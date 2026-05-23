@@ -1,7 +1,9 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 
 import UsageView from '../UsageView.vue'
+
+enableAutoUnmount(afterEach)
 
 const { list, getStats, getSnapshotV2, getModelStats, getById } = vi.hoisted(() => {
   vi.stubGlobal('localStorage', {
@@ -147,7 +149,13 @@ const UsageTableStub = {
 }
 const UserBalanceHistoryModalStub = {
   props: ['show', 'user'],
-  template: '<div v-if="show" data-test="history-modal">{{ user?.email }}</div>',
+  emits: ['close'],
+  template: `
+    <div v-if="show" data-test="history-modal">
+      <span data-test="history-user">{{ user?.email }}</span>
+      <button type="button" class="history-close" @click="$emit('close')">close</button>
+    </div>
+  `,
 }
 
 function createDeferred<T>() {
@@ -318,6 +326,72 @@ describe('admin UsageView distribution metric toggles', () => {
     await flushPromises()
 
     expect(modal.text()).toContain('second@example.com')
+  })
+
+  it('does not reopen the balance history modal after it is closed while a lookup is still pending', async () => {
+    list.mockResolvedValueOnce({
+      items: [
+        {
+          id: 1,
+          user: { id: 1, email: 'first@example.com' },
+          created_at: '2026-05-22T00:00:00Z',
+        } as any,
+        {
+          id: 2,
+          user: { id: 2, email: 'second@example.com' },
+          created_at: '2026-05-22T00:00:00Z',
+        } as any,
+      ],
+      total: 2,
+      pages: 1,
+    })
+
+    const firstUser = createDeferred<{ id: number; email: string }>()
+    const secondUser = createDeferred<{ id: number; email: string }>()
+    getById.mockImplementationOnce(() => firstUser.promise)
+    getById.mockImplementationOnce(() => secondUser.promise)
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          UsageStatsCards: true,
+          UsageFilters: UsageFiltersStub,
+          UsageTable: UsageTableStub,
+          UsageExportProgress: true,
+          UsageCleanupDialog: true,
+          UserBalanceHistoryModal: UserBalanceHistoryModalStub,
+          Pagination: true,
+          Select: true,
+          DateRangePicker: true,
+          Icon: true,
+          TokenUsageTrend: true,
+          EndpointDistributionChart: true,
+          ModelDistributionChart: ModelDistributionChartStub,
+          GroupDistributionChart: GroupDistributionChartStub,
+        },
+      },
+    })
+
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    const userButtons = wrapper.findAll('[data-test="user-row-button"]')
+    expect(userButtons).toHaveLength(2)
+
+    await userButtons[0].trigger('click')
+    firstUser.resolve({ id: 1, email: 'first@example.com' })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="history-modal"] [data-test="history-user"]').text()).toBe('first@example.com')
+
+    await userButtons[1].trigger('click')
+    await wrapper.get('[data-test="history-modal"] .history-close').trigger('click')
+    secondUser.resolve({ id: 2, email: 'second@example.com' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="history-modal"]').exists()).toBe(false)
+    expect(getById).toHaveBeenCalledTimes(2)
   })
 
   it('does not let old chart or model responses repopulate after exclude-admin is toggled', async () => {

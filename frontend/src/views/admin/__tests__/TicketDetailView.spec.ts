@@ -1,8 +1,10 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { nextTick, reactive } from 'vue'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 
 import TicketDetailView from '../TicketDetailView.vue'
+
+enableAutoUnmount(afterEach)
 
 const routeState = reactive<{ params: { id: string } }>({
   params: { id: '42' },
@@ -213,7 +215,8 @@ describe('admin TicketDetailView reply template menu', () => {
             props: ['show', 'templates', 'saving'],
             emits: ['close', 'save'],
             template: `
-              <div v-if="show" data-test="template-dialog" :data-saving="String(Boolean(saving))">
+              <div v-if="show" data-test="template-dialog" :data-open="String(show)" :data-saving="String(Boolean(saving))">
+                <div data-test="template-list">{{ templates.map((template) => template.title).join(',') }}</div>
                 <button type="button" class="template-save" :disabled="saving" @click="$emit('save', templates)">save</button>
                 <button type="button" class="template-close" @click="$emit('close')">close</button>
               </div>
@@ -235,6 +238,21 @@ describe('admin TicketDetailView reply template menu', () => {
     }
 
     await openTemplateDialog()
+    expect(wrapper.get('[data-test="template-dialog"] [data-test="template-list"]').text()).toBe('Greeting')
+
+    listAdminTicketReplyTemplates.mockResolvedValueOnce([
+      {
+        id: 'tpl-1',
+        title: 'Greeting',
+        content: 'updated template reply',
+      },
+      {
+        id: 'tpl-2',
+        title: 'Follow up',
+        content: 'follow up reply',
+      },
+    ])
+
     await wrapper.get('[data-test="template-dialog"] .template-save').trigger('click')
     await flushPromises()
 
@@ -247,11 +265,14 @@ describe('admin TicketDetailView reply template menu', () => {
 
     expect(wrapper.get('[data-test="template-dialog"]').attributes('data-saving')).toBe('false')
     expect(wrapper.get('[data-test="template-dialog"] .template-save').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-test="template-dialog"]').attributes('data-open')).toBe('true')
 
     saveRequest.resolve()
     await flushPromises()
 
     expect(wrapper.get('[data-test="template-dialog"]').attributes('data-saving')).toBe('false')
+    expect(wrapper.get('[data-test="template-dialog"]').attributes('data-open')).toBe('true')
+    expect(wrapper.get('[data-test="template-dialog"] [data-test="template-list"]').text()).toBe('Greeting,Follow up')
   })
 
   it('refreshes ticket detail after sending a reply', async () => {
@@ -283,6 +304,112 @@ describe('admin TicketDetailView reply template menu', () => {
 
     expect(replyAdminTicket).toHaveBeenCalledWith(42, 'Need update', undefined)
     expect(getAdminTicket).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not refresh or clear the new ticket when a reply finishes after the route changes', async () => {
+    const replyRequest = createDeferred<{ message: string }>()
+    replyAdminTicket.mockReturnValueOnce(replyRequest.promise)
+
+    const wrapper = mount(TicketDetailView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TicketConversationPane: {
+            props: ['replyContent', 'ticketId'],
+            emits: ['update:replyContent', 'reply'],
+            template: `
+              <div>
+                <span data-test="ticket-id">{{ ticketId }}</span>
+                <button type="button" class="set-new-draft" @click="$emit('update:replyContent', 'draft for new ticket')">draft</button>
+                <button type="button" class="send-reply" @click="$emit('reply', 'Need update')">reply</button>
+                <div data-test="reply-draft">{{ replyContent }}</div>
+              </div>
+            `,
+          },
+          TicketDetailPane: {
+            props: ['ticket'],
+            template: `
+              <div>
+                <span data-test="ticket-no">{{ ticket.ticket_no }}</span>
+                <slot name="actions" />
+              </div>
+            `,
+          },
+          TicketReplyTemplatesDialog: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    expect(getAdminTicket).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-test="ticket-id"]').text()).toBe('42')
+
+    await wrapper.get('.send-reply').trigger('click')
+
+    getAdminTicket.mockResolvedValueOnce({
+      id: 108,
+      ticket_no: 'TK-108',
+      status: 'waiting_admin',
+    })
+    listAdminTicketMessages.mockResolvedValueOnce([])
+    routeState.params.id = '108'
+    await flushPromises()
+
+    await wrapper.get('.set-new-draft').trigger('click')
+    expect(wrapper.get('[data-test="reply-draft"]').text()).toBe('draft for new ticket')
+    expect(wrapper.get('[data-test="ticket-id"]').text()).toBe('108')
+
+    replyRequest.resolve({ message: 'ok' })
+    await flushPromises()
+
+    expect(replyAdminTicket).toHaveBeenCalledWith(42, 'Need update', undefined)
+    expect(wrapper.get('[data-test="reply-draft"]').text()).toBe('draft for new ticket')
+    expect(wrapper.get('[data-test="ticket-no"]').text()).toBe('TK-108')
+  })
+
+  it('does not reload the new ticket when a status update finishes after the route changes', async () => {
+    const statusRequest = createDeferred<void>()
+    updateAdminTicketStatus.mockReturnValueOnce(statusRequest.promise)
+
+    const wrapper = mount(TicketDetailView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TicketConversationPane: true,
+          TicketDetailPane: {
+            props: ['ticket'],
+            template: `
+              <div>
+                <span data-test="ticket-no">{{ ticket.ticket_no }}</span>
+                <slot name="actions" />
+              </div>
+            `,
+          },
+          TicketReplyTemplatesDialog: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    expect(getAdminTicket).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-test="ticket-no"]').text()).toBe('TK-42')
+
+    await wrapper.get('button').trigger('click')
+
+    getAdminTicket.mockResolvedValueOnce({
+      id: 108,
+      ticket_no: 'TK-108',
+      status: 'waiting_admin',
+    })
+    listAdminTicketMessages.mockResolvedValueOnce([])
+    routeState.params.id = '108'
+    await flushPromises()
+
+    statusRequest.resolve()
+    await flushPromises()
+
+    expect(updateAdminTicketStatus).toHaveBeenCalledWith(42, 'processing')
+    expect(wrapper.get('[data-test="ticket-no"]').text()).toBe('TK-108')
   })
 
   it('clears the admin reply draft when the route ticket changes', async () => {

@@ -126,7 +126,7 @@
     :show="showBalanceHistoryModal"
     :user="balanceHistoryUser"
     :hide-actions="true"
-    @close="showBalanceHistoryModal = false; balanceHistoryUser = null"
+    @close="closeBalanceHistoryModal"
   />
 </template>
 
@@ -229,6 +229,12 @@ const handleUserClick = async (userId: number) => {
     if (seq !== balanceHistoryReqSeq) return
     appStore.showError(t('admin.usage.failedToLoadUser'))
   }
+}
+
+const closeBalanceHistoryModal = () => {
+  balanceHistoryReqSeq += 1
+  showBalanceHistoryModal.value = false
+  balanceHistoryUser.value = null
 }
 
 const granularityOptions = computed(() => [{ value: 'day', label: t('admin.dashboard.day') }, { value: 'hour', label: t('admin.dashboard.hour') }])

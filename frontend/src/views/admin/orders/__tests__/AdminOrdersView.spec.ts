@@ -4,12 +4,16 @@ import { flushPromises, mount } from '@vue/test-utils'
 import type { PaymentOrder } from '@/types/payment'
 import AdminOrdersView from '../AdminOrdersView.vue'
 
-const { getOrders, getOrder, adminPaymentAPI } = vi.hoisted(() => {
+const { getOrders, getOrder, showError, showSuccess, adminPaymentAPI } = vi.hoisted(() => {
   const getOrders = vi.fn()
   const getOrder = vi.fn()
+  const showError = vi.fn()
+  const showSuccess = vi.fn()
   return {
     getOrders,
     getOrder,
+    showError,
+    showSuccess,
     adminPaymentAPI: {
       getOrders,
       getOrder,
@@ -27,8 +31,8 @@ vi.mock('@/api/admin/payment', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
-    showSuccess: vi.fn(),
+    showError,
+    showSuccess,
   }),
 }))
 
@@ -44,7 +48,17 @@ vi.mock('vue-i18n', async () => {
 
 const AppLayoutStub = { template: '<div><slot /></div>' }
 const BaseDialogStub = { props: ['show'], template: '<div v-if="show" data-test="dialog"><slot /><slot name="footer" /></div>' }
-const PaginationStub = { template: '<div data-test="pagination" />' }
+const PaginationStub = {
+  props: ['page', 'total', 'pageSize'],
+  emits: ['update:page', 'update:pageSize'],
+  template: `
+    <div data-test="pagination">
+      <button type="button" class="page-2" @click="$emit('update:page', 2)">page 2</button>
+      <button type="button" class="page-3" @click="$emit('update:page', 3)">page 3</button>
+      <button type="button" class="page-size-50" @click="$emit('update:pageSize', 50)">size 50</button>
+    </div>
+  `,
+}
 const IconStub = { template: '<span />' }
 const SelectStub = {
   props: ['modelValue', 'options'],
@@ -110,6 +124,61 @@ describe('AdminOrdersView request races', () => {
   beforeEach(() => {
     getOrders.mockReset()
     getOrder.mockReset()
+    showError.mockReset()
+    showSuccess.mockReset()
+    adminPaymentAPI.cancelOrder.mockReset()
+    adminPaymentAPI.retryRecharge.mockReset()
+    adminPaymentAPI.refundOrder.mockReset()
+  })
+
+  it('cancels a pending search debounce before manual pagination loads a new page', async () => {
+    vi.useFakeTimers()
+    try {
+      getOrders.mockResolvedValue({
+        data: {
+          items: [createOrder({ id: 1, out_trade_no: 'order-1', status: 'PAID' })],
+          total: 2,
+        },
+      })
+
+      const wrapper = mount(AdminOrdersView, {
+        global: {
+          stubs: {
+            AppLayout: AppLayoutStub,
+            BaseDialog: BaseDialogStub,
+            Pagination: PaginationStub,
+            Select: SelectStub,
+            Icon: IconStub,
+            AdminRefundDialog: true,
+            OrderStatusBadge: true,
+            OrderTable: OrderTableStub,
+          },
+        },
+      })
+
+      await flushPromises()
+      expect(getOrders).toHaveBeenCalledTimes(1)
+      expect(getOrders).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 }))
+
+      await wrapper.get('.page-2').trigger('click')
+      await flushPromises()
+      expect(getOrders).toHaveBeenCalledTimes(2)
+      expect(getOrders).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
+
+      await wrapper.get('input[type="text"]').setValue('stale')
+      await wrapper.get('.page-3').trigger('click')
+      await flushPromises()
+      expect(getOrders).toHaveBeenCalledTimes(3)
+      expect(getOrders).toHaveBeenLastCalledWith(expect.objectContaining({ page: 3 }))
+
+      await vi.advanceTimersByTimeAsync(300)
+      await flushPromises()
+
+      expect(getOrders).toHaveBeenCalledTimes(3)
+      expect(getOrders.mock.calls.map(([params]) => params.page)).toEqual([1, 2, 3])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps the newest list response when filters change before the first request returns', async () => {
@@ -197,6 +266,78 @@ describe('AdminOrdersView request races', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('invalidates list, detail, and refund requests on unmount', async () => {
+    getOrders.mockResolvedValueOnce({
+      data: {
+        items: [
+          createOrder({ id: 1, out_trade_no: 'order-1', status: 'REFUND_REQUESTED', refund_amount: 3.14, refund_requested_amount: 3.14 }),
+        ],
+        total: 1,
+      },
+    })
+
+    const staleListResponse = createDeferred<{ data: { items: PaymentOrder[]; total: number } }>()
+    getOrders.mockImplementationOnce(() => staleListResponse.promise)
+
+    const detailResponse = createDeferred<{ data: { order: PaymentOrder; auditLogs: Array<{ id: number; action: string; detail: string | null; operator: string | null; created_at: string }> } }>()
+    getOrder.mockReturnValueOnce(detailResponse.promise)
+
+    const refundResponse = createDeferred<{ data: unknown }>()
+    adminPaymentAPI.refundOrder.mockReturnValueOnce(refundResponse.promise)
+
+    const wrapper = mount(AdminOrdersView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Pagination: PaginationStub,
+          Select: SelectStub,
+          Icon: IconStub,
+          AdminRefundDialog: AdminRefundDialogStub,
+          OrderStatusBadge: true,
+          OrderTable: OrderTableStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const viewButton = wrapper.findAll('button').find((button) => button.text().includes('common.view'))
+    const refundButton = wrapper.findAll('button').find((button) => button.text().includes('payment.admin.approveRefund'))
+    expect(viewButton).toBeTruthy()
+    expect(refundButton).toBeTruthy()
+
+    await viewButton!.trigger('click')
+    await refundButton!.trigger('click')
+    await wrapper.get('[data-test="refund-dialog"] .refund-confirm').trigger('click')
+    await wrapper.get('button[title="common.refresh"]').trigger('click')
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as {
+      selectedOrder: PaymentOrder | null
+      orderAuditLogs: Array<{ id: number }>
+    }
+    expect(vm.selectedOrder?.out_trade_no).toBe('order-1')
+    expect(vm.orderAuditLogs).toHaveLength(0)
+
+    wrapper.unmount()
+
+    detailResponse.resolve({
+      data: {
+        order: createOrder({ id: 1, out_trade_no: 'order-1-updated', status: 'COMPLETED' }),
+        auditLogs: [{ id: 1, action: 'updated', detail: null, operator: null, created_at: '2026-05-22T00:00:00Z' }],
+      },
+    })
+    refundResponse.resolve({ data: {} })
+    staleListResponse.reject(new Error('stale list failed'))
+    await flushPromises()
+
+    expect(vm.selectedOrder?.out_trade_no).toBe('order-1')
+    expect(vm.orderAuditLogs).toHaveLength(0)
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(showError).not.toHaveBeenCalled()
   })
 
   it('keeps the newest order detail when two rows are opened back to back', async () => {

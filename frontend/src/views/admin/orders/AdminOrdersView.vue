@@ -23,7 +23,7 @@
             <button @click="applyOrderFilters" class="btn btn-secondary">
               {{ t('common.search') }}
             </button>
-            <button @click="loadOrders" :disabled="ordersLoading" class="btn btn-secondary" :title="t('common.refresh')">
+            <button @click="reloadOrders" :disabled="ordersLoading" class="btn btn-secondary" :title="t('common.refresh')">
               <Icon name="refresh" size="md" :class="ordersLoading ? 'animate-spin' : ''" />
             </button>
           </div>
@@ -168,8 +168,20 @@ let orderDetailReqSeq = 0
 let refundReqSeq = 0
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+function clearOrderSearchDebounce() {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
+}
+
+function reloadOrders() {
+  clearOrderSearchDebounce()
+  loadOrders()
+}
+
 function debounceApplyOrderFilters() {
-  if (debounceTimer) clearTimeout(debounceTimer)
+  clearOrderSearchDebounce()
   debounceTimer = setTimeout(() => applyOrderFilters(), 300)
 }
 
@@ -195,10 +207,12 @@ async function loadOrders() {
 
 function applyOrderFilters() {
   orderPagination.page = 1
+  clearOrderSearchDebounce()
   loadOrders()
 }
 
 function resetOrderFilters() {
+  clearOrderSearchDebounce()
   orderSearch.value = ''
   orderFilters.status = ''
   orderFilters.payment_type = ''
@@ -209,8 +223,8 @@ function resetOrderFilters() {
   loadOrders()
 }
 
-function handleOrderPageChange(page: number) { orderPagination.page = page; loadOrders() }
-function handleOrderPageSizeChange(size: number) { orderPagination.page_size = size; orderPagination.page = 1; loadOrders() }
+function handleOrderPageChange(page: number) { clearOrderSearchDebounce(); orderPagination.page = page; loadOrders() }
+function handleOrderPageSizeChange(size: number) { clearOrderSearchDebounce(); orderPagination.page_size = size; orderPagination.page = 1; loadOrders() }
 
 const statusFilterOptions = computed(() => [
   { value: '', label: t('payment.admin.allStatuses') },
@@ -254,11 +268,13 @@ async function showOrderDetail(order: PaymentOrder) {
 }
 
 async function handleCancelOrder(order: PaymentOrder) {
+  clearOrderSearchDebounce()
   try { await adminPaymentAPI.cancelOrder(order.id); appStore.showSuccess(t('payment.admin.orderCancelled')); loadOrders() }
   catch (err: unknown) { appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error'))) }
 }
 
 async function handleRetryOrder(order: PaymentOrder) {
+  clearOrderSearchDebounce()
   try { await adminPaymentAPI.retryRecharge(order.id); appStore.showSuccess(t('payment.admin.retrySuccess')); loadOrders() }
   catch (err: unknown) { appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error'))) }
 }
@@ -287,6 +303,7 @@ async function handleRefund(data: { amount: number; reason: string; deduct_balan
   try {
     await adminPaymentAPI.refundOrder(orderId, { amount: data.amount, reason: data.reason, deduct_balance: data.deduct_balance, force: data.force })
     if (seq !== refundReqSeq) return
+    clearOrderSearchDebounce()
     appStore.showSuccess(t('payment.admin.refundSuccess')); showRefundDialog.value = false; loadOrders()
   } catch (err: unknown) {
     if (seq !== refundReqSeq) return
@@ -297,12 +314,12 @@ async function handleRefund(data: { amount: number; reason: string; deduct_balan
 
 function formatDateTime(dateStr: string): string { return formatOrderDateTime(dateStr) }
 
-onMounted(() => loadOrders())
+onMounted(() => reloadOrders())
 
 onUnmounted(() => {
-  if (debounceTimer) {
-    clearTimeout(debounceTimer)
-    debounceTimer = null
-  }
+  clearOrderSearchDebounce()
+  orderListReqSeq += 1
+  orderDetailReqSeq += 1
+  refundReqSeq += 1
 })
 </script>
