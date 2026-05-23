@@ -214,7 +214,12 @@ function sanitizeOutgoingHeaders(req, targetUrl) {
   headers.host = targetUrl.host;
   headers['x-forwarded-host'] = req.headers.host || '';
   headers['x-forwarded-proto'] = req.socket.encrypted ? 'https' : 'http';
-  headers['x-forwarded-for'] = buildForwardedFor(req);
+  const forwardedFor = buildForwardedFor(req);
+  if (forwardedFor) {
+    headers['x-forwarded-for'] = forwardedFor;
+  } else {
+    delete headers['x-forwarded-for'];
+  }
   headers['accept-encoding'] = 'identity';
   return headers;
 }
@@ -225,7 +230,26 @@ function sanitizeIncomingResponseHeaders(headers) {
 
 function sanitizeHeadersForLog(headers) {
   const out = stripHopByHopHeaders(headers);
-  for (const key of ['authorization', 'proxy-authorization', 'cookie', 'set-cookie']) {
+  for (const key of [
+    'authorization',
+    'proxy-authorization',
+    'cookie',
+    'set-cookie',
+    'x-api-key',
+    'x-api-token',
+    'x-access-token',
+    'x-auth-token',
+    'x-client-secret',
+    'x-csrf-token',
+    'x-xsrf-token',
+    'x-goog-api-key',
+    'x-rapidapi-key',
+    'x-amz-security-token',
+    'api-key',
+    'api-token',
+    'x-token',
+    'token',
+  ]) {
     if (Object.hasOwn(out, key)) {
       out[key] = '[redacted]';
     }
@@ -272,11 +296,11 @@ function shouldRedactQueryParam(name) {
 }
 
 function sanitizeBodyTextForLog(headers, bodyText) {
-  if (!bodyText) {
-    return '';
-  }
   if (!isTextualContentType(headers?.['content-type'])) {
     return '[omitted non-text body]';
+  }
+  if (!bodyText) {
+    return '';
   }
   return redactSecretLikeText(bodyText);
 }
@@ -290,8 +314,7 @@ function isTextualContentType(contentType) {
     value.startsWith('text/') ||
     value.includes('json') ||
     value.includes('xml') ||
-    value.includes('x-www-form-urlencoded') ||
-    value.startsWith('multipart/form-data')
+    value.includes('x-www-form-urlencoded')
   );
 }
 
@@ -300,6 +323,10 @@ function redactSecretLikeText(text) {
   redacted = redacted.replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]');
   redacted = redacted.replace(/(Basic\s+)[A-Za-z0-9+/=]+/gi, '$1[redacted]');
   redacted = redacted.replace(
+    /(["'])(password|passwd|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|secret|token|authorization)\1(\s*:\s*)(["'])([^"\\]*(?:\\.[^"\\]*)*)\4/gi,
+    (_, keyQuote, keyName, separator, valueQuote) => `${keyQuote}${keyName}${keyQuote}${separator}${valueQuote}[redacted]${valueQuote}`,
+  );
+  redacted = redacted.replace(
     /((?:password|passwd|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|secret|token|authorization)\s*[:=]\s*)(["']?)([^"'\s,&}\]]+)(\2?)/gi,
     '$1[redacted]',
   );
@@ -307,15 +334,12 @@ function redactSecretLikeText(text) {
 }
 
 function buildForwardedFor(req) {
-  const prior = String(req.headers['x-forwarded-for'] || '').trim();
   const remote = req.socket.remoteAddress || '';
-  if (!prior) {
-    return remote;
-  }
-  if (!remote) {
-    return prior;
-  }
-  return `${prior}, ${remote}`;
+  return remote;
+}
+
+function formatLoggedUpstreamUrl(upstreamUrl, incomingUrl) {
+  return `${upstreamUrl.origin}${upstreamUrl.targetPath}${sanitizeQueryForLog(incomingUrl.query)}`;
 }
 
 class BodyRecorder extends Transform {
@@ -460,7 +484,7 @@ async function handleRequest(req, res, config) {
         body_text: sanitizeBodyTextForLog(req.headers, requestSnapshot.bodyText),
       },
       upstream: {
-        url: `${upstreamUrl.origin}${upstreamUrl.path}`,
+        url: formatLoggedUpstreamUrl(upstreamUrl, incomingUrl),
         method: req.method,
         headers: sanitizeHeadersForLog(outgoingHeaders),
       },
@@ -625,12 +649,37 @@ function runSelfCheck() {
     '/base/a/./b/%2e%2e/c?x=1',
   );
   assert.equal(
+    formatLoggedUpstreamUrl(
+      buildUpstreamUrl('https://example.test/base', '/a/./b/%2e%2e/c?token=abc123&keep=ok'),
+      { query: '?token=abc123&keep=ok' },
+    ),
+    'https://example.test/base/a/./b/%2e%2e/c?token=%5Bredacted%5D&keep=ok',
+  );
+  assert.equal(
     sanitizeQueryForLog('?token=abc123&keep=ok'),
     '?token=%5Bredacted%5D&keep=ok',
   );
   assert.equal(
     sanitizeHeadersForLog({ authorization: 'Bearer abc123', 'content-type': 'text/plain' }).authorization,
     '[redacted]',
+  );
+  assert.equal(
+    sanitizeHeadersForLog({ 'x-api-key': 'secret', 'content-type': 'text/plain' })['x-api-key'],
+    '[redacted]',
+  );
+  assert.equal(
+    sanitizeBodyTextForLog(
+      { 'content-type': 'application/json' },
+      '{"api_key":"abc123","nested":{"client_secret":"shh"}}',
+    ),
+    '{"api_key":"[redacted]","nested":{"client_secret":"[redacted]"}}',
+  );
+  assert.equal(
+    sanitizeBodyTextForLog(
+      { 'content-type': 'multipart/form-data; boundary=abc' },
+      '------abc\r\nContent-Disposition: form-data; name="api_key"\r\n\r\nabc123\r\n------abc--',
+    ),
+    '[omitted non-text body]',
   );
   assert.deepEqual(
     stripHopByHopHeaders({
@@ -643,6 +692,19 @@ function runSelfCheck() {
     {
       'content-type': 'text/plain',
     },
+  );
+  assert.equal(
+    sanitizeOutgoingHeaders(
+      {
+        headers: {
+          host: 'client.example',
+          'x-forwarded-for': '1.2.3.4, 5.6.7.8',
+        },
+        socket: { encrypted: false, remoteAddress: '9.9.9.9' },
+      },
+      { host: 'upstream.example' },
+    )['x-forwarded-for'],
+    '9.9.9.9',
   );
 
   const tempDir = mkdtempSync(path.join(os.tmpdir(), 'crs-capture-self-check-'));
