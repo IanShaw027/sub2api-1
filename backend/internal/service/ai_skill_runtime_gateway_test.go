@@ -6,7 +6,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -221,10 +220,12 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 	archive := buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))
 	hostSkillDir := t.TempDir()
 	hostScratchDir := t.TempDir()
+	archivePath := filepath.Join(t.TempDir(), "script_python_echo.zip")
 	inputPath := filepath.Join(hostScratchDir, "input", "request.json")
 	outputPath := filepath.Join(hostScratchDir, "output", "response.json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(inputPath), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Dir(outputPath), 0o755))
+	require.NoError(t, os.WriteFile(archivePath, archive, 0o600))
 	require.NoError(t, os.WriteFile(outputPath, []byte(`{"ok":true,"echo":"sunrise","runtime":"python3.11"}`), 0o600))
 
 	runner := &aiSkillScriptRunnerStub{
@@ -270,7 +271,7 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 		ScriptName:     "script_python_echo",
 		EntryPoint:     "main.py",
 		Protocol:       skillrunner.ProtocolJSONFileV1,
-		ArchiveBase64:  mustBase64(archive),
+		ArchivePath:    archivePath,
 		TimeoutSeconds: 45,
 		Environment: map[string]string{
 			"SUBJECT": "{{subject}}",
@@ -281,34 +282,61 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, AISkillRunStatusSucceeded, result.Status)
-	require.NotEmpty(t, result.ExternalJobID)
-	require.Equal(t, true, result.Output["ok"])
-	require.Equal(t, "sunrise", result.Output["echo"])
-	require.Equal(t, "python3.11", result.Output["runtime"])
+	require.Equal(t, AISkillRunStatusDispatched, result.Status)
+	require.Equal(t, "sha256:script-test", result.ExternalJobID)
 
-	paths, ok := result.Metadata["paths"].(map[string]any)
+	outputBundle, ok := result.Output["bundle"].(map[string]any)
 	require.True(t, ok)
-	hostSkillDirPath, _ := paths["host_skill_dir"].(string)
-	hostScratchDirPath, _ := paths["host_scratch_dir"].(string)
-	require.NotEmpty(t, hostSkillDirPath)
-	require.NotEmpty(t, hostScratchDirPath)
+	require.Equal(t, "sha256:script-test", outputBundle["digest"])
 
-	inputPathValue, _ := paths["input_path"].(string)
-	require.NotEmpty(t, inputPathValue)
-	rawInput, err := os.ReadFile(inputPathValue)
-	require.NoError(t, err)
-	require.Equal(t, "sunrise", gjson.GetBytes(rawInput, "parameters.subject").String())
-	require.Equal(t, "sunrise", gjson.GetBytes(rawInput, "environment.SUBJECT").String())
+	outputPlan, ok := result.Output["plan"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "/workspace/skill", outputPlan["workingDir"])
+	outputPlanEnv, ok := outputPlan["environment"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "sunrise", outputPlanEnv["SUBJECT"])
+	require.Equal(t, "/sandbox/input/request.json", outputPlanEnv["SUB2API_SKILL_INPUT"])
+	require.Equal(t, "/sandbox/output/response.json", outputPlanEnv["SUB2API_SKILL_OUTPUT"])
+	require.Equal(t, int64(45*time.Second), gjson.GetBytes(mustJSON(t, outputPlan), "resourceLimits.timeout").Int())
 
-	plan, ok := result.Metadata["plan"].(map[string]any)
+	outputPaths, ok := result.Output["paths"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "/workspace/skill", plan["workingDir"])
-	env, ok := plan["environment"].(map[string]any)
+	require.Equal(t, hostSkillDir, outputPaths["host_skill_dir"])
+	require.Equal(t, hostScratchDir, outputPaths["host_scratch_dir"])
+	require.Equal(t, inputPath, outputPaths["input_path"])
+	require.Equal(t, outputPath, outputPaths["output_path"])
+
+	outputEnvironment, ok := result.Output["environment"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "sunrise", env["SUBJECT"])
-	require.Equal(t, "/sandbox/input/request.json", env["SUB2API_SKILL_INPUT"])
-	require.Equal(t, int64(45*time.Second), gjson.GetBytes(mustJSON(t, plan), "resourceLimits.timeout").Int())
+	require.Equal(t, "sunrise", outputEnvironment["SUBJECT"])
+
+	dispatchInput, ok := result.Output["dispatch_input"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, int64(51), dispatchInput["run_id"])
+	require.Equal(t, int64(61), dispatchInput["skill_id"])
+	require.Equal(t, int64(71), dispatchInput["version_id"])
+	require.Equal(t, int64(81), dispatchInput["user_id"])
+	require.Equal(t, "use", dispatchInput["mode"])
+	require.Equal(t, "script_python_echo", dispatchInput["script_name"])
+	require.Equal(t, "python3.11", dispatchInput["runtime"])
+	require.Equal(t, "main.py", dispatchInput["entry_point"])
+	require.Equal(t, "json-file-v1", dispatchInput["protocol"])
+	require.Equal(t, archivePath, dispatchInput["archive_source"])
+	dispatchParameters, ok := dispatchInput["parameters"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "sunrise", dispatchParameters["subject"])
+	dispatchEnvironment, ok := dispatchInput["environment"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "sunrise", dispatchEnvironment["SUBJECT"])
+
+	require.NotNil(t, runner.dispatchRequest)
+	require.Equal(t, archive, runner.dispatchRequest.Archive)
+	require.Equal(t, "script_python_echo", runner.dispatchRequest.Bundle.Manifest.Metadata.Name)
+	require.Equal(t, skillrunner.ReviewStatusApproved, runner.dispatchRequest.Review.Status)
+	require.Equal(t, map[string]any{"SUBJECT": "sunrise"}, runner.dispatchRequest.Environment)
+	require.Equal(t, "skillrunner", result.Metadata["provider"])
+	require.Equal(t, "sha256:script-test", result.Metadata["bundle_digest"])
+	require.Equal(t, archivePath, result.Metadata["archive_source"])
 }
 
 func buildAISkillArchiveFromDir(t *testing.T, dir string) []byte {
@@ -348,8 +376,4 @@ func mustJSON(t *testing.T, value any) []byte {
 	raw, err := json.Marshal(value)
 	require.NoError(t, err)
 	return raw
-}
-
-func mustBase64(raw []byte) string {
-	return base64.StdEncoding.EncodeToString(raw)
 }

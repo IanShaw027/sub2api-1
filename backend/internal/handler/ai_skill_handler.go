@@ -621,11 +621,23 @@ func (h *AIHandler) runSkillWithMode(c *gin.Context, mode string) {
 		response.BadRequest(c, "Invalid skill ID")
 		return
 	}
+	var req skillRunRequest
+	if c.Request.Body != nil && c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "Invalid request body")
+			return
+		}
+	}
 	versionID := parseOptionalUserAIID(c.Query("version_id"))
+	parameters := req.Parameters
+	if parameters == nil {
+		parameters = map[string]any{}
+	}
 	executeUserIdempotentJSON(c, "skills:runs:"+mode, map[string]any{
 		"skill_id":   skillID,
 		"version_id": versionID,
 		"mode":       mode,
+		"parameters": parameters,
 	}, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
 		skill, _, err := loadSkillForViewer(ctx, module, skillID, subject.UserID)
 		if err != nil {
@@ -639,7 +651,7 @@ func (h *AIHandler) runSkillWithMode(c *gin.Context, mode string) {
 			SkillID:        skillID,
 			VersionID:      versionID,
 			Mode:           mode,
-			Parameters:     map[string]any{},
+			Parameters:     parameters,
 			IdempotencyKey: strings.TrimSpace(c.GetHeader("Idempotency-Key")),
 			Trace:          buildUserAITrace(aiTraceRequest{}),
 		})
