@@ -1134,6 +1134,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	var previousPaymentCfg *service.PaymentConfig
+	if h.paymentConfigService != nil && hasPaymentFields(req) {
+		previousPaymentCfg, err = h.paymentConfigService.GetPaymentConfig(c.Request.Context())
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+	}
 
 	// 验证参数
 	if req.DefaultConcurrency < 1 {
@@ -2001,6 +2009,11 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	var paymentReq *service.UpdatePaymentConfigRequest
+	if previousPaymentCfg != nil {
+		mergedPaymentReq := mergePaymentConfigUpdate(req, previousPaymentCfg)
+		paymentReq = &mergedPaymentReq
+	}
 
 	supportQRCodes := previousSettings.SupportQRCodes
 	if req.SupportQRCodes != nil {
@@ -2491,7 +2504,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	// Update OpenAI fast policy (stored under dedicated key, only when provided).
 	if req.OpenAIFastPolicySettings != nil {
 		if err := h.settingService.SetOpenAIFastPolicySettings(c.Request.Context(), openaiFastPolicySettingsFromDTO(req.OpenAIFastPolicySettings)); err != nil {
-			rollbackErr := h.rollbackAdminSettingsUpdate(c.Request.Context(), previousSettings, previousAuthSourceDefaults, previousFastPolicy)
+			rollbackErr := h.rollbackAdminSettingsUpdate(c.Request.Context(), previousSettings, previousAuthSourceDefaults, previousFastPolicy, nil)
 			if rollbackErr != nil {
 				response.ErrorFrom(c, fmt.Errorf("rollback admin settings update after fast policy save failure: %w", rollbackErr))
 				return
@@ -2504,14 +2517,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 	// Update payment configuration (integrated into system settings).
 	// Skip if no payment fields were provided (prevents accidental wipe).
-	if h.paymentConfigService != nil && hasPaymentFields(req) {
-		currentPaymentCfg, err := h.paymentConfigService.GetPaymentConfig(c.Request.Context())
-		if err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		paymentReq := mergePaymentConfigUpdate(req, currentPaymentCfg)
-		if err := h.paymentConfigService.UpdatePaymentConfig(c.Request.Context(), paymentReq); err != nil {
+	if h.paymentConfigService != nil && paymentReq != nil {
+		if err := h.paymentConfigService.UpdatePaymentConfig(c.Request.Context(), *paymentReq); err != nil {
+			var rollbackFastPolicy *service.OpenAIFastPolicySettings
+			if req.OpenAIFastPolicySettings != nil {
+				rollbackFastPolicy = previousFastPolicy
+			}
+			rollbackErr := h.rollbackAdminSettingsUpdate(c.Request.Context(), previousSettings, previousAuthSourceDefaults, rollbackFastPolicy, previousPaymentCfg)
+			if rollbackErr != nil {
+				response.ErrorFrom(c, fmt.Errorf("rollback admin settings update after payment config save failure: %w", rollbackErr))
+				return
+			}
+			h.cleanupIngestedSettingsMediaReferences(c.Request.Context(), createdMediaAssetIDs)
 			response.ErrorFrom(c, err)
 			return
 		}
@@ -3288,11 +3305,11 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	return changed
 }
 
-func (h *SettingHandler) rollbackAdminSettingsUpdate(ctx context.Context, previousSettings *service.SystemSettings, previousAuthSourceDefaults *service.AuthSourceDefaultSettings, previousFastPolicy *service.OpenAIFastPolicySettings) error {
+func (h *SettingHandler) rollbackAdminSettingsUpdate(ctx context.Context, previousSettings *service.SystemSettings, previousAuthSourceDefaults *service.AuthSourceDefaultSettings, previousFastPolicy *service.OpenAIFastPolicySettings, previousPaymentCfg *service.PaymentConfig) error {
 	var firstErr error
 
-	if previousSettings != nil && previousAuthSourceDefaults != nil {
-		if err := h.settingService.UpdateSettingsWithAuthSourceDefaults(ctx, previousSettings, previousAuthSourceDefaults); err != nil && firstErr == nil {
+	if previousPaymentCfg != nil && h.paymentConfigService != nil {
+		if err := h.paymentConfigService.UpdatePaymentConfig(ctx, paymentConfigUpdateRequestFromSnapshot(previousPaymentCfg)); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
@@ -3303,7 +3320,58 @@ func (h *SettingHandler) rollbackAdminSettingsUpdate(ctx context.Context, previo
 		}
 	}
 
+	if previousSettings != nil && previousAuthSourceDefaults != nil {
+		if err := h.settingService.UpdateSettingsWithAuthSourceDefaults(ctx, previousSettings, previousAuthSourceDefaults); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
 	return firstErr
+}
+
+func paymentConfigUpdateRequestFromSnapshot(cfg *service.PaymentConfig) service.UpdatePaymentConfigRequest {
+	if cfg == nil {
+		cfg = &service.PaymentConfig{}
+	}
+	return service.UpdatePaymentConfigRequest{
+		Enabled:                   paymentBoolPtr(cfg.Enabled),
+		MinAmount:                 paymentFloat64Ptr(cfg.MinAmount),
+		MaxAmount:                 paymentFloat64Ptr(cfg.MaxAmount),
+		DailyLimit:                paymentFloat64Ptr(cfg.DailyLimit),
+		OrderTimeoutMin:           paymentIntPtr(cfg.OrderTimeoutMin),
+		MaxPendingOrders:          paymentIntPtr(cfg.MaxPendingOrders),
+		EnabledTypes:              append([]string{}, cfg.EnabledTypes...),
+		BalanceDisabled:           paymentBoolPtr(cfg.BalanceDisabled),
+		BalanceRechargeMultiplier: paymentFloat64Ptr(cfg.BalanceRechargeMultiplier),
+		RechargeFeeRate:           paymentFloat64Ptr(cfg.RechargeFeeRate),
+		LoadBalanceStrategy:       paymentStringPtr(cfg.LoadBalanceStrategy),
+		ProductNamePrefix:         paymentStringPtr(cfg.ProductNamePrefix),
+		ProductNameSuffix:         paymentStringPtr(cfg.ProductNameSuffix),
+		HelpImageURL:              paymentStringPtr(cfg.HelpImageURL),
+		HelpText:                  paymentStringPtr(cfg.HelpText),
+		CancelRateLimitEnabled:    paymentBoolPtr(cfg.CancelRateLimitEnabled),
+		CancelRateLimitMax:        paymentIntPtr(cfg.CancelRateLimitMax),
+		CancelRateLimitWindow:     paymentIntPtr(cfg.CancelRateLimitWindow),
+		CancelRateLimitUnit:       paymentStringPtr(cfg.CancelRateLimitUnit),
+		CancelRateLimitMode:       paymentStringPtr(cfg.CancelRateLimitMode),
+		AlipayForceQRCode:         paymentBoolPtr(cfg.AlipayForceQRCode),
+	}
+}
+
+func paymentBoolPtr(value bool) *bool {
+	return &value
+}
+
+func paymentFloat64Ptr(value float64) *float64 {
+	return &value
+}
+
+func paymentIntPtr(value int) *int {
+	return &value
+}
+
+func paymentStringPtr(value string) *string {
+	return &value
 }
 
 func openAIFastPolicySettingsEqual(before, after *service.OpenAIFastPolicySettings) bool {
