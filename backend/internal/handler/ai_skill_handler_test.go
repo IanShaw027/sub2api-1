@@ -395,6 +395,54 @@ func TestAIHandlerRunSkillRejectsPrivateSkillBeforeUploadingAttachments(t *testi
 	require.Empty(t, store.deleted)
 }
 
+func TestResolveSkillRunVersionForViewerKeepsOwnerDraftAndViewerPublished(t *testing.T) {
+	t.Parallel()
+
+	currentVersionID := int64(11)
+	publishedVersionID := int64(22)
+	skill := &domain.AISkill{
+		UserID:             7,
+		CurrentVersionID:   &currentVersionID,
+		PublishedVersionID: &publishedVersionID,
+	}
+
+	ownerVersionID, err := resolveSkillRunVersionForViewer(skill, &currentVersionID, 7)
+	require.NoError(t, err)
+	require.NotNil(t, ownerVersionID)
+	require.Equal(t, currentVersionID, *ownerVersionID)
+
+	viewerVersionID, err := resolveSkillRunVersionForViewer(skill, nil, 9001)
+	require.NoError(t, err)
+	require.NotNil(t, viewerVersionID)
+	require.Equal(t, publishedVersionID, *viewerVersionID)
+
+	forbiddenVersionID, err := resolveSkillRunVersionForViewer(skill, &currentVersionID, 9001)
+	require.Error(t, err)
+	require.Nil(t, forbiddenVersionID)
+}
+
+func TestSkillViewForViewerKeepsOwnerCurrentVersionAndPinsViewerToPublishedVersion(t *testing.T) {
+	t.Parallel()
+
+	currentVersionID := int64(11)
+	publishedVersionID := int64(22)
+	skill := &domain.AISkill{
+		UserID:             7,
+		CurrentVersionID:   &currentVersionID,
+		PublishedVersionID: &publishedVersionID,
+	}
+
+	ownerView := skillViewForViewer(skill, 7)
+	require.NotNil(t, ownerView)
+	require.NotNil(t, ownerView.CurrentVersionID)
+	require.Equal(t, currentVersionID, *ownerView.CurrentVersionID)
+
+	viewerView := skillViewForViewer(skill, 9001)
+	require.NotNil(t, viewerView)
+	require.NotNil(t, viewerView.CurrentVersionID)
+	require.Equal(t, publishedVersionID, *viewerView.CurrentVersionID)
+}
+
 func newAIHandlerMediaTestHarness(t *testing.T) (*AIHandler, *aiSkillHandlerMediaRepo, *aiSkillHandlerMediaStore) {
 	t.Helper()
 
