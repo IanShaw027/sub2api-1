@@ -85,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
@@ -110,6 +110,7 @@ const filters = reactive({ status: '', keyword: '' })
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 let invoiceListReqSeq = 0
 let invoiceDetailReqSeq = 0
+let invoiceUploadReqSeq = 0
 let activeInvoiceDetailId: number | null = null
 
 const statusOptions = computed(() => [
@@ -179,6 +180,7 @@ async function openDetail(id: number) {
   activeInvoiceDetailId = id
   detail.value = null
   selectedFile.value = null
+  resetInvoiceSubmitting()
   try {
     const res = await adminPaymentAPI.getInvoice(id)
     if (seq !== invoiceDetailReqSeq || activeInvoiceDetailId !== id) return
@@ -193,6 +195,12 @@ function closeDetail() {
   activeInvoiceDetailId = null
   detail.value = null
   selectedFile.value = null
+  resetInvoiceSubmitting()
+}
+
+function resetInvoiceSubmitting() {
+  invoiceUploadReqSeq += 1
+  submitting.value = false
 }
 
 function handleFileChange(event: Event) {
@@ -202,19 +210,30 @@ function handleFileChange(event: Event) {
 
 async function uploadFile() {
   if (!detail.value || !selectedFile.value) return
+  const seq = ++invoiceUploadReqSeq
+  const detailId = detail.value.id
+  const file = selectedFile.value
   submitting.value = true
   try {
-    const res = await adminPaymentAPI.uploadInvoiceFile(detail.value.id, selectedFile.value)
+    const res = await adminPaymentAPI.uploadInvoiceFile(detailId, file)
+    if (seq !== invoiceUploadReqSeq || activeInvoiceDetailId !== detailId) return
     detail.value = res.data
     appStore.showSuccess(t('common.success'))
     selectedFile.value = null
     await loadInvoices()
   } catch (err: unknown) {
+    if (seq !== invoiceUploadReqSeq) return
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
   } finally {
-    submitting.value = false
+    if (seq === invoiceUploadReqSeq) submitting.value = false
   }
 }
 
 onMounted(loadInvoices)
+
+onUnmounted(() => {
+  invoiceListReqSeq += 1
+  invoiceDetailReqSeq += 1
+  invoiceUploadReqSeq += 1
+})
 </script>

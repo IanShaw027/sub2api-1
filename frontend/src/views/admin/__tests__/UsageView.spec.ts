@@ -85,13 +85,28 @@ vi.mock('vue-router', () => ({
 }))
 
 const AppLayoutStub = { template: '<div><slot /></div>' }
-const UsageFiltersStub = { template: '<div><slot name="after-reset" /></div>' }
+const UsageFiltersStub = {
+  props: ['modelValue'],
+  emits: ['update:modelValue', 'change', 'refresh', 'reset', 'cleanup', 'export'],
+  template: `
+    <div>
+      <button
+        data-test="exclude-admin-toggle"
+        @click="$emit('update:modelValue', { ...modelValue, exclude_admin: !modelValue.exclude_admin }); $emit('change')"
+      >
+        toggle
+      </button>
+      <slot name="after-reset" />
+    </div>
+  `,
+}
 const ModelDistributionChartStub = {
-  props: ['metric'],
+  props: ['metric', 'modelStats'],
   emits: ['update:metric'],
   template: `
     <div data-test="model-chart">
       <span class="metric">{{ metric }}</span>
+      <span class="count">{{ modelStats?.length ?? 0 }}</span>
       <button class="switch-metric" @click="$emit('update:metric', 'actual_cost')">switch</button>
     </div>
   `,
@@ -105,6 +120,14 @@ const GroupDistributionChartStub = {
       <button class="switch-metric" @click="$emit('update:metric', 'actual_cost')">switch</button>
     </div>
   `,
+}
+const UsageStatsCardsStub = {
+  props: ['stats'],
+  template: '<div data-test="stats-cards">{{ stats?.total_requests ?? 0 }}</div>',
+}
+const TokenUsageTrendStub = {
+  props: ['trendData'],
+  template: '<div data-test="trend-chart">{{ trendData?.length ?? 0 }}</div>',
 }
 const UsageTableStub = {
   props: ['data', 'loading', 'columns'],
@@ -295,5 +318,127 @@ describe('admin UsageView distribution metric toggles', () => {
     await flushPromises()
 
     expect(modal.text()).toContain('second@example.com')
+  })
+
+  it('does not let old chart or model responses repopulate after exclude-admin is toggled', async () => {
+    list.mockResolvedValue({
+      items: [],
+      total: 0,
+      pages: 0,
+    })
+    getStats.mockResolvedValue({
+      total_requests: 0,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cache_tokens: 0,
+      total_tokens: 0,
+      total_cost: 0,
+      total_actual_cost: 0,
+      average_duration_ms: 0,
+    })
+
+    const initialSnapshot = createDeferred<{ trend: Array<{ value: number }>; groups: Array<{ name: string }> }>()
+    const initialModelStats = createDeferred<{ models: Array<{ model: string }> }>()
+    getSnapshotV2.mockImplementationOnce(() => initialSnapshot.promise)
+    getModelStats.mockImplementationOnce(() => initialModelStats.promise)
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          UsageStatsCards: UsageStatsCardsStub,
+          UsageFilters: UsageFiltersStub,
+          UsageTable: true,
+          UsageExportProgress: true,
+          UsageCleanupDialog: true,
+          UserBalanceHistoryModal: true,
+          Pagination: true,
+          Select: true,
+          DateRangePicker: true,
+          Icon: true,
+          TokenUsageTrend: TokenUsageTrendStub,
+          ModelDistributionChart: ModelDistributionChartStub,
+          GroupDistributionChart: GroupDistributionChartStub,
+          EndpointDistributionChart: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    expect(getSnapshotV2).toHaveBeenCalledTimes(1)
+    expect(getModelStats).toHaveBeenCalledTimes(1)
+
+    await wrapper.get('[data-test="exclude-admin-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(getSnapshotV2).toHaveBeenCalledTimes(1)
+    expect(getModelStats).toHaveBeenCalledTimes(1)
+
+    initialSnapshot.resolve({
+      trend: [{ value: 1 }],
+      groups: [{ name: 'old-group' }],
+    })
+    initialModelStats.resolve({
+      models: [{ model: 'old-model' }],
+    })
+    await flushPromises()
+
+    expect((wrapper.vm as any).trendData).toHaveLength(0)
+    expect((wrapper.vm as any).requestedModelStats).toHaveLength(0)
+    expect((wrapper.vm as any).upstreamModelStats).toHaveLength(0)
+    expect((wrapper.vm as any).mappingModelStats).toHaveLength(0)
+  })
+
+  it('clears the delayed chart load when the view unmounts', async () => {
+    list.mockResolvedValue({
+      items: [],
+      total: 0,
+      pages: 0,
+    })
+    getStats.mockResolvedValue({
+      total_requests: 0,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cache_tokens: 0,
+      total_tokens: 0,
+      total_cost: 0,
+      total_actual_cost: 0,
+      average_duration_ms: 0,
+    })
+    getModelStats.mockResolvedValue({ models: [] })
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          UsageStatsCards: UsageStatsCardsStub,
+          UsageFilters: UsageFiltersStub,
+          UsageTable: true,
+          UsageExportProgress: true,
+          UsageCleanupDialog: true,
+          UserBalanceHistoryModal: true,
+          Pagination: true,
+          Select: true,
+          DateRangePicker: true,
+          Icon: true,
+          TokenUsageTrend: TokenUsageTrendStub,
+          ModelDistributionChart: ModelDistributionChartStub,
+          GroupDistributionChart: GroupDistributionChartStub,
+          EndpointDistributionChart: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    expect(getSnapshotV2).toHaveBeenCalledTimes(0)
+
+    wrapper.unmount()
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    expect(getSnapshotV2).toHaveBeenCalledTimes(0)
   })
 })

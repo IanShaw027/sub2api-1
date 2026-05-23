@@ -76,6 +76,16 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 describe('admin TicketDetailView reply template menu', () => {
   beforeEach(() => {
     getAdminTicket.mockReset()
@@ -180,6 +190,68 @@ describe('admin TicketDetailView reply template menu', () => {
     await nextTick()
 
     expect(wrapper.get('[data-test="template-dialog"]').attributes('data-open')).toBe('true')
+  })
+
+  it('does not keep a reopened template dialog saving or close it from a stale save response', async () => {
+    const saveRequest = createDeferred<void>()
+    replaceAdminTicketReplyTemplates.mockReturnValueOnce(saveRequest.promise)
+
+    const wrapper = mount(TicketDetailView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TicketConversationPane: {
+            template: `
+              <div>
+                <slot name="composer-actions" />
+              </div>
+            `,
+          },
+          TicketDetailPane: { template: '<div><slot name="actions" /></div>' },
+          TicketReplyTemplatesDialog: {
+            props: ['show', 'templates', 'saving'],
+            emits: ['close', 'save'],
+            template: `
+              <div v-if="show" data-test="template-dialog" :data-saving="String(Boolean(saving))">
+                <button type="button" class="template-save" :disabled="saving" @click="$emit('save', templates)">save</button>
+                <button type="button" class="template-close" @click="$emit('close')">close</button>
+              </div>
+            `,
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const openTemplateDialog = async () => {
+      await wrapper.get('button[aria-haspopup="menu"]').trigger('click')
+      await flushPromises()
+      const manageButton = wrapper.findAll('button[role="menuitem"]').at(-1)
+      expect(manageButton).toBeTruthy()
+      await manageButton!.trigger('click')
+      await nextTick()
+    }
+
+    await openTemplateDialog()
+    await wrapper.get('[data-test="template-dialog"] .template-save').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="template-dialog"]').attributes('data-saving')).toBe('true')
+
+    await wrapper.get('[data-test="template-dialog"] .template-close').trigger('click')
+    await nextTick()
+
+    await openTemplateDialog()
+
+    expect(wrapper.get('[data-test="template-dialog"]').attributes('data-saving')).toBe('false')
+    expect(wrapper.get('[data-test="template-dialog"] .template-save').attributes('disabled')).toBeUndefined()
+
+    saveRequest.resolve()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="template-dialog"]').attributes('data-saving')).toBe('false')
   })
 
   it('refreshes ticket detail after sending a reply', async () => {

@@ -193,4 +193,94 @@ describe('AdminInvoiceApplicationsView request races', () => {
     expect(dialog.text()).toContain('invoice-new')
     expect(dialog.text()).not.toContain('invoice-old')
   })
+
+  it('does not keep a reopened invoice dialog submitting or overwrite it with stale detail and upload responses', async () => {
+    const firstDetail = createDeferred<{ data: InvoiceApplication }>()
+    const secondDetail = createDeferred<{ data: InvoiceApplication }>()
+    getInvoices.mockResolvedValue({
+      data: {
+        items: [
+          createInvoice({ id: 1, order_out_trade_no: 'invoice-old', email: 'old@example.com', user_email: 'old@example.com' }),
+          createInvoice({ id: 2, order_out_trade_no: 'invoice-new', email: 'new@example.com', user_email: 'new@example.com' }),
+        ],
+        total: 2,
+      },
+    })
+    getInvoice.mockImplementationOnce(() => firstDetail.promise)
+    getInvoice.mockImplementationOnce(() => secondDetail.promise)
+    getInvoice.mockResolvedValueOnce({
+      data: createInvoice({ id: 2, order_out_trade_no: 'invoice-new', email: 'new@example.com', user_email: 'new@example.com' }),
+    })
+
+    const uploadRequest = createDeferred<{ data: InvoiceApplication }>()
+    adminPaymentAPI.uploadInvoiceFile.mockReturnValueOnce(uploadRequest.promise)
+
+    const wrapper = mount(AdminInvoiceApplicationsView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Pagination: PaginationStub,
+          Select: SelectStub,
+          Icon: IconStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const viewButtons = wrapper.findAll('tbody button')
+    await viewButtons[0].trigger('click')
+    await viewButtons[1].trigger('click')
+
+    secondDetail.resolve({
+      data: createInvoice({ id: 2, order_out_trade_no: 'invoice-new', email: 'new@example.com', user_email: 'new@example.com' }),
+    })
+    await flushPromises()
+
+    const firstFileInput = wrapper.get('input[type="file"]')
+    Object.defineProperty(firstFileInput.element, 'files', {
+      value: [new File(['invoice'], 'invoice.pdf', { type: 'application/pdf' })],
+      configurable: true,
+    })
+    await firstFileInput.trigger('change')
+    await wrapper.get('[data-test="dialog"] button.btn-primary').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="dialog"] button.btn-primary').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-test="dialog"] button.btn-secondary').trigger('click')
+    await flushPromises()
+
+    await viewButtons[1].trigger('click')
+    await flushPromises()
+
+    const reopenedDialog = wrapper.get('[data-test="dialog"]')
+    expect(reopenedDialog.text()).toContain('invoice-new')
+    expect(reopenedDialog.text()).not.toContain('invoice-old')
+
+    const secondFileInput = wrapper.get('input[type="file"]')
+    Object.defineProperty(secondFileInput.element, 'files', {
+      value: [new File(['invoice'], 'invoice-2.pdf', { type: 'application/pdf' })],
+      configurable: true,
+    })
+    await secondFileInput.trigger('change')
+    expect(wrapper.get('[data-test="dialog"] button.btn-primary').attributes('disabled')).toBeUndefined()
+
+    firstDetail.resolve({
+      data: createInvoice({ id: 1, order_out_trade_no: 'invoice-old', email: 'old@example.com', user_email: 'old@example.com' }),
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="dialog"]').text()).toContain('invoice-new')
+    expect(wrapper.get('[data-test="dialog"]').text()).not.toContain('invoice-old')
+
+    uploadRequest.resolve({
+      data: createInvoice({ id: 1, order_out_trade_no: 'invoice-old', email: 'old@example.com', user_email: 'old@example.com', status: 'ISSUED' }),
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="dialog"]').text()).toContain('invoice-new')
+    expect(wrapper.get('[data-test="dialog"]').text()).not.toContain('invoice-old')
+  })
 })

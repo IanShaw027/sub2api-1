@@ -108,14 +108,14 @@
       :show="showTemplateDialog"
       :templates="replyTemplates"
       :saving="savingTemplates"
-      @close="showTemplateDialog = false"
+      @close="closeTemplateDialog"
       @save="saveTemplates"
     />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -156,6 +156,7 @@ const availableAdminStatuses = computed(() => {
 const canUpdateStatus = computed(() => availableAdminStatuses.value.length > 0)
 const ticketID = computed(() => Number(route.params.id))
 let loadDetailRequestID = 0
+let saveTemplatesRequestID = 0
 
 function isAdminStatusActionAllowed(currentStatus: TicketStatus, lastReplyRole?: SupportTicket['last_reply_role'], nextStatus?: TicketStatus) {
   if (!nextStatus) return false
@@ -241,23 +242,47 @@ function applyTemplate(content: string) {
 
 function openTemplateDialog() {
   showTemplateMenu.value = false
+  resetTemplateSaveState()
   showTemplateDialog.value = true
 }
 
+function closeTemplateDialog() {
+  showTemplateDialog.value = false
+  resetTemplateSaveState()
+}
+
+function resetTemplateSaveState() {
+  saveTemplatesRequestID += 1
+  savingTemplates.value = false
+}
+
 async function saveTemplates(templates: TicketReplyTemplate[]) {
+  const requestID = ++saveTemplatesRequestID
   try {
     savingTemplates.value = true
     await adminTicketsAPI.replaceAdminTicketReplyTemplates(templates)
-    replyTemplates.value = await adminTicketsAPI.listAdminTicketReplyTemplates()
+    if (requestID !== saveTemplatesRequestID || !showTemplateDialog.value) {
+      return
+    }
+    const latestTemplates = await adminTicketsAPI.listAdminTicketReplyTemplates()
+    if (requestID !== saveTemplatesRequestID || !showTemplateDialog.value) {
+      return
+    }
+    replyTemplates.value = latestTemplates
     showTemplateDialog.value = false
     appStore.showSuccess(t('common.saved'))
     nextTick(() => {
       templateTriggerRef.value?.focus()
     })
   } catch (err: any) {
+    if (requestID !== saveTemplatesRequestID) {
+      return
+    }
     appStore.showError(err?.message || t('common.unknownError'))
   } finally {
-    savingTemplates.value = false
+    if (requestID === saveTemplatesRequestID) {
+      savingTemplates.value = false
+    }
   }
 }
 
@@ -310,6 +335,10 @@ async function updateStatus(status: TicketStatus) {
 }
 
 onMounted(loadReplyTemplates)
+
+onUnmounted(() => {
+  saveTemplatesRequestID += 1
+})
 
 watch(ticketID, (nextTicketID, previousTicketID) => {
   if (nextTicketID !== previousTicketID && previousTicketID !== undefined) {

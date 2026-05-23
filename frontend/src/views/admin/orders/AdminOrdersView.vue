@@ -119,12 +119,12 @@
       </div>
     </BaseDialog>
 
-    <AdminRefundDialog :show="showRefundDialog" :order="selectedOrder" :submitting="refundSubmitting" @confirm="handleRefund" @cancel="showRefundDialog = false" />
+    <AdminRefundDialog :show="showRefundDialog" :order="selectedOrder" :submitting="refundSubmitting" @confirm="handleRefund" @cancel="closeRefundDialog" />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminPaymentAPI } from '@/api/admin/payment'
@@ -165,6 +165,7 @@ const refundSubmitting = ref(false)
 const orderAuditLogs = ref<AuditLog[]>([])
 let orderListReqSeq = 0
 let orderDetailReqSeq = 0
+let refundReqSeq = 0
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 function debounceApplyOrderFilters() {
@@ -262,19 +263,46 @@ async function handleRetryOrder(order: PaymentOrder) {
   catch (err: unknown) { appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error'))) }
 }
 
-function openRefundDialog(order: PaymentOrder) { selectedOrder.value = order; showRefundDialog.value = true }
+function resetRefundSubmitting() {
+  refundReqSeq += 1
+  refundSubmitting.value = false
+}
+
+function openRefundDialog(order: PaymentOrder) {
+  selectedOrder.value = order
+  resetRefundSubmitting()
+  showRefundDialog.value = true
+}
+
+function closeRefundDialog() {
+  showRefundDialog.value = false
+  resetRefundSubmitting()
+}
 
 async function handleRefund(data: { amount: number; reason: string; deduct_balance: boolean; force: boolean }) {
   if (!selectedOrder.value) return
+  const seq = ++refundReqSeq
+  const orderId = selectedOrder.value.id
   refundSubmitting.value = true
   try {
-    await adminPaymentAPI.refundOrder(selectedOrder.value.id, { amount: data.amount, reason: data.reason, deduct_balance: data.deduct_balance, force: data.force })
+    await adminPaymentAPI.refundOrder(orderId, { amount: data.amount, reason: data.reason, deduct_balance: data.deduct_balance, force: data.force })
+    if (seq !== refundReqSeq) return
     appStore.showSuccess(t('payment.admin.refundSuccess')); showRefundDialog.value = false; loadOrders()
-  } catch (err: unknown) { appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error'))) }
-  finally { refundSubmitting.value = false }
+  } catch (err: unknown) {
+    if (seq !== refundReqSeq) return
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  }
+  finally { if (seq === refundReqSeq) refundSubmitting.value = false }
 }
 
 function formatDateTime(dateStr: string): string { return formatOrderDateTime(dateStr) }
 
 onMounted(() => loadOrders())
+
+onUnmounted(() => {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
+})
 </script>

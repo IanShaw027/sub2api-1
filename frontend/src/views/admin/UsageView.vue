@@ -172,6 +172,7 @@ const upstreamEndpointStats = ref<EndpointStat[]>([])
 const endpointPathStats = ref<EndpointStat[]>([])
 const endpointStatsLoading = ref(false)
 let abortController: AbortController | null = null; let exportAbortController: AbortController | null = null
+let chartLoadTimer: number | null = null
 let chartReqSeq = 0
 let statsReqSeq = 0
 let modelStatsReqSeq = 0
@@ -363,6 +364,12 @@ const loadStats = async () => {
   }
 }
 
+const invalidateUsageRequests = () => {
+  chartReqSeq++
+  statsReqSeq++
+  modelStatsReqSeq++
+}
+
 const resetModelStatsCache = () => {
   requestedModelStats.value = []
   upstreamModelStats.value = []
@@ -417,6 +424,10 @@ const loadModelStats = async (source: ModelDistributionSource, force = false) =>
 }
 
 const loadChartData = async () => {
+  if (chartLoadTimer !== null) {
+    clearTimeout(chartLoadTimer)
+    chartLoadTimer = null
+  }
   if (filters.value.exclude_admin) {
     trendData.value = []
     groupStats.value = []
@@ -441,6 +452,7 @@ const loadChartData = async () => {
   } catch (error) { console.error('Failed to load chart data:', error) } finally { if (seq === chartReqSeq) chartsLoading.value = false }
 }
 const applyFilters = () => {
+  invalidateUsageRequests()
   pagination.page = 1
   resetModelStatsCache()
   loadLogs()
@@ -449,6 +461,7 @@ const applyFilters = () => {
   loadChartData()
 }
 const refreshData = () => {
+  invalidateUsageRequests()
   resetModelStatsCache()
   loadLogs()
   loadStats()
@@ -631,14 +644,24 @@ onMounted(() => {
   loadStats()
   if (!filters.value.exclude_admin) {
     loadModelStats(modelDistributionSource.value, true)
-    window.setTimeout(() => {
+    chartLoadTimer = window.setTimeout(() => {
+      chartLoadTimer = null
       void loadChartData()
     }, 120)
   }
   loadSavedColumns()
   document.addEventListener('click', handleColumnClickOutside)
 })
-onUnmounted(() => { abortController?.abort(); exportAbortController?.abort(); document.removeEventListener('click', handleColumnClickOutside) })
+onUnmounted(() => {
+  if (chartLoadTimer !== null) {
+    clearTimeout(chartLoadTimer)
+    chartLoadTimer = null
+  }
+  invalidateUsageRequests()
+  abortController?.abort()
+  exportAbortController?.abort()
+  document.removeEventListener('click', handleColumnClickOutside)
+})
 
 watch(modelDistributionSource, (source) => {
   void loadModelStats(source)
