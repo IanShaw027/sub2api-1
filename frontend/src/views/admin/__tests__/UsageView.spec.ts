@@ -106,6 +106,36 @@ const GroupDistributionChartStub = {
     </div>
   `,
 }
+const UsageTableStub = {
+  props: ['data', 'loading', 'columns'],
+  emits: ['userClick'],
+  template: `
+    <div>
+      <div v-for="row in data" :key="row.id">
+        <button
+          data-test="user-row-button"
+          @click="$emit('userClick', row.user.id)"
+        >
+          {{ row.user.email }}
+        </button>
+      </div>
+    </div>
+  `,
+}
+const UserBalanceHistoryModalStub = {
+  props: ['show', 'user'],
+  template: '<div v-if="show" data-test="history-modal">{{ user?.email }}</div>',
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
 
 describe('admin UsageView distribution metric toggles', () => {
   beforeEach(() => {
@@ -196,5 +226,74 @@ describe('admin UsageView distribution metric toggles', () => {
     expect(modelChart.find('.metric').text()).toBe('actual_cost')
     expect(groupChart.find('.metric').text()).toBe('actual_cost')
     expect(getSnapshotV2).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the latest user detail response when two rows are clicked back to back', async () => {
+    list.mockResolvedValueOnce({
+      items: [
+        {
+          id: 1,
+          user: { id: 1, email: 'first@example.com' },
+          created_at: '2026-05-22T00:00:00Z',
+        } as any,
+        {
+          id: 2,
+          user: { id: 2, email: 'second@example.com' },
+          created_at: '2026-05-22T00:00:00Z',
+        } as any,
+      ],
+      total: 2,
+      pages: 1,
+    })
+
+    const firstUser = createDeferred<{ id: number; email: string }>()
+    const secondUser = createDeferred<{ id: number; email: string }>()
+    getById.mockImplementationOnce(() => firstUser.promise)
+    getById.mockImplementationOnce(() => secondUser.promise)
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          UsageStatsCards: true,
+          UsageFilters: UsageFiltersStub,
+          UsageTable: UsageTableStub,
+          UsageExportProgress: true,
+          UsageCleanupDialog: true,
+          UserBalanceHistoryModal: UserBalanceHistoryModalStub,
+          Pagination: true,
+          Select: true,
+          DateRangePicker: true,
+          Icon: true,
+          TokenUsageTrend: true,
+          EndpointDistributionChart: true,
+          ModelDistributionChart: ModelDistributionChartStub,
+          GroupDistributionChart: GroupDistributionChartStub,
+        },
+      },
+    })
+
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    const userButtons = wrapper.findAll('[data-test="user-row-button"]')
+    expect(userButtons).toHaveLength(2)
+
+    await userButtons[0].trigger('click')
+    await userButtons[1].trigger('click')
+
+    expect(getById).toHaveBeenNthCalledWith(1, 1)
+    expect(getById).toHaveBeenNthCalledWith(2, 2)
+
+    secondUser.resolve({ id: 2, email: 'second@example.com' })
+    await flushPromises()
+
+    const modal = wrapper.get('[data-test="history-modal"]')
+    expect(modal.text()).toContain('second@example.com')
+
+    firstUser.resolve({ id: 1, email: 'first@example.com' })
+    await flushPromises()
+
+    expect(modal.text()).toContain('second@example.com')
   })
 })

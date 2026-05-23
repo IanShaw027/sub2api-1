@@ -213,6 +213,44 @@ describe('admin TicketDetailView reply template menu', () => {
     expect(getAdminTicket).toHaveBeenCalledTimes(2)
   })
 
+  it('clears the admin reply draft when the route ticket changes', async () => {
+    const wrapper = mount(TicketDetailView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TicketConversationPane: {
+            props: ['replyContent'],
+            emits: ['update:replyContent'],
+            template: `
+              <div>
+                <button type="button" class="set-draft" @click="$emit('update:replyContent', 'draft from old ticket')">set</button>
+                <div data-test="reply-draft">{{ replyContent }}</div>
+              </div>
+            `,
+          },
+          TicketDetailPane: { template: '<div><slot name="actions" /></div>' },
+          TicketReplyTemplatesDialog: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('.set-draft').trigger('click')
+    expect(wrapper.get('[data-test="reply-draft"]').text()).toBe('draft from old ticket')
+
+    getAdminTicket.mockResolvedValueOnce({
+      id: 108,
+      ticket_no: 'TK-108',
+      status: 'waiting_admin',
+    })
+    listAdminTicketMessages.mockResolvedValueOnce([])
+    routeState.params.id = '108'
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="reply-draft"]').text()).toBe('')
+  })
+
   it('does not surface stale upload errors after switching to another ticket', async () => {
     let rejectUpload!: (reason?: unknown) => void
     apiPost.mockReturnValueOnce(new Promise((_, reject) => {

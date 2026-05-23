@@ -163,6 +163,8 @@ const showDetailDialog = ref(false)
 const showRefundDialog = ref(false)
 const refundSubmitting = ref(false)
 const orderAuditLogs = ref<AuditLog[]>([])
+let orderListReqSeq = 0
+let orderDetailReqSeq = 0
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 function debounceApplyOrderFilters() {
@@ -171,6 +173,7 @@ function debounceApplyOrderFilters() {
 }
 
 async function loadOrders() {
+  const seq = ++orderListReqSeq
   ordersLoading.value = true
   try {
     const res = await adminPaymentAPI.getOrders({
@@ -180,11 +183,13 @@ async function loadOrders() {
       start_date: orderFilters.start_date || undefined, end_date: orderFilters.end_date || undefined,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     })
+    if (seq !== orderListReqSeq) return
     orders.value = res.data.items || []
     orderPagination.total = res.data.total || 0
   } catch (err: unknown) {
+    if (seq !== orderListReqSeq) return
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
-  } finally { ordersLoading.value = false }
+  } finally { if (seq === orderListReqSeq) ordersLoading.value = false }
 }
 
 function applyOrderFilters() {
@@ -234,12 +239,14 @@ const orderTypeFilterOptions = computed(() => [
 ])
 
 async function showOrderDetail(order: PaymentOrder) {
+  const seq = ++orderDetailReqSeq
   selectedOrder.value = order
   orderAuditLogs.value = []
   showDetailDialog.value = true
   try {
     const res = await adminPaymentAPI.getOrder(order.id)
     const data = res.data as AdminPaymentOrderDetail & { audit_logs?: AuditLog[] }
+    if (seq !== orderDetailReqSeq || !showDetailDialog.value || selectedOrder.value?.id !== order.id) return
     if (data.order) selectedOrder.value = data.order
     orderAuditLogs.value = (data.auditLogs || data.audit_logs || []) as AuditLog[]
   } catch (_err: unknown) { /* keep cached order data */ }

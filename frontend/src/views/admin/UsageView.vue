@@ -180,6 +180,7 @@ const cleanupDialogVisible = ref(false)
 // Balance history modal state
 const showBalanceHistoryModal = ref(false)
 const balanceHistoryUser = ref<AdminUser | null>(null)
+let balanceHistoryReqSeq = 0
 
 const buildSharedFilterParams = (): AdminUsageQueryParams => {
   const requestType = filters.value.request_type
@@ -217,11 +218,14 @@ const breakdownFilters = computed(() => {
 })
 
 const handleUserClick = async (userId: number) => {
+  const seq = ++balanceHistoryReqSeq
   try {
     const user = await adminAPI.users.getById(userId)
+    if (seq !== balanceHistoryReqSeq) return
     balanceHistoryUser.value = user
     showBalanceHistoryModal.value = true
   } catch {
+    if (seq !== balanceHistoryReqSeq) return
     appStore.showError(t('admin.usage.failedToLoadUser'))
   }
 }

@@ -311,7 +311,11 @@ async function updateStatus(status: TicketStatus) {
 
 onMounted(loadReplyTemplates)
 
-watch(ticketID, () => {
+watch(ticketID, (nextTicketID, previousTicketID) => {
+  if (nextTicketID !== previousTicketID && previousTicketID !== undefined) {
+    replyDraft.value = ''
+    clearComposerKey.value += 1
+  }
   loadDetail()
 }, { immediate: true })
 </script>
