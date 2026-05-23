@@ -40,6 +40,9 @@ FROM ${GOLANG_IMAGE} AS backend-builder
 ARG VERSION=
 ARG COMMIT=docker
 ARG DATE
+ARG DIRTY=unknown
+ARG SOURCE_HASH=unknown
+ARG FRONTEND_DIST_HASH=unknown
 ARG GOPROXY
 ARG GOSUMDB
 
@@ -68,7 +71,7 @@ RUN VERSION_VALUE="${VERSION}" && \
     DATE_VALUE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
     CGO_ENABLED=0 GOOS=linux go build \
     -tags embed \
-    -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release" \
+    -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release -X main.Dirty=${DIRTY} -X main.SourceHash=${SOURCE_HASH} -X main.FrontendDistHash=${FRONTEND_DIST_HASH}" \
     -trimpath \
     -o /app/sub2api \
     ./cmd/server

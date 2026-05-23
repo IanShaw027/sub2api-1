@@ -1,4 +1,4 @@
-.PHONY: build build-backend build-frontend test test-backend test-frontend test-frontend-ci secret-scan
+.PHONY: build build-backend build-frontend test test-backend test-frontend test-frontend-ci test-frontend-smoke secret-scan
 
 FRONTEND_CI_VITEST := \
 	src/views/auth/__tests__/LinuxDoCallbackView.spec.ts \
