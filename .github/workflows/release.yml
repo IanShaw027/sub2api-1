@@ -172,6 +172,18 @@ jobs:
         id: lowercase
         run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
+      - name: Prepare build metadata
+        run: |
+          eval "$(bash ./deploy/build_metadata.sh)"
+          {
+            echo "DIRTY=$DIRTY"
+            echo "SOURCE_HASH=$SOURCE_HASH"
+            echo "FRONTEND_DIST_HASH=$FRONTEND_DIST_HASH"
+          } >> "$GITHUB_ENV"
+          echo "dirty: $DIRTY"
+          echo "source_hash: $SOURCE_HASH"
+          echo "frontend_dist_hash: $FRONTEND_DIST_HASH"
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
