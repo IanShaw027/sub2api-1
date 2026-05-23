@@ -381,6 +381,47 @@ describe('TicketConversationPane', () => {
     expect(wrapper.emitted('upload-error')).toBeUndefined()
   })
 
+  it('uses a local image preview when the uploaded image has no generated thumbnail', async () => {
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    URL.createObjectURL = vi.fn(() => 'blob:ticket-image-thumbnail-fallback') as typeof URL.createObjectURL
+    URL.revokeObjectURL = vi.fn() as typeof URL.revokeObjectURL
+
+    const uploadFn = vi.fn().mockResolvedValue({
+      id: 26,
+      public_url: 'https://example.com/ticket.png',
+      mime_type: 'image/png',
+      original_file_name: 'ticket.png',
+      size_bytes: 5,
+    })
+
+    const wrapper = mount(TicketConversationPane, {
+      props: {
+        title: 'Conversation',
+        emptyText: 'Empty',
+        messages: [],
+        uploadFn,
+        ticketId: 1,
+      },
+    })
+
+    const fileInput = wrapper.get('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [new File(['image'], 'ticket.png', { type: 'image/png' })],
+      configurable: true,
+    })
+
+    await fileInput.trigger('change')
+    await flushPromises()
+
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
+    expect(wrapper.html()).toContain('blob:ticket-image-thumbnail-fallback')
+
+    wrapper.unmount()
+    URL.createObjectURL = originalCreateObjectURL
+    URL.revokeObjectURL = originalRevokeObjectURL
+  })
+
   it('uploads non-image attachments and emits their media ids on reply', async () => {
     const originalCreateObjectURL = URL.createObjectURL
     URL.createObjectURL = vi.fn(() => 'blob:should-not-be-used') as typeof URL.createObjectURL
@@ -415,6 +456,7 @@ describe('TicketConversationPane', () => {
     expect(uploadFn).toHaveBeenCalledTimes(1)
     expect(URL.createObjectURL).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('txt')
+    expect(wrapper.get('button.btn-primary').attributes('disabled')).toBeUndefined()
 
     await wrapper.get('button.btn-primary').trigger('click')
 

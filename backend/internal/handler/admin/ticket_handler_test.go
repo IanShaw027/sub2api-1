@@ -10,6 +10,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -18,6 +19,51 @@ import (
 type ticketHandlerSettingRepoStub struct {
 	value    string
 	setCount int
+}
+
+type adminTicketHandlerRepoStub struct {
+	service.SupportTicketRepository
+
+	ticket        *service.SupportTicket
+	messages      []service.SupportTicketMessage
+	replyMessage  *service.SupportTicketMessage
+	addReplyCalls int
+}
+
+func (s *adminTicketHandlerRepoStub) GetByID(context.Context, int64) (*service.SupportTicket, error) {
+	if s.ticket == nil {
+		return nil, service.ErrTicketNotFound
+	}
+	return s.ticket, nil
+}
+
+func (s *adminTicketHandlerRepoStub) ListMessages(context.Context, int64) ([]service.SupportTicketMessage, error) {
+	return s.messages, nil
+}
+
+func (s *adminTicketHandlerRepoStub) AddReply(_ context.Context, _ int64, message *service.SupportTicketMessage, _ string, _ bool, _ bool, _ string) error {
+	s.addReplyCalls++
+	if message != nil {
+		stored := *message
+		s.replyMessage = &stored
+	}
+	return nil
+}
+
+func (*adminTicketHandlerRepoStub) MarkReadByAdmin(context.Context, int64) error {
+	return nil
+}
+
+type adminTicketHandlerUserRepoStub struct {
+	service.UserRepository
+}
+
+func (*adminTicketHandlerUserRepoStub) GetByID(_ context.Context, id int64) (*service.User, error) {
+	return &service.User{ID: id, Email: "admin@example.com", Username: "admin"}, nil
+}
+
+func (*adminTicketHandlerUserRepoStub) GetUserAvatar(context.Context, int64) (*service.UserAvatar, error) {
+	return nil, nil
 }
 
 func (*ticketHandlerSettingRepoStub) Get(context.Context, string) (*service.Setting, error) {
@@ -83,11 +129,13 @@ func TestTicketHandlerReplaceReplyTemplatesRejectsMissingTemplatesField(t *testi
 	require.Equal(t, http.StatusBadRequest, resp.Code)
 }
 
-func TestTicketHandlerResolveAttachmentsForAdminSignsPrivateMediaURLs(t *testing.T) {
+func TestTicketHandlerResolveAttachmentsForAdminBuildsMetadataOnly(t *testing.T) {
 	mediaSvc := service.NewMediaService(&settingHandlerMediaRepoStub{
 		assets: map[int64]*service.MediaAsset{
 			321: {
 				ID:                 321,
+				BizType:            "ticket",
+				BizID:              "12",
 				Visibility:         service.MediaVisibilityPrivate,
 				Status:             service.MediaStatusActive,
 				ThumbnailObjectKey: "thumbs/321.png",
@@ -106,10 +154,184 @@ func TestTicketHandlerResolveAttachmentsForAdminSignsPrivateMediaURLs(t *testing
 	})
 	handler := NewTicketHandler(nil, nil, mediaSvc)
 
-	attachments, err := handler.resolveAttachmentsForAdmin(context.Background(), []TicketAttachmentRefRequest{{MediaID: 321}})
+	attachments, err := handler.resolveAttachmentsForAdmin(context.Background(), 12, []TicketAttachmentRefRequest{{MediaID: 321}})
 
 	require.NoError(t, err)
 	require.Len(t, attachments, 1)
-	require.Contains(t, attachments[0].URL, "https://media.example.com/api/v1/media/download/321?expires=")
-	require.Contains(t, attachments[0].ThumbnailURL, "https://media.example.com/api/v1/media/download/321/thumbnail?expires=")
+	require.Equal(t, int64(321), attachments[0].MediaID)
+	require.Equal(t, "screen.png", attachments[0].FileName)
+	require.Equal(t, "image/png", attachments[0].ContentType)
+	require.Equal(t, int64(42), attachments[0].SizeBytes)
+	require.Empty(t, attachments[0].URL)
+	require.Empty(t, attachments[0].ThumbnailURL)
+}
+
+func TestTicketHandlerReplyRejectsTicketScopedMediaMismatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &adminTicketHandlerRepoStub{
+		ticket: &service.SupportTicket{ID: 12, UserID: 77, Status: service.SupportTicketStatusSubmitted},
+	}
+	mediaSvc := service.NewMediaService(&settingHandlerMediaRepoStub{
+		assets: map[int64]*service.MediaAsset{
+			321: {
+				ID:               321,
+				BizType:          "ticket",
+				BizID:            "999",
+				Visibility:       service.MediaVisibilityPrivate,
+				Status:           service.MediaStatusActive,
+				OriginalFileName: "screen.png",
+				MIMEType:         "image/png",
+				SizeBytes:        42,
+			},
+		},
+	}, &settingHandlerMediaStoreStub{}, &config.Config{
+		Media: config.MediaConfig{
+			Enabled:               true,
+			PublicBaseURL:         "https://media.example.com",
+			PresignExpiryMinutes:  10,
+			DownloadSigningSecret: "secret",
+		},
+	})
+	handler := NewTicketHandler(service.NewTicketService(repo, &adminTicketHandlerUserRepoStub{}), nil, mediaSvc)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 88})
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/tickets/12/messages", bytes.NewBufferString(`{"content":"reply","attachments":[{"media_id":321}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: "12"}}
+
+	handler.Reply(c)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Zero(t, repo.addReplyCalls)
+}
+
+func TestTicketHandlerReplyPersistsTicketAttachmentMetadataWithoutSignedURLs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &adminTicketHandlerRepoStub{
+		ticket: &service.SupportTicket{ID: 12, UserID: 77, Status: service.SupportTicketStatusSubmitted},
+	}
+	mediaSvc := service.NewMediaService(&settingHandlerMediaRepoStub{
+		assets: map[int64]*service.MediaAsset{
+			321: {
+				ID:                 321,
+				BizType:            "ticket",
+				BizID:              "12",
+				Visibility:         service.MediaVisibilityPrivate,
+				Status:             service.MediaStatusActive,
+				ThumbnailObjectKey: "thumbs/321.png",
+				OriginalFileName:   "screen.png",
+				MIMEType:           "image/png",
+				SizeBytes:          42,
+			},
+		},
+	}, &settingHandlerMediaStoreStub{}, &config.Config{
+		Media: config.MediaConfig{
+			Enabled:               true,
+			PublicBaseURL:         "https://media.example.com",
+			PresignExpiryMinutes:  10,
+			DownloadSigningSecret: "secret",
+		},
+	})
+	handler := NewTicketHandler(service.NewTicketService(repo, &adminTicketHandlerUserRepoStub{}), nil, mediaSvc)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 88})
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/tickets/12/messages", bytes.NewBufferString(`{"attachments":[{"media_id":321}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: "12"}}
+
+	handler.Reply(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, repo.addReplyCalls)
+	require.NotNil(t, repo.replyMessage)
+	require.Len(t, repo.replyMessage.Attachments, 1)
+	require.Equal(t, int64(321), repo.replyMessage.Attachments[0].MediaID)
+	require.Equal(t, "screen.png", repo.replyMessage.Attachments[0].FileName)
+	require.Equal(t, "image/png", repo.replyMessage.Attachments[0].ContentType)
+	require.Equal(t, int64(42), repo.replyMessage.Attachments[0].SizeBytes)
+	require.Empty(t, repo.replyMessage.Attachments[0].URL)
+	require.Empty(t, repo.replyMessage.Attachments[0].ThumbnailURL)
+}
+
+func TestTicketHandlerListMessagesFallsBackToImageURLWhenThumbnailMissing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &adminTicketHandlerRepoStub{
+		ticket: &service.SupportTicket{ID: 12, UserID: 77, Status: service.SupportTicketStatusSubmitted},
+		messages: []service.SupportTicketMessage{
+			{
+				ID:                 1,
+				TicketID:           12,
+				SenderRole:         service.SupportTicketSenderRoleAdmin,
+				SenderNameSnapshot: "Admin",
+				MessageType:        service.SupportTicketMessageTypeMessage,
+				Content:            "",
+				Attachments: []service.TicketMessageAttachment{
+					{
+						MediaID:     321,
+						FileName:    "screen.png",
+						ContentType: "image/png",
+						SizeBytes:   42,
+					},
+				},
+			},
+		},
+	}
+	mediaSvc := service.NewMediaService(&settingHandlerMediaRepoStub{
+		assets: map[int64]*service.MediaAsset{
+			321: {
+				ID:               321,
+				BizType:          "ticket",
+				BizID:            "12",
+				Visibility:       service.MediaVisibilityPrivate,
+				Status:           service.MediaStatusActive,
+				OriginalFileName: "screen.png",
+				MIMEType:         "image/png",
+				SizeBytes:        42,
+			},
+		},
+	}, &settingHandlerMediaStoreStub{}, &config.Config{
+		Media: config.MediaConfig{
+			Enabled:               true,
+			PublicBaseURL:         "https://media.example.com",
+			PresignExpiryMinutes:  10,
+			DownloadSigningSecret: "secret",
+		},
+	})
+	handler := NewTicketHandler(service.NewTicketService(repo, &adminTicketHandlerUserRepoStub{}), nil, mediaSvc)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 88})
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/tickets/12/messages", nil)
+	c.Params = gin.Params{{Key: "id", Value: "12"}}
+
+	handler.ListMessages(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Data, 1)
+
+	payload, ok := resp.Data.([]any)
+	require.True(t, ok)
+	require.Len(t, payload, 1)
+
+	message, ok := payload[0].(map[string]any)
+	require.True(t, ok)
+	attachments, ok := message["attachments"].([]any)
+	require.True(t, ok)
+	require.Len(t, attachments, 1)
+
+	attachment, ok := attachments[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, attachment["url"], attachment["thumbnail_url"])
+	require.Contains(t, attachment["url"].(string), "https://media.example.com/api/v1/media/download/321?expires=")
 }
