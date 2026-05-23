@@ -589,7 +589,7 @@ func TestExchangePendingOAuthCompletionBindCurrentUserOwnershipConflict(t *testi
 	require.Nil(t, storedSession.ConsumedAt)
 }
 
-func TestExchangePendingOAuthCompletionBindCurrentUserReclaimsIdentityFromInactiveOwner(t *testing.T) {
+func TestExchangePendingOAuthCompletionBindCurrentUserRejectsIdentityReclaimFromDisabledOwner(t *testing.T) {
 	handler, client := newOAuthPendingFlowTestHandler(t, false)
 	ctx := context.Background()
 
@@ -653,24 +653,25 @@ func TestExchangePendingOAuthCompletionBindCurrentUserReclaimsIdentityFromInacti
 
 	handler.ExchangePendingOAuthCompletion(ginCtx)
 
-	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, http.StatusConflict, recorder.Code)
+	payload := decodeJSONBody(t, recorder)
+	require.Equal(t, "AUTH_IDENTITY_OWNERSHIP_CONFLICT", payload["reason"])
 
 	identity, err := client.AuthIdentity.Get(ctx, existingIdentity.ID)
 	require.NoError(t, err)
-	require.Equal(t, targetUser.ID, identity.UserID)
+	require.Equal(t, inactiveOwner.ID, identity.UserID)
 
 	decision, err := client.IdentityAdoptionDecision.Query().
 		Where(identityadoptiondecision.PendingAuthSessionIDEQ(session.ID)).
 		Only(ctx)
 	require.NoError(t, err)
-	require.NotNil(t, decision.IdentityID)
-	require.Equal(t, identity.ID, *decision.IdentityID)
+	require.Nil(t, decision.IdentityID)
 
 	storedSession, err := client.PendingAuthSession.Query().
 		Where(pendingauthsession.IDEQ(session.ID)).
 		Only(ctx)
 	require.NoError(t, err)
-	require.NotNil(t, storedSession.ConsumedAt)
+	require.Nil(t, storedSession.ConsumedAt)
 }
 
 func TestExchangePendingOAuthCompletionLoginFalseFalseBindsIdentityWithoutAdoption(t *testing.T) {

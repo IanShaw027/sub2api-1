@@ -1048,11 +1048,17 @@ func findActiveUserByID(ctx context.Context, client *dbent.Client, userID int64)
 }
 
 func findReclaimBlockingActiveUserByID(ctx context.Context, client *dbent.Client, userID int64) (*dbent.User, error) {
-	userEntity, err := findActiveUserByID(ctx, client, userID)
-	if errors.Is(err, service.ErrUserNotActive) {
+	if client == nil || userID <= 0 {
 		return nil, nil
 	}
-	return userEntity, err
+	userEntity, err := client.User.Get(ctx, userID)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, infraerrors.InternalServer("AUTH_IDENTITY_USER_LOOKUP_FAILED", "failed to load auth identity user").WithCause(err)
+	}
+	return userEntity, nil
 }
 
 func channelRecordMetadata(channel *dbent.AuthIdentityChannel) map[string]any {
