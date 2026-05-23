@@ -380,4 +380,46 @@ describe('TicketConversationPane', () => {
 
     expect(wrapper.emitted('upload-error')).toBeUndefined()
   })
+
+  it('uploads non-image attachments and emits their media ids on reply', async () => {
+    const originalCreateObjectURL = URL.createObjectURL
+    URL.createObjectURL = vi.fn(() => 'blob:should-not-be-used') as typeof URL.createObjectURL
+
+    const uploadFn = vi.fn().mockResolvedValue({
+      id: 27,
+      url: 'https://example.com/notes.txt',
+      mime_type: 'text/plain',
+    })
+
+    const wrapper = mount(TicketConversationPane, {
+      props: {
+        title: 'Conversation',
+        emptyText: 'Empty',
+        messages: [],
+        uploadFn,
+        ticketId: 1,
+      },
+    })
+
+    const fileInput = wrapper.get('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [new File(['hello'], 'notes.txt', { type: 'text/plain' })],
+      configurable: true,
+    })
+
+    expect(fileInput.attributes('accept')).toBeUndefined()
+
+    await fileInput.trigger('change')
+    await flushPromises()
+
+    expect(uploadFn).toHaveBeenCalledTimes(1)
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('txt')
+
+    await wrapper.get('button.btn-primary').trigger('click')
+
+    expect(wrapper.emitted('reply')).toEqual([['', [{ media_id: 27 }]]])
+
+    URL.createObjectURL = originalCreateObjectURL
+  })
 })

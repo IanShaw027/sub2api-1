@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -80,4 +81,35 @@ func TestTicketHandlerReplaceReplyTemplatesRejectsMissingTemplatesField(t *testi
 	var resp response.Response
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, http.StatusBadRequest, resp.Code)
+}
+
+func TestTicketHandlerResolveAttachmentsForAdminSignsPrivateMediaURLs(t *testing.T) {
+	mediaSvc := service.NewMediaService(&settingHandlerMediaRepoStub{
+		assets: map[int64]*service.MediaAsset{
+			321: {
+				ID:                 321,
+				Visibility:         service.MediaVisibilityPrivate,
+				Status:             service.MediaStatusActive,
+				ThumbnailObjectKey: "thumbs/321.png",
+				OriginalFileName:   "screen.png",
+				MIMEType:           "image/png",
+				SizeBytes:          42,
+			},
+		},
+	}, &settingHandlerMediaStoreStub{}, &config.Config{
+		Media: config.MediaConfig{
+			Enabled:               true,
+			PublicBaseURL:         "https://media.example.com",
+			PresignExpiryMinutes:  10,
+			DownloadSigningSecret: "secret",
+		},
+	})
+	handler := NewTicketHandler(nil, nil, mediaSvc)
+
+	attachments, err := handler.resolveAttachmentsForAdmin(context.Background(), []TicketAttachmentRefRequest{{MediaID: 321}})
+
+	require.NoError(t, err)
+	require.Len(t, attachments, 1)
+	require.Contains(t, attachments[0].URL, "https://media.example.com/api/v1/media/download/321?expires=")
+	require.Contains(t, attachments[0].ThumbnailURL, "https://media.example.com/api/v1/media/download/321/thumbnail?expires=")
 }

@@ -146,6 +146,51 @@
           compact
         />
       </section>
+
+      <section
+        v-if="contactInfoDisplay || supportQRCodeItems.length > 0"
+        data-testid="profile-support-panel"
+        class="card border border-gray-100 bg-white/90 p-6 dark:border-dark-700 dark:bg-dark-900/50"
+      >
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('common.contactSupport') }}
+            </h3>
+            <p
+              v-if="contactInfoDisplay"
+              data-testid="profile-support-contact"
+              class="mt-1 whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-300"
+            >
+              {{ contactInfoDisplay }}
+            </p>
+          </div>
+
+          <div
+            v-if="supportQRCodeItems.length > 0"
+            data-testid="profile-support-qr-grid"
+            class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          >
+            <div
+              v-for="(qrCode, index) in supportQRCodeItems"
+              :key="`${qrCode.image_url}-${index}`"
+              class="overflow-hidden rounded-3xl border border-gray-100 bg-gray-50/80 p-4 dark:border-dark-700 dark:bg-dark-900/30"
+            >
+              <img
+                :src="qrCode.image_url"
+                :alt="qrCode.note || t('common.contactSupport')"
+                class="aspect-square w-full rounded-2xl object-cover"
+              />
+              <p
+                v-if="qrCode.note"
+                class="mt-2 text-xs text-gray-500 dark:text-gray-400"
+              >
+                {{ qrCode.note }}
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -156,7 +201,7 @@ import { useI18n } from 'vue-i18n'
 import ProfileAvatarCard from '@/components/user/profile/ProfileAvatarCard.vue'
 import ProfileEditForm from '@/components/user/profile/ProfileEditForm.vue'
 import ProfileIdentityBindingsSection from '@/components/user/profile/ProfileIdentityBindingsSection.vue'
-import type { User, UserAuthBindingStatus, UserAuthProvider, UserProfileSourceContext } from '@/types'
+import type { SupportQRCodeEntry, User, UserAuthBindingStatus, UserAuthProvider, UserProfileSourceContext } from '@/types'
 
 const emit = defineEmits<{
   'balance-history': []
@@ -168,6 +213,8 @@ const props = withDefaults(defineProps<{
   dingtalkEnabled?: boolean
   oidcEnabled?: boolean
   oidcProviderName?: string
+  contactInfo?: string
+  supportQRCodes?: SupportQRCodeEntry[]
   wechatEnabled?: boolean
   wechatOpenEnabled?: boolean
   wechatMpEnabled?: boolean
@@ -176,6 +223,8 @@ const props = withDefaults(defineProps<{
   dingtalkEnabled: false,
   oidcEnabled: false,
   oidcProviderName: 'OIDC',
+  contactInfo: '',
+  supportQRCodes: () => [],
   wechatEnabled: false,
   wechatOpenEnabled: undefined,
   wechatMpEnabled: undefined,
@@ -208,6 +257,8 @@ function isEmailBound(user: User | null | undefined): boolean {
 
 const avatarUrl = computed(() => props.user?.avatar_url?.trim() || '')
 const displayName = computed(() => props.user?.username?.trim() || props.user?.email?.trim() || t('profile.user'))
+const contactInfoDisplay = computed(() => props.contactInfo?.trim() || '')
+const supportQRCodeItems = computed(() => (props.supportQRCodes || []).filter((entry) => entry?.image_url?.trim()))
 const primaryEmailDisplay = computed(() => {
   const email = props.user?.email?.trim() || ''
   if (!email) {
@@ -281,7 +332,10 @@ function resolveProfileSourceProvider(source: string | UserProfileSourceContext 
 }
 
 function normalizeProvider(value: string): UserAuthProvider | null {
-  const normalized = value.trim().toLowerCase()
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (normalized === 'oidc_connect' || normalized === 'oidcconnect') {
+    return 'oidc'
+  }
   if (
     normalized === 'email' ||
     normalized === 'linuxdo' ||
@@ -297,9 +351,9 @@ function normalizeProvider(value: string): UserAuthProvider | null {
 }
 
 function formatProviderLabel(provider: string): string {
-  const normalized = provider.trim().toLowerCase()
+  const normalized = provider.trim().toLowerCase().replace(/[\s-]+/g, '_')
   if (!normalized) return ''
-  if (normalized === 'oidc') return props.oidcProviderName || 'OIDC'
+  if (normalized === 'oidc' || normalized === 'oidc_connect' || normalized === 'oidcconnect') return props.oidcProviderName || 'OIDC'
   if (normalized === 'linuxdo') return 'LinuxDo'
   if (normalized === 'wechat') return 'WeChat'
   if (normalized === 'email') return t('profile.email')

@@ -180,10 +180,32 @@ func (h *TicketHandler) resolveAttachmentsForAdmin(ctx context.Context, refs []T
 		if err != nil {
 			return nil, err
 		}
+		url := h.mediaService.PublicURL(asset.ID, asset.Visibility)
+		thumbnailURL := h.mediaService.ThumbnailPublicURL(asset.ID, asset.Visibility, asset.ThumbnailObjectKey)
+		if strings.TrimSpace(asset.Visibility) != service.MediaVisibilityPublic {
+			download, err := h.mediaService.CreateDownloadURLForAdmin(ctx, asset.ID)
+			if err != nil {
+				return nil, err
+			}
+			if download != nil {
+				url = download.URL
+			}
+			if strings.TrimSpace(asset.ThumbnailObjectKey) != "" {
+				thumbnail, err := h.mediaService.CreateThumbnailDownloadURLForAdmin(ctx, asset.ID)
+				if err != nil {
+					return nil, err
+				}
+				if thumbnail != nil {
+					thumbnailURL = thumbnail.URL
+				}
+			} else {
+				thumbnailURL = ""
+			}
+		}
 		attachments = append(attachments, service.TicketMessageAttachment{
 			MediaID:      asset.ID,
-			URL:          h.mediaService.PublicURL(asset.ID, asset.Visibility),
-			ThumbnailURL: h.mediaService.ThumbnailPublicURL(asset.ID, asset.Visibility, asset.ThumbnailObjectKey),
+			URL:          url,
+			ThumbnailURL: thumbnailURL,
 			FileName:     asset.OriginalFileName,
 			ContentType:  asset.MIMEType,
 			SizeBytes:    asset.SizeBytes,

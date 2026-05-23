@@ -122,7 +122,6 @@
           <label class="btn btn-secondary btn-sm cursor-pointer">
             <input
               type="file"
-              accept="image/*"
               multiple
               class="hidden"
               :disabled="uploadingAttachment"
@@ -244,7 +243,6 @@ async function handleAttachmentUpload(event: Event) {
       if (!isCurrentAttachmentUpload(ticketId, uploadGeneration)) {
         break
       }
-      if (!file.type.startsWith('image/')) continue
       const result = await props.uploadFn(file, ticketId)
       if (!isCurrentAttachmentUpload(ticketId, uploadGeneration)) {
         break
@@ -252,12 +250,12 @@ async function handleAttachmentUpload(event: Event) {
       if (!result) {
         continue
       }
-      const previewURL = URL.createObjectURL(file)
+      const previewURL = file.type.startsWith('image/') ? URL.createObjectURL(file) : ''
       pendingAttachments.value.push({
         media_id: result.id,
         url: result.public_url || result.url || '',
         thumbnail_url: result.thumbnail_public_url || result.thumbnail_url || previewURL,
-        preview_url: previewURL,
+        preview_url: previewURL || undefined,
         file_name: result.original_file_name || file.name,
         content_type: result.mime_type || file.type,
         size_bytes: result.size_bytes || file.size,

@@ -188,4 +188,41 @@ describe('ProfileInfoCard', () => {
       wrapper.getComponent(ProfileIdentityBindingsSection).props('dingtalkEnabled'),
     ).toBe(true)
   })
+
+  it('renders support contact info and qr codes when provided', () => {
+    const wrapper = mount(ProfileInfoCard, {
+      props: {
+        user: createUser(),
+        contactInfo: 'Telegram: @sub2api_support',
+        supportQRCodes: [{ image_url: 'https://cdn.example.com/support.png', note: '客服' }],
+      },
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('[data-testid="profile-support-panel"]').text()).toContain('Telegram: @sub2api_support')
+    expect(wrapper.get('[data-testid="profile-support-qr-grid"]').html()).toContain('https://cdn.example.com/support.png')
+    expect(wrapper.get('[data-testid="profile-support-qr-grid"]').text()).toContain('客服')
+  })
+
+  it('maps legacy oidc source aliases to the configured provider label', () => {
+    const wrapper = mount(ProfileInfoCard, {
+      props: {
+        user: createUser({
+          username_source: 'oidc_connect'
+        }),
+        oidcProviderName: 'LegacyID'
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.get('[data-testid="profile-source-hints"]').text()).toContain('Nickname from LegacyID')
+  })
 })
