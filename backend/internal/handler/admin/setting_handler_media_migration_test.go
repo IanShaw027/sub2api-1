@@ -119,6 +119,7 @@ func (s *paymentConfigReadbackFailRepoStub) GetMultiple(ctx context.Context, key
 			service.SettingCancelWindowSize,
 			service.SettingCancelWindowUnit,
 			service.SettingCancelWindowMode,
+			service.SettingAlipayForceQRCode,
 			service.SettingPaymentVisibleMethodAlipayEnabled,
 			service.SettingPaymentVisibleMethodAlipaySource,
 			service.SettingPaymentVisibleMethodWxpayEnabled,
@@ -157,6 +158,7 @@ func (s *paymentConfigWriteFailRepoStub) SetMultiple(ctx context.Context, settin
 			service.SettingCancelWindowSize,
 			service.SettingCancelWindowUnit,
 			service.SettingCancelWindowMode,
+			service.SettingAlipayForceQRCode,
 			service.SettingPaymentVisibleMethodAlipayEnabled,
 			service.SettingPaymentVisibleMethodAlipaySource,
 			service.SettingPaymentVisibleMethodWxpayEnabled,
@@ -796,6 +798,51 @@ func TestSettingHandler_UpdateSettings_PreservesPartialFieldsWhenSavingPaymentHe
 	require.Equal(t, "alipay,wxpay", repo.values[service.SettingEnabledPaymentTypes])
 	require.Equal(t, "Prefix", repo.values[service.SettingProductNamePrefix])
 	require.Equal(t, "https://media.example/api/v1/media/public/1", repo.values[service.SettingHelpImageURL])
+}
+
+func TestSettingHandler_UpdateSettings_RoundTripsPaymentAlipayForceQRCode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyPromoCodeEnabled: "true",
+			service.SettingPaymentEnabled:      "true",
+			service.SettingMinRechargeAmount:   "12.50",
+			service.SettingHelpText:            "keep me",
+			service.SettingAlipayForceQRCode:   "false",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	paymentCfgSvc := service.NewPaymentConfigService(nil, repo, nil)
+	handler := NewSettingHandler(svc, nil, nil, nil, paymentCfgSvc, nil, nil)
+
+	body := map[string]any{
+		"promo_code_enabled":          true,
+		"payment_alipay_force_qrcode": true,
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "true", repo.values[service.SettingAlipayForceQRCode])
+	require.Equal(t, "true", repo.values[service.SettingPaymentEnabled])
+	require.Equal(t, "12.50", repo.values[service.SettingMinRechargeAmount])
+	require.Equal(t, "keep me", repo.values[service.SettingHelpText])
+
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	data, ok := resp.Data.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, data["payment_alipay_force_qrcode"])
+	require.Equal(t, true, data["payment_enabled"])
+	require.Equal(t, "keep me", data["payment_help_text"])
 }
 
 func TestSettingHandler_UpdateSettings_RoundTripsDingTalkAuthSourceDefaults(t *testing.T) {

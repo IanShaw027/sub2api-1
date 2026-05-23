@@ -696,6 +696,52 @@ func TestSettingHandler_UpdateSettings_DoesNotPersistPartialSystemSettingsWhenAu
 	require.Equal(t, "9.5", repo.values[service.SettingKeyAuthSourceDefaultEmailBalance])
 }
 
+func TestSettingHandler_UpdateSettings_NormalizesDingTalkAuthSourceSubscriptions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyRegistrationEnabled: "false",
+			service.SettingKeyPromoCodeEnabled:    "true",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+	body := map[string]any{
+		"registration_enabled": true,
+		"promo_code_enabled":   true,
+		"auth_source_default_dingtalk_subscriptions": []map[string]any{
+			{"group_id": 0, "validity_days": 10},
+			{"group_id": 77, "validity_days": 0},
+			{"group_id": 77, "validity_days": service.MaxValidityDays + 1},
+		},
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `[{"group_id":77,"validity_days":36500}]`, repo.values[service.SettingKeyAuthSourceDefaultDingTalkSubscriptions])
+
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	data, ok := resp.Data.(map[string]any)
+	require.True(t, ok)
+	subs, ok := data["auth_source_default_dingtalk_subscriptions"].([]any)
+	require.True(t, ok)
+	require.Len(t, subs, 1)
+	sub, ok := subs[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, float64(77), sub["group_id"])
+	require.Equal(t, float64(service.MaxValidityDays), sub["validity_days"])
+}
+
 func TestDiffSettings_IncludesAuthSourceDefaultsAndForceEmail(t *testing.T) {
 	changed := diffSettings(
 		&service.SystemSettings{},

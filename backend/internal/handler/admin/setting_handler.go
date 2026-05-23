@@ -1031,6 +1031,7 @@ type UpdateSettingsRequest struct {
 	PaymentCancelRateLimitWindow  *int    `json:"payment_cancel_rate_limit_window"`
 	PaymentCancelRateLimitUnit    *string `json:"payment_cancel_rate_limit_unit"`
 	PaymentCancelRateLimitMode    *string `json:"payment_cancel_rate_limit_window_mode"`
+	PaymentAlipayForceQRCode      *bool   `json:"payment_alipay_force_qrcode"`
 
 	// Channel Monitor feature switch
 	AIStudioEnabled                      *bool `json:"ai_studio_enabled"`
@@ -1233,6 +1234,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	req.AuthSourceDefaultLinuxDoSubscriptions = normalizeOptionalDefaultSubscriptions(req.AuthSourceDefaultLinuxDoSubscriptions)
 	req.AuthSourceDefaultOIDCSubscriptions = normalizeOptionalDefaultSubscriptions(req.AuthSourceDefaultOIDCSubscriptions)
 	req.AuthSourceDefaultWeChatSubscriptions = normalizeOptionalDefaultSubscriptions(req.AuthSourceDefaultWeChatSubscriptions)
+	req.AuthSourceDefaultDingTalkSubscriptions = normalizeOptionalDefaultSubscriptions(req.AuthSourceDefaultDingTalkSubscriptions)
 	if req.KiroCacheHitRateScale != nil && (*req.KiroCacheHitRateScale < 0 || *req.KiroCacheHitRateScale > 100) {
 		response.BadRequest(c, "Kiro cache hit rate scale must be between 0 and 100")
 		return
@@ -2783,6 +2785,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentCancelRateLimitWindow:              updatedPaymentCfg.CancelRateLimitWindow,
 		PaymentCancelRateLimitUnit:                updatedPaymentCfg.CancelRateLimitUnit,
 		PaymentCancelRateLimitMode:                updatedPaymentCfg.CancelRateLimitMode,
+		PaymentAlipayForceQRCode:                  updatedPaymentCfg.AlipayForceQRCode,
 
 		ChannelMonitorEnabled:                updatedSettings.ChannelMonitorEnabled,
 		ChannelMonitorDefaultIntervalSeconds: updatedSettings.ChannelMonitorDefaultIntervalSeconds,
@@ -2823,6 +2826,7 @@ func mergePaymentConfigUpdate(req UpdateSettingsRequest, current *service.Paymen
 		CancelRateLimitWindow:     intPtrValueOrDefault(req.PaymentCancelRateLimitWindow, current.CancelRateLimitWindow),
 		CancelRateLimitUnit:       stringPtrValueOrDefault(req.PaymentCancelRateLimitUnit, current.CancelRateLimitUnit),
 		CancelRateLimitMode:       stringPtrValueOrDefault(req.PaymentCancelRateLimitMode, current.CancelRateLimitMode),
+		AlipayForceQRCode:         boolPtrValueOrDefault(req.PaymentAlipayForceQRCode, current.AlipayForceQRCode),
 	}
 }
 
@@ -2872,7 +2876,8 @@ func hasPaymentFields(req UpdateSettingsRequest) bool {
 		req.PaymentProductNameSuffix != nil || req.PaymentHelpImageURL != nil ||
 		req.PaymentHelpText != nil || req.PaymentCancelRateLimitEnabled != nil ||
 		req.PaymentCancelRateLimitMax != nil || req.PaymentCancelRateLimitWindow != nil ||
-		req.PaymentCancelRateLimitUnit != nil || req.PaymentCancelRateLimitMode != nil
+		req.PaymentCancelRateLimitUnit != nil || req.PaymentCancelRateLimitMode != nil ||
+		req.PaymentAlipayForceQRCode != nil
 }
 
 func (h *SettingHandler) auditSettingsUpdate(c *gin.Context, before *service.SystemSettings, after *service.SystemSettings, beforeAuthSourceDefaults *service.AuthSourceDefaultSettings, afterAuthSourceDefaults *service.AuthSourceDefaultSettings, beforeFastPolicy *service.OpenAIFastPolicySettings, afterFastPolicy *service.OpenAIFastPolicySettings, req UpdateSettingsRequest) {
