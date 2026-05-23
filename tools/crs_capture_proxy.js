@@ -4,9 +4,10 @@ const http = require('node:http');
 const https = require('node:https');
 const os = require('node:os');
 const path = require('node:path');
+const assert = require('node:assert/strict');
 const { Transform, pipeline } = require('node:stream');
 const { randomUUID } = require('node:crypto');
-const { mkdirSync, appendFileSync } = require('node:fs');
+const { mkdirSync, openSync, writeSync, closeSync, chmodSync, statSync, mkdtempSync, rmSync } = require('node:fs');
 
 const DEFAULT_LISTEN = '127.0.0.1:8787';
 const DEFAULT_TARGET = 'https://crs.qazwc.com';
@@ -25,6 +26,7 @@ function printUsage() {
       '  --log-dir <path>               JSONL output directory (default: /tmp/crs-capture-logs)',
       '  --max-body-bytes <n>           Max bytes captured per request/response body (default: 8388608)',
       '  --upstream-timeout-ms <n>      Upstream timeout in milliseconds (default: 600000)',
+      '  --self-check                   Run local invariants and exit',
       '  --help                         Show this help message',
       '',
       'Example:',
@@ -42,6 +44,7 @@ function parseArgs(argv) {
     logDir: DEFAULT_LOG_DIR,
     maxBodyBytes: DEFAULT_MAX_BODY_BYTES,
     upstreamTimeoutMs: DEFAULT_UPSTREAM_TIMEOUT_MS,
+    selfCheck: false,
     help: false,
   };
 
@@ -49,6 +52,10 @@ function parseArgs(argv) {
     const value = argv[i];
     if (value === '--help' || value === '-h') {
       args.help = true;
+      continue;
+    }
+    if (value === '--self-check') {
+      args.selfCheck = true;
       continue;
     }
     if (!value.startsWith('--')) {
@@ -129,12 +136,17 @@ function parsePort(value, original) {
 
 function buildUpstreamUrl(targetBase, incomingUrl) {
   const upstreamBase = new URL(targetBase);
-  const incoming = new URL(incomingUrl, 'http://placeholder.local');
+  const incoming = splitRequestTarget(incomingUrl);
   const basePath = upstreamBase.pathname === '/' ? '' : upstreamBase.pathname.replace(/\/+$/, '');
-  upstreamBase.pathname = `${basePath}${incoming.pathname}`;
-  upstreamBase.search = incoming.search;
-  upstreamBase.hash = '';
-  return upstreamBase;
+  return {
+    protocol: upstreamBase.protocol,
+    hostname: upstreamBase.hostname,
+    port: upstreamBase.port || undefined,
+    host: upstreamBase.host,
+    origin: upstreamBase.origin,
+    path: `${basePath}${incoming.path}${incoming.query}`,
+    targetPath: `${basePath}${incoming.path}`,
+  };
 }
 
 function cloneHeaders(headers) {
@@ -145,12 +157,48 @@ function cloneHeaders(headers) {
   return out;
 }
 
+function splitRequestTarget(rawUrl) {
+  const raw = rawUrl == null || rawUrl === '' ? '/' : String(rawUrl);
+  const queryIndex = raw.indexOf('?');
+  const beforeQuery = queryIndex >= 0 ? raw.slice(0, queryIndex) : raw;
+  const query = queryIndex >= 0 ? raw.slice(queryIndex) : '';
+  const schemeMatch = beforeQuery.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//);
+  if (!schemeMatch) {
+    return {
+      path: beforeQuery || '/',
+      query,
+    };
+  }
+  const authorityStart = schemeMatch[0].length;
+  const pathStart = beforeQuery.indexOf('/', authorityStart);
+  return {
+    path: pathStart >= 0 ? beforeQuery.slice(pathStart) : '/',
+    query,
+  };
+}
+
+function getConnectionHeaderTokens(headers) {
+  const connectionValue = headers?.connection;
+  if (!connectionValue) {
+    return [];
+  }
+  return String(connectionValue)
+    .split(',')
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function stripHopByHopHeaders(headers) {
   const out = cloneHeaders(headers);
+  for (const key of getConnectionHeaderTokens(out)) {
+    delete out[key];
+  }
   for (const key of [
     'connection',
     'proxy-connection',
     'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
     'transfer-encoding',
     'te',
     'trailer',
@@ -173,6 +221,89 @@ function sanitizeOutgoingHeaders(req, targetUrl) {
 
 function sanitizeIncomingResponseHeaders(headers) {
   return stripHopByHopHeaders(headers);
+}
+
+function sanitizeHeadersForLog(headers) {
+  const out = stripHopByHopHeaders(headers);
+  for (const key of ['authorization', 'proxy-authorization', 'cookie', 'set-cookie']) {
+    if (Object.hasOwn(out, key)) {
+      out[key] = '[redacted]';
+    }
+  }
+  return out;
+}
+
+function sanitizeQueryForLog(query) {
+  if (!query) {
+    return '';
+  }
+  const raw = query.startsWith('?') ? query.slice(1) : query;
+  if (!raw) {
+    return '';
+  }
+  const params = new URLSearchParams(raw);
+  const parts = [];
+  for (const [key, value] of params) {
+    const sanitizedValue = shouldRedactQueryParam(key.toLowerCase()) ? '[redacted]' : value;
+    parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(sanitizedValue)}`);
+  }
+  return parts.length > 0 ? `?${parts.join('&')}` : '';
+}
+
+function shouldRedactQueryParam(name) {
+  return [
+    'authorization',
+    'auth',
+    'api_key',
+    'apikey',
+    'access_token',
+    'refresh_token',
+    'id_token',
+    'token',
+    'secret',
+    'client_secret',
+    'password',
+    'passwd',
+    'code',
+    'session',
+    'session_id',
+    'sid',
+  ].includes(name);
+}
+
+function sanitizeBodyTextForLog(headers, bodyText) {
+  if (!bodyText) {
+    return '';
+  }
+  if (!isTextualContentType(headers?.['content-type'])) {
+    return '[omitted non-text body]';
+  }
+  return redactSecretLikeText(bodyText);
+}
+
+function isTextualContentType(contentType) {
+  const value = String(contentType || '').toLowerCase();
+  if (!value) {
+    return true;
+  }
+  return (
+    value.startsWith('text/') ||
+    value.includes('json') ||
+    value.includes('xml') ||
+    value.includes('x-www-form-urlencoded') ||
+    value.startsWith('multipart/form-data')
+  );
+}
+
+function redactSecretLikeText(text) {
+  let redacted = String(text);
+  redacted = redacted.replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]');
+  redacted = redacted.replace(/(Basic\s+)[A-Za-z0-9+/=]+/gi, '$1[redacted]');
+  redacted = redacted.replace(
+    /((?:password|passwd|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|secret|token|authorization)\s*[:=]\s*)(["']?)([^"'\s,&}\]]+)(\2?)/gi,
+    '$1[redacted]',
+  );
+  return redacted;
 }
 
 function buildForwardedFor(req) {
@@ -230,6 +361,7 @@ class BodyRecorder extends Transform {
 
 function ensureLogDir(logDir) {
   mkdirSync(logDir, { recursive: true });
+  chmodSync(logDir, 0o700);
 }
 
 function logPathFor(logDir, now = new Date()) {
@@ -239,20 +371,19 @@ function logPathFor(logDir, now = new Date()) {
 
 function appendJsonl(logDir, record) {
   const line = `${JSON.stringify(record)}\n`;
-  appendFileSync(logPathFor(logDir), line, 'utf8');
-}
-
-function summarizeHeaders(headers) {
-  return Object.fromEntries(Object.entries(headers || {}));
+  const logPath = logPathFor(logDir);
+  const fd = openSync(logPath, 'a', 0o600);
+  try {
+    writeSync(fd, line, undefined, 'utf8');
+    chmodSync(logDir, 0o700);
+    chmodSync(logPath, 0o600);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function getIncomingUrl(req) {
-  const rawUrl = req.url || '/';
-  try {
-    return new URL(rawUrl);
-  } catch {
-    return new URL(rawUrl, `http://${req.headers.host || 'localhost'}`);
-  }
+  return splitRequestTarget(req.url || '/');
 }
 
 function createProxyServer(config) {
@@ -273,7 +404,7 @@ async function handleRequest(req, res, config) {
   const requestId = randomUUID();
   const incomingUrl = getIncomingUrl(req);
 
-  if (incomingUrl.pathname === '/__capture/healthz') {
+  if (incomingUrl.path === '/__capture/healthz') {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
     res.end(
       JSON.stringify({
@@ -318,30 +449,29 @@ async function handleRequest(req, res, config) {
       elapsed_ms: Date.now() - requestStartedAt,
       request: {
         method: req.method,
-        url: req.url,
-        path: incomingUrl.pathname,
-        query: incomingUrl.search,
-        headers: summarizeHeaders(req.headers),
+        path: incomingUrl.path,
+        query: sanitizeQueryForLog(incomingUrl.query),
+        headers: sanitizeHeadersForLog(req.headers),
         remote_address: req.socket.remoteAddress,
         remote_port: req.socket.remotePort,
         body_bytes: requestSnapshot.bodyBytes,
         body_captured_bytes: requestSnapshot.bodyCapturedBytes,
         body_truncated: requestSnapshot.bodyTruncated,
-        body_text: requestSnapshot.bodyText,
+        body_text: sanitizeBodyTextForLog(req.headers, requestSnapshot.bodyText),
       },
       upstream: {
-        url: upstreamUrl.toString(),
+        url: `${upstreamUrl.origin}${upstreamUrl.path}`,
         method: req.method,
-        headers: summarizeHeaders(outgoingHeaders),
+        headers: sanitizeHeadersForLog(outgoingHeaders),
       },
       response: {
         status_code: responseState.statusCode,
         status_message: responseState.statusMessage,
-        headers: responseState.headers,
+        headers: sanitizeHeadersForLog(responseState.headers),
         body_bytes: responseSnapshot.bodyBytes,
         body_captured_bytes: responseSnapshot.bodyCapturedBytes,
         body_truncated: responseSnapshot.bodyTruncated,
-        body_text: responseSnapshot.bodyText,
+        body_text: sanitizeBodyTextForLog(responseState.headers, responseSnapshot.bodyText),
       },
       error: patch.error || null,
       aborted: Boolean(patch.aborted),
@@ -354,7 +484,7 @@ async function handleRequest(req, res, config) {
     const resSize = formatBytes(responseSnapshot.bodyBytes);
     const suffix = patch.error ? ` error=${patch.error}` : '';
     process.stdout.write(
-      `[${requestId}] ${req.method} ${req.url} -> ${statusLabel} ` +
+      `[${requestId}] ${req.method} ${incomingUrl.path} -> ${statusLabel} ` +
         `req=${reqSize} res=${resSize}${suffix}\n`,
     );
   };
@@ -365,7 +495,7 @@ async function handleRequest(req, res, config) {
     hostname: upstreamUrl.hostname,
     port: upstreamUrl.port || undefined,
     method: req.method,
-    path: `${upstreamUrl.pathname}${upstreamUrl.search}`,
+    path: upstreamUrl.path,
     headers: outgoingHeaders,
     signal: abortController.signal,
   };
@@ -454,6 +584,10 @@ async function main() {
     printUsage();
     return;
   }
+  if (args.selfCheck) {
+    runSelfCheck();
+    return;
+  }
 
   const listen = parseHostPort(args.listen);
   ensureLogDir(args.logDir);
@@ -483,6 +617,46 @@ async function main() {
 
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+}
+
+function runSelfCheck() {
+  assert.equal(
+    buildUpstreamUrl('https://example.test/base', '/a/./b/%2e%2e/c?x=1').path,
+    '/base/a/./b/%2e%2e/c?x=1',
+  );
+  assert.equal(
+    sanitizeQueryForLog('?token=abc123&keep=ok'),
+    '?token=%5Bredacted%5D&keep=ok',
+  );
+  assert.equal(
+    sanitizeHeadersForLog({ authorization: 'Bearer abc123', 'content-type': 'text/plain' }).authorization,
+    '[redacted]',
+  );
+  assert.deepEqual(
+    stripHopByHopHeaders({
+      connection: 'X-Foo, Keep-Alive',
+      'x-foo': '1',
+      'proxy-authorization': 'secret',
+      'keep-alive': 'timeout=5',
+      'content-type': 'text/plain',
+    }),
+    {
+      'content-type': 'text/plain',
+    },
+  );
+
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), 'crs-capture-self-check-'));
+  try {
+    ensureLogDir(tempDir);
+    appendJsonl(tempDir, { ok: true });
+    const logFile = logPathFor(tempDir);
+    assert.equal(statSync(tempDir).mode & 0o777, 0o700);
+    assert.equal(statSync(logFile).mode & 0o777, 0o600);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+
+  process.stdout.write('self-check passed\n');
 }
 
 main().catch((err) => {
