@@ -3365,18 +3365,18 @@
               </p>
             </div>
             <div class="space-y-3 p-6">
-              <textarea
+                <textarea
                 v-model="platformDefaultAccountModelConfigText"
                 rows="12"
                 class="input font-mono text-xs"
                 spellcheck="false"
-                placeholder='{"kiro":{"model_mapping":{"claude-sonnet-4-6":"claude-sonnet-4.6"}}}'
+                placeholder='{"kiro":{"model_mapping":{"claude-sonnet-4-6":"claude-sonnet-4.6"},"kiro_subscription_type_model_config":{"pro":{"model_mapping":{"claude-opus-*":"claude-opus-4.7"}}}}}'
               />
               <p class="text-xs text-gray-500 dark:text-gray-400">
                 {{
                   localText(
-                    "格式：{ platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to} } }。白名单用于模型限制，支持末尾 * 通配符。",
-                    "Format: { platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to} } }. Whitelist entries restrict models and support trailing * wildcards.",
+                    "格式：{ platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to}, kiro_subscription_type_model_config?: { free|pro|pro_plus|power: { ... } } } }。白名单用于模型限制，支持末尾 * 通配符；Kiro 的 1M 变体可写成 -1m 或 [1m]，保存后会归一为 -1m。",
+                    "Format: { platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to}, kiro_subscription_type_model_config?: { free|pro|pro_plus|power: { ... } } } }. Whitelist entries restrict models and support trailing * wildcards; Kiro 1M variants can be written as -1m or [1m] and are normalized to -1m when saved.",
                   )
                 }}
               </p>
@@ -7003,17 +7003,11 @@ function validatePlatformDefaultAccountModelConfig(value: Record<string, unknown
     return starIndex === -1 || (starIndex === pattern.length - 1 && pattern.lastIndexOf("*") === starIndex);
   };
 
-  for (const [platform, rawConfig] of Object.entries(value)) {
-    if (!platform.trim()) {
-      return localText("平台名称不能为空。", "Platform name cannot be empty.");
-    }
-    if (!rawConfig || Array.isArray(rawConfig) || typeof rawConfig !== "object") {
-      return localText(
-        `${platform} 的配置必须是对象。`,
-        `Config for ${platform} must be an object.`,
-      );
-    }
-    const config = rawConfig as Record<string, unknown>;
+  const validateConfig = (
+    platform: string,
+    config: Record<string, unknown>,
+    allowKiroVariants: boolean,
+  ): string | null => {
     if (config.model_whitelist !== undefined) {
       if (!Array.isArray(config.model_whitelist) || config.model_whitelist.some((item) => typeof item !== "string")) {
         return localText(
@@ -7051,6 +7045,59 @@ function validatePlatformDefaultAccountModelConfig(value: Record<string, unknown
           );
         }
       }
+    }
+    if (config.kiro_subscription_type_model_config !== undefined) {
+      if (!allowKiroVariants) {
+        return localText(
+          `${platform}.kiro_subscription_type_model_config 仅支持 kiro 平台。`,
+          `${platform}.kiro_subscription_type_model_config is only supported for kiro.`,
+        );
+      }
+      if (!config.kiro_subscription_type_model_config || Array.isArray(config.kiro_subscription_type_model_config) || typeof config.kiro_subscription_type_model_config !== "object") {
+        return localText(
+          `${platform}.kiro_subscription_type_model_config 必须是对象。`,
+          `${platform}.kiro_subscription_type_model_config must be an object.`,
+        );
+      }
+      for (const [subscriptionType, rawVariant] of Object.entries(config.kiro_subscription_type_model_config as Record<string, unknown>)) {
+        if (!subscriptionType.trim()) {
+          return localText(
+            `${platform}.kiro_subscription_type_model_config 的档位名称不能为空。`,
+            `${platform}.kiro_subscription_type_model_config plan name cannot be empty.`,
+          );
+        }
+        if (!rawVariant || Array.isArray(rawVariant) || typeof rawVariant !== "object") {
+          return localText(
+            `${platform}.kiro_subscription_type_model_config.${subscriptionType} 必须是对象。`,
+            `${platform}.kiro_subscription_type_model_config.${subscriptionType} must be an object.`,
+          );
+        }
+        const nestedError = validateConfig(
+          `${platform}.kiro_subscription_type_model_config.${subscriptionType}`,
+          rawVariant as Record<string, unknown>,
+          false,
+        );
+        if (nestedError) {
+          return nestedError;
+        }
+      }
+    }
+    return null;
+  };
+
+  for (const [platform, rawConfig] of Object.entries(value)) {
+    if (!platform.trim()) {
+      return localText("平台名称不能为空。", "Platform name cannot be empty.");
+    }
+    if (!rawConfig || Array.isArray(rawConfig) || typeof rawConfig !== "object") {
+      return localText(
+        `${platform} 的配置必须是对象。`,
+        `Config for ${platform} must be an object.`,
+      );
+    }
+    const validationError = validateConfig(platform, rawConfig as Record<string, unknown>, platform.trim().toLowerCase() === "kiro");
+    if (validationError) {
+      return validationError;
     }
   }
   return null;

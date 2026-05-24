@@ -8,15 +8,30 @@ const {
   checkMixedChannelRiskMock,
   getSettingsMock,
   getWebSearchEmulationConfigMock,
-  listTlsFingerprintProfilesMock
-} = vi.hoisted(() => ({
-  updateAccountMock: vi.fn(),
-  importOpenAIWebProfileMock: vi.fn(),
-  checkMixedChannelRiskMock: vi.fn(),
-  getSettingsMock: vi.fn(),
-  getWebSearchEmulationConfigMock: vi.fn(),
-  listTlsFingerprintProfilesMock: vi.fn()
-}))
+  listTlsFingerprintProfilesMock,
+  getPaymentConfigMock,
+  adminSettingsStoreMock
+} = vi.hoisted(() => {
+  const adminSettingsStoreMock = {
+    loaded: false,
+    platformDefaultAccountModelConfig: {} as Record<string, any>,
+    fetch: vi.fn(async () => {
+      const settings = await getSettingsMock()
+      adminSettingsStoreMock.platformDefaultAccountModelConfig = settings?.platform_default_account_model_config || {}
+      adminSettingsStoreMock.loaded = true
+    })
+  }
+  return {
+    updateAccountMock: vi.fn(),
+    importOpenAIWebProfileMock: vi.fn(),
+    checkMixedChannelRiskMock: vi.fn(),
+    getSettingsMock: vi.fn(),
+    getWebSearchEmulationConfigMock: vi.fn(),
+    listTlsFingerprintProfilesMock: vi.fn(),
+    getPaymentConfigMock: vi.fn(),
+    adminSettingsStoreMock
+  }
+})
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
@@ -32,11 +47,18 @@ vi.mock('@/stores/auth', () => ({
   })
 }))
 
+vi.mock('@/stores/adminSettings', () => ({
+  useAdminSettingsStore: () => adminSettingsStoreMock
+}))
+
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     settings: {
       getSettings: getSettingsMock,
       getWebSearchEmulationConfig: getWebSearchEmulationConfigMock
+    },
+    payment: {
+      getConfig: getPaymentConfigMock
     },
     tlsFingerprintProfiles: {
       list: listTlsFingerprintProfilesMock
@@ -58,7 +80,8 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key
+      t: (key: string) => key,
+      locale: { value: 'zh-CN' }
     })
   }
 })
@@ -160,9 +183,19 @@ function resetCommonMocks() {
   getSettingsMock.mockReset()
   getWebSearchEmulationConfigMock.mockReset()
   listTlsFingerprintProfilesMock.mockReset()
+  getPaymentConfigMock.mockReset()
+  adminSettingsStoreMock.loaded = false
+  adminSettingsStoreMock.platformDefaultAccountModelConfig = {}
+  adminSettingsStoreMock.fetch.mockReset()
+  adminSettingsStoreMock.fetch.mockImplementation(async () => {
+    const settings = await getSettingsMock()
+    adminSettingsStoreMock.platformDefaultAccountModelConfig = settings?.platform_default_account_model_config || {}
+    adminSettingsStoreMock.loaded = true
+  })
   getSettingsMock.mockResolvedValue({})
   getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
   listTlsFingerprintProfilesMock.mockResolvedValue([])
+  getPaymentConfigMock.mockResolvedValue({ data: { enabled: false } })
   checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
 }
 
@@ -621,6 +654,131 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_mapping).toEqual({
       'gpt-5.2-2025-12-11': 'gpt-5.2-2025-12-11'
     })
+  })
+
+  it('offers to sync Kiro mapping to the plan default and keeps dismissals scoped to the current mapping', async () => {
+    const account = {
+      id: 10,
+      name: 'Kiro Pro',
+      notes: '',
+      platform: 'kiro',
+      type: 'oauth',
+      credentials: {
+        refresh_token: 'rt-test',
+        subscription_type: 'Kiro Pro',
+        model_mapping: {
+          'claude-opus-*': 'claude-opus-4.6'
+        }
+      },
+      extra: {},
+      proxy_id: null,
+      concurrency: 1,
+      priority: 1,
+      rate_multiplier: 1,
+      status: 'active',
+      group_ids: [],
+      expires_at: null,
+      auto_pause_on_expired: false
+    } as any
+
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    getSettingsMock.mockResolvedValue({
+      platform_default_account_model_config: {
+        kiro: {
+          kiro_subscription_type_model_config: {
+            pro: {
+              model_mapping: {
+                'claude-opus-*': 'claude-opus-4.7'
+              }
+            }
+          }
+        }
+      }
+    })
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(updateAccountMock).toHaveBeenCalledTimes(0)
+    expect(wrapper.text()).toContain('当前 Kiro pro 账号的模型映射与默认值不一致')
+
+    const syncButton = wrapper.findAll('button').find((btn) => btn.text().includes('同步默认值'))
+    expect(syncButton).toBeTruthy()
+    await syncButton!.trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_mapping).toEqual({
+      'claude-opus-*': 'claude-opus-4.7'
+    })
+
+    updateAccountMock.mockResolvedValue(account)
+    await wrapper.setProps({ show: true })
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    expect(updateAccountMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('normalizes Kiro [1m] aliases to canonical -1m on load and save', async () => {
+    const account = {
+      id: 12,
+      name: 'Kiro 1M',
+      notes: '',
+      platform: 'kiro',
+      type: 'oauth',
+      credentials: {
+        refresh_token: 'rt-test',
+        model_mapping: {
+          'claude-opus-4.7[1m]': 'claude-opus-4.6[1m]'
+        }
+      },
+      extra: {},
+      proxy_id: null,
+      concurrency: 1,
+      priority: 1,
+      rate_multiplier: 1,
+      status: 'active',
+      group_ids: [],
+      expires_at: null,
+      auto_pause_on_expired: false
+    } as any
+
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect((wrapper.get('input[placeholder="admin.accounts.requestModel"]').element as HTMLInputElement).value).toBe('claude-opus-4.7-1m')
+    expect((wrapper.get('input[placeholder="admin.accounts.actualModel"]').element as HTMLInputElement).value).toBe('claude-opus-4.6-1m')
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+
+    const submittedMapping = updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_mapping as
+      | Record<string, string>
+      | undefined
+    if (submittedMapping) {
+      expect(submittedMapping).toEqual({
+        'claude-opus-4.7-1m': 'claude-opus-4.6-1m'
+      })
+    }
   })
 
   it('updates changed Kiro API key credentials and metadata', async () => {

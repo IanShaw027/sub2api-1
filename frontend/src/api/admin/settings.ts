@@ -816,6 +816,7 @@ export interface DefaultAccountModelConfig {
   model_whitelist?: string[];
   model_mapping?: Record<string, string>;
   compact_model_mapping?: Record<string, string>;
+  kiro_subscription_type_model_config?: Record<string, DefaultAccountModelConfig>;
 }
 
 export interface UpdateSettingsRequest {
