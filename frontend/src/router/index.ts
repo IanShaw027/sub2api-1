@@ -1108,7 +1108,16 @@ let authInitialized = false
 const navigationLoading = useNavigationLoadingState()
 // 延迟初始化预加载，传入 router 实例
 let routePrefetch: ReturnType<typeof useRoutePrefetch> | null = null
-export const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal']
+export const BACKEND_MODE_ALLOWED_PATHS = [
+  '/login',
+  '/key-usage',
+  '/setup',
+  '/payment/result',
+  '/payment/stripe',
+  '/payment/stripe-popup',
+  '/payment/airwallex',
+  '/legal',
+]
 export const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',
   '/auth/oauth/callback',

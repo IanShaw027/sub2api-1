@@ -537,14 +537,14 @@ func convertResponsesInputRawToChatMessages(raw string) ([]byte, error) {
 		}})
 	}
 
-	var items []apicompat.ResponsesInputItem
+	var items []json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &items); err != nil {
 		return nil, fmt.Errorf("parse responses input array: %w", err)
 	}
 
 	messages := make([]apicompat.ChatMessage, 0, len(items))
 	for _, item := range items {
-		converted, err := convertResponsesInputItemToChatMessages(item)
+		converted, err := convertResponsesInputRawItemToChatMessages(item)
 		if err != nil {
 			return nil, err
 		}
@@ -554,14 +554,15 @@ func convertResponsesInputRawToChatMessages(raw string) ([]byte, error) {
 	return json.Marshal(messages)
 }
 
-func convertResponsesInputItemToChatMessages(item apicompat.ResponsesInputItem) ([]apicompat.ChatMessage, error) {
-	switch item.Type {
+func convertResponsesInputRawItemToChatMessages(raw json.RawMessage) ([]apicompat.ChatMessage, error) {
+	itemType := strings.TrimSpace(gjson.GetBytes(raw, "type").String())
+	switch itemType {
 	case "", "message":
-		role := strings.TrimSpace(item.Role)
+		role := strings.TrimSpace(gjson.GetBytes(raw, "role").String())
 		if role == "" {
 			role = "user"
 		}
-		content, err := convertResponsesMessageContentToChatContent(item.Content)
+		content, err := convertResponsesMessageContentToChatContent(json.RawMessage(gjson.GetBytes(raw, "content").Raw))
 		if err != nil {
 			return nil, fmt.Errorf("convert %s message content: %w", role, err)
 		}
@@ -569,13 +570,48 @@ func convertResponsesInputItemToChatMessages(item apicompat.ResponsesInputItem) 
 			Role:    role,
 			Content: content,
 		}}, nil
+	case "input_text":
+		text := gjson.GetBytes(raw, "text").String()
+		if text == "" {
+			text = gjson.GetBytes(raw, "content").String()
+		}
+		return []apicompat.ChatMessage{{
+			Role:    "user",
+			Content: mustMarshalRawJSON(text),
+		}}, nil
+	case "input_image":
+		imageURL := firstNonEmptyRawChat(
+			strings.TrimSpace(gjson.GetBytes(raw, "image_url").String()),
+			strings.TrimSpace(gjson.GetBytes(raw, "image_url.url").String()),
+			strings.TrimSpace(gjson.GetBytes(raw, "file_url").String()),
+		)
+		if imageURL == "" {
+			return nil, nil
+		}
+		content, err := json.Marshal([]apicompat.ChatContentPart{{
+			Type: "image_url",
+			ImageURL: &apicompat.ChatImageURL{
+				URL: imageURL,
+			},
+		}})
+		if err != nil {
+			return nil, err
+		}
+		return []apicompat.ChatMessage{{
+			Role:    "user",
+			Content: content,
+		}}, nil
 	case "function_call":
+		callID := strings.TrimSpace(gjson.GetBytes(raw, "call_id").String())
+		if callID == "" {
+			callID = strings.TrimSpace(gjson.GetBytes(raw, "id").String())
+		}
 		toolCall := apicompat.ChatToolCall{
-			ID:   firstNonEmptyRawChat(strings.TrimSpace(item.CallID), strings.TrimSpace(item.ID)),
+			ID:   callID,
 			Type: "function",
 			Function: apicompat.ChatFunctionCall{
-				Name:      item.Name,
-				Arguments: item.Arguments,
+				Name:      strings.TrimSpace(gjson.GetBytes(raw, "name").String()),
+				Arguments: strings.TrimSpace(gjson.GetBytes(raw, "arguments").String()),
 			},
 		}
 		return []apicompat.ChatMessage{{
@@ -583,13 +619,13 @@ func convertResponsesInputItemToChatMessages(item apicompat.ResponsesInputItem) 
 			ToolCalls: []apicompat.ChatToolCall{toolCall},
 		}}, nil
 	case "function_call_output":
-		output := item.Output
+		output := strings.TrimSpace(gjson.GetBytes(raw, "output").String())
 		if output == "" {
 			output = "(empty)"
 		}
 		return []apicompat.ChatMessage{{
 			Role:       "tool",
-			ToolCallID: strings.TrimSpace(item.CallID),
+			ToolCallID: strings.TrimSpace(gjson.GetBytes(raw, "call_id").String()),
 			Content:    mustMarshalRawJSON(output),
 		}}, nil
 	default:

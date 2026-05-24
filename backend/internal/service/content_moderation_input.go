@@ -93,9 +93,7 @@ func collectAnthropicUserContentValue(value gjson.Result, parts *[]string, image
 	case !value.Exists():
 		return
 	case value.Type == gjson.String:
-		if !isAnthropicSystemReminderText(value.String()) {
-			addModerationText(parts, value.String())
-		}
+		addModerationText(parts, value.String())
 	case value.IsArray():
 		value.ForEach(func(_, item gjson.Result) bool {
 			collectAnthropicUserContentValue(item, parts, images)
@@ -105,7 +103,7 @@ func collectAnthropicUserContentValue(value gjson.Result, parts *[]string, image
 		typ := strings.ToLower(strings.TrimSpace(value.Get("type").String()))
 		switch typ {
 		case "", "text", "input_text", "message":
-			if value.Get("text").Exists() && !isAnthropicSystemReminderText(value.Get("text").String()) {
+			if value.Get("text").Exists() {
 				addModerationText(parts, value.Get("text").String())
 			}
 			if value.Get("content").Exists() {
@@ -304,14 +302,37 @@ func limitContentModerationImages(images []string) []string {
 }
 
 func addModerationText(parts *[]string, text string) {
-	text = strings.TrimSpace(text)
+	text = stripAnthropicSystemReminderText(text)
 	if text == "" {
 		return
 	}
-	if strings.Contains(text, "<system-reminder>") {
-		return
-	}
 	*parts = append(*parts, text)
+}
+
+func stripAnthropicSystemReminderText(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	const openTag = "<system-reminder>"
+	const closeTag = "</system-reminder>"
+
+	for {
+		start := strings.Index(text, openTag)
+		if start < 0 {
+			break
+		}
+		endRel := strings.Index(text[start+len(openTag):], closeTag)
+		if endRel < 0 {
+			text = text[:start] + text[start+len(openTag):]
+			break
+		}
+		end := start + len(openTag) + endRel
+		text = text[:start] + text[end+len(closeTag):]
+	}
+
+	text = strings.ReplaceAll(text, closeTag, "")
+	return strings.TrimSpace(text)
 }
 
 func normalizeContentModerationText(text string) string {

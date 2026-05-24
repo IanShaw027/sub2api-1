@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/stretchr/testify/require"
 )
 
 type betaPolicySettingRepoStub struct {
@@ -264,4 +265,13 @@ func TestResolveBedrockBetaTokensForRequest_PassesWhenNoBlockRuleMatches(t *test
 	if !found {
 		t.Fatal("expected computer-use token to be present")
 	}
+}
+
+func TestApplyBedrockCCCompat_IgnoresNonBedrockAccounts(t *testing.T) {
+	svc := &GatewayService{}
+	body := []byte(`{"messages":[{"role":"user","content":"keep me"}]}`)
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	got := svc.ApplyBedrockCCCompat(context.Background(), body, "us.anthropic.claude-opus-4-6-v1", account, nil)
+	require.Equal(t, string(body), string(got))
 }

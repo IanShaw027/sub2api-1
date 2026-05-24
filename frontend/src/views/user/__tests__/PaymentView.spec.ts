@@ -282,8 +282,8 @@ describe('PaymentView WeChat JSAPI flow', () => {
     expect(wrapper.html()).not.toContain('payment-status-panel-stub')
   })
 
-  it('clears a stale recovery snapshot before handling wechat resume callback params', async () => {
-    createOrder.mockRejectedValueOnce(new Error('resume failed'))
+  it('clears a stale recovery snapshot before a later unrelated session can restore it', async () => {
+    routeState.query = {}
     window.localStorage.setItem(PAYMENT_RECOVERY_STORAGE_KEY, JSON.stringify({
       orderId: 999,
       amount: 66,
@@ -315,9 +315,7 @@ describe('PaymentView WeChat JSAPI flow', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({
-      wechat_resume_token: 'resume-token-123',
-    }))
+    expect(createOrder).not.toHaveBeenCalled()
     expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toBeNull()
   })
 

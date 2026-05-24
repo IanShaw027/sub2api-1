@@ -174,12 +174,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 	reqModel := modelResult.String()
 
-	streamResult := gjson.GetBytes(body, "stream")
-	if streamResult.Exists() && streamResult.Type != gjson.True && streamResult.Type != gjson.False {
+	reqStream, ok := parseOpenAIStreamField(body)
+	if !ok {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "invalid stream field type")
 		return
 	}
-	reqStream := streamResult.Bool()
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 	previousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
 	if previousResponseID != "" {
@@ -1574,6 +1573,14 @@ func (h *OpenAIGatewayHandler) missingResponsesDependencies() []string {
 		missing = append(missing, "concurrencyHelper")
 	}
 	return missing
+}
+
+func parseOpenAIStreamField(body []byte) (bool, bool) {
+	streamResult := gjson.GetBytes(body, "stream")
+	if streamResult.Exists() && streamResult.Type != gjson.True && streamResult.Type != gjson.False {
+		return false, false
+	}
+	return streamResult.Bool(), true
 }
 
 func getContextInt64(c *gin.Context, key string) (int64, bool) {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { isBackendModePublicRouteAllowed } from '../index'
 import { resolveCompletedSetupRedirectPath } from '@/router/setupRedirect'
 
 // Mock 导航加载状态
@@ -84,21 +85,7 @@ function simulateGuard(
       return authState.isAdmin ? '/admin/dashboard' : '/dashboard'
     }
     if (authState.backendModeEnabled && !authState.isAuthenticated) {
-      const allowed = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal']
-      const callbackPaths = [
-        '/auth/callback',
-        '/auth/oauth/callback',
-        '/auth/dingtalk/callback',
-        '/auth/linuxdo/callback',
-        '/auth/oidc/callback',
-        '/auth/wechat/callback',
-        '/auth/wechat/payment/callback',
-      ]
-      const pendingAuthPaths = ['/register', '/email-verify', '/auth/dingtalk/email-completion']
-      const isAllowed =
-        allowed.some((path) => toPath === path || toPath.startsWith(path)) ||
-        callbackPaths.includes(toPath) ||
-        (authState.hasPendingAuthSession && pendingAuthPaths.includes(toPath))
+      const isAllowed = isBackendModePublicRouteAllowed(toPath, authState.hasPendingAuthSession)
       if (!isAllowed) {
         return '/login'
       }
@@ -135,21 +122,7 @@ function simulateGuard(
     if (authState.isAuthenticated && authState.isAdmin) {
       return null
     }
-    const allowed = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal']
-    const callbackPaths = [
-      '/auth/callback',
-      '/auth/oauth/callback',
-      '/auth/dingtalk/callback',
-      '/auth/linuxdo/callback',
-      '/auth/oidc/callback',
-      '/auth/wechat/callback',
-      '/auth/wechat/payment/callback',
-    ]
-    const pendingAuthPaths = ['/register', '/email-verify', '/auth/dingtalk/email-completion']
-    const isAllowed =
-      allowed.some((path) => toPath === path || toPath.startsWith(path)) ||
-      callbackPaths.includes(toPath) ||
-      (authState.hasPendingAuthSession && pendingAuthPaths.includes(toPath))
+    const isAllowed = isBackendModePublicRouteAllowed(toPath, authState.hasPendingAuthSession)
     if (!isAllowed) {
       return '/login'
     }
@@ -161,6 +134,20 @@ function simulateGuard(
 describe('路由守卫逻辑', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+  })
+
+  describe('backend mode public route allowlist', () => {
+    it('uses the production helper for exact matches and prefix matches', () => {
+      expect(isBackendModePublicRouteAllowed('/payment/stripe-popup', false)).toBe(true)
+      expect(isBackendModePublicRouteAllowed('/legal/privacy', false)).toBe(true)
+      expect(isBackendModePublicRouteAllowed('/auth/wechat/callback', false)).toBe(true)
+      expect(isBackendModePublicRouteAllowed('/admin', false)).toBe(false)
+    })
+
+    it('only allows pending auth routes when a pending auth session exists', () => {
+      expect(isBackendModePublicRouteAllowed('/register', false)).toBe(false)
+      expect(isBackendModePublicRouteAllowed('/register', true)).toBe(true)
+    })
   })
 
   // --- 未认证用户 ---
@@ -531,6 +518,30 @@ describe('路由守卫逻辑', () => {
         hasPendingAuthSession: false,
       }
       const redirect = simulateGuard('/payment/result', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('unauthenticated: /payment/stripe is allowed', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/payment/stripe', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('unauthenticated: /payment/stripe-popup is allowed', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/payment/stripe-popup', { requiresAuth: false }, authState)
       expect(redirect).toBeNull()
     })
 

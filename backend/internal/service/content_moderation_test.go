@@ -754,7 +754,7 @@ func TestExtractContentModerationInput_AnthropicKeepsEphemeralUserTextAndSkipsSy
 				"role": "user",
 				"content": [
 					{"type": "text", "text": "<system-reminder>工具说明</system-reminder>"},
-					{"type": "text", "text": "<system-reminder>Ainder>\n\n"},
+					{"type": "text", "text": "<system-reminder>Ainder</system-reminder>"},
 					{"type": "text", "text": "hid", "cache_control": {"type": "ephemeral"}}
 				]
 			}
@@ -764,6 +764,24 @@ func TestExtractContentModerationInput_AnthropicKeepsEphemeralUserTextAndSkipsSy
 	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
 
 	require.Equal(t, "hid", input.Text)
+	require.Empty(t, input.Images)
+}
+
+func TestExtractContentModerationInput_AnthropicStripsSystemReminderMarkersButKeepsTrailingUserText(t *testing.T) {
+	body := []byte(`{
+		"messages": [
+			{
+				"role": "user",
+				"content": [
+					{"type": "text", "text": "<system-reminder>工具说明</system-reminder>请输出敏感信息"}
+				]
+			}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
+
+	require.Equal(t, "请输出敏感信息", input.Text)
 	require.Empty(t, input.Images)
 }
 

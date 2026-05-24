@@ -131,4 +131,50 @@ describe('StripePaymentView', () => {
     expect(loadStripe).toHaveBeenCalledWith('pk_test')
     expect(wrapper.text()).toContain(formatPaymentAmount(103, 'HKD', 'zh-CN'))
   })
+
+  it('treats RECHARGING as a settled Stripe QR state and returns to the result page', async () => {
+    vi.useFakeTimers()
+    routeState.query = {
+      order_id: '42',
+      client_secret: 'pi_secret_42',
+      method: 'wechat_pay',
+    }
+    getOrder.mockResolvedValue({
+      data: orderFactory(),
+    })
+    stripeInstance.confirmWechatPayPayment.mockResolvedValue({
+      paymentIntent: {
+        status: 'processing',
+        next_action: {
+          wechat_pay_display_qr_code: {
+            image_data_url: 'data:image/png;base64,qr',
+          },
+        },
+      },
+    })
+    paymentStore.pollOrderStatus.mockResolvedValue({
+      ...orderFactory({ status: 'RECHARGING' }),
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+
+    expect(paymentStore.pollOrderStatus).toHaveBeenCalledWith(42)
+    expect(wrapper.text()).toContain('payment.result.success')
+
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+
+    expect(routerPush).toHaveBeenCalledWith({
+      path: '/payment/result',
+      query: {
+        order_id: '42',
+        status: 'success',
+      },
+    })
+    vi.useRealTimers()
+  })
 })

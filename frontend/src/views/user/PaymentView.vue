@@ -1051,23 +1051,16 @@ onMounted(async () => {
       selectedMethod.value = sorted[0]
     }
     if (typeof window !== 'undefined') {
+      const rawRecoverySnapshot = window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)
       const hasRouteWechatResume = hasWechatResumeQuery(route.query)
       const routeResumeToken = typeof route.query.resume_token === 'string'
         ? route.query.resume_token
         : typeof route.query.wechat_resume_token === 'string'
           ? route.query.wechat_resume_token
           : undefined
-      const restored = hasRouteWechatResume
-        ? (routeResumeToken
-          ? readPaymentRecoverySnapshot(
-            window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY),
-            { resumeToken: routeResumeToken },
-          )
-          : null)
-        : readPaymentRecoverySnapshot(
-          window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY),
-          { resumeToken: routeResumeToken },
-        )
+      const restored = hasRouteWechatResume && routeResumeToken
+        ? readPaymentRecoverySnapshot(rawRecoverySnapshot, { resumeToken: routeResumeToken })
+        : null
       if (restored) {
         paymentState.value = restored
         paymentPhase.value = 'paying'
@@ -1075,8 +1068,8 @@ onMounted(async () => {
         if (restoredMethod) {
           selectedMethod.value = restoredMethod
         }
-      } else {
-        removeRecoverySnapshot()
+      } else if (rawRecoverySnapshot) {
+        clearPaymentRecoverySnapshot(window.localStorage, PAYMENT_RECOVERY_STORAGE_KEY)
       }
     }
     await resumeWechatPaymentFromQuery()
