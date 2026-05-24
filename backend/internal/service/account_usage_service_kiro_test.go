@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,6 +57,17 @@ func (s *kiroUsageFetcherStub) FetchUsageWithOptions(context.Context, *ClaudeUsa
 
 func (s *kiroUsageFetcherStub) HTTPUpstream() HTTPUpstream {
 	return s.upstream
+}
+
+type kiroWindowStatsRepoStub struct {
+	geminiUsageLogRepoStub
+	windowStats    *usagestats.AccountStats
+	requestedStart time.Time
+}
+
+func (r *kiroWindowStatsRepoStub) GetAccountWindowStats(_ context.Context, _ int64, startTime time.Time) (*usagestats.AccountStats, error) {
+	r.requestedStart = startTime
+	return r.windowStats, nil
 }
 
 func TestAccountUsageService_PersistRefreshedKiroCredentials_InvalidatesTokenCache(t *testing.T) {
@@ -283,6 +296,60 @@ func TestAccountUsageService_GetUsage_KiroCachesSuccessfulUsage(t *testing.T) {
 	require.Equal(t, 1, upstream.calls)
 	require.NotNil(t, second.KiroQuota)
 	require.GreaterOrEqual(t, second.KiroQuota.RemainingSeconds, 0)
+}
+
+func TestAccountUsageService_GetUsage_KiroPopulatesWindowStatsFromLocalUsageLogs(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       69,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "access-token",
+			"refresh_token": "refresh-token",
+		},
+	}
+	repo := &kiroUsageAccountRepo{account: account}
+	usageRepo := &kiroWindowStatsRepoStub{
+		windowStats: &usagestats.AccountStats{
+			Requests:     27,
+			Tokens:       45123,
+			Cost:         99.9,
+			StandardCost: 88.8,
+			UserCost:     77.7,
+		},
+	}
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(strings.NewReader(`{
+				"subscriptionInfo":{"subscriptionTitle":"Kiro Pro"},
+				"usageBreakdownList":[{"currentUsageWithPrecision":12.5,"usageLimitWithPrecision":100,"nextDateReset":4102444800}]
+			}`)),
+			Header: make(http.Header),
+		},
+	}
+	svc := &AccountUsageService{
+		accountRepo:  repo,
+		usageLogRepo: usageRepo,
+		usageFetcher: &kiroUsageFetcherStub{
+			upstream: upstream,
+		},
+	}
+
+	usage, err := svc.GetUsage(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.NotNil(t, usage.KiroQuota)
+	require.NotNil(t, usage.KiroQuota.WindowStats)
+	require.Equal(t, int64(27), usage.KiroQuota.WindowStats.Requests)
+	require.Equal(t, int64(45123), usage.KiroQuota.WindowStats.Tokens)
+	require.Equal(t, 12.5, usage.KiroQuota.WindowStats.Cost)
+	require.Equal(t, 12.5, usage.KiroQuota.WindowStats.UserCost)
+	require.Equal(t, 12.5, usage.KiroQuota.WindowStats.StandardCost)
+	require.True(t, usageRepo.requestedStart.Equal(timezone.StartOfMonth(time.Now())), "window start = %v", usageRepo.requestedStart)
 }
 
 func TestAccountUsageService_GetUsage_KiroSeparatesMonthlyBonusAndFreeTrialQuota(t *testing.T) {
