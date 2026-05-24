@@ -785,6 +785,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 			InputTokens:              inputTokens,
 			OutputTokens:             outputTokens,
 			CacheCreationInputTokens: fakeCacheUsage.CacheCreationInputTokens,
+			CacheCreation5mTokens:    fakeCacheUsage.CacheCreationInputTokens,
 			CacheReadInputTokens:     fakeCacheUsage.CacheReadInputTokens,
 		},
 	}
@@ -1231,6 +1232,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			InputTokens:              inputTokens,
 			OutputTokens:             outputTokens,
 			CacheCreationInputTokens: finalFakeCacheUsage.CacheCreationInputTokens,
+			CacheCreation5mTokens:    finalFakeCacheUsage.CacheCreationInputTokens,
 			CacheReadInputTokens:     finalFakeCacheUsage.CacheReadInputTokens,
 		},
 	}

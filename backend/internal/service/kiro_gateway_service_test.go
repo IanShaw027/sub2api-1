@@ -1180,6 +1180,47 @@ func TestKiroGatewayService_ForwardNonStream_UsageMatchesAnthropicCacheShape(t *
 	require.True(t, ok)
 	require.Contains(t, cacheCreation, "ephemeral_5m_input_tokens")
 	require.Contains(t, cacheCreation, "ephemeral_1h_input_tokens")
+	require.Equal(t, result.Usage.CacheCreationInputTokens, result.Usage.CacheCreation5mTokens)
+	require.Zero(t, result.Usage.CacheCreation1hTokens)
+}
+
+func TestKiroGatewayService_ForwardStream_PopulatesCacheCreationTTLBreakdown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+	fakeCachePlan := &kiropkg.FakeCachePlan{
+		CurrentKey:             "kiro:test:stream-cache-ttl",
+		CurrentCacheableTokens: 17,
+	}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "assistantResponseEvent",
+	}, map[string]any{"content": "hello"})
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 1, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4-6", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.6"},
+		32,
+		time.Now(),
+		fakeCachePlan,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, result.Usage.CacheCreationInputTokens, result.Usage.CacheCreation5mTokens)
+	require.Zero(t, result.Usage.CacheCreation1hTokens)
 }
 
 func TestKiroGatewayService_Forward_HTTPErrorRecordsOpsContext(t *testing.T) {

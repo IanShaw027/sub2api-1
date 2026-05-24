@@ -181,16 +181,15 @@ func fakeCacheUsageFromReadWrite(totalInputTokens, cacheRead, cacheWrite, hitRat
 	cacheRead = clampFakeCacheTokens(cacheRead, totalInputTokens)
 	cacheWrite = clampFakeCacheTokens(cacheWrite, totalInputTokens-cacheRead)
 
-	// Apply hit rate scaling: reduce cache read and increase regular input tokens
-	// This simulates a lower cache hit rate without artificially inflating cache writes
+	// Apply hit rate scaling only to cache reads.
+	// Claude-style input_tokens is the non-cached remainder after subtracting
+	// both cache_read and cache_creation.
 	if hitRateScale < 100 {
 		scaledRead := cacheRead * hitRateScale / 100
 		if scaledRead < 0 {
 			scaledRead = 0
 		}
 		cacheRead = scaledRead
-		// The difference goes to regular input tokens, not cache write
-		// This correctly models cache misses
 	}
 
 	inputTokens := totalInputTokens - cacheRead - cacheWrite

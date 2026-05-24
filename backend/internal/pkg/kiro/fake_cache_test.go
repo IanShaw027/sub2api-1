@@ -296,6 +296,27 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAndHonorsMinBlock(t 
 	}, usage)
 }
 
+func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAt98Percent(t *testing.T) {
+	plan := &FakeCachePlan{
+		CurrentPrefixCacheableTokens:  100,
+		PreviousPrefixCacheableTokens: 60,
+		CurrentPrefixKey:              "prefix:current",
+		PreviousPrefixKey:             "prefix:previous",
+	}
+
+	usage := plan.ResolveUsageWithConfig(140, FakeCacheHitState{
+		Prefix: true,
+	}, FakeCacheUsageConfig{
+		HitRateScale: 98,
+	})
+
+	require.Equal(t, FakeCacheUsage{
+		InputTokens:              42,
+		CacheCreationInputTokens: 40,
+		CacheReadInputTokens:     58, // 98% of 60
+	}, usage)
+}
+
 func TestFakeCachePlanResolveUsageWithConfig_ZeroHitRateScaleIsValid(t *testing.T) {
 	plan := &FakeCachePlan{
 		CurrentPrefixCacheableTokens:  100,
