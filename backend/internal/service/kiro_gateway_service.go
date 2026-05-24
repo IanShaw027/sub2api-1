@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -932,12 +933,12 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				}
 				targetLen := len(nativeThinkingBuffer) - len("<thinking>")
 				if targetLen > 0 {
-					safeContent := nativeThinkingBuffer[:targetLen]
+					safeContent := utf8SafePrefix(nativeThinkingBuffer, targetLen)
 					if strings.TrimSpace(safeContent) != "" {
 						if err := emitTextDelta(safeContent); err != nil {
 							return err
 						}
-						nativeThinkingBuffer = nativeThinkingBuffer[targetLen:]
+						nativeThinkingBuffer = nativeThinkingBuffer[len(safeContent):]
 					}
 				}
 				return nil
@@ -967,10 +968,11 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				}
 				targetLen := len(nativeThinkingBuffer) - len("</thinking>\n\n")
 				if targetLen > 0 {
-					if err := emitThinkingDelta(nativeThinkingBuffer[:targetLen]); err != nil {
+					safeContent := utf8SafePrefix(nativeThinkingBuffer, targetLen)
+					if err := emitThinkingDelta(safeContent); err != nil {
 						return err
 					}
-					nativeThinkingBuffer = nativeThinkingBuffer[targetLen:]
+					nativeThinkingBuffer = nativeThinkingBuffer[len(safeContent):]
 				}
 				return nil
 			}
@@ -1692,6 +1694,19 @@ func writeSSEEvent(w gin.ResponseWriter, event string, payload any) error {
 	}
 	w.Flush()
 	return nil
+}
+
+func utf8SafePrefix(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if maxBytes >= len(s) {
+		return s
+	}
+	for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+		maxBytes--
+	}
+	return s[:maxBytes]
 }
 
 func readAllKiroFrames(body io.Reader) ([]*kiroFrame, error) {

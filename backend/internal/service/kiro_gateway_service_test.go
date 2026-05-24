@@ -853,6 +853,61 @@ func TestKiroGatewayService_ForwardStream_NativeThinkingBlocksUseUpstreamContent
 	require.NotContains(t, output, `Thinking through the request with high effort`)
 }
 
+func TestKiroGatewayService_ForwardStream_DoesNotSplitUTF8WhenBufferingThinkingMarkers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	chinese := "中文中文中文"
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "assistantResponseEvent",
+	}, map[string]any{"content": chinese})
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 115, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-opus-4-6", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-opus-4.6"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	var reconstructed strings.Builder
+	for _, line := range strings.Split(rec.Body.String(), "\n") {
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &payload); err != nil {
+			continue
+		}
+		delta, _ := payload["delta"].(map[string]any)
+		deltaType, _ := delta["type"].(string)
+		if deltaType != "text_delta" {
+			continue
+		}
+		chunk, _ := delta["text"].(string)
+		reconstructed.WriteString(chunk)
+	}
+
+	require.Equal(t, chinese, reconstructed.String())
+	require.NotContains(t, rec.Body.String(), "�")
+}
+
 func TestExtractKiroNativeThinkingText_UsesSameParserAsNativeNonStreamPath(t *testing.T) {
 	thinking := extractKiroNativeThinkingText("prefix<thinking>\nfirst pass</thinking>\n\nmiddle<thinking>second pass</thinking>\n\nsuffix")
 
