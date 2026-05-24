@@ -278,6 +278,17 @@ func TestAccountGetMappedModel(t *testing.T) {
 			requestedModel: "claude-sonnet-4-5",
 			expected:       "claude-sonnet-mapped",
 		},
+		{
+			name:     "kiro bracketed 1m alias normalizes through mapping",
+			platform: PlatformKiro,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"claude-opus-4.7[1m]": "claude-opus-4.6[1m]",
+				},
+			},
+			requestedModel: "claude-opus-4.7[1m]",
+			expected:       "claude-opus-4.6-1m",
+		},
 
 		// 无匹配返回原始模型
 		{
@@ -386,6 +397,16 @@ func TestAccountResolveMappedModel(t *testing.T) {
 			},
 			requestedModel: "claude-haiku-4.5",
 			expectedModel:  "claude-haiku-4.5",
+			expectedMatch:  true,
+		},
+		{
+			name:     "kiro bracketed 1m whitelist normalizes to canonical 1m",
+			platform: PlatformKiro,
+			credentials: map[string]any{
+				"model_whitelist": []any{"claude-sonnet-4.6[1m]"},
+			},
+			requestedModel: "claude-sonnet-4.6[1m]",
+			expectedModel:  "claude-sonnet-4.6-1m",
 			expectedMatch:  true,
 		},
 		{

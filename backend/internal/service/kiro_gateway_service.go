@@ -692,6 +692,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	toolOutputBuilder := strings.Builder{}
 	toolUses := make([]map[string]any, 0)
 	toolBuffers := make(map[string]*kiroToolState)
+	toolOrder := make([]string, 0)
 	toolNames := make([]string, 0)
 	stopReason := "end_turn"
 	hasVisibleOutput := strings.TrimSpace(thinkingOverride) != ""
@@ -706,27 +707,39 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 			if content := rawStringField(frame.Payload, "content"); content != "" {
 				_, _ = assistantContentBuilder.WriteString(content)
 			}
+		case "contextUsageEvent":
+			if usagePercent, ok := numericField(frame.Payload, "contextUsagePercentage"); ok {
+				setKiroContextUsagePercentage(c, usagePercent)
+				if reason := kiroStopReasonFromContextUsage(usagePercent); reason != "" {
+					stopReason = reason
+				}
+			}
 		case "toolUseEvent":
 			state := ensureKiroToolState(toolBuffers, controlStringField(frame.Payload, "toolUseId"), controlStringField(frame.Payload, "name"))
+			toolOrder = appendKiroToolStateOrder(toolOrder, state)
 			inputChunk := rawStringField(frame.Payload, "input")
 			_, _ = state.InputBuilder.WriteString(inputChunk)
 			_, _ = toolOutputBuilder.WriteString(inputChunk)
 			if booleanField(frame.Payload, "stop") {
 				state.Stopped = true
-				_, _ = toolOutputBuilder.WriteString(state.Name)
-				input := map[string]any{}
-				_ = json.Unmarshal([]byte(state.InputBuilder.String()), &input)
-				toolUses = append(toolUses, map[string]any{
-					"type":  "tool_use",
-					"id":    state.ToolUseID,
-					"name":  state.Name,
-					"input": input,
-				})
-				toolNames = append(toolNames, state.Name)
-				stopReason = "tool_use"
-				hasVisibleOutput = true
+				_, _ = toolOutputBuilder.WriteString(strings.TrimSpace(state.Name))
 			}
 		}
+	}
+	for _, toolUseID := range toolOrder {
+		state := toolBuffers[toolUseID]
+		toolUse, ok := buildKiroToolUseBlock(state)
+		if !ok {
+			continue
+		}
+		toolUses = append(toolUses, toolUse)
+		if name := strings.TrimSpace(state.Name); name != "" {
+			toolNames = append(toolNames, name)
+		}
+		hasVisibleOutput = true
+	}
+	if len(toolUses) > 0 && stopReason == "end_turn" {
+		stopReason = "tool_use"
 	}
 	content := make([]map[string]any, 0, 2+len(toolUses))
 	if strings.TrimSpace(thinkingOverride) != "" {
@@ -812,6 +825,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	stopReason := "end_turn"
 	framesSeen := 0
 	completedToolUses := 0
+	toolOrder := make([]string, 0)
 	toolNames := make([]string, 0)
 	var lastContextUsagePercentage *float64
 	simulatedThinking := strings.TrimSpace(thinkingOverride)
@@ -1032,6 +1046,9 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					if usagePercent, ok := numericField(frame.Payload, "contextUsagePercentage"); ok {
 						lastContextUsagePercentage = &usagePercent
 						setKiroContextUsagePercentage(c, usagePercent)
+						if reason := kiroStopReasonFromContextUsage(usagePercent); reason != "" {
+							stopReason = reason
+						}
 					}
 				case "assistantResponseEvent":
 					content := rawStringField(frame.Payload, "content")
@@ -1053,6 +1070,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				case "toolUseEvent":
 					toolUseID := controlStringField(frame.Payload, "toolUseId")
 					state := ensureKiroToolState(toolStates, toolUseID, controlStringField(frame.Payload, "name"))
+					toolOrder = appendKiroToolStateOrder(toolOrder, state)
 					if !streamStarted {
 						if err := startStream(inputTokens); err != nil {
 							return nil, err
@@ -1112,7 +1130,9 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						}
 					}
 					if booleanField(frame.Payload, "stop") {
-						stopReason = "tool_use"
+						if stopReason == "end_turn" {
+							stopReason = "tool_use"
+						}
 						state.Stopped = true
 						completedToolUses++
 						toolNames = append(toolNames, state.Name)
@@ -1178,7 +1198,11 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		}
 		nativeThinkingBuffer = ""
 	}
-	if !streamStarted || (textOutputBuilder.Len() == 0 && nativeThinkingBuilder.Len() == 0 && simulatedThinking == "" && completedToolUses == 0) {
+	hasVisibleToolOutput := completedToolUses > 0 || kiroHasVisibleToolStates(toolStates, toolOrder)
+	if hasVisibleToolOutput && stopReason == "end_turn" {
+		stopReason = "tool_use"
+	}
+	if !streamStarted || (textOutputBuilder.Len() == 0 && nativeThinkingBuilder.Len() == 0 && simulatedThinking == "" && !hasVisibleToolOutput) {
 		fallbackThinking := resolveKiroFallbackThinkingOverride(parsed, converted, runtimeSettings, simulatedThinking)
 		if fallbackThinking != "" {
 			simulatedThinking = fallbackThinking
@@ -1189,7 +1213,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			}
 		}
 	}
-	if !streamStarted || (textOutputBuilder.Len() == 0 && nativeThinkingBuilder.Len() == 0 && simulatedThinking == "" && completedToolUses == 0) {
+	if !streamStarted || (textOutputBuilder.Len() == 0 && nativeThinkingBuilder.Len() == 0 && simulatedThinking == "" && !hasVisibleToolOutput) {
 		emptyErr := errors.New("kiro response contained no assistant output")
 		if streamStarted {
 			if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
@@ -1203,6 +1227,9 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	}
 
 	if err := closeTextBlock(); err != nil {
+		return nil, err
+	}
+	if err := closeOpenKiroBlocks(writer, false, 0, false, 0, toolStates); err != nil {
 		return nil, err
 	}
 
@@ -1565,6 +1592,63 @@ func ensureKiroToolState(states map[string]*kiroToolState, toolUseID, name strin
 	state := &kiroToolState{ToolUseID: toolUseID, Name: name}
 	states[toolUseID] = state
 	return state
+}
+
+func appendKiroToolStateOrder(order []string, state *kiroToolState) []string {
+	if state == nil || strings.TrimSpace(state.ToolUseID) == "" {
+		return order
+	}
+	for _, existing := range order {
+		if existing == state.ToolUseID {
+			return order
+		}
+	}
+	return append(order, state.ToolUseID)
+}
+
+func kiroToolStateHasVisibleOutput(state *kiroToolState) bool {
+	if state == nil {
+		return false
+	}
+	return state.Started || strings.TrimSpace(state.Name) != "" || strings.TrimSpace(state.InputBuilder.String()) != ""
+}
+
+func buildKiroToolUseBlock(state *kiroToolState) (map[string]any, bool) {
+	if !kiroToolStateHasVisibleOutput(state) {
+		return nil, false
+	}
+
+	input := any(map[string]any{})
+	raw := strings.TrimSpace(state.InputBuilder.String())
+	if raw != "" {
+		var parsed any
+		if err := json.Unmarshal([]byte(raw), &parsed); err == nil && parsed != nil {
+			input = parsed
+		}
+	}
+
+	return map[string]any{
+		"type":  "tool_use",
+		"id":    state.ToolUseID,
+		"name":  strings.TrimSpace(state.Name),
+		"input": input,
+	}, true
+}
+
+func kiroHasVisibleToolStates(states map[string]*kiroToolState, order []string) bool {
+	for _, toolUseID := range order {
+		if kiroToolStateHasVisibleOutput(states[toolUseID]) {
+			return true
+		}
+	}
+	return false
+}
+
+func kiroStopReasonFromContextUsage(usagePercent float64) string {
+	if usagePercent >= 100 {
+		return "model_context_window_exceeded"
+	}
+	return ""
 }
 
 func parseKiroFrame(buffer []byte) (*kiroFrame, int, bool, error) {

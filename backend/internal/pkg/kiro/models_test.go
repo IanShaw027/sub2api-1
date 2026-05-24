@@ -42,6 +42,8 @@ func TestMapModel_MapsPublishedAliases(t *testing.T) {
 		"claude-opus-4.6":                     "claude-opus-4.6",
 		"claude-opus-4-6-20260205":            "claude-opus-4.6",
 		"claude-opus-4-6-20260205-context-1m": "claude-opus-4.6-1m",
+		"claude-opus-4.7[1m]":                 "claude-opus-4.7-1m",
+		"claude-opus-4-7[1m]":                 "claude-opus-4.7-1m",
 		"claude-opus-4-7":                     "claude-opus-4.7",
 		"claude-haiku-4-5-20251001":           "claude-haiku-4.5",
 	}

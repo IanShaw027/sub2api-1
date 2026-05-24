@@ -384,6 +384,7 @@ func TestMapKiroModel_MatchesClaudeCodeAliasesAgainstConfiguredKiroModels(t *tes
 	require.Equal(t, "claude-sonnet-4.6", mapKiroModel(account, "claude-sonnet-4-6"))
 	require.Equal(t, "claude-sonnet-4.6-1m", mapKiroModel(account, "claude-sonnet-4-6-1m"))
 	require.Equal(t, "claude-opus-4.7-1m", mapKiroModel(account, "claude-opus-4-7-1m"))
+	require.Equal(t, "claude-opus-4.7-1m", mapKiroModel(account, "claude-opus-4.7[1m]"))
 }
 
 func TestResolveKiroRequestedModelForRequest_DefaultSimulationKeepsMappedModel(t *testing.T) {
@@ -1593,6 +1594,91 @@ func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFallsBackToThinking(t *
 	require.NotContains(t, rec.Body.String(), "Kiro upstream returned no assistant output")
 }
 
+func TestKiroGatewayService_ForwardNonStream_IncompleteToolUseDoesNotFailEmptyOutput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "toolUseEvent",
+	}, map[string]any{
+		"toolUseId": "tool-1",
+		"name":      "search",
+		"input":     `{"q":"a"`,
+	})
+
+	result, err := svc.forwardNonStream(
+		context.Background(),
+		c,
+		&Account{ID: 7, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: false},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.6"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"stop_reason":"tool_use"`)
+	require.Contains(t, rec.Body.String(), `"type":"tool_use"`)
+	require.Contains(t, rec.Body.String(), `"id":"tool-1"`)
+	require.Contains(t, rec.Body.String(), `"input":{}`)
+	require.NotContains(t, rec.Body.String(), "Kiro upstream returned no assistant output")
+}
+
+func TestKiroGatewayService_ForwardStream_ContextWindowExceededUsesStopReason(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "contextUsageEvent",
+		}, map[string]any{"contextUsagePercentage": 100}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "done"}),
+	}, nil)
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 8, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.6"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), `"stop_reason":"model_context_window_exceeded"`)
+	require.Contains(t, rec.Body.String(), "event: message_stop")
+	require.NotContains(t, rec.Body.String(), "event: error")
+}
+
 func TestKiroGatewayService_ForwardStream_DoesNotBillContextUsagePercentageAsInputTokens(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1740,6 +1826,49 @@ func TestKiroGatewayService_ForwardStream_ToolOnlyCountsOutputTokens(t *testing.
 	require.NotNil(t, result)
 	require.Greater(t, result.Usage.OutputTokens, 0)
 	require.Contains(t, rec.Body.String(), fmt.Sprintf(`"output_tokens":%d`, result.Usage.OutputTokens))
+}
+
+func TestKiroGatewayService_ForwardStream_IncompleteToolUseEOFStillStopsMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "toolUseEvent",
+	}, map[string]any{
+		"toolUseId": "tool-1",
+		"name":      "search",
+		"input":     `{"q":"a"`,
+	})
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 9, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.5"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), `"id":"tool-1"`)
+	require.Contains(t, rec.Body.String(), `"partial_json":"{\"q\":\"a\""`)
+	require.Contains(t, rec.Body.String(), `"stop_reason":"tool_use"`)
+	require.Contains(t, rec.Body.String(), "event: message_stop")
+	require.NotContains(t, rec.Body.String(), "event: error")
+	require.Greater(t, result.Usage.OutputTokens, 0)
 }
 
 func TestKiroGatewayService_ForwardStream_TextToolTextClosesBlocksInOrder(t *testing.T) {

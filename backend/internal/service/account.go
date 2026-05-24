@@ -8,6 +8,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,6 +68,8 @@ type Account struct {
 	modelMappingCacheRawSig         uint64
 	modelMappingCacheWhitelistSig   uint64
 }
+
+var kiroClaudeModelPattern = regexp.MustCompile(`^claude-(haiku|sonnet|opus)-4[.-]([567])(?:-\d{8})?$`)
 
 type TempUnschedulableRule struct {
 	ErrorCode       int      `json:"error_code"`
@@ -563,6 +566,9 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any, hasModelMapping
 			return domain.DefaultAntigravityModelMapping
 		}
 		if !hasModelMapping {
+			if a.Platform == PlatformKiro {
+				return normalizeKiroModelWhitelistMapping(a.Credentials["model_whitelist"])
+			}
 			return legacyModelWhitelistMapping(a.Credentials["model_whitelist"])
 		}
 		return nil
@@ -575,11 +581,13 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any, hasModelMapping
 		}
 	}
 	if a.Platform == PlatformKiro {
-		for k, v := range legacyModelWhitelistMapping(a.Credentials["model_whitelist"]) {
+		result = normalizeKiroModelMapping(result)
+		for k, v := range normalizeKiroModelWhitelistMapping(a.Credentials["model_whitelist"]) {
 			if _, exists := result[k]; !exists {
 				result[k] = v
 			}
 		}
+		return result
 	}
 	if len(result) > 0 {
 		if a.Platform == domain.PlatformAntigravity {
@@ -609,6 +617,118 @@ func legacyModelWhitelistMapping(raw any) map[string]string {
 		mapping[model] = model
 	}
 	return mapping
+}
+
+func normalizeKiroModelMapping(raw map[string]string) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	mapping := make(map[string]string, len(raw))
+	for from, to := range raw {
+		from = normalizeKiroModelName(from)
+		to = normalizeKiroModelName(to)
+		if from == "" || to == "" {
+			continue
+		}
+		mapping[from] = to
+	}
+	if len(mapping) == 0 {
+		return nil
+	}
+	return mapping
+}
+
+func normalizeKiroModelWhitelistMapping(raw any) map[string]string {
+	models := stringsFromRawSlice(raw)
+	if len(models) == 0 {
+		return nil
+	}
+	mapping := make(map[string]string, len(models))
+	for _, model := range models {
+		normalized := normalizeKiroModelName(model)
+		if normalized == "" {
+			continue
+		}
+		mapping[normalized] = normalized
+	}
+	if len(mapping) == 0 {
+		return nil
+	}
+	return mapping
+}
+
+func normalizeKiroModelName(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	if value == "" {
+		return ""
+	}
+	if idx := strings.Index(value, "*"); idx >= 0 {
+		return normalizeKiroModelName(value[:idx]) + "*"
+	}
+
+	value = strings.TrimPrefix(value, "models/")
+	value = strings.TrimSuffix(value, "-v1:0")
+	base := value
+	oneMillionContext := false
+	for {
+		switch {
+		case strings.HasSuffix(base, "[1m]"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "[1m]")
+		case strings.HasSuffix(base, "-1m-context"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "-1m-context")
+		case strings.HasSuffix(base, "-context-1m"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "-context-1m")
+		case strings.HasSuffix(base, "-1m"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "-1m")
+		default:
+			goto normalizeKiroModelNameDone
+		}
+	}
+
+normalizeKiroModelNameDone:
+	directAliases := map[string]string{
+		"claude-sonnet-4":            "claude-sonnet-4.6",
+		"claude-sonnet-4-5":          "claude-sonnet-4.5",
+		"claude-sonnet-4.5":          "claude-sonnet-4.5",
+		"claude-sonnet-4-5-20250929": "claude-sonnet-4.5",
+		"claude-sonnet-4-6":          "claude-sonnet-4.6",
+		"claude-sonnet-4.6":          "claude-sonnet-4.6",
+		"claude-opus-4":              "claude-opus-4.6",
+		"claude-opus-4-5":            "claude-opus-4.5",
+		"claude-opus-4.5":            "claude-opus-4.5",
+		"claude-opus-4-5-20251101":   "claude-opus-4.5",
+		"claude-opus-4-6":            "claude-opus-4.6",
+		"claude-opus-4.6":            "claude-opus-4.6",
+		"claude-opus-4-7":            "claude-opus-4.7",
+		"claude-opus-4.7":            "claude-opus-4.7",
+		"claude-haiku-4":             "claude-haiku-4.5",
+		"claude-haiku-4-5":           "claude-haiku-4.5",
+		"claude-haiku-4.5":           "claude-haiku-4.5",
+		"claude-haiku-4-5-20251001":  "claude-haiku-4.5",
+	}
+	if mapped, ok := directAliases[base]; ok {
+		if oneMillionContext {
+			return mapped + "-1m"
+		}
+		return mapped
+	}
+
+	if matches := kiroClaudeModelPattern.FindStringSubmatch(base); len(matches) == 3 {
+		mapped := "claude-" + matches[1] + "-4." + matches[2]
+		if oneMillionContext {
+			mapped += "-1m"
+		}
+		return mapped
+	}
+
+	if oneMillionContext {
+		return base + "-1m"
+	}
+	return base
 }
 
 func stringsFromRawSlice(raw any) []string {
@@ -706,6 +826,9 @@ func normalizeRequestedModelForLookup(platform, requestedModel string) string {
 	trimmed := strings.TrimSpace(requestedModel)
 	if trimmed == "" {
 		return ""
+	}
+	if platform == PlatformKiro {
+		return normalizeKiroModelName(trimmed)
 	}
 	if platform != PlatformGemini && platform != PlatformAntigravity {
 		return trimmed

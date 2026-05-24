@@ -179,6 +179,9 @@ func stripKiroVariantSuffixes(model string) (base string, oneMillionContext bool
 	base = model
 	for {
 		switch {
+		case strings.HasSuffix(base, "[1m]"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "[1m]")
 		case strings.HasSuffix(base, "-1m-context"):
 			oneMillionContext = true
 			base = strings.TrimSuffix(base, "-1m-context")
