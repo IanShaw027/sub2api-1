@@ -9,16 +9,22 @@ import (
 
 const expiryCheckTimeout = 30 * time.Second
 
+type paymentOrderExpiryWorker interface {
+	ReconcilePendingWxpayOrders(context.Context) (int, error)
+	ExpireTimedOutOrders(context.Context) (int, error)
+}
+
 // PaymentOrderExpiryService periodically expires timed-out payment orders.
 type PaymentOrderExpiryService struct {
-	paymentSvc *PaymentService
+	paymentSvc paymentOrderExpiryWorker
 	interval   time.Duration
 	stopCh     chan struct{}
+	startOnce  sync.Once
 	stopOnce   sync.Once
 	wg         sync.WaitGroup
 }
 
-func NewPaymentOrderExpiryService(paymentSvc *PaymentService, interval time.Duration) *PaymentOrderExpiryService {
+func NewPaymentOrderExpiryService(paymentSvc paymentOrderExpiryWorker, interval time.Duration) *PaymentOrderExpiryService {
 	return &PaymentOrderExpiryService{
 		paymentSvc: paymentSvc,
 		interval:   interval,
@@ -30,22 +36,24 @@ func (s *PaymentOrderExpiryService) Start() {
 	if s == nil || s.paymentSvc == nil || s.interval <= 0 {
 		return
 	}
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		ticker := time.NewTicker(s.interval)
-		defer ticker.Stop()
+	s.startOnce.Do(func() {
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			ticker := time.NewTicker(s.interval)
+			defer ticker.Stop()
 
-		s.runOnce()
-		for {
-			select {
-			case <-ticker.C:
-				s.runOnce()
-			case <-s.stopCh:
-				return
+			s.runOnce()
+			for {
+				select {
+				case <-ticker.C:
+					s.runOnce()
+				case <-s.stopCh:
+					return
+				}
 			}
-		}
-	}()
+		}()
+	})
 }
 
 func (s *PaymentOrderExpiryService) Stop() {
