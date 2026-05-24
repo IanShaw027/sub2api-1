@@ -53,6 +53,12 @@ function abortFetch() {
   fetchController = null
 }
 
+function resetData() {
+  loading.value = false
+  items.value = []
+  total.value = 0
+}
+
 const rangeLabel = computed(() => {
   const minutes = parseTimeRangeMinutes(props.timeRange)
   if (minutes >= 60) return t('admin.ops.requestDetails.rangeHours', { n: Math.round(minutes / 60) })
@@ -120,7 +126,7 @@ watch(
     } else {
       abortFetch()
       fetchSeq += 1
-      loading.value = false
+      resetData()
     }
   },
   { immediate: true }
@@ -170,6 +176,7 @@ function openErrorDetail(errorId: number | null | undefined) {
 onUnmounted(() => {
   abortFetch()
   fetchSeq += 1
+  resetData()
 })
 
 const kindBadgeClass = (kind: string) => {

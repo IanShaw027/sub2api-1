@@ -334,6 +334,22 @@ function abortCorrelatedFetch() {
   correlatedFetchController = null
 }
 
+function resetDetailState() {
+  loading.value = false
+  detail.value = null
+  correlatedUpstreamLoading.value = false
+  correlatedUpstream.value = []
+  expandedUpstreamDetailIds.value = new Set()
+}
+
+function resetAndAbortFetches() {
+  abortDetailFetch()
+  abortCorrelatedFetch()
+  detailFetchSeq += 1
+  correlatedFetchSeq += 1
+  resetDetailState()
+}
+
 function getUpstreamResponsePreview(ev: OpsErrorDetail): string {
   const upstreamPayload = resolveUpstreamPayload(ev)
   if (upstreamPayload) return upstreamPayload
@@ -412,39 +428,29 @@ async function fetchDetail(id: number) {
 }
 
 watch(
-  () => [props.show, props.errorId] as const,
-  ([show, id]) => {
-    if (!show) {
-      abortDetailFetch()
-      abortCorrelatedFetch()
-      detailFetchSeq += 1
-      correlatedFetchSeq += 1
-      loading.value = false
-      correlatedUpstreamLoading.value = false
-      detail.value = null
-      correlatedUpstream.value = []
+  () => [props.show, props.errorId, props.errorType] as const,
+  ([show, id, errorType]) => {
+    if (!show || typeof id !== 'number' || id <= 0) {
+      resetAndAbortFetches()
       return
     }
-    if (typeof id === 'number' && id > 0) {
-      expandedUpstreamDetailIds.value = new Set()
-      fetchDetail(id)
-      if (props.errorType === 'request') {
-        fetchCorrelatedUpstreamErrors(id)
-      } else {
-        correlatedUpstream.value = []
-      }
+    detail.value = null
+    correlatedUpstream.value = []
+    expandedUpstreamDetailIds.value = new Set()
+    fetchDetail(id)
+    if (errorType === 'request') {
+      fetchCorrelatedUpstreamErrors(id)
+    } else {
+      abortCorrelatedFetch()
+      correlatedFetchSeq += 1
+      correlatedUpstreamLoading.value = false
     }
   },
   { immediate: true }
 )
 
 onUnmounted(() => {
-  abortDetailFetch()
-  abortCorrelatedFetch()
-  detailFetchSeq += 1
-  correlatedFetchSeq += 1
-  loading.value = false
-  correlatedUpstreamLoading.value = false
+  resetAndAbortFetches()
 })
 
 const statusClass = computed(() => {

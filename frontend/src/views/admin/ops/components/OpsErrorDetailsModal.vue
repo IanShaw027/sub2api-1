@@ -105,6 +105,12 @@ function abortFetch() {
   fetchController = null
 }
 
+function resetData() {
+  loading.value = false
+  rows.value = []
+  total.value = 0
+}
+
 async function fetchErrorLogs() {
   if (!props.show) return
 
@@ -181,7 +187,7 @@ watch(
     if (!open) {
       abortFetch()
       fetchSeq += 1
-      loading.value = false
+      resetData()
       return
     }
     page.value = 1
@@ -234,6 +240,7 @@ onUnmounted(() => {
   if (searchTimeout) window.clearTimeout(searchTimeout)
   abortFetch()
   fetchSeq += 1
+  resetData()
 })
 </script>
 

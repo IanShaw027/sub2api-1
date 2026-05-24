@@ -1057,6 +1057,22 @@ const isAbortError = (error: unknown) => {
   return maybeError.name === 'AbortError' || maybeError.code === 'ERR_CANCELED'
 }
 
+const clearProxyLatencyDetails = (proxy: Proxy) => {
+  proxy.latency_ms = undefined
+  proxy.ip_address = undefined
+  proxy.country = undefined
+  proxy.country_code = undefined
+  proxy.region = undefined
+  proxy.city = undefined
+}
+
+const normalizeProxyRuntimeFields = (proxy: Proxy): Proxy => {
+  if (proxy.latency_status !== 'failed') return proxy
+  const normalized = { ...proxy }
+  clearProxyLatencyDetails(normalized)
+  return normalized
+}
+
 const toggleSelectRow = (id: number, event: Event) => {
   const target = event.target as HTMLInputElement
   if (target.checked) {
@@ -1097,7 +1113,7 @@ const loadProxies = async () => {
     if (currentAbortController.signal.aborted || abortController !== currentAbortController) {
       return
     }
-    proxies.value = response.items
+    proxies.value = response.items.map(normalizeProxyRuntimeFields)
     pagination.total = response.total
     pagination.pages = response.pages
   } catch (error) {
@@ -1376,12 +1392,7 @@ const applyLatencyResult = (
     target.city = result.city
   } else {
     target.latency_status = 'failed'
-    target.latency_ms = undefined
-    target.ip_address = undefined
-    target.country = undefined
-    target.country_code = undefined
-    target.region = undefined
-    target.city = undefined
+    clearProxyLatencyDetails(target)
   }
   target.latency_message = result.message
 }
@@ -1412,13 +1423,8 @@ const applyQualityFailure = (proxyId: number, message: string) => {
   target.quality_summary = message
   target.quality_checked = Math.floor(Date.now() / 1000)
   target.latency_status = 'failed'
-  target.latency_ms = undefined
   target.latency_message = message
-  target.ip_address = undefined
-  target.country = undefined
-  target.country_code = undefined
-  target.region = undefined
-  target.city = undefined
+  clearProxyLatencyDetails(target)
 }
 
 const formatLocation = (proxy: Proxy) => {

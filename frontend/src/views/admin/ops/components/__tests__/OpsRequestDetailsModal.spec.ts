@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import OpsRequestDetailsModal from '../OpsRequestDetailsModal.vue'
@@ -52,6 +52,10 @@ function deferred<T>() {
 }
 
 describe('OpsRequestDetailsModal request races', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('keeps the latest request details response when filters change quickly', async () => {
     const first = deferred<any>()
     const second = deferred<any>()
@@ -90,5 +94,36 @@ describe('OpsRequestDetailsModal request races', () => {
 
     expect(wrapper.text()).toContain('new-id')
     expect(wrapper.text()).not.toContain('old-id')
+  })
+
+  it('clears loaded request details when the modal closes', async () => {
+    listRequestDetails.mockResolvedValueOnce({
+      items: [{ kind: 'success', created_at: '2026-05-24T00:00:00Z', request_id: 'loaded-id', platform: 'openai' }],
+      total: 1,
+    })
+
+    const wrapper = mount(OpsRequestDetailsModal, {
+      props: {
+        modelValue: true,
+        timeRange: '1h',
+        preset: { title: 'Requests', kind: 'all', sort: 'created_at_desc' },
+      },
+      global: {
+        stubs: {
+          BaseDialog: { props: ['show', 'title'], template: '<div v-if="show"><slot /></div>' },
+          Pagination: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('loaded-id')
+
+    await wrapper.setProps({ modelValue: false })
+    await flushPromises()
+
+    expect((wrapper.vm as any).items).toEqual([])
+    expect((wrapper.vm as any).total).toBe(0)
+    expect((wrapper.vm as any).loading).toBe(false)
   })
 })

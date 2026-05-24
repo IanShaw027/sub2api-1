@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import OpsErrorDetailModal from '../OpsErrorDetailModal.vue'
@@ -46,6 +46,10 @@ function deferred<T>() {
 }
 
 describe('OpsErrorDetailModal request races', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('keeps the latest detail response when the selected error changes', async () => {
     const first = deferred<any>()
     const second = deferred<any>()
@@ -124,5 +128,56 @@ describe('OpsErrorDetailModal request races', () => {
 
     expect(wrapper.text()).toContain('new-request')
     expect(wrapper.text()).not.toContain('old-request')
+  })
+
+  it('clears loaded detail when the selected error is reset while open', async () => {
+    getRequestErrorDetail.mockResolvedValueOnce({
+      id: 1,
+      created_at: '2026-05-24T00:00:00Z',
+      request_id: 'loaded-request',
+      status_code: 500,
+      error_body: '{}',
+      request_type: 1,
+      phase: 'request',
+      type: 'gateway',
+      severity: 'error',
+      error_owner: 'client',
+      error_source: 'gateway',
+      platform: 'openai',
+      model: 'gpt-4',
+      resolved: false,
+      client_request_id: 'loaded-request',
+      message: 'loaded message',
+    })
+    listRequestErrorUpstreamErrors.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 100,
+      pages: 0,
+    })
+
+    const wrapper = mount(OpsErrorDetailModal, {
+      props: {
+        show: true,
+        errorId: 1,
+        errorType: 'request',
+      },
+      global: {
+        stubs: {
+          BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /></div>' },
+          Icon: { template: '<span />' },
+        },
+      },
+    })
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('loaded-request')
+
+    await wrapper.setProps({ errorId: null })
+    await flushPromises()
+
+    expect((wrapper.vm as any).detail).toBeNull()
+    expect(wrapper.text()).not.toContain('loaded-request')
   })
 })

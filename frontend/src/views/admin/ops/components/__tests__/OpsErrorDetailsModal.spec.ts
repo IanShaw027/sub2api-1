@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import OpsErrorDetailsModal from '../OpsErrorDetailsModal.vue'
@@ -38,6 +38,10 @@ function deferred<T>() {
 }
 
 describe('OpsErrorDetailsModal request races', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('ignores stale error list responses after scope changes', async () => {
     const first = deferred<any>()
     const second = deferred<any>()
@@ -75,5 +79,42 @@ describe('OpsErrorDetailsModal request races', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-test="rows"]').text()).toBe('new-error')
+  })
+
+  it('clears loaded error rows when the modal closes', async () => {
+    listRequestErrors.mockResolvedValueOnce({
+      items: [{ id: 1, request_id: 'loaded-error' }],
+      total: 1,
+    })
+
+    const wrapper = mount(OpsErrorDetailsModal, {
+      props: {
+        show: true,
+        timeRange: '1h',
+        platform: '',
+        groupId: null,
+        errorType: 'request',
+      },
+      global: {
+        stubs: {
+          BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /></div>' },
+          Select: true,
+          OpsErrorLogTable: {
+            props: ['rows'],
+            template: '<div data-test="rows">{{ rows.map((row) => row.request_id).join(",") }}</div>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+    expect(wrapper.get('[data-test="rows"]').text()).toBe('loaded-error')
+
+    await wrapper.setProps({ show: false })
+    await flushPromises()
+
+    expect((wrapper.vm as any).rows).toEqual([])
+    expect((wrapper.vm as any).total).toBe(0)
+    expect((wrapper.vm as any).loading).toBe(false)
   })
 })
