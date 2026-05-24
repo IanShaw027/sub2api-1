@@ -30,6 +30,19 @@ func TestLoadForBootstrapAllowsMissingJWTSecret(t *testing.T) {
 	}
 }
 
+func TestLoadRequiresJWTSecretAtRuntime(t *testing.T) {
+	viper.Reset()
+	t.Setenv("JWT_SECRET", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() should reject missing jwt.secret during runtime")
+	}
+	if !strings.Contains(err.Error(), "jwt.secret is required") {
+		t.Fatalf("Load() error = %v, want jwt.secret is required", err)
+	}
+}
+
 func TestNormalizeRunMode(t *testing.T) {
 	tests := []struct {
 		input    string

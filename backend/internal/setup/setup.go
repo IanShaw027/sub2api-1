@@ -279,14 +279,8 @@ func Install(cfg *SetupConfig) error {
 		return fmt.Errorf("system is already installed, re-installation is not allowed")
 	}
 
-	// Generate JWT secret if not provided
-	if cfg.JWT.Secret == "" {
-		secret, err := generateSecret(32)
-		if err != nil {
-			return fmt.Errorf("failed to generate jwt secret: %w", err)
-		}
-		cfg.JWT.Secret = secret
-		logger.LegacyPrintf("setup", "%s", "Warning: JWT secret auto-generated. Consider setting a fixed secret for production.")
+	if err := ensureJWTSecretForBootstrap(cfg); err != nil {
+		return err
 	}
 
 	// Test connections
@@ -325,6 +319,24 @@ func Install(cfg *SetupConfig) error {
 func createInstallLock() error {
 	content := fmt.Sprintf("installed_at=%s\n", time.Now().UTC().Format(time.RFC3339))
 	return os.WriteFile(GetInstallLockPath(), []byte(content), 0400) // Read-only for owner
+}
+
+func ensureJWTSecretForBootstrap(cfg *SetupConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("setup config is nil")
+	}
+	cfg.JWT.Secret = strings.TrimSpace(cfg.JWT.Secret)
+	if cfg.JWT.Secret != "" {
+		return nil
+	}
+
+	secret, err := generateSecret(32)
+	if err != nil {
+		return fmt.Errorf("failed to generate jwt secret: %w", err)
+	}
+	cfg.JWT.Secret = secret
+	logger.LegacyPrintf("setup", "%s", "Warning: JWT secret auto-generated. Consider setting a fixed secret for production.")
+	return nil
 }
 
 func initializeDatabase(cfg *SetupConfig) error {
@@ -576,14 +588,8 @@ func AutoSetupFromEnv() error {
 		Timezone: tz,
 	}
 
-	// Generate JWT secret if not provided
-	if cfg.JWT.Secret == "" {
-		secret, err := generateSecret(32)
-		if err != nil {
-			return fmt.Errorf("failed to generate jwt secret: %w", err)
-		}
-		cfg.JWT.Secret = secret
-		logger.LegacyPrintf("setup", "%s", "Warning: JWT secret auto-generated. Consider setting a fixed secret for production.")
+	if err := ensureJWTSecretForBootstrap(cfg); err != nil {
+		return err
 	}
 
 	// Test database connection

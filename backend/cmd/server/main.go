@@ -72,8 +72,14 @@ func init() {
 // In non-release mode, Debug level logs are enabled.
 func main() {
 	logger.InitBootstrap()
-	defer logger.Sync()
+	exitCode := run()
+	logger.Sync()
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
+}
 
+func run() int {
 	// Parse command line flags
 	setupMode := flag.Bool("setup", false, "Run setup wizard in CLI mode")
 	showVersion := flag.Bool("version", false, "Show version information")
@@ -81,15 +87,16 @@ func main() {
 
 	if *showVersion {
 		fmt.Println(buildVersionLine())
-		return
+		return 0
 	}
 
 	// CLI setup mode
 	if *setupMode {
 		if err := setup.RunCLI(); err != nil {
-			log.Fatalf("Setup failed: %v", err)
+			log.Printf("Setup failed: %v", err)
+			return 1
 		}
-		return
+		return 0
 	}
 
 	// Check if setup is needed
@@ -98,21 +105,29 @@ func main() {
 		if setup.AutoSetupEnabled() {
 			log.Println("Auto setup mode enabled...")
 			if err := setup.AutoSetupFromEnv(); err != nil {
-				log.Fatalf("Auto setup failed: %v", err)
+				log.Printf("Auto setup failed: %v", err)
+				return 1
 			}
 			// Continue to main server after auto-setup
 		} else {
 			log.Println("First run detected, starting setup wizard...")
-			runSetupServer()
-			return
+			if err := runSetupServer(); err != nil {
+				log.Printf("Setup server failed: %v", err)
+				return 1
+			}
+			return 0
 		}
 	}
 
 	// Normal server mode
-	runMainServer()
+	if err := runMainServer(); err != nil {
+		log.Printf("%v", err)
+		return 1
+	}
+	return 0
 }
 
-func runSetupServer() {
+func runSetupServer() error {
 	r := gin.New()
 	r.Use(middleware.Recovery())
 	r.Use(middleware.CORS(config.CORSConfig{}))
@@ -145,17 +160,18 @@ func runSetupServer() {
 	}
 
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("Failed to start setup server: %v", err)
+		return fmt.Errorf("failed to start setup server: %w", err)
 	}
+	return nil
 }
 
-func runMainServer() {
-	cfg, err := config.LoadForBootstrap()
+func runMainServer() error {
+	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 	if err := logger.Init(logger.OptionsFromConfig(cfg.Log)); err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
+		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
 	if cfg.RunMode == config.RunModeSimple {
 		log.Println("⚠️  WARNING: Running in SIMPLE mode - billing and quota checks are DISABLED")
@@ -168,13 +184,17 @@ func runMainServer() {
 
 	app, err := initializeApplication(buildInfo)
 	if err != nil {
-		log.Fatalf("Failed to initialize application: %v", err)
+		return fmt.Errorf("failed to initialize application: %w", err)
 	}
+	return serveApplication(app, nil)
+}
+
+func serveApplication(app *Application, quit <-chan os.Signal) error {
 	defer app.Cleanup()
 
 	listener, err := net.Listen("tcp", app.Server.Addr)
 	if err != nil {
-		log.Fatalf("Failed to bind server on %s: %v", app.Server.Addr, err)
+		return fmt.Errorf("failed to bind server on %s: %w", app.Server.Addr, err)
 	}
 
 	serverErrCh := make(chan error, 1)
@@ -187,13 +207,16 @@ func runMainServer() {
 	log.Printf("Server started on %s", listener.Addr().String())
 
 	// 等待中断信号
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(quit)
+	if quit == nil {
+		signalQuit := make(chan os.Signal, 1)
+		signal.Notify(signalQuit, syscall.SIGINT, syscall.SIGTERM)
+		defer signal.Stop(signalQuit)
+		quit = signalQuit
+	}
 
 	select {
 	case err := <-serverErrCh:
-		log.Fatalf("Server stopped unexpectedly: %v", err)
+		return fmt.Errorf("server stopped unexpectedly: %w", err)
 	case <-quit:
 	}
 
@@ -203,8 +226,9 @@ func runMainServer() {
 	defer cancel()
 
 	if err := app.Server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		return fmt.Errorf("server forced to shutdown: %w", err)
 	}
 
 	log.Println("Server exited")
+	return nil
 }

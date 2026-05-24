@@ -8,7 +8,8 @@
 
 ARG NODE_IMAGE=node:24-alpine
 ARG GOLANG_IMAGE=golang:1.26.3-alpine
-ARG ALPINE_IMAGE=alpine:3.20
+ARG ALPINE_IMAGE=alpine:3.21
+ARG POSTGRES_IMAGE=postgres:18-alpine
 ARG GOPROXY=https://goproxy.cn,direct
 ARG GOSUMDB=sum.golang.google.cn
 
@@ -19,8 +20,8 @@ FROM ${NODE_IMAGE} AS frontend-builder
 
 WORKDIR /app/frontend
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install pnpm (pinned to v9 to match CI and keep builds reproducible)
+RUN corepack enable && corepack prepare pnpm@9 --activate
 
 # Install dependencies first (better caching)
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
@@ -39,6 +40,9 @@ FROM ${GOLANG_IMAGE} AS backend-builder
 ARG VERSION=docker
 ARG COMMIT=docker
 ARG DATE
+ARG DIRTY=unknown
+ARG SOURCE_HASH=unknown
+ARG FRONTEND_DIST_HASH=unknown
 ARG GOPROXY
 ARG GOSUMDB
 
@@ -61,14 +65,37 @@ COPY backend/ ./
 COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
 
 # Build the binary (BuildType=release for CI builds, embed frontend)
-RUN CGO_ENABLED=0 GOOS=linux go build \
+# Version precedence: build arg VERSION > cmd/server/VERSION
+RUN VERSION_VALUE="${VERSION}" && \
+    if [ -z "${VERSION_VALUE}" ]; then VERSION_VALUE="$(tr -d '\r\n' < ./cmd/server/VERSION)"; fi && \
+    DATE_VALUE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
+    CGO_ENABLED=0 GOOS=linux go build \
     -tags embed \
-    -ldflags="-s -w -X main.Commit=${COMMIT} -X main.Date=${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)} -X main.BuildType=release" \
+    -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release -X main.Dirty=${DIRTY} -X main.SourceHash=${SOURCE_HASH} -X main.FrontendDistHash=${FRONTEND_DIST_HASH}" \
+    -trimpath \
     -o /app/sub2api \
     ./cmd/server
 
 # -----------------------------------------------------------------------------
-# Stage 3: Final Runtime Image
+# Stage 3: PostgreSQL Client (version-matched with docker-compose)
+# -----------------------------------------------------------------------------
+FROM ${POSTGRES_IMAGE} AS pg-client
+
+RUN set -eu; \
+    mkdir -p /pg-runtime-libs; \
+    { ldd /usr/local/bin/pg_dump; ldd /usr/local/bin/psql; } \
+        | awk '/=>/ { print $3 } /^[[:space:]]*\// { print $1 }' \
+        | sort -u \
+        | while IFS= read -r lib; do \
+            case "$lib" in \
+                /lib/ld-musl-*|/lib/libc.musl-*) continue ;; \
+            esac; \
+            cp -L "$lib" /pg-runtime-libs/; \
+        done; \
+    cp -L /usr/local/lib/libpq.so.5* /pg-runtime-libs/
+
+# -----------------------------------------------------------------------------
+# Stage 4: Final Runtime Image
 # -----------------------------------------------------------------------------
 FROM ${ALPINE_IMAGE}
 
@@ -81,9 +108,14 @@ LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
-    curl \
     su-exec \
     && rm -rf /var/cache/apk/*
+
+# Copy pg_dump and psql from the same postgres image used in docker-compose.
+COPY --from=pg-client /usr/local/bin/pg_dump /usr/local/bin/pg_dump
+COPY --from=pg-client /usr/local/bin/psql /usr/local/bin/psql
+COPY --from=pg-client /pg-runtime-libs/ /usr/local/lib/postgresql/
+ENV LD_LIBRARY_PATH=/usr/local/lib/postgresql
 
 # Create non-root user
 RUN addgroup -g 1000 sub2api && \
@@ -92,11 +124,12 @@ RUN addgroup -g 1000 sub2api && \
 # Set working directory
 WORKDIR /app
 
-# Copy binary from builder
-COPY --from=backend-builder /app/sub2api /app/sub2api
+# Copy binary/resources with ownership to avoid extra full-layer chown copy
+COPY --from=backend-builder --chown=sub2api:sub2api /app/sub2api /app/sub2api
+COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
 
 # Create data directory
-RUN mkdir -p /app/data && chown -R sub2api:sub2api /app
+RUN mkdir -p /app/data && chown sub2api:sub2api /app/data
 
 # Copy entrypoint script (fixes volume permissions then drops to sub2api)
 COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh

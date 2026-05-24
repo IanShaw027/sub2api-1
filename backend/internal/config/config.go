@@ -1321,9 +1321,9 @@ func Load() (*Config, error) {
 	return load(false)
 }
 
-// LoadForBootstrap 读取启动阶段配置。
+// LoadForBootstrap 读取安装引导阶段配置。
 //
-// 启动阶段允许 jwt.secret 先留空，后续由数据库初始化流程补齐并再次完整校验。
+// 安装引导阶段允许 jwt.secret 先留空；正常服务运行必须使用 Load() 完整校验。
 func LoadForBootstrap() (*Config, error) {
 	return load(true)
 }

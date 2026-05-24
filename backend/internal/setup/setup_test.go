@@ -87,3 +87,26 @@ func TestWriteConfigFileKeepsDefaultUserConcurrency(t *testing.T) {
 		t.Fatalf("config missing default user concurrency, got:\n%s", string(data))
 	}
 }
+
+func TestEnsureJWTSecretForBootstrap(t *testing.T) {
+	t.Run("generates missing secret", func(t *testing.T) {
+		cfg := &SetupConfig{}
+		if err := ensureJWTSecretForBootstrap(cfg); err != nil {
+			t.Fatalf("ensureJWTSecretForBootstrap() error = %v", err)
+		}
+		if len(cfg.JWT.Secret) != 64 {
+			t.Fatalf("generated secret length = %d, want 64", len(cfg.JWT.Secret))
+		}
+	})
+
+	t.Run("keeps configured secret", func(t *testing.T) {
+		const secret = "configured-secret"
+		cfg := &SetupConfig{JWT: JWTConfig{Secret: secret}}
+		if err := ensureJWTSecretForBootstrap(cfg); err != nil {
+			t.Fatalf("ensureJWTSecretForBootstrap() error = %v", err)
+		}
+		if cfg.JWT.Secret != secret {
+			t.Fatalf("secret = %q, want %q", cfg.JWT.Secret, secret)
+		}
+	})
+}
