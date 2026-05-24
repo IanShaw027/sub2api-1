@@ -3055,7 +3055,25 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	if s.shouldFailoverUpstreamError(statusCode) {
 		return true
 	}
+	if isOpenAIImageGenerationToolUnsupportedError(statusCode, upstreamMsg, upstreamBody) {
+		return true
+	}
 	return isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody)
+}
+
+func isOpenAIImageGenerationToolUnsupportedError(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(upstreamMsg))
+	if msg == "" {
+		msg = strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(upstreamBody)))
+	}
+	if msg == "" {
+		msg = strings.ToLower(strings.TrimSpace(string(upstreamBody)))
+	}
+	return strings.Contains(msg, "tool choice 'image_generation' not found") &&
+		strings.Contains(msg, "'tools' parameter")
 }
 
 func (s *OpenAIGatewayService) handleFailoverSideEffects(ctx context.Context, resp *http.Response, account *Account) {
