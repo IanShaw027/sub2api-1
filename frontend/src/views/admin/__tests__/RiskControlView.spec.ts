@@ -224,4 +224,28 @@ describe('admin RiskControlView', () => {
     }))
     expect(showError).not.toHaveBeenCalled()
   })
+
+  it('keeps the active settings tab readable in dark mode', async () => {
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    const activeTab = findButtonByText(wrapper, 'admin.riskControl.tabs.basic')
+
+    expect(activeTab.classes()).toContain('dark:bg-primary-600')
+    expect(activeTab.classes()).toContain('dark:text-white')
+  })
 })

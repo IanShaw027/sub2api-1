@@ -153,6 +153,32 @@ function buildAccount() {
   } as any
 }
 
+function buildVertexAccount() {
+  return {
+    id: 2,
+    name: 'Vertex SA',
+    notes: '',
+    platform: 'gemini',
+    type: 'service_account',
+    credentials: {
+      service_account_json: '{"type":"service_account","client_email":"sa@example.iam.gserviceaccount.com"}',
+      project_id: 'demo-project',
+      client_email: 'sa@example.iam.gserviceaccount.com',
+      location: 'us-central1',
+      tier_id: 'vertex'
+    },
+    extra: {},
+    proxy_id: null,
+    concurrency: 1,
+    priority: 1,
+    rate_multiplier: 1,
+    status: 'active',
+    group_ids: [],
+    expires_at: null,
+    auto_pause_on_expired: false
+  } as any
+}
+
 function resetCommonMocks() {
   updateAccountMock.mockReset()
   importOpenAIWebProfileMock.mockReset()
@@ -399,6 +425,7 @@ describe('EditAccountModal', () => {
     account.credentials = {
       base_url: 'https://api.openai.com'
     }
+    account.credentials_status = { has_api_key: true }
 
     updateAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset()
@@ -420,6 +447,56 @@ describe('EditAccountModal', () => {
       base_url: 'https://api.openai.com'
     })
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('api_key')
+  })
+
+  it('allows API key accounts to save against legacy credentials without credentials_status', async () => {
+    const account = buildAccount()
+
+    resetCommonMocks()
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.api_key).toBe('sk-test')
+  })
+
+  it('allows Vertex service accounts to save when service account JSON is redacted', async () => {
+    const account = buildVertexAccount()
+    account.credentials = {
+      project_id: 'demo-project',
+      client_email: 'sa@example.iam.gserviceaccount.com',
+      location: 'us-central1',
+      tier_id: 'vertex'
+    }
+    account.credentials_status = { has_service_account_json: true }
+
+    resetCommonMocks()
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.project_id).toBe('demo-project')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('service_account_json')
+  })
+
+  it('allows Vertex service accounts to save against legacy credentials without credentials_status', async () => {
+    const account = buildVertexAccount()
+
+    resetCommonMocks()
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.service_account_json).toContain('service_account')
   })
 
   it('updates OpenAI TLS fingerprint settings in extra', async () => {

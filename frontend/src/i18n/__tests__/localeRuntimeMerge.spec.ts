@@ -116,6 +116,10 @@ describe('i18n runtime locale merge', () => {
     expect(messages.admin.ops.settings.validation.retentionDaysRange).toBe(
       '保留天数必须在 0-365 天之间（0 = 每次清理都清空历史）'
     )
+    expect(messages.admin.riskControl.apiKeysModeAppend).toBe('增量添加')
+    expect(messages.admin.riskControl.apiKeysPlaceholderReplace).toContain('覆盖保存')
+    expect(messages.admin.riskControl.apiKeyPendingDelete).toBe('待删除')
+    expect(messages.admin.riskControl.modelFilterInclude).toBe('仅指定模型')
   })
 
   it('keeps runtime english overrides aligned with locale json semantics', async () => {
@@ -186,6 +190,10 @@ describe('i18n runtime locale merge', () => {
     expect(messages.admin.ops.settings.validation.retentionDaysRange).toBe(
       'Retention days must be between 0 and 365 (0 = wipe all on every cleanup)'
     )
+    expect(messages.admin.riskControl.apiKeysModeAppend).toBe('Add')
+    expect(messages.admin.riskControl.apiKeysPlaceholderReplace).toContain('Replace API Keys')
+    expect(messages.admin.riskControl.apiKeyPendingDelete).toBe('Pending delete')
+    expect(messages.admin.riskControl.modelFilterInclude).toBe('Only selected')
   })
 
   it('loads english fallback messages before the current locale during init', async () => {

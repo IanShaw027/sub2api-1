@@ -2489,6 +2489,10 @@ interface Props {
   groups: AdminGroup[]
 }
 
+type AccountWithCredentialsStatus = Account & {
+  credentials_status?: Record<string, boolean>
+}
+
 const props = defineProps<Props>()
 const emit = defineEmits<{
   close: []
@@ -3717,6 +3721,19 @@ const stableSerializeCredentialValue = (value: unknown): string => {
 const credentialsValueChanged = (current: unknown, next: unknown) =>
   stableSerializeCredentialValue(current) !== stableSerializeCredentialValue(next)
 
+function hasStoredCredential(
+  account: Account,
+  currentCredentials: Record<string, unknown>,
+  statusKeys: string[],
+  legacyKeys: string[]
+): boolean {
+  const credentialsStatus = (account as AccountWithCredentialsStatus).credentials_status
+  if (credentialsStatus) {
+    return statusKeys.some((key) => credentialsStatus[key] === true)
+  }
+  return legacyKeys.some((key) => Boolean(currentCredentials[key]))
+}
+
 const applyKiroModelRestrictionPatch = (
   newCredentials: Record<string, unknown>,
   currentCredentials: Record<string, unknown>
@@ -3951,6 +3968,9 @@ const handleSubmit = async () => {
       // edit, omit api_key from the patch so the backend can preserve it.
       if (editApiKey.value.trim()) {
         newCredentials.api_key = editApiKey.value.trim()
+      } else if (!hasStoredCredential(props.account, currentCredentials, ['has_api_key'], ['api_key'])) {
+        appStore.showError(t('admin.accounts.apiKeyIsRequired'))
+        return
       }
 
       // Add model mapping if configured（OpenAI 开启自动透传时保留现有映射，不再编辑）
@@ -4033,7 +4053,13 @@ const handleSubmit = async () => {
         return
       }
 
-      if (!currentCredentials.service_account_json && !currentCredentials.service_account) {
+      const hasExistingServiceAccountJson = hasStoredCredential(
+        props.account,
+        currentCredentials,
+        ['has_service_account_json', 'has_service_account'],
+        ['service_account_json', 'service_account']
+      )
+      if (!hasExistingServiceAccountJson) {
         appStore.showError(t('admin.accounts.vertexSaJsonRequired'))
         return
       }
