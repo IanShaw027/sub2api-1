@@ -1403,6 +1403,24 @@ const applyQualityResult = (proxyId: number, result: ProxyQualityCheckResult) =>
   target.quality_checked = result.checked_at
 }
 
+const applyQualityFailure = (proxyId: number, message: string) => {
+  const target = proxies.value.find((proxy) => proxy.id === proxyId)
+  if (!target) return
+  target.quality_status = 'failed'
+  target.quality_score = undefined
+  target.quality_grade = undefined
+  target.quality_summary = message
+  target.quality_checked = Math.floor(Date.now() / 1000)
+  target.latency_status = 'failed'
+  target.latency_ms = undefined
+  target.latency_message = message
+  target.ip_address = undefined
+  target.country = undefined
+  target.country_code = undefined
+  target.region = undefined
+  target.city = undefined
+}
+
 const formatLocation = (proxy: Proxy) => {
   const parts = [proxy.country, proxy.city].filter(Boolean) as string[]
   return parts.join(' · ')
@@ -1482,6 +1500,11 @@ const handleQualityCheck = async (proxy: Proxy) => {
         country: result.country,
         country_code: result.country_code
       })
+    } else {
+      applyLatencyResult(proxy.id, {
+        success: false,
+        message: baseStep?.message || result.summary || t('admin.proxies.qualityCheckFailed')
+      })
     }
     applyQualityResult(proxy.id, result)
 
@@ -1490,6 +1513,7 @@ const handleQualityCheck = async (proxy: Proxy) => {
     )
   } catch (error: any) {
     const message = error.response?.data?.detail || t('admin.proxies.qualityCheckFailed')
+    applyQualityFailure(proxy.id, message)
     appStore.showError(message)
     console.error('Error checking proxy quality:', error)
   } finally {
@@ -1526,6 +1550,11 @@ const runBatchProxyQualityChecks = async (ids: number[]) => {
               country: result.country,
               country_code: result.country_code
             })
+          } else {
+            applyLatencyResult(current, {
+              success: false,
+              message: baseStep?.message || result.summary || t('admin.proxies.qualityCheckFailed')
+            })
           }
         }
         applyQualityResult(current, result)
@@ -1538,7 +1567,8 @@ const runBatchProxyQualityChecks = async (ids: number[]) => {
         } else {
           healthy++
         }
-      } catch {
+      } catch (error: any) {
+        applyQualityFailure(current, error.response?.data?.detail || t('admin.proxies.qualityCheckFailed'))
         failed++
       } finally {
         stopQualityCheckingProxy(current)

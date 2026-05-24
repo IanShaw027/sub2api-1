@@ -210,7 +210,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -237,6 +237,10 @@ const appStore = useAppStore()
 
 const loading = ref(false)
 const detail = ref<OpsErrorDetail | null>(null)
+let detailFetchSeq = 0
+let detailFetchController: AbortController | null = null
+let correlatedFetchSeq = 0
+let correlatedFetchController: AbortController | null = null
 
 const showUpstreamList = computed(() => props.errorType === 'request')
 
@@ -316,6 +320,20 @@ const correlatedUpstreamErrors = computed<OpsErrorDetail[]>(() => correlatedUpst
 
 const expandedUpstreamDetailIds = ref(new Set<number>())
 
+function isCanceledRequest(err: unknown): boolean {
+  return Boolean(err && typeof err === 'object' && (err as { code?: string }).code === 'ERR_CANCELED')
+}
+
+function abortDetailFetch() {
+  detailFetchController?.abort()
+  detailFetchController = null
+}
+
+function abortCorrelatedFetch() {
+  correlatedFetchController?.abort()
+  correlatedFetchController = null
+}
+
 function getUpstreamResponsePreview(ev: OpsErrorDetail): string {
   const upstreamPayload = resolveUpstreamPayload(ev)
   if (upstreamPayload) return upstreamPayload
@@ -330,19 +348,28 @@ function toggleUpstreamDetail(id: number) {
 }
 
 async function fetchCorrelatedUpstreamErrors(requestErrorId: number) {
+  abortCorrelatedFetch()
+  const currentSeq = ++correlatedFetchSeq
+  const controller = new AbortController()
+  correlatedFetchController = controller
   correlatedUpstreamLoading.value = true
   try {
     const res = await opsAPI.listRequestErrorUpstreamErrors(
       requestErrorId,
       { page: 1, page_size: 100, view: 'all' },
-      { include_detail: true }
+      { include_detail: true, signal: controller.signal }
     )
+    if (currentSeq !== correlatedFetchSeq || controller.signal.aborted) return
     correlatedUpstream.value = res.items || []
   } catch (err) {
+    if (currentSeq !== correlatedFetchSeq || isCanceledRequest(err)) return
     console.error('[OpsErrorDetailModal] Failed to load correlated upstream errors', err)
     correlatedUpstream.value = []
   } finally {
-    correlatedUpstreamLoading.value = false
+    if (currentSeq === correlatedFetchSeq) {
+      correlatedUpstreamLoading.value = false
+      correlatedFetchController = null
+    }
   }
 }
 
@@ -360,16 +387,27 @@ function prettyJSON(raw?: string): string {
 }
 
 async function fetchDetail(id: number) {
+  abortDetailFetch()
+  const currentSeq = ++detailFetchSeq
+  const controller = new AbortController()
+  detailFetchController = controller
   loading.value = true
   try {
     const kind = props.errorType || (detail.value?.phase === 'upstream' ? 'upstream' : 'request')
-    const d = kind === 'upstream' ? await opsAPI.getUpstreamErrorDetail(id) : await opsAPI.getRequestErrorDetail(id)
+    const d = kind === 'upstream'
+      ? await opsAPI.getUpstreamErrorDetail(id, { signal: controller.signal })
+      : await opsAPI.getRequestErrorDetail(id, { signal: controller.signal })
+    if (currentSeq !== detailFetchSeq || controller.signal.aborted) return
     detail.value = d
   } catch (err: any) {
+    if (currentSeq !== detailFetchSeq || isCanceledRequest(err)) return
     detail.value = null
     appStore.showError(err?.message || t('admin.ops.failedToLoadErrorDetail'))
   } finally {
-    loading.value = false
+    if (currentSeq === detailFetchSeq) {
+      loading.value = false
+      detailFetchController = null
+    }
   }
 }
 
@@ -377,7 +415,14 @@ watch(
   () => [props.show, props.errorId] as const,
   ([show, id]) => {
     if (!show) {
+      abortDetailFetch()
+      abortCorrelatedFetch()
+      detailFetchSeq += 1
+      correlatedFetchSeq += 1
+      loading.value = false
+      correlatedUpstreamLoading.value = false
       detail.value = null
+      correlatedUpstream.value = []
       return
     }
     if (typeof id === 'number' && id > 0) {
@@ -392,6 +437,15 @@ watch(
   },
   { immediate: true }
 )
+
+onUnmounted(() => {
+  abortDetailFetch()
+  abortCorrelatedFetch()
+  detailFetchSeq += 1
+  correlatedFetchSeq += 1
+  loading.value = false
+  correlatedUpstreamLoading.value = false
+})
 
 const statusClass = computed(() => {
   const code = detail.value?.status_code ?? 0

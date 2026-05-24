@@ -271,7 +271,7 @@
         </div>
       </template>
 
-      <BaseDialog :show="settingsOpen" :title="t('admin.riskControl.settingsTitle')" width="extra-wide" @close="settingsOpen = false">
+      <BaseDialog :show="settingsOpen" :title="t('admin.riskControl.settingsTitle')" width="extra-wide" @close="closeSettingsDialog">
         <div class="space-y-6">
           <div class="flex gap-2 overflow-x-auto border-b border-gray-100 pb-3 dark:border-dark-700">
             <button
@@ -878,7 +878,7 @@
 
         <template #footer>
           <div class="flex justify-end gap-2">
-            <button type="button" class="btn btn-secondary" @click="settingsOpen = false">{{ t('common.cancel') }}</button>
+            <button type="button" class="btn btn-secondary" @click="closeSettingsDialog">{{ t('common.cancel') }}</button>
             <button type="button" class="btn btn-primary inline-flex items-center gap-2" :disabled="saving" @click="saveConfig">
               <Icon v-if="saving" name="refresh" size="sm" class="animate-spin" />
               <Icon v-else name="check" size="sm" />
@@ -1023,6 +1023,11 @@ const moderationTestImages = ref<string[]>([])
 const moderationTestResult = ref<ContentModerationTestAuditResult | null>(null)
 const inputDetailRow = ref<ContentModerationLog | null>(null)
 let statusTimer: number | null = null
+let lastAppliedConfig: ContentModerationConfig | null = null
+let logsRequestSeq = 0
+let statusRequestSeq = 0
+let loadAllRequestSeq = 0
+let isUnmounted = false
 
 const configForm = reactive({
   enabled: false,
@@ -1413,6 +1418,7 @@ const runtimeBadgeClass = computed(() => {
 })
 
 function applyConfig(config: ContentModerationConfig) {
+  lastAppliedConfig = structuredClone(config)
   configForm.enabled = config.enabled
   configForm.mode = config.mode
   configForm.base_url = config.base_url || 'https://api.openai.com'
@@ -1452,7 +1458,17 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.model_filter_models = modelFilter.models
 }
 
+function resetDraftFromAppliedConfig() {
+  if (lastAppliedConfig) {
+    applyConfig(lastAppliedConfig)
+  }
+  clearModerationTestInput()
+  groupSearch.value = ''
+  flaggedHashInput.value = ''
+}
+
 async function loadAll() {
+  const requestSeq = ++loadAllRequestSeq
   loading.value = true
   try {
     const [config, groupItems, runtimeStatus] = await Promise.all([
@@ -1460,6 +1476,7 @@ async function loadAll() {
       adminAPI.groups.getAll(),
       adminAPI.riskControl.getStatus(),
     ])
+    if (requestSeq !== loadAllRequestSeq || isUnmounted) return
     applyConfig(config)
     groups.value = groupItems
     status.value = runtimeStatus
@@ -1469,27 +1486,35 @@ async function loadAll() {
     }
     await loadLogs()
   } catch (err: unknown) {
+    if (requestSeq !== loadAllRequestSeq || isUnmounted) return
     appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.loadFailed')))
   } finally {
-    loading.value = false
+    if (requestSeq === loadAllRequestSeq && !isUnmounted) {
+      loading.value = false
+    }
   }
 }
 
 async function loadStatus(silent = true) {
+  const requestSeq = ++statusRequestSeq
   statusLoading.value = true
   try {
     const runtimeStatus = await adminAPI.riskControl.getStatus()
+    if (requestSeq !== statusRequestSeq || isUnmounted) return
     status.value = runtimeStatus
-    if (Array.isArray(runtimeStatus.api_key_statuses)) {
+    if (!settingsOpen.value && Array.isArray(runtimeStatus.api_key_statuses)) {
       configForm.api_key_statuses = [...runtimeStatus.api_key_statuses]
       prunePendingDeleteAPIKeyHashes()
     }
   } catch (err: unknown) {
+    if (requestSeq !== statusRequestSeq || isUnmounted) return
     if (!silent) {
       appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.statusFailed')))
     }
   } finally {
-    statusLoading.value = false
+    if (requestSeq === statusRequestSeq && !isUnmounted) {
+      statusLoading.value = false
+    }
   }
 }
 
@@ -1555,6 +1580,7 @@ async function saveConfig() {
 }
 
 async function loadLogs() {
+  const requestSeq = ++logsRequestSeq
   logsLoading.value = true
   try {
     const params = {
@@ -1568,15 +1594,19 @@ async function loadLogs() {
       to: normalizeDateTimeLocal(filters.to),
     }
     const result = await adminAPI.riskControl.listLogs(params)
+    if (requestSeq !== logsRequestSeq || isUnmounted) return
     logs.value = result.items
     pagination.total = result.total
     pagination.page = result.page
     pagination.page_size = result.page_size
     pagination.pages = result.pages
   } catch (err: unknown) {
+    if (requestSeq !== logsRequestSeq || isUnmounted) return
     appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.logsFailed')))
   } finally {
-    logsLoading.value = false
+    if (requestSeq === logsRequestSeq && !isUnmounted) {
+      logsLoading.value = false
+    }
   }
 }
 
@@ -1645,8 +1675,14 @@ async function clearFlaggedHashes() {
 }
 
 function openSettings() {
+  resetDraftFromAppliedConfig()
   activeSettingsTab.value = 'basic'
   settingsOpen.value = true
+}
+
+function closeSettingsDialog() {
+  settingsOpen.value = false
+  resetDraftFromAppliedConfig()
 }
 
 function reloadLogsFromFirstPage() {
@@ -2030,6 +2066,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  isUnmounted = true
+  logsRequestSeq += 1
+  statusRequestSeq += 1
+  loadAllRequestSeq += 1
   if (statusTimer !== null) {
     window.clearInterval(statusTimer)
     statusTimer = null

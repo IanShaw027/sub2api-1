@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -36,6 +36,8 @@ const statusCode = ref<number | 'other' | null>(null)
 const phase = ref<string>('')
 const errorOwner = ref<string>('')
 const viewMode = ref<'errors' | 'excluded' | 'all'>('errors')
+let fetchSeq = 0
+let fetchController: AbortController | null = null
 
 
 const modalTitle = computed(() => {
@@ -94,9 +96,22 @@ function close() {
   emit('update:show', false)
 }
 
+function isCanceledRequest(err: unknown): boolean {
+  return Boolean(err && typeof err === 'object' && (err as { code?: string }).code === 'ERR_CANCELED')
+}
+
+function abortFetch() {
+  fetchController?.abort()
+  fetchController = null
+}
+
 async function fetchErrorLogs() {
   if (!props.show) return
 
+  abortFetch()
+  const currentSeq = ++fetchSeq
+  const controller = new AbortController()
+  fetchController = controller
   loading.value = true
   try {
     const params: Record<string, any> = {
@@ -128,16 +143,21 @@ async function fetchErrorLogs() {
 
 
     const res = props.errorType === 'upstream'
-      ? await opsAPI.listUpstreamErrors(params)
-      : await opsAPI.listRequestErrors(params)
+      ? await opsAPI.listUpstreamErrors(params, { signal: controller.signal })
+      : await opsAPI.listRequestErrors(params, { signal: controller.signal })
+    if (currentSeq !== fetchSeq || controller.signal.aborted) return
     rows.value = res.items || []
     total.value = res.total || 0
   } catch (err) {
+    if (currentSeq !== fetchSeq || isCanceledRequest(err)) return
     console.error('[OpsErrorDetailsModal] Failed to fetch error logs', err)
     rows.value = []
     total.value = 0
   } finally {
-    loading.value = false
+    if (currentSeq === fetchSeq) {
+      loading.value = false
+      fetchController = null
+    }
   }
 }
 
@@ -158,7 +178,12 @@ async function fetchErrorLogs() {
 watch(
   () => props.show,
   (open) => {
-    if (!open) return
+    if (!open) {
+      abortFetch()
+      fetchSeq += 1
+      loading.value = false
+      return
+    }
     page.value = 1
     pageSize.value = 10
     resetFilters()
@@ -204,6 +229,12 @@ watch(
     fetchErrorLogs()
   }
 )
+
+onUnmounted(() => {
+  if (searchTimeout) window.clearTimeout(searchTimeout)
+  abortFetch()
+  fetchSeq += 1
+})
 </script>
 
 <template>

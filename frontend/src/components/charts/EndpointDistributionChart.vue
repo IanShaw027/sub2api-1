@@ -132,7 +132,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Doughnut } from 'vue-chartjs'
@@ -183,13 +183,17 @@ const emit = defineEmits<{
 const expandedKey = ref<string | null>(null)
 const breakdownItems = ref<UserBreakdownItem[]>([])
 const breakdownLoading = ref(false)
+let breakdownSeq = 0
 
 const toggleBreakdown = async (endpoint: string) => {
   if (expandedKey.value === endpoint) {
     expandedKey.value = null
+    breakdownItems.value = []
+    breakdownSeq += 1
     return
   }
   expandedKey.value = endpoint
+  const currentSeq = ++breakdownSeq
   breakdownLoading.value = true
   breakdownItems.value = []
   try {
@@ -200,13 +204,27 @@ const toggleBreakdown = async (endpoint: string) => {
       endpoint,
       endpoint_type: props.source,
     })
+    if (currentSeq !== breakdownSeq || expandedKey.value !== endpoint) return
     breakdownItems.value = res.users || []
   } catch {
+    if (currentSeq !== breakdownSeq || expandedKey.value !== endpoint) return
     breakdownItems.value = []
   } finally {
-    breakdownLoading.value = false
+    if (currentSeq === breakdownSeq && expandedKey.value === endpoint) {
+      breakdownLoading.value = false
+    }
   }
 }
+
+watch(
+  () => [props.source, props.metric, props.startDate, props.endDate, props.filters] as const,
+  () => {
+    expandedKey.value = null
+    breakdownItems.value = []
+    breakdownLoading.value = false
+    breakdownSeq += 1
+  }
+)
 
 const chartColors = [
   '#3b82f6',

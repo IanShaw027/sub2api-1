@@ -511,6 +511,35 @@ export const OPS_WS_CLOSE_CODES = {
 } as const
 
 const OPS_WS_BASE_PROTOCOL = 'sub2api-admin'
+const OPS_QPS_WS_PATH = '/api/v1/admin/ops/ws/qps'
+
+export function buildOpsWebSocketURL(pageProtocol: string, wsBaseUrl: string, currentHost?: string): URL {
+  const defaultWsProtocol = pageProtocol === 'https:' ? 'wss:' : 'ws:'
+  const rawBase = String(wsBaseUrl || currentHost || '').trim()
+  const originHost = String(currentHost || '').trim()
+
+  if (!rawBase) {
+    return new URL(`${defaultWsProtocol}//${originHost}${OPS_QPS_WS_PATH}`)
+  }
+
+  let base: URL
+  if (/^wss?:\/\//i.test(rawBase) || /^https?:\/\//i.test(rawBase)) {
+    base = new URL(rawBase)
+  } else if (rawBase.startsWith('/')) {
+    base = new URL(rawBase, `${defaultWsProtocol}//${originHost}`)
+  } else {
+    base = new URL(`${defaultWsProtocol}//${rawBase}`)
+  }
+
+  if (base.protocol === 'https:') base.protocol = 'wss:'
+  if (base.protocol === 'http:') base.protocol = 'ws:'
+
+  const basePath = base.pathname.replace(/\/+$/, '')
+  base.pathname = `${basePath}${OPS_QPS_WS_PATH}`
+  base.search = ''
+  base.hash = ''
+  return base
+}
 
 export function subscribeQPS(onMessage: (data: any) => void, options: SubscribeQPSOptions = {}): () => void {
   let ws: WebSocket | null = null
@@ -601,9 +630,8 @@ export function subscribeQPS(onMessage: (data: any) => void, options: SubscribeQ
 
     isConnecting = true
     setStatus(hasConnectedOnce ? 'reconnecting' : 'connecting')
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsBaseUrl = options.wsBaseUrl || import.meta.env.VITE_WS_BASE_URL || window.location.host
-    const wsURL = new URL(`${protocol}//${wsBaseUrl}/api/v1/admin/ops/ws/qps`)
+    const wsURL = buildOpsWebSocketURL(window.location.protocol, wsBaseUrl, window.location.host)
 
     // Do NOT put admin JWT in the URL query string (it can leak via access logs, proxies, etc).
     // Browsers cannot set Authorization headers for WebSockets, so we pass the token via
@@ -1093,13 +1121,21 @@ export type OpsErrorListQueryParams = {
 }
 
 // Legacy unified endpoints
-export async function listErrorLogs(params: OpsErrorListQueryParams): Promise<OpsErrorLogsResponse> {
-  const { data } = await apiClient.get<OpsErrorLogsResponse>('/admin/ops/errors', { params })
+export async function listErrorLogs(
+  params: OpsErrorListQueryParams,
+  options: OpsRequestOptions = {}
+): Promise<OpsErrorLogsResponse> {
+  const { data } = await apiClient.get<OpsErrorLogsResponse>('/admin/ops/errors', {
+    params,
+    signal: options.signal
+  })
   return data
 }
 
-export async function getErrorLogDetail(id: number): Promise<OpsErrorDetail> {
-  const { data } = await apiClient.get<OpsErrorDetail>(`/admin/ops/errors/${id}`)
+export async function getErrorLogDetail(id: number, options: OpsRequestOptions = {}): Promise<OpsErrorDetail> {
+  const { data } = await apiClient.get<OpsErrorDetail>(`/admin/ops/errors/${id}`, {
+    signal: options.signal
+  })
   return data
 }
 
@@ -1108,23 +1144,39 @@ export async function updateErrorResolved(errorId: number, resolved: boolean): P
 }
 
 // New split endpoints
-export async function listRequestErrors(params: OpsErrorListQueryParams): Promise<OpsErrorLogsResponse> {
-  const { data } = await apiClient.get<OpsErrorLogsResponse>('/admin/ops/request-errors', { params })
+export async function listRequestErrors(
+  params: OpsErrorListQueryParams,
+  options: OpsRequestOptions = {}
+): Promise<OpsErrorLogsResponse> {
+  const { data } = await apiClient.get<OpsErrorLogsResponse>('/admin/ops/request-errors', {
+    params,
+    signal: options.signal
+  })
   return data
 }
 
-export async function listUpstreamErrors(params: OpsErrorListQueryParams): Promise<OpsErrorLogsResponse> {
-  const { data } = await apiClient.get<OpsErrorLogsResponse>('/admin/ops/upstream-errors', { params })
+export async function listUpstreamErrors(
+  params: OpsErrorListQueryParams,
+  options: OpsRequestOptions = {}
+): Promise<OpsErrorLogsResponse> {
+  const { data } = await apiClient.get<OpsErrorLogsResponse>('/admin/ops/upstream-errors', {
+    params,
+    signal: options.signal
+  })
   return data
 }
 
-export async function getRequestErrorDetail(id: number): Promise<OpsErrorDetail> {
-  const { data } = await apiClient.get<OpsErrorDetail>(`/admin/ops/request-errors/${id}`)
+export async function getRequestErrorDetail(id: number, options: OpsRequestOptions = {}): Promise<OpsErrorDetail> {
+  const { data } = await apiClient.get<OpsErrorDetail>(`/admin/ops/request-errors/${id}`, {
+    signal: options.signal
+  })
   return data
 }
 
-export async function getUpstreamErrorDetail(id: number): Promise<OpsErrorDetail> {
-  const { data } = await apiClient.get<OpsErrorDetail>(`/admin/ops/upstream-errors/${id}`)
+export async function getUpstreamErrorDetail(id: number, options: OpsRequestOptions = {}): Promise<OpsErrorDetail> {
+  const { data } = await apiClient.get<OpsErrorDetail>(`/admin/ops/upstream-errors/${id}`, {
+    signal: options.signal
+  })
   return data
 }
 
@@ -1139,16 +1191,25 @@ export async function updateUpstreamErrorResolved(errorId: number, resolved: boo
 export async function listRequestErrorUpstreamErrors(
   id: number,
   params: OpsErrorListQueryParams = {},
-  options: { include_detail?: boolean } = {}
+  options: OpsRequestOptions & { include_detail?: boolean } = {}
 ): Promise<PaginatedResponse<OpsErrorDetail>> {
   const query: Record<string, any> = { ...params }
   if (options.include_detail) query.include_detail = '1'
-  const { data } = await apiClient.get<PaginatedResponse<OpsErrorDetail>>(`/admin/ops/request-errors/${id}/upstream-errors`, { params: query })
+  const { data } = await apiClient.get<PaginatedResponse<OpsErrorDetail>>(`/admin/ops/request-errors/${id}/upstream-errors`, {
+    params: query,
+    signal: options.signal
+  })
   return data
 }
 
-export async function listRequestDetails(params: OpsRequestDetailsParams): Promise<OpsRequestDetailsResponse> {
-  const { data } = await apiClient.get<OpsRequestDetailsResponse>('/admin/ops/requests', { params })
+export async function listRequestDetails(
+  params: OpsRequestDetailsParams,
+  options: OpsRequestOptions = {}
+): Promise<OpsRequestDetailsResponse> {
+  const { data } = await apiClient.get<OpsRequestDetailsResponse>('/admin/ops/requests', {
+    params,
+    signal: options.signal
+  })
   return data
 }
 

@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 
 import ModelDistributionChart from '../ModelDistributionChart.vue'
+
+const { getUserBreakdown } = vi.hoisted(() => ({
+  getUserBreakdown: vi.fn(),
+}))
+
+vi.mock('@/api/admin/dashboard', () => ({
+  getUserBreakdown,
+}))
 
 const messages: Record<string, string> = {
   'admin.dashboard.modelDistribution': 'Model Distribution',
@@ -167,5 +175,40 @@ describe('ModelDistributionChart', () => {
     expect(rows[2].text()).toContain('4')
     expect(rows[2].text()).toContain('400')
     expect(rows[2].text()).toContain('$10.00')
+  })
+
+  it('ignores stale model breakdown responses', async () => {
+    let resolveFirst!: (value: any) => void
+    let resolveSecond!: (value: any) => void
+    getUserBreakdown
+      .mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve }))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveSecond = resolve }))
+
+    const wrapper = mount(ModelDistributionChart, {
+      props: {
+        modelStats,
+      },
+      global: {
+        stubs: {
+          LoadingSpinner: true,
+          UserBreakdownSubTable: {
+            props: ['items', 'loading'],
+            template: '<div data-test="breakdown">{{ items.map((item) => item.email).join(",") }}</div>',
+          },
+        },
+      },
+    })
+
+    const rows = wrapper.findAll('tbody tr').filter((row) => row.text().includes('model-'))
+    await rows[0].trigger('click')
+    await rows[1].trigger('click')
+
+    resolveSecond({ users: [{ user_id: 2, email: 'new@example.com' }] })
+    await flushPromises()
+    expect(wrapper.get('[data-test="breakdown"]').text()).toBe('new@example.com')
+
+    resolveFirst({ users: [{ user_id: 1, email: 'old@example.com' }] })
+    await flushPromises()
+    expect(wrapper.get('[data-test="breakdown"]').text()).toBe('new@example.com')
   })
 })
