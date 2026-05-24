@@ -133,6 +133,9 @@ func (s *PaymentService) cancelCore(ctx context.Context, o *dbent.PaymentOrder, 
 		}
 		s.writeAuditLog(ctx, o.ID, auditAction, op, map[string]any{"detail": ad})
 	}
+	if o.PaymentTradeNo != "" || o.PaymentType != "" {
+		s.cancelUnpaidUpstreamOrder(ctx, o)
+	}
 	return checkPaidResultCancelled, nil
 }
 
@@ -195,10 +198,21 @@ func (s *PaymentService) checkPaid(ctx context.Context, o *dbent.PaymentOrder) s
 		}
 		return checkPaidResultAlreadyPaid
 	}
+	return ""
+}
+
+func (s *PaymentService) cancelUnpaidUpstreamOrder(ctx context.Context, o *dbent.PaymentOrder) {
+	prov, err := s.getOrderProvider(ctx, o)
+	if err != nil {
+		return
+	}
+	queryRef := paymentOrderQueryReference(o, prov)
+	if queryRef == "" {
+		return
+	}
 	if cp, ok := prov.(payment.CancelableProvider); ok {
 		_ = cp.CancelPayment(ctx, queryRef)
 	}
-	return ""
 }
 
 func (s *PaymentService) reconcilePaid(ctx context.Context, o *dbent.PaymentOrder) string {

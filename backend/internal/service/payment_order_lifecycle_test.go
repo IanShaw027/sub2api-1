@@ -675,8 +675,14 @@ func TestReconcilePendingWxpayOrdersBackfillsPaidOrder(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusCompleted, reloaded.Status)
 	require.Equal(t, "wxpay-upstream-trade-123", reloaded.PaymentTradeNo)
-	require.Equal(t, 50.0, userRepo.getByIDUser.Balance)
-	require.Len(t, redeemRepo.useCalls, 1)
+	reloadedUser, err := client.User.Get(ctx, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, 50.0, reloadedUser.Balance)
+	redeemCode, err := client.RedeemCode.Query().Where(redeemcode.CodeEQ(order.RechargeCode)).Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, StatusUsed, redeemCode.Status)
+	require.NotNil(t, redeemCode.UsedBy)
+	require.Equal(t, user.ID, *redeemCode.UsedBy)
 }
 
 func TestVerifyOrderByOutTradeNoUsesOutTradeNoWhenPaymentTradeNoAlreadyExistsForAlipay(t *testing.T) {

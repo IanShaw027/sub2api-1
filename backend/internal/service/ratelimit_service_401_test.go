@@ -56,6 +56,7 @@ func TestRateLimitService_HandleUpstreamError_OAuth401SetsTempUnschedulable(t *t
 			Platform: PlatformGemini,
 			Type:     AccountTypeOAuth,
 			Credentials: map[string]any{
+				"refresh_token":              "refresh",
 				"temp_unschedulable_enabled": true,
 				"temp_unschedulable_rules": []any{
 					map[string]any{
@@ -73,6 +74,7 @@ func TestRateLimitService_HandleUpstreamError_OAuth401SetsTempUnschedulable(t *t
 		require.True(t, shouldDisable)
 		require.Equal(t, 0, repo.setErrorCalls)
 		require.Equal(t, 1, repo.tempCalls)
+		require.Equal(t, 1, repo.updateCredentialsCalls)
 		require.Len(t, invalidator.accounts, 1)
 	})
 
@@ -109,6 +111,9 @@ func TestRateLimitService_HandleUpstreamError_OAuth401InvalidatorError(t *testin
 		ID:       101,
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "refresh",
+		},
 	}
 
 	shouldDisable := service.HandleUpstreamError(context.Background(), account, 401, http.Header{}, []byte("unauthorized"))
@@ -146,7 +151,8 @@ func TestRateLimitService_HandleUpstreamError_OAuth401UsesCredentialsUpdater(t *
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"access_token": "token",
+			"access_token":  "token",
+			"refresh_token": "refresh",
 		},
 	}
 
@@ -154,6 +160,8 @@ func TestRateLimitService_HandleUpstreamError_OAuth401UsesCredentialsUpdater(t *
 
 	require.True(t, shouldDisable)
 	require.Equal(t, 1, repo.updateCredentialsCalls)
+	require.Equal(t, 1, repo.tempCalls)
+	require.Equal(t, 0, repo.setErrorCalls)
 	require.NotEmpty(t, repo.lastCredentials["expires_at"])
 }
 

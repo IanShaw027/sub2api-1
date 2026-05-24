@@ -57,6 +57,18 @@ func isGeminiProjectRoutedOAuthAccount(account *Account) bool {
 		strings.EqualFold(strings.TrimSpace(account.GeminiOAuthTypeSafe()), "code_assist")
 }
 
+func isGeminiSharedPoolOAuthAccount(account *Account) bool {
+	if account == nil || account.Platform != PlatformGemini || account.Type != AccountTypeOAuth {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(account.GeminiOAuthTypeSafe())) {
+	case "code_assist", "google_one":
+		return true
+	default:
+		return false
+	}
+}
+
 func isGeminiAIStudioCompatibleOAuthAccount(account *Account) bool {
 	if account == nil || account.Platform != PlatformGemini || account.Type != AccountTypeOAuth {
 		return false
@@ -3174,20 +3186,20 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 	oauthType := account.GeminiOAuthTypeSafe()
 	tierID := account.GeminiTierID()
 	projectID := strings.TrimSpace(account.GetCredential("project_id"))
-	isCodeAssist := isGeminiProjectRoutedOAuthAccount(account)
+	isSharedPool := isGeminiSharedPoolOAuthAccount(account)
 
 	resetAt := ParseGeminiRateLimitResetTime(body)
 	if resetAt == nil {
 		// 根据账号类型使用不同的默认重置时间
 		var ra time.Time
-		if isCodeAssist {
-			// Code Assist: fallback cooldown by tier
+		if isSharedPool {
+			// Shared-pool Gemini OAuth accounts: fallback cooldown by tier
 			cooldown := geminiCooldownForTier(tierID)
 			if s.rateLimitService != nil {
 				cooldown = s.rateLimitService.GeminiCooldown(ctx, account)
 			}
 			ra = time.Now().Add(cooldown)
-			logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d (Code Assist, tier=%s, project=%s) rate limited, cooldown=%v", account.ID, tierID, projectID, time.Until(ra).Truncate(time.Second))
+			logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d (shared-pool OAuth, oauth_type=%s, tier=%s, project=%s) rate limited, cooldown=%v", account.ID, oauthType, tierID, projectID, time.Until(ra).Truncate(time.Second))
 		} else {
 			// API Key / AI Studio OAuth: PST 午夜
 			if ts := nextGeminiDailyResetUnix(); ts != nil {

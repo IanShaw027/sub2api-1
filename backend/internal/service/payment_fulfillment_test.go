@@ -85,6 +85,12 @@ func (s *paymentFulfillmentUserSubRepoStub) ExtendExpiry(context.Context, int64,
 	return nil
 }
 
+func (s *paymentFulfillmentUserSubRepoStub) Update(_ context.Context, sub *UserSubscription) error {
+	s.extendCalls++
+	s.existing = sub
+	return nil
+}
+
 func (s *paymentFulfillmentUserSubRepoStub) UpdateStatus(context.Context, int64, string) error {
 	return nil
 }
