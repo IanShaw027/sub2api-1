@@ -299,9 +299,10 @@ type DefaultSubscriptionSetting struct {
 }
 
 type DefaultAccountModelConfig struct {
-	ModelWhitelist      []string          `json:"model_whitelist,omitempty"`
-	ModelMapping        map[string]string `json:"model_mapping,omitempty"`
-	CompactModelMapping map[string]string `json:"compact_model_mapping,omitempty"`
+	ModelWhitelist               []string                             `json:"model_whitelist,omitempty"`
+	ModelMapping                 map[string]string                    `json:"model_mapping,omitempty"`
+	CompactModelMapping          map[string]string                    `json:"compact_model_mapping,omitempty"`
+	KiroSubscriptionTypeModelMap map[string]DefaultAccountModelConfig `json:"kiro_subscription_type_model_config,omitempty"`
 }
 
 type PublicSettings struct {

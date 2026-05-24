@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -23,6 +24,37 @@ func normalizePlatformDefaultAccountModelConfig(raw map[string]DefaultAccountMod
 		if platform == "" {
 			continue
 		}
+		normalized := normalizeDefaultAccountModelConfig(cfg)
+		if len(normalized.ModelWhitelist) == 0 && len(normalized.ModelMapping) == 0 && len(normalized.CompactModelMapping) == 0 && len(normalized.KiroSubscriptionTypeModelMap) == 0 {
+			continue
+		}
+		out[platform] = normalized
+	}
+	return out
+}
+
+func normalizeDefaultAccountModelConfig(cfg DefaultAccountModelConfig) DefaultAccountModelConfig {
+	normalized := DefaultAccountModelConfig{
+		ModelWhitelist:      normalizeModelList(cfg.ModelWhitelist),
+		ModelMapping:        normalizeStringMap(cfg.ModelMapping),
+		CompactModelMapping: normalizeStringMap(cfg.CompactModelMapping),
+	}
+	if len(cfg.KiroSubscriptionTypeModelMap) > 0 {
+		normalized.KiroSubscriptionTypeModelMap = normalizeKiroSubscriptionTypeModelConfig(cfg.KiroSubscriptionTypeModelMap)
+	}
+	return normalized
+}
+
+func normalizeKiroSubscriptionTypeModelConfig(raw map[string]DefaultAccountModelConfig) map[string]DefaultAccountModelConfig {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]DefaultAccountModelConfig, len(raw))
+	for key, cfg := range raw {
+		normalizedKey := normalizeKiroSubscriptionTypeKey(key)
+		if normalizedKey == "" {
+			continue
+		}
 		normalized := DefaultAccountModelConfig{
 			ModelWhitelist:      normalizeModelList(cfg.ModelWhitelist),
 			ModelMapping:        normalizeStringMap(cfg.ModelMapping),
@@ -31,7 +63,10 @@ func normalizePlatformDefaultAccountModelConfig(raw map[string]DefaultAccountMod
 		if len(normalized.ModelWhitelist) == 0 && len(normalized.ModelMapping) == 0 && len(normalized.CompactModelMapping) == 0 {
 			continue
 		}
-		out[platform] = normalized
+		out[normalizedKey] = normalized
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
@@ -94,10 +129,35 @@ func validatePlatformDefaultAccountModelConfig(cfg map[string]DefaultAccountMode
 		if platform == "" {
 			return infraerrors.BadRequest("INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", "platform name cannot be empty")
 		}
-		if err := validateDefaultModelMapping(platform, "model_mapping", item.ModelMapping); err != nil {
+		if err := validateDefaultAccountModelConfig(platform, item, platform == "kiro"); err != nil {
 			return err
 		}
-		if err := validateDefaultModelMapping(platform, "compact_model_mapping", item.CompactModelMapping); err != nil {
+	}
+	return nil
+}
+
+func validateDefaultAccountModelConfig(platform string, cfg DefaultAccountModelConfig, allowKiroVariants bool) error {
+	if err := validateDefaultModelMapping(platform, "model_mapping", cfg.ModelMapping); err != nil {
+		return err
+	}
+	if err := validateDefaultModelMapping(platform, "compact_model_mapping", cfg.CompactModelMapping); err != nil {
+		return err
+	}
+	if len(cfg.KiroSubscriptionTypeModelMap) == 0 {
+		return nil
+	}
+	if !allowKiroVariants {
+		return infraerrors.BadRequest("INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", platform+".kiro_subscription_type_model_config is only supported for kiro")
+	}
+	for key, variant := range cfg.KiroSubscriptionTypeModelMap {
+		normalizedKey := normalizeKiroSubscriptionTypeKey(key)
+		if normalizedKey == "" {
+			return infraerrors.BadRequest("INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", platform+".kiro_subscription_type_model_config contains an empty or unsupported subscription type key")
+		}
+		if err := validateDefaultModelMapping(platform+".kiro_subscription_type_model_config."+normalizedKey, "model_mapping", variant.ModelMapping); err != nil {
+			return err
+		}
+		if err := validateDefaultModelMapping(platform+".kiro_subscription_type_model_config."+normalizedKey, "compact_model_mapping", variant.CompactModelMapping); err != nil {
 			return err
 		}
 	}
@@ -156,6 +216,39 @@ func (s *SettingService) GetPlatformDefaultAccountModelConfig(ctx context.Contex
 }
 
 func applyDefaultAccountModelConfig(credentials map[string]any, cfg DefaultAccountModelConfig) map[string]any {
+	return applyDefaultAccountModelConfigForPlatform("", credentials, cfg)
+}
+
+func applyDefaultAccountModelConfigForPlatform(platform string, credentials map[string]any, cfg DefaultAccountModelConfig) map[string]any {
+	cfg = normalizeDefaultAccountModelConfig(cfg)
+	if credentials == nil {
+		credentials = map[string]any{}
+	}
+	originalKeys := make(map[string]struct{}, len(credentials))
+	for key := range credentials {
+		originalKeys[key] = struct{}{}
+	}
+	out := applyDefaultAccountModelConfigBaseWithOriginalKeys(credentials, cfg, originalKeys, false)
+	if strings.EqualFold(strings.TrimSpace(platform), PlatformKiro) && len(cfg.KiroSubscriptionTypeModelMap) > 0 {
+		subscriptionType := normalizeKiroSubscriptionTypeKey(resolveKiroSubscriptionTypeFromCredentials(out))
+		if subscriptionType != "" {
+			if variantCfg, ok := cfg.KiroSubscriptionTypeModelMap[subscriptionType]; ok {
+				out = applyDefaultAccountModelConfigBaseWithOriginalKeys(out, variantCfg, originalKeys, true)
+			}
+		}
+	}
+	return out
+}
+
+func applyDefaultAccountModelConfigBase(credentials map[string]any, cfg DefaultAccountModelConfig, override bool) map[string]any {
+	originalKeys := make(map[string]struct{}, len(credentials))
+	for key := range credentials {
+		originalKeys[key] = struct{}{}
+	}
+	return applyDefaultAccountModelConfigBaseWithOriginalKeys(credentials, cfg, originalKeys, override)
+}
+
+func applyDefaultAccountModelConfigBaseWithOriginalKeys(credentials map[string]any, cfg DefaultAccountModelConfig, originalKeys map[string]struct{}, override bool) map[string]any {
 	if credentials == nil {
 		credentials = map[string]any{}
 	}
@@ -163,19 +256,67 @@ func applyDefaultAccountModelConfig(credentials map[string]any, cfg DefaultAccou
 	for k, v := range credentials {
 		out[k] = v
 	}
-	if _, exists := out["model_whitelist"]; !exists {
+	if keyNotExplicit(originalKeys, "model_whitelist") {
 		if whitelist := normalizeDefaultModelWhitelist(cfg.ModelWhitelist); len(whitelist) > 0 {
 			out["model_whitelist"] = whitelist
 		}
 	}
-	if _, exists := out["model_mapping"]; !exists {
+	if keyNotExplicit(originalKeys, "model_mapping") {
 		mapping := buildDefaultModelMapping(cfg)
 		if len(mapping) > 0 {
-			out["model_mapping"] = stringMapToAnyMap(mapping)
+			if override && hasCredentialValue(out, "model_mapping") {
+				out["model_mapping"] = mergeCredentialStringMap(out["model_mapping"], mapping)
+			} else {
+				out["model_mapping"] = stringMapToAnyMap(mapping)
+			}
 		}
 	}
-	if _, exists := out["compact_model_mapping"]; !exists && len(cfg.CompactModelMapping) > 0 {
-		out["compact_model_mapping"] = copyStringMap(cfg.CompactModelMapping)
+	if keyNotExplicit(originalKeys, "compact_model_mapping") {
+		if len(cfg.CompactModelMapping) > 0 {
+			if override && hasCredentialValue(out, "compact_model_mapping") {
+				out["compact_model_mapping"] = mergeCredentialStringMap(out["compact_model_mapping"], cfg.CompactModelMapping)
+			} else {
+				out["compact_model_mapping"] = copyStringMap(cfg.CompactModelMapping)
+			}
+		}
+	}
+	return out
+}
+
+func keyNotExplicit(originalKeys map[string]struct{}, key string) bool {
+	return originalKeys == nil || !hasKey(originalKeys, key)
+}
+
+func hasKey(values map[string]struct{}, key string) bool {
+	if len(values) == 0 {
+		return false
+	}
+	_, ok := values[key]
+	return ok
+}
+
+func hasCredentialValue(credentials map[string]any, key string) bool {
+	if len(credentials) == 0 {
+		return false
+	}
+	_, exists := credentials[key]
+	return exists
+}
+
+func mergeCredentialStringMap(existing any, incoming map[string]string) map[string]any {
+	out := make(map[string]any, len(incoming))
+	switch current := existing.(type) {
+	case map[string]any:
+		for key, value := range current {
+			out[key] = value
+		}
+	case map[string]string:
+		for key, value := range current {
+			out[key] = value
+		}
+	}
+	for key, value := range incoming {
+		out[key] = value
 	}
 	return out
 }
@@ -230,4 +371,40 @@ func copyStringMap(src map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func resolveKiroSubscriptionTypeFromCredentials(credentials map[string]any) string {
+	if len(credentials) == 0 {
+		return ""
+	}
+	for _, key := range []string{"subscription_type", "plan_name", "plan_tier"} {
+		if raw, ok := credentials[key]; ok {
+			if normalized := normalizeKiroSubscriptionTypeKey(fmt.Sprint(raw)); normalized != "" {
+				return normalized
+			}
+		}
+	}
+	return ""
+}
+
+func normalizeKiroSubscriptionTypeKey(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	if value == "" {
+		return ""
+	}
+	value = strings.ReplaceAll(value, " ", "")
+	value = strings.ReplaceAll(value, "-", "_")
+	value = strings.ReplaceAll(value, "+", "plus")
+	switch {
+	case strings.Contains(value, "free"):
+		return "free"
+	case strings.Contains(value, "power"):
+		return "power"
+	case strings.Contains(value, "proplus"), strings.Contains(value, "plus"):
+		return "pro_plus"
+	case strings.Contains(value, "pro"):
+		return "pro"
+	default:
+		return value
+	}
 }
