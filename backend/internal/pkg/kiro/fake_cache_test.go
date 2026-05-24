@@ -413,6 +413,33 @@ func TestFakeCachePlanResolveUsageWithConfig_UsesLongestCheckpointHit(t *testing
 	}, usage)
 }
 
+func TestFakeCachePlanResolveUsageWithConfig_CheckpointsStillWriteCurrentPrefixDelta(t *testing.T) {
+	plan := &FakeCachePlan{
+		IndependentCacheableTokens:    2600,
+		CurrentPrefixCacheableTokens:  320,
+		PreviousPrefixCacheableTokens: 200,
+		Checkpoints: []FakeCacheCheckpoint{
+			{Key: "checkpoint:system", Tokens: 2600},
+			{Key: "checkpoint:previous", Tokens: 2800},
+		},
+	}
+
+	usage := plan.ResolveUsageWithConfig(3300, FakeCacheHitState{
+		Independent:      true,
+		Prefix:           true,
+		CheckpointTokens: 2800,
+	}, FakeCacheUsageConfig{
+		HitRateScale:   100,
+		MinBlockTokens: 1024,
+	})
+
+	require.Equal(t, FakeCacheUsage{
+		InputTokens:              380,
+		CacheCreationInputTokens: 120,
+		CacheReadInputTokens:     2800,
+	}, usage)
+}
+
 func TestFakeCachePlanResolveUsageWithConfig_NoSessionID(t *testing.T) {
 	// When there's no session ID, all keys are empty
 	// Should return all tokens as regular input, no cache simulation

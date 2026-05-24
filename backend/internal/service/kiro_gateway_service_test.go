@@ -260,18 +260,20 @@ func TestKiroGatewayService_FakeCacheSessionProgressCarriesCheckpointAcrossTurns
 	require.NotNil(t, firstPlan)
 	require.Zero(t, firstHit.CheckpointTokens)
 	firstCurrent := firstPlan.CurrentCheckpointTokens()
+	firstCacheable := firstPlan.CurrentCacheableTokens
 	require.Positive(t, firstCurrent)
+	require.GreaterOrEqual(t, firstCacheable, firstCurrent)
 
 	svc.commitFakeCachePlan(firstPlan, settings)
 
 	secondPlan, secondHit := svc.prepareFakeCachePlan(account, &ParsedRequest{Model: "claude-sonnet-4", Body: secondBody}, nil, settings)
 	require.NotNil(t, secondPlan)
 	require.Greater(t, secondPlan.CurrentCheckpointTokens(), firstCurrent)
-	require.Equal(t, firstCurrent, secondHit.CheckpointTokens)
+	require.Equal(t, firstCacheable, secondHit.CheckpointTokens)
 
-	usage := resolveKiroFakeCacheUsage(secondPlan, secondHit, secondPlan.CurrentCheckpointTokens()+10, settings)
-	require.Equal(t, firstCurrent, usage.CacheReadInputTokens)
-	require.Equal(t, secondPlan.CurrentCheckpointTokens()-firstCurrent, usage.CacheCreationInputTokens)
+	usage := resolveKiroFakeCacheUsage(secondPlan, secondHit, secondPlan.CurrentCacheableTokens+10, settings)
+	require.Equal(t, firstCacheable, usage.CacheReadInputTokens)
+	require.Equal(t, secondPlan.CurrentCacheableTokens-firstCacheable, usage.CacheCreationInputTokens)
 	require.Equal(t, 10, usage.InputTokens)
 }
 

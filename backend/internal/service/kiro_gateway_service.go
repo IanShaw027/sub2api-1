@@ -1474,7 +1474,10 @@ func (s *KiroGatewayService) commitFakeCachePlan(plan *kiropkg.FakeCachePlan, ru
 		s.fakeCache.Set(checkpoint.Key, struct{}{}, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
 	}
 	if plan.SessionProgressKey != "" {
-		currentTokens := plan.CurrentCheckpointTokens()
+		currentTokens := plan.CurrentCacheableTokens
+		if checkpointTokens := plan.CurrentCheckpointTokens(); checkpointTokens > currentTokens {
+			currentTokens = checkpointTokens
+		}
 		if currentTokens > 0 {
 			if value, ok := s.fakeCache.Get(plan.SessionProgressKey); ok {
 				if existing, ok := value.(int); ok && existing > currentTokens {
