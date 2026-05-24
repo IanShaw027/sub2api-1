@@ -50,6 +50,8 @@ jobs:
           push: false
           load: false
           tags: sub2api:ci
+          cache-from: type=gha,scope=sub2api-root-image
+          cache-to: type=gha,mode=max,scope=sub2api-root-image
           build-args: |
             VERSION=ci
             COMMIT=${{ github.sha }}
@@ -62,6 +64,8 @@ jobs:
           push: false
           load: false
           tags: sub2api:deploy-ci
+          cache-from: type=gha,scope=sub2api-deploy-image
+          cache-to: type=gha,mode=max,scope=sub2api-deploy-image
           build-args: |
             VERSION=ci
             COMMIT=${{ github.sha }}

@@ -81,19 +81,6 @@ RUN VERSION_VALUE="${VERSION}" && \
 # -----------------------------------------------------------------------------
 FROM ${POSTGRES_IMAGE} AS pg-client
 
-RUN set -eu; \
-    mkdir -p /pg-runtime-libs; \
-    { ldd /usr/local/bin/pg_dump; ldd /usr/local/bin/psql; } \
-        | awk '/=>/ { print $3 } /^[[:space:]]*\// { print $1 }' \
-        | sort -u \
-        | while IFS= read -r lib; do \
-            case "$lib" in \
-                /lib/ld-musl-*|/lib/libc.musl-*) continue ;; \
-            esac; \
-            cp -L "$lib" /pg-runtime-libs/; \
-        done; \
-    cp -L /usr/local/lib/libpq.so.5* /pg-runtime-libs/
-
 # -----------------------------------------------------------------------------
 # Stage 4: Final Runtime Image
 # -----------------------------------------------------------------------------
@@ -108,14 +95,19 @@ LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
+    libpq \
+    zstd-libs \
+    lz4-libs \
+    krb5-libs \
+    libldap \
+    libedit \
     su-exec \
     && rm -rf /var/cache/apk/*
 
 # Copy pg_dump and psql from the same postgres image used in docker-compose.
 COPY --from=pg-client /usr/local/bin/pg_dump /usr/local/bin/pg_dump
 COPY --from=pg-client /usr/local/bin/psql /usr/local/bin/psql
-COPY --from=pg-client /pg-runtime-libs/ /usr/local/lib/postgresql/
-ENV LD_LIBRARY_PATH=/usr/local/lib/postgresql
+COPY --from=pg-client /usr/local/lib/libpq.so.5* /usr/local/lib/
 
 # Create non-root user
 RUN addgroup -g 1000 sub2api && \
