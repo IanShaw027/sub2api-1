@@ -45,6 +45,63 @@ func TestRedeemService_BatchUpdate_PartialFields(t *testing.T) {
 	require.Nil(t, repo.batchUpdateFields.Value)
 }
 
+func TestRedeemService_BatchUpdate_DedupesDuplicateIDsBeforeValidation(t *testing.T) {
+	currentGroupID := int64(7)
+	repo := &redeemRepoStub{
+		getByID: map[int64]*RedeemCode{
+			42: {
+				ID:      42,
+				Type:    RedeemTypeSubscription,
+				Status:  StatusUnused,
+				GroupID: &currentGroupID,
+			},
+		},
+	}
+	svc := &RedeemService{
+		redeemRepo: repo,
+		subscriptionService: &SubscriptionService{
+			groupRepo: &kiroDefaultGroupRepoStub{
+				getByID: &Group{ID: currentGroupID, SubscriptionType: SubscriptionTypeSubscription},
+			},
+		},
+	}
+	notes := "dedupe check"
+
+	result, err := svc.BatchUpdate(context.Background(), &RedeemCodeBatchUpdateInput{
+		IDs: []int64{42, 42, 42},
+		Fields: RedeemCodeBatchUpdateFields{
+			Notes: &notes,
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), result.Updated)
+	require.Equal(t, 1, repo.getByIDCalls)
+	require.True(t, repo.batchUpdateCalled)
+	require.Equal(t, []int64{42}, repo.batchUpdateIDs)
+}
+
+func TestRedeemService_BatchUpdate_RejectsTooManyIDs(t *testing.T) {
+	repo := &redeemRepoStub{}
+	svc := &RedeemService{redeemRepo: repo}
+	notes := "too many"
+	ids := make([]int64, 0, redeemBatchUpdateMaxIDs+1)
+	for i := 0; i <= redeemBatchUpdateMaxIDs; i++ {
+		ids = append(ids, int64(i+1))
+	}
+
+	result, err := svc.BatchUpdate(context.Background(), &RedeemCodeBatchUpdateInput{
+		IDs:    ids,
+		Fields: RedeemCodeBatchUpdateFields{Notes: &notes},
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.True(t, infraerrors.IsBadRequest(err))
+	require.False(t, repo.batchUpdateCalled)
+	require.Zero(t, repo.getByIDCalls)
+}
+
 func TestRedeemService_BatchUpdate_RejectsInvalidID(t *testing.T) {
 	repo := &redeemRepoStub{}
 	svc := &RedeemService{redeemRepo: repo}

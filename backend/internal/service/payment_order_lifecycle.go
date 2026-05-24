@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -174,6 +175,17 @@ func (s *PaymentService) checkPaid(ctx context.Context, o *dbent.PaymentOrder) (
 			}
 			resp = retriedResp
 		}
+		if o.Status == OrderStatusFailed {
+			notificationTradeNo := o.PaymentTradeNo
+			if upstreamTradeNo := strings.TrimSpace(resp.TradeNo); paymentOrderShouldPersistUpstreamTradeNo(queryRef, upstreamTradeNo, notificationTradeNo) {
+				notificationTradeNo = upstreamTradeNo
+			}
+			if err := s.HandlePaymentNotification(ctx, &payment.PaymentNotification{TradeNo: notificationTradeNo, OrderID: o.OutTradeNo, Amount: resp.Amount, Status: payment.ProviderStatusSuccess, Metadata: resp.Metadata}, prov.ProviderKey()); err != nil {
+				slog.Error("fulfillment failed during checkPaid", "orderID", o.ID, "error", err)
+				return "", fmt.Errorf("local payment confirmation failed: %w", err)
+			}
+			return checkPaidResultAlreadyPaid, nil
+		}
 		notificationTradeNo := o.PaymentTradeNo
 		if upstreamTradeNo := strings.TrimSpace(resp.TradeNo); paymentOrderShouldPersistUpstreamTradeNo(queryRef, upstreamTradeNo, notificationTradeNo) {
 			if _, updateErr := s.entClient.PaymentOrder.Update().
@@ -185,18 +197,6 @@ func (s *PaymentService) checkPaid(ctx context.Context, o *dbent.PaymentOrder) (
 				o.PaymentTradeNo = upstreamTradeNo
 			}
 			notificationTradeNo = upstreamTradeNo
-		}
-		if o.Status == OrderStatusFailed {
-			recoveredOrder, recoverErr := s.markFailedOrderPaidAndReload(ctx, o.ID, notificationTradeNo, resp.Amount)
-			if recoverErr != nil {
-				slog.Error("recover failed order paid metadata during checkPaid failed", "orderID", o.ID, "error", recoverErr)
-				return "", fmt.Errorf("local payment confirmation failed: %w", recoverErr)
-			}
-			if err := s.executeFulfillment(ctx, recoveredOrder.ID); err != nil {
-				slog.Error("fulfillment failed during checkPaid", "orderID", o.ID, "error", err)
-				// Still return already_paid — order was paid, fulfillment can be retried
-			}
-			return checkPaidResultAlreadyPaid, nil
 		}
 		if err := s.HandlePaymentNotification(ctx, &payment.PaymentNotification{TradeNo: notificationTradeNo, OrderID: o.OutTradeNo, Amount: resp.Amount, Status: payment.ProviderStatusSuccess, Metadata: resp.Metadata}, prov.ProviderKey()); err != nil {
 			slog.Error("fulfillment failed during checkPaid", "orderID", o.ID, "error", err)
@@ -254,28 +254,28 @@ func (s *PaymentService) reconcilePaid(ctx context.Context, o *dbent.PaymentOrde
 			}
 			resp = retriedResp
 		}
+		if o.Status == OrderStatusFailed {
+			notificationTradeNo := o.PaymentTradeNo
+			if upstreamTradeNo := strings.TrimSpace(resp.TradeNo); paymentOrderShouldPersistUpstreamTradeNo(queryRef, upstreamTradeNo, notificationTradeNo) {
+				notificationTradeNo = upstreamTradeNo
+			}
+			if err := s.HandlePaymentNotification(ctx, &payment.PaymentNotification{TradeNo: notificationTradeNo, OrderID: o.OutTradeNo, Amount: resp.Amount, Status: payment.ProviderStatusSuccess, Metadata: resp.Metadata}, prov.ProviderKey()); err != nil {
+				slog.Error("fulfillment failed during reconcilePaid", "orderID", o.ID, "error", err)
+				return "", fmt.Errorf("local payment confirmation failed: %w", err)
+			}
+			return checkPaidResultAlreadyPaid, nil
+		}
 		notificationTradeNo := o.PaymentTradeNo
 		if upstreamTradeNo := strings.TrimSpace(resp.TradeNo); paymentOrderShouldPersistUpstreamTradeNo(queryRef, upstreamTradeNo, notificationTradeNo) {
 			if _, updateErr := s.entClient.PaymentOrder.Update().
 				Where(paymentorder.IDEQ(o.ID)).
 				SetPaymentTradeNo(upstreamTradeNo).
 				Save(ctx); updateErr != nil {
-				slog.Error("persist upstream trade no during checkPaid failed", "orderID", o.ID, "tradeNo", upstreamTradeNo, "error", updateErr)
+				slog.Error("persist upstream trade no during reconcilePaid failed", "orderID", o.ID, "tradeNo", upstreamTradeNo, "error", updateErr)
 			} else {
 				o.PaymentTradeNo = upstreamTradeNo
 			}
 			notificationTradeNo = upstreamTradeNo
-		}
-		if o.Status == OrderStatusFailed {
-			recoveredOrder, recoverErr := s.markFailedOrderPaidAndReload(ctx, o.ID, notificationTradeNo, resp.Amount)
-			if recoverErr != nil {
-				slog.Error("recover failed order paid metadata during checkPaid failed", "orderID", o.ID, "error", recoverErr)
-				return "", fmt.Errorf("local payment confirmation failed: %w", recoverErr)
-			}
-			if err := s.executeFulfillment(ctx, recoveredOrder.ID); err != nil {
-				slog.Error("fulfillment failed during checkPaid", "orderID", o.ID, "error", err)
-			}
-			return checkPaidResultAlreadyPaid, nil
 		}
 		if err := s.HandlePaymentNotification(ctx, &payment.PaymentNotification{TradeNo: notificationTradeNo, OrderID: o.OutTradeNo, Amount: resp.Amount, Status: payment.ProviderStatusSuccess, Metadata: resp.Metadata}, prov.ProviderKey()); err != nil {
 			slog.Error("fulfillment failed during checkPaid", "orderID", o.ID, "error", err)
@@ -354,6 +354,22 @@ func (s *PaymentService) markFailedOrderPaidAndReload(ctx context.Context, oid i
 	}
 	if o.Status != OrderStatusFailed {
 		return o, nil
+	}
+	if !isValidProviderAmount(paid) {
+		s.writeAuditLog(ctx, oid, "PAYMENT_INVALID_AMOUNT", "system", map[string]any{
+			"expected": o.PayAmount,
+			"paid":     paid,
+			"tradeNo":  strings.TrimSpace(tradeNo),
+		})
+		return nil, fmt.Errorf("invalid paid amount from provider: %v", paid)
+	}
+	if math.Abs(paid-o.PayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(o)) {
+		s.writeAuditLog(ctx, oid, "PAYMENT_AMOUNT_MISMATCH", "system", map[string]any{
+			"expected": o.PayAmount,
+			"paid":     paid,
+			"tradeNo":  strings.TrimSpace(tradeNo),
+		})
+		return nil, fmt.Errorf("amount mismatch: expected %s, got %s", strconv.FormatFloat(o.PayAmount, 'f', -1, 64), strconv.FormatFloat(paid, 'f', -1, 64))
 	}
 
 	now := time.Now()

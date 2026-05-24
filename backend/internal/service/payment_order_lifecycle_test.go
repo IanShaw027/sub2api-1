@@ -910,7 +910,7 @@ func TestVerifyOrderByOutTradeNoReconcilesFailedOrderAndBackfillsPaidMetadata(t 
 	require.Equal(t, 88.0, reloadedUser.TotalRecharged)
 }
 
-func TestMarkFailedOrderPaidAndReloadUsesProviderPaidAmount(t *testing.T) {
+func TestMarkFailedOrderPaidAndReloadRejectsAmountMismatch(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
 
@@ -945,15 +945,79 @@ func TestMarkFailedOrderPaidAndReloadUsesProviderPaidAmount(t *testing.T) {
 	svc := &PaymentService{entClient: client}
 
 	got, err := svc.markFailedOrderPaidAndReload(ctx, order.ID, "upstream-trade-preserve", 80)
-	require.NoError(t, err)
-	require.Equal(t, 80.0, got.PayAmount)
-	require.Equal(t, OrderStatusPaid, got.Status)
-	require.Equal(t, "upstream-trade-preserve", got.PaymentTradeNo)
+	require.Error(t, err)
+	require.Nil(t, got)
+	require.Contains(t, err.Error(), "amount mismatch")
 
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
-	require.Equal(t, 80.0, reloaded.PayAmount)
-	require.Equal(t, OrderStatusPaid, reloaded.Status)
+	require.Equal(t, 120.0, reloaded.PayAmount)
+	require.Equal(t, OrderStatusFailed, reloaded.Status)
+	require.Empty(t, reloaded.PaymentTradeNo)
+	require.Nil(t, reloaded.PaidAt)
+	require.NotNil(t, reloaded.FailedAt)
+}
+
+func TestVerifyOrderByOutTradeNoRejectsFailedOrderAmountMismatch(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("checkpaid-failed-amount-mismatch@example.com").
+		SetPasswordHash("hash").
+		SetUsername("checkpaid-failed-amount-mismatch-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(120).
+		SetFeeRate(0).
+		SetRechargeCode("CHECKPAID-FAILED-AMOUNT-MISMATCH").
+		SetOutTradeNo("sub2_checkpaid_failed_amount_mismatch").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusFailed).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetFailedAt(time.Now().Add(-5 * time.Minute)).
+		SetFailedReason("provider callback lost after local failure").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "upstream-trade-mismatch",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  80,
+		},
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	_, err = svc.VerifyOrderByOutTradeNo(ctx, order.OutTradeNo, user.ID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "amount mismatch")
+	require.Equal(t, 1, provider.queryCalls)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusFailed, reloaded.Status)
+	require.Equal(t, 120.0, reloaded.PayAmount)
+	require.Empty(t, reloaded.PaymentTradeNo)
+	require.Nil(t, reloaded.PaidAt)
+	require.NotNil(t, reloaded.FailedAt)
 }
 
 func TestVerifyOrderByOutTradeNoReturnsErrorWhenLocalConfirmationFails(t *testing.T) {

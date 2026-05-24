@@ -28,6 +28,7 @@ const (
 	redeemMaxErrorsPerHour  = 20
 	redeemRateLimitDuration = time.Hour
 	redeemLockDuration      = 10 * time.Second // 锁超时时间，防止死锁
+	redeemBatchUpdateMaxIDs = 100
 )
 
 type ctxKeySkipRedeemAffiliate struct{}
@@ -306,6 +307,9 @@ func (s *RedeemService) BatchUpdate(ctx context.Context, input *RedeemCodeBatchU
 	}
 	if len(ids) == 0 {
 		return nil, infraerrors.BadRequest("REDEEM_CODE_BATCH_UPDATE_IDS_REQUIRED", "ids are required")
+	}
+	if len(ids) > redeemBatchUpdateMaxIDs {
+		return nil, infraerrors.BadRequest("REDEEM_CODE_BATCH_UPDATE_TOO_LARGE", fmt.Sprintf("cannot batch update more than %d redeem codes at once", redeemBatchUpdateMaxIDs))
 	}
 
 	if input.Fields.Status != nil {

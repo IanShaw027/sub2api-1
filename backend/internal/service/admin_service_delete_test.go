@@ -275,7 +275,9 @@ func (s *apiKeyRepoStubForGroupUpdateDelete) Update(_ context.Context, key *APIK
 	return nil
 }
 
-func (s *apiKeyRepoStubForGroupUpdateDelete) Create(context.Context, *APIKey) error { panic("unexpected") }
+func (s *apiKeyRepoStubForGroupUpdateDelete) Create(context.Context, *APIKey) error {
+	panic("unexpected")
+}
 func (s *apiKeyRepoStubForGroupUpdateDelete) GetKeyAndOwnerID(context.Context, int64) (string, int64, error) {
 	panic("unexpected")
 }
@@ -285,7 +287,9 @@ func (s *apiKeyRepoStubForGroupUpdateDelete) GetByKey(context.Context, string) (
 func (s *apiKeyRepoStubForGroupUpdateDelete) GetByKeyForAuth(context.Context, string) (*APIKey, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdateDelete) Delete(context.Context, int64) error { panic("unexpected") }
+func (s *apiKeyRepoStubForGroupUpdateDelete) Delete(context.Context, int64) error {
+	panic("unexpected")
+}
 func (s *apiKeyRepoStubForGroupUpdateDelete) ListByUserID(context.Context, int64, pagination.PaginationParams, APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
 	panic("unexpected")
 }
@@ -422,6 +426,7 @@ type redeemRepoStub struct {
 	created       []*RedeemCode
 	getByID       map[int64]*RedeemCode
 	getByIDErr    error
+	getByIDCalls  int
 
 	batchUpdateIDs    []int64
 	batchUpdateFields RedeemCodeBatchUpdateFields
@@ -452,6 +457,7 @@ func (s *redeemRepoStub) CreateBatch(ctx context.Context, codes []RedeemCode) er
 }
 
 func (s *redeemRepoStub) GetByID(ctx context.Context, id int64) (*RedeemCode, error) {
+	s.getByIDCalls++
 	if s.getByIDErr != nil {
 		return nil, s.getByIDErr
 	}
