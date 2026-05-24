@@ -270,6 +270,58 @@ func TestOpsErrorLoggerMiddleware_RecordsNoAvailableAccounts(t *testing.T) {
 	}
 }
 
+func TestOpsErrorLoggerMiddleware_RecordsRecoveredUpstreamErrorOnSuccessfulRequest(t *testing.T) {
+	resetOpsErrorLoggerStateForTest(t)
+	t.Cleanup(func() { resetOpsErrorLoggerStateForTest(t) })
+	gin.SetMode(gin.TestMode)
+
+	opsErrorLogOnce.Do(func() {})
+	opsErrorLogMu.Lock()
+	opsErrorLogQueue = make(chan opsErrorLogJob, 1)
+	opsErrorLogMu.Unlock()
+
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := gin.New()
+	r.POST("/v1/messages", OpsErrorLoggerMiddleware(ops), func(c *gin.Context) {
+		body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}]}`)
+		setOpsRequestContext(c, "claude-sonnet-4-5", true, body)
+		setOpsEndpointContext(c, "claude-sonnet-4.5", int16(service.RequestTypeSync))
+		c.Set(service.OpsUpstreamErrorsKey, []*service.OpsUpstreamErrorEvent{{
+			Platform:          service.PlatformKiro,
+			AccountID:         99,
+			AccountName:       "kiro-test",
+			UpstreamRequestID: "kiro-upstream-1",
+			Kind:              "response_anomaly",
+			Message:           "kiro completed with anomalies: incomplete_tool_use_completed",
+			Detail:            `{"anomaly_kinds":["incomplete_tool_use_completed"]}`,
+		}})
+		c.JSON(http.StatusOK, gin.H{"type": "message"})
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(1), OpsErrorLogEnqueuedTotal())
+	require.Equal(t, int64(1), OpsErrorLogQueueLength())
+
+	select {
+	case job := <-opsErrorLogQueue:
+		opsErrorLogQueueLen.Add(-1)
+		require.NotNil(t, job.entry)
+		require.Equal(t, http.StatusOK, job.entry.StatusCode)
+		require.Equal(t, "upstream", job.entry.ErrorPhase)
+		require.Equal(t, "upstream_error", job.entry.ErrorType)
+		require.Contains(t, job.entry.ErrorMessage, "Recovered upstream error")
+		require.Contains(t, job.entry.ErrorMessage, "incomplete_tool_use_completed")
+		require.Len(t, job.entry.UpstreamErrors, 1)
+		require.Equal(t, "response_anomaly", job.entry.UpstreamErrors[0].Kind)
+	default:
+		t.Fatal("expected recovered upstream anomaly to be enqueued")
+	}
+}
+
 func TestShouldSkipOpsErrorLog_NewAdvancedFilters(t *testing.T) {
 	repo := &opsLoggerSettingRepoStub{values: map[string]string{}}
 	raw, err := json.Marshal(map[string]any{

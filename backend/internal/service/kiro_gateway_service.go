@@ -34,6 +34,7 @@ const (
 	kiroStandardContextPromoteThreshold = 180000
 	kiroOneMillionContextBudgetTokens   = 900000
 	kiroContextUsagePercentKey          = "kiro_context_usage_percentage"
+	kiroShortOutputTokenThreshold       = 20
 )
 
 type KiroGatewayService struct {
@@ -57,6 +58,17 @@ type kiroPreparedRequestMeta struct {
 	Compacted             bool
 	DroppedMessages       int
 	ToolCount             int
+}
+
+type kiroResponseTelemetry struct {
+	FramesSeen             int
+	AssistantChars         int
+	NativeThinkingChars    int
+	SimulatedThinkingChars int
+	ToolUseCount           int
+	CompletedToolUseCount  int
+	PartialToolUseCount    int
+	ContextUsagePercentage *float64
 }
 
 func NewKiroGatewayService(
@@ -219,10 +231,8 @@ func prepareKiroConvertedRequestWithMeta(account *Account, parsed *ParsedRequest
 
 	billedInputTokens := estimateKiroInputTokens(parsed.Body)
 	meta.ForwardInputTokens = billedInputTokens
-	if billedInputTokens >= kiroStandardContextPromoteThreshold {
-		promotedModel := ensureKiroOneMillionContextModelVariant(requestedModel)
-		meta.PromotedContextWindow = promotedModel != requestedModel
-		requestedModel = promotedModel
+	if billedInputTokens >= kiroStandardContextPromoteThreshold && kiropkg.SupportsOneMillionContextModel(requestedModel) {
+		meta.PromotedContextWindow = true
 	}
 
 	forwardBody := parsed.Body
@@ -262,7 +272,13 @@ func resolveKiroRequestedModel(account *Account, requestedModel string) (string,
 		return "", fmt.Errorf("unsupported kiro model: %s", requestedModel)
 	}
 	if mappedModel, matched := resolveKiroMappedModel(account, requestedModel); matched {
+		if strippedModel, hadVariant := stripKiroModelVariantSuffixes(strings.TrimSpace(mappedModel)); hadVariant {
+			return strippedModel, nil
+		}
 		return mappedModel, nil
+	}
+	if strippedModel, hadVariant := stripKiroModelVariantSuffixes(requestedModel); hadVariant {
+		return strippedModel, nil
 	}
 	return requestedModel, nil
 }
@@ -284,19 +300,8 @@ func isKiroFreeAccount(account *Account) bool {
 	return subscriptionType == "" || strings.Contains(subscriptionType, "free")
 }
 
-func ensureKiroOneMillionContextModelVariant(model string) string {
-	if strings.HasSuffix(kiropkg.MapModel(model), "-1m") {
-		return model
-	}
-	candidate := model + "-1m"
-	if kiropkg.MapModel(candidate) != "" {
-		return candidate
-	}
-	return model
-}
-
 func kiroContextBudgetTokensForModel(model string) int {
-	if strings.HasSuffix(kiropkg.MapModel(model), "-1m") {
+	if kiropkg.SupportsOneMillionContextModel(model) {
 		return kiroOneMillionContextBudgetTokens
 	}
 	return kiroStandardContextBudgetTokens
@@ -696,6 +701,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	toolNames := make([]string, 0)
 	stopReason := "end_turn"
 	hasVisibleOutput := strings.TrimSpace(thinkingOverride) != ""
+	var lastContextUsagePercentage *float64
 
 	for _, frame := range frames {
 		if failureErr := kiroFrameFailure(frame); failureErr != nil {
@@ -709,6 +715,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 			}
 		case "contextUsageEvent":
 			if usagePercent, ok := numericField(frame.Payload, "contextUsagePercentage"); ok {
+				lastContextUsagePercentage = &usagePercent
 				setKiroContextUsagePercentage(c, usagePercent)
 				if reason := kiroStopReasonFromContextUsage(usagePercent); reason != "" {
 					stopReason = reason
@@ -726,6 +733,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 			}
 		}
 	}
+	visibleToolUses, completedToolUses, partialToolUses := kiroVisibleToolStateCounts(toolBuffers, toolOrder)
 	for _, toolUseID := range toolOrder {
 		state := toolBuffers[toolUseID]
 		toolUse, ok := buildKiroToolUseBlock(state)
@@ -802,7 +810,18 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 			CacheReadInputTokens:     fakeCacheUsage.CacheReadInputTokens,
 		},
 	}
-	logKiroRequestCompleted(ctx, account, parsed, result.RequestID, result.UpstreamModel, false, result.Duration, nil, inputTokens, outputTokens, fakeCacheUsage.CacheCreationInputTokens, fakeCacheUsage.CacheReadInputTokens, stopReason, toolNames, strings.TrimSpace(thinkingOverride) != "", nil)
+	telemetry := &kiroResponseTelemetry{
+		FramesSeen:             len(frames),
+		AssistantChars:         len(textOutput),
+		NativeThinkingChars:    len(nativeThinkingOutput),
+		SimulatedThinkingChars: len(strings.TrimSpace(thinkingOverride)),
+		ToolUseCount:           visibleToolUses,
+		CompletedToolUseCount:  completedToolUses,
+		PartialToolUseCount:    partialToolUses,
+		ContextUsagePercentage: lastContextUsagePercentage,
+	}
+	s.recordKiroSuccessfulAnomalies(ctx, c, account, parsed, result.RequestID, false, outputTokens, stopReason, telemetry)
+	logKiroRequestCompleted(ctx, account, parsed, result.RequestID, result.UpstreamModel, false, result.Duration, nil, inputTokens, outputTokens, fakeCacheUsage.CacheCreationInputTokens, fakeCacheUsage.CacheReadInputTokens, stopReason, toolNames, strings.TrimSpace(thinkingOverride) != "", telemetry)
 	return result, nil
 }
 
@@ -1198,7 +1217,8 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		}
 		nativeThinkingBuffer = ""
 	}
-	hasVisibleToolOutput := completedToolUses > 0 || kiroHasVisibleToolStates(toolStates, toolOrder)
+	visibleToolUses, completedVisibleToolUses, partialToolUses := kiroVisibleToolStateCounts(toolStates, toolOrder)
+	hasVisibleToolOutput := visibleToolUses > 0
 	if hasVisibleToolOutput && stopReason == "end_turn" {
 		stopReason = "tool_use"
 	}
@@ -1263,7 +1283,18 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			CacheReadInputTokens:     finalFakeCacheUsage.CacheReadInputTokens,
 		},
 	}
-	logKiroRequestCompleted(ctx, account, parsed, result.RequestID, result.UpstreamModel, true, result.Duration, firstTokenMs, inputTokens, outputTokens, finalFakeCacheUsage.CacheCreationInputTokens, finalFakeCacheUsage.CacheReadInputTokens, stopReason, toolNames, simulatedThinking != "", lastContextUsagePercentage)
+	telemetry := &kiroResponseTelemetry{
+		FramesSeen:             framesSeen,
+		AssistantChars:         textOutputBuilder.Len(),
+		NativeThinkingChars:    nativeThinkingBuilder.Len(),
+		SimulatedThinkingChars: len(strings.TrimSpace(simulatedThinking)),
+		ToolUseCount:           visibleToolUses,
+		CompletedToolUseCount:  completedVisibleToolUses,
+		PartialToolUseCount:    partialToolUses,
+		ContextUsagePercentage: lastContextUsagePercentage,
+	}
+	s.recordKiroSuccessfulAnomalies(ctx, c, account, parsed, result.RequestID, true, outputTokens, stopReason, telemetry)
+	logKiroRequestCompleted(ctx, account, parsed, result.RequestID, result.UpstreamModel, true, result.Duration, firstTokenMs, inputTokens, outputTokens, finalFakeCacheUsage.CacheCreationInputTokens, finalFakeCacheUsage.CacheReadInputTokens, stopReason, toolNames, simulatedThinking != "", telemetry)
 	return result, nil
 }
 
@@ -1642,6 +1673,22 @@ func kiroHasVisibleToolStates(states map[string]*kiroToolState, order []string) 
 		}
 	}
 	return false
+}
+
+func kiroVisibleToolStateCounts(states map[string]*kiroToolState, order []string) (visible int, completed int, partial int) {
+	for _, toolUseID := range order {
+		state := states[toolUseID]
+		if !kiroToolStateHasVisibleOutput(state) {
+			continue
+		}
+		visible++
+		if state != nil && state.Stopped {
+			completed++
+			continue
+		}
+		partial++
+	}
+	return visible, completed, partial
 }
 
 func kiroStopReasonFromContextUsage(usagePercent float64) string {
@@ -2269,7 +2316,113 @@ func logKiroResponseAnomaly(ctx context.Context, account *Account, parsed *Parse
 	kiroLogger(ctx, account).Warn("kiro.response_anomaly", fields...)
 }
 
-func logKiroRequestCompleted(ctx context.Context, account *Account, parsed *ParsedRequest, upstreamRequestID string, upstreamModel string, stream bool, duration time.Duration, firstTokenMs *int, inputTokens int, outputTokens int, cacheCreationTokens int, cacheReadTokens int, stopReason string, toolNames []string, simulatedThinking bool, contextUsagePercentage *float64) {
+func (t *kiroResponseTelemetry) shortOutput(outputTokens int) bool {
+	if t == nil {
+		return false
+	}
+	return outputTokens > 0 && outputTokens <= kiroShortOutputTokenThreshold
+}
+
+func (t *kiroResponseTelemetry) anomalyKinds(stopReason string) []string {
+	if t == nil {
+		return nil
+	}
+	kinds := make([]string, 0, 3)
+	if t.PartialToolUseCount > 0 {
+		kinds = append(kinds, "incomplete_tool_use_completed")
+	}
+	if stopReason == "model_context_window_exceeded" {
+		kinds = append(kinds, "context_window_exceeded")
+	}
+	if t.AssistantChars == 0 && t.NativeThinkingChars == 0 && t.SimulatedThinkingChars > 0 && t.ToolUseCount == 0 {
+		kinds = append(kinds, "fallback_thinking_only")
+	}
+	return kinds
+}
+
+func (t *kiroResponseTelemetry) completionKinds() []string {
+	if t == nil {
+		return nil
+	}
+	kinds := make([]string, 0, 4)
+	if t.AssistantChars > 0 {
+		kinds = append(kinds, "text")
+	}
+	if t.NativeThinkingChars > 0 {
+		kinds = append(kinds, "native_thinking")
+	}
+	if t.SimulatedThinkingChars > 0 {
+		kinds = append(kinds, "simulated_thinking")
+	}
+	if t.ToolUseCount > 0 {
+		kinds = append(kinds, "tool_use")
+	}
+	return kinds
+}
+
+func (t *kiroResponseTelemetry) opsDetail(stopReason string, outputTokens int, shortOutput bool, anomalyKinds []string) string {
+	if t == nil {
+		return ""
+	}
+	payload := map[string]any{
+		"frames_seen":              t.FramesSeen,
+		"assistant_chars":          t.AssistantChars,
+		"native_thinking_chars":    t.NativeThinkingChars,
+		"simulated_thinking_chars": t.SimulatedThinkingChars,
+		"tool_use_count":           t.ToolUseCount,
+		"completed_tool_use_count": t.CompletedToolUseCount,
+		"partial_tool_use_count":   t.PartialToolUseCount,
+		"stop_reason":              stopReason,
+		"output_tokens":            outputTokens,
+		"short_output":             shortOutput,
+		"completion_kinds":         t.completionKinds(),
+		"anomaly_kinds":            anomalyKinds,
+	}
+	if t.ContextUsagePercentage != nil {
+		payload["context_usage_percentage"] = *t.ContextUsagePercentage
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}
+
+func (s *KiroGatewayService) recordKiroSuccessfulAnomalies(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest, upstreamRequestID string, stream bool, outputTokens int, stopReason string, telemetry *kiroResponseTelemetry) {
+	if telemetry == nil {
+		return
+	}
+	anomalyKinds := telemetry.anomalyKinds(stopReason)
+	shortOutput := telemetry.shortOutput(outputTokens)
+	if len(anomalyKinds) == 0 && !shortOutput {
+		return
+	}
+	detail := telemetry.opsDetail(stopReason, outputTokens, shortOutput, anomalyKinds)
+	for _, kind := range anomalyKinds {
+		logKiroResponseAnomaly(ctx, account, parsed, stream, kind, nil, telemetry.FramesSeen, telemetry.ToolUseCount, telemetry.ContextUsagePercentage)
+	}
+	if shortOutput {
+		logKiroResponseAnomaly(ctx, account, parsed, stream, "short_output", nil, telemetry.FramesSeen, telemetry.ToolUseCount, telemetry.ContextUsagePercentage)
+	}
+	if len(anomalyKinds) == 0 || c == nil || account == nil {
+		return
+	}
+	messageParts := append([]string{}, anomalyKinds...)
+	if shortOutput {
+		messageParts = append(messageParts, "short_output")
+	}
+	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		Platform:          account.Platform,
+		AccountID:         account.ID,
+		AccountName:       account.Name,
+		UpstreamRequestID: strings.TrimSpace(upstreamRequestID),
+		Kind:              "response_anomaly",
+		Message:           "kiro completed with anomalies: " + strings.Join(messageParts, ","),
+		Detail:            detail,
+	})
+}
+
+func logKiroRequestCompleted(ctx context.Context, account *Account, parsed *ParsedRequest, upstreamRequestID string, upstreamModel string, stream bool, duration time.Duration, firstTokenMs *int, inputTokens int, outputTokens int, cacheCreationTokens int, cacheReadTokens int, stopReason string, toolNames []string, simulatedThinking bool, telemetry *kiroResponseTelemetry) {
 	fields := []zap.Field{
 		zap.Bool("stream", stream),
 		zap.String("upstream_request_id", strings.TrimSpace(upstreamRequestID)),
@@ -2290,8 +2443,21 @@ func logKiroRequestCompleted(ctx context.Context, account *Account, parsed *Pars
 	if firstTokenMs != nil {
 		fields = append(fields, zap.Int("first_token_ms", *firstTokenMs))
 	}
-	if contextUsagePercentage != nil {
-		fields = append(fields, zap.Float64("context_usage_percentage", *contextUsagePercentage))
+	if telemetry != nil {
+		fields = append(fields,
+			zap.Int("frames_seen", telemetry.FramesSeen),
+			zap.Int("assistant_chars", telemetry.AssistantChars),
+			zap.Int("native_thinking_chars", telemetry.NativeThinkingChars),
+			zap.Int("simulated_thinking_chars", telemetry.SimulatedThinkingChars),
+			zap.Int("completed_tool_use_count", telemetry.CompletedToolUseCount),
+			zap.Int("partial_tool_use_count", telemetry.PartialToolUseCount),
+			zap.Strings("completion_kinds", telemetry.completionKinds()),
+			zap.Bool("short_output", telemetry.shortOutput(outputTokens)),
+			zap.Strings("anomaly_kinds", telemetry.anomalyKinds(stopReason)),
+		)
+		if telemetry.ContextUsagePercentage != nil {
+			fields = append(fields, zap.Float64("context_usage_percentage", *telemetry.ContextUsagePercentage))
+		}
 	}
 	kiroLogger(ctx, account).Info("kiro.request_completed", fields...)
 }

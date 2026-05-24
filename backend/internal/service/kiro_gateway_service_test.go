@@ -382,9 +382,9 @@ func TestMapKiroModel_MatchesClaudeCodeAliasesAgainstConfiguredKiroModels(t *tes
 	}
 
 	require.Equal(t, "claude-sonnet-4.6", mapKiroModel(account, "claude-sonnet-4-6"))
-	require.Equal(t, "claude-sonnet-4.6-1m", mapKiroModel(account, "claude-sonnet-4-6-1m"))
-	require.Equal(t, "claude-opus-4.7-1m", mapKiroModel(account, "claude-opus-4-7-1m"))
-	require.Equal(t, "claude-opus-4.7-1m", mapKiroModel(account, "claude-opus-4.7[1m]"))
+	require.Equal(t, "claude-sonnet-4.6", mapKiroModel(account, "claude-sonnet-4-6-1m"))
+	require.Equal(t, "claude-opus-4.7", mapKiroModel(account, "claude-opus-4-7-1m"))
+	require.Equal(t, "claude-opus-4.7", mapKiroModel(account, "claude-opus-4.7[1m]"))
 }
 
 func TestResolveKiroRequestedModelForRequest_DefaultSimulationKeepsMappedModel(t *testing.T) {
@@ -411,8 +411,8 @@ func TestResolveKiroRequestedModelForRequest_PreservesOneMillionMappedModel(t *t
 	}, nil)
 
 	require.NoError(t, err)
-	require.Equal(t, "claude-sonnet-4-5-20250929-1m", model)
-	require.Equal(t, "claude-sonnet-4.5-1m", kiropkg.MapModel(model))
+	require.Equal(t, "claude-sonnet-4-5-20250929", model)
+	require.Equal(t, "claude-sonnet-4.5", kiropkg.MapModel(model))
 }
 
 func TestResolveKiroRequestedModelForRequest_LowEffortDoesNotUseThinkingVariant(t *testing.T) {
@@ -582,13 +582,13 @@ func TestPrepareKiroConvertedRequest_PromotesLargeContextToOneMillionModelWithou
 	}, nil)
 	require.NoError(t, err)
 	require.Greater(t, billedInputTokens, kiroStandardContextBudgetTokens)
-	require.Equal(t, "claude-sonnet-4.6-1m", converted.Model)
+	require.Equal(t, "claude-sonnet-4.6", converted.Model)
 
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(converted.Body, &payload))
 	state := payload["conversationState"].(map[string]any)
 	current := state["currentMessage"].(map[string]any)["userInputMessage"].(map[string]any)
-	require.Equal(t, "claude-sonnet-4.6-1m", current["modelId"])
+	require.Equal(t, "claude-sonnet-4.6", current["modelId"])
 }
 
 func TestRenderKiroThinkingSimulation_UsesConfiguredTemplateAndEffortThreshold(t *testing.T) {
@@ -1554,6 +1554,14 @@ func TestKiroGatewayService_ForwardNonStream_ContextOnlyBodyFallsBackToThinking(
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), `"type":"thinking"`)
 	require.NotContains(t, rec.Body.String(), "Kiro upstream returned no assistant output")
+	rawEvents, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := rawEvents.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "response_anomaly", events[0].Kind)
+	require.Contains(t, events[0].Message, "fallback_thinking_only")
+	require.Contains(t, events[0].Detail, `"anomaly_kinds":["fallback_thinking_only"]`)
 }
 
 func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFallsBackToThinking(t *testing.T) {
@@ -1677,6 +1685,14 @@ func TestKiroGatewayService_ForwardStream_ContextWindowExceededUsesStopReason(t 
 	require.Contains(t, rec.Body.String(), `"stop_reason":"model_context_window_exceeded"`)
 	require.Contains(t, rec.Body.String(), "event: message_stop")
 	require.NotContains(t, rec.Body.String(), "event: error")
+	rawEvents, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := rawEvents.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "response_anomaly", events[0].Kind)
+	require.Contains(t, events[0].Message, "context_window_exceeded")
+	require.Contains(t, events[0].Detail, `"stop_reason":"model_context_window_exceeded"`)
 }
 
 func TestKiroGatewayService_ForwardStream_DoesNotBillContextUsagePercentageAsInputTokens(t *testing.T) {
@@ -1869,6 +1885,14 @@ func TestKiroGatewayService_ForwardStream_IncompleteToolUseEOFStillStopsMessage(
 	require.Contains(t, rec.Body.String(), "event: message_stop")
 	require.NotContains(t, rec.Body.String(), "event: error")
 	require.Greater(t, result.Usage.OutputTokens, 0)
+	rawEvents, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := rawEvents.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "response_anomaly", events[0].Kind)
+	require.Contains(t, events[0].Message, "incomplete_tool_use_completed")
+	require.Contains(t, events[0].Detail, `"partial_tool_use_count":1`)
 }
 
 func TestKiroGatewayService_ForwardStream_TextToolTextClosesBlocksInOrder(t *testing.T) {
