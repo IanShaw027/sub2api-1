@@ -3793,25 +3793,20 @@ function normalizeKiroModelName(raw: unknown): string {
 
   const normalized = input.replace(/^models\//, '').replace(/-v1:0$/, '')
   let base = normalized
-  let oneMillionContext = false
   for (;;) {
     if (base.endsWith('[1m]')) {
-      oneMillionContext = true
       base = base.slice(0, -4)
       continue
     }
     if (base.endsWith('-1m-context')) {
-      oneMillionContext = true
       base = base.slice(0, -11)
       continue
     }
     if (base.endsWith('-context-1m')) {
-      oneMillionContext = true
       base = base.slice(0, -11)
       continue
     }
     if (base.endsWith('-1m')) {
-      oneMillionContext = true
       base = base.slice(0, -3)
       continue
     }
@@ -3839,16 +3834,16 @@ function normalizeKiroModelName(raw: unknown): string {
     'claude-haiku-4-5-20251001': 'claude-haiku-4.5'
   }
   if (directAliases[base]) {
-    return `${directAliases[base]}${oneMillionContext ? '-1m' : ''}`
+    return directAliases[base]
   }
 
   const pattern = /^claude-(haiku|sonnet|opus)-4[.-]([567])(?:-\d{8})?$/
   const match = base.match(pattern)
   if (match) {
-    return `claude-${match[1]}-4.${match[2]}${oneMillionContext ? '-1m' : ''}`
+    return `claude-${match[1]}-4.${match[2]}`
   }
 
-  return `${base}${oneMillionContext ? '-1m' : ''}`
+  return base
 }
 
 function normalizeKiroModelWhitelist(models: unknown): string[] {

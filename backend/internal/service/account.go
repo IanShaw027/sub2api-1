@@ -668,28 +668,7 @@ func normalizeKiroModelName(raw string) string {
 
 	value = strings.TrimPrefix(value, "models/")
 	value = strings.TrimSuffix(value, "-v1:0")
-	base := value
-	oneMillionContext := false
-	for {
-		switch {
-		case strings.HasSuffix(base, "[1m]"):
-			oneMillionContext = true
-			base = strings.TrimSuffix(base, "[1m]")
-		case strings.HasSuffix(base, "-1m-context"):
-			oneMillionContext = true
-			base = strings.TrimSuffix(base, "-1m-context")
-		case strings.HasSuffix(base, "-context-1m"):
-			oneMillionContext = true
-			base = strings.TrimSuffix(base, "-context-1m")
-		case strings.HasSuffix(base, "-1m"):
-			oneMillionContext = true
-			base = strings.TrimSuffix(base, "-1m")
-		default:
-			goto normalizeKiroModelNameDone
-		}
-	}
-
-normalizeKiroModelNameDone:
+	base, oneMillionContext := stripKiroModelVariantSuffixes(value)
 	directAliases := map[string]string{
 		"claude-sonnet-4":            "claude-sonnet-4.6",
 		"claude-sonnet-4-5":          "claude-sonnet-4.5",
@@ -711,24 +690,39 @@ normalizeKiroModelNameDone:
 		"claude-haiku-4-5-20251001":  "claude-haiku-4.5",
 	}
 	if mapped, ok := directAliases[base]; ok {
-		if oneMillionContext {
-			return mapped + "-1m"
-		}
 		return mapped
 	}
 
 	if matches := kiroClaudeModelPattern.FindStringSubmatch(base); len(matches) == 3 {
-		mapped := "claude-" + matches[1] + "-4." + matches[2]
-		if oneMillionContext {
-			mapped += "-1m"
-		}
-		return mapped
+		return "claude-" + matches[1] + "-4." + matches[2]
 	}
 
 	if oneMillionContext {
-		return base + "-1m"
+		return base
 	}
 	return base
+}
+
+func stripKiroModelVariantSuffixes(value string) (base string, oneMillionContext bool) {
+	base = value
+	for {
+		switch {
+		case strings.HasSuffix(base, "[1m]"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "[1m]")
+		case strings.HasSuffix(base, "-1m-context"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "-1m-context")
+		case strings.HasSuffix(base, "-context-1m"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "-context-1m")
+		case strings.HasSuffix(base, "-1m"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "-1m")
+		default:
+			return base, oneMillionContext
+		}
+	}
 }
 
 func stringsFromRawSlice(raw any) []string {

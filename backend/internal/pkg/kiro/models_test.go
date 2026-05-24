@@ -36,14 +36,14 @@ func TestMapModel_MapsPublishedAliases(t *testing.T) {
 	tests := map[string]string{
 		"claude-sonnet-4":                     "claude-sonnet-4.6",
 		"claude-sonnet-4-5-20250929":          "claude-sonnet-4.5",
-		"claude-sonnet-4-5-20250929-1m":       "claude-sonnet-4.5-1m",
+		"claude-sonnet-4-5-20250929-1m":       "claude-sonnet-4.5",
 		"claude-haiku-4-6":                    "claude-haiku-4.6",
-		"claude-haiku-4.7-1m":                 "claude-haiku-4.7-1m",
+		"claude-haiku-4.7-1m":                 "claude-haiku-4.7",
 		"claude-opus-4.6":                     "claude-opus-4.6",
 		"claude-opus-4-6-20260205":            "claude-opus-4.6",
-		"claude-opus-4-6-20260205-context-1m": "claude-opus-4.6-1m",
-		"claude-opus-4.7[1m]":                 "claude-opus-4.7-1m",
-		"claude-opus-4-7[1m]":                 "claude-opus-4.7-1m",
+		"claude-opus-4-6-20260205-context-1m": "claude-opus-4.6",
+		"claude-opus-4.7[1m]":                 "claude-opus-4.7",
+		"claude-opus-4-7[1m]":                 "claude-opus-4.7",
 		"claude-opus-4-7":                     "claude-opus-4.7",
 		"claude-haiku-4-5-20251001":           "claude-haiku-4.5",
 	}
@@ -64,6 +64,22 @@ func TestMapModel_RejectsThinkingSuffixAliases(t *testing.T) {
 	for _, input := range tests {
 		if got := MapModel(input); got != "" {
 			t.Fatalf("MapModel(%q) = %q, want empty string", input, got)
+		}
+	}
+}
+
+func TestSupportsOneMillionContextModel(t *testing.T) {
+	tests := map[string]bool{
+		"claude-sonnet-4-6":          true,
+		"claude-sonnet-4.6-1m":       true,
+		"claude-opus-4.6":            true,
+		"claude-opus-4.7[1m]":        true,
+		"claude-sonnet-4-5-20250929": false,
+		"claude-haiku-4.6":           false,
+	}
+	for input, want := range tests {
+		if got := SupportsOneMillionContextModel(input); got != want {
+			t.Fatalf("SupportsOneMillionContextModel(%q) = %v, want %v", input, got, want)
 		}
 	}
 }

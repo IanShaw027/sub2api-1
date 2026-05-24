@@ -3375,8 +3375,8 @@
               <p class="text-xs text-gray-500 dark:text-gray-400">
                 {{
                   localText(
-                    "格式：{ platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to}, kiro_subscription_type_model_config?: { free|pro|pro_plus|power: { ... } } } }。白名单用于模型限制，支持末尾 * 通配符；Kiro 的 1M 变体可写成 -1m 或 [1m]，保存后会归一为 -1m。",
-                    "Format: { platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to}, kiro_subscription_type_model_config?: { free|pro|pro_plus|power: { ... } } } }. Whitelist entries restrict models and support trailing * wildcards; Kiro 1M variants can be written as -1m or [1m] and are normalized to -1m when saved.",
+                    "格式：{ platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to}, kiro_subscription_type_model_config?: { free|pro|pro_plus|power: { ... } } } }。白名单用于模型限制，支持末尾 * 通配符；Kiro 的 -1m / [1m] 只作为兼容别名，保存后会归一为官方 canonical 模型名。",
+                    "Format: { platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to}, kiro_subscription_type_model_config?: { free|pro|pro_plus|power: { ... } } } }. Whitelist entries restrict models and support trailing * wildcards; Kiro -1m / [1m] values are treated as compatibility aliases and normalized to the official canonical model names when saved.",
                   )
                 }}
               </p>

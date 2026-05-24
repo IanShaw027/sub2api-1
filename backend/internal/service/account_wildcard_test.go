@@ -287,7 +287,7 @@ func TestAccountGetMappedModel(t *testing.T) {
 				},
 			},
 			requestedModel: "claude-opus-4.7[1m]",
-			expected:       "claude-opus-4.6-1m",
+			expected:       "claude-opus-4.6",
 		},
 
 		// 无匹配返回原始模型
@@ -406,7 +406,7 @@ func TestAccountResolveMappedModel(t *testing.T) {
 				"model_whitelist": []any{"claude-sonnet-4.6[1m]"},
 			},
 			requestedModel: "claude-sonnet-4.6[1m]",
-			expectedModel:  "claude-sonnet-4.6-1m",
+			expectedModel:  "claude-sonnet-4.6",
 			expectedMatch:  true,
 		},
 		{

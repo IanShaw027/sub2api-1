@@ -346,9 +346,9 @@ func TestAccountUsageService_GetUsage_KiroPopulatesWindowStatsFromLocalUsageLogs
 	require.NotNil(t, usage.KiroQuota.WindowStats)
 	require.Equal(t, int64(27), usage.KiroQuota.WindowStats.Requests)
 	require.Equal(t, int64(45123), usage.KiroQuota.WindowStats.Tokens)
-	require.Equal(t, 12.5, usage.KiroQuota.WindowStats.Cost)
-	require.Equal(t, 12.5, usage.KiroQuota.WindowStats.UserCost)
-	require.Equal(t, 12.5, usage.KiroQuota.WindowStats.StandardCost)
+	require.Equal(t, 99.9, usage.KiroQuota.WindowStats.Cost)
+	require.Equal(t, 77.7, usage.KiroQuota.WindowStats.UserCost)
+	require.Equal(t, 88.8, usage.KiroQuota.WindowStats.StandardCost)
 	require.True(t, usageRepo.requestedStart.Equal(timezone.StartOfMonth(time.Now())), "window start = %v", usageRepo.requestedStart)
 }
 

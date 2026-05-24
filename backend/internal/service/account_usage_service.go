@@ -572,16 +572,11 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 		bonusQuota := buildKiroQuotaBreakdown(limits.BonusCurrentUsage(), limits.BonusUsageLimit(), nil)
 		freeTrialQuota := buildKiroQuotaBreakdown(limits.FreeTrialCurrentUsage(), limits.FreeTrialUsageLimit(), nil)
 		totalQuota := buildKiroQuotaBreakdown(currentUsage, usageLimit, resetAt)
-		windowStats := &WindowStats{
-			Cost:         currentUsage,
-			StandardCost: currentUsage,
-			UserCost:     currentUsage,
-		}
+		windowStats := &WindowStats{}
 		if s.usageLogRepo != nil {
 			startTime := timezone.StartOfMonth(now)
 			if stats, err := s.usageLogRepo.GetAccountWindowStats(fetchCtx, account.ID, startTime); err == nil && stats != nil {
-				windowStats.Requests = stats.Requests
-				windowStats.Tokens = stats.Tokens
+				windowStats = windowStatsFromAccountStats(stats)
 			} else if err != nil {
 				log.Printf("Failed to get Kiro window stats for account %d: %v", account.ID, err)
 			}

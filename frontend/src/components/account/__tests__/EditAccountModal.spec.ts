@@ -727,7 +727,7 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).toHaveBeenCalledTimes(2)
   })
 
-  it('normalizes Kiro [1m] aliases to canonical -1m on load and save', async () => {
+  it('normalizes Kiro [1m] aliases to canonical models on load and save', async () => {
     const account = {
       id: 12,
       name: 'Kiro 1M',
@@ -765,8 +765,8 @@ describe('EditAccountModal', () => {
     await wrapper.setProps({ show: true })
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect((wrapper.get('input[placeholder="admin.accounts.requestModel"]').element as HTMLInputElement).value).toBe('claude-opus-4.7-1m')
-    expect((wrapper.get('input[placeholder="admin.accounts.actualModel"]').element as HTMLInputElement).value).toBe('claude-opus-4.6-1m')
+    expect((wrapper.get('input[placeholder="admin.accounts.requestModel"]').element as HTMLInputElement).value).toBe('claude-opus-4.7')
+    expect((wrapper.get('input[placeholder="admin.accounts.actualModel"]').element as HTMLInputElement).value).toBe('claude-opus-4.6')
 
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
@@ -776,7 +776,7 @@ describe('EditAccountModal', () => {
       | undefined
     if (submittedMapping) {
       expect(submittedMapping).toEqual({
-        'claude-opus-4.7-1m': 'claude-opus-4.6-1m'
+        'claude-opus-4.7': 'claude-opus-4.6'
       })
     }
   })
