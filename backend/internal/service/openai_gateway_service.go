@@ -132,6 +132,12 @@ func clearOpenAIRequestBodyCache(c *gin.Context) {
 	delete(c.Keys, OpenAIParsedRequestBodyKey)
 }
 
+// ClearOpenAICompatRequestState clears per-request OpenAI compat replay/cache state.
+func ClearOpenAICompatRequestState(c *gin.Context) {
+	clearOpenAIRequestBodyCache(c)
+	ClearOpenAIStreamRetryReplayState(c)
+}
+
 // OpenAI allowed headers whitelist (for non-passthrough).
 var openaiAllowedHeaders = map[string]bool{
 	"accept":                   true,

@@ -141,6 +141,30 @@ func TestGetOpenAIRequestBodyMap_WriteBackContextCache(t *testing.T) {
 	require.Equal(t, got, cachedMap)
 }
 
+func TestClearOpenAICompatRequestState_RemovesCachedReplayState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	c.Set(OpenAIParsedRequestBodyKey, map[string]any{"model": "cached"})
+	c.Set(openAIStreamRetryReplayStateKey, &openAIStreamRetryReplayState{
+		accountID:              42,
+		visibleFrameSignatures: []string{"response.output_text.delta"},
+		emittedTextPrefix:      "hello",
+	})
+	c.Set("unrelated", "keep")
+
+	ClearOpenAICompatRequestState(c)
+
+	_, exists := c.Get(OpenAIParsedRequestBodyKey)
+	require.False(t, exists)
+	_, exists = c.Get(openAIStreamRetryReplayStateKey)
+	require.False(t, exists)
+	other, exists := c.Get("unrelated")
+	require.True(t, exists)
+	require.Equal(t, "keep", other)
+}
+
 func TestSanitizeEmptyBase64InputImagesInOpenAIRequestBodyMap(t *testing.T) {
 	var reqBody map[string]any
 	require.NoError(t, json.Unmarshal([]byte(`{

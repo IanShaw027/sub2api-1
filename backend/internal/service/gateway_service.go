@@ -6744,6 +6744,7 @@ func (s *GatewayService) resolveBedrockBetaTokensForRequest(
 
 	// 2. 解析 header + body 自动注入 + Bedrock 转换/过滤
 	betaTokens := ResolveBedrockBetaTokens(betaHeader, body, modelID)
+	betaTokens = dedupeStrings(append(betaTokens, extractBedrockBetaTokensFromBody(body)...))
 
 	// 3. 对最终 token 列表再做 block 检查，捕获通过 body 自动注入绕过 header block 的情况。
 	//    例如：管理员 block 了 interleaved-thinking，客户端不在 header 中带该 token，
@@ -6754,6 +6755,26 @@ func (s *GatewayService) resolveBedrockBetaTokensForRequest(
 	}
 
 	return filterBetaTokens(betaTokens, policy.filterSet), nil
+}
+
+func extractBedrockBetaTokensFromBody(body []byte) []string {
+	if len(body) == 0 {
+		return nil
+	}
+	field := gjson.GetBytes(body, "anthropic_beta")
+	if !field.Exists() || !field.IsArray() {
+		return nil
+	}
+	tokens := make([]string, 0, len(field.Array()))
+	for _, token := range field.Array() {
+		if token.Type != gjson.String {
+			continue
+		}
+		if value := strings.TrimSpace(token.String()); value != "" {
+			tokens = append(tokens, value)
+		}
+	}
+	return tokens
 }
 
 // checkBetaPolicyBlockForTokens 检查 token 列表中是否有被管理员 block 规则命中的 token。

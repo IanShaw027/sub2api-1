@@ -267,6 +267,24 @@ func TestResolveBedrockBetaTokensForRequest_PassesWhenNoBlockRuleMatches(t *test
 	}
 }
 
+func TestResolveBedrockBetaTokensForRequest_PreservesBodyAnthropicBetaTokens(t *testing.T) {
+	svc := &GatewayService{}
+	account := &Account{Platform: PlatformAnthropic, Type: AccountTypeBedrock}
+
+	tokens, err := svc.resolveBedrockBetaTokensForRequest(
+		context.Background(),
+		account,
+		"computer-use-2025-11-24",
+		[]byte(`{"anthropic_beta":["context-1m-2025-08-07"],"messages":[{"role":"user","content":"hi"}]}`),
+		"us.anthropic.claude-opus-4-6-v1",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	require.Contains(t, tokens, "computer-use-2025-11-24")
+	require.Contains(t, tokens, "context-1m-2025-08-07")
+}
+
 func TestApplyBedrockCCCompat_IgnoresNonBedrockAccounts(t *testing.T) {
 	svc := &GatewayService{}
 	body := []byte(`{"messages":[{"role":"user","content":"keep me"}]}`)

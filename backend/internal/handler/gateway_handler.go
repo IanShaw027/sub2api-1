@@ -112,6 +112,15 @@ func NewGatewayHandler(
 	}
 }
 
+func cloneGatewayRequestBody(body []byte) []byte {
+	if len(body) == 0 {
+		return nil
+	}
+	cloned := make([]byte, len(body))
+	copy(cloned, body)
+	return cloned
+}
+
 // Messages handles Claude API compatible messages endpoint
 // POST /v1/messages
 func (h *GatewayHandler) Messages(c *gin.Context) {
@@ -761,13 +770,19 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// ===== 用户消息串行队列 END =====
 
 			// 应用渠道模型映射到请求
+			forwardBody := cloneGatewayRequestBody(body)
+			forwardModel := parsedReq.Model
 			if channelMapping.Mapped {
-				parsedReq.Model = channelMapping.MappedModel
-				parsedReq.Body = h.gatewayService.ReplaceModelInBody(parsedReq.Body, channelMapping.MappedModel)
+				forwardModel = channelMapping.MappedModel
+				forwardBody = h.gatewayService.ReplaceModelInBody(forwardBody, channelMapping.MappedModel)
 			}
-			// Bedrock CC 兼容：渠道模型映射后，清理 Anthropic API 专有字段、注入 Bedrock 必需字段
-			parsedReq.Body = h.gatewayService.ApplyBedrockCCCompat(c.Request.Context(), parsedReq.Body, parsedReq.Model, account, apiKey.GroupID)
-			body = parsedReq.Body
+			// Bedrock CC 兼容：渠道模型映射后，清理 Anthropic API 专有字段、注入 Bedrock 必需字段。
+			// 这里必须只改写本次 attempt 的 body，不能回写 parsedReq.Body，
+			// 否则 Bedrock attempt 的兼容字段会污染后续非 Bedrock 重试。
+			forwardBody = h.gatewayService.ApplyBedrockCCCompat(c.Request.Context(), forwardBody, forwardModel, account, apiKey.GroupID)
+			forwardParsedReq := *parsedReq
+			forwardParsedReq.Model = forwardModel
+			forwardParsedReq.Body = forwardBody
 
 			// 转发请求 - 根据账号平台分流
 			c.Set("parsed_request", parsedReq)
@@ -781,9 +796,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 记录 Forward 前已写入字节数，Forward 后若增加则说明 SSE 内容已发，禁止 failover
 			writerSizeBeforeForward := c.Writer.Size()
 			if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
-				result, err = h.antigravityGatewayService.Forward(requestCtx, c, account, body, hasBoundSession)
+				result, err = h.antigravityGatewayService.Forward(requestCtx, c, account, forwardBody, hasBoundSession)
 			} else {
-				result, err = h.gatewayService.Forward(requestCtx, c, account, parsedReq)
+				result, err = h.gatewayService.Forward(requestCtx, c, account, &forwardParsedReq)
 			}
 			forwardDurationMs := time.Since(forwardStart).Milliseconds()
 
