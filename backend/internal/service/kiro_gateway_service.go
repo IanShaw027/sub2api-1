@@ -2259,13 +2259,20 @@ func logKiroPreparedRequest(ctx context.Context, account *Account, parsed *Parse
 	if parsed == nil || converted == nil || meta == nil {
 		return
 	}
+	_, requestedHadVariant := stripKiroModelVariantSuffixes(strings.TrimSpace(parsed.Model))
+	_, resolvedHadVariant := stripKiroModelVariantSuffixes(strings.TrimSpace(converted.RequestedModel))
 	kiroLogger(ctx, account).Info(
 		"kiro.request_prepared",
 		zap.String("requested_model", parsed.Model),
+		zap.String("resolved_requested_model", converted.RequestedModel),
 		zap.String("upstream_model", converted.Model),
 		zap.Bool("stream", parsed.Stream),
 		zap.Bool("thinking_enabled", parsed.ThinkingEnabled),
 		zap.Bool("free_thinking_path", freeThinkingPath),
+		zap.Bool("requested_model_had_variant_suffix", requestedHadVariant),
+		zap.Bool("resolved_model_had_variant_suffix", resolvedHadVariant),
+		zap.Bool("supports_one_million_context", kiropkg.SupportsOneMillionContextModel(converted.RequestedModel)),
+		zap.Bool("mapping_changed_requested_model", !strings.EqualFold(strings.TrimSpace(parsed.Model), strings.TrimSpace(converted.RequestedModel))),
 		zap.Bool("has_metadata_user_id", strings.TrimSpace(parsed.MetadataUserID) != ""),
 		zap.Int("billed_input_tokens", billedInputTokens),
 		zap.Int("forward_input_tokens", meta.ForwardInputTokens),

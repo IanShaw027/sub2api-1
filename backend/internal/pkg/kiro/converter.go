@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/promptsanitize"
 	"github.com/google/uuid"
 )
 
@@ -23,6 +24,7 @@ const (
 	toolOnlyUserPlaceholder      = "Here are the tool results."
 	toolOnlyAssistantPlaceholder = "I will call the requested tools."
 	contextTrimSystemNote        = "Gateway notice: older conversation history was compacted to fit Kiro's available context window. Use the retained recent messages as the source of truth, and ask for clarification if older details are required."
+	claudeCodeBanner             = "You are Claude Code, Anthropic's official CLI for Claude."
 )
 
 const kiroCompactionRecentWindow = 4
@@ -567,7 +569,7 @@ func toolResultContent(v any) string {
 func joinSystem(raw any) string {
 	switch v := raw.(type) {
 	case string:
-		return strings.TrimSpace(filterBillingHeaderLine(v))
+		return promptsanitize.SystemText(filterBillingHeaderLine(v), claudeCodeBanner)
 	case []any:
 		lines := make([]string, 0, len(v))
 		for _, item := range v {
@@ -580,7 +582,7 @@ func joinSystem(raw any) string {
 				lines = append(lines, text)
 			}
 		}
-		return strings.TrimSpace(strings.Join(lines, "\n"))
+		return promptsanitize.SystemText(strings.Join(lines, "\n"), claudeCodeBanner)
 	default:
 		return ""
 	}
