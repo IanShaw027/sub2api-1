@@ -9995,7 +9995,7 @@ func mapKiroModel(account *Account, requestedModel string) string {
 	if account != nil {
 		if mappedModel, matched := resolveKiroMappedModel(account, requestedModel); matched {
 			effectiveModel = mappedModel
-		} else if len(account.GetModelMapping()) > 0 {
+		} else if account.hasExplicitModelMappingEntries() {
 			return ""
 		}
 	}

@@ -630,6 +630,9 @@ func normalizeKiroModelMapping(raw map[string]string) map[string]string {
 		if from == "" || to == "" {
 			continue
 		}
+		if !isCompatibleKiroModelMappingPair(from, to) {
+			continue
+		}
 		mapping[from] = to
 	}
 	if len(mapping) == 0 {
@@ -703,6 +706,29 @@ func normalizeKiroModelName(raw string) string {
 	return base
 }
 
+func kiroModelFamily(model string) string {
+	base, _ := stripKiroModelVariantSuffixes(normalizeKiroModelName(model))
+	if base == "" {
+		return ""
+	}
+	switch {
+	case strings.HasPrefix(base, "claude-haiku-"):
+		return "haiku"
+	case strings.HasPrefix(base, "claude-sonnet-"):
+		return "sonnet"
+	case strings.HasPrefix(base, "claude-opus-"):
+		return "opus"
+	default:
+		return ""
+	}
+}
+
+func isCompatibleKiroModelMappingPair(from, to string) bool {
+	fromFamily := kiroModelFamily(from)
+	toFamily := kiroModelFamily(to)
+	return fromFamily != "" && fromFamily == toFamily
+}
+
 func stripKiroModelVariantSuffixes(value string) (base string, oneMillionContext bool) {
 	base = value
 	for {
@@ -722,6 +748,20 @@ func stripKiroModelVariantSuffixes(value string) (base string, oneMillionContext
 		default:
 			return base, oneMillionContext
 		}
+	}
+}
+
+func (a *Account) hasExplicitModelMappingEntries() bool {
+	if a == nil || a.Credentials == nil {
+		return false
+	}
+	switch raw := a.Credentials["model_mapping"].(type) {
+	case map[string]any:
+		return len(raw) > 0
+	case map[string]string:
+		return len(raw) > 0
+	default:
+		return false
 	}
 }
 
@@ -863,6 +903,9 @@ func resolveRequestedModelInMapping(mapping map[string]string, requestedModel st
 func (a *Account) IsModelSupported(requestedModel string) bool {
 	mapping := a.GetModelMapping()
 	if len(mapping) == 0 {
+		if a != nil && a.Platform == PlatformKiro && a.hasExplicitModelMappingEntries() {
+			return false
+		}
 		return true // 无映射 = 允许所有
 	}
 	if mappingSupportsRequestedModel(mapping, requestedModel) {

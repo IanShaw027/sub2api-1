@@ -177,6 +177,11 @@ func validateDefaultModelMapping(platform, key string, mapping map[string]string
 		if strings.Contains(to, "*") {
 			return infraerrors.BadRequest("INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", platform+"."+key+" target model cannot contain wildcard *")
 		}
+		if strings.EqualFold(strings.TrimSpace(platform), PlatformKiro) {
+			if !isCompatibleKiroModelMappingPair(from, to) {
+				return infraerrors.BadRequest("INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", platform+"."+key+" cannot map across kiro model families")
+			}
+		}
 	}
 	return nil
 }

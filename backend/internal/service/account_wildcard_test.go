@@ -215,6 +215,17 @@ func TestAccountIsModelSupported(t *testing.T) {
 			requestedModel: "gemini-3-flash",
 			expected:       false,
 		},
+		{
+			name:     "kiro cross family mapping does not mark model as supported",
+			platform: PlatformKiro,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"claude-opus-4-6": "claude-sonnet-4.6",
+				},
+			},
+			requestedModel: "claude-opus-4-6",
+			expected:       false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -408,6 +419,18 @@ func TestAccountResolveMappedModel(t *testing.T) {
 			requestedModel: "claude-sonnet-4.6[1m]",
 			expectedModel:  "claude-sonnet-4.6",
 			expectedMatch:  true,
+		},
+		{
+			name:     "kiro cross family mapping is ignored",
+			platform: PlatformKiro,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"claude-opus-4-6": "claude-sonnet-4.6",
+				},
+			},
+			requestedModel: "claude-opus-4-6",
+			expectedModel:  "claude-opus-4-6",
+			expectedMatch:  false,
 		},
 		{
 			name:     "gemini customtools alias reports normalized match",
