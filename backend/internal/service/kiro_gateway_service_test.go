@@ -387,6 +387,21 @@ func TestMapKiroModel_MatchesClaudeCodeAliasesAgainstConfiguredKiroModels(t *tes
 	require.Equal(t, "claude-opus-4.7", mapKiroModel(account, "claude-opus-4.7[1m]"))
 }
 
+func TestMapKiroModel_RejectsCrossFamilyFallbackMappings(t *testing.T) {
+	account := &Account{
+		ID:       103,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"claude-opus-4-6": "claude-sonnet-4.6",
+			},
+		},
+	}
+
+	require.Empty(t, mapKiroModel(account, "claude-opus-4-6"))
+}
+
 func TestResolveKiroRequestedModelForRequest_DefaultSimulationKeepsMappedModel(t *testing.T) {
 	account := &Account{ID: 104, Platform: PlatformKiro, Type: AccountTypeOAuth}
 
@@ -1602,7 +1617,7 @@ func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFallsBackToThinking(t *
 	require.NotContains(t, rec.Body.String(), "Kiro upstream returned no assistant output")
 }
 
-func TestKiroGatewayService_ForwardNonStream_IncompleteToolUseDoesNotFailEmptyOutput(t *testing.T) {
+func TestKiroGatewayService_ForwardNonStream_IncompleteToolUseReturnsRecoverableFailure(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -1635,14 +1650,70 @@ func TestKiroGatewayService_ForwardNonStream_IncompleteToolUseDoesNotFailEmptyOu
 		"",
 	)
 
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+	require.Contains(t, string(failoverErr.ResponseBody), "incomplete tool_use output")
+	rawEvents, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := rawEvents.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "response_anomaly", events[0].Kind)
+	require.Contains(t, events[0].Message, "incomplete_tool_use_completed")
+	require.Contains(t, events[0].Detail, `"partial_tool_use_count":1`)
+}
+
+func TestKiroGatewayService_ForwardNonStream_ValidToolUseWithoutStopSucceeds(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "I'll call a tool now."}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{
+			"toolUseId": "tool-1",
+			"name":      "search",
+			"input":     `{"q":"a"}`,
+		}),
+	}, nil)
+
+	result, err := svc.forwardNonStream(
+		context.Background(),
+		c,
+		&Account{ID: 7, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: false},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.6"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), `"stop_reason":"tool_use"`)
 	require.Contains(t, rec.Body.String(), `"type":"tool_use"`)
-	require.Contains(t, rec.Body.String(), `"id":"tool-1"`)
-	require.Contains(t, rec.Body.String(), `"input":{}`)
-	require.NotContains(t, rec.Body.String(), "Kiro upstream returned no assistant output")
+	require.Contains(t, rec.Body.String(), `"name":"search"`)
+	require.NotContains(t, rec.Body.String(), "incomplete tool_use output")
+	_, ok := c.Get(OpsUpstreamErrorsKey)
+	require.False(t, ok)
 }
 
 func TestKiroGatewayService_ForwardStream_ContextWindowExceededUsesStopReason(t *testing.T) {
@@ -1844,7 +1915,7 @@ func TestKiroGatewayService_ForwardStream_ToolOnlyCountsOutputTokens(t *testing.
 	require.Contains(t, rec.Body.String(), fmt.Sprintf(`"output_tokens":%d`, result.Usage.OutputTokens))
 }
 
-func TestKiroGatewayService_ForwardStream_IncompleteToolUseEOFStillStopsMessage(t *testing.T) {
+func TestKiroGatewayService_ForwardStream_IncompleteToolUseEOFReturnsRecoverableFailure(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -1877,14 +1948,13 @@ func TestKiroGatewayService_ForwardStream_IncompleteToolUseEOFStillStopsMessage(
 		"",
 	)
 
-	require.NoError(t, err)
-	require.NotNil(t, result)
+	require.Nil(t, result)
+	require.Error(t, err)
 	require.Contains(t, rec.Body.String(), `"id":"tool-1"`)
 	require.Contains(t, rec.Body.String(), `"partial_json":"{\"q\":\"a\""`)
-	require.Contains(t, rec.Body.String(), `"stop_reason":"tool_use"`)
-	require.Contains(t, rec.Body.String(), "event: message_stop")
-	require.NotContains(t, rec.Body.String(), "event: error")
-	require.Greater(t, result.Usage.OutputTokens, 0)
+	require.Contains(t, rec.Body.String(), "event: error")
+	require.Contains(t, rec.Body.String(), "incomplete tool_use output")
+	require.NotContains(t, rec.Body.String(), "event: message_stop")
 	rawEvents, ok := c.Get(OpsUpstreamErrorsKey)
 	require.True(t, ok)
 	events, ok := rawEvents.([]*OpsUpstreamErrorEvent)
@@ -1893,6 +1963,56 @@ func TestKiroGatewayService_ForwardStream_IncompleteToolUseEOFStillStopsMessage(
 	require.Equal(t, "response_anomaly", events[0].Kind)
 	require.Contains(t, events[0].Message, "incomplete_tool_use_completed")
 	require.Contains(t, events[0].Detail, `"partial_tool_use_count":1`)
+}
+
+func TestKiroGatewayService_ForwardStream_ValidToolUseWithoutStopCompletesAtEOF(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "I'll call a tool now."}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{
+			"toolUseId": "tool-1",
+			"name":      "search",
+			"input":     `{"q":"a"}`,
+		}),
+	}, nil)
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 9, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.5"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), `"id":"tool-1"`)
+	require.Contains(t, rec.Body.String(), `"partial_json":"{\"q\":\"a\"}"`)
+	require.Contains(t, rec.Body.String(), `"stop_reason":"tool_use"`)
+	require.Contains(t, rec.Body.String(), `event: message_stop`)
+	require.NotContains(t, rec.Body.String(), `event: error`)
+	_, ok := c.Get(OpsUpstreamErrorsKey)
+	require.False(t, ok)
 }
 
 func TestKiroGatewayService_ForwardStream_TextToolTextClosesBlocksInOrder(t *testing.T) {

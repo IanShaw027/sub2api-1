@@ -780,9 +780,39 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	}
 
 	content = append(content, toolUses...)
+	outputTokens := estimateKiroOutputTokens(textOutput+nativeThinkingOutput+thinkingOverride, toolOutputBuilder.String())
+	telemetry := &kiroResponseTelemetry{
+		FramesSeen:             len(frames),
+		AssistantChars:         len(textOutput),
+		NativeThinkingChars:    len(nativeThinkingOutput),
+		SimulatedThinkingChars: len(strings.TrimSpace(thinkingOverride)),
+		ToolUseCount:           visibleToolUses,
+		CompletedToolUseCount:  completedToolUses,
+		PartialToolUseCount:    partialToolUses,
+		ContextUsagePercentage: lastContextUsagePercentage,
+	}
+	if telemetry.PartialToolUseCount > 0 && telemetry.CompletedToolUseCount == 0 {
+		incompleteErr := errors.New("kiro response completed with incomplete tool_use output")
+		logKiroResponseAnomaly(ctx, account, parsed, false, "incomplete_tool_use_completed", incompleteErr, telemetry.FramesSeen, telemetry.ToolUseCount, telemetry.ContextUsagePercentage)
+		if c != nil && account != nil {
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:          account.Platform,
+				AccountID:         account.ID,
+				AccountName:       account.Name,
+				UpstreamRequestID: strings.TrimSpace(resp.Header.Get("x-amzn-requestid")),
+				Kind:              "response_anomaly",
+				Message:           "kiro completed with anomalies: incomplete_tool_use_completed",
+				Detail:            telemetry.opsDetail(stopReason, outputTokens, telemetry.shortOutput(outputTokens), []string{"incomplete_tool_use_completed"}),
+			})
+		}
+		return nil, &UpstreamFailoverError{
+			StatusCode:             http.StatusBadGateway,
+			ResponseBody:           []byte(kiroIncompleteToolUseClientMessage()),
+			RetryableOnSameAccount: true,
+		}
+	}
 	fakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
 	inputTokens = fakeCacheUsage.InputTokens
-	outputTokens := estimateKiroOutputTokens(textOutput+nativeThinkingOutput+thinkingOverride, toolOutputBuilder.String())
 	s.commitFakeCachePlan(fakeCachePlan, runtimeSettings)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -809,16 +839,6 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 			CacheCreation5mTokens:    fakeCacheUsage.CacheCreationInputTokens,
 			CacheReadInputTokens:     fakeCacheUsage.CacheReadInputTokens,
 		},
-	}
-	telemetry := &kiroResponseTelemetry{
-		FramesSeen:             len(frames),
-		AssistantChars:         len(textOutput),
-		NativeThinkingChars:    len(nativeThinkingOutput),
-		SimulatedThinkingChars: len(strings.TrimSpace(thinkingOverride)),
-		ToolUseCount:           visibleToolUses,
-		CompletedToolUseCount:  completedToolUses,
-		PartialToolUseCount:    partialToolUses,
-		ContextUsagePercentage: lastContextUsagePercentage,
 	}
 	s.recordKiroSuccessfulAnomalies(ctx, c, account, parsed, result.RequestID, false, outputTokens, stopReason, telemetry)
 	logKiroRequestCompleted(ctx, account, parsed, result.RequestID, result.UpstreamModel, false, result.Duration, nil, inputTokens, outputTokens, fakeCacheUsage.CacheCreationInputTokens, fakeCacheUsage.CacheReadInputTokens, stopReason, toolNames, strings.TrimSpace(thinkingOverride) != "", telemetry)
@@ -1222,6 +1242,36 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	if hasVisibleToolOutput && stopReason == "end_turn" {
 		stopReason = "tool_use"
 	}
+	outputTokens := estimateKiroOutputTokens(textOutputBuilder.String()+nativeThinkingBuilder.String()+simulatedThinking, toolOutputBuilder.String())
+	telemetry := &kiroResponseTelemetry{
+		FramesSeen:             framesSeen,
+		AssistantChars:         textOutputBuilder.Len(),
+		NativeThinkingChars:    nativeThinkingBuilder.Len(),
+		SimulatedThinkingChars: len(strings.TrimSpace(simulatedThinking)),
+		ToolUseCount:           visibleToolUses,
+		CompletedToolUseCount:  completedVisibleToolUses,
+		PartialToolUseCount:    partialToolUses,
+		ContextUsagePercentage: lastContextUsagePercentage,
+	}
+	if telemetry.PartialToolUseCount > 0 && telemetry.CompletedToolUseCount == 0 {
+		incompleteErr := errors.New("kiro response completed with incomplete tool_use output")
+		if err := writeKiroStreamError(writer, kiroIncompleteToolUseClientMessage()); err != nil {
+			return nil, err
+		}
+		logKiroResponseAnomaly(ctx, account, parsed, true, "incomplete_tool_use_completed", incompleteErr, telemetry.FramesSeen, telemetry.ToolUseCount, telemetry.ContextUsagePercentage)
+		if c != nil && account != nil {
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:          account.Platform,
+				AccountID:         account.ID,
+				AccountName:       account.Name,
+				UpstreamRequestID: strings.TrimSpace(resp.Header.Get("x-amzn-requestid")),
+				Kind:              "response_anomaly",
+				Message:           "kiro completed with anomalies: incomplete_tool_use_completed",
+				Detail:            telemetry.opsDetail(stopReason, outputTokens, telemetry.shortOutput(outputTokens), []string{"incomplete_tool_use_completed"}),
+			})
+		}
+		return nil, incompleteErr
+	}
 	if !streamStarted || (textOutputBuilder.Len() == 0 && nativeThinkingBuilder.Len() == 0 && simulatedThinking == "" && !hasVisibleToolOutput) {
 		fallbackThinking := resolveKiroFallbackThinkingOverride(parsed, converted, runtimeSettings, simulatedThinking)
 		if fallbackThinking != "" {
@@ -1245,6 +1295,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		s.handleProtocolError(ctx, c, account, parsed.Model, true, emptyErr)
 		return nil, emptyErr
 	}
+	toolNames = kiroCompletedToolNames(toolStates, toolOrder)
 
 	if err := closeTextBlock(); err != nil {
 		return nil, err
@@ -1255,7 +1306,6 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 
 	finalFakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
 	inputTokens = finalFakeCacheUsage.InputTokens
-	outputTokens := estimateKiroOutputTokens(textOutputBuilder.String()+nativeThinkingBuilder.String()+simulatedThinking, toolOutputBuilder.String())
 	if err := writeSSEEvent(writer, "message_delta", map[string]any{
 		"type":  "message_delta",
 		"delta": map[string]any{"stop_reason": stopReason, "stop_sequence": nil},
@@ -1282,16 +1332,6 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			CacheCreation5mTokens:    finalFakeCacheUsage.CacheCreationInputTokens,
 			CacheReadInputTokens:     finalFakeCacheUsage.CacheReadInputTokens,
 		},
-	}
-	telemetry := &kiroResponseTelemetry{
-		FramesSeen:             framesSeen,
-		AssistantChars:         textOutputBuilder.Len(),
-		NativeThinkingChars:    nativeThinkingBuilder.Len(),
-		SimulatedThinkingChars: len(strings.TrimSpace(simulatedThinking)),
-		ToolUseCount:           visibleToolUses,
-		CompletedToolUseCount:  completedVisibleToolUses,
-		PartialToolUseCount:    partialToolUses,
-		ContextUsagePercentage: lastContextUsagePercentage,
 	}
 	s.recordKiroSuccessfulAnomalies(ctx, c, account, parsed, result.RequestID, true, outputTokens, stopReason, telemetry)
 	logKiroRequestCompleted(ctx, account, parsed, result.RequestID, result.UpstreamModel, true, result.Duration, firstTokenMs, inputTokens, outputTokens, finalFakeCacheUsage.CacheCreationInputTokens, finalFakeCacheUsage.CacheReadInputTokens, stopReason, toolNames, simulatedThinking != "", telemetry)
@@ -1644,6 +1684,25 @@ func kiroToolStateHasVisibleOutput(state *kiroToolState) bool {
 	return state.Started || strings.TrimSpace(state.Name) != "" || strings.TrimSpace(state.InputBuilder.String()) != ""
 }
 
+func kiroToolStateHasCompleteInput(state *kiroToolState) bool {
+	if state == nil {
+		return false
+	}
+	raw := strings.TrimSpace(state.InputBuilder.String())
+	if raw == "" {
+		return true
+	}
+	var parsed any
+	return json.Unmarshal([]byte(raw), &parsed) == nil
+}
+
+func kiroToolStateIsComplete(state *kiroToolState) bool {
+	if !kiroToolStateHasVisibleOutput(state) {
+		return false
+	}
+	return state.Stopped || kiroToolStateHasCompleteInput(state)
+}
+
 func buildKiroToolUseBlock(state *kiroToolState) (map[string]any, bool) {
 	if !kiroToolStateHasVisibleOutput(state) {
 		return nil, false
@@ -1682,13 +1741,27 @@ func kiroVisibleToolStateCounts(states map[string]*kiroToolState, order []string
 			continue
 		}
 		visible++
-		if state != nil && state.Stopped {
+		if kiroToolStateIsComplete(state) {
 			completed++
 			continue
 		}
 		partial++
 	}
 	return visible, completed, partial
+}
+
+func kiroCompletedToolNames(states map[string]*kiroToolState, order []string) []string {
+	names := make([]string, 0, len(order))
+	for _, toolUseID := range order {
+		state := states[toolUseID]
+		if !kiroToolStateIsComplete(state) {
+			continue
+		}
+		if name := strings.TrimSpace(state.Name); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 func kiroStopReasonFromContextUsage(usagePercent float64) string {
@@ -2157,6 +2230,10 @@ func writeKiroStreamError(writer gin.ResponseWriter, message string) error {
 	})
 }
 
+func kiroIncompleteToolUseClientMessage() string {
+	return "Kiro upstream returned incomplete tool_use output; retry the request to continue"
+}
+
 func rawStringField(obj map[string]any, key string) string {
 	if obj == nil {
 		return ""
@@ -2335,7 +2412,7 @@ func (t *kiroResponseTelemetry) anomalyKinds(stopReason string) []string {
 		return nil
 	}
 	kinds := make([]string, 0, 3)
-	if t.PartialToolUseCount > 0 {
+	if t.PartialToolUseCount > 0 && t.CompletedToolUseCount == 0 {
 		kinds = append(kinds, "incomplete_tool_use_completed")
 	}
 	if stopReason == "model_context_window_exceeded" {
