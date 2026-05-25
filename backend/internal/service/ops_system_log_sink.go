@@ -102,6 +102,7 @@ func (s *OpsSystemLogSink) shouldIndex(event *logger.LogEvent) bool {
 	}
 
 	component := strings.ToLower(strings.TrimSpace(event.Component))
+	message := strings.ToLower(strings.TrimSpace(event.Message))
 	// zap 的 LoggerName 往往为空或不等于业务组件名；业务组件名通常以字段 component 透传。
 	if event.Fields != nil {
 		if fc := strings.ToLower(strings.TrimSpace(asString(event.Fields["component"]))); fc != "" {
@@ -112,6 +113,9 @@ func (s *OpsSystemLogSink) shouldIndex(event *logger.LogEvent) bool {
 		return true
 	}
 	if strings.Contains(component, "audit") {
+		return true
+	}
+	if strings.HasPrefix(message, "kiro.") {
 		return true
 	}
 	return false

@@ -60,6 +60,11 @@ func TestOpsSystemLogSink_ShouldIndex(t *testing.T) {
 			want: true,
 		},
 		{
+			name:  "kiro breadcrumb message prefix",
+			event: &logger.LogEvent{Level: "info", Component: "", Message: "kiro.request_prepared"},
+			want:  true,
+		},
+		{
 			name:  "plain info",
 			event: &logger.LogEvent{Level: "info", Component: "app"},
 			want:  false,
