@@ -34,6 +34,11 @@ func amountCentsEqual(left, right float64) bool {
 	return amountToCents(left) == amountToCents(right)
 }
 
+func amountEqualForCurrency(left, right float64, currency string) bool {
+	fractionDigits := int32(payment.CurrencyMaxFractionDigits(currency))
+	return decimal.NewFromFloat(left).Round(fractionDigits).Equal(decimal.NewFromFloat(right).Round(fractionDigits))
+}
+
 func amountCentsGreaterThan(left, right float64) bool {
 	return amountToCents(left) > amountToCents(right)
 }

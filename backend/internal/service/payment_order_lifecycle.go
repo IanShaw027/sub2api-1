@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -363,7 +362,7 @@ func (s *PaymentService) markFailedOrderPaidAndReload(ctx context.Context, oid i
 		})
 		return nil, fmt.Errorf("invalid paid amount from provider: %v", paid)
 	}
-	if math.Abs(paid-o.PayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(o)) {
+	if !amountEqualForCurrency(paid, o.PayAmount, PaymentOrderCurrency(o)) {
 		s.writeAuditLog(ctx, oid, "PAYMENT_AMOUNT_MISMATCH", "system", map[string]any{
 			"expected": o.PayAmount,
 			"paid":     paid,

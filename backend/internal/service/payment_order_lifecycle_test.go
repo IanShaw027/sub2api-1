@@ -958,6 +958,53 @@ func TestMarkFailedOrderPaidAndReloadRejectsAmountMismatch(t *testing.T) {
 	require.NotNil(t, reloaded.FailedAt)
 }
 
+func TestMarkFailedOrderPaidAndReloadRejectsSubCentAmountDrift(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("failed-subcent@example.com").
+		SetPasswordHash("hash").
+		SetUsername("failed-subcent-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("FAILED-SUBCENT-PRESERVE").
+		SetOutTradeNo("sub2_failed_subcent_preserve").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusFailed).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetFailedAt(time.Now().Add(-2 * time.Minute)).
+		SetFailedReason("local failure before reconciliation").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+
+	got, err := svc.markFailedOrderPaidAndReload(ctx, order.ID, "upstream-trade-subcent", 100.005)
+	require.Error(t, err)
+	require.Nil(t, got)
+	require.Contains(t, err.Error(), "amount mismatch")
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusFailed, reloaded.Status)
+	require.Equal(t, 100.0, reloaded.PayAmount)
+	require.Empty(t, reloaded.PaymentTradeNo)
+	require.Nil(t, reloaded.PaidAt)
+}
+
 func TestVerifyOrderByOutTradeNoRejectsFailedOrderAmountMismatch(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)

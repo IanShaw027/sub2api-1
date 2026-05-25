@@ -2,17 +2,21 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	entsql "entgo.io/ent/dialect/sql"
 )
+
+const redeemCodeBatchUpdateMaxIDs = 100
 
 type redeemCodeRepository struct {
 	client *dbent.Client
@@ -255,6 +259,9 @@ func (r *redeemCodeRepository) BatchUpdate(ctx context.Context, ids []int64, fie
 	}
 	if len(uniqueIDs) == 0 {
 		return 0, nil
+	}
+	if len(uniqueIDs) > redeemCodeBatchUpdateMaxIDs {
+		return 0, infraerrors.BadRequest("REDEEM_CODE_BATCH_UPDATE_TOO_LARGE", fmt.Sprintf("cannot batch update more than %d redeem codes at once", redeemCodeBatchUpdateMaxIDs))
 	}
 
 	if tx := dbent.TxFromContext(ctx); tx != nil {

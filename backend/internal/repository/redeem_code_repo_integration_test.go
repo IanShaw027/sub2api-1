@@ -9,6 +9,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/suite"
@@ -336,6 +337,38 @@ func (s *RedeemCodeRepoSuite) TestBatchUpdate_PartialFieldsAndClear() {
 	s.Require().NoError(err)
 	s.Require().Nil(gotA.ExpiresAt)
 	s.Require().Nil(gotA.GroupID)
+}
+
+func (s *RedeemCodeRepoSuite) TestBatchUpdate_DeduplicatesIDs() {
+	code := &service.RedeemCode{
+		Code:   "BATCH-UP-DEDUP",
+		Type:   service.RedeemTypeBalance,
+		Value:  10,
+		Status: service.StatusUnused,
+		Notes:  "keep",
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, code))
+	notes := "deduped"
+
+	updated, err := s.repo.BatchUpdate(s.ctx, []int64{code.ID, code.ID, code.ID}, service.RedeemCodeBatchUpdateFields{Notes: &notes})
+	s.Require().NoError(err)
+	s.Require().Equal(int64(1), updated)
+
+	got, err := s.repo.GetByID(s.ctx, code.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(notes, got.Notes)
+}
+
+func (s *RedeemCodeRepoSuite) TestBatchUpdate_RejectsTooManyIDs() {
+	notes := "too many"
+	ids := make([]int64, 0, redeemCodeBatchUpdateMaxIDs+1)
+	for i := 0; i <= redeemCodeBatchUpdateMaxIDs; i++ {
+		ids = append(ids, int64(i+1))
+	}
+
+	_, err := s.repo.BatchUpdate(s.ctx, ids, service.RedeemCodeBatchUpdateFields{Notes: &notes})
+	s.Require().Error(err)
+	s.Require().True(infraerrors.IsBadRequest(err))
 }
 
 func (s *RedeemCodeRepoSuite) TestBatchUpdate_InvalidIDRollsBack() {
