@@ -385,6 +385,13 @@ func TestMapKiroModel_MatchesClaudeCodeAliasesAgainstConfiguredKiroModels(t *tes
 	require.Equal(t, "claude-sonnet-4.6", mapKiroModel(account, "claude-sonnet-4-6-1m"))
 	require.Equal(t, "claude-opus-4.7", mapKiroModel(account, "claude-opus-4-7-1m"))
 	require.Equal(t, "claude-opus-4.7", mapKiroModel(account, "claude-opus-4.7[1m]"))
+
+	account.Credentials["model_mapping"] = map[string]any{
+		"claude-opus-*":   "claude-opus-4.6",
+		"claude-opus-4.7": "claude-opus-4.7",
+	}
+	require.Equal(t, "claude-opus-4.7", mapKiroModel(account, "claude-opus-4-7"))
+	require.Equal(t, "claude-opus-4.6", mapKiroModel(account, "claude-opus-4-6"))
 }
 
 func TestMapKiroModel_RejectsCrossFamilyFallbackMappings(t *testing.T) {

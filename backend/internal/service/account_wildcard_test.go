@@ -421,6 +421,19 @@ func TestAccountResolveMappedModel(t *testing.T) {
 			expectedMatch:  true,
 		},
 		{
+			name:     "kiro exact normalized mapping beats wildcard alias",
+			platform: PlatformKiro,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"claude-opus-*":   "claude-opus-4.6",
+					"claude-opus-4.7": "claude-opus-4.7",
+				},
+			},
+			requestedModel: "claude-opus-4-7",
+			expectedModel:  "claude-opus-4.7",
+			expectedMatch:  true,
+		},
+		{
 			name:     "kiro cross family mapping is ignored",
 			platform: PlatformKiro,
 			credentials: map[string]any{
