@@ -34,6 +34,7 @@ import (
 // passthrough path.
 var cursorResponsesUnsupportedFields = []string{
 	"prompt_cache_retention",
+	"reasoningSummary",
 	"safety_identifier",
 	"metadata",
 	"stream_options",

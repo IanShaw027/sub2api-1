@@ -70,6 +70,7 @@ const (
 
 var openAIResponsesUnsupportedFields = []string{
 	"prompt_cache_retention",
+	"reasoningSummary",
 	"safety_identifier",
 	"metadata",
 	"stream_options",

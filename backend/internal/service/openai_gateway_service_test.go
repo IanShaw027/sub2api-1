@@ -860,6 +860,7 @@ func TestOpenAIGatewayService_Forward_StripsUnsupportedFieldsConsistently(t *tes
 		"stream":false,
 		"temperature":0.2,
 		"prompt_cache_retention":"24h",
+		"reasoningSummary":"auto",
 		"safety_identifier":"safe-id",
 		"metadata":{"k":"v"},
 		"stream_options":{"include_usage":true}
@@ -896,6 +897,7 @@ func TestOpenAIGatewayService_Forward_StripsUnsupportedFieldsConsistently(t *tes
 	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "temperature").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_retention").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "reasoningSummary").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "safety_identifier").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "metadata").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "stream_options").Exists())

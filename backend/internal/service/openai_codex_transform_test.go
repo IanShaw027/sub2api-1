@@ -1174,6 +1174,7 @@ func TestApplyCodexOAuthTransform_StripsChatGPTInternalUnsupportedFields(t *test
 		"user":                   "user_123",
 		"metadata":               map[string]any{"trace_id": "abc"},
 		"prompt_cache_retention": "24h",
+		"reasoningSummary":       "auto",
 		"safety_identifier":      "sid",
 		"stream_options":         map[string]any{"include_usage": true},
 		"input": []any{
