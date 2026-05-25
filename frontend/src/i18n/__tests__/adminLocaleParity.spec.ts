@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import en from '../locales/en.json'
-import zh from '../locales/zh.json'
+import { mergeLocaleMessages } from '../index'
+import enJson from '../locales/en.json'
+import zhJson from '../locales/zh.json'
+import enTs from '../locales/en.ts'
+import zhTs from '../locales/zh.ts'
 
-const requiredKeys = [
+const requiredRuntimeKeys = [
   'admin.dashboard.newUsersToday',
   'admin.dashboard.active',
   'admin.dashboard.ok',
@@ -23,6 +26,30 @@ const requiredKeys = [
   'payment.admin.allowUserRefund',
 ]
 
+const requiredRedeemBatchUpdateKeys = [
+  'admin.redeem.batchUpdate',
+  'admin.redeem.batchUpdateTitle',
+  'admin.redeem.selectedCount',
+  'admin.redeem.clearSelection',
+  'admin.redeem.codeExpiry',
+  'admin.redeem.neverExpires',
+  'admin.redeem.customExpiry',
+  'admin.redeem.customExpiryDays',
+  'admin.redeem.expiryPresetDays',
+  'admin.redeem.expiryDaysRequired',
+  'admin.redeem.columns.expiresAt',
+  'admin.redeem.batchFields.status',
+  'admin.redeem.batchFields.expiresAt',
+  'admin.redeem.batchFields.notes',
+  'admin.redeem.batchFields.group',
+  'admin.redeem.batchNotesPlaceholder',
+  'admin.redeem.clearGroup',
+  'admin.redeem.selectCodesFirst',
+  'admin.redeem.noBatchFieldsSelected',
+  'admin.redeem.batchUpdateSuccess',
+  'admin.redeem.failedToBatchUpdate',
+]
+
 function lookup(obj: unknown, path: string): unknown {
   return path.split('.').reduce<unknown>((current, key) => {
     if (!current || typeof current !== 'object') return undefined
@@ -31,10 +58,33 @@ function lookup(obj: unknown, path: string): unknown {
 }
 
 describe('admin locale parity', () => {
-  it('keeps newly referenced admin keys present in both English and Chinese locales', () => {
-    for (const key of requiredKeys) {
-      expect(lookup(en, key), `missing en locale key: ${key}`).toBeTypeOf('string')
-      expect(lookup(zh, key), `missing zh locale key: ${key}`).toBeTypeOf('string')
+  it('keeps newly referenced admin keys present in runtime locales', () => {
+    const localeSources = [
+      { name: 'en runtime', messages: mergeLocaleMessages(enJson, enTs) },
+      { name: 'zh runtime', messages: mergeLocaleMessages(zhJson, zhTs) },
+    ]
+
+    for (const key of requiredRuntimeKeys) {
+      for (const { name, messages } of localeSources) {
+        expect(lookup(messages, key), `missing ${name} locale key: ${key}`).toBeTypeOf('string')
+      }
+    }
+  })
+
+  it('keeps redeem batch-update keys present in JSON, TS, and runtime locales', () => {
+    const localeSources = [
+      { name: 'en JSON', messages: enJson },
+      { name: 'zh JSON', messages: zhJson },
+      { name: 'en TS', messages: enTs },
+      { name: 'zh TS', messages: zhTs },
+      { name: 'en runtime', messages: mergeLocaleMessages(enJson, enTs) },
+      { name: 'zh runtime', messages: mergeLocaleMessages(zhJson, zhTs) },
+    ]
+
+    for (const key of requiredRedeemBatchUpdateKeys) {
+      for (const { name, messages } of localeSources) {
+        expect(lookup(messages, key), `missing ${name} locale key: ${key}`).toBeTypeOf('string')
+      }
     }
   })
 })
