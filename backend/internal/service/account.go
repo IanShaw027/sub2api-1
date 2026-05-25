@@ -929,13 +929,21 @@ func (a *Account) ResolveMappedModel(requestedModel string) (mappedModel string,
 	if len(mapping) == 0 {
 		return requestedModel, false
 	}
+	normalized := normalizeRequestedModelForLookup(a.Platform, requestedModel)
+	if a.Platform == PlatformKiro && normalized != "" && normalized != requestedModel {
+		if mappedModel, matched := resolveRequestedModelInMapping(mapping, normalized); matched {
+			if a.usesModelWhitelistMapping() && strings.Contains(mappedModel, "*") {
+				return normalized, true
+			}
+			return mappedModel, true
+		}
+	}
 	if mappedModel, matched := resolveRequestedModelInMapping(mapping, requestedModel); matched {
 		if a.usesModelWhitelistMapping() && strings.Contains(mappedModel, "*") {
 			return requestedModel, true
 		}
 		return mappedModel, true
 	}
-	normalized := normalizeRequestedModelForLookup(a.Platform, requestedModel)
 	if normalized != requestedModel {
 		if mappedModel, matched := resolveRequestedModelInMapping(mapping, normalized); matched {
 			if a.usesModelWhitelistMapping() && strings.Contains(mappedModel, "*") {
