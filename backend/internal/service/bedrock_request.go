@@ -465,10 +465,10 @@ var bedrockSupportedBetaTokens = map[string]bool{
 	"computer-use-2025-11-24": true,
 	"context-1m-2025-08-07":   true,
 	// "context-management-2025-06-27": false, // 无官方文档支持
-	"compact-2026-01-12": true, // 官方支持，仅 InvokeModel API（Opus 4.6+）
-	// "interleaved-thinking-2025-05-14": false, // 无官方文档支持
-	"tool-search-tool-2025-10-19": true,
-	"tool-examples-2025-10-29":    true,
+	"compact-2026-01-12":              true, // 官方支持，仅 InvokeModel API（Opus 4.6+）
+	"interleaved-thinking-2025-05-14": true,
+	"tool-search-tool-2025-10-19":     true,
+	"tool-examples-2025-10-29":        true,
 }
 
 // bedrockBetaTokenTransforms 定义 Bedrock Invoke 特有的 beta 头转换规则
@@ -496,8 +496,10 @@ func autoInjectBedrockBetaTokens(tokens []string, body []byte, modelID string) [
 		}
 	}
 
-	// 注意：thinking 字段不再自动注入 interleaved-thinking-2025-05-14
-	// 因为该 beta token 未在 AWS Bedrock 官方文档中确认支持
+	thinking := gjson.GetBytes(body, "thinking")
+	if thinking.Exists() && thinking.IsObject() && strings.EqualFold(thinking.Get("type").String(), "enabled") {
+		inject("interleaved-thinking-2025-05-14")
+	}
 
 	// 检测 computer_use 工具
 	// tools 中有 type="computer_20xxxxxx" 的工具 → 需要 computer-use beta

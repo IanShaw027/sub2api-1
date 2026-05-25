@@ -5781,6 +5781,7 @@ func (s *GatewayService) ApplyBedrockCCCompat(ctx context.Context, body []byte, 
 	if !s.isBedrockCCCompatEnabled(ctx, account, groupID) {
 		return body
 	}
+	body = append([]byte(nil), body...)
 	body = sanitizeBedrockCCFields(body)
 	body = sanitizeBedrockThinking(body, model)
 	body = sanitizeBedrockToolUseIDs(body)

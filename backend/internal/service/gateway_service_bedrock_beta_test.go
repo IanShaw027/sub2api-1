@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 type betaPolicySettingRepoStub struct {
@@ -292,4 +294,39 @@ func TestApplyBedrockCCCompat_IgnoresNonBedrockAccounts(t *testing.T) {
 
 	got := svc.ApplyBedrockCCCompat(context.Background(), body, "us.anthropic.claude-opus-4-6-v1", account, nil)
 	require.Equal(t, string(body), string(got))
+}
+
+func TestApplyBedrockCCCompat_DoesNotMutateInputSlice(t *testing.T) {
+	channelSvc := &ChannelService{}
+	channelSvc.cache.Store(&channelCache{
+		channelByGroupID: map[int64]*Channel{
+			10: &Channel{
+				ID:     1,
+				Status: StatusActive,
+				GroupIDs: []int64{
+					10,
+				},
+				FeaturesConfig: map[string]any{
+					featureKeyBedrockCCCompat: true,
+				},
+			},
+		},
+		groupPlatform: map[int64]string{10: PlatformAnthropic},
+		loadedAt:      time.Now(),
+	})
+	svc := &GatewayService{channelService: channelSvc}
+	account := &Account{Platform: PlatformAnthropic, Type: AccountTypeBedrock}
+	body := []byte(`{"service_tier":"standard","thinking":{"type":"enabled"},"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"toolu.01.Ab","name":"bash","input":{}}]}]}`)
+	original := append([]byte(nil), body...)
+
+	got := svc.ApplyBedrockCCCompat(context.Background(), body, "us.anthropic.claude-opus-4-6-v1", account, ptrInt64(10))
+	require.Equal(t, string(original), string(body))
+	require.Equal(t, "bedrock-2023-05-31", gjson.GetBytes(got, "anthropic_version").String())
+	require.Equal(t, "enabled", gjson.GetBytes(got, "thinking.type").String())
+	require.Equal(t, int64(defaultThinkingBudgetTokens), gjson.GetBytes(got, "thinking.budget_tokens").Int())
+	require.Equal(t, "toolu_01_Ab", gjson.GetBytes(got, "messages.0.content.0.id").String())
+}
+
+func ptrInt64(v int64) *int64 {
+	return &v
 }

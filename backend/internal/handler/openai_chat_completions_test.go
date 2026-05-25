@@ -53,3 +53,22 @@ func TestOpenAIChatCompletions_RejectsInvalidStreamType(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code)
 	require.Contains(t, w.Body.String(), "invalid stream field type")
 }
+
+func TestOpenAIChatCompletions_ClearsCompatRequestStateOnEarlyReturn(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Set("openai_stream_retry_replay_state", map[string]any{
+		"visibleFrameSignatures": []string{"response.created"},
+		"emittedTextPrefix":      "partial output",
+	})
+
+	h := &OpenAIGatewayHandler{}
+	h.ChatCompletions(c)
+
+	_, exists := c.Get("openai_stream_retry_replay_state")
+	require.False(t, exists)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}

@@ -1341,3 +1341,22 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 func testStringPtr(v string) *string {
 	return &v
 }
+
+func TestOpenAIMessages_ClearsCompatRequestStateOnEarlyReturn(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Set("openai_stream_retry_replay_state", map[string]any{
+		"visibleFrameSignatures": []string{"response.created"},
+		"emittedTextPrefix":      "partial output",
+	})
+
+	h := &OpenAIGatewayHandler{}
+	h.Messages(c)
+
+	_, exists := c.Get("openai_stream_retry_replay_state")
+	require.False(t, exists)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}

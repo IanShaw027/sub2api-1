@@ -497,17 +497,22 @@ func TestResolveBedrockModelID(t *testing.T) {
 }
 
 func TestAutoInjectBedrockBetaTokens(t *testing.T) {
-	t.Run("no auto-inject for thinking (interleaved-thinking not supported)", func(t *testing.T) {
+	t.Run("inject interleaved-thinking for enabled thinking", func(t *testing.T) {
 		body := []byte(`{"thinking":{"type":"enabled","budget_tokens":10000},"messages":[{"role":"user","content":"hi"}]}`)
 		result := autoInjectBedrockBetaTokens(nil, body, "us.anthropic.claude-opus-4-6-v1")
-		// interleaved-thinking-2025-05-14 已从白名单移除，不应自动注入
-		assert.Empty(t, result)
+		assert.Contains(t, result, "interleaved-thinking-2025-05-14")
+	})
+
+	t.Run("does not inject interleaved-thinking for adaptive thinking", func(t *testing.T) {
+		body := []byte(`{"thinking":{"type":"adaptive"},"messages":[{"role":"user","content":"hi"}]}`)
+		result := autoInjectBedrockBetaTokens(nil, body, "us.anthropic.claude-opus-4-7-v1")
+		assert.NotContains(t, result, "interleaved-thinking-2025-05-14")
 	})
 
 	t.Run("no duplicate when already present", func(t *testing.T) {
 		body := []byte(`{"thinking":{"type":"enabled","budget_tokens":10000},"messages":[{"role":"user","content":"hi"}]}`)
-		result := autoInjectBedrockBetaTokens([]string{"context-1m-2025-08-07"}, body, "us.anthropic.claude-opus-4-6-v1")
-		assert.Equal(t, []string{"context-1m-2025-08-07"}, result)
+		result := autoInjectBedrockBetaTokens([]string{"context-1m-2025-08-07", "interleaved-thinking-2025-05-14"}, body, "us.anthropic.claude-opus-4-6-v1")
+		assert.Equal(t, []string{"context-1m-2025-08-07", "interleaved-thinking-2025-05-14"}, result)
 	})
 
 	t.Run("inject computer-use when computer tool present", func(t *testing.T) {
@@ -568,8 +573,7 @@ func TestAutoInjectBedrockBetaTokens(t *testing.T) {
 		result := autoInjectBedrockBetaTokens(existing, body, "us.anthropic.claude-opus-4-6-v1")
 		assert.Contains(t, result, "context-1m-2025-08-07")
 		assert.Contains(t, result, "compact-2026-01-12")
-		// interleaved-thinking 不再自动注入
-		assert.NotContains(t, result, "interleaved-thinking-2025-05-14")
+		assert.Contains(t, result, "interleaved-thinking-2025-05-14")
 	})
 }
 
@@ -581,6 +585,12 @@ func TestResolveBedrockBetaTokens(t *testing.T) {
 		assert.Contains(t, result, "tool-examples-2025-10-29")
 	})
 
+	t.Run("body thinking resolves to interleaved-thinking", func(t *testing.T) {
+		body := []byte(`{"thinking":{"type":"enabled","budget_tokens":10000},"messages":[{"role":"user","content":"hi"}]}`)
+		result := ResolveBedrockBetaTokens("", body, "us.anthropic.claude-opus-4-6-v1")
+		assert.Contains(t, result, "interleaved-thinking-2025-05-14")
+	})
+
 	t.Run("unsupported client beta tokens are filtered out", func(t *testing.T) {
 		body := []byte(`{"messages":[{"role":"user","content":"hi"}]}`)
 		result := ResolveBedrockBetaTokens("context-1m-2025-08-07,files-api-2025-04-14", body, "us.anthropic.claude-opus-4-6-v1")
@@ -589,12 +599,16 @@ func TestResolveBedrockBetaTokens(t *testing.T) {
 }
 
 func TestPrepareBedrockRequestBody_AutoBetaInjection(t *testing.T) {
-	t.Run("thinking in body does not auto-inject beta (not supported)", func(t *testing.T) {
+	t.Run("thinking in body auto-injects interleaved-thinking beta", func(t *testing.T) {
 		input := `{"messages":[{"role":"user","content":"hi"}],"max_tokens":100,"thinking":{"type":"enabled","budget_tokens":10000}}`
 		result, err := PrepareBedrockRequestBody([]byte(input), "us.anthropic.claude-opus-4-6-v1", "")
 		require.NoError(t, err)
-		// interleaved-thinking 已从白名单移除，不应自动注入
-		assert.False(t, gjson.GetBytes(result, "anthropic_beta").Exists())
+		arr := gjson.GetBytes(result, "anthropic_beta").Array()
+		names := make([]string, len(arr))
+		for i, v := range arr {
+			names[i] = v.String()
+		}
+		assert.Contains(t, names, "interleaved-thinking-2025-05-14")
 	})
 
 	t.Run("header tokens preserved without auto-injection", func(t *testing.T) {
@@ -607,8 +621,7 @@ func TestPrepareBedrockRequestBody_AutoBetaInjection(t *testing.T) {
 			names[i] = v.String()
 		}
 		assert.Contains(t, names, "context-1m-2025-08-07")
-		// interleaved-thinking 不再自动注入
-		assert.NotContains(t, names, "interleaved-thinking-2025-05-14")
+		assert.Contains(t, names, "interleaved-thinking-2025-05-14")
 	})
 }
 
@@ -965,10 +978,12 @@ func TestSanitizeBedrockCCBetaTokens(t *testing.T) {
 		assert.False(t, gjson.GetBytes(result, "anthropic_beta").Exists())
 	})
 
-	t.Run("thinking alone does not auto-inject beta tokens", func(t *testing.T) {
+	t.Run("thinking alone auto-injects interleaved-thinking", func(t *testing.T) {
 		input := `{"anthropic_beta":[],"thinking":{"type":"enabled"},"messages":[]}`
 		result := sanitizeBedrockCCBetaTokens([]byte(input), "claude-opus-4-6")
-		assert.False(t, gjson.GetBytes(result, "anthropic_beta").Exists())
+		beta := gjson.GetBytes(result, "anthropic_beta")
+		assert.True(t, beta.Exists())
+		assert.Equal(t, "interleaved-thinking-2025-05-14", beta.Array()[0].String())
 	})
 
 	t.Run("auto-injects computer-use beta token", func(t *testing.T) {
