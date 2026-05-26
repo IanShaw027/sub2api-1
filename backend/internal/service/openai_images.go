@@ -2160,7 +2160,7 @@ func newOpenAIBackendAPIClient(proxyURL string) (*req.Client, error) {
 
 func (s *OpenAIGatewayService) buildOpenAIBackendAPIHeaders(account *Account, token string) (http.Header, error) {
 	deviceID, sessionID := s.ensureOpenAIImageSessionCredentials(context.Background(), account)
-	profile := ResolveOpenAIWebProfile(account)
+	profile := ResolveOpenAIImageWebProfile(account)
 	headers := make(http.Header)
 	headers.Set("Authorization", "Bearer "+token)
 	headers.Set("Accept", "application/json")
@@ -3753,7 +3753,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 	channelMappedModel string,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
-	profile := ResolveOpenAIWebProfile(account)
+	profile := ResolveOpenAIImageWebProfile(account)
 	proxyURL := resolveOpenAIProxyURL(account)
 	s.recordOpenAIImagesLegacyBridgeTelemetry(c, account, profile, proxyURL)
 	requestModel := strings.TrimSpace(parsed.Model)

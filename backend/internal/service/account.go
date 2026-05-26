@@ -1487,6 +1487,19 @@ func (a *Account) SupportsOpenAIImageRoute(route string) bool {
 	}
 }
 
+// HasOpenAIImageWeb2APIProfile reports whether the account has the browser
+// bundle required by the ChatGPT web image bootstrap path.
+//
+// Device/session IDs can still be auto-generated later, so the hard gate is the
+// web profile itself: browser headers plus a usable ChatGPT cookie header for
+// the conversation route.
+func (a *Account) HasOpenAIImageWeb2APIProfile() bool {
+	if !a.IsOpenAIOAuth() {
+		return false
+	}
+	return ResolveOpenAIImageWebProfile(a).HasOpenAIImageWeb2APIProfile()
+}
+
 func (a *Account) GetChatGPTUserID() string {
 	if !a.IsOpenAIOAuth() {
 		return ""

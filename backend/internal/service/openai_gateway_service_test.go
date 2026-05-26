@@ -1866,6 +1866,22 @@ func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimitedButWe
 	imageResetAt := time.Now().Add(2 * time.Minute).UTC().Truncate(time.Second)
 	oldLastUsed := time.Now().Add(-5 * time.Hour)
 	newLastUsed := time.Now().Add(-1 * time.Hour)
+	webProfile := map[string]any{
+		"user_agent":                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.6950.102 Safari/537.36",
+		"accept_language":            "en;q=0.9",
+		"sec_ch_ua":                  `"Not.A/Brand";v="8", "Chromium";v="145", "Google Chrome";v="145"`,
+		"sec_ch_ua_mobile":           "?0",
+		"sec_ch_ua_platform":         `"macOS"`,
+		"sec_ch_ua_arch":             `"arm"`,
+		"sec_ch_ua_bitness":          `"64"`,
+		"sec_ch_ua_full_version":     `"145.0.0.0"`,
+		"sec_ch_ua_platform_version": `"15.4.0"`,
+		"oai_device_id":              "device-1",
+		"oai_session_id":             "session-1",
+		"cookies": []any{
+			map[string]any{"name": "__Secure-next-auth.session-token", "value": "cookie-value", "domain": ".chatgpt.com", "path": "/"},
+		},
+	}
 	accounts := []Account{
 		{
 			ID:               47031,
@@ -1879,6 +1895,20 @@ func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimitedButWe
 			RateLimitResetAt: &accountResetAt,
 			Credentials:      map[string]any{"plan_type": "plus"},
 			Extra: map[string]any{
+				"web_profile": map[string]any{
+					"user_agent":                 webProfile["user_agent"],
+					"accept_language":            webProfile["accept_language"],
+					"sec_ch_ua":                  webProfile["sec_ch_ua"],
+					"sec_ch_ua_mobile":           webProfile["sec_ch_ua_mobile"],
+					"sec_ch_ua_platform":         webProfile["sec_ch_ua_platform"],
+					"sec_ch_ua_arch":             webProfile["sec_ch_ua_arch"],
+					"sec_ch_ua_bitness":          webProfile["sec_ch_ua_bitness"],
+					"sec_ch_ua_full_version":     webProfile["sec_ch_ua_full_version"],
+					"sec_ch_ua_platform_version": webProfile["sec_ch_ua_platform_version"],
+					"oai_device_id":              webProfile["oai_device_id"],
+					"oai_session_id":             webProfile["oai_session_id"],
+					"cookies":                    webProfile["cookies"],
+				},
 				"openai_image_web2api_rate_limit_reset_at": imageResetAt.Format(time.RFC3339),
 			},
 		},
@@ -1892,6 +1922,24 @@ func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimitedButWe
 			Priority:    1,
 			LastUsedAt:  &newLastUsed,
 			Credentials: map[string]any{"plan_type": "plus"},
+			Extra: map[string]any{
+				"web_profile": map[string]any{
+					"user_agent":                 webProfile["user_agent"],
+					"accept_language":            webProfile["accept_language"],
+					"sec_ch_ua":                  webProfile["sec_ch_ua"],
+					"sec_ch_ua_mobile":           webProfile["sec_ch_ua_mobile"],
+					"sec_ch_ua_platform":         webProfile["sec_ch_ua_platform"],
+					"sec_ch_ua_arch":             webProfile["sec_ch_ua_arch"],
+					"sec_ch_ua_bitness":          webProfile["sec_ch_ua_bitness"],
+					"sec_ch_ua_full_version":     webProfile["sec_ch_ua_full_version"],
+					"sec_ch_ua_platform_version": webProfile["sec_ch_ua_platform_version"],
+					"oai_device_id":              "device-2",
+					"oai_session_id":             "session-2",
+					"cookies": []any{
+						map[string]any{"name": "__Secure-next-auth.session-token", "value": "cookie-value", "domain": ".chatgpt.com", "path": "/"},
+					},
+				},
+			},
 		},
 	}
 	svc := &OpenAIGatewayService{
@@ -2522,6 +2570,36 @@ func TestOpenAIStreamingPassthroughResponseDoneWithoutDoneMarkerStillSucceeds(t 
 	require.Equal(t, 1, result.usage.CacheReadInputTokens)
 	require.Contains(t, rec.Body.String(), "response.completed")
 	require.NotContains(t, rec.Body.String(), "response.done")
+}
+
+func TestOpenAIStreamingPassthroughCountsImageOutputs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			MaxLineSize: defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"ig_passthrough_1\",\"type\":\"image_generation_call\",\"result\":\"final-image\"}}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_passthrough_image\",\"output\":[{\"id\":\"ig_passthrough_1\",\"type\":\"image_generation_call\",\"result\":\"final-image\"}],\"usage\":{\"input_tokens\":2,\"output_tokens\":3,\"output_tokens_details\":{\"image_tokens\":1}}}}\n\n",
+		)),
+		Header: http.Header{},
+	}
+
+	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 1, result.imageCount)
+	require.Equal(t, 1, result.usage.ImageOutputTokens)
 }
 
 func TestOpenAIStreamingPassthroughResponseIncompleteWithoutDoneMarkerStillSucceeds(t *testing.T) {

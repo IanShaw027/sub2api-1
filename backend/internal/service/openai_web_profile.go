@@ -110,6 +110,45 @@ func ResolveOpenAIWebProfile(account *Account) *OpenAIWebProfile {
 	return profile
 }
 
+// ResolveOpenAIImageWebProfile expands the raw nested web_profile with the
+// legacy flat credential/extra fallbacks that the image bridge already knows
+// how to normalize for persisted account data.
+func ResolveOpenAIImageWebProfile(account *Account) *OpenAIWebProfile {
+	if account == nil || !account.IsOpenAI() {
+		return nil
+	}
+	return BuildOpenAIWebProfileFromAccountData(account.Credentials, account.Extra)
+}
+
+func (p *OpenAIWebProfile) HasOpenAIImageWeb2APIProfile() bool {
+	if p == nil {
+		return false
+	}
+	if strings.TrimSpace(p.UserAgent) == "" || strings.TrimSpace(p.AcceptLanguage) == "" {
+		return false
+	}
+	if strings.TrimSpace(p.SecCHUA) == "" ||
+		strings.TrimSpace(p.SecCHUAMobile) == "" ||
+		strings.TrimSpace(p.SecCHUAPlatform) == "" ||
+		strings.TrimSpace(p.SecCHUAArch) == "" ||
+		strings.TrimSpace(p.SecCHUABitness) == "" ||
+		strings.TrimSpace(p.SecCHUAFullVersion) == "" ||
+		strings.TrimSpace(p.SecCHUAPlatformVersion) == "" {
+		return false
+	}
+	hostname, requestPath := normalizeCookieTarget(openAIChatGPTConversationURL)
+	for _, cookie := range p.Cookies {
+		if strings.TrimSpace(cookie.Value) == "" {
+			continue
+		}
+		if !cookieDomainMatchesHost(cookie.Domain, hostname) || !cookiePathMatches(cookie.Path, requestPath) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 func NormalizeOpenAIWebProfileExtra(platform string, accountType string, credentials map[string]any, extra map[string]any) map[string]any {
 	if strings.ToLower(strings.TrimSpace(platform)) != PlatformOpenAI {
 		return extra
