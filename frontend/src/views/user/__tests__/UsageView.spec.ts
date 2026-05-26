@@ -23,6 +23,12 @@ const messages: Record<string, string> = {
   'usage.inputTokenPrice': 'Input price',
   'usage.outputTokenPrice': 'Output price',
   'usage.perMillionTokens': '/ 1M tokens',
+  'usage.imageCount': 'Image count',
+  'usage.imageUnit': ' images',
+  'usage.imageUnitPrice': 'Per-image price',
+  'usage.imageSubtotal': 'Image subtotal',
+  'usage.tokenSubtotal': 'Token subtotal',
+  'usage.rowTotal': 'Row total',
   'usage.serviceTier': 'Service tier',
   'usage.serviceTierPriority': 'Fast',
   'usage.serviceTierFlex': 'Flex',
@@ -162,6 +168,9 @@ describe('user UsageView tooltip', () => {
 
     const wrapper = mount(UsageView, {
       global: {
+        mocks: {
+          $t: (key: string) => messages[key] ?? key,
+        },
         stubs: {
           AppLayout: AppLayoutStub,
           TablePageLayout: TablePageLayoutStub,
@@ -261,6 +270,9 @@ describe('user UsageView tooltip', () => {
 
     const wrapper = mount(UsageView, {
       global: {
+        mocks: {
+          $t: (key: string) => messages[key] ?? key,
+        },
         stubs: {
           AppLayout: AppLayoutStub,
           TablePageLayout: TablePageLayoutStub,
@@ -343,6 +355,9 @@ describe('user UsageView tooltip', () => {
 
     const wrapper = mount(UsageView, {
       global: {
+        mocks: {
+          $t: (key: string) => messages[key] ?? key,
+        },
         stubs: {
           AppLayout: AppLayoutStub,
           TablePageLayout: TablePageLayoutStub,
@@ -365,5 +380,185 @@ describe('user UsageView tooltip', () => {
     expect(text).toContain('gpt-5.4')
     expect(text).toContain('route')
     expect(wrapper.html()).toContain('text-red-600')
+  })
+
+  it('splits image and token subtotals in user tooltip for image billing rows', async () => {
+    query.mockResolvedValue({
+      items: [
+        {
+          request_id: 'req-user-image-1',
+          billing_mode: 'image',
+          inbound_endpoint: '/v1/responses',
+          upstream_endpoint: '/v1/responses',
+          actual_cost: 0.147388,
+          total_cost: 0.147388,
+          rate_multiplier: 1,
+          service_tier: 'standard',
+          input_cost: 0.04,
+          output_cost: 0.02,
+          cache_creation_cost: 0,
+          cache_read_cost: 0.007388,
+          input_tokens: 4806,
+          output_tokens: 1213,
+          cache_creation_tokens: 0,
+          cache_read_tokens: 0,
+          cache_creation_5m_tokens: 0,
+          cache_creation_1h_tokens: 0,
+          image_count: 1,
+          image_size: '2K',
+          first_token_ms: null,
+          duration_ms: 1,
+          created_at: '2026-03-08T00:00:00Z',
+        },
+      ],
+      total: 1,
+      pages: 1,
+    })
+    getStatsByDateRange.mockResolvedValue({
+      total_requests: 1,
+      total_tokens: 100,
+      total_cost: 0.1,
+      avg_duration_ms: 1,
+    })
+    list.mockResolvedValue({ items: [] })
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          TablePageLayout: TablePageLayoutStub,
+          Pagination: true,
+          EmptyState: true,
+          DataTable: DataTableStub,
+          Select: true,
+          DateRangePicker: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await nextTick()
+
+    const setupState = (wrapper.vm as any).$?.setupState
+    setupState.tooltipData = {
+      request_id: 'req-user-image-1',
+      billing_mode: 'image',
+      inbound_endpoint: '/v1/responses',
+      upstream_endpoint: '/v1/responses',
+      actual_cost: 0.147388,
+      total_cost: 0.147388,
+      rate_multiplier: 1,
+      service_tier: 'standard',
+      input_cost: 0.04,
+      output_cost: 0.02,
+      cache_creation_cost: 0,
+      cache_read_cost: 0.007388,
+      input_tokens: 4806,
+      output_tokens: 1213,
+      image_count: 1,
+      image_size: '2K',
+    }
+    setupState.tooltipVisible = true
+    await nextTick()
+
+    const text = wrapper.text()
+    expect(text).toContain('Image subtotal')
+    expect(text).toContain('$0.080000')
+    expect(text).toContain('Token subtotal')
+    expect(text).toContain('$0.067388')
+    expect(text).toContain('Row total')
+    expect(text).toContain('$0.147388')
+  })
+
+  it('shows pure image billing rows without token subtotal cost in user tooltip', async () => {
+    query.mockResolvedValue({
+      items: [
+        {
+          request_id: 'req-user-image-only-1',
+          billing_mode: 'image',
+          inbound_endpoint: '/v1/images/generations',
+          upstream_endpoint: '/v1/images/generations',
+          actual_cost: 0.08,
+          total_cost: 0.08,
+          rate_multiplier: 1,
+          service_tier: 'standard',
+          input_cost: 0,
+          output_cost: 0,
+          cache_creation_cost: 0,
+          cache_read_cost: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_creation_tokens: 0,
+          cache_read_tokens: 0,
+          cache_creation_5m_tokens: 0,
+          cache_creation_1h_tokens: 0,
+          image_count: 2,
+          image_size: '1K',
+          first_token_ms: null,
+          duration_ms: 1,
+          created_at: '2026-03-08T00:00:00Z',
+        },
+      ],
+      total: 1,
+      pages: 1,
+    })
+    getStatsByDateRange.mockResolvedValue({
+      total_requests: 1,
+      total_tokens: 100,
+      total_cost: 0.1,
+      avg_duration_ms: 1,
+    })
+    list.mockResolvedValue({ items: [] })
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          TablePageLayout: TablePageLayoutStub,
+          Pagination: true,
+          EmptyState: true,
+          DataTable: DataTableStub,
+          Select: true,
+          DateRangePicker: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await nextTick()
+
+    const setupState = (wrapper.vm as any).$?.setupState
+    setupState.tooltipData = {
+      request_id: 'req-user-image-only-1',
+      billing_mode: 'image',
+      inbound_endpoint: '/v1/images/generations',
+      upstream_endpoint: '/v1/images/generations',
+      actual_cost: 0.08,
+      total_cost: 0.08,
+      rate_multiplier: 1,
+      service_tier: 'standard',
+      input_cost: 0,
+      output_cost: 0,
+      cache_creation_cost: 0,
+      cache_read_cost: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      image_count: 2,
+      image_size: '1K',
+    }
+    setupState.tooltipVisible = true
+    await nextTick()
+
+    const text = wrapper.text()
+    expect(text).toContain('Per-image price')
+    expect(text).toContain('$0.040000')
+    expect(text).toContain('Image subtotal')
+    expect(text).toContain('Token subtotal')
+    expect(text).toContain('Row total')
+    expect(text).toContain('$0.080000')
   })
 })

@@ -231,7 +231,7 @@
                   d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
                 />
               </svg>
-              <span class="font-medium text-gray-900 dark:text-white">{{ row.image_count }}{{ $t('usage.imageUnit') }}</span>
+              <span class="font-medium text-gray-900 dark:text-white">{{ row.image_count }}{{ t('usage.imageUnit') }}</span>
               <span class="text-gray-400">({{ row.image_size || '2K' }})</span>
             </div>
             <!-- Token 请求 -->
@@ -498,7 +498,15 @@
                 <span class="font-medium text-sky-300">${{ imageUnitPrice(tooltipData).toFixed(6) }}</span>
               </div>
               <div class="flex items-center justify-between gap-4">
-                <span class="text-gray-400">{{ t('usage.imageTotalPrice') }}</span>
+                <span class="text-gray-400">{{ t('usage.imageSubtotal') }}</span>
+                <span class="font-medium text-white">${{ imageSubtotal(tooltipData).toFixed(6) }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.tokenSubtotal') }}</span>
+                <span class="font-medium text-amber-300">${{ imageModeTokenCost(tooltipData).toFixed(6) }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.rowTotal') }}</span>
                 <span class="font-medium text-white">${{ tooltipData.total_cost?.toFixed(6) || '0.000000' }}</span>
               </div>
             </template>
@@ -670,9 +678,20 @@ const formatDuration = (ms: number): string => {
 
 const imageUnitPrice = (row: UsageLog | null): number => {
   if (!row || row.image_count <= 0) return 0
-  const total = row.total_cost ?? 0
-  const price = total / row.image_count
+  const price = imageSubtotal(row) / row.image_count
   return Number.isFinite(price) ? price : 0
+}
+
+const imageModeTokenCost = (row: UsageLog | null): number => {
+  if (!row) return 0
+  return (row.input_cost ?? 0) + (row.output_cost ?? 0) + (row.cache_creation_cost ?? 0) + (row.cache_read_cost ?? 0)
+}
+
+const imageSubtotal = (row: UsageLog | null): number => {
+  if (!row) return 0
+  const subtotal = (row.total_cost ?? 0) - imageModeTokenCost(row)
+  if (!Number.isFinite(subtotal) || subtotal < 0) return 0
+  return subtotal
 }
 
 const formatUserAgent = (ua: string): string => {

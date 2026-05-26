@@ -1484,12 +1484,70 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 			}
 		}
 
+		if sanitizedItem, sanitized := sanitizeCodexInputItem(newItem); sanitized {
+			newItem = sanitizedItem
+			modified = true
+		}
+
 		filtered = append(filtered, newItem)
 	}
 	if !modified && len(filtered) == len(input) {
 		return input, false
 	}
 	return filtered, true
+}
+
+var codexMessageInputAllowedFields = map[string]struct{}{
+	"type":    {},
+	"role":    {},
+	"content": {},
+	"id":      {},
+}
+
+func sanitizeCodexInputItem(item map[string]any) (map[string]any, bool) {
+	if len(item) == 0 {
+		return item, false
+	}
+
+	if strings.TrimSpace(firstNonEmptyString(item["type"])) == "message" {
+		sanitized := make(map[string]any, len(item))
+		modified := false
+		for key, value := range item {
+			if value == nil {
+				modified = true
+				continue
+			}
+			if _, ok := codexMessageInputAllowedFields[key]; !ok {
+				modified = true
+				continue
+			}
+			sanitized[key] = value
+		}
+		if !modified {
+			return item, false
+		}
+		return sanitized, true
+	}
+
+	var sanitized map[string]any
+	modified := false
+	for key, value := range item {
+		if value != nil {
+			continue
+		}
+		if sanitized == nil {
+			sanitized = make(map[string]any, len(item)-1)
+			for existingKey, existingValue := range item {
+				sanitized[existingKey] = existingValue
+			}
+		}
+		delete(sanitized, key)
+		modified = true
+	}
+	if !modified {
+		return item, false
+	}
+	return sanitized, true
 }
 
 func isCodexToolCallItemType(typ string) bool {

@@ -870,6 +870,54 @@ func TestApplyCodexOAuthTransform_EmptyInput(t *testing.T) {
 	require.Len(t, input, 0)
 }
 
+func TestApplyCodexOAuthTransform_StripsCodexMessageNoiseFields(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.2",
+		"input": []any{
+			map[string]any{
+				"id":                nil,
+				"cwd":               nil,
+				"name":              nil,
+				"role":              "user",
+				"type":              "message",
+				"input":             nil,
+				"action":            nil,
+				"output":            nil,
+				"stderr":            nil,
+				"stdout":            nil,
+				"call_id":           nil,
+				"changes":           nil,
+				"command":           nil,
+				"content":           "health check",
+				"thought":           nil,
+				"arguments":         nil,
+				"encrypted_content": nil,
+				"reasoning_content": nil,
+				"thought_signature": "[REDACTED]",
+				"working_directory": nil,
+			},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, true, false)
+
+	require.True(t, result.Modified)
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 1)
+
+	msg, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "message", msg["type"])
+	require.Equal(t, "user", msg["role"])
+	require.Equal(t, "health check", msg["content"])
+	require.NotContains(t, msg, "action")
+	require.NotContains(t, msg, "cwd")
+	require.NotContains(t, msg, "command")
+	require.NotContains(t, msg, "stdout")
+	require.NotContains(t, msg, "thought_signature")
+}
+
 func TestNormalizeCodexModel_Gpt53(t *testing.T) {
 	cases := map[string]string{
 		"gpt-5.4":                   "gpt-5.4",

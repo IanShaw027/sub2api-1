@@ -905,6 +905,76 @@ func TestOpenAIGatewayService_Forward_StripsUnsupportedFieldsConsistently(t *tes
 	require.False(t, result.Stream)
 }
 
+func TestOpenAIGatewayService_Forward_CodexCLIStripsMessageNoiseFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{
+		"model":"gpt-5.2",
+		"store":false,
+		"stream":false,
+		"input":[{
+			"id":null,
+			"cwd":null,
+			"name":null,
+			"role":"user",
+			"type":"message",
+			"input":null,
+			"action":null,
+			"output":null,
+			"stderr":null,
+			"stdout":null,
+			"call_id":null,
+			"changes":null,
+			"command":null,
+			"content":"health check",
+			"thought":null,
+			"arguments":null,
+			"encrypted_content":null,
+			"reasoning_content":null,
+			"thought_signature":"[REDACTED]",
+			"working_directory":null
+		}]
+	}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.125.0")
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid-codex-message-clean"}},
+			Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
+		},
+	}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:          654,
+		Name:        "oauth-codex-message-clean",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "health check", gjson.GetBytes(upstream.lastBody, "input.0.content").String())
+	require.Equal(t, "message", gjson.GetBytes(upstream.lastBody, "input.0.type").String())
+	require.Equal(t, "user", gjson.GetBytes(upstream.lastBody, "input.0.role").String())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.action").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.cwd").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.command").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.stdout").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.thought_signature").Exists())
+}
+
 func TestOpenAIGatewayService_OAuthLegacy_ClaudeCLIResponsesInjectsInstructionsAndNormalizesStrictToolSchema(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

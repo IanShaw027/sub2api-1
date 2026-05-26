@@ -301,7 +301,15 @@
                 <span class="font-medium text-sky-300">${{ imageUnitPrice(tooltipData).toFixed(6) }}</span>
               </div>
               <div class="flex items-center justify-between gap-4">
-                <span class="text-gray-400">{{ t('usage.imageTotalPrice') }}</span>
+                <span class="text-gray-400">{{ t('usage.imageSubtotal') }}</span>
+                <span class="font-medium text-white">${{ imageSubtotal(tooltipData).toFixed(6) }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.tokenSubtotal') }}</span>
+                <span class="font-medium text-amber-300">${{ imageModeTokenCost(tooltipData).toFixed(6) }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.rowTotal') }}</span>
                 <span class="font-medium text-white">${{ tooltipData.total_cost?.toFixed(6) || '0.000000' }}</span>
               </div>
             </template>
@@ -376,9 +384,20 @@ function accountBilled(row: { total_cost?: number | null; account_stats_cost?: n
 
 function imageUnitPrice(row: AdminUsageLog | null): number {
   if (!row || row.image_count <= 0) return 0
-  const total = row.total_cost ?? 0
-  const price = total / row.image_count
+  const price = imageSubtotal(row) / row.image_count
   return Number.isFinite(price) ? price : 0
+}
+
+function imageModeTokenCost(row: AdminUsageLog | null): number {
+  if (!row) return 0
+  return (row.input_cost ?? 0) + (row.output_cost ?? 0) + (row.cache_creation_cost ?? 0) + (row.cache_read_cost ?? 0)
+}
+
+function imageSubtotal(row: AdminUsageLog | null): number {
+  if (!row) return 0
+  const subtotal = (row.total_cost ?? 0) - imageModeTokenCost(row)
+  if (!Number.isFinite(subtotal) || subtotal < 0) return 0
+  return subtotal
 }
 
 import DataTable from '@/components/common/DataTable.vue'
