@@ -1623,7 +1623,7 @@ func openAIWSRawItemsHasPrefix(items []json.RawMessage, prefix []json.RawMessage
 
 func openAIWSRawItemsHasFunctionCallOutput(items []json.RawMessage) bool {
 	for _, item := range items {
-		if gjson.GetBytes(item, "type").String() == "function_call_output" {
+		if isToolContinuationOutputItemType(gjson.GetBytes(item, "type").String()) {
 			return true
 		}
 	}
@@ -3295,7 +3295,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	currentTurnReplayInputExists := false
 	skipBeforeTurn := false
 	hasCurrentOrReplayFunctionCallOutput := func(payload []byte) bool {
-		if gjson.GetBytes(payload, `input.#(type=="function_call_output")`).Exists() {
+		if HasToolContinuationOutputInRawPayload(payload) {
 			return true
 		}
 		return currentTurnReplayInputExists && openAIWSRawItemsHasFunctionCallOutput(currentTurnReplayInput)

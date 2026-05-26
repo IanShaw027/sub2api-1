@@ -632,6 +632,20 @@ func TestShouldKeepIngressPreviousResponseID(t *testing.T) {
 		require.Equal(t, "has_function_call_output", reason)
 	})
 
+	t.Run("tool_search_output_keeps_previous_response_id", func(t *testing.T) {
+		payload := []byte(`{
+			"type":"response.create",
+			"model":"gpt-5.1",
+			"store":false,
+			"previous_response_id":"resp_external",
+			"input":[{"type":"tool_search_output","call_id":"call_1","output":"ok"}]
+		}`)
+		keep, reason, err := shouldKeepIngressPreviousResponseID(previousPayload, payload, "resp_turn_1", true)
+		require.NoError(t, err)
+		require.True(t, keep)
+		require.Equal(t, "has_function_call_output", reason)
+	})
+
 	t.Run("non_input_compare_error", func(t *testing.T) {
 		keep, reason, err := shouldKeepIngressPreviousResponseID([]byte(`[]`), currentStrictPayload, "resp_turn_1", false)
 		require.Error(t, err)
@@ -694,6 +708,38 @@ func TestBuildOpenAIWSReplayInputSequence(t *testing.T) {
 		require.Equal(t, "hello", gjson.GetBytes(items[0], "text").String())
 		require.Equal(t, "world", gjson.GetBytes(items[1], "text").String())
 	})
+}
+
+func TestOpenAIWSRawItemsHasFunctionCallOutput(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		items []json.RawMessage
+		want  bool
+	}{
+		{
+			name: "function_call_output",
+			items: []json.RawMessage{json.RawMessage(`{"type":"function_call_output","call_id":"call_1","output":"ok"}`)},
+			want:  true,
+		},
+		{
+			name: "tool_search_output",
+			items: []json.RawMessage{json.RawMessage(`{"type":"tool_search_output","call_id":"call_1","output":"ok"}`)},
+			want:  true,
+		},
+		{
+			name: "non_tool_output",
+			items: []json.RawMessage{json.RawMessage(`{"type":"input_text","text":"hello"}`)},
+			want:  false,
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, openAIWSRawItemsHasFunctionCallOutput(tc.items))
+		})
+	}
 }
 
 func TestSetOpenAIWSPayloadInputSequence(t *testing.T) {
