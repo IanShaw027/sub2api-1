@@ -68,6 +68,11 @@ const (
 	openAICacheProbePrefix16KBytes        = 16 * 1024
 )
 
+var (
+	openAITTFTWatchdogTimeout  = 8 * time.Second
+	openAITTFTCooldownDuration = time.Minute
+)
+
 var openAIResponsesUnsupportedFields = []string{
 	"prompt_cache_retention",
 	"reasoningSummary",
@@ -4905,6 +4910,122 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 	return true
 }
 
+func (s *OpenAIGatewayService) shouldEnableOpenAITTFTWatchdog(c *gin.Context, account *Account) bool {
+	if account == nil {
+		return false
+	}
+	if account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth {
+		return false
+	}
+	if !isOpenAIResponsesInboundPath(c) {
+		return false
+	}
+	return openAITTFTWatchdogTimeout > 0
+}
+
+func (s *OpenAIGatewayService) applyOpenAITTFTCooldown(ctx context.Context, account *Account, model string) {
+	if s == nil || s.accountRepo == nil || account == nil || openAITTFTCooldownDuration <= 0 {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	now := time.Now()
+	until := now.Add(openAITTFTCooldownDuration)
+	state := &TempUnschedState{
+		UntilUnix:       until.Unix(),
+		TriggeredAtUnix: now.Unix(),
+		StatusCode:      http.StatusGatewayTimeout,
+		MatchedKeyword:  "ttft_timeout",
+		RuleIndex:       -1,
+		ErrorMessage: fmt.Sprintf(
+			"TTFT watchdog timeout after %s for model: %s",
+			openAITTFTWatchdogTimeout,
+			strings.TrimSpace(model),
+		),
+	}
+
+	reason := state.ErrorMessage
+	if raw, err := json.Marshal(state); err == nil {
+		reason = string(raw)
+	}
+	if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
+		logger.FromContext(ctx).Warn(
+			"openai.ttft_watchdog_set_temp_unsched_failed",
+			zap.Int64("account_id", account.ID),
+			zap.Error(err),
+		)
+		return
+	}
+	if s.rateLimitService != nil && s.rateLimitService.tempUnschedCache != nil {
+		if err := s.rateLimitService.tempUnschedCache.SetTempUnsched(ctx, account.ID, state); err != nil {
+			logger.FromContext(ctx).Warn(
+				"openai.ttft_watchdog_set_temp_unsched_cache_failed",
+				zap.Int64("account_id", account.ID),
+				zap.Error(err),
+			)
+		}
+	}
+}
+
+func (s *OpenAIGatewayService) newOpenAITTFTTimeoutFailoverError(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	passthrough bool,
+	upstreamRequestID string,
+	model string,
+) *UpstreamFailoverError {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.applyOpenAITTFTCooldown(ctx, account, model)
+	message := fmt.Sprintf(
+		"No forwardable event received within %s before first token; switching account",
+		openAITTFTWatchdogTimeout,
+	)
+	if c != nil {
+		setOpsUpstreamError(c, http.StatusGatewayTimeout, message, "")
+		event := OpsUpstreamErrorEvent{
+			Platform:           PlatformOpenAI,
+			UpstreamStatusCode: http.StatusGatewayTimeout,
+			UpstreamRequestID:  strings.TrimSpace(upstreamRequestID),
+			Passthrough:        passthrough,
+			Kind:               "failover",
+			Message:            message,
+		}
+		if account != nil {
+			event.Platform = account.Platform
+			event.AccountID = account.ID
+			event.AccountName = account.Name
+		}
+		appendOpsUpstreamError(c, event)
+	}
+	logger.FromContext(ctx).Warn(
+		"openai.ttft_watchdog_failover",
+		zap.Int64("account_id", func() int64 {
+			if account == nil {
+				return 0
+			}
+			return account.ID
+		}()),
+		zap.String("model", strings.TrimSpace(model)),
+		zap.Duration("ttft_timeout", openAITTFTWatchdogTimeout),
+		zap.Duration("cooldown", openAITTFTCooldownDuration),
+		zap.Bool("passthrough", passthrough),
+	)
+	body, _ := json.Marshal(gin.H{
+		"error": gin.H{
+			"type":    "upstream_timeout",
+			"message": message,
+		},
+	})
+	return &UpstreamFailoverError{
+		StatusCode:   http.StatusGatewayTimeout,
+		ResponseBody: body,
+	}
+}
+
 func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	c *gin.Context,
 	account *Account,
@@ -5049,6 +5170,27 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			imageCount:   imageCounter.Count(),
 		}
 	}
+	ttftWatchdogEnabled := s.shouldEnableOpenAITTFTWatchdog(c, account)
+	var ttftTimer *time.Timer
+	var ttftCh <-chan time.Time
+	stopTTFTWatchdog := func() {
+		if ttftTimer == nil {
+			return
+		}
+		if !ttftTimer.Stop() {
+			select {
+			case <-ttftTimer.C:
+			default:
+			}
+		}
+		ttftTimer = nil
+		ttftCh = nil
+	}
+	if ttftWatchdogEnabled {
+		ttftTimer = time.NewTimer(openAITTFTWatchdogTimeout)
+		ttftCh = ttftTimer.C
+		defer stopTTFTWatchdog()
+	}
 	pendingLines := make([]string, 0, 8)
 	writePendingLines := func() bool {
 		for _, pending := range pendingLines {
@@ -5069,12 +5211,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	}
 	scanBuf := getSSEScannerBuf64K()
 	scanner.Buffer(scanBuf[:0], maxLineSize)
-	defer putSSEScannerBuf64K(scanBuf)
 
 	needModelReplace := strings.TrimSpace(originalModel) != "" && strings.TrimSpace(mappedModel) != "" && strings.TrimSpace(originalModel) != strings.TrimSpace(mappedModel)
-
-	for scanner.Scan() {
-		line := scanner.Text()
+	processLine := func(line string) error {
 		lineStartsClientOutput := false
 		forceFlushFailedEvent := false
 		line = normalizeOpenAIHTTPResponseTerminalSSELine(line)
@@ -5090,18 +5229,15 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 			if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(dataBytes); matched {
 				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
-					return resultWithUsage(),
-						s.newOpenAISoftRateLimitFailoverError(ctx, c, account, true, upstreamRequestID, dataBytes, advisoryMsg)
+					return s.newOpenAISoftRateLimitFailoverError(ctx, c, account, true, upstreamRequestID, dataBytes, advisoryMsg)
 				}
-				return resultWithUsage(),
-					fmt.Errorf("openai passthrough soft rate limit advisory: %s", advisoryMsg)
+				return fmt.Errorf("openai passthrough soft rate limit advisory: %s", advisoryMsg)
 			}
 			eventType := strings.TrimSpace(gjson.Get(trimmedData, "type").String())
 			if eventType == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
 				if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
-					return resultWithUsage(),
-						s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
+					return s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
 				}
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
@@ -5116,19 +5252,21 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			if firstTokenMs == nil && lineStartsClientOutput && trimmedData != "[DONE]" {
 				ms := int(time.Since(startTime).Milliseconds())
 				firstTokenMs = &ms
+				stopTTFTWatchdog()
 			}
 			imageCounter.AddSSEData(dataBytes)
 			s.parseSSEUsageBytes(dataBytes, usage)
+			return nil
 		}
 
 		if !clientDisconnected {
 			if !clientOutputStarted && !lineStartsClientOutput {
 				pendingLines = append(pendingLines, line)
-				continue
+				return nil
 			}
 			if !clientOutputStarted && len(pendingLines) > 0 {
 				if !writePendingLines() {
-					continue
+					return nil
 				}
 			}
 			if _, err := fmt.Fprintln(w, line); err != nil {
@@ -5139,31 +5277,34 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				flusher.Flush()
 			}
 		}
+		return nil
 	}
-	if err := scanner.Err(); err != nil {
+	handleScanErr := func(err error) error {
+		if err == nil {
+			return nil
+		}
 		if sawTerminalEvent && !sawFailedEvent {
-			return resultWithUsage(), nil
+			return nil
 		}
 		if sawFailedEvent {
-			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
+			return fmt.Errorf("upstream response failed: %s", failedMessage)
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
+			return fmt.Errorf("stream usage incomplete: %w", err)
 		}
 		if errors.Is(err, bufio.ErrTooLong) {
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] SSE line too long: account=%d max_size=%d error=%v", account.ID, maxLineSize, err)
-			return resultWithUsage(), err
+			return err
 		}
 		if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 			msg := "OpenAI stream disconnected before completion"
 			if errText := strings.TrimSpace(err.Error()); errText != "" {
 				msg += ": " + errText
 			}
-			return resultWithUsage(),
-				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, msg)
+			return s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, msg)
 		}
 		if clientDisconnected {
-			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", err)
+			return fmt.Errorf("stream usage incomplete after disconnect: %w", err)
 		}
 		logger.LegacyPrintf("service.openai_gateway",
 			"[OpenAI passthrough] 流读取异常中断: account=%d request_id=%s err=%v",
@@ -5171,8 +5312,89 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			upstreamRequestID,
 			err,
 		)
-		return resultWithUsage(), fmt.Errorf("stream read error: %w", err)
+		return fmt.Errorf("stream read error: %w", err)
 	}
+	if !ttftWatchdogEnabled {
+		defer putSSEScannerBuf64K(scanBuf)
+		for scanner.Scan() {
+			if err := processLine(scanner.Text()); err != nil {
+				return resultWithUsage(), err
+			}
+		}
+		if err := handleScanErr(scanner.Err()); err != nil {
+			return resultWithUsage(), err
+		}
+	} else {
+		type scanEvent struct {
+			line string
+			err  error
+		}
+		events := make(chan scanEvent, 16)
+		done := make(chan struct{})
+		sendEvent := func(ev scanEvent) bool {
+			select {
+			case events <- ev:
+				return true
+			case <-done:
+				return false
+			}
+		}
+		go func() {
+			defer putSSEScannerBuf64K(scanBuf)
+			defer close(events)
+			for scanner.Scan() {
+				if !sendEvent(scanEvent{line: scanner.Text()}) {
+					return
+				}
+			}
+			if err := scanner.Err(); err != nil {
+				_ = sendEvent(scanEvent{err: err})
+			}
+		}()
+		defer close(done)
+
+		for {
+			select {
+			case ev, ok := <-events:
+				if !ok {
+					goto passthroughFinalize
+				}
+				if err := handleScanErr(ev.err); err != nil {
+					return resultWithUsage(), err
+				}
+				if err := processLine(ev.line); err != nil {
+					return resultWithUsage(), err
+				}
+			case <-ttftCh:
+				drained := false
+				for !drained {
+					select {
+					case ev, ok := <-events:
+						if !ok {
+							drained = true
+							break
+						}
+						if err := handleScanErr(ev.err); err != nil {
+							return resultWithUsage(), err
+						}
+						if err := processLine(ev.line); err != nil {
+							return resultWithUsage(), err
+						}
+						if firstTokenMs != nil {
+							break
+						}
+					default:
+						drained = true
+					}
+				}
+				if firstTokenMs != nil {
+					continue
+				}
+				return resultWithUsage(), s.newOpenAITTFTTimeoutFailoverError(ctx, c, account, true, upstreamRequestID, originalModel)
+			}
+		}
+	}
+passthroughFinalize:
 	if sawFailedEvent {
 		return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 	}
@@ -5967,6 +6189,27 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	var streamFailoverErr error
 	imageCounter := newOpenAIImageOutputCounter()
+	ttftWatchdogEnabled := s.shouldEnableOpenAITTFTWatchdog(c, account)
+	var ttftTimer *time.Timer
+	var ttftCh <-chan time.Time
+	stopTTFTWatchdog := func() {
+		if ttftTimer == nil {
+			return
+		}
+		if !ttftTimer.Stop() {
+			select {
+			case <-ttftTimer.C:
+			default:
+			}
+		}
+		ttftTimer = nil
+		ttftCh = nil
+	}
+	if ttftWatchdogEnabled {
+		ttftTimer = time.NewTimer(openAITTFTWatchdogTimeout)
+		ttftCh = ttftTimer.C
+		defer stopTTFTWatchdog()
+	}
 	sendErrorEvent := func(reason string) {
 		if errorEventSent || clientDisconnected {
 			return
@@ -6131,6 +6374,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			if firstTokenMs == nil && startsClientOutput {
 				ms := int(time.Since(startTime).Milliseconds())
 				firstTokenMs = &ms
+				stopTTFTWatchdog()
 			}
 			imageCounter.AddSSEData(dataBytes)
 			s.parseSSEUsageBytes(dataBytes, usage)
@@ -6158,7 +6402,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	}
 
 	// 无超时/无 keepalive 的常见路径走同步扫描，减少 goroutine 与 channel 开销。
-	if streamInterval <= 0 && keepaliveInterval <= 0 {
+	if streamInterval <= 0 && keepaliveInterval <= 0 && ttftCh == nil {
 		defer putSSEScannerBuf64K(scanBuf)
 		for scanner.Scan() {
 			processSSELine(scanner.Text(), true)
@@ -6219,6 +6463,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			}
 
 		case <-intervalCh:
+			if ttftCh != nil && firstTokenMs == nil {
+				continue
+			}
 			lastRead := time.Unix(0, atomic.LoadInt64(&lastReadAt))
 			if time.Since(lastRead) < streamInterval {
 				continue
@@ -6235,6 +6482,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			return resultWithUsage(), fmt.Errorf("stream data interval timeout")
 
 		case <-keepaliveCh:
+			if ttftCh != nil && firstTokenMs == nil {
+				continue
+			}
 			if clientDisconnected {
 				continue
 			}
@@ -6252,6 +6502,32 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			} else {
 				lastDataAt = time.Now()
 			}
+		case <-ttftCh:
+			drained := false
+			for !drained {
+				select {
+				case ev, ok := <-events:
+					if !ok {
+						return finalizeStream()
+					}
+					if result, err, done := handleScanErr(ev.err); done {
+						return result, err
+					}
+					processSSELine(ev.line, len(events) == 0)
+					if streamFailoverErr != nil {
+						return resultWithUsage(), streamFailoverErr
+					}
+					if firstTokenMs != nil {
+						drained = true
+					}
+				default:
+					drained = true
+				}
+			}
+			if firstTokenMs != nil {
+				continue
+			}
+			return resultWithUsage(), s.newOpenAITTFTTimeoutFailoverError(ctx, c, account, false, upstreamRequestID, originalModel)
 		}
 	}
 
