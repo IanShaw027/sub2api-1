@@ -259,12 +259,12 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentO
 	secondBody := upstream.bodies[1]
 	require.False(t, gjson.GetBytes(firstBody, "previous_response_id").Exists(), "HTTP 首次请求仍应沿用原逻辑移除 previous_response_id")
 	require.True(t, gjson.GetBytes(firstBody, "input.0.encrypted_content").Exists(), "首次请求不应做发送前预清理")
-	require.Equal(t, "keep me", gjson.GetBytes(firstBody, "input.0.summary.0.text").String())
+	require.Equal(t, "reasoning", gjson.GetBytes(firstBody, "input.0.type").String())
 
 	require.False(t, gjson.GetBytes(secondBody, "previous_response_id").Exists(), "HTTP 精确重试不应重新带回 previous_response_id")
-	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "精确重试应移除 reasoning.encrypted_content")
-	require.Equal(t, "keep me", gjson.GetBytes(secondBody, "input.0.summary.0.text").String(), "精确重试应保留有效 reasoning summary")
-	require.Equal(t, "input_text", gjson.GetBytes(secondBody, "input.1.type").String(), "非 reasoning input 应保持原样")
+	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "精确重试应移除坏的 reasoning item")
+	require.Equal(t, "message", gjson.GetBytes(secondBody, "input.0.type").String(), "重试后首项应变为后续消息")
+	require.Equal(t, "input_text", gjson.GetBytes(secondBody, "input.0.content.0.type").String(), "后续消息内容应保留")
 	requireOrderedJSONKeys(t, secondBody, "model", "instructions", "prompt_cache_key", "input")
 
 	decision, _ := c.Get("openai_ws_transport_decision")
@@ -348,8 +348,8 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesWrappedInvalidEncryptedC
 	firstBody := upstream.bodies[0]
 	secondBody := upstream.bodies[1]
 	require.True(t, gjson.GetBytes(firstBody, "input.0.encrypted_content").Exists(), "首次请求不应做发送前预清理")
-	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "wrapped exact retry 应移除 reasoning.encrypted_content")
-	require.Equal(t, "keep me too", gjson.GetBytes(secondBody, "input.0.summary.0.text").String(), "wrapped exact retry 应保留有效 reasoning summary")
+	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "wrapped exact retry 应移除坏的 reasoning item")
+	require.Equal(t, "input_text", gjson.GetBytes(secondBody, "input.0.type").String())
 	requireOrderedJSONKeys(t, secondBody, "model", "instructions", "prompt_cache_key", "input")
 
 	decision, _ := c.Get("openai_ws_transport_decision")
@@ -435,10 +435,87 @@ func TestOpenAIGatewayService_Forward_HTTPIngressCompactRetryReappliesCodexShape
 	require.False(t, gjson.GetBytes(secondBody, "metadata").Exists())
 	require.False(t, gjson.GetBytes(secondBody, "stream").Exists())
 	require.False(t, gjson.GetBytes(secondBody, "store").Exists())
-	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "retry should remove encrypted content")
-	require.Equal(t, "keep compact summary", gjson.GetBytes(secondBody, "input.0.summary.0.text").String())
+	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "retry should remove the malformed reasoning item")
+	require.Equal(t, "message", gjson.GetBytes(secondBody, "input.0.type").String())
 	require.Equal(t, "apply_patch", gjson.GetBytes(secondBody, "tools.0.function.name").String())
 	require.Equal(t, "*/*", upstream.reqs[1].Header.Get("Accept"))
+}
+
+func TestOpenAIGatewayService_Forward_HTTPIngressRetriesMalformedEncryptedContentOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer wsFallbackServer.Close()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "custom-client/1.0")
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	upstream := &httpUpstreamSequenceRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"error":{"code":"invalid_encrypted_content","type":"invalid_request_error","message":"The encrypted content could not be verified."}}`,
+				)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"id":"resp_http_retry_malformed_ok","usage":{"input_tokens":1,"output_tokens":2,"input_tokens_details":{"cached_tokens":0}}}`,
+				)),
+			},
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+	}
+
+	account := &Account{
+		ID:          105,
+		Name:        "openai-apikey-malformed",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": wsFallbackServer.URL,
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	body := []byte(`{"model":"gpt-5.1","stream":false,"previous_response_id":"resp_http_retry_malformed","input":[{"role":"assistant","encrypted_content":"当前任务...型问题。","content":[{"type":"output_text","text":"keep malformed"}]},{"type":"input_text","text":"hello"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.OpenAIWSMode, "HTTP 入站应保持 HTTP 转发")
+	require.Equal(t, 2, upstream.callCount, "malformed invalid_encrypted_content should retry once")
+	require.Len(t, upstream.bodies, 2)
+
+	firstBody := upstream.bodies[0]
+	secondBody := upstream.bodies[1]
+	require.True(t, gjson.GetBytes(firstBody, "input.0.encrypted_content").Exists(), "首轮请求应保留原始 malformed encrypted_content")
+	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "重试应移除 malformed item")
+	require.Equal(t, "input_text", gjson.GetBytes(secondBody, "input.0.type").String())
+	require.False(t, gjson.GetBytes(secondBody, "input.1").Exists())
 }
 
 func TestOpenAIGatewayService_Forward_RemovePreviousResponseIDWhenWSDisabled(t *testing.T) {
@@ -495,6 +572,62 @@ func TestOpenAIGatewayService_Forward_RemovePreviousResponseIDWhenWSDisabled(t *
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.False(t, gjson.GetBytes(upstream.lastBody, "previous_response_id").Exists())
+}
+
+func TestOpenAIGatewayService_Forward_DropsStoreFalseReasoningItemsOnHTTPResponsesPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer wsFallbackServer.Close()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "custom-client/1.0")
+
+	upstream := &httpUpstreamSequenceRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(`{"usage":{"input_tokens":1,"output_tokens":2,"input_tokens_details":{"cached_tokens":0}}}`)),
+			},
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = false
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+	}
+
+	account := &Account{
+		ID:          2,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": wsFallbackServer.URL,
+		},
+	}
+
+	body := []byte(`{"model":"gpt-5.5","stream":false,"store":false,"input":[{"type":"reasoning","id":"rs_00afdd9da807060c016a1158b22dac8195a9d6d3c42791f21a","summary":[{"text":"drop me"}]},{"type":"message","role":"user","content":"hello"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 1)
+	require.Equal(t, int64(1), gjson.GetBytes(upstream.bodies[0], "input.#").Int())
+	require.Equal(t, "message", gjson.GetBytes(upstream.bodies[0], "input.0.type").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[0], "input.0.id").Exists())
 }
 
 func TestOpenAIGatewayService_Forward_WSv2Dial426FallbackHTTP(t *testing.T) {
@@ -2192,10 +2325,125 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversSingleO
 	wsRequestMu.Unlock()
 	require.Len(t, requests, 2)
 	require.True(t, gjson.GetBytes(requests[0], `input.encrypted_content`).Exists(), "首轮单对象应保留 encrypted_content")
-	require.True(t, gjson.GetBytes(requests[1], `input.summary.0.text`).Exists(), "恢复重试应保留 reasoning summary")
-	require.False(t, gjson.GetBytes(requests[1], `input.encrypted_content`).Exists(), "恢复重试只应移除 encrypted_content")
-	require.Equal(t, "reasoning", gjson.GetBytes(requests[1], `input.type`).String())
+	require.False(t, gjson.GetBytes(requests[1], `input`).Exists(), "恢复重试应移除整个 reasoning input")
 	require.False(t, gjson.GetBytes(requests[1], `previous_response_id`).Exists(), "恢复重试应移除 previous_response_id")
+}
+
+func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversMalformedInputItem(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var wsAttempts atomic.Int32
+	var wsRequestPayloads [][]byte
+	var wsRequestMu sync.Mutex
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt := wsAttempts.Add(1)
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket failed: %v", err)
+			return
+		}
+		defer func() {
+			_ = conn.Close()
+		}()
+
+		var req map[string]any
+		if err := conn.ReadJSON(&req); err != nil {
+			t.Errorf("read ws request failed: %v", err)
+			return
+		}
+		reqRaw, _ := json.Marshal(req)
+		wsRequestMu.Lock()
+		wsRequestPayloads = append(wsRequestPayloads, reqRaw)
+		wsRequestMu.Unlock()
+		if attempt == 1 {
+			_ = conn.WriteJSON(map[string]any{
+				"type": "error",
+				"error": map[string]any{
+					"code":    "invalid_encrypted_content",
+					"type":    "invalid_request_error",
+					"message": "The encrypted content could not be verified.",
+				},
+			})
+			return
+		}
+		_ = conn.WriteJSON(map[string]any{
+			"type": "response.completed",
+			"response": map[string]any{
+				"id":    "resp_ws_invalid_encrypted_content_malformed_ok",
+				"model": "gpt-5.3-codex",
+				"usage": map[string]any{
+					"input_tokens":  1,
+					"output_tokens": 1,
+					"input_tokens_details": map[string]any{
+						"cached_tokens": 0,
+					},
+				},
+			},
+		})
+	}))
+	defer wsServer.Close()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "custom-client/1.0")
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_http_drop_reasoning","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.FallbackCooldownSeconds = 1
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+	}
+
+	account := &Account{
+		ID:          99,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": wsServer.URL,
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	body := []byte(`{"model":"gpt-5.3-codex","stream":false,"previous_response_id":"resp_prev_encrypted","input":[{"role":"assistant","encrypted_content":"当前任务...型问题。","content":[{"type":"output_text","text":"keep malformed"}]},{"type":"input_text","text":"hello"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_ws_invalid_encrypted_content_malformed_ok", result.RequestID)
+	require.Nil(t, upstream.lastReq, "invalid_encrypted_content malformed item 不应回退 HTTP")
+	require.Equal(t, int32(2), wsAttempts.Load(), "malformed encrypted_content 应触发一次清洗后重试")
+
+	wsRequestMu.Lock()
+	requests := append([][]byte(nil), wsRequestPayloads...)
+	wsRequestMu.Unlock()
+	require.Len(t, requests, 2)
+	require.True(t, gjson.GetBytes(requests[0], `input.0.encrypted_content`).Exists(), "首轮请求应保留 malformed encrypted_content")
+	require.False(t, gjson.GetBytes(requests[1], `input.0.encrypted_content`).Exists(), "恢复重试应移除 malformed item")
+	require.Equal(t, "input_text", gjson.GetBytes(requests[1], `input.0.type`).String())
+	require.False(t, gjson.GetBytes(requests[1], "previous_response_id").Exists(), "恢复重试应移除 previous_response_id")
 }
 
 func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentKeepsPreviousResponseIDForFunctionCallOutput(t *testing.T) {

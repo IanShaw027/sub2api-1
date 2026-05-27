@@ -574,6 +574,22 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_Web2APIRateLim
 	ctx := context.Background()
 	groupID := int64(101021)
 	resetAt := time.Now().Add(2 * time.Minute).UTC().Truncate(time.Second)
+	webProfile := map[string]any{
+		"user_agent":                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.6950.102 Safari/537.36",
+		"accept_language":            "en;q=0.9",
+		"sec_ch_ua":                  `"Not.A/Brand";v="8", "Chromium";v="145", "Google Chrome";v="145"`,
+		"sec_ch_ua_mobile":           "?0",
+		"sec_ch_ua_platform":         `"macOS"`,
+		"sec_ch_ua_arch":             `"arm"`,
+		"sec_ch_ua_bitness":          `"64"`,
+		"sec_ch_ua_full_version":     `"145.0.0.0"`,
+		"sec_ch_ua_platform_version": `"15.4.0"`,
+		"oai_device_id":              "device-1",
+		"oai_session_id":             "session-1",
+		"cookies": []any{
+			map[string]any{"name": "__Secure-next-auth.session-token", "value": "cookie-value", "domain": ".chatgpt.com", "path": "/"},
+		},
+	}
 	accounts := []Account{
 		{
 			ID:          32011,
@@ -584,6 +600,20 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_Web2APIRateLim
 			Concurrency: 1,
 			Priority:    9,
 			Extra: map[string]any{
+				"web_profile": map[string]any{
+					"user_agent":                 webProfile["user_agent"],
+					"accept_language":            webProfile["accept_language"],
+					"sec_ch_ua":                  webProfile["sec_ch_ua"],
+					"sec_ch_ua_mobile":           webProfile["sec_ch_ua_mobile"],
+					"sec_ch_ua_platform":         webProfile["sec_ch_ua_platform"],
+					"sec_ch_ua_arch":             webProfile["sec_ch_ua_arch"],
+					"sec_ch_ua_bitness":          webProfile["sec_ch_ua_bitness"],
+					"sec_ch_ua_full_version":     webProfile["sec_ch_ua_full_version"],
+					"sec_ch_ua_platform_version": webProfile["sec_ch_ua_platform_version"],
+					"oai_device_id":              webProfile["oai_device_id"],
+					"oai_session_id":             webProfile["oai_session_id"],
+					"cookies":                    webProfile["cookies"],
+				},
 				"openai_image_web2api_rate_limit_reset_at": resetAt.Format(time.RFC3339),
 			},
 		},
@@ -595,6 +625,24 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_Web2APIRateLim
 			Schedulable: true,
 			Concurrency: 1,
 			Priority:    0,
+			Extra: map[string]any{
+				"web_profile": map[string]any{
+					"user_agent":                 webProfile["user_agent"],
+					"accept_language":            webProfile["accept_language"],
+					"sec_ch_ua":                  webProfile["sec_ch_ua"],
+					"sec_ch_ua_mobile":           webProfile["sec_ch_ua_mobile"],
+					"sec_ch_ua_platform":         webProfile["sec_ch_ua_platform"],
+					"sec_ch_ua_arch":             webProfile["sec_ch_ua_arch"],
+					"sec_ch_ua_bitness":          webProfile["sec_ch_ua_bitness"],
+					"sec_ch_ua_full_version":     webProfile["sec_ch_ua_full_version"],
+					"sec_ch_ua_platform_version": webProfile["sec_ch_ua_platform_version"],
+					"oai_device_id":              "device-2",
+					"oai_session_id":             "session-2",
+					"cookies": []any{
+						map[string]any{"name": "oai-sc", "value": "cookie-value", "domain": ".openai.com", "path": "/"},
+					},
+				},
+			},
 		},
 	}
 	cfg := &config.Config{}
@@ -626,6 +674,88 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_Web2APIRateLim
 	require.NotNil(t, selection.WaitPlan.NotBefore)
 	require.True(t, selection.WaitPlan.NotBefore.Equal(resetAt))
 	require.Greater(t, selection.WaitPlan.Timeout, cfg.Gateway.Scheduling.FallbackWaitTimeout)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_Web2APISkipsIncompleteWebProfile(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(101022)
+	accounts := []Account{
+		{
+			ID:          32013,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+			Extra: map[string]any{
+				"web_profile": map[string]any{
+					"user_agent":                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.6950.102 Safari/537.36",
+					"accept_language":            "en;q=0.9",
+					"sec_ch_ua":                  `"Not.A/Brand";v="8", "Chromium";v="145", "Google Chrome";v="145"`,
+					"sec_ch_ua_mobile":           "?0",
+					"sec_ch_ua_platform":         `"macOS"`,
+					"sec_ch_ua_arch":             `"arm"`,
+					"sec_ch_ua_bitness":          `"64"`,
+					"sec_ch_ua_full_version":     `"145.0.0.0"`,
+					"sec_ch_ua_platform_version": `"15.4.0"`,
+					"oai_device_id":              "device-1",
+					"oai_session_id":             "session-1",
+					"cookies": []any{
+						map[string]any{"name": "__Secure-next-auth.session-token", "value": "", "domain": ".chatgpt.com", "path": "/"},
+					},
+				},
+			},
+		},
+		{
+			ID:          32014,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    1,
+			Extra: map[string]any{
+				"web_profile": map[string]any{
+					"user_agent":                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.6950.102 Safari/537.36",
+					"accept_language":            "en;q=0.9",
+					"sec_ch_ua":                  `"Not.A/Brand";v="8", "Chromium";v="145", "Google Chrome";v="145"`,
+					"sec_ch_ua_mobile":           "?0",
+					"sec_ch_ua_platform":         `"macOS"`,
+					"sec_ch_ua_arch":             `"arm"`,
+					"sec_ch_ua_bitness":          `"64"`,
+					"sec_ch_ua_full_version":     `"145.0.0.0"`,
+					"sec_ch_ua_platform_version": `"15.4.0"`,
+					"oai_device_id":              "device-2",
+					"oai_session_id":             "session-2",
+					"cookies": []any{
+						map[string]any{"name": "__Secure-next-auth.session-token", "value": "cookie-value", "domain": ".chatgpt.com", "path": "/"},
+					},
+				},
+			},
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cfg:         cfg,
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForImages(
+		ctx,
+		&groupID,
+		"",
+		"gpt-image-1",
+		nil,
+		OpenAIImagesCapabilityBasic,
+		GroupImageGenerationRouteWeb2API,
+		true,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(32014), selection.Account.ID)
 }
 
 func TestOpenAIAccountScheduleRequest_MaxConcurrencyForImageRoutes(t *testing.T) {

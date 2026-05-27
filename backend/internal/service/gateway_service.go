@@ -30,6 +30,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/promptsanitize"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
@@ -922,22 +923,10 @@ type claudeOAuthNormalizeOptions struct {
 	stripSystemCacheControl bool
 }
 
-// sanitizeSystemText rewrites only the fixed OpenCode identity sentence (if present).
-// We intentionally avoid broad keyword replacement in system prompts to prevent
-// accidentally changing user-provided instructions.
+// sanitizeSystemText rewrites only known upstream identity banners and leaves
+// user-authored instructions untouched.
 func sanitizeSystemText(text string) string {
-	if text == "" {
-		return text
-	}
-	// Some clients include a fixed OpenCode identity sentence. Anthropic may treat
-	// this as a non-Claude-Code fingerprint, so rewrite it to the canonical
-	// Claude Code banner before generic "OpenCode"/"opencode" replacements.
-	text = strings.ReplaceAll(
-		text,
-		"You are OpenCode, the best coding agent on the planet.",
-		strings.TrimSpace(claudeCodeSystemPrompt),
-	)
-	return text
+	return promptsanitize.SystemText(text, claudeCodeSystemPrompt)
 }
 
 func marshalAnthropicSystemTextBlock(text string, includeCacheControl bool) ([]byte, error) {
@@ -10120,7 +10109,7 @@ func mapKiroModel(account *Account, requestedModel string) string {
 	if account != nil {
 		if mappedModel, matched := resolveKiroMappedModel(account, requestedModel); matched {
 			effectiveModel = mappedModel
-		} else if len(account.GetModelMapping()) > 0 {
+		} else if account.hasExplicitModelMappingEntries() {
 			return ""
 		}
 	}

@@ -1093,6 +1093,9 @@ export interface KiroCredentials {
   profile_id?: string
   machine_id?: string
   model_mapping?: Record<string, string>
+  subscription_type?: string
+  plan_name?: string
+  plan_tier?: string
 }
 
 export interface KiroAccountExtra {

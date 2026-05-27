@@ -8,6 +8,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,6 +68,8 @@ type Account struct {
 	modelMappingCacheRawSig         uint64
 	modelMappingCacheWhitelistSig   uint64
 }
+
+var kiroClaudeModelPattern = regexp.MustCompile(`^claude-(haiku|sonnet|opus)-4[.-]([567])(?:-\d{8})?$`)
 
 type TempUnschedulableRule struct {
 	ErrorCode       int      `json:"error_code"`
@@ -563,6 +566,9 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any, hasModelMapping
 			return domain.DefaultAntigravityModelMapping
 		}
 		if !hasModelMapping {
+			if a.Platform == PlatformKiro {
+				return normalizeKiroModelWhitelistMapping(a.Credentials["model_whitelist"])
+			}
 			return legacyModelWhitelistMapping(a.Credentials["model_whitelist"])
 		}
 		return nil
@@ -575,11 +581,13 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any, hasModelMapping
 		}
 	}
 	if a.Platform == PlatformKiro {
-		for k, v := range legacyModelWhitelistMapping(a.Credentials["model_whitelist"]) {
+		result = normalizeKiroModelMapping(result)
+		for k, v := range normalizeKiroModelWhitelistMapping(a.Credentials["model_whitelist"]) {
 			if _, exists := result[k]; !exists {
 				result[k] = v
 			}
 		}
+		return result
 	}
 	if len(result) > 0 {
 		if a.Platform == domain.PlatformAntigravity {
@@ -609,6 +617,152 @@ func legacyModelWhitelistMapping(raw any) map[string]string {
 		mapping[model] = model
 	}
 	return mapping
+}
+
+func normalizeKiroModelMapping(raw map[string]string) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	mapping := make(map[string]string, len(raw))
+	for from, to := range raw {
+		from = normalizeKiroModelName(from)
+		to = normalizeKiroModelName(to)
+		if from == "" || to == "" {
+			continue
+		}
+		if !isCompatibleKiroModelMappingPair(from, to) {
+			continue
+		}
+		mapping[from] = to
+	}
+	if len(mapping) == 0 {
+		return nil
+	}
+	return mapping
+}
+
+func normalizeKiroModelWhitelistMapping(raw any) map[string]string {
+	models := stringsFromRawSlice(raw)
+	if len(models) == 0 {
+		return nil
+	}
+	mapping := make(map[string]string, len(models))
+	for _, model := range models {
+		normalized := normalizeKiroModelName(model)
+		if normalized == "" {
+			continue
+		}
+		mapping[normalized] = normalized
+	}
+	if len(mapping) == 0 {
+		return nil
+	}
+	return mapping
+}
+
+func normalizeKiroModelName(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	if value == "" {
+		return ""
+	}
+	if idx := strings.Index(value, "*"); idx >= 0 {
+		return normalizeKiroModelName(value[:idx]) + "*"
+	}
+
+	value = strings.TrimPrefix(value, "models/")
+	value = strings.TrimSuffix(value, "-v1:0")
+	base, oneMillionContext := stripKiroModelVariantSuffixes(value)
+	directAliases := map[string]string{
+		"claude-sonnet-4":            "claude-sonnet-4.6",
+		"claude-sonnet-4-5":          "claude-sonnet-4.5",
+		"claude-sonnet-4.5":          "claude-sonnet-4.5",
+		"claude-sonnet-4-5-20250929": "claude-sonnet-4.5",
+		"claude-sonnet-4-6":          "claude-sonnet-4.6",
+		"claude-sonnet-4.6":          "claude-sonnet-4.6",
+		"claude-opus-4":              "claude-opus-4.6",
+		"claude-opus-4-5":            "claude-opus-4.5",
+		"claude-opus-4.5":            "claude-opus-4.5",
+		"claude-opus-4-5-20251101":   "claude-opus-4.5",
+		"claude-opus-4-6":            "claude-opus-4.6",
+		"claude-opus-4.6":            "claude-opus-4.6",
+		"claude-opus-4-7":            "claude-opus-4.7",
+		"claude-opus-4.7":            "claude-opus-4.7",
+		"claude-haiku-4":             "claude-haiku-4.5",
+		"claude-haiku-4-5":           "claude-haiku-4.5",
+		"claude-haiku-4.5":           "claude-haiku-4.5",
+		"claude-haiku-4-5-20251001":  "claude-haiku-4.5",
+	}
+	if mapped, ok := directAliases[base]; ok {
+		return mapped
+	}
+
+	if matches := kiroClaudeModelPattern.FindStringSubmatch(base); len(matches) == 3 {
+		return "claude-" + matches[1] + "-4." + matches[2]
+	}
+
+	if oneMillionContext {
+		return base
+	}
+	return base
+}
+
+func kiroModelFamily(model string) string {
+	base, _ := stripKiroModelVariantSuffixes(normalizeKiroModelName(model))
+	if base == "" {
+		return ""
+	}
+	switch {
+	case strings.HasPrefix(base, "claude-haiku-"):
+		return "haiku"
+	case strings.HasPrefix(base, "claude-sonnet-"):
+		return "sonnet"
+	case strings.HasPrefix(base, "claude-opus-"):
+		return "opus"
+	default:
+		return ""
+	}
+}
+
+func isCompatibleKiroModelMappingPair(from, to string) bool {
+	fromFamily := kiroModelFamily(from)
+	toFamily := kiroModelFamily(to)
+	return fromFamily != "" && fromFamily == toFamily
+}
+
+func stripKiroModelVariantSuffixes(value string) (base string, oneMillionContext bool) {
+	base = value
+	for {
+		switch {
+		case strings.HasSuffix(base, "[1m]"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "[1m]")
+		case strings.HasSuffix(base, "-1m-context"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "-1m-context")
+		case strings.HasSuffix(base, "-context-1m"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "-context-1m")
+		case strings.HasSuffix(base, "-1m"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "-1m")
+		default:
+			return base, oneMillionContext
+		}
+	}
+}
+
+func (a *Account) hasExplicitModelMappingEntries() bool {
+	if a == nil || a.Credentials == nil {
+		return false
+	}
+	switch raw := a.Credentials["model_mapping"].(type) {
+	case map[string]any:
+		return len(raw) > 0
+	case map[string]string:
+		return len(raw) > 0
+	default:
+		return false
+	}
 }
 
 func stringsFromRawSlice(raw any) []string {
@@ -707,6 +861,9 @@ func normalizeRequestedModelForLookup(platform, requestedModel string) string {
 	if trimmed == "" {
 		return ""
 	}
+	if platform == PlatformKiro {
+		return normalizeKiroModelName(trimmed)
+	}
 	if platform != PlatformGemini && platform != PlatformAntigravity {
 		return trimmed
 	}
@@ -746,6 +903,9 @@ func resolveRequestedModelInMapping(mapping map[string]string, requestedModel st
 func (a *Account) IsModelSupported(requestedModel string) bool {
 	mapping := a.GetModelMapping()
 	if len(mapping) == 0 {
+		if a != nil && a.Platform == PlatformKiro && a.hasExplicitModelMappingEntries() {
+			return false
+		}
 		return true // 无映射 = 允许所有
 	}
 	if mappingSupportsRequestedModel(mapping, requestedModel) {
@@ -769,13 +929,21 @@ func (a *Account) ResolveMappedModel(requestedModel string) (mappedModel string,
 	if len(mapping) == 0 {
 		return requestedModel, false
 	}
+	normalized := normalizeRequestedModelForLookup(a.Platform, requestedModel)
+	if a.Platform == PlatformKiro && normalized != "" && normalized != requestedModel {
+		if mappedModel, matched := resolveRequestedModelInMapping(mapping, normalized); matched {
+			if a.usesModelWhitelistMapping() && strings.Contains(mappedModel, "*") {
+				return normalized, true
+			}
+			return mappedModel, true
+		}
+	}
 	if mappedModel, matched := resolveRequestedModelInMapping(mapping, requestedModel); matched {
 		if a.usesModelWhitelistMapping() && strings.Contains(mappedModel, "*") {
 			return requestedModel, true
 		}
 		return mappedModel, true
 	}
-	normalized := normalizeRequestedModelForLookup(a.Platform, requestedModel)
 	if normalized != requestedModel {
 		if mappedModel, matched := resolveRequestedModelInMapping(mapping, normalized); matched {
 			if a.usesModelWhitelistMapping() && strings.Contains(mappedModel, "*") {
@@ -1197,7 +1365,7 @@ func (a *Account) SupportsOpenAIImageCapability(capability OpenAIImagesCapabilit
 	case OpenAIImagesCapabilityBasic:
 		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
 	case OpenAIImagesCapabilityNative:
-		return a.Type == AccountTypeAPIKey
+		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
 	default:
 		return true
 	}
@@ -1317,6 +1485,19 @@ func (a *Account) SupportsOpenAIImageRoute(route string) bool {
 	default:
 		return false
 	}
+}
+
+// HasOpenAIImageWeb2APIProfile reports whether the account has the browser
+// bundle required by the ChatGPT web image bootstrap path.
+//
+// Device/session IDs can still be auto-generated later, so the hard gate is the
+// web profile itself: browser headers plus a usable ChatGPT cookie header for
+// the conversation route.
+func (a *Account) HasOpenAIImageWeb2APIProfile() bool {
+	if !a.IsOpenAIOAuth() {
+		return false
+	}
+	return ResolveOpenAIImageWebProfile(a).HasOpenAIImageWeb2APIProfile()
 }
 
 func (a *Account) GetChatGPTUserID() string {

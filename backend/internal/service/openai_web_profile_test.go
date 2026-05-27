@@ -172,6 +172,92 @@ func TestOpenAIWebProfileHeadersSkipMissingValues(t *testing.T) {
 	require.Equal(t, "en-US,en;q=0.9", headers.Get("Accept-Language"))
 }
 
+func TestOpenAIWebProfileHasOpenAIImageWeb2APIProfile(t *testing.T) {
+	complete := ResolveOpenAIWebProfile(&Account{Extra: map[string]any{
+		"web_profile": map[string]any{
+			"user_agent":                 "Mozilla/5.0 Chrome/145.0.0.0 Safari/537.36",
+			"accept_language":            "en-US,en;q=0.9",
+			"sec_ch_ua":                  `"Not.A/Brand";v="8", "Chromium";v="145", "Google Chrome";v="145"`,
+			"sec_ch_ua_mobile":           "?0",
+			"sec_ch_ua_platform":         `"macOS"`,
+			"sec_ch_ua_arch":             `"arm"`,
+			"sec_ch_ua_bitness":          `"64"`,
+			"sec_ch_ua_full_version":     `"145.0.0.0"`,
+			"sec_ch_ua_platform_version": `"15.4.0"`,
+			"oai_device_id":              "device-123",
+			"oai_session_id":             "session-456",
+			"cookies": []any{
+				map[string]any{"name": "__Secure-next-auth.session-token", "value": "cookie-value", "domain": ".chatgpt.com", "path": "/"},
+			},
+		},
+	}})
+	require.NotNil(t, complete)
+	require.True(t, complete.HasOpenAIImageWeb2APIProfile())
+
+	incomplete := ResolveOpenAIWebProfile(&Account{Extra: map[string]any{
+		"web_profile": map[string]any{
+			"user_agent":                 "Mozilla/5.0 Chrome/145.0.0.0 Safari/537.36",
+			"accept_language":            "en-US,en;q=0.9",
+			"sec_ch_ua":                  `"Not.A/Brand";v="8", "Chromium";v="145", "Google Chrome";v="145"`,
+			"sec_ch_ua_mobile":           "?0",
+			"sec_ch_ua_platform":         `"macOS"`,
+			"sec_ch_ua_arch":             `"arm"`,
+			"sec_ch_ua_bitness":          `"64"`,
+			"sec_ch_ua_full_version":     `"145.0.0.0"`,
+			"sec_ch_ua_platform_version": `"15.4.0"`,
+			"cookies": []any{
+				map[string]any{"name": "__Secure-next-auth.session-token", "value": "", "domain": ".chatgpt.com", "path": "/"},
+			},
+		},
+	}})
+	require.NotNil(t, incomplete)
+	require.False(t, incomplete.HasOpenAIImageWeb2APIProfile())
+}
+
+func TestOpenAIWebProfileHasOpenAIImageWeb2APIProfile_RejectsNonChatGPTCookieJar(t *testing.T) {
+	profile := ResolveOpenAIWebProfile(&Account{Extra: map[string]any{
+		"web_profile": map[string]any{
+			"user_agent":                 "Mozilla/5.0 Chrome/145.0.0.0 Safari/537.36",
+			"accept_language":            "en-US,en;q=0.9",
+			"sec_ch_ua":                  `"Not.A/Brand";v="8", "Chromium";v="145", "Google Chrome";v="145"`,
+			"sec_ch_ua_mobile":           "?0",
+			"sec_ch_ua_platform":         `"macOS"`,
+			"sec_ch_ua_arch":             `"arm"`,
+			"sec_ch_ua_bitness":          `"64"`,
+			"sec_ch_ua_full_version":     `"145.0.0.0"`,
+			"sec_ch_ua_platform_version": `"15.4.0"`,
+			"cookies": []any{
+				map[string]any{"name": "oai-sc", "value": "cookie-value", "domain": ".openai.com", "path": "/"},
+			},
+		},
+	}})
+	require.NotNil(t, profile)
+	require.False(t, profile.HasOpenAIImageWeb2APIProfile())
+}
+
+func TestResolveOpenAIImageWebProfile_UsesLegacyFlatFields(t *testing.T) {
+	profile := ResolveOpenAIImageWebProfile(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"user_agent":                 "Mozilla/5.0 Chrome/145.0.0.0 Safari/537.36",
+			"accept_language":            "en-US,en;q=0.9",
+			"sec_ch_ua":                  `"Not.A/Brand";v="8", "Chromium";v="145", "Google Chrome";v="145"`,
+			"sec_ch_ua_mobile":           "?0",
+			"sec_ch_ua_platform":         `"macOS"`,
+			"sec_ch_ua_arch":             `"arm"`,
+			"sec_ch_ua_bitness":          `"64"`,
+			"sec_ch_ua_full_version":     `"145.0.0.0"`,
+			"sec_ch_ua_platform_version": `"15.4.0"`,
+			"cookies": []any{
+				map[string]any{"name": "__Secure-next-auth.session-token", "value": "cookie-value", "domain": ".chatgpt.com", "path": "/"},
+			},
+		},
+	})
+	require.NotNil(t, profile)
+	require.True(t, profile.HasOpenAIImageWeb2APIProfile())
+}
+
 func TestOpenAIWebProfileMergeResponseCookies(t *testing.T) {
 	profile := ResolveOpenAIWebProfile(&Account{Extra: map[string]any{
 		"web_profile": map[string]any{

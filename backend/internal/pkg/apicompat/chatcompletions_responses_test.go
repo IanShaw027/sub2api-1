@@ -113,6 +113,31 @@ func TestChatCompletionsToResponses_ToolCalls(t *testing.T) {
 	assert.Equal(t, "ping", resp.Tools[0].Name)
 }
 
+func TestChatCompletionsToResponses_FunctionToolParametersNormalized(t *testing.T) {
+	req := &ChatCompletionsRequest{
+		Model: "gpt-4o",
+		Messages: []ChatMessage{
+			{Role: "user", Content: json.RawMessage(`"Call the function"`)},
+		},
+		Tools: []ChatTool{
+			{
+				Type: "function",
+				Function: &ChatFunction{
+					Name:        "builtin_web_search",
+					Description: "Search the web",
+				},
+			},
+		},
+	}
+
+	resp, err := ChatCompletionsToResponses(req)
+	require.NoError(t, err)
+	require.Len(t, resp.Tools, 1)
+	assert.Equal(t, "function", resp.Tools[0].Type)
+	assert.Equal(t, "builtin_web_search", resp.Tools[0].Name)
+	assert.JSONEq(t, `{"type":"object","properties":{}}`, string(resp.Tools[0].Parameters))
+}
+
 func TestChatCompletionsToResponses_MaxTokens(t *testing.T) {
 	t.Run("max_tokens", func(t *testing.T) {
 		maxTokens := 100

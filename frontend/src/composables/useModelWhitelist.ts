@@ -342,9 +342,10 @@ const kiroPresetMappings = [
   { label: 'Sonnet→4.5', from: 'claude-sonnet-*', to: 'claude-sonnet-4.5', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' },
   { label: 'Opus→4.5', from: 'claude-opus-*', to: 'claude-opus-4.5', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
   { label: 'Sonnet 4.5', from: 'claude-sonnet-4.5', to: 'claude-sonnet-4.5', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400' },
+  { label: 'Sonnet 4.6', from: 'claude-sonnet-4.6', to: 'claude-sonnet-4.6', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400' },
   { label: 'Opus 4.7', from: 'claude-opus-4.7', to: 'claude-opus-4.7', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
-  { label: 'Opus 4.7 Thinking', from: 'claude-opus-4.7-thinking', to: 'claude-opus-4.7-thinking', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
   { label: 'Opus 4.6', from: 'claude-opus-4.6', to: 'claude-opus-4.6', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400' },
+  { label: 'Opus 4.7 Thinking', from: 'claude-opus-4.7-thinking', to: 'claude-opus-4.7-thinking', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
   { label: 'Opus 4.5', from: 'claude-opus-4.5', to: 'claude-opus-4.5', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-400' },
   { label: 'Haiku 4.5', from: 'claude-haiku-4.5', to: 'claude-haiku-4.5', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' }
 ]

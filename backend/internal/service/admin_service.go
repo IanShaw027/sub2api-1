@@ -2745,7 +2745,7 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if s.settingService != nil {
 		defaults := s.settingService.GetPlatformDefaultAccountModelConfig(ctx)
 		if cfg, ok := defaults[strings.ToLower(strings.TrimSpace(input.Platform))]; ok {
-			input.Credentials = applyDefaultAccountModelConfig(input.Credentials, cfg)
+			input.Credentials = applyDefaultAccountModelConfigForPlatform(input.Platform, input.Credentials, cfg)
 		}
 	}
 	if input.Platform == PlatformKiro {

@@ -1245,7 +1245,10 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to build backend headers: %s", err.Error()))
 	}
-	profile := ResolveOpenAIWebProfile(account)
+	profile := ResolveOpenAIImageWebProfile(account)
+	if profile == nil || !profile.HasOpenAIImageWeb2APIProfile() {
+		return s.sendErrorAndEnd(c, "OpenAI web2api image route requires complete web_profile (browser headers and cookie values)")
+	}
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()

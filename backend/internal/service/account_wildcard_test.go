@@ -215,6 +215,17 @@ func TestAccountIsModelSupported(t *testing.T) {
 			requestedModel: "gemini-3-flash",
 			expected:       false,
 		},
+		{
+			name:     "kiro cross family mapping does not mark model as supported",
+			platform: PlatformKiro,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"claude-opus-4-6": "claude-sonnet-4.6",
+				},
+			},
+			requestedModel: "claude-opus-4-6",
+			expected:       false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -277,6 +288,17 @@ func TestAccountGetMappedModel(t *testing.T) {
 			},
 			requestedModel: "claude-sonnet-4-5",
 			expected:       "claude-sonnet-mapped",
+		},
+		{
+			name:     "kiro bracketed 1m alias normalizes through mapping",
+			platform: PlatformKiro,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"claude-opus-4.7[1m]": "claude-opus-4.6[1m]",
+				},
+			},
+			requestedModel: "claude-opus-4.7[1m]",
+			expected:       "claude-opus-4.6",
 		},
 
 		// 无匹配返回原始模型
@@ -387,6 +409,41 @@ func TestAccountResolveMappedModel(t *testing.T) {
 			requestedModel: "claude-haiku-4.5",
 			expectedModel:  "claude-haiku-4.5",
 			expectedMatch:  true,
+		},
+		{
+			name:     "kiro bracketed 1m whitelist normalizes to canonical 1m",
+			platform: PlatformKiro,
+			credentials: map[string]any{
+				"model_whitelist": []any{"claude-sonnet-4.6[1m]"},
+			},
+			requestedModel: "claude-sonnet-4.6[1m]",
+			expectedModel:  "claude-sonnet-4.6",
+			expectedMatch:  true,
+		},
+		{
+			name:     "kiro exact normalized mapping beats wildcard alias",
+			platform: PlatformKiro,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"claude-opus-*":   "claude-opus-4.6",
+					"claude-opus-4.7": "claude-opus-4.7",
+				},
+			},
+			requestedModel: "claude-opus-4-7",
+			expectedModel:  "claude-opus-4.7",
+			expectedMatch:  true,
+		},
+		{
+			name:     "kiro cross family mapping is ignored",
+			platform: PlatformKiro,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"claude-opus-4-6": "claude-sonnet-4.6",
+				},
+			},
+			requestedModel: "claude-opus-4-6",
+			expectedModel:  "claude-opus-4-6",
+			expectedMatch:  false,
 		},
 		{
 			name:     "gemini customtools alias reports normalized match",

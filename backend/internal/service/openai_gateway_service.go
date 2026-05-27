@@ -71,6 +71,7 @@ const (
 
 var openAIResponsesUnsupportedFields = []string{
 	"prompt_cache_retention",
+	"reasoningSummary",
 	"safety_identifier",
 	"metadata",
 	"stream_options",
@@ -2109,6 +2110,9 @@ func isOpenAIAccountEligibleForRequest(account *Account, requestedModel string, 
 		if !account.IsSelectableForOpenAIImageRoute(requiredImageRoute, allowRateLimitedOpenAIImageRouteScheduling(requiredImageRoute)) {
 			return false
 		}
+		if NormalizeGroupImageGenerationRoute(requiredImageRoute) == GroupImageGenerationRouteWeb2API && !account.HasOpenAIImageWeb2APIProfile() {
+			return false
+		}
 	} else if !account.IsSchedulable() {
 		return false
 	}
@@ -3108,7 +3112,25 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	if s.shouldFailoverUpstreamError(statusCode) {
 		return true
 	}
+	if isOpenAIImageGenerationToolUnsupportedError(statusCode, upstreamMsg, upstreamBody) {
+		return true
+	}
 	return isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody)
+}
+
+func isOpenAIImageGenerationToolUnsupportedError(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(upstreamMsg))
+	if msg == "" {
+		msg = strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(upstreamBody)))
+	}
+	if msg == "" {
+		msg = strings.ToLower(strings.TrimSpace(string(upstreamBody)))
+	}
+	return strings.Contains(msg, "tool choice 'image_generation' not found") &&
+		strings.Contains(msg, "'tools' parameter")
 }
 
 func (s *OpenAIGatewayService) handleFailoverSideEffects(ctx context.Context, resp *http.Response, account *Account) {
@@ -3449,6 +3471,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			markPatchSet("reasoning.effort", "none")
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized reasoning.effort: minimal -> none (account: %s)", account.Name)
 		}
+	}
+	if trimOpenAIStoreFalseReasoningItems(reqBody) {
+		bodyModified = true
+		disablePatch()
 	}
 
 	if account.Type == AccountTypeOAuth {
@@ -4233,6 +4259,7 @@ oauthTransformDone:
 			FirstTokenMs:    firstTokenMs,
 			ImageCount:      imageCount,
 		}
+		applyOpenAIResponsesImageBillingMeta(result, body, upstreamModel)
 		emitOpenAICacheProbeEvent(ctx, c, account, originalBody, body, result, promptCacheKey, false)
 		emitOpenAICodexCompatFallbackEvent(
 			ctx,
@@ -4558,6 +4585,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		FirstTokenMs:    firstTokenMs,
 		ImageCount:      imageCount,
 	}
+	applyOpenAIResponsesImageBillingMeta(result, body, upstreamPassthroughModel)
 	emitOpenAICacheProbeEvent(ctx, c, account, originalBody, body, result, promptCacheKey, true)
 	return result, nil
 }
@@ -5159,6 +5187,14 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	failedMessage := ""
 	clientOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
+	imageCounter := newOpenAIImageOutputCounter()
+	resultWithUsage := func() *openaiStreamingResultPassthrough {
+		return &openaiStreamingResultPassthrough{
+			usage:        usage,
+			firstTokenMs: firstTokenMs,
+			imageCount:   imageCounter.Count(),
+		}
+	}
 	replayAttempt := beginOpenAIStreamRetryReplayAttempt(c, account.ID)
 	pendingFrames := make([]openAICompatSSEFrame, 0, 8)
 
@@ -5253,6 +5289,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				ms := int(time.Since(startTime).Milliseconds())
 				firstTokenMs = &ms
 			}
+			imageCounter.AddSSEData(dataBytes)
 			s.parseSSEUsageBytes(dataBytes, usage)
 
 			if clientDisconnected {
@@ -5285,39 +5322,39 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	for scanner.Scan() {
 		if frame, ok := parser.AddLine(scanner.Text()); ok {
 			if err := processFrame(frame); err != nil {
-				return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, err
+				return resultWithUsage(), err
 			}
 		}
 	}
 	if frame, ok := parser.Finish(); ok {
 		if err := processFrame(frame); err != nil {
-			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, err
+			return resultWithUsage(), err
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		if sawTerminalEvent && !sawFailedEvent {
-			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, nil
+			return resultWithUsage(), nil
 		}
 		if sawFailedEvent {
-			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("upstream response failed: %s", failedMessage)
+			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream usage incomplete: %w", err)
+			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
 		}
 		if errors.Is(err, bufio.ErrTooLong) {
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] SSE line too long: account=%d max_size=%d error=%v", account.ID, maxLineSize, err)
-			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, err
+			return resultWithUsage(), err
 		}
 		if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 			msg := "OpenAI stream disconnected before completion"
 			if errText := strings.TrimSpace(err.Error()); errText != "" {
 				msg += ": " + errText
 			}
-			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
+			return resultWithUsage(),
 				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, msg)
 		}
 		if clientDisconnected {
-			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream usage incomplete after disconnect: %w", err)
+			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", err)
 		}
 		logger.LegacyPrintf("service.openai_gateway",
 			"[OpenAI passthrough] 流读取异常中断: account=%d request_id=%s err=%v",
@@ -5325,10 +5362,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			upstreamRequestID,
 			err,
 		)
-		return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", err)
+		return resultWithUsage(), fmt.Errorf("stream read error: %w", err)
 	}
 	if sawFailedEvent {
-		return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("upstream response failed: %s", failedMessage)
+		return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 	}
 	if !clientDisconnected && !sawDone && !sawTerminalEvent && ctx.Err() == nil {
 		logger.FromContext(ctx).With(
@@ -5337,13 +5374,13 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			zap.String("upstream_request_id", upstreamRequestID),
 		).Info("OpenAI passthrough 上游流在未收到 [DONE] 时结束，疑似断流")
 		if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
-			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
+			return resultWithUsage(),
 				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event")
 		}
-		return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, errors.New("stream usage incomplete: missing terminal event")
+		return resultWithUsage(), errors.New("stream usage incomplete: missing terminal event")
 	}
 
-	return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, nil
+	return resultWithUsage(), nil
 }
 
 func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
@@ -5724,6 +5761,24 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		return nil, fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
 	}
 
+	if isOpenAITransientCapacityError(upstreamMsg) {
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: resp.StatusCode,
+			UpstreamRequestID:  resp.Header.Get("x-request-id"),
+			Kind:               "failover",
+			Message:            upstreamMsg,
+			Detail:             upstreamDetail,
+		})
+		return nil, &UpstreamFailoverError{
+			StatusCode:             resp.StatusCode,
+			ResponseBody:           body,
+			RetryableOnSameAccount: false,
+		}
+	}
+
 	// Check custom error codes
 	if !account.ShouldHandleErrorCode(resp.StatusCode) {
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -5873,6 +5928,25 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 		})
 		writeError(c, resp.StatusCode, openAIClientVisibleErrorType(resp.StatusCode), upstreamMsg)
 		return nil, fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
+	}
+
+	if isOpenAITransientCapacityError(upstreamMsg) {
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: resp.StatusCode,
+			UpstreamRequestID:  resp.Header.Get("x-request-id"),
+			Kind:               "failover",
+			Message:            upstreamMsg,
+			Detail:             upstreamDetail,
+		})
+		return nil, &UpstreamFailoverError{
+			StatusCode:             resp.StatusCode,
+			ResponseBody:           body,
+			ResponseHeaders:        resp.Header.Clone(),
+			RetryableOnSameAccount: false,
+		}
 	}
 
 	// Check custom error codes — if the account does not handle this status,
@@ -6527,6 +6601,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				ms := int(time.Since(startTime).Milliseconds())
 				firstTokenMs = &ms
 			}
+			imageCounter.AddSSEData(dataBytes)
 			s.parseSSEUsageBytes(dataBytes, usage)
 		}
 
@@ -6942,6 +7017,27 @@ func (s *OpenAIGatewayService) replaceModelInSSELine(line, fromModel, toModel st
 	}
 
 	return line
+}
+
+func normalizeOpenAIHTTPResponseTerminalSSELine(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if strings.EqualFold(trimmed, "event: response.done") {
+		return "event: response.completed"
+	}
+
+	data, ok := extractOpenAISSEDataLine(line)
+	if !ok || data == "" || data == "[DONE]" {
+		return line
+	}
+	if strings.TrimSpace(gjson.Get(data, "type").String()) != "response.done" {
+		return line
+	}
+
+	normalized, err := sjson.Set(data, "type", "response.completed")
+	if err != nil {
+		return line
+	}
+	return "data: " + normalized
 }
 
 // correctToolCallsInResponseBody 修正响应体中的工具调用
@@ -7446,97 +7542,125 @@ func trimOpenAIEncryptedReasoningItems(reqBody map[string]any) bool {
 		return false
 	}
 
-	switch input := inputValue.(type) {
+	nextInput, changed, keep := sanitizeEncryptedReasoningInputItem(inputValue)
+	if !changed {
+		return false
+	}
+	if !keep {
+		delete(reqBody, "input")
+		return true
+	}
+	reqBody["input"] = nextInput
+	return true
+}
+
+func trimOpenAIStoreFalseReasoningItems(reqBody map[string]any) bool {
+	if len(reqBody) == 0 {
+		return false
+	}
+	rawStore, ok := reqBody["store"]
+	if !ok {
+		return false
+	}
+	storeEnabled, ok := rawStore.(bool)
+	if !ok || storeEnabled {
+		return false
+	}
+
+	rawInput, ok := reqBody["input"]
+	if !ok || rawInput == nil {
+		return false
+	}
+	input, ok := rawInput.([]any)
+	if !ok || len(input) == 0 {
+		return false
+	}
+
+	filtered, modified := filterCodexInputWithOptions(input, codexInputFilterOptions{})
+	if !modified {
+		return false
+	}
+	reqBody["input"] = filtered
+	return true
+}
+
+func sanitizeEncryptedReasoningInputItem(item any) (next any, changed bool, keep bool) {
+	switch typed := item.(type) {
 	case []any:
-		filtered := input[:0]
+		filtered := typed[:0]
 		changed := false
-		for _, item := range input {
-			nextItem, itemChanged, keep := sanitizeEncryptedReasoningInputItem(item)
-			if itemChanged {
+		for _, child := range typed {
+			nextChild, childChanged, keep := sanitizeEncryptedReasoningInputItem(child)
+			if childChanged {
 				changed = true
 			}
 			if !keep {
 				continue
 			}
-			filtered = append(filtered, nextItem)
+			filtered = append(filtered, nextChild)
 		}
 		if !changed {
-			return false
+			return item, false, true
 		}
 		if len(filtered) == 0 {
-			delete(reqBody, "input")
-			return true
+			return nil, true, false
 		}
-		reqBody["input"] = filtered
-		return true
+		return filtered, true, true
 	case []map[string]any:
-		filtered := input[:0]
+		filtered := typed[:0]
 		changed := false
-		for _, item := range input {
-			nextItem, itemChanged, keep := sanitizeEncryptedReasoningInputItem(item)
-			if itemChanged {
+		for _, child := range typed {
+			nextChild, childChanged, keep := sanitizeEncryptedReasoningInputItem(child)
+			if childChanged {
 				changed = true
 			}
 			if !keep {
 				continue
 			}
-			nextMap, ok := nextItem.(map[string]any)
+			nextMap, ok := nextChild.(map[string]any)
 			if !ok {
-				filtered = append(filtered, item)
+				filtered = append(filtered, child)
 				continue
 			}
 			filtered = append(filtered, nextMap)
 		}
 		if !changed {
-			return false
+			return item, false, true
 		}
 		if len(filtered) == 0 {
-			delete(reqBody, "input")
-			return true
+			return nil, true, false
 		}
-		reqBody["input"] = filtered
-		return true
+		return filtered, true, true
 	case map[string]any:
-		nextItem, changed, keep := sanitizeEncryptedReasoningInputItem(input)
+		if _, hasEncryptedContent := typed["encrypted_content"]; hasEncryptedContent {
+			return nil, true, false
+		}
+		changed := false
+		for key, child := range typed {
+			nextChild, childChanged, keep := sanitizeEncryptedReasoningInputItem(child)
+			if childChanged {
+				changed = true
+			}
+			if !keep {
+				delete(typed, key)
+				continue
+			}
+			typed[key] = nextChild
+		}
 		if !changed {
-			return false
+			return item, false, true
 		}
-		if !keep {
-			delete(reqBody, "input")
-			return true
+		if len(typed) == 0 {
+			return nil, true, false
 		}
-		nextMap, ok := nextItem.(map[string]any)
-		if !ok {
-			return false
+		itemType, _ := typed["type"].(string)
+		if strings.TrimSpace(itemType) == "reasoning" && len(typed) == 1 {
+			return nil, true, false
 		}
-		reqBody["input"] = nextMap
-		return true
+		return typed, true, true
 	default:
-		return false
-	}
-}
-
-func sanitizeEncryptedReasoningInputItem(item any) (next any, changed bool, keep bool) {
-	inputItem, ok := item.(map[string]any)
-	if !ok {
 		return item, false, true
 	}
-
-	itemType, _ := inputItem["type"].(string)
-	if strings.TrimSpace(itemType) != "reasoning" {
-		return item, false, true
-	}
-
-	_, hasEncryptedContent := inputItem["encrypted_content"]
-	if !hasEncryptedContent {
-		return item, false, true
-	}
-
-	delete(inputItem, "encrypted_content")
-	if len(inputItem) == 1 {
-		return nil, true, false
-	}
-	return inputItem, true, true
 }
 
 func IsOpenAIResponsesCompactPathForTest(c *gin.Context) bool {
@@ -7749,6 +7873,33 @@ func isOpenAIRecordUsageImageRequest(input *OpenAIRecordUsageInput, result *Open
 		return false
 	}
 	return isOpenAIImagesPath(input.InboundEndpoint) || isOpenAIImagesPath(input.UpstreamEndpoint)
+}
+
+func applyOpenAIResponsesImageBillingMeta(result *OpenAIForwardResult, body []byte, fallbackModel string) {
+	if result == nil || result.ImageCount <= 0 || len(body) == 0 {
+		return
+	}
+
+	if imageModel, imageSizeTier, err := resolveOpenAIResponsesImageBillingConfigFromBody(body, fallbackModel); err == nil {
+		if result.BillingModel == "" {
+			result.BillingModel = imageModel
+		}
+		if result.ImageSize == "" {
+			result.ImageSize = imageSizeTier
+		}
+	}
+
+	if result.TokenBillingModel != "" {
+		return
+	}
+
+	tokenBillingModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	if tokenBillingModel == "" {
+		tokenBillingModel = strings.TrimSpace(fallbackModel)
+	}
+	if tokenBillingModel != "" && !isOpenAIImageGenerationModel(tokenBillingModel) {
+		result.TokenBillingModel = tokenBillingModel
+	}
 }
 
 func isOpenAIImages2APIBridgePath(path string) bool {
@@ -8450,6 +8601,9 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	if normalizeOpenAIResponsesInputToolRoles(reqBody) {
 		changed = true
 	}
+	if trimOpenAIStoreFalseReasoningItems(reqBody) {
+		changed = true
+	}
 	if normalizeOpenAIStrictFunctionToolSchemas(reqBody) {
 		changed = true
 	}
@@ -8507,6 +8661,9 @@ func normalizeOpenAIPassthroughBaseBody(body []byte, compact bool, stripTopP boo
 		}
 	}
 	if normalizeOpenAIResponsesInputToolRoles(reqBody) {
+		changed = true
+	}
+	if trimOpenAIStoreFalseReasoningItems(reqBody) {
 		changed = true
 	}
 
@@ -8661,9 +8818,6 @@ func isOpenAIResponsesInboundPath(c *gin.Context) bool {
 
 func shouldInjectDefaultInstructionsForOpenAIResponses(c *gin.Context, account *Account, isMessagesBridgeRequest bool, isCompactRequest bool) bool {
 	if account == nil {
-		return false
-	}
-	if isMessagesBridgeRequest || isCompactRequest {
 		return false
 	}
 	if account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth {

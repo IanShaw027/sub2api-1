@@ -144,9 +144,17 @@ func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCac
 		return FakeCacheUsage{InputTokens: totalInputTokens}
 	}
 
+	prefixCurrentTokens, prefixReadTokens := p.resolvePrefixUsageBounds(totalInputTokens, hit, config.MinBlockTokens)
+
 	if len(p.Checkpoints) > 0 {
 		currentTokens := eligibleFakeCacheCheckpointTokens(p.Checkpoints[len(p.Checkpoints)-1].Tokens, config.MinBlockTokens, totalInputTokens)
 		cacheRead := eligibleFakeCacheCheckpointTokens(hit.CheckpointTokens, config.MinBlockTokens, totalInputTokens)
+		if prefixCurrentTokens > currentTokens {
+			currentTokens = prefixCurrentTokens
+		}
+		if prefixReadTokens > cacheRead {
+			cacheRead = prefixReadTokens
+		}
 		if cacheRead > currentTokens {
 			cacheRead = currentTokens
 		}
@@ -154,43 +162,51 @@ func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCac
 		return fakeCacheUsageFromReadWrite(totalInputTokens, cacheRead, cacheWrite, config.HitRateScale)
 	}
 
-	independentCurrent := eligibleFakeCacheCheckpointTokens(p.IndependentCacheableTokens, config.MinBlockTokens, totalInputTokens)
-	previousCumulative := eligibleFakeCacheCheckpointTokens(p.IndependentCacheableTokens+p.PreviousPrefixCacheableTokens, config.MinBlockTokens, totalInputTokens)
-	currentCumulative := eligibleFakeCacheCheckpointTokens(p.IndependentCacheableTokens+p.CurrentPrefixCacheableTokens, config.MinBlockTokens, totalInputTokens)
+	cacheWrite := prefixCurrentTokens - prefixReadTokens
+	if cacheWrite < 0 {
+		cacheWrite = 0
+	}
+	return fakeCacheUsageFromReadWrite(totalInputTokens, prefixReadTokens, cacheWrite, config.HitRateScale)
+}
 
-	cacheRead := 0
+func (p *FakeCachePlan) resolvePrefixUsageBounds(totalInputTokens int, hit FakeCacheHitState, minBlockTokens int) (currentTokens, cacheRead int) {
+	if p == nil {
+		return 0, 0
+	}
+
+	independentCurrent := eligibleFakeCacheCheckpointTokens(p.IndependentCacheableTokens, minBlockTokens, totalInputTokens)
+	previousCumulative := eligibleFakeCacheCheckpointTokens(p.IndependentCacheableTokens+p.PreviousPrefixCacheableTokens, minBlockTokens, totalInputTokens)
+	currentCumulative := eligibleFakeCacheCheckpointTokens(p.IndependentCacheableTokens+p.CurrentPrefixCacheableTokens, minBlockTokens, totalInputTokens)
+
+	currentTokens = currentCumulative
+	if currentTokens == 0 {
+		currentTokens = independentCurrent
+	}
+
 	if hit.Prefix && previousCumulative > 0 {
 		cacheRead = previousCumulative
 	} else if hit.Independent && independentCurrent > 0 {
 		cacheRead = independentCurrent
 	}
-
-	cacheWrite := 0
-	if currentCumulative > 0 {
-		cacheWrite = currentCumulative - cacheRead
-	} else if independentCurrent > 0 && !hit.Independent {
-		cacheWrite = independentCurrent
+	if cacheRead > currentTokens {
+		cacheRead = currentTokens
 	}
-	if cacheWrite < 0 {
-		cacheWrite = 0
-	}
-	return fakeCacheUsageFromReadWrite(totalInputTokens, cacheRead, cacheWrite, config.HitRateScale)
+	return currentTokens, cacheRead
 }
 
 func fakeCacheUsageFromReadWrite(totalInputTokens, cacheRead, cacheWrite, hitRateScale int) FakeCacheUsage {
 	cacheRead = clampFakeCacheTokens(cacheRead, totalInputTokens)
 	cacheWrite = clampFakeCacheTokens(cacheWrite, totalInputTokens-cacheRead)
 
-	// Apply hit rate scaling: reduce cache read and increase regular input tokens
-	// This simulates a lower cache hit rate without artificially inflating cache writes
+	// Apply hit rate scaling only to cache reads.
+	// Claude-style input_tokens is the non-cached remainder after subtracting
+	// both cache_read and cache_creation.
 	if hitRateScale < 100 {
 		scaledRead := cacheRead * hitRateScale / 100
 		if scaledRead < 0 {
 			scaledRead = 0
 		}
 		cacheRead = scaledRead
-		// The difference goes to regular input tokens, not cache write
-		// This correctly models cache misses
 	}
 
 	inputTokens := totalInputTokens - cacheRead - cacheWrite

@@ -598,6 +598,35 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 	require.Equal(t, "client-req-1", gjson.Get(requestJSON, "client_metadata.x-client-request-id").String())
 }
 
+func TestOpenAIGatewayService_BuildOpenAIWSCreatePayload_DropsUnpersistedReasoningItemsWhenStoreFalse(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{
+		Type: AccountTypeOAuth,
+	}
+	reqBody := map[string]any{
+		"model": "gpt-5.1",
+		"store": false,
+		"input": []any{
+			map[string]any{"type": "message", "role": "user", "content": "hi"},
+			map[string]any{"type": "reasoning", "id": "rs_0672f12450da0b9c0169f07220a6c08198b68c2455ced99344", "summary": []any{}},
+			map[string]any{"type": "function_call_output", "call_id": "call_123", "output": "done"},
+		},
+	}
+
+	payload := svc.buildOpenAIWSCreatePayload(reqBody, account)
+	input, ok := payload["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 2)
+	first, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	second, ok := input[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "message", first["type"])
+	require.Equal(t, "function_call_output", second["type"])
+	require.False(t, gjson.Get(requestToJSONString(payload), `input.#(type=="reasoning")`).Exists())
+	require.False(t, gjson.Get(requestToJSONString(payload), "store").Bool())
+}
+
 func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

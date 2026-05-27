@@ -296,6 +296,27 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAndHonorsMinBlock(t 
 	}, usage)
 }
 
+func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAt98Percent(t *testing.T) {
+	plan := &FakeCachePlan{
+		CurrentPrefixCacheableTokens:  100,
+		PreviousPrefixCacheableTokens: 60,
+		CurrentPrefixKey:              "prefix:current",
+		PreviousPrefixKey:             "prefix:previous",
+	}
+
+	usage := plan.ResolveUsageWithConfig(140, FakeCacheHitState{
+		Prefix: true,
+	}, FakeCacheUsageConfig{
+		HitRateScale: 98,
+	})
+
+	require.Equal(t, FakeCacheUsage{
+		InputTokens:              42,
+		CacheCreationInputTokens: 40,
+		CacheReadInputTokens:     58, // 98% of 60
+	}, usage)
+}
+
 func TestFakeCachePlanResolveUsageWithConfig_ZeroHitRateScaleIsValid(t *testing.T) {
 	plan := &FakeCachePlan{
 		CurrentPrefixCacheableTokens:  100,
@@ -379,6 +400,33 @@ func TestFakeCachePlanResolveUsageWithConfig_UsesLongestCheckpointHit(t *testing
 	}
 
 	usage := plan.ResolveUsageWithConfig(3300, FakeCacheHitState{
+		CheckpointTokens: 2800,
+	}, FakeCacheUsageConfig{
+		HitRateScale:   100,
+		MinBlockTokens: 1024,
+	})
+
+	require.Equal(t, FakeCacheUsage{
+		InputTokens:              380,
+		CacheCreationInputTokens: 120,
+		CacheReadInputTokens:     2800,
+	}, usage)
+}
+
+func TestFakeCachePlanResolveUsageWithConfig_CheckpointsStillWriteCurrentPrefixDelta(t *testing.T) {
+	plan := &FakeCachePlan{
+		IndependentCacheableTokens:    2600,
+		CurrentPrefixCacheableTokens:  320,
+		PreviousPrefixCacheableTokens: 200,
+		Checkpoints: []FakeCacheCheckpoint{
+			{Key: "checkpoint:system", Tokens: 2600},
+			{Key: "checkpoint:previous", Tokens: 2800},
+		},
+	}
+
+	usage := plan.ResolveUsageWithConfig(3300, FakeCacheHitState{
+		Independent:      true,
+		Prefix:           true,
 		CheckpointTokens: 2800,
 	}, FakeCacheUsageConfig{
 		HitRateScale:   100,

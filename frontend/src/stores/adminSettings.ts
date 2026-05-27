@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { adminAPI } from '@/api'
 import type { CustomMenuItem } from '@/types'
+import type { DefaultAccountModelConfig } from '@/api/admin/settings'
 
 export const useAdminSettingsStore = defineStore('adminSettings', () => {
   const loaded = ref(false)
@@ -50,6 +51,7 @@ export const useAdminSettingsStore = defineStore('adminSettings', () => {
   const opsQueryModeDefault = ref(readCachedString('ops_query_mode_default_cached', 'auto'))
   const paymentEnabled = ref(readCachedBool('payment_enabled_cached', false))
   const customMenuItems = ref<CustomMenuItem[]>([])
+  const platformDefaultAccountModelConfig = ref<Record<string, DefaultAccountModelConfig>>({})
 
   async function fetch(force = false): Promise<void> {
     if (loaded.value && !force) return
@@ -71,6 +73,7 @@ export const useAdminSettingsStore = defineStore('adminSettings', () => {
       writeCachedString('ops_query_mode_default_cached', opsQueryModeDefault.value)
 
       customMenuItems.value = Array.isArray(settings.custom_menu_items) ? settings.custom_menu_items : []
+      platformDefaultAccountModelConfig.value = settings.platform_default_account_model_config || {}
 
       paymentEnabled.value = paymentConfigResp.data?.enabled ?? false
       writeCachedBool('payment_enabled_cached', paymentEnabled.value)
@@ -141,6 +144,7 @@ export const useAdminSettingsStore = defineStore('adminSettings', () => {
     opsQueryModeDefault,
     paymentEnabled,
     customMenuItems,
+    platformDefaultAccountModelConfig,
     fetch,
     setOpsMonitoringEnabledLocal,
     setOpsRealtimeMonitoringEnabledLocal,

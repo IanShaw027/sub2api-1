@@ -104,3 +104,42 @@ func TestAdminServiceCreateAccount_DoesNotOverrideExplicitModelMapping(t *testin
 	require.NotNil(t, account)
 	require.Equal(t, map[string]any{}, account.Credentials["model_mapping"])
 }
+
+func TestAdminServiceCreateAccount_InjectsKiroSubscriptionTypeDefaultModelConfig(t *testing.T) {
+	repo := &kiroDefaultAccountRepoStub{}
+	settingRepo := &accountModelDefaultsSettingRepoStub{values: map[string]string{
+		SettingKeyPlatformDefaultAccountModelConfig: `{
+			"kiro": {
+				"model_mapping": {"claude-sonnet-*": "claude-sonnet-4.6"},
+				"kiro_subscription_type_model_config": {
+					"pro": {
+						"model_mapping": {"claude-opus-*": "claude-opus-4.7"},
+						"compact_model_mapping": {"claude-opus-4.6": "claude-opus-4.7"}
+					}
+				}
+			}
+		}`,
+	}}
+	svc := &adminServiceImpl{
+		accountRepo:    repo,
+		settingService: NewSettingService(settingRepo, &config.Config{}),
+	}
+
+	account, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
+		Name:                 "kiro-pro",
+		Platform:             PlatformKiro,
+		Type:                 AccountTypeOAuth,
+		Credentials:          map[string]any{"refresh_token": "rt-test-valid-refresh-token-1234567890", "subscription_type": "Kiro Pro"},
+		SkipDefaultGroupBind: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, map[string]any{
+		"claude-sonnet-*": "claude-sonnet-4.6",
+		"claude-opus-*":   "claude-opus-4.7",
+	}, account.Credentials["model_mapping"])
+	require.Equal(t, map[string]string{
+		"claude-opus-4.6": "claude-opus-4.7",
+	}, account.Credentials["compact_model_mapping"])
+}

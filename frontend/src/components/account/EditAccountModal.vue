@@ -2432,6 +2432,15 @@
     @confirm="handleMixedChannelConfirm"
     @cancel="handleMixedChannelCancel"
   />
+  <ConfirmDialog
+    :show="showKiroModelSyncWarning"
+    :title="t('common.confirm')"
+    :message="kiroModelSyncWarningMessage"
+    :confirm-text="localText('同步默认值', 'Sync default')"
+    :cancel-text="localText('保持当前', 'Keep current')"
+    @confirm="handleKiroModelSyncConfirm"
+    @cancel="handleKiroModelSyncCancel"
+  />
 </template>
 
 <script setup lang="ts">
@@ -2439,6 +2448,7 @@ import { ref, reactive, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
+import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { adminAPI } from '@/api/admin'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
 import type {
@@ -2451,6 +2461,7 @@ import type {
   OpenAICompactMode,
   OpenAIWebProfileState
 } from '@/types'
+import type { DefaultAccountModelConfig } from '@/api/admin/settings'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -2499,9 +2510,10 @@ const emit = defineEmits<{
   updated: [account: Account]
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const adminSettingsStore = useAdminSettingsStore()
 
 // Platform-specific hint for Base URL
 const baseUrlHint = computed(() => {
@@ -2510,6 +2522,10 @@ const baseUrlHint = computed(() => {
   if (props.account.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   return t('admin.accounts.baseUrlHint')
 })
+
+function localText(zh: string, en: string): string {
+  return locale.value.startsWith('zh') ? zh : en
+}
 
 const antigravityPresetMappings = computed(() => getPresetMappingsByPlatform('antigravity'))
 const bedrockPresets = computed(() => getPresetMappingsByPlatform('bedrock'))
@@ -2577,6 +2593,10 @@ const mixedChannelWarningDetails = ref<{ groupName: string; currentPlatform: str
 const mixedChannelWarningRawMessage = ref('')
 const mixedChannelWarningAction = ref<(() => Promise<void>) | null>(null)
 const antigravityMixedChannelConfirmed = ref(false)
+const showKiroModelSyncWarning = ref(false)
+const kiroModelSyncWarningMessage = ref('')
+const kiroModelSyncWarningResolver = ref<((sync: boolean) => void) | null>(null)
+const kiroModelSyncDismissedSignature = ref('')
 
 // Quota control state. TLS is also used by OpenAI/Kiro; the rest is Anthropic-only.
 const windowCostEnabled = ref(false)
@@ -3068,6 +3088,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     const kiroCredentials = (newAccount.credentials || {}) as KiroCredentials & Record<string, unknown>
 
     loadModelRestrictionFromCredentials(kiroCredentials)
+    kiroModelSyncDismissedSignature.value = ''
   }
 
   // Initialize API Key fields for apikey type
@@ -3210,6 +3231,9 @@ watch(
     }
     if (!wasShow || newAccount !== previousAccount) {
       syncFormFromAccount(newAccount)
+      if (newAccount.platform === 'kiro') {
+        void adminSettingsStore.fetch()
+      }
       loadTLSProfiles()
     }
   },
@@ -3220,16 +3244,12 @@ function loadModelRestrictionFromCredentials(
   credentials?: Record<string, unknown>,
   options: { forceMappingMode?: boolean } = {}
 ) {
-  const existingWhitelist = credentials?.model_whitelist
-  const whitelistModels = Array.isArray(existingWhitelist)
-    ? existingWhitelist
-      .map((model) => String(model).trim())
-      .filter((model) => model.length > 0)
-    : []
+  const whitelistModels = normalizeKiroModelWhitelist(credentials?.model_whitelist)
 
   const existingMappings = credentials?.model_mapping as Record<string, string> | undefined
   if (existingMappings && typeof existingMappings === 'object') {
-    const entries = Object.entries(existingMappings)
+    const normalizedMappings = normalizeKiroModelMappingObject(existingMappings)
+    const entries = normalizedMappings ? Object.entries(normalizedMappings) : Object.entries(existingMappings)
     modelMappings.value = entries.map(([from, to]) => ({ from, to }))
 
     const isWhitelistMode = !options.forceMappingMode && entries.length > 0 && entries.every(([from, to]) => from === to)
@@ -3738,8 +3758,10 @@ const applyKiroModelRestrictionPatch = (
   newCredentials: Record<string, unknown>,
   currentCredentials: Record<string, unknown>
 ) => {
-  const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
-  const currentModelMapping = currentCredentials.model_mapping as Record<string, string> | undefined
+  const modelMapping = normalizeKiroModelMappingObject(
+    buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+  )
+  const currentModelMapping = normalizeKiroModelMappingObject(currentCredentials.model_mapping)
   if (modelMapping) {
     if (credentialsValueChanged(currentModelMapping || {}, modelMapping)) {
       newCredentials.model_mapping = modelMapping
@@ -3748,9 +3770,7 @@ const applyKiroModelRestrictionPatch = (
     newCredentials.model_mapping = {}
   }
 
-  const currentModelWhitelist = Array.isArray(currentCredentials.model_whitelist)
-    ? currentCredentials.model_whitelist
-    : []
+  const currentModelWhitelist = normalizeKiroModelWhitelist(currentCredentials.model_whitelist)
   if (currentModelWhitelist.length > 0) {
     newCredentials.model_whitelist = null
   }
@@ -3769,6 +3789,217 @@ const validateModelMappingRows = () => {
     return false
   }
   return true
+}
+
+function normalizeKiroSubscriptionType(raw: unknown): string {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return ''
+  const compact = value.replace(/[\s\-_]+/g, '').replace(/\+/g, 'plus')
+  if (compact.includes('free') || compact.includes('basic') || compact === 'standard') return 'free'
+  if (compact.includes('power')) return 'power'
+  if (compact.includes('plus')) return 'pro_plus'
+  if (compact.includes('pro')) return 'pro'
+  return compact
+}
+
+function normalizeKiroModelName(raw: unknown): string {
+  const input = String(raw ?? '').trim().toLowerCase()
+  if (!input) return ''
+
+  const wildcardIndex = input.indexOf('*')
+  if (wildcardIndex >= 0) {
+    const prefix = input.slice(0, wildcardIndex)
+    return `${normalizeKiroModelName(prefix)}*`
+  }
+
+  const normalized = input.replace(/^models\//, '').replace(/-v1:0$/, '')
+  let base = normalized
+  for (;;) {
+    if (base.endsWith('[1m]')) {
+      base = base.slice(0, -4)
+      continue
+    }
+    if (base.endsWith('-1m-context')) {
+      base = base.slice(0, -11)
+      continue
+    }
+    if (base.endsWith('-context-1m')) {
+      base = base.slice(0, -11)
+      continue
+    }
+    if (base.endsWith('-1m')) {
+      base = base.slice(0, -3)
+      continue
+    }
+    break
+  }
+
+  const directAliases: Record<string, string> = {
+    'claude-sonnet-4': 'claude-sonnet-4.6',
+    'claude-sonnet-4-5': 'claude-sonnet-4.5',
+    'claude-sonnet-4.5': 'claude-sonnet-4.5',
+    'claude-sonnet-4-5-20250929': 'claude-sonnet-4.5',
+    'claude-sonnet-4-6': 'claude-sonnet-4.6',
+    'claude-sonnet-4.6': 'claude-sonnet-4.6',
+    'claude-opus-4': 'claude-opus-4.6',
+    'claude-opus-4-5': 'claude-opus-4.5',
+    'claude-opus-4.5': 'claude-opus-4.5',
+    'claude-opus-4-5-20251101': 'claude-opus-4.5',
+    'claude-opus-4-6': 'claude-opus-4.6',
+    'claude-opus-4.6': 'claude-opus-4.6',
+    'claude-opus-4-7': 'claude-opus-4.7',
+    'claude-opus-4.7': 'claude-opus-4.7',
+    'claude-haiku-4': 'claude-haiku-4.5',
+    'claude-haiku-4-5': 'claude-haiku-4.5',
+    'claude-haiku-4.5': 'claude-haiku-4.5',
+    'claude-haiku-4-5-20251001': 'claude-haiku-4.5'
+  }
+  if (directAliases[base]) {
+    return directAliases[base]
+  }
+
+  const pattern = /^claude-(haiku|sonnet|opus)-4[.-]([567])(?:-\d{8})?$/
+  const match = base.match(pattern)
+  if (match) {
+    return `claude-${match[1]}-4.${match[2]}`
+  }
+
+  return base
+}
+
+function normalizeKiroModelWhitelist(models: unknown): string[] {
+  if (!Array.isArray(models)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const model of models) {
+    const normalized = normalizeKiroModelName(model)
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    out.push(normalized)
+  }
+  return out
+}
+
+function normalizeKiroModelMappingObject(mapping: unknown): Record<string, string> | null {
+  if (!mapping || Array.isArray(mapping) || typeof mapping !== 'object') return null
+  const out: Record<string, string> = {}
+  for (const [rawFrom, rawTo] of Object.entries(mapping as Record<string, unknown>)) {
+    const from = normalizeKiroModelName(rawFrom)
+    const to = normalizeKiroModelName(rawTo)
+    if (!from || !to) continue
+    out[from] = to
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
+function formatKiroSubscriptionTypeLabel(key: string): string {
+  switch (key) {
+    case 'free':
+      return '普号'
+    case 'pro':
+      return 'pro'
+    case 'pro_plus':
+      return 'pro+'
+    case 'power':
+      return 'power'
+    default:
+      return key || 'default'
+  }
+}
+
+function resolveKiroSubscriptionTypeKey(account: Account | null): string {
+  if (!account) return ''
+  const credentials = (account.credentials || {}) as Record<string, unknown>
+  const extra = (account.extra || {}) as Record<string, unknown>
+  return normalizeKiroSubscriptionType(
+    credentials.subscription_type ||
+      credentials.plan_name ||
+      credentials.plan_tier ||
+      extra.subscription_type ||
+      extra.plan_name ||
+      extra.plan_tier
+  )
+}
+
+function defaultAccountModelConfigToMapping(config?: DefaultAccountModelConfig | null): Record<string, string> | null {
+  if (!config) return null
+  if (config.model_mapping && Object.keys(config.model_mapping).length > 0) {
+    return normalizeKiroModelMappingObject(config.model_mapping)
+  }
+  if (config.model_whitelist && config.model_whitelist.length > 0) {
+    const whitelist = normalizeKiroModelWhitelist(config.model_whitelist)
+    if (whitelist.length === 0) return null
+    return Object.fromEntries(whitelist.map((model) => [model, model]))
+  }
+  return null
+}
+
+function getKiroEffectiveDefaultMapping(account: Account | null): Record<string, string> | null {
+  const platformDefaults = adminSettingsStore.platformDefaultAccountModelConfig?.kiro
+  const baseMapping = defaultAccountModelConfigToMapping(platformDefaults)
+  const variantKey = resolveKiroSubscriptionTypeKey(account)
+  const variantConfig = variantKey
+    ? platformDefaults?.kiro_subscription_type_model_config?.[variantKey]
+    : undefined
+  const variantMapping = defaultAccountModelConfigToMapping(variantConfig)
+
+  if (!baseMapping && !variantMapping) {
+    return null
+  }
+
+  return {
+    ...(baseMapping || {}),
+    ...(variantMapping || {})
+  }
+}
+
+function buildKiroCurrentMappingObject(): Record<string, string> | null {
+  return normalizeKiroModelMappingObject(
+    buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+  )
+}
+
+function getKiroMappingSignatureFromObject(mapping: Record<string, string> | null): string {
+  return stableSerializeCredentialValue(normalizeKiroModelMappingObject(mapping) || {})
+}
+
+async function ensureAdminSettingsLoaded() {
+  if (!adminSettingsStore.loaded) {
+    await adminSettingsStore.fetch()
+  }
+}
+
+function applyKiroDefaultMappingToForm(account: Account | null) {
+  const mapping = getKiroEffectiveDefaultMapping(account)
+  if (!mapping) {
+    return
+  }
+  const currentMode = Object.keys(mapping).every((key) => mapping[key] === key) ? 'whitelist' : 'mapping'
+  modelRestrictionMode.value = currentMode
+  if (currentMode === 'whitelist') {
+    allowedModels.value = Object.keys(mapping)
+    modelMappings.value = []
+  } else {
+    allowedModels.value = []
+    modelMappings.value = Object.entries(mapping).map(([from, to]) => ({ from, to }))
+  }
+}
+
+function promptKiroModelSync(message: string): Promise<boolean> {
+  kiroModelSyncWarningMessage.value = message
+  showKiroModelSyncWarning.value = true
+  return new Promise<boolean>((resolve) => {
+    kiroModelSyncWarningResolver.value = resolve
+  })
+}
+
+function resolveKiroModelSyncWarning(sync: boolean) {
+  showKiroModelSyncWarning.value = false
+  const resolve = kiroModelSyncWarningResolver.value
+  kiroModelSyncWarningResolver.value = null
+  if (resolve) {
+    resolve(sync)
+  }
 }
 
 // Methods
@@ -3852,6 +4083,29 @@ const handleSubmit = async () => {
   }
   if (!validateModelMappingRows()) {
     return
+  }
+
+  if (props.account.platform === 'kiro') {
+    await ensureAdminSettingsLoaded()
+    const currentMapping = buildKiroCurrentMappingObject()
+    const defaultMapping = getKiroEffectiveDefaultMapping(props.account)
+    const currentSignature = getKiroMappingSignatureFromObject(currentMapping)
+    const defaultSignature = getKiroMappingSignatureFromObject(defaultMapping)
+    if (defaultMapping && currentSignature !== defaultSignature && kiroModelSyncDismissedSignature.value !== currentSignature) {
+      const subscriptionKey = resolveKiroSubscriptionTypeKey(props.account)
+      const tierLabel = formatKiroSubscriptionTypeLabel(subscriptionKey)
+      const shouldSync = await promptKiroModelSync(
+        localText(
+          `当前 Kiro ${tierLabel} 账号的模型映射与默认值不一致，是否同步为默认值？`,
+          `The current Kiro ${tierLabel} account model mapping differs from the default. Sync to the default mapping?`,
+        ),
+      )
+      if (shouldSync) {
+        applyKiroDefaultMappingToForm(props.account)
+      } else {
+        kiroModelSyncDismissedSignature.value = currentSignature
+      }
+    }
   }
 
   const updatePayload: UpdateAccountRequest = { ...form }
@@ -4463,5 +4717,13 @@ const handleMixedChannelConfirm = async () => {
 
 const handleMixedChannelCancel = () => {
   clearMixedChannelDialog()
+}
+
+const handleKiroModelSyncConfirm = () => {
+  resolveKiroModelSyncWarning(true)
+}
+
+const handleKiroModelSyncCancel = () => {
+  resolveKiroModelSyncWarning(false)
 }
 </script>

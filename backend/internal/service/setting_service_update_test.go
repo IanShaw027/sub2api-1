@@ -416,6 +416,14 @@ func TestSettingService_UpdateSettings_RejectsInvalidPlatformDefaultModelMapping
 				},
 			},
 		},
+		{
+			name: "kiro cross family mapping",
+			cfg: map[string]DefaultAccountModelConfig{
+				"kiro": {
+					ModelMapping: map[string]string{"claude-opus-4-6": "claude-sonnet-4.6"},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {

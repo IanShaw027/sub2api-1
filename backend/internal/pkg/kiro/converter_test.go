@@ -57,6 +57,7 @@ func TestConvertAnthropicRequestWithModel_FiltersBillingHeaderAndInjectsThinking
 	input := []byte(`{
 		"model":"claude-sonnet-4-6",
 		"system":[
+			{"type":"text","text":"{{identity}}"},
 			{"type":"text","text":"x-anthropic-billing-header: should-be-removed"},
 			{"type":"text","text":"Follow repository constraints."}
 		],
@@ -83,8 +84,42 @@ func TestConvertAnthropicRequestWithModel_FiltersBillingHeaderAndInjectsThinking
 	if !strings.Contains(content, "<thinking_mode>enabled</thinking_mode><max_thinking_length>5000</max_thinking_length>") {
 		t.Fatalf("missing thinking prefix in system history: %q", content)
 	}
+	if !strings.Contains(content, "You are Claude Code, Anthropic's official CLI for Claude.") {
+		t.Fatalf("missing canonical Claude Code banner in system history: %q", content)
+	}
+	if strings.Contains(content, "{{identity}}") {
+		t.Fatalf("identity placeholder leaked into system history: %q", content)
+	}
 	if !strings.Contains(content, "Follow repository constraints.") {
 		t.Fatalf("missing system prompt in system history: %q", content)
+	}
+}
+
+func TestConvertAnthropicRequestWithModel_RewritesKiroIdentityBanner(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"system":"You are Amazon Q Developer, a Kiro coding assistant.\n\nFollow repository constraints.",
+		"messages":[{"role":"user","content":"hello"}]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	if err != nil {
+		t.Fatalf("ConvertAnthropicRequestWithModel error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(result.Body, &payload); err != nil {
+		t.Fatalf("unmarshal converted payload: %v", err)
+	}
+
+	history := payload["conversationState"].(map[string]any)["history"].([]any)
+	first := history[0].(map[string]any)["userInputMessage"].(map[string]any)
+	content := first["content"].(string)
+	if !strings.Contains(content, "You are Claude Code, Anthropic's official CLI for Claude.") {
+		t.Fatalf("missing canonical Claude Code banner in system history: %q", content)
+	}
+	if strings.Contains(content, "Amazon Q") || strings.Contains(content, "Kiro coding assistant") {
+		t.Fatalf("upstream identity leaked into system history: %q", content)
 	}
 }
 

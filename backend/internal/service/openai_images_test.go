@@ -1054,14 +1054,14 @@ func TestResolveOpenAIImageBytes_PrefersInlineBase64(t *testing.T) {
 	require.Equal(t, []byte("ABC"), data)
 }
 
-func TestAccountSupportsOpenAIImageCapability_OAuthDoesNotSupportNative(t *testing.T) {
+func TestAccountSupportsOpenAIImageCapability_OAuthSupportsNative(t *testing.T) {
 	account := &Account{
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 	}
 
 	require.True(t, account.SupportsOpenAIImageCapability(OpenAIImagesCapabilityBasic))
-	require.False(t, account.SupportsOpenAIImageCapability(OpenAIImagesCapabilityNative))
+	require.True(t, account.SupportsOpenAIImageCapability(OpenAIImagesCapabilityNative))
 }
 
 func TestAccountSupportsOpenAIImageCapability_APIKeySupportsNative(t *testing.T) {
@@ -1072,6 +1072,26 @@ func TestAccountSupportsOpenAIImageCapability_APIKeySupportsNative(t *testing.T)
 
 	require.True(t, account.SupportsOpenAIImageCapability(OpenAIImagesCapabilityBasic))
 	require.True(t, account.SupportsOpenAIImageCapability(OpenAIImagesCapabilityNative))
+}
+
+func TestIsOpenAIImageGenerationToolUnsupportedError(t *testing.T) {
+	body := []byte(`{"error":{"message":"Tool choice 'image_generation' not found in 'tools' parameter.","type":"invalid_request_error"}}`)
+
+	require.True(t, isOpenAIImageGenerationToolUnsupportedError(
+		http.StatusBadRequest,
+		"Tool choice 'image_generation' not found in 'tools' parameter.",
+		body,
+	))
+	require.False(t, isOpenAIImageGenerationToolUnsupportedError(
+		http.StatusBadRequest,
+		"unsupported response_format",
+		[]byte(`{"error":{"message":"unsupported response_format"}}`),
+	))
+	require.False(t, isOpenAIImageGenerationToolUnsupportedError(
+		http.StatusInternalServerError,
+		"Tool choice 'image_generation' not found in 'tools' parameter.",
+		body,
+	))
 }
 
 func TestBuildOpenAIImagesURL_HandlesVersionedBaseURL(t *testing.T) {
@@ -1181,6 +1201,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthUsesResponsesAPI(t *testing.T) {
 	require.Equal(t, 11, result.Usage.InputTokens)
 	require.Equal(t, 22, result.Usage.OutputTokens)
 	require.Equal(t, 7, result.Usage.ImageOutputTokens)
+	require.Empty(t, result.TokenBillingModel)
 
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, chatgptCodexURL, upstream.lastReq.URL.String())

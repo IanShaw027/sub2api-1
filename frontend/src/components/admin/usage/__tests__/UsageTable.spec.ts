@@ -13,6 +13,12 @@ const messages: Record<string, string> = {
   'usage.inputTokenPrice': 'Input price',
   'usage.outputTokenPrice': 'Output price',
   'usage.perMillionTokens': '/ 1M tokens',
+  'usage.imageCount': 'Image count',
+  'usage.imageUnit': ' images',
+  'usage.imageUnitPrice': 'Per-image price',
+  'usage.imageSubtotal': 'Image subtotal',
+  'usage.tokenSubtotal': 'Token subtotal',
+  'usage.rowTotal': 'Row total',
   'usage.serviceTier': 'Service tier',
   'usage.serviceTierPriority': 'Fast',
   'usage.serviceTierFlex': 'Flex',
@@ -22,8 +28,6 @@ const messages: Record<string, string> = {
   'usage.original': 'Original',
   'usage.userBilled': 'User billed',
   'usage.accountBilled': 'Account billed',
-  'usage.imageUnit': ' images',
-  'usage.imageCount': 'Image count',
   'usage.imageBillingSize': 'Billing size',
   'usage.imageInputSize': 'Input size',
   'usage.imageOutputSize': 'Output size',
@@ -37,8 +41,6 @@ const messages: Record<string, string> = {
   'usage.imageSizeNotRecorded': 'not recorded',
   'usage.imageSizeLegacyUnstandardized': 'legacy unstandardized',
   'usage.imageSizeUnknown': 'unknown',
-  'usage.imageUnitPrice': 'Per-image price',
-  'usage.imageTotalPrice': 'Image total price',
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
@@ -276,7 +278,7 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('Input size')
     expect(text).toContain('Output size')
     expect(text).toContain('Per-image price')
-    expect(text).toContain('Image total price')
+    expect(text).toContain('Image subtotal')
     for (const value of expected) {
       expect(text).toContain(value)
     }
@@ -319,5 +321,104 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('Per-image price')
     expect(text).toContain('not recorded')
     expect(text).not.toContain('(2K)')
+  })
+
+  it('explains mixed token and image charges for responses image rows', async () => {
+    const row = {
+      request_id: 'req-admin-image-1',
+      billing_mode: 'image',
+      inbound_endpoint: '/v1/responses',
+      upstream_endpoint: '/v1/responses',
+      image_count: 1,
+      image_size: '2K',
+      actual_cost: 0.147388,
+      total_cost: 0.147388,
+      account_rate_multiplier: 1,
+      rate_multiplier: 1,
+      service_tier: 'standard',
+      input_cost: 0.04,
+      output_cost: 0.02,
+      cache_creation_cost: 0,
+      cache_read_cost: 0.007388,
+      input_tokens: 4806,
+      output_tokens: 1213,
+    }
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [row],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    await wrapper.find('.group.relative').trigger('mouseenter')
+    await nextTick()
+
+    const text = wrapper.text()
+    expect(text).toContain('Image subtotal')
+    expect(text).toContain('$0.080000')
+    expect(text).toContain('Token subtotal')
+    expect(text).toContain('$0.067388')
+    expect(text).toContain('Row total')
+    expect(text).toContain('$0.147388')
+    expect(text).toContain('Per-image price')
+  })
+
+  it('shows pure image billing rows without token subtotal cost', async () => {
+    const row = {
+      request_id: 'req-admin-image-only-1',
+      billing_mode: 'image',
+      inbound_endpoint: '/v1/images/generations',
+      upstream_endpoint: '/v1/images/generations',
+      image_count: 2,
+      image_size: '1K',
+      actual_cost: 0.08,
+      total_cost: 0.08,
+      account_rate_multiplier: 1,
+      rate_multiplier: 1,
+      service_tier: 'standard',
+      input_cost: 0,
+      output_cost: 0,
+      cache_creation_cost: 0,
+      cache_read_cost: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+    }
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [row],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    await wrapper.find('.group.relative').trigger('mouseenter')
+    await nextTick()
+
+    const text = wrapper.text()
+    expect(text).toContain('Per-image price')
+    expect(text).toContain('$0.040000')
+    expect(text).toContain('Image subtotal')
+    expect(text).toContain('Token subtotal')
+    expect(text).toContain('Row total')
+    expect(text).toContain('$0.080000')
   })
 })

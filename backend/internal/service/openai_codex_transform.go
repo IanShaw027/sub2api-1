@@ -129,6 +129,7 @@ var openAIChatGPTInternalUnsupportedFields = []string{
 	"user",
 	"metadata",
 	"prompt_cache_retention",
+	"reasoningSummary",
 	"safety_identifier",
 	"stream_options",
 	"max_output_tokens",
@@ -248,6 +249,7 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReason(
 		"user",
 		"metadata",
 		"prompt_cache_retention",
+		"reasoningSummary",
 		"safety_identifier",
 		"stream_options",
 		"max_output_tokens",
@@ -1199,9 +1201,6 @@ func extractSystemMessagesFromInput(reqBody map[string]any) bool {
 
 // applyInstructions 处理 instructions 字段：仅在 instructions 为空时填充默认值。
 func applyInstructions(reqBody map[string]any, isCodexCLI bool) bool {
-	if !isCodexCLI {
-		return false
-	}
 	return applyEmbeddedDefaultInstructions(reqBody)
 }
 
@@ -1486,12 +1485,70 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 			}
 		}
 
+		if sanitizedItem, sanitized := sanitizeCodexInputItem(newItem); sanitized {
+			newItem = sanitizedItem
+			modified = true
+		}
+
 		filtered = append(filtered, newItem)
 	}
 	if !modified && len(filtered) == len(input) {
 		return input, false
 	}
 	return filtered, true
+}
+
+var codexMessageInputAllowedFields = map[string]struct{}{
+	"type":    {},
+	"role":    {},
+	"content": {},
+	"id":      {},
+}
+
+func sanitizeCodexInputItem(item map[string]any) (map[string]any, bool) {
+	if len(item) == 0 {
+		return item, false
+	}
+
+	if strings.TrimSpace(firstNonEmptyString(item["type"])) == "message" {
+		sanitized := make(map[string]any, len(item))
+		modified := false
+		for key, value := range item {
+			if value == nil {
+				modified = true
+				continue
+			}
+			if _, ok := codexMessageInputAllowedFields[key]; !ok {
+				modified = true
+				continue
+			}
+			sanitized[key] = value
+		}
+		if !modified {
+			return item, false
+		}
+		return sanitized, true
+	}
+
+	var sanitized map[string]any
+	modified := false
+	for key, value := range item {
+		if value != nil {
+			continue
+		}
+		if sanitized == nil {
+			sanitized = make(map[string]any, len(item)-1)
+			for existingKey, existingValue := range item {
+				sanitized[existingKey] = existingValue
+			}
+		}
+		delete(sanitized, key)
+		modified = true
+	}
+	if !modified {
+		return item, false
+	}
+	return sanitized, true
 }
 
 func isCodexToolCallItemType(typ string) bool {
@@ -1560,6 +1617,9 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 
 		// OpenAI Responses-style tools use top-level name/parameters.
 		if name, ok := toolMap["name"].(string); ok && strings.TrimSpace(name) != "" {
+			if normalizeCodexFunctionToolParameters(toolMap) {
+				modified = true
+			}
 			validTools = append(validTools, toolMap)
 			continue
 		}
@@ -1597,6 +1657,9 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 				modified = true
 			}
 		}
+		if normalizeCodexFunctionToolParameters(toolMap) {
+			modified = true
+		}
 
 		validTools = append(validTools, toolMap)
 	}
@@ -1606,4 +1669,50 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 	}
 
 	return modified
+}
+
+func normalizeCodexFunctionToolParameters(toolMap map[string]any) bool {
+	if toolMap == nil || strings.TrimSpace(firstNonEmptyString(toolMap["type"])) != "function" {
+		return false
+	}
+
+	paramsValue, hasParams := toolMap["parameters"]
+	if !hasParams || paramsValue == nil {
+		if function, ok := toolMap["function"].(map[string]any); ok && function != nil {
+			if fnParams, ok := function["parameters"]; ok && fnParams != nil {
+				toolMap["parameters"] = fnParams
+				paramsValue = fnParams
+				hasParams = true
+			}
+		}
+	}
+
+	if !hasParams || paramsValue == nil {
+		toolMap["parameters"] = map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		}
+		return true
+	}
+
+	paramsMap, ok := paramsValue.(map[string]any)
+	if !ok {
+		toolMap["parameters"] = map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		}
+		return true
+	}
+
+	changed := false
+	if typ, ok := paramsMap["type"].(string); !ok || strings.TrimSpace(typ) == "" {
+		paramsMap["type"] = "object"
+		changed = true
+	}
+	if _, ok := paramsMap["properties"]; !ok {
+		paramsMap["properties"] = map[string]any{}
+		changed = true
+	}
+	toolMap["parameters"] = paramsMap
+	return changed
 }

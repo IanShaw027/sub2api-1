@@ -860,6 +860,7 @@ func TestOpenAIGatewayService_Forward_StripsUnsupportedFieldsConsistently(t *tes
 		"stream":false,
 		"temperature":0.2,
 		"prompt_cache_retention":"24h",
+		"reasoningSummary":"auto",
 		"safety_identifier":"safe-id",
 		"metadata":{"k":"v"},
 		"stream_options":{"include_usage":true}
@@ -896,11 +897,82 @@ func TestOpenAIGatewayService_Forward_StripsUnsupportedFieldsConsistently(t *tes
 	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "temperature").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_retention").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "reasoningSummary").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "safety_identifier").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "metadata").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "stream_options").Exists())
 	require.Equal(t, "hello", gjson.GetBytes(upstream.lastBody, "input.0.content").String())
 	require.False(t, result.Stream)
+}
+
+func TestOpenAIGatewayService_Forward_CodexCLIStripsMessageNoiseFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{
+		"model":"gpt-5.2",
+		"store":false,
+		"stream":false,
+		"input":[{
+			"id":null,
+			"cwd":null,
+			"name":null,
+			"role":"user",
+			"type":"message",
+			"input":null,
+			"action":null,
+			"output":null,
+			"stderr":null,
+			"stdout":null,
+			"call_id":null,
+			"changes":null,
+			"command":null,
+			"content":"health check",
+			"thought":null,
+			"arguments":null,
+			"encrypted_content":null,
+			"reasoning_content":null,
+			"thought_signature":"[REDACTED]",
+			"working_directory":null
+		}]
+	}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.125.0")
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid-codex-message-clean"}},
+			Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
+		},
+	}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:          654,
+		Name:        "oauth-codex-message-clean",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "health check", gjson.GetBytes(upstream.lastBody, "input.0.content").String())
+	require.Equal(t, "message", gjson.GetBytes(upstream.lastBody, "input.0.type").String())
+	require.Equal(t, "user", gjson.GetBytes(upstream.lastBody, "input.0.role").String())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.action").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.cwd").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.command").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.stdout").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.thought_signature").Exists())
 }
 
 func TestOpenAIGatewayService_OAuthLegacy_ClaudeCLIResponsesInjectsInstructionsAndNormalizesStrictToolSchema(t *testing.T) {
@@ -1864,6 +1936,22 @@ func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimitedButWe
 	imageResetAt := time.Now().Add(2 * time.Minute).UTC().Truncate(time.Second)
 	oldLastUsed := time.Now().Add(-5 * time.Hour)
 	newLastUsed := time.Now().Add(-1 * time.Hour)
+	webProfile := map[string]any{
+		"user_agent":                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.6950.102 Safari/537.36",
+		"accept_language":            "en;q=0.9",
+		"sec_ch_ua":                  `"Not.A/Brand";v="8", "Chromium";v="145", "Google Chrome";v="145"`,
+		"sec_ch_ua_mobile":           "?0",
+		"sec_ch_ua_platform":         `"macOS"`,
+		"sec_ch_ua_arch":             `"arm"`,
+		"sec_ch_ua_bitness":          `"64"`,
+		"sec_ch_ua_full_version":     `"145.0.0.0"`,
+		"sec_ch_ua_platform_version": `"15.4.0"`,
+		"oai_device_id":              "device-1",
+		"oai_session_id":             "session-1",
+		"cookies": []any{
+			map[string]any{"name": "__Secure-next-auth.session-token", "value": "cookie-value", "domain": ".chatgpt.com", "path": "/"},
+		},
+	}
 	accounts := []Account{
 		{
 			ID:               47031,
@@ -1877,6 +1965,20 @@ func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimitedButWe
 			RateLimitResetAt: &accountResetAt,
 			Credentials:      map[string]any{"plan_type": "plus"},
 			Extra: map[string]any{
+				"web_profile": map[string]any{
+					"user_agent":                 webProfile["user_agent"],
+					"accept_language":            webProfile["accept_language"],
+					"sec_ch_ua":                  webProfile["sec_ch_ua"],
+					"sec_ch_ua_mobile":           webProfile["sec_ch_ua_mobile"],
+					"sec_ch_ua_platform":         webProfile["sec_ch_ua_platform"],
+					"sec_ch_ua_arch":             webProfile["sec_ch_ua_arch"],
+					"sec_ch_ua_bitness":          webProfile["sec_ch_ua_bitness"],
+					"sec_ch_ua_full_version":     webProfile["sec_ch_ua_full_version"],
+					"sec_ch_ua_platform_version": webProfile["sec_ch_ua_platform_version"],
+					"oai_device_id":              webProfile["oai_device_id"],
+					"oai_session_id":             webProfile["oai_session_id"],
+					"cookies":                    webProfile["cookies"],
+				},
 				"openai_image_web2api_rate_limit_reset_at": imageResetAt.Format(time.RFC3339),
 			},
 		},
@@ -1890,6 +1992,24 @@ func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimitedButWe
 			Priority:    1,
 			LastUsedAt:  &newLastUsed,
 			Credentials: map[string]any{"plan_type": "plus"},
+			Extra: map[string]any{
+				"web_profile": map[string]any{
+					"user_agent":                 webProfile["user_agent"],
+					"accept_language":            webProfile["accept_language"],
+					"sec_ch_ua":                  webProfile["sec_ch_ua"],
+					"sec_ch_ua_mobile":           webProfile["sec_ch_ua_mobile"],
+					"sec_ch_ua_platform":         webProfile["sec_ch_ua_platform"],
+					"sec_ch_ua_arch":             webProfile["sec_ch_ua_arch"],
+					"sec_ch_ua_bitness":          webProfile["sec_ch_ua_bitness"],
+					"sec_ch_ua_full_version":     webProfile["sec_ch_ua_full_version"],
+					"sec_ch_ua_platform_version": webProfile["sec_ch_ua_platform_version"],
+					"oai_device_id":              "device-2",
+					"oai_session_id":             "session-2",
+					"cookies": []any{
+						map[string]any{"name": "__Secure-next-auth.session-token", "value": "cookie-value", "domain": ".chatgpt.com", "path": "/"},
+					},
+				},
+			},
 		},
 	}
 	svc := &OpenAIGatewayService{
@@ -2246,6 +2366,41 @@ func TestOpenAIStreamingPreambleKeepaliveUsesDownstreamIdle(t *testing.T) {
 	require.NotNil(t, result)
 	require.Contains(t, rec.Body.String(), ":\n\n")
 	require.Contains(t, rec.Body.String(), "response.completed")
+}
+
+func TestOpenAIStreamingNormalizesResponseDoneEventForHTTPClients(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			StreamDataIntervalTimeout: 0,
+			StreamKeepaliveInterval:   0,
+			MaxLineSize:               defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.done",
+			`data: {"type":"response.done","response":{"id":"resp_done","usage":{"input_tokens":2,"output_tokens":3,"input_tokens_details":{"cached_tokens":1}}}}`,
+			"",
+		}, "\n"))),
+		Header: http.Header{},
+	}
+
+	result, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "model", "model")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 2, result.usage.InputTokens)
+	require.Contains(t, rec.Body.String(), "event: response.completed")
+	require.Contains(t, rec.Body.String(), `"type":"response.completed"`)
+	require.NotContains(t, rec.Body.String(), "response.done")
 }
 
 func TestOpenAIStreamingPolicyResponseFailedBeforeOutputPassesThrough(t *testing.T) {
@@ -2832,6 +2987,38 @@ func TestOpenAIStreamingPassthroughResponseDoneWithoutDoneMarkerStillSucceeds(t 
 	require.Equal(t, 2, result.usage.InputTokens)
 	require.Equal(t, 3, result.usage.OutputTokens)
 	require.Equal(t, 1, result.usage.CacheReadInputTokens)
+	require.Contains(t, rec.Body.String(), "response.completed")
+	require.NotContains(t, rec.Body.String(), "response.done")
+}
+
+func TestOpenAIStreamingPassthroughCountsImageOutputs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			MaxLineSize: defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"ig_passthrough_1\",\"type\":\"image_generation_call\",\"result\":\"final-image\"}}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_passthrough_image\",\"output\":[{\"id\":\"ig_passthrough_1\",\"type\":\"image_generation_call\",\"result\":\"final-image\"}],\"usage\":{\"input_tokens\":2,\"output_tokens\":3,\"output_tokens_details\":{\"image_tokens\":1}}}}\n\n",
+		)),
+		Header: http.Header{},
+	}
+
+	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 1, result.imageCount)
+	require.Equal(t, 1, result.usage.ImageOutputTokens)
 }
 
 func TestOpenAIStreamingPassthroughResponseIncompleteWithoutDoneMarkerStillSucceeds(t *testing.T) {
@@ -2867,6 +3054,39 @@ func TestOpenAIStreamingPassthroughResponseIncompleteWithoutDoneMarkerStillSucce
 	require.Equal(t, 2, result.usage.InputTokens)
 	require.Equal(t, 3, result.usage.OutputTokens)
 	require.Equal(t, 1, result.usage.CacheReadInputTokens)
+}
+
+func TestOpenAIStreamingPassthroughNormalizesResponseDoneEventForHTTPClients(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			MaxLineSize: defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.done",
+			`data: {"type":"response.done","response":{"id":"resp_done","usage":{"input_tokens":2,"output_tokens":3,"input_tokens_details":{"cached_tokens":1}}}}`,
+			"",
+		}, "\n"))),
+		Header: http.Header{},
+	}
+
+	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 2, result.usage.InputTokens)
+	require.Contains(t, rec.Body.String(), "event: response.completed")
+	require.Contains(t, rec.Body.String(), `"type":"response.completed"`)
+	require.NotContains(t, rec.Body.String(), "response.done")
 }
 
 func TestOpenAIStreamingTooLong(t *testing.T) {

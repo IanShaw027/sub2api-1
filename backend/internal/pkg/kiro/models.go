@@ -149,6 +149,12 @@ var kiroModelAliases = map[string]string{
 
 var kiroClaudeModelPattern = regexp.MustCompile(`^claude-(haiku|sonnet|opus)-4[.-]([567])(?:-\d{8})?$`)
 
+var kiroOneMillionContextModels = map[string]struct{}{
+	"claude-sonnet-4.6": {},
+	"claude-opus-4.6":   {},
+	"claude-opus-4.7":   {},
+}
+
 func MapModel(model string) string {
 	normalized := normalizeKiroModelAlias(model)
 	if mapped := kiroModelAliases[normalized]; mapped != "" {
@@ -163,9 +169,18 @@ func MapModel(model string) string {
 
 	mapped := "claude-" + matches[1] + "-4." + matches[2]
 	if oneMillionContext {
-		mapped += "-1m"
+		return mapped
 	}
 	return mapped
+}
+
+func SupportsOneMillionContextModel(model string) bool {
+	mapped := MapModel(model)
+	if mapped == "" {
+		return false
+	}
+	_, ok := kiroOneMillionContextModels[mapped]
+	return ok
 }
 
 func normalizeKiroModelAlias(model string) string {
@@ -179,6 +194,9 @@ func stripKiroVariantSuffixes(model string) (base string, oneMillionContext bool
 	base = model
 	for {
 		switch {
+		case strings.HasSuffix(base, "[1m]"):
+			oneMillionContext = true
+			base = strings.TrimSuffix(base, "[1m]")
 		case strings.HasSuffix(base, "-1m-context"):
 			oneMillionContext = true
 			base = strings.TrimSuffix(base, "-1m-context")

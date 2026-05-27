@@ -156,6 +156,24 @@ func TestResolveOpenAIResponsesImageBillingConfigDoesNotRejectUnknownSizes(t *te
 	require.Equal(t, "2K", imageSize)
 }
 
+func TestApplyOpenAIResponsesImageBillingMetaDefaultsMissingSizeAndTokenModel(t *testing.T) {
+	result := &OpenAIForwardResult{
+		Model:         "gpt-image-2",
+		UpstreamModel: "gpt-5.4-mini",
+		ImageCount:    1,
+	}
+
+	applyOpenAIResponsesImageBillingMeta(
+		result,
+		[]byte(`{"model":"gpt-5.4-mini","tools":[{"type":"image_generation","model":"gpt-image-2"}]}`),
+		"requested-model",
+	)
+
+	require.Equal(t, "gpt-image-2", result.BillingModel)
+	require.Equal(t, "2K", result.ImageSize)
+	require.Equal(t, "gpt-5.4-mini", result.TokenBillingModel)
+}
+
 func TestOpenAIImageOutputCounterDeduplicatesFinalImages(t *testing.T) {
 	counter := newOpenAIImageOutputCounter()
 	counter.AddSSEData([]byte(`{"type":"response.image_generation_call.partial_image","partial_image_b64":"abc"}`))
