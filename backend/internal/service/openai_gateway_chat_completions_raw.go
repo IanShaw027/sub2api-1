@@ -71,10 +71,17 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	account *Account,
 	body []byte,
 	promptCacheKey string,
-	defaultMappedModel string,
-	selectedFallbackModel string,
+	modelHints ...string,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
+	defaultMappedModel := ""
+	selectedFallbackModel := ""
+	if len(modelHints) > 0 {
+		defaultMappedModel = modelHints[0]
+	}
+	if len(modelHints) > 1 {
+		selectedFallbackModel = modelHints[1]
+	}
 
 	// 1. Parse minimal fields needed for routing/billing
 	originalModel := gjson.GetBytes(body, "model").String()
@@ -120,11 +127,13 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	if policyErr != nil {
 		var blocked *OpenAIFastBlockedError
 		if errors.As(policyErr, &blocked) {
+			MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
 			writeChatCompletionsError(c, http.StatusForbidden, "permission_error", blocked.Message)
 		}
 		return nil, policyErr
 	}
 	upstreamBody = updatedBody
+	serviceTier = extractOpenAIServiceTierFromBody(upstreamBody)
 	if clientStream {
 		var usageErr error
 		upstreamBody, usageErr = ensureOpenAIChatStreamUsage(upstreamBody)
@@ -162,6 +171,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
+	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
 	if clientStream {
@@ -245,9 +255,41 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 
 	// 8. Forward response
 	if clientStream {
-		return s.streamRawChatCompletions(c, resp, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
+		return s.streamRawChatCompletions(c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime, len(body))
 	}
 	return s.bufferRawChatCompletions(c, resp, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
+}
+
+const openAISilentRefusalMinRequestBodyBytes = 1024
+
+func IsOpenAISilentRefusalErrorBody(body []byte) bool {
+	return gjson.GetBytes(body, "error.code").String() == "silent_refusal"
+}
+
+func isOpenAIChatVisibleOutputChunk(payload string) bool {
+	if strings.TrimSpace(payload) == "" {
+		return false
+	}
+	choices := gjson.Get(payload, "choices")
+	if !choices.Exists() || !choices.IsArray() {
+		return false
+	}
+	for _, choice := range choices.Array() {
+		if choice.Get("delta.tool_calls").Exists() && len(choice.Get("delta.tool_calls").Array()) > 0 {
+			return true
+		}
+		if strings.TrimSpace(choice.Get("delta.reasoning_content").String()) != "" {
+			return true
+		}
+		if strings.TrimSpace(choice.Get("delta.content").String()) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func buildOpenAISilentRefusalErrorBody() []byte {
+	return []byte(`{"error":{"type":"upstream_error","code":"silent_refusal","message":"OpenAI upstream returned no visible output before stop"}}`)
 }
 
 // streamRawChatCompletions 透传上游 CC SSE 流到客户端，并提取 usage（包括
@@ -259,23 +301,18 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 func (s *OpenAIGatewayService) streamRawChatCompletions(
 	c *gin.Context,
 	resp *http.Response,
+	account *Account,
 	originalModel string,
 	billingModel string,
 	upstreamModel string,
 	reasoningEffort *string,
 	serviceTier *string,
 	startTime time.Time,
+	requestBodyBytes int,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
 
-	if s.responseHeaderFilter != nil {
-		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
-	}
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("X-Accel-Buffering", "no")
-	c.Writer.WriteHeader(http.StatusOK)
+	shouldDetectSilentRefusal := requestBodyBytes >= openAISilentRefusalMinRequestBodyBytes
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -287,6 +324,44 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	var usage OpenAIUsage
 	var firstTokenMs *int
 	clientDisconnected := false
+	responseStarted := false
+	sawVisibleOutput := false
+	pendingLines := make([]string, 0, 8)
+	startResponse := func() {
+		if responseStarted {
+			return
+		}
+		if s.responseHeaderFilter != nil {
+			responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+		}
+		c.Writer.Header().Set("Content-Type", "text/event-stream")
+		c.Writer.Header().Set("Cache-Control", "no-cache")
+		c.Writer.Header().Set("Connection", "keep-alive")
+		c.Writer.Header().Set("X-Accel-Buffering", "no")
+		c.Writer.WriteHeader(http.StatusOK)
+		responseStarted = true
+	}
+	flushPending := func() {
+		if len(pendingLines) == 0 || clientDisconnected {
+			pendingLines = pendingLines[:0]
+			return
+		}
+		startResponse()
+		for _, line := range pendingLines {
+			if _, werr := c.Writer.WriteString(line + "\n"); werr != nil {
+				clientDisconnected = true
+				logger.L().Debug("openai chat_completions raw: client disconnected during pending flush",
+					zap.Error(werr),
+					zap.String("request_id", requestID),
+				)
+				break
+			}
+			if line == "" {
+				c.Writer.Flush()
+			}
+		}
+		pendingLines = pendingLines[:0]
+	}
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -297,6 +372,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 				if u := extractCCStreamUsage(payload); u != nil {
 					usage = *u
 				}
+				if isOpenAIChatVisibleOutputChunk(payload) {
+					sawVisibleOutput = true
+				}
 				if firstTokenMs == nil && !usageOnlyChunk {
 					elapsed := int(time.Since(startTime).Milliseconds())
 					firstTokenMs = &elapsed
@@ -304,7 +382,16 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 			}
 		}
 
+		if shouldDetectSilentRefusal && !responseStarted {
+			pendingLines = append(pendingLines, line)
+			if sawVisibleOutput {
+				flushPending()
+			}
+			continue
+		}
+
 		if !clientDisconnected {
+			startResponse()
 			if _, werr := c.Writer.WriteString(line + "\n"); werr != nil {
 				clientDisconnected = true
 				logger.L().Debug("openai chat_completions raw: client disconnected, continuing to drain upstream for billing",
@@ -321,6 +408,32 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		}
 		if !clientDisconnected {
 			c.Writer.Flush()
+		}
+	}
+
+	if shouldDetectSilentRefusal && !responseStarted && !sawVisibleOutput {
+		message := "OpenAI upstream returned no visible output before stop"
+		responseBody := buildOpenAISilentRefusalErrorBody()
+		setOpsUpstreamError(c, http.StatusBadGateway, message, "")
+		event := OpsUpstreamErrorEvent{
+			Platform:           PlatformOpenAI,
+			UpstreamStatusCode: http.StatusBadGateway,
+			UpstreamRequestID:  strings.TrimSpace(requestID),
+			Kind:               "failover",
+			Message:            message,
+		}
+		if account != nil {
+			event.AccountID = account.ID
+			event.AccountName = account.Name
+		}
+		appendOpsUpstreamError(c, event)
+		if account != nil {
+			_ = s.handleOpenAIAccountUpstreamError(c.Request.Context(), account, http.StatusBadGateway, resp.Header, responseBody)
+		}
+		return nil, &UpstreamFailoverError{
+			StatusCode:      http.StatusBadGateway,
+			ResponseBody:    responseBody,
+			ResponseHeaders: resp.Header.Clone(),
 		}
 	}
 
@@ -464,7 +577,27 @@ func buildOpenAIChatCompletionsURL(base string) string {
 	if strings.HasSuffix(normalized, "/v1") {
 		return normalized + "/chat/completions"
 	}
+	if hasOpenAIVersionedBasePath(normalized) {
+		return normalized + "/chat/completions"
+	}
 	return normalized + "/v1/chat/completions"
+}
+
+func hasOpenAIVersionedBasePath(base string) bool {
+	idx := strings.LastIndex(strings.TrimRight(strings.TrimSpace(base), "/"), "/")
+	if idx < 0 || idx == len(base)-1 {
+		return false
+	}
+	segment := base[idx+1:]
+	if len(segment) < 2 || segment[0] != 'v' {
+		return false
+	}
+	for _, ch := range segment[1:] {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeRawChatCompletionsCompatBody(body []byte) ([]byte, error) {

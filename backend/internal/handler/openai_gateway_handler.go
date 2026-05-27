@@ -246,7 +246,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 
 	// 2. Re-check billing eligibility after wait
-	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription); err != nil {
+	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
 		reqLog.Info("openai.billing_eligibility_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
@@ -450,6 +450,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		requestPayloadHash := service.HashUsageRequestPayload(body)
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 		h.submitOpenAIUsageRecordTask(result, func(ctx context.Context) {
@@ -465,6 +466,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				QuotaPlatform:      quotaPlatform,
 				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 			}); err != nil {
 				logger.L().With(
@@ -666,7 +668,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		defer userReleaseFunc()
 	}
 
-	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription); err != nil {
+	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
 		reqLog.Info("openai_messages.billing_eligibility_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
@@ -837,6 +839,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		requestPayloadHash := service.HashUsageRequestPayload(body)
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 
 		h.submitOpenAIUsageRecordTask(result, func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
@@ -851,6 +854,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				QuotaPlatform:      quotaPlatform,
 				ChannelUsageFields: channelMappingMsg.ToUsageFields(reqModel, result.UpstreamModel),
 			}); err != nil {
 				logger.L().With(
@@ -1245,7 +1249,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	var currentAccountRelease func()
 	var currentImageRelease func()
 	currentTurnNeedsImageSlot := false
-	releaseTurnSlots := func() {
+	releaseAccountScopedSlots := func() {
 		if currentImageRelease != nil {
 			currentImageRelease()
 			currentImageRelease = nil
@@ -1254,6 +1258,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			currentAccountRelease()
 			currentAccountRelease = nil
 		}
+	}
+	releaseTurnSlots := func() {
+		releaseAccountScopedSlots()
 		if currentUserRelease != nil {
 			currentUserRelease()
 			currentUserRelease = nil
@@ -1273,9 +1280,26 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		return
 	}
 	currentUserRelease = wrapReleaseOnDone(ctx, userReleaseFunc)
+	ensureUserSlotHeld := func() bool {
+		if currentUserRelease != nil {
+			return true
+		}
+		userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlot(ctx, subject.UserID, subject.Concurrency)
+		if err != nil {
+			reqLog.Warn("openai.websocket_user_slot_reacquire_failed", zap.Error(err))
+			closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire user concurrency slot")
+			return false
+		}
+		if !userAcquired {
+			closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "too many concurrent requests, please retry later")
+			return false
+		}
+		currentUserRelease = wrapReleaseOnDone(ctx, userReleaseFunc)
+		return true
+	}
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
-	if err := h.billingCacheService.CheckBillingEligibility(ctx, apiKey.User, apiKey, apiKey.Group, subscription); err != nil {
+	if err := h.billingCacheService.CheckBillingEligibility(ctx, apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
 		reqLog.Info("openai.websocket_billing_eligibility_check_failed", zap.Error(err))
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "billing check failed")
 		return
@@ -1286,214 +1310,265 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		firstMessage,
 		openAIWSIngressFallbackSessionSeed(subject.UserID, apiKey.ID, apiKey.GroupID),
 	)
-	selection, scheduleDecision, err := h.gatewayService.SelectAccountWithScheduler(
-		ctx,
-		apiKey.GroupID,
-		previousResponseID,
-		sessionHash,
-		reqModel,
-		nil,
-		service.OpenAIUpstreamTransportResponsesWebsocketV2,
-		false,
-	)
-	if err != nil {
-		reqLog.Warn("openai.websocket_account_select_failed", zap.Error(err))
-		closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "no available account")
-		return
-	}
-	if selection == nil || selection.Account == nil {
-		closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "no available account")
-		return
-	}
+	maxAccountSwitches := h.maxAccountSwitches
+	switchCount := 0
+	failedAccountIDs := make(map[int64]struct{})
+	var lastFailoverErr *service.UpstreamFailoverError
 
-	account := selection.Account
-	accountMaxConcurrency := account.Concurrency
-	if selection.WaitPlan != nil && selection.WaitPlan.MaxConcurrency > 0 {
-		accountMaxConcurrency = selection.WaitPlan.MaxConcurrency
-	}
-	accountReleaseFunc := selection.ReleaseFunc
-	if !selection.Acquired {
-		if selection.WaitPlan == nil {
-			closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
-			return
-		}
-		fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlotForGroup(
+	for {
+		reqLog.Debug("openai.websocket_account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithScheduler(
 			ctx,
-			account.ID,
 			apiKey.GroupID,
-			selection.WaitPlan.MaxConcurrency,
+			previousResponseID,
+			sessionHash,
+			reqModel,
+			failedAccountIDs,
+			service.OpenAIUpstreamTransportResponsesWebsocketV2,
+			false,
 		)
 		if err != nil {
-			reqLog.Warn("openai.websocket_account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-			closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire account concurrency slot")
-			return
-		}
-		if !fastAcquired {
-			closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
-			return
-		}
-		accountReleaseFunc = fastReleaseFunc
-	}
-	currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
-	if err := h.gatewayService.BindStickySession(ctx, apiKey.GroupID, sessionHash, account.ID); err != nil {
-		reqLog.Warn("openai.websocket_bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-	}
-
-	token, _, err := h.gatewayService.GetAccessToken(ctx, account)
-	if err != nil {
-		reqLog.Warn("openai.websocket_get_access_token_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-		closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to get access token")
-		return
-	}
-
-	reqLog.Debug("openai.websocket_account_selected",
-		zap.Int64("account_id", account.ID),
-		zap.String("account_name", account.Name),
-		zap.String("schedule_layer", scheduleDecision.Layer),
-		zap.Int("candidate_count", scheduleDecision.CandidateCount),
-	)
-
-	wsFirstMessage, wsFirstModel := h.applyOpenAIResponsesChannelMapping(firstMessage, reqModel, channelMappingWS)
-	effectiveWSFirstModel := resolveOpenAIResponsesEffectiveModel(account, wsFirstModel)
-	firstTurnImageIntent, firstTurnNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveWSFirstModel, wsFirstMessage)
-	if firstTurnImageIntent && !allowImageGeneration {
-		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
-		return
-	}
-	currentTurnNeedsImageSlot = firstTurnNeedsImageSlot
-
-	hooks := &service.OpenAIWSIngressHooks{
-		InitialRequestModel: reqModel,
-		BeforeRequest: func(turn int, payload []byte, originalModel string) error {
-			if turn == 1 {
-				return nil
-			}
-			if !gjson.ValidBytes(payload) {
-				return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", errors.New("invalid json"))
-			}
-			model := strings.TrimSpace(originalModel)
-			if model == "" {
-				model = strings.TrimSpace(gjson.GetBytes(payload, "model").String())
-			}
-			if model == "" {
-				model = reqModel
-			}
-			if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, payload); decision != nil && decision.Blocked {
-				writeContentModerationWSError(ctx, wsConn, decision)
-				return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, decision.Message, nil)
-			}
-			effectiveModel := resolveOpenAIResponsesEffectiveModel(account, model)
-			imageIntent, needsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveModel, payload)
-			if imageIntent && !allowImageGeneration {
-				return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage(), nil)
-			}
-			currentTurnNeedsImageSlot = needsImageSlot
-			return nil
-		},
-		BeforeTurn: func(turn int) error {
-			if turn > 1 {
-				// 防御式清理：避免异常路径下旧槽位覆盖导致泄漏。
-				releaseTurnSlots()
-				// 非首轮 turn 需要重新抢占并发槽位，避免长连接空闲占槽。
-				userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlot(ctx, subject.UserID, subject.Concurrency)
-				if err != nil {
-					return service.NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to acquire user concurrency slot", err)
-				}
-				if !userAcquired {
-					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "too many concurrent requests, please retry later", nil)
-				}
-				accountReleaseFunc, accountAcquired, err := h.concurrencyHelper.TryAcquireAccountSlotForGroup(ctx, account.ID, apiKey.GroupID, accountMaxConcurrency)
-				if err != nil {
-					if userReleaseFunc != nil {
-						userReleaseFunc()
-					}
-					return service.NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to acquire account concurrency slot", err)
-				}
-				if !accountAcquired {
-					if userReleaseFunc != nil {
-						userReleaseFunc()
-					}
-					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "account is busy, please retry later", nil)
-				}
-				currentUserRelease = wrapReleaseOnDone(ctx, userReleaseFunc)
-				currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
-			}
-			if currentTurnNeedsImageSlot {
-				imageReleaseFunc, err := h.acquireImageGenerationWSSlot(ctx)
-				if err != nil {
-					releaseTurnSlots()
-					return err
-				}
-				currentImageRelease = imageReleaseFunc
+			reqLog.Warn("openai.websocket_account_select_failed",
+				zap.Error(err),
+				zap.Int("excluded_account_count", len(failedAccountIDs)),
+			)
+			if lastFailoverErr != nil {
+				closeOpenAIWSFailoverExhausted(wsConn, lastFailoverErr)
 			} else {
-				currentImageRelease = nil
+				closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "no available account")
 			}
-			return nil
-		},
-		AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
-			releaseTurnSlots()
-			if turnErr != nil {
-				if result == nil || result.ImageCount <= 0 {
-					return
-				}
-				reqLog.Warn("openai.websocket_partial_error_with_image_result",
-					zap.Int64("account_id", account.ID),
-					zap.Int("image_count", result.ImageCount),
-					zap.Error(turnErr),
-				)
+			return
+		}
+		if selection == nil || selection.Account == nil {
+			if lastFailoverErr != nil {
+				closeOpenAIWSFailoverExhausted(wsConn, lastFailoverErr)
+			} else {
+				closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "no available account")
 			}
-			if result == nil {
+			return
+		}
+
+		account := selection.Account
+		accountMaxConcurrency := account.Concurrency
+		if selection.WaitPlan != nil && selection.WaitPlan.MaxConcurrency > 0 {
+			accountMaxConcurrency = selection.WaitPlan.MaxConcurrency
+		}
+		accountReleaseFunc := selection.ReleaseFunc
+		if !selection.Acquired {
+			if selection.WaitPlan == nil {
+				closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
 				return
 			}
-			if account.Type == service.AccountTypeOAuth {
-				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(ctx, account.ID, result.ResponseHeaders)
+			fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlotForGroup(
+				ctx,
+				account.ID,
+				apiKey.GroupID,
+				selection.WaitPlan.MaxConcurrency,
+			)
+			if err != nil {
+				reqLog.Warn("openai.websocket_account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire account concurrency slot")
+				return
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
-			inboundEndpoint := GetInboundEndpoint(c)
-			upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
-			h.submitOpenAIUsageRecordTask(result, func(taskCtx context.Context) {
-				if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
-					Result:             result,
-					APIKey:             apiKey,
-					User:               apiKey.User,
-					Account:            account,
-					Subscription:       subscription,
-					InboundEndpoint:    inboundEndpoint,
-					UpstreamEndpoint:   upstreamEndpoint,
-					UserAgent:          userAgent,
-					IPAddress:          clientIP,
-					RequestPayloadHash: service.HashUsageRequestPayload(firstMessage),
-					APIKeyService:      h.apiKeyService,
-					ChannelUsageFields: channelMappingWS.ToUsageFields(reqModel, result.UpstreamModel),
-				}); err != nil {
-					reqLog.Error("openai.websocket_record_usage_failed",
-						zap.Int64("account_id", account.ID),
-						zap.String("request_id", result.RequestID),
-						zap.Error(err),
-					)
-				}
-			})
-		},
-	}
+			if !fastAcquired {
+				closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
+				return
+			}
+			accountReleaseFunc = fastReleaseFunc
+		}
+		currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
+		if err := h.gatewayService.BindStickySession(ctx, apiKey.GroupID, sessionHash, account.ID); err != nil {
+			reqLog.Warn("openai.websocket_bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		}
 
-	if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
-		h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
-		closeStatus, closeReason := summarizeWSCloseErrorForLog(err)
-		reqLog.Warn("openai.websocket_proxy_failed",
-			zap.Int64("account_id", account.ID),
-			zap.Error(err),
-			zap.String("close_status", closeStatus),
-			zap.String("close_reason", closeReason),
-		)
-		var closeErr *service.OpenAIWSClientCloseError
-		if errors.As(err, &closeErr) {
-			closeOpenAIClientWS(wsConn, closeErr.StatusCode(), closeErr.Reason())
+		token, _, err := h.gatewayService.GetAccessToken(ctx, account)
+		if err != nil {
+			reqLog.Warn("openai.websocket_get_access_token_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to get access token")
 			return
 		}
-		closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "upstream websocket proxy failed")
+
+		reqLog.Debug("openai.websocket_account_selected",
+			zap.Int64("account_id", account.ID),
+			zap.String("account_name", account.Name),
+			zap.String("schedule_layer", scheduleDecision.Layer),
+			zap.Int("candidate_count", scheduleDecision.CandidateCount),
+		)
+
+		wsFirstMessage, wsFirstModel := h.applyOpenAIResponsesChannelMapping(firstMessage, reqModel, channelMappingWS)
+		effectiveWSFirstModel := resolveOpenAIResponsesEffectiveModel(account, wsFirstModel)
+		firstTurnImageIntent, firstTurnNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveWSFirstModel, wsFirstMessage)
+		if firstTurnImageIntent && !allowImageGeneration {
+			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
+			return
+		}
+		currentTurnNeedsImageSlot = firstTurnNeedsImageSlot
+
+		hooks := &service.OpenAIWSIngressHooks{
+			InitialRequestModel: reqModel,
+			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
+				if turn == 1 {
+					return nil
+				}
+				if !gjson.ValidBytes(payload) {
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", errors.New("invalid json"))
+				}
+				model := strings.TrimSpace(originalModel)
+				if model == "" {
+					model = strings.TrimSpace(gjson.GetBytes(payload, "model").String())
+				}
+				if model == "" {
+					model = reqModel
+				}
+				if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, payload); decision != nil && decision.Blocked {
+					writeContentModerationWSError(ctx, wsConn, decision)
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, decision.Message, nil)
+				}
+				effectiveModel := resolveOpenAIResponsesEffectiveModel(account, model)
+				imageIntent, needsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveModel, payload)
+				if imageIntent && !allowImageGeneration {
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage(), nil)
+				}
+				currentTurnNeedsImageSlot = needsImageSlot
+				return nil
+			},
+			BeforeTurn: func(turn int) error {
+				if turn > 1 {
+					// 防御式清理：避免异常路径下旧槽位覆盖导致泄漏。
+					releaseTurnSlots()
+					// 非首轮 turn 需要重新抢占并发槽位，避免长连接空闲占槽。
+					userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlot(ctx, subject.UserID, subject.Concurrency)
+					if err != nil {
+						return service.NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to acquire user concurrency slot", err)
+					}
+					if !userAcquired {
+						return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "too many concurrent requests, please retry later", nil)
+					}
+					accountReleaseFunc, accountAcquired, err := h.concurrencyHelper.TryAcquireAccountSlotForGroup(ctx, account.ID, apiKey.GroupID, accountMaxConcurrency)
+					if err != nil {
+						if userReleaseFunc != nil {
+							userReleaseFunc()
+						}
+						return service.NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to acquire account concurrency slot", err)
+					}
+					if !accountAcquired {
+						if userReleaseFunc != nil {
+							userReleaseFunc()
+						}
+						return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "account is busy, please retry later", nil)
+					}
+					currentUserRelease = wrapReleaseOnDone(ctx, userReleaseFunc)
+					currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
+				}
+				if currentTurnNeedsImageSlot {
+					imageReleaseFunc, err := h.acquireImageGenerationWSSlot(ctx)
+					if err != nil {
+						releaseTurnSlots()
+						return err
+					}
+					currentImageRelease = imageReleaseFunc
+				} else {
+					currentImageRelease = nil
+				}
+				return nil
+			},
+			AfterTurn: func(turn int, turnPayload []byte, result *service.OpenAIForwardResult, turnErr error) {
+				releaseTurnSlots()
+				if turnErr != nil {
+					if result == nil || result.ImageCount <= 0 {
+						return
+					}
+					reqLog.Warn("openai.websocket_partial_error_with_image_result",
+						zap.Int64("account_id", account.ID),
+						zap.Int("image_count", result.ImageCount),
+						zap.Error(turnErr),
+					)
+				}
+				if result == nil {
+					return
+				}
+				if account.Type == service.AccountTypeOAuth {
+					h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(ctx, account.ID, result.ResponseHeaders)
+				}
+				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
+				inboundEndpoint := GetInboundEndpoint(c)
+				upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+				requestPayloadHash := service.HashUsageRequestPayload(turnPayload)
+				h.submitOpenAIUsageRecordTask(result, func(taskCtx context.Context) {
+					if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
+						Result:             result,
+						APIKey:             apiKey,
+						User:               apiKey.User,
+						Account:            account,
+						Subscription:       subscription,
+						InboundEndpoint:    inboundEndpoint,
+						UpstreamEndpoint:   upstreamEndpoint,
+						UserAgent:          userAgent,
+						IPAddress:          clientIP,
+						RequestPayloadHash: requestPayloadHash,
+						APIKeyService:      h.apiKeyService,
+						QuotaPlatform:      quotaPlatform,
+						ChannelUsageFields: channelMappingWS.ToUsageFields(reqModel, result.UpstreamModel),
+					}); err != nil {
+						reqLog.Error("openai.websocket_record_usage_failed",
+							zap.Int64("account_id", account.ID),
+							zap.String("request_id", result.RequestID),
+							zap.Error(err),
+						)
+					}
+				})
+			},
+		}
+
+		if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
+			var failoverErr *service.UpstreamFailoverError
+			if errors.As(err, &failoverErr) {
+				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				releaseAccountScopedSlots()
+				failedAccountIDs[account.ID] = struct{}{}
+				lastFailoverErr = failoverErr
+				if switchCount >= maxAccountSwitches {
+					closeOpenAIWSFailoverExhausted(wsConn, failoverErr)
+					return
+				}
+				switchCount++
+				if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount) {
+					closeOpenAIWSFailoverExhausted(wsConn, failoverErr)
+					return
+				}
+				h.gatewayService.RecordOpenAIAccountSwitch()
+				reqLog.Warn("openai.websocket_upstream_failover_switching",
+					zap.Int64("account_id", account.ID),
+					zap.Int("upstream_status", failoverErr.StatusCode),
+					zap.Int("switch_count", switchCount),
+					zap.Int("max_switches", maxAccountSwitches),
+				)
+				if !ensureUserSlotHeld() {
+					return
+				}
+				continue
+			}
+
+			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+			closeStatus, closeReason := summarizeWSCloseErrorForLog(err)
+			reqLog.Warn("openai.websocket_proxy_failed",
+				zap.Int64("account_id", account.ID),
+				zap.Error(err),
+				zap.String("close_status", closeStatus),
+				zap.String("close_reason", closeReason),
+			)
+			var closeErr *service.OpenAIWSClientCloseError
+			if errors.As(err, &closeErr) {
+				closeOpenAIClientWS(wsConn, closeErr.StatusCode(), closeErr.Reason())
+				return
+			}
+			closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "upstream websocket proxy failed")
+			return
+		}
+		reqLog.Info("openai.websocket_ingress_closed", zap.Int64("account_id", account.ID))
 		return
 	}
-	reqLog.Info("openai.websocket_ingress_closed", zap.Int64("account_id", account.ID))
 }
 
 func (h *OpenAIGatewayHandler) recoverResponsesPanic(c *gin.Context, streamStarted *bool) {
@@ -1630,11 +1705,7 @@ func (h *OpenAIGatewayHandler) submitUsageRecordTask(task service.UsageRecordTas
 }
 
 func (h *OpenAIGatewayHandler) submitOpenAIUsageRecordTask(result *service.OpenAIForwardResult, task service.UsageRecordTask) {
-	if result != nil && result.ImageCount > 0 {
-		h.submitMandatoryUsageRecordTask(task)
-		return
-	}
-	h.submitUsageRecordTask(task)
+	h.submitMandatoryUsageRecordTask(task)
 }
 
 func (h *OpenAIGatewayHandler) submitMandatoryUsageRecordTask(task service.UsageRecordTask) {
@@ -1825,6 +1896,11 @@ func (h *OpenAIGatewayHandler) mapUpstreamError(statusCode int) (int, string, st
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
 	if openAIStreamingResponseStarted(c, streamStarted) {
+		if inboundIsResponses(c) {
+			if writeResponsesFailedSSE(c, errType, message) {
+				return
+			}
+		}
 		// Stream already started, send error as SSE event then close
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {
@@ -1862,8 +1938,11 @@ func openAIStreamingResponseStarted(c *gin.Context, streamStarted bool) bool {
 
 // ensureForwardErrorResponse 在 Forward 返回错误但尚未写响应时补写统一错误响应。
 func (h *OpenAIGatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarted bool, forwardErr error) bool {
-	if c == nil || c.Writer == nil || c.Writer.Written() {
+	if c == nil || c.Writer == nil {
 		return false
+	}
+	if c.Writer.Written() {
+		streamStarted = true
 	}
 	detail := resolveUpstreamForwardErrorDetail(c, forwardErr)
 	service.SetOpsUpstreamErrorWithType(c, detail.ErrorType, 0, detail.Message, detail.Detail)
@@ -1935,6 +2014,18 @@ func closeOpenAIClientWS(conn *coderws.Conn, status coderws.StatusCode, reason s
 	}
 	_ = conn.Close(status, reason)
 	_ = conn.CloseNow()
+}
+
+func closeOpenAIWSFailoverExhausted(conn *coderws.Conn, failoverErr *service.UpstreamFailoverError) {
+	reason := "upstream request failed"
+	if failoverErr != nil {
+		if isOpenAIRetryableOverloadFailover(failoverErr) {
+			reason = "upstream overloaded, retry later"
+		} else if msg := strings.TrimSpace(service.ExtractUpstreamErrorMessage(failoverErr.ResponseBody)); msg != "" {
+			reason = msg
+		}
+	}
+	closeOpenAIClientWS(conn, coderws.StatusTryAgainLater, reason)
 }
 
 func writeContentModerationWSError(ctx context.Context, conn *coderws.Conn, decision *service.ContentModerationDecision) {

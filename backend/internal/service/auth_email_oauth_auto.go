@@ -196,6 +196,8 @@ func (s *AuthService) createEmailOAuthUser(ctx context.Context, email, username,
 			return nil, ErrInvitationCodeInvalid
 		}
 	}
+	// snapshot user × platform quota（fail-open）
+	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
 	return user, nil
 }
 

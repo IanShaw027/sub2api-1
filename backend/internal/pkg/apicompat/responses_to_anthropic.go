@@ -118,11 +118,7 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 
 	out.Usage = newAnthropicUsageEnvelope(0, 0, 0)
 	if resp.Usage != nil {
-		out.Usage.InputTokens = resp.Usage.InputTokens
-		out.Usage.OutputTokens = resp.Usage.OutputTokens
-		if resp.Usage.InputTokensDetails != nil {
-			out.Usage.CacheReadInputTokens = resp.Usage.InputTokensDetails.CachedTokens
-		}
+		out.Usage = anthropicUsageFromResponsesUsage(resp.Usage)
 	}
 
 	return out
@@ -143,6 +139,24 @@ func newAnthropicUsageEnvelope(inputTokens, outputTokens, cacheReadTokens int) A
 		Iterations:   []string{},
 		Speed:        "standard",
 	}
+}
+
+func anthropicUsageFromResponsesUsage(u *ResponsesUsage) AnthropicUsage {
+	if u == nil {
+		return newAnthropicUsageEnvelope(0, 0, 0)
+	}
+
+	cacheReadTokens := 0
+	if u.InputTokensDetails != nil && u.InputTokensDetails.CachedTokens > 0 {
+		cacheReadTokens = u.InputTokensDetails.CachedTokens
+	}
+
+	inputTokens := u.InputTokens - cacheReadTokens
+	if inputTokens < 0 {
+		inputTokens = 0
+	}
+
+	return newAnthropicUsageEnvelope(inputTokens, u.OutputTokens, cacheReadTokens)
 }
 
 func refusalStopDetails(explanation string) *AnthropicStopDetails {
@@ -595,13 +609,18 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 	stopReason := "end_turn"
 	var stopDetails *AnthropicStopDetails
 	var refusalExplanation string
+	if evt.Usage != nil {
+		usage := anthropicUsageFromResponsesUsage(evt.Usage)
+		state.InputTokens = usage.InputTokens
+		state.OutputTokens = usage.OutputTokens
+		state.CacheReadInputTokens = usage.CacheReadInputTokens
+	}
 	if evt.Response != nil {
 		if evt.Response.Usage != nil {
-			state.InputTokens = evt.Response.Usage.InputTokens
-			state.OutputTokens = evt.Response.Usage.OutputTokens
-			if evt.Response.Usage.InputTokensDetails != nil {
-				state.CacheReadInputTokens = evt.Response.Usage.InputTokensDetails.CachedTokens
-			}
+			usage := anthropicUsageFromResponsesUsage(evt.Response.Usage)
+			state.InputTokens = usage.InputTokens
+			state.OutputTokens = usage.OutputTokens
+			state.CacheReadInputTokens = usage.CacheReadInputTokens
 		}
 		switch evt.Response.Status {
 		case "incomplete":

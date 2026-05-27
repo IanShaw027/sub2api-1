@@ -3057,6 +3057,7 @@ CREATE TABLE IF NOT EXISTS user_affiliate_ledger (
 		nil,
 		options.defaultSubAssigner,
 		effectiveAffiliateService,
+		nil,
 	)
 	userSvc := service.NewUserService(userRepo, nil, nil, nil, options.mediaService)
 	var totpSvc *service.TotpService

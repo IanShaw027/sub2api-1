@@ -1,7 +1,5 @@
 <template>
-  <!-- Row 1: Core Stats -->
   <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-    <!-- Balance -->
     <button
       v-if="!isSimple"
       type="button"
@@ -23,7 +21,6 @@
       </div>
     </button>
 
-    <!-- API Keys -->
     <div class="card p-4">
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
@@ -37,7 +34,6 @@
       </div>
     </div>
 
-    <!-- Today Requests -->
     <div class="card p-4">
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
@@ -51,7 +47,6 @@
       </div>
     </div>
 
-    <!-- Today Cost -->
     <div class="card p-4">
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
@@ -63,14 +58,17 @@
             <span class="text-purple-600 dark:text-purple-400" :title="t('dashboard.actual')">${{ formatCost(stats?.today_actual_cost || 0) }}</span>
             <span class="text-sm font-normal text-gray-400 dark:text-gray-500" :title="t('dashboard.standard')"> / ${{ formatCost(stats?.today_cost || 0) }}</span>
           </p>
+          <p class="text-xs">
+            <span class="text-gray-500 dark:text-gray-400">{{ t('common.total') }}: </span>
+            <span class="text-purple-600 dark:text-purple-400" :title="t('dashboard.actual')">${{ formatCost(stats?.total_actual_cost || 0) }}</span>
+            <span class="text-gray-400 dark:text-gray-500" :title="t('dashboard.standard')"> / ${{ formatCost(stats?.total_cost || 0) }}</span>
+          </p>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Row 2: Token Stats -->
   <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-    <!-- Today Tokens -->
     <div class="card p-4">
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
@@ -85,7 +83,6 @@
       </div>
     </div>
 
-    <!-- Total Tokens -->
     <div class="card p-4">
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30">
@@ -100,7 +97,6 @@
       </div>
     </div>
 
-    <!-- Performance (RPM/TPM) -->
     <div class="card p-4">
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30">
@@ -120,7 +116,6 @@
       </div>
     </div>
 
-    <!-- Avg Response Time -->
     <div class="card p-4">
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
@@ -134,36 +129,256 @@
       </div>
     </div>
   </div>
+
+  <div v-if="!isSimple && platformCards.length > 0" class="card p-4">
+    <div class="mb-3 flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('dashboard.platformBreakdown') }}</h3>
+      <span class="text-xs text-gray-500 dark:text-gray-400">
+        {{ t('dashboard.platformCount', { count: sortedPlatforms.length }) }}
+      </span>
+    </div>
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div
+        v-for="item in platformCards"
+        :key="item.platform"
+        :class="[
+          'rounded-lg border p-3',
+          item.isOther
+            ? 'border-dashed border-gray-300 bg-gray-50 dark:border-dark-500 dark:bg-dark-700/30'
+            : 'border-gray-200 dark:border-dark-600'
+        ]"
+      >
+        <div class="flex items-center justify-between">
+          <span class="text-sm font-semibold text-gray-900 dark:text-white">
+            {{ item.isOther ? t('dashboard.platformOther') : platformLabel(item.platform) }}
+          </span>
+          <span class="font-mono text-sm text-purple-600 dark:text-purple-400" :title="t('dashboard.actual')">
+            ${{ formatCost(item.total_actual_cost) }}
+          </span>
+        </div>
+        <div class="mt-2 space-y-1 text-xs">
+          <div class="flex items-center justify-between">
+            <span class="text-gray-500 dark:text-gray-400">{{ t('dashboard.todayCost') }}</span>
+            <span class="font-mono text-gray-900 dark:text-white">${{ formatCost(item.today_actual_cost) }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-gray-500 dark:text-gray-400">{{ t('dashboard.requests') }}</span>
+            <span class="font-mono text-gray-700 dark:text-gray-300">
+              {{ item.total_requests > 0 ? formatNumber(item.total_requests) : '-' }}
+            </span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-gray-500 dark:text-gray-400">{{ t('dashboard.tokens') }}</span>
+            <span class="font-mono text-gray-700 dark:text-gray-300">
+              {{ item.total_tokens > 0 ? formatTokens(item.total_tokens) : '-' }}
+            </span>
+          </div>
+        </div>
+
+        <div v-if="hasAnyLimit(item.quota) && !item.isOther" class="mt-3 space-y-1.5 border-t border-gray-200 pt-2 dark:border-dark-700">
+          <p class="text-[10px] uppercase tracking-wide text-gray-400">
+            {{ t('dashboard.platformQuota.title') }}
+          </p>
+          <template v-for="w in (['daily', 'weekly', 'monthly'] as const)" :key="w">
+            <div v-if="quotaVal(item.quota, `${w}_limit_usd`) != null" class="space-y-0.5">
+              <template v-if="(quotaVal(item.quota, `${w}_limit_usd`) as number) === 0">
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-gray-600 dark:text-gray-300">{{ t(`dashboard.platformQuota.${w}`) }}</span>
+                  <span class="font-mono text-red-500">{{ t('dashboard.platformQuota.disabled') }}</span>
+                </div>
+                <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700">
+                  <div class="h-full w-full rounded-full bg-red-500" />
+                </div>
+              </template>
+              <template v-else>
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-gray-600 dark:text-gray-300">{{ t(`dashboard.platformQuota.${w}`) }}</span>
+                  <span class="font-mono text-gray-700 dark:text-gray-200">
+                    ${{ formatUsd((quotaVal(item.quota, `${w}_usage_usd`) as number) ?? 0) }} / ${{ formatUsd(quotaVal(item.quota, `${w}_limit_usd`) as number) }}
+                  </span>
+                </div>
+                <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700">
+                  <div
+                    class="h-full rounded-full transition-all"
+                    :class="quotaBarClass(calcPercent((quotaVal(item.quota, `${w}_usage_usd`) as number) ?? 0, quotaVal(item.quota, `${w}_limit_usd`) as number))"
+                    :style="{ width: calcPercent((quotaVal(item.quota, `${w}_usage_usd`) as number) ?? 0, quotaVal(item.quota, `${w}_limit_usd`) as number) + '%' }"
+                  />
+                </div>
+                <p v-if="quotaVal(item.quota, `${w}_window_resets_at`)" class="text-[10px] text-gray-400">
+                  {{ t('dashboard.platformQuota.resetsAt', { time: formatResetTime(quotaVal(item.quota, `${w}_window_resets_at`) as string) }) }}
+                </p>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import type { UserDashboardStats as UserStatsType } from '@/api/usage'
+import type { PlatformQuotaItem } from '@/types'
+
+interface FusedPlatformCard {
+  platform: string
+  total_actual_cost: number
+  today_actual_cost: number
+  total_requests: number
+  total_tokens: number
+  isOther?: boolean
+  quota?: PlatformQuotaItem
+}
 
 const emit = defineEmits<{
   'balance-history': []
 }>()
 
-defineProps<{
+const props = defineProps<{
   stats: UserStatsType
   balance: number
   isSimple: boolean
+  platformQuotas?: PlatformQuotaItem[] | null
 }>()
+
 const { t } = useI18n()
 
-const formatBalance = (b: number) =>
+const PLATFORM_LABELS: Record<string, string> = {
+  anthropic: 'Claude',
+  openai: 'OpenAI',
+  gemini: 'Gemini',
+  antigravity: 'Antigravity',
+}
+
+const platformLabel = (platform: string) => PLATFORM_LABELS[platform] ?? platform
+
+const sortedPlatforms = computed(() => {
+  const list = props.stats?.by_platform ?? []
+  return [...list].sort((a, b) => b.total_actual_cost - a.total_actual_cost)
+})
+
+const OTHER_THRESHOLD = 0.0001
+const platformCards = computed<FusedPlatformCard[]>(() => {
+  const byPlatform = new Map<string, (typeof sortedPlatforms.value)[number]>()
+  for (const item of props.stats?.by_platform ?? []) {
+    byPlatform.set(item.platform, item)
+  }
+
+  const byQuota = new Map<string, PlatformQuotaItem>()
+  for (const quota of props.platformQuotas ?? []) {
+    byQuota.set(quota.platform, quota)
+  }
+
+  const platforms = new Set<string>([...byPlatform.keys(), ...byQuota.keys()])
+  const platformOrder = ['anthropic', 'openai', 'gemini', 'antigravity']
+  const cards: FusedPlatformCard[] = []
+
+  for (const platform of platforms) {
+    const stat = byPlatform.get(platform)
+    cards.push({
+      platform,
+      total_actual_cost: stat?.total_actual_cost ?? 0,
+      today_actual_cost: stat?.today_actual_cost ?? 0,
+      total_requests: stat?.total_requests ?? 0,
+      total_tokens: stat?.total_tokens ?? 0,
+      quota: byQuota.get(platform),
+    })
+  }
+
+  cards.sort((a, b) => {
+    const ai = platformOrder.indexOf(a.platform)
+    const bi = platformOrder.indexOf(b.platform)
+    if (ai === -1 && bi === -1) return a.platform.localeCompare(b.platform)
+    if (ai === -1) return 1
+    if (bi === -1) return -1
+    return ai - bi
+  })
+
+  const total = props.stats?.total_actual_cost ?? 0
+  const today = props.stats?.today_actual_cost ?? 0
+  const sumTotal = cards.reduce((sum, card) => sum + card.total_actual_cost, 0)
+  const sumToday = cards.reduce((sum, card) => sum + card.today_actual_cost, 0)
+  const diffTotal = Math.max(0, total - sumTotal)
+  const diffToday = Math.max(0, today - sumToday)
+
+  if (diffTotal > OTHER_THRESHOLD || diffToday > OTHER_THRESHOLD) {
+    cards.push({
+      platform: '__other__',
+      total_actual_cost: diffTotal,
+      today_actual_cost: diffToday,
+      total_requests: 0,
+      total_tokens: 0,
+      isOther: true,
+    })
+  }
+
+  return cards
+})
+
+type QuotaWindow = 'daily' | 'weekly' | 'monthly'
+type QuotaField = `${QuotaWindow}_limit_usd` | `${QuotaWindow}_usage_usd` | `${QuotaWindow}_window_resets_at`
+
+function quotaVal(
+  quota: PlatformQuotaItem | undefined,
+  key: QuotaField,
+): PlatformQuotaItem[QuotaField] {
+  return quota?.[key]
+}
+
+function hasAnyLimit(quota: PlatformQuotaItem | undefined): boolean {
+  if (!quota) return false
+  return quota.daily_limit_usd != null || quota.weekly_limit_usd != null || quota.monthly_limit_usd != null
+}
+
+function calcPercent(usage: number, limit: number): number {
+  if (!limit || limit <= 0) return 0
+  return Math.min(100, Math.max(0, Math.round((usage / limit) * 100)))
+}
+
+function quotaBarClass(percent: number): string {
+  if (percent >= 95) return 'bg-red-500'
+  if (percent >= 75) return 'bg-amber-500'
+  return 'bg-green-500'
+}
+
+const usdFormatter = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+function formatUsd(value: number): string {
+  if (!Number.isFinite(value)) return '0.00'
+  return usdFormatter.format(value)
+}
+
+function formatResetTime(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return date.toLocaleString(undefined, {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
+const formatBalance = (balance: number) =>
   new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(b)
+    maximumFractionDigits: 2,
+  }).format(balance)
 
-const formatNumber = (n: number) => n.toLocaleString()
-const formatCost = (c: number) => c.toFixed(4)
-const formatTokens = (t: number) => {
-  if (t >= 1_000_000) return `${(t / 1_000_000).toFixed(1)}M`
-  if (t >= 1000) return `${(t / 1000).toFixed(1)}K`
-  return t.toString()
+const formatNumber = (value: number) => value.toLocaleString()
+const formatCost = (value: number) => value.toFixed(4)
+const formatTokens = (value: number) => {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}K`
+  return value.toString()
 }
-const formatDuration = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms.toFixed(0)}ms`
+const formatDuration = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms.toFixed(0)}ms`)
 </script>

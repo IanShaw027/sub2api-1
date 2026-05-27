@@ -286,6 +286,8 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 	s.recordSignupGrantHistory(ctx, user.ID, signupSource, grantPlan)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 	appendRuntimeMessage(user, buildSignupGrantMessage(grantPlan))
+	// snapshot user × platform quota（fail-open）
+	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
 	if s.affiliateService != nil {
 		if _, err := s.affiliateService.EnsureUserAffiliate(ctx, user.ID); err != nil {
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to initialize affiliate profile for oauth user %d: %v", user.ID, err)

@@ -567,8 +567,9 @@ func ProvideBillingCacheService(
 	rpmCache UserRPMCache,
 	rateRepo UserGroupRateRepository,
 	cfg *config.Config,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
 ) *BillingCacheService {
-	return NewBillingCacheService(cache, userRepo, subRepo, apiKeyRepo, rpmCache, rateRepo, cfg)
+	return NewBillingCacheService(cache, userRepo, subRepo, apiKeyRepo, rpmCache, rateRepo, cfg, userPlatformQuotaRepo)
 }
 
 // ProvideAPIKeyService wires APIKeyService and connects rate-limit cache invalidation.
@@ -616,6 +617,7 @@ func ProvideGatewayService(
 	balanceNotifyService *BalanceNotifyService,
 	kiroTokenProvider *KiroTokenProvider,
 	kiroGatewayService *KiroGatewayService,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
 ) *GatewayService {
 	svc := NewGatewayService(
 		accountRepo,
@@ -644,6 +646,7 @@ func ProvideGatewayService(
 		channelService,
 		resolver,
 		balanceNotifyService,
+		userPlatformQuotaRepo,
 	)
 	svc.SetKiroDeps(kiroTokenProvider, kiroGatewayService)
 	return svc
@@ -806,6 +809,7 @@ func ProvideOpenAIGatewayService(
 	balanceNotifyService *BalanceNotifyService,
 	tlsFPProfileService *TLSFingerprintProfileService,
 	settingService *SettingService,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
 ) *OpenAIGatewayService {
 	return NewOpenAIGatewayService(
 		accountRepo,
@@ -829,6 +833,7 @@ func ProvideOpenAIGatewayService(
 		balanceNotifyService,
 		tlsFPProfileService,
 		settingService,
+		userPlatformQuotaRepo,
 	)
 }
 

@@ -93,6 +93,10 @@ const baseConfig = (): ContentModerationConfig => ({
   pre_hash_check_enabled: false,
   blocked_keywords: [],
   keyword_blocking_mode: 'keyword_and_api',
+  thresholds: {
+    harassment: 0.98,
+    sexual: 0.65,
+  },
   model_filter: {
     type: 'all',
     models: [],
@@ -223,6 +227,70 @@ describe('admin RiskControlView', () => {
       },
     }))
     expect(showError).not.toHaveBeenCalled()
+  })
+
+  it('submits edited risk control thresholds when saving moderation config', async () => {
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.riskThresholds').trigger('click')
+    await wrapper.get('[data-test="risk-threshold-sexual"]').setValue('72')
+    await wrapper.get('[data-test="risk-threshold-harassment"]').setValue('99')
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      thresholds: expect.objectContaining({
+        sexual: 0.72,
+        harassment: 0.99,
+      }),
+    }))
+    expect(showError).not.toHaveBeenCalled()
+  })
+
+  it('does not silently save cleared or invalid risk thresholds as 0%', async () => {
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.riskThresholds').trigger('click')
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm
+    setupState.configForm.thresholds.sexual = ''
+    setupState.configForm.thresholds.harassment = Number.NaN
+
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalled()
   })
 
   it('keeps the active settings tab readable in dark mode', async () => {

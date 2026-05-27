@@ -27,6 +27,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/cespare/xxhash/v2"
@@ -468,6 +469,7 @@ type OpenAIGatewayService struct {
 	balanceNotifyService  *BalanceNotifyService
 	settingService        *SettingService
 	tlsFPProfileService   *TLSFingerprintProfileService
+	userPlatformQuotaRepo UserPlatformQuotaRepository
 
 	openaiWSPoolOnce              sync.Once
 	openaiWSStateStoreOnce        sync.Once
@@ -512,12 +514,9 @@ func NewOpenAIGatewayService(
 	channelService *ChannelService,
 	balanceNotifyService *BalanceNotifyService,
 	tlsFPProfileService *TLSFingerprintProfileService,
-	settingServices ...*SettingService,
+	settingService *SettingService,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
 ) *OpenAIGatewayService {
-	var settingService *SettingService
-	if len(settingServices) > 0 {
-		settingService = settingServices[0]
-	}
 	svc := &OpenAIGatewayService{
 		accountRepo:         accountRepo,
 		usageLogRepo:        usageLogRepo,
@@ -549,6 +548,7 @@ func NewOpenAIGatewayService(
 		balanceNotifyService:  balanceNotifyService,
 		settingService:        settingService,
 		tlsFPProfileService:   tlsFPProfileService,
+		userPlatformQuotaRepo: userPlatformQuotaRepo,
 		responseHeaderFilter:  compileResponseHeaderFilter(cfg),
 		codexSnapshotThrottle: newAccountWriteThrottle(openAICodexSnapshotPersistMinInterval),
 	}
@@ -654,12 +654,13 @@ func (s *OpenAIGatewayService) getCodexSnapshotThrottle() *accountWriteThrottle 
 
 func (s *OpenAIGatewayService) billingDeps() *billingDeps {
 	return &billingDeps{
-		accountRepo:          s.accountRepo,
-		userRepo:             s.userRepo,
-		userSubRepo:          s.userSubRepo,
-		billingCacheService:  s.billingCacheService,
-		deferredService:      s.deferredService,
-		balanceNotifyService: s.balanceNotifyService,
+		accountRepo:           s.accountRepo,
+		userRepo:              s.userRepo,
+		userSubRepo:           s.userSubRepo,
+		billingCacheService:   s.billingCacheService,
+		deferredService:       s.deferredService,
+		balanceNotifyService:  s.balanceNotifyService,
+		userPlatformQuotaRepo: s.userPlatformQuotaRepo,
 	}
 }
 
@@ -3151,6 +3152,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	apiKeyID := getAPIKeyIDFromContext(c)
 	logCodexCLIOnlyDetection(ctx, c, account, apiKeyID, restrictionResult, body)
 	if restrictionResult.Enabled && !restrictionResult.Matched {
+		MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": gin.H{
 				"type":    "forbidden_error",
@@ -3201,6 +3203,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// 当前仅支持 WSv2；WSv1 命中时直接返回错误，避免出现“配置可开但行为不确定”。
 	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocket {
 		if c != nil {
+			MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": gin.H{
 					"type":    "invalid_request_error",
@@ -3220,6 +3223,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	reqBody, err := getOpenAIRequestBodyMap(c, body)
 	if err != nil {
 		return nil, err
+	}
+	if account.Platform == PlatformOpenAI &&
+		account.Type == AccountTypeAPIKey &&
+		openai_compat.ResolveResponsesSupport(account.Extra) == openai_compat.ResponsesSupportNo {
+		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
 	}
 
 	if v, ok := reqBody["model"].(string); ok {
@@ -4342,17 +4350,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		isCompact := isOpenAIResponsesCompactPath(c)
 		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(c, reqModel, body, s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI); rejectReason != "" {
 			rejectMsg := "OpenAI codex passthrough requires a non-empty instructions field"
-			setOpsUpstreamError(c, http.StatusForbidden, rejectMsg, "")
-			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-				Platform:           account.Platform,
-				AccountID:          account.ID,
-				AccountName:        account.Name,
-				UpstreamStatusCode: http.StatusForbidden,
-				Passthrough:        true,
-				Kind:               "request_error",
-				Message:            rejectMsg,
-				Detail:             rejectReason,
-			})
+			MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
 			logOpenAIPassthroughInstructionsRejected(ctx, c, account, reqModel, rejectReason, body)
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": gin.H{
@@ -4397,6 +4395,19 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	if err != nil {
 		return nil, err
 	}
+	policyModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	if policyModel == "" {
+		policyModel = reqModel
+	}
+	updatedBody, policyErr := s.applyOpenAIFastPolicyToBody(ctx, account, policyModel, body)
+	if policyErr != nil {
+		var blocked *OpenAIFastBlockedError
+		if errors.As(policyErr, &blocked) {
+			writeOpenAIFastPolicyBlockedResponse(c, blocked)
+		}
+		return nil, policyErr
+	}
+	body = updatedBody
 	reqStream := gjson.GetBytes(body, "stream").Bool()
 
 	logger.LegacyPrintf("service.openai_gateway",
@@ -4656,6 +4667,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	if err != nil {
 		return nil, err
 	}
+	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 
 	// 透传客户端请求头（安全白名单）。
 	allowTimeoutHeaders := s.isOpenAIPassthroughTimeoutHeadersAllowed()
@@ -5606,6 +5618,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	if err != nil {
 		return nil, err
 	}
+	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 
 	// Set authentication header
 	req.Header.Set("authorization", "Bearer "+token)
@@ -7524,6 +7537,9 @@ func buildOpenAIResponsesURL(base string) string {
 	if strings.HasSuffix(normalized, "/v1") {
 		return normalized + "/responses"
 	}
+	if hasOpenAIVersionedBasePath(normalized) {
+		return normalized + "/responses"
+	}
 	return normalized + "/v1/responses"
 }
 
@@ -7830,6 +7846,7 @@ type OpenAIRecordUsageInput struct {
 	RequestPayloadHash string
 	RequestType        RequestType
 	APIKeyService      APIKeyQuotaUpdater
+	QuotaPlatform      string // user×platform 配额计量平台：handler 在请求 ctx 内经 QuotaPlatform() 算定后传入
 	ChannelUsageFields
 }
 
@@ -8133,6 +8150,10 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 
 	billingErr := func() error {
+		quotaPlatform := strings.TrimSpace(input.QuotaPlatform)
+		if quotaPlatform == "" {
+			quotaPlatform = PlatformFromAPIKey(apiKey)
+		}
 		_, err := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
 			Cost:                  cost,
 			User:                  user,
@@ -8144,6 +8165,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			AccountRateMultiplier: accountRateMultiplier,
 			APIKeyService:         input.APIKeyService,
 			UsageLog:              usageLog,
+			Platform:              quotaPlatform,
 		}, s.billingDeps(), s.usageBillingRepo)
 		return err
 	}()
@@ -9072,6 +9094,7 @@ func writeOpenAIFastPolicyBlockedResponse(c *gin.Context, err *OpenAIFastBlocked
 	if c == nil || err == nil {
 		return
 	}
+	MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
 	c.JSON(http.StatusForbidden, gin.H{
 		"error": gin.H{
 			"type":    "permission_error",
