@@ -233,6 +233,8 @@ func TestRunUpstreamToClient_FlushesPendingTerminalBeforeDifferentResponse(t *te
 		func(turn RelayTurnResult) {
 			turns = append(turns, turn)
 		},
+		nil,
+		nil,
 		&atomic.Bool{},
 		nil,
 		nil,
@@ -709,6 +711,8 @@ func TestRunUpstreamToClient_DrainTerminatesOnWeakTerminal(t *testing.T) {
 		func(turn RelayTurnResult) {
 			turns = append(turns, turn)
 		},
+		nil,
+		nil,
 		&dropDownstreamWrites,
 		nil,
 		nil,

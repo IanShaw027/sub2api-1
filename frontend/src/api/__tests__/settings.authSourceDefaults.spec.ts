@@ -8,15 +8,7 @@ import {
   sanitizePlatformQuotasMap,
   type UpdateSettingsRequest,
   type AuthSourcePlatformQuotaOverridesMap,
-  type DefaultPlatformQuotasMap,
 } from "@/api/admin/settings";
-
-const allNullQuotas: DefaultPlatformQuotasMap = {
-  anthropic: { daily: null, weekly: null, monthly: null },
-  openai: { daily: null, weekly: null, monthly: null },
-  gemini: { daily: null, weekly: null, monthly: null },
-  antigravity: { daily: null, weekly: null, monthly: null },
-};
 
 const allInheritedOverrides: AuthSourcePlatformQuotaOverridesMap = {
   anthropic: { daily: undefined, weekly: undefined, monthly: undefined },
