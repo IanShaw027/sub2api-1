@@ -1566,23 +1566,6 @@ func pendingOAuthIdentityForUser(
 	return identity, nil
 }
 
-func pendingOAuthCompletionAdoptedAvatarURL(
-	ctx context.Context,
-	client *dbent.Client,
-	session *dbent.PendingAuthSession,
-	userID int64,
-) (string, error) {
-	identity, err := pendingOAuthIdentityForUser(ctx, client, session, userID)
-	if err != nil || identity == nil {
-		return "", err
-	}
-	avatarURL := pendingSessionStringValue(identity.Metadata, "avatar_url")
-	if avatarURL == "" {
-		avatarURL = pendingSessionStringValue(identity.Metadata, "suggested_avatar_url")
-	}
-	return avatarURL, nil
-}
-
 func pendingOAuthIdentityExistsForUser(
 	ctx context.Context,
 	client *dbent.Client,

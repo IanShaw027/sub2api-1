@@ -22,10 +22,10 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 	}
 
 	out := &ResponsesRequest{
-		Model:       req.Model,
-		Input:       inputJSON,
-		Stream:      req.Stream,
-		Include:     responsesIncludeForAnthropicTools(req.Tools),
+		Model:   req.Model,
+		Input:   inputJSON,
+		Stream:  req.Stream,
+		Include: responsesIncludeForAnthropicTools(req.Tools),
 	}
 
 	if !isReasoningModel(req.Model) {

@@ -692,15 +692,15 @@ func newDingTalkOAuthAPIServer(t *testing.T, cfg dingTalkOAuthAPIServerConfig) *
 
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1.0/oauth2/userAccessToken":
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"accessToken":"user-token","refreshToken":"refresh-token","expireIn":7200,"corpId":%q}`, cfg.CorpID)))
+			_, _ = fmt.Fprintf(w, `{"accessToken":"user-token","refreshToken":"refresh-token","expireIn":7200,"corpId":%q}`, cfg.CorpID)
 		case r.Method == http.MethodPost && r.URL.Path == "/v1.0/oauth2/accessToken":
 			_, _ = w.Write([]byte(`{"accessToken":"app-token","expireIn":7200}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1.0/contact/users/me":
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"unionId":%q,"nick":%q}`, cfg.UnionID, cfg.Nick)))
+			_, _ = fmt.Fprintf(w, `{"unionId":%q,"nick":%q}`, cfg.UnionID, cfg.Nick)
 		case r.Method == http.MethodPost && r.URL.Path == "/topapi/user/getbyunionid":
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"errcode":0,"result":{"userid":%q}}`, cfg.UserID)))
+			_, _ = fmt.Fprintf(w, `{"errcode":0,"result":{"userid":%q}}`, cfg.UserID)
 		case r.Method == http.MethodPost && r.URL.Path == "/topapi/v2/user/get":
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"errcode":0,"result":{"userid":%q,"name":%q,"email":%q,"dept_id_list":[42]}}`, cfg.UserID, cfg.Name, cfg.Email)))
+			_, _ = fmt.Fprintf(w, `{"errcode":0,"result":{"userid":%q,"name":%q,"email":%q,"dept_id_list":[42]}}`, cfg.UserID, cfg.Name, cfg.Email)
 		default:
 			http.NotFound(w, r)
 		}

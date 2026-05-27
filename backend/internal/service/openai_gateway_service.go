@@ -480,15 +480,14 @@ type OpenAIGatewayService struct {
 	openaiWSURLBuilder            func(*Account) (string, error)
 	openaiAccountStats            *openAIAccountRuntimeStats
 
-	openaiWSFallbackUntil               sync.Map // key: int64(accountID), value: time.Time
-	openaiWSRetryMetrics                openAIWSRetryMetrics
-	responseHeaderFilter                *responseheaders.CompiledHeaderFilter
-	codexSnapshotThrottle               *accountWriteThrottle
-	openaiCompatSessionResponses        sync.Map
-	openaiAccountRuntimeBlockUntil      sync.Map // key: int64(accountID), value: time.Time
-	openaiOAuth429WindowStartUnixNano   atomic.Int64
-	openaiOAuth429WindowCount           atomic.Int64
-	openaiCompatAnthropicDigestSessions sync.Map
+	openaiWSFallbackUntil             sync.Map // key: int64(accountID), value: time.Time
+	openaiWSRetryMetrics              openAIWSRetryMetrics
+	responseHeaderFilter              *responseheaders.CompiledHeaderFilter
+	codexSnapshotThrottle             *accountWriteThrottle
+	openaiCompatSessionResponses      sync.Map
+	openaiAccountRuntimeBlockUntil    sync.Map // key: int64(accountID), value: time.Time
+	openaiOAuth429WindowStartUnixNano atomic.Int64
+	openaiOAuth429WindowCount         atomic.Int64
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
@@ -2438,7 +2437,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		}
 		result, err := s.tryAcquireAccountSlot(ctx, account.ID, groupID, acquireLimit)
 		if err == nil && result != nil && result.Acquired {
-			return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
+			return s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 		}
 		if stickyAccountID > 0 && stickyAccountID == account.ID && s.concurrencyService != nil {
 			waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, account.ID)
@@ -2506,7 +2505,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 						result, err := s.tryAcquireAccountSlot(ctx, accountID, groupID, concurrencyForOpenAIAccountSelection(account, requiredImageRoute))
 						if err == nil && result != nil && result.Acquired {
 							_ = s.refreshStickySessionTTL(ctx, groupID, sessionHash, openaiStickySessionTTL)
-							return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
+							return s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 						}
 
 						waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
@@ -2601,7 +2600,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				if sessionHash != "" {
 					_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, openaiStickySessionTTL)
 				}
-				return s.newSelectionResult(ctx, fresh, true, result.ReleaseFunc, nil)
+				return s.newAcquiredSelectionResult(ctx, fresh, result.ReleaseFunc)
 			}
 		}
 	} else {
@@ -2683,7 +2682,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 					if sessionHash != "" {
 						_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, openaiStickySessionTTL)
 					}
-					return s.newSelectionResult(ctx, fresh, true, result.ReleaseFunc, nil)
+					return s.newAcquiredSelectionResult(ctx, fresh, result.ReleaseFunc)
 				}
 			}
 		}
@@ -6301,29 +6300,29 @@ func openAIStreamFrameString(frame openAICompatSSEFrame) string {
 	if len(frame.Fields) > 0 {
 		var builder strings.Builder
 		for _, field := range frame.Fields {
-			builder.WriteString(field.Raw)
-			builder.WriteByte('\n')
+			_, _ = builder.WriteString(field.Raw)
+			_ = builder.WriteByte('\n')
 		}
-		builder.WriteByte('\n')
+		_ = builder.WriteByte('\n')
 		return builder.String()
 	}
 	var builder strings.Builder
 	if eventType := strings.TrimSpace(frame.EventType); eventType != "" {
-		builder.WriteString("event: ")
-		builder.WriteString(eventType)
-		builder.WriteByte('\n')
+		_, _ = builder.WriteString("event: ")
+		_, _ = builder.WriteString(eventType)
+		_ = builder.WriteByte('\n')
 	}
 	data := frame.Data
 	if data == "" {
-		builder.WriteString("data:\n\n")
+		_, _ = builder.WriteString("data:\n\n")
 		return builder.String()
 	}
 	for _, line := range strings.Split(data, "\n") {
-		builder.WriteString("data: ")
-		builder.WriteString(line)
-		builder.WriteByte('\n')
+		_, _ = builder.WriteString("data: ")
+		_, _ = builder.WriteString(line)
+		_ = builder.WriteByte('\n')
 	}
-	builder.WriteByte('\n')
+	_ = builder.WriteByte('\n')
 	return builder.String()
 }
 
@@ -6592,7 +6591,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 
 			if correctedData, corrected := s.toolCorrector.CorrectToolCallsInSSEBytes(dataBytes); corrected {
 				openAICompatSetSSEFrameData(&frame, string(correctedData))
-				eventType, data = openAIStreamFrameEventTypeAndData(frame)
+				_, data = openAIStreamFrameEventTypeAndData(frame)
 				dataBytes = correctedData
 			}
 			startsClientOutput = forceFlushFailedEvent || openAIStreamFrameStartsClientOutput(frame)
@@ -6756,20 +6755,6 @@ func extractOpenAISSEDataLine(line string) (string, bool) {
 		start++
 	}
 	return line[start:], true
-}
-
-func extractOpenAISSEEventLine(line string) (string, bool) {
-	if !strings.HasPrefix(line, "event:") {
-		return "", false
-	}
-	start := len("event:")
-	for start < len(line) {
-		if line[start] != ' ' && line[start] != '	' {
-			break
-		}
-		start++
-	}
-	return strings.TrimSpace(line[start:]), true
 }
 
 type openAICompatSSEFrame struct {
@@ -7017,27 +7002,6 @@ func (s *OpenAIGatewayService) replaceModelInSSELine(line, fromModel, toModel st
 	}
 
 	return line
-}
-
-func normalizeOpenAIHTTPResponseTerminalSSELine(line string) string {
-	trimmed := strings.TrimSpace(line)
-	if strings.EqualFold(trimmed, "event: response.done") {
-		return "event: response.completed"
-	}
-
-	data, ok := extractOpenAISSEDataLine(line)
-	if !ok || data == "" || data == "[DONE]" {
-		return line
-	}
-	if strings.TrimSpace(gjson.Get(data, "type").String()) != "response.done" {
-		return line
-	}
-
-	normalized, err := sjson.Set(data, "type", "response.completed")
-	if err != nil {
-		return line
-	}
-	return "data: " + normalized
 }
 
 // correctToolCallsInResponseBody 修正响应体中的工具调用

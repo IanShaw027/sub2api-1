@@ -719,17 +719,17 @@ func TestOpenAIWSRawItemsHasFunctionCallOutput(t *testing.T) {
 		want  bool
 	}{
 		{
-			name: "function_call_output",
+			name:  "function_call_output",
 			items: []json.RawMessage{json.RawMessage(`{"type":"function_call_output","call_id":"call_1","output":"ok"}`)},
 			want:  true,
 		},
 		{
-			name: "tool_search_output",
+			name:  "tool_search_output",
 			items: []json.RawMessage{json.RawMessage(`{"type":"tool_search_output","call_id":"call_1","output":"ok"}`)},
 			want:  true,
 		},
 		{
-			name: "non_tool_output",
+			name:  "non_tool_output",
 			items: []json.RawMessage{json.RawMessage(`{"type":"input_text","text":"hello"}`)},
 			want:  false,
 		},

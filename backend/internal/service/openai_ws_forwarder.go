@@ -4176,7 +4176,7 @@ func (s *OpenAIGatewayService) SelectAccountByPreviousResponseID(
 			responseID,
 			store.BindResponseAccount(ctx, derefGroupID(groupID), responseID, accountID, s.openAIWSResponseStickyTTL()),
 		)
-		return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
+		return s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 	}
 
 	cfg := s.schedulingConfig()

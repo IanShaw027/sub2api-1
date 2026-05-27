@@ -2037,7 +2037,7 @@ func (s *SettingService) buildAuthSourceDefaultUpdates(ctx context.Context, sett
 }
 
 func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
-	if settings == nil {
+	if s == nil || settings == nil {
 		return
 	}
 
@@ -2116,7 +2116,7 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		freshClient:       settings.OpenAIOAuthImageBridgeFreshUpstreamClient,
 		expiresAt:         time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 	})
-	if s != nil && s.cfg != nil {
+	if s.cfg != nil {
 		s.cfg.SetTrustForwardedIPForAPIKeyACL(settings.APIKeyACLTrustForwardedIP)
 	}
 	if s.onUpdate != nil {

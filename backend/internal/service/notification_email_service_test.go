@@ -647,7 +647,7 @@ func (s *notificationEmailTestSMTPServer) handleConn(conn net.Conn) {
 				if strings.TrimRight(dataLine, "\r\n") == "." {
 					break
 				}
-				payload.WriteString(dataLine)
+				_, _ = payload.WriteString(dataLine)
 			}
 			s.mu.Lock()
 			s.lastData = payload.String()

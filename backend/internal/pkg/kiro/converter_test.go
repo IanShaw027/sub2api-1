@@ -7,6 +7,33 @@ import (
 	"testing"
 )
 
+func requireJSONObject(t *testing.T, value any, name string) map[string]any {
+	t.Helper()
+	object, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("%s has type %T, want map[string]any", name, value)
+	}
+	return object
+}
+
+func requireJSONArray(t *testing.T, value any, name string) []any {
+	t.Helper()
+	array, ok := value.([]any)
+	if !ok {
+		t.Fatalf("%s has type %T, want []any", name, value)
+	}
+	return array
+}
+
+func requireJSONString(t *testing.T, value any, name string) string {
+	t.Helper()
+	text, ok := value.(string)
+	if !ok {
+		t.Fatalf("%s has type %T, want string", name, value)
+	}
+	return text
+}
+
 func TestConvertAnthropicRequestWithModel_DoesNotInjectSyntheticAssistantOrPolicy(t *testing.T) {
 	input := []byte(`{
 		"model":"claude-sonnet-4-6",
@@ -47,7 +74,7 @@ func TestConvertAnthropicRequestWithModel_DoesNotInjectSyntheticAssistantOrPolic
 	if !ok {
 		t.Fatalf("userInputMessage has type %T, want map[string]any", first["userInputMessage"])
 	}
-	content, _ := userMsg["content"].(string)
+	content := requireJSONString(t, userMsg["content"], "userInputMessage.content")
 	if strings.Contains(content, "When the Write or Edit tool has content size limits") {
 		t.Fatalf("unexpected injected chunked policy in history content: %q", content)
 	}
@@ -75,9 +102,29 @@ func TestConvertAnthropicRequestWithModel_FiltersBillingHeaderAndInjectsThinking
 		t.Fatalf("unmarshal converted payload: %v", err)
 	}
 
-	history := payload["conversationState"].(map[string]any)["history"].([]any)
-	first := history[0].(map[string]any)["userInputMessage"].(map[string]any)
-	content := first["content"].(string)
+	state, ok := payload["conversationState"].(map[string]any)
+	if !ok {
+		t.Fatalf("conversationState has type %T, want map[string]any", payload["conversationState"])
+	}
+	history, ok := state["history"].([]any)
+	if !ok {
+		t.Fatalf("history has type %T, want []any", state["history"])
+	}
+	if len(history) == 0 {
+		t.Fatal("history should not be empty")
+	}
+	firstEntry, ok := history[0].(map[string]any)
+	if !ok {
+		t.Fatalf("first history entry has type %T, want map[string]any", history[0])
+	}
+	first, ok := firstEntry["userInputMessage"].(map[string]any)
+	if !ok {
+		t.Fatalf("userInputMessage has type %T, want map[string]any", firstEntry["userInputMessage"])
+	}
+	content, ok := first["content"].(string)
+	if !ok {
+		t.Fatalf("content has type %T, want string", first["content"])
+	}
 	if strings.Contains(content, "x-anthropic-billing-header") {
 		t.Fatalf("billing header leaked into system history: %q", content)
 	}
@@ -112,9 +159,29 @@ func TestConvertAnthropicRequestWithModel_RewritesKiroIdentityBanner(t *testing.
 		t.Fatalf("unmarshal converted payload: %v", err)
 	}
 
-	history := payload["conversationState"].(map[string]any)["history"].([]any)
-	first := history[0].(map[string]any)["userInputMessage"].(map[string]any)
-	content := first["content"].(string)
+	state, ok := payload["conversationState"].(map[string]any)
+	if !ok {
+		t.Fatalf("conversationState has type %T, want map[string]any", payload["conversationState"])
+	}
+	history, ok := state["history"].([]any)
+	if !ok {
+		t.Fatalf("history has type %T, want []any", state["history"])
+	}
+	if len(history) == 0 {
+		t.Fatal("history should not be empty")
+	}
+	firstEntry, ok := history[0].(map[string]any)
+	if !ok {
+		t.Fatalf("first history entry has type %T, want map[string]any", history[0])
+	}
+	first, ok := firstEntry["userInputMessage"].(map[string]any)
+	if !ok {
+		t.Fatalf("userInputMessage has type %T, want map[string]any", firstEntry["userInputMessage"])
+	}
+	content, ok := first["content"].(string)
+	if !ok {
+		t.Fatalf("content has type %T, want string", first["content"])
+	}
 	if !strings.Contains(content, "You are Claude Code, Anthropic's official CLI for Claude.") {
 		t.Fatalf("missing canonical Claude Code banner in system history: %q", content)
 	}
@@ -144,10 +211,10 @@ func TestConvertAnthropicRequestWithModel_FiltersUnsupportedServerTools(t *testi
 		t.Fatalf("unmarshal converted payload: %v", err)
 	}
 
-	state := payload["conversationState"].(map[string]any)
-	current := state["currentMessage"].(map[string]any)
-	userMsg := current["userInputMessage"].(map[string]any)
-	ctx := userMsg["userInputMessageContext"].(map[string]any)
+	state := requireJSONObject(t, payload["conversationState"], "conversationState")
+	current := requireJSONObject(t, state["currentMessage"], "currentMessage")
+	userMsg := requireJSONObject(t, current["userInputMessage"], "userInputMessage")
+	ctx := requireJSONObject(t, userMsg["userInputMessageContext"], "userInputMessageContext")
 	tools, ok := ctx["tools"].([]any)
 	if !ok {
 		t.Fatalf("tools has type %T, want []any", ctx["tools"])
@@ -155,7 +222,8 @@ func TestConvertAnthropicRequestWithModel_FiltersUnsupportedServerTools(t *testi
 	if len(tools) != 1 {
 		t.Fatalf("tools length = %d, want 1", len(tools))
 	}
-	spec := tools[0].(map[string]any)["toolSpecification"].(map[string]any)
+	firstTool := requireJSONObject(t, tools[0], "tools[0]")
+	spec := requireJSONObject(t, firstTool["toolSpecification"], "toolSpecification")
 	if got := spec["name"]; got != "local_tool" {
 		t.Fatalf("tool name = %v, want local_tool", got)
 	}
@@ -199,20 +267,22 @@ func TestConvertAnthropicRequestWithModel_TruncatesLongToolNamesAndPreservesMap(
 		t.Fatalf("unmarshal converted payload: %v", err)
 	}
 
-	current := payload["conversationState"].(map[string]any)["currentMessage"].(map[string]any)
-	ctx := current["userInputMessage"].(map[string]any)["userInputMessageContext"].(map[string]any)
-	tools := ctx["tools"].([]any)
-	spec := tools[0].(map[string]any)["toolSpecification"].(map[string]any)
-	if got := spec["name"].(string); got != shortName {
+	state := requireJSONObject(t, payload["conversationState"], "conversationState")
+	current := requireJSONObject(t, state["currentMessage"], "currentMessage")
+	ctx := requireJSONObject(t, requireJSONObject(t, current["userInputMessage"], "userInputMessage")["userInputMessageContext"], "userInputMessageContext")
+	tools := requireJSONArray(t, ctx["tools"], "tools")
+	spec := requireJSONObject(t, requireJSONObject(t, tools[0], "tools[0]")["toolSpecification"], "toolSpecification")
+	if got := requireJSONString(t, spec["name"], "tool spec name"); got != shortName {
 		t.Fatalf("tool spec name = %q, want %q", got, shortName)
 	}
 
-	history := payload["conversationState"].(map[string]any)["history"].([]any)
-	assistant := history[0].(map[string]any)["assistantResponseMessage"].(map[string]any)
-	if got := assistant["toolUses"].([]any)[0].(map[string]any)["name"].(string); got != shortName {
+	history := requireJSONArray(t, state["history"], "history")
+	assistant := requireJSONObject(t, requireJSONObject(t, history[0], "history[0]")["assistantResponseMessage"], "assistantResponseMessage")
+	toolUses := requireJSONArray(t, assistant["toolUses"], "toolUses")
+	if got := requireJSONString(t, requireJSONObject(t, toolUses[0], "toolUses[0]")["name"], "toolUses[0].name"); got != shortName {
 		t.Fatalf("history tool use name = %q, want %q", got, shortName)
 	}
-	if got := assistant["content"].(string); got == "" {
+	if got := requireJSONString(t, assistant["content"], "assistantResponseMessage.content"); got == "" {
 		t.Fatal("assistant tool-only history content should not be empty")
 	}
 }
@@ -243,42 +313,42 @@ func TestConvertAnthropicRequestWithModel_CleansOrphanToolPairsAndFillsToolOnlyC
 		t.Fatalf("unmarshal converted payload: %v", err)
 	}
 
-	state := payload["conversationState"].(map[string]any)
-	history := state["history"].([]any)
+	state := requireJSONObject(t, payload["conversationState"], "conversationState")
+	history := requireJSONArray(t, state["history"], "history")
 	if len(history) != 5 {
 		t.Fatalf("history length = %d, want 5", len(history))
 	}
 
-	firstAssistant := history[0].(map[string]any)["assistantResponseMessage"].(map[string]any)
+	firstAssistant := requireJSONObject(t, requireJSONObject(t, history[0], "history[0]")["assistantResponseMessage"], "assistantResponseMessage")
 	if _, ok := firstAssistant["toolUses"]; ok {
 		t.Fatal("orphan assistant tool_use should be removed")
 	}
-	if got := firstAssistant["content"].(string); got != "" {
+	if got := requireJSONString(t, firstAssistant["content"], "assistantResponseMessage.content"); got != "" {
 		t.Fatalf("orphan assistant text content = %q, want empty", got)
 	}
 
-	firstUser := history[1].(map[string]any)["userInputMessage"].(map[string]any)
+	firstUser := requireJSONObject(t, requireJSONObject(t, history[1], "history[1]")["userInputMessage"], "userInputMessage")
 	if _, ok := firstUser["userInputMessageContext"]; ok {
 		t.Fatal("orphan user tool_result should be removed")
 	}
-	if got := firstUser["content"].(string); got != "" {
+	if got := requireJSONString(t, firstUser["content"], "userInputMessage.content"); got != "" {
 		t.Fatalf("orphan user text content = %q, want empty", got)
 	}
 
-	thirdAssistant := history[4].(map[string]any)["assistantResponseMessage"].(map[string]any)
-	toolUses := thirdAssistant["toolUses"].([]any)
+	thirdAssistant := requireJSONObject(t, requireJSONObject(t, history[4], "history[4]")["assistantResponseMessage"], "assistantResponseMessage")
+	toolUses := requireJSONArray(t, thirdAssistant["toolUses"], "toolUses")
 	if len(toolUses) != 1 {
 		t.Fatalf("current-paired assistant toolUses length = %d, want 1", len(toolUses))
 	}
-	if got := toolUses[0].(map[string]any)["toolUseId"].(string); got != "current-id" {
+	if got := requireJSONString(t, requireJSONObject(t, toolUses[0], "toolUses[0]")["toolUseId"], "toolUseId"); got != "current-id" {
 		t.Fatalf("current-paired assistant toolUseId = %q, want current-id", got)
 	}
-	if got := thirdAssistant["content"].(string); got != "I will call the requested tools." {
+	if got := requireJSONString(t, thirdAssistant["content"], "assistantResponseMessage.content"); got != "I will call the requested tools." {
 		t.Fatalf("current-paired assistant content = %q, want placeholder", got)
 	}
 
-	current := state["currentMessage"].(map[string]any)["userInputMessage"].(map[string]any)
-	if got := current["content"].(string); got != "Here are the tool results." {
+	current := requireJSONObject(t, requireJSONObject(t, state["currentMessage"], "currentMessage")["userInputMessage"], "userInputMessage")
+	if got := requireJSONString(t, current["content"], "userInputMessage.content"); got != "Here are the tool results." {
 		t.Fatalf("current tool-only content = %q, want placeholder", got)
 	}
 }
@@ -310,16 +380,16 @@ func TestTrimAnthropicRequestToTokenBudget_DropsOldestMessagesAndAnnotatesSystem
 		t.Fatalf("unmarshal trimmed payload: %v", err)
 	}
 
-	system := payload["system"].(string)
+	system := requireJSONString(t, payload["system"], "system")
 	if !strings.Contains(system, "compacted to fit Kiro's available context window") {
 		t.Fatalf("missing trim note in system: %q", system)
 	}
 
-	messages := payload["messages"].([]any)
+	messages := requireJSONArray(t, payload["messages"], "messages")
 	if len(messages) != 1 {
 		t.Fatalf("trimmed messages length = %d, want 1", len(messages))
 	}
-	last := messages[0].(map[string]any)
+	last := requireJSONObject(t, messages[0], "messages[0]")
 	if got := last["role"]; got != "user" {
 		t.Fatalf("trimmed last message role = %v, want user", got)
 	}
@@ -358,7 +428,7 @@ func TestCompactAnthropicRequestToTokenBudget_PreservesRecentWindowAndAddsStruct
 		t.Fatalf("unmarshal compacted payload: %v", err)
 	}
 
-	system := payload["system"].(string)
+	system := requireJSONString(t, payload["system"], "system")
 	if !strings.Contains(system, "Compaction summary:") {
 		t.Fatalf("missing compaction summary header: %q", system)
 	}
@@ -369,11 +439,11 @@ func TestCompactAnthropicRequestToTokenBudget_PreservesRecentWindowAndAddsStruct
 		t.Fatalf("missing recent user requests section: %q", system)
 	}
 
-	messages := payload["messages"].([]any)
+	messages := requireJSONArray(t, payload["messages"], "messages")
 	if len(messages) != 4 {
 		t.Fatalf("compacted messages length = %d, want 4", len(messages))
 	}
-	last := messages[len(messages)-1].(map[string]any)
+	last := requireJSONObject(t, messages[len(messages)-1], "messages[last]")
 	if got := last["role"]; got != "user" {
 		t.Fatalf("compacted last message role = %v, want user", got)
 	}
@@ -408,11 +478,11 @@ func TestTrimAnthropicRequestToTokenBudget_PreservesLeadingToolPair(t *testing.T
 		t.Fatalf("unmarshal trimmed payload: %v", err)
 	}
 
-	messages := payload["messages"].([]any)
+	messages := requireJSONArray(t, payload["messages"], "messages")
 	if len(messages) != 1 {
 		t.Fatalf("trimmed messages length = %d, want 1", len(messages))
 	}
-	first := messages[0].(map[string]any)
+	first := requireJSONObject(t, messages[0], "messages[0]")
 	if got := first["role"]; got != "user" {
 		t.Fatalf("trimmed first message role = %v, want user", got)
 	}
@@ -448,17 +518,18 @@ func TestCompactAnthropicRequestToTokenBudget_SmallWindowDoesNotSplitToolPair(t 
 		t.Fatalf("unmarshal compacted payload: %v", err)
 	}
 
-	messages := payload["messages"].([]any)
+	messages := requireJSONArray(t, payload["messages"], "messages")
 	if len(messages) == 0 {
 		t.Fatal("compacted messages should not be empty")
 	}
-	first := messages[0].(map[string]any)
+	first := requireJSONObject(t, messages[0], "messages[0]")
 	if role := first["role"]; role == "user" {
-		content, _ := first["content"].([]any)
-		for _, item := range content {
-			block, _ := item.(map[string]any)
-			if block["type"] == "tool_result" {
-				t.Fatalf("compaction kept an orphan leading tool_result: %v", first)
+		if content, ok := first["content"].([]any); ok {
+			for _, item := range content {
+				block := requireJSONObject(t, item, "messages[0].content[]")
+				if block["type"] == "tool_result" {
+					t.Fatalf("compaction kept an orphan leading tool_result: %v", first)
+				}
 			}
 		}
 	}

@@ -115,10 +115,6 @@ func collectAnthropicUserContentValue(value gjson.Result, parts *[]string, image
 	}
 }
 
-func isAnthropicSystemReminderText(text string) bool {
-	return strings.HasPrefix(strings.TrimSpace(text), "<system-reminder>")
-}
-
 func collectLastResponsesInput(input gjson.Result, parts *[]string, images *[]string) {
 	switch {
 	case !input.Exists():
