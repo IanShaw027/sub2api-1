@@ -71,6 +71,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	clientStream := anthropicReq.Stream // client's original stream preference
 	toolNameMap := anthropicToolNameMap(anthropicReq.Tools)
 	stripAnthropicBillingHeaderFromSystem(&anthropicReq)
+	claudeCodeClient := c != nil && c.Request != nil && IsClaudeCodeClient(c.Request.Context())
+	anthropicBetaHeader := ""
+	if c != nil {
+		anthropicBetaHeader = c.GetHeader("anthropic-beta")
+	}
 
 	isStream := true
 	forcedDispatchModel := getOpenAIMessagesDispatchForcedModel(c)
@@ -114,7 +119,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if err != nil {
 		return nil, fmt.Errorf("convert anthropic to responses: %w", err)
 	}
-	if IsClaudeCodeClient(c.Request.Context()) {
+	if claudeCodeClient {
 		apicompat.AugmentClaudeToolDescriptions(responsesReq.Tools)
 	}
 
@@ -123,7 +128,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	responsesReq.Stream = true
 
 	// 2b. Handle BetaFastMode → service_tier: "priority"
-	if containsBetaToken(c.GetHeader("anthropic-beta"), claude.BetaFastMode) {
+	if containsBetaToken(anthropicBetaHeader, claude.BetaFastMode) {
 		responsesReq.ServiceTier = "priority"
 	}
 
@@ -180,7 +185,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		if s.cfg != nil {
 			forcedTemplateText = s.cfg.Gateway.ForcedCodexInstructionsTemplate
 		}
-		embedDefaultInstructions := IsClaudeCodeClient(c.Request.Context()) &&
+		embedDefaultInstructions := claudeCodeClient &&
 			strings.TrimSpace(forcedTemplateText) == ""
 		codexResult := applyCodexOAuthTransformWithInputModeAndOptions(
 			reqBody,
