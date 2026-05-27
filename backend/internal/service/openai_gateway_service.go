@@ -7994,6 +7994,15 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	if trimOpenAIStoreFalseReasoningItems(reqBody) {
 		changed = true
 	}
+	if normalizeCodexTools(reqBody) {
+		changed = true
+	}
+	if normalizeCodexToolChoice(reqBody) {
+		changed = true
+	}
+	if extractSystemMessagesFromInput(reqBody) {
+		changed = true
+	}
 	if normalizeOpenAIStrictFunctionToolSchemas(reqBody) {
 		changed = true
 	}
