@@ -1359,12 +1359,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
 				return
 			}
-			fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlotForGroup(
-				ctx,
-				account.ID,
-				apiKey.GroupID,
-				selection.WaitPlan.MaxConcurrency,
-			)
+				fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlotForGroup(
+					ctx,
+					account.ID,
+					apiKey.GroupID,
+					selection.WaitPlan.MaxConcurrency,
+				)
 			if err != nil {
 				reqLog.Warn("openai.websocket_account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 				closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire account concurrency slot")
@@ -1395,16 +1395,16 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			zap.Int("candidate_count", scheduleDecision.CandidateCount),
 		)
 
-		wsFirstMessage, wsFirstModel := h.applyOpenAIResponsesChannelMapping(firstMessage, reqModel, channelMappingWS)
-		effectiveWSFirstModel := resolveOpenAIResponsesEffectiveModel(account, wsFirstModel)
-		firstTurnImageIntent, firstTurnNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveWSFirstModel, wsFirstMessage)
-		if firstTurnImageIntent && !allowImageGeneration {
-			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
+			wsFirstMessage, wsFirstModel := h.applyOpenAIResponsesChannelMapping(firstMessage, reqModel, channelMappingWS)
+			effectiveWSFirstModel := resolveOpenAIResponsesEffectiveModel(account, wsFirstModel)
+			firstTurnImageIntent, firstTurnNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveWSFirstModel, wsFirstMessage)
+			if firstTurnImageIntent && !allowImageGeneration {
+				closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
 			return
 		}
 		currentTurnNeedsImageSlot = firstTurnNeedsImageSlot
 
-		hooks := &service.OpenAIWSIngressHooks{
+			hooks := &service.OpenAIWSIngressHooks{
 			InitialRequestModel: reqModel,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
 				if turn == 1 {
@@ -1424,11 +1424,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					writeContentModerationWSError(ctx, wsConn, decision)
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, decision.Message, nil)
 				}
-				effectiveModel := resolveOpenAIResponsesEffectiveModel(account, model)
-				imageIntent, needsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveModel, payload)
-				if imageIntent && !allowImageGeneration {
-					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage(), nil)
-				}
+					effectiveModel := resolveOpenAIResponsesEffectiveModel(account, model)
+					imageIntent, needsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveModel, payload)
+					if imageIntent && !allowImageGeneration {
+						return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage(), nil)
+					}
 				currentTurnNeedsImageSlot = needsImageSlot
 				return nil
 			},
@@ -1473,7 +1473,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return nil
 			},
 			AfterTurn: func(turn int, turnPayload []byte, result *service.OpenAIForwardResult, turnErr error) {
-				releaseTurnSlots()
+					releaseTurnSlots()
 				if turnErr != nil {
 					if result == nil || result.ImageCount <= 0 {
 						return
@@ -1493,10 +1493,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
 				inboundEndpoint := GetInboundEndpoint(c)
 				upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
-				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-				requestPayloadHash := service.HashUsageRequestPayload(turnPayload)
-				h.submitOpenAIUsageRecordTask(result, func(taskCtx context.Context) {
-					if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
+					quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+					requestPayloadHash := service.HashUsageRequestPayload(turnPayload)
+					h.submitOpenAIUsageRecordTask(result, func(taskCtx context.Context) {
+						if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 						Result:             result,
 						APIKey:             apiKey,
 						User:               apiKey.User,
@@ -1506,11 +1506,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 						UpstreamEndpoint:   upstreamEndpoint,
 						UserAgent:          userAgent,
 						IPAddress:          clientIP,
-						RequestPayloadHash: requestPayloadHash,
-						APIKeyService:      h.apiKeyService,
-						QuotaPlatform:      quotaPlatform,
-						ChannelUsageFields: channelMappingWS.ToUsageFields(reqModel, result.UpstreamModel),
-					}); err != nil {
+							RequestPayloadHash: requestPayloadHash,
+							APIKeyService:      h.apiKeyService,
+							QuotaPlatform:      quotaPlatform,
+							ChannelUsageFields: channelMappingWS.ToUsageFields(reqModel, result.UpstreamModel),
+						}); err != nil {
 						reqLog.Error("openai.websocket_record_usage_failed",
 							zap.Int64("account_id", account.ID),
 							zap.String("request_id", result.RequestID),
@@ -1521,12 +1521,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			},
 		}
 
-		if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
+			if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
-				releaseAccountScopedSlots()
-				failedAccountIDs[account.ID] = struct{}{}
+					releaseAccountScopedSlots()
+					failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr
 				if switchCount >= maxAccountSwitches {
 					closeOpenAIWSFailoverExhausted(wsConn, failoverErr)
@@ -1896,6 +1896,10 @@ func (h *OpenAIGatewayHandler) mapUpstreamError(statusCode int) (int, string, st
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
 	if openAIStreamingResponseStarted(c, streamStarted) {
+		// /v1/responses 的严格 SDK（Codex CLI）要求终止事件必须属于
+		// response.completed/failed/incomplete/cancelled 集合。
+		// 通用 `event: error` 帧不被识别为终止事件，会导致
+		// "stream closed before response.completed"。
 		if inboundIsResponses(c) {
 			if writeResponsesFailedSSE(c, errType, message) {
 				return
@@ -2017,15 +2021,32 @@ func closeOpenAIClientWS(conn *coderws.Conn, status coderws.StatusCode, reason s
 }
 
 func closeOpenAIWSFailoverExhausted(conn *coderws.Conn, failoverErr *service.UpstreamFailoverError) {
-	reason := "upstream request failed"
-	if failoverErr != nil {
+	if failoverErr == nil {
+		closeOpenAIClientWS(conn, coderws.StatusInternalError, "upstream websocket proxy failed")
+		return
+	}
+	switch failoverErr.StatusCode {
+	case http.StatusTooManyRequests:
+		reason := "upstream rate limit exceeded, please retry later"
 		if isOpenAIRetryableOverloadFailover(failoverErr) {
 			reason = "upstream overloaded, retry later"
-		} else if msg := strings.TrimSpace(service.ExtractUpstreamErrorMessage(failoverErr.ResponseBody)); msg != "" {
+		}
+		closeOpenAIClientWS(conn, coderws.StatusTryAgainLater, reason)
+	case 529, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		reason := "upstream service temporarily unavailable"
+		if msg := strings.TrimSpace(service.ExtractUpstreamErrorMessage(failoverErr.ResponseBody)); msg != "" {
 			reason = msg
 		}
+		closeOpenAIClientWS(conn, coderws.StatusTryAgainLater, reason)
+	case http.StatusUnauthorized, http.StatusForbidden:
+		closeOpenAIClientWS(conn, coderws.StatusPolicyViolation, "upstream websocket authentication failed")
+	default:
+		reason := "upstream websocket proxy failed"
+		if msg := strings.TrimSpace(service.ExtractUpstreamErrorMessage(failoverErr.ResponseBody)); msg != "" {
+			reason = msg
+		}
+		closeOpenAIClientWS(conn, coderws.StatusInternalError, reason)
 	}
-	closeOpenAIClientWS(conn, coderws.StatusTryAgainLater, reason)
 }
 
 func writeContentModerationWSError(ctx context.Context, conn *coderws.Conn, decision *service.ContentModerationDecision) {

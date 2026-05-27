@@ -127,7 +127,7 @@ func (s *accountCredentialsRepoStub) SetRateLimited(ctx context.Context, id int6
 	return nil
 }
 
-func (s *accountCredentialsRepoStub) SetModelRateLimit(ctx context.Context, id int64, scope string, resetAt time.Time) error {
+func (s *accountCredentialsRepoStub) SetModelRateLimit(ctx context.Context, id int64, scope string, resetAt time.Time, reason ...string) error {
 	return nil
 }
 

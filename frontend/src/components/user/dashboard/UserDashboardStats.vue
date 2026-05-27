@@ -174,7 +174,6 @@
             </span>
           </div>
         </div>
-
         <div v-if="hasAnyLimit(item.quota) && !item.isOther" class="mt-3 space-y-1.5 border-t border-gray-200 pt-2 dark:border-dark-700">
           <p class="text-[10px] uppercase tracking-wide text-gray-400">
             {{ t('dashboard.platformQuota.title') }}
@@ -267,36 +266,40 @@ const platformCards = computed<FusedPlatformCard[]>(() => {
     byPlatform.set(item.platform, item)
   }
 
+  // 建立 quota Map
   const byQuota = new Map<string, PlatformQuotaItem>()
-  for (const quota of props.platformQuotas ?? []) {
-    byQuota.set(quota.platform, quota)
-  }
+  for (const q of props.platformQuotas ?? []) byQuota.set(q.platform, q)
 
+  // union 平台集合。后端 by_platform / quota 接口均不会返回 platform='__other__'，
+  // 无需显式排除；__other__ 由下方差值补差逻辑单独追加。
   const platforms = new Set<string>([...byPlatform.keys(), ...byQuota.keys()])
-  const platformOrder = ['anthropic', 'openai', 'gemini', 'antigravity']
+
+  const PLATFORM_ORDER = ['anthropic', 'openai', 'gemini', 'antigravity']
   const cards: FusedPlatformCard[] = []
 
-  for (const platform of platforms) {
-    const stat = byPlatform.get(platform)
+  for (const p of platforms) {
+    const stat = byPlatform.get(p)
     cards.push({
-      platform,
+      platform: p,
       total_actual_cost: stat?.total_actual_cost ?? 0,
       today_actual_cost: stat?.today_actual_cost ?? 0,
       total_requests: stat?.total_requests ?? 0,
       total_tokens: stat?.total_tokens ?? 0,
-      quota: byQuota.get(platform),
+      quota: byQuota.get(p),
     })
   }
 
+  // 排序：按 PLATFORM_ORDER，未知平台按名称排序
   cards.sort((a, b) => {
-    const ai = platformOrder.indexOf(a.platform)
-    const bi = platformOrder.indexOf(b.platform)
+    const ai = PLATFORM_ORDER.indexOf(a.platform)
+    const bi = PLATFORM_ORDER.indexOf(b.platform)
     if (ai === -1 && bi === -1) return a.platform.localeCompare(b.platform)
     if (ai === -1) return 1
     if (bi === -1) return -1
     return ai - bi
   })
 
+  // __other__ 补差逻辑：只对 by_platform 有 usage 数据的总和计算
   const total = props.stats?.total_actual_cost ?? 0
   const today = props.stats?.today_actual_cost ?? 0
   const sumTotal = cards.reduce((sum, card) => sum + card.total_actual_cost, 0)
@@ -343,7 +346,6 @@ function quotaBarClass(percent: number): string {
   if (percent >= 75) return 'bg-amber-500'
   return 'bg-green-500'
 }
-
 const usdFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,

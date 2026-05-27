@@ -26,21 +26,21 @@
               :options="platformFilterOptions"
               :placeholder="t('admin.groups.allPlatforms')"
               class="w-44"
-              @change="applyFilters"
+              @change="loadGroups"
             />
             <Select
               v-model="filters.status"
               :options="statusOptions"
               :placeholder="t('admin.groups.allStatus')"
               class="w-40"
-              @change="applyFilters"
+              @change="loadGroups"
             />
             <Select
               v-model="filters.is_exclusive"
               :options="exclusiveOptions"
               :placeholder="t('admin.groups.allGroups')"
               class="w-44"
-              @change="applyFilters"
+              @change="loadGroups"
             />
           </div>
 
@@ -69,7 +69,7 @@
               {{ t("admin.groups.sortOrder") }}
             </button>
             <button
-              @click="showCreateModal = true"
+              @click="openCreateModal"
               class="btn btn-primary"
               data-tour="groups-create-btn"
             >
@@ -110,7 +110,7 @@
               ]"
             >
               <PlatformIcon :platform="value" size="xs" />
-              {{ t(groupPlatformI18nKey(value), groupPlatformFallbackLabel(value)) }}
+              {{ t("admin.groups.platforms." + value) }}
             </span>
           </template>
 
@@ -279,7 +279,7 @@
                 value === 'active' ? 'badge-success' : 'badge-danger',
               ]"
             >
-              {{ t(accountStatusI18nKey(value), value) }}
+              {{ t("admin.accounts.status." + value) }}
             </span>
           </template>
 
@@ -325,7 +325,7 @@
               :title="t('admin.groups.noGroupsYet')"
               :description="t('admin.groups.createFirstGroup')"
               :action-text="t('admin.groups.createGroup')"
-              @action="showCreateModal = true"
+              @action="openCreateModal"
             />
           </template>
         </DataTable>
@@ -601,18 +601,6 @@
             class="space-y-4 border-l-2 border-primary-200 pl-4 dark:border-primary-800"
           >
             <div>
-              <label class="input-label">订阅退款倍率</label>
-              <input
-                v-model.number="createForm.refund_rate_multiplier"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                placeholder="1"
-              />
-              <p class="input-hint">订阅退款时按消耗额度 / 订阅倍率 * 退款倍率折算已使用金额。</p>
-            </div>
-            <div>
               <label class="input-label">{{
                 t("admin.groups.subscription.dailyLimit")
               }}</label>
@@ -654,6 +642,109 @@
           </div>
         </div>
 
+        <div class="border-t pt-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t("admin.groups.modelsList.title") }}
+              </label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.modelsList.hint") }}
+              </p>
+            </div>
+            <button
+              type="button"
+              @click="createModelsListState.enabled = !createModelsListState.enabled"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
+                createModelsListState.enabled
+                  ? 'bg-primary-500'
+                  : 'bg-gray-300 dark:bg-dark-600',
+              ]"
+            >
+              <span
+                :class="[
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  createModelsListState.enabled ? 'translate-x-6' : 'translate-x-1',
+                ]"
+              />
+            </button>
+          </div>
+          <div
+            v-if="createModelsListState.enabled"
+            class="overflow-hidden rounded-lg border border-gray-200 bg-gray-50/50 dark:border-dark-600 dark:bg-dark-800/40"
+          >
+            <div
+              v-if="!createModelsListLoading && createModelsListState.items.length > 0"
+              class="flex items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs dark:border-dark-600 dark:bg-dark-800"
+            >
+              <span class="text-gray-500 dark:text-gray-400">
+                已选 {{ createModelsListSelectedCount }} /
+                {{ createModelsListState.items.length }}
+              </span>
+              <div class="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  class="rounded px-2 py-1 font-medium text-primary-600 transition-colors hover:bg-primary-50 dark:text-primary-400 dark:hover:bg-primary-900/20"
+                  @click="selectAllModelsListItems(createModelsListState)"
+                >
+                  全选
+                </button>
+                <button
+                  type="button"
+                  class="rounded px-2 py-1 font-medium text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
+                  @click="invertModelsListSelection(createModelsListState)"
+                >
+                  反选
+                </button>
+              </div>
+            </div>
+            <div
+              class="max-h-64 space-y-2 overflow-y-auto p-2"
+            >
+              <p v-if="createModelsListLoading" class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.modelsList.loading") }}
+              </p>
+              <p
+                v-else-if="createModelsListState.items.length === 0"
+                class="text-xs text-gray-500 dark:text-gray-400"
+              >
+                {{ t("admin.groups.modelsList.empty") }}
+              </p>
+              <div
+                v-for="(item, index) in createModelsListState.items"
+                :key="item.id"
+                class="flex items-center gap-2 rounded border border-gray-200 bg-white px-3 py-2 dark:border-dark-600 dark:bg-dark-800"
+              >
+                <input
+                  v-model="item.selected"
+                  type="checkbox"
+                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span class="min-w-0 flex-1 break-all text-sm text-gray-700 dark:text-gray-300">
+                  {{ item.id }}
+                </span>
+                <button
+                  type="button"
+                  :disabled="index === 0"
+                  class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:hover:bg-dark-600 dark:hover:text-gray-200"
+                  @click="moveCreateModelsListItem(index, index - 1)"
+                >
+                  <Icon name="arrowUp" size="sm" />
+                </button>
+                <button
+                  type="button"
+                  :disabled="index === createModelsListState.items.length - 1"
+                  class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:hover:bg-dark-600 dark:hover:text-gray-200"
+                  @click="moveCreateModelsListItem(index, index + 1)"
+                >
+                  <Icon name="arrowDown" size="sm" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 图片生成计费配置 -->
         <div
           v-if="
@@ -671,8 +762,8 @@
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
-          <template v-if="createForm.platform === 'openai'">
-            <label class="mb-4 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
                 v-model="createForm.allow_image_generation"
                 type="checkbox"
@@ -680,307 +771,82 @@
               />
               {{ t("admin.groups.imagePricing.allowImageGeneration") }}
             </label>
-            <div v-if="createForm.allow_image_generation" class="space-y-4">
-              <div>
-                <label class="input-label">{{ t("admin.groups.imagePricing.routeLabel") }}</label>
-                <div class="mt-2 flex flex-wrap gap-4">
-                  <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                    <input
-                      v-model="createForm.openai_image_codex_enabled"
-                      type="checkbox"
-                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    {{ t("admin.groups.imagePricing.routeCodex") }}
-                  </label>
-                  <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                    <input
-                      v-model="createForm.openai_image_web2api_enabled"
-                      type="checkbox"
-                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    {{ t("admin.groups.imagePricing.routeWeb2api") }}
-                  </label>
-                </div>
-                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t("admin.groups.imagePricing.routeHint") }}
-                </p>
-              </div>
-              <div
-                v-if="createForm.openai_image_codex_enabled"
-                class="rounded-lg border border-gray-200 p-4 dark:border-gray-700"
-              >
-                <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t("admin.groups.imagePricing.routeCodex") }}
-                </div>
-                <div class="grid grid-cols-3 gap-3">
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="createForm.image_price_1k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.134"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="createForm.image_price_2k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.201"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="createForm.image_price_4k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.268"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div
-                v-if="createForm.openai_image_web2api_enabled"
-                class="rounded-lg border border-gray-200 p-4 dark:border-gray-700"
-              >
-                <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t("admin.groups.imagePricing.routeWeb2api") }}
-                </div>
-                <div class="grid grid-cols-3 gap-3">
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="createForm.images2api_price_1k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.134"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="createForm.images2api_price_2k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.201"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="createForm.images2api_price_4k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.268"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-          <template v-else>
-            <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                <input
-                  v-model="createForm.allow_image_generation"
-                  type="checkbox"
-                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                {{ t("admin.groups.imagePricing.allowImageGeneration") }}
-              </label>
-              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                <input
-                  v-model="createForm.image_rate_independent"
-                  type="checkbox"
-                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                {{ t("admin.groups.imagePricing.independentMultiplier") }}
-              </label>
-            </div>
-            <div class="mb-4">
-              <label class="input-label">{{ t("admin.groups.imagePricing.routeLabel") }}</label>
-              <Select
-                v-model="createForm.image_generation_route"
-                :options="imageGenerationRouteOptions"
-              />
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {{ t("admin.groups.imagePricing.routeHint") }}
-              </p>
-            </div>
-            <div
-              v-if="createForm.image_rate_independent"
-              class="mb-4"
-            >
-              <label class="input-label">{{
-                t("admin.groups.imagePricing.imageMultiplier")
-              }}</label>
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
-                v-model.number="createForm.image_rate_multiplier"
+                v-model="createForm.image_rate_independent"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.independentMultiplier") }}
+            </label>
+          </div>
+          <div
+            v-if="createForm.image_rate_independent"
+            class="mb-4"
+          >
+            <label class="input-label">{{
+              t("admin.groups.imagePricing.imageMultiplier")
+            }}</label>
+            <input
+              v-model.number="createForm.image_rate_multiplier"
+              type="number"
+              step="0.0001"
+              min="0"
+              class="input"
+              placeholder="1"
+            />
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="input-label">1K ($)</label>
+              <input
+                v-model.number="createForm.image_price_1k"
                 type="number"
-                step="0.0001"
+                step="0.001"
                 min="0"
                 class="input"
-                placeholder="1"
+                placeholder="0.134"
               />
             </div>
-            <div class="space-y-4">
-              <div>
-                <div class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t("admin.groups.imagePricing.images") }}
-                </div>
-                <div class="grid grid-cols-3 gap-3">
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="createForm.image_price_1k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.134"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="createForm.image_price_2k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.201"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="createForm.image_price_4k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.268"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div>
-                <div class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t("admin.groups.imagePricing.images2api") }}
-                </div>
-                <div class="grid grid-cols-3 gap-3">
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="createForm.images2api_price_1k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.134"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="createForm.images2api_price_2k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.201"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="createForm.images2api_price_4k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.268"
-                    />
-                  </div>
-                </div>
+            <div>
+              <label class="input-label">2K ($)</label>
+              <input
+                v-model.number="createForm.image_price_2k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.201"
+              />
+            </div>
+            <div>
+              <label class="input-label">4K ($)</label>
+              <input
+                v-model.number="createForm.image_price_4k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.268"
+              />
+            </div>
+          </div>
+          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            {{ t("admin.groups.imagePricing.modeHint") }}
+          </p>
+          <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <div class="mb-1 font-medium">
+              {{ t("admin.groups.imagePricing.finalPricePreview") }}
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div
+                v-for="item in createImageFinalPricePreview"
+                :key="item.label"
+              >
+                {{ item.label }}: {{ item.value }}
               </div>
             </div>
-            <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-              {{ t("admin.groups.imagePricing.modeHint") }}
-            </p>
-            <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-              <div class="mb-1 font-medium">
-                {{ t("admin.groups.imagePricing.finalPricePreview") }}
-              </div>
-              <div class="space-y-2">
-                <div>
-                  <div class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
-                    {{ t("admin.groups.imagePricing.images") }}
-                  </div>
-                  <div class="grid grid-cols-3 gap-2">
-                    <div
-                      v-for="item in createImageFinalPricePreview"
-                      :key="`create-images-${item.label}`"
-                    >
-                      {{ item.label }}: {{ item.value }}
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <div class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
-                    {{ t("admin.groups.imagePricing.images2api") }}
-                  </div>
-                  <div class="grid grid-cols-3 gap-2">
-                    <div
-                      v-for="item in createImages2apiFinalPricePreview"
-                      :key="`create-images2api-${item.label}`"
-                    >
-                      {{ item.label }}: {{ item.value }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
+          </div>
         </div>
 
         <!-- 支持的模型系列（仅 antigravity 平台） -->
@@ -1427,20 +1293,20 @@
           class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4 space-y-4"
         >
           <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-            {{ t("admin.groups.accountFilters.title") }}
+            账号过滤控制
           </h4>
 
           <!-- require_oauth_only toggle -->
           <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
-                >{{ t("admin.groups.accountFilters.oauthOnly") }}</label
+                >仅允许 OAuth 账号</label
               >
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {{
                   createForm.require_oauth_only
-                    ? t("admin.groups.accountFilters.oauthOnlyEnabled")
-                    : t("admin.groups.accountFilters.disabled")
+                    ? "已启用 — 排除 API Key 类型账号"
+                    : "未启用"
                 }}
               </p>
             </div>
@@ -1471,13 +1337,13 @@
           <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
-                >{{ t("admin.groups.accountFilters.privacyOnly") }}</label
+                >仅允许隐私保护已设置的账号</label
               >
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {{
                   createForm.require_privacy_set
-                    ? t("admin.groups.accountFilters.privacyOnlyEnabled")
-                    : t("admin.groups.accountFilters.disabled")
+                    ? "已启用 — Privacy 未设置的账号将被排除"
+                    : "未启用"
                 }}
               </p>
             </div>
@@ -2023,18 +1889,6 @@
             class="space-y-4 border-l-2 border-primary-200 pl-4 dark:border-primary-800"
           >
             <div>
-              <label class="input-label">订阅退款倍率</label>
-              <input
-                v-model.number="editForm.refund_rate_multiplier"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                placeholder="1"
-              />
-              <p class="input-hint">订阅退款时按消耗额度 / 订阅倍率 * 退款倍率折算已使用金额。</p>
-            </div>
-            <div>
               <label class="input-label">{{
                 t("admin.groups.subscription.dailyLimit")
               }}</label>
@@ -2076,6 +1930,109 @@
           </div>
         </div>
 
+        <div class="border-t pt-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t("admin.groups.modelsList.title") }}
+              </label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.modelsList.hint") }}
+              </p>
+            </div>
+            <button
+              type="button"
+              @click="editModelsListState.enabled = !editModelsListState.enabled"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
+                editModelsListState.enabled
+                  ? 'bg-primary-500'
+                  : 'bg-gray-300 dark:bg-dark-600',
+              ]"
+            >
+              <span
+                :class="[
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  editModelsListState.enabled ? 'translate-x-6' : 'translate-x-1',
+                ]"
+              />
+            </button>
+          </div>
+          <div
+            v-if="editModelsListState.enabled"
+            class="overflow-hidden rounded-lg border border-gray-200 bg-gray-50/50 dark:border-dark-600 dark:bg-dark-800/40"
+          >
+            <div
+              v-if="!editModelsListLoading && editModelsListState.items.length > 0"
+              class="flex items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs dark:border-dark-600 dark:bg-dark-800"
+            >
+              <span class="text-gray-500 dark:text-gray-400">
+                已选 {{ editModelsListSelectedCount }} /
+                {{ editModelsListState.items.length }}
+              </span>
+              <div class="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  class="rounded px-2 py-1 font-medium text-primary-600 transition-colors hover:bg-primary-50 dark:text-primary-400 dark:hover:bg-primary-900/20"
+                  @click="selectAllModelsListItems(editModelsListState)"
+                >
+                  全选
+                </button>
+                <button
+                  type="button"
+                  class="rounded px-2 py-1 font-medium text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
+                  @click="invertModelsListSelection(editModelsListState)"
+                >
+                  反选
+                </button>
+              </div>
+            </div>
+            <div
+              class="max-h-64 space-y-2 overflow-y-auto p-2"
+            >
+              <p v-if="editModelsListLoading" class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.modelsList.loading") }}
+              </p>
+              <p
+                v-else-if="editModelsListState.items.length === 0"
+                class="text-xs text-gray-500 dark:text-gray-400"
+              >
+                {{ t("admin.groups.modelsList.empty") }}
+              </p>
+              <div
+                v-for="(item, index) in editModelsListState.items"
+                :key="item.id"
+                class="flex items-center gap-2 rounded border border-gray-200 bg-white px-3 py-2 dark:border-dark-600 dark:bg-dark-800"
+              >
+                <input
+                  v-model="item.selected"
+                  type="checkbox"
+                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span class="min-w-0 flex-1 break-all text-sm text-gray-700 dark:text-gray-300">
+                  {{ item.id }}
+                </span>
+                <button
+                  type="button"
+                  :disabled="index === 0"
+                  class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:hover:bg-dark-600 dark:hover:text-gray-200"
+                  @click="moveEditModelsListItem(index, index - 1)"
+                >
+                  <Icon name="arrowUp" size="sm" />
+                </button>
+                <button
+                  type="button"
+                  :disabled="index === editModelsListState.items.length - 1"
+                  class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:hover:bg-dark-600 dark:hover:text-gray-200"
+                  @click="moveEditModelsListItem(index, index + 1)"
+                >
+                  <Icon name="arrowDown" size="sm" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 图片生成计费配置 -->
         <div
           v-if="
@@ -2093,8 +2050,8 @@
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
-          <template v-if="editForm.platform === 'openai'">
-            <label class="mb-4 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
                 v-model="editForm.allow_image_generation"
                 type="checkbox"
@@ -2102,307 +2059,82 @@
               />
               {{ t("admin.groups.imagePricing.allowImageGeneration") }}
             </label>
-            <div v-if="editForm.allow_image_generation" class="space-y-4">
-              <div>
-                <label class="input-label">{{ t("admin.groups.imagePricing.routeLabel") }}</label>
-                <div class="mt-2 flex flex-wrap gap-4">
-                  <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                    <input
-                      v-model="editForm.openai_image_codex_enabled"
-                      type="checkbox"
-                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    {{ t("admin.groups.imagePricing.routeCodex") }}
-                  </label>
-                  <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                    <input
-                      v-model="editForm.openai_image_web2api_enabled"
-                      type="checkbox"
-                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    {{ t("admin.groups.imagePricing.routeWeb2api") }}
-                  </label>
-                </div>
-                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t("admin.groups.imagePricing.routeHint") }}
-                </p>
-              </div>
-              <div
-                v-if="editForm.openai_image_codex_enabled"
-                class="rounded-lg border border-gray-200 p-4 dark:border-gray-700"
-              >
-                <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t("admin.groups.imagePricing.routeCodex") }}
-                </div>
-                <div class="grid grid-cols-3 gap-3">
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="editForm.image_price_1k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.134"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="editForm.image_price_2k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.201"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="editForm.image_price_4k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.268"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div
-                v-if="editForm.openai_image_web2api_enabled"
-                class="rounded-lg border border-gray-200 p-4 dark:border-gray-700"
-              >
-                <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t("admin.groups.imagePricing.routeWeb2api") }}
-                </div>
-                <div class="grid grid-cols-3 gap-3">
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="editForm.images2api_price_1k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.134"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="editForm.images2api_price_2k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.201"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="editForm.images2api_price_4k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.268"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-          <template v-else>
-            <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                <input
-                  v-model="editForm.allow_image_generation"
-                  type="checkbox"
-                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                {{ t("admin.groups.imagePricing.allowImageGeneration") }}
-              </label>
-              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                <input
-                  v-model="editForm.image_rate_independent"
-                  type="checkbox"
-                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                {{ t("admin.groups.imagePricing.independentMultiplier") }}
-              </label>
-            </div>
-            <div class="mb-4">
-              <label class="input-label">{{ t("admin.groups.imagePricing.routeLabel") }}</label>
-              <Select
-                v-model="editForm.image_generation_route"
-                :options="imageGenerationRouteOptions"
-              />
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {{ t("admin.groups.imagePricing.routeHint") }}
-              </p>
-            </div>
-            <div
-              v-if="editForm.image_rate_independent"
-              class="mb-4"
-            >
-              <label class="input-label">{{
-                t("admin.groups.imagePricing.imageMultiplier")
-              }}</label>
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
-                v-model.number="editForm.image_rate_multiplier"
+                v-model="editForm.image_rate_independent"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.independentMultiplier") }}
+            </label>
+          </div>
+          <div
+            v-if="editForm.image_rate_independent"
+            class="mb-4"
+          >
+            <label class="input-label">{{
+              t("admin.groups.imagePricing.imageMultiplier")
+            }}</label>
+            <input
+              v-model.number="editForm.image_rate_multiplier"
+              type="number"
+              step="0.0001"
+              min="0"
+              class="input"
+              placeholder="1"
+            />
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="input-label">1K ($)</label>
+              <input
+                v-model.number="editForm.image_price_1k"
                 type="number"
-                step="0.0001"
+                step="0.001"
                 min="0"
                 class="input"
-                placeholder="1"
+                placeholder="0.134"
               />
             </div>
-            <div class="space-y-4">
-              <div>
-                <div class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t("admin.groups.imagePricing.images") }}
-                </div>
-                <div class="grid grid-cols-3 gap-3">
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="editForm.image_price_1k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.134"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="editForm.image_price_2k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.201"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="editForm.image_price_4k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.268"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div>
-                <div class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t("admin.groups.imagePricing.images2api") }}
-                </div>
-                <div class="grid grid-cols-3 gap-3">
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="editForm.images2api_price_1k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.134"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="editForm.images2api_price_2k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.201"
-                    />
-                  </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
-                    }}</label>
-                    <input
-                      v-model.number="editForm.images2api_price_4k"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      class="input"
-                      placeholder="0.268"
-                    />
-                  </div>
-                </div>
+            <div>
+              <label class="input-label">2K ($)</label>
+              <input
+                v-model.number="editForm.image_price_2k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.201"
+              />
+            </div>
+            <div>
+              <label class="input-label">4K ($)</label>
+              <input
+                v-model.number="editForm.image_price_4k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.268"
+              />
+            </div>
+          </div>
+          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            {{ t("admin.groups.imagePricing.modeHint") }}
+          </p>
+          <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <div class="mb-1 font-medium">
+              {{ t("admin.groups.imagePricing.finalPricePreview") }}
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div
+                v-for="item in editImageFinalPricePreview"
+                :key="item.label"
+              >
+                {{ item.label }}: {{ item.value }}
               </div>
             </div>
-            <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-              {{ t("admin.groups.imagePricing.modeHint") }}
-            </p>
-            <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-              <div class="mb-1 font-medium">
-                {{ t("admin.groups.imagePricing.finalPricePreview") }}
-              </div>
-              <div class="space-y-2">
-                <div>
-                  <div class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
-                    {{ t("admin.groups.imagePricing.images") }}
-                  </div>
-                  <div class="grid grid-cols-3 gap-2">
-                    <div
-                      v-for="item in editImageFinalPricePreview"
-                      :key="`edit-images-${item.label}`"
-                    >
-                      {{ item.label }}: {{ item.value }}
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <div class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
-                    {{ t("admin.groups.imagePricing.images2api") }}
-                  </div>
-                  <div class="grid grid-cols-3 gap-2">
-                    <div
-                      v-for="item in editImages2apiFinalPricePreview"
-                      :key="`edit-images2api-${item.label}`"
-                    >
-                      {{ item.label }}: {{ item.value }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
+          </div>
         </div>
 
         <!-- 支持的模型系列（仅 antigravity 平台） -->
@@ -2845,20 +2577,20 @@
           class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4 space-y-4"
         >
           <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-            {{ t("admin.groups.accountFilters.title") }}
+            账号过滤控制
           </h4>
 
           <!-- require_oauth_only toggle -->
           <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
-                >{{ t("admin.groups.accountFilters.oauthOnly") }}</label
+                >仅允许 OAuth 账号</label
               >
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {{
                   editForm.require_oauth_only
-                    ? t("admin.groups.accountFilters.oauthOnlyEnabled")
-                    : t("admin.groups.accountFilters.disabled")
+                    ? "已启用 — 排除 API Key 类型账号"
+                    : "未启用"
                 }}
               </p>
             </div>
@@ -2889,13 +2621,13 @@
           <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
-                >{{ t("admin.groups.accountFilters.privacyOnly") }}</label
+                >仅允许隐私保护已设置的账号</label
               >
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {{
                   editForm.require_privacy_set
-                    ? t("admin.groups.accountFilters.privacyOnlyEnabled")
-                    : t("admin.groups.accountFilters.disabled")
+                    ? "已启用 — Privacy 未设置的账号将被排除"
+                    : "未启用"
                 }}
               </p>
             </div>
@@ -3233,7 +2965,7 @@
                           : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
                   ]"
                 >
-                  {{ t(groupPlatformI18nKey(group.platform), groupPlatformFallbackLabel(group.platform)) }}
+                  {{ t("admin.groups.platforms." + group.platform) }}
                 </span>
               </div>
             </div>
@@ -3306,13 +3038,7 @@ import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";
 import { useOnboardingStore } from "@/stores/onboarding";
 import { adminAPI } from "@/api/admin";
-import type {
-  AdminGroup,
-  CreateGroupRequest,
-  GroupPlatform,
-  SubscriptionType,
-  UpdateGroupRequest,
-} from "@/types";
+import type { AdminGroup, GroupPlatform, SubscriptionType } from "@/types";
 import type { Column } from "@/components/common/types";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import TablePageLayout from "@/components/layout/TablePageLayout.vue";
@@ -3339,17 +3065,15 @@ import {
   type MessagesDispatchMappingRow,
 } from "./groupsMessagesDispatch";
 import {
-  applyOpenAIImageTypeSelection,
-  deriveOpenAIImageFormState,
-  normalizeOpenAIImageTypeSelection,
-  type OpenAIImageSelectionFormState,
-  type OpenAIImageSelectionPayload,
-} from "./groupsOpenAIImagePricing";
-import {
-  accountStatusI18nKey,
-  groupPlatformFallbackLabel,
-  groupPlatformI18nKey,
-} from "@/utils/i18n";
+  buildModelsListConfig,
+  createModelsListState as createInitialModelsListState,
+  invertModelsListSelection,
+  moveModelsListItem,
+  selectAllModelsListItems,
+  setModelsListCandidates,
+} from "./groupsModelsList";
+import { createModelsListCandidatesTracker } from "./groupsModelsListCandidates";
+import { normalizeSupportedModelScopesForPlatform } from "./groupsSupportedModelScopes";
 
 const { t } = useI18n();
 const appStore = useAppStore();
@@ -3406,18 +3130,18 @@ const exclusiveOptions = computed(() => [
 ]);
 
 const platformOptions = computed(() => [
-  { value: "anthropic", label: t(groupPlatformI18nKey("anthropic"), groupPlatformFallbackLabel("anthropic")) },
-  { value: "openai", label: t(groupPlatformI18nKey("openai"), groupPlatformFallbackLabel("openai")) },
-  { value: "gemini", label: t(groupPlatformI18nKey("gemini"), groupPlatformFallbackLabel("gemini")) },
-  { value: "antigravity", label: t(groupPlatformI18nKey("antigravity"), groupPlatformFallbackLabel("antigravity")) },
+  { value: "anthropic", label: "Anthropic" },
+  { value: "openai", label: "OpenAI" },
+  { value: "gemini", label: "Gemini" },
+  { value: "antigravity", label: "Antigravity" },
 ]);
 
 const platformFilterOptions = computed(() => [
   { value: "", label: t("admin.groups.allPlatforms") },
-  { value: "anthropic", label: t(groupPlatformI18nKey("anthropic"), groupPlatformFallbackLabel("anthropic")) },
-  { value: "openai", label: t(groupPlatformI18nKey("openai"), groupPlatformFallbackLabel("openai")) },
-  { value: "gemini", label: t(groupPlatformI18nKey("gemini"), groupPlatformFallbackLabel("gemini")) },
-  { value: "antigravity", label: t(groupPlatformI18nKey("antigravity"), groupPlatformFallbackLabel("antigravity")) },
+  { value: "anthropic", label: "Anthropic" },
+  { value: "openai", label: "OpenAI" },
+  { value: "gemini", label: "Gemini" },
+  { value: "antigravity", label: "Antigravity" },
 ]);
 
 const editStatusOptions = computed(() => [
@@ -3511,7 +3235,7 @@ const copyAccountsGroupOptions = computed(() => {
   );
   return eligibleGroups.map((g) => ({
     value: g.id,
-    label: `${g.name} (${t("admin.groups.accountsCount", { count: g.account_count || 0 })})`,
+    label: `${g.name} (${g.account_count || 0} 个账号)`,
   }));
 });
 
@@ -3526,7 +3250,7 @@ const copyAccountsGroupOptionsForEdit = computed(() => {
   );
   return eligibleGroups.map((g) => ({
     value: g.id,
-    label: `${g.name} (${t("admin.groups.accountsCount", { count: g.account_count || 0 })})`,
+    label: `${g.name} (${g.account_count || 0} 个账号)`,
   }));
 });
 
@@ -3539,12 +3263,12 @@ const usageLoading = ref(false);
 const capacityMap = ref<
   Map<
     number,
-	    {
-	      concurrencyUsed: number;
-	      concurrencyMax: number;
-	    }
-	  >
-	>(new Map());
+    {
+      concurrencyUsed: number;
+      concurrencyMax: number;
+    }
+  >
+>(new Map());
 const searchQuery = ref("");
 const filters = reactive({
   platform: "",
@@ -3579,14 +3303,23 @@ const rpmOverridesGroup = ref<AdminGroup | null>(null);
 const sortableGroups = ref<AdminGroup[]>([]);
 const createMessagesDispatchDefaults = createDefaultMessagesDispatchFormState();
 const editMessagesDispatchDefaults = createDefaultMessagesDispatchFormState();
-let editHydrationRequestSeq = 0;
+const createModelsListState = reactive(createInitialModelsListState());
+const editModelsListState = reactive(createInitialModelsListState());
+const createModelsListLoading = ref(false);
+const editModelsListLoading = ref(false);
+const modelsListCandidatesTracker = createModelsListCandidatesTracker();
+const createModelsListSelectedCount = computed(
+  () => createModelsListState.items.filter((item) => item.selected).length,
+);
+const editModelsListSelectedCount = computed(
+  () => editModelsListState.items.filter((item) => item.selected).length,
+);
 
 const createForm = reactive({
   name: "",
   description: "",
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
-  refund_rate_multiplier: 1.0,
   is_exclusive: false,
   subscription_type: "standard" as SubscriptionType,
   daily_limit_usd: null as number | null,
@@ -3594,17 +3327,11 @@ const createForm = reactive({
   monthly_limit_usd: null as number | null,
   // 图片生成计费配置
   allow_image_generation: false,
-  image_generation_route: "codex" as "codex" | "web2api",
-  openai_image_codex_enabled: false,
-  openai_image_web2api_enabled: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
-  images2api_price_1k: null as number | null,
-  images2api_price_2k: null as number | null,
-  images2api_price_4k: null as number | null,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -3826,6 +3553,52 @@ const removeEditRoutingRule = (rule: ModelRoutingRule) => {
   editModelRoutingRules.value.splice(index, 1);
 };
 
+const resetModelsListState = (
+  state: typeof createModelsListState,
+  config?: Parameters<typeof createInitialModelsListState>[0],
+) => {
+  const fresh = createInitialModelsListState(config);
+  state.enabled = fresh.enabled;
+  state.savedModels = fresh.savedModels;
+  state.items = fresh.items;
+};
+
+const loadModelsListCandidates = async (
+  mode: "create" | "edit",
+  groupID: number,
+  platform: GroupPlatform,
+) => {
+  const request = { mode, groupID, platform };
+  const requestID = modelsListCandidatesTracker.next(request);
+  const state = mode === "create" ? createModelsListState : editModelsListState;
+  const loadingRef = mode === "create" ? createModelsListLoading : editModelsListLoading;
+  loadingRef.value = true;
+  try {
+    const models = await adminAPI.groups.getModelsListCandidates(groupID, platform);
+    if (!modelsListCandidatesTracker.isCurrent(requestID, request)) {
+      return;
+    }
+    setModelsListCandidates(state, models);
+  } catch (error) {
+    if (!modelsListCandidatesTracker.isCurrent(requestID, request)) {
+      return;
+    }
+    console.error("Error loading group models list candidates:", error);
+  } finally {
+    if (modelsListCandidatesTracker.isCurrent(requestID, request)) {
+      loadingRef.value = false;
+    }
+  }
+};
+
+const moveCreateModelsListItem = (fromIndex: number, toIndex: number) => {
+  moveModelsListItem(createModelsListState, fromIndex, toIndex);
+};
+
+const moveEditModelsListItem = (fromIndex: number, toIndex: number) => {
+  moveModelsListItem(editModelsListState, fromIndex, toIndex);
+};
+
 // 将 UI 格式的路由规则转换为 API 格式
 const convertRoutingRulesToApiFormat = (
   rules: ModelRoutingRule[],
@@ -3877,7 +3650,6 @@ const editForm = reactive({
   description: "",
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
-  refund_rate_multiplier: 1.0,
   is_exclusive: false,
   status: "active" as "active" | "inactive",
   subscription_type: "standard" as SubscriptionType,
@@ -3886,17 +3658,11 @@ const editForm = reactive({
   monthly_limit_usd: null as number | null,
   // 图片生成计费配置
   allow_image_generation: false,
-  image_generation_route: "codex" as "codex" | "web2api",
-  openai_image_codex_enabled: false,
-  openai_image_web2api_enabled: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
-  images2api_price_1k: null as number | null,
-  images2api_price_2k: null as number | null,
-  images2api_price_4k: null as number | null,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -3930,51 +3696,13 @@ type ImagePricingFormState = {
   image_price_1k: number | string | null;
   image_price_2k: number | string | null;
   image_price_4k: number | string | null;
-  images2api_price_1k: number | string | null;
-  images2api_price_2k: number | string | null;
-  images2api_price_4k: number | string | null;
 };
 
 const imagePricingTiers = [
-  {
-    key: "image_price_1k",
-    labelKey: "admin.groups.imagePricing.tier1k",
-    labelFallback: "1K",
-  },
-  {
-    key: "image_price_2k",
-    labelKey: "admin.groups.imagePricing.tier2k",
-    labelFallback: "2K",
-  },
-  {
-    key: "image_price_4k",
-    labelKey: "admin.groups.imagePricing.tier4k",
-    labelFallback: "4K",
-  },
+  { key: "image_price_1k", label: "1K" },
+  { key: "image_price_2k", label: "2K" },
+  { key: "image_price_4k", label: "4K" },
 ] as const;
-
-const images2apiPricingTiers = [
-  {
-    key: "images2api_price_1k",
-    labelKey: "admin.groups.imagePricing.tier1k",
-    labelFallback: "1K",
-  },
-  {
-    key: "images2api_price_2k",
-    labelKey: "admin.groups.imagePricing.tier2k",
-    labelFallback: "2K",
-  },
-  {
-    key: "images2api_price_4k",
-    labelKey: "admin.groups.imagePricing.tier4k",
-    labelFallback: "4K",
-  },
-] as const;
-
-const imageGenerationRouteOptions = computed(() => [
-  { value: "codex", label: t("admin.groups.imagePricing.routeCodex") },
-  { value: "web2api", label: t("admin.groups.imagePricing.routeWeb2api") },
-]);
 
 const normalizePreviewNumber = (value: number | string | null | undefined, fallback = 0) => {
   if (value === null || value === undefined || value === "") {
@@ -4002,22 +3730,7 @@ const buildImageFinalPricePreview = (form: ImagePricingFormState) => {
   return imagePricingTiers.map((tier) => {
     const basePrice = normalizePreviewNumber(form[tier.key]);
     return {
-      label: t(tier.labelKey, tier.labelFallback),
-      value: basePrice > 0
-        ? formatImagePricePreview(basePrice * multiplier)
-        : t("admin.groups.imagePricing.notConfigured"),
-    };
-  });
-};
-
-const buildImages2apiFinalPricePreview = (form: ImagePricingFormState) => {
-  const multiplier = form.image_rate_independent
-    ? normalizePreviewNumber(form.image_rate_multiplier, 1)
-    : normalizePreviewNumber(form.rate_multiplier, 1);
-  return images2apiPricingTiers.map((tier) => {
-    const basePrice = normalizePreviewNumber(form[tier.key]);
-    return {
-      label: t(tier.labelKey, tier.labelFallback),
+      label: tier.label,
       value: basePrice > 0
         ? formatImagePricePreview(basePrice * multiplier)
         : t("admin.groups.imagePricing.notConfigured"),
@@ -4028,14 +3741,8 @@ const buildImages2apiFinalPricePreview = (form: ImagePricingFormState) => {
 const createImageFinalPricePreview = computed(() =>
   buildImageFinalPricePreview(createForm),
 );
-const createImages2apiFinalPricePreview = computed(() =>
-  buildImages2apiFinalPricePreview(createForm),
-);
 const editImageFinalPricePreview = computed(() =>
   buildImageFinalPricePreview(editForm),
-);
-const editImages2apiFinalPricePreview = computed(() =>
-  buildImages2apiFinalPricePreview(editForm),
 );
 
 // 根据分组类型返回不同的删除确认消息
@@ -4052,7 +3759,6 @@ const deleteConfirmMessage = computed(() => {
 });
 
 const loadGroups = async () => {
-  clearTimeout(searchTimeout);
   if (abortController) {
     abortController.abort();
   }
@@ -4156,11 +3862,6 @@ const handleSearch = () => {
   }, 300);
 };
 
-const applyFilters = () => {
-  pagination.page = 1;
-  loadGroups();
-};
-
 const handlePageChange = (page: number) => {
   pagination.page = page;
   loadGroups();
@@ -4179,6 +3880,11 @@ const handleSort = (key: string, order: 'asc' | 'desc') => {
   loadGroups();
 };
 
+const openCreateModal = () => {
+  showCreateModal.value = true;
+  loadModelsListCandidates("create", 0, createForm.platform);
+};
+
 const closeCreateModal = () => {
   showCreateModal.value = false;
   createModelRoutingRules.value.forEach((rule) => {
@@ -4189,24 +3895,17 @@ const closeCreateModal = () => {
   createForm.description = "";
   createForm.platform = "anthropic";
   createForm.rate_multiplier = 1.0;
-  createForm.refund_rate_multiplier = 1.0;
   createForm.is_exclusive = false;
   createForm.subscription_type = "standard";
   createForm.daily_limit_usd = null;
   createForm.weekly_limit_usd = null;
   createForm.monthly_limit_usd = null;
   createForm.allow_image_generation = false;
-  createForm.image_generation_route = "codex";
-  createForm.openai_image_codex_enabled = false;
-  createForm.openai_image_web2api_enabled = false;
   createForm.image_rate_independent = false;
   createForm.image_rate_multiplier = 1;
   createForm.image_price_1k = null;
   createForm.image_price_2k = null;
   createForm.image_price_4k = null;
-  createForm.images2api_price_1k = null;
-  createForm.images2api_price_2k = null;
-  createForm.images2api_price_4k = null;
   createForm.claude_code_only = false;
   createForm.fallback_group_id = null;
   createForm.fallback_group_id_on_invalid_request = null;
@@ -4216,6 +3915,8 @@ const closeCreateModal = () => {
   createForm.supported_model_scopes = ["claude", "gemini_text", "gemini_image"];
   createForm.mcp_xml_inject = true;
   createForm.copy_accounts_from_group_ids = [];
+  createForm.rpm_limit = 0;
+  resetModelsListState(createModelsListState);
   createModelRoutingRules.value = [];
 };
 
@@ -4248,76 +3949,15 @@ const normalizeImageRateMultiplier = (
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
 };
 
-const normalizeNullablePrice = (
-  value: number | string | null | undefined,
-): number | null => {
-  if (value === null || value === undefined || value === "") {
-    return null;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-};
-
-const openAIImageTypeSelectionMessage = () =>
-  t("admin.groups.imagePricing.openaiTypeRequired");
-
-type OpenAIImageTypeSelectionRequest = (
-  | CreateGroupRequest
-  | UpdateGroupRequest
-) & {
-  openai_image_codex_enabled?: boolean;
-  openai_image_web2api_enabled?: boolean;
-};
-
-watch(
-  () => [
-    createForm.platform,
-    createForm.allow_image_generation,
-    createForm.openai_image_codex_enabled,
-    createForm.openai_image_web2api_enabled,
-  ],
-  () => {
-    normalizeOpenAIImageTypeSelection(
-      createForm as typeof createForm & OpenAIImageSelectionFormState,
-    );
-  },
-);
-
-watch(
-  () => [
-    editForm.platform,
-    editForm.allow_image_generation,
-    editForm.openai_image_codex_enabled,
-    editForm.openai_image_web2api_enabled,
-  ],
-  () => {
-    normalizeOpenAIImageTypeSelection(
-      editForm as typeof editForm & OpenAIImageSelectionFormState,
-    );
-  },
-);
-
 const handleCreateGroup = async () => {
   if (!createForm.name.trim()) {
     appStore.showError(t("admin.groups.nameRequired"));
     return;
   }
-  if (
-    createForm.platform === "openai" &&
-    createForm.allow_image_generation &&
-    !createForm.openai_image_codex_enabled &&
-    !createForm.openai_image_web2api_enabled
-  ) {
-    appStore.showError(openAIImageTypeSelectionMessage());
-    return;
-  }
   submitting.value = true;
   try {
     // 构建请求数据，包含模型路由配置
-    const requestData: CreateGroupRequest & {
-      openai_image_codex_enabled?: boolean;
-      openai_image_web2api_enabled?: boolean;
-    } = {
+    const requestData = {
       ...createForm,
       daily_limit_usd: normalizeOptionalLimit(
         createForm.daily_limit_usd as number | string | null,
@@ -4330,6 +3970,11 @@ const handleCreateGroup = async () => {
       ),
       model_routing: convertRoutingRulesToApiFormat(
         createModelRoutingRules.value,
+      ),
+      models_list_config: buildModelsListConfig(createModelsListState),
+      supported_model_scopes: normalizeSupportedModelScopesForPlatform(
+        createForm.platform,
+        createForm.supported_model_scopes,
       ),
       messages_dispatch_model_config:
         createForm.platform === "openai"
@@ -4349,15 +3994,6 @@ const handleCreateGroup = async () => {
     requestData.monthly_limit_usd = emptyToNull(requestData.monthly_limit_usd);
     requestData.image_rate_multiplier = normalizeImageRateMultiplier(
       requestData.image_rate_multiplier,
-    );
-    requestData.image_price_1k = normalizeNullablePrice(requestData.image_price_1k);
-    requestData.image_price_2k = normalizeNullablePrice(requestData.image_price_2k);
-    requestData.image_price_4k = normalizeNullablePrice(requestData.image_price_4k);
-    requestData.images2api_price_1k = normalizeNullablePrice(requestData.images2api_price_1k);
-    requestData.images2api_price_2k = normalizeNullablePrice(requestData.images2api_price_2k);
-    requestData.images2api_price_4k = normalizeNullablePrice(requestData.images2api_price_4k);
-    applyOpenAIImageTypeSelection(
-      requestData as OpenAIImageTypeSelectionRequest & OpenAIImageSelectionPayload,
     );
     await adminAPI.groups.create(requestData);
     appStore.showSuccess(t("admin.groups.groupCreated"));
@@ -4379,25 +4015,23 @@ const handleCreateGroup = async () => {
 };
 
 const handleEdit = async (group: AdminGroup) => {
-  const requestSeq = ++editHydrationRequestSeq;
-  editModelRoutingRules.value.forEach((rule) => {
-    accountSearchRunner.clearKey(getEditRuleSearchKey(rule));
-  });
-  clearAllAccountSearchState();
-  editModelRoutingRules.value = [];
   editingGroup.value = group;
   editForm.name = group.name;
   editForm.description = group.description || "";
   editForm.platform = group.platform;
   editForm.rate_multiplier = group.rate_multiplier;
-  editForm.refund_rate_multiplier = group.refund_rate_multiplier ?? 1.0;
   editForm.is_exclusive = group.is_exclusive;
   editForm.status = group.status;
   editForm.subscription_type = group.subscription_type || "standard";
   editForm.daily_limit_usd = group.daily_limit_usd;
   editForm.weekly_limit_usd = group.weekly_limit_usd;
   editForm.monthly_limit_usd = group.monthly_limit_usd;
-  Object.assign(editForm, deriveOpenAIImageFormState(group));
+  editForm.allow_image_generation = group.allow_image_generation ?? false;
+  editForm.image_rate_independent = group.image_rate_independent ?? false;
+  editForm.image_rate_multiplier = group.image_rate_multiplier ?? 1;
+  editForm.image_price_1k = group.image_price_1k;
+  editForm.image_price_2k = group.image_price_2k;
+  editForm.image_price_4k = group.image_price_4k;
   editForm.claude_code_only = group.claude_code_only || false;
   editForm.fallback_group_id = group.fallback_group_id;
   editForm.fallback_group_id_on_invalid_request =
@@ -4424,19 +4058,16 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.mcp_xml_inject = group.mcp_xml_inject ?? true;
   editForm.copy_accounts_from_group_ids = []; // 复制账号字段每次编辑时重置为空
   editForm.rpm_limit = group.rpm_limit ?? 0;
+  resetModelsListState(editModelsListState, group.models_list_config);
   // 加载模型路由规则（异步加载账号名称）
-  const routingRules = await convertApiFormatToRoutingRules(
+  editModelRoutingRules.value = await convertApiFormatToRoutingRules(
     group.model_routing,
   );
-  if (requestSeq !== editHydrationRequestSeq) {
-    return;
-  }
-  editModelRoutingRules.value = routingRules;
+  loadModelsListCandidates("edit", group.id, group.platform);
   showEditModal.value = true;
 };
 
 const closeEditModal = () => {
-  editHydrationRequestSeq += 1;
   editModelRoutingRules.value.forEach((rule) => {
     accountSearchRunner.clearKey(getEditRuleSearchKey(rule));
   });
@@ -4446,6 +4077,7 @@ const closeEditModal = () => {
   editModelRoutingRules.value = [];
   editForm.copy_accounts_from_group_ids = [];
   resetMessagesDispatchFormState(editForm);
+  resetModelsListState(editModelsListState);
 };
 
 const handleUpdateGroup = async () => {
@@ -4454,23 +4086,11 @@ const handleUpdateGroup = async () => {
     appStore.showError(t("admin.groups.nameRequired"));
     return;
   }
-  if (
-    editForm.platform === "openai" &&
-    editForm.allow_image_generation &&
-    !editForm.openai_image_codex_enabled &&
-    !editForm.openai_image_web2api_enabled
-  ) {
-    appStore.showError(openAIImageTypeSelectionMessage());
-    return;
-  }
 
   submitting.value = true;
   try {
     // 转换 fallback_group_id: null -> 0 (后端使用 0 表示清除)
-    const payload: UpdateGroupRequest & {
-      openai_image_codex_enabled?: boolean;
-      openai_image_web2api_enabled?: boolean;
-    } = {
+    const payload = {
       ...editForm,
       daily_limit_usd: normalizeOptionalLimit(
         editForm.daily_limit_usd as number | string | null,
@@ -4490,6 +4110,11 @@ const handleUpdateGroup = async () => {
       model_routing: convertRoutingRulesToApiFormat(
         editModelRoutingRules.value,
       ),
+      models_list_config: buildModelsListConfig(editModelsListState),
+      supported_model_scopes: normalizeSupportedModelScopesForPlatform(
+        editForm.platform,
+        editForm.supported_model_scopes,
+      ),
       messages_dispatch_model_config:
         editForm.platform === "openai"
           ? messagesDispatchFormStateToConfig({
@@ -4508,15 +4133,6 @@ const handleUpdateGroup = async () => {
     payload.monthly_limit_usd = emptyToNull(payload.monthly_limit_usd);
     payload.image_rate_multiplier = normalizeImageRateMultiplier(
       payload.image_rate_multiplier,
-    );
-    payload.image_price_1k = normalizeNullablePrice(payload.image_price_1k);
-    payload.image_price_2k = normalizeNullablePrice(payload.image_price_2k);
-    payload.image_price_4k = normalizeNullablePrice(payload.image_price_4k);
-    payload.images2api_price_1k = normalizeNullablePrice(payload.images2api_price_1k);
-    payload.images2api_price_2k = normalizeNullablePrice(payload.images2api_price_2k);
-    payload.images2api_price_4k = normalizeNullablePrice(payload.images2api_price_4k);
-    applyOpenAIImageTypeSelection(
-      payload as OpenAIImageTypeSelectionRequest & OpenAIImageSelectionPayload,
     );
     await adminAPI.groups.update(editingGroup.value.id, payload);
     appStore.showSuccess(t("admin.groups.groupUpdated"));
@@ -4612,6 +4228,8 @@ watch(
       createForm.require_oauth_only = false;
       createForm.require_privacy_set = false;
     }
+    resetModelsListState(createModelsListState);
+    loadModelsListCandidates("create", 0, newVal);
   },
 );
 
@@ -4627,6 +4245,10 @@ watch(
     if (!["openai", "antigravity", "anthropic", "gemini"].includes(newVal)) {
       editForm.require_oauth_only = false;
       editForm.require_privacy_set = false;
+    }
+    if (editingGroup.value) {
+      resetModelsListState(editModelsListState, editForm.platform === editingGroup.value.platform ? editingGroup.value.models_list_config : undefined);
+      loadModelsListCandidates("edit", editingGroup.value.id, newVal);
     }
   },
 );
@@ -4701,6 +4323,7 @@ const saveSortOrder = async () => {
 
 onMounted(() => {
   loadGroups();
+  loadModelsListCandidates("create", 0, createForm.platform);
   document.addEventListener("click", handleClickOutside);
 });
 

@@ -2148,7 +2148,6 @@ function findInvalidRiskThresholdFields(): string[] {
   }
   return invalid
 }
-
 function resetRiskThresholds() {
   configForm.thresholds = { ...riskThresholdDefaults }
 }

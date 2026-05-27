@@ -7,12 +7,14 @@ const {
   listGroups,
   getUsageSummary,
   getCapacitySummary,
+  getModelsListCandidates,
   getAccountById,
   showError
 } = vi.hoisted(() => ({
   listGroups: vi.fn(),
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
+  getModelsListCandidates: vi.fn(),
   getAccountById: vi.fn(),
   showError: vi.fn()
 }))
@@ -23,6 +25,7 @@ vi.mock('@/api/admin', () => ({
       list: listGroups,
       getUsageSummary,
       getCapacitySummary,
+      getModelsListCandidates,
       create: vi.fn(),
       update: vi.fn(),
       deleteGroup: vi.fn(),
@@ -160,6 +163,7 @@ describe('admin GroupsView edit hydration', () => {
     listGroups.mockReset()
     getUsageSummary.mockReset()
     getCapacitySummary.mockReset()
+    getModelsListCandidates.mockReset()
     getAccountById.mockReset()
     showError.mockReset()
 
@@ -175,6 +179,7 @@ describe('admin GroupsView edit hydration', () => {
     })
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])
+    getModelsListCandidates.mockResolvedValue([])
   })
 
   it('ignores stale async hydration when edit is clicked again before the first request resolves', async () => {

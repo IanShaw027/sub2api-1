@@ -3019,8 +3019,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		turnPreviousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(turnPreviousResponseID)
 		turnPromptCacheKey := openAIWSPayloadStringFromRaw(payload, "prompt_cache_key")
 		turnStoreDisabled := s.isOpenAIWSStoreDisabledInRequestRaw(payload, account)
-		turnHasFunctionCallOutput := HasToolContinuationOutputInRawPayload(payload)
-		eventCount := 0
+			turnHasFunctionCallOutput := HasToolContinuationOutputInRawPayload(payload)
+			eventCount := 0
 		tokenEventCount := 0
 		terminalEventCount := 0
 		firstEventType := ""
