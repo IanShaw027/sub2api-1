@@ -161,6 +161,17 @@ func TestNormalizeOpenAIPassthroughOAuthBody_MergesLegacyMessagesIntoReplayInput
 	require.False(t, gjson.GetBytes(normalized, "input.2").Exists())
 }
 
+func TestNormalizeOpenAIPassthroughOAuthBody_NormalizesAssistantMessageContentTypes(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","stream":true,"input":[{"role":"user","type":"message","content":[{"type":"input_text","text":"prompt"}]},{"role":"assistant","type":"message","content":[{"type":"input_text","text":"{\"ok\":true}"}]}]}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "input_text", gjson.GetBytes(normalized, "input.0.content.0.type").String())
+	require.Equal(t, "output_text", gjson.GetBytes(normalized, "input.1.content.0.type").String())
+	require.Equal(t, "{\"ok\":true}", gjson.GetBytes(normalized, "input.1.content.0.text").String())
+}
+
 func TestNormalizeOpenAIPassthroughOAuthBody_DropsUnpersistedReasoningItemsWhenStoreFalse(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.4","stream":true,"store":false,"input":[{"type":"message","role":"user","content":"hi"},{"type":"reasoning","id":"rs_0672f12450da0b9c0169f07220a6c08198b68c2455ced99344","summary":[]}]}`)
 

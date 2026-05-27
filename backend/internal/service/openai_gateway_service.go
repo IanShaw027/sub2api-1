@@ -8004,6 +8004,17 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	if normalizeOpenAIResponsesInputToolRoles(reqBody) {
 		changed = true
 	}
+	if input, ok := reqBody["input"].([]any); ok {
+		if normalizedInput, modified := normalizeCodexMessageContentText(input); modified {
+			reqBody["input"] = normalizedInput
+			input = normalizedInput
+			changed = true
+		}
+		if normalizedInput, modified := normalizeOpenAIResponsesMessageContentPartTypes(input); modified {
+			reqBody["input"] = normalizedInput
+			changed = true
+		}
+	}
 	if trimOpenAIStoreFalseReasoningItems(reqBody) {
 		changed = true
 	}

@@ -670,6 +670,94 @@ func normalizeCodexMessageContentText(input []any) ([]any, bool) {
 	return normalized, true
 }
 
+func normalizeOpenAIResponsesMessageContentPartTypes(input []any) ([]any, bool) {
+	if len(input) == 0 {
+		return input, false
+	}
+
+	modified := false
+	normalized := make([]any, 0, len(input))
+	for _, item := range input {
+		m, ok := item.(map[string]any)
+		if !ok || strings.TrimSpace(firstNonEmptyString(m["type"])) != "message" {
+			normalized = append(normalized, item)
+			continue
+		}
+		role := strings.TrimSpace(firstNonEmptyString(m["role"]))
+		if role == "" {
+			role = "user"
+		}
+		parts, ok := m["content"].([]any)
+		if !ok {
+			normalized = append(normalized, item)
+			continue
+		}
+
+		targetType := "input_text"
+		if role == "assistant" {
+			targetType = "output_text"
+		}
+
+		var newItem map[string]any
+		var newParts []any
+		ensureItemCopy := func() {
+			if newItem != nil {
+				return
+			}
+			newItem = make(map[string]any, len(m))
+			for key, value := range m {
+				newItem[key] = value
+			}
+			newParts = make([]any, len(parts))
+			copy(newParts, parts)
+		}
+
+		for i, rawPart := range parts {
+			part, ok := rawPart.(map[string]any)
+			if !ok {
+				continue
+			}
+			partType := strings.TrimSpace(firstNonEmptyString(part["type"]))
+			switch role {
+			case "assistant":
+				if partType == "refusal" || partType == "output_text" {
+					continue
+				}
+				if partType != "" && partType != "text" && partType != "input_text" {
+					continue
+				}
+			default:
+				if partType == "input_text" {
+					continue
+				}
+				if partType != "" && partType != "text" && partType != "output_text" {
+					continue
+				}
+			}
+
+			ensureItemCopy()
+			newPart := make(map[string]any, len(part))
+			for key, value := range part {
+				newPart[key] = value
+			}
+			newPart["type"] = targetType
+			newParts[i] = newPart
+			modified = true
+		}
+
+		if newItem != nil {
+			newItem["content"] = newParts
+			normalized = append(normalized, newItem)
+			continue
+		}
+		normalized = append(normalized, item)
+	}
+	if !modified {
+		return input, false
+	}
+	return normalized, true
+}
+
 func stringifyCodexContentText(value any) string {
 	switch v := value.(type) {
 	case string:
