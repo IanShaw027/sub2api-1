@@ -7942,12 +7942,25 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 		return body, false, nil
 	}
 
+	normalizedIngress, err := normalizeOpenAIResponsesIngress(body)
+	if err != nil {
+		return body, false, err
+	}
+	changed := false
+	switch {
+	case len(normalizedIngress.FullReplayBody) > 0:
+		body = normalizedIngress.FullReplayBody
+		changed = true
+	case len(normalizedIngress.PrimaryBody) > 0 && !bytes.Equal(normalizedIngress.PrimaryBody, body):
+		body = normalizedIngress.PrimaryBody
+		changed = true
+	}
+
 	var reqBody map[string]any
 	if err := json.Unmarshal(body, &reqBody); err != nil {
 		return body, false, fmt.Errorf("normalize passthrough body parse: %w", err)
 	}
 
-	changed := false
 	for _, field := range openAIChatGPTInternalUnsupportedFields {
 		if _, ok := reqBody[field]; ok {
 			delete(reqBody, field)

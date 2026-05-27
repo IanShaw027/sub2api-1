@@ -130,6 +130,37 @@ func TestNormalizeOpenAIPassthroughOAuthBody_NormalizesToolChoiceAndExtractsSyst
 	require.Equal(t, "object", gjson.GetBytes(normalized, "tools.0.parameters.type").String())
 }
 
+func TestNormalizeOpenAIPassthroughOAuthBody_NormalizesLegacyMessagesIntoInstructionsAndInput(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","stream":true,"messages":[{"role":"system","content":"planner policy"},{"role":"user","content":"draw"}],"tools":[{"type":"function","function":{"name":"generate_images","description":"Plan for generating images","parameters":{"type":"object"}}}],"tool_choice":{"type":"function","function":{"name":"generate_images"}}}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(normalized, "messages").Exists())
+	require.Equal(t, "planner policy", gjson.GetBytes(normalized, "instructions").String())
+	require.Equal(t, "user", gjson.GetBytes(normalized, "input.0.role").String())
+	require.Equal(t, "draw", gjson.GetBytes(normalized, "input.0.content").String())
+	require.Equal(t, "function", gjson.GetBytes(normalized, "tool_choice.type").String())
+	require.Equal(t, "generate_images", gjson.GetBytes(normalized, "tool_choice.name").String())
+	require.Equal(t, "generate_images", gjson.GetBytes(normalized, "tools.0.name").String())
+}
+
+func TestNormalizeOpenAIPassthroughOAuthBody_MergesLegacyMessagesIntoReplayInput(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","stream":true,"previous_response_id":"resp_123","input":[{"type":"function_call_output","call_id":"call_1","output":"done"}],"messages":[{"role":"system","content":"planner policy"},{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"hello\"}"}}]},{"role":"tool","tool_call_id":"call_1","content":"done"}]}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(normalized, "messages").Exists())
+	require.False(t, gjson.GetBytes(normalized, "previous_response_id").Exists())
+	require.Equal(t, "planner policy", gjson.GetBytes(normalized, "instructions").String())
+	require.Equal(t, "function_call", gjson.GetBytes(normalized, "input.0.type").String())
+	require.Equal(t, "call_1", gjson.GetBytes(normalized, "input.0.call_id").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(normalized, "input.1.type").String())
+	require.Equal(t, "call_1", gjson.GetBytes(normalized, "input.1.call_id").String())
+	require.False(t, gjson.GetBytes(normalized, "input.2").Exists())
+}
+
 func TestNormalizeOpenAIPassthroughOAuthBody_DropsUnpersistedReasoningItemsWhenStoreFalse(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.4","stream":true,"store":false,"input":[{"type":"message","role":"user","content":"hi"},{"type":"reasoning","id":"rs_0672f12450da0b9c0169f07220a6c08198b68c2455ced99344","summary":[]}]}`)
 
