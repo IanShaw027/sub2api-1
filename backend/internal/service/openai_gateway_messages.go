@@ -176,18 +176,23 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		if err := json.Unmarshal(responsesBody, &reqBody); err != nil {
 			return nil, fmt.Errorf("unmarshal for codex transform: %w", err)
 		}
-		codexResult := applyCodexOAuthTransformWithInputMode(reqBody, false, false, codexTransformInputModePreservePrefix)
-		if c != nil {
-			c.Set(openAICodexTransformObsKey, codexResult.Observability)
-		}
 		forcedTemplateText := ""
 		if s.cfg != nil {
 			forcedTemplateText = s.cfg.Gateway.ForcedCodexInstructionsTemplate
 		}
-		if IsClaudeCodeClient(c.Request.Context()) &&
-			strings.TrimSpace(forcedTemplateText) == "" &&
-			applyEmbeddedDefaultInstructions(reqBody) {
-			codexResult.Modified = true
+		embedDefaultInstructions := IsClaudeCodeClient(c.Request.Context()) &&
+			strings.TrimSpace(forcedTemplateText) == ""
+		codexResult := applyCodexOAuthTransformWithInputModeAndOptions(
+			reqBody,
+			false,
+			false,
+			codexTransformInputModePreservePrefix,
+			codexOAuthTransformOptions{
+				SkipDefaultInstructions: !embedDefaultInstructions,
+			},
+		)
+		if c != nil {
+			c.Set(openAICodexTransformObsKey, codexResult.Observability)
 		}
 		templateUpstreamModel := upstreamModel
 		if codexResult.NormalizedModel != "" {

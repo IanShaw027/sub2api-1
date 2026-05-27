@@ -203,6 +203,24 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_UsesGroupImage
 			Status:      StatusActive,
 			Schedulable: true,
 			Concurrency: 1,
+			Extra: map[string]any{
+				"web_profile": map[string]any{
+					"user_agent":                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.6950.102 Safari/537.36",
+					"accept_language":            "en;q=0.9",
+					"sec_ch_ua":                  `"Not.A/Brand";v="8", "Chromium";v="145", "Google Chrome";v="145"`,
+					"sec_ch_ua_mobile":           "?0",
+					"sec_ch_ua_platform":         `"macOS"`,
+					"sec_ch_ua_arch":             `"arm"`,
+					"sec_ch_ua_bitness":          `"64"`,
+					"sec_ch_ua_full_version":     `"145.0.0.0"`,
+					"sec_ch_ua_platform_version": `"15.4.0"`,
+					"oai_device_id":              "device-71031",
+					"oai_session_id":             "session-71031",
+					"cookies": []any{
+						map[string]any{"name": "__Secure-next-auth.session-token", "value": "cookie-value", "domain": ".chatgpt.com", "path": "/"},
+					},
+				},
+			},
 		},
 	}}
 	svc := &OpenAIGatewayService{

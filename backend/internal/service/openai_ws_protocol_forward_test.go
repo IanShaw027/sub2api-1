@@ -263,8 +263,8 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentO
 
 	require.False(t, gjson.GetBytes(secondBody, "previous_response_id").Exists(), "HTTP 精确重试不应重新带回 previous_response_id")
 	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "精确重试应移除坏的 reasoning item")
-	require.Equal(t, "message", gjson.GetBytes(secondBody, "input.0.type").String(), "重试后首项应变为后续消息")
-	require.Equal(t, "input_text", gjson.GetBytes(secondBody, "input.0.content.0.type").String(), "后续消息内容应保留")
+	require.Equal(t, "input_text", gjson.GetBytes(secondBody, "input.0.type").String(), "重试后应保留后续 input_text 项")
+	require.Equal(t, "hello", gjson.GetBytes(secondBody, "input.0.text").String(), "后续消息内容应保留")
 	requireOrderedJSONKeys(t, secondBody, "model", "instructions", "prompt_cache_key", "input")
 
 	decision, _ := c.Get("openai_ws_transport_decision")

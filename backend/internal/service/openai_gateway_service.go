@@ -3290,7 +3290,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		patchDisabled = true
 	}
 	isMessagesBridgeRequest := isOpenAICompatMessagesBridgeRequestBody(reqBody)
-	if isMessagesBridgeRequest {
+	if shouldMarkOpenAICompatMessagesBridgeContext(c, reqBody) {
 		setOpenAICompatMessagesBridgeContext(c, true)
 	}
 	isCompactRequest := isOpenAIResponsesCompactPath(c)
@@ -3485,7 +3485,15 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 || NeedsToolContinuation(reqBody) {
 			codexInputMode = codexTransformInputModePreservePrefix
 		}
-		codexResult := applyCodexOAuthTransformWithInputMode(reqBody, isCodexCLI, isCompactRequest, codexInputMode)
+		codexResult := applyCodexOAuthTransformWithInputModeAndOptions(
+			reqBody,
+			isCodexCLI,
+			isCompactRequest,
+			codexInputMode,
+			codexOAuthTransformOptions{
+				SkipDefaultInstructions: isMessagesBridgeRequest && !shouldInjectDefaultInstructionsForOpenAIMessagesBridge(c),
+			},
+		)
 		if c != nil {
 			c.Set(openAICodexTransformObsKey, codexResult.Observability)
 		}
@@ -5625,7 +5633,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	if account.Type == AccountTypeOAuth {
 		req.Header.Del("conversation_id")
 		req.Header.Del("session_id")
-		isMessagesBridge := shouldUseOpenAIMessagesBridgeHeaders(c, body)
+		isMessagesBridge := shouldUseOpenAIMessagesBridgeHeaders(c, body) ||
+			isOpenAICompatMessagesBridgePromptCacheKey(strings.TrimSpace(promptCacheKey))
 		if isMessagesBridge {
 			req.Header.Del("originator")
 		} else {
@@ -6777,6 +6786,7 @@ type openAICompatSSEFrameParser struct {
 
 func (p *openAICompatSSEFrameParser) AddLine(line string) (openAICompatSSEFrame, bool) {
 	line = strings.TrimSuffix(line, "\r")
+	line = normalizeOpenAIHTTPResponseTerminalSSELine(line)
 	if line == "" {
 		return p.dispatch()
 	}
@@ -7002,6 +7012,27 @@ func (s *OpenAIGatewayService) replaceModelInSSELine(line, fromModel, toModel st
 	}
 
 	return line
+}
+
+func normalizeOpenAIHTTPResponseTerminalSSELine(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if strings.EqualFold(trimmed, "event: response.done") {
+		return "event: response.completed"
+	}
+
+	data, ok := extractOpenAISSEDataLine(line)
+	if !ok || data == "" || data == "[DONE]" {
+		return line
+	}
+	if strings.TrimSpace(gjson.Get(data, "type").String()) != "response.done" {
+		return line
+	}
+
+	normalized, err := sjson.Set(data, "type", "response.completed")
+	if err != nil {
+		return line
+	}
+	return "data: " + normalized
 }
 
 // correctToolCallsInResponseBody 修正响应体中的工具调用
@@ -8781,13 +8812,24 @@ func isOpenAIResponsesInboundPath(c *gin.Context) bool {
 }
 
 func shouldInjectDefaultInstructionsForOpenAIResponses(c *gin.Context, account *Account, isMessagesBridgeRequest bool, isCompactRequest bool) bool {
+	_ = isCompactRequest
 	if account == nil {
 		return false
 	}
 	if account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth {
 		return false
 	}
+	if isMessagesBridgeRequest {
+		return shouldInjectDefaultInstructionsForOpenAIMessagesBridge(c)
+	}
 	return isOpenAIResponsesInboundPath(c)
+}
+
+func shouldInjectDefaultInstructionsForOpenAIMessagesBridge(c *gin.Context) bool {
+	if c != nil && c.Request != nil && IsClaudeCodeClient(c.Request.Context()) {
+		return true
+	}
+	return isOpenAICompatMessagesBridgeContext(c)
 }
 
 func finalizeOpenAIResponsesOAuthUpstreamBody(c *gin.Context, account *Account, reqModel string, body []byte) ([]byte, bool, error) {

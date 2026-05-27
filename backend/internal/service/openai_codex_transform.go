@@ -146,7 +146,14 @@ const (
 )
 
 func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact bool) codexTransformResult {
-	return applyCodexOAuthTransformWithInputModeAndFallbackReason(reqBody, isCodexCLI, isCompact, codexTransformInputModeStrict, "")
+	return applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
+		reqBody,
+		isCodexCLI,
+		isCompact,
+		codexTransformInputModeStrict,
+		"",
+		codexOAuthTransformOptions{},
+	)
 }
 
 func applyCodexOAuthTransformWithInputMode(
@@ -155,11 +162,34 @@ func applyCodexOAuthTransformWithInputMode(
 	isCompact bool,
 	inputMode codexTransformInputMode,
 ) codexTransformResult {
-	return applyCodexOAuthTransformWithInputModeAndFallbackReason(reqBody, isCodexCLI, isCompact, inputMode, "")
+	return applyCodexOAuthTransformWithInputModeAndOptions(
+		reqBody,
+		isCodexCLI,
+		isCompact,
+		inputMode,
+		codexOAuthTransformOptions{},
+	)
+}
+
+func applyCodexOAuthTransformWithInputModeAndOptions(
+	reqBody map[string]any,
+	isCodexCLI bool,
+	isCompact bool,
+	inputMode codexTransformInputMode,
+	opts codexOAuthTransformOptions,
+) codexTransformResult {
+	return applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
+		reqBody,
+		isCodexCLI,
+		isCompact,
+		inputMode,
+		"",
+		opts,
+	)
 }
 
 func applyCodexOAuthTransformWithOptions(reqBody map[string]any, opts codexOAuthTransformOptions) codexTransformResult {
-	result := applyCodexOAuthTransform(reqBody, false, false)
+	result := applyCodexOAuthTransformWithInputModeAndOptions(reqBody, false, false, codexTransformInputModeStrict, opts)
 	if opts.SkipDefaultInstructions {
 		if instructions, ok := reqBody["instructions"].(string); ok {
 			defaultInstructions := strings.TrimSpace(openai.DefaultInstructions)
@@ -187,6 +217,24 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReason(
 	isCompact bool,
 	inputMode codexTransformInputMode,
 	fallbackReason string,
+) codexTransformResult {
+	return applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
+		reqBody,
+		isCodexCLI,
+		isCompact,
+		inputMode,
+		fallbackReason,
+		codexOAuthTransformOptions{},
+	)
+}
+
+func applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
+	reqBody map[string]any,
+	isCodexCLI bool,
+	isCompact bool,
+	inputMode codexTransformInputMode,
+	fallbackReason string,
+	opts codexOAuthTransformOptions,
 ) codexTransformResult {
 	result := codexTransformResult{}
 	// 工具续链需求会影响存储策略与 input 过滤逻辑。
@@ -337,7 +385,7 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReason(
 	}
 
 	// instructions 处理逻辑：根据是否是 Codex CLI 分别调用不同方法
-	if applyInstructions(reqBody, isCodexCLI) {
+	if !opts.SkipDefaultInstructions && applyInstructions(reqBody, isCodexCLI) {
 		result.Modified = true
 		result.Observability.DefaultInstructionsApplied = true
 	}
