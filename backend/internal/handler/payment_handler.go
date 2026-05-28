@@ -725,12 +725,15 @@ type PaymentOrderResult struct {
 	PaidAt              *time.Time `json:"paid_at,omitempty"`
 	CompletedAt         *time.Time `json:"completed_at,omitempty"`
 	RefundAmount        float64    `json:"refund_amount"`
+	RefundRequestedAmount float64  `json:"refund_requested_amount"`
 	RefundReason        *string    `json:"refund_reason,omitempty"`
 	RefundRequestedAt   *time.Time `json:"refund_requested_at,omitempty"`
 	RefundRequestedBy   *string    `json:"refund_requested_by,omitempty"`
 	RefundRequestReason *string    `json:"refund_request_reason,omitempty"`
 	PlanID              *int64     `json:"plan_id,omitempty"`
 	ProviderInstanceID  *string    `json:"provider_instance_id,omitempty"`
+	InvoiceStatus       string     `json:"invoice_status,omitempty"`
+	InvoiceFileMediaID  *int64     `json:"invoice_file_media_id,omitempty"`
 }
 
 func sanitizePaymentOrdersForResponse(orders []*dbent.PaymentOrder) []PaymentOrderResult {
@@ -763,12 +766,15 @@ func sanitizePaymentOrderForResponse(order *dbent.PaymentOrder) *PaymentOrderRes
 		PaidAt:              order.PaidAt,
 		CompletedAt:         order.CompletedAt,
 		RefundAmount:        order.RefundAmount,
+		RefundRequestedAmount: order.RefundRequestedAmount,
 		RefundReason:        order.RefundReason,
 		RefundRequestedAt:   order.RefundRequestedAt,
 		RefundRequestedBy:   order.RefundRequestedBy,
 		RefundRequestReason: order.RefundRequestReason,
 		PlanID:              order.PlanID,
 		ProviderInstanceID:  order.ProviderInstanceID,
+		InvoiceStatus:       order.InvoiceStatus,
+		InvoiceFileMediaID:  order.InvoiceFileMediaID,
 	}
 }
 
