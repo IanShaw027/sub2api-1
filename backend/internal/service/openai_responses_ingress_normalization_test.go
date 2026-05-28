@@ -92,6 +92,21 @@ func TestNormalizeOpenAIResponsesIngress_PreservesLegacyChatCompletionTopLevelFi
 	require.InDelta(t, 0.7, gjson.GetBytes(normalized.PrimaryBody, "top_p").Float(), 0.001)
 }
 
+func TestNormalizeOpenAIResponsesIngress_PreservesResponsesNativeToolShapeWhenInputExists(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"gpt-5.4","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"compact me"}]}],"tools":[{"type":"function","function":{"name":"apply_patch"}}],"tool_choice":{"type":"function","function":{"name":"apply_patch"}},"previous_response_id":"resp_stale"}`)
+
+	normalized, err := normalizeOpenAIResponsesIngress(body)
+	require.NoError(t, err)
+	require.Equal(t, "input", normalized.FullReplaySource)
+	require.False(t, gjson.GetBytes(normalized.FullReplayBody, "previous_response_id").Exists())
+	require.Equal(t, "apply_patch", gjson.GetBytes(normalized.FullReplayBody, "tools.0.function.name").String())
+	require.False(t, gjson.GetBytes(normalized.FullReplayBody, "tools.0.name").Exists())
+	require.Equal(t, "apply_patch", gjson.GetBytes(normalized.FullReplayBody, "tool_choice.function.name").String())
+	require.False(t, gjson.GetBytes(normalized.FullReplayBody, "tool_choice.name").Exists())
+}
+
 func TestSetOpenAIResponsesIngressInstructions_PreservesNonBlankValue(t *testing.T) {
 	t.Parallel()
 

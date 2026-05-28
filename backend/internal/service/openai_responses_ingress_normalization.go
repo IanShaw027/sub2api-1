@@ -38,19 +38,22 @@ func normalizeOpenAIResponsesIngress(body []byte) (openAIResponsesIngressNormali
 	inputValue := gjson.GetBytes(body, "input")
 	messagesValue := gjson.GetBytes(body, "messages")
 	hasInput := inputValue.Exists() && inputValue.Type != gjson.Null
+	hasLegacyMessages := messagesValue.Exists() && messagesValue.Type == gjson.JSON && len(messagesValue.Array()) > 0
 
 	if hasInput {
 		fullReplayInputRaw := []byte(inputValue.Raw)
 		fullReplaySource := "input"
-		legacyMessages, legacyErr := normalizeLegacyResponsesMessages(body)
-		if legacyErr == nil && len(legacyMessages.InputRaw) > 0 {
-			mergedInputRaw, merged, err := mergeResponsesReplayInputs(legacyMessages.InputRaw, fullReplayInputRaw)
-			if err != nil {
-				return normalized, err
-			}
-			if merged {
-				fullReplayInputRaw = mergedInputRaw
-				fullReplaySource = "input+messages"
+		if hasLegacyMessages {
+			legacyMessages, legacyErr := normalizeLegacyResponsesMessages(body)
+			if legacyErr == nil && len(legacyMessages.InputRaw) > 0 {
+				mergedInputRaw, merged, err := mergeResponsesReplayInputs(legacyMessages.InputRaw, fullReplayInputRaw)
+				if err != nil {
+					return normalized, err
+				}
+				if merged {
+					fullReplayInputRaw = mergedInputRaw
+					fullReplaySource = "input+messages"
+				}
 			}
 		}
 
@@ -58,14 +61,16 @@ func normalizeOpenAIResponsesIngress(body []byte) (openAIResponsesIngressNormali
 		if err != nil {
 			return normalized, err
 		}
-		if legacyMessages, legacyErr := normalizeLegacyResponsesMessages(body); legacyErr == nil && len(legacyMessages.InputRaw) > 0 {
-			fullReplayBody, err = setOpenAIResponsesIngressInstructions(fullReplayBody, legacyMessages.Instructions)
-			if err != nil {
-				return normalized, err
-			}
-			fullReplayBody, err = setNormalizedLegacyResponsesFields(fullReplayBody, legacyMessages)
-			if err != nil {
-				return normalized, err
+		if hasLegacyMessages {
+			if legacyMessages, legacyErr := normalizeLegacyResponsesMessages(body); legacyErr == nil && len(legacyMessages.InputRaw) > 0 {
+				fullReplayBody, err = setOpenAIResponsesIngressInstructions(fullReplayBody, legacyMessages.Instructions)
+				if err != nil {
+					return normalized, err
+				}
+				fullReplayBody, err = setNormalizedLegacyResponsesFields(fullReplayBody, legacyMessages)
+				if err != nil {
+					return normalized, err
+				}
 			}
 		}
 		normalized.FullReplayBody = dropOpenAIResponsesIngressPreviousResponseID(fullReplayBody)

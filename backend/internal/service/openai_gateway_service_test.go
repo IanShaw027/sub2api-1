@@ -35,6 +35,17 @@ type snapshotUpdateAccountRepo struct {
 	updateExtraCalls chan map[string]any
 }
 
+type ttftCooldownCall struct {
+	id     int64
+	until  time.Time
+	reason string
+}
+
+type ttftCooldownAccountRepoStub struct {
+	AccountRepository
+	calls []ttftCooldownCall
+}
+
 type openAISettingRepoStub struct {
 	values map[string]string
 }
@@ -106,6 +117,11 @@ func (r *snapshotUpdateAccountRepo) UpdateExtra(ctx context.Context, id int64, u
 		}
 		r.updateExtraCalls <- copied
 	}
+	return nil
+}
+
+func (r *ttftCooldownAccountRepoStub) SetTempUnschedulable(_ context.Context, id int64, until time.Time, reason string) error {
+	r.calls = append(r.calls, ttftCooldownCall{id: id, until: until, reason: reason})
 	return nil
 }
 
@@ -2881,6 +2897,132 @@ func TestOpenAIStreamingPassthroughSoftRateLimitAdvisoryBeforeOutputReturnsFailo
 	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
 	require.False(t, c.Writer.Written())
 	require.Empty(t, rec.Body.String())
+}
+
+func TestOpenAIStreamingTTFTWatchdogReturnsFailoverAndCooldown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	prevTimeout := openAITTFTWatchdogTimeout
+	prevCooldown := openAITTFTCooldownDuration
+	openAITTFTWatchdogTimeout = 20 * time.Millisecond
+	openAITTFTCooldownDuration = time.Minute
+	defer func() {
+		openAITTFTWatchdogTimeout = prevTimeout
+		openAITTFTCooldownDuration = prevCooldown
+	}()
+
+	repo := &ttftCooldownAccountRepoStub{}
+	svc := &OpenAIGatewayService{
+		cfg:         &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}},
+		accountRepo: repo,
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	pr, pw := io.Pipe()
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       pr,
+		Header:     http.Header{"X-Request-Id": []string{"rid-ttft-watchdog"}},
+	}
+	go func() {
+		time.Sleep(60 * time.Millisecond)
+		_ = pw.Close()
+	}()
+
+	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Name: "oauth-42"}
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, account, time.Now(), "gpt-5.5", "gpt-5.5")
+	require.Error(t, err)
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusGatewayTimeout, failoverErr.StatusCode)
+	require.False(t, c.Writer.Written())
+	require.Len(t, repo.calls, 1)
+	require.Equal(t, int64(42), repo.calls[0].id)
+	require.Contains(t, repo.calls[0].reason, "ttft_timeout")
+	require.WithinDuration(t, time.Now().Add(time.Minute), repo.calls[0].until, 2*time.Second)
+}
+
+func TestOpenAIStreamingPassthroughTTFTWatchdogReturnsFailoverAndCooldown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	prevTimeout := openAITTFTWatchdogTimeout
+	prevCooldown := openAITTFTCooldownDuration
+	openAITTFTWatchdogTimeout = 20 * time.Millisecond
+	openAITTFTCooldownDuration = time.Minute
+	defer func() {
+		openAITTFTWatchdogTimeout = prevTimeout
+		openAITTFTCooldownDuration = prevCooldown
+	}()
+
+	repo := &ttftCooldownAccountRepoStub{}
+	svc := &OpenAIGatewayService{
+		cfg:         &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}},
+		accountRepo: repo,
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	pr, pw := io.Pipe()
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       pr,
+		Header:     http.Header{"X-Request-Id": []string{"rid-ttft-watchdog-pass"}},
+	}
+	go func() {
+		time.Sleep(60 * time.Millisecond)
+		_ = pw.Close()
+	}()
+
+	account := &Account{ID: 84, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Name: "oauth-84"}
+	_, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, account, time.Now(), "gpt-5.5", "gpt-5.5")
+	require.Error(t, err)
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusGatewayTimeout, failoverErr.StatusCode)
+	require.False(t, c.Writer.Written())
+	require.Len(t, repo.calls, 1)
+	require.Equal(t, int64(84), repo.calls[0].id)
+	require.Contains(t, repo.calls[0].reason, "ttft_timeout")
+	require.WithinDuration(t, time.Now().Add(time.Minute), repo.calls[0].until, 2*time.Second)
+}
+
+func TestOpenAITTFTWatchdogDisabledForResponsesImageOnlyRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Name: "oauth-42"}
+	body := []byte(`{"model":"gpt-image-2","size":"1024x1024"}`)
+
+	_, _, err := finalizeOpenAIResponsesOAuthUpstreamBody(c, account, "gpt-image-2", body)
+	require.NoError(t, err)
+
+	svc := &OpenAIGatewayService{}
+	require.False(t, svc.shouldEnableOpenAITTFTWatchdog(c, account))
+}
+
+func TestOpenAITTFTWatchdogDisabledForResponsesExplicitImageToolChoice(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	account := &Account{ID: 84, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Name: "oauth-84"}
+	body := []byte(`{"model":"gpt-5.4","tool_choice":{"type":"image_generation"},"tools":[{"type":"image_generation","output_format":"png"}],"input":"draw a cat"}`)
+
+	_, _, err := finalizeOpenAIResponsesOAuthUpstreamBody(c, account, "gpt-5.4", body)
+	require.NoError(t, err)
+
+	svc := &OpenAIGatewayService{}
+	require.False(t, svc.shouldEnableOpenAITTFTWatchdog(c, account))
 }
 
 func TestOpenAINonStreamingSoftRateLimitAdvisoryDoesNotFailover(t *testing.T) {
