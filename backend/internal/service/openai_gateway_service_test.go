@@ -3647,6 +3647,7 @@ func TestOpenAIBuildUpstreamRequestOpenAIPassthroughPreservesCompactPath(t *test
 	require.Empty(t, req.Header.Get("Conversation_Id"))
 	require.Equal(t, "inst-123", req.Header.Get("X-Codex-Installation-Id"))
 	require.Equal(t, "compact-cache:0", req.Header.Get("X-Codex-Window-Id"))
+	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(req.Context()))
 }
 
 func TestOpenAIBuildUpstreamRequestCompactPreservesOfficialOAuthHeaders(t *testing.T) {
@@ -3820,6 +3821,7 @@ func TestOpenAIBuildUpstreamRequest_APIKeySkipsOAuthOnlyCodexHeaders(t *testing.
 	require.Empty(t, passthroughReq.Header.Get("X-Codex-Beta-Features"))
 	require.Empty(t, passthroughReq.Header.Get("X-Client-Request-Id"))
 	require.Empty(t, passthroughReq.Header.Get("X-Codex-Window-Id"))
+	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(req.Context()))
 }
 
 func TestOpenAIBuildUpstreamRequestOAuthMessagesBridgeUsesSessionOnly(t *testing.T) {

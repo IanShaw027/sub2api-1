@@ -99,7 +99,7 @@ func (r *rateLimitAccountRepoStub) SetRateLimited(ctx context.Context, id int64,
 	r.lastRateLimitedAt = resetAt
 	return nil
 }
-func (r *rateLimitAccountRepoStub) SetModelRateLimit(context.Context, int64, string, time.Time) error {
+func (r *rateLimitAccountRepoStub) SetModelRateLimit(context.Context, int64, string, time.Time, ...string) error {
 	return nil
 }
 func (r *rateLimitAccountRepoStub) SetOverloaded(context.Context, int64, time.Time) error { return nil }

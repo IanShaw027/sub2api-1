@@ -49,8 +49,9 @@ func TestOpenAIHandleFailoverExhausted_StreamRetryableOverloadReturnsSSEOverload
 	}, true)
 
 	body := w.Body.String()
-	require.Contains(t, body, "event: error\n")
-	require.Contains(t, body, `"type":"overloaded_error"`)
+	require.Contains(t, body, "event: response.failed\n")
+	require.Contains(t, body, `"type":"response.failed"`)
+	require.Contains(t, body, `"code":"overloaded_error"`)
 	require.Contains(t, body, `"message":"Upstream service overloaded, please retry later"`)
 	require.NotContains(t, body, "Upstream service temporarily unavailable")
 }
@@ -74,8 +75,9 @@ func TestOpenAIHandleFailoverExhausted_PartialSSEOutputKeepsStreamingErrorShape(
 
 	body := w.Body.String()
 	require.Contains(t, body, "data: {\"type\":\"response.output_text.delta\"}\n\n")
-	require.Contains(t, body, "event: error\n")
-	require.Contains(t, body, `"type":"overloaded_error"`)
+	require.Contains(t, body, "event: response.failed\n")
+	require.Contains(t, body, `"type":"response.failed"`)
+	require.Contains(t, body, `"code":"overloaded_error"`)
 	require.Contains(t, body, `"message":"Upstream service overloaded, please retry later"`)
 }
 

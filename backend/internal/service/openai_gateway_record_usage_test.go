@@ -111,6 +111,47 @@ func (s *openAIRecordUsageAPIKeyQuotaStub) UpdateRateLimitUsage(ctx context.Cont
 	return s.err
 }
 
+type openAIRecordUsageUserPlatformQuotaRepoStub struct {
+	callCh chan openAIRecordUsageUserPlatformQuotaCall
+}
+
+type openAIRecordUsageUserPlatformQuotaCall struct {
+	userID   int64
+	platform string
+	cost     float64
+}
+
+func (s *openAIRecordUsageUserPlatformQuotaRepoStub) GetByUserPlatform(context.Context, int64, string) (*UserPlatformQuotaRecord, error) {
+	panic("unexpected GetByUserPlatform call")
+}
+
+func (s *openAIRecordUsageUserPlatformQuotaRepoStub) BulkInsertInitial(context.Context, []UserPlatformQuotaRecord) error {
+	panic("unexpected BulkInsertInitial call")
+}
+
+func (s *openAIRecordUsageUserPlatformQuotaRepoStub) IncrementUsageWithReset(_ context.Context, userID int64, platform string, cost float64, _ time.Time) error {
+	if s.callCh != nil {
+		s.callCh <- openAIRecordUsageUserPlatformQuotaCall{
+			userID:   userID,
+			platform: platform,
+			cost:     cost,
+		}
+	}
+	return nil
+}
+
+func (s *openAIRecordUsageUserPlatformQuotaRepoStub) ListByUser(context.Context, int64) ([]UserPlatformQuotaRecord, error) {
+	panic("unexpected ListByUser call")
+}
+
+func (s *openAIRecordUsageUserPlatformQuotaRepoStub) UpsertForUser(context.Context, int64, []UserPlatformQuotaRecord) error {
+	panic("unexpected UpsertForUser call")
+}
+
+func (s *openAIRecordUsageUserPlatformQuotaRepoStub) ResetExpiredWindow(context.Context, int64, string, string, time.Time) error {
+	panic("unexpected ResetExpiredWindow call")
+}
+
 type openAIUserGroupRateRepoStub struct {
 	UserGroupRateRepository
 
@@ -161,7 +202,9 @@ func newOpenAIRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo U
 		nil,
 		nil,
 		nil,
-		nil,
+		nil, // tlsFPProfileService
+		nil, // settingService
+		nil, // userPlatformQuotaRepo
 	)
 	svc.userGroupRateResolver = newUserGroupRateResolver(
 		rateRepo,
@@ -969,6 +1012,53 @@ func TestOpenAIGatewayServiceRecordUsage_ServiceTierFlexHalvesCost(t *testing.T)
 	baseCost, calcErr := svc.billingService.CalculateCost("gpt-5.4", UsageTokens{InputTokens: 80, OutputTokens: 50, CacheReadTokens: 20}, 1.0)
 	require.NoError(t, calcErr)
 	require.InDelta(t, baseCost.TotalCost*0.5, usageRepo.lastLog.TotalCost, 1e-10)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_UsesQuotaPlatformForPlatformQuotaAccounting(t *testing.T) {
+	groupID := int64(1017)
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	quotaRepo := &openAIRecordUsageUserPlatformQuotaRepoStub{
+		callCh: make(chan openAIRecordUsageUserPlatformQuotaCall, 1),
+	}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
+	svc.userPlatformQuotaRepo = quotaRepo
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_quota_platform_override",
+			Usage: OpenAIUsage{
+				InputTokens:  120,
+				OutputTokens: 60,
+			},
+			Model:    "gpt-5.4",
+			Duration: time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      1017,
+			GroupID: i64p(groupID),
+			Group: &Group{
+				ID:             groupID,
+				Platform:       PlatformOpenAI,
+				RateMultiplier: 1.0,
+			},
+		},
+		User:          &User{ID: 2017},
+		Account:       &Account{ID: 3017, Type: AccountTypeAPIKey},
+		QuotaPlatform: PlatformAntigravity,
+	})
+
+	require.NoError(t, err)
+	select {
+	case call := <-quotaRepo.callCh:
+		require.Equal(t, int64(2017), call.userID)
+		require.Equal(t, PlatformAntigravity, call.platform, "post-billing quota accounting must follow the handler-provided quota platform")
+		require.Positive(t, call.cost)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for user platform quota increment")
+	}
 }
 
 func TestNormalizeOpenAIServiceTier(t *testing.T) {

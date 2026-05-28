@@ -3,7 +3,7 @@
     "stop_reason": "refusal",
     "stop_details.type": "refusal",
     "stop_details.explanation": "Blocked by policy review",
-    "usage.input_tokens": 12,
+    "usage.input_tokens": 8,
     "usage.output_tokens": 0,
     "usage.cache_read_input_tokens": 4,
     "usage.service_tier": "standard",

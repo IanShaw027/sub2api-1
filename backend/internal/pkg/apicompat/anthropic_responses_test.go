@@ -883,6 +883,101 @@ func TestStreamingTextOnly(t *testing.T) {
 	assert.Equal(t, "message_stop", events[1].Type)
 }
 
+func TestResponsesEventToAnthropicEvents_ResponseDone(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+	state.Model = "gpt-4o"
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type: "response.done",
+		Response: &ResponsesResponse{
+			Status: "completed",
+			Usage:  &ResponsesUsage{InputTokens: 12, OutputTokens: 4},
+		},
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "message_delta", events[0].Type)
+	assert.Equal(t, "end_turn", events[0].Delta.StopReason)
+	assert.Equal(t, 12, events[0].Usage.InputTokens)
+	assert.Equal(t, 4, events[0].Usage.OutputTokens)
+	assert.Equal(t, "message_stop", events[1].Type)
+	assert.Nil(t, FinalizeResponsesAnthropicStream(state))
+}
+
+func TestResponsesEventToAnthropicEvents_TopLevelTerminalUsage(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+	state.Model = "gpt-4o"
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type: "response.completed",
+		Response: &ResponsesResponse{
+			Status: "completed",
+		},
+		Usage: &ResponsesUsage{
+			InputTokens:  20,
+			OutputTokens: 6,
+			InputTokensDetails: &ResponsesInputTokensDetails{
+				CachedTokens: 5,
+			},
+		},
+	}, state)
+
+	require.Len(t, events, 2)
+	assert.Equal(t, "message_delta", events[0].Type)
+	require.NotNil(t, events[0].Usage)
+	assert.Equal(t, 15, events[0].Usage.InputTokens)
+	assert.Equal(t, 5, events[0].Usage.CacheReadInputTokens)
+	assert.Equal(t, 6, events[0].Usage.OutputTokens)
+	assert.Equal(t, "message_stop", events[1].Type)
+}
+
+func TestResponsesEventToAnthropicEvents_ResponseDoneIncomplete(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+	state.Model = "gpt-4o"
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type: "response.done",
+		Response: &ResponsesResponse{
+			Status:            "incomplete",
+			IncompleteDetails: &ResponsesIncompleteDetails{Reason: "max_output_tokens"},
+			Usage:             &ResponsesUsage{InputTokens: 12, OutputTokens: 4},
+		},
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "message_delta", events[0].Type)
+	assert.Equal(t, "max_tokens", events[0].Delta.StopReason)
+	assert.Equal(t, "message_stop", events[1].Type)
+	assert.Nil(t, FinalizeResponsesAnthropicStream(state))
+}
+
+func TestStreamingCachedTokensUseAnthropicInputSemantics(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:     "response.created",
+		Response: &ResponsesResponse{ID: "resp_cached_stream", Model: "gpt-5.2"},
+	}, state)
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type: "response.completed",
+		Response: &ResponsesResponse{
+			Status: "completed",
+			Usage: &ResponsesUsage{
+				InputTokens:  54006,
+				OutputTokens: 123,
+				TotalTokens:  54129,
+				InputTokensDetails: &ResponsesInputTokensDetails{
+					CachedTokens: 50688,
+				},
+			},
+		},
+	}, state)
+
+	require.Len(t, events, 2)
+	assert.Equal(t, "message_delta", events[0].Type)
+	assert.Equal(t, 3318, events[0].Usage.InputTokens)
+	assert.Equal(t, 50688, events[0].Usage.CacheReadInputTokens)
+	assert.Equal(t, 123, events[0].Usage.OutputTokens)
+	assert.Equal(t, "message_stop", events[1].Type)
+}
 func TestStreamingToolCall(t *testing.T) {
 	state := NewResponsesEventToAnthropicState()
 	state.ToolNameMap = ClaudeToolNameMapFromTools([]ResponsesTool{

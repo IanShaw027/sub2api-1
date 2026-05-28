@@ -17,6 +17,116 @@ export interface DefaultSubscriptionSetting {
   validity_days: number;
 }
 
+// ── 平台限额类型 ──────────────────────────────────────────────────
+export type PlatformType = "anthropic" | "openai" | "gemini" | "antigravity"
+export type QuotaWindowType = "daily" | "weekly" | "monthly"
+
+/** 单平台三档限额；null = 不限制，undefined = 未填（等价 null） */
+export interface PlatformQuotaLimits {
+  daily:   number | null
+  weekly:  number | null
+  monthly: number | null
+}
+
+/** auth-source 覆盖专用：undefined = 继承系统默认，null = 显式不限额，number = 显式限额 */
+export interface PlatformQuotaOverrideLimits {
+  daily: number | null | undefined
+  weekly: number | null | undefined
+  monthly: number | null | undefined
+}
+
+/** 全平台默认限额 map（key = PlatformType） */
+export type DefaultPlatformQuotasMap = Partial<Record<PlatformType, PlatformQuotaLimits>>
+export type AuthSourcePlatformQuotaOverridesMap = Partial<Record<PlatformType, PlatformQuotaOverrideLimits>>
+
+const PLATFORMS: PlatformType[] = ["anthropic", "openai", "gemini", "antigravity"]
+const QUOTA_WINDOWS: QuotaWindowType[] = ["daily", "weekly", "monthly"]
+
+/** 归一化为全 4 平台 × 3 窗口（缺失填 null），供模板非空绑定 */
+export function normalizePlatformQuotasMap(input?: DefaultPlatformQuotasMap | null): DefaultPlatformQuotasMap {
+  const result: DefaultPlatformQuotasMap = {}
+  for (const p of PLATFORMS) {
+    const src = input?.[p]
+    result[p] = {
+      daily:   typeof src?.daily === "number" ? src.daily : null,
+      weekly:  typeof src?.weekly === "number" ? src.weekly : null,
+      monthly: typeof src?.monthly === "number" ? src.monthly : null,
+    }
+  }
+  return result
+}
+
+/** 空字符串代表用户主动清空；其他非法值必须由调用方先拦截，避免静默降级成 null。 */
+export function findInvalidPlatformQuotaFields(
+  input?: DefaultPlatformQuotasMap | AuthSourcePlatformQuotaOverridesMap | null,
+): string[] {
+  const invalid: string[] = []
+  for (const p of PLATFORMS) {
+    const src = input?.[p]
+    for (const window of QUOTA_WINDOWS) {
+      const value = src?.[window] as unknown
+      if (value === "" || value === null || value === undefined) continue
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0) continue
+      invalid.push(`${p}.${window}`)
+    }
+  }
+  return invalid
+}
+
+/** auth-source 覆盖归一化：补全 4 平台 × 3 窗口，但保留 undefined/null/number 三态。 */
+export function normalizePlatformQuotaOverridesMap(
+  input?: AuthSourcePlatformQuotaOverridesMap | null,
+): AuthSourcePlatformQuotaOverridesMap {
+  const result: AuthSourcePlatformQuotaOverridesMap = {}
+  for (const p of PLATFORMS) {
+    const src = input?.[p]
+    result[p] = {
+      daily: src?.daily === null ? null : typeof src?.daily === "number" ? src.daily : undefined,
+      weekly: src?.weekly === null ? null : typeof src?.weekly === "number" ? src.weekly : undefined,
+      monthly: src?.monthly === null ? null : typeof src?.monthly === "number" ? src.monthly : undefined,
+    }
+  }
+  return result
+}
+
+/** 提交前清洗：非有限数/负数/空字符串 → null（保留 0 = 显式禁用），返回全 4 平台嵌套 map */
+export function sanitizePlatformQuotasMap(input?: DefaultPlatformQuotasMap | null): DefaultPlatformQuotasMap {
+  const clean = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null)
+  const result: DefaultPlatformQuotasMap = {}
+  for (const p of PLATFORMS) {
+    const src = input?.[p]
+    result[p] = { daily: clean(src?.daily), weekly: clean(src?.weekly), monthly: clean(src?.monthly) }
+  }
+  return result
+}
+
+/** auth-source 覆盖提交前清洗：undefined/空字符串不写 override，null 保留显式不限额。 */
+export function sanitizePlatformQuotaOverridesMap(
+  input?: AuthSourcePlatformQuotaOverridesMap | null,
+): AuthSourcePlatformQuotaOverridesMap {
+  const result: AuthSourcePlatformQuotaOverridesMap = {}
+  for (const p of PLATFORMS) {
+    const src = input?.[p]
+    if (!src) continue
+    const platform: Partial<PlatformQuotaOverrideLimits> = {}
+    for (const window of QUOTA_WINDOWS) {
+      const value = src[window] as unknown
+      if (value === "" || value === undefined) continue
+      if (value === null) {
+        platform[window] = null
+        continue
+      }
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+        platform[window] = value
+      }
+    }
+    if (Object.keys(platform).length > 0) {
+      result[p] = platform as PlatformQuotaOverrideLimits
+    }
+  }
+  return result
+}
+
 export type AuthSourceType =
   | "email"
   | "linuxdo"
@@ -33,6 +143,8 @@ export interface AuthSourceDefaultsValue {
   subscriptions: DefaultSubscriptionSetting[];
   grant_on_signup: boolean;
   grant_on_first_bind: boolean;
+  // ★ 新增：平台限额覆盖（key = PlatformType）
+  platform_quotas: AuthSourcePlatformQuotaOverridesMap;
 }
 
 export type AuthSourceDefaultsState = Record<
@@ -243,6 +355,11 @@ export function buildAuthSourceDefaultsState(
       ),
       grant_on_signup: grantOnSignup,
       grant_on_first_bind: grantOnFirstBind,
+      platform_quotas: normalizePlatformQuotaOverridesMap(
+        raw[
+          `auth_source_default_${source}_platform_quotas`
+        ] as AuthSourcePlatformQuotaOverridesMap | undefined,
+      ),
     };
     return acc;
   }, {} as AuthSourceDefaultsState);
@@ -272,6 +389,8 @@ export function appendAuthSourceDefaultsToUpdateRequest(
       current.enabled;
     target[`auth_source_default_${source}_grant_on_first_bind`] =
       current.grant_on_first_bind;
+    target[`auth_source_default_${source}_platform_quotas`] =
+      sanitizePlatformQuotaOverridesMap(current.platform_quotas)
   }
 
   return payload;
@@ -631,6 +750,15 @@ export interface SystemSettings {
   auth_source_default_google_grant_on_signup?: boolean;
   auth_source_default_google_grant_on_first_bind?: boolean;
   force_email_on_third_party_signup?: boolean;
+  // ── 平台限额（嵌套 JSON，系统层 + 7 auth-source 层）────────────────────────────────
+  default_platform_quotas?: DefaultPlatformQuotasMap;
+  auth_source_default_email_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_linuxdo_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_oidc_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_wechat_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_github_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_google_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_dingtalk_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
   // OEM settings
   site_name: string;
   site_logo: string;
@@ -910,6 +1038,15 @@ export interface UpdateSettingsRequest {
   auth_source_default_google_grant_on_signup?: boolean;
   auth_source_default_google_grant_on_first_bind?: boolean;
   force_email_on_third_party_signup?: boolean;
+  // ── 平台限额（嵌套 JSON，系统层 + 7 auth-source 层）────────────────────────────────
+  default_platform_quotas?: DefaultPlatformQuotasMap;
+  auth_source_default_email_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_linuxdo_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_oidc_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_wechat_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_github_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_google_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_dingtalk_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
   site_name?: string;
   site_logo?: string;
   site_subtitle?: string;

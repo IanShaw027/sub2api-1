@@ -1016,18 +1016,18 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 			})
 			if s.rateLimitService != nil {
 				if !s.rateLimitService.handleOpenAIImageRoute429(ctx, account, imageRoute, resp.StatusCode, resp.Header, respBody, true) {
-					s.handleFailoverSideEffects(ctx, resp, account)
+					s.handleFailoverSideEffects(ctx, resp, account, requestModel)
 				}
 			} else {
-				s.handleFailoverSideEffects(ctx, resp, account)
+				s.handleFailoverSideEffects(ctx, resp, account, requestModel)
 			}
 			return nil, &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
 				ResponseBody:           respBody,
-				RetryableOnSameAccount: account.IsPoolMode() && isPoolModeRetryableStatus(resp.StatusCode),
+				RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 			}
 		}
-		return s.handleErrorResponse(ctx, resp, c, account, responsesBody)
+		return s.handleErrorResponse(ctx, resp, c, account, responsesBody, requestModel)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

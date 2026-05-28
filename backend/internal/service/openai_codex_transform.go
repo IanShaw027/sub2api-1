@@ -382,13 +382,15 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
 		result.Observability.FunctionCallConverted = true
 	}
 
-	if normalizeCodexTools(reqBody) {
-		result.Modified = true
-		result.Observability.ToolsNormalized = true
-	}
-	if normalizeCodexToolChoice(reqBody) {
-		result.Modified = true
-		result.Observability.ToolChoiceNormalized = true
+	if !isCompact {
+		if normalizeCodexTools(reqBody) {
+			result.Modified = true
+			result.Observability.ToolsNormalized = true
+		}
+		if normalizeCodexToolChoice(reqBody) {
+			result.Modified = true
+			result.Observability.ToolChoiceNormalized = true
+		}
 	}
 
 	if v, ok := reqBody["prompt_cache_key"].(string); ok {

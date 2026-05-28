@@ -1221,6 +1221,19 @@ export default {
     hour: 'Hour',
     modelDistribution: 'Model Distribution',
     groupDistribution: 'Group Usage Distribution',
+    platformBreakdown: 'Per-platform Breakdown',
+    platformBreakdownEmpty: 'No platform usage yet',
+    platformCount: '{count} platforms',
+    platformOther: 'Other',
+    platformQuota: {
+      title: 'Quota Usage',
+      daily: 'Daily',
+      weekly: 'Weekly',
+      monthly: 'Monthly (30-day rolling)',
+      resetsAt: 'Resets {time}',
+      noLimit: 'unlimited',
+      disabled: 'Disabled',
+    },
     tokenUsageTrend: 'Token Usage Trend',
     noDataAvailable: 'No data available',
     model: 'Model',
@@ -2404,6 +2417,7 @@ export default {
         groups: 'Groups',
         subscriptions: 'Subscriptions',
         balance: 'Balance',
+        balancePlatformQuota: 'Balance (Platform Quota)',
         usage: 'Usage',
         concurrency: 'Concurrency',
         status: 'Status',
@@ -2585,6 +2599,41 @@ export default {
         failedToReorder: 'Failed to update order',
         keyExists: 'Attribute key already exists',
         dragToReorder: 'Drag to reorder'
+      },
+      platformQuota: {
+        menuItem: 'Platform Quotas',
+        title: 'Platform Quotas',
+        subtitle: 'Configure daily / weekly / monthly USD usage limits for each upstream platform for user {email}',
+        columns: {
+          platform: 'Platform',
+          daily: 'Daily (USD)',
+          weekly: 'Weekly (USD)',
+          monthly: 'Monthly (USD, 30-day rolling)',
+          usage: 'Current Usage',
+        },
+        placeholder: 'unlimited',
+        save: 'Save',
+        saving: 'Saving...',
+        cancel: 'Cancel',
+        clearAll: 'Clear All (remove all limits)',
+        clearAllConfirm: 'Clear daily / weekly / monthly limits for ALL platforms? All platforms will become "unlimited" with no local undo — you must manually re-enter values before saving.',
+        reset: {
+          button: 'Reset window',
+          confirm: 'Reset the {window} usage for {platform} for this user? This is effective immediately.',
+          success: 'Reset {platform} {window} usage',
+          failed: 'Reset failed',
+        },
+        updateSuccess: 'Platform quotas updated',
+        updateFailed: 'Save failed',
+        loadFailed: 'Load failed',
+        hint: 'Empty = no limit for that window.',
+        windowDaily: 'daily',
+        windowWeekly: 'weekly',
+        windowMonthly: 'monthly',
+        cellNotConfigured: 'Not configured',
+        cellColumnTooltip: 'Only platforms with a limit are shown',
+        subscriptionWarning: 'This user has an active subscription. Platform quotas only apply to balance (standard) mode requests; subscription mode requests are not subject to these limits.',
+        invalidNumber: 'The following fields contain invalid numbers. Please fix them before saving: {fields}',
       }
     },
 
@@ -2746,6 +2795,12 @@ export default {
       tier2kPrice: '2K ($)',
       tier4kPrice: '4K ($)',
       notConfigured: 'Not configured'
+      },
+      modelsList: {
+        title: 'Custom /v1/models Model List',
+        hint: 'Only changes the /v1/models response. Whitelist model calls and account routing are unchanged.',
+        loading: 'Loading model list...',
+        empty: 'No displayable models'
       },
       claudeCode: {
         title: 'Claude Code Client Restriction',
@@ -3183,11 +3238,18 @@ export default {
       lastCleanup: 'Last cleanup: {time}',
       cleanupStats: 'Last cleanup deleted {hit} hits and {nonHit} non-hits',
       riskSwitchOff: 'System switch off',
+      riskThresholds: 'Risk Thresholds',
+      riskThresholdsHint: 'Adjust hit thresholds by OpenAI Moderations category. Scores greater than or equal to the threshold count as hits.',
+      riskThresholdDefault: 'Default {value}',
+      riskThresholdReset: 'Restore defaults',
+      riskThresholdPercent: 'Threshold percentage',
       tabs: {
         basic: 'Basic',
         scope: 'Scope',
         runtime: 'Runtime',
         response: 'Hit Notice',
+        riskThresholds: 'Risk Thresholds',
+        keywords: 'Keyword Block',
         retention: 'Retention',
       },
       overview: {
@@ -3625,6 +3687,7 @@ export default {
         usageWindows: 'Usage Windows',
         proxy: 'Proxy',
         lastUsed: 'Last Used',
+        createdAt: 'Created',
         expiresAt: 'Expires At',
         actions: 'Actions'
       },
@@ -3975,6 +4038,9 @@ export default {
       poolModeRetryCount: 'Same-Account Retries',
       poolModeRetryCountHint:
         'Only applies in pool mode. Use 0 to disable in-place retry. Default {default}, maximum {max}.',
+      poolModeRetryStatusCodes: 'Retry Status Codes',
+      poolModeRetryStatusCodesHint:
+        'Comma-separated HTTP status codes (100-599) that trigger same-account retry in pool mode. Leave blank to use defaults ({default}).',
       customErrorCodes: 'Custom Error Codes',
       customErrorCodesHint: 'Only stop scheduling for selected error codes',
       customErrorCodesWarning:
@@ -6335,7 +6401,17 @@ export default {
         defaultSubscriptionsDuplicate:
           'Duplicate subscription group: {groupId}. Each group can only appear once.',
         subscriptionGroup: 'Subscription Group',
-        subscriptionValidityDays: 'Validity (days)'
+        subscriptionValidityDays: 'Validity (days)',
+        defaultPlatformQuotas: 'Default Platform Quotas (on signup)',
+        defaultPlatformQuotasHint: 'Automatically assigned to new users on signup; existing users are not affected. Leave blank = unlimited.',
+        platformQuotaNotice: 'Monthly quota uses a 30-day rolling window, not a calendar month.',
+      },
+      platformQuota: {
+        platform:    'Platform',
+        daily:       'Daily (USD)',
+        weekly:      'Weekly (USD)',
+        monthly:     'Monthly (USD, 30d rolling)',
+        placeholder: 'Unlimited',
       },
       claudeCode: {
         title: 'Claude Code Settings',
@@ -7031,7 +7107,9 @@ export default {
         defaultSubscriptionsHint: 'Applies only to this auth source and stacks with user default subscriptions.',
         addBonusSubscription: 'Add bonus subscription',
         subscriptionGroupLabel: 'Subscription group',
-        noSourceSubscriptions: 'No bonus subscriptions configured for this source.'
+        noSourceSubscriptions: 'No bonus subscriptions configured for this source.',
+        platformQuotasOverride: 'Platform Quota Overrides',
+        platformQuotasOverrideHint: 'Blank fields inherit the system default. Set to 0 to fully block that window for this auth source.',
       },
       paymentVisibleMethods: {
         methodLabel: '{title} visible method',
