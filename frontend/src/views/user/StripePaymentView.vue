@@ -128,6 +128,8 @@ const currency = ref('CNY')
 const wechatQrUrl = ref('')
 const redirecting = ref(false)
 const showPaymentElement = ref(false)
+const recoveryResumeToken = ref('')
+const recoveryOutTradeNo = ref('')
 
 let stripeInstance: Stripe | null = null
 let elementsInstance: StripeElements | null = null
@@ -138,6 +140,10 @@ onMounted(async () => {
   const clientSecret = String(route.query.client_secret || '')
   const method = String(route.query.method || '')
   const resumeToken = typeof route.query.resume_token === 'string' ? route.query.resume_token : undefined
+  const routeOutTradeNo = typeof route.query.out_trade_no === 'string' ? route.query.out_trade_no : ''
+  const routePublishableKey = typeof route.query.publishable_key === 'string'
+    ? route.query.publishable_key.trim()
+    : ''
 
   if (!orderId || !clientSecret) {
     loading.value = false
@@ -146,23 +152,47 @@ onMounted(async () => {
   }
 
   try {
-    if (typeof window !== 'undefined') {
-      const restored = readPaymentRecoverySnapshot(
+    const restored = typeof window !== 'undefined'
+      ? readPaymentRecoverySnapshot(
         window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY),
         { resumeToken },
       )
+      : null
+    recoveryResumeToken.value = resumeToken || restored?.resumeToken || ''
+    recoveryOutTradeNo.value = routeOutTradeNo || restored?.outTradeNo || ''
+    if (typeof window !== 'undefined') {
       if (restored?.orderId === orderId) {
         currency.value = normalizePaymentCurrency(restored.currency)
       }
     }
-    const res = await paymentAPI.getOrder(orderId)
-    order.value = res.data
-    if (res.data.currency) {
-      currency.value = normalizePaymentCurrency(res.data.currency)
+    let resolvedOrder: PaymentOrder | null = null
+    try {
+      const res = await paymentAPI.getOrder(orderId)
+      resolvedOrder = res.data
+    } catch (authErr: unknown) {
+      if (!recoveryResumeToken.value) {
+        throw authErr
+      }
+      const res = await paymentAPI.resolveOrderPublicByResumeToken(recoveryResumeToken.value)
+      resolvedOrder = res.data
+    }
+    order.value = resolvedOrder
+    if (resolvedOrder?.currency) {
+      currency.value = normalizePaymentCurrency(resolvedOrder.currency)
+    }
+    if (resolvedOrder?.out_trade_no) {
+      recoveryOutTradeNo.value = resolvedOrder.out_trade_no
     }
 
-    await paymentStore.fetchConfig()
-    const publishableKey = paymentStore.config?.stripe_publishable_key
+    let publishableKey = routePublishableKey
+    if (!publishableKey) {
+      try {
+        await paymentStore.fetchConfig()
+      } catch {
+        // Public recovery routes may not have an authenticated payment config fetch.
+      }
+      publishableKey = paymentStore.config?.stripe_publishable_key || ''
+    }
     if (!publishableKey) { initError.value = t('payment.stripeNotConfigured'); return }
 
     const { loadStripe } = await import('@stripe/stripe-js')
@@ -205,7 +235,7 @@ function formatGatewayAmount(value: number): string {
 
 async function confirmAlipay(stripe: Stripe, clientSecret: string, orderId: number) {
   redirecting.value = true
-  const returnUrl = window.location.origin + '/payment/result?order_id=' + orderId + '&status=success'
+  const returnUrl = buildPaymentResultReturnURL(orderId)
   const { error } = await stripe.confirmAlipayPayment(clientSecret, { return_url: returnUrl })
   if (error) {
     redirecting.value = false
@@ -263,7 +293,7 @@ async function handleGenericPay() {
     const { error } = await stripeInstance.confirmPayment({
       elements: elementsInstance,
       confirmParams: {
-        return_url: window.location.origin + '/payment/result?order_id=' + route.query.order_id + '&status=success',
+        return_url: buildPaymentResultReturnURL(Number(route.query.order_id)),
       },
       redirect: 'if_required',
     })
@@ -302,9 +332,34 @@ function scheduleClose() {
     redirectTimer = setTimeout(() => { window.close() }, 2000)
   } else {
     redirectTimer = setTimeout(() => {
-      router.push({ path: '/payment/result', query: { order_id: String(route.query.order_id || ''), status: 'success' } })
+      router.push({ path: '/payment/result', query: buildPaymentResultRouteQuery(String(route.query.order_id || '')) })
     }, 2000)
   }
+}
+
+function buildPaymentResultRouteQuery(orderID: string): Record<string, string> {
+  const query: Record<string, string> = {
+    order_id: orderID,
+    status: 'success',
+  }
+  if (recoveryResumeToken.value) {
+    query.resume_token = recoveryResumeToken.value
+  }
+  if (recoveryOutTradeNo.value) {
+    query.out_trade_no = recoveryOutTradeNo.value
+  }
+  return query
+}
+
+function buildPaymentResultReturnURL(orderID: number): string {
+  const url = new URL('/payment/result', window.location.origin)
+  const query = buildPaymentResultRouteQuery(String(orderID))
+  Object.entries(query).forEach(([key, value]) => {
+    if (value) {
+      url.searchParams.set(key, value)
+    }
+  })
+  return url.toString()
 }
 
 onUnmounted(() => {

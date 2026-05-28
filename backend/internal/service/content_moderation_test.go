@@ -937,7 +937,7 @@ func TestExtractContentModerationInput_OpenAIImagesIncludesPromptAndImages(t *te
 	require.Equal(t, []string{"https://example.com/source.png", "data:image/png;base64,aGVsbG8="}, input.Images)
 }
 
-func TestContentModerationInput_NormalizeKeepsImagesAndModerationInputSamplesOneImage(t *testing.T) {
+func TestContentModerationInput_NormalizeKeepsImagesAndModerationInputUsesDeterministicFirstImage(t *testing.T) {
 	images := []string{
 		"data:image/png;base64,Zmlyc3Q=",
 		"data:image/png;base64,c2Vjb25k",
@@ -956,7 +956,17 @@ func TestContentModerationInput_NormalizeKeepsImagesAndModerationInputSamplesOne
 	require.Equal(t, "text", parts[0].Type)
 	require.Equal(t, "image_url", parts[1].Type)
 	require.NotNil(t, parts[1].ImageURL)
-	require.Contains(t, images, parts[1].ImageURL.URL)
+	require.Equal(t, images[0], parts[1].ImageURL.URL)
+
+	partsAgain, ok := input.ModerationInput().([]moderationAPIInputPart)
+	require.True(t, ok)
+	require.Equal(t, parts, partsAgain)
+
+	expectedHash := (ContentModerationInput{
+		Text:   input.Text,
+		Images: []string{images[0]},
+	}).Hash()
+	require.Equal(t, expectedHash, input.Hash())
 }
 
 func TestBuildModerationTestInputRejectsMultipleImages(t *testing.T) {

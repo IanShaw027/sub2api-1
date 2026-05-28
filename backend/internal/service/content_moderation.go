@@ -345,7 +345,7 @@ func (in ContentModerationInput) Hash() string {
 	h := sha256.New()
 	_, _ = h.Write([]byte("text:"))
 	_, _ = h.Write([]byte(in.Text))
-	for _, image := range in.Images {
+	for _, image := range limitContentModerationImages(in.Images) {
 		imageHash := sha256.Sum256([]byte(image))
 		_, _ = h.Write([]byte("\nimage:"))
 		_, _ = h.Write([]byte(hex.EncodeToString(imageHash[:])))
