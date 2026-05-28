@@ -85,8 +85,10 @@ __pycache__/
 *.temp
 *.log
 *.bak
+*.bak.*
 .cache/
 .dev/
+.reauth/
 .serena/
 
 # ===================
