@@ -192,7 +192,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 			upstreamModel = codexResult.NormalizedModel
 		}
 		if input, ok := reqBody["input"].([]any); ok {
-			sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, input)
+			sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, input, strings.TrimSpace(firstNonEmptyString(reqBody["previous_response_id"])) != "")
 		}
 		if codexResult.PromptCacheKey != "" {
 			promptCacheKey = codexResult.PromptCacheKey

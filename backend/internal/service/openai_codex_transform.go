@@ -3,11 +3,28 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
+
+// codexToolNameInvalidChar 匹配 OpenAI Responses API 不允许出现在 function/tool name 中的字符。
+// 上游对 tool 定义的 name 以及 function_call / custom_tool_call / mcp_tool_call 等 input item
+// 的 name 强制要求满足 ^[a-zA-Z0-9_-]+$，否则返回 400 invalid_request_error。
+var codexToolNameInvalidChar = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+
+// sanitizeCodexToolName 将不合法字符替换为下划线，确保满足上游正则。
+// 替换是确定性的：相同的原始 name 总是映射到相同的 sanitized name，
+// 因而 tool 定义与对应的 function_call / tool_choice 引用之间的对应关系保持一致。
+func sanitizeCodexToolName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return trimmed
+	}
+	return codexToolNameInvalidChar.ReplaceAllString(trimmed, "_")
+}
 
 var codexModelMap = map[string]string{
 	"gpt-5.5":                    "gpt-5.5",
@@ -526,6 +543,9 @@ func normalizeCodexToolChoice(reqBody map[string]any) bool {
 	}
 	if choiceType == "function" {
 		name := codexToolChoiceFunctionName(choiceMap)
+		if name != "" {
+			name = sanitizeCodexToolName(name)
+		}
 		if name == "" || !codexToolsContainFunctionName(reqBody["tools"], name) {
 			reqBody["tool_choice"] = "auto"
 			return true
@@ -702,6 +722,94 @@ func normalizeCodexMessageContentText(input []any) ([]any, bool) {
 				newPart[key] = value
 			}
 			newPart["text"] = stringifyCodexContentText(text)
+			newParts[i] = newPart
+			modified = true
+		}
+
+		if newItem != nil {
+			newItem["content"] = newParts
+			normalized = append(normalized, newItem)
+			continue
+		}
+		normalized = append(normalized, item)
+	}
+	if !modified {
+		return input, false
+	}
+	return normalized, true
+}
+
+func normalizeOpenAIResponsesMessageContentPartTypes(input []any) ([]any, bool) {
+	if len(input) == 0 {
+		return input, false
+	}
+
+	modified := false
+	normalized := make([]any, 0, len(input))
+	for _, item := range input {
+		m, ok := item.(map[string]any)
+		if !ok || strings.TrimSpace(firstNonEmptyString(m["type"])) != "message" {
+			normalized = append(normalized, item)
+			continue
+		}
+		role := strings.TrimSpace(firstNonEmptyString(m["role"]))
+		if role == "" {
+			role = "user"
+		}
+		parts, ok := m["content"].([]any)
+		if !ok {
+			normalized = append(normalized, item)
+			continue
+		}
+
+		targetType := "input_text"
+		if role == "assistant" {
+			targetType = "output_text"
+		}
+
+		var newItem map[string]any
+		var newParts []any
+		ensureItemCopy := func() {
+			if newItem != nil {
+				return
+			}
+			newItem = make(map[string]any, len(m))
+			for key, value := range m {
+				newItem[key] = value
+			}
+			newParts = make([]any, len(parts))
+			copy(newParts, parts)
+		}
+
+		for i, rawPart := range parts {
+			part, ok := rawPart.(map[string]any)
+			if !ok {
+				continue
+			}
+			partType := strings.TrimSpace(firstNonEmptyString(part["type"]))
+			switch role {
+			case "assistant":
+				if partType == "refusal" || partType == "output_text" {
+					continue
+				}
+				if partType != "" && partType != "text" && partType != "input_text" {
+					continue
+				}
+			default:
+				if partType == "input_text" {
+					continue
+				}
+				if partType != "" && partType != "text" && partType != "output_text" {
+					continue
+				}
+			}
+
+			ensureItemCopy()
+			newPart := make(map[string]any, len(part))
+			for key, value := range part {
+				newPart[key] = value
+			}
+			newPart["type"] = targetType
 			newParts[i] = newPart
 			modified = true
 		}
@@ -1509,18 +1617,26 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 		}
 
 		if codexInputItemRequiresName(typ) {
-			if strings.TrimSpace(firstNonEmptyString(m["name"])) == "" {
-				name := firstNonEmptyString(m["tool_name"])
-				if name == "" {
+			rawName := strings.TrimSpace(firstNonEmptyString(m["name"]))
+			if rawName == "" {
+				rawName = strings.TrimSpace(firstNonEmptyString(m["tool_name"]))
+				if rawName == "" {
 					if function, ok := m["function"].(map[string]any); ok {
-						name = firstNonEmptyString(function["name"])
+						rawName = strings.TrimSpace(firstNonEmptyString(function["name"]))
 					}
 				}
-				if name == "" {
-					name = "tool"
+				if rawName == "" {
+					rawName = "tool"
 				}
+			}
+			sanitizedName := sanitizeCodexToolName(rawName)
+			if sanitizedName == "" {
+				sanitizedName = "tool"
+			}
+			currentName, _ := m["name"].(string)
+			if currentName != sanitizedName {
 				ensureCopy()
-				newItem["name"] = name
+				newItem["name"] = sanitizedName
 				modified = true
 			}
 		}
@@ -1647,6 +1763,56 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 
 	modified := false
 	validTools := make([]any, 0, len(tools))
+	sanitizeToolName := func(toolMap map[string]any) {
+		if toolMap == nil {
+			return
+		}
+		if name, ok := toolMap["name"].(string); ok {
+			if sanitized := sanitizeCodexToolName(name); sanitized != "" && sanitized != name {
+				toolMap["name"] = sanitized
+				modified = true
+			}
+		}
+		if function, ok := toolMap["function"].(map[string]any); ok && function != nil {
+			if name, ok := function["name"].(string); ok {
+				if sanitized := sanitizeCodexToolName(name); sanitized != "" && sanitized != name {
+					function["name"] = sanitized
+					modified = true
+				}
+			}
+		}
+	}
+	ensureFunctionShape := func(toolMap map[string]any) {
+		if toolMap == nil || strings.TrimSpace(firstNonEmptyString(toolMap["type"])) != "function" {
+			return
+		}
+		function, _ := toolMap["function"].(map[string]any)
+		if function == nil {
+			function = map[string]any{}
+			toolMap["function"] = function
+			modified = true
+		}
+		if name := strings.TrimSpace(firstNonEmptyString(toolMap["name"])); name != "" && strings.TrimSpace(firstNonEmptyString(function["name"])) == "" {
+			function["name"] = name
+			modified = true
+		}
+		if description := strings.TrimSpace(firstNonEmptyString(toolMap["description"])); description != "" && strings.TrimSpace(firstNonEmptyString(function["description"])) == "" {
+			function["description"] = description
+			modified = true
+		}
+		if _, ok := function["parameters"]; !ok {
+			if params, ok := toolMap["parameters"]; ok && params != nil {
+				function["parameters"] = params
+				modified = true
+			}
+		}
+		if _, ok := function["strict"]; !ok {
+			if strict, ok := toolMap["strict"]; ok {
+				function["strict"] = strict
+				modified = true
+			}
+		}
+	}
 
 	for _, tool := range tools {
 		toolMap, ok := tool.(map[string]any)
@@ -1668,6 +1834,8 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 			if normalizeCodexFunctionToolParameters(toolMap) {
 				modified = true
 			}
+			ensureFunctionShape(toolMap)
+			sanitizeToolName(toolMap)
 			validTools = append(validTools, toolMap)
 			continue
 		}
@@ -1708,6 +1876,8 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 		if normalizeCodexFunctionToolParameters(toolMap) {
 			modified = true
 		}
+		ensureFunctionShape(toolMap)
+		sanitizeToolName(toolMap)
 
 		validTools = append(validTools, toolMap)
 	}

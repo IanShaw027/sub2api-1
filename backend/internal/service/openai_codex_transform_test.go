@@ -394,6 +394,123 @@ func TestCodexInputItemRequiresNameTypesAllowCallID(t *testing.T) {
 	}
 }
 
+func TestSanitizeCodexToolName(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"shell", "shell"},
+		{"my_tool-1", "my_tool-1"},
+		{"read.file", "read_file"},
+		{"with space", "with_space"},
+		{"net:fetch", "net_fetch"},
+		{"namespace.sub.tool/v2", "namespace_sub_tool_v2"},
+		{"工具", "__"},
+		{"  trimmed  ", "trimmed"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		require.Equal(t, tc.want, sanitizeCodexToolName(tc.in), tc.in)
+	}
+}
+
+func TestApplyCodexOAuthTransform_SanitizesInvalidToolNamesAcrossTooling(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{
+			map[string]any{
+				"type": "function",
+				"name": "read.file",
+				"parameters": map[string]any{
+					"type":       "object",
+					"properties": map[string]any{},
+				},
+			},
+			map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name": "net:fetch",
+					"parameters": map[string]any{
+						"type":       "object",
+						"properties": map[string]any{},
+					},
+				},
+			},
+		},
+		"tool_choice": map[string]any{
+			"type": "function",
+			"name": "read.file",
+		},
+		"input": []any{
+			map[string]any{"type": "message", "role": "user", "content": "go"},
+			map[string]any{
+				"type":      "function_call",
+				"call_id":   "call_1",
+				"name":      "read.file",
+				"arguments": "{}",
+			},
+			map[string]any{
+				"type":      "mcp_tool_call",
+				"call_id":   "call_2",
+				"name":      "namespace.sub.tool/v2",
+				"arguments": "{}",
+			},
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, true, false)
+
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 2)
+	for _, raw := range tools {
+		tool, ok := raw.(map[string]any)
+		require.True(t, ok)
+		name, _ := tool["name"].(string)
+		require.Regexp(t, `^[a-zA-Z0-9_-]+$`, name)
+		if fn, ok := tool["function"].(map[string]any); ok {
+			fnName, _ := fn["name"].(string)
+			require.Regexp(t, `^[a-zA-Z0-9_-]+$`, fnName)
+		}
+	}
+
+	choice, ok := reqBody["tool_choice"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function", choice["type"])
+	require.Equal(t, "read_file", choice["name"])
+
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 3)
+
+	fnCall, ok := input[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function_call", fnCall["type"])
+	require.Equal(t, "read_file", fnCall["name"])
+
+	mcpCall, ok := input[2].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "mcp_tool_call", mcpCall["type"])
+	require.Equal(t, "namespace_sub_tool_v2", mcpCall["name"])
+}
+
+func TestApplyCodexOAuthTransform_DropsToolChoiceWhenSanitizedNameMissing(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{
+			map[string]any{"type": "function", "name": "shell"},
+		},
+		"tool_choice": map[string]any{
+			"type": "function",
+			"name": "工具",
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, true, false)
+
+	require.Equal(t, "auto", reqBody["tool_choice"])
+}
+
 func TestApplyCodexOAuthTransform_ExplicitStoreFalsePreserved(t *testing.T) {
 	// 续链场景：显式 store=false 不再强制为 true，保持 false。
 
