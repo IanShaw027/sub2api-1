@@ -61,6 +61,7 @@ const (
 	openAICodexCompatFallbackReasonKey   = "openai_codex_compat_fallback_reason"
 	openAIMessagesDispatchForcedModelKey = "openai_messages_dispatch_forced_model"
 	openAIFailoverRequestBodyKey         = "openai_failover_request_body"
+	openAITTFTWatchdogBypassKey          = "openai_ttft_watchdog_bypass"
 	codexCLIVersion                      = "0.125.0"
 	// Codex 限额快照仅用于后台展示/诊断，不需要每个成功请求都立即落库。
 	openAICodexSnapshotPersistMinInterval = 30 * time.Second
@@ -128,6 +129,31 @@ func getOpenAIFailoverRequestBody(c *gin.Context, fallback []byte) ([]byte, bool
 		return fallback, false
 	}
 	return append([]byte(nil), body...), true
+}
+
+func setOpenAITTFTWatchdogBypass(c *gin.Context, bypass bool) {
+	if c == nil {
+		return
+	}
+	if bypass {
+		c.Set(openAITTFTWatchdogBypassKey, true)
+		return
+	}
+	if c.Keys != nil {
+		delete(c.Keys, openAITTFTWatchdogBypassKey)
+	}
+}
+
+func shouldBypassOpenAITTFTWatchdog(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	value, ok := c.Get(openAITTFTWatchdogBypassKey)
+	if !ok {
+		return false
+	}
+	bypass, ok := value.(bool)
+	return ok && bypass
 }
 
 func clearOpenAIRequestBodyCache(c *gin.Context) {
@@ -4284,6 +4310,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			return nil, err
 		}
 		body = bodyWithInstructions
+		setOpenAITTFTWatchdogBypass(c, IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, body))
 		isCompact := isOpenAIResponsesCompactPath(c)
 		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(c, reqModel, body, s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI); rejectReason != "" {
 			rejectMsg := "OpenAI codex passthrough requires a non-empty instructions field"
@@ -4918,6 +4945,9 @@ func (s *OpenAIGatewayService) shouldEnableOpenAITTFTWatchdog(c *gin.Context, ac
 		return false
 	}
 	if !isOpenAIResponsesInboundPath(c) {
+		return false
+	}
+	if shouldBypassOpenAITTFTWatchdog(c) {
 		return false
 	}
 	return openAITTFTWatchdogTimeout > 0
@@ -8556,6 +8586,7 @@ func finalizeOpenAIResponsesOAuthUpstreamBody(c *gin.Context, account *Account, 
 		body = bodyWithInstructions
 		changed = changed || injected
 	}
+	setOpenAITTFTWatchdogBypass(c, IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, body))
 
 	return body, changed, nil
 }
