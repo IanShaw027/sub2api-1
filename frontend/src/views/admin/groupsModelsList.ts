@@ -111,7 +111,7 @@ const normalizeModels = (models: string[]): string[] => {
   const out: string[] = []
   for (const raw of models) {
     const model = raw.trim()
-    if (!model || seen.has(model)) {
+    if (!model || model.endsWith("*") || seen.has(model)) {
       continue
     }
     seen.add(model)

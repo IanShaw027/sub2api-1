@@ -1939,6 +1939,9 @@ func (s *adminServiceImpl) GetGroupModelsListCandidates(ctx context.Context, id 
 			if model == "" {
 				continue
 			}
+			if _, isWildcard := splitWildcardSuffix(model); isWildcard {
+				continue
+			}
 			if _, ok := seen[model]; ok {
 				continue
 			}

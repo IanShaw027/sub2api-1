@@ -81,6 +81,22 @@ describe("groupsModelsList", () => {
     });
   });
 
+  it("drops wildcard pattern entries from candidates and saved selections", () => {
+    const state = hydrateModelsListState({
+      enabled: true,
+      models: ["claude-*", "claude-sonnet-4-6"],
+    }, ["claude-*", "claude-sonnet-4-6", "claude-opus-4-6"]);
+
+    expect(state.items).toEqual([
+      { id: "claude-sonnet-4-6", selected: true },
+      { id: "claude-opus-4-6", selected: false },
+    ]);
+    expect(buildModelsListConfig(state)).toEqual({
+      enabled: true,
+      models: ["claude-sonnet-4-6"],
+    });
+  });
+
   it("preserves saved models when candidates have not loaded yet", () => {
     const state = createModelsListState({
       enabled: true,

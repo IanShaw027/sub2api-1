@@ -1121,6 +1121,9 @@ func filterModelsByCustomList(availableModels, fallbackModels, selectedModels []
 		if model == "" {
 			continue
 		}
+		if strings.HasSuffix(model, "*") {
+			continue
+		}
 		if !customModelsListAllowsModel(allowed, model) {
 			continue
 		}
