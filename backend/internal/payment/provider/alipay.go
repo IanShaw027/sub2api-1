@@ -105,10 +105,15 @@ func (a *Alipay) MerchantIdentityMetadata() map[string]string {
 
 // CreatePayment creates an Alipay payment using the following routing:
 //   - Mobile (H5): alipay.trade.wap.pay — browser redirect into Alipay.
-//   - Desktop: prefer alipay.trade.precreate to get a scan payload directly.
-//   - Desktop fallback: if precreate is unavailable for the merchant, fall back
-//     to alipay.trade.page.pay and expose both pay_url and qr_code so the
-//     frontend can render a QR while still allowing direct page open.
+//   - Desktop, default: prefer alipay.trade.precreate to get a scannable QR
+//     payload. If precreate is unavailable, fall back to alipay.trade.page.pay
+//     and expose pay_url only so the frontend opens the Alipay cashier page.
+//   - Desktop, paymentMode == "redirect": skip precreate and go straight to
+//     alipay.trade.page.pay so the frontend always opens the Alipay cashier
+//     page in a new tab.
+//
+// Note: alipay.trade.page.pay returns a checkout page URL, not a scannable QR
+// payload. Never expose it via QRCode.
 func (a *Alipay) CreatePayment(ctx context.Context, req payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
 	client, err := a.getClient()
 	if err != nil {
@@ -150,6 +155,10 @@ func (a *Alipay) createWapTrade(client *alipay.Client, req payment.CreatePayment
 }
 
 func (a *Alipay) createDesktopTrade(ctx context.Context, client *alipay.Client, req payment.CreatePaymentRequest, notifyURL, returnURL string) (*payment.CreatePaymentResponse, error) {
+	if strings.EqualFold(strings.TrimSpace(a.config["paymentMode"]), "redirect") {
+		return a.createPagePayTrade(client, req, notifyURL, returnURL)
+	}
+
 	resp, precreateErr := a.createPrecreateTrade(ctx, client, req, notifyURL)
 	if precreateErr == nil {
 		return resp, nil
@@ -207,7 +216,6 @@ func (a *Alipay) createPagePayTrade(client *alipay.Client, req payment.CreatePay
 	return &payment.CreatePaymentResponse{
 		TradeNo: req.OrderID,
 		PayURL:  payURL.String(),
-		QRCode:  payURL.String(),
 	}, nil
 }
 

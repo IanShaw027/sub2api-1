@@ -14,6 +14,10 @@ const messages: Record<string, string> = {
   'admin.settings.payment.stripeWebhookHint': 'Configure Stripe webhook.',
   'admin.settings.payment.stripeWebhookApiVersionHint': 'Use Stripe API version {version}.',
   'admin.settings.payment.airwallexWebhookHint': 'Select payment_intent.succeeded and use the latest stable API version.',
+  'admin.settings.payment.paymentMode': 'Payment Mode',
+  'admin.settings.payment.modeQRCode': 'QR Code',
+  'admin.settings.payment.modePopup': 'Popup',
+  'admin.settings.payment.modeRedirect': 'Redirect',
   'admin.settings.payment.supportedTypes': 'Supported Types',
   'payment.methods.card': 'Bank Card',
   'payment.methods.link': 'Link',
@@ -141,6 +145,39 @@ describe('PaymentProviderDialog payment guide', () => {
     expect(wrapper.text()).toContain(messages['admin.settings.payment.stripeWebhookHint'])
     expect(wrapper.text()).toContain(`Use Stripe API version ${STRIPE_SDK_API_VERSION}.`)
     expect(wrapper.text()).toContain('/api/v1/payment/webhook/stripe')
+  })
+
+  it('shows the Alipay redirect payment mode option', async () => {
+    const wrapper = mountDialog()
+
+    ;(wrapper.vm as unknown as { reset: (key: string) => void }).reset('alipay')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('Payment Mode')
+    expect(wrapper.text()).toContain('QR Code')
+    expect(wrapper.text()).toContain('Redirect')
+  })
+
+  it('preserves Alipay redirect mode when saving', async () => {
+    const provider = providerFactory({
+      provider_key: 'alipay',
+      name: 'Alipay Direct',
+      supported_types: ['alipay'],
+      payment_mode: 'redirect',
+      config: {
+        appId: '2021001234567890',
+        notifyUrl: 'https://app.example.com/api/v1/payment/webhook/alipay',
+        returnUrl: 'https://app.example.com/payment/result',
+      },
+    })
+    const wrapper = mountDialog({ editing: provider })
+
+    ;(wrapper.vm as unknown as { loadProvider: (provider: ProviderInstance) => void }).loadProvider(provider)
+    await nextTick()
+    await wrapper.find('form').trigger('submit.prevent')
+
+    const payload = wrapper.emitted('save')?.[0]?.[0] as { payment_mode: string }
+    expect(payload.payment_mode).toBe('redirect')
   })
 
   it('emits an empty Airwallex accountId when the admin clears it', async () => {
