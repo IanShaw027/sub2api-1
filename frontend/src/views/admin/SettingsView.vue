@@ -618,6 +618,447 @@
             </div>
           </div>
 
+          <!-- DingTalk Connect OAuth 登录 -->
+          <div class="card">
+            <div
+              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+            >
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ localText("钉钉登录", "DingTalk Sign-in") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{
+                  localText(
+                    "配置钉钉 OAuth 登录、企业限制和用户资料同步字段。",
+                    "Configure DingTalk OAuth sign-in, corporate restrictions, and user profile sync fields.",
+                  )
+                }}
+              </p>
+            </div>
+            <div class="space-y-5 p-6">
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="font-medium text-gray-900 dark:text-white">
+                    {{ localText("启用钉钉登录", "Enable DingTalk sign-in") }}
+                  </label>
+                  <p class="text-sm text-gray-500 dark:text-gray-400">
+                    {{
+                      localText(
+                        "开启后，用户可以通过钉钉完成登录或注册流程。",
+                        "When enabled, users can complete sign-in or signup through DingTalk.",
+                      )
+                    }}
+                  </p>
+                </div>
+                <Toggle
+                  :model-value="Boolean(form.dingtalk_connect_enabled)"
+                  data-testid="dingtalk-connect-enabled"
+                  @update:model-value="
+                    (value: boolean) => {
+                      form.dingtalk_connect_enabled = value;
+                    }
+                  "
+                />
+              </div>
+
+              <div
+                v-if="form.dingtalk_connect_enabled"
+                class="space-y-6 border-t border-gray-100 pt-4 dark:border-dark-700"
+              >
+                <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      Client ID
+                    </label>
+                    <input
+                      v-model="form.dingtalk_connect_client_id"
+                      data-testid="dingtalk-connect-client-id"
+                      type="text"
+                      class="input font-mono text-sm"
+                      :placeholder="
+                        localText(
+                          '钉钉开放平台 Client ID',
+                          'DingTalk Open Platform Client ID',
+                        )
+                      "
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      Client Secret
+                    </label>
+                    <input
+                      v-model="form.dingtalk_connect_client_secret"
+                      data-testid="dingtalk-connect-client-secret"
+                      type="password"
+                      class="input font-mono text-sm"
+                      :placeholder="
+                        form.dingtalk_connect_client_secret_configured
+                          ? localText(
+                              '密钥已配置，留空以保留当前值。',
+                              'Secret configured. Leave empty to keep the current value.',
+                            )
+                          : localText(
+                              '钉钉开放平台 Client Secret',
+                              'DingTalk Open Platform Client Secret',
+                            )
+                      "
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        form.dingtalk_connect_client_secret_configured
+                          ? localText(
+                              "保存时留空将继续使用当前密钥。",
+                              "Leave empty on save to keep the current secret.",
+                            )
+                          : localText(
+                              "填写后会覆盖当前钉钉密钥。",
+                              "Saving a value here replaces the current DingTalk secret.",
+                            )
+                      }}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label
+                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ localText("后端回调地址", "Backend Callback URL") }}
+                  </label>
+                  <input
+                    v-model="form.dingtalk_connect_redirect_url"
+                    data-testid="dingtalk-connect-redirect-url"
+                    type="url"
+                    class="input font-mono text-sm"
+                    placeholder="https://your-domain.com/api/v1/auth/oauth/dingtalk/callback"
+                  />
+                  <div
+                    class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
+                  >
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm w-fit"
+                      @click="setAndCopyDingTalkRedirectUrl"
+                    >
+                      {{ localText("生成并复制", "Generate and copy") }}
+                    </button>
+                    <code
+                      v-if="dingtalkRedirectUrlSuggestion"
+                      class="select-all break-all rounded bg-gray-50 px-2 py-1 font-mono text-xs text-gray-600 dark:bg-dark-800 dark:text-gray-300"
+                    >
+                      {{ dingtalkRedirectUrlSuggestion }}
+                    </code>
+                  </div>
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      localText(
+                        "钉钉开放平台后台回调地址应与这里保持一致。",
+                        "Keep this URL aligned with the callback URL configured in the DingTalk Open Platform console.",
+                      )
+                    }}
+                  </p>
+                </div>
+
+                <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ localText("企业限制策略", "Corporate restriction policy") }}
+                    </label>
+                    <select
+                      v-model="form.dingtalk_connect_corp_restriction_policy"
+                      data-testid="dingtalk-connect-corp-restriction-policy"
+                      class="input"
+                    >
+                      <option value="none">
+                        {{ localText("不限制", "No restriction") }}
+                      </option>
+                      <option value="internal_only">
+                        {{ localText("仅企业内部应用", "Internal app only") }}
+                      </option>
+                    </select>
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        localText(
+                          "选择“仅企业内部应用”时，钉钉应用需按企业内部应用方式配置。",
+                          "When set to internal app only, the DingTalk app must also be configured as an internal app.",
+                        )
+                      }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ localText("企业 Corp ID", "Corporate Corp ID") }}
+                    </label>
+                    <input
+                      v-model="form.dingtalk_connect_internal_corp_id"
+                      data-testid="dingtalk-connect-internal-corp-id"
+                      type="text"
+                      class="input font-mono text-sm"
+                      :placeholder="
+                        localText(
+                          '选填，仅用于记录或排查',
+                          'Optional, kept for reference or troubleshooting',
+                        )
+                      "
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        localText(
+                          "该字段保留用于管理记录；企业内部限制的实际边界仍由钉钉应用配置决定。",
+                          "This field is retained for admin reference; the actual internal-only boundary still comes from the DingTalk app configuration.",
+                        )
+                      }}
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  class="flex items-center justify-between rounded border border-gray-200 px-4 py-3 dark:border-dark-700"
+                >
+                  <div>
+                    <label class="font-medium text-gray-900 dark:text-white">
+                      {{
+                        localText(
+                          "企业内部模式下绕过开放注册",
+                          "Bypass global signup gate for internal mode",
+                        )
+                      }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        localText(
+                          "当全局开放注册关闭时，允许符合企业内部限制的钉钉用户继续完成注册。",
+                          "When global signup is disabled, still allow DingTalk users that satisfy the internal-only restriction to finish registration.",
+                        )
+                      }}
+                    </p>
+                  </div>
+                  <Toggle
+                    :model-value="Boolean(form.dingtalk_connect_bypass_registration)"
+                    data-testid="dingtalk-connect-bypass-registration"
+                    @update:model-value="
+                      (value: boolean) => {
+                        form.dingtalk_connect_bypass_registration = value;
+                      }
+                    "
+                  />
+                </div>
+
+                <div
+                  class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-dark-700"
+                >
+                  <div>
+                    <h3 class="font-medium text-gray-900 dark:text-white">
+                      {{ localText("用户资料同步", "User profile sync") }}
+                    </h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      {{
+                        localText(
+                          "按需把钉钉信息同步到用户属性字段中，关闭开关时会保留已填写的映射值供管理员检查。",
+                          "Sync DingTalk data into user attributes as needed. Turning a switch off keeps the stored mappings visible for admin inspection.",
+                        )
+                      }}
+                    </p>
+                  </div>
+
+                  <div
+                    class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
+                  >
+                    <div class="flex items-start justify-between gap-4">
+                      <div>
+                        <h4 class="font-medium text-gray-900 dark:text-white">
+                          {{ localText("同步企业邮箱", "Sync corporate email") }}
+                        </h4>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                          {{
+                            localText(
+                              "把钉钉侧企业邮箱写入用户属性，便于审计或后续业务使用。",
+                              "Write the DingTalk corporate email into user attributes for audit or downstream business logic.",
+                            )
+                          }}
+                        </p>
+                      </div>
+                      <Toggle
+                        :model-value="Boolean(form.dingtalk_connect_sync_corp_email)"
+                        data-testid="dingtalk-connect-sync-corp-email"
+                        @update:model-value="
+                          (value: boolean) => {
+                            form.dingtalk_connect_sync_corp_email = value;
+                          }
+                        "
+                      />
+                    </div>
+                    <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                      <div>
+                        <label
+                          class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                        >
+                          {{ localText("属性 Key", "Attribute key") }}
+                        </label>
+                        <input
+                          v-model="form.dingtalk_connect_sync_corp_email_attr_key"
+                          data-testid="dingtalk-connect-sync-corp-email-attr-key"
+                          type="text"
+                          class="input font-mono text-sm"
+                          :disabled="!form.dingtalk_connect_sync_corp_email"
+                          placeholder="dingtalk_email"
+                        />
+                      </div>
+                      <div>
+                        <label
+                          class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                        >
+                          {{ localText("属性名称", "Attribute label") }}
+                        </label>
+                        <input
+                          v-model="form.dingtalk_connect_sync_corp_email_attr_name"
+                          data-testid="dingtalk-connect-sync-corp-email-attr-name"
+                          type="text"
+                          class="input"
+                          :disabled="!form.dingtalk_connect_sync_corp_email"
+                          :placeholder="localText('企业邮箱', 'Corporate email')"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
+                  >
+                    <div class="flex items-start justify-between gap-4">
+                      <div>
+                        <h4 class="font-medium text-gray-900 dark:text-white">
+                          {{ localText("同步展示名称", "Sync display name") }}
+                        </h4>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                          {{
+                            localText(
+                              "把钉钉昵称或显示名称同步到用户属性，便于在后台识别企业身份。",
+                              "Write the DingTalk nickname or display name into user attributes for easier admin identification.",
+                            )
+                          }}
+                        </p>
+                      </div>
+                      <Toggle
+                        :model-value="Boolean(form.dingtalk_connect_sync_display_name)"
+                        data-testid="dingtalk-connect-sync-display-name"
+                        @update:model-value="
+                          (value: boolean) => {
+                            form.dingtalk_connect_sync_display_name = value;
+                          }
+                        "
+                      />
+                    </div>
+                    <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                      <div>
+                        <label
+                          class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                        >
+                          {{ localText("属性 Key", "Attribute key") }}
+                        </label>
+                        <input
+                          v-model="form.dingtalk_connect_sync_display_name_attr_key"
+                          data-testid="dingtalk-connect-sync-display-name-attr-key"
+                          type="text"
+                          class="input font-mono text-sm"
+                          :disabled="!form.dingtalk_connect_sync_display_name"
+                          placeholder="dingtalk_name"
+                        />
+                      </div>
+                      <div>
+                        <label
+                          class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                        >
+                          {{ localText("属性名称", "Attribute label") }}
+                        </label>
+                        <input
+                          v-model="form.dingtalk_connect_sync_display_name_attr_name"
+                          data-testid="dingtalk-connect-sync-display-name-attr-name"
+                          type="text"
+                          class="input"
+                          :disabled="!form.dingtalk_connect_sync_display_name"
+                          :placeholder="localText('钉钉昵称', 'DingTalk display name')"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
+                  >
+                    <div class="flex items-start justify-between gap-4">
+                      <div>
+                        <h4 class="font-medium text-gray-900 dark:text-white">
+                          {{ localText("同步部门信息", "Sync department") }}
+                        </h4>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                          {{
+                            localText(
+                              "把钉钉部门名称同步到用户属性，便于企业内分层管理或报表使用。",
+                              "Write the DingTalk department into user attributes for internal segmentation or reporting.",
+                            )
+                          }}
+                        </p>
+                      </div>
+                      <Toggle
+                        :model-value="Boolean(form.dingtalk_connect_sync_dept)"
+                        data-testid="dingtalk-connect-sync-dept"
+                        @update:model-value="
+                          (value: boolean) => {
+                            form.dingtalk_connect_sync_dept = value;
+                          }
+                        "
+                      />
+                    </div>
+                    <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                      <div>
+                        <label
+                          class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                        >
+                          {{ localText("属性 Key", "Attribute key") }}
+                        </label>
+                        <input
+                          v-model="form.dingtalk_connect_sync_dept_attr_key"
+                          data-testid="dingtalk-connect-sync-dept-attr-key"
+                          type="text"
+                          class="input font-mono text-sm"
+                          :disabled="!form.dingtalk_connect_sync_dept"
+                          placeholder="dingtalk_department"
+                        />
+                      </div>
+                      <div>
+                        <label
+                          class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                        >
+                          {{ localText("属性名称", "Attribute label") }}
+                        </label>
+                        <input
+                          v-model="form.dingtalk_connect_sync_dept_attr_name"
+                          data-testid="dingtalk-connect-sync-dept-attr-name"
+                          type="text"
+                          class="input"
+                          :disabled="!form.dingtalk_connect_sync_dept"
+                          :placeholder="localText('所在部门', 'Department')"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- GitHub / Google 邮箱快捷登录 -->
           <div class="card">
             <div
@@ -3615,6 +4056,57 @@
                   }}
                 </p>
               </div>
+
+              <!-- API Key ACL trust forwarded IP -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <label
+                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{
+                      t(
+                        "admin.settings.gatewayForwarding.apiKeyAclTrustForwardedIP",
+                      )
+                    }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t(
+                        "admin.settings.gatewayForwarding.apiKeyAclTrustForwardedIPHint",
+                      )
+                    }}
+                  </p>
+                </div>
+                <Toggle v-model="form.api_key_acl_trust_forwarded_ip" />
+              </div>
+
+              <!-- OpenAI Codex User-Agent -->
+              <div>
+                <label
+                  class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {{
+                    t("admin.settings.gatewayForwarding.openaiCodexUserAgent")
+                  }}
+                </label>
+                <input
+                  v-model="form.openai_codex_user_agent"
+                  type="text"
+                  class="input max-w-xs font-mono text-sm"
+                  :placeholder="
+                    t(
+                      'admin.settings.gatewayForwarding.openaiCodexUserAgentPlaceholder',
+                    )
+                  "
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{
+                    t(
+                      "admin.settings.gatewayForwarding.openaiCodexUserAgentHint",
+                    )
+                  }}
+                </p>
+              </div>
             </div>
           </div>
           <!-- Web Search Emulation -->
@@ -4266,6 +4758,73 @@
                   </div>
                 </div>
               </div>
+
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <div class="mb-3">
+                  <label class="font-medium text-gray-900 dark:text-white">
+                    {{ t("admin.settings.defaults.defaultPlatformQuotas") }}
+                  </label>
+                  <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.defaults.defaultPlatformQuotasHint") }}
+                  </p>
+                  <p class="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
+                    {{ t("admin.settings.defaults.platformQuotaNotice") }}
+                  </p>
+                </div>
+                <div class="overflow-x-auto">
+                  <table class="min-w-full text-sm">
+                    <thead>
+                      <tr class="text-left text-xs text-gray-500 dark:text-gray-400">
+                        <th class="pb-2 pr-4 font-medium">{{ t("admin.settings.platformQuota.platform") }}</th>
+                        <th class="pb-2 pr-4 font-medium">{{ t("admin.settings.platformQuota.daily") }}</th>
+                        <th class="pb-2 pr-4 font-medium">{{ t("admin.settings.platformQuota.weekly") }}</th>
+                        <th class="pb-2 font-medium">{{ t("admin.settings.platformQuota.monthly") }}</th>
+                      </tr>
+                    </thead>
+                    <tbody class="space-y-2">
+                      <tr
+                        v-for="p in (['anthropic', 'openai', 'gemini', 'antigravity'] as const)"
+                        :key="p"
+                        class="align-top"
+                      >
+                        <td class="py-1 pr-4">
+                          <span class="font-mono text-xs text-gray-700 dark:text-gray-300">{{ p }}</span>
+                        </td>
+                        <td class="py-1 pr-4">
+                          <input
+                            v-model.number="form.default_platform_quotas[p]!.daily"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            class="input h-8 w-28 text-sm"
+                            :placeholder="t('admin.settings.platformQuota.placeholder')"
+                          />
+                        </td>
+                        <td class="py-1 pr-4">
+                          <input
+                            v-model.number="form.default_platform_quotas[p]!.weekly"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            class="input h-8 w-28 text-sm"
+                            :placeholder="t('admin.settings.platformQuota.placeholder')"
+                          />
+                        </td>
+                        <td class="py-1">
+                          <input
+                            v-model.number="form.default_platform_quotas[p]!.monthly"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            class="input h-8 w-28 text-sm"
+                            :placeholder="t('admin.settings.platformQuota.placeholder')"
+                          />
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -4544,6 +5103,70 @@
                             {{ t("common.delete") }}
                           </button>
                         </div>
+                      </div>
+                    </div>
+
+                    <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                      <div class="mb-3">
+                        <label class="font-medium text-gray-900 dark:text-white">
+                          {{ t("admin.settings.authSourceDefaults.platformQuotasOverride") }}
+                        </label>
+                        <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          {{ t("admin.settings.authSourceDefaults.platformQuotasOverrideHint") }}
+                        </p>
+                      </div>
+                      <div class="overflow-x-auto">
+                        <table class="min-w-full text-sm">
+                          <thead>
+                            <tr class="text-left text-xs text-gray-500 dark:text-gray-400">
+                              <th class="pb-2 pr-4 font-medium">{{ t("admin.settings.platformQuota.platform") }}</th>
+                              <th class="pb-2 pr-4 font-medium">{{ t("admin.settings.platformQuota.daily") }}</th>
+                              <th class="pb-2 pr-4 font-medium">{{ t("admin.settings.platformQuota.weekly") }}</th>
+                              <th class="pb-2 font-medium">{{ t("admin.settings.platformQuota.monthly") }}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr
+                              v-for="p in (['anthropic', 'openai', 'gemini', 'antigravity'] as const)"
+                              :key="`${authSource.source}-pq-${p}`"
+                              class="align-top"
+                            >
+                              <td class="py-1 pr-4">
+                                <span class="font-mono text-xs text-gray-700 dark:text-gray-300">{{ p }}</span>
+                              </td>
+                              <td class="py-1 pr-4">
+                                <input
+                                  v-model.number="authSourceDefaults[authSource.source].platform_quotas[p]!.daily"
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  class="input h-8 w-28 text-sm"
+                                  :placeholder="t('admin.settings.platformQuota.placeholder')"
+                                />
+                              </td>
+                              <td class="py-1 pr-4">
+                                <input
+                                  v-model.number="authSourceDefaults[authSource.source].platform_quotas[p]!.weekly"
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  class="input h-8 w-28 text-sm"
+                                  :placeholder="t('admin.settings.platformQuota.placeholder')"
+                                />
+                              </td>
+                              <td class="py-1">
+                                <input
+                                  v-model.number="authSourceDefaults[authSource.source].platform_quotas[p]!.monthly"
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  class="input h-8 w-28 text-sm"
+                                  :placeholder="t('admin.settings.platformQuota.placeholder')"
+                                />
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   </div>
@@ -6014,6 +6637,22 @@
                 <Toggle v-model="form.payment_enabled" />
               </div>
               <template v-if="form.payment_enabled">
+                <!-- Alipay QR code flow -->
+                <div class="flex items-center justify-between">
+                  <div>
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{
+                        t("admin.settings.payment.alipayForceQRCode")
+                      }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        t("admin.settings.payment.alipayForceQRCodeHint")
+                      }}
+                    </p>
+                  </div>
+                  <Toggle v-model="form.payment_alipay_force_qrcode" />
+                </div>
                 <!-- Row 1: Product name -->
                 <div class="grid grid-cols-3 gap-3">
                   <div>
@@ -6676,6 +7315,9 @@
               </div>
             </div>
           </div>
+
+          <EmailTemplateEditor v-if="activeTab === 'email'" />
+
           <!-- Balance Low Notification -->
           <div class="card">
             <div
@@ -6732,6 +7374,24 @@
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   {{ t("admin.settings.balanceNotify.rechargeUrlHint") }}
                 </p>
+              </div>
+              <div
+                class="flex items-center justify-between rounded-2xl border border-gray-100 px-4 py-3 dark:border-dark-700"
+              >
+                <div>
+                  <label
+                    class="mb-0 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >{{ t("admin.settings.subscriptionExpiryNotify.title") }}</label
+                  >
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t(
+                        "admin.settings.subscriptionExpiryNotify.description",
+                      )
+                    }}
+                  </p>
+                </div>
+                <Toggle v-model="form.subscription_expiry_notify_enabled" />
               </div>
             </div>
           </div>
@@ -6898,6 +7558,9 @@ import { adminAPI } from "@/api";
 import {
   appendAuthSourceDefaultsToUpdateRequest,
   buildAuthSourceDefaultsState,
+  findInvalidPlatformQuotaFields,
+  normalizePlatformQuotasMap,
+  sanitizePlatformQuotasMap,
   defaultWeChatConnectScopesForMode,
   deriveWeChatConnectStoredMode,
   KIRO_CACHE_MIN_BLOCK_TOKENS_MAX,
@@ -6919,6 +7582,7 @@ import type {
   UpdateSettingsRequest,
   DefaultAccountModelConfig,
   DefaultSubscriptionSetting,
+  DefaultPlatformQuotasMap,
   OpenAIFastPolicyRule,
   WeChatConnectMode,
   WebSearchEmulationConfig,
@@ -6968,6 +7632,9 @@ const ProxySelector = defineAsyncComponent(
 const BackupSettings = defineAsyncComponent(
   () => import("@/views/admin/BackupView.vue"),
 );
+const EmailTemplateEditor = defineAsyncComponent(
+  () => import("@/views/admin/settings/EmailTemplateEditor.vue"),
+);
 
 const { t, locale } = useI18n();
 const appStore = useAppStore();
@@ -6976,6 +7643,12 @@ const isZhLocale = computed(() => locale.value.startsWith("zh"));
 
 function localText(zh: string, en: string): string {
   return isZhLocale.value ? zh : en;
+}
+
+function normalizeDingTalkCorpRestrictionPolicy(
+  raw: string | null | undefined,
+): "none" | "internal_only" {
+  return raw === "internal_only" ? "internal_only" : "none";
 }
 
 function formatKiroRuntimeValidationError(
@@ -7363,6 +8036,23 @@ type SettingsForm = Omit<
   smtp_password: string;
   turnstile_secret_key: string;
   linuxdo_connect_client_secret: string;
+  dingtalk_connect_enabled: boolean;
+  dingtalk_connect_client_id: string;
+  dingtalk_connect_client_secret: string;
+  dingtalk_connect_client_secret_configured: boolean;
+  dingtalk_connect_redirect_url: string;
+  dingtalk_connect_corp_restriction_policy: string;
+  dingtalk_connect_internal_corp_id: string;
+  dingtalk_connect_bypass_registration: boolean;
+  dingtalk_connect_sync_corp_email: boolean;
+  dingtalk_connect_sync_display_name: boolean;
+  dingtalk_connect_sync_dept: boolean;
+  dingtalk_connect_sync_corp_email_attr_key: string;
+  dingtalk_connect_sync_display_name_attr_key: string;
+  dingtalk_connect_sync_dept_attr_key: string;
+  dingtalk_connect_sync_corp_email_attr_name: string;
+  dingtalk_connect_sync_display_name_attr_name: string;
+  dingtalk_connect_sync_dept_attr_name: string;
   wechat_connect_app_secret: string;
   wechat_connect_open_app_secret: string;
   wechat_connect_mp_app_secret: string;
@@ -7375,6 +8065,7 @@ type SettingsForm = Omit<
   google_oauth_client_secret: string;
   force_email_on_third_party_signup: boolean;
   openai_advanced_scheduler_enabled: boolean;
+  default_platform_quotas: DefaultPlatformQuotasMap;
   openai_oauth_image_bridge_disable_keepalives: boolean;
   openai_oauth_image_bridge_fresh_upstream_client: boolean;
 } & Required<OpenAIImageWebConversationModelSettings>;
@@ -7396,6 +8087,8 @@ const form = reactive<SettingsForm>({
   login_agreement_updated_at: "2026-03-31",
   login_agreement_documents: defaultLoginAgreementDocuments(),
   default_balance: 0,
+  default_platform_quotas:
+    normalizePlatformQuotasMap() as DefaultPlatformQuotasMap,
   affiliate_enabled: false,
   affiliate_rebate_rate: 20,
   affiliate_rebate_cap: 0,
@@ -7440,6 +8133,7 @@ const form = reactive<SettingsForm>({
   payment_cancel_rate_limit_window: 1,
   payment_cancel_rate_limit_unit: "day",
   payment_cancel_rate_limit_window_mode: "rolling",
+  payment_alipay_force_qrcode: false,
   table_default_page_size: tablePageSizeDefault,
   table_page_size_options: [10, 20, 50, 100],
   custom_menu_items: [] as Array<{
@@ -7469,12 +8163,30 @@ const form = reactive<SettingsForm>({
   turnstile_site_key: "",
   turnstile_secret_key: "",
   turnstile_secret_key_configured: false,
+  api_key_acl_trust_forwarded_ip: false,
   // LinuxDo Connect OAuth 登录
   linuxdo_connect_enabled: false,
   linuxdo_connect_client_id: "",
   linuxdo_connect_client_secret: "",
   linuxdo_connect_client_secret_configured: false,
   linuxdo_connect_redirect_url: "",
+  dingtalk_connect_enabled: false,
+  dingtalk_connect_client_id: "",
+  dingtalk_connect_client_secret: "",
+  dingtalk_connect_client_secret_configured: false,
+  dingtalk_connect_redirect_url: "",
+  dingtalk_connect_corp_restriction_policy: "none",
+  dingtalk_connect_internal_corp_id: "",
+  dingtalk_connect_bypass_registration: false,
+  dingtalk_connect_sync_corp_email: false,
+  dingtalk_connect_sync_display_name: false,
+  dingtalk_connect_sync_dept: false,
+  dingtalk_connect_sync_corp_email_attr_key: "",
+  dingtalk_connect_sync_display_name_attr_key: "",
+  dingtalk_connect_sync_dept_attr_key: "",
+  dingtalk_connect_sync_corp_email_attr_name: "",
+  dingtalk_connect_sync_display_name_attr_name: "",
+  dingtalk_connect_sync_dept_attr_name: "",
   wechat_connect_enabled: false,
   wechat_connect_app_id: "",
   wechat_connect_app_secret: "",
@@ -7582,10 +8294,12 @@ const form = reactive<SettingsForm>({
   enable_anthropic_cache_ttl_1h_injection: false,
   rewrite_message_cache_control: false,
   antigravity_user_agent_version: "",
+  openai_codex_user_agent: "",
   // Balance & quota notification
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
   balance_low_notify_recharge_url: "",
+  subscription_expiry_notify_enabled: true,
   account_quota_notify_enabled: false,
   account_quota_notify_emails: [] as NotifyEmailEntry[],
   ai_studio_enabled: false,
@@ -7620,6 +8334,14 @@ const authSourceDefaultsMeta = computed(() => [
     source: "wechat" as AuthSourceType,
     title: t("admin.settings.authSourceDefaults.sources.wechat.title"),
     description: t("admin.settings.authSourceDefaults.sources.wechat.description"),
+  },
+  {
+    source: "dingtalk" as AuthSourceType,
+    title: localText("钉钉登录", "DingTalk Sign-in"),
+    description: localText(
+      "通过钉钉首次注册或首次绑定时应用，可与企业信息同步配置配合使用。",
+      "Applied on first signup or first bind through DingTalk and can be paired with the corporate sync settings.",
+    ),
   },
   {
     source: "github" as AuthSourceType,
@@ -7972,6 +8694,22 @@ async function setAndCopyLinuxdoRedirectUrl() {
   );
 }
 
+const dingtalkRedirectUrlSuggestion = computed(() => {
+  const origin = resolveBackendCallbackOrigin();
+  return origin ? `${origin}/api/v1/auth/oauth/dingtalk/callback` : "";
+});
+
+async function setAndCopyDingTalkRedirectUrl() {
+  const url = dingtalkRedirectUrlSuggestion.value;
+  if (!url) return;
+
+  form.dingtalk_connect_redirect_url = url;
+  await copyToClipboard(
+    url,
+    localText("回调地址已写入并复制。", "Callback URL set and copied."),
+  );
+}
+
 type EmailOAuthProvider = "github" | "google";
 
 const githubOAuthRedirectUrlSuggestion = computed(() => {
@@ -8231,6 +8969,7 @@ async function loadSettings() {
           }))
         : defaultLoginAgreementDocuments();
     Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(settings));
+    form.default_platform_quotas = normalizePlatformQuotasMap(settings.default_platform_quotas);
     form.backend_mode_enabled = settings.backend_mode_enabled;
     form.default_subscriptions = normalizeDefaultSubscriptionSettings(
       settings.default_subscriptions,
@@ -8244,6 +8983,10 @@ async function loadSettings() {
       normalizeRegistrationEmailSuffixDomains(
         settings.registration_email_suffix_whitelist,
       );
+    form.dingtalk_connect_corp_restriction_policy =
+      normalizeDingTalkCorpRestrictionPolicy(
+        settings.dingtalk_connect_corp_restriction_policy,
+      );
     tablePageSizeOptionsInput.value = formatTablePageSizeOptions(
       Array.isArray(settings.table_page_size_options)
         ? settings.table_page_size_options
@@ -8254,6 +8997,7 @@ async function loadSettings() {
     smtpPasswordManuallyEdited.value = false;
     form.turnstile_secret_key = "";
     form.linuxdo_connect_client_secret = "";
+    form.dingtalk_connect_client_secret = "";
     form.github_oauth_client_secret = "";
     form.google_oauth_client_secret = "";
     form.wechat_connect_app_secret = "";
@@ -8418,7 +9162,7 @@ function findDuplicateDefaultSubscription(
 
 function isAuthSourceBonusEnabled(source: AuthSourceType): boolean {
   const current = authSourceDefaults[source];
-  return current.enabled;
+  return current.enabled || current.grant_on_first_bind;
 }
 
 function dedupeDefaultSubscriptions(
@@ -8437,18 +9181,20 @@ function dedupeDefaultSubscriptions(
 }
 
 function buildAuthSourceDefaultsForSubmit(): AuthSourceDefaultsState {
-  return authSourceDefaultsMeta.value.reduce((acc, authSource) => {
-    const current = authSourceDefaults[authSource.source];
+  const entries = Object.entries(authSourceDefaults) as Array<
+    [AuthSourceType, AuthSourceDefaultsState[AuthSourceType]]
+  >;
+
+  return entries.reduce((acc, [source, current]) => {
     const normalizedSubscriptions = normalizeDefaultSubscriptionSettings(
       current.subscriptions,
     );
 
-    acc[authSource.source] = {
+    acc[source] = {
       ...current,
       grant_on_signup: current.enabled,
-      grant_on_first_bind:
-        current.enabled && current.grant_on_first_bind,
-      subscriptions: isAuthSourceBonusEnabled(authSource.source)
+      grant_on_first_bind: current.grant_on_first_bind,
+      subscriptions: isAuthSourceBonusEnabled(source)
         ? normalizedSubscriptions
         : dedupeDefaultSubscriptions(normalizedSubscriptions),
     };
@@ -8569,6 +9315,33 @@ async function saveSettings() {
       }
     }
 
+    const invalidDefaultPlatformQuotaFields = findInvalidPlatformQuotaFields(
+      form.default_platform_quotas,
+    );
+    if (invalidDefaultPlatformQuotaFields.length > 0) {
+      appStore.showError(
+        t("admin.users.platformQuota.invalidNumber", {
+          fields: invalidDefaultPlatformQuotaFields.join(", "),
+        }),
+      );
+      return;
+    }
+
+    for (const authSource of authSourceDefaultsMeta.value) {
+      const invalidSourcePlatformQuotaFields = findInvalidPlatformQuotaFields(
+        authSourceDefaultsForSubmit[authSource.source].platform_quotas,
+      );
+      if (invalidSourcePlatformQuotaFields.length === 0) continue;
+      appStore.showError(
+        t("admin.users.platformQuota.invalidNumber", {
+          fields: invalidSourcePlatformQuotaFields
+            .map((field) => `${authSource.source}.${field}`)
+            .join(", "),
+        }),
+      );
+      return;
+    }
+
     if (form.wechat_connect_mp_enabled && form.wechat_connect_mobile_enabled) {
       appStore.showError(
         localText(
@@ -8621,6 +9394,10 @@ async function saveSettings() {
     if (!isValidHttpUrl(form.frontend_url)) form.frontend_url = "";
     if (!isValidHttpUrl(form.doc_url)) form.doc_url = "";
     syncWeChatConnectMode();
+    const dingtalkCorpRestrictionPolicy =
+      normalizeDingTalkCorpRestrictionPolicy(
+        form.dingtalk_connect_corp_restriction_policy,
+      );
     const wechatStoredMode = deriveWeChatConnectStoredMode(
       form.wechat_connect_open_enabled,
       form.wechat_connect_mp_enabled,
@@ -8690,11 +9467,40 @@ async function saveSettings() {
       turnstile_enabled: form.turnstile_enabled,
       turnstile_site_key: form.turnstile_site_key,
       turnstile_secret_key: form.turnstile_secret_key || undefined,
+      api_key_acl_trust_forwarded_ip:
+        form.api_key_acl_trust_forwarded_ip,
       linuxdo_connect_enabled: form.linuxdo_connect_enabled,
       linuxdo_connect_client_id: form.linuxdo_connect_client_id,
       linuxdo_connect_client_secret:
         form.linuxdo_connect_client_secret || undefined,
       linuxdo_connect_redirect_url: form.linuxdo_connect_redirect_url,
+      dingtalk_connect_enabled: form.dingtalk_connect_enabled,
+      dingtalk_connect_client_id: form.dingtalk_connect_client_id,
+      dingtalk_connect_client_secret:
+        form.dingtalk_connect_client_secret || undefined,
+      dingtalk_connect_redirect_url: form.dingtalk_connect_redirect_url,
+      dingtalk_connect_corp_restriction_policy:
+        dingtalkCorpRestrictionPolicy,
+      dingtalk_connect_internal_corp_id: form.dingtalk_connect_internal_corp_id,
+      dingtalk_connect_bypass_registration:
+        form.dingtalk_connect_bypass_registration,
+      dingtalk_connect_sync_corp_email:
+        form.dingtalk_connect_sync_corp_email,
+      dingtalk_connect_sync_display_name:
+        form.dingtalk_connect_sync_display_name,
+      dingtalk_connect_sync_dept: form.dingtalk_connect_sync_dept,
+      dingtalk_connect_sync_corp_email_attr_key:
+        form.dingtalk_connect_sync_corp_email_attr_key,
+      dingtalk_connect_sync_display_name_attr_key:
+        form.dingtalk_connect_sync_display_name_attr_key,
+      dingtalk_connect_sync_dept_attr_key:
+        form.dingtalk_connect_sync_dept_attr_key,
+      dingtalk_connect_sync_corp_email_attr_name:
+        form.dingtalk_connect_sync_corp_email_attr_name,
+      dingtalk_connect_sync_display_name_attr_name:
+        form.dingtalk_connect_sync_display_name_attr_name,
+      dingtalk_connect_sync_dept_attr_name:
+        form.dingtalk_connect_sync_dept_attr_name,
       wechat_connect_enabled: form.wechat_connect_enabled,
       wechat_connect_app_id:
         form.wechat_connect_open_app_id ||
@@ -8791,6 +9597,8 @@ async function saveSettings() {
       rewrite_message_cache_control: form.rewrite_message_cache_control,
       antigravity_user_agent_version:
         form.antigravity_user_agent_version?.trim() || "",
+      openai_codex_user_agent:
+        form.openai_codex_user_agent?.trim() || "",
       // Payment configuration
       payment_enabled: form.payment_enabled,
       risk_control_enabled: form.risk_control_enabled,
@@ -8818,6 +9626,7 @@ async function saveSettings() {
       payment_cancel_rate_limit_unit: form.payment_cancel_rate_limit_unit,
       payment_cancel_rate_limit_window_mode:
         form.payment_cancel_rate_limit_window_mode,
+      payment_alipay_force_qrcode: form.payment_alipay_force_qrcode,
 	      openai_advanced_scheduler_enabled: form.openai_advanced_scheduler_enabled,
 	      openai_sticky_reserve_percent: Math.max(
 	        0,
@@ -8834,8 +9643,9 @@ async function saveSettings() {
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:
         Number(form.balance_low_notify_threshold) || 0,
-      balance_low_notify_recharge_url: (form.balance_low_notify_recharge_url =
-        form.balance_low_notify_recharge_url || currentOrigin),
+      balance_low_notify_recharge_url: form.balance_low_notify_recharge_url,
+      subscription_expiry_notify_enabled:
+        form.subscription_expiry_notify_enabled,
       account_quota_notify_enabled: form.account_quota_notify_enabled,
       account_quota_notify_emails: (
         form.account_quota_notify_emails || []
@@ -8880,6 +9690,7 @@ async function saveSettings() {
     }
 
     appendAuthSourceDefaultsToUpdateRequest(payload, authSourceDefaultsForSubmit);
+    payload.default_platform_quotas = sanitizePlatformQuotasMap(form.default_platform_quotas);
 
     const updated = await adminAPI.settings.updateSettings(payload);
     for (const [key, value] of Object.entries(updated)) {
@@ -8889,6 +9700,7 @@ async function saveSettings() {
       }
     }
     Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(updated));
+    form.default_platform_quotas = normalizePlatformQuotasMap(updated.default_platform_quotas);
     registrationEmailSuffixWhitelistTags.value =
       normalizeRegistrationEmailSuffixDomains(
         updated.registration_email_suffix_whitelist,
@@ -8903,6 +9715,7 @@ async function saveSettings() {
     smtpPasswordManuallyEdited.value = false;
     form.turnstile_secret_key = "";
     form.linuxdo_connect_client_secret = "";
+    form.dingtalk_connect_client_secret = "";
     form.github_oauth_client_secret = "";
     form.google_oauth_client_secret = "";
     form.wechat_connect_app_secret = "";
@@ -8928,6 +9741,10 @@ async function saveSettings() {
     form.wechat_connect_scopes = defaultWeChatConnectScopesForMode(
       form.wechat_connect_mode,
     );
+    form.dingtalk_connect_corp_restriction_policy =
+      normalizeDingTalkCorpRestrictionPolicy(
+        updated.dingtalk_connect_corp_restriction_policy,
+      );
     form.oidc_connect_client_secret = "";
     // Refresh OpenAI fast/flex policy from server response
     if (

@@ -24,10 +24,18 @@ func isOpenAICompatMessagesBridgeRequestBody(reqBody map[string]any) bool {
 	if reqBody == nil {
 		return false
 	}
-	if input, ok := reqBody["input"].([]any); ok && inputContainsText(input, openAICompatClaudeCodeTodoGuardMarker) {
+	if isOpenAICompatClaudeCodeBridgeRequestBody(reqBody) {
 		return true
 	}
 	return isOpenAICompatMessagesBridgePromptCacheKey(firstNonEmptyString(reqBody["prompt_cache_key"]))
+}
+
+func isOpenAICompatClaudeCodeBridgeRequestBody(reqBody map[string]any) bool {
+	if reqBody == nil {
+		return false
+	}
+	input, ok := reqBody["input"].([]any)
+	return ok && inputContainsText(input, openAICompatClaudeCodeTodoGuardMarker)
 }
 
 func isOpenAICompatMessagesBridgePromptCacheKey(key string) bool {
@@ -35,6 +43,13 @@ func isOpenAICompatMessagesBridgePromptCacheKey(key string) bool {
 	return strings.HasPrefix(key, "anthropic-metadata-") ||
 		strings.HasPrefix(key, "anthropic-cache-") ||
 		strings.HasPrefix(key, "anthropic-digest-")
+}
+
+func shouldMarkOpenAICompatMessagesBridgeContext(c *gin.Context, reqBody map[string]any) bool {
+	if c != nil && c.Request != nil && IsClaudeCodeClient(c.Request.Context()) {
+		return true
+	}
+	return isOpenAICompatClaudeCodeBridgeRequestBody(reqBody)
 }
 
 func setOpenAICompatMessagesBridgeContext(c *gin.Context, enabled bool) {

@@ -136,6 +136,7 @@
         <ProfileIdentityBindingsSection
           :user="user"
           :linuxdo-enabled="linuxdoEnabled"
+          :dingtalk-enabled="dingtalkEnabled"
           :oidc-enabled="oidcEnabled"
           :oidc-provider-name="oidcProviderName"
           :wechat-enabled="wechatEnabled"
@@ -144,6 +145,54 @@
           embedded
           compact
         />
+      </section>
+
+      <section
+        v-if="contactInfoDisplay || supportQRCodeItems.length > 0"
+        data-testid="profile-support-panel"
+        class="card border border-gray-100 bg-white/90 p-6 dark:border-dark-700 dark:bg-dark-900/50"
+      >
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('common.contactSupport') }}
+            </h3>
+            <p
+              v-if="contactInfoDisplay"
+              data-testid="profile-support-contact"
+              class="mt-1 whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-300"
+            >
+              {{ contactInfoDisplay }}
+            </p>
+          </div>
+
+          <div
+            v-if="supportQRCodeItems.length > 0"
+            data-testid="profile-support-qr-grid"
+            class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          >
+            <div
+              v-for="(qrCode, index) in supportQRCodeItems"
+              :key="`${qrCode.image_url}-${index}`"
+              :aria-label="supportQRCodeAlt(qrCode)"
+              class="overflow-hidden rounded-3xl border border-gray-100 bg-gray-50/80 p-4 dark:border-dark-700 dark:bg-dark-900/30"
+              role="group"
+            >
+              <img
+                :src="qrCode.image_url"
+                :alt="supportQRCodeAlt(qrCode)"
+                :aria-label="supportQRCodeAlt(qrCode)"
+                class="aspect-square w-full rounded-2xl object-cover"
+              />
+              <p
+                v-if="qrCode.note"
+                class="mt-2 text-xs text-gray-500 dark:text-gray-400"
+              >
+                {{ qrCode.note }}
+              </p>
+            </div>
+          </div>
+        </div>
       </section>
     </div>
   </div>
@@ -155,7 +204,7 @@ import { useI18n } from 'vue-i18n'
 import ProfileAvatarCard from '@/components/user/profile/ProfileAvatarCard.vue'
 import ProfileEditForm from '@/components/user/profile/ProfileEditForm.vue'
 import ProfileIdentityBindingsSection from '@/components/user/profile/ProfileIdentityBindingsSection.vue'
-import type { User, UserAuthBindingStatus, UserAuthProvider, UserProfileSourceContext } from '@/types'
+import type { SupportQRCodeEntry, User, UserAuthBindingStatus, UserAuthProvider, UserProfileSourceContext } from '@/types'
 
 const emit = defineEmits<{
   'balance-history': []
@@ -164,15 +213,21 @@ const emit = defineEmits<{
 const props = withDefaults(defineProps<{
   user: User | null
   linuxdoEnabled?: boolean
+  dingtalkEnabled?: boolean
   oidcEnabled?: boolean
   oidcProviderName?: string
+  contactInfo?: string
+  supportQRCodes?: SupportQRCodeEntry[]
   wechatEnabled?: boolean
   wechatOpenEnabled?: boolean
   wechatMpEnabled?: boolean
 }>(), {
   linuxdoEnabled: false,
+  dingtalkEnabled: false,
   oidcEnabled: false,
   oidcProviderName: 'OIDC',
+  contactInfo: '',
+  supportQRCodes: () => [],
   wechatEnabled: false,
   wechatOpenEnabled: undefined,
   wechatMpEnabled: undefined,
@@ -205,6 +260,8 @@ function isEmailBound(user: User | null | undefined): boolean {
 
 const avatarUrl = computed(() => props.user?.avatar_url?.trim() || '')
 const displayName = computed(() => props.user?.username?.trim() || props.user?.email?.trim() || t('profile.user'))
+const contactInfoDisplay = computed(() => props.contactInfo?.trim() || '')
+const supportQRCodeItems = computed(() => (props.supportQRCodes || []).filter((entry) => entry?.image_url?.trim()))
 const primaryEmailDisplay = computed(() => {
   const email = props.user?.email?.trim() || ''
   if (!email) {
@@ -257,8 +314,9 @@ const providerLabels = computed<Record<UserAuthProvider, string>>(() => ({
   linuxdo: t('profile.authBindings.providers.linuxdo'),
   oidc: t('profile.authBindings.providers.oidc', { providerName: props.oidcProviderName }),
   wechat: t('profile.authBindings.providers.wechat'),
-  github: 'GitHub',
-  google: 'Google'
+  dingtalk: t('profile.authBindings.providers.dingtalk'),
+  github: t('profile.authBindings.providers.github'),
+  google: t('profile.authBindings.providers.google')
 }))
 function formatCurrency(value: number): string {
   return `$${value.toFixed(2)}`
@@ -268,21 +326,44 @@ function resolveProfileSourceProvider(source: string | UserProfileSourceContext 
   if (!source) return ''
   if (typeof source === 'string') {
     const normalized = normalizeProvider(source)
+    if (normalized === 'email') {
+      return ''
+    }
     return normalized ? providerLabels.value[normalized] : formatProviderLabel(source)
   }
   const normalized = normalizeProvider(source.provider || source.source || '')
-  return source.provider_label?.trim()
-    || source.label?.trim()
-    || (normalized ? providerLabels.value[normalized] : formatProviderLabel(source.provider || source.source || ''))
+  if (normalized === 'email') {
+    return ''
+  }
+  const explicitLabel =
+    formatProviderLabel(source.provider_label || '') ||
+    formatProviderLabel(source.label || '')
+  if (explicitLabel) {
+    return explicitLabel
+  }
+  if (normalized) {
+    return providerLabels.value[normalized]
+  }
+
+  return formatProviderLabel(source.provider || source.source || '')
 }
 
 function normalizeProvider(value: string): UserAuthProvider | null {
-  const normalized = value.trim().toLowerCase()
+  const trimmed = value.trim().toLowerCase()
+  if (trimmed.startsWith('oidc:') || trimmed.startsWith('oidc/')) {
+    return 'oidc'
+  }
+
+  const normalized = trimmed.replace(/[\s-]+/g, '_')
+  if (normalized === 'oidc_connect' || normalized === 'oidcconnect') {
+    return 'oidc'
+  }
   if (
     normalized === 'email' ||
     normalized === 'linuxdo' ||
     normalized === 'oidc' ||
     normalized === 'wechat' ||
+    normalized === 'dingtalk' ||
     normalized === 'github' ||
     normalized === 'google'
   ) {
@@ -292,12 +373,25 @@ function normalizeProvider(value: string): UserAuthProvider | null {
 }
 
 function formatProviderLabel(provider: string): string {
-  const normalized = provider.trim().toLowerCase()
+  const normalized = provider.trim().toLowerCase().replace(/[\s-]+/g, '_')
   if (!normalized) return ''
-  if (normalized === 'oidc') return props.oidcProviderName || 'OIDC'
+  const providerAlias = normalizeProvider(provider)
+  if (providerAlias) return providerLabels.value[providerAlias]
+  if (isInternalProfileSourceSentinel(normalized)) return ''
+  if (normalized === 'oidc' || normalized === 'oidc_connect' || normalized === 'oidcconnect') return props.oidcProviderName || 'OIDC'
   if (normalized === 'linuxdo') return 'LinuxDo'
   if (normalized === 'wechat') return 'WeChat'
-  if (normalized === 'email') return t('profile.email')
+  if (normalized === 'email') return ''
   return provider.trim()
+}
+
+function isInternalProfileSourceSentinel(normalized: string): boolean {
+  return normalized === 'remote_url' || normalized === 'media'
+}
+
+function supportQRCodeAlt(qrCode: SupportQRCodeEntry): string {
+  const note = qrCode.note?.trim()
+  const label = note || t('common.contactSupport')
+  return `${label} QR code`
 }
 </script>

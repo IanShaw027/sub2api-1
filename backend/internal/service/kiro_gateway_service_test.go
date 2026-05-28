@@ -608,8 +608,12 @@ func TestPrepareKiroConvertedRequest_PromotesLargeContextToOneMillionModelWithou
 
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(converted.Body, &payload))
-	state := payload["conversationState"].(map[string]any)
-	current := state["currentMessage"].(map[string]any)["userInputMessage"].(map[string]any)
+	state, ok := payload["conversationState"].(map[string]any)
+	require.True(t, ok)
+	currentMessage, ok := state["currentMessage"].(map[string]any)
+	require.True(t, ok)
+	current, ok := currentMessage["userInputMessage"].(map[string]any)
+	require.True(t, ok)
 	require.Equal(t, "claude-sonnet-4.6", current["modelId"])
 }
 
@@ -926,7 +930,7 @@ func TestKiroGatewayService_ForwardStream_DoesNotSplitUTF8WhenBufferingThinkingM
 			continue
 		}
 		chunk, _ := delta["text"].(string)
-		reconstructed.WriteString(chunk)
+		_, _ = reconstructed.WriteString(chunk)
 	}
 
 	require.Equal(t, chinese, reconstructed.String())

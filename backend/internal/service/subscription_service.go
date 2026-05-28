@@ -202,6 +202,18 @@ func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, in
 		} else {
 			// 已过期：从当前时间开始计算
 			newExpiresAt = now.AddDate(0, 0, validityDays)
+			existingSub.StartsAt = now
+			if validityDays <= 1 {
+				windowStart := startOfDay(now)
+				existingSub.DailyWindowStart = &windowStart
+			} else {
+				existingSub.DailyWindowStart = nil
+			}
+			existingSub.WeeklyWindowStart = nil
+			existingSub.MonthlyWindowStart = nil
+			existingSub.DailyUsageUSD = 0
+			existingSub.WeeklyUsageUSD = 0
+			existingSub.MonthlyUsageUSD = 0
 		}
 
 		// 确保不超过最大过期时间
@@ -215,7 +227,7 @@ func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, in
 		var tx *dbent.Tx
 		if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
 			tx = existingTx
-		} else {
+		} else if s.entClient != nil {
 			var err error
 			tx, err = s.entClient.Tx(ctx)
 			if err != nil {
@@ -229,35 +241,25 @@ func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, in
 			}
 		}
 
-		// 更新过期时间
-		if err := s.userSubRepo.ExtendExpiry(txCtx, existingSub.ID, newExpiresAt); err != nil {
-			rollback()
-			return nil, false, fmt.Errorf("extend subscription: %w", err)
-		}
-
-		// 如果订阅已过期或被暂停，恢复为active状态
-		if existingSub.Status != SubscriptionStatusActive {
-			if err := s.userSubRepo.UpdateStatus(txCtx, existingSub.ID, SubscriptionStatusActive); err != nil {
-				rollback()
-				return nil, false, fmt.Errorf("update subscription status: %w", err)
-			}
-		}
-
-		// 追加备注
+		existingSub.ExpiresAt = newExpiresAt
+		existingSub.Status = SubscriptionStatusActive
+		existingSub.AssignedAt = now
 		if input.Notes != "" {
 			newNotes := existingSub.Notes
 			if newNotes != "" {
 				newNotes += "\n"
 			}
 			newNotes += input.Notes
-			if err := s.userSubRepo.UpdateNotes(txCtx, existingSub.ID, newNotes); err != nil {
-				rollback()
-				return nil, false, fmt.Errorf("update subscription notes: %w", err)
-			}
+			existingSub.Notes = newNotes
+		}
+
+		if err := s.userSubRepo.Update(txCtx, existingSub); err != nil {
+			rollback()
+			return nil, false, fmt.Errorf("update subscription: %w", err)
 		}
 
 		// 提交事务
-		if dbent.TxFromContext(ctx) == nil {
+		if dbent.TxFromContext(ctx) == nil && tx != nil {
 			if err := tx.Commit(); err != nil {
 				return nil, false, fmt.Errorf("commit transaction: %w", err)
 			}
@@ -975,6 +977,9 @@ func (s *SubscriptionService) calculateProgress(sub *UserSubscription, group *Gr
 	if group.HasDailyLimit() && sub.DailyWindowStart != nil {
 		limit := *group.DailyLimitUSD
 		resetsAt := sub.DailyWindowStart.Add(24 * time.Hour)
+		if dailyResetTime := sub.DailyResetTime(); dailyResetTime != nil {
+			resetsAt = *dailyResetTime
+		}
 		progress.Daily = &UsageWindowProgress{
 			LimitUSD:        limit,
 			UsedUSD:         sub.DailyUsageUSD,

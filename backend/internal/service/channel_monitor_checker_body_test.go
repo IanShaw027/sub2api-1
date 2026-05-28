@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -62,6 +64,90 @@ func setupFakeAnthropic(t *testing.T, handler *captureHandler) string {
 	return srv.URL
 }
 
+type openAICaptureHandler struct {
+	lastBody                  map[string]any
+	lastHeaders               http.Header
+	lastPath                  string
+	status                    int
+	responsesLeadingReasoning bool
+}
+
+func (h *openAICaptureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.lastHeaders = r.Header.Clone()
+	h.lastPath = r.URL.Path
+	defer func() { _ = r.Body.Close() }()
+	var parsed map[string]any
+	_ = json.NewDecoder(r.Body).Decode(&parsed)
+	h.lastBody = parsed
+
+	if h.status == 0 {
+		h.status = http.StatusOK
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(h.status)
+
+	answer := answerFromOpenAIRequest(parsed)
+	if h.lastPath == providerOpenAIResponsesPath {
+		output := []map[string]any{}
+		if h.responsesLeadingReasoning {
+			output = append(output, map[string]any{
+				"type":    "reasoning",
+				"summary": []any{},
+			})
+		}
+		output = append(output, map[string]any{
+			"type":   "message",
+			"status": "completed",
+			"role":   "assistant",
+			"content": []map[string]any{
+				{"type": "output_text", "text": answer},
+			},
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"output": output,
+		})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"choices": []map[string]any{{"message": map[string]any{"content": answer}}},
+	})
+}
+
+func setupFakeOpenAI(t *testing.T, handler *openAICaptureHandler) string {
+	t.Helper()
+	swapMonitorHTTPClient(t)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func answerFromOpenAIRequest(body map[string]any) string {
+	prompt, _ := body["input"].(string)
+	if prompt == "" {
+		if messages, ok := body["messages"].([]any); ok && len(messages) > 0 {
+			if msg, ok := messages[0].(map[string]any); ok {
+				prompt, _ = msg["content"].(string)
+			}
+		}
+	}
+	return answerFromChallengePrompt(prompt)
+}
+
+var challengeQuestionRegex = regexp.MustCompile(`Q: (\d+) ([+-]) (\d+) = \?\nA:$`)
+
+func answerFromChallengePrompt(prompt string) string {
+	m := challengeQuestionRegex.FindStringSubmatch(prompt)
+	if len(m) != 4 {
+		return "0"
+	}
+	left, _ := strconv.Atoi(m[1])
+	right, _ := strconv.Atoi(m[3])
+	if m[2] == "+" {
+		return strconv.Itoa(left + right)
+	}
+	return strconv.Itoa(left - right)
+}
+
 func TestRunCheckForModel_OffMode_PreservesDefaultBody(t *testing.T) {
 	h := &captureHandler{respondText: "the answer is 42"}
 	endpoint := setupFakeAnthropic(t, h)
@@ -77,6 +163,210 @@ func TestRunCheckForModel_OffMode_PreservesDefaultBody(t *testing.T) {
 	}
 	if h.lastHeaders.Get("x-api-key") != "sk-fake" {
 		t.Errorf("expected adapter's x-api-key header, got %q", h.lastHeaders.Get("x-api-key"))
+	}
+}
+
+func TestRunCheckForModel_OpenAI_DefaultChatRequest(t *testing.T) {
+	h := &openAICaptureHandler{}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-test", nil)
+
+	if res.Status != MonitorStatusOperational {
+		t.Fatalf("default chat request should pass challenge, got status=%s message=%q", res.Status, res.Message)
+	}
+	if h.lastPath != providerOpenAIPath {
+		t.Fatalf("expected chat completions path %q, got %q", providerOpenAIPath, h.lastPath)
+	}
+	if h.lastBody["model"] != "gpt-test" {
+		t.Errorf("chat body should contain model=gpt-test, got %v", h.lastBody["model"])
+	}
+	if _, ok := h.lastBody["messages"]; !ok {
+		t.Error("chat body should contain messages")
+	}
+	if _, ok := h.lastBody["instructions"]; ok {
+		t.Error("chat body must not contain top-level instructions")
+	}
+	if h.lastBody["stream"] != false {
+		t.Errorf("chat body should set stream=false, got %v", h.lastBody["stream"])
+	}
+	if h.lastHeaders.Get("Authorization") != "Bearer sk-openai" {
+		t.Errorf("expected bearer auth header, got %q", h.lastHeaders.Get("Authorization"))
+	}
+}
+
+func TestRunCheckForModel_OpenAIResponses_DefaultRequest(t *testing.T) {
+	h := &openAICaptureHandler{}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-test", &CheckOptions{
+		APIMode: MonitorAPIModeResponses,
+	})
+
+	if res.Status != MonitorStatusOperational {
+		t.Fatalf("default responses request should pass challenge, got status=%s message=%q", res.Status, res.Message)
+	}
+	if h.lastPath != providerOpenAIResponsesPath {
+		t.Fatalf("expected responses path %q, got %q", providerOpenAIResponsesPath, h.lastPath)
+	}
+	if h.lastBody["model"] != "gpt-test" {
+		t.Errorf("responses body should contain model=gpt-test, got %v", h.lastBody["model"])
+	}
+	instructions, _ := h.lastBody["instructions"].(string)
+	if strings.TrimSpace(instructions) == "" {
+		t.Error("responses body should contain non-empty instructions")
+	}
+	input, _ := h.lastBody["input"].(string)
+	if strings.TrimSpace(input) == "" {
+		t.Error("responses body should contain non-empty input")
+	}
+	if _, ok := h.lastBody["messages"]; ok {
+		t.Error("responses body must not contain chat messages")
+	}
+	if h.lastBody["stream"] != false {
+		t.Errorf("responses body should set stream=false, got %v", h.lastBody["stream"])
+	}
+	if h.lastHeaders.Get("Authorization") != "Bearer sk-openai" {
+		t.Errorf("expected bearer auth header, got %q", h.lastHeaders.Get("Authorization"))
+	}
+}
+
+func TestRunCheckForModel_OpenAIResponses_SkipsLeadingReasoningItem(t *testing.T) {
+	h := &openAICaptureHandler{responsesLeadingReasoning: true}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-5.5", &CheckOptions{
+		APIMode: MonitorAPIModeResponses,
+	})
+
+	if res.Status != MonitorStatusOperational {
+		t.Fatalf("responses request should find text after leading reasoning item, got status=%s message=%q", res.Status, res.Message)
+	}
+	if h.lastPath != providerOpenAIResponsesPath {
+		t.Fatalf("expected responses path %q, got %q", providerOpenAIResponsesPath, h.lastPath)
+	}
+}
+
+func TestRunCheckForModel_OpenAIResponses_MergeMode_ProtectsChallengeFields(t *testing.T) {
+	h := &openAICaptureHandler{}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-5.5", &CheckOptions{
+		APIMode:          MonitorAPIModeResponses,
+		BodyOverrideMode: MonitorBodyOverrideModeMerge,
+		BodyOverride: map[string]any{
+			"metadata":          map[string]any{"source": "monitor"},
+			"max_output_tokens": float64(64),
+			"model":             "user-forced-model",
+			"instructions":      "user-forced-instructions",
+			"input":             "user-forced-input",
+			"stream":            true,
+		},
+	})
+
+	if res.Status != MonitorStatusOperational {
+		t.Fatalf("responses merge request should pass challenge, got status=%s message=%q", res.Status, res.Message)
+	}
+	if h.lastPath != providerOpenAIResponsesPath {
+		t.Fatalf("expected responses path %q, got %q", providerOpenAIResponsesPath, h.lastPath)
+	}
+	if h.lastBody["model"] != "gpt-5.5" {
+		t.Errorf("responses merge should keep adapter model, got %v", h.lastBody["model"])
+	}
+	if h.lastBody["instructions"] == "user-forced-instructions" {
+		t.Error("responses merge should protect adapter instructions")
+	}
+	if h.lastBody["input"] == "user-forced-input" {
+		t.Error("responses merge should protect adapter input")
+	}
+	if h.lastBody["stream"] != false {
+		t.Errorf("responses merge should keep stream=false, got %v", h.lastBody["stream"])
+	}
+	if h.lastBody["metadata"] == nil {
+		t.Error("responses merge should allow non-protected keys like metadata")
+	}
+	if got := h.lastBody["max_output_tokens"]; got != float64(64) {
+		t.Errorf("responses merge should allow max_output_tokens override, got %v", got)
+	}
+}
+
+func TestRunCheckForModel_OpenAIResponsesReplaceMissingInstructionsFailsLocally(t *testing.T) {
+	h := &openAICaptureHandler{}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-test", &CheckOptions{
+		APIMode:          MonitorAPIModeResponses,
+		BodyOverrideMode: MonitorBodyOverrideModeReplace,
+		BodyOverride: map[string]any{
+			"model": "gpt-test",
+			"input": "hello",
+		},
+	})
+
+	if res.Status != MonitorStatusError {
+		t.Fatalf("invalid responses replace body should fail locally as error, got status=%s", res.Status)
+	}
+	if !strings.Contains(res.Message, "non-empty instructions and input for responses") {
+		t.Errorf("expected local validation message about instructions/input, got %q", res.Message)
+	}
+	if h.lastPath != "" {
+		t.Errorf("invalid replace body should fail before HTTP request, got path %q", h.lastPath)
+	}
+}
+
+func TestRunCheckForModel_OpenAIResponsesReplaceMissingModelFailsLocally(t *testing.T) {
+	h := &openAICaptureHandler{}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-test", &CheckOptions{
+		APIMode:          MonitorAPIModeResponses,
+		BodyOverrideMode: MonitorBodyOverrideModeReplace,
+		BodyOverride: map[string]any{
+			"instructions": "Return a number.",
+			"input":        "What is 1 + 1?",
+		},
+	})
+
+	if res.Status != MonitorStatusError {
+		t.Fatalf("missing model should fail locally as error, got status=%s", res.Status)
+	}
+	if !strings.Contains(res.Message, "non-empty model") {
+		t.Errorf("expected local validation message about model, got %q", res.Message)
+	}
+	if h.lastPath != "" {
+		t.Errorf("invalid replace body should fail before HTTP request, got path %q", h.lastPath)
+	}
+}
+
+func TestRunCheckForModel_OpenAIResponses_ReplaceMode_UsesResponsesBodyAndExtraction(t *testing.T) {
+	h := &openAICaptureHandler{responsesLeadingReasoning: true}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-5.5", &CheckOptions{
+		APIMode:          MonitorAPIModeResponses,
+		BodyOverrideMode: MonitorBodyOverrideModeReplace,
+		BodyOverride: map[string]any{
+			"model":        "user-forced-model",
+			"instructions": "Return the number 42.",
+			"input":        "What is 40 + 2?",
+			"stream":       false,
+		},
+	})
+
+	if res.Status != MonitorStatusOperational {
+		t.Fatalf("responses replace request should treat non-empty output text as operational, got status=%s message=%q", res.Status, res.Message)
+	}
+	if h.lastPath != providerOpenAIResponsesPath {
+		t.Fatalf("expected responses path %q, got %q", providerOpenAIResponsesPath, h.lastPath)
+	}
+	if h.lastBody["model"] != "user-forced-model" {
+		t.Errorf("responses replace should use user model, got %v", h.lastBody["model"])
+	}
+	if h.lastBody["instructions"] != "Return the number 42." {
+		t.Errorf("responses replace should use user instructions, got %v", h.lastBody["instructions"])
+	}
+	if h.lastBody["input"] != "What is 40 + 2?" {
+		t.Errorf("responses replace should use user input, got %v", h.lastBody["input"])
 	}
 }
 

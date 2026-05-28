@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { isBackendModePublicRouteAllowed } from '../index'
+import { resolveCompletedSetupRedirectPath } from '@/router/setupRedirect'
 
 // Mock 导航加载状态
 vi.mock('@/composables/useNavigationLoading', () => {
@@ -53,6 +55,7 @@ interface MockAuthState {
   isSimpleMode: boolean
   backendModeEnabled: boolean
   hasPendingAuthSession: boolean
+  setupNeedsSetup?: boolean
 }
 
 /**
@@ -66,6 +69,10 @@ function simulateGuard(
   const requiresAuth = toMeta.requiresAuth !== false
   const requiresAdmin = toMeta.requiresAdmin === true
 
+  if (toPath === '/setup' && authState.setupNeedsSetup === false) {
+    return resolveCompletedSetupRedirectPath(authState.isAuthenticated, authState.isAdmin)
+  }
+
   // 不需要认证的路由
   if (!requiresAuth) {
     if (
@@ -78,19 +85,7 @@ function simulateGuard(
       return authState.isAdmin ? '/admin/dashboard' : '/dashboard'
     }
     if (authState.backendModeEnabled && !authState.isAuthenticated) {
-      const allowed = ['/login', '/key-usage', '/setup', '/payment/result']
-      const callbackPaths = [
-        '/auth/callback',
-        '/auth/linuxdo/callback',
-        '/auth/oidc/callback',
-        '/auth/wechat/callback',
-        '/auth/wechat/payment/callback',
-      ]
-      const pendingAuthPaths = ['/register', '/email-verify']
-      const isAllowed =
-        allowed.some((path) => toPath === path || toPath.startsWith(path)) ||
-        callbackPaths.includes(toPath) ||
-        (authState.hasPendingAuthSession && pendingAuthPaths.includes(toPath))
+      const isAllowed = isBackendModePublicRouteAllowed(toPath, authState.hasPendingAuthSession)
       if (!isAllowed) {
         return '/login'
       }
@@ -127,19 +122,7 @@ function simulateGuard(
     if (authState.isAuthenticated && authState.isAdmin) {
       return null
     }
-    const allowed = ['/login', '/key-usage', '/setup', '/payment/result']
-    const callbackPaths = [
-      '/auth/callback',
-      '/auth/linuxdo/callback',
-      '/auth/oidc/callback',
-      '/auth/wechat/callback',
-      '/auth/wechat/payment/callback',
-    ]
-    const pendingAuthPaths = ['/register', '/email-verify']
-    const isAllowed =
-      allowed.some((path) => toPath === path || toPath.startsWith(path)) ||
-      callbackPaths.includes(toPath) ||
-      (authState.hasPendingAuthSession && pendingAuthPaths.includes(toPath))
+    const isAllowed = isBackendModePublicRouteAllowed(toPath, authState.hasPendingAuthSession)
     if (!isAllowed) {
       return '/login'
     }
@@ -151,6 +134,20 @@ function simulateGuard(
 describe('路由守卫逻辑', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+  })
+
+  describe('backend mode public route allowlist', () => {
+    it('uses the production helper for exact matches and prefix matches', () => {
+      expect(isBackendModePublicRouteAllowed('/payment/stripe-popup', false)).toBe(true)
+      expect(isBackendModePublicRouteAllowed('/legal/privacy', false)).toBe(true)
+      expect(isBackendModePublicRouteAllowed('/auth/wechat/callback', false)).toBe(true)
+      expect(isBackendModePublicRouteAllowed('/admin', false)).toBe(false)
+    })
+
+    it('only allows pending auth routes when a pending auth session exists', () => {
+      expect(isBackendModePublicRouteAllowed('/register', false)).toBe(false)
+      expect(isBackendModePublicRouteAllowed('/register', true)).toBe(true)
+    })
   })
 
   // --- 未认证用户 ---
@@ -378,6 +375,32 @@ describe('路由守卫逻辑', () => {
       expect(redirect).toBeNull()
     })
 
+    it('unauthenticated: initialized /setup redirects to /login', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+        setupNeedsSetup: false,
+      }
+      const redirect = simulateGuard('/setup', { requiresAuth: false }, authState)
+      expect(redirect).toBe('/login')
+    })
+
+    it('admin: initialized /setup redirects to /admin/dashboard', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: true,
+        isAdmin: true,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+        setupNeedsSetup: false,
+      }
+      const redirect = simulateGuard('/setup', { requiresAuth: false }, authState)
+      expect(redirect).toBe('/admin/dashboard')
+    })
+
     it('admin: /admin/dashboard is allowed', () => {
       const authState: MockAuthState = {
         isAuthenticated: true,
@@ -450,6 +473,30 @@ describe('路由守卫逻辑', () => {
       expect(redirect).toBeNull()
     })
 
+    it('unauthenticated: DingTalk callback route is allowed', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/auth/dingtalk/callback', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('unauthenticated: OAuth callback route is allowed', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/auth/oauth/callback', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
     it('unauthenticated: WeChat payment callback route is allowed', () => {
       const authState: MockAuthState = {
         isAuthenticated: false,
@@ -472,6 +519,78 @@ describe('路由守卫逻辑', () => {
       }
       const redirect = simulateGuard('/payment/result', { requiresAuth: false }, authState)
       expect(redirect).toBeNull()
+    })
+
+    it('unauthenticated: /payment/stripe is allowed', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/payment/stripe', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('unauthenticated: /payment/stripe-popup is allowed', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/payment/stripe-popup', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('unauthenticated: /payment/airwallex is allowed', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/payment/airwallex', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('unauthenticated: /legal/* is allowed', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/legal/privacy-policy', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('unauthenticated: DingTalk email completion is allowed when a pending auth session exists', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: true,
+      }
+      const redirect = simulateGuard('/auth/dingtalk/email-completion', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('unauthenticated: DingTalk email completion is blocked without a pending auth session', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/auth/dingtalk/email-completion', { requiresAuth: false }, authState)
+      expect(redirect).toBe('/login')
     })
 
     it('unauthenticated: /register is allowed when a pending auth session exists', () => {

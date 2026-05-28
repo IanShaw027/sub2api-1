@@ -15,11 +15,11 @@ type OpsRepository interface {
 	ListSystemLogs(ctx context.Context, filter *OpsSystemLogFilter) (*OpsSystemLogList, error)
 	DeleteSystemLogs(ctx context.Context, filter *OpsSystemLogCleanupFilter) (int64, error)
 	InsertSystemLogCleanupAudit(ctx context.Context, input *OpsSystemLogCleanupAudit) error
-
 	InsertRetryAttempt(ctx context.Context, input *OpsInsertRetryAttemptInput) (int64, error)
 	UpdateRetryAttempt(ctx context.Context, input *OpsUpdateRetryAttemptInput) error
 	GetLatestRetryAttemptForError(ctx context.Context, sourceErrorID int64) (*OpsRetryAttempt, error)
 	ListRetryAttemptsByErrorID(ctx context.Context, sourceErrorID int64, limit int) ([]*OpsRetryAttempt, error)
+
 	UpdateErrorResolution(ctx context.Context, errorID int64, resolved bool, resolvedByUserID *int64, resolvedRetryID *int64, resolvedAt *time.Time) error
 
 	// Lightweight window stats (for realtime WS / quick sampling).
@@ -96,6 +96,8 @@ type OpsInsertErrorLogInput struct {
 	ErrorType         string
 	Severity          string
 	StatusCode        int
+	IsRetryable       bool
+	RetryCount        int
 	IsBusinessLimited bool
 	IsCountTokens     bool // 是否为 count_tokens 请求
 
@@ -108,6 +110,7 @@ type OpsInsertErrorLogInput struct {
 	UpstreamStatusCode   *int
 	UpstreamErrorMessage *string
 	UpstreamErrorDetail  *string
+	ResolvedRetryID      *int64
 	// UpstreamErrors captures all upstream error attempts observed during handling this request.
 	// It is populated during request processing (gin context) and sanitized+serialized by OpsService.
 	UpstreamErrors []*OpsUpstreamErrorEvent
@@ -125,9 +128,6 @@ type OpsInsertErrorLogInput struct {
 	RequestBodyTruncated bool
 	RequestBodyBytes     *int
 	RequestHeadersJSON   *string // optional json string
-
-	IsRetryable bool
-	RetryCount  int
 
 	CreatedAt time.Time
 }

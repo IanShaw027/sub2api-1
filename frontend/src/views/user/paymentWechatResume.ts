@@ -43,13 +43,19 @@ export function parseWechatResumeRoute(
   const orderType = readQueryString(query, 'order_type') === 'subscription' || hasPlanId
     ? 'subscription'
     : 'balance'
+  const rawAmount = Number.parseFloat(readQueryString(query, 'amount'))
+  const orderAmount = Number.isFinite(rawAmount) && rawAmount > 0
+    ? rawAmount
+    : (orderType === 'subscription'
+      ? (plans.find(plan => plan.id === planId)?.price ?? 0)
+      : fallbackBalanceAmount)
 
   if (wechatResumeToken) {
     return {
       wechatResumeToken,
       paymentType,
       orderType,
-      orderAmount: 0,
+      orderAmount,
       planId: hasPlanId ? planId : undefined,
     }
   }
@@ -58,13 +64,6 @@ export function parseWechatResumeRoute(
   if (!openid) {
     return null
   }
-
-  const rawAmount = Number.parseFloat(readQueryString(query, 'amount'))
-  const orderAmount = Number.isFinite(rawAmount) && rawAmount > 0
-    ? rawAmount
-    : (orderType === 'subscription'
-      ? (plans.find(plan => plan.id === planId)?.price ?? 0)
-      : fallbackBalanceAmount)
 
   return {
     openid,

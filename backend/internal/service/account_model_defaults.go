@@ -220,10 +220,6 @@ func (s *SettingService) GetPlatformDefaultAccountModelConfig(ctx context.Contex
 	return parsePlatformDefaultAccountModelConfig(raw)
 }
 
-func applyDefaultAccountModelConfig(credentials map[string]any, cfg DefaultAccountModelConfig) map[string]any {
-	return applyDefaultAccountModelConfigForPlatform("", credentials, cfg)
-}
-
 func applyDefaultAccountModelConfigForPlatform(platform string, credentials map[string]any, cfg DefaultAccountModelConfig) map[string]any {
 	cfg = normalizeDefaultAccountModelConfig(cfg)
 	if credentials == nil {
@@ -243,14 +239,6 @@ func applyDefaultAccountModelConfigForPlatform(platform string, credentials map[
 		}
 	}
 	return out
-}
-
-func applyDefaultAccountModelConfigBase(credentials map[string]any, cfg DefaultAccountModelConfig, override bool) map[string]any {
-	originalKeys := make(map[string]struct{}, len(credentials))
-	for key := range credentials {
-		originalKeys[key] = struct{}{}
-	}
-	return applyDefaultAccountModelConfigBaseWithOriginalKeys(credentials, cfg, originalKeys, override)
 }
 
 func applyDefaultAccountModelConfigBaseWithOriginalKeys(credentials map[string]any, cfg DefaultAccountModelConfig, originalKeys map[string]struct{}, override bool) map[string]any {

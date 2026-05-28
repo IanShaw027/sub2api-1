@@ -17,11 +17,122 @@ export interface DefaultSubscriptionSetting {
   validity_days: number;
 }
 
+// ── 平台限额类型 ──────────────────────────────────────────────────
+export type PlatformType = "anthropic" | "openai" | "gemini" | "antigravity"
+export type QuotaWindowType = "daily" | "weekly" | "monthly"
+
+/** 单平台三档限额；null = 不限制，undefined = 未填（等价 null） */
+export interface PlatformQuotaLimits {
+  daily:   number | null
+  weekly:  number | null
+  monthly: number | null
+}
+
+/** auth-source 覆盖专用：undefined = 继承系统默认，null = 显式不限额，number = 显式限额 */
+export interface PlatformQuotaOverrideLimits {
+  daily: number | null | undefined
+  weekly: number | null | undefined
+  monthly: number | null | undefined
+}
+
+/** 全平台默认限额 map（key = PlatformType） */
+export type DefaultPlatformQuotasMap = Partial<Record<PlatformType, PlatformQuotaLimits>>
+export type AuthSourcePlatformQuotaOverridesMap = Partial<Record<PlatformType, PlatformQuotaOverrideLimits>>
+
+const PLATFORMS: PlatformType[] = ["anthropic", "openai", "gemini", "antigravity"]
+const QUOTA_WINDOWS: QuotaWindowType[] = ["daily", "weekly", "monthly"]
+
+/** 归一化为全 4 平台 × 3 窗口（缺失填 null），供模板非空绑定 */
+export function normalizePlatformQuotasMap(input?: DefaultPlatformQuotasMap | null): DefaultPlatformQuotasMap {
+  const result: DefaultPlatformQuotasMap = {}
+  for (const p of PLATFORMS) {
+    const src = input?.[p]
+    result[p] = {
+      daily:   typeof src?.daily === "number" ? src.daily : null,
+      weekly:  typeof src?.weekly === "number" ? src.weekly : null,
+      monthly: typeof src?.monthly === "number" ? src.monthly : null,
+    }
+  }
+  return result
+}
+
+/** 空字符串代表用户主动清空；其他非法值必须由调用方先拦截，避免静默降级成 null。 */
+export function findInvalidPlatformQuotaFields(
+  input?: DefaultPlatformQuotasMap | AuthSourcePlatformQuotaOverridesMap | null,
+): string[] {
+  const invalid: string[] = []
+  for (const p of PLATFORMS) {
+    const src = input?.[p]
+    for (const window of QUOTA_WINDOWS) {
+      const value = src?.[window] as unknown
+      if (value === "" || value === null || value === undefined) continue
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0) continue
+      invalid.push(`${p}.${window}`)
+    }
+  }
+  return invalid
+}
+
+/** auth-source 覆盖归一化：补全 4 平台 × 3 窗口，但保留 undefined/null/number 三态。 */
+export function normalizePlatformQuotaOverridesMap(
+  input?: AuthSourcePlatformQuotaOverridesMap | null,
+): AuthSourcePlatformQuotaOverridesMap {
+  const result: AuthSourcePlatformQuotaOverridesMap = {}
+  for (const p of PLATFORMS) {
+    const src = input?.[p]
+    result[p] = {
+      daily: src?.daily === null ? null : typeof src?.daily === "number" ? src.daily : undefined,
+      weekly: src?.weekly === null ? null : typeof src?.weekly === "number" ? src.weekly : undefined,
+      monthly: src?.monthly === null ? null : typeof src?.monthly === "number" ? src.monthly : undefined,
+    }
+  }
+  return result
+}
+
+/** 提交前清洗：非有限数/负数/空字符串 → null（保留 0 = 显式禁用），返回全 4 平台嵌套 map */
+export function sanitizePlatformQuotasMap(input?: DefaultPlatformQuotasMap | null): DefaultPlatformQuotasMap {
+  const clean = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null)
+  const result: DefaultPlatformQuotasMap = {}
+  for (const p of PLATFORMS) {
+    const src = input?.[p]
+    result[p] = { daily: clean(src?.daily), weekly: clean(src?.weekly), monthly: clean(src?.monthly) }
+  }
+  return result
+}
+
+/** auth-source 覆盖提交前清洗：undefined/空字符串不写 override，null 保留显式不限额。 */
+export function sanitizePlatformQuotaOverridesMap(
+  input?: AuthSourcePlatformQuotaOverridesMap | null,
+): AuthSourcePlatformQuotaOverridesMap {
+  const result: AuthSourcePlatformQuotaOverridesMap = {}
+  for (const p of PLATFORMS) {
+    const src = input?.[p]
+    if (!src) continue
+    const platform: Partial<PlatformQuotaOverrideLimits> = {}
+    for (const window of QUOTA_WINDOWS) {
+      const value = src[window] as unknown
+      if (value === "" || value === undefined) continue
+      if (value === null) {
+        platform[window] = null
+        continue
+      }
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+        platform[window] = value
+      }
+    }
+    if (Object.keys(platform).length > 0) {
+      result[p] = platform as PlatformQuotaOverrideLimits
+    }
+  }
+  return result
+}
+
 export type AuthSourceType =
   | "email"
   | "linuxdo"
   | "oidc"
   | "wechat"
+  | "dingtalk"
   | "github"
   | "google";
 
@@ -32,6 +143,8 @@ export interface AuthSourceDefaultsValue {
   subscriptions: DefaultSubscriptionSetting[];
   grant_on_signup: boolean;
   grant_on_first_bind: boolean;
+  // ★ 新增：平台限额覆盖（key = PlatformType）
+  platform_quotas: AuthSourcePlatformQuotaOverridesMap;
 }
 
 export type AuthSourceDefaultsState = Record<
@@ -114,6 +227,7 @@ const AUTH_SOURCE_TYPES: AuthSourceType[] = [
   "linuxdo",
   "oidc",
   "wechat",
+  "dingtalk",
   "github",
   "google",
 ];
@@ -227,7 +341,7 @@ export function buildAuthSourceDefaultsState(
     const grantOnFirstBind =
       raw[`auth_source_default_${source}_grant_on_first_bind`] === true;
     acc[source] = {
-      enabled: grantOnSignup || grantOnFirstBind,
+      enabled: grantOnSignup,
       balance: Number(
         raw[`auth_source_default_${source}_balance`] ??
           AUTH_SOURCE_DEFAULT_BALANCE,
@@ -241,6 +355,11 @@ export function buildAuthSourceDefaultsState(
       ),
       grant_on_signup: grantOnSignup,
       grant_on_first_bind: grantOnFirstBind,
+      platform_quotas: normalizePlatformQuotaOverridesMap(
+        raw[
+          `auth_source_default_${source}_platform_quotas`
+        ] as AuthSourcePlatformQuotaOverridesMap | undefined,
+      ),
     };
     return acc;
   }, {} as AuthSourceDefaultsState);
@@ -269,7 +388,9 @@ export function appendAuthSourceDefaultsToUpdateRequest(
     target[`auth_source_default_${source}_grant_on_signup`] =
       current.enabled;
     target[`auth_source_default_${source}_grant_on_first_bind`] =
-      current.enabled && current.grant_on_first_bind;
+      current.grant_on_first_bind;
+    target[`auth_source_default_${source}_platform_quotas`] =
+      sanitizePlatformQuotaOverridesMap(current.platform_quotas)
   }
 
   return payload;
@@ -613,6 +734,11 @@ export interface SystemSettings {
   auth_source_default_wechat_subscriptions?: DefaultSubscriptionSetting[];
   auth_source_default_wechat_grant_on_signup?: boolean;
   auth_source_default_wechat_grant_on_first_bind?: boolean;
+  auth_source_default_dingtalk_balance?: number;
+  auth_source_default_dingtalk_concurrency?: number;
+  auth_source_default_dingtalk_subscriptions?: DefaultSubscriptionSetting[];
+  auth_source_default_dingtalk_grant_on_signup?: boolean;
+  auth_source_default_dingtalk_grant_on_first_bind?: boolean;
   auth_source_default_github_balance?: number;
   auth_source_default_github_concurrency?: number;
   auth_source_default_github_subscriptions?: DefaultSubscriptionSetting[];
@@ -624,6 +750,15 @@ export interface SystemSettings {
   auth_source_default_google_grant_on_signup?: boolean;
   auth_source_default_google_grant_on_first_bind?: boolean;
   force_email_on_third_party_signup?: boolean;
+  // ── 平台限额（嵌套 JSON，系统层 + 7 auth-source 层）────────────────────────────────
+  default_platform_quotas?: DefaultPlatformQuotasMap;
+  auth_source_default_email_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_linuxdo_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_oidc_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_wechat_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_github_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_google_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_dingtalk_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
   // OEM settings
   site_name: string;
   site_logo: string;
@@ -651,12 +786,31 @@ export interface SystemSettings {
   turnstile_enabled: boolean;
   turnstile_site_key: string;
   turnstile_secret_key_configured: boolean;
+  api_key_acl_trust_forwarded_ip: boolean;
 
   // LinuxDo Connect OAuth settings
   linuxdo_connect_enabled: boolean;
   linuxdo_connect_client_id: string;
   linuxdo_connect_client_secret_configured: boolean;
   linuxdo_connect_redirect_url: string;
+
+  // DingTalk Connect OAuth settings
+  dingtalk_connect_enabled?: boolean;
+  dingtalk_connect_client_id?: string;
+  dingtalk_connect_client_secret_configured?: boolean;
+  dingtalk_connect_redirect_url?: string;
+  dingtalk_connect_corp_restriction_policy?: string;
+  dingtalk_connect_internal_corp_id?: string;
+  dingtalk_connect_bypass_registration?: boolean;
+  dingtalk_connect_sync_corp_email?: boolean;
+  dingtalk_connect_sync_display_name?: boolean;
+  dingtalk_connect_sync_dept?: boolean;
+  dingtalk_connect_sync_corp_email_attr_key?: string;
+  dingtalk_connect_sync_display_name_attr_key?: string;
+  dingtalk_connect_sync_dept_attr_key?: string;
+  dingtalk_connect_sync_corp_email_attr_name?: string;
+  dingtalk_connect_sync_display_name_attr_name?: string;
+  dingtalk_connect_sync_dept_attr_name?: string;
 
   // WeChat Connect OAuth settings
   wechat_connect_enabled: boolean;
@@ -760,6 +914,7 @@ export interface SystemSettings {
   enable_anthropic_cache_ttl_1h_injection: boolean;
   rewrite_message_cache_control: boolean;
   antigravity_user_agent_version: string;
+  openai_codex_user_agent: string;
   web_search_emulation_enabled?: boolean;
 
   // Payment configuration
@@ -784,6 +939,7 @@ export interface SystemSettings {
   payment_cancel_rate_limit_window: number;
   payment_cancel_rate_limit_unit: string;
   payment_cancel_rate_limit_window_mode: string;
+  payment_alipay_force_qrcode: boolean;
   payment_visible_method_alipay_source?: string;
   payment_visible_method_wxpay_source?: string;
   payment_visible_method_alipay_enabled?: boolean;
@@ -797,6 +953,7 @@ export interface SystemSettings {
   balance_low_notify_enabled: boolean;
   balance_low_notify_threshold: number;
   balance_low_notify_recharge_url: string;
+  subscription_expiry_notify_enabled: boolean;
   account_quota_notify_enabled: boolean;
   account_quota_notify_emails: NotifyEmailEntry[];
 
@@ -865,6 +1022,11 @@ export interface UpdateSettingsRequest {
   auth_source_default_wechat_subscriptions?: DefaultSubscriptionSetting[];
   auth_source_default_wechat_grant_on_signup?: boolean;
   auth_source_default_wechat_grant_on_first_bind?: boolean;
+  auth_source_default_dingtalk_balance?: number;
+  auth_source_default_dingtalk_concurrency?: number;
+  auth_source_default_dingtalk_subscriptions?: DefaultSubscriptionSetting[];
+  auth_source_default_dingtalk_grant_on_signup?: boolean;
+  auth_source_default_dingtalk_grant_on_first_bind?: boolean;
   auth_source_default_github_balance?: number;
   auth_source_default_github_concurrency?: number;
   auth_source_default_github_subscriptions?: DefaultSubscriptionSetting[];
@@ -876,6 +1038,15 @@ export interface UpdateSettingsRequest {
   auth_source_default_google_grant_on_signup?: boolean;
   auth_source_default_google_grant_on_first_bind?: boolean;
   force_email_on_third_party_signup?: boolean;
+  // ── 平台限额（嵌套 JSON，系统层 + 7 auth-source 层）────────────────────────────────
+  default_platform_quotas?: DefaultPlatformQuotasMap;
+  auth_source_default_email_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_linuxdo_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_oidc_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_wechat_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_github_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_google_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
+  auth_source_default_dingtalk_platform_quotas?: AuthSourcePlatformQuotaOverridesMap;
   site_name?: string;
   site_logo?: string;
   site_subtitle?: string;
@@ -900,10 +1071,27 @@ export interface UpdateSettingsRequest {
   turnstile_enabled?: boolean;
   turnstile_site_key?: string;
   turnstile_secret_key?: string;
+  api_key_acl_trust_forwarded_ip?: boolean;
   linuxdo_connect_enabled?: boolean;
   linuxdo_connect_client_id?: string;
   linuxdo_connect_client_secret?: string;
   linuxdo_connect_redirect_url?: string;
+  dingtalk_connect_enabled?: boolean;
+  dingtalk_connect_client_id?: string;
+  dingtalk_connect_client_secret?: string;
+  dingtalk_connect_redirect_url?: string;
+  dingtalk_connect_corp_restriction_policy?: string;
+  dingtalk_connect_internal_corp_id?: string;
+  dingtalk_connect_bypass_registration?: boolean;
+  dingtalk_connect_sync_corp_email?: boolean;
+  dingtalk_connect_sync_display_name?: boolean;
+  dingtalk_connect_sync_dept?: boolean;
+  dingtalk_connect_sync_corp_email_attr_key?: string;
+  dingtalk_connect_sync_display_name_attr_key?: string;
+  dingtalk_connect_sync_dept_attr_key?: string;
+  dingtalk_connect_sync_corp_email_attr_name?: string;
+  dingtalk_connect_sync_display_name_attr_name?: string;
+  dingtalk_connect_sync_dept_attr_name?: string;
   wechat_connect_enabled?: boolean;
   wechat_connect_app_id?: string;
   wechat_connect_app_secret?: string;
@@ -989,6 +1177,7 @@ export interface UpdateSettingsRequest {
   enable_anthropic_cache_ttl_1h_injection?: boolean;
   rewrite_message_cache_control?: boolean;
   antigravity_user_agent_version?: string;
+  openai_codex_user_agent?: string;
   // Payment configuration
   payment_enabled?: boolean;
   risk_control_enabled?: boolean;
@@ -1011,6 +1200,7 @@ export interface UpdateSettingsRequest {
   payment_cancel_rate_limit_window?: number;
   payment_cancel_rate_limit_unit?: string;
   payment_cancel_rate_limit_window_mode?: string;
+  payment_alipay_force_qrcode?: boolean;
   payment_visible_method_alipay_source?: string;
   payment_visible_method_wxpay_source?: string;
   payment_visible_method_alipay_enabled?: boolean;
@@ -1023,6 +1213,7 @@ export interface UpdateSettingsRequest {
   balance_low_notify_enabled?: boolean;
   balance_low_notify_threshold?: number;
   balance_low_notify_recharge_url?: string;
+  subscription_expiry_notify_enabled?: boolean;
   account_quota_notify_enabled?: boolean;
   account_quota_notify_emails?: NotifyEmailEntry[];
 
@@ -1112,6 +1303,107 @@ export async function sendTestEmail(
 ): Promise<{ message: string }> {
   const { data } = await apiClient.post<{ message: string }>(
     "/admin/settings/send-test-email",
+    request,
+  );
+  return data;
+}
+
+// ==================== Email Template Settings ====================
+
+export interface EmailTemplateOption {
+  value: string;
+  label?: string;
+  description?: string;
+  category?: string;
+  optional?: boolean;
+}
+
+export type EmailTemplateEventOption = string | EmailTemplateOption;
+
+export interface EmailTemplateSummary {
+  event: string;
+  locale: string;
+  subject: string;
+  is_custom?: boolean;
+  updated_at?: string;
+}
+
+export interface EmailTemplateListResponse {
+  events: EmailTemplateEventOption[];
+  locales: string[];
+  templates?: EmailTemplateSummary[];
+  placeholders?: string[];
+}
+
+export interface EmailTemplateDetail {
+  event: string;
+  locale: string;
+  subject: string;
+  html: string;
+  is_custom?: boolean;
+  updated_at?: string;
+  placeholders?: string[];
+}
+
+export interface UpdateEmailTemplateRequest {
+  subject: string;
+  html: string;
+}
+
+export interface PreviewEmailTemplateRequest extends UpdateEmailTemplateRequest {
+  event: string;
+  locale: string;
+}
+
+export interface EmailTemplatePreviewResponse {
+  subject: string;
+  html: string;
+}
+
+export async function getEmailTemplates(): Promise<EmailTemplateListResponse> {
+  const { data } = await apiClient.get<EmailTemplateListResponse>(
+    "/admin/settings/email-templates",
+  );
+  return data;
+}
+
+export async function getEmailTemplate(
+  event: string,
+  locale: string,
+): Promise<EmailTemplateDetail> {
+  const { data } = await apiClient.get<EmailTemplateDetail>(
+    `/admin/settings/email-templates/${encodeURIComponent(event)}/${encodeURIComponent(locale)}`,
+  );
+  return data;
+}
+
+export async function updateEmailTemplate(
+  event: string,
+  locale: string,
+  request: UpdateEmailTemplateRequest,
+): Promise<EmailTemplateDetail> {
+  const { data } = await apiClient.put<EmailTemplateDetail>(
+    `/admin/settings/email-templates/${encodeURIComponent(event)}/${encodeURIComponent(locale)}`,
+    request,
+  );
+  return data;
+}
+
+export async function restoreOfficialEmailTemplate(
+  event: string,
+  locale: string,
+): Promise<EmailTemplateDetail> {
+  const { data } = await apiClient.post<EmailTemplateDetail>(
+    `/admin/settings/email-templates/${encodeURIComponent(event)}/${encodeURIComponent(locale)}/restore-official`,
+  );
+  return data;
+}
+
+export async function previewEmailTemplate(
+  request: PreviewEmailTemplateRequest,
+): Promise<EmailTemplatePreviewResponse> {
+  const { data } = await apiClient.post<EmailTemplatePreviewResponse>(
+    "/admin/settings/email-template-preview",
     request,
   );
   return data;
@@ -1423,6 +1715,11 @@ export const settingsAPI = {
   updateSettings,
   testSmtpConnection,
   sendTestEmail,
+  getEmailTemplates,
+  getEmailTemplate,
+  updateEmailTemplate,
+  restoreOfficialEmailTemplate,
+  previewEmailTemplate,
   getAdminApiKey,
   regenerateAdminApiKey,
   deleteAdminApiKey,

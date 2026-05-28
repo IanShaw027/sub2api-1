@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 
 import GroupDistributionChart from '../GroupDistributionChart.vue'
+
+const { getUserBreakdown } = vi.hoisted(() => ({
+  getUserBreakdown: vi.fn(),
+}))
+
+vi.mock('@/api/admin/dashboard', () => ({
+  getUserBreakdown,
+}))
 
 const messages: Record<string, string> = {
   'admin.dashboard.groupDistribution': 'Group Distribution',
@@ -110,5 +118,40 @@ describe('GroupDistributionChart', () => {
       dataset: { data: [0.9, 0.1] },
     })
     expect(label).toBe('group-b: $0.900 (90.0%)')
+  })
+
+  it('ignores stale group breakdown responses', async () => {
+    let resolveFirst!: (value: any) => void
+    let resolveSecond!: (value: any) => void
+    getUserBreakdown
+      .mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve }))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveSecond = resolve }))
+
+    const wrapper = mount(GroupDistributionChart, {
+      props: {
+        groupStats,
+      },
+      global: {
+        stubs: {
+          LoadingSpinner: true,
+          UserBreakdownSubTable: {
+            props: ['items', 'loading'],
+            template: '<div data-test="breakdown">{{ items.map((item) => item.email).join(",") }}</div>',
+          },
+        },
+      },
+    })
+
+    const rows = wrapper.findAll('tbody tr').filter((row) => row.text().includes('group-'))
+    await rows[0].trigger('click')
+    await rows[1].trigger('click')
+
+    resolveSecond({ users: [{ user_id: 2, email: 'new@example.com' }] })
+    await flushPromises()
+    expect(wrapper.get('[data-test="breakdown"]').text()).toBe('new@example.com')
+
+    resolveFirst({ users: [{ user_id: 1, email: 'old@example.com' }] })
+    await flushPromises()
+    expect(wrapper.get('[data-test="breakdown"]').text()).toBe('new@example.com')
   })
 })

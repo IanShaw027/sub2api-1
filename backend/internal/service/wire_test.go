@@ -68,6 +68,7 @@ func TestProvideTokenRefreshService_InjectsKiroProxyRepo(t *testing.T) {
 		proxyRepo,
 		nil,
 		nil,
+		nil,
 	)
 
 	require.NotNil(t, svc)

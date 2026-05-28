@@ -107,7 +107,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Doughnut } from 'vue-chartjs'
@@ -150,14 +150,18 @@ const emit = defineEmits<{
 const expandedKey = ref<string | null>(null)
 const breakdownItems = ref<UserBreakdownItem[]>([])
 const breakdownLoading = ref(false)
+let breakdownSeq = 0
 
 const toggleBreakdown = async (type: string, id: number | string) => {
   const key = `${type}-${id}`
   if (expandedKey.value === key) {
     expandedKey.value = null
+    breakdownItems.value = []
+    breakdownSeq += 1
     return
   }
   expandedKey.value = key
+  const currentSeq = ++breakdownSeq
   breakdownLoading.value = true
   breakdownItems.value = []
   try {
@@ -167,13 +171,27 @@ const toggleBreakdown = async (type: string, id: number | string) => {
       end_date: props.endDate,
       group_id: Number(id),
     })
+    if (currentSeq !== breakdownSeq || expandedKey.value !== key) return
     breakdownItems.value = res.users || []
   } catch {
+    if (currentSeq !== breakdownSeq || expandedKey.value !== key) return
     breakdownItems.value = []
   } finally {
-    breakdownLoading.value = false
+    if (currentSeq === breakdownSeq && expandedKey.value === key) {
+      breakdownLoading.value = false
+    }
   }
 }
+
+watch(
+  () => [props.metric, props.startDate, props.endDate, props.filters] as const,
+  () => {
+    expandedKey.value = null
+    breakdownItems.value = []
+    breakdownLoading.value = false
+    breakdownSeq += 1
+  }
+)
 
 const chartColors = [
   '#3b82f6',

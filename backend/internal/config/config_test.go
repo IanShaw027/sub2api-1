@@ -30,6 +30,19 @@ func TestLoadForBootstrapAllowsMissingJWTSecret(t *testing.T) {
 	}
 }
 
+func TestLoadRequiresJWTSecretAtRuntime(t *testing.T) {
+	viper.Reset()
+	t.Setenv("JWT_SECRET", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() should reject missing jwt.secret during runtime")
+	}
+	if !strings.Contains(err.Error(), "jwt.secret is required") {
+		t.Fatalf("Load() error = %v, want jwt.secret is required", err)
+	}
+}
+
 func TestNormalizeRunMode(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -72,6 +85,9 @@ func TestLoadDefaultSchedulingConfig(t *testing.T) {
 	}
 	if !cfg.Gateway.Scheduling.LoadBatchEnabled {
 		t.Fatalf("LoadBatchEnabled = false, want true")
+	}
+	if cfg.Gateway.Scheduling.LoadBatchCacheTTLMS != 200 {
+		t.Fatalf("LoadBatchCacheTTLMS = %d, want 200", cfg.Gateway.Scheduling.LoadBatchCacheTTLMS)
 	}
 	if cfg.Gateway.Scheduling.SlotCleanupInterval != 30*time.Second {
 		t.Fatalf("SlotCleanupInterval = %v, want 30s", cfg.Gateway.Scheduling.SlotCleanupInterval)
@@ -160,6 +176,41 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultOpenAIHTTP2Enabled(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Gateway.OpenAIHTTP2.Enabled)
+	require.True(t, cfg.Gateway.OpenAIHTTP2.AllowProxyFallbackToHTTP1)
+}
+
+func TestLoadOpenAIHTTP2DisabledFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_OPENAI_HTTP2_ENABLED", "false")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.False(t, cfg.Gateway.OpenAIHTTP2.Enabled)
+}
+
+func TestLoadDefaultOpenAIResponseHeaderTimeoutUnlimited(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 0, cfg.Gateway.OpenAIResponseHeaderTimeout)
+}
+
+func TestLoadOpenAIResponseHeaderTimeoutFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_OPENAI_RESPONSE_HEADER_TIMEOUT", "1800")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 1800, cfg.Gateway.OpenAIResponseHeaderTimeout)
+}
+
 func TestLoadOpenAIWSStickyTTLCompatibility(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv("GATEWAY_OPENAI_WS_STICKY_RESPONSE_ID_TTL_SECONDS", "0")
@@ -208,6 +259,20 @@ func TestLoadIdempotencyConfigFromEnv(t *testing.T) {
 	}
 	if cfg.Idempotency.DefaultTTLSeconds != 600 {
 		t.Fatalf("Idempotency.DefaultTTLSeconds = %d, want 600", cfg.Idempotency.DefaultTTLSeconds)
+	}
+}
+
+func TestLoadBillingUserPlatformQuotaCacheTTLFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("BILLING_USER_PLATFORM_QUOTA_CACHE_TTL_SECONDS", "7200")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.Billing.UserPlatformQuotaCacheTTLSeconds != 7200 {
+		t.Fatalf("Billing.UserPlatformQuotaCacheTTLSeconds = %d, want 7200", cfg.Billing.UserPlatformQuotaCacheTTLSeconds)
 	}
 }
 
@@ -1161,6 +1226,16 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "billing.circuit_breaker.half_open_requests",
 		},
 		{
+			name:    "billing user platform quota cache ttl zero",
+			mutate:  func(c *Config) { c.Billing.UserPlatformQuotaCacheTTLSeconds = 0 },
+			wantErr: "billing.user_platform_quota_cache_ttl_seconds",
+		},
+		{
+			name:    "billing user platform quota cache ttl negative",
+			mutate:  func(c *Config) { c.Billing.UserPlatformQuotaCacheTTLSeconds = -1 },
+			wantErr: "billing.user_platform_quota_cache_ttl_seconds",
+		},
+		{
 			name:    "database max open conns",
 			mutate:  func(c *Config) { c.Database.MaxOpenConns = 0 },
 			wantErr: "database.max_open_conns",
@@ -1277,6 +1352,16 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "gateway.max_body_size",
 		},
 		{
+			name:    "gateway response header timeout",
+			mutate:  func(c *Config) { c.Gateway.ResponseHeaderTimeout = -1 },
+			wantErr: "gateway.response_header_timeout",
+		},
+		{
+			name:    "gateway openai response header timeout",
+			mutate:  func(c *Config) { c.Gateway.OpenAIResponseHeaderTimeout = -1 },
+			wantErr: "gateway.openai_response_header_timeout",
+		},
+		{
 			name:    "gateway max idle conns",
 			mutate:  func(c *Config) { c.Gateway.MaxIdleConns = 0 },
 			wantErr: "gateway.max_idle_conns",
@@ -1330,6 +1415,21 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "gateway openai ws apikey max conns factor",
 			mutate:  func(c *Config) { c.Gateway.OpenAIWS.APIKeyMaxConnsFactor = 0 },
 			wantErr: "gateway.openai_ws.apikey_max_conns_factor",
+		},
+		{
+			name:    "gateway openai http2 fallback threshold",
+			mutate:  func(c *Config) { c.Gateway.OpenAIHTTP2.FallbackErrorThreshold = -1 },
+			wantErr: "gateway.openai_http2.fallback_error_threshold",
+		},
+		{
+			name:    "gateway openai http2 fallback window",
+			mutate:  func(c *Config) { c.Gateway.OpenAIHTTP2.FallbackWindowSeconds = -1 },
+			wantErr: "gateway.openai_http2.fallback_window_seconds",
+		},
+		{
+			name:    "gateway openai http2 fallback ttl",
+			mutate:  func(c *Config) { c.Gateway.OpenAIHTTP2.FallbackTTLSeconds = -1 },
+			wantErr: "gateway.openai_http2.fallback_ttl_seconds",
 		},
 		{
 			name:    "gateway stream data interval range",
@@ -1478,6 +1578,11 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "gateway scheduling sticky waiting",
 			mutate:  func(c *Config) { c.Gateway.Scheduling.StickySessionMaxWaiting = 0 },
 			wantErr: "gateway.scheduling.sticky_session_max_waiting",
+		},
+		{
+			name:    "gateway scheduling load batch cache ttl",
+			mutate:  func(c *Config) { c.Gateway.Scheduling.LoadBatchCacheTTLMS = -1 },
+			wantErr: "gateway.scheduling.load_batch_cache_ttl_ms",
 		},
 		{
 			name:    "gateway scheduling outbox poll",

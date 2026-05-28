@@ -1963,7 +1963,9 @@
         "email": "Email",
         "linuxdo": "LinuxDo",
         "oidc": "{providerName}",
-        "wechat": "WeChat"
+        "wechat": "WeChat",
+        "github": "GitHub",
+        "google": "Google"
       },
       "notes": {
         "emailManagedFromProfile": "Primary email is managed in the profile form",
@@ -4619,6 +4621,7 @@
         "status": "Status",
         "usedBy": "Used By",
         "usedAt": "Used At",
+        "expiresAt": "Expires At",
         "actions": "Actions"
       },
       "userPrefix": "User #{id}",
@@ -4635,21 +4638,29 @@
       "amount": "Amount ($)",
       "value": "Value",
       "count": "Count",
+      "selectedCount": "{count} selected",
       "generating": "Generating...",
       "generate": "Generate",
       "copyAll": "Copy All",
       "copied": "Copied!",
       "download": "Download",
+      "clearSelection": "Clear selection",
+      "batchUpdate": "Batch Update",
+      "batchUpdateTitle": "Batch Update Redeem Codes",
       "codesExported": "Codes exported successfully",
       "codeDeleted": "Redeem code deleted successfully",
       "codesDeleted": "Successfully deleted {count} unused code(s)",
+      "batchUpdateSuccess": "Updated {count} redeem code(s)",
       "noUnusedCodes": "No unused codes to delete",
       "failedToLoad": "Failed to load redeem codes",
       "failedToGenerate": "Failed to generate codes",
       "failedToExport": "Failed to export codes",
       "failedToDelete": "Failed to delete code",
       "failedToDeleteUnused": "Failed to delete unused codes",
+      "failedToBatchUpdate": "Failed to batch update codes",
       "failedToCopy": "Failed to copy codes",
+      "selectCodesFirst": "Please select redeem codes first",
+      "noBatchFieldsSelected": "Select at least one field to update",
       "types": {
         "balance": "Balance",
         "concurrency": "Concurrency",
@@ -4660,9 +4671,23 @@
       },
       "selectGroup": "Select Group",
       "selectGroupPlaceholder": "Choose a subscription group",
+      "clearGroup": "Clear group",
       "validityDays": "Validity Days",
+      "codeExpiry": "Code Expiry",
+      "neverExpires": "Never expires",
+      "customExpiry": "Custom expiry",
+      "customExpiryDays": "Custom days",
+      "expiryPresetDays": "{days} day(s)",
+      "expiryDaysRequired": "Please enter a valid expiry time",
       "groupRequired": "Please select a subscription group",
       "days": " days",
+      "batchNotesPlaceholder": "Enter notes",
+      "batchFields": {
+        "status": "Status",
+        "expiresAt": "Expiration",
+        "notes": "Notes",
+        "group": "Group"
+      },
       "status": {
         "active": "Unused",
         "unused": "Unused",
@@ -6115,7 +6140,12 @@
         "debugTimelineRetentionDays": "Retention Days",
         "debugTimelineMaxSizeMB": "Max Size MB",
         "anthropicCacheTTL1hInjection": "Anthropic Cache TTL Injection",
-        "anthropicCacheTTL1hInjectionHint": "When enabled, existing ephemeral cache_control blocks in Anthropic OAuth/Setup Token request bodies are forced to 1h; response usage is billed back as 5m by default, with account-level TTL billing override taking priority."
+        "anthropicCacheTTL1hInjectionHint": "When enabled, existing ephemeral cache_control blocks in Anthropic OAuth/Setup Token request bodies are forced to 1h; response usage is billed back as 5m by default, with account-level TTL billing override taking priority.",
+        "apiKeyAclTrustForwardedIP": "Trust Forwarded IP for API Key ACL",
+        "apiKeyAclTrustForwardedIPHint": "Use forwarded IP headers when evaluating API Key ACL rules.",
+        "openaiCodexUserAgent": "OpenAI Codex User-Agent",
+        "openaiCodexUserAgentPlaceholder": "OpenAI-Codex/2025.05",
+        "openaiCodexUserAgentHint": "Set the User-Agent sent to OpenAI Codex upstream requests."
       },
       "webSearchEmulation": {
         "title": "Web Search Emulation",
@@ -6284,6 +6314,8 @@
         "cancelRateLimitWindowMode": "Window Mode",
         "cancelRateLimitWindowModeRolling": "Rolling",
         "cancelRateLimitWindowModeFixed": "Fixed",
+        "alipayForceQRCode": "Force Alipay QR Code",
+        "alipayForceQRCodeHint": "Always use the QR code flow for Alipay recharges.",
         "helpText": "Help Text",
         "helpImageUrl": "Help Image URL",
         "manageProviders": "Manage Providers",
@@ -6399,6 +6431,10 @@
         "rechargeUrl": "Recharge Page URL",
         "rechargeUrlPlaceholder": "https://example.com/payment",
         "rechargeUrlHint": "A top-up button will appear in the email when set"
+      },
+      "subscriptionExpiryNotify": {
+        "title": "Subscription Expiry Notification",
+        "description": "Send reminder emails before user subscriptions expire"
       },
       "quotaNotify": {
         "title": "Account Quota Notification",

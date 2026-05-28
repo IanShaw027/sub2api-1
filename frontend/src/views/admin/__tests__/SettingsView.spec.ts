@@ -208,6 +208,16 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.site.contactInfo": "客服联系方式",
     "admin.settings.site.contactInfoPlaceholder": "例如：QQ: 123456789",
     "admin.settings.site.contactInfoHint": "填写客服联系方式，将展示在兑换页面、个人资料等位置",
+    "admin.settings.platformQuota.platform": "平台",
+    "admin.settings.platformQuota.daily": "日限额 (USD)",
+    "admin.settings.platformQuota.weekly": "周限额 (USD)",
+    "admin.settings.platformQuota.monthly": "月限额 (USD, 30天滚动)",
+    "admin.settings.platformQuota.placeholder": "不限",
+    "admin.settings.defaults.defaultPlatformQuotas": "默认平台限额（注册时分配）",
+    "admin.settings.defaults.defaultPlatformQuotasHint": "新用户注册时自动写入平台限额记录；已有用户不受影响。留空 = 该平台该窗口不限制。",
+    "admin.settings.defaults.platformQuotaNotice": "月限额为 30 天滚动窗口，非自然月",
+    "admin.settings.authSourceDefaults.platformQuotasOverride": "平台限额覆盖",
+    "admin.settings.authSourceDefaults.platformQuotasOverrideHint": "留空的字段继承「系统默认平台限额」；填 0 表示禁止该窗口使用。",
   };
   return {
     ...actual,
@@ -367,6 +377,22 @@ const baseSettingsResponse = {
   linuxdo_connect_client_id: "",
   linuxdo_connect_client_secret_configured: false,
   linuxdo_connect_redirect_url: "",
+  dingtalk_connect_enabled: false,
+  dingtalk_connect_client_id: "",
+  dingtalk_connect_client_secret_configured: false,
+  dingtalk_connect_redirect_url: "",
+  dingtalk_connect_corp_restriction_policy: "none",
+  dingtalk_connect_internal_corp_id: "",
+  dingtalk_connect_bypass_registration: false,
+  dingtalk_connect_sync_corp_email: false,
+  dingtalk_connect_sync_display_name: false,
+  dingtalk_connect_sync_dept: false,
+  dingtalk_connect_sync_corp_email_attr_key: "",
+  dingtalk_connect_sync_display_name_attr_key: "",
+  dingtalk_connect_sync_dept_attr_key: "",
+  dingtalk_connect_sync_corp_email_attr_name: "",
+  dingtalk_connect_sync_display_name_attr_name: "",
+  dingtalk_connect_sync_dept_attr_name: "",
   wechat_connect_enabled: true,
   wechat_connect_app_id: "wx-app-id-123",
   wechat_connect_app_secret_configured: true,
@@ -419,6 +445,7 @@ const baseSettingsResponse = {
   enable_anthropic_cache_ttl_1h_injection: false,
   rewrite_message_cache_control: false,
   antigravity_user_agent_version: "",
+  openai_codex_user_agent: "",
   payment_enabled: true,
   payment_min_amount: 1,
   payment_max_amount: 10000,
@@ -449,6 +476,7 @@ const baseSettingsResponse = {
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
   balance_low_notify_recharge_url: "",
+  subscription_expiry_notify_enabled: true,
   account_quota_notify_enabled: false,
   account_quota_notify_emails: [],
   kiro_version: "0.10.0",
@@ -459,6 +487,12 @@ const baseSettingsResponse = {
   cache_min_block_tokens: 1024,
   cache_independent_ttl_seconds: 3600,
   cache_prefix_ttl_seconds: 300,
+  default_platform_quotas: {
+    anthropic:   { daily: null, weekly: null, monthly: null },
+    openai:      { daily: null, weekly: 12.5, monthly: null },
+    gemini:      { daily: null, weekly: null, monthly: 200 },
+    antigravity: { daily: null, weekly: null, monthly: null },
+  },
 };
 
 function mountView() {
@@ -477,6 +511,9 @@ function mountView() {
         ProxySelector: true,
         ImageUpload: ImageUploadStub,
         BackupSettings: true,
+        EmailTemplateEditor: {
+          template: '<div data-testid="email-template-editor-stub" />',
+        },
       },
     },
   });
@@ -519,6 +556,16 @@ async function openGatewayTab(wrapper: ReturnType<typeof mountView>) {
 
   expect(gatewayTabButton).toBeDefined();
   await gatewayTabButton?.trigger("click");
+  await flushPromises();
+}
+
+async function openEmailTab(wrapper: ReturnType<typeof mountView>) {
+  const emailTabButton = wrapper
+    .findAll("button")
+    .find((node) => node.text().includes("admin.settings.tabs.email"));
+
+  expect(emailTabButton).toBeDefined();
+  await emailTabButton?.trigger("click");
   await flushPromises();
 }
 
@@ -1023,6 +1070,7 @@ describe("admin SettingsView wechat connect controls", () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       api_base_url: "https://api.example.com/api/v1",
+      dingtalk_connect_enabled: true,
       github_oauth_enabled: true,
       google_oauth_enabled: true,
     });
@@ -1037,6 +1085,9 @@ describe("admin SettingsView wechat connect controls", () => {
     );
     expect(wrapper.text()).toContain(
       "https://api.example.com/api/v1/auth/oauth/google/callback",
+    );
+    expect(wrapper.text()).toContain(
+      "https://api.example.com/api/v1/auth/oauth/dingtalk/callback",
     );
   });
 
@@ -1162,6 +1213,61 @@ describe("admin SettingsView wechat connect controls", () => {
     );
     expect(updateSettings.mock.calls[0]?.[0]).not.toHaveProperty(
       "auth_source_default_email_concurrency",
+    );
+  });
+
+  it("preserves first-bind auth-source grants without forcing signup grants", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      auth_source_default_email_balance: 5,
+      auth_source_default_email_grant_on_signup: false,
+      auth_source_default_email_grant_on_first_bind: true,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    expect(
+      (
+        wrapper.get('[data-testid="auth-source-email-enabled"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(false);
+    expect(
+      wrapper.find('[data-testid="auth-source-email-panel"]').exists(),
+    ).toBe(true);
+    expect(
+      (
+        wrapper.get('[data-testid="auth-source-email-first-bind-enabled"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        auth_source_default_email_grant_on_signup: false,
+        auth_source_default_email_grant_on_first_bind: true,
+      }),
+    );
+  });
+
+  it("preserves notification settings values when saving untouched data", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        balance_low_notify_recharge_url: "",
+        subscription_expiry_notify_enabled: true,
+      }),
     );
   });
 
@@ -1484,5 +1590,631 @@ describe("admin SettingsView wechat connect controls", () => {
       `缓存最小块 Token 数必须在 0-${KIRO_CACHE_MIN_BLOCK_TOKENS_MAX} 之间。`,
     );
     expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("renders DingTalk auth-source bonus controls from the settings contract", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      auth_source_default_dingtalk_balance: 8,
+      auth_source_default_dingtalk_grant_on_signup: true,
+      auth_source_default_dingtalk_grant_on_first_bind: true,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    expect(
+      (
+        wrapper.get('[data-testid="auth-source-dingtalk-enabled"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(
+      (
+        wrapper.get('[data-testid="auth-source-dingtalk-first-bind-enabled"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-testid="auth-source-dingtalk-panel"]').exists(),
+    ).toBe(true);
+  });
+});
+
+describe("admin SettingsView DingTalk and email template surfaces", () => {
+  beforeEach(() => {
+    getSettings.mockReset();
+    updateSettings.mockReset();
+    getWebSearchEmulationConfig.mockReset();
+    updateWebSearchEmulationConfig.mockReset();
+    getAdminApiKey.mockReset();
+    getOverloadCooldownSettings.mockReset();
+    getRateLimit429CooldownSettings.mockReset();
+    updateRateLimit429CooldownSettings.mockReset();
+    getStreamTimeoutSettings.mockReset();
+    getRectifierSettings.mockReset();
+    getBetaPolicySettings.mockReset();
+    getGroups.mockReset();
+    listProxies.mockReset();
+    getProviders.mockReset();
+    updateProvider.mockReset();
+    createProvider.mockReset();
+    deleteProvider.mockReset();
+    fetchPublicSettings.mockReset();
+    adminSettingsFetch.mockReset();
+    showError.mockReset();
+    showSuccess.mockReset();
+    localeRef.value = "zh-CN";
+
+    getSettings.mockResolvedValue({ ...baseSettingsResponse });
+    updateSettings.mockImplementation(async (payload) => ({
+      ...baseSettingsResponse,
+      ...payload,
+    }));
+    getWebSearchEmulationConfig.mockResolvedValue({
+      enabled: false,
+      providers: [],
+    });
+    updateWebSearchEmulationConfig.mockResolvedValue({
+      enabled: false,
+      providers: [],
+    });
+    getAdminApiKey.mockResolvedValue({
+      exists: false,
+      masked_key: "",
+    });
+    getOverloadCooldownSettings.mockResolvedValue({
+      enabled: true,
+      cooldown_minutes: 10,
+    });
+    getRateLimit429CooldownSettings.mockResolvedValue({
+      enabled: true,
+      cooldown_seconds: 5,
+    });
+    updateRateLimit429CooldownSettings.mockImplementation(async (payload) => payload);
+    getStreamTimeoutSettings.mockResolvedValue({
+      enabled: true,
+      action: "temp_unsched",
+      temp_unsched_minutes: 5,
+      threshold_count: 3,
+      threshold_window_minutes: 10,
+    });
+    getRectifierSettings.mockResolvedValue({
+      enabled: true,
+      thinking_signature_enabled: true,
+      thinking_budget_enabled: true,
+      apikey_signature_enabled: false,
+      apikey_signature_patterns: [],
+    });
+    getBetaPolicySettings.mockResolvedValue({
+      rules: [],
+    });
+    getGroups.mockResolvedValue([]);
+    listProxies.mockResolvedValue({
+      items: [],
+    });
+    getProviders.mockResolvedValue({
+      data: [],
+    });
+    fetchPublicSettings.mockResolvedValue(undefined);
+    adminSettingsFetch.mockResolvedValue(undefined);
+  });
+
+  it("keeps the email template editor reachable from the email tab", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openEmailTab(wrapper);
+
+    expect(wrapper.find('[data-testid="email-template-editor-stub"]').exists()).toBe(
+      true,
+    );
+  });
+
+  it("loads DingTalk connect fields from the backend payload", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      dingtalk_connect_enabled: true,
+      dingtalk_connect_client_id: "ding-client-id-123",
+      dingtalk_connect_client_secret_configured: true,
+      dingtalk_connect_redirect_url:
+        "https://admin.example.com/api/v1/auth/oauth/dingtalk/callback",
+      dingtalk_connect_corp_restriction_policy: "internal_only",
+      dingtalk_connect_internal_corp_id: "dingcorp123456",
+      dingtalk_connect_bypass_registration: true,
+      dingtalk_connect_sync_corp_email: true,
+      dingtalk_connect_sync_display_name: true,
+      dingtalk_connect_sync_dept: true,
+      dingtalk_connect_sync_corp_email_attr_key: "dingtalk_email",
+      dingtalk_connect_sync_display_name_attr_key: "dingtalk_name",
+      dingtalk_connect_sync_dept_attr_key: "dingtalk_department",
+      dingtalk_connect_sync_corp_email_attr_name: "企业邮箱",
+      dingtalk_connect_sync_display_name_attr_name: "钉钉昵称",
+      dingtalk_connect_sync_dept_attr_name: "所在部门",
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    expect(
+      (
+        wrapper.get('[data-testid="dingtalk-connect-client-id"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("ding-client-id-123");
+    expect(
+      wrapper
+        .get('[data-testid="dingtalk-connect-client-secret"]')
+        .attributes("placeholder"),
+    ).toContain("密钥已配置");
+    expect(
+      (
+        wrapper.get('[data-testid="dingtalk-connect-corp-restriction-policy"]')
+          .element as HTMLSelectElement
+      ).value,
+    ).toBe("internal_only");
+    expect(
+      (
+        wrapper.get('[data-testid="dingtalk-connect-sync-display-name"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(
+      (
+        wrapper.get('[data-testid="dingtalk-connect-sync-dept-attr-key"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("dingtalk_department");
+  });
+
+  it("saves DingTalk connect fields and clears the secret after save", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    await wrapper
+      .get('[data-testid="dingtalk-connect-enabled"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="dingtalk-connect-client-id"]')
+      .setValue("ding-client-id-updated");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-client-secret"]')
+      .setValue("ding-secret-updated");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-redirect-url"]')
+      .setValue("https://admin.example.com/api/v1/auth/oauth/dingtalk/callback");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-corp-restriction-policy"]')
+      .setValue("internal_only");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-internal-corp-id"]')
+      .setValue("dingcorp-updated");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-bypass-registration"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-corp-email"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-display-name"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-dept"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-corp-email-attr-key"]')
+      .setValue("corp_email");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-display-name-attr-key"]')
+      .setValue("display_name");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-dept-attr-key"]')
+      .setValue("department");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-corp-email-attr-name"]')
+      .setValue("企业邮箱");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-display-name-attr-name"]')
+      .setValue("展示名称");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-dept-attr-name"]')
+      .setValue("部门名称");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dingtalk_connect_enabled: true,
+        dingtalk_connect_client_id: "ding-client-id-updated",
+        dingtalk_connect_client_secret: "ding-secret-updated",
+        dingtalk_connect_redirect_url:
+          "https://admin.example.com/api/v1/auth/oauth/dingtalk/callback",
+        dingtalk_connect_corp_restriction_policy: "internal_only",
+        dingtalk_connect_internal_corp_id: "dingcorp-updated",
+        dingtalk_connect_bypass_registration: true,
+        dingtalk_connect_sync_corp_email: true,
+        dingtalk_connect_sync_display_name: true,
+        dingtalk_connect_sync_dept: true,
+        dingtalk_connect_sync_corp_email_attr_key: "corp_email",
+        dingtalk_connect_sync_display_name_attr_key: "display_name",
+        dingtalk_connect_sync_dept_attr_key: "department",
+        dingtalk_connect_sync_corp_email_attr_name: "企业邮箱",
+        dingtalk_connect_sync_display_name_attr_name: "展示名称",
+        dingtalk_connect_sync_dept_attr_name: "部门名称",
+      }),
+    );
+    expect(
+      (
+        wrapper.get('[data-testid="dingtalk-connect-client-secret"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("");
+  });
+});
+
+describe("admin SettingsView platform quota matrix", () => {
+  beforeEach(() => {
+    getSettings.mockReset();
+    updateSettings.mockReset();
+    getWebSearchEmulationConfig.mockReset();
+    updateWebSearchEmulationConfig.mockReset();
+    getAdminApiKey.mockReset();
+    getOverloadCooldownSettings.mockReset();
+    getRateLimit429CooldownSettings.mockReset();
+    updateRateLimit429CooldownSettings.mockReset();
+    getStreamTimeoutSettings.mockReset();
+    getRectifierSettings.mockReset();
+    getBetaPolicySettings.mockReset();
+    getGroups.mockReset();
+    listProxies.mockReset();
+    getProviders.mockReset();
+    updateProvider.mockReset();
+    createProvider.mockReset();
+    deleteProvider.mockReset();
+    fetchPublicSettings.mockReset();
+    adminSettingsFetch.mockReset();
+    showError.mockReset();
+    showSuccess.mockReset();
+    localeRef.value = "zh-CN";
+
+    getSettings.mockResolvedValue({ ...baseSettingsResponse });
+    updateSettings.mockImplementation(async (payload) => ({
+      ...baseSettingsResponse,
+      ...payload,
+    }));
+    getWebSearchEmulationConfig.mockResolvedValue({ enabled: false, providers: [] });
+    updateWebSearchEmulationConfig.mockResolvedValue({ enabled: false, providers: [] });
+    getAdminApiKey.mockResolvedValue({ exists: false, masked_key: "" });
+    getOverloadCooldownSettings.mockResolvedValue({});
+    getRateLimit429CooldownSettings.mockResolvedValue({});
+    updateRateLimit429CooldownSettings.mockResolvedValue({});
+    getStreamTimeoutSettings.mockResolvedValue({});
+    getRectifierSettings.mockResolvedValue({});
+    getBetaPolicySettings.mockResolvedValue({});
+    getGroups.mockResolvedValue([]);
+    listProxies.mockResolvedValue({ items: [] });
+    getProviders.mockResolvedValue({ data: [] });
+  });
+
+  it("从 baseSettings 加载默认平台配额数据并在 Users tab 渲染 4 平台行", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    expect(getSettings).toHaveBeenCalled();
+
+    const html = wrapper.html();
+    // 表格行的平台字段：font-mono 渲染纯英文 platform key
+    expect(html).toContain("anthropic");
+    expect(html).toContain("openai");
+    expect(html).toContain("gemini");
+    expect(html).toContain("antigravity");
+  });
+
+  it("保存时 updateSettings payload 应包含嵌套 default_platform_quotas 对象（含全 4 平台）", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalled();
+    const lastCallArgs = updateSettings.mock.calls.at(-1);
+    expect(lastCallArgs).toBeDefined();
+    const payload = lastCallArgs![0] as Record<string, unknown>;
+
+    // 应携带嵌套对象，而非扁平字段
+    expect(payload).toHaveProperty("default_platform_quotas");
+    const quotas = payload["default_platform_quotas"] as Record<string, unknown>;
+    const platforms = ["anthropic", "openai", "gemini", "antigravity"];
+    for (const p of platforms) {
+      expect(quotas).toHaveProperty(p);
+      const pq = quotas[p] as Record<string, unknown>;
+      expect(pq).toHaveProperty("daily");
+      expect(pq).toHaveProperty("weekly");
+      expect(pq).toHaveProperty("monthly");
+    }
+
+    // 不应存在旧扁平字段
+    expect(payload).not.toHaveProperty("default_platform_quota_anthropic_daily");
+    expect(payload).not.toHaveProperty("default_platform_quota_openai_weekly");
+  });
+
+  it("加载后 form.default_platform_quotas 含全 4 平台，从嵌套 JSON 正确读取数值", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      default_platform_quotas: {
+        anthropic: { daily: 5, weekly: null, monthly: null },
+        openai:    { daily: null, weekly: 12.5, monthly: null },
+        // gemini / antigravity 缺失 → 应被归一化为全 null
+      },
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    const payload = updateSettings.mock.calls.at(-1)![0] as Record<string, unknown>;
+    const quotas = payload["default_platform_quotas"] as Record<string, Record<string, unknown>>;
+
+    expect(quotas["anthropic"]?.["daily"]).toBe(5);
+    expect(quotas["openai"]?.["weekly"]).toBe(12.5);
+    // 缺失平台应补全为 null
+    expect(quotas["gemini"]).toEqual({ daily: null, weekly: null, monthly: null });
+    expect(quotas["antigravity"]).toEqual({ daily: null, weekly: null, monthly: null });
+  });
+
+  it("空输入（v-model.number 产出 \"\"）在提交时清洗为 null 而非空字符串", async () => {
+    // 模拟后端返回带有 anthropic daily 值的配额
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      default_platform_quotas: {
+        anthropic: { daily: 10, weekly: null, monthly: null },
+        openai:    { daily: null, weekly: null, monthly: null },
+        gemini:    { daily: null, weekly: null, monthly: null },
+        antigravity: { daily: null, weekly: null, monthly: null },
+      },
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    // 找到 anthropic daily 输入框并清空（模拟用户删除值）
+    const inputs = wrapper.findAll('input[type="number"]');
+    const anthropicDailyInput = inputs.find((i) => {
+      const parent = i.element.closest("tr");
+      return parent?.textContent?.includes("anthropic");
+    });
+
+    if (anthropicDailyInput) {
+      // 设置为空字符串，模拟 v-model.number 在清空时产出 ""
+      await anthropicDailyInput.setValue("");
+    }
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    const payload = updateSettings.mock.calls.at(-1)![0] as Record<string, unknown>;
+    const quotas = payload["default_platform_quotas"] as Record<string, Record<string, unknown>>;
+    // 不管输入是什么，提交值应为 null（而非 "" 或 NaN）
+    expect(quotas["anthropic"]?.["daily"]).toBe(null);
+  });
+
+  it("默认平台限额存在非法中间态时阻止保存，而不是静默写成 null", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
+    setupState.form.default_platform_quotas.anthropic.daily = Number.NaN;
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(showError).toHaveBeenCalled();
+  });
+
+  it("来源附加授权的平台限额存在非法中间态时阻止保存，而不是静默写成 null", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
+    setupState.authSourceDefaults.email.platform_quotas.openai.weekly = "-" as unknown as number;
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(showError).toHaveBeenCalled();
+  });
+
+  it("来源附加授权平台限额留空时按继承处理，不写 override；显式 null 保留为 null", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
+    setupState.authSourceDefaults.email.platform_quotas.anthropic.daily = "";
+    setupState.authSourceDefaults.email.platform_quotas.openai.weekly = null;
+    setupState.authSourceDefaults.email.platform_quotas.gemini.monthly = 25;
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalled();
+    const payload = updateSettings.mock.calls.at(-1)![0] as Record<string, any>;
+    expect(payload.auth_source_default_email_platform_quotas).toEqual({
+      openai: { weekly: null },
+      gemini: { monthly: 25 },
+    });
+    expect(payload.auth_source_default_email_platform_quotas).not.toHaveProperty("anthropic");
+  });
+});
+
+describe("admin SettingsView platform quota matrix", () => {
+  beforeEach(() => {
+    getSettings.mockReset();
+    updateSettings.mockReset();
+    getWebSearchEmulationConfig.mockReset();
+    updateWebSearchEmulationConfig.mockReset();
+    getAdminApiKey.mockReset();
+    getOverloadCooldownSettings.mockReset();
+    getRateLimit429CooldownSettings.mockReset();
+    updateRateLimit429CooldownSettings.mockReset();
+    getStreamTimeoutSettings.mockReset();
+    getRectifierSettings.mockReset();
+    getBetaPolicySettings.mockReset();
+    getGroups.mockReset();
+    listProxies.mockReset();
+    getProviders.mockReset();
+    updateProvider.mockReset();
+    createProvider.mockReset();
+    deleteProvider.mockReset();
+    fetchPublicSettings.mockReset();
+    adminSettingsFetch.mockReset();
+    showError.mockReset();
+    showSuccess.mockReset();
+    localeRef.value = "zh-CN";
+
+    getSettings.mockResolvedValue({ ...baseSettingsResponse });
+    updateSettings.mockImplementation(async (payload) => ({
+      ...baseSettingsResponse,
+      ...payload,
+    }));
+    getWebSearchEmulationConfig.mockResolvedValue({ enabled: false, providers: [] });
+    updateWebSearchEmulationConfig.mockResolvedValue({ enabled: false, providers: [] });
+    getAdminApiKey.mockResolvedValue({ exists: false, masked_key: "" });
+    getOverloadCooldownSettings.mockResolvedValue({});
+    getRateLimit429CooldownSettings.mockResolvedValue({});
+    updateRateLimit429CooldownSettings.mockResolvedValue({});
+    getStreamTimeoutSettings.mockResolvedValue({});
+    getRectifierSettings.mockResolvedValue({});
+    getBetaPolicySettings.mockResolvedValue({});
+    getGroups.mockResolvedValue([]);
+    listProxies.mockResolvedValue({ items: [] });
+    getProviders.mockResolvedValue({ data: [] });
+  });
+
+  it("从 baseSettings 加载默认平台配额数据并在 Users tab 渲染 4 平台行", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    expect(getSettings).toHaveBeenCalled();
+
+    const html = wrapper.html();
+    // 表格行的平台字段：font-mono 渲染纯英文 platform key
+    expect(html).toContain("anthropic");
+    expect(html).toContain("openai");
+    expect(html).toContain("gemini");
+    expect(html).toContain("antigravity");
+  });
+
+  it("保存时 updateSettings payload 应包含嵌套 default_platform_quotas 对象（含全 4 平台）", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalled();
+    const lastCallArgs = updateSettings.mock.calls.at(-1);
+    expect(lastCallArgs).toBeDefined();
+    const payload = lastCallArgs![0] as Record<string, unknown>;
+
+    // 应携带嵌套对象，而非扁平字段
+    expect(payload).toHaveProperty("default_platform_quotas");
+    const quotas = payload["default_platform_quotas"] as Record<string, unknown>;
+    const platforms = ["anthropic", "openai", "gemini", "antigravity"];
+    for (const p of platforms) {
+      expect(quotas).toHaveProperty(p);
+      const pq = quotas[p] as Record<string, unknown>;
+      expect(pq).toHaveProperty("daily");
+      expect(pq).toHaveProperty("weekly");
+      expect(pq).toHaveProperty("monthly");
+    }
+
+    // 不应存在旧扁平字段
+    expect(payload).not.toHaveProperty("default_platform_quota_anthropic_daily");
+    expect(payload).not.toHaveProperty("default_platform_quota_openai_weekly");
+  });
+
+  it("加载后 form.default_platform_quotas 含全 4 平台，从嵌套 JSON 正确读取数值", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      default_platform_quotas: {
+        anthropic: { daily: 5, weekly: null, monthly: null },
+        openai:    { daily: null, weekly: 12.5, monthly: null },
+        // gemini / antigravity 缺失 → 应被归一化为全 null
+      },
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    const payload = updateSettings.mock.calls.at(-1)![0] as Record<string, unknown>;
+    const quotas = payload["default_platform_quotas"] as Record<string, Record<string, unknown>>;
+
+    expect(quotas["anthropic"]?.["daily"]).toBe(5);
+    expect(quotas["openai"]?.["weekly"]).toBe(12.5);
+    // 缺失平台应补全为 null
+    expect(quotas["gemini"]).toEqual({ daily: null, weekly: null, monthly: null });
+    expect(quotas["antigravity"]).toEqual({ daily: null, weekly: null, monthly: null });
+  });
+
+  it("空输入（v-model.number 产出 \"\"）在提交时清洗为 null 而非空字符串", async () => {
+    // 模拟后端返回带有 anthropic daily 值的配额
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      default_platform_quotas: {
+        anthropic: { daily: 10, weekly: null, monthly: null },
+        openai:    { daily: null, weekly: null, monthly: null },
+        gemini:    { daily: null, weekly: null, monthly: null },
+        antigravity: { daily: null, weekly: null, monthly: null },
+      },
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    // 找到 anthropic daily 输入框并清空（模拟用户删除值）
+    const inputs = wrapper.findAll('input[type="number"]');
+    const anthropicDailyInput = inputs.find((i) => {
+      const parent = i.element.closest("tr");
+      return parent?.textContent?.includes("anthropic");
+    });
+
+    if (anthropicDailyInput) {
+      // 设置为空字符串，模拟 v-model.number 在清空时产出 ""
+      await anthropicDailyInput.setValue("");
+    }
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    const payload = updateSettings.mock.calls.at(-1)![0] as Record<string, unknown>;
+    const quotas = payload["default_platform_quotas"] as Record<string, Record<string, unknown>>;
+    // 不管输入是什么，提交值应为 null（而非 "" 或 NaN）
+    expect(quotas["anthropic"]?.["daily"]).toBe(null);
   });
 });

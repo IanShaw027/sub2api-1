@@ -263,8 +263,8 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentO
 
 	require.False(t, gjson.GetBytes(secondBody, "previous_response_id").Exists(), "HTTP 精确重试不应重新带回 previous_response_id")
 	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "精确重试应移除坏的 reasoning item")
-	require.Equal(t, "message", gjson.GetBytes(secondBody, "input.0.type").String(), "重试后首项应变为后续消息")
-	require.Equal(t, "input_text", gjson.GetBytes(secondBody, "input.0.content.0.type").String(), "后续消息内容应保留")
+	require.Equal(t, "input_text", gjson.GetBytes(secondBody, "input.0.type").String(), "重试后应保留后续 input_text 项")
+	require.Equal(t, "hello", gjson.GetBytes(secondBody, "input.0.text").String(), "后续消息内容应保留")
 	requireOrderedJSONKeys(t, secondBody, "model", "instructions", "prompt_cache_key", "input")
 
 	decision, _ := c.Get("openai_ws_transport_decision")
@@ -591,7 +591,7 @@ func TestOpenAIGatewayService_Forward_DropsStoreFalseReasoningItemsOnHTTPRespons
 			{
 				StatusCode: http.StatusOK,
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body: io.NopCloser(strings.NewReader(`{"usage":{"input_tokens":1,"output_tokens":2,"input_tokens_details":{"cached_tokens":0}}}`)),
+				Body:       io.NopCloser(strings.NewReader(`{"usage":{"input_tokens":1,"output_tokens":2,"input_tokens_details":{"cached_tokens":0}}}`)),
 			},
 		},
 	}
@@ -825,6 +825,7 @@ func TestNewOpenAIGatewayService_InitializesOpenAIWSResolver(t *testing.T) {
 		nil,
 		nil,
 		cfg,
+		nil,
 		nil,
 		nil,
 		nil,
@@ -1685,8 +1686,8 @@ func TestOpenAIGatewayService_Forward_WSv2OAuthRetriesCodexCompatOnMissingToolCa
 	require.Len(t, requests, 2)
 	require.Equal(t, "call_1", gjson.GetBytes(requests[0], "input.0.id").String())
 	require.Equal(t, "call_1", gjson.GetBytes(requests[0], "input.1.call_id").String())
-	require.Equal(t, "fc1", gjson.GetBytes(requests[1], "input.0.id").String())
-	require.Equal(t, "fc1", gjson.GetBytes(requests[1], "input.1.call_id").String())
+	require.Equal(t, "fc_1", gjson.GetBytes(requests[1], "input.0.id").String())
+	require.Equal(t, "fc_1", gjson.GetBytes(requests[1], "input.1.call_id").String())
 }
 
 func TestOpenAIGatewayService_Forward_WSv2OAuthDoesNotCodexCompatRecoverNonCompatReason(t *testing.T) {

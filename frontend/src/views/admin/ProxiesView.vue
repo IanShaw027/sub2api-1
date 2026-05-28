@@ -357,45 +357,50 @@
       @close="closeCreateModal"
     >
       <!-- Tab Switch -->
-      <div class="mb-6 flex border-b border-gray-200 dark:border-dark-600">
-        <button
-          type="button"
-          @click="createMode = 'standard'"
-          :class="[
-            '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
-            createMode === 'standard'
-              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-          ]"
-        >
-          <Icon name="plus" size="sm" class="mr-1.5 inline" />
-          {{ t('admin.proxies.standardAdd') }}
-        </button>
-        <button
-          type="button"
-          @click="createMode = 'batch'"
-          :class="[
-            '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
-            createMode === 'batch'
-              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-          ]"
-        >
-          <svg
-            class="mr-1.5 inline h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            stroke-width="1.5"
+      <div
+        class="mb-6 flex items-center justify-between gap-3 border-b border-gray-200 dark:border-dark-600"
+      >
+        <div class="flex min-w-0 shrink-0">
+          <button
+            type="button"
+            @click="createMode = 'standard'"
+            :class="[
+              '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
+              createMode === 'standard'
+                ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+            ]"
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"
-            />
-          </svg>
-          {{ t('admin.proxies.batchAdd') }}
-        </button>
+            <Icon name="plus" size="sm" class="mr-1.5 inline" />
+            {{ t('admin.proxies.standardAdd') }}
+          </button>
+          <button
+            type="button"
+            @click="createMode = 'batch'"
+            :class="[
+              '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
+              createMode === 'batch'
+                ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+            ]"
+          >
+            <svg
+              class="mr-1.5 inline h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"
+              />
+            </svg>
+            {{ t('admin.proxies.batchAdd') }}
+          </button>
+        </div>
+        <ProxyAdBanner />
       </div>
 
       <!-- Standard Add Form -->
@@ -887,6 +892,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ImportDataModal from '@/components/admin/proxy/ImportDataModal.vue'
 import Select from '@/components/common/Select.vue'
+import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import Icon from '@/components/icons/Icon.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import { useClipboard } from '@/composables/useClipboard'
@@ -1051,6 +1057,22 @@ const isAbortError = (error: unknown) => {
   return maybeError.name === 'AbortError' || maybeError.code === 'ERR_CANCELED'
 }
 
+const clearProxyLatencyDetails = (proxy: Proxy) => {
+  proxy.latency_ms = undefined
+  proxy.ip_address = undefined
+  proxy.country = undefined
+  proxy.country_code = undefined
+  proxy.region = undefined
+  proxy.city = undefined
+}
+
+const normalizeProxyRuntimeFields = (proxy: Proxy): Proxy => {
+  if (proxy.latency_status !== 'failed') return proxy
+  const normalized = { ...proxy }
+  clearProxyLatencyDetails(normalized)
+  return normalized
+}
+
 const toggleSelectRow = (id: number, event: Event) => {
   const target = event.target as HTMLInputElement
   if (target.checked) {
@@ -1074,6 +1096,7 @@ const buildProxyQueryFilters = () => ({
 })
 
 const loadProxies = async () => {
+  clearTimeout(searchTimeout)
   if (abortController) {
     abortController.abort()
   }
@@ -1090,7 +1113,7 @@ const loadProxies = async () => {
     if (currentAbortController.signal.aborted || abortController !== currentAbortController) {
       return
     }
-    proxies.value = response.items
+    proxies.value = response.items.map(normalizeProxyRuntimeFields)
     pagination.total = response.total
     pagination.pages = response.pages
   } catch (error) {
@@ -1369,12 +1392,7 @@ const applyLatencyResult = (
     target.city = result.city
   } else {
     target.latency_status = 'failed'
-    target.latency_ms = undefined
-    target.ip_address = undefined
-    target.country = undefined
-    target.country_code = undefined
-    target.region = undefined
-    target.city = undefined
+    clearProxyLatencyDetails(target)
   }
   target.latency_message = result.message
 }
@@ -1394,6 +1412,19 @@ const applyQualityResult = (proxyId: number, result: ProxyQualityCheckResult) =>
   target.quality_grade = result.grade
   target.quality_summary = result.summary
   target.quality_checked = result.checked_at
+}
+
+const applyQualityFailure = (proxyId: number, message: string) => {
+  const target = proxies.value.find((proxy) => proxy.id === proxyId)
+  if (!target) return
+  target.quality_status = 'failed'
+  target.quality_score = undefined
+  target.quality_grade = undefined
+  target.quality_summary = message
+  target.quality_checked = Math.floor(Date.now() / 1000)
+  target.latency_status = 'failed'
+  target.latency_message = message
+  clearProxyLatencyDetails(target)
 }
 
 const formatLocation = (proxy: Proxy) => {
@@ -1475,6 +1506,11 @@ const handleQualityCheck = async (proxy: Proxy) => {
         country: result.country,
         country_code: result.country_code
       })
+    } else {
+      applyLatencyResult(proxy.id, {
+        success: false,
+        message: baseStep?.message || result.summary || t('admin.proxies.qualityCheckFailed')
+      })
     }
     applyQualityResult(proxy.id, result)
 
@@ -1483,6 +1519,7 @@ const handleQualityCheck = async (proxy: Proxy) => {
     )
   } catch (error: any) {
     const message = error.response?.data?.detail || t('admin.proxies.qualityCheckFailed')
+    applyQualityFailure(proxy.id, message)
     appStore.showError(message)
     console.error('Error checking proxy quality:', error)
   } finally {
@@ -1519,6 +1556,11 @@ const runBatchProxyQualityChecks = async (ids: number[]) => {
               country: result.country,
               country_code: result.country_code
             })
+          } else {
+            applyLatencyResult(current, {
+              success: false,
+              message: baseStep?.message || result.summary || t('admin.proxies.qualityCheckFailed')
+            })
           }
         }
         applyQualityResult(current, result)
@@ -1531,7 +1573,8 @@ const runBatchProxyQualityChecks = async (ids: number[]) => {
         } else {
           healthy++
         }
-      } catch {
+      } catch (error: any) {
+        applyQualityFailure(current, error.response?.data?.detail || t('admin.proxies.qualityCheckFailed'))
         failed++
       } finally {
         stopQualityCheckingProxy(current)

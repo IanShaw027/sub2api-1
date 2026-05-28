@@ -173,6 +173,42 @@ func TestChannelMonitorCreate_TemplateProviderMismatch(t *testing.T) {
 	}
 }
 
+func TestChannelMonitorCreate_TemplateAPIModeMismatch(t *testing.T) {
+	called := false
+	repo := &channelMonitorRepoStub{
+		createFn: func(context.Context, *ChannelMonitor) error {
+			called = true
+			return nil
+		},
+		getTemplateByID: func(context.Context, int64) (*ChannelMonitorRequestTemplate, error) {
+			return &ChannelMonitorRequestTemplate{
+				ID:       1,
+				Provider: MonitorProviderOpenAI,
+				APIMode:  MonitorAPIModeResponses,
+			}, nil
+		},
+	}
+	svc := NewChannelMonitorService(repo, channelMonitorEncryptorStub{})
+	templateID := int64(1)
+	_, err := svc.Create(context.Background(), ChannelMonitorCreateParams{
+		Name:            "m1",
+		Provider:        MonitorProviderOpenAI,
+		APIMode:         MonitorAPIModeChatCompletions,
+		Endpoint:        "https://api.openai.com",
+		APIKey:          "sk",
+		PrimaryModel:    "gpt-4.1",
+		Enabled:         true,
+		IntervalSeconds: 60,
+		TemplateID:      &templateID,
+	})
+	if !errors.Is(err, ErrChannelMonitorTemplateAPIModeMismatch) {
+		t.Fatalf("expected ErrChannelMonitorTemplateAPIModeMismatch, got %v", err)
+	}
+	if called {
+		t.Fatal("repo.Create should not be called on api_mode mismatch")
+	}
+}
+
 func TestChannelMonitorUpdate_ProviderChangeViolatesTemplateProvider(t *testing.T) {
 	updated := false
 	repo := &channelMonitorRepoStub{
@@ -207,6 +243,48 @@ func TestChannelMonitorUpdate_ProviderChangeViolatesTemplateProvider(t *testing.
 	}
 	if updated {
 		t.Fatal("repo.Update should not be called on provider mismatch")
+	}
+}
+
+func TestChannelMonitorUpdate_APIModeChangeViolatesTemplateAPIMode(t *testing.T) {
+	updated := false
+	repo := &channelMonitorRepoStub{
+		getByIDFn: func(context.Context, int64) (*ChannelMonitor, error) {
+			return &ChannelMonitor{
+				ID:              1,
+				Name:            "m1",
+				Provider:        MonitorProviderOpenAI,
+				APIMode:         MonitorAPIModeResponses,
+				Endpoint:        "https://api.openai.com",
+				APIKey:          "enc:sk",
+				PrimaryModel:    "gpt-4.1",
+				Enabled:         true,
+				IntervalSeconds: 60,
+				TemplateID:      ptrInt64CM(1),
+			}, nil
+		},
+		updateFn: func(context.Context, *ChannelMonitor) error {
+			updated = true
+			return nil
+		},
+		getTemplateByID: func(context.Context, int64) (*ChannelMonitorRequestTemplate, error) {
+			return &ChannelMonitorRequestTemplate{
+				ID:       1,
+				Provider: MonitorProviderOpenAI,
+				APIMode:  MonitorAPIModeResponses,
+			}, nil
+		},
+	}
+	svc := NewChannelMonitorService(repo, channelMonitorEncryptorStub{})
+	newMode := MonitorAPIModeChatCompletions
+	_, err := svc.Update(context.Background(), 1, ChannelMonitorUpdateParams{
+		APIMode: &newMode,
+	})
+	if !errors.Is(err, ErrChannelMonitorTemplateAPIModeMismatch) {
+		t.Fatalf("expected ErrChannelMonitorTemplateAPIModeMismatch, got %v", err)
+	}
+	if updated {
+		t.Fatal("repo.Update should not be called on api_mode mismatch")
 	}
 }
 
@@ -365,6 +443,66 @@ func TestChannelMonitorRunCheck_RejectsDisabledMonitor(t *testing.T) {
 	}
 	if insertHistoryCalled || markCheckedCalled {
 		t.Fatal("disabled monitor should not persist check results")
+	}
+}
+
+func TestChannelMonitorRunCheck_OpenAIResponsesPropagatesAPIModeAndBodyOverride(t *testing.T) {
+	h := &openAICaptureHandler{}
+	endpoint := setupFakeOpenAI(t, h)
+
+	repo := &channelMonitorRepoStub{
+		getByIDFn: func(context.Context, int64) (*ChannelMonitor, error) {
+			return &ChannelMonitor{
+				ID:               17,
+				Name:             "responses",
+				Provider:         MonitorProviderOpenAI,
+				APIMode:          MonitorAPIModeResponses,
+				Endpoint:         endpoint,
+				APIKey:           "enc:sk-openai",
+				PrimaryModel:     "gpt-5.5",
+				Enabled:          true,
+				IntervalSeconds:  60,
+				ExtraHeaders:     map[string]string{"x-monitor": "runtime"},
+				BodyOverrideMode: MonitorBodyOverrideModeMerge,
+				BodyOverride: map[string]any{
+					"metadata":     map[string]any{"source": "service"},
+					"instructions": "do not replace the challenge instructions",
+					"input":        "do not replace the challenge input",
+				},
+			}, nil
+		},
+		insertHistoryFn: func(context.Context, []*ChannelMonitorHistoryRow) error { return nil },
+		markCheckedFn:   func(context.Context, int64, time.Time) error { return nil },
+	}
+	svc := NewChannelMonitorService(repo, channelMonitorEncryptorStub{})
+
+	results, err := svc.RunCheck(context.Background(), 17)
+	if err != nil {
+		t.Fatalf("RunCheck returned error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected one result, got %d", len(results))
+	}
+	if results[0].Status != MonitorStatusOperational {
+		t.Fatalf("expected operational result, got status=%s message=%q", results[0].Status, results[0].Message)
+	}
+	if h.lastPath != providerOpenAIResponsesPath {
+		t.Fatalf("expected responses path %q, got %q", providerOpenAIResponsesPath, h.lastPath)
+	}
+	if h.lastHeaders.Get("Authorization") != "Bearer enc:sk-openai" {
+		t.Errorf("expected decrypted auth header, got %q", h.lastHeaders.Get("Authorization"))
+	}
+	if h.lastHeaders.Get("x-monitor") != "runtime" {
+		t.Errorf("expected runtime extra header, got %q", h.lastHeaders.Get("x-monitor"))
+	}
+	if h.lastBody["metadata"] == nil {
+		t.Error("expected runtime body override to be merged")
+	}
+	if h.lastBody["instructions"] == "do not replace the challenge instructions" {
+		t.Error("runtime responses merge should protect challenge instructions")
+	}
+	if h.lastBody["input"] == "do not replace the challenge input" {
+		t.Error("runtime responses merge should protect challenge input")
 	}
 }
 

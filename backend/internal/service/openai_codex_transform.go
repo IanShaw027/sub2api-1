@@ -3,14 +3,32 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
+// codexToolNameInvalidChar 匹配 OpenAI Responses API 不允许出现在 function/tool name 中的字符。
+// 上游对 tool 定义的 name 以及 function_call / custom_tool_call / mcp_tool_call 等 input item
+// 的 name 强制要求满足 ^[a-zA-Z0-9_-]+$，否则返回 400 invalid_request_error。
+var codexToolNameInvalidChar = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+
+// sanitizeCodexToolName 将不合法字符替换为下划线，确保满足上游正则。
+// 替换是确定性的：相同的原始 name 总是映射到相同的 sanitized name，
+// 因而 tool 定义与对应的 function_call / tool_choice 引用之间的对应关系保持一致。
+func sanitizeCodexToolName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return trimmed
+	}
+	return codexToolNameInvalidChar.ReplaceAllString(trimmed, "_")
+}
+
 var codexModelMap = map[string]string{
 	"gpt-5.5":                    "gpt-5.5",
+	"codex-auto-review":          "codex-auto-review",
 	"gpt-5.4":                    "gpt-5.4",
 	"gpt-5.4-mini":               "gpt-5.4-mini",
 	"gpt-5.4-nano":               "gpt-5.4-nano",
@@ -145,7 +163,14 @@ const (
 )
 
 func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact bool) codexTransformResult {
-	return applyCodexOAuthTransformWithInputModeAndFallbackReason(reqBody, isCodexCLI, isCompact, codexTransformInputModeStrict, "")
+	return applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
+		reqBody,
+		isCodexCLI,
+		isCompact,
+		codexTransformInputModeStrict,
+		"",
+		codexOAuthTransformOptions{},
+	)
 }
 
 func applyCodexOAuthTransformWithInputMode(
@@ -154,11 +179,34 @@ func applyCodexOAuthTransformWithInputMode(
 	isCompact bool,
 	inputMode codexTransformInputMode,
 ) codexTransformResult {
-	return applyCodexOAuthTransformWithInputModeAndFallbackReason(reqBody, isCodexCLI, isCompact, inputMode, "")
+	return applyCodexOAuthTransformWithInputModeAndOptions(
+		reqBody,
+		isCodexCLI,
+		isCompact,
+		inputMode,
+		codexOAuthTransformOptions{},
+	)
+}
+
+func applyCodexOAuthTransformWithInputModeAndOptions(
+	reqBody map[string]any,
+	isCodexCLI bool,
+	isCompact bool,
+	inputMode codexTransformInputMode,
+	opts codexOAuthTransformOptions,
+) codexTransformResult {
+	return applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
+		reqBody,
+		isCodexCLI,
+		isCompact,
+		inputMode,
+		"",
+		opts,
+	)
 }
 
 func applyCodexOAuthTransformWithOptions(reqBody map[string]any, opts codexOAuthTransformOptions) codexTransformResult {
-	result := applyCodexOAuthTransform(reqBody, false, false)
+	result := applyCodexOAuthTransformWithInputModeAndOptions(reqBody, false, false, codexTransformInputModeStrict, opts)
 	if opts.SkipDefaultInstructions {
 		if instructions, ok := reqBody["instructions"].(string); ok {
 			defaultInstructions := strings.TrimSpace(openai.DefaultInstructions)
@@ -186,6 +234,24 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReason(
 	isCompact bool,
 	inputMode codexTransformInputMode,
 	fallbackReason string,
+) codexTransformResult {
+	return applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
+		reqBody,
+		isCodexCLI,
+		isCompact,
+		inputMode,
+		fallbackReason,
+		codexOAuthTransformOptions{},
+	)
+}
+
+func applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
+	reqBody map[string]any,
+	isCodexCLI bool,
+	isCompact bool,
+	inputMode codexTransformInputMode,
+	fallbackReason string,
+	opts codexOAuthTransformOptions,
 ) codexTransformResult {
 	result := codexTransformResult{}
 	// 工具续链需求会影响存储策略与 input 过滤逻辑。
@@ -316,13 +382,15 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReason(
 		result.Observability.FunctionCallConverted = true
 	}
 
-	if normalizeCodexTools(reqBody) {
-		result.Modified = true
-		result.Observability.ToolsNormalized = true
-	}
-	if normalizeCodexToolChoice(reqBody) {
-		result.Modified = true
-		result.Observability.ToolChoiceNormalized = true
+	if !isCompact {
+		if normalizeCodexTools(reqBody) {
+			result.Modified = true
+			result.Observability.ToolsNormalized = true
+		}
+		if normalizeCodexToolChoice(reqBody) {
+			result.Modified = true
+			result.Observability.ToolChoiceNormalized = true
+		}
 	}
 
 	if v, ok := reqBody["prompt_cache_key"].(string); ok {
@@ -336,7 +404,7 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReason(
 	}
 
 	// instructions 处理逻辑：根据是否是 Codex CLI 分别调用不同方法
-	if applyInstructions(reqBody, isCodexCLI) {
+	if !opts.SkipDefaultInstructions && applyInstructions(reqBody, isCodexCLI) {
 		result.Modified = true
 		result.Observability.DefaultInstructionsApplied = true
 	}
@@ -477,6 +545,9 @@ func normalizeCodexToolChoice(reqBody map[string]any) bool {
 	}
 	if choiceType == "function" {
 		name := codexToolChoiceFunctionName(choiceMap)
+		if name != "" {
+			name = sanitizeCodexToolName(name)
+		}
 		if name == "" || !codexToolsContainFunctionName(reqBody["tools"], name) {
 			reqBody["tool_choice"] = "auto"
 			return true
@@ -1481,7 +1552,7 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 				return id
 			}
 			if strings.HasPrefix(id, "call_") {
-				return "fc" + strings.TrimPrefix(id, "call_")
+				return "fc_" + strings.TrimPrefix(id, "call_")
 			}
 			return "fc_" + id
 		}
@@ -1548,18 +1619,26 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 		}
 
 		if codexInputItemRequiresName(typ) {
-			if strings.TrimSpace(firstNonEmptyString(m["name"])) == "" {
-				name := firstNonEmptyString(m["tool_name"])
-				if name == "" {
+			rawName := strings.TrimSpace(firstNonEmptyString(m["name"]))
+			if rawName == "" {
+				rawName = strings.TrimSpace(firstNonEmptyString(m["tool_name"]))
+				if rawName == "" {
 					if function, ok := m["function"].(map[string]any); ok {
-						name = firstNonEmptyString(function["name"])
+						rawName = strings.TrimSpace(firstNonEmptyString(function["name"]))
 					}
 				}
-				if name == "" {
-					name = "tool"
+				if rawName == "" {
+					rawName = "tool"
 				}
+			}
+			sanitizedName := sanitizeCodexToolName(rawName)
+			if sanitizedName == "" {
+				sanitizedName = "tool"
+			}
+			currentName, _ := m["name"].(string)
+			if currentName != sanitizedName {
 				ensureCopy()
-				newItem["name"] = name
+				newItem["name"] = sanitizedName
 				modified = true
 			}
 		}
@@ -1686,6 +1765,56 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 
 	modified := false
 	validTools := make([]any, 0, len(tools))
+	sanitizeToolName := func(toolMap map[string]any) {
+		if toolMap == nil {
+			return
+		}
+		if name, ok := toolMap["name"].(string); ok {
+			if sanitized := sanitizeCodexToolName(name); sanitized != "" && sanitized != name {
+				toolMap["name"] = sanitized
+				modified = true
+			}
+		}
+		if function, ok := toolMap["function"].(map[string]any); ok && function != nil {
+			if name, ok := function["name"].(string); ok {
+				if sanitized := sanitizeCodexToolName(name); sanitized != "" && sanitized != name {
+					function["name"] = sanitized
+					modified = true
+				}
+			}
+		}
+	}
+	ensureFunctionShape := func(toolMap map[string]any) {
+		if toolMap == nil || strings.TrimSpace(firstNonEmptyString(toolMap["type"])) != "function" {
+			return
+		}
+		function, _ := toolMap["function"].(map[string]any)
+		if function == nil {
+			function = map[string]any{}
+			toolMap["function"] = function
+			modified = true
+		}
+		if name := strings.TrimSpace(firstNonEmptyString(toolMap["name"])); name != "" && strings.TrimSpace(firstNonEmptyString(function["name"])) == "" {
+			function["name"] = name
+			modified = true
+		}
+		if description := strings.TrimSpace(firstNonEmptyString(toolMap["description"])); description != "" && strings.TrimSpace(firstNonEmptyString(function["description"])) == "" {
+			function["description"] = description
+			modified = true
+		}
+		if _, ok := function["parameters"]; !ok {
+			if params, ok := toolMap["parameters"]; ok && params != nil {
+				function["parameters"] = params
+				modified = true
+			}
+		}
+		if _, ok := function["strict"]; !ok {
+			if strict, ok := toolMap["strict"]; ok {
+				function["strict"] = strict
+				modified = true
+			}
+		}
+	}
 
 	for _, tool := range tools {
 		toolMap, ok := tool.(map[string]any)
@@ -1707,6 +1836,8 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 			if normalizeCodexFunctionToolParameters(toolMap) {
 				modified = true
 			}
+			ensureFunctionShape(toolMap)
+			sanitizeToolName(toolMap)
 			validTools = append(validTools, toolMap)
 			continue
 		}
@@ -1747,6 +1878,8 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 		if normalizeCodexFunctionToolParameters(toolMap) {
 			modified = true
 		}
+		ensureFunctionShape(toolMap)
+		sanitizeToolName(toolMap)
 
 		validTools = append(validTools, toolMap)
 	}

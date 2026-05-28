@@ -275,6 +275,35 @@ func TestAdminServiceBindUserAuthIdentityReusesLegacyWeChatAliasRecords(t *testi
 	require.Equal(t, 1, channelCount)
 }
 
+func TestAdminServiceBindUserAuthIdentityAcceptsNewOAuthProviderTypes(t *testing.T) {
+	client := newAdminServiceAuthIdentityBindingTestClient(t)
+	ctx := context.Background()
+
+	user, err := client.User.Create().
+		SetEmail("invalid-provider@example.com").
+		SetPasswordHash("hash").
+		SetRole(RoleUser).
+		SetStatus(StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &adminServiceImpl{
+		userRepo:  &userRepoStub{user: &User{ID: user.ID, Email: user.Email, Status: StatusActive}},
+		entClient: client,
+	}
+
+	for _, providerType := range []string{"github", "google", "dingtalk"} {
+		result, err := svc.BindUserAuthIdentity(ctx, user.ID, AdminBindAuthIdentityInput{
+			ProviderType:    providerType,
+			ProviderKey:     providerType + "-main",
+			ProviderSubject: providerType + "-subject-3",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, providerType, result.ProviderType)
+	}
+}
+
 func TestAdminServiceBindUserAuthIdentityRejectsInvalidProviderType(t *testing.T) {
 	client := newAdminServiceAuthIdentityBindingTestClient(t)
 	ctx := context.Background()
@@ -293,8 +322,8 @@ func TestAdminServiceBindUserAuthIdentityRejectsInvalidProviderType(t *testing.T
 	}
 
 	_, err = svc.BindUserAuthIdentity(ctx, user.ID, AdminBindAuthIdentityInput{
-		ProviderType:    "github",
-		ProviderKey:     "github-main",
+		ProviderType:    "not-a-provider",
+		ProviderKey:     "provider-main",
 		ProviderSubject: "subject-3",
 	})
 	require.Error(t, err)

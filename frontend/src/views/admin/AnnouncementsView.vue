@@ -351,6 +351,10 @@ const targetingSummary = (targeting: AnnouncementTargeting) => {
 let currentController: AbortController | null = null
 
 async function loadAnnouncements() {
+  if (searchDebounceTimer !== null) {
+    window.clearTimeout(searchDebounceTimer)
+    searchDebounceTimer = null
+  }
   currentController?.abort()
   const requestController = new AbortController()
   currentController = requestController

@@ -196,6 +196,14 @@ func (h *AuthHandler) createOAuthPendingSession(c *gin.Context, payload oauthPen
 		},
 	})
 	if err != nil {
+		slog.Error("pending auth session create failed",
+			"intent", strings.TrimSpace(payload.Intent),
+			"provider_type", strings.TrimSpace(payload.Identity.ProviderType),
+			"provider_key", strings.TrimSpace(payload.Identity.ProviderKey),
+			"provider_subject_len", len(strings.TrimSpace(payload.Identity.ProviderSubject)),
+			"resolved_email_len", len(strings.TrimSpace(payload.ResolvedEmail)),
+			"has_target_user", payload.TargetUserID != nil,
+			"error", err.Error())
 		return infraerrors.InternalServer("PENDING_AUTH_SESSION_CREATE_FAILED", "failed to create pending auth session").WithCause(err)
 	}
 
@@ -253,7 +261,7 @@ func pendingSessionStringValue(values map[string]any, key string) string {
 		return ""
 	}
 	raw, ok := values[key]
-	if !ok {
+	if !ok || raw == nil {
 		return ""
 	}
 	switch value := raw.(type) {
@@ -264,12 +272,28 @@ func pendingSessionStringValue(values map[string]any, key string) string {
 	case fmt.Stringer:
 		return strings.TrimSpace(value.String())
 	default:
-		return strings.TrimSpace(fmt.Sprint(raw))
+		return ""
 	}
 }
 
 func pendingSessionWantsInvitation(payload map[string]any) bool {
 	return strings.EqualFold(strings.TrimSpace(pendingSessionStringValue(payload, "error")), "invitation_required")
+}
+
+// pendingSessionRequiresEmailCompletion 判断 callback 写入的 completion payload 是否处于"补邮箱"状态。
+// 钉钉跨组织/staff 邮箱缺失时进入此状态：前端跳到补邮箱页，exchange 不应走 adoption apply。
+func pendingSessionRequiresEmailCompletion(payload map[string]any) bool {
+	if v, ok := payload["requires_email_completion"].(bool); ok && v {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(pendingSessionStringValue(payload, "step")), "email_completion")
+}
+
+// pendingSessionRequiresBindLogin 判断 callback 写入的 completion payload 是否处于"必须绑定已有账户"状态。
+// 钉钉 signupBlocked=true（注册关 + 钉钉企业豁免关）时进入此状态：前端渲染 bind_login 表单，
+// exchange 不应消费 session，否则后续 /pending/bind-login 找不到 session。
+func pendingSessionRequiresBindLogin(payload map[string]any) bool {
+	return strings.EqualFold(strings.TrimSpace(pendingSessionStringValue(payload, "step")), "bind_login_required")
 }
 
 func pendingOAuthCompletionCanIssueTokenPair(session *dbent.PendingAuthSession, payload map[string]any) bool {
@@ -526,7 +550,7 @@ func (h *AuthHandler) SendPendingOAuthVerifyCode(c *gin.Context) {
 		return
 	}
 
-	result, err := h.authService.SendPendingOAuthVerifyCode(c.Request.Context(), req.Email)
+	result, err := h.authService.SendPendingOAuthVerifyCode(c.Request.Context(), req.Email, c.GetHeader("Accept-Language"))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -1024,11 +1048,20 @@ func findActiveUserByID(ctx context.Context, client *dbent.Client, userID int64)
 }
 
 func findReclaimBlockingActiveUserByID(ctx context.Context, client *dbent.Client, userID int64) (*dbent.User, error) {
-	userEntity, err := findActiveUserByID(ctx, client, userID)
-	if errors.Is(err, service.ErrUserNotActive) {
+	if client == nil || userID <= 0 {
 		return nil, nil
 	}
-	return userEntity, err
+	userEntity, err := client.User.Get(ctx, userID)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, infraerrors.InternalServer("AUTH_IDENTITY_USER_LOOKUP_FAILED", "failed to load auth identity user").WithCause(err)
+	}
+	if !strings.EqualFold(strings.TrimSpace(userEntity.Status), service.StatusActive) {
+		return nil, nil
+	}
+	return userEntity, nil
 }
 
 func channelRecordMetadata(channel *dbent.AuthIdentityChannel) map[string]any {
@@ -1157,15 +1190,15 @@ func applyPendingOAuthBindingTx(
 		}
 	}()
 
-	adoptedAvatarStorageURL = adoptedAvatarURL
+	adoptedAvatarStorageURL = ""
 	if shouldAdoptAvatar && userService != nil {
 		avatar, cleanup, setAvatarErr := userService.SetAvatarWithCleanup(ctx, targetUserID, adoptedAvatarURL)
 		avatarCleanup = cleanup
-		if setAvatarErr == nil && avatar != nil && strings.TrimSpace(avatar.URL) != "" {
-			adoptedAvatarStorageURL = avatar.URL
-		}
 		if setAvatarErr != nil {
-			avatarCleanup = nil
+			return "", avatarCleanup, setAvatarErr
+		}
+		if avatar != nil && strings.TrimSpace(avatar.URL) != "" {
+			adoptedAvatarStorageURL = avatar.URL
 		}
 	}
 
@@ -1330,6 +1363,19 @@ func ensurePendingOAuthTargetUserAllowedTx(
 	return nil
 }
 
+func applyPendingOAuthAdoption(
+	ctx context.Context,
+	client *dbent.Client,
+	authService *service.AuthService,
+	userService *service.UserService,
+	authHandler *AuthHandler,
+	session *dbent.PendingAuthSession,
+	decision *dbent.IdentityAdoptionDecision,
+	userID int64,
+) (string, error) {
+	return applyPendingOAuthBindingWithoutConsume(ctx, client, authService, userService, authHandler, session, decision, userID, false, strings.EqualFold(strings.TrimSpace(session.Intent), "bind_current_user"))
+}
+
 func applyPendingOAuthAdoptionAndConsumeSession(
 	ctx context.Context,
 	client *dbent.Client,
@@ -1341,6 +1387,46 @@ func applyPendingOAuthAdoptionAndConsumeSession(
 	userID int64,
 ) error {
 	return applyPendingOAuthBindingAndConsumeSession(ctx, client, authService, userService, authHandler, session, decision, userID, false, strings.EqualFold(strings.TrimSpace(session.Intent), "bind_current_user"))
+}
+
+func applyPendingOAuthBindingWithoutConsume(
+	ctx context.Context,
+	client *dbent.Client,
+	authService *service.AuthService,
+	userService *service.UserService,
+	authHandler *AuthHandler,
+	session *dbent.PendingAuthSession,
+	decision *dbent.IdentityAdoptionDecision,
+	userID int64,
+	forceBind bool,
+	applyFirstBindDefaults bool,
+) (string, error) {
+	if client == nil {
+		return "", infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready")
+	}
+	if session == nil || userID <= 0 {
+		return "", infraerrors.BadRequest("PENDING_AUTH_SESSION_INVALID", "pending auth registration context is invalid")
+	}
+
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	txCtx := dbent.NewTxContext(ctx, tx)
+	if err := ensurePendingOAuthTargetUserAllowedTx(txCtx, tx, authHandler, userID); err != nil {
+		return "", err
+	}
+	adoptedAvatarURL, avatarCleanup, err := applyPendingOAuthBinding(txCtx, client, authService, userService, session, decision, &userID, forceBind, applyFirstBindDefaults)
+	if err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		runPendingOAuthAvatarCleanup(ctx, avatarCleanup)
+		return "", err
+	}
+	return adoptedAvatarURL, nil
 }
 
 func applyPendingOAuthBindingAndConsumeSession(
@@ -1385,6 +1471,28 @@ func applyPendingOAuthBindingAndConsumeSession(
 		return err
 	}
 	return nil
+}
+
+func consumePendingOAuthBrowserSession(
+	ctx context.Context,
+	client *dbent.Client,
+	session *dbent.PendingAuthSession,
+) error {
+	if client == nil {
+		return infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready")
+	}
+
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	txCtx := dbent.NewTxContext(ctx, tx)
+	if err := consumePendingOAuthBrowserSessionTx(txCtx, tx, session); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func runPendingOAuthAvatarCleanup(ctx context.Context, cleanup service.AvatarCleanupFunc) {
@@ -1456,23 +1564,6 @@ func pendingOAuthIdentityForUser(
 		return nil, infraerrors.InternalServer("AUTH_IDENTITY_LOOKUP_FAILED", "failed to inspect auth identity ownership").WithCause(err)
 	}
 	return identity, nil
-}
-
-func pendingOAuthCompletionAdoptedAvatarURL(
-	ctx context.Context,
-	client *dbent.Client,
-	session *dbent.PendingAuthSession,
-	userID int64,
-) (string, error) {
-	identity, err := pendingOAuthIdentityForUser(ctx, client, session, userID)
-	if err != nil || identity == nil {
-		return "", err
-	}
-	avatarURL := pendingSessionStringValue(identity.Metadata, "avatar_url")
-	if avatarURL == "" {
-		avatarURL = pendingSessionStringValue(identity.Metadata, "suggested_avatar_url")
-	}
-	return avatarURL, nil
 }
 
 func pendingOAuthIdentityExistsForUser(
@@ -1615,8 +1706,10 @@ func normalizePendingOAuthCompletionResponse(payload map[string]any) map[string]
 		delete(normalized, key)
 	}
 	step := strings.ToLower(strings.TrimSpace(pendingSessionStringValue(normalized, "step")))
+	// 把多种 choice 别名归一为 oauthPendingChoiceStep；bind_login_required 是独立终态
+	// （前端渲染 needsBindLogin 而非 needsChooser），故不能并入归一化列表。
 	switch step {
-	case "choice", "choose_account_action", "choose_account", "choose", "email_required", "bind_login_required":
+	case "choice", "choose_account_action", "choose_account", "choose", "email_required":
 		normalized["step"] = oauthPendingChoiceStep
 	}
 	if strings.EqualFold(strings.TrimSpace(pendingSessionStringValue(normalized, "step")), oauthPendingChoiceStep) {
@@ -1737,17 +1830,24 @@ func (h *AuthHandler) bindPendingOAuthLogin(c *gin.Context, provider string) {
 		})
 		return
 	}
-	if err := applyPendingOAuthBindingAndConsumeSession(c.Request.Context(), h.entClient(), h.authService, h.userService, h, session, decision, user.ID, true, true); err != nil {
+	if _, err := applyPendingOAuthBindingWithoutConsume(c.Request.Context(), h.entClient(), h.authService, h.userService, h, session, decision, user.ID, true, true); err != nil {
 		respondPendingOAuthBindingApplyError(c, err)
 		return
 	}
 
-	h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
 	tokenPair, err := h.authService.GenerateTokenPair(c.Request.Context(), user, "")
 	if err != nil {
 		response.InternalError(c, "Failed to generate token pair")
 		return
 	}
+	if err := consumePendingOAuthBrowserSession(c.Request.Context(), h.entClient(), session); err != nil {
+		clearCookies()
+		response.ErrorFrom(c, err)
+		return
+	}
+	h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
+	// bindPendingOAuthLogin = 绑定已有账户登录，不动 users.username（用户已有自己的名字）
+	h.maybeSyncDingTalkAfterLogin(c.Request.Context(), session, user.ID)
 	clearCookies()
 	writeOAuthTokenPairResponse(c, tokenPair)
 }
@@ -1940,6 +2040,8 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 	}
 
 	h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
+	// createPendingOAuthAccount = 注册新账户，需要把钉钉昵称同步到 users.username 作为初始值
+	h.maybeSyncDingTalkAfterRegistration(c.Request.Context(), session, user.ID)
 	clearCookies()
 	writeOAuthTokenPairResponse(c, tokenPair)
 }
@@ -2044,6 +2146,14 @@ func (h *AuthHandler) ExchangePendingOAuthCompletion(c *gin.Context) {
 		response.Success(c, payload)
 		return
 	}
+	if pendingSessionRequiresEmailCompletion(payload) {
+		response.Success(c, payload)
+		return
+	}
+	if pendingSessionRequiresBindLogin(payload) {
+		response.Success(c, payload)
+		return
+	}
 	if !adoptionDecision.hasDecision() {
 		adoptionRequired, _ := payload["adoption_required"].(bool)
 		if adoptionRequired {
@@ -2077,7 +2187,8 @@ func (h *AuthHandler) ExchangePendingOAuthCompletion(c *gin.Context) {
 			return
 		}
 	}
-	if err := applyPendingOAuthAdoptionAndConsumeSession(c.Request.Context(), h.entClient(), h.authService, h.userService, h, session, decision, targetUserID); err != nil {
+	adoptedAvatarURL, err := applyPendingOAuthAdoption(c.Request.Context(), h.entClient(), h.authService, h.userService, h, session, decision, targetUserID)
+	if err != nil {
 		respondPendingOAuthBindingApplyError(c, err)
 		return
 	}
@@ -2095,10 +2206,17 @@ func (h *AuthHandler) ExchangePendingOAuthCompletion(c *gin.Context) {
 		payload["expires_in"] = tokenPair.ExpiresIn
 		payload["token_type"] = "Bearer"
 	}
-
-	if adoptedAvatarURL, err := pendingOAuthCompletionAdoptedAvatarURL(c.Request.Context(), h.entClient(), session, targetUserID); err == nil && strings.TrimSpace(adoptedAvatarURL) != "" {
+	if err := consumePendingOAuthBrowserSession(c.Request.Context(), h.entClient(), session); err != nil {
+		clearCookies()
+		response.ErrorFrom(c, err)
+		return
+	}
+	if strings.TrimSpace(adoptedAvatarURL) != "" {
 		payload["suggested_avatar_url"] = adoptedAvatarURL
 		payload["avatar_url"] = adoptedAvatarURL
+	} else {
+		delete(payload, "suggested_avatar_url")
+		delete(payload, "avatar_url")
 	}
 
 	clearCookies()

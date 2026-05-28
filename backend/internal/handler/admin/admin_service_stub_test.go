@@ -27,6 +27,7 @@ type stubAdminService struct {
 	updatedProxyIDs      []int64
 	updatedProxies       []*service.UpdateProxyInput
 	testedProxyIDs       []int64
+	getUserErr           error
 	createAccountErr     error
 	updateAccountErr     error
 	bulkUpdateAccountErr error
@@ -71,7 +72,8 @@ type stubAdminService struct {
 		sortOrder string
 		calls     int
 	}
-	mu sync.Mutex
+	lastGenerateRedeemInput *service.GenerateRedeemCodesInput
+	mu                      sync.Mutex
 }
 
 func newStubAdminService() *stubAdminService {
@@ -150,6 +152,9 @@ func (s *stubAdminService) ListUsers(ctx context.Context, page, pageSize int, fi
 }
 
 func (s *stubAdminService) GetUser(ctx context.Context, id int64) (*service.User, error) {
+	if s.getUserErr != nil {
+		return nil, s.getUserErr
+	}
 	for i := range s.users {
 		if s.users[i].ID == id {
 			return &s.users[i], nil
@@ -271,6 +276,13 @@ func (s *stubAdminService) GetAllGroupsByPlatform(ctx context.Context, platform 
 func (s *stubAdminService) GetGroup(ctx context.Context, id int64) (*service.Group, error) {
 	group := service.Group{ID: id, Name: "group", Status: service.StatusActive}
 	return &group, nil
+}
+
+func (s *stubAdminService) GetGroupModelsListCandidates(ctx context.Context, id int64, platform string) ([]string, error) {
+	if platform == service.PlatformOpenAI {
+		return []string{"gpt-5.5", "gpt-5.4"}, nil
+	}
+	return []string{"claude-sonnet-4-6"}, nil
 }
 
 func (s *stubAdminService) CreateGroup(ctx context.Context, input *service.CreateGroupInput) (*service.Group, error) {
@@ -562,6 +574,20 @@ func (s *stubAdminService) GetRedeemCode(ctx context.Context, id int64) (*servic
 }
 
 func (s *stubAdminService) GenerateRedeemCodes(ctx context.Context, input *service.GenerateRedeemCodesInput) ([]service.RedeemCode, error) {
+	if input != nil {
+		copied := *input
+		if input.GroupID != nil {
+			groupID := *input.GroupID
+			copied.GroupID = &groupID
+		}
+		if input.ExpiresAt != nil {
+			expiresAt := *input.ExpiresAt
+			copied.ExpiresAt = &expiresAt
+		}
+		s.lastGenerateRedeemInput = &copied
+	} else {
+		s.lastGenerateRedeemInput = nil
+	}
 	return s.redeems, nil
 }
 

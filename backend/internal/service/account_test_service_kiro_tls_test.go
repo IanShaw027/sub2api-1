@@ -168,12 +168,12 @@ func TestAccountTestService_TestKiroAccountConnection_UsesSharedKiroModelMapping
 		Credentials: map[string]any{
 			"api_key": "kiro-manual-token",
 			"model_mapping": map[string]any{
-				"kiro-test-*": "claude-sonnet-4-5-20250929",
+				"claude-sonnet-*": "claude-sonnet-4-5-20250929",
 			},
 		},
 	}
 
-	err := svc.testKiroAccountConnection(c, account, "kiro-test-sonnet")
+	err := svc.testKiroAccountConnection(c, account, "claude-sonnet-4-7")
 	require.NoError(t, err)
 
 	body, err := io.ReadAll(upstream.req.Body)
@@ -258,12 +258,12 @@ func TestAccountTestService_TestKiroAccountConnection_UsesAccountModelMapping(t 
 		Credentials: map[string]any{
 			"api_key": "kiro-manual-token",
 			"model_mapping": map[string]any{
-				"kiro-test-alias": "claude-sonnet-4-5-20250929",
+				"claude-sonnet-4-7": "claude-sonnet-4-5-20250929",
 			},
 		},
 	}
 
-	err := svc.testKiroAccountConnection(c, account, "kiro-test-alias")
+	err := svc.testKiroAccountConnection(c, account, "claude-sonnet-4-7")
 	require.NoError(t, err)
 
 	var payload struct {

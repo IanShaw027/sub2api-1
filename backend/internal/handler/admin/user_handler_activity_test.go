@@ -36,7 +36,7 @@ func TestUserHandlerListIncludesActivityFieldsAndSortParams(t *testing.T) {
 			UpdatedAt:    lastLoginAt,
 		},
 	}
-	handler := NewUserHandler(adminSvc, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil)
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -93,7 +93,7 @@ func TestUserHandlerGetByIDIncludesActivityFields(t *testing.T) {
 			UpdatedAt:    lastLoginAt,
 		},
 	}
-	handler := NewUserHandler(adminSvc, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil)
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -147,7 +147,7 @@ func TestUserHandlerGetByIDIncludesAvatarAndIdentityBindings(t *testing.T) {
 			},
 		},
 	}
-	handler := NewUserHandler(adminSvc, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil)
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)

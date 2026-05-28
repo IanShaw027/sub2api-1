@@ -613,6 +613,10 @@ func TestAPIContracts(t *testing.T) {
 							"first_token_ms": 50,
 							"image_count": 0,
 							"image_size": null,
+							"image_input_size": null,
+							"image_output_size": null,
+							"image_size_source": null,
+							"image_size_breakdown": null,
 							"media_type": null,
 							"cache_ttl_overridden": false,
 							"created_at": "2025-01-02T03:04:05Z",
@@ -711,7 +715,7 @@ func TestAPIContracts(t *testing.T) {
 						"login_agreement_enabled": false,
 						"login_agreement_mode": "modal",
 						"login_agreement_updated_at": "2026-03-31",
-						"login_agreement_documents": [
+					"login_agreement_documents": [
 							{"id": "terms", "title": "服务条款", "content_md": ""},
 							{"id": "usage-policy", "title": "使用政策", "content_md": ""},
 							{"id": "supported-regions", "title": "支持的国家和地区", "content_md": ""},
@@ -788,16 +792,21 @@ func TestAPIContracts(t *testing.T) {
 					"auth_source_default_google_subscriptions": [],
 					"auth_source_default_google_grant_on_signup": false,
 					"auth_source_default_google_grant_on_first_bind": false,
-					"auth_source_default_linuxdo_balance": 0,
-					"auth_source_default_linuxdo_concurrency": 5,
-					"auth_source_default_linuxdo_subscriptions": [],
-					"auth_source_default_linuxdo_grant_on_signup": false,
-					"auth_source_default_linuxdo_grant_on_first_bind": false,
-					"auth_source_default_oidc_balance": 0,
-					"auth_source_default_oidc_concurrency": 5,
-					"auth_source_default_oidc_subscriptions": [],
-					"auth_source_default_oidc_grant_on_signup": false,
-					"auth_source_default_oidc_grant_on_first_bind": false,
+						"auth_source_default_linuxdo_balance": 0,
+						"auth_source_default_linuxdo_concurrency": 5,
+						"auth_source_default_linuxdo_subscriptions": [],
+						"auth_source_default_linuxdo_grant_on_signup": false,
+						"auth_source_default_linuxdo_grant_on_first_bind": false,
+						"auth_source_default_dingtalk_balance": 0,
+						"auth_source_default_dingtalk_concurrency": 5,
+						"auth_source_default_dingtalk_subscriptions": [],
+						"auth_source_default_dingtalk_grant_on_signup": false,
+						"auth_source_default_dingtalk_grant_on_first_bind": false,
+						"auth_source_default_oidc_balance": 0,
+						"auth_source_default_oidc_concurrency": 5,
+						"auth_source_default_oidc_subscriptions": [],
+						"auth_source_default_oidc_grant_on_signup": false,
+						"auth_source_default_oidc_grant_on_first_bind": false,
 					"auth_source_default_wechat_balance": 0,
 					"auth_source_default_wechat_concurrency": 5,
 					"auth_source_default_wechat_subscriptions": [],
@@ -816,6 +825,14 @@ func TestAPIContracts(t *testing.T) {
 					"kiro_thinking_mode": "simulate",
 					"kiro_thinking_simulation_template": "Thinking through the request with {effort} effort for {model}. {detail}",
 					"kiro_version": "0.10.0",
+					"default_platform_quotas": {"anthropic":{"daily":null,"weekly":null,"monthly":null},"antigravity":{"daily":null,"weekly":null,"monthly":null},"gemini":{"daily":null,"weekly":null,"monthly":null},"openai":{"daily":null,"weekly":null,"monthly":null}},
+					"auth_source_default_email_platform_quotas": null,
+					"auth_source_default_github_platform_quotas": null,
+					"auth_source_default_google_platform_quotas": null,
+					"auth_source_default_linuxdo_platform_quotas": null,
+					"auth_source_default_oidc_platform_quotas": null,
+					"auth_source_default_wechat_platform_quotas": null,
+					"auth_source_default_dingtalk_platform_quotas": null,
 					"affiliate_rebate_cap": 0,
 					"affiliate_rebate_rate": 20,
 					"affiliate_rebate_freeze_hours": 0,
@@ -865,17 +882,10 @@ func TestAPIContracts(t *testing.T) {
 						"openai_oauth_image_bridge_disable_keepalives": false,
 						"openai_oauth_image_bridge_fresh_upstream_client": false,
 						"openai_sticky_reserve_percent": 0,
-						"platform_default_account_model_config": {},
 						"openai_fast_policy_settings": {
-						"rules": [
-							{
-								"service_tier": "priority",
-								"action": "filter",
-								"scope": "all",
-								"fallback_action": "pass"
-							}
-						]
+						"rules": []
 					},
+					"platform_default_account_model_config": {},
 					"custom_menu_items": [],
 					"custom_endpoints": [],
 					"payment_enabled": false,
@@ -927,7 +937,27 @@ func TestAPIContracts(t *testing.T) {
 					"wechat_connect_mobile_app_secret_configured": false,
 					"wechat_connect_redirect_url": "",
 					"wechat_connect_frontend_redirect_url": "/auth/wechat/callback",
-					"wechat_connect_scopes": "snsapi_login"
+					"wechat_connect_scopes": "snsapi_login",
+					"api_key_acl_trust_forwarded_ip": false,
+					"dingtalk_connect_enabled": false,
+					"dingtalk_connect_client_id": "",
+					"dingtalk_connect_client_secret_configured": false,
+					"dingtalk_connect_redirect_url": "",
+					"dingtalk_connect_corp_restriction_policy": "",
+					"dingtalk_connect_internal_corp_id": "",
+					"dingtalk_connect_bypass_registration": false,
+					"dingtalk_connect_sync_corp_email": false,
+					"dingtalk_connect_sync_display_name": false,
+					"dingtalk_connect_sync_dept": false,
+					"dingtalk_connect_sync_corp_email_attr_key": "",
+					"dingtalk_connect_sync_display_name_attr_key": "",
+					"dingtalk_connect_sync_dept_attr_key": "",
+					"dingtalk_connect_sync_corp_email_attr_name": "",
+					"dingtalk_connect_sync_display_name_attr_name": "",
+					"dingtalk_connect_sync_dept_attr_name": "",
+					"openai_codex_user_agent": "",
+					"payment_alipay_force_qrcode": false,
+					"subscription_expiry_notify_enabled": true
 				}
 			}`,
 		},
@@ -1048,6 +1078,14 @@ func TestAPIContracts(t *testing.T) {
 					"purchase_subscription_url": "",
 					"table_default_page_size": 20,
 					"table_page_size_options": [10, 20, 50],
+					"default_platform_quotas": {"anthropic":{"daily":null,"weekly":null,"monthly":null},"antigravity":{"daily":null,"weekly":null,"monthly":null},"gemini":{"daily":null,"weekly":null,"monthly":null},"openai":{"daily":null,"weekly":null,"monthly":null}},
+					"auth_source_default_email_platform_quotas": null,
+					"auth_source_default_github_platform_quotas": null,
+					"auth_source_default_google_platform_quotas": null,
+					"auth_source_default_linuxdo_platform_quotas": null,
+					"auth_source_default_oidc_platform_quotas": null,
+					"auth_source_default_wechat_platform_quotas": null,
+					"auth_source_default_dingtalk_platform_quotas": null,
 					"custom_menu_items": [],
 					"custom_endpoints": [],
 					"default_concurrency": 0,
@@ -1090,15 +1128,9 @@ func TestAPIContracts(t *testing.T) {
 						"openai_oauth_image_bridge_disable_keepalives": false,
 						"openai_oauth_image_bridge_fresh_upstream_client": false,
 						"openai_sticky_reserve_percent": 0,
+						"openai_codex_user_agent": "",
 						"openai_fast_policy_settings": {
-						"rules": [
-							{
-								"service_tier": "priority",
-								"action": "filter",
-								"scope": "all",
-								"fallback_action": "pass"
-							}
-						]
+						"rules": []
 					},
 					"payment_enabled": false,
 					"payment_min_amount": 0,
@@ -1120,8 +1152,10 @@ func TestAPIContracts(t *testing.T) {
 					"payment_cancel_rate_limit_window": 0,
 					"payment_cancel_rate_limit_unit": "",
 					"payment_cancel_rate_limit_window_mode": "",
+					"payment_alipay_force_qrcode": false,
 					"balance_low_notify_enabled": false,
 					"account_quota_notify_enabled": false,
+					"subscription_expiry_notify_enabled": true,
 					"balance_low_notify_threshold": 0,
 					"balance_low_notify_recharge_url": "",
 					"account_quota_notify_emails": [],
@@ -1174,6 +1208,11 @@ func TestAPIContracts(t *testing.T) {
 					"auth_source_default_linuxdo_subscriptions": [],
 					"auth_source_default_linuxdo_grant_on_signup": false,
 					"auth_source_default_linuxdo_grant_on_first_bind": false,
+					"auth_source_default_dingtalk_balance": 0,
+					"auth_source_default_dingtalk_concurrency": 5,
+					"auth_source_default_dingtalk_subscriptions": [],
+					"auth_source_default_dingtalk_grant_on_signup": false,
+					"auth_source_default_dingtalk_grant_on_first_bind": false,
 					"auth_source_default_oidc_balance": 0,
 					"auth_source_default_oidc_concurrency": 5,
 					"auth_source_default_oidc_subscriptions": [],
@@ -1199,7 +1238,24 @@ func TestAPIContracts(t *testing.T) {
 					"platform_default_account_model_config": {},
 					"support_qr_codes": [],
 					"system_version": "darwin#24.6.0",
-					"ticket_enabled": false
+					"ticket_enabled": false,
+					"api_key_acl_trust_forwarded_ip": false,
+					"dingtalk_connect_enabled": false,
+					"dingtalk_connect_client_id": "",
+					"dingtalk_connect_client_secret_configured": false,
+					"dingtalk_connect_redirect_url": "",
+					"dingtalk_connect_corp_restriction_policy": "",
+					"dingtalk_connect_internal_corp_id": "",
+					"dingtalk_connect_bypass_registration": false,
+					"dingtalk_connect_sync_corp_email": false,
+					"dingtalk_connect_sync_display_name": false,
+					"dingtalk_connect_sync_dept": false,
+					"dingtalk_connect_sync_corp_email_attr_key": "",
+					"dingtalk_connect_sync_display_name_attr_key": "",
+					"dingtalk_connect_sync_dept_attr_key": "",
+					"dingtalk_connect_sync_corp_email_attr_name": "",
+					"dingtalk_connect_sync_display_name_attr_name": "",
+					"dingtalk_connect_sync_dept_attr_name": ""
 				}
 			}`,
 		},
@@ -1337,7 +1393,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	settingRepo := newStubSettingRepo()
 	settingService := service.NewSettingService(settingRepo, cfg)
 
-	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
@@ -1818,7 +1874,7 @@ func (s *stubAccountRepo) SetRateLimited(ctx context.Context, id int64, resetAt 
 	return errors.New("not implemented")
 }
 
-func (s *stubAccountRepo) SetModelRateLimit(ctx context.Context, id int64, scope string, resetAt time.Time) error {
+func (s *stubAccountRepo) SetModelRateLimit(ctx context.Context, id int64, scope string, resetAt time.Time, reason ...string) error {
 	return errors.New("not implemented")
 }
 
@@ -1972,6 +2028,10 @@ func (stubRedeemCodeRepo) Create(ctx context.Context, code *service.RedeemCode) 
 
 func (stubRedeemCodeRepo) CreateBatch(ctx context.Context, codes []service.RedeemCode) error {
 	return errors.New("not implemented")
+}
+
+func (stubRedeemCodeRepo) BatchUpdate(ctx context.Context, ids []int64, fields service.RedeemCodeBatchUpdateFields) (int64, error) {
+	return 0, errors.New("not implemented")
 }
 
 func (stubRedeemCodeRepo) GetByID(ctx context.Context, id int64) (*service.RedeemCode, error) {

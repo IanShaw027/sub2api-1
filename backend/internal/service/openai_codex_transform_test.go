@@ -41,7 +41,7 @@ func TestApplyCodexOAuthTransform_ToolContinuationPreservesInput(t *testing.T) {
 	second, ok := input[1].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "o1", second["id"])
-	require.Equal(t, "fc1", second["call_id"])
+	require.Equal(t, "fc_1", second["call_id"])
 }
 
 func TestApplyCodexOAuthTransform_MessagesBridgePromptCacheKeyIsHeaderOnly(t *testing.T) {
@@ -120,11 +120,11 @@ func TestApplyCodexOAuthTransform_ToolContinuationNormalizesToolReferenceIDsOnly
 
 	first, ok := input[0].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "fc1", first["id"])
+	require.Equal(t, "fc_1", first["id"])
 
 	second, ok := input[1].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "fc1", second["call_id"])
+	require.Equal(t, "fc_1", second["call_id"])
 }
 
 func TestApplyCodexOAuthTransform_ToolSearchOutputPreservesCallID(t *testing.T) {
@@ -144,7 +144,7 @@ func TestApplyCodexOAuthTransform_ToolSearchOutputPreservesCallID(t *testing.T) 
 	first, ok := input[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "tool_search_output", first["type"])
-	require.Equal(t, "fc1", first["call_id"])
+	require.Equal(t, "fc_1", first["call_id"])
 }
 
 func TestApplyCodexOAuthTransform_CustomAndMCPToolOutputsPreserveCallID(t *testing.T) {
@@ -164,11 +164,11 @@ func TestApplyCodexOAuthTransform_CustomAndMCPToolOutputsPreserveCallID(t *testi
 
 	first, ok := input[0].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "fccustom", first["call_id"])
+	require.Equal(t, "fc_custom", first["call_id"])
 
 	second, ok := input[1].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "fcmcp", second["call_id"])
+	require.Equal(t, "fc_mcp", second["call_id"])
 }
 
 func TestApplyCodexOAuthTransform_ImageAndWebSearchCallsDoNotGainCallID(t *testing.T) {
@@ -221,7 +221,7 @@ func TestApplyCodexOAuthTransform_ConvertsToolRoleMessageToFunctionCallOutput(t 
 	item, ok := input[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "function_call_output", item["type"])
-	require.Equal(t, "fc1", item["call_id"])
+	require.Equal(t, "fc_1", item["call_id"])
 	require.Equal(t, "ok", item["output"])
 	_, hasRole := item["role"]
 	require.False(t, hasRole)
@@ -340,7 +340,7 @@ func TestApplyCodexOAuthTransform_AddsFallbackNameForFunctionCallInput(t *testin
 	require.True(t, ok)
 	require.Equal(t, "function_call", item["type"])
 	require.Equal(t, "tool", item["name"])
-	require.Equal(t, "fc1", item["call_id"])
+	require.Equal(t, "fc_1", item["call_id"])
 }
 
 func TestApplyCodexOAuthTransform_PreservesFunctionCallInputName(t *testing.T) {
@@ -359,7 +359,7 @@ func TestApplyCodexOAuthTransform_PreservesFunctionCallInputName(t *testing.T) {
 	item, ok := input[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "shell", item["name"])
-	require.Equal(t, "fc1", item["call_id"])
+	require.Equal(t, "fc_1", item["call_id"])
 }
 
 func TestApplyCodexOAuthTransform_PreservesMCPToolCallIDAndName(t *testing.T) {
@@ -384,7 +384,7 @@ func TestApplyCodexOAuthTransform_PreservesMCPToolCallIDAndName(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "mcp_tool_call", item["type"])
 	require.Equal(t, "remote_tool", item["name"])
-	require.Equal(t, "fcabc", item["call_id"])
+	require.Equal(t, "fc_abc", item["call_id"])
 }
 
 func TestCodexInputItemRequiresNameTypesAllowCallID(t *testing.T) {
@@ -392,6 +392,123 @@ func TestCodexInputItemRequiresNameTypesAllowCallID(t *testing.T) {
 		require.True(t, codexInputItemRequiresName(typ), typ)
 		require.True(t, isCodexToolCallItemType(typ), typ)
 	}
+}
+
+func TestSanitizeCodexToolName(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"shell", "shell"},
+		{"my_tool-1", "my_tool-1"},
+		{"read.file", "read_file"},
+		{"with space", "with_space"},
+		{"net:fetch", "net_fetch"},
+		{"namespace.sub.tool/v2", "namespace_sub_tool_v2"},
+		{"工具", "__"},
+		{"  trimmed  ", "trimmed"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		require.Equal(t, tc.want, sanitizeCodexToolName(tc.in), tc.in)
+	}
+}
+
+func TestApplyCodexOAuthTransform_SanitizesInvalidToolNamesAcrossTooling(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{
+			map[string]any{
+				"type": "function",
+				"name": "read.file",
+				"parameters": map[string]any{
+					"type":       "object",
+					"properties": map[string]any{},
+				},
+			},
+			map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name": "net:fetch",
+					"parameters": map[string]any{
+						"type":       "object",
+						"properties": map[string]any{},
+					},
+				},
+			},
+		},
+		"tool_choice": map[string]any{
+			"type": "function",
+			"name": "read.file",
+		},
+		"input": []any{
+			map[string]any{"type": "message", "role": "user", "content": "go"},
+			map[string]any{
+				"type":      "function_call",
+				"call_id":   "call_1",
+				"name":      "read.file",
+				"arguments": "{}",
+			},
+			map[string]any{
+				"type":      "mcp_tool_call",
+				"call_id":   "call_2",
+				"name":      "namespace.sub.tool/v2",
+				"arguments": "{}",
+			},
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, true, false)
+
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 2)
+	for _, raw := range tools {
+		tool, ok := raw.(map[string]any)
+		require.True(t, ok)
+		name, _ := tool["name"].(string)
+		require.Regexp(t, `^[a-zA-Z0-9_-]+$`, name)
+		if fn, ok := tool["function"].(map[string]any); ok {
+			fnName, _ := fn["name"].(string)
+			require.Regexp(t, `^[a-zA-Z0-9_-]+$`, fnName)
+		}
+	}
+
+	choice, ok := reqBody["tool_choice"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function", choice["type"])
+	require.Equal(t, "read_file", choice["name"])
+
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 3)
+
+	fnCall, ok := input[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function_call", fnCall["type"])
+	require.Equal(t, "read_file", fnCall["name"])
+
+	mcpCall, ok := input[2].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "mcp_tool_call", mcpCall["type"])
+	require.Equal(t, "namespace_sub_tool_v2", mcpCall["name"])
+}
+
+func TestApplyCodexOAuthTransform_DropsToolChoiceWhenSanitizedNameMissing(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{
+			map[string]any{"type": "function", "name": "shell"},
+		},
+		"tool_choice": map[string]any{
+			"type": "function",
+			"name": "工具",
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, true, false)
+
+	require.Equal(t, "auto", reqBody["tool_choice"])
 }
 
 func TestApplyCodexOAuthTransform_ExplicitStoreFalsePreserved(t *testing.T) {
@@ -923,6 +1040,7 @@ func TestNormalizeCodexModel_Gpt53(t *testing.T) {
 		"gpt-5.4":                   "gpt-5.4",
 		"gpt5.5":                    "gpt-5.5",
 		"openai/gpt5.5":             "gpt-5.5",
+		"codex-auto-review":         "codex-auto-review",
 		"gpt5.4":                    "gpt-5.4",
 		"gpt-5.4-high":              "gpt-5.4",
 		"gpt-5.4-chat-latest":       "gpt-5.4",
@@ -944,7 +1062,6 @@ func TestNormalizeCodexModel_Gpt53(t *testing.T) {
 		"gpt-5.3-codex-spark-high":  "gpt-5.3-codex-spark",
 		"gpt-5.3-codex-spark-xhigh": "gpt-5.3-codex-spark",
 		"gpt 5.3 codex":             "gpt-5.3-codex",
-		"codex-auto-review":         "codex-auto-review",
 	}
 
 	for input, expected := range cases {

@@ -21,13 +21,13 @@ RUN apk add --no-cache \
     ca-certificates \
     tzdata \
     curl \
-    su-exec \
     libpq \
     zstd-libs \
     lz4-libs \
     krb5-libs \
     libldap \
     libedit \
+    su-exec \
     && rm -rf /var/cache/apk/*
 
 # Copy pg_dump and psql from a version-matched PostgreSQL image so backup and
@@ -44,6 +44,7 @@ WORKDIR /app
 
 # Copy pre-built binary from GoReleaser
 COPY sub2api /app/sub2api
+COPY backend/resources /app/resources
 
 # Create data directory
 RUN mkdir -p /app/data && chown -R sub2api:sub2api /app

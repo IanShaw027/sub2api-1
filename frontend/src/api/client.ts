@@ -27,6 +27,42 @@ let isRefreshing = false
 // Queue of requests waiting for token refresh
 let refreshSubscribers: Array<(token: string) => void> = []
 
+function normalizeRequestUrl(url: string): string {
+  if (!url) {
+    return ''
+  }
+
+  try {
+    const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    return new URL(url, base).pathname
+  } catch {
+    const stripped = url.split('?')[0]?.split('#')[0] ?? url
+    if (!stripped) {
+      return ''
+    }
+    return stripped.startsWith('/') ? stripped : `/${stripped.replace(/^\/+/, '')}`
+  }
+}
+
+function isPublicPaymentRecoveryPath(path: string): boolean {
+  return path.startsWith('/payment/public/orders/')
+}
+
+function isPublicPaymentRecoveryEndpoint(url: string): boolean {
+  return isPublicPaymentRecoveryPath(normalizeRequestUrl(url))
+}
+
+function isPaymentResultRecoveryRequest(url: string): boolean {
+  if (typeof window === 'undefined' || window.location.pathname !== '/payment/result') {
+    return false
+  }
+
+  const path = normalizeRequestUrl(url)
+  return path === '/payment/orders/verify' ||
+    /^\/payment\/orders\/\d+$/.test(path) ||
+    isPublicPaymentRecoveryPath(path)
+}
+
 /**
  * Subscribe to token refresh completion
  */
@@ -57,7 +93,8 @@ apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     // Attach token from localStorage
     const token = localStorage.getItem('auth_token')
-    if (token && config.headers) {
+    const url = String(config.url || '')
+    if (token && config.headers && !isPublicPaymentRecoveryEndpoint(url)) {
       config.headers.Authorization = `Bearer ${token}`
     }
 
@@ -118,6 +155,10 @@ apiClient.interceptors.response.use(
     if (error.response) {
       const { status, data } = error.response
       const url = String(error.config?.url || '')
+      const normalizedUrl = normalizeRequestUrl(url)
+      const suppressAuthRedirect = isPaymentResultRecoveryRequest(normalizedUrl)
+      const isPublicPaymentRecovery = isPublicPaymentRecoveryPath(normalizedUrl)
+      const preserveAuthState = isPublicPaymentRecovery
 
       // Validate `data` shape to avoid HTML error pages breaking our error handling.
       const apiData = (typeof data === 'object' && data !== null ? data : {}) as Record<string, any>
@@ -156,7 +197,7 @@ apiClient.interceptors.response.use(
           url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/refresh')
 
         // If we have a refresh token and this is not an auth endpoint, try to refresh
-        if (refreshToken && !isAuthEndpoint) {
+        if (refreshToken && !isAuthEndpoint && !isPublicPaymentRecovery) {
           if (isRefreshing) {
             // Wait for the ongoing refresh to complete
             return new Promise((resolve, reject) => {
@@ -225,13 +266,15 @@ apiClient.interceptors.response.use(
             isRefreshing = false
 
             // Clear tokens and redirect to login
-            localStorage.removeItem('auth_token')
-            localStorage.removeItem('refresh_token')
-            localStorage.removeItem('auth_user')
-            localStorage.removeItem('token_expires_at')
-            sessionStorage.setItem('auth_expired', '1')
+            if (!preserveAuthState) {
+              localStorage.removeItem('auth_token')
+              localStorage.removeItem('refresh_token')
+              localStorage.removeItem('auth_user')
+              localStorage.removeItem('token_expires_at')
+              sessionStorage.setItem('auth_expired', '1')
+            }
 
-            if (!window.location.pathname.includes('/login')) {
+            if (!suppressAuthRedirect && !window.location.pathname.includes('/login')) {
               window.location.href = '/login'
             }
 
@@ -254,15 +297,17 @@ apiClient.interceptors.response.use(
               ? authHeader.length > 0
               : !!authHeader
 
-        localStorage.removeItem('auth_token')
-        localStorage.removeItem('refresh_token')
-        localStorage.removeItem('auth_user')
-        localStorage.removeItem('token_expires_at')
-        if ((hasToken || sentAuth) && !isAuthEndpoint) {
+        if (!preserveAuthState) {
+          localStorage.removeItem('auth_token')
+          localStorage.removeItem('refresh_token')
+          localStorage.removeItem('auth_user')
+          localStorage.removeItem('token_expires_at')
+        }
+        if (!preserveAuthState && (hasToken || sentAuth) && !isAuthEndpoint) {
           sessionStorage.setItem('auth_expired', '1')
         }
         // Only redirect if not already on login page
-        if (!window.location.pathname.includes('/login')) {
+        if (!suppressAuthRedirect && !window.location.pathname.includes('/login')) {
           window.location.href = '/login'
         }
       }

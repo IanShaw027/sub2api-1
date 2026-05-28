@@ -29,6 +29,26 @@
         </div>
       </div>
 
+      <div
+        v-if="form.provider === PROVIDER_OPENAI"
+        class="rounded-lg border border-blue-100 bg-blue-50/50 p-3 dark:border-blue-500/20 dark:bg-blue-500/10"
+      >
+        <label class="input-label">{{ apiModeFieldLabel }}</label>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <button
+            v-for="opt in apiModeOptions"
+            :key="opt.value"
+            type="button"
+            class="rounded-lg border-2 px-3 py-2 text-left transition-colors"
+            :class="apiModeButtonClass(opt.value)"
+            @click="form.api_mode = opt.value"
+          >
+            <span class="block text-sm font-semibold">{{ opt.label }}</span>
+            <span class="mt-0.5 block text-xs opacity-80">{{ opt.hint }}</span>
+          </button>
+        </div>
+      </div>
+
       <div>
         <label class="input-label">{{ t('admin.channelMonitor.form.endpoint') }} <span class="text-red-500">*</span></label>
         <div class="flex gap-2">
@@ -115,6 +135,8 @@
           </div>
 
           <MonitorAdvancedRequestConfig
+            :provider="form.provider"
+            :api-mode="form.api_mode"
             :extra-headers="form.extra_headers"
             :body-override-mode="form.body_override_mode"
             :body-override="form.body_override"
@@ -165,6 +187,7 @@ import { adminAPI } from '@/api/admin'
 import { keysAPI } from '@/api/keys'
 import { userGroupsAPI } from '@/api/groups'
 import type {
+  APIMode,
   BodyOverrideMode,
   ChannelMonitor,
   CreateParams,
@@ -186,6 +209,8 @@ import {
   PROVIDER_OPENAI,
   PROVIDER_ANTHROPIC,
   PROVIDER_GEMINI,
+  API_MODE_CHAT_COMPLETIONS,
+  API_MODE_RESPONSES,
   DEFAULT_INTERVAL_SECONDS,
 } from '@/constants/channelMonitor'
 
@@ -224,6 +249,7 @@ const userGroupRates = ref<Record<number, number>>({})
 interface MonitorForm {
   name: string
   provider: Provider
+  api_mode: APIMode
   endpoint: string
   api_key: string
   primary_model: string
@@ -241,6 +267,7 @@ interface MonitorForm {
 const form = reactive<MonitorForm>({
   name: '',
   provider: PROVIDER_ANTHROPIC,
+  api_mode: API_MODE_CHAT_COMPLETIONS,
   endpoint: '',
   api_key: '',
   primary_model: '',
@@ -254,30 +281,36 @@ const form = reactive<MonitorForm>({
   body_override: null,
 })
 
-// 可用模板列表（进入 dialog 时一次性拉取 cache；按 provider 过滤）。
+// 可用模板列表（进入 dialog 时一次性拉取 cache；OpenAI 再按 api_mode 过滤）。
 const templatesCache = ref<ChannelMonitorTemplate[]>([])
 const templatesLoading = ref(false)
+let templatesLoadPromise: Promise<void> | null = null
 
 const templateOptions = computed(() => {
-  const items = templatesCache.value.filter((t) => t.provider === form.provider)
+  const items = templatesCache.value.filter((tpl) => templateMatchesCurrentForm(tpl))
   return [
     { value: '', label: t('admin.channelMonitor.templateField.none') },
-    ...items.map((t) => ({ value: String(t.id), label: t.name })),
+    ...items.map((tpl) => ({ value: String(tpl.id), label: tpl.name })),
   ]
 })
 
 async function loadTemplates() {
   if (templatesCache.value.length > 0) return
+  if (templatesLoadPromise) return templatesLoadPromise
   templatesLoading.value = true
-  try {
-    const { items } = await adminAPI.channelMonitorTemplate.list()
-    templatesCache.value = items
-  } catch (err: unknown) {
-    // 模板拉取失败不阻塞监控表单，用户可以不选模板
-    console.warn('load monitor templates failed', err)
-  } finally {
-    templatesLoading.value = false
-  }
+  templatesLoadPromise = (async () => {
+    try {
+      const { items } = await adminAPI.channelMonitorTemplate.list()
+      templatesCache.value = items
+    } catch (err: unknown) {
+      // 模板拉取失败不阻塞监控表单，用户可以不选模板
+      console.warn('load monitor templates failed', err)
+    } finally {
+      templatesLoading.value = false
+      templatesLoadPromise = null
+    }
+  })()
+  return templatesLoadPromise
 }
 
 // 模板下拉绑定：value 是 string（Select 组件约束），需要与 number | null 互转。
@@ -290,9 +323,12 @@ const templateSelectValue = computed<string>({
     }
     const id = Number(raw)
     if (!Number.isFinite(id)) return
+    const tpl = templatesCache.value.find((item) => item.id === id)
+    if (!tpl) return
+    if (tpl.provider === PROVIDER_OPENAI) {
+      form.api_mode = normalizeAPIMode(tpl.api_mode)
+    }
     form.template_id = id
-    // 应用模板 = 拷贝快照
-    const tpl = templatesCache.value.find((t) => t.id === id)
     if (tpl) {
       form.extra_headers = { ...(tpl.extra_headers || {}) }
       form.body_override_mode = tpl.body_override_mode
@@ -312,22 +348,87 @@ const providerOptions = computed<ProviderOption[]>(() => [
   { value: PROVIDER_GEMINI, label: t('monitorCommon.providers.gemini') },
 ])
 
+function translateOrFallback(key: string, fallback: string): string {
+  const translated = t(key)
+  return translated === key ? fallback : translated
+}
+
+const apiModeFieldLabel = computed(() =>
+  translateOrFallback('admin.channelMonitor.form.apiMode', 'API Mode'),
+)
+
+const apiModeOptions = computed<{ value: APIMode; label: string; hint: string }[]>(() => [
+  {
+    value: API_MODE_CHAT_COMPLETIONS,
+    label: translateOrFallback('admin.channelMonitor.form.apiModeChatCompletions', 'Chat Completions'),
+    hint: translateOrFallback('admin.channelMonitor.form.apiModeChatCompletionsHint', 'Use the Chat Completions request shape.'),
+  },
+  {
+    value: API_MODE_RESPONSES,
+    label: translateOrFallback('admin.channelMonitor.form.apiModeResponses', 'Responses'),
+    hint: translateOrFallback('admin.channelMonitor.form.apiModeResponsesHint', 'Use the Responses request shape.'),
+  },
+])
+
+function normalizeAPIMode(mode: APIMode | undefined | null): APIMode {
+  return mode === API_MODE_RESPONSES ? API_MODE_RESPONSES : API_MODE_CHAT_COMPLETIONS
+}
+
+function templateMatchesCurrentForm(tpl: ChannelMonitorTemplate): boolean {
+  if (tpl.provider !== form.provider) return false
+  if (form.provider !== PROVIDER_OPENAI) return true
+  return normalizeAPIMode(tpl.api_mode) === normalizeAPIMode(form.api_mode)
+}
+
+function syncSelectedTemplateCompatibility() {
+  if (form.template_id == null || templatesCache.value.length === 0) return
+  const tpl = templatesCache.value.find((item) => item.id === form.template_id)
+  if (!tpl || !templateMatchesCurrentForm(tpl)) {
+    form.template_id = null
+    form.extra_headers = {}
+    form.body_override_mode = 'off'
+    form.body_override = null
+  }
+}
+
 let hydratingForm = false
 
 // Clear provider-specific fields only when the user changes provider. Loading an
 // existing monitor also assigns form.provider and must preserve template_id.
-watch(() => form.provider, () => {
+watch(
+  () => form.provider,
+  (provider) => {
+    if (hydratingForm) return
+    form.api_key = ''
+    if (provider !== PROVIDER_OPENAI) {
+      form.api_mode = API_MODE_CHAT_COMPLETIONS
+    }
+    form.template_id = null
+    form.extra_headers = {}
+    form.body_override_mode = 'off'
+    form.body_override = null
+  },
+  { flush: 'sync' },
+)
+
+watch(
+  () => form.api_mode,
+  () => {
+    if (hydratingForm || form.provider !== PROVIDER_OPENAI) return
+    syncSelectedTemplateCompatibility()
+  },
+  { flush: 'sync' },
+)
+
+watch(templatesCache, () => {
   if (hydratingForm) return
-  form.api_key = ''
-  form.template_id = null
-  form.extra_headers = {}
-  form.body_override_mode = 'off'
-  form.body_override = null
+  syncSelectedTemplateCompatibility()
 })
 
 function resetForm() {
   form.name = ''
   form.provider = PROVIDER_ANTHROPIC
+  form.api_mode = API_MODE_CHAT_COMPLETIONS
   form.endpoint = ''
   form.api_key = ''
   form.primary_model = ''
@@ -345,6 +446,7 @@ function loadFromMonitor(m: ChannelMonitor) {
 	hydratingForm = true
 	form.name = m.name
 	form.provider = m.provider
+  form.api_mode = normalizeAPIMode(m.api_mode)
   form.endpoint = m.endpoint
   form.api_key = ''
   form.primary_model = m.primary_model
@@ -409,6 +511,7 @@ function buildPayload(): CreateParams {
   return {
     name: form.name.trim(),
     provider: form.provider,
+    api_mode: form.provider === PROVIDER_OPENAI ? form.api_mode : API_MODE_CHAT_COMPLETIONS,
     endpoint: form.endpoint.trim(),
     api_key: form.api_key.trim(),
     primary_model: form.primary_model.trim(),
@@ -423,6 +526,14 @@ function buildPayload(): CreateParams {
   }
 }
 
+function apiModeButtonClass(mode: APIMode): string {
+  const active = form.api_mode === mode
+  if (active) {
+    return 'border-primary-500 bg-white text-primary-700 shadow-sm dark:border-primary-400 dark:bg-primary-500/15 dark:text-primary-300'
+  }
+  return 'border-blue-100 bg-white/70 text-gray-600 hover:border-primary-300 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400'
+}
+
 async function handleSubmit() {
   if (submitting.value) return
   if (!form.name.trim()) {
@@ -432,6 +543,9 @@ async function handleSubmit() {
   if (!form.primary_model.trim()) {
     appStore.showError(t('admin.channelMonitor.primaryModelRequired'))
     return
+  }
+  if (form.provider === PROVIDER_OPENAI && form.template_id != null) {
+    await loadTemplates()
   }
 
   submitting.value = true

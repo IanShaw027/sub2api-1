@@ -865,7 +865,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	framesSeen := 0
 	completedToolUses := 0
 	toolOrder := make([]string, 0)
-	toolNames := make([]string, 0)
+	var toolNames []string
 	var lastContextUsagePercentage *float64
 	simulatedThinking := strings.TrimSpace(thinkingOverride)
 	nativeThinkingBuffer := ""
@@ -1174,7 +1174,6 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						}
 						state.Stopped = true
 						completedToolUses++
-						toolNames = append(toolNames, state.Name)
 						_, _ = toolOutputBuilder.WriteString(state.Name)
 						if err := writeSSEEvent(writer, "content_block_stop", map[string]any{
 							"type":  "content_block_stop",
@@ -1411,9 +1410,7 @@ func splitKiroThinkingContent(text string) (before, thinking, after string, foun
 	}
 	before = text[:start]
 	thinking = afterOpen[:end]
-	if strings.HasPrefix(thinking, "\n") {
-		thinking = thinking[1:]
-	}
+	thinking = strings.TrimPrefix(thinking, "\n")
 	after = afterOpen[end+len("</thinking>"):]
 	after = strings.TrimLeft(after, "\n")
 	return before, thinking, after, true
@@ -1428,17 +1425,17 @@ func appendKiroNativeContentBlocks(text string, content []map[string]any) ([]map
 		if !found {
 			if trimmed := strings.TrimSpace(remaining); trimmed != "" {
 				content = append(content, map[string]any{"type": "text", "text": remaining})
-				textOutput.WriteString(remaining)
+				_, _ = textOutput.WriteString(remaining)
 			}
 			break
 		}
 		if strings.TrimSpace(before) != "" {
 			content = append(content, map[string]any{"type": "text", "text": before})
-			textOutput.WriteString(before)
+			_, _ = textOutput.WriteString(before)
 		}
 		if thinking != "" {
 			content = append(content, map[string]any{"type": "thinking", "thinking": thinking})
-			thinkingOutput.WriteString(thinking)
+			_, _ = thinkingOutput.WriteString(thinking)
 		}
 		remaining = after
 	}
@@ -1463,7 +1460,7 @@ func collectKiroAssistantResponseText(frames []*kiroFrame) (string, bool) {
 			continue
 		}
 		hasAssistantResponse = true
-		textBuilder.WriteString(content)
+		_, _ = textBuilder.WriteString(content)
 	}
 	return textBuilder.String(), hasAssistantResponse
 }
@@ -1723,15 +1720,6 @@ func buildKiroToolUseBlock(state *kiroToolState) (map[string]any, bool) {
 		"name":  strings.TrimSpace(state.Name),
 		"input": input,
 	}, true
-}
-
-func kiroHasVisibleToolStates(states map[string]*kiroToolState, order []string) bool {
-	for _, toolUseID := range order {
-		if kiroToolStateHasVisibleOutput(states[toolUseID]) {
-			return true
-		}
-	}
-	return false
 }
 
 func kiroVisibleToolStateCounts(states map[string]*kiroToolState, order []string) (visible int, completed int, partial int) {

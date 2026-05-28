@@ -46,7 +46,10 @@ func (s *PaymentService) GetPublicOrderByResumeToken(ctx context.Context, token 
 		return nil, invalidResumeTokenMatchError()
 	}
 	if paymentOrderStatusAllowsPaidReconciliation(order.Status) {
-		result := s.checkPaid(ctx, order)
+		result, err := s.checkPaid(ctx, order)
+		if err != nil {
+			return nil, err
+		}
 		if result == checkPaidResultAlreadyPaid {
 			order, err = s.entClient.PaymentOrder.Get(ctx, order.ID)
 			if err != nil {

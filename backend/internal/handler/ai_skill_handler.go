@@ -569,13 +569,21 @@ func (h *AIHandler) RunSkill(c *gin.Context) {
 		return
 	}
 	executeUserIdempotentJSON(c, "skills:runs:create", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		skill, _, err := loadSkillForViewer(ctx, module, skillID, subject.UserID)
+		if err != nil {
+			return nil, err
+		}
+		versionID, err := resolveSkillRunVersionForViewer(skill, req.VersionID, subject.UserID)
+		if err != nil {
+			return nil, err
+		}
 		attachments, cleanupIDs, err := h.buildRunAttachments(ctx, subject.UserID, req.Attachments)
 		if err != nil {
 			return nil, err
 		}
 		result, err := module.RunService.Execute(ctx, subject.UserID, &service.AISkillRunInput{
 			SkillID:        skillID,
-			VersionID:      req.VersionID,
+			VersionID:      versionID,
 			Mode:           strings.TrimSpace(req.Mode),
 			Parameters:     req.Parameters,
 			Attachments:    attachments,
@@ -613,17 +621,37 @@ func (h *AIHandler) runSkillWithMode(c *gin.Context, mode string) {
 		response.BadRequest(c, "Invalid skill ID")
 		return
 	}
+	var req skillRunRequest
+	if c.Request.Body != nil && c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "Invalid request body")
+			return
+		}
+	}
 	versionID := parseOptionalUserAIID(c.Query("version_id"))
+	parameters := req.Parameters
+	if parameters == nil {
+		parameters = map[string]any{}
+	}
 	executeUserIdempotentJSON(c, "skills:runs:"+mode, map[string]any{
 		"skill_id":   skillID,
 		"version_id": versionID,
 		"mode":       mode,
+		"parameters": parameters,
 	}, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		skill, _, err := loadSkillForViewer(ctx, module, skillID, subject.UserID)
+		if err != nil {
+			return nil, err
+		}
+		versionID, err := resolveSkillRunVersionForViewer(skill, versionID, subject.UserID)
+		if err != nil {
+			return nil, err
+		}
 		result, err := module.RunService.Execute(ctx, subject.UserID, &service.AISkillRunInput{
 			SkillID:        skillID,
 			VersionID:      versionID,
 			Mode:           mode,
-			Parameters:     map[string]any{},
+			Parameters:     parameters,
 			IdempotencyKey: strings.TrimSpace(c.GetHeader("Idempotency-Key")),
 			Trace:          buildUserAITrace(aiTraceRequest{}),
 		})
@@ -819,6 +847,23 @@ func skillVersionVisibleToViewer(ownerUserID, viewerUserID int64, version *domai
 		return true
 	}
 	return domain.CanUseAISkillVersion(version.ReviewStatus)
+}
+
+func resolveSkillRunVersionForViewer(skill *domain.AISkill, requestedVersionID *int64, viewerUserID int64) (*int64, error) {
+	if skill == nil {
+		return nil, infraerrors.NotFound("AI_SKILL_NOT_FOUND", "ai skill not found")
+	}
+	if skill.UserID > 0 && skill.UserID == viewerUserID {
+		return requestedVersionID, nil
+	}
+	if skill.PublishedVersionID == nil || *skill.PublishedVersionID <= 0 {
+		return nil, infraerrors.Forbidden("AI_SKILL_ACCESS_DENIED", "not authorized to access this skill")
+	}
+	publishedVersionID := *skill.PublishedVersionID
+	if requestedVersionID != nil && *requestedVersionID > 0 && *requestedVersionID != publishedVersionID {
+		return nil, infraerrors.Forbidden("AI_SKILL_ACCESS_DENIED", "not authorized to access this skill")
+	}
+	return &publishedVersionID, nil
 }
 
 func skillViewForViewer(skill *domain.AISkill, viewerUserID int64) *domain.AISkill {

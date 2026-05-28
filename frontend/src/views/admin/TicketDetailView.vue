@@ -108,14 +108,14 @@
       :show="showTemplateDialog"
       :templates="replyTemplates"
       :saving="savingTemplates"
-      @close="showTemplateDialog = false"
+      @close="closeTemplateDialog"
       @save="saveTemplates"
     />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -156,6 +156,10 @@ const availableAdminStatuses = computed(() => {
 const canUpdateStatus = computed(() => availableAdminStatuses.value.length > 0)
 const ticketID = computed(() => Number(route.params.id))
 let loadDetailRequestID = 0
+let replyRequestID = 0
+let statusRequestID = 0
+let saveTemplatesRequestID = 0
+let templateDialogSessionID = 0
 
 function isAdminStatusActionAllowed(currentStatus: TicketStatus, lastReplyRole?: SupportTicket['last_reply_role'], nextStatus?: TicketStatus) {
   if (!nextStatus) return false
@@ -167,13 +171,13 @@ function isAdminStatusActionAllowed(currentStatus: TicketStatus, lastReplyRole?:
   return true
 }
 
-async function loadDetail() {
+async function loadDetail(targetTicketID = ticketID.value) {
   const requestID = ++loadDetailRequestID
   try {
     loading.value = true
     const [ticketData, messageData] = await Promise.all([
-      adminTicketsAPI.getAdminTicket(ticketID.value),
-      adminTicketsAPI.listAdminTicketMessages(ticketID.value),
+      adminTicketsAPI.getAdminTicket(targetTicketID),
+      adminTicketsAPI.listAdminTicketMessages(targetTicketID),
     ])
     if (requestID !== loadDetailRequestID) {
       return
@@ -201,16 +205,26 @@ async function loadReplyTemplates() {
 }
 
 async function reply(content: string, attachments?: { media_id: number }[]) {
+  const currentTicketID = ticketID.value
+  const requestID = ++replyRequestID
   try {
     sendingReply.value = true
-    await adminTicketsAPI.replyAdminTicket(ticketID.value, content, attachments)
+    await adminTicketsAPI.replyAdminTicket(currentTicketID, content, attachments)
+    if (requestID !== replyRequestID || currentTicketID !== ticketID.value) {
+      return
+    }
     replyDraft.value = ''
     clearComposerKey.value += 1
-    await loadDetail()
+    await loadDetail(currentTicketID)
   } catch (err: any) {
+    if (requestID !== replyRequestID || currentTicketID !== ticketID.value) {
+      return
+    }
     appStore.showError(err?.message || t('common.unknownError'))
   } finally {
-    sendingReply.value = false
+    if (requestID === replyRequestID) {
+      sendingReply.value = false
+    }
   }
 }
 
@@ -241,23 +255,46 @@ function applyTemplate(content: string) {
 
 function openTemplateDialog() {
   showTemplateMenu.value = false
+  templateDialogSessionID += 1
   showTemplateDialog.value = true
 }
 
+function closeTemplateDialog() {
+  showTemplateDialog.value = false
+  savingTemplates.value = false
+  templateDialogSessionID += 1
+}
+
 async function saveTemplates(templates: TicketReplyTemplate[]) {
+  const requestID = ++saveTemplatesRequestID
+  const dialogSessionID = templateDialogSessionID
   try {
     savingTemplates.value = true
     await adminTicketsAPI.replaceAdminTicketReplyTemplates(templates)
-    replyTemplates.value = await adminTicketsAPI.listAdminTicketReplyTemplates()
-    showTemplateDialog.value = false
+    if (requestID !== saveTemplatesRequestID) {
+      return
+    }
+    const latestTemplates = await adminTicketsAPI.listAdminTicketReplyTemplates()
+    if (requestID !== saveTemplatesRequestID) {
+      return
+    }
+    replyTemplates.value = latestTemplates
+    if (showTemplateDialog.value && dialogSessionID === templateDialogSessionID) {
+      showTemplateDialog.value = false
+      nextTick(() => {
+        templateTriggerRef.value?.focus()
+      })
+    }
     appStore.showSuccess(t('common.saved'))
-    nextTick(() => {
-      templateTriggerRef.value?.focus()
-    })
   } catch (err: any) {
+    if (requestID !== saveTemplatesRequestID) {
+      return
+    }
     appStore.showError(err?.message || t('common.unknownError'))
   } finally {
-    savingTemplates.value = false
+    if (requestID === saveTemplatesRequestID) {
+      savingTemplates.value = false
+    }
   }
 }
 
@@ -297,21 +334,42 @@ function handleTemplateMouseLeave() {
 }
 
 async function updateStatus(status: TicketStatus) {
+  const currentTicketID = ticketID.value
+  const requestID = ++statusRequestID
   try {
     actionLoading.value = true
-    await adminTicketsAPI.updateAdminTicketStatus(ticketID.value, status)
-    await loadDetail()
+    await adminTicketsAPI.updateAdminTicketStatus(currentTicketID, status)
+    if (requestID !== statusRequestID || currentTicketID !== ticketID.value) {
+      return
+    }
+    await loadDetail(currentTicketID)
     appStore.showSuccess(t('tickets.messages.statusUpdated'))
   } catch (err: any) {
+    if (requestID !== statusRequestID || currentTicketID !== ticketID.value) {
+      return
+    }
     appStore.showError(err?.message || t('common.unknownError'))
   } finally {
-    actionLoading.value = false
+    if (requestID === statusRequestID) {
+      actionLoading.value = false
+    }
   }
 }
 
 onMounted(loadReplyTemplates)
 
-watch(ticketID, () => {
+onUnmounted(() => {
+  loadDetailRequestID += 1
+  replyRequestID += 1
+  statusRequestID += 1
+  saveTemplatesRequestID += 1
+})
+
+watch(ticketID, (nextTicketID, previousTicketID) => {
+  if (nextTicketID !== previousTicketID && previousTicketID !== undefined) {
+    replyDraft.value = ''
+    clearComposerKey.value += 1
+  }
   loadDetail()
 }, { immediate: true })
 </script>

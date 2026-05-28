@@ -66,8 +66,8 @@ const skillsStore = vi.hoisted(() => ({
         review_note: null,
         can_submit_review: false,
         can_publish: false,
-        can_test: false,
-        can_use: false,
+        can_test: true,
+        can_use: true,
         variable_schema: [],
         content: null,
         metadata: {},
@@ -159,7 +159,8 @@ vi.mock('@/components/skills/SkillCenterNav.vue', () => ({
 vi.mock('@/components/skills/SkillVariableForm.vue', () => ({
   default: {
     name: 'SkillVariableFormStub',
-    template: '<section />',
+    emits: ['update:modelValue'],
+    template: '<button class="skill-variable-form-stub" type="button" @click="$emit(`update:modelValue`, { api_key: `abc123`, retries: 2 })" />',
   },
 }))
 
@@ -213,6 +214,30 @@ describe('SkillDetailView', () => {
     const hrefs = wrapper.findAll('a').map((item) => item.attributes('href'))
 
     expect(hrefs).not.toContain('/skills/42/runs')
+    expect(hrefs).not.toContain('/skills/42/versions')
     expect(buttonLabels).not.toContain('安装')
+  })
+
+  it('forwards user variables into skill runs', async () => {
+    const wrapper = mount(SkillDetailView)
+    await flushPromises()
+
+    await wrapper.get('.skill-variable-form-stub').trigger('click')
+    await flushPromises()
+
+    const buttons = wrapper.findAll('button')
+    await buttons.find((item) => item.text() === '测试')?.trigger('click')
+    await flushPromises()
+    await buttons.find((item) => item.text() === '使用')?.trigger('click')
+    await flushPromises()
+
+    expect(skillsStore.testSkillVersion).toHaveBeenCalledWith(42, 101, {
+      api_key: 'abc123',
+      retries: 2,
+    })
+    expect(skillsStore.useSkillVersion).toHaveBeenCalledWith(42, 101, {
+      api_key: 'abc123',
+      retries: 2,
+    })
   })
 })

@@ -233,6 +233,11 @@ describe('useAuthStore', () => {
         token_field: 'pending_auth_token',
         provider: 'wechat',
         redirect: '/profile',
+        adoption_required: undefined,
+        suggested_display_name: undefined,
+        suggested_avatar_url: undefined,
+        adopt_display_name: undefined,
+        adopt_avatar: undefined,
       })
     })
   })
@@ -287,7 +292,9 @@ describe('useAuthStore', () => {
         redirect: '/welcome',
         adoption_required: true,
         suggested_display_name: 'OIDC Nick',
-        suggested_avatar_url: undefined
+        suggested_avatar_url: undefined,
+        adopt_display_name: undefined,
+        adopt_avatar: undefined,
       })
     })
 

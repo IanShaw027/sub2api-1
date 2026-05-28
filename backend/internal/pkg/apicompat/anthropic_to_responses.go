@@ -22,12 +22,15 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 	}
 
 	out := &ResponsesRequest{
-		Model:       req.Model,
-		Input:       inputJSON,
-		Temperature: req.Temperature,
-		TopP:        req.TopP,
-		Stream:      req.Stream,
-		Include:     responsesIncludeForAnthropicTools(req.Tools),
+		Model:   req.Model,
+		Input:   inputJSON,
+		Stream:  req.Stream,
+		Include: responsesIncludeForAnthropicTools(req.Tools),
+	}
+
+	if !isReasoningModel(req.Model) {
+		out.Temperature = req.Temperature
+		out.TopP = req.TopP
 	}
 
 	storeFalse := false
@@ -258,6 +261,12 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 	}
 
 	return out, nil
+}
+
+// GPT-5 family models are reasoning-only on the Responses API and reject
+// sampling parameters like temperature/top_p when they are explicitly sent.
+func isReasoningModel(model string) bool {
+	return strings.HasPrefix(model, "gpt-5")
 }
 
 // anthropicAssistantToResponses handles an Anthropic assistant message.

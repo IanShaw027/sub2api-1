@@ -60,6 +60,24 @@ describe('API Client', () => {
       expect(config.headers.get('Authorization')).toBeFalsy()
     })
 
+    it('公共支付恢复接口不附加 Authorization 头', async () => {
+      localStorage.setItem('auth_token', 'stale-token')
+
+      const adapter = vi.fn().mockResolvedValue({
+        status: 200,
+        data: { code: 0, data: {} },
+        headers: {},
+        config: {},
+        statusText: 'OK',
+      })
+      apiClient.defaults.adapter = adapter
+
+      await apiClient.post('/payment/public/orders/verify', { out_trade_no: 'legacy-order-no' })
+
+      const config = adapter.mock.calls[0][0]
+      expect(config.headers.get('Authorization')).toBeFalsy()
+    })
+
     it('GET 请求自动附加 timezone 参数', async () => {
       const adapter = vi.fn().mockResolvedValue({
         status: 200,
@@ -177,6 +195,124 @@ describe('API Client', () => {
       expect(localStorage.getItem('auth_token')).toBeNull()
 
       // 恢复 location
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
+
+    it('payment result 页面上的支付恢复 401 不会重定向到 /login', async () => {
+      localStorage.setItem('auth_token', 'expired-token')
+
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/payment/result', href: '/payment/result' },
+        writable: true,
+      })
+
+      const adapter = vi.fn().mockRejectedValue({
+        response: {
+          status: 401,
+          data: { code: 'TOKEN_EXPIRED', message: 'Token expired' },
+        },
+        config: {
+          url: '/payment/orders/verify',
+          headers: { Authorization: 'Bearer expired-token' },
+        },
+        code: 'ERR_BAD_REQUEST',
+      })
+      apiClient.defaults.adapter = adapter
+
+      await expect(apiClient.post('/payment/orders/verify', { out_trade_no: 'legacy-order-no' })).rejects.toEqual(
+        expect.objectContaining({
+          status: 401,
+          code: 'TOKEN_EXPIRED',
+        })
+      )
+
+      expect(localStorage.getItem('auth_token')).toBeNull()
+      expect(window.location.href).toBe('/payment/result')
+
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
+
+    it('payment result 页面上的非支付恢复 401 仍然会重定向到 /login', async () => {
+      localStorage.setItem('auth_token', 'expired-token')
+
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/payment/result', href: '/payment/result' },
+        writable: true,
+      })
+
+      const adapter = vi.fn().mockRejectedValue({
+        response: {
+          status: 401,
+          data: { code: 'TOKEN_EXPIRED', message: 'Token expired' },
+        },
+        config: {
+          url: '/users/me',
+          headers: { Authorization: 'Bearer expired-token' },
+        },
+        code: 'ERR_BAD_REQUEST',
+      })
+      apiClient.defaults.adapter = adapter
+
+      await expect(apiClient.get('/users/me')).rejects.toEqual(
+        expect.objectContaining({
+          status: 401,
+          code: 'TOKEN_EXPIRED',
+        })
+      )
+
+      expect(localStorage.getItem('auth_token')).toBeNull()
+      expect(window.location.href).toBe('/login')
+
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
+
+    it('payment result 页面上的公共支付恢复 401 不会清空现有登录态', async () => {
+      localStorage.setItem('auth_token', 'still-valid-token')
+      localStorage.setItem('refresh_token', 'still-valid-refresh-token')
+      localStorage.setItem('auth_user', JSON.stringify({ id: 1, email: 'user@example.com' }))
+
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/payment/result', href: '/payment/result' },
+        writable: true,
+      })
+
+      const adapter = vi.fn().mockRejectedValue({
+        response: {
+          status: 401,
+          data: { code: 'ORDER_NOT_FOUND', message: 'Order not found' },
+        },
+        config: {
+          url: '/payment/public/orders/legacy-order-no',
+          headers: {},
+        },
+        code: 'ERR_BAD_REQUEST',
+      })
+      apiClient.defaults.adapter = adapter
+
+      await expect(apiClient.get('/payment/public/orders/legacy-order-no')).rejects.toEqual(
+        expect.objectContaining({
+          status: 401,
+          code: 'ORDER_NOT_FOUND',
+        })
+      )
+
+      expect(localStorage.getItem('auth_token')).toBe('still-valid-token')
+      expect(localStorage.getItem('refresh_token')).toBe('still-valid-refresh-token')
+      expect(localStorage.getItem('auth_user')).toBe(JSON.stringify({ id: 1, email: 'user@example.com' }))
+      expect(window.location.href).toBe('/payment/result')
+
       Object.defineProperty(window, 'location', {
         value: originalLocation,
         writable: true,

@@ -30,6 +30,9 @@ builds:
       - -X main.Commit={{.Commit}}
       - -X main.Date={{.Date}}
       - -X main.BuildType=release
+      - '-X main.Dirty={{ if .Env.DIRTY }}{{ .Env.DIRTY }}{{ else }}unknown{{ end }}'
+      - '-X main.SourceHash={{ if .Env.SOURCE_HASH }}{{ .Env.SOURCE_HASH }}{{ else }}unknown{{ end }}'
+      - '-X main.FrontendDistHash={{ if .Env.FRONTEND_DIST_HASH }}{{ .Env.FRONTEND_DIST_HASH }}{{ else }}unknown{{ end }}'
 
 archives:
   - id: default

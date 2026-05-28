@@ -7,8 +7,11 @@
       <ProfileInfoCard
         :user="user"
         :linuxdo-enabled="linuxdoOAuthEnabled"
+        :dingtalk-enabled="dingtalkOAuthEnabled"
         :oidc-enabled="oidcOAuthEnabled"
         :oidc-provider-name="oidcOAuthProviderName"
+        :contact-info="profileContactInfo"
+        :support-q-r-codes="profileSupportQRCodes"
         :wechat-enabled="wechatOAuthEnabled"
         :wechat-open-enabled="wechatOAuthOpenEnabled"
         :wechat-mp-enabled="wechatOAuthMPEnabled"
@@ -49,20 +52,44 @@ import UserBalanceHistoryModal from '@/components/user/UserBalanceHistoryModal.v
 import { isWeChatWebOAuthEnabled } from '@/api/auth'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
+import type { PublicSettings, SupportQRCodeEntry } from '@/types'
 
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const user = computed(() => authStore.user)
 const showBalanceHistory = ref(false)
 
-const balanceLowNotifyEnabled = ref(false)
-const systemDefaultThreshold = ref(0)
-const linuxdoOAuthEnabled = ref(false)
-const wechatOAuthEnabled = ref(false)
-const wechatOAuthOpenEnabled = ref<boolean | undefined>(undefined)
-const wechatOAuthMPEnabled = ref<boolean | undefined>(undefined)
-const oidcOAuthEnabled = ref(false)
-const oidcOAuthProviderName = ref('OIDC')
+type LegacyPublicSettings = PublicSettings & {
+  oidc_connect_provider_name?: string
+  oidc_connect_enabled?: boolean
+}
+
+const publicSettings = ref<LegacyPublicSettings | null>(appStore.cachedPublicSettings as LegacyPublicSettings | null)
+
+const balanceLowNotifyEnabled = computed(() => publicSettings.value?.balance_low_notify_enabled ?? false)
+const systemDefaultThreshold = computed(() => publicSettings.value?.balance_low_notify_threshold ?? 0)
+const linuxdoOAuthEnabled = computed(() => publicSettings.value?.linuxdo_oauth_enabled ?? false)
+const dingtalkOAuthEnabled = computed(() => publicSettings.value?.dingtalk_oauth_enabled ?? false)
+const wechatOAuthEnabled = computed(() => {
+  const settings = publicSettings.value
+  return settings ? isWeChatWebOAuthEnabled(settings) : false
+})
+const wechatOAuthOpenEnabled = computed<boolean | undefined>(() => {
+  const value = publicSettings.value?.wechat_oauth_open_enabled
+  return typeof value === 'boolean' ? value : undefined
+})
+const wechatOAuthMPEnabled = computed<boolean | undefined>(() => {
+  const value = publicSettings.value?.wechat_oauth_mp_enabled
+  return typeof value === 'boolean' ? value : undefined
+})
+const oidcOAuthEnabled = computed(() => publicSettings.value?.oidc_oauth_enabled ?? publicSettings.value?.oidc_connect_enabled ?? false)
+const oidcOAuthProviderName = computed(() => resolveOidcProviderName(publicSettings.value))
+const profileContactInfo = computed(() => publicSettings.value?.contact_info?.trim() || '')
+const profileSupportQRCodes = computed<SupportQRCodeEntry[]>(() => (
+  Array.isArray(publicSettings.value?.support_qr_codes)
+    ? [...(publicSettings.value?.support_qr_codes || [])]
+    : []
+))
 
 onMounted(async () => {
   const profileRefresh = authStore.refreshUser({ touchActive: true }).catch((error) => {
@@ -74,18 +101,7 @@ onMounted(async () => {
       if (!settings) {
         return
       }
-      balanceLowNotifyEnabled.value = settings.balance_low_notify_enabled ?? false
-      systemDefaultThreshold.value = settings.balance_low_notify_threshold ?? 0
-      linuxdoOAuthEnabled.value = settings.linuxdo_oauth_enabled ?? false
-      wechatOAuthEnabled.value = isWeChatWebOAuthEnabled(settings)
-      wechatOAuthOpenEnabled.value = typeof settings.wechat_oauth_open_enabled === 'boolean'
-        ? settings.wechat_oauth_open_enabled
-        : undefined
-      wechatOAuthMPEnabled.value = typeof settings.wechat_oauth_mp_enabled === 'boolean'
-        ? settings.wechat_oauth_mp_enabled
-        : undefined
-      oidcOAuthEnabled.value = settings.oidc_oauth_enabled ?? false
-      oidcOAuthProviderName.value = settings.oidc_oauth_provider_name || 'OIDC'
+      publicSettings.value = settings as LegacyPublicSettings
     })
     .catch((error) => {
       console.error('Failed to load settings:', error)
@@ -93,4 +109,18 @@ onMounted(async () => {
 
   await Promise.all([profileRefresh, settingsLoad])
 })
+
+function resolveOidcProviderName(settings: LegacyPublicSettings | null): string {
+  const modernName = settings?.oidc_oauth_provider_name?.trim()
+  if (modernName) {
+    return modernName
+  }
+
+  const legacyName = settings?.oidc_connect_provider_name?.trim()
+  if (legacyName) {
+    return legacyName
+  }
+
+  return 'OIDC'
+}
 </script>

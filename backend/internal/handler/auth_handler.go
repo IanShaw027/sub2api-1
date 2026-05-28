@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
@@ -19,14 +20,17 @@ import (
 
 // AuthHandler handles authentication-related requests
 type AuthHandler struct {
-	cfg              *config.Config
-	authService      *service.AuthService
-	userService      *service.UserService
-	settingSvc       *service.SettingService
-	promoService     *service.PromoService
-	redeemService    *service.RedeemService
-	totpService      *service.TotpService
-	affiliateService *service.AffiliateService
+	cfg                    *config.Config
+	authService            *service.AuthService
+	userService            *service.UserService
+	settingSvc             *service.SettingService
+	promoService           *service.PromoService
+	redeemService          *service.RedeemService
+	totpService            *service.TotpService
+	affiliateService       *service.AffiliateService
+	dingTalkClientMu       sync.Mutex
+	dingTalkClientInstance *DingTalkClient
+	userAttributeService   *service.UserAttributeService
 }
 
 // NewAuthHandler creates a new AuthHandler
@@ -44,6 +48,10 @@ func NewAuthHandler(cfg *config.Config, authService *service.AuthService, userSe
 
 func (h *AuthHandler) SetAffiliateService(affiliateService *service.AffiliateService) {
 	h.affiliateService = affiliateService
+}
+
+func (h *AuthHandler) SetUserAttributeService(userAttributeService *service.UserAttributeService) {
+	h.userAttributeService = userAttributeService
 }
 
 // RegisterRequest represents the registration request payload

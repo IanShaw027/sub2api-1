@@ -96,6 +96,26 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/auth/dingtalk/callback',
+    name: 'DingTalkOAuthCallback',
+    component: () => import('@/views/auth/DingTalkCallbackView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'DingTalk OAuth Callback',
+      titleKey: 'auth.dingtalk.callbackTitle'
+    }
+  },
+  {
+    path: '/auth/dingtalk/email-completion',
+    name: 'DingTalkEmailCompletion',
+    component: () => import('@/views/auth/DingTalkEmailCompletionView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Complete DingTalk Registration',
+      titleKey: 'auth.dingtalk.createAccountTitle'
+    }
+  },
+  {
     path: '/auth/wechat/callback',
     name: 'WeChatOAuthCallback',
     component: () => import('@/views/auth/WechatCallbackView.vue'),
@@ -1088,18 +1108,28 @@ let authInitialized = false
 const navigationLoading = useNavigationLoadingState()
 // 延迟初始化预加载，传入 router 实例
 let routePrefetch: ReturnType<typeof useRoutePrefetch> | null = null
-const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal']
-const BACKEND_MODE_CALLBACK_PATHS = [
+export const BACKEND_MODE_ALLOWED_PATHS = [
+  '/login',
+  '/key-usage',
+  '/setup',
+  '/payment/result',
+  '/payment/stripe',
+  '/payment/stripe-popup',
+  '/payment/airwallex',
+  '/legal',
+]
+export const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',
   '/auth/oauth/callback',
+  '/auth/dingtalk/callback',
   '/auth/linuxdo/callback',
   '/auth/oidc/callback',
   '/auth/wechat/callback',
   '/auth/wechat/payment/callback',
 ]
-const BACKEND_MODE_PENDING_AUTH_PATHS = ['/register', '/email-verify']
+export const BACKEND_MODE_PENDING_AUTH_PATHS = ['/register', '/email-verify', '/auth/dingtalk/email-completion']
 
-function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: boolean): boolean {
+export function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: boolean): boolean {
   if (BACKEND_MODE_ALLOWED_PATHS.some((allowedPath) => path === allowedPath || path.startsWith(allowedPath))) {
     return true
   }

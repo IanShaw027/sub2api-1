@@ -141,6 +141,46 @@ func TestAdminService_ListGroups_PassesSortParams(t *testing.T) {
 	}, repo.listWithFiltersParams)
 }
 
+func TestAdminService_GetGroupModelsListCandidates_ExcludesWildcardPatterns(t *testing.T) {
+	groupRepo := &groupRepoStubForAdmin{
+		getByID: &Group{ID: 77, Platform: PlatformAnthropic},
+	}
+	accountRepo := &modelsListAccountRepoStub{
+		byGroup: map[int64][]Account{
+			77: {
+				{
+					ID:       1,
+					Platform: PlatformAnthropic,
+					Credentials: map[string]any{
+						"model_mapping": map[string]any{
+							"claude-*":          "claude-sonnet-4-6",
+							"claude-sonnet-4-6": "claude-sonnet-4-6",
+						},
+					},
+				},
+				{
+					ID:       2,
+					Platform: PlatformAnthropic,
+					Credentials: map[string]any{
+						"model_whitelist": []string{"claude-opus-*", "claude-3-7-sonnet"},
+					},
+				},
+			},
+		},
+	}
+	svc := &adminServiceImpl{
+		groupRepo:   groupRepo,
+		accountRepo: accountRepo,
+	}
+
+	candidates, err := svc.GetGroupModelsListCandidates(context.Background(), 77, PlatformAnthropic)
+	require.NoError(t, err)
+	require.Contains(t, candidates, "claude-sonnet-4-6")
+	require.Contains(t, candidates, "claude-3-7-sonnet")
+	require.NotContains(t, candidates, "claude-*")
+	require.NotContains(t, candidates, "claude-opus-*")
+}
+
 // TestAdminService_CreateGroup_WithImagePricing 测试创建分组时 ImagePrice 字段正确传递
 func TestAdminService_CreateGroup_WithImagePricing(t *testing.T) {
 	repo := &groupRepoStubForAdmin{}

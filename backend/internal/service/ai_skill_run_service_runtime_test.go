@@ -9,12 +9,15 @@ import (
 )
 
 type aiSkillRunServiceTestStore struct {
-	skills        map[int64]*AISkill
-	versions      map[int64]*AISkillVersion
-	runs          map[int64]*AISkillRun
-	nextSkillID   int64
-	nextVersionID int64
-	nextRunID     int64
+	skills          map[int64]*AISkill
+	versions        map[int64]*AISkillVersion
+	runs            map[int64]*AISkillRun
+	nextSkillID     int64
+	nextVersionID   int64
+	nextRunID       int64
+	updateCalls     int
+	updateErrOnCall int
+	updateErr       error
 }
 
 func newAISkillRunServiceTestStore() *aiSkillRunServiceTestStore {
@@ -118,6 +121,10 @@ func (s *aiSkillRunServiceTestStore) UpdateRun(_ context.Context, run *AISkillRu
 	if _, ok := s.runs[run.ID]; !ok {
 		return ErrAISkillRunNotFound
 	}
+	s.updateCalls++
+	if s.updateErrOnCall > 0 && s.updateCalls == s.updateErrOnCall {
+		return s.updateErr
+	}
 	s.runs[run.ID] = cloneAISkillRunEntityForRunRuntime(run)
 	return nil
 }
@@ -220,7 +227,122 @@ func TestAISkillRunServiceExecuteFailedDispatchDoesNotChargeRuntimeStore(t *test
 	require.Empty(t, run.Output)
 }
 
-func TestAISkillRunServiceExecuteScriptDispatchDoesNotSettle(t *testing.T) {
+func TestAISkillRunServicePrepareAppliesPromptVariableDefaults(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillRunServiceTestStore()
+	skill := &AISkill{
+		CreatorUserID: 701,
+		Name:          "Prompt Skill",
+		Type:          AISkillTypePromptChat,
+	}
+	require.NoError(t, store.CreateSkill(ctx, skill))
+	version := &AISkillVersion{
+		SkillID:       skill.ID,
+		CreatorUserID: skill.CreatorUserID,
+		Version:       1,
+		Type:          skill.Type,
+		Status:        AISkillVersionStatusApproved,
+		ExecutionSpec: AISkillExecutionSpec{
+			Type: AISkillTypePromptChat,
+			PromptChat: &AISkillPromptChatSpec{
+				UserPromptTemplate: "Summarize {{topic}} in {{tone}} with {{format}}",
+				Variables: []map[string]any{
+					{"key": "topic"},
+					{"key": "tone", "default_value": "formal"},
+					{"key": "format", "default_value": "bullet points"},
+				},
+			},
+		},
+		BillingPolicy: AISkillBillingPolicy{Mode: AISkillBillingModeFree},
+	}
+	require.NoError(t, store.CreateVersion(ctx, version))
+
+	settlementSvc := NewAISkillSettlementService(&aiSkillRunServiceTestSettlementRepo{}, nil, nil)
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, nil)
+
+	prepared, err := runSvc.Prepare(ctx, 702, &AISkillRunInput{
+		SkillID:   skill.ID,
+		VersionID: aiSkillRunServiceTestInt64Ptr(version.ID),
+		Mode:      AISkillRunModeUse,
+		Parameters: map[string]any{
+			"topic": "golang",
+			"tone":  "casual",
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, prepared)
+	require.NotNil(t, prepared.Execution)
+	require.NotNil(t, prepared.Execution.PromptChat)
+	require.Equal(t, map[string]any{
+		"topic":  "golang",
+		"tone":   "casual",
+		"format": "bullet points",
+	}, prepared.Execution.PromptChat.Parameters)
+}
+
+func TestAISkillRunServicePrepareAppliesScriptVariableDefaultsFromMetadata(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillRunServiceTestStore()
+	skill := &AISkill{
+		CreatorUserID: 703,
+		Name:          "Script Skill",
+		Type:          AISkillTypeScript,
+	}
+	require.NoError(t, store.CreateSkill(ctx, skill))
+	version := &AISkillVersion{
+		SkillID:       skill.ID,
+		CreatorUserID: skill.CreatorUserID,
+		Version:       1,
+		Type:          skill.Type,
+		Status:        AISkillVersionStatusApproved,
+		ExecutionSpec: AISkillExecutionSpec{
+			Type: AISkillTypeScript,
+			Script: &AISkillScriptSpec{
+				Runtime:    skillrunner.RuntimeNode20,
+				ScriptName: "script_skill",
+				EntryPoint: "main.mjs",
+				Protocol:   skillrunner.ProtocolJSONFileV1,
+			},
+		},
+		BillingPolicy: AISkillBillingPolicy{Mode: AISkillBillingModeFree},
+		Metadata: map[string]any{
+			"variable_schema": []map[string]any{
+				{"key": "subject", "default_value": "sunrise"},
+				{"key": "mode", "default_value": "batch"},
+				{"key": "attempts", "default_value": 2},
+			},
+			"source_code": "console.log('hello')",
+		},
+	}
+	require.NoError(t, store.CreateVersion(ctx, version))
+
+	settlementSvc := NewAISkillSettlementService(&aiSkillRunServiceTestSettlementRepo{}, nil, nil)
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, nil)
+
+	prepared, err := runSvc.Prepare(ctx, 704, &AISkillRunInput{
+		SkillID:   skill.ID,
+		VersionID: aiSkillRunServiceTestInt64Ptr(version.ID),
+		Mode:      AISkillRunModeUse,
+		Parameters: map[string]any{
+			"mode": "interactive",
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, prepared)
+	require.NotNil(t, prepared.Execution)
+	require.NotNil(t, prepared.Execution.Script)
+	require.Equal(t, map[string]any{
+		"mode":     "interactive",
+		"subject":  "sunrise",
+		"attempts": 2,
+	}, prepared.Execution.Script.Parameters)
+}
+
+func TestAISkillRunServiceExecuteScriptDispatchAckReturnsDispatchedRun(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -275,15 +397,90 @@ func TestAISkillRunServiceExecuteScriptDispatchDoesNotSettle(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Len(t, runtime.requests, 1)
-	require.Equal(t, AISkillRunStatusDispatched, result.Dispatch.Status)
-	require.Equal(t, AISkillRunStatusDispatched, result.Prepared.Run.Status)
+	run := store.runs[1]
+	require.NotNil(t, run)
+	require.Equal(t, AISkillRunStatusDispatched, run.Status)
+	require.Equal(t, "skillrunner", run.Provider)
+	require.Equal(t, "skillrunner:1", run.ExternalJobID)
+	require.Empty(t, run.ErrorMessage)
+	require.Equal(t, map[string]any{"plan": map[string]any{"mode": "dispatch"}}, run.Output)
 	settlementRepo, ok := settlementSvc.repo.(*aiSkillRunServiceTestSettlementRepo)
 	require.True(t, ok)
 	require.Len(t, settlementRepo.created, 0)
-	require.Equal(t, 0.0, result.Prepared.Run.ChargeAmount)
-	require.Empty(t, result.Prepared.Run.BillingMode)
-	require.Empty(t, result.Prepared.Run.Currency)
-	require.Nil(t, result.Prepared.Run.SettlementID)
+	require.Equal(t, 0.0, run.ChargeAmount)
+	require.Empty(t, run.BillingMode)
+	require.Empty(t, run.Currency)
+	require.Nil(t, run.SettlementID)
+}
+
+func TestAISkillRunServiceExecuteSuccessKeepsRunUnsettledWhenFinalUpdateFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillRunServiceTestStore()
+	store.updateErrOnCall = 2
+	store.updateErr = context.Canceled
+	skill := &AISkill{
+		CreatorUserID: 704,
+		Name:          "Settled Chat Skill",
+		Type:          AISkillTypePromptChat,
+	}
+	require.NoError(t, store.CreateSkill(ctx, skill))
+	version := &AISkillVersion{
+		SkillID:       skill.ID,
+		CreatorUserID: skill.CreatorUserID,
+		Version:       1,
+		Type:          skill.Type,
+		Status:        AISkillVersionStatusApproved,
+		ExecutionSpec: AISkillExecutionSpec{
+			Type: AISkillTypePromptChat,
+			PromptChat: &AISkillPromptChatSpec{
+				UserPromptTemplate: "Summarize {{topic}}",
+			},
+		},
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:        AISkillBillingModeFree,
+			PricePerRun: 0,
+		},
+	}
+	require.NoError(t, store.CreateVersion(ctx, version))
+
+	settlementSvc := NewAISkillSettlementService(&aiSkillRunServiceTestSettlementRepo{}, nil, nil)
+	runtime := &aiSkillRunServiceTestRuntime{
+		result: &AISkillDispatchResult{
+			Status:        AISkillRunStatusSucceeded,
+			Provider:      "openai",
+			ExternalJobID: "resp_settled",
+			Output:        map[string]any{"text": "summary"},
+		},
+	}
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime)
+
+	result, err := runSvc.Execute(ctx, 904, &AISkillRunInput{
+		SkillID:   skill.ID,
+		VersionID: aiSkillRunServiceTestInt64Ptr(version.ID),
+		Mode:      AISkillRunModeUse,
+		Parameters: map[string]any{
+			"topic": "golang",
+		},
+	})
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Len(t, runtime.requests, 1)
+	run := store.runs[1]
+	require.NotNil(t, run)
+	require.Equal(t, AISkillRunStatusDispatched, run.Status)
+	require.Equal(t, "openai", run.Provider)
+	require.Equal(t, "resp_settled", run.ExternalJobID)
+	require.Empty(t, run.ErrorMessage)
+	require.Equal(t, 0.0, run.ChargeAmount)
+	require.Empty(t, run.BillingMode)
+	require.Empty(t, run.Currency)
+	require.Nil(t, run.SettlementID)
+	settlementRepo, ok := settlementSvc.repo.(*aiSkillRunServiceTestSettlementRepo)
+	require.True(t, ok)
+	require.Len(t, settlementRepo.created, 1)
+	require.Equal(t, 2, store.updateCalls)
 }
 
 func cloneAISkillEntityForRunRuntime(skill *AISkill) *AISkill {

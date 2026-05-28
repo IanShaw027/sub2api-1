@@ -29,6 +29,9 @@ func (s *redeemStatsRepoStub) GetByCode(context.Context, string) (*RedeemCode, e
 func (s *redeemStatsRepoStub) Update(context.Context, *RedeemCode) error {
 	panic("unexpected Update call")
 }
+func (s *redeemStatsRepoStub) BatchUpdate(context.Context, []int64, RedeemCodeBatchUpdateFields) (int64, error) {
+	panic("unexpected BatchUpdate call")
+}
 func (s *redeemStatsRepoStub) Delete(context.Context, int64) error { panic("unexpected Delete call") }
 func (s *redeemStatsRepoStub) Use(context.Context, int64, int64) error {
 	panic("unexpected Use call")

@@ -1169,6 +1169,7 @@ function apiToForm(channel: Channel): PlatformSection[] {
 
 // ── Load data ──
 async function loadChannels() {
+  clearTimeout(searchTimeout)
   if (abortController) abortController.abort()
   const ctrl = new AbortController()
   abortController = ctrl

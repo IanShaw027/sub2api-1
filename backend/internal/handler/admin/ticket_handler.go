@@ -151,7 +151,7 @@ func (h *TicketHandler) Reply(c *gin.Context) {
 		response.ErrorFrom(c, service.ErrTicketMessageRequired)
 		return
 	}
-	attachments, err := h.resolveAttachmentsForAdmin(c.Request.Context(), req.Attachments)
+	attachments, err := h.resolveAttachmentsForAdmin(c.Request.Context(), ticketID, req.Attachments)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -167,7 +167,7 @@ func (h *TicketHandler) Reply(c *gin.Context) {
 	response.Success(c, gin.H{"message": "ok"})
 }
 
-func (h *TicketHandler) resolveAttachmentsForAdmin(ctx context.Context, refs []TicketAttachmentRefRequest) ([]service.TicketMessageAttachment, error) {
+func (h *TicketHandler) resolveAttachmentsForAdmin(ctx context.Context, ticketID int64, refs []TicketAttachmentRefRequest) ([]service.TicketMessageAttachment, error) {
 	if len(refs) == 0 {
 		return nil, nil
 	}
@@ -176,20 +176,35 @@ func (h *TicketHandler) resolveAttachmentsForAdmin(ctx context.Context, refs []T
 	}
 	attachments := make([]service.TicketMessageAttachment, 0, len(refs))
 	for _, ref := range refs {
-		asset, err := h.mediaService.GetForAdmin(ctx, ref.MediaID)
+		asset, err := h.getTicketScopedMediaForAdmin(ctx, ticketID, ref.MediaID)
 		if err != nil {
 			return nil, err
 		}
 		attachments = append(attachments, service.TicketMessageAttachment{
-			MediaID:      asset.ID,
-			URL:          h.mediaService.PublicURL(asset.ID, asset.Visibility),
-			ThumbnailURL: h.mediaService.ThumbnailPublicURL(asset.ID, asset.Visibility, asset.ThumbnailObjectKey),
-			FileName:     asset.OriginalFileName,
-			ContentType:  asset.MIMEType,
-			SizeBytes:    asset.SizeBytes,
+			MediaID:     asset.ID,
+			FileName:    asset.OriginalFileName,
+			ContentType: asset.MIMEType,
+			SizeBytes:   asset.SizeBytes,
 		})
 	}
 	return attachments, nil
+}
+
+func (h *TicketHandler) getTicketScopedMediaForAdmin(ctx context.Context, ticketID, mediaID int64) (*service.MediaAsset, error) {
+	if h.mediaService == nil {
+		return nil, service.ErrMediaStorageDisabled
+	}
+	asset, err := h.mediaService.GetForAdmin(ctx, mediaID)
+	if err != nil {
+		return nil, err
+	}
+	if asset == nil || strings.TrimSpace(asset.Status) != service.MediaStatusActive {
+		return nil, service.ErrMediaNotFound
+	}
+	if strings.TrimSpace(asset.BizType) != "ticket" || strings.TrimSpace(asset.BizID) != strconv.FormatInt(ticketID, 10) {
+		return nil, service.ErrMediaForbidden
+	}
+	return asset, nil
 }
 
 func (h *TicketHandler) hydrateMessageAttachmentsForAdmin(ctx context.Context, message *service.SupportTicketMessage) {
@@ -198,11 +213,19 @@ func (h *TicketHandler) hydrateMessageAttachmentsForAdmin(ctx context.Context, m
 	}
 	for i := range message.Attachments {
 		attachment := &message.Attachments[i]
-		download, err := h.mediaService.CreateDownloadURLForAdmin(ctx, attachment.MediaID)
+		asset, err := h.getTicketScopedMediaForAdmin(ctx, message.TicketID, attachment.MediaID)
+		if err != nil {
+			continue
+		}
+		download, err := h.mediaService.CreateDownloadURLForAdmin(ctx, asset.ID)
 		if err == nil && download != nil {
 			attachment.URL = download.URL
 		}
-		thumbnail, err := h.mediaService.CreateThumbnailDownloadURLForAdmin(ctx, attachment.MediaID)
+		if strings.TrimSpace(asset.ThumbnailObjectKey) == "" {
+			attachment.ThumbnailURL = attachment.URL
+			continue
+		}
+		thumbnail, err := h.mediaService.CreateThumbnailDownloadURLForAdmin(ctx, asset.ID)
 		if err == nil && thumbnail != nil {
 			attachment.ThumbnailURL = thumbnail.URL
 		}

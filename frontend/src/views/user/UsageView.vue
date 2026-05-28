@@ -210,14 +210,14 @@
 
           <template #cell-billing_mode="{ row }">
             <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium"
-                  :class="getBillingModeBadgeClass(row.billing_mode)">
-              {{ getBillingModeLabel(row.billing_mode, t) }}
+                  :class="getBillingModeBadgeClass(getDisplayBillingMode(row))">
+              {{ getBillingModeLabel(getDisplayBillingMode(row), t) }}
             </span>
           </template>
 
           <template #cell-tokens="{ row }">
-            <!-- 图片生成请求（仅按次计费时显示图片格式） -->
-            <div v-if="row.image_count > 0 && row.billing_mode === 'image'" class="flex items-center gap-1.5">
+            <!-- 图片生成请求 -->
+            <div v-if="isImageUsage(row)" class="flex items-center gap-1.5">
               <svg
                 class="h-4 w-4 text-indigo-500"
                 fill="none"
@@ -232,7 +232,7 @@
                 />
               </svg>
               <span class="font-medium text-gray-900 dark:text-white">{{ row.image_count }}{{ t('usage.imageUnit') }}</span>
-              <span class="text-gray-400">({{ row.image_size || '2K' }})</span>
+              <span class="text-gray-400">({{ formatImageBillingSize(row, t) }})</span>
             </div>
             <!-- Token 请求 -->
             <div v-else class="flex items-center gap-1.5">
@@ -476,22 +476,31 @@
               <span class="text-gray-400">{{ t('admin.usage.outputCost') }}</span>
               <span class="font-medium text-white">${{ tooltipData.output_cost.toFixed(6) }}</span>
             </div>
-            <!-- Token billing: show unit prices per 1M tokens -->
-            <template v-if="!tooltipData?.billing_mode || tooltipData.billing_mode === 'token'">
-              <div v-if="tooltipData && tooltipData.input_tokens > 0" class="flex items-center justify-between gap-4">
-                <span class="text-gray-400">{{ t('usage.inputTokenPrice') }}</span>
-                <span class="font-medium text-sky-300">{{ formatTokenPricePerMillion(tooltipData.input_cost, tooltipData.input_tokens) }} {{ t('usage.perMillionTokens') }}</span>
-              </div>
-              <div v-if="tooltipData && tooltipData.output_tokens > 0" class="flex items-center justify-between gap-4">
-                <span class="text-gray-400">{{ t('usage.outputTokenPrice') }}</span>
-                <span class="font-medium text-violet-300">{{ formatTokenPricePerMillion(tooltipData.output_cost, tooltipData.output_tokens) }} {{ t('usage.perMillionTokens') }}</span>
-              </div>
-            </template>
-            <!-- Per-request / image billing: show unit price -->
-            <template v-else-if="tooltipData?.billing_mode === 'image'">
+            <!-- Per-image billing: show image metadata and unit price -->
+            <template v-if="tooltipData && isImageUsage(tooltipData)">
               <div class="flex items-center justify-between gap-4">
                 <span class="text-gray-400">{{ t('usage.imageCount') }}</span>
-                <span class="font-medium text-white">{{ tooltipData.image_count }}{{ t('usage.imageUnit') }} ({{ tooltipData.image_size || '2K' }})</span>
+                <span class="font-medium text-white">{{ tooltipData.image_count }}{{ t('usage.imageUnit') }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.imageBillingSize') }}</span>
+                <span class="font-medium text-white">{{ formatImageBillingSize(tooltipData, t) }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.imageSizeSource') }}</span>
+                <span class="font-medium text-white">{{ formatImageSizeSource(tooltipData, t) }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.imageInputSize') }}</span>
+                <span class="font-medium text-white">{{ formatImageInputSize(tooltipData, t) }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.imageOutputSize') }}</span>
+                <span class="font-medium text-white">{{ formatImageOutputSize(tooltipData, t) }}</span>
+              </div>
+              <div v-if="formatImageSizeBreakdown(tooltipData)" class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.imageSizeBreakdown') }}</span>
+                <span class="font-medium text-white">{{ formatImageSizeBreakdown(tooltipData) }}</span>
               </div>
               <div class="flex items-center justify-between gap-4">
                 <span class="text-gray-400">{{ t('usage.imageUnitPrice') }}</span>
@@ -508,6 +517,17 @@
               <div class="flex items-center justify-between gap-4">
                 <span class="text-gray-400">{{ t('usage.rowTotal') }}</span>
                 <span class="font-medium text-white">${{ tooltipData.total_cost?.toFixed(6) || '0.000000' }}</span>
+              </div>
+            </template>
+            <!-- Token billing: show unit prices per 1M tokens -->
+            <template v-else-if="!getDisplayBillingMode(tooltipData) || getDisplayBillingMode(tooltipData) === BILLING_MODE_TOKEN">
+              <div v-if="tooltipData && tooltipData.input_tokens > 0" class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.inputTokenPrice') }}</span>
+                <span class="font-medium text-sky-300">{{ formatTokenPricePerMillion(tooltipData.input_cost, tooltipData.input_tokens) }} {{ t('usage.perMillionTokens') }}</span>
+              </div>
+              <div v-if="tooltipData && tooltipData.output_tokens > 0" class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.outputTokenPrice') }}</span>
+                <span class="font-medium text-violet-300">{{ formatTokenPricePerMillion(tooltipData.output_cost, tooltipData.output_tokens) }} {{ t('usage.perMillionTokens') }}</span>
               </div>
             </template>
             <div v-else class="flex items-center justify-between gap-4">
@@ -575,7 +595,19 @@ import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'
 import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
 import { resolveUsageRequestType } from '@/utils/usageRequestType'
-import { getBillingModeLabel, getBillingModeBadgeClass } from '@/utils/billingMode'
+import {
+  BILLING_MODE_IMAGE,
+  BILLING_MODE_TOKEN,
+  getBillingModeBadgeClass,
+  getBillingModeLabel,
+} from '@/utils/billingMode'
+import {
+  formatImageBillingSize,
+  formatImageInputSize,
+  formatImageOutputSize,
+  formatImageSizeBreakdown,
+  formatImageSizeSource,
+} from '@/utils/imageUsage'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -680,6 +712,17 @@ const imageUnitPrice = (row: UsageLog | null): number => {
   if (!row || row.image_count <= 0) return 0
   const price = imageSubtotal(row) / row.image_count
   return Number.isFinite(price) ? price : 0
+}
+
+const isImageUsage = (row: Pick<UsageLog, 'image_count'> | null | undefined): boolean => {
+  return (row?.image_count ?? 0) > 0
+}
+
+const getDisplayBillingMode = (row: Pick<UsageLog, 'billing_mode' | 'image_count'> | null | undefined): string | null | undefined => {
+  if (isImageUsage(row)) {
+    return BILLING_MODE_IMAGE
+  }
+  return row?.billing_mode
 }
 
 const imageModeTokenCost = (row: UsageLog | null): number => {
@@ -925,7 +968,7 @@ const exportToCSV = async () => {
         formatReasoningEffort(log.reasoning_effort),
         log.inbound_endpoint || '',
         getRequestTypeExportText(log),
-        getBillingModeLabel(log.billing_mode, t),
+        getBillingModeLabel(getDisplayBillingMode(log), t),
         log.input_tokens,
         log.output_tokens,
         log.cache_read_tokens,

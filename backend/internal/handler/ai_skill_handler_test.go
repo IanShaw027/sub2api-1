@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/handler/skillkit"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/repository"
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -263,6 +265,13 @@ func TestAIHandlerCreateSkillCleansUpUploadedCoverImageOnPersistenceFailure(t *t
 
 	handler, repo, store := newAIHandlerMediaTestHarness(t)
 	handler.skillModule = &skillkit.Module{
+		DomainRepo: &aiSkillHandlerViewerRepo{
+			skill: &domain.AISkill{
+				ID:     1,
+				UserID: 42,
+				Type:   domain.AISkillTypePromptChat,
+			},
+		},
 		SkillService: service.NewAISkillService(&aiSkillHandlerCreateFailRepo{createErr: errors.New("persist failed")}),
 	}
 
@@ -299,8 +308,10 @@ func TestAIHandlerRunSkillCleansUpUploadedAttachmentsOnExecutionFailure(t *testi
 				Type:          service.AISkillTypePromptChat,
 				Status:        service.AISkillVersionStatusApproved,
 				ExecutionSpec: service.AISkillExecutionSpec{
-					Type:       service.AISkillTypePromptChat,
-					PromptChat: &service.AISkillPromptChatSpec{},
+					Type: service.AISkillTypePromptChat,
+					PromptChat: &service.AISkillPromptChatSpec{
+						UserPromptTemplate: "Write about {{subject}}",
+					},
 				},
 				BillingPolicy: service.AISkillBillingPolicy{Mode: service.AISkillBillingModeFree},
 			},
@@ -309,7 +320,18 @@ func TestAIHandlerRunSkillCleansUpUploadedAttachmentsOnExecutionFailure(t *testi
 		service.NewAISkillSettlementService(nil, nil, nil),
 		nil,
 	)
-	handler.skillModule = &skillkit.Module{RunService: runSvc}
+	handler.skillModule = &skillkit.Module{
+		DomainRepo: &aiSkillHandlerViewerRepo{
+			skill: &domain.AISkill{
+				ID:               7,
+				UserID:           42,
+				Type:             domain.AISkillTypePromptChat,
+				Visibility:       domain.AIVisibilityPublic,
+				CurrentVersionID: func() *int64 { v := int64(8); return &v }(),
+			},
+		},
+		RunService: runSvc,
+	}
 
 	png := aiSkillHandlerTestPNGBytes(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -327,6 +349,203 @@ func TestAIHandlerRunSkillCleansUpUploadedAttachmentsOnExecutionFailure(t *testi
 	require.Len(t, store.uploads, 1)
 	require.Len(t, repo.deleted, 1)
 	require.Len(t, store.deleted, 1)
+}
+
+func TestAIHandlerRunSkillRejectsPrivateSkillBeforeUploadingAttachments(t *testing.T) {
+	t.Parallel()
+
+	handler, repo, store := newAIHandlerMediaTestHarness(t)
+	runSvc := service.NewAISkillRunService(
+		&aiSkillHandlerRunSkillRepo{
+			skill: &service.AISkill{
+				ID:            7,
+				CreatorUserID: 1001,
+				Type:          service.AISkillTypePromptChat,
+				Metadata: map[string]any{
+					"visibility": "private",
+				},
+			},
+		},
+		&aiSkillHandlerRunVersionRepo{
+			version: &service.AISkillVersion{
+				ID:            8,
+				SkillID:       7,
+				CreatorUserID: 1001,
+				Type:          service.AISkillTypePromptChat,
+				Status:        service.AISkillVersionStatusApproved,
+				ExecutionSpec: service.AISkillExecutionSpec{
+					Type:       service.AISkillTypePromptChat,
+					PromptChat: &service.AISkillPromptChatSpec{},
+				},
+				BillingPolicy: service.AISkillBillingPolicy{Mode: service.AISkillBillingModeFree},
+			},
+		},
+		&aiSkillHandlerRunRepo{},
+		service.NewAISkillSettlementService(nil, nil, nil),
+		nil,
+	)
+	handler.skillModule = &skillkit.Module{
+		DomainRepo: &aiSkillHandlerViewerRepo{
+			skill: &domain.AISkill{
+				ID:         7,
+				UserID:     1001,
+				Type:       domain.AISkillTypePromptChat,
+				Visibility: domain.AIVisibilityPrivate,
+			},
+		},
+		RunService: runSvc,
+	}
+
+	png := aiSkillHandlerTestPNGBytes(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(png)
+	}))
+	defer srv.Close()
+
+	ctx, recorder := newAISkillHandlerJSONContext(t, http.MethodPost, "/api/v1/ai/skills/7/runs", `{"mode":"use","attachments":[{"url":"`+srv.URL+`/input.png","purpose":"input","file_name":"input.png"}]}`)
+	ctx.Params = gin.Params{{Key: "id", Value: "7"}}
+
+	handler.RunSkill(ctx)
+
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	require.Empty(t, repo.created)
+	require.Empty(t, repo.deleted)
+	require.Empty(t, store.uploads)
+	require.Empty(t, store.deleted)
+}
+
+func TestAIHandlerRunSkillWithModeForwardsRequestParameters(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		path   string
+		invoke func(*AIHandler, *gin.Context)
+	}{
+		{
+			name: "test",
+			path: "/api/v1/ai/skills/7/test",
+			invoke: func(handler *AIHandler, ctx *gin.Context) {
+				handler.TestSkill(ctx)
+			},
+		},
+		{
+			name: "use",
+			path: "/api/v1/ai/skills/7/use",
+			invoke: func(handler *AIHandler, ctx *gin.Context) {
+				handler.UseSkill(ctx)
+			},
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			runRepo := &aiSkillHandlerRunRepo{}
+			handler := &AIHandler{}
+			versionID := int64(8)
+			runSvc := service.NewAISkillRunService(
+				&aiSkillHandlerRunSkillRepo{
+					skill: &service.AISkill{ID: 7, CreatorUserID: 42, Type: service.AISkillTypePromptChat},
+				},
+				&aiSkillHandlerRunVersionRepo{
+					version: &service.AISkillVersion{
+						ID:            versionID,
+						SkillID:       7,
+						CreatorUserID: 42,
+						Type:          service.AISkillTypePromptChat,
+						Status:        service.AISkillVersionStatusApproved,
+						ExecutionSpec: service.AISkillExecutionSpec{
+							Type: service.AISkillTypePromptChat,
+							PromptChat: &service.AISkillPromptChatSpec{
+								UserPromptTemplate: "Write about {{subject}}",
+							},
+						},
+						BillingPolicy: service.AISkillBillingPolicy{Mode: service.AISkillBillingModeFree},
+					},
+				},
+				runRepo,
+				service.NewAISkillSettlementService(nil, nil, nil),
+				nil,
+			)
+			handler.skillModule = &skillkit.Module{
+				DomainRepo: &aiSkillHandlerViewerRepo{
+					skill: &domain.AISkill{
+						ID:               7,
+						UserID:           42,
+						Type:             domain.AISkillTypePromptChat,
+						Visibility:       domain.AIVisibilityPublic,
+						CurrentVersionID: &versionID,
+					},
+				},
+				RunService: runSvc,
+			}
+
+			ctx, recorder := newAISkillHandlerJSONContext(t, http.MethodPost, tc.path+"?version_id=8", `{"parameters":{"subject":"sunrise","count":2,"nested":{"enabled":true}}}`)
+			ctx.Params = gin.Params{{Key: "id", Value: "7"}}
+
+			tc.invoke(handler, ctx)
+
+			require.Equal(t, http.StatusOK, recorder.Code)
+			require.Len(t, runRepo.created, 1)
+			require.Equal(t, map[string]any{
+				"subject": "sunrise",
+				"count":   float64(2),
+				"nested": map[string]any{
+					"enabled": true,
+				},
+			}, runRepo.created[0].Parameters)
+		})
+	}
+}
+
+func TestResolveSkillRunVersionForViewerKeepsOwnerDraftAndViewerPublished(t *testing.T) {
+	t.Parallel()
+
+	currentVersionID := int64(11)
+	publishedVersionID := int64(22)
+	skill := &domain.AISkill{
+		UserID:             7,
+		CurrentVersionID:   &currentVersionID,
+		PublishedVersionID: &publishedVersionID,
+	}
+
+	ownerVersionID, err := resolveSkillRunVersionForViewer(skill, &currentVersionID, 7)
+	require.NoError(t, err)
+	require.NotNil(t, ownerVersionID)
+	require.Equal(t, currentVersionID, *ownerVersionID)
+
+	viewerVersionID, err := resolveSkillRunVersionForViewer(skill, nil, 9001)
+	require.NoError(t, err)
+	require.NotNil(t, viewerVersionID)
+	require.Equal(t, publishedVersionID, *viewerVersionID)
+
+	forbiddenVersionID, err := resolveSkillRunVersionForViewer(skill, &currentVersionID, 9001)
+	require.Error(t, err)
+	require.Nil(t, forbiddenVersionID)
+}
+
+func TestSkillViewForViewerKeepsOwnerCurrentVersionAndPinsViewerToPublishedVersion(t *testing.T) {
+	t.Parallel()
+
+	currentVersionID := int64(11)
+	publishedVersionID := int64(22)
+	skill := &domain.AISkill{
+		UserID:             7,
+		CurrentVersionID:   &currentVersionID,
+		PublishedVersionID: &publishedVersionID,
+	}
+
+	ownerView := skillViewForViewer(skill, 7)
+	require.NotNil(t, ownerView)
+	require.NotNil(t, ownerView.CurrentVersionID)
+	require.Equal(t, currentVersionID, *ownerView.CurrentVersionID)
+
+	viewerView := skillViewForViewer(skill, 9001)
+	require.NotNil(t, viewerView)
+	require.NotNil(t, viewerView.CurrentVersionID)
+	require.Equal(t, publishedVersionID, *viewerView.CurrentVersionID)
 }
 
 func newAIHandlerMediaTestHarness(t *testing.T) (*AIHandler, *aiSkillHandlerMediaRepo, *aiSkillHandlerMediaStore) {
@@ -424,7 +643,10 @@ func (*aiSkillHandlerRunVersionRepo) CreateVersion(context.Context, *service.AIS
 	return nil
 }
 
-func (*aiSkillHandlerRunVersionRepo) GetVersionByID(context.Context, int64) (*service.AISkillVersion, error) {
+func (r *aiSkillHandlerRunVersionRepo) GetVersionByID(_ context.Context, id int64) (*service.AISkillVersion, error) {
+	if r != nil && r.version != nil && r.version.ID == id {
+		return r.version, nil
+	}
 	return nil, service.ErrAISkillVersionNotFound
 }
 
@@ -442,9 +664,14 @@ func (*aiSkillHandlerRunVersionRepo) UpdateVersion(context.Context, *service.AIS
 
 type aiSkillHandlerRunRepo struct {
 	createErr error
+	created   []*service.AISkillRun
 }
 
-func (r *aiSkillHandlerRunRepo) CreateRun(context.Context, *service.AISkillRun) error {
+func (r *aiSkillHandlerRunRepo) CreateRun(_ context.Context, run *service.AISkillRun) error {
+	if r != nil {
+		copy := *run
+		r.created = append(r.created, &copy)
+	}
 	return r.createErr
 }
 
@@ -454,4 +681,24 @@ func (*aiSkillHandlerRunRepo) GetRunByID(context.Context, int64) (*service.AISki
 
 func (*aiSkillHandlerRunRepo) UpdateRun(context.Context, *service.AISkillRun) error {
 	return nil
+}
+
+type aiSkillHandlerViewerRepo struct {
+	repository.AISkillRepository
+
+	skill *domain.AISkill
+}
+
+func (r *aiSkillHandlerViewerRepo) GetSkillByID(context.Context, int64) (*domain.AISkill, error) {
+	if r == nil || r.skill == nil {
+		return nil, domain.ErrAISkillNotFound
+	}
+	copy := *r.skill
+	if r.skill.Metadata != nil {
+		copy.Metadata = make(map[string]any, len(r.skill.Metadata))
+		for key, value := range r.skill.Metadata {
+			copy.Metadata[key] = value
+		}
+	}
+	return &copy, nil
 }

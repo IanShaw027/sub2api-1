@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
@@ -39,8 +39,25 @@ const items = ref<OpsRequestDetail[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(10)
+let fetchSeq = 0
+let fetchController: AbortController | null = null
 
 const close = () => emit('update:modelValue', false)
+
+function isCanceledRequest(err: unknown): boolean {
+  return Boolean(err && typeof err === 'object' && (err as { code?: string }).code === 'ERR_CANCELED')
+}
+
+function abortFetch() {
+  fetchController?.abort()
+  fetchController = null
+}
+
+function resetData() {
+  loading.value = false
+  items.value = []
+  total.value = 0
+}
 
 const rangeLabel = computed(() => {
   const minutes = parseTimeRangeMinutes(props.timeRange)
@@ -60,6 +77,10 @@ function buildTimeParams(): Pick<OpsRequestDetailsParams, 'start_time' | 'end_ti
 
 const fetchData = async () => {
   if (!props.modelValue) return
+  abortFetch()
+  const currentSeq = ++fetchSeq
+  const controller = new AbortController()
+  fetchController = controller
   loading.value = true
   try {
     const params: OpsRequestDetailsParams = {
@@ -77,16 +98,21 @@ const fetchData = async () => {
     if (typeof props.preset.min_duration_ms === 'number') params.min_duration_ms = props.preset.min_duration_ms
     if (typeof props.preset.max_duration_ms === 'number') params.max_duration_ms = props.preset.max_duration_ms
 
-    const res = await opsAPI.listRequestDetails(params)
+    const res = await opsAPI.listRequestDetails(params, { signal: controller.signal })
+    if (currentSeq !== fetchSeq || controller.signal.aborted) return
     items.value = res.items || []
     total.value = res.total || 0
   } catch (e: any) {
+    if (currentSeq !== fetchSeq || isCanceledRequest(e)) return
     console.error('[OpsRequestDetailsModal] Failed to fetch request details', e)
     appStore.showError(e?.message || t('admin.ops.requestDetails.failedToLoad'))
     items.value = []
     total.value = 0
   } finally {
-    loading.value = false
+    if (currentSeq === fetchSeq) {
+      loading.value = false
+      fetchController = null
+    }
   }
 }
 
@@ -97,6 +123,10 @@ watch(
       page.value = 1
       pageSize.value = 10
       fetchData()
+    } else {
+      abortFetch()
+      fetchSeq += 1
+      resetData()
     }
   },
   { immediate: true }
@@ -142,6 +172,12 @@ function openErrorDetail(errorId: number | null | undefined) {
   close()
   emit('openErrorDetail', errorId)
 }
+
+onUnmounted(() => {
+  abortFetch()
+  fetchSeq += 1
+  resetData()
+})
 
 const kindBadgeClass = (kind: string) => {
   if (kind === 'error') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'

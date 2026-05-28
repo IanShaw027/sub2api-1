@@ -448,9 +448,9 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return s.service.newSelectionResult(ctx, account, false, nil, waitPlan)
 	}
 	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, req.GroupID, maxConcurrency)
-	if acquireErr == nil && result.Acquired {
+	if acquireErr == nil && result != nil && result.Acquired {
 		_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
-		return s.service.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
+		return s.service.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 	}
 
 	cfg := s.service.schedulingConfig()
@@ -697,8 +697,12 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		if !s.isLoadBalanceAccountSchedulableForRequest(account, req) {
 			continue
 		}
+		if s.service.isOpenAIAccountRuntimeBlocked(account) {
+			continue
+		}
 		// require_privacy_set: 跳过 privacy 未设置的账号并标记异常
 		if schedGroup != nil && schedGroup.RequirePrivacySet && !account.IsPrivacySet() {
+			s.service.BlockAccountScheduling(account, time.Time{}, "privacy_not_set")
 			_ = s.service.accountRepo.SetError(ctx, account.ID,
 				fmt.Sprintf("Privacy not set, required by group [%s]", schedGroup.Name))
 			continue
@@ -961,7 +965,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			if req.SessionHash != "" {
 				_ = s.service.BindStickySession(ctx, req.GroupID, req.SessionHash, fresh.ID)
 			}
-			selection, err := s.service.newSelectionResult(ctx, fresh, true, result.ReleaseFunc, nil)
+			selection, err := s.service.newAcquiredSelectionResult(ctx, fresh, result.ReleaseFunc)
 			return selection, candidateCount, topK, loadSkew, err
 		}
 	}
@@ -1021,6 +1025,9 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 		return false
 	}
 	if req.RequiredImageRoute != "" && !account.IsSelectableForOpenAIImageRoute(req.RequiredImageRoute, allowRateLimitedOpenAIImageRouteScheduling(req.RequiredImageRoute)) {
+		return false
+	}
+	if s != nil && s.service != nil && s.service.isOpenAIAccountRuntimeBlocked(account) {
 		return false
 	}
 	if NormalizeGroupImageGenerationRoute(req.RequiredImageRoute) == GroupImageGenerationRouteWeb2API && !account.HasOpenAIImageWeb2APIProfile() {

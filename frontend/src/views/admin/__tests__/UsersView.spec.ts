@@ -8,12 +8,14 @@ import UsersView from '../UsersView.vue'
 const {
   listUsers,
   getById,
+  getPlatformQuotas,
   getAllGroups,
   listEnabledDefinitions,
   getBatchUserAttributes
 } = vi.hoisted(() => ({
   listUsers: vi.fn(),
   getById: vi.fn(),
+  getPlatformQuotas: vi.fn(),
   getAllGroups: vi.fn(),
   listEnabledDefinitions: vi.fn(),
   getBatchUserAttributes: vi.fn()
@@ -24,6 +26,7 @@ vi.mock('@/api/admin', () => ({
     users: {
       list: listUsers,
       getById,
+      getPlatformQuotas,
       toggleStatus: vi.fn(),
       delete: vi.fn()
     },
@@ -98,6 +101,9 @@ const DataTableStub = {
         <div data-test="concurrency-cell">
           <slot name="cell-concurrency" :row="row" />
         </div>
+        <div data-test="platform-quota-cell">
+          <slot name="cell-balance_platform_quota" :row="row" />
+        </div>
         <div data-test="last-active-cell">
           <slot name="cell-last_active_at" :value="row.last_active_at" :row="row" />
         </div>
@@ -121,6 +127,7 @@ describe('admin UsersView', () => {
     listUsers.mockReset()
     getAllGroups.mockReset()
     getById.mockReset()
+    getPlatformQuotas.mockReset()
     listEnabledDefinitions.mockReset()
     getBatchUserAttributes.mockReset()
 
@@ -133,6 +140,7 @@ describe('admin UsersView', () => {
     })
     getAllGroups.mockResolvedValue([])
     getById.mockResolvedValue(createAdminUser())
+    getPlatformQuotas.mockResolvedValue({ platform_quotas: [] })
     listEnabledDefinitions.mockResolvedValue([])
     getBatchUserAttributes.mockResolvedValue({ values: {} })
   })
@@ -505,6 +513,52 @@ describe('admin UsersView', () => {
       expect.any(Object)
     )
     expect(wrapper.get('[data-test="row-order"]').text()).toBe('high-available@example.com,low-current@example.com,high-current@example.com')
+  })
+
+  it('exits platform quota loading when a single getPlatformQuotas request rejects', async () => {
+    localStorage.setItem('user-hidden-columns', JSON.stringify([]))
+    getPlatformQuotas.mockRejectedValueOnce(new Error('quota fetch failed'))
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          UserPlatformQuotaCell: {
+            props: ['quotas'],
+            template: '<span data-test="quota-state">{{ quotas === undefined ? "loading" : "loaded" }}</span>'
+          },
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+    expect(wrapper.get('[data-test="quota-state"]').text()).toBe('loading')
+
+    await vi.advanceTimersByTimeAsync(50)
+    await flushPromises()
+
+    expect(getPlatformQuotas).toHaveBeenCalledWith(42)
+    expect(wrapper.get('[data-test="quota-state"]').text()).toBe('loaded')
   })
 
   afterEach(() => {

@@ -451,7 +451,7 @@ function buildWechatOAuthAuthorizeUrl(
       redirectUrl.searchParams.delete('plan_id')
     }
 
-    if (context.orderAmount > 0) {
+    if (context.orderType === 'balance' && context.orderAmount > 0) {
       redirectUrl.searchParams.set('amount', String(context.orderAmount))
     } else {
       redirectUrl.searchParams.delete('amount')
@@ -709,6 +709,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       origin: typeof window !== 'undefined' ? window.location.origin : '',
       isMobile: isMobileDevice(),
       isWechatBrowser: typeof window !== 'undefined' && /MicroMessenger/i.test(window.navigator.userAgent),
+      forceQRCode: !!(checkout.value.alipay_force_qrcode && normalizeVisibleMethod(requestType) === 'alipay'),
     })
     if (options.openid) {
       payload.openid = options.openid
@@ -756,6 +757,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       orderType,
       isMobile: isMobileDevice(),
       isWechatBrowser: typeof window !== 'undefined' && /MicroMessenger/i.test(window.navigator.userAgent),
+      forceQRCode: !!(checkout.value.alipay_force_qrcode && visibleMethod === 'alipay'),
       stripePopupUrl: stripeRouteUrl,
       stripeRouteUrl,
       airwallexRouteUrl,
@@ -808,6 +810,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
               orderType,
               planId,
               paymentType: visibleMethod,
+              wechatResumeToken: options.wechatResumeToken,
               attempted: options.mobileQrFallbackAttempted === true,
             },
           )
@@ -826,6 +829,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
           orderType,
           planId,
           paymentType: visibleMethod,
+          wechatResumeToken: options.wechatResumeToken,
           attempted: options.mobileQrFallbackAttempted === true,
         })
         if (!fallbackApplied) {
@@ -856,6 +860,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       orderType,
       planId,
       paymentType: requestType,
+      wechatResumeToken: options.wechatResumeToken,
       attempted: options.mobileQrFallbackAttempted === true,
     })) {
       return
@@ -883,6 +888,7 @@ interface MobileQrFallbackContext {
   orderType: OrderType
   planId?: number
   paymentType: string
+  wechatResumeToken?: string
   attempted: boolean
 }
 
@@ -935,6 +941,9 @@ async function attemptMobileQrFallback(err: unknown, context: MobileQrFallbackCo
       isMobile: false,
       isWechatBrowser: false,
     })
+    if (context.wechatResumeToken) {
+      payload.wechat_resume_token = context.wechatResumeToken
+    }
     const result = await paymentStore.createOrder(payload) as CreateOrderResult & { resume_token?: string }
     const stripeMethod = visibleMethod === 'wxpay' ? 'wechat_pay' : 'alipay'
     const stripeRouteUrl = result.client_secret
@@ -991,7 +1000,11 @@ function applyScenarioError(err: unknown, paymentMethod: string): boolean {
 }
 
 async function resumeWechatPaymentFromQuery() {
-  const resume = parseWechatResumeRoute(route.query, checkout.value.plans, validAmount.value)
+  const resume = parseWechatResumeRoute(
+    route.query,
+    checkout.value.plans,
+    paymentState.value.amount > 0 ? paymentState.value.amount : validAmount.value,
+  )
   if (!resume) {
     return
   }
@@ -1007,7 +1020,7 @@ async function resumeWechatPaymentFromQuery() {
   await router.replace({ path: route.path, query: stripWechatResumeQuery(route.query) })
 
   if (resume.wechatResumeToken) {
-    await createOrder(0, resume.orderType, resume.planId, {
+    await createOrder(resume.orderAmount, resume.orderType, resume.planId, {
       wechatResumeToken: resume.wechatResumeToken,
       paymentType: resume.paymentType,
       isResume: true,
@@ -1038,23 +1051,16 @@ onMounted(async () => {
       selectedMethod.value = sorted[0]
     }
     if (typeof window !== 'undefined') {
+      const rawRecoverySnapshot = window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)
       const hasRouteWechatResume = hasWechatResumeQuery(route.query)
       const routeResumeToken = typeof route.query.resume_token === 'string'
         ? route.query.resume_token
         : typeof route.query.wechat_resume_token === 'string'
           ? route.query.wechat_resume_token
           : undefined
-      const restored = hasRouteWechatResume
-        ? (routeResumeToken
-          ? readPaymentRecoverySnapshot(
-            window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY),
-            { resumeToken: routeResumeToken },
-          )
-          : null)
-        : readPaymentRecoverySnapshot(
-          window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY),
-          { resumeToken: routeResumeToken },
-        )
+      const restored = hasRouteWechatResume && routeResumeToken
+        ? readPaymentRecoverySnapshot(rawRecoverySnapshot, { resumeToken: routeResumeToken })
+        : null
       if (restored) {
         paymentState.value = restored
         paymentPhase.value = 'paying'
@@ -1062,8 +1068,8 @@ onMounted(async () => {
         if (restoredMethod) {
           selectedMethod.value = restoredMethod
         }
-      } else {
-        removeRecoverySnapshot()
+      } else if (rawRecoverySnapshot) {
+        clearPaymentRecoverySnapshot(window.localStorage, PAYMENT_RECOVERY_STORAGE_KEY)
       }
     }
     await resumeWechatPaymentFromQuery()

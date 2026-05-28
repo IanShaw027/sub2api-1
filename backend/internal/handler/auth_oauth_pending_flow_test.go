@@ -80,6 +80,21 @@ func TestSetOAuthPendingSessionCookieUsesProviderCompletionPathPrefix(t *testing
 	require.Equal(t, "/api/v1/auth/oauth", cookie.Path)
 }
 
+func TestPendingSessionStringValueTreatsNilAndUnsupportedAsEmpty(t *testing.T) {
+	values := map[string]any{
+		"nil":         nil,
+		"unsupported": 123,
+		"string":      "  value  ",
+		"bytes":       []byte("  bytes  "),
+	}
+
+	require.Empty(t, pendingSessionStringValue(values, "nil"))
+	require.Empty(t, pendingSessionStringValue(values, "unsupported"))
+	require.Equal(t, "value", pendingSessionStringValue(values, "string"))
+	require.Equal(t, "bytes", pendingSessionStringValue(values, "bytes"))
+	require.Empty(t, pendingSessionStringValue(nil, "missing"))
+}
+
 func TestExchangePendingOAuthCompletionPreviewThenFinalizeAppliesAdoptionDecision(t *testing.T) {
 	handler, client := newOAuthPendingFlowTestHandler(t, false)
 	ctx := context.Background()
@@ -241,6 +256,9 @@ func TestExchangePendingOAuthCompletionSkipsInvalidAvatarAdoptionWithoutBlocking
 	handler.ExchangePendingOAuthCompletion(ginCtx)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
+	data := decodeJSONResponseData(t, recorder)
+	require.NotContains(t, data, "suggested_avatar_url")
+	require.NotContains(t, data, "avatar_url")
 
 	identity, err := client.AuthIdentity.Query().
 		Where(
@@ -407,12 +425,28 @@ func TestExchangePendingOAuthCompletionKeepsCompletionWhenAvatarAdoptionIsBlocke
 
 	handler.ExchangePendingOAuthCompletion(ginCtx)
 
-	require.Equal(t, http.StatusOK, recorder.Code)
-	data := decodeJSONResponseData(t, recorder)
-	require.NotEmpty(t, data["access_token"])
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+
+	storedUser, err := client.User.Get(ctx, userEntity.ID)
+	require.NoError(t, err)
+	require.Equal(t, "legacy-name", storedUser.Username)
+
+	identityCount, err := client.AuthIdentity.Query().
+		Where(
+			authidentity.ProviderTypeEQ("linuxdo"),
+			authidentity.ProviderKeyEQ("linuxdo"),
+			authidentity.ProviderSubjectEQ("blocked-avatar-123"),
+		).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, identityCount)
 
 	avatar := loadUserAvatarRecord(t, client, userEntity.ID)
 	require.Nil(t, avatar)
+
+	storedSession, err := client.PendingAuthSession.Get(ctx, session.ID)
+	require.NoError(t, err)
+	require.Nil(t, storedSession.ConsumedAt)
 }
 
 func TestExchangePendingOAuthCompletionBindCurrentUserWithSuggestedProfileBindsImmediately(t *testing.T) {
@@ -589,7 +623,7 @@ func TestExchangePendingOAuthCompletionBindCurrentUserOwnershipConflict(t *testi
 	require.Nil(t, storedSession.ConsumedAt)
 }
 
-func TestExchangePendingOAuthCompletionBindCurrentUserReclaimsIdentityFromInactiveOwner(t *testing.T) {
+func TestExchangePendingOAuthCompletionBindCurrentUserReclaimsIdentityFromDisabledOwner(t *testing.T) {
 	handler, client := newOAuthPendingFlowTestHandler(t, false)
 	ctx := context.Background()
 
@@ -720,6 +754,9 @@ func TestExchangePendingOAuthCompletionLoginFalseFalseBindsIdentityWithoutAdopti
 	handler.ExchangePendingOAuthCompletion(ginCtx)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
+	data := decodeJSONResponseData(t, recorder)
+	require.NotContains(t, data, "suggested_avatar_url")
+	require.NotContains(t, data, "avatar_url")
 
 	identity, err := client.AuthIdentity.Query().
 		Where(
@@ -745,6 +782,57 @@ func TestExchangePendingOAuthCompletionLoginFalseFalseBindsIdentityWithoutAdopti
 		Only(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, storedSession.ConsumedAt)
+}
+
+func TestExchangePendingOAuthCompletionDoesNotConsumeSessionWhenTokenMintingFails(t *testing.T) {
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		refreshTokenCache: &oauthPendingFlowRefreshTokenCacheStub{
+			storeErr: errors.New("forced refresh token store failure"),
+		},
+	})
+	ctx := context.Background()
+
+	userEntity, err := client.User.Create().
+		SetEmail("token-failure@example.com").
+		SetUsername("token-failure-user").
+		SetPasswordHash("hash").
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	session, err := client.PendingAuthSession.Create().
+		SetSessionToken("token-failure-session-token").
+		SetIntent("login").
+		SetProviderType("linuxdo").
+		SetProviderKey("linuxdo").
+		SetProviderSubject("token-failure-123").
+		SetTargetUserID(userEntity.ID).
+		SetResolvedEmail(userEntity.Email).
+		SetBrowserSessionKey("token-failure-browser-session-key").
+		SetLocalFlowState(map[string]any{
+			oauthCompletionResponseKey: map[string]any{
+				"redirect": "/dashboard",
+			},
+		}).
+		SetExpiresAt(time.Now().UTC().Add(10 * time.Minute)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/pending/exchange", nil)
+	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("token-failure-browser-session-key")})
+	ginCtx.Request = req
+
+	handler.ExchangePendingOAuthCompletion(ginCtx)
+
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+
+	storedSession, err := client.PendingAuthSession.Get(ctx, session.ID)
+	require.NoError(t, err)
+	require.Nil(t, storedSession.ConsumedAt)
 }
 
 func TestExchangePendingOAuthCompletionLoginReassignsExistingDecisionIdentityReference(t *testing.T) {
@@ -985,7 +1073,8 @@ func TestExchangePendingOAuthCompletionExistingLoginWithSuggestedProfileSkipsAdo
 	require.NotEqual(t, "legacy-refresh-token", payload["refresh_token"])
 	require.Equal(t, "/dashboard", payload["redirect"])
 	require.Equal(t, "Existing Login Example", payload["suggested_display_name"])
-	require.Equal(t, "https://cdn.example/existing-login.png", payload["suggested_avatar_url"])
+	require.NotContains(t, payload, "suggested_avatar_url")
+	require.NotContains(t, payload, "avatar_url")
 	require.NotContains(t, payload, "adoption_required")
 
 	accessToken, ok := payload["access_token"].(string)
@@ -2617,6 +2706,7 @@ type oauthPendingFlowTestHandlerOptions struct {
 	emailVerifyEnabled bool
 	emailCache         service.EmailCache
 	mediaService       *service.MediaService
+	refreshTokenCache  service.RefreshTokenCache
 	settingValues      map[string]string
 	defaultSubAssigner service.DefaultSubscriptionAssigner
 	affiliateService   *service.AffiliateService
@@ -2950,11 +3040,15 @@ CREATE TABLE IF NOT EXISTS user_affiliate_ledger (
 	if effectiveAffiliateService == nil {
 		effectiveAffiliateService = affiliateSvc
 	}
+	refreshTokenCache := options.refreshTokenCache
+	if refreshTokenCache == nil {
+		refreshTokenCache = &oauthPendingFlowRefreshTokenCacheStub{}
+	}
 	authSvc := service.NewAuthService(
 		client,
 		userRepo,
 		redeemRepo,
-		&oauthPendingFlowRefreshTokenCacheStub{},
+		refreshTokenCache,
 		cfg,
 		settingSvc,
 		emailService,
@@ -2963,6 +3057,7 @@ CREATE TABLE IF NOT EXISTS user_affiliate_ledger (
 		nil,
 		options.defaultSubAssigner,
 		effectiveAffiliateService,
+		nil,
 	)
 	userSvc := service.NewUserService(userRepo, nil, nil, nil, options.mediaService)
 	var totpSvc *service.TotpService
@@ -3043,7 +3138,9 @@ func (s *oauthPendingFlowSettingRepoStub) Delete(context.Context, string) error 
 	return nil
 }
 
-type oauthPendingFlowRefreshTokenCacheStub struct{}
+type oauthPendingFlowRefreshTokenCacheStub struct {
+	storeErr error
+}
 
 type oauthPendingFlowEmailCacheStub struct {
 	verificationCodes map[string]*service.VerificationCodeData
@@ -3110,7 +3207,7 @@ func (s *oauthPendingFlowEmailCacheStub) GetNotifyCodeUserRate(context.Context, 
 }
 
 func (s *oauthPendingFlowRefreshTokenCacheStub) StoreRefreshToken(context.Context, string, *service.RefreshTokenData, time.Duration) error {
-	return nil
+	return s.storeErr
 }
 
 func (s *oauthPendingFlowRefreshTokenCacheStub) GetRefreshToken(context.Context, string) (*service.RefreshTokenData, error) {
@@ -3220,6 +3317,10 @@ func (r *oauthPendingFlowRedeemCodeRepo) Update(ctx context.Context, code *servi
 	}
 	_, err := update.Save(ctx)
 	return err
+}
+
+func (r *oauthPendingFlowRedeemCodeRepo) BatchUpdate(context.Context, []int64, service.RedeemCodeBatchUpdateFields) (int64, error) {
+	panic("unexpected BatchUpdate call")
 }
 
 func (r *oauthPendingFlowRedeemCodeRepo) Delete(context.Context, int64) error {

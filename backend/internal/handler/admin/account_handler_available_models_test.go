@@ -115,7 +115,7 @@ func TestAccountHandlerGetAvailableModels_KiroUsesExplicitModelMapping(t *testin
 			Status:   service.StatusActive,
 			Credentials: map[string]any{
 				"model_mapping": map[string]any{
-					"claude-sonnet-4": "claude-3-7-sonnet",
+					"claude-sonnet-4.6": "claude-sonnet-4.6",
 				},
 			},
 		},
@@ -135,5 +135,5 @@ func TestAccountHandlerGetAvailableModels_KiroUsesExplicitModelMapping(t *testin
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Len(t, resp.Data, 1)
-	require.Equal(t, "claude-sonnet-4", resp.Data[0].ID)
+	require.Equal(t, "claude-sonnet-4.6", resp.Data[0].ID)
 }

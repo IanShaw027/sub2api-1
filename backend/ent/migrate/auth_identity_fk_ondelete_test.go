@@ -37,6 +37,14 @@ func TestAuthIdentityFoundationForeignKeyOnDeleteActions(t *testing.T) {
 	)
 }
 
+func TestUserPlatformQuotaForeignKeyOnDeleteAction(t *testing.T) {
+	require.Equal(
+		t,
+		entschema.Cascade,
+		findForeignKeyBySymbol(t, UserPlatformQuotasTable, "user_platform_quotas_users_platform_quotas").OnDelete,
+	)
+}
+
 func TestPaymentOrdersOutTradeNoPartialUniqueIndex(t *testing.T) {
 	idx := findIndexByName(t, PaymentOrdersTable, "paymentorder_out_trade_no")
 	require.True(t, idx.Unique)

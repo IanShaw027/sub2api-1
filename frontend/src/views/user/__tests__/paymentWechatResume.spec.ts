@@ -15,7 +15,7 @@ describe('parseWechatResumeRoute', () => {
       wechatResumeToken: 'resume-token-123',
       paymentType: 'wxpay',
       orderType: 'subscription',
-      orderAmount: 0,
+      orderAmount: 12.5,
       planId: 7,
     })
   })

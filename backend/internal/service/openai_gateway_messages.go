@@ -71,6 +71,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	clientStream := anthropicReq.Stream // client's original stream preference
 	toolNameMap := anthropicToolNameMap(anthropicReq.Tools)
 	stripAnthropicBillingHeaderFromSystem(&anthropicReq)
+	claudeCodeClient := c != nil && c.Request != nil && IsClaudeCodeClient(c.Request.Context())
+	anthropicBetaHeader := ""
+	if c != nil {
+		anthropicBetaHeader = c.GetHeader("anthropic-beta")
+	}
 
 	isStream := true
 	forcedDispatchModel := getOpenAIMessagesDispatchForcedModel(c)
@@ -114,7 +119,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if err != nil {
 		return nil, fmt.Errorf("convert anthropic to responses: %w", err)
 	}
-	if IsClaudeCodeClient(c.Request.Context()) {
+	if claudeCodeClient {
 		apicompat.AugmentClaudeToolDescriptions(responsesReq.Tools)
 	}
 
@@ -123,7 +128,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	responsesReq.Stream = true
 
 	// 2b. Handle BetaFastMode → service_tier: "priority"
-	if containsBetaToken(c.GetHeader("anthropic-beta"), claude.BetaFastMode) {
+	if containsBetaToken(anthropicBetaHeader, claude.BetaFastMode) {
 		responsesReq.ServiceTier = "priority"
 	}
 
@@ -176,18 +181,23 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		if err := json.Unmarshal(responsesBody, &reqBody); err != nil {
 			return nil, fmt.Errorf("unmarshal for codex transform: %w", err)
 		}
-		codexResult := applyCodexOAuthTransformWithInputMode(reqBody, false, false, codexTransformInputModePreservePrefix)
-		if c != nil {
-			c.Set(openAICodexTransformObsKey, codexResult.Observability)
-		}
 		forcedTemplateText := ""
 		if s.cfg != nil {
 			forcedTemplateText = s.cfg.Gateway.ForcedCodexInstructionsTemplate
 		}
-		if IsClaudeCodeClient(c.Request.Context()) &&
-			strings.TrimSpace(forcedTemplateText) == "" &&
-			applyEmbeddedDefaultInstructions(reqBody) {
-			codexResult.Modified = true
+		embedDefaultInstructions := claudeCodeClient &&
+			strings.TrimSpace(forcedTemplateText) == ""
+		codexResult := applyCodexOAuthTransformWithInputModeAndOptions(
+			reqBody,
+			false,
+			false,
+			codexTransformInputModePreservePrefix,
+			codexOAuthTransformOptions{
+				SkipDefaultInstructions: !embedDefaultInstructions,
+			},
+		)
+		if c != nil {
+			c.Set(openAICodexTransformObsKey, codexResult.Observability)
 		}
 		templateUpstreamModel := upstreamModel
 		if codexResult.NormalizedModel != "" {
@@ -244,6 +254,17 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			}
 		}
 	}
+
+	updatedBody, policyErr := s.applyOpenAIFastPolicyToBody(ctx, account, upstreamModel, responsesBody)
+	if policyErr != nil {
+		var blocked *OpenAIFastBlockedError
+		if errors.As(policyErr, &blocked) {
+			MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
+			writeAnthropicError(c, http.StatusForbidden, "permission_error", blocked.Message)
+		}
+		return nil, policyErr
+	}
+	responsesBody = updatedBody
 
 	// 5. Get access token
 	token, _, err := s.GetAccessToken(ctx, account)
@@ -422,14 +443,15 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 				if s.rateLimitService != nil {
 					s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
 				}
+				s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, billingModel)
 				return nil, &UpstreamFailoverError{
 					StatusCode:             resp.StatusCode,
 					ResponseBody:           respBody,
-					RetryableOnSameAccount: account.IsPoolMode() && (isPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
+					RetryableOnSameAccount: account.IsPoolMode() && (account.IsPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
 				}
 			}
 			// Non-failover error: return Anthropic-formatted error to client
-			return s.handleAnthropicErrorResponse(resp, c, account)
+			return s.handleAnthropicErrorResponse(resp, c, account, billingModel)
 		}
 		break
 	}
@@ -487,8 +509,9 @@ func (s *OpenAIGatewayService) handleAnthropicErrorResponse(
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
+	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
-	return s.handleCompatErrorResponse(resp, c, account, writeAnthropicError)
+	return s.handleCompatErrorResponse(resp, c, account, writeAnthropicError, requestedModel...)
 }
 
 // handleAnthropicBufferedStreamingResponse reads all Responses SSE events from
@@ -507,78 +530,14 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
-
-	scanner := bufio.NewScanner(resp.Body)
-	maxLineSize := defaultMaxLineSize
-	if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
-		maxLineSize = s.cfg.Gateway.MaxLineSize
-	}
-	scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
-
-	var finalResponse *apicompat.ResponsesResponse
-	var usage OpenAIUsage
-	acc := apicompat.NewBufferedResponseAccumulator()
-	processFrame := func(frame openAICompatSSEFrame) bool {
-		payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
-
-		var event apicompat.ResponsesStreamEvent
-		if err := json.Unmarshal([]byte(payload), &event); err != nil {
-			logger.L().Warn("openai messages buffered: failed to parse event",
-				zap.Error(err),
-				zap.String("request_id", requestID),
-			)
-			return false
-		}
-
-		// Accumulate delta content for fallback when terminal output is empty.
-		acc.ProcessEvent(&event)
-
-		// Terminal events carry the complete ResponsesResponse with output + usage.
-		if isAnthropicResponsesTerminalEvent(event.Type) && event.Response != nil {
-			finalResponse = event.Response
-			if event.Response.Usage != nil {
-				usage = OpenAIUsage{
-					InputTokens:  event.Response.Usage.InputTokens,
-					OutputTokens: event.Response.Usage.OutputTokens,
-				}
-				if event.Response.Usage.InputTokensDetails != nil {
-					usage.CacheReadInputTokens = event.Response.Usage.InputTokensDetails.CachedTokens
-				}
-			}
-			return true
-		}
-		return false
-	}
-
-	var parser openAICompatSSEFrameParser
-	for scanner.Scan() {
-		line := scanner.Text()
-		frame, ok := parser.AddLine(line)
-		if !ok {
-			continue
-		}
-		if processFrame(frame) {
-			break
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			logger.L().Warn("openai messages buffered: read error",
-				zap.Error(err),
-				zap.String("request_id", requestID),
-			)
-		}
-	}
-	if finalResponse == nil {
-		if frame, ok := parser.Finish(); ok {
-			processFrame(frame)
-		}
+	finalResponse, usage, acc, err := s.readOpenAICompatBufferedTerminal(resp, "openai messages buffered", requestID)
+	if err != nil {
+		return nil, err
 	}
 
 	if finalResponse == nil {
 		writeAnthropicError(c, http.StatusBadGateway, "api_error", "Upstream stream ended without a terminal response event")
-		return nil, fmt.Errorf("stream usage incomplete: missing terminal event")
+		return nil, fmt.Errorf("upstream stream ended without terminal event")
 	}
 
 	// When the terminal event has an empty output array, reconstruct from
@@ -679,19 +638,18 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			return false
 		}
 
-		// Extract usage from completion events
-		if isAnthropicResponsesTerminalEvent(event.Type) && event.Response != nil && event.Response.Usage != nil {
-			usage = OpenAIUsage{
-				InputTokens:  event.Response.Usage.InputTokens,
-				OutputTokens: event.Response.Usage.OutputTokens,
-			}
-			if event.Response.Usage.InputTokensDetails != nil {
-				usage.CacheReadInputTokens = event.Response.Usage.InputTokensDetails.CachedTokens
-			}
-		}
-		if isAnthropicResponsesTerminalEvent(event.Type) {
+		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(event.Type)
+		if isTerminalEvent {
 			if event.Response != nil {
-				responseID = strings.TrimSpace(event.Response.ID)
+				if id := strings.TrimSpace(event.Response.ID); id != "" {
+					responseID = id
+				}
+				if event.Response.Usage != nil {
+					usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
+				}
+			}
+			if event.Usage != nil {
+				usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
 			}
 			sawTerminalEvent = true
 		}
@@ -720,7 +678,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		if len(events) > 0 && !clientDisconnected {
 			c.Writer.Flush()
 		}
-		return sawTerminalEvent
+		return isTerminalEvent
 	}
 
 	// finalizeStream sends any remaining Anthropic events and returns the result.
@@ -756,6 +714,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	}
 	processFrame := func(frame openAICompatSSEFrame) bool {
 		payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
+		if strings.TrimSpace(payload) == "[DONE]" {
+			return false
+		}
 		return processDataLine(payload)
 	}
 
@@ -868,6 +829,178 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	}
 }
 
+func isOpenAICompatResponsesTerminalEvent(eventType string) bool {
+	switch strings.TrimSpace(eventType) {
+	case "response.completed", "response.done", "response.incomplete", "response.failed", "response.cancelled", "response.canceled":
+		return true
+	default:
+		return false
+	}
+}
+
+func isOpenAICompatDoneSentinelLine(line string) bool {
+	payload, ok := extractOpenAISSEDataLine(line)
+	return ok && strings.TrimSpace(payload) == "[DONE]"
+}
+
+func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
+	resp *http.Response,
+	logPrefix string,
+	requestID string,
+) (*apicompat.ResponsesResponse, OpenAIUsage, *apicompat.BufferedResponseAccumulator, error) {
+	acc := apicompat.NewBufferedResponseAccumulator()
+	var usage OpenAIUsage
+	if resp == nil || resp.Body == nil {
+		return nil, usage, acc, errors.New("upstream response body is nil")
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	maxLineSize := defaultMaxLineSize
+	if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
+		maxLineSize = s.cfg.Gateway.MaxLineSize
+	}
+	scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
+
+	streamInterval := time.Duration(0)
+	if s.cfg != nil && s.cfg.Gateway.StreamDataIntervalTimeout > 0 {
+		streamInterval = time.Duration(s.cfg.Gateway.StreamDataIntervalTimeout) * time.Second
+	}
+	var timeoutCh <-chan time.Time
+	var timeoutTimer *time.Timer
+	resetTimeout := func() {
+		if streamInterval <= 0 {
+			return
+		}
+		if timeoutTimer == nil {
+			timeoutTimer = time.NewTimer(streamInterval)
+			timeoutCh = timeoutTimer.C
+			return
+		}
+		if !timeoutTimer.Stop() {
+			select {
+			case <-timeoutTimer.C:
+			default:
+			}
+		}
+		timeoutTimer.Reset(streamInterval)
+	}
+	stopTimeout := func() {
+		if timeoutTimer == nil {
+			return
+		}
+		if !timeoutTimer.Stop() {
+			select {
+			case <-timeoutTimer.C:
+			default:
+			}
+		}
+	}
+	resetTimeout()
+	defer stopTimeout()
+
+	type scanEvent struct {
+		line string
+		err  error
+	}
+	events := make(chan scanEvent, 16)
+	done := make(chan struct{})
+	go func() {
+		defer close(events)
+		for scanner.Scan() {
+			select {
+			case events <- scanEvent{line: scanner.Text()}:
+			case <-done:
+				return
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			select {
+			case events <- scanEvent{err: err}:
+			case <-done:
+			}
+		}
+	}()
+	defer close(done)
+
+	var parser openAICompatSSEFrameParser
+	for {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				if frame, ok := parser.Finish(); ok {
+					payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
+					var event apicompat.ResponsesStreamEvent
+					if err := json.Unmarshal([]byte(payload), &event); err == nil {
+						acc.ProcessEvent(&event)
+						if isOpenAICompatResponsesTerminalEvent(event.Type) && event.Response != nil {
+							if event.Usage != nil {
+								usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
+								if event.Response.Usage == nil {
+									event.Response.Usage = event.Usage
+								}
+							}
+							if event.Response.Usage != nil {
+								usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
+							}
+							return event.Response, usage, acc, nil
+						}
+					}
+				}
+				return nil, usage, acc, nil
+			}
+			resetTimeout()
+			if ev.err != nil {
+				if !errors.Is(ev.err, context.Canceled) && !errors.Is(ev.err, context.DeadlineExceeded) {
+					logger.L().Warn(logPrefix+": read error",
+						zap.Error(ev.err),
+						zap.String("request_id", requestID),
+					)
+				}
+				return nil, usage, acc, ev.err
+			}
+			if isOpenAICompatDoneSentinelLine(ev.line) {
+				return nil, usage, acc, nil
+			}
+			frame, ok := parser.AddLine(ev.line)
+			if !ok {
+				continue
+			}
+			payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
+
+			var event apicompat.ResponsesStreamEvent
+			if err := json.Unmarshal([]byte(payload), &event); err != nil {
+				logger.L().Warn(logPrefix+": failed to parse event",
+					zap.Error(err),
+					zap.String("request_id", requestID),
+				)
+				continue
+			}
+
+			acc.ProcessEvent(&event)
+			if isOpenAICompatResponsesTerminalEvent(event.Type) && event.Response != nil {
+				if event.Usage != nil {
+					usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
+					if event.Response.Usage == nil {
+						event.Response.Usage = event.Usage
+					}
+				}
+				if event.Response.Usage != nil {
+					usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
+				}
+				return event.Response, usage, acc, nil
+			}
+
+		case <-timeoutCh:
+			_ = resp.Body.Close()
+			logger.L().Warn(logPrefix+": data interval timeout",
+				zap.String("request_id", requestID),
+				zap.Duration("interval", streamInterval),
+			)
+			return nil, usage, acc, fmt.Errorf("stream data interval timeout")
+		}
+	}
+}
+
 // writeAnthropicError writes an error response in Anthropic Messages API format.
 func writeAnthropicError(c *gin.Context, statusCode int, errType, message string) {
 	c.JSON(statusCode, gin.H{
@@ -877,6 +1010,20 @@ func writeAnthropicError(c *gin.Context, statusCode int, errType, message string
 			"message": message,
 		},
 	})
+}
+
+func copyOpenAIUsageFromResponsesUsage(usage *apicompat.ResponsesUsage) OpenAIUsage {
+	if usage == nil {
+		return OpenAIUsage{}
+	}
+	result := OpenAIUsage{
+		InputTokens:  usage.InputTokens,
+		OutputTokens: usage.OutputTokens,
+	}
+	if usage.InputTokensDetails != nil {
+		result.CacheReadInputTokens = usage.InputTokensDetails.CachedTokens
+	}
+	return result
 }
 
 func anthropicToolNameMap(tools []apicompat.AnthropicTool) map[string]string {

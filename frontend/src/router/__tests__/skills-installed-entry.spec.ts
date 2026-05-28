@@ -119,7 +119,8 @@ vi.mock('@/components/skills/SkillCard.vue', () => ({
   default: {
     name: 'SkillCardStub',
     props: ['skill'],
-    template: '<div class="skill-card-stub">{{ skill?.name }}</div>',
+    emits: ['toggle-install'],
+    template: '<button class="skill-card-stub" type="button" @click="$emit(`toggle-install`, skill)">{{ skill?.name }}</button>',
   },
 }))
 
@@ -372,5 +373,58 @@ describe('skill installed entry', () => {
         page_size: '24',
       },
     })
+  })
+
+  it('refreshes the installed-only list after uninstall so the card is removed', async () => {
+    skillsStore.marketPagination.items = [
+      {
+        id: 7,
+        slug: 'installed-skill',
+        name: 'Installed skill',
+        tagline: '',
+        description: '',
+        type: 'prompt_chat',
+        visibility: 'public',
+        status: 'published',
+        category: null,
+        tags: [],
+        cover_image_url: null,
+        pricing: { mode: 'free', amount: 0, currency: 'USD' },
+        source_locked: false,
+        can_view_source: true,
+        installed: true,
+        owned: false,
+        editable: false,
+        author: { id: 1, name: 'Author', avatar_url: null },
+        stats: { installs: 3, runs: 0, revenue: 0, rating: null, versions: 1 },
+        latest_version: null,
+        current_version: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      } as never,
+    ]
+    skillsStore.marketPagination.total = 1
+    skillsStore.loadMarket.mockImplementationOnce(async () => undefined)
+    skillsStore.loadMarket.mockImplementationOnce(async () => {
+      skillsStore.marketPagination.items = []
+      skillsStore.marketPagination.total = 0
+    })
+
+    const wrapper = mount(SkillMarketView, {
+      props: {
+        installedOnly: true,
+      },
+    })
+
+    await flushPromises()
+    expect(wrapper.findAll('.skill-card-stub')).toHaveLength(1)
+
+    await wrapper.get('.skill-card-stub').trigger('click')
+    await flushPromises()
+
+    expect(skillsStore.toggleInstall).toHaveBeenCalledWith(7, true)
+    expect(skillsStore.loadMarket.mock.calls[skillsStore.loadMarket.mock.calls.length - 1]).toEqual([1, 18])
+    expect(skillsStore.loadMarket.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(skillsStore.marketPagination.items).toHaveLength(0)
   })
 })

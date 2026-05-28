@@ -23,7 +23,7 @@
             <button @click="applyOrderFilters" class="btn btn-secondary">
               {{ t('common.search') }}
             </button>
-            <button @click="loadOrders" :disabled="ordersLoading" class="btn btn-secondary" :title="t('common.refresh')">
+            <button @click="reloadOrders" :disabled="ordersLoading" class="btn btn-secondary" :title="t('common.refresh')">
               <Icon name="refresh" size="md" :class="ordersLoading ? 'animate-spin' : ''" />
             </button>
           </div>
@@ -119,12 +119,12 @@
       </div>
     </BaseDialog>
 
-    <AdminRefundDialog :show="showRefundDialog" :order="selectedOrder" :submitting="refundSubmitting" @confirm="handleRefund" @cancel="showRefundDialog = false" />
+    <AdminRefundDialog :show="showRefundDialog" :order="selectedOrder" :submitting="refundSubmitting" @confirm="handleRefund" @cancel="closeRefundDialog" />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminPaymentAPI } from '@/api/admin/payment'
@@ -163,14 +163,30 @@ const showDetailDialog = ref(false)
 const showRefundDialog = ref(false)
 const refundSubmitting = ref(false)
 const orderAuditLogs = ref<AuditLog[]>([])
+let orderListReqSeq = 0
+let orderDetailReqSeq = 0
+let refundReqSeq = 0
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+function clearOrderSearchDebounce() {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
+}
+
+function reloadOrders() {
+  clearOrderSearchDebounce()
+  loadOrders()
+}
+
 function debounceApplyOrderFilters() {
-  if (debounceTimer) clearTimeout(debounceTimer)
+  clearOrderSearchDebounce()
   debounceTimer = setTimeout(() => applyOrderFilters(), 300)
 }
 
 async function loadOrders() {
+  const seq = ++orderListReqSeq
   ordersLoading.value = true
   try {
     const res = await adminPaymentAPI.getOrders({
@@ -180,19 +196,23 @@ async function loadOrders() {
       start_date: orderFilters.start_date || undefined, end_date: orderFilters.end_date || undefined,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     })
+    if (seq !== orderListReqSeq) return
     orders.value = res.data.items || []
     orderPagination.total = res.data.total || 0
   } catch (err: unknown) {
+    if (seq !== orderListReqSeq) return
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
-  } finally { ordersLoading.value = false }
+  } finally { if (seq === orderListReqSeq) ordersLoading.value = false }
 }
 
 function applyOrderFilters() {
   orderPagination.page = 1
+  clearOrderSearchDebounce()
   loadOrders()
 }
 
 function resetOrderFilters() {
+  clearOrderSearchDebounce()
   orderSearch.value = ''
   orderFilters.status = ''
   orderFilters.payment_type = ''
@@ -203,8 +223,8 @@ function resetOrderFilters() {
   loadOrders()
 }
 
-function handleOrderPageChange(page: number) { orderPagination.page = page; loadOrders() }
-function handleOrderPageSizeChange(size: number) { orderPagination.page_size = size; orderPagination.page = 1; loadOrders() }
+function handleOrderPageChange(page: number) { clearOrderSearchDebounce(); orderPagination.page = page; loadOrders() }
+function handleOrderPageSizeChange(size: number) { clearOrderSearchDebounce(); orderPagination.page_size = size; orderPagination.page = 1; loadOrders() }
 
 const statusFilterOptions = computed(() => [
   { value: '', label: t('payment.admin.allStatuses') },
@@ -234,40 +254,72 @@ const orderTypeFilterOptions = computed(() => [
 ])
 
 async function showOrderDetail(order: PaymentOrder) {
+  const seq = ++orderDetailReqSeq
   selectedOrder.value = order
   orderAuditLogs.value = []
   showDetailDialog.value = true
   try {
     const res = await adminPaymentAPI.getOrder(order.id)
     const data = res.data as AdminPaymentOrderDetail & { audit_logs?: AuditLog[] }
+    if (seq !== orderDetailReqSeq || !showDetailDialog.value || selectedOrder.value?.id !== order.id) return
     if (data.order) selectedOrder.value = data.order
     orderAuditLogs.value = (data.auditLogs || data.audit_logs || []) as AuditLog[]
   } catch (_err: unknown) { /* keep cached order data */ }
 }
 
 async function handleCancelOrder(order: PaymentOrder) {
+  clearOrderSearchDebounce()
   try { await adminPaymentAPI.cancelOrder(order.id); appStore.showSuccess(t('payment.admin.orderCancelled')); loadOrders() }
   catch (err: unknown) { appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error'))) }
 }
 
 async function handleRetryOrder(order: PaymentOrder) {
+  clearOrderSearchDebounce()
   try { await adminPaymentAPI.retryRecharge(order.id); appStore.showSuccess(t('payment.admin.retrySuccess')); loadOrders() }
   catch (err: unknown) { appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error'))) }
 }
 
-function openRefundDialog(order: PaymentOrder) { selectedOrder.value = order; showRefundDialog.value = true }
+function resetRefundSubmitting() {
+  refundReqSeq += 1
+  refundSubmitting.value = false
+}
+
+function openRefundDialog(order: PaymentOrder) {
+  selectedOrder.value = order
+  resetRefundSubmitting()
+  showRefundDialog.value = true
+}
+
+function closeRefundDialog() {
+  showRefundDialog.value = false
+  resetRefundSubmitting()
+}
 
 async function handleRefund(data: { amount: number; reason: string; deduct_balance: boolean; force: boolean }) {
   if (!selectedOrder.value) return
+  const seq = ++refundReqSeq
+  const orderId = selectedOrder.value.id
   refundSubmitting.value = true
   try {
-    await adminPaymentAPI.refundOrder(selectedOrder.value.id, { amount: data.amount, reason: data.reason, deduct_balance: data.deduct_balance, force: data.force })
+    await adminPaymentAPI.refundOrder(orderId, { amount: data.amount, reason: data.reason, deduct_balance: data.deduct_balance, force: data.force })
+    if (seq !== refundReqSeq) return
+    clearOrderSearchDebounce()
     appStore.showSuccess(t('payment.admin.refundSuccess')); showRefundDialog.value = false; loadOrders()
-  } catch (err: unknown) { appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error'))) }
-  finally { refundSubmitting.value = false }
+  } catch (err: unknown) {
+    if (seq !== refundReqSeq) return
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  }
+  finally { if (seq === refundReqSeq) refundSubmitting.value = false }
 }
 
 function formatDateTime(dateStr: string): string { return formatOrderDateTime(dateStr) }
 
-onMounted(() => loadOrders())
+onMounted(() => reloadOrders())
+
+onUnmounted(() => {
+  clearOrderSearchDebounce()
+  orderListReqSeq += 1
+  orderDetailReqSeq += 1
+  refundReqSeq += 1
+})
 </script>

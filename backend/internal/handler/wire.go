@@ -97,31 +97,33 @@ func ProvideChannelMonitorHandler(monitorService *service.ChannelMonitorService,
 	return admin.NewChannelMonitorHandler(monitorService, settingService)
 }
 
-// ProvideAdminSettingHandler wires the optional media service parameter
-// explicitly so Wire does not try to synthesize a variadic []*MediaService dependency.
-func ProvideAdminSettingHandler(
-	settingService *service.SettingService,
-	emailService *service.EmailService,
-	turnstileService *service.TurnstileService,
-	opsService *service.OpsService,
-	paymentConfigService *service.PaymentConfigService,
-	paymentService *service.PaymentService,
-	mediaService *service.MediaService,
-) *admin.SettingHandler {
-	return admin.NewSettingHandler(
-		settingService,
-		emailService,
-		turnstileService,
-		opsService,
-		paymentConfigService,
-		paymentService,
-		mediaService,
-	)
+// ProvideSettingHandler creates SettingHandler with version from BuildInfo
+func ProvideSettingHandler(settingService *service.SettingService, buildInfo BuildInfo, notificationEmailService *service.NotificationEmailService) *SettingHandler {
+	h := NewSettingHandler(settingService, buildInfo.Version)
+	h.SetNotificationEmailService(notificationEmailService)
+	return h
 }
 
-// ProvideSettingHandler creates SettingHandler with version from BuildInfo
-func ProvideSettingHandler(settingService *service.SettingService, buildInfo BuildInfo) *SettingHandler {
-	return NewSettingHandler(settingService, buildInfo.Version)
+func ProvideAuthHandler(
+	cfg *config.Config,
+	authService *service.AuthService,
+	userService *service.UserService,
+	settingService *service.SettingService,
+	promoService *service.PromoService,
+	redeemService *service.RedeemService,
+	totpService *service.TotpService,
+	userAttributeService *service.UserAttributeService,
+) *AuthHandler {
+	h := NewAuthHandler(cfg, authService, userService, settingService, promoService, redeemService, totpService)
+	h.SetUserAttributeService(userAttributeService)
+	return h
+}
+
+// ProvideAdminSettingHandler creates admin.SettingHandler.
+func ProvideAdminSettingHandler(settingService *service.SettingService, emailService *service.EmailService, turnstileService *service.TurnstileService, opsService *service.OpsService, paymentConfigService *service.PaymentConfigService, paymentService *service.PaymentService, notificationEmailService *service.NotificationEmailService, mediaService *service.MediaService) *admin.SettingHandler {
+	h := admin.NewSettingHandler(settingService, emailService, turnstileService, opsService, paymentConfigService, paymentService, mediaService)
+	h.SetNotificationEmailService(notificationEmailService)
+	return h
 }
 
 func ProvideAISkillModule(
@@ -206,7 +208,7 @@ func ProvideHandlers(
 // ProviderSet is the Wire provider set for all handlers
 var ProviderSet = wire.NewSet(
 	// Top-level handlers
-	NewAuthHandler,
+	ProvideAuthHandler,
 	NewAIHandler,
 	NewUserHandler,
 	NewAPIKeyHandler,

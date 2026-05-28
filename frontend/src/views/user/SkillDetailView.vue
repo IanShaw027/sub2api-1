@@ -202,7 +202,11 @@
           <div class="card p-5">
             <div class="mb-4 flex items-center justify-between">
               <h2 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('skills.versions.recent', '最近版本') }}</h2>
-              <RouterLink :to="skillPaths.versions(skill.id)" class="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400">
+              <RouterLink
+                v-if="skill.editable"
+                :to="skillPaths.versions(skill.id)"
+                class="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400"
+              >
                 {{ t('skills.versions.title', '版本管理') }}
               </RouterLink>
             </div>
@@ -397,12 +401,12 @@ async function triggerRun(mode: SkillRunMode): Promise<void> {
 
   try {
     if (mode === 'test') {
-      await skillsStore.testSkillVersion(skill.value.id, version.id)
+      await skillsStore.testSkillVersion(skill.value.id, version.id, { ...variableValues.value })
       appStore.showSuccess(t('skills.actions.testSuccess', '已发起测试'))
       return
     }
 
-    await skillsStore.useSkillVersion(skill.value.id, version.id)
+    await skillsStore.useSkillVersion(skill.value.id, version.id, { ...variableValues.value })
     appStore.showSuccess(t('skills.actions.useSuccess', '已发起使用'))
   } catch (error) {
     appStore.showError(actionErrorMessage(error))

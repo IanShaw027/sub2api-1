@@ -122,7 +122,6 @@
           <label class="btn btn-secondary btn-sm cursor-pointer">
             <input
               type="file"
-              accept="image/*"
               multiple
               class="hidden"
               :disabled="uploadingAttachment"
@@ -179,6 +178,7 @@ const { t } = useI18n()
 const localReplyContent = ref('')
 const messageContainerRef = ref<HTMLDivElement | null>(null)
 const isComposing = ref(false)
+const attachmentUploadGeneration = ref(0)
 type PendingTicketAttachment = TicketMessageAttachment & { preview_url?: string }
 
 const pendingAttachments = ref<PendingTicketAttachment[]>([])
@@ -212,7 +212,16 @@ watch(() => props.clearComposerKey, () => {
   clearPendingAttachments()
 })
 
+watch(() => props.ticketId, (nextTicketID, previousTicketID) => {
+  if (nextTicketID === previousTicketID) return
+  attachmentUploadGeneration.value += 1
+  composerValue.value = ''
+  clearPendingAttachments()
+  uploadingAttachment.value = false
+})
+
 function submitReply() {
+  if (props.sending || uploadingAttachment.value) return
   const content = composerValue.value.trim()
   const atts = pendingAttachments.value.length > 0
     ? pendingAttachments.value.map(a => ({ media_id: a.media_id }))
@@ -226,30 +235,46 @@ async function handleAttachmentUpload(event: Event) {
   const files = Array.from(input.files || [])
   if (files.length === 0 || !props.uploadFn) return
 
+  const ticketId = props.ticketId
+  const uploadGeneration = attachmentUploadGeneration.value
   uploadingAttachment.value = true
   try {
     for (const file of files) {
-      if (!file.type.startsWith('image/')) continue
-      const result = await props.uploadFn(file, props.ticketId)
-      if (result) {
-        const previewURL = URL.createObjectURL(file)
-        pendingAttachments.value.push({
-          media_id: result.id,
-          url: result.public_url || result.url || '',
-          thumbnail_url: result.thumbnail_public_url || result.thumbnail_url || previewURL,
-          preview_url: previewURL,
-          file_name: result.original_file_name || file.name,
-          content_type: result.mime_type || file.type,
-          size_bytes: result.size_bytes || file.size,
-        })
+      if (!isCurrentAttachmentUpload(ticketId, uploadGeneration)) {
+        break
       }
+      const result = await props.uploadFn(file, ticketId)
+      if (!isCurrentAttachmentUpload(ticketId, uploadGeneration)) {
+        break
+      }
+      if (!result) {
+        continue
+      }
+      const previewURL = file.type.startsWith('image/') ? URL.createObjectURL(file) : ''
+      pendingAttachments.value.push({
+        media_id: result.id,
+        url: result.public_url || result.url || '',
+        thumbnail_url: result.thumbnail_public_url || result.thumbnail_url || previewURL,
+        preview_url: previewURL || undefined,
+        file_name: result.original_file_name || file.name,
+        content_type: result.mime_type || file.type,
+        size_bytes: result.size_bytes || file.size,
+      })
     }
   } catch (error) {
-    emit('upload-error', error)
+    if (isCurrentAttachmentUpload(ticketId, uploadGeneration)) {
+      emit('upload-error', error)
+    }
   } finally {
-    uploadingAttachment.value = false
+    if (isCurrentAttachmentUpload(ticketId, uploadGeneration)) {
+      uploadingAttachment.value = false
+    }
     input.value = ''
   }
+}
+
+function isCurrentAttachmentUpload(ticketId: number | undefined, uploadGeneration: number) {
+  return props.ticketId === ticketId && attachmentUploadGeneration.value === uploadGeneration
 }
 
 function removePendingAttachment(index: number) {

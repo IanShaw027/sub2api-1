@@ -5,6 +5,8 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -21,10 +23,14 @@ import (
 )
 
 type paymentOrderLifecycleQueryProvider struct {
-	lastQueryTradeNo string
-	queryCalls       int
-	responses        []*payment.QueryOrderResponse
-	resp             *payment.QueryOrderResponse
+	key               string
+	lastQueryTradeNo  string
+	lastCancelTradeNo string
+	queryCalls        int
+	cancelCalls       int
+	cancelErr         error
+	responses         []*payment.QueryOrderResponse
+	resp              *payment.QueryOrderResponse
 }
 
 type paymentOrderLifecycleRedeemRepo struct {
@@ -39,10 +45,15 @@ func (p *paymentOrderLifecycleQueryProvider) Name() string {
 	return "payment-order-lifecycle-query-provider"
 }
 
-func (p *paymentOrderLifecycleQueryProvider) ProviderKey() string { return payment.TypeAlipay }
+func (p *paymentOrderLifecycleQueryProvider) ProviderKey() string {
+	if p.key != "" {
+		return p.key
+	}
+	return payment.TypeAlipay
+}
 
 func (p *paymentOrderLifecycleQueryProvider) SupportedTypes() []payment.PaymentType {
-	return []payment.PaymentType{payment.TypeAlipay}
+	return []payment.PaymentType{p.ProviderKey()}
 }
 
 func (p *paymentOrderLifecycleQueryProvider) CreatePayment(context.Context, payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
@@ -68,6 +79,12 @@ func (p *paymentOrderLifecycleQueryProvider) VerifyNotification(context.Context,
 
 func (p *paymentOrderLifecycleQueryProvider) Refund(context.Context, payment.RefundRequest) (*payment.RefundResponse, error) {
 	panic("unexpected call")
+}
+
+func (p *paymentOrderLifecycleQueryProvider) CancelPayment(_ context.Context, tradeNo string) error {
+	p.lastCancelTradeNo = tradeNo
+	p.cancelCalls++
+	return p.cancelErr
 }
 
 func (r *paymentOrderLifecycleRedeemRepo) Create(context.Context, *RedeemCode) error {
@@ -99,6 +116,10 @@ func (r *paymentOrderLifecycleRedeemRepo) GetByCode(_ context.Context, code stri
 }
 
 func (r *paymentOrderLifecycleRedeemRepo) Update(context.Context, *RedeemCode) error {
+	panic("unexpected call")
+}
+
+func (r *paymentOrderLifecycleRedeemRepo) BatchUpdate(context.Context, []int64, RedeemCodeBatchUpdateFields) (int64, error) {
 	panic("unexpected call")
 }
 
@@ -445,6 +466,286 @@ func TestVerifyOrderByOutTradeNoRejectsPaidQueryWithZeroAmount(t *testing.T) {
 	require.Empty(t, redeemRepo.useCalls)
 }
 
+func TestVerifyOrderByOutTradeNoDoesNotCancelUnpaidUpstreamOrder(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("checkpaid-pending@example.com").
+		SetPasswordHash("hash").
+		SetUsername("checkpaid-pending-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("CHECKPAID-PENDING").
+		SetOutTradeNo("sub2_checkpaid_pending").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		resp: &payment.QueryOrderResponse{
+			TradeNo: order.OutTradeNo,
+			Status:  payment.ProviderStatusPending,
+			Amount:  0,
+		},
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	got, err := svc.VerifyOrderByOutTradeNo(ctx, order.OutTradeNo, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPending, got.Status)
+	require.Equal(t, order.OutTradeNo, provider.lastQueryTradeNo)
+	require.Zero(t, provider.cancelCalls)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPending, reloaded.Status)
+}
+
+func TestCancelOrderStillClosesUnpaidUpstreamOrder(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("cancel-pending@example.com").
+		SetPasswordHash("hash").
+		SetUsername("cancel-pending-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("CANCEL-PENDING").
+		SetOutTradeNo("sub2_cancel_pending").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		resp: &payment.QueryOrderResponse{
+			TradeNo: order.OutTradeNo,
+			Status:  payment.ProviderStatusPending,
+			Amount:  0,
+		},
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	outcome, err := svc.CancelOrder(ctx, order.ID, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, checkPaidResultCancelled, outcome)
+	require.Equal(t, order.OutTradeNo, provider.lastCancelTradeNo)
+	require.Equal(t, 1, provider.cancelCalls)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCancelled, reloaded.Status)
+}
+
+func TestCancelOrderIgnoresUpstreamCancelErrorAfterLocalCancel(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("cancel-error@example.com").
+		SetPasswordHash("hash").
+		SetUsername("cancel-error-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("CANCEL-UPSTREAM-ERROR").
+		SetOutTradeNo("sub2_cancel_upstream_error").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		resp: &payment.QueryOrderResponse{
+			TradeNo: order.OutTradeNo,
+			Status:  payment.ProviderStatusPending,
+			Amount:  0,
+		},
+		cancelErr: errors.New("provider cancel failed"),
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	outcome, err := svc.CancelOrder(ctx, order.ID, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, checkPaidResultCancelled, outcome)
+	require.Equal(t, order.OutTradeNo, provider.lastCancelTradeNo)
+	require.Equal(t, 1, provider.cancelCalls)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCancelled, reloaded.Status)
+}
+
+func TestReconcilePendingWxpayOrdersBackfillsPaidOrder(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wxpay-reconcile@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wxpay-reconcile-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(50).
+		SetPayAmount(50).
+		SetFeeRate(0).
+		SetRechargeCode("WXPAY-RECONCILE").
+		SetOutTradeNo("sub2_wxpay_reconcile").
+		SetPaymentType(payment.TypeWxpay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	userRepo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:       user.ID,
+			Email:    user.Email,
+			Username: user.Username,
+			Balance:  0,
+		},
+	}
+	userRepo.updateBalanceFn = func(ctx context.Context, id int64, amount float64) error {
+		require.Equal(t, user.ID, id)
+		if userRepo.getByIDUser != nil {
+			userRepo.getByIDUser.Balance += amount
+		}
+		return nil
+	}
+	redeemRepo := &paymentOrderLifecycleRedeemRepo{
+		codesByCode: map[string]*RedeemCode{
+			order.RechargeCode: {
+				ID:     1,
+				Code:   order.RechargeCode,
+				Type:   RedeemTypeBalance,
+				Value:  order.Amount,
+				Status: StatusUnused,
+			},
+		},
+	}
+	redeemService := NewRedeemService(
+		redeemRepo,
+		userRepo,
+		nil,
+		nil,
+		nil,
+		client,
+		nil,
+		nil,
+	)
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWxpay,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wxpay-upstream-trade-123",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  50,
+			Metadata: map[string]string{
+				"trade_state": "SUCCESS",
+			},
+		},
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		redeemService:   redeemService,
+		userRepo:        userRepo,
+		providersLoaded: true,
+	}
+
+	recovered, err := svc.ReconcilePendingWxpayOrders(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, recovered)
+	require.Equal(t, order.OutTradeNo, provider.lastQueryTradeNo)
+	require.Zero(t, provider.cancelCalls)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Equal(t, "wxpay-upstream-trade-123", reloaded.PaymentTradeNo)
+	reloadedUser, err := client.User.Get(ctx, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, 50.0, reloadedUser.Balance)
+	redeemCode, err := client.RedeemCode.Query().Where(redeemcode.CodeEQ(order.RechargeCode)).Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, StatusUsed, redeemCode.Status)
+	require.NotNil(t, redeemCode.UsedBy)
+	require.Equal(t, user.ID, *redeemCode.UsedBy)
+}
+
 func TestVerifyOrderByOutTradeNoUsesOutTradeNoWhenPaymentTradeNoAlreadyExistsForAlipay(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
@@ -607,6 +908,288 @@ func TestVerifyOrderByOutTradeNoReconcilesFailedOrderAndBackfillsPaidMetadata(t 
 	require.NoError(t, err)
 	require.Equal(t, 88.0, reloadedUser.Balance)
 	require.Equal(t, 88.0, reloadedUser.TotalRecharged)
+}
+
+func TestMarkFailedOrderPaidAndReloadRejectsAmountMismatch(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("failed-amount@example.com").
+		SetPasswordHash("hash").
+		SetUsername("failed-amount-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(120).
+		SetFeeRate(0).
+		SetRechargeCode("FAILED-AMOUNT-PRESERVE").
+		SetOutTradeNo("sub2_failed_amount_preserve").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusFailed).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetFailedAt(time.Now().Add(-2 * time.Minute)).
+		SetFailedReason("local failure before reconciliation").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+
+	got, err := svc.markFailedOrderPaidAndReload(ctx, order.ID, "upstream-trade-preserve", 80)
+	require.Error(t, err)
+	require.Nil(t, got)
+	require.Contains(t, err.Error(), "amount mismatch")
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, 120.0, reloaded.PayAmount)
+	require.Equal(t, OrderStatusFailed, reloaded.Status)
+	require.Empty(t, reloaded.PaymentTradeNo)
+	require.Nil(t, reloaded.PaidAt)
+	require.NotNil(t, reloaded.FailedAt)
+}
+
+func TestMarkFailedOrderPaidAndReloadRejectsSubCentAmountDrift(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("failed-subcent@example.com").
+		SetPasswordHash("hash").
+		SetUsername("failed-subcent-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("FAILED-SUBCENT-PRESERVE").
+		SetOutTradeNo("sub2_failed_subcent_preserve").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusFailed).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetFailedAt(time.Now().Add(-2 * time.Minute)).
+		SetFailedReason("local failure before reconciliation").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+
+	got, err := svc.markFailedOrderPaidAndReload(ctx, order.ID, "upstream-trade-subcent", 100.005)
+	require.Error(t, err)
+	require.Nil(t, got)
+	require.Contains(t, err.Error(), "amount mismatch")
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusFailed, reloaded.Status)
+	require.Equal(t, 100.0, reloaded.PayAmount)
+	require.Empty(t, reloaded.PaymentTradeNo)
+	require.Nil(t, reloaded.PaidAt)
+}
+
+func TestVerifyOrderByOutTradeNoRejectsFailedOrderAmountMismatch(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("checkpaid-failed-amount-mismatch@example.com").
+		SetPasswordHash("hash").
+		SetUsername("checkpaid-failed-amount-mismatch-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(120).
+		SetFeeRate(0).
+		SetRechargeCode("CHECKPAID-FAILED-AMOUNT-MISMATCH").
+		SetOutTradeNo("sub2_checkpaid_failed_amount_mismatch").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusFailed).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetFailedAt(time.Now().Add(-5 * time.Minute)).
+		SetFailedReason("provider callback lost after local failure").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "upstream-trade-mismatch",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  80,
+		},
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	_, err = svc.VerifyOrderByOutTradeNo(ctx, order.OutTradeNo, user.ID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "amount mismatch")
+	require.Equal(t, 1, provider.queryCalls)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusFailed, reloaded.Status)
+	require.Equal(t, 120.0, reloaded.PayAmount)
+	require.Empty(t, reloaded.PaymentTradeNo)
+	require.Nil(t, reloaded.PaidAt)
+	require.NotNil(t, reloaded.FailedAt)
+}
+
+func TestVerifyOrderByOutTradeNoReturnsErrorWhenLocalConfirmationFails(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("checkpaid-local-fail@example.com").
+		SetPasswordHash("hash").
+		SetUsername("checkpaid-local-fail-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("CHECKPAID-LOCAL-FAIL").
+		SetOutTradeNo("sub2_checkpaid_local_fail").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	trigger := fmt.Sprintf(`
+		CREATE TRIGGER fail_payment_confirmation
+		BEFORE UPDATE OF status ON payment_orders
+		WHEN NEW.id = %d AND NEW.status = '%s'
+		BEGIN
+			SELECT RAISE(FAIL, 'forced local confirmation failure');
+		END;
+	`, order.ID, OrderStatusPaid)
+	_, err = client.ExecContext(ctx, trigger)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "upstream-trade-local-fail",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  88,
+		},
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	_, err = svc.VerifyOrderByOutTradeNo(ctx, order.OutTradeNo, user.ID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "local payment confirmation failed")
+	require.Equal(t, 1, provider.queryCalls)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPending, reloaded.Status)
+	require.Nil(t, reloaded.PaidAt)
+}
+
+func TestExpireTimedOutOrdersIgnoresUpstreamCancelErrorAfterLocalExpire(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("expire-cancel-fail@example.com").
+		SetPasswordHash("hash").
+		SetUsername("expire-cancel-fail-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("EXPIRE-CANCEL-FAIL").
+		SetOutTradeNo("sub2_expire_cancel_fail").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(-time.Minute)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		resp: &payment.QueryOrderResponse{
+			TradeNo: order.OutTradeNo,
+			Status:  payment.ProviderStatusPending,
+			Amount:  0,
+		},
+		cancelErr: errors.New("provider cancel failed"),
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	count, err := svc.ExpireTimedOutOrders(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+	require.Equal(t, 1, provider.cancelCalls)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusExpired, reloaded.Status)
 }
 
 func TestVerifyOrderPublicReconcilesLegacyFailedOrderWithoutResumeToken(t *testing.T) {

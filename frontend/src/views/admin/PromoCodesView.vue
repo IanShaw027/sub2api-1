@@ -512,6 +512,7 @@ const getStatusLabel = (status: string, row: PromoCode) => {
 let abortController: AbortController | null = null
 
 const loadCodes = async () => {
+  clearTimeout(searchTimeout)
   if (abortController) {
     abortController.abort()
   }

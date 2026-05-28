@@ -56,7 +56,7 @@
       <Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" />
     </div>
 
-    <BaseDialog :show="!!detail" :title="t('payment.invoice.detail')" width="wide" @close="detail = null">
+    <BaseDialog :show="!!detail" :title="t('payment.invoice.detail')" width="wide" @close="closeDetail">
       <div v-if="detail" class="space-y-4">
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderNo') }}</p><p class="text-sm text-gray-900 dark:text-white">{{ detail.order_out_trade_no }}</p></div>
@@ -76,7 +76,7 @@
       </div>
       <template #footer>
         <div class="flex justify-end gap-3">
-          <button class="btn btn-secondary" @click="detail = null">{{ t('common.close') }}</button>
+          <button class="btn btn-secondary" @click="closeDetail">{{ t('common.close') }}</button>
           <button v-if="detail?.status === 'APPLIED'" class="btn btn-primary" :disabled="submitting || !selectedFile" @click="uploadFile">{{ submitting ? t('common.processing') : t('payment.invoice.markIssued') }}</button>
         </div>
       </template>
@@ -85,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
@@ -108,6 +108,10 @@ const detail = ref<InvoiceApplication | null>(null)
 const selectedFile = ref<File | null>(null)
 const filters = reactive({ status: '', keyword: '' })
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
+let invoiceListReqSeq = 0
+let invoiceDetailReqSeq = 0
+let invoiceUploadReqSeq = 0
+let activeInvoiceDetailId: number | null = null
 
 const statusOptions = computed(() => [
   { value: '', label: t('common.all') },
@@ -128,6 +132,7 @@ function formatDateTime(value?: string) {
 }
 
 async function loadInvoices() {
+  const seq = ++invoiceListReqSeq
   loading.value = true
   try {
     const res = await adminPaymentAPI.getInvoices({
@@ -136,12 +141,14 @@ async function loadInvoices() {
       status: filters.status || undefined,
       keyword: filters.keyword || undefined,
     })
+    if (seq !== invoiceListReqSeq) return
     invoices.value = res.data.items || []
     pagination.total = res.data.total || 0
   } catch (err: unknown) {
+    if (seq !== invoiceListReqSeq) return
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
   } finally {
-    loading.value = false
+    if (seq === invoiceListReqSeq) loading.value = false
   }
 }
 
@@ -169,13 +176,31 @@ function handlePageSizeChange(pageSize: number) {
 }
 
 async function openDetail(id: number) {
+  const seq = ++invoiceDetailReqSeq
+  activeInvoiceDetailId = id
+  detail.value = null
   selectedFile.value = null
+  resetInvoiceSubmitting()
   try {
     const res = await adminPaymentAPI.getInvoice(id)
+    if (seq !== invoiceDetailReqSeq || activeInvoiceDetailId !== id) return
     detail.value = res.data
   } catch (err: unknown) {
+    if (seq !== invoiceDetailReqSeq || activeInvoiceDetailId !== id) return
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
   }
+}
+
+function closeDetail() {
+  activeInvoiceDetailId = null
+  detail.value = null
+  selectedFile.value = null
+  resetInvoiceSubmitting()
+}
+
+function resetInvoiceSubmitting() {
+  invoiceUploadReqSeq += 1
+  submitting.value = false
 }
 
 function handleFileChange(event: Event) {
@@ -185,19 +210,30 @@ function handleFileChange(event: Event) {
 
 async function uploadFile() {
   if (!detail.value || !selectedFile.value) return
+  const seq = ++invoiceUploadReqSeq
+  const detailId = detail.value.id
+  const file = selectedFile.value
   submitting.value = true
   try {
-    const res = await adminPaymentAPI.uploadInvoiceFile(detail.value.id, selectedFile.value)
+    const res = await adminPaymentAPI.uploadInvoiceFile(detailId, file)
+    if (seq !== invoiceUploadReqSeq || activeInvoiceDetailId !== detailId) return
     detail.value = res.data
     appStore.showSuccess(t('common.success'))
     selectedFile.value = null
     await loadInvoices()
   } catch (err: unknown) {
+    if (seq !== invoiceUploadReqSeq) return
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
   } finally {
-    submitting.value = false
+    if (seq === invoiceUploadReqSeq) submitting.value = false
   }
 }
 
 onMounted(loadInvoices)
+
+onUnmounted(() => {
+  invoiceListReqSeq += 1
+  invoiceDetailReqSeq += 1
+  invoiceUploadReqSeq += 1
+})
 </script>

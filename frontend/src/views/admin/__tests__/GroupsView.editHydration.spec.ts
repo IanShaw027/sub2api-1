@@ -7,12 +7,18 @@ const {
   listGroups,
   getUsageSummary,
   getCapacitySummary,
+  getModelsListCandidates,
+  createGroup,
+  updateGroup,
   getAccountById,
   showError
 } = vi.hoisted(() => ({
   listGroups: vi.fn(),
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
+  getModelsListCandidates: vi.fn(),
+  createGroup: vi.fn(),
+  updateGroup: vi.fn(),
   getAccountById: vi.fn(),
   showError: vi.fn()
 }))
@@ -23,8 +29,9 @@ vi.mock('@/api/admin', () => ({
       list: listGroups,
       getUsageSummary,
       getCapacitySummary,
-      create: vi.fn(),
-      update: vi.fn(),
+      getModelsListCandidates,
+      create: createGroup,
+      update: updateGroup,
       deleteGroup: vi.fn(),
       getAll: vi.fn(),
       updateSortOrder: vi.fn()
@@ -65,6 +72,7 @@ const DataTableStub = {
   template: `
     <div data-test="groups-table">
       <div v-for="row in data" :key="row.id" :data-test="['group-row', row.id].join('-')">
+        <slot name="cell-account_count" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
     </div>
@@ -73,7 +81,7 @@ const DataTableStub = {
 
 const BaseDialogStub = {
   props: ['show'],
-  template: '<div v-if="show"><slot /></div>'
+  template: '<div v-if="show"><slot /><slot name="footer" /></div>'
 }
 
 function deferred<T>() {
@@ -120,7 +128,10 @@ function buildGroup(id: number, name: string, modelRouting: Record<string, numbe
     model_routing: modelRouting,
     supported_model_scopes: ['claude'],
     mcp_xml_inject: true,
-    rpm_limit: 0
+    rpm_limit: 0,
+    account_count: 0,
+    active_account_count: 0,
+    rate_limited_account_count: 0
   } as any
 }
 
@@ -137,8 +148,28 @@ function mountGroupsView() {
         Pagination: true,
         ConfirmDialog: true,
         Select: {
-          props: ['modelValue', 'options', 'placeholder'],
-          template: '<div data-test="select-stub"></div>'
+          props: ['modelValue', 'options', 'placeholder', 'disabled'],
+          emits: ['update:modelValue', 'change'],
+          template: `
+            <select
+              data-test="select-stub"
+              :value="modelValue"
+              :disabled="disabled"
+              @change="
+                $emit('update:modelValue', $event.target.value);
+                $emit('change', $event.target.value);
+              "
+            >
+              <option value=""></option>
+              <option
+                v-for="option in options"
+                :key="String(option.value)"
+                :value="option.value ?? ''"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          `
         },
         Icon: true,
         PlatformIcon: true,
@@ -156,6 +187,9 @@ describe('admin GroupsView edit hydration', () => {
     listGroups.mockReset()
     getUsageSummary.mockReset()
     getCapacitySummary.mockReset()
+    getModelsListCandidates.mockReset()
+    createGroup.mockReset()
+    updateGroup.mockReset()
     getAccountById.mockReset()
     showError.mockReset()
 
@@ -171,6 +205,9 @@ describe('admin GroupsView edit hydration', () => {
     })
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])
+    getModelsListCandidates.mockResolvedValue([])
+    createGroup.mockResolvedValue({})
+    updateGroup.mockResolvedValue({})
   })
 
   it('ignores stale async hydration when edit is clicked again before the first request resolves', async () => {
@@ -186,6 +223,7 @@ describe('admin GroupsView edit hydration', () => {
     const wrapper = mountGroupsView()
 
     await flushPromises()
+    getModelsListCandidates.mockClear()
     await wrapper.get('[data-test="group-row-1"] button').trigger('click')
     await wrapper.get('[data-test="group-row-2"] button').trigger('click')
 
@@ -194,10 +232,128 @@ describe('admin GroupsView edit hydration', () => {
 
     const nameInput = wrapper.get('input[data-tour="edit-group-form-name"]')
     expect((nameInput.element as HTMLInputElement).value).toBe('Group Beta')
+    expect(getModelsListCandidates).toHaveBeenCalledTimes(2)
+    expect(getModelsListCandidates).toHaveBeenLastCalledWith(2, 'openai')
 
     firstAccount.resolve({ id: 101, name: 'Account 101' })
     await flushPromises()
 
     expect((wrapper.get('input[data-tour="edit-group-form-name"]').element as HTMLInputElement).value).toBe('Group Beta')
+    expect(getModelsListCandidates).toHaveBeenCalledTimes(2)
+    expect(getModelsListCandidates).toHaveBeenLastCalledWith(2, 'openai')
+  })
+
+  it('renders available accounts directly from active_account_count without subtracting rate-limited twice', async () => {
+    listGroups.mockResolvedValueOnce({
+      items: [
+        {
+          ...buildGroup(3, 'Group Gamma', {}),
+          account_count: 5,
+          active_account_count: 2,
+          rate_limited_account_count: 3
+        }
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountGroupsView()
+    await flushPromises()
+
+    const rowText = wrapper.get('[data-test="group-row-3"]').text()
+    expect(rowText).toContain('admin.groups.accountsAvailable')
+    expect(rowText).toContain('2')
+    expect(rowText).toContain('admin.groups.accountsRateLimited')
+    expect(rowText).toContain('3')
+    expect(rowText).not.toContain('-1')
+  })
+
+  it('submits the default refund multiplier when creating a group', async () => {
+    const wrapper = mountGroupsView()
+
+    await flushPromises()
+    await wrapper.get('[data-tour="groups-create-btn"]').trigger('click')
+    await wrapper.get('input[data-tour="group-form-name"]').setValue('Group Delta')
+    await wrapper.get('#create-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(createGroup).toHaveBeenCalledTimes(1)
+    expect(createGroup.mock.calls[0][0]).toMatchObject({
+      name: 'Group Delta',
+      refund_rate_multiplier: 1
+    })
+  })
+
+  it('resets pagination to the first page when a filter dropdown changes', async () => {
+    const wrapper = mountGroupsView()
+
+    await flushPromises()
+    ;(wrapper.vm as any).pagination.page = 2
+    await wrapper.vm.$nextTick()
+
+    listGroups.mockClear()
+    const platformFilter = wrapper.findAll('[data-test="select-stub"]')[0]
+    await platformFilter.setValue('openai')
+    await flushPromises()
+
+    expect((wrapper.vm as any).pagination.page).toBe(1)
+    expect(listGroups).toHaveBeenCalledTimes(1)
+    expect(listGroups).toHaveBeenCalledWith(
+      1,
+      20,
+      expect.objectContaining({
+        platform: 'openai'
+      }),
+      expect.any(Object)
+    )
+  })
+
+  it('preserves stored OpenAI image route pricing fields when editing without changing them', async () => {
+    listGroups.mockResolvedValueOnce({
+      items: [
+        {
+          ...buildGroup(4, 'Group Image', {}),
+          allow_image_generation: true,
+          image_generation_route: 'web2api',
+          image_rate_independent: true,
+          image_rate_multiplier: 1.75,
+          image_price_1k: 0.25,
+          image_price_2k: 0.35,
+          image_price_4k: 0.45,
+          images2api_price_1k: 1.25,
+          images2api_price_2k: 1.35,
+          images2api_price_4k: 1.45,
+          refund_rate_multiplier: 2.5
+        }
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountGroupsView()
+
+    await flushPromises()
+    await wrapper.get('[data-test="group-row-4"] button').trigger('click')
+    await flushPromises()
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateGroup).toHaveBeenCalledTimes(1)
+    expect(updateGroup.mock.calls[0][1]).toMatchObject({
+      refund_rate_multiplier: 2.5,
+      image_generation_route: 'web2api',
+      image_rate_independent: true,
+      image_rate_multiplier: 1.75,
+      image_price_1k: 0.25,
+      image_price_2k: 0.35,
+      image_price_4k: 0.45,
+      images2api_price_1k: 1.25,
+      images2api_price_2k: 1.35,
+      images2api_price_4k: 1.45
+    })
   })
 })

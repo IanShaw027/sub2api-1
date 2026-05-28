@@ -15,6 +15,7 @@ import (
 
 type redeemCodeRepoStub struct {
 	codesByCode map[string]*RedeemCode
+	useErr      error
 	useCalls    []struct {
 		id     int64
 		userID int64
@@ -172,11 +173,18 @@ func (s *redeemCodeRepoStub) Update(_ context.Context, code *RedeemCode) error {
 	return nil
 }
 
+func (s *redeemCodeRepoStub) BatchUpdate(context.Context, []int64, RedeemCodeBatchUpdateFields) (int64, error) {
+	panic("unexpected BatchUpdate call")
+}
+
 func (s *redeemCodeRepoStub) Delete(context.Context, int64) error {
 	panic("unexpected Delete call")
 }
 
 func (s *redeemCodeRepoStub) Use(_ context.Context, id, userID int64) error {
+	if s.useErr != nil {
+		return s.useErr
+	}
 	for code, redeemCode := range s.codesByCode {
 		if redeemCode.ID != id {
 			continue
@@ -225,6 +233,7 @@ func newOAuthEmailFlowAuthService(
 	refreshTokenCache RefreshTokenCache,
 	settings map[string]string,
 	emailCache EmailCache,
+	quotaRepo UserPlatformQuotaRepository, // 新增
 ) *AuthService {
 	cfg := &config.Config{
 		JWT: config.JWTConfig{
@@ -255,6 +264,7 @@ func newOAuthEmailFlowAuthService(
 		nil,
 		nil,
 		nil,
+		quotaRepo, // 替换原来的 nil
 	)
 }
 
@@ -288,6 +298,7 @@ func TestRegisterOAuthEmailAccountRollsBackCreatedUserWhenTokenPairGenerationFai
 			SettingKeyEmailVerifyEnabled:    "true",
 		},
 		emailCache,
+		nil,
 	)
 
 	tokenPair, user, err := authService.RegisterOAuthEmailAccount(
@@ -328,6 +339,7 @@ func TestRegisterOAuthEmailAccountSetsNormalizedSignupSourceOnCreatedUser(t *tes
 			SettingKeyEmailVerifyEnabled:  "true",
 		},
 		emailCache,
+		nil,
 	)
 
 	tokenPair, user, err := authService.RegisterOAuthEmailAccount(
@@ -387,6 +399,7 @@ func TestRegisterOAuthEmailAccountKeepsGitHubAndGoogleSignupSource(t *testing.T)
 					SettingKeyEmailVerifyEnabled:  "true",
 				},
 				emailCache,
+				nil,
 			)
 
 			tokenPair, user, err := authService.RegisterOAuthEmailAccount(
@@ -426,6 +439,7 @@ func TestRegisterOAuthEmailAccountFallsBackUnknownSignupSourceToEmail(t *testing
 			SettingKeyEmailVerifyEnabled:  "true",
 		},
 		emailCache,
+		nil,
 	)
 
 	tokenPair, user, err := authService.RegisterOAuthEmailAccount(
@@ -455,6 +469,7 @@ func TestFinalizeOAuthEmailAccountBindsTrimmedAffiliateCodeAndSignupBonus(t *tes
 		&refreshTokenCacheStub{},
 		map[string]string{},
 		&emailCacheStub{},
+		nil,
 	)
 	authService.affiliateService = NewAffiliateService(affiliateRepo, &settingRepoStub{values: map[string]string{
 		SettingKeyAffiliateEnabled:     "true",
@@ -503,6 +518,7 @@ func TestRollbackOAuthEmailAccountCreationRestoresInvitationUsage(t *testing.T) 
 			SettingKeyInvitationCodeEnabled: "true",
 		},
 		&emailCacheStub{},
+		nil,
 	)
 
 	err := authService.RollbackOAuthEmailAccountCreation(context.Background(), 42, "INVITE123")
@@ -525,10 +541,66 @@ func TestRollbackOAuthEmailAccountCreationPropagatesDeleteError(t *testing.T) {
 			SettingKeyRegistrationEnabled: "true",
 		},
 		&emailCacheStub{},
+		nil,
 	)
 
 	err := authService.RollbackOAuthEmailAccountCreation(context.Background(), 42, "")
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "delete created oauth user")
+}
+
+func TestFinalizeOAuthEmailAccount_SnapshotsPlatformQuotaDefaults(t *testing.T) {
+	userRepo := &userRepoStub{nextID: 99}
+	quotaRepo := &userPlatformQuotaRepoStub{}
+
+	authService := newOAuthEmailFlowAuthService(
+		userRepo,
+		nil,
+		&refreshTokenCacheStub{},
+		map[string]string{
+			SettingKeyRegistrationEnabled:                "true",
+			SettingKeyEmailVerifyEnabled:                 "true",
+			SettingKeyDefaultPlatformQuotas:              `{"anthropic": {"daily": 5.5}}`,
+			SettingKeyAuthSourceDefaultOIDCGrantOnSignup: "true",
+			SettingKeyAuthSourcePlatformQuotas("oidc"):   `{"anthropic": {"monthly": 17.25}}`,
+		},
+		&emailCacheStub{},
+		quotaRepo,
+	)
+
+	user := &User{
+		ID:           99,
+		Email:        "newuser@example.com",
+		Role:         RoleUser,
+		Status:       StatusActive,
+		SignupSource: "oidc",
+	}
+
+	err := authService.FinalizeOAuthEmailAccount(
+		context.Background(),
+		user,
+		"",
+		"",
+		"oidc",
+	)
+
+	require.NoError(t, err)
+
+	require.Len(t, quotaRepo.bulkInsertCalls, 1, "snapshotPlatformQuotaDefaults must call BulkInsertInitial once on successful OAuth signup")
+
+	records := quotaRepo.bulkInsertCalls[0]
+	var anthropicRecord *UserPlatformQuotaRecord
+	for i := range records {
+		if records[i].Platform == "anthropic" {
+			anthropicRecord = &records[i]
+			break
+		}
+	}
+	require.NotNil(t, anthropicRecord, "expected anthropic platform record")
+	require.Equal(t, int64(99), anthropicRecord.UserID)
+	require.NotNil(t, anthropicRecord.DailyLimitUSD)
+	require.InDelta(t, 5.5, *anthropicRecord.DailyLimitUSD, 0.0001)
+	require.NotNil(t, anthropicRecord.MonthlyLimitUSD, "expected auth-source quota override to be merged")
+	require.InDelta(t, 17.25, *anthropicRecord.MonthlyLimitUSD, 0.0001)
 }
