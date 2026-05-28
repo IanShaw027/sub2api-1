@@ -2991,6 +2991,40 @@ func TestOpenAIStreamingPassthroughTTFTWatchdogReturnsFailoverAndCooldown(t *tes
 	require.WithinDuration(t, time.Now().Add(time.Minute), repo.calls[0].until, 2*time.Second)
 }
 
+func TestOpenAITTFTWatchdogDisabledForResponsesImageOnlyRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Name: "oauth-42"}
+	body := []byte(`{"model":"gpt-image-2","size":"1024x1024"}`)
+
+	_, _, err := finalizeOpenAIResponsesOAuthUpstreamBody(c, account, "gpt-image-2", body)
+	require.NoError(t, err)
+
+	svc := &OpenAIGatewayService{}
+	require.False(t, svc.shouldEnableOpenAITTFTWatchdog(c, account))
+}
+
+func TestOpenAITTFTWatchdogDisabledForResponsesExplicitImageToolChoice(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	account := &Account{ID: 84, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Name: "oauth-84"}
+	body := []byte(`{"model":"gpt-5.4","tool_choice":{"type":"image_generation"},"tools":[{"type":"image_generation","output_format":"png"}],"input":"draw a cat"}`)
+
+	_, _, err := finalizeOpenAIResponsesOAuthUpstreamBody(c, account, "gpt-5.4", body)
+	require.NoError(t, err)
+
+	svc := &OpenAIGatewayService{}
+	require.False(t, svc.shouldEnableOpenAITTFTWatchdog(c, account))
+}
+
 func TestOpenAINonStreamingSoftRateLimitAdvisoryDoesNotFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
