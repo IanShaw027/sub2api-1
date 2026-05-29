@@ -72,7 +72,7 @@ const (
 )
 
 var (
-	openAITTFTWatchdogTimeout  = 8 * time.Second
+	openAITTFTWatchdogTimeout  = 0 * time.Second
 	openAITTFTCooldownDuration = time.Minute
 )
 
