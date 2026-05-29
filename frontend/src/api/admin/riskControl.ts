@@ -24,6 +24,8 @@ export interface ContentModerationConfig {
   all_groups: boolean
   group_ids: number[]
   record_non_hits: boolean
+  record_attention_inputs: boolean
+  attention_threshold: number
   thresholds: Record<string, number>
   worker_count: number
   queue_size: number
@@ -32,6 +34,8 @@ export interface ContentModerationConfig {
   email_on_hit: boolean
   auto_ban_enabled: boolean
   ban_threshold: number
+  auto_ban_exempt_user_ids: number[]
+  auto_ban_exempt_user_emails: string[]
   violation_window_hours: number
   retry_count: number
   hit_retention_days: number
@@ -48,6 +52,7 @@ export interface ContentModerationAPIKeyStatus {
   index: number
   key_hash: string
   masked: string
+  account_email: string
   status: ContentModerationAPIKeyStatusValue
   failure_count: number
   success_count: number
@@ -58,6 +63,11 @@ export interface ContentModerationAPIKeyStatus {
   last_http_status: number
   last_tested: boolean
   configured: boolean
+}
+
+export interface ContentModerationAPIKeyAccountInput {
+  api_key: string
+  account_email: string
 }
 
 export interface TestContentModerationAPIKeysPayload {
@@ -91,6 +101,7 @@ export interface UpdateContentModerationConfig {
   model?: string
   api_key?: string
   api_keys?: string[]
+  api_key_accounts?: ContentModerationAPIKeyAccountInput[]
   api_keys_mode?: 'append' | 'replace'
   delete_api_key_hashes?: string[]
   clear_api_key?: boolean
@@ -99,6 +110,8 @@ export interface UpdateContentModerationConfig {
   all_groups?: boolean
   group_ids?: number[]
   record_non_hits?: boolean
+  record_attention_inputs?: boolean
+  attention_threshold?: number
   thresholds?: Record<string, number>
   worker_count?: number
   queue_size?: number
@@ -107,6 +120,8 @@ export interface UpdateContentModerationConfig {
   email_on_hit?: boolean
   auto_ban_enabled?: boolean
   ban_threshold?: number
+  auto_ban_exempt_user_ids?: number[]
+  auto_ban_exempt_user_emails?: string[]
   violation_window_hours?: number
   retry_count?: number
   hit_retention_days?: number
@@ -153,6 +168,7 @@ export interface ContentModerationAPIKeyLoad {
   index: number
   key_hash: string
   masked: string
+  account_email: string
   status: ContentModerationAPIKeyStatusValue
   active: number
   total: number

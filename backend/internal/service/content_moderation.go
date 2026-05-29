@@ -36,6 +36,7 @@ const (
 	ContentModerationActionBlock        = "block"
 	ContentModerationActionHashBlock    = "hash_block"
 	ContentModerationActionKeywordBlock = "keyword_block"
+	ContentModerationActionAttention    = "attention"
 	ContentModerationActionError        = "error"
 
 	contentModerationKeywordCategory = "keyword"
@@ -133,72 +134,82 @@ func ContentModerationCategories() []string {
 }
 
 type ContentModerationConfig struct {
-	Enabled              bool                         `json:"enabled"`
-	Mode                 string                       `json:"mode"`
-	BaseURL              string                       `json:"base_url"`
-	Model                string                       `json:"model"`
-	APIKey               string                       `json:"api_key,omitempty"`
-	APIKeys              []string                     `json:"api_keys,omitempty"`
-	TimeoutMS            int                          `json:"timeout_ms"`
-	SampleRate           int                          `json:"sample_rate"`
-	AllGroups            bool                         `json:"all_groups"`
-	GroupIDs             []int64                      `json:"group_ids"`
-	RecordNonHits        bool                         `json:"record_non_hits"`
-	Thresholds           map[string]float64           `json:"thresholds"`
-	WorkerCount          int                          `json:"worker_count"`
-	QueueSize            int                          `json:"queue_size"`
-	BlockStatus          int                          `json:"block_status"`
-	BlockMessage         string                       `json:"block_message"`
-	EmailOnHit           bool                         `json:"email_on_hit"`
-	AutoBanEnabled       bool                         `json:"auto_ban_enabled"`
-	BanThreshold         int                          `json:"ban_threshold"`
-	ViolationWindowHours int                          `json:"violation_window_hours"`
-	RetryCount           int                          `json:"retry_count"`
-	HitRetentionDays     int                          `json:"hit_retention_days"`
-	NonHitRetentionDays  int                          `json:"non_hit_retention_days"`
-	PreHashCheckEnabled  bool                         `json:"pre_hash_check_enabled"`
-	BlockedKeywords      []string                     `json:"blocked_keywords"`
-	KeywordBlockingMode  string                       `json:"keyword_blocking_mode"`
-	ModelFilter          ContentModerationModelFilter `json:"model_filter"`
+	Enabled                 bool                              `json:"enabled"`
+	Mode                    string                            `json:"mode"`
+	BaseURL                 string                            `json:"base_url"`
+	Model                   string                            `json:"model"`
+	APIKey                  string                            `json:"api_key,omitempty"`
+	APIKeys                 []string                          `json:"api_keys,omitempty"`
+	APIKeyMetadata          []ContentModerationAPIKeyMetadata `json:"api_key_metadata,omitempty"`
+	TimeoutMS               int                               `json:"timeout_ms"`
+	SampleRate              int                               `json:"sample_rate"`
+	AllGroups               bool                              `json:"all_groups"`
+	GroupIDs                []int64                           `json:"group_ids"`
+	RecordNonHits           bool                              `json:"record_non_hits"`
+	RecordAttentionInputs   bool                              `json:"record_attention_inputs"`
+	AttentionThreshold      float64                           `json:"attention_threshold"`
+	Thresholds              map[string]float64                `json:"thresholds"`
+	WorkerCount             int                               `json:"worker_count"`
+	QueueSize               int                               `json:"queue_size"`
+	BlockStatus             int                               `json:"block_status"`
+	BlockMessage            string                            `json:"block_message"`
+	EmailOnHit              bool                              `json:"email_on_hit"`
+	AutoBanEnabled          bool                              `json:"auto_ban_enabled"`
+	BanThreshold            int                               `json:"ban_threshold"`
+	AutoBanExemptUserIDs    []int64                           `json:"auto_ban_exempt_user_ids"`
+	AutoBanExemptUserEmails []string                          `json:"auto_ban_exempt_user_emails"`
+	ViolationWindowHours    int                               `json:"violation_window_hours"`
+	RetryCount              int                               `json:"retry_count"`
+	HitRetentionDays        int                               `json:"hit_retention_days"`
+	NonHitRetentionDays     int                               `json:"non_hit_retention_days"`
+	PreHashCheckEnabled     bool                              `json:"pre_hash_check_enabled"`
+	BlockedKeywords         []string                          `json:"blocked_keywords"`
+	KeywordBlockingMode     string                            `json:"keyword_blocking_mode"`
+	ModelFilter             ContentModerationModelFilter      `json:"model_filter"`
 }
 
 type ContentModerationConfigView struct {
-	Enabled              bool                            `json:"enabled"`
-	Mode                 string                          `json:"mode"`
-	BaseURL              string                          `json:"base_url"`
-	Model                string                          `json:"model"`
-	APIKeyConfigured     bool                            `json:"api_key_configured"`
-	APIKeyMasked         string                          `json:"api_key_masked"`
-	APIKeyCount          int                             `json:"api_key_count"`
-	APIKeyMasks          []string                        `json:"api_key_masks"`
-	APIKeyStatuses       []ContentModerationAPIKeyStatus `json:"api_key_statuses"`
-	TimeoutMS            int                             `json:"timeout_ms"`
-	SampleRate           int                             `json:"sample_rate"`
-	AllGroups            bool                            `json:"all_groups"`
-	GroupIDs             []int64                         `json:"group_ids"`
-	RecordNonHits        bool                            `json:"record_non_hits"`
-	Thresholds           map[string]float64              `json:"thresholds"`
-	WorkerCount          int                             `json:"worker_count"`
-	QueueSize            int                             `json:"queue_size"`
-	BlockStatus          int                             `json:"block_status"`
-	BlockMessage         string                          `json:"block_message"`
-	EmailOnHit           bool                            `json:"email_on_hit"`
-	AutoBanEnabled       bool                            `json:"auto_ban_enabled"`
-	BanThreshold         int                             `json:"ban_threshold"`
-	ViolationWindowHours int                             `json:"violation_window_hours"`
-	RetryCount           int                             `json:"retry_count"`
-	HitRetentionDays     int                             `json:"hit_retention_days"`
-	NonHitRetentionDays  int                             `json:"non_hit_retention_days"`
-	PreHashCheckEnabled  bool                            `json:"pre_hash_check_enabled"`
-	BlockedKeywords      []string                        `json:"blocked_keywords"`
-	KeywordBlockingMode  string                          `json:"keyword_blocking_mode"`
-	ModelFilter          ContentModerationModelFilter    `json:"model_filter"`
+	Enabled                 bool                            `json:"enabled"`
+	Mode                    string                          `json:"mode"`
+	BaseURL                 string                          `json:"base_url"`
+	Model                   string                          `json:"model"`
+	APIKeyConfigured        bool                            `json:"api_key_configured"`
+	APIKeyMasked            string                          `json:"api_key_masked"`
+	APIKeyCount             int                             `json:"api_key_count"`
+	APIKeyMasks             []string                        `json:"api_key_masks"`
+	APIKeyStatuses          []ContentModerationAPIKeyStatus `json:"api_key_statuses"`
+	TimeoutMS               int                             `json:"timeout_ms"`
+	SampleRate              int                             `json:"sample_rate"`
+	AllGroups               bool                            `json:"all_groups"`
+	GroupIDs                []int64                         `json:"group_ids"`
+	RecordNonHits           bool                            `json:"record_non_hits"`
+	RecordAttentionInputs   bool                            `json:"record_attention_inputs"`
+	AttentionThreshold      float64                         `json:"attention_threshold"`
+	Thresholds              map[string]float64              `json:"thresholds"`
+	WorkerCount             int                             `json:"worker_count"`
+	QueueSize               int                             `json:"queue_size"`
+	BlockStatus             int                             `json:"block_status"`
+	BlockMessage            string                          `json:"block_message"`
+	EmailOnHit              bool                            `json:"email_on_hit"`
+	AutoBanEnabled          bool                            `json:"auto_ban_enabled"`
+	BanThreshold            int                             `json:"ban_threshold"`
+	AutoBanExemptUserIDs    []int64                         `json:"auto_ban_exempt_user_ids"`
+	AutoBanExemptUserEmails []string                        `json:"auto_ban_exempt_user_emails"`
+	ViolationWindowHours    int                             `json:"violation_window_hours"`
+	RetryCount              int                             `json:"retry_count"`
+	HitRetentionDays        int                             `json:"hit_retention_days"`
+	NonHitRetentionDays     int                             `json:"non_hit_retention_days"`
+	PreHashCheckEnabled     bool                            `json:"pre_hash_check_enabled"`
+	BlockedKeywords         []string                        `json:"blocked_keywords"`
+	KeywordBlockingMode     string                          `json:"keyword_blocking_mode"`
+	ModelFilter             ContentModerationModelFilter    `json:"model_filter"`
 }
 
 type ContentModerationAPIKeyStatus struct {
 	Index          int        `json:"index"`
 	KeyHash        string     `json:"key_hash"`
 	Masked         string     `json:"masked"`
+	AccountEmail   string     `json:"account_email"`
 	Status         string     `json:"status"`
 	FailureCount   int        `json:"failure_count"`
 	SuccessCount   int64      `json:"success_count"`
@@ -215,6 +226,7 @@ type ContentModerationAPIKeyLoad struct {
 	Index          int    `json:"index"`
 	KeyHash        string `json:"key_hash"`
 	Masked         string `json:"masked"`
+	AccountEmail   string `json:"account_email"`
 	Status         string `json:"status"`
 	Active         int64  `json:"active"`
 	Total          int64  `json:"total"`
@@ -223,6 +235,16 @@ type ContentModerationAPIKeyLoad struct {
 	AvgLatencyMS   int64  `json:"avg_latency_ms"`
 	LastLatencyMS  int    `json:"last_latency_ms"`
 	LastHTTPStatus int    `json:"last_http_status"`
+}
+
+type ContentModerationAPIKeyMetadata struct {
+	KeyHash      string `json:"key_hash"`
+	AccountEmail string `json:"account_email"`
+}
+
+type ContentModerationAPIKeyAccountInput struct {
+	APIKey       string `json:"api_key"`
+	AccountEmail string `json:"account_email"`
 }
 
 type TestContentModerationAPIKeysInput struct {
@@ -250,36 +272,41 @@ type ContentModerationTestAuditResult struct {
 }
 
 type UpdateContentModerationConfigInput struct {
-	Enabled              *bool                         `json:"enabled"`
-	Mode                 *string                       `json:"mode"`
-	BaseURL              *string                       `json:"base_url"`
-	Model                *string                       `json:"model"`
-	APIKey               *string                       `json:"api_key"`
-	APIKeys              *[]string                     `json:"api_keys"`
-	APIKeysMode          string                        `json:"api_keys_mode"`
-	DeleteAPIKeyHashes   *[]string                     `json:"delete_api_key_hashes"`
-	ClearAPIKey          bool                          `json:"clear_api_key"`
-	TimeoutMS            *int                          `json:"timeout_ms"`
-	SampleRate           *int                          `json:"sample_rate"`
-	AllGroups            *bool                         `json:"all_groups"`
-	GroupIDs             *[]int64                      `json:"group_ids"`
-	RecordNonHits        *bool                         `json:"record_non_hits"`
-	Thresholds           *map[string]float64           `json:"thresholds"`
-	WorkerCount          *int                          `json:"worker_count"`
-	QueueSize            *int                          `json:"queue_size"`
-	BlockStatus          *int                          `json:"block_status"`
-	BlockMessage         *string                       `json:"block_message"`
-	EmailOnHit           *bool                         `json:"email_on_hit"`
-	AutoBanEnabled       *bool                         `json:"auto_ban_enabled"`
-	BanThreshold         *int                          `json:"ban_threshold"`
-	ViolationWindowHours *int                          `json:"violation_window_hours"`
-	RetryCount           *int                          `json:"retry_count"`
-	HitRetentionDays     *int                          `json:"hit_retention_days"`
-	NonHitRetentionDays  *int                          `json:"non_hit_retention_days"`
-	PreHashCheckEnabled  *bool                         `json:"pre_hash_check_enabled"`
-	BlockedKeywords      *[]string                     `json:"blocked_keywords"`
-	KeywordBlockingMode  *string                       `json:"keyword_blocking_mode"`
-	ModelFilter          *ContentModerationModelFilter `json:"model_filter"`
+	Enabled                 *bool                                  `json:"enabled"`
+	Mode                    *string                                `json:"mode"`
+	BaseURL                 *string                                `json:"base_url"`
+	Model                   *string                                `json:"model"`
+	APIKey                  *string                                `json:"api_key"`
+	APIKeys                 *[]string                              `json:"api_keys"`
+	APIKeyAccounts          *[]ContentModerationAPIKeyAccountInput `json:"api_key_accounts"`
+	APIKeysMode             string                                 `json:"api_keys_mode"`
+	DeleteAPIKeyHashes      *[]string                              `json:"delete_api_key_hashes"`
+	ClearAPIKey             bool                                   `json:"clear_api_key"`
+	TimeoutMS               *int                                   `json:"timeout_ms"`
+	SampleRate              *int                                   `json:"sample_rate"`
+	AllGroups               *bool                                  `json:"all_groups"`
+	GroupIDs                *[]int64                               `json:"group_ids"`
+	RecordNonHits           *bool                                  `json:"record_non_hits"`
+	RecordAttentionInputs   *bool                                  `json:"record_attention_inputs"`
+	AttentionThreshold      *float64                               `json:"attention_threshold"`
+	Thresholds              *map[string]float64                    `json:"thresholds"`
+	WorkerCount             *int                                   `json:"worker_count"`
+	QueueSize               *int                                   `json:"queue_size"`
+	BlockStatus             *int                                   `json:"block_status"`
+	BlockMessage            *string                                `json:"block_message"`
+	EmailOnHit              *bool                                  `json:"email_on_hit"`
+	AutoBanEnabled          *bool                                  `json:"auto_ban_enabled"`
+	BanThreshold            *int                                   `json:"ban_threshold"`
+	AutoBanExemptUserIDs    *[]int64                               `json:"auto_ban_exempt_user_ids"`
+	AutoBanExemptUserEmails *[]string                              `json:"auto_ban_exempt_user_emails"`
+	ViolationWindowHours    *int                                   `json:"violation_window_hours"`
+	RetryCount              *int                                   `json:"retry_count"`
+	HitRetentionDays        *int                                   `json:"hit_retention_days"`
+	NonHitRetentionDays     *int                                   `json:"non_hit_retention_days"`
+	PreHashCheckEnabled     *bool                                  `json:"pre_hash_check_enabled"`
+	BlockedKeywords         *[]string                              `json:"blocked_keywords"`
+	KeywordBlockingMode     *string                                `json:"keyword_blocking_mode"`
+	ModelFilter             *ContentModerationModelFilter          `json:"model_filter"`
 }
 
 type ContentModerationModelFilter struct {
@@ -648,28 +675,55 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if input.RecordNonHits != nil {
 		cfg.RecordNonHits = *input.RecordNonHits
 	}
+	if input.RecordAttentionInputs != nil {
+		cfg.RecordAttentionInputs = *input.RecordAttentionInputs
+	}
+	if input.AttentionThreshold != nil {
+		cfg.AttentionThreshold = *input.AttentionThreshold
+	}
 	if input.Thresholds != nil {
 		cfg.Thresholds = mergeContentModerationThresholds(ContentModerationDefaultThresholds(), *input.Thresholds)
+	}
+	if input.AutoBanExemptUserIDs != nil {
+		cfg.AutoBanExemptUserIDs = normalizeInt64IDs(*input.AutoBanExemptUserIDs)
+	}
+	if input.AutoBanExemptUserEmails != nil {
+		cfg.AutoBanExemptUserEmails = normalizeContentModerationEmailList(*input.AutoBanExemptUserEmails)
 	}
 	if input.ClearAPIKey {
 		cfg.APIKey = ""
 		cfg.APIKeys = []string{}
+		cfg.APIKeyMetadata = []ContentModerationAPIKeyMetadata{}
 	} else {
 		apiKeysMode := normalizeContentModerationAPIKeysMode(input.APIKeysMode)
 		if input.DeleteAPIKeyHashes != nil && apiKeysMode != contentModerationAPIKeysModeReplace {
 			cfg.APIKeys = deleteModerationAPIKeysByHash(cfg.apiKeys(), *input.DeleteAPIKeyHashes)
 			cfg.APIKey = ""
+			cfg.APIKeyMetadata = filterModerationAPIKeyMetadata(cfg.APIKeyMetadata, cfg.APIKeys)
 		}
-		if input.APIKeys != nil {
+		if input.APIKeyAccounts != nil {
+			inputKeys, inputMetadata := normalizeModerationAPIKeyAccountInput(*input.APIKeyAccounts)
+			if apiKeysMode == contentModerationAPIKeysModeReplace {
+				cfg.APIKeys = inputKeys
+				cfg.APIKeyMetadata = inputMetadata
+			} else {
+				cfg.APIKeys = normalizeModerationAPIKeys(append(cfg.apiKeys(), inputKeys...))
+				cfg.APIKeyMetadata = mergeModerationAPIKeyMetadata(cfg.APIKeyMetadata, inputMetadata, cfg.APIKeys)
+			}
+			cfg.APIKey = ""
+		} else if input.APIKeys != nil {
 			if apiKeysMode == contentModerationAPIKeysModeReplace {
 				cfg.APIKeys = normalizeModerationAPIKeys(*input.APIKeys)
+				cfg.APIKeyMetadata = filterModerationAPIKeyMetadata(cfg.APIKeyMetadata, cfg.APIKeys)
 			} else {
 				cfg.APIKeys = normalizeModerationAPIKeys(append(cfg.apiKeys(), *input.APIKeys...))
+				cfg.APIKeyMetadata = filterModerationAPIKeyMetadata(cfg.APIKeyMetadata, cfg.APIKeys)
 			}
 			cfg.APIKey = ""
 		}
 		if input.APIKey != nil && strings.TrimSpace(*input.APIKey) != "" {
 			cfg.APIKeys = normalizeModerationAPIKeys(append(cfg.APIKeys, *input.APIKey))
+			cfg.APIKeyMetadata = filterModerationAPIKeyMetadata(cfg.APIKeyMetadata, cfg.APIKeys)
 			cfg.APIKey = ""
 		}
 	}
@@ -717,7 +771,7 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 		key, ok := s.nextUsableAPIKey(cfg)
 		if !ok {
 			return &TestContentModerationAPIKeysResult{
-				Items:      s.apiKeyStatuses(keys),
+				Items:      s.apiKeyStatusesForConfig(cfg),
 				ImageCount: imageCount,
 			}, nil
 		}
@@ -742,7 +796,7 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 				auditResult = buildContentModerationTestAuditResult(result, cfg.Thresholds)
 			}
 		}
-		status := s.apiKeyStatusForHash(idx, keyHash, maskSecretTail(key), configured)
+		status := s.apiKeyStatusForHash(idx, keyHash, maskSecretTail(key), cfg.apiKeyEmailByHash()[keyHash], configured)
 		status.LastTested = true
 		items = append(items, status)
 	}
@@ -1041,7 +1095,11 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		"highest_score", highestScore,
 		"latency_ms", latency,
 		"queue_delay_ms", queueDelay)
-	if flagged || cfg.RecordNonHits {
+	attention := !flagged && cfg.RecordAttentionInputs && cfg.AttentionThreshold > 0 && highestScore >= cfg.AttentionThreshold
+	if attention {
+		action = ContentModerationActionAttention
+	}
+	if flagged || cfg.RecordNonHits || attention {
 		log := s.buildLog(input, cfg, action, flagged, highestCategory, highestScore, result.CategoryScores, content.ExcerptText(), &latency, queueDelay, "")
 		if queueDelay == nil && cfg.Mode == ContentModerationModePreBlock {
 			s.enqueueRecord(input, cfg, log, hashText, flagged, flagged)
@@ -1374,8 +1432,8 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		PreBlockAPIKeyActive:         s.preBlockAPIKeyActive(cfg.apiKeys()),
 		PreBlockAPIKeyAvailableCount: s.preBlockAPIKeyAvailableCount(cfg.apiKeys()),
 		PreBlockAPIKeyTotalCalls:     s.preBlockAPIKeyTotalCalls(cfg.apiKeys()),
-		PreBlockAPIKeyLoads:          s.preBlockAPIKeyLoads(cfg.apiKeys()),
-		APIKeyStatuses:               s.apiKeyStatuses(cfg.apiKeys()),
+		PreBlockAPIKeyLoads:          s.preBlockAPIKeyLoadsForConfig(cfg),
+		APIKeyStatuses:               s.apiKeyStatusesForConfig(cfg),
 		FlaggedHashCount:             flaggedHashCount,
 		LastCleanupAt:                lastCleanupAt,
 		LastCleanupDeletedHit:        s.lastCleanupDeletedHit.Load(),
@@ -1650,6 +1708,9 @@ func (s *ContentModerationService) applyFlaggedAccountSideEffects(ctx context.Co
 	}
 	log.ViolationCount = count
 	autoBanJustApplied := false
+	if cfg.isAutoBanExempt(log) {
+		return false
+	}
 	if cfg.AutoBanEnabled && cfg.BanThreshold > 0 && count >= cfg.BanThreshold && s.userRepo != nil {
 		user, err := s.userRepo.GetByID(ctx, *log.UserID)
 		if err != nil {
@@ -1670,6 +1731,29 @@ func (s *ContentModerationService) applyFlaggedAccountSideEffects(ctx context.Co
 		log.AutoBanned = true
 	}
 	return autoBanJustApplied
+}
+
+func (cfg *ContentModerationConfig) isAutoBanExempt(log *ContentModerationLog) bool {
+	if cfg == nil || log == nil {
+		return false
+	}
+	if log.UserID != nil {
+		for _, id := range cfg.AutoBanExemptUserIDs {
+			if id == *log.UserID {
+				return true
+			}
+		}
+	}
+	email := strings.ToLower(strings.TrimSpace(log.UserEmail))
+	if email == "" {
+		return false
+	}
+	for _, item := range cfg.AutoBanExemptUserEmails {
+		if strings.ToLower(strings.TrimSpace(item)) == email {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *ContentModerationService) sendFlaggedNotificationSideEffects(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog, autoBanJustApplied bool) {
@@ -1802,30 +1886,34 @@ func (s *ContentModerationService) siteName(ctx context.Context) string {
 
 func defaultContentModerationConfig() *ContentModerationConfig {
 	return &ContentModerationConfig{
-		Enabled:              false,
-		Mode:                 ContentModerationModePreBlock,
-		BaseURL:              defaultContentModerationBaseURL,
-		Model:                defaultContentModerationModel,
-		TimeoutMS:            defaultContentModerationTimeoutMS,
-		SampleRate:           100,
-		AllGroups:            true,
-		GroupIDs:             []int64{},
-		RecordNonHits:        false,
-		Thresholds:           ContentModerationDefaultThresholds(),
-		WorkerCount:          defaultContentModerationWorkerCount,
-		QueueSize:            defaultContentModerationQueueSize,
-		BlockStatus:          defaultContentModerationBlockHTTPStatus,
-		BlockMessage:         defaultContentModerationBlockMessage,
-		EmailOnHit:           true,
-		AutoBanEnabled:       true,
-		BanThreshold:         defaultContentModerationBanThreshold,
-		ViolationWindowHours: defaultContentModerationViolationWindowHours,
-		RetryCount:           defaultContentModerationRetryCount,
-		HitRetentionDays:     defaultContentModerationHitRetentionDays,
-		NonHitRetentionDays:  defaultContentModerationNonHitRetentionDays,
-		PreHashCheckEnabled:  false,
-		BlockedKeywords:      []string{},
-		KeywordBlockingMode:  ContentModerationKeywordModeKeywordAndAPI,
+		Enabled:                 false,
+		Mode:                    ContentModerationModePreBlock,
+		BaseURL:                 defaultContentModerationBaseURL,
+		Model:                   defaultContentModerationModel,
+		TimeoutMS:               defaultContentModerationTimeoutMS,
+		SampleRate:              100,
+		AllGroups:               true,
+		GroupIDs:                []int64{},
+		RecordNonHits:           false,
+		RecordAttentionInputs:   false,
+		AttentionThreshold:      0,
+		Thresholds:              ContentModerationDefaultThresholds(),
+		WorkerCount:             defaultContentModerationWorkerCount,
+		QueueSize:               defaultContentModerationQueueSize,
+		BlockStatus:             defaultContentModerationBlockHTTPStatus,
+		BlockMessage:            defaultContentModerationBlockMessage,
+		EmailOnHit:              true,
+		AutoBanEnabled:          true,
+		BanThreshold:            defaultContentModerationBanThreshold,
+		AutoBanExemptUserIDs:    []int64{},
+		AutoBanExemptUserEmails: []string{},
+		ViolationWindowHours:    defaultContentModerationViolationWindowHours,
+		RetryCount:              defaultContentModerationRetryCount,
+		HitRetentionDays:        defaultContentModerationHitRetentionDays,
+		NonHitRetentionDays:     defaultContentModerationNonHitRetentionDays,
+		PreHashCheckEnabled:     false,
+		BlockedKeywords:         []string{},
+		KeywordBlockingMode:     ContentModerationKeywordModeKeywordAndAPI,
 		ModelFilter: ContentModerationModelFilter{
 			Type:   ContentModerationModelFilterAll,
 			Models: []string{},
@@ -1839,7 +1927,10 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 	}
 	clone := *cfg
 	clone.APIKeys = append([]string(nil), cfg.APIKeys...)
+	clone.APIKeyMetadata = append([]ContentModerationAPIKeyMetadata(nil), cfg.APIKeyMetadata...)
 	clone.GroupIDs = append([]int64(nil), cfg.GroupIDs...)
+	clone.AutoBanExemptUserIDs = append([]int64(nil), cfg.AutoBanExemptUserIDs...)
+	clone.AutoBanExemptUserEmails = append([]string(nil), cfg.AutoBanExemptUserEmails...)
 	clone.BlockedKeywords = append([]string(nil), cfg.BlockedKeywords...)
 	clone.Thresholds = cloneFloatMap(cfg.Thresholds)
 	clone.ModelFilter = ContentModerationModelFilter{
@@ -1856,6 +1947,7 @@ func (cfg *ContentModerationConfig) normalize() {
 	} else {
 		cfg.APIKeys = normalizeModerationAPIKeys(cfg.APIKeys)
 	}
+	cfg.APIKeyMetadata = filterModerationAPIKeyMetadata(cfg.APIKeyMetadata, cfg.APIKeys)
 	if cfg.Mode == "" {
 		cfg.Mode = ContentModerationModePreBlock
 	}
@@ -1878,6 +1970,12 @@ func (cfg *ContentModerationConfig) normalize() {
 	}
 	if cfg.SampleRate > 100 {
 		cfg.SampleRate = 100
+	}
+	if cfg.AttentionThreshold < 0 {
+		cfg.AttentionThreshold = 0
+	}
+	if cfg.AttentionThreshold > 1 {
+		cfg.AttentionThreshold = 1
 	}
 	if cfg.WorkerCount <= 0 {
 		cfg.WorkerCount = defaultContentModerationWorkerCount
@@ -1923,6 +2021,8 @@ func (cfg *ContentModerationConfig) normalize() {
 		cfg.NonHitRetentionDays = maxContentModerationNonHitRetentionDays
 	}
 	cfg.GroupIDs = normalizeInt64IDs(cfg.GroupIDs)
+	cfg.AutoBanExemptUserIDs = normalizeInt64IDs(cfg.AutoBanExemptUserIDs)
+	cfg.AutoBanExemptUserEmails = normalizeContentModerationEmailList(cfg.AutoBanExemptUserEmails)
 	cfg.Thresholds = mergeContentModerationThresholds(ContentModerationDefaultThresholds(), cfg.Thresholds)
 	cfg.BlockedKeywords = normalizeBlockedKeywords(cfg.BlockedKeywords)
 	cfg.KeywordBlockingMode = normalizeKeywordBlockingMode(cfg.KeywordBlockingMode)
@@ -1985,6 +2085,22 @@ func (cfg *ContentModerationConfig) apiKeys() []string {
 		return nil
 	}
 	return normalizeModerationAPIKeys(cfg.APIKeys)
+}
+
+func (cfg *ContentModerationConfig) apiKeyEmailByHash() map[string]string {
+	out := map[string]string{}
+	if cfg == nil {
+		return out
+	}
+	for _, item := range cfg.APIKeyMetadata {
+		hash := normalizeContentModerationHash(item.KeyHash)
+		email := strings.TrimSpace(item.AccountEmail)
+		if hash == "" || email == "" {
+			continue
+		}
+		out[hash] = email
+	}
+	return out
 }
 
 func (s *ContentModerationService) nextUsableAPIKey(cfg *ContentModerationConfig) (string, bool) {
@@ -2126,51 +2242,79 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		apiKeyMasked = masks[0]
 	}
 	return &ContentModerationConfigView{
-		Enabled:              cfg.Enabled,
-		Mode:                 cfg.Mode,
-		BaseURL:              cfg.BaseURL,
-		Model:                cfg.Model,
-		APIKeyConfigured:     len(keys) > 0,
-		APIKeyMasked:         apiKeyMasked,
-		APIKeyCount:          len(keys),
-		APIKeyMasks:          masks,
-		APIKeyStatuses:       s.apiKeyStatuses(keys),
-		TimeoutMS:            cfg.TimeoutMS,
-		SampleRate:           cfg.SampleRate,
-		AllGroups:            cfg.AllGroups,
-		GroupIDs:             append([]int64(nil), cfg.GroupIDs...),
-		RecordNonHits:        cfg.RecordNonHits,
-		Thresholds:           cloneFloatMap(cfg.Thresholds),
-		WorkerCount:          cfg.WorkerCount,
-		QueueSize:            cfg.QueueSize,
-		BlockStatus:          cfg.BlockStatus,
-		BlockMessage:         cfg.BlockMessage,
-		EmailOnHit:           cfg.EmailOnHit,
-		AutoBanEnabled:       cfg.AutoBanEnabled,
-		BanThreshold:         cfg.BanThreshold,
-		ViolationWindowHours: cfg.ViolationWindowHours,
-		RetryCount:           cfg.RetryCount,
-		HitRetentionDays:     cfg.HitRetentionDays,
-		NonHitRetentionDays:  cfg.NonHitRetentionDays,
-		PreHashCheckEnabled:  cfg.PreHashCheckEnabled,
-		BlockedKeywords:      append([]string(nil), cfg.BlockedKeywords...),
-		KeywordBlockingMode:  cfg.KeywordBlockingMode,
-		ModelFilter:          cloneContentModerationModelFilter(cfg.ModelFilter),
+		Enabled:                 cfg.Enabled,
+		Mode:                    cfg.Mode,
+		BaseURL:                 cfg.BaseURL,
+		Model:                   cfg.Model,
+		APIKeyConfigured:        len(keys) > 0,
+		APIKeyMasked:            apiKeyMasked,
+		APIKeyCount:             len(keys),
+		APIKeyMasks:             masks,
+		APIKeyStatuses:          s.apiKeyStatusesForConfig(cfg),
+		TimeoutMS:               cfg.TimeoutMS,
+		SampleRate:              cfg.SampleRate,
+		AllGroups:               cfg.AllGroups,
+		GroupIDs:                append([]int64(nil), cfg.GroupIDs...),
+		RecordNonHits:           cfg.RecordNonHits,
+		RecordAttentionInputs:   cfg.RecordAttentionInputs,
+		AttentionThreshold:      cfg.AttentionThreshold,
+		Thresholds:              cloneFloatMap(cfg.Thresholds),
+		WorkerCount:             cfg.WorkerCount,
+		QueueSize:               cfg.QueueSize,
+		BlockStatus:             cfg.BlockStatus,
+		BlockMessage:            cfg.BlockMessage,
+		EmailOnHit:              cfg.EmailOnHit,
+		AutoBanEnabled:          cfg.AutoBanEnabled,
+		BanThreshold:            cfg.BanThreshold,
+		AutoBanExemptUserIDs:    append([]int64(nil), cfg.AutoBanExemptUserIDs...),
+		AutoBanExemptUserEmails: append([]string(nil), cfg.AutoBanExemptUserEmails...),
+		ViolationWindowHours:    cfg.ViolationWindowHours,
+		RetryCount:              cfg.RetryCount,
+		HitRetentionDays:        cfg.HitRetentionDays,
+		NonHitRetentionDays:     cfg.NonHitRetentionDays,
+		PreHashCheckEnabled:     cfg.PreHashCheckEnabled,
+		BlockedKeywords:         append([]string(nil), cfg.BlockedKeywords...),
+		KeywordBlockingMode:     cfg.KeywordBlockingMode,
+		ModelFilter:             cloneContentModerationModelFilter(cfg.ModelFilter),
 	}
 }
 
-func (s *ContentModerationService) apiKeyStatuses(keys []string) []ContentModerationAPIKeyStatus {
+func (s *ContentModerationService) apiKeyStatusesForConfig(cfg *ContentModerationConfig) []ContentModerationAPIKeyStatus {
+	if cfg == nil {
+		return []ContentModerationAPIKeyStatus{}
+	}
+	return s.apiKeyStatuses(cfg.apiKeys(), cfg.apiKeyEmailByHash())
+}
+
+func (s *ContentModerationService) apiKeyStatuses(keys []string, emails ...map[string]string) []ContentModerationAPIKeyStatus {
+	emailByHash := map[string]string{}
+	if len(emails) > 0 && emails[0] != nil {
+		emailByHash = emails[0]
+	}
 	out := make([]ContentModerationAPIKeyStatus, 0, len(keys))
 	for idx, key := range keys {
-		out = append(out, s.apiKeyStatusForHash(idx, moderationAPIKeyHash(key), maskSecretTail(key), true))
+		hash := moderationAPIKeyHash(key)
+		out = append(out, s.apiKeyStatusForHash(idx, hash, maskSecretTail(key), emailByHash[hash], true))
 	}
 	return out
 }
 
-func (s *ContentModerationService) preBlockAPIKeyLoads(keys []string) []ContentModerationAPIKeyLoad {
+func (s *ContentModerationService) preBlockAPIKeyLoadsForConfig(cfg *ContentModerationConfig) []ContentModerationAPIKeyLoad {
+	if cfg == nil {
+		return []ContentModerationAPIKeyLoad{}
+	}
+	return s.preBlockAPIKeyLoads(cfg.apiKeys(), cfg.apiKeyEmailByHash())
+}
+
+func (s *ContentModerationService) preBlockAPIKeyLoads(keys []string, emails ...map[string]string) []ContentModerationAPIKeyLoad {
+	emailByHash := map[string]string{}
+	if len(emails) > 0 && emails[0] != nil {
+		emailByHash = emails[0]
+	}
 	out := make([]ContentModerationAPIKeyLoad, 0, len(keys))
 	for idx, key := range keys {
-		out = append(out, s.preBlockAPIKeyLoadForHash(idx, moderationAPIKeyHash(key), maskSecretTail(key)))
+		hash := moderationAPIKeyHash(key)
+		out = append(out, s.preBlockAPIKeyLoadForHash(idx, hash, maskSecretTail(key), emailByHash[hash]))
 	}
 	return out
 }
@@ -2202,14 +2346,15 @@ func (s *ContentModerationService) preBlockAPIKeyTotalCalls(keys []string) int64
 	return total
 }
 
-func (s *ContentModerationService) preBlockAPIKeyLoadForHash(index int, hash string, masked string) ContentModerationAPIKeyLoad {
+func (s *ContentModerationService) preBlockAPIKeyLoadForHash(index int, hash string, masked string, accountEmail string) ContentModerationAPIKeyLoad {
 	load := ContentModerationAPIKeyLoad{
-		Index:   index,
-		KeyHash: hash,
-		Masked:  masked,
-		Status:  "unknown",
+		Index:        index,
+		KeyHash:      hash,
+		Masked:       masked,
+		AccountEmail: accountEmail,
+		Status:       "unknown",
 	}
-	status := s.apiKeyStatusForHash(index, hash, masked, true)
+	status := s.apiKeyStatusForHash(index, hash, masked, accountEmail, true)
 	load.Status = status.Status
 	load.LastLatencyMS = status.LastLatencyMS
 	load.LastHTTPStatus = status.LastHTTPStatus
@@ -2232,13 +2377,14 @@ func (s *ContentModerationService) preBlockAPIKeyLoadForHash(index int, hash str
 	return load
 }
 
-func (s *ContentModerationService) apiKeyStatusForHash(index int, hash string, masked string, configured bool) ContentModerationAPIKeyStatus {
+func (s *ContentModerationService) apiKeyStatusForHash(index int, hash string, masked string, accountEmail string, configured bool) ContentModerationAPIKeyStatus {
 	status := ContentModerationAPIKeyStatus{
-		Index:      index,
-		KeyHash:    hash,
-		Masked:     masked,
-		Status:     "unknown",
-		Configured: configured,
+		Index:        index,
+		KeyHash:      hash,
+		Masked:       masked,
+		AccountEmail: accountEmail,
+		Status:       "unknown",
+		Configured:   configured,
 	}
 	if hash == "" || s == nil {
 		return status
@@ -2601,6 +2747,26 @@ func normalizeModerationAPIKeys(keys []string) []string {
 	return out
 }
 
+func normalizeContentModerationEmailList(emails []string) []string {
+	if len(emails) == 0 {
+		return []string{}
+	}
+	seen := make(map[string]struct{}, len(emails))
+	out := make([]string, 0, len(emails))
+	for _, email := range emails {
+		email = strings.ToLower(strings.TrimSpace(email))
+		if email == "" {
+			continue
+		}
+		if _, ok := seen[email]; ok {
+			continue
+		}
+		seen[email] = struct{}{}
+		out = append(out, email)
+	}
+	return out
+}
+
 func deleteModerationAPIKeysByHash(keys []string, hashes []string) []string {
 	keys = normalizeModerationAPIKeys(keys)
 	deleteHashes := make(map[string]struct{}, len(hashes))
@@ -2621,6 +2787,86 @@ func deleteModerationAPIKeysByHash(keys []string, hashes []string) []string {
 		out = append(out, key)
 	}
 	return out
+}
+
+func normalizeModerationAPIKeyAccountInput(items []ContentModerationAPIKeyAccountInput) ([]string, []ContentModerationAPIKeyMetadata) {
+	keys := make([]string, 0, len(items))
+	emailByHash := map[string]string{}
+	for _, item := range items {
+		key := strings.TrimSpace(item.APIKey)
+		if key == "" {
+			continue
+		}
+		keys = append(keys, key)
+		if email := strings.TrimSpace(item.AccountEmail); email != "" {
+			emailByHash[moderationAPIKeyHash(key)] = email
+		}
+	}
+	keys = normalizeModerationAPIKeys(keys)
+	metadata := make([]ContentModerationAPIKeyMetadata, 0, len(emailByHash))
+	for _, key := range keys {
+		hash := moderationAPIKeyHash(key)
+		if email := emailByHash[hash]; email != "" {
+			metadata = append(metadata, ContentModerationAPIKeyMetadata{KeyHash: hash, AccountEmail: email})
+		}
+	}
+	return keys, metadata
+}
+
+func filterModerationAPIKeyMetadata(metadata []ContentModerationAPIKeyMetadata, keys []string) []ContentModerationAPIKeyMetadata {
+	keys = normalizeModerationAPIKeys(keys)
+	allowed := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		if hash := moderationAPIKeyHash(key); hash != "" {
+			allowed[hash] = struct{}{}
+		}
+	}
+	if len(allowed) == 0 {
+		return []ContentModerationAPIKeyMetadata{}
+	}
+	out := make([]ContentModerationAPIKeyMetadata, 0, len(metadata))
+	seen := make(map[string]struct{}, len(metadata))
+	for _, item := range metadata {
+		hash := normalizeContentModerationHash(item.KeyHash)
+		email := strings.TrimSpace(item.AccountEmail)
+		if hash == "" || email == "" {
+			continue
+		}
+		if _, ok := allowed[hash]; !ok {
+			continue
+		}
+		if _, ok := seen[hash]; ok {
+			continue
+		}
+		seen[hash] = struct{}{}
+		out = append(out, ContentModerationAPIKeyMetadata{KeyHash: hash, AccountEmail: email})
+	}
+	return out
+}
+
+func mergeModerationAPIKeyMetadata(existing []ContentModerationAPIKeyMetadata, updates []ContentModerationAPIKeyMetadata, keys []string) []ContentModerationAPIKeyMetadata {
+	emailByHash := map[string]string{}
+	for _, item := range existing {
+		hash := normalizeContentModerationHash(item.KeyHash)
+		email := strings.TrimSpace(item.AccountEmail)
+		if hash != "" && email != "" {
+			emailByHash[hash] = email
+		}
+	}
+	for _, item := range updates {
+		hash := normalizeContentModerationHash(item.KeyHash)
+		email := strings.TrimSpace(item.AccountEmail)
+		if hash != "" {
+			emailByHash[hash] = email
+		}
+	}
+	metadata := make([]ContentModerationAPIKeyMetadata, 0, len(emailByHash))
+	for hash, email := range emailByHash {
+		if email != "" {
+			metadata = append(metadata, ContentModerationAPIKeyMetadata{KeyHash: hash, AccountEmail: email})
+		}
+	}
+	return filterModerationAPIKeyMetadata(metadata, keys)
 }
 
 func normalizeContentModerationAPIKeysMode(mode string) string {

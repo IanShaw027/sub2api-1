@@ -307,6 +307,36 @@ describe('admin RiskControlView', () => {
     expect(showError).toHaveBeenCalled()
   })
 
+  it('requires a positive attention threshold when attention recording is enabled', async () => {
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm
+    setupState.configForm.record_attention_inputs = true
+    setupState.configForm.attention_threshold = 0
+
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith('admin.riskControl.attentionThresholdInvalid')
+  })
+
   it('keeps the active settings tab readable in dark mode', async () => {
     const wrapper = mount(RiskControlView, {
       global: {

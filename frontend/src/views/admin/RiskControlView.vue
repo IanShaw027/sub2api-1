@@ -116,6 +116,7 @@
                         <span class="truncate font-mono text-sm text-gray-700 dark:text-gray-200">{{ item.masked || '-' }}</span>
                         <span class="h-2 w-2 flex-shrink-0 rounded-full" :class="apiKeyStatusDotClass(item.status)"></span>
                       </div>
+                      <p v-if="item.account_email" class="mt-1 truncate text-xs text-gray-600 dark:text-gray-300">{{ item.account_email }}</p>
                       <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                         {{ t('admin.riskControl.preBlockAPIKeyTotals', { total: formatNumber(item.total), success: formatNumber(item.success), errors: formatNumber(item.errors) }) }}
                       </p>
@@ -608,6 +609,9 @@
                           <div class="min-w-0">
                             <div class="flex min-w-0 flex-wrap items-center gap-2">
                               <span class="truncate font-mono text-sm font-semibold text-gray-900 dark:text-white">{{ row.masked || '-' }}</span>
+                              <span v-if="row.account_email" class="truncate rounded-md bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
+                                {{ row.account_email }}
+                              </span>
                               <span
                                 class="inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-medium"
                                 :class="row.configured ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300' : 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'"
@@ -810,6 +814,22 @@
               </div>
               <Toggle v-model="configForm.record_non_hits" />
             </div>
+            <div class="rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.recordAttentionInputs') }}</p>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.recordAttentionInputsHint') }}</p>
+                </div>
+                <Toggle v-model="configForm.record_attention_inputs" />
+              </div>
+              <div class="mt-4">
+                <label class="input-label">{{ t('admin.riskControl.attentionThreshold') }}</label>
+                <div class="relative">
+                  <input v-model.number="configForm.attention_threshold" type="number" min="1" max="100" step="1" class="input pr-8" :disabled="!configForm.record_attention_inputs" />
+                  <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">%</span>
+                </div>
+              </div>
+            </div>
             <div class="space-y-4 rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
               <div class="flex items-center justify-between gap-4">
                 <div>
@@ -884,6 +904,15 @@
               <div>
                 <label class="input-label">{{ t('admin.riskControl.banThreshold') }}</label>
                 <input v-model.number="configForm.ban_threshold" type="number" min="1" max="1000" class="input" />
+              </div>
+              <div class="lg:col-span-2">
+                <label class="input-label">{{ t('admin.riskControl.autoBanExemptUsers') }}</label>
+                <textarea
+                  v-model="configForm.auto_ban_exempt_users_text"
+                  class="input min-h-24 resize-y font-mono text-sm"
+                  :placeholder="t('admin.riskControl.autoBanExemptUsersPlaceholder')"
+                ></textarea>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.autoBanExemptUsersHint') }}</p>
               </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.violationWindowHours') }}</label>
@@ -1111,6 +1140,7 @@ import Pagination from '@/components/common/Pagination.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import { adminAPI } from '@/api/admin'
 import type {
+  ContentModerationAPIKeyAccountInput,
   ContentModerationAPIKeyLoad,
   ContentModerationAPIKeyStatus,
   ContentModerationConfig,
@@ -1225,6 +1255,8 @@ const configForm = reactive({
   all_groups: true,
   group_ids: [] as number[],
   record_non_hits: false,
+  record_attention_inputs: false,
+  attention_threshold: 50,
   worker_count: 4,
   queue_size: 32768,
   block_status: 403,
@@ -1232,6 +1264,7 @@ const configForm = reactive({
   email_on_hit: true,
   auto_ban_enabled: true,
   ban_threshold: 10,
+  auto_ban_exempt_users_text: '',
   violation_window_hours: 720,
   hit_retention_days: 180,
   non_hit_retention_days: 3,
@@ -1417,7 +1450,7 @@ const filteredGroups = computed(() => {
   })
 })
 
-const inputApiKeyCount = computed(() => parseApiKeys(configForm.api_keys_text).length)
+const inputApiKeyCount = computed(() => parseApiKeyAccountInputs(configForm.api_keys_text).length)
 
 const blockedKeywordList = computed(() => parseBlockedKeywords(configForm.blocked_keywords_text))
 
@@ -1702,6 +1735,8 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.all_groups = config.all_groups
   configForm.group_ids = Array.isArray(config.group_ids) ? [...config.group_ids] : []
   configForm.record_non_hits = config.record_non_hits
+  configForm.record_attention_inputs = config.record_attention_inputs ?? false
+  configForm.attention_threshold = Math.round((config.attention_threshold ?? 0.5) * 100)
   configForm.worker_count = config.worker_count || 4
   configForm.queue_size = config.queue_size || 32768
   configForm.block_status = config.block_status || 403
@@ -1709,6 +1744,7 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.email_on_hit = config.email_on_hit ?? true
   configForm.auto_ban_enabled = config.auto_ban_enabled ?? true
   configForm.ban_threshold = config.ban_threshold || 10
+  configForm.auto_ban_exempt_users_text = formatAutoBanExemptUsers(config.auto_ban_exempt_user_ids, config.auto_ban_exempt_user_emails)
   configForm.violation_window_hours = config.violation_window_hours || 720
   configForm.hit_retention_days = config.hit_retention_days || 180
   configForm.non_hit_retention_days = Math.min(Math.max(config.non_hit_retention_days || 3, 1), 3)
@@ -1794,6 +1830,11 @@ async function saveConfig() {
       appStore.showError(t('admin.users.platformQuota.invalidNumber', { fields: invalidThresholdFields.join(', ') }))
       return
     }
+    const attentionThreshold = Number(configForm.attention_threshold)
+    if (configForm.record_attention_inputs && (!Number.isFinite(attentionThreshold) || attentionThreshold <= 0 || attentionThreshold > 100)) {
+      appStore.showError(t('admin.riskControl.attentionThresholdInvalid'))
+      return
+    }
     const payload: UpdateContentModerationConfig = {
       enabled: configForm.enabled,
       mode: configForm.mode,
@@ -1805,6 +1846,8 @@ async function saveConfig() {
       all_groups: configForm.all_groups,
       group_ids: configForm.all_groups ? [] : [...configForm.group_ids],
       record_non_hits: configForm.record_non_hits,
+      record_attention_inputs: configForm.record_attention_inputs,
+      attention_threshold: Number((clampPercent(attentionThreshold) / 100).toFixed(4)),
       clear_api_key: configForm.clear_api_key,
       worker_count: Number(configForm.worker_count) || 4,
       queue_size: Number(configForm.queue_size) || 32768,
@@ -1813,6 +1856,7 @@ async function saveConfig() {
       email_on_hit: configForm.email_on_hit,
       auto_ban_enabled: configForm.auto_ban_enabled,
       ban_threshold: Number(configForm.ban_threshold) || 10,
+      ...buildAutoBanExemptUsersPayload(configForm.auto_ban_exempt_users_text),
       violation_window_hours: Number(configForm.violation_window_hours) || 720,
       hit_retention_days: Number(configForm.hit_retention_days) || 180,
       non_hit_retention_days: Math.min(Math.max(Number(configForm.non_hit_retention_days) || 3, 1), 3),
@@ -1822,13 +1866,13 @@ async function saveConfig() {
       keyword_blocking_mode: configForm.keyword_blocking_mode,
       model_filter: modelFilterPayload,
     }
-    const keys = parseApiKeys(configForm.api_keys_text)
-    if (!payload.clear_api_key && configForm.api_keys_mode === 'replace' && keys.length === 0) {
+    const keyAccounts = parseApiKeyAccountInputs(configForm.api_keys_text)
+    if (!payload.clear_api_key && configForm.api_keys_mode === 'replace' && keyAccounts.length === 0) {
       appStore.showError(t('admin.riskControl.apiKeysReplaceNoInput'))
       return
     }
-    if (keys.length > 0) {
-      payload.api_keys = keys
+    if (keyAccounts.length > 0) {
+      payload.api_key_accounts = keyAccounts
       payload.api_keys_mode = configForm.api_keys_mode
       payload.clear_api_key = false
     }
@@ -1995,7 +2039,8 @@ function setModelFilterType(type: ContentModerationModelFilterType) {
 }
 
 async function testApiKeys(useInputKeys: boolean) {
-  const keys = useInputKeys ? parseApiKeys(configForm.api_keys_text) : []
+  const keyAccounts = useInputKeys ? parseApiKeyAccountInputs(configForm.api_keys_text) : []
+  const keys = keyAccounts.map((item) => item.api_key)
   if (useInputKeys && keys.length === 0) {
     appStore.showError(t('admin.riskControl.apiKeyTestNoInput'))
     return
@@ -2140,6 +2185,7 @@ function modeDescription(mode: ModerationMode): string {
 function resultLabel(row: ContentModerationLog): string {
   if (row.action === 'keyword_block') return t('admin.riskControl.action.keywordBlock')
   if (row.action === 'block') return t('admin.riskControl.action.block')
+  if (row.action === 'attention') return t('admin.riskControl.action.attention')
   if (row.action === 'error' || row.error) return t('admin.riskControl.action.error')
   if (row.flagged) return t('admin.riskControl.result.hit')
   return t('admin.riskControl.result.pass')
@@ -2147,6 +2193,7 @@ function resultLabel(row: ContentModerationLog): string {
 
 function resultBadgeClass(row: ContentModerationLog): string {
   if (row.action === 'block' || row.action === 'keyword_block') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  if (row.action === 'attention') return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
   if (row.action === 'error' || row.error) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
   if (row.flagged) return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300'
   return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
@@ -2236,11 +2283,59 @@ function apiKeyStatusMeta(row: ContentModerationAPIKeyStatus): string {
   return parts.join(' / ')
 }
 
-function parseApiKeys(value: string): string[] {
-  return value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter((item, index, arr) => item && arr.indexOf(item) === index)
+function parseApiKeyAccountInputs(value: string): ContentModerationAPIKeyAccountInput[] {
+  const seen = new Set<string>()
+  const rows: ContentModerationAPIKeyAccountInput[] = []
+  for (const rawLine of value.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const parts = line.split(/[\s,，]+/).filter(Boolean)
+    const apiKey = parts.find((part) => !part.includes('@')) ?? parts[0]
+    const accountEmail = parts.find((part) => part.includes('@')) ?? ''
+    if (!apiKey || seen.has(apiKey)) continue
+    seen.add(apiKey)
+    rows.push({ api_key: apiKey, account_email: accountEmail })
+  }
+  return rows
+}
+
+function formatAutoBanExemptUsers(userIDs?: number[], emails?: string[]): string {
+  const lines = [
+    ...(Array.isArray(userIDs) ? userIDs.map((id) => String(id)) : []),
+    ...(Array.isArray(emails) ? emails : []),
+  ].map((item) => item.trim()).filter(Boolean)
+  return Array.from(new Set(lines)).join('\n')
+}
+
+function buildAutoBanExemptUsersPayload(value: string): Pick<UpdateContentModerationConfig, 'auto_ban_exempt_user_ids' | 'auto_ban_exempt_user_emails'> {
+  const ids: number[] = []
+  const emails: string[] = []
+  const seenIDs = new Set<number>()
+  const seenEmails = new Set<string>()
+  for (const rawLine of value.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const parts = line.split(/[\s,，]+/).filter(Boolean)
+    for (const part of parts) {
+      if (part.includes('@')) {
+        const email = part.toLowerCase()
+        if (!seenEmails.has(email)) {
+          seenEmails.add(email)
+          emails.push(email)
+        }
+        continue
+      }
+      const id = Number(part)
+      if (Number.isInteger(id) && id > 0 && !seenIDs.has(id)) {
+        seenIDs.add(id)
+        ids.push(id)
+      }
+    }
+  }
+  return {
+    auto_ban_exempt_user_ids: ids,
+    auto_ban_exempt_user_emails: emails,
+  }
 }
 
 function normalizeKeywordBlockingMode(value: unknown): KeywordBlockingMode {

@@ -564,6 +564,110 @@ func TestContentModerationCheck_KeywordOnlyStrategySkipsAPIOnMiss(t *testing.T) 
 	require.Len(t, repo.snapshotLogs(), 0)
 }
 
+func TestContentModerationCheck_AttentionThresholdRecordsNonHit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{Results: []moderationAPIResult{{
+			CategoryScores: map[string]float64{"sexual": 0.5},
+		}}})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.RecordNonHits = false
+	cfg.RecordAttentionInputs = true
+	cfg.AttentionThreshold = 0.45
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:    1001,
+		UserEmail: "watch@example.com",
+		Endpoint:  "/v1/chat/completions",
+		Protocol:  ContentModerationProtocolOpenAIChat,
+		Body:      []byte(`{"messages":[{"role":"user","content":"borderline prompt"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Flagged)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.False(t, logs[0].Flagged)
+	require.Equal(t, ContentModerationActionAttention, logs[0].Action)
+	require.Equal(t, 0.5, logs[0].HighestScore)
+}
+
+func TestContentModerationCheck_AutoBanExemptUserStillBlocksWithoutDisabling(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{Results: []moderationAPIResult{{
+			CategoryScores: map[string]float64{"sexual": 0.99},
+		}}})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.AutoBanEnabled = true
+	cfg.BanThreshold = 1
+	cfg.AutoBanExemptUserIDs = []int64{1001}
+	cfg.AutoBanExemptUserEmails = []string{"vip@example.com"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	userRepo := &contentModerationTestUserRepo{user: &User{ID: 1001, Email: "vip@example.com", Status: StatusActive}}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		userRepo,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:    1001,
+		UserEmail: "vip@example.com",
+		Endpoint:  "/v1/chat/completions",
+		Protocol:  ContentModerationProtocolOpenAIChat,
+		Body:      []byte(`{"messages":[{"role":"user","content":"flagged prompt"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.True(t, logs[0].Flagged)
+	require.Equal(t, ContentModerationActionBlock, logs[0].Action)
+	require.Equal(t, 1, logs[0].ViolationCount)
+	require.False(t, logs[0].AutoBanned)
+	require.Empty(t, userRepo.updated)
+	require.Equal(t, StatusActive, userRepo.user.Status)
+}
+
 func TestContentModerationCheck_APIOnlyStrategyIgnoresKeywordList(t *testing.T) {
 	upstreamCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -783,6 +887,46 @@ func TestContentModerationUpdateConfig_AppendsAndDeletesAPIKeys(t *testing.T) {
 	var saved ContentModerationConfig
 	require.NoError(t, json.Unmarshal([]byte(repo.values[SettingKeyContentModerationConfig]), &saved))
 	require.Equal(t, []string{"sk-old-b", "sk-new-c"}, saved.apiKeys())
+}
+
+func TestContentModerationUpdateConfig_AppendsAPIKeyAccountEmails(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.APIKeys = []string{"sk-old-a", "sk-old-b"}
+	cfg.APIKeyMetadata = []ContentModerationAPIKeyMetadata{
+		{KeyHash: moderationAPIKeyHash("sk-old-a"), AccountEmail: "old-a@example.com"},
+		{KeyHash: moderationAPIKeyHash("sk-old-b"), AccountEmail: "old-b@example.com"},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyContentModerationConfig: string(rawCfg),
+	}}
+	svc := NewContentModerationService(repo, nil, nil, nil, nil, nil, nil)
+	deleteHashes := []string{moderationAPIKeyHash("sk-old-a")}
+	addAccounts := []ContentModerationAPIKeyAccountInput{
+		{APIKey: "sk-new-c", AccountEmail: "new-c@example.com"},
+		{APIKey: "sk-old-b", AccountEmail: "old-b-updated@example.com"},
+	}
+
+	view, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
+		APIKeyAccounts:     &addAccounts,
+		DeleteAPIKeyHashes: &deleteHashes,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"old-b-updated@example.com", "new-c@example.com"}, []string{
+		view.APIKeyStatuses[0].AccountEmail,
+		view.APIKeyStatuses[1].AccountEmail,
+	})
+
+	var saved ContentModerationConfig
+	require.NoError(t, json.Unmarshal([]byte(repo.values[SettingKeyContentModerationConfig]), &saved))
+	require.Equal(t, []string{"sk-old-b", "sk-new-c"}, saved.apiKeys())
+	require.Equal(t, map[string]string{
+		moderationAPIKeyHash("sk-old-b"): "old-b-updated@example.com",
+		moderationAPIKeyHash("sk-new-c"): "new-c@example.com",
+	}, saved.apiKeyEmailByHash())
 }
 
 func TestContentModerationUpdateConfig_ReplacesAPIKeysWhenRequested(t *testing.T) {
@@ -1305,7 +1449,7 @@ func TestContentModerationCallModeration_400DoesNotFreezeAPIKey(t *testing.T) {
 
 	require.Error(t, err)
 	require.Equal(t, 1, requestCount)
-	status := svc.apiKeyStatusForHash(0, moderationAPIKeyHash("sk-test"), maskSecretTail("sk-test"), true)
+	status := svc.apiKeyStatusForHash(0, moderationAPIKeyHash("sk-test"), maskSecretTail("sk-test"), "", true)
 	require.Equal(t, "error", status.Status)
 	require.Equal(t, http.StatusBadRequest, status.LastHTTPStatus)
 	require.Zero(t, status.FailureCount)
@@ -1343,7 +1487,7 @@ func TestContentModerationCallModeration_FreezesByHTTPStatus(t *testing.T) {
 			_, err := svc.callModeration(context.Background(), cfg, "hello")
 
 			require.Error(t, err)
-			status := svc.apiKeyStatusForHash(0, moderationAPIKeyHash("sk-test"), maskSecretTail("sk-test"), true)
+			status := svc.apiKeyStatusForHash(0, moderationAPIKeyHash("sk-test"), maskSecretTail("sk-test"), "", true)
 			require.Equal(t, "frozen", status.Status)
 			require.Equal(t, tt.statusCode, status.LastHTTPStatus)
 			require.Equal(t, 1, status.FailureCount)
