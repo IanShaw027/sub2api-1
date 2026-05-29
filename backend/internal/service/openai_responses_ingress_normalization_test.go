@@ -135,3 +135,47 @@ func TestDropOpenAIResponsesIngressPreviousResponseID_MalformedJSONKeepsSjsonRes
 	updated := dropOpenAIResponsesIngressPreviousResponseID(body)
 	require.Equal(t, "{", string(updated))
 }
+
+func TestMergeResponsesReplayInputs_DedupesByID(t *testing.T) {
+	t.Parallel()
+
+	legacy := []byte(`[{"id":"msg_20","type":"message","role":"user","content":[{"type":"input_text","text":"prior"}]},{"id":"msg_21","type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}]`)
+	current := []byte(`[{"id":"msg_21","type":"message","role":"assistant","content":[{"type":"output_text","text":"hello world"}]},{"id":"msg_22","type":"message","role":"user","content":[{"type":"input_text","text":"next"}]}]`)
+
+	merged, changed, err := mergeResponsesReplayInputs(legacy, current)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, int64(3), gjson.GetBytes(merged, "#").Int())
+	require.Equal(t, "msg_20", gjson.GetBytes(merged, "0.id").String())
+	require.Equal(t, "msg_21", gjson.GetBytes(merged, "1.id").String())
+	require.Equal(t, "hello world", gjson.GetBytes(merged, "1.content.0.text").String())
+	require.Equal(t, "msg_22", gjson.GetBytes(merged, "2.id").String())
+}
+
+func TestMergeResponsesReplayInputs_DedupesByContentWhenIDMissing(t *testing.T) {
+	t.Parallel()
+
+	legacy := []byte(`[{"type":"message","role":"user","content":[{"type":"input_text","text":"earlier"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}]`)
+	current := []byte(`[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}]`)
+
+	merged, changed, err := mergeResponsesReplayInputs(legacy, current)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, int64(3), gjson.GetBytes(merged, "#").Int())
+	require.Equal(t, "earlier", gjson.GetBytes(merged, "0.content.0.text").String())
+	require.Equal(t, "hi", gjson.GetBytes(merged, "1.content.0.text").String())
+	require.Equal(t, "assistant", gjson.GetBytes(merged, "2.role").String())
+}
+
+func TestMergeResponsesReplayInputs_DedupesDuplicateIDsWithinCurrent(t *testing.T) {
+	t.Parallel()
+
+	current := []byte(`[{"id":"msg_21","type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]},{"id":"msg_21","type":"message","role":"assistant","content":[{"type":"output_text","text":"hello world"}]}]`)
+
+	merged, changed, err := mergeResponsesReplayInputs(nil, current)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, int64(1), gjson.GetBytes(merged, "#").Int())
+	require.Equal(t, "msg_21", gjson.GetBytes(merged, "0.id").String())
+	require.Equal(t, "hello world", gjson.GetBytes(merged, "0.content.0.text").String())
+}

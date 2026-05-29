@@ -205,29 +205,30 @@ func mergeResponsesReplayInputs(legacyInputRaw, inputRaw []byte) ([]byte, bool, 
 	if err != nil {
 		return nil, false, fmt.Errorf("decode current replay input: %w", err)
 	}
-	if len(legacyItems) == 0 {
-		return inputRaw, false, nil
-	}
-	if len(currentItems) == 0 {
-		mergedRaw, err := json.Marshal(legacyItems)
-		if err != nil {
-			return nil, false, fmt.Errorf("marshal legacy replay input: %w", err)
-		}
-		return mergedRaw, true, nil
-	}
 
-	seen := make(map[string]struct{}, len(legacyItems)+len(currentItems))
+	idIndex := make(map[string]int, len(legacyItems)+len(currentItems))
+	contentIndex := make(map[string]int, len(legacyItems)+len(currentItems))
 	merged := make([]json.RawMessage, 0, len(legacyItems)+len(currentItems))
 	appendUnique := func(items []json.RawMessage) error {
 		for _, item := range items {
+			id := strings.TrimSpace(gjson.GetBytes(item, "id").String())
+			if id != "" {
+				if pos, ok := idIndex[id]; ok {
+					merged[pos] = item
+					continue
+				}
+				idIndex[id] = len(merged)
+				merged = append(merged, item)
+				continue
+			}
 			key, err := compactJSONRaw(item)
 			if err != nil {
 				return err
 			}
-			if _, ok := seen[key]; ok {
+			if _, ok := contentIndex[key]; ok {
 				continue
 			}
-			seen[key] = struct{}{}
+			contentIndex[key] = len(merged)
 			merged = append(merged, item)
 		}
 		return nil
