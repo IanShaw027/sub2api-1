@@ -255,12 +255,89 @@ func prepareKiroConvertedRequestWithMeta(account *Account, parsed *ParsedRequest
 	meta.ForwardInputTokens = estimateKiroInputTokens(forwardBody)
 	meta.ForwardBody = forwardBody
 
+	forwardBody = patchKiroThinkingForModel(forwardBody, requestedModel, strings.TrimSpace(parsed.OutputEffort))
+
 	converted, err := kiropkg.ConvertAnthropicRequestWithModel(forwardBody, requestedModel)
 	if err != nil {
 		return nil, 0, nil, err
 	}
 	meta.ToolCount = len(converted.ToolNameMap)
 	return converted, billedInputTokens, meta, nil
+}
+
+func patchKiroThinkingForModel(forwardBody []byte, requestedModel string, outputEffort string) []byte {
+	thinkingType := extractJSONStringField(forwardBody, "thinking", "type")
+	if thinkingType == "" {
+		return forwardBody
+	}
+
+	needsDowngrade := thinkingType == "enabled" && !kiropkg.SupportsExtendedThinking(requestedModel)
+	needsEffortOverride := outputEffort != "" && (thinkingType == "adaptive" || needsDowngrade)
+
+	if !needsDowngrade && !needsEffortOverride {
+		return forwardBody
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(forwardBody, &body); err != nil {
+		return forwardBody
+	}
+	thinking, _ := body["thinking"].(map[string]any)
+	if thinking == nil {
+		return forwardBody
+	}
+
+	if needsDowngrade {
+		thinking["type"] = "adaptive"
+		if outputEffort != "" {
+			thinking["thinking_effort"] = outputEffort
+		} else {
+			budget, _ := thinking["budget_tokens"].(float64)
+			thinking["thinking_effort"] = budgetTokensToEffort(int(budget))
+		}
+		delete(thinking, "budget_tokens")
+		if thinking["display"] == nil {
+			thinking["display"] = "summarized"
+		}
+	} else if needsEffortOverride {
+		thinking["thinking_effort"] = outputEffort
+	}
+
+	body["thinking"] = thinking
+	patched, err := json.Marshal(body)
+	if err != nil {
+		return forwardBody
+	}
+	return patched
+}
+
+func budgetTokensToEffort(budget int) string {
+	switch {
+	case budget <= 4096:
+		return "low"
+	case budget <= 16384:
+		return "medium"
+	case budget <= 65536:
+		return "high"
+	default:
+		return "max"
+	}
+}
+
+func extractJSONStringField(body []byte, keys ...string) string {
+	var current any
+	if err := json.Unmarshal(body, &current); err != nil {
+		return ""
+	}
+	for _, key := range keys {
+		m, ok := current.(map[string]any)
+		if !ok {
+			return ""
+		}
+		current = m[key]
+	}
+	s, _ := current.(string)
+	return s
 }
 
 func resolveKiroRequestedModel(account *Account, requestedModel string) (string, error) {

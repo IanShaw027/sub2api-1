@@ -147,12 +147,21 @@ var kiroModelAliases = map[string]string{
 	"claude-haiku-4-5-20251001":  "claude-haiku-4.5",
 }
 
-var kiroClaudeModelPattern = regexp.MustCompile(`^claude-(haiku|sonnet|opus)-4[.-]([567])(?:-\d{8})?$`)
+var kiroClaudeModelPattern = regexp.MustCompile(`^claude-(haiku|sonnet|opus)-(\d+)(?:[.-](\d+))?(?:-\d{8})?$`)
 
 var kiroOneMillionContextModels = map[string]struct{}{
 	"claude-sonnet-4.6": {},
 	"claude-opus-4.6":   {},
 	"claude-opus-4.7":   {},
+	"claude-opus-4.8":   {},
+}
+
+var kiroExtendedThinkingModels = map[string]struct{}{
+	"claude-opus-4.5":   {},
+	"claude-opus-4.6":   {},
+	"claude-sonnet-4.5": {},
+	"claude-sonnet-4.6": {},
+	"claude-haiku-4.5":  {},
 }
 
 func MapModel(model string) string {
@@ -163,11 +172,21 @@ func MapModel(model string) string {
 
 	base, oneMillionContext := stripKiroVariantSuffixes(normalized)
 	matches := kiroClaudeModelPattern.FindStringSubmatch(base)
-	if len(matches) != 3 {
+	if len(matches) == 0 {
 		return ""
 	}
 
-	mapped := "claude-" + matches[1] + "-4." + matches[2]
+	family := matches[1]
+	major := matches[2]
+	minor := ""
+	if len(matches) > 3 {
+		minor = matches[3]
+	}
+
+	mapped := "claude-" + family + "-" + major
+	if minor != "" {
+		mapped += "." + minor
+	}
 	if oneMillionContext {
 		return mapped
 	}
@@ -180,6 +199,15 @@ func SupportsOneMillionContextModel(model string) bool {
 		return false
 	}
 	_, ok := kiroOneMillionContextModels[mapped]
+	return ok
+}
+
+func SupportsExtendedThinking(model string) bool {
+	mapped := MapModel(model)
+	if mapped == "" {
+		return false
+	}
+	_, ok := kiroExtendedThinkingModels[mapped]
 	return ok
 }
 

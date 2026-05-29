@@ -970,6 +970,11 @@ func buildThinkingPrefix(raw any) string {
 	if thinking == nil {
 		return ""
 	}
+	display := stringField(thinking, "display")
+	displayTag := ""
+	if display != "" {
+		displayTag = fmt.Sprintf("<thinking_display>%s</thinking_display>", display)
+	}
 	switch stringField(thinking, "type") {
 	case "enabled":
 		budget, _ := thinking["budget_tokens"].(float64)
@@ -980,13 +985,13 @@ func buildThinkingPrefix(raw any) string {
 		if budgetTokens <= 0 {
 			budgetTokens = maxThinkingBudget
 		}
-		return fmt.Sprintf("<thinking_mode>enabled</thinking_mode><max_thinking_length>%d</max_thinking_length>", budgetTokens)
+		return fmt.Sprintf("<thinking_mode>enabled</thinking_mode><max_thinking_length>%d</max_thinking_length>%s", budgetTokens, displayTag)
 	case "adaptive":
 		effort := stringField(thinking, "thinking_effort")
 		if effort == "" {
 			effort = "medium"
 		}
-		return fmt.Sprintf("<thinking_mode>adaptive</thinking_mode><thinking_effort>%s</thinking_effort>", effort)
+		return fmt.Sprintf("<thinking_mode>adaptive</thinking_mode><thinking_effort>%s</thinking_effort>%s", effort, displayTag)
 	default:
 		return ""
 	}
