@@ -375,7 +375,13 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 		}
 	}
 
-	s.sendEvent(c, TestEvent{Type: "content", Text: "Kiro connection OK"})
+	assistantText, hasAssistantResponse := collectKiroAssistantResponseText(frames)
+	if !hasAssistantResponse {
+		return s.sendErrorAndEnd(c, "Kiro upstream returned no assistant content")
+	}
+	if trimmed := strings.TrimSpace(assistantText); trimmed != "" {
+		s.sendEvent(c, TestEvent{Type: "content", Text: trimmed})
+	}
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
 }
@@ -1000,7 +1006,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	s.sendEvent(c, TestEvent{Type: "content", Text: "Compact probe succeeded"})
+	s.sendEvent(c, TestEvent{Type: "content", Text: extractOpenAICompactProbeText(body)})
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,50 @@ func TestWriteGatewayDebugTimelineEventRecoversAfterInitFailure(t *testing.T) {
 	content := readGatewayDebugTimelineLog(t, dir)
 	if !strings.Contains(content, `"stage":"after_recover"`) {
 		t.Fatalf("expected recovered log to contain stage, got %s", content)
+	}
+}
+
+func TestRecordGatewayDebugTimelineBody_RedactsOversizedSensitiveJSON(t *testing.T) {
+	resetGatewayDebugTimelineStateForTest(t)
+
+	dir := filepath.Join(t.TempDir(), "timeline")
+	settingService := testGatewayDebugTimelineSettingService(t, dir)
+	repo := settingService.settingRepo
+	if repo == nil {
+		t.Fatal("expected setting repo")
+	}
+	if err := repo.SetMultiple(context.TODO(), map[string]string{
+		SettingKeyGatewayDebugTimelineIncludeBody: "true",
+		SettingKeyGatewayDebugTimelineBodyMaxKB:   "1",
+	}); err != nil {
+		t.Fatalf("seed gateway debug timeline body settings: %v", err)
+	}
+	gatewayDebugTimelineSettingsSF.Forget("gateway_debug_timeline")
+	gatewayDebugTimelineSettingsCache.Store(&cachedGatewayDebugTimelineSettings{
+		settings:  DefaultGatewayDebugTimelineSettings(),
+		expiresAt: 0,
+	})
+
+	body := []byte(`{"access_token":"secret-token","payload":"` + strings.Repeat("x", 4096) + `"}`)
+	RecordGatewayDebugTimelineBody(settingService, nil, "request_received", body, "application/json", map[string]any{
+		"component": "test",
+	})
+
+	content := readGatewayDebugTimelineLog(t, dir)
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	if len(lines) == 0 {
+		t.Fatal("expected timeline log line")
+	}
+	var event map[string]any
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &event); err != nil {
+		t.Fatalf("unmarshal timeline event: %v", err)
+	}
+	bodyValue, _ := event["body"].(string)
+	if strings.Contains(bodyValue, "secret-token") {
+		t.Fatalf("expected redacted body, got %q", bodyValue)
+	}
+	if !strings.Contains(bodyValue, "[REDACTED]") {
+		t.Fatalf("expected redacted marker in body, got %q", bodyValue)
 	}
 }
 

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -117,4 +118,74 @@ func compactProbeSessionID(accountID int64) string {
 		return "probe_compact"
 	}
 	return "probe_compact_" + strconv.FormatInt(accountID, 10)
+}
+
+// extractOpenAICompactProbeText pulls the model's reply text out of an OpenAI
+// /responses(/compact) success body so the test UI can display the actual
+// upstream answer rather than a static placeholder.
+func extractOpenAICompactProbeText(body []byte) string {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return "Compact probe succeeded"
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err == nil {
+		if text := strings.TrimSpace(extractOpenAIResponsesText(payload)); text != "" {
+			return text
+		}
+	}
+	return truncateString(trimmed, 2048)
+}
+
+func extractOpenAIResponsesText(payload map[string]any) string {
+	if payload == nil {
+		return ""
+	}
+	var builder strings.Builder
+	appendText := func(text string) {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return
+		}
+		if builder.Len() > 0 {
+			builder.WriteString("\n")
+		}
+		builder.WriteString(text)
+	}
+
+	if outputText, ok := payload["output_text"].(string); ok {
+		appendText(outputText)
+	}
+
+	output, ok := payload["output"].([]any)
+	if !ok {
+		return builder.String()
+	}
+	for _, item := range output {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if entryType, _ := entry["type"].(string); entryType != "" && entryType != "message" {
+			continue
+		}
+		content, ok := entry["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, c := range content {
+			block, ok := c.(map[string]any)
+			if !ok {
+				continue
+			}
+			if text, ok := block["text"].(string); ok {
+				appendText(text)
+				continue
+			}
+			if text, ok := block["output_text"].(string); ok {
+				appendText(text)
+			}
+		}
+	}
+	return builder.String()
 }

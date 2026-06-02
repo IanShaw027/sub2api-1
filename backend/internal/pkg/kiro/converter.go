@@ -56,6 +56,7 @@ func ConvertAnthropicRequestWithModel(body []byte, requestedModelOverride string
 	if modelID == "" {
 		return nil, fmt.Errorf("unsupported kiro model: %s", requestedModel)
 	}
+	normalizeThinkingForRequestedModel(requestedModel, req)
 
 	rawMessages, _ := req["messages"].([]any)
 	if len(rawMessages) == 0 {
@@ -131,6 +132,37 @@ func ConvertAnthropicRequestWithModel(body []byte, requestedModelOverride string
 		RequestedModel: requestedModel,
 		ToolNameMap:    toolNameMap,
 	}, nil
+}
+
+func normalizeThinkingForRequestedModel(requestedModel string, req map[string]any) {
+	if req == nil {
+		return
+	}
+
+	thinking, _ := req["thinking"].(map[string]any)
+	if thinking == nil {
+		return
+	}
+	if !strings.EqualFold(stringField(thinking, "type"), "enabled") {
+		return
+	}
+	if SupportsExtendedThinking(requestedModel) {
+		return
+	}
+
+	effort := strings.TrimSpace(stringField(thinking, "thinking_effort"))
+	if effort == "" {
+		budget, _ := thinking["budget_tokens"].(float64)
+		effort = thinkingBudgetTokensToEffort(int(budget))
+	}
+
+	thinking["type"] = "adaptive"
+	thinking["thinking_effort"] = effort
+	delete(thinking, "budget_tokens")
+	if strings.TrimSpace(stringField(thinking, "display")) == "" {
+		thinking["display"] = "summarized"
+	}
+	req["thinking"] = thinking
 }
 
 func EstimateInputTokens(body []byte) int {
@@ -463,10 +495,7 @@ func convertTools(raw any) ([]map[string]any, map[string]string) {
 
 func isUnsupportedServerTool(tool map[string]any) bool {
 	toolType := strings.TrimSpace(stringField(tool, "type"))
-	if toolType == "server_tool" {
-		return true
-	}
-	return strings.HasPrefix(toolType, "web_search")
+	return toolType == "server_tool"
 }
 
 func ensureHistoryTools(history []any, tools []map[string]any, toolNameMap map[string]string) []map[string]any {
@@ -994,6 +1023,19 @@ func buildThinkingPrefix(raw any) string {
 		return fmt.Sprintf("<thinking_mode>adaptive</thinking_mode><thinking_effort>%s</thinking_effort>%s", effort, displayTag)
 	default:
 		return ""
+	}
+}
+
+func thinkingBudgetTokensToEffort(budget int) string {
+	switch {
+	case budget <= 4096:
+		return "low"
+	case budget <= 16384:
+		return "medium"
+	case budget <= 65536:
+		return "high"
+	default:
+		return "max"
 	}
 }
 

@@ -627,6 +627,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		GatewayDebugTimelineDirectory:             settings.GatewayDebugTimelineDirectory,
 		GatewayDebugTimelineRetentionDays:         settings.GatewayDebugTimelineRetentionDays,
 		GatewayDebugTimelineMaxSizeMB:             settings.GatewayDebugTimelineMaxSizeMB,
+		GatewayDebugTimelineIncludeBody:           settings.GatewayDebugTimelineIncludeBody,
+		GatewayDebugTimelineBodyMaxKB:             settings.GatewayDebugTimelineBodyMaxKB,
 		EnableAnthropicCacheTTL1hInjection:        settings.EnableAnthropicCacheTTL1hInjection,
 		RewriteMessageCacheControl:                settings.RewriteMessageCacheControl,
 		AntigravityUserAgentVersion:               settings.AntigravityUserAgentVersion,
@@ -979,6 +981,8 @@ type UpdateSettingsRequest struct {
 	GatewayDebugTimelineDirectory      *string `json:"gateway_debug_timeline_directory"`
 	GatewayDebugTimelineRetentionDays  *int    `json:"gateway_debug_timeline_retention_days"`
 	GatewayDebugTimelineMaxSizeMB      *int64  `json:"gateway_debug_timeline_max_size_mb"`
+	GatewayDebugTimelineIncludeBody    *bool   `json:"gateway_debug_timeline_include_body"`
+	GatewayDebugTimelineBodyMaxKB      *int    `json:"gateway_debug_timeline_body_max_kb"`
 	EnableAnthropicCacheTTL1hInjection *bool   `json:"enable_anthropic_cache_ttl_1h_injection"`
 	RewriteMessageCacheControl         *bool   `json:"rewrite_message_cache_control"`
 	AntigravityUserAgentVersion        *string `json:"antigravity_user_agent_version"`
@@ -2269,6 +2273,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.GatewayDebugTimelineMaxSizeMB
 		}(),
+		GatewayDebugTimelineIncludeBody: func() bool {
+			if req.GatewayDebugTimelineIncludeBody != nil {
+				return *req.GatewayDebugTimelineIncludeBody
+			}
+			return previousSettings.GatewayDebugTimelineIncludeBody
+		}(),
+		GatewayDebugTimelineBodyMaxKB: func() int {
+			if req.GatewayDebugTimelineBodyMaxKB != nil {
+				return *req.GatewayDebugTimelineBodyMaxKB
+			}
+			return previousSettings.GatewayDebugTimelineBodyMaxKB
+		}(),
 		KiroDefaultVersion: func() string {
 			if req.KiroDefaultVersion != nil {
 				return strings.TrimSpace(*req.KiroDefaultVersion)
@@ -2787,6 +2803,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		GatewayDebugTimelineDirectory:             updatedSettings.GatewayDebugTimelineDirectory,
 		GatewayDebugTimelineRetentionDays:         updatedSettings.GatewayDebugTimelineRetentionDays,
 		GatewayDebugTimelineMaxSizeMB:             updatedSettings.GatewayDebugTimelineMaxSizeMB,
+		GatewayDebugTimelineIncludeBody:           updatedSettings.GatewayDebugTimelineIncludeBody,
+		GatewayDebugTimelineBodyMaxKB:             updatedSettings.GatewayDebugTimelineBodyMaxKB,
 		EnableAnthropicCacheTTL1hInjection:        updatedSettings.EnableAnthropicCacheTTL1hInjection,
 		RewriteMessageCacheControl:                updatedSettings.RewriteMessageCacheControl,
 		AntigravityUserAgentVersion:               updatedSettings.AntigravityUserAgentVersion,
@@ -3307,6 +3325,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.GatewayDebugTimelineMaxSizeMB != after.GatewayDebugTimelineMaxSizeMB {
 		changed = append(changed, "gateway_debug_timeline_max_size_mb")
+	}
+	if before.GatewayDebugTimelineIncludeBody != after.GatewayDebugTimelineIncludeBody {
+		changed = append(changed, "gateway_debug_timeline_include_body")
+	}
+	if before.GatewayDebugTimelineBodyMaxKB != after.GatewayDebugTimelineBodyMaxKB {
+		changed = append(changed, "gateway_debug_timeline_body_max_kb")
 	}
 	if before.EnableAnthropicCacheTTL1hInjection != after.EnableAnthropicCacheTTL1hInjection {
 		changed = append(changed, "enable_anthropic_cache_ttl_1h_injection")

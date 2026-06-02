@@ -86,12 +86,14 @@ func WriteGatewayDebugTimelineEvent(settingService *SettingService, c *gin.Conte
 			}
 			event["request_method"] = strings.TrimSpace(c.Request.Method)
 		}
-		if _, ok := event["client_request_id"]; !ok {
-			if id := strings.TrimSpace(c.GetHeader("X-Client-Request-Id")); id != "" {
-				event["client_request_id"] = id
+		if c.Request != nil {
+			if _, ok := event["client_request_id"]; !ok {
+				if id := strings.TrimSpace(c.GetHeader("X-Client-Request-Id")); id != "" {
+					event["client_request_id"] = id
+				}
 			}
+			event["request_user_agent"] = strings.TrimSpace(c.GetHeader("User-Agent"))
 		}
-		event["request_user_agent"] = strings.TrimSpace(c.GetHeader("User-Agent"))
 	}
 
 	line, err := json.Marshal(event)

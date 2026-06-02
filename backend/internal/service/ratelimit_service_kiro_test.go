@@ -53,44 +53,62 @@ func (c *kiroTempUnschedCacheRecorder) DeleteTempUnsched(ctx context.Context, ac
 	return nil
 }
 
-func TestRateLimitService_HandleUpstreamError_KiroTransient429UsesShortTempUnschedulable(t *testing.T) {
+func TestRateLimitService_HandleUpstreamError_Kiro429WithoutWindowDoesNotPersistCooldown(t *testing.T) {
 	repo := &kiroRateLimitRepoStub{}
 	cache := &kiroTempUnschedCacheRecorder{}
 	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, cache)
 	account := &Account{ID: 42, Platform: PlatformKiro, Type: AccountTypeOAuth}
-	before := time.Now()
 
-	shouldDisable := svc.HandleUpstreamError(context.Background(), account, http.StatusTooManyRequests, http.Header{}, []byte(`{"message":"ThrottlingException: Rate exceeded"}`))
+	shouldDisable := svc.HandleUpstreamError(context.Background(), account, http.StatusTooManyRequests, http.Header{}, []byte(`{"message":"Too many requests, please wait before trying again.","reason":null}`))
 
 	require.False(t, shouldDisable)
+	require.Empty(t, repo.rateLimitedIDs)
 	require.Empty(t, repo.tempIDs)
-	require.Equal(t, []int64{42}, repo.rateLimitedIDs)
-	require.Len(t, repo.rateLimitUntil, 1)
-	require.WithinDuration(t, before.Add(5*time.Second), repo.rateLimitUntil[0], 2*time.Second)
 	require.Empty(t, cache.accountIDs)
 	require.Empty(t, cache.states)
 }
 
-func TestRateLimitService_HandleUpstreamError_KiroTransient429HonorsRetryAfter(t *testing.T) {
+func TestRateLimitService_HandleUpstreamError_Kiro429ShortRetryAfterUsesTempUnschedulable(t *testing.T) {
 	repo := &kiroRateLimitRepoStub{}
-	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	cache := &kiroTempUnschedCacheRecorder{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, cache)
 	account := &Account{ID: 43, Platform: PlatformKiro, Type: AccountTypeOAuth}
 	headers := http.Header{"Retry-After": []string{"12"}}
 	before := time.Now()
 
-	shouldDisable := svc.HandleUpstreamError(context.Background(), account, http.StatusTooManyRequests, headers, []byte(`TooManyRequestsException`))
+	shouldDisable := svc.HandleUpstreamError(context.Background(), account, http.StatusTooManyRequests, headers, []byte(`{"message":"Too many requests, please wait before trying again.","reason":null}`))
+
+	require.False(t, shouldDisable)
+	require.Empty(t, repo.rateLimitedIDs)
+	require.Equal(t, []int64{43}, repo.tempIDs)
+	require.Len(t, repo.tempUntil, 1)
+	require.WithinDuration(t, before.Add(12*time.Second), repo.tempUntil[0], 2*time.Second)
+	require.Equal(t, []int64{43}, cache.accountIDs)
+	require.Len(t, cache.states, 1)
+	require.WithinDuration(t, before.Add(12*time.Second), time.Unix(cache.states[0].UntilUnix, 0), 2*time.Second)
+}
+
+func TestRateLimitService_HandleUpstreamError_Kiro429LongRetryAfterUsesRateLimitedPath(t *testing.T) {
+	repo := &kiroRateLimitRepoStub{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{ID: 44, Platform: PlatformKiro, Type: AccountTypeOAuth}
+	headers := http.Header{"Retry-After": []string{"900"}}
+	before := time.Now()
+	body := []byte(`{"message":"Too many requests, please wait before trying again.","reason":null}`)
+
+	shouldDisable := svc.HandleUpstreamError(context.Background(), account, http.StatusTooManyRequests, headers, body)
 
 	require.False(t, shouldDisable)
 	require.Empty(t, repo.tempIDs)
-	require.Equal(t, []int64{43}, repo.rateLimitedIDs)
+	require.Equal(t, []int64{44}, repo.rateLimitedIDs)
 	require.Len(t, repo.rateLimitUntil, 1)
-	require.WithinDuration(t, before.Add(12*time.Second), repo.rateLimitUntil[0], 2*time.Second)
+	require.WithinDuration(t, before.Add(15*time.Minute), repo.rateLimitUntil[0], 2*time.Second)
 }
 
 func TestRateLimitService_HandleUpstreamError_KiroQuotaExhausted429KeepsRateLimitedPath(t *testing.T) {
 	repo := &kiroRateLimitRepoStub{}
 	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
-	account := &Account{ID: 44, Platform: PlatformKiro, Type: AccountTypeOAuth}
+	account := &Account{ID: 45, Platform: PlatformKiro, Type: AccountTypeOAuth}
 	before := time.Now()
 	body := []byte(`{"message":"monthly quota exceeded for this subscription"}`)
 
@@ -98,7 +116,7 @@ func TestRateLimitService_HandleUpstreamError_KiroQuotaExhausted429KeepsRateLimi
 
 	require.False(t, shouldDisable)
 	require.Empty(t, repo.tempIDs)
-	require.Equal(t, []int64{44}, repo.rateLimitedIDs)
+	require.Equal(t, []int64{45}, repo.rateLimitedIDs)
 	require.Len(t, repo.rateLimitUntil, 1)
 	require.WithinDuration(t, before.Add(5*time.Second), repo.rateLimitUntil[0], 2*time.Second)
 }

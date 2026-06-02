@@ -111,6 +111,37 @@ func TestSettingService_UpdateSettings_WritesKiroRuntimeDefaults(t *testing.T) {
 	require.Equal(t, 600, got.CachePrefixTTLSecs)
 }
 
+func TestSettingService_GetAllSettingsAndUpdateSettings_PreserveGatewayDebugTimelineBodySettings(t *testing.T) {
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyGatewayDebugTimelineEnabled:       "true",
+			SettingKeyGatewayDebugTimelineDirectory:     "logs/gateway-debug",
+			SettingKeyGatewayDebugTimelineRetentionDays: "7",
+			SettingKeyGatewayDebugTimelineMaxSizeMB:     "1024",
+			SettingKeyGatewayDebugTimelineIncludeBody:   "true",
+			SettingKeyGatewayDebugTimelineBodyMaxKB:     "256",
+			SettingKeySiteName:                          "before",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.True(t, settings.GatewayDebugTimelineIncludeBody)
+	require.Equal(t, 256, settings.GatewayDebugTimelineBodyMaxKB)
+
+	settings.SiteName = "after"
+	err = svc.UpdateSettings(context.Background(), settings)
+	require.NoError(t, err)
+	require.Equal(t, "true", repo.updates[SettingKeyGatewayDebugTimelineIncludeBody])
+	require.Equal(t, "256", repo.updates[SettingKeyGatewayDebugTimelineBodyMaxKB])
+}
+
+func TestDefaultKiroRuntimeSettings_UsesOneHourPrefixTTL(t *testing.T) {
+	got := DefaultKiroRuntimeSettings()
+	require.Equal(t, 3600, got.CachePrefixTTLSecs)
+}
+
 func TestSettingService_UpdateSettings_PreservesExtendedKiroThinkingModes(t *testing.T) {
 	kiroRuntimeSettingsCache.Store((*cachedKiroRuntimeSettings)(nil))
 	kiroRuntimeSettingsSF.Forget("kiro_runtime")
@@ -150,7 +181,7 @@ func TestSettingService_UpdateSettings_RejectsInvalidKiroRuntimeRanges(t *testin
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{
 		KiroCacheHitRateScale:          101,
 		KiroCacheIndependentTTLSeconds: 30,
-		KiroCachePrefixTTLSeconds:      9999,
+		KiroCachePrefixTTLSeconds:      3601,
 	})
 	require.Error(t, err)
 	require.Nil(t, repo.updates)
@@ -193,7 +224,7 @@ func TestSettingService_GetKiroRuntimeSettings_NormalizesInvalidValues(t *testin
 	require.Equal(t, 100, got.CacheHitRateScale)
 	require.Equal(t, defaultKiroCacheMinBlockTokens, got.CacheMinBlockTokens)
 	require.Equal(t, defaultKiroCacheIndependentTTL, got.CacheIndependentTTLSecs)
-	require.Equal(t, 3600, got.CachePrefixTTLSecs)
+	require.Equal(t, defaultKiroCachePrefixTTL, got.CachePrefixTTLSecs)
 }
 
 func TestSettingService_GetKiroRuntimeSettings_PreservesZeroHitRateScale(t *testing.T) {

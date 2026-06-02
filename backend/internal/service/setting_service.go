@@ -106,6 +106,8 @@ type GatewayDebugTimelineSettings struct {
 	Directory     string
 	RetentionDays int
 	MaxSizeMB     int64
+	IncludeBody   bool
+	BodyMaxKB     int
 }
 
 type cachedGatewayDebugTimelineSettings struct {
@@ -122,6 +124,8 @@ const gatewayDebugTimelineSettingsDBTimeout = 3 * time.Second
 const defaultGatewayDebugTimelineDirectory = "logs/gateway-debug"
 const defaultGatewayDebugTimelineRetentionDays = 7
 const defaultGatewayDebugTimelineMaxSizeMB int64 = 1024
+const defaultGatewayDebugTimelineBodyMaxKB = 32
+const maxGatewayDebugTimelineBodyMaxKB = 1024
 
 type cachedKiroRuntimeSettings struct {
 	settings  *KiroRuntimeSettings
@@ -1974,11 +1978,15 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 		Directory:     settings.GatewayDebugTimelineDirectory,
 		RetentionDays: settings.GatewayDebugTimelineRetentionDays,
 		MaxSizeMB:     settings.GatewayDebugTimelineMaxSizeMB,
+		IncludeBody:   settings.GatewayDebugTimelineIncludeBody,
+		BodyMaxKB:     settings.GatewayDebugTimelineBodyMaxKB,
 	})
 	updates[SettingKeyGatewayDebugTimelineEnabled] = strconv.FormatBool(gatewayDebugTimeline.Enabled)
 	updates[SettingKeyGatewayDebugTimelineDirectory] = gatewayDebugTimeline.Directory
 	updates[SettingKeyGatewayDebugTimelineRetentionDays] = strconv.Itoa(gatewayDebugTimeline.RetentionDays)
 	updates[SettingKeyGatewayDebugTimelineMaxSizeMB] = strconv.FormatInt(gatewayDebugTimeline.MaxSizeMB, 10)
+	updates[SettingKeyGatewayDebugTimelineIncludeBody] = strconv.FormatBool(gatewayDebugTimeline.IncludeBody)
+	updates[SettingKeyGatewayDebugTimelineBodyMaxKB] = strconv.Itoa(gatewayDebugTimeline.BodyMaxKB)
 	kiroRuntime := normalizeKiroRuntimeSettings(&KiroRuntimeSettings{
 		KiroVersion:                settings.KiroDefaultVersion,
 		KiroCommit:                 settings.KiroDefaultCommit,
@@ -2147,6 +2155,8 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 			Directory:     settings.GatewayDebugTimelineDirectory,
 			RetentionDays: settings.GatewayDebugTimelineRetentionDays,
 			MaxSizeMB:     settings.GatewayDebugTimelineMaxSizeMB,
+			IncludeBody:   settings.GatewayDebugTimelineIncludeBody,
+			BodyMaxKB:     settings.GatewayDebugTimelineBodyMaxKB,
 		}),
 		expiresAt: time.Now().Add(gatewayDebugTimelineSettingsCacheTTL).UnixNano(),
 	})
@@ -2457,6 +2467,8 @@ func DefaultGatewayDebugTimelineSettings() GatewayDebugTimelineSettings {
 		Directory:     defaultGatewayDebugTimelineDirectory,
 		RetentionDays: defaultGatewayDebugTimelineRetentionDays,
 		MaxSizeMB:     defaultGatewayDebugTimelineMaxSizeMB,
+		IncludeBody:   false,
+		BodyMaxKB:     defaultGatewayDebugTimelineBodyMaxKB,
 	}
 }
 
@@ -2472,6 +2484,12 @@ func normalizeGatewayDebugTimelineSettings(settings GatewayDebugTimelineSettings
 	if settings.MaxSizeMB <= 0 {
 		settings.MaxSizeMB = defaultGatewayDebugTimelineMaxSizeMB
 	}
+	if settings.BodyMaxKB <= 0 {
+		settings.BodyMaxKB = defaultGatewayDebugTimelineBodyMaxKB
+	}
+	if settings.BodyMaxKB > maxGatewayDebugTimelineBodyMaxKB {
+		settings.BodyMaxKB = maxGatewayDebugTimelineBodyMaxKB
+	}
 	return settings
 }
 
@@ -2486,6 +2504,10 @@ func parseGatewayDebugTimelineSettings(values map[string]string) GatewayDebugTim
 	}
 	if v, err := strconv.ParseInt(strings.TrimSpace(values[SettingKeyGatewayDebugTimelineMaxSizeMB]), 10, 64); err == nil && v > 0 {
 		settings.MaxSizeMB = v
+	}
+	settings.IncludeBody = values[SettingKeyGatewayDebugTimelineIncludeBody] == "true"
+	if v, err := strconv.Atoi(strings.TrimSpace(values[SettingKeyGatewayDebugTimelineBodyMaxKB])); err == nil && v > 0 {
+		settings.BodyMaxKB = v
 	}
 	return normalizeGatewayDebugTimelineSettings(settings)
 }
@@ -2513,6 +2535,8 @@ func (s *SettingService) GetGatewayDebugTimelineSettings(ctx context.Context) Ga
 			SettingKeyGatewayDebugTimelineDirectory,
 			SettingKeyGatewayDebugTimelineRetentionDays,
 			SettingKeyGatewayDebugTimelineMaxSizeMB,
+			SettingKeyGatewayDebugTimelineIncludeBody,
+			SettingKeyGatewayDebugTimelineBodyMaxKB,
 		})
 		if err != nil {
 			slog.Warn("failed to get gateway debug timeline settings", "error", err)
@@ -3511,6 +3535,8 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.GatewayDebugTimelineDirectory = gatewayDebugTimeline.Directory
 	result.GatewayDebugTimelineRetentionDays = gatewayDebugTimeline.RetentionDays
 	result.GatewayDebugTimelineMaxSizeMB = gatewayDebugTimeline.MaxSizeMB
+	result.GatewayDebugTimelineIncludeBody = gatewayDebugTimeline.IncludeBody
+	result.GatewayDebugTimelineBodyMaxKB = gatewayDebugTimeline.BodyMaxKB
 	result.EnableAnthropicCacheTTL1hInjection = settings[SettingKeyEnableAnthropicCacheTTL1hInjection] == "true"
 	if v, ok := settings[SettingKeyRewriteMessageCacheControl]; ok && v != "" {
 		result.RewriteMessageCacheControl = v == "true"

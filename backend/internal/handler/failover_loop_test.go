@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
@@ -272,6 +273,37 @@ func TestHandleFailoverError_CacheBilling(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleFailoverError_SameAccountRetry(t *testing.T) {
+	t.Run("错误自带同账号重试策略时优先使用错误配置", func(t *testing.T) {
+		mock := &mockTempUnscheduler{}
+		fs := NewFailoverState(3, false)
+		err := &service.UpstreamFailoverError{
+			StatusCode:             http.StatusTooManyRequests,
+			RetryableOnSameAccount: true,
+			SameAccountRetryDelay:  time.Millisecond,
+			SameAccountRetryMax:    2,
+		}
+
+		action := fs.HandleFailoverError(context.Background(), mock, 100, service.PlatformKiro, err)
+		require.Equal(t, FailoverContinue, action)
+		require.Equal(t, 1, fs.SameAccountRetryCount[100])
+		require.Equal(t, 0, fs.SwitchCount)
+		require.Empty(t, mock.calls)
+
+		action = fs.HandleFailoverError(context.Background(), mock, 100, service.PlatformKiro, err)
+		require.Equal(t, FailoverContinue, action)
+		require.Equal(t, 2, fs.SameAccountRetryCount[100])
+		require.Equal(t, 0, fs.SwitchCount)
+		require.Empty(t, mock.calls)
+
+		action = fs.HandleFailoverError(context.Background(), mock, 100, service.PlatformKiro, err)
+		require.Equal(t, FailoverContinue, action)
+		require.Equal(t, 2, fs.SameAccountRetryCount[100], "重试耗尽后不应继续递增")
+		require.Equal(t, 1, fs.SwitchCount, "应在错误指定的最大重试次数后切换账号")
+		require.Contains(t, fs.FailedAccountIDs, int64(100))
+		require.Len(t, mock.calls, 1)
+		require.Equal(t, err, mock.calls[0].failoverErr)
+	})
+
 	t.Run("第一次重试返回FailoverContinue", func(t *testing.T) {
 		mock := &mockTempUnscheduler{}
 		fs := NewFailoverState(3, false)

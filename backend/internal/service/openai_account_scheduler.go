@@ -62,6 +62,7 @@ type OpenAIAccountScheduleRequest struct {
 	RequiredTransport       OpenAIUpstreamTransport
 	RequiredImageCapability OpenAIImagesCapability
 	RequiredImageRoute      string
+	RequireImageEnabled     bool
 	RequireOAuthAccount     bool
 	RequireCompact          bool
 	ExcludedIDs             map[int64]struct{}
@@ -343,7 +344,8 @@ func (s *defaultOpenAIAccountScheduler) Select(
 			return nil, decision, err
 		}
 		if selection != nil && selection.Account != nil {
-			if !s.isAccountTransportCompatible(selection.Account, req.RequiredTransport) {
+			if !s.isAccountTransportCompatible(selection.Account, req.RequiredTransport) ||
+				!s.isAccountRequestCompatible(ctx, selection.Account, req) {
 				if selection.ReleaseFunc != nil {
 					selection.ReleaseFunc()
 				}
@@ -432,7 +434,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return nil, nil
 	}
 	account = s.service.recheckSelectedOpenAIAccountFromDB(ctx, account, req.RequestedModel, req.RequireCompact, req.RequiredImageRoute)
-	if account == nil || !s.isAccountTransportCompatible(account, req.RequiredTransport) {
+	if account == nil || !s.isAccountRequestCompatible(ctx, account, req) || !s.isAccountTransportCompatible(account, req.RequiredTransport) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, nil
 	}
@@ -1021,6 +1023,9 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 	if account == nil {
 		return false
 	}
+	if req.RequireImageEnabled && !account.OpenAIImageGenerationAllowed() {
+		return false
+	}
 	if req.RequireOAuthAccount && !account.IsOpenAIOAuth() {
 		return false
 	}
@@ -1048,6 +1053,9 @@ func (s *defaultOpenAIAccountScheduler) isStickyAccountSchedulableForRequest(acc
 	if account == nil {
 		return false
 	}
+	if req.RequireImageEnabled && !account.OpenAIImageGenerationAllowed() {
+		return false
+	}
 	if req.RequireOAuthAccount && !account.IsOpenAIOAuth() {
 		return false
 	}
@@ -1068,6 +1076,9 @@ func (s *defaultOpenAIAccountScheduler) isStickyAccountSchedulableForRequest(acc
 
 func (s *defaultOpenAIAccountScheduler) isLoadBalanceAccountSchedulableForRequest(account *Account, req OpenAIAccountScheduleRequest) bool {
 	if account == nil || !account.IsOpenAI() {
+		return false
+	}
+	if req.RequireImageEnabled && !account.OpenAIImageGenerationAllowed() {
 		return false
 	}
 	if req.RequireOAuthAccount && !account.IsOpenAIOAuth() {
@@ -1324,7 +1335,21 @@ func (s *OpenAIGatewayService) SelectAccountWithScheduler(
 	requiredTransport OpenAIUpstreamTransport,
 	requireCompact bool,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
-	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", "", false, requireCompact)
+	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", "", false, false, requireCompact)
+}
+
+func (s *OpenAIGatewayService) SelectAccountWithSchedulerForResponses(
+	ctx context.Context,
+	groupID *int64,
+	previousResponseID string,
+	sessionHash string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requireImageEnabled bool,
+	requireCompact bool,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", "", requireImageEnabled, false, requireCompact)
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
@@ -1345,7 +1370,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	if strings.TrimSpace(requiredRoute) != "" {
 		requiredRoute = NormalizeGroupImageGenerationRoute(requiredRoute)
 	}
-	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, requiredCapability, requiredRoute, requireOAuthAccount, false)
+	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, requiredCapability, requiredRoute, true, requireOAuthAccount, false)
 	if err == nil && selection != nil && selection.Account != nil {
 		if !selection.Account.SupportsOpenAIImageRoute(requiredRoute) {
 			if selection.ReleaseFunc != nil {
@@ -1362,7 +1387,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	}
 	// 如果要求 native 能力（如指定了模型）但没有可用的 APIKey 账号，回退到 basic（OAuth 账号）
 	if requiredCapability == OpenAIImagesCapabilityNative {
-		selection, decision, err = s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, OpenAIImagesCapabilityBasic, requiredRoute, requireOAuthAccount, false)
+		selection, decision, err = s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, OpenAIImagesCapabilityBasic, requiredRoute, true, requireOAuthAccount, false)
 		if err == nil && selection != nil && selection.Account != nil && !selection.Account.SupportsOpenAIImageRoute(requiredRoute) {
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
@@ -1415,6 +1440,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	requiredTransport OpenAIUpstreamTransport,
 	requiredImageCapability OpenAIImagesCapability,
 	requiredImageRoute string,
+	requireImageEnabled bool,
 	requireOAuthAccount bool,
 	requireCompact bool,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
@@ -1438,10 +1464,13 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 				if selection == nil || selection.Account == nil {
 					return selection, decision, nil
 				}
-				if selection.Account.SupportsOpenAIImageCapability(requiredImageCapability) {
+				if requireImageEnabled && !selection.Account.OpenAIImageGenerationAllowed() {
+					if selection.ReleaseFunc != nil {
+						selection.ReleaseFunc()
+					}
+				} else if selection.Account.SupportsOpenAIImageCapability(requiredImageCapability) {
 					return selection, decision, nil
-				}
-				if selection.ReleaseFunc != nil {
+				} else if selection.ReleaseFunc != nil {
 					selection.ReleaseFunc()
 				}
 				if effectiveExcludedIDs == nil {
@@ -1463,7 +1492,8 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 			if selection == nil || selection.Account == nil {
 				return selection, decision, nil
 			}
-			if s.isOpenAIAccountTransportCompatible(selection.Account, requiredTransport) {
+			if (!requireImageEnabled || selection.Account.OpenAIImageGenerationAllowed()) &&
+				s.isOpenAIAccountTransportCompatible(selection.Account, requiredTransport) {
 				return selection, decision, nil
 			}
 			if selection.ReleaseFunc != nil {
@@ -1502,6 +1532,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		RequiredTransport:       requiredTransport,
 		RequiredImageCapability: requiredImageCapability,
 		RequiredImageRoute:      requiredImageRoute,
+		RequireImageEnabled:     requireImageEnabled,
 		RequireOAuthAccount:     requireOAuthAccount,
 		RequireCompact:          requireCompact,
 		ExcludedIDs:             excludedIDs,
@@ -1547,6 +1578,31 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountID int64
 		return
 	}
 	scheduler.ReportResult(accountID, success, firstTokenMs)
+}
+
+func (s *OpenAIGatewayService) RefreshOpenAIResponsesTurnAccount(ctx context.Context, account *Account, requestedModel string) *Account {
+	if account == nil {
+		return nil
+	}
+
+	refreshed := account
+	if s != nil && s.accountRepo != nil {
+		latest, err := s.accountRepo.GetByID(ctx, account.ID)
+		if err != nil || latest == nil {
+			return nil
+		}
+		refreshed = latest
+	}
+
+	if s == nil {
+		return refreshed
+	}
+
+	rechecked := s.recheckSelectedOpenAIAccountFromDB(ctx, refreshed, requestedModel, false, "")
+	if rechecked != nil {
+		return rechecked
+	}
+	return nil
 }
 
 func (s *OpenAIGatewayService) RecordOpenAIAccountRecoveryReason(accountID int64, reason string) {

@@ -11,6 +11,7 @@ import (
 	"hash/crc32"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -132,6 +133,8 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		return nil, err
 	}
 
+	s.emitGatewayDebugUpstreamRequest(c, account, req, converted.Body, 1)
+
 	start := time.Now()
 	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, s.resolveTLSProfile(account))
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(start).Milliseconds())
@@ -168,11 +171,17 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		s.handleUpstreamError(ctx, account, effectiveStatusCode, resp.Header, body)
 		s.recordOpsHTTPError(c, account, req.URL.String(), resp.StatusCode, resp.Header, body)
 		if shouldKiroFailover(effectiveStatusCode) {
-			return nil, &UpstreamFailoverError{
+			failoverErr := &UpstreamFailoverError{
 				StatusCode:      effectiveStatusCode,
 				ResponseBody:    body,
 				ResponseHeaders: resp.Header.Clone(),
 			}
+			if effectiveStatusCode == http.StatusTooManyRequests && shouldKiroRetrySameAccount(resp.StatusCode, resp.Header, body) {
+				failoverErr.RetryableOnSameAccount = true
+				failoverErr.SameAccountRetryDelay = time.Second
+				failoverErr.SameAccountRetryMax = 3
+			}
+			return nil, failoverErr
 		}
 		upstreamMessage := kiroSafeHTTPStatusErrorMessage("Kiro upstream", resp.StatusCode, body)
 		c.JSON(http.StatusBadGateway, gin.H{
@@ -760,8 +769,18 @@ func bodyFromGetBody(req *http.Request) ([]byte, error) {
 }
 
 func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, parsed *ParsedRequest, converted *kiropkg.ConvertResult, inputTokens int, start time.Time, fakeCachePlan *kiropkg.FakeCachePlan, fakeCacheHit kiropkg.FakeCacheHitState, runtimeSettings *KiroRuntimeSettings, thinkingOverride string) (*ForwardResult, error) {
+	debugAggregator := BeginKiroFrameAggregator(s.settingService, c)
 	frames, err := readAllKiroFrames(resp.Body)
 	if err != nil {
+		debugAggregator.Finalize("upstream_response_body", map[string]any{
+			"component":      "gateway_debug_timeline",
+			"platform":       account.Platform,
+			"account_id":     account.ID,
+			"stream":         false,
+			"frames_seen":    0,
+			"upstream_model": converted.Model,
+			"decode_error":   err.Error(),
+		})
 		s.handleProtocolError(ctx, c, account, parsed.Model, false, err)
 		c.JSON(http.StatusBadGateway, gin.H{
 			"type":  "error",
@@ -769,6 +788,19 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		})
 		return nil, err
 	}
+	for _, frame := range frames {
+		debugAggregator.Append(frame, rawStringField(frame.Payload, "content"))
+	}
+	defer func() {
+		debugAggregator.Finalize("upstream_response_body", map[string]any{
+			"component":      "gateway_debug_timeline",
+			"platform":       account.Platform,
+			"account_id":     account.ID,
+			"stream":         false,
+			"frames_seen":    len(frames),
+			"upstream_model": converted.Model,
+		})
+	}()
 
 	assistantContentBuilder := strings.Builder{}
 	toolOutputBuilder := strings.Builder{}
@@ -948,6 +980,17 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	nativeThinkingBuffer := ""
 	nativeThinkingExtracted := false
 	stripThinkingLeadingNewline := false
+	debugAggregator := BeginKiroFrameAggregator(s.settingService, c)
+	defer func() {
+		debugAggregator.Finalize("upstream_response_body", map[string]any{
+			"component":      "gateway_debug_timeline",
+			"platform":       account.Platform,
+			"account_id":     account.ID,
+			"stream":         true,
+			"frames_seen":    framesSeen,
+			"upstream_model": converted.Model,
+		})
+	}()
 	startStream := func(initialInputTokens int) error {
 		if parsed.OnUpstreamAccepted != nil {
 			parsed.OnUpstreamAccepted()
@@ -1139,6 +1182,11 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				}
 				buffer = buffer[consumed:]
 				framesSeen++
+
+				if debugAggregator != nil && debugAggregator.enabled {
+					logKiroFrameDiagnostic(ctx, account, parsed, frame)
+				}
+				debugAggregator.Append(frame, rawStringField(frame.Payload, "content"))
 
 				if failureErr := kiroFrameFailure(frame); failureErr != nil {
 					if streamStarted {
@@ -2028,6 +2076,16 @@ func kiroSchedulingStatusCode(statusCode int, body []byte) int {
 	return statusCode
 }
 
+func shouldKiroRetrySameAccount(statusCode int, headers http.Header, body []byte) bool {
+	if statusCode == http.StatusPaymentRequired && classifyKiroHTTPErrorSemantic(statusCode, body) == kiroHTTPErrorSemanticQuotaExhausted {
+		return false
+	}
+	if kiro429LooksQuotaExhausted(body) {
+		return false
+	}
+	return parseKiro429ResetAt(headers, body) == nil
+}
+
 func accountProxyURL(account *Account) string {
 	if account != nil && account.Proxy != nil {
 		return account.Proxy.URL()
@@ -2826,4 +2884,69 @@ func stripKiroThinkingField(body []byte) []byte {
 		return body
 	}
 	return removeThinkingDependentContextStrategies(encoded)
+}
+
+// logKiroFrameDiagnostic emits a structured info log for every upstream Kiro
+// frame so unfamiliar event types (e.g. reasoning frames produced by Adaptive
+// Thinking on 4.7/4.8) can be identified without dumping payload values.
+func logKiroFrameDiagnostic(ctx context.Context, account *Account, parsed *ParsedRequest, frame *kiroFrame) {
+	if frame == nil {
+		return
+	}
+	keys := make([]string, 0, len(frame.Payload))
+	for key := range frame.Payload {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	model := ""
+	if parsed != nil {
+		model = parsed.Model
+	}
+	kiroLogger(ctx, account).Info(
+		"kiro.frame_received",
+		zap.String("event_type", frame.EventType),
+		zap.String("message_type", frame.MessageType),
+		zap.String("requested_model", model),
+		zap.Strings("payload_keys", keys),
+	)
+}
+
+// emitGatewayDebugUpstreamRequest writes the Kiro upstream request body to the
+// debug timeline (when capture is enabled) so operators can inspect tool
+// definitions, fake-cache plans and Adaptive Thinking parameters end-to-end.
+func (s *KiroGatewayService) emitGatewayDebugUpstreamRequest(c *gin.Context, account *Account, upstreamReq *http.Request, body []byte, attempt int) {
+	if s == nil || s.settingService == nil || c == nil || c.Request == nil {
+		return
+	}
+	if !GatewayDebugTimelineEnabled(c.Request.Context(), s.settingService) {
+		return
+	}
+	platform := ""
+	accountID := int64(0)
+	if account != nil {
+		platform = account.Platform
+		accountID = account.ID
+	}
+	if !shouldRecordGatewayDebugBodyForPlatform(platform) {
+		return
+	}
+	endpoint := ""
+	method := ""
+	contentType := ""
+	if upstreamReq != nil {
+		if upstreamReq.URL != nil {
+			endpoint = safeUpstreamURL(upstreamReq.URL.String())
+		}
+		method = upstreamReq.Method
+		contentType = upstreamReq.Header.Get("Content-Type")
+	}
+	fields := map[string]any{
+		"component":         "gateway_debug_timeline",
+		"platform":          platform,
+		"account_id":        accountID,
+		"upstream_endpoint": endpoint,
+		"upstream_method":   method,
+		"attempt":           attempt,
+	}
+	RecordGatewayDebugTimelineBody(s.settingService, c, "upstream_request_body", body, contentType, fields)
 }

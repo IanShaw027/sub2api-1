@@ -3019,6 +3019,10 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 	return latest
 }
 
+func (s *OpenAIGatewayService) RecheckSelectedOpenAIAccountForResponses(ctx context.Context, account *Account, requestedModel string) *Account {
+	return s.recheckSelectedOpenAIAccountFromDB(ctx, account, requestedModel, false, "")
+}
+
 func (s *OpenAIGatewayService) getSchedulableAccount(ctx context.Context, accountID int64) (*Account, error) {
 	var (
 		account *Account
@@ -8357,12 +8361,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	account := input.Account
 	subscription := input.Subscription
 
-	// 计算实际的新输入token（减去缓存读取的token）
-	// 因为 input_tokens 包含了 cache_read_tokens，而缓存读取的token不应按输入价格计费
-	actualInputTokens := result.Usage.InputTokens - result.Usage.CacheReadInputTokens
-	if actualInputTokens < 0 {
-		actualInputTokens = 0
-	}
+	actualInputTokens := normalizeRecordedInputTokens(account, result.Usage)
 
 	// Calculate cost
 	tokens := UsageTokens{
@@ -8592,6 +8591,24 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 
 	return nil
+}
+
+func normalizeRecordedInputTokens(account *Account, usage OpenAIUsage) int {
+	inputTokens := usage.InputTokens
+	if account != nil && account.Platform == PlatformKiro {
+		if inputTokens < 0 {
+			return 0
+		}
+		return inputTokens
+	}
+
+	// OpenAI-style usage reports include cache reads inside input_tokens, but
+	// usage_logs stores only the billable non-cached remainder.
+	inputTokens -= usage.CacheReadInputTokens
+	if inputTokens < 0 {
+		return 0
+	}
+	return inputTokens
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(

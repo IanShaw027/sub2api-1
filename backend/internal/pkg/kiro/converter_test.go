@@ -219,13 +219,55 @@ func TestConvertAnthropicRequestWithModel_FiltersUnsupportedServerTools(t *testi
 	if !ok {
 		t.Fatalf("tools has type %T, want []any", ctx["tools"])
 	}
-	if len(tools) != 1 {
-		t.Fatalf("tools length = %d, want 1", len(tools))
+	if len(tools) != 2 {
+		t.Fatalf("tools length = %d, want 2", len(tools))
 	}
-	firstTool := requireJSONObject(t, tools[0], "tools[0]")
-	spec := requireJSONObject(t, firstTool["toolSpecification"], "toolSpecification")
-	if got := spec["name"]; got != "local_tool" {
-		t.Fatalf("tool name = %v, want local_tool", got)
+	gotNames := make(map[string]bool, len(tools))
+	for i, raw := range tools {
+		entry := requireJSONObject(t, raw, fmt.Sprintf("tools[%d]", i))
+		spec := requireJSONObject(t, entry["toolSpecification"], "toolSpecification")
+		name, _ := spec["name"].(string)
+		gotNames[name] = true
+	}
+	for _, expected := range []string{"local_tool", "web_search_20250305"} {
+		if !gotNames[expected] {
+			t.Fatalf("tools missing %q, got names: %v", expected, gotNames)
+		}
+	}
+}
+
+func TestConvertAnthropicRequestWithModel_DowngradesOpus47EnabledThinkingToAdaptivePrefix(t *testing.T) {
+	enabledInput := []byte(`{
+		"model":"claude-opus-4.7",
+		"thinking":{"type":"enabled","budget_tokens":2048},
+		"messages":[{"role":"user","content":"Reply with OK only."}]
+	}`)
+	adaptiveInput := []byte(`{
+		"model":"claude-opus-4.7",
+		"thinking":{"type":"adaptive","thinking_effort":"low","display":"summarized"},
+		"messages":[{"role":"user","content":"Reply with OK only."}]
+	}`)
+
+	enabledResult, err := ConvertAnthropicRequestWithModel(enabledInput, "claude-opus-4.7")
+	if err != nil {
+		t.Fatalf("ConvertAnthropicRequestWithModel enabled error: %v", err)
+	}
+	adaptiveResult, err := ConvertAnthropicRequestWithModel(adaptiveInput, "claude-opus-4.7")
+	if err != nil {
+		t.Fatalf("ConvertAnthropicRequestWithModel adaptive error: %v", err)
+	}
+
+	enabledPrefix := convertedHistoryPrefix(t, enabledResult.Body)
+	adaptivePrefix := convertedHistoryPrefix(t, adaptiveResult.Body)
+
+	if enabledPrefix != adaptivePrefix {
+		t.Fatalf("enabled/adaptive prefixes differ\nenabled:  %q\nadaptive: %q", enabledPrefix, adaptivePrefix)
+	}
+	if !strings.Contains(enabledPrefix, "<thinking_mode>adaptive</thinking_mode>") {
+		t.Fatalf("missing adaptive thinking prefix: %q", enabledPrefix)
+	}
+	if strings.Contains(enabledPrefix, "<thinking_mode>enabled</thinking_mode>") {
+		t.Fatalf("unexpected enabled thinking prefix: %q", enabledPrefix)
 	}
 }
 
@@ -596,4 +638,23 @@ func TestEstimateInputTokens_HandlesSystemPolymorphism(t *testing.T) {
 	if nullTokens >= stringTokens {
 		t.Fatalf("null system tokens = %d, want less than string system tokens = %d", nullTokens, stringTokens)
 	}
+}
+
+func convertedHistoryPrefix(t *testing.T, body []byte) string {
+	t.Helper()
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal converted payload: %v", err)
+	}
+
+	state := requireJSONObject(t, payload["conversationState"], "conversationState")
+	history := requireJSONArray(t, state["history"], "history")
+	if len(history) == 0 {
+		t.Fatal("history is empty")
+	}
+
+	first := requireJSONObject(t, history[0], "history[0]")
+	userInput := requireJSONObject(t, first["userInputMessage"], "history[0].userInputMessage")
+	return requireJSONString(t, userInput["content"], "history[0].userInputMessage.content")
 }

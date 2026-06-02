@@ -66,6 +66,8 @@ const (
 	maxRateLimit429CooldownSeconds     = 7200
 )
 
+const kiroTempUnsched429MaxWindow = 5 * time.Minute
+
 const (
 	openAI403CooldownMinutesDefault = 10
 	openAI403DisableThreshold       = 3
@@ -171,6 +173,120 @@ func parseRetryAfterHeader(raw string) *time.Time {
 		return &when
 	}
 	return nil
+}
+
+var kiro429ResetTimePaths = []string{
+	"retry_after",
+	"retryAfter",
+	"retry_after_seconds",
+	"retryAfterSeconds",
+	"reset_at",
+	"resetAt",
+	"rate_limit_reset_at",
+	"rateLimitResetAt",
+	"throttle_until",
+	"throttleUntil",
+	"deadline",
+	"data.retry_after",
+	"data.retryAfter",
+	"data.retry_after_seconds",
+	"data.retryAfterSeconds",
+	"data.reset_at",
+	"data.resetAt",
+	"data.rate_limit_reset_at",
+	"data.rateLimitResetAt",
+	"data.throttle_until",
+	"data.throttleUntil",
+	"data.deadline",
+	"error.retry_after",
+	"error.retryAfter",
+	"error.retry_after_seconds",
+	"error.retryAfterSeconds",
+	"error.reset_at",
+	"error.resetAt",
+	"error.rate_limit_reset_at",
+	"error.rateLimitResetAt",
+	"error.throttle_until",
+	"error.throttleUntil",
+	"error.deadline",
+}
+
+func parseKiro429ResetAt(headers http.Header, responseBody []byte) *time.Time {
+	if resetAt := parseRetryAfterHeader(headers.Get("Retry-After")); resetAt != nil {
+		return resetAt
+	}
+	return parseKiro429ResetAtFromBody(responseBody)
+}
+
+func parseKiro429ResetAtFromBody(responseBody []byte) *time.Time {
+	if len(responseBody) == 0 {
+		return nil
+	}
+	for _, path := range kiro429ResetTimePaths {
+		if resetAt := parseKiro429ResetField(path, gjson.GetBytes(responseBody, path)); resetAt != nil {
+			return resetAt
+		}
+	}
+	return nil
+}
+
+func parseKiro429ResetField(path string, value gjson.Result) *time.Time {
+	if !value.Exists() {
+		return nil
+	}
+
+	switch value.Type {
+	case gjson.Number:
+		return parseKiro429ResetNumber(path, value.Float())
+	case gjson.String:
+		return parseKiro429ResetString(path, value.String())
+	default:
+		return nil
+	}
+}
+
+func parseKiro429ResetString(path string, raw string) *time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if n, err := strconv.ParseFloat(raw, 64); err == nil {
+		return parseKiro429ResetNumber(path, n)
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if when, err := time.Parse(layout, raw); err == nil {
+			return &when
+		}
+	}
+	return parseRetryAfterHeader(raw)
+}
+
+func parseKiro429ResetNumber(path string, raw float64) *time.Time {
+	if raw <= 0 {
+		return nil
+	}
+	value := int64(raw)
+	lowerPath := strings.ToLower(strings.TrimSpace(path))
+	if strings.Contains(lowerPath, "reset") || strings.Contains(lowerPath, "until") || strings.Contains(lowerPath, "deadline") || strings.HasSuffix(lowerPath, "_at") || strings.HasSuffix(lowerPath, "at") {
+		if value >= 1_000_000_000_000 {
+			when := time.UnixMilli(value)
+			return &when
+		}
+		if value >= 1_000_000_000 {
+			when := time.Unix(value, 0)
+			return &when
+		}
+	}
+	when := time.Now().Add(time.Duration(raw * float64(time.Second)))
+	return &when
+}
+
+func kiro429LooksQuotaExhausted(responseBody []byte) bool {
+	detail := strings.TrimSpace(kiroErrorDetailFromBody(responseBody))
+	if detail == "" {
+		detail = strings.TrimSpace(string(responseBody))
+	}
+	return kiroQuotaExhaustedDetail(detail)
 }
 
 // NewRateLimitService 创建RateLimitService实例
@@ -1071,12 +1187,12 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 				return
 			}
 		case PlatformKiro:
-			if resetAt := parseRetryAfterHeader(headers.Get("Retry-After")); resetAt != nil {
-				if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {
-					slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
-					return
-				}
-				slog.Info("kiro_account_rate_limited_retry_after", "account_id", account.ID, "reset_at", *resetAt, "reset_in", time.Until(*resetAt).Truncate(time.Second))
+			if resetAt := parseKiro429ResetAt(headers, responseBody); resetAt != nil {
+				s.applyKiro429ExplicitCooldown(ctx, account, *resetAt, responseBody, "explicit_reset")
+				return
+			}
+			if kiro429LooksQuotaExhausted(responseBody) {
+				s.apply429FallbackRateLimit(ctx, account, "kiro_quota_exhausted_no_reset")
 				return
 			}
 		}
@@ -1088,6 +1204,12 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 				"account_id", account.ID,
 				"platform", account.Platform,
 				"reason", "no rate limit reset time in headers, likely not a real rate limit")
+			return
+		}
+		if account.Platform == PlatformKiro {
+			slog.Info("kiro_429_no_reset_time_retry_only",
+				"account_id", account.ID,
+				"platform", account.Platform)
 			return
 		}
 
@@ -1121,6 +1243,29 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	}
 
 	slog.Info("account_rate_limited", "account_id", account.ID, "reset_at", resetAt)
+}
+
+func (s *RateLimitService) applyKiro429ExplicitCooldown(ctx context.Context, account *Account, resetAt time.Time, responseBody []byte, reason string) {
+	if account == nil {
+		return
+	}
+	now := time.Now()
+	if !resetAt.After(now) {
+		slog.Info("kiro_429_explicit_reset_expired", "account_id", account.ID, "reset_at", resetAt)
+		return
+	}
+	if resetAt.Sub(now) <= kiroTempUnsched429MaxWindow {
+		if s.persistTempUnschedulableState(ctx, account, resetAt, http.StatusTooManyRequests, "kiro_explicit_reset", -1, responseBody, "kiro_429_temp_unschedulable") {
+			slog.Info("kiro_account_temp_unschedulable_retry_after", "account_id", account.ID, "until", resetAt, "reset_in", time.Until(resetAt).Truncate(time.Second))
+		}
+		return
+	}
+	s.notifyAccountSchedulingBlocked(account, resetAt, "kiro_429_rate_limited")
+	if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetAt); err != nil {
+		slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
+		return
+	}
+	slog.Info("kiro_account_rate_limited_retry_after", "account_id", account.ID, "reset_at", resetAt, "reset_in", time.Until(resetAt).Truncate(time.Second))
 }
 
 func (s *RateLimitService) apply429FallbackRateLimit(ctx context.Context, account *Account, reason string) {
@@ -1960,7 +2105,14 @@ func (s *RateLimitService) triggerTempUnschedulable(ctx context.Context, account
 
 	now := time.Now()
 	until := now.Add(time.Duration(rule.DurationMinutes) * time.Minute)
+	return s.persistTempUnschedulableState(ctx, account, until, statusCode, matchedKeyword, ruleIndex, responseBody, "temp_unschedulable")
+}
 
+func (s *RateLimitService) persistTempUnschedulableState(ctx context.Context, account *Account, until time.Time, statusCode int, matchedKeyword string, ruleIndex int, responseBody []byte, blockReason string) bool {
+	if account == nil || until.IsZero() {
+		return false
+	}
+	now := time.Now()
 	state := &TempUnschedState{
 		UntilUnix:       until.Unix(),
 		TriggeredAtUnix: now.Unix(),
@@ -1978,7 +2130,7 @@ func (s *RateLimitService) triggerTempUnschedulable(ctx context.Context, account
 		reason = strings.TrimSpace(state.ErrorMessage)
 	}
 
-	s.notifyAccountSchedulingBlocked(account, until, "temp_unschedulable")
+	s.notifyAccountSchedulingBlocked(account, until, blockReason)
 	if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
 		slog.Warn("temp_unsched_set_failed", "account_id", account.ID, "error", err)
 		return false

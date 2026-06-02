@@ -226,7 +226,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	if forcePlatform, ok := middleware.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcePlatform) != "" {
 		timelinePlatform = forcePlatform
 	}
-	h.emitGatewayDebugTimelineRequestReceived(c, timelinePlatform, "gemini_v1beta_models", requestStart, apiKey, authSubject.UserID, modelName, stream, len(body))
+	h.emitGatewayDebugTimelineRequestReceived(c, timelinePlatform, "gemini_v1beta_models", requestStart, apiKey, authSubject.UserID, modelName, stream, body)
 
 	if decision := h.checkContentModeration(c, reqLog, apiKey, authSubject, service.ContentModerationProtocolGemini, modelName, body); decision != nil && decision.Blocked {
 		googleError(c, contentModerationStatus(decision), decision.Message)

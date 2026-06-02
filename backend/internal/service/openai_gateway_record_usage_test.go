@@ -235,6 +235,39 @@ func expectedOpenAICost(t *testing.T, svc *OpenAIGatewayService, model string, u
 	return cost
 }
 
+func TestOpenAIGatewayServiceRecordUsage_KiroPreservesNetInputTokens(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, subRepo, nil)
+
+	usage := OpenAIUsage{
+		InputTokens:              44,
+		OutputTokens:             11,
+		CacheCreationInputTokens: 20,
+		CacheReadInputTokens:     76,
+	}
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_kiro_net_input",
+			Usage:     usage,
+			Model:     "gpt-5.1",
+			Duration:  time.Second,
+		},
+		APIKey:  &APIKey{ID: 1005, Group: &Group{RateMultiplier: 1}},
+		User:    &User{ID: 2005},
+		Account: &Account{ID: 3005, Platform: PlatformKiro, Type: AccountTypeOAuth},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, 44, usageRepo.lastLog.InputTokens)
+	require.Equal(t, 20, usageRepo.lastLog.CacheCreationTokens)
+	require.Equal(t, 76, usageRepo.lastLog.CacheReadTokens)
+	require.Positive(t, usageRepo.lastLog.InputCost)
+}
+
 func max(a, b int) int {
 	if a > b {
 		return a

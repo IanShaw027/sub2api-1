@@ -206,7 +206,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	} else if apiKey.Group != nil {
 		timelinePlatform = apiKey.Group.Platform
 	}
-	h.emitGatewayDebugTimelineRequestReceived(c, timelinePlatform, "messages", requestStart, apiKey, subject.UserID, reqModel, reqStream, len(body))
+	h.emitGatewayDebugTimelineRequestReceived(c, timelinePlatform, "messages", requestStart, apiKey, subject.UserID, reqModel, reqStream, body)
 
 	// 验证 model 必填
 	if reqModel == "" {
@@ -2112,8 +2112,23 @@ func (h *GatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
 	task(ctx)
 }
 
-func (h *GatewayHandler) emitGatewayDebugTimelineRequestReceived(c *gin.Context, platform, endpointKind string, requestStart time.Time, apiKey *service.APIKey, userID int64, requestedModel string, stream bool, bodyBytes int) {
+func (h *GatewayHandler) emitGatewayDebugTimelineRequestReceived(c *gin.Context, platform, endpointKind string, requestStart time.Time, apiKey *service.APIKey, userID int64, requestedModel string, stream bool, body []byte) {
 	if c == nil || c.Request == nil || !service.GatewayDebugTimelineEnabled(c.Request.Context(), h.settingService) {
+		return
+	}
+	if !shouldCaptureGatewayDebugTimelineBody(platform) {
+		fields := gatewayDebugTimelineFields(c, apiKey, nil)
+		fields["component"] = "gateway_debug_timeline"
+		fields["platform"] = strings.TrimSpace(platform)
+		fields["endpoint_kind"] = strings.TrimSpace(endpointKind)
+		fields["user_id"] = userID
+		fields["requested_model"] = strings.TrimSpace(requestedModel)
+		fields["stream"] = stream
+		fields["request_body_bytes"] = len(body)
+		fields["request_start_unix_ms"] = requestStart.UnixMilli()
+		fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
+		fields["inbound_endpoint"] = GetInboundEndpoint(c)
+		service.WriteGatewayDebugTimelineEvent(h.settingService, c, "request_received", fields)
 		return
 	}
 	fields := gatewayDebugTimelineFields(c, apiKey, nil)
@@ -2123,11 +2138,27 @@ func (h *GatewayHandler) emitGatewayDebugTimelineRequestReceived(c *gin.Context,
 	fields["user_id"] = userID
 	fields["requested_model"] = strings.TrimSpace(requestedModel)
 	fields["stream"] = stream
-	fields["request_body_bytes"] = bodyBytes
+	fields["request_body_bytes"] = len(body)
 	fields["request_start_unix_ms"] = requestStart.UnixMilli()
 	fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
 	fields["inbound_endpoint"] = GetInboundEndpoint(c)
-	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "request_received", fields)
+	contentType := ""
+	if c.Request != nil {
+		contentType = c.Request.Header.Get("Content-Type")
+	}
+	service.RecordGatewayDebugTimelineBody(h.settingService, c, "request_received", body, contentType, fields)
+}
+
+// shouldCaptureGatewayDebugTimelineBody limits body capture to the platforms
+// whose end-to-end traces actually need it (Claude + Kiro). For other
+// platforms the timeline keeps its existing metadata-only entry.
+func shouldCaptureGatewayDebugTimelineBody(platform string) bool {
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case "anthropic", "kiro":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *GatewayHandler) emitGatewayDebugTimelineAccountSelected(c *gin.Context, platform, endpointKind string, requestStart time.Time, apiKey *service.APIKey, account *service.Account, requestedModel string, stream bool, switchCount int) {

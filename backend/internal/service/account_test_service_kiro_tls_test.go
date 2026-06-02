@@ -102,7 +102,7 @@ func TestAccountTestService_TestKiroAccountConnection_UsesKiroTLSProfile(t *test
 	require.Equal(t, "vibe", upstream.req.Header.Get("x-amzn-kiro-agent-mode"))
 	require.Contains(t, upstream.req.URL.String(), "generateAssistantResponse")
 	require.Empty(t, upstream.req.Header.Values("Connection"))
-	require.Contains(t, rec.Body.String(), "Kiro connection OK")
+	require.Contains(t, rec.Body.String(), "hello from kiro")
 }
 
 func TestAccountTestService_TestKiroAccountConnection_UsesAPIKeyForManualAccounts(t *testing.T) {
@@ -138,7 +138,7 @@ func TestAccountTestService_TestKiroAccountConnection_UsesAPIKeyForManualAccount
 	err := svc.testKiroAccountConnection(c, account, "claude-sonnet-4-5-20250929")
 	require.NoError(t, err)
 	require.Equal(t, "Bearer kiro-manual-token", upstream.req.Header.Get("Authorization"))
-	require.Contains(t, rec.Body.String(), "Kiro connection OK")
+	require.Contains(t, rec.Body.String(), "hello from kiro")
 }
 
 func TestAccountTestService_TestKiroAccountConnection_UsesSharedKiroModelMapping(t *testing.T) {
@@ -179,7 +179,7 @@ func TestAccountTestService_TestKiroAccountConnection_UsesSharedKiroModelMapping
 	body, err := io.ReadAll(upstream.req.Body)
 	require.NoError(t, err)
 	require.Contains(t, string(body), `"modelId":"claude-sonnet-4.5"`)
-	require.Contains(t, rec.Body.String(), "Kiro connection OK")
+	require.Contains(t, rec.Body.String(), "hello from kiro")
 }
 
 func TestAccountTestService_TestKiroAccountConnection_UsesRuntimeSettings(t *testing.T) {
@@ -279,7 +279,7 @@ func TestAccountTestService_TestKiroAccountConnection_UsesAccountModelMapping(t 
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(reqBody, &payload))
 	require.Equal(t, kiropkg.MapModel("claude-sonnet-4-5-20250929"), payload.ConversationState.CurrentMessage.UserInputMessage.ModelID)
-	require.Contains(t, rec.Body.String(), "Kiro connection OK")
+	require.Contains(t, rec.Body.String(), "hello from kiro")
 }
 
 func TestAccountTestService_TestKiroAccountConnection_IncludesUpstreamErrorDetail(t *testing.T) {

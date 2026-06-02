@@ -108,20 +108,25 @@ func classifyKiroHTTPErrorSemantic(statusCode int, body []byte) kiroHTTPErrorSem
 		return kiroHTTPErrorSemanticUnknown
 	}
 
-	normalized := strings.ToLower(detail)
-	switch {
-	case strings.Contains(detail, "MONTHLY_REQUEST_COUNT"),
-		strings.Contains(detail, "MONTHLY_QUOTA"),
-		strings.Contains(normalized, "monthly request count"),
-		strings.Contains(normalized, "request count exceeded"),
-		strings.Contains(normalized, "request limit exceeded"),
-		strings.Contains(normalized, "monthly quota"),
-		strings.Contains(normalized, "quota exceeded"),
-		strings.Contains(normalized, "quota exhausted"):
+	if kiroQuotaExhaustedDetail(detail) {
 		return kiroHTTPErrorSemanticQuotaExhausted
-	default:
-		return kiroHTTPErrorSemanticUnknown
 	}
+	return kiroHTTPErrorSemanticUnknown
+}
+
+func kiroQuotaExhaustedDetail(detail string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(detail))
+	if normalized == "" {
+		return false
+	}
+	return strings.Contains(detail, "MONTHLY_REQUEST_COUNT") ||
+		strings.Contains(detail, "MONTHLY_QUOTA") ||
+		strings.Contains(normalized, "monthly request count") ||
+		strings.Contains(normalized, "request count exceeded") ||
+		strings.Contains(normalized, "request limit exceeded") ||
+		strings.Contains(normalized, "monthly quota") ||
+		strings.Contains(normalized, "quota exceeded") ||
+		strings.Contains(normalized, "quota exhausted")
 }
 
 func kiroHTTPStatusErrorMessage(prefix string, statusCode int, body []byte) string {

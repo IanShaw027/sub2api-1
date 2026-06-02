@@ -205,6 +205,8 @@ type SystemSettings struct {
 	GatewayDebugTimelineDirectory      string
 	GatewayDebugTimelineRetentionDays  int
 	GatewayDebugTimelineMaxSizeMB      int64
+	GatewayDebugTimelineIncludeBody    bool
+	GatewayDebugTimelineBodyMaxKB      int
 	EnableAnthropicCacheTTL1hInjection bool   // 是否对 Anthropic OAuth/SetupToken 请求体注入 1h cache_control ttl（默认 false）
 	RewriteMessageCacheControl         bool   // 是否改写 messages[*].content[*].cache_control（默认 false）
 	AntigravityUserAgentVersion        string // Antigravity 上游 User-Agent 版本号；空值使用配置/默认值
@@ -296,7 +298,7 @@ const (
 	defaultKiroCacheHitRateScale          = 100
 	defaultKiroCacheMinBlockTokens        = 1024
 	defaultKiroCacheIndependentTTL        = 3600
-	defaultKiroCachePrefixTTL             = 300
+	defaultKiroCachePrefixTTL             = 3600
 	defaultKiroThinkingMode               = KiroThinkingModeSimulate
 	defaultKiroThinkingEffortThreshold    = "medium"
 	defaultKiroThinkingSimulationTemplate = "Thinking through the request with {effort} effort for {model}. {detail}"

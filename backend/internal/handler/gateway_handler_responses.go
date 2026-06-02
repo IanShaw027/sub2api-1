@@ -80,7 +80,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
-	h.emitGatewayDebugTimelineRequestReceived(c, service.PlatformAnthropic, "responses", requestStart, apiKey, subject.UserID, reqModel, reqStream, len(body))
+	h.emitGatewayDebugTimelineRequestReceived(c, service.PlatformAnthropic, "responses", requestStart, apiKey, subject.UserID, reqModel, reqStream, body)
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)

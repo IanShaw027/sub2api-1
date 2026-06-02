@@ -196,6 +196,8 @@ type SystemSettings struct {
 	GatewayDebugTimelineDirectory      string `json:"gateway_debug_timeline_directory"`
 	GatewayDebugTimelineRetentionDays  int    `json:"gateway_debug_timeline_retention_days"`
 	GatewayDebugTimelineMaxSizeMB      int64  `json:"gateway_debug_timeline_max_size_mb"`
+	GatewayDebugTimelineIncludeBody    bool   `json:"gateway_debug_timeline_include_body"`
+	GatewayDebugTimelineBodyMaxKB      int    `json:"gateway_debug_timeline_body_max_kb"`
 	EnableAnthropicCacheTTL1hInjection bool   `json:"enable_anthropic_cache_ttl_1h_injection"`
 	RewriteMessageCacheControl         bool   `json:"rewrite_message_cache_control"`
 	AntigravityUserAgentVersion        string `json:"antigravity_user_agent_version"`

@@ -458,6 +458,16 @@ func TestKiroOAuthServiceCompleteDeviceAuthorizationReturnsPendingContinuation(t
 	}
 }
 
+func TestResolveKiroIDCContinuationConfig_DoesNotUseIssuerAsStartURL(t *testing.T) {
+	cfg := resolveKiroIDCContinuationConfig(&KiroExchangeCallbackInput{
+		IssuerURL: "https://oidc.us-east-1.amazonaws.com",
+	}, url.Values{}, "awsidc", &KiroOAuthSession{})
+
+	if cfg.StartURL != kiroIDCDefaultStartURL {
+		t.Fatalf("start_url = %q, want %q", cfg.StartURL, kiroIDCDefaultStartURL)
+	}
+}
+
 func TestKiroOAuthServiceEnrichRefreshedCredentialsUsesAccountProxy(t *testing.T) {
 	proxyID := int64(901)
 	var usageProxyURL string

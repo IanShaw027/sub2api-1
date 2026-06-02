@@ -196,6 +196,54 @@ func (s *GatewayService) debugModelRoutingEnabled() bool {
 	return s.debugModelRouting.Load()
 }
 
+func (s *GatewayService) emitGatewayDebugUpstreamRequest(c *gin.Context, account *Account, upstreamReq *http.Request, body []byte, attempt int) {
+	if s == nil || s.settingService == nil || c == nil || c.Request == nil {
+		return
+	}
+	if !GatewayDebugTimelineEnabled(c.Request.Context(), s.settingService) {
+		return
+	}
+	platform := ""
+	accountID := int64(0)
+	if account != nil {
+		platform = account.Platform
+		accountID = account.ID
+	}
+	if !shouldRecordGatewayDebugBodyForPlatform(platform) {
+		return
+	}
+	endpoint := ""
+	method := ""
+	contentType := ""
+	if upstreamReq != nil {
+		if upstreamReq.URL != nil {
+			endpoint = safeUpstreamURL(upstreamReq.URL.String())
+		}
+		method = upstreamReq.Method
+		contentType = upstreamReq.Header.Get("Content-Type")
+	}
+	fields := map[string]any{
+		"component":         "gateway_debug_timeline",
+		"platform":          platform,
+		"account_id":        accountID,
+		"upstream_endpoint": endpoint,
+		"upstream_method":   method,
+		"attempt":           attempt,
+	}
+	RecordGatewayDebugTimelineBody(s.settingService, c, "upstream_request_body", body, contentType, fields)
+}
+
+// shouldRecordGatewayDebugBodyForPlatform mirrors the handler-side allow-list
+// so body capture only fires for Claude (anthropic) and Kiro requests.
+func shouldRecordGatewayDebugBodyForPlatform(platform string) bool {
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case "anthropic", "kiro":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *GatewayService) debugClaudeMimicEnabled() bool {
 	if s == nil {
 		return false
@@ -540,6 +588,8 @@ type UpstreamFailoverError struct {
 	ResponseHeaders        http.Header // 上游响应头，用于透传 cf-ray/cf-mitigated/content-type 等诊断信息
 	ForceCacheBilling      bool        // Antigravity 粘性会话切换时设为 true
 	RetryableOnSameAccount bool        // 临时性错误（如 Google 间歇性 400、空响应），应在同一账号上重试 N 次再切换
+	SameAccountRetryDelay  time.Duration
+	SameAccountRetryMax    int
 }
 
 func (e *UpstreamFailoverError) Error() string {
@@ -4617,6 +4667,8 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		if err != nil {
 			return nil, err
 		}
+
+		s.emitGatewayDebugUpstreamRequest(c, account, upstreamReq, body, attempt)
 
 		// 发送请求
 		attemptStart := time.Now()

@@ -164,3 +164,26 @@ func TestAccountFromServiceKeepsGeminiCanonicalTierMetadata(t *testing.T) {
 	require.Equal(t, "g1-pro-tier", out.Extra["gemini_current_tier_id"])
 	require.Equal(t, "g1-pro-tier", out.Extra["gemini_paid_tier_id"])
 }
+
+func TestAccountFromServiceExposesOpenAIImageGenerationEnabledField(t *testing.T) {
+	t.Run("missing key defaults to true", func(t *testing.T) {
+		account := &service.Account{Platform: service.PlatformOpenAI}
+
+		out := AccountFromService(account)
+		require.NotNil(t, out)
+		require.True(t, out.OpenAIImageGenerationEnabled)
+	})
+
+	t.Run("explicit false is exposed as false", func(t *testing.T) {
+		account := &service.Account{
+			Platform: service.PlatformOpenAI,
+			Extra: map[string]any{
+				"openai_image_generation_enabled": false,
+			},
+		}
+
+		out := AccountFromService(account)
+		require.NotNil(t, out)
+		require.False(t, out.OpenAIImageGenerationEnabled)
+	})
+}

@@ -28,6 +28,8 @@ const (
 	kiroIDCDeviceGrantType    = "urn:ietf:params:oauth:grant-type:device_code"
 )
 
+var kiroIDCDefaultScopes = []string{"codewhisperer:conversations"}
+
 var kiroCodeExchangeFunc = exchangeKiroCodeForToken
 var kiroFindCallbackBaseURLFunc = findKiroCallbackBaseURL
 var kiroIDCRegisterClientFunc = registerKiroIDCClient
@@ -799,13 +801,12 @@ func (s *KiroOAuthService) startOrResumeIDCContinuation(
 
 	cfg := resolveKiroIDCContinuationConfig(input, query, loginOption, session)
 	registerResult, err := kiroIDCRegisterClientFunc(ctx, kiroIDCRegisterClientInput{
-		ProxyURL:     proxyURL,
-		ClientName:   cfg.ClientName,
-		RedirectURIs: cfg.RedirectURIs,
-		Scopes:       cfg.Scopes,
-		IssuerURL:    cfg.IssuerURL,
-		GrantTypes:   []string{"authorization_code", kiroIDCDeviceGrantType, "refresh_token"},
-		Region:       cfg.Region,
+		ProxyURL:   proxyURL,
+		ClientName: cfg.ClientName,
+		Scopes:     cfg.Scopes,
+		IssuerURL:  cfg.IssuerURL,
+		GrantTypes: []string{kiroIDCDeviceGrantType, "refresh_token"},
+		Region:     cfg.Region,
 	})
 	if err != nil {
 		return nil, err
@@ -859,16 +860,16 @@ type kiroIDCContinuationConfig struct {
 
 func resolveKiroIDCContinuationConfig(input *KiroExchangeCallbackInput, query url.Values, loginOption string, session *KiroOAuthSession) kiroIDCContinuationConfig {
 	redirectURI := strings.TrimSpace(kiroOAuthSessionRedirectURI(session))
+	issuerURL := firstNonEmptyKiroString(
+		strings.TrimSpace(query.Get("issuer_url")),
+		strings.TrimSpace(query.Get("issuerUrl")),
+		strings.TrimSpace(input.IssuerURL),
+	)
 	startURL := firstNonEmptyKiroString(
 		strings.TrimSpace(query.Get("start_url")),
 		strings.TrimSpace(query.Get("startUrl")),
 		strings.TrimSpace(input.StartURL),
 		kiroIDCDefaultStartURL,
-	)
-	issuerURL := firstNonEmptyKiroString(
-		strings.TrimSpace(query.Get("issuer_url")),
-		strings.TrimSpace(query.Get("issuerUrl")),
-		strings.TrimSpace(input.IssuerURL),
 	)
 	region := firstNonEmptyKiroString(
 		deriveKiroIDCRegionFromIssuerURL(issuerURL),
@@ -1272,16 +1273,22 @@ func normalizeKiroProvider(value string) string {
 
 func normalizeKiroScopes(explicit []string, query url.Values) []string {
 	if len(explicit) > 0 {
-		return filterEmptyKiroStrings(explicit)
+		filtered := filterEmptyKiroStrings(explicit)
+		if len(filtered) > 0 {
+			return filtered
+		}
 	}
 	scopeText := firstNonEmptyKiroString(query.Get("scopes"), query.Get("scope"))
-	if scopeText == "" {
-		return nil
+	if scopeText != "" {
+		parts := strings.FieldsFunc(scopeText, func(r rune) bool {
+			return r == ' ' || r == ','
+		})
+		filtered := filterEmptyKiroStrings(parts)
+		if len(filtered) > 0 {
+			return filtered
+		}
 	}
-	parts := strings.FieldsFunc(scopeText, func(r rune) bool {
-		return r == ' ' || r == ','
-	})
-	return filterEmptyKiroStrings(parts)
+	return append([]string(nil), kiroIDCDefaultScopes...)
 }
 
 func deriveKiroIDCRegionFromIssuerURL(issuerURL string) string {

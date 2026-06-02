@@ -758,6 +758,280 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_Web2APISkipsIn
 	require.Equal(t, int64(32014), selection.Account.ID)
 }
 
+func TestAccount_OpenAIImageGenerationAllowed(t *testing.T) {
+	t.Run("missing key defaults to enabled", func(t *testing.T) {
+		account := &Account{Platform: PlatformOpenAI}
+		require.True(t, account.OpenAIImageGenerationAllowed())
+	})
+
+	t.Run("explicit false disables image generation", func(t *testing.T) {
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Extra: map[string]any{
+				"openai_image_generation_enabled": false,
+			},
+		}
+		require.False(t, account.OpenAIImageGenerationAllowed())
+	})
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageIntentRequiresImageEnabledAccount(t *testing.T) {
+	for _, advancedSchedulerEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("advanced_scheduler_enabled=%t", advancedSchedulerEnabled), func(t *testing.T) {
+			ctx := context.Background()
+			groupID := int64(101023)
+			accounts := []Account{
+				{
+					ID:          32015,
+					Platform:    PlatformOpenAI,
+					Type:        AccountTypeAPIKey,
+					Status:      StatusActive,
+					Schedulable: true,
+					Concurrency: 1,
+					Priority:    0,
+					Extra: map[string]any{
+						"openai_image_generation_enabled": false,
+					},
+				},
+				{
+					ID:          32016,
+					Platform:    PlatformOpenAI,
+					Type:        AccountTypeAPIKey,
+					Status:      StatusActive,
+					Schedulable: true,
+					Concurrency: 1,
+					Priority:    5,
+				},
+			}
+			cfg := &config.Config{}
+			cfg.Gateway.Scheduling.LoadBatchEnabled = false
+			svc := &OpenAIGatewayService{
+				accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+				cache:              &schedulerTestGatewayCache{},
+				cfg:                cfg,
+				concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+			}
+			if advancedSchedulerEnabled {
+				svc.rateLimitService = newOpenAIAdvancedSchedulerRateLimitService("true")
+			}
+
+			selection, _, err := svc.SelectAccountWithSchedulerForResponses(
+				ctx,
+				&groupID,
+				"",
+				"",
+				"gpt-5.4",
+				nil,
+				OpenAIUpstreamTransportAny,
+				true,
+				false,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, selection)
+			require.NotNil(t, selection.Account)
+			require.Equal(t, int64(32016), selection.Account.ID)
+		})
+	}
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_WithoutImageIntentMayUseImageDisabledAccount(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(101024)
+	accounts := []Account{
+		{
+			ID:          32017,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+			Extra: map[string]any{
+				"openai_image_generation_enabled": false,
+			},
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, _, err := svc.SelectAccountWithScheduler(
+		ctx,
+		&groupID,
+		"",
+		"",
+		"gpt-5.4",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(32017), selection.Account.ID)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_SkipsImageDisabledAccounts(t *testing.T) {
+	for _, advancedSchedulerEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("advanced_scheduler_enabled=%t", advancedSchedulerEnabled), func(t *testing.T) {
+			ctx := context.Background()
+			groupID := int64(101025)
+			accounts := []Account{
+				{
+					ID:          32019,
+					Platform:    PlatformOpenAI,
+					Type:        AccountTypeAPIKey,
+					Status:      StatusActive,
+					Schedulable: true,
+					Concurrency: 1,
+					Priority:    0,
+					Extra: map[string]any{
+						"openai_image_generation_enabled": false,
+					},
+				},
+				{
+					ID:          32020,
+					Platform:    PlatformOpenAI,
+					Type:        AccountTypeAPIKey,
+					Status:      StatusActive,
+					Schedulable: true,
+					Concurrency: 1,
+					Priority:    5,
+				},
+			}
+			cfg := &config.Config{}
+			cfg.Gateway.Scheduling.LoadBatchEnabled = false
+			svc := &OpenAIGatewayService{
+				accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+				cache:              &schedulerTestGatewayCache{},
+				cfg:                cfg,
+				concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+			}
+			if advancedSchedulerEnabled {
+				svc.rateLimitService = newOpenAIAdvancedSchedulerRateLimitService("true")
+			}
+
+			selection, _, err := svc.SelectAccountWithSchedulerForImages(
+				ctx,
+				&groupID,
+				"",
+				"gpt-image-1",
+				nil,
+				OpenAIImagesCapabilityNative,
+				GroupImageGenerationRouteCodex,
+				false,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, selection)
+			require.NotNil(t, selection.Account)
+			require.Equal(t, int64(32020), selection.Account.ID)
+		})
+	}
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_AllImageDisabledPreservesNoAvailableSemantics(t *testing.T) {
+	for _, advancedSchedulerEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("advanced_scheduler_enabled=%t", advancedSchedulerEnabled), func(t *testing.T) {
+			ctx := context.Background()
+			groupID := int64(101026)
+			accounts := []Account{
+				{
+					ID:          32031,
+					Platform:    PlatformOpenAI,
+					Type:        AccountTypeAPIKey,
+					Status:      StatusActive,
+					Schedulable: true,
+					Concurrency: 1,
+					Priority:    0,
+					Extra: map[string]any{
+						"openai_image_generation_enabled": false,
+					},
+				},
+			}
+			cfg := &config.Config{}
+			cfg.Gateway.Scheduling.LoadBatchEnabled = false
+			svc := &OpenAIGatewayService{
+				accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+				cache:              &schedulerTestGatewayCache{},
+				cfg:                cfg,
+				concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+			}
+			if advancedSchedulerEnabled {
+				svc.rateLimitService = newOpenAIAdvancedSchedulerRateLimitService("true")
+			}
+
+			selection, _, err := svc.SelectAccountWithSchedulerForImages(
+				ctx,
+				&groupID,
+				"",
+				"gpt-image-1",
+				nil,
+				OpenAIImagesCapabilityNative,
+				GroupImageGenerationRouteCodex,
+				false,
+			)
+			require.Nil(t, selection)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "no available OpenAI accounts")
+		})
+	}
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_SessionStickyDBRuntimeRecheckSkipsImageDisabledAccount(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(101027)
+	staleSticky := &Account{ID: 32041, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 0}
+	staleBackup := &Account{ID: 32042, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 5}
+	dbSticky := Account{
+		ID:          32041,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    0,
+		Extra: map[string]any{
+			"openai_image_generation_enabled": false,
+		},
+	}
+	dbBackup := Account{ID: 32042, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 5}
+	cache := &schedulerTestGatewayCache{sessionBindings: map[string]int64{"openai:session_hash_image_db_runtime_recheck": 32041}}
+	snapshotCache := &openAISnapshotCacheStub{
+		snapshotAccounts: []*Account{staleSticky, staleBackup},
+		accountsByID:     map[int64]*Account{32041: staleSticky, 32042: staleBackup},
+	}
+	snapshotService := &SchedulerSnapshotService{cache: snapshotCache}
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{dbSticky, dbBackup}},
+		cache:              cache,
+		cfg:                &config.Config{},
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		schedulerSnapshot:  snapshotService,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, decision, err := svc.SelectAccountWithSchedulerForImages(
+		ctx,
+		&groupID,
+		"session_hash_image_db_runtime_recheck",
+		"gpt-image-1",
+		nil,
+		OpenAIImagesCapabilityNative,
+		GroupImageGenerationRouteCodex,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(32042), selection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+}
+
 func TestOpenAIAccountScheduleRequest_MaxConcurrencyForImageRoutes(t *testing.T) {
 	account := &Account{Concurrency: 7}
 

@@ -1364,6 +1364,21 @@ func (a *Account) IsOpenAIApiKey() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeAPIKey
 }
 
+func (a *Account) OpenAIImageGenerationAllowed() bool {
+	if a == nil || a.Extra == nil {
+		return true
+	}
+	value, exists := a.Extra["openai_image_generation_enabled"]
+	if !exists {
+		return true
+	}
+	enabled, ok := value.(bool)
+	if !ok {
+		return true
+	}
+	return enabled
+}
+
 func (a *Account) GetOpenAIBaseURL() string {
 	if !a.IsOpenAI() {
 		return ""

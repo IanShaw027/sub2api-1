@@ -1326,6 +1326,55 @@ func TestKiroGatewayService_Forward_HTTPErrorRecordsOpsContext(t *testing.T) {
 	require.NotContains(t, events[0].UpstreamRequestBody, `"model":"claude-sonnet-4-5-20250929"`)
 }
 
+func TestKiroGatewayService_Forward_Kiro429MarksSameAccountRetry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Header: http.Header{
+				"X-Amzn-Requestid": []string{"kiro-request-429"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"message":"Too many requests, please wait before trying again.","reason":null}`)),
+		},
+	}
+	svc := &KiroGatewayService{
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.Forward(
+		context.Background(),
+		c,
+		&Account{
+			ID:       8,
+			Name:     "Kiro Gateway",
+			Platform: PlatformKiro,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"api_key": "kiro-api-key",
+			},
+		},
+		&ParsedRequest{
+			Model: "claude-sonnet-4-6",
+			Body: []byte(`{
+				"model":"claude-sonnet-4-6",
+				"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+			}`),
+		},
+	)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+	require.Equal(t, time.Second, failoverErr.SameAccountRetryDelay)
+	require.Equal(t, 3, failoverErr.SameAccountRetryMax)
+	require.Equal(t, "kiro-request-429", failoverErr.ResponseHeaders.Get("X-Amzn-Requestid"))
+}
+
 func TestKiroGatewayService_ForwardStream_PreStartExceptionReturnsFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

@@ -42,6 +42,8 @@ type OpenAIGatewayHandler struct {
 
 const openAIStreamRetryReplayStateContextKey = "openai_stream_retry_replay_state"
 
+var errOpenAIWSLocalImageToggleUnavailable = errors.New("openai websocket local image-toggle unavailable")
+
 func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedModel string) string {
 	if apiKey == nil || apiKey.Group == nil {
 		return ""
@@ -267,7 +269,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	for {
 		// Select account supporting the requested model
 		reqLog.Debug("openai.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithScheduler(
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForResponses(
 			c.Request.Context(),
 			apiKey.GroupID,
 			previousResponseID,
@@ -275,6 +277,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			reqModel,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportAny,
+			rawImageIntent,
 			requireCompact,
 		)
 		if err != nil {
@@ -282,7 +285,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.Error(err),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
-			if len(failedAccountIDs) == 0 {
+			if lastFailoverErr == nil {
 				if errors.Is(err, service.ErrNoAvailableCompactAccounts) {
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available OpenAI accounts support /responses/compact", streamStarted)
 					return
@@ -335,6 +338,17 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			}
 			h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 			return
+		}
+		if shouldAcquireImageSlot && !account.OpenAIImageGenerationAllowed() {
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			reqLog.Warn("openai.account_image_generation_disabled_after_routing",
+				zap.Int64("account_id", account.ID),
+				zap.String("effective_model", effectiveModel),
+			)
+			failedAccountIDs[account.ID] = struct{}{}
+			continue
 		}
 		var imageReleaseFunc func()
 		if shouldAcquireImageSlot {
@@ -1311,7 +1325,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 	for {
 		reqLog.Debug("openai.websocket_account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithScheduler(
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForResponses(
 			ctx,
 			apiKey.GroupID,
 			previousResponseID,
@@ -1319,6 +1333,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			reqModel,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportResponsesWebsocketV2,
+			rawWSImageIntent,
 			false,
 		)
 		if err != nil {
@@ -1353,12 +1368,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
 				return
 			}
-				fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlotForGroup(
-					ctx,
-					account.ID,
-					apiKey.GroupID,
-					selection.WaitPlan.MaxConcurrency,
-				)
+			fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlotForGroup(
+				ctx,
+				account.ID,
+				apiKey.GroupID,
+				selection.WaitPlan.MaxConcurrency,
+			)
 			if err != nil {
 				reqLog.Warn("openai.websocket_account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 				closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire account concurrency slot")
@@ -1389,16 +1404,25 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			zap.Int("candidate_count", scheduleDecision.CandidateCount),
 		)
 
-			wsFirstMessage, wsFirstModel := h.applyOpenAIResponsesChannelMapping(firstMessage, reqModel, channelMappingWS)
-			effectiveWSFirstModel := resolveOpenAIResponsesEffectiveModel(account, wsFirstModel)
-			firstTurnImageIntent, firstTurnNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveWSFirstModel, wsFirstMessage)
-			if firstTurnImageIntent && !allowImageGeneration {
-				closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
+		wsFirstMessage, wsFirstModel := h.applyOpenAIResponsesChannelMapping(firstMessage, reqModel, channelMappingWS)
+		effectiveWSFirstModel := resolveOpenAIResponsesEffectiveModel(account, wsFirstModel)
+		firstTurnImageIntent, firstTurnNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveWSFirstModel, wsFirstMessage)
+		if firstTurnImageIntent && !allowImageGeneration {
+			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
 			return
+		}
+		if firstTurnNeedsImageSlot && !account.OpenAIImageGenerationAllowed() {
+			reqLog.Warn("openai.websocket_account_image_generation_disabled_after_routing",
+				zap.Int64("account_id", account.ID),
+				zap.String("effective_model", effectiveWSFirstModel),
+			)
+			releaseAccountScopedSlots()
+			failedAccountIDs[account.ID] = struct{}{}
+			continue
 		}
 		currentTurnNeedsImageSlot = firstTurnNeedsImageSlot
 
-			hooks := &service.OpenAIWSIngressHooks{
+		hooks := &service.OpenAIWSIngressHooks{
 			InitialRequestModel: reqModel,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
 				if turn == 1 {
@@ -1418,11 +1442,18 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					writeContentModerationWSError(ctx, wsConn, decision)
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, decision.Message, nil)
 				}
-					effectiveModel := resolveOpenAIResponsesEffectiveModel(account, model)
-					imageIntent, needsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveModel, payload)
-					if imageIntent && !allowImageGeneration {
-						return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage(), nil)
-					}
+				if refreshedAccount := h.gatewayService.RefreshOpenAIResponsesTurnAccount(ctx, account, model); refreshedAccount != nil {
+					account = refreshedAccount
+				}
+				effectiveModel := resolveOpenAIResponsesEffectiveModel(account, model)
+				imageIntent, needsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveModel, payload)
+				if imageIntent && !allowImageGeneration {
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage(), nil)
+				}
+				if needsImageSlot && !account.OpenAIImageGenerationAllowed() {
+					currentTurnNeedsImageSlot = false
+					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "no available account", errOpenAIWSLocalImageToggleUnavailable)
+				}
 				currentTurnNeedsImageSlot = needsImageSlot
 				return nil
 			},
@@ -1467,7 +1498,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return nil
 			},
 			AfterTurn: func(turn int, turnPayload []byte, result *service.OpenAIForwardResult, turnErr error) {
-					releaseTurnSlots()
+				releaseTurnSlots()
 				if turnErr != nil {
 					if result == nil || result.ImageCount <= 0 {
 						return
@@ -1487,10 +1518,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
 				inboundEndpoint := GetInboundEndpoint(c)
 				upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
-					quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-					requestPayloadHash := service.HashUsageRequestPayload(turnPayload)
-					h.submitOpenAIUsageRecordTask(result, func(taskCtx context.Context) {
-						if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
+				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+				requestPayloadHash := service.HashUsageRequestPayload(turnPayload)
+				h.submitOpenAIUsageRecordTask(result, func(taskCtx context.Context) {
+					if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 						Result:             result,
 						APIKey:             apiKey,
 						User:               apiKey.User,
@@ -1500,11 +1531,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 						UpstreamEndpoint:   upstreamEndpoint,
 						UserAgent:          userAgent,
 						IPAddress:          clientIP,
-							RequestPayloadHash: requestPayloadHash,
-							APIKeyService:      h.apiKeyService,
-							QuotaPlatform:      quotaPlatform,
-							ChannelUsageFields: channelMappingWS.ToUsageFields(reqModel, result.UpstreamModel),
-						}); err != nil {
+						RequestPayloadHash: requestPayloadHash,
+						APIKeyService:      h.apiKeyService,
+						QuotaPlatform:      quotaPlatform,
+						ChannelUsageFields: channelMappingWS.ToUsageFields(reqModel, result.UpstreamModel),
+					}); err != nil {
 						reqLog.Error("openai.websocket_record_usage_failed",
 							zap.Int64("account_id", account.ID),
 							zap.String("request_id", result.RequestID),
@@ -1515,12 +1546,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			},
 		}
 
-			if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
+		if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
-					releaseAccountScopedSlots()
-					failedAccountIDs[account.ID] = struct{}{}
+				releaseAccountScopedSlots()
+				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr
 				if switchCount >= maxAccountSwitches {
 					closeOpenAIWSFailoverExhausted(wsConn, failoverErr)
@@ -1544,6 +1575,21 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				continue
 			}
 
+			var closeErr *service.OpenAIWSClientCloseError
+			if errors.As(err, &closeErr) {
+				if !shouldReportOpenAIWebSocketAccountFailure(err) {
+					closeStatus, closeReason := summarizeWSCloseErrorForLog(err)
+					reqLog.Warn("openai.websocket_proxy_closed_without_scheduler_failure",
+						zap.Int64("account_id", account.ID),
+						zap.Error(err),
+						zap.String("close_status", closeStatus),
+						zap.String("close_reason", closeReason),
+					)
+					closeOpenAIClientWS(wsConn, closeErr.StatusCode(), closeErr.Reason())
+					return
+				}
+			}
+
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
 			closeStatus, closeReason := summarizeWSCloseErrorForLog(err)
 			reqLog.Warn("openai.websocket_proxy_failed",
@@ -1552,7 +1598,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				zap.String("close_status", closeStatus),
 				zap.String("close_reason", closeReason),
 			)
-			var closeErr *service.OpenAIWSClientCloseError
 			if errors.As(err, &closeErr) {
 				closeOpenAIClientWS(wsConn, closeErr.StatusCode(), closeErr.Reason())
 				return
@@ -1644,6 +1689,10 @@ func (h *OpenAIGatewayHandler) missingResponsesDependencies() []string {
 		missing = append(missing, "concurrencyHelper")
 	}
 	return missing
+}
+
+func shouldReportOpenAIWebSocketAccountFailure(err error) bool {
+	return !errors.Is(err, errOpenAIWSLocalImageToggleUnavailable)
 }
 
 func parseOpenAIStreamField(body []byte) (bool, bool) {
