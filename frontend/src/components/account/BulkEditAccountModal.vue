@@ -82,6 +82,56 @@
         </div>
       </div>
 
+      <div
+        v-if="allOpenAIImageGenerationConfigurable"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="mb-3 flex items-center justify-between">
+          <div class="flex-1 pr-4">
+            <label
+              id="bulk-edit-openai-image-generation-label"
+              class="input-label mb-0"
+              for="bulk-edit-openai-image-generation-enabled"
+            >
+              {{ openAIImageGenerationLabel }}
+            </label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ openAIImageGenerationDescription }}
+            </p>
+          </div>
+          <input
+            v-model="enableOpenAIImageGeneration"
+            id="bulk-edit-openai-image-generation-enabled"
+            type="checkbox"
+            aria-controls="bulk-edit-openai-image-generation-body"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+        </div>
+        <div
+          id="bulk-edit-openai-image-generation-body"
+          :class="!enableOpenAIImageGeneration && 'pointer-events-none opacity-50'"
+          role="group"
+          aria-labelledby="bulk-edit-openai-image-generation-label"
+        >
+          <button
+            id="bulk-edit-openai-image-generation-toggle"
+            type="button"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              openaiImageGenerationEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+            @click="openaiImageGenerationEnabled = !openaiImageGenerationEnabled"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                openaiImageGenerationEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
       <!-- Base URL (API Key only) -->
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
@@ -1172,6 +1222,8 @@ const allOpenAIAPIKey = computed(() => {
   )
 })
 
+const allOpenAIImageGenerationConfigurable = computed(() => allOpenAIPassthroughCapable.value)
+
 // 是否全部为 Anthropic OAuth/SetupToken（RPM 配置仅在此条件下显示）
 const allAnthropicOAuthOrSetupToken = computed(() => {
   return (
@@ -1216,6 +1268,7 @@ const enableRateMultiplier = ref(false)
 const enableStatus = ref(false)
 const enableGroups = ref(false)
 const enableOpenAIPassthrough = ref(false)
+const enableOpenAIImageGeneration = ref(false)
 const enableOpenAIWSMode = ref(false)
 const enableOpenAIAPIKeyWSMode = ref(false)
 const enableCodexCLIOnly = ref(false)
@@ -1243,6 +1296,7 @@ const rateMultiplier = ref(1)
 const status = ref<'active' | 'inactive'>('active')
 const groupIds = ref<number[]>([])
 const openaiPassthroughEnabled = ref(false)
+const openaiImageGenerationEnabled = ref(true)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
@@ -1274,6 +1328,23 @@ const statusOptions = computed(() => [
   { value: 'active', label: t('common.active') },
   { value: 'inactive', label: t('common.inactive') }
 ])
+
+const translateWithFallback = (key: string, fallback: string) => {
+  const translated = t(key)
+  return translated === key ? fallback : translated
+}
+
+const openAIImageGenerationLabel = computed(() =>
+  translateWithFallback('admin.accounts.openai.imageGenerationEnabled', 'Allow image generation')
+)
+
+const openAIImageGenerationDescription = computed(() =>
+  translateWithFallback(
+    'admin.accounts.openai.imageGenerationEnabledDesc',
+    'Only affects actual image-generation routing. Text requests and image tool declarations are unchanged.'
+  )
+)
+
 const isOpenAIModelRestrictionDisabled = computed(
   () =>
     allOpenAIPassthroughCapable.value &&
@@ -1445,6 +1516,11 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
+  if (enableOpenAIImageGeneration.value) {
+    const extra = ensureExtra()
+    extra.openai_image_generation_enabled = openaiImageGenerationEnabled.value
+  }
+
   if (enableModelRestriction.value && !isOpenAIModelRestrictionDisabled.value) {
     // 统一使用 model_mapping 字段
     if (modelRestrictionMode.value === 'whitelist') {
@@ -1589,6 +1665,7 @@ const handleSubmit = async () => {
   const hasAnyFieldEnabled =
     enableBaseUrl.value ||
     enableOpenAIPassthrough.value ||
+    enableOpenAIImageGeneration.value ||
     enableModelRestriction.value ||
     enableCustomErrorCodes.value ||
     enableInterceptWarmup.value ||
@@ -1701,6 +1778,7 @@ watch(
       enableStatus.value = false
       enableGroups.value = false
       enableOpenAIPassthrough.value = false
+      enableOpenAIImageGeneration.value = false
       enableOpenAIWSMode.value = false
       enableOpenAIAPIKeyWSMode.value = false
       enableCodexCLIOnly.value = false
@@ -1726,6 +1804,7 @@ watch(
       groupIds.value = []
       openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
+      openaiImageGenerationEnabled.value = true
       codexCLIOnlyEnabled.value = false
       openAICompactMode.value = 'auto'
       openAICompactModelMappings.value = []

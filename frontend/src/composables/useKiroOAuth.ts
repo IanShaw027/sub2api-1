@@ -3,10 +3,21 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import type { KiroAccountExtra, KiroCredentials } from '@/types'
-import type { KiroAuthUrlRequest, KiroExchangeCallbackRequest, KiroTokenInfo } from '@/api/admin/kiro'
+import type {
+  KiroAuthUrlRequest,
+  KiroExchangeCallbackRequest,
+  KiroIDCContinuationInfo,
+  KiroOAuthProgressResult,
+  KiroTokenInfo
+} from '@/api/admin/kiro'
+import { isKiroContinuationResponse } from '@/api/admin/kiro'
 import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 
 const KIRO_RUNTIME_EXTRA_KEYS = ['kiro_version', 'kiro_commit', 'system_version', 'node_version'] as const
+
+const KIRO_DEVICE_POLL_FALLBACK_INTERVAL_MS = 5000
+const KIRO_DEVICE_POLL_MIN_INTERVAL_MS = 2000
+const KIRO_DEVICE_POLL_MAX_INTERVAL_MS = 30000
 
 export const stripKiroRuntimeExtra = (
   extra?: Record<string, unknown> | null
@@ -18,6 +29,19 @@ export const stripKiroRuntimeExtra = (
   return cleaned
 }
 
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms)
+  })
+
+const clampPollInterval = (seconds?: number | null): number => {
+  if (!seconds || seconds <= 0) return KIRO_DEVICE_POLL_FALLBACK_INTERVAL_MS
+  const ms = seconds * 1000
+  if (ms < KIRO_DEVICE_POLL_MIN_INTERVAL_MS) return KIRO_DEVICE_POLL_MIN_INTERVAL_MS
+  if (ms > KIRO_DEVICE_POLL_MAX_INTERVAL_MS) return KIRO_DEVICE_POLL_MAX_INTERVAL_MS
+  return ms
+}
+
 export function useKiroOAuth() {
   const appStore = useAppStore()
   const { t } = useI18n()
@@ -27,6 +51,8 @@ export function useKiroOAuth() {
   const callbackBaseUrl = ref('')
   const loading = ref(false)
   const error = ref('')
+  const continuation = ref<KiroIDCContinuationInfo | null>(null)
+  const cancelToken = ref(0)
 
   const resetState = () => {
     authUrl.value = ''
@@ -34,6 +60,14 @@ export function useKiroOAuth() {
     callbackBaseUrl.value = ''
     loading.value = false
     error.value = ''
+    continuation.value = null
+    cancelToken.value += 1
+  }
+
+  const cancelDeviceAuthorization = () => {
+    cancelToken.value += 1
+    continuation.value = null
+    loading.value = false
   }
 
   const generateAuthUrl = async (proxyId?: number | null): Promise<boolean> => {
@@ -42,6 +76,7 @@ export function useKiroOAuth() {
     sessionId.value = ''
     callbackBaseUrl.value = ''
     error.value = ''
+    continuation.value = null
 
     try {
       const payload: KiroAuthUrlRequest = {}
@@ -61,6 +96,54 @@ export function useKiroOAuth() {
     }
   }
 
+  const pollDeviceAuthorization = async (
+    info: KiroIDCContinuationInfo,
+    proxyId?: number | null
+  ): Promise<KiroTokenInfo | null> => {
+    const pollSessionId = info.session_id || sessionId.value
+    if (!pollSessionId) {
+      error.value = t('admin.accounts.kiro.idcSessionMissing')
+      return null
+    }
+    const myToken = cancelToken.value
+    let intervalMs = clampPollInterval(info.interval_seconds)
+    const expiresAt = info.expires_at ? Date.parse(info.expires_at) : NaN
+    while (cancelToken.value === myToken) {
+      await sleep(intervalMs)
+      if (cancelToken.value !== myToken) return null
+      if (!Number.isNaN(expiresAt) && Date.now() > expiresAt) {
+        error.value = t('admin.accounts.kiro.idcDeviceExpired')
+        continuation.value = null
+        return null
+      }
+      try {
+        const result = await adminAPI.kiro.deviceComplete({
+          session_id: pollSessionId,
+          ...(proxyId ? { proxy_id: proxyId } : {})
+        })
+        if (cancelToken.value !== myToken) return null
+        if (result.token_info && result.token_info.access_token) {
+          continuation.value = null
+          return result.token_info
+        }
+        if (result.continuation) {
+          continuation.value = result.continuation
+          intervalMs = clampPollInterval(result.continuation.interval_seconds)
+          continue
+        }
+        error.value = t('admin.accounts.kiro.idcDeviceUnexpected')
+        return null
+      } catch (err: any) {
+        error.value =
+          err?.response?.data?.detail || err?.message || t('admin.accounts.kiro.idcDeviceFailed')
+        appStore.showError(error.value)
+        continuation.value = null
+        return null
+      }
+    }
+    return null
+  }
+
   const exchangeCallback = async (
     callbackUrl: string,
     proxyId?: number | null
@@ -71,8 +154,10 @@ export function useKiroOAuth() {
       return null
     }
 
+    cancelToken.value += 1
     loading.value = true
     error.value = ''
+    continuation.value = null
 
     try {
       const payload: KiroExchangeCallbackRequest = {
@@ -80,7 +165,20 @@ export function useKiroOAuth() {
         callback_url: trimmedCallback
       }
       if (proxyId) payload.proxy_id = proxyId
-      return await adminAPI.kiro.exchangeCallback(payload)
+      const response = await adminAPI.kiro.exchangeCallback(payload)
+      if (isKiroContinuationResponse(response)) {
+        const progress = response as KiroOAuthProgressResult
+        if (progress.token_info && progress.token_info.access_token) {
+          return progress.token_info
+        }
+        if (progress.continuation) {
+          continuation.value = progress.continuation
+          return await pollDeviceAuthorization(progress.continuation, proxyId)
+        }
+        error.value = t('admin.accounts.kiro.idcDeviceUnexpected')
+        return null
+      }
+      return response as KiroTokenInfo
     } catch (err: any) {
       error.value = err?.response?.data?.detail || err?.message || t('admin.accounts.oauth.authFailed')
       appStore.showError(error.value)
@@ -203,7 +301,7 @@ export function useKiroOAuth() {
       details: detailIdentity ? [detailIdentity] : [],
       platformLabel: 'Kiro',
       fallbackDetail: normalizedSubscription,
-      defaultName: ''
+      defaultName: 'Kiro OAuth Account'
     })
   }
 
@@ -213,7 +311,9 @@ export function useKiroOAuth() {
     callbackBaseUrl,
     loading,
     error,
+    continuation,
     resetState,
+    cancelDeviceAuthorization,
     generateAuthUrl,
     exchangeCallback,
     validateRefreshToken,

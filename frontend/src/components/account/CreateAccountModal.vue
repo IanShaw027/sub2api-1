@@ -2669,6 +2669,36 @@
         </div>
       </div>
 
+      <div
+        v-if="form.platform === 'openai' && (accountCategory === 'oauth-based' || accountCategory === 'apikey')"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="input-label mb-0">{{ openAIImageGenerationLabel }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ openAIImageGenerationDescription }}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="openai-image-generation-toggle"
+            @click="openaiImageGenerationEnabled = !openaiImageGenerationEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              openaiImageGenerationEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                openaiImageGenerationEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
       <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
       <div
         v-if="form.platform === 'openai' && (accountCategory === 'oauth-based' || accountCategory === 'apikey')"
@@ -2955,9 +2985,11 @@
         :callback-base-url="kiroOAuth.callbackBaseUrl?.value || ''"
         :loading="kiroOAuth.loading.value"
         :error="kiroOAuth.error.value"
+        :continuation="kiroOAuth.continuation.value"
         @generate-url="handleGenerateUrl"
         @submit="handleKiroAuthorize"
         @submit-refresh-token="handleKiroValidateRT"
+        @cancel-continuation="kiroOAuth.cancelDeviceAuthorization"
       />
       <OAuthAuthorizationFlow
         v-else
@@ -3528,6 +3560,7 @@ const customErrorCodeInput = ref<number | null>(null)
 const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(true)
 const openaiPassthroughEnabled = ref(false)
+const openaiImageGenerationEnabled = ref(true)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -3747,6 +3780,22 @@ const form = reactive({
   expires_at: null as number | null
 })
 
+const translateWithFallback = (key: string, fallback: string) => {
+  const translated = t(key)
+  return translated === key ? fallback : translated
+}
+
+const openAIImageGenerationLabel = computed(() =>
+  translateWithFallback('admin.accounts.openai.imageGenerationEnabled', 'Allow image generation')
+)
+
+const openAIImageGenerationDescription = computed(() =>
+  translateWithFallback(
+    'admin.accounts.openai.imageGenerationEnabledDesc',
+    'Only affects actual image-generation routing. Text requests and image tool declarations are unchanged.'
+  )
+)
+
 // Helper to check if current type needs OAuth flow
 const isOAuthFlow = computed(() => {
   // Antigravity upstream 类型不需要 OAuth 流程
@@ -3913,6 +3962,7 @@ watch(
     }
     if (newPlatform !== 'openai') {
       openaiPassthroughEnabled.value = false
+      openaiImageGenerationEnabled.value = true
       openAICompactMode.value = 'auto'
       openAICompactModelMappings.value = []
       openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
@@ -4299,6 +4349,7 @@ const resetForm = () => {
   interceptWarmupRequests.value = false
   autoPauseOnExpired.value = true
   openaiPassthroughEnabled.value = false
+  openaiImageGenerationEnabled.value = true
   openAICompactMode.value = 'auto'
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
@@ -4373,6 +4424,7 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     extra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
     extra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiAPIKeyResponsesWebSocketV2Mode.value)
   }
+  extra.openai_image_generation_enabled = openaiImageGenerationEnabled.value
   // 清理兼容旧键，统一改用分类型开关。
   delete extra.responses_websockets_v2_enabled
   delete extra.openai_ws_enabled

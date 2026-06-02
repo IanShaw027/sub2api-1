@@ -212,7 +212,7 @@ export const KIRO_CACHE_HIT_RATE_SCALE_DEFAULT = 100;
 export const KIRO_CACHE_MIN_BLOCK_TOKENS_DEFAULT = 1024;
 export const KIRO_CACHE_MIN_BLOCK_TOKENS_MAX = 1 << 20;
 export const KIRO_CACHE_INDEPENDENT_TTL_SECONDS_DEFAULT = 3600;
-export const KIRO_CACHE_PREFIX_TTL_SECONDS_DEFAULT = 300;
+export const KIRO_CACHE_PREFIX_TTL_SECONDS_DEFAULT = 3600;
 export const KIRO_THINKING_MODE_DEFAULT: KiroThinkingMode = "simulate";
 export const KIRO_THINKING_EFFORT_THRESHOLD_DEFAULT: KiroThinkingEffortThreshold =
   "medium";
@@ -911,6 +911,8 @@ export interface SystemSettings {
   gateway_debug_timeline_directory: string;
   gateway_debug_timeline_retention_days: number;
   gateway_debug_timeline_max_size_mb: number;
+  gateway_debug_timeline_include_body: boolean;
+  gateway_debug_timeline_body_max_kb: number;
   enable_anthropic_cache_ttl_1h_injection: boolean;
   rewrite_message_cache_control: boolean;
   antigravity_user_agent_version: string;
@@ -1174,6 +1176,8 @@ export interface UpdateSettingsRequest {
   gateway_debug_timeline_directory?: string;
   gateway_debug_timeline_retention_days?: number;
   gateway_debug_timeline_max_size_mb?: number;
+  gateway_debug_timeline_include_body?: boolean;
+  gateway_debug_timeline_body_max_kb?: number;
   enable_anthropic_cache_ttl_1h_injection?: boolean;
   rewrite_message_cache_control?: boolean;
   antigravity_user_agent_version?: string;

@@ -16,6 +16,11 @@ export interface KiroExchangeCallbackRequest {
   proxy_id?: number
 }
 
+export interface KiroDeviceCompleteRequest {
+  session_id: string
+  proxy_id?: number
+}
+
 export interface KiroRefreshTokenRequest {
   credentials: Record<string, unknown>
   extra?: Record<string, unknown>
@@ -52,6 +57,39 @@ export interface KiroTokenInfo {
   [key: string]: unknown
 }
 
+export interface KiroIDCContinuationInfo {
+  session_id: string
+  status: string
+  auth_method: string
+  login_option?: string
+  start_url?: string
+  issuer_url?: string
+  idc_region?: string
+  scopes?: string[]
+  login_hint?: string
+  user_code?: string
+  verification_uri?: string
+  verification_uri_complete?: string
+  interval_seconds?: number
+  expires_at?: string
+  message?: string
+}
+
+export interface KiroOAuthProgressResult {
+  token_info?: KiroTokenInfo | null
+  continuation?: KiroIDCContinuationInfo | null
+}
+
+export type KiroExchangeCallbackResponse = KiroTokenInfo | KiroOAuthProgressResult
+
+export function isKiroContinuationResponse(
+  value: KiroExchangeCallbackResponse | null | undefined
+): value is KiroOAuthProgressResult {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as KiroOAuthProgressResult
+  return Boolean(candidate.continuation)
+}
+
 export async function generateAuthUrl(
   payload: KiroAuthUrlRequest
 ): Promise<KiroAuthUrlResponse> {
@@ -61,8 +99,21 @@ export async function generateAuthUrl(
 
 export async function exchangeCallback(
   payload: KiroExchangeCallbackRequest
-): Promise<KiroTokenInfo> {
-  const { data } = await apiClient.post<KiroTokenInfo>('/admin/kiro/oauth/exchange-callback', payload)
+): Promise<KiroExchangeCallbackResponse> {
+  const { data } = await apiClient.post<KiroExchangeCallbackResponse>(
+    '/admin/kiro/oauth/exchange-callback',
+    payload
+  )
+  return data
+}
+
+export async function deviceComplete(
+  payload: KiroDeviceCompleteRequest
+): Promise<KiroOAuthProgressResult> {
+  const { data } = await apiClient.post<KiroOAuthProgressResult>(
+    '/admin/kiro/oauth/device-complete',
+    payload
+  )
   return data
 }
 
@@ -76,5 +127,6 @@ export async function refreshToken(
 export default {
   generateAuthUrl,
   exchangeCallback,
+  deviceComplete,
   refreshToken
 }

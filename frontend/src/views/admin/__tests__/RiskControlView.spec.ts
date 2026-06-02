@@ -337,6 +337,39 @@ describe('admin RiskControlView', () => {
     expect(showError).toHaveBeenCalledWith('admin.riskControl.attentionThresholdInvalid')
   })
 
+  it('preserves independent auto-ban exempt user id and email arrays when saving unchanged config', async () => {
+    getConfig.mockResolvedValueOnce({
+      ...baseConfig(),
+      auto_ban_exempt_user_ids: [1001, 1002],
+      auto_ban_exempt_user_emails: ['vip@example.com'],
+    })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      auto_ban_exempt_user_ids: [1001, 1002],
+      auto_ban_exempt_user_emails: ['vip@example.com'],
+    }))
+  })
+
   it('keeps the active settings tab readable in dark mode', async () => {
     const wrapper = mount(RiskControlView, {
       global: {

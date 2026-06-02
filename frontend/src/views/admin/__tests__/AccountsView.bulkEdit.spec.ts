@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 
 import AccountsView from '../AccountsView.vue'
+import BulkEditAccountModal from '@/components/account/BulkEditAccountModal.vue'
 
 vi.mock('@/components/layout/AppLayout.vue', () => ({
   default: {
@@ -77,6 +78,21 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
+vi.mock('@/composables/useModelWhitelist', () => ({
+  commonErrorCodes: [],
+  getPresetMappingsByPlatform: vi.fn(() => []),
+  buildModelMappingPayload: vi.fn((mode: string, allowed: string[], mappings: Array<{ from: string; to: string }>) => {
+    if (mode === 'whitelist') {
+      return Object.fromEntries((allowed || []).map((model) => [model, model]))
+    }
+    return Object.fromEntries(
+      (mappings || [])
+        .filter((mapping) => mapping.from && mapping.to)
+        .map((mapping) => [mapping.from, mapping.to])
+    )
+  })
+}))
+
 const DataTableStub = {
   props: ['columns', 'data'],
   template: `
@@ -130,6 +146,43 @@ const PlatformTypeBadgeStub = defineComponent({
   `
 })
 
+const BaseDialogStub = defineComponent({
+  name: 'BaseDialog',
+  props: {
+    show: {
+      type: Boolean,
+      default: false
+    }
+  },
+  template: '<div v-if="show"><slot /><slot name="footer" /></div>'
+})
+
+const SelectStub = defineComponent({
+  name: 'SelectStub',
+  props: {
+    modelValue: {
+      type: [String, Number, Boolean, null],
+      default: ''
+    },
+    options: {
+      type: Array,
+      default: () => []
+    }
+  },
+  emits: ['update:modelValue'],
+  template: `
+    <select
+      v-bind="$attrs"
+      :value="modelValue"
+      @change="$emit('update:modelValue', $event.target.value)"
+    >
+      <option v-for="option in options" :key="option.value" :value="option.value">
+        {{ option.label }}
+      </option>
+    </select>
+  `
+})
+
 function mountAccountsView() {
   return mount(AccountsView, {
     global: {
@@ -163,6 +216,31 @@ function mountAccountsView() {
         AccountTodayStatsCell: true,
         AccountGroupsCell: true,
         AccountUsageCell: true,
+        Icon: true
+      }
+    }
+  })
+}
+
+function mountBulkEditModal(props: Record<string, unknown> = {}) {
+  return mount(BulkEditAccountModal, {
+    props: {
+      show: true,
+      accountIds: [1, 2],
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth'],
+      proxies: [],
+      groups: [],
+      ...props
+    },
+    global: {
+      stubs: {
+        BaseDialog: BaseDialogStub,
+        ConfirmDialog: true,
+        Select: SelectStub,
+        ProxySelector: true,
+        GroupSelector: true,
+        ModelWhitelistSelector: true,
         Icon: true
       }
     }
@@ -599,5 +677,24 @@ describe('admin AccountsView bulk edit scope', () => {
 
     expect(wrapper.find('[data-test="row-2"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('admin.accounts.listPendingSyncHint')
+  })
+})
+
+describe('BulkEditAccountModal OpenAI image generation', () => {
+  it('writes only the dedicated OpenAI image generation extra override when enabled', async () => {
+    bulkUpdate.mockResolvedValue({ success: 2, failed: 0 })
+
+    const wrapper = mountBulkEditModal()
+
+    await wrapper.get('#bulk-edit-openai-image-generation-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-openai-image-generation-toggle').trigger('click')
+    await wrapper.get('form#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        openai_image_generation_enabled: false
+      }
+    })
   })
 })

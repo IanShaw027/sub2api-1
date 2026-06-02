@@ -3976,6 +3976,34 @@
                       class="input"
                     />
                   </div>
+
+                  <div class="md:col-span-2 flex items-center justify-between">
+                    <div>
+                      <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t('admin.settings.gatewayForwarding.debugTimelineIncludeBody') }}
+                      </label>
+                      <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                        {{ t('admin.settings.gatewayForwarding.debugTimelineIncludeBodyHint') }}
+                      </p>
+                    </div>
+                    <Toggle v-model="form.gateway_debug_timeline_include_body" />
+                  </div>
+
+                  <div v-if="form.gateway_debug_timeline_include_body">
+                    <label class="label">
+                      {{ t('admin.settings.gatewayForwarding.debugTimelineBodyMaxKB') }}
+                    </label>
+                    <input
+                      v-model.number="form.gateway_debug_timeline_body_max_kb"
+                      type="number"
+                      min="1"
+                      max="1024"
+                      class="input"
+                    />
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.settings.gatewayForwarding.debugTimelineBodyMaxKBHint') }}
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -8291,6 +8319,8 @@ const form = reactive<SettingsForm>({
   gateway_debug_timeline_directory: "logs/gateway-debug",
   gateway_debug_timeline_retention_days: 7,
   gateway_debug_timeline_max_size_mb: 1024,
+  gateway_debug_timeline_include_body: false,
+  gateway_debug_timeline_body_max_kb: 32,
   enable_anthropic_cache_ttl_1h_injection: false,
   rewrite_message_cache_control: false,
   antigravity_user_agent_version: "",
@@ -9591,6 +9621,14 @@ async function saveSettings() {
       gateway_debug_timeline_max_size_mb: Math.max(
         1,
         Math.floor(Number(form.gateway_debug_timeline_max_size_mb) || 1024),
+      ),
+      gateway_debug_timeline_include_body: form.gateway_debug_timeline_include_body,
+      gateway_debug_timeline_body_max_kb: Math.min(
+        1024,
+        Math.max(
+          1,
+          Math.floor(Number(form.gateway_debug_timeline_body_max_kb) || 32),
+        ),
       ),
       enable_anthropic_cache_ttl_1h_injection:
         form.enable_anthropic_cache_ttl_1h_injection,

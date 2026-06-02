@@ -115,7 +115,9 @@ function buildOAuthComposable() {
     errorCode: ref(''),
     oauthState: ref('oauth-state'),
     state: ref('oauth-state'),
+    continuation: ref(null),
     resetState: vi.fn(),
+    cancelDeviceAuthorization: vi.fn(),
     generateAuthUrl: vi.fn(),
     exchangeAuthCode: vi.fn(),
     buildCredentials: vi.fn(() => ({})),
@@ -544,6 +546,54 @@ describe('CreateAccountModal', () => {
       extra: expect.objectContaining({
         enable_tls_fingerprint: true,
         tls_fingerprint_profile_id: 12
+      })
+    }))
+  })
+
+  it('shows the OpenAI image generation toggle only for OpenAI flows and defaults it to enabled', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="openai-image-generation-toggle"]').exists()).toBe(false)
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await findAccountTypeButton(wrapper, 1).trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="openai-image-generation-toggle"]').exists()).toBe(true)
+    expect((wrapper.vm as any).openaiImageGenerationEnabled).toBe(true)
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('openai-api')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      extra: expect.objectContaining({
+        openai_image_generation_enabled: true
+      })
+    }))
+  })
+
+  it('persists an explicit disabled OpenAI image generation setting on create', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await findAccountTypeButton(wrapper, 1).trigger('click')
+    await nextTick()
+
+    await wrapper.get('[data-testid="openai-image-generation-toggle"]').trigger('click')
+    await wrapper.get('[data-tour="account-form-name"]').setValue('openai-api-disabled')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      extra: expect.objectContaining({
+        openai_image_generation_enabled: false
       })
     }))
   })

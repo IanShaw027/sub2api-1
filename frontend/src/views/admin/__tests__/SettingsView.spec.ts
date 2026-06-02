@@ -486,7 +486,7 @@ const baseSettingsResponse = {
   cache_hit_rate_scale: 100,
   cache_min_block_tokens: 1024,
   cache_independent_ttl_seconds: 3600,
-  cache_prefix_ttl_seconds: 300,
+  cache_prefix_ttl_seconds: 3600,
   default_platform_quotas: {
     anthropic:   { daily: null, weekly: null, monthly: null },
     openai:      { daily: null, weekly: 12.5, monthly: null },
@@ -1415,7 +1415,7 @@ describe("admin SettingsView wechat connect controls", () => {
         cache_hit_rate_scale: 100,
         cache_min_block_tokens: 1024,
         cache_independent_ttl_seconds: 3600,
-        cache_prefix_ttl_seconds: 300,
+        cache_prefix_ttl_seconds: 3600,
       }),
     );
   });

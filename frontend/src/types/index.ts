@@ -1172,6 +1172,7 @@ export interface Account<
   last_used_at: string | null
   expires_at: number | null
   auto_pause_on_expired: boolean
+  openai_image_generation_enabled?: boolean
   created_at: string
   updated_at: string
   proxy?: Proxy

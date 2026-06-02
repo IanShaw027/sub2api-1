@@ -113,10 +113,10 @@
                     <div class="min-w-0">
                       <div class="flex min-w-0 items-center gap-2">
                         <span class="font-mono text-sm font-semibold text-gray-900 dark:text-white">#{{ item.index + 1 }}</span>
+                        <span v-if="item.account_email" class="truncate text-xs text-gray-600 dark:text-gray-300">{{ item.account_email }}</span>
                         <span class="truncate font-mono text-sm text-gray-700 dark:text-gray-200">{{ item.masked || '-' }}</span>
                         <span class="h-2 w-2 flex-shrink-0 rounded-full" :class="apiKeyStatusDotClass(item.status)"></span>
                       </div>
-                      <p v-if="item.account_email" class="mt-1 truncate text-xs text-gray-600 dark:text-gray-300">{{ item.account_email }}</p>
                       <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                         {{ t('admin.riskControl.preBlockAPIKeyTotals', { total: formatNumber(item.total), success: formatNumber(item.success), errors: formatNumber(item.errors) }) }}
                       </p>
@@ -416,6 +416,25 @@
                 <input v-model.number="configForm.retry_count" type="number" min="0" max="5" class="input" />
               </div>
               <div>
+                <label class="input-label">{{ t('admin.riskControl.apiKeyRateLimitPolicy') }}</label>
+                <Select v-model="configForm.api_key_rate_limit_failure_policy" :options="apiKeyRateLimitPolicyOptions" />
+                <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.apiKeyRateLimitPolicyHint') }}</p>
+              </div>
+              <div class="grid grid-cols-1 gap-3 lg:col-span-2 md:grid-cols-3">
+                <div>
+                  <label class="input-label">{{ t('admin.riskControl.apiKeyRPMLimit') }}</label>
+                  <input v-model.number="configForm.api_key_rpm_limit" type="number" min="1" max="1000000000" class="input" />
+                </div>
+                <div>
+                  <label class="input-label">{{ t('admin.riskControl.apiKeyRPDLimit') }}</label>
+                  <input v-model.number="configForm.api_key_rpd_limit" type="number" min="1" max="1000000000" class="input" />
+                </div>
+                <div>
+                  <label class="input-label">{{ t('admin.riskControl.apiKeyTPMLimit') }}</label>
+                  <input v-model.number="configForm.api_key_tpm_limit" type="number" min="1" max="1000000000" class="input" />
+                </div>
+              </div>
+              <div>
                 <label class="input-label">{{ t('admin.riskControl.sampleRate') }}</label>
                 <div class="relative">
                   <input v-model.number="configForm.sample_rate" type="number" min="0" max="100" step="1" class="input pr-8" />
@@ -608,10 +627,10 @@
                         <div class="flex items-start justify-between gap-2">
                           <div class="min-w-0">
                             <div class="flex min-w-0 flex-wrap items-center gap-2">
-                              <span class="truncate font-mono text-sm font-semibold text-gray-900 dark:text-white">{{ row.masked || '-' }}</span>
                               <span v-if="row.account_email" class="truncate rounded-md bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
                                 {{ row.account_email }}
                               </span>
+                              <span class="truncate font-mono text-sm font-semibold text-gray-900 dark:text-white">{{ row.masked || '-' }}</span>
                               <span
                                 class="inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-medium"
                                 :class="row.configured ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300' : 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'"
@@ -907,9 +926,49 @@
               </div>
               <div class="lg:col-span-2">
                 <label class="input-label">{{ t('admin.riskControl.autoBanExemptUsers') }}</label>
+                <div class="relative">
+                  <input
+                    v-model="exemptUserKeyword"
+                    type="search"
+                    class="input"
+                    :placeholder="t('admin.riskControl.autoBanExemptUsersSearchPlaceholder')"
+                    autocomplete="off"
+                    @input="debounceExemptUserSearch"
+                    @focus="exemptUserDropdownOpen = exemptUserResults.length > 0"
+                    @blur="onExemptUserBlur"
+                  />
+                  <div
+                    v-if="exemptUserDropdownOpen && exemptUserResults.length > 0"
+                    class="absolute left-0 right-0 z-30 mt-1 max-h-64 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-dark-700 dark:bg-dark-800"
+                  >
+                    <button
+                      v-for="user in exemptUserResults"
+                      :key="user.id"
+                      type="button"
+                      class="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-dark-700"
+                      :class="exemptUserIDSet.has(user.id) ? 'opacity-50' : ''"
+                      :disabled="exemptUserIDSet.has(user.id)"
+                      @mousedown.prevent="selectExemptUser(user)"
+                    >
+                      <span class="font-mono text-xs text-gray-500 dark:text-gray-400">#{{ user.id }}</span>
+                      <span class="ml-2 text-gray-900 dark:text-white">{{ user.email }}</span>
+                    </button>
+                  </div>
+                </div>
+                <div v-if="configForm.auto_ban_exempt_users.length > 0" class="mt-2 flex flex-wrap gap-1.5">
+                  <span
+                    v-for="user in configForm.auto_ban_exempt_users"
+                    :key="user.id"
+                    class="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-xs text-sky-700 dark:bg-sky-900/30 dark:text-sky-300"
+                  >
+                    <span class="font-mono">#{{ user.id }}</span>
+                    <span>{{ user.email || t('admin.riskControl.autoBanExemptUserUnknownEmail') }}</span>
+                    <button type="button" class="text-sky-700/70 hover:text-sky-900 dark:text-sky-300/70 dark:hover:text-sky-100" @click="removeExemptUser(user.id)">×</button>
+                  </span>
+                </div>
                 <textarea
                   v-model="configForm.auto_ban_exempt_users_text"
-                  class="input min-h-24 resize-y font-mono text-sm"
+                  class="input mt-2 min-h-20 resize-y font-mono text-sm"
                   :placeholder="t('admin.riskControl.autoBanExemptUsersPlaceholder')"
                 ></textarea>
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.autoBanExemptUsersHint') }}</p>
@@ -1139,6 +1198,7 @@ import Toggle from '@/components/common/Toggle.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import { adminAPI } from '@/api/admin'
+import type { SimpleUser } from '@/api/admin/usage'
 import type {
   ContentModerationAPIKeyAccountInput,
   ContentModerationAPIKeyLoad,
@@ -1149,6 +1209,7 @@ import type {
   ContentModerationModelFilterType,
   ContentModerationRuntimeStatus,
   ContentModerationTestAuditResult,
+  APIKeyRateLimitFailurePolicy,
   KeywordBlockingMode,
   ModerationMode,
   UpdateContentModerationConfig,
@@ -1251,6 +1312,10 @@ const configForm = reactive({
   clear_api_key: false,
   timeout_ms: 3000,
   retry_count: 2,
+  api_key_rpm_limit: 500,
+  api_key_rpd_limit: 10000,
+  api_key_tpm_limit: 10000,
+  api_key_rate_limit_failure_policy: 'error' as APIKeyRateLimitFailurePolicy,
   sample_rate: 100,
   all_groups: true,
   group_ids: [] as number[],
@@ -1264,6 +1329,7 @@ const configForm = reactive({
   email_on_hit: true,
   auto_ban_enabled: true,
   ban_threshold: 10,
+  auto_ban_exempt_users: [] as { id: number; email: string }[],
   auto_ban_exempt_users_text: '',
   violation_window_hours: 720,
   hit_retention_days: 180,
@@ -1306,6 +1372,11 @@ const modeOptions = computed<SelectOption[]>(() => [
   { value: 'pre_block', label: t('admin.riskControl.modePreBlock') },
   { value: 'observe', label: t('admin.riskControl.modeObserve') },
   { value: 'off', label: t('admin.riskControl.modeOff') },
+])
+
+const apiKeyRateLimitPolicyOptions = computed<SelectOption[]>(() => [
+  { value: 'error', label: t('admin.riskControl.apiKeyRateLimitPolicyError') },
+  { value: 'allow', label: t('admin.riskControl.apiKeyRateLimitPolicyAllow') },
 ])
 
 const keywordBlockingModeOptions = computed<Array<{ value: KeywordBlockingMode; label: string; description: string }>>(() => [
@@ -1402,6 +1473,7 @@ const resultOptions = computed<SelectOption[]>(() => [
   { value: '', label: t('admin.riskControl.result.all') },
   { value: 'hit', label: t('admin.riskControl.result.hit') },
   { value: 'blocked', label: t('admin.riskControl.result.blocked') },
+  { value: 'attention', label: t('admin.riskControl.result.attention') },
   { value: 'pass', label: t('admin.riskControl.result.pass') },
   { value: 'error', label: t('admin.riskControl.result.error') },
 ])
@@ -1455,6 +1527,50 @@ const inputApiKeyCount = computed(() => parseApiKeyAccountInputs(configForm.api_
 const blockedKeywordList = computed(() => parseBlockedKeywords(configForm.blocked_keywords_text))
 
 const blockedKeywordCount = computed(() => blockedKeywordList.value.length)
+
+const exemptUserKeyword = ref('')
+const exemptUserResults = ref<SimpleUser[]>([])
+const exemptUserDropdownOpen = ref(false)
+let exemptUserSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+const exemptUserIDSet = computed(() => new Set(configForm.auto_ban_exempt_users.map((u) => u.id)))
+
+function debounceExemptUserSearch() {
+  if (exemptUserSearchTimer) clearTimeout(exemptUserSearchTimer)
+  exemptUserSearchTimer = setTimeout(async () => {
+    const keyword = exemptUserKeyword.value.trim()
+    if (!keyword) {
+      exemptUserResults.value = []
+      exemptUserDropdownOpen.value = false
+      return
+    }
+    try {
+      exemptUserResults.value = await adminAPI.usage.searchUsers(keyword)
+      exemptUserDropdownOpen.value = exemptUserResults.value.length > 0
+    } catch {
+      exemptUserResults.value = []
+      exemptUserDropdownOpen.value = false
+    }
+  }, 300)
+}
+
+function selectExemptUser(user: SimpleUser) {
+  if (exemptUserIDSet.value.has(user.id)) return
+  configForm.auto_ban_exempt_users.push({ id: user.id, email: user.email })
+  exemptUserKeyword.value = ''
+  exemptUserResults.value = []
+  exemptUserDropdownOpen.value = false
+}
+
+function removeExemptUser(id: number) {
+  configForm.auto_ban_exempt_users = configForm.auto_ban_exempt_users.filter((u) => u.id !== id)
+}
+
+function onExemptUserBlur() {
+  setTimeout(() => {
+    exemptUserDropdownOpen.value = false
+  }, 150)
+}
 
 const pendingDeletedApiKeyCount = computed(() => pendingDeleteApiKeyHashes.value.length)
 
@@ -1731,6 +1847,10 @@ function applyConfig(config: ContentModerationConfig) {
   apiKeyRowsExpanded.value = false
   configForm.timeout_ms = config.timeout_ms || 3000
   configForm.retry_count = config.retry_count ?? 2
+  configForm.api_key_rpm_limit = config.api_key_rpm_limit || 500
+  configForm.api_key_rpd_limit = config.api_key_rpd_limit || 10000
+  configForm.api_key_tpm_limit = config.api_key_tpm_limit || 10000
+  configForm.api_key_rate_limit_failure_policy = config.api_key_rate_limit_failure_policy === 'allow' ? 'allow' : 'error'
   configForm.sample_rate = config.sample_rate ?? 100
   configForm.all_groups = config.all_groups
   configForm.group_ids = Array.isArray(config.group_ids) ? [...config.group_ids] : []
@@ -1744,7 +1864,8 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.email_on_hit = config.email_on_hit ?? true
   configForm.auto_ban_enabled = config.auto_ban_enabled ?? true
   configForm.ban_threshold = config.ban_threshold || 10
-  configForm.auto_ban_exempt_users_text = formatAutoBanExemptUsers(config.auto_ban_exempt_user_ids, config.auto_ban_exempt_user_emails)
+  configForm.auto_ban_exempt_users = formatAutoBanExemptUsers(config.auto_ban_exempt_user_ids, config.auto_ban_exempt_user_emails)
+  configForm.auto_ban_exempt_users_text = formatAutoBanExemptText(config.auto_ban_exempt_user_emails)
   configForm.violation_window_hours = config.violation_window_hours || 720
   configForm.hit_retention_days = config.hit_retention_days || 180
   configForm.non_hit_retention_days = Math.min(Math.max(config.non_hit_retention_days || 3, 1), 3)
@@ -1842,6 +1963,10 @@ async function saveConfig() {
       model: configForm.model,
       timeout_ms: Number(configForm.timeout_ms) || 3000,
       retry_count: Number(configForm.retry_count) || 0,
+      api_key_rpm_limit: Number(configForm.api_key_rpm_limit) || 500,
+      api_key_rpd_limit: Number(configForm.api_key_rpd_limit) || 10000,
+      api_key_tpm_limit: Number(configForm.api_key_tpm_limit) || 10000,
+      api_key_rate_limit_failure_policy: configForm.api_key_rate_limit_failure_policy,
       sample_rate: Number(configForm.sample_rate) || 0,
       all_groups: configForm.all_groups,
       group_ids: configForm.all_groups ? [] : [...configForm.group_ids],
@@ -1856,7 +1981,7 @@ async function saveConfig() {
       email_on_hit: configForm.email_on_hit,
       auto_ban_enabled: configForm.auto_ban_enabled,
       ban_threshold: Number(configForm.ban_threshold) || 10,
-      ...buildAutoBanExemptUsersPayload(configForm.auto_ban_exempt_users_text),
+      ...buildAutoBanExemptUsersPayload(configForm.auto_ban_exempt_users, configForm.auto_ban_exempt_users_text),
       violation_window_hours: Number(configForm.violation_window_hours) || 720,
       hit_retention_days: Number(configForm.hit_retention_days) || 180,
       non_hit_retention_days: Math.min(Math.max(Number(configForm.non_hit_retention_days) || 3, 1), 3),
@@ -2267,6 +2392,11 @@ function apiKeyStatusDotClass(statusValue: ContentModerationAPIKeyStatus['status
 function apiKeyStatusMeta(row: ContentModerationAPIKeyStatus): string {
   const parts: string[] = []
   parts.push(t('admin.riskControl.apiKeyFailureCount', { count: row.failure_count || 0 }))
+  parts.push(t('admin.riskControl.apiKeyLocalUsage', {
+    rpm: row.rpm_used || 0,
+    rpd: row.rpd_used || 0,
+    tpm: row.tpm_used || 0,
+  }))
   if (row.last_latency_ms > 0) {
     parts.push(t('admin.riskControl.apiKeyLatency', { ms: row.last_latency_ms }))
   }
@@ -2299,20 +2429,38 @@ function parseApiKeyAccountInputs(value: string): ContentModerationAPIKeyAccount
   return rows
 }
 
-function formatAutoBanExemptUsers(userIDs?: number[], emails?: string[]): string {
-  const lines = [
-    ...(Array.isArray(userIDs) ? userIDs.map((id) => String(id)) : []),
-    ...(Array.isArray(emails) ? emails : []),
-  ].map((item) => item.trim()).filter(Boolean)
-  return Array.from(new Set(lines)).join('\n')
+function formatAutoBanExemptUsers(userIDs?: number[], _emails?: string[]): { id: number; email: string }[] {
+  const ids = Array.isArray(userIDs) ? userIDs : []
+  const result: { id: number; email: string }[] = []
+  const seen = new Set<number>()
+  ids.forEach((id) => {
+    if (!Number.isInteger(id) || id <= 0 || seen.has(id)) return
+    seen.add(id)
+    result.push({ id, email: '' })
+  })
+  return result
 }
 
-function buildAutoBanExemptUsersPayload(value: string): Pick<UpdateContentModerationConfig, 'auto_ban_exempt_user_ids' | 'auto_ban_exempt_user_emails'> {
+function formatAutoBanExemptText(emails?: string[]): string {
+  return Array.from(new Set((Array.isArray(emails) ? emails : []).map((item) => item.trim().toLowerCase()).filter(Boolean))).join('\n')
+}
+
+function buildAutoBanExemptUsersPayload(users: { id: number; email: string }[], manualText = ''): Pick<UpdateContentModerationConfig, 'auto_ban_exempt_user_ids' | 'auto_ban_exempt_user_emails'> {
   const ids: number[] = []
   const emails: string[] = []
-  const seenIDs = new Set<number>()
+  const seen = new Set<number>()
   const seenEmails = new Set<string>()
-  for (const rawLine of value.split(/\r?\n/)) {
+  for (const user of users) {
+    if (!Number.isInteger(user.id) || user.id <= 0 || seen.has(user.id)) continue
+    seen.add(user.id)
+    ids.push(user.id)
+    const email = (user.email || '').trim().toLowerCase()
+    if (email) {
+      emails.push(email)
+      seenEmails.add(email)
+    }
+  }
+  for (const rawLine of manualText.split(/\r?\n/)) {
     const line = rawLine.trim()
     if (!line) continue
     const parts = line.split(/[\s,，]+/).filter(Boolean)
@@ -2326,8 +2474,8 @@ function buildAutoBanExemptUsersPayload(value: string): Pick<UpdateContentModera
         continue
       }
       const id = Number(part)
-      if (Number.isInteger(id) && id > 0 && !seenIDs.has(id)) {
-        seenIDs.add(id)
+      if (Number.isInteger(id) && id > 0 && !seen.has(id)) {
+        seen.add(id)
         ids.push(id)
       }
     }

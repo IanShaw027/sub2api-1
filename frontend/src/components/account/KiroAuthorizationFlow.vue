@@ -253,7 +253,118 @@
       </div>
 
       <div
-        v-else
+        v-if="inputMode === 'oauth' && continuation"
+        class="rounded-lg border border-amber-300 bg-amber-50/80 p-4 dark:border-amber-700/60 dark:bg-amber-900/20"
+      >
+        <div class="flex items-start gap-3">
+          <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">
+            4
+          </div>
+          <div class="flex-1 space-y-3">
+            <div>
+              <p class="font-medium text-amber-950 dark:text-amber-100">
+                {{ t('admin.accounts.kiro.idcContinuationTitle') }}
+              </p>
+              <p class="mt-1 text-sm text-amber-800 dark:text-amber-200">
+                {{ t('admin.accounts.kiro.idcContinuationDesc') }}
+              </p>
+            </div>
+
+            <div class="rounded-md border border-amber-200 bg-white/80 p-3 dark:border-amber-800/60 dark:bg-gray-800/60">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                {{ t('admin.accounts.kiro.idcUserCodeLabel') }}
+              </p>
+              <div class="flex flex-wrap items-center gap-3">
+                <span class="select-all font-mono text-2xl font-bold tracking-[0.3em] text-amber-950 dark:text-amber-100">
+                  {{ continuation.user_code || '—' }}
+                </span>
+                <button
+                  v-if="continuation.user_code"
+                  type="button"
+                  class="btn btn-secondary text-xs"
+                  @click="copyToClipboard(continuation.user_code, t('common.copiedToClipboard'))"
+                >
+                  <Icon v-if="!copied" name="copy" size="sm" class="mr-1" />
+                  <Icon v-else name="check" size="sm" class="mr-1 text-green-500" :stroke-width="2" />
+                  {{ t('common.copy') }}
+                </button>
+              </div>
+              <p class="mt-2 text-xs text-amber-800 dark:text-amber-200">
+                {{ t('admin.accounts.kiro.idcUserCodeHint') }}
+              </p>
+            </div>
+
+            <div class="rounded-md border border-amber-200 bg-white/80 p-3 dark:border-amber-800/60 dark:bg-gray-800/60">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                {{ t('admin.accounts.kiro.idcVerificationUrlLabel') }}
+              </p>
+              <a
+                v-if="verificationUrl"
+                :href="verificationUrl"
+                target="_blank"
+                rel="noopener"
+                class="btn btn-primary text-xs"
+              >
+                <Icon name="link" size="sm" class="mr-2" />
+                {{ t('admin.accounts.kiro.idcVerificationUrlOpen') }}
+              </a>
+              <p v-else class="text-xs text-amber-800 dark:text-amber-200">
+                {{ t('admin.accounts.kiro.idcVerificationUrlMissing') }}
+              </p>
+              <p v-if="verificationUrl" class="mt-2 break-all font-mono text-xs text-amber-800 dark:text-amber-200">
+                {{ verificationUrl }}
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-2 text-xs text-amber-900 dark:text-amber-100 md:grid-cols-2">
+              <div>
+                <span class="font-semibold">{{ t('admin.accounts.kiro.idcExpiresLabel') }}:</span>
+                <span class="ml-1">
+                  {{ remainingSeconds === null
+                    ? '—'
+                    : remainingSeconds <= 0
+                      ? t('admin.accounts.kiro.idcExpiresExpired')
+                      : t('admin.accounts.kiro.idcExpiresValue', { seconds: remainingSeconds })
+                  }}
+                </span>
+              </div>
+              <div v-if="continuation.idc_region">
+                {{ t('admin.accounts.kiro.idcMetaRegion', { value: continuation.idc_region }) }}
+              </div>
+              <div v-if="continuation.start_url" class="break-all">
+                {{ t('admin.accounts.kiro.idcMetaStartUrl', { value: continuation.start_url }) }}
+              </div>
+              <div v-if="continuation.issuer_url" class="break-all">
+                {{ t('admin.accounts.kiro.idcMetaIssuerUrl', { value: continuation.issuer_url }) }}
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 text-xs text-amber-800 dark:text-amber-200">
+              <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span>{{ t('admin.accounts.kiro.idcStatusPending') }}</span>
+            </div>
+
+            <div class="flex flex-col gap-2">
+              <button
+                type="button"
+                class="btn btn-secondary self-start text-xs"
+                @click="emit('cancel-continuation')"
+              >
+                {{ t('admin.accounts.kiro.idcCancelAction') }}
+              </button>
+              <p class="text-xs text-amber-700 dark:text-amber-300">
+                {{ t('admin.accounts.kiro.idcCancelHint') }}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="inputMode === 'refresh_token'"
         class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80"
       >
         <p class="mb-3 text-sm text-cyan-700 dark:text-cyan-300">
@@ -416,11 +527,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import type { KiroAccountExtra, KiroCredentials } from '@/types'
+import type { KiroIDCContinuationInfo } from '@/api/admin/kiro'
 
 interface Props {
   mode?: 'create' | 'reauth'
@@ -430,6 +542,7 @@ interface Props {
   callbackBaseUrl?: string
   initialCredentials?: KiroCredentials | null
   initialExtra?: KiroAccountExtra | null
+  continuation?: KiroIDCContinuationInfo | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -439,11 +552,13 @@ const props = withDefaults(defineProps<Props>(), {
   authUrl: '',
   callbackBaseUrl: '',
   initialCredentials: null,
-  initialExtra: null
+  initialExtra: null,
+  continuation: null
 })
 
 const emit = defineEmits<{
   'generate-url': []
+  'cancel-continuation': []
   submit: [payload: {
     callbackUrl: string
     credentials: KiroCredentials & Record<string, unknown>
@@ -601,4 +716,42 @@ const handleSubmitRefreshToken = () => {
     extra: {}
   })
 }
+
+const verificationUrl = computed(() => (
+  props.continuation?.verification_uri_complete || props.continuation?.verification_uri || ''
+))
+
+const now = ref(Date.now())
+let nowTimer: ReturnType<typeof setInterval> | null = null
+
+watch(
+  () => props.continuation?.expires_at,
+  (expiresAt) => {
+    if (nowTimer) {
+      clearInterval(nowTimer)
+      nowTimer = null
+    }
+    if (!expiresAt) return
+    now.value = Date.now()
+    nowTimer = setInterval(() => {
+      now.value = Date.now()
+    }, 1000)
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => {
+  if (nowTimer) {
+    clearInterval(nowTimer)
+    nowTimer = null
+  }
+})
+
+const remainingSeconds = computed<number | null>(() => {
+  const expiresAt = props.continuation?.expires_at
+  if (!expiresAt) return null
+  const ts = Date.parse(expiresAt)
+  if (Number.isNaN(ts)) return null
+  return Math.max(0, Math.floor((ts - now.value) / 1000))
+})
 </script>

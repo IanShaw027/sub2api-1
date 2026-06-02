@@ -1507,6 +1507,36 @@
         </div>
       </div>
 
+      <div
+        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'apikey')"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="input-label mb-0">{{ openAIImageGenerationLabel }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ openAIImageGenerationDescription }}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="openai-image-generation-toggle"
+            @click="openaiImageGenerationEnabled = !openaiImageGenerationEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              openaiImageGenerationEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                openaiImageGenerationEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
       <!-- OpenAI Codex 图片生成桥接账号级覆盖 -->
       <div
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'apikey')"
@@ -2693,6 +2723,7 @@ const openAIWebProfileImportContent = ref('')
 const openAIWebProfileImporting = ref(false)
 const openAIWebProfileImportSummary = ref('')
 const codexCLIOnlyEnabled = ref(false)
+const openaiImageGenerationEnabled = ref(true)
 type CodexImageGenerationBridgeMode = 'inherit' | 'enabled' | 'disabled'
 const codexImageGenerationBridgeMode = ref<CodexImageGenerationBridgeMode>('inherit')
 const anthropicPassthroughEnabled = ref(false)
@@ -2744,6 +2775,21 @@ const openaiResponsesWebSocketV2Mode = computed({
 })
 const openAIWSModeConcurrencyHintKey = computed(() =>
   resolveOpenAIWSModeConcurrencyHintKey(openaiResponsesWebSocketV2Mode.value)
+)
+const translateWithFallback = (key: string, fallback: string) => {
+  const translated = t(key)
+  return translated === key ? fallback : translated
+}
+
+const openAIImageGenerationLabel = computed(() =>
+  translateWithFallback('admin.accounts.openai.imageGenerationEnabled', 'Allow image generation')
+)
+
+const openAIImageGenerationDescription = computed(() =>
+  translateWithFallback(
+    'admin.accounts.openai.imageGenerationEnabledDesc',
+    'Only affects actual image-generation routing. Text requests and image tool declarations are unchanged.'
+  )
 )
 const codexImageGenerationBridgeOptions = computed<Array<{
   value: CodexImageGenerationBridgeMode
@@ -3021,6 +3067,12 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   codexCLIOnlyEnabled.value = false
+  const legacyOpenAIImageGenerationEnabled = extra?.openai_image_generation_enabled
+  openaiImageGenerationEnabled.value = typeof newAccount.openai_image_generation_enabled === 'boolean'
+    ? newAccount.openai_image_generation_enabled
+    : typeof legacyOpenAIImageGenerationEnabled === 'boolean'
+      ? legacyOpenAIImageGenerationEnabled
+      : true
   codexImageGenerationBridgeMode.value = 'inherit'
   anthropicPassthroughEnabled.value = false
   webSearchEmulationMode.value = 'default'
@@ -4665,6 +4717,7 @@ const handleSubmit = async () => {
       }
       delete newExtra.responses_websockets_v2_enabled
       delete newExtra.openai_ws_enabled
+      newExtra.openai_image_generation_enabled = openaiImageGenerationEnabled.value
       if (openaiPassthroughEnabled.value) {
         newExtra.openai_passthrough = true
       } else {

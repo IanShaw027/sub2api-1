@@ -2,6 +2,7 @@ import { apiClient } from '../client'
 
 export type ModerationMode = 'off' | 'observe' | 'pre_block'
 export type KeywordBlockingMode = 'keyword_only' | 'keyword_and_api' | 'api_only'
+export type APIKeyRateLimitFailurePolicy = 'allow' | 'error'
 export type ContentModerationModelFilterType = 'all' | 'include' | 'exclude'
 
 export interface ContentModerationModelFilter {
@@ -19,6 +20,10 @@ export interface ContentModerationConfig {
   api_key_count: number
   api_key_masks: string[]
   api_key_statuses: ContentModerationAPIKeyStatus[]
+  api_key_rpm_limit: number
+  api_key_rpd_limit: number
+  api_key_tpm_limit: number
+  api_key_rate_limit_failure_policy: APIKeyRateLimitFailurePolicy
   timeout_ms: number
   sample_rate: number
   all_groups: boolean
@@ -63,6 +68,12 @@ export interface ContentModerationAPIKeyStatus {
   last_http_status: number
   last_tested: boolean
   configured: boolean
+  rpm_used: number
+  rpd_used: number
+  tpm_used: number
+  rpm_reset_at?: string
+  rpd_reset_at?: string
+  tpm_reset_at?: string
 }
 
 export interface ContentModerationAPIKeyAccountInput {
@@ -105,6 +116,10 @@ export interface UpdateContentModerationConfig {
   api_keys_mode?: 'append' | 'replace'
   delete_api_key_hashes?: string[]
   clear_api_key?: boolean
+  api_key_rpm_limit?: number
+  api_key_rpd_limit?: number
+  api_key_tpm_limit?: number
+  api_key_rate_limit_failure_policy?: APIKeyRateLimitFailurePolicy
   timeout_ms?: number
   sample_rate?: number
   all_groups?: boolean
@@ -177,6 +192,12 @@ export interface ContentModerationAPIKeyLoad {
   avg_latency_ms: number
   last_latency_ms: number
   last_http_status: number
+  rpm_used: number
+  rpd_used: number
+  tpm_used: number
+  rpm_reset_at?: string
+  rpd_reset_at?: string
+  tpm_reset_at?: string
 }
 
 export interface ContentModerationLog {

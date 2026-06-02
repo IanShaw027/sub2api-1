@@ -129,9 +129,11 @@
         :error="kiroOAuth.error.value"
         :initial-credentials="kiroCredentials"
         :initial-extra="kiroExtra"
+        :continuation="kiroOAuth.continuation.value"
         @generate-url="handleGenerateUrl"
         @submit="handleKiroReauthorize"
         @submit-refresh-token="handleKiroValidateRT"
+        @cancel-continuation="kiroOAuth.cancelDeviceAuthorization"
       />
 
       <OAuthAuthorizationFlow
