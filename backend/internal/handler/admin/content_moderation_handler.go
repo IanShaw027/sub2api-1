@@ -30,6 +30,10 @@ type contentModerationConfigRequest struct {
 	APIKeysMode             string                                         `json:"api_keys_mode"`
 	DeleteAPIKeyHashes      *[]string                                      `json:"delete_api_key_hashes"`
 	ClearAPIKey             bool                                           `json:"clear_api_key"`
+	APIKeyRPMLimit          *int                                           `json:"api_key_rpm_limit"`
+	APIKeyRPDLimit          *int                                           `json:"api_key_rpd_limit"`
+	APIKeyTPMLimit          *int                                           `json:"api_key_tpm_limit"`
+	APIKeyRateLimitPolicy   *string                                        `json:"api_key_rate_limit_failure_policy"`
 	TimeoutMS               *int                                           `json:"timeout_ms"`
 	SampleRate              *int                                           `json:"sample_rate"`
 	AllGroups               *bool                                          `json:"all_groups"`
@@ -96,6 +100,10 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		APIKeysMode:             req.APIKeysMode,
 		DeleteAPIKeyHashes:      req.DeleteAPIKeyHashes,
 		ClearAPIKey:             req.ClearAPIKey,
+		APIKeyRPMLimit:          req.APIKeyRPMLimit,
+		APIKeyRPDLimit:          req.APIKeyRPDLimit,
+		APIKeyTPMLimit:          req.APIKeyTPMLimit,
+		APIKeyRateLimitPolicy:   req.APIKeyRateLimitPolicy,
 		TimeoutMS:               req.TimeoutMS,
 		SampleRate:              req.SampleRate,
 		AllGroups:               req.AllGroups,

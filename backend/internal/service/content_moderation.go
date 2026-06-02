@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -44,6 +45,9 @@ const (
 	ContentModerationKeywordModeKeywordOnly   = "keyword_only"
 	ContentModerationKeywordModeKeywordAndAPI = "keyword_and_api"
 	ContentModerationKeywordModeAPIOnly       = "api_only"
+
+	ContentModerationRateLimitFailurePolicyAllow = "allow"
+	ContentModerationRateLimitFailurePolicyError = "error"
 
 	ContentModerationModelFilterAll     = "all"
 	ContentModerationModelFilterInclude = "include"
@@ -76,6 +80,11 @@ const (
 	defaultContentModerationNonHitRetentionDays  = 3
 	maxContentModerationRetentionDays            = 3650
 	maxContentModerationNonHitRetentionDays      = 3
+	defaultContentModerationAPIKeyRPMLimit       = 500
+	defaultContentModerationAPIKeyRPDLimit       = 10000
+	defaultContentModerationAPIKeyTPMLimit       = 10000
+	maxContentModerationAPIKeyRateLimit          = 1000000000
+	minContentModerationTokenEstimate            = 1
 	contentModerationKeyRateLimitFreezeDuration  = time.Minute
 	contentModerationKeyAuthFreezeDuration       = 10 * time.Minute
 	contentModerationKeyHTTPErrorFreezeDuration  = 10 * time.Second
@@ -141,6 +150,10 @@ type ContentModerationConfig struct {
 	APIKey                  string                            `json:"api_key,omitempty"`
 	APIKeys                 []string                          `json:"api_keys,omitempty"`
 	APIKeyMetadata          []ContentModerationAPIKeyMetadata `json:"api_key_metadata,omitempty"`
+	APIKeyRPMLimit          int                               `json:"api_key_rpm_limit"`
+	APIKeyRPDLimit          int                               `json:"api_key_rpd_limit"`
+	APIKeyTPMLimit          int                               `json:"api_key_tpm_limit"`
+	APIKeyRateLimitPolicy   string                            `json:"api_key_rate_limit_failure_policy"`
 	TimeoutMS               int                               `json:"timeout_ms"`
 	SampleRate              int                               `json:"sample_rate"`
 	AllGroups               bool                              `json:"all_groups"`
@@ -178,6 +191,10 @@ type ContentModerationConfigView struct {
 	APIKeyCount             int                             `json:"api_key_count"`
 	APIKeyMasks             []string                        `json:"api_key_masks"`
 	APIKeyStatuses          []ContentModerationAPIKeyStatus `json:"api_key_statuses"`
+	APIKeyRPMLimit          int                             `json:"api_key_rpm_limit"`
+	APIKeyRPDLimit          int                             `json:"api_key_rpd_limit"`
+	APIKeyTPMLimit          int                             `json:"api_key_tpm_limit"`
+	APIKeyRateLimitPolicy   string                          `json:"api_key_rate_limit_failure_policy"`
 	TimeoutMS               int                             `json:"timeout_ms"`
 	SampleRate              int                             `json:"sample_rate"`
 	AllGroups               bool                            `json:"all_groups"`
@@ -220,6 +237,12 @@ type ContentModerationAPIKeyStatus struct {
 	LastHTTPStatus int        `json:"last_http_status"`
 	LastTested     bool       `json:"last_tested"`
 	Configured     bool       `json:"configured"`
+	RPMUsed        int64      `json:"rpm_used"`
+	RPDUsed        int64      `json:"rpd_used"`
+	TPMUsed        int64      `json:"tpm_used"`
+	RPMResetAt     *time.Time `json:"rpm_reset_at,omitempty"`
+	RPDResetAt     *time.Time `json:"rpd_reset_at,omitempty"`
+	TPMResetAt     *time.Time `json:"tpm_reset_at,omitempty"`
 }
 
 type ContentModerationAPIKeyLoad struct {
@@ -245,6 +268,10 @@ type ContentModerationAPIKeyMetadata struct {
 type ContentModerationAPIKeyAccountInput struct {
 	APIKey       string `json:"api_key"`
 	AccountEmail string `json:"account_email"`
+}
+
+type contentModerationAPIKeyAdmission struct {
+	TokenEstimate int
 }
 
 type TestContentModerationAPIKeysInput struct {
@@ -282,6 +309,10 @@ type UpdateContentModerationConfigInput struct {
 	APIKeysMode             string                                 `json:"api_keys_mode"`
 	DeleteAPIKeyHashes      *[]string                              `json:"delete_api_key_hashes"`
 	ClearAPIKey             bool                                   `json:"clear_api_key"`
+	APIKeyRPMLimit          *int                                   `json:"api_key_rpm_limit"`
+	APIKeyRPDLimit          *int                                   `json:"api_key_rpd_limit"`
+	APIKeyTPMLimit          *int                                   `json:"api_key_tpm_limit"`
+	APIKeyRateLimitPolicy   *string                                `json:"api_key_rate_limit_failure_policy"`
 	TimeoutMS               *int                                   `json:"timeout_ms"`
 	SampleRate              *int                                   `json:"sample_rate"`
 	AllGroups               *bool                                  `json:"all_groups"`
@@ -498,6 +529,19 @@ type ContentModerationHashCache interface {
 	DeleteFlaggedInputHash(ctx context.Context, inputHash string) (bool, error)
 	ClearFlaggedInputHashes(ctx context.Context) (int64, error)
 	CountFlaggedInputHashes(ctx context.Context) (int64, error)
+	AdmitModerationAPIKeyQuota(ctx context.Context, keyHash string, rpmLimit int, rpdLimit int, tpmLimit int, tokenEstimate int) (*ContentModerationAPIKeyQuotaState, bool, error)
+	GetModerationAPIKeyQuotaState(ctx context.Context, keyHash string) (*ContentModerationAPIKeyQuotaState, error)
+}
+
+type ContentModerationAPIKeyQuotaState struct {
+	RPMUsed          int64
+	RPDUsed          int64
+	TPMUsed          int64
+	RPMResetAt       time.Time
+	RPDResetAt       time.Time
+	TPMResetAt       time.Time
+	FrozenUntil      time.Time
+	LastDeniedReason string
 }
 
 type ContentModerationService struct {
@@ -557,6 +601,36 @@ type contentModerationKeyHealth struct {
 	SyncSuccess    int64
 	SyncErrors     int64
 	SyncLatencyMS  int64
+	RPMWindowStart time.Time
+	RPDWindowStart time.Time
+	TPMWindowStart time.Time
+	RPMUsed        int64
+	RPDUsed        int64
+	TPMUsed        int64
+}
+
+type moderationAPIHTTPError struct {
+	StatusCode  int
+	Body        string
+	FreezeUntil time.Time
+}
+
+func (e *moderationAPIHTTPError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("moderation api status %d: %s", e.StatusCode, strings.TrimSpace(e.Body))
+}
+
+type moderationAPIKeyRateLimitError struct {
+	Message string
+}
+
+func (e *moderationAPIKeyRateLimitError) Error() string {
+	if e == nil || strings.TrimSpace(e.Message) == "" {
+		return "moderation api key rate limit exceeded"
+	}
+	return e.Message
 }
 
 func NewContentModerationService(
@@ -727,6 +801,18 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 			cfg.APIKey = ""
 		}
 	}
+	if input.APIKeyRPMLimit != nil {
+		cfg.APIKeyRPMLimit = *input.APIKeyRPMLimit
+	}
+	if input.APIKeyRPDLimit != nil {
+		cfg.APIKeyRPDLimit = *input.APIKeyRPDLimit
+	}
+	if input.APIKeyTPMLimit != nil {
+		cfg.APIKeyTPMLimit = *input.APIKeyTPMLimit
+	}
+	if input.APIKeyRateLimitPolicy != nil {
+		cfg.APIKeyRateLimitPolicy = *input.APIKeyRateLimitPolicy
+	}
 	if err := s.validateConfig(ctx, cfg); err != nil {
 		return nil, err
 	}
@@ -766,9 +852,11 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 	if err != nil {
 		return nil, err
 	}
+	admission := contentModerationAPIKeyAdmission{TokenEstimate: estimateModerationTokenUsage(testInput)}
 	auditOnly := contentModerationTestHasAuditInput(input.Prompt, input.Images)
+	preReservedKeyHashes := map[string]struct{}{}
 	if configured && auditOnly {
-		key, ok := s.nextUsableAPIKey(cfg)
+		key, ok := s.nextUsableAPIKey(cfg, admission)
 		if !ok {
 			return &TestContentModerationAPIKeysResult{
 				Items:      s.apiKeyStatusesForConfig(cfg),
@@ -776,6 +864,7 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 			}, nil
 		}
 		keys = []string{key}
+		preReservedKeyHashes[moderationAPIKeyHash(key)] = struct{}{}
 	}
 	if len(keys) == 0 {
 		return &TestContentModerationAPIKeysResult{Items: []ContentModerationAPIKeyStatus{}, ImageCount: imageCount}, nil
@@ -783,13 +872,20 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 	items := make([]ContentModerationAPIKeyStatus, 0, len(keys))
 	var auditResult *ContentModerationTestAuditResult
 	for idx, key := range keys {
+		keyHash := moderationAPIKeyHash(key)
+		if _, ok := preReservedKeyHashes[keyHash]; !ok {
+			now := time.Now()
+			if s.isAPIKeyFrozen(key, now) || !s.reserveModerationAPIKeyQuota(key, cfg, admission, now) {
+				items = append(items, s.apiKeyStatusForHash(idx, keyHash, maskSecretTail(key), cfg.apiKeyEmailByHash()[keyHash], configured))
+				continue
+			}
+		}
 		start := time.Now()
 		httpStatus := 0
 		result, err := s.callModerationOnceWithInput(ctx, cfg, key, testInput, &httpStatus)
 		latency := int(time.Since(start).Milliseconds())
-		keyHash := moderationAPIKeyHash(key)
 		if err != nil {
-			s.markAPIKeyError(key, err.Error(), latency, httpStatus)
+			s.markAPIKeyError(key, err, latency, httpStatus)
 		} else {
 			s.markAPIKeySuccess(key, latency, httpStatus)
 			if auditResult == nil {
@@ -1062,9 +1158,22 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		if queueDelay != nil {
 			s.asyncErrors.Add(1)
 		}
-		if cfg.RecordNonHits {
+		failClosed := allowBlock && cfg.Mode == ContentModerationModePreBlock
+		if failClosed && isModerationRateLimitError(err) && cfg.APIKeyRateLimitPolicy == ContentModerationRateLimitFailurePolicyAllow {
+			failClosed = false
+		}
+		if cfg.RecordNonHits || failClosed {
 			log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, content.ExcerptText(), &latency, queueDelay, err.Error())
 			_ = s.repo.CreateLog(ctx, log)
+		}
+		if failClosed {
+			return &ContentModerationDecision{
+				Allowed:    false,
+				Blocked:    true,
+				Message:    cfg.BlockMessage,
+				StatusCode: cfg.BlockStatus,
+				Action:     ContentModerationActionError,
+			}
 		}
 		return allow
 	}
@@ -1430,7 +1539,7 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		PreBlockErrors:               s.preBlockErrors.Load(),
 		PreBlockAvgLatencyMS:         preBlockAvgLatency,
 		PreBlockAPIKeyActive:         s.preBlockAPIKeyActive(cfg.apiKeys()),
-		PreBlockAPIKeyAvailableCount: s.preBlockAPIKeyAvailableCount(cfg.apiKeys()),
+		PreBlockAPIKeyAvailableCount: s.preBlockAPIKeyAvailableCountForConfig(cfg),
 		PreBlockAPIKeyTotalCalls:     s.preBlockAPIKeyTotalCalls(cfg.apiKeys()),
 		PreBlockAPIKeyLoads:          s.preBlockAPIKeyLoadsForConfig(cfg),
 		APIKeyStatuses:               s.apiKeyStatusesForConfig(cfg),
@@ -1545,11 +1654,12 @@ func (s *ContentModerationService) callModeration(ctx context.Context, cfg *Cont
 		attempts = maxContentModerationRetryCount + 1
 	}
 	trackLoad := len(trackKeyLoad) > 0 && trackKeyLoad[0]
+	admission := contentModerationAPIKeyAdmission{TokenEstimate: estimateModerationTokenUsage(input)}
 	var lastErr error
 	for attempt := 0; attempt < attempts; attempt++ {
-		key, ok := s.nextUsableAPIKey(cfg)
+		key, ok := s.nextUsableAPIKey(cfg, admission)
 		if !ok {
-			lastErr = errors.New("no moderation api key available")
+			lastErr = &moderationAPIKeyRateLimitError{Message: "no moderation api key available"}
 			break
 		}
 		if trackLoad {
@@ -1569,7 +1679,7 @@ func (s *ContentModerationService) callModeration(ctx context.Context, cfg *Cont
 		if trackLoad {
 			s.finishModerationAPIKeyCall(key, latency, false)
 		}
-		s.markAPIKeyError(key, err.Error(), latency, httpStatus)
+		s.markAPIKeyError(key, err, latency, httpStatus)
 		lastErr = err
 		if httpStatus == http.StatusBadRequest {
 			break
@@ -1627,7 +1737,11 @@ func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Conte
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("moderation api status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, &moderationAPIHTTPError{
+			StatusCode:  resp.StatusCode,
+			Body:        string(body),
+			FreezeUntil: parseRetryAfter(resp.Header.Get("Retry-After"), time.Now()),
+		}
 	}
 	var out moderationAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -1890,6 +2004,10 @@ func defaultContentModerationConfig() *ContentModerationConfig {
 		Mode:                    ContentModerationModePreBlock,
 		BaseURL:                 defaultContentModerationBaseURL,
 		Model:                   defaultContentModerationModel,
+		APIKeyRPMLimit:          defaultContentModerationAPIKeyRPMLimit,
+		APIKeyRPDLimit:          defaultContentModerationAPIKeyRPDLimit,
+		APIKeyTPMLimit:          defaultContentModerationAPIKeyTPMLimit,
+		APIKeyRateLimitPolicy:   ContentModerationRateLimitFailurePolicyError,
 		TimeoutMS:               defaultContentModerationTimeoutMS,
 		SampleRate:              100,
 		AllGroups:               true,
@@ -1971,6 +2089,25 @@ func (cfg *ContentModerationConfig) normalize() {
 	if cfg.SampleRate > 100 {
 		cfg.SampleRate = 100
 	}
+	if cfg.APIKeyRPMLimit <= 0 {
+		cfg.APIKeyRPMLimit = defaultContentModerationAPIKeyRPMLimit
+	}
+	if cfg.APIKeyRPMLimit > maxContentModerationAPIKeyRateLimit {
+		cfg.APIKeyRPMLimit = maxContentModerationAPIKeyRateLimit
+	}
+	if cfg.APIKeyRPDLimit <= 0 {
+		cfg.APIKeyRPDLimit = defaultContentModerationAPIKeyRPDLimit
+	}
+	if cfg.APIKeyRPDLimit > maxContentModerationAPIKeyRateLimit {
+		cfg.APIKeyRPDLimit = maxContentModerationAPIKeyRateLimit
+	}
+	if cfg.APIKeyTPMLimit <= 0 {
+		cfg.APIKeyTPMLimit = defaultContentModerationAPIKeyTPMLimit
+	}
+	if cfg.APIKeyTPMLimit > maxContentModerationAPIKeyRateLimit {
+		cfg.APIKeyTPMLimit = maxContentModerationAPIKeyRateLimit
+	}
+	cfg.APIKeyRateLimitPolicy = normalizeContentModerationRateLimitPolicy(cfg.APIKeyRateLimitPolicy)
 	if cfg.AttentionThreshold < 0 {
 		cfg.AttentionThreshold = 0
 	}
@@ -2103,20 +2240,102 @@ func (cfg *ContentModerationConfig) apiKeyEmailByHash() map[string]string {
 	return out
 }
 
-func (s *ContentModerationService) nextUsableAPIKey(cfg *ContentModerationConfig) (string, bool) {
+func (s *ContentModerationService) nextUsableAPIKey(cfg *ContentModerationConfig, admissions ...contentModerationAPIKeyAdmission) (string, bool) {
 	keys := cfg.apiKeys()
 	if len(keys) == 0 {
 		return "", false
 	}
 	now := time.Now()
+	admission := contentModerationAPIKeyAdmission{}
+	if len(admissions) > 0 {
+		admission = admissions[0]
+	}
 	for i := 0; i < len(keys); i++ {
 		idx := int(s.apiKeyCursor.Add(1)-1) % len(keys)
 		key := keys[idx]
-		if !s.isAPIKeyFrozen(key, now) {
+		if !s.isAPIKeyFrozen(key, now) && s.reserveModerationAPIKeyQuota(key, cfg, admission, now) {
 			return key, true
 		}
 	}
 	return "", false
+}
+
+func (s *ContentModerationService) reserveModerationAPIKeyQuota(key string, cfg *ContentModerationConfig, admission contentModerationAPIKeyAdmission, now time.Time) bool {
+	hash := moderationAPIKeyHash(key)
+	if hash == "" || s == nil || cfg == nil {
+		return false
+	}
+	tokenEstimate := admission.TokenEstimate
+	if tokenEstimate < minContentModerationTokenEstimate {
+		tokenEstimate = minContentModerationTokenEstimate
+	}
+	if s.hashCache != nil {
+		state, admitted, err := s.hashCache.AdmitModerationAPIKeyQuota(context.Background(), hash, cfg.APIKeyRPMLimit, cfg.APIKeyRPDLimit, cfg.APIKeyTPMLimit, tokenEstimate)
+		if err == nil && state != nil {
+			s.mergePersistentQuotaState(key, state)
+			return admitted
+		}
+		if err != nil {
+			slog.Warn("content_moderation.api_key_quota_admit_failed", "key_hash", hash, "error", err)
+		}
+	}
+	s.keyHealthMu.Lock()
+	defer s.keyHealthMu.Unlock()
+	state := s.ensureAPIKeyHealthLocked(hash, maskSecretTail(key))
+	resetAPIKeyRateLimitWindowsLocked(state, now)
+	if limitExceeded(cfg.APIKeyRPMLimit, state.RPMUsed+1) {
+		freezeAPIKeyForLocalLimit(state, "RPM", state.RPMWindowStart.Add(time.Minute), now)
+		return false
+	}
+	if limitExceeded(cfg.APIKeyRPDLimit, state.RPDUsed+1) {
+		freezeAPIKeyForLocalLimit(state, "RPD", state.RPDWindowStart.Add(24*time.Hour), now)
+		return false
+	}
+	if limitExceeded(cfg.APIKeyTPMLimit, state.TPMUsed+int64(tokenEstimate)) {
+		freezeAPIKeyForLocalLimit(state, "TPM", state.TPMWindowStart.Add(time.Minute), now)
+		return false
+	}
+	state.RPMUsed++
+	state.RPDUsed++
+	state.TPMUsed += int64(tokenEstimate)
+	return true
+}
+
+func limitExceeded(limit int, used int64) bool {
+	return limit > 0 && used > int64(limit)
+}
+
+func resetAPIKeyRateLimitWindowsLocked(state *contentModerationKeyHealth, now time.Time) {
+	if state == nil {
+		return
+	}
+	if state.RPMWindowStart.IsZero() || now.Sub(state.RPMWindowStart) >= time.Minute {
+		state.RPMWindowStart = now
+		state.RPMUsed = 0
+	}
+	if state.RPDWindowStart.IsZero() || now.Sub(state.RPDWindowStart) >= 24*time.Hour {
+		state.RPDWindowStart = now
+		state.RPDUsed = 0
+	}
+	if state.TPMWindowStart.IsZero() || now.Sub(state.TPMWindowStart) >= time.Minute {
+		state.TPMWindowStart = now
+		state.TPMUsed = 0
+	}
+}
+
+func freezeAPIKeyForLocalLimit(state *contentModerationKeyHealth, dimension string, resetAt time.Time, now time.Time) {
+	if state == nil {
+		return
+	}
+	if !resetAt.After(now) {
+		resetAt = now.Add(contentModerationKeyRateLimitFreezeDuration)
+	}
+	state.FailureCount++
+	state.LastError = fmt.Sprintf("local moderation api key %s limit exceeded", dimension)
+	state.LastCheckedAt = now
+	state.LastHTTPStatus = http.StatusTooManyRequests
+	state.LastTested = true
+	state.FrozenUntil = resetAt
 }
 
 func (s *ContentModerationService) isAPIKeyFrozen(key string, now time.Time) bool {
@@ -2182,10 +2401,14 @@ func (s *ContentModerationService) markAPIKeySuccess(key string, latencyMS int, 
 	state.LastTested = true
 }
 
-func (s *ContentModerationService) markAPIKeyError(key string, errText string, latencyMS int, httpStatus int) {
+func (s *ContentModerationService) markAPIKeyError(key string, err error, latencyMS int, httpStatus int) {
 	hash := moderationAPIKeyHash(key)
 	if hash == "" || s == nil {
 		return
+	}
+	errText := ""
+	if err != nil {
+		errText = err.Error()
 	}
 	s.keyHealthMu.Lock()
 	defer s.keyHealthMu.Unlock()
@@ -2198,6 +2421,11 @@ func (s *ContentModerationService) markAPIKeyError(key string, errText string, l
 	state.LastLatencyMS = latencyMS
 	state.LastHTTPStatus = httpStatus
 	state.LastTested = true
+	var httpErr *moderationAPIHTTPError
+	if errors.As(err, &httpErr) && httpErr.FreezeUntil.After(time.Now()) {
+		state.FrozenUntil = httpErr.FreezeUntil
+		return
+	}
 	if freezeDuration := contentModerationFreezeDurationForHTTPStatus(httpStatus); freezeDuration > 0 {
 		state.FrozenUntil = time.Now().Add(freezeDuration)
 	}
@@ -2213,6 +2441,80 @@ func contentModerationFreezeDurationForHTTPStatus(httpStatus int) time.Duration 
 		return contentModerationKeyRateLimitFreezeDuration
 	default:
 		return contentModerationKeyHTTPErrorFreezeDuration
+	}
+}
+
+func isModerationRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var keyLimitErr *moderationAPIKeyRateLimitError
+	if errors.As(err, &keyLimitErr) {
+		return true
+	}
+	var httpErr *moderationAPIHTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode == http.StatusTooManyRequests || httpErr.StatusCode == 529
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "no moderation api key available")
+}
+
+func parseRetryAfter(value string, now time.Time) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+	if seconds, err := strconv.ParseFloat(value, 64); err == nil && seconds > 0 {
+		return now.Add(time.Duration(seconds * float64(time.Second)))
+	}
+	if t, err := http.ParseTime(value); err == nil && t.After(now) {
+		return t
+	}
+	return time.Time{}
+}
+
+func (s *ContentModerationService) loadPersistentQuotaState(hash string) *ContentModerationAPIKeyQuotaState {
+	if s == nil || s.hashCache == nil || strings.TrimSpace(hash) == "" {
+		return nil
+	}
+	state, err := s.hashCache.GetModerationAPIKeyQuotaState(context.Background(), hash)
+	if err != nil {
+		slog.Warn("content_moderation.api_key_quota_state_load_failed", "key_hash", hash, "error", err)
+		return nil
+	}
+	return state
+}
+
+func (s *ContentModerationService) mergePersistentQuotaState(key string, quotaState *ContentModerationAPIKeyQuotaState) {
+	if s == nil || quotaState == nil {
+		return
+	}
+	hash := moderationAPIKeyHash(key)
+	if hash == "" {
+		return
+	}
+	s.keyHealthMu.Lock()
+	defer s.keyHealthMu.Unlock()
+	state := s.ensureAPIKeyHealthLocked(hash, maskSecretTail(key))
+	state.RPMUsed = quotaState.RPMUsed
+	state.RPDUsed = quotaState.RPDUsed
+	state.TPMUsed = quotaState.TPMUsed
+	if !quotaState.RPMResetAt.IsZero() {
+		state.RPMWindowStart = quotaState.RPMResetAt.Add(-time.Minute)
+	}
+	if !quotaState.RPDResetAt.IsZero() {
+		state.RPDWindowStart = quotaState.RPDResetAt.Add(-24 * time.Hour)
+	}
+	if !quotaState.TPMResetAt.IsZero() {
+		state.TPMWindowStart = quotaState.TPMResetAt.Add(-time.Minute)
+	}
+	if quotaState.FrozenUntil.After(time.Now()) {
+		state.FrozenUntil = quotaState.FrozenUntil
+		state.LastHTTPStatus = http.StatusTooManyRequests
+		state.LastTested = true
+		if quotaState.LastDeniedReason != "" {
+			state.LastError = fmt.Sprintf("local moderation api key %s limit exceeded", quotaState.LastDeniedReason)
+		}
 	}
 }
 
@@ -2251,6 +2553,10 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		APIKeyCount:             len(keys),
 		APIKeyMasks:             masks,
 		APIKeyStatuses:          s.apiKeyStatusesForConfig(cfg),
+		APIKeyRPMLimit:          cfg.APIKeyRPMLimit,
+		APIKeyRPDLimit:          cfg.APIKeyRPDLimit,
+		APIKeyTPMLimit:          cfg.APIKeyTPMLimit,
+		APIKeyRateLimitPolicy:   cfg.APIKeyRateLimitPolicy,
 		TimeoutMS:               cfg.TimeoutMS,
 		SampleRate:              cfg.SampleRate,
 		AllGroups:               cfg.AllGroups,
@@ -2327,15 +2633,35 @@ func (s *ContentModerationService) preBlockAPIKeyActive(keys []string) int64 {
 	return total
 }
 
-func (s *ContentModerationService) preBlockAPIKeyAvailableCount(keys []string) int64 {
-	now := time.Now()
+func (s *ContentModerationService) preBlockAPIKeyAvailableCountForConfig(cfg *ContentModerationConfig) int64 {
+	if cfg == nil {
+		return 0
+	}
+	keys := cfg.apiKeys()
 	var count int64
-	for _, key := range keys {
-		if !s.isAPIKeyFrozen(key, now) {
+	for idx, key := range keys {
+		status := s.apiKeyStatusForHash(idx, moderationAPIKeyHash(key), maskSecretTail(key), "", true)
+		if contentModerationAPIKeyHasRemainingQuota(status, cfg) {
 			count++
 		}
 	}
 	return count
+}
+
+func contentModerationAPIKeyHasRemainingQuota(status ContentModerationAPIKeyStatus, cfg *ContentModerationConfig) bool {
+	if cfg == nil || status.Status == "frozen" {
+		return false
+	}
+	if cfg.APIKeyRPMLimit > 0 && status.RPMUsed >= int64(cfg.APIKeyRPMLimit) {
+		return false
+	}
+	if cfg.APIKeyRPDLimit > 0 && status.RPDUsed >= int64(cfg.APIKeyRPDLimit) {
+		return false
+	}
+	if cfg.APIKeyTPMLimit > 0 && status.TPMUsed >= int64(cfg.APIKeyTPMLimit) {
+		return false
+	}
+	return true
 }
 
 func (s *ContentModerationService) preBlockAPIKeyTotalCalls(keys []string) int64 {
@@ -2389,34 +2715,80 @@ func (s *ContentModerationService) apiKeyStatusForHash(index int, hash string, m
 	if hash == "" || s == nil {
 		return status
 	}
+	persistentQuotaState := s.loadPersistentQuotaState(hash)
 	now := time.Now()
 	s.keyHealthMu.Lock()
 	defer s.keyHealthMu.Unlock()
 	state := s.keyHealth[hash]
-	if state == nil {
+	if state == nil && persistentQuotaState == nil {
 		return status
 	}
-	status.FailureCount = state.FailureCount
-	status.SuccessCount = state.SuccessCount
-	status.LastError = state.LastError
-	status.LastLatencyMS = state.LastLatencyMS
-	status.LastHTTPStatus = state.LastHTTPStatus
-	status.LastTested = state.LastTested
-	if !state.LastCheckedAt.IsZero() {
-		t := state.LastCheckedAt
-		status.LastCheckedAt = &t
+	if state != nil {
+		status.FailureCount = state.FailureCount
+		status.SuccessCount = state.SuccessCount
+		status.LastError = state.LastError
+		status.LastLatencyMS = state.LastLatencyMS
+		status.LastHTTPStatus = state.LastHTTPStatus
+		status.LastTested = state.LastTested
+		resetAPIKeyRateLimitWindowsLocked(state, now)
+		status.RPMUsed = state.RPMUsed
+		status.RPDUsed = state.RPDUsed
+		status.TPMUsed = state.TPMUsed
+		if !state.RPMWindowStart.IsZero() {
+			t := state.RPMWindowStart.Add(time.Minute)
+			status.RPMResetAt = &t
+		}
+		if !state.RPDWindowStart.IsZero() {
+			t := state.RPDWindowStart.Add(24 * time.Hour)
+			status.RPDResetAt = &t
+		}
+		if !state.TPMWindowStart.IsZero() {
+			t := state.TPMWindowStart.Add(time.Minute)
+			status.TPMResetAt = &t
+		}
+		if !state.LastCheckedAt.IsZero() {
+			t := state.LastCheckedAt
+			status.LastCheckedAt = &t
+		}
+		if state.FrozenUntil.After(now) {
+			t := state.FrozenUntil
+			status.FrozenUntil = &t
+			status.Status = "frozen"
+		}
 	}
-	if state.FrozenUntil.After(now) {
-		t := state.FrozenUntil
-		status.FrozenUntil = &t
-		status.Status = "frozen"
+	if persistentQuotaState != nil {
+		status.RPMUsed = persistentQuotaState.RPMUsed
+		status.RPDUsed = persistentQuotaState.RPDUsed
+		status.TPMUsed = persistentQuotaState.TPMUsed
+		if !persistentQuotaState.RPMResetAt.IsZero() {
+			t := persistentQuotaState.RPMResetAt
+			status.RPMResetAt = &t
+		}
+		if !persistentQuotaState.RPDResetAt.IsZero() {
+			t := persistentQuotaState.RPDResetAt
+			status.RPDResetAt = &t
+		}
+		if !persistentQuotaState.TPMResetAt.IsZero() {
+			t := persistentQuotaState.TPMResetAt
+			status.TPMResetAt = &t
+		}
+		if persistentQuotaState.FrozenUntil.After(now) {
+			t := persistentQuotaState.FrozenUntil
+			status.FrozenUntil = &t
+			status.Status = "frozen"
+			if status.LastError == "" && persistentQuotaState.LastDeniedReason != "" {
+				status.LastError = fmt.Sprintf("local moderation api key %s limit exceeded", persistentQuotaState.LastDeniedReason)
+			}
+		}
+	}
+	if status.Status == "frozen" {
 		return status
 	}
-	if state.LastError != "" {
+	if status.LastError != "" {
 		status.Status = "error"
 		return status
 	}
-	if state.SuccessCount > 0 || state.LastTested {
+	if status.SuccessCount > 0 || status.LastTested || status.RPMUsed > 0 || status.RPDUsed > 0 || status.TPMUsed > 0 {
 		status.Status = "ok"
 	}
 	return status
@@ -2429,6 +2801,46 @@ func moderationAPIKeyHash(key string) string {
 	}
 	sum := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(sum[:])
+}
+
+func normalizeContentModerationRateLimitPolicy(value string) string {
+	switch strings.TrimSpace(value) {
+	case ContentModerationRateLimitFailurePolicyAllow:
+		return ContentModerationRateLimitFailurePolicyAllow
+	default:
+		return ContentModerationRateLimitFailurePolicyError
+	}
+}
+
+func estimateModerationTokenUsage(input any) int {
+	var text string
+	switch v := input.(type) {
+	case string:
+		text = v
+	case []moderationAPIInputPart:
+		var b strings.Builder
+		for _, part := range v {
+			if part.Type == "text" {
+				b.WriteString(part.Text)
+				b.WriteByte('\n')
+			} else if part.Type == "image_url" {
+				b.WriteString(" image ")
+			}
+		}
+		text = b.String()
+	default:
+		raw, _ := json.Marshal(v)
+		text = string(raw)
+	}
+	runes := len([]rune(text))
+	if runes <= 0 {
+		return minContentModerationTokenEstimate
+	}
+	estimate := (runes + 3) / 4
+	if estimate < minContentModerationTokenEstimate {
+		return minContentModerationTokenEstimate
+	}
+	return estimate
 }
 
 func buildModerationTestInput(prompt string, images []string) (any, int, error) {

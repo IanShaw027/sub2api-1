@@ -248,8 +248,10 @@ func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) (
 		where = append(where, "l.flagged = TRUE")
 	case "blocked", "block":
 		where = append(where, "l.action IN ('block', 'keyword_block', 'hash_block')")
+	case "attention":
+		where = append(where, "l.action = 'attention'")
 	case "pass", "allow":
-		where = append(where, "l.flagged = FALSE AND l.error = ''")
+		where = append(where, "l.flagged = FALSE AND l.error = '' AND l.action <> 'attention'")
 	case "error":
 		where = append(where, "l.error <> ''")
 	}

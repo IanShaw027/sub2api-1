@@ -148,6 +148,7 @@ type contentModerationTestHashCache struct {
 	deleted       []string
 	hasResult     bool
 	hasResultUsed bool
+	quotaState    map[string]ContentModerationAPIKeyQuotaState
 }
 
 type contentModerationTestUserRepo struct {
@@ -339,6 +340,88 @@ func (c *contentModerationTestHashCache) CountFlaggedInputHashes(ctx context.Con
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return int64(len(c.hashes)), nil
+}
+
+func (c *contentModerationTestHashCache) AdmitModerationAPIKeyQuota(ctx context.Context, keyHash string, rpmLimit int, rpdLimit int, tpmLimit int, tokenEstimate int) (*ContentModerationAPIKeyQuotaState, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.quotaState == nil {
+		c.quotaState = map[string]ContentModerationAPIKeyQuotaState{}
+	}
+	state := c.quotaState[keyHash]
+	now := time.Now()
+	if state.RPMResetAt.IsZero() || !state.RPMResetAt.After(now) {
+		state.RPMUsed = 0
+		state.RPMResetAt = now.Add(time.Minute)
+	}
+	if state.RPDResetAt.IsZero() || !state.RPDResetAt.After(now) {
+		state.RPDUsed = 0
+		state.RPDResetAt = now.Add(24 * time.Hour)
+	}
+	if state.TPMResetAt.IsZero() || !state.TPMResetAt.After(now) {
+		state.TPMUsed = 0
+		state.TPMResetAt = now.Add(time.Minute)
+	}
+	if tokenEstimate <= 0 {
+		tokenEstimate = 1
+	}
+	if rpmLimit > 0 && state.RPMUsed+1 > int64(rpmLimit) {
+		state.FrozenUntil = state.RPMResetAt
+		state.LastDeniedReason = "RPM"
+		c.quotaState[keyHash] = state
+		copyState := state
+		return &copyState, false, nil
+	}
+	if rpdLimit > 0 && state.RPDUsed+1 > int64(rpdLimit) {
+		state.FrozenUntil = state.RPDResetAt
+		state.LastDeniedReason = "RPD"
+		c.quotaState[keyHash] = state
+		copyState := state
+		return &copyState, false, nil
+	}
+	if tpmLimit > 0 && state.TPMUsed+int64(tokenEstimate) > int64(tpmLimit) {
+		state.FrozenUntil = state.TPMResetAt
+		state.LastDeniedReason = "TPM"
+		c.quotaState[keyHash] = state
+		copyState := state
+		return &copyState, false, nil
+	}
+	state.RPMUsed++
+	state.RPDUsed++
+	state.TPMUsed += int64(tokenEstimate)
+	state.FrozenUntil = time.Time{}
+	state.LastDeniedReason = ""
+	c.quotaState[keyHash] = state
+	copyState := state
+	return &copyState, true, nil
+}
+
+func (c *contentModerationTestHashCache) GetModerationAPIKeyQuotaState(ctx context.Context, keyHash string) (*ContentModerationAPIKeyQuotaState, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.quotaState == nil {
+		return nil, nil
+	}
+	state, ok := c.quotaState[keyHash]
+	if !ok {
+		return nil, nil
+	}
+	now := time.Now()
+	if !state.RPMResetAt.After(now) {
+		state.RPMUsed = 0
+	}
+	if !state.RPDResetAt.After(now) {
+		state.RPDUsed = 0
+	}
+	if !state.TPMResetAt.After(now) {
+		state.TPMUsed = 0
+	}
+	if !state.FrozenUntil.After(now) {
+		state.FrozenUntil = time.Time{}
+		state.LastDeniedReason = ""
+	}
+	copyState := state
+	return &copyState, nil
 }
 
 func (c *contentModerationTestHashCache) snapshotRecorded() []string {
@@ -612,6 +695,106 @@ func TestContentModerationCheck_AttentionThresholdRecordsNonHit(t *testing.T) {
 	require.False(t, logs[0].Flagged)
 	require.Equal(t, ContentModerationActionAttention, logs[0].Action)
 	require.Equal(t, 0.5, logs[0].HighestScore)
+}
+
+func TestContentModerationCheck_PreBlockAuditFailureBlocksAfterRetries(t *testing.T) {
+	var attempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		http.Error(w, `{"error":{"message":"Too Many Requests"}}`, http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test-1", "sk-test-2", "sk-test-3"}
+	cfg.RetryCount = 2
+	cfg.RecordNonHits = false
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:    1002,
+		UserEmail: "risk@example.com",
+		Endpoint:  "/v1/chat/completions",
+		Protocol:  ContentModerationProtocolOpenAIChat,
+		Body:      []byte(`{"messages":[{"role":"user","content":"prompt that must be audited"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 3, attempts)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.NotEmpty(t, logs[0].Error)
+}
+
+func TestContentModerationCheck_PreBlockRateLimitFailureCanAllow(t *testing.T) {
+	var attempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"Too Many Requests"}}`))
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test-1"}
+	cfg.RetryCount = 0
+	cfg.RecordNonHits = false
+	cfg.APIKeyRateLimitPolicy = ContentModerationRateLimitFailurePolicyAllow
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:    1002,
+		UserEmail: "risk@example.com",
+		Endpoint:  "/v1/chat/completions",
+		Protocol:  ContentModerationProtocolOpenAIChat,
+		Body:      []byte(`{"messages":[{"role":"user","content":"prompt that must be audited"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, attempts)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	require.Empty(t, repo.logs)
 }
 
 func TestContentModerationCheck_AutoBanExemptUserStillBlocksWithoutDisabling(t *testing.T) {
@@ -927,6 +1110,231 @@ func TestContentModerationUpdateConfig_AppendsAPIKeyAccountEmails(t *testing.T) 
 		moderationAPIKeyHash("sk-old-b"): "old-b-updated@example.com",
 		moderationAPIKeyHash("sk-new-c"): "new-c@example.com",
 	}, saved.apiKeyEmailByHash())
+}
+
+func TestContentModerationConfig_DefaultsToTier1ModerationRateLimits(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.normalize()
+
+	require.Equal(t, 500, cfg.APIKeyRPMLimit)
+	require.Equal(t, 10000, cfg.APIKeyRPDLimit)
+	require.Equal(t, 10000, cfg.APIKeyTPMLimit)
+}
+
+func TestContentModerationUpdateConfig_SavesModerationAPIKeyRateLimits(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyContentModerationConfig: string(rawCfg),
+	}}
+	svc := NewContentModerationService(repo, nil, nil, nil, nil, nil, nil)
+	rpmLimit := 250
+	rpdLimit := 5000
+	tpmLimit := 7500
+	rateLimitPolicy := ContentModerationRateLimitFailurePolicyAllow
+
+	view, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
+		APIKeyRPMLimit:        &rpmLimit,
+		APIKeyRPDLimit:        &rpdLimit,
+		APIKeyTPMLimit:        &tpmLimit,
+		APIKeyRateLimitPolicy: &rateLimitPolicy,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, rpmLimit, view.APIKeyRPMLimit)
+	require.Equal(t, rpdLimit, view.APIKeyRPDLimit)
+	require.Equal(t, tpmLimit, view.APIKeyTPMLimit)
+	require.Equal(t, rateLimitPolicy, view.APIKeyRateLimitPolicy)
+
+	var saved ContentModerationConfig
+	require.NoError(t, json.Unmarshal([]byte(repo.values[SettingKeyContentModerationConfig]), &saved))
+	require.Equal(t, rpmLimit, saved.APIKeyRPMLimit)
+	require.Equal(t, rpdLimit, saved.APIKeyRPDLimit)
+	require.Equal(t, tpmLimit, saved.APIKeyTPMLimit)
+	require.Equal(t, rateLimitPolicy, saved.APIKeyRateLimitPolicy)
+}
+
+func TestContentModerationCallModeration_PreventsRequestsPastLocalRPM(t *testing.T) {
+	var upstreamCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"flagged":false,"category_scores":{"harassment":0.01}}]}`))
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-local-limit"}
+	cfg.APIKeyRPMLimit = 1
+	cfg.APIKeyRPDLimit = 100
+	cfg.APIKeyTPMLimit = 100
+	cfg.RetryCount = 0
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{}}, nil, nil, nil, nil, nil, nil)
+
+	_, err := svc.callModeration(context.Background(), cfg, "hello", true)
+	require.NoError(t, err)
+	_, err = svc.callModeration(context.Background(), cfg, "hello", true)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no moderation api key available")
+	require.Equal(t, 1, upstreamCalls)
+	status := svc.apiKeyStatusForHash(0, moderationAPIKeyHash("sk-local-limit"), maskSecretTail("sk-local-limit"), "", true)
+	require.Equal(t, "frozen", status.Status)
+	require.Contains(t, status.LastError, "local moderation api key RPM limit exceeded")
+	require.NotNil(t, status.FrozenUntil)
+	require.LessOrEqual(t, time.Until(*status.FrozenUntil), time.Minute)
+}
+
+func TestContentModerationCallModeration_PreventsRequestsPastLocalTPM(t *testing.T) {
+	var upstreamCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"flagged":false,"category_scores":{"harassment":0.01}}]}`))
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-local-tpm"}
+	cfg.APIKeyRPMLimit = 100
+	cfg.APIKeyRPDLimit = 100
+	cfg.APIKeyTPMLimit = 1
+	cfg.RetryCount = 0
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{}}, nil, nil, nil, nil, nil, nil)
+
+	_, err := svc.callModeration(context.Background(), cfg, "hello world", true)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no moderation api key available")
+	require.Equal(t, 0, upstreamCalls)
+	status := svc.apiKeyStatusForHash(0, moderationAPIKeyHash("sk-local-tpm"), maskSecretTail("sk-local-tpm"), "", true)
+	require.Equal(t, "frozen", status.Status)
+	require.Contains(t, status.LastError, "local moderation api key TPM limit exceeded")
+}
+
+func TestContentModerationCallModeration_PersistsLocalRPMAcrossServiceInstances(t *testing.T) {
+	var upstreamCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"flagged":false,"category_scores":{"harassment":0.01}}]}`))
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-shared-limit"}
+	cfg.APIKeyRPMLimit = 1
+	cfg.APIKeyRPDLimit = 100
+	cfg.APIKeyTPMLimit = 100
+	cfg.RetryCount = 0
+
+	sharedCache := &contentModerationTestHashCache{}
+	svc1 := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{}}, nil, sharedCache, nil, nil, nil, nil)
+	_, err := svc1.callModeration(context.Background(), cfg, "hello", true)
+	require.NoError(t, err)
+	require.Equal(t, 1, upstreamCalls)
+
+	svc2 := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{}}, nil, sharedCache, nil, nil, nil, nil)
+	_, err = svc2.callModeration(context.Background(), cfg, "hello", true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no moderation api key available")
+	require.Equal(t, 1, upstreamCalls)
+}
+
+func TestContentModerationPreBlockAPIKeyAvailableCount_UsesPersistentQuotaState(t *testing.T) {
+	var upstreamCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"flagged":false,"category_scores":{"harassment":0.01}}]}`))
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-shared-available-count"}
+	cfg.APIKeyRPMLimit = 1
+	cfg.APIKeyRPDLimit = 100
+	cfg.APIKeyTPMLimit = 100
+	cfg.RetryCount = 0
+
+	sharedCache := &contentModerationTestHashCache{}
+	svc1 := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{}}, nil, sharedCache, nil, nil, nil, nil)
+	_, err := svc1.callModeration(context.Background(), cfg, "hello", true)
+	require.NoError(t, err)
+	require.Equal(t, 1, upstreamCalls)
+
+	svc2 := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{}}, nil, sharedCache, nil, nil, nil, nil)
+	require.Equal(t, int64(0), svc2.preBlockAPIKeyAvailableCountForConfig(cfg))
+}
+
+func TestContentModerationTestAPIKeys_429UsesRetryAfterFreeze(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "2")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"rate limited"}}`))
+	}))
+	defer server.Close()
+
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{}}, nil, nil, nil, nil, nil, nil)
+	result, err := svc.TestAPIKeys(context.Background(), TestContentModerationAPIKeysInput{
+		APIKeys: []string{"sk-retry-after"},
+		BaseURL: server.URL,
+		Prompt:  "hello",
+	})
+
+	require.NoError(t, err)
+	require.Len(t, result.Items, 1)
+	require.Equal(t, "frozen", result.Items[0].Status)
+	require.NotNil(t, result.Items[0].FrozenUntil)
+	remaining := time.Until(*result.Items[0].FrozenUntil)
+	require.GreaterOrEqual(t, remaining, 1500*time.Millisecond)
+	require.LessOrEqual(t, remaining, 2500*time.Millisecond)
+}
+
+func TestContentModerationTestAPIKeys_ExplicitKeysRespectLocalRPM(t *testing.T) {
+	var upstreamCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"flagged":false,"category_scores":{"harassment":0.01}}]}`))
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-explicit-limit"}
+	cfg.APIKeyRPMLimit = 1
+	cfg.APIKeyRPDLimit = 100
+	cfg.APIKeyTPMLimit = 100
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyContentModerationConfig: string(rawCfg),
+	}}, nil, nil, nil, nil, nil, nil)
+
+	_, err = svc.callModeration(context.Background(), cfg, "hello", true)
+	require.NoError(t, err)
+	require.Equal(t, 1, upstreamCalls)
+
+	result, err := svc.TestAPIKeys(context.Background(), TestContentModerationAPIKeysInput{
+		APIKeys:   []string{"sk-explicit-limit"},
+		BaseURL:   server.URL,
+		Prompt:    "hello",
+		TimeoutMS: 3000,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, result.Items, 1)
+	require.Equal(t, 1, upstreamCalls)
+	require.Equal(t, "frozen", result.Items[0].Status)
+	require.Contains(t, result.Items[0].LastError, "local moderation api key RPM limit exceeded")
 }
 
 func TestContentModerationUpdateConfig_ReplacesAPIKeysWhenRequested(t *testing.T) {
