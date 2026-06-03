@@ -14,7 +14,7 @@ func TestBuildFakeCachePlanRequiresSessionID(t *testing.T) {
 		]
 	}`)
 
-	plan, err := BuildFakeCachePlan(body, 42, "claude-sonnet-4")
+	plan, err := BuildFakeCachePlan(body, FakeCacheScope{AccountID: 42, UserID: 1, APIKeyID: 2}, "claude-sonnet-4")
 	require.NoError(t, err)
 	require.Nil(t, plan)
 }
@@ -32,7 +32,7 @@ func TestBuildFakeCachePlanBuildsStableScopedKeys(t *testing.T) {
 		]
 	}`)
 
-	plan, err := BuildFakeCachePlan(body, 7, "claude-sonnet-4")
+	plan, err := BuildFakeCachePlan(body, FakeCacheScope{AccountID: 7, UserID: 1, APIKeyID: 2}, "claude-sonnet-4")
 	require.NoError(t, err)
 	require.NotNil(t, plan)
 	require.NotEmpty(t, plan.CurrentKey)
@@ -42,7 +42,7 @@ func TestBuildFakeCachePlanBuildsStableScopedKeys(t *testing.T) {
 	require.NotEmpty(t, plan.PreviousPrefixKey)
 	require.NotEqual(t, plan.CurrentKey, plan.PreviousKey)
 	require.Greater(t, plan.CurrentCacheableTokens, plan.PreviousCacheableTokens)
-	require.Contains(t, plan.CurrentKey, "acct:7:model:claude-sonnet-4:session:123e4567-e89b-12d3-a456-426614174000")
+	require.Contains(t, plan.CurrentKey, "user:1:key:2:model:claude-sonnet-4:session:123e4567-e89b-12d3-a456-426614174000")
 }
 
 func TestBuildFakeCachePlanAcceptsJSONMetadataUserID(t *testing.T) {
@@ -54,10 +54,62 @@ func TestBuildFakeCachePlanAcceptsJSONMetadataUserID(t *testing.T) {
 		]
 	}`)
 
-	plan, err := BuildFakeCachePlan(body, 7, "claude-sonnet-4")
+	plan, err := BuildFakeCachePlan(body, FakeCacheScope{AccountID: 7, UserID: 1, APIKeyID: 2}, "claude-sonnet-4")
 	require.NoError(t, err)
 	require.NotNil(t, plan)
 	require.Contains(t, plan.CurrentKey, "session:123e4567-e89b-12d3-a456-426614174000")
+}
+
+func TestBuildFakeCachePlanReusesKeysAcrossAccountsForSameUserAndAPIKey(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4",
+		"metadata":{"user_id":"user_x_account__session_123e4567-e89b-12d3-a456-4266141740aa"},
+		"messages":[
+			{"role":"user","content":"hello"},
+			{"role":"assistant","content":"hi"},
+			{"role":"user","content":"please continue"}
+		]
+	}`)
+
+	first, err := BuildFakeCachePlan(body, FakeCacheScope{AccountID: 101, UserID: 7, APIKeyID: 11}, "claude-sonnet-4")
+	require.NoError(t, err)
+	second, err := BuildFakeCachePlan(body, FakeCacheScope{AccountID: 202, UserID: 7, APIKeyID: 11}, "claude-sonnet-4")
+	require.NoError(t, err)
+
+	require.NotNil(t, first)
+	require.NotNil(t, second)
+	require.Equal(t, first.IndependentKey, second.IndependentKey)
+	require.Equal(t, first.CurrentPrefixKey, second.CurrentPrefixKey)
+	require.Equal(t, first.PreviousPrefixKey, second.PreviousPrefixKey)
+	require.Equal(t, first.SessionProgressKey, second.SessionProgressKey)
+	require.Contains(t, first.CurrentKey, "user:7:key:11:model:claude-sonnet-4:session:123e4567-e89b-12d3-a456-4266141740aa")
+}
+
+func TestBuildFakeCachePlanSeparatesDifferentUsersAndAPIKeys(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4",
+		"metadata":{"user_id":"user_x_account__session_123e4567-e89b-12d3-a456-4266141740ab"},
+		"messages":[
+			{"role":"user","content":"hello"},
+			{"role":"assistant","content":"hi"},
+			{"role":"user","content":"please continue"}
+		]
+	}`)
+
+	base, err := BuildFakeCachePlan(body, FakeCacheScope{AccountID: 101, UserID: 7, APIKeyID: 11}, "claude-sonnet-4")
+	require.NoError(t, err)
+	otherUser, err := BuildFakeCachePlan(body, FakeCacheScope{AccountID: 202, UserID: 8, APIKeyID: 11}, "claude-sonnet-4")
+	require.NoError(t, err)
+	otherKey, err := BuildFakeCachePlan(body, FakeCacheScope{AccountID: 303, UserID: 7, APIKeyID: 12}, "claude-sonnet-4")
+	require.NoError(t, err)
+
+	require.NotNil(t, base)
+	require.NotNil(t, otherUser)
+	require.NotNil(t, otherKey)
+	require.NotEqual(t, base.CurrentKey, otherUser.CurrentKey)
+	require.NotEqual(t, base.CurrentKey, otherKey.CurrentKey)
+	require.NotEqual(t, base.SessionProgressKey, otherUser.SessionProgressKey)
+	require.NotEqual(t, base.SessionProgressKey, otherKey.SessionProgressKey)
 }
 
 func TestBuildFakeCachePlanBindsPrefixKeysToIndependentChain(t *testing.T) {
@@ -287,11 +339,12 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAndHonorsMinBlock(t 
 	// - CurrentPrefix: 80 tokens (20 new)
 	// Total cache read before scaling: 80 (20 + 60)
 	// After 95% scaling: 76 tokens
-	// Cache write: 20 tokens (80 - 60, new content)
-	// Regular input: 44 tokens (140 - 76 - 20)
+	// The 4 missed read tokens stay in the cacheable bucket and become cache writes.
+	// Cache write: 24 tokens (20 new + 4 missed reads)
+	// Regular input: 40 tokens (only the non-cacheable tail)
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              44, // Increased due to 5% cache miss
-		CacheCreationInputTokens: 20, // Only new content, not affected by hit rate
+		InputTokens:              40,
+		CacheCreationInputTokens: 24,
 		CacheReadInputTokens:     76, // 95% of 80
 	}, usage)
 }
@@ -311,8 +364,8 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAt98Percent(t *testi
 	})
 
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              42,
-		CacheCreationInputTokens: 40,
+		InputTokens:              40,
+		CacheCreationInputTokens: 42,
 		CacheReadInputTokens:     58, // 98% of 60
 	}, usage)
 }
@@ -331,12 +384,11 @@ func TestFakeCachePlanResolveUsageWithConfig_ZeroHitRateScaleIsValid(t *testing.
 		HitRateScale: 0,
 	})
 
-	// With 0% hit rate, all cache reads should become regular input tokens
-	// Cache write should remain the same (40 tokens for the new content)
+	// With 0% hit rate, all would-be reads are rewritten into cache creation.
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              100, // 40 (non-cached) + 60 (failed cache read)
-		CacheCreationInputTokens: 40,  // Only new content (100 - 60)
-		CacheReadInputTokens:     0,   // No cache hits with 0% rate
+		InputTokens:              40,
+		CacheCreationInputTokens: 100,
+		CacheReadInputTokens:     0, // No cache hits with 0% rate
 	}, usage)
 }
 
@@ -470,7 +522,7 @@ func TestFakeCachePlanResolveUsageWithConfig_NoSessionID(t *testing.T) {
 func requireFakeCachePlan(t *testing.T, body string) *FakeCachePlan {
 	t.Helper()
 
-	plan, err := BuildFakeCachePlan([]byte(body), 7, "claude-sonnet-4")
+	plan, err := BuildFakeCachePlan([]byte(body), FakeCacheScope{AccountID: 7, UserID: 1, APIKeyID: 2}, "claude-sonnet-4")
 	require.NoError(t, err)
 	require.NotNil(t, plan)
 	require.NotEmpty(t, plan.CurrentPrefixKey)

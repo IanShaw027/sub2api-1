@@ -67,6 +67,8 @@ type ParsedRequest struct {
 	Body            []byte          // 原始请求体（保留用于转发）
 	Model           string          // 请求的模型名称
 	Stream          bool            // 是否为流式请求
+	UserID          int64           // 当前认证用户 ID（用于 Kiro fake cache scope）
+	APIKeyID        int64           // 当前 API Key ID（用于 Kiro fake cache scope）
 	MetadataUserID  string          // metadata.user_id（用于会话亲和）
 	System          any             // system 字段内容
 	Messages        []any           // messages 数组

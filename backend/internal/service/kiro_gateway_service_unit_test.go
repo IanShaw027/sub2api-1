@@ -24,6 +24,8 @@ type kiroGatewayRateLimitRepoStub struct {
 	rateLimitedIDs []int64
 	rateLimitUntil []time.Time
 	tempIDs        []int64
+	tempUntil      []time.Time
+	tempReasons    []string
 	errorIDs       []int64
 	errorMsgs      []string
 }
@@ -36,9 +38,47 @@ func (r *kiroGatewayRateLimitRepoStub) SetRateLimited(_ context.Context, id int6
 
 func (r *kiroGatewayRateLimitRepoStub) SetTempUnschedulable(_ context.Context, id int64, until time.Time, reason string) error {
 	r.tempIDs = append(r.tempIDs, id)
-	_ = until
-	_ = reason
+	r.tempUntil = append(r.tempUntil, until)
+	r.tempReasons = append(r.tempReasons, reason)
 	return nil
+}
+
+func TestGatewayService_TempUnscheduleRetryableError_Kiro429RetryExhaustedUsesShortCooldown(t *testing.T) {
+	repo := &kiroGatewayRateLimitRepoStub{
+		mockAccountRepoForGemini: mockAccountRepoForGemini{
+			accountsByID: map[int64]*Account{
+				42: {
+					ID:       42,
+					Platform: PlatformKiro,
+					Type:     AccountTypeOAuth,
+				},
+			},
+		},
+	}
+	cache := &kiroTempUnschedCacheRecorder{}
+	svc := &GatewayService{
+		accountRepo:      repo,
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, cache),
+	}
+	before := time.Now()
+	failoverErr := &UpstreamFailoverError{
+		StatusCode:             http.StatusTooManyRequests,
+		ResponseBody:           []byte(`{"message":"Too many requests, please wait before trying again.","reason":null}`),
+		RetryableOnSameAccount: true,
+		RetryExhaustedCooldown: time.Minute,
+		RetryExhaustedReason:   "kiro_429_retry_exhausted",
+	}
+
+	svc.TempUnscheduleRetryableError(context.Background(), 42, failoverErr)
+
+	require.Equal(t, []int64{42}, repo.tempIDs)
+	require.Len(t, repo.tempUntil, 1)
+	require.WithinDuration(t, before.Add(time.Minute), repo.tempUntil[0], 2*time.Second)
+	require.Contains(t, repo.tempReasons[0], "Too many requests")
+	require.Equal(t, []int64{42}, cache.accountIDs)
+	require.Len(t, cache.states, 1)
+	require.Equal(t, int64(http.StatusTooManyRequests), int64(cache.states[0].StatusCode))
+	require.WithinDuration(t, before.Add(time.Minute), time.Unix(cache.states[0].UntilUnix, 0), 2*time.Second)
 }
 
 func (r *kiroGatewayRateLimitRepoStub) SetError(_ context.Context, id int64, errorMsg string) error {

@@ -171,6 +171,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
 	}
+	parsedReq.UserID = subject.UserID
+	parsedReq.APIKeyID = apiKey.ID
 	reqModel := parsedReq.Model
 	reqStream := parsedReq.Stream
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
@@ -880,9 +882,13 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, account.Platform, true)
 						return
 					}
+					prevRetryCount := fs.SameAccountRetryCount[account.ID]
+					prevSwitchCount := fs.SwitchCount
 					action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, failoverErr)
 					switch action {
 					case FailoverContinue:
+						ctx := pinSameAccountRetryContext(c.Request.Context(), fs, account.ID, currentAPIKey.GroupID, failoverErr, prevRetryCount, prevSwitchCount, h.metadataBridgeEnabled())
+						c.Request = c.Request.WithContext(ctx)
 						continue
 					case FailoverExhausted:
 						h.handleFailoverExhausted(c, fs.LastFailoverErr, account.Platform, streamStarted)

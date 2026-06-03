@@ -32,6 +32,7 @@ func (s *GatewayService) forwardKiroAnthropicCapture(
 	parsed.Model = strings.TrimSpace(model)
 	parsed.Body = anthropicBody
 	parsed.Stream = true
+	applyKiroRequestScopeFromContext(c, parsed)
 	anthropicBody, parsed = ensureKiroOpenAICompatSessionMetadata(sourceBody, c, parsed, anthropicBody)
 
 	rec := httptest.NewRecorder()
@@ -96,6 +97,28 @@ func ensureKiroOpenAICompatSessionMetadata(
 	parsed.Body = updatedBody
 	parsed.MetadataUserID = metadataUserID
 	return updatedBody, parsed
+}
+
+func applyKiroRequestScopeFromContext(c *gin.Context, parsed *ParsedRequest) {
+	if c == nil || parsed == nil {
+		return
+	}
+	value, ok := c.Get("api_key")
+	if !ok {
+		return
+	}
+	apiKey, ok := value.(*APIKey)
+	if !ok || apiKey == nil {
+		return
+	}
+	if apiKey.UserID > 0 {
+		parsed.UserID = apiKey.UserID
+	} else if apiKey.User != nil {
+		parsed.UserID = apiKey.User.ID
+	}
+	if apiKey.ID > 0 {
+		parsed.APIKeyID = apiKey.ID
+	}
 }
 
 func headerValueFromContext(c *gin.Context, key string) string {

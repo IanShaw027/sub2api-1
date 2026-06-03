@@ -27,9 +27,13 @@ import (
 )
 
 const (
-	kiroPreludeSize = 12
-	kiroMinMsgSize  = kiroPreludeSize + 4
-	kiroMaxBodySize = 16 << 20
+	kiroPreludeSize             = 12
+	kiroMinMsgSize              = kiroPreludeSize + 4
+	kiroMaxBodySize             = 16 << 20
+	kiroSameAccountRetryDelay   = 3 * time.Second
+	kiroSameAccountRetryMax     = 3
+	kiroRetryExhaustedCooldown  = time.Minute
+	kiroRetryExhaustedReasonKey = "kiro_429_retry_exhausted"
 
 	kiroStandardContextBudgetTokens     = 180000
 	kiroStandardContextPromoteThreshold = 180000
@@ -178,8 +182,10 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 			}
 			if effectiveStatusCode == http.StatusTooManyRequests && shouldKiroRetrySameAccount(resp.StatusCode, resp.Header, body) {
 				failoverErr.RetryableOnSameAccount = true
-				failoverErr.SameAccountRetryDelay = time.Second
-				failoverErr.SameAccountRetryMax = 3
+				failoverErr.SameAccountRetryDelay = kiroSameAccountRetryDelay
+				failoverErr.SameAccountRetryMax = kiroSameAccountRetryMax
+				failoverErr.RetryExhaustedCooldown = kiroRetryExhaustedCooldown
+				failoverErr.RetryExhaustedReason = kiroRetryExhaustedReasonKey
 			}
 			return nil, failoverErr
 		}
@@ -1612,7 +1618,11 @@ func (s *KiroGatewayService) prepareFakeCachePlan(account *Account, parsed *Pars
 		return nil, kiropkg.FakeCacheHitState{}
 	}
 
-	plan, err := kiropkg.BuildFakeCachePlan(kiroFakeCachePlanBody(parsed, meta), account.ID, parsed.Model)
+	plan, err := kiropkg.BuildFakeCachePlan(kiroFakeCachePlanBody(parsed, meta), kiropkg.FakeCacheScope{
+		AccountID: account.ID,
+		UserID:    parsed.UserID,
+		APIKeyID:  parsed.APIKeyID,
+	}, parsed.Model)
 	if err != nil || plan == nil {
 		return nil, kiropkg.FakeCacheHitState{}
 	}
@@ -2083,7 +2093,24 @@ func shouldKiroRetrySameAccount(statusCode int, headers http.Header, body []byte
 	if kiro429LooksQuotaExhausted(body) {
 		return false
 	}
-	return parseKiro429ResetAt(headers, body) == nil
+	if parseKiro429ResetAt(headers, body) != nil {
+		return false
+	}
+	return kiro429LooksShortBurst(body)
+}
+
+func kiro429LooksShortBurst(body []byte) bool {
+	detail := strings.ToLower(strings.TrimSpace(kiroErrorDetailFromBody(body)))
+	if detail == "" {
+		detail = strings.ToLower(strings.TrimSpace(string(body)))
+	}
+	if detail == "" {
+		return false
+	}
+	if strings.Contains(detail, "suspicious activity") {
+		return false
+	}
+	return strings.Contains(detail, "too many requests")
 }
 
 func accountProxyURL(account *Account) string {

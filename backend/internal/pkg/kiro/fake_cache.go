@@ -56,7 +56,32 @@ type FakeCacheUsageConfig struct {
 	MinBlockTokens int
 }
 
-func BuildFakeCachePlan(body []byte, accountID int64, requestedModel string) (*FakeCachePlan, error) {
+type FakeCacheScope struct {
+	AccountID int64
+	UserID    int64
+	APIKeyID  int64
+}
+
+func (s FakeCacheScope) keyScope(requestedModel, sessionID string) string {
+	model := strings.ToLower(strings.TrimSpace(requestedModel))
+	if s.UserID > 0 && s.APIKeyID > 0 {
+		return fmt.Sprintf(
+			"kiro:fakecache:v2:user:%d:key:%d:model:%s:session:%s",
+			s.UserID,
+			s.APIKeyID,
+			model,
+			sessionID,
+		)
+	}
+	return fmt.Sprintf(
+		"kiro:fakecache:v1:acct:%d:model:%s:session:%s",
+		s.AccountID,
+		model,
+		sessionID,
+	)
+}
+
+func BuildFakeCachePlan(body []byte, scope FakeCacheScope, requestedModel string) (*FakeCachePlan, error) {
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, err
@@ -79,22 +104,17 @@ func BuildFakeCachePlan(body []byte, accountID int64, requestedModel string) (*F
 		return nil, nil
 	}
 
-	scope := fmt.Sprintf(
-		"kiro:fakecache:v1:acct:%d:model:%s:session:%s",
-		accountID,
-		strings.ToLower(strings.TrimSpace(requestedModel)),
-		sessionID,
-	)
+	scopeKey := scope.keyScope(requestedModel, sessionID)
 
 	plan := &FakeCachePlan{
 		PreviousCacheableTokens: 0,
-		SessionProgressKey:      scope + ":session_progress",
+		SessionProgressKey:      scopeKey + ":session_progress",
 	}
 	if independentChain != "" {
-		plan.IndependentKey = fakeCacheKey(scope+":independent", independentChain)
+		plan.IndependentKey = fakeCacheKey(scopeKey+":independent", independentChain)
 		plan.IndependentCacheableTokens = AccurateTokenCount(independentChain)
 	}
-	prefixScope := scope + ":prefix:independent:" + fakeCacheDigest(independentChain)
+	prefixScope := scopeKey + ":prefix:independent:" + fakeCacheDigest(independentChain)
 	if currentPrefixChain != "" {
 		plan.CurrentPrefixKey = fakeCacheKey(prefixScope, currentPrefixChain)
 		plan.CurrentPrefixCacheableTokens = AccurateTokenCount(currentPrefixChain)
@@ -109,7 +129,7 @@ func BuildFakeCachePlan(body []byte, accountID int64, requestedModel string) (*F
 		plan.PreviousKey = plan.PreviousPrefixKey
 	}
 	plan.PreviousCacheableTokens = plan.IndependentCacheableTokens + plan.PreviousPrefixCacheableTokens
-	plan.Checkpoints = buildFakeCacheCheckpoints(scope, plan.IndependentKey, independentChain, rawMessages)
+	plan.Checkpoints = buildFakeCacheCheckpoints(scopeKey, plan.IndependentKey, independentChain, rawMessages)
 
 	return plan, nil
 }
@@ -198,15 +218,18 @@ func fakeCacheUsageFromReadWrite(totalInputTokens, cacheRead, cacheWrite, hitRat
 	cacheRead = clampFakeCacheTokens(cacheRead, totalInputTokens)
 	cacheWrite = clampFakeCacheTokens(cacheWrite, totalInputTokens-cacheRead)
 
-	// Apply hit rate scaling only to cache reads.
-	// Claude-style input_tokens is the non-cached remainder after subtracting
-	// both cache_read and cache_creation.
+	// Apply hit rate scaling only to the read/write split inside the cacheable
+	// portion. Missed reads stay cacheable and are reclassified as cache writes,
+	// so the pure non-cacheable tail does not change when hit rate is reduced.
 	if hitRateScale < 100 {
+		originalRead := cacheRead
 		scaledRead := cacheRead * hitRateScale / 100
 		if scaledRead < 0 {
 			scaledRead = 0
 		}
 		cacheRead = scaledRead
+		cacheWrite += originalRead - scaledRead
+		cacheWrite = clampFakeCacheTokens(cacheWrite, totalInputTokens-cacheRead)
 	}
 
 	inputTokens := totalInputTokens - cacheRead - cacheWrite

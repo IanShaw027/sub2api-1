@@ -163,6 +163,8 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	if parsedReq == nil {
 		parsedReq = &service.ParsedRequest{Model: reqModel, Stream: reqStream, Body: body}
 	}
+	parsedReq.UserID = subject.UserID
+	parsedReq.APIKeyID = apiKey.ID
 	parsedReq.SessionContext = &service.SessionContext{
 		ClientIP:  ip.GetClientIP(c),
 		UserAgent: c.GetHeader("User-Agent"),
@@ -256,9 +258,13 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 					h.handleResponsesFailoverExhausted(c, failoverErr, true)
 					return
 				}
+				prevRetryCount := fs.SameAccountRetryCount[account.ID]
+				prevSwitchCount := fs.SwitchCount
 				action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, failoverErr)
 				switch action {
 				case FailoverContinue:
+					ctx := pinSameAccountRetryContext(c.Request.Context(), fs, account.ID, apiKey.GroupID, failoverErr, prevRetryCount, prevSwitchCount, h.metadataBridgeEnabled())
+					c.Request = c.Request.WithContext(ctx)
 					continue
 				case FailoverExhausted:
 					h.handleResponsesFailoverExhausted(c, fs.LastFailoverErr, streamStarted)

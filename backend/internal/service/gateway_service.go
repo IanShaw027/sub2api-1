@@ -590,6 +590,8 @@ type UpstreamFailoverError struct {
 	RetryableOnSameAccount bool        // 临时性错误（如 Google 间歇性 400、空响应），应在同一账号上重试 N 次再切换
 	SameAccountRetryDelay  time.Duration
 	SameAccountRetryMax    int
+	RetryExhaustedCooldown time.Duration // 同账号重试耗尽后，对该账号施加的短期冷却
+	RetryExhaustedReason   string        // 同账号重试耗尽后的冷却原因
 }
 
 func (e *UpstreamFailoverError) Error() string {
@@ -602,12 +604,44 @@ func (s *GatewayService) TempUnscheduleRetryableError(ctx context.Context, accou
 	if failoverErr == nil || !failoverErr.RetryableOnSameAccount {
 		return
 	}
+	s.applyRetryExhaustedCooldown(ctx, accountID, failoverErr)
 	// 根据状态码选择封禁策略
 	switch failoverErr.StatusCode {
 	case http.StatusBadRequest:
 		tempUnscheduleGoogleConfigError(ctx, s.accountRepo, accountID, "[handler]")
 	case http.StatusBadGateway:
 		tempUnscheduleEmptyResponse(ctx, s.accountRepo, accountID, "[handler]")
+	}
+}
+
+func (s *GatewayService) applyRetryExhaustedCooldown(ctx context.Context, accountID int64, failoverErr *UpstreamFailoverError) {
+	if s == nil || s.accountRepo == nil || failoverErr == nil || failoverErr.RetryExhaustedCooldown <= 0 {
+		return
+	}
+
+	until := time.Now().Add(failoverErr.RetryExhaustedCooldown)
+	blockReason := strings.TrimSpace(failoverErr.RetryExhaustedReason)
+	if blockReason == "" {
+		blockReason = "retry_exhausted_temp_unschedulable"
+	}
+
+	if s.rateLimitService != nil {
+		account, err := s.accountRepo.GetByID(ctx, accountID)
+		if err != nil {
+			slog.Warn("retry_exhausted_get_account_failed", "account_id", accountID, "error", err)
+		} else if account != nil {
+			if s.rateLimitService.persistTempUnschedulableState(ctx, account, until, failoverErr.StatusCode, blockReason, -1, failoverErr.ResponseBody, blockReason) {
+				return
+			}
+		}
+	}
+
+	reason := strings.TrimSpace(kiroErrorDetailFromBody(failoverErr.ResponseBody))
+	if reason == "" {
+		reason = blockReason
+	}
+	if err := s.accountRepo.SetTempUnschedulable(ctx, accountID, until, reason); err != nil {
+		slog.Warn("retry_exhausted_temp_unsched_set_failed", "account_id", accountID, "error", err)
 	}
 }
 

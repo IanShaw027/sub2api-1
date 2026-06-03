@@ -54,6 +54,32 @@ func sameAccountRetryPolicy(failoverErr *service.UpstreamFailoverError) (time.Du
 	return delay, maxRetries
 }
 
+func pinSameAccountRetryContext(
+	ctx context.Context,
+	fs *FailoverState,
+	accountID int64,
+	groupID *int64,
+	failoverErr *service.UpstreamFailoverError,
+	prevRetryCount int,
+	prevSwitchCount int,
+	bridgeOldKeys bool,
+) context.Context {
+	if ctx == nil || fs == nil || failoverErr == nil || !failoverErr.RetryableOnSameAccount {
+		return ctx
+	}
+	if fs.SwitchCount != prevSwitchCount {
+		return ctx
+	}
+	if fs.SameAccountRetryCount[accountID] != prevRetryCount+1 {
+		return ctx
+	}
+	prefetchedGroupID := int64(0)
+	if groupID != nil {
+		prefetchedGroupID = *groupID
+	}
+	return service.WithPrefetchedStickySession(ctx, accountID, prefetchedGroupID, bridgeOldKeys)
+}
+
 // FailoverState 跨循环迭代共享的 failover 状态
 type FailoverState struct {
 	SwitchCount           int

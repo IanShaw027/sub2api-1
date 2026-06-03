@@ -256,7 +256,7 @@ func TestKiroGatewayService_FakeCacheSessionProgressCarriesCheckpointAcrossTurns
 		]
 	}`, sessionID))
 
-	firstPlan, firstHit := svc.prepareFakeCachePlan(account, &ParsedRequest{Model: "claude-sonnet-4", Body: firstBody}, nil, settings)
+	firstPlan, firstHit := svc.prepareFakeCachePlan(account, &ParsedRequest{Model: "claude-sonnet-4", Body: firstBody, UserID: 1, APIKeyID: 2}, nil, settings)
 	require.NotNil(t, firstPlan)
 	require.Zero(t, firstHit.CheckpointTokens)
 	firstCurrent := firstPlan.CurrentCheckpointTokens()
@@ -266,7 +266,7 @@ func TestKiroGatewayService_FakeCacheSessionProgressCarriesCheckpointAcrossTurns
 
 	svc.commitFakeCachePlan(firstPlan, settings)
 
-	secondPlan, secondHit := svc.prepareFakeCachePlan(account, &ParsedRequest{Model: "claude-sonnet-4", Body: secondBody}, nil, settings)
+	secondPlan, secondHit := svc.prepareFakeCachePlan(account, &ParsedRequest{Model: "claude-sonnet-4", Body: secondBody, UserID: 1, APIKeyID: 2}, nil, settings)
 	require.NotNil(t, secondPlan)
 	require.Greater(t, secondPlan.CurrentCheckpointTokens(), firstCurrent)
 	require.Equal(t, firstCacheable, secondHit.CheckpointTokens)
@@ -293,7 +293,7 @@ func TestKiroGatewayService_ForwardSnapshotsFakeCacheHitBeforeUpstreamRequest(t 
 		],
 		"max_tokens":128
 	}`, sessionID, longFirstPrompt, longSecondPrompt))
-	plan, err := kiropkg.BuildFakeCachePlan(body, 77, "claude-sonnet-4-5-20250929")
+	plan, err := kiropkg.BuildFakeCachePlan(body, kiropkg.FakeCacheScope{AccountID: 77, UserID: 1, APIKeyID: 2}, "claude-sonnet-4-5-20250929")
 	require.NoError(t, err)
 	require.NotNil(t, plan)
 	require.NotEmpty(t, plan.PreviousPrefixKey)
@@ -328,8 +328,10 @@ func TestKiroGatewayService_ForwardSnapshotsFakeCacheHitBeforeUpstreamRequest(t 
 		},
 	}
 	parsed := &ParsedRequest{
-		Model: "claude-sonnet-4-5-20250929",
-		Body:  body,
+		Model:    "claude-sonnet-4-5-20250929",
+		Body:     body,
+		UserID:   1,
+		APIKeyID: 2,
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, parsed)
@@ -340,6 +342,57 @@ func TestKiroGatewayService_ForwardSnapshotsFakeCacheHitBeforeUpstreamRequest(t 
 	require.Zero(t, result.Usage.CacheReadInputTokens)
 	require.Greater(t, result.Usage.CacheCreationInputTokens, 0)
 	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestKiroGatewayService_PrepareFakeCachePlanReusesAcrossAccountsForSameUserAndAPIKey(t *testing.T) {
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+	settings := &KiroRuntimeSettings{
+		CacheHitRateScale:       100,
+		CacheMinBlockTokens:     0,
+		CacheIndependentTTLSecs: 3600,
+		CachePrefixTTLSecs:      300,
+	}
+	firstBody := []byte(`{
+		"model":"claude-sonnet-4",
+		"metadata":{"user_id":"user_x_account__session_123e4567-e89b-12d3-a456-426614174099"},
+		"messages":[
+			{"role":"user","content":"hello"},
+			{"role":"assistant","content":"hi"},
+			{"role":"user","content":"please continue"}
+		]
+	}`)
+	secondBody := []byte(`{
+		"model":"claude-sonnet-4",
+		"metadata":{"user_id":"user_x_account__session_123e4567-e89b-12d3-a456-426614174099"},
+		"messages":[
+			{"role":"user","content":"hello"},
+			{"role":"assistant","content":"hi"},
+			{"role":"user","content":"please continue"},
+			{"role":"user","content":"one more step"}
+		]
+	}`)
+
+	firstPlan, firstHit := svc.prepareFakeCachePlan(&Account{ID: 42, Platform: PlatformKiro, Type: AccountTypeOAuth}, &ParsedRequest{
+		Model:    "claude-sonnet-4",
+		Body:     firstBody,
+		UserID:   1,
+		APIKeyID: 2,
+	}, nil, settings)
+	require.NotNil(t, firstPlan)
+	require.False(t, firstHit.Prefix)
+	svc.commitFakeCachePlan(firstPlan, settings)
+
+	secondPlan, secondHit := svc.prepareFakeCachePlan(&Account{ID: 99, Platform: PlatformKiro, Type: AccountTypeOAuth}, &ParsedRequest{
+		Model:    "claude-sonnet-4",
+		Body:     secondBody,
+		UserID:   1,
+		APIKeyID: 2,
+	}, nil, settings)
+	require.NotNil(t, secondPlan)
+	require.Equal(t, firstPlan.CurrentPrefixKey, secondPlan.PreviousPrefixKey)
+	require.True(t, secondHit.Prefix)
 }
 
 func TestKiroGatewayService_ForwardCountTokens_RejectsUnsupportedModel(t *testing.T) {
@@ -1370,9 +1423,60 @@ func TestKiroGatewayService_Forward_Kiro429MarksSameAccountRetry(t *testing.T) {
 	require.ErrorAs(t, err, &failoverErr)
 	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
 	require.True(t, failoverErr.RetryableOnSameAccount)
-	require.Equal(t, time.Second, failoverErr.SameAccountRetryDelay)
+	require.Equal(t, 3*time.Second, failoverErr.SameAccountRetryDelay)
 	require.Equal(t, 3, failoverErr.SameAccountRetryMax)
+	require.Equal(t, time.Minute, failoverErr.RetryExhaustedCooldown)
+	require.Equal(t, "kiro_429_retry_exhausted", failoverErr.RetryExhaustedReason)
 	require.Equal(t, "kiro-request-429", failoverErr.ResponseHeaders.Get("X-Amzn-Requestid"))
+}
+
+func TestKiroGatewayService_Forward_Kiro429SuspiciousActivityDoesNotMarkSameAccountRetry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Header: http.Header{
+				"X-Amzn-Requestid": []string{"kiro-request-429-suspicious"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"message":"Due to suspicious activity, we are imposing temporary limits on how frequently your account can send a request to Kiro while we investigate."}`)),
+		},
+	}
+	svc := &KiroGatewayService{
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.Forward(
+		context.Background(),
+		c,
+		&Account{
+			ID:       9,
+			Name:     "Kiro Gateway",
+			Platform: PlatformKiro,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"api_key": "kiro-api-key",
+			},
+		},
+		&ParsedRequest{
+			Model: "claude-sonnet-4-6",
+			Body: []byte(`{
+				"model":"claude-sonnet-4-6",
+				"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+			}`),
+		},
+	)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.False(t, failoverErr.RetryableOnSameAccount)
+	require.Zero(t, failoverErr.SameAccountRetryDelay)
+	require.Zero(t, failoverErr.SameAccountRetryMax)
+	require.Equal(t, "kiro-request-429-suspicious", failoverErr.ResponseHeaders.Get("X-Amzn-Requestid"))
 }
 
 func TestKiroGatewayService_ForwardStream_PreStartExceptionReturnsFailover(t *testing.T) {
