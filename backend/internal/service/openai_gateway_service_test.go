@@ -1416,6 +1416,100 @@ func TestOpenAISelectAccountWithLoadAwareness_StickyWaitPlan(t *testing.T) {
 	}
 }
 
+func TestOpenAISelectAccountWithLoadAwareness_StickyTempUnschedulableWithinWaitBudgetKeepsSticky(t *testing.T) {
+	resetOpenAIStickyWaitTimeoutSettingCacheForTest()
+	defer resetOpenAIStickyWaitTimeoutSettingCacheForTest()
+
+	sessionHash := "sticky-temp-wait"
+	groupID := int64(1)
+	waitUntil := time.Now().Add(20 * time.Second)
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{
+			{
+				ID:                     1,
+				Platform:               PlatformOpenAI,
+				Status:                 StatusActive,
+				Schedulable:            true,
+				Concurrency:            1,
+				Priority:               1,
+				TempUnschedulableUntil: &waitUntil,
+			},
+			{ID: 2, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 9},
+		},
+	}
+	cache := &stubGatewayCache{
+		sessionBindings: map[string]int64{"openai:" + sessionHash: 1},
+	}
+	settingSvc := NewSettingService(&openAISettingRepoStub{
+		values: map[string]string{SettingKeyOpenAIStickyWaitTimeoutSeconds: "30"},
+	}, &config.Config{})
+
+	svc := &OpenAIGatewayService{
+		accountRepo:        repo,
+		cache:              cache,
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+		settingService:     settingSvc,
+	}
+
+	selection, err := svc.SelectAccountWithLoadAwareness(context.Background(), &groupID, sessionHash, "gpt-4", nil)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(1), selection.Account.ID)
+	require.False(t, selection.Acquired)
+	require.NotNil(t, selection.WaitPlan)
+	require.Equal(t, int64(1), selection.WaitPlan.AccountID)
+	require.NotNil(t, selection.WaitPlan.NotBefore)
+	require.WithinDuration(t, waitUntil, *selection.WaitPlan.NotBefore, time.Second)
+	require.Equal(t, 30*time.Second, selection.WaitPlan.Timeout)
+}
+
+func TestOpenAISelectAccountWithLoadAwareness_StickyTempUnschedulableBeyondWaitBudgetSwitchesAndRebinds(t *testing.T) {
+	resetOpenAIStickyWaitTimeoutSettingCacheForTest()
+	defer resetOpenAIStickyWaitTimeoutSettingCacheForTest()
+
+	sessionHash := "sticky-temp-switch"
+	groupID := int64(1)
+	waitUntil := time.Now().Add(45 * time.Second)
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{
+			{
+				ID:                     1,
+				Platform:               PlatformOpenAI,
+				Status:                 StatusActive,
+				Schedulable:            true,
+				Concurrency:            1,
+				Priority:               1,
+				TempUnschedulableUntil: &waitUntil,
+			},
+			{ID: 2, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 9},
+		},
+	}
+	cache := &stubGatewayCache{
+		sessionBindings: map[string]int64{"openai:" + sessionHash: 1},
+	}
+	settingSvc := NewSettingService(&openAISettingRepoStub{
+		values: map[string]string{SettingKeyOpenAIStickyWaitTimeoutSeconds: "30"},
+	}, &config.Config{})
+
+	svc := &OpenAIGatewayService{
+		accountRepo:        repo,
+		cache:              cache,
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{acquireResults: map[int64]bool{2: true}}),
+		settingService:     settingSvc,
+	}
+
+	selection, err := svc.SelectAccountWithLoadAwareness(context.Background(), &groupID, sessionHash, "gpt-4", nil)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(2), selection.Account.ID)
+	require.True(t, selection.Acquired)
+	require.Nil(t, selection.WaitPlan)
+	require.Equal(t, 1, cache.deletedSessions["openai:"+sessionHash])
+	require.Equal(t, int64(2), cache.sessionBindings["openai:"+sessionHash])
+}
+
 func TestOpenAISelectAccountWithLoadAwareness_PrefersLowerLoad(t *testing.T) {
 	groupID := int64(1)
 	lastUsed := time.Now().Add(-1 * time.Hour)
@@ -1867,7 +1961,7 @@ func TestOpenAIGatewayService_ListOpenAIImageCandidateAccounts_OverlaysCachedLas
 }
 
 func TestOpenAIGatewayService_SelectOpenAIImageCodexRouteLimitedAccountWaits(t *testing.T) {
-	resetAt := time.Now().Add(2 * time.Minute).UTC().Truncate(time.Second)
+	resetAt := time.Now().Add(20 * time.Second).UTC().Truncate(time.Second)
 	oldLastUsed := time.Now().Add(-5 * time.Hour)
 	newLastUsed := time.Now().Add(-1 * time.Hour)
 	accounts := []Account{
@@ -1947,9 +2041,9 @@ func TestOpenAIGatewayService_SelectAccountWithLoadAwarenessForImageRoute_CodexS
 	require.Equal(t, 6, acquireMax[47041])
 }
 
-func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimitedButWeb2APIWaits(t *testing.T) {
+func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimitedAndWeb2APISwitchesWhenBudgetExceeded(t *testing.T) {
 	accountResetAt := time.Now().Add(10 * time.Minute).UTC().Truncate(time.Second)
-	imageResetAt := time.Now().Add(2 * time.Minute).UTC().Truncate(time.Second)
+	imageResetAt := time.Now().Add(20 * time.Second).UTC().Truncate(time.Second)
 	oldLastUsed := time.Now().Add(-5 * time.Hour)
 	newLastUsed := time.Now().Add(-1 * time.Hour)
 	webProfile := map[string]any{
@@ -2043,11 +2137,9 @@ func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimitedButWe
 	web2apiSelection, err := svc.selectAccountWithLoadAwarenessForImageRoute(context.Background(), nil, "", "gpt-image-1", nil, false, GroupImageGenerationRouteWeb2API, true)
 	require.NoError(t, err)
 	require.NotNil(t, web2apiSelection)
-	require.Equal(t, int64(47031), web2apiSelection.Account.ID)
-	require.False(t, web2apiSelection.Acquired)
-	require.NotNil(t, web2apiSelection.WaitPlan)
-	require.NotNil(t, web2apiSelection.WaitPlan.NotBefore)
-	require.True(t, web2apiSelection.WaitPlan.NotBefore.Equal(imageResetAt))
+	require.Equal(t, int64(47032), web2apiSelection.Account.ID)
+	require.True(t, web2apiSelection.Acquired)
+	require.Nil(t, web2apiSelection.WaitPlan)
 }
 
 func TestOpenAIStreamingTimeout(t *testing.T) {

@@ -1989,6 +1989,27 @@ func (s *OpenAIGatewayService) BindStickySession(ctx context.Context, groupID *i
 	return s.setStickySessionAccountID(ctx, groupID, sessionHash, accountID, ttl)
 }
 
+// ClearStickySession removes the current session -> account binding.
+func (s *OpenAIGatewayService) ClearStickySession(ctx context.Context, groupID *int64, sessionHash string) error {
+	if sessionHash == "" {
+		return nil
+	}
+	return s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
+}
+
+// ClearPreviousResponseBinding removes the previous_response_id -> account binding.
+func (s *OpenAIGatewayService) ClearPreviousResponseBinding(ctx context.Context, groupID *int64, previousResponseID string) error {
+	responseID := strings.TrimSpace(previousResponseID)
+	if responseID == "" {
+		return nil
+	}
+	store := s.getOpenAIWSStateStore()
+	if store == nil {
+		return nil
+	}
+	return store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+}
+
 // SelectAccount selects an OpenAI account with sticky session support
 func (s *OpenAIGatewayService) SelectAccount(ctx context.Context, groupID *int64, sessionHash string) (*Account, error) {
 	return s.SelectAccountForModel(ctx, groupID, sessionHash, "")
@@ -2034,7 +2055,11 @@ func openAICompactSupportTier(account *Account) int {
 }
 
 func allowRateLimitedOpenAIImageRouteScheduling(route string) bool {
-	switch NormalizeGroupImageGenerationRoute(route) {
+	normalized := strings.TrimSpace(route)
+	if normalized == "" {
+		return false
+	}
+	switch NormalizeGroupImageGenerationRoute(normalized) {
 	case GroupImageGenerationRouteCodex, GroupImageGenerationRouteWeb2API:
 		return true
 	default:
@@ -2110,22 +2135,100 @@ func reorderOpenAIImageRouteRateLimitedCandidates(items []openAIAccountCandidate
 	return out
 }
 
-func buildOpenAIImageRouteRateLimitedWaitPlan(account *Account, route string, maxConcurrency int, timeout time.Duration, maxWaiting int) *AccountWaitPlan {
-	resetAt := openAIImageRouteSchedulingResetAt(account, route)
-	if resetAt == nil {
+func openAIAccountTemporaryRecoveryAt(account *Account, requestedModel string, requiredImageRoute string) *time.Time {
+	if account == nil {
 		return nil
 	}
-	remaining := time.Until(*resetAt)
-	if remaining < 0 {
-		remaining = 0
+	now := time.Now()
+	var recoverAt *time.Time
+	updateRecoverAt := func(candidate *time.Time) {
+		if candidate == nil || !now.Before(*candidate) {
+			return
+		}
+		if recoverAt == nil || recoverAt.Before(*candidate) {
+			value := *candidate
+			recoverAt = &value
+		}
+	}
+
+	updateRecoverAt(account.OverloadUntil)
+	updateRecoverAt(account.RateLimitResetAt)
+	updateRecoverAt(account.TempUnschedulableUntil)
+	updateRecoverAt(openAIImageRouteSchedulingResetAt(account, requiredImageRoute))
+	if remaining := account.GetRateLimitRemainingTimeWithContext(context.Background(), requestedModel); remaining > 0 {
+		value := now.Add(remaining)
+		updateRecoverAt(&value)
+	}
+	return recoverAt
+}
+
+func buildOpenAIAccountWaitPlan(account *Account, requestedModel string, requiredImageRoute string, maxConcurrency int, timeout time.Duration, maxWaiting int) *AccountWaitPlan {
+	recoverAt := openAIAccountTemporaryRecoveryAt(account, requestedModel, requiredImageRoute)
+	if recoverAt == nil || timeout <= 0 {
+		return nil
+	}
+	if time.Until(*recoverAt) > timeout {
+		return nil
 	}
 	return &AccountWaitPlan{
 		AccountID:      account.ID,
 		MaxConcurrency: maxConcurrency,
-		Timeout:        timeout + remaining,
+		Timeout:        timeout,
 		MaxWaiting:     maxWaiting,
-		NotBefore:      resetAt,
+		NotBefore:      recoverAt,
 	}
+}
+
+func hasOpenAIAccountTemporaryRecoveryPending(account *Account, requestedModel string, requiredImageRoute string) bool {
+	return openAIAccountTemporaryRecoveryAt(account, requestedModel, requiredImageRoute) != nil
+}
+
+func shouldClearOpenAIStickyAccount(account *Account, requestedModel string, requiredImageRoute string, timeout time.Duration) bool {
+	if account == nil {
+		return false
+	}
+	if !account.IsActive() || !account.Schedulable {
+		return true
+	}
+	now := time.Now()
+	if account.AutoPauseOnExpired && account.ExpiresAt != nil && !now.Before(*account.ExpiresAt) {
+		return true
+	}
+	if account.IsAPIKeyOrBedrock() && account.IsQuotaExceeded() {
+		return true
+	}
+	recoverAt := openAIAccountTemporaryRecoveryAt(account, requestedModel, requiredImageRoute)
+	if recoverAt == nil {
+		return false
+	}
+	return timeout <= 0 || time.Until(*recoverAt) > timeout
+}
+
+func isOpenAIStickyCandidateCompatible(account *Account, requestedModel string, requireCompact bool, requiredImageRoute string, requireOAuthAccount bool, requireImageEnabled bool) bool {
+	if account == nil || !account.IsOpenAI() {
+		return false
+	}
+	if requireImageEnabled && !account.OpenAIImageGenerationAllowed() {
+		return false
+	}
+	if requireOAuthAccount && !account.IsOpenAIOAuth() {
+		return false
+	}
+	if requiredImageRoute != "" {
+		if !account.SupportsOpenAIImageRoute(requiredImageRoute) {
+			return false
+		}
+		if NormalizeGroupImageGenerationRoute(requiredImageRoute) == GroupImageGenerationRouteWeb2API && !account.HasOpenAIImageWeb2APIProfile() {
+			return false
+		}
+	}
+	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
+		return false
+	}
+	if requireCompact && openAICompactSupportTier(account) == 0 {
+		return false
+	}
+	return true
 }
 
 // isOpenAIAccountEligibleForRequest centralises the schedulable / OpenAI / model /
@@ -2268,23 +2371,21 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 		return nil
 	}
 
-	// 检查账号是否需要清理粘性会话
-	// Check if sticky session should be cleared
-	if shouldClearStickySession(account, requestedModel) {
+	waitTimeout := s.openAIStickyWaitTimeout(ctx)
+	if shouldClearOpenAIStickyAccount(account, requestedModel, requiredImageRoute, waitTimeout) {
 		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
 	}
 
-	// 验证账号是否可用于当前请求
-	// Verify account is usable for current request
-	if !isOpenAIAccountEligibleForRequest(ctx, account, requestedModel, false, requiredImageRoute, false) {
+	if !isOpenAIStickyCandidateCompatible(account, requestedModel, requireCompact, requiredImageRoute, false, requiredImageRoute != "") {
+		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
 	}
 	if s.isOpenAIAccountRuntimeBlocked(account) {
 		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
 	}
-	account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, requiredImageRoute)
+	account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, requiredImageRoute, false, requiredImageRoute != "")
 	if account == nil {
 		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
@@ -2442,6 +2543,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	cfg := s.schedulingConfig()
+	stickyWaitTimeout := s.openAIStickyWaitTimeout(ctx)
 	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
 	var stickyAccountID int64
 	if sessionHash != "" && s.cache != nil {
@@ -2461,10 +2563,10 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		waitTimeout := cfg.FallbackWaitTimeout
 		maxWaiting := cfg.FallbackMaxWaiting
 		if stickyAccountID > 0 && stickyAccountID == account.ID {
-			waitTimeout = cfg.StickySessionWaitTimeout
+			waitTimeout = stickyWaitTimeout
 			maxWaiting = cfg.StickySessionMaxWaiting
 		}
-		if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(account, requiredImageRoute, acquireLimit, waitTimeout, maxWaiting); waitPlan != nil {
+		if waitPlan := buildOpenAIAccountWaitPlan(account, requestedModel, requiredImageRoute, acquireLimit, waitTimeout, maxWaiting); waitPlan != nil {
 			return s.newSelectionResult(ctx, account, false, nil, waitPlan)
 		}
 		result, err := s.tryAcquireAccountSlot(ctx, account.ID, groupID, acquireLimit)
@@ -2477,7 +2579,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 					AccountID:      account.ID,
 					MaxConcurrency: concurrencyForOpenAIAccountSelection(account, requiredImageRoute),
-					Timeout:        cfg.StickySessionWaitTimeout,
+					Timeout:        stickyWaitTimeout,
 					MaxWaiting:     cfg.StickySessionMaxWaiting,
 				})
 			}
@@ -2512,12 +2614,12 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		if accountID > 0 && !isExcluded(accountID) {
 			account, err := s.getSchedulableAccount(ctx, accountID)
 			if err == nil {
-				clearSticky := shouldClearStickySession(account, requestedModel)
+				clearSticky := shouldClearOpenAIStickyAccount(account, requestedModel, requiredImageRoute, stickyWaitTimeout)
 				if clearSticky {
 					_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 				}
-				if !clearSticky && isOpenAIAccountEligibleForRequest(ctx, account, requestedModel, false, requiredImageRoute, requireOAuthAccount) {
-					account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, requiredImageRoute)
+				if !clearSticky && isOpenAIStickyCandidateCompatible(account, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requiredImageRoute != "") {
+					account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requiredImageRoute != "")
 					if account == nil {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else if s.isOpenAIAccountRuntimeBlocked(account) {
@@ -2525,11 +2627,12 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 					} else if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel, requireCompact) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else {
-						if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+						if waitPlan := buildOpenAIAccountWaitPlan(
 							account,
+							requestedModel,
 							requiredImageRoute,
 							concurrencyForOpenAIAccountSelection(account, requiredImageRoute),
-							cfg.StickySessionWaitTimeout,
+							stickyWaitTimeout,
 							cfg.StickySessionMaxWaiting,
 						); waitPlan != nil {
 							return s.newSelectionResult(ctx, account, false, nil, waitPlan)
@@ -2545,11 +2648,13 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 							return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 								AccountID:      accountID,
 								MaxConcurrency: concurrencyForOpenAIAccountSelection(account, requiredImageRoute),
-								Timeout:        cfg.StickySessionWaitTimeout,
+								Timeout:        stickyWaitTimeout,
 								MaxWaiting:     cfg.StickySessionMaxWaiting,
 							})
 						}
 					}
+				} else if !clearSticky {
+					_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 				}
 			}
 		}
@@ -2618,14 +2723,18 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 				continue
 			}
-			if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+			if waitPlan := buildOpenAIAccountWaitPlan(
 				fresh,
+				requestedModel,
 				requiredImageRoute,
 				s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute),
 				s.schedulingConfig().FallbackWaitTimeout,
 				s.schedulingConfig().FallbackMaxWaiting,
 			); waitPlan != nil {
 				return s.newSelectionResult(ctx, fresh, false, nil, waitPlan)
+			}
+			if hasOpenAIAccountTemporaryRecoveryPending(fresh, requestedModel, requiredImageRoute) {
+				continue
 			}
 			result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, groupID, s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute))
 			if err == nil && result != nil && result.Acquired {
@@ -2697,8 +2806,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 					continue
 				}
-				if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+				if waitPlan := buildOpenAIAccountWaitPlan(
 					fresh,
+					requestedModel,
 					requiredImageRoute,
 					s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute),
 					s.schedulingConfig().FallbackWaitTimeout,
@@ -2708,6 +2818,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 						_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, openaiStickySessionTTL)
 					}
 					return s.newSelectionResult(ctx, fresh, false, nil, waitPlan)
+				}
+				if hasOpenAIAccountTemporaryRecoveryPending(fresh, requestedModel, requiredImageRoute) {
+					continue
 				}
 				result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, groupID, s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute))
 				if err == nil && result != nil && result.Acquired {
@@ -2766,14 +2879,18 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			continue
 		}
 		waitLimit := s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute)
-		if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+		if waitPlan := buildOpenAIAccountWaitPlan(
 			fresh,
+			requestedModel,
 			requiredImageRoute,
 			waitLimit,
 			cfg.FallbackWaitTimeout,
 			cfg.FallbackMaxWaiting,
 		); waitPlan != nil {
 			return s.newSelectionResult(ctx, fresh, false, nil, waitPlan)
+		}
+		if hasOpenAIAccountTemporaryRecoveryPending(fresh, requestedModel, requiredImageRoute) {
+			continue
 		}
 		return s.newSelectionResult(ctx, fresh, false, nil, &AccountWaitPlan{
 			AccountID:      fresh.ID,
@@ -3019,6 +3136,40 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 	return latest
 }
 
+func (s *OpenAIGatewayService) recheckSelectedStickyOpenAIAccountFromDB(ctx context.Context, account *Account, requestedModel string, requireCompact bool, requiredImageRoute string, requireOAuthAccount bool, requireImageEnabled bool) *Account {
+	if account == nil {
+		return nil
+	}
+	waitTimeout := s.openAIStickyWaitTimeout(ctx)
+	if s.schedulerSnapshot == nil || s.accountRepo == nil {
+		if shouldClearOpenAIStickyAccount(account, requestedModel, requiredImageRoute, waitTimeout) {
+			return nil
+		}
+		if !isOpenAIStickyCandidateCompatible(account, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
+			return nil
+		}
+		if s.isOpenAIAccountRuntimeBlocked(account) {
+			return nil
+		}
+		return account
+	}
+
+	latest, err := s.accountRepo.GetByID(ctx, account.ID)
+	if err != nil || latest == nil {
+		return nil
+	}
+	if shouldClearOpenAIStickyAccount(latest, requestedModel, requiredImageRoute, waitTimeout) {
+		return nil
+	}
+	if !isOpenAIStickyCandidateCompatible(latest, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
+		return nil
+	}
+	if s.isOpenAIAccountRuntimeBlocked(latest) {
+		return nil
+	}
+	return latest
+}
+
 func (s *OpenAIGatewayService) RecheckSelectedOpenAIAccountForResponses(ctx context.Context, account *Account, requestedModel string) *Account {
 	return s.recheckSelectedOpenAIAccountFromDB(ctx, account, requestedModel, false, "")
 }
@@ -3092,10 +3243,7 @@ func (s *OpenAIGatewayService) newAcquiredSelectionResult(ctx context.Context, a
 }
 
 func (s *OpenAIGatewayService) schedulingConfig() config.GatewaySchedulingConfig {
-	if s.cfg != nil {
-		return s.cfg.Gateway.Scheduling
-	}
-	return config.GatewaySchedulingConfig{
+	cfg := config.GatewaySchedulingConfig{
 		StickySessionMaxWaiting:  3,
 		StickySessionWaitTimeout: 45 * time.Second,
 		FallbackWaitTimeout:      30 * time.Second,
@@ -3103,6 +3251,32 @@ func (s *OpenAIGatewayService) schedulingConfig() config.GatewaySchedulingConfig
 		LoadBatchEnabled:         true,
 		SlotCleanupInterval:      30 * time.Second,
 	}
+	if s.cfg == nil {
+		return cfg
+	}
+	runtimeCfg := s.cfg.Gateway.Scheduling
+	if runtimeCfg.StickySessionMaxWaiting > 0 {
+		cfg.StickySessionMaxWaiting = runtimeCfg.StickySessionMaxWaiting
+	}
+	if runtimeCfg.StickySessionWaitTimeout > 0 {
+		cfg.StickySessionWaitTimeout = runtimeCfg.StickySessionWaitTimeout
+	}
+	if runtimeCfg.FallbackWaitTimeout > 0 {
+		cfg.FallbackWaitTimeout = runtimeCfg.FallbackWaitTimeout
+	}
+	if runtimeCfg.FallbackMaxWaiting > 0 {
+		cfg.FallbackMaxWaiting = runtimeCfg.FallbackMaxWaiting
+	}
+	cfg.FallbackSelectionMode = runtimeCfg.FallbackSelectionMode
+	cfg.LoadBatchEnabled = runtimeCfg.LoadBatchEnabled
+	cfg.LoadBatchCacheTTLMS = runtimeCfg.LoadBatchCacheTTLMS
+	cfg.SnapshotMGetChunkSize = runtimeCfg.SnapshotMGetChunkSize
+	cfg.SnapshotWriteChunkSize = runtimeCfg.SnapshotWriteChunkSize
+	cfg.SlotCleanupInterval = runtimeCfg.SlotCleanupInterval
+	if cfg.SlotCleanupInterval <= 0 {
+		cfg.SlotCleanupInterval = 30 * time.Second
+	}
+	return cfg
 }
 
 // GetAccessToken gets the access token for an OpenAI account
@@ -4491,6 +4665,12 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	body = updatedBody
 	reqStream := gjson.GetBytes(body, "stream").Bool()
 	apiKey := getAPIKeyFromContext(c)
+	if upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(account, reqModel, isOpenAIResponsesCompactPath(c)); upstreamModel != "" {
+		currentModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+		if !strings.EqualFold(currentModel, upstreamModel) {
+			body = ReplaceModelInBody(body, upstreamModel)
+		}
+	}
 	if IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, body) && !GroupAllowsImageGeneration(apiKeyGroup(apiKey)) {
 		MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
 		c.JSON(http.StatusForbidden, gin.H{

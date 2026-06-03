@@ -44,6 +44,14 @@ const openAIStreamRetryReplayStateContextKey = "openai_stream_retry_replay_state
 
 var errOpenAIWSLocalImageToggleUnavailable = errors.New("openai websocket local image-toggle unavailable")
 
+type accountSlotAcquireStatus int
+
+const (
+	accountSlotAcquireFailed accountSlotAcquireStatus = iota
+	accountSlotAcquireAcquired
+	accountSlotAcquireRetry
+)
+
 func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedModel string) string {
 	if apiKey == nil || apiKey.Group == nil {
 		return ""
@@ -216,6 +224,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
+	forwardPreviewBody, routedPreviewModel := h.applyOpenAIResponsesChannelMapping(body, reqModel, channelMapping)
+	previewImageIntent, _ := classifyOpenAIResponsesImageRequest(allowImageGeneration, routedPreviewModel, forwardPreviewBody)
+	if previewImageIntent && !allowImageGeneration {
+		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
+		return
+	}
 
 	// 提前校验 function_call_output 是否具备可关联上下文，避免上游 400。
 	if !h.validateFunctionCallOutputRequest(c, body, reqLog) {
@@ -277,7 +291,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			reqModel,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportAny,
-			rawImageIntent,
+			previewImageIntent,
 			requireCompact,
 		)
 		if err != nil {
@@ -321,35 +335,38 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		reqLog.Debug("openai.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)
-		if !acquired {
+		forwardBody := forwardPreviewBody
+		effectiveModel := resolveOpenAIResponsesEffectiveModel(account, routedPreviewModel)
+		effectiveImageIntent, shouldAcquireImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveModel, forwardBody)
+		if effectiveImageIntent && !allowImageGeneration {
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+			h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
+			return
+		}
+		if !openAIResponsesAccountSupportsImageIntent(account, apiKey.Group, effectiveImageIntent) {
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+			_ = h.gatewayService.ClearStickySession(c.Request.Context(), apiKey.GroupID, sessionHash)
+			_ = h.gatewayService.ClearPreviousResponseBinding(c.Request.Context(), apiKey.GroupID, previousResponseID)
+			failedAccountIDs[account.ID] = struct{}{}
+			continue
+		}
+
+		accountReleaseFunc, acquireStatus := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, previousResponseID, selection, reqStream, &streamStarted, reqLog)
+		if acquireStatus == accountSlotAcquireRetry {
+			failedAccountIDs[account.ID] = struct{}{}
+			continue
+		}
+		if acquireStatus != accountSlotAcquireAcquired {
 			return
 		}
 
 		// Forward request
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
-		forwardBody, routedModel := h.applyOpenAIResponsesChannelMapping(body, reqModel, channelMapping)
-		effectiveModel := resolveOpenAIResponsesEffectiveModel(account, routedModel)
-		effectiveImageIntent, shouldAcquireImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveModel, forwardBody)
-		if effectiveImageIntent && !allowImageGeneration {
-			if accountReleaseFunc != nil {
-				accountReleaseFunc()
-			}
-			h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
-			return
-		}
-		if shouldAcquireImageSlot && !account.OpenAIImageGenerationAllowed() {
-			if accountReleaseFunc != nil {
-				accountReleaseFunc()
-			}
-			reqLog.Warn("openai.account_image_generation_disabled_after_routing",
-				zap.Int64("account_id", account.ID),
-				zap.String("effective_model", effectiveModel),
-			)
-			failedAccountIDs[account.ID] = struct{}{}
-			continue
-		}
 		var imageReleaseFunc func()
 		if shouldAcquireImageSlot {
 			var imageAcquired bool
@@ -743,8 +760,12 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		_ = scheduleDecision
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)
-		if !acquired {
+		accountReleaseFunc, acquireStatus := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, "", selection, reqStream, &streamStarted, reqLog)
+		if acquireStatus == accountSlotAcquireRetry {
+			failedAccountIDs[account.ID] = struct{}{}
+			continue
+		}
+		if acquireStatus != accountSlotAcquireAcquired {
 			return
 		}
 
@@ -1041,33 +1062,47 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	c *gin.Context,
 	groupID *int64,
 	sessionHash string,
+	previousResponseID string,
 	selection *service.AccountSelectionResult,
 	reqStream bool,
 	streamStarted *bool,
 	reqLog *zap.Logger,
-) (func(), bool) {
+) (func(), accountSlotAcquireStatus) {
 	if selection == nil || selection.Account == nil {
 		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
-		return nil, false
+		return nil, accountSlotAcquireFailed
 	}
 
 	ctx := c.Request.Context()
+	clearStickyBindings := func() {
+		_ = h.gatewayService.ClearStickySession(ctx, groupID, sessionHash)
+		_ = h.gatewayService.ClearPreviousResponseBinding(ctx, groupID, previousResponseID)
+	}
 	account := selection.Account
 	if selection.Acquired {
-		return wrapReleaseOnDone(ctx, selection.ReleaseFunc), true
+		return wrapReleaseOnDone(ctx, selection.ReleaseFunc), accountSlotAcquireAcquired
 	}
 	if selection.WaitPlan == nil {
 		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
-		return nil, false
+		return nil, accountSlotAcquireFailed
 	}
 
 	remainingTimeout := selection.WaitPlan.Timeout
 	if selection.WaitPlan.NotBefore != nil {
+		if remainingTimeout <= 0 || time.Until(*selection.WaitPlan.NotBefore) > remainingTimeout {
+			reqLog.Info("openai.account_wait_deadline_exceeded_before_ready",
+				zap.Int64("account_id", account.ID),
+				zap.Duration("wait_timeout", selection.WaitPlan.Timeout),
+				zap.Timep("not_before", selection.WaitPlan.NotBefore),
+			)
+			clearStickyBindings()
+			return nil, accountSlotAcquireRetry
+		}
 		waitStart := time.Now()
 		if err := h.concurrencyHelper.WaitUntil(c, *selection.WaitPlan.NotBefore, reqStream, streamStarted); err != nil {
 			reqLog.Warn("openai.account_wait_until_ready_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			h.handleConcurrencyError(c, err, "account", *streamStarted)
-			return nil, false
+			return nil, accountSlotAcquireFailed
 		}
 		remainingTimeout -= time.Since(waitStart)
 		if remainingTimeout < 0 {
@@ -1084,13 +1119,13 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	if err != nil {
 		reqLog.Warn("openai.account_slot_quick_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		h.handleConcurrencyError(c, err, "account", *streamStarted)
-		return nil, false
+		return nil, accountSlotAcquireFailed
 	}
 	if fastAcquired {
 		if err := h.gatewayService.BindStickySession(ctx, groupID, sessionHash, account.ID); err != nil {
 			reqLog.Warn("openai.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		}
-		return wrapReleaseOnDone(ctx, fastReleaseFunc), true
+		return wrapReleaseOnDone(ctx, fastReleaseFunc), accountSlotAcquireAcquired
 	}
 
 	canWait, waitErr := h.concurrencyHelper.IncrementAccountWaitCount(ctx, account.ID, selection.WaitPlan.MaxWaiting)
@@ -1102,7 +1137,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 			zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
 		)
 		h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", *streamStarted)
-		return nil, false
+		return nil, accountSlotAcquireFailed
 	}
 
 	accountWaitCounted := waitErr == nil && canWait
@@ -1124,9 +1159,18 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 		streamStarted,
 	)
 	if err != nil {
+		var concurrencyErr *ConcurrencyError
+		if errors.As(err, &concurrencyErr) && concurrencyErr.IsTimeout {
+			reqLog.Info("openai.account_slot_wait_timed_out",
+				zap.Int64("account_id", account.ID),
+				zap.Duration("wait_timeout", selection.WaitPlan.Timeout),
+			)
+			clearStickyBindings()
+			return nil, accountSlotAcquireRetry
+		}
 		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		h.handleConcurrencyError(c, err, "account", *streamStarted)
-		return nil, false
+		return nil, accountSlotAcquireFailed
 	}
 
 	// Slot acquired: no longer waiting in queue.
@@ -1134,7 +1178,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	if err := h.gatewayService.BindStickySession(ctx, groupID, sessionHash, account.ID); err != nil {
 		reqLog.Warn("openai.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 	}
-	return wrapReleaseOnDone(ctx, accountReleaseFunc), true
+	return wrapReleaseOnDone(ctx, accountReleaseFunc), accountSlotAcquireAcquired
 }
 
 // ResponsesWebSocket handles OpenAI Responses API WebSocket ingress endpoint
@@ -1252,6 +1296,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 	// 解析渠道级模型映射
 	channelMappingWS, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, reqModel)
+	wsFirstMessage, wsFirstModel := h.applyOpenAIResponsesChannelMapping(firstMessage, reqModel, channelMappingWS)
+	wsPreviewImageIntent, _ := classifyOpenAIResponsesImageRequest(allowImageGeneration, wsFirstModel, wsFirstMessage)
+	if wsPreviewImageIntent && !allowImageGeneration {
+		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
+		return
+	}
 
 	var currentUserRelease func()
 	var currentAccountRelease func()
@@ -1333,7 +1383,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			reqModel,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportResponsesWebsocketV2,
-			rawWSImageIntent,
+			wsPreviewImageIntent,
 			false,
 		)
 		if err != nil {
@@ -1358,6 +1408,25 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		}
 
 		account := selection.Account
+		effectiveWSFirstModel := resolveOpenAIResponsesEffectiveModel(account, wsFirstModel)
+		firstTurnImageIntent, firstTurnNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveWSFirstModel, wsFirstMessage)
+		if firstTurnImageIntent && !allowImageGeneration {
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
+			return
+		}
+		if !openAIResponsesAccountSupportsImageIntent(account, apiKey.Group, firstTurnImageIntent) {
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+			_ = h.gatewayService.ClearStickySession(ctx, apiKey.GroupID, sessionHash)
+			_ = h.gatewayService.ClearPreviousResponseBinding(ctx, apiKey.GroupID, previousResponseID)
+			failedAccountIDs[account.ID] = struct{}{}
+			continue
+		}
+
 		accountMaxConcurrency := account.Concurrency
 		if selection.WaitPlan != nil && selection.WaitPlan.MaxConcurrency > 0 {
 			accountMaxConcurrency = selection.WaitPlan.MaxConcurrency
@@ -1404,22 +1473,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			zap.Int("candidate_count", scheduleDecision.CandidateCount),
 		)
 
-		wsFirstMessage, wsFirstModel := h.applyOpenAIResponsesChannelMapping(firstMessage, reqModel, channelMappingWS)
-		effectiveWSFirstModel := resolveOpenAIResponsesEffectiveModel(account, wsFirstModel)
-		firstTurnImageIntent, firstTurnNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveWSFirstModel, wsFirstMessage)
-		if firstTurnImageIntent && !allowImageGeneration {
-			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
-			return
-		}
-		if firstTurnNeedsImageSlot && !account.OpenAIImageGenerationAllowed() {
-			reqLog.Warn("openai.websocket_account_image_generation_disabled_after_routing",
-				zap.Int64("account_id", account.ID),
-				zap.String("effective_model", effectiveWSFirstModel),
-			)
-			releaseAccountScopedSlots()
-			failedAccountIDs[account.ID] = struct{}{}
-			continue
-		}
 		currentTurnNeedsImageSlot = firstTurnNeedsImageSlot
 
 		hooks := &service.OpenAIWSIngressHooks{
@@ -1449,10 +1502,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				imageIntent, needsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveModel, payload)
 				if imageIntent && !allowImageGeneration {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage(), nil)
-				}
-				if needsImageSlot && !account.OpenAIImageGenerationAllowed() {
-					currentTurnNeedsImageSlot = false
-					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "no available account", errOpenAIWSLocalImageToggleUnavailable)
 				}
 				currentTurnNeedsImageSlot = needsImageSlot
 				return nil
@@ -1833,6 +1882,30 @@ func resolveOpenAIResponsesEffectiveModel(account *service.Account, requestModel
 		return mappedModel
 	}
 	return model
+}
+
+func resolveOpenAIResponsesRequiredImageRoute(group *service.Group, imageIntent bool) string {
+	if !imageIntent {
+		return ""
+	}
+	if group == nil {
+		return service.GroupImageGenerationRouteCodex
+	}
+	return group.EffectiveImageGenerationRoute()
+}
+
+func openAIResponsesAccountSupportsImageIntent(account *service.Account, group *service.Group, imageIntent bool) bool {
+	requiredRoute := resolveOpenAIResponsesRequiredImageRoute(group, imageIntent)
+	if requiredRoute == "" {
+		return true
+	}
+	if account == nil || !account.SupportsOpenAIImageRoute(requiredRoute) {
+		return false
+	}
+	if service.NormalizeGroupImageGenerationRoute(requiredRoute) == service.GroupImageGenerationRouteWeb2API && !account.HasOpenAIImageWeb2APIProfile() {
+		return false
+	}
+	return true
 }
 
 func classifyOpenAIResponsesImageRequest(allowImageGeneration bool, requestModel string, body []byte) (bool, bool) {

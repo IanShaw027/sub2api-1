@@ -2193,10 +2193,7 @@ func (s *GatewayService) tryAcquireByLegacyOrder(ctx context.Context, candidates
 }
 
 func (s *GatewayService) schedulingConfig() config.GatewaySchedulingConfig {
-	if s.cfg != nil {
-		return s.cfg.Gateway.Scheduling
-	}
-	return config.GatewaySchedulingConfig{
+	cfg := config.GatewaySchedulingConfig{
 		StickySessionMaxWaiting:  3,
 		StickySessionWaitTimeout: 45 * time.Second,
 		FallbackWaitTimeout:      30 * time.Second,
@@ -2204,6 +2201,32 @@ func (s *GatewayService) schedulingConfig() config.GatewaySchedulingConfig {
 		LoadBatchEnabled:         true,
 		SlotCleanupInterval:      30 * time.Second,
 	}
+	if s.cfg == nil {
+		return cfg
+	}
+	runtimeCfg := s.cfg.Gateway.Scheduling
+	if runtimeCfg.StickySessionMaxWaiting > 0 {
+		cfg.StickySessionMaxWaiting = runtimeCfg.StickySessionMaxWaiting
+	}
+	if runtimeCfg.StickySessionWaitTimeout > 0 {
+		cfg.StickySessionWaitTimeout = runtimeCfg.StickySessionWaitTimeout
+	}
+	if runtimeCfg.FallbackWaitTimeout > 0 {
+		cfg.FallbackWaitTimeout = runtimeCfg.FallbackWaitTimeout
+	}
+	if runtimeCfg.FallbackMaxWaiting > 0 {
+		cfg.FallbackMaxWaiting = runtimeCfg.FallbackMaxWaiting
+	}
+	cfg.FallbackSelectionMode = runtimeCfg.FallbackSelectionMode
+	cfg.LoadBatchEnabled = runtimeCfg.LoadBatchEnabled
+	cfg.LoadBatchCacheTTLMS = runtimeCfg.LoadBatchCacheTTLMS
+	cfg.SnapshotMGetChunkSize = runtimeCfg.SnapshotMGetChunkSize
+	cfg.SnapshotWriteChunkSize = runtimeCfg.SnapshotWriteChunkSize
+	cfg.SlotCleanupInterval = runtimeCfg.SlotCleanupInterval
+	if cfg.SlotCleanupInterval <= 0 {
+		cfg.SlotCleanupInterval = 30 * time.Second
+	}
+	return cfg
 }
 
 func (s *GatewayService) withGroupContext(ctx context.Context, group *Group) context.Context {

@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -40,6 +41,11 @@ type cachedOpenAIStickyReservePercentSetting struct {
 	expiresAt int64
 }
 
+type cachedOpenAIStickyWaitTimeoutSetting struct {
+	timeout   time.Duration
+	expiresAt int64
+}
+
 type cachedOpenAIOAuthImageBridgeTransportSettings struct {
 	disableKeepAlives bool
 	freshClient       bool
@@ -50,6 +56,8 @@ var openAIAdvancedSchedulerSettingCache atomic.Value // *cachedOpenAIAdvancedSch
 var openAIAdvancedSchedulerSettingSF singleflight.Group
 var openAIStickyReservePercentSettingCache atomic.Value // *cachedOpenAIStickyReservePercentSetting
 var openAIStickyReservePercentSettingSF singleflight.Group
+var openAIStickyWaitTimeoutSettingCache atomic.Value // *cachedOpenAIStickyWaitTimeoutSetting
+var openAIStickyWaitTimeoutSettingSF singleflight.Group
 var openAIOAuthImageBridgeTransportSettingsCache atomic.Value // *cachedOpenAIOAuthImageBridgeTransportSettings
 var openAIOAuthImageBridgeTransportSettingsSF singleflight.Group
 
@@ -422,29 +430,32 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, nil
 	}
-	if !s.isStickyAccountSchedulableForRequest(account, req) {
+	stickyWaitTimeout := s.service.openAIStickyWaitTimeout(ctx)
+	if shouldClearOpenAIStickyAccount(account, req.RequestedModel, req.RequiredImageRoute, stickyWaitTimeout) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, nil
 	}
-	if !s.isAccountRequestCompatible(ctx, account, req) {
+	if !isOpenAIStickyCandidateCompatible(account, req.RequestedModel, req.RequireCompact, req.RequiredImageRoute, req.RequireOAuthAccount, req.RequireImageEnabled) {
+		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, nil
 	}
 	if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, nil
 	}
-	account = s.service.recheckSelectedOpenAIAccountFromDB(ctx, account, req.RequestedModel, req.RequireCompact, req.RequiredImageRoute)
-	if account == nil || !s.isAccountRequestCompatible(ctx, account, req) || !s.isAccountTransportCompatible(account, req.RequiredTransport) {
+	account = s.service.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, req.RequestedModel, req.RequireCompact, req.RequiredImageRoute, req.RequireOAuthAccount, req.RequireImageEnabled)
+	if account == nil || !s.isAccountTransportCompatible(account, req.RequiredTransport) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, nil
 	}
 
 	maxConcurrency := req.MaxConcurrencyFor(account)
-	if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+	if waitPlan := buildOpenAIAccountWaitPlan(
 		account,
+		req.RequestedModel,
 		req.RequiredImageRoute,
 		maxConcurrency,
-		s.service.schedulingConfig().StickySessionWaitTimeout,
+		stickyWaitTimeout,
 		s.service.schedulingConfig().StickySessionMaxWaiting,
 	); waitPlan != nil {
 		return s.service.newSelectionResult(ctx, account, false, nil, waitPlan)
@@ -461,7 +472,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return s.service.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 			AccountID:      accountID,
 			MaxConcurrency: maxConcurrency,
-			Timeout:        cfg.StickySessionWaitTimeout,
+			Timeout:        stickyWaitTimeout,
 			MaxWaiting:     cfg.StickySessionMaxWaiting,
 		})
 	}
@@ -946,8 +957,9 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			continue
 		}
 		maxConcurrency := s.service.freshSessionAdmissionLimit(ctx, fresh, req.RequiredImageRoute)
-		if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+		if waitPlan := buildOpenAIAccountWaitPlan(
 			fresh,
+			req.RequestedModel,
 			req.RequiredImageRoute,
 			maxConcurrency,
 			s.service.schedulingConfig().FallbackWaitTimeout,
@@ -958,6 +970,9 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			}
 			selection, err := s.service.newSelectionResult(ctx, fresh, false, nil, waitPlan)
 			return selection, candidateCount, topK, loadSkew, err
+		}
+		if hasOpenAIAccountTemporaryRecoveryPending(fresh, req.RequestedModel, req.RequiredImageRoute) {
+			continue
 		}
 		result, acquireErr := s.service.tryAcquireAccountSlot(ctx, fresh.ID, req.GroupID, maxConcurrency)
 		if acquireErr != nil {
@@ -987,8 +1002,9 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			compactBlocked = true
 			continue
 		}
-		if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+		if waitPlan := buildOpenAIAccountWaitPlan(
 			fresh,
+			req.RequestedModel,
 			req.RequiredImageRoute,
 			s.service.freshSessionAdmissionLimit(ctx, fresh, req.RequiredImageRoute),
 			cfg.FallbackWaitTimeout,
@@ -996,6 +1012,9 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		); waitPlan != nil {
 			selection, err := s.service.newSelectionResult(ctx, fresh, false, nil, waitPlan)
 			return selection, candidateCount, topK, loadSkew, err
+		}
+		if hasOpenAIAccountTemporaryRecoveryPending(fresh, req.RequestedModel, req.RequiredImageRoute) {
+			continue
 		}
 		selection, err := s.service.newSelectionResult(ctx, fresh, false, nil, &AccountWaitPlan{
 			AccountID:      fresh.ID,
@@ -1249,6 +1268,47 @@ func (s *OpenAIGatewayService) openAIStickyReservePercent(ctx context.Context) i
 	return percent
 }
 
+func (s *OpenAIGatewayService) openAIStickyWaitTimeout(ctx context.Context) time.Duration {
+	if cached, ok := openAIStickyWaitTimeoutSettingCache.Load().(*cachedOpenAIStickyWaitTimeoutSetting); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return cached.timeout
+		}
+	}
+
+	result, _, _ := openAIStickyWaitTimeoutSettingSF.Do(SettingKeyOpenAIStickyWaitTimeoutSeconds, func() (any, error) {
+		if cached, ok := openAIStickyWaitTimeoutSettingCache.Load().(*cachedOpenAIStickyWaitTimeoutSetting); ok && cached != nil {
+			if time.Now().UnixNano() < cached.expiresAt {
+				return cached.timeout, nil
+			}
+		}
+
+		timeout := 30 * time.Second
+		if repo := s.openAISettingsRepo(); repo != nil {
+			dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIAdvancedSchedulerSettingDBTimeout)
+			defer cancel()
+
+			value, err := repo.GetValue(dbCtx, SettingKeyOpenAIStickyWaitTimeoutSeconds)
+			if err == nil {
+				if parsed, parseErr := strconv.Atoi(strings.TrimSpace(value)); parseErr == nil {
+					timeout = time.Duration(boundedIntOrDefault(parsed, 1, 300, 30)) * time.Second
+				}
+			}
+		}
+
+		openAIStickyWaitTimeoutSettingCache.Store(&cachedOpenAIStickyWaitTimeoutSetting{
+			timeout:   timeout,
+			expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
+		})
+		return timeout, nil
+	})
+
+	timeout, _ := result.(time.Duration)
+	if timeout <= 0 {
+		return 30 * time.Second
+	}
+	return timeout
+}
+
 func (s *OpenAIGatewayService) openAIOAuthImageBridgeTransportSettings(ctx context.Context) cachedOpenAIOAuthImageBridgeTransportSettings {
 	if cached, ok := openAIOAuthImageBridgeTransportSettingsCache.Load().(*cachedOpenAIOAuthImageBridgeTransportSettings); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
@@ -1325,6 +1385,11 @@ func resetOpenAIStickyReservePercentSettingCacheForTest() {
 	openAIStickyReservePercentSettingSF = singleflight.Group{}
 }
 
+func resetOpenAIStickyWaitTimeoutSettingCacheForTest() {
+	openAIStickyWaitTimeoutSettingCache = atomic.Value{}
+	openAIStickyWaitTimeoutSettingSF = singleflight.Group{}
+}
+
 func (s *OpenAIGatewayService) SelectAccountWithScheduler(
 	ctx context.Context,
 	groupID *int64,
@@ -1349,7 +1414,16 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForResponses(
 	requireImageEnabled bool,
 	requireCompact bool,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
-	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", "", requireImageEnabled, false, requireCompact)
+	requiredImageRoute := ""
+	if requireImageEnabled {
+		requiredImageRoute = GroupImageGenerationRouteCodex
+		if groupID != nil && *groupID > 0 {
+			if group := s.loadGroupForImageRoute(ctx, *groupID); group != nil {
+				requiredImageRoute = group.EffectiveImageGenerationRoute()
+			}
+		}
+	}
+	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", requiredImageRoute, false, false, requireCompact)
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
@@ -1454,7 +1528,9 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	scheduler := s.getOpenAIAccountScheduler(ctx)
 	if scheduler == nil {
 		decision.Layer = openAIAccountScheduleLayerLoadBalance
-		if requiredTransport == OpenAIUpstreamTransportAny || requiredTransport == OpenAIUpstreamTransportHTTPSSE {
+		useImageRouteFallback := (requiredTransport == OpenAIUpstreamTransportAny || requiredTransport == OpenAIUpstreamTransportHTTPSSE) &&
+			(requiredImageCapability != "" || strings.TrimSpace(requiredImageRoute) != "" || requireImageEnabled)
+		if useImageRouteFallback {
 			effectiveExcludedIDs := cloneExcludedAccountIDs(excludedIDs)
 			for {
 				selection, err := s.selectAccountWithLoadAwarenessForImageRoute(ctx, groupID, sessionHash, requestedModel, effectiveExcludedIDs, requireCompact, requiredImageRoute, requireOAuthAccount)
@@ -1542,6 +1618,9 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 func (s *OpenAIGatewayService) loadGroupForImageRoute(ctx context.Context, groupID int64) *Group {
 	if s == nil || groupID <= 0 {
 		return nil
+	}
+	if group, ok := ctx.Value(ctxkey.Group).(*Group); ok && IsGroupContextValid(group) && group.ID == groupID {
+		return group
 	}
 	if s.schedulerSnapshot != nil {
 		if group, err := s.schedulerSnapshot.GetGroupByID(ctx, groupID); err == nil && group != nil {

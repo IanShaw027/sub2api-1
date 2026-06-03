@@ -573,7 +573,7 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_Web2APIRateLim
 
 	ctx := context.Background()
 	groupID := int64(101021)
-	resetAt := time.Now().Add(2 * time.Minute).UTC().Truncate(time.Second)
+	resetAt := time.Now().Add(20 * time.Second).UTC().Truncate(time.Second)
 	webProfile := map[string]any{
 		"user_agent":                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.6950.102 Safari/537.36",
 		"accept_language":            "en;q=0.9",
@@ -673,7 +673,7 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_Web2APIRateLim
 	require.NotNil(t, selection.WaitPlan)
 	require.NotNil(t, selection.WaitPlan.NotBefore)
 	require.True(t, selection.WaitPlan.NotBefore.Equal(resetAt))
-	require.Greater(t, selection.WaitPlan.Timeout, cfg.Gateway.Scheduling.FallbackWaitTimeout)
+	require.Equal(t, 30*time.Second, selection.WaitPlan.Timeout)
 }
 
 func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_Web2APISkipsIncompleteWebProfile(t *testing.T) {
@@ -775,7 +775,7 @@ func TestAccount_OpenAIImageGenerationAllowed(t *testing.T) {
 	})
 }
 
-func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageIntentRequiresImageEnabledAccount(t *testing.T) {
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageIntentMayUseImageDisabledAccount(t *testing.T) {
 	for _, advancedSchedulerEnabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("advanced_scheduler_enabled=%t", advancedSchedulerEnabled), func(t *testing.T) {
 			ctx := context.Background()
@@ -792,15 +792,6 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageIntent
 					Extra: map[string]any{
 						"openai_image_generation_enabled": false,
 					},
-				},
-				{
-					ID:          32016,
-					Platform:    PlatformOpenAI,
-					Type:        AccountTypeAPIKey,
-					Status:      StatusActive,
-					Schedulable: true,
-					Concurrency: 1,
-					Priority:    5,
 				},
 			}
 			cfg := &config.Config{}
@@ -829,7 +820,7 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageIntent
 			require.NoError(t, err)
 			require.NotNil(t, selection)
 			require.NotNil(t, selection.Account)
-			require.Equal(t, int64(32016), selection.Account.ID)
+			require.Equal(t, int64(32015), selection.Account.ID)
 		})
 	}
 }
@@ -874,6 +865,155 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_WithoutImageIntentMayUs
 	require.NotNil(t, selection)
 	require.NotNil(t, selection.Account)
 	require.Equal(t, int64(32017), selection.Account.ID)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_NoImageIntentIgnoresCodexImageResetWhenAdvancedSchedulerDisabled(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(1010241)
+	sessionHash := "plain_responses_session"
+	resetAt := time.Now().Add(45 * time.Minute).UTC().Format(time.RFC3339)
+	accounts := []Account{
+		{
+			ID:          32018,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+			Extra: map[string]any{
+				"openai_image_codex_rate_limit_reset_at": resetAt,
+			},
+		},
+		{
+			ID:          32021,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    5,
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache: &schedulerTestGatewayCache{
+			sessionBindings: map[string]int64{
+				"openai:" + sessionHash: 32018,
+			},
+		},
+		cfg: cfg,
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForResponses(
+		ctx,
+		&groupID,
+		"",
+		sessionHash,
+		"gpt-5.4",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(32018), selection.Account.ID)
+	require.True(t, selection.Acquired, "plain /responses should not be forced into a codex image reset wait plan")
+	require.Nil(t, selection.WaitPlan)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageContextUsesGroupImageRouteWithoutImageToggle(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	groupID := int64(1010242)
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	cfg.Gateway.Scheduling.DbFallbackEnabled = true
+
+	webProfile := map[string]any{
+		"user_agent":                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.6950.102 Safari/537.36",
+		"accept_language":            "en;q=0.9",
+		"sec_ch_ua":                  `"Not.A/Brand";v="8", "Chromium";v="145", "Google Chrome";v="145"`,
+		"sec_ch_ua_mobile":           "?0",
+		"sec_ch_ua_platform":         `"macOS"`,
+		"sec_ch_ua_arch":             `"arm"`,
+		"sec_ch_ua_bitness":          `"64"`,
+		"sec_ch_ua_full_version":     `"145.0.0.0"`,
+		"sec_ch_ua_platform_version": `"15.4.0"`,
+		"oai_device_id":              "device-1",
+		"oai_session_id":             "session-1",
+		"cookies": []any{
+			map[string]any{"name": "__Secure-next-auth.session-token", "value": "cookie-value", "domain": ".chatgpt.com", "path": "/"},
+		},
+	}
+	accounts := []Account{
+		{
+			ID:          32051,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+		},
+		{
+			ID:          32052,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    5,
+			Extra: map[string]any{
+				"openai_image_generation_enabled": false,
+				"web_profile":                     webProfile,
+			},
+		},
+	}
+
+	accountRepo := schedulerTestOpenAIAccountRepo{accounts: accounts}
+	snapshot := NewSchedulerSnapshotService(
+		nil,
+		nil,
+		accountRepo,
+		schedulerImageRouteGroupRepoStub{
+			group: &Group{
+				ID:                   groupID,
+				AllowImageGeneration: true,
+				ImageGenerationRoute: GroupImageGenerationRouteWeb2API,
+			},
+		},
+		cfg,
+	)
+	svc := &OpenAIGatewayService{
+		accountRepo:        accountRepo,
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		schedulerSnapshot:  snapshot,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForResponses(
+		ctx,
+		&groupID,
+		"",
+		"",
+		"gpt-5.4",
+		nil,
+		OpenAIUpstreamTransportAny,
+		true,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(32052), selection.Account.ID)
 }
 
 func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_SkipsImageDisabledAccounts(t *testing.T) {
@@ -1331,6 +1471,141 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionStickyBusyKeepsS
 	require.Equal(t, int64(21001), selection.WaitPlan.AccountID)
 	require.Equal(t, openAIAccountScheduleLayerSessionSticky, decision.Layer)
 	require.True(t, decision.StickySessionHit)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionStickyTempUnschedulableWithinWaitBudgetKeepsSticky(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(101001)
+	waitUntil := time.Now().Add(20 * time.Second)
+	accounts := []Account{
+		{
+			ID:                     21011,
+			Platform:               PlatformOpenAI,
+			Type:                   AccountTypeAPIKey,
+			Status:                 StatusActive,
+			Schedulable:            true,
+			Concurrency:            1,
+			Priority:               0,
+			TempUnschedulableUntil: &waitUntil,
+		},
+		{
+			ID:          21012,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    9,
+		},
+	}
+	cache := &schedulerTestGatewayCache{
+		sessionBindings: map[string]int64{
+			"openai:session_hash_sticky_temp_wait": 21011,
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.StickySessionMaxWaiting = 2
+	cfg.Gateway.Scheduling.StickySessionWaitTimeout = 45 * time.Second
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              cache,
+		cfg:                cfg,
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, decision, err := svc.SelectAccountWithScheduler(
+		ctx,
+		&groupID,
+		"",
+		"session_hash_sticky_temp_wait",
+		"gpt-5.1",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(21011), selection.Account.ID)
+	require.False(t, selection.Acquired)
+	require.NotNil(t, selection.WaitPlan)
+	require.Equal(t, int64(21011), selection.WaitPlan.AccountID)
+	require.NotNil(t, selection.WaitPlan.NotBefore)
+	require.WithinDuration(t, waitUntil, *selection.WaitPlan.NotBefore, time.Second)
+	require.Equal(t, 30*time.Second, selection.WaitPlan.Timeout)
+	require.Equal(t, openAIAccountScheduleLayerSessionSticky, decision.Layer)
+	require.True(t, decision.StickySessionHit)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionStickyTempUnschedulableBeyondWaitBudgetSwitchesAccount(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(101002)
+	waitUntil := time.Now().Add(45 * time.Second)
+	cache := &schedulerTestGatewayCache{
+		sessionBindings: map[string]int64{
+			"openai:session_hash_sticky_temp_switch": 21021,
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.StickySessionMaxWaiting = 2
+	cfg.Gateway.Scheduling.StickySessionWaitTimeout = 45 * time.Second
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+
+	svc := &OpenAIGatewayService{
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{
+			{
+				ID:                     21021,
+				Platform:               PlatformOpenAI,
+				Type:                   AccountTypeAPIKey,
+				Status:                 StatusActive,
+				Schedulable:            true,
+				Concurrency:            1,
+				Priority:               0,
+				TempUnschedulableUntil: &waitUntil,
+			},
+			{
+				ID:          21022,
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Status:      StatusActive,
+				Schedulable: true,
+				Concurrency: 1,
+				Priority:    9,
+			},
+		}},
+		cache:              cache,
+		cfg:                cfg,
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, decision, err := svc.SelectAccountWithScheduler(
+		ctx,
+		&groupID,
+		"",
+		"session_hash_sticky_temp_switch",
+		"gpt-5.1",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(21022), selection.Account.ID)
+	require.True(t, selection.Acquired)
+	require.Nil(t, selection.WaitPlan)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+	require.Equal(t, 1, cache.deletedSessions["openai:session_hash_sticky_temp_switch"])
 }
 
 func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionSticky_ForceHTTP(t *testing.T) {

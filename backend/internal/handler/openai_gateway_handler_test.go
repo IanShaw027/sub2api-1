@@ -708,7 +708,7 @@ func TestOpenAIResponses_FunctionCallOutputWithPreviousResponseIDStillRequiresHT
 	require.Contains(t, w.Body.String(), "function_call_output requires item_reference ids matching each call_id")
 }
 
-func TestOpenAIResponses_HTTPPostRoutingImageIntentSkipsImageDisabledAccount(t *testing.T) {
+func TestOpenAIResponses_HTTPPostRoutingImageIntentMayUseImageDisabledAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(6201)
@@ -848,12 +848,12 @@ func TestOpenAIResponses_HTTPPostRoutingImageIntentSkipsImageDisabledAccount(t *
 	if w.Code != http.StatusOK {
 		t.Fatalf("unexpected status=%d body=%s disabled_hit=%s enabled_hit=%s", w.Code, w.Body.String(), upstream.recordedBody(12001), upstream.recordedBody(12002))
 	}
-	require.Equal(t, "resp_http_image_ok", gjson.GetBytes(w.Body.Bytes(), "id").String())
-	require.Empty(t, upstream.recordedBody(12001))
-	require.Equal(t, "gpt-image-1", gjson.Get(upstream.recordedBody(12002), "model").String())
+	require.Equal(t, "resp_http_disabled_should_not_run", gjson.GetBytes(w.Body.Bytes(), "id").String())
+	require.Equal(t, "gpt-image-1", gjson.Get(upstream.recordedBody(12001), "model").String())
+	require.Empty(t, upstream.recordedBody(12002))
 }
 
-func TestOpenAIResponses_HTTPPostImageToolCapabilitySkipsImageDisabledAccount(t *testing.T) {
+func TestOpenAIResponses_HTTPPostImageToolCapabilityMayUseImageDisabledAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(6205)
@@ -981,12 +981,12 @@ func TestOpenAIResponses_HTTPPostImageToolCapabilitySkipsImageDisabledAccount(t 
 	if w.Code != http.StatusOK {
 		t.Fatalf("unexpected status=%d body=%s disabled_hit=%s enabled_hit=%s", w.Code, w.Body.String(), upstream.recordedBody(12041), upstream.recordedBody(12042))
 	}
-	require.Equal(t, "resp_http_enabled_tool_capability_ok", gjson.GetBytes(w.Body.Bytes(), "id").String())
-	require.Empty(t, upstream.recordedBody(12041))
-	require.Equal(t, "image_generation", gjson.Get(upstream.recordedBody(12042), "tools.0.type").String())
+	require.Equal(t, "resp_http_disabled_tool_capability_should_not_run", gjson.GetBytes(w.Body.Bytes(), "id").String())
+	require.Equal(t, "image_generation", gjson.Get(upstream.recordedBody(12041), "tools.0.type").String())
+	require.Empty(t, upstream.recordedBody(12042))
 }
 
-func TestOpenAIResponses_HTTPPostRoutingImageIntentExhaustsToServiceUnavailable(t *testing.T) {
+func TestOpenAIResponses_HTTPPostRoutingImageIntentAllowsImageDisabledOnlyAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(6202)
@@ -1099,10 +1099,343 @@ func TestOpenAIResponses_HTTPPostRoutingImageIntentExhaustsToServiceUnavailable(
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusServiceUnavailable, w.Code)
-	require.Equal(t, "api_error", gjson.GetBytes(w.Body.Bytes(), "error.type").String())
-	require.Equal(t, "Service temporarily unavailable", gjson.GetBytes(w.Body.Bytes(), "error.message").String())
-	require.Empty(t, upstream.recordedBody(12011))
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status=%d body=%s disabled_hit=%s", w.Code, w.Body.String(), upstream.recordedBody(12011))
+	}
+	require.Equal(t, "resp_http_disabled_should_not_run", gjson.GetBytes(w.Body.Bytes(), "id").String())
+	require.Equal(t, "gpt-image-1", gjson.Get(upstream.recordedBody(12011), "model").String())
+}
+
+func TestOpenAIResponses_HTTPPostAccountMappedImageOnlyModel_Web2APIRouteUsesCompatibleAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(62021)
+	upstream := &openAIResponsesHTTPHandlerUpstreamStub{
+		replies: map[int64]openAIResponsesHTTPHandlerUpstreamReply{
+			12101: {
+				statusCode:  http.StatusOK,
+				contentType: "application/json",
+				body:        `{"id":"resp_http_apikey_should_not_run","model":"gpt-image-1","usage":{"input_tokens":1,"output_tokens":1}}`,
+			},
+			12102: {
+				statusCode:  http.StatusOK,
+				contentType: "text/event-stream",
+				body: "event: response.completed\n" +
+					`data: {"type":"response.completed","response":{"id":"resp_http_oauth_web2api_ok","model":"gpt-image-1","usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\n" +
+					"data: [DONE]\n\n",
+			},
+		},
+	}
+
+	webProfile := map[string]any{
+		"user_agent":                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.6950.102 Safari/537.36",
+		"accept_language":            "en;q=0.9",
+		"sec_ch_ua":                  `"Not.A/Brand";v="8", "Chromium";v="145", "Google Chrome";v="145"`,
+		"sec_ch_ua_mobile":           "?0",
+		"sec_ch_ua_platform":         `"macOS"`,
+		"sec_ch_ua_arch":             `"arm"`,
+		"sec_ch_ua_bitness":          `"64"`,
+		"sec_ch_ua_full_version":     `"145.0.0.0"`,
+		"sec_ch_ua_platform_version": `"15.4.0"`,
+		"oai_device_id":              "device-1",
+		"oai_session_id":             "session-1",
+		"cookies": []any{
+			map[string]any{"name": "__Secure-next-auth.session-token", "value": "cookie-value", "domain": ".chatgpt.com", "path": "/"},
+		},
+	}
+
+	accounts := []service.Account{
+		{
+			ID:          12101,
+			Name:        "openai-http-apikey-image-mapped",
+			Platform:    service.PlatformOpenAI,
+			Type:        service.AccountTypeAPIKey,
+			Status:      service.StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+			Credentials: map[string]any{
+				"api_key":  "sk-apikey-image-mapped",
+				"base_url": "http://apikey-image-mapped-upstream.test",
+				"model_mapping": map[string]any{
+					"gpt-5.4": "gpt-image-1",
+				},
+			},
+			Extra: map[string]any{
+				"openai_passthrough": true,
+			},
+		},
+		{
+			ID:          12102,
+			Name:        "openai-http-oauth-web2api-image-mapped",
+			Platform:    service.PlatformOpenAI,
+			Type:        service.AccountTypeOAuth,
+			Status:      service.StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    1,
+			Credentials: map[string]any{
+				"access_token": "oauth-token",
+				"model_mapping": map[string]any{
+					"gpt-5.4": "gpt-image-1",
+				},
+			},
+			Extra: map[string]any{
+				"openai_image_generation_enabled": false,
+				"openai_passthrough":              true,
+				"web_profile":                     webProfile,
+			},
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.RunMode = config.RunModeSimple
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.MaxAccountSwitches = 3
+
+	accountRepo := &openAIWSFailoverHandlerAccountRepoStub{accounts: accounts}
+	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		accountRepo,
+		&openAIWSUsageHandlerUsageLogRepoStub{created: make(chan *service.UsageLog, 1)},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cfg,
+		nil,
+		nil,
+		service.NewBillingService(cfg, nil),
+		nil,
+		billingCacheSvc,
+		upstream,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	cache := &concurrencyCacheMock{
+		acquireUserSlotFn: func(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+		acquireAccountSlotFn: func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+	}
+	h := &OpenAIGatewayHandler{
+		gatewayService:      gatewaySvc,
+		billingCacheService: billingCacheSvc,
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+		maxAccountSwitches:  3,
+	}
+
+	apiKey := &service.APIKey{
+		ID:      9211,
+		GroupID: &groupID,
+		User:    &service.User{ID: 9111, Status: service.StatusActive},
+		Group: &service.Group{
+			ID:                   groupID,
+			Platform:             service.PlatformOpenAI,
+			Status:               service.StatusActive,
+			AllowImageGeneration: true,
+			ImageGenerationRoute: service.GroupImageGenerationRouteWeb2API,
+		},
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
+		c.Next()
+	})
+	router.POST("/openai/v1/responses", h.Responses)
+
+	req := httptest.NewRequest(http.MethodPost, "/openai/v1/responses", strings.NewReader(`{"model":"gpt-5.4","stream":true,"input":"draw a cat"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status=%d body=%s apikey_hit=%s oauth_hit=%s", w.Code, w.Body.String(), upstream.recordedBody(12101), upstream.recordedBody(12102))
+	}
+	require.Contains(t, w.Body.String(), "response.completed")
+	require.Empty(t, upstream.recordedBody(12101))
+	require.Equal(t, "gpt-image-1", gjson.Get(upstream.recordedBody(12102), "model").String())
+}
+
+func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_WaitTimeoutRequestsReselection(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+
+	stickyCache := &openAIHandlerGatewayCacheStub{
+		sessionBindings: map[string]int64{
+			"openai:sticky-timeout": 13001,
+		},
+	}
+	concurrencyCache := &concurrencyCacheMock{
+		acquireAccountSlotFn: func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+			return false, nil
+		},
+	}
+	concurrencySvc := service.NewConcurrencyService(concurrencyCache)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		stickyCache,
+		&config.Config{},
+		nil,
+		concurrencySvc,
+		nil,
+		nil,
+		nil,
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	h := &OpenAIGatewayHandler{
+		gatewayService:    gatewaySvc,
+		concurrencyHelper: NewConcurrencyHelper(concurrencySvc, SSEPingFormatNone, 5*time.Millisecond),
+	}
+
+	streamStarted := false
+	selection := &service.AccountSelectionResult{
+		Account: &service.Account{
+			ID:          13001,
+			Platform:    service.PlatformOpenAI,
+			Type:        service.AccountTypeAPIKey,
+			Status:      service.StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+		},
+		WaitPlan: &service.AccountWaitPlan{
+			AccountID:      13001,
+			MaxConcurrency: 1,
+			Timeout:        30 * time.Millisecond,
+			MaxWaiting:     1,
+		},
+	}
+
+	release, status := h.acquireResponsesAccountSlot(
+		c,
+		nil,
+		"sticky-timeout",
+		"",
+		selection,
+		false,
+		&streamStarted,
+		zap.NewNop(),
+	)
+	require.Nil(t, release)
+	require.Equal(t, accountSlotAcquireRetry, status)
+	require.Empty(t, rec.Body.String())
+	require.Equal(t, 1, stickyCache.deletedSessions["openai:sticky-timeout"])
+}
+
+func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_WaitTimeoutClearsPreviousResponseBinding(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+
+	stickyCache := &openAIHandlerGatewayCacheStub{
+		sessionBindings: map[string]int64{
+			"openai:sticky-timeout-prev": 13011,
+		},
+	}
+	store := service.NewOpenAIWSStateStore(stickyCache)
+	require.NoError(t, store.BindResponseAccount(context.Background(), 0, "resp_timeout_prev", 13011, time.Hour))
+
+	concurrencyCache := &concurrencyCacheMock{
+		acquireAccountSlotFn: func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+			return false, nil
+		},
+	}
+	concurrencySvc := service.NewConcurrencyService(concurrencyCache)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		stickyCache,
+		&config.Config{},
+		nil,
+		concurrencySvc,
+		nil,
+		nil,
+		nil,
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	h := &OpenAIGatewayHandler{
+		gatewayService:    gatewaySvc,
+		concurrencyHelper: NewConcurrencyHelper(concurrencySvc, SSEPingFormatNone, 5*time.Millisecond),
+	}
+
+	streamStarted := false
+	selection := &service.AccountSelectionResult{
+		Account: &service.Account{
+			ID:          13011,
+			Platform:    service.PlatformOpenAI,
+			Type:        service.AccountTypeAPIKey,
+			Status:      service.StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+		},
+		WaitPlan: &service.AccountWaitPlan{
+			AccountID:      13011,
+			MaxConcurrency: 1,
+			Timeout:        30 * time.Millisecond,
+			MaxWaiting:     1,
+		},
+	}
+
+	release, status := h.acquireResponsesAccountSlot(
+		c,
+		nil,
+		"sticky-timeout-prev",
+		"resp_timeout_prev",
+		selection,
+		false,
+		&streamStarted,
+		zap.NewNop(),
+	)
+	require.Nil(t, release)
+	require.Equal(t, accountSlotAcquireRetry, status)
+	freshStore := service.NewOpenAIWSStateStore(stickyCache)
+	accountID, err := freshStore.GetResponseAccount(context.Background(), 0, "resp_timeout_prev")
+	require.NoError(t, err)
+	require.Zero(t, accountID)
 }
 
 func TestOpenAIResponsesWebSocket_SetsClientTransportWSWhenUpgradeValid(t *testing.T) {
@@ -1839,12 +2172,65 @@ type openAIWSFailoverHandlerAccountRepoStub struct {
 	rateLimitedIDs []int64
 }
 
+type openAIHandlerGatewayCacheStub struct {
+	sessionBindings map[string]int64
+	deletedSessions map[string]int
+}
+
+func (s *openAIHandlerGatewayCacheStub) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
+	if s != nil && s.sessionBindings != nil {
+		if accountID, ok := s.sessionBindings[sessionHash]; ok {
+			return accountID, nil
+		}
+	}
+	return 0, errors.New("not found")
+}
+
+func (s *openAIHandlerGatewayCacheStub) SetSessionAccountID(ctx context.Context, groupID int64, sessionHash string, accountID int64, ttl time.Duration) error {
+	if s.sessionBindings == nil {
+		s.sessionBindings = make(map[string]int64)
+	}
+	s.sessionBindings[sessionHash] = accountID
+	return nil
+}
+
+func (s *openAIHandlerGatewayCacheStub) RefreshSessionTTL(ctx context.Context, groupID int64, sessionHash string, ttl time.Duration) error {
+	return nil
+}
+
+func (s *openAIHandlerGatewayCacheStub) DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error {
+	if s.deletedSessions == nil {
+		s.deletedSessions = make(map[string]int)
+	}
+	s.deletedSessions[sessionHash]++
+	delete(s.sessionBindings, sessionHash)
+	return nil
+}
+
 func (s *openAIWSFailoverHandlerAccountRepoStub) ListSchedulableByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
 	out := make([]service.Account, 0, len(s.accounts))
 	for _, account := range s.accounts {
 		if account.Platform == platform && account.IsSchedulable() {
 			out = append(out, account)
 		}
+	}
+	return out, nil
+}
+
+func (s *openAIWSFailoverHandlerAccountRepoStub) ListByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
+	out := make([]service.Account, 0, len(s.accounts))
+	for _, account := range s.accounts {
+		if account.Platform == platform {
+			out = append(out, account)
+		}
+	}
+	return out, nil
+}
+
+func (s *openAIWSFailoverHandlerAccountRepoStub) ListByGroup(ctx context.Context, groupID int64) ([]service.Account, error) {
+	out := make([]service.Account, 0, len(s.accounts))
+	for _, account := range s.accounts {
+		out = append(out, account)
 	}
 	return out, nil
 }
@@ -2174,7 +2560,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 	require.Equal(t, []int64{int64(9902)}, accountRepo.rateLimitedIDs)
 }
 
-func TestOpenAIResponsesWebSocket_FirstTurnPostModelMappingImageIntentSkipsImageDisabledAccount(t *testing.T) {
+func TestOpenAIResponsesWebSocket_FirstTurnPostModelMappingImageIntentMayUseImageDisabledAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	firstHitCh := make(chan []byte, 1)
@@ -2361,23 +2747,23 @@ func TestOpenAIResponsesWebSocket_FirstTurnPostModelMappingImageIntentSkipsImage
 	cancelRead()
 	require.NoError(t, err)
 	require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
-	require.Equal(t, "resp_ws_enabled_ok", gjson.GetBytes(event, "response.id").String())
-
-	select {
-	case payload := <-secondHitCh:
-		require.Equal(t, "gpt-5.4", gjson.GetBytes(payload, "model").String())
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for enabled websocket upstream request")
-	}
+	require.Equal(t, "resp_ws_disabled_should_not_run", gjson.GetBytes(event, "response.id").String())
 
 	select {
 	case payload := <-firstHitCh:
-		t.Fatalf("disabled websocket upstream should not have been hit: %s", string(payload))
+		require.Equal(t, "gpt-5.4", gjson.GetBytes(payload, "model").String())
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for disabled websocket upstream request")
+	}
+
+	select {
+	case payload := <-secondHitCh:
+		t.Fatalf("enabled websocket upstream should not have been hit: %s", string(payload))
 	case <-time.After(200 * time.Millisecond):
 	}
 }
 
-func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentRefreshesLiveToggleWithoutPollutingSchedulerHealth(t *testing.T) {
+func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentContinuesAfterLiveToggleChange(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	firstHitCh := make(chan []byte, 1)
@@ -2407,6 +2793,9 @@ func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentRefreshesLiveToggl
 		cancelRead()
 		if readErr == nil {
 			secondHitCh <- payload
+			writeCtx, cancelWrite = context.WithTimeout(r.Context(), 3*time.Second)
+			_ = conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.completed","response":{"id":"resp_ws_turn_two","model":"gpt-5.4","usage":{"input_tokens":1,"output_tokens":1}}}`))
+			cancelWrite()
 		}
 	}))
 	defer upstreamServer.Close()
@@ -2537,13 +2926,11 @@ func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentRefreshesLiveToggl
 	require.NoError(t, err)
 
 	readCtx, cancelRead = context.WithTimeout(context.Background(), 5*time.Second)
-	_, _, err = clientConn.Read(readCtx)
+	_, event, err = clientConn.Read(readCtx)
 	cancelRead()
-	require.Error(t, err)
-	var closeErr coderws.CloseError
-	require.ErrorAs(t, err, &closeErr)
-	require.Equal(t, coderws.StatusTryAgainLater, closeErr.Code)
-	require.Contains(t, strings.ToLower(closeErr.Reason), "no available account")
+	require.NoError(t, err)
+	require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
+	require.Equal(t, "resp_ws_turn_two", gjson.GetBytes(event, "response.id").String())
 
 	select {
 	case payload := <-firstHitCh:
@@ -2554,17 +2941,13 @@ func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentRefreshesLiveToggl
 
 	select {
 	case payload := <-secondHitCh:
-		t.Fatalf("explicit image later turn should not have been forwarded upstream: %s", string(payload))
-	case <-time.After(200 * time.Millisecond):
+		require.Equal(t, "image_generation", gjson.GetBytes(payload, "tool_choice.type").String())
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for explicit image later turn websocket request")
 	}
-
-	snapshot := gatewaySvc.SnapshotOpenAIAccountSchedulerMetrics()
-	runtimeSnapshot, ok := snapshot.RuntimeStats[account.ID]
-	require.True(t, ok)
-	require.InDelta(t, 0.0, runtimeSnapshot.ErrorRateEWMA, 1e-9)
 }
 
-func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityRefreshesLiveToggleWithoutForwarding(t *testing.T) {
+func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityContinuesAfterLiveToggleChange(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	firstHitCh := make(chan []byte, 1)
@@ -2593,6 +2976,9 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityRefreshesLiveToggl
 		cancelRead()
 		if readErr == nil {
 			secondHitCh <- payload
+			writeCtx, cancelWrite = context.WithTimeout(r.Context(), 3*time.Second)
+			_ = conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.completed","response":{"id":"resp_ws_turn_two_tool_capability","model":"gpt-5.4","usage":{"input_tokens":1,"output_tokens":1}}}`))
+			cancelWrite()
 		}
 	}))
 	defer upstreamServer.Close()
@@ -2719,13 +3105,11 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityRefreshesLiveToggl
 	require.NoError(t, err)
 
 	readCtx, cancelRead = context.WithTimeout(context.Background(), 5*time.Second)
-	_, _, err = clientConn.Read(readCtx)
+	_, event, err = clientConn.Read(readCtx)
 	cancelRead()
-	require.Error(t, err)
-	var closeErr coderws.CloseError
-	require.ErrorAs(t, err, &closeErr)
-	require.Equal(t, coderws.StatusTryAgainLater, closeErr.Code)
-	require.Contains(t, strings.ToLower(closeErr.Reason), "no available account")
+	require.NoError(t, err)
+	require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
+	require.Equal(t, "resp_ws_turn_two_tool_capability", gjson.GetBytes(event, "response.id").String())
 
 	select {
 	case payload := <-firstHitCh:
@@ -2736,8 +3120,9 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityRefreshesLiveToggl
 
 	select {
 	case payload := <-secondHitCh:
-		t.Fatalf("image tool capability later turn should not have been forwarded upstream: %s", string(payload))
-	case <-time.After(200 * time.Millisecond):
+		require.Equal(t, "image_generation", gjson.GetBytes(payload, "tools.0.type").String())
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for image tool capability later turn websocket request")
 	}
 }
 

@@ -3019,8 +3019,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		turnPreviousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(turnPreviousResponseID)
 		turnPromptCacheKey := openAIWSPayloadStringFromRaw(payload, "prompt_cache_key")
 		turnStoreDisabled := s.isOpenAIWSStoreDisabledInRequestRaw(payload, account)
-			turnHasFunctionCallOutput := HasToolContinuationOutputInRawPayload(payload)
-			eventCount := 0
+		turnHasFunctionCallOutput := HasToolContinuationOutputInRawPayload(payload)
+		eventCount := 0
 		tokenEventCount := 0
 		terminalEventCount := 0
 		firstEventType := ""
@@ -4167,14 +4167,12 @@ func (s *OpenAIGatewayService) SelectAccountByPreviousResponseID(
 	if s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
 		return nil, nil
 	}
-	if shouldClearStickySession(account, requestedModel) || !account.IsOpenAI() || !account.IsSchedulable() {
+	stickyWaitTimeout := s.openAIStickyWaitTimeout(ctx)
+	if shouldClearOpenAIStickyAccount(account, requestedModel, "", stickyWaitTimeout) || !isOpenAIStickyCandidateCompatible(account, requestedModel, requireCompact, "", false, false) {
 		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
 		return nil, nil
 	}
-	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
-		return nil, nil
-	}
-	account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, "")
+	account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, "", false, false)
 	if account == nil {
 		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
 		return nil, nil
@@ -4197,11 +4195,14 @@ func (s *OpenAIGatewayService) SelectAccountByPreviousResponseID(
 	}
 
 	cfg := s.schedulingConfig()
+	if waitPlan := buildOpenAIAccountWaitPlan(account, requestedModel, "", account.Concurrency, stickyWaitTimeout, cfg.StickySessionMaxWaiting); waitPlan != nil {
+		return s.newSelectionResult(ctx, account, false, nil, waitPlan)
+	}
 	if s.concurrencyService != nil {
 		return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 			AccountID:      accountID,
 			MaxConcurrency: account.Concurrency,
-			Timeout:        cfg.StickySessionWaitTimeout,
+			Timeout:        stickyWaitTimeout,
 			MaxWaiting:     cfg.StickySessionMaxWaiting,
 		})
 	}
