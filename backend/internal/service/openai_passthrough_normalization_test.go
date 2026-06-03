@@ -66,6 +66,15 @@ func TestNormalizeOpenAIPassthroughBaseBody_PreservesTopPWhenNotRequested(t *tes
 	require.Equal(t, 0.8, gjson.GetBytes(normalized, "top_p").Float())
 }
 
+func TestNormalizeOpenAIPassthroughBaseBody_NormalizesResponseFormatSchemaRequired(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","input":"hello","text":{"format":{"type":"json_schema","name":"codex_output_schema","schema":{"type":"object","required":["action_dispatch_maps"],"properties":{"action_dispatch":{"type":"string"},"summary":{"type":"string"}}}}}}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughBaseBody(body, false, false)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.JSONEq(t, `["action_dispatch","summary"]`, gjson.GetBytes(normalized, "text.format.schema.required").Raw)
+}
+
 func TestNormalizeOpenAIPassthroughOAuthBody_NormalizesToolRoleInput(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.4","stream":true,"store":false,"previous_response_id":"resp_123","input":[{"type":"message","role":"user","content":"hi"},{"role":"tool","tool_call_id":"call_123","content":"done"}]}`)
 
@@ -227,6 +236,25 @@ func TestFinalizeOpenAIResponsesOAuthUpstreamBody_CompactInjectsDefaultInstructi
 	require.False(t, gjson.GetBytes(finalBody, "stream").Exists())
 	require.True(t, gjson.GetBytes(finalBody, "instructions").Exists())
 	require.NotEmpty(t, gjson.GetBytes(finalBody, "instructions").String())
+}
+
+func TestFinalizeOpenAIResponsesOAuthUpstreamBody_NormalizesResponseFormatSchemaRequired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}
+	body := []byte(`{"model":"gpt-5.4","stream":true,"store":false,"text":{"format":{"type":"json_schema","name":"codex_output_schema","schema":{"type":"object","required":["action_dispatch_maps"],"properties":{"action_dispatch":{"type":"string"},"summary":{"type":"string"}}}}}}`)
+
+	finalBody, changed, err := finalizeOpenAIResponsesOAuthUpstreamBody(c, account, "gpt-5.4", body)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.JSONEq(t, `["action_dispatch","summary"]`, gjson.GetBytes(finalBody, "text.format.schema.required").Raw)
 }
 
 func TestFinalizeOpenAIResponsesOAuthUpstreamBody_ContextMarkedMessagesBridgeInjectsDefaultInstructions(t *testing.T) {

@@ -3377,6 +3377,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		disablePatch()
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized strict function tool schemas for /responses request")
 	}
+	if normalizeOpenAIResponseFormatSchemas(reqBody) {
+		bodyModified = true
+		disablePatch()
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized response_format JSON schemas for /responses request")
+	}
 	if codexImageGenerationBridgeEnabled && !isMessagesBridgeRequest && applyCodexImageGenerationBridgeInstructions(reqBody) {
 		bodyModified = true
 		disablePatch()
@@ -9095,6 +9100,9 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	if normalizeOpenAIStrictFunctionToolSchemas(reqBody) {
 		changed = true
 	}
+	if normalizeOpenAIResponseFormatSchemas(reqBody) {
+		changed = true
+	}
 
 	if !changed {
 		return body, false, nil
@@ -9153,6 +9161,9 @@ func normalizeOpenAIPassthroughBaseBody(body []byte, compact bool, stripTopP boo
 		changed = true
 	}
 	if trimOpenAIStoreFalseReasoningItems(reqBody) {
+		changed = true
+	}
+	if normalizeOpenAIResponseFormatSchemas(reqBody) {
 		changed = true
 	}
 

@@ -1457,6 +1457,36 @@ func TestNormalizeOpenAIStrictFunctionToolSchemas_CleansInvalidRequiredEntries(t
 	require.Equal(t, []any{"filePath", "offset"}, required)
 }
 
+func TestNormalizeOpenAITextFormatSchema_RebuildsRequiredFromProperties(t *testing.T) {
+	reqBody := map[string]any{
+		"text": map[string]any{
+			"format": map[string]any{
+				"type": "json_schema",
+				"name": "codex_output_schema",
+				"schema": map[string]any{
+					"type":     "object",
+					"required": []any{"action_dispatch_maps"},
+					"properties": map[string]any{
+						"action_dispatch": map[string]any{"type": "string"},
+						"summary":         map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+
+	modified := normalizeOpenAIResponseFormatSchemas(reqBody)
+
+	require.True(t, modified)
+	text, ok := reqBody["text"].(map[string]any)
+	require.True(t, ok)
+	format, ok := text["format"].(map[string]any)
+	require.True(t, ok)
+	schema, ok := format["schema"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, []any{"action_dispatch", "summary"}, schema["required"])
+}
+
 func requireFirstToolRequiredFields(t *testing.T, reqBody map[string]any) []any {
 	t.Helper()
 

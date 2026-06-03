@@ -1415,6 +1415,131 @@ func normalizeOpenAIStrictFunctionToolSchemas(reqBody map[string]any) bool {
 	return modified
 }
 
+func normalizeOpenAIResponseFormatSchemas(reqBody map[string]any) bool {
+	if reqBody == nil {
+		return false
+	}
+
+	modified := false
+
+	if text, ok := reqBody["text"].(map[string]any); ok {
+		if format, ok := text["format"].(map[string]any); ok {
+			if strings.TrimSpace(firstNonEmptyString(format["type"])) == "json_schema" {
+				if schema, ok := format["schema"].(map[string]any); ok {
+					if normalizeOpenAIResponseJSONSchema(schema) {
+						modified = true
+					}
+				}
+			}
+		}
+	}
+
+	if responseFormat, ok := reqBody["response_format"].(map[string]any); ok {
+		if strings.TrimSpace(firstNonEmptyString(responseFormat["type"])) == "json_schema" {
+			if schema, ok := responseFormat["schema"].(map[string]any); ok {
+				if normalizeOpenAIResponseJSONSchema(schema) {
+					modified = true
+				}
+			}
+			if jsonSchema, ok := responseFormat["json_schema"].(map[string]any); ok {
+				if schema, ok := jsonSchema["schema"].(map[string]any); ok {
+					if normalizeOpenAIResponseJSONSchema(schema) {
+						modified = true
+					}
+				}
+			}
+		}
+	}
+
+	return modified
+}
+
+func normalizeOpenAIResponseJSONSchema(schema map[string]any) bool {
+	if schema == nil {
+		return false
+	}
+
+	modified := false
+
+	if properties, ok := schema["properties"].(map[string]any); ok {
+		for _, rawProperty := range properties {
+			propertySchema, ok := rawProperty.(map[string]any)
+			if !ok {
+				continue
+			}
+			if normalizeOpenAIResponseJSONSchema(propertySchema) {
+				modified = true
+			}
+		}
+
+		required := make([]any, 0, len(properties))
+		for _, key := range sortedOpenAIResponseSchemaKeys(properties) {
+			required = append(required, key)
+		}
+		if !openAIResponseSchemaRequiredEquals(schema["required"], required) {
+			schema["required"] = required
+			modified = true
+		}
+	}
+
+	switch items := schema["items"].(type) {
+	case map[string]any:
+		if normalizeOpenAIResponseJSONSchema(items) {
+			modified = true
+		}
+	case []any:
+		for _, rawItem := range items {
+			itemSchema, ok := rawItem.(map[string]any)
+			if !ok {
+				continue
+			}
+			if normalizeOpenAIResponseJSONSchema(itemSchema) {
+				modified = true
+			}
+		}
+	}
+
+	for _, key := range []string{"anyOf", "oneOf", "allOf"} {
+		rawSchemas, ok := schema[key].([]any)
+		if !ok {
+			continue
+		}
+		for _, rawSchema := range rawSchemas {
+			childSchema, ok := rawSchema.(map[string]any)
+			if !ok {
+				continue
+			}
+			if normalizeOpenAIResponseJSONSchema(childSchema) {
+				modified = true
+			}
+		}
+	}
+
+	return modified
+}
+
+func sortedOpenAIResponseSchemaKeys(properties map[string]any) []string {
+	keys := make([]string, 0, len(properties))
+	for key := range properties {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func openAIResponseSchemaRequiredEquals(rawRequired any, expected []any) bool {
+	required, ok := rawRequired.([]any)
+	if !ok || len(required) != len(expected) {
+		return false
+	}
+	for i := range expected {
+		if strings.TrimSpace(firstNonEmptyString(required[i])) != strings.TrimSpace(firstNonEmptyString(expected[i])) {
+			return false
+		}
+	}
+	return true
+}
+
 func openAIStrictFunctionToolEnabled(toolMap map[string]any) bool {
 	if toolMap == nil {
 		return false
