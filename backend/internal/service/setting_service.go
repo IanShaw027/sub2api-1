@@ -2023,6 +2023,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingPaymentVisibleMethodWxpayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodWxpayEnabled)
 	updates[openAIAdvancedSchedulerSettingKey] = strconv.FormatBool(settings.OpenAIAdvancedSchedulerEnabled)
 	updates[SettingKeyOpenAIStickyReservePercent] = strconv.Itoa(boundedIntOrDefault(settings.OpenAIStickyReservePercent, 0, 100, 0))
+	updates[SettingKeyOpenAIStickyWaitTimeoutSeconds] = strconv.Itoa(boundedIntOrDefault(settings.OpenAIStickyWaitTimeoutSeconds, 1, 300, 30))
 	updates[SettingKeyOpenAIImageWebFreeModel] = settings.OpenAIImageWebFreeModel
 	updates[SettingKeyOpenAIImageWebPaidModel] = settings.OpenAIImageWebPaidModel
 	updates[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives] = strconv.FormatBool(settings.OpenAIOAuthImageBridgeDisableKeepAlives)
@@ -2196,6 +2197,11 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	openAIStickyReservePercentSettingSF.Forget(SettingKeyOpenAIStickyReservePercent)
 	openAIStickyReservePercentSettingCache.Store(&cachedOpenAIStickyReservePercentSetting{
 		percent:   boundedIntOrDefault(settings.OpenAIStickyReservePercent, 0, 100, 0),
+		expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
+	})
+	openAIStickyWaitTimeoutSettingSF.Forget(SettingKeyOpenAIStickyWaitTimeoutSeconds)
+	openAIStickyWaitTimeoutSettingCache.Store(&cachedOpenAIStickyWaitTimeoutSetting{
+		timeout:   time.Duration(boundedIntOrDefault(settings.OpenAIStickyWaitTimeoutSeconds, 1, 300, 30)) * time.Second,
 		expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 	})
 	openAIOAuthImageBridgeTransportSettingsSF.Forget(openAIOAuthImageBridgeTransportSettingsKey)
@@ -3573,6 +3579,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.OpenAIAdvancedSchedulerEnabled = settings[openAIAdvancedSchedulerSettingKey] == "true"
 	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyOpenAIStickyReservePercent])); err == nil {
 		result.OpenAIStickyReservePercent = boundedIntOrDefault(v, 0, 100, 0)
+	}
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyOpenAIStickyWaitTimeoutSeconds])); err == nil {
+		result.OpenAIStickyWaitTimeoutSeconds = boundedIntOrDefault(v, 1, 300, 30)
+	} else {
+		result.OpenAIStickyWaitTimeoutSeconds = 30
 	}
 	result.OpenAIImageWebFreeModel = strings.TrimSpace(settings[SettingKeyOpenAIImageWebFreeModel])
 	result.OpenAIImageWebPaidModel = strings.TrimSpace(settings[SettingKeyOpenAIImageWebPaidModel])

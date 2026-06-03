@@ -238,6 +238,7 @@ type SystemSettings struct {
 	// OpenAI account scheduling
 	OpenAIAdvancedSchedulerEnabled            bool
 	OpenAIStickyReservePercent                int
+	OpenAIStickyWaitTimeoutSeconds            int
 	OpenAIImageWebFreeModel                   string
 	OpenAIImageWebPaidModel                   string
 	OpenAIOAuthImageBridgeDisableKeepAlives   bool

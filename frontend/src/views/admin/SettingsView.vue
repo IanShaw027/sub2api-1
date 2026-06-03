@@ -3600,6 +3600,34 @@
 	                </p>
 	              </div>
 
+	              <div>
+	                <label class="label">
+	                  {{
+	                    localText(
+	                      "粘性等待超时（秒）",
+	                      "Sticky Wait Timeout (Seconds)",
+	                    )
+	                  }}
+	                </label>
+	                <input
+	                  v-model.number="form.openai_sticky_wait_timeout_seconds"
+	                  type="number"
+	                  min="1"
+	                  max="300"
+	                  step="1"
+	                  class="input"
+	                  placeholder="30"
+	                />
+	                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+	                  {{
+	                    localText(
+	                      "粘性会话命中不可用账号时，最多等待这么多秒；30 秒内仍未恢复可调度或没有空槽位，就会切换到其他可调度账号。",
+	                      "Maximum time a sticky session waits for its bound account before switching. If the account is still unavailable or has no free slot after this window, routing moves to another schedulable account.",
+	                    )
+	                  }}
+	                </p>
+	              </div>
+
 	              <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
 	                <div class="flex items-center justify-between gap-4">
 	                  <div>
@@ -8279,6 +8307,7 @@ const form = reactive<SettingsForm>({
   fallback_model_gemini: "gemini-2.5-pro",
   fallback_model_antigravity: "gemini-2.5-pro",
   openai_sticky_reserve_percent: 0,
+  openai_sticky_wait_timeout_seconds: 30,
   openai_image_web_free_model: "",
   openai_image_web_paid_model: "",
   platform_default_account_model_config: {},
@@ -9088,6 +9117,13 @@ async function loadSettings() {
     form.oidc_connect_client_secret = "";
     form.openai_sticky_reserve_percent =
       Number(settings.openai_sticky_reserve_percent) || 0;
+    form.openai_sticky_wait_timeout_seconds = Math.max(
+      1,
+      Math.min(
+        300,
+        Math.floor(Number(settings.openai_sticky_wait_timeout_seconds) || 30),
+      ),
+    );
     form.openai_image_web_free_model =
       imageWebModelSettings.openai_image_web_free_model || "";
     form.openai_image_web_paid_model =
@@ -9671,6 +9707,13 @@ async function saveSettings() {
 	        Math.min(
 	          100,
 	          Math.floor(Number(form.openai_sticky_reserve_percent) || 0),
+	        ),
+	      ),
+	      openai_sticky_wait_timeout_seconds: Math.max(
+	        1,
+	        Math.min(
+	          300,
+	          Math.floor(Number(form.openai_sticky_wait_timeout_seconds) || 30),
 	        ),
 	      ),
 	      openai_oauth_image_bridge_disable_keepalives:

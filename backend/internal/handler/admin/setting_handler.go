@@ -652,6 +652,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentVisibleMethodWxpayEnabled:          settings.PaymentVisibleMethodWxpayEnabled,
 		OpenAIAdvancedSchedulerEnabled:            settings.OpenAIAdvancedSchedulerEnabled,
 		OpenAIStickyReservePercent:                settings.OpenAIStickyReservePercent,
+		OpenAIStickyWaitTimeoutSeconds:            settings.OpenAIStickyWaitTimeoutSeconds,
 		OpenAIImageWebFreeModel:                   settings.OpenAIImageWebFreeModel,
 		OpenAIImageWebPaidModel:                   settings.OpenAIImageWebPaidModel,
 		OpenAIOAuthImageBridgeDisableKeepAlives:   settings.OpenAIOAuthImageBridgeDisableKeepAlives,
@@ -1011,6 +1012,7 @@ type UpdateSettingsRequest struct {
 	// OpenAI account scheduling
 	OpenAIAdvancedSchedulerEnabled            *bool   `json:"openai_advanced_scheduler_enabled"`
 	OpenAIStickyReservePercent                *int    `json:"openai_sticky_reserve_percent"`
+	OpenAIStickyWaitTimeoutSeconds            *int    `json:"openai_sticky_wait_timeout_seconds"`
 	OpenAIImageWebFreeModel                   *string `json:"openai_image_web_free_model"`
 	OpenAIImageWebPaidModel                   *string `json:"openai_image_web_paid_model"`
 	OpenAIOAuthImageBridgeDisableKeepAlives   *bool   `json:"openai_oauth_image_bridge_disable_keepalives"`
@@ -2424,6 +2426,19 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAIStickyReservePercent
 		}(),
+		OpenAIStickyWaitTimeoutSeconds: func() int {
+			if req.OpenAIStickyWaitTimeoutSeconds != nil {
+				value := *req.OpenAIStickyWaitTimeoutSeconds
+				if value < 1 {
+					return 1
+				}
+				if value > 300 {
+					return 300
+				}
+				return value
+			}
+			return previousSettings.OpenAIStickyWaitTimeoutSeconds
+		}(),
 		OpenAIImageWebFreeModel: func() string {
 			if req.OpenAIImageWebFreeModel != nil {
 				return strings.TrimSpace(*req.OpenAIImageWebFreeModel)
@@ -3358,6 +3373,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.OpenAIStickyReservePercent != after.OpenAIStickyReservePercent {
 		changed = append(changed, "openai_sticky_reserve_percent")
+	}
+	if before.OpenAIStickyWaitTimeoutSeconds != after.OpenAIStickyWaitTimeoutSeconds {
+		changed = append(changed, "openai_sticky_wait_timeout_seconds")
 	}
 	if before.OpenAIImageWebFreeModel != after.OpenAIImageWebFreeModel {
 		changed = append(changed, "openai_image_web_free_model")

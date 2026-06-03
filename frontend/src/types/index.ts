@@ -232,6 +232,7 @@ export interface OpenAIImageWebConversationModelSettings {
   openai_image_web_free_model?: string
   openai_image_web_paid_model?: string
   openai_sticky_reserve_percent?: number
+  openai_sticky_wait_timeout_seconds?: number
 }
 
 export interface PublicSettings {

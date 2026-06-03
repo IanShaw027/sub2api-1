@@ -229,6 +229,7 @@ type SystemSettings struct {
 	// OpenAI account scheduling
 	OpenAIAdvancedSchedulerEnabled            bool   `json:"openai_advanced_scheduler_enabled"`
 	OpenAIStickyReservePercent                int    `json:"openai_sticky_reserve_percent"`
+	OpenAIStickyWaitTimeoutSeconds            int    `json:"openai_sticky_wait_timeout_seconds"`
 	OpenAIImageWebFreeModel                   string `json:"openai_image_web_free_model"`
 	OpenAIImageWebPaidModel                   string `json:"openai_image_web_paid_model"`
 	OpenAIOAuthImageBridgeDisableKeepAlives   bool   `json:"openai_oauth_image_bridge_disable_keepalives"`

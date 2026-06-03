@@ -437,6 +437,10 @@ const (
 	// account's concurrency that should be reserved for returning sticky
 	// sessions. New sessions can only use the remaining capacity.
 	SettingKeyOpenAIStickyReservePercent = "openai_sticky_reserve_percent"
+	// SettingKeyOpenAIStickyWaitTimeoutSeconds stores the maximum number of
+	// seconds a sticky OpenAI session may wait for its bound account before
+	// switching to another schedulable account.
+	SettingKeyOpenAIStickyWaitTimeoutSeconds = "openai_sticky_wait_timeout_seconds"
 
 	// =========================
 	// Sora S3 存储配置
