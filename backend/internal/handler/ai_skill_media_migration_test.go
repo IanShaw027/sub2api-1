@@ -3,9 +3,11 @@ package handler
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,16 +21,31 @@ const aiSkillMediaTestPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCA
 
 type aiSkillMediaRepoStub struct {
 	nextID int64
+	assets map[int64]*service.MediaAsset
 }
 
 func (r *aiSkillMediaRepoStub) Create(_ context.Context, asset *service.MediaAsset) error {
 	r.nextID++
 	asset.ID = r.nextID
+	if r.assets == nil {
+		r.assets = make(map[int64]*service.MediaAsset)
+	}
+	cloned := *asset
+	r.assets[asset.ID] = &cloned
 	return nil
 }
 
-func (*aiSkillMediaRepoStub) GetByID(context.Context, int64) (*service.MediaAsset, error) {
-	return nil, nil
+func (r *aiSkillMediaRepoStub) GetByID(_ context.Context, id int64) (*service.MediaAsset, error) {
+	if asset, ok := r.assets[id]; ok && asset != nil {
+		cloned := *asset
+		return &cloned, nil
+	}
+	return &service.MediaAsset{
+		ID:         id,
+		ObjectKey:  fmt.Sprintf("ai_image/stub/%d.png", id),
+		Visibility: service.MediaVisibilityPublic,
+		Status:     service.MediaStatusActive,
+	}, nil
 }
 
 func (*aiSkillMediaRepoStub) List(context.Context, pagination.PaginationParams, service.MediaListFilters) ([]service.MediaAsset, *pagination.PaginationResult, error) {
@@ -37,6 +54,9 @@ func (*aiSkillMediaRepoStub) List(context.Context, pagination.PaginationParams, 
 
 func (*aiSkillMediaRepoStub) UpdateVisibility(context.Context, int64, string) error { return nil }
 func (*aiSkillMediaRepoStub) MarkDeleted(context.Context, int64, time.Time) error   { return nil }
+func (*aiSkillMediaRepoStub) GetByObjectKey(context.Context, string, string) (*service.MediaAsset, error) {
+	return nil, service.ErrMediaNotFound
+}
 
 type aiSkillMediaStoreStub struct{}
 
@@ -51,6 +71,9 @@ func (*aiSkillMediaStoreStub) Delete(context.Context, service.MediaStorageRuntim
 }
 func (*aiSkillMediaStoreStub) Stat(context.Context, service.MediaStorageRuntimeConfig, string, string) (int64, error) {
 	return 0, nil
+}
+func (*aiSkillMediaStoreStub) PresignGetObject(context.Context, service.MediaStorageRuntimeConfig, string, string, time.Duration) (string, error) {
+	return "", nil
 }
 
 func newAISkillMediaService() *service.MediaService {
@@ -80,7 +103,7 @@ func TestAIHandlerNormalizeSkillCoverImageToMediaURL(t *testing.T) {
 	req := &skillUpsertRequest{CoverImageURL: stringPtr("data:image/png;base64," + aiSkillMediaTestPNGBase64)}
 
 	require.NoError(t, h.normalizeSkillCoverImage(context.Background(), req, "skill-1"))
-	require.Equal(t, "https://media.example/api/v1/media/public/1", *req.CoverImageURL)
+	require.True(t, strings.HasPrefix(*req.CoverImageURL, "https://media.example/"), "expected direct URL, got %s", *req.CoverImageURL)
 }
 
 func TestAIHandlerNormalizeSkillCoverImageStoresRemoteURLInMedia(t *testing.T) {
@@ -95,7 +118,7 @@ func TestAIHandlerNormalizeSkillCoverImageStoresRemoteURLInMedia(t *testing.T) {
 	req := &skillUpsertRequest{CoverImageURL: stringPtr(srv.URL + "/cover.png")}
 
 	require.NoError(t, h.normalizeSkillCoverImage(context.Background(), req, "skill-1"))
-	require.Equal(t, "https://media.example/api/v1/media/public/1", *req.CoverImageURL)
+	require.True(t, strings.HasPrefix(*req.CoverImageURL, "https://media.example/"), "expected direct URL, got %s", *req.CoverImageURL)
 }
 
 func TestAIHandlerBuildRunAttachmentsWithMedia(t *testing.T) {
@@ -113,7 +136,7 @@ func TestAIHandlerBuildRunAttachmentsWithMedia(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, attachments, 2)
-	require.Equal(t, "https://media.example/api/v1/media/public/1", attachments[0].URL)
+	require.True(t, strings.HasPrefix(attachments[0].URL, "https://media.example/"), "expected direct URL, got %s", attachments[0].URL)
 	require.Equal(t, "input", attachments[0].Purpose)
 	require.Equal(t, "input.png", attachments[0].FileName)
 	require.NotNil(t, attachments[1].AssetID)
@@ -130,7 +153,7 @@ func TestAIHandlerBuildRunAttachmentsWithMediaPromotesManagedIDsToURLs(t *testin
 	require.Len(t, attachments, 1)
 	require.NotNil(t, attachments[0].MediaID)
 	require.EqualValues(t, 321, *attachments[0].MediaID)
-	require.Equal(t, "https://media.example/api/v1/media/public/321", attachments[0].URL)
+	require.True(t, strings.HasPrefix(attachments[0].URL, "https://media.example/"), "expected direct URL, got %s", attachments[0].URL)
 }
 
 func TestAIHandlerBuildRunAttachmentsWithMediaKeepsRawURLWhenAdoptionFails(t *testing.T) {

@@ -271,7 +271,7 @@ func (s *MediaService) CreateDownloadURLForUser(ctx context.Context, requesterUs
 	if err := s.authorize(asset, requesterUserID, false, false); err != nil {
 		return nil, err
 	}
-	return s.buildSignedDownloadURL(asset.ID, false), nil
+	return s.buildSignedDownloadURL(ctx, asset, false)
 }
 
 func (s *MediaService) CreateDownloadURLForAdmin(ctx context.Context, id int64) (*MediaDownloadURL, error) {
@@ -279,7 +279,7 @@ func (s *MediaService) CreateDownloadURLForAdmin(ctx context.Context, id int64) 
 	if err != nil {
 		return nil, err
 	}
-	return s.buildSignedDownloadURL(asset.ID, false), nil
+	return s.buildSignedDownloadURL(ctx, asset, false)
 }
 
 func (s *MediaService) CreateThumbnailDownloadURLForUser(ctx context.Context, requesterUserID, id int64) (*MediaDownloadURL, error) {
@@ -290,7 +290,7 @@ func (s *MediaService) CreateThumbnailDownloadURLForUser(ctx context.Context, re
 	if err := s.authorize(asset, requesterUserID, false, false); err != nil {
 		return nil, err
 	}
-	return s.buildSignedDownloadURL(asset.ID, true), nil
+	return s.buildSignedDownloadURL(ctx, asset, true)
 }
 
 func (s *MediaService) CreateThumbnailDownloadURLForAdmin(ctx context.Context, id int64) (*MediaDownloadURL, error) {
@@ -298,7 +298,7 @@ func (s *MediaService) CreateThumbnailDownloadURLForAdmin(ctx context.Context, i
 	if err != nil {
 		return nil, err
 	}
-	return s.buildSignedDownloadURL(asset.ID, true), nil
+	return s.buildSignedDownloadURL(ctx, asset, true)
 }
 
 func (s *MediaService) OpenPublic(ctx context.Context, id int64, thumbnail bool) (*MediaObjectStream, *MediaAsset, error) {
@@ -342,22 +342,35 @@ func (s *MediaService) PublicURL(id int64, visibility string) string {
 	if strings.TrimSpace(visibility) != MediaVisibilityPublic {
 		return ""
 	}
-	base := strings.TrimRight(strings.TrimSpace(s.currentStorageConfig(context.Background()).PublicBaseURL), "/")
-	if base == "" {
+	asset, err := s.repo.GetByID(context.Background(), id)
+	if err != nil || asset == nil {
 		return ""
 	}
-	return fmt.Sprintf("%s/api/v1/media/public/%d", base, id)
+	return s.directObjectURL(asset.ObjectKey)
 }
 
 func (s *MediaService) ThumbnailPublicURL(id int64, visibility string, thumbnailObjectKey string) string {
 	if strings.TrimSpace(visibility) != MediaVisibilityPublic || strings.TrimSpace(thumbnailObjectKey) == "" {
 		return ""
 	}
+	return s.directObjectURL(thumbnailObjectKey)
+}
+
+func (s *MediaService) directObjectURL(objectKey string) string {
+	objectKey = strings.TrimSpace(objectKey)
+	if objectKey == "" {
+		return ""
+	}
 	base := strings.TrimRight(strings.TrimSpace(s.currentStorageConfig(context.Background()).PublicBaseURL), "/")
 	if base == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s/api/v1/media/public/%d/thumbnail", base, id)
+	parts := strings.Split(strings.TrimLeft(objectKey, "/"), "/")
+	encoded := make([]string, 0, len(parts))
+	for _, part := range parts {
+		encoded = append(encoded, url.PathEscape(part))
+	}
+	return base + "/" + strings.Join(encoded, "/")
 }
 
 func (s *MediaService) RuntimeInfo() MediaRuntimeInfo {
@@ -381,20 +394,34 @@ func (s *MediaService) RuntimeInfo() MediaRuntimeInfo {
 	}
 }
 
-func (s *MediaService) buildSignedDownloadURL(id int64, thumbnail bool) *MediaDownloadURL {
-	storageCfg := s.currentStorageConfig(context.Background())
-	ttl := time.Duration(storageCfg.PresignExpiryMinutes) * time.Minute
-	expiresAt := time.Now().Add(ttl)
-	expiresAtUnix := expiresAt.Unix()
-	base := strings.TrimRight(strings.TrimSpace(storageCfg.PublicBaseURL), "/")
-	pathSuffix := ""
+func (s *MediaService) buildSignedDownloadURL(ctx context.Context, asset *MediaAsset, thumbnail bool) (*MediaDownloadURL, error) {
+	if asset == nil {
+		return nil, ErrMediaNotFound
+	}
+	objectKey := asset.ObjectKey
 	if thumbnail {
-		pathSuffix = "/thumbnail"
+		if strings.TrimSpace(asset.ThumbnailObjectKey) == "" {
+			return nil, ErrMediaNotFound
+		}
+		objectKey = asset.ThumbnailObjectKey
+	}
+	storageCfg, err := s.assetStorageConfig(ctx, asset)
+	if err != nil {
+		return nil, err
+	}
+	ttl := time.Duration(storageCfg.PresignExpiryMinutes) * time.Minute
+	if ttl <= 0 {
+		ttl = defaultMediaPresignTTL
+	}
+	expiresAt := time.Now().Add(ttl)
+	signedURL, err := s.store.PresignGetObject(ctx, storageCfg, asset.Bucket, objectKey, ttl)
+	if err != nil {
+		return nil, fmt.Errorf("presign media object: %w", err)
 	}
 	return &MediaDownloadURL{
-		URL:       fmt.Sprintf("%s/api/v1/media/download/%d%s?expires=%d&sig=%s", base, id, pathSuffix, expiresAtUnix, url.QueryEscape(s.downloadSignature(id, expiresAtUnix, thumbnail))),
+		URL:       signedURL,
 		ExpiresAt: expiresAt,
-	}
+	}, nil
 }
 
 func (s *MediaService) deleteAsset(ctx context.Context, asset *MediaAsset) error {
@@ -538,6 +565,10 @@ func ParseManagedMediaID(mediaService *MediaService, raw string) (int64, bool) {
 	if mediaService == nil {
 		return 0, false
 	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
+	}
 	base := strings.TrimRight(strings.TrimSpace(mediaService.publicBaseURL()), "/")
 	if base == "" {
 		return 0, false
@@ -559,6 +590,23 @@ func ParseManagedMediaID(mediaService *MediaService, raw string) (int64, bool) {
 				return id, true
 			}
 		}
+	}
+	directPrefix := base + "/"
+	if strings.HasPrefix(raw, directPrefix) {
+		remainder := strings.TrimPrefix(raw, directPrefix)
+		if idx := strings.IndexAny(remainder, "?#"); idx >= 0 {
+			remainder = remainder[:idx]
+		}
+		objectKey, err := url.PathUnescape(remainder)
+		if err != nil || strings.TrimSpace(objectKey) == "" {
+			return 0, false
+		}
+		bucket := strings.TrimSpace(mediaService.currentStorageConfig(context.Background()).Bucket)
+		asset, err := mediaService.repo.GetByObjectKey(context.Background(), bucket, objectKey)
+		if err != nil || asset == nil {
+			return 0, false
+		}
+		return asset.ID, true
 	}
 	return 0, false
 }

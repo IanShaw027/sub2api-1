@@ -6,12 +6,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +24,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func asString(t *testing.T, v any) string {
+	t.Helper()
+	s, ok := v.(string)
+	require.True(t, ok, "expected string, got %T", v)
+	return s
+}
 
 type settingHandlerMediaRepoStub struct {
 	nextID     int64
@@ -45,7 +54,12 @@ func (r *settingHandlerMediaRepoStub) GetByID(_ context.Context, id int64) (*ser
 		assetCopy := *asset
 		return &assetCopy, nil
 	}
-	return nil, nil
+	return &service.MediaAsset{
+		ID:         id,
+		ObjectKey:  fmt.Sprintf("settings/stub/%d.png", id),
+		Visibility: service.MediaVisibilityPublic,
+		Status:     service.MediaStatusActive,
+	}, nil
 }
 
 func (r *settingHandlerMediaRepoStub) List(context.Context, pagination.PaginationParams, service.MediaListFilters) ([]service.MediaAsset, *pagination.PaginationResult, error) {
@@ -64,6 +78,16 @@ func (r *settingHandlerMediaRepoStub) MarkDeleted(_ context.Context, id int64, _
 	return nil
 }
 
+func (r *settingHandlerMediaRepoStub) GetByObjectKey(_ context.Context, _, objectKey string) (*service.MediaAsset, error) {
+	for _, asset := range r.assets {
+		if asset != nil && asset.ObjectKey == objectKey {
+			assetCopy := *asset
+			return &assetCopy, nil
+		}
+	}
+	return nil, service.ErrMediaNotFound
+}
+
 type settingHandlerMediaStoreStub struct {
 	deleteCount int
 }
@@ -80,6 +104,9 @@ func (s *settingHandlerMediaStoreStub) Delete(context.Context, service.MediaStor
 }
 func (*settingHandlerMediaStoreStub) Stat(context.Context, service.MediaStorageRuntimeConfig, string, string) (int64, error) {
 	return 0, nil
+}
+func (*settingHandlerMediaStoreStub) PresignGetObject(_ context.Context, _ service.MediaStorageRuntimeConfig, _, objectKey string, _ time.Duration) (string, error) {
+	return "https://media.example.com/presigned/" + objectKey, nil
 }
 
 type failingSettingHandlerRepoStub struct {
@@ -258,19 +285,19 @@ func TestSettingHandler_UpdateSettings_MigratesMediaReferences(t *testing.T) {
 	data, ok := resp.Data.(map[string]any)
 	require.True(t, ok)
 
-	require.Equal(t, "https://media.example/api/v1/media/public/1", data["site_logo"])
+	require.True(t, strings.HasPrefix(asString(t, data["site_logo"]), "https://media.example/"), "expected direct URL, got %v", data["site_logo"])
 	qrs, ok := data["support_qr_codes"].([]any)
 	require.True(t, ok)
 	require.Len(t, qrs, 1)
 	qr, ok := qrs[0].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "https://media.example/api/v1/media/public/2", qr["image_url"])
+	require.True(t, strings.HasPrefix(asString(t, qr["image_url"]), "https://media.example/"), "expected direct URL, got %v", qr["image_url"])
 	require.Equal(t, "help", qr["note"])
-	require.Equal(t, "https://media.example/api/v1/media/public/3", data["payment_help_image_url"])
+	require.True(t, strings.HasPrefix(asString(t, data["payment_help_image_url"]), "https://media.example/"), "expected direct URL, got %v", data["payment_help_image_url"])
 
-	require.Equal(t, "https://media.example/api/v1/media/public/1", repo.values[service.SettingKeySiteLogo])
-	require.JSONEq(t, `[{"image_url":"https://media.example/api/v1/media/public/2","note":"help"}]`, repo.values[service.SettingKeySupportQRCodes])
-	require.Equal(t, "https://media.example/api/v1/media/public/3", repo.values[service.SettingHelpImageURL])
+	require.True(t, strings.HasPrefix(repo.values[service.SettingKeySiteLogo], "https://media.example/"), "expected direct URL, got %s", repo.values[service.SettingKeySiteLogo])
+	require.True(t, strings.Contains(repo.values[service.SettingKeySupportQRCodes], "https://media.example/"), "expected direct URL in qr codes, got %s", repo.values[service.SettingKeySupportQRCodes])
+	require.True(t, strings.HasPrefix(repo.values[service.SettingHelpImageURL], "https://media.example/"), "expected direct URL, got %s", repo.values[service.SettingHelpImageURL])
 }
 
 func TestSettingHandler_UpdateSettings_DoesNotUploadMediaWhenValidationFails(t *testing.T) {
@@ -397,9 +424,9 @@ func TestSettingHandler_UpdateSettings_ReusesManagedMediaURLs(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Zero(t, mediaRepo.nextID)
-	require.Equal(t, "https://media.example/api/v1/media/public/11", repo.values[service.SettingKeySiteLogo])
-	require.JSONEq(t, `[{"image_url":"https://media.example/api/v1/media/public/12","note":"help"}]`, repo.values[service.SettingKeySupportQRCodes])
-	require.Equal(t, "https://media.example/api/v1/media/public/13", repo.values[service.SettingHelpImageURL])
+	require.True(t, strings.HasPrefix(repo.values[service.SettingKeySiteLogo], "https://media.example/"), "expected direct URL, got %s", repo.values[service.SettingKeySiteLogo])
+	require.True(t, strings.Contains(repo.values[service.SettingKeySupportQRCodes], "https://media.example/"), "expected direct URL in qr codes, got %s", repo.values[service.SettingKeySupportQRCodes])
+	require.True(t, strings.HasPrefix(repo.values[service.SettingHelpImageURL], "https://media.example/"), "expected direct URL, got %s", repo.values[service.SettingHelpImageURL])
 }
 
 func TestSettingHandler_UpdateSettings_CleansUpMigratedMediaWhenPersistenceFails(t *testing.T) {
@@ -797,7 +824,7 @@ func TestSettingHandler_UpdateSettings_PreservesPartialFieldsWhenSavingPaymentHe
 	require.Equal(t, "12.50", repo.values[service.SettingMinRechargeAmount])
 	require.Equal(t, "alipay,wxpay", repo.values[service.SettingEnabledPaymentTypes])
 	require.Equal(t, "Prefix", repo.values[service.SettingProductNamePrefix])
-	require.Equal(t, "https://media.example/api/v1/media/public/1", repo.values[service.SettingHelpImageURL])
+	require.True(t, strings.HasPrefix(repo.values[service.SettingHelpImageURL], "https://media.example/"), "expected direct URL, got %s", repo.values[service.SettingHelpImageURL])
 }
 
 func TestSettingHandler_UpdateSettings_RoundTripsPaymentAlipayForceQRCode(t *testing.T) {

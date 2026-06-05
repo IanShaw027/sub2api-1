@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,6 +159,16 @@ func (r *userServiceMediaAvatarMediaRepo) MarkDeleted(_ context.Context, id int6
 	return nil
 }
 
+func (r *userServiceMediaAvatarMediaRepo) GetByObjectKey(_ context.Context, _, objectKey string) (*MediaAsset, error) {
+	for _, asset := range r.assets {
+		if asset != nil && asset.ObjectKey == objectKey {
+			cloned := *asset
+			return &cloned, nil
+		}
+	}
+	return nil, ErrMediaNotFound
+}
+
 type userServiceMediaAvatarTestStore struct {
 	uploadedObjectKeys []string
 	deletedObjectKeys  []string
@@ -178,6 +189,9 @@ func (s *userServiceMediaAvatarTestStore) Delete(_ context.Context, _ MediaStora
 }
 func (*userServiceMediaAvatarTestStore) Stat(context.Context, MediaStorageRuntimeConfig, string, string) (int64, error) {
 	return 0, nil
+}
+func (*userServiceMediaAvatarTestStore) PresignGetObject(_ context.Context, _ MediaStorageRuntimeConfig, _, objectKey string, _ time.Duration) (string, error) {
+	return "https://source.qazwc.com/presigned/" + objectKey, nil
 }
 
 func newUserServiceMediaAvatarTestMediaService() (*MediaService, *userServiceMediaAvatarMediaRepo, *userServiceMediaAvatarTestStore) {
@@ -228,7 +242,7 @@ func TestSetAvatar_StoresDataURLInSharedMedia(t *testing.T) {
 	require.NotEmpty(t, repo.upsertAvatarArg[0].StorageKey)
 	require.Equal(t, "image/png", repo.upsertAvatarArg[0].ContentType)
 	require.Equal(t, len(raw), repo.upsertAvatarArg[0].ByteSize)
-	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/1", avatar.URL)
+	require.True(t, strings.HasPrefix(avatar.URL, "https://source.qazwc.com/"), "expected direct URL, got %s", avatar.URL)
 	require.Equal(t, avatar.URL, repo.upsertAvatarArg[0].URL)
 }
 
@@ -269,7 +283,7 @@ func TestSetAvatar_StoresRemoteURLInSharedMedia(t *testing.T) {
 	require.NotNil(t, avatar)
 	require.Len(t, repo.upsertAvatarArg, 1)
 	require.Equal(t, "media", repo.upsertAvatarArg[0].StorageProvider)
-	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/1", avatar.URL)
+	require.True(t, strings.HasPrefix(avatar.URL, "https://source.qazwc.com/"), "expected direct URL, got %s", avatar.URL)
 	require.Equal(t, avatar.URL, repo.upsertAvatarArg[0].URL)
 }
 
@@ -312,7 +326,7 @@ func TestSetAvatar_ReusesManagedMediaURLWithoutReupload(t *testing.T) {
 	require.Len(t, repo.upsertAvatarArg, 1)
 	require.Equal(t, "media", repo.upsertAvatarArg[0].StorageProvider)
 	require.Equal(t, "avatar/13/2026/05/05/reused.png", repo.upsertAvatarArg[0].StorageKey)
-	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/5", repo.upsertAvatarArg[0].URL)
+	require.Equal(t, "https://source.qazwc.com/avatar/13/2026/05/05/reused.png", repo.upsertAvatarArg[0].URL)
 	require.Equal(t, int64(5), mediaRepo.nextID)
 	require.Len(t, mediaRepo.assets, 1)
 }

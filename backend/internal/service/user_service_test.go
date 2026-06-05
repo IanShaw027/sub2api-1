@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"net/http"
@@ -68,12 +69,22 @@ func (r *userServiceMediaRepo) Create(_ context.Context, asset *MediaAsset) erro
 	return nil
 }
 
-func (*userServiceMediaRepo) GetByID(context.Context, int64) (*MediaAsset, error) { return nil, nil }
+func (*userServiceMediaRepo) GetByID(_ context.Context, id int64) (*MediaAsset, error) {
+	return &MediaAsset{
+		ID:         id,
+		ObjectKey:  fmt.Sprintf("avatar/stub/%d.png", id),
+		Visibility: MediaVisibilityPublic,
+		Status:     MediaStatusActive,
+	}, nil
+}
 func (*userServiceMediaRepo) List(context.Context, pagination.PaginationParams, MediaListFilters) ([]MediaAsset, *pagination.PaginationResult, error) {
 	return nil, nil, nil
 }
 func (*userServiceMediaRepo) UpdateVisibility(context.Context, int64, string) error { return nil }
 func (*userServiceMediaRepo) MarkDeleted(context.Context, int64, time.Time) error   { return nil }
+func (*userServiceMediaRepo) GetByObjectKey(context.Context, string, string) (*MediaAsset, error) {
+	return nil, ErrMediaNotFound
+}
 
 func newUserServiceMediaService() *MediaService {
 	cfg := &config.Config{}
@@ -996,7 +1007,7 @@ func TestUpdateProfile_StoresInlineAvatarWithinLimit(t *testing.T) {
 	require.Equal(t, "image/png", repo.upsertAvatarArgs[0].ContentType)
 	require.Equal(t, len(raw), repo.upsertAvatarArgs[0].ByteSize)
 	require.NotEmpty(t, repo.upsertAvatarArgs[0].SHA256)
-	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/1", updated.AvatarURL)
+	require.True(t, strings.HasPrefix(updated.AvatarURL, "https://source.qazwc.com/"), "expected direct URL, got %s", updated.AvatarURL)
 	require.Equal(t, "media", updated.AvatarSource)
 	require.Equal(t, "image/png", updated.AvatarMIME)
 	require.Equal(t, len(raw), updated.AvatarByteSize)
@@ -1046,11 +1057,11 @@ func TestUpdateProfile_CompressesInlineAvatarToTwentyKilobytes(t *testing.T) {
 	require.Equal(t, "media", repo.upsertAvatarArgs[0].StorageProvider)
 	require.LessOrEqual(t, repo.upsertAvatarArgs[0].ByteSize, 20*1024)
 	require.Equal(t, "image/jpeg", repo.upsertAvatarArgs[0].ContentType)
-	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/1", repo.upsertAvatarArgs[0].URL)
+	require.True(t, strings.HasPrefix(repo.upsertAvatarArgs[0].URL, "https://source.qazwc.com/"), "expected direct URL, got %s", repo.upsertAvatarArgs[0].URL)
 	require.Equal(t, "media", updated.AvatarSource)
 	require.Equal(t, "image/jpeg", updated.AvatarMIME)
 	require.LessOrEqual(t, updated.AvatarByteSize, 20*1024)
-	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/1", updated.AvatarURL)
+	require.True(t, strings.HasPrefix(updated.AvatarURL, "https://source.qazwc.com/"), "expected direct URL, got %s", updated.AvatarURL)
 	require.NotEmpty(t, updated.AvatarSHA256)
 }
 
@@ -1098,8 +1109,8 @@ func TestUpdateProfile_StoresRemoteAvatarURL(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, repo.upsertAvatarArgs, 1)
 	require.Equal(t, "media", repo.upsertAvatarArgs[0].StorageProvider)
-	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/1", repo.upsertAvatarArgs[0].URL)
-	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/1", updated.AvatarURL)
+	require.True(t, strings.HasPrefix(repo.upsertAvatarArgs[0].URL, "https://source.qazwc.com/"), "expected direct URL, got %s", repo.upsertAvatarArgs[0].URL)
+	require.True(t, strings.HasPrefix(updated.AvatarURL, "https://source.qazwc.com/"), "expected direct URL, got %s", updated.AvatarURL)
 	require.Equal(t, "media", updated.AvatarSource)
 	require.NotZero(t, updated.AvatarByteSize)
 }

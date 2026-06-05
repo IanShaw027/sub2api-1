@@ -28,6 +28,9 @@ func (mediaIngestTestRepo) List(context.Context, pagination.PaginationParams, Me
 }
 func (mediaIngestTestRepo) UpdateVisibility(context.Context, int64, string) error { return nil }
 func (mediaIngestTestRepo) MarkDeleted(context.Context, int64, time.Time) error   { return nil }
+func (mediaIngestTestRepo) GetByObjectKey(context.Context, string, string) (*MediaAsset, error) {
+	return nil, ErrMediaNotFound
+}
 
 type mediaIngestTestStore struct {
 	uploadedBucket      string
@@ -53,6 +56,9 @@ func (*mediaIngestTestStore) Delete(context.Context, MediaStorageRuntimeConfig, 
 }
 func (*mediaIngestTestStore) Stat(context.Context, MediaStorageRuntimeConfig, string, string) (int64, error) {
 	return 0, nil
+}
+func (*mediaIngestTestStore) PresignGetObject(context.Context, MediaStorageRuntimeConfig, string, string, time.Duration) (string, error) {
+	return "", nil
 }
 
 type mediaIngestRoundTripperFunc func(*http.Request) (*http.Response, error)

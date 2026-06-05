@@ -73,6 +73,35 @@ func (r *mediaRepository) GetByID(ctx context.Context, id int64) (*service.Media
 	return item, nil
 }
 
+func (r *mediaRepository) GetByObjectKey(ctx context.Context, bucket, objectKey string) (*service.MediaAsset, error) {
+	objectKey = strings.TrimSpace(objectKey)
+	if objectKey == "" {
+		return nil, service.ErrMediaNotFound
+	}
+	bucket = strings.TrimSpace(bucket)
+	query := `
+		SELECT id, biz_type, biz_id, storage_profile_id, bucket, object_key, thumbnail_object_key, thumbnail_mime_type, visibility,
+		       mime_type, size_bytes, width, height, sha256, owner_user_id, status,
+		       original_file_name, created_at, updated_at, deleted_at
+		FROM media_assets
+		WHERE object_key = $1 AND status = $2`
+	args := []any{objectKey, service.MediaStatusActive}
+	if bucket != "" {
+		query += " AND bucket = $3"
+		args = append(args, bucket)
+	}
+	query += " ORDER BY id DESC LIMIT 1"
+	row := r.db.QueryRowContext(ctx, query, args...)
+	item, err := scanMediaAsset(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, service.ErrMediaNotFound
+		}
+		return nil, err
+	}
+	return item, nil
+}
+
 func (r *mediaRepository) List(ctx context.Context, params pagination.PaginationParams, filters service.MediaListFilters) ([]service.MediaAsset, *pagination.PaginationResult, error) {
 	where := make([]string, 0, 8)
 	args := make([]any, 0, 8)

@@ -150,6 +150,10 @@ func TestTicketHandlerListMessagesSignsPrivateAttachmentURLs(t *testing.T) {
 	}, &ticketHandlerMediaStoreStub{}, &config.Config{
 		Media: config.MediaConfig{
 			Enabled:               true,
+			Endpoint:              "https://s3.example.com",
+			Bucket:                "media",
+			AccessKeyID:           "test-ak",
+			SecretAccessKey:       "test-sk",
 			PublicBaseURL:         "https://media.example.com",
 			PresignExpiryMinutes:  10,
 			DownloadSigningSecret: "secret",
@@ -177,8 +181,8 @@ func TestTicketHandlerListMessagesSignsPrivateAttachmentURLs(t *testing.T) {
 	require.True(t, ok)
 	attachment, ok := attachments[0].(map[string]any)
 	require.True(t, ok)
-	require.Contains(t, attachment["url"], "https://media.example.com/api/v1/media/download/321?expires=")
-	require.Contains(t, attachment["thumbnail_url"], "https://media.example.com/api/v1/media/download/321/thumbnail?expires=")
+	require.Contains(t, attachment["url"], "https://media.example.com/presigned/")
+	require.Contains(t, attachment["thumbnail_url"], "https://media.example.com/presigned/")
 }
 
 type ticketHandlerRepoStub struct {
@@ -329,6 +333,12 @@ func (*ticketHandlerMediaRepoStub) List(context.Context, pagination.PaginationPa
 }
 func (*ticketHandlerMediaRepoStub) UpdateVisibility(context.Context, int64, string) error { return nil }
 func (*ticketHandlerMediaRepoStub) MarkDeleted(context.Context, int64, time.Time) error   { return nil }
+func (s *ticketHandlerMediaRepoStub) GetByObjectKey(context.Context, string, string) (*service.MediaAsset, error) {
+	if s.asset == nil {
+		return nil, service.ErrMediaNotFound
+	}
+	return s.asset, nil
+}
 
 type ticketHandlerMediaStoreStub struct{}
 
@@ -343,4 +353,7 @@ func (*ticketHandlerMediaStoreStub) Delete(context.Context, service.MediaStorage
 }
 func (*ticketHandlerMediaStoreStub) Stat(context.Context, service.MediaStorageRuntimeConfig, string, string) (int64, error) {
 	return 0, nil
+}
+func (*ticketHandlerMediaStoreStub) PresignGetObject(_ context.Context, _ service.MediaStorageRuntimeConfig, _, objectKey string, _ time.Duration) (string, error) {
+	return "https://media.example.com/presigned/" + objectKey, nil
 }

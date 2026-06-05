@@ -147,6 +147,10 @@ func TestTicketHandlerResolveAttachmentsForAdminBuildsMetadataOnly(t *testing.T)
 	}, &settingHandlerMediaStoreStub{}, &config.Config{
 		Media: config.MediaConfig{
 			Enabled:               true,
+			Endpoint:              "https://s3.example.com",
+			Bucket:                "media",
+			AccessKeyID:           "test-ak",
+			SecretAccessKey:       "test-sk",
 			PublicBaseURL:         "https://media.example.com",
 			PresignExpiryMinutes:  10,
 			DownloadSigningSecret: "secret",
@@ -188,6 +192,10 @@ func TestTicketHandlerReplyRejectsTicketScopedMediaMismatch(t *testing.T) {
 	}, &settingHandlerMediaStoreStub{}, &config.Config{
 		Media: config.MediaConfig{
 			Enabled:               true,
+			Endpoint:              "https://s3.example.com",
+			Bucket:                "media",
+			AccessKeyID:           "test-ak",
+			SecretAccessKey:       "test-sk",
 			PublicBaseURL:         "https://media.example.com",
 			PresignExpiryMinutes:  10,
 			DownloadSigningSecret: "secret",
@@ -231,6 +239,10 @@ func TestTicketHandlerReplyPersistsTicketAttachmentMetadataWithoutSignedURLs(t *
 	}, &settingHandlerMediaStoreStub{}, &config.Config{
 		Media: config.MediaConfig{
 			Enabled:               true,
+			Endpoint:              "https://s3.example.com",
+			Bucket:                "media",
+			AccessKeyID:           "test-ak",
+			SecretAccessKey:       "test-sk",
 			PublicBaseURL:         "https://media.example.com",
 			PresignExpiryMinutes:  10,
 			DownloadSigningSecret: "secret",
@@ -299,6 +311,10 @@ func TestTicketHandlerListMessagesFallsBackToImageURLWhenThumbnailMissing(t *tes
 	}, &settingHandlerMediaStoreStub{}, &config.Config{
 		Media: config.MediaConfig{
 			Enabled:               true,
+			Endpoint:              "https://s3.example.com",
+			Bucket:                "media",
+			AccessKeyID:           "test-ak",
+			SecretAccessKey:       "test-sk",
 			PublicBaseURL:         "https://media.example.com",
 			PresignExpiryMinutes:  10,
 			DownloadSigningSecret: "secret",
@@ -335,5 +351,5 @@ func TestTicketHandlerListMessagesFallsBackToImageURLWhenThumbnailMissing(t *tes
 	require.Equal(t, attachment["url"], attachment["thumbnail_url"])
 	url, ok := attachment["url"].(string)
 	require.True(t, ok)
-	require.Contains(t, url, "https://media.example.com/api/v1/media/download/321?expires=")
+	require.Contains(t, url, "https://media.example.com/presigned/")
 }

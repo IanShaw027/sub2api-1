@@ -2757,6 +2757,16 @@ func (r *oauthPendingFlowMediaRepoStub) MarkDeleted(_ context.Context, id int64,
 	return nil
 }
 
+func (r *oauthPendingFlowMediaRepoStub) GetByObjectKey(_ context.Context, _, objectKey string) (*service.MediaAsset, error) {
+	for _, asset := range r.assets {
+		if asset != nil && asset.ObjectKey == objectKey {
+			cloned := *asset
+			return &cloned, nil
+		}
+	}
+	return nil, service.ErrMediaNotFound
+}
+
 type oauthPendingFlowMediaStoreStub struct {
 	uploadedBucket      string
 	uploadedObjectKey   string
@@ -2785,6 +2795,9 @@ func (s *oauthPendingFlowMediaStoreStub) Delete(_ context.Context, _ service.Med
 }
 func (*oauthPendingFlowMediaStoreStub) Stat(context.Context, service.MediaStorageRuntimeConfig, string, string) (int64, error) {
 	return 0, nil
+}
+func (*oauthPendingFlowMediaStoreStub) PresignGetObject(_ context.Context, _ service.MediaStorageRuntimeConfig, _, objectKey string, _ time.Duration) (string, error) {
+	return "https://source.qazwc.com/presigned/" + objectKey, nil
 }
 
 func newOAuthPendingFlowMediaService() *service.MediaService {

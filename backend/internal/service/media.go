@@ -117,6 +117,7 @@ type MediaObjectStream struct {
 type MediaRepository interface {
 	Create(ctx context.Context, asset *MediaAsset) error
 	GetByID(ctx context.Context, id int64) (*MediaAsset, error)
+	GetByObjectKey(ctx context.Context, bucket, objectKey string) (*MediaAsset, error)
 	List(ctx context.Context, params pagination.PaginationParams, filters MediaListFilters) ([]MediaAsset, *pagination.PaginationResult, error)
 	UpdateVisibility(ctx context.Context, id int64, visibility string) error
 	MarkDeleted(ctx context.Context, id int64, deletedAt time.Time) error
@@ -127,4 +128,5 @@ type MediaObjectStore interface {
 	Download(ctx context.Context, cfg MediaStorageRuntimeConfig, bucket, objectKey string) (io.ReadCloser, error)
 	Delete(ctx context.Context, cfg MediaStorageRuntimeConfig, bucket, objectKey string) error
 	Stat(ctx context.Context, cfg MediaStorageRuntimeConfig, bucket, objectKey string) (int64, error)
+	PresignGetObject(ctx context.Context, cfg MediaStorageRuntimeConfig, bucket, objectKey string, expiry time.Duration) (string, error)
 }

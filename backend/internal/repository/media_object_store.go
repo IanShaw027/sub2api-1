@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
@@ -90,6 +91,25 @@ func (s *s3MediaObjectStore) Stat(ctx context.Context, cfg service.MediaStorageR
 		return 0, nil
 	}
 	return *result.ContentLength, nil
+}
+
+func (s *s3MediaObjectStore) PresignGetObject(ctx context.Context, cfg service.MediaStorageRuntimeConfig, bucket, objectKey string, expiry time.Duration) (string, error) {
+	client, err := s.clientFor(ctx, cfg)
+	if err != nil {
+		return "", err
+	}
+	if expiry <= 0 {
+		expiry = 15 * time.Minute
+	}
+	presignClient := s3.NewPresignClient(client)
+	result, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(objectKey),
+	}, s3.WithPresignExpires(expiry))
+	if err != nil {
+		return "", fmt.Errorf("s3 presign get object: %w", err)
+	}
+	return result.URL, nil
 }
 
 func (s *s3MediaObjectStore) clientFor(ctx context.Context, cfg service.MediaStorageRuntimeConfig) (*s3.Client, error) {

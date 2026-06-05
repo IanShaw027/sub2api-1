@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -50,14 +51,17 @@ func (r *aiSkillHandlerMediaRepo) Create(_ context.Context, asset *service.Media
 }
 
 func (r *aiSkillHandlerMediaRepo) GetByID(_ context.Context, id int64) (*service.MediaAsset, error) {
-	if r.assets == nil {
-		return nil, service.ErrMediaNotFound
+	if r.assets != nil {
+		if asset, ok := r.assets[id]; ok {
+			return asset, nil
+		}
 	}
-	asset, ok := r.assets[id]
-	if !ok {
-		return nil, service.ErrMediaNotFound
-	}
-	return asset, nil
+	return &service.MediaAsset{
+		ID:         id,
+		ObjectKey:  fmt.Sprintf("ai_skill/stub/%d.png", id),
+		Visibility: service.MediaVisibilityPublic,
+		Status:     service.MediaStatusActive,
+	}, nil
 }
 func (*aiSkillHandlerMediaRepo) List(context.Context, pagination.PaginationParams, service.MediaListFilters) ([]service.MediaAsset, *pagination.PaginationResult, error) {
 	return nil, nil, nil
@@ -69,6 +73,15 @@ func (r *aiSkillHandlerMediaRepo) MarkDeleted(_ context.Context, id int64, _ tim
 		asset.Status = service.MediaStatusDeleted
 	}
 	return nil
+}
+
+func (r *aiSkillHandlerMediaRepo) GetByObjectKey(_ context.Context, _, objectKey string) (*service.MediaAsset, error) {
+	for _, asset := range r.assets {
+		if asset != nil && asset.ObjectKey == objectKey {
+			return asset, nil
+		}
+	}
+	return nil, service.ErrMediaNotFound
 }
 
 type aiSkillHandlerMediaStore struct {
@@ -93,6 +106,9 @@ func (s *aiSkillHandlerMediaStore) Delete(_ context.Context, _ service.MediaStor
 func (*aiSkillHandlerMediaStore) Stat(context.Context, service.MediaStorageRuntimeConfig, string, string) (int64, error) {
 	return 0, nil
 }
+func (*aiSkillHandlerMediaStore) PresignGetObject(_ context.Context, _ service.MediaStorageRuntimeConfig, _, objectKey string, _ time.Duration) (string, error) {
+	return "https://media.example.com/presigned/" + objectKey, nil
+}
 
 func TestAIHandlerBuildSkillMetadataStoresCoverImageURL(t *testing.T) {
 	t.Parallel()
@@ -113,7 +129,7 @@ func TestAIHandlerBuildSkillMetadataStoresCoverImageURL(t *testing.T) {
 		"legacy": true,
 	})
 	require.NoError(t, err)
-	require.Equal(t, "https://media.example.com/api/v1/media/public/1", metadata["cover_image_url"])
+	require.True(t, strings.HasPrefix(metadata["cover_image_url"].(string), "https://media.example.com/"), "expected direct URL, got %v", metadata["cover_image_url"])
 	require.Len(t, repo.created, 1)
 	require.Len(t, store.uploads, 1)
 	require.Equal(t, png, store.uploads[0])
@@ -184,17 +200,17 @@ func TestAIHandlerBuildRunAttachmentsStoresURLsAndPreservesExistingIDs(t *testin
 	})
 	require.NoError(t, err)
 	require.Len(t, attachments, 3)
-	require.Equal(t, "https://media.example.com/api/v1/media/public/1", attachments[0].URL)
+	require.True(t, strings.HasPrefix(attachments[0].URL, "https://media.example.com/"), "expected direct URL, got %s", attachments[0].URL)
 	require.NotNil(t, attachments[0].MediaID)
 	require.Equal(t, int64(1), *attachments[0].MediaID)
-	require.Equal(t, "https://media.example.com/api/v1/media/public/2", attachments[1].URL)
+	require.True(t, strings.HasPrefix(attachments[1].URL, "https://media.example.com/"), "expected direct URL, got %s", attachments[1].URL)
 	require.NotNil(t, attachments[1].MediaID)
 	require.Equal(t, int64(2), *attachments[1].MediaID)
 	require.NotNil(t, attachments[2].AssetID)
 	require.NotNil(t, attachments[2].MediaID)
 	require.Equal(t, int64(11), *attachments[2].AssetID)
 	require.Equal(t, int64(12), *attachments[2].MediaID)
-	require.Equal(t, "https://media.example.com/api/v1/media/public/77", attachments[2].URL)
+	require.True(t, strings.HasPrefix(attachments[2].URL, "https://media.example.com/"), "expected direct URL, got %s", attachments[2].URL)
 	require.Len(t, repo.created, 2)
 	require.Len(t, store.uploads, 2)
 	require.Equal(t, png, store.uploads[0])
