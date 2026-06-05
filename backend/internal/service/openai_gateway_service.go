@@ -1675,6 +1675,29 @@ func classifyOpenAICodexCompatFallbackMessage(msg string) string {
 	return ""
 }
 
+// isOpenAIUnsupportedPreviousResponseIDError reports whether the upstream 400
+// response is the explicit "Unsupported parameter: previous_response_id" error
+// thrown by models that do not allow continuation via previous_response_id.
+// In that case the gateway can safely drop previous_response_id and retry,
+// because the request will then go through as an independent turn.
+func isOpenAIUnsupportedPreviousResponseIDError(upstreamCode, upstreamMsg string) bool {
+	msg := strings.ToLower(strings.TrimSpace(upstreamMsg))
+	if msg == "" {
+		return false
+	}
+	if !strings.Contains(msg, "previous_response_id") {
+		return false
+	}
+	if strings.Contains(msg, "unsupported parameter") ||
+		strings.Contains(msg, "unsupported field") ||
+		strings.Contains(msg, "unknown parameter") ||
+		strings.Contains(msg, "not supported") {
+		return true
+	}
+	code := strings.ToLower(strings.TrimSpace(upstreamCode))
+	return strings.Contains(code, "unsupported_parameter") || strings.Contains(code, "unknown_parameter")
+}
+
 func isOpenAICodexCompatFallbackReason(reason string) bool {
 	switch strings.TrimSpace(reason) {
 	case "call_id", "item_reference", "tool_context", "system_role", "input_schema":
@@ -1696,6 +1719,12 @@ func remarshalOpenAIOAuthCompatFallbackBody(
 		codexTransformInputModeStrict,
 		fallbackReason,
 	)
+	if strings.TrimSpace(fallbackReason) == "call_id" && !HasFunctionCallOutput(reqBody) {
+		if _, present := reqBody["previous_response_id"]; present {
+			delete(reqBody, "previous_response_id")
+			codexResult.Modified = true
+		}
+	}
 	trimmedPromptCacheKey := strings.TrimSpace(promptCacheKey)
 	if codexResult.PromptCacheKey != "" {
 		trimmedPromptCacheKey = codexResult.PromptCacheKey
@@ -1721,6 +1750,12 @@ func applyOpenAIWSCodexCompatFallback(
 		codexTransformInputModeStrict,
 		fallbackReason,
 	)
+	if strings.TrimSpace(fallbackReason) == "call_id" && !HasFunctionCallOutput(reqBody) {
+		if _, present := reqBody["previous_response_id"]; present {
+			delete(reqBody, "previous_response_id")
+			codexResult.Modified = true
+		}
+	}
 	if c != nil {
 		c.Set(openAICodexTransformObsKey, codexResult.Observability)
 		if codexResult.Modified {
@@ -4214,6 +4249,7 @@ oauthTransformDone:
 	httpCodexCompatRetryTried := false
 	httpModelFallbackRetryTried := false
 	httpInstructionsRetryTried := false
+	httpUnsupportedPreviousResponseIDRetryTried := false
 	for {
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, upstreamStream)
@@ -4324,7 +4360,15 @@ oauthTransformDone:
 				}
 			}
 			if !httpInvalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest && upstreamCode == "invalid_encrypted_content" {
-				if trimOpenAIEncryptedReasoningItems(reqBody) {
+				removedReasoningItems := trimOpenAIEncryptedReasoningItems(reqBody)
+				previousResponseID := openAIWSPayloadString(reqBody, "previous_response_id")
+				hasFunctionCallOutput := HasFunctionCallOutput(reqBody)
+				droppedPreviousResponseID := false
+				if previousResponseID != "" && !hasFunctionCallOutput {
+					delete(reqBody, "previous_response_id")
+					droppedPreviousResponseID = true
+				}
+				if removedReasoningItems || droppedPreviousResponseID {
 					body, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
 					if err != nil {
 						return nil, fmt.Errorf("serialize invalid_encrypted_content retry body: %w", err)
@@ -4341,10 +4385,54 @@ oauthTransformDone:
 					}
 					setOpsUpstreamRequestBody(c, body)
 					httpInvalidEncryptedContentRetryTried = true
-					logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request once after invalid_encrypted_content (account: %s)", account.Name)
+					s.RecordOpenAIAccountRecoveryReason(account.ID, "invalid_encrypted_content")
+					logger.LegacyPrintf(
+						"service.openai_gateway",
+						"[OpenAI] Retrying non-WSv2 request once after invalid_encrypted_content (account: %s, dropped_reasoning_items=%v, dropped_previous_response_id=%v, has_function_call_output=%v)",
+						account.Name,
+						removedReasoningItems,
+						droppedPreviousResponseID,
+						hasFunctionCallOutput,
+					)
 					continue
 				}
-				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
+				logger.LegacyPrintf(
+					"service.openai_gateway",
+					"[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because nothing can be dropped (account: %s, previous_response_id_present=%v, has_function_call_output=%v)",
+					account.Name,
+					previousResponseID != "",
+					hasFunctionCallOutput,
+				)
+			}
+			if !httpUnsupportedPreviousResponseIDRetryTried &&
+				resp.StatusCode == http.StatusBadRequest &&
+				isOpenAIUnsupportedPreviousResponseIDError(upstreamCode, upstreamMsg) {
+				if _, present := reqBody["previous_response_id"]; present && !HasFunctionCallOutput(reqBody) {
+					delete(reqBody, "previous_response_id")
+					body, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
+					if err != nil {
+						return nil, fmt.Errorf("serialize unsupported previous_response_id retry body: %w", err)
+					}
+					if account.Type == AccountTypeOAuth && isOpenAIResponsesCompactPath(c) {
+						normalizedBody, normalized, normErr := normalizeOpenAICompactRequestBody(body)
+						if normErr != nil {
+							return nil, normErr
+						}
+						if normalized {
+							body = normalizedBody
+						}
+						reqStream = gjson.GetBytes(body, "stream").Bool()
+					}
+					setOpsUpstreamRequestBody(c, body)
+					httpUnsupportedPreviousResponseIDRetryTried = true
+					s.RecordOpenAIAccountRecoveryReason(account.ID, "unsupported_previous_response_id")
+					logger.LegacyPrintf(
+						"service.openai_gateway",
+						"[OpenAI] Retrying non-WSv2 request once after dropping unsupported previous_response_id (account: %s)",
+						account.Name,
+					)
+					continue
+				}
 			}
 			if !httpInstructionsRetryTried &&
 				account.Type == AccountTypeOAuth &&
@@ -5255,6 +5343,10 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 		"high-risk cyber",
 		"not allowed",
 		"violat",
+		"context window",
+		"context_length_exceeded",
+		"model_context_window_exceeded",
+		"exceeds the context",
 	}
 	for _, marker := range nonRetryableMarkers {
 		if strings.Contains(combined, marker) {

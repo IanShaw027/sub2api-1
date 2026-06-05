@@ -73,13 +73,14 @@ func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 
 			body := w.Body.String()
 
-			// 验证 SSE 格式：event: error\ndata: {JSON}\n\n
+			// 验证 SSE 格式：event: error\ndata: {JSON}\n\ndata: [DONE]\n\n
 			assert.True(t, strings.HasPrefix(body, "event: error\n"), "应以 'event: error\\n' 开头")
-			assert.True(t, strings.HasSuffix(body, "\n\n"), "应以 '\\n\\n' 结尾")
+			assert.True(t, strings.HasSuffix(body, "data: [DONE]\n\n"), "应以 'data: [DONE]\\n\\n' 结尾")
 
-			// 提取 data 部分
-			lines := strings.Split(strings.TrimSuffix(body, "\n\n"), "\n")
-			require.Len(t, lines, 2, "应有 event 行和 data 行")
+			// 拆出错误事件部分（去掉尾部 [DONE] 帧）
+			eventBody := strings.TrimSuffix(body, "data: [DONE]\n\n")
+			lines := strings.Split(strings.TrimSuffix(eventBody, "\n\n"), "\n")
+			require.Len(t, lines, 2, "错误帧应有 event 行和 data 行")
 			dataLine := lines[1]
 			require.True(t, strings.HasPrefix(dataLine, "data: "), "第二行应以 'data: ' 开头")
 			jsonStr := strings.TrimPrefix(dataLine, "data: ")
@@ -157,6 +158,51 @@ func TestOpenAIHandleStreamingAwareError_NonStreaming(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "upstream_error", errorObj["type"])
 	assert.Equal(t, "test error", errorObj["message"])
+}
+
+func TestOpenAIHandleStreamingAwareError_ChatCompletionsAppendsDone(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	// Simulate that streaming has started.
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	_, _ = c.Writer.WriteString("data: {\"id\":\"chatcmpl_x\"}\n\n")
+
+	h := &OpenAIGatewayHandler{}
+	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "boom", true)
+
+	body := w.Body.String()
+	assert.Contains(t, body, "event: error")
+	assert.Contains(t, body, `"type":"upstream_error"`)
+	assert.Contains(t, body, `"message":"boom"`)
+	// Chat-completions style SDKs need the [DONE] marker to close the stream cleanly.
+	assert.Contains(t, body, "data: [DONE]")
+}
+
+func TestOpenAIHandleStreamingAwareError_ResponsesPathStillEmitsResponseFailed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	called := false
+	router.POST("/v1/responses", func(c *gin.Context) {
+		// Simulate that streaming has started.
+		c.Writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = c.Writer.WriteString(": ping\n\n")
+
+		h := &OpenAIGatewayHandler{}
+		h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "boom", true)
+		called = true
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	router.ServeHTTP(w, req)
+
+	require.True(t, called)
+	body := w.Body.String()
+	assert.Contains(t, body, "event: response.failed")
+	// Responses 协议下不再追加 [DONE]，response.failed 已经是合法终止帧。
+	assert.NotContains(t, body, "data: [DONE]")
 }
 
 func TestOpenAIValidateFunctionCallOutputRequest_RejectsToolSearchOutputWithoutCallID(t *testing.T) {

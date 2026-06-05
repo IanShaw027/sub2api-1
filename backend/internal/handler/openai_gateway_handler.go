@@ -2029,6 +2029,12 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status 
 			if _, err := fmt.Fprint(c.Writer, errorEvent); err != nil {
 				_ = c.Error(err)
 			}
+			// 给 chat completions / 通用 SSE 客户端补一个 [DONE] 终止符。
+			// 不少 SDK（含 openai-python、openai-js）依赖 data: [DONE] 关闭流，
+			// 仅有 event: error 会让客户端等到读取超时才放弃。
+			if _, err := fmt.Fprint(c.Writer, "data: [DONE]\n\n"); err != nil {
+				_ = c.Error(err)
+			}
 			flusher.Flush()
 		}
 		return

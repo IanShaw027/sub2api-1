@@ -132,9 +132,10 @@ const (
 )
 
 type codexInputFilterOptions struct {
-	rewriteToolContinuationIDs bool
-	dropItemReferences         bool
-	dropNonToolItemIDs         bool
+	rewriteToolContinuationIDs    bool
+	dropItemReferences            bool
+	dropNonToolItemIDs            bool
+	dropOrphanFunctionCallOutputs bool
 }
 
 type codexOAuthTransformOptions struct {
@@ -443,7 +444,10 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
 			filterOptions.rewriteToolContinuationIDs = false
 		}
 		switch strings.TrimSpace(fallbackReason) {
-		case "call_id", "input_schema":
+		case "call_id":
+			filterOptions.dropNonToolItemIDs = true
+			filterOptions.dropOrphanFunctionCallOutputs = true
+		case "input_schema":
 			filterOptions.dropNonToolItemIDs = true
 		case "item_reference":
 			filterOptions.dropItemReferences = true
@@ -1783,7 +1787,95 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 
 		filtered = append(filtered, newItem)
 	}
+	if opts.dropOrphanFunctionCallOutputs {
+		next, dropped := dropOrphanFunctionCallOutputs(filtered)
+		if dropped {
+			filtered = next
+			modified = true
+		}
+	}
 	if !modified && len(filtered) == len(input) {
+		return input, false
+	}
+	return filtered, true
+}
+
+// dropOrphanFunctionCallOutputs removes function_call_output items whose call_id
+// has no matching function_call (or other tool-call) item earlier in the same
+// input array. Sending an orphan function_call_output causes the upstream to
+// reject the request with "No tool call found for function call output with
+// call_id ...". The orphan typically arises when a client persists transcript
+// state but the matching function_call has already been pruned (e.g. because
+// it lived on a server-side previous_response chain that is no longer reachable).
+func dropOrphanFunctionCallOutputs(input []any) ([]any, bool) {
+	if len(input) == 0 {
+		return input, false
+	}
+	isCallSourceType := func(typ string) bool {
+		switch typ {
+		case "function_call",
+			"tool_call",
+			"local_shell_call",
+			"tool_search_call",
+			"custom_tool_call",
+			"mcp_tool_call",
+			"item_reference":
+			return true
+		default:
+			return false
+		}
+	}
+	seenCallIDs := make(map[string]struct{}, len(input))
+	for _, item := range input {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		typ, _ := m["type"].(string)
+		if !isCallSourceType(typ) {
+			continue
+		}
+		// item_reference uses `id` to point at a server-side tool call;
+		// other call sources use `call_id`.
+		var ref string
+		if typ == "item_reference" {
+			ref, _ = m["id"].(string)
+		} else {
+			ref, _ = m["call_id"].(string)
+		}
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		seenCallIDs[ref] = struct{}{}
+	}
+
+	filtered := make([]any, 0, len(input))
+	dropped := false
+	for _, item := range input {
+		m, ok := item.(map[string]any)
+		if !ok {
+			filtered = append(filtered, item)
+			continue
+		}
+		typ, _ := m["type"].(string)
+		if typ != "function_call_output" {
+			filtered = append(filtered, item)
+			continue
+		}
+		callID, _ := m["call_id"].(string)
+		callID = strings.TrimSpace(callID)
+		if callID == "" {
+			dropped = true
+			continue
+		}
+		if _, matched := seenCallIDs[callID]; !matched {
+			dropped = true
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	if !dropped {
 		return input, false
 	}
 	return filtered, true
