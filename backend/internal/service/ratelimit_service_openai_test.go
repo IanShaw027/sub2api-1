@@ -263,6 +263,69 @@ func TestHandle429_OpenAISyncsObservedPlanType(t *testing.T) {
 	require.Equal(t, account.ID, repo.rateLimitedID)
 }
 
+func TestHandle429_OpenAIImageRateLimitMessage_OnlyMarksImageRoute(t *testing.T) {
+	repo := &openAI429SnapshotRepo{}
+	svc := NewRateLimitService(repo, nil, nil, nil, nil)
+	account := &Account{ID: 200, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	body := []byte(`{"error":{"message":"Rate limit reached for gpt-image-2-codex (for limit gpt-image) in organization org-XYZ on input-images per min: Limit 4000, Used 4000, Requested 1.","type":"requests"}}`)
+
+	svc.handle429(context.Background(), account, http.Header{}, body)
+
+	// 不应当污染全局 RateLimitedAt（chat/responses 文本仍可调度）
+	require.Zero(t, repo.rateLimitedID, "image-only rate limit must not call SetRateLimited")
+
+	// codex + web2api 两条 route 都被标记（账号级共享配额）
+	require.Contains(t, repo.updatedExtra, "openai_image_codex_rate_limit_reset_at")
+	require.Contains(t, repo.updatedExtra, "openai_image_web2api_rate_limit_reset_at")
+
+	codexResetRaw, _ := repo.updatedExtra["openai_image_codex_rate_limit_reset_at"].(string)
+	web2apiResetRaw, _ := repo.updatedExtra["openai_image_web2api_rate_limit_reset_at"].(string)
+	require.Equal(t, codexResetRaw, web2apiResetRaw, "two route prefixes must share the same reset_at")
+
+	resetAt, err := time.Parse(time.RFC3339, codexResetRaw)
+	require.NoError(t, err)
+	// fallback 应为 3h
+	gap := time.Until(resetAt)
+	require.GreaterOrEqual(t, gap, 3*time.Hour-2*time.Minute)
+	require.LessOrEqual(t, gap, 3*time.Hour+2*time.Minute)
+}
+
+func TestIsOpenAIImageGenerationRateLimitMessage(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{
+			name: "input-images per min",
+			body: `{"error":{"message":"Rate limit reached for gpt-image-2-codex on input-images per min: Limit 4000, Used 4000."}}`,
+			want: true,
+		},
+		{
+			name: "gpt-image without input-images keyword",
+			body: `{"error":{"message":"You are limited on gpt-image requests."}}`,
+			want: true,
+		},
+		{
+			name: "regular usage_limit_reached",
+			body: `{"error":{"type":"usage_limit_reached","message":"You hit your weekly usage."}}`,
+			want: false,
+		},
+		{
+			name: "empty body",
+			body: ``,
+			want: false,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isOpenAIImageGenerationRateLimitMessage([]byte(tt.body)))
+		})
+	}
+}
+
 func TestNormalizedCodexLimits(t *testing.T) {
 	// Test the Normalize() method directly
 	pUsed := 100.0

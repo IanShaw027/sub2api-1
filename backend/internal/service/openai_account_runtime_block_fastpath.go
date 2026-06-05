@@ -55,6 +55,12 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 	if s == nil || !isOpenAIOAuthAccount(account) {
 		return
 	}
+	// OpenAI 账号级图片配额（input-images per min/day）撞 429 时，
+	// 由 RateLimitService.handleOpenAIImageRoute429 仅标记 image route；
+	// 这里跳过 runtime block，避免误伤同账号的 chat/responses 文本请求。
+	if isOpenAIImageGenerationRateLimitMessage(responseBody) {
+		return
+	}
 	s.recordOpenAIOAuth429()
 
 	cooldownUntil := time.Now().Add(openAIOAuth429FallbackCooldown)
