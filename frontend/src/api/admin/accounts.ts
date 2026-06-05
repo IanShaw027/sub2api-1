@@ -18,6 +18,7 @@ import type {
   AdminDataImportResult,
   CodexSessionImportRequest,
   CodexSessionImportResult,
+  ArchiveImportResult,
   CheckMixedChannelRequest,
   CheckMixedChannelResponse,
   OpenAIWebProfileImportRequest,
@@ -619,6 +620,33 @@ export async function importCodexSession(payload: CodexSessionImportRequest): Pr
   return data
 }
 
+export async function importArchive(
+  file: File,
+  options?: {
+    dedup_mode?: string
+    skip_default_group_bind?: boolean
+    update_existing?: boolean
+    confirm_mixed_channel_risk?: boolean
+  }
+): Promise<ArchiveImportResult> {
+  const formData = new FormData()
+  formData.append('file', file)
+  if (options?.dedup_mode) {
+    formData.append('dedup_mode', options.dedup_mode)
+  }
+  if (options?.skip_default_group_bind !== undefined) {
+    formData.append('skip_default_group_bind', String(options.skip_default_group_bind))
+  }
+  if (options?.update_existing !== undefined) {
+    formData.append('update_existing', String(options.update_existing))
+  }
+  if (options?.confirm_mixed_channel_risk !== undefined) {
+    formData.append('confirm_mixed_channel_risk', String(options.confirm_mixed_channel_risk))
+  }
+  const { data } = await apiClient.post<ArchiveImportResult>('/admin/accounts/import/archive', formData)
+  return data
+}
+
 /**
  * Get Antigravity default model mapping from backend
  * @returns Default model mapping (from -> to)
@@ -740,6 +768,7 @@ export const accountsAPI = {
   exportData,
   importData,
   importCodexSession,
+  importArchive,
   getAntigravityDefaultModelMapping,
   batchClearError,
   batchRefresh,

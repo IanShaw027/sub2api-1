@@ -3635,6 +3635,7 @@ export default {
       dataImportDedupIgnore: 'Deduplicate and ignore',
       dataImportDedupHint: 'Overwrite updates existing accounts matched by unique credentials; ignore skips duplicates.',
       dataImportFile: 'Data file',
+      dataImportFileHint: 'Supports JSON (.json) and archive (.zip / .cpa) formats',
       dataImportButton: 'Start Import',
       dataImporting: 'Importing...',
       dataImportSelectFile: 'Please select a data file',
@@ -3645,6 +3646,10 @@ export default {
       dataImportErrors: 'Error Details',
       dataImportSuccess: 'Import completed: accounts created {account_created}, updated {account_updated}, skipped {account_skipped}, failed {account_failed}',
       dataImportCompletedWithErrors: 'Import completed with errors: account failed {account_failed}, proxy failed {proxy_failed}',
+      dataImportArchiveSummary: 'Archive format: {format} | Total files: {total} | Codex: {codex} | Sub2API: {sub2api} | Unknown: {unknown}',
+      dataImportArchiveCodexSummary: 'Codex accounts: created {created}, updated {updated}, skipped {skipped}, failed {failed}',
+      dataImportArchiveParseErrors: 'Parse Errors',
+      dataImportArchiveSuccess: 'Archive import completed: {created} accounts created (format: {format})',
       syncFromCrsTitle: 'Sync Accounts from CRS',
       syncFromCrsDesc:
         'Sync accounts from claude-relay-service (CRS) into this system (CRS is called server-to-server).',

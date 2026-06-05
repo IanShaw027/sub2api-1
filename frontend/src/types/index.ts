@@ -1596,6 +1596,23 @@ export interface CodexSessionImportResult {
   errors?: CodexSessionImportMessage[]
 }
 
+export interface ArchiveImportParseError {
+  entry: string
+  message: string
+}
+
+export interface ArchiveImportResult {
+  format: string
+  total_entries: number
+  sub2api_entries: number
+  codex_entries: number
+  unknown_entries: number
+  unknown_names?: string[]
+  sub2api_result?: AdminDataImportResult
+  codex_result?: CodexSessionImportResult
+  parse_errors?: ArchiveImportParseError[]
+}
+
 // ==================== Usage & Redeem Types ====================
 
 export type RedeemCodeType = 'balance' | 'concurrency' | 'subscription' | 'invitation'

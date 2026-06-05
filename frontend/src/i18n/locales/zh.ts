@@ -3700,6 +3700,7 @@ export default {
       dataImportDedupIgnore: '去重并忽略',
       dataImportDedupHint: '覆盖会按唯一凭证匹配并更新已有账号；忽略会跳过重复账号。',
       dataImportFile: '数据文件',
+      dataImportFileHint: '支持 JSON (.json) 和压缩包 (.zip / .cpa) 格式',
       dataImportButton: '开始导入',
       dataImporting: '导入中...',
       dataImportSelectFile: '请选择数据文件',
@@ -3710,6 +3711,10 @@ export default {
       dataImportErrors: '失败详情',
       dataImportSuccess: '导入完成：账号创建 {account_created}，更新 {account_updated}，跳过 {account_skipped}，失败 {account_failed}',
       dataImportCompletedWithErrors: '导入完成但有错误：账号失败 {account_failed}，代理失败 {proxy_failed}',
+      dataImportArchiveSummary: '压缩包格式: {format} | 总文件: {total} | Codex: {codex} | Sub2API: {sub2api} | 未识别: {unknown}',
+      dataImportArchiveCodexSummary: 'Codex 账号: 创建 {created}，更新 {updated}，跳过 {skipped}，失败 {failed}',
+      dataImportArchiveParseErrors: '解析错误',
+      dataImportArchiveSuccess: '压缩包导入完成：共创建 {created} 个账号（格式: {format}）',
       syncFromCrsTitle: '从 CRS 同步账号',
       syncFromCrsDesc:
         '将 claude-relay-service（CRS）中的账号同步到当前系统（不会在浏览器侧直接请求 CRS）。',

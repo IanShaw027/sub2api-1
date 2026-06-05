@@ -812,15 +812,19 @@ func buildCodexIdentityKeys(accountID, userID, email, accessToken string) []stri
 	keys := make([]string, 0, 4)
 	accountID = strings.TrimSpace(accountID)
 	userID = strings.TrimSpace(userID)
-	if accountID != "" {
-		keys = append(keys, "account:"+accountID)
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email != "" && accountID != "" {
+		keys = append(keys, "email_account:"+email+":"+accountID)
 	}
 	if userID != "" {
 		keys = append(keys, "user:"+userID)
 	}
-	if accountID == "" && userID == "" {
-		if email = strings.ToLower(strings.TrimSpace(email)); email != "" {
+	if len(keys) == 0 {
+		if email != "" {
 			keys = append(keys, "email:"+email)
+		}
+		if accountID != "" {
+			keys = append(keys, "account:"+accountID)
 		}
 	}
 	if accessToken = strings.TrimSpace(accessToken); accessToken != "" {

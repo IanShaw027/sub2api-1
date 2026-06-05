@@ -36,7 +36,7 @@
               {{ fileName || t('admin.accounts.dataImportSelectFile') }}
             </div>
             <div class="text-xs text-gray-500 dark:text-dark-400">
-              {{ t('common.jsonFileFormat', 'JSON (.json)') }}
+              {{ t('admin.accounts.dataImportFileHint') }}
             </div>
           </div>
           <button type="button" class="btn btn-secondary shrink-0" @click="openFilePicker">
@@ -47,31 +47,69 @@
           ref="fileInput"
           type="file"
           class="hidden"
-          accept="application/json,.json"
+          accept="application/json,.json,.zip,.cpa,application/zip"
           @change="handleFileChange"
         />
       </div>
 
+      <!-- JSON import result -->
       <div
-        v-if="result"
+        v-if="jsonResult"
         class="space-y-2 rounded-xl border border-gray-200 p-4 dark:border-dark-700"
       >
         <div class="text-sm font-medium text-gray-900 dark:text-white">
           {{ t('admin.accounts.dataImportResult') }}
         </div>
         <div class="text-sm text-gray-700 dark:text-dark-300">
-          {{ t('admin.accounts.dataImportResultSummary', result) }}
+          {{ t('admin.accounts.dataImportResultSummary', jsonResult) }}
         </div>
 
-        <div v-if="errorItems.length" class="mt-2">
+        <div v-if="jsonErrorItems.length" class="mt-2">
           <div class="text-sm font-medium text-red-600 dark:text-red-400">
             {{ t('admin.accounts.dataImportErrors') }}
           </div>
           <div
             class="mt-2 max-h-48 overflow-auto rounded-lg bg-gray-50 p-3 font-mono text-xs dark:bg-dark-800"
           >
-            <div v-for="(item, idx) in errorItems" :key="idx" class="whitespace-pre-wrap">
+            <div v-for="(item, idx) in jsonErrorItems" :key="idx" class="whitespace-pre-wrap">
               {{ item.kind }} {{ item.name || item.proxy_key || t('common.notAvailable') }} — {{ item.message }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Archive import result -->
+      <div
+        v-if="archiveResult"
+        class="space-y-2 rounded-xl border border-gray-200 p-4 dark:border-dark-700"
+      >
+        <div class="text-sm font-medium text-gray-900 dark:text-white">
+          {{ t('admin.accounts.dataImportResult') }}
+        </div>
+        <div class="text-sm text-gray-700 dark:text-dark-300">
+          {{ t('admin.accounts.dataImportArchiveSummary', { format: archiveResult.format, total: archiveResult.total_entries, codex: archiveResult.codex_entries, sub2api: archiveResult.sub2api_entries, unknown: archiveResult.unknown_entries }) }}
+        </div>
+
+        <!-- sub2api result -->
+        <div v-if="archiveResult.sub2api_result" class="text-sm text-gray-700 dark:text-dark-300">
+          {{ t('admin.accounts.dataImportResultSummary', archiveResult.sub2api_result) }}
+        </div>
+
+        <!-- codex result -->
+        <div v-if="archiveResult.codex_result" class="text-sm text-gray-700 dark:text-dark-300">
+          {{ t('admin.accounts.dataImportArchiveCodexSummary', archiveResult.codex_result) }}
+        </div>
+
+        <!-- parse errors -->
+        <div v-if="archiveResult.parse_errors?.length" class="mt-2">
+          <div class="text-sm font-medium text-red-600 dark:text-red-400">
+            {{ t('admin.accounts.dataImportArchiveParseErrors') }}
+          </div>
+          <div
+            class="mt-2 max-h-48 overflow-auto rounded-lg bg-gray-50 p-3 font-mono text-xs dark:bg-dark-800"
+          >
+            <div v-for="(item, idx) in archiveResult.parse_errors" :key="idx" class="whitespace-pre-wrap">
+              {{ item.entry }} — {{ item.message }}
             </div>
           </div>
         </div>
@@ -102,7 +140,7 @@ import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
-import type { AdminDataImportResult } from '@/types'
+import type { AdminDataImportResult, ArchiveImportResult } from '@/types'
 
 interface Props {
   show: boolean
@@ -121,20 +159,22 @@ const appStore = useAppStore()
 
 const importing = ref(false)
 const file = ref<File | null>(null)
-const result = ref<AdminDataImportResult | null>(null)
+const jsonResult = ref<AdminDataImportResult | null>(null)
+const archiveResult = ref<ArchiveImportResult | null>(null)
 const dedupMode = ref<'none' | 'overwrite' | 'ignore'>('none')
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const fileName = computed(() => file.value?.name || '')
 
-const errorItems = computed(() => result.value?.errors || [])
+const jsonErrorItems = computed(() => jsonResult.value?.errors || [])
 
 watch(
   () => props.show,
   (open) => {
     if (open) {
       file.value = null
-      result.value = null
+      jsonResult.value = null
+      archiveResult.value = null
       dedupMode.value = 'none'
       if (fileInput.value) {
         fileInput.value.value = ''
@@ -155,6 +195,11 @@ const handleFileChange = (event: Event) => {
 const handleClose = () => {
   if (importing.value) return
   emit('close')
+}
+
+const isArchiveFile = (f: File): boolean => {
+  const name = f.name.toLowerCase()
+  return name.endsWith('.zip') || name.endsWith('.cpa')
 }
 
 const readFileAsText = async (sourceFile: File): Promise<string> => {
@@ -182,32 +227,61 @@ const handleImport = async () => {
   }
 
   importing.value = true
+  jsonResult.value = null
+  archiveResult.value = null
+
   try {
-    const text = await readFileAsText(file.value)
-    const dataPayload = JSON.parse(text)
+    if (isArchiveFile(file.value)) {
+      const res = await adminAPI.accounts.importArchive(file.value, {
+        dedup_mode: dedupMode.value,
+        skip_default_group_bind: true,
+        update_existing: true
+      })
 
-    const res = await adminAPI.accounts.importData({
-      data: dataPayload,
-      skip_default_group_bind: true,
-      dedup_mode: dedupMode.value
-    })
+      archiveResult.value = res
 
-    result.value = res
+      const hasFailed =
+        (res.codex_result?.failed ?? 0) > 0 ||
+        (res.sub2api_result?.account_failed ?? 0) > 0 ||
+        (res.parse_errors?.length ?? 0) > 0
 
-    const msgParams: Record<string, unknown> = {
-      account_created: res.account_created,
-      account_updated: res.account_updated ?? 0,
-      account_skipped: res.account_skipped ?? 0,
-      account_failed: res.account_failed,
-      proxy_created: res.proxy_created,
-      proxy_reused: res.proxy_reused,
-      proxy_failed: res.proxy_failed,
-    }
-    if (res.account_failed > 0 || res.proxy_failed > 0) {
-      appStore.showError(t('admin.accounts.dataImportCompletedWithErrors', msgParams))
+      if (hasFailed) {
+        appStore.showError(t('admin.accounts.dataImportCompletedWithErrors', {
+          account_failed: (res.codex_result?.failed ?? 0) + (res.sub2api_result?.account_failed ?? 0),
+          proxy_failed: res.sub2api_result?.proxy_failed ?? 0
+        }))
+      } else {
+        const created = (res.codex_result?.created ?? 0) + (res.sub2api_result?.account_created ?? 0)
+        appStore.showSuccess(t('admin.accounts.dataImportArchiveSuccess', { created, format: res.format }))
+        emit('imported')
+      }
     } else {
-      appStore.showSuccess(t('admin.accounts.dataImportSuccess', msgParams))
-      emit('imported')
+      const text = await readFileAsText(file.value)
+      const dataPayload = JSON.parse(text)
+
+      const res = await adminAPI.accounts.importData({
+        data: dataPayload,
+        skip_default_group_bind: true,
+        dedup_mode: dedupMode.value
+      })
+
+      jsonResult.value = res
+
+      const msgParams: Record<string, unknown> = {
+        account_created: res.account_created,
+        account_updated: res.account_updated ?? 0,
+        account_skipped: res.account_skipped ?? 0,
+        account_failed: res.account_failed,
+        proxy_created: res.proxy_created,
+        proxy_reused: res.proxy_reused,
+        proxy_failed: res.proxy_failed,
+      }
+      if (res.account_failed > 0 || res.proxy_failed > 0) {
+        appStore.showError(t('admin.accounts.dataImportCompletedWithErrors', msgParams))
+      } else {
+        appStore.showSuccess(t('admin.accounts.dataImportSuccess', msgParams))
+        emit('imported')
+      }
     }
   } catch (error: any) {
     if (error instanceof SyntaxError) {
