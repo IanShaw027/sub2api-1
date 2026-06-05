@@ -46,6 +46,7 @@ const (
 	// 让调度层在该窗口内跳过出错账号，避免重复打到不可达上游。命中后会一并触发 failover。
 	kiroTransportFailureCooldown      = 2 * time.Minute
 	kiroTransportFailureReasonKeyword = "kiro_transport_failure"
+	kiroAccountStateUpdateTimeout     = 5 * time.Second
 )
 
 type KiroGatewayService struct {
@@ -2134,13 +2135,20 @@ func (s *KiroGatewayService) handleUpstreamError(ctx context.Context, account *A
 	return s.rateLimitService.HandleUpstreamError(ctx, account, statusCode, headers, body)
 }
 
+func kiroAccountStateContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	base := context.Background()
+	if ctx != nil {
+		base = context.WithoutCancel(ctx)
+	}
+	return context.WithTimeout(base, kiroAccountStateUpdateTimeout)
+}
+
 // handleKiroTransportError 处理上游 transport 层失败（DoWithTLS 直接返回 err）。
 //
 // 调用方在 kiro 流式入口和双请求路径上调用。函数职责：
 //  1. 若是真正的客户端断开（gin context 已 Canceled），仅记录 ops 事件，不标记账号、不 failover。
 //  2. 否则视为上游 transport 故障：
-//     - 调用 SetTempUnschedulable 给账号一个短冷却（kiroTransportFailureCooldown），
-//       让调度层在窗口内跳过该账号，防止反复撞同一个不可达上游。
+//     - 调用 SetTempUnschedulable 给账号一个短冷却，防止反复撞同一个不可达上游。
 //     - 返回 *UpstreamFailoverError 让 handler 主循环切到下一个账号。
 //
 // 注意：返回 failover 后 handler 会写最终响应，所以这里不能再 c.JSON。
@@ -2149,7 +2157,9 @@ func (s *KiroGatewayService) handleKiroTransportError(ctx context.Context, c *gi
 	if isClientDisconnectError(c, transportErr) {
 		return transportErr
 	}
-	s.markKiroTransportFailureUnschedulable(ctx, account, transportErr)
+	stateCtx, cancel := kiroAccountStateContext(ctx)
+	defer cancel()
+	s.markKiroTransportFailureUnschedulable(stateCtx, account, transportErr)
 	return &UpstreamFailoverError{
 		StatusCode:   http.StatusBadGateway,
 		ResponseBody: []byte(sanitizeUpstreamErrorMessage(transportErr.Error())),
@@ -2158,8 +2168,8 @@ func (s *KiroGatewayService) handleKiroTransportError(ctx context.Context, c *gi
 
 // isClientDisconnectError 判断 transport err 是否由客户端取消触发。
 //
-// 仅当 gin 请求 context 已被取消（c.Request.Context().Err() != nil）才视作客户端断开；
-// 上游主动 RST 让 Go transport 把 context 标 Canceled 的情况下，gin context 仍然有效。
+// 仅当 gin 请求 context 被客户端取消，且 transport err 本身也是 cancellation 形态时才视作
+// 客户端断开；不能因为请求 context 已取消就吞掉 connection reset / deadline 等上游故障。
 func isClientDisconnectError(c *gin.Context, err error) bool {
 	if c == nil || c.Request == nil {
 		return false
@@ -2168,12 +2178,10 @@ func isClientDisconnectError(c *gin.Context, err error) bool {
 	if reqCtx == nil {
 		return false
 	}
-	if reqCtx.Err() == nil {
+	if !errors.Is(reqCtx.Err(), context.Canceled) {
 		return false
 	}
-	// gin context 已取消，再确认底层 err 是 cancellation 性质的（避免把 deadline + ctx 取消同
-	// 时发生的真上游故障误判为客户端断开）。
-	return errors.Is(err, context.Canceled) || errors.Is(reqCtx.Err(), context.Canceled)
+	return errors.Is(err, context.Canceled)
 }
 
 // markKiroTransportFailureUnschedulable 把账号标记为短期临时不可调度，

@@ -27,6 +27,8 @@ type kiroGatewayRateLimitRepoStub struct {
 	tempIDs        []int64
 	tempUntil      []time.Time
 	tempReasons    []string
+	tempCtxErrs    []error
+	rejectCanceled bool
 	errorIDs       []int64
 	errorMsgs      []string
 }
@@ -37,10 +39,51 @@ func (r *kiroGatewayRateLimitRepoStub) SetRateLimited(_ context.Context, id int6
 	return nil
 }
 
-func (r *kiroGatewayRateLimitRepoStub) SetTempUnschedulable(_ context.Context, id int64, until time.Time, reason string) error {
+func (r *kiroGatewayRateLimitRepoStub) SetTempUnschedulable(ctx context.Context, id int64, until time.Time, reason string) error {
+	return r.setTempUnschedulable(ctx, id, until, reason)
+}
+
+func (r *kiroGatewayRateLimitRepoStub) setTempUnschedulable(ctx context.Context, id int64, until time.Time, reason string) error {
+	if ctx != nil {
+		r.tempCtxErrs = append(r.tempCtxErrs, ctx.Err())
+	} else {
+		r.tempCtxErrs = append(r.tempCtxErrs, nil)
+	}
+	if r.rejectCanceled && ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
 	r.tempIDs = append(r.tempIDs, id)
 	r.tempUntil = append(r.tempUntil, until)
 	r.tempReasons = append(r.tempReasons, reason)
+	return nil
+}
+
+type kiroTempUnschedCacheCtxRecorder struct {
+	accountIDs     []int64
+	states         []*TempUnschedState
+	ctxErrs        []error
+	rejectCanceled bool
+}
+
+func (c *kiroTempUnschedCacheCtxRecorder) SetTempUnsched(ctx context.Context, accountID int64, state *TempUnschedState) error {
+	if ctx != nil {
+		c.ctxErrs = append(c.ctxErrs, ctx.Err())
+	} else {
+		c.ctxErrs = append(c.ctxErrs, nil)
+	}
+	if c.rejectCanceled && ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	c.accountIDs = append(c.accountIDs, accountID)
+	c.states = append(c.states, state)
+	return nil
+}
+
+func (c *kiroTempUnschedCacheCtxRecorder) GetTempUnsched(context.Context, int64) (*TempUnschedState, error) {
+	return nil, nil
+}
+
+func (c *kiroTempUnschedCacheCtxRecorder) DeleteTempUnsched(context.Context, int64) error {
 	return nil
 }
 
@@ -429,6 +472,92 @@ func TestKiroGatewayService_Forward_TransportErr_UpstreamCancel_FailoverAndTempU
 	require.Empty(t, repo.errorIDs)
 }
 
+func TestKiroGatewayService_HandleKiroTransportError_ExpiredCtxStillMarksTempUnsched(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	repo := &kiroGatewayRateLimitRepoStub{rejectCanceled: true}
+	cache := &kiroTempUnschedCacheCtxRecorder{rejectCanceled: true}
+	svc := &KiroGatewayService{
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, cache),
+	}
+	account := &Account{
+		ID:       58611,
+		Name:     "ctx-expired-account",
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}
+	expiredCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	before := time.Now()
+
+	err := svc.handleKiroTransportError(
+		expiredCtx,
+		c,
+		account,
+		"https://q.us-east-1.amazonaws.com/generateAssistantResponse",
+		errors.New(`Post "https://q.us-east-1.amazonaws.com/generateAssistantResponse": context deadline exceeded`),
+	)
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Equal(t, []int64{58611}, repo.tempIDs)
+	require.Len(t, repo.tempUntil, 1)
+	require.WithinDuration(t, before.Add(kiroTransportFailureCooldown), repo.tempUntil[0], 5*time.Second)
+	require.Len(t, repo.tempCtxErrs, 1)
+	require.NoError(t, repo.tempCtxErrs[0], "账号短冷却写入应使用脱离请求取消的 state context")
+	require.Equal(t, []int64{58611}, cache.accountIDs)
+	require.Len(t, cache.states, 1)
+	require.Len(t, cache.ctxErrs, 1)
+	require.NoError(t, cache.ctxErrs[0], "cache 同步也应使用脱离请求取消的 state context")
+}
+
+func TestKiroGatewayService_HandleKiroTransportError_CanceledRequestWithConnectionResetMarksTempUnsched(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(canceledCtx)
+
+	repo := &kiroGatewayRateLimitRepoStub{}
+	cache := &kiroTempUnschedCacheRecorder{}
+	svc := &KiroGatewayService{
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, cache),
+	}
+	account := &Account{
+		ID:       58612,
+		Name:     "connection-reset-account",
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}
+	before := time.Now()
+
+	err := svc.handleKiroTransportError(
+		context.Background(),
+		c,
+		account,
+		"https://q.us-east-1.amazonaws.com/generateAssistantResponse",
+		errors.New(`Post "https://q.us-east-1.amazonaws.com/generateAssistantResponse": read tcp 10.0.0.2:52564->10.0.0.3:443: read: connection reset by peer`),
+	)
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Contains(t, string(failoverErr.ResponseBody), "connection reset by peer")
+	require.Equal(t, []int64{58612}, repo.tempIDs)
+	require.Len(t, repo.tempUntil, 1)
+	require.WithinDuration(t, before.Add(kiroTransportFailureCooldown), repo.tempUntil[0], 5*time.Second)
+	require.Equal(t, []int64{58612}, cache.accountIDs)
+	require.Len(t, cache.states, 1)
+	require.Equal(t, kiroTransportFailureReasonKeyword, cache.states[0].MatchedKeyword)
+}
+
 // TestKiroGatewayService_Forward_TransportErr_ClientDisconnect_NoFailoverNoMark
 // 验证：客户端真正断开（gin.Request.Context() 已 Canceled）时，
 // 不返回 UpstreamFailoverError、不标记账号临时不可调度。
@@ -486,6 +615,7 @@ func TestKiroGatewayService_Forward_TransportErr_ClientDisconnect_NoFailoverNoMa
 
 	require.Nil(t, result)
 	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
 	var failoverErr *UpstreamFailoverError
 	require.False(t, errors.As(err, &failoverErr), "客户端断开不应当触发账号 failover")
 
