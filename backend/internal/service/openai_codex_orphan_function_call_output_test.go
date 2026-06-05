@@ -108,6 +108,37 @@ func TestDropOrphanFunctionCallOutputs(t *testing.T) {
 			t.Fatalf("expected call source kept, got %#v", got[0])
 		}
 	})
+
+	t.Run("item_reference_keeps_later_output", func(t *testing.T) {
+		input := []any{
+			map[string]any{"type": "item_reference", "id": "call_ref"},
+			map[string]any{"type": "mcp_tool_call_output", "call_id": "call_ref", "output": "ok"},
+		}
+		got, dropped := dropOrphanFunctionCallOutputs(input)
+		if dropped {
+			t.Fatal("expected item_reference to satisfy the call source check")
+		}
+		if len(got) != 2 {
+			t.Fatalf("expected pair preserved, got %d items", len(got))
+		}
+	})
+
+	t.Run("item_reference_after_output_drops_orphan", func(t *testing.T) {
+		input := []any{
+			map[string]any{"type": "custom_tool_call_output", "call_id": "call_ref", "output": "ok"},
+			map[string]any{"type": "item_reference", "id": "call_ref"},
+		}
+		got, dropped := dropOrphanFunctionCallOutputs(input)
+		if !dropped {
+			t.Fatal("expected dropped=true when output appears before item_reference")
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected only later item_reference kept, got %d items", len(got))
+		}
+		if got[0].(map[string]any)["type"].(string) != "item_reference" {
+			t.Fatalf("expected item_reference kept, got %#v", got[0])
+		}
+	})
 }
 
 func TestFilterCodexInputWithOptions_DropOrphanFunctionCallOutputs(t *testing.T) {
