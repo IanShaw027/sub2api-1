@@ -84,13 +84,13 @@ func (r *mediaRepository) GetByObjectKey(ctx context.Context, bucket, objectKey 
 		       mime_type, size_bytes, width, height, sha256, owner_user_id, status,
 		       original_file_name, created_at, updated_at, deleted_at
 		FROM media_assets
-		WHERE object_key = $1 AND status = $2`
+		WHERE (object_key = $1 OR thumbnail_object_key = $1) AND status = $2`
 	args := []any{objectKey, service.MediaStatusActive}
 	if bucket != "" {
 		query += " AND bucket = $3"
 		args = append(args, bucket)
 	}
-	query += " ORDER BY id DESC LIMIT 1"
+	query += " ORDER BY CASE WHEN object_key = $1 THEN 0 ELSE 1 END, id DESC LIMIT 1"
 	row := r.db.QueryRowContext(ctx, query, args...)
 	item, err := scanMediaAsset(row)
 	if err != nil {

@@ -326,7 +326,7 @@ func TestSetAvatar_ReusesManagedMediaURLWithoutReupload(t *testing.T) {
 	require.Len(t, repo.upsertAvatarArg, 1)
 	require.Equal(t, "media", repo.upsertAvatarArg[0].StorageProvider)
 	require.Equal(t, "avatar/13/2026/05/05/reused.png", repo.upsertAvatarArg[0].StorageKey)
-	require.Equal(t, "https://source.qazwc.com/avatar/13/2026/05/05/reused.png", repo.upsertAvatarArg[0].URL)
+	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/5", repo.upsertAvatarArg[0].URL)
 	require.Equal(t, int64(5), mediaRepo.nextID)
 	require.Len(t, mediaRepo.assets, 1)
 }

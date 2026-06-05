@@ -33,6 +33,39 @@ func (mediaIngestTestRepo) GetByObjectKey(context.Context, string, string) (*Med
 	return nil, ErrMediaNotFound
 }
 
+type mediaURLTestRepo struct {
+	assetsByID map[int64]*MediaAsset
+}
+
+func (r mediaURLTestRepo) Create(context.Context, *MediaAsset) error { return nil }
+func (r mediaURLTestRepo) GetByID(_ context.Context, id int64) (*MediaAsset, error) {
+	if asset, ok := r.assetsByID[id]; ok {
+		return asset, nil
+	}
+	return nil, ErrMediaNotFound
+}
+func (r mediaURLTestRepo) List(context.Context, pagination.PaginationParams, MediaListFilters) ([]MediaAsset, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+func (r mediaURLTestRepo) UpdateVisibility(context.Context, int64, string) error { return nil }
+func (r mediaURLTestRepo) MarkDeleted(context.Context, int64, time.Time) error   { return nil }
+func (r mediaURLTestRepo) GetByObjectKey(_ context.Context, bucket, objectKey string) (*MediaAsset, error) {
+	bucket = strings.TrimSpace(bucket)
+	objectKey = strings.TrimSpace(objectKey)
+	for _, asset := range r.assetsByID {
+		if asset == nil {
+			continue
+		}
+		if strings.TrimSpace(asset.ObjectKey) != objectKey {
+			continue
+		}
+		if bucket == "" || strings.TrimSpace(asset.Bucket) == bucket {
+			return asset, nil
+		}
+	}
+	return nil, ErrMediaNotFound
+}
+
 type mediaIngestTestStore struct {
 	uploadedBucket      string
 	uploadedObjectKey   string
@@ -311,6 +344,60 @@ func TestBuildSignedDownloadURL_UsesMediaPublicBaseURLInsteadOfFrontendURLPath(t
 	}
 	if strings.Contains(result.URL, "/console/api/v1/media/download/") {
 		t.Fatalf("download url should not be rooted at frontend path: %q", result.URL)
+	}
+}
+
+func TestManagedPublicMediaURLs_UseApplicationRoutesAndRoundTripManagedID(t *testing.T) {
+	cfg := newMediaIngestTestConfig()
+	asset := &MediaAsset{
+		ID:                 42,
+		StorageProfileID:   "old",
+		Bucket:             "old-bucket",
+		ObjectKey:          "media/avatar/user-42/original.png",
+		ThumbnailObjectKey: "media/avatar_thumbnail/user-42/thumb.png",
+		Visibility:         MediaVisibilityPublic,
+		Status:             MediaStatusActive,
+	}
+	svc := NewMediaService(mediaURLTestRepo{
+		assetsByID: map[int64]*MediaAsset{
+			42: asset,
+		},
+	}, &mediaIngestTestStore{}, cfg)
+
+	publicURL := svc.PublicURL(asset.ID, asset.Visibility)
+	if publicURL != "https://media.example/api/v1/media/public/42" {
+		t.Fatalf("public url = %q, want managed route", publicURL)
+	}
+	thumbnailURL := svc.ThumbnailPublicURL(asset.ID, asset.Visibility, asset.ThumbnailObjectKey)
+	if thumbnailURL != "https://media.example/api/v1/media/public/42/thumbnail" {
+		t.Fatalf("thumbnail public url = %q, want managed route", thumbnailURL)
+	}
+
+	if id, ok := ParseManagedMediaID(svc, publicURL); !ok || id != asset.ID {
+		t.Fatalf("ParseManagedMediaID(public) = (%d, %v), want (%d, true)", id, ok, asset.ID)
+	}
+	if id, ok := ParseManagedMediaID(svc, thumbnailURL); !ok || id != asset.ID {
+		t.Fatalf("ParseManagedMediaID(thumbnail) = (%d, %v), want (%d, true)", id, ok, asset.ID)
+	}
+}
+
+func TestParseManagedMediaID_DirectObjectURLDoesNotFallbackToDifferentBucket(t *testing.T) {
+	cfg := newMediaIngestTestConfig()
+	asset := &MediaAsset{
+		ID:        43,
+		Bucket:    "archive-bucket",
+		ObjectKey: "media/avatar/user-43/original.png",
+		Status:    MediaStatusActive,
+	}
+	svc := NewMediaService(mediaURLTestRepo{
+		assetsByID: map[int64]*MediaAsset{
+			43: asset,
+		},
+	}, &mediaIngestTestStore{}, cfg)
+
+	raw := "https://media.example/media/avatar/user-43/original.png"
+	if id, ok := ParseManagedMediaID(svc, raw); ok {
+		t.Fatalf("ParseManagedMediaID(%q) = (%d, true), want no match from different bucket", raw, id)
 	}
 }
 

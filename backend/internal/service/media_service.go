@@ -342,35 +342,22 @@ func (s *MediaService) PublicURL(id int64, visibility string) string {
 	if strings.TrimSpace(visibility) != MediaVisibilityPublic {
 		return ""
 	}
-	asset, err := s.repo.GetByID(context.Background(), id)
-	if err != nil || asset == nil {
+	base := strings.TrimRight(strings.TrimSpace(s.currentStorageConfig(context.Background()).PublicBaseURL), "/")
+	if base == "" {
 		return ""
 	}
-	return s.directObjectURL(asset.ObjectKey)
+	return fmt.Sprintf("%s/api/v1/media/public/%d", base, id)
 }
 
 func (s *MediaService) ThumbnailPublicURL(id int64, visibility string, thumbnailObjectKey string) string {
 	if strings.TrimSpace(visibility) != MediaVisibilityPublic || strings.TrimSpace(thumbnailObjectKey) == "" {
 		return ""
 	}
-	return s.directObjectURL(thumbnailObjectKey)
-}
-
-func (s *MediaService) directObjectURL(objectKey string) string {
-	objectKey = strings.TrimSpace(objectKey)
-	if objectKey == "" {
-		return ""
-	}
 	base := strings.TrimRight(strings.TrimSpace(s.currentStorageConfig(context.Background()).PublicBaseURL), "/")
 	if base == "" {
 		return ""
 	}
-	parts := strings.Split(strings.TrimLeft(objectKey, "/"), "/")
-	encoded := make([]string, 0, len(parts))
-	for _, part := range parts {
-		encoded = append(encoded, url.PathEscape(part))
-	}
-	return base + "/" + strings.Join(encoded, "/")
+	return fmt.Sprintf("%s/api/v1/media/public/%d/thumbnail", base, id)
 }
 
 func (s *MediaService) RuntimeInfo() MediaRuntimeInfo {
@@ -604,9 +591,6 @@ func ParseManagedMediaID(mediaService *MediaService, raw string) (int64, bool) {
 		}
 		bucket := strings.TrimSpace(mediaService.currentStorageConfig(context.Background()).Bucket)
 		asset, err := mediaService.repo.GetByObjectKey(context.Background(), bucket, objectKey)
-		if (err != nil || asset == nil) && bucket != "" {
-			asset, err = mediaService.repo.GetByObjectKey(context.Background(), "", objectKey)
-		}
 		if err != nil || asset == nil {
 			return 0, false
 		}

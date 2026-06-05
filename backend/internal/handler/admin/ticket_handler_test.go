@@ -351,5 +351,5 @@ func TestTicketHandlerListMessagesFallsBackToImageURLWhenThumbnailMissing(t *tes
 	require.Equal(t, attachment["url"], attachment["thumbnail_url"])
 	url, ok := attachment["url"].(string)
 	require.True(t, ok)
-	require.Contains(t, url, "https://media.example.com/presigned/")
+	require.Contains(t, url, "https://media.example.com/api/v1/media/download/321?")
 }
