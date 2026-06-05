@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -40,6 +41,11 @@ const (
 	kiroOneMillionContextBudgetTokens   = 900000
 	kiroContextUsagePercentKey          = "kiro_context_usage_percentage"
 	kiroShortOutputTokenThreshold       = 20
+
+	// kiroTransportFailureCooldown：transport 层故障（非客户端取消）短期冷却时长，
+	// 让调度层在该窗口内跳过出错账号，避免重复打到不可达上游。命中后会一并触发 failover。
+	kiroTransportFailureCooldown      = 2 * time.Minute
+	kiroTransportFailureReasonKeyword = "kiro_transport_failure"
 )
 
 type KiroGatewayService struct {
@@ -143,13 +149,7 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, s.resolveTLSProfile(account))
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(start).Milliseconds())
 	if err != nil {
-		s.handleUpstreamError(ctx, account, http.StatusBadGateway, http.Header{}, []byte(err.Error()))
-		s.recordOpsRequestError(c, account, req.URL.String(), err)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"type":  "error",
-			"error": gin.H{"type": "api_error", "message": "Kiro upstream request failed"},
-		})
-		return nil, err
+		return nil, s.handleKiroTransportError(ctx, c, account, req.URL.String(), err)
 	}
 	needsDeferredClose := true
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -2134,6 +2134,90 @@ func (s *KiroGatewayService) handleUpstreamError(ctx context.Context, account *A
 	return s.rateLimitService.HandleUpstreamError(ctx, account, statusCode, headers, body)
 }
 
+// handleKiroTransportError 处理上游 transport 层失败（DoWithTLS 直接返回 err）。
+//
+// 调用方在 kiro 流式入口和双请求路径上调用。函数职责：
+//  1. 若是真正的客户端断开（gin context 已 Canceled），仅记录 ops 事件，不标记账号、不 failover。
+//  2. 否则视为上游 transport 故障：
+//     - 调用 SetTempUnschedulable 给账号一个短冷却（kiroTransportFailureCooldown），
+//       让调度层在窗口内跳过该账号，防止反复撞同一个不可达上游。
+//     - 返回 *UpstreamFailoverError 让 handler 主循环切到下一个账号。
+//
+// 注意：返回 failover 后 handler 会写最终响应，所以这里不能再 c.JSON。
+func (s *KiroGatewayService) handleKiroTransportError(ctx context.Context, c *gin.Context, account *Account, upstreamURL string, transportErr error) error {
+	s.recordOpsRequestError(c, account, upstreamURL, transportErr)
+	if isClientDisconnectError(c, transportErr) {
+		return transportErr
+	}
+	s.markKiroTransportFailureUnschedulable(ctx, account, transportErr)
+	return &UpstreamFailoverError{
+		StatusCode:   http.StatusBadGateway,
+		ResponseBody: []byte(sanitizeUpstreamErrorMessage(transportErr.Error())),
+	}
+}
+
+// isClientDisconnectError 判断 transport err 是否由客户端取消触发。
+//
+// 仅当 gin 请求 context 已被取消（c.Request.Context().Err() != nil）才视作客户端断开；
+// 上游主动 RST 让 Go transport 把 context 标 Canceled 的情况下，gin context 仍然有效。
+func isClientDisconnectError(c *gin.Context, err error) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
+	reqCtx := c.Request.Context()
+	if reqCtx == nil {
+		return false
+	}
+	if reqCtx.Err() == nil {
+		return false
+	}
+	// gin context 已取消，再确认底层 err 是 cancellation 性质的（避免把 deadline + ctx 取消同
+	// 时发生的真上游故障误判为客户端断开）。
+	return errors.Is(err, context.Canceled) || errors.Is(reqCtx.Err(), context.Canceled)
+}
+
+// markKiroTransportFailureUnschedulable 把账号标记为短期临时不可调度，
+// 让调度层在 cooldown 窗口内跳过这个上游故障的账号。
+func (s *KiroGatewayService) markKiroTransportFailureUnschedulable(ctx context.Context, account *Account, transportErr error) {
+	if s == nil || s.rateLimitService == nil || s.rateLimitService.accountRepo == nil || account == nil || account.ID <= 0 {
+		return
+	}
+	now := time.Now()
+	until := now.Add(kiroTransportFailureCooldown)
+	state := &TempUnschedState{
+		UntilUnix:       until.Unix(),
+		TriggeredAtUnix: now.Unix(),
+		StatusCode:      0,
+		MatchedKeyword:  kiroTransportFailureReasonKeyword,
+		RuleIndex:       -1,
+		ErrorMessage:    truncateTempUnschedMessage([]byte(sanitizeUpstreamErrorMessage(transportErr.Error())), tempUnschedMessageMaxBytes),
+	}
+	reason := ""
+	if raw, marshalErr := json.Marshal(state); marshalErr == nil {
+		reason = string(raw)
+	}
+	if reason == "" {
+		reason = "Kiro upstream transport failure: " + state.ErrorMessage
+	}
+
+	if err := s.rateLimitService.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
+		slog.Warn("kiro_transport_failure_set_temp_unsched_failed", "account_id", account.ID, "error", err)
+		return
+	}
+	if s.rateLimitService.tempUnschedCache != nil {
+		if err := s.rateLimitService.tempUnschedCache.SetTempUnsched(ctx, account.ID, state); err != nil {
+			slog.Warn("kiro_transport_failure_temp_unsched_cache_set_failed", "account_id", account.ID, "error", err)
+		}
+	}
+	s.rateLimitService.notifyAccountSchedulingBlocked(account, until, kiroTransportFailureReasonKeyword)
+	slog.Warn("kiro_transport_failure_temp_unschedulable",
+		"account_id", account.ID,
+		"account_name", account.Name,
+		"until", until,
+		"error", state.ErrorMessage,
+	)
+}
+
 func (s *KiroGatewayService) handleProtocolError(ctx context.Context, c *gin.Context, account *Account, model string, isStream bool, err error) {
 	if err == nil {
 		return
@@ -2752,13 +2836,7 @@ func (s *KiroGatewayService) forwardWithFreeThinking(ctx context.Context, c *gin
 	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, s.resolveTLSProfile(account))
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(start).Milliseconds())
 	if err != nil {
-		s.handleUpstreamError(ctx, account, http.StatusBadGateway, http.Header{}, []byte(err.Error()))
-		s.recordOpsRequestError(c, account, req.URL.String(), err)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"type":  "error",
-			"error": gin.H{"type": "api_error", "message": "Kiro upstream request failed"},
-		})
-		return nil, err
+		return nil, s.handleKiroTransportError(ctx, c, account, req.URL.String(), err)
 	}
 	needsDeferredClose := true
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

@@ -5,6 +5,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -346,4 +347,151 @@ func TestKiroGatewayService_Forward_WebSearchMalformedRequestDoesNotAcceptEarly(
 	require.Nil(t, result)
 	require.Contains(t, err.Error(), "no query found")
 	require.Equal(t, 0, accepted)
+}
+
+// TestKiroGatewayService_Forward_TransportErr_UpstreamCancel_FailoverAndTempUnsched
+// 验证：上游 transport 故障（非客户端断开）时，handleKiroTransportError 应当返回
+// *UpstreamFailoverError 触发 handler 的账号 failover，并把当前账号置临时不可调度。
+func TestKiroGatewayService_Forward_TransportErr_UpstreamCancel_FailoverAndTempUnsched(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(*http.Request, string, int64, int, *tlsfingerprint.Profile) (*http.Response, error) {
+			return nil, errors.New(`Post "https://q.us-east-1.amazonaws.com/generateAssistantResponse": context canceled`)
+		},
+	}
+	repo := &kiroGatewayRateLimitRepoStub{}
+	cache := &kiroTempUnschedCacheRecorder{}
+	tokenRepo := &refreshAPIAccountRepo{
+		account: &Account{
+			ID:       58609,
+			Platform: PlatformKiro,
+			Type:     AccountTypeOAuth,
+			Credentials: map[string]any{
+				"access_token":  "fresh",
+				"refresh_token": "fresh",
+				"expires_at":    time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			},
+		},
+	}
+	provider := NewKiroTokenProvider(tokenRepo, nil)
+	svc := &KiroGatewayService{
+		httpUpstream:     upstream,
+		tokenProvider:    provider,
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, cache),
+	}
+
+	before := time.Now()
+	result, err := svc.Forward(context.Background(), c, &Account{
+		ID:       58609,
+		Name:     "hikmanalie@protzy.tech",
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "fresh",
+			"refresh_token": "fresh",
+			"expires_at":    time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		},
+	}, &ParsedRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Body: []byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`),
+	})
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr, "应当返回 UpstreamFailoverError 触发账号 failover")
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Contains(t, string(failoverErr.ResponseBody), "context canceled")
+
+	// handler 主循环负责写最终响应；service 内部不再 c.JSON
+	require.Empty(t, rec.Body.String())
+
+	// 上游故障 → 该账号临时不可调度
+	require.Equal(t, []int64{58609}, repo.tempIDs)
+	require.Len(t, repo.tempUntil, 1)
+	require.WithinDuration(t, before.Add(kiroTransportFailureCooldown), repo.tempUntil[0], 5*time.Second)
+	require.Contains(t, repo.tempReasons[0], "context canceled")
+
+	// cache 同步落盘
+	require.Equal(t, []int64{58609}, cache.accountIDs)
+	require.Len(t, cache.states, 1)
+	require.Equal(t, kiroTransportFailureReasonKeyword, cache.states[0].MatchedKeyword)
+
+	// transport err 不应误标全局限流
+	require.Empty(t, repo.rateLimitedIDs)
+	require.Empty(t, repo.errorIDs)
+}
+
+// TestKiroGatewayService_Forward_TransportErr_ClientDisconnect_NoFailoverNoMark
+// 验证：客户端真正断开（gin.Request.Context() 已 Canceled）时，
+// 不返回 UpstreamFailoverError、不标记账号临时不可调度。
+func TestKiroGatewayService_Forward_TransportErr_ClientDisconnect_NoFailoverNoMark(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel() // 模拟客户端在请求过程中断开
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(canceledCtx)
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(*http.Request, string, int64, int, *tlsfingerprint.Profile) (*http.Response, error) {
+			return nil, context.Canceled
+		},
+	}
+	repo := &kiroGatewayRateLimitRepoStub{}
+	cache := &kiroTempUnschedCacheRecorder{}
+	tokenRepo := &refreshAPIAccountRepo{
+		account: &Account{
+			ID:       58610,
+			Platform: PlatformKiro,
+			Type:     AccountTypeOAuth,
+			Credentials: map[string]any{
+				"access_token":  "fresh",
+				"refresh_token": "fresh",
+				"expires_at":    time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			},
+		},
+	}
+	provider := NewKiroTokenProvider(tokenRepo, nil)
+	svc := &KiroGatewayService{
+		httpUpstream:     upstream,
+		tokenProvider:    provider,
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, cache),
+	}
+
+	result, err := svc.Forward(context.Background(), c, &Account{
+		ID:       58610,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "fresh",
+			"refresh_token": "fresh",
+			"expires_at":    time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		},
+	}, &ParsedRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Body: []byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`),
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr), "客户端断开不应当触发账号 failover")
+
+	// 不写客户端响应（客户端已经走了）、不标记账号
+	require.Empty(t, repo.tempIDs)
+	require.Empty(t, cache.accountIDs)
+	require.Empty(t, repo.rateLimitedIDs)
+	require.Empty(t, repo.errorIDs)
 }
