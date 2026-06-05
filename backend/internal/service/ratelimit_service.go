@@ -1412,7 +1412,10 @@ func isOpenAIImageGenerationRateLimitMessage(responseBody []byte) bool {
 		if strings.Contains(candidate, "input-images") {
 			return true
 		}
-		if strings.Contains(candidate, "gpt-image") {
+		// "gpt-image" alone is not sufficient — it may appear as a model name in
+		// generic account-wide 429 messages. Require an accompanying quota keyword.
+		if strings.Contains(candidate, "gpt-image") &&
+			(strings.Contains(candidate, "limit") || strings.Contains(candidate, "quota") || strings.Contains(candidate, "per ")) {
 			return true
 		}
 	}

@@ -1859,7 +1859,7 @@ func dropOrphanFunctionCallOutputs(input []any) ([]any, bool) {
 			continue
 		}
 		typ, _ := m["type"].(string)
-		if typ != "function_call_output" {
+		if !isCodexToolCallOutputItemType(typ) {
 			filtered = append(filtered, item)
 			continue
 		}
