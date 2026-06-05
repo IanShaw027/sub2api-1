@@ -401,20 +401,49 @@ func (c *IDTokenClaims) GetUserInfo() *UserInfo {
 		info.UserID = c.OpenAIAuth.UserID
 		info.Organizations = c.OpenAIAuth.Organizations
 
-		// Get default organization ID
-		for _, org := range c.OpenAIAuth.Organizations {
-			if org.IsDefault {
-				info.OrganizationID = org.ID
-				info.OrganizationTitle = org.Title
-				info.OrganizationRole = org.Role
+		// When plan_type is "team", identify the team workspace org:
+		// 1. Member: personal org has role "owner", team org has "member"/"admin"
+		// 2. Owner: both orgs have role "owner", distinguish by title != "Personal"
+		// For non-team plans, use the default org or first.
+		var defaultOrg *OrganizationClaim
+		for i := range c.OpenAIAuth.Organizations {
+			if c.OpenAIAuth.Organizations[i].IsDefault {
+				defaultOrg = &c.OpenAIAuth.Organizations[i]
 				break
 			}
 		}
-		// If no default, use first org
-		if info.OrganizationID == "" && len(c.OpenAIAuth.Organizations) > 0 {
-			info.OrganizationID = c.OpenAIAuth.Organizations[0].ID
-			info.OrganizationTitle = c.OpenAIAuth.Organizations[0].Title
-			info.OrganizationRole = c.OpenAIAuth.Organizations[0].Role
+
+		var chosen *OrganizationClaim
+		if info.PlanType == "team" && len(c.OpenAIAuth.Organizations) > 1 {
+			// Try non-"owner" role org first (clearly the team workspace for members)
+			for i := range c.OpenAIAuth.Organizations {
+				org := &c.OpenAIAuth.Organizations[i]
+				if org.Role != "" && org.Role != "owner" {
+					chosen = org
+					break
+				}
+			}
+			// For team owners: both orgs have "owner", pick non-"Personal" title
+			if chosen == nil {
+				for i := range c.OpenAIAuth.Organizations {
+					org := &c.OpenAIAuth.Organizations[i]
+					if org.Title != "Personal" {
+						chosen = org
+						break
+					}
+				}
+			}
+		}
+		if chosen == nil {
+			chosen = defaultOrg
+		}
+		if chosen == nil && len(c.OpenAIAuth.Organizations) > 0 {
+			chosen = &c.OpenAIAuth.Organizations[0]
+		}
+		if chosen != nil {
+			info.OrganizationID = chosen.ID
+			info.OrganizationTitle = chosen.Title
+			info.OrganizationRole = chosen.Role
 		}
 	}
 

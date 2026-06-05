@@ -35,3 +35,39 @@ func TestIDTokenClaimsGetUserInfo_PreservesDefaultOrganizationRole(t *testing.T)
 		t.Fatalf("expected default organization role, got %q", info.OrganizationRole)
 	}
 }
+
+func TestIDTokenClaimsGetUserInfo_TeamPlanPrefersWorkspaceOrganization(t *testing.T) {
+	claims := &IDTokenClaims{
+		Name:  "User",
+		Email: "user@example.com",
+		OpenAIAuth: &OpenAIAuthClaims{
+			ChatGPTPlanType: "team",
+			Organizations: []OrganizationClaim{
+				{
+					ID:    "org-personal",
+					Role:  "owner",
+					Title: "Personal",
+				},
+				{
+					ID:    "org-team",
+					Role:  "member",
+					Title: "Workspace A",
+				},
+			},
+		},
+	}
+
+	info := claims.GetUserInfo()
+	if info == nil {
+		t.Fatal("expected user info")
+	}
+	if info.OrganizationID != "org-team" {
+		t.Fatalf("expected workspace organization id, got %q", info.OrganizationID)
+	}
+	if info.OrganizationTitle != "Workspace A" {
+		t.Fatalf("expected workspace organization title, got %q", info.OrganizationTitle)
+	}
+	if info.OrganizationRole != "member" {
+		t.Fatalf("expected workspace organization role, got %q", info.OrganizationRole)
+	}
+}

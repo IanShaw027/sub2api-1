@@ -104,11 +104,11 @@ describe('useKiroOAuth', () => {
     const kiroOAuth = useKiroOAuth()
 
     expect(kiroOAuth.buildAccountName({ email: 'user@example.com' } as any, '  Manual Name  ')).toBe('Manual Name')
-    expect(kiroOAuth.buildAccountName({ email: 'user@example.com', profile_id: 'EHGA3GRVQMUK' } as any)).toBe('user@example.com (EHGA3GRVQMUK)')
+    expect(kiroOAuth.buildAccountName({ email: 'user@example.com', profile_id: 'EHGA3GRVQMUK' } as any)).toBe('user@example.com')
     expect(kiroOAuth.buildAccountName({ name: 'Kiro User' } as any)).toBe('Kiro User')
     expect(kiroOAuth.buildAccountName({ name: 'Kiro User', profile_id: 'EHGA3GRVQMUK' } as any)).toBe('Kiro User')
     expect(kiroOAuth.buildAccountName({ email: 'user@example.com' } as any)).toBe('user@example.com')
-    expect(kiroOAuth.buildAccountName({ profile_id: 'EHGA3GRVQMUK' } as any)).toBe('EHGA3GRVQMUK')
+    expect(kiroOAuth.buildAccountName({ profile_id: 'EHGA3GRVQMUK' } as any)).toBe('Kiro OAuth Account')
     expect(kiroOAuth.buildAccountName({ user_id: 'arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK' } as any)).toBe('Kiro OAuth Account')
     expect(kiroOAuth.buildAccountName({ plan_name: 'Pro' } as any)).toBe('Kiro Pro')
     expect(kiroOAuth.buildAccountName({} as any)).toBe('Kiro OAuth Account')
