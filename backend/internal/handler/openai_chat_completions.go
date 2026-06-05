@@ -157,7 +157,8 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				if lastFailoverErr != nil {
 					h.handleFailoverExhausted(c, lastFailoverErr, lastFailoverAccount, streamStarted)
 				} else {
-					h.handleStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted)
+					markOpsRoutingCapacityLimited(c)
+					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
 				}
 				return
 			}

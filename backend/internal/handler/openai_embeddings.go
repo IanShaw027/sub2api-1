@@ -131,7 +131,8 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			if lastFailoverErr != nil {
 				h.handleFailoverExhausted(c, lastFailoverErr, lastFailoverAccount, false)
 			} else {
-				h.errorResponse(c, http.StatusBadGateway, "api_error", "Upstream request failed")
+				markOpsRoutingCapacityLimited(c)
+				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts")
 			}
 			return
 		}

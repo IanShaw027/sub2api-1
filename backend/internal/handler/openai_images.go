@@ -184,7 +184,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			if lastFailoverErr != nil {
 				h.handleFailoverExhausted(c, lastFailoverErr, lastFailoverAccount, streamStarted)
 			} else {
-				h.handleFailoverExhaustedSimple(c, 502, streamStarted)
+				markOpsRoutingCapacityLimited(c)
+				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available compatible accounts", streamStarted)
 			}
 			return
 		}
