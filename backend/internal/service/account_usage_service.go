@@ -600,6 +600,7 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 		}
 		info.UpdatedAt = &now
 		recalcKiroRemainingSeconds(info)
+		s.persistKiroSchedulerSnapshot(fetchCtx, account, info)
 		return info, nil
 	}
 
@@ -1191,6 +1192,49 @@ func mergeAccountExtra(account *Account, updates map[string]any) {
 	}
 }
 
+func buildKiroSchedulerSnapshotExtraUpdates(info *UsageInfo) map[string]any {
+	if info == nil || info.KiroQuota == nil {
+		return nil
+	}
+	if info.Error != "" || info.ErrorCode != "" || info.IsForbidden || info.NeedsReauth {
+		return nil
+	}
+
+	updatedAt := time.Now().UTC()
+	if info.UpdatedAt != nil {
+		updatedAt = info.UpdatedAt.UTC()
+	}
+
+	updates := map[string]any{
+		"kiro_sched_utilization":      info.KiroQuota.Utilization,
+		"kiro_sched_usage_updated_at": updatedAt.Format(time.RFC3339),
+	}
+	if info.KiroQuota.ResetsAt != nil {
+		updates["kiro_sched_reset_at"] = info.KiroQuota.ResetsAt.UTC().Format(time.RFC3339)
+	}
+
+	return updates
+}
+
+func (s *AccountUsageService) persistKiroSchedulerSnapshot(ctx context.Context, account *Account, info *UsageInfo) {
+	s.persistSchedulerSnapshotExtra(ctx, account, buildKiroSchedulerSnapshotExtraUpdates(info), "kiro")
+}
+
+func (s *AccountUsageService) persistAntigravitySchedulerSnapshot(ctx context.Context, account *Account, info *UsageInfo) {
+	s.persistSchedulerSnapshotExtra(ctx, account, buildAntigravitySchedulerSnapshotExtraUpdates(info), "antigravity")
+}
+
+func (s *AccountUsageService) persistSchedulerSnapshotExtra(ctx context.Context, account *Account, updates map[string]any, platform string) {
+	if s == nil || s.accountRepo == nil || account == nil || account.ID <= 0 || len(updates) == 0 {
+		return
+	}
+	if err := s.accountRepo.UpdateExtra(ctx, account.ID, updates); err != nil {
+		slog.Warn("persist_scheduler_snapshot_failed", "platform", platform, "account_id", account.ID, "error", err)
+		return
+	}
+	mergeAccountExtra(account, updates)
+}
+
 func (s *AccountUsageService) getGeminiUsage(ctx context.Context, account *Account) (*UsageInfo, error) {
 	now := time.Now()
 	usage := &UsageInfo{
@@ -1310,6 +1354,7 @@ func (s *AccountUsageService) getAntigravityUsage(ctx context.Context, account *
 		}
 
 		enrichUsageWithAccountError(fetchResult.UsageInfo, account)
+		s.persistAntigravitySchedulerSnapshot(fetchCtx, account, fetchResult.UsageInfo)
 		s.cache.antigravityCache.Store(account.ID, &antigravityUsageCache{
 			usageInfo: fetchResult.UsageInfo,
 			timestamp: time.Now(),

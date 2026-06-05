@@ -5,6 +5,7 @@ package service
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -388,6 +389,57 @@ func TestBuildUsageInfo_AICredits(t *testing.T) {
 	require.Equal(t, "GOOGLE_ONE_AI", info.AICredits[0].CreditType)
 	require.Equal(t, 25.0, info.AICredits[0].Amount)
 	require.Equal(t, 5.0, info.AICredits[0].MinimumBalance)
+}
+
+func TestBuildAntigravitySchedulerSnapshotExtraUpdates_UsesHighestUtilizationScope(t *testing.T) {
+	updatedAt := time.Date(2026, time.June, 3, 12, 0, 0, 0, time.UTC)
+	info := &UsageInfo{
+		UpdatedAt: &updatedAt,
+		AntigravityQuota: map[string]*AntigravityModelQuota{
+			"claude-sonnet-4": {
+				Utilization: 67,
+				ResetTime:   "2026-06-03T18:00:00Z",
+			},
+			"gemini-2.5-pro": {
+				Utilization: 82,
+				ResetTime:   "2026-06-04T01:30:00Z",
+			},
+		},
+	}
+
+	updates := buildAntigravitySchedulerSnapshotExtraUpdates(info)
+
+	require.Len(t, updates, 4)
+	require.Equal(t, 82, updates["antigravity_sched_utilization"])
+	require.Equal(t, "gemini-2.5-pro", updates["antigravity_sched_scope"])
+	require.Equal(t, "2026-06-04T01:30:00Z", updates["antigravity_sched_reset_at"])
+	require.Equal(t, "2026-06-03T12:00:00Z", updates["antigravity_sched_usage_updated_at"])
+}
+
+func TestBuildAntigravitySchedulerSnapshotExtraUpdates_OmitsResetAtWhenUnavailable(t *testing.T) {
+	updatedAt := time.Date(2026, time.June, 3, 12, 5, 0, 0, time.UTC)
+	info := &UsageInfo{
+		UpdatedAt: &updatedAt,
+		AntigravityQuota: map[string]*AntigravityModelQuota{
+			"claude-sonnet-4": {
+				Utilization: 91,
+				ResetTime:   "",
+			},
+			"gemini-2.5-pro": {
+				Utilization: 84,
+				ResetTime:   "2026-06-04T01:30:00Z",
+			},
+		},
+	}
+
+	updates := buildAntigravitySchedulerSnapshotExtraUpdates(info)
+
+	require.Len(t, updates, 3)
+	require.Equal(t, 91, updates["antigravity_sched_utilization"])
+	require.Equal(t, "claude-sonnet-4", updates["antigravity_sched_scope"])
+	require.Equal(t, "2026-06-03T12:05:00Z", updates["antigravity_sched_usage_updated_at"])
+	_, hasResetAt := updates["antigravity_sched_reset_at"]
+	require.False(t, hasResetAt)
 }
 
 func TestFetchQuota_ForbiddenReturnsIsForbidden(t *testing.T) {

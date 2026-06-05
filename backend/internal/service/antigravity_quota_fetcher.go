@@ -204,6 +204,69 @@ func (f *AntigravityQuotaFetcher) buildUsageInfo(modelsResp *antigravity.FetchAv
 	return info
 }
 
+func buildAntigravitySchedulerSnapshotExtraUpdates(info *UsageInfo) map[string]any {
+	if info == nil || len(info.AntigravityQuota) == 0 {
+		return nil
+	}
+
+	var (
+		bestScope string
+		bestQuota *AntigravityModelQuota
+		bestReset *time.Time
+	)
+	for scope, quota := range info.AntigravityQuota {
+		if quota == nil {
+			continue
+		}
+		resetAt := parseAntigravitySchedulerResetAt(quota.ResetTime)
+		if bestQuota == nil || quota.Utilization > bestQuota.Utilization {
+			bestScope = scope
+			bestQuota = quota
+			bestReset = resetAt
+			continue
+		}
+		if quota.Utilization < bestQuota.Utilization {
+			continue
+		}
+		if bestReset == nil || (resetAt != nil && resetAt.After(*bestReset)) {
+			bestScope = scope
+			bestQuota = quota
+			bestReset = resetAt
+		}
+	}
+	if bestQuota == nil {
+		return nil
+	}
+
+	updatedAt := time.Now().UTC()
+	if info.UpdatedAt != nil {
+		updatedAt = info.UpdatedAt.UTC()
+	}
+
+	updates := map[string]any{
+		"antigravity_sched_utilization":      bestQuota.Utilization,
+		"antigravity_sched_scope":            bestScope,
+		"antigravity_sched_usage_updated_at": updatedAt.Format(time.RFC3339),
+	}
+	if bestReset != nil {
+		updates["antigravity_sched_reset_at"] = bestReset.UTC().Format(time.RFC3339)
+	}
+
+	return updates
+}
+
+func parseAntigravitySchedulerResetAt(raw string) *time.Time {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	resetAt, err := parseTime(trimmed)
+	if err != nil {
+		return nil
+	}
+	return &resetAt
+}
+
 // GetProxyURL 获取账户的代理 URL
 func (f *AntigravityQuotaFetcher) GetProxyURL(ctx context.Context, account *Account) string {
 	if account.ProxyID == nil || f.proxyRepo == nil {

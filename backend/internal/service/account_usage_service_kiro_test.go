@@ -19,10 +19,13 @@ import (
 
 type kiroUsageAccountRepo struct {
 	mockAccountRepoForGemini
-	updateCalls int
-	updatedAcct *Account
-	clearCalls  int
-	account     *Account
+	updateCalls      int
+	updatedAcct      *Account
+	updateExtraIDs   []int64
+	updateExtraCalls []map[string]any
+	updateExtraErr   error
+	clearCalls       int
+	account          *Account
 }
 
 func (r *kiroUsageAccountRepo) Update(_ context.Context, account *Account) error {
@@ -36,6 +39,16 @@ func (r *kiroUsageAccountRepo) GetByID(_ context.Context, _ int64) (*Account, er
 		return r.account, nil
 	}
 	return r.mockAccountRepoForGemini.GetByID(context.Background(), 0)
+}
+
+func (r *kiroUsageAccountRepo) UpdateExtra(_ context.Context, id int64, updates map[string]any) error {
+	r.updateExtraIDs = append(r.updateExtraIDs, id)
+	cloned := make(map[string]any, len(updates))
+	for k, v := range updates {
+		cloned[k] = v
+	}
+	r.updateExtraCalls = append(r.updateExtraCalls, cloned)
+	return r.updateExtraErr
 }
 
 func (r *kiroUsageAccountRepo) ClearError(_ context.Context, _ int64) error {
@@ -296,6 +309,110 @@ func TestAccountUsageService_GetUsage_KiroCachesSuccessfulUsage(t *testing.T) {
 	require.Equal(t, 1, upstream.calls)
 	require.NotNil(t, second.KiroQuota)
 	require.GreaterOrEqual(t, second.KiroQuota.RemainingSeconds, 0)
+}
+
+func TestAccountUsageService_GetUsage_KiroPersistsSchedulerSnapshotIntoExtra(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       680,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"existing": "value",
+		},
+		Credentials: map[string]any{
+			"access_token":  "cached-access-token",
+			"refresh_token": "refresh-token",
+		},
+	}
+	repo := &kiroUsageAccountRepo{account: account}
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(strings.NewReader(`{
+				"subscriptionInfo":{"subscriptionTitle":"Kiro Pro"},
+				"usageBreakdownList":[{"currentUsageWithPrecision":12.5,"usageLimitWithPrecision":100,"nextDateReset":4102444800}]
+			}`)),
+			Header: make(http.Header),
+		},
+	}
+	svc := &AccountUsageService{
+		accountRepo: repo,
+		usageFetcher: &kiroUsageFetcherStub{
+			upstream: upstream,
+		},
+		cache: NewUsageCache(),
+	}
+
+	usage, err := svc.GetUsage(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.Len(t, repo.updateExtraCalls, 1)
+	require.Equal(t, []int64{account.ID}, repo.updateExtraIDs)
+
+	updates := repo.updateExtraCalls[0]
+	require.Len(t, updates, 3)
+	require.Equal(t, usage.KiroQuota.Utilization, updates["kiro_sched_utilization"])
+	require.Equal(t, time.Unix(4102444800, 0).UTC().Format(time.RFC3339), updates["kiro_sched_reset_at"])
+	require.Equal(t, usage.UpdatedAt.UTC().Format(time.RFC3339), updates["kiro_sched_usage_updated_at"])
+
+	require.Equal(t, "value", account.Extra["existing"])
+	require.Equal(t, updates["kiro_sched_utilization"], account.Extra["kiro_sched_utilization"])
+	require.Equal(t, updates["kiro_sched_reset_at"], account.Extra["kiro_sched_reset_at"])
+	require.Equal(t, updates["kiro_sched_usage_updated_at"], account.Extra["kiro_sched_usage_updated_at"])
+}
+
+func TestAccountUsageService_GetUsage_KiroDoesNotMergeSchedulerSnapshotWhenPersistenceFails(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       681,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"existing": "value",
+		},
+		Credentials: map[string]any{
+			"access_token":  "cached-access-token",
+			"refresh_token": "refresh-token",
+		},
+	}
+	repo := &kiroUsageAccountRepo{
+		account:        account,
+		updateExtraErr: errors.New("write failed"),
+	}
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(strings.NewReader(`{
+				"subscriptionInfo":{"subscriptionTitle":"Kiro Pro"},
+				"usageBreakdownList":[{"currentUsageWithPrecision":12.5,"usageLimitWithPrecision":100,"nextDateReset":4102444800}]
+			}`)),
+			Header: make(http.Header),
+		},
+	}
+	svc := &AccountUsageService{
+		accountRepo: repo,
+		usageFetcher: &kiroUsageFetcherStub{
+			upstream: upstream,
+		},
+		cache: NewUsageCache(),
+	}
+
+	usage, err := svc.GetUsage(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.Len(t, repo.updateExtraCalls, 1)
+	require.Equal(t, "value", account.Extra["existing"])
+	_, hasUtilization := account.Extra["kiro_sched_utilization"]
+	_, hasResetAt := account.Extra["kiro_sched_reset_at"]
+	_, hasUpdatedAt := account.Extra["kiro_sched_usage_updated_at"]
+	require.False(t, hasUtilization)
+	require.False(t, hasResetAt)
+	require.False(t, hasUpdatedAt)
 }
 
 func TestAccountUsageService_GetUsage_KiroPopulatesWindowStatsFromLocalUsageLogs(t *testing.T) {
