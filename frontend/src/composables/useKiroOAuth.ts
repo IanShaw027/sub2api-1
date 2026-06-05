@@ -42,6 +42,16 @@ const clampPollInterval = (seconds?: number | null): number => {
   return ms
 }
 
+const extractKiroProfileLabel = (tokenInfo: KiroTokenInfo): string => {
+  const profileID = tokenInfo.profile_id?.trim() || ''
+  if (profileID) return profileID
+
+  const userID = tokenInfo.user_id?.trim() || ''
+  if (!userID) return ''
+  const match = userID.match(/profile\/([^/]+)$/i)
+  return match?.[1]?.trim() || ''
+}
+
 export function useKiroOAuth() {
   const appStore = useAppStore()
   const { t } = useI18n()
@@ -288,10 +298,11 @@ export function useKiroOAuth() {
       tokenInfo.plan_name?.trim() ||
       tokenInfo.plan_tier?.trim()
     )
+    const profileLabel = extractKiroProfileLabel(tokenInfo)
 
     return formatOAuthAccountName({
       manualName: fallbackName,
-      primary: tokenInfo.email || tokenInfo.name,
+      primary: tokenInfo.email || tokenInfo.name || profileLabel,
       details: [],
       platformLabel: 'Kiro',
       fallbackDetail: subscriptionLabel,

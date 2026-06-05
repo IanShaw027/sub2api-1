@@ -401,29 +401,44 @@ func (c *IDTokenClaims) GetUserInfo() *UserInfo {
 		info.UserID = c.OpenAIAuth.UserID
 		info.Organizations = c.OpenAIAuth.Organizations
 
-		// When plan_type is "team", identify the team workspace org:
-		// 1. Member: personal org has role "owner", team org has "member"/"admin"
-		// 2. Owner: both orgs have role "owner", distinguish by title != "Personal"
-		// For non-team plans, use the default org or first.
+		// Prefer the exact workspace from access_token `poid` when present.
+		// For team plans without a usable `poid`, fall back to the default org
+		// before using role/title heuristics.
 		var defaultOrg *OrganizationClaim
+		var poidOrg *OrganizationClaim
+		poid := strings.TrimSpace(c.OpenAIAuth.POID)
 		for i := range c.OpenAIAuth.Organizations {
-			if c.OpenAIAuth.Organizations[i].IsDefault {
-				defaultOrg = &c.OpenAIAuth.Organizations[i]
-				break
+			org := &c.OpenAIAuth.Organizations[i]
+			if defaultOrg == nil && org.IsDefault {
+				defaultOrg = org
+			}
+			if poid != "" && org.ID == poid {
+				poidOrg = org
 			}
 		}
 
 		var chosen *OrganizationClaim
-		if info.PlanType == "team" && len(c.OpenAIAuth.Organizations) > 1 {
+		if poidOrg != nil {
+			chosen = poidOrg
+		}
+		if chosen == nil && info.PlanType == "team" && len(c.OpenAIAuth.Organizations) > 1 {
+			if defaultOrg != nil && defaultOrg.Role != "" && defaultOrg.Role != "owner" {
+				chosen = defaultOrg
+			}
+			if chosen == nil && defaultOrg != nil && defaultOrg.Title != "Personal" {
+				chosen = defaultOrg
+			}
 			// Try non-"owner" role org first (clearly the team workspace for members)
-			for i := range c.OpenAIAuth.Organizations {
-				org := &c.OpenAIAuth.Organizations[i]
-				if org.Role != "" && org.Role != "owner" {
-					chosen = org
-					break
+			if chosen == nil {
+				for i := range c.OpenAIAuth.Organizations {
+					org := &c.OpenAIAuth.Organizations[i]
+					if org.Role != "" && org.Role != "owner" {
+						chosen = org
+						break
+					}
 				}
 			}
-			// For team owners: both orgs have "owner", pick non-"Personal" title
+			// For team owners: both orgs may be "owner", pick non-"Personal" title.
 			if chosen == nil {
 				for i := range c.OpenAIAuth.Organizations {
 					org := &c.OpenAIAuth.Organizations[i]
