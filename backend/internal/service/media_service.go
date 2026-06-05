@@ -398,12 +398,10 @@ func (s *MediaService) buildSignedDownloadURL(ctx context.Context, asset *MediaA
 	if asset == nil {
 		return nil, ErrMediaNotFound
 	}
-	objectKey := asset.ObjectKey
 	if thumbnail {
 		if strings.TrimSpace(asset.ThumbnailObjectKey) == "" {
 			return nil, ErrMediaNotFound
 		}
-		objectKey = asset.ThumbnailObjectKey
 	}
 	storageCfg, err := s.assetStorageConfig(ctx, asset)
 	if err != nil {
@@ -414,12 +412,15 @@ func (s *MediaService) buildSignedDownloadURL(ctx context.Context, asset *MediaA
 		ttl = defaultMediaPresignTTL
 	}
 	expiresAt := time.Now().Add(ttl)
-	signedURL, err := s.store.PresignGetObject(ctx, storageCfg, asset.Bucket, objectKey, ttl)
-	if err != nil {
-		return nil, fmt.Errorf("presign media object: %w", err)
+	expiresAtUnix := expiresAt.Unix()
+	pathSuffix := ""
+	if thumbnail {
+		pathSuffix = "/thumbnail"
 	}
+	base := strings.TrimRight(strings.TrimSpace(storageCfg.PublicBaseURL), "/")
+	downloadURL := fmt.Sprintf("%s/api/v1/media/download/%d%s?expires=%d&sig=%s", base, asset.ID, pathSuffix, expiresAtUnix, url.QueryEscape(s.downloadSignature(asset.ID, expiresAtUnix, thumbnail)))
 	return &MediaDownloadURL{
-		URL:       signedURL,
+		URL:       downloadURL,
 		ExpiresAt: expiresAt,
 	}, nil
 }
@@ -603,6 +604,9 @@ func ParseManagedMediaID(mediaService *MediaService, raw string) (int64, bool) {
 		}
 		bucket := strings.TrimSpace(mediaService.currentStorageConfig(context.Background()).Bucket)
 		asset, err := mediaService.repo.GetByObjectKey(context.Background(), bucket, objectKey)
+		if (err != nil || asset == nil) && bucket != "" {
+			asset, err = mediaService.repo.GetByObjectKey(context.Background(), "", objectKey)
+		}
 		if err != nil || asset == nil {
 			return 0, false
 		}

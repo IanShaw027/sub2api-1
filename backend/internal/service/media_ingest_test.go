@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -283,6 +284,33 @@ func TestIngestImageReferenceVisibilityHandling(t *testing.T) {
 				t.Fatalf("asset visibility = %q, want %q", asset.Visibility, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuildSignedDownloadURL_UsesMediaPublicBaseURLInsteadOfFrontendURLPath(t *testing.T) {
+	cfg := newMediaIngestTestConfig()
+	cfg.Server.FrontendURL = "https://app.example.com/console"
+	svc := NewMediaService(mediaIngestTestRepo{}, &mediaIngestTestStore{}, cfg)
+
+	asset := &MediaAsset{
+		ID:        42,
+		Bucket:    cfg.Media.Bucket,
+		Status:    MediaStatusActive,
+		ObjectKey: "avatars/u42.png",
+	}
+
+	result, err := svc.buildSignedDownloadURL(context.Background(), asset, false)
+	if err != nil {
+		t.Fatalf("buildSignedDownloadURL returned error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected download url result")
+	}
+	if got, wantPrefix := result.URL, "https://media.example/api/v1/media/download/42?"; len(got) < len(wantPrefix) || got[:len(wantPrefix)] != wantPrefix {
+		t.Fatalf("download url = %q, want prefix %q", got, wantPrefix)
+	}
+	if strings.Contains(result.URL, "/console/api/v1/media/download/") {
+		t.Fatalf("download url should not be rooted at frontend path: %q", result.URL)
 	}
 }
 
