@@ -39,3 +39,10 @@ func buildOpenAISelectionFailureMessage(err error, fallback string) string {
 
 	return fallback
 }
+
+func buildOpenAISelectionExhaustedMessage(err error, fallback string, hadLocalExclusions bool) string {
+	if hadLocalExclusions {
+		return fallback
+	}
+	return buildOpenAISelectionFailureMessage(err, fallback)
+}

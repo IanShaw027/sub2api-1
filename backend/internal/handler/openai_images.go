@@ -185,7 +185,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				h.handleFailoverExhausted(c, lastFailoverErr, lastFailoverAccount, streamStarted)
 			} else {
 				markOpsRoutingCapacityLimited(c)
-				msg := buildOpenAISelectionFailureMessage(err, "No available compatible accounts")
+				msg := buildOpenAISelectionExhaustedMessage(err, "No available compatible accounts", len(failedAccountIDs) > 0)
 				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", msg, streamStarted)
 			}
 			return
@@ -290,6 +290,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					continue
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				if shouldSuppressForwardErrorResponse(c, err) {
+					return
+				}
 				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted, err)
 				fields := []zap.Field{
 					zap.Int64("account_id", account.ID),

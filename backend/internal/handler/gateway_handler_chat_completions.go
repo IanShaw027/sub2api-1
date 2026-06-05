@@ -255,6 +255,9 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 					return
 				}
 			}
+			if shouldSuppressForwardErrorResponse(c, err) {
+				return
+			}
 			h.ensureForwardErrorResponse(c, streamStarted, err)
 			reqLog.Error("gateway.cc.forward_failed",
 				zap.Int64("account_id", account.ID),

@@ -511,6 +511,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					}
 				}
 				h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "error", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
+				if shouldSuppressForwardErrorResponse(c, err) {
+					return
+				}
 				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted, err)
 				forwardFailedFields := []zap.Field{
 					zap.Int64("account_id", account.ID),
@@ -898,6 +901,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					}
 				}
 				h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "error", requestStart, currentAPIKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
+				if shouldSuppressForwardErrorResponse(c, err) {
+					return
+				}
 				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted, err)
 				forwardFailedFields := []zap.Field{
 					zap.Int64("account_id", account.ID),
@@ -1602,6 +1608,9 @@ func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, e
 // response.failed 而不是 silent EOF；同时保留当前分支更细的错误映射。
 func (h *GatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarted bool, forwardErr error) bool {
 	if c == nil || c.Writer == nil {
+		return false
+	}
+	if shouldSuppressForwardErrorResponse(c, forwardErr) {
 		return false
 	}
 	if c.Writer.Written() {

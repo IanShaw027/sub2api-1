@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -93,6 +94,22 @@ func TestGatewayEnsureForwardErrorResponse_UsesDetailedForwardError(t *testing.T
 	require.True(t, ok)
 	assert.Equal(t, "upstream_connect_error", errorObj["type"])
 	assert.Equal(t, "Failed to connect to upstream service", errorObj["message"])
+}
+
+func TestGatewayEnsureForwardErrorResponse_ClientDisconnectSkipsFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	reqCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil).WithContext(reqCtx)
+
+	h := &GatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false, context.Canceled)
+
+	require.False(t, wrote)
+	require.False(t, c.Writer.Written())
+	require.Empty(t, w.Body.String())
 }
 
 func TestGatewayEnsureForwardErrorResponse_PreservesExistingDetailedContext(t *testing.T) {

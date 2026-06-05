@@ -132,7 +132,8 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				h.handleFailoverExhausted(c, lastFailoverErr, lastFailoverAccount, false)
 			} else {
 				markOpsRoutingCapacityLimited(c)
-				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", buildOpenAISelectionFailureMessage(err, "No available accounts"))
+				msg := buildOpenAISelectionExhaustedMessage(err, "No available accounts", len(failedAccountIDs) > 0)
+				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", msg)
 			}
 			return
 		}
@@ -211,6 +212,9 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				continue
 			}
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+			if shouldSuppressForwardErrorResponse(c, err) {
+				return
+			}
 			if c.Writer.Size() == writerSizeBeforeForward {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 			}

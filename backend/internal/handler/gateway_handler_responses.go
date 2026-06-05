@@ -274,6 +274,9 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				}
 			}
 			h.emitGatewayDebugTimelineAttemptFinished(c, account.Platform, "responses", "error", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
+			if shouldSuppressForwardErrorResponse(c, err) {
+				return
+			}
 			h.ensureForwardErrorResponse(c, streamStarted, err)
 			reqLog.Error("gateway.responses.forward_failed",
 				zap.Int64("account_id", account.ID),

@@ -326,6 +326,22 @@ func TestOpenAIEnsureForwardErrorResponse_UsesDetailedForwardError(t *testing.T)
 	assert.Equal(t, "Upstream HTTP/2 peer reset the stream with INTERNAL_ERROR", errorObj["message"])
 }
 
+func TestOpenAIEnsureForwardErrorResponse_ClientDisconnectSkipsFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	reqCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil).WithContext(reqCtx)
+
+	h := &OpenAIGatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false, context.Canceled)
+
+	require.False(t, wrote)
+	require.False(t, c.Writer.Written())
+	require.Empty(t, w.Body.String())
+}
+
 func TestShouldLogOpenAIForwardFailureAsWarn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

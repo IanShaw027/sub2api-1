@@ -450,6 +450,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					continue
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				if shouldSuppressForwardErrorResponse(c, err) {
+					return
+				}
 				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted, err)
 				fields := []zap.Field{
 					zap.Int64("account_id", account.ID),
@@ -2071,6 +2074,9 @@ func openAIStreamingResponseStarted(c *gin.Context, streamStarted bool) bool {
 // ensureForwardErrorResponse 在 Forward 返回错误但尚未写响应时补写统一错误响应。
 func (h *OpenAIGatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarted bool, forwardErr error) bool {
 	if c == nil || c.Writer == nil {
+		return false
+	}
+	if shouldSuppressForwardErrorResponse(c, forwardErr) {
 		return false
 	}
 	if c.Writer.Written() {

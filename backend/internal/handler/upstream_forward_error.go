@@ -117,6 +117,17 @@ func resolveUpstreamForwardErrorDetail(c *gin.Context, forwardErr error) upstrea
 	return classifyUpstreamForwardError(forwardErr)
 }
 
+func shouldSuppressForwardErrorResponse(c *gin.Context, forwardErr error) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
+	reqCtx := c.Request.Context()
+	if reqCtx == nil || reqCtx.Err() == nil {
+		return false
+	}
+	return errors.Is(forwardErr, context.Canceled) || errors.Is(reqCtx.Err(), context.Canceled)
+}
+
 func upstreamForwardErrorDetailFromContext(c *gin.Context) (upstreamForwardErrorDetail, bool) {
 	if c == nil {
 		return upstreamForwardErrorDetail{}, false

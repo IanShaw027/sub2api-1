@@ -158,7 +158,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					h.handleFailoverExhausted(c, lastFailoverErr, lastFailoverAccount, streamStarted)
 				} else {
 					markOpsRoutingCapacityLimited(c)
-					msg := buildOpenAISelectionFailureMessage(err, "No available accounts")
+					msg := buildOpenAISelectionExhaustedMessage(err, "No available accounts", len(failedAccountIDs) > 0)
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", msg, streamStarted)
 				}
 				return
@@ -270,6 +270,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					continue
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				if shouldSuppressForwardErrorResponse(c, err) {
+					return
+				}
 				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted, err)
 				reqLog.Warn("openai_chat_completions.forward_failed",
 					zap.Int64("account_id", account.ID),

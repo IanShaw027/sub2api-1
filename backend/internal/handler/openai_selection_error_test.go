@@ -148,6 +148,12 @@ func TestBuildOpenAISelectionFailureMessage_GenericNoAvailable(t *testing.T) {
 	require.Equal(t, "No available accounts", got)
 }
 
+func TestBuildOpenAISelectionExhaustedMessage_LocalExclusionPrefersFallback(t *testing.T) {
+	err := errors.New("no available OpenAI accounts supporting model: gpt-5")
+	require.Equal(t, "No available accounts", buildOpenAISelectionExhaustedMessage(err, "No available accounts", true))
+	require.Equal(t, "No available compatible accounts", buildOpenAISelectionExhaustedMessage(err, "No available compatible accounts", true))
+}
+
 func TestOpenAIResponses_SelectionFailure_ReturnsSupportingModelMessage(t *testing.T) {
 	c, rec := newOpenAISelectionErrorTestContext("/v1/responses", `{"model":"gpt-5","input":"hello"}`)
 	h := newOpenAISelectionErrorTestHandler(t, nil)
