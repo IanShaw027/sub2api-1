@@ -1401,6 +1401,133 @@
         </div>
       </div>
 
+      <div
+        v-if="account?.platform === 'openai'"
+        data-testid="openai-response-rewrite-section"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
+      >
+        <div class="mb-3">
+          <label class="input-label mb-0">{{ t('admin.accounts.responseRewrite.title') }}</label>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.responseRewrite.hint') }}
+          </p>
+        </div>
+
+        <div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+          <p class="text-xs text-blue-700 dark:text-blue-400">
+            <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
+            {{ t('admin.accounts.responseRewrite.notice') }}
+          </p>
+        </div>
+
+        <div v-if="responseRewriteRules.length > 0" class="space-y-3">
+          <div
+            v-for="(rule, index) in responseRewriteRules"
+            :key="getResponseRewriteRuleKey(rule)"
+            class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"
+          >
+            <div class="mb-2 flex items-center justify-between">
+              <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.responseRewrite.ruleIndex', { index: index + 1 }) }}
+              </span>
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  :disabled="index === 0"
+                  @click="moveResponseRewriteRule(index, -1)"
+                  class="rounded p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
+                >
+                  <Icon name="chevronUp" size="sm" :stroke-width="2" />
+                </button>
+                <button
+                  type="button"
+                  :disabled="index === responseRewriteRules.length - 1"
+                  @click="moveResponseRewriteRule(index, 1)"
+                  class="rounded p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
+                >
+                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  @click="removeResponseRewriteRule(index)"
+                  class="rounded p-1 text-red-500 transition-colors hover:text-red-600"
+                >
+                  <Icon name="x" size="sm" :stroke-width="2" />
+                </button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label class="input-label">{{ t('admin.accounts.responseRewrite.statusCode') }}</label>
+                <input
+                  v-model.number="rule.status_code"
+                  type="number"
+                  min="100"
+                  max="599"
+                  class="input"
+                  :placeholder="t('admin.accounts.responseRewrite.statusCodePlaceholder')"
+                />
+              </div>
+              <div>
+                <label class="input-label">{{ t('admin.accounts.responseRewrite.matchMode') }}</label>
+                <select v-model="rule.match_mode" class="input">
+                  <option value="any">{{ t('admin.accounts.responseRewrite.matchModeAny') }}</option>
+                  <option value="all">{{ t('admin.accounts.responseRewrite.matchModeAll') }}</option>
+                </select>
+              </div>
+              <div class="sm:col-span-2">
+                <label class="input-label">{{ t('admin.accounts.responseRewrite.keywords') }}</label>
+                <input
+                  v-model="rule.keywords"
+                  type="text"
+                  class="input"
+                  :placeholder="t('admin.accounts.responseRewrite.keywordsPlaceholder')"
+                />
+                <p class="input-hint">{{ t('admin.accounts.responseRewrite.keywordsHint') }}</p>
+              </div>
+              <div class="sm:col-span-2">
+                <label class="input-label">{{ t('admin.accounts.responseRewrite.responseMessage') }}</label>
+                <input
+                  v-model="rule.response_message"
+                  type="text"
+                  class="input"
+                  :placeholder="t('admin.accounts.responseRewrite.responseMessagePlaceholder')"
+                />
+              </div>
+              <div class="sm:col-span-2">
+                <label class="input-label">{{ t('admin.accounts.responseRewrite.description') }}</label>
+                <input
+                  v-model="rule.description"
+                  type="text"
+                  class="input"
+                  :placeholder="t('admin.accounts.responseRewrite.descriptionPlaceholder')"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          data-testid="openai-response-rewrite-add-rule"
+          @click="addResponseRewriteRule()"
+          class="w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-sm text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+        >
+          <svg
+            class="mr-1 inline h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          {{ t('admin.accounts.responseRewrite.addRule') }}
+        </button>
+      </div>
+
       <!-- Intercept Warmup Requests (Anthropic/Antigravity) -->
       <div
         v-if="account?.platform === 'anthropic' || account?.platform === 'antigravity'"
@@ -2527,6 +2654,12 @@ import AccountQuotaInfo from '@/components/account/AccountQuotaInfo.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
+import {
+  buildResponseRewriteRules,
+  hasResponseRewriteRuleInputs,
+  loadResponseRewriteRules,
+  type ResponseRewriteRuleForm
+} from '@/components/account/responseRewriteRules'
 import { stripKiroRuntimeExtra } from '@/composables/useKiroOAuth'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
@@ -2669,10 +2802,12 @@ const antigravityWhitelistModels = ref<string[]>([])
 const antigravityModelMappings = ref<ModelMapping[]>([])
 const tempUnschedEnabled = ref(false)
 const tempUnschedRules = ref<TempUnschedRuleForm[]>([])
+const responseRewriteRules = ref<ResponseRewriteRuleForm[]>([])
 const getModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-model-mapping')
 const getOpenAICompactModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-openai-compact-model-mapping')
 const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-antigravity-model-mapping')
 const getTempUnschedRuleKey = createStableObjectKeyResolver<TempUnschedRuleForm>('edit-temp-unsched-rule')
+const getResponseRewriteRuleKey = createStableObjectKeyResolver<ResponseRewriteRuleForm>('edit-response-rewrite-rule')
 
 const showMixedChannelWarning = ref(false)
 const mixedChannelWarningDetails = ref<{ groupName: string; currentPlatform: string; otherPlatform: string } | null>(
@@ -3193,6 +3328,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   loadQuotaControlSettings(newAccount)
 
   loadTempUnschedRules(credentials)
+  responseRewriteRules.value = newAccount.platform === 'openai'
+    ? loadResponseRewriteRules(credentials)
+    : []
 
   if (newAccount.platform === 'kiro') {
     const kiroCredentials = (newAccount.credentials || {}) as KiroCredentials & Record<string, unknown>
@@ -3536,6 +3674,29 @@ const moveTempUnschedRule = (index: number, direction: number) => {
   rules[target] = current
 }
 
+const addResponseRewriteRule = () => {
+  responseRewriteRules.value.push({
+    status_code: null,
+    keywords: '',
+    match_mode: 'any',
+    response_message: '',
+    description: ''
+  })
+}
+
+const removeResponseRewriteRule = (index: number) => {
+  responseRewriteRules.value.splice(index, 1)
+}
+
+const moveResponseRewriteRule = (index: number, direction: number) => {
+  const target = index + direction
+  if (target < 0 || target >= responseRewriteRules.value.length) return
+  const rules = responseRewriteRules.value
+  const current = rules[index]
+  rules[index] = rules[target]
+  rules[target] = current
+}
+
 const buildTempUnschedRules = (rules: TempUnschedRuleForm[]) => {
   const out: Array<{
     error_code: number
@@ -3586,6 +3747,42 @@ const applyTempUnschedConfig = (credentials: Record<string, unknown>) => {
   return true
 }
 
+const applyResponseRewriteConfig = (
+  credentials: Record<string, unknown>,
+  platform: Account['platform'] | undefined = props.account?.platform
+) => {
+  if (platform !== 'openai') {
+    delete credentials.response_rewrite_rules
+    return true
+  }
+
+  const rules = buildResponseRewriteRules(responseRewriteRules.value)
+  if (rules.length === 0) {
+    if (hasResponseRewriteRuleInputs(responseRewriteRules.value)) {
+      appStore.showError(t('admin.accounts.responseRewrite.rulesInvalid'))
+      return false
+    }
+    delete credentials.response_rewrite_rules
+    return true
+  }
+
+  credentials.response_rewrite_rules = rules
+  return true
+}
+
+const applyCredentialRuleConfigs = (
+  credentials: Record<string, unknown>,
+  platform: Account['platform'] | undefined = props.account?.platform
+) => {
+  if (!applyTempUnschedConfig(credentials)) {
+    return false
+  }
+  if (!applyResponseRewriteConfig(credentials, platform)) {
+    return false
+  }
+  return true
+}
+
 const applyTempUnschedPatch = (
   credentials: Record<string, unknown>,
   currentCredentials: Record<string, unknown>
@@ -3614,6 +3811,51 @@ const applyTempUnschedPatch = (
   ) {
     credentials.temp_unschedulable_enabled = true
     credentials.temp_unschedulable_rules = nextTempUnschedRules
+  }
+  return true
+}
+
+const applyResponseRewritePatch = (
+  credentials: Record<string, unknown>,
+  currentCredentials: Record<string, unknown>,
+  platform: Account['platform'] | undefined = props.account?.platform
+) => {
+  if (platform !== 'openai') {
+    return true
+  }
+
+  const currentRules = Array.isArray(currentCredentials.response_rewrite_rules)
+    ? currentCredentials.response_rewrite_rules
+    : []
+  const nextRules = buildResponseRewriteRules(responseRewriteRules.value)
+
+  if (nextRules.length === 0) {
+    if (hasResponseRewriteRuleInputs(responseRewriteRules.value)) {
+      appStore.showError(t('admin.accounts.responseRewrite.rulesInvalid'))
+      return false
+    }
+    if (currentRules.length > 0) {
+      credentials.response_rewrite_rules = []
+    }
+    return true
+  }
+
+  if (credentialsValueChanged(currentRules, nextRules)) {
+    credentials.response_rewrite_rules = nextRules
+  }
+  return true
+}
+
+const applyCredentialRulePatches = (
+  credentials: Record<string, unknown>,
+  currentCredentials: Record<string, unknown>,
+  platform: Account['platform'] | undefined = props.account?.platform
+) => {
+  if (!applyTempUnschedPatch(credentials, currentCredentials)) {
+    return false
+  }
+  if (!applyResponseRewritePatch(credentials, currentCredentials, platform)) {
+    return false
   }
   return true
 }
@@ -4387,7 +4629,7 @@ const handleSubmit = async () => {
 
       // Add intercept warmup requests setting
       applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      if (!applyTempUnschedConfig(newCredentials)) {
+      if (!applyCredentialRuleConfigs(newCredentials)) {
         return
       }
 
@@ -4405,7 +4647,7 @@ const handleSubmit = async () => {
       // Add intercept warmup requests setting
       applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
 
-      if (!applyTempUnschedConfig(newCredentials)) {
+      if (!applyCredentialRuleConfigs(newCredentials)) {
         return
       }
 
@@ -4451,7 +4693,7 @@ const handleSubmit = async () => {
       }
 
       applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      if (!applyTempUnschedConfig(newCredentials)) {
+      if (!applyCredentialRuleConfigs(newCredentials)) {
         return
       }
 
@@ -4508,7 +4750,7 @@ const handleSubmit = async () => {
       }
 
       applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      if (!applyTempUnschedConfig(newCredentials)) {
+      if (!applyCredentialRuleConfigs(newCredentials)) {
         return
       }
 
@@ -4519,7 +4761,7 @@ const handleSubmit = async () => {
       const newCredentials: Record<string, unknown> = { ...currentCredentials }
 
       applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      if (!applyTempUnschedConfig(newCredentials)) {
+      if (!applyCredentialRuleConfigs(newCredentials)) {
         return
       }
 
@@ -4536,7 +4778,7 @@ const handleSubmit = async () => {
       if (interceptWarmupRequests.value !== currentInterceptWarmup) {
         newCredentials.intercept_warmup_requests = interceptWarmupRequests.value
       }
-      if (!applyTempUnschedPatch(newCredentials, currentCredentials)) {
+      if (!applyCredentialRulePatches(newCredentials, currentCredentials, 'openai')) {
         return
       }
 

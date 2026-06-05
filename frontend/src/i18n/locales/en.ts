@@ -3850,6 +3850,26 @@ export default {
           unavailableDesc: 'Unavailable - pause 30 minutes'
         }
       },
+      responseRewrite: {
+        title: 'Response Rewrite Rules',
+        hint: 'OpenAI only. Rewrite the final client-facing message for matched upstream failures.',
+        notice: 'Rules use raw upstream status code and body text. Account rules are checked before global passthrough rules.',
+        addRule: 'Add Rewrite Rule',
+        ruleIndex: 'Rule #{index}',
+        statusCode: 'Status Code',
+        statusCodePlaceholder: 'Optional, e.g. 503',
+        matchMode: 'Match Mode',
+        matchModeAny: 'Any condition',
+        matchModeAll: 'All conditions',
+        keywords: 'Keywords',
+        keywordsPlaceholder: 'Optional, e.g. insufficient_quota, too many requests',
+        keywordsHint: 'Separate keywords with commas; matching is case-insensitive.',
+        responseMessage: 'Response Message',
+        responseMessagePlaceholder: 'Message returned to the client',
+        description: 'Description',
+        descriptionPlaceholder: 'Optional internal note',
+        rulesInvalid: 'Add at least one valid rewrite rule, or clear the incomplete entries.'
+      },
       clearRateLimit: 'Clear Rate Limit',
       resetQuota: 'Reset Quota',
       quotaLimit: 'Quota Limit',

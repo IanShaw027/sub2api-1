@@ -23,7 +23,7 @@ func TestOpenAIHandleFailoverExhausted_RetryableOverloadReturns503(t *testing.T)
 		StatusCode:             http.StatusServiceUnavailable,
 		RetryableOnSameAccount: true,
 		ResponseBody:           []byte(`{"error":{"type":"upstream_error","message":"Upstream service overloaded, please retry later"}}`),
-	}, false)
+	}, nil, false)
 
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 
@@ -46,7 +46,7 @@ func TestOpenAIHandleFailoverExhausted_StreamRetryableOverloadReturnsSSEOverload
 		StatusCode:             http.StatusServiceUnavailable,
 		RetryableOnSameAccount: true,
 		ResponseBody:           []byte(`{"error":{"type":"upstream_error","message":"Upstream service overloaded, please retry later"}}`),
-	}, true)
+	}, nil, true)
 
 	body := w.Body.String()
 	require.Contains(t, body, "event: response.failed\n")
@@ -71,7 +71,7 @@ func TestOpenAIHandleFailoverExhausted_PartialSSEOutputKeepsStreamingErrorShape(
 		StatusCode:             http.StatusServiceUnavailable,
 		RetryableOnSameAccount: true,
 		ResponseBody:           []byte(`{"error":{"type":"upstream_error","message":"Upstream service overloaded, please retry later"}}`),
-	}, false)
+	}, nil, false)
 
 	body := w.Body.String()
 	require.Contains(t, body, "data: {\"type\":\"response.output_text.delta\"}\n\n")
@@ -91,7 +91,7 @@ func TestOpenAIHandleFailoverExhausted_Generic503StillReturnsBadGateway(t *testi
 	h.handleFailoverExhausted(c, &service.UpstreamFailoverError{
 		StatusCode:   http.StatusServiceUnavailable,
 		ResponseBody: []byte(`{"error":{"type":"upstream_error","message":"temporary maintenance"}}`),
-	}, false)
+	}, nil, false)
 
 	require.Equal(t, http.StatusBadGateway, w.Code)
 	require.Contains(t, strings.TrimSpace(w.Body.String()), "Upstream service temporarily unavailable")

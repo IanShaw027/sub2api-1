@@ -1192,4 +1192,61 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_image_generation_enabled).toBe(true)
   })
+
+  it('loads and patches OpenAI response rewrite rules', async () => {
+    const account = buildAccount()
+    account.credentials = {
+      ...account.credentials,
+      response_rewrite_rules: [
+        {
+          status_code: 401,
+          keywords: ['token_invalidated', 'auth'],
+          match_mode: 'all',
+          response_message: 'Service temporarily unavailable',
+          description: 'masked auth'
+        }
+      ]
+    }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.get('[data-testid="openai-response-rewrite-section"]').exists()).toBe(true)
+    expect((wrapper.vm as any).responseRewriteRules).toEqual([
+      {
+        status_code: 401,
+        keywords: 'token_invalidated, auth',
+        match_mode: 'all',
+        response_message: 'Service temporarily unavailable',
+        description: 'masked auth'
+      }
+    ])
+
+    ;(wrapper.vm as any).responseRewriteRules = [
+      {
+        status_code: 429,
+        keywords: 'too many requests',
+        match_mode: 'any',
+        response_message: 'Retry later',
+        description: 'mask 429'
+      }
+    ]
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.response_rewrite_rules).toEqual([
+      {
+        status_code: 429,
+        keywords: ['too many requests'],
+        match_mode: 'any',
+        response_message: 'Retry later',
+        description: 'mask 429'
+      }
+    ])
+  })
 })

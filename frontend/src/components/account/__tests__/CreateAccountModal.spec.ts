@@ -598,6 +598,49 @@ describe('CreateAccountModal', () => {
     }))
   })
 
+  it('shows OpenAI response rewrite rules only for OpenAI and serializes them on create', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="openai-response-rewrite-section"]').exists()).toBe(false)
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await findAccountTypeButton(wrapper, 1).trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="openai-response-rewrite-section"]').exists()).toBe(true)
+
+    ;(wrapper.vm as any).responseRewriteRules = [
+      {
+        status_code: 503,
+        keywords: '欠费, insufficient_quota',
+        match_mode: 'all',
+        response_message: 'Service temporarily unavailable',
+        description: 'quota mask'
+      }
+    ]
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('openai-api')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      credentials: expect.objectContaining({
+        response_rewrite_rules: [
+          {
+            status_code: 503,
+            keywords: ['欠费', 'insufficient_quota'],
+            match_mode: 'all',
+            response_message: 'Service temporarily unavailable',
+            description: 'quota mask'
+          }
+        ]
+      })
+    }))
+  })
+
   it('creates a Kiro OAuth account from manual refresh token input', async () => {
     const wrapper = mountModal()
     await flushPromises()

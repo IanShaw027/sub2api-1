@@ -3635,6 +3635,26 @@
           "unavailableDesc": "服务不可用 - 暂停 30 分钟"
         }
       },
+      "responseRewrite": {
+        "title": "响应改写规则",
+        "hint": "仅适用于 OpenAI。命中规则时，只改写最终返回给客户端的错误文案。",
+        "notice": "规则基于上游原始状态码和响应体文本匹配。账号规则优先于全局透传规则。",
+        "addRule": "添加改写规则",
+        "ruleIndex": "规则 #{index}",
+        "statusCode": "状态码",
+        "statusCodePlaceholder": "可选，例如 503",
+        "matchMode": "匹配方式",
+        "matchModeAny": "命中任一条件",
+        "matchModeAll": "命中全部条件",
+        "keywords": "关键词",
+        "keywordsPlaceholder": "可选，例如 insufficient_quota, too many requests",
+        "keywordsHint": "多个关键词用逗号分隔，匹配时不区分大小写。",
+        "responseMessage": "响应文案",
+        "responseMessagePlaceholder": "返回给客户端的文案",
+        "description": "描述",
+        "descriptionPlaceholder": "可选，便于内部备注",
+        "rulesInvalid": "请至少填写一条有效的改写规则，或清空未完成的条目。"
+      },
       "usageWindow": {
         "statsTitle": "5小时窗口用量统计",
         "statsTitleDaily": "每日用量统计",
