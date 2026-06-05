@@ -319,7 +319,7 @@ func kiroThresholdCandidates(account *Account) []*accountSchedulingThresholdCand
 	return []*accountSchedulingThresholdCandidate{
 		{
 			window:      "quota",
-			usedPercent: utilizationAsPercent(account.Extra["kiro_sched_utilization"]),
+			usedPercent: schedulingPercentValue(account.Extra["kiro_sched_utilization"]),
 			until:       parseSchedulingResetAt(account.Extra["kiro_sched_reset_at"]),
 		},
 	}
@@ -333,7 +333,7 @@ func antigravityThresholdCandidates(account *Account) []*accountSchedulingThresh
 		{
 			window:      "quota",
 			scope:       strings.TrimSpace(parseSchedulingScope(account.Extra["antigravity_sched_scope"])),
-			usedPercent: utilizationAsPercent(account.Extra["antigravity_sched_utilization"]),
+			usedPercent: schedulingPercentValue(account.Extra["antigravity_sched_utilization"]),
 			until:       parseSchedulingResetAt(account.Extra["antigravity_sched_reset_at"]),
 		},
 	}
@@ -397,6 +397,33 @@ func utilizationAsPercent(raw any) float64 {
 		}
 		if strings.Contains(trimmed, ".") && value >= 0 && value <= 1 {
 			return value * 100
+		}
+		return value
+	default:
+		return 0
+	}
+}
+
+func schedulingPercentValue(raw any) float64 {
+	switch v := raw.(type) {
+	case float64:
+		return v
+	case float32:
+		return float64(v)
+	case int:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case json.Number:
+		value, err := v.Float64()
+		if err != nil {
+			return 0
+		}
+		return value
+	case string:
+		value, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		if err != nil {
+			return 0
 		}
 		return value
 	default:

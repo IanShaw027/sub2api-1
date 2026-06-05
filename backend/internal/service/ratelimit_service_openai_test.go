@@ -303,9 +303,14 @@ func TestIsOpenAIImageGenerationRateLimitMessage(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "gpt-image without input-images keyword",
+			name: "gpt-image without image-specific quota keyword",
 			body: `{"error":{"message":"You are limited on gpt-image requests."}}`,
-			want: true,
+			want: false,
+		},
+		{
+			name: "generic request limit mentioning gpt-image model",
+			body: `{"error":{"message":"Rate limit reached for requests to the Responses API for model gpt-image-1 in organization org-XYZ on requests per min: Limit 10000, Used 10000, Requested 1."}}`,
+			want: false,
 		},
 		{
 			name: "regular usage_limit_reached",

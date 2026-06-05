@@ -358,7 +358,7 @@ func (s *RateLimitService) ApplyAccountSchedulingThreshold(ctx context.Context, 
 	if s == nil || s.settingService == nil || s.accountRepo == nil || account == nil || account.ID <= 0 {
 		return false
 	}
-	if !account.IsSchedulable() {
+	if !account.IsActive() || !account.Schedulable {
 		return false
 	}
 
@@ -379,6 +379,13 @@ func (s *RateLimitService) ApplyAccountSchedulingThreshold(ctx context.Context, 
 		Until:            *decision.Until,
 		Now:              now,
 	})
+
+	if accountHasSameSchedulingThresholdPause(account, *decision.Until, reason) {
+		return true
+	}
+	if !account.IsSchedulable() {
+		return false
+	}
 
 	account.TempUnschedulableUntil = cloneTimePtr(decision.Until)
 	account.TempUnschedulableReason = reason
@@ -411,6 +418,28 @@ func (s *RateLimitService) ApplyAccountSchedulingThreshold(ctx context.Context, 
 		"used_percent", decision.UsedPercent,
 		"until", decision.Until.UTC())
 	return true
+}
+
+func accountHasSameSchedulingThresholdPause(account *Account, until time.Time, reason string) bool {
+	if account == nil || account.TempUnschedulableUntil == nil {
+		return false
+	}
+	if account.TempUnschedulableUntil.UTC().Unix() != until.UTC().Unix() {
+		return false
+	}
+
+	existing, ok := parseTempUnschedReasonPayload(account.TempUnschedulableReason)
+	if !ok || existing.Source != AccountSchedulingThresholdReasonSource {
+		return false
+	}
+	next, ok := parseTempUnschedReasonPayload(reason)
+	if !ok || next.Source != AccountSchedulingThresholdReasonSource {
+		return false
+	}
+
+	existing.TriggeredAtUnix = 0
+	next.TriggeredAtUnix = 0
+	return existing == next
 }
 
 // ErrorPolicyResult 表示错误策略检查的结果
@@ -1409,13 +1438,13 @@ func isOpenAIImageGenerationRateLimitMessage(responseBody []byte) bool {
 		if candidate == "" {
 			continue
 		}
-		if strings.Contains(candidate, "input-images") {
+		if strings.Contains(candidate, "input-images") || strings.Contains(candidate, "input images") {
 			return true
 		}
-		// "gpt-image" alone is not sufficient — it may appear as a model name in
-		// generic account-wide 429 messages. Require an accompanying quota keyword.
-		if strings.Contains(candidate, "gpt-image") &&
-			(strings.Contains(candidate, "limit") || strings.Contains(candidate, "quota") || strings.Contains(candidate, "per ")) {
+		// Some image-specific 429s include the limit name but omit "input-images".
+		// Keep this narrow to avoid treating generic request-count 429s for a
+		// gpt-image model as image-route-only throttles.
+		if strings.Contains(candidate, "for limit gpt-image") {
 			return true
 		}
 	}

@@ -49,7 +49,7 @@ func TestGatewayService_ListSchedulableAccounts_FiltersThresholdBlockedAccounts(
 				Status:      StatusActive,
 				Schedulable: true,
 				Extra: map[string]any{
-					"kiro_sched_utilization": 0.95,
+					"kiro_sched_utilization": 95.0,
 					"kiro_sched_reset_at":    time.Now().UTC().Add(2 * time.Hour).Format(time.RFC3339),
 				},
 			},
@@ -59,7 +59,7 @@ func TestGatewayService_ListSchedulableAccounts_FiltersThresholdBlockedAccounts(
 				Status:      StatusActive,
 				Schedulable: true,
 				Extra: map[string]any{
-					"kiro_sched_utilization": 0.42,
+					"kiro_sched_utilization": 42.0,
 					"kiro_sched_reset_at":    time.Now().UTC().Add(2 * time.Hour).Format(time.RFC3339),
 				},
 			},

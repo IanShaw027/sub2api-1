@@ -66,6 +66,43 @@ func TestEvaluateAccountSchedulingThreshold_AnthropicIgnoresExpiredFiveHourWindo
 	require.True(t, wantUntil.Equal(*decision.Until))
 }
 
+func TestEvaluateAccountSchedulingThreshold_FractionalPlatformsKeepFractionSemantics(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	openAIUntil := now.Add(24 * time.Hour)
+	openAIAccount := &Account{
+		Platform: PlatformOpenAI,
+		Extra: map[string]any{
+			"codex_5h_used_percent": 0.91,
+			"codex_5h_reset_at":     openAIUntil.Format(time.RFC3339),
+		},
+	}
+
+	openAIDecision := EvaluateAccountSchedulingThreshold(openAIAccount, map[string]int{
+		PlatformOpenAI: 90,
+	}, now)
+
+	require.True(t, openAIDecision.ShouldPause)
+	require.Equal(t, 91.0, openAIDecision.UsedPercent)
+
+	anthropicUntil := now.Add(5 * time.Hour)
+	anthropicAccount := &Account{
+		Platform:         PlatformAnthropic,
+		SessionWindowEnd: &anthropicUntil,
+		Extra: map[string]any{
+			"session_window_utilization": 0.92,
+		},
+	}
+
+	anthropicDecision := EvaluateAccountSchedulingThreshold(anthropicAccount, map[string]int{
+		PlatformAnthropic: 90,
+	}, now)
+
+	require.True(t, anthropicDecision.ShouldPause)
+	require.Equal(t, 92.0, anthropicDecision.UsedPercent)
+}
+
 func TestEvaluateAccountSchedulingThreshold_GeminiUsesHighestUtilizationBucket(t *testing.T) {
 	t.Parallel()
 
@@ -112,7 +149,7 @@ func TestEvaluateAccountSchedulingThreshold_KiroPausesWhenThresholdReached(t *te
 	account := &Account{
 		Platform: PlatformKiro,
 		Extra: map[string]any{
-			"kiro_sched_utilization": 0.91,
+			"kiro_sched_utilization": 91.0,
 			"kiro_sched_reset_at":    wantUntil.Format(time.RFC3339),
 		},
 	}
@@ -130,6 +167,25 @@ func TestEvaluateAccountSchedulingThreshold_KiroPausesWhenThresholdReached(t *te
 	require.True(t, wantUntil.Equal(*decision.Until))
 }
 
+func TestEvaluateAccountSchedulingThreshold_KiroSubOnePercentDoesNotPauseAsFraction(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	account := &Account{
+		Platform: PlatformKiro,
+		Extra: map[string]any{
+			"kiro_sched_utilization": 0.5,
+			"kiro_sched_reset_at":    now.Add(24 * time.Hour).Format(time.RFC3339),
+		},
+	}
+
+	decision := EvaluateAccountSchedulingThreshold(account, map[string]int{
+		PlatformKiro: 1,
+	}, now)
+
+	require.False(t, decision.ShouldPause)
+}
+
 func TestEvaluateAccountSchedulingThreshold_KiroThresholdHundredDisablesPlatform(t *testing.T) {
 	t.Parallel()
 
@@ -137,7 +193,7 @@ func TestEvaluateAccountSchedulingThreshold_KiroThresholdHundredDisablesPlatform
 	account := &Account{
 		Platform: PlatformKiro,
 		Extra: map[string]any{
-			"kiro_sched_utilization": 0.99,
+			"kiro_sched_utilization": 99.0,
 			"kiro_sched_reset_at":    now.Add(24 * time.Hour).Format(time.RFC3339),
 		},
 	}
@@ -157,7 +213,7 @@ func TestEvaluateAccountSchedulingThreshold_AntigravityCarriesScope(t *testing.T
 	account := &Account{
 		Platform: PlatformAntigravity,
 		Extra: map[string]any{
-			"antigravity_sched_utilization": 0.92,
+			"antigravity_sched_utilization": 92.0,
 			"antigravity_sched_reset_at":    wantUntil.Format(time.RFC3339),
 			"antigravity_sched_scope":       "gemini",
 		},

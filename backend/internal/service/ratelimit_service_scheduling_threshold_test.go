@@ -52,6 +52,48 @@ func TestRateLimitService_ApplyAccountSchedulingThreshold_SetsTempUnschedulable(
 	require.Contains(t, payload["error_message"], "91.5% used >= 80%")
 }
 
+func TestRateLimitService_ApplyAccountSchedulingThreshold_SkipsDuplicateTempUnschedulable(t *testing.T) {
+	accountSchedulingThresholdsSF.Forget(SettingKeyAccountSchedulingThresholds)
+	accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{})
+
+	settingsRepo := newMockSettingRepo()
+	settingsRepo.data[SettingKeyAccountSchedulingThresholds] = `{"openai":80}`
+
+	accountRepo := &rateLimitAccountRepoStub{}
+	rl := NewRateLimitService(accountRepo, nil, &config.Config{}, nil, nil)
+	rl.SetSettingService(NewSettingService(settingsRepo, &config.Config{}))
+
+	until := time.Now().UTC().Add(6 * time.Hour).Truncate(time.Second)
+	existingReason := BuildDetailedAccountSchedulingThresholdReason(AccountSchedulingThresholdReasonInput{
+		Platform:         PlatformOpenAI,
+		Window:           "7d",
+		ThresholdPercent: 80,
+		UsedPercent:      91.5,
+		Until:            until,
+		Now:              until.Add(-time.Hour),
+	})
+	account := &Account{
+		ID:                      1002,
+		Platform:                PlatformOpenAI,
+		Status:                  StatusActive,
+		Schedulable:             true,
+		TempUnschedulableUntil:  &until,
+		TempUnschedulableReason: existingReason,
+		Extra: map[string]any{
+			"codex_7d_used_percent": 91.5,
+			"codex_7d_reset_at":     until.Format(time.RFC3339),
+		},
+	}
+
+	blocked := rl.ApplyAccountSchedulingThreshold(context.Background(), account)
+
+	require.True(t, blocked)
+	require.Equal(t, 0, accountRepo.tempCalls)
+	require.Equal(t, existingReason, account.TempUnschedulableReason)
+	require.NotNil(t, account.TempUnschedulableUntil)
+	require.True(t, until.Equal(*account.TempUnschedulableUntil))
+}
+
 func TestRateLimitService_ApplyAccountSchedulingThreshold_HundredDisablesBlocking(t *testing.T) {
 	accountSchedulingThresholdsSF.Forget(SettingKeyAccountSchedulingThresholds)
 	accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{})
