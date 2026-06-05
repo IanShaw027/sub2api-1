@@ -1,0 +1,489 @@
+package service
+
+import (
+	"encoding/json"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// AccountSchedulingThresholdDecision captures the pure pause decision for one account.
+type AccountSchedulingThresholdDecision struct {
+	ShouldPause bool
+	Platform    string
+	Window      string
+	Scope       string
+	UsedPercent float64
+	Until       *time.Time
+}
+
+type accountSchedulingThresholdCandidate struct {
+	window      string
+	scope       string
+	usedPercent float64
+	until       *time.Time
+}
+
+type geminiSchedulingSnapshotWindow struct {
+	utilization float64
+	resetAt     *time.Time
+}
+
+type geminiSchedulingSnapshot struct {
+	pro   *geminiSchedulingSnapshotWindow
+	flash *geminiSchedulingSnapshotWindow
+}
+
+// EvaluateAccountSchedulingThreshold evaluates whether an account should be paused
+// based on the current per-platform scheduling threshold snapshot.
+func EvaluateAccountSchedulingThreshold(account *Account, thresholds map[string]int, now time.Time) AccountSchedulingThresholdDecision {
+	decision := AccountSchedulingThresholdDecision{}
+	if account == nil {
+		return decision
+	}
+
+	decision.Platform = strings.ToLower(strings.TrimSpace(account.Platform))
+	if decision.Platform == "" {
+		return decision
+	}
+
+	threshold, ok := lookupAccountSchedulingThreshold(thresholds, decision.Platform)
+	if !ok || threshold >= 100 {
+		return decision
+	}
+
+	var winner *accountSchedulingThresholdCandidate
+	switch decision.Platform {
+	case PlatformOpenAI:
+		winner = pickLatestResetSchedulingCandidate(openAIThresholdCandidates(account), threshold, now)
+	case PlatformAnthropic:
+		winner = pickLatestResetSchedulingCandidate(anthropicThresholdCandidates(account), threshold, now)
+	case PlatformGemini:
+		winner = pickGeminiSchedulingCandidate(account, threshold, now)
+	case PlatformKiro:
+		winner = pickLatestResetSchedulingCandidate(kiroThresholdCandidates(account), threshold, now)
+	case PlatformAntigravity:
+		winner = pickLatestResetSchedulingCandidate(antigravityThresholdCandidates(account), threshold, now)
+	default:
+		return decision
+	}
+
+	if winner == nil {
+		return decision
+	}
+
+	decision.ShouldPause = true
+	decision.Window = winner.window
+	decision.Scope = winner.scope
+	decision.UsedPercent = winner.usedPercent
+	decision.Until = winner.until
+	return decision
+}
+
+func lookupAccountSchedulingThreshold(thresholds map[string]int, platform string) (int, bool) {
+	if len(thresholds) == 0 {
+		return 0, false
+	}
+	value, ok := thresholds[platform]
+	return value, ok
+}
+
+func openAIThresholdCandidates(account *Account) []*accountSchedulingThresholdCandidate {
+	if account == nil {
+		return nil
+	}
+	return []*accountSchedulingThresholdCandidate{
+		openAIThresholdCandidate(account.Extra, "5h"),
+		openAIThresholdCandidate(account.Extra, "7d"),
+	}
+}
+
+func openAIThresholdCandidate(extra map[string]any, window string) *accountSchedulingThresholdCandidate {
+	if len(extra) == 0 {
+		return nil
+	}
+
+	var (
+		usedPercentKey string
+		resetAtKey     string
+	)
+	switch window {
+	case "5h":
+		usedPercentKey = "codex_5h_used_percent"
+		resetAtKey = "codex_5h_reset_at"
+	case "7d":
+		usedPercentKey = "codex_7d_used_percent"
+		resetAtKey = "codex_7d_reset_at"
+	default:
+		return nil
+	}
+
+	usedPercent, ok := extra[usedPercentKey]
+	if !ok {
+		return nil
+	}
+	return &accountSchedulingThresholdCandidate{
+		window:      window,
+		usedPercent: utilizationAsPercent(usedPercent),
+		until:       parseSchedulingResetAt(extra[resetAtKey]),
+	}
+}
+
+func anthropicThresholdCandidates(account *Account) []*accountSchedulingThresholdCandidate {
+	if account == nil {
+		return nil
+	}
+
+	var candidates []*accountSchedulingThresholdCandidate
+	if usedPercent := utilizationAsPercent(account.Extra["session_window_utilization"]); usedPercent > 0 {
+		candidates = append(candidates, &accountSchedulingThresholdCandidate{
+			window:      "5h",
+			usedPercent: usedPercent,
+			until:       cloneTimePtr(account.SessionWindowEnd),
+		})
+	}
+	if usedPercent := utilizationAsPercent(account.Extra["passive_usage_7d_utilization"]); usedPercent > 0 {
+		candidates = append(candidates, &accountSchedulingThresholdCandidate{
+			window:      "7d",
+			usedPercent: usedPercent,
+			until:       parseSchedulingResetAt(account.Extra["passive_usage_7d_reset"]),
+		})
+	}
+	return candidates
+}
+
+func pickGeminiSchedulingCandidate(account *Account, threshold int, now time.Time) *accountSchedulingThresholdCandidate {
+	snapshot := parseGeminiSchedulingSnapshot(account)
+	if snapshot == nil {
+		return nil
+	}
+
+	var candidates []*accountSchedulingThresholdCandidate
+	if snapshot.pro != nil {
+		candidates = append(candidates, &accountSchedulingThresholdCandidate{
+			window:      "daily",
+			scope:       "pro",
+			usedPercent: snapshot.pro.utilization,
+			until:       cloneTimePtr(snapshot.pro.resetAt),
+		})
+	}
+	if snapshot.flash != nil {
+		candidates = append(candidates, &accountSchedulingThresholdCandidate{
+			window:      "daily",
+			scope:       "flash",
+			usedPercent: snapshot.flash.utilization,
+			until:       cloneTimePtr(snapshot.flash.resetAt),
+		})
+	}
+
+	var winner *accountSchedulingThresholdCandidate
+	for _, candidate := range candidates {
+		if !candidateMatchesThreshold(candidate, threshold, now) {
+			continue
+		}
+		if winner == nil || candidate.usedPercent > winner.usedPercent {
+			winner = candidate
+			continue
+		}
+		if candidate.usedPercent < winner.usedPercent {
+			continue
+		}
+		if winner.until == nil || (candidate.until != nil && candidate.until.After(*winner.until)) {
+			winner = candidate
+		}
+	}
+	return winner
+}
+
+func parseGeminiSchedulingSnapshot(account *Account) *geminiSchedulingSnapshot {
+	if account == nil {
+		return nil
+	}
+
+	raw, ok := account.Credentials["gemini_usage_raw"]
+	if !ok {
+		raw = account.Extra["gemini_usage_raw"]
+	}
+
+	root, ok := raw.(map[string]any)
+	if !ok || len(root) == 0 {
+		return nil
+	}
+
+	buckets, ok := root["buckets"].([]any)
+	if !ok || len(buckets) == 0 {
+		return nil
+	}
+
+	snapshot := &geminiSchedulingSnapshot{}
+	for _, item := range buckets {
+		bucket, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		modelID, _ := bucket["modelId"].(string)
+		modelID = strings.ToLower(strings.TrimSpace(modelID))
+		if modelID == "" {
+			continue
+		}
+
+		remainingFraction, ok := parseGeminiRemainingFraction(bucket["remainingFraction"])
+		if !ok {
+			continue
+		}
+
+		window := &geminiSchedulingSnapshotWindow{
+			utilization: geminiUtilizationFromRemainingFraction(remainingFraction),
+			resetAt:     parseSchedulingResetAt(bucket["resetTime"]),
+		}
+
+		switch {
+		case strings.Contains(modelID, "flash"):
+			snapshot.flash = preferHigherUtilizationGeminiWindow(snapshot.flash, window)
+		case strings.Contains(modelID, "pro"):
+			snapshot.pro = preferHigherUtilizationGeminiWindow(snapshot.pro, window)
+		}
+	}
+
+	if snapshot.pro == nil && snapshot.flash == nil {
+		return nil
+	}
+	return snapshot
+}
+
+func parseGeminiRemainingFraction(raw any) (float64, bool) {
+	switch v := raw.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case json.Number:
+		value, err := v.Float64()
+		if err != nil {
+			return 0, false
+		}
+		return value, true
+	case string:
+		value, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		if err != nil {
+			return 0, false
+		}
+		return value, true
+	default:
+		return 0, false
+	}
+}
+
+func geminiUtilizationFromRemainingFraction(remainingFraction float64) float64 {
+	utilization := 100 - (remainingFraction * 100)
+	if utilization < 0 {
+		return 0
+	}
+	if utilization > 100 {
+		return 100
+	}
+	return utilization
+}
+
+func preferHigherUtilizationGeminiWindow(current, next *geminiSchedulingSnapshotWindow) *geminiSchedulingSnapshotWindow {
+	if next == nil {
+		return current
+	}
+	if current == nil || next.utilization > current.utilization {
+		return next
+	}
+	if next.utilization < current.utilization {
+		return current
+	}
+	if current.resetAt == nil {
+		return next
+	}
+	if next.resetAt == nil {
+		return current
+	}
+	if next.resetAt.After(*current.resetAt) {
+		return next
+	}
+	return current
+}
+
+func kiroThresholdCandidates(account *Account) []*accountSchedulingThresholdCandidate {
+	if account == nil {
+		return nil
+	}
+	return []*accountSchedulingThresholdCandidate{
+		{
+			window:      "quota",
+			usedPercent: utilizationAsPercent(account.Extra["kiro_sched_utilization"]),
+			until:       parseSchedulingResetAt(account.Extra["kiro_sched_reset_at"]),
+		},
+	}
+}
+
+func antigravityThresholdCandidates(account *Account) []*accountSchedulingThresholdCandidate {
+	if account == nil {
+		return nil
+	}
+	return []*accountSchedulingThresholdCandidate{
+		{
+			window:      "quota",
+			scope:       strings.TrimSpace(parseSchedulingScope(account.Extra["antigravity_sched_scope"])),
+			usedPercent: utilizationAsPercent(account.Extra["antigravity_sched_utilization"]),
+			until:       parseSchedulingResetAt(account.Extra["antigravity_sched_reset_at"]),
+		},
+	}
+}
+
+func pickLatestResetSchedulingCandidate(candidates []*accountSchedulingThresholdCandidate, threshold int, now time.Time) *accountSchedulingThresholdCandidate {
+	var winner *accountSchedulingThresholdCandidate
+	for _, candidate := range candidates {
+		if !candidateMatchesThreshold(candidate, threshold, now) {
+			continue
+		}
+		if winner == nil || candidate.until.After(*winner.until) {
+			winner = candidate
+			continue
+		}
+		if winner.until.Equal(*candidate.until) && candidate.usedPercent > winner.usedPercent {
+			winner = candidate
+		}
+	}
+	return winner
+}
+
+func candidateMatchesThreshold(candidate *accountSchedulingThresholdCandidate, threshold int, now time.Time) bool {
+	if candidate == nil || candidate.until == nil || !candidate.until.After(now) {
+		return false
+	}
+	return candidate.usedPercent >= float64(threshold)
+}
+
+func utilizationAsPercent(raw any) float64 {
+	switch v := raw.(type) {
+	case float64:
+		if v >= 0 && v <= 1 {
+			return v * 100
+		}
+		return v
+	case float32:
+		value := float64(v)
+		if value >= 0 && value <= 1 {
+			return value * 100
+		}
+		return value
+	case int:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case json.Number:
+		value, err := v.Float64()
+		if err != nil {
+			return 0
+		}
+		if strings.Contains(v.String(), ".") && value >= 0 && value <= 1 {
+			return value * 100
+		}
+		return value
+	case string:
+		trimmed := strings.TrimSpace(v)
+		value, err := strconv.ParseFloat(trimmed, 64)
+		if err != nil {
+			return 0
+		}
+		if strings.Contains(trimmed, ".") && value >= 0 && value <= 1 {
+			return value * 100
+		}
+		return value
+	default:
+		return 0
+	}
+}
+
+func parseSchedulingResetAt(raw any) *time.Time {
+	switch v := raw.(type) {
+	case nil:
+		return nil
+	case time.Time:
+		ts := v
+		return &ts
+	case *time.Time:
+		return cloneTimePtr(v)
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return nil
+		}
+		ts, err := parseSchedulingTime(trimmed)
+		if err != nil {
+			return nil
+		}
+		return &ts
+	case json.Number:
+		if value, err := v.Int64(); err == nil && value > 0 {
+			ts := time.Unix(value, 0)
+			return &ts
+		}
+		if value, err := v.Float64(); err == nil && value > 0 {
+			ts := time.Unix(int64(value), 0)
+			return &ts
+		}
+	case float64:
+		if v > 0 {
+			ts := time.Unix(int64(v), 0)
+			return &ts
+		}
+	case float32:
+		if v > 0 {
+			ts := time.Unix(int64(v), 0)
+			return &ts
+		}
+	case int:
+		if v > 0 {
+			ts := time.Unix(int64(v), 0)
+			return &ts
+		}
+	case int64:
+		if v > 0 {
+			ts := time.Unix(v, 0)
+			return &ts
+		}
+	}
+	return nil
+}
+
+func parseSchedulingTime(raw string) (time.Time, error) {
+	formats := []string{
+		time.RFC3339,
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05Z",
+		"2006-01-02T15:04:05.000Z",
+	}
+	for _, format := range formats {
+		if ts, err := time.Parse(format, raw); err == nil {
+			return ts, nil
+		}
+	}
+	return time.Time{}, strconv.ErrSyntax
+}
+
+func parseSchedulingScope(raw any) string {
+	switch v := raw.(type) {
+	case string:
+		return v
+	default:
+		return ""
+	}
+}
+
+func cloneTimePtr(src *time.Time) *time.Time {
+	if src == nil {
+		return nil
+	}
+	value := *src
+	return &value
+}

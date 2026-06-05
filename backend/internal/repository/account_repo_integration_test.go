@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -737,6 +738,24 @@ func (s *AccountRepoSuite) TestTempUnschedulableFieldsLoadedByGetByIDAndGetByIDs
 	s.Require().NoError(err)
 	s.Require().Nil(cleared.TempUnschedulableUntil)
 	s.Require().Equal("", cleared.TempUnschedulableReason)
+}
+
+func (s *AccountRepoSuite) TestSetTempUnschedulable_EmptyReasonStoresStructuredFallback() {
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-temp-empty"})
+	until := time.Now().Add(15 * time.Minute).UTC().Truncate(time.Second)
+
+	s.Require().NoError(s.repo.SetTempUnschedulable(s.ctx, account.ID, until, " \n\t "))
+
+	got, err := s.repo.GetByID(s.ctx, account.ID)
+	s.Require().NoError(err)
+	s.Require().NotNil(got.TempUnschedulableUntil)
+	s.Require().WithinDuration(until, *got.TempUnschedulableUntil, time.Second)
+	s.Require().NotEmpty(got.TempUnschedulableReason)
+
+	var payload map[string]string
+	s.Require().NoError(json.Unmarshal([]byte(got.TempUnschedulableReason), &payload))
+	s.Require().NotEmpty(payload["error_message"])
+	s.Require().Empty(payload["source"])
 }
 
 // --- UpdateLastUsed ---

@@ -689,6 +689,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
 
 		AvailableChannelsEnabled: settings.AvailableChannelsEnabled,
+		AccountSchedulingThresholds: settings.AccountSchedulingThresholds,
 	}
 
 	// OpenAI fast policy (stored under a dedicated setting key)
@@ -1066,6 +1067,9 @@ type UpdateSettingsRequest struct {
 
 	// 系统全局 platform quota 默认值（整体替换语义：nil = 不修改，non-nil = 整体覆盖）。
 	DefaultPlatformQuotas map[string]*service.DefaultPlatformQuotaSetting `json:"default_platform_quotas"`
+
+	// 各平台账号自动停调阈值（整体替换语义：nil = 不修改，non-nil = 整体覆盖）。
+	AccountSchedulingThresholds map[string]int `json:"account_scheduling_thresholds"`
 
 	// auth-source 层 platform quota 覆盖（override 语义：nil = 不修改，non-nil = 整体覆盖该 source 的 quota 配置）。
 	AuthSourceEmailPlatformQuotas    map[string]*service.DefaultPlatformQuotaSetting `json:"auth_source_default_email_platform_quotas"`
@@ -2064,6 +2068,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	settings := &service.SystemSettings{
 		// 系统全局 platform quota 默认值（整体替换语义）
 		DefaultPlatformQuotas: req.DefaultPlatformQuotas,
+		AccountSchedulingThresholds: req.AccountSchedulingThresholds,
 
 		RegistrationEnabled:              req.RegistrationEnabled,
 		EmailVerifyEnabled:               req.EmailVerifyEnabled,
@@ -2877,8 +2882,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ChannelMonitorEnabled:                updatedSettings.ChannelMonitorEnabled,
 		ChannelMonitorDefaultIntervalSeconds: updatedSettings.ChannelMonitorDefaultIntervalSeconds,
 
-		AvailableChannelsEnabled: updatedSettings.AvailableChannelsEnabled,
-		RiskControlEnabled:       updatedSettings.RiskControlEnabled,
+		AvailableChannelsEnabled:    updatedSettings.AvailableChannelsEnabled,
+		RiskControlEnabled:          updatedSettings.RiskControlEnabled,
+		AccountSchedulingThresholds: updatedSettings.AccountSchedulingThresholds,
 	}
 	if fastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context()); err != nil {
 		slog.Error("openai_fast_policy_settings_get_failed", "error", err)
@@ -3426,6 +3432,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	// Default platform quotas（JSON map，整体比较）
 	if !equalPlatformQuotaSettings(before.DefaultPlatformQuotas, after.DefaultPlatformQuotas) {
 		changed = append(changed, service.SettingKeyDefaultPlatformQuotas)
+	}
+	if !equalAccountSchedulingThresholds(before.AccountSchedulingThresholds, after.AccountSchedulingThresholds) {
+		changed = append(changed, service.SettingKeyAccountSchedulingThresholds)
 	}
 	changed = appendAuthSourceDefaultChanges(changed, beforeAuthSourceDefaults, afterAuthSourceDefaults)
 	return changed
@@ -4402,6 +4411,27 @@ func equalPlatformQuotaSettings(before, after map[string]*service.DefaultPlatfor
 			return false
 		}
 		if !equalNullableFloat(slotOf(b, "monthly"), slotOf(a, "monthly")) {
+			return false
+		}
+	}
+	return true
+}
+
+func equalAccountSchedulingThresholds(before, after map[string]int) bool {
+	for _, platform := range service.AllowedSchedulingThresholdPlatforms {
+		beforeValue := 100
+		if before != nil {
+			if value, ok := before[platform]; ok {
+				beforeValue = value
+			}
+		}
+		afterValue := 100
+		if after != nil {
+			if value, ok := after[platform]; ok {
+				afterValue = value
+			}
+		}
+		if beforeValue != afterValue {
 			return false
 		}
 	}

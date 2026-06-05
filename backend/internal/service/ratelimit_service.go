@@ -66,6 +66,12 @@ const (
 	maxRateLimit429CooldownSeconds     = 7200
 )
 
+// openAIImageRouteFallbackCooldown 是 OpenAI 生图（gpt-image* / Responses image_generation tool）
+// 撞到账号级 input-images 配额限速、且响应未带可解析的 reset 信号时，使用的兜底冷却时长。
+// 该限速实际是 organization 级别的 per-min/per-day 配额，恢复速度远慢于普通 5h 窗口；
+// 用 3h 让被标记的账号在窗口自然滚动后才再被调度，避免短间隔反复打 429。
+const openAIImageRouteFallbackCooldown = 3 * time.Hour
+
 const kiroTempUnsched429MaxWindow = 5 * time.Minute
 
 const (
@@ -75,10 +81,6 @@ const (
 )
 
 func buildOpenAIImageRouteRateLimitExtraUpdates(route string, resetAt time.Time, updatedAt time.Time) map[string]any {
-	prefix := openAIImageRouteExtraPrefix(route)
-	if prefix == "" {
-		return nil
-	}
 	if updatedAt.IsZero() {
 		updatedAt = time.Now()
 	}
@@ -89,12 +91,29 @@ func buildOpenAIImageRouteRateLimitExtraUpdates(route string, resetAt time.Time,
 	if remainingSeconds < 0 {
 		remainingSeconds = 0
 	}
-	return map[string]any{
-		prefix + "_rate_limited_at":       updatedAt.UTC().Format(time.RFC3339),
-		prefix + "_rate_limit_reset_at":   resetAt.UTC().Format(time.RFC3339),
-		prefix + "_rate_limit_updated_at": updatedAt.UTC().Format(time.RFC3339),
-		prefix + "_reset_after_seconds":   remainingSeconds,
+
+	// OpenAI 的 input-images per min/day 是账号级（organization 级）共享配额，
+	// codex 和 web2api 任一路由撞到都意味着另一条路由也用不了，因此两个 prefix 一起写。
+	// 当 route 仅明确为其中一种时，仍会写入两个 prefix，保持调度层对账号整体不可生图。
+	prefixes := []string{
+		openAIImageRouteExtraPrefix(GroupImageGenerationRouteCodex),
+		openAIImageRouteExtraPrefix(GroupImageGenerationRouteWeb2API),
 	}
+
+	updates := make(map[string]any, len(prefixes)*4)
+	for _, prefix := range prefixes {
+		if prefix == "" {
+			continue
+		}
+		updates[prefix+"_rate_limited_at"] = updatedAt.UTC().Format(time.RFC3339)
+		updates[prefix+"_rate_limit_reset_at"] = resetAt.UTC().Format(time.RFC3339)
+		updates[prefix+"_rate_limit_updated_at"] = updatedAt.UTC().Format(time.RFC3339)
+		updates[prefix+"_reset_after_seconds"] = remainingSeconds
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return updates
 }
 
 func (s *RateLimitService) setOpenAIImageRouteRateLimited(ctx context.Context, account *Account, route string, resetAt time.Time) {
@@ -143,13 +162,9 @@ func (s *RateLimitService) handleOpenAIImageRoute429(ctx context.Context, accoun
 	}
 
 	if resetAt == nil && allowFallback {
-		cooldown, enabled := s.get429FallbackCooldown(ctx, account)
-		if !enabled || cooldown <= 0 {
-			cooldown = time.Duration(defaultRateLimit429CooldownSeconds) * time.Second
-		}
-		fallbackResetAt := time.Now().Add(cooldown)
+		fallbackResetAt := time.Now().Add(openAIImageRouteFallbackCooldown)
 		resetAt = &fallbackResetAt
-		slog.Warn("openai_image_route_rate_limit_fallback_used", "account_id", account.ID, "route", route, "cooldown", cooldown)
+		slog.Warn("openai_image_route_rate_limit_fallback_used", "account_id", account.ID, "route", route, "cooldown", openAIImageRouteFallbackCooldown)
 	}
 
 	if resetAt == nil {
@@ -337,6 +352,65 @@ func (s *RateLimitService) notifyAccountSchedulingBlockCleared(accountID int64) 
 		return
 	}
 	s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
+}
+
+func (s *RateLimitService) ApplyAccountSchedulingThreshold(ctx context.Context, account *Account) bool {
+	if s == nil || s.settingService == nil || s.accountRepo == nil || account == nil || account.ID <= 0 {
+		return false
+	}
+	if !account.IsSchedulable() {
+		return false
+	}
+
+	now := time.Now().UTC()
+	thresholds := s.settingService.GetAccountSchedulingThresholds(ctx)
+	decision := EvaluateAccountSchedulingThreshold(account, thresholds, now)
+	if !decision.ShouldPause || decision.Until == nil || !decision.Until.After(now) {
+		return false
+	}
+
+	threshold, _ := lookupAccountSchedulingThreshold(thresholds, decision.Platform)
+	reason := BuildDetailedAccountSchedulingThresholdReason(AccountSchedulingThresholdReasonInput{
+		Platform:         decision.Platform,
+		Window:           decision.Window,
+		Scope:            decision.Scope,
+		ThresholdPercent: threshold,
+		UsedPercent:      decision.UsedPercent,
+		Until:            *decision.Until,
+		Now:              now,
+	})
+
+	account.TempUnschedulableUntil = cloneTimePtr(decision.Until)
+	account.TempUnschedulableReason = reason
+	s.notifyAccountSchedulingBlocked(account, *decision.Until, "account_scheduling_threshold")
+
+	if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, *decision.Until, reason); err != nil {
+		slog.Warn("account_scheduling_threshold_set_temp_unsched_failed",
+			"account_id", account.ID,
+			"platform", decision.Platform,
+			"window", decision.Window,
+			"scope", decision.Scope,
+			"threshold_percent", threshold,
+			"used_percent", decision.UsedPercent,
+			"until", decision.Until.UTC(),
+			"error", err)
+	} else if s.tempUnschedCache != nil {
+		if state := tempUnschedStateFromStoredReason(reason, decision.Until.Unix()); state != nil {
+			if err := s.tempUnschedCache.SetTempUnsched(ctx, account.ID, state); err != nil {
+				slog.Warn("account_scheduling_threshold_cache_set_failed", "account_id", account.ID, "error", err)
+			}
+		}
+	}
+
+	slog.Info("account_scheduling_threshold_temp_unschedulable",
+		"account_id", account.ID,
+		"platform", decision.Platform,
+		"window", decision.Window,
+		"scope", decision.Scope,
+		"threshold_percent", threshold,
+		"used_percent", decision.UsedPercent,
+		"until", decision.Until.UTC())
+	return true
 }
 
 // ErrorPolicyResult 表示错误策略检查的结果
@@ -1119,6 +1193,14 @@ func (s *RateLimitService) handleCustomErrorCode(ctx context.Context, account *A
 // handle429 处理429限流错误
 // 解析响应头获取重置时间，标记账号为限流状态
 func (s *RateLimitService) handle429(ctx context.Context, account *Account, headers http.Header, responseBody []byte) {
+	// 0. OpenAI 平台账号级图片配额（input-images per min/day）：仅标记 image route，
+	//    不污染全局 RateLimitedAt，避免误伤 chat/responses 文本请求。
+	if account.Platform == PlatformOpenAI && isOpenAIImageGenerationRateLimitMessage(responseBody) {
+		// 任选一个 route 触发，buildOpenAIImageRouteRateLimitExtraUpdates 内部会同时写两个 prefix。
+		s.handleOpenAIImageRoute429(ctx, account, GroupImageGenerationRouteCodex, http.StatusTooManyRequests, headers, responseBody, true)
+		return
+	}
+
 	// 1. OpenAI 平台：优先尝试解析 x-codex-* 响应头（用于 rate_limit_exceeded）
 	if account.Platform == PlatformOpenAI {
 		persistOpenAI429PlanType(ctx, s.accountRepo, account, responseBody)
@@ -1309,6 +1391,32 @@ func clampRateLimit429CooldownSeconds(seconds int) int {
 		return maxRateLimit429CooldownSeconds
 	}
 	return seconds
+}
+
+// isOpenAIImageGenerationRateLimitMessage 判断 OpenAI 429 响应是否为账号级图片配额限速
+// （所有 gpt-image*、Responses image_generation tool、Images API 共用同一份 organization 级 input-images
+// per min/day 配额）。命中后应当只标记 image route，不污染全局 RateLimitedAt 或 runtime block，
+// 以免误伤同账号的 chat/responses 文本请求。
+func isOpenAIImageGenerationRateLimitMessage(responseBody []byte) bool {
+	if len(responseBody) == 0 {
+		return false
+	}
+	candidates := []string{
+		strings.ToLower(extractUpstreamErrorMessage(responseBody)),
+		strings.ToLower(string(responseBody)),
+	}
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if strings.Contains(candidate, "input-images") {
+			return true
+		}
+		if strings.Contains(candidate, "gpt-image") {
+			return true
+		}
+	}
+	return false
 }
 
 // calculateOpenAI429ResetTime 从 OpenAI 429 响应头计算正确的重置时间
@@ -1898,31 +2006,6 @@ func tempUnschedStateHasReason(state *TempUnschedState) bool {
 		return false
 	}
 	return strings.TrimSpace(state.ErrorMessage) != ""
-}
-
-func tempUnschedStateFromStoredReason(rawReason string, fallbackUntilUnix int64) *TempUnschedState {
-	state := &TempUnschedState{
-		UntilUnix: fallbackUntilUnix,
-	}
-
-	rawReason = strings.TrimSpace(rawReason)
-	if rawReason == "" {
-		return state
-	}
-
-	var parsed TempUnschedState
-	if err := json.Unmarshal([]byte(rawReason), &parsed); err == nil {
-		if fallbackUntilUnix > parsed.UntilUnix {
-			parsed.UntilUnix = fallbackUntilUnix
-		}
-		if strings.TrimSpace(parsed.ErrorMessage) == "" {
-			parsed.ErrorMessage = rawReason
-		}
-		return &parsed
-	}
-
-	state.ErrorMessage = rawReason
-	return state
 }
 
 func mergeTempUnschedState(primary *TempUnschedState, fallback *TempUnschedState) *TempUnschedState {

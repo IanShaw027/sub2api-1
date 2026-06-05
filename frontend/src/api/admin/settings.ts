@@ -42,6 +42,42 @@ export type AuthSourcePlatformQuotaOverridesMap = Partial<Record<PlatformType, P
 const PLATFORMS: PlatformType[] = ["anthropic", "openai", "gemini", "antigravity"]
 const QUOTA_WINDOWS: QuotaWindowType[] = ["daily", "weekly", "monthly"]
 
+export type SchedulingThresholdPlatformType =
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "kiro"
+  | "antigravity"
+
+export type AccountSchedulingThresholdsMap = Record<SchedulingThresholdPlatformType, number>
+
+export const SCHEDULING_THRESHOLD_PLATFORMS: SchedulingThresholdPlatformType[] = [
+  "openai",
+  "anthropic",
+  "gemini",
+  "kiro",
+  "antigravity",
+]
+
+export function normalizeAccountSchedulingThresholdsMap(
+  input?: Partial<Record<SchedulingThresholdPlatformType, number>> | null,
+): AccountSchedulingThresholdsMap {
+  const result = {} as AccountSchedulingThresholdsMap
+  for (const platform of SCHEDULING_THRESHOLD_PLATFORMS) {
+    const value = input?.[platform]
+    result[platform] = typeof value === "number" && Number.isFinite(value)
+      ? Math.min(100, Math.max(1, Math.trunc(value)))
+      : 100
+  }
+  return result
+}
+
+export function sanitizeAccountSchedulingThresholdsMap(
+  input?: Partial<Record<SchedulingThresholdPlatformType, number>> | null,
+): AccountSchedulingThresholdsMap {
+  return normalizeAccountSchedulingThresholdsMap(input)
+}
+
 /** 归一化为全 4 平台 × 3 窗口（缺失填 null），供模板非空绑定 */
 export function normalizePlatformQuotasMap(input?: DefaultPlatformQuotasMap | null): DefaultPlatformQuotasMap {
   const result: DefaultPlatformQuotasMap = {}
@@ -970,6 +1006,7 @@ export interface SystemSettings {
 
   // OpenAI fast/flex policy
   openai_fast_policy_settings?: OpenAIFastPolicySettings;
+  account_scheduling_thresholds: AccountSchedulingThresholdsMap;
 }
 
 export interface DefaultAccountModelConfig {
@@ -1233,6 +1270,7 @@ export interface UpdateSettingsRequest {
 
   // OpenAI fast/flex policy
   openai_fast_policy_settings?: OpenAIFastPolicySettings;
+  account_scheduling_thresholds?: AccountSchedulingThresholdsMap;
 }
 
 /**

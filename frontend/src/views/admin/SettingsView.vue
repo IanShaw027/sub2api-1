@@ -3556,6 +3556,78 @@
                 <Toggle v-model="form.allow_ungrouped_key_scheduling" />
               </div>
 
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <div class="mb-3">
+                  <label class="font-medium text-gray-900 dark:text-white">
+                    {{
+                      t(
+                        "admin.settings.scheduling.accountSchedulingThresholdsTitle",
+                      )
+                    }}
+                  </label>
+                  <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    {{
+                      t(
+                        "admin.settings.scheduling.accountSchedulingThresholdsDescription",
+                      )
+                    }}
+                  </p>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t(
+                        "admin.settings.scheduling.accountSchedulingThresholdsGlobalHint",
+                      )
+                    }}
+                  </p>
+                  <p class="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
+                    {{
+                      t(
+                        "admin.settings.scheduling.accountSchedulingThresholdsDisabledHint",
+                      )
+                    }}
+                  </p>
+                </div>
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  <div
+                    v-for="platform in schedulingThresholdPlatforms"
+                    :key="platform"
+                    class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
+                  >
+                    <div class="flex items-start justify-between gap-3">
+                      <div>
+                        <label
+                          class="font-mono text-sm font-medium text-gray-900 dark:text-white"
+                        >
+                          {{ platform }}
+                        </label>
+                        <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          {{
+                            t(
+                              "admin.settings.scheduling.accountSchedulingThresholdsRangeHint",
+                            )
+                          }}
+                        </p>
+                      </div>
+                      <span
+                        class="rounded bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300"
+                      >
+                        %
+                      </span>
+                    </div>
+                    <input
+                      v-model.number="form.account_scheduling_thresholds[platform]"
+                      type="number"
+                      min="1"
+                      max="100"
+                      step="1"
+                      class="input mt-3"
+                      :data-testid="`account-scheduling-threshold-${platform}`"
+                      placeholder="100"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div class="flex items-center justify-between">
                 <div>
                   <label
@@ -7615,8 +7687,11 @@ import {
   appendAuthSourceDefaultsToUpdateRequest,
   buildAuthSourceDefaultsState,
   findInvalidPlatformQuotaFields,
+  normalizeAccountSchedulingThresholdsMap,
   normalizePlatformQuotasMap,
+  sanitizeAccountSchedulingThresholdsMap,
   sanitizePlatformQuotasMap,
+  SCHEDULING_THRESHOLD_PLATFORMS,
   defaultWeChatConnectScopesForMode,
   deriveWeChatConnectStoredMode,
   KIRO_CACHE_MIN_BLOCK_TOKENS_MAX,
@@ -7867,6 +7942,7 @@ const settingsTabs = [
   { key: "email" as SettingsTab, icon: "mail" as const },
   { key: "backup" as SettingsTab, icon: "database" as const },
 ];
+const schedulingThresholdPlatforms = SCHEDULING_THRESHOLD_PLATFORMS;
 
 const settingsTabKeyboardActions = {
   ArrowLeft: -1,
@@ -8337,6 +8413,7 @@ const form = reactive<SettingsForm>({
   kiro_thinking_free_prompt: KIRO_THINKING_FREE_PROMPT_DEFAULT,
   // 分组隔离
   allow_ungrouped_key_scheduling: false,
+  account_scheduling_thresholds: normalizeAccountSchedulingThresholdsMap(),
   openai_advanced_scheduler_enabled: false,
   openai_oauth_image_bridge_disable_keepalives: false,
   openai_oauth_image_bridge_fresh_upstream_client: false,
@@ -9029,6 +9106,9 @@ async function loadSettings() {
         : defaultLoginAgreementDocuments();
     Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(settings));
     form.default_platform_quotas = normalizePlatformQuotasMap(settings.default_platform_quotas);
+    form.account_scheduling_thresholds = normalizeAccountSchedulingThresholdsMap(
+      settings.account_scheduling_thresholds,
+    );
     form.backend_mode_enabled = settings.backend_mode_enabled;
     form.default_subscriptions = normalizeDefaultSubscriptionSettings(
       settings.default_subscriptions,
@@ -9644,6 +9724,9 @@ async function saveSettings() {
       min_claude_code_version: form.min_claude_code_version,
       max_claude_code_version: form.max_claude_code_version,
       allow_ungrouped_key_scheduling: form.allow_ungrouped_key_scheduling,
+      account_scheduling_thresholds: sanitizeAccountSchedulingThresholdsMap(
+        form.account_scheduling_thresholds,
+      ),
       enable_fingerprint_unification: form.enable_fingerprint_unification,
       enable_metadata_passthrough: form.enable_metadata_passthrough,
       enable_cch_signing: form.enable_cch_signing,
@@ -9782,6 +9865,9 @@ async function saveSettings() {
     }
     Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(updated));
     form.default_platform_quotas = normalizePlatformQuotasMap(updated.default_platform_quotas);
+    form.account_scheduling_thresholds = normalizeAccountSchedulingThresholdsMap(
+      updated.account_scheduling_thresholds,
+    );
     registrationEmailSuffixWhitelistTags.value =
       normalizeRegistrationEmailSuffixDomains(
         updated.registration_email_suffix_whitelist,

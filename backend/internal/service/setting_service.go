@@ -140,6 +140,18 @@ const kiroRuntimeSettingsCacheTTL = 60 * time.Second
 const kiroRuntimeSettingsErrorTTL = 5 * time.Second
 const kiroRuntimeSettingsDBTimeout = 5 * time.Second
 
+type cachedAccountSchedulingThresholds struct {
+	thresholds map[string]int
+	expiresAt  int64 // unix nano
+}
+
+var accountSchedulingThresholdsCache atomic.Value // *cachedAccountSchedulingThresholds
+var accountSchedulingThresholdsSF singleflight.Group
+
+const accountSchedulingThresholdsCacheTTL = 60 * time.Second
+const accountSchedulingThresholdsErrorTTL = 5 * time.Second
+const accountSchedulingThresholdsDBTimeout = 5 * time.Second
+
 // cachedAntigravityUserAgentVersion 缓存 Antigravity UA 版本号（进程内缓存，60s TTL）
 type cachedAntigravityUserAgentVersion struct {
 	version   string
@@ -177,6 +189,16 @@ type DefaultPlatformQuotaSetting struct {
 	DailyLimitUSD   *float64 `json:"daily"`
 	WeeklyLimitUSD  *float64 `json:"weekly"`
 	MonthlyLimitUSD *float64 `json:"monthly"`
+}
+
+func defaultAccountSchedulingThresholds() map[string]int {
+	return map[string]int{
+		PlatformOpenAI:      100,
+		PlatformAnthropic:   100,
+		PlatformGemini:      100,
+		PlatformKiro:        100,
+		PlatformAntigravity: 100,
+	}
 }
 
 type ProviderDefaultGrantSettings struct {
@@ -2048,8 +2070,40 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 		}
 		updates[SettingKeyDefaultPlatformQuotas] = string(blob)
 	}
+	if settings.AccountSchedulingThresholds != nil {
+		normalized, err := validateAndNormalizeAccountSchedulingThresholds(settings.AccountSchedulingThresholds)
+		if err != nil {
+			return nil, err
+		}
+		blob, err := json.Marshal(normalized)
+		if err != nil {
+			return nil, fmt.Errorf("marshal account scheduling thresholds: %w", err)
+		}
+		updates[SettingKeyAccountSchedulingThresholds] = string(blob)
+	}
 
 	return updates, nil
+}
+
+func validateAndNormalizeAccountSchedulingThresholds(input map[string]int) (map[string]int, error) {
+	normalized := defaultAccountSchedulingThresholds()
+	for platform, value := range input {
+		allowed := false
+		for _, item := range AllowedSchedulingThresholdPlatforms {
+			if item == platform {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return nil, infraerrors.BadRequest("INVALID_ACCOUNT_SCHEDULING_THRESHOLDS", fmt.Sprintf("unknown platform %q", platform))
+		}
+		if value < 1 || value > 100 {
+			return nil, infraerrors.BadRequest("INVALID_ACCOUNT_SCHEDULING_THRESHOLDS", "platform scheduling threshold must be between 1 and 100")
+		}
+		normalized[platform] = value
+	}
+	return normalized, nil
 }
 
 // validateDefaultPlatformQuotaMap 校验 platform quota map 的合法性：
@@ -2179,6 +2233,15 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 			ThinkingFreePrompt:         settings.KiroThinkingFreePrompt,
 		}),
 		expiresAt: time.Now().Add(kiroRuntimeSettingsCacheTTL).UnixNano(),
+	})
+	accountSchedulingThresholdsSF.Forget(SettingKeyAccountSchedulingThresholds)
+	normalizedThresholds, err := validateAndNormalizeAccountSchedulingThresholds(settings.AccountSchedulingThresholds)
+	if err != nil {
+		normalizedThresholds = defaultAccountSchedulingThresholds()
+	}
+	accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{
+		thresholds: cloneAccountSchedulingThresholds(normalizedThresholds),
+		expiresAt:  time.Now().Add(accountSchedulingThresholdsCacheTTL).UnixNano(),
 	})
 	s.antigravityUAVersionSF.Forget("antigravity_user_agent_version")
 	antigravityUserAgentVersion := antigravity.NormalizeUserAgentVersion(settings.AntigravityUserAgentVersion)
@@ -3631,6 +3694,19 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 			result.DefaultPlatformQuotas = parsed
 		}
 	}
+	result.AccountSchedulingThresholds = defaultAccountSchedulingThresholds()
+	if raw := strings.TrimSpace(settings[SettingKeyAccountSchedulingThresholds]); raw != "" {
+		parsed := map[string]int{}
+		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+			slog.Warn("[Setting] parseSettings: unmarshal account_scheduling_thresholds failed", "error", err)
+		} else {
+			for _, platform := range AllowedSchedulingThresholdPlatforms {
+				if value, ok := parsed[platform]; ok {
+					result.AccountSchedulingThresholds[platform] = boundedIntOrDefault(value, 1, 100, 100)
+				}
+			}
+		}
+	}
 
 	return result
 }
@@ -4932,6 +5008,71 @@ func (s *SettingService) GetKiroRuntimeSettings(ctx context.Context) *KiroRuntim
 		return settings
 	}
 	return DefaultKiroRuntimeSettings()
+}
+
+func cloneAccountSchedulingThresholds(input map[string]int) map[string]int {
+	if len(input) == 0 {
+		return defaultAccountSchedulingThresholds()
+	}
+	cloned := make(map[string]int, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func (s *SettingService) GetAccountSchedulingThresholds(ctx context.Context) map[string]int {
+	if cached, ok := accountSchedulingThresholdsCache.Load().(*cachedAccountSchedulingThresholds); ok {
+		if cached != nil && len(cached.thresholds) > 0 && time.Now().UnixNano() < cached.expiresAt {
+			return cloneAccountSchedulingThresholds(cached.thresholds)
+		}
+	}
+
+	result, err, _ := accountSchedulingThresholdsSF.Do(SettingKeyAccountSchedulingThresholds, func() (any, error) {
+		if cached, ok := accountSchedulingThresholdsCache.Load().(*cachedAccountSchedulingThresholds); ok {
+			if cached != nil && len(cached.thresholds) > 0 && time.Now().UnixNano() < cached.expiresAt {
+				return cloneAccountSchedulingThresholds(cached.thresholds), nil
+			}
+		}
+
+		thresholds := defaultAccountSchedulingThresholds()
+		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), accountSchedulingThresholdsDBTimeout)
+		defer cancel()
+
+		raw, err := s.settingRepo.GetValue(dbCtx, SettingKeyAccountSchedulingThresholds)
+		if err != nil {
+			slog.Warn("failed to get account scheduling thresholds, falling back to defaults", "error", err)
+			accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{
+				thresholds: cloneAccountSchedulingThresholds(thresholds),
+				expiresAt:  time.Now().Add(accountSchedulingThresholdsErrorTTL).UnixNano(),
+			})
+			return cloneAccountSchedulingThresholds(thresholds), nil
+		}
+
+		if trimmed := strings.TrimSpace(raw); trimmed != "" {
+			var parsed map[string]int
+			if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+				slog.Warn("failed to parse account scheduling thresholds, falling back to defaults", "error", err)
+			} else if normalized, err := validateAndNormalizeAccountSchedulingThresholds(parsed); err != nil {
+				slog.Warn("failed to normalize account scheduling thresholds, falling back to defaults", "error", err)
+			} else {
+				thresholds = normalized
+			}
+		}
+
+		accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{
+			thresholds: cloneAccountSchedulingThresholds(thresholds),
+			expiresAt:  time.Now().Add(accountSchedulingThresholdsCacheTTL).UnixNano(),
+		})
+		return cloneAccountSchedulingThresholds(thresholds), nil
+	})
+	if err != nil {
+		return defaultAccountSchedulingThresholds()
+	}
+	if thresholds, ok := result.(map[string]int); ok {
+		return cloneAccountSchedulingThresholds(thresholds)
+	}
+	return defaultAccountSchedulingThresholds()
 }
 
 // GetClaudeCodeVersionBounds 获取 Claude Code 版本号上下限要求

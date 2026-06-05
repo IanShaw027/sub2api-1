@@ -180,6 +180,11 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.kiroRuntime.cachePrefixTtlSeconds": "前缀缓存 TTL（秒）",
     "admin.settings.kiroRuntime.cachePrefixTtlSecondsPlaceholder": "60 - 3600",
     "admin.settings.kiroRuntime.cachePrefixTtlSecondsHint": "范围 60-3600 秒，且不能大于独立缓存 TTL。",
+    "admin.settings.scheduling.accountSchedulingThresholdsTitle": "平台账号自动停调阈值",
+    "admin.settings.scheduling.accountSchedulingThresholdsDescription": "按平台设置账号自动停调阈值。",
+    "admin.settings.scheduling.accountSchedulingThresholdsGlobalHint": "系统级全局设置，对该平台全部账号生效。",
+    "admin.settings.scheduling.accountSchedulingThresholdsDisabledHint": "100 表示禁用该平台的自动停调阈值。",
+    "admin.settings.scheduling.accountSchedulingThresholdsRangeHint": "范围 1-100，按百分比填写。",
     "admin.settings.kiroRuntime.thinkingTitle": "Thinking 兼容",
     "admin.settings.kiroRuntime.thinkingDescription": "配置 Thinking 兼容模式和阈值。",
     "admin.settings.kiroRuntime.thinkingMode": "Thinking 模式",
@@ -439,6 +444,13 @@ const baseSettingsResponse = {
   min_claude_code_version: "",
   max_claude_code_version: "",
   allow_ungrouped_key_scheduling: false,
+  account_scheduling_thresholds: {
+    openai: 100,
+    anthropic: 100,
+    gemini: 100,
+    kiro: 100,
+    antigravity: 100,
+  },
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
   enable_cch_signing: false,
@@ -883,6 +895,88 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(gatewayPanel.text()).toContain("admin.settings.claudeCode.title");
     expect(gatewayPanel.text()).toContain("admin.settings.scheduling.title");
     expect(gatewayPanel.text()).toContain("Thinking 兼容");
+  });
+
+  it("renders platform account auto-pause thresholds inside the gateway scheduling card", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      account_scheduling_thresholds: {
+        openai: 82,
+        anthropic: 67,
+        gemini: 100,
+        kiro: 58,
+        antigravity: 91,
+      },
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    expect(wrapper.text()).toContain("平台账号自动停调阈值");
+    expect(wrapper.text()).toContain("100 表示禁用该平台的自动停调阈值。");
+    expect(wrapper.findAll('[data-testid^="account-scheduling-threshold-"]')).toHaveLength(5);
+    expect(
+      (
+        wrapper.get('[data-testid="account-scheduling-threshold-openai"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("82");
+    expect(
+      (
+        wrapper.get('[data-testid="account-scheduling-threshold-kiro"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("58");
+  });
+
+  it("normalizes and submits account scheduling thresholds for all five platforms", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      account_scheduling_thresholds: {
+        openai: 0,
+        anthropic: 45,
+        gemini: 999,
+      },
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    expect(
+      (
+        wrapper.get('[data-testid="account-scheduling-threshold-openai"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("1");
+    expect(
+      (
+        wrapper.get('[data-testid="account-scheduling-threshold-gemini"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("100");
+    expect(
+      (
+        wrapper.get('[data-testid="account-scheduling-threshold-kiro"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("100");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalled();
+    const payload = updateSettings.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(payload.account_scheduling_thresholds).toEqual({
+      openai: 1,
+      anthropic: 45,
+      gemini: 100,
+      kiro: 100,
+      antigravity: 100,
+    });
   });
 
   it("loads support contact info in the general tab", async () => {

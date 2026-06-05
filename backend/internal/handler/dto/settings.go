@@ -290,6 +290,9 @@ type SystemSettings struct {
 	// 系统全局默认平台配额（key = platform，nil/缺省 = 不限制）
 	DefaultPlatformQuotas map[string]*service.DefaultPlatformQuotaSetting `json:"default_platform_quotas,omitempty"`
 
+	// 各平台账号自动停调阈值（100 = disabled）
+	AccountSchedulingThresholds map[string]int `json:"account_scheduling_thresholds,omitempty"`
+
 	// 各认证来源的平台配额覆盖（undefined/缺省 = 继承系统默认，nil = 显式不限额）
 	AuthSourceEmailPlatformQuotas    map[string]*service.DefaultPlatformQuotaSetting `json:"auth_source_default_email_platform_quotas,omitempty"`
 	AuthSourceLinuxDoPlatformQuotas  map[string]*service.DefaultPlatformQuotaSetting `json:"auth_source_default_linuxdo_platform_quotas,omitempty"`

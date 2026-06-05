@@ -60,6 +60,15 @@ var AllowedQuotaPlatforms = []string{
 	PlatformKiro,
 }
 
+// AllowedSchedulingThresholdPlatforms 是允许设置账号自动停调阈值的平台列表。
+var AllowedSchedulingThresholdPlatforms = []string{
+	PlatformOpenAI,
+	PlatformAnthropic,
+	PlatformGemini,
+	PlatformKiro,
+	PlatformAntigravity,
+}
+
 // IsAllowedQuotaPlatform 报告 s 是否为合法的 quota platform 标识。
 func IsAllowedQuotaPlatform(s string) bool {
 	for _, p := range AllowedQuotaPlatforms {
@@ -538,6 +547,8 @@ const (
 // SettingKeyDefaultPlatformQuotas —— 系统全局：每用户 × 平台日/周/月 USD 上限（JSON）。
 // 值为 map[platform]{daily,weekly,monthly}，null/缺省 = 不限制；0 = 禁用；>0 = USD 上限。
 const SettingKeyDefaultPlatformQuotas = "default_platform_quotas"
+
+const SettingKeyAccountSchedulingThresholds = "account_scheduling_thresholds"
 
 // SettingKeyAuthSourcePlatformQuotas 返回某 auth source 的 platform quota JSON key。
 // 形如 auth_source_default_{source}_platform_quotas
