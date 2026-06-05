@@ -91,6 +91,23 @@ func TestDropOrphanFunctionCallOutputs(t *testing.T) {
 			t.Fatal("expected custom_tool_call to satisfy the call source check")
 		}
 	})
+
+	t.Run("drops_output_when_call_source_appears_later", func(t *testing.T) {
+		input := []any{
+			map[string]any{"type": "tool_search_output", "call_id": "call_late", "output": "ok"},
+			map[string]any{"type": "tool_search_call", "call_id": "call_late", "query": "hello"},
+		}
+		got, dropped := dropOrphanFunctionCallOutputs(input)
+		if !dropped {
+			t.Fatal("expected dropped=true when output appears before call source")
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected only later call source kept, got %d items", len(got))
+		}
+		if got[0].(map[string]any)["type"].(string) != "tool_search_call" {
+			t.Fatalf("expected call source kept, got %#v", got[0])
+		}
+	})
 }
 
 func TestFilterCodexInputWithOptions_DropOrphanFunctionCallOutputs(t *testing.T) {

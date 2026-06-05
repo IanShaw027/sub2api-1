@@ -1826,12 +1826,30 @@ func dropOrphanFunctionCallOutputs(input []any) ([]any, bool) {
 		}
 	}
 	seenCallIDs := make(map[string]struct{}, len(input))
+	filtered := make([]any, 0, len(input))
+	dropped := false
 	for _, item := range input {
 		m, ok := item.(map[string]any)
 		if !ok {
+			filtered = append(filtered, item)
 			continue
 		}
 		typ, _ := m["type"].(string)
+		if isCodexToolCallOutputItemType(typ) {
+			callID, _ := m["call_id"].(string)
+			callID = strings.TrimSpace(callID)
+			if callID == "" {
+				dropped = true
+				continue
+			}
+			if _, matched := seenCallIDs[callID]; !matched {
+				dropped = true
+				continue
+			}
+			filtered = append(filtered, item)
+			continue
+		}
+		filtered = append(filtered, item)
 		if !isCallSourceType(typ) {
 			continue
 		}
@@ -1848,32 +1866,6 @@ func dropOrphanFunctionCallOutputs(input []any) ([]any, bool) {
 			continue
 		}
 		seenCallIDs[ref] = struct{}{}
-	}
-
-	filtered := make([]any, 0, len(input))
-	dropped := false
-	for _, item := range input {
-		m, ok := item.(map[string]any)
-		if !ok {
-			filtered = append(filtered, item)
-			continue
-		}
-		typ, _ := m["type"].(string)
-		if !isCodexToolCallOutputItemType(typ) {
-			filtered = append(filtered, item)
-			continue
-		}
-		callID, _ := m["call_id"].(string)
-		callID = strings.TrimSpace(callID)
-		if callID == "" {
-			dropped = true
-			continue
-		}
-		if _, matched := seenCallIDs[callID]; !matched {
-			dropped = true
-			continue
-		}
-		filtered = append(filtered, item)
 	}
 	if !dropped {
 		return input, false
