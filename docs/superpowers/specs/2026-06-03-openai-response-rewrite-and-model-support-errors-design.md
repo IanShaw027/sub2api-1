@@ -60,9 +60,10 @@
 分层顺序如下：
 
 1. 本地选路失败优先返回明确文案
-2. 上游最终错误优先匹配账号级 `response_rewrite_rules`
-3. 若账号级未命中，再匹配全局 `error_passthrough_rules`
-4. 最后落回现有默认错误映射
+2. 保留现有 OpenAI overload 特殊分支
+3. 上游最终错误优先匹配账号级 `response_rewrite_rules`
+4. 若账号级未命中，再匹配全局 `error_passthrough_rules`
+5. 最后落回现有默认错误映射
 
 这样可以同时满足：
 
@@ -78,15 +79,19 @@
 
 行为：
 
-1. 错误包含“supporting model: <model>”时：
+1. 已有更精确的本地错误分支保持原样，不被本轮统一文案覆盖，例如：
+   - `compact_not_supported`
+   - `No available compatible accounts`
+   - 其他已经明确表达 endpoint-specific 兼容性约束的分支
+2. 仍然落在通用“本地选账号失败”分支，且错误包含“supporting model: <model>”时：
    - 返回 `503`
    - `type=api_error`
    - `message=No available accounts supporting model: <model>`
-2. 普通无账号时：
+3. 仍然落在通用“本地选账号失败”分支，且属于普通无账号时：
    - 返回 `503`
    - `type=api_error`
    - `message=No available accounts`
-3. 仅在无法归类为本地可解释错误时，才保留 `Service temporarily unavailable`
+4. 仅在无法归类为本地可解释错误时，才保留 `Service temporarily unavailable`
 
 ### Why Keep 503
 
@@ -169,8 +174,16 @@
 
 账号级规则只匹配“最终要返回给客户端的上游错误”：
 
-1. 最终 status code
+1. 原始上游 status code
 2. 原始上游响应体提取出的 message / body 文本
+
+不使用已经过 `mapUpstreamError(...)` 之后的最终客户端状态码作为匹配输入。
+
+原因：
+
+1. 用户配置的规则语义是“上游返回了什么”
+2. 现有默认映射可能把 `401/429/503` 改写成其他客户端状态码
+3. 若按映射后的状态码匹配，账号级规则会变得不可预测
 
 ### Match Mode
 
@@ -204,9 +217,10 @@
 
 1. 判断是否是本地选路失败
 2. 若是本地选路失败，直接返回明确本地文案
-3. 若是上游最终失败，先尝试账号级改写
-4. 若账号级未命中，再尝试全局 `error_passthrough_rules`
-5. 若全局也未命中，走现有默认错误映射
+3. 若命中现有 OpenAI overload 特殊分支，保持现有 overload 行为
+4. 若是普通上游最终失败，先尝试账号级改写
+5. 若账号级未命中，再尝试全局 `error_passthrough_rules`
+6. 若全局也未命中，走现有默认错误映射
 
 ### Account-Level Rewrite Trigger Point
 
@@ -222,6 +236,24 @@
 
 1. 不改变现有 failover 行为
 2. 不会因为某个中间失败就污染最终成功请求
+
+### Final Failing Account Ownership
+
+账号级改写必须绑定“最终失败的那个账号”，不能只拿 `failoverErr` 本身做平台级匹配。
+
+原因：
+
+1. 现有 `UpstreamFailoverError` 只携带状态码、响应体和响应头，不携带账号 ID
+2. 同一次请求可能经过多个账号，只有最后那个失败账号的规则才应该生效
+
+本轮要求：
+
+1. handler 在保存 `lastFailoverErr` 时，同时保存对应的 `lastFailoverAccountID` 或 `lastFailoverAccount`
+2. 对于没有切号、直接在当前账号上终止的上游错误，直接使用当前 `account`
+3. 最终错误处理 helper 需要显式接收账号上下文，例如：
+   - `handleFailoverExhausted(c, failoverErr, account, streamStarted)`
+   - 或等价的 `accountID` 形态
+4. 若最终失败账号上下文缺失，则跳过账号级改写，继续走全局规则和默认映射
 
 ### Local Failure Handling
 
@@ -263,6 +295,10 @@ OpenAI handler 中当前这些位置需要从模糊 503 调整为明确本地错
 - `Response Rewrite Rules`
 
 放在账号策略相关区块内，不单独新开管理页面。
+
+该 section 仅对 `platform === openai` 的账号显示。
+
+本轮不在 Anthropic、Gemini、Kiro、Antigravity、Sora 账号上展示该配置，避免生成无效配置。
 
 ### UI Shape
 
@@ -354,18 +390,22 @@ OpenAI handler 中当前这些位置需要从模糊 503 调整为明确本地错
 1. `/v1/responses` 本地模型不支持时，不再返回 `Service temporarily unavailable`
 2. 返回 `No available accounts supporting model: gpt-5`
 3. 普通无账号时返回 `No available accounts`
-4. 上游 `503 + insufficient_quota` 命中账号规则后，只替换 message
-5. 上游 `429` 命中账号规则后，只替换 message
-6. 未命中账号规则时，仍走全局规则或默认映射
+4. `compact_not_supported` 仍保持现有精确错误，不被通用文案覆盖
+5. `No available compatible accounts` 仍保持现有精确错误，不被通用文案覆盖
+6. 上游 `503 + insufficient_quota` 命中账号规则后，只替换 message
+7. 上游 `429` 命中账号规则后，只替换 message
+8. 两账号 failover 场景下，以最终失败账号的规则为准，而不是中间失败账号
+9. 未命中账号规则时，仍走全局规则或默认映射
 
 ### Frontend Tests
 
 覆盖：
 
-1. 账号弹窗规则增删改排序
-2. 关键词序列化
-3. 开关关闭时字段移除
-4. 校验提示
+1. OpenAI 账号显示该 section，非 OpenAI 账号不显示
+2. 账号弹窗规则增删改排序
+3. 关键词序列化
+4. 开关关闭时字段移除
+5. 校验提示
 
 ## Risks
 
