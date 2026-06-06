@@ -1,5 +1,23 @@
 <template>
-  <DataTable :columns="columns" :data="orders" :loading="loading">
+  <DataTable :columns="computedColumns" :data="orders" :loading="loading">
+    <template v-if="selectable" #header-select>
+      <input
+        type="checkbox"
+        :checked="allVisibleSelected"
+        :indeterminate="someVisibleSelected && !allVisibleSelected"
+        class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-dark-600 dark:bg-dark-800"
+        @change="emit('toggle-all')"
+      >
+    </template>
+    <template v-if="selectable" #cell-select="{ row }">
+      <input
+        type="checkbox"
+        :checked="isSelected?.(row) ?? false"
+        :disabled="!(isRowSelectable?.(row) ?? true)"
+        class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-dark-600 dark:bg-dark-800"
+        @change="emit('toggle-row', row)"
+      >
+    </template>
     <template #cell-id="{ value }">
       <span class="font-mono text-sm">#{{ value }}</span>
     </template>
@@ -49,19 +67,37 @@ import { paymentMethodDisplayKey } from '@/utils/i18n'
 
 const { t } = useI18n()
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   orders: PaymentOrder[]
   loading: boolean
   showUser?: boolean
+  selectable?: boolean
+  isSelected?: (row: PaymentOrder) => boolean
+  isRowSelectable?: (row: PaymentOrder) => boolean
+  allVisibleSelected?: boolean
+  someVisibleSelected?: boolean
+}>(), {
+  selectable: false,
+  allVisibleSelected: false,
+  someVisibleSelected: false,
+})
+
+const emit = defineEmits<{
+  'toggle-row': [row: PaymentOrder]
+  'toggle-all': []
 }>()
 
 function formatDate(dateStr: string) { return new Date(dateStr).toLocaleString() }
 
-const columns = computed((): Column[] => {
-  const cols: Column[] = [
+const computedColumns = computed((): Column[] => {
+  const cols: Column[] = []
+  if (props.selectable) {
+    cols.push({ key: 'select', label: '' })
+  }
+  cols.push(
     { key: 'id', label: t('payment.orders.orderId') },
     { key: 'out_trade_no', label: t('payment.orders.orderNo') },
-  ]
+  )
   if (props.showUser) {
     cols.push({ key: 'user_email', label: t('payment.admin.colUser') })
   }

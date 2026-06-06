@@ -502,7 +502,7 @@ const resolveRowKey = (row: any, index: number) => {
   return key ?? index
 }
 
-const dataColumns = computed(() => props.columns.filter((column) => column.key !== 'actions'))
+const dataColumns = computed(() => props.columns.filter((column) => column.key !== 'actions' && column.key !== 'select'))
 const columnsSignature = computed(() =>
   props.columns.map((column) => `${column.key}:${column.sortable ? '1' : '0'}`).join('|')
 )
@@ -720,7 +720,7 @@ defineExpose({
 .table-wrapper .table-header {
   position: sticky;
   top: 0;
-  z-index: 200;
+  z-index: 20;
   background-color: rgb(249 250 251);
 }
 
@@ -738,7 +738,7 @@ defineExpose({
 .sticky-header-cell {
   position: sticky;
   top: 0;
-  z-index: 210; /* 必须高于所有表体内容 */
+  z-index: 30; /* 必须高于所有表体内容，但低于全局弹窗 z-50 */
   background-color: rgb(249 250 251);
 }
 
@@ -749,7 +749,7 @@ defineExpose({
 /* Sticky 列基础样式 */
 .sticky-col {
   position: sticky;
-  z-index: 20; /* 表体固定列 */
+  z-index: 10; /* 表体固定列 */
 }
 
 /* 单列固定（无勾选列时） */
@@ -774,7 +774,7 @@ defineExpose({
 
 /* 表头 sticky 列 - 需要比普通表头单元格更高的 z-index */
 .sticky-header-cell.sticky-col {
-  z-index: 220; /* 高于普通表头单元格和表体固定列 */
+  z-index: 35; /* 高于普通表头单元格和表体固定列，低于全局弹窗 */
 }
 
 /* 表体 sticky 列背景 */

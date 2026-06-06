@@ -200,6 +200,21 @@ export interface InvoiceApplication {
   updated_at: string
 }
 
+export interface BatchInvoiceItemResult {
+  order_id: number
+  status: 'applied' | 'skipped' | 'error'
+  code?: string
+  message?: string
+}
+
+export interface BatchApplyInvoiceResult {
+  total: number
+  success: number
+  skipped: number
+  failed: number
+  results: BatchInvoiceItemResult[]
+}
+
 // ==================== Request / Response ====================
 
 export interface CreateOrderRequest {

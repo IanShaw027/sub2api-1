@@ -14,7 +14,8 @@ import type {
   CreateOrderResult,
   PaymentOrder,
   RefundPreview,
-  InvoiceApplication
+  InvoiceApplication,
+  BatchApplyInvoiceResult
 } from '@/types/payment'
 import type { BasePaginationResponse } from '@/types'
 import type { MediaDownloadURL } from '@/types'
@@ -125,5 +126,18 @@ export const paymentAPI = {
   /** Get invoice download URL */
   getOrderInvoiceDownloadURL(id: number) {
     return apiClient.get<MediaDownloadURL>(`/payment/orders/${id}/invoice/download`)
+  },
+
+  /** Batch apply invoice for multiple completed orders */
+  batchApplyInvoice(data: {
+    order_ids: number[]
+    title: string
+    tax_number: string
+    email: string
+    contact_name?: string
+    contact_phone?: string
+    request_note?: string
+  }) {
+    return apiClient.post<BatchApplyInvoiceResult>('/payment/orders/invoices/batch-apply', data)
   }
 }

@@ -14,8 +14,36 @@
         </div>
       </div>
 
+      <!-- Batch Actions Bar -->
+      <div v-if="selectedCount > 0" class="card flex items-center gap-4 border-blue-200 bg-blue-50/80 p-3 dark:border-blue-900/40 dark:bg-blue-900/20">
+        <span class="text-sm font-medium text-blue-700 dark:text-blue-300">
+          {{ t('payment.invoice.batch.selected', { count: selectedCount }) }}
+        </span>
+        <span class="text-sm text-blue-600 dark:text-blue-400">
+          {{ t('payment.invoice.batch.totalAmount') }}: ¥{{ selectedTotalAmount.toFixed(2) }}
+        </span>
+        <div class="ml-auto flex items-center gap-2">
+          <button class="btn btn-primary btn-sm" @click="openBatchInvoiceDialog">
+            {{ t('payment.invoice.batch.action') }}
+          </button>
+          <button class="btn btn-secondary btn-sm" @click="clear">
+            {{ t('payment.invoice.batch.clearSelection') }}
+          </button>
+        </div>
+      </div>
+
       <!-- Table -->
-      <OrderTable :orders="orders" :loading="loading">
+      <OrderTable
+        :orders="orders"
+        :loading="loading"
+        :selectable="hasInvoiceEligible"
+        :is-selected="isOrderSelected"
+        :is-row-selectable="canApplyInvoice"
+        :all-visible-selected="allEligibleSelected"
+        :some-visible-selected="someEligibleSelected"
+        @toggle-row="handleToggleRow"
+        @toggle-all="handleToggleAll"
+      >
         <template #actions="{ row }">
           <div class="flex items-center gap-2">
             <button v-if="row.status === 'PENDING'" @click="handleCancel(row.id)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-yellow-600 hover:bg-yellow-50 dark:text-yellow-400 dark:hover:bg-yellow-900/20">
@@ -147,6 +175,7 @@
       </template>
     </BaseDialog>
 
+    <!-- Single Invoice Apply Dialog -->
     <BaseDialog :show="!!invoiceApplyTarget" :title="t('payment.invoice.apply')" @close="invoiceApplyTarget = null">
       <div v-if="invoiceApplyTarget" class="space-y-4">
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
@@ -196,6 +225,88 @@
       </template>
     </BaseDialog>
 
+    <!-- Batch Invoice Apply Dialog -->
+    <BaseDialog :show="showBatchInvoiceDialog" :title="t('payment.invoice.batch.action')" @close="closeBatchInvoiceDialog">
+      <div class="space-y-4">
+        <!-- Results view -->
+        <template v-if="batchResult">
+          <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
+            <h4 class="text-sm font-medium text-gray-900 dark:text-white">{{ t('payment.invoice.batch.resultTitle') }}</h4>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
+              {{ t('payment.invoice.batch.partialFail', { success: batchResult.success, failed: batchResult.failed }) }}
+            </p>
+          </div>
+          <div class="max-h-60 space-y-2 overflow-y-auto">
+            <div
+              v-for="item in batchResult.results"
+              :key="item.order_id"
+              class="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
+              :class="{
+                'border-green-200 bg-green-50 dark:border-green-900/40 dark:bg-green-900/20': item.status === 'applied',
+                'border-yellow-200 bg-yellow-50 dark:border-yellow-900/40 dark:bg-yellow-900/20': item.status === 'skipped',
+                'border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20': item.status === 'error',
+              }"
+            >
+              <span class="font-mono text-gray-700 dark:text-gray-300">#{{ item.order_id }}</span>
+              <span :class="{
+                'text-green-600 dark:text-green-400': item.status === 'applied',
+                'text-yellow-600 dark:text-yellow-400': item.status === 'skipped',
+                'text-red-600 dark:text-red-400': item.status === 'error',
+              }">
+                {{ item.status === 'applied' ? t('payment.invoice.batch.statusApplied') : item.status === 'skipped' ? t('payment.invoice.batch.statusSkipped') : (item.message || t('payment.invoice.batch.statusError')) }}
+              </span>
+            </div>
+          </div>
+        </template>
+        <!-- Form view -->
+        <template v-else>
+          <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
+            <div class="flex justify-between text-sm">
+              <span class="text-gray-500 dark:text-gray-400">{{ t('payment.invoice.batch.selected', { count: selectedCount }) }}</span>
+              <span class="font-medium text-gray-900 dark:text-white">{{ t('payment.invoice.batch.totalAmount') }}: ¥{{ selectedTotalAmount.toFixed(2) }}</span>
+            </div>
+          </div>
+          <div>
+            <label class="input-label">{{ t('payment.invoice.title') }}</label>
+            <input v-model="batchInvoiceForm.title" class="input mt-1 w-full" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('payment.invoice.taxNumber') }}</label>
+            <input v-model="batchInvoiceForm.tax_number" class="input mt-1 w-full" />
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">{{ t('payment.invoice.email') }}</label>
+              <input v-model="batchInvoiceForm.email" class="input mt-1 w-full" />
+            </div>
+            <div>
+              <label class="input-label">{{ t('payment.invoice.contactName') }}</label>
+              <input v-model="batchInvoiceForm.contact_name" class="input mt-1 w-full" />
+            </div>
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">{{ t('payment.invoice.contactPhone') }}</label>
+              <input v-model="batchInvoiceForm.contact_phone" class="input mt-1 w-full" />
+            </div>
+            <div>
+              <label class="input-label">{{ t('payment.invoice.note') }}</label>
+              <input v-model="batchInvoiceForm.request_note" class="input mt-1 w-full" />
+            </div>
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button class="btn btn-secondary" @click="closeBatchInvoiceDialog">{{ batchResult ? t('common.close') : t('common.cancel') }}</button>
+          <button v-if="!batchResult" class="btn btn-primary" :disabled="actionLoading || !batchInvoiceForm.title.trim() || !batchInvoiceForm.tax_number.trim() || !batchInvoiceForm.email.trim()" @click="confirmBatchApplyInvoice">
+            {{ actionLoading ? t('payment.invoice.batch.submitting') : t('payment.invoice.batch.submit') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- Invoice Detail Dialog -->
     <BaseDialog :show="!!invoiceDetail" :title="t('payment.invoice.detail')" @close="invoiceDetail = null">
       <div v-if="invoiceDetail" class="space-y-4">
         <div class="grid grid-cols-2 gap-4">
@@ -227,7 +338,8 @@ import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
-import type { InvoiceApplication, PaymentOrder, RefundPreview } from '@/types/payment'
+import { useTableSelection } from '@/composables/useTableSelection'
+import type { InvoiceApplication, PaymentOrder, RefundPreview, BatchApplyInvoiceResult } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -263,6 +375,114 @@ const invoiceForm = reactive({
 })
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
+// Batch invoice state
+const showBatchInvoiceDialog = ref(false)
+const batchResult = ref<BatchApplyInvoiceResult | null>(null)
+const batchInvoiceForm = reactive({
+  title: '',
+  tax_number: '',
+  email: '',
+  contact_name: '',
+  contact_phone: '',
+  request_note: '',
+})
+
+// Selection
+const { selectedIds, selectedCount, isSelected, toggle, clear, batchUpdate } = useTableSelection({
+  rows: orders,
+  getId: (o) => o.id,
+})
+
+const hasInvoiceEligible = computed(() => orders.value.some(canApplyInvoice))
+
+const eligibleOrders = computed(() => orders.value.filter(canApplyInvoice))
+
+const allEligibleSelected = computed(() => {
+  if (eligibleOrders.value.length === 0) return false
+  return eligibleOrders.value.every((o) => isSelected(o.id))
+})
+
+const someEligibleSelected = computed(() => {
+  return eligibleOrders.value.some((o) => isSelected(o.id))
+})
+
+const selectedTotalAmount = computed(() => {
+  const ids = new Set(selectedIds.value)
+  return orders.value
+    .filter((o) => ids.has(o.id))
+    .reduce((sum, o) => sum + o.pay_amount, 0)
+})
+
+function isOrderSelected(row: PaymentOrder): boolean {
+  return isSelected(row.id)
+}
+
+function handleToggleRow(row: PaymentOrder) {
+  toggle(row.id)
+}
+
+function handleToggleAll() {
+  if (allEligibleSelected.value) {
+    batchUpdate((draft) => {
+      eligibleOrders.value.forEach((o) => draft.delete(o.id))
+    })
+  } else {
+    batchUpdate((draft) => {
+      eligibleOrders.value.forEach((o) => draft.add(o.id))
+    })
+  }
+}
+
+// Batch invoice
+function openBatchInvoiceDialog() {
+  batchResult.value = null
+  batchInvoiceForm.title = ''
+  batchInvoiceForm.tax_number = ''
+  batchInvoiceForm.email = ''
+  batchInvoiceForm.contact_name = ''
+  batchInvoiceForm.contact_phone = ''
+  batchInvoiceForm.request_note = ''
+  showBatchInvoiceDialog.value = true
+}
+
+function closeBatchInvoiceDialog() {
+  const hadSuccess = batchResult.value && batchResult.value.success > 0
+  batchResult.value = null
+  showBatchInvoiceDialog.value = false
+  if (hadSuccess) {
+    clear()
+    fetchOrders()
+  }
+}
+
+async function confirmBatchApplyInvoice() {
+  if (selectedCount.value === 0) return
+  actionLoading.value = true
+  try {
+    const res = await paymentAPI.batchApplyInvoice({
+      order_ids: selectedIds.value,
+      title: batchInvoiceForm.title.trim(),
+      tax_number: batchInvoiceForm.tax_number.trim(),
+      email: batchInvoiceForm.email.trim(),
+      contact_name: batchInvoiceForm.contact_name.trim() || undefined,
+      contact_phone: batchInvoiceForm.contact_phone.trim() || undefined,
+      request_note: batchInvoiceForm.request_note.trim() || undefined,
+    })
+    if (res.data.failed === 0 && res.data.skipped === 0) {
+      appStore.showSuccess(t('payment.invoice.batch.allSuccess'))
+      showBatchInvoiceDialog.value = false
+      clear()
+      await fetchOrders()
+    } else {
+      batchResult.value = res.data
+    }
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
 const statusFilters = computed(() => [
   { value: '', label: t('common.all') },
   { value: 'PENDING', label: t('payment.status.pending') },
@@ -273,6 +493,7 @@ const statusFilters = computed(() => [
 
 async function fetchOrders() {
   loading.value = true
+  clear()
   try {
     const res = await paymentAPI.getMyOrders({
       page: pagination.page,
@@ -331,15 +552,6 @@ function closeRefundDialog() {
   refundAmount.value = 0
   refundPreview.value = null
 }
-function openInvoiceApplyDialog(order: PaymentOrder) {
-  invoiceApplyTarget.value = order
-  invoiceForm.title = ''
-  invoiceForm.tax_number = ''
-  invoiceForm.email = ''
-  invoiceForm.contact_name = ''
-  invoiceForm.contact_phone = ''
-  invoiceForm.request_note = ''
-}
 
 async function confirmRefund() {
   if (!refundTarget.value || !refundPreview.value || !refundReason.value.trim()) return
@@ -369,6 +581,16 @@ function formatRefundMoney(value: number): string {
     return `¥${Number(value || 0).toFixed(2)}`
   }
   return `$${Number(value || 0).toFixed(2)}`
+}
+
+function openInvoiceApplyDialog(order: PaymentOrder) {
+  invoiceApplyTarget.value = order
+  invoiceForm.title = ''
+  invoiceForm.tax_number = ''
+  invoiceForm.email = ''
+  invoiceForm.contact_name = ''
+  invoiceForm.contact_phone = ''
+  invoiceForm.request_note = ''
 }
 
 async function confirmApplyInvoice() {
