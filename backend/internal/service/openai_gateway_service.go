@@ -4867,6 +4867,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	fallbackModelRetried := false
 	instructionsRetryTried := false
+	invalidEncryptedContentRetryTried := false
 	var upstreamReq *http.Request
 	var resp *http.Response
 	for {
@@ -4942,10 +4943,50 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		}
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+		upstreamCode := extractUpstreamErrorCode(respBody)
 		isCompact := isOpenAIResponsesCompactPath(c)
 		isMessagesBridge := isOpenAICompatMessagesBridgeContext(c) ||
 			shouldUseOpenAIMessagesBridgeHeaders(c, body) ||
 			isOpenAICompatMessagesBridgePromptCacheKey(strings.TrimSpace(promptCacheKey))
+		if !invalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest && upstreamCode == "invalid_encrypted_content" {
+			var reqBody map[string]any
+			if err := json.Unmarshal(body, &reqBody); err != nil {
+				return nil, fmt.Errorf("unmarshal passthrough invalid_encrypted_content retry body: %w", err)
+			}
+			removedReasoningItems := trimOpenAIEncryptedReasoningItems(reqBody)
+			previousResponseID := openAIWSPayloadString(reqBody, "previous_response_id")
+			hasFunctionCallOutput := HasFunctionCallOutput(reqBody)
+			droppedPreviousResponseID := false
+			if previousResponseID != "" && !hasFunctionCallOutput {
+				delete(reqBody, "previous_response_id")
+				droppedPreviousResponseID = true
+			}
+			if removedReasoningItems || droppedPreviousResponseID {
+				body, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
+				if err != nil {
+					return nil, fmt.Errorf("serialize passthrough invalid_encrypted_content retry body: %w", err)
+				}
+				setOpsUpstreamRequestBody(c, body)
+				invalidEncryptedContentRetryTried = true
+				s.RecordOpenAIAccountRecoveryReason(account.ID, "invalid_encrypted_content")
+				logger.LegacyPrintf(
+					"service.openai_gateway",
+					"[OpenAI 自动透传] retry once after invalid_encrypted_content account=%d dropped_reasoning_items=%v dropped_previous_response_id=%v has_function_call_output=%v",
+					account.ID,
+					removedReasoningItems,
+					droppedPreviousResponseID,
+					hasFunctionCallOutput,
+				)
+				continue
+			}
+			logger.LegacyPrintf(
+				"service.openai_gateway",
+				"[OpenAI 自动透传] skip invalid_encrypted_content retry because nothing can be dropped account=%d previous_response_id_present=%v has_function_call_output=%v",
+				account.ID,
+				previousResponseID != "",
+				hasFunctionCallOutput,
+			)
+		}
 		if !instructionsRetryTried &&
 			account.Type == AccountTypeOAuth &&
 			shouldInjectDefaultInstructionsForOpenAIResponses(c, account, isMessagesBridge, isCompact) &&

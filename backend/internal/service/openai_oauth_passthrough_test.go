@@ -779,6 +779,68 @@ func TestOpenAIGatewayService_OAuthPassthrough_RetriesInstructionsRequiredOnce(t
 	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(upstream.bodies[1], "instructions").String()))
 }
 
+func TestOpenAIGatewayService_OAuthPassthrough_RetriesInvalidEncryptedContentWithSanitizedBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.98.0")
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	originalBody := []byte(`{"model":"gpt-5.5","stream":true,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"bad-ciphertext"},{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}]}`)
+
+	upstream := &httpUpstreamRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_invalid_encrypted"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"The encrypted content bad-ciphertext could not be verified. Reason: Encrypted content could not be decrypted or parsed."}}`)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_after_sanitize"}},
+				Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+					`data: {"type":"response.output_text.delta","delta":"o"}`,
+					"",
+					`data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}}`,
+					"",
+					"data: [DONE]",
+					"",
+				}, "\n"))),
+			},
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream: upstream,
+	}
+
+	account := &Account{
+		ID:             123,
+		Name:           "acc",
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeOAuth,
+		Concurrency:    1,
+		Credentials:    map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+		Extra:          map[string]any{"openai_passthrough": true, "openai_oauth_responses_websockets_v2_mode": OpenAIWSIngressModeOff},
+		Status:         StatusActive,
+		Schedulable:    true,
+		RateMultiplier: f64p(1),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	require.True(t, gjson.GetBytes(upstream.bodies[0], "previous_response_id").Exists())
+	require.True(t, gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").Exists())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
+	require.NotContains(t, string(upstream.bodies[1]), "encrypted_content")
+	require.Equal(t, "continue", gjson.GetBytes(upstream.bodies[1], "input.0.content.0.text").String())
+}
+
 func TestOpenAIGatewayService_OAuthPassthrough_StripsImageToolCapabilityForDisabledGroup(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
