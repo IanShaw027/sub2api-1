@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import AccountsView from '../AccountsView.vue'
 import BulkEditAccountModal from '@/components/account/BulkEditAccountModal.vue'
@@ -696,5 +698,23 @@ describe('BulkEditAccountModal OpenAI image generation', () => {
         openai_image_generation_enabled: false
       }
     })
+  })
+})
+
+describe('admin account modal layering', () => {
+  it('keeps table and account action overlays below BaseDialog modals', () => {
+    const dataTableSource = readFileSync(
+      resolve(process.cwd(), 'src/components/common/DataTable.vue'),
+      'utf8'
+    )
+    const actionMenuSource = readFileSync(
+      resolve(process.cwd(), 'src/components/admin/account/AccountActionMenu.vue'),
+      'utf8'
+    )
+    const dataTableZIndexes = [...dataTableSource.matchAll(/z-index:\s*(\d+)/g)].map(match => Number(match[1]))
+
+    expect(Math.max(...dataTableZIndexes)).toBeLessThan(50)
+    expect(actionMenuSource).not.toContain('z-[9998]')
+    expect(actionMenuSource).not.toContain('z-[9999]')
   })
 })

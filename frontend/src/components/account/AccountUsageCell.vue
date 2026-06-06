@@ -120,17 +120,14 @@
             :color="item.color"
           />
         </div>
-        <div v-if="openAIImageUsageBars.length" class="space-y-1">
-          <UsageProgressBar
-            v-for="item in openAIImageUsageBars"
-            :key="item.key"
-            :label="item.label"
-            :utilization="item.progress.utilization"
-            :resets-at="item.progress.resets_at"
-            :window-stats="item.progress.window_stats"
-            :show-now-when-idle="true"
-            color="amber"
-          />
+        <div v-if="openAIImageUsageSummary.length" class="flex items-center gap-1 text-[10px]">
+          <span class="shrink-0 font-medium text-amber-600 dark:text-amber-400">img:</span>
+          <template v-for="(item, idx) in openAIImageUsageSummary" :key="item.label">
+            <span v-if="idx > 0" class="text-gray-300 dark:text-gray-600">|</span>
+            <span class="text-gray-600 dark:text-gray-400">
+              {{ item.label }} {{ formatCompactNumber(item.requests, { allowBillions: false }) }}req ${{ item.userCost.toFixed(2) }}
+            </span>
+          </template>
         </div>
       </div>
       <div v-else-if="loading" class="space-y-1.5">
@@ -702,10 +699,38 @@ const openAIImageUsageBars = computed(() => {
   return items
 })
 
+const openAIImageUsageSummary = computed(() => {
+  if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return []
+  const info = usageInfo.value
+  if (!info) return []
+  const { codex: showCodex, web2api: showWeb2api } = openAIEnabledImageRoutes.value
+  const items: Array<{ label: string; requests: number; userCost: number }> = []
+  if (showCodex && info.openai_image_codex_five_hour?.window_stats) {
+    const s = info.openai_image_codex_five_hour.window_stats
+    if (s.requests > 0 || (s.user_cost ?? 0) > 0) {
+      items.push({ label: '5h', requests: s.requests, userCost: s.user_cost ?? 0 })
+    }
+  }
+  if (showCodex && info.openai_image_codex_seven_day?.window_stats) {
+    const s = info.openai_image_codex_seven_day.window_stats
+    if (s.requests > 0 || (s.user_cost ?? 0) > 0) {
+      items.push({ label: '7d', requests: s.requests, userCost: s.user_cost ?? 0 })
+    }
+  }
+  if (showWeb2api && info.openai_image_web2api_five_hour?.window_stats) {
+    const s = info.openai_image_web2api_five_hour.window_stats
+    if (s.requests > 0 || (s.user_cost ?? 0) > 0) {
+      items.push({ label: 'web', requests: s.requests, userCost: s.user_cost ?? 0 })
+    }
+  }
+  return items
+})
+
 const hasOpenAIUsageContent = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
   return (showOpenAIResponseUsageBars.value && openAIResponseUsageBars.value.length > 0) ||
     openAIImageUsageBars.value.length > 0 ||
+    openAIImageUsageSummary.value.length > 0 ||
     !!usageInfo.value?.error
 })
 

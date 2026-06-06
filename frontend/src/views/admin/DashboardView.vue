@@ -8,7 +8,7 @@
 
       <template v-else-if="stats">
         <!-- Row 1: Core Stats -->
-        <div class="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
           <!-- Total API Keys -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
@@ -101,7 +101,7 @@
           </div>
 
           <!-- Avg Response Time -->
-          <div class="card p-4">
+          <div class="card col-span-2 p-4 md:col-span-1">
             <div class="flex items-center gap-3">
               <div class="rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
                 <Icon name="clock" size="md" class="text-rose-600 dark:text-rose-400" :stroke-width="2" />
@@ -122,7 +122,7 @@
         </div>
 
         <!-- Row 2: Usage & Spend -->
-        <div class="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
           <!-- Today Requests -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
@@ -243,7 +243,7 @@
           </div>
 
           <!-- Total Consumption -->
-          <div class="card p-4">
+          <div class="card col-span-2 p-4 md:col-span-1">
             <div class="flex items-center gap-3">
               <div class="rounded-lg bg-cyan-100 p-2 dark:bg-cyan-900/30">
                 <Icon name="creditCard" size="md" class="text-cyan-600 dark:text-cyan-400" :stroke-width="2" />

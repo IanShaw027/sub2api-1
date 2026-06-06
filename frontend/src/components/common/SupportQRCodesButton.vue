@@ -17,7 +17,7 @@
       :close-on-click-outside="true"
       @close="showDialog = false"
     >
-      <div v-if="hasEntries" class="grid gap-4 sm:grid-cols-2">
+      <div v-if="hasEntries" :class="['grid gap-4', normalizedEntries.length > 1 ? 'sm:grid-cols-2' : '']">
         <div
           v-for="(entry, index) in normalizedEntries"
           :key="`${entry.image_url}-${index}`"

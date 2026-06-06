@@ -91,6 +91,13 @@ const getUserTimezone = (): string => {
 
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    const isFormDataPayload = typeof FormData !== 'undefined' && config.data instanceof FormData
+    if (isFormDataPayload && config.headers) {
+      // Prevent the instance default application/json header from serializing files as {"file":{}}.
+      // Axios' browser adapters remove the bare multipart header and let the browser add the boundary.
+      config.headers.setContentType('multipart/form-data')
+    }
+
     // Attach token from localStorage
     const token = localStorage.getItem('auth_token')
     const url = String(config.url || '')

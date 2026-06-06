@@ -125,6 +125,26 @@ describe('API Client', () => {
       const config = adapter.mock.calls[0][0]
       expect(config.withCredentials).toBe(true)
     })
+
+    it('FormData 请求不保留默认 JSON Content-Type', async () => {
+      const adapter = vi.fn().mockResolvedValue({
+        status: 200,
+        data: { code: 0, data: {} },
+        headers: {},
+        config: {},
+        statusText: 'OK',
+      })
+      apiClient.defaults.adapter = adapter
+
+      const formData = new FormData()
+      formData.append('file', new File(['zip-bytes'], 'accounts.zip', { type: 'application/zip' }))
+
+      await apiClient.post('/admin/accounts/import/archive', formData)
+
+      const config = adapter.mock.calls[0][0]
+      expect(config.data).toBe(formData)
+      expect(config.headers.get('Content-Type')).toBe('multipart/form-data')
+    })
   })
 
   // --- 响应拦截器 ---
