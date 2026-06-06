@@ -500,6 +500,47 @@ func (h *PaymentHandler) ApplyInvoice(c *gin.Context) {
 	response.Success(c, app)
 }
 
+type BatchApplyInvoiceRequestBody struct {
+	OrderIDs     []int64 `json:"order_ids" binding:"required,min=1"`
+	Title        string  `json:"title" binding:"required"`
+	TaxNumber    string  `json:"tax_number" binding:"required"`
+	Email        string  `json:"email" binding:"required"`
+	ContactName  string  `json:"contact_name"`
+	ContactPhone string  `json:"contact_phone"`
+	RequestNote  *string `json:"request_note,omitempty"`
+}
+
+// BatchApplyInvoice submits invoice applications for multiple completed orders.
+func (h *PaymentHandler) BatchApplyInvoice(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if h.invoiceService == nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
+		return
+	}
+	var req BatchApplyInvoiceRequestBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	result, err := h.invoiceService.BatchApply(c.Request.Context(), req.OrderIDs, subject.UserID, service.ApplyInvoiceRequest{
+		Title:        req.Title,
+		TaxNumber:    req.TaxNumber,
+		Email:        req.Email,
+		ContactName:  req.ContactName,
+		ContactPhone: req.ContactPhone,
+		RequestNote:  req.RequestNote,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
 // GetInvoice returns invoice application details for a specific order.
 func (h *PaymentHandler) GetInvoice(c *gin.Context) {
 	orderID, ok := parseIDParam(c, "id")

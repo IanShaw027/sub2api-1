@@ -189,6 +189,72 @@ func (s *InvoiceService) Apply(ctx context.Context, orderID, userID int64, req A
 	return invoiceApplicationDetailFromEnt(app), nil
 }
 
+const MaxBatchInvoiceOrders = 100
+
+type BatchInvoiceItemResult struct {
+	OrderID int64  `json:"order_id"`
+	Status  string `json:"status"`
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+type BatchApplyInvoiceResult struct {
+	Total   int                      `json:"total"`
+	Success int                      `json:"success"`
+	Skipped int                      `json:"skipped"`
+	Failed  int                      `json:"failed"`
+	Results []BatchInvoiceItemResult `json:"results"`
+}
+
+func (s *InvoiceService) BatchApply(ctx context.Context, orderIDs []int64, userID int64, req ApplyInvoiceRequest) (*BatchApplyInvoiceResult, error) {
+	if len(orderIDs) == 0 {
+		return nil, infraerrors.BadRequest("INVOICE_ORDER_IDS_REQUIRED", "order_ids is required")
+	}
+	if len(orderIDs) > MaxBatchInvoiceOrders {
+		return nil, infraerrors.BadRequest("INVOICE_BATCH_TOO_MANY", fmt.Sprintf("at most %d orders per batch", MaxBatchInvoiceOrders))
+	}
+
+	seen := make(map[int64]struct{}, len(orderIDs))
+	unique := make([]int64, 0, len(orderIDs))
+	for _, id := range orderIDs {
+		if _, dup := seen[id]; !dup {
+			seen[id] = struct{}{}
+			unique = append(unique, id)
+		}
+	}
+
+	results := make([]BatchInvoiceItemResult, 0, len(unique))
+	success := 0
+	skipped := 0
+	failed := 0
+
+	for _, orderID := range unique {
+		_, err := s.Apply(ctx, orderID, userID, req)
+		if err == nil {
+			results = append(results, BatchInvoiceItemResult{OrderID: orderID, Status: "applied"})
+			success++
+		} else {
+			reason := infraerrors.Reason(err)
+			switch reason {
+			case "INVOICE_ALREADY_APPLIED", "INVOICE_ALREADY_ISSUED":
+				results = append(results, BatchInvoiceItemResult{OrderID: orderID, Status: "skipped", Code: reason, Message: err.Error()})
+				skipped++
+			default:
+				results = append(results, BatchInvoiceItemResult{OrderID: orderID, Status: "error", Code: reason, Message: err.Error()})
+				failed++
+			}
+		}
+	}
+
+	return &BatchApplyInvoiceResult{
+		Total:   len(unique),
+		Success: success,
+		Skipped: skipped,
+		Failed:  failed,
+		Results: results,
+	}, nil
+}
+
 func (s *InvoiceService) GetByOrderForUser(ctx context.Context, orderID, userID int64) (*InvoiceApplicationDetail, error) {
 	order, err := s.getOwnedOrder(ctx, orderID, userID)
 	if err != nil {
