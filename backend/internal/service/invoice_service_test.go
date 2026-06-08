@@ -182,8 +182,8 @@ func TestInvoiceServiceCreate_AtomicRollbackOnIneligible(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = svc.Create(ctx, user.ID, CreateInvoiceRequest{
-		OrderIDs:  []int64{completedOrder.ID, pendingOrder.ID},
-		Title:     "T", TaxNumber: "TX", Email: "x@a.com",
+		OrderIDs: []int64{completedOrder.ID, pendingOrder.ID},
+		Title:    "T", TaxNumber: "TX", Email: "x@a.com",
 	})
 	require.Error(t, err)
 	require.Equal(t, "INVOICE_ORDER_INELIGIBLE", infraerrors.Reason(err))
