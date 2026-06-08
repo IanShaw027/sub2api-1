@@ -14,8 +14,7 @@ import type {
   CreateOrderResult,
   PaymentOrder,
   RefundPreview,
-  InvoiceApplication,
-  BatchApplyInvoiceResult
+  Invoice
 } from '@/types/payment'
 import type { BasePaginationResponse } from '@/types'
 import type { MediaDownloadURL } from '@/types'
@@ -101,35 +100,13 @@ export const paymentAPI = {
     return apiClient.get<{ provider_instance_ids: string[] }>('/payment/orders/invoice-eligible-providers')
   },
 
-  /** Get invoice application by order ID */
-  getOrderInvoice(id: number) {
-    return apiClient.get<InvoiceApplication>(`/payment/orders/${id}/invoice`)
+  /** List invoices belonging to the authenticated user */
+  listMyInvoices(params?: { page?: number; page_size?: number; status?: string; keyword?: string }) {
+    return apiClient.get<BasePaginationResponse<Invoice>>('/payment/invoices', { params })
   },
 
-  /** Apply invoice for a completed order */
-  applyOrderInvoice(id: number, data: {
-    title: string
-    tax_number: string
-    email: string
-    contact_name?: string
-    contact_phone?: string
-    request_note?: string
-  }) {
-    return apiClient.post<InvoiceApplication>(`/payment/orders/${id}/invoice`, data)
-  },
-
-  /** Cancel invoice application for an order */
-  cancelOrderInvoice(id: number) {
-    return apiClient.post<InvoiceApplication>(`/payment/orders/${id}/invoice/cancel`)
-  },
-
-  /** Get invoice download URL */
-  getOrderInvoiceDownloadURL(id: number) {
-    return apiClient.get<MediaDownloadURL>(`/payment/orders/${id}/invoice/download`)
-  },
-
-  /** Batch apply invoice for multiple completed orders */
-  batchApplyInvoice(data: {
+  /** Create a single invoice covering N completed orders */
+  createInvoice(data: {
     order_ids: number[]
     title: string
     tax_number: string
@@ -138,6 +115,21 @@ export const paymentAPI = {
     contact_phone?: string
     request_note?: string
   }) {
-    return apiClient.post<BatchApplyInvoiceResult>('/payment/orders/invoices/batch-apply', data)
+    return apiClient.post<Invoice>('/payment/invoices', data)
+  },
+
+  /** Get an invoice owned by the authenticated user */
+  getInvoice(id: number) {
+    return apiClient.get<Invoice>(`/payment/invoices/${id}`)
+  },
+
+  /** Cancel an APPLIED invoice owned by the authenticated user */
+  cancelInvoice(id: number) {
+    return apiClient.post<Invoice>(`/payment/invoices/${id}/cancel`)
+  },
+
+  /** Get a signed download URL for an ISSUED invoice */
+  getInvoiceDownloadURL(id: number) {
+    return apiClient.get<MediaDownloadURL>(`/payment/invoices/${id}/download`)
   }
 }

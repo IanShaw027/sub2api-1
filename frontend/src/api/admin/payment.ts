@@ -9,7 +9,7 @@ import type {
   PaymentOrder,
   SubscriptionPlan,
   ProviderInstance,
-  InvoiceApplication
+  Invoice
 } from '@/types/payment'
 import type { BasePaginationResponse } from '@/types'
 
@@ -177,21 +177,26 @@ export const adminPaymentAPI = {
     status?: string
     keyword?: string
   }) {
-    return apiClient.get<BasePaginationResponse<InvoiceApplication>>('/admin/payment/invoices', { params })
+    return apiClient.get<BasePaginationResponse<Invoice>>('/admin/payment/invoices', { params })
   },
 
   /** Get invoice application detail */
   getInvoice(id: number) {
-    return apiClient.get<InvoiceApplication>(`/admin/payment/invoices/${id}`)
+    return apiClient.get<Invoice>(`/admin/payment/invoices/${id}`)
   },
 
   /** Upload invoice file */
   uploadInvoiceFile(id: number, file: File) {
     const formData = new FormData()
     formData.append('file', file)
-    return apiClient.post<InvoiceApplication>(`/admin/payment/invoices/${id}/upload`, formData, {
+    return apiClient.post<Invoice>(`/admin/payment/invoices/${id}/upload`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
+  },
+
+  /** Cancel an APPLIED invoice on behalf of admin */
+  cancelInvoice(id: number) {
+    return apiClient.post<Invoice>(`/admin/payment/invoices/${id}/cancel`)
   }
 }
 
