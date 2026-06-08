@@ -159,8 +159,15 @@ func (r *userServiceMediaAvatarMediaRepo) MarkDeleted(_ context.Context, id int6
 	return nil
 }
 
-func (r *userServiceMediaAvatarMediaRepo) GetByObjectKey(_ context.Context, _, objectKey string) (*MediaAsset, error) {
+func (r *userServiceMediaAvatarMediaRepo) GetByObjectKey(_ context.Context, bucket, objectKey string) (*MediaAsset, error) {
+	bucket = strings.TrimSpace(bucket)
 	for _, asset := range r.assets {
+		if asset == nil || asset.ObjectKey != objectKey {
+			continue
+		}
+		if bucket != "" && strings.TrimSpace(asset.Bucket) != bucket {
+			continue
+		}
 		if asset != nil && asset.ObjectKey == objectKey {
 			cloned := *asset
 			return &cloned, nil
@@ -309,6 +316,7 @@ func TestSetAvatar_ReusesManagedMediaURLWithoutReupload(t *testing.T) {
 	mediaRepo.assets = map[int64]*MediaAsset{
 		5: {
 			ID:         5,
+			Bucket:     "media",
 			ObjectKey:  "avatar/13/2026/05/05/reused.png",
 			Visibility: MediaVisibilityPublic,
 			MIMEType:   "image/png",
@@ -329,6 +337,39 @@ func TestSetAvatar_ReusesManagedMediaURLWithoutReupload(t *testing.T) {
 	require.Equal(t, "https://source.qazwc.com/avatar/13/2026/05/05/reused.png", repo.upsertAvatarArg[0].URL)
 	require.Equal(t, int64(5), mediaRepo.nextID)
 	require.Len(t, mediaRepo.assets, 1)
+}
+
+func TestSetAvatar_ReusesManagedDirectObjectURLFromHistoricalBucketWithoutReupload(t *testing.T) {
+	repo := &userServiceMediaAvatarRepo{
+		getByIDUser: &User{ID: 16, Email: "history@example.com", Username: "history-user"},
+	}
+	mediaSvc, mediaRepo, store := newUserServiceMediaAvatarTestMediaService()
+	mediaRepo.assets = map[int64]*MediaAsset{
+		6: {
+			ID:               6,
+			StorageProfileID: "archive",
+			Bucket:           "archive-bucket",
+			ObjectKey:        "avatar/16/2026/05/05/reused.png",
+			Visibility:       MediaVisibilityPublic,
+			MIMEType:         "image/png",
+			SizeBytes:        321,
+			SHA256:           "def456",
+			Status:           MediaStatusActive,
+		},
+	}
+	mediaRepo.nextID = 6
+	svc := NewUserService(repo, nil, nil, nil, mediaSvc)
+
+	avatar, err := svc.SetAvatar(context.Background(), 16, "https://source.qazwc.com/avatar/16/2026/05/05/reused.png")
+	require.NoError(t, err)
+	require.NotNil(t, avatar)
+	require.Len(t, repo.upsertAvatarArg, 1)
+	require.Equal(t, "media", repo.upsertAvatarArg[0].StorageProvider)
+	require.Equal(t, "avatar/16/2026/05/05/reused.png", repo.upsertAvatarArg[0].StorageKey)
+	require.Equal(t, "https://source.qazwc.com/avatar/16/2026/05/05/reused.png", repo.upsertAvatarArg[0].URL)
+	require.Equal(t, int64(6), mediaRepo.nextID)
+	require.Len(t, mediaRepo.assets, 1)
+	require.Empty(t, store.uploadedObjectKeys)
 }
 
 func TestSetAvatar_FallsBackToRemoteURLWhenManagedAssetMissing(t *testing.T) {

@@ -37,6 +37,27 @@ type mediaURLTestRepo struct {
 	assetsByID map[int64]*MediaAsset
 }
 
+type mediaObjectSettingsRepo struct {
+	value string
+}
+
+func (r mediaObjectSettingsRepo) Get(context.Context, string) (*Setting, error) {
+	return nil, ErrSettingNotFound
+}
+func (r mediaObjectSettingsRepo) GetValue(_ context.Context, key string) (string, error) {
+	if key != settingKeyObjectStorageConfig || strings.TrimSpace(r.value) == "" {
+		return "", ErrSettingNotFound
+	}
+	return r.value, nil
+}
+func (r mediaObjectSettingsRepo) Set(context.Context, string, string) error { return nil }
+func (r mediaObjectSettingsRepo) GetMultiple(context.Context, []string) (map[string]string, error) {
+	return nil, nil
+}
+func (r mediaObjectSettingsRepo) SetMultiple(context.Context, map[string]string) error { return nil }
+func (r mediaObjectSettingsRepo) GetAll(context.Context) (map[string]string, error)    { return nil, nil }
+func (r mediaObjectSettingsRepo) Delete(context.Context, string) error                 { return nil }
+
 func (r mediaURLTestRepo) Create(context.Context, *MediaAsset) error { return nil }
 func (r mediaURLTestRepo) GetByID(_ context.Context, id int64) (*MediaAsset, error) {
 	if asset, ok := r.assetsByID[id]; ok {
@@ -387,23 +408,36 @@ func TestManagedPublicMediaURLs_UseDirectObjectKeyAndRoundTripManagedID(t *testi
 	}
 }
 
-func TestParseManagedMediaID_DirectObjectURLDoesNotFallbackToDifferentBucket(t *testing.T) {
+func TestParseManagedMediaID_DirectObjectURLMatchesHistoricalBucket(t *testing.T) {
 	cfg := newMediaIngestTestConfig()
 	asset := &MediaAsset{
-		ID:        43,
-		Bucket:    "archive-bucket",
-		ObjectKey: "media/avatar/user-43/original.png",
-		Status:    MediaStatusActive,
+		ID:               43,
+		StorageProfileID: "archive",
+		Bucket:           "archive-bucket",
+		ObjectKey:        "media/avatar/user-43/original.png",
+		Status:           MediaStatusActive,
 	}
 	svc := NewMediaService(mediaURLTestRepo{
 		assetsByID: map[int64]*MediaAsset{
 			43: asset,
 		},
 	}, &mediaIngestTestStore{}, cfg)
+	svc.SetStorageConfigProvider(NewMediaStorageConfigProvider(mediaObjectSettingsRepo{
+		value: `{
+			"profiles":[
+				{"id":"current","name":"Current","provider":"s3","endpoint":"https://storage.example.com","region":"auto","bucket":"media","access_key_id":"test-ak","secret_access_key":"test-sk"},
+				{"id":"archive","name":"Archive","provider":"s3","endpoint":"https://archive-storage.example.com","region":"auto","bucket":"archive-bucket","access_key_id":"archive-ak","secret_access_key":"archive-sk"}
+			],
+			"media_enabled":true,
+			"media_profile_id":"current",
+			"media_public_base_url":"https://media.example",
+			"media_prefix":""
+		}`,
+	}, nil, cfg))
 
 	raw := "https://media.example/media/avatar/user-43/original.png"
-	if id, ok := ParseManagedMediaID(svc, raw); ok {
-		t.Fatalf("ParseManagedMediaID(%q) = (%d, true), want no match from different bucket", raw, id)
+	if id, ok := ParseManagedMediaID(svc, raw); !ok || id != asset.ID {
+		t.Fatalf("ParseManagedMediaID(%q) = (%d, %v), want (%d, true)", raw, id, ok, asset.ID)
 	}
 }
 

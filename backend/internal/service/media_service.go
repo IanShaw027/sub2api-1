@@ -349,7 +349,7 @@ func (s *MediaService) PublicURL(asset *MediaAsset) string {
 	if objectKey == "" {
 		return ""
 	}
-	base := strings.TrimRight(strings.TrimSpace(s.currentStorageConfig(context.Background()).PublicBaseURL), "/")
+	base := strings.TrimRight(strings.TrimSpace(s.publicBaseURLForAsset(context.Background(), asset)), "/")
 	if base == "" {
 		return ""
 	}
@@ -367,7 +367,7 @@ func (s *MediaService) ThumbnailPublicURL(asset *MediaAsset) string {
 	if objectKey == "" {
 		return ""
 	}
-	base := strings.TrimRight(strings.TrimSpace(s.currentStorageConfig(context.Background()).PublicBaseURL), "/")
+	base := strings.TrimRight(strings.TrimSpace(s.publicBaseURLForAsset(context.Background(), asset)), "/")
 	if base == "" {
 		return ""
 	}
@@ -385,6 +385,12 @@ func escapeObjectKeyPath(objectKey string) string {
 func (s *MediaService) RuntimeInfo() MediaRuntimeInfo {
 	storageCfg := s.currentStorageConfig(context.Background())
 	base := strings.TrimSpace(storageCfg.PublicBaseURL)
+	publicTemplate := ""
+	thumbnailTemplate := ""
+	if base != "" {
+		publicTemplate = strings.TrimRight(base, "/") + "/{object_key}"
+		thumbnailTemplate = strings.TrimRight(base, "/") + "/{thumbnail_object_key}"
+	}
 	return MediaRuntimeInfo{
 		Enabled:                   storageCfg.Enabled,
 		Bucket:                    storageCfg.Bucket,
@@ -394,8 +400,8 @@ func (s *MediaService) RuntimeInfo() MediaRuntimeInfo {
 		MaxUploadSizeBytes:        storageCfg.MaxUploadSizeBytes,
 		DefaultVisibility:         MediaVisibilityPrivate,
 		UploadEndpoint:            "/api/v1/media/upload",
-		PublicEndpointTemplate:    "/api/v1/media/public/{id}",
-		ThumbnailEndpointTemplate: "/api/v1/media/public/{id}/thumbnail",
+		PublicEndpointTemplate:    publicTemplate,
+		ThumbnailEndpointTemplate: thumbnailTemplate,
 		DownloadEndpointTemplate:  "/api/v1/media/download/{id}",
 		ThumbnailDownloadTemplate: "/api/v1/media/download/{id}/thumbnail",
 		SupportedBizTypes:         []string{"avatar", "announcement", "ticket", "ai_image", "forum"},
@@ -611,14 +617,52 @@ func ParseManagedMediaID(mediaService *MediaService, raw string) (int64, bool) {
 		if err != nil || strings.TrimSpace(objectKey) == "" {
 			return 0, false
 		}
-		bucket := strings.TrimSpace(mediaService.currentStorageConfig(context.Background()).Bucket)
-		asset, err := mediaService.repo.GetByObjectKey(context.Background(), bucket, objectKey)
-		if err != nil || asset == nil {
-			return 0, false
+		for _, bucket := range mediaService.publicLookupBuckets(context.Background()) {
+			asset, err := mediaService.repo.GetByObjectKey(context.Background(), bucket, objectKey)
+			if err == nil && asset != nil {
+				return asset.ID, true
+			}
 		}
-		return asset.ID, true
+		return 0, false
 	}
 	return 0, false
+}
+
+func (s *MediaService) publicBaseURLForAsset(ctx context.Context, asset *MediaAsset) string {
+	if asset == nil {
+		return ""
+	}
+	if storageCfg, err := s.assetStorageConfig(ctx, asset); err == nil {
+		return storageCfg.PublicBaseURL
+	}
+	return s.currentStorageConfig(ctx).PublicBaseURL
+}
+
+func (s *MediaService) publicLookupBuckets(ctx context.Context) []string {
+	buckets := make([]string, 0, 4)
+	seen := map[string]struct{}{}
+	appendBucket := func(bucket string) {
+		bucket = strings.TrimSpace(bucket)
+		if bucket == "" {
+			return
+		}
+		if _, ok := seen[bucket]; ok {
+			return
+		}
+		seen[bucket] = struct{}{}
+		buckets = append(buckets, bucket)
+	}
+
+	appendBucket(s.currentStorageConfig(ctx).Bucket)
+	if s != nil && s.configProvider != nil {
+		if settings, err := s.configProvider.Settings(ctx); err == nil {
+			for _, profile := range settings.Profiles {
+				appendBucket(profile.Bucket)
+			}
+		}
+	}
+	buckets = append(buckets, "")
+	return buckets
 }
 
 func (s *MediaService) publicBaseURL() string {
