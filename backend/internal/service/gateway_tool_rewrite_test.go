@@ -283,3 +283,54 @@ func TestBuildDynamicToolMap_FakeNameShape(t *testing.T) {
 		require.True(t, strings.Contains(fake, head), "fake %q should contain head3 %q of %q", fake, head, name)
 	}
 }
+
+func TestBuildToolNameRewriteFromBody_ShadowToolsAreSkipped(t *testing.T) {
+	body := []byte(`{"tools":[
+		{"name":"cc_srv_web_search","input_schema":{}},
+		{"name":"cc_srv_web_fetch","input_schema":{}},
+		{"name":"sessions_list","input_schema":{}},
+		{"name":"alpha_search","input_schema":{}},
+		{"name":"beta_lookup","input_schema":{}},
+		{"name":"gamma_fetch","input_schema":{}},
+		{"name":"delta_update","input_schema":{}},
+		{"name":"epsilon_parse","input_schema":{}}
+	]}`)
+
+	rw := buildToolNameRewriteFromBody(body)
+	require.NotNil(t, rw)
+	require.NotContains(t, rw.Forward, "cc_srv_web_search")
+	require.NotContains(t, rw.Forward, "cc_srv_web_fetch")
+	require.Contains(t, rw.Forward, "sessions_list")
+	require.Contains(t, rw.Forward, "alpha_search")
+}
+
+func TestApplyToolNameRewriteToBody_ShadowToolsKeepStableNames(t *testing.T) {
+	body := []byte(`{"tools":[
+		{"name":"cc_srv_web_search","input_schema":{}},
+		{"name":"sessions_list","input_schema":{}},
+		{"name":"alpha_search","input_schema":{}},
+		{"name":"beta_lookup","input_schema":{}},
+		{"name":"gamma_fetch","input_schema":{}},
+		{"name":"delta_update","input_schema":{}},
+		{"name":"epsilon_parse","input_schema":{}}
+	],"tool_choice":{"type":"tool","name":"cc_srv_web_search"},"messages":[
+		{"role":"assistant","content":[
+			{"type":"tool_use","id":"tu_shadow","name":"cc_srv_web_search","input":{"query":"golang"}},
+			{"type":"tool_use","id":"tu_normal","name":"sessions_list","input":{}}
+		]}
+	]}`)
+
+	rw := buildToolNameRewriteFromBody(body)
+	require.NotNil(t, rw)
+	require.Contains(t, rw.Forward, "sessions_list")
+	fakeSessions := rw.Forward["sessions_list"]
+	require.NotEmpty(t, fakeSessions)
+
+	out := applyToolNameRewriteToBody(body, rw)
+
+	require.Equal(t, "cc_srv_web_search", gjson.GetBytes(out, "tools.0.name").String())
+	require.Equal(t, "cc_srv_web_search", gjson.GetBytes(out, "tool_choice.name").String())
+	require.Equal(t, "cc_srv_web_search", gjson.GetBytes(out, "messages.0.content.0.name").String())
+	require.Equal(t, fakeSessions, gjson.GetBytes(out, "tools.1.name").String())
+	require.Equal(t, fakeSessions, gjson.GetBytes(out, "messages.0.content.1.name").String())
+}

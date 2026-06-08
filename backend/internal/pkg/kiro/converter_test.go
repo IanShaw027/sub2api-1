@@ -3,8 +3,11 @@ package kiro
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func requireJSONObject(t *testing.T, value any, name string) map[string]any {
@@ -32,6 +35,45 @@ func requireJSONString(t *testing.T, value any, name string) string {
 		t.Fatalf("%s has type %T, want string", name, value)
 	}
 	return text
+}
+
+func convertedCurrentTools(t *testing.T, body []byte) []map[string]any {
+	t.Helper()
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal converted payload: %v", err)
+	}
+
+	state := requireJSONObject(t, payload["conversationState"], "conversationState")
+	current := requireJSONObject(t, state["currentMessage"], "currentMessage")
+	userMsg := requireJSONObject(t, current["userInputMessage"], "userInputMessage")
+	ctx := requireJSONObject(t, userMsg["userInputMessageContext"], "userInputMessageContext")
+	tools := requireJSONArray(t, ctx["tools"], "tools")
+
+	out := make([]map[string]any, 0, len(tools))
+	for i, raw := range tools {
+		out = append(out, requireJSONObject(t, raw, fmt.Sprintf("tools[%d]", i)))
+	}
+	return out
+}
+
+func bridgeMetadataFieldValue(t *testing.T, result any) reflect.Value {
+	t.Helper()
+
+	value := reflect.ValueOf(result)
+	if !value.IsValid() || value.IsNil() {
+		t.Fatal("result is nil")
+	}
+	elem := value.Elem()
+	field := elem.FieldByName("BridgeMetadata")
+	if !field.IsValid() {
+		t.Fatal("BridgeMetadata field not found on ConvertResult")
+	}
+	if field.IsNil() {
+		t.Fatal("BridgeMetadata field is nil")
+	}
+	return field
 }
 
 func TestConvertAnthropicRequestWithModel_DoesNotInjectSyntheticAssistantOrPolicy(t *testing.T) {
@@ -196,7 +238,8 @@ func TestConvertAnthropicRequestWithModel_FiltersUnsupportedServerTools(t *testi
 		"messages":[{"role":"user","content":"hello"}],
 		"tools":[
 			{"type":"server_tool","name":"web_search","description":"search"},
-			{"type":"web_search_20250305","name":"web_search_20250305","description":"search v2"},
+			{"type":"web_search_20250305","name":"web_search","description":"search v2"},
+			{"type":"web_fetch_20250910","name":"web_fetch","description":"fetch v2"},
 			{"name":"local_tool","description":"local","input_schema":{"type":"object"}}
 		]
 	}`)
@@ -206,34 +249,104 @@ func TestConvertAnthropicRequestWithModel_FiltersUnsupportedServerTools(t *testi
 		t.Fatalf("ConvertAnthropicRequestWithModel error: %v", err)
 	}
 
-	var payload map[string]any
-	if err := json.Unmarshal(result.Body, &payload); err != nil {
-		t.Fatalf("unmarshal converted payload: %v", err)
-	}
-
-	state := requireJSONObject(t, payload["conversationState"], "conversationState")
-	current := requireJSONObject(t, state["currentMessage"], "currentMessage")
-	userMsg := requireJSONObject(t, current["userInputMessage"], "userInputMessage")
-	ctx := requireJSONObject(t, userMsg["userInputMessageContext"], "userInputMessageContext")
-	tools, ok := ctx["tools"].([]any)
-	if !ok {
-		t.Fatalf("tools has type %T, want []any", ctx["tools"])
-	}
-	if len(tools) != 2 {
-		t.Fatalf("tools length = %d, want 2", len(tools))
+	tools := convertedCurrentTools(t, result.Body)
+	if len(tools) != 3 {
+		t.Fatalf("tools length = %d, want 3", len(tools))
 	}
 	gotNames := make(map[string]bool, len(tools))
-	for i, raw := range tools {
-		entry := requireJSONObject(t, raw, fmt.Sprintf("tools[%d]", i))
+	for i, entry := range tools {
 		spec := requireJSONObject(t, entry["toolSpecification"], "toolSpecification")
 		name, _ := spec["name"].(string)
 		gotNames[name] = true
+		switch name {
+		case "cc_srv_web_search":
+			schema := requireJSONObject(t, requireJSONObject(t, spec["inputSchema"], "inputSchema")["json"], "inputSchema.json")
+			require.Equal(t, "object", schema["type"])
+			require.Equal(t, []any{"query"}, requireJSONArray(t, schema["required"], fmt.Sprintf("tools[%d].required", i)))
+		case "cc_srv_web_fetch":
+			schema := requireJSONObject(t, requireJSONObject(t, spec["inputSchema"], "inputSchema")["json"], "inputSchema.json")
+			require.Equal(t, "object", schema["type"])
+			require.Equal(t, []any{"url"}, requireJSONArray(t, schema["required"], fmt.Sprintf("tools[%d].required", i)))
+		}
 	}
-	for _, expected := range []string{"local_tool", "web_search_20250305"} {
+	for _, expected := range []string{"local_tool", "cc_srv_web_search", "cc_srv_web_fetch"} {
 		if !gotNames[expected] {
 			t.Fatalf("tools missing %q, got names: %v", expected, gotNames)
 		}
 	}
+	if gotNames["web_search_20250305"] || gotNames["web_fetch_20250910"] {
+		t.Fatalf("raw server tool names leaked into converted tools: %v", gotNames)
+	}
+
+	bridgeField := bridgeMetadataFieldValue(t, result)
+	shadowTools := bridgeField.Elem().FieldByName("ShadowTools")
+	if !shadowTools.IsValid() {
+		t.Fatal("BridgeMetadata.ShadowTools field not found")
+	}
+	if shadowTools.Len() != 2 {
+		t.Fatalf("BridgeMetadata.ShadowTools length = %d, want 2", shadowTools.Len())
+	}
+	webSearch := shadowTools.MapIndex(reflect.ValueOf("cc_srv_web_search"))
+	if !webSearch.IsValid() {
+		t.Fatal("BridgeMetadata missing cc_srv_web_search")
+	}
+	if got := webSearch.FieldByName("AnthropicType").String(); got != "web_search_20250305" {
+		t.Fatalf("cc_srv_web_search AnthropicType = %q, want %q", got, "web_search_20250305")
+	}
+	webFetch := shadowTools.MapIndex(reflect.ValueOf("cc_srv_web_fetch"))
+	if !webFetch.IsValid() {
+		t.Fatal("BridgeMetadata missing cc_srv_web_fetch")
+	}
+	if got := webFetch.FieldByName("AnthropicType").String(); got != "web_fetch_20250910" {
+		t.Fatalf("cc_srv_web_fetch AnthropicType = %q, want %q", got, "web_fetch_20250910")
+	}
+}
+
+func TestConvertAnthropicRequestWithModel_WebSearchShadowToolUsesStableName(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"search"}],
+		"tools":[
+			{"type":"web_search_20250305","name":"web_search","description":"search v2"}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	if err != nil {
+		t.Fatalf("ConvertAnthropicRequestWithModel error: %v", err)
+	}
+
+	tools := convertedCurrentTools(t, result.Body)
+	require.Len(t, tools, 1)
+	spec := requireJSONObject(t, tools[0]["toolSpecification"], "toolSpecification")
+	require.Equal(t, "cc_srv_web_search", requireJSONString(t, spec["name"], "toolSpecification.name"))
+}
+
+func TestConvertAnthropicRequestWithModel_ToolSearchServerToolsRemainUntouched(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"search"}],
+		"tools":[
+			{"type":"tool_search_tool_regex_20251119","name":"tool_search_tool_regex_20251119","description":"regex tool search"},
+			{"name":"local_tool","description":"local","input_schema":{"type":"object"}}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	if err != nil {
+		t.Fatalf("ConvertAnthropicRequestWithModel error: %v", err)
+	}
+
+	tools := convertedCurrentTools(t, result.Body)
+	require.Len(t, tools, 2)
+
+	gotNames := make([]string, 0, len(tools))
+	for i, entry := range tools {
+		spec := requireJSONObject(t, entry["toolSpecification"], fmt.Sprintf("tools[%d].toolSpecification", i))
+		gotNames = append(gotNames, requireJSONString(t, spec["name"], fmt.Sprintf("tools[%d].toolSpecification.name", i)))
+	}
+	require.Contains(t, gotNames, "tool_search_tool_regex_20251119")
+	require.Contains(t, gotNames, "local_tool")
 }
 
 func TestConvertAnthropicRequestWithModel_DowngradesOpus47EnabledThinkingToAdaptivePrefix(t *testing.T) {

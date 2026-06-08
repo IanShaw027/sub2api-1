@@ -16,6 +16,7 @@ import (
 // toolNameRewriteKey 是 gin.Context 上存 ToolNameRewrite 映射的 key。
 // 请求阶段写入，响应阶段读取，用于 bytes 级逆向还原假名 → 真名。
 const toolNameRewriteKey = "claude_tool_name_rewrite"
+const shadowToolPrefix = "cc_srv_"
 
 // staticToolNameRewrites 是"静态前缀映射"，与 Parrot src/transform/cc_mimicry.py
 // TOOL_NAME_REWRITES 完全一致。只有以这些前缀开头的工具会被重写。
@@ -116,6 +117,10 @@ func shouldMimicToolName(toolType string) bool {
 	return false
 }
 
+func shouldSkipShadowToolName(name string) bool {
+	return strings.HasPrefix(strings.TrimSpace(name), shadowToolPrefix)
+}
+
 // buildToolNameRewriteFromBody 扫描 body 的 tools[*].name，构造 ToolNameRewrite
 // 并返回它。若不需要混淆（tools 数量不足 + 没有匹配静态前缀的工具）返回 nil。
 //
@@ -133,7 +138,7 @@ func buildToolNameRewriteFromBody(body []byte) *ToolNameRewrite {
 			continue
 		}
 		name := t.Get("name").String()
-		if name == "" {
+		if name == "" || shouldSkipShadowToolName(name) {
 			continue
 		}
 		mimicableNames = append(mimicableNames, name)
@@ -191,7 +196,7 @@ func applyToolNameRewriteToBody(body []byte, rw *ToolNameRewrite) []byte {
 				return true
 			}
 			name := t.Get("name").String()
-			if name == "" {
+			if name == "" || shouldSkipShadowToolName(name) {
 				return true
 			}
 			fake, ok := rw.Forward[name]
@@ -207,7 +212,9 @@ func applyToolNameRewriteToBody(body []byte, rw *ToolNameRewrite) []byte {
 
 	if tc := gjson.GetBytes(body, "tool_choice"); tc.Exists() && tc.Get("type").String() == "tool" {
 		name := tc.Get("name").String()
-		if fake, ok := rw.Forward[name]; ok {
+		if shouldSkipShadowToolName(name) {
+			// Stable internal shadow tools must survive request-side rewrite untouched.
+		} else if fake, ok := rw.Forward[name]; ok {
 			if next, err := sjson.SetBytes(body, "tool_choice.name", fake); err == nil {
 				body = next
 			}
@@ -230,7 +237,7 @@ func applyToolNameRewriteToBody(body []byte, rw *ToolNameRewrite) []byte {
 					return true
 				}
 				name := blk.Get("name").String()
-				if name == "" {
+				if name == "" || shouldSkipShadowToolName(name) {
 					return true
 				}
 				if fake, ok := rw.Forward[name]; ok {
