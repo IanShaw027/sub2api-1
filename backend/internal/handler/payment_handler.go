@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -336,7 +337,9 @@ func (h *PaymentHandler) GetMyOrders(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Paginated(c, sanitizePaymentOrdersForResponse(orders), int64(total), page, pageSize)
+	items := sanitizePaymentOrdersForResponse(orders)
+	items = enrichOrdersWithInvoice(c.Request.Context(), h.invoiceService, items)
+	response.Paginated(c, items, int64(total), page, pageSize)
 }
 
 // GetOrder returns a single order for the authenticated user.
@@ -358,7 +361,13 @@ func (h *PaymentHandler) GetOrder(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, sanitizePaymentOrderForResponse(order))
+	single := sanitizePaymentOrderForResponse(order)
+	if single != nil {
+		enriched := enrichOrdersWithInvoice(c.Request.Context(), h.invoiceService, []PaymentOrderResult{*single})
+		response.Success(c, enriched[0])
+		return
+	}
+	response.Success(c, single)
 }
 
 // CancelOrder cancels a pending order for the authenticated user.
@@ -774,7 +783,7 @@ type PaymentOrderResult struct {
 	PlanID              *int64     `json:"plan_id,omitempty"`
 	ProviderInstanceID  *string    `json:"provider_instance_id,omitempty"`
 	InvoiceStatus       string     `json:"invoice_status,omitempty"`
-	InvoiceFileMediaID  *int64     `json:"invoice_file_media_id,omitempty"`
+	InvoiceID           *int64     `json:"invoice_id,omitempty"`
 }
 
 func sanitizePaymentOrdersForResponse(orders []*dbent.PaymentOrder) []PaymentOrderResult {
@@ -814,8 +823,6 @@ func sanitizePaymentOrderForResponse(order *dbent.PaymentOrder) *PaymentOrderRes
 		RefundRequestReason: order.RefundRequestReason,
 		PlanID:              order.PlanID,
 		ProviderInstanceID:  order.ProviderInstanceID,
-		InvoiceStatus:       order.InvoiceStatus,
-		InvoiceFileMediaID:  order.InvoiceFileMediaID,
 	}
 }
 
@@ -831,4 +838,26 @@ func parseIDParam(c *gin.Context, paramName string) (int64, bool) {
 
 func isWeChatBrowser(c *gin.Context) bool {
 	return strings.Contains(strings.ToLower(c.GetHeader("User-Agent")), "micromessenger")
+}
+
+func enrichOrdersWithInvoice(ctx context.Context, invoiceSvc *service.InvoiceService, items []PaymentOrderResult) []PaymentOrderResult {
+	if invoiceSvc == nil || len(items) == 0 {
+		return items
+	}
+	ids := make([]int64, 0, len(items))
+	for _, it := range items {
+		ids = append(ids, it.ID)
+	}
+	links, err := invoiceSvc.GetActiveLinksByOrderIDs(ctx, ids)
+	if err != nil || len(links) == 0 {
+		return items
+	}
+	for i := range items {
+		if link, ok := links[items[i].ID]; ok {
+			invoiceID := link.InvoiceID
+			items[i].InvoiceID = &invoiceID
+			items[i].InvoiceStatus = link.InvoiceStatus
+		}
+	}
+	return items
 }
