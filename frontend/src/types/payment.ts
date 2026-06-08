@@ -22,7 +22,7 @@ export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' 
 
 export type OrderType = 'balance' | 'subscription'
 
-export type InvoiceStatus = '' | 'APPLIED' | 'ISSUED' | 'CANCELLED'
+export type InvoiceStatus = 'APPLIED' | 'ISSUED' | 'CANCELLED'
 
 // ==================== Configuration ====================
 
@@ -101,7 +101,7 @@ export interface PaymentOrder {
   plan_id?: number
   provider_instance_id?: string
   invoice_status?: InvoiceStatus
-  invoice_file_media_id?: number
+  invoice_id?: number
 }
 
 export interface RefundPreview {
@@ -172,17 +172,21 @@ export interface ProviderInstance {
   sort_order: number
 }
 
-export interface InvoiceApplication {
-  id: number
+export interface InvoiceOrderItem {
   order_id: number
+  out_trade_no: string
+  pay_amount_snapshot: number
+  payment_type: string
+  created_at: string
+}
+
+export interface Invoice {
+  id: number
   user_id: number
   user_email: string
-  order_out_trade_no: string
-  payment_type: string
-  provider_instance_id: string
-  provider_key: string
-  status: InvoiceStatus
+  status: 'APPLIED' | 'ISSUED' | 'CANCELLED'
   invoice_amount: number
+  order_count: number
   title: string
   tax_number: string
   email: string
@@ -198,21 +202,8 @@ export interface InvoiceApplication {
   issued_at?: string
   created_at: string
   updated_at: string
-}
-
-export interface BatchInvoiceItemResult {
-  order_id: number
-  status: 'applied' | 'skipped' | 'error'
-  code?: string
-  message?: string
-}
-
-export interface BatchApplyInvoiceResult {
-  total: number
-  success: number
-  skipped: number
-  failed: number
-  results: BatchInvoiceItemResult[]
+  /** 仅详情接口返回；列表接口为 undefined */
+  orders?: InvoiceOrderItem[]
 }
 
 // ==================== Request / Response ====================
