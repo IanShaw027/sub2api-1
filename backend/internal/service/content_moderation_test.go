@@ -1489,7 +1489,7 @@ func TestExtractContentModerationInput_OpenAIImagesIncludesPromptAndImages(t *te
 	require.Equal(t, []string{"https://example.com/source.png", "data:image/png;base64,aGVsbG8="}, input.Images)
 }
 
-func TestContentModerationInput_NormalizeKeepsImagesAndModerationInputSamplesOneImage(t *testing.T) {
+func TestContentModerationInput_NormalizeKeepsImagesAndModerationInputUsesDeterministicFirstImage(t *testing.T) {
 	images := []string{
 		"data:image/png;base64,Zmlyc3Q=",
 		"data:image/png;base64,c2Vjb25k",
@@ -1508,7 +1508,17 @@ func TestContentModerationInput_NormalizeKeepsImagesAndModerationInputSamplesOne
 	require.Equal(t, "text", parts[0].Type)
 	require.Equal(t, "image_url", parts[1].Type)
 	require.NotNil(t, parts[1].ImageURL)
-	require.Contains(t, images, parts[1].ImageURL.URL)
+	require.Equal(t, images[0], parts[1].ImageURL.URL)
+
+	partsAgain, ok := input.ModerationInput().([]moderationAPIInputPart)
+	require.True(t, ok)
+	require.Equal(t, parts, partsAgain)
+
+	expectedHash := (ContentModerationInput{
+		Text:   input.Text,
+		Images: []string{images[0]},
+	}).Hash()
+	require.Equal(t, expectedHash, input.Hash())
 }
 
 func TestBuildModerationTestInputRejectsMultipleImages(t *testing.T) {
@@ -2112,6 +2122,120 @@ func TestContentModerationCheck_PreBlockFlaggedWritesRedisHashCache(t *testing.T
 	logs := requireContentModerationLogCount(t, repo, 2)
 	require.Equal(t, ContentModerationActionBlock, logs[0].Action)
 	require.Equal(t, ContentModerationActionHashBlock, logs[1].Action)
+}
+
+func TestContentModerationCheck_PreBlockFlaggedAppliesSideEffectsBeforeReturn(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
+			Results: []moderationAPIResult{{
+				CategoryScores: map[string]float64{"sexual": 0.9},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.PreHashCheckEnabled = true
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.AutoBanEnabled = true
+	cfg.BanThreshold = 1
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{}
+	userRepo := &contentModerationTestUserRepo{user: &User{ID: 3001, Status: StatusActive}}
+	invalidator := &contentModerationTestAuthCacheInvalidator{}
+	svc := &ContentModerationService{
+		settingRepo: &contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo:                 repo,
+		hashCache:            hashCache,
+		userRepo:             userRepo,
+		authCacheInvalidator: invalidator,
+		httpClient:           &http.Client{},
+		asyncQueue:           make(chan contentModerationTask, 1),
+		keyHealth:            make(map[string]*contentModerationKeyHealth),
+	}
+
+	body := []byte(`{"messages":[{"role":"user","content":"repeat blocked prompt"}]}`)
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:   3001,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     body,
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	recorded := hashCache.snapshotRecorded()
+	require.Len(t, recorded, 1, "pre-block must record the flagged hash before returning")
+	require.Len(t, userRepo.updated, 1, "pre-block auto-ban must apply before returning")
+	require.Equal(t, StatusDisabled, userRepo.updated[0].Status)
+	require.Equal(t, []int64{3001}, invalidator.userIDs)
+}
+
+func TestContentModerationCheck_PreBlockQueueFullFallsBackToInlineLogWrite(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
+			Results: []moderationAPIResult{{
+				CategoryScores: map[string]float64{"sexual": 0.9},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.PreHashCheckEnabled = true
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.AutoBanEnabled = true
+	cfg.BanThreshold = 1
+	cfg.QueueSize = 1
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{}
+	userRepo := &contentModerationTestUserRepo{user: &User{ID: 3002, Status: StatusActive}}
+	invalidator := &contentModerationTestAuthCacheInvalidator{}
+	queue := make(chan contentModerationTask, 1)
+	queue <- contentModerationTask{}
+	svc := &ContentModerationService{
+		settingRepo: &contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo:                 repo,
+		hashCache:            hashCache,
+		userRepo:             userRepo,
+		authCacheInvalidator: invalidator,
+		httpClient:           &http.Client{},
+		asyncQueue:           queue,
+		keyHealth:            make(map[string]*contentModerationKeyHealth),
+	}
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:   3002,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"repeat blocked prompt"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1, "queue-full pre-block requests must fall back to inline log persistence")
+	require.True(t, logs[0].Flagged)
+	require.Equal(t, ContentModerationActionBlock, logs[0].Action)
+	require.Len(t, hashCache.snapshotRecorded(), 1)
+	require.Len(t, userRepo.updated, 1)
+	require.Equal(t, []int64{3002}, invalidator.userIDs)
 }
 
 func TestContentModerationDeleteFlaggedInputHash_NormalizesAndDeletes(t *testing.T) {

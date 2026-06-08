@@ -75,7 +75,14 @@ compute_frontend_dist_hash() {
 }
 
 get_git_dirty_state() {
-    if [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all -- backend frontend)" ]; then
+    if [ -n "$(
+        git -C "$REPO_ROOT" status --porcelain --untracked-files=all -- \
+            backend \
+            frontend \
+            ':(exclude)backend/cmd/server/VERSION' \
+            ':(exclude)backend/internal/web/dist' \
+            ':(exclude)backend/internal/web/dist/**'
+    )" ]; then
         echo "dirty"
     else
         echo "clean"

@@ -6,6 +6,7 @@ const routeState = vi.hoisted(() => ({
 }))
 const routerPush = vi.hoisted(() => vi.fn())
 const getOrder = vi.hoisted(() => vi.fn())
+const resolveOrderPublicByResumeToken = vi.hoisted(() => vi.fn())
 const paymentStore = vi.hoisted(() => ({
   config: { stripe_publishable_key: 'pk_test' } as { stripe_publishable_key?: string },
   fetchConfig: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock('@/stores/payment', () => ({
 vi.mock('@/api/payment', () => ({
   paymentAPI: {
     getOrder,
+    resolveOrderPublicByResumeToken,
   },
 }))
 
@@ -102,6 +104,7 @@ describe('StripePaymentView', () => {
     }
     routerPush.mockReset()
     getOrder.mockReset()
+    resolveOrderPublicByResumeToken.mockReset()
     paymentStore.config = { stripe_publishable_key: 'pk_test' }
     paymentStore.fetchConfig.mockReset().mockResolvedValue(undefined)
     paymentStore.pollOrderStatus.mockReset()
@@ -172,9 +175,78 @@ describe('StripePaymentView', () => {
       path: '/payment/result',
       query: {
         order_id: '42',
+        out_trade_no: 'sub2_stripe_42',
         status: 'success',
       },
     })
     vi.useRealTimers()
+  })
+
+  it('falls back to public resume-token order resolution when authenticated order lookup fails', async () => {
+    routeState.query = {
+      order_id: '42',
+      client_secret: 'pi_secret_42',
+      resume_token: 'resume-42',
+    }
+    getOrder.mockRejectedValueOnce(new Error('auth required'))
+    resolveOrderPublicByResumeToken.mockResolvedValueOnce({
+      data: orderFactory({ currency: 'HKD', pay_amount: 103 }),
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+
+    expect(getOrder).toHaveBeenCalledWith(42)
+    expect(resolveOrderPublicByResumeToken).toHaveBeenCalledWith('resume-42')
+    expect(loadStripe).toHaveBeenCalledWith('pk_test')
+    expect(wrapper.text()).toContain(formatPaymentAmount(103, 'HKD', 'zh-CN'))
+    expect(wrapper.text()).not.toContain('payment.stripeLoadFailed')
+  })
+
+  it('includes resume-token and out-trade-no in stripe return URLs', async () => {
+    vi.useFakeTimers()
+    routeState.query = {
+      order_id: '42',
+      client_secret: 'pi_secret_42',
+      method: 'alipay',
+      resume_token: 'resume-42',
+      out_trade_no: 'sub2_stripe_42',
+    }
+    getOrder.mockResolvedValue({
+      data: orderFactory(),
+    })
+    stripeInstance.confirmAlipayPayment.mockResolvedValueOnce({})
+
+    mountView()
+    await flushPromises()
+
+    expect(stripeInstance.confirmAlipayPayment).toHaveBeenCalledTimes(1)
+    const returnUrl = stripeInstance.confirmAlipayPayment.mock.calls[0]?.[1]?.return_url as string
+    expect(returnUrl).toContain('/payment/result?')
+    expect(returnUrl).toContain('order_id=42')
+    expect(returnUrl).toContain('resume_token=resume-42')
+    expect(returnUrl).toContain('out_trade_no=sub2_stripe_42')
+    vi.useRealTimers()
+  })
+
+  it('uses publishable_key from route query when payment config lookup is unavailable', async () => {
+    routeState.query = {
+      order_id: '42',
+      client_secret: 'pi_secret_42',
+      publishable_key: 'pk_live_from_query',
+    }
+    getOrder.mockResolvedValue({
+      data: orderFactory(),
+    })
+    paymentStore.config = {}
+    paymentStore.fetchConfig.mockRejectedValueOnce(new Error('auth required'))
+
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+
+    expect(loadStripe).toHaveBeenCalledWith('pk_live_from_query')
+    expect(wrapper.text()).not.toContain('payment.stripeLoadFailed')
   })
 })

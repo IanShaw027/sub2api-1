@@ -393,7 +393,6 @@ describe('admin RiskControlView', () => {
     expect(activeTab.classes()).toContain('dark:bg-primary-600')
     expect(activeTab.classes()).toContain('dark:text-white')
   })
-
   it('describes worker runtime as async audit and pre-block record processing', async () => {
     getStatus.mockResolvedValue({
       ...runtimeStatus(),
@@ -401,7 +400,6 @@ describe('admin RiskControlView', () => {
       processed: 12,
       queue_length: 2,
     })
-
     const wrapper = mount(RiskControlView, {
       global: {
         stubs: {
@@ -468,7 +466,6 @@ describe('admin RiskControlView', () => {
         },
       ],
     })
-
     const wrapper = mount(RiskControlView, {
       global: {
         stubs: {
@@ -487,7 +484,8 @@ describe('admin RiskControlView', () => {
 
     expect(wrapper.text()).toContain('admin.riskControl.preBlockSyncStatus')
     expect(wrapper.text()).toContain('admin.riskControl.preBlockSyncHint')
-    expect(wrapper.text()).not.toContain('admin.riskControl.workerStatus')
+    expect(wrapper.text()).toContain('admin.riskControl.workerStatus')
+    expect(wrapper.text()).toContain('admin.riskControl.workerStatusHint')
     expect(wrapper.text()).toContain('admin.riskControl.records')
     expect(wrapper.text()).toContain('128')
     expect(wrapper.text()).toContain('120')
@@ -520,6 +518,11 @@ describe('admin RiskControlView', () => {
     expect(wrapper.get('[data-test="pre-block-api-key-load-list"]').classes()).toEqual(expect.arrayContaining([
       'max-h-[280px]',
       'overflow-y-auto',
+    ]))
+    expect(wrapper.findAll('h2').map((item) => item.text())).toEqual(expect.arrayContaining([
+      'admin.riskControl.preBlockSyncStatus',
+      'admin.riskControl.preBlockAPIKeyLoad',
+      'admin.riskControl.workerStatus',
     ]))
   })
 })

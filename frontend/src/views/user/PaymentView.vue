@@ -738,6 +738,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
           order_id: String(result.order_id),
           client_secret: result.client_secret,
           method: stripeMethod || undefined,
+          publishable_key: paymentStore.config?.stripe_publishable_key || undefined,
           resume_token: result.resume_token || undefined,
         },
       }).href
@@ -953,6 +954,7 @@ async function attemptMobileQrFallback(err: unknown, context: MobileQrFallbackCo
           order_id: String(result.order_id),
           client_secret: result.client_secret,
           method: stripeMethod,
+          publishable_key: paymentStore.config?.stripe_publishable_key || undefined,
           resume_token: result.resume_token || undefined,
         },
       }).href

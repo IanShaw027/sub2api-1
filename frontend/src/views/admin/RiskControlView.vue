@@ -1729,7 +1729,9 @@ const runtimeMode = computed<ModerationMode>(() => status.value?.mode ?? configF
 
 const showPreBlockRuntimeCard = computed(() => runtimeMode.value === 'pre_block')
 
-const showWorkerRuntimeCard = computed(() => runtimeMode.value === 'observe')
+const showWorkerRuntimeCard = computed(() => (
+  runtimeMode.value === 'observe' || runtimeMode.value === 'pre_block'
+))
 
 const preBlockMetricItems = computed(() => [
   {
