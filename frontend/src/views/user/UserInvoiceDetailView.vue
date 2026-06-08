@@ -37,7 +37,7 @@
       <!-- 关联订单 -->
       <div class="card overflow-hidden">
         <div class="border-b border-gray-200 px-6 py-3 text-sm font-medium text-gray-700 dark:border-dark-700 dark:text-gray-200">
-          {{ t('payment.invoice.detail.relatedOrders') }}
+          {{ t('payment.invoice.detailPage.relatedOrders') }}
         </div>
         <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
           <thead class="bg-gray-50 dark:bg-dark-800">
@@ -61,7 +61,7 @@
 
       <!-- 文件区 -->
       <div class="card p-6">
-        <p v-if="invoice.status === 'APPLIED'" class="text-sm text-gray-500">{{ t('payment.invoice.detail.fileWaiting') }}</p>
+        <p v-if="invoice.status === 'APPLIED'" class="text-sm text-gray-500">{{ t('payment.invoice.detailPage.fileWaiting') }}</p>
         <p v-else-if="invoice.status === 'ISSUED'" class="text-sm text-gray-700 dark:text-gray-200">
           {{ t('payment.invoice.fileName') }}: {{ invoice.file_name || '-' }}
         </p>
