@@ -559,7 +559,7 @@ func unsupportedServerToolFamily(tool map[string]any) string {
 	case strings.HasPrefix(toolType, "text_editor_"):
 		return toolType
 	default:
-		return ""
+		return toolType
 	}
 }
 
@@ -633,15 +633,13 @@ func ensureHistoryShadowTools(history []any, tools []map[string]any, bridgeMetad
 		if strings.ToLower(stringField(msg, "role")) != "assistant" {
 			continue
 		}
-		_, toolUses := processAssistantContent(msg["content"], nil)
-		for _, toolUse := range toolUses {
-			name := strings.TrimSpace(stringField(toolUse, "name"))
-			if !isShadowToolName(name) {
+		for _, toolUse := range historyShadowToolUses(msg["content"]) {
+			if !isShadowToolName(toolUse.Name) {
 				continue
 			}
-			key := strings.ToLower(name)
+			key := strings.ToLower(toolUse.Name)
 			if _, ok := seen[key]; !ok {
-				tools = append(tools, makeShadowToolSpecification(name))
+				tools = append(tools, makeShadowToolSpecification(toolUse.Name))
 				seen[key] = struct{}{}
 			}
 			if bridgeMetadata == nil {
@@ -650,8 +648,8 @@ func ensureHistoryShadowTools(history []any, tools []map[string]any, bridgeMetad
 			if bridgeMetadata.ShadowTools == nil {
 				bridgeMetadata.ShadowTools = map[string]ShadowToolBridge{}
 			}
-			if _, ok := bridgeMetadata.ShadowTools[name]; !ok {
-				bridgeMetadata.ShadowTools[name] = shadowBridgeForName(name)
+			if existing, ok := bridgeMetadata.ShadowTools[toolUse.Name]; !ok || isShadowBridgeZero(existing) || shadowBridgeHasConstraints(toolUse.Bridge) {
+				bridgeMetadata.ShadowTools[toolUse.Name] = mergeShadowBridge(shadowBridgeForName(toolUse.Name), toolUse.Bridge)
 			}
 		}
 	}
@@ -731,6 +729,101 @@ func shadowBridgeForName(name string) ShadowToolBridge {
 	default:
 		return ShadowToolBridge{}
 	}
+}
+
+type historyShadowToolUse struct {
+	Name   string
+	Bridge ShadowToolBridge
+}
+
+func historyShadowToolUses(content any) []historyShadowToolUse {
+	items, _ := content.([]any)
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]historyShadowToolUse, 0, len(items))
+	for _, item := range items {
+		block, _ := item.(map[string]any)
+		if strings.TrimSpace(stringField(block, "type")) != "tool_use" {
+			continue
+		}
+		name := strings.TrimSpace(stringField(block, "name"))
+		if !isShadowToolName(name) {
+			continue
+		}
+		out = append(out, historyShadowToolUse{
+			Name:   name,
+			Bridge: shadowBridgeFromHistoryBlock(block),
+		})
+	}
+	return out
+}
+
+func shadowBridgeFromHistoryBlock(block map[string]any) ShadowToolBridge {
+	if bridge := shadowBridgeFromAnyMap(jsonMapField(block, "_shadow_bridge")); !isShadowBridgeZero(bridge) {
+		return mergeShadowBridge(shadowBridgeForName(strings.TrimSpace(stringField(block, "name"))), bridge)
+	}
+	return shadowBridgeForName(strings.TrimSpace(stringField(block, "name")))
+}
+
+func shadowBridgeFromAnyMap(raw map[string]any) ShadowToolBridge {
+	if len(raw) == 0 {
+		return ShadowToolBridge{}
+	}
+	return ShadowToolBridge{
+		AnthropicType:    strings.TrimSpace(stringField(raw, "anthropic_type")),
+		AnthropicName:    strings.TrimSpace(stringField(raw, "anthropic_name")),
+		AllowedDomains:   stringArrayField(raw["allowed_domains"]),
+		BlockedDomains:   stringArrayField(raw["blocked_domains"]),
+		MaxUses:          intField(raw["max_uses"]),
+		MaxContentTokens: intField(raw["max_content_tokens"]),
+	}
+}
+
+func mergeShadowBridge(base, override ShadowToolBridge) ShadowToolBridge {
+	if strings.TrimSpace(override.AnthropicType) != "" {
+		base.AnthropicType = override.AnthropicType
+	}
+	if strings.TrimSpace(override.AnthropicName) != "" {
+		base.AnthropicName = override.AnthropicName
+	}
+	if len(override.AllowedDomains) > 0 {
+		base.AllowedDomains = append([]string(nil), override.AllowedDomains...)
+	}
+	if len(override.BlockedDomains) > 0 {
+		base.BlockedDomains = append([]string(nil), override.BlockedDomains...)
+	}
+	if override.MaxUses > 0 {
+		base.MaxUses = override.MaxUses
+	}
+	if override.MaxContentTokens > 0 {
+		base.MaxContentTokens = override.MaxContentTokens
+	}
+	return base
+}
+
+func isShadowBridgeZero(bridge ShadowToolBridge) bool {
+	return strings.TrimSpace(bridge.AnthropicType) == "" &&
+		strings.TrimSpace(bridge.AnthropicName) == "" &&
+		len(bridge.AllowedDomains) == 0 &&
+		len(bridge.BlockedDomains) == 0 &&
+		bridge.MaxUses == 0 &&
+		bridge.MaxContentTokens == 0
+}
+
+func shadowBridgeHasConstraints(bridge ShadowToolBridge) bool {
+	return len(bridge.AllowedDomains) > 0 ||
+		len(bridge.BlockedDomains) > 0 ||
+		bridge.MaxUses > 0 ||
+		bridge.MaxContentTokens > 0
+}
+
+func jsonMapField(parent map[string]any, key string) map[string]any {
+	if parent == nil {
+		return nil
+	}
+	value, _ := parent[key].(map[string]any)
+	return value
 }
 
 func convertImage(block map[string]any) map[string]any {

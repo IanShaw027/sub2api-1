@@ -28,10 +28,9 @@ const (
 )
 
 var errTooManyRedirects = errors.New("webfetch: too many redirects")
+var validateResolvedFetchHost = urlvalidator.ValidateResolvedIP
 
-type checkRedirectFunc func(req *http.Request, via []*http.Request) error
-
-type clientFactoryFunc func(proxyURL string, checkRedirect checkRedirectFunc) (*http.Client, error)
+type clientFactoryFunc func(proxyURL string) (*http.Client, error)
 
 // Fetcher executes outbound web fetches with bounded redirects/content.
 type Fetcher struct {
@@ -47,17 +46,9 @@ func NewFetcher() *Fetcher {
 func (f *Fetcher) Fetch(ctx context.Context, req FetchRequest) *FetchResult {
 	result := &FetchResult{RequestedURL: req.URL}
 
-	normalizedURL, host, err := validateFetchURL(req)
+	normalizedURL, _, err := validateFetchURL(req.URL, req)
 	if err != nil {
 		result.Error = err
-		return result
-	}
-
-	if matchesHost(host, req.BlockedHosts) {
-		result.Error = &FetchError{
-			Code:    ErrorCodeDomainBlocked,
-			Message: fmt.Sprintf("host is blocked: %s", host),
-		}
 		return result
 	}
 
@@ -79,18 +70,26 @@ func (f *Fetcher) Fetch(ctx context.Context, req FetchRequest) *FetchResult {
 		factory = newHTTPClient
 	}
 
-	client, clientErr := factory(req.ProxyURL, func(_ *http.Request, via []*http.Request) error {
-		if len(via) > maxRedirects {
-			return errTooManyRedirects
-		}
-		return nil
-	})
+	client, clientErr := factory(req.ProxyURL)
 	if clientErr != nil {
 		result.Error = &FetchError{
 			Code:    ErrorCodeClientConfig,
 			Message: clientErr.Error(),
+			Reason:  "client_config",
 		}
 		return result
+	}
+	client.CheckRedirect = func(nextReq *http.Request, via []*http.Request) error {
+		if len(via) > maxRedirects {
+			return errTooManyRedirects
+		}
+		if nextReq == nil || nextReq.URL == nil {
+			return nil
+		}
+		if _, _, redirectErr := validateFetchURL(nextReq.URL.String(), req); redirectErr != nil {
+			return redirectErr
+		}
+		return nil
 	}
 
 	httpReq, buildErr := http.NewRequestWithContext(ctx, http.MethodGet, normalizedURL, nil)
@@ -115,6 +114,10 @@ func (f *Fetcher) Fetch(ctx context.Context, req FetchRequest) *FetchResult {
 	if resp.Request != nil && resp.Request.URL != nil {
 		result.FinalURL = resp.Request.URL.String()
 	}
+	if _, _, redirectErr := validateFetchURL(result.FinalURL, req); redirectErr != nil {
+		result.Error = redirectErr
+		return result
+	}
 	result.StatusCode = resp.StatusCode
 	result.ContentType = canonicalContentType(resp.Header.Get("Content-Type"))
 
@@ -123,6 +126,7 @@ func (f *Fetcher) Fetch(ctx context.Context, req FetchRequest) *FetchResult {
 		result.Error = &FetchError{
 			Code:      ErrorCodeReadFailed,
 			Message:   readErr.Error(),
+			Reason:    "read_failed",
 			Retryable: true,
 		}
 		return result
@@ -130,9 +134,11 @@ func (f *Fetcher) Fetch(ctx context.Context, req FetchRequest) *FetchResult {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		result.Error = &FetchError{
-			Code:      ErrorCodeHTTPStatus,
-			Message:   fmt.Sprintf("unexpected HTTP status %d", resp.StatusCode),
-			Retryable: resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests,
+			Code:       ErrorCodeHTTPStatus,
+			Message:    fmt.Sprintf("unexpected HTTP status %d", resp.StatusCode),
+			StatusCode: resp.StatusCode,
+			Reason:     "http_status",
+			Retryable:  resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests,
 		}
 		return result
 	}
@@ -149,28 +155,52 @@ func (f *Fetcher) Fetch(ctx context.Context, req FetchRequest) *FetchResult {
 	return result
 }
 
-func validateFetchURL(req FetchRequest) (normalizedURL, host string, fetchErr *FetchError) {
-	normalizedURL, err := urlvalidator.ValidateHTTPURL(req.URL, req.AllowInsecureHTTP, urlvalidator.ValidationOptions{
+func validateFetchURL(rawURL string, req FetchRequest) (normalizedURL, host string, fetchErr *FetchError) {
+	normalizedURL, err := urlvalidator.ValidateHTTPURL(rawURL, req.AllowInsecureHTTP, urlvalidator.ValidationOptions{
 		AllowedHosts: req.AllowedHosts,
 		AllowPrivate: req.AllowPrivate,
 	})
 	if err != nil {
 		code := ErrorCodeInvalidURL
 		msg := err.Error()
+		reason := "invalid_url"
+		parsedHost := normalizedFetchHost(rawURL)
 		if strings.Contains(msg, "host is not allowed") || strings.Contains(msg, "allowlist") {
 			code = ErrorCodeDomainBlocked
+			if isPrivateLiteralHost(parsedHost) {
+				reason = "private_host"
+			} else {
+				reason = "blocked_host"
+			}
 		}
-		return "", "", &FetchError{Code: code, Message: msg}
+		return "", "", &FetchError{Code: code, Message: msg, Reason: reason}
 	}
 
 	parsed, err := url.Parse(normalizedURL)
 	if err != nil || parsed.Hostname() == "" {
-		return "", "", &FetchError{Code: ErrorCodeInvalidURL, Message: "invalid normalized url"}
+		return "", "", &FetchError{Code: ErrorCodeInvalidURL, Message: "invalid normalized url", Reason: "invalid_url"}
 	}
-	return normalizedURL, strings.ToLower(parsed.Hostname()), nil
+	host = strings.ToLower(parsed.Hostname())
+	if matchesHost(host, req.BlockedHosts) {
+		return "", "", &FetchError{
+			Code:    ErrorCodeDomainBlocked,
+			Message: fmt.Sprintf("host is blocked: %s", host),
+			Reason:  "blocked_host",
+		}
+	}
+	if !req.AllowPrivate {
+		if err := validateResolvedFetchHost(host); err != nil {
+			return "", "", &FetchError{
+				Code:    ErrorCodeDomainBlocked,
+				Message: err.Error(),
+				Reason:  "resolved_private_ip",
+			}
+		}
+	}
+	return normalizedURL, host, nil
 }
 
-func newHTTPClient(proxyURL string, redirect checkRedirectFunc) (*http.Client, error) {
+func newHTTPClient(proxyURL string) (*http.Client, error) {
 	_, parsedProxy, err := proxyurl.Parse(proxyURL)
 	if err != nil {
 		return nil, err
@@ -187,33 +217,62 @@ func newHTTPClient(proxyURL string, redirect checkRedirectFunc) (*http.Client, e
 	}
 
 	return &http.Client{
-		Transport:     transport,
-		Timeout:       defaultRequestTimeout,
-		CheckRedirect: redirect,
+		Transport: transport,
+		Timeout:   defaultRequestTimeout,
 	}, nil
 }
 
 func mapRequestError(err error) *FetchError {
+	var fetchErr *FetchError
+	if errors.As(err, &fetchErr) && fetchErr != nil {
+		return fetchErr
+	}
 	switch {
 	case errors.Is(err, errTooManyRedirects):
 		return &FetchError{
 			Code:      ErrorCodeTooManyRedirects,
 			Message:   "redirect limit exceeded",
+			Reason:    "too_many_redirects",
 			Retryable: true,
 		}
 	case errors.Is(err, context.DeadlineExceeded):
 		return &FetchError{
 			Code:      ErrorCodeRequestFailed,
 			Message:   err.Error(),
+			Reason:    "request_failed",
 			Retryable: true,
 		}
 	default:
 		return &FetchError{
 			Code:      ErrorCodeRequestFailed,
 			Message:   err.Error(),
+			Reason:    "request_failed",
 			Retryable: !errors.Is(err, context.Canceled),
 		}
 	}
+}
+
+func normalizedFetchHost(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+}
+
+func isPrivateLiteralHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return false
+	}
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
 }
 
 func readBoundedBody(r io.Reader, maxBytes int) ([]byte, bool, error) {

@@ -126,6 +126,12 @@ func convertResponsesInputToAnthropic(inputRaw json.RawMessage) (json.RawMessage
 			}
 
 		case item.Type == "function_call":
+			if strings.TrimSpace(item.Name) == "webfetch" {
+				if assistantMsg, userMsg, ok := webFetchHistoryMessagesFromFunctionCall(item); ok {
+					messages = append(messages, assistantMsg, userMsg)
+					continue
+				}
+			}
 			// function_call → assistant message with tool_use block
 			input := json.RawMessage("{}")
 			if item.Arguments != "" {
@@ -142,6 +148,10 @@ func convertResponsesInputToAnthropic(inputRaw json.RawMessage) (json.RawMessage
 				Role:    "assistant",
 				Content: blockJSON,
 			})
+
+		case item.Type == "web_search_call":
+			assistantMsg, userMsg := webSearchHistoryMessagesFromCall(item)
+			messages = append(messages, assistantMsg, userMsg)
 
 		case item.Type == "function_call_output":
 			// function_call_output → user message with tool_result block
@@ -197,6 +207,76 @@ func convertResponsesInputToAnthropic(inputRaw json.RawMessage) (json.RawMessage
 	messages = mergeConsecutiveMessages(messages)
 
 	return system, messages, nil
+}
+
+func webSearchHistoryMessagesFromCall(item ResponsesInputItem) (AnthropicMessage, AnthropicMessage) {
+	query := ""
+	sources := make([]map[string]any, 0)
+	if item.Action != nil {
+		query = strings.TrimSpace(item.Action.Query)
+		for _, source := range item.Action.Sources {
+			sources = append(sources, map[string]any{
+				"type":  "web_search_result",
+				"url":   source.URL,
+				"title": source.Title,
+			})
+		}
+	}
+	input, _ := json.Marshal(map[string]any{"query": query})
+	assistantBlocks, _ := json.Marshal([]AnthropicContentBlock{{
+		Type:  "server_tool_use",
+		ID:    restoreResponsesServerToolID(item.ID),
+		Name:  "web_search",
+		Input: input,
+	}})
+	userContent, _ := json.Marshal(sources)
+	userBlocks, _ := json.Marshal([]AnthropicContentBlock{{
+		Type:      "web_search_tool_result",
+		ToolUseID: restoreResponsesServerToolID(item.ID),
+		Content:   userContent,
+	}})
+	return AnthropicMessage{Role: "assistant", Content: assistantBlocks}, AnthropicMessage{Role: "user", Content: userBlocks}
+}
+
+func webFetchHistoryMessagesFromFunctionCall(item ResponsesInputItem) (AnthropicMessage, AnthropicMessage, bool) {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(item.Arguments), &payload); err != nil {
+		return AnthropicMessage{}, AnthropicMessage{}, false
+	}
+	rawResult, ok := payload["_sub2api_server_tool_result"]
+	if !ok {
+		return AnthropicMessage{}, AnthropicMessage{}, false
+	}
+	delete(payload, "_sub2api_server_tool_result")
+	input, _ := json.Marshal(payload)
+	resultJSON, err := json.Marshal(rawResult)
+	if err != nil {
+		return AnthropicMessage{}, AnthropicMessage{}, false
+	}
+	callID := fromResponsesCallIDToAnthropic(item.CallID)
+	assistantBlocks, _ := json.Marshal([]AnthropicContentBlock{{
+		Type:  "server_tool_use",
+		ID:    callID,
+		Name:  "web_fetch",
+		Input: input,
+	}})
+	userBlocks, _ := json.Marshal([]AnthropicContentBlock{{
+		Type:      "web_fetch_tool_result",
+		ToolUseID: callID,
+		Content:   resultJSON,
+	}})
+	return AnthropicMessage{Role: "assistant", Content: assistantBlocks}, AnthropicMessage{Role: "user", Content: userBlocks}, true
+}
+
+func restoreResponsesServerToolID(id string) string {
+	trimmed := strings.TrimSpace(id)
+	if trimmed == "" {
+		return "srvtoolu_" + generateItemID()
+	}
+	if strings.HasPrefix(trimmed, "srvtoolu_") {
+		return trimmed
+	}
+	return "srvtoolu_" + trimmed
 }
 
 func tryDecodeAnthropicToolResultEnvelope(raw string) (*anthropicToolResultEnvelope, bool) {
@@ -356,12 +436,12 @@ func convertResponsesAssistantToAnthropicContent(raw json.RawMessage) (json.RawM
 func fromResponsesCallIDToAnthropic(id string) string {
 	// If it has our "fc_" prefix wrapping a known Anthropic prefix, strip it
 	if after, ok := strings.CutPrefix(id, "fc_"); ok {
-		if strings.HasPrefix(after, "toolu_") || strings.HasPrefix(after, "call_") {
+		if strings.HasPrefix(after, "toolu_") || strings.HasPrefix(after, "call_") || strings.HasPrefix(after, "srvtoolu_") {
 			return after
 		}
 	}
 	// Generate a synthetic Anthropic tool ID
-	if !strings.HasPrefix(id, "toolu_") && !strings.HasPrefix(id, "call_") {
+	if !strings.HasPrefix(id, "toolu_") && !strings.HasPrefix(id, "call_") && !strings.HasPrefix(id, "srvtoolu_") {
 		return "toolu_" + id
 	}
 	return id

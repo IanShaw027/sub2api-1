@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -76,7 +77,7 @@ func TestFetcherFetch_ValidatesAllowedAndBlockedDomainsBeforeRequest(t *testing.
 
 	called := false
 	fetcher := &Fetcher{
-		clientFactory: func(_ string, _ checkRedirectFunc) (*http.Client, error) {
+		clientFactory: func(_ string) (*http.Client, error) {
 			return &http.Client{
 				Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 					called = true
@@ -126,7 +127,7 @@ func TestFetcherFetch_MapsRequestFailuresToStructuredError(t *testing.T) {
 	t.Parallel()
 
 	fetcher := &Fetcher{
-		clientFactory: func(_ string, _ checkRedirectFunc) (*http.Client, error) {
+		clientFactory: func(_ string) (*http.Client, error) {
 			return &http.Client{
 				Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 					return nil, errors.New("dial tcp: i/o timeout")
@@ -177,8 +178,144 @@ func TestFetcherFetch_StopsAfterConfiguredRedirectLimit(t *testing.T) {
 	require.Equal(t, 2, redirects)
 }
 
+func TestFetcherFetch_RejectsRedirectToBlockedHost(t *testing.T) {
+	t.Parallel()
+
+	roundTrips := 0
+	fetcher := &Fetcher{
+		clientFactory: func(_ string) (*http.Client, error) {
+			return &http.Client{
+				Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					roundTrips++
+					return redirectResponse("http://blocked.example.com/final"), nil
+				}),
+			}, nil
+		},
+	}
+
+	result := fetcher.Fetch(context.Background(), FetchRequest{
+		URL:               "http://example.com/start",
+		AllowedHosts:      []string{"*.example.com"},
+		BlockedHosts:      []string{"blocked.example.com"},
+		AllowInsecureHTTP: true,
+	})
+
+	require.NotNil(t, result.Error)
+	require.Equal(t, ErrorCodeDomainBlocked, result.Error.Code)
+	require.Equal(t, "blocked_host", result.Error.Reason)
+	require.Equal(t, 1, roundTrips)
+}
+
+func TestFetcherFetch_RejectsRedirectToPrivateHost(t *testing.T) {
+	t.Parallel()
+
+	roundTrips := 0
+	fetcher := &Fetcher{
+		clientFactory: func(_ string) (*http.Client, error) {
+			return &http.Client{
+				Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					roundTrips++
+					return redirectResponse("http://127.0.0.1/final"), nil
+				}),
+			}, nil
+		},
+	}
+
+	result := fetcher.Fetch(context.Background(), FetchRequest{
+		URL:               "http://example.com/start",
+		AllowInsecureHTTP: true,
+	})
+
+	require.NotNil(t, result.Error)
+	require.Equal(t, ErrorCodeDomainBlocked, result.Error.Code)
+	require.Equal(t, "private_host", result.Error.Reason)
+	require.Equal(t, 1, roundTrips)
+}
+
+func TestFetcherFetch_RejectsResolvedPrivateIPBeforeRequest(t *testing.T) {
+	t.Parallel()
+
+	originalValidateResolvedHost := validateResolvedFetchHost
+	validateResolvedFetchHost = func(host string) error {
+		require.Equal(t, "public.example.com", host)
+		return errors.New("resolved ip 127.0.0.1 is not allowed")
+	}
+	t.Cleanup(func() { validateResolvedFetchHost = originalValidateResolvedHost })
+
+	called := false
+	fetcher := &Fetcher{
+		clientFactory: func(_ string) (*http.Client, error) {
+			return &http.Client{
+				Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					called = true
+					return nil, errors.New("unexpected outbound request")
+				}),
+			}, nil
+		},
+	}
+
+	result := fetcher.Fetch(context.Background(), FetchRequest{
+		URL:               "http://public.example.com/final",
+		AllowInsecureHTTP: true,
+	})
+
+	require.NotNil(t, result.Error)
+	require.Equal(t, ErrorCodeDomainBlocked, result.Error.Code)
+	require.Equal(t, "resolved_private_ip", result.Error.Reason)
+	require.False(t, called)
+}
+
+func TestFetcherFetch_ExposesHTTPStatusCodeInError(t *testing.T) {
+	t.Parallel()
+
+	fetcher := &Fetcher{
+		clientFactory: func(_ string) (*http.Client, error) {
+			return &http.Client{
+				Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: http.StatusTooManyRequests,
+						Header:     http.Header{"Content-Type": []string{"text/plain; charset=utf-8"}},
+						Body:       io.NopCloser(strings.NewReader("slow down")),
+					}, nil
+				}),
+			}, nil
+		},
+	}
+
+	result := fetcher.Fetch(context.Background(), FetchRequest{
+		URL:               "http://example.com/page",
+		AllowInsecureHTTP: true,
+	})
+
+	require.NotNil(t, result.Error)
+	require.Equal(t, ErrorCodeHTTPStatus, result.Error.Code)
+	require.Equal(t, 429, result.Error.StatusCode)
+	require.Equal(t, "http_status", result.Error.Reason)
+	require.True(t, result.Error.Retryable)
+	require.Equal(t, 429, result.StatusCode)
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
+}
+
+func redirectResponse(location string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusFound,
+		Header: http.Header{
+			"Location": []string{location},
+		},
+		Body:    io.NopCloser(strings.NewReader("")),
+		Request: &http.Request{URL: mustParseURL(location)},
+	}
+}
+
+func mustParseURL(raw string) *url.URL {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		panic(err)
+	}
+	return parsed
 }

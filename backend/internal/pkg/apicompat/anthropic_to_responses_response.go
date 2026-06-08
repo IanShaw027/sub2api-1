@@ -95,16 +95,12 @@ func AnthropicToResponsesResponse(resp *AnthropicResponse) *ResponsesResponse {
 			if !ok || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(toolUse.Name)), "web_fetch") {
 				continue
 			}
-			args := "{}"
-			if len(toolUse.Input) > 0 {
-				args = string(toolUse.Input)
-			}
 			outputs = append(outputs, ResponsesOutput{
 				Type:      "function_call",
 				ID:        generateItemID(),
 				CallID:    toResponsesCallID(toolUse.ID),
 				Name:      "webfetch",
-				Arguments: args,
+				Arguments: mergeWebFetchArguments(toolUse.Input, block.Content),
 				Status:    "completed",
 			})
 		}
@@ -255,6 +251,11 @@ type AnthropicEventToResponsesState struct {
 	CurrentName           string
 	CurrentArgs           string
 	CurrentArgsEmptyStart bool
+	CurrentStopReason     string
+	CurrentServerToolType string
+	CurrentServerToolOpen bool
+	CurrentWebSearch      *WebSearchAction
+	OutputItems           []ResponsesOutput
 
 	// Usage from message_delta
 	InputTokens          int
@@ -406,6 +407,67 @@ func anthToResHandleContentBlockStart(evt *AnthropicStreamEvent, state *Anthropi
 				Status: "in_progress",
 			},
 		}))
+	case "server_tool_use":
+		events = append(events, closeCurrentResponsesItem(state)...)
+
+		state.CurrentArgs = ""
+		state.CurrentArgsEmptyStart = false
+		if input := strings.TrimSpace(string(evt.ContentBlock.Input)); input != "" {
+			state.CurrentArgs = input
+			state.CurrentArgsEmptyStart = input == "{}"
+		}
+		state.CurrentServerToolOpen = true
+		state.CurrentWebSearch = nil
+
+		switch {
+		case strings.HasPrefix(strings.ToLower(strings.TrimSpace(evt.ContentBlock.Name)), "web_search"):
+			state.CurrentItemID = responsesServerToolCallID(evt.ContentBlock.ID)
+			state.CurrentItemType = "web_search_call"
+			state.CurrentServerToolType = "web_search"
+			state.CurrentCallID = ""
+			state.CurrentName = ""
+			events = append(events, makeResponsesEvent(state, "response.output_item.added", &ResponsesStreamEvent{
+				OutputIndex: state.OutputIndex,
+				Item: &ResponsesOutput{
+					Type:   "web_search_call",
+					ID:     state.CurrentItemID,
+					Status: "in_progress",
+				},
+			}))
+		case strings.HasPrefix(strings.ToLower(strings.TrimSpace(evt.ContentBlock.Name)), "web_fetch"):
+			state.CurrentItemID = generateItemID()
+			state.CurrentItemType = "function_call"
+			state.CurrentServerToolType = "web_fetch"
+			state.CurrentCallID = toResponsesCallID(evt.ContentBlock.ID)
+			state.CurrentName = "webfetch"
+			events = append(events, makeResponsesEvent(state, "response.output_item.added", &ResponsesStreamEvent{
+				OutputIndex: state.OutputIndex,
+				Item: &ResponsesOutput{
+					Type:   "function_call",
+					ID:     state.CurrentItemID,
+					CallID: state.CurrentCallID,
+					Name:   state.CurrentName,
+					Status: "in_progress",
+				},
+			}))
+		}
+	case "web_search_tool_result":
+		if state.CurrentServerToolType != "web_search" {
+			return events
+		}
+		state.CurrentServerToolOpen = false
+		state.CurrentWebSearch = &WebSearchAction{
+			Type:    "search",
+			Query:   anthropicServerToolQuery(json.RawMessage(state.CurrentArgs)),
+			Sources: anthropicWebSearchSources(evt.ContentBlock.Content),
+		}
+	case "web_fetch_tool_result":
+		if state.CurrentServerToolType != "web_fetch" {
+			return events
+		}
+		state.CurrentServerToolOpen = false
+		state.CurrentArgs = mergeWebFetchArguments(json.RawMessage(state.CurrentArgs), evt.ContentBlock.Content)
+		state.CurrentArgsEmptyStart = false
 	}
 
 	return events
@@ -448,6 +510,9 @@ func anthToResHandleContentBlockDelta(evt *AnthropicStreamEvent, state *Anthropi
 		}
 		state.CurrentArgsEmptyStart = false
 		state.CurrentArgs += evt.Delta.PartialJSON
+		if state.CurrentServerToolType == "web_search" {
+			return nil
+		}
 		return []ResponsesStreamEvent{makeResponsesEvent(state, "response.function_call_arguments.delta", &ResponsesStreamEvent{
 			OutputIndex: state.OutputIndex,
 			Delta:       evt.Delta.PartialJSON,
@@ -465,6 +530,9 @@ func anthToResHandleContentBlockDelta(evt *AnthropicStreamEvent, state *Anthropi
 }
 
 func anthToResHandleContentBlockStop(evt *AnthropicStreamEvent, state *AnthropicEventToResponsesState) []ResponsesStreamEvent {
+	if state.CurrentServerToolType != "" && state.CurrentServerToolOpen {
+		return nil
+	}
 	switch state.CurrentItemType {
 	case "reasoning":
 		// Emit reasoning summary done + output item done
@@ -501,6 +569,8 @@ func anthToResHandleContentBlockStop(evt *AnthropicStreamEvent, state *Anthropic
 				ItemID:       state.CurrentItemID,
 			}),
 		}
+	case "web_search_call":
+		return closeCurrentResponsesItem(state)
 	}
 
 	return nil
@@ -513,6 +583,9 @@ func anthToResHandleMessageDelta(evt *AnthropicStreamEvent, state *AnthropicEven
 		if evt.Usage.CacheReadInputTokens > 0 {
 			state.CacheReadInputTokens = evt.Usage.CacheReadInputTokens
 		}
+	}
+	if evt.Delta != nil && strings.TrimSpace(evt.Delta.StopReason) != "" {
+		state.CurrentStopReason = strings.TrimSpace(evt.Delta.StopReason)
 	}
 
 	return nil
@@ -529,8 +602,11 @@ func anthToResHandleMessageStop(state *AnthropicEventToResponsesState) []Respons
 	events = append(events, closeCurrentResponsesItem(state)...)
 
 	// Determine status
-	status := "completed"
+	status := anthropicStopReasonToResponsesStatus(state.CurrentStopReason, nil)
 	var incompleteDetails *ResponsesIncompleteDetails
+	if status == "incomplete" {
+		incompleteDetails = &ResponsesIncompleteDetails{Reason: anthropicStopReasonToResponsesIncompleteReason(state.CurrentStopReason)}
+	}
 
 	// Emit response.completed
 	events = append(events, makeResponsesCompletedEvent(state, status, incompleteDetails))
@@ -549,22 +625,37 @@ func closeCurrentResponsesItem(state *AnthropicEventToResponsesState) []Response
 	itemID := state.CurrentItemID
 
 	// Reset
+	item := ResponsesOutput{
+		Type:   itemType,
+		ID:     itemID,
+		Status: "completed",
+	}
+	switch itemType {
+	case "function_call":
+		item.CallID = state.CurrentCallID
+		item.Name = state.CurrentName
+		item.Arguments = state.CurrentArgs
+	case "web_search_call":
+		item.Action = state.CurrentWebSearch
+	case "message":
+		item.Role = "assistant"
+	}
+	state.OutputItems = append(state.OutputItems, item)
 	state.CurrentItemType = ""
 	state.CurrentItemID = ""
 	state.CurrentCallID = ""
 	state.CurrentName = ""
 	state.CurrentArgs = ""
 	state.CurrentArgsEmptyStart = false
+	state.CurrentServerToolType = ""
+	state.CurrentServerToolOpen = false
+	state.CurrentWebSearch = nil
 	state.OutputIndex++
 	state.ContentIndex = 0
 
 	return []ResponsesStreamEvent{makeResponsesEvent(state, "response.output_item.done", &ResponsesStreamEvent{
 		OutputIndex: state.OutputIndex - 1, // Use the index before increment
-		Item: &ResponsesOutput{
-			Type:   itemType,
-			ID:     itemID,
-			Status: "completed",
-		},
+		Item:        &item,
 	})}
 }
 
@@ -611,7 +702,7 @@ func makeResponsesCompletedEvent(
 			Object:            "response",
 			Model:             state.Model,
 			Status:            status,
-			Output:            []ResponsesOutput{}, // Simplified; full output tracking would add complexity
+			Output:            append([]ResponsesOutput(nil), state.OutputItems...),
 			Usage:             usage,
 			IncompleteDetails: incompleteDetails,
 		},
@@ -638,4 +729,25 @@ func generateItemID() string {
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)
 	return "item_" + hex.EncodeToString(b)
+}
+
+func mergeWebFetchArguments(input json.RawMessage, result json.RawMessage) string {
+	payload := map[string]any{}
+	if len(input) > 0 {
+		_ = json.Unmarshal(input, &payload)
+	}
+	if len(result) > 0 {
+		var resultPayload any
+		if err := json.Unmarshal(result, &resultPayload); err == nil {
+			payload["_sub2api_server_tool_result"] = resultPayload
+		}
+	}
+	if len(payload) == 0 {
+		return "{}"
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
 }

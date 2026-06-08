@@ -69,7 +69,11 @@ func TestAnthropicToResponsesResponse_MapsWebFetchServerToolBlocksToFunctionCall
 	assert.Equal(t, "completed", out.Status)
 	assert.Equal(t, "function_call", out.Output[0].Type)
 	assert.Equal(t, "webfetch", out.Output[0].Name)
-	assert.Equal(t, `{"url":"https://example.com"}`, out.Output[0].Arguments)
+	assert.JSONEq(t, `{
+		"url":"https://example.com",
+		"_sub2api_server_tool_result":{"url":"https://example.com"}
+	}`, out.Output[0].Arguments)
+	assert.Equal(t, "srvtoolu_fetch_1", out.Output[0].CallID)
 	assert.Equal(t, "completed", out.Output[0].Status)
 }
 
@@ -238,4 +242,234 @@ func TestAnthropicEventToResponsesEvents_ToolUseExplicitEmptyInputKeepsEmptyObje
 	assert.Equal(t, "response.function_call_arguments.done", events[0].Type)
 	assert.Equal(t, `{}`, events[0].Arguments)
 	assert.Equal(t, "response.output_item.done", events[1].Type)
+}
+
+func TestAnthropicEventToResponsesEvents_WebSearchServerToolStreamCompletesWithPauseTurn(t *testing.T) {
+	state := NewAnthropicEventToResponsesState()
+
+	events := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_start",
+		Message: &AnthropicResponse{
+			ID:    "msg_web_search_stream",
+			Type:  "message",
+			Role:  "assistant",
+			Model: "claude-opus-4-6",
+		},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.created", events[0].Type)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_start",
+		ContentBlock: &AnthropicContentBlock{
+			Type:  "server_tool_use",
+			ID:    "srvtoolu_search_1",
+			Name:  "web_search",
+			Input: []byte(`{}`),
+		},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.output_item.added", events[0].Type)
+	require.NotNil(t, events[0].Item)
+	assert.Equal(t, "web_search_call", events[0].Item.Type)
+	assert.Equal(t, "search_1", events[0].Item.ID)
+	assert.Equal(t, "in_progress", events[0].Item.Status)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_delta",
+		Delta: &AnthropicDelta{
+			Type:        "input_json_delta",
+			PartialJSON: `{"query":"golang"}`,
+		},
+	}, state)
+	require.Empty(t, events)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_stop",
+	}, state)
+	require.Empty(t, events)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_start",
+		ContentBlock: &AnthropicContentBlock{
+			Type:      "web_search_tool_result",
+			ToolUseID: "srvtoolu_search_1",
+			Content:   []byte(`[{"type":"url","url":"https://go.dev","title":"The Go Programming Language"}]`),
+		},
+	}, state)
+	require.Empty(t, events)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_stop",
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.output_item.done", events[0].Type)
+	require.NotNil(t, events[0].Item)
+	assert.Equal(t, "web_search_call", events[0].Item.Type)
+	assert.Equal(t, "search_1", events[0].Item.ID)
+	assert.Equal(t, "completed", events[0].Item.Status)
+	require.NotNil(t, events[0].Item.Action)
+	assert.Equal(t, "golang", events[0].Item.Action.Query)
+	require.Len(t, events[0].Item.Action.Sources, 1)
+	assert.Equal(t, "https://go.dev", events[0].Item.Action.Sources[0].URL)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_delta",
+		Delta: &AnthropicDelta{
+			StopReason: "pause_turn",
+		},
+		Usage: &AnthropicUsage{
+			InputTokens:  10,
+			OutputTokens: 3,
+		},
+	}, state)
+	require.Empty(t, events)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_stop",
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.completed", events[0].Type)
+	require.NotNil(t, events[0].Response)
+	assert.Equal(t, "completed", events[0].Response.Status)
+	require.Len(t, events[0].Response.Output, 1)
+	assert.Equal(t, "web_search_call", events[0].Response.Output[0].Type)
+	assert.Equal(t, "golang", events[0].Response.Output[0].Action.Query)
+}
+
+func TestAnthropicEventToResponsesEvents_WebFetchServerToolStreamPreservesResultContentAndCallID(t *testing.T) {
+	state := NewAnthropicEventToResponsesState()
+
+	events := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_start",
+		Message: &AnthropicResponse{
+			ID:    "msg_web_fetch_stream",
+			Type:  "message",
+			Role:  "assistant",
+			Model: "claude-opus-4-6",
+		},
+	}, state)
+	require.Len(t, events, 1)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_start",
+		ContentBlock: &AnthropicContentBlock{
+			Type:  "server_tool_use",
+			ID:    "srvtoolu_fetch_1",
+			Name:  "web_fetch",
+			Input: []byte(`{}`),
+		},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.output_item.added", events[0].Type)
+	require.NotNil(t, events[0].Item)
+	assert.Equal(t, "function_call", events[0].Item.Type)
+	assert.Equal(t, "srvtoolu_fetch_1", events[0].Item.CallID)
+	assert.Equal(t, "webfetch", events[0].Item.Name)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_delta",
+		Delta: &AnthropicDelta{
+			Type:        "input_json_delta",
+			PartialJSON: `{"url":"https://example.com"}`,
+		},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.function_call_arguments.delta", events[0].Type)
+	assert.Equal(t, `{"url":"https://example.com"}`, events[0].Delta)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_stop",
+	}, state)
+	require.Empty(t, events)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_start",
+		ContentBlock: &AnthropicContentBlock{
+			Type:      "web_fetch_tool_result",
+			ToolUseID: "srvtoolu_fetch_1",
+			Content:   []byte(`{"type":"web_fetch_result","url":"https://example.com","title":"Example","text":"Hello from fetch"}`),
+		},
+	}, state)
+	require.Empty(t, events)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_stop",
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "response.function_call_arguments.done", events[0].Type)
+	assert.Equal(t, "srvtoolu_fetch_1", events[0].CallID)
+	assert.JSONEq(t, `{
+		"url":"https://example.com",
+		"_sub2api_server_tool_result":{
+			"type":"web_fetch_result",
+			"url":"https://example.com",
+			"title":"Example",
+			"text":"Hello from fetch"
+		}
+	}`, events[0].Arguments)
+	assert.Equal(t, "response.output_item.done", events[1].Type)
+	require.NotNil(t, events[1].Item)
+	assert.Equal(t, "function_call", events[1].Item.Type)
+	assert.Equal(t, "completed", events[1].Item.Status)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_delta",
+		Delta: &AnthropicDelta{
+			StopReason: "pause_turn",
+		},
+	}, state)
+	require.Empty(t, events)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_stop",
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.completed", events[0].Type)
+	require.NotNil(t, events[0].Response)
+	require.Len(t, events[0].Response.Output, 1)
+	assert.Equal(t, "function_call", events[0].Response.Output[0].Type)
+	assert.Equal(t, "srvtoolu_fetch_1", events[0].Response.Output[0].CallID)
+	assert.JSONEq(t, `{
+		"url":"https://example.com",
+		"_sub2api_server_tool_result":{
+			"type":"web_fetch_result",
+			"url":"https://example.com",
+			"title":"Example",
+			"text":"Hello from fetch"
+		}
+	}`, events[0].Response.Output[0].Arguments)
+}
+
+func TestAnthropicEventToResponsesEvents_MessageStopUsesStopReasonForIncompleteStatus(t *testing.T) {
+	state := NewAnthropicEventToResponsesState()
+
+	events := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_start",
+		Message: &AnthropicResponse{
+			ID:    "msg_incomplete",
+			Type:  "message",
+			Role:  "assistant",
+			Model: "claude-opus-4-6",
+		},
+	}, state)
+	require.Len(t, events, 1)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_delta",
+		Delta: &AnthropicDelta{
+			StopReason: "model_context_window_exceeded",
+		},
+	}, state)
+	require.Empty(t, events)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_stop",
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.completed", events[0].Type)
+	require.NotNil(t, events[0].Response)
+	assert.Equal(t, "incomplete", events[0].Response.Status)
+	require.NotNil(t, events[0].Response.IncompleteDetails)
+	assert.Equal(t, "model_context_window_exceeded", events[0].Response.IncompleteDetails.Reason)
 }

@@ -363,6 +363,22 @@ func TestConvertAnthropicRequestWithModel_RejectsUnsupportedServerToolFamilies(t
 	require.Contains(t, err.Error(), "computer_20250124")
 }
 
+func TestConvertAnthropicRequestWithModel_RejectsUnknownServerToolFamiliesFailClosed(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"hello"}],
+		"tools":[
+			{"type":"container_upload_20260101","name":"container_upload"}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported server-side tool family")
+	require.Contains(t, err.Error(), "container_upload_20260101")
+}
+
 func TestConvertAnthropicRequestWithModel_ToolSearchServerToolsRemainUntouched(t *testing.T) {
 	input := []byte(`{
 		"model":"claude-sonnet-4-6",
@@ -388,6 +404,52 @@ func TestConvertAnthropicRequestWithModel_ToolSearchServerToolsRemainUntouched(t
 	}
 	require.Contains(t, gotNames, "tool_search_tool_regex_20251119")
 	require.Contains(t, gotNames, "local_tool")
+}
+
+func TestConvertAnthropicRequestWithModel_HistoryShadowWebFetchRestoresBridgeConstraintsWithoutTools(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[
+			{"role":"assistant","content":[
+				{
+					"type":"tool_use",
+					"id":"toolu_fetch_1",
+					"name":"cc_srv_web_fetch",
+					"input":{"url":"https://example.com/a"},
+					"_shadow_bridge":{
+						"anthropic_type":"web_fetch_20250910",
+						"anthropic_name":"web_fetch",
+						"allowed_domains":["example.com","docs.example.com"],
+						"blocked_domains":["blocked.example.com"],
+						"max_uses":2,
+						"max_content_tokens":8192
+					}
+				}
+			]},
+			{"role":"user","content":[
+				{
+					"type":"tool_result",
+					"tool_use_id":"toolu_fetch_1",
+					"content":"ok"
+				}
+			]},
+			{"role":"user","content":"fetch another page"}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.NoError(t, err)
+
+	bridgeField := bridgeMetadataFieldValue(t, result)
+	shadowTools := bridgeField.Elem().FieldByName("ShadowTools")
+	webFetch := shadowTools.MapIndex(reflect.ValueOf("cc_srv_web_fetch"))
+	require.True(t, webFetch.IsValid())
+	require.Equal(t, "web_fetch_20250910", webFetch.FieldByName("AnthropicType").String())
+	require.Equal(t, "web_fetch", webFetch.FieldByName("AnthropicName").String())
+	require.Equal(t, 2, int(webFetch.FieldByName("MaxUses").Int()))
+	require.Equal(t, 8192, int(webFetch.FieldByName("MaxContentTokens").Int()))
+	require.Equal(t, []string{"example.com", "docs.example.com"}, webFetch.FieldByName("AllowedDomains").Interface())
+	require.Equal(t, []string{"blocked.example.com"}, webFetch.FieldByName("BlockedDomains").Interface())
 }
 
 func TestConvertAnthropicRequestWithModel_DowngradesOpus47EnabledThinkingToAdaptivePrefix(t *testing.T) {

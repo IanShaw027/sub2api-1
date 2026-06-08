@@ -26,9 +26,21 @@ type FetchResult struct {
 
 // FetchError describes bridge-friendly fetch failures without losing detail.
 type FetchError struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	Retryable bool   `json:"retryable,omitempty"`
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+	StatusCode int    `json:"status_code,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+	Retryable  bool   `json:"retryable,omitempty"`
+}
+
+func (e *FetchError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Message != "" {
+		return e.Message
+	}
+	return e.Code
 }
 
 const (

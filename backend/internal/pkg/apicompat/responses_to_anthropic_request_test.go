@@ -274,6 +274,84 @@ func TestResponsesToAnthropicRequest_PreservesErrorToolResultEnvelopeWithoutText
 	assert.JSONEq(t, `[]`, string(blocks[0].Content))
 }
 
+func TestResponsesToAnthropicRequest_ConvertsWebSearchCallInputToServerToolHistory(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.4",
+		Input: json.RawMessage(`[
+			{
+				"type":"web_search_call",
+				"id":"search_1",
+				"status":"completed",
+				"action":{
+					"type":"search",
+					"query":"golang",
+					"sources":[
+						{"type":"url","url":"https://go.dev","title":"The Go Programming Language"}
+					]
+				}
+			}
+		]`),
+		MaxOutputTokens: intPtr(256),
+	}
+
+	out, err := ResponsesToAnthropicRequest(req)
+	require.NoError(t, err)
+	require.Len(t, out.Messages, 2)
+
+	assert.Equal(t, "assistant", out.Messages[0].Role)
+	var assistantBlocks []AnthropicContentBlock
+	require.NoError(t, json.Unmarshal(out.Messages[0].Content, &assistantBlocks))
+	require.Len(t, assistantBlocks, 1)
+	assert.Equal(t, "server_tool_use", assistantBlocks[0].Type)
+	assert.Equal(t, "srvtoolu_search_1", assistantBlocks[0].ID)
+	assert.Equal(t, "web_search", assistantBlocks[0].Name)
+	assert.JSONEq(t, `{"query":"golang"}`, string(assistantBlocks[0].Input))
+
+	assert.Equal(t, "user", out.Messages[1].Role)
+	var userBlocks []AnthropicContentBlock
+	require.NoError(t, json.Unmarshal(out.Messages[1].Content, &userBlocks))
+	require.Len(t, userBlocks, 1)
+	assert.Equal(t, "web_search_tool_result", userBlocks[0].Type)
+	assert.Equal(t, "srvtoolu_search_1", userBlocks[0].ToolUseID)
+	assert.JSONEq(t, `[{"type":"web_search_result","url":"https://go.dev","title":"The Go Programming Language"}]`, string(userBlocks[0].Content))
+}
+
+func TestResponsesToAnthropicRequest_RestoresWebFetchServerToolHistoryFromFunctionCallEnvelope(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.4",
+		Input: json.RawMessage(`[
+			{
+				"type":"function_call",
+				"call_id":"srvtoolu_fetch_1",
+				"name":"webfetch",
+				"arguments":"{\"url\":\"https://example.com\",\"_sub2api_server_tool_result\":{\"type\":\"web_fetch_result\",\"url\":\"https://example.com\",\"title\":\"Example\",\"text\":\"Hello from fetch\"}}"
+			}
+		]`),
+		MaxOutputTokens: intPtr(256),
+	}
+
+	out, err := ResponsesToAnthropicRequest(req)
+	require.NoError(t, err)
+	require.Len(t, out.Messages, 2)
+
+	assert.Equal(t, "assistant", out.Messages[0].Role)
+	var assistantBlocks []AnthropicContentBlock
+	require.NoError(t, json.Unmarshal(out.Messages[0].Content, &assistantBlocks))
+	require.Len(t, assistantBlocks, 1)
+	assert.Equal(t, "server_tool_use", assistantBlocks[0].Type)
+	assert.Equal(t, "srvtoolu_fetch_1", assistantBlocks[0].ID)
+	assert.Equal(t, "web_fetch", assistantBlocks[0].Name)
+	assert.JSONEq(t, `{"url":"https://example.com"}`, string(assistantBlocks[0].Input))
+
+	assert.Equal(t, "user", out.Messages[1].Role)
+	var userBlocks []AnthropicContentBlock
+	require.NoError(t, json.Unmarshal(out.Messages[1].Content, &userBlocks))
+	require.Len(t, userBlocks, 1)
+	assert.Equal(t, "web_fetch_tool_result", userBlocks[0].Type)
+	assert.Equal(t, "srvtoolu_fetch_1", userBlocks[0].ToolUseID)
+	assert.JSONEq(t, `{"type":"web_fetch_result","url":"https://example.com","title":"Example","text":"Hello from fetch"}`, string(userBlocks[0].Content))
+}
+
 func intPtr(v int) *int {
 	return &v
 }
