@@ -26,6 +26,30 @@ func TestResponsesToAnthropicRequest_ConvertsStringInput(t *testing.T) {
 	assert.JSONEq(t, `"Hello, Anthropic"`, string(out.Messages[0].Content))
 }
 
+func TestResponsesToAnthropicRequest_MapsWebFetchToolDefinitionToFunctionTool(t *testing.T) {
+	req := &ResponsesRequest{
+		Model:           "gpt-5.4",
+		Input:           json.RawMessage(`"Fetch this page"`),
+		MaxOutputTokens: intPtr(256),
+		Tools: []ResponsesTool{
+			{
+				Type:        "web_fetch_20250910",
+				Name:        "web_fetch",
+				Description: "Fetch a specific URL",
+				Parameters:  json.RawMessage(`{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}`),
+			},
+		},
+	}
+
+	out, err := ResponsesToAnthropicRequest(req)
+	require.NoError(t, err)
+	require.Len(t, out.Tools, 1)
+	assert.Empty(t, out.Tools[0].Type)
+	assert.Equal(t, "webfetch", out.Tools[0].Name)
+	assert.Equal(t, "Fetch a specific URL", out.Tools[0].Description)
+	assert.JSONEq(t, `{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}`, string(out.Tools[0].InputSchema))
+}
+
 func TestResponsesToAnthropicRequest_DefaultsMaxOutputTokensWhenUnsetOrZero(t *testing.T) {
 	t.Parallel()
 

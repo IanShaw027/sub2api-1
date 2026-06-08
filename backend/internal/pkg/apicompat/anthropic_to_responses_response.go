@@ -30,6 +30,7 @@ func AnthropicToResponsesResponse(resp *AnthropicResponse) *ResponsesResponse {
 
 	var outputs []ResponsesOutput
 	var msgParts []ResponsesContentPart
+	serverToolUses := make(map[string]AnthropicContentBlock)
 
 	for _, block := range resp.Content {
 		switch block.Type {
@@ -68,6 +69,41 @@ func AnthropicToResponsesResponse(resp *AnthropicResponse) *ResponsesResponse {
 				ID:        generateItemID(),
 				CallID:    toResponsesCallID(block.ID),
 				Name:      block.Name,
+				Arguments: args,
+				Status:    "completed",
+			})
+		case "server_tool_use":
+			if block.ID != "" {
+				serverToolUses[block.ID] = block
+			}
+		case "web_search_tool_result":
+			toolUse, ok := serverToolUses[block.ToolUseID]
+			if !ok || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(toolUse.Name)), "web_search") {
+				continue
+			}
+			outputs = append(outputs, ResponsesOutput{
+				Type: "web_search_call",
+				ID:   responsesServerToolCallID(toolUse.ID),
+				Action: &WebSearchAction{
+					Type:    "search",
+					Query:   anthropicServerToolQuery(toolUse.Input),
+					Sources: anthropicWebSearchSources(block.Content),
+				},
+			})
+		case "web_fetch_tool_result":
+			toolUse, ok := serverToolUses[block.ToolUseID]
+			if !ok || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(toolUse.Name)), "web_fetch") {
+				continue
+			}
+			args := "{}"
+			if len(toolUse.Input) > 0 {
+				args = string(toolUse.Input)
+			}
+			outputs = append(outputs, ResponsesOutput{
+				Type:      "function_call",
+				ID:        generateItemID(),
+				CallID:    toResponsesCallID(toolUse.ID),
+				Name:      "webfetch",
 				Arguments: args,
 				Status:    "completed",
 			})
@@ -121,6 +157,49 @@ func AnthropicToResponsesResponse(resp *AnthropicResponse) *ResponsesResponse {
 	}
 
 	return out
+}
+
+func responsesServerToolCallID(id string) string {
+	if after, ok := strings.CutPrefix(id, "srvtoolu_"); ok && strings.TrimSpace(after) != "" {
+		return after
+	}
+	return id
+}
+
+func anthropicServerToolQuery(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var payload struct {
+		Query string `json:"query"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return ""
+	}
+	return payload.Query
+}
+
+func anthropicWebSearchSources(raw json.RawMessage) []ResponsesWebSearchSource {
+	if len(raw) == 0 {
+		return nil
+	}
+	var results []struct {
+		Type  string `json:"type"`
+		URL   string `json:"url"`
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal(raw, &results); err != nil {
+		return nil
+	}
+	sources := make([]ResponsesWebSearchSource, 0, len(results))
+	for _, result := range results {
+		sources = append(sources, ResponsesWebSearchSource{
+			Type:  result.Type,
+			URL:   result.URL,
+			Title: result.Title,
+		})
+	}
+	return sources
 }
 
 // anthropicStopReasonToResponsesStatus maps Anthropic stop_reason to Responses status.

@@ -440,6 +440,13 @@ func convertResponsesToAnthropicTools(tools []ResponsesTool) []AnthropicTool {
 				Type: "web_search_20250305",
 				Name: "web_search",
 			})
+		case "web_fetch", "web_fetch_20250910":
+			out = append(out, AnthropicTool{
+				Name:        "webfetch",
+				Description: t.Description,
+				InputSchema: normalizeAnthropicInputSchema(t.Parameters),
+				Strict:      t.Strict,
+			})
 		case "function":
 			out = append(out, AnthropicTool{
 				Name:        t.Name,
