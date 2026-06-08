@@ -233,8 +233,6 @@ func TestFetcherFetch_RejectsRedirectToPrivateHost(t *testing.T) {
 }
 
 func TestFetcherFetch_RejectsResolvedPrivateIPBeforeRequest(t *testing.T) {
-	t.Parallel()
-
 	originalValidateResolvedHost := validateResolvedFetchHost
 	validateResolvedFetchHost = func(host string) error {
 		require.Equal(t, "public.example.com", host)
