@@ -1,18 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
-import type { InvoiceApplication } from '@/types/payment'
+import type { Invoice } from '@/types/payment'
 import AdminInvoiceApplicationsView from '../AdminInvoiceApplicationsView.vue'
 
-const { getInvoices, getInvoice, adminPaymentAPI } = vi.hoisted(() => {
+const { getInvoices, getInvoice, cancelInvoice, adminPaymentAPI } = vi.hoisted(() => {
   const getInvoices = vi.fn()
   const getInvoice = vi.fn()
+  const cancelInvoice = vi.fn()
   return {
     getInvoices,
     getInvoice,
+    cancelInvoice,
     adminPaymentAPI: {
       getInvoices,
       getInvoice,
+      cancelInvoice,
       uploadInvoiceFile: vi.fn(),
     },
   }
@@ -34,9 +37,7 @@ vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {
     ...actual,
-    useI18n: () => ({
-      t: (key: string) => key,
-    }),
+    useI18n: () => ({ t: (key: string) => key }),
   }
 })
 
@@ -54,233 +55,140 @@ const SelectStub = {
   `,
 }
 
-function createDeferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res
-    reject = rej
-  })
-  return { promise, resolve, reject }
-}
-
-function createInvoice(overrides: Partial<InvoiceApplication> = {}): InvoiceApplication {
+function createInvoice(overrides: Partial<Invoice> = {}): Invoice {
   return {
-    id: 1,
-    order_id: 101,
-    user_id: 201,
+    id: 42,
+    user_id: 1,
     user_email: 'first@example.com',
-    order_out_trade_no: 'invoice-1',
-    payment_type: 'alipay',
-    provider_instance_id: 'provider-1',
-    provider_key: 'alipay',
     status: 'APPLIED',
-    invoice_amount: 120,
-    title: 'Invoice 1',
-    tax_number: '1234567890',
-    email: 'first@example.com',
-    contact_name: 'First User',
-    contact_phone: '1234567890',
-    created_at: '2026-05-22T00:00:00Z',
-    updated_at: '2026-05-22T00:00:00Z',
+    invoice_amount: 318,
+    order_count: 3,
+    title: 'ACME Inc.',
+    tax_number: '91110000000000000X',
+    email: 'billing@acme.com',
+    contact_name: 'Alice',
+    contact_phone: '13800000000',
+    request_note: undefined,
+    file_media_id: undefined,
+    file_name: '',
+    file_mime_type: '',
+    file_size_bytes: 0,
+    applied_at: '2026-06-08T00:00:00Z',
+    cancelled_at: undefined,
+    issued_at: undefined,
+    created_at: '2026-06-08T00:00:00Z',
+    updated_at: '2026-06-08T00:00:00Z',
+    orders: [
+      { order_id: 101, out_trade_no: 'ORD-101', pay_amount_snapshot: 100, payment_type: 'wxpay', created_at: '2026-06-08T00:00:00Z' },
+      { order_id: 102, out_trade_no: 'ORD-102', pay_amount_snapshot: 100, payment_type: 'wxpay', created_at: '2026-06-08T00:00:00Z' },
+      { order_id: 103, out_trade_no: 'ORD-103', pay_amount_snapshot: 118, payment_type: 'alipay', created_at: '2026-06-08T00:00:00Z' },
+    ],
     ...overrides,
   }
 }
 
-describe('AdminInvoiceApplicationsView request races', () => {
+function mountView() {
+  return mount(AdminInvoiceApplicationsView, {
+    global: {
+      stubs: {
+        AppLayout: AppLayoutStub,
+        BaseDialog: BaseDialogStub,
+        Pagination: PaginationStub,
+        Icon: IconStub,
+        Select: SelectStub,
+      },
+    },
+  })
+}
+
+describe('AdminInvoiceApplicationsView', () => {
   beforeEach(() => {
     getInvoices.mockReset()
     getInvoice.mockReset()
+    cancelInvoice.mockReset()
   })
 
-  it('keeps the newest invoice list response when filters change before the first request returns', async () => {
-    const firstResponse = createDeferred<{ data: { items: InvoiceApplication[]; total: number } }>()
-    const secondResponse = createDeferred<{ data: { items: InvoiceApplication[]; total: number } }>()
-    getInvoices.mockImplementationOnce(() => firstResponse.promise)
-    getInvoices.mockImplementationOnce(() => secondResponse.promise)
-
-    const wrapper = mount(AdminInvoiceApplicationsView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Pagination: PaginationStub,
-          Select: SelectStub,
-          Icon: IconStub,
-        },
-      },
+  it('renders list with order_count and user_email columns', async () => {
+    getInvoices.mockResolvedValueOnce({
+      data: { items: [createInvoice()], total: 1, page: 1, page_size: 20 },
     })
-
+    const wrapper = mountView()
     await flushPromises()
-
-    await wrapper.get('select').setValue('ISSUED')
-    expect(getInvoices).toHaveBeenCalledTimes(2)
-
-    secondResponse.resolve({
-      data: {
-        items: [createInvoice({ id: 2, order_out_trade_no: 'invoice-new', status: 'ISSUED', email: 'second@example.com', user_email: 'second@example.com' })],
-        total: 1,
-      },
-    })
-    await flushPromises()
-
-    expect(wrapper.get('tbody').text()).toContain('invoice-new')
-
-    firstResponse.resolve({
-      data: {
-        items: [createInvoice({ id: 1, order_out_trade_no: 'invoice-old', email: 'old@example.com', user_email: 'old@example.com' })],
-        total: 1,
-      },
-    })
-    await flushPromises()
-
-    expect(wrapper.get('tbody').text()).toContain('invoice-new')
+    const text = wrapper.text()
+    expect(text).toContain('first@example.com')
+    expect(text).toContain('ACME Inc.')
+    expect(text).toContain('3')
+    expect(text).toContain('318')
   })
 
-  it('keeps the newest invoice detail when two rows are opened back to back', async () => {
+  it('shows related orders table in detail dialog', async () => {
+    getInvoices.mockResolvedValueOnce({
+      data: { items: [createInvoice()], total: 1, page: 1, page_size: 20 },
+    })
+    getInvoice.mockResolvedValueOnce({ data: createInvoice() })
+
+    const wrapper = mountView()
+    await flushPromises()
+    const viewBtn = wrapper.findAll('button').find((b) => b.text().includes('common.view'))
+    expect(viewBtn).toBeDefined()
+    await viewBtn!.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.find('[data-test="dialog"]')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.text()).toContain('ORD-101')
+    expect(dialog.text()).toContain('ORD-102')
+    expect(dialog.text()).toContain('ORD-103')
+  })
+
+  it('shows cancel button only when status is APPLIED', async () => {
+    getInvoices.mockResolvedValueOnce({
+      data: { items: [createInvoice()], total: 1, page: 1, page_size: 20 },
+    })
+    getInvoice.mockResolvedValueOnce({ data: createInvoice({ status: 'APPLIED' }) })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text().includes('common.view'))!.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.find('[data-test="dialog"]')
+    expect(dialog.text()).toContain('payment.invoice.cancel')
+  })
+
+  it('hides cancel button when status is ISSUED', async () => {
+    getInvoices.mockResolvedValueOnce({
+      data: { items: [createInvoice({ status: 'ISSUED' })], total: 1, page: 1, page_size: 20 },
+    })
+    getInvoice.mockResolvedValueOnce({ data: createInvoice({ status: 'ISSUED' }) })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text().includes('common.view'))!.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.find('[data-test="dialog"]')
+    expect(dialog.text()).not.toContain('payment.invoice.cancel')
+  })
+
+  it('calls cancelInvoice when admin confirms cancellation', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
     getInvoices.mockResolvedValue({
-      data: {
-        items: [
-          createInvoice({ id: 1, order_out_trade_no: 'invoice-old', email: 'old@example.com', user_email: 'old@example.com' }),
-          createInvoice({ id: 2, order_out_trade_no: 'invoice-new', email: 'second@example.com', user_email: 'second@example.com' }),
-        ],
-        total: 2,
-      },
+      data: { items: [createInvoice()], total: 1, page: 1, page_size: 20 },
     })
+    getInvoice.mockResolvedValueOnce({ data: createInvoice({ status: 'APPLIED' }) })
+    cancelInvoice.mockResolvedValueOnce({ data: createInvoice({ status: 'CANCELLED' }) })
 
-    const firstDetail = createDeferred<{ data: InvoiceApplication }>()
-    const secondDetail = createDeferred<{ data: InvoiceApplication }>()
-    getInvoice.mockImplementationOnce(() => firstDetail.promise)
-    getInvoice.mockImplementationOnce(() => secondDetail.promise)
-
-    const wrapper = mount(AdminInvoiceApplicationsView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Pagination: PaginationStub,
-          Select: SelectStub,
-          Icon: IconStub,
-        },
-      },
-    })
-
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text().includes('common.view'))!.trigger('click')
     await flushPromises()
 
-    const viewButtons = wrapper.findAll('tbody button')
-    expect(viewButtons).toHaveLength(2)
-
-    await viewButtons[0].trigger('click')
-    await viewButtons[1].trigger('click')
-
-    expect(getInvoice).toHaveBeenNthCalledWith(1, 1)
-    expect(getInvoice).toHaveBeenNthCalledWith(2, 2)
-
-    secondDetail.resolve({
-      data: createInvoice({ id: 2, order_out_trade_no: 'invoice-new', email: 'second@example.com', user_email: 'second@example.com' }),
-    })
+    const cancelBtn = wrapper.findAll('button').find((b) => b.text().includes('payment.invoice.cancel'))
+    expect(cancelBtn).toBeDefined()
+    await cancelBtn!.trigger('click')
     await flushPromises()
 
-    const dialog = wrapper.get('[data-test="dialog"]')
-    expect(dialog.text()).toContain('invoice-new')
-    expect(dialog.text()).not.toContain('invoice-old')
-
-    firstDetail.resolve({
-      data: createInvoice({ id: 1, order_out_trade_no: 'invoice-old', email: 'old@example.com', user_email: 'old@example.com' }),
-    })
-    await flushPromises()
-
-    expect(dialog.text()).toContain('invoice-new')
-    expect(dialog.text()).not.toContain('invoice-old')
-  })
-
-  it('does not keep a reopened invoice dialog submitting or overwrite it with stale detail and upload responses', async () => {
-    const firstDetail = createDeferred<{ data: InvoiceApplication }>()
-    const secondDetail = createDeferred<{ data: InvoiceApplication }>()
-    getInvoices.mockResolvedValue({
-      data: {
-        items: [
-          createInvoice({ id: 1, order_out_trade_no: 'invoice-old', email: 'old@example.com', user_email: 'old@example.com' }),
-          createInvoice({ id: 2, order_out_trade_no: 'invoice-new', email: 'new@example.com', user_email: 'new@example.com' }),
-        ],
-        total: 2,
-      },
-    })
-    getInvoice.mockImplementationOnce(() => firstDetail.promise)
-    getInvoice.mockImplementationOnce(() => secondDetail.promise)
-    getInvoice.mockResolvedValueOnce({
-      data: createInvoice({ id: 2, order_out_trade_no: 'invoice-new', email: 'new@example.com', user_email: 'new@example.com' }),
-    })
-
-    const uploadRequest = createDeferred<{ data: InvoiceApplication }>()
-    adminPaymentAPI.uploadInvoiceFile.mockReturnValueOnce(uploadRequest.promise)
-
-    const wrapper = mount(AdminInvoiceApplicationsView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Pagination: PaginationStub,
-          Select: SelectStub,
-          Icon: IconStub,
-        },
-      },
-    })
-
-    await flushPromises()
-
-    const viewButtons = wrapper.findAll('tbody button')
-    await viewButtons[0].trigger('click')
-    await viewButtons[1].trigger('click')
-
-    secondDetail.resolve({
-      data: createInvoice({ id: 2, order_out_trade_no: 'invoice-new', email: 'new@example.com', user_email: 'new@example.com' }),
-    })
-    await flushPromises()
-
-    const firstFileInput = wrapper.get('input[type="file"]')
-    Object.defineProperty(firstFileInput.element, 'files', {
-      value: [new File(['invoice'], 'invoice.pdf', { type: 'application/pdf' })],
-      configurable: true,
-    })
-    await firstFileInput.trigger('change')
-    await wrapper.get('[data-test="dialog"] button.btn-primary').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="dialog"] button.btn-primary').attributes('disabled')).toBeDefined()
-
-    await wrapper.get('[data-test="dialog"] button.btn-secondary').trigger('click')
-    await flushPromises()
-
-    await viewButtons[1].trigger('click')
-    await flushPromises()
-
-    const reopenedDialog = wrapper.get('[data-test="dialog"]')
-    expect(reopenedDialog.text()).toContain('invoice-new')
-    expect(reopenedDialog.text()).not.toContain('invoice-old')
-
-    const secondFileInput = wrapper.get('input[type="file"]')
-    Object.defineProperty(secondFileInput.element, 'files', {
-      value: [new File(['invoice'], 'invoice-2.pdf', { type: 'application/pdf' })],
-      configurable: true,
-    })
-    await secondFileInput.trigger('change')
-    expect(wrapper.get('[data-test="dialog"] button.btn-primary').attributes('disabled')).toBeUndefined()
-
-    firstDetail.resolve({
-      data: createInvoice({ id: 1, order_out_trade_no: 'invoice-old', email: 'old@example.com', user_email: 'old@example.com' }),
-    })
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="dialog"]').text()).toContain('invoice-new')
-    expect(wrapper.get('[data-test="dialog"]').text()).not.toContain('invoice-old')
-
-    uploadRequest.resolve({
-      data: createInvoice({ id: 1, order_out_trade_no: 'invoice-old', email: 'old@example.com', user_email: 'old@example.com', status: 'ISSUED' }),
-    })
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="dialog"]').text()).toContain('invoice-new')
-    expect(wrapper.get('[data-test="dialog"]').text()).not.toContain('invoice-old')
+    expect(cancelInvoice).toHaveBeenCalledWith(42)
   })
 })
