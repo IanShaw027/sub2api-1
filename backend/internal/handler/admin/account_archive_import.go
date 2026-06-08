@@ -121,6 +121,12 @@ func (h *AccountHandler) ImportArchive(c *gin.Context) {
 				Proxies:    parsed.subAPIProxies,
 				Accounts:   parsed.subAPIAccounts,
 			}
+			if payload.Proxies == nil {
+				payload.Proxies = []DataProxy{}
+			}
+			if payload.Accounts == nil {
+				payload.Accounts = []DataAccount{}
+			}
 			req := DataImportRequest{
 				Data:                 payload,
 				SkipDefaultGroupBind: &skipDefaultGroupBind,
