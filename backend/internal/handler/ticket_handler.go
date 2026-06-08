@@ -334,8 +334,8 @@ func (h *TicketHandler) resolveAttachmentsForUser(ctx context.Context, userID in
 		}
 		attachments = append(attachments, service.TicketMessageAttachment{
 			MediaID:      asset.ID,
-			URL:          h.mediaService.PublicURL(asset.ID, asset.Visibility),
-			ThumbnailURL: h.mediaService.ThumbnailPublicURL(asset.ID, asset.Visibility, asset.ThumbnailObjectKey),
+			URL:          h.mediaService.PublicURL(asset),
+			ThumbnailURL: h.mediaService.ThumbnailPublicURL(asset),
 			FileName:     asset.OriginalFileName,
 			ContentType:  asset.MIMEType,
 			SizeBytes:    asset.SizeBytes,

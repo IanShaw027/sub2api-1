@@ -198,7 +198,7 @@ func (h *SettingHandler) ingestSettingsMediaReferences(ctx context.Context, req 
 }
 
 func (h *SettingHandler) ingestPublicImage(ctx context.Context, bizType, bizID, raw, fileName string) (string, int64, error) {
-	if publicURL, ok := h.normalizeManagedMediaURL(raw); ok {
+	if publicURL, ok := h.normalizeManagedMediaURL(ctx, raw); ok {
 		return publicURL, 0, nil
 	}
 	asset, err := h.mediaService.IngestImageReference(ctx, service.IngestImageReferenceInput{
@@ -211,7 +211,7 @@ func (h *SettingHandler) ingestPublicImage(ctx context.Context, bizType, bizID, 
 	if err != nil {
 		return "", 0, err
 	}
-	publicURL := strings.TrimSpace(h.mediaService.PublicURL(asset.ID, asset.Visibility))
+	publicURL := strings.TrimSpace(h.mediaService.PublicURL(asset))
 	if publicURL == "" {
 		return "", asset.ID, service.ErrMediaStorageDisabled
 	}
@@ -232,12 +232,16 @@ func (h *SettingHandler) cleanupIngestedSettingsMediaReferences(ctx context.Cont
 	}
 }
 
-func (h *SettingHandler) normalizeManagedMediaURL(raw string) (string, bool) {
+func (h *SettingHandler) normalizeManagedMediaURL(ctx context.Context, raw string) (string, bool) {
 	id, ok := h.parseManagedMediaID(raw)
 	if !ok {
 		return "", false
 	}
-	publicURL := strings.TrimSpace(h.mediaService.PublicURL(id, service.MediaVisibilityPublic))
+	asset, err := h.mediaService.GetForAdmin(ctx, id)
+	if err != nil || asset == nil {
+		return "", false
+	}
+	publicURL := strings.TrimSpace(h.mediaService.PublicURL(asset))
 	if publicURL == "" {
 		return "", false
 	}

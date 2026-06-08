@@ -341,9 +341,12 @@ func TestExchangePendingOAuthCompletionStoresAdoptedAvatarInSharedMedia(t *testi
 	handler.ExchangePendingOAuthCompletion(ginCtx)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
+	uploadedAsset, err := mediaService.GetForAdmin(ctx, 1)
+	require.NoError(t, err)
+	wantAvatarURL := mediaService.PublicURL(uploadedAsset)
 	data := decodeJSONResponseData(t, recorder)
-	require.Equal(t, mediaService.PublicURL(1, service.MediaVisibilityPublic), data["suggested_avatar_url"])
-	require.Equal(t, mediaService.PublicURL(1, service.MediaVisibilityPublic), data["avatar_url"])
+	require.Equal(t, wantAvatarURL, data["suggested_avatar_url"])
+	require.Equal(t, wantAvatarURL, data["avatar_url"])
 
 	identity, err := client.AuthIdentity.Query().
 		Where(
@@ -354,13 +357,13 @@ func TestExchangePendingOAuthCompletionStoresAdoptedAvatarInSharedMedia(t *testi
 		Only(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "Alice Example", identity.Metadata["display_name"])
-	require.Equal(t, mediaService.PublicURL(1, service.MediaVisibilityPublic), identity.Metadata["suggested_avatar_url"])
-	require.Equal(t, mediaService.PublicURL(1, service.MediaVisibilityPublic), identity.Metadata["avatar_url"])
+	require.Equal(t, wantAvatarURL, identity.Metadata["suggested_avatar_url"])
+	require.Equal(t, wantAvatarURL, identity.Metadata["avatar_url"])
 
 	avatar := loadUserAvatarRecord(t, client, userEntity.ID)
 	require.NotNil(t, avatar)
 	require.Equal(t, "media", avatar.StorageProvider)
-	require.Equal(t, mediaService.PublicURL(1, service.MediaVisibilityPublic), avatar.URL)
+	require.Equal(t, wantAvatarURL, avatar.URL)
 }
 
 func TestExchangePendingOAuthCompletionKeepsCompletionWhenAvatarAdoptionIsBlockedByAllowlist(t *testing.T) {

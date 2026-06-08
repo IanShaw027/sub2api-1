@@ -347,12 +347,12 @@ func TestBuildSignedDownloadURL_UsesMediaPublicBaseURLInsteadOfFrontendURLPath(t
 	}
 }
 
-func TestManagedPublicMediaURLs_UseApplicationRoutesAndRoundTripManagedID(t *testing.T) {
+func TestManagedPublicMediaURLs_UseDirectObjectKeyAndRoundTripManagedID(t *testing.T) {
 	cfg := newMediaIngestTestConfig()
 	asset := &MediaAsset{
 		ID:                 42,
 		StorageProfileID:   "old",
-		Bucket:             "old-bucket",
+		Bucket:             cfg.Media.Bucket,
 		ObjectKey:          "media/avatar/user-42/original.png",
 		ThumbnailObjectKey: "media/avatar_thumbnail/user-42/thumb.png",
 		Visibility:         MediaVisibilityPublic,
@@ -364,20 +364,26 @@ func TestManagedPublicMediaURLs_UseApplicationRoutesAndRoundTripManagedID(t *tes
 		},
 	}, &mediaIngestTestStore{}, cfg)
 
-	publicURL := svc.PublicURL(asset.ID, asset.Visibility)
-	if publicURL != "https://media.example/api/v1/media/public/42" {
-		t.Fatalf("public url = %q, want managed route", publicURL)
+	publicURL := svc.PublicURL(asset)
+	if publicURL != "https://media.example/media/avatar/user-42/original.png" {
+		t.Fatalf("public url = %q, want direct object url", publicURL)
 	}
-	thumbnailURL := svc.ThumbnailPublicURL(asset.ID, asset.Visibility, asset.ThumbnailObjectKey)
-	if thumbnailURL != "https://media.example/api/v1/media/public/42/thumbnail" {
-		t.Fatalf("thumbnail public url = %q, want managed route", thumbnailURL)
+	thumbnailURL := svc.ThumbnailPublicURL(asset)
+	if thumbnailURL != "https://media.example/media/avatar_thumbnail/user-42/thumb.png" {
+		t.Fatalf("thumbnail public url = %q, want direct object url", thumbnailURL)
 	}
 
 	if id, ok := ParseManagedMediaID(svc, publicURL); !ok || id != asset.ID {
 		t.Fatalf("ParseManagedMediaID(public) = (%d, %v), want (%d, true)", id, ok, asset.ID)
 	}
-	if id, ok := ParseManagedMediaID(svc, thumbnailURL); !ok || id != asset.ID {
-		t.Fatalf("ParseManagedMediaID(thumbnail) = (%d, %v), want (%d, true)", id, ok, asset.ID)
+
+	legacyPublic := "https://media.example/api/v1/media/public/42"
+	if id, ok := ParseManagedMediaID(svc, legacyPublic); !ok || id != asset.ID {
+		t.Fatalf("ParseManagedMediaID(legacyPublic) = (%d, %v), want (%d, true)", id, ok, asset.ID)
+	}
+	legacyThumbnail := "https://media.example/api/v1/media/public/42/thumbnail"
+	if id, ok := ParseManagedMediaID(svc, legacyThumbnail); !ok || id != asset.ID {
+		t.Fatalf("ParseManagedMediaID(legacyThumbnail) = (%d, %v), want (%d, true)", id, ok, asset.ID)
 	}
 }
 

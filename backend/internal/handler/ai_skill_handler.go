@@ -1102,7 +1102,7 @@ func (h *AIHandler) buildRunAttachments(ctx context.Context, userID int64, items
 				}
 			}
 		} else if strings.TrimSpace(attachment.URL) == "" {
-			attachment.URL = h.skillManagedMediaURL(attachment.MediaID, attachment.AssetID)
+			attachment.URL = h.skillManagedMediaURL(ctx, attachment.MediaID, attachment.AssetID)
 		}
 		out = append(out, attachment)
 	}
@@ -1190,7 +1190,7 @@ func (h *AIHandler) storeSkillMediaReferenceWithID(ctx context.Context, userID i
 	if err != nil {
 		return skillMediaReference{}, err
 	}
-	storedURL := h.mediaService.PublicURL(asset.ID, asset.Visibility)
+	storedURL := h.mediaService.PublicURL(asset)
 	if strings.TrimSpace(storedURL) == "" {
 		storedURL = source
 	}
@@ -1214,17 +1214,21 @@ func (h *AIHandler) cleanupSkillMedia(ctx context.Context, userID int64, mediaID
 	}
 }
 
-func (h *AIHandler) skillManagedMediaURL(primaryID, fallbackID *int64) string {
+func (h *AIHandler) skillManagedMediaURL(ctx context.Context, primaryID, fallbackID *int64) string {
 	if h == nil || h.mediaService == nil {
 		return ""
 	}
-	if primaryID != nil && *primaryID > 0 {
-		if url := h.mediaService.PublicURL(*primaryID, service.MediaVisibilityPublic); strings.TrimSpace(url) != "" {
+	for _, id := range []*int64{primaryID, fallbackID} {
+		if id == nil || *id <= 0 {
+			continue
+		}
+		asset, err := h.mediaService.GetForAdmin(ctx, *id)
+		if err != nil || asset == nil {
+			continue
+		}
+		if url := h.mediaService.PublicURL(asset); strings.TrimSpace(url) != "" {
 			return url
 		}
-	}
-	if fallbackID != nil && *fallbackID > 0 {
-		return h.mediaService.PublicURL(*fallbackID, service.MediaVisibilityPublic)
 	}
 	return ""
 }

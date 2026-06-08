@@ -1002,11 +1002,11 @@ func (h *AIHandler) buildAIArtworkAsset(ctx context.Context, userID int64, job *
 			storagePath = uploaded.ObjectKey
 			metadata["media_asset_id"] = uploaded.ID
 			if visibility == service.MediaVisibilityPublic {
-				if publicURL := h.mediaService.PublicURL(uploaded.ID, visibility); publicURL != "" {
+				if publicURL := h.mediaService.PublicURL(uploaded); publicURL != "" {
 					sourceURL = publicURL
 				}
 				if uploaded.ThumbnailObjectKey != "" {
-					if thumbURL := h.mediaService.ThumbnailPublicURL(uploaded.ID, visibility, uploaded.ThumbnailObjectKey); thumbURL != "" {
+					if thumbURL := h.mediaService.ThumbnailPublicURL(uploaded); thumbURL != "" {
 						metadata["thumbnail_url"] = thumbURL
 					}
 				}

@@ -58,8 +58,8 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 	}
 	response.Created(c, dto.MediaAssetFromService(
 		item,
-		h.mediaService.PublicURL(item.ID, item.Visibility),
-		h.mediaService.ThumbnailPublicURL(item.ID, item.Visibility, item.ThumbnailObjectKey),
+		h.mediaService.PublicURL(item),
+		h.mediaService.ThumbnailPublicURL(item),
 	))
 }
 
@@ -76,8 +76,8 @@ func (h *MediaHandler) GetByID(c *gin.Context) {
 	}
 	response.Success(c, dto.MediaAssetFromService(
 		item,
-		h.mediaService.PublicURL(item.ID, item.Visibility),
-		h.mediaService.ThumbnailPublicURL(item.ID, item.Visibility, item.ThumbnailObjectKey),
+		h.mediaService.PublicURL(item),
+		h.mediaService.ThumbnailPublicURL(item),
 	))
 }
 
@@ -114,8 +114,8 @@ func (h *MediaHandler) List(c *gin.Context) {
 		item := items[i]
 		out = append(out, *dto.MediaAssetFromService(
 			&item,
-			h.mediaService.PublicURL(item.ID, item.Visibility),
-			h.mediaService.ThumbnailPublicURL(item.ID, item.Visibility, item.ThumbnailObjectKey),
+			h.mediaService.PublicURL(&item),
+			h.mediaService.ThumbnailPublicURL(&item),
 		))
 	}
 	response.Paginated(c, out, result.Total, page, pageSize)
@@ -154,8 +154,8 @@ func (h *MediaHandler) UpdateVisibility(c *gin.Context) {
 	}
 	response.Success(c, dto.MediaAssetFromService(
 		item,
-		h.mediaService.PublicURL(item.ID, item.Visibility),
-		h.mediaService.ThumbnailPublicURL(item.ID, item.Visibility, item.ThumbnailObjectKey),
+		h.mediaService.PublicURL(item),
+		h.mediaService.ThumbnailPublicURL(item),
 	))
 }
 

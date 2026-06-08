@@ -609,7 +609,7 @@ func (s *UserService) setAvatarViaMedia(ctx context.Context, userID int64, raw s
 	if mediaID, ok := ParseManagedMediaID(s.mediaService, raw); ok {
 		asset, err := s.mediaService.repo.GetByID(ctx, mediaID)
 		if err == nil && asset != nil && asset.Status == MediaStatusActive {
-			publicURL := s.mediaService.PublicURL(asset.ID, asset.Visibility)
+			publicURL := s.mediaService.PublicURL(asset)
 			if strings.TrimSpace(publicURL) != "" {
 				avatar, upsertErr := s.userRepo.UpsertUserAvatar(ctx, userID, UpsertUserAvatarInput{
 					StorageProvider: "media",
@@ -679,7 +679,7 @@ func (s *UserService) setAvatarViaMedia(ctx context.Context, userID int64, raw s
 		}
 		return s.mediaService.DeleteForAdmin(cleanupCtx, uploaded.ID)
 	}
-	publicURL := s.mediaService.PublicURL(uploaded.ID, uploaded.Visibility)
+	publicURL := s.mediaService.PublicURL(uploaded)
 	if strings.TrimSpace(publicURL) == "" {
 		runAvatarCleanupBestEffort(ctx, cleanup, "cleanup uploaded avatar after missing public url")
 		return nil, nil, ErrMediaStorageDisabled

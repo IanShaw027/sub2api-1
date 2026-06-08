@@ -338,26 +338,48 @@ func (s *MediaService) OpenSignedDownload(ctx context.Context, id int64, expires
 	return stream, asset, nil
 }
 
-func (s *MediaService) PublicURL(id int64, visibility string) string {
-	if strings.TrimSpace(visibility) != MediaVisibilityPublic {
+func (s *MediaService) PublicURL(asset *MediaAsset) string {
+	if asset == nil {
+		return ""
+	}
+	if strings.TrimSpace(asset.Visibility) != MediaVisibilityPublic {
+		return ""
+	}
+	objectKey := strings.TrimSpace(asset.ObjectKey)
+	if objectKey == "" {
 		return ""
 	}
 	base := strings.TrimRight(strings.TrimSpace(s.currentStorageConfig(context.Background()).PublicBaseURL), "/")
 	if base == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s/api/v1/media/public/%d", base, id)
+	return base + "/" + escapeObjectKeyPath(objectKey)
 }
 
-func (s *MediaService) ThumbnailPublicURL(id int64, visibility string, thumbnailObjectKey string) string {
-	if strings.TrimSpace(visibility) != MediaVisibilityPublic || strings.TrimSpace(thumbnailObjectKey) == "" {
+func (s *MediaService) ThumbnailPublicURL(asset *MediaAsset) string {
+	if asset == nil {
+		return ""
+	}
+	if strings.TrimSpace(asset.Visibility) != MediaVisibilityPublic {
+		return ""
+	}
+	objectKey := strings.TrimSpace(asset.ThumbnailObjectKey)
+	if objectKey == "" {
 		return ""
 	}
 	base := strings.TrimRight(strings.TrimSpace(s.currentStorageConfig(context.Background()).PublicBaseURL), "/")
 	if base == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s/api/v1/media/public/%d/thumbnail", base, id)
+	return base + "/" + escapeObjectKeyPath(objectKey)
+}
+
+func escapeObjectKeyPath(objectKey string) string {
+	parts := strings.Split(objectKey, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
 }
 
 func (s *MediaService) RuntimeInfo() MediaRuntimeInfo {

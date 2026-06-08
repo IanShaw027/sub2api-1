@@ -841,8 +841,8 @@ func (s *AICenterService) resolveMediaAssetURLs(ctx context.Context, viewerUserI
 	visibility := strings.TrimSpace(mediaAsset.Visibility)
 	var imageURL, thumbnailURL string
 	if visibility == MediaVisibilityPublic {
-		imageURL = s.mediaService.PublicURL(mediaAsset.ID, visibility)
-		thumbnailURL = s.mediaService.ThumbnailPublicURL(mediaAsset.ID, visibility, mediaAsset.ThumbnailObjectKey)
+		imageURL = s.mediaService.PublicURL(mediaAsset)
+		thumbnailURL = s.mediaService.ThumbnailPublicURL(mediaAsset)
 		return imageURL, thumbnailURL
 	}
 	if isAdmin {
