@@ -103,6 +103,7 @@ func RegisterPaymentRoutes(
 			invoices.GET("/:id", adminPaymentHandler.GetInvoiceDetail)
 			invoices.POST("/:id/upload", adminPaymentHandler.UploadInvoiceFile)
 			invoices.POST("/:id/cancel", adminPaymentHandler.CancelInvoice)
+			invoices.POST("/:id/resend-email", adminPaymentHandler.ResendInvoiceEmail)
 		}
 
 		// Subscription Plans

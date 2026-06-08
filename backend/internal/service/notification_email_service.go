@@ -32,6 +32,7 @@ const (
 	NotificationEmailEventContentModerationDisabled   = "content_moderation.account_disabled"
 	NotificationEmailEventOpsAlert                    = "ops.alert"
 	NotificationEmailEventOpsScheduledReport          = "ops.scheduled_report"
+	NotificationEmailEventInvoiceIssued               = "invoice.issued"
 
 	notificationEmailTemplateKeyPrefix    = "notification_email_template:"
 	notificationEmailPreferenceKeyPrefix  = "notification_email_preference:"
@@ -982,6 +983,7 @@ var notificationEmailEventOrder = []string{
 	NotificationEmailEventContentModerationDisabled,
 	NotificationEmailEventOpsAlert,
 	NotificationEmailEventOpsScheduledReport,
+	NotificationEmailEventInvoiceIssued,
 }
 
 var notificationEmailEventDefinitions = map[string]NotificationEmailEventInfo{
@@ -1085,6 +1087,16 @@ var notificationEmailEventDefinitions = map[string]NotificationEmailEventInfo{
 		Optional:    false,
 		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...),
 			"report_name", "report_type", "report_start_time", "report_end_time", "report_html"),
+	},
+	NotificationEmailEventInvoiceIssued: {
+		Event:       NotificationEmailEventInvoiceIssued,
+		Label:       "Invoice issued",
+		Description: "Sent to the invoice recipient email when finance uploads the invoice file (admin marks ISSUED).",
+		Category:    "billing",
+		Optional:    false,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...),
+			"invoice_id", "invoice_title", "tax_number", "invoice_amount", "order_count",
+			"order_list_html", "invoice_download_url", "invoice_file_name"),
 	},
 }
 
@@ -1348,6 +1360,40 @@ var notificationEmailOfficialTemplates = map[string]map[string]notificationEmail
 <p><strong>类型</strong>：{{report_type}}</p>
 <p><strong>时间范围</strong>：{{report_start_time}} - {{report_end_time}}</p>
 <div>{{report_html}}</div>`),
+		},
+	},
+	NotificationEmailEventInvoiceIssued: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] Invoice issued - {{invoice_title}}",
+			HTML: notificationEmailCard("#16a34a", "Invoice issued", `
+<p>Hello {{recipient_name}},</p>
+<p>The invoice you requested has been issued. Details:</p>
+<table style="width:100%;border-collapse:collapse;margin:12px 0;">
+  <tr><td style="padding:6px 0;color:#71717a;">Invoice No.</td><td style="padding:6px 0;">#{{invoice_id}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">Title</td><td style="padding:6px 0;">{{invoice_title}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">Tax No.</td><td style="padding:6px 0;">{{tax_number}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">Amount</td><td style="padding:6px 0;">¥{{invoice_amount}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">Orders</td><td style="padding:6px 0;">{{order_count}}</td></tr>
+</table>
+<div>{{order_list_html}}</div>
+<p style="margin-top:18px;"><a class="button" href="{{invoice_download_url}}">Download invoice ({{invoice_file_name}})</a></p>
+<p class="muted">The download link is valid for 24 hours. You can also view and download the invoice anytime from "My Invoices" in your account.</p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 发票已开具 - {{invoice_title}}",
+			HTML: notificationEmailCard("#16a34a", "发票已开具", `
+<p>{{recipient_name}}，您好：</p>
+<p>您申请的发票已开具完成，详情如下：</p>
+<table style="width:100%;border-collapse:collapse;margin:12px 0;">
+  <tr><td style="padding:6px 0;color:#71717a;">发票号</td><td style="padding:6px 0;">#{{invoice_id}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">抬头</td><td style="padding:6px 0;">{{invoice_title}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">税号</td><td style="padding:6px 0;">{{tax_number}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">金额</td><td style="padding:6px 0;">¥{{invoice_amount}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">关联订单数</td><td style="padding:6px 0;">{{order_count}}</td></tr>
+</table>
+<div>{{order_list_html}}</div>
+<p style="margin-top:18px;"><a class="button" href="{{invoice_download_url}}">下载发票（{{invoice_file_name}}）</a></p>
+<p class="muted">下载链接 24 小时内有效。您也可以随时登录后在「我的发票」中查看和下载。</p>`),
 		},
 	},
 }

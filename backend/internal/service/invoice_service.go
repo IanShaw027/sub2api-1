@@ -3,7 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"html"
+	"log/slog"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -94,9 +97,10 @@ type OrderInvoiceLink struct {
 }
 
 type InvoiceService struct {
-	entClient  *dbent.Client
-	paymentSvc *PaymentService
-	mediaSvc   InvoiceMediaService
+	entClient    *dbent.Client
+	paymentSvc   *PaymentService
+	mediaSvc     InvoiceMediaService
+	emailSvc     *NotificationEmailService
 }
 
 func NewInvoiceService(entClient *dbent.Client, paymentSvc *PaymentService, mediaSvc InvoiceMediaService) *InvoiceService {
@@ -104,6 +108,14 @@ func NewInvoiceService(entClient *dbent.Client, paymentSvc *PaymentService, medi
 		entClient:  entClient,
 		paymentSvc: paymentSvc,
 		mediaSvc:   mediaSvc,
+	}
+}
+
+// SetNotificationEmailService wires the email service after construction. Optional;
+// if nil, invoice issued emails are silently skipped.
+func (s *InvoiceService) SetNotificationEmailService(svc *NotificationEmailService) {
+	if s != nil {
+		s.emailSvc = svc
 	}
 }
 
@@ -495,6 +507,8 @@ func (s *InvoiceService) UploadFile(ctx context.Context, invoiceID int64, input 
 		})
 	}
 
+	s.dispatchInvoiceIssuedEmail(inv.ID)
+
 	return invoiceDetailFromEnt(inv, links), nil
 }
 
@@ -668,4 +682,136 @@ func (s *InvoiceService) GetInvoiceEligibleProviderInstanceIDs(ctx context.Conte
 		ids = append(ids, fmt.Sprintf("%d", inst.ID))
 	}
 	return ids, nil
+}
+
+// dispatchInvoiceIssuedEmail kicks off an async email send after a successful UploadFile.
+// Failure is logged but never propagated — the invoice is already ISSUED and the user
+// can always download from the in-app list/detail page.
+func (s *InvoiceService) dispatchInvoiceIssuedEmail(invoiceID int64) {
+	if s == nil || s.emailSvc == nil || invoiceID <= 0 {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), emailSendTimeout)
+		defer cancel()
+		if err := s.sendInvoiceIssuedEmail(ctx, invoiceID, "auto"); err != nil {
+			slog.Warn("invoice issued notification email failed", "invoice_id", invoiceID, "err", err.Error())
+		}
+	}()
+}
+
+// ResendIssuedEmail synchronously re-sends the issued-invoice email.
+// Used by the admin "重发邮件" button. Returns BadRequest if invoice is not ISSUED.
+func (s *InvoiceService) ResendIssuedEmail(ctx context.Context, invoiceID int64, operator string) error {
+	if s == nil || s.emailSvc == nil {
+		return infraerrors.ServiceUnavailable("INVOICE_EMAIL_DISABLED", "invoice email service is not configured")
+	}
+	inv, err := s.entClient.Invoice.Get(ctx, invoiceID)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return infraerrors.NotFound("INVOICE_NOT_FOUND", "invoice not found")
+		}
+		return fmt.Errorf("get invoice: %w", err)
+	}
+	if inv.Status != InvoiceStatusIssued || inv.FileMediaID == nil {
+		return infraerrors.BadRequest("INVOICE_NOT_ISSUED", "invoice has not been issued")
+	}
+	op := strings.TrimSpace(operator)
+	if op == "" {
+		op = "manual"
+	}
+	return s.sendInvoiceIssuedEmail(ctx, invoiceID, op)
+}
+
+func (s *InvoiceService) sendInvoiceIssuedEmail(ctx context.Context, invoiceID int64, operator string) error {
+	inv, err := s.entClient.Invoice.Get(ctx, invoiceID)
+	if err != nil {
+		return fmt.Errorf("get invoice: %w", err)
+	}
+	if inv.Status != InvoiceStatusIssued || inv.FileMediaID == nil {
+		return infraerrors.BadRequest("INVOICE_NOT_ISSUED", "invoice has not been issued")
+	}
+	recipient := strings.TrimSpace(inv.Email)
+	if recipient == "" {
+		return infraerrors.BadRequest("INVOICE_EMAIL_REQUIRED", "invoice has no recipient email")
+	}
+
+	links, err := s.entClient.InvoiceOrder.Query().Where(invoiceorder.InvoiceIDEQ(inv.ID)).All(ctx)
+	if err != nil {
+		return fmt.Errorf("load invoice_orders: %w", err)
+	}
+
+	downloadURL := ""
+	if s.mediaSvc != nil {
+		dl, dlErr := s.mediaSvc.CreateDownloadURLForUser(ctx, inv.UserID, *inv.FileMediaID)
+		if dlErr != nil {
+			return fmt.Errorf("create download url: %w", dlErr)
+		}
+		if dl != nil {
+			downloadURL = dl.URL
+		}
+	}
+	if downloadURL == "" {
+		return infraerrors.ServiceUnavailable("INVOICE_FILE_STORAGE_UNAVAILABLE", "invoice download url unavailable")
+	}
+
+	recipientName := strings.TrimSpace(inv.ContactName)
+	if recipientName == "" {
+		recipientName = recipient
+	}
+
+	variables := map[string]string{
+		"invoice_id":           strconv.FormatInt(inv.ID, 10),
+		"invoice_title":        inv.Title,
+		"tax_number":           inv.TaxNumber,
+		"invoice_amount":       fmt.Sprintf("%.2f", inv.InvoiceAmount),
+		"order_count":          strconv.Itoa(inv.OrderCount),
+		"invoice_download_url": downloadURL,
+		"invoice_file_name":    inv.FileName,
+	}
+	rawHTML := map[string]string{
+		"order_list_html": renderInvoiceOrderListHTML(links),
+	}
+
+	sendErr := s.emailSvc.Send(ctx, NotificationEmailSendInput{
+		Event:            NotificationEmailEventInvoiceIssued,
+		RecipientEmail:   recipient,
+		RecipientName:    recipientName,
+		UserID:           inv.UserID,
+		SourceType:       "invoice",
+		SourceID:         strconv.FormatInt(inv.ID, 10),
+		Variables:        variables,
+		RawHTMLVariables: rawHTML,
+	})
+	if sendErr != nil {
+		s.writeAuditLog(ctx, 0, "INVOICE_EMAIL_FAILED", operator, map[string]any{
+			"invoice_id": inv.ID, "recipient": recipient, "err": sendErr.Error(),
+		})
+		return sendErr
+	}
+	s.writeAuditLog(ctx, 0, "INVOICE_EMAIL_SENT", operator, map[string]any{
+		"invoice_id": inv.ID, "recipient": recipient,
+	})
+	return nil
+}
+
+func renderInvoiceOrderListHTML(rows []*dbent.InvoiceOrder) string {
+	if len(rows) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(`<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:13px;">`)
+	b.WriteString(`<thead><tr style="background:#fafafa;color:#71717a;">`)
+	b.WriteString(`<th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e4e4e7;">Order No.</th>`)
+	b.WriteString(`<th style="text-align:right;padding:6px 8px;border-bottom:1px solid #e4e4e7;">Amount</th>`)
+	b.WriteString(`</tr></thead><tbody>`)
+	for _, r := range rows {
+		b.WriteString(`<tr><td style="padding:6px 8px;border-bottom:1px solid #f4f4f5;font-family:ui-monospace,monospace;">`)
+		b.WriteString(html.EscapeString(r.OutTradeNo))
+		b.WriteString(`</td><td style="padding:6px 8px;text-align:right;border-bottom:1px solid #f4f4f5;">¥`)
+		b.WriteString(fmt.Sprintf("%.2f", r.PayAmountSnapshot))
+		b.WriteString(`</td></tr>`)
+	}
+	b.WriteString(`</tbody></table>`)
+	return b.String()
 }

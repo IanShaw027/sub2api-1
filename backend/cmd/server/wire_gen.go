@@ -271,7 +271,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorRequestTemplateService := service.NewChannelMonitorRequestTemplateService(channelMonitorRequestTemplateRepository)
 	channelMonitorRequestTemplateHandler := admin.NewChannelMonitorRequestTemplateHandler(channelMonitorRequestTemplateService)
 	contentModerationHandler := admin.NewContentModerationHandler(contentModerationService)
-	invoiceService := service.ProvideInvoiceService(client, paymentService, mediaService)
+	invoiceService := service.ProvideInvoiceService(client, paymentService, mediaService, notificationEmailService)
 	paymentHandler := admin.NewPaymentHandler(paymentService, paymentConfigService, invoiceService)
 	adminHandlers := handler.ProvideAdminHandlers(adminAIHandler, dashboardHandler, adminUserHandler, groupHandler, accountHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, kiroOAuthHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, affiliateHandler, adminTicketHandler, adminMediaHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, adminAPIKeyHandler, scheduledTestHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, paymentHandler)
 	userMsgQueueCache := repository.NewUserMsgQueueCache(redisClient)

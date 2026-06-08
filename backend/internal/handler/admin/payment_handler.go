@@ -302,6 +302,24 @@ func (h *PaymentHandler) CancelInvoice(c *gin.Context) {
 	response.Success(c, inv)
 }
 
+// ResendInvoiceEmail re-sends the invoice issued email synchronously.
+// POST /api/v1/admin/payment/invoices/:id/resend-email
+func (h *PaymentHandler) ResendInvoiceEmail(c *gin.Context) {
+	invoiceID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	if h.invoiceService == nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
+		return
+	}
+	if err := h.invoiceService.ResendIssuedEmail(c.Request.Context(), invoiceID, "admin"); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "invoice email resent"})
+}
+
 // --- Subscription Plans ---
 
 // ListPlans returns all subscription plans.

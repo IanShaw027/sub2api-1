@@ -887,8 +887,10 @@ func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, 
 
 // ProvideInvoiceService wires InvoiceService through the concrete MediaService
 // so Wire can satisfy the narrower invoice media interface.
-func ProvideInvoiceService(entClient *dbent.Client, paymentSvc *PaymentService, mediaSvc *MediaService) *InvoiceService {
-	return NewInvoiceService(entClient, paymentSvc, mediaSvc)
+func ProvideInvoiceService(entClient *dbent.Client, paymentSvc *PaymentService, mediaSvc *MediaService, emailSvc *NotificationEmailService) *InvoiceService {
+	svc := NewInvoiceService(entClient, paymentSvc, mediaSvc)
+	svc.SetNotificationEmailService(emailSvc)
+	return svc
 }
 
 // ProvidePaymentOrderExpiryService creates and starts PaymentOrderExpiryService.
