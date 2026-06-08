@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -104,6 +105,94 @@ func seedInvoiceTestOrder(t *testing.T, ctx context.Context, client *dbent.Clien
 	return &User{ID: user.ID, Email: user.Email, Username: user.Username}, order, providerInstance
 }
 
-// 静态使用占位（避免未使用 import 报错），后续任务真正使用后删除。
-var _ = context.Background
-var _ infraerrors.Error
+func TestInvoiceServiceCreate_SingleOrder(t *testing.T) {
+	ctx := context.Background()
+	client, _, svc := newInvoiceTestService(t)
+
+	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+
+	inv, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs:  []int64{order.ID},
+		Title:     "ACME 有限公司",
+		TaxNumber: "91110000MA00000001",
+		Email:     "billing@acme.com",
+	})
+	require.NoError(t, err)
+	require.Equal(t, InvoiceStatusApplied, inv.Status)
+	require.Equal(t, 1, inv.OrderCount)
+	require.InDelta(t, order.PayAmount, inv.InvoiceAmount, 0.001)
+	require.Len(t, inv.Orders, 1)
+	require.Equal(t, order.ID, inv.Orders[0].OrderID)
+	require.Equal(t, order.OutTradeNo, inv.Orders[0].OutTradeNo)
+}
+
+func TestInvoiceServiceCreate_MultipleOrders(t *testing.T) {
+	ctx := context.Background()
+	client, _, svc := newInvoiceTestService(t)
+
+	user, order1, providerInst := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+	order2, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(50).SetPayAmount(50).SetFeeRate(0).
+		SetRechargeCode("INV-ORDER-2").
+		SetOutTradeNo("sub2_invoice_order_2").
+		SetPaymentType(payment.TypeWxpay).
+		SetPaymentTradeNo("trade-invoice-order-2").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).SetCompletedAt(time.Now()).
+		SetClientIP("127.0.0.1").SetSrcHost("example.com").
+		SetProviderInstanceID(fmt.Sprintf("%d", providerInst.ID)).
+		SetProviderKey(payment.TypeWxpay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	inv, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs:  []int64{order1.ID, order2.ID},
+		Title:     "ACME",
+		TaxNumber: "TX",
+		Email:     "x@a.com",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, inv.OrderCount)
+	require.InDelta(t, 150.0, inv.InvoiceAmount, 0.001)
+}
+
+func TestInvoiceServiceCreate_AtomicRollbackOnIneligible(t *testing.T) {
+	ctx := context.Background()
+	client, _, svc := newInvoiceTestService(t)
+
+	user, completedOrder, providerInst := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+	pendingOrder, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).SetUserEmail(user.Email).SetUserName(user.Username).
+		SetAmount(50).SetPayAmount(50).SetFeeRate(0).
+		SetRechargeCode("INV-ORDER-PEND").
+		SetOutTradeNo("sub2_invoice_order_pending").
+		SetPaymentType(payment.TypeWxpay).SetPaymentTradeNo("trade-x").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").SetSrcHost("example.com").
+		SetProviderInstanceID(fmt.Sprintf("%d", providerInst.ID)).
+		SetProviderKey(payment.TypeWxpay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs:  []int64{completedOrder.ID, pendingOrder.ID},
+		Title:     "T", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.Error(t, err)
+	require.Equal(t, "INVOICE_ORDER_INELIGIBLE", infraerrors.Reason(err))
+
+	count, err := client.Invoice.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, count, "no invoice should be created on rollback")
+
+	linkCount, err := client.InvoiceOrder.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, linkCount, "no invoice_order should be created on rollback")
+}
