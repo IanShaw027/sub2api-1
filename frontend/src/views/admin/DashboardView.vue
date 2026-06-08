@@ -8,14 +8,14 @@
 
       <template v-else-if="stats">
         <!-- Row 1: Core Stats -->
-        <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+        <div class="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(180px,1fr))]">
           <!-- Total API Keys -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
+              <div class="shrink-0 rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
                 <Icon name="key" size="md" class="text-blue-600 dark:text-blue-400" :stroke-width="2" />
               </div>
-              <div>
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.apiKeys') }}
                 </p>
@@ -32,10 +32,10 @@
           <!-- Service Accounts -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
+              <div class="shrink-0 rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
                 <Icon name="server" size="md" class="text-purple-600 dark:text-purple-400" :stroke-width="2" />
               </div>
-              <div>
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.accounts') }}
                 </p>
@@ -57,10 +57,10 @@
           <!-- New Users Today -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
+              <div class="shrink-0 rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
                 <Icon name="userPlus" size="md" class="text-emerald-600 dark:text-emerald-400" :stroke-width="2" />
               </div>
-              <div>
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.users') }}
                 </p>
@@ -77,10 +77,10 @@
           <!-- Performance (RPM/TPM) -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30">
+              <div class="shrink-0 rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30">
                 <Icon name="bolt" size="md" class="text-violet-600 dark:text-violet-400" :stroke-width="2" />
               </div>
-              <div class="flex-1">
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.performance') }}
                 </p>
@@ -101,12 +101,12 @@
           </div>
 
           <!-- Avg Response Time -->
-          <div class="card col-span-2 p-4 md:col-span-1">
+          <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
+              <div class="shrink-0 rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
                 <Icon name="clock" size="md" class="text-rose-600 dark:text-rose-400" :stroke-width="2" />
               </div>
-              <div>
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.avgResponse') }}
                 </p>
@@ -122,14 +122,14 @@
         </div>
 
         <!-- Row 2: Usage & Spend -->
-        <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+        <div class="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
           <!-- Today Requests -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
+              <div class="shrink-0 rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
                 <Icon name="chart" size="md" class="text-green-600 dark:text-green-400" :stroke-width="2" />
               </div>
-              <div>
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.todayRequests') }}
                 </p>
@@ -146,10 +146,10 @@
           <!-- Today Tokens -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
+              <div class="shrink-0 rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
                 <Icon name="cube" size="md" class="text-amber-600 dark:text-amber-400" :stroke-width="2" />
               </div>
-              <div>
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.todayTokens') }}
                 </p>
@@ -158,7 +158,7 @@
                 </p>
                 <HelpTooltip width-class="w-56">
                   <template #trigger>
-                    <div class="mt-2 flex flex-wrap items-center gap-1 text-xs font-semibold">
+                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold">
                       <template v-for="(item, index) in todayTokenBreakdownItems" :key="item.key">
                         <span :class="item.textClass">${{ formatCost(item.value) }}</span>
                         <span v-if="index < todayTokenBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
@@ -179,10 +179,10 @@
           <!-- Total Tokens -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30">
+              <div class="shrink-0 rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30">
                 <Icon name="database" size="md" class="text-indigo-600 dark:text-indigo-400" :stroke-width="2" />
               </div>
-              <div>
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.totalTokens') }}
                 </p>
@@ -191,7 +191,7 @@
                 </p>
                 <HelpTooltip width-class="w-56">
                   <template #trigger>
-                    <div class="mt-2 flex flex-wrap items-center gap-1 text-xs font-semibold">
+                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold">
                       <template v-for="(item, index) in totalTokenBreakdownItems" :key="item.key">
                         <span :class="item.textClass">${{ formatCost(item.value) }}</span>
                         <span v-if="index < totalTokenBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
@@ -212,10 +212,10 @@
           <!-- Today Consumption -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-sky-100 p-2 dark:bg-sky-900/30">
+              <div class="shrink-0 rounded-lg bg-sky-100 p-2 dark:bg-sky-900/30">
                 <Icon name="dollar" size="md" class="text-sky-600 dark:text-sky-400" :stroke-width="2" />
               </div>
-              <div class="flex-1">
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.todayCost') }}
                 </p>
@@ -224,7 +224,7 @@
                 </p>
                 <HelpTooltip width-class="w-56">
                   <template #trigger>
-                    <div class="mt-2 flex flex-wrap items-center gap-1 text-xs font-semibold">
+                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold">
                       <template v-for="(item, index) in todayFinancialBreakdownItems" :key="item.key">
                         <span :class="item.textClass">${{ formatCost(item.value) }}</span>
                         <span v-if="index < todayFinancialBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
@@ -243,12 +243,12 @@
           </div>
 
           <!-- Total Consumption -->
-          <div class="card col-span-2 p-4 md:col-span-1">
+          <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-cyan-100 p-2 dark:bg-cyan-900/30">
+              <div class="shrink-0 rounded-lg bg-cyan-100 p-2 dark:bg-cyan-900/30">
                 <Icon name="creditCard" size="md" class="text-cyan-600 dark:text-cyan-400" :stroke-width="2" />
               </div>
-              <div class="flex-1">
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.totalCost') }}
                 </p>
@@ -257,7 +257,7 @@
                 </p>
                 <HelpTooltip width-class="w-56">
                   <template #trigger>
-                    <div class="mt-2 flex flex-wrap items-center gap-1 text-xs font-semibold">
+                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold">
                       <template v-for="(item, index) in totalFinancialBreakdownItems" :key="item.key">
                         <span :class="item.textClass">${{ formatCost(item.value) }}</span>
                         <span v-if="index < totalFinancialBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
