@@ -243,7 +243,7 @@ func (h *PaymentHandler) GetInvoiceDetail(c *gin.Context) {
 		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
 		return
 	}
-	item, err := h.invoiceService.GetByIDForAdmin(c.Request.Context(), invoiceID)
+	item, err := h.invoiceService.GetForAdmin(c.Request.Context(), invoiceID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -281,6 +281,25 @@ func (h *PaymentHandler) UploadInvoiceFile(c *gin.Context) {
 		return
 	}
 	response.Success(c, item)
+}
+
+// CancelInvoice cancels an APPLIED invoice on behalf of admin.
+// POST /api/v1/admin/payment/invoices/:id/cancel
+func (h *PaymentHandler) CancelInvoice(c *gin.Context) {
+	invoiceID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	if h.invoiceService == nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
+		return
+	}
+	inv, err := h.invoiceService.CancelByAdmin(c.Request.Context(), invoiceID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, inv)
 }
 
 // --- Subscription Plans ---
