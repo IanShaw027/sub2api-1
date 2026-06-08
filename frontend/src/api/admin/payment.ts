@@ -197,6 +197,11 @@ export const adminPaymentAPI = {
   /** Cancel an APPLIED invoice on behalf of admin */
   cancelInvoice(id: number) {
     return apiClient.post<Invoice>(`/admin/payment/invoices/${id}/cancel`)
+  },
+
+  /** Resend the issued-invoice email for an ISSUED invoice */
+  resendInvoiceEmail(id: number) {
+    return apiClient.post<{ message: string }>(`/admin/payment/invoices/${id}/resend-email`)
   }
 }
 

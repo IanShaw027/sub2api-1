@@ -7984,6 +7984,8 @@ export default {
       fileName: '发票文件',
       uploadFile: '上传发票文件',
       markIssued: '标记已开具',
+      resendEmail: '重发邮件',
+      resendEmailSuccess: '邮件已重新发送',
       searchPlaceholder: '搜索发票…',
       detailPage: {
         relatedOrders: '关联订单',

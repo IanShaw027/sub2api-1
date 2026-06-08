@@ -108,6 +108,9 @@
           <span v-else />
           <div class="flex gap-3">
             <button class="btn btn-secondary" @click="closeDetail">{{ t('common.close') }}</button>
+            <button v-if="detail?.status === 'ISSUED'" class="btn btn-secondary" :disabled="resending" @click="resendEmail">
+              {{ resending ? t('common.processing') : t('payment.invoice.resendEmail') }}
+            </button>
             <button v-if="detail?.status === 'APPLIED'" class="btn btn-primary" :disabled="submitting || !selectedFile" @click="uploadFile">
               {{ submitting ? t('common.processing') : t('payment.invoice.markIssued') }}
             </button>
@@ -138,6 +141,7 @@ const appStore = useAppStore()
 const loading = ref(false)
 const submitting = ref(false)
 const cancelling = ref(false)
+const resending = ref(false)
 const invoices = ref<Invoice[]>([])
 const detail = ref<Invoice | null>(null)
 const selectedFile = ref<File | null>(null)
@@ -277,6 +281,19 @@ async function confirmCancel() {
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.invoice.errors', t('common.error')))
   } finally {
     cancelling.value = false
+  }
+}
+
+async function resendEmail() {
+  if (!detail.value) return
+  resending.value = true
+  try {
+    await adminPaymentAPI.resendInvoiceEmail(detail.value.id)
+    appStore.showSuccess(t('payment.invoice.resendEmailSuccess'))
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.invoice.errors', t('common.error')))
+  } finally {
+    resending.value = false
   }
 }
 

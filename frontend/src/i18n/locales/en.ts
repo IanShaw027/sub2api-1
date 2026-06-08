@@ -7804,6 +7804,8 @@ export default {
       fileName: 'File',
       uploadFile: 'Upload invoice file',
       markIssued: 'Mark as issued',
+      resendEmail: 'Resend email',
+      resendEmailSuccess: 'Invoice email resent',
       searchPlaceholder: 'Search invoices…',
       detailPage: {
         relatedOrders: 'Related orders',
