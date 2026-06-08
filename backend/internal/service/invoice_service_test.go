@@ -196,3 +196,28 @@ func TestInvoiceServiceCreate_AtomicRollbackOnIneligible(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, linkCount, "no invoice_order should be created on rollback")
 }
+
+func TestInvoiceServiceCreate_RejectsOrderInActiveInvoice(t *testing.T) {
+	ctx := context.Background()
+	client, _, svc := newInvoiceTestService(t)
+
+	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+
+	// First Create succeeds.
+	_, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.NoError(t, err)
+
+	// Second Create on same order must fail with INVOICE_ALREADY_INVOICED.
+	_, err = svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T2", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.Error(t, err)
+	require.Equal(t, "INVOICE_ALREADY_INVOICED", infraerrors.Reason(err))
+
+	// Verify only one invoice exists (no leak from the failed attempt).
+	count, err := client.Invoice.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+}

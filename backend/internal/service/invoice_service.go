@@ -173,7 +173,7 @@ func invoiceDetailFromEnt(inv *dbent.Invoice, orders []*dbent.InvoiceOrder) *Inv
 	return d
 }
 
-func (s *InvoiceService) Create(ctx context.Context, userID int64, req CreateInvoiceRequest) (*InvoiceDetail, error) {
+func (s *InvoiceService) Create(ctx context.Context, userID int64, req CreateInvoiceRequest) (result *InvoiceDetail, err error) {
 	if userID <= 0 {
 		return nil, infraerrors.BadRequest("INVALID_USER", "invalid user")
 	}
@@ -199,9 +199,9 @@ func (s *InvoiceService) Create(ctx context.Context, userID int64, req CreateInv
 
 	uniqueIDs := dedupeInt64(req.OrderIDs)
 
-	tx, err := s.entClient.Tx(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("invoice tx begin: %w", err)
+	tx, txErr := s.entClient.Tx(ctx)
+	if txErr != nil {
+		return nil, fmt.Errorf("invoice tx begin: %w", txErr)
 	}
 	defer func() {
 		if err != nil {
