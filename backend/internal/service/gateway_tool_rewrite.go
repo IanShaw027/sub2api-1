@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -16,7 +17,6 @@ import (
 // toolNameRewriteKey 是 gin.Context 上存 ToolNameRewrite 映射的 key。
 // 请求阶段写入，响应阶段读取，用于 bytes 级逆向还原假名 → 真名。
 const toolNameRewriteKey = "claude_tool_name_rewrite"
-const shadowToolPrefix = "cc_srv_"
 
 // staticToolNameRewrites 是"静态前缀映射"，与 Parrot src/transform/cc_mimicry.py
 // TOOL_NAME_REWRITES 完全一致。只有以这些前缀开头的工具会被重写。
@@ -118,7 +118,7 @@ func shouldMimicToolName(toolType string) bool {
 }
 
 func shouldSkipShadowToolName(name string) bool {
-	return strings.HasPrefix(strings.TrimSpace(name), shadowToolPrefix)
+	return strings.HasPrefix(strings.TrimSpace(name), kiropkg.ShadowToolPrefix)
 }
 
 // buildToolNameRewriteFromBody 扫描 body 的 tools[*].name，构造 ToolNameRewrite

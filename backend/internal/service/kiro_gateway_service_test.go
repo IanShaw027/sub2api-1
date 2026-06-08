@@ -1052,6 +1052,65 @@ func TestKiroGatewayService_ForwardNonStream_ReasoningContentEventEmitsThinkingB
 	require.NotContains(t, body, `Thinking through the request with high effort`)
 }
 
+func TestNormalizeKiroShadowToolHistory_RewritesServerToolHistoryToShadowToolPairs(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4",
+		"messages":[
+			{
+				"role":"assistant",
+				"content":[
+					{"type":"server_tool_use","id":"toolu_search_1","name":"web_search","input":{"query":"golang"}},
+					{"type":"text","text":"search completed"}
+				]
+			},
+			{
+				"role":"user",
+				"content":[
+					{"type":"web_search_tool_result","tool_use_id":"toolu_search_1","content":[{"type":"url","url":"https://go.dev","title":"The Go Programming Language"}]},
+					{"type":"text","text":"Summarize the result"}
+				]
+			}
+		]
+	}`)
+
+	normalized := normalizeKiroShadowToolHistory(input)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(normalized, &payload))
+	messages, ok := payload["messages"].([]any)
+	require.True(t, ok)
+	require.Len(t, messages, 2)
+
+	assistant, ok := messages[0].(map[string]any)
+	require.True(t, ok)
+	assistantContent, ok := assistant["content"].([]any)
+	require.True(t, ok)
+	require.Len(t, assistantContent, 2)
+	firstAssistantBlock, ok := assistantContent[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "tool_use", firstAssistantBlock["type"])
+	require.Equal(t, "toolu_search_1", firstAssistantBlock["id"])
+	require.Equal(t, "cc_srv_web_search", firstAssistantBlock["name"])
+	require.Equal(t, "golang", firstAssistantBlock["input"].(map[string]any)["query"])
+
+	user, ok := messages[1].(map[string]any)
+	require.True(t, ok)
+	userContent, ok := user["content"].([]any)
+	require.True(t, ok)
+	require.Len(t, userContent, 2)
+	firstUserBlock, ok := userContent[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "tool_result", firstUserBlock["type"])
+	require.Equal(t, "toolu_search_1", firstUserBlock["tool_use_id"])
+	results, ok := firstUserBlock["content"].([]any)
+	require.True(t, ok)
+	require.Len(t, results, 1)
+	firstResult, ok := results[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "url", firstResult["type"])
+	require.Equal(t, "https://go.dev", firstResult["url"])
+}
+
 func TestKiroGatewayService_ForwardStream_DoesNotSplitUTF8WhenBufferingThinkingMarkers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -2486,6 +2545,62 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebSearchReturnsServerToolPau
 	require.Contains(t, rec.Body.String(), `"stop_reason":"pause_turn"`)
 }
 
+func TestKiroGatewayService_ForwardStream_ShadowWebSearchEmitsInputJSONDeltaAndPauseTurn(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	previousSearchExecutor := kiroShadowWebSearchExecutor
+	kiroShadowWebSearchExecutor = func(ctx context.Context, account *Account, query string) (*websearch.SearchResponse, string, error) {
+		require.Equal(t, int64(1010), account.ID)
+		require.Equal(t, "golang", query)
+		return &websearch.SearchResponse{
+			Query: query,
+			Results: []websearch.SearchResult{
+				{URL: "https://go.dev", Title: "The Go Programming Language", Snippet: "Official site"},
+			},
+		}, "stub", nil
+	}
+	t.Cleanup(func() { kiroShadowWebSearchExecutor = previousSearchExecutor })
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "toolUseEvent",
+	}, map[string]any{"toolUseId": "tool-shadow", "name": "cc_srv_web_search", "input": `{"query":"golang"}`, "stop": true})
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 1010, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+		&kiropkg.ConvertResult{
+			Model: "claude-sonnet-4.5",
+			BridgeMetadata: &kiropkg.BridgeMetadata{
+				ShadowTools: map[string]kiropkg.ShadowToolBridge{
+					"cc_srv_web_search": {AnthropicType: "web_search_20250305", AnthropicName: "web_search"},
+				},
+			},
+		},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	output := rec.Body.String()
+	require.Contains(t, output, `"content_block":{"id":"tool-shadow","input":{},"name":"web_search","type":"server_tool_use"}`)
+	require.Contains(t, output, `"delta":{"partial_json":"{\"query\":\"golang\"}","type":"input_json_delta"}`)
+	require.Contains(t, output, `"type":"web_search_tool_result"`)
+	require.Contains(t, output, `"stop_reason":"pause_turn"`)
+}
+
 func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchReturnsServerToolPauseTurn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -2862,6 +2977,160 @@ func TestGatewayForwardAsResponses_KiroWebSearchPauseTurnReturnsResponsesCall(t 
 	require.Contains(t, rec.Body.String(), `"type":"web_search_call"`)
 	require.Contains(t, rec.Body.String(), `"query":"golang"`)
 	require.Contains(t, rec.Body.String(), `"url":"https://go.dev"`)
+}
+
+func TestKiroGatewayService_Forward_ContinuationReplaySendsShadowToolHistoryToKiro(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+				":message-type": "event",
+				":event-type":   "assistantResponseEvent",
+			}, map[string]any{"content": "final answer"}))),
+		},
+	}
+	svc := &KiroGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:       301,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-api-key",
+		},
+	}
+	parsed := &ParsedRequest{
+		Model: "claude-sonnet-4",
+		Body: []byte(`{
+			"model":"claude-sonnet-4",
+			"tools":[{"type":"web_search_20250305","name":"web_search"}],
+			"messages":[
+				{"role":"user","content":[{"type":"text","text":"Search for Go"}]},
+				{"role":"assistant","content":[{"type":"server_tool_use","id":"toolu_search_1","name":"web_search","input":{"query":"golang"}}]},
+				{"role":"user","content":[
+					{"type":"web_search_tool_result","tool_use_id":"toolu_search_1","content":[{"type":"url","url":"https://go.dev","title":"The Go Programming Language"}]},
+					{"type":"text","text":"Summarize the result"}
+				]}
+			]
+		}`),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, parsed)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, upstream.calls)
+	sentBody, readErr := io.ReadAll(upstream.req.Body)
+	require.NoError(t, readErr)
+	body := string(sentBody)
+	require.Contains(t, body, `"name":"cc_srv_web_search"`)
+	require.Contains(t, body, `"toolUseId":"toolu_search_1"`)
+	require.Contains(t, body, `"toolResults"`)
+	require.NotContains(t, body, `"server_tool_use"`)
+	require.NotContains(t, body, `"web_search_tool_result"`)
+	require.Contains(t, rec.Body.String(), `"text":"final answer","type":"text"`)
+}
+
+func TestKiroGatewayService_Forward_RejectsUnsupportedServerToolFamilies(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	upstream := &kiroHTTPUpstreamRecorder{}
+	svc := &KiroGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:       302,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-api-key",
+		},
+	}
+	parsed := &ParsedRequest{
+		Model: "claude-sonnet-4",
+		Body: []byte(`{
+			"model":"claude-sonnet-4",
+			"tools":[{"type":"computer_20250124","name":"computer","display_width_px":1024,"display_height_px":768}],
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, parsed)
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), `"type":"invalid_request_error"`)
+	require.Contains(t, rec.Body.String(), "unsupported server-side tool family")
+	require.Zero(t, upstream.calls)
+}
+
+func TestKiroGatewayService_Forward_ContinuationWithoutToolsStillBridgesShadowWebSearch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	previousSearchExecutor := kiroShadowWebSearchExecutor
+	kiroShadowWebSearchExecutor = func(ctx context.Context, account *Account, query string) (*websearch.SearchResponse, string, error) {
+		require.Equal(t, int64(303), account.ID)
+		require.Equal(t, "golang 1.23", query)
+		return &websearch.SearchResponse{
+			Query: query,
+			Results: []websearch.SearchResult{
+				{URL: "https://go.dev/doc/go1.23", Title: "Go 1.23 Release Notes", Snippet: "Release notes"},
+			},
+		}, "stub", nil
+	}
+	t.Cleanup(func() { kiroShadowWebSearchExecutor = previousSearchExecutor })
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+				":message-type": "event",
+				":event-type":   "toolUseEvent",
+			}, map[string]any{"toolUseId": "toolu_search_2", "name": "cc_srv_web_search", "input": `{"query":"golang 1.23"}`, "stop": true}))),
+		},
+	}
+	svc := &KiroGatewayService{
+		httpUpstream: upstream,
+		fakeCache:    gocache.New(time.Minute, time.Minute),
+	}
+	account := &Account{
+		ID:       303,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-api-key",
+		},
+	}
+	parsed := &ParsedRequest{
+		Model: "claude-sonnet-4",
+		Body: []byte(`{
+			"model":"claude-sonnet-4",
+			"messages":[
+				{"role":"user","content":[{"type":"text","text":"Search for Go"}]},
+				{"role":"assistant","content":[{"type":"server_tool_use","id":"toolu_search_1","name":"web_search","input":{"query":"golang"}}]},
+				{"role":"user","content":[
+					{"type":"web_search_tool_result","tool_use_id":"toolu_search_1","content":[{"type":"url","url":"https://go.dev","title":"The Go Programming Language"}]},
+					{"type":"text","text":"Search Go 1.23 next"}
+				]}
+			]
+		}`),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, parsed)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), `"type":"server_tool_use"`)
+	require.Contains(t, rec.Body.String(), `"type":"web_search_tool_result"`)
+	require.Contains(t, rec.Body.String(), `"stop_reason":"pause_turn"`)
 }
 
 func buildKiroTestFrame(t *testing.T, headers map[string]string, payload map[string]any) []byte {

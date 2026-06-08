@@ -237,7 +237,6 @@ func TestConvertAnthropicRequestWithModel_FiltersUnsupportedServerTools(t *testi
 		"model":"claude-sonnet-4-6",
 		"messages":[{"role":"user","content":"hello"}],
 		"tools":[
-			{"type":"server_tool","name":"web_search","description":"search"},
 			{"type":"web_search_20250305","name":"web_search","description":"search v2"},
 			{"type":"web_fetch_20250910","name":"web_fetch","description":"fetch v2"},
 			{"name":"local_tool","description":"local","input_schema":{"type":"object"}}
@@ -320,6 +319,48 @@ func TestConvertAnthropicRequestWithModel_WebSearchShadowToolUsesStableName(t *t
 	require.Len(t, tools, 1)
 	spec := requireJSONObject(t, tools[0]["toolSpecification"], "toolSpecification")
 	require.Equal(t, "cc_srv_web_search", requireJSONString(t, spec["name"], "toolSpecification.name"))
+}
+
+func TestConvertAnthropicRequestWithModel_GoogleSearchUsesWebSearchShadowTool(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"search"}],
+		"tools":[
+			{"type":"google_search","name":"web_search","description":"google search"}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	if err != nil {
+		t.Fatalf("ConvertAnthropicRequestWithModel error: %v", err)
+	}
+
+	tools := convertedCurrentTools(t, result.Body)
+	require.Len(t, tools, 1)
+	spec := requireJSONObject(t, tools[0]["toolSpecification"], "toolSpecification")
+	require.Equal(t, "cc_srv_web_search", requireJSONString(t, spec["name"], "toolSpecification.name"))
+
+	bridgeField := bridgeMetadataFieldValue(t, result)
+	shadowTools := bridgeField.Elem().FieldByName("ShadowTools")
+	webSearch := shadowTools.MapIndex(reflect.ValueOf("cc_srv_web_search"))
+	require.True(t, webSearch.IsValid())
+	require.Equal(t, "google_search", webSearch.FieldByName("AnthropicType").String())
+}
+
+func TestConvertAnthropicRequestWithModel_RejectsUnsupportedServerToolFamilies(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"hello"}],
+		"tools":[
+			{"type":"computer_20250124","name":"computer","display_width_px":1024,"display_height_px":768}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported server-side tool family")
+	require.Contains(t, err.Error(), "computer_20250124")
 }
 
 func TestConvertAnthropicRequestWithModel_ToolSearchServerToolsRemainUntouched(t *testing.T) {

@@ -25,12 +25,15 @@ const (
 	toolOnlyAssistantPlaceholder = "I will call the requested tools."
 	contextTrimSystemNote        = "Gateway notice: older conversation history was compacted to fit Kiro's available context window. Use the retained recent messages as the source of truth, and ask for clarification if older details are required."
 	claudeCodeBanner             = "You are Claude Code, Anthropic's official CLI for Claude."
-	shadowToolPrefix             = "cc_srv_"
-	shadowToolWebSearch          = shadowToolPrefix + "web_search"
-	shadowToolWebFetch           = shadowToolPrefix + "web_fetch"
 )
 
 const kiroCompactionRecentWindow = 4
+
+const (
+	ShadowToolPrefix    = "cc_srv_"
+	ShadowToolWebSearch = ShadowToolPrefix + "web_search"
+	ShadowToolWebFetch  = ShadowToolPrefix + "web_fetch"
+)
 
 var kiroCompactionFilePattern = regexp.MustCompile("(?i)(?:^|[\\s\\\"'(<])((?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\\.[A-Za-z0-9_.-]+)")
 
@@ -91,7 +94,11 @@ func ConvertAnthropicRequestWithModel(body []byte, requestedModelOverride string
 	}
 
 	currentContent, currentImages, currentToolResults := processUserContent(lastMessageMap["content"])
-	tools, toolNameMap, bridgeMetadata := convertTools(req["tools"])
+	tools, toolNameMap, bridgeMetadata, err := convertTools(req["tools"])
+	if err != nil {
+		return nil, err
+	}
+	tools, bridgeMetadata = ensureHistoryShadowTools(rawMessages[:len(rawMessages)-1], tools, bridgeMetadata)
 	tools = ensureHistoryTools(rawMessages[:len(rawMessages)-1], tools, toolNameMap)
 
 	currentContext := map[string]any{}
@@ -478,13 +485,16 @@ func processAssistantContent(content any, toolNameMap map[string]string) (string
 	return strings.Join(textParts, "\n"), toolUses
 }
 
-func convertTools(raw any) ([]map[string]any, map[string]string, *BridgeMetadata) {
+func convertTools(raw any) ([]map[string]any, map[string]string, *BridgeMetadata, error) {
 	items, _ := raw.([]any)
 	tools := make([]map[string]any, 0, len(items))
 	toolNameMap := make(map[string]string)
 	bridgeMetadata := &BridgeMetadata{ShadowTools: map[string]ShadowToolBridge{}}
 	for _, item := range items {
 		tool, _ := item.(map[string]any)
+		if unsupportedFamily := unsupportedServerToolFamily(tool); unsupportedFamily != "" {
+			return nil, nil, nil, fmt.Errorf("unsupported server-side tool family for Kiro bridge: %s", unsupportedFamily)
+		}
 		if isUnsupportedServerTool(tool) {
 			continue
 		}
@@ -519,7 +529,7 @@ func convertTools(raw any) ([]map[string]any, map[string]string, *BridgeMetadata
 	if len(bridgeMetadata.ShadowTools) == 0 {
 		bridgeMetadata = nil
 	}
-	return tools, toolNameMap, bridgeMetadata
+	return tools, toolNameMap, bridgeMetadata, nil
 }
 
 func isUnsupportedServerTool(tool map[string]any) bool {
@@ -527,16 +537,42 @@ func isUnsupportedServerTool(tool map[string]any) bool {
 	return toolType == "server_tool"
 }
 
+func unsupportedServerToolFamily(tool map[string]any) string {
+	toolType := strings.ToLower(strings.TrimSpace(stringField(tool, "type")))
+	switch {
+	case toolType == "":
+		return ""
+	case toolType == "server_tool":
+		return toolType
+	case toolType == "google_search":
+		return ""
+	case strings.HasPrefix(toolType, "web_search"):
+		return ""
+	case strings.HasPrefix(toolType, "web_fetch"):
+		return ""
+	case strings.HasPrefix(toolType, "tool_search_"):
+		return ""
+	case strings.HasPrefix(toolType, "computer_"):
+		return toolType
+	case strings.HasPrefix(toolType, "bash_"):
+		return toolType
+	case strings.HasPrefix(toolType, "text_editor_"):
+		return toolType
+	default:
+		return ""
+	}
+}
+
 func supportedShadowTool(tool map[string]any) (string, ShadowToolBridge, bool) {
 	toolType := strings.ToLower(strings.TrimSpace(stringField(tool, "type")))
 	switch {
-	case strings.HasPrefix(toolType, "web_search"):
-		return shadowToolWebSearch, ShadowToolBridge{
+	case toolType == "google_search", strings.HasPrefix(toolType, "web_search"):
+		return ShadowToolWebSearch, ShadowToolBridge{
 			AnthropicType: toolType,
 			AnthropicName: strings.TrimSpace(stringField(tool, "name")),
 		}, true
 	case strings.HasPrefix(toolType, "web_fetch"):
-		return shadowToolWebFetch, ShadowToolBridge{
+		return ShadowToolWebFetch, ShadowToolBridge{
 			AnthropicType:    toolType,
 			AnthropicName:    strings.TrimSpace(stringField(tool, "name")),
 			AllowedDomains:   stringArrayField(tool["allowed_domains"]),
@@ -558,13 +594,13 @@ func makeShadowToolSpecification(name string) map[string]any {
 	}
 	description := "Internal gateway bridge tool"
 	switch name {
-	case shadowToolWebSearch:
+	case ShadowToolWebSearch:
 		description = "Internal gateway bridge for Anthropic web_search server tools"
 		schema["properties"] = map[string]any{
 			"query": map[string]any{"type": "string"},
 		}
 		schema["required"] = []string{"query"}
-	case shadowToolWebFetch:
+	case ShadowToolWebFetch:
 		description = "Internal gateway bridge for Anthropic web_fetch server tools"
 		schema["properties"] = map[string]any{
 			"url": map[string]any{"type": "string"},
@@ -580,6 +616,50 @@ func makeShadowToolSpecification(name string) map[string]any {
 			},
 		},
 	}
+}
+
+func ensureHistoryShadowTools(history []any, tools []map[string]any, bridgeMetadata *BridgeMetadata) ([]map[string]any, *BridgeMetadata) {
+	seen := make(map[string]struct{}, len(tools))
+	for _, tool := range tools {
+		spec, _ := tool["toolSpecification"].(map[string]any)
+		name := stringField(spec, "name")
+		if name != "" {
+			seen[strings.ToLower(name)] = struct{}{}
+		}
+	}
+
+	for _, item := range history {
+		msg, _ := item.(map[string]any)
+		if strings.ToLower(stringField(msg, "role")) != "assistant" {
+			continue
+		}
+		_, toolUses := processAssistantContent(msg["content"], nil)
+		for _, toolUse := range toolUses {
+			name := strings.TrimSpace(stringField(toolUse, "name"))
+			if !isShadowToolName(name) {
+				continue
+			}
+			key := strings.ToLower(name)
+			if _, ok := seen[key]; !ok {
+				tools = append(tools, makeShadowToolSpecification(name))
+				seen[key] = struct{}{}
+			}
+			if bridgeMetadata == nil {
+				bridgeMetadata = &BridgeMetadata{ShadowTools: map[string]ShadowToolBridge{}}
+			}
+			if bridgeMetadata.ShadowTools == nil {
+				bridgeMetadata.ShadowTools = map[string]ShadowToolBridge{}
+			}
+			if _, ok := bridgeMetadata.ShadowTools[name]; !ok {
+				bridgeMetadata.ShadowTools[name] = shadowBridgeForName(name)
+			}
+		}
+	}
+
+	if bridgeMetadata != nil && len(bridgeMetadata.ShadowTools) == 0 {
+		bridgeMetadata = nil
+	}
+	return tools, bridgeMetadata
 }
 
 func ensureHistoryTools(history []any, tools []map[string]any, toolNameMap map[string]string) []map[string]any {
@@ -625,6 +705,32 @@ func ensureHistoryTools(history []any, tools []map[string]any, toolNameMap map[s
 	}
 
 	return tools
+}
+
+func isShadowToolName(name string) bool {
+	switch strings.TrimSpace(name) {
+	case ShadowToolWebSearch, ShadowToolWebFetch:
+		return true
+	default:
+		return false
+	}
+}
+
+func shadowBridgeForName(name string) ShadowToolBridge {
+	switch strings.TrimSpace(name) {
+	case ShadowToolWebSearch:
+		return ShadowToolBridge{
+			AnthropicType: "web_search",
+			AnthropicName: "web_search",
+		}
+	case ShadowToolWebFetch:
+		return ShadowToolBridge{
+			AnthropicType: "web_fetch",
+			AnthropicName: "web_fetch",
+		}
+	default:
+		return ShadowToolBridge{}
+	}
 }
 
 func convertImage(block map[string]any) map[string]any {

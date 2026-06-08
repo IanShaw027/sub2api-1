@@ -1354,20 +1354,11 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 							if shadowErr != nil {
 								return nil, shadowErr
 							}
+							rawShadowInput := state.InputBuilder.String()
 							for _, block := range shadowBlocks {
 								blockIndex := nextBlockIndex
 								nextBlockIndex++
-								if err := writeSSEEvent(writer, "content_block_start", map[string]any{
-									"type":          "content_block_start",
-									"index":         blockIndex,
-									"content_block": block,
-								}); err != nil {
-									return nil, err
-								}
-								if err := writeSSEEvent(writer, "content_block_stop", map[string]any{
-									"type":  "content_block_stop",
-									"index": blockIndex,
-								}); err != nil {
+								if err := writeKiroShadowStreamBlock(writer, blockIndex, block, rawShadowInput); err != nil {
 									return nil, err
 								}
 							}
@@ -1694,6 +1685,52 @@ func writeKiroThinkingBlockSignatureDelta(writer gin.ResponseWriter, index int, 
 }
 
 func writeKiroThinkingBlockStop(writer gin.ResponseWriter, index int) error {
+	return writeSSEEvent(writer, "content_block_stop", map[string]any{
+		"type":  "content_block_stop",
+		"index": index,
+	})
+}
+
+func writeKiroShadowStreamBlock(writer gin.ResponseWriter, index int, block map[string]any, rawInput string) error {
+	if strings.TrimSpace(kiroShadowStringField(block, "type")) != "server_tool_use" {
+		if err := writeSSEEvent(writer, "content_block_start", map[string]any{
+			"type":          "content_block_start",
+			"index":         index,
+			"content_block": block,
+		}); err != nil {
+			return err
+		}
+		return writeSSEEvent(writer, "content_block_stop", map[string]any{
+			"type":  "content_block_stop",
+			"index": index,
+		})
+	}
+
+	serverToolUse := map[string]any{
+		"type":  "server_tool_use",
+		"id":    kiroShadowStringField(block, "id"),
+		"name":  kiroShadowStringField(block, "name"),
+		"input": map[string]any{},
+	}
+	if err := writeSSEEvent(writer, "content_block_start", map[string]any{
+		"type":          "content_block_start",
+		"index":         index,
+		"content_block": serverToolUse,
+	}); err != nil {
+		return err
+	}
+	if rawInput != "" {
+		if err := writeSSEEvent(writer, "content_block_delta", map[string]any{
+			"type":  "content_block_delta",
+			"index": index,
+			"delta": map[string]any{
+				"type":         "input_json_delta",
+				"partial_json": rawInput,
+			},
+		}); err != nil {
+			return err
+		}
+	}
 	return writeSSEEvent(writer, "content_block_stop", map[string]any{
 		"type":  "content_block_stop",
 		"index": index,
@@ -2108,10 +2145,12 @@ func kiroShadowToolBridgeForState(converted *kiropkg.ConvertResult, state *kiroT
 
 func kiroShadowToolNameForAnthropicName(name string) string {
 	switch {
+	case strings.EqualFold(strings.TrimSpace(name), "google_search"):
+		return kiropkg.ShadowToolWebSearch
 	case strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), "web_search"):
-		return "cc_srv_web_search"
+		return kiropkg.ShadowToolWebSearch
 	case strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), "web_fetch"):
-		return "cc_srv_web_fetch"
+		return kiropkg.ShadowToolWebFetch
 	default:
 		return ""
 	}
@@ -2286,9 +2325,9 @@ func kiroShadowAnthropicToolName(bridge kiropkg.ShadowToolBridge, fallback strin
 		return name
 	}
 	switch strings.TrimSpace(fallback) {
-	case "cc_srv_web_search":
+	case kiropkg.ShadowToolWebSearch:
 		return "web_search"
-	case "cc_srv_web_fetch":
+	case kiropkg.ShadowToolWebFetch:
 		return "web_fetch"
 	default:
 		return strings.TrimSpace(fallback)
