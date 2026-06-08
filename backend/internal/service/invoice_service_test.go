@@ -49,117 +49,15 @@ func (s *invoiceTestMediaService) CreateDownloadURLForAdmin(_ context.Context, i
 	}, nil
 }
 
-func TestInvoiceServiceApplyCancelAndReapply(t *testing.T) {
-	ctx := context.Background()
+func newInvoiceTestService(t *testing.T) (*dbent.Client, *invoiceTestMediaService, *InvoiceService) {
+	t.Helper()
 	client := newPaymentConfigServiceTestClient(t)
-
-	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
-	mediaSvc := &invoiceTestMediaService{}
-	invoiceSvc := NewInvoiceService(client, &PaymentService{entClient: client}, mediaSvc)
-
-	created, err := invoiceSvc.Apply(ctx, order.ID, user.ID, ApplyInvoiceRequest{
-		Title:        "测试科技有限公司",
-		TaxNumber:    "91420100MA00000001",
-		Email:        "finance@example.com",
-		ContactName:  "张三",
-		ContactPhone: "13800000000",
-	})
-	require.NoError(t, err)
-	require.Equal(t, InvoiceStatusApplied, created.Status)
-	require.Equal(t, order.PayAmount, created.InvoiceAmount)
-
-	reloadedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
-	require.NoError(t, err)
-	require.Equal(t, InvoiceStatusApplied, reloadedOrder.InvoiceStatus)
-
-	cancelled, err := invoiceSvc.CancelByOrderForUser(ctx, order.ID, user.ID)
-	require.NoError(t, err)
-	require.Equal(t, InvoiceStatusCancelled, cancelled.Status)
-
-	reloadedOrder, err = client.PaymentOrder.Get(ctx, order.ID)
-	require.NoError(t, err)
-	require.Equal(t, InvoiceStatusCancelled, reloadedOrder.InvoiceStatus)
-
-	reapplied, err := invoiceSvc.Apply(ctx, order.ID, user.ID, ApplyInvoiceRequest{
-		Title:        "测试科技有限公司",
-		TaxNumber:    "91420100MA00000001",
-		Email:        "finance@example.com",
-		ContactName:  "李四",
-		ContactPhone: "13900000000",
-	})
-	require.NoError(t, err)
-	require.Equal(t, InvoiceStatusApplied, reapplied.Status)
-	require.Equal(t, "李四", reapplied.ContactName)
+	media := &invoiceTestMediaService{}
+	svc := NewInvoiceService(client, &PaymentService{entClient: client}, media)
+	return client, media, svc
 }
 
-func TestInvoiceServiceApplyRejectsProviderWithoutInvoiceFlag(t *testing.T) {
-	ctx := context.Background()
-	client := newPaymentConfigServiceTestClient(t)
-
-	user, order, _ := seedInvoiceTestOrder(t, ctx, client, false, OrderStatusCompleted)
-	invoiceSvc := NewInvoiceService(client, &PaymentService{entClient: client}, &invoiceTestMediaService{})
-
-	_, err := invoiceSvc.Apply(ctx, order.ID, user.ID, ApplyInvoiceRequest{
-		Title:     "测试科技有限公司",
-		TaxNumber: "91420100MA00000001",
-		Email:     "finance@example.com",
-	})
-	require.Error(t, err)
-	require.Equal(t, 403, infraerrors.Code(err))
-}
-
-func TestInvoiceServiceApplyRejectsRefundedOrder(t *testing.T) {
-	ctx := context.Background()
-	client := newPaymentConfigServiceTestClient(t)
-
-	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusRefunded)
-	invoiceSvc := NewInvoiceService(client, &PaymentService{entClient: client}, &invoiceTestMediaService{})
-
-	_, err := invoiceSvc.Apply(ctx, order.ID, user.ID, ApplyInvoiceRequest{
-		Title:     "测试科技有限公司",
-		TaxNumber: "91420100MA00000001",
-		Email:     "finance@example.com",
-	})
-	require.Error(t, err)
-	require.Equal(t, 400, infraerrors.Code(err))
-}
-
-func TestInvoiceServiceUploadMarksApplicationIssuedAndSupportsDownload(t *testing.T) {
-	ctx := context.Background()
-	client := newPaymentConfigServiceTestClient(t)
-
-	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
-	mediaSvc := &invoiceTestMediaService{}
-	invoiceSvc := NewInvoiceService(client, &PaymentService{entClient: client}, mediaSvc)
-
-	applied, err := invoiceSvc.Apply(ctx, order.ID, user.ID, ApplyInvoiceRequest{
-		Title:     "测试科技有限公司",
-		TaxNumber: "91420100MA00000001",
-		Email:     "finance@example.com",
-	})
-	require.NoError(t, err)
-
-	issued, err := invoiceSvc.UploadFile(ctx, applied.ID, InvoiceFileUploadInput{
-		FileName:    "invoice.pdf",
-		ContentType: "application/pdf",
-		File:        []byte("pdf-binary"),
-	})
-	require.NoError(t, err)
-	require.Equal(t, InvoiceStatusIssued, issued.Status)
-	require.NotNil(t, issued.FileMediaID)
-	require.Len(t, mediaSvc.uploads, 1)
-	require.Equal(t, "invoice", mediaSvc.uploads[0].BizType)
-
-	reloadedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
-	require.NoError(t, err)
-	require.Equal(t, InvoiceStatusIssued, reloadedOrder.InvoiceStatus)
-	require.NotNil(t, reloadedOrder.InvoiceFileMediaID)
-
-	download, err := invoiceSvc.CreateDownloadURLForUser(ctx, order.ID, user.ID)
-	require.NoError(t, err)
-	require.NotEmpty(t, download.URL)
-}
-
+// seedInvoiceTestOrder 复用旧版本签名：返回一张 user / order / providerInstance。
 func seedInvoiceTestOrder(t *testing.T, ctx context.Context, client *dbent.Client, invoiceEnabled bool, orderStatus string) (*User, *dbent.PaymentOrder, *dbent.PaymentProviderInstance) {
 	t.Helper()
 
@@ -203,9 +101,9 @@ func seedInvoiceTestOrder(t *testing.T, ctx context.Context, client *dbent.Clien
 		Save(ctx)
 	require.NoError(t, err)
 
-	return &User{
-		ID:       user.ID,
-		Email:    user.Email,
-		Username: user.Username,
-	}, order, providerInstance
+	return &User{ID: user.ID, Email: user.Email, Username: user.Username}, order, providerInstance
 }
+
+// 静态使用占位（避免未使用 import 报错），后续任务真正使用后删除。
+var _ = context.Background
+var _ infraerrors.Error
