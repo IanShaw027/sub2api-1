@@ -9,6 +9,7 @@ import (
 
 	"entgo.io/ent/dialect"
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/invoice"
 	"github.com/Wei-Shaw/sub2api/ent/invoiceorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -350,4 +351,148 @@ func dedupeInt64(in []int64) []int64 {
 		out = append(out, v)
 	}
 	return out
+}
+
+func (s *InvoiceService) Cancel(ctx context.Context, invoiceID, userID int64) (*InvoiceDetail, error) {
+	return s.cancelInternal(ctx, invoiceID, &userID, fmt.Sprintf("user:%d", userID))
+}
+
+func (s *InvoiceService) CancelByAdmin(ctx context.Context, invoiceID int64) (*InvoiceDetail, error) {
+	return s.cancelInternal(ctx, invoiceID, nil, "admin")
+}
+
+func (s *InvoiceService) cancelInternal(ctx context.Context, invoiceID int64, userID *int64, operator string) (result *InvoiceDetail, err error) {
+	tx, txErr := s.entClient.Tx(ctx)
+	if txErr != nil {
+		return nil, fmt.Errorf("cancel tx begin: %w", txErr)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	invQuery := tx.Invoice.Query().Where(invoice.IDEQ(invoiceID))
+	if s.entClient.Driver().Dialect() != dialect.SQLite {
+		invQuery = invQuery.ForUpdate()
+	}
+	inv, err := invQuery.Only(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, infraerrors.NotFound("INVOICE_NOT_FOUND", "invoice not found")
+		}
+		return nil, fmt.Errorf("lock invoice: %w", err)
+	}
+	if userID != nil && inv.UserID != *userID {
+		return nil, infraerrors.Forbidden("FORBIDDEN", "no permission for this invoice")
+	}
+	if inv.Status != InvoiceStatusApplied {
+		return nil, infraerrors.BadRequest("INVOICE_CANNOT_CANCEL", "invoice cannot be cancelled")
+	}
+
+	now := time.Now()
+	inv, err = tx.Invoice.UpdateOneID(inv.ID).
+		SetStatus(InvoiceStatusCancelled).
+		SetCancelledAt(now).
+		Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("update invoice cancel: %w", err)
+	}
+
+	links, err := tx.InvoiceOrder.Query().Where(invoiceorder.InvoiceIDEQ(inv.ID)).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load invoice_orders: %w", err)
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		err = commitErr
+		return nil, fmt.Errorf("cancel tx commit: %w", commitErr)
+	}
+
+	for _, l := range links {
+		s.writeAuditLog(ctx, l.OrderID, "INVOICE_CANCELLED", operator, map[string]any{"invoice_id": inv.ID})
+	}
+
+	return invoiceDetailFromEnt(inv, links), nil
+}
+
+func (s *InvoiceService) UploadFile(ctx context.Context, invoiceID int64, input InvoiceFileUploadInput) (result *InvoiceDetail, err error) {
+	if s.mediaSvc == nil {
+		return nil, infraerrors.ServiceUnavailable("INVOICE_FILE_STORAGE_UNAVAILABLE", "invoice file storage is unavailable")
+	}
+	fileName := strings.TrimSpace(input.FileName)
+	if fileName == "" || len(input.File) == 0 {
+		return nil, infraerrors.BadRequest("INVOICE_FILE_REQUIRED", "invoice file is required")
+	}
+
+	tx, txErr := s.entClient.Tx(ctx)
+	if txErr != nil {
+		return nil, fmt.Errorf("upload tx begin: %w", txErr)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	invQuery := tx.Invoice.Query().Where(invoice.IDEQ(invoiceID))
+	if s.entClient.Driver().Dialect() != dialect.SQLite {
+		invQuery = invQuery.ForUpdate()
+	}
+	inv, err := invQuery.Only(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, infraerrors.NotFound("INVOICE_NOT_FOUND", "invoice not found")
+		}
+		return nil, fmt.Errorf("lock invoice: %w", err)
+	}
+	if inv.Status != InvoiceStatusApplied {
+		return nil, infraerrors.BadRequest("INVOICE_CANNOT_UPLOAD", "invoice not in APPLIED state")
+	}
+
+	ownerUserID := inv.UserID
+	asset, err := s.mediaSvc.Upload(ctx, UploadMediaInput{
+		BizType:     "invoice",
+		BizID:       fmt.Sprintf("invoice-%d", inv.ID),
+		Visibility:  MediaVisibilityPrivate,
+		OwnerUserID: &ownerUserID,
+		FileName:    fileName,
+		ContentType: strings.TrimSpace(input.ContentType),
+		SizeBytes:   int64(len(input.File)),
+		File:        input.File,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	inv, err = tx.Invoice.UpdateOneID(inv.ID).
+		SetStatus(InvoiceStatusIssued).
+		SetFileMediaID(asset.ID).
+		SetFileName(asset.OriginalFileName).
+		SetFileMimeType(asset.MIMEType).
+		SetFileSizeBytes(asset.SizeBytes).
+		SetIssuedAt(now).
+		Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("mark invoice issued: %w", err)
+	}
+
+	links, err := tx.InvoiceOrder.Query().Where(invoiceorder.InvoiceIDEQ(inv.ID)).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load invoice_orders: %w", err)
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		err = commitErr
+		return nil, fmt.Errorf("upload tx commit: %w", commitErr)
+	}
+
+	for _, l := range links {
+		s.writeAuditLog(ctx, l.OrderID, "INVOICE_ISSUED", "admin", map[string]any{
+			"invoice_id": inv.ID, "media_id": asset.ID, "file_name": asset.OriginalFileName,
+		})
+	}
+
+	return invoiceDetailFromEnt(inv, links), nil
 }

@@ -221,3 +221,48 @@ func TestInvoiceServiceCreate_RejectsOrderInActiveInvoice(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
 }
+
+func TestInvoiceServiceCancel_ReleasesOrders(t *testing.T) {
+	ctx := context.Background()
+	client, _, svc := newInvoiceTestService(t)
+
+	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+
+	inv, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.NoError(t, err)
+
+	cancelled, err := svc.Cancel(ctx, inv.ID, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, InvoiceStatusCancelled, cancelled.Status)
+	require.NotNil(t, cancelled.CancelledAt)
+
+	// 取消后订单应该可以再加入新发票
+	inv2, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T2", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, inv.ID, inv2.ID)
+}
+
+func TestInvoiceServiceCancel_RejectsIssued(t *testing.T) {
+	ctx := context.Background()
+	client, _, svc := newInvoiceTestService(t)
+
+	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+	inv, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.NoError(t, err)
+
+	_, err = svc.UploadFile(ctx, inv.ID, InvoiceFileUploadInput{
+		FileName: "invoice.pdf", ContentType: "application/pdf", File: []byte("PDF"),
+	})
+	require.NoError(t, err)
+
+	_, err = svc.Cancel(ctx, inv.ID, user.ID)
+	require.Error(t, err)
+	require.Equal(t, "INVOICE_CANNOT_CANCEL", infraerrors.Reason(err))
+	_ = client
+}
