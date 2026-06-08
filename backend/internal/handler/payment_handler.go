@@ -8,7 +8,6 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -465,51 +464,8 @@ func (h *PaymentHandler) GetInvoiceEligibleProviders(c *gin.Context) {
 	response.Success(c, gin.H{"provider_instance_ids": ids})
 }
 
-type ApplyInvoiceRequestBody struct {
-	Title        string  `json:"title" binding:"required"`
-	TaxNumber    string  `json:"tax_number" binding:"required"`
-	Email        string  `json:"email" binding:"required"`
-	ContactName  string  `json:"contact_name"`
-	ContactPhone string  `json:"contact_phone"`
-	RequestNote  *string `json:"request_note,omitempty"`
-}
-
-// ApplyInvoice submits an invoice application for a completed order.
-func (h *PaymentHandler) ApplyInvoice(c *gin.Context) {
-	orderID, ok := parseIDParam(c, "id")
-	if !ok {
-		return
-	}
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
-	if !ok {
-		response.Unauthorized(c, "User not authenticated")
-		return
-	}
-	if h.invoiceService == nil {
-		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
-		return
-	}
-	var req ApplyInvoiceRequestBody
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request: "+err.Error())
-		return
-	}
-	app, err := h.invoiceService.Apply(c.Request.Context(), orderID, subject.UserID, service.ApplyInvoiceRequest{
-		Title:        req.Title,
-		TaxNumber:    req.TaxNumber,
-		Email:        req.Email,
-		ContactName:  req.ContactName,
-		ContactPhone: req.ContactPhone,
-		RequestNote:  req.RequestNote,
-	})
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, app)
-}
-
-type BatchApplyInvoiceRequestBody struct {
+// CreateInvoiceRequestBody is the request body for creating an invoice covering N orders.
+type CreateInvoiceRequestBody struct {
 	OrderIDs     []int64 `json:"order_ids" binding:"required,min=1"`
 	Title        string  `json:"title" binding:"required"`
 	TaxNumber    string  `json:"tax_number" binding:"required"`
@@ -519,23 +475,24 @@ type BatchApplyInvoiceRequestBody struct {
 	RequestNote  *string `json:"request_note,omitempty"`
 }
 
-// BatchApplyInvoice submits invoice applications for multiple completed orders.
-func (h *PaymentHandler) BatchApplyInvoice(c *gin.Context) {
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+// CreateInvoice creates a single invoice that aggregates N completed orders.
+// POST /api/v1/payment/invoices
+func (h *PaymentHandler) CreateInvoice(c *gin.Context) {
+	subject, ok := requireAuth(c)
 	if !ok {
-		response.Unauthorized(c, "User not authenticated")
 		return
 	}
 	if h.invoiceService == nil {
 		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
 		return
 	}
-	var req BatchApplyInvoiceRequestBody
+	var req CreateInvoiceRequestBody
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	result, err := h.invoiceService.BatchApply(c.Request.Context(), req.OrderIDs, subject.UserID, service.ApplyInvoiceRequest{
+	inv, err := h.invoiceService.Create(c.Request.Context(), subject.UserID, service.CreateInvoiceRequest{
+		OrderIDs:     req.OrderIDs,
 		Title:        req.Title,
 		TaxNumber:    req.TaxNumber,
 		Email:        req.Email,
@@ -547,76 +504,103 @@ func (h *PaymentHandler) BatchApplyInvoice(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, result)
+	response.Success(c, inv)
 }
 
-// GetInvoice returns invoice application details for a specific order.
+// ListMyInvoices returns the authenticated user's invoices.
+// GET /api/v1/payment/invoices
+func (h *PaymentHandler) ListMyInvoices(c *gin.Context) {
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
+	if h.invoiceService == nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
+		return
+	}
+	page, pageSize := response.ParsePagination(c)
+	uid := subject.UserID
+	items, total, err := h.invoiceService.List(c.Request.Context(), service.InvoiceListParams{
+		UserID:   &uid,
+		Status:   c.Query("status"),
+		Keyword:  c.Query("keyword"),
+		Page:     page,
+		PageSize: pageSize,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Paginated(c, items, int64(total), page, pageSize)
+}
+
+// GetInvoice returns an invoice owned by the authenticated user.
+// GET /api/v1/payment/invoices/:id
 func (h *PaymentHandler) GetInvoice(c *gin.Context) {
-	orderID, ok := parseIDParam(c, "id")
+	subject, ok := requireAuth(c)
 	if !ok {
 		return
 	}
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	invoiceID, ok := parseIDParam(c, "id")
 	if !ok {
-		response.Unauthorized(c, "User not authenticated")
 		return
 	}
 	if h.invoiceService == nil {
 		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
 		return
 	}
-	app, err := h.invoiceService.GetByOrderForUser(c.Request.Context(), orderID, subject.UserID)
+	inv, err := h.invoiceService.GetForUser(c.Request.Context(), invoiceID, subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, app)
+	response.Success(c, inv)
 }
 
-// CancelInvoice cancels an invoice application for a specific order.
+// CancelInvoice cancels an APPLIED invoice owned by the authenticated user.
+// POST /api/v1/payment/invoices/:id/cancel
 func (h *PaymentHandler) CancelInvoice(c *gin.Context) {
-	orderID, ok := parseIDParam(c, "id")
+	subject, ok := requireAuth(c)
 	if !ok {
 		return
 	}
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	invoiceID, ok := parseIDParam(c, "id")
 	if !ok {
-		response.Unauthorized(c, "User not authenticated")
 		return
 	}
 	if h.invoiceService == nil {
 		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
 		return
 	}
-	app, err := h.invoiceService.CancelByOrderForUser(c.Request.Context(), orderID, subject.UserID)
+	inv, err := h.invoiceService.Cancel(c.Request.Context(), invoiceID, subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, app)
+	response.Success(c, inv)
 }
 
-// GetInvoiceDownloadURL returns a signed URL for the issued invoice file.
+// GetInvoiceDownloadURL returns a signed URL for an ISSUED invoice file.
+// GET /api/v1/payment/invoices/:id/download
 func (h *PaymentHandler) GetInvoiceDownloadURL(c *gin.Context) {
-	orderID, ok := parseIDParam(c, "id")
+	subject, ok := requireAuth(c)
 	if !ok {
 		return
 	}
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	invoiceID, ok := parseIDParam(c, "id")
 	if !ok {
-		response.Unauthorized(c, "User not authenticated")
 		return
 	}
 	if h.invoiceService == nil {
 		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
 		return
 	}
-	url, err := h.invoiceService.CreateDownloadURLForUser(c.Request.Context(), orderID, subject.UserID)
+	url, err := h.invoiceService.CreateDownloadURLForUser(c.Request.Context(), invoiceID, subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, dto.MediaDownloadURLFromService(url))
+	response.Success(c, url)
 }
 
 // VerifyOrderRequest is the request body for verifying a payment order.
