@@ -42,11 +42,15 @@ func RegisterPaymentRoutes(
 			orders.POST("/:id/refund-request", paymentHandler.RequestRefund)
 			orders.GET("/refund-eligible-providers", paymentHandler.GetRefundEligibleProviders)
 			orders.GET("/invoice-eligible-providers", paymentHandler.GetInvoiceEligibleProviders)
-			orders.POST("/invoices/batch-apply", paymentHandler.BatchApplyInvoice)
-			orders.GET("/:id/invoice", paymentHandler.GetInvoice)
-			orders.POST("/:id/invoice", paymentHandler.ApplyInvoice)
-			orders.POST("/:id/invoice/cancel", paymentHandler.CancelInvoice)
-			orders.GET("/:id/invoice/download", paymentHandler.GetInvoiceDownloadURL)
+		}
+
+		invoices := authenticated.Group("/invoices")
+		{
+			invoices.GET("", paymentHandler.ListMyInvoices)
+			invoices.POST("", paymentHandler.CreateInvoice)
+			invoices.GET("/:id", paymentHandler.GetInvoice)
+			invoices.POST("/:id/cancel", paymentHandler.CancelInvoice)
+			invoices.GET("/:id/download", paymentHandler.GetInvoiceDownloadURL)
 		}
 	}
 
@@ -98,6 +102,7 @@ func RegisterPaymentRoutes(
 			invoices.GET("", adminPaymentHandler.ListInvoices)
 			invoices.GET("/:id", adminPaymentHandler.GetInvoiceDetail)
 			invoices.POST("/:id/upload", adminPaymentHandler.UploadInvoiceFile)
+			invoices.POST("/:id/cancel", adminPaymentHandler.CancelInvoice)
 		}
 
 		// Subscription Plans
