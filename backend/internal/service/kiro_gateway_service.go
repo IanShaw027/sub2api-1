@@ -21,6 +21,7 @@ import (
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/webfetch"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/websearch"
 	"github.com/gin-gonic/gin"
 	gocache "github.com/patrickmn/go-cache"
@@ -47,6 +48,13 @@ const (
 	kiroTransportFailureCooldown      = 2 * time.Minute
 	kiroTransportFailureReasonKeyword = "kiro_transport_failure"
 	kiroAccountStateUpdateTimeout     = 5 * time.Second
+)
+
+var (
+	kiroShadowWebSearchExecutor = doWebSearch
+	kiroShadowWebFetchExecutor  = func(ctx context.Context, account *Account, req webfetch.FetchRequest) *webfetch.FetchResult {
+		return webfetch.NewFetcher().Fetch(ctx, req)
+	}
 )
 
 type KiroGatewayService struct {
@@ -269,6 +277,9 @@ func prepareKiroConvertedRequestWithMeta(account *Account, parsed *ParsedRequest
 		}
 	}
 	meta.ForwardInputTokens = estimateKiroInputTokens(forwardBody)
+	meta.ForwardBody = forwardBody
+
+	forwardBody = normalizeKiroShadowToolHistory(forwardBody)
 	meta.ForwardBody = forwardBody
 
 	forwardBody = patchKiroThinkingForModel(forwardBody, requestedModel, strings.TrimSpace(parsed.OutputEffort))
@@ -810,6 +821,8 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	}()
 
 	assistantContentBuilder := strings.Builder{}
+	reasoningTextBuilder := strings.Builder{}
+	reasoningSignatureBuilder := strings.Builder{}
 	toolOutputBuilder := strings.Builder{}
 	toolUses := make([]map[string]any, 0)
 	toolBuffers := make(map[string]*kiroToolState)
@@ -828,6 +841,13 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		case "assistantResponseEvent":
 			if content := rawStringField(frame.Payload, "content"); content != "" {
 				_, _ = assistantContentBuilder.WriteString(content)
+			}
+		case "reasoningContentEvent":
+			if text := rawStringField(frame.Payload, "text"); text != "" {
+				_, _ = reasoningTextBuilder.WriteString(text)
+			}
+			if signature := rawStringField(frame.Payload, "signature"); signature != "" {
+				_, _ = reasoningSignatureBuilder.WriteString(signature)
 			}
 		case "contextUsageEvent":
 			if usagePercent, ok := numericField(frame.Payload, "contextUsagePercentage"); ok {
@@ -850,7 +870,19 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		}
 	}
 	visibleToolUses, completedToolUses, partialToolUses := kiroVisibleToolStateCounts(toolBuffers, toolOrder)
+	shadowToolBlocks, shadowHandledIDs, shadowToolNames, shadowToolOutput, shadowExecuted, shadowErr := s.executeKiroShadowTools(ctx, account, converted, toolBuffers, toolOrder)
+	if shadowErr != nil {
+		return nil, shadowErr
+	}
+	shadowContent := make([]map[string]any, 0, len(shadowToolBlocks)*2)
 	for _, toolUseID := range toolOrder {
+		if _, handled := shadowHandledIDs[toolUseID]; handled {
+			if shadowBlocks, ok := shadowToolBlocks[toolUseID]; ok {
+				shadowContent = append(shadowContent, shadowBlocks...)
+				hasVisibleOutput = true
+			}
+			continue
+		}
 		state := toolBuffers[toolUseID]
 		toolUse, ok := buildKiroToolUseBlock(state)
 		if !ok {
@@ -862,12 +894,25 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		}
 		hasVisibleOutput = true
 	}
-	if len(toolUses) > 0 && stopReason == "end_turn" {
+	toolNames = append(toolNames, shadowToolNames...)
+	if shadowExecuted {
+		stopReason = "pause_turn"
+	} else if len(toolUses) > 0 && stopReason == "end_turn" {
 		stopReason = "tool_use"
 	}
 	content := make([]map[string]any, 0, 2+len(toolUses))
 	if strings.TrimSpace(thinkingOverride) != "" {
 		content = append(content, map[string]any{"type": "thinking", "thinking": thinkingOverride})
+	}
+	reasoningThinkingText := reasoningTextBuilder.String()
+	reasoningThinkingSignature := reasoningSignatureBuilder.String()
+	if strings.TrimSpace(reasoningThinkingText) != "" {
+		block := map[string]any{"type": "thinking", "thinking": reasoningThinkingText}
+		if reasoningThinkingSignature != "" {
+			block["signature"] = reasoningThinkingSignature
+		}
+		content = append(content, block)
+		hasVisibleOutput = true
 	}
 	content, textOutput, nativeThinkingOutput := appendKiroNativeContentBlocks(assistantContentBuilder.String(), content)
 	if textOutput != "" || nativeThinkingOutput != "" {
@@ -895,12 +940,13 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		parsed.OnUpstreamAccepted()
 	}
 
+	content = append(content, shadowContent...)
 	content = append(content, toolUses...)
-	outputTokens := estimateKiroOutputTokens(textOutput+nativeThinkingOutput+thinkingOverride, toolOutputBuilder.String())
+	outputTokens := estimateKiroOutputTokens(textOutput+nativeThinkingOutput+reasoningThinkingText+thinkingOverride, toolOutputBuilder.String()+shadowToolOutput)
 	telemetry := &kiroResponseTelemetry{
 		FramesSeen:             len(frames),
 		AssistantChars:         len(textOutput),
-		NativeThinkingChars:    len(nativeThinkingOutput),
+		NativeThinkingChars:    len(nativeThinkingOutput) + len(reasoningThinkingText),
 		SimulatedThinkingChars: len(strings.TrimSpace(thinkingOverride)),
 		ToolUseCount:           visibleToolUses,
 		CompletedToolUseCount:  completedToolUses,
@@ -971,6 +1017,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	textBlockIndex := -1
 	thinkingBlockOpen := false
 	thinkingBlockIndex := -1
+	reasoningThinkingActive := false
 	nextBlockIndex := 0
 	toolStates := make(map[string]*kiroToolState)
 	var firstTokenMs *int
@@ -982,6 +1029,8 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	completedToolUses := 0
 	toolOrder := make([]string, 0)
 	var toolNames []string
+	normalToolSeen := false
+	shadowToolSeen := false
 	var lastContextUsagePercentage *float64
 	simulatedThinking := strings.TrimSpace(thinkingOverride)
 	nativeThinkingBuffer := ""
@@ -1221,6 +1270,37 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 							stopReason = reason
 						}
 					}
+				case "reasoningContentEvent":
+					if !streamStarted {
+						if err := startStream(inputTokens); err != nil {
+							return nil, err
+						}
+					}
+					if firstTokenMs == nil {
+						v := int(time.Since(start).Milliseconds())
+						firstTokenMs = &v
+					}
+					reasoningText := rawStringField(frame.Payload, "text")
+					reasoningSignature := rawStringField(frame.Payload, "signature")
+					if reasoningText == "" && reasoningSignature == "" {
+						continue
+					}
+					if !thinkingBlockOpen {
+						if err := openThinkingBlock(); err != nil {
+							return nil, err
+						}
+						reasoningThinkingActive = true
+					}
+					if reasoningText != "" {
+						if err := emitThinkingDelta(reasoningText); err != nil {
+							return nil, err
+						}
+					}
+					if reasoningSignature != "" {
+						if err := writeKiroThinkingBlockSignatureDelta(writer, thinkingBlockIndex, reasoningSignature); err != nil {
+							return nil, err
+						}
+					}
 				case "assistantResponseEvent":
 					content := rawStringField(frame.Payload, "content")
 					if content == "" {
@@ -1235,6 +1315,13 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						v := int(time.Since(start).Milliseconds())
 						firstTokenMs = &v
 					}
+					if reasoningThinkingActive && thinkingBlockOpen {
+						if err := closeThinkingBlock(); err != nil {
+							return nil, err
+						}
+						reasoningThinkingActive = false
+						nativeThinkingExtracted = true
+					}
 					if err := processAssistantContent(content); err != nil {
 						return nil, err
 					}
@@ -1242,6 +1329,73 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					toolUseID := controlStringField(frame.Payload, "toolUseId")
 					state := ensureKiroToolState(toolStates, toolUseID, controlStringField(frame.Payload, "name"))
 					toolOrder = appendKiroToolStateOrder(toolOrder, state)
+					if shadowBridge, ok := kiroShadowToolBridgeForState(converted, state); ok {
+						inputChunk := rawStringField(frame.Payload, "input")
+						if inputChunk != "" {
+							_, _ = state.InputBuilder.WriteString(inputChunk)
+						}
+						if normalToolSeen {
+							if booleanField(frame.Payload, "stop") {
+								state.Stopped = true
+							}
+							continue
+						}
+						shadowToolSeen = true
+						if !streamStarted {
+							if err := startStream(inputTokens); err != nil {
+								return nil, err
+							}
+						}
+						if inputChunk != "" {
+							_, _ = toolOutputBuilder.WriteString(inputChunk)
+						}
+						if booleanField(frame.Payload, "stop") {
+							shadowBlocks, shadowOutput, shadowErr := s.executeKiroShadowTool(ctx, account, state, shadowBridge)
+							if shadowErr != nil {
+								return nil, shadowErr
+							}
+							for _, block := range shadowBlocks {
+								blockIndex := nextBlockIndex
+								nextBlockIndex++
+								if err := writeSSEEvent(writer, "content_block_start", map[string]any{
+									"type":          "content_block_start",
+									"index":         blockIndex,
+									"content_block": block,
+								}); err != nil {
+									return nil, err
+								}
+								if err := writeSSEEvent(writer, "content_block_stop", map[string]any{
+									"type":  "content_block_stop",
+									"index": blockIndex,
+								}); err != nil {
+									return nil, err
+								}
+							}
+							if stopReason == "end_turn" || stopReason == "tool_use" {
+								stopReason = "pause_turn"
+							}
+							state.Stopped = true
+							completedToolUses++
+							if name := kiroShadowAnthropicToolName(shadowBridge, state.Name); name != "" {
+								toolNames = append(toolNames, name)
+							}
+							_, _ = toolOutputBuilder.WriteString(shadowOutput)
+						}
+						continue
+					}
+					if shadowToolSeen {
+						conflictErr := kiroShadowToolConflictError(state.Name)
+						if streamStarted {
+							if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
+								return nil, err
+							}
+						}
+						_ = writeKiroStreamError(writer, conflictErr.Error())
+						logKiroResponseAnomaly(ctx, account, parsed, true, "shadow_web_tool_conflict", conflictErr, framesSeen, completedToolUses, lastContextUsagePercentage)
+						s.handleProtocolError(ctx, c, account, parsed.Model, true, conflictErr)
+						return nil, conflictErr
+					}
+					normalToolSeen = true
 					if !streamStarted {
 						if err := startStream(inputTokens); err != nil {
 							return nil, err
@@ -1257,6 +1411,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 								return nil, err
 							}
 							nativeThinkingExtracted = true
+							reasoningThinkingActive = false
 						}
 						if !nativeThinkingExtracted && nativeThinkingBuffer != "" {
 							if strings.TrimSpace(nativeThinkingBuffer) != "" {
@@ -1306,6 +1461,9 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						}
 						state.Stopped = true
 						completedToolUses++
+						if name := strings.TrimSpace(state.Name); name != "" {
+							toolNames = append(toolNames, name)
+						}
 						_, _ = toolOutputBuilder.WriteString(state.Name)
 						if err := writeSSEEvent(writer, "content_block_stop", map[string]any{
 							"type":  "content_block_stop",
@@ -1426,8 +1584,6 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		s.handleProtocolError(ctx, c, account, parsed.Model, true, emptyErr)
 		return nil, emptyErr
 	}
-	toolNames = kiroCompletedToolNames(toolStates, toolOrder)
-
 	if err := closeTextBlock(); err != nil {
 		return nil, err
 	}
@@ -1523,6 +1679,20 @@ func writeKiroThinkingBlockDelta(writer gin.ResponseWriter, index int, thinking 
 	})
 }
 
+func writeKiroThinkingBlockSignatureDelta(writer gin.ResponseWriter, index int, signature string) error {
+	if signature == "" {
+		return nil
+	}
+	return writeSSEEvent(writer, "content_block_delta", map[string]any{
+		"type":  "content_block_delta",
+		"index": index,
+		"delta": map[string]any{
+			"type":      "signature_delta",
+			"signature": signature,
+		},
+	})
+}
+
 func writeKiroThinkingBlockStop(writer gin.ResponseWriter, index int) error {
 	return writeSSEEvent(writer, "content_block_stop", map[string]any{
 		"type":  "content_block_stop",
@@ -1612,6 +1782,76 @@ func extractKiroNativeThinkingText(text string) string {
 		thinkingParts = append(thinkingParts, thinking)
 	}
 	return strings.TrimSpace(strings.Join(thinkingParts, "\n\n"))
+}
+
+func normalizeKiroShadowToolHistory(body []byte) []byte {
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		return body
+	}
+	messages, _ := req["messages"].([]any)
+	if len(messages) == 0 {
+		return body
+	}
+
+	shadowToolNames := map[string]string{}
+	changed := false
+	for _, item := range messages {
+		msg, _ := item.(map[string]any)
+		blocks, _ := msg["content"].([]any)
+		if len(blocks) == 0 {
+			continue
+		}
+		role := strings.TrimSpace(kiroShadowStringField(msg, "role"))
+		nextBlocks := make([]any, 0, len(blocks))
+		msgChanged := false
+		for _, rawBlock := range blocks {
+			block, _ := rawBlock.(map[string]any)
+			switch role {
+			case "assistant":
+				if strings.TrimSpace(kiroShadowStringField(block, "type")) == "server_tool_use" {
+					if shadowName := kiroShadowToolNameForAnthropicName(kiroShadowStringField(block, "name")); shadowName != "" {
+						toolUseID := strings.TrimSpace(kiroShadowStringField(block, "id"))
+						if toolUseID != "" {
+							shadowToolNames[toolUseID] = shadowName
+						}
+						nextBlocks = append(nextBlocks, map[string]any{
+							"type":  "tool_use",
+							"id":    toolUseID,
+							"name":  shadowName,
+							"input": block["input"],
+						})
+						msgChanged = true
+						continue
+					}
+				}
+			case "user":
+				blockType := strings.TrimSpace(kiroShadowStringField(block, "type"))
+				if (blockType == "web_search_tool_result" || blockType == "web_fetch_tool_result") && shadowToolNames[strings.TrimSpace(kiroShadowStringField(block, "tool_use_id"))] != "" {
+					nextBlocks = append(nextBlocks, map[string]any{
+						"type":        "tool_result",
+						"tool_use_id": kiroShadowStringField(block, "tool_use_id"),
+						"content":     block["content"],
+					})
+					msgChanged = true
+					continue
+				}
+			}
+			nextBlocks = append(nextBlocks, rawBlock)
+		}
+		if msgChanged {
+			msg["content"] = nextBlocks
+			changed = true
+		}
+	}
+	if !changed {
+		return body
+	}
+	normalized, err := json.Marshal(req)
+	if err != nil {
+		return body
+	}
+	return normalized
 }
 
 func (s *KiroGatewayService) prepareFakeCachePlan(account *Account, parsed *ParsedRequest, meta *kiroPreparedRequestMeta, runtimeSettings *KiroRuntimeSettings) (*kiropkg.FakeCachePlan, kiropkg.FakeCacheHitState) {
@@ -1856,6 +2096,312 @@ func buildKiroToolUseBlock(state *kiroToolState) (map[string]any, bool) {
 		"name":  strings.TrimSpace(state.Name),
 		"input": input,
 	}, true
+}
+
+func kiroShadowToolBridgeForState(converted *kiropkg.ConvertResult, state *kiroToolState) (kiropkg.ShadowToolBridge, bool) {
+	if converted == nil || converted.BridgeMetadata == nil || state == nil {
+		return kiropkg.ShadowToolBridge{}, false
+	}
+	bridge, ok := converted.BridgeMetadata.ShadowTools[strings.TrimSpace(state.Name)]
+	return bridge, ok
+}
+
+func kiroShadowToolNameForAnthropicName(name string) string {
+	switch {
+	case strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), "web_search"):
+		return "cc_srv_web_search"
+	case strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), "web_fetch"):
+		return "cc_srv_web_fetch"
+	default:
+		return ""
+	}
+}
+
+func (s *KiroGatewayService) executeKiroShadowTools(
+	ctx context.Context,
+	account *Account,
+	converted *kiropkg.ConvertResult,
+	states map[string]*kiroToolState,
+	order []string,
+) (map[string][]map[string]any, map[string]struct{}, []string, string, bool, error) {
+	shadowHandledIDs, shadowExecutableIDs, err := kiroShadowToolExecutionPlan(converted, states, order)
+	if err != nil {
+		return nil, nil, nil, "", false, err
+	}
+	blocksByID := make(map[string][]map[string]any)
+	toolNames := make([]string, 0, len(order))
+	var outputBuilder strings.Builder
+	shadowExecuted := false
+	for _, toolUseID := range order {
+		if _, ok := shadowExecutableIDs[toolUseID]; !ok {
+			continue
+		}
+		state := states[toolUseID]
+		bridge, _ := kiroShadowToolBridgeForState(converted, state)
+		blocks, outputText, err := s.executeKiroShadowTool(ctx, account, state, bridge)
+		if err != nil {
+			return nil, nil, nil, "", false, err
+		}
+		blocksByID[toolUseID] = blocks
+		if name := kiroShadowAnthropicToolName(bridge, state.Name); name != "" {
+			toolNames = append(toolNames, name)
+		}
+		_, _ = outputBuilder.WriteString(outputText)
+		shadowExecuted = true
+	}
+	return blocksByID, shadowHandledIDs, toolNames, outputBuilder.String(), shadowExecuted, nil
+}
+
+func (s *KiroGatewayService) executeKiroShadowTool(
+	ctx context.Context,
+	account *Account,
+	state *kiroToolState,
+	bridge kiropkg.ShadowToolBridge,
+) ([]map[string]any, string, error) {
+	if state == nil {
+		return nil, "", nil
+	}
+	input, _ := kiroShadowToolInput(state)
+	anthropicName := kiroShadowAnthropicToolName(bridge, state.Name)
+	serverToolUse := map[string]any{
+		"type":  "server_tool_use",
+		"id":    state.ToolUseID,
+		"name":  anthropicName,
+		"input": input,
+	}
+
+	switch {
+	case strings.HasPrefix(strings.ToLower(strings.TrimSpace(bridge.AnthropicType)), "web_search"):
+		query := strings.TrimSpace(kiroShadowStringField(input, "query"))
+		if query == "" {
+			query = strings.TrimSpace(kiroShadowStringField(input, "q"))
+		}
+		resp, _, err := kiroShadowWebSearchExecutor(ctx, account, query)
+		if err != nil {
+			if errors.Is(err, websearch.ErrProxyUnavailable) {
+				return nil, "", &UpstreamFailoverError{
+					StatusCode:   http.StatusBadGateway,
+					ResponseBody: []byte(err.Error()),
+				}
+			}
+			return nil, "", err
+		}
+		return []map[string]any{
+			serverToolUse,
+			{
+				"type":        "web_search_tool_result",
+				"tool_use_id": state.ToolUseID,
+				"content":     kiroShadowWebSearchResults(resp.Results),
+			},
+		}, buildTextSummary(query, resp.Results), nil
+	case strings.HasPrefix(strings.ToLower(strings.TrimSpace(bridge.AnthropicType)), "web_fetch"):
+		urlValue := strings.TrimSpace(kiroShadowStringField(input, "url"))
+		fetchResult := kiroShadowWebFetchExecutor(ctx, account, webfetch.FetchRequest{
+			URL:               urlValue,
+			ProxyURL:          resolveAccountProxyURL(account),
+			AllowedHosts:      bridge.AllowedDomains,
+			BlockedHosts:      bridge.BlockedDomains,
+			AllowPrivate:      true,
+			AllowInsecureHTTP: true,
+		})
+		return []map[string]any{
+			serverToolUse,
+			{
+				"type":        "web_fetch_tool_result",
+				"tool_use_id": state.ToolUseID,
+				"content":     kiroShadowWebFetchResultContent(fetchResult),
+			},
+		}, kiroShadowWebFetchSummary(fetchResult), nil
+	default:
+		return nil, "", nil
+	}
+}
+
+func kiroShadowToolExecutionPlan(converted *kiropkg.ConvertResult, states map[string]*kiroToolState, order []string) (map[string]struct{}, map[string]struct{}, error) {
+	handledShadowIDs := make(map[string]struct{})
+	executableShadowIDs := make(map[string]struct{})
+	normalToolSeen := false
+	shadowToolSeen := false
+
+	for _, toolUseID := range order {
+		state := states[toolUseID]
+		if !kiroToolStateHasVisibleOutput(state) {
+			continue
+		}
+		_, isShadow := kiroShadowToolBridgeForState(converted, state)
+		if !isShadow {
+			if shadowToolSeen {
+				return nil, nil, kiroShadowToolConflictError(state.Name)
+			}
+			normalToolSeen = true
+			continue
+		}
+
+		handledShadowIDs[toolUseID] = struct{}{}
+		if normalToolSeen {
+			continue
+		}
+		shadowToolSeen = true
+		if kiroToolStateIsComplete(state) {
+			executableShadowIDs[toolUseID] = struct{}{}
+		}
+	}
+
+	return handledShadowIDs, executableShadowIDs, nil
+}
+
+func kiroShadowToolConflictError(name string) error {
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		return errors.New("shadow web tool conflict: normal tool followed shadow web tool in same assistant turn")
+	}
+	return fmt.Errorf("shadow web tool conflict: normal tool %q followed shadow web tool in same assistant turn", trimmedName)
+}
+
+func kiroShadowToolInput(state *kiroToolState) (map[string]any, bool) {
+	if state == nil {
+		return map[string]any{}, false
+	}
+	raw := strings.TrimSpace(state.InputBuilder.String())
+	if raw == "" {
+		return map[string]any{}, true
+	}
+	var input map[string]any
+	if err := json.Unmarshal([]byte(raw), &input); err != nil {
+		return map[string]any{}, false
+	}
+	return input, true
+}
+
+func kiroShadowStringField(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	value, _ := m[key].(string)
+	return value
+}
+
+func kiroShadowAnthropicToolName(bridge kiropkg.ShadowToolBridge, fallback string) string {
+	if name := strings.TrimSpace(bridge.AnthropicName); name != "" {
+		return name
+	}
+	switch strings.TrimSpace(fallback) {
+	case "cc_srv_web_search":
+		return "web_search"
+	case "cc_srv_web_fetch":
+		return "web_fetch"
+	default:
+		return strings.TrimSpace(fallback)
+	}
+}
+
+func kiroShadowWebSearchResults(results []websearch.SearchResult) []map[string]any {
+	out := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		out = append(out, map[string]any{
+			"type":  "url",
+			"url":   result.URL,
+			"title": result.Title,
+		})
+	}
+	return out
+}
+
+func kiroShadowWebFetchResultContent(fetchResult *webfetch.FetchResult) map[string]any {
+	if fetchResult == nil {
+		return map[string]any{
+			"type":       "web_fetch_tool_error",
+			"error_code": "unavailable",
+			"text":       "web fetch returned no result",
+		}
+	}
+
+	urlValue := kiroShadowWebFetchURL(fetchResult)
+	if fetchResult.Error != nil {
+		return map[string]any{
+			"type":       "web_fetch_tool_error",
+			"url":        urlValue,
+			"error_code": kiroShadowWebFetchErrorCode(fetchResult.Error),
+			"text":       strings.TrimSpace(fetchResult.Error.Message),
+		}
+	}
+
+	document := map[string]any{
+		"type": "document",
+		"source": map[string]any{
+			"type":       "text",
+			"media_type": "text/plain",
+			"data":       fetchResult.Text,
+		},
+	}
+	if title := strings.TrimSpace(fetchResult.Title); title != "" {
+		document["title"] = title
+	}
+
+	content := map[string]any{
+		"type":     "web_fetch_result",
+		"url":      urlValue,
+		"title":    strings.TrimSpace(fetchResult.Title),
+		"text":     fetchResult.Text,
+		"document": document,
+	}
+	if urlValue != "" {
+		content["source"] = map[string]any{
+			"type": "url",
+			"url":  urlValue,
+		}
+	}
+	return content
+}
+
+func kiroShadowWebFetchSummary(fetchResult *webfetch.FetchResult) string {
+	if fetchResult == nil {
+		return ""
+	}
+	if fetchResult.Error != nil {
+		return strings.TrimSpace(kiroShadowWebFetchURL(fetchResult) + "\n" + fetchResult.Error.Message)
+	}
+	summaryParts := make([]string, 0, 2)
+	if title := strings.TrimSpace(fetchResult.Title); title != "" {
+		summaryParts = append(summaryParts, title)
+	}
+	if text := strings.TrimSpace(fetchResult.Text); text != "" {
+		summaryParts = append(summaryParts, text)
+	}
+	return strings.TrimSpace(strings.Join(summaryParts, "\n"))
+}
+
+func kiroShadowWebFetchURL(fetchResult *webfetch.FetchResult) string {
+	if fetchResult == nil {
+		return ""
+	}
+	if finalURL := strings.TrimSpace(fetchResult.FinalURL); finalURL != "" {
+		return finalURL
+	}
+	return strings.TrimSpace(fetchResult.RequestedURL)
+}
+
+func kiroShadowWebFetchErrorCode(fetchErr *webfetch.FetchError) string {
+	if fetchErr == nil {
+		return "unavailable"
+	}
+	switch fetchErr.Code {
+	case webfetch.ErrorCodeInvalidURL:
+		return "invalid_input"
+	case webfetch.ErrorCodeDomainBlocked:
+		return "url_not_allowed"
+	case webfetch.ErrorCodeHTTPStatus:
+		if strings.Contains(fetchErr.Message, "429") {
+			return "too_many_requests"
+		}
+		return "url_not_accessible"
+	case webfetch.ErrorCodeTooManyRedirects, webfetch.ErrorCodeRequestFailed, webfetch.ErrorCodeReadFailed:
+		return "url_not_accessible"
+	case webfetch.ErrorCodeClientConfig:
+		return "unavailable"
+	default:
+		return "unavailable"
+	}
 }
 
 func kiroVisibleToolStateCounts(states map[string]*kiroToolState, order []string) (visible int, completed int, partial int) {

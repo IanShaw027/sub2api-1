@@ -19,6 +19,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/model"
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/webfetch"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/websearch"
 	"github.com/gin-gonic/gin"
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/require"
@@ -933,6 +935,121 @@ func TestKiroGatewayService_ForwardStream_NativeThinkingBlocksUseUpstreamContent
 	require.Contains(t, output, `"delta":{"text":"final","type":"text_delta"}`)
 	require.Contains(t, output, `"delta":{"text":" answer","type":"text_delta"}`)
 	require.NotContains(t, output, `Thinking through the request with high effort`)
+}
+
+func TestKiroGatewayService_ForwardStream_ReasoningContentEventEmitsThinkingBlock(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "reasoningContentEvent",
+		}, map[string]any{"text": "let me think"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "reasoningContentEvent",
+		}, map[string]any{"text": " step by step"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "reasoningContentEvent",
+		}, map[string]any{"signature": "sig-abc"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "final answer"}),
+	}, nil)
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 201, Platform: PlatformKiro, Type: AccountTypeAPIKey},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-opus-4-7", Stream: true, ThinkingEnabled: true},
+		&kiropkg.ConvertResult{Model: "claude-opus-4.7"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	output := rec.Body.String()
+	require.Contains(t, output, `"content_block":{"thinking":"","type":"thinking"}`)
+	require.Contains(t, output, `"delta":{"thinking":"let me think","type":"thinking_delta"}`)
+	require.Contains(t, output, `"delta":{"thinking":" step by step","type":"thinking_delta"}`)
+	require.Contains(t, output, `"delta":{"signature":"sig-abc","type":"signature_delta"}`)
+	require.Contains(t, output, `"delta":{"text":"final answer","type":"text_delta"}`)
+	thinkingStart := strings.Index(output, `"content_block":{"thinking":"","type":"thinking"}`)
+	textStart := strings.Index(output, `"content_block":{"text":"","type":"text"}`)
+	require.Greater(t, textStart, thinkingStart, "thinking block must precede text block")
+	thinkingStop := strings.Index(output[thinkingStart:], `"content_block_stop"`)
+	require.GreaterOrEqual(t, thinkingStop, 0, "thinking block should be closed before text block opens")
+}
+
+func TestKiroGatewayService_ForwardNonStream_ReasoningContentEventEmitsThinkingBlock(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(bytes.NewReader(bytes.Join([][]byte{
+				buildKiroTestFrame(t, map[string]string{
+					":message-type": "event",
+					":event-type":   "reasoningContentEvent",
+				}, map[string]any{"text": "let me think step by step"}),
+				buildKiroTestFrame(t, map[string]string{
+					":message-type": "event",
+					":event-type":   "reasoningContentEvent",
+				}, map[string]any{"signature": "sig-xyz"}),
+				buildKiroTestFrame(t, map[string]string{
+					":message-type": "event",
+					":event-type":   "assistantResponseEvent",
+				}, map[string]any{"content": "final answer"}),
+			}, nil))),
+		},
+	}
+	svc := &KiroGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:       202,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-api-key",
+		},
+	}
+	parsed := &ParsedRequest{
+		Model:           "claude-opus-4-7",
+		ThinkingEnabled: true,
+		OutputEffort:    "high",
+		Body: []byte(`{
+			"model":"claude-opus-4-7",
+			"thinking":{"type":"enabled","budget_tokens":5000},
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, parsed)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, upstream.calls)
+	body := rec.Body.String()
+	require.Contains(t, body, `"thinking":"let me think step by step"`)
+	require.Contains(t, body, `"signature":"sig-xyz"`)
+	require.Contains(t, body, `"text":"final answer","type":"text"`)
+	require.NotContains(t, body, `Thinking through the request with high effort`)
 }
 
 func TestKiroGatewayService_ForwardStream_DoesNotSplitUTF8WhenBufferingThinkingMarkers(t *testing.T) {
@@ -2309,6 +2426,442 @@ func TestKiroGatewayService_ForwardStream_PreservesWhitespaceInContentAndInputDe
 	require.Equal(t, " {\"q\":\" value with spaces \"} ", inputDelta)
 	require.Contains(t, rec.Body.String(), `"id":"tool-1"`, "tool_use id should still be normalized as a control field")
 	require.Contains(t, rec.Body.String(), `"name":"search"`, "tool_use name should still be normalized as a control field")
+}
+
+func TestKiroGatewayService_ForwardNonStream_ShadowWebSearchReturnsServerToolPauseTurn(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	previousSearchExecutor := kiroShadowWebSearchExecutor
+	kiroShadowWebSearchExecutor = func(ctx context.Context, account *Account, query string) (*websearch.SearchResponse, string, error) {
+		require.Equal(t, int64(10), account.ID)
+		require.Equal(t, "golang", query)
+		return &websearch.SearchResponse{
+			Query: query,
+			Results: []websearch.SearchResult{
+				{URL: "https://example.com/golang", Title: "Go", Snippet: "The Go programming language"},
+			},
+		}, "stub", nil
+	}
+	t.Cleanup(func() { kiroShadowWebSearchExecutor = previousSearchExecutor })
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "toolUseEvent",
+	}, map[string]any{"toolUseId": "tool-1", "name": "cc_srv_web_search", "input": `{"query":"golang"}`, "stop": true})
+
+	result, err := svc.forwardNonStream(
+		context.Background(),
+		c,
+		&Account{
+			ID:       10,
+			Platform: PlatformKiro,
+			Type:     AccountTypeOAuth,
+		},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Body: []byte(`{}`)},
+		&kiropkg.ConvertResult{
+			Model: "claude-sonnet-4.5",
+			BridgeMetadata: &kiropkg.BridgeMetadata{
+				ShadowTools: map[string]kiropkg.ShadowToolBridge{
+					"cc_srv_web_search": {AnthropicType: "web_search_20250305", AnthropicName: "web_search"},
+				},
+			},
+		},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), `"type":"server_tool_use"`)
+	require.Contains(t, rec.Body.String(), `"type":"web_search_tool_result"`)
+	require.Contains(t, rec.Body.String(), `"stop_reason":"pause_turn"`)
+}
+
+func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchReturnsServerToolPauseTurn(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	previousFetchExecutor := kiroShadowWebFetchExecutor
+	kiroShadowWebFetchExecutor = func(ctx context.Context, account *Account, req webfetch.FetchRequest) *webfetch.FetchResult {
+		require.Equal(t, int64(11), account.ID)
+		require.Equal(t, "https://example.com/fetch", req.URL)
+		return &webfetch.FetchResult{
+			RequestedURL: req.URL,
+			FinalURL:     req.URL,
+			StatusCode:   http.StatusOK,
+			ContentType:  "text/html",
+			Title:        "Fetch Title",
+			Text:         "Hello from fetch",
+		}
+	}
+	t.Cleanup(func() { kiroShadowWebFetchExecutor = previousFetchExecutor })
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "toolUseEvent",
+	}, map[string]any{"toolUseId": "tool-2", "name": "cc_srv_web_fetch", "input": `{"url":"https://example.com/fetch"}`, "stop": true})
+
+	result, err := svc.forwardNonStream(
+		context.Background(),
+		c,
+		&Account{ID: 11, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Body: []byte(`{}`)},
+		&kiropkg.ConvertResult{
+			Model: "claude-sonnet-4.5",
+			BridgeMetadata: &kiropkg.BridgeMetadata{
+				ShadowTools: map[string]kiropkg.ShadowToolBridge{
+					"cc_srv_web_fetch": {
+						AnthropicType:  "web_fetch_20250305",
+						AnthropicName:  "web_fetch",
+						AllowedDomains: []string{"127.0.0.1", "localhost"},
+					},
+				},
+			},
+		},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), `"type":"server_tool_use"`)
+	require.Contains(t, rec.Body.String(), `"type":"web_fetch_tool_result"`)
+	require.Contains(t, rec.Body.String(), `"type":"web_fetch_result"`)
+	require.Contains(t, rec.Body.String(), `"title":"Fetch Title"`)
+	require.Contains(t, rec.Body.String(), `"stop_reason":"pause_turn"`)
+}
+
+func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchFailureReturnsStructuredToolError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	previousFetchExecutor := kiroShadowWebFetchExecutor
+	kiroShadowWebFetchExecutor = func(ctx context.Context, account *Account, req webfetch.FetchRequest) *webfetch.FetchResult {
+		require.Equal(t, int64(111), account.ID)
+		require.Equal(t, "https://example.com/fetch", req.URL)
+		return &webfetch.FetchResult{
+			RequestedURL: req.URL,
+			Error: &webfetch.FetchError{
+				Code:    webfetch.ErrorCodeRequestFailed,
+				Message: "dial tcp: i/o timeout",
+			},
+		}
+	}
+	t.Cleanup(func() { kiroShadowWebFetchExecutor = previousFetchExecutor })
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "toolUseEvent",
+	}, map[string]any{"toolUseId": "tool-err", "name": "cc_srv_web_fetch", "input": `{"url":"https://example.com/fetch"}`, "stop": true})
+
+	result, err := svc.forwardNonStream(
+		context.Background(),
+		c,
+		&Account{ID: 111, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Body: []byte(`{}`)},
+		&kiropkg.ConvertResult{
+			Model: "claude-sonnet-4.5",
+			BridgeMetadata: &kiropkg.BridgeMetadata{
+				ShadowTools: map[string]kiropkg.ShadowToolBridge{
+					"cc_srv_web_fetch": {
+						AnthropicType: "web_fetch_20250305",
+						AnthropicName: "web_fetch",
+					},
+				},
+			},
+		},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), `"type":"web_fetch_tool_error"`)
+	require.Contains(t, rec.Body.String(), `"error_code":"url_not_accessible"`)
+	require.Contains(t, rec.Body.String(), `"stop_reason":"pause_turn"`)
+}
+
+func TestKiroGatewayService_ForwardNonStream_NormalToolBeforeShadowToolKeepsToolUseStopPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{"toolUseId": "tool-normal", "name": "search", "input": `{"q":"normal"}`, "stop": true}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{"toolUseId": "tool-shadow", "name": "cc_srv_web_search", "input": `{"query":"golang"}`, "stop": true}),
+	}, nil)
+
+	result, err := svc.forwardNonStream(
+		context.Background(),
+		c,
+		&Account{ID: 12, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Body: []byte(`{}`)},
+		&kiropkg.ConvertResult{
+			Model: "claude-sonnet-4.5",
+			BridgeMetadata: &kiropkg.BridgeMetadata{
+				ShadowTools: map[string]kiropkg.ShadowToolBridge{
+					"cc_srv_web_search": {AnthropicType: "web_search_20250305", AnthropicName: "web_search"},
+				},
+			},
+		},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), `"stop_reason":"tool_use"`)
+	require.Contains(t, rec.Body.String(), `"name":"search"`)
+	require.NotContains(t, rec.Body.String(), `"type":"server_tool_use"`)
+}
+
+func TestKiroGatewayService_ForwardNonStream_ShadowToolFollowedByNormalToolReturnsConflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{"toolUseId": "tool-shadow", "name": "cc_srv_web_search", "input": `{"query":"golang"}`, "stop": true}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{"toolUseId": "tool-normal", "name": "search", "input": `{"q":"normal"}`, "stop": true}),
+	}, nil)
+
+	result, err := svc.forwardNonStream(
+		context.Background(),
+		c,
+		&Account{ID: 13, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Body: []byte(`{}`)},
+		&kiropkg.ConvertResult{
+			Model: "claude-sonnet-4.5",
+			BridgeMetadata: &kiropkg.BridgeMetadata{
+				ShadowTools: map[string]kiropkg.ShadowToolBridge{
+					"cc_srv_web_search": {AnthropicType: "web_search_20250305", AnthropicName: "web_search"},
+				},
+			},
+		},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "shadow web tool conflict")
+}
+
+func TestKiroGatewayService_ForwardStream_NormalToolBeforeShadowToolKeepsToolUseStopPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{"toolUseId": "tool-normal", "name": "search", "input": `{"q":"normal"}`, "stop": true}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{"toolUseId": "tool-shadow", "name": "cc_srv_web_search", "input": `{"query":"golang"}`, "stop": true}),
+	}, nil)
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 14, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+		&kiropkg.ConvertResult{
+			Model: "claude-sonnet-4.5",
+			BridgeMetadata: &kiropkg.BridgeMetadata{
+				ShadowTools: map[string]kiropkg.ShadowToolBridge{
+					"cc_srv_web_search": {AnthropicType: "web_search_20250305", AnthropicName: "web_search"},
+				},
+			},
+		},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), `"type":"tool_use"`)
+	require.Contains(t, rec.Body.String(), `"name":"search"`)
+	require.Contains(t, rec.Body.String(), `"stop_reason":"tool_use"`)
+	require.NotContains(t, rec.Body.String(), `"type":"server_tool_use"`)
+}
+
+func TestKiroGatewayService_ForwardStream_ShadowToolFollowedByNormalToolReturnsConflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	previousSearchExecutor := kiroShadowWebSearchExecutor
+	kiroShadowWebSearchExecutor = func(ctx context.Context, account *Account, query string) (*websearch.SearchResponse, string, error) {
+		require.Equal(t, int64(15), account.ID)
+		require.Equal(t, "golang", query)
+		return &websearch.SearchResponse{
+			Query: query,
+			Results: []websearch.SearchResult{
+				{URL: "https://go.dev", Title: "The Go Programming Language", Snippet: "Official site"},
+			},
+		}, "stub", nil
+	}
+	t.Cleanup(func() { kiroShadowWebSearchExecutor = previousSearchExecutor })
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{"toolUseId": "tool-shadow", "name": "cc_srv_web_search", "input": `{"query":"golang"}`, "stop": true}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{"toolUseId": "tool-normal", "name": "search", "input": `{"q":"normal"}`, "stop": true}),
+	}, nil)
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 15, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+		&kiropkg.ConvertResult{
+			Model: "claude-sonnet-4.5",
+			BridgeMetadata: &kiropkg.BridgeMetadata{
+				ShadowTools: map[string]kiropkg.ShadowToolBridge{
+					"cc_srv_web_search": {AnthropicType: "web_search_20250305", AnthropicName: "web_search"},
+				},
+			},
+		},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, err.Error(), "shadow web tool conflict")
+	require.Contains(t, rec.Body.String(), `"type":"server_tool_use"`)
+	require.Contains(t, rec.Body.String(), "event: error")
+	require.NotContains(t, rec.Body.String(), "event: message_stop")
+}
+
+func TestGatewayForwardAsResponses_KiroWebSearchPauseTurnReturnsResponsesCall(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	previousSearchExecutor := kiroShadowWebSearchExecutor
+	kiroShadowWebSearchExecutor = func(ctx context.Context, account *Account, query string) (*websearch.SearchResponse, string, error) {
+		require.Equal(t, int64(12), account.ID)
+		require.Equal(t, "golang", query)
+		return &websearch.SearchResponse{
+			Query: query,
+			Results: []websearch.SearchResult{
+				{URL: "https://go.dev", Title: "The Go Programming Language", Snippet: "Official site"},
+			},
+		}, "stub", nil
+	}
+	t.Cleanup(func() { kiroShadowWebSearchExecutor = previousSearchExecutor })
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"claude-sonnet-4.5","stream":false,"input":"Search for Go","tools":[{"type":"web_search"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &kiroMutatingHTTPUpstream{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+				":message-type": "event",
+				":event-type":   "toolUseEvent",
+			}, map[string]any{"toolUseId": "tool-3", "name": "cc_srv_web_search", "input": `{"query":"golang"}`, "stop": true}))),
+		},
+	}
+
+	svc := &GatewayService{
+		kiroGatewayService: &KiroGatewayService{
+			httpUpstream: upstream,
+			fakeCache:    gocache.New(time.Minute, time.Minute),
+		},
+	}
+	account := &Account{
+		ID:       12,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-api-key",
+		},
+	}
+
+	result, err := svc.ForwardAsResponses(context.Background(), c, account, body, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), `"type":"web_search_call"`)
+	require.Contains(t, rec.Body.String(), `"query":"golang"`)
+	require.Contains(t, rec.Body.String(), `"url":"https://go.dev"`)
 }
 
 func buildKiroTestFrame(t *testing.T, headers map[string]string, payload map[string]any) []byte {
