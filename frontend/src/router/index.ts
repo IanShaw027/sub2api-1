@@ -534,6 +534,30 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/orders/invoices',
+    name: 'MyInvoices',
+    component: () => import('@/views/user/UserInvoicesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'My Invoices',
+      titleKey: 'nav.myInvoices',
+      requiresPayment: true
+    }
+  },
+  {
+    path: '/orders/invoices/:id',
+    name: 'MyInvoiceDetail',
+    component: () => import('@/views/user/UserInvoiceDetailView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Invoice Detail',
+      titleKey: 'nav.invoiceDetail',
+      requiresPayment: true
+    }
+  },
+  {
     path: '/payment/qrcode',
     name: 'PaymentQRCode',
     component: () => import('@/views/user/PaymentQRCodeView.vue'),
