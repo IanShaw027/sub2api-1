@@ -204,6 +204,24 @@ describe('StripePaymentView', () => {
     expect(wrapper.text()).not.toContain('payment.stripeLoadFailed')
   })
 
+  it('does not fall back to public resume-token order resolution for non-auth order lookup failures', async () => {
+    routeState.query = {
+      order_id: '42',
+      client_secret: 'pi_secret_42',
+      resume_token: 'resume-42',
+    }
+    getOrder.mockRejectedValueOnce({ status: 500, message: 'server exploded' })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+
+    expect(getOrder).toHaveBeenCalledWith(42)
+    expect(resolveOrderPublicByResumeToken).not.toHaveBeenCalled()
+    expect(loadStripe).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('server exploded')
+  })
+
   it('includes resume-token and out-trade-no in stripe return URLs', async () => {
     vi.useFakeTimers()
     routeState.query = {

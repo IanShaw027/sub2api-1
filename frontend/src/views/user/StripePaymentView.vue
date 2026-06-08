@@ -170,7 +170,7 @@ onMounted(async () => {
       const res = await paymentAPI.getOrder(orderId)
       resolvedOrder = res.data
     } catch (authErr: unknown) {
-      if (!recoveryResumeToken.value) {
+      if (!recoveryResumeToken.value || !isAuthRecoveryEligibleError(authErr)) {
         throw authErr
       }
       const res = await paymentAPI.resolveOrderPublicByResumeToken(recoveryResumeToken.value)
@@ -228,6 +228,21 @@ const localeCode = computed(() => {
   }
   return undefined
 })
+
+function isAuthRecoveryEligibleError(err: unknown): boolean {
+  if (typeof err === 'object' && err !== null) {
+    const status = 'status' in err ? (err as { status?: unknown }).status : undefined
+    if (status === 401 || status === 403) {
+      return true
+    }
+    const message = 'message' in err ? (err as { message?: unknown }).message : undefined
+    if (typeof message === 'string' && /(auth required|unauthorized|forbidden|login required)/i.test(message)) {
+      return true
+    }
+  }
+
+  return err instanceof Error && /(auth required|unauthorized|forbidden|login required)/i.test(err.message)
+}
 
 function formatGatewayAmount(value: number): string {
   return formatPaymentAmount(value, currency.value, localeCode.value)
