@@ -12,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/invoice"
 	"github.com/Wei-Shaw/sub2api/ent/invoiceorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
@@ -495,4 +496,176 @@ func (s *InvoiceService) UploadFile(ctx context.Context, invoiceID int64, input 
 	}
 
 	return invoiceDetailFromEnt(inv, links), nil
+}
+
+func (s *InvoiceService) GetForUser(ctx context.Context, invoiceID, userID int64) (*InvoiceDetail, error) {
+	inv, err := s.entClient.Invoice.Get(ctx, invoiceID)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, infraerrors.NotFound("INVOICE_NOT_FOUND", "invoice not found")
+		}
+		return nil, fmt.Errorf("get invoice: %w", err)
+	}
+	if inv.UserID != userID {
+		return nil, infraerrors.Forbidden("FORBIDDEN", "no permission for this invoice")
+	}
+	links, err := s.entClient.InvoiceOrder.Query().Where(invoiceorder.InvoiceIDEQ(inv.ID)).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load invoice_orders: %w", err)
+	}
+	return invoiceDetailFromEnt(inv, links), nil
+}
+
+func (s *InvoiceService) GetForAdmin(ctx context.Context, invoiceID int64) (*InvoiceDetail, error) {
+	inv, err := s.entClient.Invoice.Get(ctx, invoiceID)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, infraerrors.NotFound("INVOICE_NOT_FOUND", "invoice not found")
+		}
+		return nil, fmt.Errorf("get invoice: %w", err)
+	}
+	links, err := s.entClient.InvoiceOrder.Query().Where(invoiceorder.InvoiceIDEQ(inv.ID)).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load invoice_orders: %w", err)
+	}
+	return invoiceDetailFromEnt(inv, links), nil
+}
+
+func (s *InvoiceService) List(ctx context.Context, params InvoiceListParams) ([]*InvoiceDetail, int, error) {
+	page := params.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := params.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	q := s.entClient.Invoice.Query()
+	if params.UserID != nil {
+		q = q.Where(invoice.UserIDEQ(*params.UserID))
+	}
+	if status := strings.TrimSpace(params.Status); status != "" {
+		q = q.Where(invoice.StatusEQ(status))
+	}
+	if keyword := strings.TrimSpace(params.Keyword); keyword != "" {
+		matchedRows, err := s.entClient.InvoiceOrder.Query().
+			Where(invoiceorder.OutTradeNoContainsFold(keyword)).
+			All(ctx)
+		if err != nil {
+			return nil, 0, fmt.Errorf("keyword join lookup: %w", err)
+		}
+		matchedInvoiceIDs := make([]int64, 0, len(matchedRows))
+		for _, r := range matchedRows {
+			matchedInvoiceIDs = append(matchedInvoiceIDs, r.InvoiceID)
+		}
+		q = q.Where(invoice.Or(
+			invoice.TitleContainsFold(keyword),
+			invoice.EmailContainsFold(keyword),
+			invoice.UserEmailContainsFold(keyword),
+			invoice.TaxNumberContainsFold(keyword),
+			invoice.IDIn(matchedInvoiceIDs...),
+		))
+	}
+
+	total, err := q.Clone().Count(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count invoices: %w", err)
+	}
+	rows, err := q.
+		Order(dbent.Desc(invoice.FieldCreatedAt)).
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		All(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list invoices: %w", err)
+	}
+	out := make([]*InvoiceDetail, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, invoiceDetailFromEnt(r, nil))
+	}
+	return out, total, nil
+}
+
+func (s *InvoiceService) GetActiveLinksByOrderIDs(ctx context.Context, orderIDs []int64) (map[int64]OrderInvoiceLink, error) {
+	if len(orderIDs) == 0 {
+		return map[int64]OrderInvoiceLink{}, nil
+	}
+	rows, err := s.entClient.InvoiceOrder.Query().
+		Where(invoiceorder.OrderIDIn(orderIDs...)).
+		WithInvoice().
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query invoice_orders: %w", err)
+	}
+	out := map[int64]OrderInvoiceLink{}
+	for _, r := range rows {
+		inv := r.Edges.Invoice
+		if inv == nil {
+			continue
+		}
+		if inv.Status != InvoiceStatusApplied && inv.Status != InvoiceStatusIssued {
+			continue
+		}
+		out[r.OrderID] = OrderInvoiceLink{
+			InvoiceID:     inv.ID,
+			InvoiceStatus: inv.Status,
+			HasFile:       inv.FileMediaID != nil,
+		}
+	}
+	return out, nil
+}
+
+func (s *InvoiceService) CreateDownloadURLForUser(ctx context.Context, invoiceID, userID int64) (*MediaDownloadURL, error) {
+	if s.mediaSvc == nil {
+		return nil, infraerrors.ServiceUnavailable("INVOICE_FILE_STORAGE_UNAVAILABLE", "invoice file storage is unavailable")
+	}
+	inv, err := s.entClient.Invoice.Get(ctx, invoiceID)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, infraerrors.NotFound("INVOICE_NOT_FOUND", "invoice not found")
+		}
+		return nil, fmt.Errorf("get invoice: %w", err)
+	}
+	if inv.UserID != userID {
+		return nil, infraerrors.Forbidden("FORBIDDEN", "no permission for this invoice")
+	}
+	if inv.Status != InvoiceStatusIssued || inv.FileMediaID == nil {
+		return nil, infraerrors.BadRequest("INVOICE_NOT_ISSUED", "invoice has not been issued")
+	}
+	return s.mediaSvc.CreateDownloadURLForUser(ctx, userID, *inv.FileMediaID)
+}
+
+func (s *InvoiceService) CreateDownloadURLForAdmin(ctx context.Context, invoiceID int64) (*MediaDownloadURL, error) {
+	if s.mediaSvc == nil {
+		return nil, infraerrors.ServiceUnavailable("INVOICE_FILE_STORAGE_UNAVAILABLE", "invoice file storage is unavailable")
+	}
+	inv, err := s.entClient.Invoice.Get(ctx, invoiceID)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, infraerrors.NotFound("INVOICE_NOT_FOUND", "invoice not found")
+		}
+		return nil, fmt.Errorf("get invoice: %w", err)
+	}
+	if inv.Status != InvoiceStatusIssued || inv.FileMediaID == nil {
+		return nil, infraerrors.BadRequest("INVOICE_NOT_ISSUED", "invoice has not been issued")
+	}
+	return s.mediaSvc.CreateDownloadURLForAdmin(ctx, *inv.FileMediaID)
+}
+
+func (s *InvoiceService) GetInvoiceEligibleProviderInstanceIDs(ctx context.Context) ([]string, error) {
+	instances, err := s.entClient.PaymentProviderInstance.Query().
+		Where(paymentproviderinstance.InvoiceEnabledEQ(true)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query invoice-enabled provider instances: %w", err)
+	}
+	ids := make([]string, 0, len(instances))
+	for _, inst := range instances {
+		ids = append(ids, fmt.Sprintf("%d", inst.ID))
+	}
+	return ids, nil
 }

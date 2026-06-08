@@ -266,3 +266,79 @@ func TestInvoiceServiceCancel_RejectsIssued(t *testing.T) {
 	require.Equal(t, "INVOICE_CANNOT_CANCEL", infraerrors.Reason(err))
 	_ = client
 }
+
+func TestInvoiceServiceList_FiltersByUserAndStatus(t *testing.T) {
+	ctx := context.Background()
+	client, _, svc := newInvoiceTestService(t)
+
+	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+	inv, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.NoError(t, err)
+
+	uid := user.ID
+	items, total, err := svc.List(ctx, InvoiceListParams{UserID: &uid, Status: InvoiceStatusApplied})
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	require.Len(t, items, 1)
+	require.Equal(t, inv.ID, items[0].ID)
+	require.Nil(t, items[0].Orders, "list view must not eager-load orders")
+
+	// admin 视图（UserID 为 nil）
+	itemsAll, totalAll, err := svc.List(ctx, InvoiceListParams{})
+	require.NoError(t, err)
+	require.Equal(t, 1, totalAll)
+	require.Len(t, itemsAll, 1)
+
+	// 不匹配的 user_id
+	otherID := user.ID + 999
+	_, totalEmpty, err := svc.List(ctx, InvoiceListParams{UserID: &otherID})
+	require.NoError(t, err)
+	require.Equal(t, 0, totalEmpty)
+}
+
+func TestInvoiceServiceGetActiveLinksByOrderIDs(t *testing.T) {
+	ctx := context.Background()
+	client, _, svc := newInvoiceTestService(t)
+
+	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+	inv, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.NoError(t, err)
+
+	links, err := svc.GetActiveLinksByOrderIDs(ctx, []int64{order.ID})
+	require.NoError(t, err)
+	require.Contains(t, links, order.ID)
+	require.Equal(t, inv.ID, links[order.ID].InvoiceID)
+	require.Equal(t, InvoiceStatusApplied, links[order.ID].InvoiceStatus)
+
+	// 取消后链接消失
+	_, err = svc.Cancel(ctx, inv.ID, user.ID)
+	require.NoError(t, err)
+	links2, err := svc.GetActiveLinksByOrderIDs(ctx, []int64{order.ID})
+	require.NoError(t, err)
+	require.NotContains(t, links2, order.ID)
+	_ = client
+}
+
+func TestInvoiceServiceGetForUser_RejectsForeign(t *testing.T) {
+	ctx := context.Background()
+	client, _, svc := newInvoiceTestService(t)
+
+	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+	inv, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.NoError(t, err)
+
+	_, err = svc.GetForUser(ctx, inv.ID, user.ID+1)
+	require.Error(t, err)
+	require.Equal(t, "FORBIDDEN", infraerrors.Reason(err))
+
+	got, err := svc.GetForUser(ctx, inv.ID, user.ID)
+	require.NoError(t, err)
+	require.Len(t, got.Orders, 1)
+	_ = client
+}
