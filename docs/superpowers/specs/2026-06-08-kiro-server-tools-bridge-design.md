@@ -147,10 +147,11 @@
 不在本轮支持的 server-side tools：
 
 1. `computer_*`
-2. `tool_search_*`
-3. 其他未知 server-side tool families
+2. 其他未知 server-side tool families
 
-对于这些未支持类型，网关必须直接拒绝为客户端错误，不能再错误下沉成普通 Kiro `toolSpecification`。
+`tool_search_*` 不在本轮 bridge 范围内，但保持当前仓库已有行为，不引入新的拒绝或降级策略。
+
+对于当前真正未支持的 server-side tool families，网关必须直接拒绝为客户端错误，不能再错误下沉成普通 Kiro `toolSpecification`。
 
 ## Legacy Emulation Role
 
@@ -173,8 +174,14 @@ Kiro 平台的新 server-side web tools 行为统一走正式桥，不再依赖 
 命名要求：
 
 1. 与客户端显式工具名区分开
-2. 不参与现有 tool-name rewrite 混淆
+2. 必须通过固定前缀被现有 tool-name rewrite 层显式跳过
 3. 在 continuation 重放时可稳定识别
+
+落地要求：
+
+1. `gateway_tool_rewrite.go` 新增“shadow tool 前缀直接跳过”的显式规则
+2. `gateway_tool_rewrite_test.go` 补覆盖，保证 shadow tool 不会被改名
+3. continuation replay 不依赖改名前的用户侧工具名，只依赖 shadow tool 固定名与 bridge metadata
 
 ### Shadow Tool Schemas
 
@@ -203,6 +210,12 @@ Kiro 平台的新 server-side web tools 行为统一走正式桥，不再依赖 
 ```
 
 本轮先不把 `allowed_domains`、`blocked_domains`、`max_uses`、`max_content_tokens` 暴露给 Kiro 当调用参数；这些属于工具定义侧约束，由 gateway 本地保留并在执行时应用。
+
+其中：
+
+1. `allowed_domains` / `blocked_domains` 在 `web_fetch` 执行前校验
+2. `max_content_tokens` 在 `web_fetch` 内容提取后执行截断
+3. `max_uses` 作用于一个 assistant turn 内可桥接的 shadow web tool 总次数，而不是被退化成“每 turn 最多 1 次”
 
 ## Request-Side Design
 
@@ -260,10 +273,13 @@ Kiro 平台的新 server-side web tools 行为统一走正式桥，不再依赖 
    - 执行 search/fetch
    - 对客户端发 `server_tool_use`
    - 对客户端发 `web_search_tool_result` 或 `web_fetch_tool_result`
-   - `message_delta.stop_reason = pause_turn`
+   - 同一 upstream assistant turn 内若连续出现多个 shadow web tools，则按出现顺序全部桥接
+   - 全部 bridge 完成后统一 `message_delta.stop_reason = pause_turn`
    - `message_stop`
 
 当前 turn 到此结束，不继续在同一响应里生成最终答案。
+
+若同一 upstream assistant turn 里在 shadow web tools 之后又出现普通客户端 `tool_use`，本轮将其视为协议冲突并返回明确内部错误，而不是静默丢弃后续 tool call。
 
 ### Non-Streaming
 
@@ -276,15 +292,24 @@ buffered 路径行为与 streaming 一致，只是一次性返回完整 message�
 
 ### Web Fetch Result Shape
 
-`web_fetch_tool_result` 采用与 `web_search_tool_result` 平行的 Anthropic content block，内部最少包含：
+顶层结果块仍然是 `web_fetch_tool_result`，但其 `content` 必须遵循 Anthropic `web_fetch` 结果项语义：
 
-1. `url`
-2. `title`
-3. `page_content`
+1. 成功项：`type = web_fetch_result`
+2. 成功项内包含：
+   - `url`
+   - `title`
+   - `document`
+   - `source`
+   - `text`
+3. 失败项：`type = web_fetch_tool_error`
+4. 失败项内包含：
+   - `url`
+   - `error_code`
+   - `text`
 
 当抓取失败时：
 
-1. `page_content` 放错误说明
+1. 返回 `web_fetch_tool_error`
 2. 结果块仍然返回，供模型在 continuation 中消费
 
 ### Why `pause_turn`
@@ -357,13 +382,14 @@ buffered 路径行为与 streaming 一致，只是一次性返回完整 message�
 
 ### Mixed Tool Ordering
 
-本轮只处理“当前 Kiro turn 实际调用到的第一个 shadow web tool”：
+本轮的 mixed ordering 规则如下：
 
 1. 若模型先调用普通客户端工具，保持现有 `tool_use` 停止
-2. 若模型先调用 shadow web tool，返回 `pause_turn`
-3. 续跑后模型可以继续决定是否再调用其他工具
+2. 若模型先调用 shadow web tool，则同一 assistant turn 内后续连续 shadow web tools 全部桥接并计入 `max_uses`
+3. 当该 turn 内只出现 shadow web tools 时，统一以 `pause_turn` 结束
+4. 若同一 turn 内在 shadow web tools 之后又出现普通客户端 `tool_use`，视为协议冲突，返回明确错误而不是吞掉后续工具
 
-这与现有 Anthropic / Responses continuation 体系更一致，也避免在一个 stream 内混出多种 stop reason。
+这样不会把 server-side web tools 语义错误退化成“每 turn 只允许 1 次”。
 
 ## Testing
 
@@ -372,18 +398,23 @@ buffered 路径行为与 streaming 一致，只是一次性返回完整 message�
 1. `backend/internal/pkg/kiro/converter_test.go`
    - server-side web tools 不再被错误当作普通 Kiro tools
    - shadow tool 注入行为正确
+   - `tool_search_*` 本轮不引入新拒绝
 2. `backend/internal/service/kiro_gateway_service_test.go`
-   - streaming `server_tool_use` + `web_search_tool_result` + `pause_turn`
+   - streaming 多个 `server_tool_use` + `web_search_tool_result` / `web_fetch_tool_result` + `pause_turn`
    - buffered `pause_turn`
    - continuation replay 后生成最终答案
    - mixed tools 下普通 `tool_use` 与 shadow web tools 的优先级
-3. `backend/internal/pkg/apicompat/anthropic_to_responses_response_test.go`
+   - shadow web tools 后再出现普通 `tool_use` 时的协议冲突
+3. `backend/internal/service/gateway_tool_rewrite_test.go`
+   - shadow tool 固定前缀不参与 rewrite
+   - continuation 相关 bridge metadata 不依赖 rewrite 前名字
+4. `backend/internal/pkg/apicompat/anthropic_to_responses_response_test.go`
    - reverse bridge 正确识别 server-side web tool blocks
-4. `backend/internal/pkg/apicompat/responses_to_anthropic_request_test.go`
+5. `backend/internal/pkg/apicompat/responses_to_anthropic_request_test.go`
    - `web_fetch` 映射与保留语义
-5. `backend/internal/service/gateway_forward_as_responses_test.go`
+6. `backend/internal/service/gateway_forward_as_responses_test.go`
    - `/v1/responses` streaming / replay 行为与终止事件一致
-6. `backend/internal/pkg/webfetch/*_test.go`
+7. `backend/internal/pkg/webfetch/*_test.go`
    - HTML/text 提取、截断、错误路径
 
 ## Verification
