@@ -259,34 +259,6 @@ func (_c *PaymentOrderCreate) SetNillableStatus(v *string) *PaymentOrderCreate {
 	return _c
 }
 
-// SetInvoiceStatus sets the "invoice_status" field.
-func (_c *PaymentOrderCreate) SetInvoiceStatus(v string) *PaymentOrderCreate {
-	_c.mutation.SetInvoiceStatus(v)
-	return _c
-}
-
-// SetNillableInvoiceStatus sets the "invoice_status" field if the given value is not nil.
-func (_c *PaymentOrderCreate) SetNillableInvoiceStatus(v *string) *PaymentOrderCreate {
-	if v != nil {
-		_c.SetInvoiceStatus(*v)
-	}
-	return _c
-}
-
-// SetInvoiceFileMediaID sets the "invoice_file_media_id" field.
-func (_c *PaymentOrderCreate) SetInvoiceFileMediaID(v int64) *PaymentOrderCreate {
-	_c.mutation.SetInvoiceFileMediaID(v)
-	return _c
-}
-
-// SetNillableInvoiceFileMediaID sets the "invoice_file_media_id" field if the given value is not nil.
-func (_c *PaymentOrderCreate) SetNillableInvoiceFileMediaID(v *int64) *PaymentOrderCreate {
-	if v != nil {
-		_c.SetInvoiceFileMediaID(*v)
-	}
-	return _c
-}
-
 // SetRefundAmount sets the "refund_amount" field.
 func (_c *PaymentOrderCreate) SetRefundAmount(v float64) *PaymentOrderCreate {
 	_c.mutation.SetRefundAmount(v)
@@ -571,10 +543,6 @@ func (_c *PaymentOrderCreate) defaults() {
 		v := paymentorder.DefaultStatus
 		_c.mutation.SetStatus(v)
 	}
-	if _, ok := _c.mutation.InvoiceStatus(); !ok {
-		v := paymentorder.DefaultInvoiceStatus
-		_c.mutation.SetInvoiceStatus(v)
-	}
 	if _, ok := _c.mutation.RefundAmount(); !ok {
 		v := paymentorder.DefaultRefundAmount
 		_c.mutation.SetRefundAmount(v)
@@ -683,14 +651,6 @@ func (_c *PaymentOrderCreate) check() error {
 	if v, ok := _c.mutation.Status(); ok {
 		if err := paymentorder.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.status": %w`, err)}
-		}
-	}
-	if _, ok := _c.mutation.InvoiceStatus(); !ok {
-		return &ValidationError{Name: "invoice_status", err: errors.New(`ent: missing required field "PaymentOrder.invoice_status"`)}
-	}
-	if v, ok := _c.mutation.InvoiceStatus(); ok {
-		if err := paymentorder.InvoiceStatusValidator(v); err != nil {
-			return &ValidationError{Name: "invoice_status", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.invoice_status": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.RefundAmount(); !ok {
@@ -845,14 +805,6 @@ func (_c *PaymentOrderCreate) createSpec() (*PaymentOrder, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(paymentorder.FieldStatus, field.TypeString, value)
 		_node.Status = value
-	}
-	if value, ok := _c.mutation.InvoiceStatus(); ok {
-		_spec.SetField(paymentorder.FieldInvoiceStatus, field.TypeString, value)
-		_node.InvoiceStatus = value
-	}
-	if value, ok := _c.mutation.InvoiceFileMediaID(); ok {
-		_spec.SetField(paymentorder.FieldInvoiceFileMediaID, field.TypeInt64, value)
-		_node.InvoiceFileMediaID = &value
 	}
 	if value, ok := _c.mutation.RefundAmount(); ok {
 		_spec.SetField(paymentorder.FieldRefundAmount, field.TypeFloat64, value)
@@ -1352,42 +1304,6 @@ func (u *PaymentOrderUpsert) SetStatus(v string) *PaymentOrderUpsert {
 // UpdateStatus sets the "status" field to the value that was provided on create.
 func (u *PaymentOrderUpsert) UpdateStatus() *PaymentOrderUpsert {
 	u.SetExcluded(paymentorder.FieldStatus)
-	return u
-}
-
-// SetInvoiceStatus sets the "invoice_status" field.
-func (u *PaymentOrderUpsert) SetInvoiceStatus(v string) *PaymentOrderUpsert {
-	u.Set(paymentorder.FieldInvoiceStatus, v)
-	return u
-}
-
-// UpdateInvoiceStatus sets the "invoice_status" field to the value that was provided on create.
-func (u *PaymentOrderUpsert) UpdateInvoiceStatus() *PaymentOrderUpsert {
-	u.SetExcluded(paymentorder.FieldInvoiceStatus)
-	return u
-}
-
-// SetInvoiceFileMediaID sets the "invoice_file_media_id" field.
-func (u *PaymentOrderUpsert) SetInvoiceFileMediaID(v int64) *PaymentOrderUpsert {
-	u.Set(paymentorder.FieldInvoiceFileMediaID, v)
-	return u
-}
-
-// UpdateInvoiceFileMediaID sets the "invoice_file_media_id" field to the value that was provided on create.
-func (u *PaymentOrderUpsert) UpdateInvoiceFileMediaID() *PaymentOrderUpsert {
-	u.SetExcluded(paymentorder.FieldInvoiceFileMediaID)
-	return u
-}
-
-// AddInvoiceFileMediaID adds v to the "invoice_file_media_id" field.
-func (u *PaymentOrderUpsert) AddInvoiceFileMediaID(v int64) *PaymentOrderUpsert {
-	u.Add(paymentorder.FieldInvoiceFileMediaID, v)
-	return u
-}
-
-// ClearInvoiceFileMediaID clears the value of the "invoice_file_media_id" field.
-func (u *PaymentOrderUpsert) ClearInvoiceFileMediaID() *PaymentOrderUpsert {
-	u.SetNull(paymentorder.FieldInvoiceFileMediaID)
 	return u
 }
 
@@ -2129,48 +2045,6 @@ func (u *PaymentOrderUpsertOne) SetStatus(v string) *PaymentOrderUpsertOne {
 func (u *PaymentOrderUpsertOne) UpdateStatus() *PaymentOrderUpsertOne {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.UpdateStatus()
-	})
-}
-
-// SetInvoiceStatus sets the "invoice_status" field.
-func (u *PaymentOrderUpsertOne) SetInvoiceStatus(v string) *PaymentOrderUpsertOne {
-	return u.Update(func(s *PaymentOrderUpsert) {
-		s.SetInvoiceStatus(v)
-	})
-}
-
-// UpdateInvoiceStatus sets the "invoice_status" field to the value that was provided on create.
-func (u *PaymentOrderUpsertOne) UpdateInvoiceStatus() *PaymentOrderUpsertOne {
-	return u.Update(func(s *PaymentOrderUpsert) {
-		s.UpdateInvoiceStatus()
-	})
-}
-
-// SetInvoiceFileMediaID sets the "invoice_file_media_id" field.
-func (u *PaymentOrderUpsertOne) SetInvoiceFileMediaID(v int64) *PaymentOrderUpsertOne {
-	return u.Update(func(s *PaymentOrderUpsert) {
-		s.SetInvoiceFileMediaID(v)
-	})
-}
-
-// AddInvoiceFileMediaID adds v to the "invoice_file_media_id" field.
-func (u *PaymentOrderUpsertOne) AddInvoiceFileMediaID(v int64) *PaymentOrderUpsertOne {
-	return u.Update(func(s *PaymentOrderUpsert) {
-		s.AddInvoiceFileMediaID(v)
-	})
-}
-
-// UpdateInvoiceFileMediaID sets the "invoice_file_media_id" field to the value that was provided on create.
-func (u *PaymentOrderUpsertOne) UpdateInvoiceFileMediaID() *PaymentOrderUpsertOne {
-	return u.Update(func(s *PaymentOrderUpsert) {
-		s.UpdateInvoiceFileMediaID()
-	})
-}
-
-// ClearInvoiceFileMediaID clears the value of the "invoice_file_media_id" field.
-func (u *PaymentOrderUpsertOne) ClearInvoiceFileMediaID() *PaymentOrderUpsertOne {
-	return u.Update(func(s *PaymentOrderUpsert) {
-		s.ClearInvoiceFileMediaID()
 	})
 }
 
@@ -3124,48 +2998,6 @@ func (u *PaymentOrderUpsertBulk) SetStatus(v string) *PaymentOrderUpsertBulk {
 func (u *PaymentOrderUpsertBulk) UpdateStatus() *PaymentOrderUpsertBulk {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.UpdateStatus()
-	})
-}
-
-// SetInvoiceStatus sets the "invoice_status" field.
-func (u *PaymentOrderUpsertBulk) SetInvoiceStatus(v string) *PaymentOrderUpsertBulk {
-	return u.Update(func(s *PaymentOrderUpsert) {
-		s.SetInvoiceStatus(v)
-	})
-}
-
-// UpdateInvoiceStatus sets the "invoice_status" field to the value that was provided on create.
-func (u *PaymentOrderUpsertBulk) UpdateInvoiceStatus() *PaymentOrderUpsertBulk {
-	return u.Update(func(s *PaymentOrderUpsert) {
-		s.UpdateInvoiceStatus()
-	})
-}
-
-// SetInvoiceFileMediaID sets the "invoice_file_media_id" field.
-func (u *PaymentOrderUpsertBulk) SetInvoiceFileMediaID(v int64) *PaymentOrderUpsertBulk {
-	return u.Update(func(s *PaymentOrderUpsert) {
-		s.SetInvoiceFileMediaID(v)
-	})
-}
-
-// AddInvoiceFileMediaID adds v to the "invoice_file_media_id" field.
-func (u *PaymentOrderUpsertBulk) AddInvoiceFileMediaID(v int64) *PaymentOrderUpsertBulk {
-	return u.Update(func(s *PaymentOrderUpsert) {
-		s.AddInvoiceFileMediaID(v)
-	})
-}
-
-// UpdateInvoiceFileMediaID sets the "invoice_file_media_id" field to the value that was provided on create.
-func (u *PaymentOrderUpsertBulk) UpdateInvoiceFileMediaID() *PaymentOrderUpsertBulk {
-	return u.Update(func(s *PaymentOrderUpsert) {
-		s.UpdateInvoiceFileMediaID()
-	})
-}
-
-// ClearInvoiceFileMediaID clears the value of the "invoice_file_media_id" field.
-func (u *PaymentOrderUpsertBulk) ClearInvoiceFileMediaID() *PaymentOrderUpsertBulk {
-	return u.Update(func(s *PaymentOrderUpsert) {
-		s.ClearInvoiceFileMediaID()
 	})
 }
 

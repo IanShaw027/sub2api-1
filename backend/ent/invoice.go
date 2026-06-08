@@ -9,34 +9,26 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/Wei-Shaw/sub2api/ent/invoiceapplication"
+	"github.com/Wei-Shaw/sub2api/ent/invoice"
 )
 
-// InvoiceApplication is the model entity for the InvoiceApplication schema.
-type InvoiceApplication struct {
+// Invoice is the model entity for the Invoice schema.
+type Invoice struct {
 	config `json:"-"`
 	// ID of the ent.
 	ID int64 `json:"id,omitempty"`
-	// OrderID holds the value of the "order_id" field.
-	OrderID int64 `json:"order_id,omitempty"`
 	// UserID holds the value of the "user_id" field.
 	UserID int64 `json:"user_id,omitempty"`
 	// UserEmail holds the value of the "user_email" field.
 	UserEmail string `json:"user_email,omitempty"`
-	// OrderOutTradeNo holds the value of the "order_out_trade_no" field.
-	OrderOutTradeNo string `json:"order_out_trade_no,omitempty"`
-	// PaymentType holds the value of the "payment_type" field.
-	PaymentType string `json:"payment_type,omitempty"`
-	// ProviderInstanceID holds the value of the "provider_instance_id" field.
-	ProviderInstanceID string `json:"provider_instance_id,omitempty"`
-	// ProviderKey holds the value of the "provider_key" field.
-	ProviderKey string `json:"provider_key,omitempty"`
-	// InvoiceStatus holds the value of the "invoice_status" field.
-	InvoiceStatus string `json:"invoice_status,omitempty"`
+	// Status holds the value of the "status" field.
+	Status string `json:"status,omitempty"`
 	// InvoiceAmount holds the value of the "invoice_amount" field.
 	InvoiceAmount float64 `json:"invoice_amount,omitempty"`
-	// InvoiceTitle holds the value of the "invoice_title" field.
-	InvoiceTitle string `json:"invoice_title,omitempty"`
+	// OrderCount holds the value of the "order_count" field.
+	OrderCount int `json:"order_count,omitempty"`
+	// Title holds the value of the "title" field.
+	Title string `json:"title,omitempty"`
 	// TaxNumber holds the value of the "tax_number" field.
 	TaxNumber string `json:"tax_number,omitempty"`
 	// Email holds the value of the "email" field.
@@ -64,22 +56,43 @@ type InvoiceApplication struct {
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the InvoiceQuery when eager-loading is set.
+	Edges        InvoiceEdges `json:"edges"`
 	selectValues sql.SelectValues
 }
 
+// InvoiceEdges holds the relations/edges for other nodes in the graph.
+type InvoiceEdges struct {
+	// Orders holds the value of the orders edge.
+	Orders []*InvoiceOrder `json:"orders,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [1]bool
+}
+
+// OrdersOrErr returns the Orders value or an error if the edge
+// was not loaded in eager-loading.
+func (e InvoiceEdges) OrdersOrErr() ([]*InvoiceOrder, error) {
+	if e.loadedTypes[0] {
+		return e.Orders, nil
+	}
+	return nil, &NotLoadedError{edge: "orders"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
-func (*InvoiceApplication) scanValues(columns []string) ([]any, error) {
+func (*Invoice) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case invoiceapplication.FieldInvoiceAmount:
+		case invoice.FieldInvoiceAmount:
 			values[i] = new(sql.NullFloat64)
-		case invoiceapplication.FieldID, invoiceapplication.FieldOrderID, invoiceapplication.FieldUserID, invoiceapplication.FieldFileMediaID, invoiceapplication.FieldFileSizeBytes:
+		case invoice.FieldID, invoice.FieldUserID, invoice.FieldOrderCount, invoice.FieldFileMediaID, invoice.FieldFileSizeBytes:
 			values[i] = new(sql.NullInt64)
-		case invoiceapplication.FieldUserEmail, invoiceapplication.FieldOrderOutTradeNo, invoiceapplication.FieldPaymentType, invoiceapplication.FieldProviderInstanceID, invoiceapplication.FieldProviderKey, invoiceapplication.FieldInvoiceStatus, invoiceapplication.FieldInvoiceTitle, invoiceapplication.FieldTaxNumber, invoiceapplication.FieldEmail, invoiceapplication.FieldContactName, invoiceapplication.FieldContactPhone, invoiceapplication.FieldRequestNote, invoiceapplication.FieldFileName, invoiceapplication.FieldFileMimeType:
+		case invoice.FieldUserEmail, invoice.FieldStatus, invoice.FieldTitle, invoice.FieldTaxNumber, invoice.FieldEmail, invoice.FieldContactName, invoice.FieldContactPhone, invoice.FieldRequestNote, invoice.FieldFileName, invoice.FieldFileMimeType:
 			values[i] = new(sql.NullString)
-		case invoiceapplication.FieldAppliedAt, invoiceapplication.FieldCancelledAt, invoiceapplication.FieldIssuedAt, invoiceapplication.FieldCreatedAt, invoiceapplication.FieldUpdatedAt:
+		case invoice.FieldAppliedAt, invoice.FieldCancelledAt, invoice.FieldIssuedAt, invoice.FieldCreatedAt, invoice.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -89,163 +102,139 @@ func (*InvoiceApplication) scanValues(columns []string) ([]any, error) {
 }
 
 // assignValues assigns the values that were returned from sql.Rows (after scanning)
-// to the InvoiceApplication fields.
-func (_m *InvoiceApplication) assignValues(columns []string, values []any) error {
+// to the Invoice fields.
+func (_m *Invoice) assignValues(columns []string, values []any) error {
 	if m, n := len(values), len(columns); m < n {
 		return fmt.Errorf("mismatch number of scan values: %d != %d", m, n)
 	}
 	for i := range columns {
 		switch columns[i] {
-		case invoiceapplication.FieldID:
+		case invoice.FieldID:
 			value, ok := values[i].(*sql.NullInt64)
 			if !ok {
 				return fmt.Errorf("unexpected type %T for field id", value)
 			}
 			_m.ID = int64(value.Int64)
-		case invoiceapplication.FieldOrderID:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field order_id", values[i])
-			} else if value.Valid {
-				_m.OrderID = value.Int64
-			}
-		case invoiceapplication.FieldUserID:
+		case invoice.FieldUserID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field user_id", values[i])
 			} else if value.Valid {
 				_m.UserID = value.Int64
 			}
-		case invoiceapplication.FieldUserEmail:
+		case invoice.FieldUserEmail:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field user_email", values[i])
 			} else if value.Valid {
 				_m.UserEmail = value.String
 			}
-		case invoiceapplication.FieldOrderOutTradeNo:
+		case invoice.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field order_out_trade_no", values[i])
+				return fmt.Errorf("unexpected type %T for field status", values[i])
 			} else if value.Valid {
-				_m.OrderOutTradeNo = value.String
+				_m.Status = value.String
 			}
-		case invoiceapplication.FieldPaymentType:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field payment_type", values[i])
-			} else if value.Valid {
-				_m.PaymentType = value.String
-			}
-		case invoiceapplication.FieldProviderInstanceID:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field provider_instance_id", values[i])
-			} else if value.Valid {
-				_m.ProviderInstanceID = value.String
-			}
-		case invoiceapplication.FieldProviderKey:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field provider_key", values[i])
-			} else if value.Valid {
-				_m.ProviderKey = value.String
-			}
-		case invoiceapplication.FieldInvoiceStatus:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field invoice_status", values[i])
-			} else if value.Valid {
-				_m.InvoiceStatus = value.String
-			}
-		case invoiceapplication.FieldInvoiceAmount:
+		case invoice.FieldInvoiceAmount:
 			if value, ok := values[i].(*sql.NullFloat64); !ok {
 				return fmt.Errorf("unexpected type %T for field invoice_amount", values[i])
 			} else if value.Valid {
 				_m.InvoiceAmount = value.Float64
 			}
-		case invoiceapplication.FieldInvoiceTitle:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field invoice_title", values[i])
+		case invoice.FieldOrderCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field order_count", values[i])
 			} else if value.Valid {
-				_m.InvoiceTitle = value.String
+				_m.OrderCount = int(value.Int64)
 			}
-		case invoiceapplication.FieldTaxNumber:
+		case invoice.FieldTitle:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field title", values[i])
+			} else if value.Valid {
+				_m.Title = value.String
+			}
+		case invoice.FieldTaxNumber:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field tax_number", values[i])
 			} else if value.Valid {
 				_m.TaxNumber = value.String
 			}
-		case invoiceapplication.FieldEmail:
+		case invoice.FieldEmail:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field email", values[i])
 			} else if value.Valid {
 				_m.Email = value.String
 			}
-		case invoiceapplication.FieldContactName:
+		case invoice.FieldContactName:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field contact_name", values[i])
 			} else if value.Valid {
 				_m.ContactName = value.String
 			}
-		case invoiceapplication.FieldContactPhone:
+		case invoice.FieldContactPhone:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field contact_phone", values[i])
 			} else if value.Valid {
 				_m.ContactPhone = value.String
 			}
-		case invoiceapplication.FieldRequestNote:
+		case invoice.FieldRequestNote:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field request_note", values[i])
 			} else if value.Valid {
 				_m.RequestNote = new(string)
 				*_m.RequestNote = value.String
 			}
-		case invoiceapplication.FieldFileMediaID:
+		case invoice.FieldFileMediaID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field file_media_id", values[i])
 			} else if value.Valid {
 				_m.FileMediaID = new(int64)
 				*_m.FileMediaID = value.Int64
 			}
-		case invoiceapplication.FieldFileName:
+		case invoice.FieldFileName:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field file_name", values[i])
 			} else if value.Valid {
 				_m.FileName = value.String
 			}
-		case invoiceapplication.FieldFileMimeType:
+		case invoice.FieldFileMimeType:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field file_mime_type", values[i])
 			} else if value.Valid {
 				_m.FileMimeType = value.String
 			}
-		case invoiceapplication.FieldFileSizeBytes:
+		case invoice.FieldFileSizeBytes:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field file_size_bytes", values[i])
 			} else if value.Valid {
 				_m.FileSizeBytes = value.Int64
 			}
-		case invoiceapplication.FieldAppliedAt:
+		case invoice.FieldAppliedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field applied_at", values[i])
 			} else if value.Valid {
 				_m.AppliedAt = new(time.Time)
 				*_m.AppliedAt = value.Time
 			}
-		case invoiceapplication.FieldCancelledAt:
+		case invoice.FieldCancelledAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field cancelled_at", values[i])
 			} else if value.Valid {
 				_m.CancelledAt = new(time.Time)
 				*_m.CancelledAt = value.Time
 			}
-		case invoiceapplication.FieldIssuedAt:
+		case invoice.FieldIssuedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field issued_at", values[i])
 			} else if value.Valid {
 				_m.IssuedAt = new(time.Time)
 				*_m.IssuedAt = value.Time
 			}
-		case invoiceapplication.FieldCreatedAt:
+		case invoice.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
 			} else if value.Valid {
 				_m.CreatedAt = value.Time
 			}
-		case invoiceapplication.FieldUpdatedAt:
+		case invoice.FieldUpdatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field updated_at", values[i])
 			} else if value.Valid {
@@ -258,64 +247,57 @@ func (_m *InvoiceApplication) assignValues(columns []string, values []any) error
 	return nil
 }
 
-// Value returns the ent.Value that was dynamically selected and assigned to the InvoiceApplication.
+// Value returns the ent.Value that was dynamically selected and assigned to the Invoice.
 // This includes values selected through modifiers, order, etc.
-func (_m *InvoiceApplication) Value(name string) (ent.Value, error) {
+func (_m *Invoice) Value(name string) (ent.Value, error) {
 	return _m.selectValues.Get(name)
 }
 
-// Update returns a builder for updating this InvoiceApplication.
-// Note that you need to call InvoiceApplication.Unwrap() before calling this method if this InvoiceApplication
-// was returned from a transaction, and the transaction was committed or rolled back.
-func (_m *InvoiceApplication) Update() *InvoiceApplicationUpdateOne {
-	return NewInvoiceApplicationClient(_m.config).UpdateOne(_m)
+// QueryOrders queries the "orders" edge of the Invoice entity.
+func (_m *Invoice) QueryOrders() *InvoiceOrderQuery {
+	return NewInvoiceClient(_m.config).QueryOrders(_m)
 }
 
-// Unwrap unwraps the InvoiceApplication entity that was returned from a transaction after it was closed,
+// Update returns a builder for updating this Invoice.
+// Note that you need to call Invoice.Unwrap() before calling this method if this Invoice
+// was returned from a transaction, and the transaction was committed or rolled back.
+func (_m *Invoice) Update() *InvoiceUpdateOne {
+	return NewInvoiceClient(_m.config).UpdateOne(_m)
+}
+
+// Unwrap unwraps the Invoice entity that was returned from a transaction after it was closed,
 // so that all future queries will be executed through the driver which created the transaction.
-func (_m *InvoiceApplication) Unwrap() *InvoiceApplication {
+func (_m *Invoice) Unwrap() *Invoice {
 	_tx, ok := _m.config.driver.(*txDriver)
 	if !ok {
-		panic("ent: InvoiceApplication is not a transactional entity")
+		panic("ent: Invoice is not a transactional entity")
 	}
 	_m.config.driver = _tx.drv
 	return _m
 }
 
 // String implements the fmt.Stringer.
-func (_m *InvoiceApplication) String() string {
+func (_m *Invoice) String() string {
 	var builder strings.Builder
-	builder.WriteString("InvoiceApplication(")
+	builder.WriteString("Invoice(")
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
-	builder.WriteString("order_id=")
-	builder.WriteString(fmt.Sprintf("%v", _m.OrderID))
-	builder.WriteString(", ")
 	builder.WriteString("user_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.UserID))
 	builder.WriteString(", ")
 	builder.WriteString("user_email=")
 	builder.WriteString(_m.UserEmail)
 	builder.WriteString(", ")
-	builder.WriteString("order_out_trade_no=")
-	builder.WriteString(_m.OrderOutTradeNo)
-	builder.WriteString(", ")
-	builder.WriteString("payment_type=")
-	builder.WriteString(_m.PaymentType)
-	builder.WriteString(", ")
-	builder.WriteString("provider_instance_id=")
-	builder.WriteString(_m.ProviderInstanceID)
-	builder.WriteString(", ")
-	builder.WriteString("provider_key=")
-	builder.WriteString(_m.ProviderKey)
-	builder.WriteString(", ")
-	builder.WriteString("invoice_status=")
-	builder.WriteString(_m.InvoiceStatus)
+	builder.WriteString("status=")
+	builder.WriteString(_m.Status)
 	builder.WriteString(", ")
 	builder.WriteString("invoice_amount=")
 	builder.WriteString(fmt.Sprintf("%v", _m.InvoiceAmount))
 	builder.WriteString(", ")
-	builder.WriteString("invoice_title=")
-	builder.WriteString(_m.InvoiceTitle)
+	builder.WriteString("order_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.OrderCount))
+	builder.WriteString(", ")
+	builder.WriteString("title=")
+	builder.WriteString(_m.Title)
 	builder.WriteString(", ")
 	builder.WriteString("tax_number=")
 	builder.WriteString(_m.TaxNumber)
@@ -372,5 +354,5 @@ func (_m *InvoiceApplication) String() string {
 	return builder.String()
 }
 
-// InvoiceApplications is a parsable slice of InvoiceApplication.
-type InvoiceApplications []*InvoiceApplication
+// Invoices is a parsable slice of Invoice.
+type Invoices []*Invoice

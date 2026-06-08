@@ -33,7 +33,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
-	"github.com/Wei-Shaw/sub2api/ent/invoiceapplication"
+	"github.com/Wei-Shaw/sub2api/ent/invoice"
+	"github.com/Wei-Shaw/sub2api/ent/invoiceorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -1700,104 +1701,106 @@ func init() {
 	identityadoptiondecisionDescDecidedAt := identityadoptiondecisionFields[4].Descriptor()
 	// identityadoptiondecision.DefaultDecidedAt holds the default value on creation for the decided_at field.
 	identityadoptiondecision.DefaultDecidedAt = identityadoptiondecisionDescDecidedAt.Default.(func() time.Time)
-	invoiceapplicationFields := schema.InvoiceApplication{}.Fields()
-	_ = invoiceapplicationFields
-	// invoiceapplicationDescUserEmail is the schema descriptor for user_email field.
-	invoiceapplicationDescUserEmail := invoiceapplicationFields[2].Descriptor()
-	// invoiceapplication.DefaultUserEmail holds the default value on creation for the user_email field.
-	invoiceapplication.DefaultUserEmail = invoiceapplicationDescUserEmail.Default.(string)
-	// invoiceapplication.UserEmailValidator is a validator for the "user_email" field. It is called by the builders before save.
-	invoiceapplication.UserEmailValidator = invoiceapplicationDescUserEmail.Validators[0].(func(string) error)
-	// invoiceapplicationDescOrderOutTradeNo is the schema descriptor for order_out_trade_no field.
-	invoiceapplicationDescOrderOutTradeNo := invoiceapplicationFields[3].Descriptor()
-	// invoiceapplication.DefaultOrderOutTradeNo holds the default value on creation for the order_out_trade_no field.
-	invoiceapplication.DefaultOrderOutTradeNo = invoiceapplicationDescOrderOutTradeNo.Default.(string)
-	// invoiceapplication.OrderOutTradeNoValidator is a validator for the "order_out_trade_no" field. It is called by the builders before save.
-	invoiceapplication.OrderOutTradeNoValidator = invoiceapplicationDescOrderOutTradeNo.Validators[0].(func(string) error)
-	// invoiceapplicationDescPaymentType is the schema descriptor for payment_type field.
-	invoiceapplicationDescPaymentType := invoiceapplicationFields[4].Descriptor()
-	// invoiceapplication.DefaultPaymentType holds the default value on creation for the payment_type field.
-	invoiceapplication.DefaultPaymentType = invoiceapplicationDescPaymentType.Default.(string)
-	// invoiceapplication.PaymentTypeValidator is a validator for the "payment_type" field. It is called by the builders before save.
-	invoiceapplication.PaymentTypeValidator = invoiceapplicationDescPaymentType.Validators[0].(func(string) error)
-	// invoiceapplicationDescProviderInstanceID is the schema descriptor for provider_instance_id field.
-	invoiceapplicationDescProviderInstanceID := invoiceapplicationFields[5].Descriptor()
-	// invoiceapplication.DefaultProviderInstanceID holds the default value on creation for the provider_instance_id field.
-	invoiceapplication.DefaultProviderInstanceID = invoiceapplicationDescProviderInstanceID.Default.(string)
-	// invoiceapplication.ProviderInstanceIDValidator is a validator for the "provider_instance_id" field. It is called by the builders before save.
-	invoiceapplication.ProviderInstanceIDValidator = invoiceapplicationDescProviderInstanceID.Validators[0].(func(string) error)
-	// invoiceapplicationDescProviderKey is the schema descriptor for provider_key field.
-	invoiceapplicationDescProviderKey := invoiceapplicationFields[6].Descriptor()
-	// invoiceapplication.DefaultProviderKey holds the default value on creation for the provider_key field.
-	invoiceapplication.DefaultProviderKey = invoiceapplicationDescProviderKey.Default.(string)
-	// invoiceapplication.ProviderKeyValidator is a validator for the "provider_key" field. It is called by the builders before save.
-	invoiceapplication.ProviderKeyValidator = invoiceapplicationDescProviderKey.Validators[0].(func(string) error)
-	// invoiceapplicationDescInvoiceStatus is the schema descriptor for invoice_status field.
-	invoiceapplicationDescInvoiceStatus := invoiceapplicationFields[7].Descriptor()
-	// invoiceapplication.DefaultInvoiceStatus holds the default value on creation for the invoice_status field.
-	invoiceapplication.DefaultInvoiceStatus = invoiceapplicationDescInvoiceStatus.Default.(string)
-	// invoiceapplication.InvoiceStatusValidator is a validator for the "invoice_status" field. It is called by the builders before save.
-	invoiceapplication.InvoiceStatusValidator = invoiceapplicationDescInvoiceStatus.Validators[0].(func(string) error)
-	// invoiceapplicationDescInvoiceAmount is the schema descriptor for invoice_amount field.
-	invoiceapplicationDescInvoiceAmount := invoiceapplicationFields[8].Descriptor()
-	// invoiceapplication.DefaultInvoiceAmount holds the default value on creation for the invoice_amount field.
-	invoiceapplication.DefaultInvoiceAmount = invoiceapplicationDescInvoiceAmount.Default.(float64)
-	// invoiceapplicationDescInvoiceTitle is the schema descriptor for invoice_title field.
-	invoiceapplicationDescInvoiceTitle := invoiceapplicationFields[9].Descriptor()
-	// invoiceapplication.DefaultInvoiceTitle holds the default value on creation for the invoice_title field.
-	invoiceapplication.DefaultInvoiceTitle = invoiceapplicationDescInvoiceTitle.Default.(string)
-	// invoiceapplication.InvoiceTitleValidator is a validator for the "invoice_title" field. It is called by the builders before save.
-	invoiceapplication.InvoiceTitleValidator = invoiceapplicationDescInvoiceTitle.Validators[0].(func(string) error)
-	// invoiceapplicationDescTaxNumber is the schema descriptor for tax_number field.
-	invoiceapplicationDescTaxNumber := invoiceapplicationFields[10].Descriptor()
-	// invoiceapplication.DefaultTaxNumber holds the default value on creation for the tax_number field.
-	invoiceapplication.DefaultTaxNumber = invoiceapplicationDescTaxNumber.Default.(string)
-	// invoiceapplication.TaxNumberValidator is a validator for the "tax_number" field. It is called by the builders before save.
-	invoiceapplication.TaxNumberValidator = invoiceapplicationDescTaxNumber.Validators[0].(func(string) error)
-	// invoiceapplicationDescEmail is the schema descriptor for email field.
-	invoiceapplicationDescEmail := invoiceapplicationFields[11].Descriptor()
-	// invoiceapplication.DefaultEmail holds the default value on creation for the email field.
-	invoiceapplication.DefaultEmail = invoiceapplicationDescEmail.Default.(string)
-	// invoiceapplication.EmailValidator is a validator for the "email" field. It is called by the builders before save.
-	invoiceapplication.EmailValidator = invoiceapplicationDescEmail.Validators[0].(func(string) error)
-	// invoiceapplicationDescContactName is the schema descriptor for contact_name field.
-	invoiceapplicationDescContactName := invoiceapplicationFields[12].Descriptor()
-	// invoiceapplication.DefaultContactName holds the default value on creation for the contact_name field.
-	invoiceapplication.DefaultContactName = invoiceapplicationDescContactName.Default.(string)
-	// invoiceapplication.ContactNameValidator is a validator for the "contact_name" field. It is called by the builders before save.
-	invoiceapplication.ContactNameValidator = invoiceapplicationDescContactName.Validators[0].(func(string) error)
-	// invoiceapplicationDescContactPhone is the schema descriptor for contact_phone field.
-	invoiceapplicationDescContactPhone := invoiceapplicationFields[13].Descriptor()
-	// invoiceapplication.DefaultContactPhone holds the default value on creation for the contact_phone field.
-	invoiceapplication.DefaultContactPhone = invoiceapplicationDescContactPhone.Default.(string)
-	// invoiceapplication.ContactPhoneValidator is a validator for the "contact_phone" field. It is called by the builders before save.
-	invoiceapplication.ContactPhoneValidator = invoiceapplicationDescContactPhone.Validators[0].(func(string) error)
-	// invoiceapplicationDescFileName is the schema descriptor for file_name field.
-	invoiceapplicationDescFileName := invoiceapplicationFields[16].Descriptor()
-	// invoiceapplication.DefaultFileName holds the default value on creation for the file_name field.
-	invoiceapplication.DefaultFileName = invoiceapplicationDescFileName.Default.(string)
-	// invoiceapplication.FileNameValidator is a validator for the "file_name" field. It is called by the builders before save.
-	invoiceapplication.FileNameValidator = invoiceapplicationDescFileName.Validators[0].(func(string) error)
-	// invoiceapplicationDescFileMimeType is the schema descriptor for file_mime_type field.
-	invoiceapplicationDescFileMimeType := invoiceapplicationFields[17].Descriptor()
-	// invoiceapplication.DefaultFileMimeType holds the default value on creation for the file_mime_type field.
-	invoiceapplication.DefaultFileMimeType = invoiceapplicationDescFileMimeType.Default.(string)
-	// invoiceapplication.FileMimeTypeValidator is a validator for the "file_mime_type" field. It is called by the builders before save.
-	invoiceapplication.FileMimeTypeValidator = invoiceapplicationDescFileMimeType.Validators[0].(func(string) error)
-	// invoiceapplicationDescFileSizeBytes is the schema descriptor for file_size_bytes field.
-	invoiceapplicationDescFileSizeBytes := invoiceapplicationFields[18].Descriptor()
-	// invoiceapplication.DefaultFileSizeBytes holds the default value on creation for the file_size_bytes field.
-	invoiceapplication.DefaultFileSizeBytes = invoiceapplicationDescFileSizeBytes.Default.(int64)
-	// invoiceapplicationDescCreatedAt is the schema descriptor for created_at field.
-	invoiceapplicationDescCreatedAt := invoiceapplicationFields[22].Descriptor()
-	// invoiceapplication.DefaultCreatedAt holds the default value on creation for the created_at field.
-	invoiceapplication.DefaultCreatedAt = invoiceapplicationDescCreatedAt.Default.(func() time.Time)
-	// invoiceapplicationDescUpdatedAt is the schema descriptor for updated_at field.
-	invoiceapplicationDescUpdatedAt := invoiceapplicationFields[23].Descriptor()
-	// invoiceapplication.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	invoiceapplication.DefaultUpdatedAt = invoiceapplicationDescUpdatedAt.Default.(func() time.Time)
-	// invoiceapplication.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	invoiceapplication.UpdateDefaultUpdatedAt = invoiceapplicationDescUpdatedAt.UpdateDefault.(func() time.Time)
+	invoiceFields := schema.Invoice{}.Fields()
+	_ = invoiceFields
+	// invoiceDescUserEmail is the schema descriptor for user_email field.
+	invoiceDescUserEmail := invoiceFields[1].Descriptor()
+	// invoice.DefaultUserEmail holds the default value on creation for the user_email field.
+	invoice.DefaultUserEmail = invoiceDescUserEmail.Default.(string)
+	// invoice.UserEmailValidator is a validator for the "user_email" field. It is called by the builders before save.
+	invoice.UserEmailValidator = invoiceDescUserEmail.Validators[0].(func(string) error)
+	// invoiceDescStatus is the schema descriptor for status field.
+	invoiceDescStatus := invoiceFields[2].Descriptor()
+	// invoice.DefaultStatus holds the default value on creation for the status field.
+	invoice.DefaultStatus = invoiceDescStatus.Default.(string)
+	// invoice.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	invoice.StatusValidator = invoiceDescStatus.Validators[0].(func(string) error)
+	// invoiceDescInvoiceAmount is the schema descriptor for invoice_amount field.
+	invoiceDescInvoiceAmount := invoiceFields[3].Descriptor()
+	// invoice.DefaultInvoiceAmount holds the default value on creation for the invoice_amount field.
+	invoice.DefaultInvoiceAmount = invoiceDescInvoiceAmount.Default.(float64)
+	// invoiceDescOrderCount is the schema descriptor for order_count field.
+	invoiceDescOrderCount := invoiceFields[4].Descriptor()
+	// invoice.DefaultOrderCount holds the default value on creation for the order_count field.
+	invoice.DefaultOrderCount = invoiceDescOrderCount.Default.(int)
+	// invoiceDescTitle is the schema descriptor for title field.
+	invoiceDescTitle := invoiceFields[5].Descriptor()
+	// invoice.DefaultTitle holds the default value on creation for the title field.
+	invoice.DefaultTitle = invoiceDescTitle.Default.(string)
+	// invoice.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	invoice.TitleValidator = invoiceDescTitle.Validators[0].(func(string) error)
+	// invoiceDescTaxNumber is the schema descriptor for tax_number field.
+	invoiceDescTaxNumber := invoiceFields[6].Descriptor()
+	// invoice.DefaultTaxNumber holds the default value on creation for the tax_number field.
+	invoice.DefaultTaxNumber = invoiceDescTaxNumber.Default.(string)
+	// invoice.TaxNumberValidator is a validator for the "tax_number" field. It is called by the builders before save.
+	invoice.TaxNumberValidator = invoiceDescTaxNumber.Validators[0].(func(string) error)
+	// invoiceDescEmail is the schema descriptor for email field.
+	invoiceDescEmail := invoiceFields[7].Descriptor()
+	// invoice.DefaultEmail holds the default value on creation for the email field.
+	invoice.DefaultEmail = invoiceDescEmail.Default.(string)
+	// invoice.EmailValidator is a validator for the "email" field. It is called by the builders before save.
+	invoice.EmailValidator = invoiceDescEmail.Validators[0].(func(string) error)
+	// invoiceDescContactName is the schema descriptor for contact_name field.
+	invoiceDescContactName := invoiceFields[8].Descriptor()
+	// invoice.DefaultContactName holds the default value on creation for the contact_name field.
+	invoice.DefaultContactName = invoiceDescContactName.Default.(string)
+	// invoice.ContactNameValidator is a validator for the "contact_name" field. It is called by the builders before save.
+	invoice.ContactNameValidator = invoiceDescContactName.Validators[0].(func(string) error)
+	// invoiceDescContactPhone is the schema descriptor for contact_phone field.
+	invoiceDescContactPhone := invoiceFields[9].Descriptor()
+	// invoice.DefaultContactPhone holds the default value on creation for the contact_phone field.
+	invoice.DefaultContactPhone = invoiceDescContactPhone.Default.(string)
+	// invoice.ContactPhoneValidator is a validator for the "contact_phone" field. It is called by the builders before save.
+	invoice.ContactPhoneValidator = invoiceDescContactPhone.Validators[0].(func(string) error)
+	// invoiceDescFileName is the schema descriptor for file_name field.
+	invoiceDescFileName := invoiceFields[12].Descriptor()
+	// invoice.DefaultFileName holds the default value on creation for the file_name field.
+	invoice.DefaultFileName = invoiceDescFileName.Default.(string)
+	// invoice.FileNameValidator is a validator for the "file_name" field. It is called by the builders before save.
+	invoice.FileNameValidator = invoiceDescFileName.Validators[0].(func(string) error)
+	// invoiceDescFileMimeType is the schema descriptor for file_mime_type field.
+	invoiceDescFileMimeType := invoiceFields[13].Descriptor()
+	// invoice.DefaultFileMimeType holds the default value on creation for the file_mime_type field.
+	invoice.DefaultFileMimeType = invoiceDescFileMimeType.Default.(string)
+	// invoice.FileMimeTypeValidator is a validator for the "file_mime_type" field. It is called by the builders before save.
+	invoice.FileMimeTypeValidator = invoiceDescFileMimeType.Validators[0].(func(string) error)
+	// invoiceDescFileSizeBytes is the schema descriptor for file_size_bytes field.
+	invoiceDescFileSizeBytes := invoiceFields[14].Descriptor()
+	// invoice.DefaultFileSizeBytes holds the default value on creation for the file_size_bytes field.
+	invoice.DefaultFileSizeBytes = invoiceDescFileSizeBytes.Default.(int64)
+	// invoiceDescCreatedAt is the schema descriptor for created_at field.
+	invoiceDescCreatedAt := invoiceFields[18].Descriptor()
+	// invoice.DefaultCreatedAt holds the default value on creation for the created_at field.
+	invoice.DefaultCreatedAt = invoiceDescCreatedAt.Default.(func() time.Time)
+	// invoiceDescUpdatedAt is the schema descriptor for updated_at field.
+	invoiceDescUpdatedAt := invoiceFields[19].Descriptor()
+	// invoice.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	invoice.DefaultUpdatedAt = invoiceDescUpdatedAt.Default.(func() time.Time)
+	// invoice.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	invoice.UpdateDefaultUpdatedAt = invoiceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	invoiceorderFields := schema.InvoiceOrder{}.Fields()
+	_ = invoiceorderFields
+	// invoiceorderDescPayAmountSnapshot is the schema descriptor for pay_amount_snapshot field.
+	invoiceorderDescPayAmountSnapshot := invoiceorderFields[2].Descriptor()
+	// invoiceorder.DefaultPayAmountSnapshot holds the default value on creation for the pay_amount_snapshot field.
+	invoiceorder.DefaultPayAmountSnapshot = invoiceorderDescPayAmountSnapshot.Default.(float64)
+	// invoiceorderDescOutTradeNo is the schema descriptor for out_trade_no field.
+	invoiceorderDescOutTradeNo := invoiceorderFields[3].Descriptor()
+	// invoiceorder.DefaultOutTradeNo holds the default value on creation for the out_trade_no field.
+	invoiceorder.DefaultOutTradeNo = invoiceorderDescOutTradeNo.Default.(string)
+	// invoiceorder.OutTradeNoValidator is a validator for the "out_trade_no" field. It is called by the builders before save.
+	invoiceorder.OutTradeNoValidator = invoiceorderDescOutTradeNo.Validators[0].(func(string) error)
+	// invoiceorderDescPaymentType is the schema descriptor for payment_type field.
+	invoiceorderDescPaymentType := invoiceorderFields[4].Descriptor()
+	// invoiceorder.DefaultPaymentType holds the default value on creation for the payment_type field.
+	invoiceorder.DefaultPaymentType = invoiceorderDescPaymentType.Default.(string)
+	// invoiceorder.PaymentTypeValidator is a validator for the "payment_type" field. It is called by the builders before save.
+	invoiceorder.PaymentTypeValidator = invoiceorderDescPaymentType.Validators[0].(func(string) error)
+	// invoiceorderDescCreatedAt is the schema descriptor for created_at field.
+	invoiceorderDescCreatedAt := invoiceorderFields[5].Descriptor()
+	// invoiceorder.DefaultCreatedAt holds the default value on creation for the created_at field.
+	invoiceorder.DefaultCreatedAt = invoiceorderDescCreatedAt.Default.(func() time.Time)
 	paymentauditlogFields := schema.PaymentAuditLog{}.Fields()
 	_ = paymentauditlogFields
 	// paymentauditlogDescOrderID is the schema descriptor for order_id field.
@@ -1874,42 +1877,36 @@ func init() {
 	paymentorder.DefaultStatus = paymentorderDescStatus.Default.(string)
 	// paymentorder.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	paymentorder.StatusValidator = paymentorderDescStatus.Validators[0].(func(string) error)
-	// paymentorderDescInvoiceStatus is the schema descriptor for invoice_status field.
-	paymentorderDescInvoiceStatus := paymentorderFields[22].Descriptor()
-	// paymentorder.DefaultInvoiceStatus holds the default value on creation for the invoice_status field.
-	paymentorder.DefaultInvoiceStatus = paymentorderDescInvoiceStatus.Default.(string)
-	// paymentorder.InvoiceStatusValidator is a validator for the "invoice_status" field. It is called by the builders before save.
-	paymentorder.InvoiceStatusValidator = paymentorderDescInvoiceStatus.Validators[0].(func(string) error)
 	// paymentorderDescRefundAmount is the schema descriptor for refund_amount field.
-	paymentorderDescRefundAmount := paymentorderFields[24].Descriptor()
+	paymentorderDescRefundAmount := paymentorderFields[22].Descriptor()
 	// paymentorder.DefaultRefundAmount holds the default value on creation for the refund_amount field.
 	paymentorder.DefaultRefundAmount = paymentorderDescRefundAmount.Default.(float64)
 	// paymentorderDescForceRefund is the schema descriptor for force_refund field.
-	paymentorderDescForceRefund := paymentorderFields[27].Descriptor()
+	paymentorderDescForceRefund := paymentorderFields[25].Descriptor()
 	// paymentorder.DefaultForceRefund holds the default value on creation for the force_refund field.
 	paymentorder.DefaultForceRefund = paymentorderDescForceRefund.Default.(bool)
 	// paymentorderDescRefundRequestedAmount is the schema descriptor for refund_requested_amount field.
-	paymentorderDescRefundRequestedAmount := paymentorderFields[29].Descriptor()
+	paymentorderDescRefundRequestedAmount := paymentorderFields[27].Descriptor()
 	// paymentorder.DefaultRefundRequestedAmount holds the default value on creation for the refund_requested_amount field.
 	paymentorder.DefaultRefundRequestedAmount = paymentorderDescRefundRequestedAmount.Default.(float64)
 	// paymentorderDescRefundRequestedBy is the schema descriptor for refund_requested_by field.
-	paymentorderDescRefundRequestedBy := paymentorderFields[31].Descriptor()
+	paymentorderDescRefundRequestedBy := paymentorderFields[29].Descriptor()
 	// paymentorder.RefundRequestedByValidator is a validator for the "refund_requested_by" field. It is called by the builders before save.
 	paymentorder.RefundRequestedByValidator = paymentorderDescRefundRequestedBy.Validators[0].(func(string) error)
 	// paymentorderDescClientIP is the schema descriptor for client_ip field.
-	paymentorderDescClientIP := paymentorderFields[37].Descriptor()
+	paymentorderDescClientIP := paymentorderFields[35].Descriptor()
 	// paymentorder.ClientIPValidator is a validator for the "client_ip" field. It is called by the builders before save.
 	paymentorder.ClientIPValidator = paymentorderDescClientIP.Validators[0].(func(string) error)
 	// paymentorderDescSrcHost is the schema descriptor for src_host field.
-	paymentorderDescSrcHost := paymentorderFields[38].Descriptor()
+	paymentorderDescSrcHost := paymentorderFields[36].Descriptor()
 	// paymentorder.SrcHostValidator is a validator for the "src_host" field. It is called by the builders before save.
 	paymentorder.SrcHostValidator = paymentorderDescSrcHost.Validators[0].(func(string) error)
 	// paymentorderDescCreatedAt is the schema descriptor for created_at field.
-	paymentorderDescCreatedAt := paymentorderFields[40].Descriptor()
+	paymentorderDescCreatedAt := paymentorderFields[38].Descriptor()
 	// paymentorder.DefaultCreatedAt holds the default value on creation for the created_at field.
 	paymentorder.DefaultCreatedAt = paymentorderDescCreatedAt.Default.(func() time.Time)
 	// paymentorderDescUpdatedAt is the schema descriptor for updated_at field.
-	paymentorderDescUpdatedAt := paymentorderFields[41].Descriptor()
+	paymentorderDescUpdatedAt := paymentorderFields[39].Descriptor()
 	// paymentorder.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	paymentorder.DefaultUpdatedAt = paymentorderDescUpdatedAt.Default.(func() time.Time)
 	// paymentorder.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

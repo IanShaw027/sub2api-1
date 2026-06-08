@@ -2000,19 +2000,15 @@ var (
 			},
 		},
 	}
-	// InvoiceApplicationsColumns holds the columns for the "invoice_applications" table.
-	InvoiceApplicationsColumns = []*schema.Column{
+	// InvoicesColumns holds the columns for the "invoices" table.
+	InvoicesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "order_id", Type: field.TypeInt64},
 		{Name: "user_id", Type: field.TypeInt64},
 		{Name: "user_email", Type: field.TypeString, Size: 255, Default: ""},
-		{Name: "order_out_trade_no", Type: field.TypeString, Size: 64, Default: ""},
-		{Name: "payment_type", Type: field.TypeString, Size: 30, Default: ""},
-		{Name: "provider_instance_id", Type: field.TypeString, Size: 64, Default: ""},
-		{Name: "provider_key", Type: field.TypeString, Size: 30, Default: ""},
-		{Name: "invoice_status", Type: field.TypeString, Size: 20, Default: "APPLIED"},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "APPLIED"},
 		{Name: "invoice_amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
-		{Name: "invoice_title", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "order_count", Type: field.TypeInt, Default: 0},
+		{Name: "title", Type: field.TypeString, Size: 255, Default: ""},
 		{Name: "tax_number", Type: field.TypeString, Size: 64, Default: ""},
 		{Name: "email", Type: field.TypeString, Size: 255, Default: ""},
 		{Name: "contact_name", Type: field.TypeString, Size: 100, Default: ""},
@@ -2028,31 +2024,62 @@ var (
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 	}
-	// InvoiceApplicationsTable holds the schema information for the "invoice_applications" table.
-	InvoiceApplicationsTable = &schema.Table{
-		Name:       "invoice_applications",
-		Columns:    InvoiceApplicationsColumns,
-		PrimaryKey: []*schema.Column{InvoiceApplicationsColumns[0]},
+	// InvoicesTable holds the schema information for the "invoices" table.
+	InvoicesTable = &schema.Table{
+		Name:       "invoices",
+		Columns:    InvoicesColumns,
+		PrimaryKey: []*schema.Column{InvoicesColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "invoiceapplication_order_id",
-				Unique:  true,
-				Columns: []*schema.Column{InvoiceApplicationsColumns[1]},
+				Name:    "invoice_user_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[3]},
 			},
 			{
-				Name:    "invoiceapplication_user_id",
+				Name:    "invoice_status_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceApplicationsColumns[2]},
+				Columns: []*schema.Column{InvoicesColumns[3], InvoicesColumns[19]},
 			},
 			{
-				Name:    "invoiceapplication_invoice_status",
+				Name:    "invoice_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceApplicationsColumns[8]},
+				Columns: []*schema.Column{InvoicesColumns[19]},
+			},
+		},
+	}
+	// InvoiceOrdersColumns holds the columns for the "invoice_orders" table.
+	InvoiceOrdersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "order_id", Type: field.TypeInt64},
+		{Name: "pay_amount_snapshot", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
+		{Name: "out_trade_no", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "payment_type", Type: field.TypeString, Size: 30, Default: ""},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "invoice_id", Type: field.TypeInt64},
+	}
+	// InvoiceOrdersTable holds the schema information for the "invoice_orders" table.
+	InvoiceOrdersTable = &schema.Table{
+		Name:       "invoice_orders",
+		Columns:    InvoiceOrdersColumns,
+		PrimaryKey: []*schema.Column{InvoiceOrdersColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "invoice_orders_invoices_orders",
+				Columns:    []*schema.Column{InvoiceOrdersColumns[6]},
+				RefColumns: []*schema.Column{InvoicesColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "invoiceorder_invoice_id",
+				Unique:  false,
+				Columns: []*schema.Column{InvoiceOrdersColumns[6]},
 			},
 			{
-				Name:    "invoiceapplication_created_at",
+				Name:    "invoiceorder_order_id",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceApplicationsColumns[23]},
+				Columns: []*schema.Column{InvoiceOrdersColumns[1]},
 			},
 		},
 	}
@@ -2110,8 +2137,6 @@ var (
 		{Name: "provider_key", Type: field.TypeString, Nullable: true, Size: 30},
 		{Name: "provider_snapshot", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "status", Type: field.TypeString, Size: 30, Default: "PENDING"},
-		{Name: "invoice_status", Type: field.TypeString, Size: 20, Default: ""},
-		{Name: "invoice_file_media_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "refund_amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
 		{Name: "refund_reason", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "refund_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
@@ -2140,7 +2165,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "payment_orders_users_payment_orders",
-				Columns:    []*schema.Column{PaymentOrdersColumns[42]},
+				Columns:    []*schema.Column{PaymentOrdersColumns[40]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -2157,7 +2182,7 @@ var (
 			{
 				Name:    "paymentorder_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[42]},
+				Columns: []*schema.Column{PaymentOrdersColumns[40]},
 			},
 			{
 				Name:    "paymentorder_status",
@@ -2165,29 +2190,24 @@ var (
 				Columns: []*schema.Column{PaymentOrdersColumns[21]},
 			},
 			{
-				Name:    "paymentorder_invoice_status",
-				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[22]},
-			},
-			{
 				Name:    "paymentorder_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[32]},
+				Columns: []*schema.Column{PaymentOrdersColumns[30]},
 			},
 			{
 				Name:    "paymentorder_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[40]},
+				Columns: []*schema.Column{PaymentOrdersColumns[38]},
 			},
 			{
 				Name:    "paymentorder_paid_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[33]},
+				Columns: []*schema.Column{PaymentOrdersColumns[31]},
 			},
 			{
 				Name:    "paymentorder_payment_type_paid_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[9], PaymentOrdersColumns[33]},
+				Columns: []*schema.Column{PaymentOrdersColumns[9], PaymentOrdersColumns[31]},
 			},
 			{
 				Name:    "paymentorder_order_type",
@@ -3062,7 +3082,8 @@ var (
 		GroupsTable,
 		IdempotencyRecordsTable,
 		IdentityAdoptionDecisionsTable,
-		InvoiceApplicationsTable,
+		InvoicesTable,
+		InvoiceOrdersTable,
 		PaymentAuditLogsTable,
 		PaymentOrdersTable,
 		PaymentProviderInstancesTable,
@@ -3209,8 +3230,12 @@ func init() {
 	IdentityAdoptionDecisionsTable.Annotation = &entsql.Annotation{
 		Table: "identity_adoption_decisions",
 	}
-	InvoiceApplicationsTable.Annotation = &entsql.Annotation{
-		Table: "invoice_applications",
+	InvoicesTable.Annotation = &entsql.Annotation{
+		Table: "invoices",
+	}
+	InvoiceOrdersTable.ForeignKeys[0].RefTable = InvoicesTable
+	InvoiceOrdersTable.Annotation = &entsql.Annotation{
+		Table: "invoice_orders",
 	}
 	PaymentAuditLogsTable.Annotation = &entsql.Annotation{
 		Table: "payment_audit_logs",

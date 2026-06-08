@@ -431,47 +431,6 @@ func (_u *PaymentOrderUpdate) SetNillableStatus(v *string) *PaymentOrderUpdate {
 	return _u
 }
 
-// SetInvoiceStatus sets the "invoice_status" field.
-func (_u *PaymentOrderUpdate) SetInvoiceStatus(v string) *PaymentOrderUpdate {
-	_u.mutation.SetInvoiceStatus(v)
-	return _u
-}
-
-// SetNillableInvoiceStatus sets the "invoice_status" field if the given value is not nil.
-func (_u *PaymentOrderUpdate) SetNillableInvoiceStatus(v *string) *PaymentOrderUpdate {
-	if v != nil {
-		_u.SetInvoiceStatus(*v)
-	}
-	return _u
-}
-
-// SetInvoiceFileMediaID sets the "invoice_file_media_id" field.
-func (_u *PaymentOrderUpdate) SetInvoiceFileMediaID(v int64) *PaymentOrderUpdate {
-	_u.mutation.ResetInvoiceFileMediaID()
-	_u.mutation.SetInvoiceFileMediaID(v)
-	return _u
-}
-
-// SetNillableInvoiceFileMediaID sets the "invoice_file_media_id" field if the given value is not nil.
-func (_u *PaymentOrderUpdate) SetNillableInvoiceFileMediaID(v *int64) *PaymentOrderUpdate {
-	if v != nil {
-		_u.SetInvoiceFileMediaID(*v)
-	}
-	return _u
-}
-
-// AddInvoiceFileMediaID adds value to the "invoice_file_media_id" field.
-func (_u *PaymentOrderUpdate) AddInvoiceFileMediaID(v int64) *PaymentOrderUpdate {
-	_u.mutation.AddInvoiceFileMediaID(v)
-	return _u
-}
-
-// ClearInvoiceFileMediaID clears the value of the "invoice_file_media_id" field.
-func (_u *PaymentOrderUpdate) ClearInvoiceFileMediaID() *PaymentOrderUpdate {
-	_u.mutation.ClearInvoiceFileMediaID()
-	return _u
-}
-
 // SetRefundAmount sets the "refund_amount" field.
 func (_u *PaymentOrderUpdate) SetRefundAmount(v float64) *PaymentOrderUpdate {
 	_u.mutation.ResetRefundAmount()
@@ -880,11 +839,6 @@ func (_u *PaymentOrderUpdate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.status": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.InvoiceStatus(); ok {
-		if err := paymentorder.InvoiceStatusValidator(v); err != nil {
-			return &ValidationError{Name: "invoice_status", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.invoice_status": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.RefundRequestedBy(); ok {
 		if err := paymentorder.RefundRequestedByValidator(v); err != nil {
 			return &ValidationError{Name: "refund_requested_by", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.refund_requested_by": %w`, err)}
@@ -1028,18 +982,6 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(paymentorder.FieldStatus, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.InvoiceStatus(); ok {
-		_spec.SetField(paymentorder.FieldInvoiceStatus, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.InvoiceFileMediaID(); ok {
-		_spec.SetField(paymentorder.FieldInvoiceFileMediaID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedInvoiceFileMediaID(); ok {
-		_spec.AddField(paymentorder.FieldInvoiceFileMediaID, field.TypeInt64, value)
-	}
-	if _u.mutation.InvoiceFileMediaIDCleared() {
-		_spec.ClearField(paymentorder.FieldInvoiceFileMediaID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.RefundAmount(); ok {
 		_spec.SetField(paymentorder.FieldRefundAmount, field.TypeFloat64, value)
@@ -1579,47 +1521,6 @@ func (_u *PaymentOrderUpdateOne) SetNillableStatus(v *string) *PaymentOrderUpdat
 	return _u
 }
 
-// SetInvoiceStatus sets the "invoice_status" field.
-func (_u *PaymentOrderUpdateOne) SetInvoiceStatus(v string) *PaymentOrderUpdateOne {
-	_u.mutation.SetInvoiceStatus(v)
-	return _u
-}
-
-// SetNillableInvoiceStatus sets the "invoice_status" field if the given value is not nil.
-func (_u *PaymentOrderUpdateOne) SetNillableInvoiceStatus(v *string) *PaymentOrderUpdateOne {
-	if v != nil {
-		_u.SetInvoiceStatus(*v)
-	}
-	return _u
-}
-
-// SetInvoiceFileMediaID sets the "invoice_file_media_id" field.
-func (_u *PaymentOrderUpdateOne) SetInvoiceFileMediaID(v int64) *PaymentOrderUpdateOne {
-	_u.mutation.ResetInvoiceFileMediaID()
-	_u.mutation.SetInvoiceFileMediaID(v)
-	return _u
-}
-
-// SetNillableInvoiceFileMediaID sets the "invoice_file_media_id" field if the given value is not nil.
-func (_u *PaymentOrderUpdateOne) SetNillableInvoiceFileMediaID(v *int64) *PaymentOrderUpdateOne {
-	if v != nil {
-		_u.SetInvoiceFileMediaID(*v)
-	}
-	return _u
-}
-
-// AddInvoiceFileMediaID adds value to the "invoice_file_media_id" field.
-func (_u *PaymentOrderUpdateOne) AddInvoiceFileMediaID(v int64) *PaymentOrderUpdateOne {
-	_u.mutation.AddInvoiceFileMediaID(v)
-	return _u
-}
-
-// ClearInvoiceFileMediaID clears the value of the "invoice_file_media_id" field.
-func (_u *PaymentOrderUpdateOne) ClearInvoiceFileMediaID() *PaymentOrderUpdateOne {
-	_u.mutation.ClearInvoiceFileMediaID()
-	return _u
-}
-
 // SetRefundAmount sets the "refund_amount" field.
 func (_u *PaymentOrderUpdateOne) SetRefundAmount(v float64) *PaymentOrderUpdateOne {
 	_u.mutation.ResetRefundAmount()
@@ -2041,11 +1942,6 @@ func (_u *PaymentOrderUpdateOne) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.status": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.InvoiceStatus(); ok {
-		if err := paymentorder.InvoiceStatusValidator(v); err != nil {
-			return &ValidationError{Name: "invoice_status", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.invoice_status": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.RefundRequestedBy(); ok {
 		if err := paymentorder.RefundRequestedByValidator(v); err != nil {
 			return &ValidationError{Name: "refund_requested_by", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.refund_requested_by": %w`, err)}
@@ -2206,18 +2102,6 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(paymentorder.FieldStatus, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.InvoiceStatus(); ok {
-		_spec.SetField(paymentorder.FieldInvoiceStatus, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.InvoiceFileMediaID(); ok {
-		_spec.SetField(paymentorder.FieldInvoiceFileMediaID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedInvoiceFileMediaID(); ok {
-		_spec.AddField(paymentorder.FieldInvoiceFileMediaID, field.TypeInt64, value)
-	}
-	if _u.mutation.InvoiceFileMediaIDCleared() {
-		_spec.ClearField(paymentorder.FieldInvoiceFileMediaID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.RefundAmount(); ok {
 		_spec.SetField(paymentorder.FieldRefundAmount, field.TypeFloat64, value)
