@@ -1,9 +1,9 @@
 <template>
-  <div class="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
+  <div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
     <button
       v-if="!isSimple"
       type="button"
-      class="card p-4 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/40 dark:hover:border-primary-800/50 dark:hover:bg-primary-900/10"
+      class="card min-w-0 p-4 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/40 dark:hover:border-primary-800/50 dark:hover:bg-primary-900/10"
       :title="t('dashboard.clickToViewBalance')"
       @click="emit('balance-history')"
     >
@@ -21,7 +21,7 @@
       </div>
     </button>
 
-    <div class="card p-4">
+    <div class="card min-w-0 p-4">
       <div class="flex items-center gap-3">
         <div class="shrink-0 rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
           <Icon name="key" size="md" class="text-blue-600 dark:text-blue-400" :stroke-width="2" />
@@ -34,7 +34,7 @@
       </div>
     </div>
 
-    <div class="card p-4">
+    <div class="card min-w-0 p-4">
       <div class="flex items-center gap-3">
         <div class="shrink-0 rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
           <Icon name="chart" size="md" class="text-green-600 dark:text-green-400" :stroke-width="2" />
@@ -47,7 +47,7 @@
       </div>
     </div>
 
-    <div class="card p-4">
+    <div class="card min-w-0 p-4">
       <div class="flex items-center gap-3">
         <div class="shrink-0 rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
           <Icon name="dollar" size="md" class="text-purple-600 dark:text-purple-400" :stroke-width="2" />
@@ -68,8 +68,8 @@
     </div>
   </div>
 
-  <div class="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
-    <div class="card p-4">
+  <div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
+    <div class="card min-w-0 p-4">
       <div class="flex items-center gap-3">
         <div class="shrink-0 rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
           <Icon name="cube" size="md" class="text-amber-600 dark:text-amber-400" :stroke-width="2" />
@@ -83,7 +83,7 @@
       </div>
     </div>
 
-    <div class="card p-4">
+    <div class="card min-w-0 p-4">
       <div class="flex items-center gap-3">
         <div class="shrink-0 rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30">
           <Icon name="database" size="md" class="text-indigo-600 dark:text-indigo-400" :stroke-width="2" />
@@ -97,7 +97,7 @@
       </div>
     </div>
 
-    <div class="card p-4">
+    <div class="card min-w-0 p-4">
       <div class="flex items-center gap-3">
         <div class="shrink-0 rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30">
           <Icon name="bolt" size="md" class="text-violet-600 dark:text-violet-400" :stroke-width="2" />
@@ -116,7 +116,7 @@
       </div>
     </div>
 
-    <div class="card p-4">
+    <div class="card min-w-0 p-4">
       <div class="flex items-center gap-3">
         <div class="shrink-0 rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
           <Icon name="clock" size="md" class="text-rose-600 dark:text-rose-400" :stroke-width="2" />

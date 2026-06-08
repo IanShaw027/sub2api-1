@@ -8,9 +8,9 @@
 
       <template v-else-if="stats">
         <!-- Row 1: Core Stats -->
-        <div class="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(180px,1fr))]">
+        <div class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
           <!-- Total API Keys -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
               <div class="shrink-0 rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
                 <Icon name="key" size="md" class="text-blue-600 dark:text-blue-400" :stroke-width="2" />
@@ -30,7 +30,7 @@
           </div>
 
           <!-- Service Accounts -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
               <div class="shrink-0 rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
                 <Icon name="server" size="md" class="text-purple-600 dark:text-purple-400" :stroke-width="2" />
@@ -55,7 +55,7 @@
           </div>
 
           <!-- New Users Today -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
               <div class="shrink-0 rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
                 <Icon name="userPlus" size="md" class="text-emerald-600 dark:text-emerald-400" :stroke-width="2" />
@@ -75,7 +75,7 @@
           </div>
 
           <!-- Performance (RPM/TPM) -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
               <div class="shrink-0 rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30">
                 <Icon name="bolt" size="md" class="text-violet-600 dark:text-violet-400" :stroke-width="2" />
@@ -101,7 +101,7 @@
           </div>
 
           <!-- Avg Response Time -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
               <div class="shrink-0 rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
                 <Icon name="clock" size="md" class="text-rose-600 dark:text-rose-400" :stroke-width="2" />
@@ -122,9 +122,9 @@
         </div>
 
         <!-- Row 2: Usage & Spend -->
-        <div class="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
+        <div class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
           <!-- Today Requests -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
               <div class="shrink-0 rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
                 <Icon name="chart" size="md" class="text-green-600 dark:text-green-400" :stroke-width="2" />
@@ -144,7 +144,7 @@
           </div>
 
           <!-- Today Tokens -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
               <div class="shrink-0 rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
                 <Icon name="cube" size="md" class="text-amber-600 dark:text-amber-400" :stroke-width="2" />
@@ -177,7 +177,7 @@
           </div>
 
           <!-- Total Tokens -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
               <div class="shrink-0 rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30">
                 <Icon name="database" size="md" class="text-indigo-600 dark:text-indigo-400" :stroke-width="2" />
@@ -210,7 +210,7 @@
           </div>
 
           <!-- Today Consumption -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
               <div class="shrink-0 rounded-lg bg-sky-100 p-2 dark:bg-sky-900/30">
                 <Icon name="dollar" size="md" class="text-sky-600 dark:text-sky-400" :stroke-width="2" />
@@ -243,7 +243,7 @@
           </div>
 
           <!-- Total Consumption -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
               <div class="shrink-0 rounded-lg bg-cyan-100 p-2 dark:bg-cyan-900/30">
                 <Icon name="creditCard" size="md" class="text-cyan-600 dark:text-cyan-400" :stroke-width="2" />
