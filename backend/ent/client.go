@@ -25,6 +25,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aisession"
 	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillinstall"
 	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
@@ -90,6 +91,8 @@ type Client struct {
 	AISessionMessage *AISessionMessageClient
 	// AISkill is the client for interacting with the AISkill builders.
 	AISkill *AISkillClient
+	// AISkillInstall is the client for interacting with the AISkillInstall builders.
+	AISkillInstall *AISkillInstallClient
 	// AISkillLike is the client for interacting with the AISkillLike builders.
 	AISkillLike *AISkillLikeClient
 	// AISkillReview is the client for interacting with the AISkillReview builders.
@@ -193,6 +196,7 @@ func (c *Client) init() {
 	c.AISession = NewAISessionClient(c.config)
 	c.AISessionMessage = NewAISessionMessageClient(c.config)
 	c.AISkill = NewAISkillClient(c.config)
+	c.AISkillInstall = NewAISkillInstallClient(c.config)
 	c.AISkillLike = NewAISkillLikeClient(c.config)
 	c.AISkillReview = NewAISkillReviewClient(c.config)
 	c.AISkillRun = NewAISkillRunClient(c.config)
@@ -335,6 +339,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		AISession:                     NewAISessionClient(cfg),
 		AISessionMessage:              NewAISessionMessageClient(cfg),
 		AISkill:                       NewAISkillClient(cfg),
+		AISkillInstall:                NewAISkillInstallClient(cfg),
 		AISkillLike:                   NewAISkillLikeClient(cfg),
 		AISkillReview:                 NewAISkillReviewClient(cfg),
 		AISkillRun:                    NewAISkillRunClient(cfg),
@@ -404,6 +409,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		AISession:                     NewAISessionClient(cfg),
 		AISessionMessage:              NewAISessionMessageClient(cfg),
 		AISkill:                       NewAISkillClient(cfg),
+		AISkillInstall:                NewAISkillInstallClient(cfg),
 		AISkillLike:                   NewAISkillLikeClient(cfg),
 		AISkillReview:                 NewAISkillReviewClient(cfg),
 		AISkillRun:                    NewAISkillRunClient(cfg),
@@ -477,10 +483,10 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.AIAsset, c.AIAuditLog, c.AIGenerationJob, c.AIPromptTemplate,
 		c.AIPromptTemplateVersion, c.AISession, c.AISessionMessage, c.AISkill,
-		c.AISkillLike, c.AISkillReview, c.AISkillRun, c.AISkillSettlement,
-		c.AISkillVersion, c.APIKey, c.Account, c.AccountGroup, c.Announcement,
-		c.AnnouncementRead, c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
-		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
+		c.AISkillInstall, c.AISkillLike, c.AISkillReview, c.AISkillRun,
+		c.AISkillSettlement, c.AISkillVersion, c.APIKey, c.Account, c.AccountGroup,
+		c.Announcement, c.AnnouncementRead, c.AuthIdentity, c.AuthIdentityChannel,
+		c.ChannelMonitor, c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
 		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
 		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.Invoice, c.InvoiceOrder,
 		c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
@@ -500,10 +506,10 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.AIAsset, c.AIAuditLog, c.AIGenerationJob, c.AIPromptTemplate,
 		c.AIPromptTemplateVersion, c.AISession, c.AISessionMessage, c.AISkill,
-		c.AISkillLike, c.AISkillReview, c.AISkillRun, c.AISkillSettlement,
-		c.AISkillVersion, c.APIKey, c.Account, c.AccountGroup, c.Announcement,
-		c.AnnouncementRead, c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
-		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
+		c.AISkillInstall, c.AISkillLike, c.AISkillReview, c.AISkillRun,
+		c.AISkillSettlement, c.AISkillVersion, c.APIKey, c.Account, c.AccountGroup,
+		c.Announcement, c.AnnouncementRead, c.AuthIdentity, c.AuthIdentityChannel,
+		c.ChannelMonitor, c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
 		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
 		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.Invoice, c.InvoiceOrder,
 		c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
@@ -536,6 +542,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AISessionMessage.mutate(ctx, m)
 	case *AISkillMutation:
 		return c.AISkill.mutate(ctx, m)
+	case *AISkillInstallMutation:
+		return c.AISkillInstall.mutate(ctx, m)
 	case *AISkillLikeMutation:
 		return c.AISkillLike.mutate(ctx, m)
 	case *AISkillReviewMutation:
@@ -1974,6 +1982,22 @@ func (c *AISkillClient) QueryLikes(_m *AISkill) *AISkillLikeQuery {
 	return query
 }
 
+// QueryInstalls queries the installs edge of a AISkill.
+func (c *AISkillClient) QueryInstalls(_m *AISkill) *AISkillInstallQuery {
+	query := (&AISkillInstallClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskill.Table, aiskill.FieldID, id),
+			sqlgraph.To(aiskillinstall.Table, aiskillinstall.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiskill.InstallsTable, aiskill.InstallsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QuerySettlements queries the settlements edge of a AISkill.
 func (c *AISkillClient) QuerySettlements(_m *AISkill) *AISkillSettlementQuery {
 	query := (&AISkillSettlementClient{config: c.config}).Query()
@@ -2014,6 +2038,171 @@ func (c *AISkillClient) mutate(ctx context.Context, m *AISkillMutation) (Value, 
 		return (&AISkillDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AISkill mutation op: %q", m.Op())
+	}
+}
+
+// AISkillInstallClient is a client for the AISkillInstall schema.
+type AISkillInstallClient struct {
+	config
+}
+
+// NewAISkillInstallClient returns a client for the AISkillInstall from the given config.
+func NewAISkillInstallClient(c config) *AISkillInstallClient {
+	return &AISkillInstallClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aiskillinstall.Hooks(f(g(h())))`.
+func (c *AISkillInstallClient) Use(hooks ...Hook) {
+	c.hooks.AISkillInstall = append(c.hooks.AISkillInstall, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aiskillinstall.Intercept(f(g(h())))`.
+func (c *AISkillInstallClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AISkillInstall = append(c.inters.AISkillInstall, interceptors...)
+}
+
+// Create returns a builder for creating a AISkillInstall entity.
+func (c *AISkillInstallClient) Create() *AISkillInstallCreate {
+	mutation := newAISkillInstallMutation(c.config, OpCreate)
+	return &AISkillInstallCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AISkillInstall entities.
+func (c *AISkillInstallClient) CreateBulk(builders ...*AISkillInstallCreate) *AISkillInstallCreateBulk {
+	return &AISkillInstallCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AISkillInstallClient) MapCreateBulk(slice any, setFunc func(*AISkillInstallCreate, int)) *AISkillInstallCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AISkillInstallCreateBulk{err: fmt.Errorf("calling to AISkillInstallClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AISkillInstallCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AISkillInstallCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AISkillInstall.
+func (c *AISkillInstallClient) Update() *AISkillInstallUpdate {
+	mutation := newAISkillInstallMutation(c.config, OpUpdate)
+	return &AISkillInstallUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AISkillInstallClient) UpdateOne(_m *AISkillInstall) *AISkillInstallUpdateOne {
+	mutation := newAISkillInstallMutation(c.config, OpUpdateOne, withAISkillInstall(_m))
+	return &AISkillInstallUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AISkillInstallClient) UpdateOneID(id int64) *AISkillInstallUpdateOne {
+	mutation := newAISkillInstallMutation(c.config, OpUpdateOne, withAISkillInstallID(id))
+	return &AISkillInstallUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AISkillInstall.
+func (c *AISkillInstallClient) Delete() *AISkillInstallDelete {
+	mutation := newAISkillInstallMutation(c.config, OpDelete)
+	return &AISkillInstallDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AISkillInstallClient) DeleteOne(_m *AISkillInstall) *AISkillInstallDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AISkillInstallClient) DeleteOneID(id int64) *AISkillInstallDeleteOne {
+	builder := c.Delete().Where(aiskillinstall.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AISkillInstallDeleteOne{builder}
+}
+
+// Query returns a query builder for AISkillInstall.
+func (c *AISkillInstallClient) Query() *AISkillInstallQuery {
+	return &AISkillInstallQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAISkillInstall},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AISkillInstall entity by its id.
+func (c *AISkillInstallClient) Get(ctx context.Context, id int64) (*AISkillInstall, error) {
+	return c.Query().Where(aiskillinstall.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AISkillInstallClient) GetX(ctx context.Context, id int64) *AISkillInstall {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySkill queries the skill edge of a AISkillInstall.
+func (c *AISkillInstallClient) QuerySkill(_m *AISkillInstall) *AISkillQuery {
+	query := (&AISkillClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillinstall.Table, aiskillinstall.FieldID, id),
+			sqlgraph.To(aiskill.Table, aiskill.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillinstall.SkillTable, aiskillinstall.SkillColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUser queries the user edge of a AISkillInstall.
+func (c *AISkillInstallClient) QueryUser(_m *AISkillInstall) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillinstall.Table, aiskillinstall.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillinstall.UserTable, aiskillinstall.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AISkillInstallClient) Hooks() []Hook {
+	return c.hooks.AISkillInstall
+}
+
+// Interceptors returns the client interceptors.
+func (c *AISkillInstallClient) Interceptors() []Interceptor {
+	return c.inters.AISkillInstall
+}
+
+func (c *AISkillInstallClient) mutate(ctx context.Context, m *AISkillInstallMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AISkillInstallCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AISkillInstallUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AISkillInstallUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AISkillInstallDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AISkillInstall mutation op: %q", m.Op())
 	}
 }
 
@@ -8090,6 +8279,22 @@ func (c *UserClient) QueryAiSkillSettlementsBought(_m *User) *AISkillSettlementQ
 	return query
 }
 
+// QueryAiSkillInstalls queries the ai_skill_installs edge of a User.
+func (c *UserClient) QueryAiSkillInstalls(_m *User) *AISkillInstallQuery {
+	query := (&AISkillInstallClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(aiskillinstall.Table, aiskillinstall.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AiSkillInstallsTable, user.AiSkillInstallsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryAPIKeys queries the api_keys edge of a User.
 func (c *UserClient) QueryAPIKeys(_m *User) *APIKeyQuery {
 	query := (&APIKeyClient{config: c.config}).Query()
@@ -9127,29 +9332,31 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 type (
 	hooks struct {
 		AIAsset, AIAuditLog, AIGenerationJob, AIPromptTemplate, AIPromptTemplateVersion,
-		AISession, AISessionMessage, AISkill, AISkillLike, AISkillReview, AISkillRun,
-		AISkillSettlement, AISkillVersion, APIKey, Account, AccountGroup, Announcement,
-		AnnouncementRead, AuthIdentity, AuthIdentityChannel, ChannelMonitor,
-		ChannelMonitorDailyRollup, ChannelMonitorHistory,
-		ChannelMonitorRequestTemplate, ErrorPassthroughRule, Group, IdempotencyRecord,
-		IdentityAdoptionDecision, Invoice, InvoiceOrder, PaymentAuditLog, PaymentOrder,
-		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
-		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
-		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Hook
+		AISession, AISessionMessage, AISkill, AISkillInstall, AISkillLike,
+		AISkillReview, AISkillRun, AISkillSettlement, AISkillVersion, APIKey, Account,
+		AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
+		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
+		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
+		Group, IdempotencyRecord, IdentityAdoptionDecision, Invoice, InvoiceOrder,
+		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
+		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
+		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
 		AIAsset, AIAuditLog, AIGenerationJob, AIPromptTemplate, AIPromptTemplateVersion,
-		AISession, AISessionMessage, AISkill, AISkillLike, AISkillReview, AISkillRun,
-		AISkillSettlement, AISkillVersion, APIKey, Account, AccountGroup, Announcement,
-		AnnouncementRead, AuthIdentity, AuthIdentityChannel, ChannelMonitor,
-		ChannelMonitorDailyRollup, ChannelMonitorHistory,
-		ChannelMonitorRequestTemplate, ErrorPassthroughRule, Group, IdempotencyRecord,
-		IdentityAdoptionDecision, Invoice, InvoiceOrder, PaymentAuditLog, PaymentOrder,
-		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
-		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
-		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Interceptor
+		AISession, AISessionMessage, AISkill, AISkillInstall, AISkillLike,
+		AISkillReview, AISkillRun, AISkillSettlement, AISkillVersion, APIKey, Account,
+		AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
+		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
+		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
+		Group, IdempotencyRecord, IdentityAdoptionDecision, Invoice, InvoiceOrder,
+		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
+		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
+		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )
 

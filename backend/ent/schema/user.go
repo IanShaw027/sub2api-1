@@ -135,6 +135,8 @@ func (User) Edges() []ent.Edge {
 			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.To("ai_skill_settlements_bought", AISkillSettlement.Type).
 			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("ai_skill_installs", AISkillInstall.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.To("api_keys", APIKey.Type),
 		edge.To("redeem_codes", RedeemCode.Type),
 		edge.To("subscriptions", UserSubscription.Type),

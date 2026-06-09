@@ -1569,6 +1569,29 @@ func HasAiSkillSettlementsBoughtWith(preds ...predicate.AISkillSettlement) predi
 	})
 }
 
+// HasAiSkillInstalls applies the HasEdge predicate on the "ai_skill_installs" edge.
+func HasAiSkillInstalls() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, AiSkillInstallsTable, AiSkillInstallsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasAiSkillInstallsWith applies the HasEdge predicate on the "ai_skill_installs" edge with a given conditions (other predicates).
+func HasAiSkillInstallsWith(preds ...predicate.AISkillInstall) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newAiSkillInstallsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasAPIKeys applies the HasEdge predicate on the "api_keys" edge.
 func HasAPIKeys() predicate.User {
 	return predicate.User(func(s *sql.Selector) {

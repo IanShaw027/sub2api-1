@@ -84,27 +84,25 @@ func (AISkill) Edges() []ent.Edge {
 		edge.To("runs", AISkillRun.Type),
 		edge.To("reviews", AISkillReview.Type),
 		edge.To("likes", AISkillLike.Type),
+		edge.To("installs", AISkillInstall.Type),
 		edge.To("settlements", AISkillSettlement.Type),
 	}
 }
 
 func (AISkill) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("user_id"),
-		index.Fields("skill_type"),
-		index.Fields("visibility"),
-		index.Fields("source_visibility"),
-		index.Fields("billing_mode"),
-		index.Fields("current_version_id"),
-		index.Fields("published_version_id"),
-		index.Fields("latest_approved_version_id"),
-		index.Fields("cover_asset_id"),
-		index.Fields("request_id"),
-		index.Fields("usage_log_id"),
-		index.Fields("api_key_id"),
-		index.Fields("group_id"),
-		index.Fields("user_id", "updated_at"),
-		index.Fields("visibility", "published_version_id"),
-		index.Fields("skill_type", "visibility"),
+		index.Fields("user_id").
+			StorageKey("idx_ai_skills_user_id"),
+		index.Fields("skill_type").
+			StorageKey("idx_ai_skills_skill_type"),
+		index.Fields("visibility", "published_version_id").
+			StorageKey("idx_ai_skills_visibility_published").
+			Annotations(entsql.IndexWhere("deleted_at IS NULL")),
+		index.Fields("group_id").
+			StorageKey("idx_ai_skills_group_id").
+			Annotations(entsql.IndexWhere("group_id IS NOT NULL")),
+		index.Fields("updated_at").
+			StorageKey("idx_ai_skills_updated_at").
+			Annotations(entsql.Desc(), entsql.IndexWhere("deleted_at IS NULL")),
 	}
 }

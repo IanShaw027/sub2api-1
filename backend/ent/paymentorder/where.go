@@ -160,6 +160,16 @@ func Status(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldStatus, v))
 }
 
+// InvoiceStatus applies equality check predicate on the "invoice_status" field. It's identical to InvoiceStatusEQ.
+func InvoiceStatus(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldInvoiceStatus, v))
+}
+
+// InvoiceFileMediaID applies equality check predicate on the "invoice_file_media_id" field. It's identical to InvoiceFileMediaIDEQ.
+func InvoiceFileMediaID(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldInvoiceFileMediaID, v))
+}
+
 // RefundAmount applies equality check predicate on the "refund_amount" field. It's identical to RefundAmountEQ.
 func RefundAmount(v float64) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldRefundAmount, v))
@@ -1518,6 +1528,121 @@ func StatusEqualFold(v string) predicate.PaymentOrder {
 // StatusContainsFold applies the ContainsFold predicate on the "status" field.
 func StatusContainsFold(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldContainsFold(FieldStatus, v))
+}
+
+// InvoiceStatusEQ applies the EQ predicate on the "invoice_status" field.
+func InvoiceStatusEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldInvoiceStatus, v))
+}
+
+// InvoiceStatusNEQ applies the NEQ predicate on the "invoice_status" field.
+func InvoiceStatusNEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldInvoiceStatus, v))
+}
+
+// InvoiceStatusIn applies the In predicate on the "invoice_status" field.
+func InvoiceStatusIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldInvoiceStatus, vs...))
+}
+
+// InvoiceStatusNotIn applies the NotIn predicate on the "invoice_status" field.
+func InvoiceStatusNotIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldInvoiceStatus, vs...))
+}
+
+// InvoiceStatusGT applies the GT predicate on the "invoice_status" field.
+func InvoiceStatusGT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldInvoiceStatus, v))
+}
+
+// InvoiceStatusGTE applies the GTE predicate on the "invoice_status" field.
+func InvoiceStatusGTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldInvoiceStatus, v))
+}
+
+// InvoiceStatusLT applies the LT predicate on the "invoice_status" field.
+func InvoiceStatusLT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldInvoiceStatus, v))
+}
+
+// InvoiceStatusLTE applies the LTE predicate on the "invoice_status" field.
+func InvoiceStatusLTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldInvoiceStatus, v))
+}
+
+// InvoiceStatusContains applies the Contains predicate on the "invoice_status" field.
+func InvoiceStatusContains(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContains(FieldInvoiceStatus, v))
+}
+
+// InvoiceStatusHasPrefix applies the HasPrefix predicate on the "invoice_status" field.
+func InvoiceStatusHasPrefix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasPrefix(FieldInvoiceStatus, v))
+}
+
+// InvoiceStatusHasSuffix applies the HasSuffix predicate on the "invoice_status" field.
+func InvoiceStatusHasSuffix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasSuffix(FieldInvoiceStatus, v))
+}
+
+// InvoiceStatusEqualFold applies the EqualFold predicate on the "invoice_status" field.
+func InvoiceStatusEqualFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEqualFold(FieldInvoiceStatus, v))
+}
+
+// InvoiceStatusContainsFold applies the ContainsFold predicate on the "invoice_status" field.
+func InvoiceStatusContainsFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContainsFold(FieldInvoiceStatus, v))
+}
+
+// InvoiceFileMediaIDEQ applies the EQ predicate on the "invoice_file_media_id" field.
+func InvoiceFileMediaIDEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldInvoiceFileMediaID, v))
+}
+
+// InvoiceFileMediaIDNEQ applies the NEQ predicate on the "invoice_file_media_id" field.
+func InvoiceFileMediaIDNEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldInvoiceFileMediaID, v))
+}
+
+// InvoiceFileMediaIDIn applies the In predicate on the "invoice_file_media_id" field.
+func InvoiceFileMediaIDIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldInvoiceFileMediaID, vs...))
+}
+
+// InvoiceFileMediaIDNotIn applies the NotIn predicate on the "invoice_file_media_id" field.
+func InvoiceFileMediaIDNotIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldInvoiceFileMediaID, vs...))
+}
+
+// InvoiceFileMediaIDGT applies the GT predicate on the "invoice_file_media_id" field.
+func InvoiceFileMediaIDGT(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldInvoiceFileMediaID, v))
+}
+
+// InvoiceFileMediaIDGTE applies the GTE predicate on the "invoice_file_media_id" field.
+func InvoiceFileMediaIDGTE(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldInvoiceFileMediaID, v))
+}
+
+// InvoiceFileMediaIDLT applies the LT predicate on the "invoice_file_media_id" field.
+func InvoiceFileMediaIDLT(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldInvoiceFileMediaID, v))
+}
+
+// InvoiceFileMediaIDLTE applies the LTE predicate on the "invoice_file_media_id" field.
+func InvoiceFileMediaIDLTE(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldInvoiceFileMediaID, v))
+}
+
+// InvoiceFileMediaIDIsNil applies the IsNil predicate on the "invoice_file_media_id" field.
+func InvoiceFileMediaIDIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldInvoiceFileMediaID))
+}
+
+// InvoiceFileMediaIDNotNil applies the NotNil predicate on the "invoice_file_media_id" field.
+func InvoiceFileMediaIDNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldInvoiceFileMediaID))
 }
 
 // RefundAmountEQ applies the EQ predicate on the "refund_amount" field.

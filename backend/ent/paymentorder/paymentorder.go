@@ -58,6 +58,10 @@ const (
 	FieldProviderSnapshot = "provider_snapshot"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldInvoiceStatus holds the string denoting the invoice_status field in the database.
+	FieldInvoiceStatus = "invoice_status"
+	// FieldInvoiceFileMediaID holds the string denoting the invoice_file_media_id field in the database.
+	FieldInvoiceFileMediaID = "invoice_file_media_id"
 	// FieldRefundAmount holds the string denoting the refund_amount field in the database.
 	FieldRefundAmount = "refund_amount"
 	// FieldRefundReason holds the string denoting the refund_reason field in the database.
@@ -132,6 +136,8 @@ var Columns = []string{
 	FieldProviderKey,
 	FieldProviderSnapshot,
 	FieldStatus,
+	FieldInvoiceStatus,
+	FieldInvoiceFileMediaID,
 	FieldRefundAmount,
 	FieldRefundReason,
 	FieldRefundAt,
@@ -191,6 +197,10 @@ var (
 	DefaultStatus string
 	// StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	StatusValidator func(string) error
+	// DefaultInvoiceStatus holds the default value on creation for the "invoice_status" field.
+	DefaultInvoiceStatus string
+	// InvoiceStatusValidator is a validator for the "invoice_status" field. It is called by the builders before save.
+	InvoiceStatusValidator func(string) error
 	// DefaultRefundAmount holds the default value on creation for the "refund_amount" field.
 	DefaultRefundAmount float64
 	// DefaultForceRefund holds the default value on creation for the "force_refund" field.
@@ -322,6 +332,16 @@ func ByProviderKey(opts ...sql.OrderTermOption) OrderOption {
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
+}
+
+// ByInvoiceStatus orders the results by the invoice_status field.
+func ByInvoiceStatus(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInvoiceStatus, opts...).ToFunc()
+}
+
+// ByInvoiceFileMediaID orders the results by the invoice_file_media_id field.
+func ByInvoiceFileMediaID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInvoiceFileMediaID, opts...).ToFunc()
 }
 
 // ByRefundAmount orders the results by the refund_amount field.

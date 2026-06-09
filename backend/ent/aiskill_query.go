@@ -14,6 +14,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillinstall"
 	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
@@ -35,6 +36,7 @@ type AISkillQuery struct {
 	withRuns        *AISkillRunQuery
 	withReviews     *AISkillReviewQuery
 	withLikes       *AISkillLikeQuery
+	withInstalls    *AISkillInstallQuery
 	withSettlements *AISkillSettlementQuery
 	modifiers       []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
@@ -176,6 +178,28 @@ func (_q *AISkillQuery) QueryLikes() *AISkillLikeQuery {
 			sqlgraph.From(aiskill.Table, aiskill.FieldID, selector),
 			sqlgraph.To(aiskilllike.Table, aiskilllike.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, aiskill.LikesTable, aiskill.LikesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryInstalls chains the current query on the "installs" edge.
+func (_q *AISkillQuery) QueryInstalls() *AISkillInstallQuery {
+	query := (&AISkillInstallClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskill.Table, aiskill.FieldID, selector),
+			sqlgraph.To(aiskillinstall.Table, aiskillinstall.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiskill.InstallsTable, aiskill.InstallsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -402,6 +426,7 @@ func (_q *AISkillQuery) Clone() *AISkillQuery {
 		withRuns:        _q.withRuns.Clone(),
 		withReviews:     _q.withReviews.Clone(),
 		withLikes:       _q.withLikes.Clone(),
+		withInstalls:    _q.withInstalls.Clone(),
 		withSettlements: _q.withSettlements.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
@@ -461,6 +486,17 @@ func (_q *AISkillQuery) WithLikes(opts ...func(*AISkillLikeQuery)) *AISkillQuery
 		opt(query)
 	}
 	_q.withLikes = query
+	return _q
+}
+
+// WithInstalls tells the query-builder to eager-load the nodes that are connected to
+// the "installs" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *AISkillQuery) WithInstalls(opts ...func(*AISkillInstallQuery)) *AISkillQuery {
+	query := (&AISkillInstallClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withInstalls = query
 	return _q
 }
 
@@ -553,12 +589,13 @@ func (_q *AISkillQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*AISk
 	var (
 		nodes       = []*AISkill{}
 		_spec       = _q.querySpec()
-		loadedTypes = [6]bool{
+		loadedTypes = [7]bool{
 			_q.withUser != nil,
 			_q.withVersions != nil,
 			_q.withRuns != nil,
 			_q.withReviews != nil,
 			_q.withLikes != nil,
+			_q.withInstalls != nil,
 			_q.withSettlements != nil,
 		}
 	)
@@ -614,6 +651,13 @@ func (_q *AISkillQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*AISk
 		if err := _q.loadLikes(ctx, query, nodes,
 			func(n *AISkill) { n.Edges.Likes = []*AISkillLike{} },
 			func(n *AISkill, e *AISkillLike) { n.Edges.Likes = append(n.Edges.Likes, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withInstalls; query != nil {
+		if err := _q.loadInstalls(ctx, query, nodes,
+			func(n *AISkill) { n.Edges.Installs = []*AISkillInstall{} },
+			func(n *AISkill, e *AISkillInstall) { n.Edges.Installs = append(n.Edges.Installs, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -761,6 +805,36 @@ func (_q *AISkillQuery) loadLikes(ctx context.Context, query *AISkillLikeQuery, 
 	}
 	query.Where(predicate.AISkillLike(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(aiskill.LikesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.SkillID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "skill_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *AISkillQuery) loadInstalls(ctx context.Context, query *AISkillInstallQuery, nodes []*AISkill, init func(*AISkill), assign func(*AISkill, *AISkillInstall)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*AISkill)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(aiskillinstall.FieldSkillID)
+	}
+	query.Where(predicate.AISkillInstall(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(aiskill.InstallsColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

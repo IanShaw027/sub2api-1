@@ -22,6 +22,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aisession"
 	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillinstall"
 	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
@@ -83,6 +84,7 @@ const (
 	TypeAISession                     = "AISession"
 	TypeAISessionMessage              = "AISessionMessage"
 	TypeAISkill                       = "AISkill"
+	TypeAISkillInstall                = "AISkillInstall"
 	TypeAISkillLike                   = "AISkillLike"
 	TypeAISkillReview                 = "AISkillReview"
 	TypeAISkillRun                    = "AISkillRun"
@@ -12097,6 +12099,9 @@ type AISkillMutation struct {
 	likes                         map[int64]struct{}
 	removedlikes                  map[int64]struct{}
 	clearedlikes                  bool
+	installs                      map[int64]struct{}
+	removedinstalls               map[int64]struct{}
+	clearedinstalls               bool
 	settlements                   map[int64]struct{}
 	removedsettlements            map[int64]struct{}
 	clearedsettlements            bool
@@ -13836,6 +13841,60 @@ func (m *AISkillMutation) ResetLikes() {
 	m.removedlikes = nil
 }
 
+// AddInstallIDs adds the "installs" edge to the AISkillInstall entity by ids.
+func (m *AISkillMutation) AddInstallIDs(ids ...int64) {
+	if m.installs == nil {
+		m.installs = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.installs[ids[i]] = struct{}{}
+	}
+}
+
+// ClearInstalls clears the "installs" edge to the AISkillInstall entity.
+func (m *AISkillMutation) ClearInstalls() {
+	m.clearedinstalls = true
+}
+
+// InstallsCleared reports if the "installs" edge to the AISkillInstall entity was cleared.
+func (m *AISkillMutation) InstallsCleared() bool {
+	return m.clearedinstalls
+}
+
+// RemoveInstallIDs removes the "installs" edge to the AISkillInstall entity by IDs.
+func (m *AISkillMutation) RemoveInstallIDs(ids ...int64) {
+	if m.removedinstalls == nil {
+		m.removedinstalls = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.installs, ids[i])
+		m.removedinstalls[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedInstalls returns the removed IDs of the "installs" edge to the AISkillInstall entity.
+func (m *AISkillMutation) RemovedInstallsIDs() (ids []int64) {
+	for id := range m.removedinstalls {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// InstallsIDs returns the "installs" edge IDs in the mutation.
+func (m *AISkillMutation) InstallsIDs() (ids []int64) {
+	for id := range m.installs {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetInstalls resets all changes to the "installs" edge.
+func (m *AISkillMutation) ResetInstalls() {
+	m.installs = nil
+	m.clearedinstalls = false
+	m.removedinstalls = nil
+}
+
 // AddSettlementIDs adds the "settlements" edge to the AISkillSettlement entity by ids.
 func (m *AISkillMutation) AddSettlementIDs(ids ...int64) {
 	if m.settlements == nil {
@@ -14687,7 +14746,7 @@ func (m *AISkillMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *AISkillMutation) AddedEdges() []string {
-	edges := make([]string, 0, 6)
+	edges := make([]string, 0, 7)
 	if m.user != nil {
 		edges = append(edges, aiskill.EdgeUser)
 	}
@@ -14702,6 +14761,9 @@ func (m *AISkillMutation) AddedEdges() []string {
 	}
 	if m.likes != nil {
 		edges = append(edges, aiskill.EdgeLikes)
+	}
+	if m.installs != nil {
+		edges = append(edges, aiskill.EdgeInstalls)
 	}
 	if m.settlements != nil {
 		edges = append(edges, aiskill.EdgeSettlements)
@@ -14741,6 +14803,12 @@ func (m *AISkillMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case aiskill.EdgeInstalls:
+		ids := make([]ent.Value, 0, len(m.installs))
+		for id := range m.installs {
+			ids = append(ids, id)
+		}
+		return ids
 	case aiskill.EdgeSettlements:
 		ids := make([]ent.Value, 0, len(m.settlements))
 		for id := range m.settlements {
@@ -14753,7 +14821,7 @@ func (m *AISkillMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *AISkillMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 6)
+	edges := make([]string, 0, 7)
 	if m.removedversions != nil {
 		edges = append(edges, aiskill.EdgeVersions)
 	}
@@ -14765,6 +14833,9 @@ func (m *AISkillMutation) RemovedEdges() []string {
 	}
 	if m.removedlikes != nil {
 		edges = append(edges, aiskill.EdgeLikes)
+	}
+	if m.removedinstalls != nil {
+		edges = append(edges, aiskill.EdgeInstalls)
 	}
 	if m.removedsettlements != nil {
 		edges = append(edges, aiskill.EdgeSettlements)
@@ -14800,6 +14871,12 @@ func (m *AISkillMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case aiskill.EdgeInstalls:
+		ids := make([]ent.Value, 0, len(m.removedinstalls))
+		for id := range m.removedinstalls {
+			ids = append(ids, id)
+		}
+		return ids
 	case aiskill.EdgeSettlements:
 		ids := make([]ent.Value, 0, len(m.removedsettlements))
 		for id := range m.removedsettlements {
@@ -14812,7 +14889,7 @@ func (m *AISkillMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *AISkillMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 6)
+	edges := make([]string, 0, 7)
 	if m.cleareduser {
 		edges = append(edges, aiskill.EdgeUser)
 	}
@@ -14827,6 +14904,9 @@ func (m *AISkillMutation) ClearedEdges() []string {
 	}
 	if m.clearedlikes {
 		edges = append(edges, aiskill.EdgeLikes)
+	}
+	if m.clearedinstalls {
+		edges = append(edges, aiskill.EdgeInstalls)
 	}
 	if m.clearedsettlements {
 		edges = append(edges, aiskill.EdgeSettlements)
@@ -14848,6 +14928,8 @@ func (m *AISkillMutation) EdgeCleared(name string) bool {
 		return m.clearedreviews
 	case aiskill.EdgeLikes:
 		return m.clearedlikes
+	case aiskill.EdgeInstalls:
+		return m.clearedinstalls
 	case aiskill.EdgeSettlements:
 		return m.clearedsettlements
 	}
@@ -14884,11 +14966,605 @@ func (m *AISkillMutation) ResetEdge(name string) error {
 	case aiskill.EdgeLikes:
 		m.ResetLikes()
 		return nil
+	case aiskill.EdgeInstalls:
+		m.ResetInstalls()
+		return nil
 	case aiskill.EdgeSettlements:
 		m.ResetSettlements()
 		return nil
 	}
 	return fmt.Errorf("unknown AISkill edge %s", name)
+}
+
+// AISkillInstallMutation represents an operation that mutates the AISkillInstall nodes in the graph.
+type AISkillInstallMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *int64
+	created_at    *time.Time
+	updated_at    *time.Time
+	clearedFields map[string]struct{}
+	skill         *int64
+	clearedskill  bool
+	user          *int64
+	cleareduser   bool
+	done          bool
+	oldValue      func(context.Context) (*AISkillInstall, error)
+	predicates    []predicate.AISkillInstall
+}
+
+var _ ent.Mutation = (*AISkillInstallMutation)(nil)
+
+// aiskillinstallOption allows management of the mutation configuration using functional options.
+type aiskillinstallOption func(*AISkillInstallMutation)
+
+// newAISkillInstallMutation creates new mutation for the AISkillInstall entity.
+func newAISkillInstallMutation(c config, op Op, opts ...aiskillinstallOption) *AISkillInstallMutation {
+	m := &AISkillInstallMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAISkillInstall,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAISkillInstallID sets the ID field of the mutation.
+func withAISkillInstallID(id int64) aiskillinstallOption {
+	return func(m *AISkillInstallMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AISkillInstall
+		)
+		m.oldValue = func(ctx context.Context) (*AISkillInstall, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AISkillInstall.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAISkillInstall sets the old AISkillInstall of the mutation.
+func withAISkillInstall(node *AISkillInstall) aiskillinstallOption {
+	return func(m *AISkillInstallMutation) {
+		m.oldValue = func(context.Context) (*AISkillInstall, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AISkillInstallMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AISkillInstallMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AISkillInstallMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AISkillInstallMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AISkillInstall.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AISkillInstallMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AISkillInstallMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AISkillInstall entity.
+// If the AISkillInstall object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillInstallMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AISkillInstallMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AISkillInstallMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AISkillInstallMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AISkillInstall entity.
+// If the AISkillInstall object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillInstallMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AISkillInstallMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetSkillID sets the "skill_id" field.
+func (m *AISkillInstallMutation) SetSkillID(i int64) {
+	m.skill = &i
+}
+
+// SkillID returns the value of the "skill_id" field in the mutation.
+func (m *AISkillInstallMutation) SkillID() (r int64, exists bool) {
+	v := m.skill
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSkillID returns the old "skill_id" field's value of the AISkillInstall entity.
+// If the AISkillInstall object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillInstallMutation) OldSkillID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSkillID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSkillID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSkillID: %w", err)
+	}
+	return oldValue.SkillID, nil
+}
+
+// ResetSkillID resets all changes to the "skill_id" field.
+func (m *AISkillInstallMutation) ResetSkillID() {
+	m.skill = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *AISkillInstallMutation) SetUserID(i int64) {
+	m.user = &i
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *AISkillInstallMutation) UserID() (r int64, exists bool) {
+	v := m.user
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the AISkillInstall entity.
+// If the AISkillInstall object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillInstallMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *AISkillInstallMutation) ResetUserID() {
+	m.user = nil
+}
+
+// ClearSkill clears the "skill" edge to the AISkill entity.
+func (m *AISkillInstallMutation) ClearSkill() {
+	m.clearedskill = true
+	m.clearedFields[aiskillinstall.FieldSkillID] = struct{}{}
+}
+
+// SkillCleared reports if the "skill" edge to the AISkill entity was cleared.
+func (m *AISkillInstallMutation) SkillCleared() bool {
+	return m.clearedskill
+}
+
+// SkillIDs returns the "skill" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SkillID instead. It exists only for internal usage by the builders.
+func (m *AISkillInstallMutation) SkillIDs() (ids []int64) {
+	if id := m.skill; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSkill resets all changes to the "skill" edge.
+func (m *AISkillInstallMutation) ResetSkill() {
+	m.skill = nil
+	m.clearedskill = false
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (m *AISkillInstallMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[aiskillinstall.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *AISkillInstallMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *AISkillInstallMutation) UserIDs() (ids []int64) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *AISkillInstallMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
+// Where appends a list predicates to the AISkillInstallMutation builder.
+func (m *AISkillInstallMutation) Where(ps ...predicate.AISkillInstall) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AISkillInstallMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AISkillInstallMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AISkillInstall, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AISkillInstallMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AISkillInstallMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AISkillInstall).
+func (m *AISkillInstallMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AISkillInstallMutation) Fields() []string {
+	fields := make([]string, 0, 4)
+	if m.created_at != nil {
+		fields = append(fields, aiskillinstall.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, aiskillinstall.FieldUpdatedAt)
+	}
+	if m.skill != nil {
+		fields = append(fields, aiskillinstall.FieldSkillID)
+	}
+	if m.user != nil {
+		fields = append(fields, aiskillinstall.FieldUserID)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AISkillInstallMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case aiskillinstall.FieldCreatedAt:
+		return m.CreatedAt()
+	case aiskillinstall.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case aiskillinstall.FieldSkillID:
+		return m.SkillID()
+	case aiskillinstall.FieldUserID:
+		return m.UserID()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AISkillInstallMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case aiskillinstall.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case aiskillinstall.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case aiskillinstall.FieldSkillID:
+		return m.OldSkillID(ctx)
+	case aiskillinstall.FieldUserID:
+		return m.OldUserID(ctx)
+	}
+	return nil, fmt.Errorf("unknown AISkillInstall field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillInstallMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case aiskillinstall.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case aiskillinstall.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case aiskillinstall.FieldSkillID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSkillID(v)
+		return nil
+	case aiskillinstall.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillInstall field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AISkillInstallMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AISkillInstallMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillInstallMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown AISkillInstall numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AISkillInstallMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AISkillInstallMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AISkillInstallMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown AISkillInstall nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AISkillInstallMutation) ResetField(name string) error {
+	switch name {
+	case aiskillinstall.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case aiskillinstall.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case aiskillinstall.FieldSkillID:
+		m.ResetSkillID()
+		return nil
+	case aiskillinstall.FieldUserID:
+		m.ResetUserID()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillInstall field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AISkillInstallMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.skill != nil {
+		edges = append(edges, aiskillinstall.EdgeSkill)
+	}
+	if m.user != nil {
+		edges = append(edges, aiskillinstall.EdgeUser)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AISkillInstallMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case aiskillinstall.EdgeSkill:
+		if id := m.skill; id != nil {
+			return []ent.Value{*id}
+		}
+	case aiskillinstall.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AISkillInstallMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AISkillInstallMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AISkillInstallMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedskill {
+		edges = append(edges, aiskillinstall.EdgeSkill)
+	}
+	if m.cleareduser {
+		edges = append(edges, aiskillinstall.EdgeUser)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AISkillInstallMutation) EdgeCleared(name string) bool {
+	switch name {
+	case aiskillinstall.EdgeSkill:
+		return m.clearedskill
+	case aiskillinstall.EdgeUser:
+		return m.cleareduser
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AISkillInstallMutation) ClearEdge(name string) error {
+	switch name {
+	case aiskillinstall.EdgeSkill:
+		m.ClearSkill()
+		return nil
+	case aiskillinstall.EdgeUser:
+		m.ClearUser()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillInstall unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AISkillInstallMutation) ResetEdge(name string) error {
+	switch name {
+	case aiskillinstall.EdgeSkill:
+		m.ResetSkill()
+		return nil
+	case aiskillinstall.EdgeUser:
+		m.ResetUser()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillInstall edge %s", name)
 }
 
 // AISkillLikeMutation represents an operation that mutates the AISkillLike nodes in the graph.
@@ -46731,6 +47407,9 @@ type PaymentOrderMutation struct {
 	provider_key               *string
 	provider_snapshot          *map[string]interface{}
 	status                     *string
+	invoice_status             *string
+	invoice_file_media_id      *int64
+	addinvoice_file_media_id   *int64
 	refund_amount              *float64
 	addrefund_amount           *float64
 	refund_reason              *string
@@ -47902,6 +48581,112 @@ func (m *PaymentOrderMutation) ResetStatus() {
 	m.status = nil
 }
 
+// SetInvoiceStatus sets the "invoice_status" field.
+func (m *PaymentOrderMutation) SetInvoiceStatus(s string) {
+	m.invoice_status = &s
+}
+
+// InvoiceStatus returns the value of the "invoice_status" field in the mutation.
+func (m *PaymentOrderMutation) InvoiceStatus() (r string, exists bool) {
+	v := m.invoice_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInvoiceStatus returns the old "invoice_status" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldInvoiceStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInvoiceStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInvoiceStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInvoiceStatus: %w", err)
+	}
+	return oldValue.InvoiceStatus, nil
+}
+
+// ResetInvoiceStatus resets all changes to the "invoice_status" field.
+func (m *PaymentOrderMutation) ResetInvoiceStatus() {
+	m.invoice_status = nil
+}
+
+// SetInvoiceFileMediaID sets the "invoice_file_media_id" field.
+func (m *PaymentOrderMutation) SetInvoiceFileMediaID(i int64) {
+	m.invoice_file_media_id = &i
+	m.addinvoice_file_media_id = nil
+}
+
+// InvoiceFileMediaID returns the value of the "invoice_file_media_id" field in the mutation.
+func (m *PaymentOrderMutation) InvoiceFileMediaID() (r int64, exists bool) {
+	v := m.invoice_file_media_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInvoiceFileMediaID returns the old "invoice_file_media_id" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldInvoiceFileMediaID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInvoiceFileMediaID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInvoiceFileMediaID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInvoiceFileMediaID: %w", err)
+	}
+	return oldValue.InvoiceFileMediaID, nil
+}
+
+// AddInvoiceFileMediaID adds i to the "invoice_file_media_id" field.
+func (m *PaymentOrderMutation) AddInvoiceFileMediaID(i int64) {
+	if m.addinvoice_file_media_id != nil {
+		*m.addinvoice_file_media_id += i
+	} else {
+		m.addinvoice_file_media_id = &i
+	}
+}
+
+// AddedInvoiceFileMediaID returns the value that was added to the "invoice_file_media_id" field in this mutation.
+func (m *PaymentOrderMutation) AddedInvoiceFileMediaID() (r int64, exists bool) {
+	v := m.addinvoice_file_media_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearInvoiceFileMediaID clears the value of the "invoice_file_media_id" field.
+func (m *PaymentOrderMutation) ClearInvoiceFileMediaID() {
+	m.invoice_file_media_id = nil
+	m.addinvoice_file_media_id = nil
+	m.clearedFields[paymentorder.FieldInvoiceFileMediaID] = struct{}{}
+}
+
+// InvoiceFileMediaIDCleared returns if the "invoice_file_media_id" field was cleared in this mutation.
+func (m *PaymentOrderMutation) InvoiceFileMediaIDCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldInvoiceFileMediaID]
+	return ok
+}
+
+// ResetInvoiceFileMediaID resets all changes to the "invoice_file_media_id" field.
+func (m *PaymentOrderMutation) ResetInvoiceFileMediaID() {
+	m.invoice_file_media_id = nil
+	m.addinvoice_file_media_id = nil
+	delete(m.clearedFields, paymentorder.FieldInvoiceFileMediaID)
+}
+
 // SetRefundAmount sets the "refund_amount" field.
 func (m *PaymentOrderMutation) SetRefundAmount(f float64) {
 	m.refund_amount = &f
@@ -48781,7 +49566,7 @@ func (m *PaymentOrderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentOrderMutation) Fields() []string {
-	fields := make([]string, 0, 40)
+	fields := make([]string, 0, 42)
 	if m.user != nil {
 		fields = append(fields, paymentorder.FieldUserID)
 	}
@@ -48847,6 +49632,12 @@ func (m *PaymentOrderMutation) Fields() []string {
 	}
 	if m.status != nil {
 		fields = append(fields, paymentorder.FieldStatus)
+	}
+	if m.invoice_status != nil {
+		fields = append(fields, paymentorder.FieldInvoiceStatus)
+	}
+	if m.invoice_file_media_id != nil {
+		fields = append(fields, paymentorder.FieldInvoiceFileMediaID)
 	}
 	if m.refund_amount != nil {
 		fields = append(fields, paymentorder.FieldRefundAmount)
@@ -48954,6 +49745,10 @@ func (m *PaymentOrderMutation) Field(name string) (ent.Value, bool) {
 		return m.ProviderSnapshot()
 	case paymentorder.FieldStatus:
 		return m.Status()
+	case paymentorder.FieldInvoiceStatus:
+		return m.InvoiceStatus()
+	case paymentorder.FieldInvoiceFileMediaID:
+		return m.InvoiceFileMediaID()
 	case paymentorder.FieldRefundAmount:
 		return m.RefundAmount()
 	case paymentorder.FieldRefundReason:
@@ -49043,6 +49838,10 @@ func (m *PaymentOrderMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldProviderSnapshot(ctx)
 	case paymentorder.FieldStatus:
 		return m.OldStatus(ctx)
+	case paymentorder.FieldInvoiceStatus:
+		return m.OldInvoiceStatus(ctx)
+	case paymentorder.FieldInvoiceFileMediaID:
+		return m.OldInvoiceFileMediaID(ctx)
 	case paymentorder.FieldRefundAmount:
 		return m.OldRefundAmount(ctx)
 	case paymentorder.FieldRefundReason:
@@ -49242,6 +50041,20 @@ func (m *PaymentOrderMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetStatus(v)
 		return nil
+	case paymentorder.FieldInvoiceStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInvoiceStatus(v)
+		return nil
+	case paymentorder.FieldInvoiceFileMediaID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInvoiceFileMediaID(v)
+		return nil
 	case paymentorder.FieldRefundAmount:
 		v, ok := value.(float64)
 		if !ok {
@@ -49394,6 +50207,9 @@ func (m *PaymentOrderMutation) AddedFields() []string {
 	if m.addsubscription_days != nil {
 		fields = append(fields, paymentorder.FieldSubscriptionDays)
 	}
+	if m.addinvoice_file_media_id != nil {
+		fields = append(fields, paymentorder.FieldInvoiceFileMediaID)
+	}
 	if m.addrefund_amount != nil {
 		fields = append(fields, paymentorder.FieldRefundAmount)
 	}
@@ -49420,6 +50236,8 @@ func (m *PaymentOrderMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedSubscriptionGroupID()
 	case paymentorder.FieldSubscriptionDays:
 		return m.AddedSubscriptionDays()
+	case paymentorder.FieldInvoiceFileMediaID:
+		return m.AddedInvoiceFileMediaID()
 	case paymentorder.FieldRefundAmount:
 		return m.AddedRefundAmount()
 	case paymentorder.FieldRefundRequestedAmount:
@@ -49475,6 +50293,13 @@ func (m *PaymentOrderMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddSubscriptionDays(v)
 		return nil
+	case paymentorder.FieldInvoiceFileMediaID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInvoiceFileMediaID(v)
+		return nil
 	case paymentorder.FieldRefundAmount:
 		v, ok := value.(float64)
 		if !ok {
@@ -49526,6 +50351,9 @@ func (m *PaymentOrderMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(paymentorder.FieldProviderSnapshot) {
 		fields = append(fields, paymentorder.FieldProviderSnapshot)
+	}
+	if m.FieldCleared(paymentorder.FieldInvoiceFileMediaID) {
+		fields = append(fields, paymentorder.FieldInvoiceFileMediaID)
 	}
 	if m.FieldCleared(paymentorder.FieldRefundReason) {
 		fields = append(fields, paymentorder.FieldRefundReason)
@@ -49600,6 +50428,9 @@ func (m *PaymentOrderMutation) ClearField(name string) error {
 		return nil
 	case paymentorder.FieldProviderSnapshot:
 		m.ClearProviderSnapshot()
+		return nil
+	case paymentorder.FieldInvoiceFileMediaID:
+		m.ClearInvoiceFileMediaID()
 		return nil
 	case paymentorder.FieldRefundReason:
 		m.ClearRefundReason()
@@ -49704,6 +50535,12 @@ func (m *PaymentOrderMutation) ResetField(name string) error {
 		return nil
 	case paymentorder.FieldStatus:
 		m.ResetStatus()
+		return nil
+	case paymentorder.FieldInvoiceStatus:
+		m.ResetInvoiceStatus()
+		return nil
+	case paymentorder.FieldInvoiceFileMediaID:
+		m.ResetInvoiceFileMediaID()
 		return nil
 	case paymentorder.FieldRefundAmount:
 		m.ResetRefundAmount()
@@ -64559,6 +65396,9 @@ type UserMutation struct {
 	ai_skill_settlements_bought        map[int64]struct{}
 	removedai_skill_settlements_bought map[int64]struct{}
 	clearedai_skill_settlements_bought bool
+	ai_skill_installs                  map[int64]struct{}
+	removedai_skill_installs           map[int64]struct{}
+	clearedai_skill_installs           bool
 	api_keys                           map[int64]struct{}
 	removedapi_keys                    map[int64]struct{}
 	clearedapi_keys                    bool
@@ -66196,6 +67036,60 @@ func (m *UserMutation) ResetAiSkillSettlementsBought() {
 	m.removedai_skill_settlements_bought = nil
 }
 
+// AddAiSkillInstallIDs adds the "ai_skill_installs" edge to the AISkillInstall entity by ids.
+func (m *UserMutation) AddAiSkillInstallIDs(ids ...int64) {
+	if m.ai_skill_installs == nil {
+		m.ai_skill_installs = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.ai_skill_installs[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAiSkillInstalls clears the "ai_skill_installs" edge to the AISkillInstall entity.
+func (m *UserMutation) ClearAiSkillInstalls() {
+	m.clearedai_skill_installs = true
+}
+
+// AiSkillInstallsCleared reports if the "ai_skill_installs" edge to the AISkillInstall entity was cleared.
+func (m *UserMutation) AiSkillInstallsCleared() bool {
+	return m.clearedai_skill_installs
+}
+
+// RemoveAiSkillInstallIDs removes the "ai_skill_installs" edge to the AISkillInstall entity by IDs.
+func (m *UserMutation) RemoveAiSkillInstallIDs(ids ...int64) {
+	if m.removedai_skill_installs == nil {
+		m.removedai_skill_installs = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.ai_skill_installs, ids[i])
+		m.removedai_skill_installs[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAiSkillInstalls returns the removed IDs of the "ai_skill_installs" edge to the AISkillInstall entity.
+func (m *UserMutation) RemovedAiSkillInstallsIDs() (ids []int64) {
+	for id := range m.removedai_skill_installs {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// AiSkillInstallsIDs returns the "ai_skill_installs" edge IDs in the mutation.
+func (m *UserMutation) AiSkillInstallsIDs() (ids []int64) {
+	for id := range m.ai_skill_installs {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAiSkillInstalls resets all changes to the "ai_skill_installs" edge.
+func (m *UserMutation) ResetAiSkillInstalls() {
+	m.ai_skill_installs = nil
+	m.clearedai_skill_installs = false
+	m.removedai_skill_installs = nil
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by ids.
 func (m *UserMutation) AddAPIKeyIDs(ids ...int64) {
 	if m.api_keys == nil {
@@ -67536,7 +68430,7 @@ func (m *UserMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *UserMutation) AddedEdges() []string {
-	edges := make([]string, 0, 21)
+	edges := make([]string, 0, 22)
 	if m.ai_skills != nil {
 		edges = append(edges, user.EdgeAiSkills)
 	}
@@ -67560,6 +68454,9 @@ func (m *UserMutation) AddedEdges() []string {
 	}
 	if m.ai_skill_settlements_bought != nil {
 		edges = append(edges, user.EdgeAiSkillSettlementsBought)
+	}
+	if m.ai_skill_installs != nil {
+		edges = append(edges, user.EdgeAiSkillInstalls)
 	}
 	if m.api_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
@@ -67655,6 +68552,12 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeAiSkillInstalls:
+		ids := make([]ent.Value, 0, len(m.ai_skill_installs))
+		for id := range m.ai_skill_installs {
+			ids = append(ids, id)
+		}
+		return ids
 	case user.EdgeAPIKeys:
 		ids := make([]ent.Value, 0, len(m.api_keys))
 		for id := range m.api_keys {
@@ -67739,7 +68642,7 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *UserMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 21)
+	edges := make([]string, 0, 22)
 	if m.removedai_skills != nil {
 		edges = append(edges, user.EdgeAiSkills)
 	}
@@ -67763,6 +68666,9 @@ func (m *UserMutation) RemovedEdges() []string {
 	}
 	if m.removedai_skill_settlements_bought != nil {
 		edges = append(edges, user.EdgeAiSkillSettlementsBought)
+	}
+	if m.removedai_skill_installs != nil {
+		edges = append(edges, user.EdgeAiSkillInstalls)
 	}
 	if m.removedapi_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
@@ -67858,6 +68764,12 @@ func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeAiSkillInstalls:
+		ids := make([]ent.Value, 0, len(m.removedai_skill_installs))
+		for id := range m.removedai_skill_installs {
+			ids = append(ids, id)
+		}
+		return ids
 	case user.EdgeAPIKeys:
 		ids := make([]ent.Value, 0, len(m.removedapi_keys))
 		for id := range m.removedapi_keys {
@@ -67942,7 +68854,7 @@ func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *UserMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 21)
+	edges := make([]string, 0, 22)
 	if m.clearedai_skills {
 		edges = append(edges, user.EdgeAiSkills)
 	}
@@ -67966,6 +68878,9 @@ func (m *UserMutation) ClearedEdges() []string {
 	}
 	if m.clearedai_skill_settlements_bought {
 		edges = append(edges, user.EdgeAiSkillSettlementsBought)
+	}
+	if m.clearedai_skill_installs {
+		edges = append(edges, user.EdgeAiSkillInstalls)
 	}
 	if m.clearedapi_keys {
 		edges = append(edges, user.EdgeAPIKeys)
@@ -68029,6 +68944,8 @@ func (m *UserMutation) EdgeCleared(name string) bool {
 		return m.clearedai_skill_settlements_owned
 	case user.EdgeAiSkillSettlementsBought:
 		return m.clearedai_skill_settlements_bought
+	case user.EdgeAiSkillInstalls:
+		return m.clearedai_skill_installs
 	case user.EdgeAPIKeys:
 		return m.clearedapi_keys
 	case user.EdgeRedeemCodes:
@@ -68094,6 +69011,9 @@ func (m *UserMutation) ResetEdge(name string) error {
 		return nil
 	case user.EdgeAiSkillSettlementsBought:
 		m.ResetAiSkillSettlementsBought()
+		return nil
+	case user.EdgeAiSkillInstalls:
+		m.ResetAiSkillInstalls()
 		return nil
 	case user.EdgeAPIKeys:
 		m.ResetAPIKeys()

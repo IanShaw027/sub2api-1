@@ -633,84 +633,84 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "aiskill_user_id",
+				Name:    "idx_ai_skills_user_id",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillsColumns[27]},
 			},
 			{
-				Name:    "aiskill_skill_type",
+				Name:    "idx_ai_skills_skill_type",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillsColumns[4]},
 			},
 			{
-				Name:    "aiskill_visibility",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillsColumns[10]},
-			},
-			{
-				Name:    "aiskill_source_visibility",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillsColumns[11]},
-			},
-			{
-				Name:    "aiskill_billing_mode",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillsColumns[12]},
-			},
-			{
-				Name:    "aiskill_current_version_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillsColumns[14]},
-			},
-			{
-				Name:    "aiskill_published_version_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillsColumns[15]},
-			},
-			{
-				Name:    "aiskill_latest_approved_version_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillsColumns[16]},
-			},
-			{
-				Name:    "aiskill_cover_asset_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillsColumns[21]},
-			},
-			{
-				Name:    "aiskill_request_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillsColumns[23]},
-			},
-			{
-				Name:    "aiskill_usage_log_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillsColumns[24]},
-			},
-			{
-				Name:    "aiskill_api_key_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillsColumns[25]},
-			},
-			{
-				Name:    "aiskill_group_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillsColumns[26]},
-			},
-			{
-				Name:    "aiskill_user_id_updated_at",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillsColumns[27], AiSkillsColumns[2]},
-			},
-			{
-				Name:    "aiskill_visibility_published_version_id",
+				Name:    "idx_ai_skills_visibility_published",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillsColumns[10], AiSkillsColumns[15]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "deleted_at IS NULL",
+				},
 			},
 			{
-				Name:    "aiskill_skill_type_visibility",
+				Name:    "idx_ai_skills_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{AiSkillsColumns[4], AiSkillsColumns[10]},
+				Columns: []*schema.Column{AiSkillsColumns[26]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "group_id IS NOT NULL",
+				},
+			},
+			{
+				Name:    "idx_ai_skills_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[2]},
+				Annotation: &entsql.IndexAnnotation{
+					Desc:  true,
+					Where: "deleted_at IS NULL",
+				},
+			},
+		},
+	}
+	// AiSkillInstallsColumns holds the columns for the "ai_skill_installs" table.
+	AiSkillInstallsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "skill_id", Type: field.TypeInt64},
+		{Name: "user_id", Type: field.TypeInt64},
+	}
+	// AiSkillInstallsTable holds the schema information for the "ai_skill_installs" table.
+	AiSkillInstallsTable = &schema.Table{
+		Name:       "ai_skill_installs",
+		Columns:    AiSkillInstallsColumns,
+		PrimaryKey: []*schema.Column{AiSkillInstallsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "ai_skill_installs_ai_skills_installs",
+				Columns:    []*schema.Column{AiSkillInstallsColumns[3]},
+				RefColumns: []*schema.Column{AiSkillsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "ai_skill_installs_users_ai_skill_installs",
+				Columns:    []*schema.Column{AiSkillInstallsColumns[4]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_ai_skill_installs_skill_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillInstallsColumns[3]},
+			},
+			{
+				Name:    "idx_ai_skill_installs_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillInstallsColumns[4]},
+			},
+			{
+				Name:    "aiskillinstall_skill_id_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{AiSkillInstallsColumns[3], AiSkillInstallsColumns[4]},
 			},
 		},
 	}
@@ -2138,6 +2138,8 @@ var (
 		{Name: "provider_key", Type: field.TypeString, Nullable: true, Size: 30},
 		{Name: "provider_snapshot", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "status", Type: field.TypeString, Size: 30, Default: "PENDING"},
+		{Name: "invoice_status", Type: field.TypeString, Size: 20, Default: ""},
+		{Name: "invoice_file_media_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "refund_amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
 		{Name: "refund_reason", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "refund_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
@@ -2166,7 +2168,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "payment_orders_users_payment_orders",
-				Columns:    []*schema.Column{PaymentOrdersColumns[40]},
+				Columns:    []*schema.Column{PaymentOrdersColumns[42]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -2183,7 +2185,7 @@ var (
 			{
 				Name:    "paymentorder_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[40]},
+				Columns: []*schema.Column{PaymentOrdersColumns[42]},
 			},
 			{
 				Name:    "paymentorder_status",
@@ -2191,24 +2193,29 @@ var (
 				Columns: []*schema.Column{PaymentOrdersColumns[21]},
 			},
 			{
+				Name:    "idx_payment_orders_invoice_status",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[22]},
+			},
+			{
 				Name:    "paymentorder_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[30]},
+				Columns: []*schema.Column{PaymentOrdersColumns[32]},
 			},
 			{
 				Name:    "paymentorder_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[38]},
+				Columns: []*schema.Column{PaymentOrdersColumns[40]},
 			},
 			{
 				Name:    "paymentorder_paid_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[31]},
+				Columns: []*schema.Column{PaymentOrdersColumns[33]},
 			},
 			{
 				Name:    "paymentorder_payment_type_paid_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[9], PaymentOrdersColumns[31]},
+				Columns: []*schema.Column{PaymentOrdersColumns[9], PaymentOrdersColumns[33]},
 			},
 			{
 				Name:    "paymentorder_order_type",
@@ -3063,6 +3070,7 @@ var (
 		AiSessionsTable,
 		AiSessionMessagesTable,
 		AiSkillsTable,
+		AiSkillInstallsTable,
 		AiSkillLikesTable,
 		AiSkillReviewsTable,
 		AiSkillRunsTable,
@@ -3140,6 +3148,11 @@ func init() {
 	AiSkillsTable.ForeignKeys[0].RefTable = UsersTable
 	AiSkillsTable.Annotation = &entsql.Annotation{
 		Table: "ai_skills",
+	}
+	AiSkillInstallsTable.ForeignKeys[0].RefTable = AiSkillsTable
+	AiSkillInstallsTable.ForeignKeys[1].RefTable = UsersTable
+	AiSkillInstallsTable.Annotation = &entsql.Annotation{
+		Table: "ai_skill_installs",
 	}
 	AiSkillLikesTable.ForeignKeys[0].RefTable = AiSkillsTable
 	AiSkillLikesTable.ForeignKeys[1].RefTable = UsersTable

@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillinstall"
 	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
@@ -431,6 +432,21 @@ func (_c *AISkillCreate) AddLikes(v ...*AISkillLike) *AISkillCreate {
 	return _c.AddLikeIDs(ids...)
 }
 
+// AddInstallIDs adds the "installs" edge to the AISkillInstall entity by IDs.
+func (_c *AISkillCreate) AddInstallIDs(ids ...int64) *AISkillCreate {
+	_c.mutation.AddInstallIDs(ids...)
+	return _c
+}
+
+// AddInstalls adds the "installs" edges to the AISkillInstall entity.
+func (_c *AISkillCreate) AddInstalls(v ...*AISkillInstall) *AISkillCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddInstallIDs(ids...)
+}
+
 // AddSettlementIDs adds the "settlements" edge to the AISkillSettlement entity by IDs.
 func (_c *AISkillCreate) AddSettlementIDs(ids ...int64) *AISkillCreate {
 	_c.mutation.AddSettlementIDs(ids...)
@@ -836,6 +852,22 @@ func (_c *AISkillCreate) createSpec() (*AISkill, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(aiskilllike.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.InstallsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   aiskill.InstallsTable,
+			Columns: []string{aiskill.InstallsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillinstall.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

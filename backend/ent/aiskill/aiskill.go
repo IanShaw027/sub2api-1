@@ -79,6 +79,8 @@ const (
 	EdgeReviews = "reviews"
 	// EdgeLikes holds the string denoting the likes edge name in mutations.
 	EdgeLikes = "likes"
+	// EdgeInstalls holds the string denoting the installs edge name in mutations.
+	EdgeInstalls = "installs"
 	// EdgeSettlements holds the string denoting the settlements edge name in mutations.
 	EdgeSettlements = "settlements"
 	// Table holds the table name of the aiskill in the database.
@@ -118,6 +120,13 @@ const (
 	LikesInverseTable = "ai_skill_likes"
 	// LikesColumn is the table column denoting the likes relation/edge.
 	LikesColumn = "skill_id"
+	// InstallsTable is the table that holds the installs relation/edge.
+	InstallsTable = "ai_skill_installs"
+	// InstallsInverseTable is the table name for the AISkillInstall entity.
+	// It exists in this package in order to avoid circular dependency with the "aiskillinstall" package.
+	InstallsInverseTable = "ai_skill_installs"
+	// InstallsColumn is the table column denoting the installs relation/edge.
+	InstallsColumn = "skill_id"
 	// SettlementsTable is the table that holds the settlements relation/edge.
 	SettlementsTable = "ai_skill_settlements"
 	// SettlementsInverseTable is the table name for the AISkillSettlement entity.
@@ -415,6 +424,20 @@ func ByLikes(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByInstallsCount orders the results by installs count.
+func ByInstallsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newInstallsStep(), opts...)
+	}
+}
+
+// ByInstalls orders the results by installs terms.
+func ByInstalls(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newInstallsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // BySettlementsCount orders the results by settlements count.
 func BySettlementsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -461,6 +484,13 @@ func newLikesStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(LikesInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, LikesTable, LikesColumn),
+	)
+}
+func newInstallsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(InstallsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, InstallsTable, InstallsColumn),
 	)
 }
 func newSettlementsStep() *sqlgraph.Step {

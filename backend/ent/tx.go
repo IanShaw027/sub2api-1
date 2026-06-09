@@ -30,6 +30,8 @@ type Tx struct {
 	AISessionMessage *AISessionMessageClient
 	// AISkill is the client for interacting with the AISkill builders.
 	AISkill *AISkillClient
+	// AISkillInstall is the client for interacting with the AISkillInstall builders.
+	AISkillInstall *AISkillInstallClient
 	// AISkillLike is the client for interacting with the AISkillLike builders.
 	AISkillLike *AISkillLikeClient
 	// AISkillReview is the client for interacting with the AISkillReview builders.
@@ -253,6 +255,7 @@ func (tx *Tx) init() {
 	tx.AISession = NewAISessionClient(tx.config)
 	tx.AISessionMessage = NewAISessionMessageClient(tx.config)
 	tx.AISkill = NewAISkillClient(tx.config)
+	tx.AISkillInstall = NewAISkillInstallClient(tx.config)
 	tx.AISkillLike = NewAISkillLikeClient(tx.config)
 	tx.AISkillReview = NewAISkillReviewClient(tx.config)
 	tx.AISkillRun = NewAISkillRunClient(tx.config)

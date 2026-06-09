@@ -22,6 +22,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aisession"
 	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillinstall"
 	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
@@ -130,6 +131,7 @@ func checkColumn(t, c string) error {
 			aisession.Table:                     aisession.ValidColumn,
 			aisessionmessage.Table:              aisessionmessage.ValidColumn,
 			aiskill.Table:                       aiskill.ValidColumn,
+			aiskillinstall.Table:                aiskillinstall.ValidColumn,
 			aiskilllike.Table:                   aiskilllike.ValidColumn,
 			aiskillreview.Table:                 aiskillreview.ValidColumn,
 			aiskillrun.Table:                    aiskillrun.ValidColumn,

@@ -105,6 +105,18 @@ func (f AISkillFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, err
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AISkillMutation", m)
 }
 
+// The AISkillInstallFunc type is an adapter to allow the use of ordinary
+// function as AISkillInstall mutator.
+type AISkillInstallFunc func(context.Context, *ent.AISkillInstallMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AISkillInstallFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AISkillInstallMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AISkillInstallMutation", m)
+}
+
 // The AISkillLikeFunc type is an adapter to allow the use of ordinary
 // function as AISkillLike mutator.
 type AISkillLikeFunc func(context.Context, *ent.AISkillLikeMutation) (ent.Value, error)

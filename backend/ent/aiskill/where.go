@@ -1620,6 +1620,29 @@ func HasLikesWith(preds ...predicate.AISkillLike) predicate.AISkill {
 	})
 }
 
+// HasInstalls applies the HasEdge predicate on the "installs" edge.
+func HasInstalls() predicate.AISkill {
+	return predicate.AISkill(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, InstallsTable, InstallsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasInstallsWith applies the HasEdge predicate on the "installs" edge with a given conditions (other predicates).
+func HasInstallsWith(preds ...predicate.AISkillInstall) predicate.AISkill {
+	return predicate.AISkill(func(s *sql.Selector) {
+		step := newInstallsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasSettlements applies the HasEdge predicate on the "settlements" edge.
 func HasSettlements() predicate.AISkill {
 	return predicate.AISkill(func(s *sql.Selector) {

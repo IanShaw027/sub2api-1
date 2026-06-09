@@ -18,6 +18,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aisession"
 	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillinstall"
 	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
@@ -331,6 +332,33 @@ func (f TraverseAISkill) Traverse(ctx context.Context, q ent.Query) error {
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.AISkillQuery", q)
+}
+
+// The AISkillInstallFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AISkillInstallFunc func(context.Context, *ent.AISkillInstallQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AISkillInstallFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AISkillInstallQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AISkillInstallQuery", q)
+}
+
+// The TraverseAISkillInstall type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAISkillInstall func(context.Context, *ent.AISkillInstallQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAISkillInstall) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAISkillInstall) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AISkillInstallQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AISkillInstallQuery", q)
 }
 
 // The AISkillLikeFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1486,6 +1514,8 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.AISessionMessageQuery, predicate.AISessionMessage, aisessionmessage.OrderOption]{typ: ent.TypeAISessionMessage, tq: q}, nil
 	case *ent.AISkillQuery:
 		return &query[*ent.AISkillQuery, predicate.AISkill, aiskill.OrderOption]{typ: ent.TypeAISkill, tq: q}, nil
+	case *ent.AISkillInstallQuery:
+		return &query[*ent.AISkillInstallQuery, predicate.AISkillInstall, aiskillinstall.OrderOption]{typ: ent.TypeAISkillInstall, tq: q}, nil
 	case *ent.AISkillLikeQuery:
 		return &query[*ent.AISkillLikeQuery, predicate.AISkillLike, aiskilllike.OrderOption]{typ: ent.TypeAISkillLike, tq: q}, nil
 	case *ent.AISkillReviewQuery:

@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillinstall"
 	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
@@ -558,6 +559,21 @@ func (_u *UserUpdate) AddAiSkillSettlementsBought(v ...*AISkillSettlement) *User
 	return _u.AddAiSkillSettlementsBoughtIDs(ids...)
 }
 
+// AddAiSkillInstallIDs adds the "ai_skill_installs" edge to the AISkillInstall entity by IDs.
+func (_u *UserUpdate) AddAiSkillInstallIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddAiSkillInstallIDs(ids...)
+	return _u
+}
+
+// AddAiSkillInstalls adds the "ai_skill_installs" edges to the AISkillInstall entity.
+func (_u *UserUpdate) AddAiSkillInstalls(v ...*AISkillInstall) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddAiSkillInstallIDs(ids...)
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_u *UserUpdate) AddAPIKeyIDs(ids ...int64) *UserUpdate {
 	_u.mutation.AddAPIKeyIDs(ids...)
@@ -924,6 +940,27 @@ func (_u *UserUpdate) RemoveAiSkillSettlementsBought(v ...*AISkillSettlement) *U
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveAiSkillSettlementsBoughtIDs(ids...)
+}
+
+// ClearAiSkillInstalls clears all "ai_skill_installs" edges to the AISkillInstall entity.
+func (_u *UserUpdate) ClearAiSkillInstalls() *UserUpdate {
+	_u.mutation.ClearAiSkillInstalls()
+	return _u
+}
+
+// RemoveAiSkillInstallIDs removes the "ai_skill_installs" edge to AISkillInstall entities by IDs.
+func (_u *UserUpdate) RemoveAiSkillInstallIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveAiSkillInstallIDs(ids...)
+	return _u
+}
+
+// RemoveAiSkillInstalls removes "ai_skill_installs" edges to AISkillInstall entities.
+func (_u *UserUpdate) RemoveAiSkillInstalls(v ...*AISkillInstall) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveAiSkillInstallIDs(ids...)
 }
 
 // ClearAPIKeys clears all "api_keys" edges to the APIKey entity.
@@ -1746,6 +1783,51 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(aiskillsettlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.AiSkillInstallsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillInstallsTable,
+			Columns: []string{user.AiSkillInstallsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillinstall.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedAiSkillInstallsIDs(); len(nodes) > 0 && !_u.mutation.AiSkillInstallsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillInstallsTable,
+			Columns: []string{user.AiSkillInstallsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillinstall.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.AiSkillInstallsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillInstallsTable,
+			Columns: []string{user.AiSkillInstallsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillinstall.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -2882,6 +2964,21 @@ func (_u *UserUpdateOne) AddAiSkillSettlementsBought(v ...*AISkillSettlement) *U
 	return _u.AddAiSkillSettlementsBoughtIDs(ids...)
 }
 
+// AddAiSkillInstallIDs adds the "ai_skill_installs" edge to the AISkillInstall entity by IDs.
+func (_u *UserUpdateOne) AddAiSkillInstallIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddAiSkillInstallIDs(ids...)
+	return _u
+}
+
+// AddAiSkillInstalls adds the "ai_skill_installs" edges to the AISkillInstall entity.
+func (_u *UserUpdateOne) AddAiSkillInstalls(v ...*AISkillInstall) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddAiSkillInstallIDs(ids...)
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_u *UserUpdateOne) AddAPIKeyIDs(ids ...int64) *UserUpdateOne {
 	_u.mutation.AddAPIKeyIDs(ids...)
@@ -3248,6 +3345,27 @@ func (_u *UserUpdateOne) RemoveAiSkillSettlementsBought(v ...*AISkillSettlement)
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveAiSkillSettlementsBoughtIDs(ids...)
+}
+
+// ClearAiSkillInstalls clears all "ai_skill_installs" edges to the AISkillInstall entity.
+func (_u *UserUpdateOne) ClearAiSkillInstalls() *UserUpdateOne {
+	_u.mutation.ClearAiSkillInstalls()
+	return _u
+}
+
+// RemoveAiSkillInstallIDs removes the "ai_skill_installs" edge to AISkillInstall entities by IDs.
+func (_u *UserUpdateOne) RemoveAiSkillInstallIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveAiSkillInstallIDs(ids...)
+	return _u
+}
+
+// RemoveAiSkillInstalls removes "ai_skill_installs" edges to AISkillInstall entities.
+func (_u *UserUpdateOne) RemoveAiSkillInstalls(v ...*AISkillInstall) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveAiSkillInstallIDs(ids...)
 }
 
 // ClearAPIKeys clears all "api_keys" edges to the APIKey entity.
@@ -4100,6 +4218,51 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(aiskillsettlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.AiSkillInstallsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillInstallsTable,
+			Columns: []string{user.AiSkillInstallsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillinstall.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedAiSkillInstallsIDs(); len(nodes) > 0 && !_u.mutation.AiSkillInstallsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillInstallsTable,
+			Columns: []string{user.AiSkillInstallsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillinstall.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.AiSkillInstallsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillInstallsTable,
+			Columns: []string{user.AiSkillInstallsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillinstall.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

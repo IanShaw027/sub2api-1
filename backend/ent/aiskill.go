@@ -91,11 +91,13 @@ type AISkillEdges struct {
 	Reviews []*AISkillReview `json:"reviews,omitempty"`
 	// Likes holds the value of the likes edge.
 	Likes []*AISkillLike `json:"likes,omitempty"`
+	// Installs holds the value of the installs edge.
+	Installs []*AISkillInstall `json:"installs,omitempty"`
 	// Settlements holds the value of the settlements edge.
 	Settlements []*AISkillSettlement `json:"settlements,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [6]bool
+	loadedTypes [7]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -145,10 +147,19 @@ func (e AISkillEdges) LikesOrErr() ([]*AISkillLike, error) {
 	return nil, &NotLoadedError{edge: "likes"}
 }
 
+// InstallsOrErr returns the Installs value or an error if the edge
+// was not loaded in eager-loading.
+func (e AISkillEdges) InstallsOrErr() ([]*AISkillInstall, error) {
+	if e.loadedTypes[5] {
+		return e.Installs, nil
+	}
+	return nil, &NotLoadedError{edge: "installs"}
+}
+
 // SettlementsOrErr returns the Settlements value or an error if the edge
 // was not loaded in eager-loading.
 func (e AISkillEdges) SettlementsOrErr() ([]*AISkillSettlement, error) {
-	if e.loadedTypes[5] {
+	if e.loadedTypes[6] {
 		return e.Settlements, nil
 	}
 	return nil, &NotLoadedError{edge: "settlements"}
@@ -404,6 +415,11 @@ func (_m *AISkill) QueryReviews() *AISkillReviewQuery {
 // QueryLikes queries the "likes" edge of the AISkill entity.
 func (_m *AISkill) QueryLikes() *AISkillLikeQuery {
 	return NewAISkillClient(_m.config).QueryLikes(_m)
+}
+
+// QueryInstalls queries the "installs" edge of the AISkill entity.
+func (_m *AISkill) QueryInstalls() *AISkillInstallQuery {
+	return NewAISkillClient(_m.config).QueryInstalls(_m)
 }
 
 // QuerySettlements queries the "settlements" edge of the AISkill entity.

@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillinstall"
 	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
@@ -602,6 +603,21 @@ func (_u *AISkillUpdate) AddLikes(v ...*AISkillLike) *AISkillUpdate {
 	return _u.AddLikeIDs(ids...)
 }
 
+// AddInstallIDs adds the "installs" edge to the AISkillInstall entity by IDs.
+func (_u *AISkillUpdate) AddInstallIDs(ids ...int64) *AISkillUpdate {
+	_u.mutation.AddInstallIDs(ids...)
+	return _u
+}
+
+// AddInstalls adds the "installs" edges to the AISkillInstall entity.
+func (_u *AISkillUpdate) AddInstalls(v ...*AISkillInstall) *AISkillUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddInstallIDs(ids...)
+}
+
 // AddSettlementIDs adds the "settlements" edge to the AISkillSettlement entity by IDs.
 func (_u *AISkillUpdate) AddSettlementIDs(ids ...int64) *AISkillUpdate {
 	_u.mutation.AddSettlementIDs(ids...)
@@ -710,6 +726,27 @@ func (_u *AISkillUpdate) RemoveLikes(v ...*AISkillLike) *AISkillUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveLikeIDs(ids...)
+}
+
+// ClearInstalls clears all "installs" edges to the AISkillInstall entity.
+func (_u *AISkillUpdate) ClearInstalls() *AISkillUpdate {
+	_u.mutation.ClearInstalls()
+	return _u
+}
+
+// RemoveInstallIDs removes the "installs" edge to AISkillInstall entities by IDs.
+func (_u *AISkillUpdate) RemoveInstallIDs(ids ...int64) *AISkillUpdate {
+	_u.mutation.RemoveInstallIDs(ids...)
+	return _u
+}
+
+// RemoveInstalls removes "installs" edges to AISkillInstall entities.
+func (_u *AISkillUpdate) RemoveInstalls(v ...*AISkillInstall) *AISkillUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveInstallIDs(ids...)
 }
 
 // ClearSettlements clears all "settlements" edges to the AISkillSettlement entity.
@@ -1184,6 +1221,51 @@ func (_u *AISkillUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(aiskilllike.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.InstallsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   aiskill.InstallsTable,
+			Columns: []string{aiskill.InstallsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillinstall.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedInstallsIDs(); len(nodes) > 0 && !_u.mutation.InstallsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   aiskill.InstallsTable,
+			Columns: []string{aiskill.InstallsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillinstall.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.InstallsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   aiskill.InstallsTable,
+			Columns: []string{aiskill.InstallsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillinstall.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -1823,6 +1905,21 @@ func (_u *AISkillUpdateOne) AddLikes(v ...*AISkillLike) *AISkillUpdateOne {
 	return _u.AddLikeIDs(ids...)
 }
 
+// AddInstallIDs adds the "installs" edge to the AISkillInstall entity by IDs.
+func (_u *AISkillUpdateOne) AddInstallIDs(ids ...int64) *AISkillUpdateOne {
+	_u.mutation.AddInstallIDs(ids...)
+	return _u
+}
+
+// AddInstalls adds the "installs" edges to the AISkillInstall entity.
+func (_u *AISkillUpdateOne) AddInstalls(v ...*AISkillInstall) *AISkillUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddInstallIDs(ids...)
+}
+
 // AddSettlementIDs adds the "settlements" edge to the AISkillSettlement entity by IDs.
 func (_u *AISkillUpdateOne) AddSettlementIDs(ids ...int64) *AISkillUpdateOne {
 	_u.mutation.AddSettlementIDs(ids...)
@@ -1931,6 +2028,27 @@ func (_u *AISkillUpdateOne) RemoveLikes(v ...*AISkillLike) *AISkillUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveLikeIDs(ids...)
+}
+
+// ClearInstalls clears all "installs" edges to the AISkillInstall entity.
+func (_u *AISkillUpdateOne) ClearInstalls() *AISkillUpdateOne {
+	_u.mutation.ClearInstalls()
+	return _u
+}
+
+// RemoveInstallIDs removes the "installs" edge to AISkillInstall entities by IDs.
+func (_u *AISkillUpdateOne) RemoveInstallIDs(ids ...int64) *AISkillUpdateOne {
+	_u.mutation.RemoveInstallIDs(ids...)
+	return _u
+}
+
+// RemoveInstalls removes "installs" edges to AISkillInstall entities.
+func (_u *AISkillUpdateOne) RemoveInstalls(v ...*AISkillInstall) *AISkillUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveInstallIDs(ids...)
 }
 
 // ClearSettlements clears all "settlements" edges to the AISkillSettlement entity.
@@ -2435,6 +2553,51 @@ func (_u *AISkillUpdateOne) sqlSave(ctx context.Context) (_node *AISkill, err er
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(aiskilllike.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.InstallsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   aiskill.InstallsTable,
+			Columns: []string{aiskill.InstallsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillinstall.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedInstallsIDs(); len(nodes) > 0 && !_u.mutation.InstallsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   aiskill.InstallsTable,
+			Columns: []string{aiskill.InstallsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillinstall.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.InstallsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   aiskill.InstallsTable,
+			Columns: []string{aiskill.InstallsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillinstall.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

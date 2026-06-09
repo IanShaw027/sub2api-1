@@ -14,6 +14,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillinstall"
 	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
@@ -51,6 +52,7 @@ type UserQuery struct {
 	withAiSkillReviewsReviewed   *AISkillReviewQuery
 	withAiSkillSettlementsOwned  *AISkillSettlementQuery
 	withAiSkillSettlementsBought *AISkillSettlementQuery
+	withAiSkillInstalls          *AISkillInstallQuery
 	withAPIKeys                  *APIKeyQuery
 	withRedeemCodes              *RedeemCodeQuery
 	withSubscriptions            *UserSubscriptionQuery
@@ -271,6 +273,28 @@ func (_q *UserQuery) QueryAiSkillSettlementsBought() *AISkillSettlementQuery {
 			sqlgraph.From(user.Table, user.FieldID, selector),
 			sqlgraph.To(aiskillsettlement.Table, aiskillsettlement.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.AiSkillSettlementsBoughtTable, user.AiSkillSettlementsBoughtColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAiSkillInstalls chains the current query on the "ai_skill_installs" edge.
+func (_q *UserQuery) QueryAiSkillInstalls() *AISkillInstallQuery {
+	query := (&AISkillInstallClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(aiskillinstall.Table, aiskillinstall.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AiSkillInstallsTable, user.AiSkillInstallsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -786,6 +810,7 @@ func (_q *UserQuery) Clone() *UserQuery {
 		withAiSkillReviewsReviewed:   _q.withAiSkillReviewsReviewed.Clone(),
 		withAiSkillSettlementsOwned:  _q.withAiSkillSettlementsOwned.Clone(),
 		withAiSkillSettlementsBought: _q.withAiSkillSettlementsBought.Clone(),
+		withAiSkillInstalls:          _q.withAiSkillInstalls.Clone(),
 		withAPIKeys:                  _q.withAPIKeys.Clone(),
 		withRedeemCodes:              _q.withRedeemCodes.Clone(),
 		withSubscriptions:            _q.withSubscriptions.Clone(),
@@ -891,6 +916,17 @@ func (_q *UserQuery) WithAiSkillSettlementsBought(opts ...func(*AISkillSettlemen
 		opt(query)
 	}
 	_q.withAiSkillSettlementsBought = query
+	return _q
+}
+
+// WithAiSkillInstalls tells the query-builder to eager-load the nodes that are connected to
+// the "ai_skill_installs" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithAiSkillInstalls(opts ...func(*AISkillInstallQuery)) *UserQuery {
+	query := (&AISkillInstallClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withAiSkillInstalls = query
 	return _q
 }
 
@@ -1126,7 +1162,7 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [22]bool{
+		loadedTypes = [23]bool{
 			_q.withAiSkills != nil,
 			_q.withAiSkillVersions != nil,
 			_q.withAiSkillRuns != nil,
@@ -1135,6 +1171,7 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			_q.withAiSkillReviewsReviewed != nil,
 			_q.withAiSkillSettlementsOwned != nil,
 			_q.withAiSkillSettlementsBought != nil,
+			_q.withAiSkillInstalls != nil,
 			_q.withAPIKeys != nil,
 			_q.withRedeemCodes != nil,
 			_q.withSubscriptions != nil,
@@ -1233,6 +1270,13 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			func(n *User, e *AISkillSettlement) {
 				n.Edges.AiSkillSettlementsBought = append(n.Edges.AiSkillSettlementsBought, e)
 			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withAiSkillInstalls; query != nil {
+		if err := _q.loadAiSkillInstalls(ctx, query, nodes,
+			func(n *User) { n.Edges.AiSkillInstalls = []*AISkillInstall{} },
+			func(n *User, e *AISkillInstall) { n.Edges.AiSkillInstalls = append(n.Edges.AiSkillInstalls, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -1579,6 +1623,36 @@ func (_q *UserQuery) loadAiSkillSettlementsBought(ctx context.Context, query *AI
 		node, ok := nodeids[fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "buyer_user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadAiSkillInstalls(ctx context.Context, query *AISkillInstallQuery, nodes []*User, init func(*User), assign func(*User, *AISkillInstall)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(aiskillinstall.FieldUserID)
+	}
+	query.Where(predicate.AISkillInstall(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.AiSkillInstallsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
 		}
 		assign(node, n)
 	}

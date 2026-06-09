@@ -30,6 +30,9 @@ type AISessionMessage func(*sql.Selector)
 // AISkill is the predicate function for aiskill builders.
 type AISkill func(*sql.Selector)
 
+// AISkillInstall is the predicate function for aiskillinstall builders.
+type AISkillInstall func(*sql.Selector)
+
 // AISkillLike is the predicate function for aiskilllike builders.
 type AISkillLike func(*sql.Selector)
 

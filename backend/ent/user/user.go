@@ -79,6 +79,8 @@ const (
 	EdgeAiSkillSettlementsOwned = "ai_skill_settlements_owned"
 	// EdgeAiSkillSettlementsBought holds the string denoting the ai_skill_settlements_bought edge name in mutations.
 	EdgeAiSkillSettlementsBought = "ai_skill_settlements_bought"
+	// EdgeAiSkillInstalls holds the string denoting the ai_skill_installs edge name in mutations.
+	EdgeAiSkillInstalls = "ai_skill_installs"
 	// EdgeAPIKeys holds the string denoting the api_keys edge name in mutations.
 	EdgeAPIKeys = "api_keys"
 	// EdgeRedeemCodes holds the string denoting the redeem_codes edge name in mutations.
@@ -165,6 +167,13 @@ const (
 	AiSkillSettlementsBoughtInverseTable = "ai_skill_settlements"
 	// AiSkillSettlementsBoughtColumn is the table column denoting the ai_skill_settlements_bought relation/edge.
 	AiSkillSettlementsBoughtColumn = "buyer_user_id"
+	// AiSkillInstallsTable is the table that holds the ai_skill_installs relation/edge.
+	AiSkillInstallsTable = "ai_skill_installs"
+	// AiSkillInstallsInverseTable is the table name for the AISkillInstall entity.
+	// It exists in this package in order to avoid circular dependency with the "aiskillinstall" package.
+	AiSkillInstallsInverseTable = "ai_skill_installs"
+	// AiSkillInstallsColumn is the table column denoting the ai_skill_installs relation/edge.
+	AiSkillInstallsColumn = "user_id"
 	// APIKeysTable is the table that holds the api_keys relation/edge.
 	APIKeysTable = "api_keys"
 	// APIKeysInverseTable is the table name for the APIKey entity.
@@ -604,6 +613,20 @@ func ByAiSkillSettlementsBought(term sql.OrderTerm, terms ...sql.OrderTerm) Orde
 	}
 }
 
+// ByAiSkillInstallsCount orders the results by ai_skill_installs count.
+func ByAiSkillInstallsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAiSkillInstallsStep(), opts...)
+	}
+}
+
+// ByAiSkillInstalls orders the results by ai_skill_installs terms.
+func ByAiSkillInstalls(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAiSkillInstallsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByAPIKeysCount orders the results by api_keys count.
 func ByAPIKeysCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -853,6 +876,13 @@ func newAiSkillSettlementsBoughtStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AiSkillSettlementsBoughtInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, AiSkillSettlementsBoughtTable, AiSkillSettlementsBoughtColumn),
+	)
+}
+func newAiSkillInstallsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AiSkillInstallsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AiSkillInstallsTable, AiSkillInstallsColumn),
 	)
 }
 func newAPIKeysStep() *sqlgraph.Step {
