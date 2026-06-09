@@ -230,7 +230,8 @@ func (h *AIHandler) ListAssets(c *gin.Context) {
 		SessionID:        parseOptionalAIID(c.Query("session_id")),
 		PromptTemplateID: parseOptionalAIID(c.Query("prompt_template_id")),
 	}
-	items, result, err := h.aiService.AdminListAssets(c.Request.Context(), subject.UserID, params, filter)
+	ctx := contextWithRequestBaseURL(c.Request.Context(), c)
+	items, result, err := h.aiService.AdminListAssets(ctx, subject.UserID, params, filter)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -247,7 +248,8 @@ func (h *AIHandler) GetAsset(c *gin.Context) {
 		response.BadRequest(c, "Invalid asset ID")
 		return
 	}
-	asset, err := h.aiService.AdminGetAsset(c.Request.Context(), assetID)
+	ctx := contextWithRequestBaseURL(c.Request.Context(), c)
+	asset, err := h.aiService.AdminGetAsset(ctx, assetID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -409,7 +411,8 @@ func (h *AIHandler) ListArtworks(c *gin.Context) {
 		Featured:         parseOptionalBool(c.Query("featured")),
 		Search:           strings.TrimSpace(c.Query("search")),
 	}
-	items, result, err := h.aiService.AdminListAssets(c.Request.Context(), subject.UserID, adminAIPagination(c), filter)
+	ctx := contextWithRequestBaseURL(c.Request.Context(), c)
+	items, result, err := h.aiService.AdminListAssets(ctx, subject.UserID, adminAIPagination(c), filter)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

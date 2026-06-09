@@ -780,6 +780,7 @@ func (h *AIHandler) Chat(c *gin.Context) {
 		return
 	}
 	executeUserIdempotentJSON(c, "ai:chat", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		ctx = contextWithRequestBaseURL(ctx, c)
 		return h.chatViaGateway(ctx, subject.UserID, &req)
 	})
 }
@@ -815,7 +816,8 @@ func (h *AIHandler) ListGallery(c *gin.Context) {
 		GroupID:          parseOptionalUserAIID(c.Query("group_id")),
 		Search:           strings.TrimSpace(c.Query("search")),
 	}
-	items, result, err := h.aiService.ListGallery(c.Request.Context(), subject.UserID, userAIPagination(c), filter)
+	ctx := contextWithRequestBaseURL(c.Request.Context(), c)
+	items, result, err := h.aiService.ListGallery(ctx, subject.UserID, userAIPagination(c), filter)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -839,7 +841,8 @@ func (h *AIHandler) GetAsset(c *gin.Context) {
 		response.BadRequest(c, "Invalid asset ID")
 		return
 	}
-	item, err := h.aiService.GetAsset(c.Request.Context(), subject.UserID, assetID)
+	ctx := contextWithRequestBaseURL(c.Request.Context(), c)
+	item, err := h.aiService.GetAsset(ctx, subject.UserID, assetID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -959,6 +962,7 @@ func (h *AIHandler) submitArtwork(c *gin.Context, userID int64, req legacyCreate
 		action = "edit"
 	}
 	executeUserIdempotentJSON(c, "ai:artworks:"+action, req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		ctx = contextWithRequestBaseURL(ctx, c)
 		if edit {
 			return h.editArtworkViaGateway(ctx, userID, &req)
 		}

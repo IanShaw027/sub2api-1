@@ -432,12 +432,35 @@ func (s *MediaService) buildSignedDownloadURL(ctx context.Context, asset *MediaA
 	if thumbnail {
 		pathSuffix = "/thumbnail"
 	}
-	base := strings.TrimRight(strings.TrimSpace(storageCfg.PublicBaseURL), "/")
+	base := s.signedDownloadBaseURL(ctx, storageCfg)
 	downloadURL := fmt.Sprintf("%s/api/v1/media/download/%d%s?expires=%d&sig=%s", base, asset.ID, pathSuffix, expiresAtUnix, url.QueryEscape(s.downloadSignature(asset.ID, expiresAtUnix, thumbnail)))
 	return &MediaDownloadURL{
 		URL:       downloadURL,
 		ExpiresAt: expiresAt,
 	}, nil
+}
+
+// signedDownloadBaseURL resolves the base URL used to build backend-proxied
+// signed download links. Signed downloads are served by the backend itself
+// (streamed via the API), so the base must point at the backend host, NOT the
+// object storage / CDN domain configured in PublicBaseURL.
+//
+// Resolution order:
+//  1. The inbound request's own scheme://host (injected by handlers), so links
+//     point back at whatever host the caller actually reached.
+//  2. The system setting api_base_url, for contexts without an inbound request
+//     (e.g. async invoice email sending).
+//  3. PublicBaseURL as a last resort to preserve prior behaviour.
+func (s *MediaService) signedDownloadBaseURL(ctx context.Context, storageCfg MediaStorageRuntimeConfig) string {
+	if base := requestBaseURLFromContext(ctx); base != "" {
+		return base
+	}
+	if s != nil && s.configProvider != nil {
+		if base := strings.TrimRight(strings.TrimSpace(s.configProvider.APIBaseURL(ctx)), "/"); base != "" {
+			return base
+		}
+	}
+	return strings.TrimRight(strings.TrimSpace(storageCfg.PublicBaseURL), "/")
 }
 
 func (s *MediaService) deleteAsset(ctx context.Context, asset *MediaAsset) error {

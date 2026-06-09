@@ -595,7 +595,7 @@ func (h *PaymentHandler) GetInvoiceDownloadURL(c *gin.Context) {
 		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
 		return
 	}
-	url, err := h.invoiceService.CreateDownloadURLForUser(c.Request.Context(), invoiceID, subject.UserID)
+	url, err := h.invoiceService.CreateDownloadURLForUser(service.WithRequestBaseURL(c.Request.Context(), requestBaseURL(c)), invoiceID, subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

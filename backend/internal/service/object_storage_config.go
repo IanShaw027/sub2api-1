@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -139,6 +140,34 @@ func (p *MediaStorageConfigProvider) BackupConfig(ctx context.Context) (*BackupS
 		return nil, err
 	}
 	return resolveBackupS3Config(settings), nil
+}
+
+// APIBaseURL returns the configured API endpoint base URL (system setting
+// api_base_url), used to build absolute backend URLs when no inbound request
+// context is available. Returns an empty string when unset or unavailable.
+func (p *MediaStorageConfigProvider) APIBaseURL(ctx context.Context) string {
+	if p == nil || p.settingRepo == nil {
+		return ""
+	}
+	raw, err := p.settingRepo.GetValue(ctx, SettingKeyAPIBaseURL)
+	if err != nil {
+		return ""
+	}
+	return absoluteHTTPOrigin(raw)
+}
+
+func absoluteHTTPOrigin(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed == nil {
+		return ""
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ""
+	}
+	if strings.TrimSpace(parsed.Host) == "" {
+		return ""
+	}
+	return (&url.URL{Scheme: parsed.Scheme, Host: parsed.Host}).String()
 }
 
 func (p *MediaStorageConfigProvider) Invalidate() {

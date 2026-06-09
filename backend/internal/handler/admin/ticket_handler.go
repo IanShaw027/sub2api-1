@@ -123,8 +123,9 @@ func (h *TicketHandler) ListMessages(c *gin.Context) {
 		return
 	}
 	out := make([]dto.SupportTicketMessage, 0, len(items))
+	ctx := service.WithRequestBaseURL(c.Request.Context(), requestBaseURL(c))
 	for i := range items {
-		h.hydrateMessageAttachmentsForAdmin(c.Request.Context(), &items[i])
+		h.hydrateMessageAttachmentsForAdmin(ctx, &items[i])
 		out = append(out, *dto.SupportTicketMessageFromService(&items[i]))
 	}
 	response.Success(c, out)

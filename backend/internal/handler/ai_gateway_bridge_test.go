@@ -189,6 +189,8 @@ func ptrString(v string) *string {
 
 type aiGatewayBridgeRepoStub struct {
 	job            *service.AIGenerationJob
+	asset          *service.AIAsset
+	assets         []service.AIAsset
 	updateErrs     []error
 	updateStatuses []string
 }
@@ -291,16 +293,49 @@ func (s *aiGatewayBridgeRepoStub) UpdateAsset(context.Context, *service.AIAsset)
 	return nil
 }
 
-func (s *aiGatewayBridgeRepoStub) GetAssetByID(context.Context, int64) (*service.AIAsset, error) {
-	return nil, errors.New("not implemented")
+func (s *aiGatewayBridgeRepoStub) GetAssetByID(_ context.Context, id int64) (*service.AIAsset, error) {
+	if s.asset != nil && s.asset.ID == id {
+		cloned := *s.asset
+		cloned.Metadata = cloneAIMap(s.asset.Metadata)
+		return &cloned, nil
+	}
+	for i := range s.assets {
+		if s.assets[i].ID == id {
+			cloned := s.assets[i]
+			cloned.Metadata = cloneAIMap(s.assets[i].Metadata)
+			return &cloned, nil
+		}
+	}
+	return nil, errors.New("asset not found")
 }
 
-func (s *aiGatewayBridgeRepoStub) GetAssetByUserAndID(context.Context, int64, int64) (*service.AIAsset, error) {
-	return nil, errors.New("not implemented")
+func (s *aiGatewayBridgeRepoStub) GetAssetByUserAndID(_ context.Context, userID, id int64) (*service.AIAsset, error) {
+	if s.asset != nil && s.asset.ID == id && s.asset.UserID == userID {
+		cloned := *s.asset
+		cloned.Metadata = cloneAIMap(s.asset.Metadata)
+		return &cloned, nil
+	}
+	for i := range s.assets {
+		if s.assets[i].ID == id && s.assets[i].UserID == userID {
+			cloned := s.assets[i]
+			cloned.Metadata = cloneAIMap(s.assets[i].Metadata)
+			return &cloned, nil
+		}
+	}
+	return nil, errors.New("asset not found")
 }
 
-func (s *aiGatewayBridgeRepoStub) ListAssets(context.Context, int64, bool, pagination.PaginationParams, service.AIListAssetsFilter) ([]service.AIAsset, *pagination.PaginationResult, error) {
-	return nil, nil, errors.New("not implemented")
+func (s *aiGatewayBridgeRepoStub) ListAssets(_ context.Context, userID int64, isAdmin bool, _ pagination.PaginationParams, _ service.AIListAssetsFilter) ([]service.AIAsset, *pagination.PaginationResult, error) {
+	items := make([]service.AIAsset, 0, len(s.assets))
+	for i := range s.assets {
+		if !isAdmin && s.assets[i].UserID != userID {
+			continue
+		}
+		cloned := s.assets[i]
+		cloned.Metadata = cloneAIMap(s.assets[i].Metadata)
+		items = append(items, cloned)
+	}
+	return items, &pagination.PaginationResult{Total: int64(len(items)), Page: 1, PageSize: len(items)}, nil
 }
 
 func (s *aiGatewayBridgeRepoStub) CreateAuditLog(context.Context, *service.AIAuditLog) error {

@@ -38,13 +38,17 @@ type mediaURLTestRepo struct {
 }
 
 type mediaObjectSettingsRepo struct {
-	value string
+	value  string
+	values map[string]string
 }
 
 func (r mediaObjectSettingsRepo) Get(context.Context, string) (*Setting, error) {
 	return nil, ErrSettingNotFound
 }
 func (r mediaObjectSettingsRepo) GetValue(_ context.Context, key string) (string, error) {
+	if value, ok := r.values[key]; ok && strings.TrimSpace(value) != "" {
+		return value, nil
+	}
 	if key != settingKeyObjectStorageConfig || strings.TrimSpace(r.value) == "" {
 		return "", ErrSettingNotFound
 	}
@@ -365,6 +369,64 @@ func TestBuildSignedDownloadURL_UsesMediaPublicBaseURLInsteadOfFrontendURLPath(t
 	}
 	if strings.Contains(result.URL, "/console/api/v1/media/download/") {
 		t.Fatalf("download url should not be rooted at frontend path: %q", result.URL)
+	}
+}
+
+func TestBuildSignedDownloadURL_PrefersRequestBaseURLWhenPresent(t *testing.T) {
+	cfg := newMediaIngestTestConfig()
+	svc := NewMediaService(mediaIngestTestRepo{}, &mediaIngestTestStore{}, cfg)
+
+	asset := &MediaAsset{
+		ID:        42,
+		Bucket:    cfg.Media.Bucket,
+		Status:    MediaStatusActive,
+		ObjectKey: "avatars/u42.png",
+	}
+
+	ctx := WithRequestBaseURL(context.Background(), "https://api.caller.example")
+	result, err := svc.buildSignedDownloadURL(ctx, asset, false)
+	if err != nil {
+		t.Fatalf("buildSignedDownloadURL returned error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected download url result")
+	}
+	if got, wantPrefix := result.URL, "https://api.caller.example/api/v1/media/download/42?"; len(got) < len(wantPrefix) || got[:len(wantPrefix)] != wantPrefix {
+		t.Fatalf("download url = %q, want prefix %q", got, wantPrefix)
+	}
+	if strings.Contains(result.URL, "media.example") {
+		t.Fatalf("download url should use request base, not public base: %q", result.URL)
+	}
+}
+
+func TestBuildSignedDownloadURL_UsesAPIBaseURLOriginWithoutDuplicatingAPIPrefix(t *testing.T) {
+	cfg := newMediaIngestTestConfig()
+	svc := NewMediaService(mediaIngestTestRepo{}, &mediaIngestTestStore{}, cfg)
+	svc.SetStorageConfigProvider(NewMediaStorageConfigProvider(mediaObjectSettingsRepo{
+		values: map[string]string{
+			SettingKeyAPIBaseURL: "https://api.example.com/api/v1",
+		},
+	}, nil, cfg))
+
+	asset := &MediaAsset{
+		ID:        42,
+		Bucket:    cfg.Media.Bucket,
+		Status:    MediaStatusActive,
+		ObjectKey: "avatars/u42.png",
+	}
+
+	result, err := svc.buildSignedDownloadURL(context.Background(), asset, false)
+	if err != nil {
+		t.Fatalf("buildSignedDownloadURL returned error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected download url result")
+	}
+	if got, wantPrefix := result.URL, "https://api.example.com/api/v1/media/download/42?"; len(got) < len(wantPrefix) || got[:len(wantPrefix)] != wantPrefix {
+		t.Fatalf("download url = %q, want prefix %q", got, wantPrefix)
+	}
+	if strings.Contains(result.URL, "/api/v1/api/v1/") {
+		t.Fatalf("download url should not duplicate api prefix: %q", result.URL)
 	}
 }
 

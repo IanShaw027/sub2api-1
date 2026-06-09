@@ -181,8 +181,8 @@ func TestTicketHandlerListMessagesSignsPrivateAttachmentURLs(t *testing.T) {
 	require.True(t, ok)
 	attachment, ok := attachments[0].(map[string]any)
 	require.True(t, ok)
-	require.Contains(t, attachment["url"], "https://media.example.com/api/v1/media/download/321?")
-	require.Contains(t, attachment["thumbnail_url"], "https://media.example.com/api/v1/media/download/321/thumbnail?")
+	require.Contains(t, attachment["url"], "http://example.com/api/v1/media/download/321?")
+	require.Contains(t, attachment["thumbnail_url"], "http://example.com/api/v1/media/download/321/thumbnail?")
 }
 
 type ticketHandlerRepoStub struct {

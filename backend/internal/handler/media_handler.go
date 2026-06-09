@@ -139,7 +139,7 @@ func (h *MediaHandler) PresignDownload(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	result, err := h.mediaService.CreateDownloadURLForUser(c.Request.Context(), subject.UserID, mediaID)
+	result, err := h.mediaService.CreateDownloadURLForUser(service.WithRequestBaseURL(c.Request.Context(), requestBaseURL(c)), subject.UserID, mediaID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -158,7 +158,7 @@ func (h *MediaHandler) PresignThumbnailDownload(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	result, err := h.mediaService.CreateThumbnailDownloadURLForUser(c.Request.Context(), subject.UserID, mediaID)
+	result, err := h.mediaService.CreateThumbnailDownloadURLForUser(service.WithRequestBaseURL(c.Request.Context(), requestBaseURL(c)), subject.UserID, mediaID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
