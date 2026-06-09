@@ -289,8 +289,8 @@ func ProvideAISkillVersionService(skillRepo AISkillRepository, versionRepo AISki
 	return NewAISkillVersionService(skillRepo, versionRepo, reviewRepo)
 }
 
-func ProvideAISkillReviewService(versionRepo AISkillVersionRepository, reviewRepo AISkillReviewRepository) *AISkillReviewService {
-	return NewAISkillReviewService(versionRepo, reviewRepo)
+func ProvideAISkillReviewService(skillRepo AISkillRepository, versionRepo AISkillVersionRepository, reviewRepo AISkillReviewRepository) *AISkillReviewService {
+	return NewAISkillReviewService(skillRepo, versionRepo, reviewRepo)
 }
 
 func ProvideAISkillSettlementService(repo AISkillSettlementRepository, balanceCharger AISkillBalanceCharger, creatorCreditor AISkillCreatorEarningsCreditor) *AISkillSettlementService {

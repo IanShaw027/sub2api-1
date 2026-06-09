@@ -249,7 +249,7 @@ func TestAISkillVersionSubmitAndApproveWorkflow(t *testing.T) {
 	skillSvc.now = func() time.Time { return now }
 	versionSvc := NewAISkillVersionService(store, store, store)
 	versionSvc.now = func() time.Time { return now.Add(1 * time.Minute) }
-	reviewSvc := NewAISkillReviewService(store, store)
+	reviewSvc := NewAISkillReviewService(store, store, store)
 	reviewSvc.now = func() time.Time { return now.Add(2 * time.Minute) }
 
 	skill, err := skillSvc.CreateSkill(ctx, 101, &AICreateSkillInput{

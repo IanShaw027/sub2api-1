@@ -412,6 +412,7 @@ SET content_format = $2,
     usage_log_id = $11,
     api_key_id = $12,
     group_id = $13,
+    approved_artifact_digest = $14,
     updated_at = NOW()
 WHERE id = $1
   AND deleted_at IS NULL
@@ -429,6 +430,7 @@ RETURNING skill_id, user_id, version, review_status, submitted_at, reviewed_at, 
 		nullableInt64(version.Trace.UsageLogID),
 		nullableInt64(version.Trace.APIKeyID),
 		nullableInt64(version.Trace.GroupID),
+		nullableString(version.ApprovedArtifactDigest),
 	)
 	var (
 		submittedAt sql.NullTime
@@ -597,6 +599,7 @@ func serviceVersionToDomain(version *service.AISkillVersion) *domain.AISkillVers
 		UserID:         version.CreatorUserID,
 		Version:        version.Version,
 		ReviewStatus:   domainReviewStatus(version.Status),
+		ApprovedArtifactDigest: strings.TrimSpace(version.ApprovedArtifactDigest),
 		ContentFormat:  contentFormat,
 		Runtime:        runtime,
 		SourceContent:  sourceContent,
@@ -643,6 +646,7 @@ func domainVersionToService(version *domain.AISkillVersion) *service.AISkillVers
 		Version:        version.Version,
 		Type:           version.ContentFormat,
 		Status:         status,
+		ApprovedArtifactDigest: strings.TrimSpace(version.ApprovedArtifactDigest),
 		ExecutionSpec:  spec,
 		BillingPolicy:  billing,
 		ChangeNote:     version.ChangeNote,

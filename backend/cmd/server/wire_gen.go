@@ -146,7 +146,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	aiSkillServiceRepositoryAdapter := repository.ProvideAISkillServiceRepositoryAdapter(aiSkillRepository, db)
 	aiSkillService := service.ProvideAISkillService(aiSkillServiceRepositoryAdapter)
 	aiSkillVersionService := service.ProvideAISkillVersionService(aiSkillServiceRepositoryAdapter, aiSkillServiceRepositoryAdapter, aiSkillServiceRepositoryAdapter)
-	aiSkillReviewService := service.ProvideAISkillReviewService(aiSkillServiceRepositoryAdapter, aiSkillServiceRepositoryAdapter)
+	aiSkillReviewService := service.ProvideAISkillReviewService(aiSkillServiceRepositoryAdapter, aiSkillServiceRepositoryAdapter, aiSkillServiceRepositoryAdapter)
 	aiSkillBalanceCharger := service.ProvideAISkillBalanceCharger(userRepository, billingCacheService, balanceNotifyService)
 	aiSkillCreatorEarningsCreditor := service.ProvideAISkillCreatorEarningsCreditor(affiliateService)
 	aiSkillSettlementService := service.ProvideAISkillSettlementService(aiSkillServiceRepositoryAdapter, aiSkillBalanceCharger, aiSkillCreatorEarningsCreditor)

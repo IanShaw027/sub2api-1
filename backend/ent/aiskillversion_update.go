@@ -122,6 +122,26 @@ func (_u *AISkillVersionUpdate) SetNillableReviewStatus(v *string) *AISkillVersi
 	return _u
 }
 
+// SetApprovedArtifactDigest sets the "approved_artifact_digest" field.
+func (_u *AISkillVersionUpdate) SetApprovedArtifactDigest(v string) *AISkillVersionUpdate {
+	_u.mutation.SetApprovedArtifactDigest(v)
+	return _u
+}
+
+// SetNillableApprovedArtifactDigest sets the "approved_artifact_digest" field if the given value is not nil.
+func (_u *AISkillVersionUpdate) SetNillableApprovedArtifactDigest(v *string) *AISkillVersionUpdate {
+	if v != nil {
+		_u.SetApprovedArtifactDigest(*v)
+	}
+	return _u
+}
+
+// ClearApprovedArtifactDigest clears the value of the "approved_artifact_digest" field.
+func (_u *AISkillVersionUpdate) ClearApprovedArtifactDigest() *AISkillVersionUpdate {
+	_u.mutation.ClearApprovedArtifactDigest()
+	return _u
+}
+
 // SetContentFormat sets the "content_format" field.
 func (_u *AISkillVersionUpdate) SetContentFormat(v string) *AISkillVersionUpdate {
 	_u.mutation.SetContentFormat(v)
@@ -592,6 +612,11 @@ func (_u *AISkillVersionUpdate) check() error {
 			return &ValidationError{Name: "review_status", err: fmt.Errorf(`ent: validator failed for field "AISkillVersion.review_status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ApprovedArtifactDigest(); ok {
+		if err := aiskillversion.ApprovedArtifactDigestValidator(v); err != nil {
+			return &ValidationError{Name: "approved_artifact_digest", err: fmt.Errorf(`ent: validator failed for field "AISkillVersion.approved_artifact_digest": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.ContentFormat(); ok {
 		if err := aiskillversion.ContentFormatValidator(v); err != nil {
 			return &ValidationError{Name: "content_format", err: fmt.Errorf(`ent: validator failed for field "AISkillVersion.content_format": %w`, err)}
@@ -645,6 +670,12 @@ func (_u *AISkillVersionUpdate) sqlSave(ctx context.Context) (_node int, err err
 	}
 	if value, ok := _u.mutation.ReviewStatus(); ok {
 		_spec.SetField(aiskillversion.FieldReviewStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ApprovedArtifactDigest(); ok {
+		_spec.SetField(aiskillversion.FieldApprovedArtifactDigest, field.TypeString, value)
+	}
+	if _u.mutation.ApprovedArtifactDigestCleared() {
+		_spec.ClearField(aiskillversion.FieldApprovedArtifactDigest, field.TypeString)
 	}
 	if value, ok := _u.mutation.ContentFormat(); ok {
 		_spec.SetField(aiskillversion.FieldContentFormat, field.TypeString, value)
@@ -1038,6 +1069,26 @@ func (_u *AISkillVersionUpdateOne) SetNillableReviewStatus(v *string) *AISkillVe
 	if v != nil {
 		_u.SetReviewStatus(*v)
 	}
+	return _u
+}
+
+// SetApprovedArtifactDigest sets the "approved_artifact_digest" field.
+func (_u *AISkillVersionUpdateOne) SetApprovedArtifactDigest(v string) *AISkillVersionUpdateOne {
+	_u.mutation.SetApprovedArtifactDigest(v)
+	return _u
+}
+
+// SetNillableApprovedArtifactDigest sets the "approved_artifact_digest" field if the given value is not nil.
+func (_u *AISkillVersionUpdateOne) SetNillableApprovedArtifactDigest(v *string) *AISkillVersionUpdateOne {
+	if v != nil {
+		_u.SetApprovedArtifactDigest(*v)
+	}
+	return _u
+}
+
+// ClearApprovedArtifactDigest clears the value of the "approved_artifact_digest" field.
+func (_u *AISkillVersionUpdateOne) ClearApprovedArtifactDigest() *AISkillVersionUpdateOne {
+	_u.mutation.ClearApprovedArtifactDigest()
 	return _u
 }
 
@@ -1524,6 +1575,11 @@ func (_u *AISkillVersionUpdateOne) check() error {
 			return &ValidationError{Name: "review_status", err: fmt.Errorf(`ent: validator failed for field "AISkillVersion.review_status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ApprovedArtifactDigest(); ok {
+		if err := aiskillversion.ApprovedArtifactDigestValidator(v); err != nil {
+			return &ValidationError{Name: "approved_artifact_digest", err: fmt.Errorf(`ent: validator failed for field "AISkillVersion.approved_artifact_digest": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.ContentFormat(); ok {
 		if err := aiskillversion.ContentFormatValidator(v); err != nil {
 			return &ValidationError{Name: "content_format", err: fmt.Errorf(`ent: validator failed for field "AISkillVersion.content_format": %w`, err)}
@@ -1594,6 +1650,12 @@ func (_u *AISkillVersionUpdateOne) sqlSave(ctx context.Context) (_node *AISkillV
 	}
 	if value, ok := _u.mutation.ReviewStatus(); ok {
 		_spec.SetField(aiskillversion.FieldReviewStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ApprovedArtifactDigest(); ok {
+		_spec.SetField(aiskillversion.FieldApprovedArtifactDigest, field.TypeString, value)
+	}
+	if _u.mutation.ApprovedArtifactDigestCleared() {
+		_spec.ClearField(aiskillversion.FieldApprovedArtifactDigest, field.TypeString)
 	}
 	if value, ok := _u.mutation.ContentFormat(); ok {
 		_spec.SetField(aiskillversion.FieldContentFormat, field.TypeString, value)

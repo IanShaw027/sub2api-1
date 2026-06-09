@@ -1114,6 +1114,7 @@ var (
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "version", Type: field.TypeInt},
 		{Name: "review_status", Type: field.TypeString, Size: 32, Default: "draft"},
+		{Name: "approved_artifact_digest", Type: field.TypeString, Nullable: true, Size: 128},
 		{Name: "content_format", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "runtime", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "source_content", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
@@ -1141,13 +1142,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "ai_skill_versions_ai_skills_versions",
-				Columns:    []*schema.Column{AiSkillVersionsColumns[22]},
+				Columns:    []*schema.Column{AiSkillVersionsColumns[23]},
 				RefColumns: []*schema.Column{AiSkillsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "ai_skill_versions_users_ai_skill_versions",
-				Columns:    []*schema.Column{AiSkillVersionsColumns[23]},
+				Columns:    []*schema.Column{AiSkillVersionsColumns[24]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.Cascade,
 			},
@@ -1156,12 +1157,12 @@ var (
 			{
 				Name:    "aiskillversion_skill_id",
 				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[22]},
+				Columns: []*schema.Column{AiSkillVersionsColumns[23]},
 			},
 			{
 				Name:    "aiskillversion_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[23]},
+				Columns: []*schema.Column{AiSkillVersionsColumns[24]},
 			},
 			{
 				Name:    "aiskillversion_review_status",
@@ -1171,42 +1172,42 @@ var (
 			{
 				Name:    "aiskillversion_reviewer_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[15]},
+				Columns: []*schema.Column{AiSkillVersionsColumns[16]},
 			},
 			{
 				Name:    "aiskillversion_submitted_at",
 				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[13]},
+				Columns: []*schema.Column{AiSkillVersionsColumns[14]},
 			},
 			{
 				Name:    "aiskillversion_reviewed_at",
 				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[14]},
+				Columns: []*schema.Column{AiSkillVersionsColumns[15]},
 			},
 			{
 				Name:    "aiskillversion_request_id",
 				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[18]},
+				Columns: []*schema.Column{AiSkillVersionsColumns[19]},
 			},
 			{
 				Name:    "aiskillversion_usage_log_id",
 				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[19]},
+				Columns: []*schema.Column{AiSkillVersionsColumns[20]},
 			},
 			{
 				Name:    "aiskillversion_api_key_id",
 				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[20]},
+				Columns: []*schema.Column{AiSkillVersionsColumns[21]},
 			},
 			{
 				Name:    "aiskillversion_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[21]},
+				Columns: []*schema.Column{AiSkillVersionsColumns[22]},
 			},
 			{
 				Name:    "aiskillversion_skill_id_version",
 				Unique:  true,
-				Columns: []*schema.Column{AiSkillVersionsColumns[22], AiSkillVersionsColumns[4]},
+				Columns: []*schema.Column{AiSkillVersionsColumns[23], AiSkillVersionsColumns[4]},
 			},
 		},
 	}

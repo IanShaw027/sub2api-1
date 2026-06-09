@@ -29,6 +29,8 @@ const (
 	FieldVersion = "version"
 	// FieldReviewStatus holds the string denoting the review_status field in the database.
 	FieldReviewStatus = "review_status"
+	// FieldApprovedArtifactDigest holds the string denoting the approved_artifact_digest field in the database.
+	FieldApprovedArtifactDigest = "approved_artifact_digest"
 	// FieldContentFormat holds the string denoting the content_format field in the database.
 	FieldContentFormat = "content_format"
 	// FieldRuntime holds the string denoting the runtime field in the database.
@@ -120,6 +122,7 @@ var Columns = []string{
 	FieldUserID,
 	FieldVersion,
 	FieldReviewStatus,
+	FieldApprovedArtifactDigest,
 	FieldContentFormat,
 	FieldRuntime,
 	FieldSourceContent,
@@ -166,6 +169,8 @@ var (
 	DefaultReviewStatus string
 	// ReviewStatusValidator is a validator for the "review_status" field. It is called by the builders before save.
 	ReviewStatusValidator func(string) error
+	// ApprovedArtifactDigestValidator is a validator for the "approved_artifact_digest" field. It is called by the builders before save.
+	ApprovedArtifactDigestValidator func(string) error
 	// ContentFormatValidator is a validator for the "content_format" field. It is called by the builders before save.
 	ContentFormatValidator func(string) error
 	// RuntimeValidator is a validator for the "runtime" field. It is called by the builders before save.
@@ -225,6 +230,11 @@ func ByVersion(opts ...sql.OrderTermOption) OrderOption {
 // ByReviewStatus orders the results by the review_status field.
 func ByReviewStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldReviewStatus, opts...).ToFunc()
+}
+
+// ByApprovedArtifactDigest orders the results by the approved_artifact_digest field.
+func ByApprovedArtifactDigest(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldApprovedArtifactDigest, opts...).ToFunc()
 }
 
 // ByContentFormat orders the results by the content_format field.

@@ -34,6 +34,8 @@ type AISkillVersion struct {
 	Version int `json:"version,omitempty"`
 	// ReviewStatus holds the value of the "review_status" field.
 	ReviewStatus string `json:"review_status,omitempty"`
+	// sha256 digest of the script bundle captured at approval time; binds script execution to the reviewed artifact
+	ApprovedArtifactDigest *string `json:"approved_artifact_digest,omitempty"`
 	// ContentFormat holds the value of the "content_format" field.
 	ContentFormat *string `json:"content_format,omitempty"`
 	// Runtime holds the value of the "runtime" field.
@@ -147,7 +149,7 @@ func (*AISkillVersion) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case aiskillversion.FieldID, aiskillversion.FieldSkillID, aiskillversion.FieldUserID, aiskillversion.FieldVersion, aiskillversion.FieldReviewerUserID, aiskillversion.FieldUsageLogID, aiskillversion.FieldAPIKeyID, aiskillversion.FieldGroupID:
 			values[i] = new(sql.NullInt64)
-		case aiskillversion.FieldReviewStatus, aiskillversion.FieldContentFormat, aiskillversion.FieldRuntime, aiskillversion.FieldSourceContent, aiskillversion.FieldChangeNote, aiskillversion.FieldReviewNote, aiskillversion.FieldRequestID:
+		case aiskillversion.FieldReviewStatus, aiskillversion.FieldApprovedArtifactDigest, aiskillversion.FieldContentFormat, aiskillversion.FieldRuntime, aiskillversion.FieldSourceContent, aiskillversion.FieldChangeNote, aiskillversion.FieldReviewNote, aiskillversion.FieldRequestID:
 			values[i] = new(sql.NullString)
 		case aiskillversion.FieldCreatedAt, aiskillversion.FieldUpdatedAt, aiskillversion.FieldDeletedAt, aiskillversion.FieldSubmittedAt, aiskillversion.FieldReviewedAt:
 			values[i] = new(sql.NullTime)
@@ -214,6 +216,13 @@ func (_m *AISkillVersion) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field review_status", values[i])
 			} else if value.Valid {
 				_m.ReviewStatus = value.String
+			}
+		case aiskillversion.FieldApprovedArtifactDigest:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field approved_artifact_digest", values[i])
+			} else if value.Valid {
+				_m.ApprovedArtifactDigest = new(string)
+				*_m.ApprovedArtifactDigest = value.String
 			}
 		case aiskillversion.FieldContentFormat:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -413,6 +422,11 @@ func (_m *AISkillVersion) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("review_status=")
 	builder.WriteString(_m.ReviewStatus)
+	builder.WriteString(", ")
+	if v := _m.ApprovedArtifactDigest; v != nil {
+		builder.WriteString("approved_artifact_digest=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	if v := _m.ContentFormat; v != nil {
 		builder.WriteString("content_format=")

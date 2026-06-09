@@ -6,6 +6,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -275,17 +276,21 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 	runtime.archiveRoot = resolveAISkillArchiveRoot(archiveRoot)
 
 	result, err := runtime.ExecuteScript(context.Background(), AISkillScriptRuntimeInput{
-		RunID:          51,
-		SkillID:        61,
-		VersionID:      71,
-		UserID:         81,
-		Mode:           AISkillRunModeUse,
-		Runtime:        skillrunner.RuntimePython311,
-		ScriptName:     "script_python_echo",
-		EntryPoint:     "main.py",
-		Protocol:       skillrunner.ProtocolJSONFileV1,
-		ArchivePath:    archivePath,
-		TimeoutSeconds: 45,		Environment: map[string]string{
+		RunID:                  51,
+		SkillID:                61,
+		VersionID:              71,
+		UserID:                 81,
+		Mode:                   AISkillRunModeUse,
+		Runtime:                skillrunner.RuntimePython311,
+		ScriptName:             "script_python_echo",
+		EntryPoint:             "main.py",
+		Protocol:               skillrunner.ProtocolJSONFileV1,
+		ArchivePath:            archivePath,
+		ApprovedArtifactDigest: "sha256:script-test",
+		VersionStatus:          AISkillVersionStatusApproved,
+		ReviewerUserID:         int64Ptr(909),
+		TimeoutSeconds:         45,
+		Environment: map[string]string{
 			"SUBJECT": "{{subject}}",
 		},
 		Parameters: map[string]any{
@@ -357,10 +362,127 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 	require.Equal(t, archive, runner.dispatchRequest.Archive)
 	require.Equal(t, "script_python_echo", runner.dispatchRequest.Bundle.Manifest.Metadata.Name)
 	require.Equal(t, skillrunner.ReviewStatusApproved, runner.dispatchRequest.Review.Status)
+	// The review gate must carry the normalized approved digest and the real
+	// reviewer identity, not a hardcoded service account.
+	require.Equal(t, "script-test", runner.dispatchRequest.Review.ArtifactDigest)
+	require.Equal(t, "user:909", runner.dispatchRequest.Review.ApprovedBy)
 	require.Equal(t, map[string]any{"SUBJECT": "sunrise"}, runner.dispatchRequest.Environment)
 	require.Equal(t, "skillrunner", result.Metadata["provider"])
 	require.Equal(t, "sha256:script-test", result.Metadata["bundle_digest"])
 	require.Equal(t, resolvedArchivePath, result.Metadata["archive_source"])
+}
+
+func TestAISkillScriptRunnerRuntimeRejectsMissingApprovedDigest(t *testing.T) {
+	t.Parallel()
+
+	archive := buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))
+	archiveBase64 := base64.StdEncoding.EncodeToString(archive)
+
+	runner := &aiSkillScriptRunnerStub{
+		inspectResult: &skillrunner.Bundle{
+			Digest: "deadbeef",
+			Manifest: skillrunner.Manifest{
+				Metadata: skillrunner.ManifestMeta{Name: "script_python_echo", Version: "v1"},
+				Spec: skillrunner.ScriptSpec{
+					Type:       skillrunner.SkillTypeScript,
+					Runtime:    skillrunner.RuntimePython311,
+					Entrypoint: "main.py",
+					Protocol:   skillrunner.ProtocolJSONFileV1,
+				},
+			},
+		},
+	}
+	runtime := NewAISkillScriptRunnerRuntime(runner)
+
+	_, err := runtime.ExecuteScript(context.Background(), AISkillScriptRuntimeInput{
+		RunID:         1,
+		Runtime:       skillrunner.RuntimePython311,
+		ScriptName:    "script_python_echo",
+		EntryPoint:    "main.py",
+		Protocol:      skillrunner.ProtocolJSONFileV1,
+		ArchiveBase64: archiveBase64,
+		// No ApprovedArtifactDigest: must fail closed.
+		VersionStatus: AISkillVersionStatusApproved,
+	})
+	require.ErrorIs(t, err, ErrAISkillScriptNotApproved)
+	require.Nil(t, runner.dispatchRequest, "dispatch must not be reached without an approved digest")
+}
+
+func TestAISkillScriptRunnerRuntimeRejectsDigestMismatch(t *testing.T) {
+	t.Parallel()
+
+	archive := buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))
+	archiveBase64 := base64.StdEncoding.EncodeToString(archive)
+
+	runner := &aiSkillScriptRunnerStub{
+		inspectResult: &skillrunner.Bundle{
+			Digest: "abc123", // what the runner actually sees
+			Manifest: skillrunner.Manifest{
+				Metadata: skillrunner.ManifestMeta{Name: "script_python_echo", Version: "v1"},
+				Spec: skillrunner.ScriptSpec{
+					Type:       skillrunner.SkillTypeScript,
+					Runtime:    skillrunner.RuntimePython311,
+					Entrypoint: "main.py",
+					Protocol:   skillrunner.ProtocolJSONFileV1,
+				},
+			},
+		},
+	}
+	runtime := NewAISkillScriptRunnerRuntime(runner)
+
+	_, err := runtime.ExecuteScript(context.Background(), AISkillScriptRuntimeInput{
+		RunID:                  1,
+		Runtime:                skillrunner.RuntimePython311,
+		ScriptName:             "script_python_echo",
+		EntryPoint:             "main.py",
+		Protocol:               skillrunner.ProtocolJSONFileV1,
+		ArchiveBase64:          archiveBase64,
+		ApprovedArtifactDigest: "different-digest", // does not match bundle
+		VersionStatus:          AISkillVersionStatusApproved,
+	})
+	require.ErrorIs(t, err, ErrAISkillScriptArtifactMismatch)
+	require.Nil(t, runner.dispatchRequest, "dispatch must not be reached on digest mismatch")
+}
+
+func TestAISkillScriptRunnerRuntimeAcceptsMatchingDigestWithPrefixVariance(t *testing.T) {
+	t.Parallel()
+
+	archive := buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))
+	archiveBase64 := base64.StdEncoding.EncodeToString(archive)
+
+	runner := &aiSkillScriptRunnerStub{
+		inspectResult: &skillrunner.Bundle{
+			Digest: "ABC123", // uppercase, no prefix
+			Manifest: skillrunner.Manifest{
+				Metadata: skillrunner.ManifestMeta{Name: "script_python_echo", Version: "v1"},
+				Spec: skillrunner.ScriptSpec{
+					Type:       skillrunner.SkillTypeScript,
+					Runtime:    skillrunner.RuntimePython311,
+					Entrypoint: "main.py",
+					Protocol:   skillrunner.ProtocolJSONFileV1,
+				},
+			},
+		},
+		dispatchResult: &skillrunner.DispatchResult{Plan: &skillrunner.SandboxPlan{}},
+	}
+	runtime := NewAISkillScriptRunnerRuntime(runner)
+
+	// Stored digest uses sha256: prefix and lowercase; bundle digest is uppercase
+	// without prefix. Normalization must treat them as equal.
+	result, err := runtime.ExecuteScript(context.Background(), AISkillScriptRuntimeInput{
+		RunID:                  1,
+		Runtime:                skillrunner.RuntimePython311,
+		ScriptName:             "script_python_echo",
+		EntryPoint:             "main.py",
+		Protocol:               skillrunner.ProtocolJSONFileV1,
+		ArchiveBase64:          archiveBase64,
+		ApprovedArtifactDigest: "sha256:abc123",
+		VersionStatus:          AISkillVersionStatusApproved,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, runner.dispatchRequest)
+	require.Equal(t, skillrunner.ReviewStatusApproved, runner.dispatchRequest.Review.Status)
 }
 
 func TestAISkillScriptRunnerRuntimeRejectsArchivePathWithoutRoot(t *testing.T) {
@@ -507,4 +629,110 @@ func mustJSON(t *testing.T, value any) []byte {
 	raw, err := json.Marshal(value)
 	require.NoError(t, err)
 	return raw
+}
+
+// TestAISkillScriptApprovalDigestBindsRunExecution exercises the full digest
+// binding: approval captures the artifact digest, run-time recomputes it from
+// the same stored source and the real bundle inspector, and they match. It then
+// proves that mutating the approved source afterwards causes run-time rejection.
+func TestAISkillScriptApprovalDigestBindsRunExecution(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillStoreStub()
+
+	skill := &AISkill{
+		CreatorUserID: 700,
+		Name:          "Echo Script",
+		Description:   "echoes input",
+		Type:          AISkillTypeScript,
+	}
+	require.NoError(t, store.CreateSkill(ctx, skill))
+
+	version := &AISkillVersion{
+		SkillID:       skill.ID,
+		CreatorUserID: skill.CreatorUserID,
+		Version:       1,
+		Type:          AISkillTypeScript,
+		Status:        AISkillVersionStatusSubmitted,
+		ExecutionSpec: AISkillExecutionSpec{
+			Type: AISkillTypeScript,
+			Script: &AISkillScriptSpec{
+				Runtime:    skillrunner.RuntimeNode20,
+				ScriptName: "echo_script",
+				EntryPoint: "main.mjs",
+				Protocol:   skillrunner.ProtocolJSONFileV1,
+			},
+		},
+		BillingPolicy: AISkillBillingPolicy{Mode: AISkillBillingModeFree},
+		Metadata: map[string]any{
+			"source_code": "console.log('hello world')",
+		},
+	}
+	require.NoError(t, store.CreateVersion(ctx, version))
+
+	// Approve: this must persist a non-empty artifact digest.
+	reviewSvc := NewAISkillReviewService(store, store, store)
+	approved, err := reviewSvc.ApproveVersion(ctx, 999, version.ID, &AIReviewSkillVersionInput{})
+	require.NoError(t, err)
+	require.NotEmpty(t, approved.ApprovedArtifactDigest, "approval must capture a digest")
+
+	stored, err := store.GetVersionByID(ctx, version.ID)
+	require.NoError(t, err)
+	require.Equal(t, approved.ApprovedArtifactDigest, stored.ApprovedArtifactDigest)
+
+	// Build the run-time script execution from the approved version using the
+	// production code path, then run it through the REAL script runner.
+	runSkill, err := store.GetSkillByID(ctx, skill.ID)
+	require.NoError(t, err)
+	spec, err := normalizeAISkillExecutionSpec(stored.Type, stored.ExecutionSpec)
+	require.NoError(t, err)
+	resolved, err := resolveAISkillScriptArtifact(runSkill, stored, spec.Script)
+	require.NoError(t, err)
+
+	runtime := NewAISkillScriptRunnerRuntime(skillrunner.NewScriptRunner())
+	result, err := runtime.ExecuteScript(ctx, AISkillScriptRuntimeInput{
+		RunID:                  1,
+		SkillID:                skill.ID,
+		VersionID:              stored.ID,
+		UserID:                 700,
+		Mode:                   AISkillRunModeUse,
+		Runtime:                resolved.Runtime,
+		ScriptName:             resolved.ScriptName,
+		EntryPoint:             resolved.EntryPoint,
+		Protocol:               resolved.Protocol,
+		ArchiveBase64:          resolved.ArchiveBase64,
+		ApprovedArtifactDigest: stored.ApprovedArtifactDigest,
+		VersionStatus:          stored.Status,
+		ReviewerUserID:         int64Ptr(999),
+	})
+	require.NoError(t, err, "run with the approved digest must succeed")
+	require.NotNil(t, result)
+	// The runner-computed bundle digest must equal the approved digest.
+	require.Equal(t,
+		normalizeAISkillArtifactDigest(stored.ApprovedArtifactDigest),
+		normalizeAISkillArtifactDigest(result.Metadata["bundle_digest"].(string)),
+	)
+
+	// Now tamper: change the source after approval. The approved digest no longer
+	// matches the regenerated artifact, so run-time must reject execution.
+	tampered := *stored
+	tampered.Metadata = map[string]any{"source_code": "console.log('evil')"}
+	tamperedSpec, err := normalizeAISkillExecutionSpec(tampered.Type, tampered.ExecutionSpec)
+	require.NoError(t, err)
+	tamperedArtifact, err := resolveAISkillScriptArtifact(runSkill, &tampered, tamperedSpec.Script)
+	require.NoError(t, err)
+
+	_, err = runtime.ExecuteScript(ctx, AISkillScriptRuntimeInput{
+		RunID:                  2,
+		Runtime:                tamperedArtifact.Runtime,
+		ScriptName:             tamperedArtifact.ScriptName,
+		EntryPoint:             tamperedArtifact.EntryPoint,
+		Protocol:               tamperedArtifact.Protocol,
+		ArchiveBase64:          tamperedArtifact.ArchiveBase64,
+		ApprovedArtifactDigest: stored.ApprovedArtifactDigest, // stale approval
+		VersionStatus:          AISkillVersionStatusApproved,
+	})
+	require.ErrorIs(t, err, ErrAISkillScriptArtifactMismatch,
+		"tampered source must not match the approved digest")
 }

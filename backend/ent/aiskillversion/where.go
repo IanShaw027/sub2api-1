@@ -90,6 +90,11 @@ func ReviewStatus(v string) predicate.AISkillVersion {
 	return predicate.AISkillVersion(sql.FieldEQ(FieldReviewStatus, v))
 }
 
+// ApprovedArtifactDigest applies equality check predicate on the "approved_artifact_digest" field. It's identical to ApprovedArtifactDigestEQ.
+func ApprovedArtifactDigest(v string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldEQ(FieldApprovedArtifactDigest, v))
+}
+
 // ContentFormat applies equality check predicate on the "content_format" field. It's identical to ContentFormatEQ.
 func ContentFormat(v string) predicate.AISkillVersion {
 	return predicate.AISkillVersion(sql.FieldEQ(FieldContentFormat, v))
@@ -423,6 +428,81 @@ func ReviewStatusEqualFold(v string) predicate.AISkillVersion {
 // ReviewStatusContainsFold applies the ContainsFold predicate on the "review_status" field.
 func ReviewStatusContainsFold(v string) predicate.AISkillVersion {
 	return predicate.AISkillVersion(sql.FieldContainsFold(FieldReviewStatus, v))
+}
+
+// ApprovedArtifactDigestEQ applies the EQ predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestEQ(v string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldEQ(FieldApprovedArtifactDigest, v))
+}
+
+// ApprovedArtifactDigestNEQ applies the NEQ predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestNEQ(v string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldNEQ(FieldApprovedArtifactDigest, v))
+}
+
+// ApprovedArtifactDigestIn applies the In predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestIn(vs ...string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldIn(FieldApprovedArtifactDigest, vs...))
+}
+
+// ApprovedArtifactDigestNotIn applies the NotIn predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestNotIn(vs ...string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldNotIn(FieldApprovedArtifactDigest, vs...))
+}
+
+// ApprovedArtifactDigestGT applies the GT predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestGT(v string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldGT(FieldApprovedArtifactDigest, v))
+}
+
+// ApprovedArtifactDigestGTE applies the GTE predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestGTE(v string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldGTE(FieldApprovedArtifactDigest, v))
+}
+
+// ApprovedArtifactDigestLT applies the LT predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestLT(v string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldLT(FieldApprovedArtifactDigest, v))
+}
+
+// ApprovedArtifactDigestLTE applies the LTE predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestLTE(v string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldLTE(FieldApprovedArtifactDigest, v))
+}
+
+// ApprovedArtifactDigestContains applies the Contains predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestContains(v string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldContains(FieldApprovedArtifactDigest, v))
+}
+
+// ApprovedArtifactDigestHasPrefix applies the HasPrefix predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestHasPrefix(v string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldHasPrefix(FieldApprovedArtifactDigest, v))
+}
+
+// ApprovedArtifactDigestHasSuffix applies the HasSuffix predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestHasSuffix(v string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldHasSuffix(FieldApprovedArtifactDigest, v))
+}
+
+// ApprovedArtifactDigestIsNil applies the IsNil predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestIsNil() predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldIsNull(FieldApprovedArtifactDigest))
+}
+
+// ApprovedArtifactDigestNotNil applies the NotNil predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestNotNil() predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldNotNull(FieldApprovedArtifactDigest))
+}
+
+// ApprovedArtifactDigestEqualFold applies the EqualFold predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestEqualFold(v string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldEqualFold(FieldApprovedArtifactDigest, v))
+}
+
+// ApprovedArtifactDigestContainsFold applies the ContainsFold predicate on the "approved_artifact_digest" field.
+func ApprovedArtifactDigestContainsFold(v string) predicate.AISkillVersion {
+	return predicate.AISkillVersion(sql.FieldContainsFold(FieldApprovedArtifactDigest, v))
 }
 
 // ContentFormatEQ applies the EQ predicate on the "content_format" field.

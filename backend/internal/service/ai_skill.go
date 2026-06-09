@@ -65,6 +65,8 @@ var (
 
 	ErrAISkillTypeInvalid                = infraerrors.BadRequest("AI_SKILL_TYPE_INVALID", "ai skill type is invalid")
 	ErrAISkillScriptArchivePathInvalid   = infraerrors.BadRequest("AI_SKILL_SCRIPT_ARCHIVE_PATH_INVALID", "ai skill script archive path is invalid")
+	ErrAISkillScriptNotApproved          = infraerrors.Forbidden("AI_SKILL_SCRIPT_NOT_APPROVED", "ai skill script version has no approved artifact digest; re-approval is required before execution")
+	ErrAISkillScriptArtifactMismatch     = infraerrors.Forbidden("AI_SKILL_SCRIPT_ARTIFACT_MISMATCH", "ai skill script artifact does not match the approved digest")
 	ErrAISkillNameRequired               = infraerrors.BadRequest("AI_SKILL_NAME_REQUIRED", "ai skill name is required")
 	ErrAISkillExecutionSpecInvalid       = infraerrors.BadRequest("AI_SKILL_EXECUTION_SPEC_INVALID", "ai skill execution spec is invalid")
 	ErrAISkillBillingPolicyInvalid       = infraerrors.BadRequest("AI_SKILL_BILLING_POLICY_INVALID", "ai skill billing policy is invalid")
@@ -150,6 +152,7 @@ type AISkillVersion struct {
 	Version        int                  `json:"version"`
 	Type           string               `json:"type"`
 	Status         string               `json:"status"`
+	ApprovedArtifactDigest string       `json:"approved_artifact_digest,omitempty"`
 	ExecutionSpec  AISkillExecutionSpec `json:"execution_spec"`
 	BillingPolicy  AISkillBillingPolicy `json:"billing_policy"`
 	ChangeNote     string               `json:"change_note,omitempty"`
@@ -257,16 +260,19 @@ type AISkillPromptImageExecution struct {
 }
 
 type AISkillScriptExecution struct {
-	Runtime        string            `json:"runtime,omitempty"`
-	ScriptName     string            `json:"script_name,omitempty"`
-	EntryPoint     string            `json:"entry_point,omitempty"`
-	Protocol       string            `json:"protocol,omitempty"`
-	ArchivePath    string            `json:"archive_path,omitempty"`
-	ArchiveBase64  string            `json:"archive_base64,omitempty"`
-	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
-	Environment    map[string]string `json:"environment,omitempty"`
-	Arguments      []map[string]any  `json:"arguments,omitempty"`
-	Parameters     map[string]any    `json:"parameters,omitempty"`
+	Runtime                string            `json:"runtime,omitempty"`
+	ScriptName             string            `json:"script_name,omitempty"`
+	EntryPoint             string            `json:"entry_point,omitempty"`
+	Protocol               string            `json:"protocol,omitempty"`
+	ArchivePath            string            `json:"archive_path,omitempty"`
+	ArchiveBase64          string            `json:"archive_base64,omitempty"`
+	ApprovedArtifactDigest string            `json:"approved_artifact_digest,omitempty"`
+	VersionStatus          string            `json:"version_status,omitempty"`
+	ReviewerUserID         *int64            `json:"reviewer_user_id,omitempty"`
+	TimeoutSeconds         int               `json:"timeout_seconds,omitempty"`
+	Environment            map[string]string `json:"environment,omitempty"`
+	Arguments              []map[string]any  `json:"arguments,omitempty"`
+	Parameters             map[string]any    `json:"parameters,omitempty"`
 }
 
 type AISkillExecutionRequest struct {
@@ -484,22 +490,25 @@ type AISkillOpenAIImageRuntime interface {
 }
 
 type AISkillScriptRuntimeInput struct {
-	RunID          int64
-	SkillID        int64
-	VersionID      int64
-	UserID         int64
-	Mode           string
-	Runtime        string
-	ScriptName     string
-	EntryPoint     string
-	Protocol       string
-	ArchivePath    string
-	ArchiveBase64  string
-	TimeoutSeconds int
-	Environment    map[string]string
-	Arguments      []map[string]any
-	Parameters     map[string]any
-	Trace          AITraceRef
+	RunID                  int64
+	SkillID                int64
+	VersionID              int64
+	UserID                 int64
+	Mode                   string
+	Runtime                string
+	ScriptName             string
+	EntryPoint             string
+	Protocol               string
+	ArchivePath            string
+	ArchiveBase64          string
+	ApprovedArtifactDigest string
+	VersionStatus          string
+	ReviewerUserID         *int64
+	TimeoutSeconds         int
+	Environment            map[string]string
+	Arguments              []map[string]any
+	Parameters             map[string]any
+	Trace                  AITraceRef
 }
 
 type AISkillScriptRuntimeResult struct {

@@ -150,22 +150,25 @@ func (g *DefaultAISkillRuntimeGateway) executeScript(ctx context.Context, req AI
 	}
 
 	result, err := g.scriptRuntime.ExecuteScript(ctx, AISkillScriptRuntimeInput{
-		RunID:          req.RunID,
-		SkillID:        req.SkillID,
-		VersionID:      req.VersionID,
-		UserID:         req.UserID,
-		Mode:           req.Mode,
-		Runtime:        req.Script.Runtime,
-		ScriptName:     req.Script.ScriptName,
-		EntryPoint:     req.Script.EntryPoint,
-		Protocol:       req.Script.Protocol,
-		ArchivePath:    req.Script.ArchivePath,
-		ArchiveBase64:  req.Script.ArchiveBase64,
-		TimeoutSeconds: req.Script.TimeoutSeconds,
-		Environment:    cloneAISkillStringMap(req.Script.Environment),
-		Arguments:      cloneAIMapSlice(req.Script.Arguments),
-		Parameters:     cloneAIMap(req.Script.Parameters),
-		Trace:          req.Trace,
+		RunID:                  req.RunID,
+		SkillID:                req.SkillID,
+		VersionID:              req.VersionID,
+		UserID:                 req.UserID,
+		Mode:                   req.Mode,
+		Runtime:                req.Script.Runtime,
+		ScriptName:             req.Script.ScriptName,
+		EntryPoint:             req.Script.EntryPoint,
+		Protocol:               req.Script.Protocol,
+		ArchivePath:            req.Script.ArchivePath,
+		ArchiveBase64:          req.Script.ArchiveBase64,
+		ApprovedArtifactDigest: req.Script.ApprovedArtifactDigest,
+		VersionStatus:          req.Script.VersionStatus,
+		ReviewerUserID:         req.Script.ReviewerUserID,
+		TimeoutSeconds:         req.Script.TimeoutSeconds,
+		Environment:            cloneAISkillStringMap(req.Script.Environment),
+		Arguments:              cloneAIMapSlice(req.Script.Arguments),
+		Parameters:             cloneAIMap(req.Script.Parameters),
+		Trace:                  req.Trace,
 	})
 	if err != nil {
 		return nil, err
@@ -321,8 +324,12 @@ func (r *AISkillScriptRunnerRuntime) ExecuteScript(ctx context.Context, input AI
 	if err := validateAISkillScriptBundle(input, bundle); err != nil {
 		return nil, err
 	}
+	if err := validateAISkillScriptApproval(input, bundle); err != nil {
+		return nil, err
+	}
 
 	approvedAt := r.nowOrDefault()
+	review := buildAISkillScriptReviewGate(input, bundle, &approvedAt)
 	environment := renderAISkillStringMap(input.Environment, input.Parameters)
 	dispatchInput := map[string]any{
 		"run_id":         input.RunID,
@@ -342,13 +349,8 @@ func (r *AISkillScriptRunnerRuntime) ExecuteScript(ctx context.Context, input AI
 	}
 
 	dispatch, err := r.runner.Dispatch(ctx, skillrunner.DispatchRequest{
-		Bundle: bundle,
-		Review: skillrunner.ReviewGate{
-			ArtifactDigest: bundle.Digest,
-			Status:         skillrunner.ReviewStatusApproved,
-			ApprovedAt:     &approvedAt,
-			ApprovedBy:     "ai-skill-service",
-		},
+		Bundle:      bundle,
+		Review:      review,
 		Archive:     archive,
 		Input:       dispatchInput,
 		Environment: stringMapToAnyMap(environment),
@@ -405,6 +407,73 @@ func (r *AISkillScriptRunnerRuntime) nowOrDefault() time.Time {
 		return r.now()
 	}
 	return time.Now()
+}
+
+// validateAISkillScriptApproval enforces that the script bundle about to run is
+// exactly the artifact that was approved. The approved digest is captured at
+// review time (over byte-identical archive bytes) and persisted on the version.
+//
+// A missing approved digest means the version was never approved through the
+// digest-capturing flow (e.g. legacy data approved before this control existed);
+// such runs are rejected rather than silently trusted. A digest that does not
+// match the freshly inspected bundle means the stored source/spec changed after
+// approval, so execution is refused.
+func validateAISkillScriptApproval(input AISkillScriptRuntimeInput, bundle *skillrunner.Bundle) error {
+	if bundle == nil {
+		return ErrAISkillExecutionSpecInvalid
+	}
+	approved := normalizeAISkillArtifactDigest(input.ApprovedArtifactDigest)
+	if approved == "" {
+		return ErrAISkillScriptNotApproved
+	}
+	if approved != normalizeAISkillArtifactDigest(bundle.Digest) {
+		return ErrAISkillScriptArtifactMismatch
+	}
+	return nil
+}
+
+// buildAISkillScriptReviewGate constructs the sandbox review gate from the
+// version's real approval state. The artifact digest is the digest persisted at
+// approval time (already validated to match the bundle); the approver is the
+// recorded reviewer rather than a hardcoded service identity.
+func buildAISkillScriptReviewGate(input AISkillScriptRuntimeInput, bundle *skillrunner.Bundle, approvedAt *time.Time) skillrunner.ReviewGate {
+	digest := normalizeAISkillArtifactDigest(input.ApprovedArtifactDigest)
+	if digest == "" && bundle != nil {
+		digest = normalizeAISkillArtifactDigest(bundle.Digest)
+	}
+	gate := skillrunner.ReviewGate{
+		ArtifactDigest: digest,
+		Status:         skillrunner.ReviewStatusPending,
+		ApprovedAt:     approvedAt,
+	}
+	if normalizeAISkillVersionStatus(input.VersionStatus) == AISkillVersionStatusApproved {
+		gate.Status = skillrunner.ReviewStatusApproved
+	}
+	if input.ReviewerUserID != nil && *input.ReviewerUserID > 0 {
+		gate.ApprovedBy = fmt.Sprintf("user:%d", *input.ReviewerUserID)
+	}
+	return gate
+}
+
+// normalizeAISkillArtifactDigest canonicalizes a digest for comparison: trims
+// whitespace, lowercases, and strips an optional "sha256:" prefix so values
+// stored with or without the algorithm prefix compare equal.
+func normalizeAISkillArtifactDigest(raw string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
+	return strings.TrimPrefix(trimmed, "sha256:")
+}
+
+// computeAISkillScriptArtifactDigest derives the digest of a base64-encoded
+// script archive using the same algorithm the bundle inspector uses
+// (hex-encoded sha256 over the raw archive bytes). Both approval-time capture
+// and run-time validation rely on this single definition.
+func computeAISkillScriptArtifactDigest(archiveBase64 string) (string, error) {
+	raw, err := decodeAISkillArchiveBase64(archiveBase64)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // sanitizeAISkillSandboxPlan returns a copy of the plan with host-side mount
@@ -1451,7 +1520,11 @@ func decodeAISkillArchiveBase64(raw string) ([]byte, error) {
 	if trimmed == "" {
 		return nil, ErrAISkillExecutionSpecInvalid
 	}
-	trimmed = strings.TrimRight(trimmed, "=") + strings.Repeat("=", (4-len(trimmed)%4)%4)
+	// Normalize padding: drop any existing "=" then re-pad to a multiple of 4.
+	// The length used for padding must be computed AFTER trimming, otherwise a
+	// fully-padded (length % 4 == 0) input is stripped to an invalid length.
+	stripped := strings.TrimRight(trimmed, "=")
+	trimmed = stripped + strings.Repeat("=", (4-len(stripped)%4)%4)
 	return base64.StdEncoding.DecodeString(trimmed)
 }
 

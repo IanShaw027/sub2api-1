@@ -36,6 +36,11 @@ func (AISkillVersion) Fields() []ent.Field {
 		field.Int64("user_id"),
 		field.Int("version"),
 		field.String("review_status").MaxLen(32).Default(domain.AISkillVersionReviewStatusDraft),
+		field.String("approved_artifact_digest").
+			MaxLen(128).
+			Optional().
+			Nillable().
+			Comment("sha256 digest of the script bundle captured at approval time; binds script execution to the reviewed artifact"),
 		field.String("content_format").MaxLen(64).Optional().Nillable(),
 		field.String("runtime").MaxLen(64).Optional().Nillable(),
 		field.String("source_content").

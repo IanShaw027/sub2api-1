@@ -253,48 +253,122 @@ func (s *AISkillRunService) buildExecutionRequest(run *AISkillRun, skill *AISkil
 		}
 	case AISkillTypeScript:
 		parameters := mergeAISkillExecutionParameters(run.Parameters, extractAISkillVariableSchema(version.Metadata))
-		scriptRuntime := normalizeAISkillScriptRuntime(spec.Script.Runtime)
-		scriptName := normalizeAISkillScriptBundleName(spec.Script.ScriptName, skill, version)
-		scriptEntryPoint := normalizeAISkillScriptEntryPoint(spec.Script.EntryPoint, scriptRuntime)
-		scriptProtocol := firstNonEmptyString(strings.TrimSpace(spec.Script.Protocol), skillrunner.ProtocolJSONFileV1)
-		scriptArchivePath := strings.TrimSpace(spec.Script.ArchivePath)
-		scriptArchiveBase64 := strings.TrimSpace(spec.Script.ArchiveBase64)
-		if scriptArchivePath == "" && scriptArchiveBase64 == "" {
-			scriptSource := extractAISkillScriptSourceCode(version.Metadata)
-			if strings.TrimSpace(scriptSource) == "" {
-				return nil, ErrAISkillExecutionSpecInvalid
-			}
-			generatedArchive, err := buildAISkillScriptArchiveBase64(
-				scriptName,
-				normalizeAISkillScriptVersionName(version),
-				firstNonEmptyString(strings.TrimSpace(skill.Name), scriptName),
-				strings.TrimSpace(skill.Description),
-				scriptRuntime,
-				scriptEntryPoint,
-				scriptProtocol,
-				scriptSource,
-			)
-			if err != nil {
-				return nil, err
-			}
-			scriptArchiveBase64 = generatedArchive
+		resolved, err := resolveAISkillScriptArtifact(skill, version, spec.Script)
+		if err != nil {
+			return nil, err
 		}
 		req.Script = &AISkillScriptExecution{
-			Runtime:        scriptRuntime,
-			ScriptName:     scriptName,
-			EntryPoint:     scriptEntryPoint,
-			Protocol:       scriptProtocol,
-			ArchivePath:    scriptArchivePath,
-			ArchiveBase64:  scriptArchiveBase64,
-			TimeoutSeconds: spec.Script.TimeoutSeconds,
-			Environment:    cloneAISkillStringMap(spec.Script.Environment),
-			Arguments:      cloneAIMapSlice(spec.Script.Arguments),
-			Parameters:     parameters,
+			Runtime:                resolved.Runtime,
+			ScriptName:             resolved.ScriptName,
+			EntryPoint:             resolved.EntryPoint,
+			Protocol:               resolved.Protocol,
+			ArchivePath:            resolved.ArchivePath,
+			ArchiveBase64:          resolved.ArchiveBase64,
+			ApprovedArtifactDigest: strings.TrimSpace(version.ApprovedArtifactDigest),
+			VersionStatus:          version.Status,
+			ReviewerUserID:         version.ReviewerUserID,
+			TimeoutSeconds:         spec.Script.TimeoutSeconds,
+			Environment:            cloneAISkillStringMap(spec.Script.Environment),
+			Arguments:              cloneAIMapSlice(spec.Script.Arguments),
+			Parameters:             parameters,
 		}
 	default:
 		return nil, ErrAISkillExecutionSpecInvalid
 	}
 	return req, nil
+}
+
+// aiSkillResolvedScriptArtifact captures the normalized script fields and the
+// resolved archive source. It is produced from a (skill, version, spec) tuple
+// using a single deterministic code path so that the archive bytes computed at
+// approval time (for digest capture) and at run time are byte-identical.
+type aiSkillResolvedScriptArtifact struct {
+	Runtime       string
+	ScriptName    string
+	EntryPoint    string
+	Protocol      string
+	ArchivePath   string
+	ArchiveBase64 string
+}
+
+// resolveAISkillScriptArtifact normalizes the script spec for a version and, when
+// no explicit archive is supplied, regenerates the bundle from source_content.
+// This is the single source of truth for the executable artifact; both run
+// dispatch and approval-time digest capture call it to guarantee the same bytes.
+func resolveAISkillScriptArtifact(skill *AISkill, version *AISkillVersion, scriptSpec *AISkillScriptSpec) (*aiSkillResolvedScriptArtifact, error) {
+	if version == nil || scriptSpec == nil {
+		return nil, ErrAISkillExecutionSpecInvalid
+	}
+	scriptRuntime := normalizeAISkillScriptRuntime(scriptSpec.Runtime)
+	scriptName := normalizeAISkillScriptBundleName(scriptSpec.ScriptName, skill, version)
+	scriptEntryPoint := normalizeAISkillScriptEntryPoint(scriptSpec.EntryPoint, scriptRuntime)
+	scriptProtocol := firstNonEmptyString(strings.TrimSpace(scriptSpec.Protocol), skillrunner.ProtocolJSONFileV1)
+	scriptArchivePath := strings.TrimSpace(scriptSpec.ArchivePath)
+	scriptArchiveBase64 := strings.TrimSpace(scriptSpec.ArchiveBase64)
+	if scriptArchivePath == "" && scriptArchiveBase64 == "" {
+		scriptSource := extractAISkillScriptSourceCode(version.Metadata)
+		if strings.TrimSpace(scriptSource) == "" {
+			return nil, ErrAISkillExecutionSpecInvalid
+		}
+		skillName := scriptName
+		skillDescription := ""
+		if skill != nil {
+			skillName = firstNonEmptyString(strings.TrimSpace(skill.Name), scriptName)
+			skillDescription = strings.TrimSpace(skill.Description)
+		}
+		generatedArchive, err := buildAISkillScriptArchiveBase64(
+			scriptName,
+			normalizeAISkillScriptVersionName(version),
+			skillName,
+			skillDescription,
+			scriptRuntime,
+			scriptEntryPoint,
+			scriptProtocol,
+			scriptSource,
+		)
+		if err != nil {
+			return nil, err
+		}
+		scriptArchiveBase64 = generatedArchive
+	}
+	return &aiSkillResolvedScriptArtifact{
+		Runtime:       scriptRuntime,
+		ScriptName:    scriptName,
+		EntryPoint:    scriptEntryPoint,
+		Protocol:      scriptProtocol,
+		ArchivePath:   scriptArchivePath,
+		ArchiveBase64: scriptArchiveBase64,
+	}, nil
+}
+
+// computeAISkillVersionApprovedDigest derives the digest of the executable
+// artifact for a script version, using the exact same normalization and
+// archive-generation path as run-time dispatch. This is what review approval
+// persists so that run-time validation can bind execution to the reviewed
+// artifact. It returns an empty digest (no error) for non-script versions or
+// when the artifact is supplied as an on-disk path rather than inline source.
+func computeAISkillVersionApprovedDigest(skill *AISkill, version *AISkillVersion) (string, error) {
+	if version == nil {
+		return "", ErrAISkillExecutionSpecInvalid
+	}
+	if normalizeAISkillType(version.Type) != AISkillTypeScript {
+		return "", nil
+	}
+	spec, err := normalizeAISkillExecutionSpec(version.Type, version.ExecutionSpec)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := resolveAISkillScriptArtifact(skill, version, spec.Script)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(resolved.ArchiveBase64) == "" {
+		// On-disk archive paths cannot be digested deterministically here; leave
+		// the approved digest empty so run-time fails closed and requires the
+		// supported inline-source flow.
+		return "", nil
+	}
+	return computeAISkillScriptArtifactDigest(resolved.ArchiveBase64)
 }
 
 func mergeAISkillExecutionParameters(parameters map[string]any, schemas ...[]map[string]any) map[string]any {

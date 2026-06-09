@@ -48,6 +48,7 @@ skill_id,
 user_id,
 version,
 review_status,
+approved_artifact_digest,
 content_format,
 runtime,
 source_content,
@@ -317,6 +318,7 @@ func aiSkillScanSkill(scanner aiSkillRowScanner) (*domain.AISkill, error) {
 func aiSkillScanVersion(scanner aiSkillRowScanner) (*domain.AISkillVersion, error) {
 	var (
 		item           domain.AISkillVersion
+		approvedDigest sql.NullString
 		contentFormat  sql.NullString
 		runtime        sql.NullString
 		changeNote     sql.NullString
@@ -340,6 +342,7 @@ func aiSkillScanVersion(scanner aiSkillRowScanner) (*domain.AISkillVersion, erro
 		&item.UserID,
 		&item.Version,
 		&item.ReviewStatus,
+		&approvedDigest,
 		&contentFormat,
 		&runtime,
 		&item.SourceContent,
@@ -363,6 +366,7 @@ func aiSkillScanVersion(scanner aiSkillRowScanner) (*domain.AISkillVersion, erro
 		return nil, err
 	}
 	item.ContentFormat = strings.TrimSpace(contentFormat.String)
+	item.ApprovedArtifactDigest = strings.TrimSpace(approvedDigest.String)
 	item.Runtime = strings.TrimSpace(runtime.String)
 	item.ChangeNote = strings.TrimSpace(changeNote.String)
 	item.ReviewNote = strings.TrimSpace(reviewNote.String)

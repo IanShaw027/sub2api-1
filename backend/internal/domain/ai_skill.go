@@ -432,6 +432,7 @@ type AISkillVersion struct {
 	UserID         int64          `json:"user_id"`
 	Version        int            `json:"version"`
 	ReviewStatus   string         `json:"review_status"`
+	ApprovedArtifactDigest string `json:"approved_artifact_digest,omitempty"`
 	ContentFormat  string         `json:"content_format,omitempty"`
 	Runtime        string         `json:"runtime,omitempty"`
 	SourceContent  string         `json:"source_content,omitempty"`

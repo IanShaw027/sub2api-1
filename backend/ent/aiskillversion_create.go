@@ -101,6 +101,20 @@ func (_c *AISkillVersionCreate) SetNillableReviewStatus(v *string) *AISkillVersi
 	return _c
 }
 
+// SetApprovedArtifactDigest sets the "approved_artifact_digest" field.
+func (_c *AISkillVersionCreate) SetApprovedArtifactDigest(v string) *AISkillVersionCreate {
+	_c.mutation.SetApprovedArtifactDigest(v)
+	return _c
+}
+
+// SetNillableApprovedArtifactDigest sets the "approved_artifact_digest" field if the given value is not nil.
+func (_c *AISkillVersionCreate) SetNillableApprovedArtifactDigest(v *string) *AISkillVersionCreate {
+	if v != nil {
+		_c.SetApprovedArtifactDigest(*v)
+	}
+	return _c
+}
+
 // SetContentFormat sets the "content_format" field.
 func (_c *AISkillVersionCreate) SetContentFormat(v string) *AISkillVersionCreate {
 	_c.mutation.SetContentFormat(v)
@@ -463,6 +477,11 @@ func (_c *AISkillVersionCreate) check() error {
 			return &ValidationError{Name: "review_status", err: fmt.Errorf(`ent: validator failed for field "AISkillVersion.review_status": %w`, err)}
 		}
 	}
+	if v, ok := _c.mutation.ApprovedArtifactDigest(); ok {
+		if err := aiskillversion.ApprovedArtifactDigestValidator(v); err != nil {
+			return &ValidationError{Name: "approved_artifact_digest", err: fmt.Errorf(`ent: validator failed for field "AISkillVersion.approved_artifact_digest": %w`, err)}
+		}
+	}
 	if v, ok := _c.mutation.ContentFormat(); ok {
 		if err := aiskillversion.ContentFormatValidator(v); err != nil {
 			return &ValidationError{Name: "content_format", err: fmt.Errorf(`ent: validator failed for field "AISkillVersion.content_format": %w`, err)}
@@ -545,6 +564,10 @@ func (_c *AISkillVersionCreate) createSpec() (*AISkillVersion, *sqlgraph.CreateS
 	if value, ok := _c.mutation.ReviewStatus(); ok {
 		_spec.SetField(aiskillversion.FieldReviewStatus, field.TypeString, value)
 		_node.ReviewStatus = value
+	}
+	if value, ok := _c.mutation.ApprovedArtifactDigest(); ok {
+		_spec.SetField(aiskillversion.FieldApprovedArtifactDigest, field.TypeString, value)
+		_node.ApprovedArtifactDigest = &value
 	}
 	if value, ok := _c.mutation.ContentFormat(); ok {
 		_spec.SetField(aiskillversion.FieldContentFormat, field.TypeString, value)
@@ -825,6 +848,24 @@ func (u *AISkillVersionUpsert) SetReviewStatus(v string) *AISkillVersionUpsert {
 // UpdateReviewStatus sets the "review_status" field to the value that was provided on create.
 func (u *AISkillVersionUpsert) UpdateReviewStatus() *AISkillVersionUpsert {
 	u.SetExcluded(aiskillversion.FieldReviewStatus)
+	return u
+}
+
+// SetApprovedArtifactDigest sets the "approved_artifact_digest" field.
+func (u *AISkillVersionUpsert) SetApprovedArtifactDigest(v string) *AISkillVersionUpsert {
+	u.Set(aiskillversion.FieldApprovedArtifactDigest, v)
+	return u
+}
+
+// UpdateApprovedArtifactDigest sets the "approved_artifact_digest" field to the value that was provided on create.
+func (u *AISkillVersionUpsert) UpdateApprovedArtifactDigest() *AISkillVersionUpsert {
+	u.SetExcluded(aiskillversion.FieldApprovedArtifactDigest)
+	return u
+}
+
+// ClearApprovedArtifactDigest clears the value of the "approved_artifact_digest" field.
+func (u *AISkillVersionUpsert) ClearApprovedArtifactDigest() *AISkillVersionUpsert {
+	u.SetNull(aiskillversion.FieldApprovedArtifactDigest)
 	return u
 }
 
@@ -1250,6 +1291,27 @@ func (u *AISkillVersionUpsertOne) SetReviewStatus(v string) *AISkillVersionUpser
 func (u *AISkillVersionUpsertOne) UpdateReviewStatus() *AISkillVersionUpsertOne {
 	return u.Update(func(s *AISkillVersionUpsert) {
 		s.UpdateReviewStatus()
+	})
+}
+
+// SetApprovedArtifactDigest sets the "approved_artifact_digest" field.
+func (u *AISkillVersionUpsertOne) SetApprovedArtifactDigest(v string) *AISkillVersionUpsertOne {
+	return u.Update(func(s *AISkillVersionUpsert) {
+		s.SetApprovedArtifactDigest(v)
+	})
+}
+
+// UpdateApprovedArtifactDigest sets the "approved_artifact_digest" field to the value that was provided on create.
+func (u *AISkillVersionUpsertOne) UpdateApprovedArtifactDigest() *AISkillVersionUpsertOne {
+	return u.Update(func(s *AISkillVersionUpsert) {
+		s.UpdateApprovedArtifactDigest()
+	})
+}
+
+// ClearApprovedArtifactDigest clears the value of the "approved_artifact_digest" field.
+func (u *AISkillVersionUpsertOne) ClearApprovedArtifactDigest() *AISkillVersionUpsertOne {
+	return u.Update(func(s *AISkillVersionUpsert) {
+		s.ClearApprovedArtifactDigest()
 	})
 }
 
@@ -1888,6 +1950,27 @@ func (u *AISkillVersionUpsertBulk) SetReviewStatus(v string) *AISkillVersionUpse
 func (u *AISkillVersionUpsertBulk) UpdateReviewStatus() *AISkillVersionUpsertBulk {
 	return u.Update(func(s *AISkillVersionUpsert) {
 		s.UpdateReviewStatus()
+	})
+}
+
+// SetApprovedArtifactDigest sets the "approved_artifact_digest" field.
+func (u *AISkillVersionUpsertBulk) SetApprovedArtifactDigest(v string) *AISkillVersionUpsertBulk {
+	return u.Update(func(s *AISkillVersionUpsert) {
+		s.SetApprovedArtifactDigest(v)
+	})
+}
+
+// UpdateApprovedArtifactDigest sets the "approved_artifact_digest" field to the value that was provided on create.
+func (u *AISkillVersionUpsertBulk) UpdateApprovedArtifactDigest() *AISkillVersionUpsertBulk {
+	return u.Update(func(s *AISkillVersionUpsert) {
+		s.UpdateApprovedArtifactDigest()
+	})
+}
+
+// ClearApprovedArtifactDigest clears the value of the "approved_artifact_digest" field.
+func (u *AISkillVersionUpsertBulk) ClearApprovedArtifactDigest() *AISkillVersionUpsertBulk {
+	return u.Update(func(s *AISkillVersionUpsert) {
+		s.ClearApprovedArtifactDigest()
 	})
 }
 

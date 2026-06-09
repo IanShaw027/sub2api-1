@@ -753,36 +753,40 @@ func init() {
 	aiskillversion.DefaultReviewStatus = aiskillversionDescReviewStatus.Default.(string)
 	// aiskillversion.ReviewStatusValidator is a validator for the "review_status" field. It is called by the builders before save.
 	aiskillversion.ReviewStatusValidator = aiskillversionDescReviewStatus.Validators[0].(func(string) error)
+	// aiskillversionDescApprovedArtifactDigest is the schema descriptor for approved_artifact_digest field.
+	aiskillversionDescApprovedArtifactDigest := aiskillversionFields[4].Descriptor()
+	// aiskillversion.ApprovedArtifactDigestValidator is a validator for the "approved_artifact_digest" field. It is called by the builders before save.
+	aiskillversion.ApprovedArtifactDigestValidator = aiskillversionDescApprovedArtifactDigest.Validators[0].(func(string) error)
 	// aiskillversionDescContentFormat is the schema descriptor for content_format field.
-	aiskillversionDescContentFormat := aiskillversionFields[4].Descriptor()
+	aiskillversionDescContentFormat := aiskillversionFields[5].Descriptor()
 	// aiskillversion.ContentFormatValidator is a validator for the "content_format" field. It is called by the builders before save.
 	aiskillversion.ContentFormatValidator = aiskillversionDescContentFormat.Validators[0].(func(string) error)
 	// aiskillversionDescRuntime is the schema descriptor for runtime field.
-	aiskillversionDescRuntime := aiskillversionFields[5].Descriptor()
+	aiskillversionDescRuntime := aiskillversionFields[6].Descriptor()
 	// aiskillversion.RuntimeValidator is a validator for the "runtime" field. It is called by the builders before save.
 	aiskillversion.RuntimeValidator = aiskillversionDescRuntime.Validators[0].(func(string) error)
 	// aiskillversionDescSourceContent is the schema descriptor for source_content field.
-	aiskillversionDescSourceContent := aiskillversionFields[6].Descriptor()
+	aiskillversionDescSourceContent := aiskillversionFields[7].Descriptor()
 	// aiskillversion.DefaultSourceContent holds the default value on creation for the source_content field.
 	aiskillversion.DefaultSourceContent = aiskillversionDescSourceContent.Default.(string)
 	// aiskillversionDescConfig is the schema descriptor for config field.
-	aiskillversionDescConfig := aiskillversionFields[7].Descriptor()
+	aiskillversionDescConfig := aiskillversionFields[8].Descriptor()
 	// aiskillversion.DefaultConfig holds the default value on creation for the config field.
 	aiskillversion.DefaultConfig = aiskillversionDescConfig.Default.(func() map[string]interface{})
 	// aiskillversionDescInputSchema is the schema descriptor for input_schema field.
-	aiskillversionDescInputSchema := aiskillversionFields[8].Descriptor()
+	aiskillversionDescInputSchema := aiskillversionFields[9].Descriptor()
 	// aiskillversion.DefaultInputSchema holds the default value on creation for the input_schema field.
 	aiskillversion.DefaultInputSchema = aiskillversionDescInputSchema.Default.(func() map[string]interface{})
 	// aiskillversionDescOutputSchema is the schema descriptor for output_schema field.
-	aiskillversionDescOutputSchema := aiskillversionFields[9].Descriptor()
+	aiskillversionDescOutputSchema := aiskillversionFields[10].Descriptor()
 	// aiskillversion.DefaultOutputSchema holds the default value on creation for the output_schema field.
 	aiskillversion.DefaultOutputSchema = aiskillversionDescOutputSchema.Default.(func() map[string]interface{})
 	// aiskillversionDescMetadata is the schema descriptor for metadata field.
-	aiskillversionDescMetadata := aiskillversionFields[15].Descriptor()
+	aiskillversionDescMetadata := aiskillversionFields[16].Descriptor()
 	// aiskillversion.DefaultMetadata holds the default value on creation for the metadata field.
 	aiskillversion.DefaultMetadata = aiskillversionDescMetadata.Default.(func() map[string]interface{})
 	// aiskillversionDescRequestID is the schema descriptor for request_id field.
-	aiskillversionDescRequestID := aiskillversionFields[16].Descriptor()
+	aiskillversionDescRequestID := aiskillversionFields[17].Descriptor()
 	// aiskillversion.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
 	aiskillversion.RequestIDValidator = aiskillversionDescRequestID.Validators[0].(func(string) error)
 	apikeyMixin := schema.APIKey{}.Mixin()

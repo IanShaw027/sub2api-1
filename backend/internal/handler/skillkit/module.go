@@ -115,7 +115,7 @@ func buildDefaultModule() (*Module, error) {
 
 	settlementService := service.NewAISkillSettlementService(adapter, adapter.balanceCharger, adapter.creatorCreditor)
 	versionService := service.NewAISkillVersionService(adapter, adapter, adapter)
-	reviewService := service.NewAISkillReviewService(adapter, adapter)
+	reviewService := service.NewAISkillReviewService(adapter, adapter, adapter)
 	runService := service.NewAISkillRunService(adapter, adapter, adapter, settlementService, service.ProvideAISkillRuntimeGateway(nil))
 
 	return NewModule(

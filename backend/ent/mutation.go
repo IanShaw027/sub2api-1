@@ -20897,52 +20897,53 @@ func (m *AISkillSettlementMutation) ResetEdge(name string) error {
 // AISkillVersionMutation represents an operation that mutates the AISkillVersion nodes in the graph.
 type AISkillVersionMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *int64
-	created_at          *time.Time
-	updated_at          *time.Time
-	deleted_at          *time.Time
-	version             *int
-	addversion          *int
-	review_status       *string
-	content_format      *string
-	runtime             *string
-	source_content      *string
-	_config             *map[string]interface{}
-	input_schema        *map[string]interface{}
-	output_schema       *map[string]interface{}
-	change_note         *string
-	submitted_at        *time.Time
-	reviewed_at         *time.Time
-	reviewer_user_id    *int64
-	addreviewer_user_id *int64
-	review_note         *string
-	metadata            *map[string]interface{}
-	request_id          *string
-	usage_log_id        *int64
-	addusage_log_id     *int64
-	api_key_id          *int64
-	addapi_key_id       *int64
-	group_id            *int64
-	addgroup_id         *int64
-	clearedFields       map[string]struct{}
-	skill               *int64
-	clearedskill        bool
-	user                *int64
-	cleareduser         bool
-	runs                map[int64]struct{}
-	removedruns         map[int64]struct{}
-	clearedruns         bool
-	reviews             map[int64]struct{}
-	removedreviews      map[int64]struct{}
-	clearedreviews      bool
-	settlements         map[int64]struct{}
-	removedsettlements  map[int64]struct{}
-	clearedsettlements  bool
-	done                bool
-	oldValue            func(context.Context) (*AISkillVersion, error)
-	predicates          []predicate.AISkillVersion
+	op                       Op
+	typ                      string
+	id                       *int64
+	created_at               *time.Time
+	updated_at               *time.Time
+	deleted_at               *time.Time
+	version                  *int
+	addversion               *int
+	review_status            *string
+	approved_artifact_digest *string
+	content_format           *string
+	runtime                  *string
+	source_content           *string
+	_config                  *map[string]interface{}
+	input_schema             *map[string]interface{}
+	output_schema            *map[string]interface{}
+	change_note              *string
+	submitted_at             *time.Time
+	reviewed_at              *time.Time
+	reviewer_user_id         *int64
+	addreviewer_user_id      *int64
+	review_note              *string
+	metadata                 *map[string]interface{}
+	request_id               *string
+	usage_log_id             *int64
+	addusage_log_id          *int64
+	api_key_id               *int64
+	addapi_key_id            *int64
+	group_id                 *int64
+	addgroup_id              *int64
+	clearedFields            map[string]struct{}
+	skill                    *int64
+	clearedskill             bool
+	user                     *int64
+	cleareduser              bool
+	runs                     map[int64]struct{}
+	removedruns              map[int64]struct{}
+	clearedruns              bool
+	reviews                  map[int64]struct{}
+	removedreviews           map[int64]struct{}
+	clearedreviews           bool
+	settlements              map[int64]struct{}
+	removedsettlements       map[int64]struct{}
+	clearedsettlements       bool
+	done                     bool
+	oldValue                 func(context.Context) (*AISkillVersion, error)
+	predicates               []predicate.AISkillVersion
 }
 
 var _ ent.Mutation = (*AISkillVersionMutation)(nil)
@@ -21326,6 +21327,55 @@ func (m *AISkillVersionMutation) OldReviewStatus(ctx context.Context) (v string,
 // ResetReviewStatus resets all changes to the "review_status" field.
 func (m *AISkillVersionMutation) ResetReviewStatus() {
 	m.review_status = nil
+}
+
+// SetApprovedArtifactDigest sets the "approved_artifact_digest" field.
+func (m *AISkillVersionMutation) SetApprovedArtifactDigest(s string) {
+	m.approved_artifact_digest = &s
+}
+
+// ApprovedArtifactDigest returns the value of the "approved_artifact_digest" field in the mutation.
+func (m *AISkillVersionMutation) ApprovedArtifactDigest() (r string, exists bool) {
+	v := m.approved_artifact_digest
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldApprovedArtifactDigest returns the old "approved_artifact_digest" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldApprovedArtifactDigest(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldApprovedArtifactDigest is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldApprovedArtifactDigest requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldApprovedArtifactDigest: %w", err)
+	}
+	return oldValue.ApprovedArtifactDigest, nil
+}
+
+// ClearApprovedArtifactDigest clears the value of the "approved_artifact_digest" field.
+func (m *AISkillVersionMutation) ClearApprovedArtifactDigest() {
+	m.approved_artifact_digest = nil
+	m.clearedFields[aiskillversion.FieldApprovedArtifactDigest] = struct{}{}
+}
+
+// ApprovedArtifactDigestCleared returns if the "approved_artifact_digest" field was cleared in this mutation.
+func (m *AISkillVersionMutation) ApprovedArtifactDigestCleared() bool {
+	_, ok := m.clearedFields[aiskillversion.FieldApprovedArtifactDigest]
+	return ok
+}
+
+// ResetApprovedArtifactDigest resets all changes to the "approved_artifact_digest" field.
+func (m *AISkillVersionMutation) ResetApprovedArtifactDigest() {
+	m.approved_artifact_digest = nil
+	delete(m.clearedFields, aiskillversion.FieldApprovedArtifactDigest)
 }
 
 // SetContentFormat sets the "content_format" field.
@@ -22381,7 +22431,7 @@ func (m *AISkillVersionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AISkillVersionMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 24)
 	if m.created_at != nil {
 		fields = append(fields, aiskillversion.FieldCreatedAt)
 	}
@@ -22402,6 +22452,9 @@ func (m *AISkillVersionMutation) Fields() []string {
 	}
 	if m.review_status != nil {
 		fields = append(fields, aiskillversion.FieldReviewStatus)
+	}
+	if m.approved_artifact_digest != nil {
+		fields = append(fields, aiskillversion.FieldApprovedArtifactDigest)
 	}
 	if m.content_format != nil {
 		fields = append(fields, aiskillversion.FieldContentFormat)
@@ -22473,6 +22526,8 @@ func (m *AISkillVersionMutation) Field(name string) (ent.Value, bool) {
 		return m.Version()
 	case aiskillversion.FieldReviewStatus:
 		return m.ReviewStatus()
+	case aiskillversion.FieldApprovedArtifactDigest:
+		return m.ApprovedArtifactDigest()
 	case aiskillversion.FieldContentFormat:
 		return m.ContentFormat()
 	case aiskillversion.FieldRuntime:
@@ -22528,6 +22583,8 @@ func (m *AISkillVersionMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldVersion(ctx)
 	case aiskillversion.FieldReviewStatus:
 		return m.OldReviewStatus(ctx)
+	case aiskillversion.FieldApprovedArtifactDigest:
+		return m.OldApprovedArtifactDigest(ctx)
 	case aiskillversion.FieldContentFormat:
 		return m.OldContentFormat(ctx)
 	case aiskillversion.FieldRuntime:
@@ -22617,6 +22674,13 @@ func (m *AISkillVersionMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetReviewStatus(v)
+		return nil
+	case aiskillversion.FieldApprovedArtifactDigest:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetApprovedArtifactDigest(v)
 		return nil
 	case aiskillversion.FieldContentFormat:
 		v, ok := value.(string)
@@ -22826,6 +22890,9 @@ func (m *AISkillVersionMutation) ClearedFields() []string {
 	if m.FieldCleared(aiskillversion.FieldDeletedAt) {
 		fields = append(fields, aiskillversion.FieldDeletedAt)
 	}
+	if m.FieldCleared(aiskillversion.FieldApprovedArtifactDigest) {
+		fields = append(fields, aiskillversion.FieldApprovedArtifactDigest)
+	}
 	if m.FieldCleared(aiskillversion.FieldContentFormat) {
 		fields = append(fields, aiskillversion.FieldContentFormat)
 	}
@@ -22875,6 +22942,9 @@ func (m *AISkillVersionMutation) ClearField(name string) error {
 	switch name {
 	case aiskillversion.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case aiskillversion.FieldApprovedArtifactDigest:
+		m.ClearApprovedArtifactDigest()
 		return nil
 	case aiskillversion.FieldContentFormat:
 		m.ClearContentFormat()
@@ -22937,6 +23007,9 @@ func (m *AISkillVersionMutation) ResetField(name string) error {
 		return nil
 	case aiskillversion.FieldReviewStatus:
 		m.ResetReviewStatus()
+		return nil
+	case aiskillversion.FieldApprovedArtifactDigest:
+		m.ResetApprovedArtifactDigest()
 		return nil
 	case aiskillversion.FieldContentFormat:
 		m.ResetContentFormat()

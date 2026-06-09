@@ -9,13 +9,15 @@ import (
 )
 
 type AISkillReviewService struct {
+	skillRepo   AISkillRepository
 	versionRepo AISkillVersionRepository
 	reviewRepo  AISkillReviewRepository
 	now         func() time.Time
 }
 
-func NewAISkillReviewService(versionRepo AISkillVersionRepository, reviewRepo AISkillReviewRepository) *AISkillReviewService {
+func NewAISkillReviewService(skillRepo AISkillRepository, versionRepo AISkillVersionRepository, reviewRepo AISkillReviewRepository) *AISkillReviewService {
 	return &AISkillReviewService{
+		skillRepo:   skillRepo,
 		versionRepo: versionRepo,
 		reviewRepo:  reviewRepo,
 		now:         time.Now,
@@ -63,12 +65,31 @@ func (s *AISkillReviewService) applyDecision(ctx context.Context, reviewerUserID
 		version.ApprovedAt = &now
 		version.RejectedAt = nil
 		version.DisabledAt = nil
+		// Capture the digest of the executable artifact as approved, so run-time
+		// can bind execution to exactly this reviewed content. Generated over the
+		// same deterministic archive bytes the runner will rebuild at run time.
+		if normalizeAISkillType(version.Type) == AISkillTypeScript {
+			var skill *AISkill
+			if s.skillRepo != nil {
+				skill, err = s.skillRepo.GetSkillByID(ctx, version.SkillID)
+				if err != nil {
+					return nil, err
+				}
+			}
+			digest, err := computeAISkillVersionApprovedDigest(skill, version)
+			if err != nil {
+				return nil, err
+			}
+			version.ApprovedArtifactDigest = digest
+		}
 	case AISkillVersionStatusRejected:
 		version.RejectedAt = &now
 		version.ApprovedAt = nil
 		version.DisabledAt = nil
+		version.ApprovedArtifactDigest = ""
 	case AISkillVersionStatusDisabled:
 		version.DisabledAt = &now
+		version.ApprovedArtifactDigest = ""
 	}
 
 	if err := s.versionRepo.UpdateVersion(ctx, version); err != nil {
