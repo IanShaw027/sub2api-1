@@ -459,9 +459,12 @@ func TestKiroOAuthServiceCompleteDeviceAuthorizationReturnsPendingContinuation(t
 }
 
 func TestResolveKiroIDCContinuationConfig_DoesNotUseIssuerAsStartURL(t *testing.T) {
-	cfg := resolveKiroIDCContinuationConfig(&KiroExchangeCallbackInput{
+	cfg, err := resolveKiroIDCContinuationConfig(&KiroExchangeCallbackInput{
 		IssuerURL: "https://oidc.us-east-1.amazonaws.com",
 	}, url.Values{}, "awsidc", &KiroOAuthSession{})
+	if err != nil {
+		t.Fatalf("resolveKiroIDCContinuationConfig returned error: %v", err)
+	}
 
 	if cfg.StartURL != kiroIDCDefaultStartURL {
 		t.Fatalf("start_url = %q, want %q", cfg.StartURL, kiroIDCDefaultStartURL)

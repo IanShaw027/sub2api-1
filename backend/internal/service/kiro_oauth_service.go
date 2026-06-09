@@ -44,6 +44,32 @@ type KiroOAuthSession struct {
 	ProxyURL        string
 	CreatedAt       time.Time
 	IDCContinuation *KiroIDCContinuationSession
+
+	// mu guards the mutable parts of a session that may be touched by
+	// concurrent callback / continuation requests sharing the same session
+	// pointer (the store hands out the same *KiroOAuthSession to every
+	// caller). It must not be copied.
+	mu sync.Mutex
+	// consumed marks a session whose single-use authorization code has
+	// already been (or is being) exchanged. Replaying the same session is
+	// rejected so a leaked callback URL cannot be redeemed twice.
+	consumed bool
+}
+
+// tryConsume atomically marks the session as consumed. It returns true only
+// for the first caller; every subsequent caller (concurrent or sequential)
+// gets false and must be rejected.
+func (s *KiroOAuthSession) tryConsume() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.consumed {
+		return false
+	}
+	s.consumed = true
+	return true
 }
 
 type KiroOAuthSessionStore struct {
@@ -549,9 +575,20 @@ func (s *KiroOAuthService) exchangeCallbackProgress(ctx context.Context, input *
 		return nil, err
 	}
 
+	// Atomically claim the session before redeeming the single-use
+	// authorization code. Concurrent or replayed callbacks for the same
+	// session pointer lose the race and are rejected, so a leaked callback
+	// URL cannot be exchanged twice.
+	if !session.tryConsume() {
+		return nil, fmt.Errorf("kiro 授权会话已被使用，无法重复兑换。请重新生成授权链接并在同一轮流程中完成授权")
+	}
+
 	tokenExchangeRedirectURI := buildKiroTokenExchangeRedirectURI(redirectURI, parsedURL, loginOption)
 	tokenPayload, err := kiroCodeExchangeFunc(ctx, code, session.CodeVerifier, tokenExchangeRedirectURI, proxyURL)
 	if err != nil {
+		// The code may be single-use upstream; once consumed the session
+		// cannot be retried, so drop it and force a fresh authorization link.
+		s.sessionStore.Delete(input.SessionID)
 		return nil, err
 	}
 	s.sessionStore.Delete(input.SessionID)
@@ -784,6 +821,16 @@ func (s *KiroOAuthService) startOrResumeIDCContinuation(
 	if session == nil {
 		return nil, fmt.Errorf("kiro oauth session is required")
 	}
+
+	// Hold the per-session lock for the entire register -> device-authorize
+	// -> store sequence. Two concurrent callbacks sharing this session pointer
+	// would otherwise each register a fresh IDC client and the later Set would
+	// clobber the earlier one (lost update), orphaning a client + leaking its
+	// client_secret. Serializing here lets the second caller observe the
+	// pending continuation the first one stored and reuse it.
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
 	if session.IDCContinuation != nil {
 		if time.Now().Before(session.IDCContinuation.ExpiresAt) && strings.EqualFold(strings.TrimSpace(session.IDCContinuation.LoginOption), strings.TrimSpace(loginOption)) {
 			return &KiroOAuthProgressResult{
@@ -799,7 +846,10 @@ func (s *KiroOAuthService) startOrResumeIDCContinuation(
 	}
 	session.ProxyURL = proxyURL
 
-	cfg := resolveKiroIDCContinuationConfig(input, query, loginOption, session)
+	cfg, err := resolveKiroIDCContinuationConfig(input, query, loginOption, session)
+	if err != nil {
+		return nil, err
+	}
 	registerResult, err := kiroIDCRegisterClientFunc(ctx, kiroIDCRegisterClientInput{
 		ProxyURL:   proxyURL,
 		ClientName: cfg.ClientName,
@@ -858,7 +908,7 @@ type kiroIDCContinuationConfig struct {
 	RedirectURIs []string
 }
 
-func resolveKiroIDCContinuationConfig(input *KiroExchangeCallbackInput, query url.Values, loginOption string, session *KiroOAuthSession) kiroIDCContinuationConfig {
+func resolveKiroIDCContinuationConfig(input *KiroExchangeCallbackInput, query url.Values, loginOption string, session *KiroOAuthSession) (kiroIDCContinuationConfig, error) {
 	redirectURI := strings.TrimSpace(kiroOAuthSessionRedirectURI(session))
 	issuerURL := firstNonEmptyKiroString(
 		strings.TrimSpace(query.Get("issuer_url")),
@@ -881,6 +931,22 @@ func resolveKiroIDCContinuationConfig(input *KiroExchangeCallbackInput, query ur
 		strings.TrimSpace(input.IDCRegion),
 		kiroIDCDefaultRegion,
 	)
+
+	// Security: issuer_url / start_url / region originate from the (untrusted)
+	// OAuth callback query or request body. Without an allowlist an attacker
+	// could point the IDC client registration / device authorization at a
+	// forged OIDC endpoint and harvest the client_secret we mint. Only AWS
+	// official domains are accepted.
+	if err := validateKiroIDCRegion(region); err != nil {
+		return kiroIDCContinuationConfig{}, err
+	}
+	if err := validateKiroIDCIssuerURL(issuerURL); err != nil {
+		return kiroIDCContinuationConfig{}, err
+	}
+	if err := validateKiroIDCStartURL(startURL); err != nil {
+		return kiroIDCContinuationConfig{}, err
+	}
+
 	clientName := firstNonEmptyKiroString(
 		strings.TrimSpace(input.ClientName),
 		"sub2api Kiro "+strings.ToUpper(strings.TrimSpace(loginOption)),
@@ -897,7 +963,118 @@ func resolveKiroIDCContinuationConfig(input *KiroExchangeCallbackInput, query ur
 			strings.TrimSpace(query.Get("loginHint")),
 		),
 		RedirectURIs: filterEmptyKiroStrings([]string{redirectURI}),
+	}, nil
+}
+
+// kiroIDCAllowedRegions is the allowlist of AWS regions that may be used for
+// Kiro IDC client registration and device authorization. Region values flow
+// into the oidc.<region>.amazonaws.com endpoint hostname, so an unvalidated
+// value could redirect requests to an attacker-controlled host.
+var kiroIDCAllowedRegions = map[string]struct{}{
+	"us-east-1":      {},
+	"us-east-2":      {},
+	"us-west-1":      {},
+	"us-west-2":      {},
+	"af-south-1":     {},
+	"ap-east-1":      {},
+	"ap-south-1":     {},
+	"ap-south-2":     {},
+	"ap-northeast-1": {},
+	"ap-northeast-2": {},
+	"ap-northeast-3": {},
+	"ap-southeast-1": {},
+	"ap-southeast-2": {},
+	"ap-southeast-3": {},
+	"ap-southeast-4": {},
+	"ca-central-1":   {},
+	"eu-central-1":   {},
+	"eu-central-2":   {},
+	"eu-west-1":      {},
+	"eu-west-2":      {},
+	"eu-west-3":      {},
+	"eu-north-1":     {},
+	"eu-south-1":     {},
+	"eu-south-2":     {},
+	"il-central-1":   {},
+	"me-south-1":     {},
+	"me-central-1":   {},
+	"sa-east-1":      {},
+}
+
+func validateKiroIDCRegion(region string) error {
+	trimmed := strings.ToLower(strings.TrimSpace(region))
+	if trimmed == "" {
+		return fmt.Errorf("kiro idc region is required")
 	}
+	if _, ok := kiroIDCAllowedRegions[trimmed]; !ok {
+		return fmt.Errorf("kiro idc region %q is not an allowed AWS region", region)
+	}
+	return nil
+}
+
+// validateKiroIDCIssuerURL accepts only AWS IAM Identity Center OIDC issuers of
+// the form https://oidc.<region>.amazonaws.com (no path/userinfo/port). An empty
+// issuer is permitted because the start_url + region are sufficient to drive the
+// flow; only a present-but-forged issuer is rejected.
+func validateKiroIDCIssuerURL(issuerURL string) error {
+	trimmed := strings.TrimSpace(issuerURL)
+	if trimmed == "" {
+		return nil
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return fmt.Errorf("invalid kiro idc issuer_url: %w", err)
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return fmt.Errorf("kiro idc issuer_url must use https: %q", issuerURL)
+	}
+	if parsed.User != nil || parsed.Port() != "" {
+		return fmt.Errorf("kiro idc issuer_url has an unexpected host component: %q", issuerURL)
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	if !strings.HasPrefix(host, "oidc.") || !strings.HasSuffix(host, ".amazonaws.com") {
+		return fmt.Errorf("kiro idc issuer_url host %q is not an AWS OIDC endpoint", host)
+	}
+	region := strings.TrimSuffix(strings.TrimPrefix(host, "oidc."), ".amazonaws.com")
+	// Reject extra labels (e.g. oidc.evil.example.amazonaws.com) by requiring
+	// the middle segment to be exactly a single allowed region label.
+	if strings.Contains(region, ".") {
+		return fmt.Errorf("kiro idc issuer_url host %q is not an AWS OIDC endpoint", host)
+	}
+	if err := validateKiroIDCRegion(region); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateKiroIDCStartURL accepts only AWS IAM Identity Center access-portal
+// start URLs hosted under *.awsapps.com (e.g. https://view.awsapps.com/start).
+func validateKiroIDCStartURL(startURL string) error {
+	trimmed := strings.TrimSpace(startURL)
+	if trimmed == "" {
+		return fmt.Errorf("kiro idc start_url is required")
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return fmt.Errorf("invalid kiro idc start_url: %w", err)
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return fmt.Errorf("kiro idc start_url must use https: %q", startURL)
+	}
+	if parsed.User != nil || parsed.Port() != "" {
+		return fmt.Errorf("kiro idc start_url has an unexpected host component: %q", startURL)
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	// Require a non-empty subdomain label in front of awsapps.com so a bare
+	// "awsapps.com" or an attacker domain like "evil-awsapps.com" is rejected.
+	if host == "awsapps.com" || !strings.HasSuffix(host, ".awsapps.com") {
+		return fmt.Errorf("kiro idc start_url host %q is not an AWS access portal", host)
+	}
+	label := strings.TrimSuffix(host, ".awsapps.com")
+	if label == "" || strings.HasPrefix(label, ".") {
+		return fmt.Errorf("kiro idc start_url host %q is not an AWS access portal", host)
+	}
+	return nil
 }
 
 func buildKiroIDCContinuationInfo(sessionID string, continuation *KiroIDCContinuationSession, status, message string) *KiroIDCContinuationInfo {
@@ -953,9 +1130,11 @@ func exchangeKiroCodeForToken(
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
-	if transport, err := buildKiroOAuthTransport(proxyURL); err == nil {
-		client.Transport = transport
+	transport, err := buildKiroOAuthTransport(proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("kiro oauth transport: %w", err)
 	}
+	client.Transport = transport
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -1077,9 +1256,11 @@ func doKiroIDCJSONRequest(ctx context.Context, proxyURL string, endpoint string,
 	req.Header.Set("User-Agent", kiroOAuthDefaultUserAgent)
 
 	client := &http.Client{Timeout: 60 * time.Second}
-	if transport, err := buildKiroOAuthTransport(proxyURL); err == nil {
-		client.Transport = transport
+	transport, err := buildKiroOAuthTransport(proxyURL)
+	if err != nil {
+		return fmt.Errorf("%s: kiro oauth transport: %w", operation, err)
 	}
+	client.Transport = transport
 
 	resp, err := client.Do(req)
 	if err != nil {
