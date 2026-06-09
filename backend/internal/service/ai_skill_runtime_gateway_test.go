@@ -215,6 +215,32 @@ func TestAISkillRuntimeGatewayExecutesPromptImageThroughImagesRuntime(t *testing
 	require.Equal(t, "draw a fox", dispatch.Output["revised_prompt"])
 }
 
+func TestAISkillRuntimeGatewayRejectsScriptExecutionUntilExecutorIsWired(t *testing.T) {
+	t.Parallel()
+
+	runner := &aiSkillScriptRunnerStub{}
+	gateway := NewAISkillRuntimeGateway(nil, nil, NewAISkillScriptRunnerRuntime(runner))
+
+	dispatch, err := gateway.Execute(context.Background(), AISkillExecutionRequest{
+		RunID:     13,
+		SkillID:   23,
+		VersionID: 33,
+		UserID:    43,
+		Mode:      AISkillRunModeUse,
+		Type:      AISkillTypeScript,
+		Script: &AISkillScriptExecution{
+			Runtime:       skillrunner.RuntimePython311,
+			ScriptName:    "script_python_echo",
+			EntryPoint:    "main.py",
+			Protocol:      skillrunner.ProtocolJSONFileV1,
+			ArchiveBase64: base64.StdEncoding.EncodeToString(buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))),
+		},
+	})
+	require.ErrorIs(t, err, ErrAISkillScriptExecutionUnavailable)
+	require.Nil(t, dispatch)
+	require.Nil(t, runner.dispatchRequest, "script runtime must not dispatch until a real executor is wired")
+}
+
 func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 	t.Parallel()
 

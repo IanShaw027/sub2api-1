@@ -65,6 +65,7 @@ var (
 
 	ErrAISkillTypeInvalid                = infraerrors.BadRequest("AI_SKILL_TYPE_INVALID", "ai skill type is invalid")
 	ErrAISkillScriptArchivePathInvalid   = infraerrors.BadRequest("AI_SKILL_SCRIPT_ARCHIVE_PATH_INVALID", "ai skill script archive path is invalid")
+	ErrAISkillScriptExecutionUnavailable = infraerrors.ServiceUnavailable("AI_SKILL_SCRIPT_EXECUTION_UNAVAILABLE", "ai skill script execution is unavailable until the runtime executor is wired")
 	ErrAISkillScriptNotApproved          = infraerrors.Forbidden("AI_SKILL_SCRIPT_NOT_APPROVED", "ai skill script version has no approved artifact digest; re-approval is required before execution")
 	ErrAISkillScriptArtifactMismatch     = infraerrors.Forbidden("AI_SKILL_SCRIPT_ARTIFACT_MISMATCH", "ai skill script artifact does not match the approved digest")
 	ErrAISkillNameRequired               = infraerrors.BadRequest("AI_SKILL_NAME_REQUIRED", "ai skill name is required")
@@ -146,27 +147,27 @@ type AISkillExecutionSpec struct {
 }
 
 type AISkillVersion struct {
-	ID             int64                `json:"id"`
-	SkillID        int64                `json:"skill_id"`
-	CreatorUserID  int64                `json:"creator_user_id"`
-	Version        int                  `json:"version"`
-	Type           string               `json:"type"`
-	Status         string               `json:"status"`
-	ApprovedArtifactDigest string       `json:"approved_artifact_digest,omitempty"`
-	ExecutionSpec  AISkillExecutionSpec `json:"execution_spec"`
-	BillingPolicy  AISkillBillingPolicy `json:"billing_policy"`
-	ChangeNote     string               `json:"change_note,omitempty"`
-	ReviewComment  string               `json:"review_comment,omitempty"`
-	Metadata       map[string]any       `json:"metadata,omitempty"`
-	SubmittedAt    *time.Time           `json:"submitted_at,omitempty"`
-	ReviewedAt     *time.Time           `json:"reviewed_at,omitempty"`
-	ApprovedAt     *time.Time           `json:"approved_at,omitempty"`
-	RejectedAt     *time.Time           `json:"rejected_at,omitempty"`
-	DisabledAt     *time.Time           `json:"disabled_at,omitempty"`
-	ReviewerUserID *int64               `json:"reviewer_user_id,omitempty"`
-	Trace          AITraceRef           `json:"trace"`
-	CreatedAt      time.Time            `json:"created_at"`
-	UpdatedAt      time.Time            `json:"updated_at"`
+	ID                     int64                `json:"id"`
+	SkillID                int64                `json:"skill_id"`
+	CreatorUserID          int64                `json:"creator_user_id"`
+	Version                int                  `json:"version"`
+	Type                   string               `json:"type"`
+	Status                 string               `json:"status"`
+	ApprovedArtifactDigest string               `json:"approved_artifact_digest,omitempty"`
+	ExecutionSpec          AISkillExecutionSpec `json:"execution_spec"`
+	BillingPolicy          AISkillBillingPolicy `json:"billing_policy"`
+	ChangeNote             string               `json:"change_note,omitempty"`
+	ReviewComment          string               `json:"review_comment,omitempty"`
+	Metadata               map[string]any       `json:"metadata,omitempty"`
+	SubmittedAt            *time.Time           `json:"submitted_at,omitempty"`
+	ReviewedAt             *time.Time           `json:"reviewed_at,omitempty"`
+	ApprovedAt             *time.Time           `json:"approved_at,omitempty"`
+	RejectedAt             *time.Time           `json:"rejected_at,omitempty"`
+	DisabledAt             *time.Time           `json:"disabled_at,omitempty"`
+	ReviewerUserID         *int64               `json:"reviewer_user_id,omitempty"`
+	Trace                  AITraceRef           `json:"trace"`
+	CreatedAt              time.Time            `json:"created_at"`
+	UpdatedAt              time.Time            `json:"updated_at"`
 }
 
 type AISkillReview struct {

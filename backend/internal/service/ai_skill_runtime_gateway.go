@@ -145,45 +145,13 @@ func (g *DefaultAISkillRuntimeGateway) executePromptImage(ctx context.Context, r
 }
 
 func (g *DefaultAISkillRuntimeGateway) executeScript(ctx context.Context, req AISkillExecutionRequest) (*AISkillDispatchResult, error) {
-	if g == nil || g.scriptRuntime == nil || req.Script == nil {
-		return nil, ErrAISkillServiceUnavailable
+	if req.Script == nil {
+		return nil, ErrAISkillExecutionSpecInvalid
 	}
-
-	result, err := g.scriptRuntime.ExecuteScript(ctx, AISkillScriptRuntimeInput{
-		RunID:                  req.RunID,
-		SkillID:                req.SkillID,
-		VersionID:              req.VersionID,
-		UserID:                 req.UserID,
-		Mode:                   req.Mode,
-		Runtime:                req.Script.Runtime,
-		ScriptName:             req.Script.ScriptName,
-		EntryPoint:             req.Script.EntryPoint,
-		Protocol:               req.Script.Protocol,
-		ArchivePath:            req.Script.ArchivePath,
-		ArchiveBase64:          req.Script.ArchiveBase64,
-		ApprovedArtifactDigest: req.Script.ApprovedArtifactDigest,
-		VersionStatus:          req.Script.VersionStatus,
-		ReviewerUserID:         req.Script.ReviewerUserID,
-		TimeoutSeconds:         req.Script.TimeoutSeconds,
-		Environment:            cloneAISkillStringMap(req.Script.Environment),
-		Arguments:              cloneAIMapSlice(req.Script.Arguments),
-		Parameters:             cloneAIMap(req.Script.Parameters),
-		Trace:                  req.Trace,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if result == nil {
-		return nil, ErrAISkillServiceUnavailable
-	}
-
-	return &AISkillDispatchResult{
-		Status:        normalizeAISkillDispatchStatus(result.Status),
-		Provider:      "skillrunner",
-		ExternalJobID: strings.TrimSpace(result.ExternalJobID),
-		Output:        cloneAIMap(result.Output),
-		Metadata:      cloneAIMap(result.Metadata),
-	}, nil
+	// The current skillrunner path still only validates/dispatches a sandbox plan
+	// and does not execute the script. Keep script skills fail-closed at the
+	// public runtime-gateway layer until a real executor is wired end-to-end.
+	return nil, ErrAISkillScriptExecutionUnavailable
 }
 
 type AISkillOpenAIRuntime struct {

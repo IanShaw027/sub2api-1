@@ -381,7 +381,16 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 	// be silently refunded — refunding after issuance requires a VAT credit note
 	// (红冲). Force the admin to acknowledge this explicitly. APPLIED-only invoices
 	// (no file uploaded yet) are auto-cancelled later in markRefundOk.
-	if issuedInvoiceID, hasIssued := s.orderHasIssuedInvoice(ctx, o.ID); hasIssued && !force {
+	if issuedInvoiceID, hasIssued, lookupErr := s.orderHasIssuedInvoice(ctx, o.ID); lookupErr != nil && !force {
+		s.writeAuditLog(ctx, o.ID, "REFUND_BLOCKED_INVOICE_LOOKUP_FAILED", "admin", map[string]any{
+			"error": lookupErr.Error(),
+		})
+		return nil, &RefundResult{
+			Success:      false,
+			RequireForce: true,
+			Warning:      "invoice state is unavailable; refund requires force after manual verification",
+		}, nil
+	} else if hasIssued && !force {
 		s.writeAuditLog(ctx, o.ID, "REFUND_BLOCKED_ISSUED_INVOICE", "admin", map[string]any{
 			"invoiceID": issuedInvoiceID,
 		})
@@ -647,23 +656,23 @@ func (s *PaymentService) reverseAffiliateRebateBestEffort(ctx context.Context, o
 
 // orderHasIssuedInvoice reports whether the order is covered by an active invoice
 // in ISSUED state (file uploaded, externally valid). Returns the invoice ID for
-// audit context. Errors are treated as "no issued invoice" so a transient invoice
-// lookup failure never blocks the refund path silently — the gateway refund is the
-// authoritative money movement and must not be coupled to invoice availability.
-func (s *PaymentService) orderHasIssuedInvoice(ctx context.Context, orderID int64) (int64, bool) {
+// audit context, plus an error if invoice state could not be determined. The
+// admin refund entry point treats lookup errors as fail-closed unless force is
+// explicitly supplied.
+func (s *PaymentService) orderHasIssuedInvoice(ctx context.Context, orderID int64) (int64, bool, error) {
 	if s == nil || s.invoiceVoider == nil {
-		return 0, false
+		return 0, false, nil
 	}
 	links, err := s.invoiceVoider.GetActiveLinksByOrderIDs(ctx, []int64{orderID})
 	if err != nil {
-		slog.Warn("refund: invoice lookup failed, proceeding without issued-invoice gate", "orderID", orderID, "error", err)
-		return 0, false
+		slog.Warn("refund: invoice lookup failed", "orderID", orderID, "error", err)
+		return 0, false, err
 	}
 	link, ok := links[orderID]
 	if !ok || link.InvoiceStatus != InvoiceStatusIssued {
-		return 0, false
+		return 0, false, nil
 	}
-	return link.InvoiceID, true
+	return link.InvoiceID, true, nil
 }
 
 // voidInvoicesAfterRefund reconciles invoices tied to a refunded order:

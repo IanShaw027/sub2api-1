@@ -1113,9 +1113,13 @@ type stubInvoiceVoider struct {
 	cancelledInvoice int64
 	cancelHits       int
 	cancelErr        error
+	getErr           error
 }
 
 func (s *stubInvoiceVoider) GetActiveLinksByOrderIDs(_ context.Context, orderIDs []int64) (map[int64]OrderInvoiceLink, error) {
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
 	out := map[int64]OrderInvoiceLink{}
 	for _, id := range orderIDs {
 		if l, ok := s.links[id]; ok {
@@ -1155,6 +1159,26 @@ func TestPrepareRefundBlocksWhenIssuedInvoiceWithoutForce(t *testing.T) {
 	require.False(t, result.Success)
 	require.True(t, result.RequireForce)
 	require.True(t, svc.hasAuditLog(ctx, order.ID, "REFUND_BLOCKED_ISSUED_INVOICE"))
+}
+
+func TestPrepareRefundBlocksWhenInvoiceLookupFailsWithoutForce(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "issuedlookupfail")
+	_ = user
+
+	voider := &stubInvoiceVoider{getErr: errors.New("invoice lookup failed")}
+	svc := &PaymentService{entClient: client}
+	svc.SetInvoiceVoider(voider)
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 100, "refund", false, false)
+	require.NoError(t, err)
+	require.Nil(t, plan)
+	require.NotNil(t, result)
+	require.False(t, result.Success)
+	require.True(t, result.RequireForce)
+	require.Contains(t, result.Warning, "invoice state is unavailable")
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "REFUND_BLOCKED_INVOICE_LOOKUP_FAILED"))
 }
 
 // TestRefundIssuedInvoiceWithForceFlagsCreditNote: with force, refund proceeds and
