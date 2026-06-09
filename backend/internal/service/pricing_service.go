@@ -62,6 +62,17 @@ var (
 		Mode:                            "responses",
 		SupportsPromptCaching:           true,
 	}
+	// claudeFableFallbackPricing 为 claude-fable-* 系列提供静态兜底价。
+	// 上游/LiteLLM 暂未收录该系列，定价按现行 opus（$5/$25 per MTok）的 2 倍计。
+	claudeFableFallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:           1e-05,    // $10 per MTok
+		OutputCostPerToken:          5e-05,    // $50 per MTok
+		CacheCreationInputTokenCost: 1.25e-05, // opus cache write 6.25e-06 ×2
+		CacheReadInputTokenCost:     1e-06,    // opus cache read 5e-07 ×2
+		LiteLLMProvider:             "anthropic",
+		Mode:                        "chat",
+		SupportsPromptCaching:       true,
+	}
 )
 
 // LiteLLMModelPricing LiteLLM价格数据结构
@@ -581,6 +592,12 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 	// 4. 基于模型系列匹配（Claude）
 	if pricing := s.matchByModelFamily(lookupCandidates[0]); pricing != nil {
 		return pricing
+	}
+
+	// 4b. claude-fable-* 系列静态兜底（上游/LiteLLM 未收录时生效；
+	// 若远程数据后续收录，步骤 1 的精确匹配会优先命中）。
+	if strings.HasPrefix(lookupCandidates[0], "claude-fable-") {
+		return claudeFableFallbackPricing
 	}
 
 	// 5. OpenAI 模型回退策略

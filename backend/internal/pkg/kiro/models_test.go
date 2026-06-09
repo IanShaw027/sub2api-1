@@ -54,6 +54,34 @@ func TestMapModel_MapsPublishedAliases(t *testing.T) {
 	}
 }
 
+func TestMapModel_SupportsNewMajorsForKnownFamilies(t *testing.T) {
+	tests := map[string]string{
+		"claude-sonnet-5":     "claude-sonnet-5",
+		"claude-sonnet-5-2":   "claude-sonnet-5.2",
+		"claude-opus-5":       "claude-opus-5",
+		"claude-haiku-5-1m":   "claude-haiku-5",
+		"claude-opus-5.1[1m]": "claude-opus-5.1",
+	}
+	for input, want := range tests {
+		if got := MapModel(input); got != want {
+			t.Fatalf("MapModel(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestMapModel_RejectsUnknownClaudeFamilies(t *testing.T) {
+	tests := []string{
+		"claude-unknown-9-9",
+		"claude-snonet-5",
+		"claude-fable-5",
+	}
+	for _, input := range tests {
+		if got := MapModel(input); got != "" {
+			t.Fatalf("MapModel(%q) = %q, want empty string", input, got)
+		}
+	}
+}
+
 func TestMapModel_RejectsThinkingSuffixAliases(t *testing.T) {
 	tests := []string{
 		"claude-sonnet-4-5-20250929-thinking",

@@ -69,6 +69,36 @@ func TestGetModelPricing_Gpt53CodexSparkUsesDedicatedStaticFallbackWhenRemoteMis
 	require.InDelta(t, 3.5e-7, got.CacheReadInputTokenCostPriority, 1e-12)
 }
 
+func TestGetModelPricing_ClaudeFableUsesStaticFallbackWhenRemoteMissing(t *testing.T) {
+	svc := &PricingService{
+		pricingData: map[string]*LiteLLMModelPricing{
+			"claude-opus-4-7": {InputCostPerToken: 5e-6, OutputCostPerToken: 2.5e-5},
+		},
+	}
+
+	for _, model := range []string{"claude-fable-5", "claude-fable-5-1m", "claude-fable-6"} {
+		got := svc.GetModelPricing(model)
+		require.NotNilf(t, got, "expected fallback pricing for %s", model)
+		require.InDelta(t, 1e-5, got.InputCostPerToken, 1e-12, model)
+		require.InDelta(t, 5e-5, got.OutputCostPerToken, 1e-12, model)
+		require.InDelta(t, 1.25e-5, got.CacheCreationInputTokenCost, 1e-12, model)
+		require.InDelta(t, 1e-6, got.CacheReadInputTokenCost, 1e-12, model)
+		require.True(t, got.SupportsPromptCaching, model)
+	}
+}
+
+func TestGetModelPricing_ClaudeFablePrefersRemoteWhenAvailable(t *testing.T) {
+	remote := &LiteLLMModelPricing{InputCostPerToken: 7e-6, OutputCostPerToken: 3e-5}
+	svc := &PricingService{
+		pricingData: map[string]*LiteLLMModelPricing{
+			"claude-fable-5": remote,
+		},
+	}
+
+	got := svc.GetModelPricing("claude-fable-5")
+	require.Same(t, remote, got)
+}
+
 func TestGetModelPricing_Gpt53CodexFallbackStillUsesGpt52Codex(t *testing.T) {
 	gpt52CodexPricing := &LiteLLMModelPricing{InputCostPerToken: 2}
 
