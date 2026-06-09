@@ -81,6 +81,9 @@ func (s *affiliateRepoStub) AccrueQuota(ctx context.Context, input AffiliateAccr
 	s.accrual = input
 	return input.Amount, nil
 }
+func (s *affiliateRepoStub) ReverseQuotaForOrder(context.Context, AffiliateReversalInput) (float64, int64, error) {
+	return 0, 0, nil
+}
 func (s *affiliateRepoStub) ApplySignupBonus(ctx context.Context, userID int64, amount float64) (bool, float64, error) {
 	return true, amount, nil
 }

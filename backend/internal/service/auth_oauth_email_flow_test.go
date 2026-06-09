@@ -64,6 +64,10 @@ func (s *oauthEmailFlowAffiliateRepoStub) AccrueQuota(context.Context, Affiliate
 	panic("unexpected AccrueQuota call")
 }
 
+func (s *oauthEmailFlowAffiliateRepoStub) ReverseQuotaForOrder(context.Context, AffiliateReversalInput) (float64, int64, error) {
+	panic("unexpected ReverseQuotaForOrder call")
+}
+
 func (s *oauthEmailFlowAffiliateRepoStub) ApplySignupBonus(_ context.Context, userID int64, amount float64) (bool, float64, error) {
 	s.applySignupBonusCalls = append(s.applySignupBonusCalls, struct {
 		userID int64

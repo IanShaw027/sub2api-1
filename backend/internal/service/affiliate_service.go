@@ -112,6 +112,21 @@ type AffiliateAccrualInput struct {
 	PerInviteeCap float64
 }
 
+// AffiliateReversalInput drives the reversal (clawback) of rebate previously
+// accrued for an order that is being refunded.
+//
+// RefundedAmount is the *cumulative* refunded amount on the order (not the
+// incremental amount of this single refund call). The repository computes the
+// proportional target reversal as accrued * RefundedAmount/OrderAmount and only
+// claws back the delta beyond what has already been reversed for the order. This
+// makes the operation idempotent across retries and correct across repeated
+// partial refunds.
+type AffiliateReversalInput struct {
+	SourceOrderID  int64
+	RefundedAmount float64
+	OrderAmount    float64
+}
+
 type AffiliateDetail struct {
 	UserID                     int64              `json:"user_id"`
 	AffCode                    string             `json:"aff_code"`
@@ -245,6 +260,7 @@ type AffiliateRepository interface {
 	GetAffiliateByCode(ctx context.Context, code string) (*AffiliateSummary, error)
 	BindInviter(ctx context.Context, userID, inviterID int64) (bool, error)
 	AccrueQuota(ctx context.Context, input AffiliateAccrualInput) (float64, error)
+	ReverseQuotaForOrder(ctx context.Context, input AffiliateReversalInput) (reversed float64, inviterID int64, err error)
 	ApplySignupBonus(ctx context.Context, userID int64, amount float64) (bool, float64, error)
 	GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error)
 	ThawFrozenQuota(ctx context.Context, userID int64) (float64, error)
@@ -587,6 +603,48 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 		return 0, nil
 	}
 	return appliedAmount, nil
+}
+
+// ReverseInviteRebateForOrder claws back rebate previously accrued for an order
+// that is being refunded. refundedAmount is the *cumulative* refunded amount on
+// the order; orderAmount is the full order amount. The reversal is proportional
+// (accrued * refundedAmount/orderAmount) and idempotent: the repository tracks
+// what has already been reversed for the order and only claws back the delta.
+//
+// Deduction order inside the repository: aff_frozen_quota first, then aff_quota,
+// and finally the inviter's balance if the rebate was already transferred out.
+// Returns the amount actually reversed in this call (0 if nothing to do).
+func (s *AffiliateService) ReverseInviteRebateForOrder(ctx context.Context, orderID int64, refundedAmount, orderAmount float64) (float64, error) {
+	if s == nil || s.repo == nil {
+		return 0, nil
+	}
+	if orderID <= 0 || refundedAmount <= 0 || orderAmount <= 0 {
+		return 0, nil
+	}
+	if math.IsNaN(refundedAmount) || math.IsInf(refundedAmount, 0) ||
+		math.IsNaN(orderAmount) || math.IsInf(orderAmount, 0) {
+		return 0, nil
+	}
+
+	reversed, inviterID, err := s.repo.ReverseQuotaForOrder(ctx, AffiliateReversalInput{
+		SourceOrderID:  orderID,
+		RefundedAmount: refundedAmount,
+		OrderAmount:    orderAmount,
+	})
+	if err != nil {
+		return 0, err
+	}
+	if reversed <= 0 {
+		return 0, nil
+	}
+	// The reversal may have clawed back from the inviter's spendable balance and
+	// always mutates affiliate quota; invalidate the inviter's auth/billing caches
+	// so the gateway does not keep billing against a stale (higher) balance until
+	// TTL expiry. Mirrors the transfer path's invalidation.
+	if inviterID > 0 {
+		s.invalidateAffiliateCaches(ctx, inviterID)
+	}
+	return reversed, nil
 }
 
 func (s *AffiliateService) ApplySignupBonus(ctx context.Context, userID int64) (float64, float64, error) {

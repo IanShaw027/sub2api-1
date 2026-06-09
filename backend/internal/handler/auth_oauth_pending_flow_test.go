@@ -2896,6 +2896,10 @@ func (r *oauthPendingFlowAffiliateRepoStub) GetAccruedRebateFromInvitee(context.
 func (r *oauthPendingFlowAffiliateRepoStub) AccrueQuota(context.Context, service.AffiliateAccrualInput) (float64, error) {
 	panic("unexpected AccrueQuota call")
 }
+
+func (r *oauthPendingFlowAffiliateRepoStub) ReverseQuotaForOrder(context.Context, service.AffiliateReversalInput) (float64, int64, error) {
+	panic("unexpected ReverseQuotaForOrder call")
+}
 func (r *oauthPendingFlowAffiliateRepoStub) ThawFrozenQuota(context.Context, int64) (float64, error) {
 	panic("unexpected ThawFrozenQuota call")
 }

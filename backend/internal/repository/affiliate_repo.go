@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -300,6 +301,155 @@ func (r *affiliateRepository) GetAccruedRebateFromInvitee(ctx context.Context, i
 		}
 	}
 	return total, rows.Close()
+}
+
+// ReverseQuotaForOrder claws back affiliate rebate previously accrued for an
+// order that is being refunded.
+//
+// Idempotency / partial-refund correctness:
+//   - We sum the original accrual(s) for the order (action='accrue').
+//   - We sum what has already been clawed back (action='reverse').
+//   - target = round(accrued * RefundedAmount / OrderAmount); the caller passes
+//     the *cumulative* refunded amount, so target is monotonic.
+//   - We only reverse the delta (target - alreadyReversed). Retries with the same
+//     cumulative refund amount compute a non-positive delta and become no-ops.
+//
+// Deduction cascade against the inviter's balances, in order:
+//  1. aff_frozen_quota (rebate still in freeze window)
+//  2. aff_quota (matured but not yet transferred)
+//  3. users.balance (already transferred to spendable balance) — may go negative,
+//     mirroring DeductBalance semantics, so the arbitrage cannot be cashed out.
+//
+// A single 'reverse' ledger row records the amount actually clawed back this call
+// (negative amount) along with the inviter as user_id and the invitee as
+// source_user_id, so reporting and future delta math stay consistent.
+func (r *affiliateRepository) ReverseQuotaForOrder(ctx context.Context, input service.AffiliateReversalInput) (float64, int64, error) {
+	if input.SourceOrderID <= 0 || input.RefundedAmount <= 0 || input.OrderAmount <= 0 {
+		return 0, 0, nil
+	}
+
+	var reversedNow float64
+	var reversedInviterID int64
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		// Identify the inviter (user_id) and invitee (source_user_id) plus the
+		// total originally accrued for this order. The serialization point is the
+		// FOR UPDATE lock on the inviter's user_affiliates row below (Postgres
+		// disallows FOR UPDATE together with GROUP BY); accrual ledger rows are
+		// historical/immutable, so aggregating them without a row lock is safe.
+		var inviterID, inviteeID sql.NullInt64
+		var accruedTotal float64
+		err := scanSingleRow(txCtx, txClient, `
+SELECT user_id, MAX(source_user_id), COALESCE(SUM(amount), 0)::double precision
+FROM user_affiliate_ledger
+WHERE source_order_id = $1
+  AND action = 'accrue'
+GROUP BY user_id
+ORDER BY user_id
+LIMIT 1`, []any{input.SourceOrderID}, &inviterID, &inviteeID, &accruedTotal)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				// No rebate was ever accrued for this order — nothing to reverse.
+				return nil
+			}
+			return fmt.Errorf("lock affiliate accrual for reversal: %w", err)
+		}
+		if !inviterID.Valid || accruedTotal <= 0 {
+			return nil
+		}
+
+		// Acquire the inviter's affiliate row lock first. This is the
+		// serialization point: concurrent reversals for the same order/inviter
+		// block here, so each sees a consistent already-reversed total below and
+		// the delta math cannot double-claw.
+		var availableQuota, frozenQuota float64
+		if err := scanSingleRow(txCtx, txClient, `
+SELECT aff_quota::double precision, aff_frozen_quota::double precision
+FROM user_affiliates
+WHERE user_id = $1
+FOR UPDATE`, []any{inviterID.Int64}, &availableQuota, &frozenQuota); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return service.ErrUserNotFound
+			}
+			return fmt.Errorf("lock affiliate inviter for reversal: %w", err)
+		}
+
+		// Already-reversed total for this order (stored as negative amounts).
+		var alreadyReversed float64
+		if err := scanSingleRow(txCtx, txClient, `
+SELECT COALESCE(SUM(-amount), 0)::double precision
+FROM user_affiliate_ledger
+WHERE source_order_id = $1
+  AND action = 'reverse'`, []any{input.SourceOrderID}, &alreadyReversed); err != nil {
+			return fmt.Errorf("query prior affiliate reversal: %w", err)
+		}
+
+		// Proportional target reversal based on cumulative refunded amount.
+		ratio := input.RefundedAmount / input.OrderAmount
+		if ratio > 1 {
+			ratio = 1
+		}
+		target := roundTo8(accruedTotal * ratio)
+		toReverse := roundTo8(target - alreadyReversed)
+		if toReverse <= 0 {
+			return nil
+		}
+		if total := roundTo8(alreadyReversed + toReverse); total > accruedTotal {
+			toReverse = roundTo8(accruedTotal - alreadyReversed)
+		}
+		if toReverse <= 0 {
+			return nil
+		}
+
+		remaining := toReverse
+		fromFrozen := math.Min(remaining, frozenQuota)
+		remaining = roundTo8(remaining - fromFrozen)
+		fromAvailable := math.Min(remaining, availableQuota)
+		remaining = roundTo8(remaining - fromAvailable)
+		fromBalance := remaining // whatever is left was already transferred out
+
+		// Apply quota deductions. aff_history_quota is also reduced so cumulative
+		// caps (RebateCap / PerInviteeCap) free up by the reversed amount.
+		if _, err := txClient.ExecContext(txCtx, `
+UPDATE user_affiliates
+SET aff_frozen_quota = GREATEST(aff_frozen_quota - $1, 0),
+    aff_quota = GREATEST(aff_quota - $2, 0),
+    aff_history_quota = GREATEST(aff_history_quota - $3, 0),
+    updated_at = NOW()
+WHERE user_id = $4`, fromFrozen, fromAvailable, toReverse, inviterID.Int64); err != nil {
+			return fmt.Errorf("apply affiliate quota reversal: %w", err)
+		}
+
+		// Claw back the already-transferred portion from spendable balance. This
+		// may push the balance negative, which is intended: the rebate was
+		// converted to balance and must be reclaimed even if spent.
+		if fromBalance > 0 {
+			if _, err := txClient.User.Update().
+				Where(user.IDEQ(inviterID.Int64)).
+				AddBalance(-fromBalance).
+				Save(txCtx); err != nil {
+				return fmt.Errorf("reclaim affiliate balance: %w", err)
+			}
+		}
+
+		var inviteeArg any
+		if inviteeID.Valid {
+			inviteeArg = inviteeID.Int64
+		}
+		if _, err := txClient.ExecContext(txCtx, `
+INSERT INTO user_affiliate_ledger (user_id, action, amount, source_user_id, source_order_id, created_at, updated_at)
+VALUES ($1, 'reverse', $2, $3, $4, NOW(), NOW())`,
+			inviterID.Int64, -toReverse, inviteeArg, input.SourceOrderID); err != nil {
+			return fmt.Errorf("insert affiliate reverse ledger: %w", err)
+		}
+
+		reversedNow = toReverse
+		reversedInviterID = inviterID.Int64
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return reversedNow, reversedInviterID, nil
 }
 
 func (r *affiliateRepository) ApplySignupBonus(ctx context.Context, userID int64, amount float64) (bool, float64, error) {
@@ -1385,6 +1535,13 @@ func nullableFloat64Ptr(v sql.NullFloat64) *float64 {
 		return nil
 	}
 	return &v.Float64
+}
+
+// roundTo8 rounds a monetary amount to 8 decimal places, matching the
+// DECIMAL(20,8) precision of the affiliate quota/ledger columns. This avoids
+// float drift accumulating across repeated partial-refund reversals.
+func roundTo8(v float64) float64 {
+	return math.Round(v*1e8) / 1e8
 }
 
 func generateAffiliateCode() (string, error) {

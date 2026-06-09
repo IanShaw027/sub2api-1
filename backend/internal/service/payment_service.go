@@ -205,6 +205,7 @@ type PaymentService struct {
 	resumeService            *PaymentResumeService
 	affiliateService         *AffiliateService
 	notificationEmailService *NotificationEmailService
+	invoiceVoider            invoiceRefundVoider
 	commitPaymentTx          func(tx *dbent.Tx) error
 }
 
@@ -216,6 +217,25 @@ func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, load
 
 func (s *PaymentService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {
 	s.notificationEmailService = notificationEmailService
+}
+
+// invoiceRefundVoider is the narrow slice of InvoiceService that the refund flow
+// needs: inspecting which invoices cover an order and auto-cancelling an
+// un-issued (APPLIED) application after a refund. Kept as an interface so the
+// payment package does not hard-depend on the full invoice service and to allow
+// stubbing in unit tests.
+type invoiceRefundVoider interface {
+	GetActiveLinksByOrderIDs(ctx context.Context, orderIDs []int64) (map[int64]OrderInvoiceLink, error)
+	CancelByAdmin(ctx context.Context, invoiceID int64) (*InvoiceDetail, error)
+}
+
+// SetInvoiceVoider wires the invoice service so refunds can detect and void
+// invoices tied to a refunded order. Optional; if nil, refund proceeds without
+// invoice checks (legacy behavior).
+func (s *PaymentService) SetInvoiceVoider(v invoiceRefundVoider) {
+	if s != nil {
+		s.invoiceVoider = v
+	}
 }
 
 // --- Provider Registry ---

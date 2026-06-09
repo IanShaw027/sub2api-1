@@ -377,6 +377,20 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 	if preview, previewErr := s.refundPreviewForOrder(ctx, o, inst); previewErr == nil && amountCentsGreaterThan(amt, preview.MaxRefundAmount) {
 		return nil, nil, infraerrors.BadRequest("REFUND_AMOUNT_EXCEEDED", "refund amount exceeds refundable amount")
 	}
+	// Compliance gate: an order that already has an ISSUED (tax) invoice must not
+	// be silently refunded — refunding after issuance requires a VAT credit note
+	// (红冲). Force the admin to acknowledge this explicitly. APPLIED-only invoices
+	// (no file uploaded yet) are auto-cancelled later in markRefundOk.
+	if issuedInvoiceID, hasIssued := s.orderHasIssuedInvoice(ctx, o.ID); hasIssued && !force {
+		s.writeAuditLog(ctx, o.ID, "REFUND_BLOCKED_ISSUED_INVOICE", "admin", map[string]any{
+			"invoiceID": issuedInvoiceID,
+		})
+		return nil, &RefundResult{
+			Success:      false,
+			RequireForce: true,
+			Warning:      "order has an issued invoice; refund requires a credit note (use force)",
+		}, nil
+	}
 	orderCurrency := PaymentOrderCurrency(o)
 	ga := calculateGatewayRefundAmount(o.Amount, o.PayAmount, amt, orderCurrency)
 	rr := strings.TrimSpace(reason)
@@ -595,7 +609,107 @@ func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*Refu
 		return nil, fmt.Errorf("mark refund: %w", err)
 	}
 	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", map[string]any{"refundAmount": p.RefundAmount, "totalRefunded": totalRefunded, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force})
+	s.reverseAffiliateRebateBestEffort(ctx, p.Order, totalRefunded)
+	s.voidInvoicesAfterRefund(ctx, p.Order, totalRefunded)
 	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil
+}
+
+// reverseAffiliateRebateBestEffort claws back affiliate rebate proportional to the
+// cumulative refunded amount. Affiliate balance lives in a separate ledger/quota
+// system, so a reversal failure must not fail the (already gateway-confirmed)
+// refund; we record an audit row for manual follow-up instead. The reversal itself
+// is idempotent (keyed off the order's accrual/reverse ledger), so retries are safe.
+func (s *PaymentService) reverseAffiliateRebateBestEffort(ctx context.Context, o *dbent.PaymentOrder, totalRefunded float64) {
+	if s == nil || s.affiliateService == nil || o == nil {
+		return
+	}
+	if o.OrderType != payment.OrderTypeBalance || o.Amount <= 0 || totalRefunded <= 0 {
+		return
+	}
+	reversed, err := s.affiliateService.ReverseInviteRebateForOrder(ctx, o.ID, totalRefunded, o.Amount)
+	if err != nil {
+		slog.Error("affiliate rebate reversal failed after refund", "orderID", o.ID, "error", err)
+		s.writeAuditLog(ctx, o.ID, "AFFILIATE_REBATE_REVERSAL_FAILED", "system", map[string]any{
+			"totalRefunded": totalRefunded,
+			"orderAmount":   o.Amount,
+			"error":         err.Error(),
+		})
+		return
+	}
+	if reversed > 0 {
+		s.writeAuditLog(ctx, o.ID, "AFFILIATE_REBATE_REVERSED", "system", map[string]any{
+			"reversedAmount": reversed,
+			"totalRefunded":  totalRefunded,
+			"orderAmount":    o.Amount,
+		})
+	}
+}
+
+// orderHasIssuedInvoice reports whether the order is covered by an active invoice
+// in ISSUED state (file uploaded, externally valid). Returns the invoice ID for
+// audit context. Errors are treated as "no issued invoice" so a transient invoice
+// lookup failure never blocks the refund path silently — the gateway refund is the
+// authoritative money movement and must not be coupled to invoice availability.
+func (s *PaymentService) orderHasIssuedInvoice(ctx context.Context, orderID int64) (int64, bool) {
+	if s == nil || s.invoiceVoider == nil {
+		return 0, false
+	}
+	links, err := s.invoiceVoider.GetActiveLinksByOrderIDs(ctx, []int64{orderID})
+	if err != nil {
+		slog.Warn("refund: invoice lookup failed, proceeding without issued-invoice gate", "orderID", orderID, "error", err)
+		return 0, false
+	}
+	link, ok := links[orderID]
+	if !ok || link.InvoiceStatus != InvoiceStatusIssued {
+		return 0, false
+	}
+	return link.InvoiceID, true
+}
+
+// voidInvoicesAfterRefund reconciles invoices tied to a refunded order:
+//   - APPLIED (no file uploaded): auto-cancel the application so the order is
+//     released and the user is not left with a pending request for refunded money.
+//   - ISSUED (tax invoice already delivered): we cannot programmatically void a
+//     filed invoice; we record AFFILIATE-style audit (INVOICE_NEEDS_CREDIT_NOTE)
+//     so finance issues a VAT credit note (红冲). No DB enum change is made.
+//
+// Best-effort: failures are logged/audited but never fail the completed refund.
+func (s *PaymentService) voidInvoicesAfterRefund(ctx context.Context, o *dbent.PaymentOrder, totalRefunded float64) {
+	if s == nil || s.invoiceVoider == nil || o == nil {
+		return
+	}
+	links, err := s.invoiceVoider.GetActiveLinksByOrderIDs(ctx, []int64{o.ID})
+	if err != nil {
+		slog.Warn("refund: invoice void lookup failed", "orderID", o.ID, "error", err)
+		s.writeAuditLog(ctx, o.ID, "INVOICE_VOID_LOOKUP_FAILED", "system", map[string]any{"error": err.Error()})
+		return
+	}
+	link, ok := links[o.ID]
+	if !ok {
+		return
+	}
+	switch link.InvoiceStatus {
+	case InvoiceStatusApplied:
+		if _, err := s.invoiceVoider.CancelByAdmin(ctx, link.InvoiceID); err != nil {
+			slog.Error("refund: auto-cancel applied invoice failed", "orderID", o.ID, "invoiceID", link.InvoiceID, "error", err)
+			s.writeAuditLog(ctx, o.ID, "INVOICE_AUTO_CANCEL_FAILED", "system", map[string]any{
+				"invoiceID": link.InvoiceID,
+				"error":     err.Error(),
+			})
+			return
+		}
+		s.writeAuditLog(ctx, o.ID, "INVOICE_AUTO_CANCELLED_AFTER_REFUND", "system", map[string]any{
+			"invoiceID": link.InvoiceID,
+		})
+	case InvoiceStatusIssued:
+		// Issued (filed) invoice — flag for a manual credit note. Refund was forced
+		// past the PrepareRefund gate, so this is expected and recorded for finance.
+		s.writeAuditLog(ctx, o.ID, "INVOICE_NEEDS_CREDIT_NOTE", "system", map[string]any{
+			"invoiceID":     link.InvoiceID,
+			"totalRefunded": totalRefunded,
+			"orderAmount":   o.Amount,
+		})
+	}
 }
 
 func remainingRefundAmount(o *dbent.PaymentOrder) float64 {

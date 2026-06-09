@@ -740,3 +740,200 @@ func TestAffiliateRepository_ListUsersWithCustomSettings(t *testing.T) {
 
 	require.GreaterOrEqual(t, total, int64(2), "total must include at least our 2 custom rows")
 }
+
+// seedReversalFixture creates inviter+invitee bound pair and an accrued rebate
+// for a COMPLETED balance order, returning the repo, ids and order id.
+func seedReversalFixture(t *testing.T, ctx context.Context, txCtx context.Context, client *dbent.Client, freezeHours int, orderAmount, rebate float64) (service.AffiliateRepository, int64, int64, int64) {
+	t.Helper()
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	inviter := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("aff-rev-inviter-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	invitee := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("aff-rev-invitee-%d@example.com", time.Now().UnixNano()+1),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+
+	_, err := repo.EnsureUserAffiliate(txCtx, inviter.ID)
+	require.NoError(t, err)
+	_, err = repo.EnsureUserAffiliate(txCtx, invitee.ID)
+	require.NoError(t, err)
+	bound, err := repo.BindInviter(txCtx, invitee.ID, inviter.ID)
+	require.NoError(t, err)
+	require.True(t, bound)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(invitee.ID).
+		SetUserEmail(invitee.Email).
+		SetUserName(invitee.Username).
+		SetAmount(orderAmount).
+		SetPayAmount(orderAmount).
+		SetFeeRate(0).
+		SetRechargeCode(fmt.Sprintf("AFF-REV-%d", time.Now().UnixNano())).
+		SetOutTradeNo(fmt.Sprintf("sub2_aff_rev_%d", time.Now().UnixNano())).
+		SetPaymentType("alipay").
+		SetPaymentTradeNo("").
+		SetOrderType("balance").
+		SetStatus("COMPLETED").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetExpiresAt(time.Now().Add(24 * time.Hour)).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	applied, err := repo.AccrueQuota(txCtx, service.AffiliateAccrualInput{
+		InviterID:     inviter.ID,
+		InviteeUserID: invitee.ID,
+		Amount:        rebate,
+		BaseAmount:    orderAmount,
+		SourceOrderID: order.ID,
+		FreezeHours:   freezeHours,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, rebate, applied, 1e-9)
+
+	return repo, inviter.ID, invitee.ID, order.ID
+}
+
+// TestAffiliateRepository_ReverseQuotaForOrder_DeductsFrozenFirst verifies that a
+// full refund of an order whose rebate is still frozen claws back from
+// aff_frozen_quota (and aff_history_quota), leaving balance untouched.
+func TestAffiliateRepository_ReverseQuotaForOrder_DeductsFrozenFirst(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo, inviterID, _, orderID := seedReversalFixture(t, ctx, txCtx, client, 24, 100, 20)
+
+	frozen := querySingleFloat(t, txCtx, client,
+		"SELECT aff_frozen_quota::double precision FROM user_affiliates WHERE user_id = $1", inviterID)
+	require.InDelta(t, 20.0, frozen, 1e-9)
+
+	reversed, gotInviter, err := repo.ReverseQuotaForOrder(txCtx, service.AffiliateReversalInput{
+		SourceOrderID:  orderID,
+		RefundedAmount: 100,
+		OrderAmount:    100,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 20.0, reversed, 1e-9)
+	require.Equal(t, inviterID, gotInviter)
+
+	frozen = querySingleFloat(t, txCtx, client,
+		"SELECT aff_frozen_quota::double precision FROM user_affiliates WHERE user_id = $1", inviterID)
+	require.InDelta(t, 0.0, frozen, 1e-9)
+	history := querySingleFloat(t, txCtx, client,
+		"SELECT aff_history_quota::double precision FROM user_affiliates WHERE user_id = $1", inviterID)
+	require.InDelta(t, 0.0, history, 1e-9)
+	balance := querySingleFloat(t, txCtx, client,
+		"SELECT balance::double precision FROM users WHERE id = $1", inviterID)
+	require.InDelta(t, 0.0, balance, 1e-9)
+}
+
+// TestAffiliateRepository_ReverseQuotaForOrder_ClawsBackTransferredBalance is the
+// core arbitrage guard: when the rebate has already matured and been transferred
+// to spendable balance, the reversal must reclaim it from balance (allowing it to
+// go negative), not silently no-op.
+func TestAffiliateRepository_ReverseQuotaForOrder_ClawsBackTransferredBalance(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	// No freeze: rebate lands directly in aff_quota.
+	repo, inviterID, _, orderID := seedReversalFixture(t, ctx, txCtx, client, 0, 100, 20)
+
+	available := querySingleFloat(t, txCtx, client,
+		"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", inviterID)
+	require.InDelta(t, 20.0, available, 1e-9)
+
+	// Transfer the matured quota out to balance (the arbitrage cash-out step).
+	transferred, _, err := repo.TransferQuotaToBalance(txCtx, inviterID)
+	require.NoError(t, err)
+	require.InDelta(t, 20.0, transferred, 1e-9)
+	balance := querySingleFloat(t, txCtx, client,
+		"SELECT balance::double precision FROM users WHERE id = $1", inviterID)
+	require.InDelta(t, 20.0, balance, 1e-9)
+
+	// Now refund the order: quota is gone, so reversal must hit balance.
+	reversed, gotInviter, err := repo.ReverseQuotaForOrder(txCtx, service.AffiliateReversalInput{
+		SourceOrderID:  orderID,
+		RefundedAmount: 100,
+		OrderAmount:    100,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 20.0, reversed, 1e-9)
+	require.Equal(t, inviterID, gotInviter)
+
+	balance = querySingleFloat(t, txCtx, client,
+		"SELECT balance::double precision FROM users WHERE id = $1", inviterID)
+	require.InDelta(t, 0.0, balance, 1e-9, "transferred rebate must be reclaimed from balance")
+}
+
+// TestAffiliateRepository_ReverseQuotaForOrder_ProportionalAndIdempotent verifies
+// cumulative proportional reversal across repeated partial refunds and idempotent
+// retries with the same cumulative amount.
+func TestAffiliateRepository_ReverseQuotaForOrder_ProportionalAndIdempotent(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo, inviterID, _, orderID := seedReversalFixture(t, ctx, txCtx, client, 24, 100, 20)
+
+	// Refund 30% cumulative -> reverse 6.
+	reversed, _, err := repo.ReverseQuotaForOrder(txCtx, service.AffiliateReversalInput{
+		SourceOrderID: orderID, RefundedAmount: 30, OrderAmount: 100,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 6.0, reversed, 1e-9)
+
+	// Retry with same cumulative amount -> no-op.
+	reversed, _, err = repo.ReverseQuotaForOrder(txCtx, service.AffiliateReversalInput{
+		SourceOrderID: orderID, RefundedAmount: 30, OrderAmount: 100,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 0.0, reversed, 1e-9)
+
+	// Refund the rest (cumulative 100%) -> reverse remaining 14.
+	reversed, _, err = repo.ReverseQuotaForOrder(txCtx, service.AffiliateReversalInput{
+		SourceOrderID: orderID, RefundedAmount: 100, OrderAmount: 100,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 14.0, reversed, 1e-9)
+
+	frozen := querySingleFloat(t, txCtx, client,
+		"SELECT aff_frozen_quota::double precision FROM user_affiliates WHERE user_id = $1", inviterID)
+	require.InDelta(t, 0.0, frozen, 1e-9)
+
+	totalReversed := querySingleFloat(t, txCtx, client, `
+SELECT COALESCE(SUM(-amount), 0)::double precision
+FROM user_affiliate_ledger
+WHERE source_order_id = $1 AND action = 'reverse'`, orderID)
+	require.InDelta(t, 20.0, totalReversed, 1e-9)
+}
+
+// TestAffiliateRepository_ReverseQuotaForOrder_NoAccrualNoOp ensures reversal is a
+// safe no-op when the order never accrued any rebate.
+func TestAffiliateRepository_ReverseQuotaForOrder_NoAccrualNoOp(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+	reversed, gotInviter, err := repo.ReverseQuotaForOrder(txCtx, service.AffiliateReversalInput{
+		SourceOrderID: 999999999, RefundedAmount: 50, OrderAmount: 100,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 0.0, reversed, 1e-9)
+	require.Zero(t, gotInviter)
+}

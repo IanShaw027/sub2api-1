@@ -449,6 +449,10 @@ func (r *oauthEmailAffiliateRepoStub) AccrueQuota(context.Context, service.Affil
 	panic("unexpected AccrueQuota call")
 }
 
+func (r *oauthEmailAffiliateRepoStub) ReverseQuotaForOrder(context.Context, service.AffiliateReversalInput) (float64, int64, error) {
+	panic("unexpected ReverseQuotaForOrder call")
+}
+
 func (r *oauthEmailAffiliateRepoStub) ApplySignupBonus(context.Context, int64, float64) (bool, float64, error) {
 	return false, 0, nil
 }

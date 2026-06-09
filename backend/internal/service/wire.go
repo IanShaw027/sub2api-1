@@ -890,6 +890,12 @@ func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, 
 func ProvideInvoiceService(entClient *dbent.Client, paymentSvc *PaymentService, mediaSvc *MediaService, emailSvc *NotificationEmailService) *InvoiceService {
 	svc := NewInvoiceService(entClient, paymentSvc, mediaSvc)
 	svc.SetNotificationEmailService(emailSvc)
+	// Wire the reverse link so the refund flow can detect/void invoices tied to a
+	// refunded order. Done here (not in NewPaymentService) because of the
+	// paymentSvc -> invoiceSvc construction order.
+	if paymentSvc != nil {
+		paymentSvc.SetInvoiceVoider(svc)
+	}
 	return svc
 }
 

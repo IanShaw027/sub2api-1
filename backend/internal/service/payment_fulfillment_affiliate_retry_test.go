@@ -54,10 +54,15 @@ func (s *paymentFulfillmentAffiliateSettingRepoStub) Delete(context.Context, str
 }
 
 type paymentFulfillmentAffiliateRepoStub struct {
-	summary    *AffiliateSummary
-	accrueErr  error
-	accrueUsed AffiliateAccrualInput
-	accrueHits int
+	summary      *AffiliateSummary
+	accrueErr    error
+	accrueUsed   AffiliateAccrualInput
+	accrueHits   int
+	reverseUsed  AffiliateReversalInput
+	reverseHits  int
+	reverseRet   float64
+	reverseInvtr int64
+	reverseErr   error
 }
 
 func (s *paymentFulfillmentAffiliateRepoStub) EnsureUserAffiliate(context.Context, int64) (*AffiliateSummary, error) {
@@ -82,6 +87,15 @@ func (s *paymentFulfillmentAffiliateRepoStub) AccrueQuota(_ context.Context, inp
 		return 0, s.accrueErr
 	}
 	return input.Amount, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) ReverseQuotaForOrder(_ context.Context, input AffiliateReversalInput) (float64, int64, error) {
+	s.reverseHits++
+	s.reverseUsed = input
+	if s.reverseErr != nil {
+		return 0, 0, s.reverseErr
+	}
+	return s.reverseRet, s.reverseInvtr, nil
 }
 
 func (s *paymentFulfillmentAffiliateRepoStub) ApplySignupBonus(context.Context, int64, float64) (bool, float64, error) {

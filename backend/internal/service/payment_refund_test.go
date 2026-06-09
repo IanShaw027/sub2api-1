@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"testing"
 	"time"
@@ -959,4 +960,257 @@ func TestValidateRefundProviderResponseAcceptsPending(t *testing.T) {
 	require.NoError(t, validateRefundProviderResponse(&payment.RefundResponse{Status: payment.ProviderStatusSuccess}))
 	require.Error(t, validateRefundProviderResponse(&payment.RefundResponse{Status: payment.ProviderStatusFailed}))
 	require.Error(t, validateRefundProviderResponse(nil))
+}
+
+// affiliateServiceWithReverseStub builds an AffiliateService whose repo records
+// reversal calls, for asserting that the refund flow claws back rebate.
+func affiliateServiceWithReverseStub(stub *paymentFulfillmentAffiliateRepoStub) *AffiliateService {
+	return &AffiliateService{
+		repo: stub,
+		settingRepo: &paymentFulfillmentAffiliateSettingRepoStub{
+			values: map[string]string{
+				SettingKeyAffiliateEnabled:    "true",
+				SettingKeyAffiliateRebateRate: "20",
+			},
+		},
+	}
+}
+
+func seedRefundBalanceOrder(t *testing.T, ctx context.Context, client *dbent.Client, amount float64, suffix string) (*User, *dbent.PaymentOrder) {
+	t.Helper()
+	user, err := client.User.Create().
+		SetEmail("refund-reverse-" + suffix + "@example.com").
+		SetPasswordHash("hash").
+		SetUsername("refund-reverse-" + suffix).
+		Save(ctx)
+	require.NoError(t, err)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("alipay-refund-reverse-" + suffix).
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(amount).
+		SetPayAmount(amount).
+		SetFeeRate(0).
+		SetRechargeCode("REFUND-REVERSE-" + suffix).
+		SetOutTradeNo("sub2_refund_reverse_" + suffix).
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(strconv.FormatInt(inst.ID, 10)).
+		SetProviderKey(payment.TypeAlipay).
+		Save(ctx)
+	require.NoError(t, err)
+	return &User{ID: user.ID, Email: user.Email, Username: user.Username}, order
+}
+
+// TestRefundReversesAffiliateRebate is the regression guard for the arbitrage
+// hole: a successful refund must claw back the rebate accrued to the inviter.
+// Before the fix, markRefundOk never called the affiliate reversal path.
+func TestRefundReversesAffiliateRebate(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "full")
+
+	stub := &paymentFulfillmentAffiliateRepoStub{reverseRet: 20}
+	svc := &PaymentService{
+		entClient:        client,
+		userRepo:         &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}},
+		affiliateService: affiliateServiceWithReverseStub(stub),
+	}
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 100, "full refund", false, false)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	plan.Order.PaymentTradeNo = ""
+	result, err = svc.ExecuteRefund(ctx, plan)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	require.Equal(t, 1, stub.reverseHits, "refund must trigger affiliate rebate reversal")
+	require.Equal(t, order.ID, stub.reverseUsed.SourceOrderID)
+	require.Equal(t, 100.0, stub.reverseUsed.RefundedAmount)
+	require.Equal(t, 100.0, stub.reverseUsed.OrderAmount)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "AFFILIATE_REBATE_REVERSED"))
+}
+
+// TestPartialRefundReversesProportionalRebateCumulatively verifies the reversal
+// receives the *cumulative* refunded amount on each partial refund, which is what
+// makes the repository-side proportional clawback idempotent and correct.
+func TestPartialRefundReversesProportionalRebateCumulatively(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "partial")
+
+	stub := &paymentFulfillmentAffiliateRepoStub{reverseRet: 6}
+	svc := &PaymentService{
+		entClient:        client,
+		userRepo:         &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}},
+		affiliateService: affiliateServiceWithReverseStub(stub),
+	}
+
+	plan, _, err := svc.PrepareRefund(ctx, order.ID, 30, "first partial", false, false)
+	require.NoError(t, err)
+	plan.Order.PaymentTradeNo = ""
+	_, err = svc.ExecuteRefund(ctx, plan)
+	require.NoError(t, err)
+	require.Equal(t, 30.0, stub.reverseUsed.RefundedAmount)
+
+	plan, _, err = svc.PrepareRefund(ctx, order.ID, 70, "final partial", false, false)
+	require.NoError(t, err)
+	plan.Order.PaymentTradeNo = ""
+	_, err = svc.ExecuteRefund(ctx, plan)
+	require.NoError(t, err)
+	require.Equal(t, 2, stub.reverseHits)
+	require.Equal(t, 100.0, stub.reverseUsed.RefundedAmount, "second partial passes cumulative total")
+}
+
+// TestRefundReversalFailureDoesNotFailRefund ensures a clawback error is recorded
+// for follow-up but never rolls back the gateway-confirmed refund.
+func TestRefundReversalFailureDoesNotFailRefund(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "reversefail")
+
+	stub := &paymentFulfillmentAffiliateRepoStub{reverseErr: errors.New("ledger down")}
+	svc := &PaymentService{
+		entClient:        client,
+		userRepo:         &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}},
+		affiliateService: affiliateServiceWithReverseStub(stub),
+	}
+
+	plan, _, err := svc.PrepareRefund(ctx, order.ID, 100, "full refund", false, false)
+	require.NoError(t, err)
+	plan.Order.PaymentTradeNo = ""
+	result, err := svc.ExecuteRefund(ctx, plan)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRefunded, reloaded.Status)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "AFFILIATE_REBATE_REVERSAL_FAILED"))
+}
+
+// stubInvoiceVoider implements invoiceRefundVoider for refund invoice-gate tests.
+type stubInvoiceVoider struct {
+	links            map[int64]OrderInvoiceLink
+	cancelledInvoice int64
+	cancelHits       int
+	cancelErr        error
+}
+
+func (s *stubInvoiceVoider) GetActiveLinksByOrderIDs(_ context.Context, orderIDs []int64) (map[int64]OrderInvoiceLink, error) {
+	out := map[int64]OrderInvoiceLink{}
+	for _, id := range orderIDs {
+		if l, ok := s.links[id]; ok {
+			out[id] = l
+		}
+	}
+	return out, nil
+}
+
+func (s *stubInvoiceVoider) CancelByAdmin(_ context.Context, invoiceID int64) (*InvoiceDetail, error) {
+	s.cancelHits++
+	s.cancelledInvoice = invoiceID
+	if s.cancelErr != nil {
+		return nil, s.cancelErr
+	}
+	return &InvoiceDetail{ID: invoiceID, Status: InvoiceStatusCancelled}, nil
+}
+
+// TestPrepareRefundBlocksWhenIssuedInvoiceWithoutForce is the compliance guard:
+// an order with an ISSUED (filed) invoice cannot be refunded without force.
+func TestPrepareRefundBlocksWhenIssuedInvoiceWithoutForce(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "issuedgate")
+	_ = user
+
+	voider := &stubInvoiceVoider{links: map[int64]OrderInvoiceLink{
+		order.ID: {InvoiceID: 42, InvoiceStatus: InvoiceStatusIssued, HasFile: true},
+	}}
+	svc := &PaymentService{entClient: client}
+	svc.SetInvoiceVoider(voider)
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 100, "refund", false, false)
+	require.NoError(t, err)
+	require.Nil(t, plan)
+	require.NotNil(t, result)
+	require.False(t, result.Success)
+	require.True(t, result.RequireForce)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "REFUND_BLOCKED_ISSUED_INVOICE"))
+}
+
+// TestRefundIssuedInvoiceWithForceFlagsCreditNote: with force, refund proceeds and
+// records that a credit note (红冲) is needed for the issued invoice.
+func TestRefundIssuedInvoiceWithForceFlagsCreditNote(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "issuedforce")
+
+	voider := &stubInvoiceVoider{links: map[int64]OrderInvoiceLink{
+		order.ID: {InvoiceID: 42, InvoiceStatus: InvoiceStatusIssued, HasFile: true},
+	}}
+	svc := &PaymentService{
+		entClient: client,
+		userRepo:  &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}},
+	}
+	svc.SetInvoiceVoider(voider)
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 100, "refund", true, false)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	require.NotNil(t, plan)
+	plan.Order.PaymentTradeNo = ""
+	result, err = svc.ExecuteRefund(ctx, plan)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	require.Zero(t, voider.cancelHits, "issued invoice must not be auto-cancelled")
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "INVOICE_NEEDS_CREDIT_NOTE"))
+}
+
+// TestRefundAutoCancelsAppliedInvoice: an APPLIED (no file) invoice is auto-cancelled
+// after a refund, with no force required.
+func TestRefundAutoCancelsAppliedInvoice(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "appliedcancel")
+
+	voider := &stubInvoiceVoider{links: map[int64]OrderInvoiceLink{
+		order.ID: {InvoiceID: 77, InvoiceStatus: InvoiceStatusApplied, HasFile: false},
+	}}
+	svc := &PaymentService{
+		entClient: client,
+		userRepo:  &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}},
+	}
+	svc.SetInvoiceVoider(voider)
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 100, "refund", false, false)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	plan.Order.PaymentTradeNo = ""
+	result, err = svc.ExecuteRefund(ctx, plan)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	require.Equal(t, 1, voider.cancelHits)
+	require.Equal(t, int64(77), voider.cancelledInvoice)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "INVOICE_AUTO_CANCELLED_AFTER_REFUND"))
 }
