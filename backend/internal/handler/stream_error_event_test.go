@@ -151,6 +151,19 @@ func TestOpenAIHandleStreamingAwareError_ChatCompletionsStreamingKeepsLegacy(t *
 
 	body := w.Body.String()
 	assert.True(t, strings.HasPrefix(body, "event: error\n"), "got: %q", body)
+	// chat completions / 通用 SSE 客户端依赖 data: [DONE] 关闭流。
+	assert.Contains(t, body, "data: [DONE]\n\n", "chat completions must append [DONE]: %q", body)
+}
+
+// /v1/responses must NOT append data: [DONE]; strict SDKs (Codex CLI) treat it as
+// an illegal terminator. The response.failed event is the terminal frame.
+func TestOpenAIHandleStreamingAwareError_ResponsesStreamingOmitsDone(t *testing.T) {
+	c, w := newGinContextForEndpoint(t, EndpointResponses)
+	h := &OpenAIGatewayHandler{}
+	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "boom", true)
+
+	body := w.Body.String()
+	assert.NotContains(t, body, "[DONE]", "responses path must not emit [DONE]: %q", body)
 }
 
 // Gateway (Anthropic-backed) handler: /v1/responses path also must emit response.failed.

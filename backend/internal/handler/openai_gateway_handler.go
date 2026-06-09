@@ -380,6 +380,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				return
 			}
 		}
+		// 记录 Forward 之前已写出的字节数。若 Forward 在写出任意 SSE 帧
+		// （含 response.created 等终态前置帧）后才返回 failover 错误，
+		// 跨账号切换并重放会导致同一连接出现两份 response.created/failed 终态帧，
+		// Codex CLI 会报 "response.created received twice"。
+		// 注意：仅用于跨账号 switch 守卫；同账号 pool-mode 重试依赖
+		// service 层 replay 去重，不能在此拦截。
+		writerSizeBeforeForward := c.Writer.Size()
 		result, err := h.gatewayService.Forward(c.Request.Context(), c, account, forwardBody)
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		if imageReleaseFunc != nil {
@@ -431,6 +438,20 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
 					lastFailoverAccount = account
+					// 跨账号切换前的终态帧守卫：若本次 Forward 已向客户端写出
+					// 任意 SSE 帧，切换到下一个账号重放会产生重复的
+					// response.created/failed 终态帧（Codex CLI 报
+					// "response.created received twice"）。此时不再 continue，
+					// 直接按 failover 耗尽收口。同账号 pool-mode 重试在上面已经
+					// continue，不会走到这里，因此其 replay 去重不受影响。
+					if c.Writer.Size() != writerSizeBeforeForward {
+						reqLog.Warn("openai.failover_blocked_after_stream_started",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+						)
+						h.handleFailoverExhausted(c, failoverErr, account, streamStarted)
+						return
+					}
 					if switchCount >= maxAccountSwitches {
 						h.handleFailoverExhausted(c, failoverErr, account, streamStarted)
 						return
@@ -2041,8 +2062,14 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status 
 			// 给 chat completions / 通用 SSE 客户端补一个 [DONE] 终止符。
 			// 不少 SDK（含 openai-python、openai-js）依赖 data: [DONE] 关闭流，
 			// 仅有 event: error 会让客户端等到读取超时才放弃。
-			if _, err := fmt.Fprint(c.Writer, "data: [DONE]\n\n"); err != nil {
-				_ = c.Error(err)
+			// /v1/responses 严格 SDK（Codex CLI / openai-python responses 客户端）
+			// 把 [DONE] 当作非法终止帧，因此 Responses 路径不附加 [DONE]。
+			// 正常情况下 Responses 路径已在上面 writeResponsesFailedSSE 成功后 return，
+			// 这里仅作为 flusher 不可用等兜底分支的防御。
+			if !inboundIsResponses(c) {
+				if _, err := fmt.Fprint(c.Writer, "data: [DONE]\n\n"); err != nil {
+					_ = c.Error(err)
+				}
 			}
 			flusher.Flush()
 		}
