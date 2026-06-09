@@ -17,3 +17,4 @@ redis_data/
 # Temporary files
 *.tmp
 *.log
+.cache/
