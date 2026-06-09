@@ -75,9 +75,13 @@ func (s *OpenAIOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64
 		}
 	}
 
-	// Use default redirect URI if not specified
-	if redirectURI == "" {
-		redirectURI = openai.DefaultRedirectURI
+	// Resolve redirect URI against the server-side allowlist. Never trust the
+	// caller-supplied value verbatim: an attacker-controlled redirect_uri can be
+	// used to hijack the authorization code at exchange time. Only known-good
+	// values are accepted; an empty value falls back to the default.
+	redirectURI, err = resolveOpenAIRedirectURI(redirectURI)
+	if err != nil {
+		return nil, err
 	}
 	normalizedPlatform := normalizeOpenAIOAuthPlatform(platform)
 	clientID, _ := openai.OAuthClientConfigByPlatform(normalizedPlatform)
@@ -158,11 +162,12 @@ func (s *OpenAIOAuthService) ExchangeCode(ctx context.Context, input *OpenAIExch
 		}
 	}
 
-	// Use redirect URI from session or input
+	// The redirect_uri used at code exchange MUST exactly match the one used in
+	// the authorization request (OAuth spec) and originate from the server. Always
+	// use the value stored in the session; never let the caller override it,
+	// otherwise an attacker-supplied redirect_uri could be smuggled to the token
+	// endpoint to hijack the authorization code.
 	redirectURI := session.RedirectURI
-	if input.RedirectURI != "" {
-		redirectURI = input.RedirectURI
-	}
 	clientID := strings.TrimSpace(session.ClientID)
 	if clientID == "" {
 		clientID = openai.ClientID
@@ -436,4 +441,26 @@ func (s *OpenAIOAuthService) Stop() {
 
 func normalizeOpenAIOAuthPlatform(platform string) string {
 	return openai.OAuthPlatformOpenAI
+}
+
+// allowedOpenAIRedirectURIs is the server-side allowlist of redirect URIs that
+// may be used in the OpenAI OAuth flow. Only values registered here are honored;
+// any other caller-supplied value is rejected.
+var allowedOpenAIRedirectURIs = map[string]struct{}{
+	openai.DefaultRedirectURI: {},
+}
+
+// resolveOpenAIRedirectURI validates a caller-supplied redirect URI against the
+// allowlist. An empty value falls back to the default. Any non-empty value that
+// is not on the allowlist is rejected with a BadRequest error so the admin sees
+// an explicit failure rather than silently using an untrusted endpoint.
+func resolveOpenAIRedirectURI(redirectURI string) (string, error) {
+	trimmed := strings.TrimSpace(redirectURI)
+	if trimmed == "" {
+		return openai.DefaultRedirectURI, nil
+	}
+	if _, ok := allowedOpenAIRedirectURIs[trimmed]; !ok {
+		return "", infraerrors.Newf(http.StatusBadRequest, "OPENAI_OAUTH_INVALID_REDIRECT_URI", "redirect_uri %q is not allowed", trimmed)
+	}
+	return trimmed, nil
 }
