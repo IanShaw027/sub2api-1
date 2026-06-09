@@ -220,13 +220,19 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 	archive := buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))
 	hostSkillDir := t.TempDir()
 	hostScratchDir := t.TempDir()
-	archivePath := filepath.Join(t.TempDir(), "script_python_echo.zip")
+	archiveRoot := t.TempDir()
+	archivePath := filepath.Join(archiveRoot, "script_python_echo.zip")
 	inputPath := filepath.Join(hostScratchDir, "input", "request.json")
 	outputPath := filepath.Join(hostScratchDir, "output", "response.json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(inputPath), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Dir(outputPath), 0o755))
 	require.NoError(t, os.WriteFile(archivePath, archive, 0o600))
 	require.NoError(t, os.WriteFile(outputPath, []byte(`{"ok":true,"echo":"sunrise","runtime":"python3.11"}`), 0o600))
+
+	// The resolver canonicalizes the archive path via EvalSymlinks (e.g. on
+	// macOS /var -> /private/var), so archive_source reflects the resolved path.
+	resolvedArchivePath, err := filepath.EvalSymlinks(archivePath)
+	require.NoError(t, err)
 
 	runner := &aiSkillScriptRunnerStub{
 		inspectResult: &skillrunner.Bundle{
@@ -251,6 +257,10 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 					"SUB2API_SKILL_INPUT":  "/sandbox/input/request.json",
 					"SUB2API_SKILL_OUTPUT": "/sandbox/output/response.json",
 				},
+				Mounts: []skillrunner.Mount{
+					{Source: hostSkillDir, Target: "/workspace/skill", ReadOnly: true},
+					{Source: hostScratchDir, Target: "/sandbox", ReadOnly: false},
+				},
 				ResourceLimits: skillrunner.ResourceLimits{},
 			},
 			HostSkillDir:   hostSkillDir,
@@ -260,6 +270,9 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 		},
 	}
 	runtime := NewAISkillScriptRunnerRuntime(runner)
+	// Constrain on-disk archive reads to the test archive root (resolved the
+	// same way production resolves SUB2API_AI_SKILL_ARCHIVE_ROOT).
+	runtime.archiveRoot = resolveAISkillArchiveRoot(archiveRoot)
 
 	result, err := runtime.ExecuteScript(context.Background(), AISkillScriptRuntimeInput{
 		RunID:          51,
@@ -272,8 +285,7 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 		EntryPoint:     "main.py",
 		Protocol:       skillrunner.ProtocolJSONFileV1,
 		ArchivePath:    archivePath,
-		TimeoutSeconds: 45,
-		Environment: map[string]string{
+		TimeoutSeconds: 45,		Environment: map[string]string{
 			"SUBJECT": "{{subject}}",
 		},
 		Parameters: map[string]any{
@@ -299,12 +311,24 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 	require.Equal(t, "/sandbox/output/response.json", outputPlanEnv["SUB2API_SKILL_OUTPUT"])
 	require.Equal(t, int64(45*time.Second), gjson.GetBytes(mustJSON(t, outputPlan), "resourceLimits.timeout").Int())
 
-	outputPaths, ok := result.Output["paths"].(map[string]any)
+	// Host infrastructure paths must never be returned to clients.
+	_, hasPaths := result.Output["paths"]
+	require.False(t, hasPaths, "output must not expose host paths")
+	planMounts, ok := outputPlan["mounts"].([]any)
 	require.True(t, ok)
-	require.Equal(t, hostSkillDir, outputPaths["host_skill_dir"])
-	require.Equal(t, hostScratchDir, outputPaths["host_scratch_dir"])
-	require.Equal(t, inputPath, outputPaths["input_path"])
-	require.Equal(t, outputPath, outputPaths["output_path"])
+	require.Len(t, planMounts, 2)
+	for _, raw := range planMounts {
+		mount, ok := raw.(map[string]any)
+		require.True(t, ok)
+		require.Empty(t, mount["source"], "plan mount source must be scrubbed")
+	}
+	planJSON := mustJSON(t, result.Output["plan"])
+	require.NotContains(t, string(planJSON), hostSkillDir)
+	require.NotContains(t, string(planJSON), hostScratchDir)
+	outputJSON := mustJSON(t, result.Output)
+	require.NotContains(t, string(outputJSON), hostScratchDir)
+	require.NotContains(t, string(outputJSON), inputPath)
+	require.NotContains(t, string(outputJSON), outputPath)
 
 	outputEnvironment, ok := result.Output["environment"].(map[string]any)
 	require.True(t, ok)
@@ -321,7 +345,7 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 	require.Equal(t, "python3.11", dispatchInput["runtime"])
 	require.Equal(t, "main.py", dispatchInput["entry_point"])
 	require.Equal(t, "json-file-v1", dispatchInput["protocol"])
-	require.Equal(t, archivePath, dispatchInput["archive_source"])
+	require.Equal(t, resolvedArchivePath, dispatchInput["archive_source"])
 	dispatchParameters, ok := dispatchInput["parameters"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "sunrise", dispatchParameters["subject"])
@@ -336,7 +360,114 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 	require.Equal(t, map[string]any{"SUBJECT": "sunrise"}, runner.dispatchRequest.Environment)
 	require.Equal(t, "skillrunner", result.Metadata["provider"])
 	require.Equal(t, "sha256:script-test", result.Metadata["bundle_digest"])
-	require.Equal(t, archivePath, result.Metadata["archive_source"])
+	require.Equal(t, resolvedArchivePath, result.Metadata["archive_source"])
+}
+
+func TestAISkillScriptRunnerRuntimeRejectsArchivePathWithoutRoot(t *testing.T) {
+	t.Parallel()
+
+	archive := buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))
+	archivePath := filepath.Join(t.TempDir(), "skill.zip")
+	require.NoError(t, os.WriteFile(archivePath, archive, 0o600))
+
+	runner := &aiSkillScriptRunnerStub{}
+	runtime := NewAISkillScriptRunnerRuntime(runner)
+	runtime.archiveRoot = "" // no archive root configured
+
+	_, err := runtime.ExecuteScript(context.Background(), AISkillScriptRuntimeInput{
+		RunID:       1,
+		Runtime:     skillrunner.RuntimePython311,
+		ScriptName:  "script_python_echo",
+		EntryPoint:  "main.py",
+		Protocol:    skillrunner.ProtocolJSONFileV1,
+		ArchivePath: archivePath,
+	})
+	require.ErrorIs(t, err, ErrAISkillScriptArchivePathInvalid)
+	require.Nil(t, runner.dispatchRequest, "dispatch must not be reached")
+}
+
+func TestAISkillScriptRunnerRuntimeRejectsArchivePathOutsideRoot(t *testing.T) {
+	t.Parallel()
+
+	archive := buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))
+	archiveRoot := t.TempDir()
+	// Place the archive outside the configured root (a sibling directory).
+	outsideDir := t.TempDir()
+	archivePath := filepath.Join(outsideDir, "skill.zip")
+	require.NoError(t, os.WriteFile(archivePath, archive, 0o600))
+
+	runner := &aiSkillScriptRunnerStub{}
+	runtime := NewAISkillScriptRunnerRuntime(runner)
+	runtime.archiveRoot = resolveAISkillArchiveRoot(archiveRoot)
+
+	_, err := runtime.ExecuteScript(context.Background(), AISkillScriptRuntimeInput{
+		RunID:       1,
+		Runtime:     skillrunner.RuntimePython311,
+		ScriptName:  "script_python_echo",
+		EntryPoint:  "main.py",
+		Protocol:    skillrunner.ProtocolJSONFileV1,
+		ArchivePath: archivePath,
+	})
+	require.ErrorIs(t, err, ErrAISkillScriptArchivePathInvalid)
+	require.Nil(t, runner.dispatchRequest)
+}
+
+func TestAISkillScriptRunnerRuntimeRejectsArchivePathTraversal(t *testing.T) {
+	t.Parallel()
+
+	archive := buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))
+	archiveRoot := t.TempDir()
+	secretDir := t.TempDir()
+	secretPath := filepath.Join(secretDir, "secret.zip")
+	require.NoError(t, os.WriteFile(secretPath, archive, 0o600))
+
+	// Traversal attempt: a path nominally under the root that escapes via "..".
+	traversal := filepath.Join(archiveRoot, "..", filepath.Base(secretDir), "secret.zip")
+
+	runner := &aiSkillScriptRunnerStub{}
+	runtime := NewAISkillScriptRunnerRuntime(runner)
+	runtime.archiveRoot = resolveAISkillArchiveRoot(archiveRoot)
+
+	_, err := runtime.ExecuteScript(context.Background(), AISkillScriptRuntimeInput{
+		RunID:       1,
+		Runtime:     skillrunner.RuntimePython311,
+		ScriptName:  "script_python_echo",
+		EntryPoint:  "main.py",
+		Protocol:    skillrunner.ProtocolJSONFileV1,
+		ArchivePath: traversal,
+	})
+	require.ErrorIs(t, err, ErrAISkillScriptArchivePathInvalid)
+	require.Nil(t, runner.dispatchRequest)
+}
+
+func TestAISkillScriptRunnerRuntimeRejectsArchiveSymlink(t *testing.T) {
+	t.Parallel()
+
+	archive := buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))
+	archiveRoot := t.TempDir()
+	// The real file lives outside the root; a symlink inside the root points to it.
+	outsideDir := t.TempDir()
+	realPath := filepath.Join(outsideDir, "secret.zip")
+	require.NoError(t, os.WriteFile(realPath, archive, 0o600))
+	symlinkPath := filepath.Join(archiveRoot, "link.zip")
+	if err := os.Symlink(realPath, symlinkPath); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	runner := &aiSkillScriptRunnerStub{}
+	runtime := NewAISkillScriptRunnerRuntime(runner)
+	runtime.archiveRoot = resolveAISkillArchiveRoot(archiveRoot)
+
+	_, err := runtime.ExecuteScript(context.Background(), AISkillScriptRuntimeInput{
+		RunID:       1,
+		Runtime:     skillrunner.RuntimePython311,
+		ScriptName:  "script_python_echo",
+		EntryPoint:  "main.py",
+		Protocol:    skillrunner.ProtocolJSONFileV1,
+		ArchivePath: symlinkPath,
+	})
+	require.ErrorIs(t, err, ErrAISkillScriptArchivePathInvalid)
+	require.Nil(t, runner.dispatchRequest)
 }
 
 func buildAISkillArchiveFromDir(t *testing.T, dir string) []byte {

@@ -64,6 +64,7 @@ var (
 	ErrAISkillSettlementNotFound = infraerrors.NotFound("AI_SKILL_SETTLEMENT_NOT_FOUND", "ai skill settlement not found")
 
 	ErrAISkillTypeInvalid                = infraerrors.BadRequest("AI_SKILL_TYPE_INVALID", "ai skill type is invalid")
+	ErrAISkillScriptArchivePathInvalid   = infraerrors.BadRequest("AI_SKILL_SCRIPT_ARCHIVE_PATH_INVALID", "ai skill script archive path is invalid")
 	ErrAISkillNameRequired               = infraerrors.BadRequest("AI_SKILL_NAME_REQUIRED", "ai skill name is required")
 	ErrAISkillExecutionSpecInvalid       = infraerrors.BadRequest("AI_SKILL_EXECUTION_SPEC_INVALID", "ai skill execution spec is invalid")
 	ErrAISkillBillingPolicyInvalid       = infraerrors.BadRequest("AI_SKILL_BILLING_POLICY_INVALID", "ai skill billing policy is invalid")

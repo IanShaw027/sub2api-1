@@ -38,6 +38,19 @@ func (d *LocalDispatcher) Dispatch(ctx context.Context, req DispatchRequest) (*D
 	hostScratchDir := strings.TrimSpace(req.HostScratchDir)
 	var err error
 
+	// Track temp dirs created by this call so we can clean them up before
+	// returning. Dirs supplied by the caller are left untouched. The cleanup is
+	// deferred so it covers every error path; once real container execution is
+	// wired in, that execution happens before this function returns and thus
+	// before the temp dirs (holding the extracted plaintext source and the
+	// rendered input) are removed.
+	var createdDirs []string
+	defer func() {
+		for _, dir := range createdDirs {
+			_ = os.RemoveAll(dir)
+		}
+	}()
+
 	if hostSkillDir == "" {
 		if len(req.Archive) == 0 {
 			return nil, fmt.Errorf("archive or host skill dir is required")
@@ -46,6 +59,7 @@ func (d *LocalDispatcher) Dispatch(ctx context.Context, req DispatchRequest) (*D
 		if err != nil {
 			return nil, fmt.Errorf("create host skill dir: %w", err)
 		}
+		createdDirs = append(createdDirs, hostSkillDir)
 		if err := extractArchive(req.Archive, hostSkillDir); err != nil {
 			return nil, err
 		}
@@ -55,6 +69,7 @@ func (d *LocalDispatcher) Dispatch(ctx context.Context, req DispatchRequest) (*D
 		if err != nil {
 			return nil, fmt.Errorf("create host scratch dir: %w", err)
 		}
+		createdDirs = append(createdDirs, hostScratchDir)
 	}
 
 	plan, err := d.Planner.Plan(ctx, PlanRequest{

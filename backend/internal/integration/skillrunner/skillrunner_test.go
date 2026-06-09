@@ -143,6 +143,76 @@ func TestPlanBuildsLockedDownDockerSpec(t *testing.T) {
 	}
 }
 
+func TestDispatchCleansUpCreatedTempDirs(t *testing.T) {
+	t.Parallel()
+
+	archive := zipSampleDir(t, "script_python_echo")
+	inspector := NewBundleInspector(ArchiveConstraints{}, nil)
+	bundle, err := inspector.InspectArchive(context.Background(), archive)
+	if err != nil {
+		t.Fatalf("InspectArchive() error = %v", err)
+	}
+
+	dispatcher := NewLocalDispatcher(SandboxPolicy{}, nil)
+	result, err := dispatcher.Dispatch(context.Background(), DispatchRequest{
+		Bundle: bundle,
+		Review: ReviewGate{
+			ArtifactDigest: bundle.Digest,
+			Status:         ReviewStatusApproved,
+		},
+		Archive: archive,
+		Input:   map[string]any{"hello": "world"},
+	})
+	if err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
+	}
+
+	// The temp skill/scratch dirs created by Dispatch must be cleaned up before
+	// it returns, so the extracted plaintext source code does not linger in /tmp.
+	if _, statErr := os.Stat(result.HostSkillDir); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Fatalf("expected host skill dir to be removed, stat err = %v", statErr)
+	}
+	if _, statErr := os.Stat(result.HostScratchDir); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Fatalf("expected host scratch dir to be removed, stat err = %v", statErr)
+	}
+}
+
+func TestDispatchPreservesCallerSuppliedDirs(t *testing.T) {
+	t.Parallel()
+
+	skillDir := sampleSkillDir(t, "script_python_echo")
+	scratchDir := t.TempDir()
+	archive := zipSampleDir(t, "script_python_echo")
+	inspector := NewBundleInspector(ArchiveConstraints{}, nil)
+	bundle, err := inspector.InspectArchive(context.Background(), archive)
+	if err != nil {
+		t.Fatalf("InspectArchive() error = %v", err)
+	}
+
+	dispatcher := NewLocalDispatcher(SandboxPolicy{}, nil)
+	_, err = dispatcher.Dispatch(context.Background(), DispatchRequest{
+		Bundle: bundle,
+		Review: ReviewGate{
+			ArtifactDigest: bundle.Digest,
+			Status:         ReviewStatusApproved,
+		},
+		HostSkillDir:   skillDir,
+		HostScratchDir: scratchDir,
+		Input:          map[string]any{"hello": "world"},
+	})
+	if err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
+	}
+
+	// Caller-supplied dirs must not be removed by Dispatch.
+	if _, statErr := os.Stat(skillDir); statErr != nil {
+		t.Fatalf("caller skill dir should be preserved, stat err = %v", statErr)
+	}
+	if _, statErr := os.Stat(scratchDir); statErr != nil {
+		t.Fatalf("caller scratch dir should be preserved, stat err = %v", statErr)
+	}
+}
+
 func minimalManifest(runtimeID, entrypoint string) string {
 	return strings.Join([]string{
 		"apiVersion: " + ManifestAPIVersion,

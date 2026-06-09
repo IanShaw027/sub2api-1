@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,6 +28,11 @@ import (
 const (
 	defaultAISkillChatModel  = "gpt-5.4-mini"
 	defaultAISkillImageModel = "gpt-image-1"
+
+	// aiSkillArchiveRootEnv names the directory that on-disk script archives
+	// (ArchivePath) must live under. When unset, on-disk archive paths are
+	// rejected outright.
+	aiSkillArchiveRootEnv = "SUB2API_AI_SKILL_ARCHIVE_ROOT"
 )
 
 var (
@@ -279,6 +285,12 @@ func (r *AISkillOpenAIRuntime) ExecuteImages(ctx context.Context, input AISkillO
 type AISkillScriptRunnerRuntime struct {
 	runner skillrunner.Runner
 	now    func() time.Time
+	// archiveRoot constrains where on-disk script archives (ArchivePath) may be
+	// read from. It is resolved from SUB2API_AI_SKILL_ARCHIVE_ROOT. When empty,
+	// any non-empty ArchivePath is rejected: the current build path always ships
+	// the archive inline (base64) and never sets ArchivePath, so an on-disk path
+	// reaching here would be unexpected and is treated as untrusted.
+	archiveRoot string
 }
 
 func NewAISkillScriptRunnerRuntime(runner skillrunner.Runner) *AISkillScriptRunnerRuntime {
@@ -286,8 +298,9 @@ func NewAISkillScriptRunnerRuntime(runner skillrunner.Runner) *AISkillScriptRunn
 		runner = skillrunner.NewScriptRunner()
 	}
 	return &AISkillScriptRunnerRuntime{
-		runner: runner,
-		now:    time.Now,
+		runner:      runner,
+		now:         time.Now,
+		archiveRoot: resolveAISkillArchiveRoot(os.Getenv(aiSkillArchiveRootEnv)),
 	}
 }
 
@@ -296,7 +309,7 @@ func (r *AISkillScriptRunnerRuntime) ExecuteScript(ctx context.Context, input AI
 		return nil, ErrAISkillServiceUnavailable
 	}
 
-	archive, source, err := resolveAISkillScriptArchive(input)
+	archive, source, err := resolveAISkillScriptArchive(input, r.archiveRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -358,22 +371,16 @@ func (r *AISkillScriptRunnerRuntime) ExecuteScript(ctx context.Context, input AI
 
 	planValue := any(nil)
 	if dispatch != nil {
-		planValue = marshalAISkillValue(dispatch.Plan)
+		planValue = marshalAISkillValue(sanitizeAISkillSandboxPlan(dispatch.Plan))
 	}
+	// Intentionally omit host infrastructure paths (host skill/scratch dirs and
+	// host input/output file paths) from the output: they describe the server's
+	// filesystem layout and must not be surfaced to API clients.
 	output := map[string]any{
 		"bundle":         marshalAISkillValue(bundle),
 		"plan":           planValue,
-		"paths":          map[string]any{},
 		"environment":    stringMapToAnyMap(environment),
 		"dispatch_input": dispatchInput,
-	}
-	if dispatch != nil {
-		output["paths"] = map[string]any{
-			"host_skill_dir":   strings.TrimSpace(dispatch.HostSkillDir),
-			"host_scratch_dir": strings.TrimSpace(dispatch.HostScratchDir),
-			"input_path":       strings.TrimSpace(dispatch.InputPath),
-			"output_path":      strings.TrimSpace(dispatch.OutputPath),
-		}
 	}
 
 	externalJobID := strings.TrimSpace(bundle.Digest)
@@ -398,6 +405,26 @@ func (r *AISkillScriptRunnerRuntime) nowOrDefault() time.Time {
 		return r.now()
 	}
 	return time.Now()
+}
+
+// sanitizeAISkillSandboxPlan returns a copy of the plan with host-side mount
+// sources removed. The container-side targets are retained because they only
+// describe the sandbox's internal layout, but the host source directories leak
+// the server filesystem and must not be returned to clients.
+func sanitizeAISkillSandboxPlan(plan *skillrunner.SandboxPlan) *skillrunner.SandboxPlan {
+	if plan == nil {
+		return nil
+	}
+	cloned := *plan
+	if len(plan.Mounts) > 0 {
+		mounts := make([]skillrunner.Mount, len(plan.Mounts))
+		for i, mount := range plan.Mounts {
+			mount.Source = ""
+			mounts[i] = mount
+		}
+		cloned.Mounts = mounts
+	}
+	return &cloned
 }
 
 func buildAISkillChatRequestBody(exec *AISkillPromptChatExecution, model string) ([]byte, error) {
@@ -1320,13 +1347,17 @@ func firstNonEmptyAISkillScriptValue(values map[string]any, keys ...string) stri
 	return ""
 }
 
-func resolveAISkillScriptArchive(input AISkillScriptRuntimeInput) ([]byte, string, error) {
+func resolveAISkillScriptArchive(input AISkillScriptRuntimeInput, archiveRoot string) ([]byte, string, error) {
 	if archivePath := strings.TrimSpace(input.ArchivePath); archivePath != "" {
-		raw, err := os.ReadFile(archivePath)
+		safePath, err := resolveAISkillArchiveFilePath(archivePath, archiveRoot)
 		if err != nil {
 			return nil, "", err
 		}
-		return raw, archivePath, nil
+		raw, err := os.ReadFile(safePath)
+		if err != nil {
+			return nil, "", err
+		}
+		return raw, safePath, nil
 	}
 	if archiveBase64 := strings.TrimSpace(input.ArchiveBase64); archiveBase64 != "" {
 		raw, err := decodeAISkillArchiveBase64(archiveBase64)
@@ -1336,6 +1367,77 @@ func resolveAISkillScriptArchive(input AISkillScriptRuntimeInput) ([]byte, strin
 		return raw, "inline_base64", nil
 	}
 	return nil, "", ErrAISkillExecutionSpecInvalid
+}
+
+// resolveAISkillArchiveRoot normalizes the configured archive root into an
+// absolute path. An empty/whitespace value disables on-disk archive reads.
+func resolveAISkillArchiveRoot(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(trimmed)
+	if err != nil {
+		return ""
+	}
+	// Resolve symlinks in the root itself so prefix comparisons are stable.
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
+	}
+	return abs
+}
+
+// resolveAISkillArchiveFilePath validates that a caller-supplied on-disk archive
+// path is confined to the configured archive root and is a regular file (no
+// symlinks). When no root is configured, on-disk paths are rejected because the
+// supported build path always supplies the archive inline.
+func resolveAISkillArchiveFilePath(archivePath, archiveRoot string) (string, error) {
+	root := strings.TrimSpace(archiveRoot)
+	if root == "" {
+		return "", ErrAISkillScriptArchivePathInvalid
+	}
+
+	absPath, err := filepath.Abs(strings.TrimSpace(archivePath))
+	if err != nil {
+		return "", ErrAISkillScriptArchivePathInvalid
+	}
+
+	// Reject symlinks anywhere along the resolved path: EvalSymlinks both
+	// canonicalizes and fails if the target does not exist.
+	resolved, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return "", ErrAISkillScriptArchivePathInvalid
+	}
+
+	info, err := os.Lstat(resolved)
+	if err != nil {
+		return "", ErrAISkillScriptArchivePathInvalid
+	}
+	if !info.Mode().IsRegular() {
+		return "", ErrAISkillScriptArchivePathInvalid
+	}
+
+	if !isPathWithinRoot(resolved, root) {
+		return "", ErrAISkillScriptArchivePathInvalid
+	}
+	return resolved, nil
+}
+
+// isPathWithinRoot reports whether target is root itself or a descendant of it,
+// using a separator-aware prefix check to avoid sibling-prefix escapes (e.g.
+// "/srv/skills-evil" is not within "/srv/skills").
+func isPathWithinRoot(target, root string) bool {
+	rel, err := filepath.Rel(root, target)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return false
+	}
+	return true
 }
 
 func decodeAISkillArchiveBase64(raw string) ([]byte, error) {
