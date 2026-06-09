@@ -775,7 +775,7 @@ func TestAccount_OpenAIImageGenerationAllowed(t *testing.T) {
 	})
 }
 
-func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageIntentMayUseImageDisabledAccount(t *testing.T) {
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageIntentSkipsImageDisabledAccounts(t *testing.T) {
 	for _, advancedSchedulerEnabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("advanced_scheduler_enabled=%t", advancedSchedulerEnabled), func(t *testing.T) {
 			ctx := context.Background()
@@ -817,10 +817,9 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageIntent
 				true,
 				false,
 			)
-			require.NoError(t, err)
-			require.NotNil(t, selection)
-			require.NotNil(t, selection.Account)
-			require.Equal(t, int64(32015), selection.Account.ID)
+			require.Error(t, err)
+			require.Nil(t, selection)
+			require.Contains(t, err.Error(), "no available OpenAI accounts")
 		})
 	}
 }
@@ -926,7 +925,7 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_NoImageInte
 	require.Nil(t, selection.WaitPlan)
 }
 
-func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageContextUsesGroupImageRouteWithoutImageToggle(t *testing.T) {
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageContextUsesGroupImageRouteAndImageToggle(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 
 	ctx := context.Background()
@@ -960,6 +959,9 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageContex
 			Schedulable: true,
 			Concurrency: 1,
 			Priority:    0,
+			Extra: map[string]any{
+				"openai_image_generation_enabled": false,
+			},
 		},
 		{
 			ID:          32052,
@@ -970,8 +972,7 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageContex
 			Concurrency: 1,
 			Priority:    5,
 			Extra: map[string]any{
-				"openai_image_generation_enabled": false,
-				"web_profile":                     webProfile,
+				"web_profile": webProfile,
 			},
 		},
 	}

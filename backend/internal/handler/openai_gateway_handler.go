@@ -225,7 +225,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
 	forwardPreviewBody, routedPreviewModel := h.applyOpenAIResponsesChannelMapping(body, reqModel, channelMapping)
-	previewImageIntent, _ := classifyOpenAIResponsesImageRequest(allowImageGeneration, routedPreviewModel, forwardPreviewBody)
+	previewImageIntent, previewNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, routedPreviewModel, forwardPreviewBody)
 	if previewImageIntent && !allowImageGeneration {
 		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 		return
@@ -292,7 +292,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			reqModel,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportAny,
-			previewImageIntent,
+			previewNeedsImageSlot,
 			requireCompact,
 		)
 		if err != nil {
@@ -1324,7 +1324,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	// 解析渠道级模型映射
 	channelMappingWS, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, reqModel)
 	wsFirstMessage, wsFirstModel := h.applyOpenAIResponsesChannelMapping(firstMessage, reqModel, channelMappingWS)
-	wsPreviewImageIntent, _ := classifyOpenAIResponsesImageRequest(allowImageGeneration, wsFirstModel, wsFirstMessage)
+	wsPreviewImageIntent, wsPreviewNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, wsFirstModel, wsFirstMessage)
 	if wsPreviewImageIntent && !allowImageGeneration {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
 		return
@@ -1410,7 +1410,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			reqModel,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportResponsesWebsocketV2,
-			wsPreviewImageIntent,
+			wsPreviewNeedsImageSlot,
 			false,
 		)
 		if err != nil {
@@ -1529,6 +1529,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				imageIntent, needsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveModel, payload)
 				if imageIntent && !allowImageGeneration {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage(), nil)
+				}
+				if needsImageSlot && !account.OpenAIImageGenerationAllowed() {
+					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "no available account", errOpenAIWSLocalImageToggleUnavailable)
 				}
 				currentTurnNeedsImageSlot = needsImageSlot
 				return nil
@@ -1922,6 +1925,9 @@ func resolveOpenAIResponsesRequiredImageRoute(group *service.Group, imageIntent 
 }
 
 func openAIResponsesAccountSupportsImageIntent(account *service.Account, group *service.Group, imageIntent bool) bool {
+	if imageIntent && (account == nil || !account.OpenAIImageGenerationAllowed()) {
+		return false
+	}
 	requiredRoute := resolveOpenAIResponsesRequiredImageRoute(group, imageIntent)
 	if requiredRoute == "" {
 		return true

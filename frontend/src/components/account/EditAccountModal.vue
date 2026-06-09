@@ -2923,7 +2923,7 @@ const openAIImageGenerationLabel = computed(() =>
 const openAIImageGenerationDescription = computed(() =>
   translateWithFallback(
     'admin.accounts.openai.imageGenerationEnabledDesc',
-    'Only affects actual image-generation routing. Text requests and image tool declarations are unchanged.'
+    'Affects image-generation routing and declared image_generation tool capability. Ordinary text requests are unchanged.'
   )
 )
 const codexImageGenerationBridgeOptions = computed<Array<{

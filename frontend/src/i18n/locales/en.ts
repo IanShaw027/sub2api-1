@@ -4065,7 +4065,7 @@ export default {
           'Only applies to OpenAI OAuth. When enabled, only Codex official client families are allowed; when disabled, the gateway bypasses this restriction and keeps existing behavior.',
         imageGenerationEnabled: 'Allow image generation',
         imageGenerationEnabledDesc:
-          'Only affects actual image-generation routing for this account. Ordinary text requests and simply declaring image tool capability are unchanged.',
+          'Affects image-generation routing and declared image_generation tool capability for this account. Ordinary text requests are unchanged.',
         codexImageGenerationBridge: 'Codex image-generation bridge',
         codexImageGenerationBridgeDesc:
           'Account policy takes precedence over channel and global settings. Only controls whether Codex requests through the /responses text endpoint receive the image_generation tool; standalone image-generation endpoints are unaffected.',

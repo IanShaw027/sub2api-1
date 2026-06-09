@@ -32,6 +32,11 @@ type FakeCachePlan struct {
 	PreviousPrefixCacheableTokens int
 	CurrentPrefixCacheableTokens  int
 	Checkpoints                   []FakeCacheCheckpoint
+	// RecordedEffectiveCachedTokens is the effective cached weight (cache read +
+	// cache creation) computed by the most recent ResolveUsageWithConfig call.
+	// commitFakeCachePlan persists it to SessionProgress so the next turn can use
+	// it as the read basis, chaining the effect of an imperfect hit rate forward.
+	RecordedEffectiveCachedTokens int
 }
 
 type FakeCacheCheckpoint struct {
@@ -49,6 +54,12 @@ type FakeCacheHitState struct {
 	Independent      bool
 	Prefix           bool
 	CheckpointTokens int
+	// EffectiveCachedTokens is the effective cached weight carried over from the
+	// previous turn (persisted under SessionProgressKey). It caps how much of the
+	// current turn can be billed as cache read: anything beyond it is new growth
+	// that must be (re)written this turn. When zero, the read basis falls back to
+	// the plan's ideal cumulative, preserving cold-start behavior.
+	EffectiveCachedTokens int
 }
 
 type FakeCacheUsageConfig struct {
@@ -112,12 +123,12 @@ func BuildFakeCachePlan(body []byte, scope FakeCacheScope, requestedModel string
 	}
 	if independentChain != "" {
 		plan.IndependentKey = fakeCacheKey(scopeKey+":independent", independentChain)
-		plan.IndependentCacheableTokens = AccurateTokenCount(independentChain)
+		plan.IndependentCacheableTokens = fakeCacheIndependentCalibratedTokens(req)
 	}
 	prefixScope := scopeKey + ":prefix:independent:" + fakeCacheDigest(independentChain)
 	if currentPrefixChain != "" {
 		plan.CurrentPrefixKey = fakeCacheKey(prefixScope, currentPrefixChain)
-		plan.CurrentPrefixCacheableTokens = AccurateTokenCount(currentPrefixChain)
+		plan.CurrentPrefixCacheableTokens = fakeCacheContentCalibratedTokens(rawMessages)
 		plan.CurrentKey = plan.CurrentPrefixKey
 	}
 	plan.CurrentCacheableTokens = plan.IndependentCacheableTokens + plan.CurrentPrefixCacheableTokens
@@ -125,11 +136,11 @@ func BuildFakeCachePlan(body []byte, scope FakeCacheScope, requestedModel string
 	previousPrefixChain := buildFakeCachePrefixChain(rawMessages, false)
 	if previousPrefixChain != "" {
 		plan.PreviousPrefixKey = fakeCacheKey(prefixScope, previousPrefixChain)
-		plan.PreviousPrefixCacheableTokens = AccurateTokenCount(previousPrefixChain)
+		plan.PreviousPrefixCacheableTokens = fakeCacheContentCalibratedTokens(rawMessages[:len(rawMessages)-1])
 		plan.PreviousKey = plan.PreviousPrefixKey
 	}
 	plan.PreviousCacheableTokens = plan.IndependentCacheableTokens + plan.PreviousPrefixCacheableTokens
-	plan.Checkpoints = buildFakeCacheCheckpoints(scopeKey, plan.IndependentKey, independentChain, rawMessages)
+	plan.Checkpoints = buildFakeCacheCheckpoints(scopeKey, plan.IndependentKey, independentChain, plan.IndependentCacheableTokens, rawMessages)
 
 	return plan, nil
 }
@@ -166,27 +177,84 @@ func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCac
 
 	prefixCurrentTokens, prefixReadTokens := p.resolvePrefixUsageBounds(totalInputTokens, hit, config.MinBlockTokens)
 
+	currentTokens := prefixCurrentTokens
+	idealRead := prefixReadTokens
 	if len(p.Checkpoints) > 0 {
-		currentTokens := eligibleFakeCacheCheckpointTokens(p.Checkpoints[len(p.Checkpoints)-1].Tokens, config.MinBlockTokens, totalInputTokens)
-		cacheRead := eligibleFakeCacheCheckpointTokens(hit.CheckpointTokens, config.MinBlockTokens, totalInputTokens)
+		currentTokens = eligibleFakeCacheCheckpointTokens(p.Checkpoints[len(p.Checkpoints)-1].Tokens, config.MinBlockTokens, totalInputTokens)
+		idealRead = eligibleFakeCacheCheckpointTokens(hit.CheckpointTokens, config.MinBlockTokens, totalInputTokens)
 		if prefixCurrentTokens > currentTokens {
 			currentTokens = prefixCurrentTokens
 		}
-		if prefixReadTokens > cacheRead {
-			cacheRead = prefixReadTokens
+		if prefixReadTokens > idealRead {
+			idealRead = prefixReadTokens
 		}
-		if cacheRead > currentTokens {
-			cacheRead = currentTokens
+		if idealRead > currentTokens {
+			idealRead = currentTokens
 		}
-		cacheWrite := currentTokens - cacheRead
-		return fakeCacheUsageFromReadWrite(totalInputTokens, cacheRead, cacheWrite, config.HitRateScale)
 	}
 
-	cacheWrite := prefixCurrentTokens - prefixReadTokens
-	if cacheWrite < 0 {
-		cacheWrite = 0
+	return p.resolveFakeCacheUsage(totalInputTokens, currentTokens, idealRead, hit.EffectiveCachedTokens, config.HitRateScale)
+}
+
+// resolveFakeCacheUsage splits the request into cache read, cache creation, and
+// billable input under a chained, effective-cache model:
+//
+//   - read is the portion already cached. It starts from the ideal cumulative
+//     implied by the cache-key hits, then is capped by effectiveCap — the
+//     effective cached weight carried from the previous turn. A sub-100% hit
+//   - read is the portion already cached. effectiveCap — the effective cached
+//     weight carried from the previous turn — is the source of truth when present:
+//     it reflects how much was really in the cache at the end of last turn, so an
+//     earlier sub-100% hit rate that shrank it holds read below this turn's ideal
+//     and the shortfall reappears as fresh growth. idealRead (from this turn's
+//     cache-key hits) is only the cold-start basis when no cap exists yet.
+//     currentTokens caps read so a compacted history can't read more than exists.
+//   - growth = currentTokens − read is what must be written this turn.
+//   - hitRateScale governs how much of growth is actually cached: created =
+//     growth × scale. The missed remainder (growth × (1−scale)) is NOT rewritten
+//     into cache; it falls back into billable input, exactly as Anthropic bills
+//     content that never made it into a cache breakpoint.
+//   - RecordedEffectiveCachedTokens = read + created is persisted so the next
+//     turn reads from this shrunken basis, chaining the effect forward.
+func (p *FakeCachePlan) resolveFakeCacheUsage(totalInputTokens, currentTokens, idealRead, effectiveCap, hitRateScale int) FakeCacheUsage {
+	read := idealRead
+	if effectiveCap > 0 {
+		read = effectiveCap
 	}
-	return fakeCacheUsageFromReadWrite(totalInputTokens, prefixReadTokens, cacheWrite, config.HitRateScale)
+	if read > currentTokens {
+		read = currentTokens
+	}
+	read = clampFakeCacheTokens(read, totalInputTokens)
+
+	growth := currentTokens - read
+	if growth < 0 {
+		growth = 0
+	}
+	growth = clampFakeCacheTokens(growth, totalInputTokens-read)
+
+	created := growth
+	if hitRateScale < 100 {
+		created = growth * hitRateScale / 100
+		if created < 0 {
+			created = 0
+		}
+	}
+	// The missed remainder (growth − created) is intentionally left out of cache
+	// creation so it surfaces as billable input below.
+	inputTokens := totalInputTokens - read - created
+	if inputTokens < 0 {
+		inputTokens = 0
+	}
+
+	if p != nil {
+		p.RecordedEffectiveCachedTokens = read + created
+	}
+
+	return FakeCacheUsage{
+		InputTokens:              inputTokens,
+		CacheCreationInputTokens: created,
+		CacheReadInputTokens:     read,
+	}
 }
 
 func (p *FakeCachePlan) resolvePrefixUsageBounds(totalInputTokens int, hit FakeCacheHitState, minBlockTokens int) (currentTokens, cacheRead int) {
@@ -212,36 +280,6 @@ func (p *FakeCachePlan) resolvePrefixUsageBounds(totalInputTokens int, hit FakeC
 		cacheRead = currentTokens
 	}
 	return currentTokens, cacheRead
-}
-
-func fakeCacheUsageFromReadWrite(totalInputTokens, cacheRead, cacheWrite, hitRateScale int) FakeCacheUsage {
-	cacheRead = clampFakeCacheTokens(cacheRead, totalInputTokens)
-	cacheWrite = clampFakeCacheTokens(cacheWrite, totalInputTokens-cacheRead)
-
-	// Apply hit rate scaling only to the read/write split inside the cacheable
-	// portion. Missed reads stay cacheable and are reclassified as cache writes,
-	// so the pure non-cacheable tail does not change when hit rate is reduced.
-	if hitRateScale < 100 {
-		originalRead := cacheRead
-		scaledRead := cacheRead * hitRateScale / 100
-		if scaledRead < 0 {
-			scaledRead = 0
-		}
-		cacheRead = scaledRead
-		cacheWrite += originalRead - scaledRead
-		cacheWrite = clampFakeCacheTokens(cacheWrite, totalInputTokens-cacheRead)
-	}
-
-	inputTokens := totalInputTokens - cacheRead - cacheWrite
-	if inputTokens < 0 {
-		inputTokens = 0
-	}
-
-	return FakeCacheUsage{
-		InputTokens:              inputTokens,
-		CacheCreationInputTokens: cacheWrite,
-		CacheReadInputTokens:     cacheRead,
-	}
 }
 
 func buildFakeCacheIndependentChain(req map[string]any) string {
@@ -292,13 +330,13 @@ func buildFakeCachePrefixChain(messages []any, includeCurrent bool) string {
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
-func buildFakeCacheCheckpoints(scope, independentKey, independentChain string, messages []any) []FakeCacheCheckpoint {
+func buildFakeCacheCheckpoints(scope, independentKey, independentChain string, independentTokens int, messages []any) []FakeCacheCheckpoint {
 	checkpoints := make([]FakeCacheCheckpoint, 0)
 	base := strings.TrimSpace(independentChain)
 	if base != "" {
 		checkpoints = append(checkpoints, FakeCacheCheckpoint{
 			Key:    independentKey,
-			Tokens: AccurateTokenCount(base),
+			Tokens: independentTokens,
 		})
 	}
 
@@ -313,10 +351,67 @@ func buildFakeCacheCheckpoints(scope, independentKey, independentChain string, m
 		}
 		checkpoints = append(checkpoints, FakeCacheCheckpoint{
 			Key:    key,
-			Tokens: AccurateTokenCount(cumulative),
+			Tokens: independentTokens + AccurateTokenCount(chain)*kiroTokenEstimateContentScale100/100,
 		})
 	}
 	return checkpoints
+}
+
+// fakeCacheIndependentCalibratedTokens estimates the calibrated token weight of
+// the cacheable independent block (system prompt + tool definitions). It mirrors
+// the system/tool terms of calibrateKiroInputTokens so a cache hit offsets the
+// same scaled tokens EstimateInputTokens bills; the raw tiktoken count used
+// before left a content-proportional residual (plus the 493-token tool system
+// scaffold) permanently in input_tokens.
+func fakeCacheIndependentCalibratedTokens(req map[string]any) int {
+	var systemBuilder strings.Builder
+	if systemText := joinSystem(req["system"]); systemText != "" {
+		appendKiroTokenEstimateText(&systemBuilder, systemText)
+	}
+	systemTokens := AccurateTokenCount(systemBuilder.String())
+
+	toolCount := 0
+	toolSchemaTokens := 0
+	if tools, _ := req["tools"].([]any); len(tools) > 0 {
+		toolCount = len(tools)
+		var toolBuilder strings.Builder
+		for _, item := range tools {
+			tool, _ := item.(map[string]any)
+			appendKiroTokenEstimateText(&toolBuilder, stringField(tool, "name"))
+			appendKiroTokenEstimateText(&toolBuilder, stringField(tool, "description"))
+			appendKiroTokenEstimateJSON(&toolBuilder, tool["input_schema"])
+		}
+		toolSchemaTokens = AccurateTokenCount(toolBuilder.String())
+	}
+
+	total := systemTokens * kiroTokenEstimateContentScale100 / 100
+	if toolCount > 0 {
+		total += kiroTokenEstimateToolSystemBase
+		total += toolCount * kiroTokenEstimatePerTool
+		total += toolSchemaTokens * kiroTokenEstimateToolSchemaScale / 100
+	}
+	return total
+}
+
+// fakeCacheContentCalibratedTokens estimates the calibrated token weight of a
+// span of conversation messages (the cacheable prefix). It mirrors the content
+// scaling, per-message and per-tool-block overhead of calibrateKiroInputTokens
+// so a prefix cache hit offsets the billed tokens instead of the raw count.
+func fakeCacheContentCalibratedTokens(messages []any) int {
+	if len(messages) == 0 {
+		return 0
+	}
+	var contentBuilder strings.Builder
+	toolBlockCount := 0
+	for _, item := range messages {
+		msg, _ := item.(map[string]any)
+		appendKiroTokenEstimateContent(&contentBuilder, msg["content"])
+		toolBlockCount += countKiroToolBlocks(msg["content"])
+	}
+	contentTokens := AccurateTokenCount(contentBuilder.String())
+	return contentTokens*kiroTokenEstimateContentScale100/100 +
+		len(messages)*kiroTokenEstimatePerMessage +
+		toolBlockCount*kiroTokenEstimatePerToolBlock
 }
 
 func buildFakeCacheControlPrefixChains(messages []any) []string {

@@ -770,7 +770,7 @@ func TestOpenAIResponses_FunctionCallOutputWithPreviousResponseIDStillRequiresHT
 	require.Contains(t, w.Body.String(), "function_call_output requires item_reference ids matching each call_id")
 }
 
-func TestOpenAIResponses_HTTPPostRoutingImageIntentMayUseImageDisabledAccount(t *testing.T) {
+func TestOpenAIResponses_HTTPPostRoutingImageIntentSkipsImageDisabledAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(6201)
@@ -910,12 +910,12 @@ func TestOpenAIResponses_HTTPPostRoutingImageIntentMayUseImageDisabledAccount(t 
 	if w.Code != http.StatusOK {
 		t.Fatalf("unexpected status=%d body=%s disabled_hit=%s enabled_hit=%s", w.Code, w.Body.String(), upstream.recordedBody(12001), upstream.recordedBody(12002))
 	}
-	require.Equal(t, "resp_http_disabled_should_not_run", gjson.GetBytes(w.Body.Bytes(), "id").String())
-	require.Equal(t, "gpt-image-1", gjson.Get(upstream.recordedBody(12001), "model").String())
-	require.Empty(t, upstream.recordedBody(12002))
+	require.Equal(t, "resp_http_image_ok", gjson.GetBytes(w.Body.Bytes(), "id").String())
+	require.Empty(t, upstream.recordedBody(12001))
+	require.Equal(t, "gpt-image-1", gjson.Get(upstream.recordedBody(12002), "model").String())
 }
 
-func TestOpenAIResponses_HTTPPostImageToolCapabilityMayUseImageDisabledAccount(t *testing.T) {
+func TestOpenAIResponses_HTTPPostImageToolCapabilitySkipsImageDisabledAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(6205)
@@ -1043,12 +1043,12 @@ func TestOpenAIResponses_HTTPPostImageToolCapabilityMayUseImageDisabledAccount(t
 	if w.Code != http.StatusOK {
 		t.Fatalf("unexpected status=%d body=%s disabled_hit=%s enabled_hit=%s", w.Code, w.Body.String(), upstream.recordedBody(12041), upstream.recordedBody(12042))
 	}
-	require.Equal(t, "resp_http_disabled_tool_capability_should_not_run", gjson.GetBytes(w.Body.Bytes(), "id").String())
-	require.Equal(t, "image_generation", gjson.Get(upstream.recordedBody(12041), "tools.0.type").String())
-	require.Empty(t, upstream.recordedBody(12042))
+	require.Equal(t, "resp_http_enabled_tool_capability_ok", gjson.GetBytes(w.Body.Bytes(), "id").String())
+	require.Empty(t, upstream.recordedBody(12041))
+	require.Equal(t, "image_generation", gjson.Get(upstream.recordedBody(12042), "tools.0.type").String())
 }
 
-func TestOpenAIResponses_HTTPPostRoutingImageIntentAllowsImageDisabledOnlyAccount(t *testing.T) {
+func TestOpenAIResponses_HTTPPostRoutingImageIntentRejectsImageDisabledOnlyAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(6202)
@@ -1161,11 +1161,9 @@ func TestOpenAIResponses_HTTPPostRoutingImageIntentAllowsImageDisabledOnlyAccoun
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("unexpected status=%d body=%s disabled_hit=%s", w.Code, w.Body.String(), upstream.recordedBody(12011))
-	}
-	require.Equal(t, "resp_http_disabled_should_not_run", gjson.GetBytes(w.Body.Bytes(), "id").String())
-	require.Equal(t, "gpt-image-1", gjson.Get(upstream.recordedBody(12011), "model").String())
+	require.Equal(t, http.StatusServiceUnavailable, w.Code, "body=%s disabled_hit=%s", w.Body.String(), upstream.recordedBody(12011))
+	require.Contains(t, w.Body.String(), "No available accounts")
+	require.Empty(t, upstream.recordedBody(12011))
 }
 
 func TestOpenAIResponses_HTTPPostAccountMappedImageOnlyModel_Web2APIRouteUsesCompatibleAccount(t *testing.T) {
@@ -1243,7 +1241,7 @@ func TestOpenAIResponses_HTTPPostAccountMappedImageOnlyModel_Web2APIRouteUsesCom
 				},
 			},
 			Extra: map[string]any{
-				"openai_image_generation_enabled": false,
+				"openai_image_generation_enabled": true,
 				"openai_passthrough":              true,
 				"web_profile":                     webProfile,
 			},
@@ -2622,7 +2620,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 	require.Equal(t, []int64{int64(9902)}, accountRepo.rateLimitedIDs)
 }
 
-func TestOpenAIResponsesWebSocket_FirstTurnPostModelMappingImageIntentMayUseImageDisabledAccount(t *testing.T) {
+func TestOpenAIResponsesWebSocket_FirstTurnPostModelMappingImageIntentSkipsImageDisabledAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	firstHitCh := make(chan []byte, 1)
@@ -2809,23 +2807,23 @@ func TestOpenAIResponsesWebSocket_FirstTurnPostModelMappingImageIntentMayUseImag
 	cancelRead()
 	require.NoError(t, err)
 	require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
-	require.Equal(t, "resp_ws_disabled_should_not_run", gjson.GetBytes(event, "response.id").String())
+	require.Equal(t, "resp_ws_enabled_ok", gjson.GetBytes(event, "response.id").String())
 
 	select {
 	case payload := <-firstHitCh:
-		require.Equal(t, "gpt-5.4", gjson.GetBytes(payload, "model").String())
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for disabled websocket upstream request")
+		t.Fatalf("disabled websocket upstream should not have been hit: %s", string(payload))
+	case <-time.After(200 * time.Millisecond):
 	}
 
 	select {
 	case payload := <-secondHitCh:
-		t.Fatalf("enabled websocket upstream should not have been hit: %s", string(payload))
-	case <-time.After(200 * time.Millisecond):
+		require.Equal(t, "gpt-5.4", gjson.GetBytes(payload, "model").String())
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for enabled websocket upstream request")
 	}
 }
 
-func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentContinuesAfterLiveToggleChange(t *testing.T) {
+func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentRejectsAfterLiveToggleChange(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	firstHitCh := make(chan []byte, 1)
@@ -2990,9 +2988,11 @@ func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentContinuesAfterLive
 	readCtx, cancelRead = context.WithTimeout(context.Background(), 5*time.Second)
 	_, event, err = clientConn.Read(readCtx)
 	cancelRead()
-	require.NoError(t, err)
-	require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
-	require.Equal(t, "resp_ws_turn_two", gjson.GetBytes(event, "response.id").String())
+	require.Error(t, err)
+	var closeErr coderws.CloseError
+	require.ErrorAs(t, err, &closeErr)
+	require.Equal(t, coderws.StatusTryAgainLater, closeErr.Code)
+	require.Contains(t, closeErr.Reason, "no available account")
 
 	select {
 	case payload := <-firstHitCh:
@@ -3003,13 +3003,12 @@ func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentContinuesAfterLive
 
 	select {
 	case payload := <-secondHitCh:
-		require.Equal(t, "image_generation", gjson.GetBytes(payload, "tool_choice.type").String())
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for explicit image later turn websocket request")
+		t.Fatalf("disabled image later turn should not reach upstream: %s", string(payload))
+	case <-time.After(200 * time.Millisecond):
 	}
 }
 
-func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityContinuesAfterLiveToggleChange(t *testing.T) {
+func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityRejectsAfterLiveToggleChange(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	firstHitCh := make(chan []byte, 1)
@@ -3169,9 +3168,11 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityContinuesAfterLive
 	readCtx, cancelRead = context.WithTimeout(context.Background(), 5*time.Second)
 	_, event, err = clientConn.Read(readCtx)
 	cancelRead()
-	require.NoError(t, err)
-	require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
-	require.Equal(t, "resp_ws_turn_two_tool_capability", gjson.GetBytes(event, "response.id").String())
+	require.Error(t, err)
+	var closeErr coderws.CloseError
+	require.ErrorAs(t, err, &closeErr)
+	require.Equal(t, coderws.StatusTryAgainLater, closeErr.Code)
+	require.Contains(t, closeErr.Reason, "no available account")
 
 	select {
 	case payload := <-firstHitCh:
@@ -3182,9 +3183,8 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityContinuesAfterLive
 
 	select {
 	case payload := <-secondHitCh:
-		require.Equal(t, "image_generation", gjson.GetBytes(payload, "tools.0.type").String())
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for image tool capability later turn websocket request")
+		t.Fatalf("disabled image tool later turn should not reach upstream: %s", string(payload))
+	case <-time.After(200 * time.Millisecond):
 	}
 }
 

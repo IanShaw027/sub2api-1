@@ -271,7 +271,10 @@ func TestKiroGatewayService_FakeCacheSessionProgressCarriesCheckpointAcrossTurns
 	secondPlan, secondHit := svc.prepareFakeCachePlan(account, &ParsedRequest{Model: "claude-sonnet-4", Body: secondBody, UserID: 1, APIKeyID: 2}, nil, settings)
 	require.NotNil(t, secondPlan)
 	require.Greater(t, secondPlan.CurrentCheckpointTokens(), firstCurrent)
-	require.Equal(t, firstCacheable, secondHit.CheckpointTokens)
+	// Turn 1 committed its effective cached weight (== firstCacheable, since no
+	// usage was resolved that turn) to SessionProgress; turn 2 reads it back as
+	// the effective-cache cap for cache read.
+	require.Equal(t, firstCacheable, secondHit.EffectiveCachedTokens)
 
 	usage := resolveKiroFakeCacheUsage(secondPlan, secondHit, secondPlan.CurrentCacheableTokens+10, settings)
 	require.Equal(t, firstCacheable, usage.CacheReadInputTokens)
@@ -1336,8 +1339,16 @@ func TestKiroGatewayService_ForwardCountTokens_UsesForwardValidationWithLocalEst
 
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, 4, expectedInputTokens, "fixture should lock the tiktoken-backed contract, not the legacy heuristic")
-	require.JSONEq(t, fmt.Sprintf(`{"input_tokens":%d}`, expectedInputTokens), rec.Body.String())
+	// count_tokens shares the calibrated EstimateInputTokens contract so the
+	// reported value matches what usage reporting bills (raw tiktoken count
+	// would be 4; calibration adds base + content scaling + per-message overhead).
+	expectedCalibrated := kiropkg.EstimateInputTokens([]byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello from count tokens"}]}]
+		}`))
+	require.Equal(t, 4, expectedInputTokens, "raw tiktoken count should remain stable as calibration baseline")
+	require.Greater(t, expectedCalibrated, expectedInputTokens, "calibrated estimate must exceed raw count")
+	require.JSONEq(t, fmt.Sprintf(`{"input_tokens":%d}`, expectedCalibrated), rec.Body.String())
 }
 
 func TestKiroGatewayService_ForwardNonStream_ExceptionDoesNotCommitFakeCache(t *testing.T) {
@@ -1498,12 +1509,14 @@ func TestKiroGatewayService_ForwardNonStream_UsageMatchesAnthropicCacheShape(t *
 	require.True(t, ok)
 	require.Contains(t, usage, "cache_creation_input_tokens")
 	require.Contains(t, usage, "cache_read_input_tokens")
-	require.Equal(t, "standard", usage["service_tier"])
-	require.Equal(t, "global", usage["inference_geo"])
-	cacheCreation, ok := usage["cache_creation"].(map[string]any)
-	require.True(t, ok)
-	require.Contains(t, cacheCreation, "ephemeral_5m_input_tokens")
-	require.Contains(t, cacheCreation, "ephemeral_1h_input_tokens")
+	require.Contains(t, usage, "output_tokens_details")
+	require.NotContains(t, usage, "service_tier")
+	require.NotContains(t, usage, "inference_geo")
+
+	// Verify context_management and stop_details are present
+	require.Contains(t, payload, "context_management")
+	require.Contains(t, payload, "stop_details")
+
 	require.Equal(t, result.Usage.CacheCreationInputTokens, result.Usage.CacheCreation5mTokens)
 	require.Zero(t, result.Usage.CacheCreation1hTokens)
 }
@@ -1898,8 +1911,12 @@ func TestKiroGatewayService_ForwardStream_EmptyBodyFailsWithoutFinalEvents(t *te
 
 	require.Error(t, err)
 	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Contains(t, rec.Body.String(), "event: error")
+	require.Empty(t, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), "event: error")
 	require.NotContains(t, rec.Body.String(), "event: message_start")
 	require.NotContains(t, rec.Body.String(), "event: message_delta")
 	require.NotContains(t, rec.Body.String(), "event: message_stop")
@@ -1936,8 +1953,13 @@ func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFailsWithoutStartingStr
 
 	require.Error(t, err)
 	require.Nil(t, result)
-	require.Contains(t, rec.Body.String(), "event: error")
-	require.Contains(t, rec.Body.String(), "context usage reached 98%")
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Empty(t, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), "event: error")
+	require.NotContains(t, rec.Body.String(), "context usage reached 98%")
 	require.NotContains(t, rec.Body.String(), "event: message_start")
 }
 
@@ -2021,6 +2043,86 @@ func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFallsBackToThinking(t *
 	require.Contains(t, rec.Body.String(), `"content_block":{"thinking":"","type":"thinking"}`)
 	require.Contains(t, rec.Body.String(), `Thinking through the request with high effort`)
 	require.NotContains(t, rec.Body.String(), "Kiro upstream returned no assistant output")
+}
+
+func TestKiroGatewayService_ForwardStream_PlaceholderOnlyBodyFallsBackToThinking(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "assistantResponseEvent",
+	}, map[string]any{"content": "I will call the requested tools."})
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 6, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4-6", Stream: true, ThinkingEnabled: true, OutputEffort: "high"},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.6"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "event: message_start")
+	require.Contains(t, rec.Body.String(), `"content_block":{"thinking":"","type":"thinking"}`)
+	require.Contains(t, rec.Body.String(), `Thinking through the request with high effort`)
+	require.NotContains(t, rec.Body.String(), "I will call the requested tools.")
+	require.Greater(t, result.Usage.OutputTokens, 0)
+}
+
+func TestKiroGatewayService_ForwardStream_PlaceholderOnlyBodyWithoutThinkingFailsBeforeStreamStart(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	repo := &kiroPreStartAccountRepoStub{}
+	svc := &KiroGatewayService{
+		rateLimitService: &RateLimitService{
+			accountRepo: repo,
+		},
+	}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "assistantResponseEvent",
+	}, map[string]any{"content": "I will call the requested tools."})
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 6, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4-6", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.6"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Empty(t, rec.Body.String())
+	require.Len(t, repo.calls, 1)
 }
 
 func TestKiroGatewayService_ForwardNonStream_IncompleteToolUseReturnsRecoverableFailure(t *testing.T) {

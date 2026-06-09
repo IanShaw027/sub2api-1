@@ -27,6 +27,44 @@ const (
 	claudeCodeBanner             = "You are Claude Code, Anthropic's official CLI for Claude."
 )
 
+// StripToolTurnPlaceholders removes the synthetic tool-turn placeholders the
+// gateway injects into upstream requests (Kiro rejects empty message content,
+// so tool-only turns are padded with these strings). The upstream sometimes
+// echoes a padded placeholder back verbatim as assistant output; left
+// unfiltered it leaks into the client stream as a spurious assistant line like
+// "I will call the requested tools." This trims a response whose entire visible
+// text is one of those placeholders.
+func StripToolTurnPlaceholders(assistantText string) string {
+	switch strings.TrimSpace(assistantText) {
+	case toolOnlyAssistantPlaceholder, toolOnlyUserPlaceholder:
+		return ""
+	}
+	return assistantText
+}
+
+// ToolTurnPlaceholderMatch classifies trimmed assistant text against the
+// injected tool-turn placeholders for streaming suppression:
+//   - exact: the text equals a placeholder in full and must be dropped
+//   - prefix: the text is a leading fragment of a placeholder; the caller should
+//     keep buffering before deciding
+//
+// Empty input is treated as a prefix (still undecided).
+func ToolTurnPlaceholderMatch(text string) (exact, prefix bool) {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false, true
+	}
+	for _, ph := range []string{toolOnlyAssistantPlaceholder, toolOnlyUserPlaceholder} {
+		if trimmed == ph {
+			return true, false
+		}
+		if strings.HasPrefix(ph, trimmed) {
+			prefix = true
+		}
+	}
+	return false, prefix
+}
+
 const kiroCompactionRecentWindow = 4
 
 const (
@@ -190,31 +228,108 @@ func normalizeThinkingForRequestedModel(requestedModel string, req map[string]an
 	req["thinking"] = thinking
 }
 
+// Token estimate calibration constants.
+//
+// Kiro upstream (Bedrock frame protocol) does not return token usage, so the
+// gateway estimates input tokens locally. A raw tiktoken (cl100k_base) count of
+// the serialized content badly undercounts what Anthropic actually bills,
+// because it ignores per-message structural overhead and—most importantly—the
+// large tool-use system scaffold Anthropic injects whenever any tool is present.
+//
+// These coefficients were calibrated against real Anthropic usage by sending
+// controlled request bodies through the official API and regressing the real
+// total input tokens against the local component estimates. Fit error stayed
+// within ~5% across content-only, multi-turn, and tool-heavy requests.
+const (
+	kiroTokenEstimateBaseOverhead    = 13  // fixed per-request scaffold
+	kiroTokenEstimateContentScale100 = 110 // content multiplier ×100 (1.10)
+	kiroTokenEstimatePerMessage      = 4   // per-message structural overhead
+	kiroTokenEstimateToolSystemBase  = 493 // tool-use system prompt injected when any tool is present
+	kiroTokenEstimatePerTool         = 5   // per-tool fixed overhead (rounded from 4.5)
+	kiroTokenEstimateToolSchemaScale = 175 // tool schema multiplier ×100 (1.75)
+	// Per tool_use / tool_result content block in the conversation history.
+	// Calibrated from multi-turn tool conversations: each tool round-trip pair
+	// bills ~38 tokens beyond its text content and per-message overhead, split
+	// across the two structural blocks (id/type/tool_use_id wrapping).
+	kiroTokenEstimatePerToolBlock = 19
+)
+
 func EstimateInputTokens(body []byte) int {
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {
 		return 0
 	}
 
-	var builder strings.Builder
+	var contentBuilder strings.Builder
 	if systemText := joinSystem(req["system"]); systemText != "" {
-		appendKiroTokenEstimateText(&builder, systemText)
+		appendKiroTokenEstimateText(&contentBuilder, systemText)
 	}
+	messageCount := 0
+	toolBlockCount := 0
 	if messages, _ := req["messages"].([]any); len(messages) > 0 {
+		messageCount = len(messages)
 		for _, item := range messages {
 			msg, _ := item.(map[string]any)
-			appendKiroTokenEstimateContent(&builder, msg["content"])
+			appendKiroTokenEstimateContent(&contentBuilder, msg["content"])
+			toolBlockCount += countKiroToolBlocks(msg["content"])
 		}
 	}
+	contentTokens := AccurateTokenCount(contentBuilder.String())
+
+	toolCount := 0
+	toolSchemaTokens := 0
 	if tools, _ := req["tools"].([]any); len(tools) > 0 {
+		toolCount = len(tools)
+		var toolBuilder strings.Builder
 		for _, item := range tools {
 			tool, _ := item.(map[string]any)
-			appendKiroTokenEstimateText(&builder, stringField(tool, "name"))
-			appendKiroTokenEstimateText(&builder, stringField(tool, "description"))
-			appendKiroTokenEstimateJSON(&builder, tool["input_schema"])
+			appendKiroTokenEstimateText(&toolBuilder, stringField(tool, "name"))
+			appendKiroTokenEstimateText(&toolBuilder, stringField(tool, "description"))
+			appendKiroTokenEstimateJSON(&toolBuilder, tool["input_schema"])
+		}
+		toolSchemaTokens = AccurateTokenCount(toolBuilder.String())
+	}
+
+	return calibrateKiroInputTokens(contentTokens, messageCount, toolCount, toolSchemaTokens, toolBlockCount)
+}
+
+// countKiroToolBlocks counts tool_use and tool_result blocks in a message's
+// content so their structural billing overhead can be added during calibration.
+func countKiroToolBlocks(content any) int {
+	blocks, ok := content.([]any)
+	if !ok {
+		return 0
+	}
+	n := 0
+	for _, item := range blocks {
+		block, _ := item.(map[string]any)
+		switch strings.TrimSpace(stringField(block, "type")) {
+		case "tool_use", "tool_result":
+			n++
 		}
 	}
-	return AccurateTokenCount(builder.String())
+	return n
+}
+
+// calibrateKiroInputTokens maps raw local component estimates onto the
+// Anthropic-billed token scale using the constants documented above.
+func calibrateKiroInputTokens(contentTokens, messageCount, toolCount, toolSchemaTokens, toolBlockCount int) int {
+	if contentTokens == 0 && messageCount == 0 && toolCount == 0 {
+		return 0
+	}
+	total := kiroTokenEstimateBaseOverhead
+	total += contentTokens * kiroTokenEstimateContentScale100 / 100
+	total += messageCount * kiroTokenEstimatePerMessage
+	total += toolBlockCount * kiroTokenEstimatePerToolBlock
+	if toolCount > 0 {
+		total += kiroTokenEstimateToolSystemBase
+		total += toolCount * kiroTokenEstimatePerTool
+		total += toolSchemaTokens * kiroTokenEstimateToolSchemaScale / 100
+	}
+	if total < 0 {
+		return 0
+	}
+	return total
 }
 
 // TrimAnthropicRequestToTokenBudget drops the oldest conversation messages
@@ -337,7 +452,10 @@ func CompactAnthropicRequestToTokenBudget(body []byte, budgetTokens int) ([]byte
 }
 
 func EstimateOutputTokens(text string) int {
-	return AccurateTokenCount(text)
+	// Output is generated text passing through the same tiktoken estimator that
+	// undercounts Anthropic's tokenizer. Apply the same content scaling factor
+	// calibrated for input content (see kiroTokenEstimateContentScale100).
+	return AccurateTokenCount(text) * kiroTokenEstimateContentScale100 / 100
 }
 
 func trimTrailingNonUserMessages(messages []any) []any {
@@ -1215,8 +1333,8 @@ func extractSessionID(req map[string]any) string {
 			SessionID string `json:"session_id"`
 		}
 		if err := json.Unmarshal([]byte(userID), &parsed); err == nil {
-			if _, err := uuid.Parse(parsed.SessionID); err == nil {
-				return parsed.SessionID
+			if sessionID := strings.TrimSpace(parsed.SessionID); sessionID != "" {
+				return sessionID
 			}
 		}
 	}

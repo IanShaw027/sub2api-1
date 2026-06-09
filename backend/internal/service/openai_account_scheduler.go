@@ -1423,7 +1423,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForResponses(
 			}
 		}
 	}
-	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", requiredImageRoute, false, false, requireCompact)
+	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", requiredImageRoute, requireImageEnabled, false, requireCompact)
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(

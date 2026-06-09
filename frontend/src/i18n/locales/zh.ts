@@ -4196,7 +4196,7 @@ export default {
         codexCLIOnlyDesc: '仅对 OpenAI OAuth 生效。开启后仅允许 Codex 官方客户端家族访问；关闭后完全绕过并保持原逻辑。',
         imageGenerationEnabled: '允许图片生成',
         imageGenerationEnabledDesc:
-          '仅影响该账号的实际图片生成路由；普通文本请求，以及仅声明图片工具能力的场景，都不受影响。',
+          '影响该账号的图片生成路由和已声明的 image_generation 工具能力；普通文本请求不受影响。',
         codexImageGenerationBridge: 'Codex 图片生成桥接',
         codexImageGenerationBridgeDesc:
           '账号级策略优先于渠道和全局配置。仅控制 Codex 走 /responses 文本端点时是否注入 image_generation 工具；不影响独立图片生成接口。',

@@ -760,7 +760,7 @@ func TestCompactAnthropicRequestToTokenBudget_SmallWindowDoesNotSplitToolPair(t 
 		]
 	}`, strings.Repeat("summary ", 40), strings.Repeat("budget ", 60)))
 
-	compacted, dropped, changed, err := CompactAnthropicRequestToTokenBudget(input, 120)
+	compacted, dropped, changed, err := CompactAnthropicRequestToTokenBudget(input, 150)
 	if err != nil {
 		t.Fatalf("CompactAnthropicRequestToTokenBudget error: %v", err)
 	}
@@ -790,6 +790,34 @@ func TestCompactAnthropicRequestToTokenBudget_SmallWindowDoesNotSplitToolPair(t 
 				}
 			}
 		}
+	}
+}
+
+func TestEstimateInputTokens_CalibratedAgainstAnthropicUsage(t *testing.T) {
+	// Calibration anchors: controlled request bodies sent through the real
+	// Anthropic API. Estimates must land within 15% of the observed real total
+	// input tokens, locking in the calibration constants in converter.go.
+	cases := []struct {
+		name string
+		body string
+		real int
+	}{
+		{"short", `{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"What is the capital of France? Answer in one word."}]}`, 34},
+		{"tools_1", `{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"Read /etc/hostname"}],"tools":[{"name":"Read","description":"Reads a file from the local filesystem.","input_schema":{"type":"object","properties":{"file_path":{"type":"string","description":"The absolute path to the file to read"},"offset":{"type":"integer"},"limit":{"type":"integer"}},"required":["file_path"]}}]}`, 615},
+		{"tools_4", `{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"Read /etc/hostname"}],"tools":[{"name":"Read","description":"Reads a file from the local filesystem.","input_schema":{"type":"object","properties":{"file_path":{"type":"string","description":"The absolute path to the file to read"},"offset":{"type":"integer"},"limit":{"type":"integer"}},"required":["file_path"]}},{"name":"Write","description":"Writes a file to the local filesystem.","input_schema":{"type":"object","properties":{"file_path":{"type":"string"},"content":{"type":"string"}},"required":["file_path","content"]}},{"name":"Bash","description":"Executes a bash command.","input_schema":{"type":"object","properties":{"command":{"type":"string"},"timeout":{"type":"integer"},"description":{"type":"string"}},"required":["command"]}},{"name":"Edit","description":"Performs exact string replacements in files.","input_schema":{"type":"object","properties":{"file_path":{"type":"string"},"old_string":{"type":"string"},"new_string":{"type":"string"},"replace_all":{"type":"boolean"}},"required":["file_path","old_string","new_string"]}}]}`, 863},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			est := EstimateInputTokens([]byte(tc.body))
+			relErr := float64(est-tc.real) / float64(tc.real)
+			if relErr < 0 {
+				relErr = -relErr
+			}
+			if relErr > 0.15 {
+				t.Fatalf("estimate = %d, real = %d, rel err = %.1f%% (want <= 15%%)", est, tc.real, relErr*100)
+			}
+		})
 	}
 }
 
@@ -873,4 +901,46 @@ func convertedHistoryPrefix(t *testing.T, body []byte) string {
 	first := requireJSONObject(t, history[0], "history[0]")
 	userInput := requireJSONObject(t, first["userInputMessage"], "history[0].userInputMessage")
 	return requireJSONString(t, userInput["content"], "history[0].userInputMessage.content")
+}
+
+func TestStripToolTurnPlaceholders(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"I will call the requested tools.", ""},
+		{"Here are the tool results.", ""},
+		{"  I will call the requested tools.  ", ""},
+		{"Real assistant answer.", "Real assistant answer."},
+		{"I will call the requested tools. Then do more.", "I will call the requested tools. Then do more."},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := StripToolTurnPlaceholders(tc.in); got != tc.want {
+			t.Fatalf("StripToolTurnPlaceholders(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestToolTurnPlaceholderMatch(t *testing.T) {
+	cases := []struct {
+		in         string
+		wantExact  bool
+		wantPrefix bool
+	}{
+		{"", false, true},
+		{"I will", false, true},
+		{"I will call the requested tools.", true, false},
+		{"Here are the tool results.", true, false},
+		{"Here are", false, true},
+		{"Hello world", false, false},
+		{"I will call the requested tools. More", false, false},
+	}
+	for _, tc := range cases {
+		exact, prefix := ToolTurnPlaceholderMatch(tc.in)
+		if exact != tc.wantExact || prefix != tc.wantPrefix {
+			t.Fatalf("ToolTurnPlaceholderMatch(%q) = (exact=%v, prefix=%v), want (exact=%v, prefix=%v)",
+				tc.in, exact, prefix, tc.wantExact, tc.wantPrefix)
+		}
+	}
 }

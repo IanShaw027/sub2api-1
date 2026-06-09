@@ -60,6 +60,21 @@ func TestBuildFakeCachePlanAcceptsJSONMetadataUserID(t *testing.T) {
 	require.Contains(t, plan.CurrentKey, "session:123e4567-e89b-12d3-a456-426614174000")
 }
 
+func TestBuildFakeCachePlanAcceptsJSONMetadataUserIDWithNonUUIDSessionID(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4",
+		"metadata":{"user_id":"{\"device_id\":\"device\",\"account_uuid\":\"\",\"session_id\":\"kiro-recheck-nonuuid-session\"}"},
+		"messages":[
+			{"role":"user","content":"hello"}
+		]
+	}`)
+
+	plan, err := BuildFakeCachePlan(body, FakeCacheScope{AccountID: 7, UserID: 1, APIKeyID: 2}, "claude-sonnet-4")
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+	require.Contains(t, plan.CurrentKey, "session:kiro-recheck-nonuuid-session")
+}
+
 func TestBuildFakeCachePlanReusesKeysAcrossAccountsForSameUserAndAPIKey(t *testing.T) {
 	body := []byte(`{
 		"model":"claude-sonnet-4",
@@ -276,6 +291,47 @@ func TestBuildFakeCachePlanBuildsCacheControlCheckpoints(t *testing.T) {
 	}
 }
 
+func TestBuildFakeCachePlanCalibratesCacheableTokens(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4",
+		"metadata":{"user_id":"user_x_account__session_123e4567-e89b-12d3-a456-426614174111"},
+		"system":"You are a helpful coding assistant. Always be concise and accurate.",
+		"tools":[
+			{"name":"search","description":"find docs in the knowledge base","input_schema":{"type":"object","properties":{"query":{"type":"string","description":"the search query"}},"required":["query"]}},
+			{"name":"write_file","description":"write content to a file path","input_schema":{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}}
+		],
+		"messages":[
+			{"role":"user","content":"Please help me refactor the authentication module to use the new token provider."},
+			{"role":"assistant","content":"Sure, let me look at the current implementation first."},
+			{"role":"user","content":"Go ahead, the files are in internal/auth."}
+		]
+	}`)
+
+	plan, err := BuildFakeCachePlan(body, FakeCacheScope{AccountID: 7, UserID: 1, APIKeyID: 2}, "claude-sonnet-4")
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+
+	// The independent block carries the 493-token tool system scaffold plus the
+	// per-tool and schema×1.75 calibration, so it must dwarf a raw tiktoken count.
+	require.Greater(t, plan.IndependentCacheableTokens, kiroTokenEstimateToolSystemBase)
+
+	// A full cache hit (independent + previous prefix cached) must drive billable
+	// input down near the residual: only the final user turn's calibrated content
+	// stays uncached.
+	total := EstimateInputTokens(body)
+	usage := plan.ResolveUsageWithConfig(total, FakeCacheHitState{
+		Independent: true,
+		Prefix:      true,
+	}, FakeCacheUsageConfig{HitRateScale: 100})
+
+	require.Equal(t, total, usage.InputTokens+usage.CacheReadInputTokens+usage.CacheCreationInputTokens)
+	// Before the calibration fix the residual was content-proportional and grew
+	// without bound; now the cached portion offsets the calibrated weight, so the
+	// leftover billable input is a small fraction of the total.
+	require.Less(t, usage.InputTokens, total/2)
+	require.Greater(t, usage.CacheReadInputTokens, 0)
+}
+
 func TestFakeCachePlanResolveUsage(t *testing.T) {
 	plan := &FakeCachePlan{
 		PreviousPrefixCacheableTokens: 60,
@@ -333,19 +389,16 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAndHonorsMinBlock(t 
 		MinBlockTokens: 16,
 	})
 
-	// With 95% hit rate:
-	// - Independent: 20 tokens (hit)
-	// - PreviousPrefix: 60 tokens (hit)
-	// - CurrentPrefix: 80 tokens (20 new)
-	// Total cache read before scaling: 80 (20 + 60)
-	// After 95% scaling: 76 tokens
-	// The 4 missed read tokens stay in the cacheable bucket and become cache writes.
-	// Cache write: 24 tokens (20 new + 4 missed reads)
-	// Regular input: 40 tokens (only the non-cacheable tail)
+	// With 95% hit rate under the chained effective-cache model:
+	// - read (ideal): Independent 20 + PreviousPrefix 60 = 80 (both already cached)
+	// - currentTokens: Independent 20 + CurrentPrefix 80 = 100
+	// - growth = 100 - 80 = 20 (the new tokens to write this turn)
+	// - created = 20 * 95% = 19; the 1 missed token falls back into input
+	// - input = 140 - 80 - 19 = 41 (non-cacheable tail 40 + 1 missed write)
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              40,
-		CacheCreationInputTokens: 24,
-		CacheReadInputTokens:     76, // 95% of 80
+		InputTokens:              41,
+		CacheCreationInputTokens: 19,
+		CacheReadInputTokens:     80,
 	}, usage)
 }
 
@@ -363,11 +416,48 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAt98Percent(t *testi
 		HitRateScale: 98,
 	})
 
+	// 98% hit rate: read = PreviousPrefix 60; growth = 100 - 60 = 40;
+	// created = 40 * 98% = 39; the 1 missed write falls back into input.
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              40,
-		CacheCreationInputTokens: 42,
-		CacheReadInputTokens:     58, // 98% of 60
+		InputTokens:              41,
+		CacheCreationInputTokens: 39,
+		CacheReadInputTokens:     60,
 	}, usage)
+}
+
+func TestFakeCachePlanResolveUsageWithConfig_ChainsEffectiveCacheAcrossTurns(t *testing.T) {
+	// Turn 1: cold start, nothing cached yet. With 95% hit rate, 5% of the
+	// cacheable growth misses and falls back into input; the rest is cache write.
+	turn1 := &FakeCachePlan{
+		CurrentPrefixCacheableTokens: 1000,
+		CurrentPrefixKey:             "prefix:current",
+	}
+	u1 := turn1.ResolveUsageWithConfig(1000, FakeCacheHitState{}, FakeCacheUsageConfig{HitRateScale: 95})
+	// read=0 (cold), growth=1000, created=950, missed 50 -> input.
+	require.Equal(t, 950, u1.CacheCreationInputTokens)
+	require.Equal(t, 0, u1.CacheReadInputTokens)
+	require.Equal(t, 50, u1.InputTokens)
+	// Effective cached carried forward is read+created = 950, NOT the ideal 1000.
+	require.Equal(t, 950, turn1.RecordedEffectiveCachedTokens)
+
+	// Turn 2: prefix hit, ideal read would be 1000, but the effective cap from
+	// turn 1 (950) holds it back — this is the chained effect of the prior miss.
+	turn2 := &FakeCachePlan{
+		CurrentPrefixCacheableTokens:  1200,
+		PreviousPrefixCacheableTokens: 1000,
+		CurrentPrefixKey:              "prefix:current",
+		PreviousPrefixKey:             "prefix:previous",
+	}
+	u2 := turn2.ResolveUsageWithConfig(1200, FakeCacheHitState{
+		Prefix:                true,
+		EffectiveCachedTokens: turn1.RecordedEffectiveCachedTokens, // 950
+	}, FakeCacheUsageConfig{HitRateScale: 95})
+	// read capped at 950 (not the ideal 1000); growth = 1200 - 950 = 250;
+	// created = 250 * 95% = 237; missed 13 -> input.
+	require.Equal(t, 950, u2.CacheReadInputTokens)
+	require.Equal(t, 237, u2.CacheCreationInputTokens)
+	require.Equal(t, 1200-950-237, u2.InputTokens)
+	require.Equal(t, 950+237, turn2.RecordedEffectiveCachedTokens)
 }
 
 func TestFakeCachePlanResolveUsageWithConfig_ZeroHitRateScaleIsValid(t *testing.T) {
@@ -384,11 +474,14 @@ func TestFakeCachePlanResolveUsageWithConfig_ZeroHitRateScaleIsValid(t *testing.
 		HitRateScale: 0,
 	})
 
-	// With 0% hit rate, all would-be reads are rewritten into cache creation.
+	// With 0% hit rate, none of this turn's NEW growth is cached. The previously
+	// cached prefix (read = 60) is still read — 0% governs new writes, not what was
+	// already cached. growth = 100 - 60 = 40, created = 40 * 0% = 0, so all 40
+	// missed writes fall back into input: input = 140 - 60 - 0 = 80.
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              40,
-		CacheCreationInputTokens: 100,
-		CacheReadInputTokens:     0, // No cache hits with 0% rate
+		InputTokens:              80,
+		CacheCreationInputTokens: 0,
+		CacheReadInputTokens:     60,
 	}, usage)
 }
 

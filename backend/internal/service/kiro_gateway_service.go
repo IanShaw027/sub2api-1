@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -49,6 +50,8 @@ const (
 	kiroTransportFailureReasonKeyword = "kiro_transport_failure"
 	kiroAccountStateUpdateTimeout     = 5 * time.Second
 )
+
+var kiroFirstForwardableEventTimeout = 30 * time.Second
 
 var (
 	kiroShadowWebSearchExecutor = doWebSearch
@@ -919,7 +922,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		content = append(content, block)
 		hasVisibleOutput = true
 	}
-	content, textOutput, nativeThinkingOutput := appendKiroNativeContentBlocks(assistantContentBuilder.String(), content)
+	content, textOutput, nativeThinkingOutput := appendKiroNativeContentBlocks(kiropkg.StripToolTurnPlaceholders(assistantContentBuilder.String()), content)
 	if textOutput != "" || nativeThinkingOutput != "" {
 		hasVisibleOutput = true
 	}
@@ -947,7 +950,9 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 
 	content = append(content, shadowContent...)
 	content = append(content, toolUses...)
-	outputTokens := estimateKiroOutputTokens(textOutput+nativeThinkingOutput+reasoningThinkingText+thinkingOverride, toolOutputBuilder.String()+shadowToolOutput)
+	thinkingText := nativeThinkingOutput + reasoningThinkingText + thinkingOverride
+	outputTokens := estimateKiroOutputTokens(textOutput+thinkingText, toolOutputBuilder.String()+shadowToolOutput)
+	thinkingTokens := estimateKiroOutputTokens(thinkingText, "")
 	telemetry := &kiroResponseTelemetry{
 		FramesSeen:             len(frames),
 		AssistantChars:         len(textOutput),
@@ -983,14 +988,16 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	s.commitFakeCachePlan(fakeCachePlan, runtimeSettings)
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":            "msg_" + strings.ReplaceAll(generateRequestID(), "-", ""),
-		"type":          "message",
-		"role":          "assistant",
-		"content":       content,
-		"model":         parsed.Model,
-		"stop_reason":   stopReason,
-		"stop_sequence": nil,
-		"usage":         kiroAnthropicUsage(inputTokens, outputTokens, fakeCacheUsage),
+		"id":                 "msg_" + strings.ReplaceAll(generateRequestID(), "-", ""),
+		"type":               "message",
+		"role":               "assistant",
+		"content":            content,
+		"model":              parsed.Model,
+		"stop_reason":        stopReason,
+		"stop_sequence":      nil,
+		"stop_details":       nil,
+		"usage":              kiroAnthropicUsageForDelta(inputTokens, outputTokens, fakeCacheUsage, thinkingTokens),
+		"context_management": gin.H{"applied_edits": []any{}},
 	})
 
 	result := &ForwardResult{
@@ -1018,6 +1025,26 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	reader := bufio.NewReader(resp.Body)
 	buffer := make([]byte, 0, 64*1024)
 	streamStarted := false
+	var firstForwardableStarted atomic.Bool
+	var firstForwardableTimeoutTriggered atomic.Bool
+	var firstForwardableWatchdog *time.Timer
+	stopFirstForwardableWatchdog := func() {
+		if firstForwardableWatchdog == nil {
+			return
+		}
+		firstForwardableWatchdog.Stop()
+		firstForwardableWatchdog = nil
+	}
+	if kiroFirstForwardableEventTimeout > 0 {
+		firstForwardableWatchdog = time.AfterFunc(kiroFirstForwardableEventTimeout, func() {
+			if firstForwardableStarted.Load() {
+				return
+			}
+			firstForwardableTimeoutTriggered.Store(true)
+			_ = resp.Body.Close()
+		})
+		defer stopFirstForwardableWatchdog()
+	}
 	textBlockOpen := false
 	textBlockIndex := -1
 	thinkingBlockOpen := false
@@ -1043,6 +1070,14 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	nativeThinkingBuffer := ""
 	nativeThinkingExtracted := false
 	stripThinkingLeadingNewline := false
+	// Placeholder suppression: the gateway pads tool-only turns sent upstream
+	// with a fixed phrase ("I will call the requested tools."); Kiro sometimes
+	// echoes it back verbatim as the entire assistant text. We hold back leading
+	// text that could be that placeholder until we can confirm it is real output,
+	// so a spurious placeholder line never reaches the client. Once any real text
+	// has been emitted, suppression is disabled for the rest of the stream.
+	placeholderPending := ""
+	placeholderResolved := false
 	debugAggregator := BeginKiroFrameAggregator(s.settingService, c)
 	defer func() {
 		debugAggregator.Finalize("upstream_response_body", map[string]any{
@@ -1054,7 +1089,16 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			"upstream_model": converted.Model,
 		})
 	}()
+	markFirstToken := func() {
+		if firstTokenMs != nil {
+			return
+		}
+		v := int(time.Since(start).Milliseconds())
+		firstTokenMs = &v
+	}
 	startStream := func(initialInputTokens int) error {
+		firstForwardableStarted.Store(true)
+		stopFirstForwardableWatchdog()
 		if parsed.OnUpstreamAccepted != nil {
 			parsed.OnUpstreamAccepted()
 		}
@@ -1062,6 +1106,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			return err
 		}
 		streamStarted = true
+		markFirstToken()
 		if simulatedThinking == "" {
 			return nil
 		}
@@ -1069,7 +1114,16 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		nextBlockIndex++
 		return writeKiroThinkingBlock(writer, blockIndex, simulatedThinking)
 	}
+	// flushPendingPlaceholder is forward-declared so closeTextBlock can drain the
+	// placeholder-suppression buffer before closing the text block. Assigned once
+	// emitTextDeltaRaw is in scope.
+	var flushPendingPlaceholder func() error
 	closeTextBlock := func() error {
+		if flushPendingPlaceholder != nil {
+			if err := flushPendingPlaceholder(); err != nil {
+				return err
+			}
+		}
 		if !textBlockOpen {
 			return nil
 		}
@@ -1099,9 +1153,14 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			},
 		})
 	}
-	emitTextDelta := func(text string) error {
+	emitTextDeltaRaw := func(text string) error {
 		if text == "" {
 			return nil
+		}
+		if !streamStarted {
+			if err := startStream(inputTokens); err != nil {
+				return err
+			}
 		}
 		if err := ensureTextBlock(); err != nil {
 			return err
@@ -1116,12 +1175,59 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			},
 		})
 	}
+	// emitTextDelta wraps the raw emitter with leading-placeholder suppression.
+	// Until real text is confirmed, candidate placeholder text is buffered rather
+	// than streamed; an exact placeholder match is dropped, anything else flushes.
+	emitTextDelta := func(text string) error {
+		if text == "" {
+			return nil
+		}
+		if placeholderResolved {
+			return emitTextDeltaRaw(text)
+		}
+		placeholderPending += text
+		exact, prefix := kiropkg.ToolTurnPlaceholderMatch(placeholderPending)
+		if exact {
+			// Entire buffered text is a placeholder echo: drop it and keep
+			// suppression armed in case more placeholder text follows.
+			placeholderPending = ""
+			return nil
+		}
+		if prefix {
+			// Still could become a placeholder; keep buffering.
+			return nil
+		}
+		// Confirmed real text: flush buffer and disable suppression.
+		placeholderResolved = true
+		flush := placeholderPending
+		placeholderPending = ""
+		return emitTextDeltaRaw(flush)
+	}
+	flushPendingPlaceholder = func() error {
+		if placeholderResolved || placeholderPending == "" {
+			placeholderPending = ""
+			return nil
+		}
+		if exact, _ := kiropkg.ToolTurnPlaceholderMatch(placeholderPending); exact {
+			placeholderPending = ""
+			return nil
+		}
+		placeholderResolved = true
+		flush := placeholderPending
+		placeholderPending = ""
+		return emitTextDeltaRaw(flush)
+	}
 	openThinkingBlock := func() error {
 		if thinkingBlockOpen {
 			return nil
 		}
 		if err := closeTextBlock(); err != nil {
 			return err
+		}
+		if !streamStarted {
+			if err := startStream(inputTokens); err != nil {
+				return err
+			}
 		}
 		thinkingBlockIndex = nextBlockIndex
 		nextBlockIndex++
@@ -1231,12 +1337,18 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			buffer = append(buffer, chunk[:n]...)
 			if len(buffer) > kiroMaxBodySize {
 				err := fmt.Errorf("kiro stream buffer exceeded limit %d", kiroMaxBodySize)
+				if !streamStarted {
+					return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusBadGateway, kiroTransportFailureReasonKeyword, "Kiro upstream disconnected before first forwardable event", err.Error())
+				}
 				s.handleProtocolError(ctx, c, account, parsed.Model, true, err)
 				return nil, err
 			}
 			for {
 				frame, consumed, ok, err := parseKiroFrame(buffer)
 				if err != nil {
+					if !streamStarted {
+						return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusBadGateway, kiroTransportFailureReasonKeyword, "Kiro upstream disconnected before first forwardable event", err.Error())
+					}
 					s.handleProtocolError(ctx, c, account, parsed.Model, true, err)
 					return nil, err
 				}
@@ -1278,19 +1390,15 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						}
 					}
 				case "reasoningContentEvent":
-					if !streamStarted {
-						if err := startStream(inputTokens); err != nil {
-							return nil, err
-						}
-					}
-					if firstTokenMs == nil {
-						v := int(time.Since(start).Milliseconds())
-						firstTokenMs = &v
-					}
 					reasoningText := rawStringField(frame.Payload, "text")
 					reasoningSignature := rawStringField(frame.Payload, "signature")
 					if reasoningText == "" && reasoningSignature == "" {
 						continue
+					}
+					if !streamStarted {
+						if err := startStream(inputTokens); err != nil {
+							return nil, err
+						}
 					}
 					if !thinkingBlockOpen {
 						if err := openThinkingBlock(); err != nil {
@@ -1312,15 +1420,6 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					content := rawStringField(frame.Payload, "content")
 					if content == "" {
 						continue
-					}
-					if !streamStarted {
-						if err := startStream(inputTokens); err != nil {
-							return nil, err
-						}
-					}
-					if firstTokenMs == nil {
-						v := int(time.Since(start).Milliseconds())
-						firstTokenMs = &v
 					}
 					if reasoningThinkingActive && thinkingBlockOpen {
 						if err := closeThinkingBlock(); err != nil {
@@ -1501,9 +1600,19 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			}
 		}
 		if readErr != nil {
+			if isClientDisconnectError(c, readErr) {
+				return nil, readErr
+			}
+			if !streamStarted && firstForwardableTimeoutTriggered.Load() {
+				timeoutErr := fmt.Errorf("Kiro upstream did not emit a forwardable event within %s", kiroFirstForwardableEventTimeout)
+				return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusGatewayTimeout, kiroTransportFailureReasonKeyword, timeoutErr.Error(), readErr.Error())
+			}
 			if readErr == io.EOF {
 				if len(buffer) > 0 {
 					incompleteErr := fmt.Errorf("incomplete kiro frame at EOF: %w", io.ErrUnexpectedEOF)
+					if !streamStarted {
+						return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusBadGateway, kiroTransportFailureReasonKeyword, "Kiro upstream disconnected before first forwardable event", incompleteErr.Error())
+					}
 					if streamStarted {
 						if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
 							return nil, err
@@ -1516,12 +1625,18 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				}
 				if framesSeen == 0 {
 					emptyErr := errors.New("empty kiro response body")
+					if !streamStarted {
+						return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusBadGateway, kiroTransportFailureReasonKeyword, "Kiro upstream returned no assistant output before first forwardable event", emptyErr.Error())
+					}
 					_ = writeKiroStreamError(writer, emptyErr.Error())
 					logKiroResponseAnomaly(ctx, account, parsed, true, "empty_body", emptyErr, framesSeen, completedToolUses, lastContextUsagePercentage)
 					s.handleProtocolError(ctx, c, account, parsed.Model, true, emptyErr)
 					return nil, emptyErr
 				}
 				break
+			}
+			if !streamStarted {
+				return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusBadGateway, kiroTransportFailureReasonKeyword, "Kiro upstream disconnected before first forwardable event", readErr.Error())
 			}
 			if streamStarted {
 				if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
@@ -1551,28 +1666,42 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		}
 		nativeThinkingBuffer = ""
 	}
+	// Flush any buffered leading text now that the stream has ended. A
+	// pure-placeholder buffer is dropped here, leaving textOutputBuilder empty so
+	// the empty-output guard below can engage the fallback path.
+	if err := flushPendingPlaceholder(); err != nil {
+		return nil, err
+	}
 	visibleToolUses, completedVisibleToolUses, partialToolUses := kiroVisibleToolStateCounts(toolStates, toolOrder)
 	hasVisibleToolOutput := visibleToolUses > 0
 	if hasVisibleToolOutput && stopReason == "end_turn" {
 		stopReason = "tool_use"
 	}
-	outputTokens := estimateKiroOutputTokens(textOutputBuilder.String()+nativeThinkingBuilder.String()+simulatedThinking, toolOutputBuilder.String())
-	telemetry := &kiroResponseTelemetry{
-		FramesSeen:             framesSeen,
-		AssistantChars:         textOutputBuilder.Len(),
-		NativeThinkingChars:    nativeThinkingBuilder.Len(),
-		SimulatedThinkingChars: len(strings.TrimSpace(simulatedThinking)),
-		ToolUseCount:           visibleToolUses,
-		CompletedToolUseCount:  completedVisibleToolUses,
-		PartialToolUseCount:    partialToolUses,
-		ContextUsagePercentage: lastContextUsagePercentage,
+	buildStreamTelemetry := func() *kiroResponseTelemetry {
+		return &kiroResponseTelemetry{
+			FramesSeen:             framesSeen,
+			AssistantChars:         textOutputBuilder.Len(),
+			NativeThinkingChars:    nativeThinkingBuilder.Len(),
+			SimulatedThinkingChars: len(strings.TrimSpace(simulatedThinking)),
+			ToolUseCount:           visibleToolUses,
+			CompletedToolUseCount:  completedVisibleToolUses,
+			PartialToolUseCount:    partialToolUses,
+			ContextUsagePercentage: lastContextUsagePercentage,
+		}
 	}
-	if telemetry.PartialToolUseCount > 0 && telemetry.CompletedToolUseCount == 0 {
+	computeStreamUsageTokens := func() (outputTokens int, thinkingTokens int) {
+		streamThinkingText := nativeThinkingBuilder.String() + simulatedThinking
+		return estimateKiroOutputTokens(textOutputBuilder.String()+streamThinkingText, toolOutputBuilder.String()),
+			estimateKiroOutputTokens(streamThinkingText, "")
+	}
+	partialTelemetry := buildStreamTelemetry()
+	if partialTelemetry.PartialToolUseCount > 0 && partialTelemetry.CompletedToolUseCount == 0 {
+		outputTokens, _ := computeStreamUsageTokens()
 		incompleteErr := errors.New("kiro response completed with incomplete tool_use output")
 		if err := writeKiroStreamError(writer, kiroIncompleteToolUseClientMessage()); err != nil {
 			return nil, err
 		}
-		logKiroResponseAnomaly(ctx, account, parsed, true, "incomplete_tool_use_completed", incompleteErr, telemetry.FramesSeen, telemetry.ToolUseCount, telemetry.ContextUsagePercentage)
+		logKiroResponseAnomaly(ctx, account, parsed, true, "incomplete_tool_use_completed", incompleteErr, partialTelemetry.FramesSeen, partialTelemetry.ToolUseCount, partialTelemetry.ContextUsagePercentage)
 		if c != nil && account != nil {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:          account.Platform,
@@ -1581,7 +1710,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				UpstreamRequestID: strings.TrimSpace(resp.Header.Get("x-amzn-requestid")),
 				Kind:              "response_anomaly",
 				Message:           "kiro completed with anomalies: incomplete_tool_use_completed",
-				Detail:            telemetry.opsDetail(stopReason, outputTokens, telemetry.shortOutput(outputTokens), []string{"incomplete_tool_use_completed"}),
+				Detail:            partialTelemetry.opsDetail(stopReason, outputTokens, partialTelemetry.shortOutput(outputTokens), []string{"incomplete_tool_use_completed"}),
 			})
 		}
 		return nil, incompleteErr
@@ -1599,6 +1728,9 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	}
 	if !streamStarted || (textOutputBuilder.Len() == 0 && nativeThinkingBuilder.Len() == 0 && simulatedThinking == "" && !hasVisibleToolOutput) {
 		emptyErr := errors.New("kiro response contained no assistant output")
+		if !streamStarted {
+			return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusBadGateway, kiroTransportFailureReasonKeyword, "Kiro upstream returned no assistant output before first forwardable event", emptyErr.Error())
+		}
 		if streamStarted {
 			if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
 				return nil, err
@@ -1609,6 +1741,8 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		s.handleProtocolError(ctx, c, account, parsed.Model, true, emptyErr)
 		return nil, emptyErr
 	}
+	outputTokens, streamThinkingTokens := computeStreamUsageTokens()
+	telemetry := buildStreamTelemetry()
 	if err := closeTextBlock(); err != nil {
 		return nil, err
 	}
@@ -1619,9 +1753,10 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	finalFakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
 	inputTokens = finalFakeCacheUsage.InputTokens
 	if err := writeSSEEvent(writer, "message_delta", map[string]any{
-		"type":  "message_delta",
-		"delta": map[string]any{"stop_reason": stopReason, "stop_sequence": nil},
-		"usage": kiroAnthropicUsage(inputTokens, outputTokens, finalFakeCacheUsage),
+		"type":               "message_delta",
+		"delta":              map[string]any{"stop_reason": stopReason, "stop_sequence": nil, "stop_details": nil},
+		"usage":              kiroAnthropicUsageForDelta(inputTokens, outputTokens, finalFakeCacheUsage, streamThinkingTokens),
+		"context_management": map[string]any{"applied_edits": []any{}},
 	}); err != nil {
 		return nil, err
 	}
@@ -1654,7 +1789,7 @@ func estimateKiroOutputTokens(textOutput, toolOutput string) int {
 	return kiropkg.EstimateOutputTokens(textOutput + toolOutput)
 }
 
-func kiroAnthropicUsage(inputTokens, outputTokens int, fakeCacheUsage kiropkg.FakeCacheUsage) gin.H {
+func kiroAnthropicUsageForStart(inputTokens, outputTokens int, fakeCacheUsage kiropkg.FakeCacheUsage) gin.H {
 	return gin.H{
 		"input_tokens":                inputTokens,
 		"output_tokens":               outputTokens,
@@ -1665,8 +1800,24 @@ func kiroAnthropicUsage(inputTokens, outputTokens int, fakeCacheUsage kiropkg.Fa
 			"ephemeral_1h_input_tokens": 0,
 		},
 		"service_tier":  "standard",
-		"inference_geo": "global",
+		"inference_geo": "not_available",
 	}
+}
+
+func kiroAnthropicUsageForDelta(inputTokens, outputTokens int, fakeCacheUsage kiropkg.FakeCacheUsage, thinkingTokens int) gin.H {
+	usage := gin.H{
+		"input_tokens":                inputTokens,
+		"output_tokens":               outputTokens,
+		"cache_creation_input_tokens": fakeCacheUsage.CacheCreationInputTokens,
+		"cache_read_input_tokens":     fakeCacheUsage.CacheReadInputTokens,
+		"output_tokens_details":       gin.H{"thinking_tokens": thinkingTokens},
+	}
+	if fakeCacheUsage.CacheCreationInputTokens > 0 {
+		usage["cache_creation"] = gin.H{
+			"ephemeral_5m_input_tokens": fakeCacheUsage.CacheCreationInputTokens,
+		}
+	}
+	return usage
 }
 
 func writeKiroThinkingBlock(writer gin.ResponseWriter, index int, thinking string) error {
@@ -1964,8 +2115,8 @@ func (s *KiroGatewayService) prepareFakeCachePlan(account *Account, parsed *Pars
 		}
 		if plan.SessionProgressKey != "" {
 			if value, ok := s.fakeCache.Get(plan.SessionProgressKey); ok {
-				if tokens, ok := value.(int); ok && tokens > hit.CheckpointTokens {
-					hit.CheckpointTokens = tokens
+				if tokens, ok := value.(int); ok && tokens > hit.EffectiveCachedTokens {
+					hit.EffectiveCachedTokens = tokens
 				}
 			}
 		}
@@ -2026,17 +2177,20 @@ func (s *KiroGatewayService) commitFakeCachePlan(plan *kiropkg.FakeCachePlan, ru
 		s.fakeCache.Set(checkpoint.Key, struct{}{}, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
 	}
 	if plan.SessionProgressKey != "" {
-		currentTokens := plan.CurrentCacheableTokens
-		if checkpointTokens := plan.CurrentCheckpointTokens(); checkpointTokens > currentTokens {
-			currentTokens = checkpointTokens
-		}
-		if currentTokens > 0 {
-			if value, ok := s.fakeCache.Get(plan.SessionProgressKey); ok {
-				if existing, ok := value.(int); ok && existing > currentTokens {
-					currentTokens = existing
-				}
+		// Persist the effective cached weight (cache read + cache creation) recorded
+		// for this turn, not the ideal cumulative. A sub-100% hit rate makes this
+		// smaller than the ideal, so the next turn reads from a shrunken basis and
+		// the imperfect-hit-rate effect chains forward. Falls back to the ideal
+		// cumulative when no usage was resolved (RecordedEffectiveCachedTokens == 0).
+		effectiveTokens := plan.RecordedEffectiveCachedTokens
+		if effectiveTokens <= 0 {
+			effectiveTokens = plan.CurrentCacheableTokens
+			if checkpointTokens := plan.CurrentCheckpointTokens(); checkpointTokens > effectiveTokens {
+				effectiveTokens = checkpointTokens
 			}
-			s.fakeCache.Set(plan.SessionProgressKey, currentTokens, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
+		}
+		if effectiveTokens > 0 {
+			s.fakeCache.Set(plan.SessionProgressKey, effectiveTokens, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
 		}
 	}
 }
@@ -2985,7 +3139,7 @@ func (s *KiroGatewayService) handleKiroTransportError(ctx context.Context, c *gi
 	}
 	stateCtx, cancel := kiroAccountStateContext(ctx)
 	defer cancel()
-	s.markKiroTransportFailureUnschedulable(stateCtx, account, transportErr)
+	s.markKiroFailureUnschedulable(stateCtx, account, http.StatusBadGateway, kiroTransportFailureReasonKeyword, sanitizeUpstreamErrorMessage(transportErr.Error()), kiroTransportFailureCooldown)
 	return &UpstreamFailoverError{
 		StatusCode:   http.StatusBadGateway,
 		ResponseBody: []byte(sanitizeUpstreamErrorMessage(transportErr.Error())),
@@ -3010,46 +3164,86 @@ func isClientDisconnectError(c *gin.Context, err error) bool {
 	return errors.Is(err, context.Canceled)
 }
 
-// markKiroTransportFailureUnschedulable 把账号标记为短期临时不可调度，
+// markKiroFailureUnschedulable 把账号标记为短期临时不可调度，
 // 让调度层在 cooldown 窗口内跳过这个上游故障的账号。
-func (s *KiroGatewayService) markKiroTransportFailureUnschedulable(ctx context.Context, account *Account, transportErr error) {
-	if s == nil || s.rateLimitService == nil || s.rateLimitService.accountRepo == nil || account == nil || account.ID <= 0 {
+func (s *KiroGatewayService) markKiroFailureUnschedulable(ctx context.Context, account *Account, statusCode int, reasonKeyword string, message string, cooldown time.Duration) {
+	if s == nil || s.rateLimitService == nil || s.rateLimitService.accountRepo == nil || account == nil || account.ID <= 0 || cooldown <= 0 {
 		return
 	}
 	now := time.Now()
-	until := now.Add(kiroTransportFailureCooldown)
+	until := now.Add(cooldown)
+	reasonKeyword = strings.TrimSpace(reasonKeyword)
+	if reasonKeyword == "" {
+		reasonKeyword = kiroTransportFailureReasonKeyword
+	}
 	state := &TempUnschedState{
 		UntilUnix:       until.Unix(),
 		TriggeredAtUnix: now.Unix(),
-		StatusCode:      0,
-		MatchedKeyword:  kiroTransportFailureReasonKeyword,
+		StatusCode:      statusCode,
+		MatchedKeyword:  reasonKeyword,
 		RuleIndex:       -1,
-		ErrorMessage:    truncateTempUnschedMessage([]byte(sanitizeUpstreamErrorMessage(transportErr.Error())), tempUnschedMessageMaxBytes),
+		ErrorMessage:    truncateTempUnschedMessage([]byte(sanitizeUpstreamErrorMessage(message)), tempUnschedMessageMaxBytes),
 	}
 	reason := ""
 	if raw, marshalErr := json.Marshal(state); marshalErr == nil {
 		reason = string(raw)
 	}
 	if reason == "" {
-		reason = "Kiro upstream transport failure: " + state.ErrorMessage
+		reason = "Kiro upstream failure: " + state.ErrorMessage
 	}
 
 	if err := s.rateLimitService.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
-		slog.Warn("kiro_transport_failure_set_temp_unsched_failed", "account_id", account.ID, "error", err)
+		slog.Warn("kiro_failure_set_temp_unsched_failed", "account_id", account.ID, "error", err)
 		return
 	}
 	if s.rateLimitService.tempUnschedCache != nil {
 		if err := s.rateLimitService.tempUnschedCache.SetTempUnsched(ctx, account.ID, state); err != nil {
-			slog.Warn("kiro_transport_failure_temp_unsched_cache_set_failed", "account_id", account.ID, "error", err)
+			slog.Warn("kiro_failure_temp_unsched_cache_set_failed", "account_id", account.ID, "error", err)
 		}
 	}
-	s.rateLimitService.notifyAccountSchedulingBlocked(account, until, kiroTransportFailureReasonKeyword)
-	slog.Warn("kiro_transport_failure_temp_unschedulable",
+	s.rateLimitService.notifyAccountSchedulingBlocked(account, until, reasonKeyword)
+	slog.Warn("kiro_failure_temp_unschedulable",
 		"account_id", account.ID,
 		"account_name", account.Name,
 		"until", until,
 		"error", state.ErrorMessage,
+		"status_code", statusCode,
+		"reason_keyword", reasonKeyword,
 	)
+}
+
+func (s *KiroGatewayService) newKiroPreStartStreamFailoverError(ctx context.Context, c *gin.Context, account *Account, upstreamRequestID string, headers http.Header, statusCode int, reasonKeyword string, message string, detail string) *UpstreamFailoverError {
+	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
+	if message == "" {
+		message = "Kiro upstream disconnected before first forwardable event"
+	}
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		detail = message
+	}
+	stateCtx, cancel := kiroAccountStateContext(ctx)
+	defer cancel()
+	s.markKiroFailureUnschedulable(stateCtx, account, statusCode, reasonKeyword, message, kiroTransportFailureCooldown)
+	if c != nil {
+		s.recordOpsErrorEvent(c, account, statusCode, upstreamRequestID, "", "failover", message, detail)
+	}
+	body, _ := json.Marshal(gin.H{
+		"error": gin.H{
+			"type":    "upstream_error",
+			"message": message,
+		},
+	})
+	var respHeaders http.Header
+	if headers != nil {
+		respHeaders = headers.Clone()
+	} else {
+		respHeaders = http.Header{}
+	}
+	return &UpstreamFailoverError{
+		StatusCode:      statusCode,
+		ResponseBody:    body,
+		ResponseHeaders: respHeaders,
+	}
 }
 
 func (s *KiroGatewayService) handleProtocolError(ctx context.Context, c *gin.Context, account *Account, model string, isStream bool, err error) {
@@ -3074,6 +3268,11 @@ func (s *KiroGatewayService) handleFrameFailure(ctx context.Context, c *gin.Cont
 	s.recordOpsFrameFailure(c, account, upstreamRequestID, statusCode, failureErr)
 	s.handleUpstreamError(ctx, account, statusCode, http.Header{}, body)
 	if shouldKiroFailover(statusCode) {
+		if statusCode >= http.StatusInternalServerError {
+			stateCtx, cancel := kiroAccountStateContext(ctx)
+			s.markKiroFailureUnschedulable(stateCtx, account, statusCode, kiroTransportFailureReasonKeyword, sanitizeUpstreamErrorMessage(failureErr.Error()), kiroTransportFailureCooldown)
+			cancel()
+		}
 		return &UpstreamFailoverError{
 			StatusCode:      statusCode,
 			ResponseBody:    body,
@@ -3229,7 +3428,7 @@ func startKiroStream(writer gin.ResponseWriter, msgID, model string, fakeCacheUs
 	writer.Header().Set("Connection", "keep-alive")
 	writer.Header().Set("X-Accel-Buffering", "no")
 	writer.WriteHeader(http.StatusOK)
-	return writeSSEEvent(writer, "message_start", map[string]any{
+	if err := writeSSEEvent(writer, "message_start", map[string]any{
 		"type": "message_start",
 		"message": map[string]any{
 			"id":            msgID,
@@ -3239,9 +3438,12 @@ func startKiroStream(writer gin.ResponseWriter, msgID, model string, fakeCacheUs
 			"content":       []any{},
 			"stop_reason":   nil,
 			"stop_sequence": nil,
-			"usage":         kiroAnthropicUsage(fakeCacheUsage.InputTokens, 0, fakeCacheUsage),
+			"usage":         kiroAnthropicUsageForStart(fakeCacheUsage.InputTokens, 1, fakeCacheUsage),
 		},
-	})
+	}); err != nil {
+		return err
+	}
+	return writeSSEEvent(writer, "ping", map[string]any{"type": "ping"})
 }
 
 func kiroFrameFailureHeaders(upstreamRequestID string) http.Header {
