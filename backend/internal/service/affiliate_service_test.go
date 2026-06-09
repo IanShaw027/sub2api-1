@@ -63,6 +63,10 @@ type affiliateRepoStub struct {
 	accrual        AffiliateAccrualInput
 	setRateCalls   int
 	batchRateCalls int
+	reverseRet     float64
+	reverseInvtr   int64
+	reverseInput   AffiliateReversalInput
+	reverseHits    int
 }
 
 func (s *affiliateRepoStub) EnsureUserAffiliate(ctx context.Context, userID int64) (*AffiliateSummary, error) {
@@ -81,8 +85,10 @@ func (s *affiliateRepoStub) AccrueQuota(ctx context.Context, input AffiliateAccr
 	s.accrual = input
 	return input.Amount, nil
 }
-func (s *affiliateRepoStub) ReverseQuotaForOrder(context.Context, AffiliateReversalInput) (float64, int64, error) {
-	return 0, 0, nil
+func (s *affiliateRepoStub) ReverseQuotaForOrder(_ context.Context, input AffiliateReversalInput) (float64, int64, error) {
+	s.reverseHits++
+	s.reverseInput = input
+	return s.reverseRet, s.reverseInvtr, nil
 }
 func (s *affiliateRepoStub) ApplySignupBonus(ctx context.Context, userID int64, amount float64) (bool, float64, error) {
 	return true, amount, nil
@@ -171,6 +177,35 @@ func TestAccrueInviteRebate_ClampsToCapAndClaimsSlot(t *testing.T) {
 	require.Equal(t, 20.0, rebate)
 	require.Equal(t, int64(99), repo.accrual.SourceOrderID)
 	require.Equal(t, 100.0, repo.accrual.RebateCap)
+}
+
+func TestReverseInviteRebateForOrder_InvalidatesInviterCacheOnReversal(t *testing.T) {
+	ctx := context.Background()
+	inviterID := int64(10)
+	repo := &affiliateRepoStub{reverseRet: 20, reverseInvtr: inviterID}
+	cache := &mockAuthCacheInvalidator{}
+	svc := &AffiliateService{repo: repo, authCacheInvalidator: cache}
+
+	reversed, err := svc.ReverseInviteRebateForOrder(ctx, 99, 100, 100)
+	require.NoError(t, err)
+	require.Equal(t, 20.0, reversed)
+	require.Equal(t, 1, repo.reverseHits)
+	require.Equal(t, int64(99), repo.reverseInput.SourceOrderID)
+	require.Equal(t, 100.0, repo.reverseInput.RefundedAmount)
+	require.Equal(t, []int64{inviterID}, cache.invalidatedUserIDs,
+		"reversal that claws back balance must invalidate the inviter's auth/billing cache")
+}
+
+func TestReverseInviteRebateForOrder_NoCacheInvalidationWhenNothingReversed(t *testing.T) {
+	ctx := context.Background()
+	repo := &affiliateRepoStub{reverseRet: 0, reverseInvtr: 0}
+	cache := &mockAuthCacheInvalidator{}
+	svc := &AffiliateService{repo: repo, authCacheInvalidator: cache}
+
+	reversed, err := svc.ReverseInviteRebateForOrder(ctx, 99, 100, 100)
+	require.NoError(t, err)
+	require.Equal(t, 0.0, reversed)
+	require.Empty(t, cache.invalidatedUserIDs)
 }
 
 func TestAccrueInviteRebate_PassesFreezeAndPerInviteePolicy(t *testing.T) {
