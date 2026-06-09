@@ -7,8 +7,8 @@
       </div>
 
       <template v-else-if="stats">
-        <!-- Row 1: Core Stats -->
-        <div class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <!-- Total API Keys -->
           <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
@@ -119,10 +119,6 @@
               </div>
             </div>
           </div>
-        </div>
-
-        <!-- Row 2: Usage & Spend -->
-        <div class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
           <!-- Today Requests -->
           <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
