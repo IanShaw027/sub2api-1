@@ -358,7 +358,8 @@ async function confirmCreateInvoice() {
 }
 
 function quickApply(row: PaymentOrder) {
-  if (!isSelected(row.id)) toggle(row.id)
+  clear()
+  toggle(row.id)
   openCreateInvoiceDialog()
 }
 

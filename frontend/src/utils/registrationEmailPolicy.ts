@@ -160,6 +160,6 @@ function normalizeRegistrationEmailSuffixToken(value: string, strict: boolean): 
   return value.replace(/[*]/g, '').replace(EMAIL_SUFFIX_INVALID_CHAR_RE, '')
 }
 
-function toCanonicalRegistrationEmailSuffix(domain: string): string {
+export function toCanonicalRegistrationEmailSuffix(domain: string): string {
   return domain.startsWith(EMAIL_SUFFIX_WILDCARD_PREFIX) ? domain : `@${domain}`
 }

@@ -4911,7 +4911,7 @@
                     </thead>
                     <tbody class="space-y-2">
                       <tr
-                        v-for="p in (['anthropic', 'openai', 'gemini', 'antigravity'] as const)"
+                        v-for="p in (['anthropic', 'openai', 'gemini', 'antigravity', 'kiro'] as const)"
                         :key="p"
                         class="align-top"
                       >
@@ -5255,7 +5255,7 @@
                           </thead>
                           <tbody>
                             <tr
-                              v-for="p in (['anthropic', 'openai', 'gemini', 'antigravity'] as const)"
+                              v-for="p in (['anthropic', 'openai', 'gemini', 'antigravity', 'kiro'] as const)"
                               :key="`${authSource.source}-pq-${p}`"
                               class="align-top"
                             >
@@ -7749,6 +7749,7 @@ import {
   normalizeRegistrationEmailSuffixDomain,
   normalizeRegistrationEmailSuffixDomains,
   parseRegistrationEmailSuffixWhitelistInput,
+  toCanonicalRegistrationEmailSuffix,
 } from "@/utils/registrationEmailPolicy";
 
 const PaymentProviderList = defineAsyncComponent(
@@ -9556,7 +9557,7 @@ async function saveSettings() {
       email_verify_enabled: form.email_verify_enabled,
       registration_email_suffix_whitelist:
         registrationEmailSuffixWhitelistTags.value.map(
-          (suffix) => `@${suffix}`,
+          toCanonicalRegistrationEmailSuffix,
         ),
       promo_code_enabled: form.promo_code_enabled,
       invitation_code_enabled: form.invitation_code_enabled,

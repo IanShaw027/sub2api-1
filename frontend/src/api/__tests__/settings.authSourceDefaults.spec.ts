@@ -15,6 +15,7 @@ const allInheritedOverrides: AuthSourcePlatformQuotaOverridesMap = {
   openai: { daily: undefined, weekly: undefined, monthly: undefined },
   gemini: { daily: undefined, weekly: undefined, monthly: undefined },
   antigravity: { daily: undefined, weekly: undefined, monthly: undefined },
+  kiro: { daily: undefined, weekly: undefined, monthly: undefined },
 };
 
 describe("admin settings auth source defaults helpers", () => {
@@ -291,7 +292,7 @@ describe("normalizePlatformQuotasMap", () => {
 
   it("returns all-null quotas when input is omitted", () => {
     const result = normalizePlatformQuotasMap();
-    expect(Object.keys(result)).toHaveLength(4);
+    expect(Object.keys(result)).toHaveLength(5);
     for (const value of Object.values(result)) {
       expect(value).toEqual({ daily: null, weekly: null, monthly: null });
     }
@@ -343,7 +344,7 @@ describe("sanitizePlatformQuotasMap", () => {
 
   it("fills missing platforms with all-null quotas", () => {
     const result = sanitizePlatformQuotasMap({});
-    expect(Object.keys(result)).toHaveLength(4);
+    expect(Object.keys(result)).toHaveLength(5);
     for (const value of Object.values(result)) {
       expect(value).toEqual({ daily: null, weekly: null, monthly: null });
     }

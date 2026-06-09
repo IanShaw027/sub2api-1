@@ -18,7 +18,7 @@ export interface DefaultSubscriptionSetting {
 }
 
 // ── 平台限额类型 ──────────────────────────────────────────────────
-export type PlatformType = "anthropic" | "openai" | "gemini" | "antigravity"
+export type PlatformType = "anthropic" | "openai" | "gemini" | "antigravity" | "kiro"
 export type QuotaWindowType = "daily" | "weekly" | "monthly"
 
 /** 单平台三档限额；null = 不限制，undefined = 未填（等价 null） */
@@ -39,7 +39,7 @@ export interface PlatformQuotaOverrideLimits {
 export type DefaultPlatformQuotasMap = Partial<Record<PlatformType, PlatformQuotaLimits>>
 export type AuthSourcePlatformQuotaOverridesMap = Partial<Record<PlatformType, PlatformQuotaOverrideLimits>>
 
-const PLATFORMS: PlatformType[] = ["anthropic", "openai", "gemini", "antigravity"]
+const PLATFORMS: PlatformType[] = ["anthropic", "openai", "gemini", "antigravity", "kiro"]
 const QUOTA_WINDOWS: QuotaWindowType[] = ["daily", "weekly", "monthly"]
 
 export type SchedulingThresholdPlatformType =
