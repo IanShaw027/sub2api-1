@@ -24,9 +24,10 @@ const (
 	rateLimitUnitMinute        = "minute"
 	rateLimitUnitHour          = "hour"
 	rateLimitModeFixed         = "fixed"
-	checkPaidResultAlreadyPaid = "already_paid"
-	checkPaidResultCancelled   = "cancelled"
-	pendingWxpayReconcileLimit = 20
+	checkPaidResultAlreadyPaid      = "already_paid"
+	checkPaidResultCancelled        = "cancelled"
+	checkPaidResultAlreadyProcessed = "already_processed"
+	pendingWxpayReconcileLimit      = 20
 )
 
 func (s *PaymentService) checkCancelRateLimit(ctx context.Context, userID int64, cfg *PaymentConfig) error {
@@ -102,7 +103,7 @@ func (s *PaymentService) CancelOrder(ctx context.Context, orderID, userID int64)
 	if o.Status != OrderStatusPending {
 		return "", infraerrors.BadRequest("INVALID_STATUS", "order cannot be cancelled in current status")
 	}
-	return s.cancelCore(ctx, o, OrderStatusCancelled, fmt.Sprintf("user:%d", userID), "user cancelled order")
+	return cancelOutcomeForCaller(s.cancelCore(ctx, o, OrderStatusCancelled, fmt.Sprintf("user:%d", userID), "user cancelled order"))
 }
 
 func (s *PaymentService) AdminCancelOrder(ctx context.Context, orderID int64) (string, error) {
@@ -113,7 +114,21 @@ func (s *PaymentService) AdminCancelOrder(ctx context.Context, orderID int64) (s
 	if o.Status != OrderStatusPending {
 		return "", infraerrors.BadRequest("INVALID_STATUS", "order cannot be cancelled in current status")
 	}
-	return s.cancelCore(ctx, o, OrderStatusCancelled, "admin", "admin cancelled order")
+	return cancelOutcomeForCaller(s.cancelCore(ctx, o, OrderStatusCancelled, "admin", "admin cancelled order"))
+}
+
+// cancelOutcomeForCaller maps the cancelCore result string into the response
+// contract used by the user/admin cancel handlers. A discovered-paid outcome is
+// surfaced as a 409 Conflict so callers get an accurate "already paid, cannot
+// cancel" signal instead of a misleading success message.
+func cancelOutcomeForCaller(result string, err error) (string, error) {
+	if err != nil {
+		return "", err
+	}
+	if result == checkPaidResultAlreadyPaid {
+		return "", infraerrors.Conflict("ORDER_ALREADY_PAID", "order was already paid and cannot be cancelled")
+	}
+	return result, nil
 }
 
 func (s *PaymentService) cancelCore(ctx context.Context, o *dbent.PaymentOrder, fs, op, ad string) (string, error) {
@@ -130,19 +145,46 @@ func (s *PaymentService) cancelCore(ctx context.Context, o *dbent.PaymentOrder, 
 	if err != nil {
 		return "", fmt.Errorf("update order status: %w", err)
 	}
-	if c > 0 {
-		auditAction := "ORDER_CANCELLED"
-		if fs == OrderStatusExpired {
-			auditAction = "ORDER_EXPIRED"
-		}
-		s.writeAuditLog(ctx, o.ID, auditAction, op, map[string]any{"detail": ad})
+	if c == 0 {
+		// CAS missed: the order is no longer PENDING. A concurrent webhook (or
+		// another cancel/expire) won the race. Report the order's real current
+		// state instead of falsely claiming a successful cancellation, and do
+		// not attempt to cancel the upstream order — it may have been paid.
+		return s.cancelCASMissResult(ctx, o.ID), nil
 	}
+	auditAction := "ORDER_CANCELLED"
+	if fs == OrderStatusExpired {
+		auditAction = "ORDER_EXPIRED"
+	}
+	s.writeAuditLog(ctx, o.ID, auditAction, op, map[string]any{"detail": ad})
 	if o.PaymentTradeNo != "" || o.PaymentType != "" {
 		if err := s.cancelUnpaidUpstreamOrder(ctx, o); err != nil {
 			slog.Warn("cancel upstream payment failed", "orderID", o.ID, "error", err)
 		}
 	}
 	return checkPaidResultCancelled, nil
+}
+
+// cancelCASMissResult reloads the order whose pending-guarded status update
+// matched zero rows and classifies the outcome the caller should report:
+//   - a paid/fulfilled state -> checkPaidResultAlreadyPaid (cannot cancel)
+//   - an already-terminal state (cancelled/expired/failed) -> already_processed (no-op)
+//   - anything else (including a failed reload) -> already_processed as a safe default
+func (s *PaymentService) cancelCASMissResult(ctx context.Context, orderID int64) string {
+	current, err := s.entClient.PaymentOrder.Get(ctx, orderID)
+	if err != nil {
+		slog.Warn("reload order after cancel CAS miss failed", "orderID", orderID, "error", err)
+		return checkPaidResultAlreadyProcessed
+	}
+	switch current.Status {
+	case OrderStatusPaid, OrderStatusRecharging, OrderStatusCompleted,
+		OrderStatusPartiallyRefunded, OrderStatusRefunded:
+		return checkPaidResultAlreadyPaid
+	default:
+		// Cancelled / Expired / Failed (or any other non-pending state): the
+		// order is already in a terminal state, so the cancel is a no-op.
+		return checkPaidResultAlreadyProcessed
+	}
 }
 
 func (s *PaymentService) checkPaid(ctx context.Context, o *dbent.PaymentOrder) (string, error) {

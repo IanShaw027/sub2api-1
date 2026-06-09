@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 
@@ -636,6 +637,160 @@ func TestCancelOrderIgnoresUpstreamCancelErrorAfterLocalCancel(t *testing.T) {
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusCancelled, reloaded.Status)
+}
+
+func TestCancelCoreReportsAlreadyPaidWhenCASMissesPaidOrder(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("cancel-race-paid@example.com").
+		SetPasswordHash("hash").
+		SetUsername("cancel-race-paid-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	// The DB row is already PAID (a concurrent webhook won the race), but the
+	// caller still holds a stale in-memory snapshot that says PENDING.
+	// PaymentType/PaymentTradeNo are left empty so checkPaid is skipped and we
+	// isolate the CAS-miss branch.
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("CANCEL-RACE-PAID").
+		SetOutTradeNo("sub2_cancel_race_paid").
+		SetPaymentType("").
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPaid).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client, providersLoaded: true}
+
+	stale := *order
+	stale.Status = OrderStatusPending
+
+	result, err := svc.cancelCore(ctx, &stale, OrderStatusCancelled, "user:1", "user cancelled order")
+	require.NoError(t, err)
+	require.NotEqual(t, checkPaidResultCancelled, result, "must not falsely report a cancellation when CAS missed a paid order")
+	require.Equal(t, checkPaidResultAlreadyPaid, result)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPaid, reloaded.Status, "paid order must not be flipped to cancelled")
+}
+
+func TestCancelCoreReportsAlreadyProcessedWhenCASMissesTerminalOrder(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("cancel-race-terminal@example.com").
+		SetPasswordHash("hash").
+		SetUsername("cancel-race-terminal-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("CANCEL-RACE-TERMINAL").
+		SetOutTradeNo("sub2_cancel_race_terminal").
+		SetPaymentType("").
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCancelled).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client, providersLoaded: true}
+
+	stale := *order
+	stale.Status = OrderStatusPending
+
+	result, err := svc.cancelCore(ctx, &stale, OrderStatusCancelled, "user:1", "user cancelled order")
+	require.NoError(t, err)
+	require.Equal(t, checkPaidResultAlreadyProcessed, result)
+}
+
+func TestCancelOrderReturnsConflictWhenUpstreamAlreadyPaid(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("cancel-conflict@example.com").
+		SetPasswordHash("hash").
+		SetUsername("cancel-conflict-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("CANCEL-CONFLICT").
+		SetOutTradeNo("sub2_cancel_conflict").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	userRepo := &mockUserRepo{
+		getByIDUser: &User{ID: user.ID, Email: user.Email, Username: user.Username, Balance: 0},
+	}
+	userRepo.updateBalanceFn = func(_ context.Context, id int64, amount float64) error {
+		if userRepo.getByIDUser != nil {
+			userRepo.getByIDUser.Balance += amount
+		}
+		return nil
+	}
+	redeemRepo := &paymentOrderLifecycleRedeemRepo{
+		codesByCode: map[string]*RedeemCode{
+			order.RechargeCode: {ID: 1, Code: order.RechargeCode, Type: RedeemTypeBalance, Value: order.Amount, Status: StatusUnused},
+		},
+	}
+	redeemService := NewRedeemService(redeemRepo, userRepo, nil, nil, nil, client, nil, nil)
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		resp: &payment.QueryOrderResponse{TradeNo: "upstream-paid-during-cancel", Status: payment.ProviderStatusPaid, Amount: 88},
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		redeemService:   redeemService,
+		userRepo:        userRepo,
+		providersLoaded: true,
+	}
+
+	_, err = svc.CancelOrder(ctx, order.ID, user.ID)
+	require.Error(t, err)
+	require.True(t, infraerrors.IsConflict(err), "expected 409 Conflict, got %v", err)
+	require.Zero(t, provider.cancelCalls, "must not cancel an upstream order that was paid")
 }
 
 func TestReconcilePendingWxpayOrdersBackfillsPaidOrder(t *testing.T) {
