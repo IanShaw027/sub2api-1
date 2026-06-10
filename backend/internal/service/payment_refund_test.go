@@ -411,6 +411,29 @@ func TestRequestRefundDoesNotConsumeRefundableAmount(t *testing.T) {
 	require.Equal(t, 100.0, plan.RefundAmount)
 }
 
+func TestRequestRefundRejectsActiveInvoiceApplication(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "userinvoice")
+
+	voider := &stubInvoiceVoider{links: map[int64]OrderInvoiceLink{
+		order.ID: {InvoiceID: 42, InvoiceStatus: InvoiceStatusApplied, HasFile: false},
+	}}
+	svc := &PaymentService{
+		entClient: client,
+		userRepo:  &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}},
+	}
+	svc.SetInvoiceVoider(voider)
+
+	_, err := svc.RequestRefund(ctx, order.ID, user.ID, 100, "please refund")
+	require.Error(t, err)
+	require.Equal(t, "INVOICE_ACTIVE", infraerrors.Reason(err))
+
+	reloaded, getErr := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, getErr)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+}
+
 func TestGetRefundPreviewBalanceCapsByCurrentBalance(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)

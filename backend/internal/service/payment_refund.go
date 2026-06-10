@@ -213,6 +213,11 @@ func (s *PaymentService) validateRefundRequest(ctx context.Context, oid, uid int
 	if !inst.RefundEnabled {
 		return nil, nil, nil, infraerrors.Forbidden("REFUND_DISABLED", "refund is not enabled for this provider")
 	}
+	if _, hasActiveInvoice, invoiceErr := s.orderHasActiveInvoice(ctx, o.ID); invoiceErr != nil {
+		return nil, nil, nil, infraerrors.Forbidden("INVOICE_STATE_UNAVAILABLE", "invoice state is unavailable")
+	} else if hasActiveInvoice {
+		return nil, nil, nil, infraerrors.BadRequest("INVOICE_ACTIVE", "order has an active invoice application")
+	}
 	preview, err := s.refundPreviewForOrder(ctx, o, inst)
 	if err != nil {
 		return nil, nil, nil, err
@@ -221,24 +226,11 @@ func (s *PaymentService) validateRefundRequest(ctx context.Context, oid, uid int
 }
 
 func (s *PaymentService) GetRefundPreview(ctx context.Context, oid, uid int64) (*RefundPreview, error) {
-	o, err := s.entClient.PaymentOrder.Get(ctx, oid)
+	_, _, preview, err := s.validateRefundRequest(ctx, oid, uid)
 	if err != nil {
-		return nil, infraerrors.NotFound("NOT_FOUND", "order not found")
+		return nil, err
 	}
-	if o.UserID != uid {
-		return nil, infraerrors.Forbidden("FORBIDDEN", "no permission")
-	}
-	if o.Status != OrderStatusCompleted {
-		return nil, infraerrors.BadRequest("INVALID_STATUS", "only completed orders can request refund")
-	}
-	inst, err := s.getRefundOrderProviderInstance(ctx, o)
-	if err != nil || inst == nil {
-		return nil, infraerrors.Forbidden("REFUND_DISABLED", "refund is not available for this order")
-	}
-	if !inst.RefundEnabled {
-		return nil, infraerrors.Forbidden("REFUND_DISABLED", "refund is not enabled for this provider")
-	}
-	return s.refundPreviewForOrder(ctx, o, inst)
+	return preview, nil
 }
 
 func (s *PaymentService) refundPreviewForOrder(ctx context.Context, o *dbent.PaymentOrder, inst *dbent.PaymentProviderInstance) (*RefundPreview, error) {
@@ -670,6 +662,22 @@ func (s *PaymentService) orderHasIssuedInvoice(ctx context.Context, orderID int6
 	}
 	link, ok := links[orderID]
 	if !ok || link.InvoiceStatus != InvoiceStatusIssued {
+		return 0, false, nil
+	}
+	return link.InvoiceID, true, nil
+}
+
+func (s *PaymentService) orderHasActiveInvoice(ctx context.Context, orderID int64) (int64, bool, error) {
+	if s == nil || s.invoiceVoider == nil {
+		return 0, false, nil
+	}
+	links, err := s.invoiceVoider.GetActiveLinksByOrderIDs(ctx, []int64{orderID})
+	if err != nil {
+		slog.Warn("refund request: invoice lookup failed", "orderID", orderID, "error", err)
+		return 0, false, err
+	}
+	link, ok := links[orderID]
+	if !ok {
 		return 0, false, nil
 	}
 	return link.InvoiceID, true, nil
