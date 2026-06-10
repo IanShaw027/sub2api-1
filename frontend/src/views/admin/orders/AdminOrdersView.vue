@@ -119,7 +119,15 @@
       </div>
     </BaseDialog>
 
-    <AdminRefundDialog :show="showRefundDialog" :order="selectedOrder" :submitting="refundSubmitting" @confirm="handleRefund" @cancel="closeRefundDialog" />
+    <AdminRefundDialog
+      :show="showRefundDialog"
+      :order="selectedOrder"
+      :submitting="refundSubmitting"
+      :require-force="refundRequireForce"
+      :warning="refundWarning"
+      @confirm="handleRefund"
+      @cancel="closeRefundDialog"
+    />
   </AppLayout>
 </template>
 
@@ -150,6 +158,12 @@ interface AuditLog {
   created_at: string
 }
 
+interface AdminRefundResult {
+  success?: boolean
+  warning?: string
+  require_force?: boolean
+}
+
 const { t } = useI18n()
 const appStore = useAppStore()
 
@@ -162,6 +176,8 @@ const selectedOrder = ref<PaymentOrder | null>(null)
 const showDetailDialog = ref(false)
 const showRefundDialog = ref(false)
 const refundSubmitting = ref(false)
+const refundRequireForce = ref(false)
+const refundWarning = ref('')
 const orderAuditLogs = ref<AuditLog[]>([])
 let orderListReqSeq = 0
 let orderDetailReqSeq = 0
@@ -284,15 +300,37 @@ function resetRefundSubmitting() {
   refundSubmitting.value = false
 }
 
+function resetRefundFeedback() {
+  refundRequireForce.value = false
+  refundWarning.value = ''
+}
+
+function hasActiveInvoice(order: PaymentOrder): boolean {
+  return Boolean(order.invoice_id && order.invoice_status !== 'CANCELLED')
+}
+
+function invoiceRefundWarning(order: PaymentOrder): string {
+  if (!hasActiveInvoice(order)) return ''
+  if (order.invoice_status === 'ISSUED') return t('payment.admin.invoiceRefundIssuedWarning')
+  return t('payment.admin.invoiceRefundAppliedWarning')
+}
+
 function openRefundDialog(order: PaymentOrder) {
   selectedOrder.value = order
   resetRefundSubmitting()
+  resetRefundFeedback()
+  const warning = invoiceRefundWarning(order)
+  if (warning) {
+    refundRequireForce.value = true
+    refundWarning.value = warning
+  }
   showRefundDialog.value = true
 }
 
 function closeRefundDialog() {
   showRefundDialog.value = false
   resetRefundSubmitting()
+  resetRefundFeedback()
 }
 
 async function handleRefund(data: { amount: number; reason: string; deduct_balance: boolean; force: boolean }) {
@@ -301,8 +339,15 @@ async function handleRefund(data: { amount: number; reason: string; deduct_balan
   const orderId = selectedOrder.value.id
   refundSubmitting.value = true
   try {
-    await adminPaymentAPI.refundOrder(orderId, { amount: data.amount, reason: data.reason, deduct_balance: data.deduct_balance, force: data.force })
+    const res = await adminPaymentAPI.refundOrder(orderId, { amount: data.amount, reason: data.reason, deduct_balance: data.deduct_balance, force: data.force })
     if (seq !== refundReqSeq) return
+    const result = res.data as AdminRefundResult | undefined
+    if (result?.success === false) {
+      refundRequireForce.value = Boolean(result.require_force)
+      refundWarning.value = result.warning || ''
+      appStore.showError(refundWarning.value || t('common.error'))
+      return
+    }
     clearOrderSearchDebounce()
     appStore.showSuccess(t('payment.admin.refundSuccess')); showRefundDialog.value = false; loadOrders()
   } catch (err: unknown) {

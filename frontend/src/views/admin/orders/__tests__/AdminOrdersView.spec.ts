@@ -81,11 +81,19 @@ const OrderTableStub = {
   `,
 }
 const AdminRefundDialogStub = {
-  props: ['show', 'order', 'submitting'],
+  props: ['show', 'order', 'submitting', 'requireForce', 'warning'],
   emits: ['confirm', 'cancel'],
   template: `
-    <div v-if="show" data-test="refund-dialog" :data-order-id="String(order?.id ?? '')" :data-submitting="String(Boolean(submitting))">
+    <div
+      v-if="show"
+      data-test="refund-dialog"
+      :data-order-id="String(order?.id ?? '')"
+      :data-submitting="String(Boolean(submitting))"
+      :data-require-force="String(Boolean(requireForce))"
+      :data-warning="warning || ''"
+    >
       <button type="button" class="refund-confirm" :disabled="submitting" @click="$emit('confirm', { amount: 1, reason: 'refund reason', deduct_balance: true, force: false })">confirm</button>
+      <button type="button" class="refund-confirm-force" :disabled="submitting" @click="$emit('confirm', { amount: 1, reason: 'refund reason', deduct_balance: true, force: true })">confirm force</button>
       <button type="button" class="refund-close" @click="$emit('cancel')">close</button>
     </div>
   `,
@@ -468,5 +476,106 @@ describe('AdminOrdersView request races', () => {
 
     expect(wrapper.get('[data-test="refund-dialog"]').attributes('data-order-id')).toBe('2')
     expect(wrapper.get('[data-test="refund-dialog"]').attributes('data-submitting')).toBe('false')
+  })
+
+  it('keeps the refund dialog open and surfaces warning when refund requires force', async () => {
+    getOrders.mockResolvedValue({
+      data: {
+        items: [
+          createOrder({ id: 1, out_trade_no: 'order-1', status: 'COMPLETED' }),
+        ],
+        total: 1,
+      },
+    })
+    adminPaymentAPI.refundOrder.mockResolvedValueOnce({
+      data: {
+        success: false,
+        warning: 'order has an issued invoice; refund requires a credit note (use force)',
+        require_force: true,
+      },
+    })
+
+    const wrapper = mount(AdminOrdersView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Pagination: PaginationStub,
+          Select: SelectStub,
+          Icon: IconStub,
+          AdminRefundDialog: AdminRefundDialogStub,
+          OrderStatusBadge: true,
+          OrderTable: OrderTableStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const refundButton = wrapper.findAll('button').find((button) => button.text().includes('payment.admin.refund'))
+    expect(refundButton).toBeTruthy()
+
+    await refundButton!.trigger('click')
+    await wrapper.get('[data-test="refund-dialog"] .refund-confirm').trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.get('[data-test="refund-dialog"]')
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith('order has an issued invoice; refund requires a credit note (use force)')
+    expect(dialog.attributes('data-require-force')).toBe('true')
+    expect(dialog.attributes('data-warning')).toBe('order has an issued invoice; refund requires a credit note (use force)')
+  })
+
+  it('requires admin confirmation and sends force when refunding an order with an invoice application', async () => {
+    getOrders.mockResolvedValue({
+      data: {
+        items: [
+          createOrder({
+            id: 1,
+            out_trade_no: 'order-invoice',
+            status: 'COMPLETED',
+            invoice_id: 42,
+            invoice_status: 'ISSUED',
+          }),
+        ],
+        total: 1,
+      },
+    })
+    adminPaymentAPI.refundOrder.mockResolvedValueOnce({ data: { success: true } })
+
+    const wrapper = mount(AdminOrdersView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Pagination: PaginationStub,
+          Select: SelectStub,
+          Icon: IconStub,
+          AdminRefundDialog: AdminRefundDialogStub,
+          OrderStatusBadge: true,
+          OrderTable: OrderTableStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const refundButton = wrapper.findAll('button').find((button) => button.text().includes('payment.admin.refund'))
+    expect(refundButton).toBeTruthy()
+
+    await refundButton!.trigger('click')
+    const dialog = wrapper.get('[data-test="refund-dialog"]')
+    expect(dialog.attributes('data-require-force')).toBe('true')
+    expect(dialog.attributes('data-warning')).toContain('payment.admin.invoiceRefundIssuedWarning')
+
+    await wrapper.get('[data-test="refund-dialog"] .refund-confirm-force').trigger('click')
+    await flushPromises()
+
+    expect(adminPaymentAPI.refundOrder).toHaveBeenCalledWith(1, {
+      amount: 1,
+      reason: 'refund reason',
+      deduct_balance: true,
+      force: true,
+    })
   })
 })

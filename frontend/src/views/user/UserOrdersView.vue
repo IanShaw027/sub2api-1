@@ -470,7 +470,12 @@ function formatRefundMoney(value: number): string {
 function canRequestRefund(order: PaymentOrder): boolean {
   if (order.status !== 'COMPLETED') return false
   if (!order.provider_instance_id) return false
+  if (hasActiveInvoice(order)) return false
   return refundEligibleProviders.value.has(order.provider_instance_id)
+}
+
+function hasActiveInvoice(order: PaymentOrder): boolean {
+  return Boolean(order.invoice_id && order.invoice_status !== 'CANCELLED')
 }
 
 function canApplyInvoice(order: PaymentOrder): boolean {
