@@ -142,7 +142,7 @@ func upstreamForwardErrorDetailFromContext(c *gin.Context) (upstreamForwardError
 		return upstreamForwardErrorDetail{}, false
 	}
 	errType = strings.TrimSpace(errType)
-	if !isDetailedUpstreamOpsErrorType(errType) {
+	if !isDetailedUpstreamOpsErrorType(errType) && !isClientVisibleUpstreamForwardErrorType(errType) {
 		return upstreamForwardErrorDetail{}, false
 	}
 
@@ -165,6 +165,15 @@ func upstreamForwardErrorDetailFromContext(c *gin.Context) (upstreamForwardError
 		}
 	}
 	return detail, true
+}
+
+func isClientVisibleUpstreamForwardErrorType(errType string) bool {
+	switch strings.TrimSpace(errType) {
+	case "invalid_request_error", "not_found_error":
+		return true
+	default:
+		return false
+	}
 }
 
 func sanitizeUpstreamForwardErrorDetail(msg string) string {

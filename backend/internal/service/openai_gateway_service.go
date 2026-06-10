@@ -3642,6 +3642,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		bodyModified = true
 		disablePatch()
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Stripped image_generation tool capability for disabled group")
+	} else if allowImageGeneration &&
+		accountShouldStripDeclaredImageGenerationTool(account, IsImageGenerationIntentMap(openAIResponsesEndpoint, reqModel, reqBody)) &&
+		stripOpenAIImageGenerationTools(reqBody) {
+		bodyModified = true
+		disablePatch()
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Stripped declared image_generation tool for image-disabled account: %s", account.Name)
 	}
 
 	if account.Type == AccountTypeOAuth && account.Platform == PlatformOpenAI && !isCompactRequest && !isMessagesBridgeRequest {
@@ -4721,6 +4727,15 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		if stripped {
 			body = strippedBody
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Stripped image_generation tool capability for disabled group")
+		}
+	} else if accountShouldStripDeclaredImageGenerationTool(account, IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, body)) {
+		strippedBody, stripped, stripErr := stripOpenAIImageGenerationToolsBytes(body)
+		if stripErr != nil {
+			return nil, fmt.Errorf("strip image_generation tool capability: %w", stripErr)
+		}
+		if stripped {
+			body = strippedBody
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Stripped declared image_generation tool for image-disabled account: %s", account.Name)
 		}
 	}
 
@@ -6466,6 +6481,8 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	}
 
 	if shouldExposeOpenAIUpstreamClientError(resp.StatusCode, upstreamMsg) {
+		clientErrType := openAIClientVisibleErrorType(resp.StatusCode)
+		setOpsUpstreamErrorInternal(c, clientErrType, resp.StatusCode, upstreamMsg, upstreamDetail)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform:           account.Platform,
 			AccountID:          account.ID,
@@ -6478,7 +6495,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		})
 		c.JSON(resp.StatusCode, gin.H{
 			"error": gin.H{
-				"type":    openAIClientVisibleErrorType(resp.StatusCode),
+				"type":    clientErrType,
 				"message": upstreamMsg,
 			},
 		})

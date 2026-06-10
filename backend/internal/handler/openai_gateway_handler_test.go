@@ -270,7 +270,9 @@ func TestOpenAIEnsureForwardErrorResponse_AppendsSSEAfterWritten(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	c.String(http.StatusTeapot, "already written")
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.WriteHeader(http.StatusTeapot)
+	_, _ = c.Writer.WriteString("already written")
 
 	h := &OpenAIGatewayHandler{}
 	wrote := h.ensureForwardErrorResponse(c, false, nil)
@@ -283,6 +285,27 @@ func TestOpenAIEnsureForwardErrorResponse_AppendsSSEAfterWritten(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "event: error\n")
 }
 
+func TestOpenAIEnsureForwardErrorResponse_DoesNotAppendAfterJSONWritten(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c.JSON(http.StatusBadRequest, gin.H{
+		"error": gin.H{
+			"type":    "invalid_request_error",
+			"message": "already written",
+		},
+	})
+
+	h := &OpenAIGatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false, errors.New("upstream error: 400"))
+
+	require.False(t, wrote)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.NotContains(t, w.Body.String(), "event: error")
+	require.Contains(t, w.Body.String(), "already written")
+}
+
 // case B 回归测试：/responses 路径，Writer 已被写过（模拟 ping flushed），
 // ensureForwardErrorResponse 必须发 response.failed，让 Codex 收到合规终止事件。
 func TestOpenAIEnsureForwardErrorResponse_ResponsesRouteAfterWrittenEmitsResponseFailed(t *testing.T) {
@@ -290,6 +313,7 @@ func TestOpenAIEnsureForwardErrorResponse_ResponsesRouteAfterWrittenEmitsRespons
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, EndpointResponses, nil)
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	// 模拟 ping 已 flush 的状态：Writer 已写过 1 个字节
 	_, _ = c.Writer.WriteString(":\n\n")
 
@@ -324,6 +348,34 @@ func TestOpenAIEnsureForwardErrorResponse_UsesDetailedForwardError(t *testing.T)
 	require.True(t, ok)
 	assert.Equal(t, "upstream_http2_internal_error", errorObj["type"])
 	assert.Equal(t, "Upstream HTTP/2 peer reset the stream with INTERNAL_ERROR", errorObj["message"])
+}
+
+func TestOpenAIEnsureForwardErrorResponse_UsesClientVisibleUpstreamError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	service.SetOpsUpstreamErrorWithType(
+		c,
+		"invalid_request_error",
+		http.StatusBadRequest,
+		"The image data you provided does not represent a valid image.",
+		"",
+	)
+
+	h := &OpenAIGatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false, errors.New("upstream error: 400"))
+
+	require.True(t, wrote)
+	require.Equal(t, http.StatusBadGateway, w.Code)
+
+	var parsed map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &parsed)
+	require.NoError(t, err)
+	errorObj, ok := parsed["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "invalid_request_error", errorObj["type"])
+	assert.Equal(t, "The image data you provided does not represent a valid image.", errorObj["message"])
 }
 
 func TestOpenAIEnsureForwardErrorResponse_ClientDisconnectSkipsFallback(t *testing.T) {
@@ -427,7 +479,9 @@ func TestOpenAIRecoverResponsesPanic_AppendsResponseFailedAfterWritten(t *testin
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-	c.String(http.StatusTeapot, "already written")
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.WriteHeader(http.StatusTeapot)
+	_, _ = c.Writer.WriteString("already written")
 
 	h := &OpenAIGatewayHandler{}
 	streamStarted := false
@@ -915,7 +969,7 @@ func TestOpenAIResponses_HTTPPostRoutingImageIntentSkipsImageDisabledAccount(t *
 	require.Equal(t, "gpt-image-1", gjson.Get(upstream.recordedBody(12002), "model").String())
 }
 
-func TestOpenAIResponses_HTTPPostImageToolCapabilitySkipsImageDisabledAccount(t *testing.T) {
+func TestOpenAIResponses_HTTPPostImageToolCapabilityKeepsImageDisabledAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(6205)
@@ -924,12 +978,12 @@ func TestOpenAIResponses_HTTPPostImageToolCapabilitySkipsImageDisabledAccount(t 
 			12041: {
 				statusCode:  http.StatusOK,
 				contentType: "application/json",
-				body:        `{"id":"resp_http_disabled_tool_capability_should_not_run","model":"gpt-5.4","output":[{"id":"ig_disabled","type":"image_generation_call","result":"abc"}],"usage":{"input_tokens":1,"output_tokens":1}}`,
+				body:        `{"id":"resp_http_disabled_tool_capability_ok","model":"gpt-5.4","output":[{"id":"ig_disabled","type":"image_generation_call","result":"abc"}],"usage":{"input_tokens":1,"output_tokens":1}}`,
 			},
 			12042: {
 				statusCode:  http.StatusOK,
 				contentType: "application/json",
-				body:        `{"id":"resp_http_enabled_tool_capability_ok","model":"gpt-5.4","output":[{"id":"ig_enabled","type":"image_generation_call","result":"abc"}],"usage":{"input_tokens":1,"output_tokens":1}}`,
+				body:        `{"id":"resp_http_enabled_tool_capability_should_not_run","model":"gpt-5.4","output":[{"id":"ig_enabled","type":"image_generation_call","result":"abc"}],"usage":{"input_tokens":1,"output_tokens":1}}`,
 			},
 		},
 	}
@@ -1043,9 +1097,11 @@ func TestOpenAIResponses_HTTPPostImageToolCapabilitySkipsImageDisabledAccount(t 
 	if w.Code != http.StatusOK {
 		t.Fatalf("unexpected status=%d body=%s disabled_hit=%s enabled_hit=%s", w.Code, w.Body.String(), upstream.recordedBody(12041), upstream.recordedBody(12042))
 	}
-	require.Equal(t, "resp_http_enabled_tool_capability_ok", gjson.GetBytes(w.Body.Bytes(), "id").String())
-	require.Empty(t, upstream.recordedBody(12041))
-	require.Equal(t, "image_generation", gjson.Get(upstream.recordedBody(12042), "tools.0.type").String())
+	require.Equal(t, "resp_http_disabled_tool_capability_ok", gjson.GetBytes(w.Body.Bytes(), "id").String())
+	require.Empty(t, upstream.recordedBody(12042))
+	// 工具仅声明、非真生图意图，落到关闭生图的账号时应剥离 image_generation 工具再转发。
+	require.NotEmpty(t, upstream.recordedBody(12041))
+	require.False(t, gjson.Get(upstream.recordedBody(12041), `tools.#(type=="image_generation")`).Exists())
 }
 
 func TestOpenAIResponses_HTTPPostRoutingImageIntentRejectsImageDisabledOnlyAccount(t *testing.T) {

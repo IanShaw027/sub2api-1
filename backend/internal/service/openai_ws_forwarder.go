@@ -2713,21 +2713,30 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if imageIntent && !allowImageGeneration {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, ImageGenerationPermissionMessage(), nil)
 		}
-		if !imageIntent && !allowImageGeneration && imageToolCapability && stripOpenAIImageGenerationTools(normalizedReqBody) {
+		imageToolStripped := false
+		if !imageIntent && imageToolCapability &&
+			(!allowImageGeneration || accountShouldStripDeclaredImageGenerationTool(account, imageIntent)) &&
+			stripOpenAIImageGenerationTools(normalizedReqBody) {
+			imageToolStripped = true
 			rebuilt, marshalErr := marshalOpenAIResponsesRequestBodyOrdered(normalizedReqBody)
 			if marshalErr != nil {
 				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", marshalErr)
 			}
 			normalized = rebuilt
+			stripReason := "group_image_generation_disabled"
+			if allowImageGeneration {
+				stripReason = "account_image_generation_disabled"
+			}
 			logOpenAIWSModeInfo(
-				"ingress_ws_strip_image_generation_tool account_id=%d model=%s reason=group_image_generation_disabled",
+				"ingress_ws_strip_image_generation_tool account_id=%d model=%s reason=%s",
 				account.ID,
 				normalizeOpenAIWSLogValue(originalModel),
+				stripReason,
 			)
 		}
 		imageBillingModel := ""
 		imageSizeTier := ""
-		if imageIntent || (allowImageGeneration && imageToolCapability) {
+		if imageIntent || (allowImageGeneration && imageToolCapability && !imageToolStripped) {
 			var imageCfgErr error
 			imageBillingModel, imageSizeTier, imageCfgErr = resolveOpenAIResponsesImageBillingConfigFromBody(normalized, originalModel)
 			if imageCfgErr != nil {

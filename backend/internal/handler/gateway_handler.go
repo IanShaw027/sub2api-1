@@ -1604,8 +1604,8 @@ func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, e
 }
 
 // ensureForwardErrorResponse 在 Forward 返回错误但尚未写响应时补写统一错误响应。
-// Writer 已写过时强制走 streamStarted 分支，这样 /responses 可以回写
-// response.failed 而不是 silent EOF；同时保留当前分支更细的错误映射。
+// Writer 已写过 SSE 时强制走 streamStarted 分支，这样 /responses 可以回写
+// response.failed 而不是 silent EOF；普通 JSON 响应已写出时不能再追加 SSE。
 func (h *GatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarted bool, forwardErr error) bool {
 	if c == nil || c.Writer == nil {
 		return false
@@ -1614,6 +1614,9 @@ func (h *GatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarte
 		return false
 	}
 	if c.Writer.Written() {
+		if !openAIStreamingResponseStarted(c, streamStarted) {
+			return false
+		}
 		streamStarted = true
 	}
 	detail := resolveUpstreamForwardErrorDetail(c, forwardErr)

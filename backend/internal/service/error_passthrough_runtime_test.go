@@ -86,6 +86,10 @@ func TestOpenAIHandleErrorResponse_NoRuleExposesClientVisible4xx(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "invalid_request_error", errField["type"])
 	assert.Equal(t, "Stream must be set to true", errField["message"])
+	upstreamType, _ := c.Get(OpsUpstreamErrorTypeKey)
+	assert.Equal(t, "invalid_request_error", upstreamType)
+	upstreamMessage, _ := c.Get(OpsUpstreamErrorMessageKey)
+	assert.Equal(t, "Stream must be set to true", upstreamMessage)
 }
 
 func TestGeminiWriteGeminiMappedError_NoRuleKeepsDefault(t *testing.T) {

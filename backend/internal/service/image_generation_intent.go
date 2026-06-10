@@ -85,6 +85,19 @@ func HasOpenAIImageGenerationToolCapability(body []byte) bool {
 	return openAIJSONToolsContainImageGeneration(gjson.GetBytes(body, "tools"))
 }
 
+// accountShouldStripDeclaredImageGenerationTool reports whether a request that
+// merely declares the image_generation tool (no explicit intent) should have
+// that tool stripped before being forwarded to the selected account. This lets
+// a request fall back onto an image-disabled account instead of being rejected
+// upstream: the scheduler already prefers image-capable accounts, so landing on
+// an image-disabled one means no better candidate was available.
+func accountShouldStripDeclaredImageGenerationTool(account *Account, imageIntent bool) bool {
+	if imageIntent || account == nil {
+		return false
+	}
+	return !account.OpenAIImageGenerationAllowed()
+}
+
 // IsImageGenerationEndpoint identifies dedicated generated-image endpoints.
 func IsImageGenerationEndpoint(endpoint string) bool {
 	switch normalizeImageGenerationEndpoint(endpoint) {

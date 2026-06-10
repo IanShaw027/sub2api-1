@@ -225,7 +225,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
 	forwardPreviewBody, routedPreviewModel := h.applyOpenAIResponsesChannelMapping(body, reqModel, channelMapping)
-	previewImageIntent, previewNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, routedPreviewModel, forwardPreviewBody)
+	previewImageIntent, _ := classifyOpenAIResponsesImageRequest(allowImageGeneration, routedPreviewModel, forwardPreviewBody)
 	if previewImageIntent && !allowImageGeneration {
 		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 		return
@@ -292,7 +292,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			reqModel,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportAny,
-			previewNeedsImageSlot,
+			previewImageIntent,
 			requireCompact,
 		)
 		if err != nil {
@@ -1324,7 +1324,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	// 解析渠道级模型映射
 	channelMappingWS, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, reqModel)
 	wsFirstMessage, wsFirstModel := h.applyOpenAIResponsesChannelMapping(firstMessage, reqModel, channelMappingWS)
-	wsPreviewImageIntent, wsPreviewNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, wsFirstModel, wsFirstMessage)
+	wsPreviewImageIntent, _ := classifyOpenAIResponsesImageRequest(allowImageGeneration, wsFirstModel, wsFirstMessage)
 	if wsPreviewImageIntent && !allowImageGeneration {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
 		return
@@ -1410,7 +1410,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			reqModel,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportResponsesWebsocketV2,
-			wsPreviewNeedsImageSlot,
+			wsPreviewImageIntent,
 			false,
 		)
 		if err != nil {
@@ -2113,6 +2113,9 @@ func (h *OpenAIGatewayHandler) ensureForwardErrorResponse(c *gin.Context, stream
 		return false
 	}
 	if c.Writer.Written() {
+		if !openAIStreamingResponseStarted(c, streamStarted) {
+			return false
+		}
 		streamStarted = true
 	}
 	detail := resolveUpstreamForwardErrorDetail(c, forwardErr)

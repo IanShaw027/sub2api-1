@@ -44,7 +44,9 @@ func TestGatewayEnsureForwardErrorResponse_AppendsSSEAfterWritten(t *testing.T) 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	c.String(http.StatusTeapot, "already written")
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.WriteHeader(http.StatusTeapot)
+	_, _ = c.Writer.WriteString("already written")
 
 	h := &GatewayHandler{}
 	wrote := h.ensureForwardErrorResponse(c, false, nil)
@@ -55,6 +57,27 @@ func TestGatewayEnsureForwardErrorResponse_AppendsSSEAfterWritten(t *testing.T) 
 	assert.Contains(t, w.Body.String(), `data: {"type":"error"`)
 }
 
+func TestGatewayEnsureForwardErrorResponse_DoesNotAppendAfterJSONWritten(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c.JSON(http.StatusBadRequest, gin.H{
+		"error": gin.H{
+			"type":    "invalid_request_error",
+			"message": "already written",
+		},
+	})
+
+	h := &GatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false, errors.New("upstream error: 400"))
+
+	require.False(t, wrote)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.NotContains(t, w.Body.String(), `data: {"type":"error"`)
+	require.Contains(t, w.Body.String(), "already written")
+}
+
 // case B 回归：Anthropic-backed /responses，Writer 已被写过时
 // ensureForwardErrorResponse 仍要发 response.failed。
 func TestGatewayEnsureForwardErrorResponse_ResponsesRouteAfterWrittenEmitsResponseFailed(t *testing.T) {
@@ -62,6 +85,7 @@ func TestGatewayEnsureForwardErrorResponse_ResponsesRouteAfterWrittenEmitsRespon
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, EndpointResponses, nil)
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	_, _ = c.Writer.WriteString(":\n\n")
 
 	h := &GatewayHandler{}

@@ -74,6 +74,50 @@ func TestOpenAIGatewayServiceForward_StripsImageToolCapabilityOnlyForDisabledGro
 	require.False(t, gjson.GetBytes(upstream.lastBody, "tools").Exists())
 }
 
+func TestOpenAIGatewayServiceForward_StripsDeclaredImageToolForImageDisabledAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_text","model":"gpt-5.4","usage":{"input_tokens":3,"output_tokens":2}}`)),
+		},
+	}
+	svc := newOpenAIImageGenerationControlTestService(upstream)
+	// Group 允许生图，但账号关闭生图：仅声明工具（非真意图）的请求应剥离 image_generation 工具再转发，而非被上游拒绝。
+	c, recorder := newOpenAIImageGenerationControlTestContext(true, "unit-test-agent/1.0")
+	account := newOpenAIImageGenerationControlTestAccount()
+	account.Extra = map[string]any{"openai_image_generation_enabled": false}
+
+	result, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"gpt-5.4","input":"write code","stream":false,"tools":[{"type":"image_generation"}]}`))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, 0, result.ImageCount)
+	require.False(t, gjson.GetBytes(upstream.lastBody, `tools.#(type=="image_generation")`).Exists())
+}
+
+func TestOpenAIGatewayServiceForward_RejectsImageIntentForImageDisabledAccountAtGroupLevel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// 账号关闭生图、group 也关闭生图时，真生图意图（tool_choice）必须被拒绝，不得降级转发。
+	upstream := &httpUpstreamRecorder{}
+	svc := newOpenAIImageGenerationControlTestService(upstream)
+	c, recorder := newOpenAIImageGenerationControlTestContext(false, "unit-test-agent/1.0")
+	account := newOpenAIImageGenerationControlTestAccount()
+	account.Extra = map[string]any{"openai_image_generation_enabled": false}
+
+	result, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"gpt-5.4","input":"draw","stream":false,"tool_choice":{"type":"image_generation"},"tools":[{"type":"image_generation"}]}`))
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	require.Nil(t, upstream.lastReq, "true image intent must not reach an image-disabled account")
+}
+
 func TestOpenAIGatewayServiceForward_DisabledGroupAllowsTextOnlyResponses(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
