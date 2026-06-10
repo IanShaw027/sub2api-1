@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -112,7 +113,10 @@ func (s *openAIRecordUsageAPIKeyQuotaStub) UpdateRateLimitUsage(ctx context.Cont
 }
 
 type openAIRecordUsageUserPlatformQuotaRepoStub struct {
+	mu     sync.Mutex
 	callCh chan openAIRecordUsageUserPlatformQuotaCall
+	calls  []openAIRecordUsageUserPlatformQuotaCall
+	err    error
 }
 
 type openAIRecordUsageUserPlatformQuotaCall struct {
@@ -130,14 +134,28 @@ func (s *openAIRecordUsageUserPlatformQuotaRepoStub) BulkInsertInitial(context.C
 }
 
 func (s *openAIRecordUsageUserPlatformQuotaRepoStub) IncrementUsageWithReset(_ context.Context, userID int64, platform string, cost float64, _ time.Time) error {
+	call := openAIRecordUsageUserPlatformQuotaCall{
+		userID:   userID,
+		platform: platform,
+		cost:     cost,
+	}
+	s.mu.Lock()
+	s.calls = append(s.calls, call)
+	err := s.err
+	s.mu.Unlock()
 	if s.callCh != nil {
-		s.callCh <- openAIRecordUsageUserPlatformQuotaCall{
-			userID:   userID,
-			platform: platform,
-			cost:     cost,
+		select {
+		case s.callCh <- call:
+		default:
 		}
 	}
-	return nil
+	return err
+}
+
+func (s *openAIRecordUsageUserPlatformQuotaRepoStub) snapshotCalls() []openAIRecordUsageUserPlatformQuotaCall {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]openAIRecordUsageUserPlatformQuotaCall(nil), s.calls...)
 }
 
 func (s *openAIRecordUsageUserPlatformQuotaRepoStub) ListByUser(context.Context, int64) ([]UserPlatformQuotaRecord, error) {
@@ -1092,6 +1110,61 @@ func TestOpenAIGatewayServiceRecordUsage_UsesQuotaPlatformForPlatformQuotaAccoun
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for user platform quota increment")
 	}
+}
+
+func TestOpenAIGatewayServiceRecordUsage_AggregatesUserPlatformQuotaDBIncrements(t *testing.T) {
+	groupID := int64(1018)
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	quotaRepo := &openAIRecordUsageUserPlatformQuotaRepoStub{}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
+	svc.userPlatformQuotaRepo = quotaRepo
+
+	apiKey := &APIKey{
+		ID:      1018,
+		GroupID: i64p(groupID),
+		Group: &Group{
+			ID:             groupID,
+			Platform:       PlatformOpenAI,
+			RateMultiplier: 1.0,
+		},
+	}
+	user := &User{ID: 2018}
+	account := &Account{ID: 3018, Type: AccountTypeAPIKey}
+	usage := OpenAIUsage{
+		InputTokens:  120,
+		OutputTokens: 60,
+	}
+	wantCost := expectedOpenAICost(t, svc, "gpt-5.4", usage, 1.0).ActualCost * 3
+
+	for _, requestID := range []string{
+		"resp_quota_platform_aggregate_1",
+		"resp_quota_platform_aggregate_2",
+		"resp_quota_platform_aggregate_3",
+	} {
+		err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+			Result: &OpenAIForwardResult{
+				RequestID: requestID,
+				Usage:     usage,
+				Model:     "gpt-5.4",
+				Duration:  time.Second,
+			},
+			APIKey:        apiKey,
+			User:          user,
+			Account:       account,
+			QuotaPlatform: PlatformAntigravity,
+		})
+		require.NoError(t, err)
+	}
+
+	time.Sleep(350 * time.Millisecond)
+	calls := quotaRepo.snapshotCalls()
+	require.Len(t, calls, 1, "same user+platform quota DB writes should be merged before hitting PostgreSQL")
+	require.Equal(t, int64(2018), calls[0].userID)
+	require.Equal(t, PlatformAntigravity, calls[0].platform)
+	require.InDelta(t, wantCost, calls[0].cost, 1e-10)
 }
 
 func TestNormalizeOpenAIServiceTier(t *testing.T) {

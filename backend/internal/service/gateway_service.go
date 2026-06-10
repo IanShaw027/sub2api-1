@@ -99,8 +99,8 @@ var (
 	modelsListCacheMissTotal  atomic.Int64
 	modelsListCacheStoreTotal atomic.Int64
 
-	// userPlatformQuotaDBIncrErrorTotal 统计 finalizePostUsageBilling 异步 goroutine
-	// 中 IncrementUsageWithReset 失败次数。Redis 已成功累加 + DB 写失败意味着
+	// userPlatformQuotaDBIncrErrorTotal 统计 finalizePostUsageBilling 主路径聚合 flush
+	// 中 IncrementUsageWithReset 失败影响的原始增量次数。Redis 已成功累加 + DB 写失败意味着
 	// Redis cache TTL 过期或被清后该笔 cost 会丢失（与实际消费偏差）。
 	// oncall 通过 GatewayUserPlatformQuotaIncrStats() 暴露给 ops 面板做阈值告警。
 	userPlatformQuotaDBIncrErrorTotal atomic.Int64
@@ -131,7 +131,7 @@ func GatewayModelsListCacheStats() (cacheHit, cacheMiss, store int64) {
 }
 
 // GatewayUserPlatformQuotaIncrStats 返回 (mainPathErr, legacyPathErr)。
-// mainPathErr：finalizePostUsageBilling 异步 goroutine 写 DB 失败累计次数；
+// mainPathErr：finalizePostUsageBilling 主路径聚合 flush 写 DB 失败影响的原始增量累计次数；
 // legacyPathErr：postUsageBilling fallback 路径写 DB 失败累计次数。
 // ops 监控面板可以按"持续上升斜率"做告警阈值。
 func GatewayUserPlatformQuotaIncrStats() (mainPathErr, legacyPathErr int64) {
@@ -8667,29 +8667,14 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 	deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
 
 	// Platform quota 累加：仅在 standard（余额）模式生效；订阅模式豁免
-	// Redis 同步写 + DB 异步持久化:
+	// Redis 同步写 + DB 聚合异步持久化:
 	//   - Redis 同步:确保下次 preflight 立即看到最新 usage,把 TOCTOU 超支窗口
 	//     限制在并发 in-flight 请求数量内（旧实现的异步入队会让超支无限累积直到 worker 处理）
-	//   - DB 异步:在独立 goroutine 中走 detached context,失败用 ALERT log 触发 oncall 对账
+	//   - DB 聚合:按 repo+user+platform 合并短时间窗口内的 cost,避免高并发请求对同一
+	//     user_platform_quotas 行逐请求 SELECT FOR UPDATE,失败用 ALERT log 触发 oncall 对账
 	if !p.IsSubscriptionBill && p.Platform != "" && p.Cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil {
 		deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, p.Platform, p.Cost.ActualCost)
-		dbCtx, dbCancel := detachUpstreamContext(ctx)
-		userID, platform, cost := p.User.ID, p.Platform, p.Cost.ActualCost
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.LegacyPrintf("service.gateway", "ALERT: panic in user platform quota incr goroutine user=%d platform=%s: %v", userID, platform, r)
-				}
-			}()
-			defer dbCancel()
-			if err := deps.userPlatformQuotaRepo.IncrementUsageWithReset(dbCtx, userID, platform, cost, time.Now().UTC()); err != nil {
-				// 失败计数器:暴露给 GatewayUserPlatformQuotaIncrStats(),由 ops 面板做斜率告警。
-				userPlatformQuotaDBIncrErrorTotal.Add(1)
-				// ALERT 级别:DB 持久化失败意味着 Redis cache 失效后该笔 cost 永久丢失,
-				// 用户配额视图与实际消费会偏差,oncall 需要据此对账或人工补录。
-				logger.LegacyPrintf("service.gateway", "ALERT: incr user platform quota DB failed user=%d platform=%s cost=%f: %v", userID, platform, cost, err)
-			}
-		}()
+		enqueueUserPlatformQuotaDBIncrement(deps.userPlatformQuotaRepo, p.User.ID, p.Platform, p.Cost.ActualCost)
 	}
 
 	// Notification checks run async — all parameters are already captured,
