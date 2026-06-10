@@ -120,6 +120,18 @@
             :color="item.color"
           />
         </div>
+        <div v-if="openAIImageUsageBars.length" class="space-y-1">
+          <UsageProgressBar
+            v-for="item in openAIImageUsageBars"
+            :key="item.key"
+            :label="item.label"
+            :utilization="item.progress.utilization"
+            :resets-at="item.progress.resets_at"
+            :window-stats="item.progress.window_stats"
+            :show-now-when-idle="true"
+            color="amber"
+          />
+        </div>
         <div v-if="openAIImageUsageSummary.length" class="flex items-center gap-1 text-[10px]">
           <span class="shrink-0 font-medium text-amber-600 dark:text-amber-400">img:</span>
           <template v-for="(item, idx) in openAIImageUsageSummary" :key="item.label">
