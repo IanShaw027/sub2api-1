@@ -1132,7 +1132,7 @@ func isTokenEvent(eventType string) bool {
 		return false
 	}
 	switch eventType {
-	case "response.created", "response.in_progress", "response.output_item.added", "response.output_item.done":
+	case "response.created", "response.in_progress", "response.output_item.done":
 		return false
 	}
 	if strings.Contains(eventType, ".delta") {

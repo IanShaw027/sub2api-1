@@ -48,6 +48,15 @@ WITH stats AS (
       )::numeric,
       2
     )::float8 AS avg_tokens_per_sec,
+    ROUND(
+      AVG(
+        CASE
+          WHEN ul.first_token_ms IS NOT NULL AND ul.duration_ms - ul.first_token_ms > 0 AND ul.output_tokens > 0
+          THEN ul.output_tokens * 1000.0 / (ul.duration_ms - ul.first_token_ms)
+        END
+      )::numeric,
+      2
+    )::float8 AS avg_generation_tokens_per_sec,
     ROUND(AVG(ul.first_token_ms)::numeric, 2)::float8 AS avg_first_token_ms,
     COALESCE(SUM(ul.output_tokens), 0)::bigint AS total_output_tokens,
     COALESCE(ROUND(AVG(ul.duration_ms)::numeric, 0), 0)::bigint AS avg_duration_ms,
@@ -70,6 +79,7 @@ SELECT
   model,
   request_count,
   avg_tokens_per_sec,
+  avg_generation_tokens_per_sec,
   avg_first_token_ms,
   total_output_tokens,
   avg_duration_ms,
@@ -99,11 +109,13 @@ ORDER BY request_count DESC, model ASC`
 	for rows.Next() {
 		item := &service.OpsOpenAITokenStatsItem{}
 		var avgTPS sql.NullFloat64
+		var avgGenTPS sql.NullFloat64
 		var avgFirstToken sql.NullFloat64
 		if err := rows.Scan(
 			&item.Model,
 			&item.RequestCount,
 			&avgTPS,
+			&avgGenTPS,
 			&avgFirstToken,
 			&item.TotalOutputTokens,
 			&item.AvgDurationMs,
@@ -114,6 +126,10 @@ ORDER BY request_count DESC, model ASC`
 		if avgTPS.Valid {
 			v := avgTPS.Float64
 			item.AvgTokensPerSec = &v
+		}
+		if avgGenTPS.Valid {
+			v := avgGenTPS.Float64
+			item.AvgGenerationTokensPerSec = &v
 		}
 		if avgFirstToken.Valid {
 			v := avgFirstToken.Float64

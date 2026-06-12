@@ -26,10 +26,12 @@ type OpsOpenAITokenStatsItem struct {
 	Model                  string   `json:"model"`
 	RequestCount           int64    `json:"request_count"`
 	AvgTokensPerSec        *float64 `json:"avg_tokens_per_sec"`
-	AvgFirstTokenMs        *float64 `json:"avg_first_token_ms"`
-	TotalOutputTokens      int64    `json:"total_output_tokens"`
-	AvgDurationMs          int64    `json:"avg_duration_ms"`
-	RequestsWithFirstToken int64    `json:"requests_with_first_token"`
+	// AvgGenerationTokensPerSec 排除首字延迟后的生成速率：output_tokens/(duration_ms-first_token_ms)。
+	AvgGenerationTokensPerSec *float64 `json:"avg_generation_tokens_per_sec"`
+	AvgFirstTokenMs           *float64 `json:"avg_first_token_ms"`
+	TotalOutputTokens         int64    `json:"total_output_tokens"`
+	AvgDurationMs             int64    `json:"avg_duration_ms"`
+	RequestsWithFirstToken    int64    `json:"requests_with_first_token"`
 }
 
 type OpsOpenAITokenStatsResponse struct {
