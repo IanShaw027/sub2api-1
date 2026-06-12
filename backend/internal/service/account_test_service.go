@@ -244,7 +244,11 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	// Get account
 	account, err := s.accountRepo.GetByID(ctx, accountID)
 	if err != nil {
-		return s.sendErrorAndEnd(c, "Account not found")
+		sendErr := s.sendErrorAndEnd(c, "Account not found")
+		if errors.Is(err, ErrAccountNotFound) {
+			return fmt.Errorf("%w: %v", ErrAccountNotFound, sendErr)
+		}
+		return sendErr
 	}
 	c.Set(accountTestOpsAccountIDKey, account.ID)
 	c.Set(accountTestOpsPlatformKey, account.Platform)
@@ -2526,7 +2530,7 @@ func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID in
 		LatencyMs:    finishedAt.Sub(startedAt).Milliseconds(),
 		StartedAt:    startedAt,
 		FinishedAt:   finishedAt,
-	}, nil
+	}, testErr
 }
 
 // parseTestSSEOutput extracts response text and error message from captured SSE output.

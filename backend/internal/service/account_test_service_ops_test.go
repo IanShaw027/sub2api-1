@@ -176,7 +176,7 @@ func TestAccountTestService_RunTestBackground_KiroDefaultModelRecordedInOpsError
 
 	result, err := svc.RunTestBackground(context.Background(), 901, "")
 
-	require.NoError(t, err)
+	require.Error(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "failed", result.Status)
 	require.NotNil(t, captured)

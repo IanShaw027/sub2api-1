@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -121,13 +122,26 @@ func (s *ScheduledTestRunnerService) runScheduled() {
 
 func (s *ScheduledTestRunnerService) runOnePlan(ctx context.Context, plan *ScheduledTestPlan) {
 	result, err := s.accountTestSvc.RunTestBackground(ctx, plan.AccountID, plan.ModelID)
-	if err != nil {
+	if err != nil && result == nil {
 		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d RunTestBackground error: %v", plan.ID, err)
+		return
+	}
+	if result == nil {
+		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d RunTestBackground returned nil result", plan.ID)
 		return
 	}
 
 	if err := s.scheduledSvc.SaveResult(ctx, plan.ID, plan.MaxResults, result); err != nil {
 		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d SaveResult error: %v", plan.ID, err)
+	}
+
+	if isScheduledTestAccountNotFound(result, err) {
+		if err := s.planRepo.Disable(ctx, plan.ID); err != nil {
+			logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d disable after account not found failed: %v", plan.ID, err)
+		} else {
+			logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d disabled after account not found", plan.ID)
+		}
+		return
 	}
 
 	// Auto-recover account if test succeeded and auto_recover is enabled.
@@ -144,6 +158,13 @@ func (s *ScheduledTestRunnerService) runOnePlan(ctx context.Context, plan *Sched
 	if err := s.planRepo.UpdateAfterRun(ctx, plan.ID, time.Now(), nextRun); err != nil {
 		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d UpdateAfterRun error: %v", plan.ID, err)
 	}
+}
+
+func isScheduledTestAccountNotFound(result *ScheduledTestResult, testErr error) bool {
+	if result == nil || result.Status != "failed" {
+		return false
+	}
+	return errors.Is(testErr, ErrAccountNotFound)
 }
 
 // tryRecoverAccount attempts to recover an account from recoverable runtime state.
