@@ -696,10 +696,11 @@ describe('AccountUsageCell', () => {
     await wrapper.setProps({ activeGroupId: 102 })
     await flushPromises()
 
-    expect(wrapper.findAll('.usage-bar').map((node) => node.text())).toEqual(['img|0'])
+    expect(wrapper.findAll('.usage-bar')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('img:')
   })
 
-  it('OpenAI Web2API 生图窗口在 codex 路由分组下也会展示有数据的窗口', async () => {
+  it('OpenAI Web2API 生图窗口在 codex 路由分组下会纳入 img 摘要', async () => {
     getUsage.mockResolvedValue({
       openai_image_codex_supported: true,
       openai_image_web2api_supported: true,
@@ -707,7 +708,7 @@ describe('AccountUsageCell', () => {
         utilization: 88,
         resets_at: '2026-03-08T13:00:00Z',
         remaining_seconds: 1800,
-        window_stats: { requests: 3, tokens: 30, cost: 0.3 }
+        window_stats: { requests: 3, tokens: 30, cost: 0.3, user_cost: 0.3 }
       }
     })
 
@@ -764,14 +765,12 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.findAll('.usage-bar').map((node) => node.text())).toEqual([
-      'img 5h|0|',
-      'img 7d|0|',
-      'img|88|3'
-    ])
+    expect(wrapper.findAll('.usage-bar')).toHaveLength(0)
+    expect(wrapper.text()).toContain('img:')
+    expect(wrapper.text()).toContain('web 3req $0.30')
   })
 
-  it('OpenAI codex 生图路线开启时补齐 img 5h/img 7d 占位条', async () => {
+  it('OpenAI codex 生图路线开启时不会补齐 img 5h/img 7d 占位条', async () => {
     getUsage.mockResolvedValue({
       openai_image_codex_supported: true,
       five_hour: {
@@ -836,10 +835,10 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(wrapper.findAll('.usage-bar').map((node) => node.text())).toEqual([
-      '5h|12',
-      'img 5h|0',
-      'img 7d|0'
+      '5h|12'
     ])
+    expect(wrapper.text()).not.toContain('img 5h')
+    expect(wrapper.text()).not.toContain('img 7d')
     expect(wrapper.text()).not.toContain('codex')
   })
 
@@ -872,7 +871,8 @@ describe('AccountUsageCell', () => {
         window_stats: {
           requests: 10,
           tokens: 111,
-          cost: 3.45
+          cost: 3.45,
+          user_cost: 3.45
         }
       },
       openai_image_codex_seven_day: {
@@ -882,7 +882,8 @@ describe('AccountUsageCell', () => {
         window_stats: {
           requests: 20,
           tokens: 222,
-          cost: 4.56
+          cost: 4.56,
+          user_cost: 4.56
         }
       }
     })
@@ -944,11 +945,14 @@ describe('AccountUsageCell', () => {
 
     expect(wrapper.text()).toContain('5h|42|123456')
     expect(wrapper.text()).toContain('7d|58|654321')
-    expect(wrapper.text()).toContain('img 5h|99|111')
-    expect(wrapper.text()).toContain('img 7d|100|222')
+    expect(wrapper.text()).not.toContain('img 5h')
+    expect(wrapper.text()).not.toContain('img 7d')
+    expect(wrapper.text()).toContain('img:')
+    expect(wrapper.text()).toContain('5h 10req $3.45')
+    expect(wrapper.text()).toContain('7d 20req $4.56')
   })
 
-  it('OpenAI OAuth 用短标签同时展示普通和生图窗口', async () => {
+  it('OpenAI OAuth 用短标签展示普通窗口，并用 img 摘要展示生图窗口', async () => {
     getUsage.mockResolvedValue({
       five_hour: {
         utilization: 19,
@@ -963,17 +967,17 @@ describe('AccountUsageCell', () => {
       openai_image_codex_five_hour: {
         utilization: 0,
         resets_at: '2026-03-08T12:00:00Z',
-        window_stats: { requests: 1, tokens: 10, cost: 0.1 }
+        window_stats: { requests: 1, tokens: 10, cost: 0.1, user_cost: 0.1 }
       },
       openai_image_codex_seven_day: {
         utilization: 0,
         resets_at: '2026-03-13T12:00:00Z',
-        window_stats: { requests: 2, tokens: 20, cost: 0.2 }
+        window_stats: { requests: 2, tokens: 20, cost: 0.2, user_cost: 0.2 }
       },
       openai_image_web2api_five_hour: {
         utilization: 88,
         resets_at: '2026-03-08T13:00:00Z',
-        window_stats: { requests: 3, tokens: 30, cost: 0.3 }
+        window_stats: { requests: 3, tokens: 30, cost: 0.3, user_cost: 0.3 }
       }
     })
 
@@ -1032,17 +1036,20 @@ describe('AccountUsageCell', () => {
 
     expect(wrapper.findAll('.usage-bar').map((node) => node.text())).toEqual([
       '5h|19|76',
-      '7d|31|642',
-      'img 5h|0|1',
-      'img 7d|0|2',
-      'img|88|3'
+      '7d|31|642'
     ])
+    expect(wrapper.text()).toContain('img:')
+    expect(wrapper.text()).toContain('5h 1req $0.10')
+    expect(wrapper.text()).toContain('7d 2req $0.20')
+    expect(wrapper.text()).toContain('web 3req $0.30')
+    expect(wrapper.text()).not.toContain('img 5h')
+    expect(wrapper.text()).not.toContain('img 7d')
     expect(wrapper.text()).not.toContain('codex 5h')
     expect(wrapper.text()).not.toContain('web2api 5h')
     expect(wrapper.text()).not.toContain('web 5h')
   })
 
-  it('OpenAI OAuth 在当前分组为 codex 时仍会显示有数据的 web2api 窗口', async () => {
+  it('OpenAI OAuth 在当前分组为 codex 时仍会在 img 摘要显示有数据的 web2api 窗口', async () => {
     getUsage.mockResolvedValue({
       five_hour: {
         utilization: 11,
@@ -1060,19 +1067,19 @@ describe('AccountUsageCell', () => {
         utilization: 11,
         resets_at: '2026-03-08T12:00:00Z',
         remaining_seconds: 3600,
-        window_stats: { requests: 1, tokens: 11, cost: 0.11 }
+        window_stats: { requests: 1, tokens: 11, cost: 0.11, user_cost: 0.11 }
       },
       openai_image_codex_seven_day: {
         utilization: 22,
         resets_at: '2026-03-13T12:00:00Z',
         remaining_seconds: 3600,
-        window_stats: { requests: 2, tokens: 22, cost: 0.22 }
+        window_stats: { requests: 2, tokens: 22, cost: 0.22, user_cost: 0.22 }
       },
       openai_image_web2api_five_hour: {
         utilization: 33,
         resets_at: '2026-03-08T13:00:00Z',
         remaining_seconds: 1800,
-        window_stats: { requests: 3, tokens: 33, cost: 0.33 }
+        window_stats: { requests: 3, tokens: 33, cost: 0.33, user_cost: 0.33 }
       }
     })
 
@@ -1131,11 +1138,14 @@ describe('AccountUsageCell', () => {
 
     expect(wrapper.findAll('.usage-bar').map((node) => node.text())).toEqual([
       '5h|11|1',
-      '7d|22|2',
-      'img 5h|11|1',
-      'img 7d|22|2',
-      'img|33|3'
+      '7d|22|2'
     ])
+    expect(wrapper.text()).toContain('img:')
+    expect(wrapper.text()).toContain('5h 1req $0.11')
+    expect(wrapper.text()).toContain('7d 2req $0.22')
+    expect(wrapper.text()).toContain('web 3req $0.33')
+    expect(wrapper.text()).not.toContain('img 5h')
+    expect(wrapper.text()).not.toContain('img 7d')
   })
 
   it('Key 账号会展示 today stats 徽章并带 A/U 提示', async () => {

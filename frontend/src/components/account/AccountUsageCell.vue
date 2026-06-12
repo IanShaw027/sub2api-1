@@ -120,18 +120,6 @@
             :color="item.color"
           />
         </div>
-        <div v-if="openAIImageUsageBars.length" class="space-y-1">
-          <UsageProgressBar
-            v-for="item in openAIImageUsageBars"
-            :key="item.key"
-            :label="item.label"
-            :utilization="item.progress.utilization"
-            :resets-at="item.progress.resets_at"
-            :window-stats="item.progress.window_stats"
-            :show-now-when-idle="true"
-            color="amber"
-          />
-        </div>
         <div v-if="openAIImageUsageSummary.length" class="flex items-center gap-1 text-[10px]">
           <span class="shrink-0 font-medium text-amber-600 dark:text-amber-400">img:</span>
           <template v-for="(item, idx) in openAIImageUsageSummary" :key="item.label">
@@ -675,42 +663,6 @@ const showOpenAIResponseUsageBars = computed(() => {
   return openAIResponseUsageBars.value.length > 0
 })
 
-const emptyUsageProgress = (): UsageProgress => ({
-  utilization: 0,
-  resets_at: null,
-  remaining_seconds: 0
-})
-
-const openAIImageUsageBars = computed(() => {
-  if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return []
-  const info = usageInfo.value
-  if (!info) return []
-  const { codex: showCodex, web2api: showWeb2api } = openAIEnabledImageRoutes.value
-  const items: Array<{ key: string; label: string; progress: UsageProgress }> = []
-  if (showCodex) {
-    items.push({
-      key: 'codex-5h',
-      label: 'img 5h',
-      progress: info.openai_image_codex_five_hour ?? emptyUsageProgress()
-    })
-  }
-  if (showCodex) {
-    items.push({
-      key: 'codex-7d',
-      label: 'img 7d',
-      progress: info.openai_image_codex_seven_day ?? emptyUsageProgress()
-    })
-  }
-  if (showWeb2api) {
-    items.push({
-      key: 'web2api',
-      label: 'img',
-      progress: info.openai_image_web2api_five_hour ?? emptyUsageProgress()
-    })
-  }
-  return items
-})
-
 const openAIImageUsageSummary = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return []
   const info = usageInfo.value
@@ -741,7 +693,6 @@ const openAIImageUsageSummary = computed(() => {
 const hasOpenAIUsageContent = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
   return (showOpenAIResponseUsageBars.value && openAIResponseUsageBars.value.length > 0) ||
-    openAIImageUsageBars.value.length > 0 ||
     openAIImageUsageSummary.value.length > 0 ||
     !!usageInfo.value?.error
 })
