@@ -63,6 +63,7 @@ var openAIOAuthImageBridgeTransportSettingsSF singleflight.Group
 
 type OpenAIAccountScheduleRequest struct {
 	GroupID                 *int64
+	APIKeyID                int64
 	SessionHash             string
 	StickyAccountID         int64
 	PreviousResponseID      string
@@ -343,6 +344,7 @@ func (s *defaultOpenAIAccountScheduler) Select(
 		selection, err := s.service.SelectAccountByPreviousResponseID(
 			ctx,
 			req.GroupID,
+			req.APIKeyID,
 			previousResponseID,
 			req.RequestedModel,
 			req.ExcludedIDs,
@@ -1400,12 +1402,13 @@ func (s *OpenAIGatewayService) SelectAccountWithScheduler(
 	requiredTransport OpenAIUpstreamTransport,
 	requireCompact bool,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
-	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", "", false, false, requireCompact)
+	return s.selectAccountWithScheduler(ctx, groupID, 0, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", "", false, false, requireCompact)
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForResponses(
 	ctx context.Context,
 	groupID *int64,
+	apiKeyID int64,
 	previousResponseID string,
 	sessionHash string,
 	requestedModel string,
@@ -1423,7 +1426,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForResponses(
 			}
 		}
 	}
-	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", requiredImageRoute, requireImageEnabled, false, requireCompact)
+	return s.selectAccountWithScheduler(ctx, groupID, apiKeyID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", requiredImageRoute, requireImageEnabled, false, requireCompact)
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
@@ -1444,7 +1447,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	if strings.TrimSpace(requiredRoute) != "" {
 		requiredRoute = NormalizeGroupImageGenerationRoute(requiredRoute)
 	}
-	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, requiredCapability, requiredRoute, true, requireOAuthAccount, false)
+	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, 0, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, requiredCapability, requiredRoute, true, requireOAuthAccount, false)
 	if err == nil && selection != nil && selection.Account != nil {
 		if !selection.Account.SupportsOpenAIImageRoute(requiredRoute) {
 			if selection.ReleaseFunc != nil {
@@ -1461,7 +1464,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	}
 	// 如果要求 native 能力（如指定了模型）但没有可用的 APIKey 账号，回退到 basic（OAuth 账号）
 	if requiredCapability == OpenAIImagesCapabilityNative {
-		selection, decision, err = s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, OpenAIImagesCapabilityBasic, requiredRoute, true, requireOAuthAccount, false)
+		selection, decision, err = s.selectAccountWithScheduler(ctx, groupID, 0, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, OpenAIImagesCapabilityBasic, requiredRoute, true, requireOAuthAccount, false)
 		if err == nil && selection != nil && selection.Account != nil && !selection.Account.SupportsOpenAIImageRoute(requiredRoute) {
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
@@ -1507,6 +1510,7 @@ func (s *OpenAIGatewayService) normalizeOpenAIImageSelectionConcurrency(ctx cont
 func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	ctx context.Context,
 	groupID *int64,
+	apiKeyID int64,
 	previousResponseID string,
 	sessionHash string,
 	requestedModel string,
@@ -1601,6 +1605,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 
 	return scheduler.Select(ctx, OpenAIAccountScheduleRequest{
 		GroupID:                 groupID,
+		APIKeyID:                apiKeyID,
 		SessionHash:             sessionHash,
 		StickyAccountID:         stickyAccountID,
 		PreviousResponseID:      previousResponseID,

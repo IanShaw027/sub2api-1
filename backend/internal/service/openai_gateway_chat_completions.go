@@ -39,6 +39,10 @@ var cursorResponsesUnsupportedFields = []string{
 	"metadata",
 	"stream_options",
 	"temperature",
+	"verbosity",
+	"enable_thinking",
+	"stop_sequences",
+	"promptCacheKey",
 }
 
 // ForwardAsChatCompletions accepts a Chat Completions request body, converts it

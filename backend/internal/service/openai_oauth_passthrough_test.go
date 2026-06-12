@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
@@ -335,6 +336,7 @@ type openAIPassthroughFailoverRepo struct {
 	stubOpenAIAccountRepo
 	rateLimitCalls []time.Time
 	overloadCalls  []time.Time
+	setErrorCalls  []string
 }
 
 func (r *openAIPassthroughFailoverRepo) SetRateLimited(_ context.Context, _ int64, resetAt time.Time) error {
@@ -344,6 +346,11 @@ func (r *openAIPassthroughFailoverRepo) SetRateLimited(_ context.Context, _ int6
 
 func (r *openAIPassthroughFailoverRepo) SetOverloaded(_ context.Context, _ int64, until time.Time) error {
 	r.overloadCalls = append(r.overloadCalls, until)
+	return nil
+}
+
+func (r *openAIPassthroughFailoverRepo) SetError(_ context.Context, _ int64, errorMsg string) error {
+	r.setErrorCalls = append(r.setErrorCalls, errorMsg)
 	return nil
 }
 
@@ -839,6 +846,256 @@ func TestOpenAIGatewayService_OAuthPassthrough_RetriesInvalidEncryptedContentWit
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
 	require.NotContains(t, string(upstream.bodies[1]), "encrypted_content")
 	require.Equal(t, "continue", gjson.GetBytes(upstream.bodies[1], "input.0.content.0.text").String())
+}
+
+func TestOpenAIGatewayService_OAuthPassthrough_RetriesUnsupportedPreviousResponseIDWithDroppedField(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.98.0")
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	originalBody := []byte(`{"model":"gpt-5.5","stream":true,"previous_response_id":"resp_stale","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}]}`)
+	upstream := &httpUpstreamRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_previous_response_unsupported"}},
+				Body:       io.NopCloser(strings.NewReader(`{"detail":"Unsupported parameter: previous_response_id"}`)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_previous_response_retry"}},
+				Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+					`data: {"type":"response.output_text.delta","delta":"o"}`,
+					"",
+					`data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}}`,
+					"",
+					"data: [DONE]",
+					"",
+				}, "\n"))),
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:             123,
+		Name:           "acc",
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeOAuth,
+		Concurrency:    1,
+		Credentials:    map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+		Extra:          map[string]any{"openai_passthrough": true, "openai_oauth_responses_websockets_v2_mode": OpenAIWSIngressModeOff},
+		Status:         StatusActive,
+		Schedulable:    true,
+		RateMultiplier: f64p(1),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	require.True(t, gjson.GetBytes(upstream.bodies[0], "previous_response_id").Exists())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
+}
+
+func TestOpenAIGatewayService_OAuthPassthrough_RetriesUnknownReasoningEnabledWithDroppedField(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.98.0")
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	originalBody := []byte(`{"model":"gpt-5.4","stream":true,"reasoning":{"effort":"high","enabled":true},"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}]}`)
+	upstream := &httpUpstreamRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_reasoning_enabled_unknown"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"Unknown parameter: 'reasoning.enabled'.","type":"invalid_request_error","param":"reasoning.enabled","code":"unknown_parameter"}}`)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_reasoning_enabled_retry"}},
+				Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+					`data: {"type":"response.output_text.delta","delta":"o"}`,
+					"",
+					`data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}}`,
+					"",
+					"data: [DONE]",
+					"",
+				}, "\n"))),
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:             123,
+		Name:           "acc",
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeOAuth,
+		Concurrency:    1,
+		Credentials:    map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+		Extra:          map[string]any{"openai_passthrough": true, "openai_oauth_responses_websockets_v2_mode": OpenAIWSIngressModeOff},
+		Status:         StatusActive,
+		Schedulable:    true,
+		RateMultiplier: f64p(1),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	require.True(t, gjson.GetBytes(upstream.bodies[0], "reasoning.enabled").Exists())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "reasoning.enabled").Exists())
+	require.Equal(t, "high", gjson.GetBytes(upstream.bodies[1], "reasoning.effort").String())
+}
+
+func TestOpenAIGatewayService_OAuthPassthrough_AppliesErrorPassthroughRule(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	responseCode := http.StatusRequestEntityTooLarge
+	customMessage := "Request body is too large for the selected upstream. Reduce attachments/context and retry."
+	for _, statusCode := range []int{http.StatusRequestEntityTooLarge, http.StatusInternalServerError} {
+		t.Run(fmt.Sprintf("status_%d", statusCode), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+			c.Request.Header.Set("User-Agent", "codex_cli_rs/0.98.0")
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			ruleSvc := &ErrorPassthroughService{}
+			ruleSvc.setLocalCache([]*model.ErrorPassthroughRule{
+				{
+					ID:              1,
+					Name:            "openai-large-request",
+					Enabled:         true,
+					Priority:        1,
+					ErrorCodes:      []int{http.StatusRequestEntityTooLarge, http.StatusInternalServerError},
+					Keywords:        []string{"message too big"},
+					MatchMode:       model.MatchModeAll,
+					Platforms:       []string{model.PlatformOpenAI},
+					PassthroughCode: false,
+					ResponseCode:    &responseCode,
+					PassthroughBody: false,
+					CustomMessage:   &customMessage,
+				},
+			})
+			BindErrorPassthroughService(c, ruleSvc)
+
+			originalBody := []byte(`{"model":"gpt-5.4","stream":false,"input":[{"type":"message","role":"user","content":"large"}]}`)
+			upstream := &httpUpstreamRecorder{
+				resp: &http.Response{
+					StatusCode: statusCode,
+					Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_large_request"}},
+					Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"message too big","type":"server_error"}}`)),
+				},
+			}
+			svc := &OpenAIGatewayService{
+				cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+				httpUpstream: upstream,
+			}
+			account := &Account{
+				ID:             123,
+				Name:           "acc",
+				Platform:       PlatformOpenAI,
+				Type:           AccountTypeOAuth,
+				Concurrency:    1,
+				Credentials:    map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+				Extra:          map[string]any{"openai_passthrough": true, "openai_oauth_responses_websockets_v2_mode": OpenAIWSIngressModeOff},
+				Status:         StatusActive,
+				Schedulable:    true,
+				RateMultiplier: f64p(1),
+			}
+
+			result, err := svc.Forward(context.Background(), c, account, originalBody)
+			require.Error(t, err)
+			require.Nil(t, result)
+			require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+			require.Contains(t, rec.Body.String(), customMessage)
+		})
+	}
+}
+
+func TestOpenAIGatewayService_OpenAIPassthrough_ErrorPassthroughRuleSkipsAccountPolicy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.98.0")
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	responseCode := http.StatusRequestEntityTooLarge
+	customMessage := "Request body is too large for the selected upstream. Reduce attachments/context and retry."
+	ruleSvc := &ErrorPassthroughService{}
+	ruleSvc.setLocalCache([]*model.ErrorPassthroughRule{
+		{
+			ID:              1,
+			Name:            "openai-large-request",
+			Enabled:         true,
+			Priority:        1,
+			ErrorCodes:      []int{http.StatusInternalServerError},
+			Keywords:        []string{"message too big"},
+			MatchMode:       model.MatchModeAll,
+			Platforms:       []string{model.PlatformOpenAI},
+			PassthroughCode: false,
+			ResponseCode:    &responseCode,
+			PassthroughBody: false,
+			CustomMessage:   &customMessage,
+		},
+	})
+	BindErrorPassthroughService(c, ruleSvc)
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_large_request"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"message too big","type":"server_error"}}`)),
+		},
+	}
+	repo := &openAIPassthroughFailoverRepo{}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream: upstream,
+		rateLimitService: &RateLimitService{
+			accountRepo: repo,
+			cfg:         &config.Config{},
+		},
+	}
+	account := &Account{
+		ID:          123,
+		Name:        "acc",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":                    "sk-test",
+			"custom_error_codes_enabled": true,
+			"custom_error_codes":         []any{float64(http.StatusInternalServerError)},
+		},
+		Extra:          map[string]any{"openai_passthrough": true},
+		Status:         StatusActive,
+		Schedulable:    true,
+		RateMultiplier: f64p(1),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"gpt-5.4","stream":false,"input":[{"type":"message","role":"user","content":"large"}]}`))
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	require.Contains(t, rec.Body.String(), customMessage)
+	require.Empty(t, repo.setErrorCalls)
 }
 
 func TestOpenAIGatewayService_OAuthPassthrough_StripsImageToolCapabilityForDisabledGroup(t *testing.T) {
@@ -1635,6 +1892,68 @@ func TestOpenAIGatewayService_OpenAIPassthrough_429And529TriggerFailover(t *test
 			require.Equal(t, tc.statusCode, arr[len(arr)-1].UpstreamStatusCode)
 
 			tc.assertRepo(t, repo, start)
+		})
+	}
+}
+
+func TestOpenAIGatewayService_OpenAIPassthrough_Transient5xxTriggerFailoverWithoutSameAccountRetry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalBody := []byte(`{"model":"gpt-5.2","stream":false,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
+
+	testCases := []struct {
+		name       string
+		statusCode int
+		body       string
+	}{
+		{name: "cloudflare_520", statusCode: 520, body: `{"error":{"message":"unknown cloudflare error","type":"server_error"}}`},
+		{name: "bad_gateway_502", statusCode: http.StatusBadGateway, body: `{"error":{"message":"bad gateway","type":"server_error"}}`},
+		{name: "service_unavailable_503", statusCode: http.StatusServiceUnavailable, body: `{"error":{"message":"service temporarily unavailable","type":"server_error"}}`},
+		{name: "cloudflare_524", statusCode: 524, body: `{"error":{"message":"a timeout occurred","type":"server_error"}}`},
+		{name: "internal_500", statusCode: http.StatusInternalServerError, body: `{"error":{"message":"internal server error","type":"server_error"}}`},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+			c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
+
+			upstream := &httpUpstreamRecorder{
+				resp: &http.Response{
+					StatusCode: tc.statusCode,
+					Header: http.Header{
+						"Content-Type": []string{"application/json"},
+						"x-request-id": []string{"rid-transient"},
+					},
+					Body: io.NopCloser(strings.NewReader(tc.body)),
+				},
+			}
+			svc := &OpenAIGatewayService{
+				cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+				httpUpstream: upstream,
+			}
+			account := &Account{
+				ID:             123,
+				Name:           "acc",
+				Platform:       PlatformOpenAI,
+				Type:           AccountTypeAPIKey,
+				Concurrency:    1,
+				Credentials:    map[string]any{"api_key": "sk-test", "pool_mode": true},
+				Extra:          map[string]any{"openai_passthrough": true},
+				Status:         StatusActive,
+				Schedulable:    true,
+				RateMultiplier: f64p(1),
+			}
+
+			_, err := svc.Forward(context.Background(), c, account, originalBody)
+			require.Error(t, err)
+
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.Equal(t, tc.statusCode, failoverErr.StatusCode)
+			require.False(t, failoverErr.RetryableOnSameAccount)
+			require.False(t, c.Writer.Written(), "transient passthrough 5xx should fail over instead of writing directly")
 		})
 	}
 }

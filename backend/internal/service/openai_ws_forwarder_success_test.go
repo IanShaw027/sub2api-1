@@ -160,10 +160,10 @@ func TestOpenAIGatewayService_Forward_WSv2_SuccessAndBindSticky(t *testing.T) {
 	require.False(t, received.Stream, "应保持客户端 stream=false 的原始语义")
 
 	store := svc.getOpenAIWSStateStore()
-	mappedAccountID, getErr := store.GetResponseAccount(context.Background(), groupID, "resp_new_1")
+	mappedAccountID, getErr := store.GetResponseAccount(context.Background(), groupID, 0, "resp_new_1")
 	require.NoError(t, getErr)
 	require.Equal(t, account.ID, mappedAccountID)
-	connID, ok := store.GetResponseConn("resp_new_1")
+	connID, ok := store.GetResponseConn(groupID, 0, "resp_new_1")
 	require.True(t, ok)
 	require.NotEmpty(t, connID)
 
@@ -1020,7 +1020,7 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnStateAndMetadataReplayOnReconnect
 	require.Equal(t, "turn_state_first", turnState)
 
 	// 主动淘汰连接，模拟下一次请求发生重连。
-	connID, hasConn := store.GetResponseConn(result1.RequestID)
+	connID, hasConn := store.GetResponseConn(0, 0, result1.RequestID)
 	require.True(t, hasConn)
 	svc.getOpenAIWSConnPool().evictConn(account.ID, connID)
 
@@ -1151,6 +1151,7 @@ func TestOpenAIGatewayService_PrewarmReadHonorsParentContext(t *testing.T) {
 		map[string]any{"model": "gpt-5.1"},
 		account,
 		nil,
+		0,
 		0,
 	)
 	elapsed := time.Since(start)

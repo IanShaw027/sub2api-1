@@ -46,13 +46,13 @@ type openAIWSSessionConnBinding struct {
 // response_id -> account_id 优先走 GatewayCache（Redis），同时维护本地热缓存。
 // response_id -> conn_id 仅在本进程内有效。
 type OpenAIWSStateStore interface {
-	BindResponseAccount(ctx context.Context, groupID int64, responseID string, accountID int64, ttl time.Duration) error
-	GetResponseAccount(ctx context.Context, groupID int64, responseID string) (int64, error)
-	DeleteResponseAccount(ctx context.Context, groupID int64, responseID string) error
+	BindResponseAccount(ctx context.Context, groupID int64, apiKeyID int64, responseID string, accountID int64, ttl time.Duration) error
+	GetResponseAccount(ctx context.Context, groupID int64, apiKeyID int64, responseID string) (int64, error)
+	DeleteResponseAccount(ctx context.Context, groupID int64, apiKeyID int64, responseID string) error
 
-	BindResponseConn(responseID, connID string, ttl time.Duration)
-	GetResponseConn(responseID string) (string, bool)
-	DeleteResponseConn(responseID string)
+	BindResponseConn(groupID int64, apiKeyID int64, responseID, connID string, ttl time.Duration)
+	GetResponseConn(groupID int64, apiKeyID int64, responseID string) (string, bool)
+	DeleteResponseConn(groupID int64, apiKeyID int64, responseID string)
 
 	BindSessionTurnState(groupID int64, sessionHash, turnState string, ttl time.Duration)
 	GetSessionTurnState(groupID int64, sessionHash string) (string, bool)
@@ -91,9 +91,10 @@ func NewOpenAIWSStateStore(cache GatewayCache) OpenAIWSStateStore {
 	return store
 }
 
-func (s *defaultOpenAIWSStateStore) BindResponseAccount(ctx context.Context, groupID int64, responseID string, accountID int64, ttl time.Duration) error {
+func (s *defaultOpenAIWSStateStore) BindResponseAccount(ctx context.Context, groupID int64, apiKeyID int64, responseID string, accountID int64, ttl time.Duration) error {
 	id := normalizeOpenAIWSResponseID(responseID)
-	if id == "" || accountID <= 0 {
+	key := openAIWSResponseStateKey(groupID, apiKeyID, id)
+	if key == "" || accountID <= 0 {
 		return nil
 	}
 	ttl = normalizeOpenAIWSTTL(ttl)
@@ -101,29 +102,30 @@ func (s *defaultOpenAIWSStateStore) BindResponseAccount(ctx context.Context, gro
 
 	expiresAt := time.Now().Add(ttl)
 	s.responseToAccountMu.Lock()
-	ensureBindingCapacity(s.responseToAccount, id, openAIWSStateStoreMaxEntriesPerMap)
-	s.responseToAccount[id] = openAIWSAccountBinding{accountID: accountID, expiresAt: expiresAt}
+	ensureBindingCapacity(s.responseToAccount, key, openAIWSStateStoreMaxEntriesPerMap)
+	s.responseToAccount[key] = openAIWSAccountBinding{accountID: accountID, expiresAt: expiresAt}
 	s.responseToAccountMu.Unlock()
 
 	if s.cache == nil {
 		return nil
 	}
-	cacheKey := openAIWSResponseAccountCacheKey(id)
+	cacheKey := openAIWSResponseAccountCacheKey(apiKeyID, id)
 	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(ctx)
 	defer cancel()
 	return s.cache.SetSessionAccountID(cacheCtx, groupID, cacheKey, accountID, ttl)
 }
 
-func (s *defaultOpenAIWSStateStore) GetResponseAccount(ctx context.Context, groupID int64, responseID string) (int64, error) {
+func (s *defaultOpenAIWSStateStore) GetResponseAccount(ctx context.Context, groupID int64, apiKeyID int64, responseID string) (int64, error) {
 	id := normalizeOpenAIWSResponseID(responseID)
-	if id == "" {
+	key := openAIWSResponseStateKey(groupID, apiKeyID, id)
+	if key == "" {
 		return 0, nil
 	}
 	s.maybeCleanup()
 
 	now := time.Now()
 	s.responseToAccountMu.RLock()
-	if binding, ok := s.responseToAccount[id]; ok {
+	if binding, ok := s.responseToAccount[key]; ok {
 		if now.Before(binding.expiresAt) {
 			accountID := binding.accountID
 			s.responseToAccountMu.RUnlock()
@@ -136,7 +138,7 @@ func (s *defaultOpenAIWSStateStore) GetResponseAccount(ctx context.Context, grou
 		return 0, nil
 	}
 
-	cacheKey := openAIWSResponseAccountCacheKey(id)
+	cacheKey := openAIWSResponseAccountCacheKey(apiKeyID, id)
 	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(ctx)
 	defer cancel()
 	accountID, err := s.cache.GetSessionAccountID(cacheCtx, groupID, cacheKey)
@@ -147,13 +149,14 @@ func (s *defaultOpenAIWSStateStore) GetResponseAccount(ctx context.Context, grou
 	return accountID, nil
 }
 
-func (s *defaultOpenAIWSStateStore) DeleteResponseAccount(ctx context.Context, groupID int64, responseID string) error {
+func (s *defaultOpenAIWSStateStore) DeleteResponseAccount(ctx context.Context, groupID int64, apiKeyID int64, responseID string) error {
 	id := normalizeOpenAIWSResponseID(responseID)
-	if id == "" {
+	key := openAIWSResponseStateKey(groupID, apiKeyID, id)
+	if key == "" {
 		return nil
 	}
 	s.responseToAccountMu.Lock()
-	delete(s.responseToAccount, id)
+	delete(s.responseToAccount, key)
 	s.responseToAccountMu.Unlock()
 
 	if s.cache == nil {
@@ -161,37 +164,39 @@ func (s *defaultOpenAIWSStateStore) DeleteResponseAccount(ctx context.Context, g
 	}
 	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(ctx)
 	defer cancel()
-	return s.cache.DeleteSessionAccountID(cacheCtx, groupID, openAIWSResponseAccountCacheKey(id))
+	return s.cache.DeleteSessionAccountID(cacheCtx, groupID, openAIWSResponseAccountCacheKey(apiKeyID, id))
 }
 
-func (s *defaultOpenAIWSStateStore) BindResponseConn(responseID, connID string, ttl time.Duration) {
+func (s *defaultOpenAIWSStateStore) BindResponseConn(groupID int64, apiKeyID int64, responseID, connID string, ttl time.Duration) {
 	id := normalizeOpenAIWSResponseID(responseID)
+	key := openAIWSResponseStateKey(groupID, apiKeyID, id)
 	conn := strings.TrimSpace(connID)
-	if id == "" || conn == "" {
+	if key == "" || conn == "" {
 		return
 	}
 	ttl = normalizeOpenAIWSTTL(ttl)
 	s.maybeCleanup()
 
 	s.responseToConnMu.Lock()
-	ensureBindingCapacity(s.responseToConn, id, openAIWSStateStoreMaxEntriesPerMap)
-	s.responseToConn[id] = openAIWSConnBinding{
+	ensureBindingCapacity(s.responseToConn, key, openAIWSStateStoreMaxEntriesPerMap)
+	s.responseToConn[key] = openAIWSConnBinding{
 		connID:    conn,
 		expiresAt: time.Now().Add(ttl),
 	}
 	s.responseToConnMu.Unlock()
 }
 
-func (s *defaultOpenAIWSStateStore) GetResponseConn(responseID string) (string, bool) {
+func (s *defaultOpenAIWSStateStore) GetResponseConn(groupID int64, apiKeyID int64, responseID string) (string, bool) {
 	id := normalizeOpenAIWSResponseID(responseID)
-	if id == "" {
+	key := openAIWSResponseStateKey(groupID, apiKeyID, id)
+	if key == "" {
 		return "", false
 	}
 	s.maybeCleanup()
 
 	now := time.Now()
 	s.responseToConnMu.RLock()
-	binding, ok := s.responseToConn[id]
+	binding, ok := s.responseToConn[key]
 	s.responseToConnMu.RUnlock()
 	if !ok || now.After(binding.expiresAt) || strings.TrimSpace(binding.connID) == "" {
 		return "", false
@@ -199,13 +204,14 @@ func (s *defaultOpenAIWSStateStore) GetResponseConn(responseID string) (string, 
 	return binding.connID, true
 }
 
-func (s *defaultOpenAIWSStateStore) DeleteResponseConn(responseID string) {
+func (s *defaultOpenAIWSStateStore) DeleteResponseConn(groupID int64, apiKeyID int64, responseID string) {
 	id := normalizeOpenAIWSResponseID(responseID)
-	if id == "" {
+	key := openAIWSResponseStateKey(groupID, apiKeyID, id)
+	if key == "" {
 		return
 	}
 	s.responseToConnMu.Lock()
-	delete(s.responseToConn, id)
+	delete(s.responseToConn, key)
 	s.responseToConnMu.Unlock()
 }
 
@@ -412,9 +418,25 @@ func normalizeOpenAIWSResponseID(responseID string) string {
 	return strings.TrimSpace(responseID)
 }
 
-func openAIWSResponseAccountCacheKey(responseID string) string {
-	sum := sha256.Sum256([]byte(responseID))
+func openAIWSResponseAccountCacheKey(apiKeyID int64, responseID string) string {
+	id := normalizeOpenAIWSResponseID(responseID)
+	if id == "" {
+		return ""
+	}
+	seed := id
+	if apiKeyID > 0 {
+		seed = fmt.Sprintf("api_key:%d:%s", apiKeyID, id)
+	}
+	sum := sha256.Sum256([]byte(seed))
 	return openAIWSResponseAccountCachePrefix + hex.EncodeToString(sum[:])
+}
+
+func openAIWSResponseStateKey(groupID int64, apiKeyID int64, responseID string) string {
+	id := normalizeOpenAIWSResponseID(responseID)
+	if id == "" {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d:%s", groupID, apiKeyID, id)
 }
 
 func normalizeOpenAIWSTTL(ttl time.Duration) time.Duration {

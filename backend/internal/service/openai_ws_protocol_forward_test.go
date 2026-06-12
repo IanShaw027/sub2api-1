@@ -62,6 +62,12 @@ func (u *httpUpstreamSequenceRecorder) DoWithTLS(req *http.Request, proxyURL str
 	return u.Do(req, proxyURL, accountID, accountConcurrency)
 }
 
+func TestOpenAIWSTokenEventTreatsOutputItemAddedAsFirstClientOutput(t *testing.T) {
+	require.True(t, isOpenAIWSTokenEvent("response.output_item.added"))
+	require.False(t, isOpenAIWSTokenEvent("response.created"))
+	require.False(t, isOpenAIWSTokenEvent("response.in_progress"))
+}
+
 func TestOpenAIGatewayService_Forward_PreservePreviousResponseIDWhenWSEnabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -186,6 +192,401 @@ func TestOpenAIGatewayService_Forward_HTTPIngressStaysHTTPWhenWSEnabled(t *testi
 	require.Equal(t, "client_protocol_http", reason)
 }
 
+func TestOpenAIGatewayService_Forward_HTTPIngressUsesWSWhenEnabledWithSessionSignal(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	receivedCh := make(chan []byte, 1)
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket failed: %v", err)
+			return
+		}
+		defer func() {
+			_ = conn.Close()
+		}()
+
+		var req map[string]any
+		if err := conn.ReadJSON(&req); err != nil {
+			t.Errorf("read ws request failed: %v", err)
+			return
+		}
+		reqRaw, _ := json.Marshal(req)
+		receivedCh <- reqRaw
+
+		if err := conn.WriteJSON(map[string]any{
+			"type": "response.completed",
+			"response": map[string]any{
+				"id":    "resp_http_ingress_ws_session",
+				"model": "gpt-5.1",
+				"usage": map[string]any{
+					"input_tokens":  2,
+					"output_tokens": 3,
+					"input_tokens_details": map[string]any{
+						"cached_tokens": 0,
+					},
+				},
+			},
+		}); err != nil {
+			t.Errorf("write response.completed failed: %v", err)
+			return
+		}
+	}))
+	defer wsServer.Close()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "custom-client/1.0")
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+	groupID := int64(1101)
+	apiKeyID := int64(2201)
+	c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_http_should_not_happen","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 30
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 10
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+	}
+
+	account := &Account{
+		ID:          106,
+		Name:        "openai-apikey-http-ingress-ws",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": wsServer.URL,
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	body := []byte(`{"model":"gpt-5.1","stream":false,"prompt_cache_key":"http-ingress-session","input":[{"type":"input_text","text":"hello"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.OpenAIWSMode)
+	require.Equal(t, "resp_http_ingress_ws_session", result.RequestID)
+	require.Nil(t, upstream.lastReq, "HTTP 入站显式启用后应走 WS 上游，不应命中 HTTP 上游")
+
+	received := <-receivedCh
+	require.Equal(t, "http-ingress-session", gjson.GetBytes(received, "prompt_cache_key").String())
+
+	decision, _ := c.Get("openai_ws_transport_decision")
+	reason, _ := c.Get("openai_ws_transport_reason")
+	require.Equal(t, string(OpenAIUpstreamTransportResponsesWebsocketV2), decision)
+	require.Equal(t, "ws_v2_enabled", reason)
+
+	store := svc.getOpenAIWSStateStore()
+	mappedAccountID, getErr := store.GetResponseAccount(context.Background(), groupID, apiKeyID, "resp_http_ingress_ws_session")
+	require.NoError(t, getErr)
+	require.Equal(t, account.ID, mappedAccountID)
+	connID, ok := store.GetResponseConn(groupID, apiKeyID, "resp_http_ingress_ws_session")
+	require.True(t, ok, "有 session 标识的 HTTP 入站 WS 应保留 response_id -> conn_id 粘连")
+	require.NotEmpty(t, connID)
+}
+
+func TestOpenAIGatewayService_Forward_HTTPIngressNoSessionUsesOneShotWS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var connectionCount atomic.Int32
+	var requestCount atomic.Int32
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connectionCount.Add(1)
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket failed: %v", err)
+			return
+		}
+		defer func() {
+			_ = conn.Close()
+		}()
+
+		for {
+			var req map[string]any
+			if err := conn.ReadJSON(&req); err != nil {
+				return
+			}
+			seq := requestCount.Add(1)
+			responseID := "resp_http_ingress_oneshot_first"
+			switch seq {
+			case 2:
+				responseID = "resp_http_ingress_session_after_oneshot"
+			case 3:
+				responseID = "resp_http_ingress_oneshot_second"
+			}
+			if err := conn.WriteJSON(map[string]any{
+				"type": "response.completed",
+				"response": map[string]any{
+					"id":    responseID,
+					"model": "gpt-5.1",
+					"usage": map[string]any{
+						"input_tokens":  1,
+						"output_tokens": 1,
+						"input_tokens_details": map[string]any{
+							"cached_tokens": 0,
+						},
+					},
+				},
+			}); err != nil {
+				t.Errorf("write response.completed failed: %v", err)
+				return
+			}
+		}
+	}))
+	defer wsServer.Close()
+
+	groupID := int64(1102)
+	apiKeyID := int64(2202)
+	newHTTPContext := func() (*httptest.ResponseRecorder, *gin.Context) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("User-Agent", "custom-client/1.0")
+		SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+		return rec, c
+	}
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_http_should_not_happen","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 4
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 30
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 10
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+	}
+
+	account := &Account{
+		ID:          107,
+		Name:        "openai-apikey-http-ingress-oneshot",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 4,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": wsServer.URL,
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	_, firstCtx := newHTTPContext()
+	firstBody := []byte(`{"model":"gpt-5.1","stream":false,"input":[{"type":"input_text","text":"first no session"}]}`)
+	firstResult, err := svc.Forward(context.Background(), firstCtx, account, firstBody)
+	require.NoError(t, err)
+	require.NotNil(t, firstResult)
+	require.True(t, firstResult.OpenAIWSMode)
+	require.Equal(t, "resp_http_ingress_oneshot_first", firstResult.RequestID)
+
+	_, secondCtx := newHTTPContext()
+	secondBody := []byte(`{"model":"gpt-5.1","stream":false,"prompt_cache_key":"session-after-oneshot","input":[{"type":"input_text","text":"session after one-shot"}]}`)
+	secondResult, err := svc.Forward(context.Background(), secondCtx, account, secondBody)
+	require.NoError(t, err)
+	require.NotNil(t, secondResult)
+	require.True(t, secondResult.OpenAIWSMode)
+	require.Equal(t, "resp_http_ingress_session_after_oneshot", secondResult.RequestID)
+
+	_, thirdCtx := newHTTPContext()
+	thirdBody := []byte(`{"model":"gpt-5.1","stream":false,"input":[{"type":"input_text","text":"second no session"}]}`)
+	thirdResult, err := svc.Forward(context.Background(), thirdCtx, account, thirdBody)
+	require.NoError(t, err)
+	require.NotNil(t, thirdResult)
+	require.True(t, thirdResult.OpenAIWSMode)
+	require.Equal(t, "resp_http_ingress_oneshot_second", thirdResult.RequestID)
+
+	require.Nil(t, upstream.lastReq, "HTTP 入站启用 WS 后三次请求都不应命中 HTTP 上游")
+	require.Equal(t, int32(3), connectionCount.Load(), "无会话 HTTP 入站 WS 必须一次一连，不能复用已有连接或被后续会话复用")
+
+	store := svc.getOpenAIWSStateStore()
+	for _, responseID := range []string{"resp_http_ingress_oneshot_first", "resp_http_ingress_oneshot_second"} {
+		mappedAccountID, getErr := store.GetResponseAccount(context.Background(), groupID, apiKeyID, responseID)
+		require.NoError(t, getErr)
+		require.Equal(t, account.ID, mappedAccountID)
+		connID, ok := store.GetResponseConn(groupID, apiKeyID, responseID)
+		require.False(t, ok, "one-shot HTTP 入站 WS 不应写入 response_id -> conn_id: %s %s", responseID, connID)
+	}
+	sessionConnID, ok := store.GetResponseConn(groupID, apiKeyID, "resp_http_ingress_session_after_oneshot")
+	require.True(t, ok, "有 session 标识的后续请求仍应正常粘连")
+	require.NotEmpty(t, sessionConnID)
+}
+
+func TestOpenAIGatewayService_Forward_HTTPIngressWSClientDisconnectSkipsStickyBindings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket failed: %v", err)
+			return
+		}
+		defer func() {
+			_ = conn.Close()
+		}()
+
+		var req map[string]any
+		if err := conn.ReadJSON(&req); err != nil {
+			t.Errorf("read ws request failed: %v", err)
+			return
+		}
+		if err := conn.WriteJSON(map[string]any{
+			"type":        "response.output_text.delta",
+			"response_id": "resp_http_ingress_disconnect",
+			"delta":       "hello",
+		}); err != nil {
+			t.Errorf("write response delta failed: %v", err)
+			return
+		}
+		_ = conn.WriteJSON(map[string]any{
+			"type": "response.completed",
+			"response": map[string]any{
+				"id":    "resp_http_ingress_disconnect",
+				"model": "gpt-5.1",
+				"usage": map[string]any{
+					"input_tokens":  1,
+					"output_tokens": 1,
+					"input_tokens_details": map[string]any{
+						"cached_tokens": 0,
+					},
+				},
+			},
+		})
+	}))
+	defer wsServer.Close()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "custom-client/1.0")
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+	groupID := int64(1103)
+	apiKeyID := int64(2203)
+	c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+	c.Writer = &failingOpenAIImageWriter{ResponseWriter: c.Writer, failAfter: 0}
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_http_should_not_happen","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 30
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 10
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+	}
+
+	account := &Account{
+		ID:          108,
+		Name:        "openai-apikey-http-ingress-disconnect",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": wsServer.URL,
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	body := []byte(`{"model":"gpt-5.1","stream":true,"store":false,"prompt_cache_key":"http-ingress-disconnect","input":[{"type":"input_text","text":"hello"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.ClientDisconnected)
+	require.Nil(t, upstream.lastReq, "HTTP 入站启用 WS 后不应命中 HTTP 上游")
+
+	store := svc.getOpenAIWSStateStore()
+	mappedAccountID, getErr := store.GetResponseAccount(context.Background(), groupID, apiKeyID, "resp_http_ingress_disconnect")
+	require.NoError(t, getErr)
+	require.Zero(t, mappedAccountID, "断连 turn 不应绑定 response_id -> account_id")
+	_, ok := store.GetResponseConn(groupID, apiKeyID, "resp_http_ingress_disconnect")
+	require.False(t, ok, "断连 turn 不应绑定 response_id -> conn_id")
+
+	sessionHash := svc.GenerateSessionHash(c, body)
+	require.NotEmpty(t, sessionHash)
+	_, ok = store.GetSessionConn(groupID, sessionHash)
+	require.False(t, ok, "断连 turn 不应绑定 session -> conn_id")
+}
+
 func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentOnce(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -271,6 +672,160 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentO
 	reason, _ := c.Get("openai_ws_transport_reason")
 	require.Equal(t, string(OpenAIUpstreamTransportHTTPSSE), decision)
 	require.Equal(t, "client_protocol_http", reason)
+}
+
+func TestOpenAIGatewayService_Forward_HTTPIngressRetriesUnknownReasoningEnabledOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer wsFallbackServer.Close()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "custom-client/1.0")
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	upstream := &httpUpstreamSequenceRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"error":{"message":"Unknown parameter: 'reasoning.enabled'.","type":"invalid_request_error","param":"reasoning.enabled","code":"unknown_parameter"}}`,
+				)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"id":"resp_http_retry_reasoning_enabled_ok","usage":{"input_tokens":1,"output_tokens":2,"input_tokens_details":{"cached_tokens":0}}}`,
+				)),
+			},
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+	}
+
+	account := &Account{
+		ID:          109,
+		Name:        "openai-apikey-reasoning-enabled",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": wsFallbackServer.URL,
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	body := []byte(`{"model":"gpt-5.1","stream":false,"reasoning":{"effort":"high","enabled":true},"input":[{"type":"input_text","text":"hello"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.OpenAIWSMode, "HTTP 入站应保持 HTTP 转发")
+	require.Equal(t, 2, upstream.callCount, "reasoning.enabled unsupported should retry once on the non-passthrough HTTP path")
+	require.Len(t, upstream.bodies, 2)
+	require.True(t, gjson.GetBytes(upstream.bodies[0], "reasoning.enabled").Exists())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "reasoning.enabled").Exists())
+	require.Equal(t, "high", gjson.GetBytes(upstream.bodies[1], "reasoning.effort").String())
+}
+
+func TestOpenAIGatewayService_Forward_HTTPIngressRetriesThinkingSignatureInvalidEncryptedContentOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer wsFallbackServer.Close()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "custom-client/1.0")
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	upstream := &httpUpstreamSequenceRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"error":{"code":"thinking_signature_invalid","type":"invalid_request_error","message":"The encrypted content gAAA...SQ== could not be verified. Reason: Encrypted content could not be decrypted or parsed."}}`,
+				)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+					"x-request-id": []string{"req_http_retry_thinking_signature_ok"},
+				},
+				Body: io.NopCloser(strings.NewReader(
+					`{"id":"resp_http_retry_thinking_signature_ok","usage":{"input_tokens":1,"output_tokens":2,"input_tokens_details":{"cached_tokens":0}}}`,
+				)),
+			},
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+	}
+
+	account := &Account{
+		ID:          104,
+		Name:        "openai-apikey-thinking-signature",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": wsFallbackServer.URL,
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	body := []byte(`{"model":"gpt-5.4","stream":false,"previous_response_id":"resp_http_retry_thinking_signature","instructions":"local-test-instructions","prompt_cache_key":"cache-http-retry-thinking-signature","input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me"}]},{"type":"input_text","text":"hello"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.OpenAIWSMode, "HTTP 入站应保持 HTTP 转发")
+	require.Equal(t, 2, upstream.callCount, "thinking_signature_invalid encrypted content should retry once on the HTTP path")
+	require.Len(t, upstream.bodies, 2)
+
+	firstBody := upstream.bodies[0]
+	secondBody := upstream.bodies[1]
+	require.True(t, gjson.GetBytes(firstBody, "input.0.encrypted_content").Exists(), "首次请求不应做发送前预清理")
+	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "精确重试应移除坏的 reasoning item")
+	require.Equal(t, "input_text", gjson.GetBytes(secondBody, "input.0.type").String(), "重试后应保留后续 input_text 项")
+	require.Equal(t, "hello", gjson.GetBytes(secondBody, "input.0.text").String(), "后续消息内容应保留")
+	requireOrderedJSONKeys(t, secondBody, "model", "instructions", "prompt_cache_key", "input")
 }
 
 func TestOpenAIGatewayService_Forward_HTTPIngressRetriesWrappedInvalidEncryptedContentOnce(t *testing.T) {
@@ -2565,4 +3120,33 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentKeepsPreviousRe
 	require.Equal(t, "call_123", gjson.GetBytes(requests[1], `input.0.call_id`).String())
 	require.Equal(t, "ok", gjson.GetBytes(requests[1], `input.0.output`).String())
 	require.Equal(t, "resp_prev_function_call", gjson.GetBytes(requests[1], "previous_response_id").String())
+}
+
+func TestBuildOpenAIWSNeutralHeaders_NoSessionIdentity(t *testing.T) {
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	account := &Account{
+		ID:       42,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"chatgpt_account_id": "acct_123",
+		},
+	}
+	decision := OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2}
+
+	headers := svc.buildOpenAIWSNeutralHeaders(account, "tok_abc", decision, true)
+
+	require.Equal(t, "Bearer tok_abc", headers.Get("authorization"))
+	require.Equal(t, "acct_123", headers.Get("chatgpt-account-id"))
+	require.NotEmpty(t, headers.Get("originator"))
+	require.NotEmpty(t, headers.Get("OpenAI-Beta"))
+	require.NotEmpty(t, headers.Get("user-agent"))
+
+	for _, h := range []string{
+		"session_id", "conversation_id", openAIWSTurnStateHeader,
+		openAIWSWindowIDHeader, "x-client-request-id", "x-codex-installation-id",
+		"x-codex-beta-features", "accept-language",
+	} {
+		require.Empty(t, headers.Get(h), "中性头不应包含 %s", h)
+	}
 }

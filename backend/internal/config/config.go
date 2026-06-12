@@ -881,6 +881,8 @@ type GatewayOpenAIWSConfig struct {
 	ModeRouterV2Enabled bool `mapstructure:"mode_router_v2_enabled"`
 	// IngressModeDefault: ingress 默认模式（off/ctx_pool/passthrough）
 	IngressModeDefault string `mapstructure:"ingress_mode_default"`
+	// HttpIngressUpstreamWSEnabled: 允许 HTTP /v1/responses 入站显式走上游 WSv2（默认 false）
+	HttpIngressUpstreamWSEnabled bool `mapstructure:"http_ingress_upstream_ws_enabled"`
 	// Enabled: 全局总开关（默认 true）
 	Enabled bool `mapstructure:"enabled"`
 	// OAuthEnabled: 是否允许 OpenAI OAuth 账号使用 WS
@@ -912,6 +914,10 @@ type GatewayOpenAIWSConfig struct {
 	MaxConnsPerAccount int `mapstructure:"max_conns_per_account"`
 	MinIdlePerAccount  int `mapstructure:"min_idle_per_account"`
 	MaxIdlePerAccount  int `mapstructure:"max_idle_per_account"`
+	// StickyReservePercent: 账号连接池中为粘性会话预留的容量百分比（0-100，默认 50）。
+	// 中性连接（无会话 HTTP 入站复用）上限 = floor(总上限 ×(100-该值)/100)。
+	// 注意：中性预热依赖账号至少一次无会话请求建立快照，重启后冷账号不会主动预创建。
+	StickyReservePercent int `mapstructure:"sticky_reserve_percent"`
 	// DynamicMaxConnsByAccountConcurrencyEnabled: 是否按账号并发动态计算连接池上限
 	DynamicMaxConnsByAccountConcurrencyEnabled bool `mapstructure:"dynamic_max_conns_by_account_concurrency_enabled"`
 	// OAuthMaxConnsFactor: OAuth 账号连接池系数（effective=ceil(concurrency*factor)）
@@ -1836,6 +1842,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.enabled", true)
 	viper.SetDefault("gateway.openai_ws.mode_router_v2_enabled", false)
 	viper.SetDefault("gateway.openai_ws.ingress_mode_default", "ctx_pool")
+	viper.SetDefault("gateway.openai_ws.http_ingress_upstream_ws_enabled", false)
 	viper.SetDefault("gateway.openai_ws.oauth_enabled", true)
 	viper.SetDefault("gateway.openai_ws.apikey_enabled", true)
 	viper.SetDefault("gateway.openai_ws.force_http", false)
@@ -1849,6 +1856,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.max_conns_per_account", 128)
 	viper.SetDefault("gateway.openai_ws.min_idle_per_account", 4)
 	viper.SetDefault("gateway.openai_ws.max_idle_per_account", 12)
+	viper.SetDefault("gateway.openai_ws.sticky_reserve_percent", 50)
 	viper.SetDefault("gateway.openai_ws.dynamic_max_conns_by_account_concurrency_enabled", true)
 	viper.SetDefault("gateway.openai_ws.oauth_max_conns_factor", 1.0)
 	viper.SetDefault("gateway.openai_ws.apikey_max_conns_factor", 1.0)
@@ -2584,6 +2592,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIWS.MaxIdlePerAccount > c.Gateway.OpenAIWS.MaxConnsPerAccount {
 		return fmt.Errorf("gateway.openai_ws.max_idle_per_account must be <= max_conns_per_account")
+	}
+	if c.Gateway.OpenAIWS.StickyReservePercent < 0 || c.Gateway.OpenAIWS.StickyReservePercent > 100 {
+		return fmt.Errorf("gateway.openai_ws.sticky_reserve_percent must be between 0 and 100")
 	}
 	if c.Gateway.OpenAIWS.OAuthMaxConnsFactor <= 0 {
 		return fmt.Errorf("gateway.openai_ws.oauth_max_conns_factor must be positive")

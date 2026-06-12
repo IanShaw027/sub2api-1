@@ -287,6 +287,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForResponses(
 			c.Request.Context(),
 			apiKey.GroupID,
+			apiKey.ID,
 			previousResponseID,
 			sessionHash,
 			reqModel,
@@ -352,12 +353,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				selection.ReleaseFunc()
 			}
 			_ = h.gatewayService.ClearStickySession(c.Request.Context(), apiKey.GroupID, sessionHash)
-			_ = h.gatewayService.ClearPreviousResponseBinding(c.Request.Context(), apiKey.GroupID, previousResponseID)
+			_ = h.gatewayService.ClearPreviousResponseBinding(c.Request.Context(), apiKey.GroupID, apiKey.ID, previousResponseID)
 			failedAccountIDs[account.ID] = struct{}{}
 			continue
 		}
 
-		accountReleaseFunc, acquireStatus := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, previousResponseID, selection, reqStream, &streamStarted, reqLog)
+		accountReleaseFunc, acquireStatus := h.acquireResponsesAccountSlot(c, apiKey.GroupID, apiKey.ID, sessionHash, previousResponseID, selection, reqStream, &streamStarted, reqLog)
 		if acquireStatus == accountSlotAcquireRetry {
 			failedAccountIDs[account.ID] = struct{}{}
 			continue
@@ -787,7 +788,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		_ = scheduleDecision
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, acquireStatus := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, "", selection, reqStream, &streamStarted, reqLog)
+		accountReleaseFunc, acquireStatus := h.acquireResponsesAccountSlot(c, apiKey.GroupID, apiKey.ID, sessionHash, "", selection, reqStream, &streamStarted, reqLog)
 		if acquireStatus == accountSlotAcquireRetry {
 			failedAccountIDs[account.ID] = struct{}{}
 			continue
@@ -1088,6 +1089,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesUserSlot(
 func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	c *gin.Context,
 	groupID *int64,
+	apiKeyID int64,
 	sessionHash string,
 	previousResponseID string,
 	selection *service.AccountSelectionResult,
@@ -1103,7 +1105,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	ctx := c.Request.Context()
 	clearStickyBindings := func() {
 		_ = h.gatewayService.ClearStickySession(ctx, groupID, sessionHash)
-		_ = h.gatewayService.ClearPreviousResponseBinding(ctx, groupID, previousResponseID)
+		_ = h.gatewayService.ClearPreviousResponseBinding(ctx, groupID, apiKeyID, previousResponseID)
 	}
 	account := selection.Account
 	if selection.Acquired {
@@ -1405,6 +1407,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForResponses(
 			ctx,
 			apiKey.GroupID,
+			apiKey.ID,
 			previousResponseID,
 			sessionHash,
 			reqModel,
@@ -1449,7 +1452,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				selection.ReleaseFunc()
 			}
 			_ = h.gatewayService.ClearStickySession(ctx, apiKey.GroupID, sessionHash)
-			_ = h.gatewayService.ClearPreviousResponseBinding(ctx, apiKey.GroupID, previousResponseID)
+			_ = h.gatewayService.ClearPreviousResponseBinding(ctx, apiKey.GroupID, apiKey.ID, previousResponseID)
 			failedAccountIDs[account.ID] = struct{}{}
 			continue
 		}
@@ -1504,6 +1507,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 		hooks := &service.OpenAIWSIngressHooks{
 			InitialRequestModel: reqModel,
+			SessionHash:         sessionHash,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
 				if turn == 1 {
 					return nil
@@ -2165,7 +2169,7 @@ func openAIWSIngressFallbackSessionSeed(userID, apiKeyID int64, groupID *int64) 
 	if groupID != nil {
 		gid = *groupID
 	}
-	return fmt.Sprintf("openai_ws_ingress:%d:%d:%d", gid, userID, apiKeyID)
+	return fmt.Sprintf("openai_ws_ingress_conn:%d:%d:%d:%s", gid, userID, apiKeyID, uuid.NewString())
 }
 
 func isOpenAIWSUpgradeRequest(r *http.Request) bool {

@@ -473,8 +473,12 @@ type UsageLog struct {
 	RequestType  string `json:"request_type"`
 	Stream       bool   `json:"stream"`
 	OpenAIWSMode bool   `json:"openai_ws_mode"`
-	DurationMs   *int   `json:"duration_ms"`
-	FirstTokenMs *int   `json:"first_token_ms"`
+	// OpenAIWSProfile 上游 WS 连接类别："neutral"/"session_bound"，空表示非 WS 路径。
+	OpenAIWSProfile string `json:"openai_ws_profile,omitempty"`
+	// OpenAIWSConnReused 是否复用了已建立的上游 WS 连接。
+	OpenAIWSConnReused bool `json:"openai_ws_conn_reused"`
+	DurationMs         *int `json:"duration_ms"`
+	FirstTokenMs       *int `json:"first_token_ms"`
 
 	// 图片生成字段
 	ImageCount         int            `json:"image_count"`

@@ -83,6 +83,10 @@ var openAIResponsesUnsupportedFields = []string{
 	"metadata",
 	"stream_options",
 	"temperature",
+	"verbosity",
+	"enable_thinking",
+	"stop_sequences",
+	"promptCacheKey",
 }
 
 type openAICodexCompatFallbackState struct {
@@ -373,10 +377,13 @@ type OpenAIForwardResult struct {
 	ReasoningEffort      *string
 	Stream               bool
 	OpenAIWSMode         bool
+	OpenAIWSProfile      string
+	OpenAIWSConnReused   bool
 	EffectiveRequestType RequestType
 	ResponseHeaders      http.Header
 	Duration             time.Duration
 	FirstTokenMs         *int
+	ClientDisconnected   bool
 	ImageCount           int
 	ImageSize            string
 	ImageInputSize       string
@@ -1366,13 +1373,10 @@ func generateOpenAISessionHashForLog(c *gin.Context, body []byte) string {
 	if sessionID == "" && len(body) > 0 {
 		sessionID = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
 	}
-	if sessionID == "" && len(body) > 0 {
-		sessionID = deriveOpenAIContentSessionSeed(body)
-	}
 	if sessionID == "" {
 		return ""
 	}
-	currentHash, _ := deriveOpenAISessionHashes(sessionID)
+	currentHash, _ := deriveOpenAIRequestScopedSessionHashes(c, sessionID)
 	return currentHash
 }
 
@@ -1623,7 +1627,7 @@ func classifyOpenAICodexCompatFallback(statusCode int, upstreamCode, upstreamMsg
 	if statusCode != http.StatusBadRequest {
 		return ""
 	}
-	if strings.EqualFold(strings.TrimSpace(upstreamCode), "invalid_encrypted_content") {
+	if isOpenAIInvalidEncryptedContentError(upstreamCode, upstreamMsg, upstreamBody) {
 		return ""
 	}
 
@@ -1675,6 +1679,27 @@ func classifyOpenAICodexCompatFallbackMessage(msg string) string {
 	return ""
 }
 
+func isOpenAIInvalidEncryptedContentError(upstreamCode, upstreamMsg string, upstreamBody []byte) bool {
+	code := strings.ToLower(strings.TrimSpace(upstreamCode))
+	if code == "invalid_encrypted_content" {
+		return true
+	}
+
+	msg := strings.ToLower(strings.TrimSpace(upstreamMsg))
+	if msg == "" {
+		msg = strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(upstreamBody)))
+	}
+	if msg == "" {
+		msg = strings.ToLower(strings.TrimSpace(string(upstreamBody)))
+	}
+
+	hasEncryptedContentSignal := strings.Contains(msg, "encrypted content") &&
+		(strings.Contains(msg, "could not be decrypted") ||
+			strings.Contains(msg, "could not be verified") ||
+			strings.Contains(msg, "decrypted or parsed"))
+	return code == "thinking_signature_invalid" && hasEncryptedContentSignal
+}
+
 // isOpenAIUnsupportedPreviousResponseIDError reports whether the upstream 400
 // response is the explicit "Unsupported parameter: previous_response_id" error
 // thrown by models that do not allow continuation via previous_response_id.
@@ -1696,6 +1721,58 @@ func isOpenAIUnsupportedPreviousResponseIDError(upstreamCode, upstreamMsg string
 	}
 	code := strings.ToLower(strings.TrimSpace(upstreamCode))
 	return strings.Contains(code, "unsupported_parameter") || strings.Contains(code, "unknown_parameter")
+}
+
+func isOpenAIUnsupportedReasoningEnabledError(upstreamCode, upstreamMsg string, upstreamBody []byte) bool {
+	msg := strings.ToLower(strings.TrimSpace(upstreamMsg))
+	if msg == "" {
+		msg = strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(upstreamBody)))
+	}
+	if msg == "" {
+		msg = strings.ToLower(strings.TrimSpace(string(upstreamBody)))
+	}
+	if !strings.Contains(msg, "reasoning.enabled") {
+		return false
+	}
+	if strings.Contains(msg, "unsupported parameter") ||
+		strings.Contains(msg, "unsupported field") ||
+		strings.Contains(msg, "unknown parameter") ||
+		strings.Contains(msg, "not supported") {
+		return true
+	}
+	code := strings.ToLower(strings.TrimSpace(upstreamCode))
+	return strings.Contains(code, "unsupported_parameter") || strings.Contains(code, "unknown_parameter")
+}
+
+func dropOpenAIReasoningEnabled(reqBody map[string]any) bool {
+	if reqBody == nil {
+		return false
+	}
+	reasoning, ok := reqBody["reasoning"].(map[string]any)
+	if !ok {
+		return false
+	}
+	if _, ok := reasoning["enabled"]; !ok {
+		return false
+	}
+	delete(reasoning, "enabled")
+	if len(reasoning) == 0 {
+		delete(reqBody, "reasoning")
+	}
+	return true
+}
+
+func isOpenAILargeRequestUpstreamError(statusCode int, responseBody []byte) bool {
+	if statusCode == http.StatusRequestEntityTooLarge {
+		return true
+	}
+	msg := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
+	body := strings.ToLower(strings.TrimSpace(string(responseBody)))
+	combined := msg + " " + body
+	return strings.Contains(combined, "message too big") ||
+		strings.Contains(combined, "websocket: close 1009") ||
+		strings.Contains(combined, "request entity too large") ||
+		strings.Contains(combined, "payload too large")
 }
 
 func isOpenAICodexCompatFallbackReason(reason string) bool {
@@ -1923,7 +2000,7 @@ func (s *OpenAIGatewayService) GenerateExplicitSessionHash(c *gin.Context, body 
 		return ""
 	}
 
-	currentHash, legacyHash := deriveOpenAISessionHashes(sessionID)
+	currentHash, legacyHash := deriveOpenAIRequestScopedSessionHashes(c, sessionID)
 	attachOpenAILegacySessionHashToGin(c, legacyHash)
 	return currentHash
 }
@@ -1934,7 +2011,10 @@ func (s *OpenAIGatewayService) GenerateExplicitSessionHash(c *gin.Context, body 
 //  1. Header: session_id
 //  2. Header: conversation_id
 //  3. Body:   prompt_cache_key (opencode)
-//  4. Body:   content-based fallback (model + system + tools + first user message)
+//
+// Requests without an explicit session signal are intentionally left unstuck.
+// Content-derived hashes are not a reliable session boundary and can merge
+// unrelated conversations that happen to share the same first prompt.
 func (s *OpenAIGatewayService) GenerateSessionHash(c *gin.Context, body []byte) string {
 	if c == nil {
 		return ""
@@ -1947,14 +2027,11 @@ func (s *OpenAIGatewayService) GenerateSessionHash(c *gin.Context, body []byte) 
 	if sessionID == "" && len(body) > 0 {
 		sessionID = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
 	}
-	if sessionID == "" && len(body) > 0 {
-		sessionID = deriveOpenAIContentSessionSeed(body)
-	}
 	if sessionID == "" {
 		return ""
 	}
 
-	currentHash, legacyHash := deriveOpenAISessionHashes(sessionID)
+	currentHash, legacyHash := deriveOpenAIRequestScopedSessionHashes(c, sessionID)
 	attachOpenAILegacySessionHashToGin(c, legacyHash)
 	return currentHash
 }
@@ -1976,6 +2053,21 @@ func (s *OpenAIGatewayService) GenerateSessionHashWithFallback(c *gin.Context, b
 	currentHash, legacyHash := deriveOpenAISessionHashes(seed)
 	attachOpenAILegacySessionHashToGin(c, legacyHash)
 	return currentHash
+}
+
+func deriveOpenAIRequestScopedSessionHashes(c *gin.Context, sessionID string) (string, string) {
+	return deriveOpenAISessionHashes(openAIRequestScopedSessionSeed(getAPIKeyIDFromContext(c), sessionID))
+}
+
+func openAIRequestScopedSessionSeed(apiKeyID int64, sessionID string) string {
+	normalized := strings.TrimSpace(sessionID)
+	if normalized == "" {
+		return ""
+	}
+	if apiKeyID <= 0 {
+		return normalized
+	}
+	return fmt.Sprintf("api_key:%d:%s", apiKeyID, normalized)
 }
 
 func resolveOpenAIUpstreamOriginator(c *gin.Context, isOfficialClient bool) string {
@@ -2033,7 +2125,7 @@ func (s *OpenAIGatewayService) ClearStickySession(ctx context.Context, groupID *
 }
 
 // ClearPreviousResponseBinding removes the previous_response_id -> account binding.
-func (s *OpenAIGatewayService) ClearPreviousResponseBinding(ctx context.Context, groupID *int64, previousResponseID string) error {
+func (s *OpenAIGatewayService) ClearPreviousResponseBinding(ctx context.Context, groupID *int64, apiKeyID int64, previousResponseID string) error {
 	responseID := strings.TrimSpace(previousResponseID)
 	if responseID == "" {
 		return nil
@@ -2042,7 +2134,7 @@ func (s *OpenAIGatewayService) ClearPreviousResponseBinding(ctx context.Context,
 	if store == nil {
 		return nil
 	}
-	return store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+	return store.DeleteResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
 }
 
 // SelectAccount selects an OpenAI account with sticky session support
@@ -3355,6 +3447,10 @@ func (s *OpenAIGatewayService) schedulingConfig() config.GatewaySchedulingConfig
 	return cfg
 }
 
+func (s *OpenAIGatewayService) openAIHTTPIngressUpstreamWSEnabled() bool {
+	return s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled
+}
+
 // GetAccessToken gets the access token for an OpenAI account
 func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Account) (string, string, error) {
 	switch account.Type {
@@ -3472,8 +3568,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	isCodexCLI := isOpenAICodexOfficialClientRequest(c)
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
 	clientTransport := GetOpenAIClientTransport(c)
-	// 仅允许 WS 入站请求走 WS 上游，避免出现 HTTP -> WS 协议混用。
-	wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, clientTransport)
+	// 默认仅允许 WS 入站请求走 WS 上游；显式开启时 HTTP /v1/responses
+	// 也可使用上游 WSv2，由 forwarder 负责无会话请求的一次性隔离。
+	httpIngressUpstreamWSEnabled := s.openAIHTTPIngressUpstreamWSEnabled()
+	wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, clientTransport, httpIngressUpstreamWSEnabled)
 	if c != nil {
 		c.Set("openai_ws_transport_decision", string(wsDecision.Transport))
 		c.Set("openai_ws_transport_reason", wsDecision.Reason)
@@ -3905,7 +4003,7 @@ oauthTransformDone:
 				delete(reqBody, unsupportedField)
 				bodyModified = true
 				markPatchDelete(unsupportedField)
-				if unsupportedField == "temperature" || unsupportedField == "top_p" {
+				if unsupportedField == "temperature" || unsupportedField == "top_p" || unsupportedField == "verbosity" {
 					recordOpenAICompatStrippedField(unsupportedField)
 				}
 			}
@@ -4297,6 +4395,7 @@ oauthTransformDone:
 	httpModelFallbackRetryTried := false
 	httpInstructionsRetryTried := false
 	httpUnsupportedPreviousResponseIDRetryTried := false
+	httpReasoningEnabledRetryTried := false
 	for {
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, upstreamStream)
@@ -4406,7 +4505,8 @@ oauthTransformDone:
 					}
 				}
 			}
-			if !httpInvalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest && upstreamCode == "invalid_encrypted_content" {
+			if !httpInvalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest &&
+				isOpenAIInvalidEncryptedContentError(upstreamCode, upstreamMsg, respBody) {
 				removedReasoningItems := trimOpenAIEncryptedReasoningItems(reqBody)
 				previousResponseID := openAIWSPayloadString(reqBody, "previous_response_id")
 				hasFunctionCallOutput := HasFunctionCallOutput(reqBody)
@@ -4476,6 +4576,35 @@ oauthTransformDone:
 					logger.LegacyPrintf(
 						"service.openai_gateway",
 						"[OpenAI] Retrying non-WSv2 request once after dropping unsupported previous_response_id (account: %s)",
+						account.Name,
+					)
+					continue
+				}
+			}
+			if !httpReasoningEnabledRetryTried &&
+				resp.StatusCode == http.StatusBadRequest &&
+				isOpenAIUnsupportedReasoningEnabledError(upstreamCode, upstreamMsg, respBody) {
+				if dropOpenAIReasoningEnabled(reqBody) {
+					body, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
+					if err != nil {
+						return nil, fmt.Errorf("serialize unsupported reasoning.enabled retry body: %w", err)
+					}
+					if account.Type == AccountTypeOAuth && isOpenAIResponsesCompactPath(c) {
+						normalizedBody, normalized, normErr := normalizeOpenAICompactRequestBody(body)
+						if normErr != nil {
+							return nil, normErr
+						}
+						if normalized {
+							body = normalizedBody
+						}
+						reqStream = gjson.GetBytes(body, "stream").Bool()
+					}
+					setOpsUpstreamRequestBody(c, body)
+					httpReasoningEnabledRetryTried = true
+					s.RecordOpenAIAccountRecoveryReason(account.ID, "unsupported_reasoning_enabled")
+					logger.LegacyPrintf(
+						"service.openai_gateway",
+						"[OpenAI] Retrying non-WSv2 request once after dropping unsupported reasoning.enabled (account: %s)",
 						account.Name,
 					)
 					continue
@@ -4883,6 +5012,8 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	fallbackModelRetried := false
 	instructionsRetryTried := false
 	invalidEncryptedContentRetryTried := false
+	previousResponseIDRetryTried := false
+	reasoningEnabledRetryTried := false
 	var upstreamReq *http.Request
 	var resp *http.Response
 	for {
@@ -4963,7 +5094,70 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		isMessagesBridge := isOpenAICompatMessagesBridgeContext(c) ||
 			shouldUseOpenAIMessagesBridgeHeaders(c, body) ||
 			isOpenAICompatMessagesBridgePromptCacheKey(strings.TrimSpace(promptCacheKey))
-		if !invalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest && upstreamCode == "invalid_encrypted_content" {
+		if !previousResponseIDRetryTried &&
+			resp.StatusCode == http.StatusBadRequest &&
+			isOpenAIUnsupportedPreviousResponseIDError(upstreamCode, upstreamMsg) {
+			var reqBody map[string]any
+			if err := json.Unmarshal(body, &reqBody); err != nil {
+				return nil, fmt.Errorf("unmarshal passthrough previous_response_id retry body: %w", err)
+			}
+			previousResponseID := openAIWSPayloadString(reqBody, "previous_response_id")
+			hasFunctionCallOutput := HasFunctionCallOutput(reqBody)
+			if previousResponseID != "" && !hasFunctionCallOutput {
+				delete(reqBody, "previous_response_id")
+				body, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
+				if err != nil {
+					return nil, fmt.Errorf("serialize passthrough previous_response_id retry body: %w", err)
+				}
+				setOpsUpstreamRequestBody(c, body)
+				previousResponseIDRetryTried = true
+				s.RecordOpenAIAccountRecoveryReason(account.ID, "unsupported_previous_response_id")
+				logger.LegacyPrintf(
+					"service.openai_gateway",
+					"[OpenAI 自动透传] retry once after unsupported previous_response_id account=%d has_function_call_output=%v",
+					account.ID,
+					hasFunctionCallOutput,
+				)
+				continue
+			}
+			logger.LegacyPrintf(
+				"service.openai_gateway",
+				"[OpenAI 自动透传] skip previous_response_id retry account=%d previous_response_id_present=%v has_function_call_output=%v",
+				account.ID,
+				previousResponseID != "",
+				hasFunctionCallOutput,
+			)
+		}
+		if !reasoningEnabledRetryTried &&
+			resp.StatusCode == http.StatusBadRequest &&
+			isOpenAIUnsupportedReasoningEnabledError(upstreamCode, upstreamMsg, respBody) {
+			var reqBody map[string]any
+			if err := json.Unmarshal(body, &reqBody); err != nil {
+				return nil, fmt.Errorf("unmarshal passthrough reasoning.enabled retry body: %w", err)
+			}
+			if dropOpenAIReasoningEnabled(reqBody) {
+				body, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
+				if err != nil {
+					return nil, fmt.Errorf("serialize passthrough reasoning.enabled retry body: %w", err)
+				}
+				setOpsUpstreamRequestBody(c, body)
+				reasoningEnabledRetryTried = true
+				s.RecordOpenAIAccountRecoveryReason(account.ID, "unsupported_reasoning_enabled")
+				logger.LegacyPrintf(
+					"service.openai_gateway",
+					"[OpenAI 自动透传] retry once after unsupported reasoning.enabled account=%d",
+					account.ID,
+				)
+				continue
+			}
+			logger.LegacyPrintf(
+				"service.openai_gateway",
+				"[OpenAI 自动透传] skip reasoning.enabled retry because field is absent account=%d",
+				account.ID,
+			)
+		}
+		if !invalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest &&
+			isOpenAIInvalidEncryptedContentError(upstreamCode, upstreamMsg, respBody) {
 			var reqBody map[string]any
 			if err := json.Unmarshal(body, &reqBody); err != nil {
 				return nil, fmt.Errorf("unmarshal passthrough invalid_encrypted_content retry body: %w", err)
@@ -5021,9 +5215,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			continue
 		}
 
-		// 透传模式默认保持原样代理；但 429/529 属于网关必须兜底的
-		// 上游容量类错误，应先触发多账号 failover 以维持基础 SLA。
-		if shouldFailoverOpenAIPassthroughResponse(resp.StatusCode) {
+		// 透传模式默认保持原样代理；但容量、网关和 Cloudflare transient
+		// 错误应先触发多账号 failover 以维持基础 SLA。大请求类错误留给
+		// 错误改写规则返回明确 413，不做无效重试。
+		if shouldFailoverOpenAIPassthroughResponse(resp.StatusCode, respBody) {
 			if fallbackModelRetried {
 				setOpenAIFailoverRequestBody(c, body)
 			}
@@ -5234,10 +5429,12 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	return req, nil
 }
 
-func shouldFailoverOpenAIPassthroughResponse(statusCode int) bool {
+func shouldFailoverOpenAIPassthroughResponse(statusCode int, responseBody []byte) bool {
 	switch statusCode {
-	case http.StatusTooManyRequests, 529:
+	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, 520, 524, 529:
 		return true
+	case http.StatusInternalServerError:
+		return !isOpenAILargeRequestUpstreamError(statusCode, responseBody)
 	default:
 		return false
 	}
@@ -5306,10 +5503,6 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 	}
 	setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
 	logOpenAIInstructionsRequiredDebug(ctx, c, account, resp.StatusCode, upstreamMsg, requestBody, body)
-	// 透传模式保留原始上游错误响应，但运行态账号状态仍需更新，
-	// 避免粘性路由继续复用刚被限流的账号。
-	reqModel, _, _ := extractOpenAIRequestMetaFromBody(requestBody)
-	_ = s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, reqModel)
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 		Platform:             account.Platform,
 		AccountID:            account.ID,
@@ -5322,6 +5515,37 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 		Detail:               upstreamDetail,
 		UpstreamResponseBody: upstreamDetail,
 	})
+
+	// 错误改写规则用于把已知客户端问题（例如大请求）稳定返回给客户端；
+	// 命中时不应再触发账号错误策略或冷却。
+	if status, errType, errMsg, matched := applyErrorPassthroughRule(
+		c,
+		PlatformOpenAI,
+		resp.StatusCode,
+		body,
+		http.StatusBadGateway,
+		"upstream_error",
+		"Upstream request failed",
+	); matched {
+		c.JSON(status, gin.H{
+			"error": gin.H{
+				"type":    errType,
+				"message": errMsg,
+			},
+		})
+		if upstreamMsg == "" {
+			upstreamMsg = errMsg
+		}
+		if upstreamMsg == "" {
+			return fmt.Errorf("upstream error: %d (passthrough rule matched)", resp.StatusCode)
+		}
+		return fmt.Errorf("upstream error: %d (passthrough rule matched) message=%s", resp.StatusCode, upstreamMsg)
+	}
+
+	// 透传模式保留原始上游错误响应，但运行态账号状态仍需更新，
+	// 避免粘性路由继续复用刚被限流的账号。
+	reqModel, _, _ := extractOpenAIRequestMetaFromBody(requestBody)
+	_ = s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, reqModel)
 
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	contentType := resp.Header.Get("Content-Type")
@@ -8890,6 +9114,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	usageLog.BillingType = billingType
 	usageLog.Stream = result.Stream
 	usageLog.OpenAIWSMode = result.OpenAIWSMode
+	usageLog.OpenAIWSProfile = result.OpenAIWSProfile
+	usageLog.OpenAIWSConnReused = result.OpenAIWSConnReused
 	usageLog.RequestType = requestType
 	usageLog.DurationMs = &durationMs
 	usageLog.FirstTokenMs = result.FirstTokenMs
@@ -9474,6 +9700,9 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	if normalizeOpenAIResponseFormatSchemas(reqBody) {
 		changed = true
 	}
+	if normalizeOpenAIToolSchemaLookaroundPatterns(reqBody) {
+		changed = true
+	}
 
 	if !changed {
 		return body, false, nil
@@ -9505,7 +9734,7 @@ func normalizeOpenAIPassthroughBaseBody(body []byte, compact bool, stripTopP boo
 		if _, ok := reqBody[unsupportedField]; ok {
 			delete(reqBody, unsupportedField)
 			changed = true
-			if unsupportedField == "temperature" || unsupportedField == "top_p" {
+			if unsupportedField == "temperature" || unsupportedField == "top_p" || unsupportedField == "verbosity" {
 				recordOpenAICompatStrippedField(unsupportedField)
 			}
 		}
@@ -9535,6 +9764,9 @@ func normalizeOpenAIPassthroughBaseBody(body []byte, compact bool, stripTopP boo
 		changed = true
 	}
 	if normalizeOpenAIResponseFormatSchemas(reqBody) {
+		changed = true
+	}
+	if normalizeOpenAIToolSchemaLookaroundPatterns(reqBody) {
 		changed = true
 	}
 

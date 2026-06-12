@@ -66,6 +66,31 @@ func TestNormalizeOpenAIPassthroughBaseBody_PreservesTopPWhenNotRequested(t *tes
 	require.Equal(t, 0.8, gjson.GetBytes(normalized, "top_p").Float())
 }
 
+func TestNormalizeOpenAIPassthroughBaseBody_StripsTopLevelUnsupportedCompatFields(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","input":[{"type":"message","role":"user","content":"hello"}],"verbosity":"low","enable_thinking":true,"stop_sequences":["END"],"promptCacheKey":"legacy-cache","text":{"verbosity":"low"},"prompt_cache_key":"cache-ok"}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughBaseBody(body, false, false)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(normalized, "verbosity").Exists())
+	require.False(t, gjson.GetBytes(normalized, "enable_thinking").Exists())
+	require.False(t, gjson.GetBytes(normalized, "stop_sequences").Exists())
+	require.False(t, gjson.GetBytes(normalized, "promptCacheKey").Exists())
+	require.Equal(t, "low", gjson.GetBytes(normalized, "text.verbosity").String())
+	require.Equal(t, "cache-ok", gjson.GetBytes(normalized, "prompt_cache_key").String())
+}
+
+func TestNormalizeOpenAIPassthroughBaseBody_StripsOnlyToolSchemaLookaroundPatterns(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","input":[{"type":"message","role":"user","content":"hello"}],"tools":[{"type":"function","name":"read_file","parameters":{"type":"object","properties":{"fileKey":{"type":"string","pattern":"^(?!/tmp/).+$"},"safeKey":{"type":"string","pattern":"^[A-Za-z0-9_-]+$"},"nested":{"type":"object","properties":{"child":{"type":"string","pattern":"(?<=prefix).+"}}}}}}]}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughBaseBody(body, false, false)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(normalized, "tools.0.parameters.properties.fileKey.pattern").Exists())
+	require.False(t, gjson.GetBytes(normalized, "tools.0.parameters.properties.nested.properties.child.pattern").Exists())
+	require.Equal(t, "^[A-Za-z0-9_-]+$", gjson.GetBytes(normalized, "tools.0.parameters.properties.safeKey.pattern").String())
+}
+
 func TestNormalizeOpenAIPassthroughBaseBody_NormalizesResponseFormatSchemaRequired(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.4","input":"hello","text":{"format":{"type":"json_schema","name":"codex_output_schema","schema":{"type":"object","required":["action_dispatch_maps"],"properties":{"action_dispatch":{"type":"string"},"summary":{"type":"string"}}}}}}`)
 
@@ -73,6 +98,8 @@ func TestNormalizeOpenAIPassthroughBaseBody_NormalizesResponseFormatSchemaRequir
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.JSONEq(t, `["action_dispatch","summary"]`, gjson.GetBytes(normalized, "text.format.schema.required").Raw)
+	require.True(t, gjson.GetBytes(normalized, "text.format.schema.additionalProperties").Exists())
+	require.False(t, gjson.GetBytes(normalized, "text.format.schema.additionalProperties").Bool())
 }
 
 func TestNormalizeOpenAIPassthroughOAuthBody_NormalizesToolRoleInput(t *testing.T) {

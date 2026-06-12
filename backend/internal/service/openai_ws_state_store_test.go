@@ -15,29 +15,69 @@ func TestOpenAIWSStateStore_BindGetDeleteResponseAccount(t *testing.T) {
 	store := NewOpenAIWSStateStore(cache)
 	ctx := context.Background()
 	groupID := int64(7)
+	apiKeyID := int64(11)
 
-	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_abc", 101, time.Minute))
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, apiKeyID, "resp_abc", 101, time.Minute))
 
-	accountID, err := store.GetResponseAccount(ctx, groupID, "resp_abc")
+	accountID, err := store.GetResponseAccount(ctx, groupID, apiKeyID, "resp_abc")
 	require.NoError(t, err)
 	require.Equal(t, int64(101), accountID)
 
-	require.NoError(t, store.DeleteResponseAccount(ctx, groupID, "resp_abc"))
-	accountID, err = store.GetResponseAccount(ctx, groupID, "resp_abc")
+	require.NoError(t, store.DeleteResponseAccount(ctx, groupID, apiKeyID, "resp_abc"))
+	accountID, err = store.GetResponseAccount(ctx, groupID, apiKeyID, "resp_abc")
 	require.NoError(t, err)
 	require.Zero(t, accountID)
 }
 
+func TestOpenAIWSStateStore_ResponseAccountLocalCacheIsGroupIsolated(t *testing.T) {
+	store := NewOpenAIWSStateStore(nil)
+	ctx := context.Background()
+
+	require.NoError(t, store.BindResponseAccount(ctx, 7, 11, "resp_shared", 101, time.Minute))
+
+	accountID, err := store.GetResponseAccount(ctx, 8, 11, "resp_shared")
+	require.NoError(t, err)
+	require.Zero(t, accountID, "local response account cache must not bypass group isolation")
+}
+
+func TestOpenAIWSStateStore_ResponseStateIsAPIKeyIsolated(t *testing.T) {
+	store := NewOpenAIWSStateStore(nil)
+	ctx := context.Background()
+
+	require.NoError(t, store.BindResponseAccount(ctx, 7, 11, "resp_shared", 101, time.Minute))
+	accountID, err := store.GetResponseAccount(ctx, 7, 12, "resp_shared")
+	require.NoError(t, err)
+	require.Zero(t, accountID, "response account cache must not cross API keys in the same group")
+
+	store.BindResponseConn(7, 11, "resp_shared", "conn_11", time.Minute)
+	_, ok := store.GetResponseConn(7, 12, "resp_shared")
+	require.False(t, ok, "response conn cache must not cross API keys in the same group")
+
+	cache := &stubGatewayCache{}
+	writer := NewOpenAIWSStateStore(cache)
+	require.NoError(t, writer.BindResponseAccount(ctx, 7, 11, "resp_shared_redis", 201, time.Minute))
+	reader := NewOpenAIWSStateStore(cache)
+	accountID, err = reader.GetResponseAccount(ctx, 7, 12, "resp_shared_redis")
+	require.NoError(t, err)
+	require.Zero(t, accountID, "redis response account cache must not cross API keys in the same group")
+	accountID, err = reader.GetResponseAccount(ctx, 7, 11, "resp_shared_redis")
+	require.NoError(t, err)
+	require.Equal(t, int64(201), accountID)
+}
+
 func TestOpenAIWSStateStore_ResponseConnTTL(t *testing.T) {
 	store := NewOpenAIWSStateStore(nil)
-	store.BindResponseConn("resp_conn", "conn_1", 30*time.Millisecond)
+	store.BindResponseConn(7, 11, "resp_conn", "conn_1", 30*time.Millisecond)
 
-	connID, ok := store.GetResponseConn("resp_conn")
+	connID, ok := store.GetResponseConn(7, 11, "resp_conn")
 	require.True(t, ok)
 	require.Equal(t, "conn_1", connID)
 
+	_, ok = store.GetResponseConn(8, 11, "resp_conn")
+	require.False(t, ok, "local response conn cache must not bypass group isolation")
+
 	time.Sleep(60 * time.Millisecond)
-	_, ok = store.GetResponseConn("resp_conn")
+	_, ok = store.GetResponseConn(7, 11, "resp_conn")
 	require.False(t, ok)
 }
 
@@ -81,15 +121,15 @@ func TestOpenAIWSStateStore_GetResponseAccount_NoStaleAfterCacheMiss(t *testing.
 	ctx := context.Background()
 	groupID := int64(17)
 	responseID := "resp_cache_stale"
-	cacheKey := openAIWSResponseAccountCacheKey(responseID)
+	cacheKey := openAIWSResponseAccountCacheKey(11, responseID)
 
 	cache.sessionBindings[cacheKey] = 501
-	accountID, err := store.GetResponseAccount(ctx, groupID, responseID)
+	accountID, err := store.GetResponseAccount(ctx, groupID, 11, responseID)
 	require.NoError(t, err)
 	require.Equal(t, int64(501), accountID)
 
 	delete(cache.sessionBindings, cacheKey)
-	accountID, err = store.GetResponseAccount(ctx, groupID, responseID)
+	accountID, err = store.GetResponseAccount(ctx, groupID, 11, responseID)
 	require.NoError(t, err)
 	require.Zero(t, accountID, "上游缓存失效后不应继续命中本地陈旧映射")
 }
@@ -199,14 +239,14 @@ func TestOpenAIWSStateStore_RedisOpsUseShortTimeout(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(5)
 
-	err := store.BindResponseAccount(ctx, groupID, "resp_timeout_probe", 11, time.Minute)
+	err := store.BindResponseAccount(ctx, groupID, 0, "resp_timeout_probe", 11, time.Minute)
 	require.Error(t, err)
 
-	accountID, getErr := store.GetResponseAccount(ctx, groupID, "resp_timeout_probe")
+	accountID, getErr := store.GetResponseAccount(ctx, groupID, 0, "resp_timeout_probe")
 	require.NoError(t, getErr)
 	require.Equal(t, int64(11), accountID, "本地缓存命中应优先返回已绑定账号")
 
-	require.NoError(t, store.DeleteResponseAccount(ctx, groupID, "resp_timeout_probe"))
+	require.NoError(t, store.DeleteResponseAccount(ctx, groupID, 0, "resp_timeout_probe"))
 
 	require.True(t, probe.setHasDeadline, "SetSessionAccountID 应携带独立超时上下文")
 	require.True(t, probe.deleteHasDeadline, "DeleteSessionAccountID 应携带独立超时上下文")
@@ -218,7 +258,7 @@ func TestOpenAIWSStateStore_RedisOpsUseShortTimeout(t *testing.T) {
 
 	probe2 := &openAIWSStateStoreTimeoutProbeCache{}
 	store2 := NewOpenAIWSStateStore(probe2)
-	accountID2, err2 := store2.GetResponseAccount(ctx, groupID, "resp_cache_only")
+	accountID2, err2 := store2.GetResponseAccount(ctx, groupID, 0, "resp_cache_only")
 	require.NoError(t, err2)
 	require.Equal(t, int64(123), accountID2)
 	require.True(t, probe2.getHasDeadline, "GetSessionAccountID 在缓存未命中时应携带独立超时上下文")

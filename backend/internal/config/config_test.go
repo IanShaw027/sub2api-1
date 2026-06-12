@@ -174,6 +174,9 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if cfg.Gateway.OpenAIWS.IngressModeDefault != "ctx_pool" {
 		t.Fatalf("Gateway.OpenAIWS.IngressModeDefault = %q, want %q", cfg.Gateway.OpenAIWS.IngressModeDefault, "ctx_pool")
 	}
+	if cfg.Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled {
+		t.Fatalf("Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled = true, want false")
+	}
 }
 
 func TestLoadDefaultOpenAIHTTP2Enabled(t *testing.T) {

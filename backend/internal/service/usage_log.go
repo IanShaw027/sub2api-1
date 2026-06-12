@@ -168,10 +168,14 @@ type UsageLog struct {
 	RequestType  RequestType
 	Stream       bool
 	OpenAIWSMode bool
-	DurationMs   *int
-	FirstTokenMs *int
-	UserAgent    *string
-	IPAddress    *string
+	// OpenAIWSProfile 标识上游 WS 连接类别："neutral"/"session_bound"，空表示非 WS 路径。
+	OpenAIWSProfile string
+	// OpenAIWSConnReused 标识本次请求是否复用了已建立的上游 WS 连接（省去握手）。
+	OpenAIWSConnReused bool
+	DurationMs         *int
+	FirstTokenMs       *int
+	UserAgent          *string
+	IPAddress          *string
 
 	// Cache TTL Override 标记（管理员强制替换了缓存 TTL 计费）
 	CacheTTLOverridden bool

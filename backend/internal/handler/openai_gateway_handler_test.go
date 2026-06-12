@@ -261,6 +261,17 @@ func TestOpenAIEnsureForwardErrorResponse_WritesFallbackWhenNotWritten(t *testin
 	assert.Equal(t, "Upstream request failed", errorObj["message"])
 }
 
+func TestOpenAIWSIngressFallbackSessionSeedIsConnectionScoped(t *testing.T) {
+	groupID := int64(7)
+
+	first := openAIWSIngressFallbackSessionSeed(100, 200, &groupID)
+	second := openAIWSIngressFallbackSessionSeed(100, 200, &groupID)
+
+	require.NotEmpty(t, first)
+	require.NotEmpty(t, second)
+	require.NotEqual(t, first, second, "same API key must not share one fallback session across client websocket connections")
+}
+
 // Writer 已写后 ensureForwardErrorResponse 必须仍然把错误信息以 SSE
 // 形式追加给客户端（streamStarted 强制 true）。
 // 这是 case B 修复：旧实现遇到 Writer.Written 直接 return false，
@@ -1455,6 +1466,7 @@ func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_WaitTimeoutRequestsRese
 	release, status := h.acquireResponsesAccountSlot(
 		c,
 		nil,
+		0,
 		"sticky-timeout",
 		"",
 		selection,
@@ -1481,7 +1493,7 @@ func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_WaitTimeoutClearsPrevio
 		},
 	}
 	store := service.NewOpenAIWSStateStore(stickyCache)
-	require.NoError(t, store.BindResponseAccount(context.Background(), 0, "resp_timeout_prev", 13011, time.Hour))
+	require.NoError(t, store.BindResponseAccount(context.Background(), 0, 0, "resp_timeout_prev", 13011, time.Hour))
 
 	concurrencyCache := &concurrencyCacheMock{
 		acquireAccountSlotFn: func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
@@ -1539,6 +1551,7 @@ func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_WaitTimeoutClearsPrevio
 	release, status := h.acquireResponsesAccountSlot(
 		c,
 		nil,
+		0,
 		"sticky-timeout-prev",
 		"resp_timeout_prev",
 		selection,
@@ -1549,7 +1562,7 @@ func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_WaitTimeoutClearsPrevio
 	require.Nil(t, release)
 	require.Equal(t, accountSlotAcquireRetry, status)
 	freshStore := service.NewOpenAIWSStateStore(stickyCache)
-	accountID, err := freshStore.GetResponseAccount(context.Background(), 0, "resp_timeout_prev")
+	accountID, err := freshStore.GetResponseAccount(context.Background(), 0, 0, "resp_timeout_prev")
 	require.NoError(t, err)
 	require.Zero(t, accountID)
 }

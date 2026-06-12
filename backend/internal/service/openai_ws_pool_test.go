@@ -1707,3 +1707,165 @@ func TestOpenAIWSConnPool_SnapshotTransportMetrics(t *testing.T) {
 	require.Equal(t, int64(2), snapshot.ProxyClientCacheMisses)
 	require.InDelta(t, 1.0/3.0, snapshot.TransportReuseRatio, 0.0001)
 }
+
+func TestOpenAIWSConnPool_ProfileIsolation(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 4
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 4
+	cfg.Gateway.OpenAIWS.StickyReservePercent = 50
+
+	pool := newOpenAIWSConnPool(cfg)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 900, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	// 先建立一个 session_bound 空闲连接。
+	leaseSession, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+	})
+	require.NoError(t, err)
+	leaseSession.Release()
+	require.Equal(t, 1, dialer.DialCount())
+
+	// neutral 请求不得借用 session_bound 空闲连接，应新建。
+	leaseNeutral, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		Profile: openAIWSConnProfileNeutral,
+	})
+	require.NoError(t, err)
+	require.Equal(t, openAIWSConnProfileNeutral, leaseNeutral.conn.profile)
+	require.False(t, leaseNeutral.Reused(), "neutral 不应复用 session_bound 连接")
+	leaseNeutral.Release()
+	require.Equal(t, 2, dialer.DialCount())
+
+	// neutral 再次请求应复用上一条 neutral 空闲连接。
+	leaseNeutral2, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		Profile: openAIWSConnProfileNeutral,
+	})
+	require.NoError(t, err)
+	require.True(t, leaseNeutral2.Reused(), "neutral 应复用已建立的 neutral 连接")
+	leaseNeutral2.Release()
+	require.Equal(t, 2, dialer.DialCount())
+
+	// session_bound 请求应复用 session_bound 连接，不借 neutral。
+	leaseSession2, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+	})
+	require.NoError(t, err)
+	require.True(t, leaseSession2.Reused())
+	require.Equal(t, openAIWSConnProfileSessionBound, leaseSession2.conn.profile)
+	leaseSession2.Release()
+	require.Equal(t, 2, dialer.DialCount())
+}
+
+func TestOpenAIWSConnPool_SessionEvictsIdleNeutralWhenFull(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.StickyReservePercent = 50
+
+	pool := newOpenAIWSConnPool(cfg)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 901, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	// 占满总容量：1 个在租 session_bound + 1 个空闲 neutral。
+	leaseSession, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+	})
+	require.NoError(t, err)
+	leaseNeutral, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		Profile: openAIWSConnProfileNeutral,
+	})
+	require.NoError(t, err)
+	leaseNeutral.Release() // neutral 变空闲
+	require.Equal(t, 2, dialer.DialCount())
+
+	// 等待可能的异步预热 settle，确保 creating 归零，使后续断言不受预热竞态影响。
+	require.Eventually(t, func() bool {
+		ap, ok := pool.getAccountPool(account.ID)
+		if !ok || ap == nil {
+			return false
+		}
+		ap.mu.Lock()
+		defer ap.mu.Unlock()
+		return ap.creating == 0
+	}, time.Second, 5*time.Millisecond)
+
+	// 第二个 session_bound 请求：总量已满，应淘汰空闲 neutral 后新建 session_bound。
+	dialBefore := dialer.DialCount()
+	leaseSession2, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+	})
+	require.NoError(t, err)
+	require.Equal(t, openAIWSConnProfileSessionBound, leaseSession2.conn.profile)
+	require.False(t, leaseSession2.Reused(), "应新建 session_bound 而非复用")
+	require.Equal(t, dialBefore+1, dialer.DialCount(), "应淘汰空闲 neutral 并新建一条 session_bound")
+
+	// 空闲 neutral 应已被淘汰，连接总数不超过上限。
+	ap, ok := pool.getAccountPool(account.ID)
+	require.True(t, ok)
+	ap.mu.Lock()
+	require.Equal(t, 0, countConnsByProfileLocked(ap, openAIWSConnProfileNeutral), "空闲 neutral 应被淘汰腾出粘性容量")
+	ap.mu.Unlock()
+
+	leaseSession.Release()
+	leaseSession2.Release()
+}
+
+func TestOpenAIWSConnPool_NeutralMaxConns(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 10
+	cfg.Gateway.OpenAIWS.StickyReservePercent = 50
+	pool := newOpenAIWSConnPool(cfg)
+	require.Equal(t, 5, pool.neutralMaxConns(10))
+	require.Equal(t, 1, pool.neutralMaxConns(1), "总上限>0 时 neutral 至少 1")
+
+	cfg.Gateway.OpenAIWS.StickyReservePercent = 100
+	require.Equal(t, 1, pool.neutralMaxConns(10), "全部预留时 neutral 仍保底 1")
+	require.Equal(t, 0, pool.neutralMaxConns(0))
+}
+
+func TestOpenAIWSConnPool_EnsureTargetIdleNeutral(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 8
+	cfg.Gateway.OpenAIWS.StickyReservePercent = 50
+	cfg.Gateway.OpenAIWS.DynamicMaxConnsByAccountConcurrencyEnabled = false
+
+	pool := newOpenAIWSConnPool(cfg)
+	dialer := &openAIWSFakeDialer{}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 902, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	// 一次 neutral 请求建立快照后释放，触发异步中性预热补足到 minIdle。
+	lease, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		Profile: openAIWSConnProfileNeutral,
+	})
+	require.NoError(t, err)
+	lease.Release()
+
+	require.Eventually(t, func() bool {
+		ap, ok := pool.getAccountPool(account.ID)
+		if !ok || ap == nil {
+			return false
+		}
+		ap.mu.Lock()
+		defer ap.mu.Unlock()
+		return countConnsByProfileLocked(ap, openAIWSConnProfileNeutral) >= 2
+	}, 2*time.Second, 10*time.Millisecond, "中性预热应补足到 minIdle 条 neutral 连接")
+}

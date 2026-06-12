@@ -92,6 +92,8 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
 			createdAt,
+			sqlmock.AnyArg(), // openai_ws_profile
+			sqlmock.AnyArg(), // openai_ws_conn_reused
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(99), createdAt))
 
@@ -176,6 +178,8 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
 			createdAt,
+			sqlmock.AnyArg(), // openai_ws_profile
+			sqlmock.AnyArg(), // openai_ws_conn_reused
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(100), createdAt))
 
@@ -762,6 +766,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},
 			sql.NullFloat64{},
 			now,
+			sql.NullString{}, // openai_ws_profile
+			false,            // openai_ws_conn_reused
 		}})
 		require.NoError(t, err)
 		require.Equal(t, 2, log.ImageCount)
@@ -831,6 +837,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
 			now,
+			sql.NullString{}, // openai_ws_profile
+			false,             // openai_ws_conn_reused
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
@@ -884,6 +892,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
 			now,
+			sql.NullString{}, // openai_ws_profile
+			false,             // openai_ws_conn_reused
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
@@ -937,6 +947,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
 			now,
+			sql.NullString{}, // openai_ws_profile
+			false,             // openai_ws_conn_reused
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)

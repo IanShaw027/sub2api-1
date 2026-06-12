@@ -326,6 +326,48 @@ func TestOpenAIGatewayService_GenerateSessionHash_AttachesLegacyHashToContext(t 
 	require.NotEmpty(t, openAILegacySessionHashFromContext(c.Request.Context()))
 }
 
+func TestOpenAIGatewayService_GenerateSessionHash_IsolatesExplicitSessionByAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &OpenAIGatewayService{}
+
+	newContext := func(apiKeyID int64, sessionID string) *gin.Context {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("session_id", sessionID)
+		c.Set("api_key", &APIKey{ID: apiKeyID})
+		return c
+	}
+
+	sameKeySessionA := svc.GenerateSessionHash(newContext(11, "session-a"), nil)
+	sameKeySessionB := svc.GenerateSessionHash(newContext(11, "session-b"), nil)
+	require.NotEmpty(t, sameKeySessionA)
+	require.NotEmpty(t, sameKeySessionB)
+	require.NotEqual(t, sameKeySessionA, sameKeySessionB, "same API key must isolate different explicit sessions")
+
+	keyOneHash := svc.GenerateSessionHash(newContext(11, "shared-session"), nil)
+	keyTwoHash := svc.GenerateSessionHash(newContext(12, "shared-session"), nil)
+	require.NotEmpty(t, keyOneHash)
+	require.NotEmpty(t, keyTwoHash)
+	require.NotEqual(t, keyOneHash, keyTwoHash, "different API keys must not share the same raw session namespace")
+
+	keyOneHashAgain := svc.GenerateSessionHash(newContext(11, "shared-session"), nil)
+	require.Equal(t, keyOneHash, keyOneHashAgain, "same API key and same explicit session should stay sticky")
+}
+
+func TestOpenAIGatewayService_GenerateSessionHash_NoExplicitSignalDoesNotCreateSharedSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", nil)
+	c.Set("api_key", &APIKey{ID: 11})
+
+	svc := &OpenAIGatewayService{}
+	body := []byte(`{"model":"gpt-5.4","messages":[{"role":"system","content":"You are helpful."},{"role":"user","content":"Hello"}]}`)
+
+	require.Empty(t, svc.GenerateSessionHash(c, body), "content alone is not a stable client session boundary")
+}
+
 func TestOpenAIGatewayService_GenerateExplicitSessionHash_SkipsContentFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := &OpenAIGatewayService{}
@@ -379,6 +421,22 @@ func TestOpenAIGatewayService_GenerateSessionHashWithFallback(t *testing.T) {
 	require.Equal(t, "", empty)
 }
 
+func TestOpenAIGatewayService_GenerateSessionHashWithFallback_UsesFallbackWhenNoExplicitSignal(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Set("api_key", &APIKey{ID: 11})
+
+	svc := &OpenAIGatewayService{}
+	seed := "openai_ws_ingress_conn:local-request-1"
+	body := []byte(`{"model":"gpt-5.4","input":[{"type":"input_text","text":"hello"}]}`)
+
+	got := svc.GenerateSessionHashWithFallback(c, body, seed)
+	want := fmt.Sprintf("%016x", xxhash.Sum64String(seed))
+	require.Equal(t, want, got, "WS ingress fallback must be connection/request scoped, not content scoped")
+}
+
 func TestOpenAIGatewayService_ResolveOpenAICompactSessionID_ContentFallbackIsDeterministic(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
@@ -400,7 +458,7 @@ func TestOpenAIGatewayService_ResolveOpenAICompactSessionID_ContentFallbackIsDet
 	require.NotContains(t, first, "different")
 }
 
-func TestOpenAIGatewayService_GenerateSessionHash_ContentFallback(t *testing.T) {
+func TestOpenAIGatewayService_GenerateSessionHash_ContentDoesNotCreateStickySession(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -411,18 +469,7 @@ func TestOpenAIGatewayService_GenerateSessionHash_ContentFallback(t *testing.T) 
 	body := []byte(`{"model":"gpt-5.4","messages":[{"role":"system","content":"You are helpful."},{"role":"user","content":"Hello"}]}`)
 
 	hash := svc.GenerateSessionHash(c, body)
-	require.NotEmpty(t, hash, "content-based fallback should produce a hash")
-
-	hash2 := svc.GenerateSessionHash(c, body)
-	require.Equal(t, hash, hash2, "same content should produce same hash")
-
-	bodyExtended := []byte(`{"model":"gpt-5.4","messages":[{"role":"system","content":"You are helpful."},{"role":"user","content":"Hello"},{"role":"assistant","content":"Hi!"},{"role":"user","content":"How are you?"}]}`)
-	hashExtended := svc.GenerateSessionHash(c, bodyExtended)
-	require.Equal(t, hash, hashExtended, "hash should be stable across later turns")
-
-	bodyDifferent := []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"Different question"}]}`)
-	hashDifferent := svc.GenerateSessionHash(c, bodyDifferent)
-	require.NotEqual(t, hash, hashDifferent, "different content should produce different hash")
+	require.Empty(t, hash, "content alone is not a reliable client session boundary")
 }
 
 func TestClassifyOpenAICodexCompatFallback(t *testing.T) {
@@ -858,12 +905,11 @@ func TestOpenAIGatewayService_GenerateSessionHash_ExplicitSignalWinsOverContent(
 	body := []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"Hello"}]}`)
 
 	contentHash := svc.GenerateSessionHash(c, body)
-	require.NotEmpty(t, contentHash)
+	require.Empty(t, contentHash)
 
 	c.Request.Header.Set("session_id", "explicit-session")
 	explicitHash := svc.GenerateSessionHash(c, body)
 	require.NotEmpty(t, explicitHash)
-	require.NotEqual(t, contentHash, explicitHash, "explicit session_id should override content fallback")
 }
 
 func TestOpenAIGatewayService_Forward_StripsUnsupportedFieldsConsistently(t *testing.T) {

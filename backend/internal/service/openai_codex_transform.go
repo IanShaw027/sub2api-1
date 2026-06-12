@@ -1408,7 +1408,13 @@ func normalizeOpenAIStrictFunctionToolSchemas(reqBody map[string]any) bool {
 	modified := false
 	for _, rawTool := range tools {
 		toolMap, ok := rawTool.(map[string]any)
-		if !ok || !openAIStrictFunctionToolEnabled(toolMap) {
+		if !ok {
+			continue
+		}
+		if stripOpenAIToolSchemaLookaroundPatterns(toolMap) {
+			modified = true
+		}
+		if !openAIStrictFunctionToolEnabled(toolMap) {
 			continue
 		}
 		if normalizeOpenAIStrictFunctionParameters(toolMap) {
@@ -1417,6 +1423,116 @@ func normalizeOpenAIStrictFunctionToolSchemas(reqBody map[string]any) bool {
 	}
 
 	return modified
+}
+
+func normalizeOpenAIToolSchemaLookaroundPatterns(reqBody map[string]any) bool {
+	if reqBody == nil {
+		return false
+	}
+
+	tools, ok := reqBody["tools"].([]any)
+	if !ok || len(tools) == 0 {
+		return false
+	}
+
+	modified := false
+	for _, rawTool := range tools {
+		toolMap, ok := rawTool.(map[string]any)
+		if !ok {
+			continue
+		}
+		if stripOpenAIToolSchemaLookaroundPatterns(toolMap) {
+			modified = true
+		}
+	}
+	return modified
+}
+
+func stripOpenAIToolSchemaLookaroundPatterns(toolMap map[string]any) bool {
+	if toolMap == nil || strings.TrimSpace(firstNonEmptyString(toolMap["type"])) != "function" {
+		return false
+	}
+
+	modified := false
+	if params, ok := toolMap["parameters"].(map[string]any); ok {
+		if stripOpenAIJSONSchemaLookaroundPatterns(params) {
+			modified = true
+		}
+	}
+	if function, ok := toolMap["function"].(map[string]any); ok && function != nil {
+		if params, ok := function["parameters"].(map[string]any); ok {
+			if stripOpenAIJSONSchemaLookaroundPatterns(params) {
+				modified = true
+			}
+		}
+	}
+	return modified
+}
+
+func stripOpenAIJSONSchemaLookaroundPatterns(schema map[string]any) bool {
+	if schema == nil {
+		return false
+	}
+
+	modified := false
+	if pattern, ok := schema["pattern"].(string); ok && openAIRegexPatternUsesLookaround(pattern) {
+		delete(schema, "pattern")
+		modified = true
+	}
+
+	if properties, ok := schema["properties"].(map[string]any); ok {
+		for _, rawProperty := range properties {
+			propertySchema, ok := rawProperty.(map[string]any)
+			if !ok {
+				continue
+			}
+			if stripOpenAIJSONSchemaLookaroundPatterns(propertySchema) {
+				modified = true
+			}
+		}
+	}
+
+	switch items := schema["items"].(type) {
+	case map[string]any:
+		if stripOpenAIJSONSchemaLookaroundPatterns(items) {
+			modified = true
+		}
+	case []any:
+		for _, rawItem := range items {
+			itemSchema, ok := rawItem.(map[string]any)
+			if !ok {
+				continue
+			}
+			if stripOpenAIJSONSchemaLookaroundPatterns(itemSchema) {
+				modified = true
+			}
+		}
+	}
+
+	for _, key := range []string{"anyOf", "oneOf", "allOf"} {
+		rawSchemas, ok := schema[key].([]any)
+		if !ok {
+			continue
+		}
+		for _, rawSchema := range rawSchemas {
+			childSchema, ok := rawSchema.(map[string]any)
+			if !ok {
+				continue
+			}
+			if stripOpenAIJSONSchemaLookaroundPatterns(childSchema) {
+				modified = true
+			}
+		}
+	}
+
+	return modified
+}
+
+func openAIRegexPatternUsesLookaround(pattern string) bool {
+	return strings.Contains(pattern, "(?=") ||
+		strings.Contains(pattern, "(?!") ||
+		strings.Contains(pattern, "(?<=") ||
+		strings.Contains(pattern, "(?<!")
 }
 
 func normalizeOpenAIResponseFormatSchemas(reqBody map[string]any) bool {
@@ -1482,6 +1598,10 @@ func normalizeOpenAIResponseJSONSchema(schema map[string]any) bool {
 		}
 		if !openAIResponseSchemaRequiredEquals(schema["required"], required) {
 			schema["required"] = required
+			modified = true
+		}
+		if additionalProperties, ok := schema["additionalProperties"].(bool); !ok || additionalProperties {
+			schema["additionalProperties"] = false
 			modified = true
 		}
 	}

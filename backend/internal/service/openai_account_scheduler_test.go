@@ -325,7 +325,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabledUsesLega
 	}
 
 	store := svc.getOpenAIWSStateStore()
-	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_disabled_001", 36001, time.Hour))
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, 0, "resp_disabled_001", 36001, time.Hour))
 	require.False(t, svc.isOpenAIAdvancedSchedulerEnabled(ctx))
 
 	selection, decision, err := svc.SelectAccountWithScheduler(
@@ -484,7 +484,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_EnabledUsesAdvancedPrev
 	}
 
 	store := svc.getOpenAIWSStateStore()
-	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_enabled_001", 37001, time.Hour))
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, 0, "resp_enabled_001", 37001, time.Hour))
 	require.True(t, svc.isOpenAIAdvancedSchedulerEnabled(ctx))
 
 	selection, decision, err := svc.SelectAccountWithScheduler(
@@ -809,6 +809,7 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageIntent
 			selection, _, err := svc.SelectAccountWithSchedulerForResponses(
 				ctx,
 				&groupID,
+				0,
 				"",
 				"",
 				"gpt-5.4",
@@ -909,6 +910,7 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_NoImageInte
 	selection, _, err := svc.SelectAccountWithSchedulerForResponses(
 		ctx,
 		&groupID,
+		0,
 		"",
 		sessionHash,
 		"gpt-5.4",
@@ -1003,6 +1005,7 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_ImageContex
 	selection, _, err := svc.SelectAccountWithSchedulerForResponses(
 		ctx,
 		&groupID,
+		0,
 		"",
 		"",
 		"gpt-5.4",
@@ -1325,7 +1328,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_PreviousResponseSticky(
 	}
 
 	store := svc.getOpenAIWSStateStore()
-	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_prev_001", account.ID, time.Hour))
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, 0, "resp_prev_001", account.ID, time.Hour))
 
 	selection, decision, err := svc.SelectAccountWithScheduler(
 		ctx,
@@ -2285,7 +2288,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_StickyReserveLimitsFres
 	}
 
 	store := svc.getOpenAIWSStateStore()
-	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_reserved_previous", 6101, time.Hour))
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, 0, "resp_reserved_previous", 6101, time.Hour))
 	previousSelection, previousDecision, err := svc.SelectAccountWithScheduler(
 		ctx,
 		&groupID,
