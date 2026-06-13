@@ -29,8 +29,10 @@ type TempUnschedCache interface {
 // 按 (accountID, ruleFingerprint) 维度独立计数，用于"窗口内连续命中 N 次才触发"的阈值判定。
 type TempUnschedCounterCache interface {
 	// IncrementTempUnschedCount 增加某账户某条规则的命中计数，返回当前计数值。
-	// windowMinutes 是计数窗口（分钟），首次写入时设置过期，窗口滚动后自动重置。
+	// windowMinutes 是计数窗口（分钟），每次命中刷新过期时间，窗口滚动后自动重置。
 	IncrementTempUnschedCount(ctx context.Context, accountID int64, ruleFingerprint string, windowMinutes int) (int64, error)
+	// IncrementTempUnschedThreshold 原子地增加计数、判断阈值，并在达阈值时清零。
+	IncrementTempUnschedThreshold(ctx context.Context, accountID int64, ruleFingerprint string, windowMinutes int, thresholdCount int) (int64, bool, error)
 	// ResetTempUnschedCount 重置某账户某条规则的命中计数（触发后清零）。
 	ResetTempUnschedCount(ctx context.Context, accountID int64, ruleFingerprint string) error
 }
@@ -44,7 +46,7 @@ func tempUnschedRuleFingerprint(rule TempUnschedulableRule) string {
 		}
 	}
 	sort.Strings(keywords)
-	return fmt.Sprintf("status=%d;keywords=%s;duration=%d", rule.ErrorCode, strings.Join(keywords, ","), rule.DurationMinutes)
+	return fmt.Sprintf("status=%d;keywords=%s", rule.ErrorCode, strings.Join(keywords, ","))
 }
 
 // TimeoutCounterCache 超时计数器缓存接口

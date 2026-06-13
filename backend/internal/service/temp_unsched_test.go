@@ -74,6 +74,27 @@ func TestMatchTempUnschedKeyword(t *testing.T) {
 	}
 }
 
+func TestTempUnschedRuleFingerprintIgnoresDuration(t *testing.T) {
+	base := TempUnschedulableRule{
+		ErrorCode:       502,
+		Keywords:        []string{" overloaded ", "CAPACITY"},
+		DurationMinutes: 10,
+	}
+	sameRuleDifferentDuration := TempUnschedulableRule{
+		ErrorCode:       502,
+		Keywords:        []string{"capacity", "overloaded"},
+		DurationMinutes: 30,
+	}
+	differentKeywords := TempUnschedulableRule{
+		ErrorCode:       502,
+		Keywords:        []string{"upstream request failed"},
+		DurationMinutes: 10,
+	}
+
+	require.Equal(t, tempUnschedRuleFingerprint(base), tempUnschedRuleFingerprint(sameRuleDifferentDuration))
+	require.NotEqual(t, tempUnschedRuleFingerprint(base), tempUnschedRuleFingerprint(differentKeywords))
+}
+
 // TestAccountIsSchedulable_TempUnschedulable 测试临时限流账号不可调度
 func TestAccountIsSchedulable_TempUnschedulable(t *testing.T) {
 	future := time.Now().Add(10 * time.Minute)

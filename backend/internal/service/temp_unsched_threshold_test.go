@@ -38,6 +38,24 @@ func (f *fakeTempUnschedCounter) IncrementTempUnschedCount(_ context.Context, ac
 	return f.counts[k], nil
 }
 
+func (f *fakeTempUnschedCounter) IncrementTempUnschedThreshold(_ context.Context, accountID int64, ruleFingerprint string, _ int, thresholdCount int) (int64, bool, error) {
+	if f.incErr != nil {
+		return 0, false, f.incErr
+	}
+	if thresholdCount < 1 {
+		thresholdCount = 1
+	}
+	k := f.key(accountID, ruleFingerprint)
+	f.counts[k]++
+	count := f.counts[k]
+	if count >= int64(thresholdCount) {
+		f.resetCalls[k]++
+		f.counts[k] = 0
+		return count, true, nil
+	}
+	return count, false, nil
+}
+
 func (f *fakeTempUnschedCounter) ResetTempUnschedCount(_ context.Context, accountID int64, ruleFingerprint string) error {
 	k := f.key(accountID, ruleFingerprint)
 	f.resetCalls[k]++
@@ -105,7 +123,7 @@ func TestTryTempUnschedulable_ThresholdWindow(t *testing.T) {
 	// 第三次命中触发
 	require.True(t, svc.tryTempUnschedulable(context.Background(), account, 502, body))
 	require.Equal(t, 1, repo.tempCalls, "达阈值应触发一次")
-	require.Equal(t, 1, counter.resetCalls[counter.key(account.ID, "status=502;keywords=upstream request failed;duration=10")], "触发后应清零计数")
+	require.Equal(t, 1, counter.resetCalls[counter.key(account.ID, "status=502;keywords=upstream request failed")], "触发后应清零计数")
 }
 
 // TestTryTempUnschedulable_ThresholdDisabled_SingleHitTriggers 验证未启用阈值时单次命中即触发（向后兼容）。
@@ -153,7 +171,7 @@ func TestTryTempUnschedulable_IndependentCountPerRule(t *testing.T) {
 	require.False(t, svc.tryTempUnschedulable(context.Background(), account, 502, body502))
 	require.True(t, svc.tryTempUnschedulable(context.Background(), account, 502, body502))
 	require.Equal(t, 1, repo.tempCalls)
-	require.Equal(t, int64(0), counter.counts[counter.key(account.ID, "status=524;keywords=;duration=10")], "规则1计数不应被规则0影响")
+	require.Equal(t, int64(0), counter.counts[counter.key(account.ID, "status=524;keywords=")], "规则1计数不应被规则0影响")
 }
 
 func TestTryTempUnschedulable_ThresholdUsesStableRuleFingerprintWhenRulesReorder(t *testing.T) {
