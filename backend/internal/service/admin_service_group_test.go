@@ -320,7 +320,6 @@ func TestAdminService_UpdateGroup_PreservesImageGenerationControlsWhenOmitted(t 
 	repo := &groupRepoStubForAdmin{getByID: existingGroup}
 	svc := &adminServiceImpl{groupRepo: repo}
 
-	updatedDesc := "updated"
 	group, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
 		Description: stringPtr("updated"),
 	})

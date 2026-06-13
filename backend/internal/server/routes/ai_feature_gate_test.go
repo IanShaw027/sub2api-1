@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -28,8 +29,15 @@ func (s *aiStudioRouteSettingRepoStub) GetValue(_ context.Context, key string) (
 	return s.values[key], nil
 }
 
-func (s *aiStudioRouteSettingRepoStub) Set(context.Context, string, string) error {
-	panic("unexpected Set call")
+func (s *aiStudioRouteSettingRepoStub) Set(_ context.Context, key string, value string) error {
+	if key != "admin_compliance_acknowledgement" && !strings.HasPrefix(key, "admin_compliance_acknowledgement:") {
+		panic("unexpected Set call: " + key)
+	}
+	if s.values == nil {
+		s.values = map[string]string{}
+	}
+	s.values[key] = value
+	return nil
 }
 
 func (s *aiStudioRouteSettingRepoStub) GetMultiple(_ context.Context, keys []string) (map[string]string, error) {
@@ -65,6 +73,27 @@ func newAIStudioRouteSettings(enabled bool) *service.SettingService {
 			service.SettingKeyBackendModeEnabled: "false",
 		},
 	}, &config.Config{})
+}
+
+func newAIStudioRouteSettingsForCompliantAdmin(t *testing.T, enabled bool, adminUserID int64) *service.SettingService {
+	t.Helper()
+
+	settingService := newAIStudioRouteSettings(enabled)
+	_, err := settingService.AcceptAdminCompliance(context.Background(), service.AdminComplianceAcceptInput{
+		AdminUserID: adminUserID,
+		Language:    "zh",
+		Phrase:      service.AdminComplianceAckPhraseZH,
+	})
+	require.NoError(t, err)
+
+	return settingService
+}
+
+func compliantAdminAuth(adminUserID int64) middleware.AdminAuthMiddleware {
+	return middleware.AdminAuthMiddleware(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: adminUserID})
+		c.Next()
+	})
 }
 
 func TestRegisterUserRoutesRejectsAIWhenFeatureDisabled(t *testing.T) {
@@ -110,6 +139,8 @@ func TestRegisterUserSkillRoutesRejectsWhenFeatureDisabled(t *testing.T) {
 func TestRegisterAdminRoutesRejectsAIWhenFeatureDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
+	const adminUserID int64 = 1
+
 	router := gin.New()
 	v1 := router.Group("/api/v1")
 	RegisterAdminRoutes(
@@ -119,8 +150,8 @@ func TestRegisterAdminRoutesRejectsAIWhenFeatureDisabled(t *testing.T) {
 				AI: &admin.AIHandler{},
 			},
 		},
-		middleware.AdminAuthMiddleware(func(c *gin.Context) { c.Next() }),
-		newAIStudioRouteSettings(false),
+		compliantAdminAuth(adminUserID),
+		newAIStudioRouteSettingsForCompliantAdmin(t, false, adminUserID),
 	)
 
 	rec := httptest.NewRecorder()
@@ -134,6 +165,8 @@ func TestRegisterAdminRoutesRejectsAIWhenFeatureDisabled(t *testing.T) {
 func TestRegisterAdminSkillRoutesRejectsWhenFeatureDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
+	const adminUserID int64 = 1
+
 	router := gin.New()
 	v1 := router.Group("/api/v1")
 	RegisterAdminRoutes(
@@ -143,8 +176,8 @@ func TestRegisterAdminSkillRoutesRejectsWhenFeatureDisabled(t *testing.T) {
 				AI: &admin.AIHandler{},
 			},
 		},
-		middleware.AdminAuthMiddleware(func(c *gin.Context) { c.Next() }),
-		newAIStudioRouteSettings(false),
+		compliantAdminAuth(adminUserID),
+		newAIStudioRouteSettingsForCompliantAdmin(t, false, adminUserID),
 	)
 
 	rec := httptest.NewRecorder()

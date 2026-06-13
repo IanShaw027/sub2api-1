@@ -294,6 +294,9 @@ func (s *apiKeyRepoStubForGroupUpdateDelete) GetByKeyForAuth(context.Context, st
 func (s *apiKeyRepoStubForGroupUpdateDelete) Delete(context.Context, int64) error {
 	panic("unexpected")
 }
+func (s *apiKeyRepoStubForGroupUpdateDelete) DeleteWithAudit(context.Context, int64) error {
+	panic("unexpected")
+}
 func (s *apiKeyRepoStubForGroupUpdateDelete) ListByUserID(context.Context, int64, pagination.PaginationParams, APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
 	panic("unexpected")
 }

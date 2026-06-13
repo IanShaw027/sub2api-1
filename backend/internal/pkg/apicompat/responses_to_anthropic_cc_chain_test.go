@@ -31,7 +31,7 @@ func ccChainToAnthropic(t *testing.T, ccReq *ChatCompletionsRequest) []Anthropic
 //
 // A Chat Completions client trimmed its history and kept a tool result whose
 // announcing assistant tool_calls message was dropped (sliding-window context
-// management). The orphan tool_result has no matching tool_use → upstream 400.
+// management). The orphan tool_result has no matching tool_use -> upstream 400.
 // The repair drops the orphan so the request is valid.
 func TestCCChain_OrphanToolResultFromTrimmedHistory(t *testing.T) {
 	orphanID := "call_00_TgfbRvKlnD7oK6Dg00sL1661"

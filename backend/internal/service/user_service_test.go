@@ -150,6 +150,9 @@ func (m *mockUserRepo) GetByID(ctx context.Context, _ int64) (*User, error) {
 	}
 	return &User{}, nil
 }
+func (m *mockUserRepo) GetByIDIncludeDeleted(context.Context, int64) (*User, error) {
+	panic("unexpected GetByIDIncludeDeleted call")
+}
 func (m *mockUserRepo) GetByEmail(context.Context, string) (*User, error) { return &User{}, nil }
 func (m *mockUserRepo) GetFirstAdmin(context.Context) (*User, error)      { return &User{}, nil }
 func (m *mockUserRepo) Update(ctx context.Context, user *User) error {

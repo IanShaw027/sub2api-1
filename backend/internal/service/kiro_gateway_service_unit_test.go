@@ -168,11 +168,11 @@ func TestKiroGatewayService_Forward_EmulatesWebSearchBeforeKiroUpstream(t *testi
 	}, &ParsedRequest{
 		GroupID: &groupID,
 		Model:   "claude-sonnet-4-5-20250929",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4-5-20250929",
 			"tools":[{"type":"web_search_20250305"}],
 			"messages":[{"role":"user","content":[{"type":"text","text":"query"}]}]
-		}`),
+		}`)),
 	}))
 	require.Zero(t, upstream.calls)
 }
@@ -239,10 +239,10 @@ func TestKiroGatewayService_Forward_RetriesOnceAfterInvalidTokenResponse(t *test
 		},
 	}, &ParsedRequest{
 		Model: "claude-sonnet-4-5-20250929",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4-5-20250929",
 			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-		}`),
+		}`)),
 	})
 
 	require.NoError(t, err)
@@ -278,10 +278,10 @@ func TestKiroGatewayService_Forward_InvalidTokenRetryFailureDoesNotLeakRetryErro
 		},
 	}, &ParsedRequest{
 		Model: "claude-sonnet-4-5-20250929",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4-5-20250929",
 			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-		}`),
+		}`)),
 	})
 
 	require.Error(t, err)
@@ -320,10 +320,10 @@ func TestKiroGatewayService_Forward_Kiro402QuotaExhaustedTriggersFailoverRateLim
 		},
 	}, &ParsedRequest{
 		Model: "claude-sonnet-4-5-20250929",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4-5-20250929",
 			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-		}`),
+		}`)),
 	})
 
 	require.Error(t, err)
@@ -376,11 +376,11 @@ func TestKiroGatewayService_Forward_WebSearchMalformedRequestDoesNotAcceptEarly(
 	}, &ParsedRequest{
 		GroupID: &groupID,
 		Model:   "claude-sonnet-4-5-20250929",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4-5-20250929",
 			"tools":[{"type":"web_search_20250305"}],
 			"messages":[{"role":"assistant","content":[{"type":"text","text":"query"}]}]
-		}`),
+		}`)),
 		OnUpstreamAccepted: func() {
 			accepted++
 		},
@@ -441,10 +441,10 @@ func TestKiroGatewayService_Forward_TransportErr_UpstreamCancel_FailoverAndTempU
 		},
 	}, &ParsedRequest{
 		Model: "claude-sonnet-4-5-20250929",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4-5-20250929",
 			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-		}`),
+		}`)),
 	})
 
 	require.Nil(t, result)
@@ -607,10 +607,10 @@ func TestKiroGatewayService_Forward_TransportErr_ClientDisconnect_NoFailoverNoMa
 		},
 	}, &ParsedRequest{
 		Model: "claude-sonnet-4-5-20250929",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4-5-20250929",
 			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-		}`),
+		}`)),
 	})
 
 	require.Nil(t, result)

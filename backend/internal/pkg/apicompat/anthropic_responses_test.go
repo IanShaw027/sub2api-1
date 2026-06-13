@@ -721,6 +721,12 @@ func TestResponsesToAnthropic_ModelContextWindowExceededMapsStopReason(t *testin
 func TestResponsesToAnthropicRequest_RestoresToolReferenceEnvelope(t *testing.T) {
 	input, err := json.Marshal([]ResponsesInputItem{
 		{
+			Type:      "function_call",
+			CallID:    "call_123",
+			Name:      "lookup",
+			Arguments: "{}",
+		},
+		{
 			Type:   "function_call_output",
 			CallID: "call_123",
 			Output: `{"sub2api_format":"anthropic_tool_result_v1","text":["candidate tools"],"tool_references":[{"tool_name":"WebFetch"},{"tool_name":"AskUserQuestion"}]}`,
@@ -735,10 +741,11 @@ func TestResponsesToAnthropicRequest_RestoresToolReferenceEnvelope(t *testing.T)
 
 	out, err := ResponsesToAnthropicRequest(req)
 	require.NoError(t, err)
-	require.Len(t, out.Messages, 1)
+	assertAnthropicPairing(t, out.Messages)
+	require.Len(t, out.Messages, 2)
 
 	var blocks []AnthropicContentBlock
-	require.NoError(t, json.Unmarshal(out.Messages[0].Content, &blocks))
+	require.NoError(t, json.Unmarshal(out.Messages[1].Content, &blocks))
 	require.Len(t, blocks, 1)
 	require.Equal(t, "tool_result", blocks[0].Type)
 

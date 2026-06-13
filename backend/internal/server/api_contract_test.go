@@ -593,6 +593,7 @@ func TestAPIContracts(t *testing.T) {
 								"model": "claude-3",
 								"request_type": "stream",
 								"openai_ws_mode": false,
+								"openai_ws_conn_reused": false,
 								"group_id": null,
 								"subscription_id": null,
 							"input_tokens": 10,
@@ -817,8 +818,10 @@ func TestAPIContracts(t *testing.T) {
 					"auth_source_default_wechat_grant_on_signup": false,
 					"auth_source_default_wechat_grant_on_first_bind": false,
 					"force_email_on_third_party_signup": false,
+					"gateway_debug_timeline_body_max_kb": 32,
 					"gateway_debug_timeline_directory": "logs/gateway-debug",
 					"gateway_debug_timeline_enabled": false,
+					"gateway_debug_timeline_include_body": false,
 					"gateway_debug_timeline_max_size_mb": 1024,
 					"gateway_debug_timeline_retention_days": 7,
 					"default_concurrency": 5,
@@ -886,6 +889,8 @@ func TestAPIContracts(t *testing.T) {
 						"openai_oauth_image_bridge_disable_keepalives": false,
 						"openai_oauth_image_bridge_fresh_upstream_client": false,
 						"openai_sticky_reserve_percent": 0,
+						"openai_sticky_wait_timeout_seconds": 30,
+						"openai_allow_claude_code_codex_plugin": false,
 						"openai_fast_policy_settings": {
 						"rules": []
 					},
@@ -914,6 +919,7 @@ func TestAPIContracts(t *testing.T) {
 					"payment_cancel_rate_limit_window_mode": "",
 					"balance_low_notify_enabled": false,
 					"account_quota_notify_enabled": false,
+					"account_scheduling_thresholds": {"anthropic":100,"antigravity":100,"gemini":100,"kiro":100,"openai":100},
 					"balance_low_notify_threshold": 0,
 					"balance_low_notify_recharge_url": "",
 					"account_quota_notify_emails": [],
@@ -1132,6 +1138,8 @@ func TestAPIContracts(t *testing.T) {
 						"openai_oauth_image_bridge_disable_keepalives": false,
 						"openai_oauth_image_bridge_fresh_upstream_client": false,
 						"openai_sticky_reserve_percent": 0,
+						"openai_sticky_wait_timeout_seconds": 30,
+						"openai_allow_claude_code_codex_plugin": false,
 						"openai_codex_user_agent": "",
 						"openai_fast_policy_settings": {
 						"rules": []
@@ -1159,6 +1167,7 @@ func TestAPIContracts(t *testing.T) {
 					"payment_alipay_force_qrcode": false,
 					"balance_low_notify_enabled": false,
 					"account_quota_notify_enabled": false,
+					"account_scheduling_thresholds": {"anthropic":100,"antigravity":100,"gemini":100,"kiro":100,"openai":100},
 					"subscription_expiry_notify_enabled": true,
 					"balance_low_notify_threshold": 0,
 					"balance_low_notify_recharge_url": "",
@@ -1228,8 +1237,10 @@ func TestAPIContracts(t *testing.T) {
 					"auth_source_default_wechat_grant_on_signup": false,
 					"auth_source_default_wechat_grant_on_first_bind": false,
 					"force_email_on_third_party_signup": false,
+					"gateway_debug_timeline_body_max_kb": 32,
 					"gateway_debug_timeline_directory": "logs/gateway-debug",
 					"gateway_debug_timeline_enabled": false,
+					"gateway_debug_timeline_include_body": false,
 					"gateway_debug_timeline_max_size_mb": 1024,
 					"gateway_debug_timeline_retention_days": 7,
 					"kiro_commit": "",
@@ -1400,7 +1411,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
-	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
+	usageHandler := handler.NewUsageHandler(usageService, apiKeyService, nil, nil)
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil, nil, nil)
 	adminAccountHandler := adminhandler.NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 

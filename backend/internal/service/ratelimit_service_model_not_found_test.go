@@ -19,11 +19,17 @@ type modelNotFoundRateLimitCall struct {
 	reason    string
 }
 
+type modelNotFoundExtraUpdateCall struct {
+	accountID int64
+	updates   map[string]any
+}
+
 type modelNotFoundAccountRepoStub struct {
 	mockAccountRepoForGemini
 	tempCalls           int
 	modelRateLimitCalls []modelNotFoundRateLimitCall
 	modelRateLimitErr   error
+	extraUpdateCalls    []modelNotFoundExtraUpdateCall
 }
 
 func (r *modelNotFoundAccountRepoStub) SetTempUnschedulable(ctx context.Context, id int64, until time.Time, reason string) error {
@@ -42,6 +48,18 @@ func (r *modelNotFoundAccountRepoStub) SetModelRateLimit(ctx context.Context, id
 	}
 	r.modelRateLimitCalls = append(r.modelRateLimitCalls, call)
 	return r.modelRateLimitErr
+}
+
+func (r *modelNotFoundAccountRepoStub) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
+	copied := make(map[string]any, len(updates))
+	for key, value := range updates {
+		copied[key] = value
+	}
+	r.extraUpdateCalls = append(r.extraUpdateCalls, modelNotFoundExtraUpdateCall{
+		accountID: id,
+		updates:   copied,
+	})
+	return nil
 }
 
 func TestRateLimitService_HandleUpstreamError_ModelNotFoundUsesModelRateLimit(t *testing.T) {

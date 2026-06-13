@@ -135,6 +135,25 @@ func TestAnthropicPairing_OrphanToolResultDropped(t *testing.T) {
 	}
 }
 
+// A paired tool_result is re-emitted next to its tool_use and must not remain
+// duplicated in its original user turn.
+func TestAnthropicPairing_PairedToolResultMergedWithTextNotDuplicated(t *testing.T) {
+	msgs := convertAnthropic(t, `[
+		{"type":"function_call","call_id":"call_A","name":"exec","arguments":"{}"},
+		{"type":"message","role":"user","content":[{"type":"input_text","text":"note"}]},
+		{"type":"function_call_output","call_id":"call_A","output":"ok"}
+	]`)
+	var resultCount int
+	for _, m := range msgs {
+		for _, b := range parseContentBlocks(m.Content) {
+			if b.Type == "tool_result" && b.ToolUseID == "call_A" {
+				resultCount++
+			}
+		}
+	}
+	require.Equal(t, 1, resultCount, "paired tool_result should be emitted exactly once")
+}
+
 // A dangling tool_call at the end of the history (no output yet) drops the
 // assistant message holding only that call, leaving no tool_use behind.
 func TestAnthropicPairing_DanglingCallDropped(t *testing.T) {
