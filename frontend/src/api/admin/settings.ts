@@ -906,6 +906,7 @@ export interface SystemSettings {
   fallback_model_openai: string;
   fallback_model_gemini: string;
   fallback_model_antigravity: string;
+  platform_model_routing_config: Record<string, DefaultAccountModelConfig>;
   platform_default_account_model_config: Record<string, DefaultAccountModelConfig>;
 
   // Identity patch configuration (Claude -> Gemini)
@@ -985,6 +986,8 @@ export interface SystemSettings {
   openai_advanced_scheduler_enabled?: boolean;
   openai_sticky_reserve_percent?: number;
   openai_sticky_wait_timeout_seconds?: number;
+  openai_ws_min_idle_per_account?: number;
+  openai_ws_max_idle_per_account?: number;
   openai_oauth_image_bridge_disable_keepalives?: boolean;
   openai_oauth_image_bridge_fresh_upstream_client?: boolean;
 
@@ -1009,11 +1012,22 @@ export interface SystemSettings {
   account_scheduling_thresholds: AccountSchedulingThresholdsMap;
 }
 
+export interface TempUnschedRulePayload {
+  error_code: number;
+  keywords: string[];
+  duration_minutes: number;
+  description: string;
+}
+
 export interface DefaultAccountModelConfig {
   model_whitelist?: string[];
   model_mapping?: Record<string, string>;
   compact_model_mapping?: Record<string, string>;
   kiro_subscription_type_model_config?: Record<string, DefaultAccountModelConfig>;
+  temp_unschedulable_enabled?: boolean;
+  temp_unschedulable_rules?: TempUnschedRulePayload[];
+  custom_error_codes_enabled?: boolean;
+  custom_error_codes?: number[];
 }
 
 export interface UpdateSettingsRequest {
@@ -1185,6 +1199,7 @@ export interface UpdateSettingsRequest {
   fallback_model_openai?: string;
   fallback_model_gemini?: string;
   fallback_model_antigravity?: string;
+  platform_model_routing_config?: Record<string, DefaultAccountModelConfig>;
   platform_default_account_model_config?: Record<string, DefaultAccountModelConfig>;
   enable_identity_patch?: boolean;
   identity_patch_prompt?: string;
@@ -1250,6 +1265,8 @@ export interface UpdateSettingsRequest {
   openai_advanced_scheduler_enabled?: boolean;
   openai_sticky_reserve_percent?: number;
   openai_sticky_wait_timeout_seconds?: number;
+  openai_ws_min_idle_per_account?: number;
+  openai_ws_max_idle_per_account?: number;
   openai_oauth_image_bridge_disable_keepalives?: boolean;
   openai_oauth_image_bridge_fresh_upstream_client?: boolean;
   // Balance & quota notification
@@ -1584,6 +1601,40 @@ export async function updateStreamTimeoutSettings(
   return data;
 }
 
+// ==================== Temp Unsched Threshold Settings ====================
+
+/**
+ * Temp-unschedulable rule window threshold settings
+ */
+export interface TempUnschedThresholdSettings {
+  enabled: boolean;
+  threshold_count: number;
+  threshold_window_minutes: number;
+}
+
+/**
+ * Get temp-unschedulable threshold settings
+ */
+export async function getTempUnschedThresholdSettings(): Promise<TempUnschedThresholdSettings> {
+  const { data } = await apiClient.get<TempUnschedThresholdSettings>(
+    "/admin/settings/temp-unsched-threshold",
+  );
+  return data;
+}
+
+/**
+ * Update temp-unschedulable threshold settings
+ */
+export async function updateTempUnschedThresholdSettings(
+  settings: TempUnschedThresholdSettings,
+): Promise<TempUnschedThresholdSettings> {
+  const { data } = await apiClient.put<TempUnschedThresholdSettings>(
+    "/admin/settings/temp-unsched-threshold",
+    settings,
+  );
+  return data;
+}
+
 // ==================== Rectifier Settings ====================
 
 /**
@@ -1773,6 +1824,8 @@ export const settingsAPI = {
   updateRateLimit429CooldownSettings,
   getStreamTimeoutSettings,
   updateStreamTimeoutSettings,
+  getTempUnschedThresholdSettings,
+  updateTempUnschedThresholdSettings,
   getRectifierSettings,
   updateRectifierSettings,
   getBetaPolicySettings,

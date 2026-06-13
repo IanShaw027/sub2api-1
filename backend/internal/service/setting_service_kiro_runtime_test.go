@@ -2,15 +2,19 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
 type kiroRuntimeSettingRepoStub struct {
-	values  map[string]string
-	updates map[string]string
+	values        map[string]string
+	updates       map[string]string
+	errs          map[string]error
+	getValueCalls map[string]int
 }
 
 func (s *kiroRuntimeSettingRepoStub) Get(ctx context.Context, key string) (*Setting, error) {
@@ -18,8 +22,15 @@ func (s *kiroRuntimeSettingRepoStub) Get(ctx context.Context, key string) (*Sett
 }
 
 func (s *kiroRuntimeSettingRepoStub) GetValue(ctx context.Context, key string) (string, error) {
+	if s.getValueCalls == nil {
+		s.getValueCalls = map[string]int{}
+	}
+	s.getValueCalls[key]++
 	if s.values == nil {
 		return "", ErrSettingNotFound
+	}
+	if err := s.errs[key]; err != nil {
+		return "", err
 	}
 	value, ok := s.values[key]
 	if !ok {
@@ -72,6 +83,36 @@ func (s *kiroRuntimeSettingRepoStub) GetAll(ctx context.Context) (map[string]str
 func (s *kiroRuntimeSettingRepoStub) Delete(ctx context.Context, key string) error {
 	delete(s.values, key)
 	return nil
+}
+
+func TestSettingService_GetPlatformModelRoutingConfig_DefaultBuildTransientErrorKeepsStaleCache(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyPlatformModelRoutingConfig: `{
+				"openai": {
+					"model_whitelist": ["gpt-5.4"],
+					"model_mapping": {"gpt-4o-mini": "gpt-5.4"}
+				}
+			}`,
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	first := svc.GetPlatformModelRoutingConfig(context.Background())
+	require.Equal(t, "gpt-5.4", first["openai"].ModelMapping["gpt-4o-mini"])
+
+	platformModelRoutingConfigCache.Store(&cachedPlatformModelRoutingConfig{
+		config:    clonePlatformModelConfigMap(first),
+		expiresAt: time.Now().Add(-time.Second).UnixNano(),
+	})
+	platformModelRoutingConfigSF.Forget(SettingKeyPlatformModelRoutingConfig)
+	repo.errs = map[string]error{SettingKeyPlatformModelRoutingConfig: errors.New("temporary db outage")}
+
+	second := svc.GetPlatformModelRoutingConfig(context.Background())
+
+	require.Equal(t, "gpt-5.4", second["openai"].ModelMapping["gpt-4o-mini"])
+	require.Equal(t, 2, repo.getValueCalls[SettingKeyPlatformModelRoutingConfig])
 }
 
 func TestSettingService_UpdateSettings_WritesKiroRuntimeDefaults(t *testing.T) {

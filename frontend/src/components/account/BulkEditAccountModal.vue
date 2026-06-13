@@ -1163,6 +1163,7 @@ import {
   resolveOpenAIWSModeConcurrencyHintKey
 } from '@/utils/openaiWsMode'
 import type { OpenAIWSMode } from '@/utils/openaiWsMode'
+import { buildCustomErrorCodesResult, isValidCustomErrorCode } from '@/components/account/customErrorCodes'
 interface Props {
   show: boolean
   accountIds: number[]
@@ -1417,7 +1418,7 @@ const toggleErrorCode = (code: number) => {
 
 const addCustomErrorCode = () => {
   const code = customErrorCodeInput.value
-  if (code === null || code < 100 || code > 599) {
+  if (!isValidCustomErrorCode(code)) {
     appStore.showError(t('admin.accounts.invalidErrorCode'))
     return
   }
@@ -1541,8 +1542,12 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
   }
 
   if (enableCustomErrorCodes.value) {
+    const customErrorCodesResult = buildCustomErrorCodesResult(selectedErrorCodes.value)
+    if (customErrorCodesResult.invalid) {
+      return null
+    }
     credentials.custom_error_codes_enabled = true
-    credentials.custom_error_codes = [...selectedErrorCodes.value]
+    credentials.custom_error_codes = customErrorCodesResult.codes
     credentialsChanged = true
   }
 
@@ -1686,6 +1691,11 @@ const handleSubmit = async () => {
 
   if (!hasAnyFieldEnabled) {
     appStore.showError(t('admin.accounts.bulkEdit.noFieldsSelected'))
+    return
+  }
+
+  if (enableCustomErrorCodes.value && buildCustomErrorCodesResult(selectedErrorCodes.value).invalid) {
+    appStore.showError(t('admin.accounts.invalidErrorCode'))
     return
   }
 

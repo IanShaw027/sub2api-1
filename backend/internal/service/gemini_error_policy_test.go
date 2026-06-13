@@ -145,7 +145,7 @@ func TestCheckErrorPolicy_GeminiAccounts(t *testing.T) {
 			expected:   ErrorPolicyNone,
 		},
 		{
-			name: "gemini_custom_codes_override_temp_unschedulable",
+			name: "gemini_custom_codes_matching_temp_unschedulable_rule_returns_temp_unscheduled",
 			account: &Account{
 				ID:       104,
 				Type:     AccountTypeAPIKey,
@@ -165,7 +165,7 @@ func TestCheckErrorPolicy_GeminiAccounts(t *testing.T) {
 			},
 			statusCode: 503,
 			body:       []byte(`overloaded`),
-			expected:   ErrorPolicyMatched, // custom codes take precedence
+			expected:   ErrorPolicyTempUnscheduled,
 		},
 	}
 

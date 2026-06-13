@@ -5,7 +5,9 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
@@ -303,6 +305,140 @@ func TestSettingService_UpdateSettings_OpenAIImageWebModels(t *testing.T) {
 	require.Equal(t, "gpt-5-5-thinking", repo.updates[SettingKeyOpenAIImageWebPaidModel])
 }
 
+func TestSettingService_UpdateSettings_OpenAIWSIdleSettingsTriggerReconcile(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+	RegisterOpenAIWSPoolReconcileHook(nil)
+	t.Cleanup(func() { RegisterOpenAIWSPoolReconcileHook(nil) })
+
+	reconcileCalls := make(chan struct{}, 4)
+	RegisterOpenAIWSPoolReconcileHook(func() { reconcileCalls <- struct{}{} })
+
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		OpenAIWSMinIdlePerAccount: 2,
+		OpenAIWSMaxIdlePerAccount: 6,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "2", repo.updates[SettingKeyOpenAIWSMinIdlePerAccount])
+	require.Equal(t, "6", repo.updates[SettingKeyOpenAIWSMaxIdlePerAccount])
+
+	// 运行时快照已写入。
+	minIdle, maxIdle, _, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
+	require.True(t, ok)
+	require.Equal(t, 2, minIdle)
+	require.Equal(t, 6, maxIdle)
+
+	// 首次变更应异步触发 reconcile 钩子。
+	select {
+	case <-reconcileCalls:
+	case <-time.After(time.Second):
+		t.Fatal("reconcile hook not triggered on first change")
+	}
+
+	// 相同值再次保存不应触发 reconcile。
+	err = svc.UpdateSettings(context.Background(), &SystemSettings{
+		OpenAIWSMinIdlePerAccount: 2,
+		OpenAIWSMaxIdlePerAccount: 6,
+	})
+	require.NoError(t, err)
+	select {
+	case <-reconcileCalls:
+		t.Fatal("reconcile hook should not fire when pool settings unchanged")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestSettingService_UpdateSettingsWithAuthSourceDefaults_OpenAIWSIdleSettingsTriggerReconcile(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+	RegisterOpenAIWSPoolReconcileHook(nil)
+	t.Cleanup(func() { RegisterOpenAIWSPoolReconcileHook(nil) })
+
+	reconcileCalls := make(chan struct{}, 4)
+	RegisterOpenAIWSPoolReconcileHook(func() { reconcileCalls <- struct{}{} })
+
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettingsWithAuthSourceDefaults(context.Background(), &SystemSettings{
+		OpenAIWSMinIdlePerAccount: 3,
+		OpenAIWSMaxIdlePerAccount: 7,
+	}, &AuthSourceDefaultSettings{})
+	require.NoError(t, err)
+	require.Equal(t, "3", repo.updates[SettingKeyOpenAIWSMinIdlePerAccount])
+	require.Equal(t, "7", repo.updates[SettingKeyOpenAIWSMaxIdlePerAccount])
+
+	select {
+	case <-reconcileCalls:
+	case <-time.After(time.Second):
+		t.Fatal("reconcile hook not triggered on admin settings update path")
+	}
+}
+
+func TestSettingService_GetAllSettings_LoadsOpenAIWSPoolRuntimeSettings(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyOpenAIWSMinIdlePerAccount:  "3",
+			SettingKeyOpenAIWSMaxIdlePerAccount:  "8",
+			SettingKeyOpenAIStickyReservePercent: "25",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 3, settings.OpenAIWSMinIdlePerAccount)
+	require.Equal(t, 8, settings.OpenAIWSMaxIdlePerAccount)
+	require.Equal(t, 25, settings.OpenAIStickyReservePercent)
+
+	minIdle, maxIdle, stickyReserve, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
+	require.True(t, ok)
+	require.Equal(t, 3, minIdle)
+	require.Equal(t, 8, maxIdle)
+	require.Equal(t, 25, stickyReserve)
+}
+
+func TestSettingService_GetAllSettings_DefaultsOpenAIWSPoolStickyReserveToThirty(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyOpenAIWSMinIdlePerAccount: "2",
+			SettingKeyOpenAIWSMaxIdlePerAccount: "6",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, defaultOpenAIWSStickyReservePercent, settings.OpenAIStickyReservePercent)
+
+	_, _, stickyReserve, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
+	require.True(t, ok)
+	require.Equal(t, defaultOpenAIWSStickyReservePercent, stickyReserve)
+}
+
+func TestSettingService_UpdateSettings_RejectsOpenAIWSMinIdleGreaterThanMaxIdle(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		OpenAIWSMinIdlePerAccount: 5,
+		OpenAIWSMaxIdlePerAccount: 2,
+	})
+
+	require.Error(t, err)
+	require.Equal(t, "INVALID_OPENAI_WS_IDLE_SETTINGS", infraerrors.Reason(err))
+	require.Nil(t, repo.updates)
+}
+
 func TestSettingService_UpdateSettings_OpenAIOAuthImageBridgeTransportSettings(t *testing.T) {
 	repo := &settingUpdateRepoStub{}
 	svc := NewSettingService(repo, &config.Config{})
@@ -440,4 +576,463 @@ func TestSettingService_UpdateSettings_RejectsInvalidPlatformDefaultModelMapping
 			require.Nil(t, repo.updates)
 		})
 	}
+}
+
+func TestSettingService_UpdateSettings_RejectsInvalidPlatformDefaultTempUnschedAndCustomCodes(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  map[string]DefaultAccountModelConfig
+	}{
+		{
+			name: "temp unsched error code below http status range",
+			cfg: map[string]DefaultAccountModelConfig{
+				"openai": {
+					TempUnschedulableRules: []TempUnschedulableRule{
+						{ErrorCode: 99, DurationMinutes: 10},
+					},
+				},
+			},
+		},
+		{
+			name: "temp unsched error code above http status range",
+			cfg: map[string]DefaultAccountModelConfig{
+				"openai": {
+					TempUnschedulableRules: []TempUnschedulableRule{
+						{ErrorCode: 600, DurationMinutes: 10},
+					},
+				},
+			},
+		},
+		{
+			name: "temp unsched non-positive duration",
+			cfg: map[string]DefaultAccountModelConfig{
+				"openai": {
+					TempUnschedulableRules: []TempUnschedulableRule{
+						{ErrorCode: 502, DurationMinutes: 0},
+					},
+				},
+			},
+		},
+		{
+			name: "custom error code below http status range",
+			cfg: map[string]DefaultAccountModelConfig{
+				"openai": {
+					CustomErrorCodes: []int{99},
+				},
+			},
+		},
+		{
+			name: "custom error code above http status range",
+			cfg: map[string]DefaultAccountModelConfig{
+				"openai": {
+					CustomErrorCodes: []int{600},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &settingUpdateRepoStub{}
+			svc := NewSettingService(repo, &config.Config{})
+
+			err := svc.UpdateSettings(context.Background(), &SystemSettings{
+				PlatformDefaultAccountModelConfig: tt.cfg,
+			})
+
+			require.Error(t, err)
+			require.Equal(t, "INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", infraerrors.Reason(err))
+			require.Nil(t, repo.updates)
+		})
+	}
+}
+
+func TestSettingService_UpdateSettings_RejectsPlatformDefaultTempUnschedEnabledWithoutRules(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		PlatformDefaultAccountModelConfig: map[string]DefaultAccountModelConfig{
+			"openai": {
+				TempUnschedulableEnabled: true,
+			},
+		},
+	})
+
+	require.Error(t, err)
+	require.Equal(t, "INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", infraerrors.Reason(err))
+	require.Nil(t, repo.updates)
+}
+
+func TestSettingService_UpdateSettings_PlatformDefaultKiroVariantsAcceptCaseInsensitivePlatformKey(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		PlatformDefaultAccountModelConfig: map[string]DefaultAccountModelConfig{
+			"Kiro": {
+				KiroSubscriptionTypeModelMap: map[string]DefaultAccountModelConfig{
+					"pro": {
+						ModelMapping: map[string]string{"claude-sonnet-*": "claude-sonnet-4.6"},
+					},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"kiro": {
+			"kiro_subscription_type_model_config": {
+				"pro": {
+					"model_mapping": {"claude-sonnet-*": "claude-sonnet-4.6"}
+				}
+			}
+		}
+	}`, repo.updates[SettingKeyPlatformDefaultAccountModelConfig])
+}
+
+func TestSettingService_UpdateSettings_RejectsAccountDefaultFieldsInKiroSubscriptionVariants(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  DefaultAccountModelConfig
+	}{
+		{
+			name: "temp unsched enabled",
+			cfg: DefaultAccountModelConfig{
+				ModelMapping:             map[string]string{"claude-sonnet-*": "claude-sonnet-4.6"},
+				TempUnschedulableEnabled: true,
+			},
+		},
+		{
+			name: "temp unsched rules",
+			cfg: DefaultAccountModelConfig{
+				ModelMapping:           map[string]string{"claude-sonnet-*": "claude-sonnet-4.6"},
+				TempUnschedulableRules: []TempUnschedulableRule{{ErrorCode: 502, DurationMinutes: 10}},
+			},
+		},
+		{
+			name: "custom error codes enabled",
+			cfg: DefaultAccountModelConfig{
+				ModelMapping:            map[string]string{"claude-sonnet-*": "claude-sonnet-4.6"},
+				CustomErrorCodesEnabled: true,
+			},
+		},
+		{
+			name: "custom error codes",
+			cfg: DefaultAccountModelConfig{
+				ModelMapping:     map[string]string{"claude-sonnet-*": "claude-sonnet-4.6"},
+				CustomErrorCodes: []int{502},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &settingUpdateRepoStub{}
+			svc := NewSettingService(repo, &config.Config{})
+
+			err := svc.UpdateSettings(context.Background(), &SystemSettings{
+				PlatformDefaultAccountModelConfig: map[string]DefaultAccountModelConfig{
+					"kiro": {
+						KiroSubscriptionTypeModelMap: map[string]DefaultAccountModelConfig{
+							"pro": tt.cfg,
+						},
+					},
+				},
+			})
+
+			require.Error(t, err)
+			require.Equal(t, "INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", infraerrors.Reason(err))
+			require.Nil(t, repo.updates)
+		})
+	}
+}
+
+func TestSettingService_UpdateSettings_PlatformModelRoutingConfigRoundTrip(t *testing.T) {
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyPlatformModelRoutingConfig: `{
+				"openai": {
+					"model_whitelist": ["gpt-5.4-mini"],
+					"model_mapping": {"gpt-4o-mini": "gpt-5.4"},
+					"compact_model_mapping": {"gpt-5.4": "gpt-5.4-mini"}
+				}
+			}`,
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{"gpt-5.4-mini"}, settings.PlatformModelRoutingConfig["openai"].ModelWhitelist)
+	require.Equal(t, map[string]string{"gpt-4o-mini": "gpt-5.4"}, settings.PlatformModelRoutingConfig["openai"].ModelMapping)
+	require.Equal(t, map[string]string{"gpt-5.4": "gpt-5.4-mini"}, settings.PlatformModelRoutingConfig["openai"].CompactModelMapping)
+
+	settings.PlatformModelRoutingConfig["gemini"] = DefaultAccountModelConfig{
+		ModelWhitelist: []string{"gemini-2.5-pro"},
+		ModelMapping:   map[string]string{"gemini-pro": "gemini-2.5-pro"},
+	}
+	err = svc.UpdateSettings(context.Background(), settings)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"gemini": {
+			"model_whitelist": ["gemini-2.5-pro"],
+			"model_mapping": {"gemini-pro": "gemini-2.5-pro"}
+		},
+		"openai": {
+			"model_whitelist": ["gpt-5.4-mini"],
+			"model_mapping": {"gpt-4o-mini": "gpt-5.4"},
+			"compact_model_mapping": {"gpt-5.4": "gpt-5.4-mini"}
+		}
+	}`, repo.updates[SettingKeyPlatformModelRoutingConfig])
+}
+
+func TestSettingService_UpdateSettings_RejectsInvalidPlatformModelRoutingConfig(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		PlatformModelRoutingConfig: map[string]DefaultAccountModelConfig{
+			"openai": {
+				ModelMapping: map[string]string{"gpt-*mini": "gpt-5.4"},
+			},
+		},
+	})
+
+	require.Error(t, err)
+	require.Equal(t, "INVALID_PLATFORM_MODEL_ROUTING_CONFIG", infraerrors.Reason(err))
+	require.Nil(t, repo.updates)
+}
+
+func TestSettingService_UpdateSettings_RejectsKiroVariantsInPlatformModelRoutingConfig(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		PlatformModelRoutingConfig: map[string]DefaultAccountModelConfig{
+			"kiro": {
+				KiroSubscriptionTypeModelMap: map[string]DefaultAccountModelConfig{
+					"pro": {
+						ModelMapping: map[string]string{"claude-sonnet-*": "claude-sonnet-4.6"},
+					},
+				},
+			},
+		},
+	})
+
+	require.Error(t, err)
+	require.Equal(t, "INVALID_PLATFORM_MODEL_ROUTING_CONFIG", infraerrors.Reason(err))
+	require.Nil(t, repo.updates)
+}
+
+func TestSettingService_UpdateSettings_RejectsAccountDefaultFieldsInPlatformModelRoutingConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  DefaultAccountModelConfig
+	}{
+		{
+			name: "temp unsched enabled",
+			cfg: DefaultAccountModelConfig{
+				TempUnschedulableEnabled: true,
+			},
+		},
+		{
+			name: "temp unsched rules",
+			cfg: DefaultAccountModelConfig{
+				TempUnschedulableRules: []TempUnschedulableRule{{ErrorCode: 502, DurationMinutes: 10}},
+			},
+		},
+		{
+			name: "custom error codes enabled",
+			cfg: DefaultAccountModelConfig{
+				CustomErrorCodesEnabled: true,
+			},
+		},
+		{
+			name: "custom error codes",
+			cfg: DefaultAccountModelConfig{
+				CustomErrorCodes: []int{502},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &settingUpdateRepoStub{}
+			svc := NewSettingService(repo, &config.Config{})
+
+			err := svc.UpdateSettings(context.Background(), &SystemSettings{
+				PlatformModelRoutingConfig: map[string]DefaultAccountModelConfig{
+					"openai": tt.cfg,
+				},
+			})
+
+			require.Error(t, err)
+			require.Equal(t, "INVALID_PLATFORM_MODEL_ROUTING_CONFIG", infraerrors.Reason(err))
+			require.Nil(t, repo.updates)
+		})
+	}
+}
+
+func TestSettingService_GetPlatformModelRoutingConfig_AccountDefaultFieldsInStoredValueFailClosed(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyPlatformModelRoutingConfig: `{
+				"openai": {
+					"model_mapping": {"gpt-4o-mini": "gpt-5.4"},
+					"temp_unschedulable_enabled": true,
+					"temp_unschedulable_rules": [{"error_code": 502, "duration_minutes": 10}],
+					"custom_error_codes_enabled": true,
+					"custom_error_codes": [502],
+					"kiro_subscription_type_model_config": {
+						"pro": {"model_mapping": {"claude-sonnet-*": "claude-sonnet-4.6"}}
+					}
+				}
+			}`,
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+	account := &Account{Platform: PlatformOpenAI}
+
+	runtime := svc.GetPlatformModelRoutingConfig(context.Background())
+	require.Contains(t, runtime, platformModelRoutingUnavailablePlatformKey)
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, settings.PlatformModelRoutingConfig)
+
+	result := ResolveEffectiveModelRouting(context.Background(), svc, account, "gpt-5.4", false)
+	require.False(t, result.Supported)
+	require.False(t, result.Matched)
+	require.Equal(t, "gpt-5.4", result.Model)
+	require.Equal(t, "system_unavailable", result.Source)
+}
+
+func TestSettingService_GetPlatformModelRoutingConfig_CachesAndReturnsClones(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyPlatformModelRoutingConfig: `{
+				"openai": {
+					"model_whitelist": ["gpt-5.4-mini"],
+					"model_mapping": {"gpt-4o-mini": "gpt-5.4"},
+					"compact_model_mapping": {"gpt-5.4": "gpt-5.4-mini"}
+				}
+			}`,
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	first := svc.GetPlatformModelRoutingConfig(context.Background())
+	first["openai"].ModelWhitelist[0] = "mutated"
+	first["openai"].ModelMapping["gpt-4o-mini"] = "mutated"
+	first["openai"].CompactModelMapping["gpt-5.4"] = "mutated"
+	first["gemini"] = DefaultAccountModelConfig{ModelWhitelist: []string{"gemini-2.5-pro"}}
+
+	second := svc.GetPlatformModelRoutingConfig(context.Background())
+
+	require.Equal(t, 1, repo.getValueCalls[SettingKeyPlatformModelRoutingConfig])
+	require.Equal(t, []string{"gpt-5.4-mini"}, second["openai"].ModelWhitelist)
+	require.Equal(t, map[string]string{"gpt-4o-mini": "gpt-5.4"}, second["openai"].ModelMapping)
+	require.Equal(t, map[string]string{"gpt-5.4": "gpt-5.4-mini"}, second["openai"].CompactModelMapping)
+	require.NotContains(t, second, "gemini")
+}
+
+func TestSettingService_GetPlatformModelRoutingConfig_TransientErrorKeepsStaleCache(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyPlatformModelRoutingConfig: `{
+				"openai": {
+					"model_whitelist": ["gpt-5.4"],
+					"model_mapping": {"gpt-4o-mini": "gpt-5.4"}
+				}
+			}`,
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	first := svc.GetPlatformModelRoutingConfig(context.Background())
+	require.Equal(t, "gpt-5.4", first["openai"].ModelMapping["gpt-4o-mini"])
+
+	platformModelRoutingConfigCache.Store(&cachedPlatformModelRoutingConfig{
+		config:    clonePlatformModelConfigMap(first),
+		expiresAt: time.Now().Add(-time.Second).UnixNano(),
+	})
+	platformModelRoutingConfigSF.Forget(SettingKeyPlatformModelRoutingConfig)
+	repo.errs = map[string]error{SettingKeyPlatformModelRoutingConfig: errors.New("temporary db outage")}
+
+	second := svc.GetPlatformModelRoutingConfig(context.Background())
+
+	require.Equal(t, "gpt-5.4", second["openai"].ModelMapping["gpt-4o-mini"])
+	require.Equal(t, 2, repo.getValueCalls[SettingKeyPlatformModelRoutingConfig])
+}
+
+func TestResolveEffectiveModelRouting_PlatformRoutingLoadErrorFailsClosed(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyPlatformModelRoutingConfig: `{}`,
+		},
+		errs: map[string]error{SettingKeyPlatformModelRoutingConfig: errors.New("temporary db outage")},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+	account := &Account{Platform: PlatformOpenAI}
+
+	result := ResolveEffectiveModelRouting(context.Background(), svc, account, "gpt-5.4", false)
+
+	require.False(t, result.Supported)
+	require.False(t, result.Matched)
+	require.Equal(t, "gpt-5.4", result.Model)
+	require.Equal(t, "system_unavailable", result.Source)
+}
+
+func TestResolveEffectiveModelRouting_InvalidStoredConfigStillFailsClosedAfterGetAllSettings(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyPlatformModelRoutingConfig: `{not-json`,
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+	account := &Account{Platform: PlatformOpenAI}
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, settings.PlatformModelRoutingConfig)
+
+	result := ResolveEffectiveModelRouting(context.Background(), svc, account, "gpt-5.4", false)
+
+	require.False(t, result.Supported)
+	require.False(t, result.Matched)
+	require.Equal(t, "gpt-5.4", result.Model)
+	require.Equal(t, "system_unavailable", result.Source)
+}
+
+func TestResolveEffectiveModelRouting_InvalidStoredConfigDroppedByNormalizationFailsClosedAfterGetAllSettings(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyPlatformModelRoutingConfig: `{
+				"openai": {
+					"model_mapping": {"": "gpt-5.4"}
+				}
+			}`,
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+	account := &Account{Platform: PlatformOpenAI}
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, settings.PlatformModelRoutingConfig)
+
+	result := ResolveEffectiveModelRouting(context.Background(), svc, account, "gpt-5.4", false)
+
+	require.False(t, result.Supported)
+	require.False(t, result.Matched)
+	require.Equal(t, "gpt-5.4", result.Model)
+	require.Equal(t, "system_unavailable", result.Source)
 }

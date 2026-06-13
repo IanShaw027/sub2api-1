@@ -158,11 +158,12 @@ type SystemSettings struct {
 	DefaultSubscriptions         []DefaultSubscriptionSetting
 
 	// Model fallback configuration
-	EnableModelFallback      bool   `json:"enable_model_fallback"`
-	FallbackModelAnthropic   string `json:"fallback_model_anthropic"`
-	FallbackModelOpenAI      string `json:"fallback_model_openai"`
-	FallbackModelGemini      string `json:"fallback_model_gemini"`
-	FallbackModelAntigravity string `json:"fallback_model_antigravity"`
+	EnableModelFallback        bool                                 `json:"enable_model_fallback"`
+	FallbackModelAnthropic     string                               `json:"fallback_model_anthropic"`
+	FallbackModelOpenAI        string                               `json:"fallback_model_openai"`
+	FallbackModelGemini        string                               `json:"fallback_model_gemini"`
+	FallbackModelAntigravity   string                               `json:"fallback_model_antigravity"`
+	PlatformModelRoutingConfig map[string]DefaultAccountModelConfig `json:"platform_model_routing_config"`
 	// Per-platform defaults injected into newly-created account credentials.
 	PlatformDefaultAccountModelConfig map[string]DefaultAccountModelConfig `json:"platform_default_account_model_config"`
 
@@ -239,6 +240,8 @@ type SystemSettings struct {
 	OpenAIAdvancedSchedulerEnabled            bool
 	OpenAIStickyReservePercent                int
 	OpenAIStickyWaitTimeoutSeconds            int
+	OpenAIWSMinIdlePerAccount                 int
+	OpenAIWSMaxIdlePerAccount                 int
 	OpenAIImageWebFreeModel                   string
 	OpenAIImageWebPaidModel                   string
 	OpenAIOAuthImageBridgeDisableKeepAlives   bool
@@ -336,6 +339,12 @@ type DefaultAccountModelConfig struct {
 	ModelMapping                 map[string]string                    `json:"model_mapping,omitempty"`
 	CompactModelMapping          map[string]string                    `json:"compact_model_mapping,omitempty"`
 	KiroSubscriptionTypeModelMap map[string]DefaultAccountModelConfig `json:"kiro_subscription_type_model_config,omitempty"`
+
+	// 临时不可调度 / 自定义错误码默认值：新建账号时若用户未显式提供，按平台默认注入到 credentials。
+	TempUnschedulableEnabled bool                    `json:"temp_unschedulable_enabled,omitempty"`
+	TempUnschedulableRules   []TempUnschedulableRule `json:"temp_unschedulable_rules,omitempty"`
+	CustomErrorCodesEnabled  bool                    `json:"custom_error_codes_enabled,omitempty"`
+	CustomErrorCodes         []int                   `json:"custom_error_codes,omitempty"`
 }
 
 type PublicSettings struct {
@@ -498,6 +507,26 @@ func DefaultStreamTimeoutSettings() *StreamTimeoutSettings {
 		TempUnschedMinutes:     5,
 		ThresholdCount:         3,
 		ThresholdWindowMinutes: 10,
+	}
+}
+
+// TempUnschedThresholdSettings 临时不可调度规则的窗口阈值配置。
+// 控制账号级 temp_unschedulable_rules 命中后是否需要"窗口内连续命中 N 次"才触发临时不可调度。
+type TempUnschedThresholdSettings struct {
+	// Enabled 是否启用窗口阈值（false = 保持单次命中即触发，向后兼容）
+	Enabled bool `json:"enabled"`
+	// ThresholdCount 触发阈值次数（窗口内累计命中多少次才触发）
+	ThresholdCount int `json:"threshold_count"`
+	// ThresholdWindowMinutes 阈值窗口时间（分钟）
+	ThresholdWindowMinutes int `json:"threshold_window_minutes"`
+}
+
+// DefaultTempUnschedThresholdSettings 返回默认的临时不可调度窗口阈值配置（1 分钟内 3 次）。
+func DefaultTempUnschedThresholdSettings() *TempUnschedThresholdSettings {
+	return &TempUnschedThresholdSettings{
+		Enabled:                false,
+		ThresholdCount:         3,
+		ThresholdWindowMinutes: 1,
 	}
 }
 

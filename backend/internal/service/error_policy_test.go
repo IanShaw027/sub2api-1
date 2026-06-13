@@ -156,7 +156,7 @@ func TestCheckErrorPolicy(t *testing.T) {
 			expected:   ErrorPolicyNone,
 		},
 		{
-			name: "custom_error_codes_override_temp_unschedulable",
+			name: "custom_error_codes_matching_temp_unschedulable_rule_returns_temp_unscheduled",
 			account: &Account{
 				ID:       6,
 				Type:     AccountTypeAPIKey,
@@ -177,7 +177,7 @@ func TestCheckErrorPolicy(t *testing.T) {
 			},
 			statusCode: 503,
 			body:       []byte(`overloaded`),
-			expected:   ErrorPolicyMatched, // custom codes take precedence
+			expected:   ErrorPolicyTempUnscheduled,
 		},
 		{
 			name: "pool_mode_custom_error_codes_hit_returns_matched",

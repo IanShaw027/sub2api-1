@@ -329,11 +329,12 @@ const (
 	SettingKeyGeminiQuotaPolicy = "gemini_quota_policy"
 
 	// Model fallback settings
-	SettingKeyEnableModelFallback      = "enable_model_fallback"
-	SettingKeyFallbackModelAnthropic   = "fallback_model_anthropic"
-	SettingKeyFallbackModelOpenAI      = "fallback_model_openai"
-	SettingKeyFallbackModelGemini      = "fallback_model_gemini"
-	SettingKeyFallbackModelAntigravity = "fallback_model_antigravity"
+	SettingKeyEnableModelFallback        = "enable_model_fallback"
+	SettingKeyFallbackModelAnthropic     = "fallback_model_anthropic"
+	SettingKeyFallbackModelOpenAI        = "fallback_model_openai"
+	SettingKeyFallbackModelGemini        = "fallback_model_gemini"
+	SettingKeyFallbackModelAntigravity   = "fallback_model_antigravity"
+	SettingKeyPlatformModelRoutingConfig = "platform_model_routing_config"
 	// Platform default account model config stores per-platform defaults injected
 	// into newly-created account credentials when the request does not provide them.
 	SettingKeyPlatformDefaultAccountModelConfig = "platform_default_account_model_config"
@@ -408,6 +409,9 @@ const (
 	// SettingKeyStreamTimeoutSettings stores JSON config for stream timeout handling.
 	SettingKeyStreamTimeoutSettings = "stream_timeout_settings"
 
+	// SettingKeyTempUnschedThresholdSettings stores JSON config for temp-unschedulable rule window threshold.
+	SettingKeyTempUnschedThresholdSettings = "temp_unsched_threshold_settings"
+
 	// =========================
 	// Request Rectifier (请求整流器)
 	// =========================
@@ -450,6 +454,13 @@ const (
 	// seconds a sticky OpenAI session may wait for its bound account before
 	// switching to another schedulable account.
 	SettingKeyOpenAIStickyWaitTimeoutSeconds = "openai_sticky_wait_timeout_seconds"
+	// SettingKeyOpenAIWSMinIdlePerAccount stores the minimum number of idle WS
+	// connections the pool keeps warm per schedulable OAuth account. 0 disables
+	// proactive prewarming.
+	SettingKeyOpenAIWSMinIdlePerAccount = "openai_ws_min_idle_per_account"
+	// SettingKeyOpenAIWSMaxIdlePerAccount stores the maximum number of idle WS
+	// connections retained per account before the pool shrinks the oldest ones.
+	SettingKeyOpenAIWSMaxIdlePerAccount = "openai_ws_max_idle_per_account"
 
 	// =========================
 	// Sora S3 存储配置

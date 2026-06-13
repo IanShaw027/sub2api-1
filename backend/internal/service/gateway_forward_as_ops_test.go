@@ -176,6 +176,101 @@ func TestGatewayService_ForwardAsResponses_RecordsOpsContextAndLatency(t *testin
 	require.Contains(t, events[0].Message, "responses request invalid")
 }
 
+func TestGatewayService_ForwardAsChatCompletions_OAuthIgnoresCredentialModelMapping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	upstream := &anthropicHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header: http.Header{
+				"Content-Type": []string{"application/json"},
+				"X-Request-Id": []string{"rid-forward-cc-oauth"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"error":{"message":"stop after recording request","type":"invalid_request_error"}}`)),
+		},
+	}
+	svc := &GatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+	account := newAnthropicOAuthAccountWithCredentialModelMappingForTest()
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, []byte(`{"model":"claude-3-7-sonnet-20250219","messages":[{"role":"user","content":"hello"}],"stream":false}`), &ParsedRequest{
+		Model:  "claude-3-7-sonnet-20250219",
+		Stream: false,
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, "claude-3-7-sonnet-20250219", decodeRecordedAnthropicModel(t, upstream.lastBody))
+}
+
+func TestGatewayService_ForwardAsResponses_OAuthIgnoresCredentialModelMapping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	upstream := &anthropicHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header: http.Header{
+				"Content-Type": []string{"application/json"},
+				"X-Request-Id": []string{"rid-forward-responses-oauth"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"error":{"message":"stop after recording request","type":"invalid_request_error"}}`)),
+		},
+	}
+	svc := &GatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+	account := newAnthropicOAuthAccountWithCredentialModelMappingForTest()
+
+	result, err := svc.ForwardAsResponses(context.Background(), c, account, []byte(`{"model":"claude-3-7-sonnet-20250219","input":"hello","stream":false}`), &ParsedRequest{
+		Model:  "claude-3-7-sonnet-20250219",
+		Stream: false,
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, "claude-3-7-sonnet-20250219", decodeRecordedAnthropicModel(t, upstream.lastBody))
+}
+
+func newAnthropicOAuthAccountWithCredentialModelMappingForTest() *Account {
+	return &Account{
+		ID:          202,
+		Name:        "anthropic-oauth-forward",
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":    "oauth-token",
+			"model_mapping":   map[string]any{"claude-3-7-sonnet-20250219": "claude-3-haiku-20240307"},
+			"refresh_token":   "refresh-token",
+			"expires_at":      "2999-01-01T00:00:00Z",
+			"subscription":    "max",
+			"organization_id": "org-test",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+}
+
+func decodeRecordedAnthropicModel(t *testing.T, body []byte) string {
+	t.Helper()
+	var payload struct {
+		Model string `json:"model"`
+	}
+	require.NoError(t, json.Unmarshal(body, &payload))
+	return payload.Model
+}
+
 func TestGatewayService_Forward_AccumulatesOpsUpstreamLatencyAcrossRetryAttempts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

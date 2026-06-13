@@ -10,6 +10,7 @@ const {
   checkMixedChannelRiskMock,
   getWebSearchEmulationConfigMock,
   listTlsFingerprintProfilesMock,
+  exchangeCodeMock,
   kiroValidateRefreshTokenMock
 } = vi.hoisted(() => ({
   showErrorMock: vi.fn(),
@@ -19,6 +20,7 @@ const {
   checkMixedChannelRiskMock: vi.fn(),
   getWebSearchEmulationConfigMock: vi.fn(),
   listTlsFingerprintProfilesMock: vi.fn(),
+  exchangeCodeMock: vi.fn(),
   kiroValidateRefreshTokenMock: vi.fn()
 }))
 
@@ -46,6 +48,7 @@ vi.mock('@/api/admin', () => ({
     },
     accounts: {
       create: createMock,
+      exchangeCode: exchangeCodeMock,
       checkMixedChannelRisk: checkMixedChannelRiskMock
     }
   }
@@ -123,7 +126,7 @@ function buildOAuthComposable() {
     buildCredentials: vi.fn(() => ({})),
     buildExtraInfo: vi.fn(() => undefined),
     buildAccountName: vi.fn((_tokenInfo?: unknown, name?: string) => name || 'auto-generated'),
-    parseSessionKeys: vi.fn(() => []),
+    parseSessionKeys: vi.fn((value: string) => (value ? [value] : [])),
     validateRefreshToken: vi.fn(),
     exchangeCallback: vi.fn()
   }
@@ -296,12 +299,14 @@ describe('CreateAccountModal', () => {
     checkMixedChannelRiskMock.mockReset()
     getWebSearchEmulationConfigMock.mockReset()
     listTlsFingerprintProfilesMock.mockReset()
+    exchangeCodeMock.mockReset()
     kiroValidateRefreshTokenMock.mockReset()
 
     createMock.mockResolvedValue(undefined)
     checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
     getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
     listTlsFingerprintProfilesMock.mockResolvedValue([])
+    exchangeCodeMock.mockResolvedValue({ access_token: 'at-cookie' })
     kiroValidateRefreshTokenMock.mockResolvedValue({
       refresh_token: 'rt-test',
       access_token: 'at-test',
@@ -639,6 +644,187 @@ describe('CreateAccountModal', () => {
         ]
       })
     }))
+  })
+
+  it('serializes temp-unschedulable rules with empty keywords on create', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await findAccountTypeButton(wrapper, 1).trigger('click')
+    await nextTick()
+
+    ;(wrapper.vm as any).tempUnschedEnabled = true
+    ;(wrapper.vm as any).tempUnschedRules = [
+      {
+        error_code: 524,
+        keywords: '',
+        duration_minutes: 10,
+        description: 'Cloudflare timeout'
+      }
+    ]
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('openai-api')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(showErrorMock).not.toHaveBeenCalledWith('admin.accounts.tempUnschedulable.rulesInvalid')
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      credentials: expect.objectContaining({
+        temp_unschedulable_enabled: true,
+        temp_unschedulable_rules: [
+          {
+            error_code: 524,
+            keywords: [],
+            duration_minutes: 10,
+            description: 'Cloudflare timeout'
+          }
+        ]
+      })
+    }))
+  })
+
+  it('blocks mixed valid and invalid temp-unschedulable rules on create', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await findAccountTypeButton(wrapper, 1).trigger('click')
+    await nextTick()
+
+    ;(wrapper.vm as any).tempUnschedEnabled = true
+    ;(wrapper.vm as any).tempUnschedRules = [
+      {
+        error_code: 524,
+        keywords: '',
+        duration_minutes: 10,
+        description: 'Cloudflare timeout'
+      },
+      {
+        error_code: 99,
+        keywords: 'invalid',
+        duration_minutes: 10,
+        description: 'bad status'
+      }
+    ]
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('openai-api')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(showErrorMock).toHaveBeenCalledWith('admin.accounts.tempUnschedulable.rulesInvalid')
+    expect(createMock).not.toHaveBeenCalled()
+  })
+
+  it('blocks fractional custom error codes on create instead of saving them', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await findAccountTypeButton(wrapper, 1).trigger('click')
+    await nextTick()
+
+    ;(wrapper.vm as any).customErrorCodesEnabled = true
+    ;(wrapper.vm as any).selectedErrorCodes = [502.5]
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('openai-api')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(showErrorMock).toHaveBeenCalledWith('admin.accounts.invalidErrorCode')
+    expect(createMock).not.toHaveBeenCalled()
+  })
+
+  it('blocks fractional custom error codes on cookie OAuth create instead of saving them', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm
+    setupState.customErrorCodesEnabled = true
+    setupState.selectedErrorCodes = [502.5]
+
+    await wrapper.getComponent(OAuthAuthorizationFlowStub).vm.$emit('cookie-auth', 'session-key')
+    await flushPromises()
+
+    expect(showErrorMock).toHaveBeenCalledWith('admin.accounts.invalidErrorCode')
+    expect(exchangeCodeMock).not.toHaveBeenCalled()
+    expect(createMock).not.toHaveBeenCalled()
+  })
+
+  it('serializes valid custom error codes on cookie OAuth create', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm
+    setupState.customErrorCodesEnabled = true
+    setupState.selectedErrorCodes = [502]
+
+    await wrapper.getComponent(OAuthAuthorizationFlowStub).vm.$emit('cookie-auth', 'session-key')
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      credentials: expect.objectContaining({
+        custom_error_codes_enabled: true,
+        custom_error_codes: [502]
+      })
+    }))
+  })
+
+  it('offers all OpenAI service-unavailable temp-unschedulable presets separately on create', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    const presetRules = (wrapper.vm as any).tempUnschedPresets.map((preset: any) => preset.rule)
+
+    expect(presetRules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        error_code: 502,
+        keywords: 'Upstream service temporarily unavailable',
+        duration_minutes: 10
+      }),
+      expect.objectContaining({
+        error_code: 502,
+        keywords: 'Upstream request failed',
+        duration_minutes: 10
+      }),
+      expect.objectContaining({
+        error_code: 503,
+        keywords: 'Service temporarily unavailable',
+        duration_minutes: 10
+      }),
+      expect.objectContaining({
+        error_code: 503,
+        keywords: 'overloaded',
+        duration_minutes: 10
+      }),
+      expect.objectContaining({
+        error_code: 500,
+        keywords: 'upstream connection failed, Upstream transport error',
+        duration_minutes: 10
+      }),
+      expect.objectContaining({
+        error_code: 502,
+        keywords: 'Upstream access forbidden',
+        duration_minutes: 10
+      })
+    ]))
   })
 
   it('creates a Kiro OAuth account from manual refresh token input', async () => {

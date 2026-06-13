@@ -152,6 +152,18 @@ const accountSchedulingThresholdsCacheTTL = 60 * time.Second
 const accountSchedulingThresholdsErrorTTL = 5 * time.Second
 const accountSchedulingThresholdsDBTimeout = 5 * time.Second
 
+type cachedPlatformModelRoutingConfig struct {
+	config    map[string]DefaultAccountModelConfig
+	expiresAt int64 // unix nano
+}
+
+var platformModelRoutingConfigCache atomic.Value // *cachedPlatformModelRoutingConfig
+var platformModelRoutingConfigSF singleflight.Group
+
+const platformModelRoutingConfigCacheTTL = 60 * time.Second
+const platformModelRoutingConfigErrorTTL = 5 * time.Second
+const platformModelRoutingConfigDBTimeout = 5 * time.Second
+
 // cachedAntigravityUserAgentVersion 缓存 Antigravity UA 版本号（进程内缓存，60s TTL）
 type cachedAntigravityUserAgentVersion struct {
 	version   string
@@ -698,7 +710,11 @@ func (s *SettingService) GetAllSettings(ctx context.Context) (*SystemSettings, e
 		return nil, fmt.Errorf("get all settings: %w", err)
 	}
 
-	return s.parseSettings(settings), nil
+	parsed := s.parseSettings(settings)
+	s.refreshCachedSettingsWithOptions(parsed, refreshCachedSettingsOptions{
+		skipPlatformModelRoutingConfig: platformModelRoutingConfigRefreshShouldSkip(settings),
+	})
+	return parsed, nil
 }
 
 // GetFrontendURL 获取前端基础URL（数据库优先，fallback 到配置文件）
@@ -1614,6 +1630,8 @@ func oidcCompatibilityWriteDefault(base config.OIDCConnectConfig, configured boo
 
 // UpdateSettings 更新系统设置
 func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSettings) error {
+	prevPoolSettings := snapshotOpenAIWSPoolRuntimeSettingsForUpdate()
+
 	updates, err := s.buildSystemSettingsUpdates(ctx, settings)
 	if err != nil {
 		return err
@@ -1622,6 +1640,7 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	err = s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil {
 		s.refreshCachedSettings(settings)
+		triggerOpenAIWSPoolReconcileIfRuntimeSettingsChanged(settings, prevPoolSettings)
 	}
 	return err
 }
@@ -1650,6 +1669,8 @@ func (s *SettingService) OIDCSecurityWriteDefaults(ctx context.Context) (bool, b
 
 // UpdateSettingsWithAuthSourceDefaults persists system settings and auth-source defaults in a single write.
 func (s *SettingService) UpdateSettingsWithAuthSourceDefaults(ctx context.Context, settings *SystemSettings, authDefaults *AuthSourceDefaultSettings) error {
+	prevPoolSettings := snapshotOpenAIWSPoolRuntimeSettingsForUpdate()
+
 	updates, err := s.buildSystemSettingsUpdates(ctx, settings)
 	if err != nil {
 		return err
@@ -1666,8 +1687,59 @@ func (s *SettingService) UpdateSettingsWithAuthSourceDefaults(ctx context.Contex
 	err = s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil {
 		s.refreshCachedSettings(settings)
+		triggerOpenAIWSPoolReconcileIfRuntimeSettingsChanged(settings, prevPoolSettings)
 	}
 	return err
+}
+
+type openAIWSPoolRuntimeSettingsUpdateSnapshot struct {
+	minIdle       int
+	maxIdle       int
+	stickyReserve int
+	ok            bool
+}
+
+func snapshotOpenAIWSPoolRuntimeSettingsForUpdate() openAIWSPoolRuntimeSettingsUpdateSnapshot {
+	minIdle, maxIdle, stickyReserve, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
+	return openAIWSPoolRuntimeSettingsUpdateSnapshot{
+		minIdle:       minIdle,
+		maxIdle:       maxIdle,
+		stickyReserve: stickyReserve,
+		ok:            ok,
+	}
+}
+
+func triggerOpenAIWSPoolReconcileIfRuntimeSettingsChanged(settings *SystemSettings, prev openAIWSPoolRuntimeSettingsUpdateSnapshot) {
+	if settings == nil {
+		return
+	}
+	newMinIdle, newMaxIdle := normalizeOpenAIWSIdleSettingValues(settings.OpenAIWSMinIdlePerAccount, settings.OpenAIWSMaxIdlePerAccount)
+	newStickyReserve := boundedIntOrDefault(settings.OpenAIStickyReservePercent, 0, 100, 0)
+	poolSettingsChanged := !prev.ok ||
+		prev.minIdle != newMinIdle ||
+		prev.maxIdle != newMaxIdle ||
+		prev.stickyReserve != newStickyReserve
+	if poolSettingsChanged {
+		TriggerOpenAIWSPoolReconcile()
+	}
+}
+
+func normalizeOpenAIWSIdleSettingValues(minIdle, maxIdle int) (int, int) {
+	minIdle = boundedIntOrDefault(minIdle, 0, openAIWSMaxIdlePerAccountUpperBound, defaultOpenAIWSMinIdlePerAccount)
+	maxIdle = boundedIntOrDefault(maxIdle, 0, openAIWSMaxIdlePerAccountUpperBound, defaultOpenAIWSMaxIdlePerAccount)
+	if minIdle > maxIdle {
+		maxIdle = minIdle
+	}
+	return minIdle, maxIdle
+}
+
+func validateOpenAIWSIdleSettingsForUpdate(minIdle, maxIdle int) (int, int, error) {
+	minIdle = boundedIntOrDefault(minIdle, 0, openAIWSMaxIdlePerAccountUpperBound, defaultOpenAIWSMinIdlePerAccount)
+	maxIdle = boundedIntOrDefault(maxIdle, 0, openAIWSMaxIdlePerAccountUpperBound, defaultOpenAIWSMaxIdlePerAccount)
+	if minIdle > maxIdle {
+		return 0, 0, infraerrors.BadRequest("INVALID_OPENAI_WS_IDLE_SETTINGS", "openai_ws_min_idle_per_account must be <= openai_ws_max_idle_per_account")
+	}
+	return minIdle, maxIdle, nil
 }
 
 func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, settings *SystemSettings) (map[string]string, error) {
@@ -1704,6 +1776,13 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 		settings.OpenAIImageWebPaidModel = trimmed
 	} else {
 		settings.OpenAIImageWebPaidModel = DefaultOpenAIImageWebConversationSettings().PaidModel
+	}
+	openAIWSMinIdle, openAIWSMaxIdle, err := validateOpenAIWSIdleSettingsForUpdate(
+		settings.OpenAIWSMinIdlePerAccount,
+		settings.OpenAIWSMaxIdlePerAccount,
+	)
+	if err != nil {
+		return nil, err
 	}
 	settings.WeChatConnectAppID = strings.TrimSpace(settings.WeChatConnectAppID)
 	settings.WeChatConnectAppSecret = strings.TrimSpace(settings.WeChatConnectAppSecret)
@@ -1945,6 +2024,11 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyFallbackModelOpenAI] = settings.FallbackModelOpenAI
 	updates[SettingKeyFallbackModelGemini] = settings.FallbackModelGemini
 	updates[SettingKeyFallbackModelAntigravity] = settings.FallbackModelAntigravity
+	platformModelRoutingConfig, err := encodePlatformModelRoutingConfig(settings.PlatformModelRoutingConfig)
+	if err != nil {
+		return nil, fmt.Errorf("marshal platform model routing config: %w", err)
+	}
+	updates[SettingKeyPlatformModelRoutingConfig] = platformModelRoutingConfig
 	defaultAccountModelConfig, err := encodePlatformDefaultAccountModelConfig(settings.PlatformDefaultAccountModelConfig)
 	if err != nil {
 		return nil, fmt.Errorf("marshal platform default account model config: %w", err)
@@ -2046,6 +2130,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[openAIAdvancedSchedulerSettingKey] = strconv.FormatBool(settings.OpenAIAdvancedSchedulerEnabled)
 	updates[SettingKeyOpenAIStickyReservePercent] = strconv.Itoa(boundedIntOrDefault(settings.OpenAIStickyReservePercent, 0, 100, 0))
 	updates[SettingKeyOpenAIStickyWaitTimeoutSeconds] = strconv.Itoa(boundedIntOrDefault(settings.OpenAIStickyWaitTimeoutSeconds, 1, 300, 30))
+	updates[SettingKeyOpenAIWSMinIdlePerAccount] = strconv.Itoa(openAIWSMinIdle)
+	updates[SettingKeyOpenAIWSMaxIdlePerAccount] = strconv.Itoa(openAIWSMaxIdle)
 	updates[SettingKeyOpenAIImageWebFreeModel] = settings.OpenAIImageWebFreeModel
 	updates[SettingKeyOpenAIImageWebPaidModel] = settings.OpenAIImageWebPaidModel
 	updates[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives] = strconv.FormatBool(settings.OpenAIOAuthImageBridgeDisableKeepAlives)
@@ -2104,6 +2190,24 @@ func validateAndNormalizeAccountSchedulingThresholds(input map[string]int) (map[
 		normalized[platform] = value
 	}
 	return normalized, nil
+}
+
+func parseAccountSchedulingThresholdsSetting(raw string) (map[string]int, error) {
+	thresholds := defaultAccountSchedulingThresholds()
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return thresholds, nil
+	}
+	parsed := map[string]int{}
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return thresholds, err
+	}
+	for _, platform := range AllowedSchedulingThresholdPlatforms {
+		if value, ok := parsed[platform]; ok {
+			thresholds[platform] = boundedIntOrDefault(value, 1, 100, 100)
+		}
+	}
+	return thresholds, nil
 }
 
 // validateDefaultPlatformQuotaMap 校验 platform quota map 的合法性：
@@ -2177,7 +2281,24 @@ func (s *SettingService) buildAuthSourceDefaultUpdates(ctx context.Context, sett
 	return updates, nil
 }
 
+type refreshCachedSettingsOptions struct {
+	skipPlatformModelRoutingConfig bool
+}
+
+func platformModelRoutingConfigRefreshShouldSkip(settings map[string]string) bool {
+	raw, ok := settings[SettingKeyPlatformModelRoutingConfig]
+	if !ok || strings.TrimSpace(raw) == "" {
+		return false
+	}
+	_, valid := parsePlatformModelRoutingConfig(raw)
+	return !valid
+}
+
 func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
+	s.refreshCachedSettingsWithOptions(settings, refreshCachedSettingsOptions{})
+}
+
+func (s *SettingService) refreshCachedSettingsWithOptions(settings *SystemSettings, opts refreshCachedSettingsOptions) {
 	if s == nil || settings == nil {
 		return
 	}
@@ -2235,14 +2356,25 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		expiresAt: time.Now().Add(kiroRuntimeSettingsCacheTTL).UnixNano(),
 	})
 	accountSchedulingThresholdsSF.Forget(SettingKeyAccountSchedulingThresholds)
-	normalizedThresholds, err := validateAndNormalizeAccountSchedulingThresholds(settings.AccountSchedulingThresholds)
-	if err != nil {
-		normalizedThresholds = defaultAccountSchedulingThresholds()
+	if settings.AccountSchedulingThresholds != nil {
+		normalizedThresholds, err := validateAndNormalizeAccountSchedulingThresholds(settings.AccountSchedulingThresholds)
+		if err != nil {
+			normalizedThresholds = defaultAccountSchedulingThresholds()
+		}
+		accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{
+			thresholds: cloneAccountSchedulingThresholds(normalizedThresholds),
+			expiresAt:  time.Now().Add(accountSchedulingThresholdsCacheTTL).UnixNano(),
+		})
+	} else {
+		accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{})
 	}
-	accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{
-		thresholds: cloneAccountSchedulingThresholds(normalizedThresholds),
-		expiresAt:  time.Now().Add(accountSchedulingThresholdsCacheTTL).UnixNano(),
-	})
+	if !opts.skipPlatformModelRoutingConfig {
+		platformModelRoutingConfigSF.Forget(SettingKeyPlatformModelRoutingConfig)
+		platformModelRoutingConfigCache.Store(&cachedPlatformModelRoutingConfig{
+			config:    clonePlatformModelConfigMap(normalizePlatformModelRoutingConfig(settings.PlatformModelRoutingConfig)),
+			expiresAt: time.Now().Add(platformModelRoutingConfigCacheTTL).UnixNano(),
+		})
+	}
 	s.antigravityUAVersionSF.Forget("antigravity_user_agent_version")
 	antigravityUserAgentVersion := antigravity.NormalizeUserAgentVersion(settings.AntigravityUserAgentVersion)
 	if antigravityUserAgentVersion == "" {
@@ -2267,6 +2399,12 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		timeout:   time.Duration(boundedIntOrDefault(settings.OpenAIStickyWaitTimeoutSeconds, 1, 300, 30)) * time.Second,
 		expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 	})
+	openAIWSMinIdle, openAIWSMaxIdle := normalizeOpenAIWSIdleSettingValues(settings.OpenAIWSMinIdlePerAccount, settings.OpenAIWSMaxIdlePerAccount)
+	StoreOpenAIWSPoolRuntimeSettings(
+		openAIWSMinIdle,
+		openAIWSMaxIdle,
+		boundedIntOrDefault(settings.OpenAIStickyReservePercent, 0, 100, 0),
+	)
 	openAIOAuthImageBridgeTransportSettingsSF.Forget(openAIOAuthImageBridgeTransportSettingsKey)
 	openAIOAuthImageBridgeTransportSettingsCache.Store(&cachedOpenAIOAuthImageBridgeTransportSettings{
 		disableKeepAlives: settings.OpenAIOAuthImageBridgeDisableKeepAlives,
@@ -3102,7 +3240,9 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyFallbackModelOpenAI:               "gpt-4o",
 		SettingKeyFallbackModelGemini:               "gemini-2.5-pro",
 		SettingKeyFallbackModelAntigravity:          "gemini-2.5-pro",
+		SettingKeyPlatformModelRoutingConfig:        "{}",
 		SettingKeyPlatformDefaultAccountModelConfig: defaultAccountModelConfigJSON(),
+		SettingKeyOpenAIStickyReservePercent:        strconv.Itoa(defaultOpenAIWSStickyReservePercent),
 		// Identity patch defaults
 		SettingKeyEnableIdentityPatch: "true",
 		SettingKeyIdentityPatchPrompt: "",
@@ -3537,6 +3677,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.FallbackModelOpenAI = s.getStringOrDefault(settings, SettingKeyFallbackModelOpenAI, "gpt-4o")
 	result.FallbackModelGemini = s.getStringOrDefault(settings, SettingKeyFallbackModelGemini, "gemini-2.5-pro")
 	result.FallbackModelAntigravity = s.getStringOrDefault(settings, SettingKeyFallbackModelAntigravity, "gemini-2.5-pro")
+	if platformModelRoutingConfig, ok := parsePlatformModelRoutingConfig(settings[SettingKeyPlatformModelRoutingConfig]); ok {
+		result.PlatformModelRoutingConfig = platformModelRoutingConfig
+	} else {
+		result.PlatformModelRoutingConfig = map[string]DefaultAccountModelConfig{}
+	}
 	result.PlatformDefaultAccountModelConfig = parsePlatformDefaultAccountModelConfig(settings[SettingKeyPlatformDefaultAccountModelConfig])
 
 	// Identity patch settings (default: enabled, to preserve existing behavior)
@@ -3642,12 +3787,23 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.OpenAIAdvancedSchedulerEnabled = settings[openAIAdvancedSchedulerSettingKey] == "true"
 	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyOpenAIStickyReservePercent])); err == nil {
 		result.OpenAIStickyReservePercent = boundedIntOrDefault(v, 0, 100, 0)
+	} else {
+		result.OpenAIStickyReservePercent = defaultOpenAIWSStickyReservePercent
 	}
 	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyOpenAIStickyWaitTimeoutSeconds])); err == nil {
 		result.OpenAIStickyWaitTimeoutSeconds = boundedIntOrDefault(v, 1, 300, 30)
 	} else {
 		result.OpenAIStickyWaitTimeoutSeconds = 30
 	}
+	openAIWSMinIdle := defaultOpenAIWSMinIdlePerAccount
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyOpenAIWSMinIdlePerAccount])); err == nil {
+		openAIWSMinIdle = v
+	}
+	openAIWSMaxIdle := defaultOpenAIWSMaxIdlePerAccount
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyOpenAIWSMaxIdlePerAccount])); err == nil {
+		openAIWSMaxIdle = v
+	}
+	result.OpenAIWSMinIdlePerAccount, result.OpenAIWSMaxIdlePerAccount = normalizeOpenAIWSIdleSettingValues(openAIWSMinIdle, openAIWSMaxIdle)
 	result.OpenAIImageWebFreeModel = strings.TrimSpace(settings[SettingKeyOpenAIImageWebFreeModel])
 	result.OpenAIImageWebPaidModel = strings.TrimSpace(settings[SettingKeyOpenAIImageWebPaidModel])
 	if raw, ok := settings[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives]; ok && strings.TrimSpace(raw) != "" {
@@ -3696,15 +3852,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	result.AccountSchedulingThresholds = defaultAccountSchedulingThresholds()
 	if raw := strings.TrimSpace(settings[SettingKeyAccountSchedulingThresholds]); raw != "" {
-		parsed := map[string]int{}
-		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		if thresholds, err := parseAccountSchedulingThresholdsSetting(raw); err != nil {
 			slog.Warn("[Setting] parseSettings: unmarshal account_scheduling_thresholds failed", "error", err)
 		} else {
-			for _, platform := range AllowedSchedulingThresholdPlatforms {
-				if value, ok := parsed[platform]; ok {
-					result.AccountSchedulingThresholds[platform] = boundedIntOrDefault(value, 1, 100, 100)
-				}
-			}
+			result.AccountSchedulingThresholds = thresholds
 		}
 	}
 
@@ -5050,13 +5201,10 @@ func (s *SettingService) GetAccountSchedulingThresholds(ctx context.Context) map
 		}
 
 		if trimmed := strings.TrimSpace(raw); trimmed != "" {
-			var parsed map[string]int
-			if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+			if parsed, err := parseAccountSchedulingThresholdsSetting(trimmed); err != nil {
 				slog.Warn("failed to parse account scheduling thresholds, falling back to defaults", "error", err)
-			} else if normalized, err := validateAndNormalizeAccountSchedulingThresholds(parsed); err != nil {
-				slog.Warn("failed to normalize account scheduling thresholds, falling back to defaults", "error", err)
 			} else {
-				thresholds = normalized
+				thresholds = parsed
 			}
 		}
 
@@ -5361,7 +5509,62 @@ func (s *SettingService) SetStreamTimeoutSettings(ctx context.Context, settings 
 	return s.settingRepo.Set(ctx, SettingKeyStreamTimeoutSettings, string(data))
 }
 
-// GetDefaultPlatformQuotas 读取系统全局 platform quota JSON key，返回 4 platform x 3 window 的设置。
+// GetTempUnschedThresholdSettings 获取临时不可调度规则的窗口阈值配置
+func (s *SettingService) GetTempUnschedThresholdSettings(ctx context.Context) (*TempUnschedThresholdSettings, error) {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyTempUnschedThresholdSettings)
+	if err != nil {
+		if errors.Is(err, ErrSettingNotFound) {
+			return DefaultTempUnschedThresholdSettings(), nil
+		}
+		return nil, fmt.Errorf("get temp unsched threshold settings: %w", err)
+	}
+	if value == "" {
+		return DefaultTempUnschedThresholdSettings(), nil
+	}
+
+	var settings TempUnschedThresholdSettings
+	if err := json.Unmarshal([]byte(value), &settings); err != nil {
+		return DefaultTempUnschedThresholdSettings(), nil
+	}
+
+	// 验证并修正配置值
+	if settings.ThresholdCount < 1 {
+		settings.ThresholdCount = 1
+	}
+	if settings.ThresholdCount > 1000 {
+		settings.ThresholdCount = 1000
+	}
+	if settings.ThresholdWindowMinutes < 1 {
+		settings.ThresholdWindowMinutes = 1
+	}
+	if settings.ThresholdWindowMinutes > 60 {
+		settings.ThresholdWindowMinutes = 60
+	}
+
+	return &settings, nil
+}
+
+// SetTempUnschedThresholdSettings 设置临时不可调度规则的窗口阈值配置
+func (s *SettingService) SetTempUnschedThresholdSettings(ctx context.Context, settings *TempUnschedThresholdSettings) error {
+	if settings == nil {
+		return fmt.Errorf("settings cannot be nil")
+	}
+
+	if settings.ThresholdCount < 1 || settings.ThresholdCount > 1000 {
+		return fmt.Errorf("threshold_count must be between 1-1000")
+	}
+	if settings.ThresholdWindowMinutes < 1 || settings.ThresholdWindowMinutes > 60 {
+		return fmt.Errorf("threshold_window_minutes must be between 1-60")
+	}
+
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return fmt.Errorf("marshal temp unsched threshold settings: %w", err)
+	}
+
+	return s.settingRepo.Set(ctx, SettingKeyTempUnschedThresholdSettings, string(data))
+}
+
 // 永远返回包含全部 4 platform key 的 map（值可能为零值/nil 字段，表示"上层未配置 = 不限制"）。
 //
 // 使用单个 JSON key（default_platform_quotas），一次 DB roundtrip，消除旧 12-KV 格式的 N+1 问题。

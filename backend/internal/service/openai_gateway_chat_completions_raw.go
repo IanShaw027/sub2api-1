@@ -96,7 +96,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	serviceTier := extractOpenAIServiceTierFromBody(body)
 
 	// 2. Resolve model mapping (same as ForwardAsChatCompletions)
-	billingModel := resolveOpenAIForwardModelWithSelectedFallback(account, originalModel, defaultMappedModel, selectedFallbackModel)
+	billingModel := resolveOpenAIForwardModelWithSettingsAndSelectedFallback(ctx, s.settingService, account, originalModel, defaultMappedModel, selectedFallbackModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
 
 	// 3. Rewrite model in body (no protocol conversion)

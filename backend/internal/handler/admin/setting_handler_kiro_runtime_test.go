@@ -140,6 +140,38 @@ func TestSettingHandler_UpdateSettings_KiroRuntimeRequestResponseAndRuntimeMatch
 	require.Equal(t, resp.Data.KiroCachePrefixTTLSeconds, runtime.CachePrefixTTLSecs)
 }
 
+func TestSettingHandler_UpdateSettings_ReturnsOpenAIStickyWaitTimeoutSeconds(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &settingHandlerRepoStub{}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+	rawBody, err := json.Marshal(map[string]any{
+		"openai_sticky_wait_timeout_seconds": 45,
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			OpenAIStickyWaitTimeoutSeconds *int `json:"openai_sticky_wait_timeout_seconds"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.NotNil(t, resp.Data.OpenAIStickyWaitTimeoutSeconds)
+	require.Equal(t, 45, *resp.Data.OpenAIStickyWaitTimeoutSeconds)
+}
+
 func TestSettingHandler_UpdateSettings_PreservesExtendedKiroThinkingModes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

@@ -43,7 +43,7 @@ func TestResolveAccountUpstreamModel_Antigravity(t *testing.T) {
 		Platform: PlatformAntigravity,
 	}
 	// Antigravity 平台使用 DefaultAntigravityModelMapping
-	got := resolveAccountUpstreamModel(account, "claude-sonnet-4-6")
+	got := resolveAccountUpstreamModel(context.Background(), nil, account, "claude-sonnet-4-6")
 	require.Equal(t, "claude-sonnet-4-6", got)
 }
 
@@ -52,7 +52,7 @@ func TestResolveAccountUpstreamModel_Antigravity_Unsupported(t *testing.T) {
 	account := &Account{
 		Platform: PlatformAntigravity,
 	}
-	got := resolveAccountUpstreamModel(account, "totally-unknown-model")
+	got := resolveAccountUpstreamModel(context.Background(), nil, account, "totally-unknown-model")
 	require.Equal(t, "", got, "unsupported model should return empty")
 }
 
@@ -61,7 +61,7 @@ func TestResolveAccountUpstreamModel_NonAntigravity(t *testing.T) {
 	account := &Account{
 		Platform: PlatformAnthropic,
 	}
-	got := resolveAccountUpstreamModel(account, "claude-sonnet-4-6")
+	got := resolveAccountUpstreamModel(context.Background(), nil, account, "claude-sonnet-4-6")
 	require.Equal(t, "claude-sonnet-4-6", got, "no mapping = passthrough")
 }
 
