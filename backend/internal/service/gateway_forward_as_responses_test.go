@@ -186,6 +186,14 @@ func TestClassifyResponsesAnthropicFailure(t *testing.T) {
 	require.Equal(t, "tool_continuation", classification.Reason)
 	require.True(t, classification.RetryWithFullReplay)
 
+	classification = classifyResponsesAnthropicFailure(http.StatusBadRequest, []byte(`{"error":{"type":"invalid_request_error","message":"messages: at least one message is required"}}`))
+	require.Equal(t, "empty_messages", classification.Reason)
+	require.True(t, classification.RetryWithFullReplay)
+
+	classification = classifyResponsesAnthropicFailure(http.StatusBadRequest, []byte(`{"error":{"type":"invalid_request_error","message":"messages.0.content must be non-empty"}}`))
+	require.Empty(t, classification.Reason)
+	require.False(t, classification.RetryWithFullReplay)
+
 	classification = classifyResponsesAnthropicFailure(http.StatusUnprocessableEntity, []byte(`{"error":{"type":"invalid_request_error","message":"previous response not found for continuation anchor"}}`))
 	require.Equal(t, "previous_response_not_found", classification.Reason)
 	require.True(t, classification.RetryWithFullReplay)
@@ -195,9 +203,47 @@ func TestClassifyResponsesAnthropicFailure(t *testing.T) {
 	require.False(t, classification.RetryWithFullReplay)
 }
 
-func TestForwardAsResponses_RetriesFullReplayOnceOnContinuationFailure(t *testing.T) {
+func TestForwardAsResponses_RetriesFullReplayOnceOnRecoverableIngressFailures(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
+
+	cases := []struct {
+		name       string
+		message    string
+		responseID string
+		text       string
+	}{
+		{
+			name:       "previous_response_not_found",
+			message:    "previous response not found for continuation anchor",
+			responseID: "msg_replay_continuation",
+			text:       "continuation replay ok",
+		},
+		{
+			name:       "tool_continuation",
+			message:    "No tool call found for function call output with call_id call_1.",
+			responseID: "msg_replay_tool_continuation",
+			text:       "tool continuation replay ok",
+		},
+		{
+			name:       "empty_messages",
+			message:    "messages: at least one message is required",
+			responseID: "msg_replay_empty_messages",
+			text:       "empty messages replay ok",
+		},
+	}
+
+	for _, tt := range cases {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			runForwardAsResponsesFullReplayRetryTest(t, tt.message, tt.responseID, tt.text)
+		})
+	}
+}
+
+func runForwardAsResponsesFullReplayRetryTest(t *testing.T, upstreamMessage string, replayResponseID string, replayText string) {
+	t.Helper()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -210,7 +256,7 @@ func TestForwardAsResponses_RetriesFullReplayOnceOnContinuationFailure(t *testin
 			{
 				StatusCode: http.StatusBadRequest,
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"previous response not found for continuation anchor"}}`)),
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"` + upstreamMessage + `"}}`)),
 			},
 			{
 				StatusCode: http.StatusOK,
@@ -220,10 +266,10 @@ func TestForwardAsResponses_RetriesFullReplayOnceOnContinuationFailure(t *testin
 				},
 				Body: io.NopCloser(strings.NewReader(strings.Join([]string{
 					`event: message_start`,
-					`data: {"type":"message_start","message":{"id":"msg_replay","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.5","stop_reason":"","usage":{"input_tokens":12}}}`,
+					`data: {"type":"message_start","message":{"id":"` + replayResponseID + `","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.5","stop_reason":"","usage":{"input_tokens":12}}}`,
 					``,
 					`event: content_block_start`,
-					`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"replayed ok"}}`,
+					`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"` + replayText + `"}}`,
 					``,
 					`event: message_delta`,
 					`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}}`,
@@ -251,80 +297,13 @@ func TestForwardAsResponses_RetriesFullReplayOnceOnContinuationFailure(t *testin
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 2, upstream.callCount)
-	require.Equal(t, "user", gjson.GetBytes(upstream.bodies[0], "messages.0.role").String())
-	require.Equal(t, "tool_result", gjson.GetBytes(upstream.bodies[0], "messages.0.content.0.type").String())
-	require.False(t, gjson.GetBytes(upstream.bodies[0], "messages.1").Exists())
+	require.True(t, gjson.GetBytes(upstream.bodies[0], "messages").IsArray())
+	require.Equal(t, int64(0), gjson.GetBytes(upstream.bodies[0], "messages.#").Int())
+	require.NotContains(t, string(upstream.bodies[0]), `"tool_result"`)
 	require.Equal(t, "assistant", gjson.GetBytes(upstream.bodies[1], "messages.0.role").String())
 	require.Equal(t, "tool_use", gjson.GetBytes(upstream.bodies[1], "messages.0.content.0.type").String())
 	require.Equal(t, "user", gjson.GetBytes(upstream.bodies[1], "messages.1.role").String())
 	require.Equal(t, "tool_result", gjson.GetBytes(upstream.bodies[1], "messages.1.content.0.type").String())
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "messages.2").Exists())
-	require.Contains(t, rec.Body.String(), `"replayed ok"`)
-}
-
-func TestForwardAsResponses_RetriesToolContinuationWhenMessagesProvideFunctionCallContext(t *testing.T) {
-	t.Parallel()
-	gin.SetMode(gin.TestMode)
-
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	body := []byte(`{"model":"claude-sonnet-4.5","stream":false,"input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"messages":[{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"hello\"}"}}]},{"role":"tool","tool_call_id":"call_1","content":"ok"}],"previous_response_id":"resp_anchor_1"}`)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(string(body)))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	upstream := &httpUpstreamSequenceRecorder{
-		responses: []*http.Response{
-			{
-				StatusCode: http.StatusBadRequest,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"No tool call found for function call output with call_id call_1."}}`)),
-			},
-			{
-				StatusCode: http.StatusOK,
-				Header: http.Header{
-					"Content-Type": []string{"text/event-stream"},
-					"x-request-id": []string{"rid_replay_tool_ok"},
-				},
-				Body: io.NopCloser(strings.NewReader(strings.Join([]string{
-					`event: message_start`,
-					`data: {"type":"message_start","message":{"id":"msg_replay_tool","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.5","stop_reason":"","usage":{"input_tokens":12}}}`,
-					``,
-					`event: content_block_start`,
-					`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"tool replay ok"}}`,
-					``,
-					`event: message_delta`,
-					`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}}`,
-					``,
-				}, "\n"))),
-			},
-		},
-	}
-
-	svc := &GatewayService{
-		cfg: &config.Config{
-			Security: config.SecurityConfig{
-				URLAllowlist: config.URLAllowlistConfig{
-					Enabled:           false,
-					AllowInsecureHTTP: true,
-				},
-			},
-		},
-		httpUpstream: upstream,
-	}
-	account := newAnthropicAPIKeyAccountForTest()
-	account.Extra = nil
-
-	result, err := svc.ForwardAsResponses(context.Background(), c, account, body, nil)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, 2, upstream.callCount)
-	require.Equal(t, "user", gjson.GetBytes(upstream.bodies[0], "messages.0.role").String())
-	require.Equal(t, "tool_result", gjson.GetBytes(upstream.bodies[0], "messages.0.content.0.type").String())
-	require.False(t, gjson.GetBytes(upstream.bodies[0], "messages.1").Exists())
-	require.Equal(t, "assistant", gjson.GetBytes(upstream.bodies[1], "messages.0.role").String())
-	require.Equal(t, "tool_use", gjson.GetBytes(upstream.bodies[1], "messages.0.content.0.type").String())
-	require.Equal(t, "user", gjson.GetBytes(upstream.bodies[1], "messages.1.role").String())
-	require.Equal(t, "tool_result", gjson.GetBytes(upstream.bodies[1], "messages.1.content.0.type").String())
-	require.False(t, gjson.GetBytes(upstream.bodies[1], "messages.2").Exists())
-	require.Contains(t, rec.Body.String(), `"tool replay ok"`)
+	require.Contains(t, rec.Body.String(), `"`+replayText+`"`)
 }

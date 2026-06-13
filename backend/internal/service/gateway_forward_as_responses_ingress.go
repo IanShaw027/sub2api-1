@@ -23,7 +23,10 @@ func (p responsesAnthropicIngressPlan) CanRetryWithFullReplayForReason(reason st
 		return false
 	}
 	switch recoverableFailureReason(reason) {
-	case recoverableFailureInvalidContinuation, recoverableFailureToolContext, recoverableFailureToolContinuation:
+	case recoverableFailureInvalidContinuation,
+		recoverableFailureToolContext,
+		recoverableFailureToolContinuation,
+		recoverableFailureEmptyMessages:
 		return responsesFullReplayHasCompleteToolContinuationContext(p.FullReplayBody)
 	default:
 		return true

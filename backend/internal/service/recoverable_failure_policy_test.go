@@ -44,6 +44,11 @@ func TestClassifyRecoverableFailureReason(t *testing.T) {
 			message: "tool_result block missing matching tool_use block",
 			reason:  recoverableFailureToolContinuation,
 		},
+		{
+			name:    "empty_messages",
+			message: "messages: at least one message is required",
+			reason:  recoverableFailureEmptyMessages,
+		},
 	}
 
 	for _, tt := range tests {
@@ -67,6 +72,7 @@ func TestReplayPolicyForRecoverableFailureReason(t *testing.T) {
 		recoverableFailureInvalidContinuation,
 		recoverableFailureToolContext,
 		recoverableFailureToolContinuation,
+		recoverableFailureEmptyMessages,
 	}
 
 	for _, reason := range recoverableReasons {
