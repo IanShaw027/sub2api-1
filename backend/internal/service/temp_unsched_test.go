@@ -3,6 +3,7 @@
 package service
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -47,7 +48,7 @@ func TestMatchTempUnschedKeyword(t *testing.T) {
 			name:     "empty_keywords",
 			body:     "server is overloaded",
 			keywords: []string{},
-			want:     "",
+			want:     tempUnschedAnyKeyword, // keywords 留空 = 仅凭错误码匹配
 		},
 		{
 			name:     "whitespace_keyword",
@@ -205,6 +206,31 @@ func TestAccount_GetTempUnschedulableRules(t *testing.T) {
 			wantCount: 2,
 		},
 		{
+			name: "invalid_http_status_codes_ignored",
+			account: &Account{
+				Credentials: map[string]any{
+					"temp_unschedulable_rules": []any{
+						map[string]any{
+							"error_code":       float64(99),
+							"keywords":         []any{"invalid"},
+							"duration_minutes": float64(5),
+						},
+						map[string]any{
+							"error_code":       float64(600),
+							"keywords":         []any{"invalid"},
+							"duration_minutes": float64(5),
+						},
+						map[string]any{
+							"error_code":       float64(599),
+							"keywords":         []any{"valid"},
+							"duration_minutes": float64(5),
+						},
+					},
+				},
+			},
+			wantCount: 1,
+		},
+		{
 			name: "empty_rules",
 			account: &Account{
 				Credentials: map[string]any{
@@ -256,6 +282,36 @@ func TestTempUnschedulableRule_Parse(t *testing.T) {
 	require.Equal(t, 503, rule.ErrorCode)
 	require.Equal(t, []string{"overloaded", "capacity"}, rule.Keywords)
 	require.Equal(t, 5, rule.DurationMinutes)
+}
+
+func TestAccount_GetCustomErrorCodes_IgnoresCodesOutsideHTTPStatusRange(t *testing.T) {
+	account := &Account{
+		Credentials: map[string]any{
+			"custom_error_codes": []any{float64(99), float64(100), float64(599), float64(600)},
+		},
+	}
+
+	require.Equal(t, []int{100, 599}, account.GetCustomErrorCodes())
+}
+
+func TestAccount_GetCustomErrorCodes_IgnoresFractionalCodes(t *testing.T) {
+	account := &Account{
+		Credentials: map[string]any{
+			"custom_error_codes": []any{float64(502.9), float64(503)},
+		},
+	}
+
+	require.Equal(t, []int{503}, account.GetCustomErrorCodes())
+}
+
+func TestAccount_GetCustomErrorCodes_IgnoresNaNAndInfinity(t *testing.T) {
+	account := &Account{
+		Credentials: map[string]any{
+			"custom_error_codes": []any{math.NaN(), math.Inf(1), math.Inf(-1), float64(504)},
+		},
+	}
+
+	require.Equal(t, []int{504}, account.GetCustomErrorCodes())
 }
 
 // TestTruncateTempUnschedMessage 测试消息截断

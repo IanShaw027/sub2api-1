@@ -102,3 +102,33 @@ func TestGetAccountSchedulingThresholds_ReadsStoredValue(t *testing.T) {
 	require.Equal(t, 88, got[PlatformKiro])
 	require.Equal(t, 100, got[PlatformAnthropic])
 }
+
+func TestUpdateSettings_OmittedAccountSchedulingThresholdsDoesNotCacheDefaults(t *testing.T) {
+	svc := newSettingServiceForPlatformThresholdTest(map[string]string{
+		SettingKeyAccountSchedulingThresholds: `{"openai":85,"kiro":88}`,
+	})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		FrontendURL: "https://example.test",
+	})
+	require.NoError(t, err)
+
+	got := svc.GetAccountSchedulingThresholds(context.Background())
+	require.Equal(t, 85, got[PlatformOpenAI])
+	require.Equal(t, 88, got[PlatformKiro])
+}
+
+func TestAccountSchedulingThresholds_InvalidStoredValueUsesSameDefaultsInSettingsAndCache(t *testing.T) {
+	svc := newSettingServiceForPlatformThresholdTest(map[string]string{
+		SettingKeyAccountSchedulingThresholds: `{"openai":0,"kiro":88}`,
+	})
+
+	settings := svc.parseSettings(map[string]string{
+		SettingKeyAccountSchedulingThresholds: `{"openai":0,"kiro":88}`,
+	})
+	cached := svc.GetAccountSchedulingThresholds(context.Background())
+
+	require.Equal(t, settings.AccountSchedulingThresholds, cached)
+	require.Equal(t, 88, cached[PlatformKiro])
+	require.Equal(t, 100, cached[PlatformOpenAI])
+}
