@@ -398,6 +398,62 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).toContain('5h|18|900')
   })
 
+  it('OpenAI OAuth usage 接口返回空窗口时不渲染 0% 占位条', async () => {
+    getUsage.mockResolvedValue({
+      five_hour: {
+        utilization: 0,
+        resets_at: null,
+        remaining_seconds: 0,
+        window_stats: {
+          requests: 0,
+          tokens: 0,
+          cost: 0,
+          standard_cost: 0,
+          user_cost: 0
+        }
+      },
+      seven_day: {
+        utilization: 0,
+        resets_at: null,
+        remaining_seconds: 0,
+        window_stats: {
+          requests: 0,
+          tokens: 0,
+          cost: 0,
+          standard_cost: 0,
+          user_cost: 0
+        }
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 2011,
+          platform: 'openai',
+          type: 'oauth',
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(getUsage).toHaveBeenCalledWith(2011, undefined)
+    expect(wrapper.findAll('.usage-bar')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('5h|0')
+    expect(wrapper.text()).not.toContain('7d|0')
+  })
+
   it('OpenAI OAuth 在无 codex 快照时会回退显示 usage 接口窗口', async () => {
 	getUsage.mockResolvedValue({
 	  five_hour: {
@@ -768,6 +824,80 @@ describe('AccountUsageCell', () => {
     expect(wrapper.findAll('.usage-bar')).toHaveLength(0)
     expect(wrapper.text()).toContain('img:')
     expect(wrapper.text()).toContain('web 3req $0.30')
+  })
+
+  it('OpenAI 生图窗口只有限流或重置进度时仍显示 img 摘要', async () => {
+    getUsage.mockResolvedValue({
+      openai_image_codex_supported: true,
+      openai_image_codex_five_hour: {
+        utilization: 100,
+        resets_at: '2026-03-08T12:00:00Z',
+        remaining_seconds: 1800,
+        window_stats: {
+          requests: 0,
+          tokens: 0,
+          cost: 0,
+          standard_cost: 0,
+          user_cost: 0
+        }
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 2007,
+          platform: 'openai',
+          type: 'oauth',
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('img:')
+    expect(wrapper.text()).toContain('5h 0req $0.00')
+  })
+
+  it('OpenAI 生图窗口只有 used_requests 时仍显示 img 摘要', async () => {
+    getUsage.mockResolvedValue({
+      openai_image_codex_supported: true,
+      openai_image_codex_five_hour: {
+        utilization: 0,
+        resets_at: null,
+        remaining_seconds: 0,
+        used_requests: 4
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 2008,
+          platform: 'openai',
+          type: 'oauth',
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('img:')
+    expect(wrapper.text()).toContain('5h 4req $0.00')
   })
 
   it('OpenAI codex 生图路线开启时不会补齐 img 5h/img 7d 占位条', async () => {

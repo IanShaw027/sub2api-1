@@ -565,7 +565,7 @@ const openAIResponseUsageBars = computed(() => {
   const info = usageInfo.value
   if (!info) return []
   const items: Array<{ key: string; label: string; progress: UsageProgress; color: 'indigo' | 'emerald' }> = []
-  if (info.five_hour) {
+  if (hasUsageProgressData(info.five_hour)) {
     items.push({
       key: 'responses-5h',
       label: '5h',
@@ -573,7 +573,7 @@ const openAIResponseUsageBars = computed(() => {
       color: 'indigo'
     })
   }
-  if (info.seven_day) {
+  if (hasUsageProgressData(info.seven_day)) {
     items.push({
       key: 'responses-7d',
       label: '7d',
@@ -602,15 +602,16 @@ const openAICurrentImageGroups = computed(() => {
   return groups
 })
 
-const hasUsageProgressData = (progress?: UsageProgress | null) => {
+const hasUsageProgressData = (progress?: UsageProgress | null): progress is UsageProgress => {
   if (!progress) return false
   const stats = progress.window_stats
   return progress.utilization > 0 ||
-    !!progress.resets_at ||
-    progress.remaining_seconds > 0 ||
+    (progress.used_requests ?? 0) > 0 ||
     (stats?.requests ?? 0) > 0 ||
     (stats?.tokens ?? 0) > 0 ||
-    (stats?.cost ?? 0) > 0
+    (stats?.cost ?? 0) > 0 ||
+    (stats?.user_cost ?? 0) > 0 ||
+    (stats?.standard_cost ?? 0) > 0
 }
 
 const isRouteVisible = (supported: boolean | undefined, hasData: boolean) => {
@@ -669,31 +670,34 @@ const openAIImageUsageSummary = computed(() => {
   if (!info) return []
   const { codex: showCodex, web2api: showWeb2api } = openAIEnabledImageRoutes.value
   const items: Array<{ label: string; requests: number; userCost: number }> = []
-  if (showCodex && info.openai_image_codex_five_hour?.window_stats) {
-    const s = info.openai_image_codex_five_hour.window_stats
-    if (s.requests > 0 || (s.user_cost ?? 0) > 0) {
-      items.push({ label: '5h', requests: s.requests, userCost: s.user_cost ?? 0 })
-    }
+  const appendItem = (visible: boolean, label: string, progress?: UsageProgress | null) => {
+    if (!visible || !hasUsageProgressData(progress)) return
+    const stats = progress?.window_stats
+    items.push({
+      label,
+      requests: stats?.requests ?? progress?.used_requests ?? 0,
+      userCost: stats?.user_cost ?? stats?.cost ?? 0
+    })
   }
-  if (showCodex && info.openai_image_codex_seven_day?.window_stats) {
-    const s = info.openai_image_codex_seven_day.window_stats
-    if (s.requests > 0 || (s.user_cost ?? 0) > 0) {
-      items.push({ label: '7d', requests: s.requests, userCost: s.user_cost ?? 0 })
-    }
-  }
-  if (showWeb2api && info.openai_image_web2api_five_hour?.window_stats) {
-    const s = info.openai_image_web2api_five_hour.window_stats
-    if (s.requests > 0 || (s.user_cost ?? 0) > 0) {
-      items.push({ label: 'web', requests: s.requests, userCost: s.user_cost ?? 0 })
-    }
-  }
+  appendItem(showCodex, '5h', info.openai_image_codex_five_hour)
+  appendItem(showCodex, '7d', info.openai_image_codex_seven_day)
+  appendItem(showWeb2api, 'web', info.openai_image_web2api_five_hour)
   return items
+})
+
+const hasOpenAIImageUsageProgressData = computed(() => {
+  if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
+  const info = usageInfo.value
+  if (!info) return false
+  const { codex: showCodex, web2api: showWeb2api } = openAIEnabledImageRoutes.value
+  return (showCodex && (hasUsageProgressData(info.openai_image_codex_five_hour) || hasUsageProgressData(info.openai_image_codex_seven_day))) ||
+    (showWeb2api && hasUsageProgressData(info.openai_image_web2api_five_hour))
 })
 
 const hasOpenAIUsageContent = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
   return (showOpenAIResponseUsageBars.value && openAIResponseUsageBars.value.length > 0) ||
-    openAIImageUsageSummary.value.length > 0 ||
+    hasOpenAIImageUsageProgressData.value ||
     !!usageInfo.value?.error
 })
 

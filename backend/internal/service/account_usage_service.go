@@ -860,11 +860,13 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 	}
 	populateOpenAIImageRouteUsageInfo(usage, account)
 
-	if progress := buildCodexUsageProgressFromExtra(account.Extra, "5h", now); progress != nil {
-		usage.FiveHour = progress
-	}
-	if progress := buildCodexUsageProgressFromExtra(account.Extra, "7d", now); progress != nil {
-		usage.SevenDay = progress
+	if openAICodexSnapshotIdentityTrusted(account) {
+		if progress := buildCodexUsageProgressFromExtra(account.Extra, "5h", now); progress != nil {
+			usage.FiveHour = progress
+		}
+		if progress := buildCodexUsageProgressFromExtra(account.Extra, "7d", now); progress != nil {
+			usage.SevenDay = progress
+		}
 	}
 
 	if (force || shouldRefreshOpenAICodexSnapshot(account, usage, now)) && s.shouldProbeOpenAICodexSnapshot(account.ID, now, force) {

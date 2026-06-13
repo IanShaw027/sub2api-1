@@ -20,10 +20,10 @@ import (
 
 // Cancel rate limit configuration constants.
 const (
-	rateLimitUnitDay           = "day"
-	rateLimitUnitMinute        = "minute"
-	rateLimitUnitHour          = "hour"
-	rateLimitModeFixed         = "fixed"
+	rateLimitUnitDay                = "day"
+	rateLimitUnitMinute             = "minute"
+	rateLimitUnitHour               = "hour"
+	rateLimitModeFixed              = "fixed"
 	checkPaidResultAlreadyPaid      = "already_paid"
 	checkPaidResultCancelled        = "cancelled"
 	checkPaidResultAlreadyProcessed = "already_processed"

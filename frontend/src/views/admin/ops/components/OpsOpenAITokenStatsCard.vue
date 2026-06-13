@@ -217,6 +217,7 @@ function onNextPage() {
                 <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.model') }}</th>
                 <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.requestCount') }}</th>
                 <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.avgTokensPerSec') }}</th>
+                <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.avgGenerationTokensPerSec') }}</th>
                 <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.avgFirstTokenMs') }}</th>
                 <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.totalOutputTokens') }}</th>
                 <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.avgDurationMs') }}</th>
@@ -232,6 +233,7 @@ function onNextPage() {
                 <td class="px-2 py-2 font-medium">{{ row.model }}</td>
                 <td class="px-2 py-2">{{ formatInt(row.request_count) }}</td>
                 <td class="px-2 py-2">{{ formatRate(row.avg_tokens_per_sec) }}</td>
+                <td class="px-2 py-2">{{ formatRate(row.avg_generation_tokens_per_sec) }}</td>
                 <td class="px-2 py-2">{{ formatRate(row.avg_first_token_ms) }}</td>
                 <td class="px-2 py-2">{{ formatInt(row.total_output_tokens) }}</td>
                 <td class="px-2 py-2">{{ formatInt(row.avg_duration_ms) }}</td>

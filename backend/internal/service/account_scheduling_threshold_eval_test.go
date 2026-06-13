@@ -37,6 +37,35 @@ func TestEvaluateAccountSchedulingThreshold_OpenAIChoosesLatestResetWindow(t *te
 	require.True(t, wantUntil.Equal(*decision.Until))
 }
 
+func TestEvaluateAccountSchedulingThreshold_OpenAIIgnoresMismatchedCodexSnapshotIdentity(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 13, 8, 50, 0, 0, time.UTC)
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"email":                "CageLeen9208@outlook.com",
+			"chatgpt_account_id":   "1f945aa7-d9a9-4369-9542-0c702ff4adb0",
+			"workspace_id":         "org-nU4goUxMmureroyswT5oYPv4",
+			"chatgpt_workspace_id": "org-nU4goUxMmureroyswT5oYPv4",
+		},
+		Extra: map[string]any{
+			"email":                 "MasonDobies01@outlook.com",
+			"name":                  "Paul Clark",
+			"workspace_id":          "org-avRk1G4qdXg7qph3cRIraNKf",
+			"codex_7d_used_percent": 100.0,
+			"codex_7d_reset_at":     now.Add(7 * 24 * time.Hour).Format(time.RFC3339),
+		},
+	}
+
+	decision := EvaluateAccountSchedulingThreshold(account, map[string]int{
+		PlatformOpenAI: 99,
+	}, now)
+
+	require.False(t, decision.ShouldPause)
+}
+
 func TestEvaluateAccountSchedulingThreshold_AnthropicIgnoresExpiredFiveHourWindow(t *testing.T) {
 	t.Parallel()
 
