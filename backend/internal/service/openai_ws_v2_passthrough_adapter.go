@@ -17,6 +17,56 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+const openAIWSLiveRelayResponseIDLimit = 32
+
+type openAIWSLiveRelayResponseSet struct {
+	mu    sync.Mutex
+	ids   map[string]struct{}
+	order []string
+	limit int
+}
+
+func newOpenAIWSLiveRelayResponseSet(limit int) *openAIWSLiveRelayResponseSet {
+	if limit <= 0 {
+		limit = openAIWSLiveRelayResponseIDLimit
+	}
+	return &openAIWSLiveRelayResponseSet{
+		ids:   make(map[string]struct{}, limit),
+		limit: limit,
+	}
+}
+
+func (s *openAIWSLiveRelayResponseSet) Contains(responseID string) bool {
+	responseID = strings.TrimSpace(responseID)
+	if s == nil || responseID == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.ids[responseID]
+	return ok
+}
+
+func (s *openAIWSLiveRelayResponseSet) Remember(responseID string) {
+	responseID = strings.TrimSpace(responseID)
+	if s == nil || responseID == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.ids[responseID]; ok {
+		return
+	}
+	s.ids[responseID] = struct{}{}
+	s.order = append(s.order, responseID)
+	for len(s.order) > s.limit {
+		oldest := s.order[0]
+		copy(s.order, s.order[1:])
+		s.order = s.order[:len(s.order)-1]
+		delete(s.ids, oldest)
+	}
+}
+
 type openAIWSClientFrameConn struct {
 	conn *coderws.Conn
 }
@@ -259,14 +309,14 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	stateStore := s.getOpenAIWSStateStore()
 	groupID := getOpenAIGroupIDFromContext(c)
 	apiKeyID := getAPIKeyIDFromContext(c)
-	var liveRelayResponseIDs sync.Map
+	liveRelayResponseIDs := newOpenAIWSLiveRelayResponseSet(openAIWSLiveRelayResponseIDLimit)
 	applyContinuationStoreDecision := func(payload []byte) ([]byte, error) {
 		eventType := strings.TrimSpace(gjson.GetBytes(payload, "type").String())
 		if eventType != "" && eventType != "response.create" {
 			return payload, nil
 		}
 		previousResponseID := openAIWSPayloadStringFromRaw(payload, "previous_response_id")
-		_, liveRelayAffinity := liveRelayResponseIDs.Load(previousResponseID)
+		liveRelayAffinity := liveRelayResponseIDs.Contains(previousResponseID)
 		updated, decision, err := s.resolveOpenAIWSContinuationStoreDecisionRawWithOptions(
 			ctx,
 			payload,
@@ -625,9 +675,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 						stateStore.BindResponseAccount(ctx, groupID, apiKeyID, turnResult.RequestID, account.ID, s.openAIWSResponseStickyTTL()),
 					)
 				}
-				if responseID := strings.TrimSpace(turnResult.RequestID); responseID != "" {
-					liveRelayResponseIDs.Store(responseID, struct{}{})
-				}
+				liveRelayResponseIDs.Remember(turnResult.RequestID)
 				if hooks != nil && hooks.AfterTurn != nil {
 					hooks.AfterTurn(turnNo, dequeueTurnPayload(), turnResult, nil)
 				}

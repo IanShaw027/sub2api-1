@@ -630,11 +630,13 @@ func (c *openAIWSConn) markPrewarmed() {
 }
 
 type openAIWSAccountPool struct {
-	mu            sync.Mutex
-	conns         map[string]*openAIWSConn
-	pinnedConns   map[string]int
-	creating      int
-	lastCleanupAt time.Time
+	mu                   sync.Mutex
+	conns                map[string]*openAIWSConn
+	pinnedConns          map[string]int
+	creating             int
+	creatingNeutral      int
+	creatingSessionBound int
+	lastCleanupAt        time.Time
 	// lastAcquire 仅保存 session_bound 请求快照（供 session 预热克隆）；
 	// lastNeutralAcquire 保存最近一次 neutral 请求快照（供中性预热克隆），互不污染。
 	lastAcquire        *openAIWSAcquireRequest
@@ -643,6 +645,46 @@ type openAIWSAccountPool struct {
 	prewarmUntil       time.Time
 	prewarmFails       int
 	prewarmFailAt      time.Time
+}
+
+func (ap *openAIWSAccountPool) creatingForProfileLocked(profile openAIWSConnProfile) int {
+	if ap == nil {
+		return 0
+	}
+	if profile == openAIWSConnProfileNeutral {
+		return ap.creatingNeutral
+	}
+	return ap.creatingSessionBound
+}
+
+func (ap *openAIWSAccountPool) addCreatingLocked(profile openAIWSConnProfile, delta int) {
+	if ap == nil || delta <= 0 {
+		return
+	}
+	ap.creating += delta
+	if profile == openAIWSConnProfileNeutral {
+		ap.creatingNeutral += delta
+		return
+	}
+	ap.creatingSessionBound += delta
+}
+
+func (ap *openAIWSAccountPool) doneCreatingLocked(profile openAIWSConnProfile) {
+	if ap == nil {
+		return
+	}
+	if ap.creating > 0 {
+		ap.creating--
+	}
+	if profile == openAIWSConnProfileNeutral {
+		if ap.creatingNeutral > 0 {
+			ap.creatingNeutral--
+		}
+		return
+	}
+	if ap.creatingSessionBound > 0 {
+		ap.creatingSessionBound--
+	}
 }
 
 type OpenAIWSPoolMetricsSnapshot struct {
@@ -947,13 +989,13 @@ func (p *openAIWSConnPool) PrewarmNeutral(accountID int64, req openAIWSAcquireRe
 		ap.mu.Unlock()
 		return
 	}
-	current := countConnsByProfileAndReuseKeyLocked(ap, openAIWSConnProfileNeutral, reqReuseKey) + ap.creating
+	current := countConnsByProfileAndReuseKeyLocked(ap, openAIWSConnProfileNeutral, reqReuseKey) + ap.creatingForProfileLocked(openAIWSConnProfileNeutral)
 	need := targetIdle - current
 	if need <= 0 {
 		ap.mu.Unlock()
 		return
 	}
-	ap.creating += need
+	ap.addCreatingLocked(openAIWSConnProfileNeutral, need)
 	p.metrics.scaleUpTotal.Add(int64(need))
 	ap.mu.Unlock()
 
@@ -1219,13 +1261,13 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 	allowCreate := true
 	if req.Profile == openAIWSConnProfileNeutral {
 		neutralMax := p.neutralMaxConns(effectiveMaxConns)
-		if countConnsByProfileLocked(ap, openAIWSConnProfileNeutral)+ap.creating >= neutralMax {
+		if countConnsByProfileLocked(ap, openAIWSConnProfileNeutral)+ap.creatingForProfileLocked(openAIWSConnProfileNeutral) >= neutralMax {
 			if idle := p.pickOldestIdleNeutralConnLocked(ap); idle != nil {
 				delete(ap.conns, idle.id)
 				evicted = append(evicted, idle)
 				p.metrics.scaleDownTotal.Add(1)
 			}
-			if countConnsByProfileLocked(ap, openAIWSConnProfileNeutral)+ap.creating >= neutralMax {
+			if countConnsByProfileLocked(ap, openAIWSConnProfileNeutral)+ap.creatingForProfileLocked(openAIWSConnProfileNeutral) >= neutralMax {
 				allowCreate = false
 			}
 		}
@@ -1241,7 +1283,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 	if allowCreate && len(ap.conns)+ap.creating < effectiveMaxConns {
 		connPick := time.Since(pickStartedAt)
 		p.recordConnPickDuration(connPick)
-		ap.creating++
+		ap.addCreatingLocked(req.Profile, 1)
 		ap.mu.Unlock()
 		closeOpenAIWSConns(evicted)
 
@@ -1249,12 +1291,23 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 
 		ap = p.getOrCreateAccountPool(accountID)
 		ap.mu.Lock()
-		ap.creating--
+		ap.doneCreatingLocked(req.Profile)
 		if dialErr != nil {
 			ap.prewarmFails++
 			ap.prewarmFailAt = time.Now()
 			ap.mu.Unlock()
 			return nil, dialErr
+		}
+		effectiveMaxConns = p.effectiveMaxConnsByAccount(req.Account)
+		if len(ap.conns) >= effectiveMaxConns ||
+			(req.Profile == openAIWSConnProfileNeutral &&
+				countConnsByProfileLocked(ap, openAIWSConnProfileNeutral) >= p.neutralMaxConns(effectiveMaxConns)) {
+			ap.mu.Unlock()
+			conn.close()
+			if retry < 1 {
+				return p.acquire(ctx, req, retry+1)
+			}
+			return nil, errOpenAIWSConnQueueFull
 		}
 		ap.conns[conn.id] = conn
 		ap.prewarmFails = 0
@@ -1720,7 +1773,7 @@ func (p *openAIWSConnPool) ensureTargetIdleAsync(accountID int64) {
 	sessionNeed := 0
 	if ap.lastAcquire != nil {
 		target := p.targetConnCountLocked(ap, effectiveMaxConns)
-		current := countConnsByProfileLocked(ap, openAIWSConnProfileSessionBound) + ap.creating
+		current := countConnsByProfileLocked(ap, openAIWSConnProfileSessionBound) + ap.creatingForProfileLocked(openAIWSConnProfileSessionBound)
 		if current < target {
 			sessionNeed = target - current
 		}
@@ -1750,7 +1803,8 @@ func (p *openAIWSConnPool) ensureTargetIdleAsync(accountID int64) {
 	if cooldown := p.prewarmCooldown(); cooldown > 0 {
 		ap.prewarmUntil = now.Add(cooldown)
 	}
-	ap.creating += sessionNeed + neutralNeed
+	ap.addCreatingLocked(openAIWSConnProfileSessionBound, sessionNeed)
+	ap.addCreatingLocked(openAIWSConnProfileNeutral, neutralNeed)
 	p.metrics.scaleUpTotal.Add(int64(sessionNeed + neutralNeed))
 
 	go func() {
@@ -1842,9 +1896,7 @@ func (p *openAIWSConnPool) prewarmConns(accountID int64, req openAIWSAcquireRequ
 			return
 		}
 		ap.mu.Lock()
-		if ap.creating > 0 {
-			ap.creating--
-		}
+		ap.doneCreatingLocked(req.Profile)
 		if err != nil {
 			ap.prewarmFails++
 			ap.prewarmFailAt = time.Now()
