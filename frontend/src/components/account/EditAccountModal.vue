@@ -1836,7 +1836,7 @@
             {{ openAIWebProfileImportSummary }}
           </p>
         </div>
-        <div class="mt-4">
+        <div v-if="account?.type === 'apikey'" class="mt-4">
           <label class="input-label mb-2 block">{{ t('admin.accounts.openai.responsesMode') }}</label>
           <Select
             v-model="openAIResponsesMode"
@@ -2171,7 +2171,7 @@
       </div>
 
       <div
-        v-if="account?.platform === 'openai'"
+        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="space-y-2">
@@ -3192,7 +3192,11 @@ function toggleOpenAIEndpointCapability(capability: OpenAIEndpointCapability, ev
 function applyOpenAIEndpointCapabilities(credentials: Record<string, unknown>): void {
   const capabilities = normalizeOpenAIEndpointCapabilities(openAIEndpointCapabilities.value)
   if (capabilities.length === OPENAI_ENDPOINT_CAPABILITIES.length) {
-    delete credentials.openai_capabilities
+    if (Object.prototype.hasOwnProperty.call(credentials, 'openai_capabilities')) {
+      credentials.openai_capabilities = null
+    } else {
+      delete credentials.openai_capabilities
+    }
     return
   }
   credentials.openai_capabilities = capabilities
@@ -3424,7 +3428,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
     openAICompactMode.value = (extra?.openai_compact_mode as OpenAICompactMode) || 'auto'
-    openAIResponsesMode.value = isOpenAIResponsesMode(extra?.openai_responses_mode)
+    openAIResponsesMode.value = newAccount.type === 'apikey' && isOpenAIResponsesMode(extra?.openai_responses_mode)
       ? extra.openai_responses_mode
       : 'auto'
     openAICompactSupported.value = typeof extra?.openai_compact_supported === 'boolean'
@@ -3782,6 +3786,14 @@ const toOptionalNumber = (value: unknown): number | null => {
     return Number.isFinite(parsed) ? parsed : null
   }
   return null
+}
+
+const toOpenAIQuotaAutoPauseThreshold = (value: unknown): number | null => {
+  const percent = toOptionalNumber(value)
+  if (percent == null || percent <= 0) {
+    return null
+  }
+  return Math.min(percent, 100) / 100
 }
 
 const applyTLSFingerprintExtra = (extra: Record<string, unknown>) => {
@@ -4847,7 +4859,7 @@ const handleSubmit = async () => {
 
       // Add intercept warmup requests setting
       applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      if (!applyCredentialRuleConfigs(newCredentials)) {
+      if (!applyCredentialRulePatches(newCredentials, currentCredentials)) {
         return
       }
 
@@ -5189,13 +5201,40 @@ const handleSubmit = async () => {
       } else {
         newExtra.openai_compact_mode = openAICompactMode.value
       }
-      if (!openAIEndpointSupportsText.value || openAIResponsesMode.value === 'auto') {
-        delete newExtra.openai_responses_mode
+      if (props.account.type === 'apikey') {
+        if (!openAIEndpointSupportsText.value || openAIResponsesMode.value === 'auto') {
+          delete newExtra.openai_responses_mode
+        } else {
+          newExtra.openai_responses_mode = openAIResponsesMode.value
+        }
       } else {
-        newExtra.openai_responses_mode = openAIResponsesMode.value
+        delete newExtra.openai_responses_mode
       }
 
-			delete newExtra.codex_image_generation_bridge_enabled
+      const autoPause5hThresholdValue = toOpenAIQuotaAutoPauseThreshold(autoPause5hThreshold.value)
+      if (autoPause5hThresholdValue == null) {
+        delete newExtra.auto_pause_5h_threshold
+      } else {
+        newExtra.auto_pause_5h_threshold = autoPause5hThresholdValue
+      }
+      const autoPause7dThresholdValue = toOpenAIQuotaAutoPauseThreshold(autoPause7dThreshold.value)
+      if (autoPause7dThresholdValue == null) {
+        delete newExtra.auto_pause_7d_threshold
+      } else {
+        newExtra.auto_pause_7d_threshold = autoPause7dThresholdValue
+      }
+      if (autoPause5hDisabled.value) {
+        newExtra.auto_pause_5h_disabled = true
+      } else {
+        delete newExtra.auto_pause_5h_disabled
+      }
+      if (autoPause7dDisabled.value) {
+        newExtra.auto_pause_7d_disabled = true
+      } else {
+        delete newExtra.auto_pause_7d_disabled
+      }
+
+      delete newExtra.codex_image_generation_bridge_enabled
       if (codexImageGenerationBridgeMode.value === 'inherit') {
         delete newExtra.codex_image_generation_bridge
       } else {

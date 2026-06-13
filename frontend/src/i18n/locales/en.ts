@@ -4155,6 +4155,19 @@ export default {
         compactModelMapping: 'Compact-only model mapping',
         compactModelMappingDesc:
           'Only applies to /responses/compact. Use this when the upstream compact endpoint requires a special compact model.',
+        responsesMode: 'Text generation protocol',
+        responsesModeDesc:
+          'Controls whether API key text requests prefer the Responses API or Chat Completions. Auto follows gateway capability detection.',
+        responsesModeAuto: 'Auto',
+        responsesModeForceResponses: 'Force Responses',
+        responsesModeForceChatCompletions: 'Force Chat Completions',
+        responsesModeTextDisabledHint:
+          'Text generation is disabled for this account, so the protocol override is not applicable.',
+        endpointCapabilities: 'Accepted endpoint capabilities',
+        endpointCapabilitiesDesc:
+          'Restricts which OpenAI-compatible endpoints this API key account can serve. At least one capability must remain selected.',
+        endpointCapabilityChatCompletions: 'Text generation',
+        endpointCapabilityEmbeddings: 'Embeddings',
         compactSupported: 'Compact supported',
         compactUnsupported: 'Compact unsupported',
         compactAuto: 'Compact Auto',

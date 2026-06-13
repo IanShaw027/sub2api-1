@@ -3016,6 +3016,27 @@
         <p class="input-hint">{{ t('admin.accounts.openai.endpointCapabilitiesDesc') }}</p>
       </div>
 
+      <div
+        v-if="form.platform === 'openai' && accountCategory === 'apikey'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <label class="input-label mb-2 block">{{ t('admin.accounts.openai.responsesMode') }}</label>
+        <Select
+          v-model="openAIResponsesMode"
+          :options="openAIResponsesModeOptions"
+          :disabled="!openAIEndpointSupportsText"
+          data-testid="openai-responses-mode-select"
+        />
+        <p
+          v-if="!openAIEndpointSupportsText"
+          class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+          data-testid="openai-responses-mode-not-applicable"
+        >
+          {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
+        </p>
+        <p v-else class="input-hint">{{ t('admin.accounts.openai.responsesModeDesc') }}</p>
+      </div>
+
       <!-- OpenAI Compact 能力配置 -->
       <div
         v-if="form.platform === 'openai' && (accountCategory === 'oauth-based' || accountCategory === 'apikey')"
@@ -3763,6 +3784,8 @@ const codexCLIOnlyAllowClaudeCodeEnabled = ref(false)
 type OpenAIEndpointCapability = 'chat_completions' | 'embeddings'
 const OPENAI_ENDPOINT_CAPABILITIES: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings']
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>([...OPENAI_ENDPOINT_CAPABILITIES])
+type OpenAIResponsesMode = 'auto' | 'force_responses' | 'force_chat_completions'
+const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 const anthropicPassthroughEnabled = ref(false)
 const webSearchEmulationMode = ref('default')
 const webSearchGlobalEnabled = ref(false)
@@ -3825,6 +3848,11 @@ const openAICompactModeOptions = computed(() => [
   { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
   { value: 'force_off', label: t('admin.accounts.openai.compactModeForceOff') }
 ])
+const openAIResponsesModeOptions = computed(() => [
+  { value: 'auto', label: t('admin.accounts.openai.responsesModeAuto') },
+  { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
+  { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
+])
 
 function buildAntigravityExtra(): Record<string, unknown> | undefined {
   const extra: Record<string, unknown> = {}
@@ -3840,6 +3868,9 @@ const openAIEndpointCapabilityOptions = computed(() => [
   { value: 'chat_completions' as const, label: t('admin.accounts.openai.endpointCapabilityChatCompletions') },
   { value: 'embeddings' as const, label: t('admin.accounts.openai.endpointCapabilityEmbeddings') }
 ])
+const openAIEndpointSupportsText = computed(() =>
+  openAIEndpointCapabilities.value.includes('chat_completions')
+)
 
 function normalizeOpenAIEndpointCapabilities(raw: unknown): OpenAIEndpointCapability[] {
   if (!Array.isArray(raw)) return [...OPENAI_ENDPOINT_CAPABILITIES]
@@ -4211,6 +4242,7 @@ watch(
       codexCLIOnlyEnabled.value = false
       codexCLIOnlyAllowClaudeCodeEnabled.value = false
       openAIEndpointCapabilities.value = [...OPENAI_ENDPOINT_CAPABILITIES]
+      openAIResponsesMode.value = 'auto'
     }
     if (newPlatform !== 'anthropic') {
       anthropicPassthroughEnabled.value = false
@@ -4659,6 +4691,7 @@ const resetForm = () => {
   codexCLIOnlyEnabled.value = false
   codexCLIOnlyAllowClaudeCodeEnabled.value = false
   openAIEndpointCapabilities.value = [...OPENAI_ENDPOINT_CAPABILITIES]
+  openAIResponsesMode.value = 'auto'
   anthropicPassthroughEnabled.value = false
   webSearchEmulationMode.value = 'default'
   // Reset quota control state
@@ -4759,6 +4792,15 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     extra.openai_compact_mode = openAICompactMode.value
   } else {
     delete extra.openai_compact_mode
+  }
+  if (
+    accountCategory.value === 'apikey' &&
+    openAIEndpointSupportsText.value &&
+    openAIResponsesMode.value !== 'auto'
+  ) {
+    extra.openai_responses_mode = openAIResponsesMode.value
+  } else {
+    delete extra.openai_responses_mode
   }
 
   if (tlsFingerprintEnabled.value) {

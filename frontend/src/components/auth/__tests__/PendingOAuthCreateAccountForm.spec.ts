@@ -41,6 +41,7 @@ describe('PendingOAuthCreateAccountForm', () => {
     getPublicSettings.mockReset()
     showError.mockReset()
     getPublicSettings.mockResolvedValue({
+      email_verify_enabled: true,
       turnstile_enabled: false,
       turnstile_site_key: ''
     })
@@ -197,6 +198,7 @@ describe('PendingOAuthCreateAccountForm', () => {
 
   it('requires a turnstile token before sending a verify code when turnstile is enabled', async () => {
     getPublicSettings.mockResolvedValue({
+      email_verify_enabled: true,
       turnstile_enabled: true,
       turnstile_site_key: 'site-key'
     })

@@ -1121,6 +1121,7 @@ describe('EditAccountModal', () => {
     updateAccountMock.mockResolvedValue(account)
 
     const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
 
     expect(wrapper.findAll('input[type="checkbox"]').some((input) => (input.element as HTMLInputElement).checked)).toBe(true)
 
@@ -1130,6 +1131,71 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.openai_capabilities).toEqual([
       'chat_completions'
     ])
+  })
+
+  it('clears OpenAI APIKey endpoint capability override when restoring both capabilities', async () => {
+    const account = buildAccount()
+    account.credentials.openai_capabilities = ['embeddings']
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    const chatCheckbox = wrapper.get<HTMLInputElement>(
+      '[data-testid="openai-endpoint-capability-chat_completions"]'
+    )
+    const embeddingsCheckbox = wrapper.get<HTMLInputElement>(
+      '[data-testid="openai-endpoint-capability-embeddings"]'
+    )
+
+    expect(chatCheckbox.element.checked).toBe(false)
+    expect(embeddingsCheckbox.element.checked).toBe(true)
+
+    await chatCheckbox.setValue(true)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toHaveProperty(
+      'openai_capabilities',
+      null
+    )
+  })
+
+  it('hides OpenAI quota auto-pause overrides for unsupported account types', async () => {
+    const account = buildAccount()
+    account.type = 'setup-token'
+    account.credentials = {
+      access_token: 'at-test'
+    }
+
+    resetCommonMocks()
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.find('[data-testid="auto-pause-5h-disabled"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="auto-pause-5h-threshold"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="auto-pause-7d-disabled"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="auto-pause-7d-threshold"]').exists()).toBe(false)
+  })
+
+  it('hides OpenAI API key responses mode controls for OAuth accounts', async () => {
+    const account = buildAccount()
+    account.type = 'oauth'
+    account.credentials = {
+      access_token: 'at-test'
+    }
+    account.extra = {
+      openai_responses_mode: 'force_responses'
+    }
+
+    resetCommonMocks()
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.find('[data-testid="openai-responses-mode-select"]').exists()).toBe(false)
   })
 
 	it('submits OpenAI quota auto-pause thresholds in extra', async () => {
@@ -1144,6 +1210,7 @@ describe('EditAccountModal', () => {
 	  updateAccountMock.mockResolvedValue(account)
 
 	  const wrapper = mountModal(account)
+	  await wrapper.setProps({ show: true })
 
 	  await wrapper.get('[data-testid="auto-pause-5h-threshold"]').setValue('95')
 	  await wrapper.get('[data-testid="auto-pause-7d-threshold"]').setValue('96')
@@ -1166,6 +1233,7 @@ describe('EditAccountModal', () => {
 	  updateAccountMock.mockResolvedValue(account)
 
 	  const wrapper = mountModal(account)
+	  await wrapper.setProps({ show: true })
 
 	  await wrapper.get('[data-testid="auto-pause-5h-disabled"]').trigger('click')
 	  await wrapper.get('form#edit-account-form').trigger('submit.prevent')
@@ -1183,6 +1251,7 @@ describe('EditAccountModal', () => {
     updateAccountMock.mockResolvedValue(account)
 
     const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
 
     const chatCheckbox = wrapper.get<HTMLInputElement>(
       '[data-testid="openai-endpoint-capability-chat_completions"]'
@@ -1225,6 +1294,7 @@ describe('EditAccountModal', () => {
     updateAccountMock.mockResolvedValue(account)
 
     const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
 
     const responsesModeSelect = wrapper.get<HTMLSelectElement>(
       '[data-testid="openai-responses-mode-select"]'
@@ -1379,5 +1449,34 @@ describe('EditAccountModal', () => {
         description: 'mask 429'
       }
     ])
+  })
+
+  it('clears OpenAI API key response rewrite rules explicitly', async () => {
+    resetCommonMocks()
+    const account = buildAccount()
+    account.credentials = {
+      ...account.credentials,
+      response_rewrite_rules: [
+        {
+          status_code: 401,
+          keywords: ['token_invalidated'],
+          match_mode: 'any',
+          response_message: 'Service temporarily unavailable'
+        }
+      ]
+    }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    ;(wrapper.vm as any).responseRewriteRules = []
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.response_rewrite_rules).toEqual([])
   })
 })
