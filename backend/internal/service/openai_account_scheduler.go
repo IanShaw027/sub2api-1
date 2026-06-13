@@ -66,9 +66,11 @@ type OpenAIAccountScheduleRequest struct {
 	APIKeyID                int64
 	SessionHash             string
 	StickyAccountID         int64
+	PreserveStickyBinding   bool
 	PreviousResponseID      string
 	RequestedModel          string
 	RequiredTransport       OpenAIUpstreamTransport
+	RequiredCapability      OpenAIEndpointCapability
 	RequiredImageCapability OpenAIImagesCapability
 	RequiredImageRoute      string
 	RequireImageEnabled     bool
@@ -318,6 +320,12 @@ type defaultOpenAIAccountScheduler struct {
 	stats   *openAIAccountRuntimeStats
 }
 
+type openAIStickyEscapeConfig struct {
+	enabled   bool
+	ttftMs    float64
+	errorRate float64
+}
+
 func newDefaultOpenAIAccountScheduler(service *OpenAIGatewayService, stats *openAIAccountRuntimeStats) OpenAIAccountScheduler {
 	if stats == nil {
 		stats = newOpenAIAccountRuntimeStats()
@@ -341,13 +349,14 @@ func (s *defaultOpenAIAccountScheduler) Select(
 
 	previousResponseID := strings.TrimSpace(req.PreviousResponseID)
 	if previousResponseID != "" {
-		selection, err := s.service.SelectAccountByPreviousResponseID(
+		selection, err := s.service.selectAccountByPreviousResponseIDForCapability(
 			ctx,
 			req.GroupID,
 			req.APIKeyID,
 			previousResponseID,
 			req.RequestedModel,
 			req.ExcludedIDs,
+			req.RequiredCapability,
 			req.RequireCompact,
 		)
 		if err != nil {
@@ -374,7 +383,7 @@ func (s *defaultOpenAIAccountScheduler) Select(
 		}
 	}
 
-	selection, err := s.selectBySessionHash(ctx, req)
+	selection, escapedSticky, err := s.selectBySessionHash(ctx, req)
 	if err != nil {
 		return nil, decision, err
 	}
@@ -384,6 +393,9 @@ func (s *defaultOpenAIAccountScheduler) Select(
 		decision.SelectedAccountID = selection.Account.ID
 		decision.SelectedAccountType = selection.Account.Type
 		return selection, decision, nil
+	}
+	if escapedSticky {
+		req.PreserveStickyBinding = true
 	}
 
 	selection, candidateCount, topK, loadSkew, err := s.selectByLoadBalance(ctx, req)
@@ -404,10 +416,10 @@ func (s *defaultOpenAIAccountScheduler) Select(
 func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	ctx context.Context,
 	req OpenAIAccountScheduleRequest,
-) (*AccountSelectionResult, error) {
+) (*AccountSelectionResult, bool, error) {
 	sessionHash := strings.TrimSpace(req.SessionHash)
 	if sessionHash == "" || s == nil || s.service == nil || s.service.cache == nil {
-		return nil, nil
+		return nil, false, nil
 	}
 
 	accountID := req.StickyAccountID
@@ -415,40 +427,57 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		var err error
 		accountID, err = s.service.getStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		if err != nil || accountID <= 0 {
-			return nil, nil
+			return nil, false, nil
 		}
 	}
 	if accountID <= 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 	if req.ExcludedIDs != nil {
 		if _, excluded := req.ExcludedIDs[accountID]; excluded {
-			return nil, nil
+			return nil, false, nil
 		}
 	}
 
 	account, err := s.service.getSchedulableAccount(ctx, accountID)
 	if err != nil || account == nil {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
-		return nil, nil
+		return nil, false, nil
+	}
+	if !s.isStickyAccountWithinSchedulingScope(ctx, account.ID, req) {
+		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		return nil, false, nil
 	}
 	stickyWaitTimeout := s.service.openAIStickyWaitTimeout(ctx)
 	if shouldClearOpenAIStickyAccount(account, req.RequestedModel, req.RequiredImageRoute, stickyWaitTimeout) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
-		return nil, nil
+		return nil, false, nil
 	}
 	if !isOpenAIStickyCandidateCompatible(account, req.RequestedModel, req.RequireCompact, req.RequiredImageRoute, req.RequireOAuthAccount, req.RequireImageEnabled) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
-		return nil, nil
+		return nil, false, nil
 	}
 	if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
-		return nil, nil
+		return nil, false, nil
 	}
 	account = s.service.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, req.RequestedModel, req.RequireCompact, req.RequiredImageRoute, req.RequireOAuthAccount, req.RequireImageEnabled)
-	if account == nil || !s.isAccountTransportCompatible(account, req.RequiredTransport) {
+	if account == nil ||
+		!s.isStickyAccountWithinSchedulingScope(ctx, account.ID, req) ||
+		!s.isAccountTransportCompatible(account, req.RequiredTransport) ||
+		!s.isAccountRequestCompatible(ctx, account, req) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
-		return nil, nil
+		return nil, false, nil
+	}
+	escapeCfg := s.service.openAIStickyEscapeConfig()
+	if reason, errorRate, ttft, shouldEscape := s.shouldEscapeStickyAccount(accountID, escapeCfg); shouldEscape {
+		slog.Info("sticky_escape_triggered",
+			"account_id", accountID,
+			"reason", reason,
+			"error_rate", errorRate,
+			"ttft", ttft,
+		)
+		return nil, true, nil
 	}
 
 	maxConcurrency := req.MaxConcurrencyFor(account)
@@ -460,25 +489,78 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		stickyWaitTimeout,
 		s.service.schedulingConfig().StickySessionMaxWaiting,
 	); waitPlan != nil {
-		return s.service.newSelectionResult(ctx, account, false, nil, waitPlan)
+		selection, err := s.service.newSelectionResult(ctx, account, false, nil, waitPlan)
+		return selection, false, err
 	}
 	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, req.GroupID, maxConcurrency)
 	if acquireErr == nil && result != nil && result.Acquired {
 		_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
-		return s.service.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
+		selection, err := s.service.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
+		return selection, false, err
 	}
 
 	cfg := s.service.schedulingConfig()
 	// WaitPlan.MaxConcurrency 使用实际调度并发槽位；web2api 图片请求固定为 1，codex 路由共享账号并发。
 	if s.service.concurrencyService != nil {
-		return s.service.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
+		selection, err := s.service.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 			AccountID:      accountID,
 			MaxConcurrency: maxConcurrency,
 			Timeout:        stickyWaitTimeout,
 			MaxWaiting:     cfg.StickySessionMaxWaiting,
 		})
+		return selection, false, err
 	}
-	return nil, nil
+	return nil, false, nil
+}
+
+func (s *defaultOpenAIAccountScheduler) isStickyAccountWithinSchedulingScope(ctx context.Context, accountID int64, req OpenAIAccountScheduleRequest) bool {
+	if s == nil || s.service == nil || accountID <= 0 {
+		return false
+	}
+	accounts, err := s.service.listSchedulableAccounts(ctx, req.GroupID, req.RequiredImageRoute)
+	if err != nil {
+		return true
+	}
+	for i := range accounts {
+		if accounts[i].ID == accountID {
+			return true
+		}
+	}
+	return false
+}
+
+func openAIStickyAccountMatchesGroup(account *Account, groupID *int64) bool {
+	if account == nil {
+		return false
+	}
+	if groupID == nil {
+		return len(account.AccountGroups) == 0 && len(account.GroupIDs) == 0
+	}
+	for _, accountGroupID := range account.GroupIDs {
+		if accountGroupID == *groupID {
+			return true
+		}
+	}
+	for _, accountGroup := range account.AccountGroups {
+		if accountGroup.GroupID == *groupID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *defaultOpenAIAccountScheduler) shouldEscapeStickyAccount(accountID int64, cfg openAIStickyEscapeConfig) (reason string, errorRate float64, ttft float64, shouldEscape bool) {
+	if !cfg.enabled || s == nil || s.stats == nil || accountID <= 0 {
+		return "", 0, 0, false
+	}
+	errorRate, ttft, hasTTFT := s.stats.snapshot(accountID)
+	if hasTTFT && ttft > cfg.ttftMs {
+		return "ttft", errorRate, ttft, true
+	}
+	if errorRate > cfg.errorRate {
+		return "error_rate", errorRate, ttft, true
+	}
+	return "", errorRate, ttft, false
 }
 
 type openAIAccountCandidateScore struct {
@@ -1056,6 +1138,15 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 	if s != nil && s.service != nil && s.service.isOpenAIAccountRuntimeBlocked(account) {
 		return false
 	}
+	if paused, reason := shouldAutoPauseOpenAIAccountByQuota(ctx, account); paused {
+		slog.Debug("account_auto_paused_by_quota",
+			"account_id", account.ID,
+			"window", reason.window,
+			"threshold", reason.threshold,
+			"utilization", reason.utilization,
+		)
+		return false
+	}
 	if NormalizeGroupImageGenerationRoute(req.RequiredImageRoute) == GroupImageGenerationRouteWeb2API && !account.HasOpenAIImageWeb2APIProfile() {
 		return false
 	}
@@ -1067,7 +1158,20 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 		s.service.isUpstreamModelRestrictedByChannel(ctx, *req.GroupID, account, req.RequestedModel, req.RequireCompact) {
 		return false
 	}
-	return account.SupportsOpenAIImageCapability(req.RequiredImageCapability)
+	return accountSupportsOpenAICapabilities(account, req.RequiredCapability, req.RequiredImageCapability)
+}
+
+func accountSupportsOpenAICapabilities(account *Account, endpointCapability OpenAIEndpointCapability, imageCapability OpenAIImagesCapability) bool {
+	if account == nil {
+		return false
+	}
+	if !account.SupportsOpenAIEndpointCapability(endpointCapability) {
+		return false
+	}
+	if imageCapability != "" && !account.SupportsOpenAIImageCapability(imageCapability) {
+		return false
+	}
+	return true
 }
 
 func (s *defaultOpenAIAccountScheduler) isStickyAccountSchedulableForRequest(account *Account, req OpenAIAccountScheduleRequest) bool {
@@ -1402,7 +1506,21 @@ func (s *OpenAIGatewayService) SelectAccountWithScheduler(
 	requiredTransport OpenAIUpstreamTransport,
 	requireCompact bool,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
-	return s.selectAccountWithScheduler(ctx, groupID, 0, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", "", false, false, requireCompact)
+	return s.selectAccountWithScheduler(ctx, groupID, 0, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, OpenAIEndpointCapabilityChatCompletions, "", "", false, false, requireCompact)
+}
+
+func (s *OpenAIGatewayService) SelectAccountWithSchedulerForCapability(
+	ctx context.Context,
+	groupID *int64,
+	previousResponseID string,
+	sessionHash string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requireCompact bool,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	return s.selectAccountWithScheduler(ctx, groupID, 0, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, requiredCapability, "", "", false, false, requireCompact)
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForResponses(
@@ -1426,7 +1544,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForResponses(
 			}
 		}
 	}
-	return s.selectAccountWithScheduler(ctx, groupID, apiKeyID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", requiredImageRoute, requireImageEnabled, false, requireCompact)
+	return s.selectAccountWithScheduler(ctx, groupID, apiKeyID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, OpenAIEndpointCapabilityChatCompletions, "", requiredImageRoute, requireImageEnabled, false, requireCompact)
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
@@ -1447,7 +1565,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	if strings.TrimSpace(requiredRoute) != "" {
 		requiredRoute = NormalizeGroupImageGenerationRoute(requiredRoute)
 	}
-	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, 0, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, requiredCapability, requiredRoute, true, requireOAuthAccount, false)
+	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, 0, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, requiredRoute, true, requireOAuthAccount, false)
 	if err == nil && selection != nil && selection.Account != nil {
 		if !selection.Account.SupportsOpenAIImageRoute(requiredRoute) {
 			if selection.ReleaseFunc != nil {
@@ -1464,7 +1582,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	}
 	// 如果要求 native 能力（如指定了模型）但没有可用的 APIKey 账号，回退到 basic（OAuth 账号）
 	if requiredCapability == OpenAIImagesCapabilityNative {
-		selection, decision, err = s.selectAccountWithScheduler(ctx, groupID, 0, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, OpenAIImagesCapabilityBasic, requiredRoute, true, requireOAuthAccount, false)
+		selection, decision, err = s.selectAccountWithScheduler(ctx, groupID, 0, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic, requiredRoute, true, requireOAuthAccount, false)
 		if err == nil && selection != nil && selection.Account != nil && !selection.Account.SupportsOpenAIImageRoute(requiredRoute) {
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
@@ -1516,12 +1634,14 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	requestedModel string,
 	excludedIDs map[int64]struct{},
 	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
 	requiredImageCapability OpenAIImagesCapability,
 	requiredImageRoute string,
 	requireImageEnabled bool,
 	requireOAuthAccount bool,
 	requireCompact bool,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	ctx = s.withOpenAIQuotaAutoPauseContext(ctx)
 	decision := OpenAIAccountScheduleDecision{}
 	if strings.TrimSpace(requiredImageRoute) != "" {
 		requiredImageRoute = NormalizeGroupImageGenerationRoute(requiredImageRoute)
@@ -1548,7 +1668,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 					if selection.ReleaseFunc != nil {
 						selection.ReleaseFunc()
 					}
-				} else if selection.Account.SupportsOpenAIImageCapability(requiredImageCapability) {
+				} else if accountSupportsOpenAICapabilities(selection.Account, requiredCapability, requiredImageCapability) {
 					return selection, decision, nil
 				} else if selection.ReleaseFunc != nil {
 					selection.ReleaseFunc()
@@ -1573,7 +1693,8 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 				return selection, decision, nil
 			}
 			if (!requireImageEnabled || selection.Account.OpenAIImageGenerationAllowed()) &&
-				s.isOpenAIAccountTransportCompatible(selection.Account, requiredTransport) {
+				s.isOpenAIAccountTransportCompatible(selection.Account, requiredTransport) &&
+				accountSupportsOpenAICapabilities(selection.Account, requiredCapability, requiredImageCapability) {
 				return selection, decision, nil
 			}
 			if selection.ReleaseFunc != nil {
@@ -1611,6 +1732,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		PreviousResponseID:      previousResponseID,
 		RequestedModel:          requestedModel,
 		RequiredTransport:       requiredTransport,
+		RequiredCapability:      requiredCapability,
 		RequiredImageCapability: requiredImageCapability,
 		RequiredImageRoute:      requiredImageRoute,
 		RequireImageEnabled:     requireImageEnabled,
@@ -1725,6 +1847,37 @@ func (s *OpenAIGatewayService) openAIWSLBTopK() int {
 		return s.cfg.Gateway.OpenAIWS.LBTopK
 	}
 	return 7
+}
+
+func (s *OpenAIGatewayService) openAIStickyEscapeConfig() openAIStickyEscapeConfig {
+	if s != nil && s.cfg != nil {
+		cfg := s.cfg.Gateway.OpenAIScheduler
+		enabled := cfg.StickyEscapeEnabled
+		if !enabled && cfg.StickyEscapeTTFTMs == 0 && cfg.StickyEscapeErrorRate == 0 {
+			enabled = true
+		}
+		ttftMs := float64(cfg.StickyEscapeTTFTMs)
+		if ttftMs <= 0 {
+			ttftMs = 15000
+		}
+		errorRate := cfg.StickyEscapeErrorRate
+		if errorRate < 0 || errorRate > 1 {
+			errorRate = 0.5
+		}
+		if errorRate == 0 && cfg.StickyEscapeTTFTMs == 0 && cfg.StickyEscapeErrorRate == 0 {
+			errorRate = 0.5
+		}
+		return openAIStickyEscapeConfig{
+			enabled:   enabled,
+			ttftMs:    ttftMs,
+			errorRate: errorRate,
+		}
+	}
+	return openAIStickyEscapeConfig{
+		enabled:   true,
+		ttftMs:    15000,
+		errorRate: 0.5,
+	}
 }
 
 func (s *OpenAIGatewayService) openAIWSSchedulerWeights() GatewayOpenAIWSSchedulerScoreWeightsView {

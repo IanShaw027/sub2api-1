@@ -202,6 +202,7 @@ type SystemSettings struct {
 	RewriteMessageCacheControl         bool   `json:"rewrite_message_cache_control"`
 	AntigravityUserAgentVersion        string `json:"antigravity_user_agent_version"`
 	OpenAICodexUserAgent               string `json:"openai_codex_user_agent"`
+	OpenAIAllowClaudeCodeCodexPlugin   bool   `json:"openai_allow_claude_code_codex_plugin"`
 
 	// Web Search Emulation
 	WebSearchEmulationEnabled bool `json:"web_search_emulation_enabled"`
@@ -373,6 +374,8 @@ type PublicSettings struct {
 	AIStudioEnabled          bool `json:"ai_studio_enabled"`
 
 	RiskControlEnabled bool `json:"risk_control_enabled"`
+
+	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
 }
 
 type LoginAgreementDocument struct {

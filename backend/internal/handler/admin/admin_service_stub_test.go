@@ -164,6 +164,10 @@ func (s *stubAdminService) GetUser(ctx context.Context, id int64) (*service.User
 	return &user, nil
 }
 
+func (s *stubAdminService) GetUserIncludeDeleted(ctx context.Context, id int64) (*service.User, error) {
+	return s.GetUser(ctx, id)
+}
+
 func (s *stubAdminService) GetUserIdentitySummaries(ctx context.Context, userID int64, user *service.User) (service.UserIdentitySummarySet, error) {
 	if s.identitySummaries != nil {
 		if summaries, ok := s.identitySummaries[userID]; ok {
@@ -270,6 +274,10 @@ func (s *stubAdminService) GetAllGroups(ctx context.Context) ([]service.Group, e
 }
 
 func (s *stubAdminService) GetAllGroupsByPlatform(ctx context.Context, platform string) ([]service.Group, error) {
+	return s.groups, nil
+}
+
+func (s *stubAdminService) GetAllGroupsIncludingInactive(ctx context.Context) ([]service.Group, error) {
 	return s.groups, nil
 }
 
@@ -668,6 +676,10 @@ func (s *stubAdminService) ForceAntigravityPrivacy(ctx context.Context, account 
 
 func (s *stubAdminService) ReplaceUserGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (*service.ReplaceUserGroupResult, error) {
 	return &service.ReplaceUserGroupResult{MigratedKeys: 0}, nil
+}
+
+func (s *stubAdminService) RevertAccountProxyFallback(ctx context.Context, id int64) error {
+	return nil
 }
 
 // Ensure stub implements interface.

@@ -14,8 +14,13 @@ func wrapUsageRecordTaskWithRequestContext(c *gin.Context, task service.UsageRec
 	if task == nil || c == nil || c.Request == nil {
 		return task
 	}
+	return wrapUsageRecordTaskContext(c.Request.Context(), task)
+}
 
-	requestCtx := c.Request.Context()
+func wrapUsageRecordTaskContext(requestCtx context.Context, task service.UsageRecordTask) service.UsageRecordTask {
+	if task == nil || requestCtx == nil {
+		return task
+	}
 	clientRequestID, _ := requestCtx.Value(ctxkey.ClientRequestID).(string)
 	requestID, _ := requestCtx.Value(ctxkey.RequestID).(string)
 	requestLogger := logger.FromContext(requestCtx)

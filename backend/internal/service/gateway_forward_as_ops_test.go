@@ -228,7 +228,7 @@ func TestGatewayService_Forward_AccumulatesOpsUpstreamLatencyAcrossRetryAttempts
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, &ParsedRequest{
-		Body:   []byte(`{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":"hello"}],"stream":false}`),
+		Body:   NewRequestBodyRef([]byte(`{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":"hello"}],"stream":false}`)),
 		Model:  "claude-3-5-sonnet-20241022",
 		Stream: false,
 	})
@@ -297,7 +297,7 @@ func TestGatewayService_Forward_NativeMessagesHTTPErrorEventIncludesAccountAndUp
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, &ParsedRequest{
-		Body:   []byte(`{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":"hello"}],"stream":false}`),
+		Body:   NewRequestBodyRef([]byte(`{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":"hello"}],"stream":false}`)),
 		Model:  "claude-3-5-sonnet-20241022",
 		Stream: false,
 	})
@@ -359,7 +359,7 @@ func TestGatewayService_Forward_NativeMessagesFailoverEventIncludesAccountAndUps
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, &ParsedRequest{
-		Body:   []byte(`{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":"hello"}],"stream":false}`),
+		Body:   NewRequestBodyRef([]byte(`{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":"hello"}],"stream":false}`)),
 		Model:  "claude-3-5-sonnet-20241022",
 		Stream: false,
 	})
@@ -412,7 +412,7 @@ func TestGatewayService_Forward_AnthropicPassthroughRecordsLatencyAndFailoverFie
 	account.Name = "anthropic-passthrough-failover"
 
 	result, err := svc.Forward(context.Background(), c, account, &ParsedRequest{
-		Body:   []byte(`{"model":"claude-3-7-sonnet-20250219","messages":[{"role":"user","content":"hello"}],"stream":false}`),
+		Body:   NewRequestBodyRef([]byte(`{"model":"claude-3-7-sonnet-20250219","messages":[{"role":"user","content":"hello"}],"stream":false}`)),
 		Model:  "claude-3-7-sonnet-20250219",
 		Stream: false,
 	})
@@ -482,7 +482,7 @@ func TestGatewayService_Forward_BedrockRecordsLatencyAndFailoverFields(t *testin
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, &ParsedRequest{
-		Body:   []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"stream":false}`),
+		Body:   NewRequestBodyRef([]byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"stream":false}`)),
 		Model:  "claude-sonnet-4-5",
 		Stream: false,
 	})
@@ -559,7 +559,7 @@ func TestGatewayService_Forward_NativeMessagesSignatureRetryFinalHTTPErrorUsesFi
 
 	originalBody := []byte(`{"model":"claude-3-5-sonnet","thinking":{"type":"enabled","budget_tokens":1200},"messages":[{"role":"user","content":[{"type":"thinking","thinking":"chain","signature":"bad-sig"},{"type":"text","text":"hello"}]}],"stream":false}`)
 	result, err := svc.Forward(context.Background(), c, account, &ParsedRequest{
-		Body:   originalBody,
+		Body:   NewRequestBodyRef(originalBody),
 		Model:  "claude-3-5-sonnet",
 		Stream: false,
 	})
@@ -638,7 +638,7 @@ func TestGatewayService_Forward_NativeMessagesSignatureRetryRequestErrorRecordsF
 
 	originalBody := []byte(`{"model":"claude-3-5-sonnet","thinking":{"type":"enabled","budget_tokens":1200},"messages":[{"role":"user","content":[{"type":"thinking","thinking":"chain","signature":"bad-sig"},{"type":"text","text":"hello"}]}],"stream":false}`)
 	result, err := svc.Forward(context.Background(), c, account, &ParsedRequest{
-		Body:   originalBody,
+		Body:   NewRequestBodyRef(originalBody),
 		Model:  "claude-3-5-sonnet",
 		Stream: false,
 	})
@@ -711,7 +711,7 @@ func TestGatewayService_Forward_NativeMessagesBudgetRetryFinalHTTPErrorUsesRecti
 
 	originalBody := []byte(`{"model":"claude-3-5-sonnet","thinking":{"type":"enabled","budget_tokens":1200},"max_tokens":1000,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"stream":false}`)
 	result, err := svc.Forward(context.Background(), c, account, &ParsedRequest{
-		Body:   originalBody,
+		Body:   NewRequestBodyRef(originalBody),
 		Model:  "claude-3-5-sonnet",
 		Stream: false,
 	})
@@ -797,7 +797,7 @@ func TestGatewayService_Forward_NativeMessagesToolDowngradeRetryRequestErrorUses
 
 	originalBody := []byte(`{"model":"claude-3-5-sonnet","thinking":{"type":"enabled","budget_tokens":1200},"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"chain","signature":"bad-sig"},{"type":"tool_use","id":"toolu_1","name":"lookup","input":{"q":"hello"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"world"}]}],"stream":false}`)
 	result, err := svc.Forward(context.Background(), c, account, &ParsedRequest{
-		Body:   originalBody,
+		Body:   NewRequestBodyRef(originalBody),
 		Model:  "claude-3-5-sonnet",
 		Stream: false,
 	})

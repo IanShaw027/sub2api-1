@@ -58,7 +58,7 @@ func TestGatewayServiceForward_DelegatesKiroAccountsToKiroGateway(t *testing.T) 
 	}
 	parsed := &ParsedRequest{
 		Model: "claude-sonnet-4-5-20250929",
-		Body:  []byte(`{"model":"claude-sonnet-4-5-20250929","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`),
+		Body:  NewRequestBodyRef([]byte(`{"model":"claude-sonnet-4-5-20250929","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)),
 	}
 
 	_, err := svc.Forward(context.Background(), c, account, parsed)
@@ -87,7 +87,7 @@ func TestGatewayServiceForwardCountTokens_DelegatesKiroAccountsToKiroGateway(t *
 		Type:     AccountTypeOAuth,
 	}, &ParsedRequest{
 		Model: "claude-sonnet-4-5-20250929",
-		Body:  []byte(`{"model":"claude-sonnet-4-5-20250929","messages":[{"role":"user","content":[{"type":"text","text":"hello from delegated count tokens"}]}]}`),
+		Body:  NewRequestBodyRef([]byte(`{"model":"claude-sonnet-4-5-20250929","messages":[{"role":"user","content":[{"type":"text","text":"hello from delegated count tokens"}]}]}`)),
 	})
 
 	require.NoError(t, err)
@@ -104,7 +104,7 @@ func TestGatewayServiceForward_KiroReturnsConfiguredErrorWhenDelegateMissing(t *
 
 	_, err := svc.Forward(context.Background(), c, &Account{Platform: PlatformKiro, Type: AccountTypeOAuth}, &ParsedRequest{
 		Model: "claude-sonnet-4-5-20250929",
-		Body:  []byte(`{"model":"claude-sonnet-4-5-20250929","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`),
+		Body:  NewRequestBodyRef([]byte(`{"model":"claude-sonnet-4-5-20250929","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)),
 	})
 
 	require.EqualError(t, err, "kiro gateway service is not configured")
@@ -121,7 +121,7 @@ func TestGatewayServiceForwardCountTokens_KiroReturnsConfiguredErrorWhenDelegate
 
 	err := svc.ForwardCountTokens(context.Background(), c, &Account{Platform: PlatformKiro, Type: AccountTypeOAuth}, &ParsedRequest{
 		Model: "claude-sonnet-4-5-20250929",
-		Body:  []byte(`{"model":"claude-sonnet-4-5-20250929","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`),
+		Body:  NewRequestBodyRef([]byte(`{"model":"claude-sonnet-4-5-20250929","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)),
 	})
 
 	require.EqualError(t, err, "kiro gateway service is not configured")

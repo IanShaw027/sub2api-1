@@ -256,6 +256,9 @@ func (*ticketHandlerUserRepoStub) Create(context.Context, *service.User) error {
 func (*ticketHandlerUserRepoStub) GetByID(_ context.Context, id int64) (*service.User, error) {
 	return &service.User{ID: id, Email: "user@example.com", Username: "user"}, nil
 }
+func (s *ticketHandlerUserRepoStub) GetByIDIncludeDeleted(ctx context.Context, id int64) (*service.User, error) {
+	return s.GetByID(ctx, id)
+}
 func (*ticketHandlerUserRepoStub) GetByEmail(context.Context, string) (*service.User, error) {
 	return nil, nil
 }

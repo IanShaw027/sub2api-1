@@ -68,6 +68,22 @@ func (m *kiroDefaultProxyRepoStub) ListAccountSummariesByProxyID(ctx context.Con
 	panic("ListAccountSummariesByProxyID not implemented")
 }
 
+func (m *kiroDefaultProxyRepoStub) SweepExpiredProxies(ctx context.Context, now time.Time) (int64, error) {
+	panic("SweepExpiredProxies not implemented")
+}
+
+func (m *kiroDefaultProxyRepoStub) ListAllForFallback(ctx context.Context) ([]Proxy, error) {
+	panic("ListAllForFallback not implemented")
+}
+
+func (m *kiroDefaultProxyRepoStub) CountExpired(ctx context.Context) (int64, error) {
+	panic("CountExpired not implemented")
+}
+
+func (m *kiroDefaultProxyRepoStub) CountExpiringSoon(ctx context.Context, now time.Time) (int64, error) {
+	panic("CountExpiringSoon not implemented")
+}
+
 type kiroDefaultAccountRepoStub struct {
 	accountsByID     map[int64]*Account
 	getByIDsAccounts []*Account
@@ -279,6 +295,10 @@ func (s *kiroDefaultAccountRepoStub) UpdateSessionWindow(ctx context.Context, id
 	return nil
 }
 
+func (s *kiroDefaultAccountRepoStub) UpdateSessionWindowEnd(ctx context.Context, id int64, end time.Time) error {
+	return nil
+}
+
 func (s *kiroDefaultAccountRepoStub) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
 	return nil
 }
@@ -297,6 +317,10 @@ func (s *kiroDefaultAccountRepoStub) IncrementQuotaUsed(ctx context.Context, id 
 }
 
 func (s *kiroDefaultAccountRepoStub) ResetQuotaUsed(ctx context.Context, id int64) error { return nil }
+
+func (s *kiroDefaultAccountRepoStub) RevertProxyFallback(ctx context.Context, accountID int64) error {
+	return nil
+}
 
 type kiroDefaultGroupRepoStub struct {
 	getByID *Group

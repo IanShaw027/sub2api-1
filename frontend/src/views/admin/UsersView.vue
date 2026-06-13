@@ -56,7 +56,18 @@
                 searchable
                 creatable
                 :creatable-prefix="t('admin.users.fuzzySearch')"
-                :search-placeholder="t('admin.users.searchGroups')"
+                :search-placeholder="t('admin.users.searchAuthorizedGroups')"
+                @change="applyFilter"
+              />
+            </div>
+
+            <!-- API Key Group Filter (visible when enabled) -->
+            <div v-if="visibleFilters.has('apiKeyGroup')" class="w-full sm:w-44">
+              <Select
+                v-model="filters.apiKeyGroup"
+                :options="apiKeyGroupFilterOptions"
+                searchable
+                :search-placeholder="t('admin.users.searchApiKeyGroups')"
                 @change="applyFilter"
               />
             </div>
@@ -736,6 +747,7 @@ import { adminAPI } from '@/api/admin'
 import type { AdminUser, AdminGroup, UserAttributeDefinition } from '@/types'
 import type { PlatformQuotaItem } from '@/api/admin/users'
 import type { Column } from '@/components/common/types'
+import type { SelectOption } from '@/components/common/Select.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -744,6 +756,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import Select from '@/components/common/Select.vue'
+import { buildApiKeyGroupFilterOptions } from './apiKeyGroupFilterOptions'
 import UserAttributesConfigModal from '@/components/user/UserAttributesConfigModal.vue'
 import UserConcurrencyCell from '@/components/user/UserConcurrencyCell.vue'
 import UserPlatformQuotaCell from '@/components/user/UserPlatformQuotaCell.vue'
@@ -984,7 +997,7 @@ const dataTableSortableKeys = new Set([
   'created_at'
 ])
 
-// Groups data for the groups column
+// Groups data for the groups column and the existing "authorised group" filter (active only)
 const allGroups = ref<AdminGroup[]>([])
 const loadAllGroups = async () => {
   if (allGroups.value.length > 0) return
@@ -992,6 +1005,18 @@ const loadAllGroups = async () => {
     allGroups.value = await adminAPI.groups.getAll()
   } catch (e) {
     console.error('Failed to load groups:', e)
+  }
+}
+
+// Groups for the API Key group filter — includes disabled groups so admins can
+// filter users whose keys are still bound to a now-disabled group.
+const allGroupsForApiKeyFilter = ref<AdminGroup[]>([])
+const loadAllGroupsForApiKeyFilter = async () => {
+  if (allGroupsForApiKeyFilter.value.length > 0) return
+  try {
+    allGroupsForApiKeyFilter.value = await adminAPI.groups.getAllIncludingInactive()
+  } catch (e) {
+    console.error('Failed to load groups for API key filter:', e)
   }
 }
 // Resolve user's accessible groups: exclusive groups first, then public groups
@@ -1014,7 +1039,7 @@ const getUserGroups = (user: AdminUser) => {
 // Group filter options: "All Groups" + active exclusive groups (value = group name for fuzzy match)
 const groupFilterOptions = computed(() => {
   const options: { value: string; label: string }[] = [
-    { value: '', label: t('admin.users.allGroups') }
+    { value: '', label: t('admin.users.allAuthorizedGroups') }
   ]
   for (const g of allGroups.value) {
     if (g.status !== 'active' || !g.is_exclusive || g.subscription_type !== 'standard') continue
@@ -1023,11 +1048,24 @@ const groupFilterOptions = computed(() => {
   return options
 })
 
+// API Key group filter options: "All" + groups partitioned by type (value = group id).
+// Uses allGroupsForApiKeyFilter which includes disabled groups.
+const apiKeyGroupFilterOptions = computed(() =>
+  buildApiKeyGroupFilterOptions(allGroupsForApiKeyFilter.value, {
+    all: t('admin.users.allApiKeyGroups'),
+    exclusive: t('admin.users.apiKeyGroupExclusive'),
+    public: t('admin.users.apiKeyGroupPublic'),
+    subscription: t('admin.users.apiKeyGroupSubscription'),
+    disabled: t('admin.users.apiKeyGroupDisabled'),
+  }) as SelectOption[]
+)
+
 // Filter values (role, status, and custom attributes)
 const filters = reactive({
   role: '',
   status: '',
-  group: ''  // group name for fuzzy match, '' = all
+  group: '',  // group name for fuzzy match, '' = all
+  apiKeyGroup: null as number | null  // group id bound to the user's API keys, null = all
 })
 const activeAttributeFilters = reactive<Record<number, string>>({})
 
@@ -1058,7 +1096,8 @@ const filterableAttributes = computed(() =>
 const builtInFilters = computed(() => [
   { key: 'role', name: t('admin.users.columns.role'), type: 'select' as const },
   { key: 'status', name: t('admin.users.columns.status'), type: 'select' as const },
-  { key: 'group', name: t('admin.users.columns.groups'), type: 'select' as const }
+  { key: 'group', name: t('admin.users.authorizedGroupFilter'), type: 'select' as const },
+  { key: 'apiKeyGroup', name: t('admin.users.apiKeyGroupFilter'), type: 'select' as const }
 ])
 
 // Load saved filters from localStorage
@@ -1077,6 +1116,7 @@ const loadSavedFilters = () => {
       if (parsed.role) filters.role = parsed.role
       if (parsed.status) filters.status = parsed.status
       if (parsed.group) filters.group = parsed.group
+      if (typeof parsed.apiKeyGroup === 'number') filters.apiKeyGroup = parsed.apiKeyGroup
       if (parsed.attributes) {
         Object.assign(activeAttributeFilters, parsed.attributes)
       }
@@ -1096,6 +1136,7 @@ const saveFiltersToStorage = () => {
       role: filters.role,
       status: filters.status,
       group: filters.group,
+      apiKeyGroup: filters.apiKeyGroup,
       attributes: activeAttributeFilters
     }
     localStorage.setItem(FILTER_VALUES_KEY, JSON.stringify(values))
@@ -1417,6 +1458,7 @@ const loadUsers = async () => {
         status: filters.status as any,
         search: searchQuery.value || undefined,
         group_name: filters.group || undefined,
+        api_key_group_id: filters.apiKeyGroup ?? undefined,
         attributes: Object.keys(attrFilters).length > 0 ? attrFilters : undefined,
         // 始终请求 subscriptions：列隐藏时仍需用于 UserPlatformQuotaModal 的 active-subscription 警示 banner
         include_subscriptions: true,
@@ -1522,9 +1564,11 @@ const toggleBuiltInFilter = (key: string) => {
     if (key === 'role') filters.role = ''
     if (key === 'status') filters.status = ''
     if (key === 'group') filters.group = ''
+    if (key === 'apiKeyGroup') filters.apiKeyGroup = null
   } else {
     visibleFilters.add(key)
     if (key === 'group') loadAllGroups()
+    if (key === 'apiKeyGroup') loadAllGroupsForApiKeyFilter()
   }
   saveFiltersToStorage()
   pagination.page = 1
@@ -1694,6 +1738,9 @@ onMounted(async () => {
   loadUsers()
   if (hasVisibleGroupsColumn.value || visibleFilters.has('group')) {
     loadAllGroups()
+  }
+  if (visibleFilters.has('apiKeyGroup')) {
+    loadAllGroupsForApiKeyFilter()
   }
   document.addEventListener('click', handleClickOutside)
   window.addEventListener('scroll', handleScroll, true)

@@ -215,7 +215,13 @@ func PrepareBedrockRequestBodyWithTokens(body []byte, modelID string, betaTokens
 			return nil, fmt.Errorf("inject anthropic_beta: %w", err)
 		}
 		logger.LegacyPrintf("service.gateway", "[Bedrock] Injected beta tokens: %v (model=%s ccCompat=%v)", betaTokens, modelID, ccCompat)
+	} else {
+		body, _ = sjson.DeleteBytes(body, "anthropic_beta")
 	}
+
+	// 移除 Bedrock 不支持的 Anthropic 直连 API 专有顶层字段
+	body, _ = sjson.DeleteBytes(body, "provider")
+	body, _ = sjson.DeleteBytes(body, "metadata")
 
 	// 移除 model 字段（Bedrock 通过 URL 指定模型）
 	body, err = sjson.DeleteBytes(body, "model")
@@ -348,6 +354,9 @@ var claudeVersionRe = regexp.MustCompile(`claude-(?:haiku|sonnet|opus)-(\d+)[-.]
 // Claude 4.5+ 支持 cache_control 中的 ttl 字段（"5m" 和 "1h"）
 func isBedrockClaude45OrNewer(modelID string) bool {
 	lower := strings.ToLower(modelID)
+	if isBedrockFable5(lower) {
+		return true
+	}
 	matches := claudeVersionRe.FindStringSubmatch(lower)
 	if matches == nil {
 		return false
@@ -660,9 +669,14 @@ func isBedrockOpus47OrNewer(modelID string) bool {
 	return major > 4 || (major == 4 && minor >= 7)
 }
 
+func isBedrockFable5(modelID string) bool {
+	return strings.Contains(strings.ToLower(modelID), "claude-fable-5")
+}
+
 const defaultThinkingBudgetTokens = 10000
 
 // sanitizeBedrockThinking 修复 thinking 字段的 Bedrock 兼容性问题：
+//   - Fable 5: 仅使用 always-on adaptive thinking，不支持手动 budget_tokens
 //   - Opus 4.7+: 仅支持 "adaptive"，将 "enabled" 转换为 "adaptive" 并移除 budget_tokens
 //   - 其他模型: "enabled" 必须带 budget_tokens，缺失时补充默认值
 func sanitizeBedrockThinking(body []byte, modelID string) []byte {
@@ -673,6 +687,16 @@ func sanitizeBedrockThinking(body []byte, modelID string) []byte {
 
 	thinkingType := thinking.Get("type").String()
 	if thinkingType == "" {
+		return body
+	}
+
+	if isBedrockFable5(modelID) {
+		if thinkingType == "enabled" {
+			body, _ = sjson.SetBytes(body, "thinking.type", "adaptive")
+		}
+		if thinkingType == "enabled" || thinkingType == "adaptive" {
+			body, _ = sjson.DeleteBytes(body, "thinking.budget_tokens")
+		}
 		return body
 	}
 

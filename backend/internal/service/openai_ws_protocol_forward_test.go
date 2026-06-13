@@ -62,8 +62,8 @@ func (u *httpUpstreamSequenceRecorder) DoWithTLS(req *http.Request, proxyURL str
 	return u.Do(req, proxyURL, accountID, accountConcurrency)
 }
 
-func TestOpenAIWSTokenEventTreatsOutputItemAddedAsFirstClientOutput(t *testing.T) {
-	require.True(t, isOpenAIWSTokenEvent("response.output_item.added"))
+func TestOpenAIWSTokenEventExcludesOutputItemAdded(t *testing.T) {
+	require.False(t, isOpenAIWSTokenEvent("response.output_item.added"))
 	require.False(t, isOpenAIWSTokenEvent("response.created"))
 	require.False(t, isOpenAIWSTokenEvent("response.in_progress"))
 }

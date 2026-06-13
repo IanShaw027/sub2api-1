@@ -1836,6 +1836,43 @@
             {{ openAIWebProfileImportSummary }}
           </p>
         </div>
+        <div class="mt-4">
+          <label class="input-label mb-2 block">{{ t('admin.accounts.openai.responsesMode') }}</label>
+          <Select
+            v-model="openAIResponsesMode"
+            :options="openAIResponsesModeOptions"
+            :disabled="!openAIEndpointSupportsText"
+            data-testid="openai-responses-mode-select"
+          />
+          <p
+            v-if="!openAIEndpointSupportsText"
+            class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+            data-testid="openai-responses-mode-not-applicable"
+          >
+            {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
+          </p>
+          <p v-else class="input-hint">{{ t('admin.accounts.openai.responsesModeDesc') }}</p>
+        </div>
+        <div v-if="account?.type === 'apikey'" class="mt-4">
+          <label class="input-label mb-2 block">{{ t('admin.accounts.openai.endpointCapabilities') }}</label>
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <label
+              v-for="option in openAIEndpointCapabilityOptions"
+              :key="option.value"
+              class="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
+            >
+              <input
+                type="checkbox"
+                class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
+                :data-testid="`openai-endpoint-capability-${option.value}`"
+                :checked="openAIEndpointCapabilities.includes(option.value)"
+                @change="toggleOpenAIEndpointCapability(option.value, $event)"
+              />
+              <span class="text-gray-700 dark:text-gray-200">{{ option.label }}</span>
+            </label>
+          </div>
+          <p class="input-hint">{{ t('admin.accounts.openai.endpointCapabilitiesDesc') }}</p>
+        </div>
       </div>
 
       <!-- Anthropic API Key 自动透传开关 -->
@@ -2019,6 +2056,32 @@
             />
           </button>
         </div>
+        <div
+          v-if="codexCLIOnlyEnabled"
+          class="mt-4 flex items-center justify-between border-l-2 border-gray-200 pl-4 dark:border-dark-600"
+        >
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.openai.codexCLIOnlyAllowClaudeCode') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.codexCLIOnlyAllowClaudeCodeDesc') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            @click="codexCLIOnlyAllowClaudeCodeEnabled = !codexCLIOnlyAllowClaudeCodeEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              codexCLIOnlyAllowClaudeCodeEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                codexCLIOnlyAllowClaudeCodeEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
       </div>
 
       <div
@@ -2104,6 +2167,84 @@
               ]"
             />
           </button>
+        </div>
+      </div>
+
+      <div
+        v-if="account?.platform === 'openai'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
+      >
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="input-label mb-0">{{ t('admin.accounts.autoPause5hDisabled') }}</label>
+            <button
+              type="button"
+              @click="autoPause5hDisabled = !autoPause5hDisabled"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+                autoPause5hDisabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              ]"
+              data-testid="auto-pause-5h-disabled"
+            >
+              <span
+                :class="[
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  autoPause5hDisabled ? 'translate-x-5' : 'translate-x-0'
+                ]"
+              />
+            </button>
+          </div>
+          <p class="input-hint">{{ t('admin.accounts.autoPauseDisabledHint') }}</p>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.autoPause5hThreshold') }}</label>
+          <input
+            v-model.number="autoPause5hThreshold"
+            type="number"
+            min="0"
+            max="100"
+            step="0.1"
+            class="input"
+            :disabled="autoPause5hDisabled"
+            data-testid="auto-pause-5h-threshold"
+          />
+          <p class="input-hint">{{ t('admin.accounts.autoPauseThresholdHint') }}</p>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="input-label mb-0">{{ t('admin.accounts.autoPause7dDisabled') }}</label>
+            <button
+              type="button"
+              @click="autoPause7dDisabled = !autoPause7dDisabled"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+                autoPause7dDisabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              ]"
+              data-testid="auto-pause-7d-disabled"
+            >
+              <span
+                :class="[
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  autoPause7dDisabled ? 'translate-x-5' : 'translate-x-0'
+                ]"
+              />
+            </button>
+          </div>
+          <p class="input-hint">{{ t('admin.accounts.autoPauseDisabledHint') }}</p>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.autoPause7dThreshold') }}</label>
+          <input
+            v-model.number="autoPause7dThreshold"
+            type="number"
+            min="0"
+            max="100"
+            step="0.1"
+            class="input"
+            :disabled="autoPause7dDisabled"
+            data-testid="auto-pause-7d-threshold"
+          />
+          <p class="input-hint">{{ t('admin.accounts.autoPauseThresholdHint') }}</p>
         </div>
       </div>
 
@@ -2795,6 +2936,10 @@ const selectedErrorCodes = ref<number[]>([])
 const customErrorCodeInput = ref<number | null>(null)
 const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(false)
+const autoPause5hThreshold = ref<number | null>(null)
+const autoPause7dThreshold = ref<number | null>(null)
+const autoPause5hDisabled = ref(false)
+const autoPause7dDisabled = ref(false)
 const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
 const allowOverages = ref(false) // For antigravity accounts: enable AI Credits overages
 const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
@@ -2858,9 +3003,15 @@ const openAIWebProfileImportContent = ref('')
 const openAIWebProfileImporting = ref(false)
 const openAIWebProfileImportSummary = ref('')
 const codexCLIOnlyEnabled = ref(false)
+const codexCLIOnlyAllowClaudeCodeEnabled = ref(false)
 const openaiImageGenerationEnabled = ref(true)
 type CodexImageGenerationBridgeMode = 'inherit' | 'enabled' | 'disabled'
 const codexImageGenerationBridgeMode = ref<CodexImageGenerationBridgeMode>('inherit')
+type OpenAIEndpointCapability = 'chat_completions' | 'embeddings'
+const OPENAI_ENDPOINT_CAPABILITIES: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings']
+const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>([...OPENAI_ENDPOINT_CAPABILITIES])
+type OpenAIResponsesMode = 'auto' | 'force_responses' | 'force_chat_completions'
+const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 const anthropicPassthroughEnabled = ref(false)
 const webSearchEmulationMode = ref('default')
 const webSearchGlobalEnabled = ref(false)
@@ -2972,6 +3123,18 @@ const openAICompactModeOptions = computed(() => [
   { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
   { value: 'force_off', label: t('admin.accounts.openai.compactModeForceOff') }
 ])
+const openAIResponsesModeOptions = computed(() => [
+  { value: 'auto', label: t('admin.accounts.openai.responsesModeAuto') },
+  { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
+  { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
+])
+const openAIEndpointCapabilityOptions = computed(() => [
+  { value: 'chat_completions' as const, label: t('admin.accounts.openai.endpointCapabilityChatCompletions') },
+  { value: 'embeddings' as const, label: t('admin.accounts.openai.endpointCapabilityEmbeddings') }
+])
+const openAIEndpointSupportsText = computed(() =>
+  openAIEndpointCapabilities.value.includes('chat_completions')
+)
 const isOpenAIModelRestrictionDisabled = computed(() =>
   props.account?.platform === 'openai' && openaiPassthroughEnabled.value
 )
@@ -2994,6 +3157,46 @@ const openAIWebProfile = computed<OpenAIWebProfileState | null>(() => {
   }
   return raw as OpenAIWebProfileState
 })
+
+function normalizeOpenAIEndpointCapabilities(raw: unknown): OpenAIEndpointCapability[] {
+  if (!Array.isArray(raw)) return [...OPENAI_ENDPOINT_CAPABILITIES]
+  const selected = new Set<OpenAIEndpointCapability>()
+  for (const value of raw) {
+    if (value === 'chat_completions' || value === 'embeddings') {
+      selected.add(value)
+    }
+  }
+  return selected.size > 0
+    ? OPENAI_ENDPOINT_CAPABILITIES.filter((capability) => selected.has(capability))
+    : [...OPENAI_ENDPOINT_CAPABILITIES]
+}
+
+function isOpenAIResponsesMode(value: unknown): value is OpenAIResponsesMode {
+  return value === 'auto' || value === 'force_responses' || value === 'force_chat_completions'
+}
+
+function toggleOpenAIEndpointCapability(capability: OpenAIEndpointCapability, event: Event): void {
+  const target = event.target as HTMLInputElement | null
+  const next = new Set(openAIEndpointCapabilities.value)
+  if (target?.checked) {
+    next.add(capability)
+  } else if (next.size > 1) {
+    next.delete(capability)
+  } else {
+    if (target) target.checked = true
+    return
+  }
+  openAIEndpointCapabilities.value = OPENAI_ENDPOINT_CAPABILITIES.filter((item) => next.has(item))
+}
+
+function applyOpenAIEndpointCapabilities(credentials: Record<string, unknown>): void {
+  const capabilities = normalizeOpenAIEndpointCapabilities(openAIEndpointCapabilities.value)
+  if (capabilities.length === OPENAI_ENDPOINT_CAPABILITIES.length) {
+    delete credentials.openai_capabilities
+    return
+  }
+  credentials.openai_capabilities = capabilities
+}
 
 const openAIWebProfileCookieNames = computed(() => {
   const cookies = openAIWebProfile.value?.cookies
@@ -3189,9 +3392,13 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   // Load mixed scheduling setting (only for antigravity accounts)
   mixedScheduling.value = false
   allowOverages.value = false
-  const extra = newAccount.extra as Record<string, unknown> | undefined
-  mixedScheduling.value = extra?.mixed_scheduling === true
-  allowOverages.value = extra?.allow_overages === true
+	const extra = newAccount.extra as Record<string, unknown> | undefined
+	mixedScheduling.value = extra?.mixed_scheduling === true
+	allowOverages.value = extra?.allow_overages === true
+	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
+	autoPause7dThreshold.value = typeof extra?.auto_pause_7d_threshold === 'number' ? extra.auto_pause_7d_threshold * 100 : null
+	autoPause5hDisabled.value = extra?.auto_pause_5h_disabled === true
+	autoPause7dDisabled.value = extra?.auto_pause_7d_disabled === true
 
   // Load OpenAI passthrough toggle (OpenAI OAuth/API Key)
   openaiPassthroughEnabled.value = false
@@ -3202,6 +3409,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   codexCLIOnlyEnabled.value = false
+  codexCLIOnlyAllowClaudeCodeEnabled.value = false
+  openAIEndpointCapabilities.value = [...OPENAI_ENDPOINT_CAPABILITIES]
+  openAIResponsesMode.value = 'auto'
   const legacyOpenAIImageGenerationEnabled = extra?.openai_image_generation_enabled
   openaiImageGenerationEnabled.value = typeof newAccount.openai_image_generation_enabled === 'boolean'
     ? newAccount.openai_image_generation_enabled
@@ -3214,6 +3424,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
     openAICompactMode.value = (extra?.openai_compact_mode as OpenAICompactMode) || 'auto'
+    openAIResponsesMode.value = isOpenAIResponsesMode(extra?.openai_responses_mode)
+      ? extra.openai_responses_mode
+      : 'auto'
     openAICompactSupported.value = typeof extra?.openai_compact_supported === 'boolean'
       ? extra.openai_compact_supported
       : null
@@ -3242,8 +3455,12 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     })
     if (newAccount.type === 'oauth') {
       codexCLIOnlyEnabled.value = extra?.codex_cli_only === true
+      codexCLIOnlyAllowClaudeCodeEnabled.value =
+        Array.isArray(extra?.codex_cli_only_allowed_clients) &&
+        (extra.codex_cli_only_allowed_clients as unknown[]).includes('claude_code')
     }
     const credentials = newAccount.credentials as Record<string, unknown> | undefined
+    openAIEndpointCapabilities.value = normalizeOpenAIEndpointCapabilities(credentials?.openai_capabilities)
     const compactMappings = credentials?.compact_model_mapping as Record<string, string> | undefined
     if (compactMappings && typeof compactMappings === 'object') {
       openAICompactModelMappings.value = Object.entries(compactMappings).map(([from, to]) => ({ from, to }))
@@ -4594,6 +4811,7 @@ const handleSubmit = async () => {
         newCredentials.model_mapping = currentCredentials.model_mapping
       }
       if (props.account.platform === 'openai') {
+        applyOpenAIEndpointCapabilities(newCredentials)
         const compactModelMapping = buildModelMappingObject('mapping', [], openAICompactModelMappings.value)
         if (compactModelMapping) {
           newCredentials.compact_model_mapping = compactModelMapping
@@ -4971,8 +5189,13 @@ const handleSubmit = async () => {
       } else {
         newExtra.openai_compact_mode = openAICompactMode.value
       }
+      if (!openAIEndpointSupportsText.value || openAIResponsesMode.value === 'auto') {
+        delete newExtra.openai_responses_mode
+      } else {
+        newExtra.openai_responses_mode = openAIResponsesMode.value
+      }
 
-      delete newExtra.codex_image_generation_bridge_enabled
+			delete newExtra.codex_image_generation_bridge_enabled
       if (codexImageGenerationBridgeMode.value === 'inherit') {
         delete newExtra.codex_image_generation_bridge
       } else {
@@ -4987,6 +5210,12 @@ const handleSubmit = async () => {
           newExtra.codex_cli_only = false
         } else {
           delete newExtra.codex_cli_only
+        }
+        // 仅当 codex_cli_only 开启且子开关开启时写入 Claude Code 插件白名单，否则清除避免孤立字段
+        if (codexCLIOnlyEnabled.value && codexCLIOnlyAllowClaudeCodeEnabled.value) {
+          newExtra.codex_cli_only_allowed_clients = ['claude_code']
+        } else {
+          delete newExtra.codex_cli_only_allowed_clients
         }
       }
 

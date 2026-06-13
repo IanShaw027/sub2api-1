@@ -141,6 +141,7 @@ type codexInputFilterOptions struct {
 type codexOAuthTransformOptions struct {
 	SkipDefaultInstructions bool
 	PreserveToolCallIDs     bool
+	IsCompact               bool
 }
 
 var openAIChatGPTInternalUnsupportedFields = []string{
@@ -254,6 +255,7 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
 	fallbackReason string,
 	opts codexOAuthTransformOptions,
 ) codexTransformResult {
+	opts.IsCompact = isCompact
 	result := codexTransformResult{}
 	// 工具续链需求会影响存储策略与 input 过滤逻辑。
 	needsToolContinuation := NeedsToolContinuation(reqBody)
@@ -344,6 +346,12 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
 			result.Modified = true
 			result.Observability.UnsupportedFieldsStripped = append(result.Observability.UnsupportedFieldsStripped, key)
 		}
+	}
+
+	// 请求带 reasoning 时补齐 include:["reasoning.encrypted_content"]，与真实 Codex 对齐
+	// （compact 端点形态不同，单独处理，此处跳过）。
+	if !opts.IsCompact && ensureCodexReasoningInclude(reqBody) {
+		result.Modified = true
 	}
 
 	// 兼容遗留的 functions 和 function_call，转换为 tools 和 tool_choice
@@ -2264,4 +2272,80 @@ func normalizeCodexFunctionToolParameters(toolMap map[string]any) bool {
 	}
 	toolMap["parameters"] = paramsMap
 	return changed
+}
+
+// defaultCodexSynthInstructions 返回合成路径在 instructions 为空时应填入的默认提示词。
+//
+// 按 model 选择真实 Codex CLI 的 base instructions；若内嵌 prompt 意外为空，
+// 回退到最小占位符以保证字段非空。
+func defaultCodexSynthInstructions(model string) string {
+	if instructions := strings.TrimSpace(openai.CodexBaseInstructionsForModel(model)); instructions != "" {
+		return instructions
+	}
+	return "You are a helpful coding assistant."
+}
+
+// ensureCodexReasoningInclude 在请求带 reasoning 时补齐 include:["reasoning.encrypted_content"]。
+//
+// 真实 Codex 在 reasoning 存在时总会请求加密推理内容（ChatGPT/store=false 场景下用于上下文回放）。
+// 该函数为加法式、幂等：仅在 include 缺失或未包含该项时追加；对非数组的异常 include 不做破坏性改写。
+func ensureCodexReasoningInclude(reqBody map[string]any) bool {
+	reasoning, ok := reqBody["reasoning"].(map[string]any)
+	if !ok || len(reasoning) == 0 {
+		return false
+	}
+	const encrypted = "reasoning.encrypted_content"
+	switch existing := reqBody["include"].(type) {
+	case nil:
+		reqBody["include"] = []any{encrypted}
+		return true
+	case []any:
+		for _, v := range existing {
+			if s, ok := v.(string); ok && s == encrypted {
+				return false
+			}
+		}
+		reqBody["include"] = append(existing, encrypted)
+		return true
+	default:
+		return false
+	}
+}
+
+// applyCodexClientMetadata 在请求体补齐 client_metadata["x-codex-installation-id"]，
+// 取值为账号真实的 openai_device_id。
+func applyCodexClientMetadata(reqBody map[string]any, account *Account) bool {
+	if account == nil {
+		return false
+	}
+	deviceID := strings.TrimSpace(account.GetOpenAIDeviceID())
+	if deviceID == "" {
+		return false
+	}
+	const key = "x-codex-installation-id"
+	switch existing := reqBody["client_metadata"].(type) {
+	case map[string]any:
+		if v, ok := existing[key].(string); ok && strings.TrimSpace(v) != "" {
+			return false
+		}
+		existing[key] = deviceID
+		reqBody["client_metadata"] = existing
+		return true
+	case map[string]string:
+		if strings.TrimSpace(existing[key]) != "" {
+			return false
+		}
+		next := make(map[string]any, len(existing)+1)
+		for k, v := range existing {
+			next[k] = v
+		}
+		next[key] = deviceID
+		reqBody["client_metadata"] = next
+		return true
+	case nil:
+		reqBody["client_metadata"] = map[string]any{key: deviceID}
+		return true
+	default:
+		return false
+	}
 }

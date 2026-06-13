@@ -83,6 +83,9 @@ func (s *announcementUserRepoStub) GetByID(context.Context, int64) (*User, error
 	}
 	return &User{ID: 1, Balance: 10}, nil
 }
+func (s *announcementUserRepoStub) GetByIDIncludeDeleted(ctx context.Context, id int64) (*User, error) {
+	return s.GetByID(ctx, id)
+}
 func (*announcementUserRepoStub) GetByEmail(context.Context, string) (*User, error) { return nil, nil }
 func (*announcementUserRepoStub) GetFirstAdmin(context.Context) (*User, error)      { return nil, nil }
 func (*announcementUserRepoStub) Update(context.Context, *User) error               { return nil }

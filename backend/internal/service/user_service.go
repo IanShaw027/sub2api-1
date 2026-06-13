@@ -72,6 +72,10 @@ type UserListFilters struct {
 	Search     string           // Search in email, username
 	GroupName  string           // Filter by allowed group name (fuzzy match)
 	Attributes map[int64]string // Custom attribute filters: attributeID -> value
+	// IncludeDeleted controls whether soft-deleted users are included.
+	IncludeDeleted bool
+	// APIKeyGroupID filters users by actual API key group binding.
+	APIKeyGroupID int64
 	// AnnouncementID scopes announcement read-status filtering to a specific announcement.
 	AnnouncementID *int64
 	// AnnouncementReadStatus filters users by announcement read state: all/read/unread.
@@ -88,6 +92,8 @@ type UserListFilters struct {
 type UserRepository interface {
 	Create(ctx context.Context, user *User) error
 	GetByID(ctx context.Context, id int64) (*User, error)
+	// GetByIDIncludeDeleted 绕过软删除过滤按 ID 取用户（含已删）。仅供管理员审计/usage 点击使用。
+	GetByIDIncludeDeleted(ctx context.Context, id int64) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetFirstAdmin(ctx context.Context) (*User, error)
 	Update(ctx context.Context, user *User) error
