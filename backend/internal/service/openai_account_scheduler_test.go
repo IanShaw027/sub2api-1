@@ -289,7 +289,7 @@ func (s *openAISnapshotCacheStub) UpdateLastUsed(ctx context.Context, updates ma
 	return nil
 }
 
-func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabledUsesLegacyLoadAwareness(t *testing.T) {
+func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabledStillHonorsPreviousResponseSticky(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 
 	ctx := context.Background()
@@ -298,23 +298,29 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabledUsesLega
 		{
 			ID:          36001,
 			Platform:    PlatformOpenAI,
-			Type:        AccountTypeAPIKey,
-			Status:      StatusActive,
-			Schedulable: true,
-			Concurrency: 1,
-			Priority:    5,
-		},
-		{
-			ID:          36002,
-			Platform:    PlatformOpenAI,
-			Type:        AccountTypeAPIKey,
+			Type:        AccountTypeOAuth,
 			Status:      StatusActive,
 			Schedulable: true,
 			Concurrency: 1,
 			Priority:    0,
+			Extra: map[string]any{
+				"openai_oauth_responses_websockets_v2_enabled": true,
+			},
+		},
+		{
+			ID:          36002,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    5,
+			Extra: map[string]any{
+				"openai_oauth_responses_websockets_v2_enabled": true,
+			},
 		},
 	}
-	cfg := &config.Config{}
+	cfg := newSchedulerTestOpenAIWSV2Config()
 	cfg.Gateway.Scheduling.LoadBatchEnabled = false
 	cache := &schedulerTestGatewayCache{}
 	svc := &OpenAIGatewayService{
@@ -332,7 +338,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabledUsesLega
 		ctx,
 		&groupID,
 		"resp_disabled_001",
-		"",
+		"session_hash_disabled_previous",
 		"gpt-5.1",
 		nil,
 		OpenAIUpstreamTransportAny,
@@ -341,9 +347,10 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabledUsesLega
 	require.NoError(t, err)
 	require.NotNil(t, selection)
 	require.NotNil(t, selection.Account)
-	require.Equal(t, int64(36002), selection.Account.ID)
-	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
-	require.False(t, decision.StickyPreviousHit)
+	require.Equal(t, int64(36001), selection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerPreviousResponse, decision.Layer)
+	require.True(t, decision.StickyPreviousHit)
+	require.Equal(t, int64(36001), cache.sessionBindings["openai:session_hash_disabled_previous"])
 }
 
 func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_RequiredWSV2_SkipsHTTPOnlyAccount(t *testing.T) {

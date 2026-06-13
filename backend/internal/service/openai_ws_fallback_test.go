@@ -350,3 +350,42 @@ func TestShouldLogOpenAIWSPayloadSchema(t *testing.T) {
 	svc.cfg.Gateway.OpenAIWS.PayloadLogSampleRate = 1
 	require.True(t, svc.shouldLogOpenAIWSPayloadSchema(2))
 }
+
+func TestOpenAIWSContinuationProbeLogMessageIncludesStoreAndTimingFields(t *testing.T) {
+	msg := openAIWSContinuationProbeLogMessage(openAIWSContinuationProbeLog{
+		AccountID:              42,
+		AccountType:            AccountTypeOAuth,
+		ConnID:                 "oa_ws_42_1",
+		PreviousResponseID:     "resp_prev_123",
+		PreviousResponseIDKind: OpenAIPreviousResponseIDKindResponseID,
+		PreferredConnID:        "oa_ws_42_1",
+		ConnReused:             true,
+		StoreDisabled:          false,
+		StoreMode:              openAIWSStoreModeIncremental,
+		StoreEnabled:           true,
+		StickyAccountHit:       true,
+		ConnAffinityHit:        true,
+		FallbackReason:         "",
+		PayloadBytes:           3210,
+		ConnPickMs:             3,
+		QueueWaitMs:            0,
+		SessionHash:            "abcdef1234567890",
+		HeaderSessionID:        "session-header",
+		HeaderConversationID:   "conversation-header",
+		SessionIDSource:        "header",
+		ConversationIDSource:   "header",
+		HasTurnState:           true,
+		TurnStateLen:           17,
+		HasPromptCacheKey:      true,
+	})
+
+	require.Contains(t, msg, "continuation_probe")
+	require.Contains(t, msg, "store_mode=incremental")
+	require.Contains(t, msg, "store_enabled=true")
+	require.Contains(t, msg, "sticky_account_hit=true")
+	require.Contains(t, msg, "conn_affinity_hit=true")
+	require.Contains(t, msg, "fallback_reason=-")
+	require.Contains(t, msg, "payload_bytes=3210")
+	require.Contains(t, msg, "conn_pick_ms=3")
+	require.Contains(t, msg, "queue_wait_ms=0")
+}

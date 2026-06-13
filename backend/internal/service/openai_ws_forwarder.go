@@ -758,6 +758,67 @@ func logOpenAIWSModeDebug(format string, args ...any) {
 	logger.LegacyPrintf("service.openai_gateway", "[debug] [OpenAI WS Mode][openai_ws_mode=true] "+format, args...)
 }
 
+type openAIWSContinuationProbeLog struct {
+	AccountID              int64
+	AccountType            string
+	ConnID                 string
+	PreviousResponseID     string
+	PreviousResponseIDKind string
+	PreferredConnID        string
+	ConnReused             bool
+	StoreDisabled          bool
+	StoreMode              string
+	StoreEnabled           bool
+	StickyAccountHit       bool
+	ConnAffinityHit        bool
+	FallbackReason         string
+	PayloadBytes           int
+	ConnPickMs             int64
+	QueueWaitMs            int64
+	SessionHash            string
+	HeaderSessionID        string
+	HeaderConversationID   string
+	SessionIDSource        string
+	ConversationIDSource   string
+	HasTurnState           bool
+	TurnStateLen           int
+	HasPromptCacheKey      bool
+}
+
+func openAIWSContinuationProbeLogMessage(v openAIWSContinuationProbeLog) string {
+	return fmt.Sprintf(
+		"continuation_probe account_id=%d account_type=%s conn_id=%s previous_response_id=%s previous_response_id_kind=%s preferred_conn_id=%s conn_reused=%v store_disabled=%v store_mode=%s store_enabled=%v sticky_account_hit=%v conn_affinity_hit=%v fallback_reason=%s payload_bytes=%d conn_pick_ms=%d queue_wait_ms=%d session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v",
+		v.AccountID,
+		normalizeOpenAIWSLogValue(v.AccountType),
+		truncateOpenAIWSLogValue(v.ConnID, openAIWSIDValueMaxLen),
+		truncateOpenAIWSLogValue(v.PreviousResponseID, openAIWSIDValueMaxLen),
+		normalizeOpenAIWSLogValue(v.PreviousResponseIDKind),
+		truncateOpenAIWSLogValue(v.PreferredConnID, openAIWSIDValueMaxLen),
+		v.ConnReused,
+		v.StoreDisabled,
+		normalizeOpenAIWSLogValue(v.StoreMode),
+		v.StoreEnabled,
+		v.StickyAccountHit,
+		v.ConnAffinityHit,
+		normalizeOpenAIWSLogValue(v.FallbackReason),
+		v.PayloadBytes,
+		v.ConnPickMs,
+		v.QueueWaitMs,
+		truncateOpenAIWSLogValue(v.SessionHash, 12),
+		normalizeOpenAIWSLogValue(v.HeaderSessionID),
+		normalizeOpenAIWSLogValue(v.HeaderConversationID),
+		normalizeOpenAIWSLogValue(v.SessionIDSource),
+		normalizeOpenAIWSLogValue(v.ConversationIDSource),
+		v.HasTurnState,
+		v.TurnStateLen,
+		v.HasPromptCacheKey,
+	)
+}
+
+func logOpenAIWSContinuationProbe(v openAIWSContinuationProbeLog) {
+	logOpenAIWSModeInfo("%s", openAIWSContinuationProbeLogMessage(v))
+}
+
 func logOpenAIWSBindResponseAccountWarn(groupID, accountID int64, responseID string, err error) {
 	if err == nil {
 		return
@@ -2385,25 +2446,32 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		previousResponseID != "",
 	)
 	if previousResponseID != "" {
-		logOpenAIWSModeInfo(
-			"continuation_probe account_id=%d account_type=%s conn_id=%s previous_response_id=%s previous_response_id_kind=%s preferred_conn_id=%s conn_reused=%v store_disabled=%v session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v",
-			account.ID,
-			account.Type,
-			truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
-			truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
-			normalizeOpenAIWSLogValue(previousResponseIDKind),
-			truncateOpenAIWSLogValue(preferredConnID, openAIWSIDValueMaxLen),
-			lease.Reused(),
-			storeDisabled,
-			truncateOpenAIWSLogValue(sessionHash, 12),
-			openAIWSHeaderValueForLog(wsHeaders, "session_id"),
-			openAIWSHeaderValueForLog(wsHeaders, "conversation_id"),
-			normalizeOpenAIWSLogValue(sessionResolution.SessionSource),
-			normalizeOpenAIWSLogValue(sessionResolution.ConversationSource),
-			turnState != "",
-			len(turnState),
-			promptCacheKey != "",
-		)
+		logOpenAIWSContinuationProbe(openAIWSContinuationProbeLog{
+			AccountID:              account.ID,
+			AccountType:            account.Type,
+			ConnID:                 connID,
+			PreviousResponseID:     previousResponseID,
+			PreviousResponseIDKind: previousResponseIDKind,
+			PreferredConnID:        preferredConnID,
+			ConnReused:             lease.Reused(),
+			StoreDisabled:          storeDisabled,
+			StoreMode:              storeDecision.StoreMode,
+			StoreEnabled:           storeEnabled,
+			StickyAccountHit:       storeDecision.StickyAccountHit,
+			ConnAffinityHit:        connAffinityHit,
+			FallbackReason:         storeDecision.FallbackReason,
+			PayloadBytes:           resolvePayloadBytes(),
+			ConnPickMs:             lease.ConnPickDuration().Milliseconds(),
+			QueueWaitMs:            lease.QueueWaitDuration().Milliseconds(),
+			SessionHash:            sessionHash,
+			HeaderSessionID:        openAIWSHeaderValueForLog(wsHeaders, "session_id"),
+			HeaderConversationID:   openAIWSHeaderValueForLog(wsHeaders, "conversation_id"),
+			SessionIDSource:        sessionResolution.SessionSource,
+			ConversationIDSource:   sessionResolution.ConversationSource,
+			HasTurnState:           turnState != "",
+			TurnStateLen:           len(turnState),
+			HasPromptCacheKey:      promptCacheKey != "",
+		})
 	}
 	if c != nil {
 		SetOpsLatencyMs(c, OpsOpenAIWSConnPickMsKey, lease.ConnPickDuration().Milliseconds())
