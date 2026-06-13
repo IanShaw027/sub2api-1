@@ -4103,21 +4103,45 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			lastTurnStrictState = nextStrictState
 		}
 
-		if responseID != "" && stateStore != nil && !result.ClientDisconnected {
-			ttl := s.openAIWSResponseStickyTTL()
-			logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, apiKeyID, responseID, account.ID, ttl))
-			stateStore.BindResponseConn(groupID, apiKeyID, responseID, connID, ttl)
+		bindCleanTurnResponseAccount := func() {
+			if responseID != "" && stateStore != nil && !result.ClientDisconnected {
+				ttl := s.openAIWSResponseStickyTTL()
+				logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, apiKeyID, responseID, account.ID, ttl))
+			}
 		}
-		if stateStore != nil && storeDisabled && sessionHash != "" && !result.ClientDisconnected {
-			stateStore.BindSessionConn(groupID, sessionHash, connID, s.openAIWSSessionStickyTTL())
-		}
-		if connID != "" {
-			preferredConnID = connID
+		bindCleanTurnState := func() {
+			bindCleanTurnResponseAccount()
+			if responseID != "" && stateStore != nil && !result.ClientDisconnected {
+				stateStore.BindResponseConn(groupID, apiKeyID, responseID, connID, s.openAIWSResponseStickyTTL())
+			}
+			if stateStore != nil && storeDisabled && sessionHash != "" && !result.ClientDisconnected {
+				stateStore.BindSessionConn(groupID, sessionHash, connID, s.openAIWSSessionStickyTTL())
+			}
 		}
 
 		nextClientMessage, readErr := readClientMessage()
 		if readErr != nil {
 			if isOpenAIWSClientDisconnectError(readErr) {
+				if coderws.CloseStatus(readErr) == coderws.StatusNormalClosure && !result.ClientDisconnected {
+					bindCleanTurnState()
+				} else {
+					bindCleanTurnResponseAccount()
+					lastTurnClean = false
+					if sessionLease != nil {
+						sessionLease.MarkBroken()
+					}
+					if stateStore != nil {
+						if responseID != "" {
+							stateStore.DeleteResponseConn(groupID, apiKeyID, responseID)
+							if result.ClientDisconnected {
+								_ = stateStore.DeleteResponseAccount(ctx, groupID, apiKeyID, responseID)
+							}
+						}
+						if storeDisabled && sessionHash != "" {
+							stateStore.DeleteSessionConn(groupID, sessionHash)
+						}
+					}
+				}
 				closeStatus, closeReason := summarizeOpenAIWSReadCloseError(readErr)
 				logOpenAIWSModeInfo(
 					"ingress_ws_client_closed account_id=%d conn_id=%s close_status=%s close_reason=%s",
@@ -4131,9 +4155,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return fmt.Errorf("read client websocket request: %w", readErr)
 		}
 
+		bindCleanTurnState()
 		nextPayload, parseErr := parseClientPayload(nextClientMessage)
 		if parseErr != nil {
 			return parseErr
+		}
+		if connID != "" {
+			preferredConnID = connID
 		}
 		if nextPayload.promptCacheKey != "" {
 			// ingress 会话在整个客户端 WS 生命周期内复用同一上游连接；
