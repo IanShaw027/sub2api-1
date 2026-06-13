@@ -3,6 +3,7 @@
 package service
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -93,4 +94,41 @@ func TestAccountMatchResponseRewriteRule_AnyModeMatchesKeywordWithoutStatus(t *t
 	body := []byte(`{"error":{"message":"Too many requests, please wait before trying again."}}`)
 	rule := account.MatchResponseRewriteRule(429, body)
 	require.NotNil(t, rule)
+}
+
+func TestAccountGetResponseRewriteRules_RejectsNonIntegerStatusCodes(t *testing.T) {
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Credentials: map[string]any{
+			"response_rewrite_rules": []any{
+				map[string]any{
+					"status_code":      float64(502.5),
+					"match_mode":       "any",
+					"response_message": "fractional status should be ignored",
+				},
+				map[string]any{
+					"status_code":      math.NaN(),
+					"match_mode":       "any",
+					"response_message": "nan status should be ignored",
+				},
+				map[string]any{
+					"status_code":      math.Inf(1),
+					"match_mode":       "any",
+					"response_message": "infinite status should be ignored",
+				},
+				map[string]any{
+					"status_code":      float64(503),
+					"match_mode":       "any",
+					"response_message": "valid status",
+				},
+			},
+		},
+	}
+
+	rules := account.GetResponseRewriteRules()
+
+	require.Len(t, rules, 1)
+	require.NotNil(t, rules[0].StatusCode)
+	require.Equal(t, 503, *rules[0].StatusCode)
+	require.Equal(t, "valid status", rules[0].ResponseMessage)
 }

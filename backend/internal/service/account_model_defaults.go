@@ -3,12 +3,16 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
+
+const platformModelRoutingUnavailablePlatformKey = "__platform_model_routing_unavailable__"
 
 func defaultAccountModelConfigJSON() string {
 	return "{}"
@@ -25,7 +29,7 @@ func normalizePlatformDefaultAccountModelConfig(raw map[string]DefaultAccountMod
 			continue
 		}
 		normalized := normalizeDefaultAccountModelConfig(cfg)
-		if len(normalized.ModelWhitelist) == 0 && len(normalized.ModelMapping) == 0 && len(normalized.CompactModelMapping) == 0 && len(normalized.KiroSubscriptionTypeModelMap) == 0 {
+		if defaultAccountModelConfigIsEmpty(normalized) {
 			continue
 		}
 		out[platform] = normalized
@@ -33,16 +37,112 @@ func normalizePlatformDefaultAccountModelConfig(raw map[string]DefaultAccountMod
 	return out
 }
 
-func normalizeDefaultAccountModelConfig(cfg DefaultAccountModelConfig) DefaultAccountModelConfig {
-	normalized := DefaultAccountModelConfig{
+func normalizePlatformModelRoutingConfig(raw map[string]DefaultAccountModelConfig) map[string]DefaultAccountModelConfig {
+	if len(raw) == 0 {
+		return map[string]DefaultAccountModelConfig{}
+	}
+	out := make(map[string]DefaultAccountModelConfig, len(raw))
+	for platform, cfg := range raw {
+		platform = strings.TrimSpace(strings.ToLower(platform))
+		if platform == "" {
+			continue
+		}
+		normalized := normalizePlatformModelRoutingConfigEntry(cfg)
+		if !hasPlatformModelRoutingConfig(normalized) {
+			continue
+		}
+		out[platform] = normalized
+	}
+	return out
+}
+
+func normalizePlatformModelRoutingConfigEntry(cfg DefaultAccountModelConfig) DefaultAccountModelConfig {
+	return DefaultAccountModelConfig{
 		ModelWhitelist:      normalizeModelList(cfg.ModelWhitelist),
 		ModelMapping:        normalizeStringMap(cfg.ModelMapping),
 		CompactModelMapping: normalizeStringMap(cfg.CompactModelMapping),
+	}
+}
+
+func normalizeDefaultAccountModelConfig(cfg DefaultAccountModelConfig) DefaultAccountModelConfig {
+	normalized := DefaultAccountModelConfig{
+		ModelWhitelist:           normalizeModelList(cfg.ModelWhitelist),
+		ModelMapping:             normalizeStringMap(cfg.ModelMapping),
+		CompactModelMapping:      normalizeStringMap(cfg.CompactModelMapping),
+		TempUnschedulableEnabled: cfg.TempUnschedulableEnabled,
+		TempUnschedulableRules:   normalizeDefaultTempUnschedulableRules(cfg.TempUnschedulableRules),
+		CustomErrorCodesEnabled:  cfg.CustomErrorCodesEnabled,
+		CustomErrorCodes:         normalizeDefaultCustomErrorCodes(cfg.CustomErrorCodes),
 	}
 	if len(cfg.KiroSubscriptionTypeModelMap) > 0 {
 		normalized.KiroSubscriptionTypeModelMap = normalizeKiroSubscriptionTypeModelConfig(cfg.KiroSubscriptionTypeModelMap)
 	}
 	return normalized
+}
+
+func normalizeDefaultTempUnschedulableRules(rules []TempUnschedulableRule) []TempUnschedulableRule {
+	if len(rules) == 0 {
+		return nil
+	}
+	out := make([]TempUnschedulableRule, 0, len(rules))
+	for _, rule := range rules {
+		// keywords 可空（纯错误码匹配）；仅校验 error_code / duration_minutes。
+		if rule.ErrorCode < 100 || rule.ErrorCode > 599 || rule.DurationMinutes <= 0 {
+			continue
+		}
+		keywords := make([]string, 0, len(rule.Keywords))
+		for _, kw := range rule.Keywords {
+			if kw = strings.TrimSpace(kw); kw != "" {
+				keywords = append(keywords, kw)
+			}
+		}
+		if len(keywords) == 0 {
+			keywords = nil
+		}
+		out = append(out, TempUnschedulableRule{
+			ErrorCode:       rule.ErrorCode,
+			Keywords:        keywords,
+			DurationMinutes: rule.DurationMinutes,
+			Description:     strings.TrimSpace(rule.Description),
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizeDefaultCustomErrorCodes(codes []int) []int {
+	if len(codes) == 0 {
+		return nil
+	}
+	seen := make(map[int]struct{}, len(codes))
+	out := make([]int, 0, len(codes))
+	for _, code := range codes {
+		if code < 100 || code > 599 {
+			continue
+		}
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		out = append(out, code)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func defaultAccountModelConfigIsEmpty(cfg DefaultAccountModelConfig) bool {
+	return len(cfg.ModelWhitelist) == 0 &&
+		len(cfg.ModelMapping) == 0 &&
+		len(cfg.CompactModelMapping) == 0 &&
+		len(cfg.KiroSubscriptionTypeModelMap) == 0 &&
+		len(cfg.TempUnschedulableRules) == 0 &&
+		!cfg.TempUnschedulableEnabled &&
+		len(cfg.CustomErrorCodes) == 0 &&
+		!cfg.CustomErrorCodesEnabled
 }
 
 func normalizeKiroSubscriptionTypeModelConfig(raw map[string]DefaultAccountModelConfig) map[string]DefaultAccountModelConfig {
@@ -81,6 +181,25 @@ func parsePlatformDefaultAccountModelConfig(raw string) map[string]DefaultAccoun
 		return map[string]DefaultAccountModelConfig{}
 	}
 	return normalizePlatformDefaultAccountModelConfig(cfg)
+}
+
+func parsePlatformModelRoutingConfig(raw string) (map[string]DefaultAccountModelConfig, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return map[string]DefaultAccountModelConfig{}, true
+	}
+	var cfg map[string]DefaultAccountModelConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return nil, false
+	}
+	if err := validatePlatformModelRoutingConfig(cfg); err != nil {
+		return nil, false
+	}
+	cfg = normalizePlatformModelRoutingConfig(cfg)
+	if err := validatePlatformModelRoutingConfig(cfg); err != nil {
+		return nil, false
+	}
+	return cfg, true
 }
 
 func normalizeModelList(values []string) []string {
@@ -124,62 +243,129 @@ func normalizeStringMap(values map[string]string) map[string]string {
 }
 
 func validatePlatformDefaultAccountModelConfig(cfg map[string]DefaultAccountModelConfig) error {
+	return validatePlatformModelConfig(cfg, "INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG")
+}
+
+func validatePlatformModelRoutingConfig(cfg map[string]DefaultAccountModelConfig) error {
+	reason := "INVALID_PLATFORM_MODEL_ROUTING_CONFIG"
 	for platform, item := range cfg {
 		platform = strings.TrimSpace(platform)
 		if platform == "" {
-			return infraerrors.BadRequest("INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", "platform name cannot be empty")
+			return infraerrors.BadRequest(reason, "platform name cannot be empty")
 		}
-		if err := validateDefaultAccountModelConfig(platform, item, platform == "kiro"); err != nil {
+		if len(item.KiroSubscriptionTypeModelMap) > 0 {
+			return infraerrors.BadRequest(reason, platform+".kiro_subscription_type_model_config is not supported for runtime model routing config")
+		}
+		if hasAccountDefaultOnlyFields(item) {
+			return infraerrors.BadRequest(reason, platform+" contains account-default-only fields that are not supported for runtime model routing config")
+		}
+		if err := validateDefaultAccountModelConfigWithReason(platform, item, false, reason); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateDefaultAccountModelConfig(platform string, cfg DefaultAccountModelConfig, allowKiroVariants bool) error {
-	if err := validateDefaultModelMapping(platform, "model_mapping", cfg.ModelMapping); err != nil {
+func hasAccountDefaultOnlyFields(cfg DefaultAccountModelConfig) bool {
+	return cfg.TempUnschedulableEnabled ||
+		len(cfg.TempUnschedulableRules) > 0 ||
+		cfg.CustomErrorCodesEnabled ||
+		len(cfg.CustomErrorCodes) > 0
+}
+
+func validatePlatformModelConfig(cfg map[string]DefaultAccountModelConfig, reason string) error {
+	for platform, item := range cfg {
+		platform = strings.TrimSpace(platform)
+		if platform == "" {
+			return infraerrors.BadRequest(reason, "platform name cannot be empty")
+		}
+		if err := validateDefaultAccountModelConfigWithReason(platform, item, strings.EqualFold(platform, PlatformKiro), reason); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateDefaultAccountModelConfigWithReason(platform string, cfg DefaultAccountModelConfig, allowKiroVariants bool, reason string) error {
+	if err := validateDefaultModelMappingWithReason(platform, "model_mapping", cfg.ModelMapping, reason); err != nil {
 		return err
 	}
-	if err := validateDefaultModelMapping(platform, "compact_model_mapping", cfg.CompactModelMapping); err != nil {
+	if err := validateDefaultModelMappingWithReason(platform, "compact_model_mapping", cfg.CompactModelMapping, reason); err != nil {
+		return err
+	}
+	if cfg.TempUnschedulableEnabled && len(cfg.TempUnschedulableRules) == 0 {
+		return infraerrors.BadRequest(reason, platform+".temp_unschedulable_rules must contain at least one rule when temp_unschedulable_enabled is true")
+	}
+	if err := validateDefaultTempUnschedulableRulesWithReason(platform, cfg.TempUnschedulableRules, reason); err != nil {
+		return err
+	}
+	if err := validateDefaultCustomErrorCodesWithReason(platform, cfg.CustomErrorCodes, reason); err != nil {
 		return err
 	}
 	if len(cfg.KiroSubscriptionTypeModelMap) == 0 {
 		return nil
 	}
 	if !allowKiroVariants {
-		return infraerrors.BadRequest("INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", platform+".kiro_subscription_type_model_config is only supported for kiro")
+		return infraerrors.BadRequest(reason, platform+".kiro_subscription_type_model_config is only supported for kiro")
 	}
 	for key, variant := range cfg.KiroSubscriptionTypeModelMap {
 		normalizedKey := normalizeKiroSubscriptionTypeKey(key)
 		if normalizedKey == "" {
-			return infraerrors.BadRequest("INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", platform+".kiro_subscription_type_model_config contains an empty or unsupported subscription type key")
+			return infraerrors.BadRequest(reason, platform+".kiro_subscription_type_model_config contains an empty or unsupported subscription type key")
 		}
-		if err := validateDefaultModelMapping(platform+".kiro_subscription_type_model_config."+normalizedKey, "model_mapping", variant.ModelMapping); err != nil {
+		if len(variant.KiroSubscriptionTypeModelMap) > 0 {
+			return infraerrors.BadRequest(reason, platform+".kiro_subscription_type_model_config."+normalizedKey+".kiro_subscription_type_model_config is not supported")
+		}
+		if hasAccountDefaultOnlyFields(variant) {
+			return infraerrors.BadRequest(reason, platform+".kiro_subscription_type_model_config."+normalizedKey+" contains account-default-only fields that are not supported for subscription model config")
+		}
+		if err := validateDefaultModelMappingWithReason(platform+".kiro_subscription_type_model_config."+normalizedKey, "model_mapping", variant.ModelMapping, reason); err != nil {
 			return err
 		}
-		if err := validateDefaultModelMapping(platform+".kiro_subscription_type_model_config."+normalizedKey, "compact_model_mapping", variant.CompactModelMapping); err != nil {
+		if err := validateDefaultModelMappingWithReason(platform+".kiro_subscription_type_model_config."+normalizedKey, "compact_model_mapping", variant.CompactModelMapping, reason); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateDefaultModelMapping(platform, key string, mapping map[string]string) error {
+func validateDefaultTempUnschedulableRulesWithReason(platform string, rules []TempUnschedulableRule, reason string) error {
+	for _, rule := range rules {
+		if rule.ErrorCode < 100 || rule.ErrorCode > 599 {
+			return infraerrors.BadRequest(reason, platform+".temp_unschedulable_rules error_code must be between 100 and 599")
+		}
+		if rule.DurationMinutes <= 0 {
+			return infraerrors.BadRequest(reason, platform+".temp_unschedulable_rules duration_minutes must be greater than 0")
+		}
+	}
+	return nil
+}
+
+func validateDefaultCustomErrorCodesWithReason(platform string, codes []int, reason string) error {
+	for _, code := range codes {
+		if code < 100 || code > 599 {
+			return infraerrors.BadRequest(reason, platform+".custom_error_codes must only contain HTTP status codes between 100 and 599")
+		}
+	}
+	return nil
+}
+
+func validateDefaultModelMappingWithReason(platform, key string, mapping map[string]string, reason string) error {
 	for from, to := range mapping {
 		from = strings.TrimSpace(from)
 		to = strings.TrimSpace(to)
 		if from == "" || to == "" {
-			return infraerrors.BadRequest("INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", platform+"."+key+" must only contain non-empty string-to-string mappings")
+			return infraerrors.BadRequest(reason, platform+"."+key+" must only contain non-empty string-to-string mappings")
 		}
 		if !isValidModelMappingPattern(from) {
-			return infraerrors.BadRequest("INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", platform+"."+key+" wildcard * is only allowed at the end of the request model")
+			return infraerrors.BadRequest(reason, platform+"."+key+" wildcard * is only allowed at the end of the request model")
 		}
 		if strings.Contains(to, "*") {
-			return infraerrors.BadRequest("INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", platform+"."+key+" target model cannot contain wildcard *")
+			return infraerrors.BadRequest(reason, platform+"."+key+" target model cannot contain wildcard *")
 		}
 		if strings.EqualFold(strings.TrimSpace(platform), PlatformKiro) {
 			if !isCompatibleKiroModelMappingPair(from, to) {
-				return infraerrors.BadRequest("INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", platform+"."+key+" cannot map across kiro model families")
+				return infraerrors.BadRequest(reason, platform+"."+key+" cannot map across kiro model families")
 			}
 		}
 	}
@@ -209,6 +395,21 @@ func encodePlatformDefaultAccountModelConfig(cfg map[string]DefaultAccountModelC
 	return string(data), nil
 }
 
+func encodePlatformModelRoutingConfig(cfg map[string]DefaultAccountModelConfig) (string, error) {
+	if err := validatePlatformModelRoutingConfig(cfg); err != nil {
+		return "", err
+	}
+	cfg = normalizePlatformModelRoutingConfig(cfg)
+	if len(cfg) == 0 {
+		return "{}", nil
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 func (s *SettingService) GetPlatformDefaultAccountModelConfig(ctx context.Context) map[string]DefaultAccountModelConfig {
 	if s == nil || s.settingRepo == nil {
 		return map[string]DefaultAccountModelConfig{}
@@ -218,6 +419,80 @@ func (s *SettingService) GetPlatformDefaultAccountModelConfig(ctx context.Contex
 		return map[string]DefaultAccountModelConfig{}
 	}
 	return parsePlatformDefaultAccountModelConfig(raw)
+}
+
+func (s *SettingService) GetPlatformModelRoutingConfig(ctx context.Context) map[string]DefaultAccountModelConfig {
+	if s == nil || s.settingRepo == nil {
+		return map[string]DefaultAccountModelConfig{}
+	}
+	var staleConfig map[string]DefaultAccountModelConfig
+	if cached, ok := platformModelRoutingConfigCache.Load().(*cachedPlatformModelRoutingConfig); ok {
+		if cached != nil {
+			staleConfig = clonePlatformModelConfigMap(cached.config)
+			if time.Now().UnixNano() < cached.expiresAt {
+				return clonePlatformModelConfigMap(cached.config)
+			}
+		}
+	}
+
+	result, err, _ := platformModelRoutingConfigSF.Do(SettingKeyPlatformModelRoutingConfig, func() (any, error) {
+		if cached, ok := platformModelRoutingConfigCache.Load().(*cachedPlatformModelRoutingConfig); ok {
+			if cached != nil {
+				staleConfig = clonePlatformModelConfigMap(cached.config)
+				if time.Now().UnixNano() < cached.expiresAt {
+					return clonePlatformModelConfigMap(cached.config), nil
+				}
+			}
+		}
+
+		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), platformModelRoutingConfigDBTimeout)
+		defer cancel()
+
+		unavailable := func() map[string]DefaultAccountModelConfig {
+			return map[string]DefaultAccountModelConfig{
+				platformModelRoutingUnavailablePlatformKey: {},
+			}
+		}
+		cacheShortTTL := func(cfg map[string]DefaultAccountModelConfig) map[string]DefaultAccountModelConfig {
+			platformModelRoutingConfigCache.Store(&cachedPlatformModelRoutingConfig{
+				config:    clonePlatformModelConfigMap(cfg),
+				expiresAt: time.Now().Add(platformModelRoutingConfigErrorTTL).UnixNano(),
+			})
+			return clonePlatformModelConfigMap(cfg)
+		}
+
+		raw, err := s.settingRepo.GetValue(dbCtx, SettingKeyPlatformModelRoutingConfig)
+		if err != nil {
+			if !errors.Is(err, ErrSettingNotFound) {
+				if staleConfig == nil {
+					return cacheShortTTL(unavailable()), nil
+				}
+				return cacheShortTTL(staleConfig), nil
+			}
+			empty := map[string]DefaultAccountModelConfig{}
+			return cacheShortTTL(empty), nil
+		}
+
+		cfg, ok := parsePlatformModelRoutingConfig(raw)
+		if !ok {
+			if staleConfig != nil {
+				return cacheShortTTL(staleConfig), nil
+			}
+			return cacheShortTTL(unavailable()), nil
+		}
+		platformModelRoutingConfigCache.Store(&cachedPlatformModelRoutingConfig{
+			config:    clonePlatformModelConfigMap(cfg),
+			expiresAt: time.Now().Add(platformModelRoutingConfigCacheTTL).UnixNano(),
+		})
+		return clonePlatformModelConfigMap(cfg), nil
+	})
+	if err != nil {
+		return map[string]DefaultAccountModelConfig{}
+	}
+	if cfg, ok := result.(map[string]DefaultAccountModelConfig); ok {
+		return clonePlatformModelConfigMap(cfg)
+	}
+	return map[string]DefaultAccountModelConfig{}
 }
 
 func applyDefaultAccountModelConfigForPlatform(platform string, credentials map[string]any, cfg DefaultAccountModelConfig) map[string]any {
@@ -272,6 +547,61 @@ func applyDefaultAccountModelConfigBaseWithOriginalKeys(credentials map[string]a
 				out["compact_model_mapping"] = copyStringMap(cfg.CompactModelMapping)
 			}
 		}
+	}
+	// 临时不可调度 / 自定义错误码默认值：仅在基础注入阶段处理（override 为 kiro 订阅档位的二次套用，不涉及这些账号级字段）。
+	if !override {
+		if keyNotExplicit(originalKeys, "temp_unschedulable_rules") {
+			if rules := normalizeDefaultTempUnschedulableRules(cfg.TempUnschedulableRules); len(rules) > 0 {
+				out["temp_unschedulable_rules"] = tempUnschedulableRulesToAnySlice(rules)
+			}
+		}
+		if keyNotExplicit(originalKeys, "temp_unschedulable_enabled") && cfg.TempUnschedulableEnabled {
+			out["temp_unschedulable_enabled"] = true
+		}
+		if keyNotExplicit(originalKeys, "custom_error_codes") {
+			if codes := normalizeDefaultCustomErrorCodes(cfg.CustomErrorCodes); len(codes) > 0 {
+				out["custom_error_codes"] = intsToAnySlice(codes)
+			}
+		}
+		if keyNotExplicit(originalKeys, "custom_error_codes_enabled") && cfg.CustomErrorCodesEnabled {
+			out["custom_error_codes_enabled"] = true
+		}
+	}
+	return out
+}
+
+func tempUnschedulableRulesToAnySlice(rules []TempUnschedulableRule) []any {
+	if len(rules) == 0 {
+		return nil
+	}
+	out := make([]any, 0, len(rules))
+	for _, rule := range rules {
+		entry := map[string]any{
+			"error_code":       rule.ErrorCode,
+			"duration_minutes": rule.DurationMinutes,
+		}
+		if len(rule.Keywords) > 0 {
+			kws := make([]any, 0, len(rule.Keywords))
+			for _, kw := range rule.Keywords {
+				kws = append(kws, kw)
+			}
+			entry["keywords"] = kws
+		}
+		if rule.Description != "" {
+			entry["description"] = rule.Description
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+func intsToAnySlice(values []int) []any {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]any, 0, len(values))
+	for _, v := range values {
+		out = append(out, v)
 	}
 	return out
 }
@@ -366,9 +696,35 @@ func copyStringMap(src map[string]string) map[string]string {
 	return out
 }
 
+func clonePlatformModelConfigMap(src map[string]DefaultAccountModelConfig) map[string]DefaultAccountModelConfig {
+	if len(src) == 0 {
+		return map[string]DefaultAccountModelConfig{}
+	}
+	out := make(map[string]DefaultAccountModelConfig, len(src))
+	for platform, cfg := range src {
+		out[platform] = cloneDefaultAccountModelConfig(cfg)
+	}
+	return out
+}
+
+func cloneDefaultAccountModelConfig(cfg DefaultAccountModelConfig) DefaultAccountModelConfig {
+	cloned := DefaultAccountModelConfig{
+		ModelWhitelist:      cloneStringSlice(cfg.ModelWhitelist),
+		ModelMapping:        copyStringMap(cfg.ModelMapping),
+		CompactModelMapping: copyStringMap(cfg.CompactModelMapping),
+	}
+	if len(cfg.KiroSubscriptionTypeModelMap) > 0 {
+		cloned.KiroSubscriptionTypeModelMap = make(map[string]DefaultAccountModelConfig, len(cfg.KiroSubscriptionTypeModelMap))
+		for key, variant := range cfg.KiroSubscriptionTypeModelMap {
+			cloned.KiroSubscriptionTypeModelMap[key] = cloneDefaultAccountModelConfig(variant)
+		}
+	}
+	return cloned
+}
+
 func resolveKiroSubscriptionTypeFromCredentials(credentials map[string]any) string {
 	if len(credentials) == 0 {
-		return ""
+		return "free"
 	}
 	for _, key := range []string{"subscription_type", "plan_name", "plan_tier"} {
 		if raw, ok := credentials[key]; ok {
@@ -377,7 +733,7 @@ func resolveKiroSubscriptionTypeFromCredentials(credentials map[string]any) stri
 			}
 		}
 	}
-	return ""
+	return "free"
 }
 
 func normalizeKiroSubscriptionTypeKey(raw string) string {

@@ -4010,7 +4010,7 @@ func (s *GatewayService) isModelSupportedByAccountWithContext(ctx context.Contex
 			return true
 		}
 		// 使用与转发阶段一致的映射逻辑：自定义映射优先 → 默认映射兜底
-		mapped := mapAntigravityModel(account, requestedModel)
+		mapped := mapAntigravityModelWithSettings(ctx, s.settingService, account, requestedModel)
 		if mapped == "" {
 			return false
 		}
@@ -4020,7 +4020,7 @@ func (s *GatewayService) isModelSupportedByAccountWithContext(ctx context.Contex
 			if finalModel == mapped {
 				return true // thinking 后缀未改变模型名，映射已通过
 			}
-			return account.IsModelSupported(finalModel)
+			return IsEffectiveModelSupported(ctx, s.settingService, account, finalModel, false)
 		}
 		return true
 	}
@@ -4033,7 +4033,7 @@ func (s *GatewayService) isModelSupportedByAccount(account *Account, requestedMo
 		if strings.TrimSpace(requestedModel) == "" {
 			return true
 		}
-		return mapAntigravityModel(account, requestedModel) != ""
+		return mapAntigravityModelWithSettings(context.Background(), s.settingService, account, requestedModel) != ""
 	}
 	if account.IsBedrock() {
 		_, ok := ResolveBedrockModelID(account, requestedModel)
@@ -4052,7 +4052,7 @@ func (s *GatewayService) isModelSupportedByAccount(account *Account, requestedMo
 		}
 	}
 	// 其他平台使用账户的模型支持检查
-	return account.IsModelSupported(requestedModel)
+	return IsEffectiveModelSupported(context.Background(), s.settingService, account, requestedModel, false)
 }
 
 // GetAccessToken 获取账号凭证
@@ -4693,7 +4693,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		passthroughBody := parsed.Body.Bytes()
 		passthroughModel := parsed.Model
 		if passthroughModel != "" {
-			if mappedModel := account.GetMappedModel(passthroughModel); mappedModel != passthroughModel {
+			if mappedModel := ResolveEffectiveMappedModel(ctx, s.settingService, account, passthroughModel, false); mappedModel != passthroughModel {
 				passthroughBody = s.replaceModelInBody(passthroughBody, mappedModel)
 				logger.LegacyPrintf("service.gateway", "Passthrough model mapping: %s -> %s (account: %s)", parsed.Model, mappedModel, account.Name)
 				passthroughModel = mappedModel
@@ -4825,33 +4825,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	// 应用模型映射：
 	// - APIKey 账号：使用账号级别的显式映射（如果配置），否则透传原始模型名
 	// - OAuth/SetupToken 账号：使用 Anthropic 标准映射（短ID → 长ID）
-	mappedModel := reqModel
-	mappingSource := ""
-	if account.Type == AccountTypeAPIKey {
-		mappedModel = account.GetMappedModel(reqModel)
-		if mappedModel != reqModel {
-			mappingSource = "account"
-		}
-	}
-	if mappingSource == "" && account.Platform == PlatformAnthropic && account.Type == AccountTypeServiceAccount {
-		if candidate, matched := account.ResolveMappedModel(reqModel); matched {
-			mappedModel = candidate
-			mappingSource = "account"
-		} else {
-			normalized := normalizeVertexAnthropicModelID(claude.NormalizeModelID(reqModel))
-			if normalized != reqModel {
-				mappedModel = normalized
-				mappingSource = "vertex"
-			}
-		}
-	}
-	if mappingSource == "" && account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
-		normalized := claude.NormalizeModelID(reqModel)
-		if normalized != reqModel {
-			mappedModel = normalized
-			mappingSource = "prefix"
-		}
-	}
+	mappedModel, mappingSource := resolveGatewayAnthropicForwardModel(ctx, s.settingService, account, reqModel)
 	if mappedModel != reqModel {
 		// 替换请求体中的模型名
 		if err := replaceBody(s.replaceModelInBody(body, mappedModel)); err != nil {
@@ -7615,13 +7589,13 @@ func isCountTokensUnsupported404(statusCode int, body []byte) bool {
 	return strings.Contains(msg, "count_tokens") && strings.Contains(msg, "not found")
 }
 
-func resolveAnthropicFallbackUpstreamModel(account *Account, fallbackModel string) string {
+func resolveAnthropicFallbackUpstreamModel(ctx context.Context, settingService *SettingService, account *Account, fallbackModel string) string {
 	fallbackModel = strings.TrimSpace(fallbackModel)
 	if account == nil || fallbackModel == "" {
 		return fallbackModel
 	}
 
-	mappedModel := account.GetMappedModel(fallbackModel)
+	mappedModel := ResolveEffectiveMappedModel(ctx, settingService, account, fallbackModel, false)
 	if account.Platform != PlatformAnthropic || account.Type == AccountTypeAPIKey {
 		return mappedModel
 	}
@@ -7659,7 +7633,7 @@ func (s *GatewayService) maybeRetryAnthropicModelFallback(
 		return resp, requestBody, requestModel, mappedModel, false
 	}
 
-	fallbackUpstreamModel := resolveAnthropicFallbackUpstreamModel(account, fallbackModel)
+	fallbackUpstreamModel := resolveAnthropicFallbackUpstreamModel(ctx, s.settingService, account, fallbackModel)
 	if fallbackUpstreamModel == "" || strings.EqualFold(fallbackUpstreamModel, currentModel) {
 		return resp, requestBody, requestModel, mappedModel, false
 	}
@@ -9724,7 +9698,7 @@ func (s *GatewayService) isUpstreamModelRestrictedByChannel(ctx context.Context,
 	if s.channelService == nil {
 		return false
 	}
-	upstreamModel := resolveAccountUpstreamModel(account, requestedModel)
+	upstreamModel := resolveAccountUpstreamModel(ctx, s.settingService, account, requestedModel)
 	if upstreamModel == "" {
 		return false
 	}
@@ -9732,11 +9706,11 @@ func (s *GatewayService) isUpstreamModelRestrictedByChannel(ctx context.Context,
 }
 
 // resolveAccountUpstreamModel 确定账号将请求模型映射为什么上游模型。
-func resolveAccountUpstreamModel(account *Account, requestedModel string) string {
+func resolveAccountUpstreamModel(ctx context.Context, settingService *SettingService, account *Account, requestedModel string) string {
 	if account.Platform == PlatformAntigravity {
-		return mapAntigravityModel(account, requestedModel)
+		return mapAntigravityModelWithSettings(ctx, settingService, account, requestedModel)
 	}
-	return account.GetMappedModel(requestedModel)
+	return ResolveEffectiveMappedModel(ctx, settingService, account, requestedModel, false)
 }
 
 // needsUpstreamChannelRestrictionCheck 判断是否需要在调度循环中逐账号检查上游模型的渠道限制。
@@ -9786,7 +9760,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	if account != nil && account.IsAnthropicAPIKeyPassthroughEnabled() {
 		passthroughBody := parsed.Body.Bytes()
 		if reqModel := parsed.Model; reqModel != "" {
-			if mappedModel := account.GetMappedModel(reqModel); mappedModel != reqModel {
+			if mappedModel := ResolveEffectiveMappedModel(ctx, s.settingService, account, reqModel, false); mappedModel != reqModel {
 				passthroughBody = s.replaceModelInBody(passthroughBody, mappedModel)
 				logger.LegacyPrintf("service.gateway", "CountTokens passthrough model mapping: %s -> %s (account: %s)", reqModel, mappedModel, account.Name)
 			}
@@ -9855,7 +9829,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		mappedModel := reqModel
 		mappingSource := ""
 		if account.Type == AccountTypeAPIKey {
-			mappedModel = account.GetMappedModel(reqModel)
+			mappedModel = ResolveEffectiveMappedModel(ctx, s.settingService, account, reqModel, false)
 			if mappedModel != reqModel {
 				mappingSource = "account"
 			}

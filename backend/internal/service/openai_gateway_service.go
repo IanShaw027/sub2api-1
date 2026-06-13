@@ -626,6 +626,7 @@ func NewOpenAIGatewayService(
 	if openAITokenProvider != nil {
 		openAITokenProvider.SetAccountRuntimeBlocker(svc)
 	}
+	svc.registerOpenAIWSPoolReconcileHook()
 	svc.logOpenAIWSModeBootstrap()
 	return svc
 }
@@ -686,7 +687,7 @@ func (s *OpenAIGatewayService) isUpstreamModelRestrictedByChannel(ctx context.Co
 	if s.channelService == nil {
 		return false
 	}
-	upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(account, requestedModel, requireCompact)
+	upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(ctx, s.settingService, account, requestedModel, requireCompact)
 	if upstreamModel == "" {
 		return false
 	}
@@ -812,8 +813,12 @@ func classifyOpenAIWSReconnectReason(err error) (string, bool) {
 		"upgrade_required",
 		"ws_unsupported",
 		"auth_failed",
+		"model_unavailable",
 		"invalid_encrypted_content",
-		"previous_response_not_found":
+		"previous_response_not_found",
+		"unsafe_tool_continuation",
+		// 账户级并发上限：同账号盲目重试只会反复撞满，应快速 failover 到其他账号。
+		"ws_connection_limit_reached":
 		return reason, false
 	}
 
@@ -829,7 +834,8 @@ func classifyOpenAIWSReconnectReason(err error) (string, bool) {
 		"event_error",
 		"error_event",
 		"upstream_error_event",
-		"ws_connection_limit_reached",
+		// 60min 单连接 TTL 到期：evict 旧连接后同账号重拨一条新连接即可恢复。
+		"ws_conn_ttl_evict",
 		"missing_final_response":
 		return reason, true
 	default:
@@ -878,6 +884,14 @@ func resolveOpenAIWSFallbackErrorResponse(err error) (statusCode int, errType st
 		errType = "invalid_request_error"
 		if upstreamMessage == "" {
 			upstreamMessage = "previous response not found"
+		}
+	case "unsafe_tool_continuation":
+		if statusCode == 0 {
+			statusCode = http.StatusConflict
+		}
+		errType = "invalid_request_error"
+		if upstreamMessage == "" {
+			upstreamMessage = "previous response binding unavailable for tool continuation"
 		}
 	case "call_id", "item_reference", "tool_context", "system_role", "input_schema":
 		if statusCode == 0 {
@@ -987,6 +1001,52 @@ func (s *OpenAIGatewayService) newOpenAIWSFailoverError(c *gin.Context, account 
 		StatusCode:   statusCode,
 		ResponseBody: body,
 	}
+}
+
+func (s *OpenAIGatewayService) prepareOpenAIWSContinuationFailoverBody(c *gin.Context, account *Account, wsErr error, wsReqBody map[string]any) bool {
+	reason, _ := classifyOpenAIWSReconnectReason(wsErr)
+	if strings.TrimPrefix(strings.TrimSpace(reason), "prewarm_") != "ws_connection_limit_reached" {
+		return false
+	}
+	if account == nil || account.Type != AccountTypeOAuth || len(wsReqBody) == 0 {
+		return false
+	}
+	previousResponseID := openAIWSPayloadString(wsReqBody, "previous_response_id")
+	if previousResponseID == "" {
+		return false
+	}
+	if HasFunctionCallOutput(wsReqBody) {
+		logOpenAIWSModeInfo(
+			"reconnect_ws_connection_limit_failover_skip account_id=%d reason=tool_continuation previous_response_id=%s",
+			account.ID,
+			truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
+		)
+		return true
+	}
+	failoverReqBody := make(map[string]any, len(wsReqBody))
+	for k, v := range wsReqBody {
+		failoverReqBody[k] = v
+	}
+	delete(failoverReqBody, "previous_response_id")
+	failoverReqBody["store"] = false
+	trimOpenAIStoreFalseReasoningItems(failoverReqBody)
+	failoverBody, marshalErr := marshalOpenAIResponsesRequestBodyOrdered(failoverReqBody)
+	if marshalErr != nil {
+		logOpenAIWSModeInfo(
+			"reconnect_ws_connection_limit_failover_skip account_id=%d reason=serialize previous_response_id=%s cause=%s",
+			account.ID,
+			truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
+			truncateOpenAIWSLogValue(marshalErr.Error(), openAIWSLogValueMaxLen),
+		)
+		return true
+	}
+	setOpenAIFailoverRequestBody(c, failoverBody)
+	logOpenAIWSModeInfo(
+		"reconnect_ws_connection_limit_failover_body account_id=%d action=drop_previous_response_id_full_create previous_response_id=%s",
+		account.ID,
+		truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
+	)
+	return false
 }
 
 func (s *OpenAIGatewayService) writeOpenAIWSFallbackErrorResponse(c *gin.Context, account *Account, wsErr error) bool {
@@ -2372,7 +2432,7 @@ func shouldClearOpenAIStickyAccount(account *Account, requestedModel string, req
 	return timeout <= 0 || time.Until(*recoverAt) > timeout
 }
 
-func isOpenAIStickyCandidateCompatible(account *Account, requestedModel string, requireCompact bool, requiredImageRoute string, requireOAuthAccount bool, requireImageEnabled bool) bool {
+func isOpenAIStickyCandidateCompatible(ctx context.Context, settingService *SettingService, account *Account, requestedModel string, requireCompact bool, requiredImageRoute string, requireOAuthAccount bool, requireImageEnabled bool) bool {
 	if account == nil || !account.IsOpenAI() {
 		return false
 	}
@@ -2390,7 +2450,7 @@ func isOpenAIStickyCandidateCompatible(account *Account, requestedModel string, 
 			return false
 		}
 	}
-	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
+	if requestedModel != "" && !ResolveEffectiveModelRouting(ctx, settingService, account, requestedModel, requireCompact).Supported {
 		return false
 	}
 	if requireCompact && openAICompactSupportTier(account) == 0 {
@@ -2423,7 +2483,7 @@ func (s *OpenAIGatewayService) openAIStickyAccountWithinGroupScope(ctx context.C
 
 // isOpenAIAccountEligibleForRequest centralises the schedulable / OpenAI / model /
 // compact-support checks used during account selection.
-func isOpenAIAccountEligibleForRequest(ctx context.Context, account *Account, requestedModel string, requireCompact bool, requiredImageRoute string, requireOAuthAccount bool) bool {
+func isOpenAIAccountEligibleForRequest(ctx context.Context, settingService *SettingService, account *Account, requestedModel string, requireCompact bool, requiredImageRoute string, requireOAuthAccount bool) bool {
 	if account == nil || !account.IsOpenAI() {
 		return false
 	}
@@ -2451,7 +2511,7 @@ func isOpenAIAccountEligibleForRequest(ctx context.Context, account *Account, re
 		)
 		return false
 	}
-	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
+	if requestedModel != "" && !ResolveEffectiveModelRouting(ctx, settingService, account, requestedModel, requireCompact).Supported {
 		return false
 	}
 	if requireCompact && openAICompactSupportTier(account) == 0 {
@@ -2712,15 +2772,12 @@ func prioritizeOpenAICompactAccounts(accounts []*Account) []*Account {
 // resolveOpenAIAccountUpstreamModelForRequest resolves the upstream model that
 // would be sent for a given request, honouring compact-only mappings when the
 // caller is on the /responses/compact path.
-func resolveOpenAIAccountUpstreamModelForRequest(account *Account, requestedModel string, requireCompact bool) string {
-	upstreamModel := resolveOpenAIForwardModel(account, requestedModel, "")
-	if upstreamModel == "" {
+func resolveOpenAIAccountUpstreamModelForRequest(ctx context.Context, settingService *SettingService, account *Account, requestedModel string, requireCompact bool) string {
+	routing := ResolveEffectiveModelRouting(ctx, settingService, account, requestedModel, requireCompact)
+	if strings.TrimSpace(routing.Model) == "" {
 		return ""
 	}
-	if requireCompact {
-		return resolveOpenAICompactForwardModel(account, upstreamModel)
-	}
-	return upstreamModel
+	return strings.TrimSpace(routing.Model)
 }
 
 func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, stickyAccountID int64, requiredImageRoute string) (*Account, error) {
@@ -2804,7 +2861,7 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 		return nil
 	}
 
-	if !isOpenAIStickyCandidateCompatible(account, requestedModel, requireCompact, requiredImageRoute, false, requiredImageRoute != "") {
+	if !isOpenAIStickyCandidateCompatible(ctx, s.settingService, account, requestedModel, requireCompact, requiredImageRoute, false, requiredImageRoute != "") {
 		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
 	}
@@ -3045,7 +3102,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				if clearSticky {
 					_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 				}
-				if !clearSticky && isOpenAIStickyCandidateCompatible(account, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requiredImageRoute != "") {
+				if !clearSticky && isOpenAIStickyCandidateCompatible(ctx, s.settingService, account, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requiredImageRoute != "") {
 					account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requiredImageRoute != "")
 					if account == nil {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
@@ -3108,6 +3165,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			continue
 		}
 		if s.isOpenAIAccountRuntimeBlocked(acc) {
+			continue
+		}
+		if requestedModel != "" && !ResolveEffectiveModelRouting(ctx, s.settingService, acc, requestedModel, requireCompact).Supported {
 			continue
 		}
 		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, acc, requestedModel, requireCompact) {
@@ -3533,7 +3593,7 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccount(ctx context.
 		fresh = current
 	}
 
-	if !isOpenAIAccountEligibleForRequest(ctx, fresh, requestedModel, requireCompact, requiredImageRoute, false) {
+	if !isOpenAIAccountEligibleForRequest(ctx, s.settingService, fresh, requestedModel, requireCompact, requiredImageRoute, false) {
 		return nil
 	}
 	if s.isOpenAIAccountRuntimeBlocked(fresh) {
@@ -3547,7 +3607,7 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 		return nil
 	}
 	if s.schedulerSnapshot == nil || s.accountRepo == nil {
-		if !isOpenAIAccountEligibleForRequest(ctx, account, requestedModel, requireCompact, requiredImageRoute, false) {
+		if !isOpenAIAccountEligibleForRequest(ctx, s.settingService, account, requestedModel, requireCompact, requiredImageRoute, false) {
 			return nil
 		}
 		if s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, account) {
@@ -3560,7 +3620,7 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 	if err != nil || latest == nil {
 		return nil
 	}
-	if !isOpenAIAccountEligibleForRequest(ctx, latest, requestedModel, requireCompact, requiredImageRoute, false) {
+	if !isOpenAIAccountEligibleForRequest(ctx, s.settingService, latest, requestedModel, requireCompact, requiredImageRoute, false) {
 		return nil
 	}
 	if s.isOpenAIAccountRuntimeBlocked(latest) {
@@ -3581,7 +3641,7 @@ func (s *OpenAIGatewayService) recheckSelectedStickyOpenAIAccountFromDB(ctx cont
 		if shouldClearOpenAIStickyAccount(account, requestedModel, requiredImageRoute, waitTimeout) {
 			return nil
 		}
-		if !isOpenAIStickyCandidateCompatible(account, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
+		if !isOpenAIStickyCandidateCompatible(ctx, s.settingService, account, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
 			return nil
 		}
 		if s.isOpenAIAccountRuntimeBlocked(account) {
@@ -3600,7 +3660,7 @@ func (s *OpenAIGatewayService) recheckSelectedStickyOpenAIAccountFromDB(ctx cont
 	if shouldClearOpenAIStickyAccount(latest, requestedModel, requiredImageRoute, waitTimeout) {
 		return nil
 	}
-	if !isOpenAIStickyCandidateCompatible(latest, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
+	if !isOpenAIStickyCandidateCompatible(ctx, s.settingService, latest, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
 		return nil
 	}
 	if s.isOpenAIAccountRuntimeBlocked(latest) {
@@ -4081,7 +4141,14 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	// 对所有请求执行模型映射（包含 Codex CLI）。
-	billingModel := account.GetMappedModel(reqModel)
+	routingCompact := isOpenAIResponsesCompactPath(c)
+	modelRouting := ResolveEffectiveModelRouting(ctx, s.settingService, account, reqModel, routingCompact)
+	billingModel := modelRouting.Model
+	compactRoutingApplied := false
+	if routingCompact {
+		nonCompactModel := ResolveEffectiveMappedModel(ctx, s.settingService, account, reqModel, false)
+		compactRoutingApplied = nonCompactModel != "" && billingModel != "" && !strings.EqualFold(nonCompactModel, billingModel)
+	}
 	if billingModel != reqModel {
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Model mapping applied: %s -> %s (account: %s, isCodexCLI: %v)", reqModel, billingModel, account.Name, isCodexCLI)
 		reqModel = billingModel
@@ -4137,8 +4204,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// Compact-only model 映射：仅在 /responses/compact 路径生效，且优先级高于
 	// OAuth 模型规范化（避免 OAuth 规范化覆盖 compact-only 自定义模型）。
 	compactMappedModel := ""
-	compactMapped := false
-	if isCompactRequest {
+	compactMapped := compactRoutingApplied
+	if compactRoutingApplied {
+		compactMappedModel = billingModel
+	} else if isCompactRequest {
 		compactMappedModel = resolveOpenAICompactForwardModel(account, billingModel)
 		if compactMappedModel != "" && compactMappedModel != billingModel {
 			compactMapped = true
@@ -4538,6 +4607,54 @@ oauthTransformDone:
 		wsPrevResponseRecoveryTried := false
 		wsInvalidEncryptedContentRecoveryTried := false
 		wsCodexCompatRecoveryTried := false
+		wsModelFallbackRecoveryTried := false
+		syncWSRecoveredBody := func(stage string) bool {
+			nextBody, marshalErr := marshalOpenAIResponsesRequestBodyOrdered(wsReqBody)
+			if marshalErr != nil {
+				wsErr = wrapOpenAIWSFallback(stage+"_serialize", marshalErr)
+				logOpenAIWSModeInfo(
+					"reconnect_%s_skip account_id=%d reason=serialize cause=%s",
+					normalizeOpenAIWSLogValue(stage),
+					account.ID,
+					truncateOpenAIWSLogValue(marshalErr.Error(), openAIWSLogValueMaxLen),
+				)
+				return false
+			}
+			if account.Type == AccountTypeOAuth && isCompactRequest {
+				normalizedBody, normalized, normErr := normalizeOpenAICompactRequestBody(nextBody)
+				if normErr != nil {
+					wsErr = wrapOpenAIWSFallback(stage+"_normalize", normErr)
+					logOpenAIWSModeInfo(
+						"reconnect_%s_skip account_id=%d reason=normalize cause=%s",
+						normalizeOpenAIWSLogValue(stage),
+						account.ID,
+						truncateOpenAIWSLogValue(normErr.Error(), openAIWSLogValueMaxLen),
+					)
+					return false
+				}
+				if normalized {
+					nextBody = normalizedBody
+					nextReqBody := map[string]any{}
+					if unmarshalErr := json.Unmarshal(nextBody, &nextReqBody); unmarshalErr != nil {
+						wsErr = wrapOpenAIWSFallback(stage+"_parse", unmarshalErr)
+						logOpenAIWSModeInfo(
+							"reconnect_%s_skip account_id=%d reason=parse cause=%s",
+							normalizeOpenAIWSLogValue(stage),
+							account.ID,
+							truncateOpenAIWSLogValue(unmarshalErr.Error(), openAIWSLogValueMaxLen),
+						)
+						return false
+					}
+					wsReqBody = nextReqBody
+				}
+			}
+			body = nextBody
+			reqStream = gjson.GetBytes(body, "stream").Bool()
+			promptCacheKey = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+			clearOpenAIRequestBodyCache(c)
+			setOpsUpstreamRequestBody(c, body)
+			return true
+		}
 		recoverPrevResponseNotFound := func(attempt int) bool {
 			if wsPrevResponseRecoveryTried {
 				return false
@@ -4560,6 +4677,22 @@ oauthTransformDone:
 				return false
 			}
 			delete(wsReqBody, "previous_response_id")
+			wsReqBody["store"] = false
+			trimOpenAIStoreFalseReasoningItems(wsReqBody)
+			updatedBody, marshalErr := marshalOpenAIResponsesRequestBodyOrdered(wsReqBody)
+			if marshalErr != nil {
+				wsErr = wrapOpenAIWSFallback("previous_response_recovery_serialize", marshalErr)
+				logOpenAIWSModeInfo(
+					"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=serialize cause=%s",
+					account.ID,
+					attempt,
+					truncateOpenAIWSLogValue(marshalErr.Error(), openAIWSLogValueMaxLen),
+				)
+				return false
+			}
+			body = updatedBody
+			clearOpenAIRequestBodyCache(c)
+			setOpsUpstreamRequestBody(c, body)
 			wsPrevResponseRecoveryTried = true
 			s.RecordOpenAIAccountRecoveryReason(account.ID, "previous_response_not_found")
 			logOpenAIWSModeInfo(
@@ -4589,6 +4722,9 @@ oauthTransformDone:
 			if previousResponseID != "" && !hasFunctionCallOutput {
 				delete(wsReqBody, "previous_response_id")
 			}
+			if !syncWSRecoveredBody("invalid_encrypted_content_recovery") {
+				return false
+			}
 			wsInvalidEncryptedContentRecoveryTried = true
 			s.RecordOpenAIAccountRecoveryReason(account.ID, "invalid_encrypted_content")
 			logOpenAIWSModeInfo(
@@ -4600,6 +4736,107 @@ oauthTransformDone:
 				normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
 				hasFunctionCallOutput,
 				previousResponseID != "" && !hasFunctionCallOutput,
+			)
+			return true
+		}
+		recoverModelUnavailable := func(attempt int) bool {
+			if wsModelFallbackRecoveryTried {
+				return false
+			}
+			currentModel := strings.TrimSpace(upstreamModel)
+			if currentModel == "" {
+				currentModel = openAIWSPayloadString(wsReqBody, "model")
+			}
+			fallbackModel := resolveConfiguredFallbackModel(ctx, s.settingService, PlatformOpenAI, currentModel)
+			if fallbackModel == "" {
+				logOpenAIWSModeInfo(
+					"reconnect_model_fallback_skip account_id=%d attempt=%d reason=no_configured_fallback current_model=%s",
+					account.ID,
+					attempt,
+					normalizeOpenAIWSLogValue(currentModel),
+				)
+				return false
+			}
+			var fallbackUpstreamModel string
+			if isCompactRequest {
+				fallbackUpstreamModel = resolveOpenAICompactFallbackUpstreamModel(ctx, s.settingService, account, fallbackModel)
+			} else {
+				fallbackUpstreamModel = ResolveEffectiveMappedModel(ctx, s.settingService, account, fallbackModel, false)
+				if normalized := normalizeOpenAIModelForUpstream(account, fallbackUpstreamModel); normalized != "" {
+					fallbackUpstreamModel = normalized
+				}
+			}
+			if fallbackUpstreamModel == "" || strings.EqualFold(fallbackUpstreamModel, currentModel) {
+				logOpenAIWSModeInfo(
+					"reconnect_model_fallback_skip account_id=%d attempt=%d reason=same_or_empty current_model=%s fallback_model=%s",
+					account.ID,
+					attempt,
+					normalizeOpenAIWSLogValue(currentModel),
+					normalizeOpenAIWSLogValue(fallbackUpstreamModel),
+				)
+				return false
+			}
+
+			wsReqBody["model"] = fallbackUpstreamModel
+			nextBody, marshalErr := marshalOpenAIResponsesRequestBodyOrdered(wsReqBody)
+			if marshalErr != nil {
+				wsErr = wrapOpenAIWSFallback("model_fallback_serialize", marshalErr)
+				logOpenAIWSModeInfo(
+					"reconnect_model_fallback_fail account_id=%d attempt=%d reason=serialize current_model=%s fallback_model=%s cause=%s",
+					account.ID,
+					attempt,
+					normalizeOpenAIWSLogValue(currentModel),
+					normalizeOpenAIWSLogValue(fallbackUpstreamModel),
+					truncateOpenAIWSLogValue(marshalErr.Error(), openAIWSLogValueMaxLen),
+				)
+				return false
+			}
+			if account.Type == AccountTypeOAuth && isCompactRequest {
+				normalizedBody, normalized, normErr := normalizeOpenAICompactRequestBody(nextBody)
+				if normErr != nil {
+					wsErr = wrapOpenAIWSFallback("model_fallback_normalize", normErr)
+					logOpenAIWSModeInfo(
+						"reconnect_model_fallback_fail account_id=%d attempt=%d reason=normalize current_model=%s fallback_model=%s cause=%s",
+						account.ID,
+						attempt,
+						normalizeOpenAIWSLogValue(currentModel),
+						normalizeOpenAIWSLogValue(fallbackUpstreamModel),
+						truncateOpenAIWSLogValue(normErr.Error(), openAIWSLogValueMaxLen),
+					)
+					return false
+				}
+				if normalized {
+					nextBody = normalizedBody
+					nextReqBody := map[string]any{}
+					if unmarshalErr := json.Unmarshal(nextBody, &nextReqBody); unmarshalErr != nil {
+						wsErr = wrapOpenAIWSFallback("model_fallback_parse", unmarshalErr)
+						logOpenAIWSModeInfo(
+							"reconnect_model_fallback_fail account_id=%d attempt=%d reason=parse current_model=%s fallback_model=%s cause=%s",
+							account.ID,
+							attempt,
+							normalizeOpenAIWSLogValue(currentModel),
+							normalizeOpenAIWSLogValue(fallbackUpstreamModel),
+							truncateOpenAIWSLogValue(unmarshalErr.Error(), openAIWSLogValueMaxLen),
+						)
+						return false
+					}
+					wsReqBody = nextReqBody
+				}
+				reqStream = gjson.GetBytes(nextBody, "stream").Bool()
+			}
+
+			body = nextBody
+			upstreamModel = fallbackUpstreamModel
+			wsModelFallbackRecoveryTried = true
+			s.RecordOpenAIAccountRecoveryReason(account.ID, "model_unavailable")
+			clearOpenAIRequestBodyCache(c)
+			setOpsUpstreamRequestBody(c, body)
+			logOpenAIWSModeInfo(
+				"reconnect_model_fallback account_id=%d attempt=%d retry=1 current_model=%s fallback_model=%s",
+				account.ID,
+				attempt,
+				normalizeOpenAIWSLogValue(currentModel),
+				normalizeOpenAIWSLogValue(fallbackUpstreamModel),
 			)
 			return true
 		}
@@ -4626,6 +4863,12 @@ oauthTransformDone:
 					normalizeOpenAIWSLogValue(reason),
 				)
 				return false
+			}
+			if !syncWSRecoveredBody("codex_compat_recovery") {
+				return false
+			}
+			if strings.TrimSpace(codexResult.PromptCacheKey) != "" {
+				promptCacheKey = strings.TrimSpace(codexResult.PromptCacheKey)
 			}
 			wsCodexCompatRecoveryTried = true
 			s.RecordOpenAIAccountRecoveryReason(account.ID, reason)
@@ -4674,6 +4917,9 @@ oauthTransformDone:
 				continue
 			}
 			if reason == "invalid_encrypted_content" && recoverInvalidEncryptedContent(attempt) {
+				continue
+			}
+			if strings.TrimPrefix(reason, "prewarm_") == "model_unavailable" && recoverModelUnavailable(attempt) {
 				continue
 			}
 			if recoverCodexCompat(attempt, reason) {
@@ -4759,6 +5005,10 @@ oauthTransformDone:
 			wsResult.UpstreamModel = upstreamModel
 			return wsResult, nil
 		}
+		if suppressFailover := s.prepareOpenAIWSContinuationFailoverBody(c, account, wsErr, wsReqBody); suppressFailover {
+			s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
+			return nil, wsErr
+		}
 		if failoverErr := s.newOpenAIWSFailoverError(c, account, wsErr); failoverErr != nil {
 			return nil, failoverErr
 		}
@@ -4843,13 +5093,14 @@ oauthTransformDone:
 				if fallbackModel := resolveConfiguredFallbackModel(ctx, s.settingService, PlatformOpenAI, currentModel); fallbackModel != "" &&
 					isUpstreamModelUnavailableForFallback(resp.StatusCode, respBody) {
 					httpModelFallbackRetryTried = true
-					fallbackUpstreamModel := account.GetMappedModel(fallbackModel)
+					var fallbackUpstreamModel string
 					if isCompactRequest {
-						if compactFallbackModel := resolveOpenAICompactForwardModel(account, fallbackUpstreamModel); compactFallbackModel != "" {
-							fallbackUpstreamModel = compactFallbackModel
+						fallbackUpstreamModel = resolveOpenAICompactFallbackUpstreamModel(ctx, s.settingService, account, fallbackModel)
+					} else {
+						fallbackUpstreamModel = ResolveEffectiveMappedModel(ctx, s.settingService, account, fallbackModel, false)
+						if normalized := normalizeOpenAIModelForUpstream(account, fallbackUpstreamModel); normalized != "" {
+							fallbackUpstreamModel = normalized
 						}
-					} else if normalized := normalizeOpenAIModelForUpstream(account, fallbackUpstreamModel); normalized != "" {
-						fallbackUpstreamModel = normalized
 					}
 					if fallbackUpstreamModel != "" && !strings.EqualFold(fallbackUpstreamModel, currentModel) {
 						reqBody, err = ensureReqBody()
@@ -5341,7 +5592,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	body = updatedBody
 	reqStream := gjson.GetBytes(body, "stream").Bool()
 	apiKey := getAPIKeyFromContext(c)
-	if upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(account, reqModel, isOpenAIResponsesCompactPath(c)); upstreamModel != "" {
+	if upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(c.Request.Context(), s.settingService, account, reqModel, isOpenAIResponsesCompactPath(c)); upstreamModel != "" {
 		currentModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
 		if !strings.EqualFold(currentModel, upstreamModel) {
 			body = ReplaceModelInBody(body, upstreamModel)
@@ -5463,13 +5714,14 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		if !fallbackModelRetried {
 			if fallbackModel := resolveConfiguredFallbackModel(ctx, s.settingService, PlatformOpenAI, currentModel); fallbackModel != "" &&
 				isUpstreamModelUnavailableForFallback(resp.StatusCode, respBody) {
-				fallbackUpstreamModel := account.GetMappedModel(fallbackModel)
+				var fallbackUpstreamModel string
 				if isOpenAIResponsesCompactPath(c) {
-					if compactFallbackModel := resolveOpenAICompactForwardModel(account, fallbackUpstreamModel); compactFallbackModel != "" {
-						fallbackUpstreamModel = compactFallbackModel
+					fallbackUpstreamModel = resolveOpenAICompactFallbackUpstreamModel(ctx, s.settingService, account, fallbackModel)
+				} else {
+					fallbackUpstreamModel = ResolveEffectiveMappedModel(ctx, s.settingService, account, fallbackModel, false)
+					if normalized := normalizeOpenAIModelForUpstream(account, fallbackUpstreamModel); normalized != "" {
+						fallbackUpstreamModel = normalized
 					}
-				} else if normalized := normalizeOpenAIModelForUpstream(account, fallbackUpstreamModel); normalized != "" {
-					fallbackUpstreamModel = normalized
 				}
 				if fallbackUpstreamModel != "" && !strings.EqualFold(fallbackUpstreamModel, currentModel) {
 					fallbackBody, setErr := sjson.SetBytes(body, "model", fallbackUpstreamModel)

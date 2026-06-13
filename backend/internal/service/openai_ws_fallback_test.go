@@ -118,6 +118,14 @@ func TestClassifyOpenAIWSErrorEvent(t *testing.T) {
 	reason, recoverable = classifyOpenAIWSErrorEvent([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_request","message":"No tool call found for function call output with call_id call_1."}}`))
 	require.Equal(t, "call_id", reason)
 	require.True(t, recoverable)
+
+	reason, recoverable = classifyOpenAIWSErrorEvent([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_request","message":"The 'gpt-4o-mini' model is not supported when using Codex with a ChatGPT account."}}`))
+	require.Equal(t, "model_unavailable", reason)
+	require.True(t, recoverable)
+
+	reason, recoverable = classifyOpenAIWSErrorEvent([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_request","message":"The field model.metadata does not exist on this request."}}`))
+	require.Equal(t, "event_error", reason)
+	require.False(t, recoverable)
 }
 
 func TestClassifyOpenAIWSSoftRateLimitAdvisory(t *testing.T) {
@@ -158,6 +166,10 @@ func TestClassifyOpenAIWSReconnectReason(t *testing.T) {
 	reason, retryable = classifyOpenAIWSReconnectReason(wrapOpenAIWSFallback("read_event", errors.New("io")))
 	require.Equal(t, "read_event", reason)
 	require.True(t, retryable)
+
+	reason, retryable = classifyOpenAIWSReconnectReason(wrapOpenAIWSFallback("model_unavailable", errors.New("unsupported model")))
+	require.Equal(t, "model_unavailable", reason)
+	require.False(t, retryable)
 }
 
 func TestOpenAIWSErrorHTTPStatus(t *testing.T) {

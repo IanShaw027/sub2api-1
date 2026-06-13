@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	coderws "github.com/coder/websocket"
@@ -223,6 +224,138 @@ func TestSetPreviousResponseIDToRawPayload(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "resp_new", gjson.GetBytes(updated, "previous_response_id").String())
 	})
+}
+
+func TestResolveOpenAIWSContinuationStoreDecisionKeepsToolContinuationOnStickyMiss(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	payload := map[string]any{
+		"type":                 "response.create",
+		"model":                "gpt-5.1",
+		"store":                true,
+		"previous_response_id": "resp_missing",
+		"input": []any{
+			map[string]any{"type": "function_call_output", "call_id": "call_1", "output": "ok"},
+		},
+	}
+
+	decision := svc.resolveOpenAIWSContinuationStoreDecision(context.Background(), payload, account, NewOpenAIWSStateStore(nil), 7, 11)
+
+	require.True(t, decision.UnsafeToolContinuation)
+	require.Equal(t, "sticky_account_miss", decision.FallbackReason)
+	require.Equal(t, "resp_missing", payload["previous_response_id"])
+	require.Equal(t, true, payload["store"])
+	require.False(t, decision.DroppedPreviousResponseID)
+}
+
+func TestResolveOpenAIWSContinuationStoreDecisionRawKeepsToolContinuationOnStickyMiss(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	payload := []byte(`{"type":"response.create","model":"gpt-5.1","store":true,"previous_response_id":"resp_missing","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
+
+	updated, decision, err := svc.resolveOpenAIWSContinuationStoreDecisionRaw(context.Background(), payload, account, NewOpenAIWSStateStore(nil), 7, 11)
+
+	require.NoError(t, err)
+	require.True(t, decision.UnsafeToolContinuation)
+	require.Equal(t, "sticky_account_miss", decision.FallbackReason)
+	require.Equal(t, "resp_missing", gjson.GetBytes(updated, "previous_response_id").String())
+	require.True(t, gjson.GetBytes(updated, "store").Bool())
+	require.False(t, decision.DroppedPreviousResponseID)
+}
+
+func TestResolveOpenAIWSContinuationStoreDecisionOAuthRequiresStickyAccountHit(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	store := NewOpenAIWSStateStore(nil)
+	require.NoError(t, store.BindResponseAccount(context.Background(), 7, 11, "resp_bound", account.ID, time.Minute))
+
+	payload := map[string]any{
+		"type":                 "response.create",
+		"model":                "gpt-5.1",
+		"store":                false,
+		"previous_response_id": "resp_bound",
+		"input":                []any{map[string]any{"type": "input_text", "text": "hello"}},
+	}
+
+	decision := svc.resolveOpenAIWSContinuationStoreDecision(context.Background(), payload, account, store, 7, 11)
+
+	require.True(t, decision.StickyAccountHit)
+	require.True(t, decision.StoreEnabled)
+	require.False(t, decision.StoreDisabled)
+	require.Equal(t, openAIWSStoreModeIncremental, decision.StoreMode)
+	require.Equal(t, "resp_bound", payload["previous_response_id"])
+	require.Equal(t, true, payload["store"])
+}
+
+func TestResolveOpenAIWSContinuationStoreDecisionOAuthToolContinuationRequiresConnAffinity(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	store := NewOpenAIWSStateStore(nil)
+	require.NoError(t, store.BindResponseAccount(context.Background(), 7, 11, "resp_bound_no_conn", account.ID, time.Minute))
+
+	payload := map[string]any{
+		"type":                 "response.create",
+		"model":                "gpt-5.1",
+		"previous_response_id": "resp_bound_no_conn",
+		"input": []any{
+			map[string]any{"type": "function_call_output", "call_id": "call_1", "output": "ok"},
+		},
+	}
+
+	decision := svc.resolveOpenAIWSContinuationStoreDecision(context.Background(), payload, account, store, 7, 11)
+
+	require.True(t, decision.StickyAccountHit)
+	require.True(t, decision.UnsafeToolContinuation)
+	require.Equal(t, "conn_affinity_miss", decision.FallbackReason)
+	require.False(t, decision.ConnAffinityHit)
+	require.Empty(t, decision.PreferredConnID)
+	require.Equal(t, "resp_bound_no_conn", payload["previous_response_id"])
+	require.NotContains(t, payload, "store")
+}
+
+func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthToolContinuationRequiresConnAffinity(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	store := NewOpenAIWSStateStore(nil)
+	require.NoError(t, store.BindResponseAccount(context.Background(), 7, 11, "resp_bound_no_conn", account.ID, time.Minute))
+	payload := []byte(`{"type":"response.create","model":"gpt-5.1","previous_response_id":"resp_bound_no_conn","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
+
+	updated, decision, err := svc.resolveOpenAIWSContinuationStoreDecisionRaw(context.Background(), payload, account, store, 7, 11)
+
+	require.NoError(t, err)
+	require.True(t, decision.StickyAccountHit)
+	require.True(t, decision.UnsafeToolContinuation)
+	require.Equal(t, "conn_affinity_miss", decision.FallbackReason)
+	require.False(t, decision.ConnAffinityHit)
+	require.Empty(t, decision.PreferredConnID)
+	require.Equal(t, "resp_bound_no_conn", gjson.GetBytes(updated, "previous_response_id").String())
+	require.False(t, gjson.GetBytes(updated, "store").Exists())
+}
+
+func TestResolveOpenAIWSContinuationStoreDecisionOAuthStickyMismatchDropsPreviousResponseID(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	store := NewOpenAIWSStateStore(nil)
+	require.NoError(t, store.BindResponseAccount(context.Background(), 7, 11, "resp_other_account", 202, time.Minute))
+
+	payload := map[string]any{
+		"type":                 "response.create",
+		"model":                "gpt-5.1",
+		"store":                true,
+		"previous_response_id": "resp_other_account",
+		"input":                []any{map[string]any{"type": "input_text", "text": "hello"}},
+	}
+
+	decision := svc.resolveOpenAIWSContinuationStoreDecision(context.Background(), payload, account, store, 7, 11)
+
+	require.False(t, decision.StickyAccountHit)
+	require.True(t, decision.DroppedPreviousResponseID)
+	require.Equal(t, "sticky_account_mismatch", decision.FallbackReason)
+	require.False(t, decision.StoreEnabled)
+	require.True(t, decision.StoreDisabled)
+	require.Equal(t, openAIWSStoreModeFull, decision.StoreMode)
+	require.NotContains(t, payload, "previous_response_id")
+	require.Equal(t, false, payload["store"])
 }
 
 func TestShouldInferIngressFunctionCallOutputPreviousResponseID(t *testing.T) {

@@ -82,6 +82,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		zap.Bool("multipart", parsed.Multipart),
 		zap.String("capability", string(parsed.RequiredCapability)),
 	)
+	requestType := service.RequestTypeImage
+	if parsed.IsExplicitLegacyBridge() {
+		requestType = service.RequestTypeImageWebBridge
+	}
+	setOpsEndpointContext(c, "", int16(requestType))
 
 	if !service.GroupAllowsImageGeneration(apiKey.Group) {
 		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
@@ -116,7 +121,6 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	} else {
 		setOpsRequestContext(c, requestModel, parsed.Stream, body)
 	}
-	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(parsed.Stream, false)))
 
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, requestModel)
 

@@ -1076,10 +1076,24 @@ func mapAntigravityModel(account *Account, requestedModel string) string {
 	return ""
 }
 
+func mapAntigravityModelWithSettings(ctx context.Context, settingService *SettingService, account *Account, requestedModel string) string {
+	if account == nil {
+		return ""
+	}
+	if _, hasSystemConfig := platformModelRoutingConfigForAccount(ctx, settingService, account); !hasSystemConfig {
+		return mapAntigravityModel(account, requestedModel)
+	}
+	routing := ResolveEffectiveModelRouting(ctx, settingService, account, requestedModel, false)
+	if !routing.Supported {
+		return ""
+	}
+	return strings.TrimSpace(routing.Model)
+}
+
 // getMappedModel 获取映射后的模型名
 // 完全依赖映射配置：账户映射（通配符）→ 默认映射兜底
 func (s *AntigravityGatewayService) getMappedModel(account *Account, requestedModel string) string {
-	return mapAntigravityModel(account, requestedModel)
+	return mapAntigravityModelWithSettings(context.Background(), s.settingService, account, requestedModel)
 }
 
 // applyThinkingModelSuffix 根据 thinking 配置调整模型名
@@ -2321,7 +2335,7 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 				Message:            originalFallbackMsg,
 				Detail:             originalFallbackDetail,
 			})
-			fallbackModel := s.settingService.GetFallbackModel(ctx, PlatformAntigravity)
+			fallbackModel := ResolveEffectiveMappedModel(ctx, s.settingService, account, s.settingService.GetFallbackModel(ctx, PlatformAntigravity), false)
 			if fallbackModel != "" && fallbackModel != mappedModel {
 				logger.LegacyPrintf("service.antigravity_gateway", "[Antigravity] Model not found (%s), retrying with fallback model %s (account: %s)", mappedModel, fallbackModel, account.Name)
 				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{

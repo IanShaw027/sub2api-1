@@ -453,7 +453,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, false, nil
 	}
-	if !isOpenAIStickyCandidateCompatible(account, req.RequestedModel, req.RequireCompact, req.RequiredImageRoute, req.RequireOAuthAccount, req.RequireImageEnabled) {
+	if !isOpenAIStickyCandidateCompatible(ctx, s.service.settingService, account, req.RequestedModel, req.RequireCompact, req.RequiredImageRoute, req.RequireOAuthAccount, req.RequireImageEnabled) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, false, nil
 	}
@@ -1150,7 +1150,7 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 	if NormalizeGroupImageGenerationRoute(req.RequiredImageRoute) == GroupImageGenerationRouteWeb2API && !account.HasOpenAIImageWeb2APIProfile() {
 		return false
 	}
-	if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
+	if req.RequestedModel != "" && !ResolveEffectiveModelRouting(ctx, s.service.settingService, account, req.RequestedModel, req.RequireCompact).Supported {
 		return false
 	}
 	if req.GroupID != nil && s != nil && s.service != nil &&
@@ -1344,7 +1344,7 @@ func (s *OpenAIGatewayService) openAIStickyReservePercent(ctx context.Context) i
 			}
 		}
 
-		percent := 0
+		percent := defaultOpenAIWSStickyReservePercent
 		if repo := s.openAISettingsRepo(); repo != nil {
 			dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIAdvancedSchedulerSettingDBTimeout)
 			defer cancel()

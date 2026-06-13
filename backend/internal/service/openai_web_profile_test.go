@@ -466,6 +466,36 @@ func TestNormalizeOpenAIWebProfileExtraBuildsFromCredentialsAndCookies(t *testin
 	require.False(t, hasAccountID)
 }
 
+func TestNormalizeOpenAIWebProfileExtraDropsMismatchedIdentityAndCodexSnapshot(t *testing.T) {
+	extra := NormalizeOpenAIWebProfileExtra(PlatformOpenAI, AccountTypeOAuth, map[string]any{
+		"email":              "CageLeen9208@outlook.com",
+		"chatgpt_account_id": "1f945aa7-d9a9-4369-9542-0c702ff4adb0",
+		"workspace_id":       "org-nU4goUxMmureroyswT5oYPv4",
+	}, map[string]any{
+		"email":                  "MasonDobies01@outlook.com",
+		"name":                   "Paul Clark",
+		"workspace_id":           "org-avRk1G4qdXg7qph3cRIraNKf",
+		"workspace_name":         "Mason workspace",
+		"organization_role":      "owner",
+		"subscription_type":      "plus",
+		"codex_7d_used_percent":  100.0,
+		"codex_7d_reset_at":      "2026-06-20T07:33:53Z",
+		"codex_usage_updated_at": "2026-06-13T08:33:53Z",
+		"custom_setting":         "keep",
+	})
+
+	require.Equal(t, "keep", extra["custom_setting"])
+	require.NotContains(t, extra, "email")
+	require.NotContains(t, extra, "name")
+	require.NotContains(t, extra, "workspace_id")
+	require.NotContains(t, extra, "workspace_name")
+	require.NotContains(t, extra, "organization_role")
+	require.NotContains(t, extra, "subscription_type")
+	require.NotContains(t, extra, "codex_7d_used_percent")
+	require.NotContains(t, extra, "codex_7d_reset_at")
+	require.NotContains(t, extra, "codex_usage_updated_at")
+}
+
 func TestNormalizeOpenAIWebProfileExtraUsesStorageStateCookies(t *testing.T) {
 	extra := NormalizeOpenAIWebProfileExtra(PlatformOpenAI, AccountTypeOAuth, nil, map[string]any{
 		"storage_state": map[string]any{

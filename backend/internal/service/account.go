@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log/slog"
+	"math"
 	"reflect"
 	"regexp"
 	"sort"
@@ -395,7 +396,8 @@ func (a *Account) GetTempUnschedulableRules() []TempUnschedulableRule {
 			Description:     parseTempUnschedString(entry["description"]),
 		}
 
-		if rule.ErrorCode <= 0 || rule.DurationMinutes <= 0 || len(rule.Keywords) == 0 {
+		// keywords 允许为空：表示"仅凭错误码匹配"（用于 524/522/521/520 等 body 为空的上游码）。
+		if rule.ErrorCode < 100 || rule.ErrorCode > 599 || rule.DurationMinutes <= 0 {
 			continue
 		}
 
@@ -461,7 +463,10 @@ func parseTempUnschedInt(value any) int {
 	case int64:
 		return int(v)
 	case float64:
-		return int(v)
+		if !math.IsNaN(v) && !math.IsInf(v, 0) && math.Trunc(v) == v {
+			return int(v)
+		}
+		return 0
 	case json.Number:
 		if i, err := v.Int64(); err == nil {
 			return int(i)
@@ -1309,8 +1314,8 @@ func (a *Account) GetCustomErrorCodes() []int {
 	if arr, ok := raw.([]any); ok {
 		result := make([]int, 0, len(arr))
 		for _, v := range arr {
-			if f, ok := v.(float64); ok {
-				result = append(result, int(f))
+			if code := parseTempUnschedInt(v); code >= 100 && code <= 599 {
+				result = append(result, code)
 			}
 		}
 		return result

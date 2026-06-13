@@ -592,6 +592,7 @@ func TestAPIContracts(t *testing.T) {
 								"request_id": "req_123",
 								"model": "claude-3",
 								"request_type": "stream",
+								"openai_ws_conn_reused": false,
 								"openai_ws_mode": false,
 								"openai_ws_conn_reused": false,
 								"group_id": null,
@@ -867,6 +868,7 @@ func TestAPIContracts(t *testing.T) {
 					"max_claude_code_version": "",
 					"node_version": "22.21.1",
 					"allow_ungrouped_key_scheduling": false,
+					"account_scheduling_thresholds": {"anthropic":100,"antigravity":100,"gemini":100,"kiro":100,"openai":100},
 					"backend_mode_enabled": false,
 					"enable_cch_signing": false,
 					"enable_anthropic_cache_ttl_1h_injection": false,
@@ -888,13 +890,16 @@ func TestAPIContracts(t *testing.T) {
 						"openai_image_web_paid_model": "gpt-5-5-thinking",
 						"openai_oauth_image_bridge_disable_keepalives": false,
 						"openai_oauth_image_bridge_fresh_upstream_client": false,
-						"openai_sticky_reserve_percent": 0,
+						"openai_sticky_reserve_percent": 30,
 						"openai_sticky_wait_timeout_seconds": 30,
+						"openai_ws_min_idle_per_account": 1,
+						"openai_ws_max_idle_per_account": 4,
 						"openai_allow_claude_code_codex_plugin": false,
 						"openai_fast_policy_settings": {
 						"rules": []
 					},
 					"platform_default_account_model_config": {},
+					"platform_model_routing_config": {},
 					"custom_menu_items": [],
 					"custom_endpoints": [],
 					"payment_enabled": false,
@@ -968,6 +973,38 @@ func TestAPIContracts(t *testing.T) {
 					"openai_codex_user_agent": "",
 					"payment_alipay_force_qrcode": false,
 					"subscription_expiry_notify_enabled": true
+				}
+			}`,
+		},
+		{
+			name:       "GET /api/v1/admin/settings/temp-unsched-threshold",
+			method:     http.MethodGet,
+			path:       "/api/v1/admin/settings/temp-unsched-threshold",
+			wantStatus: http.StatusOK,
+			wantJSON: `{
+				"code": 0,
+				"message": "success",
+				"data": {
+					"enabled": false,
+					"threshold_count": 3,
+					"threshold_window_minutes": 1
+				}
+			}`,
+		},
+		{
+			name:       "PUT /api/v1/admin/settings/temp-unsched-threshold",
+			method:     http.MethodPut,
+			path:       "/api/v1/admin/settings/temp-unsched-threshold",
+			body:       `{"enabled":true,"threshold_count":5,"threshold_window_minutes":2}`,
+			headers:    map[string]string{"Content-Type": "application/json"},
+			wantStatus: http.StatusOK,
+			wantJSON: `{
+				"code": 0,
+				"message": "success",
+				"data": {
+					"enabled": true,
+					"threshold_count": 5,
+					"threshold_window_minutes": 2
 				}
 			}`,
 		},
@@ -1120,6 +1157,7 @@ func TestAPIContracts(t *testing.T) {
 					"min_claude_code_version": "",
 					"max_claude_code_version": "",
 					"allow_ungrouped_key_scheduling": false,
+					"account_scheduling_thresholds": {"anthropic":100,"antigravity":100,"gemini":100,"kiro":100,"openai":100},
 					"backend_mode_enabled": false,
 					"enable_fingerprint_unification": true,
 					"enable_metadata_passthrough": false,
@@ -1137,13 +1175,16 @@ func TestAPIContracts(t *testing.T) {
 						"openai_image_web_paid_model": "gpt-5-5-thinking",
 						"openai_oauth_image_bridge_disable_keepalives": false,
 						"openai_oauth_image_bridge_fresh_upstream_client": false,
-						"openai_sticky_reserve_percent": 0,
+						"openai_sticky_reserve_percent": 30,
 						"openai_sticky_wait_timeout_seconds": 30,
+						"openai_ws_min_idle_per_account": 1,
+						"openai_ws_max_idle_per_account": 4,
 						"openai_allow_claude_code_codex_plugin": false,
 						"openai_codex_user_agent": "",
 						"openai_fast_policy_settings": {
 						"rules": []
 					},
+					"platform_model_routing_config": {},
 					"payment_enabled": false,
 					"payment_min_amount": 0,
 					"payment_max_amount": 0,
@@ -1462,6 +1503,8 @@ func newContractDeps(t *testing.T) *contractDeps {
 	v1Admin := v1.Group("/admin")
 	v1Admin.Use(adminAuth)
 	v1Admin.GET("/settings", adminSettingHandler.GetSettings)
+	v1Admin.GET("/settings/temp-unsched-threshold", adminSettingHandler.GetTempUnschedThresholdSettings)
+	v1Admin.PUT("/settings/temp-unsched-threshold", adminSettingHandler.UpdateTempUnschedThresholdSettings)
 	v1Admin.POST("/accounts/bulk-update", adminAccountHandler.BulkUpdate)
 
 	return &contractDeps{

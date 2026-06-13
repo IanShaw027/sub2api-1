@@ -167,6 +167,7 @@ type SystemSettings struct {
 	FallbackModelOpenAI               string                               `json:"fallback_model_openai"`
 	FallbackModelGemini               string                               `json:"fallback_model_gemini"`
 	FallbackModelAntigravity          string                               `json:"fallback_model_antigravity"`
+	PlatformModelRoutingConfig        map[string]DefaultAccountModelConfig `json:"platform_model_routing_config"`
 	PlatformDefaultAccountModelConfig map[string]DefaultAccountModelConfig `json:"platform_default_account_model_config"`
 
 	// Identity patch configuration (Claude -> Gemini)
@@ -231,6 +232,8 @@ type SystemSettings struct {
 	OpenAIAdvancedSchedulerEnabled            bool   `json:"openai_advanced_scheduler_enabled"`
 	OpenAIStickyReservePercent                int    `json:"openai_sticky_reserve_percent"`
 	OpenAIStickyWaitTimeoutSeconds            int    `json:"openai_sticky_wait_timeout_seconds"`
+	OpenAIWSMinIdlePerAccount                 int    `json:"openai_ws_min_idle_per_account"`
+	OpenAIWSMaxIdlePerAccount                 int    `json:"openai_ws_max_idle_per_account"`
 	OpenAIImageWebFreeModel                   string `json:"openai_image_web_free_model"`
 	OpenAIImageWebPaidModel                   string `json:"openai_image_web_paid_model"`
 	OpenAIOAuthImageBridgeDisableKeepAlives   bool   `json:"openai_oauth_image_bridge_disable_keepalives"`
@@ -310,9 +313,15 @@ type DefaultSubscriptionSetting struct {
 }
 
 type DefaultAccountModelConfig struct {
-	ModelWhitelist      []string          `json:"model_whitelist,omitempty"`
-	ModelMapping        map[string]string `json:"model_mapping,omitempty"`
-	CompactModelMapping map[string]string `json:"compact_model_mapping,omitempty"`
+	ModelWhitelist               []string                             `json:"model_whitelist,omitempty"`
+	ModelMapping                 map[string]string                    `json:"model_mapping,omitempty"`
+	CompactModelMapping          map[string]string                    `json:"compact_model_mapping,omitempty"`
+	KiroSubscriptionTypeModelMap map[string]DefaultAccountModelConfig `json:"kiro_subscription_type_model_config,omitempty"`
+
+	TempUnschedulableEnabled bool                            `json:"temp_unschedulable_enabled,omitempty"`
+	TempUnschedulableRules   []service.TempUnschedulableRule `json:"temp_unschedulable_rules,omitempty"`
+	CustomErrorCodesEnabled  bool                            `json:"custom_error_codes_enabled,omitempty"`
+	CustomErrorCodes         []int                           `json:"custom_error_codes,omitempty"`
 }
 
 type PublicSettings struct {
@@ -403,6 +412,13 @@ type StreamTimeoutSettings struct {
 	TempUnschedMinutes     int    `json:"temp_unsched_minutes"`
 	ThresholdCount         int    `json:"threshold_count"`
 	ThresholdWindowMinutes int    `json:"threshold_window_minutes"`
+}
+
+// TempUnschedThresholdSettings 临时不可调度规则窗口阈值配置 DTO
+type TempUnschedThresholdSettings struct {
+	Enabled                bool `json:"enabled"`
+	ThresholdCount         int  `json:"threshold_count"`
+	ThresholdWindowMinutes int  `json:"threshold_window_minutes"`
 }
 
 // RectifierSettings 请求整流器配置 DTO

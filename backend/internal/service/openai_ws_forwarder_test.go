@@ -21,7 +21,7 @@ func TestIsOpenAIWSTokenEvent_TerminalEventsExcluded(t *testing.T) {
 
 		{name: "response.created", eventType: "response.created", want: false},
 		{name: "response.in_progress", eventType: "response.in_progress", want: false},
-		{name: "response.output_item.added", eventType: "response.output_item.added", want: false},
+		{name: "response.output_item.added", eventType: "response.output_item.added", want: true},
 		{name: "response.output_item.done", eventType: "response.output_item.done", want: false},
 
 		{name: "terminal_response.completed", eventType: "response.completed", want: false},

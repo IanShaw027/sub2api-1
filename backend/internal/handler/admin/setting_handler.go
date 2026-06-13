@@ -613,6 +613,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		FallbackModelOpenAI:                       settings.FallbackModelOpenAI,
 		FallbackModelGemini:                       settings.FallbackModelGemini,
 		FallbackModelAntigravity:                  settings.FallbackModelAntigravity,
+		PlatformModelRoutingConfig:                toDTODefaultAccountModelConfig(settings.PlatformModelRoutingConfig),
 		PlatformDefaultAccountModelConfig:         toDTODefaultAccountModelConfig(settings.PlatformDefaultAccountModelConfig),
 		EnableIdentityPatch:                       settings.EnableIdentityPatch,
 		IdentityPatchPrompt:                       settings.IdentityPatchPrompt,
@@ -657,6 +658,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		OpenAIAdvancedSchedulerEnabled:            settings.OpenAIAdvancedSchedulerEnabled,
 		OpenAIStickyReservePercent:                settings.OpenAIStickyReservePercent,
 		OpenAIStickyWaitTimeoutSeconds:            settings.OpenAIStickyWaitTimeoutSeconds,
+		OpenAIWSMinIdlePerAccount:                 settings.OpenAIWSMinIdlePerAccount,
+		OpenAIWSMaxIdlePerAccount:                 settings.OpenAIWSMaxIdlePerAccount,
 		OpenAIImageWebFreeModel:                   settings.OpenAIImageWebFreeModel,
 		OpenAIImageWebPaidModel:                   settings.OpenAIImageWebPaidModel,
 		OpenAIOAuthImageBridgeDisableKeepAlives:   settings.OpenAIOAuthImageBridgeDisableKeepAlives,
@@ -958,6 +961,7 @@ type UpdateSettingsRequest struct {
 	FallbackModelOpenAI               string                                    `json:"fallback_model_openai"`
 	FallbackModelGemini               string                                    `json:"fallback_model_gemini"`
 	FallbackModelAntigravity          string                                    `json:"fallback_model_antigravity"`
+	PlatformModelRoutingConfig        *map[string]dto.DefaultAccountModelConfig `json:"platform_model_routing_config"`
 	PlatformDefaultAccountModelConfig *map[string]dto.DefaultAccountModelConfig `json:"platform_default_account_model_config"`
 
 	// Identity patch configuration (Claude -> Gemini)
@@ -1019,6 +1023,8 @@ type UpdateSettingsRequest struct {
 	OpenAIAdvancedSchedulerEnabled            *bool   `json:"openai_advanced_scheduler_enabled"`
 	OpenAIStickyReservePercent                *int    `json:"openai_sticky_reserve_percent"`
 	OpenAIStickyWaitTimeoutSeconds            *int    `json:"openai_sticky_wait_timeout_seconds"`
+	OpenAIWSMinIdlePerAccount                 *int    `json:"openai_ws_min_idle_per_account"`
+	OpenAIWSMaxIdlePerAccount                 *int    `json:"openai_ws_max_idle_per_account"`
 	OpenAIImageWebFreeModel                   *string `json:"openai_image_web_free_model"`
 	OpenAIImageWebPaidModel                   *string `json:"openai_image_web_paid_model"`
 	OpenAIOAuthImageBridgeDisableKeepAlives   *bool   `json:"openai_oauth_image_bridge_disable_keepalives"`
@@ -1094,11 +1100,27 @@ func toDTODefaultAccountModelConfig(src map[string]service.DefaultAccountModelCo
 	}
 	out := make(map[string]dto.DefaultAccountModelConfig, len(src))
 	for platform, cfg := range src {
-		out[platform] = dto.DefaultAccountModelConfig{
-			ModelWhitelist:      append([]string(nil), cfg.ModelWhitelist...),
-			ModelMapping:        copyStringMapForSettingsDTO(cfg.ModelMapping),
-			CompactModelMapping: copyStringMapForSettingsDTO(cfg.CompactModelMapping),
+		out[platform] = toDTODefaultAccountModelConfigEntry(cfg)
+	}
+	return out
+}
+
+func toDTODefaultAccountModelConfigEntry(cfg service.DefaultAccountModelConfig) dto.DefaultAccountModelConfig {
+	out := dto.DefaultAccountModelConfig{
+		ModelWhitelist:           append([]string(nil), cfg.ModelWhitelist...),
+		ModelMapping:             copyStringMapForSettingsDTO(cfg.ModelMapping),
+		CompactModelMapping:      copyStringMapForSettingsDTO(cfg.CompactModelMapping),
+		TempUnschedulableEnabled: cfg.TempUnschedulableEnabled,
+		TempUnschedulableRules:   append([]service.TempUnschedulableRule(nil), cfg.TempUnschedulableRules...),
+		CustomErrorCodesEnabled:  cfg.CustomErrorCodesEnabled,
+		CustomErrorCodes:         append([]int(nil), cfg.CustomErrorCodes...),
+	}
+	if len(cfg.KiroSubscriptionTypeModelMap) > 0 {
+		nested := make(map[string]dto.DefaultAccountModelConfig, len(cfg.KiroSubscriptionTypeModelMap))
+		for key, variant := range cfg.KiroSubscriptionTypeModelMap {
+			nested[key] = toDTODefaultAccountModelConfigEntry(variant)
 		}
+		out.KiroSubscriptionTypeModelMap = nested
 	}
 	return out
 }
@@ -1109,11 +1131,27 @@ func fromDTODefaultAccountModelConfig(src map[string]dto.DefaultAccountModelConf
 	}
 	out := make(map[string]service.DefaultAccountModelConfig, len(src))
 	for platform, cfg := range src {
-		out[platform] = service.DefaultAccountModelConfig{
-			ModelWhitelist:      append([]string(nil), cfg.ModelWhitelist...),
-			ModelMapping:        copyStringMapForSettingsDTO(cfg.ModelMapping),
-			CompactModelMapping: copyStringMapForSettingsDTO(cfg.CompactModelMapping),
+		out[platform] = fromDTODefaultAccountModelConfigEntry(cfg)
+	}
+	return out
+}
+
+func fromDTODefaultAccountModelConfigEntry(cfg dto.DefaultAccountModelConfig) service.DefaultAccountModelConfig {
+	out := service.DefaultAccountModelConfig{
+		ModelWhitelist:           append([]string(nil), cfg.ModelWhitelist...),
+		ModelMapping:             copyStringMapForSettingsDTO(cfg.ModelMapping),
+		CompactModelMapping:      copyStringMapForSettingsDTO(cfg.CompactModelMapping),
+		TempUnschedulableEnabled: cfg.TempUnschedulableEnabled,
+		TempUnschedulableRules:   append([]service.TempUnschedulableRule(nil), cfg.TempUnschedulableRules...),
+		CustomErrorCodesEnabled:  cfg.CustomErrorCodesEnabled,
+		CustomErrorCodes:         append([]int(nil), cfg.CustomErrorCodes...),
+	}
+	if len(cfg.KiroSubscriptionTypeModelMap) > 0 {
+		nested := make(map[string]service.DefaultAccountModelConfig, len(cfg.KiroSubscriptionTypeModelMap))
+		for key, variant := range cfg.KiroSubscriptionTypeModelMap {
+			nested[key] = fromDTODefaultAccountModelConfigEntry(variant)
 		}
+		out.KiroSubscriptionTypeModelMap = nested
 	}
 	return out
 }
@@ -2211,6 +2249,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		FallbackModelOpenAI:          req.FallbackModelOpenAI,
 		FallbackModelGemini:          req.FallbackModelGemini,
 		FallbackModelAntigravity:     req.FallbackModelAntigravity,
+		PlatformModelRoutingConfig: fromOptionalDTODefaultAccountModelConfig(
+			req.PlatformModelRoutingConfig,
+			previousSettings.PlatformModelRoutingConfig,
+		),
 		PlatformDefaultAccountModelConfig: fromOptionalDTODefaultAccountModelConfig(
 			req.PlatformDefaultAccountModelConfig,
 			previousSettings.PlatformDefaultAccountModelConfig,
@@ -2456,6 +2498,32 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return value
 			}
 			return previousSettings.OpenAIStickyWaitTimeoutSeconds
+		}(),
+		OpenAIWSMinIdlePerAccount: func() int {
+			if req.OpenAIWSMinIdlePerAccount != nil {
+				value := *req.OpenAIWSMinIdlePerAccount
+				if value < 0 {
+					return 0
+				}
+				if value > 64 {
+					return 64
+				}
+				return value
+			}
+			return previousSettings.OpenAIWSMinIdlePerAccount
+		}(),
+		OpenAIWSMaxIdlePerAccount: func() int {
+			if req.OpenAIWSMaxIdlePerAccount != nil {
+				value := *req.OpenAIWSMaxIdlePerAccount
+				if value < 0 {
+					return 0
+				}
+				if value > 64 {
+					return 64
+				}
+				return value
+			}
+			return previousSettings.OpenAIWSMaxIdlePerAccount
 		}(),
 		OpenAIImageWebFreeModel: func() string {
 			if req.OpenAIImageWebFreeModel != nil {
@@ -2818,6 +2886,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		FallbackModelOpenAI:                       updatedSettings.FallbackModelOpenAI,
 		FallbackModelGemini:                       updatedSettings.FallbackModelGemini,
 		FallbackModelAntigravity:                  updatedSettings.FallbackModelAntigravity,
+		PlatformModelRoutingConfig:                toDTODefaultAccountModelConfig(updatedSettings.PlatformModelRoutingConfig),
 		PlatformDefaultAccountModelConfig:         toDTODefaultAccountModelConfig(updatedSettings.PlatformDefaultAccountModelConfig),
 		EnableIdentityPatch:                       updatedSettings.EnableIdentityPatch,
 		IdentityPatchPrompt:                       updatedSettings.IdentityPatchPrompt,
@@ -2860,6 +2929,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentVisibleMethodWxpayEnabled:          updatedSettings.PaymentVisibleMethodWxpayEnabled,
 		OpenAIAdvancedSchedulerEnabled:            updatedSettings.OpenAIAdvancedSchedulerEnabled,
 		OpenAIStickyReservePercent:                updatedSettings.OpenAIStickyReservePercent,
+		OpenAIStickyWaitTimeoutSeconds:            updatedSettings.OpenAIStickyWaitTimeoutSeconds,
+		OpenAIWSMinIdlePerAccount:                 updatedSettings.OpenAIWSMinIdlePerAccount,
+		OpenAIWSMaxIdlePerAccount:                 updatedSettings.OpenAIWSMaxIdlePerAccount,
 		OpenAIImageWebFreeModel:                   updatedSettings.OpenAIImageWebFreeModel,
 		OpenAIImageWebPaidModel:                   updatedSettings.OpenAIImageWebPaidModel,
 		OpenAIOAuthImageBridgeDisableKeepAlives:   updatedSettings.OpenAIOAuthImageBridgeDisableKeepAlives,
@@ -3288,6 +3360,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.FallbackModelAntigravity != after.FallbackModelAntigravity {
 		changed = append(changed, "fallback_model_antigravity")
 	}
+	if !defaultAccountModelConfigEqual(before.PlatformModelRoutingConfig, after.PlatformModelRoutingConfig) {
+		changed = append(changed, "platform_model_routing_config")
+	}
 	if !defaultAccountModelConfigEqual(before.PlatformDefaultAccountModelConfig, after.PlatformDefaultAccountModelConfig) {
 		changed = append(changed, "platform_default_account_model_config")
 	}
@@ -3395,6 +3470,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.OpenAIStickyWaitTimeoutSeconds != after.OpenAIStickyWaitTimeoutSeconds {
 		changed = append(changed, "openai_sticky_wait_timeout_seconds")
+	}
+	if before.OpenAIWSMinIdlePerAccount != after.OpenAIWSMinIdlePerAccount {
+		changed = append(changed, "openai_ws_min_idle_per_account")
+	}
+	if before.OpenAIWSMaxIdlePerAccount != after.OpenAIWSMaxIdlePerAccount {
+		changed = append(changed, "openai_ws_max_idle_per_account")
 	}
 	if before.OpenAIImageWebFreeModel != after.OpenAIImageWebFreeModel {
 		changed = append(changed, "openai_image_web_free_model")
@@ -4303,6 +4384,62 @@ func (h *SettingHandler) UpdateStreamTimeoutSettings(c *gin.Context) {
 		Enabled:                updatedSettings.Enabled,
 		Action:                 updatedSettings.Action,
 		TempUnschedMinutes:     updatedSettings.TempUnschedMinutes,
+		ThresholdCount:         updatedSettings.ThresholdCount,
+		ThresholdWindowMinutes: updatedSettings.ThresholdWindowMinutes,
+	})
+}
+
+// GetTempUnschedThresholdSettings 获取临时不可调度规则窗口阈值配置
+// GET /api/v1/admin/settings/temp-unsched-threshold
+func (h *SettingHandler) GetTempUnschedThresholdSettings(c *gin.Context) {
+	settings, err := h.settingService.GetTempUnschedThresholdSettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, dto.TempUnschedThresholdSettings{
+		Enabled:                settings.Enabled,
+		ThresholdCount:         settings.ThresholdCount,
+		ThresholdWindowMinutes: settings.ThresholdWindowMinutes,
+	})
+}
+
+// UpdateTempUnschedThresholdSettingsRequest 更新临时不可调度窗口阈值配置请求
+type UpdateTempUnschedThresholdSettingsRequest struct {
+	Enabled                bool `json:"enabled"`
+	ThresholdCount         int  `json:"threshold_count"`
+	ThresholdWindowMinutes int  `json:"threshold_window_minutes"`
+}
+
+// UpdateTempUnschedThresholdSettings 更新临时不可调度规则窗口阈值配置
+// PUT /api/v1/admin/settings/temp-unsched-threshold
+func (h *SettingHandler) UpdateTempUnschedThresholdSettings(c *gin.Context) {
+	var req UpdateTempUnschedThresholdSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	settings := &service.TempUnschedThresholdSettings{
+		Enabled:                req.Enabled,
+		ThresholdCount:         req.ThresholdCount,
+		ThresholdWindowMinutes: req.ThresholdWindowMinutes,
+	}
+
+	if err := h.settingService.SetTempUnschedThresholdSettings(c.Request.Context(), settings); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	updatedSettings, err := h.settingService.GetTempUnschedThresholdSettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, dto.TempUnschedThresholdSettings{
+		Enabled:                updatedSettings.Enabled,
 		ThresholdCount:         updatedSettings.ThresholdCount,
 		ThresholdWindowMinutes: updatedSettings.ThresholdWindowMinutes,
 	})

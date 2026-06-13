@@ -481,6 +481,25 @@ func TestResolveKiroRequestedModelForRequest_DefaultSimulationKeepsMappedModel(t
 	require.Equal(t, "claude-sonnet-4.5", kiropkg.MapModel(model))
 }
 
+func TestResolveKiroRequestedModelWithRouting_UsesPlatformRoutingConfig(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyPlatformModelRoutingConfig: `{
+				"kiro": {
+					"model_mapping": {"claude-sonnet-4-5": "claude-sonnet-4.6"}
+				}
+			}`,
+		},
+	}, &config.Config{})
+	account := &Account{ID: 110, Platform: PlatformKiro, Type: AccountTypeOAuth}
+
+	model, err := resolveKiroRequestedModelWithRouting(context.Background(), svc, account, "claude-sonnet-4-5")
+
+	require.NoError(t, err)
+	require.Equal(t, "claude-sonnet-4.6", model)
+}
+
 func TestResolveKiroRequestedModelForRequest_PreservesOneMillionMappedModel(t *testing.T) {
 	account := &Account{ID: 105, Platform: PlatformKiro, Type: AccountTypeOAuth}
 
@@ -605,13 +624,29 @@ func TestShouldUseKiroFreeThinkingPath_ThinkingModes(t *testing.T) {
 		{name: "model_and_simulate_sonnet46", model: "claude-sonnet-4-6", mode: KiroThinkingModeModelAndSimulate, expected: false},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			parsed := &ParsedRequest{Model: tt.model, ThinkingEnabled: true}
-			require.Equal(t, tt.expected, shouldUseKiroFreeThinkingPath(account, parsed, &KiroRuntimeSettings{ThinkingMode: tt.mode}))
-		})
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				parsed := &ParsedRequest{Model: tt.model, ThinkingEnabled: true}
+				require.Equal(t, tt.expected, shouldUseKiroFreeThinkingPath(account, parsed, &KiroRuntimeSettings{ThinkingMode: tt.mode}))
+			})
+		}
 	}
-}
+
+	func TestShouldUseKiroFreeThinkingPathForModel_UsesEffectiveRoutedModel(t *testing.T) {
+		account := &Account{
+			ID:       43,
+			Platform: PlatformKiro,
+			Type:     AccountTypeOAuth,
+			Credentials: map[string]any{
+				"subscription_type": "free",
+			},
+		}
+		parsed := &ParsedRequest{Model: "claude-sonnet-4-6", ThinkingEnabled: true}
+		settings := &KiroRuntimeSettings{ThinkingMode: KiroThinkingModeModelAndSimulate}
+
+		require.False(t, shouldUseKiroFreeThinkingPathForModel(account, parsed, settings, "claude-sonnet-4.6"))
+		require.True(t, shouldUseKiroFreeThinkingPathForModel(account, parsed, settings, "claude-sonnet-4.5"))
+	}
 
 func TestRenderKiroThinkingSimulation_AddsVisibleThinkingForNativeThinkingModels(t *testing.T) {
 	settings := &KiroRuntimeSettings{

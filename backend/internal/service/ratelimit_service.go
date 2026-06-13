@@ -25,6 +25,7 @@ type RateLimitService struct {
 	cfg                   *config.Config
 	geminiQuotaService    *GeminiQuotaService
 	tempUnschedCache      TempUnschedCache
+	tempUnschedCounter    TempUnschedCounterCache
 	timeoutCounterCache   TimeoutCounterCache
 	openAI403CounterCache OpenAI403CounterCache
 	settingService        *SettingService
@@ -329,6 +330,11 @@ func (s *RateLimitService) SetTimeoutCounterCache(cache TimeoutCounterCache) {
 	s.timeoutCounterCache = cache
 }
 
+// SetTempUnschedCounterCache 设置临时不可调度规则窗口计数缓存（可选依赖）
+func (s *RateLimitService) SetTempUnschedCounterCache(cache TempUnschedCounterCache) {
+	s.tempUnschedCounter = cache
+}
+
 // SetOpenAI403CounterCache 设置 OpenAI 403 连续失败计数器（可选依赖）
 func (s *RateLimitService) SetOpenAI403CounterCache(cache OpenAI403CounterCache) {
 	s.openAI403CounterCache = cache
@@ -460,11 +466,25 @@ const (
 	ErrorPolicyTempUnscheduled                          // 临时不可调度规则命中
 )
 
+type tempUnschedDecision int
+
+const (
+	tempUnschedNoMatch tempUnschedDecision = iota
+	tempUnschedDeferred
+	tempUnschedTriggered
+)
+
 // CheckErrorPolicy 检查自定义错误码和临时不可调度规则。
-// 自定义错误码开启时覆盖后续所有逻辑（包括临时不可调度）。
+// 自定义错误码命中时仍先允许 temp-unsched 规则执行阈值判定，避免首个命中绕过窗口阈值。
 func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Account, statusCode int, responseBody []byte) ErrorPolicyResult {
 	if account.IsCustomErrorCodesEnabled() {
 		if account.ShouldHandleErrorCode(statusCode) {
+			switch s.evaluateTempUnschedulable(ctx, account, statusCode, responseBody) {
+			case tempUnschedTriggered:
+				return ErrorPolicyTempUnscheduled
+			case tempUnschedDeferred:
+				return ErrorPolicyNone
+			}
 			return ErrorPolicyMatched
 		}
 		slog.Info("account_error_code_skipped", "account_id", account.ID, "status_code", statusCode)
@@ -501,10 +521,12 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		return true
 	}
 
-	// 先尝试临时不可调度规则（401除外）
-	// 如果匹配成功，直接返回，不执行后续禁用逻辑
+	// 先尝试临时不可调度规则（401除外）。
+	// 命中但阈值未达时，后续 custom error code default 分支不能永久禁用，否则阈值形同虚设。
+	tempDecision := tempUnschedNoMatch
 	if statusCode != 401 {
-		if s.tryTempUnschedulable(ctx, account, statusCode, responseBody) {
+		tempDecision = s.evaluateTempUnschedulable(ctx, account, statusCode, responseBody)
+		if tempDecision == tempUnschedTriggered {
 			return true
 		}
 	}
@@ -643,8 +665,13 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		s.handle529(ctx, account)
 		shouldDisable = false
 	default:
-		// 自定义错误码启用时：在列表中的错误码都应该停止调度
-		if customErrorCodesEnabled {
+		// 该响应已命中临时不可调度规则但窗口阈值未达时，
+		// default 分支不再永久禁用，否则阈值会退化为单次命中禁用。
+		if customErrorCodesEnabled && tempDecision == tempUnschedDeferred {
+			slog.Info("custom_error_code_deferred_to_temp_unsched", "account_id", account.ID, "status_code", statusCode)
+			shouldDisable = false
+		} else if customErrorCodesEnabled {
+			// 自定义错误码启用时：在列表中的错误码都应该停止调度
 			msg := "Custom error code triggered"
 			if upstreamMsg != "" {
 				msg = upstreamMsg
@@ -2235,11 +2262,15 @@ func modelRateLimitKeyForUpstreamModelNotFound(ctx context.Context, account *Acc
 }
 
 func (s *RateLimitService) tryTempUnschedulable(ctx context.Context, account *Account, statusCode int, responseBody []byte) bool {
+	return s.evaluateTempUnschedulable(ctx, account, statusCode, responseBody) == tempUnschedTriggered
+}
+
+func (s *RateLimitService) evaluateTempUnschedulable(ctx context.Context, account *Account, statusCode int, responseBody []byte) tempUnschedDecision {
 	if account == nil {
-		return false
+		return tempUnschedNoMatch
 	}
 	if !account.IsTempUnschedulableEnabled() {
-		return false
+		return tempUnschedNoMatch
 	}
 	// 401 首次命中可临时不可调度（给 token 刷新窗口）；
 	// 若历史上已因 401 进入过临时不可调度，则本次应升级为 error（返回 false 交由默认错误逻辑处理）。
@@ -2255,25 +2286,28 @@ func (s *RateLimitService) tryTempUnschedulable(ctx context.Context, account *Ac
 		if wasTempUnschedByStatusCode(reason, statusCode) {
 			slog.Info("401_escalated_to_error", "account_id", account.ID,
 				"reason", "previous temp-unschedulable was also 401")
-			return false
+			return tempUnschedNoMatch
 		}
 	}
 	rules := account.GetTempUnschedulableRules()
 	if len(rules) == 0 {
-		return false
+		return tempUnschedNoMatch
 	}
-	if statusCode <= 0 || len(responseBody) == 0 {
-		return false
+	if statusCode <= 0 {
+		return tempUnschedNoMatch
 	}
 
+	// 注意：responseBody 可能为空（如 524/522/521/520 等 Cloudflare 边缘码），
+	// 此时仅 keywords 留空的"纯错误码"规则可命中，带关键词的规则匹配不到。
 	body := responseBody
 	if len(body) > tempUnschedBodyMaxBytes {
 		body = body[:tempUnschedBodyMaxBytes]
 	}
 	bodyLower := strings.ToLower(string(body))
+	deferred := false
 
 	for idx, rule := range rules {
-		if rule.ErrorCode != statusCode || len(rule.Keywords) == 0 {
+		if rule.ErrorCode != statusCode {
 			continue
 		}
 		matchedKeyword := matchTempUnschedKeyword(bodyLower, rule.Keywords)
@@ -2281,12 +2315,18 @@ func (s *RateLimitService) tryTempUnschedulable(ctx context.Context, account *Ac
 			continue
 		}
 
-		if s.triggerTempUnschedulable(ctx, account, rule, idx, statusCode, matchedKeyword, responseBody) {
-			return true
+		switch s.triggerTempUnschedulable(ctx, account, rule, idx, statusCode, matchedKeyword, responseBody) {
+		case tempUnschedTriggered:
+			return tempUnschedTriggered
+		case tempUnschedDeferred:
+			deferred = true
 		}
 	}
 
-	return false
+	if deferred {
+		return tempUnschedDeferred
+	}
+	return tempUnschedNoMatch
 }
 
 func wasTempUnschedByStatusCode(reason string, statusCode int) bool {
@@ -2305,7 +2345,14 @@ func wasTempUnschedByStatusCode(reason string, statusCode int) bool {
 	return state.StatusCode == statusCode
 }
 
+// tempUnschedAnyKeyword 是 keywords 留空时返回的匹配标记，表示"仅凭错误码匹配"。
+const tempUnschedAnyKeyword = "*"
+
 func matchTempUnschedKeyword(bodyLower string, keywords []string) string {
+	// keywords 留空：仅凭错误码匹配（调用方已校验 error_code 相等）。
+	if len(keywords) == 0 {
+		return tempUnschedAnyKeyword
+	}
 	if bodyLower == "" {
 		return ""
 	}
@@ -2321,17 +2368,60 @@ func matchTempUnschedKeyword(bodyLower string, keywords []string) string {
 	return ""
 }
 
-func (s *RateLimitService) triggerTempUnschedulable(ctx context.Context, account *Account, rule TempUnschedulableRule, ruleIndex int, statusCode int, matchedKeyword string, responseBody []byte) bool {
+func (s *RateLimitService) triggerTempUnschedulable(ctx context.Context, account *Account, rule TempUnschedulableRule, ruleIndex int, statusCode int, matchedKeyword string, responseBody []byte) tempUnschedDecision {
 	if account == nil {
-		return false
+		return tempUnschedNoMatch
 	}
 	if rule.DurationMinutes <= 0 {
-		return false
+		return tempUnschedNoMatch
+	}
+
+	// 窗口阈值：启用且计数缓存可用时，需在窗口内连续命中 ThresholdCount 次才触发；
+	// 未启用或缓存缺失时退回"单次命中即触发"（向后兼容）。
+	ruleFingerprint := tempUnschedRuleFingerprint(rule)
+	if s.shouldDeferTempUnschedByThreshold(ctx, account, ruleIndex, ruleFingerprint) {
+		return tempUnschedDeferred
 	}
 
 	now := time.Now()
 	until := now.Add(time.Duration(rule.DurationMinutes) * time.Minute)
-	return s.persistTempUnschedulableState(ctx, account, until, statusCode, matchedKeyword, ruleIndex, responseBody, "temp_unschedulable")
+	if s.persistTempUnschedulableState(ctx, account, until, statusCode, matchedKeyword, ruleIndex, responseBody, "temp_unschedulable") {
+		return tempUnschedTriggered
+	}
+	return tempUnschedNoMatch
+}
+
+// shouldDeferTempUnschedByThreshold 在启用窗口阈值时累加命中计数，返回是否应推迟触发（未达阈值）。
+// 达阈值时清零计数并返回 false（即应触发）。未启用阈值或计数缓存缺失时返回 false。
+func (s *RateLimitService) shouldDeferTempUnschedByThreshold(ctx context.Context, account *Account, ruleIndex int, ruleFingerprint string) bool {
+	if s.tempUnschedCounter == nil || s.settingService == nil {
+		return false
+	}
+
+	settings, err := s.settingService.GetTempUnschedThresholdSettings(ctx)
+	if err != nil || settings == nil || !settings.Enabled {
+		return false
+	}
+	if settings.ThresholdCount <= 1 {
+		return false
+	}
+
+	count, err := s.tempUnschedCounter.IncrementTempUnschedCount(ctx, account.ID, ruleFingerprint, settings.ThresholdWindowMinutes)
+	if err != nil {
+		slog.Warn("temp_unsched_threshold_increment_failed", "account_id", account.ID, "rule_index", ruleIndex, "rule_fingerprint", ruleFingerprint, "error", err)
+		return false // fail-open：计数失败时按单次命中触发，避免坏账号继续被调度
+	}
+
+	if count < int64(settings.ThresholdCount) {
+		slog.Info("temp_unsched_threshold_not_reached", "account_id", account.ID, "rule_index", ruleIndex, "rule_fingerprint", ruleFingerprint, "count", count, "threshold", settings.ThresholdCount, "window_minutes", settings.ThresholdWindowMinutes)
+		return true
+	}
+
+	// 达阈值：清零计数，下一轮重新累计
+	if err := s.tempUnschedCounter.ResetTempUnschedCount(ctx, account.ID, ruleFingerprint); err != nil {
+		slog.Warn("temp_unsched_threshold_reset_failed", "account_id", account.ID, "rule_index", ruleIndex, "rule_fingerprint", ruleFingerprint, "error", err)
+	}
+	return false
 }
 
 func (s *RateLimitService) persistTempUnschedulableState(ctx context.Context, account *Account, until time.Time, statusCode int, matchedKeyword string, ruleIndex int, responseBody []byte, blockReason string) bool {

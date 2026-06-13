@@ -79,7 +79,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 
 	isStream := true
 	forcedDispatchModel := getOpenAIMessagesDispatchForcedModel(c)
-	billingModel := resolveOpenAIForwardModel(account, normalizedModel, defaultMappedModel)
+	billingModel := resolveOpenAIForwardModelWithSettings(ctx, s.settingService, account, normalizedModel, defaultMappedModel)
 	if forcedDispatchModel != "" {
 		billingModel = forcedDispatchModel
 	}

@@ -161,6 +161,42 @@ func TestAccountUsageService_GetOpenAIUsage_DoesNotPromoteCodexExtraToRateLimit(
 	}
 }
 
+func TestAccountUsageService_GetOpenAIUsage_IgnoresMismatchedCodexSnapshotIdentity(t *testing.T) {
+	t.Parallel()
+
+	resetAt := time.Now().Add(6 * 24 * time.Hour).UTC().Truncate(time.Second)
+	svc := &AccountUsageService{}
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"email":              "CageLeen9208@outlook.com",
+			"chatgpt_account_id": "1f945aa7-d9a9-4369-9542-0c702ff4adb0",
+			"workspace_id":       "org-nU4goUxMmureroyswT5oYPv4",
+		},
+		Extra: map[string]any{
+			"email":                 "MasonDobies01@outlook.com",
+			"name":                  "Paul Clark",
+			"workspace_id":          "org-avRk1G4qdXg7qph3cRIraNKf",
+			"codex_5h_used_percent": 4.0,
+			"codex_5h_reset_at":     time.Now().Add(2 * time.Hour).UTC().Truncate(time.Second).Format(time.RFC3339),
+			"codex_7d_used_percent": 100.0,
+			"codex_7d_reset_at":     resetAt.Format(time.RFC3339),
+		},
+	}
+
+	usage, err := svc.getOpenAIUsage(context.Background(), account, false)
+	if err != nil {
+		t.Fatalf("getOpenAIUsage() error = %v", err)
+	}
+	if usage.FiveHour != nil {
+		t.Fatalf("expected mismatched 5h codex snapshot to be ignored, got %#v", usage.FiveHour)
+	}
+	if usage.SevenDay != nil {
+		t.Fatalf("expected mismatched 7d codex snapshot to be ignored, got %#v", usage.SevenDay)
+	}
+}
+
 func TestBuildCodexUsageProgressFromExtra_ZerosExpiredWindow(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC)

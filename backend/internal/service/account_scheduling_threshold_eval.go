@@ -92,10 +92,45 @@ func openAIThresholdCandidates(account *Account) []*accountSchedulingThresholdCa
 	if account == nil {
 		return nil
 	}
+	if !openAICodexSnapshotIdentityTrusted(account) {
+		return nil
+	}
 	return []*accountSchedulingThresholdCandidate{
 		openAIThresholdCandidate(account.Extra, "5h"),
 		openAIThresholdCandidate(account.Extra, "7d"),
 	}
+}
+
+func openAICodexSnapshotIdentityTrusted(account *Account) bool {
+	if account == nil || !account.IsOpenAIOAuth() || len(account.Extra) == 0 {
+		return true
+	}
+
+	if identityValuesConflict(
+		firstStringValue(account.Credentials, "email"),
+		firstStringValue(account.Extra, "email", "email_address"),
+	) {
+		return false
+	}
+	if identityValuesConflict(
+		firstStringValue(account.Credentials, "chatgpt_account_id"),
+		firstStringValue(account.Extra, "chatgpt_account_id", "account_id"),
+	) {
+		return false
+	}
+	if identityValuesConflict(
+		firstStringValue(account.Credentials, "workspace_id", "chatgpt_workspace_id", "organization_id", "org_id"),
+		firstStringValue(account.Extra, "workspace_id", "chatgpt_workspace_id", "organization_id", "org_id"),
+	) {
+		return false
+	}
+	return true
+}
+
+func identityValuesConflict(left, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	return left != "" && right != "" && !strings.EqualFold(left, right)
 }
 
 func openAIThresholdCandidate(extra map[string]any, window string) *accountSchedulingThresholdCandidate {
