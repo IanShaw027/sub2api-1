@@ -28,7 +28,83 @@ const (
 
 	openAIWSPrewarmFailureWindow   = 30 * time.Second
 	openAIWSPrewarmFailureSuppress = 2
+
+	// openAIWSConnLimitTTLEvictThreshold: 当连接命中 websocket_connection_limit_reached
+	// 且连接年龄已达该阈值（接近 60min 单连接 TTL）时，视为 TTL 到期而非账户级并发上限，
+	// 触发 evict + 同账号重拨而非账户级 failover。
+	openAIWSConnLimitTTLEvictThreshold = 55 * time.Minute
 )
+
+// 连接池运行时可配参数默认值与上界（与系统设置 openai_ws_min/max_idle_per_account 对应）。
+const (
+	defaultOpenAIWSMinIdlePerAccount    = 1
+	defaultOpenAIWSMaxIdlePerAccount    = 4
+	defaultOpenAIWSStickyReservePercent = 30
+	openAIWSMaxIdlePerAccountUpperBound = 64
+)
+
+// openAIWSPoolRuntimeSettings 是连接池运行时可配参数的进程内快照，
+// 由 SettingService.refreshCachedSettings 在设置变更时写入；读取走 atomic 零锁。
+type openAIWSPoolRuntimeSettings struct {
+	minIdle       int
+	maxIdle       int
+	stickyReserve int
+}
+
+var openAIWSPoolRuntimeSettingsCache atomic.Value // *openAIWSPoolRuntimeSettings
+
+// StoreOpenAIWSPoolRuntimeSettings 由 SettingService 在设置刷新时调用，写入连接池运行时快照。
+func StoreOpenAIWSPoolRuntimeSettings(minIdle, maxIdle, stickyReserve int) {
+	openAIWSPoolRuntimeSettingsCache.Store(&openAIWSPoolRuntimeSettings{
+		minIdle:       minIdle,
+		maxIdle:       maxIdle,
+		stickyReserve: stickyReserve,
+	})
+}
+
+func loadOpenAIWSPoolRuntimeSettings() (*openAIWSPoolRuntimeSettings, bool) {
+	cached, ok := openAIWSPoolRuntimeSettingsCache.Load().(*openAIWSPoolRuntimeSettings)
+	if !ok || cached == nil {
+		return nil, false
+	}
+	return cached, true
+}
+
+func resetOpenAIWSPoolRuntimeSettingsCacheForTest() {
+	openAIWSPoolRuntimeSettingsCache = atomic.Value{}
+}
+
+// loadOpenAIWSPoolRuntimeSettingsForCompare 返回当前快照的三个值用于变更检测。
+func loadOpenAIWSPoolRuntimeSettingsForCompare() (minIdle, maxIdle, stickyReserve int, ok bool) {
+	cached, found := loadOpenAIWSPoolRuntimeSettings()
+	if !found {
+		return 0, 0, 0, false
+	}
+	return cached.minIdle, cached.maxIdle, cached.stickyReserve, true
+}
+
+// openAIWSReconcileHook 由持有连接池的服务（OpenAIGatewayService）注册，
+// 在连接池相关系统设置变更后异步触发收缩 + 冷账号预热。SettingService 不直接引用连接池。
+var openAIWSReconcileHook atomic.Pointer[func()]
+
+// RegisterOpenAIWSPoolReconcileHook 注册 reconcile 回调（幂等覆盖）。
+func RegisterOpenAIWSPoolReconcileHook(hook func()) {
+	if hook == nil {
+		openAIWSReconcileHook.Store(nil)
+		return
+	}
+	openAIWSReconcileHook.Store(&hook)
+}
+
+// TriggerOpenAIWSPoolReconcile 异步触发已注册的 reconcile 回调；未注册则静默返回。
+func TriggerOpenAIWSPoolReconcile() {
+	hookPtr := openAIWSReconcileHook.Load()
+	if hookPtr == nil || *hookPtr == nil {
+		return
+	}
+	hook := *hookPtr
+	go hook()
+}
 
 var (
 	errOpenAIWSConnClosed               = errors.New("openai ws connection closed")
@@ -70,6 +146,13 @@ const (
 	openAIWSConnProfileNeutral      openAIWSConnProfile = "neutral"
 )
 
+func openAIWSProfileUsageString(profile openAIWSConnProfile) string {
+	if profile == openAIWSConnProfileSessionBound {
+		return "session_bound"
+	}
+	return string(profile)
+}
+
 type openAIWSAcquireRequest struct {
 	Account         *Account
 	WSURL           string
@@ -81,6 +164,8 @@ type openAIWSAcquireRequest struct {
 	ForceNewConn bool
 	// ForcePreferredConn: 强制本次只使用 PreferredConnID，禁止漂移到其它连接。
 	ForcePreferredConn bool
+	// AffinityOnlyReuse: 只允许复用 PreferredConnID；未命中时新建，禁止借用其它同 profile 连接。
+	AffinityOnlyReuse bool
 }
 
 type openAIWSConnLease struct {
@@ -129,6 +214,14 @@ func (l *openAIWSConnLease) Reused() bool {
 		return false
 	}
 	return l.reused
+}
+
+// ConnAge 返回租约绑定连接自建立以来的时长；连接缺失时返回 0。
+func (l *openAIWSConnLease) ConnAge() time.Duration {
+	if l == nil || l.conn == nil {
+		return 0
+	}
+	return l.conn.age(time.Now())
 }
 
 func (l *openAIWSConnLease) HandshakeHeader(name string) string {
@@ -250,13 +343,18 @@ type openAIWSConn struct {
 	lastUsedNano  atomic.Int64
 	prewarmed     atomic.Bool
 	profile       openAIWSConnProfile
+	reuseKey      string
 }
 
 func newOpenAIWSConn(id string, _ int64, ws openAIWSClientConn, handshakeHeaders http.Header) *openAIWSConn {
-	return newOpenAIWSConnWithProfile(id, ws, handshakeHeaders, openAIWSConnProfileSessionBound)
+	return newOpenAIWSConnWithProfileAndReuseKey(id, ws, handshakeHeaders, openAIWSConnProfileSessionBound, "")
 }
 
 func newOpenAIWSConnWithProfile(id string, ws openAIWSClientConn, handshakeHeaders http.Header, profile openAIWSConnProfile) *openAIWSConn {
+	return newOpenAIWSConnWithProfileAndReuseKey(id, ws, handshakeHeaders, profile, "")
+}
+
+func newOpenAIWSConnWithProfileAndReuseKey(id string, ws openAIWSClientConn, handshakeHeaders http.Header, profile openAIWSConnProfile, reuseKey string) *openAIWSConn {
 	now := time.Now()
 	conn := &openAIWSConn{
 		id:               id,
@@ -265,6 +363,7 @@ func newOpenAIWSConnWithProfile(id string, ws openAIWSClientConn, handshakeHeade
 		leaseCh:          make(chan struct{}, 1),
 		closedCh:         make(chan struct{}),
 		profile:          profile,
+		reuseKey:         stringsTrim(reuseKey),
 	}
 	conn.leaseCh <- struct{}{}
 	conn.createdAtNano.Store(now.UnixNano())
@@ -801,6 +900,66 @@ func (p *openAIWSConnPool) Acquire(ctx context.Context, req openAIWSAcquireReque
 	return p.acquire(ctx, cloneOpenAIWSAcquireRequest(req), 0)
 }
 
+// ReconcileShrink 立即对所有账号池按当前 max_idle / sticky_reserve 收缩多余空闲连接。
+// 设置变更后调用，使收缩即时生效而非等待下一个后台 sweep tick。
+func (p *openAIWSConnPool) ReconcileShrink() {
+	if p == nil {
+		return
+	}
+	p.runBackgroundCleanupSweep(time.Now())
+}
+
+// PrewarmNeutral 为指定账号补足 neutral 空闲连接到 targetIdle（受 neutralMax 与抑制窗约束）。
+// 因冷账号无请求快照会在 ensureTargetIdleAsync 早退，这里先 seed lastNeutralAcquire 再补连。
+// req 必须是 neutral profile 的合成请求；阻塞拨号，调用方应在后台 goroutine 中执行。
+func (p *openAIWSConnPool) PrewarmNeutral(accountID int64, req openAIWSAcquireRequest, targetIdle int) {
+	if p == nil || accountID <= 0 || req.Account == nil || stringsTrim(req.WSURL) == "" {
+		return
+	}
+	if targetIdle <= 0 {
+		return
+	}
+	req.Profile = openAIWSConnProfileNeutral
+	req = cloneOpenAIWSAcquireRequest(req)
+
+	effectiveMaxConns := p.effectiveMaxConnsByAccount(req.Account)
+	if effectiveMaxConns <= 0 {
+		return
+	}
+	neutralMax := p.neutralMaxConns(effectiveMaxConns)
+	if neutralMax <= 0 {
+		return
+	}
+	if targetIdle > neutralMax {
+		targetIdle = neutralMax
+	}
+
+	ap := p.getOrCreateAccountPool(accountID)
+	if ap == nil {
+		return
+	}
+	ap.mu.Lock()
+	// seed neutral 快照，供后续 ensureTargetIdleAsync / cleanup 使用账号信息。
+	ap.lastNeutralAcquire = cloneOpenAIWSAcquireRequestPtr(&req)
+	reqReuseKey := openAIWSConnReuseKeyForAcquire(req)
+	now := time.Now()
+	if p.shouldSuppressPrewarmLocked(ap, now) {
+		ap.mu.Unlock()
+		return
+	}
+	current := countConnsByProfileAndReuseKeyLocked(ap, openAIWSConnProfileNeutral, reqReuseKey) + ap.creating
+	need := targetIdle - current
+	if need <= 0 {
+		ap.mu.Unlock()
+		return
+	}
+	ap.creating += need
+	p.metrics.scaleUpTotal.Add(int64(need))
+	ap.mu.Unlock()
+
+	p.prewarmConns(accountID, req, need)
+}
+
 func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireRequest, retry int) (*openAIWSConnLease, error) {
 	if p == nil || req.Account == nil || req.Account.ID <= 0 {
 		return nil, errors.New("invalid ws acquire request")
@@ -831,6 +990,11 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 	allowReuse := !req.ForceNewConn
 	preferredConnID := stringsTrim(req.PreferredConnID)
 	forcePreferredConn := allowReuse && req.ForcePreferredConn
+	affinityOnlyReuse := allowReuse && req.AffinityOnlyReuse
+	if allowReuse && req.Profile == openAIWSConnProfileSessionBound {
+		affinityOnlyReuse = true
+	}
+	reqReuseKey := openAIWSConnReuseKeyForAcquire(req)
 
 	if allowReuse {
 		if forcePreferredConn {
@@ -841,7 +1005,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 				return nil, errOpenAIWSPreferredConnUnavailable
 			}
 			preferredConn, ok := ap.conns[preferredConnID]
-			if !ok || preferredConn == nil || preferredConn.profile != req.Profile {
+			if !ok || !openAIWSConnMatchesProfileAndReuseKey(preferredConn, req.Profile, reqReuseKey) {
 				p.recordConnPickDuration(time.Since(pickStartedAt))
 				ap.mu.Unlock()
 				closeOpenAIWSConns(evicted)
@@ -922,77 +1086,128 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 		}
 
 		if preferredConnID != "" {
-			if conn, ok := ap.conns[preferredConnID]; ok && conn.profile == req.Profile && conn.tryAcquire() {
-				connPick := time.Since(pickStartedAt)
-				p.recordConnPickDuration(connPick)
-				ap.mu.Unlock()
-				closeOpenAIWSConns(evicted)
-				if p.shouldHealthCheckConn(conn) {
-					if err := conn.pingWithTimeout(openAIWSConnHealthCheckTO); err != nil {
-						conn.close()
-						p.evictConn(accountID, conn.id)
-						if retry < 1 {
+			if conn, ok := ap.conns[preferredConnID]; ok && openAIWSConnMatchesProfileAndReuseKey(conn, req.Profile, reqReuseKey) {
+				if conn.tryAcquire() {
+					connPick := time.Since(pickStartedAt)
+					p.recordConnPickDuration(connPick)
+					ap.mu.Unlock()
+					closeOpenAIWSConns(evicted)
+					if p.shouldHealthCheckConn(conn) {
+						if err := conn.pingWithTimeout(openAIWSConnHealthCheckTO); err != nil {
+							conn.close()
+							p.evictConn(accountID, conn.id)
+							if retry < 1 {
+								return p.acquire(ctx, req, retry+1)
+							}
+							return nil, err
+						}
+					}
+					lease := &openAIWSConnLease{pool: p, accountID: accountID, conn: conn, connPick: connPick, reused: true}
+					p.metrics.acquireReuseTotal.Add(1)
+					p.ensureTargetIdleAsync(accountID)
+					return lease, nil
+				}
+				if affinityOnlyReuse {
+					connPick := time.Since(pickStartedAt)
+					p.recordConnPickDuration(connPick)
+					if int(conn.waiters.Load()) >= p.queueLimitPerConn() {
+						ap.mu.Unlock()
+						closeOpenAIWSConns(evicted)
+						return nil, errOpenAIWSConnQueueFull
+					}
+					conn.waiters.Add(1)
+					ap.mu.Unlock()
+					closeOpenAIWSConns(evicted)
+					defer conn.waiters.Add(-1)
+					waitStart := time.Now()
+					p.metrics.acquireQueueWaitTotal.Add(1)
+
+					if err := conn.acquire(ctx); err != nil {
+						if errors.Is(err, errOpenAIWSConnClosed) && retry < 1 {
 							return p.acquire(ctx, req, retry+1)
 						}
 						return nil, err
 					}
+					if p.shouldHealthCheckConn(conn) {
+						if err := conn.pingWithTimeout(openAIWSConnHealthCheckTO); err != nil {
+							conn.release()
+							conn.close()
+							p.evictConn(accountID, conn.id)
+							if retry < 1 {
+								return p.acquire(ctx, req, retry+1)
+							}
+							return nil, err
+						}
+					}
+
+					queueWait := time.Since(waitStart)
+					p.metrics.acquireQueueWaitMs.Add(queueWait.Milliseconds())
+					lease := &openAIWSConnLease{
+						pool:      p,
+						accountID: accountID,
+						conn:      conn,
+						queueWait: queueWait,
+						connPick:  connPick,
+						reused:    true,
+					}
+					p.metrics.acquireReuseTotal.Add(1)
+					p.ensureTargetIdleAsync(accountID)
+					return lease, nil
 				}
-				lease := &openAIWSConnLease{pool: p, accountID: accountID, conn: conn, connPick: connPick, reused: true}
-				p.metrics.acquireReuseTotal.Add(1)
-				p.ensureTargetIdleAsync(accountID)
-				return lease, nil
 			}
 		}
 
-		best := p.pickLeastBusyConnLocked(ap, "", req.Profile)
-		if best != nil && best.tryAcquire() {
-			connPick := time.Since(pickStartedAt)
-			p.recordConnPickDuration(connPick)
-			ap.mu.Unlock()
-			closeOpenAIWSConns(evicted)
-			if p.shouldHealthCheckConn(best) {
-				if err := best.pingWithTimeout(openAIWSConnHealthCheckTO); err != nil {
-					best.close()
-					p.evictConn(accountID, best.id)
-					if retry < 1 {
-						return p.acquire(ctx, req, retry+1)
-					}
-					return nil, err
-				}
-			}
-			lease := &openAIWSConnLease{pool: p, accountID: accountID, conn: best, connPick: connPick, reused: true}
-			p.metrics.acquireReuseTotal.Add(1)
-			p.ensureTargetIdleAsync(accountID)
-			return lease, nil
-		}
-		for _, conn := range ap.conns {
-			if conn == nil || conn == best || conn.profile != req.Profile {
-				continue
-			}
-			if conn.tryAcquire() {
+		if !affinityOnlyReuse {
+			best := p.pickLeastBusyConnLocked(ap, "", req.Profile, reqReuseKey)
+			if best != nil && best.tryAcquire() {
 				connPick := time.Since(pickStartedAt)
 				p.recordConnPickDuration(connPick)
 				ap.mu.Unlock()
 				closeOpenAIWSConns(evicted)
-				if p.shouldHealthCheckConn(conn) {
-					if err := conn.pingWithTimeout(openAIWSConnHealthCheckTO); err != nil {
-						conn.close()
-						p.evictConn(accountID, conn.id)
+				if p.shouldHealthCheckConn(best) {
+					if err := best.pingWithTimeout(openAIWSConnHealthCheckTO); err != nil {
+						best.close()
+						p.evictConn(accountID, best.id)
 						if retry < 1 {
 							return p.acquire(ctx, req, retry+1)
 						}
 						return nil, err
 					}
 				}
-				lease := &openAIWSConnLease{pool: p, accountID: accountID, conn: conn, connPick: connPick, reused: true}
+				lease := &openAIWSConnLease{pool: p, accountID: accountID, conn: best, connPick: connPick, reused: true}
 				p.metrics.acquireReuseTotal.Add(1)
 				p.ensureTargetIdleAsync(accountID)
 				return lease, nil
+			}
+			for _, conn := range ap.conns {
+				if conn == nil || conn == best || !openAIWSConnMatchesProfileAndReuseKey(conn, req.Profile, reqReuseKey) {
+					continue
+				}
+				if conn.tryAcquire() {
+					connPick := time.Since(pickStartedAt)
+					p.recordConnPickDuration(connPick)
+					ap.mu.Unlock()
+					closeOpenAIWSConns(evicted)
+					if p.shouldHealthCheckConn(conn) {
+						if err := conn.pingWithTimeout(openAIWSConnHealthCheckTO); err != nil {
+							conn.close()
+							p.evictConn(accountID, conn.id)
+							if retry < 1 {
+								return p.acquire(ctx, req, retry+1)
+							}
+							return nil, err
+						}
+					}
+					lease := &openAIWSConnLease{pool: p, accountID: accountID, conn: conn, connPick: connPick, reused: true}
+					p.metrics.acquireReuseTotal.Add(1)
+					p.ensureTargetIdleAsync(accountID)
+					return lease, nil
+				}
 			}
 		}
 	}
 
-	if req.ForceNewConn && len(ap.conns)+ap.creating >= effectiveMaxConns {
+	if (req.ForceNewConn || affinityOnlyReuse) && len(ap.conns)+ap.creating >= effectiveMaxConns {
 		if idle := p.pickOldestIdleConnLocked(ap); idle != nil {
 			delete(ap.conns, idle.id)
 			evicted = append(evicted, idle)
@@ -1005,7 +1220,14 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 	if req.Profile == openAIWSConnProfileNeutral {
 		neutralMax := p.neutralMaxConns(effectiveMaxConns)
 		if countConnsByProfileLocked(ap, openAIWSConnProfileNeutral)+ap.creating >= neutralMax {
-			allowCreate = false
+			if idle := p.pickOldestIdleNeutralConnLocked(ap); idle != nil {
+				delete(ap.conns, idle.id)
+				evicted = append(evicted, idle)
+				p.metrics.scaleDownTotal.Add(1)
+			}
+			if countConnsByProfileLocked(ap, openAIWSConnProfileNeutral)+ap.creating >= neutralMax {
+				allowCreate = false
+			}
 		}
 	} else if len(ap.conns)+ap.creating >= effectiveMaxConns {
 		// session_bound 请求要建连而总量已满时，优先淘汰一条空闲 neutral 腾出粘性预留容量。
@@ -1052,14 +1274,14 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 		return lease, nil
 	}
 
-	if req.ForceNewConn {
+	if req.ForceNewConn || affinityOnlyReuse {
 		p.recordConnPickDuration(time.Since(pickStartedAt))
 		ap.mu.Unlock()
 		closeOpenAIWSConns(evicted)
 		return nil, errOpenAIWSConnQueueFull
 	}
 
-	target := p.pickLeastBusyConnLocked(ap, req.PreferredConnID, req.Profile)
+	target := p.pickLeastBusyConnLocked(ap, req.PreferredConnID, req.Profile, reqReuseKey)
 	connPick := time.Since(pickStartedAt)
 	p.recordConnPickDuration(connPick)
 	if target == nil {
@@ -1164,23 +1386,86 @@ func countConnsByProfileLocked(ap *openAIWSAccountPool, profile openAIWSConnProf
 	return count
 }
 
+func countConnsByProfileAndReuseKeyLocked(ap *openAIWSAccountPool, profile openAIWSConnProfile, reuseKey string) int {
+	if ap == nil {
+		return 0
+	}
+	count := 0
+	for _, conn := range ap.conns {
+		if conn != nil && openAIWSConnMatchesProfileAndReuseKey(conn, profile, reuseKey) {
+			count++
+		}
+	}
+	return count
+}
+
+func openAIWSConnMatchesProfileAndReuseKey(conn *openAIWSConn, profile openAIWSConnProfile, reuseKey string) bool {
+	if conn == nil || conn.profile != profile {
+		return false
+	}
+	if profile != openAIWSConnProfileNeutral {
+		return true
+	}
+	return stringsTrim(conn.reuseKey) == stringsTrim(reuseKey)
+}
+
+func openAIWSConnReuseKeyForAcquire(req openAIWSAcquireRequest) string {
+	if req.Profile != openAIWSConnProfileNeutral {
+		return ""
+	}
+	headerValue := func(name string) string {
+		if req.Headers == nil {
+			return ""
+		}
+		return stringsTrim(req.Headers.Get(name))
+	}
+	parts := []string{
+		stringsTrim(req.WSURL),
+		stringsTrim(req.ProxyURL),
+		headerValue("authorization"),
+		headerValue("OpenAI-Beta"),
+		headerValue("originator"),
+		headerValue("user-agent"),
+		headerValue("chatgpt-account-id"),
+	}
+	return strings.Join(parts, "\x1f")
+}
+
 // neutralMaxConns 中性连接上限 = floor(总上限 ×(100-粘性预留%)/100)，总上限>0 时至少 1。
 func (p *openAIWSConnPool) neutralMaxConns(effectiveMaxConns int) int {
 	if effectiveMaxConns <= 0 {
 		return 0
 	}
-	reserve := 50
-	if p != nil && p.cfg != nil && p.cfg.Gateway.OpenAIWS.StickyReservePercent > 0 {
-		reserve = p.cfg.Gateway.OpenAIWS.StickyReservePercent
-	}
+	reserve := p.stickyReservePercent()
 	if reserve > 100 {
 		reserve = 100
+	}
+	if reserve < 0 {
+		reserve = 0
 	}
 	neutralMax := effectiveMaxConns * (100 - reserve) / 100
 	if neutralMax < 1 {
 		neutralMax = 1
 	}
 	return neutralMax
+}
+
+// stickyReservePercent 优先读运行时设置（openai_sticky_reserve_percent），
+// 其次静态 cfg，最后回退默认 30%。
+func (p *openAIWSConnPool) stickyReservePercent() int {
+	if rt, ok := loadOpenAIWSPoolRuntimeSettings(); ok {
+		if rt.stickyReserve < 0 {
+			return 0
+		}
+		if rt.stickyReserve > 100 {
+			return 100
+		}
+		return rt.stickyReserve
+	}
+	if p != nil && p.cfg != nil {
+		return p.cfg.Gateway.OpenAIWS.StickyReservePercent
+	}
+	return defaultOpenAIWSStickyReservePercent
 }
 
 func (p *openAIWSConnPool) getOrCreateAccountPool(accountID int64) *openAIWSAccountPool {
@@ -1288,6 +1573,11 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 			idleConns = append(idleConns, conn)
 		}
 		sort.SliceStable(idleConns, func(i, j int) bool {
+			leftNeutral := idleConns[i].profile == openAIWSConnProfileNeutral
+			rightNeutral := idleConns[j].profile == openAIWSConnProfileNeutral
+			if leftNeutral != rightNeutral {
+				return leftNeutral
+			}
 			return idleConns[i].lastUsedAt().Before(idleConns[j].lastUsedAt())
 		})
 		redundant := len(ap.conns) - maxIdle
@@ -1326,13 +1616,13 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 	return evicted
 }
 
-func (p *openAIWSConnPool) pickLeastBusyConnLocked(ap *openAIWSAccountPool, preferredConnID string, profile openAIWSConnProfile) *openAIWSConn {
+func (p *openAIWSConnPool) pickLeastBusyConnLocked(ap *openAIWSAccountPool, preferredConnID string, profile openAIWSConnProfile, reuseKey string) *openAIWSConn {
 	if ap == nil || len(ap.conns) == 0 {
 		return nil
 	}
 	preferredConnID = stringsTrim(preferredConnID)
 	if preferredConnID != "" {
-		if conn, ok := ap.conns[preferredConnID]; ok && conn != nil && conn.profile == profile {
+		if conn, ok := ap.conns[preferredConnID]; ok && openAIWSConnMatchesProfileAndReuseKey(conn, profile, reuseKey) {
 			return conn
 		}
 	}
@@ -1340,7 +1630,7 @@ func (p *openAIWSConnPool) pickLeastBusyConnLocked(ap *openAIWSAccountPool, pref
 	var bestWaiters int32
 	var bestLastUsed time.Time
 	for _, conn := range ap.conns {
-		if conn == nil || conn.profile != profile {
+		if !openAIWSConnMatchesProfileAndReuseKey(conn, profile, reuseKey) {
 			continue
 		}
 		waiters := conn.waiters.Load()
@@ -1437,9 +1727,11 @@ func (p *openAIWSConnPool) ensureTargetIdleAsync(accountID int64) {
 	}
 	// neutral 缺口：目标 = min(neutralMax, max(minIdle, 1))，仅在有 neutral 快照时预热。
 	neutralNeed := 0
+	neutralReuseKey := ""
 	if ap.lastNeutralAcquire != nil {
+		neutralReuseKey = openAIWSConnReuseKeyForAcquire(*ap.lastNeutralAcquire)
 		target := p.targetNeutralConnCountLocked(effectiveMaxConns)
-		current := countConnsByProfileLocked(ap, openAIWSConnProfileNeutral)
+		current := countConnsByProfileAndReuseKeyLocked(ap, openAIWSConnProfileNeutral, neutralReuseKey)
 		if current < target {
 			neutralNeed = target - current
 		}
@@ -1665,7 +1957,7 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 		}
 	}
 	id := p.nextConnID(req.Account.ID)
-	return newOpenAIWSConnWithProfile(id, conn, handshakeHeaders, req.Profile), nil
+	return newOpenAIWSConnWithProfileAndReuseKey(id, conn, handshakeHeaders, req.Profile, openAIWSConnReuseKeyForAcquire(req)), nil
 }
 
 func (p *openAIWSConnPool) nextConnID(accountID int64) string {
@@ -1759,6 +2051,11 @@ func (p *openAIWSConnPool) effectiveMaxConnsByAccount(account *Account) int {
 }
 
 func (p *openAIWSConnPool) minIdlePerAccount() int {
+	if rt, ok := loadOpenAIWSPoolRuntimeSettings(); ok {
+		if rt.minIdle >= 0 {
+			return rt.minIdle
+		}
+	}
 	if p != nil && p.cfg != nil && p.cfg.Gateway.OpenAIWS.MinIdlePerAccount >= 0 {
 		return p.cfg.Gateway.OpenAIWS.MinIdlePerAccount
 	}
@@ -1766,6 +2063,11 @@ func (p *openAIWSConnPool) minIdlePerAccount() int {
 }
 
 func (p *openAIWSConnPool) maxIdlePerAccount() int {
+	if rt, ok := loadOpenAIWSPoolRuntimeSettings(); ok {
+		if rt.maxIdle >= 0 {
+			return rt.maxIdle
+		}
+	}
 	if p != nil && p.cfg != nil && p.cfg.Gateway.OpenAIWS.MaxIdlePerAccount >= 0 {
 		return p.cfg.Gateway.OpenAIWS.MaxIdlePerAccount
 	}

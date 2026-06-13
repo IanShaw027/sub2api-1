@@ -914,7 +914,7 @@ type GatewayOpenAIWSConfig struct {
 	MaxConnsPerAccount int `mapstructure:"max_conns_per_account"`
 	MinIdlePerAccount  int `mapstructure:"min_idle_per_account"`
 	MaxIdlePerAccount  int `mapstructure:"max_idle_per_account"`
-	// StickyReservePercent: 账号连接池中为粘性会话预留的容量百分比（0-100，默认 50）。
+	// StickyReservePercent: 账号连接池中为粘性会话预留的容量百分比（0-100，默认 30）。
 	// 中性连接（无会话 HTTP 入站复用）上限 = floor(总上限 ×(100-该值)/100)。
 	// 注意：中性预热依赖账号至少一次无会话请求建立快照，重启后冷账号不会主动预创建。
 	StickyReservePercent int `mapstructure:"sticky_reserve_percent"`
@@ -1856,7 +1856,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.max_conns_per_account", 128)
 	viper.SetDefault("gateway.openai_ws.min_idle_per_account", 4)
 	viper.SetDefault("gateway.openai_ws.max_idle_per_account", 12)
-	viper.SetDefault("gateway.openai_ws.sticky_reserve_percent", 50)
+	viper.SetDefault("gateway.openai_ws.sticky_reserve_percent", 30)
 	viper.SetDefault("gateway.openai_ws.dynamic_max_conns_by_account_concurrency_enabled", true)
 	viper.SetDefault("gateway.openai_ws.oauth_max_conns_factor", 1.0)
 	viper.SetDefault("gateway.openai_ws.apikey_max_conns_factor", 1.0)

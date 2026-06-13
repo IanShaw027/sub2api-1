@@ -115,6 +115,19 @@ func (s *defaultOpenAIWSStateStore) BindResponseAccount(ctx context.Context, gro
 	return s.cache.SetSessionAccountID(cacheCtx, groupID, cacheKey, accountID, ttl)
 }
 
+func (s *defaultOpenAIWSStateStore) getResponseAccountLocal(key string, now time.Time) (int64, bool) {
+	if s == nil || key == "" {
+		return 0, false
+	}
+	s.responseToAccountMu.RLock()
+	binding, ok := s.responseToAccount[key]
+	s.responseToAccountMu.RUnlock()
+	if !ok || now.After(binding.expiresAt) || binding.accountID <= 0 {
+		return 0, false
+	}
+	return binding.accountID, true
+}
+
 func (s *defaultOpenAIWSStateStore) GetResponseAccount(ctx context.Context, groupID int64, apiKeyID int64, responseID string) (int64, error) {
 	id := normalizeOpenAIWSResponseID(responseID)
 	key := openAIWSResponseStateKey(groupID, apiKeyID, id)
@@ -124,15 +137,9 @@ func (s *defaultOpenAIWSStateStore) GetResponseAccount(ctx context.Context, grou
 	s.maybeCleanup()
 
 	now := time.Now()
-	s.responseToAccountMu.RLock()
-	if binding, ok := s.responseToAccount[key]; ok {
-		if now.Before(binding.expiresAt) {
-			accountID := binding.accountID
-			s.responseToAccountMu.RUnlock()
-			return accountID, nil
-		}
+	if accountID, ok := s.getResponseAccountLocal(key, now); ok {
+		return accountID, nil
 	}
-	s.responseToAccountMu.RUnlock()
 
 	if s.cache == nil {
 		return 0, nil
@@ -142,11 +149,11 @@ func (s *defaultOpenAIWSStateStore) GetResponseAccount(ctx context.Context, grou
 	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(ctx)
 	defer cancel()
 	accountID, err := s.cache.GetSessionAccountID(cacheCtx, groupID, cacheKey)
-	if err != nil || accountID <= 0 {
-		// 缓存读取失败不阻断主流程，按未命中降级。
-		return 0, nil
+	if err == nil && accountID > 0 {
+		return accountID, nil
 	}
-	return accountID, nil
+	// 缓存读取失败不阻断主流程，按未命中降级。
+	return 0, nil
 }
 
 func (s *defaultOpenAIWSStateStore) DeleteResponseAccount(ctx context.Context, groupID int64, apiKeyID int64, responseID string) error {

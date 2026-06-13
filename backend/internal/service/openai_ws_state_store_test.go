@@ -65,6 +65,41 @@ func TestOpenAIWSStateStore_ResponseStateIsAPIKeyIsolated(t *testing.T) {
 	require.Equal(t, int64(201), accountID)
 }
 
+func TestOpenAIWSStateStore_ResponseAccountLegacyBindingIsNotVisibleToScopedAPIKey(t *testing.T) {
+	store := NewOpenAIWSStateStore(nil)
+	ctx := context.Background()
+
+	require.NoError(t, store.BindResponseAccount(ctx, 7, 0, "resp_legacy", 101, time.Minute))
+
+	accountID, err := store.GetResponseAccount(ctx, 7, 11, "resp_legacy")
+	require.NoError(t, err)
+	require.Zero(t, accountID, "api-key scoped lookup must not fall back to legacy apiKeyID=0 bindings")
+
+	require.NoError(t, store.DeleteResponseAccount(ctx, 7, 11, "resp_legacy"))
+	accountID, err = store.GetResponseAccount(ctx, 7, 0, "resp_legacy")
+	require.NoError(t, err)
+	require.Equal(t, int64(101), accountID, "deleting scoped binding must not remove the legacy key")
+
+	require.NoError(t, store.DeleteResponseAccount(ctx, 7, 0, "resp_legacy"))
+	accountID, err = store.GetResponseAccount(ctx, 7, 0, "resp_legacy")
+	require.NoError(t, err)
+	require.Zero(t, accountID)
+
+	cache := &stubGatewayCache{}
+	writer := NewOpenAIWSStateStore(cache)
+	require.NoError(t, writer.BindResponseAccount(ctx, 7, 0, "resp_legacy_redis", 202, time.Minute))
+
+	reader := NewOpenAIWSStateStore(cache)
+	accountID, err = reader.GetResponseAccount(ctx, 7, 11, "resp_legacy_redis")
+	require.NoError(t, err)
+	require.Zero(t, accountID, "api-key scoped redis lookup must not fall back to legacy apiKeyID=0 bindings")
+
+	require.NoError(t, reader.DeleteResponseAccount(ctx, 7, 11, "resp_legacy_redis"))
+	accountID, err = reader.GetResponseAccount(ctx, 7, 0, "resp_legacy_redis")
+	require.NoError(t, err)
+	require.Equal(t, int64(202), accountID, "deleting scoped redis binding must not remove the legacy key")
+}
+
 func TestOpenAIWSStateStore_ResponseConnTTL(t *testing.T) {
 	store := NewOpenAIWSStateStore(nil)
 	store.BindResponseConn(7, 11, "resp_conn", "conn_1", 30*time.Millisecond)

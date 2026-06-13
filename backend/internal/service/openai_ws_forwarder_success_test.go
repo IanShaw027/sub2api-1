@@ -151,6 +151,7 @@ func TestOpenAIGatewayService_Forward_WSv2_SuccessAndBindSticky(t *testing.T) {
 	require.Equal(t, 3, result.Usage.CacheReadInputTokens)
 	require.Equal(t, "resp_new_1", result.RequestID)
 	require.True(t, result.OpenAIWSMode)
+	require.Equal(t, "session_bound", result.OpenAIWSProfile)
 	require.False(t, gjson.GetBytes(upstream.lastBody, "model").Exists(), "WSv2 成功时不应回落 HTTP 上游")
 
 	received := <-receivedCh
@@ -397,7 +398,7 @@ func TestOpenAIWSPayloadString_OnlyAcceptsStringValues(t *testing.T) {
 	require.Equal(t, "resp_1", openAIWSPayloadString(payload, "previous_response_id"))
 }
 
-func TestOpenAIGatewayService_Forward_WSv2_PoolReuseNotOneToOne(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2_SessionBoundWithoutAffinityDoesNotReuse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	var upgradeCount atomic.Int64
@@ -501,10 +502,10 @@ func TestOpenAIGatewayService_Forward_WSv2_PoolReuseNotOneToOne(t *testing.T) {
 		require.True(t, strings.HasPrefix(result.RequestID, "resp_reuse_"))
 	}
 
-	// 条件式 MarkBroken：正常终端事件退出后连接归还复用，不再无条件销毁。
-	require.Equal(t, int64(1), upgradeCount.Load(), "正常完成后连接应归还复用，不应每次新建")
+	// session_bound 连接的握手头携带请求级身份；无 response/session affinity 时不得按账号泛复用。
+	require.Equal(t, int64(2), upgradeCount.Load(), "无 affinity 的 session_bound 请求应新建连接，不能泛复用上一请求的握手身份")
 	metrics := svc.SnapshotOpenAIWSPoolMetrics()
-	require.GreaterOrEqual(t, metrics.AcquireReuseTotal, int64(1))
+	require.Equal(t, int64(0), metrics.AcquireReuseTotal)
 	require.GreaterOrEqual(t, metrics.ConnPickTotal, int64(1))
 }
 
@@ -596,6 +597,313 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 	require.Equal(t, isolatedWindowID, gjson.Get(requestJSON, "client_metadata.x-codex-window-id").String())
 	require.Equal(t, "memories,prevent_idle_sleep", gjson.Get(requestJSON, "client_metadata.x-codex-beta-features").String())
 	require.Equal(t, "client-req-1", gjson.Get(requestJSON, "client_metadata.x-client-request-id").String())
+}
+
+func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyPreviousResponseUsesStoreTrue(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.StoreDisabledConnMode = openAIWSStoreDisabledConnModeStrict
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	captureConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_oauth_sticky_prev_1","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_oauth_sticky_prev_2","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":2}}}`),
+		},
+	}
+	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(captureDialer)
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          130,
+		Name:        "openai-oauth-sticky-prev",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"access_token": "oauth-token-sticky-prev",
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	groupID := int64(13001)
+	apiKeyID := int64(13002)
+	newContext := func() *gin.Context {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+		c.Request.Header.Set("originator", "codex_exec")
+		c.Request.Header.Set("session_id", "sess-oauth-sticky-prev")
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+		return c
+	}
+
+	firstBody := []byte(`{"model":"gpt-5.1","stream":false,"store":true,"input":[{"type":"input_text","text":"hello"}]}`)
+	firstResult, err := svc.Forward(context.Background(), newContext(), account, firstBody)
+	require.NoError(t, err)
+	require.NotNil(t, firstResult)
+	require.Equal(t, "resp_oauth_sticky_prev_1", firstResult.RequestID)
+
+	secondBody := []byte(`{"model":"gpt-5.1","stream":false,"previous_response_id":"resp_oauth_sticky_prev_1","input":[{"type":"input_text","text":"continue"}]}`)
+	secondResult, err := svc.Forward(context.Background(), newContext(), account, secondBody)
+	require.NoError(t, err)
+	require.NotNil(t, secondResult)
+	require.Equal(t, "resp_oauth_sticky_prev_2", secondResult.RequestID)
+
+	require.Equal(t, 1, captureDialer.DialCount(), "sticky previous_response_id 应复用 response_id 绑定的连接")
+
+	captureConn.mu.Lock()
+	writes := append([]map[string]any(nil), captureConn.writes...)
+	captureConn.mu.Unlock()
+	require.Len(t, writes, 2)
+
+	firstWrite := requestToJSONString(writes[0])
+	require.True(t, gjson.Get(firstWrite, "store").Exists())
+	require.False(t, gjson.Get(firstWrite, "store").Bool(), "OAuth 首轮无 previous_response_id 仍应 store=false")
+	require.False(t, gjson.Get(firstWrite, "previous_response_id").Exists())
+
+	secondWrite := requestToJSONString(writes[1])
+	require.Equal(t, "resp_oauth_sticky_prev_1", gjson.Get(secondWrite, "previous_response_id").String())
+	require.True(t, gjson.Get(secondWrite, "store").Exists(), "sticky OAuth 续链应显式启用 store=true")
+	require.True(t, gjson.Get(secondWrite, "store").Bool(), "sticky OAuth 续链应启用服务端增量上下文")
+}
+
+func TestOpenAIGatewayService_Forward_WSv2_OAuthUnboundPreviousResponseFallsBackStoreFalseNewConn(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.StoreDisabledConnMode = openAIWSStoreDisabledConnModeStrict
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	firstConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_oauth_unbound_seed","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
+		},
+	}
+	secondConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_oauth_unbound_full","model":"gpt-5.1","usage":{"input_tokens":4,"output_tokens":2}}}`),
+		},
+	}
+	dialer := &openAIWSQueueDialer{
+		conns: []openAIWSClientConn{firstConn, secondConn},
+	}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(dialer)
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          131,
+		Name:        "openai-oauth-unbound-prev",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"access_token": "oauth-token-unbound-prev",
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	groupID := int64(13101)
+	apiKeyID := int64(13102)
+	newContext := func(sessionID string) *gin.Context {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+		c.Request.Header.Set("originator", "codex_exec")
+		c.Request.Header.Set("session_id", sessionID)
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+		return c
+	}
+
+	seedBody := []byte(`{"model":"gpt-5.1","stream":false,"input":[{"type":"input_text","text":"seed"}]}`)
+	seedResult, err := svc.Forward(context.Background(), newContext("sess-oauth-unbound-seed"), account, seedBody)
+	require.NoError(t, err)
+	require.NotNil(t, seedResult)
+	require.Equal(t, "resp_oauth_unbound_seed", seedResult.RequestID)
+
+	unboundBody := []byte(`{"model":"gpt-5.1","stream":false,"previous_response_id":"resp_external_unbound","input":[{"type":"input_text","text":"full replay from client"}]}`)
+	unboundResult, err := svc.Forward(context.Background(), newContext("sess-oauth-unbound-new"), account, unboundBody)
+	require.NoError(t, err)
+	require.NotNil(t, unboundResult)
+	require.Equal(t, "resp_oauth_unbound_full", unboundResult.RequestID)
+
+	require.Equal(t, 2, dialer.DialCount(), "未绑定 previous_response_id 不应借用已有 session-bound 连接")
+
+	firstConn.mu.Lock()
+	firstWrites := append([]map[string]any(nil), firstConn.writes...)
+	firstConn.mu.Unlock()
+	require.Len(t, firstWrites, 1, "已有 session-bound 连接不应收到 unbound 续链请求")
+
+	secondConn.mu.Lock()
+	secondWrites := append([]map[string]any(nil), secondConn.writes...)
+	secondConn.mu.Unlock()
+	require.Len(t, secondWrites, 1)
+	secondWrite := requestToJSONString(secondWrites[0])
+	require.False(t, gjson.Get(secondWrite, "previous_response_id").Exists(), "无法证明同账号粘连时应降级为 full create")
+	require.True(t, gjson.Get(secondWrite, "store").Exists())
+	require.False(t, gjson.Get(secondWrite, "store").Bool(), "无法证明同账号粘连时应显式 store=false")
+	require.Equal(t, "full replay from client", gjson.Get(secondWrite, "input.0.text").String())
+}
+
+func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyAccountWithoutConnUsesStoreTrueNewConn(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.StoreDisabledConnMode = openAIWSStoreDisabledConnModeStrict
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	firstConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_oauth_account_only_seed","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
+		},
+	}
+	secondConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_oauth_account_only_next","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":2}}}`),
+		},
+	}
+	dialer := &openAIWSQueueDialer{
+		conns: []openAIWSClientConn{firstConn, secondConn},
+	}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(dialer)
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          132,
+		Name:        "openai-oauth-account-only-prev",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"access_token": "oauth-token-account-only-prev",
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	groupID := int64(13201)
+	apiKeyID := int64(13202)
+	newContext := func(sessionID string) *gin.Context {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+		c.Request.Header.Set("originator", "codex_exec")
+		c.Request.Header.Set("session_id", sessionID)
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+		return c
+	}
+
+	seedBody := []byte(`{"model":"gpt-5.1","stream":false,"input":[{"type":"input_text","text":"seed"}]}`)
+	seedResult, err := svc.Forward(context.Background(), newContext("sess-oauth-account-only-seed"), account, seedBody)
+	require.NoError(t, err)
+	require.NotNil(t, seedResult)
+	require.Equal(t, "resp_oauth_account_only_seed", seedResult.RequestID)
+
+	stateStore := svc.getOpenAIWSStateStore()
+	require.NoError(t, stateStore.BindResponseAccount(context.Background(), groupID, apiKeyID, "resp_oauth_account_only_prev", account.ID, time.Hour))
+	stateStore.DeleteResponseConn(groupID, apiKeyID, "resp_oauth_account_only_prev")
+
+	nextBody := []byte(`{"model":"gpt-5.1","stream":false,"previous_response_id":"resp_oauth_account_only_prev","input":[{"type":"input_text","text":"delta only"}]}`)
+	nextResult, err := svc.Forward(context.Background(), newContext("sess-oauth-account-only-next"), account, nextBody)
+	require.NoError(t, err)
+	require.NotNil(t, nextResult)
+	require.Equal(t, "resp_oauth_account_only_next", nextResult.RequestID)
+
+	require.Equal(t, 2, dialer.DialCount(), "账号粘连有效但 conn 亲和缺失时应新建连接，不能借用其它 session-bound 连接")
+
+	firstConn.mu.Lock()
+	firstWrites := append([]map[string]any(nil), firstConn.writes...)
+	firstConn.mu.Unlock()
+	require.Len(t, firstWrites, 1)
+
+	secondConn.mu.Lock()
+	secondWrites := append([]map[string]any(nil), secondConn.writes...)
+	secondConn.mu.Unlock()
+	require.Len(t, secondWrites, 1)
+	secondWrite := requestToJSONString(secondWrites[0])
+	require.Equal(t, "resp_oauth_account_only_prev", gjson.Get(secondWrite, "previous_response_id").String())
+	require.True(t, gjson.Get(secondWrite, "store").Exists())
+	require.True(t, gjson.Get(secondWrite, "store").Bool(), "账号粘连有效时应启用 store=true 增量")
+	require.Equal(t, "delta only", gjson.Get(secondWrite, "input.0.text").String())
 }
 
 func TestOpenAIGatewayService_BuildOpenAIWSCreatePayload_DropsUnpersistedReasoningItemsWhenStoreFalse(t *testing.T) {
@@ -1242,12 +1550,13 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnMetadataInPayloadOnConnReuse(t *t
 	c2.Request.Header.Set("x-codex-window-id", "session-metadata-reuse:1")
 	c2.Request.Header.Set("x-codex-beta-features", "memories,prevent_idle_sleep")
 	c2.Request.Header.Set("x-client-request-id", "client-req-meta-2")
-	result2, err := svc.Forward(context.Background(), c2, account, body)
+	body2 := []byte(`{"model":"gpt-5.1","stream":false,"store":true,"previous_response_id":"resp_meta_1","input":[{"type":"input_text","text":"hello again"}]}`)
+	result2, err := svc.Forward(context.Background(), c2, account, body2)
 	require.NoError(t, err)
 	require.NotNil(t, result2)
 	require.Equal(t, "resp_meta_2", result2.RequestID)
 
-	require.Equal(t, 1, captureDialer.DialCount(), "同一账号两轮请求应复用同一 WS 连接")
+	require.Equal(t, 1, captureDialer.DialCount(), "previous_response_id 绑定命中时应复用同一 WS 连接")
 	require.Len(t, captureConn.writes, 2)
 
 	firstWrite = requestToJSONString(captureConn.writes[0])
@@ -1462,7 +1771,7 @@ func TestOpenAIGatewayService_Forward_WSv2StoreFalseDisableForceNewConnAllowsReu
 	result2, err := svc.Forward(context.Background(), c2, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result2)
-	require.Equal(t, int64(1), upgradeCount.Load(), "关闭强制新连后，不同 session(store=false) 可复用连接")
+	require.Equal(t, int64(2), upgradeCount.Load(), "关闭强制新连后，不同 session(store=false) 也不得泛复用 session-bound 连接")
 }
 
 func TestOpenAIGatewayService_Forward_WSv2ReadTimeoutAppliesPerRead(t *testing.T) {

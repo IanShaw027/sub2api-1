@@ -44,6 +44,34 @@ func TestOpenAIWSConnPool_CleanupStaleAndTrimIdle(t *testing.T) {
 	require.NotNil(t, ap.conns["idle_new"], "newer idle should be kept")
 }
 
+func TestOpenAIWSConnPool_CleanupMaxIdleEvictsNeutralBeforeSessionBound(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.StickyReservePercent = 50
+	pool := newOpenAIWSConnPool(cfg)
+	defer pool.Close()
+
+	accountID := int64(43)
+	ap := pool.getOrCreateAccountPool(accountID)
+	session := newOpenAIWSConnWithProfile("session_old", &openAIWSFakeConn{}, nil, openAIWSConnProfileSessionBound)
+	session.lastUsedNano.Store(time.Now().Add(-30 * time.Minute).UnixNano())
+	neutralOld := newOpenAIWSConnWithProfile("neutral_old", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral)
+	neutralOld.lastUsedNano.Store(time.Now().Add(-20 * time.Minute).UnixNano())
+	neutralNew := newOpenAIWSConnWithProfile("neutral_new", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral)
+	neutralNew.lastUsedNano.Store(time.Now().Add(-10 * time.Minute).UnixNano())
+
+	ap.conns[session.id] = session
+	ap.conns[neutralOld.id] = neutralOld
+	ap.conns[neutralNew.id] = neutralNew
+
+	evicted := pool.cleanupAccountLocked(ap, time.Now(), 4)
+	closeOpenAIWSConns(evicted)
+
+	require.Len(t, evicted, 1)
+	require.NotNil(t, ap.conns[session.id], "generic max-idle cleanup must preserve idle session_bound before neutral reserve")
+	require.Nil(t, ap.conns[neutralOld.id], "oldest idle neutral should be evicted before session_bound")
+}
+
 func TestOpenAIWSConnPool_NextConnIDFormat(t *testing.T) {
 	pool := newOpenAIWSConnPool(&config.Config{})
 	id1 := pool.nextConnID(42)
@@ -277,16 +305,18 @@ func TestOpenAIWSConnPool_AcquireQueueWaitMetrics(t *testing.T) {
 	pool := newOpenAIWSConnPool(cfg)
 	accountID := int64(99)
 	account := &Account{ID: accountID, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-	conn := newOpenAIWSConn("busy", accountID, &openAIWSFakeConn{}, nil)
+	req := openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		Profile: openAIWSConnProfileNeutral,
+	}
+	conn := newOpenAIWSConnWithProfileAndReuseKey("busy", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral, openAIWSConnReuseKeyForAcquire(req))
 	require.True(t, conn.tryAcquire()) // 占用连接，触发后续排队
 
 	ap := pool.ensureAccountPoolLocked(accountID)
 	ap.mu.Lock()
 	ap.conns[conn.id] = conn
-	ap.lastAcquire = &openAIWSAcquireRequest{
-		Account: account,
-		WSURL:   "wss://example.com/v1/responses",
-	}
+	ap.lastNeutralAcquire = cloneOpenAIWSAcquireRequestPtr(&req)
 	ap.mu.Unlock()
 
 	go func() {
@@ -294,10 +324,7 @@ func TestOpenAIWSConnPool_AcquireQueueWaitMetrics(t *testing.T) {
 		conn.release()
 	}()
 
-	lease, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
-		Account: account,
-		WSURL:   "wss://example.com/v1/responses",
-	})
+	lease, err := pool.Acquire(context.Background(), req)
 	require.NoError(t, err)
 	require.NotNil(t, lease)
 	require.True(t, lease.Reused())
@@ -1394,23 +1421,26 @@ func TestOpenAIWSConnPool_Acquire_ErrorBranches(t *testing.T) {
 	_, err = fullPool.Acquire(context.Background(), openAIWSAcquireRequest{
 		Account: account,
 		WSURL:   "wss://example.com/v1/responses",
+		Profile: openAIWSConnProfileNeutral,
 	})
 	require.ErrorIs(t, err, errOpenAIWSConnClosed)
 
 	// queue full 分支：waiters 达上限
 	account2 := &Account{ID: 2002, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	ap2 := fullPool.getOrCreateAccountPool(account2.ID)
-	conn := newOpenAIWSConn("queue_full", account2.ID, &openAIWSFakeConn{}, nil)
+	req2 := openAIWSAcquireRequest{
+		Account: account2,
+		WSURL:   "wss://example.com/v1/responses",
+		Profile: openAIWSConnProfileNeutral,
+	}
+	conn := newOpenAIWSConnWithProfileAndReuseKey("queue_full", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral, openAIWSConnReuseKeyForAcquire(req2))
 	require.True(t, conn.tryAcquire())
 	conn.waiters.Store(1)
 	ap2.mu.Lock()
 	ap2.conns[conn.id] = conn
 	ap2.lastCleanupAt = time.Now()
 	ap2.mu.Unlock()
-	_, err = fullPool.Acquire(context.Background(), openAIWSAcquireRequest{
-		Account: account2,
-		WSURL:   "wss://example.com/v1/responses",
-	})
+	_, err = fullPool.Acquire(context.Background(), req2)
 	require.ErrorIs(t, err, errOpenAIWSConnQueueFull)
 }
 
@@ -1752,16 +1782,16 @@ func TestOpenAIWSConnPool_ProfileIsolation(t *testing.T) {
 	leaseNeutral2.Release()
 	require.Equal(t, 2, dialer.DialCount())
 
-	// session_bound 请求应复用 session_bound 连接，不借 neutral。
+	// session_bound 请求没有明确 affinity 时不得泛复用带会话握手头的空闲连接。
 	leaseSession2, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
 		Account: account,
 		WSURL:   "wss://example.com/v1/responses",
 	})
 	require.NoError(t, err)
-	require.True(t, leaseSession2.Reused())
+	require.False(t, leaseSession2.Reused(), "session_bound without affinity must not reuse another session-bound connection")
 	require.Equal(t, openAIWSConnProfileSessionBound, leaseSession2.conn.profile)
 	leaseSession2.Release()
-	require.Equal(t, 2, dialer.DialCount())
+	require.Equal(t, 3, dialer.DialCount())
 }
 
 func TestOpenAIWSConnPool_SessionEvictsIdleNeutralWhenFull(t *testing.T) {
@@ -1822,6 +1852,57 @@ func TestOpenAIWSConnPool_SessionEvictsIdleNeutralWhenFull(t *testing.T) {
 
 	leaseSession.Release()
 	leaseSession2.Release()
+}
+
+func TestOpenAIWSConnPool_NeutralIdentityMismatchEvictsIdleWhenNeutralMaxReached(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.StickyReservePercent = 50
+
+	pool := newOpenAIWSConnPool(cfg)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 903, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	headersA := http.Header{}
+	headersA.Set("originator", "codex_cli_rs")
+	headersA.Set("user-agent", codexCLIUserAgent)
+	headersA.Set("OpenAI-Beta", openAIWSBetaV2Value)
+	headersB := headersA.Clone()
+	headersB.Set("originator", "opencode")
+
+	leaseA, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		Headers: headersA,
+		Profile: openAIWSConnProfileNeutral,
+	})
+	require.NoError(t, err)
+	firstConnID := leaseA.ConnID()
+	leaseA.Release()
+	require.Equal(t, 1, dialer.DialCount())
+
+	leaseB, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		Headers: headersB,
+		Profile: openAIWSConnProfileNeutral,
+	})
+	require.NoError(t, err)
+	require.False(t, leaseB.Reused(), "neutral identity mismatch must create a fresh connection")
+	require.NotEqual(t, firstConnID, leaseB.ConnID())
+	require.Equal(t, 2, dialer.DialCount())
+	leaseB.Release()
+
+	ap, ok := pool.getAccountPool(account.ID)
+	require.True(t, ok)
+	ap.mu.Lock()
+	_, oldExists := ap.conns[firstConnID]
+	neutralCount := countConnsByProfileLocked(ap, openAIWSConnProfileNeutral)
+	ap.mu.Unlock()
+	require.False(t, oldExists, "idle neutral with the previous identity should be evicted to make neutralMax room")
+	require.Equal(t, 1, neutralCount)
 }
 
 func TestOpenAIWSConnPool_NeutralMaxConns(t *testing.T) {
