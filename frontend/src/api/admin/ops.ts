@@ -224,6 +224,7 @@ export interface OpsOpenAITokenStatsItem {
   model: string
   request_count: number
   avg_tokens_per_sec?: number | null
+  avg_generation_tokens_per_sec?: number | null
   avg_first_token_ms?: number | null
   total_output_tokens: number
   avg_duration_ms: number

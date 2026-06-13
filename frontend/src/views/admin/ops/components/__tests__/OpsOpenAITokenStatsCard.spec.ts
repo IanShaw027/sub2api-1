@@ -58,6 +58,7 @@ const sampleResponse = {
       model: 'gpt-4o-mini',
       request_count: 12,
       avg_tokens_per_sec: 22.5,
+      avg_generation_tokens_per_sec: 31.75,
       avg_first_token_ms: 123.45,
       total_output_tokens: 1234,
       avg_duration_ms: 321,
@@ -211,6 +212,24 @@ describe('OpsOpenAITokenStatsCard', () => {
     await flushPromises()
 
     expect(wrapper.find('.max-h-\\[420px\\]').exists()).toBe(true)
+  })
+
+  it('显示排除首字延迟后的平均生成速率', async () => {
+    mockGetOpenAITokenStats.mockResolvedValue(sampleResponse)
+
+    const wrapper = mount(OpsOpenAITokenStatsCard, {
+      props: { refreshToken: 0 },
+      global: {
+        stubs: {
+          Select: SelectStub,
+          EmptyState: EmptyStateStub,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.ops.openaiTokenStats.table.avgGenerationTokensPerSec')
+    expect(wrapper.text()).toContain('31.75')
   })
 
   it('接口异常时显示错误提示', async () => {
