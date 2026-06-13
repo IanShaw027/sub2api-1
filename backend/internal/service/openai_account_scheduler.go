@@ -1174,31 +1174,6 @@ func accountSupportsOpenAICapabilities(account *Account, endpointCapability Open
 	return true
 }
 
-func (s *defaultOpenAIAccountScheduler) isStickyAccountSchedulableForRequest(account *Account, req OpenAIAccountScheduleRequest) bool {
-	if account == nil {
-		return false
-	}
-	if req.RequireImageEnabled && !account.OpenAIImageGenerationAllowed() {
-		return false
-	}
-	if req.RequireOAuthAccount && !account.IsOpenAIOAuth() {
-		return false
-	}
-	if req.RequiredImageRoute != "" {
-		if !account.IsOpenAI() || !account.IsSelectableForOpenAIImageRoute(req.RequiredImageRoute, allowRateLimitedOpenAIImageRouteScheduling(req.RequiredImageRoute)) {
-			return false
-		}
-		if NormalizeGroupImageGenerationRoute(req.RequiredImageRoute) == GroupImageGenerationRouteWeb2API && !account.HasOpenAIImageWeb2APIProfile() {
-			return false
-		}
-		if remaining := account.GetRateLimitRemainingTimeWithContext(context.Background(), req.RequestedModel); remaining > 0 {
-			return true
-		}
-		return true
-	}
-	return !shouldClearStickySession(account, req.RequestedModel) && account.IsOpenAI() && account.IsSchedulable()
-}
-
 func (s *defaultOpenAIAccountScheduler) isLoadBalanceAccountSchedulableForRequest(account *Account, req OpenAIAccountScheduleRequest) bool {
 	if account == nil || !account.IsOpenAI() {
 		return false

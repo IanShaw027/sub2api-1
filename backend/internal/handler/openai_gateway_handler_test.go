@@ -2361,9 +2361,7 @@ func (s *openAIWSFailoverHandlerAccountRepoStub) ListByPlatform(ctx context.Cont
 
 func (s *openAIWSFailoverHandlerAccountRepoStub) ListByGroup(ctx context.Context, groupID int64) ([]service.Account, error) {
 	out := make([]service.Account, 0, len(s.accounts))
-	for _, account := range s.accounts {
-		out = append(out, account)
-	}
+	out = append(out, s.accounts...)
 	return out, nil
 }
 
@@ -3058,7 +3056,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentRejectsAfterLiveTo
 	require.NoError(t, err)
 
 	readCtx, cancelRead = context.WithTimeout(context.Background(), 5*time.Second)
-	_, event, err = clientConn.Read(readCtx)
+	_, _, err = clientConn.Read(readCtx)
 	cancelRead()
 	require.Error(t, err)
 	var closeErr coderws.CloseError
@@ -3238,7 +3236,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityRejectsAfterLiveTo
 	require.NoError(t, err)
 
 	readCtx, cancelRead = context.WithTimeout(context.Background(), 5*time.Second)
-	_, event, err = clientConn.Read(readCtx)
+	_, _, err = clientConn.Read(readCtx)
 	cancelRead()
 	require.Error(t, err)
 	var closeErr coderws.CloseError

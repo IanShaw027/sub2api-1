@@ -277,7 +277,7 @@ func readUploadedArchive(fileHeader *multipart.FileHeader) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("无法读取上传文件: %w", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	limited := io.LimitReader(src, archiveImportMaxSize+1)
 	buf, err := io.ReadAll(limited)
@@ -295,7 +295,7 @@ func readZipEntry(f *zip.File, limit int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(rc, limit+1))
 	if err != nil {
 		return nil, err

@@ -324,7 +324,6 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 				account.Type == AccountTypeAPIKey &&
 				openai_compat.ResolveResponsesSupport(account.Extra) == openai_compat.ResponsesSupportUnknown &&
 				!isResponsesEndpointSupportedByStatus(resp.StatusCode) {
-				httpRawChatFallbackRetryTried = true
 				return s.forwardAsRawChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, selectedFallbackModel)
 			}
 			if !httpCodexCompatRetryTried && account.Type == AccountTypeOAuth && oauthReqBody != nil {

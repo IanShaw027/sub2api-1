@@ -93,7 +93,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 
 	// 1b. Extract reasoning effort and service tier from the raw body before any transformation.
 	reasoningEffort := extractOpenAIReasoningEffortFromBody(body, originalModel)
-	serviceTier := extractOpenAIServiceTierFromBody(body)
+	var serviceTier *string
 
 	// 2. Resolve model mapping (same as ForwardAsChatCompletions)
 	billingModel := resolveOpenAIForwardModelWithSettingsAndSelectedFallback(ctx, s.settingService, account, originalModel, defaultMappedModel, selectedFallbackModel)

@@ -441,10 +441,8 @@ func (s *OpsService) GetUserErrorRequestDetail(ctx context.Context, userID int64
 		return nil, infraerrors.NotFound("OPS_ERROR_NOT_FOUND", "ops error log not found")
 	}
 
-	owned := false
-	if detail.UserID != nil && *detail.UserID == userID {
-		owned = true
-	}
+	owned := detail.UserID != nil && *detail.UserID == userID
+
 	if detail.DeletedKeyOwnerUserID != nil && *detail.DeletedKeyOwnerUserID == userID {
 		owned = true
 	}

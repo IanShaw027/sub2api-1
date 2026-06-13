@@ -20,15 +20,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func isAnthropicResponsesTerminalEvent(eventType string) bool {
-	switch strings.TrimSpace(eventType) {
-	case "response.completed", "response.done", "response.incomplete", "response.failed", "response.cancelled", "response.canceled":
-		return true
-	default:
-		return false
-	}
-}
-
 func shouldApplyAnthropicCompatFullReplayGuard(account *Account, previousResponseID string, continuationEnabled bool, continuationDisabled bool, compatReplayGuardEnabled bool) bool {
 	if !compatReplayGuardEnabled || continuationDisabled {
 		return false

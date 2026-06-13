@@ -624,29 +624,29 @@ func TestShouldUseKiroFreeThinkingPath_ThinkingModes(t *testing.T) {
 		{name: "model_and_simulate_sonnet46", model: "claude-sonnet-4-6", mode: KiroThinkingModeModelAndSimulate, expected: false},
 	}
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				parsed := &ParsedRequest{Model: tt.model, ThinkingEnabled: true}
-				require.Equal(t, tt.expected, shouldUseKiroFreeThinkingPath(account, parsed, &KiroRuntimeSettings{ThinkingMode: tt.mode}))
-			})
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed := &ParsedRequest{Model: tt.model, ThinkingEnabled: true}
+			require.Equal(t, tt.expected, shouldUseKiroFreeThinkingPath(account, parsed, &KiroRuntimeSettings{ThinkingMode: tt.mode}))
+		})
 	}
+}
 
-	func TestShouldUseKiroFreeThinkingPathForModel_UsesEffectiveRoutedModel(t *testing.T) {
-		account := &Account{
-			ID:       43,
-			Platform: PlatformKiro,
-			Type:     AccountTypeOAuth,
-			Credentials: map[string]any{
-				"subscription_type": "free",
-			},
-		}
-		parsed := &ParsedRequest{Model: "claude-sonnet-4-6", ThinkingEnabled: true}
-		settings := &KiroRuntimeSettings{ThinkingMode: KiroThinkingModeModelAndSimulate}
-
-		require.False(t, shouldUseKiroFreeThinkingPathForModel(account, parsed, settings, "claude-sonnet-4.6"))
-		require.True(t, shouldUseKiroFreeThinkingPathForModel(account, parsed, settings, "claude-sonnet-4.5"))
+func TestShouldUseKiroFreeThinkingPathForModel_UsesEffectiveRoutedModel(t *testing.T) {
+	account := &Account{
+		ID:       43,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"subscription_type": "free",
+		},
 	}
+	parsed := &ParsedRequest{Model: "claude-sonnet-4-6", ThinkingEnabled: true}
+	settings := &KiroRuntimeSettings{ThinkingMode: KiroThinkingModeModelAndSimulate}
+
+	require.False(t, shouldUseKiroFreeThinkingPathForModel(account, parsed, settings, "claude-sonnet-4.6"))
+	require.True(t, shouldUseKiroFreeThinkingPathForModel(account, parsed, settings, "claude-sonnet-4.5"))
+}
 
 func TestRenderKiroThinkingSimulation_AddsVisibleThinkingForNativeThinkingModels(t *testing.T) {
 	settings := &KiroRuntimeSettings{
@@ -1129,7 +1129,8 @@ func TestNormalizeKiroShadowToolHistory_RewritesServerToolHistoryToShadowToolPai
 	require.Equal(t, "tool_use", firstAssistantBlock["type"])
 	require.Equal(t, "toolu_search_1", firstAssistantBlock["id"])
 	require.Equal(t, "cc_srv_web_search", firstAssistantBlock["name"])
-	require.Equal(t, "golang", firstAssistantBlock["input"].(map[string]any)["query"])
+	firstAssistantInput, _ := firstAssistantBlock["input"].(map[string]any)
+	require.Equal(t, "golang", firstAssistantInput["query"])
 
 	user, ok := messages[1].(map[string]any)
 	require.True(t, ok)
@@ -1190,14 +1191,14 @@ func TestNormalizeKiroShadowToolHistory_RewritesWebFetchErrorToErrorToolResultAn
 
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(normalized, &payload))
-	messages := payload["messages"].([]any)
+	messages, _ := payload["messages"].([]any)
 
-	assistant := messages[0].(map[string]any)
-	assistantContent := assistant["content"].([]any)
-	firstAssistantBlock := assistantContent[0].(map[string]any)
+	assistant, _ := messages[0].(map[string]any)
+	assistantContent, _ := assistant["content"].([]any)
+	firstAssistantBlock, _ := assistantContent[0].(map[string]any)
 	require.Equal(t, "tool_use", firstAssistantBlock["type"])
 	require.Equal(t, "cc_srv_web_fetch", firstAssistantBlock["name"])
-	shadowBridge := firstAssistantBlock["_shadow_bridge"].(map[string]any)
+	shadowBridge, _ := firstAssistantBlock["_shadow_bridge"].(map[string]any)
 	require.Equal(t, "web_fetch", shadowBridge["anthropic_name"])
 	require.Equal(t, "web_fetch", shadowBridge["anthropic_type"])
 	require.Equal(t, float64(2), shadowBridge["max_uses"])
@@ -1205,12 +1206,12 @@ func TestNormalizeKiroShadowToolHistory_RewritesWebFetchErrorToErrorToolResultAn
 	require.Equal(t, []any{"example.com", "docs.example.com"}, shadowBridge["allowed_domains"])
 	require.Equal(t, []any{"blocked.example.com"}, shadowBridge["blocked_domains"])
 
-	user := messages[1].(map[string]any)
-	userContent := user["content"].([]any)
-	firstUserBlock := userContent[0].(map[string]any)
+	user, _ := messages[1].(map[string]any)
+	userContent, _ := user["content"].([]any)
+	firstUserBlock, _ := userContent[0].(map[string]any)
 	require.Equal(t, "tool_result", firstUserBlock["type"])
 	require.Equal(t, true, firstUserBlock["is_error"])
-	errorContent := firstUserBlock["content"].(map[string]any)
+	errorContent, _ := firstUserBlock["content"].(map[string]any)
 	require.Equal(t, "web_fetch_tool_error", errorContent["type"])
 	require.Equal(t, "url_not_accessible", errorContent["error_code"])
 }
@@ -2991,13 +2992,13 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchTruncatesToMaxContent
 
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
-	content := payload["content"].([]any)
-	resultBlock := content[1].(map[string]any)
-	fetchContent := resultBlock["content"].(map[string]any)
-	text := fetchContent["text"].(string)
+	content, _ := payload["content"].([]any)
+	resultBlock, _ := content[1].(map[string]any)
+	fetchContent, _ := resultBlock["content"].(map[string]any)
+	text, _ := fetchContent["text"].(string)
 	require.LessOrEqual(t, kiropkg.AccurateTokenCount(text), 4)
-	document := fetchContent["document"].(map[string]any)
-	source := document["source"].(map[string]any)
+	document, _ := fetchContent["document"].(map[string]any)
+	source, _ := document["source"].(map[string]any)
 	require.Equal(t, text, source["data"])
 }
 

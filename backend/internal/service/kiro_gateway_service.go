@@ -497,13 +497,6 @@ func shouldApplyKiroThinking(parsed *ParsedRequest, runtimeSettings *KiroRuntime
 	return kiroThinkingEffortRank(effort) >= kiroThinkingEffortRank(threshold)
 }
 
-func kiroModelNeedsFreeThinkingPreparation(parsed *ParsedRequest) bool {
-	if parsed == nil {
-		return false
-	}
-	return kiroModelNeedsFreeThinkingPreparationForModel(parsed.Model)
-}
-
 func kiroModelNeedsFreeThinkingPreparationForModel(model string) bool {
 	mappedModel := strings.TrimSpace(kiropkg.MapModel(model))
 	return strings.HasPrefix(mappedModel, "claude-sonnet-4.5")
@@ -1658,7 +1651,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				return nil, readErr
 			}
 			if !streamStarted && firstForwardableTimeoutTriggered.Load() {
-				timeoutErr := fmt.Errorf("Kiro upstream did not emit a forwardable event within %s", kiroFirstForwardableEventTimeout)
+				timeoutErr := fmt.Errorf("kiro upstream did not emit a forwardable event within %s", kiroFirstForwardableEventTimeout)
 				return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusGatewayTimeout, kiroTransportFailureReasonKeyword, timeoutErr.Error(), readErr.Error())
 			}
 			if readErr == io.EOF {
@@ -2906,20 +2899,6 @@ func kiroVisibleToolStateCounts(states map[string]*kiroToolState, order []string
 		partial++
 	}
 	return visible, completed, partial
-}
-
-func kiroCompletedToolNames(states map[string]*kiroToolState, order []string) []string {
-	names := make([]string, 0, len(order))
-	for _, toolUseID := range order {
-		state := states[toolUseID]
-		if !kiroToolStateIsComplete(state) {
-			continue
-		}
-		if name := strings.TrimSpace(state.Name); name != "" {
-			names = append(names, name)
-		}
-	}
-	return names
 }
 
 func kiroStopReasonFromContextUsage(usagePercent float64) string {

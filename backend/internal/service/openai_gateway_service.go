@@ -4285,7 +4285,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return nil, err
 		}
 		if hasOpenAIImageGenerationTool(decoded) {
-			imageIntent = true
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] /responses image_generation request inbound_model=%s mapped_model=%s account_type=%s", requestView.Model, upstreamModel, account.Type)
 		}
 		if codexImageGenerationBridgeEnabled && applyCodexImageGenerationBridgeInstructions(decoded) {
@@ -8297,10 +8296,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				}
 			}
 			if normalizedData, normalized := normalizeResponsesStreamingTerminalOutput(dataBytes, streamOutputAccumulator, streamImageOutputs); normalized {
-				dataBytes = normalizedData
 				openAICompatSetSSEFrameData(&frame, string(normalizedData))
-				eventType, data = openAIStreamFrameEventTypeAndData(frame)
-				hasData = strings.TrimSpace(data) != ""
 			}
 		}
 
@@ -10724,10 +10720,6 @@ func shouldStripTopPForResponsesUpstream(account *Account) bool {
 	}
 	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
 	return host == "api.openai.com"
-}
-
-func normalizeOpenAIResponsesInputToolRoles(reqBody map[string]any) bool {
-	return normalizeOpenAIResponsesInputToolRolesWithOptions(reqBody, true)
 }
 
 func normalizeOpenAIResponsesInputToolRolesWithOptions(reqBody map[string]any, sanitizeOrphans bool) bool {

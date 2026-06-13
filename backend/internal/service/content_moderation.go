@@ -575,14 +575,12 @@ type ContentModerationService struct {
 }
 
 type contentModerationTask struct {
-	input            ContentModerationCheckInput
-	content          ContentModerationInput
-	inputHash        string
-	log              *ContentModerationLog
-	config           *ContentModerationConfig
-	recordHash       bool
-	applySideEffects bool
-	enqueuedAt       time.Time
+	input      ContentModerationCheckInput
+	content    ContentModerationInput
+	inputHash  string
+	log        *ContentModerationLog
+	config     *ContentModerationConfig
+	enqueuedAt time.Time
 }
 
 type contentModerationKeyHealth struct {
@@ -2835,11 +2833,12 @@ func estimateModerationTokenUsage(input any) int {
 	case []moderationAPIInputPart:
 		var b strings.Builder
 		for _, part := range v {
-			if part.Type == "text" {
-				b.WriteString(part.Text)
-				b.WriteByte('\n')
-			} else if part.Type == "image_url" {
-				b.WriteString(" image ")
+			switch part.Type {
+			case "text":
+				_, _ = b.WriteString(part.Text)
+				_ = b.WriteByte('\n')
+			case "image_url":
+				_, _ = b.WriteString(" image ")
 			}
 		}
 		text = b.String()

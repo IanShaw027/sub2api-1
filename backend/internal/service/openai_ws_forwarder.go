@@ -1345,16 +1345,6 @@ func (s *OpenAIGatewayService) attachOpenAIWSOAuthClientMetadata(payload map[str
 	}
 }
 
-func (s *OpenAIGatewayService) isOpenAIWSStoreRecoveryAllowed(account *Account) bool {
-	if account != nil && account.IsOpenAIWSAllowStoreRecoveryEnabled() {
-		return true
-	}
-	if s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.AllowStoreRecovery {
-		return true
-	}
-	return false
-}
-
 type openAIWSContinuationStoreDecision struct {
 	StoreMode                  string
 	StoreEnabled               bool
@@ -1644,21 +1634,6 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecisionRawWithOp
 	decision.StickyAccountHit = true
 	decision.FallbackReason = ""
 	return updated, decision, nil
-}
-
-func (s *OpenAIGatewayService) isOpenAIWSStoreDisabledInRequest(reqBody map[string]any, account *Account) bool {
-	if len(reqBody) == 0 {
-		return false
-	}
-	rawStore, ok := reqBody["store"]
-	if !ok {
-		return false
-	}
-	storeEnabled, ok := rawStore.(bool)
-	if !ok {
-		return false
-	}
-	return !storeEnabled
 }
 
 func (s *OpenAIGatewayService) shouldUseOpenAIHTTPIngressWSOneShot(c *gin.Context, payload map[string]any, previousResponseID, promptCacheKey string) bool {

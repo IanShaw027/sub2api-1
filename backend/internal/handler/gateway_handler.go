@@ -1645,31 +1645,6 @@ func (h *GatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarte
 	return true
 }
 
-// gatewayForwardErrorAlreadyCommunicated reports whether a Forward implementation
-// has already written a complete error response to the client before returning
-// an error to the handler.
-//
-// This is intentionally narrower than "writer size changed": a stream may have
-// only emitted keepalive pings or partial data, in which case the handler still
-// needs to append a protocol-level terminal error. Non-SSE output from Forward
-// is different: service-level helpers such as handleErrorResponse/writeClaudeError
-// already wrote the client-visible JSON body, so adding the generic streaming
-// fallback would corrupt the response by appending a second `data: ...` frame.
-func gatewayForwardErrorAlreadyCommunicated(c *gin.Context, writerSizeBeforeForward int, err error) bool {
-	if err == nil || c == nil || c.Writer == nil {
-		return false
-	}
-	if c.Writer.Size() == writerSizeBeforeForward {
-		return false
-	}
-
-	contentType := strings.ToLower(strings.TrimSpace(c.Writer.Header().Get("Content-Type")))
-	if contentType == "" {
-		return false
-	}
-	return !strings.Contains(contentType, "text/event-stream")
-}
-
 // checkClaudeCodeVersion 检查 Claude Code 客户端版本是否满足版本要求
 // 仅对已识别的 Claude Code 客户端执行，count_tokens 路径除外
 func (h *GatewayHandler) checkClaudeCodeVersion(c *gin.Context) bool {

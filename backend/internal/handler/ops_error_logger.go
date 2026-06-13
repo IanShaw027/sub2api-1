@@ -1494,15 +1494,6 @@ func hasOpsUpstreamErrorContext(c *gin.Context) bool {
 	return false
 }
 
-func isOpsNoAvailableAccountMessage(message string) bool {
-	msg := strings.ToLower(message)
-	return strings.Contains(msg, opsErrNoAvailableAccounts) ||
-		strings.Contains(msg, "no available account") ||
-		strings.Contains(msg, "no available gemini accounts") ||
-		strings.Contains(msg, "no available openai accounts") ||
-		strings.Contains(msg, "no available compatible accounts")
-}
-
 func classifyOpsErrorOwner(phase, errType, message, code string) string {
 	// Standardized owners: client|account|provider|platform
 	switch phase {
