@@ -484,100 +484,10 @@
 
         <!-- Custom Error Codes Section -->
         <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
-          <div class="mb-3 flex items-center justify-between">
-            <div>
-              <label class="input-label mb-0">{{ t('admin.accounts.customErrorCodes') }}</label>
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {{ t('admin.accounts.customErrorCodesHint') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              @click="customErrorCodesEnabled = !customErrorCodesEnabled"
-              :class="[
-                'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                customErrorCodesEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
-              ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                  customErrorCodesEnabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-
-          <div v-if="customErrorCodesEnabled" class="space-y-3">
-            <div class="rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20">
-              <p class="text-xs text-amber-700 dark:text-amber-400">
-                <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
-                {{ t('admin.accounts.customErrorCodesWarning') }}
-              </p>
-            </div>
-
-            <!-- Error Code Buttons -->
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="code in commonErrorCodes"
-                :key="code.value"
-                type="button"
-                @click="toggleErrorCode(code.value)"
-                :class="[
-                  'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
-                  selectedErrorCodes.includes(code.value)
-                    ? 'bg-red-100 text-red-700 ring-1 ring-red-500 dark:bg-red-900/30 dark:text-red-400'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
-                ]"
-              >
-                {{ code.value }} {{ code.label }}
-              </button>
-            </div>
-
-            <!-- Manual input -->
-            <div class="flex items-center gap-2">
-              <input
-                v-model.number="customErrorCodeInput"
-                type="number"
-                min="100"
-                max="599"
-                class="input flex-1"
-                :placeholder="t('admin.accounts.enterErrorCode')"
-                @keyup.enter="addCustomErrorCode"
-              />
-              <button type="button" @click="addCustomErrorCode" class="btn btn-secondary px-3">
-                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 4v16m8-8H4"
-                  />
-                </svg>
-              </button>
-            </div>
-
-            <!-- Selected codes summary -->
-            <div class="flex flex-wrap gap-1.5">
-              <span
-                v-for="code in selectedErrorCodes.sort((a, b) => a - b)"
-                :key="code"
-                class="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-sm font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400"
-              >
-                {{ code }}
-                <button
-                  type="button"
-                  @click="removeErrorCode(code)"
-                  class="hover:text-red-900 dark:hover:text-red-300"
-                >
-                  <Icon name="x" size="sm" :stroke-width="2" />
-                </button>
-              </span>
-              <span v-if="selectedErrorCodes.length === 0" class="text-xs text-gray-400">
-                {{ t('admin.accounts.noneSelectedUsesDefault') }}
-              </span>
-            </div>
-          </div>
+          <CustomErrorCodesForm
+            v-model:enabled="customErrorCodesEnabled"
+            v-model:codes="selectedErrorCodes"
+          />
         </div>
 
       </div>
@@ -1254,151 +1164,12 @@
       </div>
 
       <!-- Temp Unschedulable Rules -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
-        <div class="mb-3 flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.tempUnschedulable.title') }}</label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.tempUnschedulable.hint') }}
-            </p>
-          </div>
-          <button
-            type="button"
-            @click="tempUnschedEnabled = !tempUnschedEnabled"
-            :class="[
-              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              tempUnschedEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
-            ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                tempUnschedEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
-        </div>
-
-        <div v-if="tempUnschedEnabled" class="space-y-3">
-          <div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
-            <p class="text-xs text-blue-700 dark:text-blue-400">
-              <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
-              {{ t('admin.accounts.tempUnschedulable.notice') }}
-            </p>
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="preset in tempUnschedPresets"
-              :key="preset.label"
-              type="button"
-              @click="addTempUnschedRule(preset.rule)"
-              class="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
-            >
-              + {{ preset.label }}
-            </button>
-          </div>
-
-          <div v-if="tempUnschedRules.length > 0" class="space-y-3">
-            <div
-              v-for="(rule, index) in tempUnschedRules"
-              :key="getTempUnschedRuleKey(rule)"
-              class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"
-            >
-              <div class="mb-2 flex items-center justify-between">
-                <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t('admin.accounts.tempUnschedulable.ruleIndex', { index: index + 1 }) }}
-                </span>
-                <div class="flex items-center gap-2">
-                  <button
-                    type="button"
-                    :disabled="index === 0"
-                    @click="moveTempUnschedRule(index, -1)"
-                    class="rounded p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
-                  >
-                    <Icon name="chevronUp" size="sm" :stroke-width="2" />
-                  </button>
-                  <button
-                    type="button"
-                    :disabled="index === tempUnschedRules.length - 1"
-                    @click="moveTempUnschedRule(index, 1)"
-                    class="rounded p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
-                  >
-                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    @click="removeTempUnschedRule(index)"
-                    class="rounded p-1 text-red-500 transition-colors hover:text-red-600"
-                  >
-                    <Icon name="x" size="sm" :stroke-width="2" />
-                  </button>
-                </div>
-              </div>
-
-              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <label class="input-label">{{ t('admin.accounts.tempUnschedulable.errorCode') }}</label>
-                  <input
-                    v-model.number="rule.error_code"
-                    type="number"
-                    min="100"
-                    max="599"
-                    class="input"
-                    :placeholder="t('admin.accounts.tempUnschedulable.errorCodePlaceholder')"
-                  />
-                </div>
-                <div>
-                  <label class="input-label">{{ t('admin.accounts.tempUnschedulable.durationMinutes') }}</label>
-                  <input
-                    v-model.number="rule.duration_minutes"
-                    type="number"
-                    min="1"
-                    class="input"
-                    :placeholder="t('admin.accounts.tempUnschedulable.durationPlaceholder')"
-                  />
-                </div>
-                <div class="sm:col-span-2">
-                  <label class="input-label">{{ t('admin.accounts.tempUnschedulable.keywords') }}</label>
-                  <input
-                    v-model="rule.keywords"
-                    type="text"
-                    class="input"
-                    :placeholder="t('admin.accounts.tempUnschedulable.keywordsPlaceholder')"
-                  />
-                  <p class="input-hint">{{ t('admin.accounts.tempUnschedulable.keywordsHint') }}</p>
-                </div>
-                <div class="sm:col-span-2">
-                  <label class="input-label">{{ t('admin.accounts.tempUnschedulable.description') }}</label>
-                  <input
-                    v-model="rule.description"
-                    type="text"
-                    class="input"
-                    :placeholder="t('admin.accounts.tempUnschedulable.descriptionPlaceholder')"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            @click="addTempUnschedRule()"
-            class="w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-sm text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
-          >
-            <svg
-              class="mr-1 inline h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
-            {{ t('admin.accounts.tempUnschedulable.addRule') }}
-          </button>
-        </div>
+      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <TempUnschedRulesForm
+          v-model:enabled="tempUnschedEnabled"
+          v-model:rules="tempUnschedRules"
+          :presets="tempUnschedPresets"
+        />
       </div>
 
       <div
@@ -2794,13 +2565,21 @@ import GroupSelector from '@/components/common/GroupSelector.vue'
 import AccountQuotaInfo from '@/components/account/AccountQuotaInfo.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
+import TempUnschedRulesForm from '@/components/account/TempUnschedRulesForm.vue'
+import CustomErrorCodesForm from '@/components/account/CustomErrorCodesForm.vue'
 import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
+import { buildCustomErrorCodesResult } from '@/components/account/customErrorCodes'
 import {
   buildResponseRewriteRules,
   hasResponseRewriteRuleInputs,
   loadResponseRewriteRules,
   type ResponseRewriteRuleForm
 } from '@/components/account/responseRewriteRules'
+import {
+  buildTempUnschedRulesResult,
+  loadTempUnschedRules,
+  type TempUnschedRuleForm
+} from '@/components/account/tempUnschedRules'
 import { stripKiroRuntimeExtra } from '@/composables/useKiroOAuth'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
@@ -2816,7 +2595,6 @@ import {
 } from '@/utils/openaiWsMode'
 import {
   getPresetMappingsByPlatform,
-  commonErrorCodes,
   buildModelMappingObject,
   isValidWildcardPattern
 } from '@/composables/useModelWhitelist'
@@ -2862,13 +2640,6 @@ const bedrockPresets = computed(() => getPresetMappingsByPlatform('bedrock'))
 interface ModelMapping {
   from: string
   to: string
-}
-
-interface TempUnschedRuleForm {
-  error_code: number | null
-  keywords: string
-  duration_minutes: number | null
-  description: string
 }
 
 // State
@@ -2933,7 +2704,6 @@ function formatPoolModeRetryStatusCodes(value: unknown): string {
 }
 const customErrorCodesEnabled = ref(false)
 const selectedErrorCodes = ref<number[]>([])
-const customErrorCodeInput = ref<number | null>(null)
 const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(false)
 const autoPause5hThreshold = ref<number | null>(null)
@@ -2951,7 +2721,6 @@ const responseRewriteRules = ref<ResponseRewriteRuleForm[]>([])
 const getModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-model-mapping')
 const getOpenAICompactModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-openai-compact-model-mapping')
 const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-antigravity-model-mapping')
-const getTempUnschedRuleKey = createStableObjectKeyResolver<TempUnschedRuleForm>('edit-temp-unsched-rule')
 const getResponseRewriteRuleKey = createStableObjectKeyResolver<ResponseRewriteRuleForm>('edit-response-rewrite-rule')
 
 const showMixedChannelWarning = ref(false)
@@ -3300,6 +3069,60 @@ const tempUnschedPresets = computed(() => [
       duration_minutes: 30,
       description: t('admin.accounts.tempUnschedulable.presets.unavailableDesc')
     }
+  },
+  {
+    label: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamUnavailableLabel'),
+    rule: {
+      error_code: 502,
+      keywords: 'Upstream service temporarily unavailable',
+      duration_minutes: 10,
+      description: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamUnavailableDesc')
+    }
+  },
+  {
+    label: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamFailedLabel'),
+    rule: {
+      error_code: 502,
+      keywords: 'Upstream request failed',
+      duration_minutes: 10,
+      description: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamFailedDesc')
+    }
+  },
+  {
+    label: t('admin.accounts.tempUnschedulable.presets.openaiServiceUnavailableLabel'),
+    rule: {
+      error_code: 503,
+      keywords: 'Service temporarily unavailable',
+      duration_minutes: 10,
+      description: t('admin.accounts.tempUnschedulable.presets.openaiServiceUnavailableDesc')
+    }
+  },
+  {
+    label: t('admin.accounts.tempUnschedulable.presets.openaiOverloadedLabel'),
+    rule: {
+      error_code: 503,
+      keywords: 'overloaded',
+      duration_minutes: 10,
+      description: t('admin.accounts.tempUnschedulable.presets.openaiOverloadedDesc')
+    }
+  },
+  {
+    label: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamConnLabel'),
+    rule: {
+      error_code: 500,
+      keywords: 'upstream connection failed, Upstream transport error',
+      duration_minutes: 10,
+      description: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamConnDesc')
+    }
+  },
+  {
+    label: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamForbiddenLabel'),
+    rule: {
+      error_code: 502,
+      keywords: 'Upstream access forbidden',
+      duration_minutes: 10,
+      description: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamForbiddenDesc')
+    }
   }
 ])
 
@@ -3548,7 +3371,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   // Load quota/TLS control settings
   loadQuotaControlSettings(newAccount)
 
-  loadTempUnschedRules(credentials)
+  tempUnschedEnabled.value = credentials?.temp_unschedulable_enabled === true
+  tempUnschedRules.value = loadTempUnschedRules(credentials)
   responseRewriteRules.value = newAccount.platform === 'openai'
     ? loadResponseRewriteRules(credentials)
     : []
@@ -3824,85 +3648,6 @@ const addAntigravityPresetMapping = (from: string, to: string) => {
   antigravityModelMappings.value.push({ from, to })
 }
 
-// Error code toggle helper
-const toggleErrorCode = (code: number) => {
-  const index = selectedErrorCodes.value.indexOf(code)
-  if (index === -1) {
-    // Adding code - check for 429/529 warning
-    if (code === 429) {
-      if (!confirm(t('admin.accounts.customErrorCodes429Warning'))) {
-        return
-      }
-    } else if (code === 529) {
-      if (!confirm(t('admin.accounts.customErrorCodes529Warning'))) {
-        return
-      }
-    }
-    selectedErrorCodes.value.push(code)
-  } else {
-    selectedErrorCodes.value.splice(index, 1)
-  }
-}
-
-// Add custom error code from input
-const addCustomErrorCode = () => {
-  const code = customErrorCodeInput.value
-  if (code === null || code < 100 || code > 599) {
-    appStore.showError(t('admin.accounts.invalidErrorCode'))
-    return
-  }
-  if (selectedErrorCodes.value.includes(code)) {
-    appStore.showInfo(t('admin.accounts.errorCodeExists'))
-    return
-  }
-  // Check for 429/529 warning
-  if (code === 429) {
-    if (!confirm(t('admin.accounts.customErrorCodes429Warning'))) {
-      return
-    }
-  } else if (code === 529) {
-    if (!confirm(t('admin.accounts.customErrorCodes529Warning'))) {
-      return
-    }
-  }
-  selectedErrorCodes.value.push(code)
-  customErrorCodeInput.value = null
-}
-
-// Remove error code
-const removeErrorCode = (code: number) => {
-  const index = selectedErrorCodes.value.indexOf(code)
-  if (index !== -1) {
-    selectedErrorCodes.value.splice(index, 1)
-  }
-}
-
-const addTempUnschedRule = (preset?: TempUnschedRuleForm) => {
-  if (preset) {
-    tempUnschedRules.value.push({ ...preset })
-    return
-  }
-  tempUnschedRules.value.push({
-    error_code: null,
-    keywords: '',
-    duration_minutes: 30,
-    description: ''
-  })
-}
-
-const removeTempUnschedRule = (index: number) => {
-  tempUnschedRules.value.splice(index, 1)
-}
-
-const moveTempUnschedRule = (index: number, direction: number) => {
-  const target = index + direction
-  if (target < 0 || target >= tempUnschedRules.value.length) return
-  const rules = tempUnschedRules.value
-  const current = rules[index]
-  rules[index] = rules[target]
-  rules[target] = current
-}
-
 const addResponseRewriteRule = () => {
   responseRewriteRules.value.push({
     status_code: null,
@@ -3926,38 +3671,6 @@ const moveResponseRewriteRule = (index: number, direction: number) => {
   rules[target] = current
 }
 
-const buildTempUnschedRules = (rules: TempUnschedRuleForm[]) => {
-  const out: Array<{
-    error_code: number
-    keywords: string[]
-    duration_minutes: number
-    description: string
-  }> = []
-
-  for (const rule of rules) {
-    const errorCode = Number(rule.error_code)
-    const duration = Number(rule.duration_minutes)
-    const keywords = splitTempUnschedKeywords(rule.keywords)
-    if (!Number.isFinite(errorCode) || errorCode < 100 || errorCode > 599) {
-      continue
-    }
-    if (!Number.isFinite(duration) || duration <= 0) {
-      continue
-    }
-    if (keywords.length === 0) {
-      continue
-    }
-    out.push({
-      error_code: Math.trunc(errorCode),
-      keywords,
-      duration_minutes: Math.trunc(duration),
-      description: rule.description.trim()
-    })
-  }
-
-  return out
-}
-
 const applyTempUnschedConfig = (credentials: Record<string, unknown>) => {
   if (!tempUnschedEnabled.value) {
     delete credentials.temp_unschedulable_enabled
@@ -3965,14 +3678,14 @@ const applyTempUnschedConfig = (credentials: Record<string, unknown>) => {
     return true
   }
 
-  const rules = buildTempUnschedRules(tempUnschedRules.value)
-  if (rules.length === 0) {
+  const result = buildTempUnschedRulesResult(tempUnschedRules.value)
+  if (result.invalid || result.rules.length === 0) {
     appStore.showError(t('admin.accounts.tempUnschedulable.rulesInvalid'))
     return false
   }
 
   credentials.temp_unschedulable_enabled = true
-  credentials.temp_unschedulable_rules = rules
+  credentials.temp_unschedulable_rules = result.rules
   return true
 }
 
@@ -4029,11 +3742,12 @@ const applyTempUnschedPatch = (
     return true
   }
 
-  const nextTempUnschedRules = buildTempUnschedRules(tempUnschedRules.value)
-  if (nextTempUnschedRules.length === 0) {
+  const nextTempUnschedResult = buildTempUnschedRulesResult(tempUnschedRules.value)
+  if (nextTempUnschedResult.invalid || nextTempUnschedResult.rules.length === 0) {
     appStore.showError(t('admin.accounts.tempUnschedulable.rulesInvalid'))
     return false
   }
+  const nextTempUnschedRules = nextTempUnschedResult.rules
   if (
     !currentTempUnschedEnabled ||
     credentialsValueChanged(currentTempUnschedRules, nextTempUnschedRules)
@@ -4087,25 +3801,6 @@ const applyCredentialRulePatches = (
     return false
   }
   return true
-}
-
-function loadTempUnschedRules(credentials?: Record<string, unknown>) {
-  tempUnschedEnabled.value = credentials?.temp_unschedulable_enabled === true
-  const rawRules = credentials?.temp_unschedulable_rules
-  if (!Array.isArray(rawRules)) {
-    tempUnschedRules.value = []
-    return
-  }
-
-  tempUnschedRules.value = rawRules.map((rule) => {
-    const entry = rule as Record<string, unknown>
-    return {
-      error_code: toPositiveNumber(entry.error_code),
-      keywords: formatTempUnschedKeywords(entry.keywords),
-      duration_minutes: toPositiveNumber(entry.duration_minutes),
-      description: typeof entry.description === 'string' ? entry.description : ''
-    }
-  })
 }
 
 // Load quota/TLS control settings from account
@@ -4194,35 +3889,6 @@ function loadQuotaControlSettings(account: Account) {
     customBaseUrlEnabled.value = true
     customBaseUrl.value = account.custom_base_url || ''
   }
-}
-
-function formatTempUnschedKeywords(value: unknown) {
-  if (Array.isArray(value)) {
-    return value
-      .filter((item): item is string => typeof item === 'string')
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0)
-      .join(', ')
-  }
-  if (typeof value === 'string') {
-    return value
-  }
-  return ''
-}
-
-const splitTempUnschedKeywords = (value: string) => {
-  return value
-    .split(/[,;]/)
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0)
-}
-
-function toPositiveNumber(value: unknown) {
-  const num = Number(value)
-  if (!Number.isFinite(num) || num <= 0) {
-    return null
-  }
-  return Math.trunc(num)
 }
 
 const needsMixedChannelCheck = () => props.account?.platform === 'antigravity' || props.account?.platform === 'anthropic'
@@ -4727,11 +4393,12 @@ const handleSubmit = async () => {
           newCredentials.temp_unschedulable_rules = []
         }
       } else {
-        const nextTempUnschedRules = buildTempUnschedRules(tempUnschedRules.value)
-        if (nextTempUnschedRules.length === 0) {
+        const nextTempUnschedResult = buildTempUnschedRulesResult(tempUnschedRules.value)
+        if (nextTempUnschedResult.invalid || nextTempUnschedResult.rules.length === 0) {
           appStore.showError(t('admin.accounts.tempUnschedulable.rulesInvalid'))
           return
         }
+        const nextTempUnschedRules = nextTempUnschedResult.rules
         if (
           !currentTempUnschedEnabled ||
           credentialsValueChanged(currentTempUnschedRules, nextTempUnschedRules)
@@ -4774,11 +4441,12 @@ const handleSubmit = async () => {
           newCredentials.temp_unschedulable_rules = []
         }
       } else {
-        const nextTempUnschedRules = buildTempUnschedRules(tempUnschedRules.value)
-        if (nextTempUnschedRules.length === 0) {
+        const nextTempUnschedResult = buildTempUnschedRulesResult(tempUnschedRules.value)
+        if (nextTempUnschedResult.invalid || nextTempUnschedResult.rules.length === 0) {
           appStore.showError(t('admin.accounts.tempUnschedulable.rulesInvalid'))
           return
         }
+        const nextTempUnschedRules = nextTempUnschedResult.rules
         if (
           !currentTempUnschedEnabled ||
           credentialsValueChanged(currentTempUnschedRules, nextTempUnschedRules)
@@ -4850,8 +4518,13 @@ const handleSubmit = async () => {
 
       // Add custom error codes if enabled
       if (customErrorCodesEnabled.value) {
+        const customErrorCodesResult = buildCustomErrorCodesResult(selectedErrorCodes.value)
+        if (customErrorCodesResult.invalid) {
+          appStore.showError(t('admin.accounts.invalidErrorCode'))
+          return
+        }
         newCredentials.custom_error_codes_enabled = true
-        newCredentials.custom_error_codes = [...selectedErrorCodes.value]
+        newCredentials.custom_error_codes = customErrorCodesResult.codes
       } else {
         delete newCredentials.custom_error_codes_enabled
         delete newCredentials.custom_error_codes

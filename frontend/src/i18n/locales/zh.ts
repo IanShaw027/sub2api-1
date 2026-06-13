@@ -4009,7 +4009,7 @@ export default {
         keywordsHint: '多个关键词用逗号分隔，匹配时必须命中其中之一。',
         description: '描述',
         descriptionPlaceholder: '可选，便于记忆规则用途',
-        rulesInvalid: '请至少填写一条包含错误码、关键词和时长的规则。',
+        rulesInvalid: '请至少填写一条包含错误码和时长的规则，关键词可留空。',
         viewDetails: '查看临时不可调度详情',
         accountName: '账号',
         triggeredAt: '触发时间',
@@ -4032,7 +4032,19 @@ export default {
           rateLimitLabel: '429 限流',
           rateLimitDesc: '触发限流 - 暂停 10 分钟',
           unavailableLabel: '503 维护',
-          unavailableDesc: '服务不可用 - 暂停 30 分钟'
+          unavailableDesc: '服务不可用 - 暂停 30 分钟',
+          openaiUpstreamUnavailableLabel: '502 上游不可用',
+          openaiUpstreamUnavailableDesc: '上游服务临时不可用 - 暂停 10 分钟',
+          openaiUpstreamFailedLabel: '502 上游失败',
+          openaiUpstreamFailedDesc: '上游请求失败 - 暂停 10 分钟',
+          openaiUpstreamForbiddenLabel: '502 上游禁止',
+          openaiUpstreamForbiddenDesc: '上游访问被禁止 - 暂停 10 分钟',
+          openaiServiceUnavailableLabel: '503 服务不可用',
+          openaiServiceUnavailableDesc: '服务临时不可用 - 暂停 10 分钟',
+          openaiOverloadedLabel: '503 过载',
+          openaiOverloadedDesc: '当前过载 - 暂停 10 分钟',
+          openaiUpstreamConnLabel: '500 上游连接',
+          openaiUpstreamConnDesc: '上游连接 / 传输错误 - 暂停 10 分钟'
         }
       },
       responseRewrite: {
@@ -5858,6 +5870,7 @@ export default {
           model: '模型',
           requestCount: '请求数',
           avgTokensPerSec: '平均 Tokens/秒',
+          avgGenerationTokensPerSec: '平均生成 Tokens/秒（排除首 Token）',
           avgFirstTokenMs: '平均首 Token 延迟(ms)',
           totalOutputTokens: '输出 Token 总数',
           avgDurationMs: '平均时长(ms)',
@@ -7393,6 +7406,38 @@ export default {
         thresholdWindowMinutesHint: '超时计数的时间窗口（1-60分钟）',
         saved: '流超时设置保存成功',
         saveFailed: '保存流超时设置失败'
+      },
+      platformDefaults: {
+        modelWhitelist: '模型白名单',
+        modelMapping: '模型映射',
+        compactModelMapping: 'Compact 模型映射',
+        kiroSubscriptionTypeConfig: 'Kiro 订阅档位默认配置',
+        kiroSubscriptionTypeConfigHint: '高级 JSON 对象，key 为订阅档位；每个档位支持 model_whitelist、model_mapping、compact_model_mapping。',
+        kiroSubscriptionTypeConfigInvalid: 'Kiro 订阅档位默认配置必须是合法 JSON 对象。',
+        platform: {
+          anthropic: 'Anthropic',
+          openai: 'OpenAI',
+          gemini: 'Gemini',
+          antigravity: 'Antigravity',
+          kiro: 'Kiro'
+        }
+      },
+      modelMapping: {
+        fromPlaceholder: '请求模型（支持末尾 *）',
+        toPlaceholder: '目标模型',
+        addRow: '添加映射'
+      },
+      tempUnschedThreshold: {
+        title: '临时不可调度触发阈值',
+        description: '配置账号临时不可调度规则的触发条件：命中错误需在窗口内累计达到指定次数才暂停账号，避免偶发上游错误误伤账号',
+        enabled: '启用窗口阈值',
+        enabledHint: '关闭后规则单次命中即触发临时不可调度（旧行为）',
+        thresholdCount: '触发阈值（次数）',
+        thresholdCountHint: '窗口内累计命中多少次后触发（1-1000次）',
+        thresholdWindowMinutes: '阈值窗口（分钟）',
+        thresholdWindowMinutesHint: '命中计数的时间窗口（1-60分钟）',
+        saved: '阈值设置保存成功',
+        saveFailed: '保存阈值设置失败'
       },
       rectifier: {
         title: '请求整流器',

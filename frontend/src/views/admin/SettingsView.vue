@@ -2432,6 +2432,135 @@
             </div>
           </div>
 
+          <!-- Temp Unsched Threshold Settings -->
+          <div class="card">
+            <div
+              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+            >
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t("admin.settings.tempUnschedThreshold.title") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t("admin.settings.tempUnschedThreshold.description") }}
+              </p>
+            </div>
+            <div class="space-y-5 p-6">
+              <div
+                v-if="tempUnschedThresholdLoading"
+                class="flex items-center gap-2 text-gray-500"
+              >
+                <div
+                  class="h-4 w-4 animate-spin rounded-full border-b-2 border-primary-600"
+                ></div>
+                {{ t("common.loading") }}
+              </div>
+
+              <template v-else>
+                <div class="flex items-center justify-between">
+                  <div>
+                    <label class="font-medium text-gray-900 dark:text-white">{{
+                      t("admin.settings.tempUnschedThreshold.enabled")
+                    }}</label>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.tempUnschedThreshold.enabledHint") }}
+                    </p>
+                  </div>
+                  <Toggle v-model="tempUnschedThresholdForm.enabled" />
+                </div>
+
+                <div
+                  v-if="tempUnschedThresholdForm.enabled"
+                  class="space-y-4 border-t border-gray-100 pt-4 dark:border-dark-700"
+                >
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.tempUnschedThreshold.thresholdCount") }}
+                    </label>
+                    <input
+                      v-model.number="tempUnschedThresholdForm.threshold_count"
+                      type="number"
+                      min="1"
+                      max="1000"
+                      class="input w-32"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        t("admin.settings.tempUnschedThreshold.thresholdCountHint")
+                      }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{
+                        t(
+                          "admin.settings.tempUnschedThreshold.thresholdWindowMinutes",
+                        )
+                      }}
+                    </label>
+                    <input
+                      v-model.number="
+                        tempUnschedThresholdForm.threshold_window_minutes
+                      "
+                      type="number"
+                      min="1"
+                      max="60"
+                      class="input w-32"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        t(
+                          "admin.settings.tempUnschedThreshold.thresholdWindowMinutesHint",
+                        )
+                      }}
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  class="flex justify-end border-t border-gray-100 pt-4 dark:border-dark-700"
+                >
+                  <button
+                    type="button"
+                    @click="saveTempUnschedThresholdSettings"
+                    :disabled="tempUnschedThresholdSaving"
+                    class="btn btn-primary btn-sm"
+                  >
+                    <svg
+                      v-if="tempUnschedThresholdSaving"
+                      class="mr-1 h-4 w-4 animate-spin"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        class="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        stroke-width="4"
+                      ></circle>
+                      <path
+                        class="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                    {{
+                      tempUnschedThresholdSaving
+                        ? t("common.saving")
+                        : t("common.save")
+                    }}
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
+
           <!-- Request Rectifier Settings -->
           <div class="card">
             <div
@@ -3700,6 +3829,62 @@
 	                </p>
 	              </div>
 
+	              <div>
+	                <label class="label">
+	                  {{
+	                    localText(
+	                      "WS 每账号最小空闲连接数",
+	                      "WS Min Idle Connections Per Account",
+	                    )
+	                  }}
+	                </label>
+	                <input
+	                  v-model.number="form.openai_ws_min_idle_per_account"
+	                  type="number"
+	                  min="0"
+	                  max="64"
+	                  step="1"
+	                  class="input"
+	                  placeholder="1"
+	                />
+	                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+	                  {{
+	                    localText(
+	                      "连接池为每个可调度 OAuth 账号保持的最小空闲（中性）WS 连接数。0 表示不主动预热。修改保存后会立即对所有可调度账号收缩/补足空闲连接。",
+	                      "Minimum idle (neutral) WS connections the pool keeps warm per schedulable OAuth account. 0 disables proactive prewarming. Saving changes immediately reconciles idle connections across all schedulable accounts.",
+	                    )
+	                  }}
+	                </p>
+	              </div>
+
+	              <div>
+	                <label class="label">
+	                  {{
+	                    localText(
+	                      "WS 每账号最大空闲连接数",
+	                      "WS Max Idle Connections Per Account",
+	                    )
+	                  }}
+	                </label>
+	                <input
+	                  v-model.number="form.openai_ws_max_idle_per_account"
+	                  type="number"
+	                  min="0"
+	                  max="64"
+	                  step="1"
+	                  class="input"
+	                  placeholder="4"
+	                />
+	                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+	                  {{
+	                    localText(
+	                      "连接池每账号保留的最大空闲 WS 连接数，超出的最旧空闲连接会被回收。应不小于最小空闲连接数。",
+	                      "Maximum idle WS connections retained per account; the oldest excess idle connections are reclaimed. Should be no less than the minimum idle count.",
+	                    )
+	                  }}
+	                </p>
+	              </div>
+
 	              <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
 	                <div class="flex items-center justify-between gap-4">
 	                  <div>
@@ -3820,6 +4005,34 @@
                   />
                 </div>
               </div>
+              <div class="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-dark-700">
+                <div>
+                  <label class="label">
+                    {{
+                      localText(
+                        "平台运行时模型路由配置",
+                        "Platform Runtime Model Routing Config",
+                      )
+                    }}
+                  </label>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      localText(
+                        "请求转发前按平台预先判断和映射模型；账号已设置 model_whitelist / model_mapping 时账号优先。为空则保持旧逻辑，最终 fallback 模型仍会保留。",
+                        "Pre-map request models per platform before forwarding; account model_whitelist / model_mapping still has priority. Empty config keeps legacy behavior and final fallback models remain active.",
+                      )
+                    }}
+                  </p>
+                </div>
+                <textarea
+                  v-model="platformModelRoutingConfigText"
+                  data-testid="platform-model-routing-config"
+                  rows="8"
+                  class="input font-mono text-xs"
+                  spellcheck="false"
+                  placeholder='{"openai":{"model_whitelist":["gpt-5.4-mini"],"model_mapping":{"gpt-4o-mini":"gpt-5.4"}}}'
+                />
+              </div>
             </div>
           </div>
 
@@ -3906,21 +4119,10 @@
               </p>
             </div>
             <div class="space-y-3 p-6">
-                <textarea
-                v-model="platformDefaultAccountModelConfigText"
-                rows="12"
-                class="input font-mono text-xs"
-                spellcheck="false"
-                placeholder='{"kiro":{"model_mapping":{"claude-sonnet-4-6":"claude-sonnet-4.6"},"kiro_subscription_type_model_config":{"pro":{"model_mapping":{"claude-opus-*":"claude-opus-4.7"}}}}}'
+              <PlatformDefaultAccountModelConfigForm
+                v-model="platformDefaultAccountModelConfig"
+                @validation-error="platformDefaultAccountModelConfigInvalid = $event"
               />
-              <p class="text-xs text-gray-500 dark:text-gray-400">
-                {{
-                  localText(
-                    "格式：{ platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to}, kiro_subscription_type_model_config?: { free|pro|pro_plus|power: { ... } } } }。白名单用于模型限制，支持末尾 * 通配符；Kiro 的 -1m / [1m] 只作为兼容别名，保存后会归一为官方 canonical 模型名。",
-                    "Format: { platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to}, kiro_subscription_type_model_config?: { free|pro|pro_plus|power: { ... } } } }. Whitelist entries restrict models and support trailing * wildcards; Kiro -1m / [1m] values are treated as compatibility aliases and normalized to the official canonical model names when saved.",
-                  )
-                }}
-              </p>
             </div>
           </div>
 
@@ -7778,6 +7980,7 @@ import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
 import GroupBadge from "@/components/common/GroupBadge.vue";
 import GroupOptionItem from "@/components/common/GroupOptionItem.vue";
 import Toggle from "@/components/common/Toggle.vue";
+import PlatformDefaultAccountModelConfigForm from "@/components/admin/PlatformDefaultAccountModelConfigForm.vue";
 import ImageUpload from "@/components/common/ImageUpload.vue";
 import { useClipboard } from "@/composables/useClipboard";
 import { affiliatesAPI, type AffiliateAdminEntry, type SimpleUser as AffiliateSimpleUser } from "@/api/admin/affiliates";
@@ -7893,6 +8096,72 @@ function validatePlatformDefaultAccountModelConfig(value: Record<string, unknown
         }
       }
     }
+    if (config.temp_unschedulable_rules !== undefined) {
+      if (!Array.isArray(config.temp_unschedulable_rules)) {
+        return localText(
+          `${platform}.temp_unschedulable_rules 必须是数组。`,
+          `${platform}.temp_unschedulable_rules must be an array.`,
+        );
+      }
+      for (const rule of config.temp_unschedulable_rules) {
+        if (!rule || Array.isArray(rule) || typeof rule !== "object") {
+          return localText(
+            `${platform}.temp_unschedulable_rules 的每条规则必须是对象。`,
+            `${platform}.temp_unschedulable_rules entries must be objects.`,
+          );
+        }
+        const typedRule = rule as Record<string, unknown>;
+        if (
+          typeof typedRule.error_code !== "number" ||
+          !Number.isInteger(typedRule.error_code) ||
+          typedRule.error_code < 100 ||
+          typedRule.error_code > 599
+        ) {
+          return localText(
+            `${platform}.temp_unschedulable_rules 的 error_code 必须在 100-599 之间。`,
+            `${platform}.temp_unschedulable_rules error_code must be between 100 and 599.`,
+          );
+        }
+        if (
+          typeof typedRule.duration_minutes !== "number" ||
+          !Number.isFinite(typedRule.duration_minutes) ||
+          !Number.isInteger(typedRule.duration_minutes) ||
+          typedRule.duration_minutes <= 0
+        ) {
+          return localText(
+            `${platform}.temp_unschedulable_rules 的 duration_minutes 必须是大于 0 的整数。`,
+            `${platform}.temp_unschedulable_rules duration_minutes must be an integer greater than 0.`,
+          );
+        }
+        if (
+          typedRule.keywords !== undefined &&
+          (!Array.isArray(typedRule.keywords) ||
+            typedRule.keywords.some((item) => typeof item !== "string"))
+        ) {
+          return localText(
+            `${platform}.temp_unschedulable_rules 的 keywords 必须是字符串数组。`,
+            `${platform}.temp_unschedulable_rules keywords must be an array of strings.`,
+          );
+        }
+      }
+    }
+    if (config.custom_error_codes !== undefined) {
+      if (
+        !Array.isArray(config.custom_error_codes) ||
+        config.custom_error_codes.some(
+          (code) =>
+            typeof code !== "number" ||
+            !Number.isInteger(code) ||
+            code < 100 ||
+            code > 599,
+        )
+      ) {
+        return localText(
+          `${platform}.custom_error_codes 必须只包含 100-599 之间的 HTTP 状态码。`,
+          `${platform}.custom_error_codes must only contain HTTP status codes between 100 and 599.`,
+        );
+      }
+    }
     if (config.kiro_subscription_type_model_config !== undefined) {
       if (!allowKiroVariants) {
         return localText(
@@ -7919,9 +8188,21 @@ function validatePlatformDefaultAccountModelConfig(value: Record<string, unknown
             `${platform}.kiro_subscription_type_model_config.${subscriptionType} must be an object.`,
           );
         }
+        const allowedVariantKeys = new Set([
+          "model_whitelist",
+          "model_mapping",
+          "compact_model_mapping",
+        ]);
+        const variantConfig = rawVariant as Record<string, unknown>;
+        if (Object.keys(variantConfig).some((key) => !allowedVariantKeys.has(key))) {
+          return localText(
+            `${platform}.kiro_subscription_type_model_config.${subscriptionType} 仅支持模型白名单和模型映射配置。`,
+            `${platform}.kiro_subscription_type_model_config.${subscriptionType} only supports model whitelist and model mapping config.`,
+          );
+        }
         const nestedError = validateConfig(
           `${platform}.kiro_subscription_type_model_config.${subscriptionType}`,
-          rawVariant as Record<string, unknown>,
+          variantConfig,
           false,
         );
         if (nestedError) {
@@ -7948,6 +8229,46 @@ function validatePlatformDefaultAccountModelConfig(value: Record<string, unknown
     }
   }
   return null;
+}
+
+function isBusinessFailureResponse(
+  value: unknown,
+): value is { success: false; message?: string } {
+  return (
+    !!value &&
+    !Array.isArray(value) &&
+    typeof value === "object" &&
+    (value as Record<string, unknown>).success === false
+  );
+}
+
+function validatePlatformModelRoutingConfig(value: Record<string, unknown>): string | null {
+  const accountDefaultFields = [
+    "temp_unschedulable_enabled",
+    "temp_unschedulable_rules",
+    "custom_error_codes_enabled",
+    "custom_error_codes",
+  ];
+  for (const [platform, rawConfig] of Object.entries(value)) {
+    if (!rawConfig || Array.isArray(rawConfig) || typeof rawConfig !== "object") {
+      continue;
+    }
+    const config = rawConfig as Record<string, unknown>;
+    if (config.kiro_subscription_type_model_config !== undefined) {
+      return localText(
+        `${platform}.kiro_subscription_type_model_config 不支持用于运行时模型路由配置。`,
+        `${platform}.kiro_subscription_type_model_config is not supported for runtime model routing config.`,
+      );
+    }
+    const unsupportedField = accountDefaultFields.find((field) => config[field] !== undefined);
+    if (unsupportedField) {
+      return localText(
+        `${platform}.${unsupportedField} 不支持用于运行时模型路由配置。`,
+        `${platform}.${unsupportedField} is not supported for runtime model routing config.`,
+      );
+    }
+  }
+  return validatePlatformDefaultAccountModelConfig(value);
 }
 
 const paymentGuideHref = computed(() =>
@@ -8074,7 +8395,12 @@ const testEmailAddress = ref("");
 const registrationEmailSuffixWhitelistTags = ref<string[]>([]);
 const registrationEmailSuffixWhitelistDraft = ref("");
 const tablePageSizeOptionsInput = ref("10, 20, 50, 100");
+const platformModelRoutingConfigText = ref("{}");
 const platformDefaultAccountModelConfigText = ref("{}");
+const platformDefaultAccountModelConfig = ref<
+  Record<string, DefaultAccountModelConfig>
+>({});
+const platformDefaultAccountModelConfigInvalid = ref(false);
 
 // Admin API Key 状态
 const adminApiKeyLoading = ref(true);
@@ -8109,6 +8435,15 @@ const streamTimeoutForm = reactive({
   temp_unsched_minutes: 5,
   threshold_count: 3,
   threshold_window_minutes: 10,
+});
+
+// Temp Unsched Threshold 状态
+const tempUnschedThresholdLoading = ref(true);
+const tempUnschedThresholdSaving = ref(false);
+const tempUnschedThresholdForm = reactive({
+  enabled: true,
+  threshold_count: 3,
+  threshold_window_minutes: 1,
 });
 
 // Rectifier 状态
@@ -8425,10 +8760,13 @@ const form = reactive<SettingsForm>({
   fallback_model_openai: "gpt-4o",
   fallback_model_gemini: "gemini-2.5-pro",
   fallback_model_antigravity: "gemini-2.5-pro",
-  openai_sticky_reserve_percent: 0,
+  openai_sticky_reserve_percent: 30,
   openai_sticky_wait_timeout_seconds: 30,
+  openai_ws_min_idle_per_account: 1,
+  openai_ws_max_idle_per_account: 4,
   openai_image_web_free_model: "",
   openai_image_web_paid_model: "",
+  platform_model_routing_config: {},
   platform_default_account_model_config: {},
   // Identity patch (Claude -> Gemini)
   enable_identity_patch: true,
@@ -9163,6 +9501,15 @@ async function loadSettings() {
       null,
       2,
     );
+    platformDefaultAccountModelConfig.value = JSON.parse(
+      JSON.stringify(settings.platform_default_account_model_config || {}),
+    );
+    platformDefaultAccountModelConfigInvalid.value = false;
+    platformModelRoutingConfigText.value = JSON.stringify(
+      settings.platform_model_routing_config || {},
+      null,
+      2,
+    );
     registrationEmailSuffixWhitelistTags.value =
       normalizeRegistrationEmailSuffixDomains(
         settings.registration_email_suffix_whitelist,
@@ -9240,13 +9587,32 @@ async function loadSettings() {
       form.wechat_connect_mode,
     );
     form.oidc_connect_client_secret = "";
-    form.openai_sticky_reserve_percent =
-      Number(settings.openai_sticky_reserve_percent) || 0;
+    form.openai_sticky_reserve_percent = Math.max(
+      0,
+      Math.min(
+        100,
+        Math.floor(Number(settings.openai_sticky_reserve_percent ?? 30)),
+      ),
+    );
     form.openai_sticky_wait_timeout_seconds = Math.max(
       1,
       Math.min(
         300,
         Math.floor(Number(settings.openai_sticky_wait_timeout_seconds) || 30),
+      ),
+    );
+    form.openai_ws_min_idle_per_account = Math.max(
+      0,
+      Math.min(
+        64,
+        Math.floor(Number(settings.openai_ws_min_idle_per_account ?? 1)),
+      ),
+    );
+    form.openai_ws_max_idle_per_account = Math.max(
+      0,
+      Math.min(
+        64,
+        Math.floor(Number(settings.openai_ws_max_idle_per_account ?? 4)),
       ),
     );
     form.openai_image_web_free_model =
@@ -9430,6 +9796,30 @@ async function saveSettings() {
     form.table_default_page_size = normalizedTableDefaultPageSize;
     form.table_page_size_options = normalizedTablePageSizeOptions;
 
+    const normalizedOpenAIWSMinIdle = Math.max(
+      0,
+      Math.min(
+        64,
+        Math.floor(Number(form.openai_ws_min_idle_per_account) || 0),
+      ),
+    );
+    const normalizedOpenAIWSMaxIdle = Math.max(
+      0,
+      Math.min(
+        64,
+        Math.floor(Number(form.openai_ws_max_idle_per_account) || 0),
+      ),
+    );
+    if (normalizedOpenAIWSMinIdle > normalizedOpenAIWSMaxIdle) {
+      appStore.showError(
+        localText(
+          "WS 每账号最小空闲连接数不能大于最大空闲连接数。",
+          "WS min idle connections per account cannot be greater than max idle connections per account.",
+        ),
+      );
+      return;
+    }
+
     const normalizedLoginAgreementDocuments =
       normalizeLoginAgreementDocumentsForSave();
     if (form.login_agreement_enabled && normalizedLoginAgreementDocuments.length === 0) {
@@ -9550,26 +9940,53 @@ async function saveSettings() {
       );
       return;
     }
-    let platformDefaultAccountModelConfig: Record<string, DefaultAccountModelConfig> = {};
+    let platformModelRoutingConfig: Record<string, DefaultAccountModelConfig> = {};
     try {
-      const parsed = JSON.parse(platformDefaultAccountModelConfigText.value || "{}");
+      const parsed = JSON.parse(platformModelRoutingConfigText.value || "{}");
       if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
         throw new Error("root must be an object");
       }
-      const validationError = validatePlatformDefaultAccountModelConfig(parsed as Record<string, unknown>);
+      const validationError = validatePlatformModelRoutingConfig(parsed as Record<string, unknown>);
       if (validationError) {
         appStore.showError(validationError);
         return;
       }
-      platformDefaultAccountModelConfig = parsed as Record<string, DefaultAccountModelConfig>;
+      platformModelRoutingConfig = parsed as Record<string, DefaultAccountModelConfig>;
     } catch (error) {
       appStore.showError(
         localText(
-          "平台默认账号模型配置不是合法 JSON 对象。",
-          "Platform default account model config must be a valid JSON object.",
+          "平台运行时模型路由配置不是合法 JSON 对象。",
+          "Platform runtime model routing config must be a valid JSON object.",
         ),
       );
       return;
+    }
+
+    let platformDefaultAccountModelConfigPayload: Record<string, DefaultAccountModelConfig> = {};
+    if (platformDefaultAccountModelConfigInvalid.value) {
+      appStore.showError(
+        localText(
+          "kiro.kiro_subscription_type_model_config 必须是对象。",
+          "kiro.kiro_subscription_type_model_config must be an object.",
+        ),
+      );
+      return;
+    }
+    {
+      const formValue = JSON.parse(
+        JSON.stringify(platformDefaultAccountModelConfig.value || {}),
+      );
+      const validationError = validatePlatformDefaultAccountModelConfig(
+        formValue as Record<string, unknown>,
+      );
+      if (validationError) {
+        appStore.showError(validationError);
+        return;
+      }
+      platformDefaultAccountModelConfigPayload = formValue as Record<
+        string,
+        DefaultAccountModelConfig
+      >;
     }
     // Validate URL fields — novalidate disables browser-native checks, so we validate here
     const isValidHttpUrl = (url: string): boolean => {
@@ -9761,9 +10178,10 @@ async function saveSettings() {
       fallback_model_openai: form.fallback_model_openai,
       fallback_model_gemini: form.fallback_model_gemini,
       fallback_model_antigravity: form.fallback_model_antigravity,
-	      openai_image_web_free_model: form.openai_image_web_free_model.trim(),
-	      openai_image_web_paid_model: form.openai_image_web_paid_model.trim(),
-      platform_default_account_model_config: platformDefaultAccountModelConfig,
+      openai_image_web_free_model: form.openai_image_web_free_model.trim(),
+      openai_image_web_paid_model: form.openai_image_web_paid_model.trim(),
+      platform_model_routing_config: platformModelRoutingConfig,
+      platform_default_account_model_config: platformDefaultAccountModelConfigPayload,
       enable_identity_patch: form.enable_identity_patch,
       identity_patch_prompt: form.identity_patch_prompt,
       min_claude_code_version: form.min_claude_code_version,
@@ -9831,26 +10249,28 @@ async function saveSettings() {
       payment_cancel_rate_limit_window_mode:
         form.payment_cancel_rate_limit_window_mode,
       payment_alipay_force_qrcode: form.payment_alipay_force_qrcode,
-	      openai_advanced_scheduler_enabled: form.openai_advanced_scheduler_enabled,
-	      openai_sticky_reserve_percent: Math.max(
-	        0,
-	        Math.min(
-	          100,
-	          Math.floor(Number(form.openai_sticky_reserve_percent) || 0),
-	        ),
-	      ),
-	      openai_sticky_wait_timeout_seconds: Math.max(
-	        1,
-	        Math.min(
-	          300,
-	          Math.floor(Number(form.openai_sticky_wait_timeout_seconds) || 30),
-	        ),
-	      ),
-	      openai_oauth_image_bridge_disable_keepalives:
-	        form.openai_oauth_image_bridge_disable_keepalives,
-	      openai_oauth_image_bridge_fresh_upstream_client:
-	        form.openai_oauth_image_bridge_fresh_upstream_client,
-	      // Balance & quota notification
+      openai_advanced_scheduler_enabled: form.openai_advanced_scheduler_enabled,
+      openai_sticky_reserve_percent: Math.max(
+        0,
+        Math.min(
+          100,
+          Math.floor(Number(form.openai_sticky_reserve_percent) || 0),
+        ),
+      ),
+      openai_sticky_wait_timeout_seconds: Math.max(
+        1,
+        Math.min(
+          300,
+          Math.floor(Number(form.openai_sticky_wait_timeout_seconds) || 30),
+        ),
+      ),
+      openai_ws_min_idle_per_account: normalizedOpenAIWSMinIdle,
+      openai_ws_max_idle_per_account: normalizedOpenAIWSMaxIdle,
+      openai_oauth_image_bridge_disable_keepalives:
+        form.openai_oauth_image_bridge_disable_keepalives,
+      openai_oauth_image_bridge_fresh_upstream_client:
+        form.openai_oauth_image_bridge_fresh_upstream_client,
+      // Balance & quota notification
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:
         Number(form.balance_low_notify_threshold) || 0,
@@ -9904,6 +10324,14 @@ async function saveSettings() {
     payload.default_platform_quotas = sanitizePlatformQuotasMap(form.default_platform_quotas);
 
     const updated = await adminAPI.settings.updateSettings(payload);
+    if (isBusinessFailureResponse(updated)) {
+      appStore.showError(
+        typeof updated.message === "string" && updated.message.trim()
+          ? updated.message.trim()
+          : t("admin.settings.failedToSave"),
+      );
+      return;
+    }
     for (const [key, value] of Object.entries(updated)) {
       if (key === "openai_fast_policy_settings") continue;
       if (value !== null && value !== undefined) {
@@ -9914,6 +10342,20 @@ async function saveSettings() {
     form.default_platform_quotas = normalizePlatformQuotasMap(updated.default_platform_quotas);
     form.account_scheduling_thresholds = normalizeAccountSchedulingThresholdsMap(
       updated.account_scheduling_thresholds,
+    );
+    platformDefaultAccountModelConfigText.value = JSON.stringify(
+      updated.platform_default_account_model_config || {},
+      null,
+      2,
+    );
+    platformDefaultAccountModelConfig.value = JSON.parse(
+      JSON.stringify(updated.platform_default_account_model_config || {}),
+    );
+    platformDefaultAccountModelConfigInvalid.value = false;
+    platformModelRoutingConfigText.value = JSON.stringify(
+      updated.platform_model_routing_config || {},
+      null,
+      2,
     );
     registrationEmailSuffixWhitelistTags.value =
       normalizeRegistrationEmailSuffixDomains(
@@ -10213,6 +10655,63 @@ async function saveStreamTimeoutSettings() {
     );
   } finally {
     streamTimeoutSaving.value = false;
+  }
+}
+
+// Temp Unsched Threshold 方法
+async function loadTempUnschedThresholdSettings() {
+  tempUnschedThresholdLoading.value = true;
+  try {
+    const settings =
+      await adminAPI.settings.getTempUnschedThresholdSettings();
+    Object.assign(tempUnschedThresholdForm, settings);
+  } catch (_error: unknown) {
+    // Silent fail - settings will use defaults
+  } finally {
+    tempUnschedThresholdLoading.value = false;
+  }
+}
+
+function clampInteger(value: unknown, min: number, max: number, fallback: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+}
+
+async function saveTempUnschedThresholdSettings() {
+  tempUnschedThresholdSaving.value = true;
+  try {
+    const thresholdCount = clampInteger(
+      tempUnschedThresholdForm.threshold_count,
+      1,
+      1000,
+      3,
+    );
+    const thresholdWindowMinutes = clampInteger(
+      tempUnschedThresholdForm.threshold_window_minutes,
+      1,
+      60,
+      1,
+    );
+    const updated =
+      await adminAPI.settings.updateTempUnschedThresholdSettings({
+        enabled: tempUnschedThresholdForm.enabled,
+        threshold_count: thresholdCount,
+        threshold_window_minutes: thresholdWindowMinutes,
+      });
+    Object.assign(tempUnschedThresholdForm, updated);
+    appStore.showSuccess(t("admin.settings.tempUnschedThreshold.saved"));
+  } catch (error: unknown) {
+    appStore.showError(
+      extractApiErrorMessage(
+        error,
+        t("admin.settings.tempUnschedThreshold.saveFailed"),
+      ),
+    );
+  } finally {
+    tempUnschedThresholdSaving.value = false;
   }
 }
 
@@ -10848,6 +11347,7 @@ onMounted(() => {
   loadOverloadCooldownSettings();
   loadRateLimit429CooldownSettings();
   loadStreamTimeoutSettings();
+  loadTempUnschedThresholdSettings();
   loadRectifierSettings();
   loadBetaPolicySettings();
   void nextTick(centerActiveSettingsTab);

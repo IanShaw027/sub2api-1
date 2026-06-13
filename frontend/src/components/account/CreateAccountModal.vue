@@ -3581,10 +3581,18 @@ import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
 import {
+  buildCustomErrorCodesResult,
+  isValidCustomErrorCode
+} from '@/components/account/customErrorCodes'
+import {
   buildResponseRewriteRules,
   hasResponseRewriteRuleInputs,
   type ResponseRewriteRuleForm
 } from '@/components/account/responseRewriteRules'
+import {
+  buildTempUnschedRulesResult,
+  type TempUnschedRuleForm
+} from '@/components/account/tempUnschedRules'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
@@ -3706,13 +3714,6 @@ const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
 interface ModelMapping {
   from: string
   to: string
-}
-
-interface TempUnschedRuleForm {
-  error_code: number | null
-  keywords: string
-  duration_minutes: number | null
-  description: string
 }
 
 // State
@@ -4033,6 +4034,60 @@ const tempUnschedPresets = computed(() => [
       keywords: 'unavailable, maintenance',
       duration_minutes: 30,
       description: t('admin.accounts.tempUnschedulable.presets.unavailableDesc')
+    }
+  },
+  {
+    label: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamUnavailableLabel'),
+    rule: {
+      error_code: 502,
+      keywords: 'Upstream service temporarily unavailable',
+      duration_minutes: 10,
+      description: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamUnavailableDesc')
+    }
+  },
+  {
+    label: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamFailedLabel'),
+    rule: {
+      error_code: 502,
+      keywords: 'Upstream request failed',
+      duration_minutes: 10,
+      description: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamFailedDesc')
+    }
+  },
+  {
+    label: t('admin.accounts.tempUnschedulable.presets.openaiServiceUnavailableLabel'),
+    rule: {
+      error_code: 503,
+      keywords: 'Service temporarily unavailable',
+      duration_minutes: 10,
+      description: t('admin.accounts.tempUnschedulable.presets.openaiServiceUnavailableDesc')
+    }
+  },
+  {
+    label: t('admin.accounts.tempUnschedulable.presets.openaiOverloadedLabel'),
+    rule: {
+      error_code: 503,
+      keywords: 'overloaded',
+      duration_minutes: 10,
+      description: t('admin.accounts.tempUnschedulable.presets.openaiOverloadedDesc')
+    }
+  },
+  {
+    label: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamConnLabel'),
+    rule: {
+      error_code: 500,
+      keywords: 'upstream connection failed, Upstream transport error',
+      duration_minutes: 10,
+      description: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamConnDesc')
+    }
+  },
+  {
+    label: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamForbiddenLabel'),
+    rule: {
+      error_code: 502,
+      keywords: 'Upstream access forbidden',
+      duration_minutes: 10,
+      description: t('admin.accounts.tempUnschedulable.presets.openaiUpstreamForbiddenDesc')
     }
   }
 ])
@@ -4366,7 +4421,7 @@ const toggleErrorCode = (code: number) => {
 // Add custom error code from input
 const addCustomErrorCode = () => {
   const code = customErrorCodeInput.value
-  if (code === null || code < 100 || code > 599) {
+  if (!isValidCustomErrorCode(code)) {
     appStore.showError(t('admin.accounts.invalidErrorCode'))
     return
   }
@@ -4445,38 +4500,6 @@ const moveResponseRewriteRule = (index: number, direction: number) => {
   rules[target] = current
 }
 
-const buildTempUnschedRules = (rules: TempUnschedRuleForm[]) => {
-  const out: Array<{
-    error_code: number
-    keywords: string[]
-    duration_minutes: number
-    description: string
-  }> = []
-
-  for (const rule of rules) {
-    const errorCode = Number(rule.error_code)
-    const duration = Number(rule.duration_minutes)
-    const keywords = splitTempUnschedKeywords(rule.keywords)
-    if (!Number.isFinite(errorCode) || errorCode < 100 || errorCode > 599) {
-      continue
-    }
-    if (!Number.isFinite(duration) || duration <= 0) {
-      continue
-    }
-    if (keywords.length === 0) {
-      continue
-    }
-    out.push({
-      error_code: Math.trunc(errorCode),
-      keywords,
-      duration_minutes: Math.trunc(duration),
-      description: rule.description.trim()
-    })
-  }
-
-  return out
-}
-
 const applyTempUnschedConfig = (credentials: Record<string, unknown>) => {
   if (!tempUnschedEnabled.value) {
     delete credentials.temp_unschedulable_enabled
@@ -4484,14 +4507,14 @@ const applyTempUnschedConfig = (credentials: Record<string, unknown>) => {
     return true
   }
 
-  const rules = buildTempUnschedRules(tempUnschedRules.value)
-  if (rules.length === 0) {
+  const result = buildTempUnschedRulesResult(tempUnschedRules.value)
+  if (result.invalid || result.rules.length === 0) {
     appStore.showError(t('admin.accounts.tempUnschedulable.rulesInvalid'))
     return false
   }
 
   credentials.temp_unschedulable_enabled = true
-  credentials.temp_unschedulable_rules = rules
+  credentials.temp_unschedulable_rules = result.rules
   return true
 }
 
@@ -4529,13 +4552,6 @@ const applyCredentialRuleConfigs = (
     return false
   }
   return true
-}
-
-const splitTempUnschedKeywords = (value: string) => {
-  return value
-    .split(/[,;]/)
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0)
 }
 
 const needsMixedChannelCheck = (platform: AccountPlatform) => platform === 'antigravity' || platform === 'anthropic'
@@ -5143,8 +5159,13 @@ const handleSubmit = async () => {
 
   // Add custom error codes if enabled
   if (customErrorCodesEnabled.value) {
+    const customErrorCodesResult = buildCustomErrorCodesResult(selectedErrorCodes.value)
+    if (customErrorCodesResult.invalid) {
+      appStore.showError(t('admin.accounts.invalidErrorCode'))
+      return
+    }
     credentials.custom_error_codes_enabled = true
-    credentials.custom_error_codes = [...selectedErrorCodes.value]
+    credentials.custom_error_codes = customErrorCodesResult.codes
   }
 
   applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
@@ -6012,14 +6033,20 @@ const handleCookieAuth = async (sessionKey: string) => {
       return
     }
 
-    const tempUnschedPayload = tempUnschedEnabled.value
-      ? buildTempUnschedRules(tempUnschedRules.value)
-      : []
-    if (tempUnschedEnabled.value && tempUnschedPayload.length === 0) {
+    const tempUnschedResult = tempUnschedEnabled.value
+      ? buildTempUnschedRulesResult(tempUnschedRules.value)
+      : { rules: [], invalid: false }
+    if (tempUnschedEnabled.value && (tempUnschedResult.invalid || tempUnschedResult.rules.length === 0)) {
       appStore.showError(t('admin.accounts.tempUnschedulable.rulesInvalid'))
       return
     }
-
+    const customErrorCodesResult = customErrorCodesEnabled.value
+      ? buildCustomErrorCodesResult(selectedErrorCodes.value)
+      : { codes: [], invalid: false }
+    if (customErrorCodesEnabled.value && customErrorCodesResult.invalid) {
+      appStore.showError(t('admin.accounts.invalidErrorCode'))
+      return
+    }
     const endpoint =
       addMethod.value === 'oauth'
         ? '/admin/accounts/cookie-auth'
@@ -6102,7 +6129,11 @@ const handleCookieAuth = async (sessionKey: string) => {
         applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
         if (tempUnschedEnabled.value) {
           credentials.temp_unschedulable_enabled = true
-          credentials.temp_unschedulable_rules = tempUnschedPayload
+          credentials.temp_unschedulable_rules = tempUnschedResult.rules
+        }
+        if (customErrorCodesEnabled.value) {
+          credentials.custom_error_codes_enabled = true
+          credentials.custom_error_codes = customErrorCodesResult.codes
         }
         if (!applyResponseRewriteConfig(credentials, form.platform)) {
           return

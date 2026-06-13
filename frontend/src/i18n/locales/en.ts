@@ -3894,7 +3894,7 @@ export default {
         keywordsHint: 'Separate keywords with commas; any keyword match will trigger.',
         description: 'Description',
         descriptionPlaceholder: 'Optional note for this rule',
-        rulesInvalid: 'Add at least one rule with error code, keywords, and duration.',
+        rulesInvalid: 'Add at least one rule with error code and duration. Keywords are optional.',
         viewDetails: 'View temp unschedulable details',
         accountName: 'Account',
         triggeredAt: 'Triggered At',
@@ -3917,7 +3917,19 @@ export default {
           rateLimitLabel: '429 Rate Limit',
           rateLimitDesc: 'Rate limited - pause 10 minutes',
           unavailableLabel: '503 Unavailable',
-          unavailableDesc: 'Unavailable - pause 30 minutes'
+          unavailableDesc: 'Unavailable - pause 30 minutes',
+          openaiUpstreamUnavailableLabel: '502 Upstream Unavailable',
+          openaiUpstreamUnavailableDesc: 'Upstream service temporarily unavailable - pause 10 minutes',
+          openaiUpstreamFailedLabel: '502 Upstream Failed',
+          openaiUpstreamFailedDesc: 'Upstream request failed - pause 10 minutes',
+          openaiUpstreamForbiddenLabel: '502 Upstream Forbidden',
+          openaiUpstreamForbiddenDesc: 'Upstream access forbidden - pause 10 minutes',
+          openaiServiceUnavailableLabel: '503 Service Unavailable',
+          openaiServiceUnavailableDesc: 'Service temporarily unavailable - pause 10 minutes',
+          openaiOverloadedLabel: '503 Overloaded',
+          openaiOverloadedDesc: 'Currently overloaded - pause 10 minutes',
+          openaiUpstreamConnLabel: '500 Upstream Connection',
+          openaiUpstreamConnDesc: 'Upstream connection / transport error - pause 10 minutes'
         }
       },
       responseRewrite: {
@@ -5707,6 +5719,7 @@ export default {
           model: 'Model',
           requestCount: 'Requests',
           avgTokensPerSec: 'Avg Tokens/sec',
+          avgGenerationTokensPerSec: 'Avg Generation Tokens/sec (excl. first token)',
           avgFirstTokenMs: 'Avg First Token Latency (ms)',
           totalOutputTokens: 'Total Output Tokens',
           avgDurationMs: 'Avg Duration (ms)',
@@ -7241,6 +7254,38 @@ export default {
         thresholdWindowMinutesHint: 'Time window for counting timeouts (1-60 minutes)',
         saved: 'Stream timeout settings saved',
         saveFailed: 'Failed to save stream timeout settings'
+      },
+      platformDefaults: {
+        modelWhitelist: 'Model Whitelist',
+        modelMapping: 'Model Mapping',
+        compactModelMapping: 'Compact Model Mapping',
+        kiroSubscriptionTypeConfig: 'Kiro Subscription Type Defaults',
+        kiroSubscriptionTypeConfigHint: 'Advanced JSON object keyed by subscription type. Each value supports model_whitelist, model_mapping, and compact_model_mapping.',
+        kiroSubscriptionTypeConfigInvalid: 'Kiro subscription type defaults must be a valid JSON object.',
+        platform: {
+          anthropic: 'Anthropic',
+          openai: 'OpenAI',
+          gemini: 'Gemini',
+          antigravity: 'Antigravity',
+          kiro: 'Kiro'
+        }
+      },
+      modelMapping: {
+        fromPlaceholder: 'Request model (trailing * allowed)',
+        toPlaceholder: 'Target model',
+        addRow: 'Add mapping'
+      },
+      tempUnschedThreshold: {
+        title: 'Temp-Unschedulable Trigger Threshold',
+        description: 'Configure when account temp-unschedulable rules trigger: a matched error must occur a number of times within the window before pausing the account, avoiding false positives from transient upstream errors',
+        enabled: 'Enable Window Threshold',
+        enabledHint: 'When disabled, a single rule match triggers temp-unschedulable (legacy behavior)',
+        thresholdCount: 'Trigger Threshold (count)',
+        thresholdCountHint: 'Number of matches within the window before triggering (1-1000)',
+        thresholdWindowMinutes: 'Threshold Window (minutes)',
+        thresholdWindowMinutesHint: 'Time window for counting matches (1-60 minutes)',
+        saved: 'Threshold settings saved',
+        saveFailed: 'Failed to save threshold settings'
       },
       rectifier: {
         title: 'Request Rectifier',

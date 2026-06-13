@@ -236,6 +236,21 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('批量编辑保存前拒绝小数 custom_error_codes', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+
+    ;(wrapper.vm as any).enableCustomErrorCodes = true
+    ;(wrapper.vm as any).selectedErrorCodes = [502.5]
+
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).not.toHaveBeenCalled()
+  })
+
   it('筛选 OpenAI 账号批量编辑应提交 Compact 模式和专属模型映射', async () => {
     const wrapper = mountModal({
       accountIds: [],

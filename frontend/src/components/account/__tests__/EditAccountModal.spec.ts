@@ -3,6 +3,7 @@ import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 
 const {
+  showErrorMock,
   updateAccountMock,
   importOpenAIWebProfileMock,
   checkMixedChannelRiskMock,
@@ -22,6 +23,7 @@ const {
     })
   }
   return {
+    showErrorMock: vi.fn(),
     updateAccountMock: vi.fn(),
     importOpenAIWebProfileMock: vi.fn(),
     checkMixedChannelRiskMock: vi.fn(),
@@ -35,7 +37,7 @@ const {
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
+    showError: showErrorMock,
     showSuccess: vi.fn(),
     showInfo: vi.fn()
   })
@@ -203,6 +205,7 @@ function buildVertexAccount() {
 }
 
 function resetCommonMocks() {
+  showErrorMock.mockReset()
   updateAccountMock.mockReset()
   importOpenAIWebProfileMock.mockReset()
   checkMixedChannelRiskMock.mockReset()
@@ -247,6 +250,75 @@ function mountModal(account = buildAccount()) {
 }
 
 describe('EditAccountModal', () => {
+  it('offers OpenAI service-unavailable temp-unschedulable presets as separate rules', async () => {
+    resetCommonMocks()
+    const wrapper = mountModal()
+
+    const presetRules = (wrapper.vm as any).tempUnschedPresets.map((preset: any) => preset.rule)
+
+    expect(presetRules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        error_code: 503,
+        keywords: 'Service temporarily unavailable',
+        duration_minutes: 10
+      }),
+      expect.objectContaining({
+        error_code: 503,
+        keywords: 'overloaded',
+        duration_minutes: 10
+      })
+    ]))
+  })
+
+  it('blocks mixed valid and invalid temp-unschedulable rules on edit', async () => {
+    resetCommonMocks()
+    const account = buildAccount()
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    ;(wrapper.vm as any).tempUnschedEnabled = true
+    ;(wrapper.vm as any).tempUnschedRules = [
+      {
+        error_code: 524,
+        keywords: '',
+        duration_minutes: 10,
+        description: 'Cloudflare timeout'
+      },
+      {
+        error_code: 99,
+        keywords: 'invalid',
+        duration_minutes: 10,
+        description: 'bad status'
+      }
+    ]
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(showErrorMock).toHaveBeenCalledWith('admin.accounts.tempUnschedulable.rulesInvalid')
+    expect(updateAccountMock).not.toHaveBeenCalled()
+  })
+
+  it('blocks invalid loaded custom error codes on edit instead of saving them', async () => {
+    resetCommonMocks()
+    const account = buildAccount()
+    account.credentials = {
+      ...account.credentials,
+      custom_error_codes_enabled: true,
+      custom_error_codes: [429, 502.5]
+    }
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(showErrorMock).toHaveBeenCalledWith('admin.accounts.invalidErrorCode')
+    expect(updateAccountMock).not.toHaveBeenCalled()
+  })
+
   it('shows safe OpenAI WebProfile metadata and import entry', async () => {
     const account = buildAccount()
     account.extra = {

@@ -15,6 +15,8 @@ const {
   getRateLimit429CooldownSettings,
   updateRateLimit429CooldownSettings,
   getStreamTimeoutSettings,
+  getTempUnschedThresholdSettings,
+  updateTempUnschedThresholdSettings,
   getRectifierSettings,
   getBetaPolicySettings,
   getGroups,
@@ -37,6 +39,8 @@ const {
   getRateLimit429CooldownSettings: vi.fn(),
   updateRateLimit429CooldownSettings: vi.fn(),
   getStreamTimeoutSettings: vi.fn(),
+  getTempUnschedThresholdSettings: vi.fn(),
+  updateTempUnschedThresholdSettings: vi.fn(),
   getRectifierSettings: vi.fn(),
   getBetaPolicySettings: vi.fn(),
   getGroups: vi.fn(),
@@ -65,6 +69,8 @@ vi.mock("@/api", () => ({
       getRateLimit429CooldownSettings,
       updateRateLimit429CooldownSettings,
       getStreamTimeoutSettings,
+      getTempUnschedThresholdSettings,
+      updateTempUnschedThresholdSettings,
       getRectifierSettings,
       getBetaPolicySettings,
     },
@@ -84,6 +90,16 @@ vi.mock("@/api", () => ({
 }));
 
 vi.mock("@/stores", () => ({
+  useAppStore: () => ({
+    showError,
+    showSuccess,
+    showWarning: vi.fn(),
+    showInfo: vi.fn(),
+    fetchPublicSettings,
+  }),
+}));
+
+vi.mock("@/stores/app", () => ({
   useAppStore: () => ({
     showError,
     showSuccess,
@@ -341,6 +357,25 @@ const ImageUploadStub = defineComponent({
   },
 });
 
+const ModelWhitelistSelectorStub = defineComponent({
+  props: {
+    modelValue: {
+      type: Array,
+      default: () => [],
+    },
+  },
+  emits: ["update:modelValue"],
+  setup(props, { emit }) {
+    return () =>
+      h("button", {
+        type: "button",
+        "data-testid": "model-whitelist-selector-stub",
+        "data-value": JSON.stringify(props.modelValue),
+        onClick: () => emit("update:modelValue", props.modelValue),
+      });
+  },
+});
+
 const baseSettingsResponse = {
   registration_enabled: true,
   email_verify_enabled: false,
@@ -435,6 +470,7 @@ const baseSettingsResponse = {
   fallback_model_openai: "",
   fallback_model_gemini: "",
   fallback_model_antigravity: "",
+  platform_model_routing_config: {},
   enable_identity_patch: false,
   identity_patch_prompt: "",
   ops_monitoring_enabled: false,
@@ -522,6 +558,7 @@ function mountView() {
         GroupOptionItem: true,
         ProxySelector: true,
         ImageUpload: ImageUploadStub,
+        ModelWhitelistSelector: ModelWhitelistSelectorStub,
         BackupSettings: true,
         EmailTemplateEditor: {
           template: '<div data-testid="email-template-editor-stub" />',
@@ -592,6 +629,8 @@ describe("admin SettingsView payment visible method controls", () => {
     getRateLimit429CooldownSettings.mockReset();
     updateRateLimit429CooldownSettings.mockReset();
     getStreamTimeoutSettings.mockReset();
+    getTempUnschedThresholdSettings.mockReset();
+    updateTempUnschedThresholdSettings.mockReset();
     getRectifierSettings.mockReset();
     getBetaPolicySettings.mockReset();
     getGroups.mockReset();
@@ -639,6 +678,12 @@ describe("admin SettingsView payment visible method controls", () => {
       threshold_count: 3,
       threshold_window_minutes: 10,
     });
+    getTempUnschedThresholdSettings.mockResolvedValue({
+      enabled: true,
+      threshold_count: 3,
+      threshold_window_minutes: 1,
+    });
+    updateTempUnschedThresholdSettings.mockImplementation(async (payload) => payload);
     getRectifierSettings.mockResolvedValue({
       enabled: true,
       thinking_signature_enabled: true,
@@ -750,6 +795,58 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
+  it("clamps temp-unschedulable threshold settings before saving", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    (wrapper.vm as any).tempUnschedThresholdForm.enabled = true;
+    (wrapper.vm as any).tempUnschedThresholdForm.threshold_count = 0;
+    (wrapper.vm as any).tempUnschedThresholdForm.threshold_window_minutes = 99;
+
+    await (wrapper.vm as any).saveTempUnschedThresholdSettings();
+    await flushPromises();
+
+    expect(updateTempUnschedThresholdSettings).toHaveBeenCalledTimes(1);
+    expect(updateTempUnschedThresholdSettings).toHaveBeenCalledWith({
+      enabled: true,
+      threshold_count: 1,
+      threshold_window_minutes: 60,
+    });
+  });
+
+  it("allows temp-unschedulable threshold count up to backend contract max", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    (wrapper.vm as any).tempUnschedThresholdForm.enabled = true;
+    (wrapper.vm as any).tempUnschedThresholdForm.threshold_count = 999;
+    (wrapper.vm as any).tempUnschedThresholdForm.threshold_window_minutes = 1;
+
+    await (wrapper.vm as any).saveTempUnschedThresholdSettings();
+    await flushPromises();
+
+    expect(updateTempUnschedThresholdSettings).toHaveBeenCalledWith({
+      enabled: true,
+      threshold_count: 999,
+      threshold_window_minutes: 1,
+    });
+  });
+
+  it("keeps sticky wait timeout from updateSettings response in the form", async () => {
+    updateSettings.mockImplementationOnce(async (payload) => ({
+      ...baseSettingsResponse,
+      ...payload,
+      openai_sticky_wait_timeout_seconds: 73,
+    }));
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect((wrapper.vm as any).form.openai_sticky_wait_timeout_seconds).toBe(73);
+  });
+
   it("submits Antigravity user agent version gateway setting", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
@@ -768,6 +865,23 @@ describe("admin SettingsView payment visible method controls", () => {
         antigravity_user_agent_version: "1.23.2",
       }),
     );
+  });
+
+  it("rejects OpenAI WS min idle greater than max idle before submitting settings", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
+    setupState.form.openai_ws_min_idle_per_account = 5;
+    setupState.form.openai_ws_max_idle_per_account = 2;
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(showError).toHaveBeenCalled();
   });
 
   it("updates provider enablement immediately and reloads providers", async () => {
@@ -819,6 +933,7 @@ describe("admin SettingsView payment visible method controls", () => {
           GroupOptionItem: true,
           ProxySelector: true,
           ImageUpload: ImageUploadStub,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
           BackupSettings: true,
         },
       },
@@ -1031,6 +1146,8 @@ describe("admin SettingsView wechat connect controls", () => {
     getRateLimit429CooldownSettings.mockReset();
     updateRateLimit429CooldownSettings.mockReset();
     getStreamTimeoutSettings.mockReset();
+    getTempUnschedThresholdSettings.mockReset();
+    updateTempUnschedThresholdSettings.mockReset();
     getRectifierSettings.mockReset();
     getBetaPolicySettings.mockReset();
     getGroups.mockReset();
@@ -1081,6 +1198,12 @@ describe("admin SettingsView wechat connect controls", () => {
       threshold_count: 3,
       threshold_window_minutes: 10,
     });
+    getTempUnschedThresholdSettings.mockResolvedValue({
+      enabled: true,
+      threshold_count: 3,
+      threshold_window_minutes: 1,
+    });
+    updateTempUnschedThresholdSettings.mockImplementation(async (payload) => payload);
     getRectifierSettings.mockResolvedValue({
       enabled: true,
       thinking_signature_enabled: true,
@@ -1520,27 +1643,17 @@ describe("admin SettingsView wechat connect controls", () => {
     await flushPromises();
     await openGatewayTab(wrapper);
 
-    const configTextarea = wrapper
-      .findAll("textarea")
-      .find((node) =>
-        (node.element as HTMLTextAreaElement).placeholder.includes(
-          "model_mapping",
-        ),
-      );
-    expect(configTextarea).toBeDefined();
-    await configTextarea?.setValue(
-      JSON.stringify({
-        kiro: {
-          model_whitelist: ["claude-sonnet-4-6"],
-          model_mapping: {
-            "claude-sonnet-4-6": "claude-sonnet-4.6",
-          },
-          compact_model_mapping: {
-            "claude-sonnet-4-6": "claude-haiku-4.5",
-          },
+    (wrapper.vm as any).platformDefaultAccountModelConfig = {
+      kiro: {
+        model_whitelist: ["claude-sonnet-4-6"],
+        model_mapping: {
+          "claude-sonnet-4-6": "claude-sonnet-4.6",
         },
-      }),
-    );
+        compact_model_mapping: {
+          "claude-sonnet-4-6": "claude-haiku-4.5",
+        },
+      },
+    };
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 
@@ -1562,29 +1675,128 @@ describe("admin SettingsView wechat connect controls", () => {
     );
   });
 
-  it("blocks malformed platform default account model config JSON shape", async () => {
+  it("submits kiro subscription type platform defaults edited through the form", async () => {
     const wrapper = mountView();
 
     await flushPromises();
     await openGatewayTab(wrapper);
 
-    const configTextarea = wrapper
-      .findAll("textarea")
-      .find((node) =>
-        (node.element as HTMLTextAreaElement).placeholder.includes(
-          "model_mapping",
-        ),
-      );
-    expect(configTextarea).toBeDefined();
-    await configTextarea?.setValue(
-      JSON.stringify({
-        kiro: {
-          model_mapping: {
-            "claude-sonnet-4-6": 42,
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
+    setupState.platformDefaultAccountModelConfig = {
+      kiro: {
+        kiro_subscription_type_model_config: {
+          pro: {
+            model_mapping: {
+              "claude-sonnet-*": "claude-sonnet-4.6",
+            },
+          },
+        },
+      },
+    };
+    await flushPromises();
+
+    await wrapper.get('[data-testid="platform-default-tab-kiro"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="kiro-subscription-type-config"]').exists()).toBe(true);
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platform_default_account_model_config: {
+          kiro: {
+            kiro_subscription_type_model_config: {
+              pro: {
+                model_mapping: {
+                  "claude-sonnet-*": "claude-sonnet-4.6",
+                },
+              },
+            },
           },
         },
       }),
     );
+  });
+
+  it("blocks malformed kiro subscription JSON edited through the platform defaults form", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
+    setupState.platformDefaultAccountModelConfig = {
+      kiro: {
+        kiro_subscription_type_model_config: {
+          pro: {
+            model_mapping: {
+              "claude-sonnet-*": "claude-sonnet-4.6",
+            },
+          },
+        },
+      },
+    };
+    await flushPromises();
+
+    await wrapper.get('[data-testid="platform-default-tab-kiro"]').trigger("click");
+    await flushPromises();
+
+    await wrapper.get('[data-testid="kiro-subscription-type-config"]').setValue("{");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalledWith(
+      "kiro.kiro_subscription_type_model_config 必须是对象。",
+    );
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("keeps the previous kiro subscription defaults when JSON editing is malformed", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
+    const previousConfig = {
+      kiro: {
+        kiro_subscription_type_model_config: {
+          pro: {
+            model_mapping: {
+              "claude-sonnet-*": "claude-sonnet-4.6",
+            },
+          },
+        },
+      },
+    };
+    setupState.platformDefaultAccountModelConfig = previousConfig;
+    await flushPromises();
+
+    await wrapper.get('[data-testid="platform-default-tab-kiro"]').trigger("click");
+    await flushPromises();
+
+    await wrapper.get('[data-testid="kiro-subscription-type-config"]').setValue("{");
+    await flushPromises();
+
+    expect(setupState.platformDefaultAccountModelConfig).toEqual(previousConfig);
+    expect(wrapper.find('[data-testid="kiro-subscription-type-config"]').exists()).toBe(true);
+  });
+
+  it("blocks malformed platform default account model config shape", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    (wrapper.vm as any).platformDefaultAccountModelConfig = {
+      kiro: {
+        model_mapping: {
+          "claude-sonnet-4-6": 42,
+        },
+      },
+    };
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 
@@ -1600,19 +1812,335 @@ describe("admin SettingsView wechat connect controls", () => {
     await flushPromises();
     await openGatewayTab(wrapper);
 
-    const configTextarea = wrapper
-      .findAll("textarea")
-      .find((node) =>
-        (node.element as HTMLTextAreaElement).placeholder.includes(
-          "model_mapping",
-        ),
-      );
-    expect(configTextarea).toBeDefined();
-    await configTextarea?.setValue(
+    (wrapper.vm as any).platformDefaultAccountModelConfig = {
+      kiro: {
+        model_mapping: {
+          "claude-*sonnet": "claude-*",
+        },
+      },
+    };
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalledWith(
+      "kiro.model_mapping 的请求模型通配符 * 只能位于末尾。",
+    );
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("blocks invalid platform default temp-unsched and custom error codes", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    (wrapper.vm as any).platformDefaultAccountModelConfig = {
+      openai: {
+        temp_unschedulable_rules: [
+          {
+            error_code: 99,
+            duration_minutes: 10,
+          },
+        ],
+        custom_error_codes: [600],
+      },
+    };
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalledWith(
+      "openai.temp_unschedulable_rules 的 error_code 必须在 100-599 之间。",
+    );
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("blocks fractional platform default temp-unsched error code before save", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    (wrapper.vm as any).platformDefaultAccountModelConfig = {
+      openai: {
+        temp_unschedulable_rules: [
+          {
+            error_code: 524.5,
+            duration_minutes: 10,
+            keywords: [],
+          },
+        ],
+      },
+    };
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalledWith(
+      "openai.temp_unschedulable_rules 的 error_code 必须在 100-599 之间。",
+    );
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("blocks fractional platform default temp-unsched duration before save", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    (wrapper.vm as any).platformDefaultAccountModelConfig = {
+      openai: {
+        temp_unschedulable_rules: [
+          {
+            error_code: 524,
+            duration_minutes: 10.5,
+            keywords: [],
+          },
+        ],
+      },
+    };
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalledWith(
+      "openai.temp_unschedulable_rules 的 duration_minutes 必须是大于 0 的整数。",
+    );
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("blocks unsupported kiro subscription type non-model defaults before save", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    (wrapper.vm as any).platformDefaultAccountModelConfig = {
+      kiro: {
+        kiro_subscription_type_model_config: {
+          pro: {
+            temp_unschedulable_enabled: true,
+            temp_unschedulable_rules: [
+              {
+                error_code: 502,
+                keywords: ["Upstream request failed"],
+                duration_minutes: 10,
+                description: "upstream failed",
+              },
+            ],
+          },
+        },
+      },
+    };
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalledWith(
+      "kiro.kiro_subscription_type_model_config.pro 仅支持模型白名单和模型映射配置。",
+    );
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("submits platform model routing config JSON", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const configTextarea = wrapper.find(
+      '[data-testid="platform-model-routing-config"]',
+    );
+    expect(configTextarea.exists()).toBe(true);
+    await configTextarea.setValue(
       JSON.stringify({
+        openai: {
+          model_whitelist: ["gpt-5.4-mini"],
+          model_mapping: {
+            "gpt-4o-mini": "gpt-5.4",
+          },
+          compact_model_mapping: {
+            "gpt-5.4": "gpt-5.4-mini",
+          },
+        },
+      }),
+    );
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platform_model_routing_config: {
+          openai: {
+            model_whitelist: ["gpt-5.4-mini"],
+            model_mapping: {
+              "gpt-4o-mini": "gpt-5.4",
+            },
+            compact_model_mapping: {
+              "gpt-5.4": "gpt-5.4-mini",
+            },
+          },
+        },
+      }),
+    );
+  });
+
+  it("blocks account default fields in platform model routing config", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const configTextarea = wrapper.find(
+      '[data-testid="platform-model-routing-config"]',
+    );
+    await configTextarea.setValue(
+      JSON.stringify({
+        openai: {
+          temp_unschedulable_enabled: true,
+        },
+      }),
+    );
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalledWith(
+      "openai.temp_unschedulable_enabled 不支持用于运行时模型路由配置。",
+    );
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("refreshes platform model config editors from update response", async () => {
+    updateSettings.mockImplementationOnce(async (payload) => ({
+      ...baseSettingsResponse,
+      ...payload,
+      platform_model_routing_config: {
+        openai: {
+          model_mapping: {
+            "gpt-old": "gpt-normalized",
+          },
+        },
+      },
+      platform_default_account_model_config: {
         kiro: {
           model_mapping: {
-            "claude-*sonnet": "claude-*",
+            "claude-old": "claude-normalized",
+          },
+        },
+      },
+    }));
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const configTextarea = wrapper.find(
+      '[data-testid="platform-model-routing-config"]',
+    );
+    await configTextarea.setValue(
+      JSON.stringify({
+        openai: {
+          model_mapping: {
+            "gpt-old": "gpt-raw",
+          },
+        },
+      }),
+    );
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
+    setupState.platformDefaultAccountModelConfig = {
+      kiro: {
+        model_mapping: {
+          "claude-old": "claude-raw",
+        },
+      },
+    };
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(JSON.parse((configTextarea.element as HTMLTextAreaElement).value)).toEqual({
+      openai: {
+        model_mapping: {
+          "gpt-old": "gpt-normalized",
+        },
+      },
+    });
+    expect(setupState.platformDefaultAccountModelConfig).toEqual({
+      kiro: {
+        model_mapping: {
+          "claude-old": "claude-normalized",
+        },
+      },
+    });
+  });
+
+  it("does not refresh platform model config editors when updateSettings reports business failure", async () => {
+    updateSettings.mockImplementationOnce(async () => ({
+      success: false,
+      message: "业务保存失败",
+    }));
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const configTextarea = wrapper.find(
+      '[data-testid="platform-model-routing-config"]',
+    );
+    await configTextarea.setValue(
+      JSON.stringify({
+        openai: {
+          model_mapping: {
+            "gpt-old": "gpt-raw",
+          },
+        },
+      }),
+    );
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
+    setupState.platformDefaultAccountModelConfig = {
+      kiro: {
+        model_mapping: {
+          "claude-old": "claude-raw",
+        },
+      },
+    };
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalledWith("业务保存失败");
+    expect(showSuccess).not.toHaveBeenCalledWith("admin.settings.settingsSaved");
+    expect(JSON.parse((configTextarea.element as HTMLTextAreaElement).value)).toEqual({
+      openai: {
+        model_mapping: {
+          "gpt-old": "gpt-raw",
+        },
+      },
+    });
+    expect(setupState.platformDefaultAccountModelConfig).toEqual({
+      kiro: {
+        model_mapping: {
+          "claude-old": "claude-raw",
+        },
+      },
+    });
+  });
+
+  it("blocks kiro subscription variants in platform model routing config", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const configTextarea = wrapper.find(
+      '[data-testid="platform-model-routing-config"]',
+    );
+    expect(configTextarea.exists()).toBe(true);
+    await configTextarea.setValue(
+      JSON.stringify({
+        kiro: {
+          kiro_subscription_type_model_config: {
+            pro: {
+              model_mapping: {
+                "claude-sonnet-*": "claude-sonnet-4.6",
+              },
+            },
           },
         },
       }),
@@ -1621,7 +2149,7 @@ describe("admin SettingsView wechat connect controls", () => {
     await flushPromises();
 
     expect(showError).toHaveBeenCalledWith(
-      "kiro.model_mapping 的请求模型通配符 * 只能位于末尾。",
+      "kiro.kiro_subscription_type_model_config 不支持用于运行时模型路由配置。",
     );
     expect(updateSettings).not.toHaveBeenCalled();
   });
@@ -1728,6 +2256,8 @@ describe("admin SettingsView DingTalk and email template surfaces", () => {
     getRateLimit429CooldownSettings.mockReset();
     updateRateLimit429CooldownSettings.mockReset();
     getStreamTimeoutSettings.mockReset();
+    getTempUnschedThresholdSettings.mockReset();
+    updateTempUnschedThresholdSettings.mockReset();
     getRectifierSettings.mockReset();
     getBetaPolicySettings.mockReset();
     getGroups.mockReset();
@@ -1775,6 +2305,12 @@ describe("admin SettingsView DingTalk and email template surfaces", () => {
       threshold_count: 3,
       threshold_window_minutes: 10,
     });
+    getTempUnschedThresholdSettings.mockResolvedValue({
+      enabled: true,
+      threshold_count: 3,
+      threshold_window_minutes: 1,
+    });
+    updateTempUnschedThresholdSettings.mockImplementation(async (payload) => payload);
     getRectifierSettings.mockResolvedValue({
       enabled: true,
       thinking_signature_enabled: true,
@@ -1964,6 +2500,8 @@ describe("admin SettingsView platform quota matrix", () => {
     getRateLimit429CooldownSettings.mockReset();
     updateRateLimit429CooldownSettings.mockReset();
     getStreamTimeoutSettings.mockReset();
+    getTempUnschedThresholdSettings.mockReset();
+    updateTempUnschedThresholdSettings.mockReset();
     getRectifierSettings.mockReset();
     getBetaPolicySettings.mockReset();
     getGroups.mockReset();
@@ -1990,6 +2528,8 @@ describe("admin SettingsView platform quota matrix", () => {
     getRateLimit429CooldownSettings.mockResolvedValue({});
     updateRateLimit429CooldownSettings.mockResolvedValue({});
     getStreamTimeoutSettings.mockResolvedValue({});
+    getTempUnschedThresholdSettings.mockResolvedValue({});
+    updateTempUnschedThresholdSettings.mockResolvedValue({});
     getRectifierSettings.mockResolvedValue({});
     getBetaPolicySettings.mockResolvedValue({});
     getGroups.mockResolvedValue([]);
@@ -2170,6 +2710,8 @@ describe("admin SettingsView platform quota matrix", () => {
     getRateLimit429CooldownSettings.mockReset();
     updateRateLimit429CooldownSettings.mockReset();
     getStreamTimeoutSettings.mockReset();
+    getTempUnschedThresholdSettings.mockReset();
+    updateTempUnschedThresholdSettings.mockReset();
     getRectifierSettings.mockReset();
     getBetaPolicySettings.mockReset();
     getGroups.mockReset();
@@ -2196,6 +2738,8 @@ describe("admin SettingsView platform quota matrix", () => {
     getRateLimit429CooldownSettings.mockResolvedValue({});
     updateRateLimit429CooldownSettings.mockResolvedValue({});
     getStreamTimeoutSettings.mockResolvedValue({});
+    getTempUnschedThresholdSettings.mockResolvedValue({});
+    updateTempUnschedThresholdSettings.mockResolvedValue({});
     getRectifierSettings.mockResolvedValue({});
     getBetaPolicySettings.mockResolvedValue({});
     getGroups.mockResolvedValue([]);
