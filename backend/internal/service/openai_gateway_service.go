@@ -2399,6 +2399,28 @@ func isOpenAIStickyCandidateCompatible(account *Account, requestedModel string, 
 	return true
 }
 
+func (s *OpenAIGatewayService) openAIStickyAccountWithinGroupScope(ctx context.Context, account *Account, groupID *int64) bool {
+	if account == nil {
+		return false
+	}
+	if openAIStickyAccountMatchesGroup(account, groupID) {
+		return true
+	}
+	if groupID == nil || s == nil || s.accountRepo == nil {
+		return false
+	}
+	accounts, err := s.accountRepo.ListByGroup(ctx, *groupID)
+	if err != nil {
+		return false
+	}
+	for i := range accounts {
+		if accounts[i].ID == account.ID && accounts[i].Platform == account.Platform {
+			return true
+		}
+	}
+	return false
+}
+
 // isOpenAIAccountEligibleForRequest centralises the schedulable / OpenAI / model /
 // compact-support checks used during account selection.
 func isOpenAIAccountEligibleForRequest(ctx context.Context, account *Account, requestedModel string, requireCompact bool, requiredImageRoute string, requireOAuthAccount bool) bool {
@@ -2771,7 +2793,7 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 	if err != nil {
 		return nil
 	}
-	if !openAIStickyAccountMatchesGroup(account, groupID) {
+	if !s.openAIStickyAccountWithinGroupScope(ctx, account, groupID) {
 		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
 	}
@@ -3027,7 +3049,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 					account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requiredImageRoute != "")
 					if account == nil {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
-					} else if !openAIStickyAccountMatchesGroup(account, groupID) {
+					} else if !s.openAIStickyAccountWithinGroupScope(ctx, account, groupID) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else if s.isOpenAIAccountRuntimeBlocked(account) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
@@ -3843,7 +3865,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, errors.New(ImageGenerationPermissionMessage())
 	}
 
-	isCodexCLI := isOpenAICodexOfficialClientRequest(c)
+	isCodexCLI := isOpenAICodexOfficialOrForcedClientRequest(c, s.cfg)
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
 	clientTransport := GetOpenAIClientTransport(c)
 	// 默认仅允许 WS 入站请求走 WS 上游；显式开启时 HTTP /v1/responses
@@ -3887,16 +3909,19 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	bodyModified := false
 	var reqBody map[string]any
+	resetRawBodyView := func(nextBody []byte) {
+		body = nextBody
+		requestView = newOpenAIRequestView(body)
+		reqBody = nil
+		bodyModified = false
+	}
 	ensureReqBody := func() (map[string]any, error) {
 		if requestView.HasPatches() {
 			patchedBody, patchErr := requestView.ApplyPatches()
 			if patchErr != nil {
 				return nil, patchErr
 			}
-			body = patchedBody
-			requestView = newOpenAIRequestView(body)
-			reqBody = nil
-			bodyModified = false
+			resetRawBodyView(patchedBody)
 		}
 		if reqBody != nil {
 			return reqBody, nil
@@ -3910,20 +3935,20 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 	markPatchSet := func(path string, value any) {
 		bodyModified = true
+		if reqBody != nil {
+			setOpenAIRequestMapPath(reqBody, path, value)
+		}
 		if requestView.patchesDisabled {
-			if reqBody != nil {
-				setOpenAIRequestMapPath(reqBody, path, value)
-			}
 			return
 		}
 		requestView.MarkPatchSet(path, value)
 	}
 	markPatchDelete := func(path string) {
 		bodyModified = true
+		if reqBody != nil {
+			deleteOpenAIRequestMapPath(reqBody, path)
+		}
 		if requestView.patchesDisabled {
-			if reqBody != nil {
-				deleteOpenAIRequestMapPath(reqBody, path)
-			}
 			return
 		}
 		requestView.MarkPatchDelete(path)
@@ -3955,8 +3980,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	instructions := gjson.GetBytes(body, "instructions")
 	instructionsEmpty := !instructions.Exists() || instructions.Type != gjson.String || strings.TrimSpace(instructions.String()) == ""
-	isMessagesBridgeRequest := isOpenAICompatMessagesBridgeRequestBody(reqBody)
-	if instructionsEmpty && !isMessagesBridgeRequest {
+	isMessagesBridgeRequest := isOpenAICompatMessagesBridgeBody(body)
+	if instructionsEmpty && shouldPatchDefaultCodexSynthInstructions(c, isCodexCLI, isMessagesBridgeRequest) {
 		markPatchSet("instructions", defaultCodexSynthInstructions(reqModel))
 	}
 	if shouldMarkOpenAICompatMessagesBridgeContext(c, reqBody) {
@@ -3964,6 +3989,15 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 	isCompactRequest := isOpenAIResponsesCompactPath(c)
 	if account.Platform == PlatformOpenAI && account.Type == AccountTypeOAuth {
+		if _, err := ensureReqBody(); err != nil {
+			return nil, err
+		}
+		isMessagesBridgeRequest = isMessagesBridgeRequest || isOpenAICompatMessagesBridgeRequestBody(reqBody)
+		if shouldMarkOpenAICompatMessagesBridgeContext(c, reqBody) {
+			setOpenAICompatMessagesBridgeContext(c, true)
+		}
+	}
+	if shouldDecodeOpenAIResponsesImageToolMutationBody(body, codexImageGenerationBridgeEnabled, isMessagesBridgeRequest, allowImageGeneration, imageIntent, account) {
 		if _, err := ensureReqBody(); err != nil {
 			return nil, err
 		}
@@ -4205,9 +4239,19 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return nil, err
 		}
 	}
-	if trimOpenAIStoreFalseReasoningItems(reqBody) {
-		bodyModified = true
-		disablePatch()
+	if reqBody != nil {
+		if trimOpenAIStoreFalseReasoningItems(reqBody) {
+			bodyModified = true
+			disablePatch()
+		}
+	} else if openAIRequestBodyStoreFalseMayContainReasoningInputItem(body) {
+		decoded, decodeErr := ensureReqBody()
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if trimOpenAIStoreFalseReasoningItems(decoded) {
+			markDecodedModified()
+		}
 	}
 
 	if account.Type == AccountTypeOAuth {
@@ -4338,8 +4382,16 @@ oauthTransformDone:
 			unsupportedFields = append(unsupportedFields, "top_p")
 		}
 		for _, unsupportedField := range unsupportedFields {
-			if _, has := reqBody[unsupportedField]; has {
-				delete(reqBody, unsupportedField)
+			hasUnsupportedField := false
+			if reqBody != nil {
+				_, hasUnsupportedField = reqBody[unsupportedField]
+			} else {
+				hasUnsupportedField = gjson.GetBytes(body, unsupportedField).Exists()
+			}
+			if hasUnsupportedField {
+				if reqBody != nil {
+					delete(reqBody, unsupportedField)
+				}
 				bodyModified = true
 				markPatchDelete(unsupportedField)
 				if unsupportedField == "temperature" || unsupportedField == "top_p" || unsupportedField == "verbosity" {
@@ -4375,10 +4427,7 @@ oauthTransformDone:
 	if bodyModified {
 		if requestView.HasPatches() {
 			if patchedBody, patchErr := requestView.ApplyPatches(); patchErr == nil {
-				body = patchedBody
-				requestView = newOpenAIRequestView(body)
-				reqBody = nil
-				bodyModified = false
+				resetRawBodyView(patchedBody)
 			}
 		}
 		if bodyModified {
@@ -4391,7 +4440,8 @@ oauthTransformDone:
 			if marshalErr != nil {
 				return nil, fmt.Errorf("serialize request body: %w", marshalErr)
 			}
-			requestView = newOpenAIRequestView(body)
+			resetRawBodyView(body)
+			reqBody = decoded
 		}
 	}
 	if IsImageGenerationIntentMap(openAIResponsesEndpoint, reqModel, reqBody) {
@@ -4413,12 +4463,12 @@ oauthTransformDone:
 			return nil, policyErr
 		}
 		if !bytes.Equal(filteredBody, body) {
-			body = filteredBody
-			reqBody = nil
-			if err := json.Unmarshal(body, &reqBody); err != nil {
-				return nil, fmt.Errorf("parse request body after fast policy: %w", err)
+			resetRawBodyView(filteredBody)
+			decoded, decodeErr := ensureReqBody()
+			if decodeErr != nil {
+				return nil, fmt.Errorf("parse request body after fast policy: %w", decodeErr)
 			}
-			if v, ok := reqBody["stream"].(bool); ok {
+			if v, ok := decoded["stream"].(bool); ok {
 				reqStream = v
 			}
 		}
@@ -4430,26 +4480,28 @@ oauthTransformDone:
 			return nil, err
 		}
 		if normalized {
-			body = normalizedBody
+			resetRawBodyView(normalizedBody)
 		}
 		reqStream = gjson.GetBytes(body, "stream").Bool()
 	} else if account.Type == AccountTypeOAuth {
 		reqStream = clientStream
 	}
-	body, _, finalizeErr := finalizeOpenAIResponsesOAuthUpstreamBody(c, account, reqModel, body)
+	finalizedBody, finalized, finalizeErr := finalizeOpenAIResponsesOAuthUpstreamBody(c, account, reqModel, body)
 	if finalizeErr != nil {
 		return nil, finalizeErr
 	}
-	if err := json.Unmarshal(body, &reqBody); err != nil {
-		return nil, fmt.Errorf("parse finalized request body: %w", err)
+	if finalized {
+		resetRawBodyView(finalizedBody)
+	} else {
+		body = finalizedBody
 	}
-	if shouldInjectDefaultInstructionsForOpenAIResponses(c, account, isMessagesBridgeRequest, isCompactRequest) && isInstructionsEmpty(reqBody) {
-		if applyEmbeddedDefaultInstructions(reqBody) {
-			var marshalErr error
-			body, marshalErr = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
-			if marshalErr != nil {
-				return nil, fmt.Errorf("serialize finalized request body with instructions: %w", marshalErr)
-			}
+	if shouldInjectDefaultInstructionsForOpenAIResponses(c, account, isMessagesBridgeRequest, isCompactRequest) {
+		bodyWithInstructions, injected, injectErr := ensureOpenAIPassthroughInstructions(c, reqModel, body)
+		if injectErr != nil {
+			return nil, injectErr
+		}
+		if injected {
+			resetRawBodyView(bodyWithInstructions)
 		}
 	}
 	upstreamStream = gjson.GetBytes(body, "stream").Bool()
@@ -4800,6 +4852,10 @@ oauthTransformDone:
 						fallbackUpstreamModel = normalized
 					}
 					if fallbackUpstreamModel != "" && !strings.EqualFold(fallbackUpstreamModel, currentModel) {
+						reqBody, err = ensureReqBody()
+						if err != nil {
+							return nil, fmt.Errorf("parse openai model fallback retry body: %w", err)
+						}
 						reqBody["model"] = fallbackUpstreamModel
 						body, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
 						if err != nil {
@@ -4815,6 +4871,7 @@ oauthTransformDone:
 							}
 							reqStream = gjson.GetBytes(body, "stream").Bool()
 						}
+						resetRawBodyView(body)
 						upstreamModel = fallbackUpstreamModel
 						setOpsUpstreamRequestBody(c, body)
 						logger.LegacyPrintf(
@@ -4831,6 +4888,10 @@ oauthTransformDone:
 			}
 			if !httpInvalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest &&
 				isOpenAIInvalidEncryptedContentError(upstreamCode, upstreamMsg, respBody) {
+				reqBody, err = ensureReqBody()
+				if err != nil {
+					return nil, fmt.Errorf("parse invalid_encrypted_content retry body: %w", err)
+				}
 				removedReasoningItems := trimOpenAIEncryptedReasoningItems(reqBody)
 				previousResponseID := openAIWSPayloadString(reqBody, "previous_response_id")
 				hasFunctionCallOutput := HasFunctionCallOutput(reqBody)
@@ -4854,6 +4915,7 @@ oauthTransformDone:
 						}
 						reqStream = gjson.GetBytes(body, "stream").Bool()
 					}
+					resetRawBodyView(body)
 					setOpsUpstreamRequestBody(c, body)
 					httpInvalidEncryptedContentRetryTried = true
 					s.RecordOpenAIAccountRecoveryReason(account.ID, "invalid_encrypted_content")
@@ -4878,6 +4940,10 @@ oauthTransformDone:
 			if !httpUnsupportedPreviousResponseIDRetryTried &&
 				resp.StatusCode == http.StatusBadRequest &&
 				isOpenAIUnsupportedPreviousResponseIDError(upstreamCode, upstreamMsg) {
+				reqBody, err = ensureReqBody()
+				if err != nil {
+					return nil, fmt.Errorf("parse unsupported previous_response_id retry body: %w", err)
+				}
 				if _, present := reqBody["previous_response_id"]; present && !HasFunctionCallOutput(reqBody) {
 					delete(reqBody, "previous_response_id")
 					body, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
@@ -4894,6 +4960,7 @@ oauthTransformDone:
 						}
 						reqStream = gjson.GetBytes(body, "stream").Bool()
 					}
+					resetRawBodyView(body)
 					setOpsUpstreamRequestBody(c, body)
 					httpUnsupportedPreviousResponseIDRetryTried = true
 					s.RecordOpenAIAccountRecoveryReason(account.ID, "unsupported_previous_response_id")
@@ -4908,6 +4975,10 @@ oauthTransformDone:
 			if !httpReasoningEnabledRetryTried &&
 				resp.StatusCode == http.StatusBadRequest &&
 				isOpenAIUnsupportedReasoningEnabledError(upstreamCode, upstreamMsg, respBody) {
+				reqBody, err = ensureReqBody()
+				if err != nil {
+					return nil, fmt.Errorf("parse unsupported reasoning.enabled retry body: %w", err)
+				}
 				if dropOpenAIReasoningEnabled(reqBody) {
 					body, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
 					if err != nil {
@@ -4923,6 +4994,7 @@ oauthTransformDone:
 						}
 						reqStream = gjson.GetBytes(body, "stream").Bool()
 					}
+					resetRawBodyView(body)
 					setOpsUpstreamRequestBody(c, body)
 					httpReasoningEnabledRetryTried = true
 					s.RecordOpenAIAccountRecoveryReason(account.ID, "unsupported_reasoning_enabled")
@@ -4944,9 +5016,7 @@ oauthTransformDone:
 					return nil, fmt.Errorf("serialize instructions retry body: %w", err)
 				}
 				if injected {
-					if err := json.Unmarshal(body, &reqBody); err != nil {
-						return nil, fmt.Errorf("unmarshal instructions retry body: %w", err)
-					}
+					resetRawBodyView(body)
 					setOpsUpstreamRequestBody(c, body)
 					httpInstructionsRetryTried = true
 					logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request once after injecting missing instructions (account: %s)", account.Name)
@@ -4963,6 +5033,10 @@ oauthTransformDone:
 						c.Set(openAICodexCompatFallbackReasonKey, fallbackReason)
 					}
 					var codexResult codexTransformResult
+					reqBody, err = ensureReqBody()
+					if err != nil {
+						return nil, fmt.Errorf("parse codex compat fallback retry body: %w", err)
+					}
 					body, codexResult, promptCacheKey, err = remarshalOpenAIOAuthCompatFallbackBody(reqBody, promptCacheKey, fallbackReason)
 					if err != nil {
 						return nil, fmt.Errorf("serialize codex compat fallback body: %w", err)
@@ -4982,6 +5056,7 @@ oauthTransformDone:
 							}
 							reqStream = gjson.GetBytes(body, "stream").Bool()
 						}
+						resetRawBodyView(body)
 						setOpsUpstreamRequestBody(c, body)
 						logger.LegacyPrintf(
 							"service.openai_gateway",
@@ -5103,8 +5178,8 @@ oauthTransformDone:
 			usage = &OpenAIUsage{}
 		}
 
-		reasoningEffort := extractOpenAIReasoningEffort(reqBody, originalModel)
-		serviceTier := extractOpenAIServiceTier(reqBody)
+		reasoningEffort := extractOpenAIReasoningEffortFromBody(body, originalModel)
+		serviceTier := extractOpenAIServiceTierFromBody(body)
 
 		result := &OpenAIForwardResult{
 			RequestID:       resp.Header.Get("x-request-id"),
@@ -10520,6 +10595,21 @@ func isOpenAIResponsesInboundPath(c *gin.Context) bool {
 	return strings.Contains(path, "/responses")
 }
 
+func isOpenAIGatewayResponsesPath(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	path := strings.TrimRight(strings.TrimSpace(c.Request.URL.Path), "/")
+	return path == "/openai/v1/responses" || strings.HasPrefix(path, "/openai/v1/responses/")
+}
+
+func shouldPatchDefaultCodexSynthInstructions(c *gin.Context, isCodexCLI bool, isMessagesBridgeRequest bool) bool {
+	if isMessagesBridgeRequest {
+		return false
+	}
+	return isCodexCLI || isOpenAIGatewayResponsesPath(c)
+}
+
 func shouldInjectDefaultInstructionsForOpenAIResponses(c *gin.Context, account *Account, isMessagesBridgeRequest bool, isCompactRequest bool) bool {
 	_ = isCompactRequest
 	if account == nil {
@@ -10529,7 +10619,7 @@ func shouldInjectDefaultInstructionsForOpenAIResponses(c *gin.Context, account *
 		return false
 	}
 	if isMessagesBridgeRequest {
-		return shouldInjectDefaultInstructionsForOpenAIMessagesBridge(c)
+		return true
 	}
 	return isOpenAIResponsesInboundPath(c)
 }
@@ -10571,6 +10661,14 @@ func finalizeOpenAIResponsesOAuthUpstreamBody(c *gin.Context, account *Account, 
 		}
 		body = bodyWithInstructions
 		changed = changed || injected
+	}
+	if isMessagesBridge && gjson.GetBytes(body, "prompt_cache_key").Exists() {
+		bodyWithoutPromptCacheKey, err := sjson.DeleteBytes(body, "prompt_cache_key")
+		if err != nil {
+			return body, false, fmt.Errorf("delete messages bridge prompt_cache_key: %w", err)
+		}
+		body = bodyWithoutPromptCacheKey
+		changed = true
 	}
 	setOpenAITTFTWatchdogBypass(c, IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, body))
 
@@ -10905,6 +11003,55 @@ func openAIRequestBodyMayContainEmptyBase64InputImage(body []byte) bool {
 	return openAIJSONValueMayContainEmptyBase64InputImage(input)
 }
 
+func shouldDecodeOpenAIResponsesImageToolMutationBody(body []byte, codexBridgeEnabled bool, isMessagesBridgeRequest bool, allowImageGeneration bool, imageIntent bool, account *Account) bool {
+	if codexBridgeEnabled && !isMessagesBridgeRequest {
+		return true
+	}
+	if openAIRequestBodyImageGenerationToolNeedsNormalization(body) {
+		return true
+	}
+	if !openAIRequestBodyHasImageGenerationTool(body) {
+		return false
+	}
+	if !allowImageGeneration {
+		return true
+	}
+	return accountShouldStripDeclaredImageGenerationTool(account, imageIntent)
+}
+
+func openAIRequestBodyStoreFalseMayContainReasoningInputItem(body []byte) bool {
+	root := parseRawJSONView(body)
+	store := root.Get("store")
+	if !store.Exists() || store.Type != gjson.False {
+		return false
+	}
+	return openAIJSONValueMayContainReasoningInputItem(root.Get("input"))
+}
+
+func openAIJSONValueMayContainReasoningInputItem(value gjson.Result) bool {
+	if !value.Exists() {
+		return false
+	}
+	if value.IsArray() {
+		found := false
+		value.ForEach(func(_, item gjson.Result) bool {
+			if openAIJSONValueMayContainReasoningInputItem(item) {
+				found = true
+				return false
+			}
+			return true
+		})
+		return found
+	}
+	if value.IsObject() {
+		if strings.TrimSpace(value.Get("type").String()) == "reasoning" {
+			return true
+		}
+		return openAIJSONValueMayContainReasoningInputItem(value.Get("content"))
+	}
+	return false
+}
+
 func openAIRequestBodyMayContainInputImageToken(body []byte) bool {
 	if bytes.Contains(body, []byte("input_image")) {
 		return true
@@ -11056,7 +11203,16 @@ func isEmptyBase64DataURI(raw string) bool {
 
 func getOpenAIRequestBodyMap(_ *gin.Context, body []byte) (map[string]any, error) {
 	var reqBody map[string]any
-	if err := json.Unmarshal(body, &reqBody); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&reqBody); err != nil {
+		return nil, fmt.Errorf("parse request: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("parse request: unexpected trailing JSON value")
+		}
 		return nil, fmt.Errorf("parse request: %w", err)
 	}
 	return reqBody, nil
