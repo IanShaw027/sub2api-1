@@ -484,6 +484,7 @@ describe('LinuxDoCallbackView', () => {
   it('collects email, password, and verify code for pending oauth account creation and submits adoption decisions', async () => {
     getPublicSettings.mockResolvedValue({
       invitation_code_enabled: true,
+      email_verify_enabled: true,
       turnstile_enabled: false,
       turnstile_site_key: ''
     })
@@ -540,6 +541,11 @@ describe('LinuxDoCallbackView', () => {
   })
 
   it('starts with an empty create-account email when the upstream provider did not return one', async () => {
+    getPublicSettings.mockResolvedValue({
+      email_verify_enabled: true,
+      turnstile_enabled: false,
+      turnstile_site_key: ''
+    })
     exchangePendingOAuthCompletion.mockResolvedValue({
       error: 'email_required',
       redirect: '/welcome',
@@ -652,6 +658,11 @@ describe('LinuxDoCallbackView', () => {
   })
 
   it('sends a verify code for pending oauth account creation', async () => {
+    getPublicSettings.mockResolvedValue({
+      email_verify_enabled: true,
+      turnstile_enabled: false,
+      turnstile_site_key: ''
+    })
     exchangePendingOAuthCompletion.mockResolvedValue({
       error: 'email_required',
       redirect: '/welcome'

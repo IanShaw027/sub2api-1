@@ -653,6 +653,7 @@ describe('WechatCallbackView', () => {
   it('collects email, password, and verify code for pending oauth account creation and submits adoption decisions', async () => {
     getPublicSettingsMock.mockResolvedValue({
       invitation_code_enabled: true,
+      email_verify_enabled: true,
       turnstile_enabled: false,
       turnstile_site_key: '',
     })
@@ -800,6 +801,11 @@ describe('WechatCallbackView', () => {
   })
 
   it('sends a verify code for pending oauth account creation', async () => {
+    getPublicSettingsMock.mockResolvedValue({
+      email_verify_enabled: true,
+      turnstile_enabled: false,
+      turnstile_site_key: '',
+    })
     exchangePendingOAuthCompletionMock.mockResolvedValue({
       error: 'email_required',
       redirect: '/welcome',
