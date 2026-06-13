@@ -457,6 +457,31 @@ const showDatePicker = ref(false)
 const resultData = ref<any>(null)
 const now = ref(new Date())
 let resetTimer: ReturnType<typeof setInterval> | null = null
+let ringStartFrame: number | null = null
+let ringTickFrame: number | null = null
+let ringStartTimer: ReturnType<typeof setTimeout> | null = null
+let ringAnimationGeneration = 0
+let isUnmounted = false
+
+function cancelRingAnimation() {
+  ringAnimationGeneration += 1
+  if (ringStartFrame != null) {
+    cancelAnimationFrame(ringStartFrame)
+    ringStartFrame = null
+  }
+  if (ringTickFrame != null) {
+    cancelAnimationFrame(ringTickFrame)
+    ringTickFrame = null
+  }
+  if (ringStartTimer != null) {
+    clearTimeout(ringStartTimer)
+    ringStartTimer = null
+  }
+}
+
+function isRingAnimationActive(generation: number) {
+  return !isUnmounted && generation === ringAnimationGeneration
+}
 
 // ==================== Date Range State ====================
 
@@ -552,12 +577,20 @@ function getRingOffset(ring: RingItem): number {
 }
 
 function triggerRingAnimation(items: RingItem[]) {
+  if (isUnmounted) return
+  cancelRingAnimation()
+  const generation = ringAnimationGeneration
   ringAnimated.value = false
   displayPcts.value = items.map(() => 0)
 
   nextTick(() => {
-    requestAnimationFrame(() => {
-      setTimeout(() => {
+    if (!isRingAnimationActive(generation)) return
+    ringStartFrame = requestAnimationFrame(() => {
+      if (!isRingAnimationActive(generation)) return
+      ringStartFrame = null
+      ringStartTimer = setTimeout(() => {
+        if (!isRingAnimationActive(generation)) return
+        ringStartTimer = null
         ringAnimated.value = true
 
         // Animate percentage numbers
@@ -566,13 +599,18 @@ function triggerRingAnimation(items: RingItem[]) {
         const targets = items.map(item => item.isBalance ? 0 : item.pct)
 
         function tick() {
+          if (!isRingAnimationActive(generation)) return
           const elapsed = performance.now() - startTime
           const p = Math.min(elapsed / duration, 1)
           const ease = 1 - Math.pow(1 - p, 3)
           displayPcts.value = targets.map(target => Math.round(ease * target))
-          if (p < 1) requestAnimationFrame(tick)
+          if (p < 1) {
+            ringTickFrame = requestAnimationFrame(tick)
+          } else {
+            ringTickFrame = null
+          }
         }
-        requestAnimationFrame(tick)
+        ringTickFrame = requestAnimationFrame(tick)
       }, 50)
     })
   })
@@ -934,6 +972,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (resetTimer) clearInterval(resetTimer)
+  isUnmounted = true
+  cancelRingAnimation()
 })
 </script>
 
