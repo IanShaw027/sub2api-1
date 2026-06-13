@@ -940,6 +940,42 @@ func TestSettingService_GetPlatformModelRoutingConfig_CachesAndReturnsClones(t *
 	require.NotContains(t, second, "gemini")
 }
 
+func TestClonePlatformModelConfigMap_PreservesAccountDefaultPolicyFields(t *testing.T) {
+	src := map[string]DefaultAccountModelConfig{
+		"openai": {
+			ModelWhitelist:           []string{"gpt-5.4"},
+			TempUnschedulableEnabled: true,
+			TempUnschedulableRules:   []TempUnschedulableRule{{ErrorCode: 502, Keywords: []string{"overloaded"}, DurationMinutes: 10}},
+			CustomErrorCodesEnabled:  true,
+			CustomErrorCodes:         []int{500, 502},
+			KiroSubscriptionTypeModelMap: map[string]DefaultAccountModelConfig{
+				"free": {
+					TempUnschedulableEnabled: true,
+					TempUnschedulableRules:   []TempUnschedulableRule{{ErrorCode: 429, DurationMinutes: 5}},
+					CustomErrorCodesEnabled:  true,
+					CustomErrorCodes:         []int{429},
+				},
+			},
+		},
+	}
+
+	cloned := clonePlatformModelConfigMap(src)
+
+	require.True(t, cloned["openai"].TempUnschedulableEnabled)
+	require.Equal(t, []TempUnschedulableRule{{ErrorCode: 502, Keywords: []string{"overloaded"}, DurationMinutes: 10}}, cloned["openai"].TempUnschedulableRules)
+	require.True(t, cloned["openai"].CustomErrorCodesEnabled)
+	require.Equal(t, []int{500, 502}, cloned["openai"].CustomErrorCodes)
+	require.True(t, cloned["openai"].KiroSubscriptionTypeModelMap["free"].TempUnschedulableEnabled)
+	require.Equal(t, []TempUnschedulableRule{{ErrorCode: 429, DurationMinutes: 5}}, cloned["openai"].KiroSubscriptionTypeModelMap["free"].TempUnschedulableRules)
+	require.True(t, cloned["openai"].KiroSubscriptionTypeModelMap["free"].CustomErrorCodesEnabled)
+	require.Equal(t, []int{429}, cloned["openai"].KiroSubscriptionTypeModelMap["free"].CustomErrorCodes)
+
+	src["openai"].TempUnschedulableRules[0].ErrorCode = 503
+	src["openai"].CustomErrorCodes[0] = 599
+	require.Equal(t, 502, cloned["openai"].TempUnschedulableRules[0].ErrorCode)
+	require.Equal(t, 500, cloned["openai"].CustomErrorCodes[0])
+}
+
 func TestSettingService_GetPlatformModelRoutingConfig_TransientErrorKeepsStaleCache(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	repo := &kiroRuntimeSettingRepoStub{

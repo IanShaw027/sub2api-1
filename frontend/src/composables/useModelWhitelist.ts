@@ -513,6 +513,20 @@ export interface ModelMappingEntry {
   to: string
 }
 
+function kiroModelFamily(model: string): 'haiku' | 'sonnet' | 'opus' | '' {
+  const normalized = model.trim().toLowerCase()
+  if (normalized.startsWith('claude-haiku-')) return 'haiku'
+  if (normalized.startsWith('claude-sonnet-')) return 'sonnet'
+  if (normalized.startsWith('claude-opus-')) return 'opus'
+  return ''
+}
+
+export function isCompatibleKiroModelMappingPair(from: string, to: string): boolean {
+  const fromFamily = kiroModelFamily(from)
+  const toFamily = kiroModelFamily(to)
+  return fromFamily !== '' && fromFamily === toFamily
+}
+
 export function splitModelMappingObject(
   modelMapping?: Record<string, unknown> | null
 ): { allowedModels: string[]; modelMappings: ModelMappingEntry[] } {
@@ -542,9 +556,11 @@ export function splitModelMappingObject(
 export function buildModelMappingObject(
   mode: ModelRestrictionMode,
   allowedModels: string[],
-  modelMappings: ModelMappingEntry[]
+  modelMappings: ModelMappingEntry[],
+  platform = ''
 ): Record<string, string> | null {
   const mapping: Record<string, string> = {}
+  const isKiro = platform.trim().toLowerCase() === 'kiro'
 
   if (mode === 'whitelist' || mode === 'combined') {
     for (const model of allowedModels) {
@@ -572,6 +588,10 @@ export function buildModelMappingObject(
       // to 不允许包含通配符
       if (to.includes('*')) {
         console.warn(`[buildModelMappingObject] 目标模型不能包含通配符，跳过: ${from} -> ${to}`)
+        continue
+      }
+      if (isKiro && !isCompatibleKiroModelMappingPair(from, to)) {
+        console.warn(`[buildModelMappingObject] Kiro 模型映射不能跨模型族，跳过: ${from} -> ${to}`)
         continue
       }
       mapping[from] = to

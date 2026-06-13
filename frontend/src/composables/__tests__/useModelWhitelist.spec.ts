@@ -85,6 +85,22 @@ describe('useModelWhitelist', () => {
     })
   })
 
+  it('Kiro mapping mode skips cross-family mappings before backend submit', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const mapping = buildModelMappingObject('mapping', [], [
+      { from: 'claude-opus-4-6', to: 'claude-sonnet-4.6' },
+      { from: 'claude-sonnet-*', to: 'claude-sonnet-4.6' },
+      { from: 'claude-haiku-4.5-thinking-1m', to: 'claude-haiku-4.6' }
+    ], 'kiro')
+
+    expect(mapping).toEqual({
+      'claude-sonnet-*': 'claude-sonnet-4.6',
+      'claude-haiku-4.5-thinking-1m': 'claude-haiku-4.6'
+    })
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Kiro 模型映射不能跨模型族'))
+    warnSpy.mockRestore()
+  })
+
   it('Kiro 快速映射按模型族通用映射到 4.5', () => {
     const presets = getPresetMappingsByPlatform('kiro')
 

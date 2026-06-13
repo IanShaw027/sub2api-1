@@ -709,9 +709,13 @@ func clonePlatformModelConfigMap(src map[string]DefaultAccountModelConfig) map[s
 
 func cloneDefaultAccountModelConfig(cfg DefaultAccountModelConfig) DefaultAccountModelConfig {
 	cloned := DefaultAccountModelConfig{
-		ModelWhitelist:      cloneStringSlice(cfg.ModelWhitelist),
-		ModelMapping:        copyStringMap(cfg.ModelMapping),
-		CompactModelMapping: copyStringMap(cfg.CompactModelMapping),
+		ModelWhitelist:           cloneStringSlice(cfg.ModelWhitelist),
+		ModelMapping:             copyStringMap(cfg.ModelMapping),
+		CompactModelMapping:      copyStringMap(cfg.CompactModelMapping),
+		TempUnschedulableEnabled: cfg.TempUnschedulableEnabled,
+		TempUnschedulableRules:   cloneTempUnschedulableRules(cfg.TempUnschedulableRules),
+		CustomErrorCodesEnabled:  cfg.CustomErrorCodesEnabled,
+		CustomErrorCodes:         cloneIntSlice(cfg.CustomErrorCodes),
 	}
 	if len(cfg.KiroSubscriptionTypeModelMap) > 0 {
 		cloned.KiroSubscriptionTypeModelMap = make(map[string]DefaultAccountModelConfig, len(cfg.KiroSubscriptionTypeModelMap))
@@ -720,6 +724,27 @@ func cloneDefaultAccountModelConfig(cfg DefaultAccountModelConfig) DefaultAccoun
 		}
 	}
 	return cloned
+}
+
+func cloneTempUnschedulableRules(src []TempUnschedulableRule) []TempUnschedulableRule {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]TempUnschedulableRule, len(src))
+	for i, rule := range src {
+		out[i] = rule
+		out[i].Keywords = cloneStringSlice(rule.Keywords)
+	}
+	return out
+}
+
+func cloneIntSlice(src []int) []int {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]int, len(src))
+	copy(out, src)
+	return out
 }
 
 func resolveKiroSubscriptionTypeFromCredentials(credentials map[string]any) string {
