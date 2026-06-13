@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -90,6 +91,119 @@ func TestOpenAIGatewayService_Forward_NonCompactRequestIgnoresCompactOnlyModelMa
 	require.Equal(t, "gpt-5.4", result.Model)
 	require.Equal(t, "gpt-5.4", result.UpstreamModel)
 	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.lastBody, "model").String())
+}
+
+func TestOpenAIGatewayService_Forward_CompactUsesPlatformModelRoutingCompactMapping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	resetPlatformModelRoutingConfigCacheForTest()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-4o-mini","stream":false,"instructions":"compact-test","input":"hello"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid-platform-compact-map"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"resp_platform_compact","status":"completed","model":"gpt-5.4-mini","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`)),
+	}}
+
+	svc := &OpenAIGatewayService{
+		httpUpstream: upstream,
+		settingService: NewSettingService(&kiroRuntimeSettingRepoStub{
+			values: map[string]string{
+				SettingKeyPlatformModelRoutingConfig: `{
+					"openai": {
+						"model_mapping": {"gpt-4o-mini": "gpt-5.4"},
+						"compact_model_mapping": {"gpt-5.4": "gpt-5.4-mini"}
+					}
+				}`,
+			},
+		}, &config.Config{}),
+	}
+	account := &Account{
+		ID:          22,
+		Name:        "openai-oauth-platform-compact",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "gpt-4o-mini", result.Model)
+	require.Equal(t, "gpt-5.4-mini", result.UpstreamModel)
+	require.Equal(t, "gpt-5.4-mini", gjson.GetBytes(upstream.lastBody, "model").String())
+}
+
+func TestOpenAIGatewayService_Forward_CompactFallbackUsesPlatformCompactMapping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	resetPlatformModelRoutingConfigCacheForTest()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt6","stream":false,"instructions":"compact-fallback-test","input":"hello"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"unknown model"}}`)),
+			},
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"stop after fallback capture"}}`)),
+			},
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		httpUpstream: upstream,
+		settingService: NewSettingService(&antigravityFallbackSettingRepoStub{values: map[string]string{
+			SettingKeyEnableModelFallback: "true",
+			SettingKeyFallbackModelOpenAI: "gpt-4o-mini",
+			SettingKeyPlatformModelRoutingConfig: `{
+				"openai": {
+					"model_mapping": {"gpt-4o-mini": "gpt-5.4"},
+					"compact_model_mapping": {"gpt-5.4": "gpt-5.4-mini"}
+				}
+			}`,
+		}}, &config.Config{}),
+	}
+	account := &Account{
+		ID:          23,
+		Name:        "openai-oauth-platform-compact-fallback",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	require.Equal(t, "gpt6", gjson.GetBytes(upstream.bodies[0], "model").String())
+	require.Equal(t, "gpt-5.4-mini", gjson.GetBytes(upstream.bodies[1], "model").String())
 }
 
 func TestOpenAIGatewayService_OAuthPassthrough_CompactOnlyModelMappingOverridesUpstreamModel(t *testing.T) {

@@ -1,6 +1,9 @@
 package service
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // resolveOpenAIForwardModel 解析 OpenAI 兼容转发使用的模型。
 // defaultMappedModel 只服务于 /v1/messages 的 Claude 系列显式调度映射，
@@ -10,12 +13,19 @@ func resolveOpenAIForwardModel(account *Account, requestedModel, defaultMappedMo
 }
 
 func resolveOpenAIForwardModelWithSelectedFallback(account *Account, requestedModel, defaultMappedModel, selectedFallbackModel string) string {
+	return resolveOpenAIForwardModelWithSettingsAndSelectedFallback(context.Background(), nil, account, requestedModel, defaultMappedModel, selectedFallbackModel)
+}
+
+func resolveOpenAIForwardModelWithSettings(ctx context.Context, settingService *SettingService, account *Account, requestedModel, defaultMappedModel string) string {
+	return resolveOpenAIForwardModelWithSettingsAndSelectedFallback(ctx, settingService, account, requestedModel, defaultMappedModel, "")
+}
+
+func resolveOpenAIForwardModelWithSettingsAndSelectedFallback(ctx context.Context, settingService *SettingService, account *Account, requestedModel, defaultMappedModel, selectedFallbackModel string) string {
 	if selectedFallbackModel = strings.TrimSpace(selectedFallbackModel); selectedFallbackModel != "" {
 		if account == nil {
 			return selectedFallbackModel
 		}
-		mappedModel, _ := account.ResolveMappedModel(selectedFallbackModel)
-		return mappedModel
+		return ResolveEffectiveMappedModel(ctx, settingService, account, selectedFallbackModel, false)
 	}
 
 	if account == nil {
@@ -25,11 +35,21 @@ func resolveOpenAIForwardModelWithSelectedFallback(account *Account, requestedMo
 		return requestedModel
 	}
 
-	mappedModel, matched := account.ResolveMappedModel(requestedModel)
+	routing := ResolveEffectiveModelRouting(ctx, settingService, account, requestedModel, false)
+	mappedModel := routing.Model
+	matched := routing.Matched
 	if !matched && defaultMappedModel != "" && claudeMessagesDispatchFamily(requestedModel) != "" {
 		return defaultMappedModel
 	}
 	return mappedModel
+}
+
+func resolveOpenAICompactFallbackUpstreamModel(ctx context.Context, settingService *SettingService, account *Account, fallbackModel string) string {
+	fallbackModel = strings.TrimSpace(fallbackModel)
+	if fallbackModel == "" {
+		return ""
+	}
+	return ResolveEffectiveMappedModel(ctx, settingService, account, fallbackModel, true)
 }
 
 // resolveOpenAICompactForwardModel determines the compact-only upstream model

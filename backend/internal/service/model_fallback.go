@@ -20,13 +20,17 @@ func resolveConfiguredFallbackModel(ctx context.Context, settingService *Setting
 }
 
 func isUpstreamModelUnavailableForFallback(statusCode int, body []byte) bool {
+	upstreamMsg := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(body)))
+	rawBody := strings.ToLower(strings.TrimSpace(string(body)))
+	return isUpstreamModelUnavailableTextForFallback(statusCode, upstreamMsg, rawBody)
+}
+
+func isUpstreamModelUnavailableTextForFallback(statusCode int, parts ...string) bool {
 	if statusCode != 400 && statusCode != 404 {
 		return false
 	}
 
-	upstreamMsg := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(body)))
-	rawBody := strings.ToLower(strings.TrimSpace(string(body)))
-	haystack := strings.TrimSpace(upstreamMsg + " " + rawBody)
+	haystack := strings.ToLower(strings.TrimSpace(strings.Join(parts, " ")))
 	if haystack == "" {
 		return false
 	}

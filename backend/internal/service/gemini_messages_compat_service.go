@@ -295,7 +295,7 @@ func (s *GeminiMessagesCompatService) isAccountUsableForRequestWithPrecheck(
 
 	// 检查模型支持
 	// Check model support
-	if requestedModel != "" && !s.isModelSupportedByAccount(account, requestedModel) {
+	if requestedModel != "" && !s.isModelSupportedByAccount(ctx, account, requestedModel) {
 		return false
 	}
 
@@ -439,14 +439,14 @@ func (s *GeminiMessagesCompatService) isBetterGeminiAccount(candidate, current *
 }
 
 // isModelSupportedByAccount 根据账户平台检查模型支持
-func (s *GeminiMessagesCompatService) isModelSupportedByAccount(account *Account, requestedModel string) bool {
+func (s *GeminiMessagesCompatService) isModelSupportedByAccount(ctx context.Context, account *Account, requestedModel string) bool {
 	if account.Platform == PlatformAntigravity {
 		if strings.TrimSpace(requestedModel) == "" {
 			return true
 		}
-		return mapAntigravityModel(account, requestedModel) != ""
+		return mapAntigravityModelWithSettings(ctx, s.settingService, account, requestedModel) != ""
 	}
-	return account.IsModelSupported(requestedModel)
+	return IsEffectiveModelSupported(ctx, s.settingService, account, requestedModel, false)
 }
 
 // GetAntigravityGatewayService 返回 AntigravityGatewayService
@@ -645,7 +645,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	}
 
 	originalModel := req.Model
-	mappedModel := account.GetMappedModel(req.Model)
+	mappedModel := ResolveEffectiveMappedModel(ctx, s.settingService, account, req.Model, false)
 
 	geminiReq, err := convertClaudeMessagesToGeminiGenerateContent(body)
 	if err != nil {
@@ -1220,7 +1220,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	// `thoughtSignature` to avoid frequent INVALID_ARGUMENT 400s.
 	body = ensureGeminiFunctionCallThoughtSignatures(body)
 
-	mappedModel := account.GetMappedModel(originalModel)
+	mappedModel := ResolveEffectiveMappedModel(ctx, s.settingService, account, originalModel, false)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -1822,7 +1822,7 @@ func (s *GeminiMessagesCompatService) maybeRetryGeminiModelFallback(
 		return resp, currentModel, false
 	}
 
-	fallbackMappedModel := account.GetMappedModel(fallbackModel)
+	fallbackMappedModel := ResolveEffectiveMappedModel(ctx, s.settingService, account, fallbackModel, false)
 	if fallbackMappedModel == "" || strings.EqualFold(fallbackMappedModel, currentModel) {
 		return resp, currentModel, false
 	}

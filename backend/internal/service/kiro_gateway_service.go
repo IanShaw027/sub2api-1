@@ -121,7 +121,8 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 	runtimeSettings := s.resolveKiroRuntimeSettings(ctx)
 
 	// Free 账号在 simulate / model_and_simulate 模式下，对缺少原生 thinking 的模型走双请求提取。
-	if shouldUseKiroFreeThinkingPath(account, parsed, runtimeSettings) {
+	if effectiveModelForThinking, err := resolveKiroRequestedModelForRequestWithRouting(ctx, s.settingService, account, parsed, runtimeSettings); err == nil &&
+		shouldUseKiroFreeThinkingPathForModel(account, parsed, runtimeSettings, effectiveModelForThinking) {
 		return s.forwardWithFreeThinking(ctx, c, account, parsed, runtimeSettings)
 	}
 
@@ -231,7 +232,11 @@ func estimateKiroInputTokens(body []byte) int {
 }
 
 func (s *KiroGatewayService) validateAndConvertRequest(c *gin.Context, account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) (*kiropkg.ConvertResult, int, *kiroPreparedRequestMeta, error) {
-	converted, billedInputTokens, meta, err := prepareKiroConvertedRequestWithMeta(account, parsed, runtimeSettings)
+	ctx := context.Background()
+	if c != nil && c.Request != nil {
+		ctx = c.Request.Context()
+	}
+	converted, billedInputTokens, meta, err := prepareKiroConvertedRequestWithRoutingWithMeta(ctx, s.settingService, account, parsed, runtimeSettings)
 	if err != nil {
 		writeKiroInvalidRequest(c, err)
 		return nil, 0, nil, err
@@ -245,12 +250,16 @@ func prepareKiroConvertedRequest(account *Account, parsed *ParsedRequest, runtim
 }
 
 func prepareKiroConvertedRequestWithMeta(account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) (*kiropkg.ConvertResult, int, *kiroPreparedRequestMeta, error) {
+	return prepareKiroConvertedRequestWithRoutingWithMeta(context.Background(), nil, account, parsed, runtimeSettings)
+}
+
+func prepareKiroConvertedRequestWithRoutingWithMeta(ctx context.Context, settingService *SettingService, account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) (*kiropkg.ConvertResult, int, *kiroPreparedRequestMeta, error) {
 	if account == nil || parsed == nil {
 		err := fmt.Errorf("invalid kiro request args")
 		return nil, 0, nil, err
 	}
 
-	requestedModel, err := resolveKiroRequestedModelForRequest(account, parsed, runtimeSettings)
+	requestedModel, err := resolveKiroRequestedModelForRequestWithRouting(ctx, settingService, account, parsed, runtimeSettings)
 	if err != nil {
 		return nil, 0, nil, err
 	}
@@ -391,10 +400,39 @@ func resolveKiroRequestedModel(account *Account, requestedModel string) (string,
 }
 
 func resolveKiroRequestedModelForRequest(account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) (string, error) {
+	return resolveKiroRequestedModelForRequestWithRouting(context.Background(), nil, account, parsed, runtimeSettings)
+}
+
+func resolveKiroRequestedModelForRequestWithRouting(ctx context.Context, settingService *SettingService, account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) (string, error) {
 	if parsed == nil {
 		return "", fmt.Errorf("invalid kiro request args")
 	}
-	return resolveKiroRequestedModel(account, parsed.Model)
+	return resolveKiroRequestedModelWithRouting(ctx, settingService, account, parsed.Model)
+}
+
+func resolveKiroRequestedModelWithRouting(ctx context.Context, settingService *SettingService, account *Account, requestedModel string) (string, error) {
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" {
+		return "", nil
+	}
+	if _, hasSystemConfig := platformModelRoutingConfigForAccount(ctx, settingService, account); !hasSystemConfig {
+		return resolveKiroRequestedModel(account, requestedModel)
+	}
+	routing := ResolveEffectiveModelRouting(ctx, settingService, account, requestedModel, false)
+	if !routing.Supported {
+		return "", fmt.Errorf("unsupported kiro model: %s", requestedModel)
+	}
+	effectiveModel := strings.TrimSpace(routing.Model)
+	if effectiveModel == "" {
+		effectiveModel = requestedModel
+	}
+	if kiropkg.MapModel(effectiveModel) == "" {
+		return "", fmt.Errorf("unsupported kiro model: %s", requestedModel)
+	}
+	if strippedModel, hadVariant := stripKiroModelVariantSuffixes(effectiveModel); hadVariant {
+		return strippedModel, nil
+	}
+	return effectiveModel, nil
 }
 
 // isKiroFreeAccount 判断 Kiro 账号是否为 Free 订阅。
@@ -426,6 +464,10 @@ func shouldSimulateKiroThinking(parsed *ParsedRequest, runtimeSettings *KiroRunt
 }
 
 func shouldUseKiroFreeThinkingPath(account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) bool {
+	return shouldUseKiroFreeThinkingPathForModel(account, parsed, runtimeSettings, "")
+}
+
+func shouldUseKiroFreeThinkingPathForModel(account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings, effectiveModel string) bool {
 	if parsed == nil || !parsed.ThinkingEnabled || !isKiroFreeAccount(account) {
 		return false
 	}
@@ -435,7 +477,10 @@ func shouldUseKiroFreeThinkingPath(account *Account, parsed *ParsedRequest, runt
 	default:
 		return false
 	}
-	return kiroModelNeedsFreeThinkingPreparation(parsed)
+	if strings.TrimSpace(effectiveModel) == "" {
+		effectiveModel = parsed.Model
+	}
+	return kiroModelNeedsFreeThinkingPreparationForModel(effectiveModel)
 }
 
 func shouldApplyKiroThinking(parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) bool {
@@ -451,7 +496,11 @@ func kiroModelNeedsFreeThinkingPreparation(parsed *ParsedRequest) bool {
 	if parsed == nil {
 		return false
 	}
-	mappedModel := strings.TrimSpace(kiropkg.MapModel(parsed.Model))
+	return kiroModelNeedsFreeThinkingPreparationForModel(parsed.Model)
+}
+
+func kiroModelNeedsFreeThinkingPreparationForModel(model string) bool {
+	mappedModel := strings.TrimSpace(kiropkg.MapModel(model))
 	return strings.HasPrefix(mappedModel, "claude-sonnet-4.5")
 }
 
