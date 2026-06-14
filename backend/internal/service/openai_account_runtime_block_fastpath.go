@@ -3,7 +3,11 @@ package service
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/guard"
+	"github.com/Wei-Shaw/sub2api/internal/util/httputil"
 )
 
 const (
@@ -13,7 +17,30 @@ const (
 	openAIOAuth429StormWindow             = 10 * time.Second
 	openAIOAuth429StormThreshold          = 20
 	openAIOAuth429StormMaxAccountSwitches = 1
+
+	openAICFChallengeInitialCooldown = 10 * time.Second
+	openAICFChallengeMaxCooldown     = 120 * time.Second
+	openAICFChallengeBackoffFactor   = 3
 )
+
+var openAICFBackoffLevels sync.Map
+
+func openAICFBackoffLevel(accountID int64) int {
+	v, ok := openAICFBackoffLevels.Load(accountID)
+	if !ok {
+		return 0
+	}
+	level, _ := v.(int)
+	return level
+}
+
+func setOpenAICFBackoffLevel(accountID int64, level int) {
+	openAICFBackoffLevels.Store(accountID, level)
+}
+
+func resetOpenAICFBackoffLevel(accountID int64) {
+	openAICFBackoffLevels.Delete(accountID)
+}
 
 func openAIAccountStateContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	base := context.Background()
@@ -44,6 +71,13 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if len(requestedModel) > 0 && s.rateLimitService.HandleUpstreamModelNotFound(stateCtx, account, requestedModel[0], statusCode, responseBody) {
 		return true
 	}
+
+	// Cloudflare challenge detection with progressive backoff.
+	if httputil.IsCloudflareChallengeResponse(statusCode, headers, responseBody) {
+		s.markOpenAICloudflareChallenge(stateCtx, account)
+		return false
+	}
+
 	shouldDisable := s.rateLimitService.HandleUpstreamError(stateCtx, account, statusCode, headers, responseBody)
 	if shouldDisable {
 		s.BlockAccountScheduling(account, time.Time{}, "upstream_disable")
@@ -119,6 +153,7 @@ func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
 		return
 	}
 	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
+	resetOpenAICFBackoffLevel(accountID)
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) bool {
@@ -138,6 +173,7 @@ func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) b
 		return true
 	}
 	s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+	resetOpenAICFBackoffLevel(account.ID)
 	return false
 }
 
@@ -175,4 +211,25 @@ func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account
 		return false
 	}
 	return s.isOpenAIOAuth429Storm()
+}
+
+// markOpenAICloudflareChallenge applies a progressive exponential backoff for
+// Cloudflare challenge responses. The account is temporarily unschedulable but
+// recovers quickly so other accounts can be tried immediately.
+func (s *OpenAIGatewayService) markOpenAICloudflareChallenge(ctx context.Context, account *Account) {
+	if s == nil || !isOpenAIOAuthAccount(account) {
+		return
+	}
+	level := openAICFBackoffLevel(account.ID)
+	cfg := guard.CloudflareBackoffConfig{
+		Enabled:         true,
+		InitialCooldown: openAICFChallengeInitialCooldown,
+		MaxCooldown:     openAICFChallengeMaxCooldown,
+		BackoffFactor:   openAICFChallengeBackoffFactor,
+	}
+	cooldown := guard.CloudflareBackoff(level, &cfg)
+	if cooldown > 0 {
+		setOpenAICFBackoffLevel(account.ID, level+1)
+		s.BlockAccountScheduling(account, time.Now().Add(cooldown), "cloudflare_challenge")
+	}
 }
