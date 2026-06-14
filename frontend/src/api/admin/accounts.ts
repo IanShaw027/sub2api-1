@@ -20,9 +20,7 @@ import type {
   CodexSessionImportResult,
   ArchiveImportResult,
   CheckMixedChannelRequest,
-  CheckMixedChannelResponse,
-  OpenAIWebProfileImportRequest,
-  OpenAIWebProfileImportResult
+  CheckMixedChannelResponse
 } from '@/types'
 
 /**
@@ -146,17 +144,6 @@ export async function create(accountData: CreateAccountRequest): Promise<Account
  */
 export async function update(id: number, updates: UpdateAccountRequest): Promise<Account> {
   const { data } = await apiClient.put<Account>(`/admin/accounts/${id}`, updates)
-  return data
-}
-
-export async function importOpenAIWebProfile(
-  id: number,
-  payload: OpenAIWebProfileImportRequest
-): Promise<OpenAIWebProfileImportResult> {
-  const { data } = await apiClient.post<OpenAIWebProfileImportResult>(
-    `/admin/accounts/${id}/openai-web-profile/import`,
-    payload
-  )
   return data
 }
 
@@ -763,7 +750,6 @@ export const accountsAPI = {
   getById,
   create,
   update,
-  importOpenAIWebProfile,
   reauthorizeKiroOAuth,
   checkMixedChannelRisk,
   delete: deleteAccount,

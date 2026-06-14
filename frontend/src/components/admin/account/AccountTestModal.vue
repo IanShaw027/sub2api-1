@@ -387,10 +387,6 @@ const openAIImageTestModeOptions = computed(() => [
     value: "codex",
     label: t("admin.accounts.imageTestRouteOptionCodex"),
   },
-  {
-    value: "web2api",
-    label: t("admin.accounts.imageTestRouteOptionWeb2API"),
-  },
 ]);
 
 const sortTestModels = (models: ClaudeModel[]) => {

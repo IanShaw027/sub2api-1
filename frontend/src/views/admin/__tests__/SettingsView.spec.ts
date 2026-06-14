@@ -201,15 +201,6 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.scheduling.accountSchedulingThresholdsGlobalHint": "系统级全局设置，对该平台全部账号生效。",
     "admin.settings.scheduling.accountSchedulingThresholdsDisabledHint": "100 表示禁用该平台的自动停调阈值。",
     "admin.settings.scheduling.accountSchedulingThresholdsRangeHint": "范围 1-100，按百分比填写。",
-    "admin.settings.kiroRuntime.thinkingTitle": "Thinking 兼容",
-    "admin.settings.kiroRuntime.thinkingDescription": "配置 Thinking 兼容模式和阈值。",
-    "admin.settings.kiroRuntime.thinkingMode": "Thinking 模式",
-    "admin.settings.kiroRuntime.thinkingModeHint": "控制请求的 Thinking 兼容行为。",
-    "admin.settings.kiroRuntime.thinkingEffortThreshold": "Thinking 阈值",
-    "admin.settings.kiroRuntime.thinkingEffortThresholdHint": "达到阈值后启用兼容逻辑。",
-    "admin.settings.kiroRuntime.thinkingSimulationTemplate": "Thinking 模板",
-    "admin.settings.kiroRuntime.thinkingSimulationTemplatePlaceholder": "模拟模板",
-    "admin.settings.kiroRuntime.thinkingSimulationTemplateHint": "用于模拟 Thinking 内容。",
     "admin.settings.kiroRuntime.cache_hit_rate_scale_range": "缓存命中率缩放必须在 0-100 之间。",
     "admin.settings.kiroRuntime.cache_min_block_tokens_range": "缓存最小块 Token 数必须大于等于 0。",
     "admin.settings.kiroRuntime.cache_independent_ttl_seconds_range": "独立缓存 TTL 必须在 60-86400 秒之间。",
@@ -470,7 +461,6 @@ const baseSettingsResponse = {
   fallback_model_openai: "",
   fallback_model_gemini: "",
   fallback_model_antigravity: "",
-  platform_model_routing_config: {},
   enable_identity_patch: false,
   identity_patch_prompt: "",
   ops_monitoring_enabled: false,
@@ -483,9 +473,6 @@ const baseSettingsResponse = {
   account_scheduling_thresholds: {
     openai: 100,
     anthropic: 100,
-    gemini: 100,
-    kiro: 100,
-    antigravity: 100,
   },
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
@@ -978,21 +965,37 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(paymentHelpImageUpload?.attributes("data-remove-label")).toBe("移除");
   });
 
-  it("keeps thinking compatibility controls only in the gateway tab", async () => {
+  it("does not render removed Kiro thinking compatibility controls", async () => {
     const wrapper = mountView();
 
     await flushPromises();
     await openSecurityTab(wrapper);
 
-    expect(wrapper.get('[data-testid="security-settings-panel"]').text()).not.toContain(
-      "Thinking 兼容",
-    );
+    expect(wrapper.get('[data-testid="security-settings-panel"]').text()).not.toContain("Thinking 兼容");
 
     await openGatewayTab(wrapper);
 
-    expect(wrapper.text()).toContain("Thinking 兼容");
-    expect(wrapper.findAll('[data-testid="kiro-runtime-thinking-mode"]')).toHaveLength(1);
-    expect(wrapper.findAll('[data-testid="kiro-runtime-thinking-template"]')).toHaveLength(1);
+    expect(wrapper.text()).not.toContain("Thinking 兼容");
+    expect(wrapper.findAll('[data-testid="kiro-runtime-thinking-mode"]')).toHaveLength(0);
+    expect(wrapper.findAll('[data-testid="kiro-runtime-thinking-template"]')).toHaveLength(0);
+  });
+
+  it("does not render or submit removed OpenAI Web2API image model settings", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    expect(wrapper.text()).not.toContain("admin.settings.openaiImageWebModels.title");
+    expect(wrapper.findAll('[data-testid="openai-image-web-free-model"]')).toHaveLength(0);
+    expect(wrapper.findAll('[data-testid="openai-image-web-paid-model"]')).toHaveLength(0);
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    const payload = updateSettings.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("openai_image_web_free_model");
+    expect(payload).not.toHaveProperty("openai_image_web_paid_model");
   });
 
   it("keeps security and gateway content inside a single tab panel each", async () => {
@@ -1006,10 +1009,11 @@ describe("admin SettingsView payment visible method controls", () => {
 
     await openGatewayTab(wrapper);
 
-    const gatewayPanel = wrapper.get('[data-testid="gateway-settings-panel"]');
-    expect(gatewayPanel.text()).toContain("admin.settings.claudeCode.title");
-    expect(gatewayPanel.text()).toContain("admin.settings.scheduling.title");
-    expect(gatewayPanel.text()).toContain("Thinking 兼容");
+	const gatewayPanel = wrapper.get('[data-testid="gateway-settings-panel"]');
+	expect(gatewayPanel.text()).toContain("admin.settings.claudeCode.title");
+	expect(gatewayPanel.text()).toContain("admin.settings.scheduling.title");
+	expect(gatewayPanel.text()).toContain("Kiro 运行默认值");
+	expect(gatewayPanel.text()).not.toContain("Thinking 兼容");
   });
 
   it("renders platform account auto-pause thresholds inside the gateway scheduling card", async () => {
@@ -1031,7 +1035,7 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(wrapper.text()).toContain("平台账号自动停调阈值");
     expect(wrapper.text()).toContain("100 表示禁用该平台的自动停调阈值。");
-    expect(wrapper.findAll('[data-testid^="account-scheduling-threshold-"]')).toHaveLength(5);
+    expect(wrapper.findAll('[data-testid^="account-scheduling-threshold-"]')).toHaveLength(2);
     expect(
       (
         wrapper.get('[data-testid="account-scheduling-threshold-openai"]')
@@ -1040,13 +1044,15 @@ describe("admin SettingsView payment visible method controls", () => {
     ).toBe("82");
     expect(
       (
-        wrapper.get('[data-testid="account-scheduling-threshold-kiro"]')
+        wrapper.get('[data-testid="account-scheduling-threshold-anthropic"]')
           .element as HTMLInputElement
       ).value,
-    ).toBe("58");
+    ).toBe("67");
+    expect(wrapper.find('[data-testid="account-scheduling-threshold-kiro"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="account-scheduling-threshold-gemini"]').exists()).toBe(false);
   });
 
-  it("normalizes and submits account scheduling thresholds for all five platforms", async () => {
+  it("normalizes and submits account scheduling thresholds for supported platforms only", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       account_scheduling_thresholds: {
@@ -1067,18 +1073,8 @@ describe("admin SettingsView payment visible method controls", () => {
           .element as HTMLInputElement
       ).value,
     ).toBe("1");
-    expect(
-      (
-        wrapper.get('[data-testid="account-scheduling-threshold-gemini"]')
-          .element as HTMLInputElement
-      ).value,
-    ).toBe("100");
-    expect(
-      (
-        wrapper.get('[data-testid="account-scheduling-threshold-kiro"]')
-          .element as HTMLInputElement
-      ).value,
-    ).toBe("100");
+    expect(wrapper.find('[data-testid="account-scheduling-threshold-gemini"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="account-scheduling-threshold-kiro"]').exists()).toBe(false);
 
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
@@ -1088,9 +1084,6 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(payload.account_scheduling_thresholds).toEqual({
       openai: 1,
       anthropic: 45,
-      gemini: 100,
-      kiro: 100,
-      antigravity: 100,
     });
   });
 
@@ -1938,85 +1931,10 @@ describe("admin SettingsView wechat connect controls", () => {
     expect(updateSettings).not.toHaveBeenCalled();
   });
 
-  it("submits platform model routing config JSON", async () => {
-    const wrapper = mountView();
-
-    await flushPromises();
-    await openGatewayTab(wrapper);
-
-    const configTextarea = wrapper.find(
-      '[data-testid="platform-model-routing-config"]',
-    );
-    expect(configTextarea.exists()).toBe(true);
-    await configTextarea.setValue(
-      JSON.stringify({
-        openai: {
-          model_whitelist: ["gpt-5.4-mini"],
-          model_mapping: {
-            "gpt-4o-mini": "gpt-5.4",
-          },
-          compact_model_mapping: {
-            "gpt-5.4": "gpt-5.4-mini",
-          },
-        },
-      }),
-    );
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
-
-    expect(updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        platform_model_routing_config: {
-          openai: {
-            model_whitelist: ["gpt-5.4-mini"],
-            model_mapping: {
-              "gpt-4o-mini": "gpt-5.4",
-            },
-            compact_model_mapping: {
-              "gpt-5.4": "gpt-5.4-mini",
-            },
-          },
-        },
-      }),
-    );
-  });
-
-  it("blocks account default fields in platform model routing config", async () => {
-    const wrapper = mountView();
-
-    await flushPromises();
-    await openGatewayTab(wrapper);
-
-    const configTextarea = wrapper.find(
-      '[data-testid="platform-model-routing-config"]',
-    );
-    await configTextarea.setValue(
-      JSON.stringify({
-        openai: {
-          temp_unschedulable_enabled: true,
-        },
-      }),
-    );
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
-
-    expect(showError).toHaveBeenCalledWith(
-      "openai.temp_unschedulable_enabled 不支持用于运行时模型路由配置。",
-    );
-    expect(updateSettings).not.toHaveBeenCalled();
-  });
-
   it("refreshes platform model config editors from update response", async () => {
     updateSettings.mockImplementationOnce(async (payload) => ({
       ...baseSettingsResponse,
       ...payload,
-      platform_model_routing_config: {
-        openai: {
-          model_mapping: {
-            "gpt-old": "gpt-normalized",
-          },
-        },
-      },
       platform_default_account_model_config: {
         kiro: {
           model_mapping: {
@@ -2030,18 +1948,6 @@ describe("admin SettingsView wechat connect controls", () => {
     await flushPromises();
     await openGatewayTab(wrapper);
 
-    const configTextarea = wrapper.find(
-      '[data-testid="platform-model-routing-config"]',
-    );
-    await configTextarea.setValue(
-      JSON.stringify({
-        openai: {
-          model_mapping: {
-            "gpt-old": "gpt-raw",
-          },
-        },
-      }),
-    );
     const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
     setupState.platformDefaultAccountModelConfig = {
       kiro: {
@@ -2054,13 +1960,6 @@ describe("admin SettingsView wechat connect controls", () => {
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 
-    expect(JSON.parse((configTextarea.element as HTMLTextAreaElement).value)).toEqual({
-      openai: {
-        model_mapping: {
-          "gpt-old": "gpt-normalized",
-        },
-      },
-    });
     expect(setupState.platformDefaultAccountModelConfig).toEqual({
       kiro: {
         model_mapping: {
@@ -2070,7 +1969,7 @@ describe("admin SettingsView wechat connect controls", () => {
     });
   });
 
-  it("does not refresh platform model config editors when updateSettings reports business failure", async () => {
+  it("does not refresh platform default model config editor when updateSettings reports business failure", async () => {
     updateSettings.mockImplementationOnce(async () => ({
       success: false,
       message: "业务保存失败",
@@ -2080,18 +1979,6 @@ describe("admin SettingsView wechat connect controls", () => {
     await flushPromises();
     await openGatewayTab(wrapper);
 
-    const configTextarea = wrapper.find(
-      '[data-testid="platform-model-routing-config"]',
-    );
-    await configTextarea.setValue(
-      JSON.stringify({
-        openai: {
-          model_mapping: {
-            "gpt-old": "gpt-raw",
-          },
-        },
-      }),
-    );
     const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
     setupState.platformDefaultAccountModelConfig = {
       kiro: {
@@ -2106,13 +1993,6 @@ describe("admin SettingsView wechat connect controls", () => {
 
     expect(showError).toHaveBeenCalledWith("业务保存失败");
     expect(showSuccess).not.toHaveBeenCalledWith("admin.settings.settingsSaved");
-    expect(JSON.parse((configTextarea.element as HTMLTextAreaElement).value)).toEqual({
-      openai: {
-        model_mapping: {
-          "gpt-old": "gpt-raw",
-        },
-      },
-    });
     expect(setupState.platformDefaultAccountModelConfig).toEqual({
       kiro: {
         model_mapping: {
@@ -2120,38 +2000,6 @@ describe("admin SettingsView wechat connect controls", () => {
         },
       },
     });
-  });
-
-  it("blocks kiro subscription variants in platform model routing config", async () => {
-    const wrapper = mountView();
-
-    await flushPromises();
-    await openGatewayTab(wrapper);
-
-    const configTextarea = wrapper.find(
-      '[data-testid="platform-model-routing-config"]',
-    );
-    expect(configTextarea.exists()).toBe(true);
-    await configTextarea.setValue(
-      JSON.stringify({
-        kiro: {
-          kiro_subscription_type_model_config: {
-            pro: {
-              model_mapping: {
-                "claude-sonnet-*": "claude-sonnet-4.6",
-              },
-            },
-          },
-        },
-      }),
-    );
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
-
-    expect(showError).toHaveBeenCalledWith(
-      "kiro.kiro_subscription_type_model_config 不支持用于运行时模型路由配置。",
-    );
-    expect(updateSettings).not.toHaveBeenCalled();
   });
 
   it("blocks save when kiro prefix ttl exceeds independent ttl", async () => {

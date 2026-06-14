@@ -2044,6 +2044,20 @@
           class="space-y-6"
           data-testid="gateway-settings-panel"
         >
+          <div class="rounded-xl border border-gray-200 bg-gray-50 px-5 py-4 dark:border-dark-700 dark:bg-dark-800/50">
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+              {{ localText("通用限流与策略模块", "Common Rate Limit and Policy Modules") }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{
+                localText(
+                  "先集中配置跨平台生效的冷却、超时、临时停调、请求修正和策略规则。",
+                  "Common cross-platform cooldown, timeout, temporary-unschedulable, request-rectifier, and policy rules are grouped first.",
+                )
+              }}
+            </p>
+          </div>
+
           <!-- Overload Cooldown (529) Settings -->
           <div class="card">
             <div
@@ -3039,6 +3053,21 @@
               </template>
             </div>
           </div>
+
+          <div class="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 dark:border-blue-900/60 dark:bg-blue-950/30">
+            <h2 class="text-base font-semibold text-blue-900 dark:text-blue-100">
+              {{ localText("OpenAI 平台模块", "OpenAI Platform Modules") }}
+            </h2>
+            <p class="mt-1 text-sm text-blue-700 dark:text-blue-300">
+              {{
+                localText(
+                  "OpenAI 专属的 Fast/Flex、图片桥接和 Codex 相关配置集中在这里。",
+                  "OpenAI-specific Fast/Flex, image bridge, and Codex settings are grouped here.",
+                )
+              }}
+            </p>
+          </div>
+
           <!-- OpenAI Fast/Flex Policy Settings -->
           <div class="card">
             <div
@@ -3319,6 +3348,20 @@
             </div>
           </div>
         <!-- Tab: Gateway — Claude Code, Scheduling -->
+          <div class="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 dark:border-amber-900/60 dark:bg-amber-950/30">
+            <h2 class="text-base font-semibold text-amber-900 dark:text-amber-100">
+              {{ localText("Claude / Kiro 平台模块", "Claude / Kiro Platform Modules") }}
+            </h2>
+            <p class="mt-1 text-sm text-amber-700 dark:text-amber-300">
+              {{
+                localText(
+                  "Claude Code 版本约束和 Kiro 运行默认值按平台放在一起。",
+                  "Claude Code version gates and Kiro runtime defaults are grouped by platform.",
+                )
+              }}
+            </p>
+          </div>
+
           <!-- Claude Code Settings -->
           <div class="card">
             <div
@@ -3561,101 +3604,21 @@
                 </div>
               </div>
 
-              <div class="rounded-xl border border-gray-200 p-4 dark:border-dark-700">
-                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
-                  {{ t("admin.settings.kiroRuntime.thinkingTitle") }}
-                </h3>
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t("admin.settings.kiroRuntime.thinkingDescription") }}
-                </p>
-                <div class="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-2">
-                  <div>
-                    <label
-                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                    >
-                      {{ t("admin.settings.kiroRuntime.thinkingMode") }}
-                    </label>
-                    <Select
-                      v-model="form.kiro_thinking_mode"
-                      :options="kiroThinkingModeOptions"
-                      data-testid="kiro-runtime-thinking-mode"
-                    />
-                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                      {{ t("admin.settings.kiroRuntime.thinkingModeHint") }}
-                    </p>
-                  </div>
-                  <div>
-                    <label
-                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                    >
-                      {{ t("admin.settings.kiroRuntime.thinkingEffortThreshold") }}
-                    </label>
-                    <Select
-                      v-model="form.kiro_thinking_effort_threshold"
-                      :options="kiroThinkingEffortOptions"
-                      data-testid="kiro-runtime-thinking-effort-threshold"
-                    />
-                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                      {{
-                        t(
-                          "admin.settings.kiroRuntime.thinkingEffortThresholdHint",
-                        )
-                      }}
-                    </p>
-                  </div>
-                </div>
-                <div class="mt-4">
-                  <label
-                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    {{ t("admin.settings.kiroRuntime.thinkingSimulationTemplate") }}
-                  </label>
-                  <textarea
-                    v-model="form.kiro_thinking_simulation_template"
-                    rows="3"
-                    class="input min-h-[86px] font-mono text-sm"
-                    data-testid="kiro-runtime-thinking-template"
-                    :placeholder="
-                      t(
-                        'admin.settings.kiroRuntime.thinkingSimulationTemplatePlaceholder',
-                      )
-                    "
-                  />
-                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{
-                      t("admin.settings.kiroRuntime.thinkingSimulationTemplateHint")
-                    }}
-                  </p>
-                </div>
-                <div class="mt-4">
-                  <label
-                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    {{ localText("自由思考提示词", "Free Thinking Prompt") }}
-                  </label>
-                  <textarea
-                    v-model="form.kiro_thinking_free_prompt"
-                    rows="4"
-                    class="input min-h-[112px] font-mono text-sm"
-                    data-testid="kiro-runtime-thinking-free-prompt"
-                    :placeholder="
-                      localText(
-                        '留空将恢复默认提示词。',
-                        'Leave blank to restore the default prompt.',
-                      )
-                    "
-                  />
-                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{
-                      localText(
-                        `保存时最多 ${KIRO_THINKING_FREE_PROMPT_MAX_LENGTH} 个字符；留空会恢复默认提示词。`,
-                        `Save up to ${KIRO_THINKING_FREE_PROMPT_MAX_LENGTH} characters; leave blank to restore the default prompt.`,
-                      )
-                    }}
-                  </p>
-                </div>
-              </div>
             </div>
+          </div>
+
+          <div class="rounded-xl border border-gray-200 bg-gray-50 px-5 py-4 dark:border-dark-700 dark:bg-dark-800/50">
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+              {{ localText("通用调度与兜底模块", "Common Scheduling and Failover Modules") }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{
+                localText(
+                  "账号调度阈值、模型 fallback 和平台默认账号模型配置统一放在调度运行区域。",
+                  "Account scheduling thresholds, model fallback, and platform default account models stay together in the runtime scheduling area.",
+                )
+              }}
+            </p>
           </div>
 
           <!-- Gateway Scheduling Settings -->
@@ -4003,94 +3966,6 @@
                     class="input font-mono text-sm"
                     placeholder="gemini-2.5-pro"
                   />
-                </div>
-              </div>
-              <div class="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-dark-700">
-                <div>
-                  <label class="label">
-                    {{
-                      localText(
-                        "平台运行时模型路由配置",
-                        "Platform Runtime Model Routing Config",
-                      )
-                    }}
-                  </label>
-                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    {{
-                      localText(
-                        "请求转发前按平台预先判断和映射模型；账号已设置 model_whitelist / model_mapping 时账号优先。为空则保持旧逻辑，最终 fallback 模型仍会保留。",
-                        "Pre-map request models per platform before forwarding; account model_whitelist / model_mapping still has priority. Empty config keeps legacy behavior and final fallback models remain active.",
-                      )
-                    }}
-                  </p>
-                </div>
-                <textarea
-                  v-model="platformModelRoutingConfigText"
-                  data-testid="platform-model-routing-config"
-                  rows="8"
-                  class="input font-mono text-xs"
-                  spellcheck="false"
-                  placeholder='{"openai":{"model_whitelist":["gpt-5.4-mini"],"model_mapping":{"gpt-4o-mini":"gpt-5.4"}}}'
-                />
-              </div>
-            </div>
-          </div>
-
-          <!-- OpenAI Image Web2API Conversation Model Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.openaiImageWebModels.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.openaiImageWebModels.description") }}
-              </p>
-            </div>
-            <div class="space-y-5 p-6">
-              <div
-                class="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300"
-              >
-                <p>
-                  {{ t("admin.settings.openaiImageWebModels.prepareHint") }}
-                </p>
-                <p class="mt-2">
-                  {{ t("admin.settings.openaiImageWebModels.conversationHint") }}
-                </p>
-              </div>
-              <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <div>
-                  <label class="label">
-                    {{ t("admin.settings.openaiImageWebModels.freeModel") }}
-                  </label>
-                  <input
-                    v-model="form.openai_image_web_free_model"
-                    type="text"
-                    class="input font-mono text-sm"
-                    :placeholder="
-                      t('admin.settings.openaiImageWebModels.freeModelPlaceholder')
-                    "
-                  />
-                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{ t("admin.settings.openaiImageWebModels.freeModelHint") }}
-                  </p>
-                </div>
-                <div>
-                  <label class="label">
-                    {{ t("admin.settings.openaiImageWebModels.paidModel") }}
-                  </label>
-                  <input
-                    v-model="form.openai_image_web_paid_model"
-                    type="text"
-                    class="input font-mono text-sm"
-                    :placeholder="
-                      t('admin.settings.openaiImageWebModels.paidModelPlaceholder')
-                    "
-                  />
-                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{ t("admin.settings.openaiImageWebModels.paidModelHint") }}
-                  </p>
                 </div>
               </div>
             </div>
@@ -7939,11 +7814,6 @@ import {
   defaultWeChatConnectScopesForMode,
   deriveWeChatConnectStoredMode,
   KIRO_CACHE_MIN_BLOCK_TOKENS_MAX,
-  KIRO_THINKING_EFFORT_THRESHOLD_DEFAULT,
-  KIRO_THINKING_FREE_PROMPT_DEFAULT,
-  KIRO_THINKING_FREE_PROMPT_MAX_LENGTH,
-  KIRO_THINKING_MODE_DEFAULT,
-  KIRO_THINKING_SIMULATION_TEMPLATE_DEFAULT,
   normalizeKiroRuntimeSettingsForUpdate,
   normalizeDefaultSubscriptionSettings,
   resolveWeChatConnectModeCapabilities,
@@ -7968,7 +7838,6 @@ import type {
   AdminGroup,
   LoginAgreementDocument,
   NotifyEmailEntry,
-  OpenAIImageWebConversationModelSettings,
   Proxy,
   SupportQRCodeEntry,
 } from "@/types";
@@ -8037,13 +7906,6 @@ function formatKiroRuntimeValidationError(
       `Cache min block tokens must be between 0 and ${KIRO_CACHE_MIN_BLOCK_TOKENS_MAX}.`,
     );
   }
-  if (error === "kiro_thinking_free_prompt_length") {
-    return localText(
-      `自由思考提示词不能超过 ${KIRO_THINKING_FREE_PROMPT_MAX_LENGTH} 个字符。`,
-      `Free thinking prompt must be at most ${KIRO_THINKING_FREE_PROMPT_MAX_LENGTH} characters.`,
-    );
-  }
-
   return t(`admin.settings.kiroRuntime.${error}`);
 }
 
@@ -8242,35 +8104,6 @@ function isBusinessFailureResponse(
   );
 }
 
-function validatePlatformModelRoutingConfig(value: Record<string, unknown>): string | null {
-  const accountDefaultFields = [
-    "temp_unschedulable_enabled",
-    "temp_unschedulable_rules",
-    "custom_error_codes_enabled",
-    "custom_error_codes",
-  ];
-  for (const [platform, rawConfig] of Object.entries(value)) {
-    if (!rawConfig || Array.isArray(rawConfig) || typeof rawConfig !== "object") {
-      continue;
-    }
-    const config = rawConfig as Record<string, unknown>;
-    if (config.kiro_subscription_type_model_config !== undefined) {
-      return localText(
-        `${platform}.kiro_subscription_type_model_config 不支持用于运行时模型路由配置。`,
-        `${platform}.kiro_subscription_type_model_config is not supported for runtime model routing config.`,
-      );
-    }
-    const unsupportedField = accountDefaultFields.find((field) => config[field] !== undefined);
-    if (unsupportedField) {
-      return localText(
-        `${platform}.${unsupportedField} 不支持用于运行时模型路由配置。`,
-        `${platform}.${unsupportedField} is not supported for runtime model routing config.`,
-      );
-    }
-  }
-  return validatePlatformDefaultAccountModelConfig(value);
-}
-
 const paymentGuideHref = computed(() =>
   locale.value.startsWith("zh")
     ? "https://github.com/Wei-Shaw/sub2api/blob/main/docs/PAYMENT_CN.md"
@@ -8395,7 +8228,6 @@ const testEmailAddress = ref("");
 const registrationEmailSuffixWhitelistTags = ref<string[]>([]);
 const registrationEmailSuffixWhitelistDraft = ref("");
 const tablePageSizeOptionsInput = ref("10, 20, 50, 100");
-const platformModelRoutingConfigText = ref("{}");
 const platformDefaultAccountModelConfigText = ref("{}");
 const platformDefaultAccountModelConfig = ref<
   Record<string, DefaultAccountModelConfig>
@@ -8575,13 +8407,14 @@ type SettingsForm = Omit<
   google_oauth_client_secret: string;
   force_email_on_third_party_signup: boolean;
   openai_advanced_scheduler_enabled: boolean;
+  openai_sticky_reserve_percent: number;
+  openai_sticky_wait_timeout_seconds: number;
   default_platform_quotas: DefaultPlatformQuotasMap;
   openai_oauth_image_bridge_disable_keepalives: boolean;
   openai_oauth_image_bridge_fresh_upstream_client: boolean;
-} & Required<OpenAIImageWebConversationModelSettings>;
+};
 
-type SettingsUpdatePayload =
-  UpdateSettingsRequest & OpenAIImageWebConversationModelSettings;
+type SettingsUpdatePayload = UpdateSettingsRequest;
 
 const form = reactive<SettingsForm>({
   registration_enabled: true,
@@ -8764,9 +8597,6 @@ const form = reactive<SettingsForm>({
   openai_sticky_wait_timeout_seconds: 30,
   openai_ws_min_idle_per_account: 1,
   openai_ws_max_idle_per_account: 4,
-  openai_image_web_free_model: "",
-  openai_image_web_paid_model: "",
-  platform_model_routing_config: {},
   platform_default_account_model_config: {},
   // Identity patch (Claude -> Gemini)
   enable_identity_patch: true,
@@ -8788,10 +8618,6 @@ const form = reactive<SettingsForm>({
   cache_min_block_tokens: undefined,
   cache_independent_ttl_seconds: undefined,
   cache_prefix_ttl_seconds: undefined,
-  kiro_thinking_mode: KIRO_THINKING_MODE_DEFAULT,
-  kiro_thinking_effort_threshold: KIRO_THINKING_EFFORT_THRESHOLD_DEFAULT,
-  kiro_thinking_simulation_template: KIRO_THINKING_SIMULATION_TEMPLATE_DEFAULT,
-  kiro_thinking_free_prompt: KIRO_THINKING_FREE_PROMPT_DEFAULT,
   // 分组隔离
   allow_ungrouped_key_scheduling: false,
   account_scheduling_thresholds: normalizeAccountSchedulingThresholdsMap(),
@@ -9461,13 +9287,11 @@ function parseTablePageSizeOptionsInput(raw: string): number[] | null {
 
 async function loadSettings() {
   loading.value = true;
-  loadFailed.value = false;
-  try {
-    const settings = await adminAPI.settings.getSettings();
-    const imageWebModelSettings =
-      settings as SystemSettings & OpenAIImageWebConversationModelSettings;
-    settings.payment_load_balance_strategy =
-      settings.payment_load_balance_strategy || "round-robin";
+    loadFailed.value = false;
+    try {
+      const settings = await adminAPI.settings.getSettings();
+      settings.payment_load_balance_strategy =
+        settings.payment_load_balance_strategy || "round-robin";
     // Only assign non-null values from backend (null means unconfigured, keep defaults)
     for (const [key, value] of Object.entries(settings)) {
       if (value !== null && value !== undefined) {
@@ -9505,11 +9329,6 @@ async function loadSettings() {
       JSON.stringify(settings.platform_default_account_model_config || {}),
     );
     platformDefaultAccountModelConfigInvalid.value = false;
-    platformModelRoutingConfigText.value = JSON.stringify(
-      settings.platform_model_routing_config || {},
-      null,
-      2,
-    );
     registrationEmailSuffixWhitelistTags.value =
       normalizeRegistrationEmailSuffixDomains(
         settings.registration_email_suffix_whitelist,
@@ -9615,11 +9434,6 @@ async function loadSettings() {
         Math.floor(Number(settings.openai_ws_max_idle_per_account ?? 4)),
       ),
     );
-    form.openai_image_web_free_model =
-      imageWebModelSettings.openai_image_web_free_model || "";
-    form.openai_image_web_paid_model =
-      imageWebModelSettings.openai_image_web_paid_model || "";
-
     // Load OpenAI fast/flex policy rules from bulk settings.
     // 仅当 payload 真的包含该字段时填充并标记为已加载；否则保持表单空值，
     // 让 saveSettings 在未加载时跳过该字段，防止覆盖后端默认规则。
@@ -9940,28 +9754,6 @@ async function saveSettings() {
       );
       return;
     }
-    let platformModelRoutingConfig: Record<string, DefaultAccountModelConfig> = {};
-    try {
-      const parsed = JSON.parse(platformModelRoutingConfigText.value || "{}");
-      if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
-        throw new Error("root must be an object");
-      }
-      const validationError = validatePlatformModelRoutingConfig(parsed as Record<string, unknown>);
-      if (validationError) {
-        appStore.showError(validationError);
-        return;
-      }
-      platformModelRoutingConfig = parsed as Record<string, DefaultAccountModelConfig>;
-    } catch (error) {
-      appStore.showError(
-        localText(
-          "平台运行时模型路由配置不是合法 JSON 对象。",
-          "Platform runtime model routing config must be a valid JSON object.",
-        ),
-      );
-      return;
-    }
-
     let platformDefaultAccountModelConfigPayload: Record<string, DefaultAccountModelConfig> = {};
     if (platformDefaultAccountModelConfigInvalid.value) {
       appStore.showError(
@@ -10178,9 +9970,6 @@ async function saveSettings() {
       fallback_model_openai: form.fallback_model_openai,
       fallback_model_gemini: form.fallback_model_gemini,
       fallback_model_antigravity: form.fallback_model_antigravity,
-      openai_image_web_free_model: form.openai_image_web_free_model.trim(),
-      openai_image_web_paid_model: form.openai_image_web_paid_model.trim(),
-      platform_model_routing_config: platformModelRoutingConfig,
       platform_default_account_model_config: platformDefaultAccountModelConfigPayload,
       enable_identity_patch: form.enable_identity_patch,
       identity_patch_prompt: form.identity_patch_prompt,
@@ -10352,11 +10141,6 @@ async function saveSettings() {
       JSON.stringify(updated.platform_default_account_model_config || {}),
     );
     platformDefaultAccountModelConfigInvalid.value = false;
-    platformModelRoutingConfigText.value = JSON.stringify(
-      updated.platform_model_routing_config || {},
-      null,
-      2,
-    );
     registrationEmailSuffixWhitelistTags.value =
       normalizeRegistrationEmailSuffixDomains(
         updated.registration_email_suffix_whitelist,
@@ -10769,23 +10553,6 @@ const betaPolicyScopeOptions = computed(() => [
   { value: "oauth", label: t("admin.settings.betaPolicy.scopeOAuth") },
   { value: "apikey", label: t("admin.settings.betaPolicy.scopeAPIKey") },
   { value: "bedrock", label: t("admin.settings.betaPolicy.scopeBedrock") },
-]);
-
-const kiroThinkingModeOptions = computed(() => [
-  {
-    value: "simulate",
-    label: t("admin.settings.kiroRuntime.thinkingModeSimulate"),
-  },
-  { value: "off", label: t("admin.settings.kiroRuntime.thinkingModeOff") },
-]);
-
-const kiroThinkingEffortOptions = computed(() => [
-  { value: "minimal", label: t("admin.settings.kiroRuntime.effortMinimal") },
-  { value: "low", label: t("admin.settings.kiroRuntime.effortLow") },
-  { value: "medium", label: t("admin.settings.kiroRuntime.effortMedium") },
-  { value: "high", label: t("admin.settings.kiroRuntime.effortHigh") },
-  { value: "xhigh", label: t("admin.settings.kiroRuntime.effortXHigh") },
-  { value: "max", label: t("admin.settings.kiroRuntime.effortMax") },
 ]);
 
 // Beta Policy 方法

@@ -114,9 +114,6 @@ function buildGroup(id: number, name: string, modelRouting: Record<string, numbe
     image_price_1k: null,
     image_price_2k: null,
     image_price_4k: null,
-    images2api_price_1k: null,
-    images2api_price_2k: null,
-    images2api_price_4k: null,
     claude_code_only: false,
     fallback_group_id: null,
     fallback_group_id_on_invalid_request: null,
@@ -310,7 +307,7 @@ describe('admin GroupsView edit hydration', () => {
     )
   })
 
-  it('preserves stored OpenAI image route pricing fields when editing without changing them', async () => {
+  it('normalizes legacy OpenAI web2api image pricing fields when editing', async () => {
     listGroups.mockResolvedValueOnce({
       items: [
         {
@@ -322,11 +319,8 @@ describe('admin GroupsView edit hydration', () => {
           image_price_1k: 0.25,
           image_price_2k: 0.35,
           image_price_4k: 0.45,
-          images2api_price_1k: 1.25,
-          images2api_price_2k: 1.35,
-          images2api_price_4k: 1.45,
           refund_rate_multiplier: 2.5
-        }
+        } as any
       ],
       total: 1,
       page: 1,
@@ -345,15 +339,15 @@ describe('admin GroupsView edit hydration', () => {
     expect(updateGroup).toHaveBeenCalledTimes(1)
     expect(updateGroup.mock.calls[0][1]).toMatchObject({
       refund_rate_multiplier: 2.5,
-      image_generation_route: 'web2api',
-      image_rate_independent: true,
+      image_generation_route: 'codex',
+      image_rate_independent: false,
       image_rate_multiplier: 1.75,
       image_price_1k: 0.25,
       image_price_2k: 0.35,
-      image_price_4k: 0.45,
-      images2api_price_1k: 1.25,
-      images2api_price_2k: 1.35,
-      images2api_price_4k: 1.45
+      image_price_4k: 0.45
     })
+    expect(updateGroup.mock.calls[0][1]).not.toHaveProperty('images2api_price_1k')
+    expect(updateGroup.mock.calls[0][1]).not.toHaveProperty('images2api_price_2k')
+    expect(updateGroup.mock.calls[0][1]).not.toHaveProperty('images2api_price_4k')
   })
 })

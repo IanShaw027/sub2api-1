@@ -1,9 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import {
-  KIRO_THINKING_FREE_PROMPT_DEFAULT,
-  normalizeKiroRuntimeSettingsForUpdate,
-  validateKiroRuntimeSettings,
-} from '@/api/admin/settings'
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
@@ -80,24 +75,6 @@ describe('useKiroOAuth', () => {
       kiro_status: 'active',
       kiro_status_reason: 'ok'
     })
-  })
-
-  it('normalizes and validates the Kiro thinking free prompt setting', () => {
-    expect(normalizeKiroRuntimeSettingsForUpdate({
-      kiro_thinking_free_prompt: '  Think step by step before answering.  '
-    })).toEqual({
-      kiro_thinking_free_prompt: 'Think step by step before answering.'
-    })
-
-    expect(normalizeKiroRuntimeSettingsForUpdate({
-      kiro_thinking_free_prompt: '   '
-    })).toEqual({
-      kiro_thinking_free_prompt: KIRO_THINKING_FREE_PROMPT_DEFAULT
-    })
-
-    expect(validateKiroRuntimeSettings({
-      kiro_thinking_free_prompt: 'x'.repeat(4001)
-    })).toBe('kiro_thinking_free_prompt_length')
   })
 
   it('builds account names from explicit or identity fields and avoids generic defaults', () => {

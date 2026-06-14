@@ -229,13 +229,6 @@ export interface LoginAgreementDocument {
   content_md: string
 }
 
-export interface OpenAIImageWebConversationModelSettings {
-  openai_image_web_free_model?: string
-  openai_image_web_paid_model?: string
-  openai_sticky_reserve_percent?: number
-  openai_sticky_wait_timeout_seconds?: number
-}
-
 export interface PublicSettings {
   registration_enabled: boolean
   email_verify_enabled: boolean
@@ -770,15 +763,12 @@ export interface Group {
   monthly_limit_usd: number | null
   // 图片生成计费配置
   allow_image_generation: boolean
-  image_generation_route: 'codex' | 'web2api'
+  image_generation_route: 'codex'
   image_rate_independent: boolean
   image_rate_multiplier: number
   image_price_1k: number | null
   image_price_2k: number | null
   image_price_4k: number | null
-  images2api_price_1k: number | null
-  images2api_price_2k: number | null
-  images2api_price_4k: number | null
   // Claude Code 客户端限制
   claude_code_only: boolean
   fallback_group_id: number | null
@@ -894,15 +884,12 @@ export interface CreateGroupRequest {
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
   allow_image_generation?: boolean
-  image_generation_route?: 'codex' | 'web2api'
+  image_generation_route?: 'codex'
   image_rate_independent?: boolean
   image_rate_multiplier?: number
   image_price_1k?: number | null
   image_price_2k?: number | null
   image_price_4k?: number | null
-  images2api_price_1k?: number | null
-  images2api_price_2k?: number | null
-  images2api_price_4k?: number | null
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
@@ -934,15 +921,12 @@ export interface UpdateGroupRequest {
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
   allow_image_generation?: boolean
-  image_generation_route?: 'codex' | 'web2api'
+  image_generation_route?: 'codex'
   image_rate_independent?: boolean
   image_rate_multiplier?: number
   image_price_1k?: number | null
   image_price_2k?: number | null
   image_price_4k?: number | null
-  images2api_price_1k?: number | null
-  images2api_price_2k?: number | null
-  images2api_price_4k?: number | null
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
@@ -1328,14 +1312,11 @@ export interface AccountUsageInfo {
   // 机器可读错误码：forbidden / unauthenticated / rate_limited / network_error
   error_code?: string
   openai_image_codex_supported?: boolean
-  openai_image_web2api_supported?: boolean
   openai_image_codex_reason?: string
-  openai_image_web2api_reason?: string
   openai_image_plan_type?: string
   openai_image_workspace_name?: string
   openai_image_codex_five_hour?: UsageProgress | null
   openai_image_codex_seven_day?: UsageProgress | null
-  openai_image_web2api_five_hour?: UsageProgress | null
 
   error?: string            // usage 获取失败时的错误信息
 }
@@ -1378,44 +1359,6 @@ export interface OpenAICompactState {
   openai_compact_last_error?: string
 }
 
-export interface OpenAIWebProfileCookieState {
-  name?: string
-  domain?: string
-  path?: string
-  secure?: boolean
-  expires?: number
-  httponly?: boolean
-  same_site?: string
-}
-
-export interface OpenAIWebProfileState {
-  source?: string
-  captured_at?: string
-  user_agent?: string
-  ua_major?: number
-  has_cookie_jar?: boolean
-  cookie_names_digest?: string
-  proxy_id?: number | null
-  proxy_hash?: string
-  cookies?: OpenAIWebProfileCookieState[]
-}
-
-export interface OpenAIWebProfileImportRequest {
-  content: string
-}
-
-export interface OpenAIWebProfileImportResult {
-  account?: Account
-  has_web_profile?: boolean
-  source?: string
-  captured_at?: string
-  ua_major?: number
-  has_cookie_jar?: boolean
-  cookie_names_digest?: string
-  proxy_id?: number | null
-  proxy_hash?: string
-  message?: string
-}
 
 export interface CreateAccountRequest<
   TCredentials extends object = AccountDataRecord,

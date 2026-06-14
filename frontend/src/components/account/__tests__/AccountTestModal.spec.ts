@@ -154,7 +154,7 @@ describe('AccountTestModal', () => {
     })
   })
 
-  it('posts OpenAI image route selection alongside compact mode', async () => {
+  it('posts OpenAI image tests through codex regardless of compact probe mode', async () => {
     getAvailableModelsMock.mockResolvedValue([
       { id: 'gpt-image-1', display_name: 'GPT Image 1' }
     ])
@@ -164,7 +164,6 @@ describe('AccountTestModal', () => {
     await flushPromises()
     ;(wrapper.vm as any).selectedModelId = 'gpt-image-1'
     ;(wrapper.vm as any).testMode = 'compact'
-    ;(wrapper.vm as any).selectedOpenAIImageTestMode = 'web2api'
     ;(wrapper.vm as any).testPrompt = 'draw a cat'
     await (wrapper.vm as any).startTest()
     await flushPromises()
@@ -175,7 +174,7 @@ describe('AccountTestModal', () => {
       model_id: 'gpt-image-1',
       prompt: 'draw a cat',
       mode: 'default',
-      test_mode: 'web2api'
+      test_mode: 'codex'
     })
   })
 

@@ -564,7 +564,6 @@ function buildOpenAIImageUsageRows(usage: AccountUsageInfo | null | undefined): 
   return [
     buildUsageRow('codex-5h', 'codex 5h', usage.openai_image_codex_five_hour),
     buildUsageRow('codex-7d', 'codex 7d', usage.openai_image_codex_seven_day),
-    buildUsageRow('web2api-5h', 'web2api 5h', usage.openai_image_web2api_five_hour),
   ].filter((item): item is OpenAIImageUsageRow => item !== null)
 }
 

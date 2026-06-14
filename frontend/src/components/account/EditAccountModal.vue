@@ -1173,6 +1173,38 @@
       </div>
 
       <div
+        v-if="supportsAccountSchedulingThresholdOverride"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="mb-3 flex items-center justify-between">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.accountSchedulingThresholdOverride') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.accountSchedulingThresholdOverrideHint') }}
+            </p>
+          </div>
+          <input
+            v-model="accountSchedulingThresholdOverrideEnabled"
+            data-testid="account-scheduling-threshold-override-enabled"
+            type="checkbox"
+            class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+        </div>
+        <div v-if="accountSchedulingThresholdOverrideEnabled">
+          <label class="input-label">{{ t('admin.accounts.accountSchedulingThresholdOverrideValue') }}</label>
+          <input
+            v-model.number="accountSchedulingThresholdOverrideValue"
+            data-testid="account-scheduling-threshold-override-value"
+            type="number"
+            min="1"
+            max="100"
+            class="input"
+          />
+          <p class="input-hint">{{ t('admin.accounts.accountSchedulingThresholdOverrideDisabledHint') }}</p>
+        </div>
+      </div>
+
+      <div
         v-if="account?.platform === 'openai'"
         data-testid="openai-response-rewrite-section"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
@@ -1554,60 +1586,10 @@
         </div>
       </div>
 
-      <!-- OpenAI WebProfile safe metadata and import -->
       <div
-        v-if="account?.platform === 'openai'"
+        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
-        data-testid="openai-web-profile-section"
       >
-        <div class="mb-3">
-          <label class="input-label mb-0">{{ t('admin.accounts.openAIWebProfileTitle') }}</label>
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            {{ t('admin.accounts.openAIWebProfileSafeHint') }}
-          </p>
-        </div>
-
-        <div class="grid grid-cols-1 gap-2 rounded-lg bg-gray-50 p-3 text-xs dark:bg-dark-700/40 sm:grid-cols-2">
-          <div v-for="row in openAIWebProfileRows" :key="row.label" class="flex justify-between gap-3">
-            <span class="text-gray-500 dark:text-gray-400">{{ row.label }}</span>
-            <span class="break-all text-right font-medium text-gray-800 dark:text-gray-100">{{ row.value }}</span>
-          </div>
-        </div>
-
-        <div class="mt-4 space-y-2">
-          <label class="input-label">{{ t('admin.accounts.openAIWebProfileImportLabel') }}</label>
-          <textarea
-            v-model="openAIWebProfileImportContent"
-            rows="5"
-            class="input font-mono text-xs"
-            data-testid="openai-web-profile-import-content"
-            :placeholder="t('admin.accounts.openAIWebProfileImportPlaceholder')"
-          ></textarea>
-          <div class="flex items-center justify-between gap-3">
-            <p class="text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.openAIWebProfileImportHint') }}
-            </p>
-            <button
-              type="button"
-              class="btn btn-secondary text-sm"
-              data-testid="openai-web-profile-import-submit"
-              :disabled="openAIWebProfileImporting || !openAIWebProfileImportContent.trim()"
-              @click="handleOpenAIWebProfileImport"
-            >
-              {{ openAIWebProfileImporting
-                ? t('admin.accounts.openAIWebProfileImporting')
-                : t('admin.accounts.openAIWebProfileImportSubmit') }}
-            </button>
-          </div>
-          <p
-            v-if="openAIWebProfileImportSummary"
-            class="rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700 dark:bg-green-900/20 dark:text-green-300"
-            data-testid="openai-web-profile-import-summary"
-          >
-            {{ openAIWebProfileImportSummary }}
-          </p>
-        </div>
-        <div v-if="account?.type === 'apikey'" class="mt-4">
           <label class="input-label mb-2 block">{{ t('admin.accounts.openai.responsesMode') }}</label>
           <Select
             v-model="openAIResponsesMode"
@@ -1623,8 +1605,11 @@
             {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
           </p>
           <p v-else class="input-hint">{{ t('admin.accounts.openai.responsesModeDesc') }}</p>
-        </div>
-        <div v-if="account?.type === 'apikey'" class="mt-4">
+      </div>
+      <div
+        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
           <label class="input-label mb-2 block">{{ t('admin.accounts.openai.endpointCapabilities') }}</label>
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label
@@ -1643,9 +1628,7 @@
             </label>
           </div>
           <p class="input-hint">{{ t('admin.accounts.openai.endpointCapabilitiesDesc') }}</p>
-        </div>
       </div>
-
       <!-- Anthropic API Key 自动透传开关 -->
       <div
         v-if="account?.platform === 'anthropic' && account?.type === 'apikey'"
@@ -1938,84 +1921,6 @@
               ]"
             />
           </button>
-        </div>
-      </div>
-
-      <div
-        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'apikey')"
-        class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
-      >
-        <div class="space-y-2">
-          <div class="flex items-center justify-between">
-            <label class="input-label mb-0">{{ t('admin.accounts.autoPause5hDisabled') }}</label>
-            <button
-              type="button"
-              @click="autoPause5hDisabled = !autoPause5hDisabled"
-              :class="[
-                'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                autoPause5hDisabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
-              ]"
-              data-testid="auto-pause-5h-disabled"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                  autoPause5hDisabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-          <p class="input-hint">{{ t('admin.accounts.autoPauseDisabledHint') }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.autoPause5hThreshold') }}</label>
-          <input
-            v-model.number="autoPause5hThreshold"
-            type="number"
-            min="0"
-            max="100"
-            step="0.1"
-            class="input"
-            :disabled="autoPause5hDisabled"
-            data-testid="auto-pause-5h-threshold"
-          />
-          <p class="input-hint">{{ t('admin.accounts.autoPauseThresholdHint') }}</p>
-        </div>
-        <div class="space-y-2">
-          <div class="flex items-center justify-between">
-            <label class="input-label mb-0">{{ t('admin.accounts.autoPause7dDisabled') }}</label>
-            <button
-              type="button"
-              @click="autoPause7dDisabled = !autoPause7dDisabled"
-              :class="[
-                'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                autoPause7dDisabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
-              ]"
-              data-testid="auto-pause-7d-disabled"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                  autoPause7dDisabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-          <p class="input-hint">{{ t('admin.accounts.autoPauseDisabledHint') }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.autoPause7dThreshold') }}</label>
-          <input
-            v-model.number="autoPause7dThreshold"
-            type="number"
-            min="0"
-            max="100"
-            step="0.1"
-            class="input"
-            :disabled="autoPause7dDisabled"
-            data-testid="auto-pause-7d-threshold"
-          />
-          <p class="input-hint">{{ t('admin.accounts.autoPauseThresholdHint') }}</p>
         </div>
       </div>
 
@@ -2551,8 +2456,7 @@ import type {
   CheckMixedChannelResponse,
   UpdateAccountRequest,
   KiroCredentials,
-  OpenAICompactMode,
-  OpenAIWebProfileState
+  OpenAICompactMode
 } from '@/types'
 import type { DefaultAccountModelConfig } from '@/api/admin/settings'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -2706,10 +2610,6 @@ const customErrorCodesEnabled = ref(false)
 const selectedErrorCodes = ref<number[]>([])
 const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(false)
-const autoPause5hThreshold = ref<number | null>(null)
-const autoPause7dThreshold = ref<number | null>(null)
-const autoPause5hDisabled = ref(false)
-const autoPause7dDisabled = ref(false)
 const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
 const allowOverages = ref(false) // For antigravity accounts: enable AI Credits overages
 const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
@@ -2717,6 +2617,8 @@ const antigravityWhitelistModels = ref<string[]>([])
 const antigravityModelMappings = ref<ModelMapping[]>([])
 const tempUnschedEnabled = ref(false)
 const tempUnschedRules = ref<TempUnschedRuleForm[]>([])
+const accountSchedulingThresholdOverrideEnabled = ref(false)
+const accountSchedulingThresholdOverrideValue = ref(100)
 const responseRewriteRules = ref<ResponseRewriteRuleForm[]>([])
 const getModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-model-mapping')
 const getOpenAICompactModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-openai-compact-model-mapping')
@@ -2734,6 +2636,10 @@ const showKiroModelSyncWarning = ref(false)
 const kiroModelSyncWarningMessage = ref('')
 const kiroModelSyncWarningResolver = ref<((sync: boolean) => void) | null>(null)
 const kiroModelSyncDismissedSignature = ref('')
+const ACCOUNT_SCHEDULING_THRESHOLD_CREDENTIAL_KEY = 'account_scheduling_threshold'
+const supportsAccountSchedulingThresholdOverride = computed(() =>
+  supportsAccountSchedulingThresholdOverridePlatform(props.account?.platform)
+)
 
 // Quota control state. TLS is also used by OpenAI/Kiro; the rest is Anthropic-only.
 const windowCostEnabled = ref(false)
@@ -2768,9 +2674,6 @@ const openAICompactSupported = ref<boolean | null>(null)
 const openAICompactCheckedAt = ref<string | null>(null)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
-const openAIWebProfileImportContent = ref('')
-const openAIWebProfileImporting = ref(false)
-const openAIWebProfileImportSummary = ref('')
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAllowClaudeCodeEnabled = ref(false)
 const openaiImageGenerationEnabled = ref(true)
@@ -2919,14 +2822,6 @@ const openAICompactStatusKey = computed(() => {
   return 'admin.accounts.openai.compactAuto'
 })
 
-const openAIWebProfile = computed<OpenAIWebProfileState | null>(() => {
-  const raw = (props.account?.extra as Record<string, unknown> | undefined)?.web_profile
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return null
-  }
-  return raw as OpenAIWebProfileState
-})
-
 function normalizeOpenAIEndpointCapabilities(raw: unknown): OpenAIEndpointCapability[] {
   if (!Array.isArray(raw)) return [...OPENAI_ENDPOINT_CAPABILITIES]
   const selected = new Set<OpenAIEndpointCapability>()
@@ -2970,76 +2865,6 @@ function applyOpenAIEndpointCapabilities(credentials: Record<string, unknown>): 
   }
   credentials.openai_capabilities = capabilities
 }
-
-const openAIWebProfileCookieNames = computed(() => {
-  const cookies = openAIWebProfile.value?.cookies
-  if (!Array.isArray(cookies)) {
-    return []
-  }
-  return Array.from(new Set(
-    cookies
-      .map((cookie) => String(cookie?.name || '').trim())
-      .filter((name) => name.length > 0)
-  )).sort()
-})
-
-const openAIWebProfileHasCookieJar = computed(() => {
-  if (typeof openAIWebProfile.value?.has_cookie_jar === 'boolean') {
-    return openAIWebProfile.value.has_cookie_jar
-  }
-  return openAIWebProfileCookieNames.value.length > 0
-})
-
-const openAIWebProfileUAMajor = computed(() => {
-  if (typeof openAIWebProfile.value?.ua_major === 'number') {
-    return openAIWebProfile.value.ua_major
-  }
-  const userAgent = String(openAIWebProfile.value?.user_agent || '')
-  const match = userAgent.match(/(?:Chrome|Chromium|CriOS|Edg|OPR)\/(\d+)/)
-  return match ? Number(match[1]) : null
-})
-
-function digestOpenAIWebProfileCookieNames(names: string[]): string {
-  if (names.length === 0) {
-    return ''
-  }
-  let hash = 0x811c9dc5
-  for (const char of names.join('\n')) {
-    hash ^= char.charCodeAt(0)
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return `fnv1a:${(hash >>> 0).toString(16).padStart(8, '0')}`
-}
-
-const openAIWebProfileCookieNamesDigest = computed(() => {
-  const profile = openAIWebProfile.value as (OpenAIWebProfileState & { cookie_names_hash?: string }) | null
-  if (!profile) {
-    return ''
-  }
-  return String(
-    profile.cookie_names_digest ||
-    profile.cookie_names_hash ||
-    digestOpenAIWebProfileCookieNames(openAIWebProfileCookieNames.value)
-  )
-})
-
-const openAIWebProfileRows = computed(() => {
-  const profile = openAIWebProfile.value
-  const empty = '-'
-  const yes = t('common.yes')
-  const no = t('common.no')
-  return [
-    { label: t('admin.accounts.openAIWebProfileFieldHasWebProfile'), value: profile ? yes : no },
-    { label: t('admin.accounts.openAIWebProfileFieldSource'), value: profile?.source || empty },
-    { label: t('admin.accounts.openAIWebProfileFieldCapturedAt'), value: profile?.captured_at || empty },
-    { label: t('admin.accounts.openAIWebProfileFieldUAMajor'), value: openAIWebProfileUAMajor.value == null ? empty : String(openAIWebProfileUAMajor.value) },
-    { label: t('admin.accounts.openAIWebProfileFieldHasCookieJar'), value: openAIWebProfileHasCookieJar.value ? yes : no },
-    { label: t('admin.accounts.openAIWebProfileFieldCookieNamesDigest'), value: openAIWebProfileCookieNamesDigest.value || empty },
-    { label: t('admin.accounts.openAIWebProfileFieldProxyId'), value: profile?.proxy_id == null ? empty : String(profile.proxy_id) },
-    { label: t('admin.accounts.openAIWebProfileFieldProxyHash'), value: profile?.proxy_hash || empty }
-  ]
-})
-
 // Computed: current preset mappings based on platform
 const presetMappings = computed(() => getPresetMappingsByPlatform(props.account?.platform || 'anthropic'))
 const tempUnschedPresets = computed(() => [
@@ -3211,6 +3036,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   // Load intercept warmup requests setting (applies to all account types)
   const credentials = newAccount.credentials as Record<string, unknown> | undefined
   interceptWarmupRequests.value = credentials?.intercept_warmup_requests === true
+  loadAccountSchedulingThresholdOverride(newAccount.platform, credentials)
   autoPauseOnExpired.value = newAccount.auto_pause_on_expired === true
   editVertexProjectId.value = ''
   editVertexClientEmail.value = ''
@@ -3222,10 +3048,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	const extra = newAccount.extra as Record<string, unknown> | undefined
 	mixedScheduling.value = extra?.mixed_scheduling === true
 	allowOverages.value = extra?.allow_overages === true
-	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
-	autoPause7dThreshold.value = typeof extra?.auto_pause_7d_threshold === 'number' ? extra.auto_pause_7d_threshold * 100 : null
-	autoPause5hDisabled.value = extra?.auto_pause_5h_disabled === true
-	autoPause7dDisabled.value = extra?.auto_pause_7d_disabled === true
 
   // Load OpenAI passthrough toggle (OpenAI OAuth/API Key)
   openaiPassthroughEnabled.value = false
@@ -3612,14 +3434,6 @@ const toOptionalNumber = (value: unknown): number | null => {
   return null
 }
 
-const toOpenAIQuotaAutoPauseThreshold = (value: unknown): number | null => {
-  const percent = toOptionalNumber(value)
-  if (percent == null || percent <= 0) {
-    return null
-  }
-  return Math.min(percent, 100) / 100
-}
-
 const applyTLSFingerprintExtra = (extra: Record<string, unknown>) => {
   if (tlsFingerprintEnabled.value) {
     extra.enable_tls_fingerprint = true
@@ -3712,10 +3526,86 @@ const applyResponseRewriteConfig = (
   return true
 }
 
+const supportsAccountSchedulingThresholdOverridePlatform = (platform: Account['platform'] | undefined) =>
+  platform === 'openai' || platform === 'anthropic'
+
+const normalizeAccountSchedulingThresholdOverride = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) {
+    return null
+  }
+  const integer = Math.trunc(numeric)
+  if (integer < 1 || integer > 100) {
+    return null
+  }
+  return integer
+}
+
+const clampAccountSchedulingThresholdOverride = (value: unknown): number =>
+  Math.min(100, Math.max(1, Math.trunc(Number(value) || 100)))
+
+const loadAccountSchedulingThresholdOverride = (
+  platform: Account['platform'] | undefined,
+  credentials: Record<string, unknown> | undefined
+) => {
+  if (!supportsAccountSchedulingThresholdOverridePlatform(platform)) {
+    accountSchedulingThresholdOverrideEnabled.value = false
+    accountSchedulingThresholdOverrideValue.value = 100
+    return
+  }
+  const value = normalizeAccountSchedulingThresholdOverride(
+    credentials?.[ACCOUNT_SCHEDULING_THRESHOLD_CREDENTIAL_KEY]
+  )
+  accountSchedulingThresholdOverrideEnabled.value = value !== null
+  accountSchedulingThresholdOverrideValue.value = value ?? 100
+}
+
+const applyAccountSchedulingThresholdOverrideConfig = (
+  credentials: Record<string, unknown>,
+  platform: Account['platform'] | undefined = props.account?.platform
+) => {
+  if (!supportsAccountSchedulingThresholdOverridePlatform(platform)) {
+    return
+  }
+  if (!accountSchedulingThresholdOverrideEnabled.value) {
+    delete credentials[ACCOUNT_SCHEDULING_THRESHOLD_CREDENTIAL_KEY]
+    return
+  }
+  credentials[ACCOUNT_SCHEDULING_THRESHOLD_CREDENTIAL_KEY] =
+    clampAccountSchedulingThresholdOverride(accountSchedulingThresholdOverrideValue.value)
+}
+
+const applyAccountSchedulingThresholdOverridePatch = (
+  credentials: Record<string, unknown>,
+  currentCredentials: Record<string, unknown>,
+  platform: Account['platform'] | undefined = props.account?.platform
+) => {
+  if (!supportsAccountSchedulingThresholdOverridePlatform(platform)) {
+    return
+  }
+  const current = normalizeAccountSchedulingThresholdOverride(
+    currentCredentials[ACCOUNT_SCHEDULING_THRESHOLD_CREDENTIAL_KEY]
+  )
+  if (!accountSchedulingThresholdOverrideEnabled.value) {
+    if (current !== null) {
+      credentials[ACCOUNT_SCHEDULING_THRESHOLD_CREDENTIAL_KEY] = null
+    }
+    return
+  }
+  const next = clampAccountSchedulingThresholdOverride(accountSchedulingThresholdOverrideValue.value)
+  if (current !== next) {
+    credentials[ACCOUNT_SCHEDULING_THRESHOLD_CREDENTIAL_KEY] = next
+  }
+}
+
 const applyCredentialRuleConfigs = (
   credentials: Record<string, unknown>,
   platform: Account['platform'] | undefined = props.account?.platform
 ) => {
+  applyAccountSchedulingThresholdOverrideConfig(credentials, platform)
   if (!applyTempUnschedConfig(credentials)) {
     return false
   }
@@ -3794,6 +3684,7 @@ const applyCredentialRulePatches = (
   currentCredentials: Record<string, unknown>,
   platform: Account['platform'] | undefined = props.account?.platform
 ) => {
+  applyAccountSchedulingThresholdOverridePatch(credentials, currentCredentials, platform)
   if (!applyTempUnschedPatch(credentials, currentCredentials)) {
     return false
   }
@@ -4257,46 +4148,6 @@ const handleClose = () => {
   antigravityMixedChannelConfirmed.value = false
   clearMixedChannelDialog()
   emit('close')
-}
-
-const summarizeOpenAIWebProfileImport = (result: Record<string, unknown>) => {
-  const parts = [
-    result.source ? `source=${result.source}` : '',
-    result.captured_at ? `captured_at=${result.captured_at}` : '',
-    result.ua_major != null ? `ua_major=${result.ua_major}` : '',
-    result.has_cookie_jar != null ? `has_cookie_jar=${Boolean(result.has_cookie_jar)}` : '',
-    result.cookie_names_digest ? `cookie_names_digest=${result.cookie_names_digest}` : '',
-    result.proxy_id != null ? `proxy_id=${result.proxy_id}` : '',
-    result.proxy_hash ? `proxy_hash=${result.proxy_hash}` : ''
-  ].filter(Boolean)
-  return parts.length > 0 ? parts.join(', ') : t('admin.accounts.openAIWebProfileImported')
-}
-
-const handleOpenAIWebProfileImport = async () => {
-  if (!props.account || props.account.platform !== 'openai') {
-    return
-  }
-  const content = openAIWebProfileImportContent.value.trim()
-  if (!content) {
-    return
-  }
-
-  openAIWebProfileImporting.value = true
-  openAIWebProfileImportSummary.value = ''
-  try {
-    const result = await adminAPI.accounts.importOpenAIWebProfile(props.account.id, { content })
-    const updatedAccount = result.account
-    if (updatedAccount) {
-      emit('updated', updatedAccount)
-    }
-    openAIWebProfileImportSummary.value = summarizeOpenAIWebProfileImport(result as Record<string, unknown>)
-    openAIWebProfileImportContent.value = ''
-    appStore.showSuccess(t('admin.accounts.openAIWebProfileImported'))
-  } catch (error: any) {
-    appStore.showError(error.message || t('admin.accounts.openAIWebProfileImportFailed'))
-  } finally {
-    openAIWebProfileImporting.value = false
-  }
 }
 
 const submitUpdateAccount = async (accountID: number, updatePayload: UpdateAccountRequest) => {
@@ -4882,29 +4733,6 @@ const handleSubmit = async () => {
         }
       } else {
         delete newExtra.openai_responses_mode
-      }
-
-      const autoPause5hThresholdValue = toOpenAIQuotaAutoPauseThreshold(autoPause5hThreshold.value)
-      if (autoPause5hThresholdValue == null) {
-        delete newExtra.auto_pause_5h_threshold
-      } else {
-        newExtra.auto_pause_5h_threshold = autoPause5hThresholdValue
-      }
-      const autoPause7dThresholdValue = toOpenAIQuotaAutoPauseThreshold(autoPause7dThreshold.value)
-      if (autoPause7dThresholdValue == null) {
-        delete newExtra.auto_pause_7d_threshold
-      } else {
-        newExtra.auto_pause_7d_threshold = autoPause7dThresholdValue
-      }
-      if (autoPause5hDisabled.value) {
-        newExtra.auto_pause_5h_disabled = true
-      } else {
-        delete newExtra.auto_pause_5h_disabled
-      }
-      if (autoPause7dDisabled.value) {
-        newExtra.auto_pause_7d_disabled = true
-      } else {
-        delete newExtra.auto_pause_7d_disabled
       }
 
       delete newExtra.codex_image_generation_bridge_enabled

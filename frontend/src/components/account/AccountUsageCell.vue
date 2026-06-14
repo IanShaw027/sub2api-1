@@ -623,14 +623,11 @@ const openAIEnabledImageRoutes = computed(() => {
   const groups = openAICurrentImageGroups.value
   const info = usageInfo.value
   const codexSupported = info?.openai_image_codex_supported
-  const web2apiSupported = info?.openai_image_web2api_supported
   const hasCodexData = hasUsageProgressData(info?.openai_image_codex_five_hour) || hasUsageProgressData(info?.openai_image_codex_seven_day)
-  const hasWeb2apiData = hasUsageProgressData(info?.openai_image_web2api_five_hour)
 
   if (!groups.length) {
     return {
       codex: isRouteVisible(codexSupported, hasCodexData),
-      web2api: isRouteVisible(web2apiSupported, hasWeb2apiData),
       constrained: false,
       masterEnabled: false,
       hasGroups: false
@@ -638,25 +635,17 @@ const openAIEnabledImageRoutes = computed(() => {
   }
 
   let codex = false
-  let web2api = false
   let masterEnabled = false
 
   for (const group of groups) {
     if (!group.allow_image_generation) continue
     masterEnabled = true
-    if ((group.image_generation_route || 'codex') === 'codex' && isRouteVisible(codexSupported, hasCodexData)) {
+    if (isRouteVisible(codexSupported, hasCodexData)) {
       codex = true
     }
-    if ((group.image_generation_route || 'codex') === 'web2api' && isRouteVisible(web2apiSupported, hasWeb2apiData)) {
-      web2api = true
-    }
   }
 
-  if (!web2api && masterEnabled && hasWeb2apiData && isRouteVisible(web2apiSupported, hasWeb2apiData)) {
-    web2api = true
-  }
-
-  return { codex, web2api, constrained: masterEnabled, masterEnabled, hasGroups: true }
+  return { codex, constrained: masterEnabled, masterEnabled, hasGroups: true }
 })
 
 const showOpenAIResponseUsageBars = computed(() => {
@@ -668,7 +657,7 @@ const openAIImageUsageSummary = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return []
   const info = usageInfo.value
   if (!info) return []
-  const { codex: showCodex, web2api: showWeb2api } = openAIEnabledImageRoutes.value
+  const { codex: showCodex } = openAIEnabledImageRoutes.value
   const items: Array<{ label: string; requests: number; userCost: number }> = []
   const appendItem = (visible: boolean, label: string, progress?: UsageProgress | null) => {
     if (!visible || !hasUsageProgressData(progress)) return
@@ -681,7 +670,6 @@ const openAIImageUsageSummary = computed(() => {
   }
   appendItem(showCodex, '5h', info.openai_image_codex_five_hour)
   appendItem(showCodex, '7d', info.openai_image_codex_seven_day)
-  appendItem(showWeb2api, 'web', info.openai_image_web2api_five_hour)
   return items
 })
 
@@ -689,9 +677,8 @@ const hasOpenAIImageUsageProgressData = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
   const info = usageInfo.value
   if (!info) return false
-  const { codex: showCodex, web2api: showWeb2api } = openAIEnabledImageRoutes.value
-  return (showCodex && (hasUsageProgressData(info.openai_image_codex_five_hour) || hasUsageProgressData(info.openai_image_codex_seven_day))) ||
-    (showWeb2api && hasUsageProgressData(info.openai_image_web2api_five_hour))
+  const { codex: showCodex } = openAIEnabledImageRoutes.value
+  return showCodex && (hasUsageProgressData(info.openai_image_codex_five_hour) || hasUsageProgressData(info.openai_image_codex_seven_day))
 })
 
 const hasOpenAIUsageContent = computed(() => {

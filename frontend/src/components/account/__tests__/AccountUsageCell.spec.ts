@@ -647,7 +647,6 @@ describe('AccountUsageCell', () => {
     getUsage.mockResolvedValue({
       openai_image_codex_supported: false,
       openai_image_codex_reason: 'free_plan_not_supported',
-      openai_image_web2api_supported: true,
       openai_image_codex_five_hour: {
         utilization: 100,
         resets_at: '2026-03-08T12:00:00Z',
@@ -687,9 +686,6 @@ describe('AccountUsageCell', () => {
               image_price_1k: null,
               image_price_2k: null,
               image_price_4k: null,
-              images2api_price_1k: null,
-              images2api_price_2k: null,
-              images2api_price_4k: null,
               claude_code_only: false,
               fallback_group_id: null,
               fallback_group_id_on_invalid_request: null,
@@ -698,7 +694,7 @@ describe('AccountUsageCell', () => {
             },
             {
               id: 102,
-              name: 'OpenAI Web2API Enabled',
+              name: 'OpenAI Legacy Route',
               description: '',
               platform: 'openai',
               rate_limit: 0,
@@ -711,15 +707,12 @@ describe('AccountUsageCell', () => {
               weekly_limit_usd: null,
               monthly_limit_usd: null,
               allow_image_generation: true,
-              image_generation_route: 'web2api',
+              image_generation_route: 'codex',
               image_rate_independent: false,
               image_rate_multiplier: 1,
               image_price_1k: null,
               image_price_2k: null,
               image_price_4k: null,
-              images2api_price_1k: null,
-              images2api_price_2k: null,
-              images2api_price_4k: null,
               claude_code_only: false,
               fallback_group_id: null,
               fallback_group_id_on_invalid_request: null,
@@ -756,10 +749,9 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('img:')
   })
 
-  it('OpenAI Web2API 生图窗口在 codex 路由分组下会纳入 img 摘要', async () => {
+  it('OpenAI Web2API 生图窗口不再纳入 img 摘要', async () => {
     getUsage.mockResolvedValue({
       openai_image_codex_supported: true,
-      openai_image_web2api_supported: true,
       openai_image_web2api_five_hour: {
         utilization: 88,
         resets_at: '2026-03-08T13:00:00Z',
@@ -796,9 +788,6 @@ describe('AccountUsageCell', () => {
               image_price_1k: null,
               image_price_2k: null,
               image_price_4k: null,
-              images2api_price_1k: null,
-              images2api_price_2k: null,
-              images2api_price_4k: null,
               claude_code_only: false,
               fallback_group_id: null,
               fallback_group_id_on_invalid_request: null,
@@ -822,8 +811,8 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(wrapper.findAll('.usage-bar')).toHaveLength(0)
-    expect(wrapper.text()).toContain('img:')
-    expect(wrapper.text()).toContain('web 3req $0.30')
+    expect(wrapper.text()).not.toContain('img:')
+    expect(wrapper.text()).not.toContain('web 3req $0.30')
   })
 
   it('OpenAI 生图窗口只有限流或重置进度时仍显示 img 摘要', async () => {
@@ -938,9 +927,6 @@ describe('AccountUsageCell', () => {
               image_price_1k: null,
               image_price_2k: null,
               image_price_4k: null,
-              images2api_price_1k: null,
-              images2api_price_2k: null,
-              images2api_price_4k: null,
               claude_code_only: false,
               fallback_group_id: null,
               fallback_group_id_on_invalid_request: null,
@@ -1047,9 +1033,6 @@ describe('AccountUsageCell', () => {
               image_price_1k: null,
               image_price_2k: null,
               image_price_4k: null,
-              images2api_price_1k: null,
-              images2api_price_2k: null,
-              images2api_price_4k: null,
               claude_code_only: false,
               fallback_group_id: null,
               fallback_group_id_on_invalid_request: null,
@@ -1139,9 +1122,6 @@ describe('AccountUsageCell', () => {
               image_price_1k: null,
               image_price_2k: null,
               image_price_4k: null,
-              images2api_price_1k: null,
-              images2api_price_2k: null,
-              images2api_price_4k: null,
               claude_code_only: false,
               fallback_group_id: null,
               fallback_group_id_on_invalid_request: null,
@@ -1171,7 +1151,7 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).toContain('img:')
     expect(wrapper.text()).toContain('5h 1req $0.10')
     expect(wrapper.text()).toContain('7d 2req $0.20')
-    expect(wrapper.text()).toContain('web 3req $0.30')
+    expect(wrapper.text()).not.toContain('web 3req $0.30')
     expect(wrapper.text()).not.toContain('img 5h')
     expect(wrapper.text()).not.toContain('img 7d')
     expect(wrapper.text()).not.toContain('codex 5h')
@@ -1179,7 +1159,7 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('web 5h')
   })
 
-  it('OpenAI OAuth 在当前分组为 codex 时仍会在 img 摘要显示有数据的 web2api 窗口', async () => {
+  it('OpenAI OAuth 在当前分组为 codex 时忽略历史 web2api 窗口', async () => {
     getUsage.mockResolvedValue({
       five_hour: {
         utilization: 11,
@@ -1192,7 +1172,6 @@ describe('AccountUsageCell', () => {
         window_stats: { requests: 2, tokens: 22, cost: 0.22 }
       },
       openai_image_codex_supported: true,
-      openai_image_web2api_supported: true,
       openai_image_codex_five_hour: {
         utilization: 11,
         resets_at: '2026-03-08T12:00:00Z',
@@ -1241,9 +1220,6 @@ describe('AccountUsageCell', () => {
               image_price_1k: null,
               image_price_2k: null,
               image_price_4k: null,
-              images2api_price_1k: null,
-              images2api_price_2k: null,
-              images2api_price_4k: null,
               claude_code_only: false,
               fallback_group_id: null,
               fallback_group_id_on_invalid_request: null,
@@ -1273,7 +1249,7 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).toContain('img:')
     expect(wrapper.text()).toContain('5h 1req $0.11')
     expect(wrapper.text()).toContain('7d 2req $0.22')
-    expect(wrapper.text()).toContain('web 3req $0.33')
+    expect(wrapper.text()).not.toContain('web 3req $0.33')
     expect(wrapper.text()).not.toContain('img 5h')
     expect(wrapper.text()).not.toContain('img 7d')
   })

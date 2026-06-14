@@ -45,18 +45,12 @@ const QUOTA_WINDOWS: QuotaWindowType[] = ["daily", "weekly", "monthly"]
 export type SchedulingThresholdPlatformType =
   | "openai"
   | "anthropic"
-  | "gemini"
-  | "kiro"
-  | "antigravity"
 
 export type AccountSchedulingThresholdsMap = Record<SchedulingThresholdPlatformType, number>
 
 export const SCHEDULING_THRESHOLD_PLATFORMS: SchedulingThresholdPlatformType[] = [
   "openai",
   "anthropic",
-  "gemini",
-  "kiro",
-  "antigravity",
 ]
 
 export function normalizeAccountSchedulingThresholdsMap(
@@ -213,21 +207,7 @@ export type KiroRuntimeValidationError =
   | "cache_min_block_tokens_range"
   | "cache_independent_ttl_seconds_range"
   | "cache_prefix_ttl_seconds_range"
-  | "cache_prefix_ttl_seconds_exceeds_independent"
-  | "kiro_thinking_simulation_template_length"
-  | "kiro_thinking_free_prompt_length";
-
-export type KiroThinkingMode =
-  | "off"
-  | "simulate";
-
-export type KiroThinkingEffortThreshold =
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max";
+  | "cache_prefix_ttl_seconds_exceeds_independent";
 
 export interface KiroRuntimeSettingsInput {
   kiro_version?: string | null;
@@ -238,10 +218,6 @@ export interface KiroRuntimeSettingsInput {
   cache_min_block_tokens?: number | null;
   cache_independent_ttl_seconds?: number | null;
   cache_prefix_ttl_seconds?: number | null;
-  kiro_thinking_mode?: KiroThinkingMode | string | null;
-  kiro_thinking_effort_threshold?: KiroThinkingEffortThreshold | string | null;
-  kiro_thinking_simulation_template?: string | null;
-  kiro_thinking_free_prompt?: string | null;
 }
 
 export const KIRO_CACHE_HIT_RATE_SCALE_DEFAULT = 100;
@@ -249,14 +225,6 @@ export const KIRO_CACHE_MIN_BLOCK_TOKENS_DEFAULT = 1024;
 export const KIRO_CACHE_MIN_BLOCK_TOKENS_MAX = 1 << 20;
 export const KIRO_CACHE_INDEPENDENT_TTL_SECONDS_DEFAULT = 3600;
 export const KIRO_CACHE_PREFIX_TTL_SECONDS_DEFAULT = 3600;
-export const KIRO_THINKING_MODE_DEFAULT: KiroThinkingMode = "simulate";
-export const KIRO_THINKING_EFFORT_THRESHOLD_DEFAULT: KiroThinkingEffortThreshold =
-  "medium";
-export const KIRO_THINKING_SIMULATION_TEMPLATE_DEFAULT =
-  "Using Kiro simulated thinking with {effort} effort for {model}. {detail}";
-export const KIRO_THINKING_FREE_PROMPT_DEFAULT =
-  "Before answering, think through the problem carefully. Output your complete reasoning in <thinking>...</thinking> XML tags first, then provide your answer.";
-export const KIRO_THINKING_FREE_PROMPT_MAX_LENGTH = 4000;
 
 const AUTH_SOURCE_TYPES: AuthSourceType[] = [
   "email",
@@ -557,19 +525,6 @@ export function validateKiroRuntimeSettings(
     return "cache_prefix_ttl_seconds_exceeds_independent";
   }
 
-  if (
-    [...String(settings.kiro_thinking_simulation_template ?? "").trim()]
-      .length > 2000
-  ) {
-    return "kiro_thinking_simulation_template_length";
-  }
-  if (
-    [...String(settings.kiro_thinking_free_prompt ?? "").trim()].length >
-    KIRO_THINKING_FREE_PROMPT_MAX_LENGTH
-  ) {
-    return "kiro_thinking_free_prompt_length";
-  }
-
   return null;
 }
 
@@ -585,10 +540,6 @@ export function normalizeKiroRuntimeSettingsForUpdate(
   | "cache_min_block_tokens"
   | "cache_independent_ttl_seconds"
   | "cache_prefix_ttl_seconds"
-  | "kiro_thinking_mode"
-  | "kiro_thinking_effort_threshold"
-  | "kiro_thinking_simulation_template"
-  | "kiro_thinking_free_prompt"
 > {
   const payload: Pick<
     UpdateSettingsRequest,
@@ -600,10 +551,6 @@ export function normalizeKiroRuntimeSettingsForUpdate(
     | "cache_min_block_tokens"
     | "cache_independent_ttl_seconds"
     | "cache_prefix_ttl_seconds"
-    | "kiro_thinking_mode"
-    | "kiro_thinking_effort_threshold"
-    | "kiro_thinking_simulation_template"
-    | "kiro_thinking_free_prompt"
   > = {};
 
   if (settings.kiro_version !== undefined) {
@@ -649,30 +596,6 @@ export function normalizeKiroRuntimeSettingsForUpdate(
   );
   if (cachePrefixTtlSeconds !== undefined) {
     payload.cache_prefix_ttl_seconds = cachePrefixTtlSeconds;
-  }
-  if (settings.kiro_thinking_mode !== undefined) {
-    payload.kiro_thinking_mode = String(
-      settings.kiro_thinking_mode || KIRO_THINKING_MODE_DEFAULT,
-    ).trim();
-  }
-  if (settings.kiro_thinking_effort_threshold !== undefined) {
-    payload.kiro_thinking_effort_threshold = String(
-      settings.kiro_thinking_effort_threshold ||
-        KIRO_THINKING_EFFORT_THRESHOLD_DEFAULT,
-    ).trim();
-  }
-  if (settings.kiro_thinking_simulation_template !== undefined) {
-    payload.kiro_thinking_simulation_template = String(
-      settings.kiro_thinking_simulation_template ||
-        KIRO_THINKING_SIMULATION_TEMPLATE_DEFAULT,
-    ).trim();
-  }
-  if (settings.kiro_thinking_free_prompt !== undefined) {
-    const normalizedFreePrompt = String(
-      settings.kiro_thinking_free_prompt ?? "",
-    ).trim();
-    payload.kiro_thinking_free_prompt =
-      normalizedFreePrompt || KIRO_THINKING_FREE_PROMPT_DEFAULT;
   }
 
   return payload;
@@ -906,7 +829,6 @@ export interface SystemSettings {
   fallback_model_openai: string;
   fallback_model_gemini: string;
   fallback_model_antigravity: string;
-  platform_model_routing_config: Record<string, DefaultAccountModelConfig>;
   platform_default_account_model_config: Record<string, DefaultAccountModelConfig>;
 
   // Identity patch configuration (Claude -> Gemini)
@@ -932,10 +854,6 @@ export interface SystemSettings {
   cache_min_block_tokens?: number | null;
   cache_independent_ttl_seconds?: number | null;
   cache_prefix_ttl_seconds?: number | null;
-  kiro_thinking_mode?: KiroThinkingMode | string;
-  kiro_thinking_effort_threshold?: KiroThinkingEffortThreshold | string;
-  kiro_thinking_simulation_template?: string;
-  kiro_thinking_free_prompt?: string;
 
   // 分组隔离
   allow_ungrouped_key_scheduling: boolean;
@@ -1201,7 +1119,6 @@ export interface UpdateSettingsRequest {
   fallback_model_openai?: string;
   fallback_model_gemini?: string;
   fallback_model_antigravity?: string;
-  platform_model_routing_config?: Record<string, DefaultAccountModelConfig>;
   platform_default_account_model_config?: Record<string, DefaultAccountModelConfig>;
   enable_identity_patch?: boolean;
   identity_patch_prompt?: string;
@@ -1219,10 +1136,6 @@ export interface UpdateSettingsRequest {
   cache_min_block_tokens?: number;
   cache_independent_ttl_seconds?: number;
   cache_prefix_ttl_seconds?: number;
-  kiro_thinking_mode?: KiroThinkingMode | string;
-  kiro_thinking_effort_threshold?: KiroThinkingEffortThreshold | string;
-  kiro_thinking_simulation_template?: string;
-  kiro_thinking_free_prompt?: string;
   allow_ungrouped_key_scheduling?: boolean;
   enable_fingerprint_unification?: boolean;
   enable_metadata_passthrough?: boolean;

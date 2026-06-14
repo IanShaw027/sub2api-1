@@ -5,7 +5,6 @@ import { mount } from '@vue/test-utils'
 const {
   showErrorMock,
   updateAccountMock,
-  importOpenAIWebProfileMock,
   checkMixedChannelRiskMock,
   getSettingsMock,
   getWebSearchEmulationConfigMock,
@@ -25,7 +24,6 @@ const {
   return {
     showErrorMock: vi.fn(),
     updateAccountMock: vi.fn(),
-    importOpenAIWebProfileMock: vi.fn(),
     checkMixedChannelRiskMock: vi.fn(),
     getSettingsMock: vi.fn(),
     getWebSearchEmulationConfigMock: vi.fn(),
@@ -67,7 +65,6 @@ vi.mock('@/api/admin', () => ({
     },
     accounts: {
       update: updateAccountMock,
-      importOpenAIWebProfile: importOpenAIWebProfileMock,
       checkMixedChannelRisk: checkMixedChannelRiskMock
     }
   }
@@ -207,7 +204,6 @@ function buildVertexAccount() {
 function resetCommonMocks() {
   showErrorMock.mockReset()
   updateAccountMock.mockReset()
-  importOpenAIWebProfileMock.mockReset()
   checkMixedChannelRiskMock.mockReset()
   getSettingsMock.mockReset()
   getWebSearchEmulationConfigMock.mockReset()
@@ -319,97 +315,48 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).not.toHaveBeenCalled()
   })
 
-  it('shows safe OpenAI WebProfile metadata and import entry', async () => {
-    const account = buildAccount()
-    account.extra = {
-      web_profile: {
-        source: 'browser-capture',
-        captured_at: '2026-04-29T10:00:00Z',
-        user_agent: 'Mozilla/5.0 Chrome/136.0.0.0 Safari/537.36',
-        has_cookie_jar: true,
-        cookie_names_digest: 'sha256:safe-digest',
-        proxy_id: 18,
-        proxy_hash: 'proxy-hash-abc',
-        cookies: [
-          { name: '__Secure-next-auth.session-token', value: 'secret-cookie-value' }
-        ]
-      }
-    }
-
+  it('edits account scheduling threshold override for supported OpenAI accounts', async () => {
     resetCommonMocks()
+    const account = buildAccount()
+    account.credentials = {
+      ...account.credentials,
+      account_scheduling_threshold: 82
+    }
+    updateAccountMock.mockResolvedValue(account)
+
     const wrapper = mountModal(account)
     await wrapper.setProps({ show: true })
 
-    const section = wrapper.get('[data-testid="openai-web-profile-section"]')
-    expect(section.text()).toContain('admin.accounts.openAIWebProfileTitle')
-    expect(section.text()).toContain('admin.accounts.openAIWebProfileFieldHasWebProfile')
-    expect(section.text()).toContain('common.yes')
-    expect(section.text()).toContain('admin.accounts.openAIWebProfileFieldSource')
-    expect(section.text()).toContain('browser-capture')
-    expect(section.text()).toContain('admin.accounts.openAIWebProfileFieldCapturedAt')
-    expect(section.text()).toContain('2026-04-29T10:00:00Z')
-    expect(section.text()).toContain('admin.accounts.openAIWebProfileFieldUAMajor')
-    expect(section.text()).toContain('136')
-    expect(section.text()).toContain('admin.accounts.openAIWebProfileFieldHasCookieJar')
-    expect(section.text()).toContain('admin.accounts.openAIWebProfileFieldCookieNamesDigest')
-    expect(section.text()).toContain('sha256:safe-digest')
-    expect(section.text()).toContain('admin.accounts.openAIWebProfileFieldProxyId')
-    expect(section.text()).toContain('18')
-    expect(section.text()).toContain('admin.accounts.openAIWebProfileFieldProxyHash')
-    expect(section.text()).toContain('proxy-hash-abc')
-    expect(wrapper.get('[data-testid="openai-web-profile-import-content"]').exists()).toBe(true)
+    const enabled = wrapper.get('[data-testid="account-scheduling-threshold-override-enabled"]')
+      .element as HTMLInputElement
+    expect(enabled.checked).toBe(true)
+    const input = wrapper.get('[data-testid="account-scheduling-threshold-override-value"]')
+    expect((input.element as HTMLInputElement).value).toBe('82')
+
+    await input.setValue('75')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalled()
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.account_scheduling_threshold).toBe(75)
   })
 
-  it('submits OpenAI WebProfile import without rendering cookie values', async () => {
-    const account = buildAccount()
-    const updatedAccount = {
-      ...account,
-      extra: {
-        web_profile: {
-          source: 'imported',
-          captured_at: '2026-04-29T11:00:00Z',
-          ua_major: 136,
-          has_cookie_jar: true,
-          cookie_names_digest: 'sha256:imported-digest',
-          cookies: [
-            { name: 'oai-did', value: 'new-secret-cookie-value' }
-          ]
-        }
-      }
-    }
-    const pasted = JSON.stringify({ cookies: [{ name: 'oai-did', value: 'pasted-secret-cookie-value' }] })
-
+  it('does not show account scheduling threshold override for unsupported Kiro accounts', async () => {
     resetCommonMocks()
-    importOpenAIWebProfileMock.mockResolvedValue({
-      account: updatedAccount,
-      source: 'imported',
-      captured_at: '2026-04-29T11:00:00Z',
-      ua_major: 136,
-      has_cookie_jar: true,
-      cookie_names_digest: 'sha256:imported-digest'
-    })
+    const account = buildAccount()
+    account.platform = 'kiro'
+    account.type = 'oauth'
 
     const wrapper = mountModal(account)
     await wrapper.setProps({ show: true })
-    await wrapper.get('[data-testid="openai-web-profile-import-content"]').setValue(pasted)
-    await wrapper.get('[data-testid="openai-web-profile-import-submit"]').trigger('click')
 
-    expect(importOpenAIWebProfileMock).toHaveBeenCalledWith(1, { content: pasted })
-    expect(wrapper.emitted('updated')?.[0]).toEqual([updatedAccount])
-    expect(wrapper.text()).toContain('sha256:imported-digest')
-    expect(wrapper.text()).not.toContain('pasted-secret-cookie-value')
-    expect(wrapper.text()).not.toContain('new-secret-cookie-value')
+    expect(wrapper.find('[data-testid="account-scheduling-threshold-override-enabled"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="account-scheduling-threshold-override-value"]').exists()).toBe(false)
   })
 
-  it('does not show OpenAI WebProfile controls for non-OpenAI accounts', async () => {
+  it('does not show OpenAI WebProfile controls', async () => {
     resetCommonMocks()
     const wrapper = mountModal({
       ...buildAccount(),
-      platform: 'anthropic',
-      credentials: {
-        api_key: 'sk-ant-test',
-        base_url: 'https://api.anthropic.com'
-      },
       extra: {
         web_profile: {
           source: 'should-not-render'
@@ -1269,51 +1216,6 @@ describe('EditAccountModal', () => {
 
     expect(wrapper.find('[data-testid="openai-responses-mode-select"]').exists()).toBe(false)
   })
-
-	it('submits OpenAI quota auto-pause thresholds in extra', async () => {
-	  const account = buildAccount()
-	  account.extra = {
-		auto_pause_5h_threshold: 0.9,
-		auto_pause_7d_threshold: 0.8
-	  }
-	  updateAccountMock.mockReset()
-	  checkMixedChannelRiskMock.mockReset()
-	  checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
-	  updateAccountMock.mockResolvedValue(account)
-
-	  const wrapper = mountModal(account)
-	  await wrapper.setProps({ show: true })
-
-	  await wrapper.get('[data-testid="auto-pause-5h-threshold"]').setValue('95')
-	  await wrapper.get('[data-testid="auto-pause-7d-threshold"]').setValue('96')
-	  await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-
-	  expect(updateAccountMock).toHaveBeenCalledTimes(1)
-	  expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.auto_pause_5h_threshold).toBe(0.95)
-	  expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.auto_pause_7d_threshold).toBe(0.96)
-	})
-
-	it('submits OpenAI quota auto-pause disable flag in extra', async () => {
-	  // Toggling the per-account disable flag must persist as auto_pause_5h_disabled
-	  // so an admin can exempt one account from auto-pause even when a global default
-	  // threshold is configured (otherwise leaving the threshold blank would silently
-	  // fall back to the global default).
-	  const account = buildAccount()
-	  updateAccountMock.mockReset()
-	  checkMixedChannelRiskMock.mockReset()
-	  checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
-	  updateAccountMock.mockResolvedValue(account)
-
-	  const wrapper = mountModal(account)
-	  await wrapper.setProps({ show: true })
-
-	  await wrapper.get('[data-testid="auto-pause-5h-disabled"]').trigger('click')
-	  await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-
-	  expect(updateAccountMock).toHaveBeenCalledTimes(1)
-	  expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.auto_pause_5h_disabled).toBe(true)
-	  expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.auto_pause_7d_disabled).toBeUndefined()
-	})
 
   it('keeps at least one OpenAI APIKey endpoint capability selected', async () => {
     const account = buildAccount()
