@@ -110,8 +110,6 @@ func NormalizeGroupImageGenerationRoute(route string) string {
 	switch strings.ToLower(strings.TrimSpace(route)) {
 	case "", GroupImageGenerationRouteCodex:
 		return GroupImageGenerationRouteCodex
-	case GroupImageGenerationRouteWeb2API:
-		return GroupImageGenerationRouteWeb2API
 	default:
 		return GroupImageGenerationRouteCodex
 	}
@@ -164,13 +162,7 @@ func (g *Group) OpenAIImageCodexEnabled() bool {
 }
 
 func (g *Group) OpenAIImageWeb2APIEnabled() bool {
-	if g == nil {
-		return true
-	}
-	if !g.AllowImageGeneration {
-		return false
-	}
-	return g.ImageRateIndependent || NormalizeGroupImageGenerationRoute(g.ImageGenerationRoute) == GroupImageGenerationRouteWeb2API
+	return false
 }
 
 func (g *Group) HasDailyLimit() bool {

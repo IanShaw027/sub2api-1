@@ -236,7 +236,7 @@ func TestWrapOpenAIImageBackendErrorFailsoverReal429WithoutHeadersWhenBodyHasRes
 		context.Background(),
 		c,
 		account,
-		GroupImageGenerationRouteWeb2API,
+		GroupImageGenerationRouteCodex,
 		&openAIImageStatusError{
 			StatusCode:      http.StatusTooManyRequests,
 			Message:         "usage limit reached",
@@ -249,7 +249,7 @@ func TestWrapOpenAIImageBackendErrorFailsoverReal429WithoutHeadersWhenBodyHasRes
 	require.ErrorAs(t, err, &failoverErr)
 	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
 	require.NotEmpty(t, repo.updatedExtra)
-	require.Contains(t, repo.updatedExtra, "openai_image_web2api_rate_limit_reset_at")
+	require.Contains(t, repo.updatedExtra, "openai_image_codex_rate_limit_reset_at")
 }
 
 func newOpenAIImagesTelemetryTestContext() *gin.Context {

@@ -911,36 +911,11 @@ func resolveAIArtworkEditModel(apiKey *service.APIKey) string {
 }
 
 func aiArtworkGenerationEndpoint(apiKey *service.APIKey) string {
-	if !shouldUseAIImages2APIEndpoint(apiKey) {
-		return "/openai/v1/images/generations"
-	}
-	return "/openai/v1/images2api/generations"
+	return "/openai/v1/images/generations"
 }
 
 func aiArtworkEditEndpoint(apiKey *service.APIKey) string {
-	if !shouldUseAIImages2APIEndpoint(apiKey) {
-		return "/openai/v1/images/edits"
-	}
-	return "/openai/v1/images2api/edits"
-}
-
-func shouldUseAIImages2APIEndpoint(apiKey *service.APIKey) bool {
-	if apiKey == nil || apiKey.Group == nil {
-		return false
-	}
-	group := apiKey.Group
-	if group.Platform != service.PlatformOpenAI {
-		return true
-	}
-	if group.Images2APIPrice1K != nil || group.Images2APIPrice2K != nil || group.Images2APIPrice4K != nil {
-		return true
-	}
-	label := strings.ToLower(strings.TrimSpace(group.DisplayLabel()))
-	name := strings.ToLower(strings.TrimSpace(group.Name))
-	return strings.Contains(label, "images2api") ||
-		strings.Contains(label, "2api") ||
-		strings.Contains(name, "images2api") ||
-		strings.Contains(name, "2api")
+	return "/openai/v1/images/edits"
 }
 
 func (h *AIHandler) buildAIArtworkAsset(ctx context.Context, userID int64, job *service.AIGenerationJob, apiKey *service.APIKey, req *legacyCreateArtworkRequest, imageBytes []byte, mimeType string, revisedPrompt string, requestID string) (*service.AIAsset, error) {

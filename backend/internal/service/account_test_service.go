@@ -63,7 +63,6 @@ const (
 	defaultGeminiImageTestPrompt = "Generate a cute orange cat astronaut sticker on a clean pastel background."
 	defaultOpenAIImageTestPrompt = "Generate a cute orange cat astronaut sticker on a clean pastel background."
 	openAIImageTestModeCodex     = "codex"
-	openAIImageTestModeWeb2API   = "web2api"
 )
 
 const (
@@ -85,8 +84,6 @@ func NormalizeOpenAIImageTestMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case openAIImageTestModeCodex, "image_api", "images_api", "images-api", "openai_images_api", "openai-images-api":
 		return openAIImageTestModeCodex
-	case openAIImageTestModeWeb2API:
-		return openAIImageTestModeWeb2API
 	default:
 		return ""
 	}
@@ -717,11 +714,6 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			imagePrompt = defaultOpenAIImageTestPrompt
 		}
 		switch resolveOpenAIImageExecutionMode(c) {
-		case openAIImageTestModeWeb2API:
-			if account.Type == AccountTypeOAuth {
-				return s.testOpenAIImageWeb2API(c, ctx, account, testModelID, imagePrompt)
-			}
-			return s.testOpenAIImageAPIEndpoint(c, ctx, account, testModelID, imagePrompt, "/v1/images2api/generations")
 		case openAIImageTestModeCodex:
 			if account.Type == AccountTypeOAuth {
 				return s.testOpenAIImageOAuth(c, ctx, account, testModelID, imagePrompt)

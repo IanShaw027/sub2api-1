@@ -82,11 +82,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		zap.Bool("multipart", parsed.Multipart),
 		zap.String("capability", string(parsed.RequiredCapability)),
 	)
-	requestType := service.RequestTypeImage
-	if parsed.IsExplicitLegacyBridge() {
-		requestType = service.RequestTypeImageWebBridge
-	}
-	setOpsEndpointContext(c, "", int16(requestType))
+	setOpsEndpointContext(c, "", int16(service.RequestTypeImage))
 
 	if !service.GroupAllowsImageGeneration(apiKey.Group) {
 		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
@@ -95,12 +91,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	if service.IsGroupContextValid(apiKey.Group) {
 		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.Group, apiKey.Group))
 	}
-	if parsed.IsExplicitLegacyBridge() {
-		if !service.GroupAllowsOpenAIImages2API(apiKey.Group) {
-			h.errorResponse(c, http.StatusForbidden, "permission_error", service.OpenAIImages2APIDisabledMessage())
-			return
-		}
-	} else if !service.GroupAllowsOpenAIImagesCodex(apiKey.Group) {
+	if !service.GroupAllowsOpenAIImagesCodex(apiKey.Group) {
 		h.errorResponse(c, http.StatusForbidden, "permission_error", service.OpenAIImagesCodexDisabledMessage())
 		return
 	}
@@ -163,10 +154,6 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 
 	for {
 		reqLog.Debug("openai.images.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		requiredRoute := service.GroupImageGenerationRouteCodex
-		if parsed.IsExplicitLegacyBridge() {
-			requiredRoute = service.GroupImageGenerationRouteWeb2API
-		}
 		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForImages(
 			requestCtx,
 			apiKey.GroupID,
@@ -174,8 +161,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			requestModel,
 			failedAccountIDs,
 			parsed.RequiredCapability,
-			requiredRoute,
-			parsed.IsExplicitLegacyBridge(),
+			service.GroupImageGenerationRouteCodex,
+			false,
 		)
 		if err != nil {
 			reqLog.Warn("openai.images.account_select_failed",

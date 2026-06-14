@@ -250,15 +250,12 @@ type UsageInfo struct {
 	ErrorCode string `json:"error_code,omitempty"`
 
 	// OpenAI 图片生成路由状态
-	OpenAIImageCodexSupported   *bool          `json:"openai_image_codex_supported,omitempty"`
-	OpenAIImageWeb2APISupported *bool          `json:"openai_image_web2api_supported,omitempty"`
-	OpenAIImageCodexReason      string         `json:"openai_image_codex_reason,omitempty"`
-	OpenAIImageWeb2APIReason    string         `json:"openai_image_web2api_reason,omitempty"`
-	OpenAIImagePlanType         string         `json:"openai_image_plan_type,omitempty"`
-	OpenAIImageWorkspaceName    string         `json:"openai_image_workspace_name,omitempty"`
-	OpenAIImageCodexFiveHour    *UsageProgress `json:"openai_image_codex_five_hour,omitempty"`
-	OpenAIImageCodexSevenDay    *UsageProgress `json:"openai_image_codex_seven_day,omitempty"`
-	OpenAIImageWeb2APIFiveHour  *UsageProgress `json:"openai_image_web2api_five_hour,omitempty"`
+	OpenAIImageCodexSupported *bool          `json:"openai_image_codex_supported,omitempty"`
+	OpenAIImageCodexReason    string         `json:"openai_image_codex_reason,omitempty"`
+	OpenAIImagePlanType       string         `json:"openai_image_plan_type,omitempty"`
+	OpenAIImageWorkspaceName  string         `json:"openai_image_workspace_name,omitempty"`
+	OpenAIImageCodexFiveHour  *UsageProgress `json:"openai_image_codex_five_hour,omitempty"`
+	OpenAIImageCodexSevenDay  *UsageProgress `json:"openai_image_codex_seven_day,omitempty"`
 
 	// 获取 usage 时的错误信息（降级返回，而非 500）
 	Error string `json:"error,omitempty"`
@@ -936,20 +933,6 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 			UsedRequests: imageStats.Requests,
 		}
 	}
-	usage.OpenAIImageWeb2APIFiveHour = buildOpenAIImageRouteUsageProgressFromExtra(account.Extra, GroupImageGenerationRouteWeb2API, now)
-	if usage.OpenAIImageWeb2APIFiveHour != nil {
-		if imageStats, err := s.getOpenAIImageWindowStatsByRequestType(ctx, account.ID, now.Add(-5*time.Hour), RequestTypeImageWebBridge); err == nil && imageStats != nil {
-			usage.OpenAIImageWeb2APIFiveHour.WindowStats = imageStats
-			usage.OpenAIImageWeb2APIFiveHour.UsedRequests = imageStats.Requests
-		}
-	} else if imageStats, err := s.getOpenAIImageWindowStatsByRequestType(ctx, account.ID, now.Add(-5*time.Hour), RequestTypeImageWebBridge); err == nil && imageStats != nil && imageStats.Requests > 0 {
-		usage.OpenAIImageWeb2APIFiveHour = &UsageProgress{
-			Utilization:  0,
-			WindowStats:  imageStats,
-			UsedRequests: imageStats.Requests,
-		}
-	}
-
 	return usage, nil
 }
 
@@ -958,9 +941,7 @@ func populateOpenAIImageRouteUsageInfo(usage *UsageInfo, account *Account) {
 		return
 	}
 	codexSupported := account.SupportsOpenAIImageRoute(GroupImageGenerationRouteCodex)
-	web2apiSupported := account.SupportsOpenAIImageRoute(GroupImageGenerationRouteWeb2API)
 	usage.OpenAIImageCodexSupported = &codexSupported
-	usage.OpenAIImageWeb2APISupported = &web2apiSupported
 	usage.OpenAIImagePlanType = account.GetOpenAIPlanType()
 	usage.OpenAIImageWorkspaceName = account.GetOpenAIWorkspaceName()
 	if !codexSupported {
@@ -969,9 +950,6 @@ func populateOpenAIImageRouteUsageInfo(usage *UsageInfo, account *Account) {
 		} else {
 			usage.OpenAIImageCodexReason = "unsupported_account_type"
 		}
-	}
-	if !web2apiSupported {
-		usage.OpenAIImageWeb2APIReason = "unsupported_account_type"
 	}
 }
 

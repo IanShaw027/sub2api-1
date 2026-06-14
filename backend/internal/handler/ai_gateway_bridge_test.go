@@ -94,10 +94,10 @@ func TestAIArtworkGenerationEndpoint(t *testing.T) {
 		Group: &service.Group{Platform: service.PlatformOpenAI},
 	}))
 	webBridgePrice := 0.1
-	require.Equal(t, "/openai/v1/images2api/generations", aiArtworkGenerationEndpoint(&service.APIKey{
+	require.Equal(t, "/openai/v1/images/generations", aiArtworkGenerationEndpoint(&service.APIKey{
 		Group: &service.Group{Platform: service.PlatformOpenAI, Images2APIPrice1K: &webBridgePrice},
 	}))
-	require.Equal(t, "/openai/v1/images2api/generations", aiArtworkGenerationEndpoint(&service.APIKey{
+	require.Equal(t, "/openai/v1/images/generations", aiArtworkGenerationEndpoint(&service.APIKey{
 		Group: &service.Group{Platform: service.PlatformAnthropic},
 	}))
 }
@@ -107,10 +107,10 @@ func TestAIArtworkEditEndpoint(t *testing.T) {
 		Group: &service.Group{Platform: service.PlatformOpenAI},
 	}))
 	webBridgePrice := 0.1
-	require.Equal(t, "/openai/v1/images2api/edits", aiArtworkEditEndpoint(&service.APIKey{
+	require.Equal(t, "/openai/v1/images/edits", aiArtworkEditEndpoint(&service.APIKey{
 		Group: &service.Group{Platform: service.PlatformOpenAI, Images2APIPrice1K: &webBridgePrice},
 	}))
-	require.Equal(t, "/openai/v1/images2api/edits", aiArtworkEditEndpoint(&service.APIKey{
+	require.Equal(t, "/openai/v1/images/edits", aiArtworkEditEndpoint(&service.APIKey{
 		Group: &service.Group{Platform: service.PlatformAnthropic},
 	}))
 }

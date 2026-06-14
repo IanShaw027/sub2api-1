@@ -250,7 +250,7 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_UsesGroupImage
 	require.NoError(t, err)
 	require.NotNil(t, selection)
 	require.NotNil(t, selection.Account)
-	require.Equal(t, int64(71031), selection.Account.ID, "web2api group should choose OAuth account instead of API key account")
+	require.Equal(t, int64(71030), selection.Account.ID, "legacy web2api group is normalized to codex and can choose API key account")
 }
 
 // TestOpenAICompactSupportTier 验证 tier 分类逻辑。

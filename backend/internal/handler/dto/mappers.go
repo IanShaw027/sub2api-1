@@ -202,9 +202,6 @@ func groupFromServiceBase(g *service.Group) Group {
 		ImagePrice1K:                    g.ImagePrice1K,
 		ImagePrice2K:                    g.ImagePrice2K,
 		ImagePrice4K:                    g.ImagePrice4K,
-		Images2APIPrice1K:               g.Images2APIPrice1K,
-		Images2APIPrice2K:               g.Images2APIPrice2K,
-		Images2APIPrice4K:               g.Images2APIPrice4K,
 		ClaudeCodeOnly:                  g.ClaudeCodeOnly,
 		FallbackGroupID:                 g.FallbackGroupID,
 		FallbackGroupIDOnInvalidRequest: g.FallbackGroupIDOnInvalidRequest,
@@ -435,7 +432,6 @@ func sanitizeAccountExtraForDTO(extra map[string]any) map[string]any {
 	filtered := make(map[string]any, len(extra))
 	for key, value := range extra {
 		if key == "web_profile" {
-			filtered[key] = sanitizeOpenAIWebProfileForDTO(value)
 			continue
 		}
 		filtered[key] = value

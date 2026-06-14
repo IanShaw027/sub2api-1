@@ -660,10 +660,6 @@ func validateOpenAIImagesModel(model string) error {
 func normalizeOpenAIImagesEndpointPath(path string) string {
 	trimmed := strings.TrimSpace(path)
 	switch {
-	case strings.Contains(trimmed, "/images2api/generations"):
-		return openAIImages2APIGenerationsEndpoint
-	case strings.Contains(trimmed, "/images2api/edits"):
-		return openAIImages2APIEditsEndpoint
 	case strings.Contains(trimmed, "/images/generations"):
 		return openAIImagesGenerationsEndpoint
 	case strings.Contains(trimmed, "/images/edits"):
@@ -675,7 +671,7 @@ func normalizeOpenAIImagesEndpointPath(path string) string {
 
 func isOpenAIImagesEditsEndpoint(endpoint string) bool {
 	switch endpoint {
-	case openAIImagesEditsEndpoint, openAIImages2APIEditsEndpoint:
+	case openAIImagesEditsEndpoint:
 		return true
 	default:
 		return false
@@ -683,25 +679,16 @@ func isOpenAIImagesEditsEndpoint(endpoint string) bool {
 }
 
 func isOpenAIImages2APIEndpoint(endpoint string) bool {
-	switch endpoint {
-	case openAIImages2APIGenerationsEndpoint, openAIImages2APIEditsEndpoint:
-		return true
-	default:
-		return false
-	}
+	return false
 }
 
 func shouldUseLegacyOpenAIImagesBridge(account *Account, parsed *OpenAIImagesRequest) bool {
-	return account != nil && account.Type == AccountTypeOAuth && parsed != nil && parsed.IsLegacyBridge()
+	return false
 }
 
 func applyOpenAIImagesRouteSelection(parsed *OpenAIImagesRequest, route string) RequestType {
 	if parsed == nil {
 		return RequestTypeUnknown
-	}
-	if parsed.IsExplicitLegacyBridge() {
-		parsed.Endpoint = parsed.OriginalEndpoint
-		return RequestTypeImageWebBridge
 	}
 	parsed.Endpoint = parsed.OriginalEndpoint
 	return RequestTypeImage
@@ -896,17 +883,7 @@ func (s *OpenAIGatewayService) ForwardImages(
 		return nil, fmt.Errorf("parsed images request is required")
 	}
 	imageRoute := GroupImageGenerationRouteCodex
-	if parsed.IsExplicitLegacyBridge() {
-		imageRoute = GroupImageGenerationRouteWeb2API
-	}
 	effectiveRequestType := applyOpenAIImagesRouteSelection(parsed, imageRoute)
-	if shouldUseLegacyOpenAIImagesBridge(account, parsed) {
-		result, err := s.forwardOpenAIImagesLegacyBridge(ctx, c, account, parsed, channelMappedModel)
-		if result != nil {
-			result.EffectiveRequestType = effectiveRequestType
-		}
-		return result, err
-	}
 	switch account.Type {
 	case AccountTypeAPIKey:
 		result, err := s.forwardOpenAIImagesAPIKey(ctx, c, account, body, parsed, channelMappedModel, imageRoute)
@@ -3145,11 +3122,6 @@ func buildOpenAIImageConversationPrepareHeaders(headers http.Header) http.Header
 
 func resolveOpenAIImageConversationModel(ctx context.Context, settingService *SettingService, account *Account) string {
 	settings := DefaultOpenAIImageWebConversationSettings()
-	if settingService != nil {
-		if configured, err := settingService.GetOpenAIImageWebConversationSettings(ctx); err == nil && configured != nil {
-			settings = configured
-		}
-	}
 	if account == nil {
 		return openAIChatGPTConversationModelAuto
 	}

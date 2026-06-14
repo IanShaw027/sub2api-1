@@ -1658,9 +1658,10 @@ func (a *Account) SupportsOpenAIImageRoute(route string) bool {
 	if !a.IsOpenAI() {
 		return false
 	}
+	if strings.EqualFold(strings.TrimSpace(route), GroupImageGenerationRouteWeb2API) {
+		return false
+	}
 	switch NormalizeGroupImageGenerationRoute(route) {
-	case GroupImageGenerationRouteWeb2API:
-		return a.Type == AccountTypeOAuth
 	case GroupImageGenerationRouteCodex:
 		if a.Type == AccountTypeAPIKey {
 			return true

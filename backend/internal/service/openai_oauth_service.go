@@ -436,20 +436,9 @@ func (s *OpenAIOAuthService) BuildAccountExtra(tokenInfo *OpenAITokenInfo, proxy
 
 	deviceID := uuid.NewString()
 	sessionID := uuid.NewString()
-	profile := &OpenAIWebProfile{
-		Version:      "1",
-		Source:       "sub2api/openai-oauth",
-		CapturedAt:   time.Now().UTC().Format(time.RFC3339),
-		OAIDeviceID:  deviceID,
-		OAISessionID: sessionID,
-	}
-	if proxyID != nil {
-		profile.ProxyID = *proxyID
-	}
 
 	extra["openai_device_id"] = deviceID
 	extra["openai_session_id"] = sessionID
-	extra["web_profile"] = profile.ToExtraMap()
 	return extra
 }
 

@@ -31,21 +31,6 @@ func TestOpenAIImages_SelectionFailureStoresImageRequestType(t *testing.T) {
 	require.Equal(t, int16(service.RequestTypeImage), rt)
 }
 
-func TestOpenAIImages2API_SelectionFailureStoresImageWebBridgeRequestType(t *testing.T) {
-	c, rec := newOpenAISelectionErrorTestContext("/v1/images2api/generations", `{"model":"gpt-image-1","prompt":"cat"}`)
-	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
-	require.True(t, ok)
-	apiKey.Group.ImageGenerationRoute = service.GroupImageGenerationRouteWeb2API
-	h := newOpenAISelectionErrorTestHandler(t, nil)
-
-	h.Images(c)
-
-	require.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
-	rt, ok := c.Get(opsRequestTypeKey)
-	require.True(t, ok)
-	require.Equal(t, int16(service.RequestTypeImageWebBridge), rt)
-}
-
 func TestOpenAIImages_PermissionFailureStoresImageRequestType(t *testing.T) {
 	c, rec := newOpenAISelectionErrorTestContext("/v1/images/generations", `{"model":"gpt-image-1","prompt":"cat"}`)
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
@@ -59,19 +44,4 @@ func TestOpenAIImages_PermissionFailureStoresImageRequestType(t *testing.T) {
 	rt, ok := c.Get(opsRequestTypeKey)
 	require.True(t, ok)
 	require.Equal(t, int16(service.RequestTypeImage), rt)
-}
-
-func TestOpenAIImages2API_RouteDisabledStoresImageWebBridgeRequestType(t *testing.T) {
-	c, rec := newOpenAISelectionErrorTestContext("/v1/images2api/generations", `{"model":"gpt-image-1","prompt":"cat"}`)
-	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
-	require.True(t, ok)
-	apiKey.Group.ImageGenerationRoute = service.GroupImageGenerationRouteCodex
-	h := newOpenAISelectionErrorTestHandler(t, nil)
-
-	h.Images(c)
-
-	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
-	rt, ok := c.Get(opsRequestTypeKey)
-	require.True(t, ok)
-	require.Equal(t, int16(service.RequestTypeImageWebBridge), rt)
 }

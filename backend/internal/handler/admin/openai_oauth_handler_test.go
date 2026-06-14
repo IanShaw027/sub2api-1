@@ -129,7 +129,7 @@ func newOpenAIOAuthPrivacyServer(t *testing.T) *httptest.Server {
 	}))
 }
 
-func TestOpenAIOAuthHandler_CreateFromOAuthPersistsPrivacyModeAndWebProfileSeed(t *testing.T) {
+func TestOpenAIOAuthHandler_CreateFromOAuthPersistsPrivacyModeAndCodexIdentity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	privacyServer := newOpenAIOAuthPrivacyServer(t)
@@ -170,14 +170,9 @@ func TestOpenAIOAuthHandler_CreateFromOAuthPersistsPrivacyModeAndWebProfileSeed(
 	require.NotNil(t, created.Extra)
 	require.Equal(t, "training_off", created.Extra["privacy_mode"])
 
-	profile, ok := created.Extra["web_profile"].(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "sub2api/openai-oauth", profile["source"])
-	require.NotEmpty(t, profile["captured_at"])
-	require.NotEmpty(t, profile["oai_device_id"])
-	require.NotEmpty(t, profile["oai_session_id"])
-	require.Equal(t, profile["oai_device_id"], created.Extra["openai_device_id"])
-	require.Equal(t, profile["oai_session_id"], created.Extra["openai_session_id"])
+	require.NotEmpty(t, created.Extra["openai_device_id"])
+	require.NotEmpty(t, created.Extra["openai_session_id"])
+	require.NotContains(t, created.Extra, "web_profile")
 }
 
 func TestAccountHandlerRefreshSingleAccountPersistsOpenAIPrivacyMode(t *testing.T) {

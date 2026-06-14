@@ -255,7 +255,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsMalformedInputs(t *
 	}
 }
 
-func TestOpenAIGatewayServiceParseOpenAIImagesRequest_PreservesImages2APIGenerationsEndpoint(t *testing.T) {
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsImages2APIGenerationsEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","response_format":"b64_json"}`)
 
@@ -263,38 +263,22 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_PreservesImages2APIGenerat
 
 	svc := &OpenAIGatewayService{}
 	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
-	require.NoError(t, err)
-	require.NotNil(t, parsed)
-	require.Equal(t, openAIImages2APIGenerationsEndpoint, parsed.OriginalEndpoint)
-	require.Equal(t, openAIImages2APIGenerationsEndpoint, parsed.Endpoint)
-	require.False(t, parsed.Multipart)
+	require.Nil(t, parsed)
+	require.ErrorContains(t, err, "unsupported images endpoint")
 }
 
-func TestOpenAIGatewayServiceForwardImages_RejectsLegacyBridgeJSONRemoteImages(t *testing.T) {
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsImages2APIJSONRemoteImages(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-image-1.5","prompt":"replace background","images":[{"image_url":"https://example.com/source.png"}]}`)
 
 	c := newOpenAIImagesParseRequestContext(http.MethodPost, "/v1/images2api/edits", body, "application/json")
 	svc := &OpenAIGatewayService{}
 	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
-	require.NoError(t, err)
-
-	account := &Account{
-		ID:       1,
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeOAuth,
-		Credentials: map[string]any{
-			"access_token": "access-token",
-			"plan_type":    "pro",
-		},
-	}
-
-	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
-	require.Nil(t, result)
-	require.ErrorContains(t, err, "legacy bridge does not support JSON image_url/file_id edits")
+	require.Nil(t, parsed)
+	require.ErrorContains(t, err, "unsupported images endpoint")
 }
 
-func TestOpenAIGatewayServiceForwardImages_RejectsLegacyBridgeMultipartMaskWithoutInpaintingIDs(t *testing.T) {
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsImages2APIMultipartMask(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	var body bytes.Buffer
@@ -314,21 +298,8 @@ func TestOpenAIGatewayServiceForwardImages_RejectsLegacyBridgeMultipartMaskWitho
 	c := newOpenAIImagesParseRequestContext(http.MethodPost, "/v1/images2api/edits", body.Bytes(), writer.FormDataContentType())
 	svc := &OpenAIGatewayService{}
 	parsed, err := svc.ParseOpenAIImagesRequest(c, body.Bytes())
-	require.NoError(t, err)
-
-	account := &Account{
-		ID:       1,
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeOAuth,
-		Credentials: map[string]any{
-			"access_token": "access-token",
-			"plan_type":    "pro",
-		},
-	}
-
-	result, err := svc.ForwardImages(context.Background(), c, account, body.Bytes(), parsed, "")
-	require.Nil(t, result)
-	require.ErrorContains(t, err, "legacy inpainting requires original_file_id, original_gen_id, and mask inputs")
+	require.Nil(t, parsed)
+	require.ErrorContains(t, err, "unsupported images endpoint")
 }
 
 func TestResolveOpenAIImageConversationModelByPlanType(t *testing.T) {
@@ -380,15 +351,15 @@ func TestResolveOpenAIImageConversationModelByPlanType(t *testing.T) {
 			expected: openAIChatGPTConversationModelPaid,
 		},
 		{
-			name: "settings override both plan models",
+			name: "legacy settings no longer override paid model",
 			setup: func() {
-				repo.values[SettingKeyOpenAIImageWebFreeModel] = "free-custom"
-				repo.values[SettingKeyOpenAIImageWebPaidModel] = "paid-custom"
+				repo.values["openai_image_web_free_model"] = "free-custom"
+				repo.values["openai_image_web_paid_model"] = "paid-custom"
 			},
 			account: &Account{
 				Credentials: map[string]any{"plan_type": "pro"},
 			},
-			expected: "paid-custom",
+			expected: openAIChatGPTConversationModelPaid,
 		},
 		{
 			name:  "unknown plan stays conservative",
@@ -399,15 +370,15 @@ func TestResolveOpenAIImageConversationModelByPlanType(t *testing.T) {
 			expected: openAIChatGPTConversationModelPaid,
 		},
 		{
-			name: "unknown plan ignores customized free model fallback",
+			name: "unknown plan ignores legacy settings",
 			setup: func() {
-				repo.values[SettingKeyOpenAIImageWebFreeModel] = "free-custom"
-				repo.values[SettingKeyOpenAIImageWebPaidModel] = "paid-custom"
+				repo.values["openai_image_web_free_model"] = "free-custom"
+				repo.values["openai_image_web_paid_model"] = "paid-custom"
 			},
 			account: &Account{
 				Credentials: map[string]any{"plan_type": "enterprise"},
 			},
-			expected: "paid-custom",
+			expected: openAIChatGPTConversationModelPaid,
 		},
 	}
 
@@ -839,7 +810,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONEditURLs(t *testing.T)
 			"response_format":"b64_json"
 		}`)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/images2api/edits", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -871,7 +842,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONEditFileIDs(t *testing
 			"response_format":"b64_json"
 		}`)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/images2api/edits", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -886,7 +857,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONEditFileIDs(t *testing
 	require.Equal(t, []string{"file_source_123"}, parsed.InputImageFileIDs)
 	require.Equal(t, "file_mask_456", parsed.MaskFileID)
 	require.True(t, parsed.HasMask)
-	require.True(t, parsed.UsesLegacyInpainting())
+	require.False(t, parsed.UsesLegacyInpainting())
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsResponseFormatURL(t *testing.T) {

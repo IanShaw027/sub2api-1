@@ -77,7 +77,7 @@ func TestOpenAIOAuthService_BuildAccountCredentials_IncludesOrganizationRole(t *
 	require.Equal(t, "owner", creds["organization_role"])
 }
 
-func TestOpenAIOAuthService_BuildAccountExtraSeedsPrivacyModeAndWebProfile(t *testing.T) {
+func TestOpenAIOAuthService_BuildAccountExtraSeedsPrivacyModeAndCodexIdentity(t *testing.T) {
 	svc := NewOpenAIOAuthService(nil, &openaiOAuthClientRefreshStub{})
 
 	extra := svc.BuildAccountExtra(&OpenAITokenInfo{
@@ -86,14 +86,9 @@ func TestOpenAIOAuthService_BuildAccountExtraSeedsPrivacyModeAndWebProfile(t *te
 
 	require.Equal(t, "training_off", extra["privacy_mode"])
 
-	profile, ok := extra["web_profile"].(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "sub2api/openai-oauth", profile["source"])
-	require.NotEmpty(t, profile["captured_at"])
-	require.NotEmpty(t, profile["oai_device_id"])
-	require.NotEmpty(t, profile["oai_session_id"])
-	require.Equal(t, profile["oai_device_id"], extra["openai_device_id"])
-	require.Equal(t, profile["oai_session_id"], extra["openai_session_id"])
+	require.NotEmpty(t, extra["openai_device_id"])
+	require.NotEmpty(t, extra["openai_session_id"])
+	require.NotContains(t, extra, "web_profile")
 }
 
 func TestOpenAITokenRefresher_NeedsRefresh_SkipsAccountWithoutRefreshToken(t *testing.T) {

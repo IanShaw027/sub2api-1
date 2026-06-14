@@ -68,7 +68,7 @@ func TestAccountHandlerGetByID_RedactsSensitiveCredentialsForDetail(t *testing.T
 	require.NotContains(t, resp.Data.Credentials, "refresh_token")
 }
 
-func TestAccountHandlerGetByID_RedactsOpenAIWebProfileCookiesAndPreservesGroups(t *testing.T) {
+func TestAccountHandlerGetByID_DropsOpenAIWebProfileAndPreservesGroups(t *testing.T) {
 	svc := &getByIDAccountAdminService{
 		stubAdminService: newStubAdminService(),
 		account: service.Account{
@@ -117,13 +117,7 @@ func TestAccountHandlerGetByID_RedactsOpenAIWebProfileCookiesAndPreservesGroups(
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 
-	profile, ok := resp.Data.Extra["web_profile"].(map[string]any)
-	require.True(t, ok)
-	cookies, ok := profile["cookies"].([]any)
-	require.True(t, ok)
-	cookie, ok := cookies[0].(map[string]any)
-	require.True(t, ok)
-	require.NotContains(t, cookie, "value")
+	require.NotContains(t, resp.Data.Extra, "web_profile")
 	require.Len(t, resp.Data.Groups, 1)
 	require.Equal(t, int64(17), resp.Data.Groups[0].ID)
 }

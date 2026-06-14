@@ -15,13 +15,13 @@ func TestResolveTestAccountModes(t *testing.T) {
 		wantImageMode string
 	}{
 		{
-			name: "separates compact mode from web2api image route",
+			name: "ignores removed web2api image route",
 			req: TestAccountRequest{
 				Mode:     service.AccountTestModeCompact,
 				TestMode: "web2api",
 			},
 			wantMode:      service.AccountTestModeCompact,
-			wantImageMode: "web2api",
+			wantImageMode: "",
 		},
 		{
 			name: "separates default mode from codex image route",
@@ -41,12 +41,12 @@ func TestResolveTestAccountModes(t *testing.T) {
 			wantImageMode: "",
 		},
 		{
-			name: "keeps image route when no explicit mode is sent",
+			name: "drops removed image route when no explicit mode is sent",
 			req: TestAccountRequest{
 				TestMode: "web2api",
 			},
 			wantMode:      "",
-			wantImageMode: "web2api",
+			wantImageMode: "",
 		},
 	}
 

@@ -2246,7 +2246,7 @@ func TestOpenAIGatewayService_SelectAccountWithLoadAwarenessForImageRoute_CodexS
 	require.Equal(t, 4, acquireMax[47041])
 }
 
-func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimitedAndWeb2APISwitchesWhenBudgetExceeded(t *testing.T) {
+func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimited(t *testing.T) {
 	accountResetAt := time.Now().Add(10 * time.Minute).UTC().Truncate(time.Second)
 	imageResetAt := time.Now().Add(20 * time.Second).UTC().Truncate(time.Second)
 	oldLastUsed := time.Now().Add(-5 * time.Hour)
@@ -2339,12 +2339,6 @@ func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimitedAndWe
 	require.Equal(t, int64(47032), codexSelection.Account.ID)
 	require.True(t, codexSelection.Acquired)
 
-	web2apiSelection, err := svc.selectAccountWithLoadAwarenessForImageRoute(context.Background(), nil, "", "gpt-image-1", nil, false, GroupImageGenerationRouteWeb2API, true)
-	require.NoError(t, err)
-	require.NotNil(t, web2apiSelection)
-	require.Equal(t, int64(47032), web2apiSelection.Account.ID)
-	require.True(t, web2apiSelection.Acquired)
-	require.Nil(t, web2apiSelection.WaitPlan)
 }
 
 func TestOpenAIStreamingTimeout(t *testing.T) {

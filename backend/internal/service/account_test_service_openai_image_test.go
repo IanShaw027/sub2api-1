@@ -18,7 +18,7 @@ import (
 func TestNormalizeOpenAIImageTestMode(t *testing.T) {
 	require.Equal(t, "codex", NormalizeOpenAIImageTestMode("codex"))
 	require.Equal(t, "codex", NormalizeOpenAIImageTestMode("image_api"))
-	require.Equal(t, "web2api", NormalizeOpenAIImageTestMode("web2api"))
+	require.Equal(t, "", NormalizeOpenAIImageTestMode("web2api"))
 	require.Equal(t, "", NormalizeOpenAIImageTestMode("responses-tool"))
 }
 
@@ -29,15 +29,15 @@ func TestResolveOpenAIImageExecutionMode_DefaultsToCodex(t *testing.T) {
 	require.Equal(t, "codex", resolveOpenAIImageExecutionMode(c))
 
 	c.Set(AccountTestContextRequestedModeKey, "web2api")
-	require.Equal(t, "web2api", resolveOpenAIImageExecutionMode(c))
+	require.Equal(t, "codex", resolveOpenAIImageExecutionMode(c))
 }
 
-func TestAccountSupportsOpenAIImageRoute_Web2APIRequiresOAuth(t *testing.T) {
+func TestAccountSupportsOpenAIImageRoute_CodexOnly(t *testing.T) {
 	oauthAccount := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	apiKeyAccount := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
-	require.True(t, oauthAccount.SupportsOpenAIImageRoute("web2api"))
-	require.False(t, apiKeyAccount.SupportsOpenAIImageRoute("web2api"))
+	require.True(t, apiKeyAccount.SupportsOpenAIImageRoute("codex"))
+	require.False(t, oauthAccount.SupportsOpenAIImageRoute("web2api"))
 }
 
 func TestAccountTestService_OpenAIImageOAuthDefaultCallsImagesEndpoint(t *testing.T) {

@@ -77,7 +77,7 @@ func TestAccountFromServiceExposesOpenAITLSFingerprintConfig(t *testing.T) {
 	require.Equal(t, int64(42), *out.TLSFingerprintProfileID)
 }
 
-func TestAccountFromServiceRedactsOpenAIWebProfileCookieValues(t *testing.T) {
+func TestAccountFromServiceDropsOpenAIWebProfile(t *testing.T) {
 	account := &service.Account{
 		Platform: service.PlatformOpenAI,
 		Extra: map[string]any{
@@ -92,16 +92,10 @@ func TestAccountFromServiceRedactsOpenAIWebProfileCookieValues(t *testing.T) {
 
 	out := AccountFromService(account)
 	require.NotNil(t, out)
-	profile, ok := out.Extra["web_profile"].(map[string]any)
-	require.True(t, ok)
-	cookies, ok := profile["cookies"].([]map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "oai-did", cookies[0]["name"])
-	require.Equal(t, ".chatgpt.com", cookies[0]["domain"])
-	require.NotContains(t, cookies[0], "value")
+	require.NotContains(t, out.Extra, "web_profile")
 }
 
-func TestAccountFromServiceDetailRedactsOpenAIWebProfileCookiesAndPreservesGroups(t *testing.T) {
+func TestAccountFromServiceDetailDropsOpenAIWebProfileAndPreservesGroups(t *testing.T) {
 	account := &service.Account{
 		Platform: service.PlatformOpenAI,
 		Extra: map[string]any{
@@ -129,14 +123,7 @@ func TestAccountFromServiceDetailRedactsOpenAIWebProfileCookiesAndPreservesGroup
 	out := AccountFromServiceDetail(account)
 	require.NotNil(t, out)
 
-	profile, ok := out.Extra["web_profile"].(map[string]any)
-	require.True(t, ok)
-	cookies, ok := profile["cookies"].([]any)
-	require.True(t, ok)
-	cookie, ok := cookies[0].(map[string]any)
-	require.True(t, ok)
-	require.NotContains(t, cookie, "value")
-
+	require.NotContains(t, out.Extra, "web_profile")
 	require.Len(t, out.Groups, 1)
 	require.Equal(t, int64(17), out.Groups[0].ID)
 }

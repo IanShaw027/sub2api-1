@@ -1233,7 +1233,7 @@ func TestOpenAIResponses_HTTPPostRoutingImageIntentRejectsImageDisabledOnlyAccou
 	require.Empty(t, upstream.recordedBody(12011))
 }
 
-func TestOpenAIResponses_HTTPPostAccountMappedImageOnlyModel_Web2APIRouteUsesCompatibleAccount(t *testing.T) {
+func TestOpenAIResponses_HTTPPostAccountMappedImageOnlyModel_CodexRouteUsesImageMappedAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(62021)
@@ -1241,33 +1241,11 @@ func TestOpenAIResponses_HTTPPostAccountMappedImageOnlyModel_Web2APIRouteUsesCom
 		replies: map[int64]openAIResponsesHTTPHandlerUpstreamReply{
 			12101: {
 				statusCode:  http.StatusOK,
-				contentType: "application/json",
-				body:        `{"id":"resp_http_apikey_should_not_run","model":"gpt-image-1","usage":{"input_tokens":1,"output_tokens":1}}`,
-			},
-			12102: {
-				statusCode:  http.StatusOK,
 				contentType: "text/event-stream",
 				body: "event: response.completed\n" +
-					`data: {"type":"response.completed","response":{"id":"resp_http_oauth_web2api_ok","model":"gpt-image-1","usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\n" +
+					`data: {"type":"response.completed","response":{"id":"resp_http_codex_ok","model":"gpt-image-1","usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\n" +
 					"data: [DONE]\n\n",
 			},
-		},
-	}
-
-	webProfile := map[string]any{
-		"user_agent":                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.6950.102 Safari/537.36",
-		"accept_language":            "en;q=0.9",
-		"sec_ch_ua":                  `"Not.A/Brand";v="8", "Chromium";v="145", "Google Chrome";v="145"`,
-		"sec_ch_ua_mobile":           "?0",
-		"sec_ch_ua_platform":         `"macOS"`,
-		"sec_ch_ua_arch":             `"arm"`,
-		"sec_ch_ua_bitness":          `"64"`,
-		"sec_ch_ua_full_version":     `"145.0.0.0"`,
-		"sec_ch_ua_platform_version": `"15.4.0"`,
-		"oai_device_id":              "device-1",
-		"oai_session_id":             "session-1",
-		"cookies": []any{
-			map[string]any{"name": "__Secure-next-auth.session-token", "value": "cookie-value", "domain": ".chatgpt.com", "path": "/"},
 		},
 	}
 
@@ -1290,27 +1268,6 @@ func TestOpenAIResponses_HTTPPostAccountMappedImageOnlyModel_Web2APIRouteUsesCom
 			},
 			Extra: map[string]any{
 				"openai_passthrough": true,
-			},
-		},
-		{
-			ID:          12102,
-			Name:        "openai-http-oauth-web2api-image-mapped",
-			Platform:    service.PlatformOpenAI,
-			Type:        service.AccountTypeOAuth,
-			Status:      service.StatusActive,
-			Schedulable: true,
-			Concurrency: 1,
-			Priority:    1,
-			Credentials: map[string]any{
-				"access_token": "oauth-token",
-				"model_mapping": map[string]any{
-					"gpt-5.4": "gpt-image-1",
-				},
-			},
-			Extra: map[string]any{
-				"openai_image_generation_enabled": true,
-				"openai_passthrough":              true,
-				"web_profile":                     webProfile,
 			},
 		},
 	}
@@ -1374,7 +1331,7 @@ func TestOpenAIResponses_HTTPPostAccountMappedImageOnlyModel_Web2APIRouteUsesCom
 			Platform:             service.PlatformOpenAI,
 			Status:               service.StatusActive,
 			AllowImageGeneration: true,
-			ImageGenerationRoute: service.GroupImageGenerationRouteWeb2API,
+			ImageGenerationRoute: service.GroupImageGenerationRouteCodex,
 		},
 	}
 	router := gin.New()
@@ -1394,8 +1351,7 @@ func TestOpenAIResponses_HTTPPostAccountMappedImageOnlyModel_Web2APIRouteUsesCom
 		t.Fatalf("unexpected status=%d body=%s apikey_hit=%s oauth_hit=%s", w.Code, w.Body.String(), upstream.recordedBody(12101), upstream.recordedBody(12102))
 	}
 	require.Contains(t, w.Body.String(), "response.completed")
-	require.Empty(t, upstream.recordedBody(12101))
-	require.Equal(t, "gpt-image-1", gjson.Get(upstream.recordedBody(12102), "model").String())
+	require.Equal(t, "gpt-image-1", gjson.Get(upstream.recordedBody(12101), "model").String())
 }
 
 func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_WaitTimeoutRequestsReselection(t *testing.T) {
