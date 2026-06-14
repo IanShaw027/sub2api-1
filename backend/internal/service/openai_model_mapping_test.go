@@ -137,11 +137,11 @@ func TestResolveOpenAIForwardModel(t *testing.T) {
 	}
 }
 
-func TestResolveOpenAICompactFallbackUpstreamModel_UsesPlatformCompactRouting(t *testing.T) {
+func TestResolveOpenAICompactFallbackUpstreamModel_IgnoresPlatformDefaultCompactRouting(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
 		values: map[string]string{
-			SettingKeyPlatformModelRoutingConfig: `{
+			SettingKeyPlatformDefaultAccountModelConfig: `{
 				"openai": {
 					"model_mapping": {"gpt-4o-mini": "gpt-5.4"},
 					"compact_model_mapping": {"gpt-5.4": "gpt-5.4-mini"}
@@ -153,16 +153,16 @@ func TestResolveOpenAICompactFallbackUpstreamModel_UsesPlatformCompactRouting(t 
 
 	got := resolveOpenAICompactFallbackUpstreamModel(context.Background(), svc, account, "gpt-4o-mini")
 
-	if got != "gpt-5.4-mini" {
-		t.Fatalf("resolveOpenAICompactFallbackUpstreamModel(...) = %q, want %q", got, "gpt-5.4-mini")
+	if got != "gpt-4o-mini" {
+		t.Fatalf("resolveOpenAICompactFallbackUpstreamModel(...) = %q, want %q", got, "gpt-4o-mini")
 	}
 }
 
-func TestResolveOpenAIAccountUpstreamModelForRequest_UsesPlatformRoutingConfig(t *testing.T) {
+func TestResolveOpenAIAccountUpstreamModelForRequest_IgnoresPlatformDefaultRoutingConfig(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
 		values: map[string]string{
-			SettingKeyPlatformModelRoutingConfig: `{
+			SettingKeyPlatformDefaultAccountModelConfig: `{
 				"openai": {
 					"model_mapping": {"gpt-4o-mini": "gpt-5.4"},
 					"compact_model_mapping": {"gpt-5.4": "gpt-5.4-mini"}
@@ -172,19 +172,19 @@ func TestResolveOpenAIAccountUpstreamModelForRequest_UsesPlatformRoutingConfig(t
 	}, &config.Config{})
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
-	if got := resolveOpenAIAccountUpstreamModelForRequest(context.Background(), svc, account, "gpt-4o-mini", false); got != "gpt-5.4" {
-		t.Fatalf("normal upstream model = %q, want %q", got, "gpt-5.4")
+	if got := resolveOpenAIAccountUpstreamModelForRequest(context.Background(), svc, account, "gpt-4o-mini", false); got != "gpt-4o-mini" {
+		t.Fatalf("normal upstream model = %q, want %q", got, "gpt-4o-mini")
 	}
-	if got := resolveOpenAIAccountUpstreamModelForRequest(context.Background(), svc, account, "gpt-4o-mini", true); got != "gpt-5.4-mini" {
-		t.Fatalf("compact upstream model = %q, want %q", got, "gpt-5.4-mini")
+	if got := resolveOpenAIAccountUpstreamModelForRequest(context.Background(), svc, account, "gpt-4o-mini", true); got != "gpt-4o-mini" {
+		t.Fatalf("compact upstream model = %q, want %q", got, "gpt-4o-mini")
 	}
 }
 
-func TestResolveOpenAIForwardModelWithSettings_UsesPlatformRoutingConfig(t *testing.T) {
+func TestResolveOpenAIForwardModelWithSettings_IgnoresPlatformDefaultRoutingConfig(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
 		values: map[string]string{
-			SettingKeyPlatformModelRoutingConfig: `{
+			SettingKeyPlatformDefaultAccountModelConfig: `{
 				"openai": {
 					"model_mapping": {"gpt-4o-mini": "gpt-5.4"}
 				}
@@ -195,8 +195,8 @@ func TestResolveOpenAIForwardModelWithSettings_UsesPlatformRoutingConfig(t *test
 
 	got := resolveOpenAIForwardModelWithSettings(context.Background(), svc, account, "gpt-4o-mini", "")
 
-	if got != "gpt-5.4" {
-		t.Fatalf("resolveOpenAIForwardModelWithSettings(...) = %q, want %q", got, "gpt-5.4")
+	if got != "gpt-4o-mini" {
+		t.Fatalf("resolveOpenAIForwardModelWithSettings(...) = %q, want %q", got, "gpt-4o-mini")
 	}
 }
 

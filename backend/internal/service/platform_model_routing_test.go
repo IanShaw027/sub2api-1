@@ -23,11 +23,11 @@ func TestResolveEffectiveModelRouting_EmptySystemConfigKeepsAccountBehavior(t *t
 	require.Equal(t, "none", result.Source)
 }
 
-func TestResolveEffectiveModelRouting_UsesSystemConfigWhenAccountHasNoModelRules(t *testing.T) {
+func TestResolveEffectiveModelRouting_IgnoresLegacyPlatformModelRoutingConfig(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
 		values: map[string]string{
-			SettingKeyPlatformModelRoutingConfig: `{
+			"platform_model_routing_config": `{
 				"openai": {
 					"model_whitelist": ["gpt-5.4-mini"],
 					"model_mapping": {"gpt-4o-mini": "gpt-5.4", "gpt-4o*": "gpt-5.4"}
@@ -40,23 +40,12 @@ func TestResolveEffectiveModelRouting_UsesSystemConfigWhenAccountHasNoModelRules
 	result := ResolveEffectiveModelRouting(context.Background(), svc, account, "gpt-4o-mini", false)
 
 	require.True(t, result.Supported)
-	require.True(t, result.Matched)
-	require.Equal(t, "gpt-5.4", result.Model)
-	require.Equal(t, "system", result.Source)
-
-	whitelistResult := ResolveEffectiveModelRouting(context.Background(), svc, account, "gpt-5.4-mini", false)
-	require.True(t, whitelistResult.Supported)
-	require.True(t, whitelistResult.Matched)
-	require.Equal(t, "gpt-5.4-mini", whitelistResult.Model)
-	require.Equal(t, "system", whitelistResult.Source)
-
-	unsupportedResult := ResolveEffectiveModelRouting(context.Background(), svc, account, "gpt-3.5-turbo", false)
-	require.False(t, unsupportedResult.Supported)
-	require.False(t, unsupportedResult.Matched)
-	require.Equal(t, "gpt-3.5-turbo", unsupportedResult.Model)
+	require.False(t, result.Matched)
+	require.Equal(t, "gpt-4o-mini", result.Model)
+	require.Equal(t, "none", result.Source)
 }
 
-func TestResolveEffectiveModelRouting_EmptyAccountMappingInheritsPlatformDefault(t *testing.T) {
+func TestResolveEffectiveModelRouting_EmptyAccountMappingIgnoresPlatformDefault(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
 		values: map[string]string{
@@ -79,16 +68,16 @@ func TestResolveEffectiveModelRouting_EmptyAccountMappingInheritsPlatformDefault
 	result := ResolveEffectiveModelRouting(context.Background(), svc, account, "anthropic-opus-4-8", false)
 
 	require.True(t, result.Supported)
-	require.True(t, result.Matched)
-	require.Equal(t, "claude-opus-4.8", result.Model)
-	require.Equal(t, "platform_default", result.Source)
+	require.False(t, result.Matched)
+	require.Equal(t, "anthropic-opus-4-8", result.Model)
+	require.Equal(t, "none", result.Source)
 }
 
 func TestResolveEffectiveModelRouting_MappingOnlyDoesNotRestrictUnmappedModels(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
 		values: map[string]string{
-			SettingKeyPlatformModelRoutingConfig: `{
+			SettingKeyPlatformDefaultAccountModelConfig: `{
 				"openai": {
 					"model_mapping": {"gpt-4o-mini": "gpt-5.4"}
 				}
@@ -105,11 +94,32 @@ func TestResolveEffectiveModelRouting_MappingOnlyDoesNotRestrictUnmappedModels(t
 	require.Equal(t, "none", result.Source)
 }
 
+func TestResolveEffectiveModelRouting_IgnoresPlatformDefaultMapping(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyPlatformDefaultAccountModelConfig: `{
+				"openai": {
+					"model_mapping": {"gpt-4o-mini": "gpt-5.4"}
+				}
+			}`,
+		},
+	}, &config.Config{})
+	account := &Account{Platform: PlatformOpenAI}
+
+	result := ResolveEffectiveModelRouting(context.Background(), svc, account, "gpt-4o-mini", false)
+
+	require.True(t, result.Supported)
+	require.False(t, result.Matched)
+	require.Equal(t, "gpt-4o-mini", result.Model)
+	require.Equal(t, "none", result.Source)
+}
+
 func TestResolveEffectiveModelRouting_MappingOnlyKeepsAntigravityDefaultMapping(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
 		values: map[string]string{
-			SettingKeyPlatformModelRoutingConfig: `{
+			"platform_model_routing_config": `{
 				"antigravity": {
 					"model_mapping": {"custom-model": "custom-upstream"}
 				}
@@ -126,11 +136,11 @@ func TestResolveEffectiveModelRouting_MappingOnlyKeepsAntigravityDefaultMapping(
 	require.Equal(t, "none", result.Source)
 }
 
-func TestResolveEffectiveModelRouting_AccountRulesOverrideSystemConfig(t *testing.T) {
+func TestResolveEffectiveModelRouting_AccountRulesOverridePlatformDefaultConfig(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
 		values: map[string]string{
-			SettingKeyPlatformModelRoutingConfig: `{
+			SettingKeyPlatformDefaultAccountModelConfig: `{
 				"openai": {"model_mapping": {"gpt-4o-mini": "gpt-5.4"}}
 			}`,
 		},
@@ -154,7 +164,7 @@ func TestResolveEffectiveModelRouting_CompactMappingIsSeparate(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
 		values: map[string]string{
-			SettingKeyPlatformModelRoutingConfig: `{
+			SettingKeyPlatformDefaultAccountModelConfig: `{
 				"openai": {
 					"model_mapping": {"gpt-4o-mini": "gpt-5.4"},
 					"compact_model_mapping": {"gpt-5.4": "gpt-5.4-mini"}
@@ -165,17 +175,21 @@ func TestResolveEffectiveModelRouting_CompactMappingIsSeparate(t *testing.T) {
 	account := &Account{Platform: PlatformOpenAI}
 
 	normal := ResolveEffectiveModelRouting(context.Background(), svc, account, "gpt-4o-mini", false)
-	require.Equal(t, "gpt-5.4", normal.Model)
+	require.Equal(t, "gpt-4o-mini", normal.Model)
+	require.False(t, normal.Matched)
+	require.Equal(t, "none", normal.Source)
 
 	compact := ResolveEffectiveModelRouting(context.Background(), svc, account, "gpt-4o-mini", true)
-	require.Equal(t, "gpt-5.4-mini", compact.Model)
+	require.Equal(t, "gpt-4o-mini", compact.Model)
+	require.False(t, compact.Matched)
+	require.Equal(t, "none", compact.Source)
 }
 
-func TestResolveGatewayAnthropicForwardModel_UsesPlatformRoutingForOAuthAndServiceAccount(t *testing.T) {
+func TestResolveGatewayAnthropicForwardModel_IgnoresPlatformDefaultForOAuthAndServiceAccount(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
 		values: map[string]string{
-			SettingKeyPlatformModelRoutingConfig: `{
+			SettingKeyPlatformDefaultAccountModelConfig: `{
 				"anthropic": {
 					"model_whitelist": ["claude-sonnet-4-6"],
 					"model_mapping": {"claude-3-7-sonnet-20250219": "claude-sonnet-4-6"}
@@ -184,14 +198,23 @@ func TestResolveGatewayAnthropicForwardModel_UsesPlatformRoutingForOAuthAndServi
 		},
 	}, &config.Config{})
 
-	for _, accountType := range []string{AccountTypeOAuth, AccountTypeServiceAccount, AccountTypeSetupToken} {
-		t.Run(accountType, func(t *testing.T) {
-			account := &Account{Platform: PlatformAnthropic, Type: accountType}
+	tests := []struct {
+		accountType string
+		wantModel   string
+		wantSource  string
+	}{
+		{accountType: AccountTypeOAuth, wantModel: "claude-3-7-sonnet-20250219", wantSource: ""},
+		{accountType: AccountTypeServiceAccount, wantModel: "claude-3-7-sonnet@20250219", wantSource: "vertex"},
+		{accountType: AccountTypeSetupToken, wantModel: "claude-3-7-sonnet-20250219", wantSource: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.accountType, func(t *testing.T) {
+			account := &Account{Platform: PlatformAnthropic, Type: tt.accountType}
 
 			mapped, source := resolveGatewayAnthropicForwardModel(context.Background(), svc, account, "claude-3-7-sonnet-20250219")
 
-			require.Equal(t, "claude-sonnet-4-6", mapped)
-			require.Equal(t, "system", source)
+			require.Equal(t, tt.wantModel, mapped)
+			require.Equal(t, tt.wantSource, source)
 		})
 	}
 }

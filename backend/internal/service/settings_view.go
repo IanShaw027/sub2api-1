@@ -158,12 +158,11 @@ type SystemSettings struct {
 	DefaultSubscriptions         []DefaultSubscriptionSetting
 
 	// Model fallback configuration
-	EnableModelFallback        bool                                 `json:"enable_model_fallback"`
-	FallbackModelAnthropic     string                               `json:"fallback_model_anthropic"`
-	FallbackModelOpenAI        string                               `json:"fallback_model_openai"`
-	FallbackModelGemini        string                               `json:"fallback_model_gemini"`
-	FallbackModelAntigravity   string                               `json:"fallback_model_antigravity"`
-	PlatformModelRoutingConfig map[string]DefaultAccountModelConfig `json:"platform_model_routing_config"`
+	EnableModelFallback      bool   `json:"enable_model_fallback"`
+	FallbackModelAnthropic   string `json:"fallback_model_anthropic"`
+	FallbackModelOpenAI      string `json:"fallback_model_openai"`
+	FallbackModelGemini      string `json:"fallback_model_gemini"`
+	FallbackModelAntigravity string `json:"fallback_model_antigravity"`
 	// Per-platform defaults injected into newly-created account credentials.
 	PlatformDefaultAccountModelConfig map[string]DefaultAccountModelConfig `json:"platform_default_account_model_config"`
 
@@ -226,10 +225,6 @@ type SystemSettings struct {
 	KiroCacheMinBlockTokens        int
 	KiroCacheIndependentTTLSeconds int
 	KiroCachePrefixTTLSeconds      int
-	KiroThinkingMode               string
-	KiroThinkingEffortThreshold    string
-	KiroThinkingSimulationTemplate string
-	KiroThinkingFreePrompt         string
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  string
@@ -243,8 +238,6 @@ type SystemSettings struct {
 	OpenAIStickyWaitTimeoutSeconds            int
 	OpenAIWSMinIdlePerAccount                 int
 	OpenAIWSMaxIdlePerAccount                 int
-	OpenAIImageWebFreeModel                   string
-	OpenAIImageWebPaidModel                   string
 	OpenAIOAuthImageBridgeDisableKeepAlives   bool
 	OpenAIOAuthImageBridgeFreshUpstreamClient bool
 
@@ -282,53 +275,36 @@ func DefaultOpenAIImageWebConversationSettings() *OpenAIImageWebConversationSett
 }
 
 type KiroRuntimeSettings struct {
-	KiroVersion                string `json:"kiro_version"`
-	KiroCommit                 string `json:"kiro_commit"`
-	SystemVersion              string `json:"system_version"`
-	NodeVersion                string `json:"node_version"`
-	CacheHitRateScale          int    `json:"cache_hit_rate_scale"`
-	CacheMinBlockTokens        int    `json:"cache_min_block_tokens"`
-	CacheIndependentTTLSecs    int    `json:"cache_independent_ttl_seconds"`
-	CachePrefixTTLSecs         int    `json:"cache_prefix_ttl_seconds"`
-	ThinkingMode               string `json:"thinking_mode"`
-	ThinkingEffortThreshold    string `json:"thinking_effort_threshold"`
-	ThinkingSimulationTemplate string `json:"thinking_simulation_template"`
-	ThinkingFreePrompt         string `json:"thinking_free_prompt"`
+	KiroVersion             string `json:"kiro_version"`
+	KiroCommit              string `json:"kiro_commit"`
+	SystemVersion           string `json:"system_version"`
+	NodeVersion             string `json:"node_version"`
+	CacheHitRateScale       int    `json:"cache_hit_rate_scale"`
+	CacheMinBlockTokens     int    `json:"cache_min_block_tokens"`
+	CacheIndependentTTLSecs int    `json:"cache_independent_ttl_seconds"`
+	CachePrefixTTLSecs      int    `json:"cache_prefix_ttl_seconds"`
 }
 
 const (
-	KiroThinkingModeOff              = "off"
-	KiroThinkingModeModel            = "model"
-	KiroThinkingModeSimulate         = "simulate"
-	KiroThinkingModeModelAndSimulate = "model_and_simulate"
-
-	defaultKiroVersion                    = "0.10.0"
-	defaultKiroSystemVersion              = "darwin#24.6.0"
-	defaultKiroNodeVersion                = "22.21.1"
-	defaultKiroCacheHitRateScale          = 100
-	defaultKiroCacheMinBlockTokens        = 1024
-	defaultKiroCacheIndependentTTL        = 3600
-	defaultKiroCachePrefixTTL             = 3600
-	defaultKiroThinkingMode               = KiroThinkingModeSimulate
-	defaultKiroThinkingEffortThreshold    = "medium"
-	defaultKiroThinkingSimulationTemplate = "Thinking through the request with {effort} effort for {model}. {detail}"
-	defaultKiroThinkingFreePrompt         = "Before answering, think through the problem carefully. Output your complete reasoning in <thinking>...</thinking> XML tags first, then provide your answer."
+	defaultKiroVersion             = "0.10.0"
+	defaultKiroSystemVersion       = "darwin#24.6.0"
+	defaultKiroNodeVersion         = "22.21.1"
+	defaultKiroCacheHitRateScale   = 100
+	defaultKiroCacheMinBlockTokens = 1024
+	defaultKiroCacheIndependentTTL = 3600
+	defaultKiroCachePrefixTTL      = 3600
 )
 
 func DefaultKiroRuntimeSettings() *KiroRuntimeSettings {
 	return &KiroRuntimeSettings{
-		KiroVersion:                defaultKiroVersion,
-		KiroCommit:                 "",
-		SystemVersion:              defaultKiroSystemVersion,
-		NodeVersion:                defaultKiroNodeVersion,
-		CacheHitRateScale:          defaultKiroCacheHitRateScale,
-		CacheMinBlockTokens:        defaultKiroCacheMinBlockTokens,
-		CacheIndependentTTLSecs:    defaultKiroCacheIndependentTTL,
-		CachePrefixTTLSecs:         defaultKiroCachePrefixTTL,
-		ThinkingMode:               defaultKiroThinkingMode,
-		ThinkingEffortThreshold:    defaultKiroThinkingEffortThreshold,
-		ThinkingSimulationTemplate: defaultKiroThinkingSimulationTemplate,
-		ThinkingFreePrompt:         defaultKiroThinkingFreePrompt,
+		KiroVersion:             defaultKiroVersion,
+		KiroCommit:              "",
+		SystemVersion:           defaultKiroSystemVersion,
+		NodeVersion:             defaultKiroNodeVersion,
+		CacheHitRateScale:       defaultKiroCacheHitRateScale,
+		CacheMinBlockTokens:     defaultKiroCacheMinBlockTokens,
+		CacheIndependentTTLSecs: defaultKiroCacheIndependentTTL,
+		CachePrefixTTLSecs:      defaultKiroCachePrefixTTL,
 	}
 }
 

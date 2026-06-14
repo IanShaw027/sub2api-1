@@ -167,7 +167,6 @@ type SystemSettings struct {
 	FallbackModelOpenAI               string                               `json:"fallback_model_openai"`
 	FallbackModelGemini               string                               `json:"fallback_model_gemini"`
 	FallbackModelAntigravity          string                               `json:"fallback_model_antigravity"`
-	PlatformModelRoutingConfig        map[string]DefaultAccountModelConfig `json:"platform_model_routing_config"`
 	PlatformDefaultAccountModelConfig map[string]DefaultAccountModelConfig `json:"platform_default_account_model_config"`
 
 	// Identity patch configuration (Claude -> Gemini)
@@ -217,10 +216,6 @@ type SystemSettings struct {
 	KiroCacheMinBlockTokens        int    `json:"cache_min_block_tokens"`
 	KiroCacheIndependentTTLSeconds int    `json:"cache_independent_ttl_seconds"`
 	KiroCachePrefixTTLSeconds      int    `json:"cache_prefix_ttl_seconds"`
-	KiroThinkingMode               string `json:"kiro_thinking_mode"`
-	KiroThinkingEffortThreshold    string `json:"kiro_thinking_effort_threshold"`
-	KiroThinkingSimulationTemplate string `json:"kiro_thinking_simulation_template"`
-	KiroThinkingFreePrompt         string `json:"kiro_thinking_free_prompt"`
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  string `json:"payment_visible_method_alipay_source"`
@@ -229,15 +224,13 @@ type SystemSettings struct {
 	PaymentVisibleMethodWxpayEnabled  bool   `json:"payment_visible_method_wxpay_enabled"`
 
 	// OpenAI account scheduling
-	OpenAIAdvancedSchedulerEnabled            bool   `json:"openai_advanced_scheduler_enabled"`
-	OpenAIStickyReservePercent                int    `json:"openai_sticky_reserve_percent"`
-	OpenAIStickyWaitTimeoutSeconds            int    `json:"openai_sticky_wait_timeout_seconds"`
-	OpenAIWSMinIdlePerAccount                 int    `json:"openai_ws_min_idle_per_account"`
-	OpenAIWSMaxIdlePerAccount                 int    `json:"openai_ws_max_idle_per_account"`
-	OpenAIImageWebFreeModel                   string `json:"openai_image_web_free_model"`
-	OpenAIImageWebPaidModel                   string `json:"openai_image_web_paid_model"`
-	OpenAIOAuthImageBridgeDisableKeepAlives   bool   `json:"openai_oauth_image_bridge_disable_keepalives"`
-	OpenAIOAuthImageBridgeFreshUpstreamClient bool   `json:"openai_oauth_image_bridge_fresh_upstream_client"`
+	OpenAIAdvancedSchedulerEnabled            bool `json:"openai_advanced_scheduler_enabled"`
+	OpenAIStickyReservePercent                int  `json:"openai_sticky_reserve_percent"`
+	OpenAIStickyWaitTimeoutSeconds            int  `json:"openai_sticky_wait_timeout_seconds"`
+	OpenAIWSMinIdlePerAccount                 int  `json:"openai_ws_min_idle_per_account"`
+	OpenAIWSMaxIdlePerAccount                 int  `json:"openai_ws_max_idle_per_account"`
+	OpenAIOAuthImageBridgeDisableKeepAlives   bool `json:"openai_oauth_image_bridge_disable_keepalives"`
+	OpenAIOAuthImageBridgeFreshUpstreamClient bool `json:"openai_oauth_image_bridge_fresh_upstream_client"`
 
 	// Payment configuration
 	PaymentEnabled                   bool     `json:"payment_enabled"`

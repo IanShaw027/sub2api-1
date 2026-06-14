@@ -52,6 +52,44 @@ func TestRateLimitService_ApplyAccountSchedulingThreshold_SetsTempUnschedulable(
 	require.Contains(t, payload["error_message"], "91.5% used >= 80%")
 }
 
+func TestRateLimitService_ApplyAccountSchedulingThreshold_UsesAccountOverrideInReason(t *testing.T) {
+	accountSchedulingThresholdsSF.Forget(SettingKeyAccountSchedulingThresholds)
+	accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{})
+
+	settingsRepo := newMockSettingRepo()
+	settingsRepo.data[SettingKeyAccountSchedulingThresholds] = `{"openai":90}`
+
+	accountRepo := &rateLimitAccountRepoStub{}
+	rl := NewRateLimitService(accountRepo, nil, &config.Config{}, nil, nil)
+	rl.SetSettingService(NewSettingService(settingsRepo, &config.Config{}))
+
+	until := time.Now().UTC().Add(6 * time.Hour)
+	account := &Account{
+		ID:          1003,
+		Platform:    PlatformOpenAI,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"account_scheduling_threshold": 80,
+		},
+		Extra: map[string]any{
+			"codex_7d_used_percent": 85.5,
+			"codex_7d_reset_at":     until.Format(time.RFC3339),
+		},
+	}
+
+	blocked := rl.ApplyAccountSchedulingThreshold(context.Background(), account)
+
+	require.True(t, blocked)
+	require.Equal(t, 1, accountRepo.tempCalls)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(accountRepo.lastTempReason), &payload))
+	require.Equal(t, float64(80), payload["threshold_percent"])
+	require.Equal(t, float64(85.5), payload["used_percent"])
+	require.Contains(t, payload["error_message"], "85.5% used >= 80%")
+}
+
 func TestRateLimitService_ApplyAccountSchedulingThreshold_SkipsDuplicateTempUnschedulable(t *testing.T) {
 	accountSchedulingThresholdsSF.Forget(SettingKeyAccountSchedulingThresholds)
 	accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{})
@@ -94,12 +132,12 @@ func TestRateLimitService_ApplyAccountSchedulingThreshold_SkipsDuplicateTempUnsc
 	require.True(t, until.Equal(*account.TempUnschedulableUntil))
 }
 
-func TestRateLimitService_ApplyAccountSchedulingThreshold_HundredDisablesBlocking(t *testing.T) {
+func TestRateLimitService_ApplyAccountSchedulingThreshold_UnsupportedPlatformDoesNotBlock(t *testing.T) {
 	accountSchedulingThresholdsSF.Forget(SettingKeyAccountSchedulingThresholds)
 	accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{})
 
 	settingsRepo := newMockSettingRepo()
-	settingsRepo.data[SettingKeyAccountSchedulingThresholds] = `{"kiro":100}`
+	settingsRepo.data[SettingKeyAccountSchedulingThresholds] = `{"openai":80}`
 
 	accountRepo := &rateLimitAccountRepoStub{}
 	rl := NewRateLimitService(accountRepo, nil, &config.Config{}, nil, nil)
@@ -110,8 +148,11 @@ func TestRateLimitService_ApplyAccountSchedulingThreshold_HundredDisablesBlockin
 		Platform:    PlatformKiro,
 		Status:      StatusActive,
 		Schedulable: true,
+		Credentials: map[string]any{
+			"account_scheduling_threshold": 1,
+		},
 		Extra: map[string]any{
-			"kiro_sched_utilization": 0.99,
+			"kiro_sched_utilization": 99.0,
 			"kiro_sched_reset_at":    time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339),
 		},
 	}

@@ -8,11 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestResolveGatewayAnthropicForwardModel_DefaultBuildUsesPlatformRoutingForOAuthAndServiceAccount(t *testing.T) {
+func TestResolveGatewayAnthropicForwardModel_DefaultBuildIgnoresPlatformDefaultForOAuthAndServiceAccount(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
 		values: map[string]string{
-			SettingKeyPlatformModelRoutingConfig: `{
+			SettingKeyPlatformDefaultAccountModelConfig: `{
 				"anthropic": {
 					"model_whitelist": ["claude-sonnet-4-6"],
 					"model_mapping": {"claude-3-7-sonnet-20250219": "claude-sonnet-4-6"}
@@ -21,14 +21,23 @@ func TestResolveGatewayAnthropicForwardModel_DefaultBuildUsesPlatformRoutingForO
 		},
 	}, &config.Config{})
 
-	for _, accountType := range []string{AccountTypeOAuth, AccountTypeServiceAccount, AccountTypeSetupToken} {
-		t.Run(accountType, func(t *testing.T) {
-			account := &Account{Platform: PlatformAnthropic, Type: accountType}
+	tests := []struct {
+		accountType string
+		wantModel   string
+		wantSource  string
+	}{
+		{accountType: AccountTypeOAuth, wantModel: "claude-3-7-sonnet-20250219", wantSource: ""},
+		{accountType: AccountTypeServiceAccount, wantModel: "claude-3-7-sonnet@20250219", wantSource: "vertex"},
+		{accountType: AccountTypeSetupToken, wantModel: "claude-3-7-sonnet-20250219", wantSource: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.accountType, func(t *testing.T) {
+			account := &Account{Platform: PlatformAnthropic, Type: tt.accountType}
 
 			mapped, source := resolveGatewayAnthropicForwardModel(context.Background(), svc, account, "claude-3-7-sonnet-20250219")
 
-			require.Equal(t, "claude-sonnet-4-6", mapped)
-			require.Equal(t, "system", source)
+			require.Equal(t, tt.wantModel, mapped)
+			require.Equal(t, tt.wantSource, source)
 		})
 	}
 }

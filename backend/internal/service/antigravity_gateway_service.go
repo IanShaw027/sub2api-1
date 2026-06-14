@@ -1080,14 +1080,7 @@ func mapAntigravityModelWithSettings(ctx context.Context, settingService *Settin
 	if account == nil {
 		return ""
 	}
-	if _, hasSystemConfig := platformModelRoutingConfigForAccount(ctx, settingService, account); !hasSystemConfig {
-		return mapAntigravityModel(account, requestedModel)
-	}
-	routing := ResolveEffectiveModelRouting(ctx, settingService, account, requestedModel, false)
-	if !routing.Supported {
-		return ""
-	}
-	return strings.TrimSpace(routing.Model)
+	return mapAntigravityModel(account, requestedModel)
 }
 
 // getMappedModel 获取映射后的模型名

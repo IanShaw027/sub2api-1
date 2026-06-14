@@ -27,6 +27,7 @@ type rateLimitClearRepoStub struct {
 	clearAntigravityErr       error
 	clearModelRateLimitErr    error
 	clearTempUnschedulableErr error
+	clearThresholdSnapshotIDs []int64
 }
 
 func (r *rateLimitClearRepoStub) GetByID(ctx context.Context, id int64) (*Account, error) {
@@ -60,6 +61,11 @@ func (r *rateLimitClearRepoStub) ClearModelRateLimits(ctx context.Context, id in
 func (r *rateLimitClearRepoStub) ClearTempUnschedulable(ctx context.Context, id int64) error {
 	r.clearTempUnschedCalls++
 	return r.clearTempUnschedulableErr
+}
+
+func (r *rateLimitClearRepoStub) ClearAccountSchedulingThresholdSnapshots(ctx context.Context, id int64) error {
+	r.clearThresholdSnapshotIDs = append(r.clearThresholdSnapshotIDs, id)
+	return nil
 }
 
 type tempUnschedCacheRecorder struct {
@@ -121,6 +127,26 @@ func TestRateLimitService_ClearRateLimit_AlsoClearsTempUnschedulable(t *testing.
 	require.Equal(t, 1, repo.clearModelRateLimitCalls)
 	require.Equal(t, 1, repo.clearTempUnschedCalls)
 	require.Equal(t, []int64{42}, cache.deletedIDs)
+}
+
+func TestRateLimitService_ClearRateLimit_ClearsSchedulingThresholdSnapshots(t *testing.T) {
+	repo := &rateLimitClearRepoStub{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+
+	err := svc.ClearRateLimit(context.Background(), 42)
+	require.NoError(t, err)
+
+	require.Equal(t, []int64{42}, repo.clearThresholdSnapshotIDs)
+}
+
+func TestRateLimitService_ClearTempUnschedulable_ClearsSchedulingThresholdSnapshots(t *testing.T) {
+	repo := &rateLimitClearRepoStub{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+
+	err := svc.ClearTempUnschedulable(context.Background(), 43)
+	require.NoError(t, err)
+
+	require.Equal(t, []int64{43}, repo.clearThresholdSnapshotIDs)
 }
 
 func TestRateLimitService_ClearRateLimit_ClearTempUnschedulableFailed(t *testing.T) {
@@ -300,6 +326,30 @@ func TestRateLimitService_RecoverAccountAfterSuccessfulTest_ClearErrorFailed(t *
 	require.Equal(t, 1, repo.getByIDCalls)
 	require.Equal(t, 1, repo.clearErrorCalls)
 	require.Equal(t, 0, repo.clearRateLimitCalls)
+}
+
+func TestRateLimitService_RecoverAccountAfterSuccessfulTest_ClearsThresholdSnapshotsWhenOnlyErrorCleared(t *testing.T) {
+	repo := &rateLimitClearRepoStub{
+		getByIDAccount: &Account{
+			ID:       22,
+			Platform: PlatformOpenAI,
+			Status:   StatusError,
+			Extra: map[string]any{
+				"codex_7d_used_percent": 99.0,
+				"codex_7d_reset_at":     time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339),
+			},
+		},
+	}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+
+	result, err := svc.RecoverAccountAfterSuccessfulTest(context.Background(), 22)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.ClearedError)
+	require.False(t, result.ClearedRateLimit)
+	require.Equal(t, 1, repo.clearErrorCalls)
+	require.Equal(t, 0, repo.clearRateLimitCalls)
+	require.Equal(t, []int64{22}, repo.clearThresholdSnapshotIDs)
 }
 
 func TestRateLimitService_RecoverAccountState_InvalidatesOAuthTokenOnErrorRecovery(t *testing.T) {

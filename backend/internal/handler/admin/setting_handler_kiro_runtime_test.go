@@ -172,39 +172,42 @@ func TestSettingHandler_UpdateSettings_ReturnsOpenAIStickyWaitTimeoutSeconds(t *
 	require.Equal(t, 45, *resp.Data.OpenAIStickyWaitTimeoutSeconds)
 }
 
-func TestSettingHandler_UpdateSettings_PreservesExtendedKiroThinkingModes(t *testing.T) {
+func TestSettingHandler_UpdateSettings_IgnoresLegacyKiroThinkingFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	for _, mode := range []string{service.KiroThinkingModeModel, service.KiroThinkingModeModelAndSimulate} {
-		t.Run(mode, func(t *testing.T) {
-			repo := &settingHandlerRepoStub{}
-			svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
-			handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
-			body := map[string]any{
-				"kiro_thinking_mode": mode,
-			}
-			rawBody, err := json.Marshal(body)
-			require.NoError(t, err)
+	repo := &settingHandlerRepoStub{}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+	body := map[string]any{
+		"kiro_thinking_mode":                "model_and_simulate",
+		"kiro_thinking_effort_threshold":    "max",
+		"kiro_thinking_simulation_template": "legacy template",
+		"kiro_thinking_free_prompt":         "legacy prompt",
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
 
-			rec := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(rec)
-			c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
-			c.Request.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
 
-			handler.UpdateSettings(c)
+	handler.UpdateSettings(c)
 
-			require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, http.StatusOK, rec.Code)
 
-			var resp struct {
-				Code int `json:"code"`
-				Data struct {
-					KiroThinkingMode string `json:"kiro_thinking_mode"`
-				} `json:"data"`
-			}
-			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-			require.Equal(t, 0, resp.Code)
-			require.Equal(t, mode, resp.Data.KiroThinkingMode)
-			require.Equal(t, mode, svc.GetKiroRuntimeSettings(context.Background()).ThinkingMode)
-		})
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, float64(0), resp["code"])
+	data, ok := resp["data"].(map[string]any)
+	require.True(t, ok)
+	for _, key := range []string{
+		"kiro_thinking_mode",
+		"kiro_thinking_effort_threshold",
+		"kiro_thinking_simulation_template",
+		"kiro_thinking_free_prompt",
+	} {
+		require.NotContains(t, data, key)
+		require.NotContains(t, repo.lastUpdates, key)
 	}
 }

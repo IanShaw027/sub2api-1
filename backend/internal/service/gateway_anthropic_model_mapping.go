@@ -29,8 +29,8 @@ func resolveGatewayAnthropicForwardModel(ctx context.Context, settingService *Se
 		routingAccount = accountWithoutCredentialModelRouting(account)
 	}
 	routing := ResolveEffectiveModelRouting(ctx, settingService, routingAccount, requestedModel, false)
-	if routing.Source == "system" && routing.Model != requestedModel {
-		return routing.Model, "system"
+	if routing.Source == "platform_default" && routing.Model != requestedModel {
+		return routing.Model, "platform_default"
 	}
 	if account.Type == AccountTypeServiceAccount {
 		if candidate, matched := account.ResolveMappedModel(requestedModel); matched {

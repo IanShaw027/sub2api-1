@@ -383,12 +383,11 @@ func (s *RateLimitService) ApplyAccountSchedulingThreshold(ctx context.Context, 
 		return false
 	}
 
-	threshold, _ := lookupAccountSchedulingThreshold(thresholds, decision.Platform)
 	reason := BuildDetailedAccountSchedulingThresholdReason(AccountSchedulingThresholdReasonInput{
 		Platform:         decision.Platform,
 		Window:           decision.Window,
 		Scope:            decision.Scope,
-		ThresholdPercent: threshold,
+		ThresholdPercent: decision.ThresholdPercent,
 		UsedPercent:      decision.UsedPercent,
 		Until:            *decision.Until,
 		Now:              now,
@@ -411,7 +410,7 @@ func (s *RateLimitService) ApplyAccountSchedulingThreshold(ctx context.Context, 
 			"platform", decision.Platform,
 			"window", decision.Window,
 			"scope", decision.Scope,
-			"threshold_percent", threshold,
+			"threshold_percent", decision.ThresholdPercent,
 			"used_percent", decision.UsedPercent,
 			"until", decision.Until.UTC(),
 			"error", err)
@@ -428,7 +427,7 @@ func (s *RateLimitService) ApplyAccountSchedulingThreshold(ctx context.Context, 
 		"platform", decision.Platform,
 		"window", decision.Window,
 		"scope", decision.Scope,
-		"threshold_percent", threshold,
+		"threshold_percent", decision.ThresholdPercent,
 		"used_percent", decision.UsedPercent,
 		"until", decision.Until.UTC())
 	return true
@@ -1920,6 +1919,9 @@ func (s *RateLimitService) ClearRateLimit(ctx context.Context, accountID int64) 
 	if err := s.accountRepo.ClearTempUnschedulable(ctx, accountID); err != nil {
 		return err
 	}
+	if err := clearAccountSchedulingThresholdSnapshots(ctx, s.accountRepo, accountID); err != nil {
+		return err
+	}
 	if s.tempUnschedCache != nil {
 		if err := s.tempUnschedCache.DeleteTempUnsched(ctx, accountID); err != nil {
 			slog.Warn("temp_unsched_cache_delete_failed", "account_id", accountID, "error", err)
@@ -1968,6 +1970,9 @@ func (s *RateLimitService) RecoverAccountState(ctx context.Context, accountID in
 	if result.ClearedError || result.ClearedRateLimit {
 		s.ResetOpenAI403Counter(ctx, accountID)
 		if result.ClearedError && !result.ClearedRateLimit {
+			if err := clearAccountSchedulingThresholdSnapshots(ctx, s.accountRepo, accountID); err != nil {
+				return nil, err
+			}
 			s.notifyAccountSchedulingBlockCleared(accountID)
 		}
 	}
@@ -1993,6 +1998,9 @@ func (s *RateLimitService) ClearTempUnschedulable(ctx context.Context, accountID
 	// 同时清除模型级别限流
 	if err := s.accountRepo.ClearModelRateLimits(ctx, accountID); err != nil {
 		slog.Warn("clear_model_rate_limits_on_temp_unsched_reset_failed", "account_id", accountID, "error", err)
+	}
+	if err := clearAccountSchedulingThresholdSnapshots(ctx, s.accountRepo, accountID); err != nil {
+		return err
 	}
 	s.notifyAccountSchedulingBlockCleared(accountID)
 	return nil

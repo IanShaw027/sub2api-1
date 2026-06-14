@@ -87,7 +87,6 @@ type kiroResponseTelemetry struct {
 	FramesSeen             int
 	AssistantChars         int
 	NativeThinkingChars    int
-	SimulatedThinkingChars int
 	ToolUseCount           int
 	CompletedToolUseCount  int
 	PartialToolUseCount    int
@@ -120,12 +119,6 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 
 	runtimeSettings := s.resolveKiroRuntimeSettings(ctx)
 
-	// Free 账号在 simulate / model_and_simulate 模式下，对缺少原生 thinking 的模型走双请求提取。
-	if effectiveModelForThinking, err := resolveKiroRequestedModelForRequestWithRouting(ctx, s.settingService, account, parsed, runtimeSettings); err == nil &&
-		shouldUseKiroFreeThinkingPathForModel(account, parsed, runtimeSettings, effectiveModelForThinking) {
-		return s.forwardWithFreeThinking(ctx, c, account, parsed, runtimeSettings)
-	}
-
 	converted, billedInputTokens, meta, err := s.validateAndConvertRequest(c, account, parsed, runtimeSettings)
 	if err != nil {
 		return nil, err
@@ -134,7 +127,7 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		setOpsUpstreamRequestBody(c, converted.Body)
 		SetOpsUpstreamModel(c, converted.Model)
 	}
-	logKiroPreparedRequest(ctx, account, parsed, converted, billedInputTokens, meta, false)
+	logKiroPreparedRequest(ctx, account, parsed, converted, billedInputTokens, meta)
 
 	accessToken, err := s.resolveAccessToken(ctx, account)
 	if err != nil {
@@ -457,167 +450,6 @@ func kiroContextBudgetTokensForModel(model string) int {
 	return kiroStandardContextBudgetTokens
 }
 
-func shouldSimulateKiroThinking(parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) bool {
-	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	if runtimeSettings.ThinkingMode != KiroThinkingModeSimulate {
-		return false
-	}
-	// In simulate mode we add a visible thinking block for any request that
-	// asks for thinking, even when the upstream model already has native
-	// thinking support and the request itself stays on the native path.
-	return shouldApplyKiroThinking(parsed, runtimeSettings)
-}
-
-func shouldUseKiroFreeThinkingPath(account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) bool {
-	return shouldUseKiroFreeThinkingPathForModel(account, parsed, runtimeSettings, "")
-}
-
-func shouldUseKiroFreeThinkingPathForModel(account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings, effectiveModel string) bool {
-	if parsed == nil || !parsed.ThinkingEnabled || !isKiroFreeAccount(account) {
-		return false
-	}
-	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	switch runtimeSettings.ThinkingMode {
-	case KiroThinkingModeSimulate, KiroThinkingModeModelAndSimulate:
-	default:
-		return false
-	}
-	if strings.TrimSpace(effectiveModel) == "" {
-		effectiveModel = parsed.Model
-	}
-	return kiroModelNeedsFreeThinkingPreparationForModel(effectiveModel)
-}
-
-func shouldApplyKiroThinking(parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) bool {
-	if parsed == nil || !parsed.ThinkingEnabled {
-		return false
-	}
-	effort := normalizedKiroRequestThinkingEffort(parsed)
-	threshold := normalizeKiroThinkingEffortThreshold(runtimeSettings.ThinkingEffortThreshold)
-	return kiroThinkingEffortRank(effort) >= kiroThinkingEffortRank(threshold)
-}
-
-func kiroModelNeedsFreeThinkingPreparationForModel(model string) bool {
-	mappedModel := strings.TrimSpace(kiropkg.MapModel(model))
-	return strings.HasPrefix(mappedModel, "claude-sonnet-4.5")
-}
-
-func normalizedKiroRequestThinkingEffort(parsed *ParsedRequest) string {
-	if parsed != nil {
-		if effort := NormalizeClaudeOutputEffort(parsed.OutputEffort); effort != nil {
-			return *effort
-		}
-	}
-	return defaultKiroThinkingEffortThreshold
-}
-
-func kiroThinkingEffortRank(effort string) int {
-	switch normalizeKiroThinkingEffortThreshold(effort) {
-	case "minimal":
-		return 0
-	case "low":
-		return 1
-	case "medium":
-		return 2
-	case "high":
-		return 3
-	case "xhigh":
-		return 4
-	case "max":
-		return 5
-	default:
-		return 2
-	}
-}
-
-func renderKiroThinkingSimulation(parsed *ParsedRequest, converted *kiropkg.ConvertResult, runtimeSettings *KiroRuntimeSettings) string {
-	if !shouldSimulateKiroThinking(parsed, runtimeSettings) {
-		return ""
-	}
-	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	effort := normalizedKiroRequestThinkingEffort(parsed)
-	model := ""
-	if parsed != nil {
-		model = strings.TrimSpace(parsed.Model)
-	}
-	upstreamModel := model
-	if converted != nil && strings.TrimSpace(converted.Model) != "" {
-		upstreamModel = strings.TrimSpace(converted.Model)
-	}
-	if model == "" {
-		model = upstreamModel
-	}
-	detail := kiroThinkingSimulationDetail(effort)
-	text := runtimeSettings.ThinkingSimulationTemplate
-	replacements := map[string]string{
-		"{effort}":         effort,
-		"{model}":          model,
-		"{upstream_model}": upstreamModel,
-		"{detail}":         detail,
-	}
-	for placeholder, value := range replacements {
-		text = strings.ReplaceAll(text, placeholder, value)
-	}
-	return strings.TrimSpace(text)
-}
-
-func renderKiroFallbackThinkingSimulation(parsed *ParsedRequest, converted *kiropkg.ConvertResult, runtimeSettings *KiroRuntimeSettings) string {
-	if parsed == nil || !parsed.ThinkingEnabled {
-		return ""
-	}
-	if runtimeSettings == nil {
-		runtimeSettings = DefaultKiroRuntimeSettings()
-	} else {
-		cloned := *runtimeSettings
-		runtimeSettings = &cloned
-	}
-	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	runtimeSettings.ThinkingMode = KiroThinkingModeSimulate
-	return renderKiroThinkingSimulation(parsed, converted, runtimeSettings)
-}
-
-func resolveKiroFallbackThinkingOverride(
-	parsed *ParsedRequest,
-	converted *kiropkg.ConvertResult,
-	runtimeSettings *KiroRuntimeSettings,
-	current string,
-) string {
-	if strings.TrimSpace(current) != "" {
-		return strings.TrimSpace(current)
-	}
-	fallback := renderKiroFallbackThinkingSimulation(parsed, converted, runtimeSettings)
-	if strings.TrimSpace(fallback) != "" {
-		return strings.TrimSpace(fallback)
-	}
-	if parsed == nil || !parsed.ThinkingEnabled {
-		return ""
-	}
-	cloned := DefaultKiroRuntimeSettings()
-	if runtimeSettings != nil {
-		cloned = runtimeSettings
-	}
-	if cloned == nil {
-		cloned = &KiroRuntimeSettings{}
-	}
-	clonedCopy := *cloned
-	clonedCopy.ThinkingMode = KiroThinkingModeSimulate
-	clonedCopy.ThinkingEffortThreshold = "minimal"
-	return renderKiroThinkingSimulation(parsed, converted, &clonedCopy)
-}
-
-func kiroThinkingSimulationDetail(effort string) string {
-	switch normalizeKiroThinkingEffortThreshold(effort) {
-	case "minimal", "low":
-		return "Checking the immediate response path."
-	case "high":
-		return "Checking constraints, tool state, and likely failure modes before answering."
-	case "xhigh", "max":
-		return "Performing a deeper pass over constraints, tool state, edge cases, and response structure before answering."
-	default:
-		return "Planning the response before answering."
-	}
-}
-
 func (s *KiroGatewayService) resolveAccessToken(ctx context.Context, account *Account) (string, error) {
 	if account == nil {
 		return "", errors.New("account is nil")
@@ -839,7 +671,7 @@ func bodyFromGetBody(req *http.Request) ([]byte, error) {
 	return io.ReadAll(body)
 }
 
-func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, parsed *ParsedRequest, converted *kiropkg.ConvertResult, inputTokens int, start time.Time, fakeCachePlan *kiropkg.FakeCachePlan, fakeCacheHit kiropkg.FakeCacheHitState, runtimeSettings *KiroRuntimeSettings, thinkingOverride string) (*ForwardResult, error) {
+func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, parsed *ParsedRequest, converted *kiropkg.ConvertResult, inputTokens int, start time.Time, fakeCachePlan *kiropkg.FakeCachePlan, fakeCacheHit kiropkg.FakeCacheHitState, runtimeSettings *KiroRuntimeSettings, _ string) (*ForwardResult, error) {
 	debugAggregator := BeginKiroFrameAggregator(s.settingService, c)
 	frames, err := readAllKiroFrames(resp.Body)
 	if err != nil {
@@ -882,7 +714,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	toolOrder := make([]string, 0)
 	toolNames := make([]string, 0)
 	stopReason := "end_turn"
-	hasVisibleOutput := strings.TrimSpace(thinkingOverride) != ""
+	hasVisibleOutput := false
 	var lastContextUsagePercentage *float64
 
 	for _, frame := range frames {
@@ -956,9 +788,6 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		stopReason = "tool_use"
 	}
 	content := make([]map[string]any, 0, 2+len(toolUses))
-	if strings.TrimSpace(thinkingOverride) != "" {
-		content = append(content, map[string]any{"type": "thinking", "thinking": thinkingOverride})
-	}
 	reasoningThinkingText := reasoningTextBuilder.String()
 	reasoningThinkingSignature := reasoningSignatureBuilder.String()
 	if strings.TrimSpace(reasoningThinkingText) != "" {
@@ -972,14 +801,6 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	content, textOutput, nativeThinkingOutput := appendKiroNativeContentBlocks(kiropkg.StripToolTurnPlaceholders(assistantContentBuilder.String()), content)
 	if textOutput != "" || nativeThinkingOutput != "" {
 		hasVisibleOutput = true
-	}
-	if !hasVisibleOutput {
-		fallbackThinking := resolveKiroFallbackThinkingOverride(parsed, converted, runtimeSettings, thinkingOverride)
-		if fallbackThinking != "" {
-			thinkingOverride = fallbackThinking
-			content = append(content, map[string]any{"type": "thinking", "thinking": thinkingOverride})
-			hasVisibleOutput = true
-		}
 	}
 	if !hasVisibleOutput {
 		emptyErr := errors.New("kiro response contained no assistant output")
@@ -997,14 +818,13 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 
 	content = append(content, shadowContent...)
 	content = append(content, toolUses...)
-	thinkingText := nativeThinkingOutput + reasoningThinkingText + thinkingOverride
+	thinkingText := nativeThinkingOutput + reasoningThinkingText
 	outputTokens := estimateKiroOutputTokens(textOutput+thinkingText, toolOutputBuilder.String()+shadowToolOutput)
 	thinkingTokens := estimateKiroOutputTokens(thinkingText, "")
 	telemetry := &kiroResponseTelemetry{
 		FramesSeen:             len(frames),
 		AssistantChars:         len(textOutput),
 		NativeThinkingChars:    len(nativeThinkingOutput) + len(reasoningThinkingText),
-		SimulatedThinkingChars: len(strings.TrimSpace(thinkingOverride)),
 		ToolUseCount:           visibleToolUses,
 		CompletedToolUseCount:  completedToolUses,
 		PartialToolUseCount:    partialToolUses,
@@ -1062,11 +882,11 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		},
 	}
 	s.recordKiroSuccessfulAnomalies(ctx, c, account, parsed, result.RequestID, false, outputTokens, stopReason, telemetry)
-	logKiroRequestCompleted(ctx, account, parsed, result.RequestID, result.UpstreamModel, false, result.Duration, nil, inputTokens, outputTokens, fakeCacheUsage.CacheCreationInputTokens, fakeCacheUsage.CacheReadInputTokens, stopReason, toolNames, strings.TrimSpace(thinkingOverride) != "", telemetry)
+	logKiroRequestCompleted(ctx, account, parsed, result.RequestID, result.UpstreamModel, false, result.Duration, nil, inputTokens, outputTokens, fakeCacheUsage.CacheCreationInputTokens, fakeCacheUsage.CacheReadInputTokens, stopReason, toolNames, telemetry)
 	return result, nil
 }
 
-func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, parsed *ParsedRequest, converted *kiropkg.ConvertResult, inputTokens int, start time.Time, fakeCachePlan *kiropkg.FakeCachePlan, fakeCacheHit kiropkg.FakeCacheHitState, runtimeSettings *KiroRuntimeSettings, thinkingOverride string) (*ForwardResult, error) {
+func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, parsed *ParsedRequest, converted *kiropkg.ConvertResult, inputTokens int, start time.Time, fakeCachePlan *kiropkg.FakeCachePlan, fakeCacheHit kiropkg.FakeCacheHitState, runtimeSettings *KiroRuntimeSettings, _ string) (*ForwardResult, error) {
 	writer := c.Writer
 	msgID := "msg_" + strings.ReplaceAll(generateRequestID(), "-", "")
 	reader := bufio.NewReader(resp.Body)
@@ -1113,7 +933,6 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	shadowToolSeen := false
 	shadowMaxUsesLimit := 0
 	var lastContextUsagePercentage *float64
-	simulatedThinking := strings.TrimSpace(thinkingOverride)
 	nativeThinkingBuffer := ""
 	nativeThinkingExtracted := false
 	stripThinkingLeadingNewline := false
@@ -1154,12 +973,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		}
 		streamStarted = true
 		markFirstToken()
-		if simulatedThinking == "" {
-			return nil
-		}
-		blockIndex := nextBlockIndex
-		nextBlockIndex++
-		return writeKiroThinkingBlock(writer, blockIndex, simulatedThinking)
+		return nil
 	}
 	// flushPendingPlaceholder is forward-declared so closeTextBlock can drain the
 	// placeholder-suppression buffer before closing the text block. Assigned once
@@ -1729,7 +1543,6 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			FramesSeen:             framesSeen,
 			AssistantChars:         textOutputBuilder.Len(),
 			NativeThinkingChars:    nativeThinkingBuilder.Len(),
-			SimulatedThinkingChars: len(strings.TrimSpace(simulatedThinking)),
 			ToolUseCount:           visibleToolUses,
 			CompletedToolUseCount:  completedVisibleToolUses,
 			PartialToolUseCount:    partialToolUses,
@@ -1737,7 +1550,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		}
 	}
 	computeStreamUsageTokens := func() (outputTokens int, thinkingTokens int) {
-		streamThinkingText := nativeThinkingBuilder.String() + simulatedThinking
+		streamThinkingText := nativeThinkingBuilder.String()
 		return estimateKiroOutputTokens(textOutputBuilder.String()+streamThinkingText, toolOutputBuilder.String()),
 			estimateKiroOutputTokens(streamThinkingText, "")
 	}
@@ -1762,18 +1575,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		}
 		return nil, incompleteErr
 	}
-	if !streamStarted || (textOutputBuilder.Len() == 0 && nativeThinkingBuilder.Len() == 0 && simulatedThinking == "" && !hasVisibleToolOutput) {
-		fallbackThinking := resolveKiroFallbackThinkingOverride(parsed, converted, runtimeSettings, simulatedThinking)
-		if fallbackThinking != "" {
-			simulatedThinking = fallbackThinking
-			if !streamStarted {
-				if err := startStream(inputTokens); err != nil {
-					return nil, err
-				}
-			}
-		}
-	}
-	if !streamStarted || (textOutputBuilder.Len() == 0 && nativeThinkingBuilder.Len() == 0 && simulatedThinking == "" && !hasVisibleToolOutput) {
+	if !streamStarted || (textOutputBuilder.Len() == 0 && nativeThinkingBuilder.Len() == 0 && !hasVisibleToolOutput) {
 		emptyErr := errors.New("kiro response contained no assistant output")
 		if !streamStarted {
 			return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusBadGateway, kiroTransportFailureReasonKeyword, "Kiro upstream returned no assistant output before first forwardable event", emptyErr.Error())
@@ -1828,7 +1630,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		},
 	}
 	s.recordKiroSuccessfulAnomalies(ctx, c, account, parsed, result.RequestID, true, outputTokens, stopReason, telemetry)
-	logKiroRequestCompleted(ctx, account, parsed, result.RequestID, result.UpstreamModel, true, result.Duration, firstTokenMs, inputTokens, outputTokens, finalFakeCacheUsage.CacheCreationInputTokens, finalFakeCacheUsage.CacheReadInputTokens, stopReason, toolNames, simulatedThinking != "", telemetry)
+	logKiroRequestCompleted(ctx, account, parsed, result.RequestID, result.UpstreamModel, true, result.Duration, firstTokenMs, inputTokens, outputTokens, finalFakeCacheUsage.CacheCreationInputTokens, finalFakeCacheUsage.CacheReadInputTokens, stopReason, toolNames, telemetry)
 	return result, nil
 }
 
@@ -3635,7 +3437,7 @@ func kiroLogger(ctx context.Context, account *Account) *zap.Logger {
 	return logger.FromContext(ctx).With(fields...)
 }
 
-func logKiroPreparedRequest(ctx context.Context, account *Account, parsed *ParsedRequest, converted *kiropkg.ConvertResult, billedInputTokens int, meta *kiroPreparedRequestMeta, freeThinkingPath bool) {
+func logKiroPreparedRequest(ctx context.Context, account *Account, parsed *ParsedRequest, converted *kiropkg.ConvertResult, billedInputTokens int, meta *kiroPreparedRequestMeta) {
 	if parsed == nil || converted == nil || meta == nil {
 		return
 	}
@@ -3648,7 +3450,6 @@ func logKiroPreparedRequest(ctx context.Context, account *Account, parsed *Parse
 		zap.String("upstream_model", converted.Model),
 		zap.Bool("stream", parsed.Stream),
 		zap.Bool("thinking_enabled", parsed.ThinkingEnabled),
-		zap.Bool("free_thinking_path", freeThinkingPath),
 		zap.Bool("requested_model_had_variant_suffix", requestedHadVariant),
 		zap.Bool("resolved_model_had_variant_suffix", resolvedHadVariant),
 		zap.Bool("supports_one_million_context", kiropkg.SupportsOneMillionContextModel(converted.RequestedModel)),
@@ -3721,9 +3522,6 @@ func (t *kiroResponseTelemetry) anomalyKinds(stopReason string) []string {
 	if stopReason == "model_context_window_exceeded" {
 		kinds = append(kinds, "context_window_exceeded")
 	}
-	if t.AssistantChars == 0 && t.NativeThinkingChars == 0 && t.SimulatedThinkingChars > 0 && t.ToolUseCount == 0 {
-		kinds = append(kinds, "fallback_thinking_only")
-	}
 	return kinds
 }
 
@@ -3737,9 +3535,6 @@ func (t *kiroResponseTelemetry) completionKinds() []string {
 	}
 	if t.NativeThinkingChars > 0 {
 		kinds = append(kinds, "native_thinking")
-	}
-	if t.SimulatedThinkingChars > 0 {
-		kinds = append(kinds, "simulated_thinking")
 	}
 	if t.ToolUseCount > 0 {
 		kinds = append(kinds, "tool_use")
@@ -3755,7 +3550,6 @@ func (t *kiroResponseTelemetry) opsDetail(stopReason string, outputTokens int, s
 		"frames_seen":              t.FramesSeen,
 		"assistant_chars":          t.AssistantChars,
 		"native_thinking_chars":    t.NativeThinkingChars,
-		"simulated_thinking_chars": t.SimulatedThinkingChars,
 		"tool_use_count":           t.ToolUseCount,
 		"completed_tool_use_count": t.CompletedToolUseCount,
 		"partial_tool_use_count":   t.PartialToolUseCount,
@@ -3809,7 +3603,7 @@ func (s *KiroGatewayService) recordKiroSuccessfulAnomalies(ctx context.Context, 
 	})
 }
 
-func logKiroRequestCompleted(ctx context.Context, account *Account, parsed *ParsedRequest, upstreamRequestID string, upstreamModel string, stream bool, duration time.Duration, firstTokenMs *int, inputTokens int, outputTokens int, cacheCreationTokens int, cacheReadTokens int, stopReason string, toolNames []string, simulatedThinking bool, telemetry *kiroResponseTelemetry) {
+func logKiroRequestCompleted(ctx context.Context, account *Account, parsed *ParsedRequest, upstreamRequestID string, upstreamModel string, stream bool, duration time.Duration, firstTokenMs *int, inputTokens int, outputTokens int, cacheCreationTokens int, cacheReadTokens int, stopReason string, toolNames []string, telemetry *kiroResponseTelemetry) {
 	fields := []zap.Field{
 		zap.Bool("stream", stream),
 		zap.String("upstream_request_id", strings.TrimSpace(upstreamRequestID)),
@@ -3822,7 +3616,6 @@ func logKiroRequestCompleted(ctx context.Context, account *Account, parsed *Pars
 		zap.String("stop_reason", stopReason),
 		zap.Int("tool_use_count", len(toolNames)),
 		zap.Strings("tool_names", toolNames),
-		zap.Bool("simulated_thinking", simulatedThinking),
 	}
 	if parsed != nil {
 		fields = append(fields, zap.String("requested_model", parsed.Model))
@@ -3835,7 +3628,6 @@ func logKiroRequestCompleted(ctx context.Context, account *Account, parsed *Pars
 			zap.Int("frames_seen", telemetry.FramesSeen),
 			zap.Int("assistant_chars", telemetry.AssistantChars),
 			zap.Int("native_thinking_chars", telemetry.NativeThinkingChars),
-			zap.Int("simulated_thinking_chars", telemetry.SimulatedThinkingChars),
 			zap.Int("completed_tool_use_count", telemetry.CompletedToolUseCount),
 			zap.Int("partial_tool_use_count", telemetry.PartialToolUseCount),
 			zap.Strings("completion_kinds", telemetry.completionKinds()),
@@ -3847,217 +3639,6 @@ func logKiroRequestCompleted(ctx context.Context, account *Account, parsed *Pars
 		}
 	}
 	kiroLogger(ctx, account).Info("kiro.request_completed", fields...)
-}
-
-// forwardWithFreeThinking 为 Kiro Free 账号实现两步 thinking：
-//  1. 第一步（非流式）：注入 ThinkingFreePrompt，让 Kiro 在 <thinking>...</thinking> 标签里输出推理
-//  2. 第二步：去掉 thinking 字段，正常请求，把第一步提取的 thinking 内容作为 thinking block 注入响应
-func (s *KiroGatewayService) forwardWithFreeThinking(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) (*ForwardResult, error) {
-	thinkingContent := s.generateKiroFreeThinkingContent(ctx, account, parsed, runtimeSettings)
-
-	// 第二步：去掉 thinking 字段，正常请求
-	answerBody := stripKiroThinkingField(parsed.Body.Bytes())
-	answerParsed := *parsed
-	answerParsed.Body = NewRequestBodyRef(answerBody)
-	answerParsed.ThinkingEnabled = false
-
-	converted, billedInputTokens, meta, err := s.validateAndConvertRequest(c, account, &answerParsed, runtimeSettings)
-	if err != nil {
-		return nil, err
-	}
-	if c != nil && converted != nil {
-		setOpsUpstreamRequestBody(c, converted.Body)
-		SetOpsUpstreamModel(c, converted.Model)
-	}
-	thinkingOverride := thinkingContent
-	if strings.TrimSpace(thinkingOverride) == "" {
-		thinkingOverride = renderKiroFallbackThinkingSimulation(parsed, converted, runtimeSettings)
-	}
-	logKiroPreparedRequest(ctx, account, &answerParsed, converted, billedInputTokens, meta, true)
-	kiroLogger(ctx, account).Info(
-		"kiro.free_thinking_prepare",
-		zap.Bool("generated_thinking", strings.TrimSpace(thinkingContent) != ""),
-		zap.Int("thinking_chars", len(thinkingContent)),
-		zap.Bool("fallback_simulated_thinking", strings.TrimSpace(thinkingContent) == "" && strings.TrimSpace(thinkingOverride) != ""),
-	)
-
-	accessToken, err := s.resolveAccessToken(ctx, account)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"type":  "error",
-			"error": gin.H{"type": "api_error", "message": "Failed to get Kiro access token"},
-		})
-		return nil, err
-	}
-
-	fakeCachePlan, fakeCacheHit := s.prepareFakeCachePlan(account, &answerParsed, meta, runtimeSettings)
-	logKiroFakeCachePlan(ctx, account, &answerParsed, fakeCachePlan, fakeCacheHit)
-	req, err := s.buildRequest(ctx, account, converted.Body, accessToken, runtimeSettings)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"type":  "error",
-			"error": gin.H{"type": "api_error", "message": "Failed to build Kiro upstream request"},
-		})
-		return nil, err
-	}
-
-	start := time.Now()
-	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, s.resolveTLSProfile(account))
-	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(start).Milliseconds())
-	if err != nil {
-		return nil, s.handleKiroTransportError(ctx, c, account, req.URL.String(), err)
-	}
-	needsDeferredClose := true
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		if retryResp, retryErr := s.retryInvalidTokenResponse(ctx, account, req, resp.StatusCode, body, runtimeSettings); retryResp != nil {
-			needsDeferredClose = false
-			_ = resp.Body.Close()
-			resp = retryResp
-		} else {
-			_ = retryErr
-			resp.Body = io.NopCloser(bytes.NewReader(body))
-		}
-	}
-	if needsDeferredClose {
-		defer func() { _ = resp.Body.Close() }()
-	} else if resp != nil && resp.Body != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		effectiveStatusCode := kiroSchedulingStatusCode(resp.StatusCode, body)
-		s.handleUpstreamError(ctx, account, effectiveStatusCode, resp.Header, body)
-		s.recordOpsHTTPError(c, account, req.URL.String(), resp.StatusCode, resp.Header, body)
-		if shouldKiroFailover(effectiveStatusCode) {
-			return nil, &UpstreamFailoverError{
-				StatusCode:      effectiveStatusCode,
-				ResponseBody:    body,
-				ResponseHeaders: resp.Header.Clone(),
-			}
-		}
-		upstreamMessage := kiroSafeHTTPStatusErrorMessage("Kiro upstream", resp.StatusCode, body)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"type":  "error",
-			"error": gin.H{"type": "api_error", "message": upstreamMessage},
-		})
-		return nil, fmt.Errorf("%s", upstreamMessage)
-	}
-
-	if answerParsed.Stream {
-		return s.forwardStream(ctx, c, account, resp, &answerParsed, converted, billedInputTokens, start, fakeCachePlan, fakeCacheHit, runtimeSettings, thinkingOverride)
-	}
-	return s.forwardNonStream(ctx, c, account, resp, &answerParsed, converted, billedInputTokens, start, fakeCachePlan, fakeCacheHit, runtimeSettings, thinkingOverride)
-}
-
-// generateKiroFreeThinkingContent 向 Kiro 发一次非流式请求，注入 ThinkingFreePrompt，
-// 再复用正常 native-thinking 解析逻辑，从 assistantResponseEvent 文本里提取 thinking 内容。
-// 失败时返回空字符串，由调用方决定是否回退到 simulated thinking。
-func (s *KiroGatewayService) generateKiroFreeThinkingContent(ctx context.Context, account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) string {
-	freePrompt := runtimeSettings.ThinkingFreePrompt
-	if strings.TrimSpace(freePrompt) == "" {
-		return ""
-	}
-
-	thinkingBody := buildKiroFreeThinkingBody(parsed.Body.Bytes(), freePrompt)
-	if thinkingBody == nil {
-		return ""
-	}
-
-	thinkingParsed := *parsed
-	thinkingParsed.Body = NewRequestBodyRef(thinkingBody)
-	thinkingParsed.Stream = false
-	thinkingParsed.ThinkingEnabled = false
-	thinkingParsed.OnUpstreamAccepted = nil
-
-	converted, _, _, err := prepareKiroConvertedRequestWithMeta(account, &thinkingParsed, runtimeSettings)
-	if err != nil {
-		return ""
-	}
-
-	accessToken, err := s.resolveAccessToken(ctx, account)
-	if err != nil {
-		return ""
-	}
-
-	req, err := s.buildRequest(ctx, account, converted.Body, accessToken, runtimeSettings)
-	if err != nil {
-		return ""
-	}
-
-	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, s.resolveTLSProfile(account))
-	if err != nil {
-		return ""
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return ""
-	}
-
-	frames, err := readAllKiroFrames(resp.Body)
-	if err != nil {
-		return ""
-	}
-
-	text, ok := collectKiroAssistantResponseText(frames)
-	if !ok {
-		return ""
-	}
-	return extractKiroNativeThinkingText(text)
-}
-
-// buildKiroFreeThinkingBody 在请求体的 system 前注入 freePrompt，并移除 thinking 字段。
-// 删除顶层 thinking 时也要同步移除依赖该字段的 context_management 策略，避免上游 400。
-func buildKiroFreeThinkingBody(body []byte, freePrompt string) []byte {
-	var req map[string]any
-	if err := json.Unmarshal(body, &req); err != nil {
-		return nil
-	}
-	delete(req, "thinking")
-
-	existingSystem := ""
-	switch v := req["system"].(type) {
-	case string:
-		existingSystem = strings.TrimSpace(v)
-	case []any:
-		var parts []string
-		for _, item := range v {
-			if m, ok := item.(map[string]any); ok {
-				if text, ok := m["text"].(string); ok && strings.TrimSpace(text) != "" {
-					parts = append(parts, strings.TrimSpace(text))
-				}
-			}
-		}
-		existingSystem = strings.Join(parts, "\n\n")
-	}
-
-	if existingSystem != "" {
-		req["system"] = freePrompt + "\n\n" + existingSystem
-	} else {
-		req["system"] = freePrompt
-	}
-
-	encoded, err := json.Marshal(req)
-	if err != nil {
-		return nil
-	}
-	return removeThinkingDependentContextStrategies(encoded)
-}
-
-// stripKiroThinkingField 移除请求体里的 thinking 字段，并清理依赖它的 context_management 策略。
-func stripKiroThinkingField(body []byte) []byte {
-	var req map[string]any
-	if err := json.Unmarshal(body, &req); err != nil {
-		return body
-	}
-	delete(req, "thinking")
-	encoded, err := json.Marshal(req)
-	if err != nil {
-		return body
-	}
-	return removeThinkingDependentContextStrategies(encoded)
 }
 
 // logKiroFrameDiagnostic emits a structured info log for every upstream Kiro

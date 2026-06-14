@@ -12,8 +12,6 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
-const platformModelRoutingUnavailablePlatformKey = "__platform_model_routing_unavailable__"
-
 func defaultAccountModelConfigJSON() string {
 	return "{}"
 }
@@ -30,25 +28,6 @@ func normalizePlatformDefaultAccountModelConfig(raw map[string]DefaultAccountMod
 		}
 		normalized := normalizeDefaultAccountModelConfig(cfg)
 		if defaultAccountModelConfigIsEmpty(normalized) {
-			continue
-		}
-		out[platform] = normalized
-	}
-	return out
-}
-
-func normalizePlatformModelRoutingConfig(raw map[string]DefaultAccountModelConfig) map[string]DefaultAccountModelConfig {
-	if len(raw) == 0 {
-		return map[string]DefaultAccountModelConfig{}
-	}
-	out := make(map[string]DefaultAccountModelConfig, len(raw))
-	for platform, cfg := range raw {
-		platform = strings.TrimSpace(strings.ToLower(platform))
-		if platform == "" {
-			continue
-		}
-		normalized := normalizePlatformModelRoutingConfigEntry(cfg)
-		if !hasPlatformModelRoutingConfig(normalized) {
 			continue
 		}
 		out[platform] = normalized
@@ -183,25 +162,6 @@ func parsePlatformDefaultAccountModelConfig(raw string) map[string]DefaultAccoun
 	return normalizePlatformDefaultAccountModelConfig(cfg)
 }
 
-func parsePlatformModelRoutingConfig(raw string) (map[string]DefaultAccountModelConfig, bool) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return map[string]DefaultAccountModelConfig{}, true
-	}
-	var cfg map[string]DefaultAccountModelConfig
-	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
-		return nil, false
-	}
-	if err := validatePlatformModelRoutingConfig(cfg); err != nil {
-		return nil, false
-	}
-	cfg = normalizePlatformModelRoutingConfig(cfg)
-	if err := validatePlatformModelRoutingConfig(cfg); err != nil {
-		return nil, false
-	}
-	return cfg, true
-}
-
 func normalizeModelList(values []string) []string {
 	if len(values) == 0 {
 		return nil
@@ -244,26 +204,6 @@ func normalizeStringMap(values map[string]string) map[string]string {
 
 func validatePlatformDefaultAccountModelConfig(cfg map[string]DefaultAccountModelConfig) error {
 	return validatePlatformModelConfig(cfg, "INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG")
-}
-
-func validatePlatformModelRoutingConfig(cfg map[string]DefaultAccountModelConfig) error {
-	reason := "INVALID_PLATFORM_MODEL_ROUTING_CONFIG"
-	for platform, item := range cfg {
-		platform = strings.TrimSpace(platform)
-		if platform == "" {
-			return infraerrors.BadRequest(reason, "platform name cannot be empty")
-		}
-		if len(item.KiroSubscriptionTypeModelMap) > 0 {
-			return infraerrors.BadRequest(reason, platform+".kiro_subscription_type_model_config is not supported for runtime model routing config")
-		}
-		if hasAccountDefaultOnlyFields(item) {
-			return infraerrors.BadRequest(reason, platform+" contains account-default-only fields that are not supported for runtime model routing config")
-		}
-		if err := validateDefaultAccountModelConfigWithReason(platform, item, false, reason); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func hasAccountDefaultOnlyFields(cfg DefaultAccountModelConfig) bool {
@@ -395,21 +335,6 @@ func encodePlatformDefaultAccountModelConfig(cfg map[string]DefaultAccountModelC
 	return string(data), nil
 }
 
-func encodePlatformModelRoutingConfig(cfg map[string]DefaultAccountModelConfig) (string, error) {
-	if err := validatePlatformModelRoutingConfig(cfg); err != nil {
-		return "", err
-	}
-	cfg = normalizePlatformModelRoutingConfig(cfg)
-	if len(cfg) == 0 {
-		return "{}", nil
-	}
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
 func (s *SettingService) GetPlatformDefaultAccountModelConfig(ctx context.Context) map[string]DefaultAccountModelConfig {
 	if s == nil || s.settingRepo == nil {
 		return map[string]DefaultAccountModelConfig{}
@@ -461,80 +386,6 @@ func (s *SettingService) GetPlatformDefaultAccountModelConfig(ctx context.Contex
 		}
 
 		return cacheNormalTTL(parsePlatformDefaultAccountModelConfig(raw)), nil
-	})
-	if err != nil {
-		return map[string]DefaultAccountModelConfig{}
-	}
-	if cfg, ok := result.(map[string]DefaultAccountModelConfig); ok {
-		return clonePlatformModelConfigMap(cfg)
-	}
-	return map[string]DefaultAccountModelConfig{}
-}
-
-func (s *SettingService) GetPlatformModelRoutingConfig(ctx context.Context) map[string]DefaultAccountModelConfig {
-	if s == nil || s.settingRepo == nil {
-		return map[string]DefaultAccountModelConfig{}
-	}
-	var staleConfig map[string]DefaultAccountModelConfig
-	if cached, ok := platformModelRoutingConfigCache.Load().(*cachedPlatformModelRoutingConfig); ok {
-		if cached != nil {
-			staleConfig = clonePlatformModelConfigMap(cached.config)
-			if time.Now().UnixNano() < cached.expiresAt {
-				return clonePlatformModelConfigMap(cached.config)
-			}
-		}
-	}
-
-	result, err, _ := platformModelRoutingConfigSF.Do(SettingKeyPlatformModelRoutingConfig, func() (any, error) {
-		if cached, ok := platformModelRoutingConfigCache.Load().(*cachedPlatformModelRoutingConfig); ok {
-			if cached != nil {
-				staleConfig = clonePlatformModelConfigMap(cached.config)
-				if time.Now().UnixNano() < cached.expiresAt {
-					return clonePlatformModelConfigMap(cached.config), nil
-				}
-			}
-		}
-
-		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), platformModelRoutingConfigDBTimeout)
-		defer cancel()
-
-		unavailable := func() map[string]DefaultAccountModelConfig {
-			return map[string]DefaultAccountModelConfig{
-				platformModelRoutingUnavailablePlatformKey: {},
-			}
-		}
-		cacheShortTTL := func(cfg map[string]DefaultAccountModelConfig) map[string]DefaultAccountModelConfig {
-			platformModelRoutingConfigCache.Store(&cachedPlatformModelRoutingConfig{
-				config:    clonePlatformModelConfigMap(cfg),
-				expiresAt: time.Now().Add(platformModelRoutingConfigErrorTTL).UnixNano(),
-			})
-			return clonePlatformModelConfigMap(cfg)
-		}
-
-		raw, err := s.settingRepo.GetValue(dbCtx, SettingKeyPlatformModelRoutingConfig)
-		if err != nil {
-			if !errors.Is(err, ErrSettingNotFound) {
-				if staleConfig == nil {
-					return cacheShortTTL(unavailable()), nil
-				}
-				return cacheShortTTL(staleConfig), nil
-			}
-			empty := map[string]DefaultAccountModelConfig{}
-			return cacheShortTTL(empty), nil
-		}
-
-		cfg, ok := parsePlatformModelRoutingConfig(raw)
-		if !ok {
-			if staleConfig != nil {
-				return cacheShortTTL(staleConfig), nil
-			}
-			return cacheShortTTL(unavailable()), nil
-		}
-		platformModelRoutingConfigCache.Store(&cachedPlatformModelRoutingConfig{
-			config:    clonePlatformModelConfigMap(cfg),
-			expiresAt: time.Now().Add(platformModelRoutingConfigCacheTTL).UnixNano(),
-		})
-		return clonePlatformModelConfigMap(cfg), nil
 	})
 	if err != nil {
 		return map[string]DefaultAccountModelConfig{}

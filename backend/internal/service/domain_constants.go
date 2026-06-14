@@ -64,9 +64,6 @@ var AllowedQuotaPlatforms = []string{
 var AllowedSchedulingThresholdPlatforms = []string{
 	PlatformOpenAI,
 	PlatformAnthropic,
-	PlatformGemini,
-	PlatformKiro,
-	PlatformAntigravity,
 }
 
 // IsAllowedQuotaPlatform 报告 s 是否为合法的 quota platform 标识。
@@ -329,12 +326,11 @@ const (
 	SettingKeyGeminiQuotaPolicy = "gemini_quota_policy"
 
 	// Model fallback settings
-	SettingKeyEnableModelFallback        = "enable_model_fallback"
-	SettingKeyFallbackModelAnthropic     = "fallback_model_anthropic"
-	SettingKeyFallbackModelOpenAI        = "fallback_model_openai"
-	SettingKeyFallbackModelGemini        = "fallback_model_gemini"
-	SettingKeyFallbackModelAntigravity   = "fallback_model_antigravity"
-	SettingKeyPlatformModelRoutingConfig = "platform_model_routing_config"
+	SettingKeyEnableModelFallback      = "enable_model_fallback"
+	SettingKeyFallbackModelAnthropic   = "fallback_model_anthropic"
+	SettingKeyFallbackModelOpenAI      = "fallback_model_openai"
+	SettingKeyFallbackModelGemini      = "fallback_model_gemini"
+	SettingKeyFallbackModelAntigravity = "fallback_model_antigravity"
 	// Platform default account model config stores per-platform defaults injected
 	// into newly-created account credentials when the request does not provide them.
 	SettingKeyPlatformDefaultAccountModelConfig = "platform_default_account_model_config"
@@ -432,14 +428,6 @@ const (
 	// anthropic-beta header.
 	SettingKeyOpenAIFastPolicySettings = "openai_fast_policy_settings"
 
-	// SettingKeyOpenAIImageWebFreeModel stores the final
-	// /backend-api/f/conversation model used for free-plan OpenAI web image
-	// generation requests.
-	SettingKeyOpenAIImageWebFreeModel = "openai_image_web_free_model"
-	// SettingKeyOpenAIImageWebPaidModel stores the final
-	// /backend-api/f/conversation model used for paid-plan (plus/pro/team)
-	// OpenAI web image generation requests.
-	SettingKeyOpenAIImageWebPaidModel = "openai_image_web_paid_model"
 	// SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives stores whether OpenAI
 	// OAuth image bridge requests should disable keep-alive reuse.
 	SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives = "openai_oauth_image_bridge_disable_keepalives"
@@ -552,10 +540,6 @@ const (
 	SettingKeyKiroCacheMinBlockTokens        = "kiro_cache_min_block_tokens"
 	SettingKeyKiroCacheIndependentTTLSeconds = "kiro_cache_independent_ttl_seconds"
 	SettingKeyKiroCachePrefixTTLSeconds      = "kiro_cache_prefix_ttl_seconds"
-	SettingKeyKiroThinkingMode               = "kiro_thinking_mode"
-	SettingKeyKiroThinkingEffortThreshold    = "kiro_thinking_effort_threshold"
-	SettingKeyKiroThinkingSimulationTemplate = "kiro_thinking_simulation_template"
-	SettingKeyKiroThinkingFreePrompt         = "kiro_thinking_free_prompt"
 )
 
 // SettingKeyDefaultPlatformQuotas —— 系统全局：每用户 × 平台日/周/月 USD 上限（JSON）。

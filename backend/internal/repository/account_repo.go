@@ -73,6 +73,40 @@ var schedulerNeutralExtraKeys = map[string]struct{}{
 	"usage_updated_at":           {},
 }
 
+var accountSchedulingThresholdSnapshotExtraKeys = []string{
+	"session_window_utilization",
+	"passive_usage_7d_utilization",
+	"passive_usage_7d_reset",
+	"passive_usage_sampled_at",
+	"codex_primary_used_percent",
+	"codex_primary_reset_after_seconds",
+	"codex_primary_window_minutes",
+	"codex_secondary_used_percent",
+	"codex_secondary_reset_after_seconds",
+	"codex_secondary_window_minutes",
+	"codex_primary_over_secondary_percent",
+	"codex_usage_updated_at",
+	"codex_5h_used_percent",
+	"codex_5h_reset_after_seconds",
+	"codex_5h_reset_at",
+	"codex_5h_window_minutes",
+	"codex_7d_used_percent",
+	"codex_7d_reset_after_seconds",
+	"codex_7d_reset_at",
+	"codex_7d_window_minutes",
+}
+
+func jsonbDeleteKeysExpression(base string, keys []string) string {
+	var builder strings.Builder
+	builder.WriteString(base)
+	for _, key := range keys {
+		builder.WriteString(" - '")
+		builder.WriteString(key)
+		builder.WriteString("'")
+	}
+	return builder.String()
+}
+
 // NewAccountRepository 创建账户仓储实例。
 // 这是对外暴露的构造函数，返回接口类型以便于依赖注入。
 func NewAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache) service.AccountRepository {
@@ -1213,6 +1247,35 @@ func (r *accountRepository) ClearRateLimit(ctx context.Context, id int64) error 
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
 	return nil
+}
+
+func (r *accountRepository) ClearAccountSchedulingThresholdSnapshots(ctx context.Context, id int64) error {
+	client := clientFromContext(ctx, r.client)
+
+	result, err := client.ExecContext(ctx, accountSchedulingThresholdSnapshotCleanupQuery(), id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return service.ErrAccountNotFound
+	}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue threshold snapshot cleanup failed: account=%d err=%v", id, err)
+	}
+	r.syncSchedulerAccountSnapshot(ctx, id)
+	return nil
+}
+
+func accountSchedulingThresholdSnapshotCleanupQuery() string {
+	supportedPlatforms := "('" + service.PlatformOpenAI + "', '" + service.PlatformAnthropic + "')"
+	return "UPDATE accounts SET extra = CASE WHEN platform IN " + supportedPlatforms + " THEN " +
+		jsonbDeleteKeysExpression("COALESCE(extra, '{}'::jsonb)", accountSchedulingThresholdSnapshotExtraKeys) +
+		" ELSE extra END, updated_at = CASE WHEN platform IN " + supportedPlatforms +
+		" THEN NOW() ELSE updated_at END WHERE id = $1 AND deleted_at IS NULL"
 }
 
 func (r *accountRepository) ClearAntigravityQuotaScopes(ctx context.Context, id int64) error {

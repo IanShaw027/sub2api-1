@@ -2997,7 +2997,7 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 		}
 	}
 
-	input.Extra = NormalizeOpenAIWebProfileExtra(input.Platform, input.Type, input.Credentials, input.Extra)
+	input.Extra = NormalizeOpenAICodexIdentityExtra(input.Platform, input.Type, input.Credentials, input.Extra)
 
 	account := &Account{
 		Name:        input.Name,
@@ -3118,7 +3118,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	// Extra 使用 map：需要区分“未提供(nil)”与“显式清空({})”。
 	// 关闭配额限制时前端会删除 quota_* 键并提交 extra:{}，此时也必须落库。
 	if input.Extra != nil {
-		input.Extra = NormalizeOpenAIWebProfileExtra(account.Platform, account.Type, account.Credentials, input.Extra)
+		input.Extra = NormalizeOpenAICodexIdentityExtra(account.Platform, account.Type, account.Credentials, input.Extra)
 		// 保留配额用量字段，防止编辑账号时意外重置
 		for _, key := range []string{"quota_used", "quota_daily_used", "quota_daily_start", "quota_weekly_used", "quota_weekly_start"} {
 			if v, ok := account.Extra[key]; ok {
@@ -3482,7 +3482,7 @@ func applyBulkUpdateInputToAccount(account *Account, input *BulkUpdateAccountsIn
 	}
 	if len(input.Extra) > 0 {
 		mergedExtra := MergeCredentials(account.Extra, input.Extra)
-		account.Extra = NormalizeOpenAIWebProfileExtra(account.Platform, account.Type, account.Credentials, mergedExtra)
+		account.Extra = NormalizeOpenAICodexIdentityExtra(account.Platform, account.Type, account.Credentials, mergedExtra)
 	}
 }
 
@@ -3622,6 +3622,9 @@ func (s *adminServiceImpl) ClearAccountError(ctx context.Context, id int64) (*Ac
 		return nil, err
 	}
 	if err := s.accountRepo.ClearTempUnschedulable(ctx, id); err != nil {
+		return nil, err
+	}
+	if err := clearAccountSchedulingThresholdSnapshots(ctx, s.accountRepo, id); err != nil {
 		return nil, err
 	}
 	if s.runtimeBlocker != nil {

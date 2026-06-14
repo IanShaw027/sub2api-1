@@ -12,12 +12,13 @@ import (
 
 type accountRepoStubForClearAccountError struct {
 	mockAccountRepoForGemini
-	account                  *Account
-	clearErrorCalls          int
-	clearRateLimitCalls      int
-	clearAntigravityCalls    int
-	clearModelRateLimitCalls int
-	clearTempUnschedCalls    int
+	account                   *Account
+	clearErrorCalls           int
+	clearRateLimitCalls       int
+	clearAntigravityCalls     int
+	clearModelRateLimitCalls  int
+	clearTempUnschedCalls     int
+	clearThresholdSnapshotIDs []int64
 }
 
 func (r *accountRepoStubForClearAccountError) GetByID(ctx context.Context, id int64) (*Account, error) {
@@ -55,6 +56,11 @@ func (r *accountRepoStubForClearAccountError) ClearTempUnschedulable(ctx context
 	return nil
 }
 
+func (r *accountRepoStubForClearAccountError) ClearAccountSchedulingThresholdSnapshots(ctx context.Context, id int64) error {
+	r.clearThresholdSnapshotIDs = append(r.clearThresholdSnapshotIDs, id)
+	return nil
+}
+
 func TestAdminService_ClearAccountError_AlsoClearsRecoverableRuntimeState(t *testing.T) {
 	until := time.Now().Add(10 * time.Minute)
 	resetAt := time.Now().Add(5 * time.Minute)
@@ -81,6 +87,7 @@ func TestAdminService_ClearAccountError_AlsoClearsRecoverableRuntimeState(t *tes
 	require.Equal(t, 1, repo.clearAntigravityCalls)
 	require.Equal(t, 1, repo.clearModelRateLimitCalls)
 	require.Equal(t, 1, repo.clearTempUnschedCalls)
+	require.Equal(t, []int64{31}, repo.clearThresholdSnapshotIDs)
 	require.Nil(t, updated.RateLimitResetAt)
 	require.Nil(t, updated.TempUnschedulableUntil)
 	require.Empty(t, updated.TempUnschedulableReason)

@@ -25,20 +25,17 @@ func TestPlatformSchedulingThresholds_RoundTrip_DefaultsAndStoredValues(t *testi
 
 	got := svc.parseSettings(map[string]string{})
 	require.Equal(t, map[string]int{
-		PlatformOpenAI:      100,
-		PlatformAnthropic:   100,
-		PlatformGemini:      100,
-		PlatformKiro:        100,
-		PlatformAntigravity: 100,
+		PlatformOpenAI:    100,
+		PlatformAnthropic: 100,
 	}, got.AccountSchedulingThresholds)
 
 	got = svc.parseSettings(map[string]string{
 		SettingKeyAccountSchedulingThresholds: `{"openai":91,"gemini":85,"kiro":99}`,
 	})
 	require.Equal(t, 91, got.AccountSchedulingThresholds[PlatformOpenAI])
-	require.Equal(t, 85, got.AccountSchedulingThresholds[PlatformGemini])
-	require.Equal(t, 99, got.AccountSchedulingThresholds[PlatformKiro])
 	require.Equal(t, 100, got.AccountSchedulingThresholds[PlatformAnthropic])
+	require.NotContains(t, got.AccountSchedulingThresholds, PlatformGemini)
+	require.NotContains(t, got.AccountSchedulingThresholds, PlatformKiro)
 }
 
 func TestBuildSystemSettingsUpdates_PersistsAccountSchedulingThresholds(t *testing.T) {
@@ -46,28 +43,31 @@ func TestBuildSystemSettingsUpdates_PersistsAccountSchedulingThresholds(t *testi
 
 	updates, err := svc.buildSystemSettingsUpdates(context.Background(), &SystemSettings{
 		AccountSchedulingThresholds: map[string]int{
-			PlatformOpenAI:      91,
-			PlatformAnthropic:   88,
-			PlatformGemini:      87,
-			PlatformKiro:        95,
-			PlatformAntigravity: 92,
+			PlatformOpenAI:    91,
+			PlatformAnthropic: 88,
 		},
 	})
 	require.NoError(t, err)
-	require.JSONEq(t, `{"openai":91,"anthropic":88,"gemini":87,"kiro":95,"antigravity":92}`, updates[SettingKeyAccountSchedulingThresholds])
+	require.JSONEq(t, `{"openai":91,"anthropic":88}`, updates[SettingKeyAccountSchedulingThresholds])
 }
 
 func TestValidateAndNormalizeAccountSchedulingThresholds_FillsMissingPlatforms(t *testing.T) {
 	normalized, err := validateAndNormalizeAccountSchedulingThresholds(map[string]int{
 		PlatformOpenAI: 91,
-		PlatformGemini: 85,
 	})
 	require.NoError(t, err)
 	require.Equal(t, 91, normalized[PlatformOpenAI])
-	require.Equal(t, 85, normalized[PlatformGemini])
 	require.Equal(t, 100, normalized[PlatformAnthropic])
-	require.Equal(t, 100, normalized[PlatformKiro])
-	require.Equal(t, 100, normalized[PlatformAntigravity])
+	require.NotContains(t, normalized, PlatformGemini)
+	require.NotContains(t, normalized, PlatformKiro)
+	require.NotContains(t, normalized, PlatformAntigravity)
+}
+
+func TestValidateAndNormalizeAccountSchedulingThresholds_RejectsUnsupportedPlatforms(t *testing.T) {
+	_, err := validateAndNormalizeAccountSchedulingThresholds(map[string]int{
+		PlatformGemini: 85,
+	})
+	require.Error(t, err)
 }
 
 func TestUpdateSettings_StoresAccountSchedulingThresholds(t *testing.T) {
@@ -75,11 +75,8 @@ func TestUpdateSettings_StoresAccountSchedulingThresholds(t *testing.T) {
 
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{
 		AccountSchedulingThresholds: map[string]int{
-			PlatformOpenAI:      92,
-			PlatformAnthropic:   89,
-			PlatformGemini:      87,
-			PlatformKiro:        96,
-			PlatformAntigravity: 93,
+			PlatformOpenAI:    92,
+			PlatformAnthropic: 89,
 		},
 	})
 	require.NoError(t, err)
@@ -88,7 +85,8 @@ func TestUpdateSettings_StoresAccountSchedulingThresholds(t *testing.T) {
 		SettingKeyAccountSchedulingThresholds: svc.settingRepo.(*mockSettingRepo).data[SettingKeyAccountSchedulingThresholds],
 	})
 	require.Equal(t, 92, got.AccountSchedulingThresholds[PlatformOpenAI])
-	require.Equal(t, 96, got.AccountSchedulingThresholds[PlatformKiro])
+	require.Equal(t, 89, got.AccountSchedulingThresholds[PlatformAnthropic])
+	require.NotContains(t, got.AccountSchedulingThresholds, PlatformKiro)
 }
 
 func TestGetAccountSchedulingThresholds_ReadsStoredValue(t *testing.T) {
@@ -99,8 +97,8 @@ func TestGetAccountSchedulingThresholds_ReadsStoredValue(t *testing.T) {
 	got := svc.GetAccountSchedulingThresholds(context.Background())
 
 	require.Equal(t, 93, got[PlatformOpenAI])
-	require.Equal(t, 88, got[PlatformKiro])
 	require.Equal(t, 100, got[PlatformAnthropic])
+	require.NotContains(t, got, PlatformKiro)
 }
 
 func TestUpdateSettings_OmittedAccountSchedulingThresholdsDoesNotCacheDefaults(t *testing.T) {
@@ -115,7 +113,7 @@ func TestUpdateSettings_OmittedAccountSchedulingThresholdsDoesNotCacheDefaults(t
 
 	got := svc.GetAccountSchedulingThresholds(context.Background())
 	require.Equal(t, 85, got[PlatformOpenAI])
-	require.Equal(t, 88, got[PlatformKiro])
+	require.NotContains(t, got, PlatformKiro)
 }
 
 func TestAccountSchedulingThresholds_InvalidStoredValueUsesSameDefaultsInSettingsAndCache(t *testing.T) {
@@ -129,6 +127,6 @@ func TestAccountSchedulingThresholds_InvalidStoredValueUsesSameDefaultsInSetting
 	cached := svc.GetAccountSchedulingThresholds(context.Background())
 
 	require.Equal(t, settings.AccountSchedulingThresholds, cached)
-	require.Equal(t, 88, cached[PlatformKiro])
 	require.Equal(t, 100, cached[PlatformOpenAI])
+	require.NotContains(t, cached, PlatformKiro)
 }

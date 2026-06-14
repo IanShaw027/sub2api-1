@@ -181,7 +181,7 @@ func TestForwardAsChatCompletions_APIKeyPropagatesPromptCacheKeyInResponsesBody(
 	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(99, "cache-key-123")), upstream.lastReq.Header.Get("session_id"))
 }
 
-func TestForwardAsChatCompletions_UsesPlatformModelRoutingConfig(t *testing.T) {
+func TestForwardAsChatCompletions_IgnoresPlatformDefaultModelRoutingConfig(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	resetPlatformModelRoutingConfigCacheForTest()
 
@@ -192,7 +192,7 @@ func TestForwardAsChatCompletions_UsesPlatformModelRoutingConfig(t *testing.T) {
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	upstreamBody := strings.Join([]string{
-		`data: {"type":"response.completed","response":{"id":"resp_platform_routing","object":"response","model":"gpt-5.4","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok"}]}]},"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`,
+		`data: {"type":"response.completed","response":{"id":"resp_platform_routing","object":"response","model":"gpt-4o-mini","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok"}]}]},"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`,
 		"",
 		"data: [DONE]",
 		"",
@@ -207,7 +207,7 @@ func TestForwardAsChatCompletions_UsesPlatformModelRoutingConfig(t *testing.T) {
 		httpUpstream: upstream,
 		settingService: NewSettingService(&kiroRuntimeSettingRepoStub{
 			values: map[string]string{
-				SettingKeyPlatformModelRoutingConfig: `{"openai":{"model_mapping":{"gpt-4o-mini":"gpt-5.4"}}}`,
+				SettingKeyPlatformDefaultAccountModelConfig: `{"openai":{"model_mapping":{"gpt-4o-mini":"gpt-5.4"}}}`,
 			},
 		}, &config.Config{}),
 	}
@@ -228,9 +228,9 @@ func TestForwardAsChatCompletions_UsesPlatformModelRoutingConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "gpt-4o-mini", result.Model)
-	require.Equal(t, "gpt-5.4", result.BillingModel)
-	require.Equal(t, "gpt-5.4", result.UpstreamModel)
-	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "gpt-4o-mini", result.BillingModel)
+	require.Equal(t, "gpt-4o-mini", result.UpstreamModel)
+	require.Equal(t, "gpt-4o-mini", gjson.GetBytes(upstream.lastBody, "model").String())
 }
 
 func TestForwardAsChatCompletions_ClientDisconnectDrainsUpstreamUsage(t *testing.T) {

@@ -2,9 +2,8 @@ package service
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
@@ -85,36 +84,6 @@ func (s *kiroRuntimeSettingRepoStub) Delete(ctx context.Context, key string) err
 	return nil
 }
 
-func TestSettingService_GetPlatformModelRoutingConfig_DefaultBuildTransientErrorKeepsStaleCache(t *testing.T) {
-	resetPlatformModelRoutingConfigCacheForTest()
-	repo := &kiroRuntimeSettingRepoStub{
-		values: map[string]string{
-			SettingKeyPlatformModelRoutingConfig: `{
-				"openai": {
-					"model_whitelist": ["gpt-5.4"],
-					"model_mapping": {"gpt-4o-mini": "gpt-5.4"}
-				}
-			}`,
-		},
-	}
-	svc := NewSettingService(repo, &config.Config{})
-
-	first := svc.GetPlatformModelRoutingConfig(context.Background())
-	require.Equal(t, "gpt-5.4", first["openai"].ModelMapping["gpt-4o-mini"])
-
-	platformModelRoutingConfigCache.Store(&cachedPlatformModelRoutingConfig{
-		config:    clonePlatformModelConfigMap(first),
-		expiresAt: time.Now().Add(-time.Second).UnixNano(),
-	})
-	platformModelRoutingConfigSF.Forget(SettingKeyPlatformModelRoutingConfig)
-	repo.errs = map[string]error{SettingKeyPlatformModelRoutingConfig: errors.New("temporary db outage")}
-
-	second := svc.GetPlatformModelRoutingConfig(context.Background())
-
-	require.Equal(t, "gpt-5.4", second["openai"].ModelMapping["gpt-4o-mini"])
-	require.Equal(t, 2, repo.getValueCalls[SettingKeyPlatformModelRoutingConfig])
-}
-
 func TestSettingService_UpdateSettings_WritesKiroRuntimeDefaults(t *testing.T) {
 	kiroRuntimeSettingsCache.Store((*cachedKiroRuntimeSettings)(nil))
 	kiroRuntimeSettingsSF.Forget("kiro_runtime")
@@ -181,27 +150,6 @@ func TestSettingService_GetAllSettingsAndUpdateSettings_PreserveGatewayDebugTime
 func TestDefaultKiroRuntimeSettings_UsesOneHourPrefixTTL(t *testing.T) {
 	got := DefaultKiroRuntimeSettings()
 	require.Equal(t, 3600, got.CachePrefixTTLSecs)
-}
-
-func TestSettingService_UpdateSettings_PreservesExtendedKiroThinkingModes(t *testing.T) {
-	kiroRuntimeSettingsCache.Store((*cachedKiroRuntimeSettings)(nil))
-	kiroRuntimeSettingsSF.Forget("kiro_runtime")
-
-	for _, mode := range []string{KiroThinkingModeModel, KiroThinkingModeModelAndSimulate} {
-		t.Run(mode, func(t *testing.T) {
-			repo := &kiroRuntimeSettingRepoStub{}
-			svc := NewSettingService(repo, &config.Config{})
-
-			err := svc.UpdateSettings(context.Background(), &SystemSettings{
-				KiroThinkingMode: mode,
-			})
-			require.NoError(t, err)
-			require.Equal(t, mode, repo.updates[SettingKeyKiroThinkingMode])
-
-			got := svc.GetKiroRuntimeSettings(context.Background())
-			require.Equal(t, mode, got.ThinkingMode)
-		})
-	}
 }
 
 func TestSettingService_UpdateSettings_RejectsKiroCacheMinBlockTokensAboveMax(t *testing.T) {
@@ -280,4 +228,29 @@ func TestSettingService_GetKiroRuntimeSettings_PreservesZeroHitRateScale(t *test
 
 	got := svc.GetKiroRuntimeSettings(context.Background())
 	require.Equal(t, 0, got.CacheHitRateScale)
+}
+
+func TestSettingService_GetKiroRuntimeSettings_DoesNotExposeLegacyThinkingFields(t *testing.T) {
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			"kiro_thinking_mode":                "model_and_simulate",
+			"kiro_thinking_effort_threshold":    "max",
+			"kiro_thinking_simulation_template": "legacy template",
+			"kiro_thinking_free_prompt":         "legacy prompt",
+		},
+	}
+	kiroRuntimeSettingsCache.Store((*cachedKiroRuntimeSettings)(nil))
+	kiroRuntimeSettingsSF.Forget("kiro_runtime")
+	svc := NewSettingService(repo, &config.Config{})
+
+	got := svc.GetKiroRuntimeSettings(context.Background())
+	raw, err := json.Marshal(got)
+	require.NoError(t, err)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(raw, &payload))
+	require.NotContains(t, payload, "thinking_mode")
+	require.NotContains(t, payload, "thinking_effort_threshold")
+	require.NotContains(t, payload, "thinking_simulation_template")
+	require.NotContains(t, payload, "thinking_free_prompt")
 }

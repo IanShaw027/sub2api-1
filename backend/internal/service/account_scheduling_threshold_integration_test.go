@@ -34,12 +34,12 @@ func (r *thresholdSelectionAccountRepoStub) ListSchedulableUngroupedByPlatform(c
 	return r.ListSchedulableByPlatform(ctx, platform)
 }
 
-func TestGatewayService_ListSchedulableAccounts_FiltersThresholdBlockedAccounts(t *testing.T) {
+func TestGatewayService_ListSchedulableAccounts_DoesNotFilterUnsupportedThresholdPlatforms(t *testing.T) {
 	accountSchedulingThresholdsSF.Forget(SettingKeyAccountSchedulingThresholds)
 	accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{})
 
 	settingsRepo := newMockSettingRepo()
-	settingsRepo.data[SettingKeyAccountSchedulingThresholds] = `{"kiro":90}`
+	settingsRepo.data[SettingKeyAccountSchedulingThresholds] = `{"openai":90}`
 
 	accountRepo := &thresholdSelectionAccountRepoStub{
 		accounts: []Account{
@@ -48,6 +48,9 @@ func TestGatewayService_ListSchedulableAccounts_FiltersThresholdBlockedAccounts(
 				Platform:    PlatformKiro,
 				Status:      StatusActive,
 				Schedulable: true,
+				Credentials: map[string]any{
+					"account_scheduling_threshold": 1,
+				},
 				Extra: map[string]any{
 					"kiro_sched_utilization": 95.0,
 					"kiro_sched_reset_at":    time.Now().UTC().Add(2 * time.Hour).Format(time.RFC3339),
@@ -78,9 +81,10 @@ func TestGatewayService_ListSchedulableAccounts_FiltersThresholdBlockedAccounts(
 
 	require.NoError(t, err)
 	require.False(t, useMixed)
-	require.Len(t, accounts, 1)
-	require.Equal(t, int64(3102), accounts[0].ID)
-	require.Equal(t, 1, accountRepo.tempCalls)
+	require.Len(t, accounts, 2)
+	require.Equal(t, int64(3101), accounts[0].ID)
+	require.Equal(t, int64(3102), accounts[1].ID)
+	require.Equal(t, 0, accountRepo.tempCalls)
 }
 
 func TestOpenAIGatewayService_ListSchedulableAccounts_FiltersThresholdBlockedAccounts(t *testing.T) {

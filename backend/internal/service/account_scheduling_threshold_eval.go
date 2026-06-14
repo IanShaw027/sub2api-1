@@ -9,12 +9,13 @@ import (
 
 // AccountSchedulingThresholdDecision captures the pure pause decision for one account.
 type AccountSchedulingThresholdDecision struct {
-	ShouldPause bool
-	Platform    string
-	Window      string
-	Scope       string
-	UsedPercent float64
-	Until       *time.Time
+	ShouldPause      bool
+	Platform         string
+	Window           string
+	Scope            string
+	ThresholdPercent int
+	UsedPercent      float64
+	Until            *time.Time
 }
 
 type accountSchedulingThresholdCandidate struct {
@@ -34,6 +35,8 @@ type geminiSchedulingSnapshot struct {
 	flash *geminiSchedulingSnapshotWindow
 }
 
+const accountSchedulingThresholdCredentialKey = "account_scheduling_threshold"
+
 // EvaluateAccountSchedulingThreshold evaluates whether an account should be paused
 // based on the current per-platform scheduling threshold snapshot.
 func EvaluateAccountSchedulingThreshold(account *Account, thresholds map[string]int, now time.Time) AccountSchedulingThresholdDecision {
@@ -46,8 +49,12 @@ func EvaluateAccountSchedulingThreshold(account *Account, thresholds map[string]
 	if decision.Platform == "" {
 		return decision
 	}
+	if !isAllowedSchedulingThresholdPlatform(decision.Platform) {
+		return decision
+	}
 
-	threshold, ok := lookupAccountSchedulingThreshold(thresholds, decision.Platform)
+	threshold, ok := resolveEffectiveAccountSchedulingThreshold(account, thresholds, decision.Platform)
+	decision.ThresholdPercent = threshold
 	if !ok || threshold >= 100 {
 		return decision
 	}
@@ -58,12 +65,6 @@ func EvaluateAccountSchedulingThreshold(account *Account, thresholds map[string]
 		winner = pickLatestResetSchedulingCandidate(openAIThresholdCandidates(account), threshold, now)
 	case PlatformAnthropic:
 		winner = pickLatestResetSchedulingCandidate(anthropicThresholdCandidates(account), threshold, now)
-	case PlatformGemini:
-		winner = pickGeminiSchedulingCandidate(account, threshold, now)
-	case PlatformKiro:
-		winner = pickLatestResetSchedulingCandidate(kiroThresholdCandidates(account), threshold, now)
-	case PlatformAntigravity:
-		winner = pickLatestResetSchedulingCandidate(antigravityThresholdCandidates(account), threshold, now)
 	default:
 		return decision
 	}
@@ -78,6 +79,73 @@ func EvaluateAccountSchedulingThreshold(account *Account, thresholds map[string]
 	decision.UsedPercent = winner.usedPercent
 	decision.Until = winner.until
 	return decision
+}
+
+func isAllowedSchedulingThresholdPlatform(platform string) bool {
+	for _, allowed := range AllowedSchedulingThresholdPlatforms {
+		if platform == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveEffectiveAccountSchedulingThreshold(account *Account, thresholds map[string]int, platform string) (int, bool) {
+	if account != nil {
+		if threshold, ok := accountSchedulingThresholdOverride(account); ok {
+			return threshold, true
+		}
+	}
+	return lookupAccountSchedulingThreshold(thresholds, platform)
+}
+
+func accountSchedulingThresholdOverride(account *Account) (int, bool) {
+	if account == nil || len(account.Credentials) == 0 {
+		return 0, false
+	}
+	raw, ok := account.Credentials[accountSchedulingThresholdCredentialKey]
+	if !ok {
+		return 0, false
+	}
+	return parseAccountSchedulingThresholdValue(raw)
+}
+
+func parseAccountSchedulingThresholdValue(raw any) (int, bool) {
+	var value int
+	switch v := raw.(type) {
+	case int:
+		value = v
+	case int64:
+		value = int(v)
+	case float64:
+		if v != float64(int(v)) {
+			return 0, false
+		}
+		value = int(v)
+	case float32:
+		if v != float32(int(v)) {
+			return 0, false
+		}
+		value = int(v)
+	case json.Number:
+		parsed, err := v.Int64()
+		if err != nil {
+			return 0, false
+		}
+		value = int(parsed)
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			return 0, false
+		}
+		value = parsed
+	default:
+		return 0, false
+	}
+	if value < 1 || value > 100 {
+		return 0, false
+	}
+	return value, true
 }
 
 func lookupAccountSchedulingThreshold(thresholds map[string]int, platform string) (int, bool) {

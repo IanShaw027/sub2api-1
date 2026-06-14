@@ -613,7 +613,6 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		FallbackModelOpenAI:                       settings.FallbackModelOpenAI,
 		FallbackModelGemini:                       settings.FallbackModelGemini,
 		FallbackModelAntigravity:                  settings.FallbackModelAntigravity,
-		PlatformModelRoutingConfig:                toDTODefaultAccountModelConfig(settings.PlatformModelRoutingConfig),
 		PlatformDefaultAccountModelConfig:         toDTODefaultAccountModelConfig(settings.PlatformDefaultAccountModelConfig),
 		EnableIdentityPatch:                       settings.EnableIdentityPatch,
 		IdentityPatchPrompt:                       settings.IdentityPatchPrompt,
@@ -647,10 +646,6 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		KiroCacheMinBlockTokens:                   settings.KiroCacheMinBlockTokens,
 		KiroCacheIndependentTTLSeconds:            settings.KiroCacheIndependentTTLSeconds,
 		KiroCachePrefixTTLSeconds:                 settings.KiroCachePrefixTTLSeconds,
-		KiroThinkingMode:                          settings.KiroThinkingMode,
-		KiroThinkingEffortThreshold:               settings.KiroThinkingEffortThreshold,
-		KiroThinkingSimulationTemplate:            settings.KiroThinkingSimulationTemplate,
-		KiroThinkingFreePrompt:                    settings.KiroThinkingFreePrompt,
 		PaymentVisibleMethodAlipaySource:          settings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:           settings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:         settings.PaymentVisibleMethodAlipayEnabled,
@@ -660,8 +655,6 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		OpenAIStickyWaitTimeoutSeconds:            settings.OpenAIStickyWaitTimeoutSeconds,
 		OpenAIWSMinIdlePerAccount:                 settings.OpenAIWSMinIdlePerAccount,
 		OpenAIWSMaxIdlePerAccount:                 settings.OpenAIWSMaxIdlePerAccount,
-		OpenAIImageWebFreeModel:                   settings.OpenAIImageWebFreeModel,
-		OpenAIImageWebPaidModel:                   settings.OpenAIImageWebPaidModel,
 		OpenAIOAuthImageBridgeDisableKeepAlives:   settings.OpenAIOAuthImageBridgeDisableKeepAlives,
 		OpenAIOAuthImageBridgeFreshUpstreamClient: settings.OpenAIOAuthImageBridgeFreshUpstreamClient,
 		BalanceLowNotifyEnabled:                   settings.BalanceLowNotifyEnabled,
@@ -961,7 +954,6 @@ type UpdateSettingsRequest struct {
 	FallbackModelOpenAI               string                                    `json:"fallback_model_openai"`
 	FallbackModelGemini               string                                    `json:"fallback_model_gemini"`
 	FallbackModelAntigravity          string                                    `json:"fallback_model_antigravity"`
-	PlatformModelRoutingConfig        *map[string]dto.DefaultAccountModelConfig `json:"platform_model_routing_config"`
 	PlatformDefaultAccountModelConfig *map[string]dto.DefaultAccountModelConfig `json:"platform_default_account_model_config"`
 
 	// Identity patch configuration (Claude -> Gemini)
@@ -1008,10 +1000,6 @@ type UpdateSettingsRequest struct {
 	KiroCacheMinBlockTokens        *int    `json:"cache_min_block_tokens"`
 	KiroCacheIndependentTTLSeconds *int    `json:"cache_independent_ttl_seconds"`
 	KiroCachePrefixTTLSeconds      *int    `json:"cache_prefix_ttl_seconds"`
-	KiroThinkingMode               *string `json:"kiro_thinking_mode"`
-	KiroThinkingEffortThreshold    *string `json:"kiro_thinking_effort_threshold"`
-	KiroThinkingSimulationTemplate *string `json:"kiro_thinking_simulation_template"`
-	KiroThinkingFreePrompt         *string `json:"kiro_thinking_free_prompt"`
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  *string `json:"payment_visible_method_alipay_source"`
@@ -1020,15 +1008,13 @@ type UpdateSettingsRequest struct {
 	PaymentVisibleMethodWxpayEnabled  *bool   `json:"payment_visible_method_wxpay_enabled"`
 
 	// OpenAI account scheduling
-	OpenAIAdvancedSchedulerEnabled            *bool   `json:"openai_advanced_scheduler_enabled"`
-	OpenAIStickyReservePercent                *int    `json:"openai_sticky_reserve_percent"`
-	OpenAIStickyWaitTimeoutSeconds            *int    `json:"openai_sticky_wait_timeout_seconds"`
-	OpenAIWSMinIdlePerAccount                 *int    `json:"openai_ws_min_idle_per_account"`
-	OpenAIWSMaxIdlePerAccount                 *int    `json:"openai_ws_max_idle_per_account"`
-	OpenAIImageWebFreeModel                   *string `json:"openai_image_web_free_model"`
-	OpenAIImageWebPaidModel                   *string `json:"openai_image_web_paid_model"`
-	OpenAIOAuthImageBridgeDisableKeepAlives   *bool   `json:"openai_oauth_image_bridge_disable_keepalives"`
-	OpenAIOAuthImageBridgeFreshUpstreamClient *bool   `json:"openai_oauth_image_bridge_fresh_upstream_client"`
+	OpenAIAdvancedSchedulerEnabled            *bool `json:"openai_advanced_scheduler_enabled"`
+	OpenAIStickyReservePercent                *int  `json:"openai_sticky_reserve_percent"`
+	OpenAIStickyWaitTimeoutSeconds            *int  `json:"openai_sticky_wait_timeout_seconds"`
+	OpenAIWSMinIdlePerAccount                 *int  `json:"openai_ws_min_idle_per_account"`
+	OpenAIWSMaxIdlePerAccount                 *int  `json:"openai_ws_max_idle_per_account"`
+	OpenAIOAuthImageBridgeDisableKeepAlives   *bool `json:"openai_oauth_image_bridge_disable_keepalives"`
+	OpenAIOAuthImageBridgeFreshUpstreamClient *bool `json:"openai_oauth_image_bridge_fresh_upstream_client"`
 
 	// Balance low notification
 	BalanceLowNotifyEnabled         *bool                   `json:"balance_low_notify_enabled"`
@@ -2249,10 +2235,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		FallbackModelOpenAI:          req.FallbackModelOpenAI,
 		FallbackModelGemini:          req.FallbackModelGemini,
 		FallbackModelAntigravity:     req.FallbackModelAntigravity,
-		PlatformModelRoutingConfig: fromOptionalDTODefaultAccountModelConfig(
-			req.PlatformModelRoutingConfig,
-			previousSettings.PlatformModelRoutingConfig,
-		),
 		PlatformDefaultAccountModelConfig: fromOptionalDTODefaultAccountModelConfig(
 			req.PlatformDefaultAccountModelConfig,
 			previousSettings.PlatformDefaultAccountModelConfig,
@@ -2389,30 +2371,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.KiroCachePrefixTTLSeconds
 		}(),
-		KiroThinkingMode: func() string {
-			if req.KiroThinkingMode != nil {
-				return strings.TrimSpace(*req.KiroThinkingMode)
-			}
-			return previousSettings.KiroThinkingMode
-		}(),
-		KiroThinkingEffortThreshold: func() string {
-			if req.KiroThinkingEffortThreshold != nil {
-				return strings.TrimSpace(*req.KiroThinkingEffortThreshold)
-			}
-			return previousSettings.KiroThinkingEffortThreshold
-		}(),
-		KiroThinkingSimulationTemplate: func() string {
-			if req.KiroThinkingSimulationTemplate != nil {
-				return strings.TrimSpace(*req.KiroThinkingSimulationTemplate)
-			}
-			return previousSettings.KiroThinkingSimulationTemplate
-		}(),
-		KiroThinkingFreePrompt: func() string {
-			if req.KiroThinkingFreePrompt != nil {
-				return strings.TrimSpace(*req.KiroThinkingFreePrompt)
-			}
-			return previousSettings.KiroThinkingFreePrompt
-		}(),
 		EnableAnthropicCacheTTL1hInjection: func() bool {
 			if req.EnableAnthropicCacheTTL1hInjection != nil {
 				return *req.EnableAnthropicCacheTTL1hInjection
@@ -2524,18 +2482,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return value
 			}
 			return previousSettings.OpenAIWSMaxIdlePerAccount
-		}(),
-		OpenAIImageWebFreeModel: func() string {
-			if req.OpenAIImageWebFreeModel != nil {
-				return strings.TrimSpace(*req.OpenAIImageWebFreeModel)
-			}
-			return previousSettings.OpenAIImageWebFreeModel
-		}(),
-		OpenAIImageWebPaidModel: func() string {
-			if req.OpenAIImageWebPaidModel != nil {
-				return strings.TrimSpace(*req.OpenAIImageWebPaidModel)
-			}
-			return previousSettings.OpenAIImageWebPaidModel
 		}(),
 		OpenAIOAuthImageBridgeDisableKeepAlives: func() bool {
 			if req.OpenAIOAuthImageBridgeDisableKeepAlives != nil {
@@ -2886,7 +2832,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		FallbackModelOpenAI:                       updatedSettings.FallbackModelOpenAI,
 		FallbackModelGemini:                       updatedSettings.FallbackModelGemini,
 		FallbackModelAntigravity:                  updatedSettings.FallbackModelAntigravity,
-		PlatformModelRoutingConfig:                toDTODefaultAccountModelConfig(updatedSettings.PlatformModelRoutingConfig),
 		PlatformDefaultAccountModelConfig:         toDTODefaultAccountModelConfig(updatedSettings.PlatformDefaultAccountModelConfig),
 		EnableIdentityPatch:                       updatedSettings.EnableIdentityPatch,
 		IdentityPatchPrompt:                       updatedSettings.IdentityPatchPrompt,
@@ -2919,10 +2864,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		KiroCacheMinBlockTokens:                   updatedSettings.KiroCacheMinBlockTokens,
 		KiroCacheIndependentTTLSeconds:            updatedSettings.KiroCacheIndependentTTLSeconds,
 		KiroCachePrefixTTLSeconds:                 updatedSettings.KiroCachePrefixTTLSeconds,
-		KiroThinkingMode:                          updatedSettings.KiroThinkingMode,
-		KiroThinkingEffortThreshold:               updatedSettings.KiroThinkingEffortThreshold,
-		KiroThinkingSimulationTemplate:            updatedSettings.KiroThinkingSimulationTemplate,
-		KiroThinkingFreePrompt:                    updatedSettings.KiroThinkingFreePrompt,
 		PaymentVisibleMethodAlipaySource:          updatedSettings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:           updatedSettings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:         updatedSettings.PaymentVisibleMethodAlipayEnabled,
@@ -2932,8 +2873,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		OpenAIStickyWaitTimeoutSeconds:            updatedSettings.OpenAIStickyWaitTimeoutSeconds,
 		OpenAIWSMinIdlePerAccount:                 updatedSettings.OpenAIWSMinIdlePerAccount,
 		OpenAIWSMaxIdlePerAccount:                 updatedSettings.OpenAIWSMaxIdlePerAccount,
-		OpenAIImageWebFreeModel:                   updatedSettings.OpenAIImageWebFreeModel,
-		OpenAIImageWebPaidModel:                   updatedSettings.OpenAIImageWebPaidModel,
 		OpenAIOAuthImageBridgeDisableKeepAlives:   updatedSettings.OpenAIOAuthImageBridgeDisableKeepAlives,
 		OpenAIOAuthImageBridgeFreshUpstreamClient: updatedSettings.OpenAIOAuthImageBridgeFreshUpstreamClient,
 		BalanceLowNotifyEnabled:                   updatedSettings.BalanceLowNotifyEnabled,
@@ -3360,9 +3299,6 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.FallbackModelAntigravity != after.FallbackModelAntigravity {
 		changed = append(changed, "fallback_model_antigravity")
 	}
-	if !defaultAccountModelConfigEqual(before.PlatformModelRoutingConfig, after.PlatformModelRoutingConfig) {
-		changed = append(changed, "platform_model_routing_config")
-	}
 	if !defaultAccountModelConfigEqual(before.PlatformDefaultAccountModelConfig, after.PlatformDefaultAccountModelConfig) {
 		changed = append(changed, "platform_default_account_model_config")
 	}
@@ -3476,12 +3412,6 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.OpenAIWSMaxIdlePerAccount != after.OpenAIWSMaxIdlePerAccount {
 		changed = append(changed, "openai_ws_max_idle_per_account")
-	}
-	if before.OpenAIImageWebFreeModel != after.OpenAIImageWebFreeModel {
-		changed = append(changed, "openai_image_web_free_model")
-	}
-	if before.OpenAIImageWebPaidModel != after.OpenAIImageWebPaidModel {
-		changed = append(changed, "openai_image_web_paid_model")
 	}
 	if before.OpenAIOAuthImageBridgeDisableKeepAlives != after.OpenAIOAuthImageBridgeDisableKeepAlives {
 		changed = append(changed, "openai_oauth_image_bridge_disable_keepalives")
