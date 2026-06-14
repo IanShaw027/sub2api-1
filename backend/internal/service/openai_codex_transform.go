@@ -1581,6 +1581,13 @@ func normalizeOpenAIResponseJSONSchema(schema map[string]any) bool {
 
 	modified := false
 
+	if _, exists := schema["required"]; exists {
+		if _, ok := schema["required"].([]any); !ok {
+			schema["required"] = []any{}
+			modified = true
+		}
+	}
+
 	if properties, ok := schema["properties"].(map[string]any); ok {
 		for _, rawProperty := range properties {
 			propertySchema, ok := rawProperty.(map[string]any)
@@ -1606,6 +1613,14 @@ func normalizeOpenAIResponseJSONSchema(schema map[string]any) bool {
 		}
 	}
 
+	isArraySchema := strings.TrimSpace(firstNonEmptyString(schema["type"])) == "array"
+	if isArraySchema {
+		rawItems, exists := schema["items"]
+		if !exists || rawItems == nil {
+			schema["items"] = map[string]any{}
+			modified = true
+		}
+	}
 	switch items := schema["items"].(type) {
 	case map[string]any:
 		if normalizeOpenAIResponseJSONSchema(items) {
@@ -1621,6 +1636,11 @@ func normalizeOpenAIResponseJSONSchema(schema map[string]any) bool {
 				modified = true
 			}
 		}
+	default:
+		if isArraySchema {
+			schema["items"] = map[string]any{}
+			modified = true
+		}
 	}
 
 	for _, key := range []string{"anyOf", "oneOf", "allOf"} {
@@ -1634,6 +1654,80 @@ func normalizeOpenAIResponseJSONSchema(schema map[string]any) bool {
 				continue
 			}
 			if normalizeOpenAIResponseJSONSchema(childSchema) {
+				modified = true
+			}
+		}
+	}
+
+	return modified
+}
+
+func normalizeOpenAIClientJSONSchemaShape(schema map[string]any) bool {
+	if schema == nil {
+		return false
+	}
+
+	modified := false
+	if _, exists := schema["required"]; exists {
+		if _, ok := schema["required"].([]any); !ok {
+			schema["required"] = []any{}
+			modified = true
+		}
+	}
+
+	if properties, ok := schema["properties"].(map[string]any); ok {
+		for _, rawProperty := range properties {
+			propertySchema, ok := rawProperty.(map[string]any)
+			if !ok {
+				continue
+			}
+			if normalizeOpenAIClientJSONSchemaShape(propertySchema) {
+				modified = true
+			}
+		}
+	}
+
+	isArraySchema := strings.TrimSpace(firstNonEmptyString(schema["type"])) == "array"
+	if isArraySchema {
+		rawItems, exists := schema["items"]
+		if !exists || rawItems == nil {
+			schema["items"] = map[string]any{}
+			modified = true
+		}
+	}
+	switch items := schema["items"].(type) {
+	case map[string]any:
+		if normalizeOpenAIClientJSONSchemaShape(items) {
+			modified = true
+		}
+	case []any:
+		for _, rawItem := range items {
+			itemSchema, ok := rawItem.(map[string]any)
+			if !ok {
+				continue
+			}
+			if normalizeOpenAIClientJSONSchemaShape(itemSchema) {
+				modified = true
+			}
+		}
+	default:
+		if isArraySchema {
+			schema["items"] = map[string]any{}
+			modified = true
+		}
+	}
+
+	for _, key := range []string{"anyOf", "oneOf", "allOf"} {
+		rawSchemas, ok := schema[key].([]any)
+		if !ok {
+			continue
+		}
+		for _, rawSchema := range rawSchemas {
+			childSchema, ok := rawSchema.(map[string]any)
+			if !ok {
+				continue
+			}
+			if normalizeOpenAIClientJSONSchemaShape(childSchema) {
 				modified = true
 			}
 		}
@@ -2260,6 +2354,9 @@ func normalizeCodexFunctionToolParameters(toolMap map[string]any) bool {
 	}
 	if _, ok := paramsMap["properties"]; !ok {
 		paramsMap["properties"] = map[string]any{}
+		changed = true
+	}
+	if normalizeOpenAIClientJSONSchemaShape(paramsMap) {
 		changed = true
 	}
 	toolMap["parameters"] = paramsMap
