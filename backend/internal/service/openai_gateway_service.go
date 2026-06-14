@@ -391,6 +391,13 @@ type OpenAIForwardResult struct {
 	ImageOutputSizes     []string
 	ImageSizeSource      string
 	ImageSizeBreakdown   map[string]int
+
+	// strict-delta shadow 载体（TEMP_DIAG openai_ws_delta_shadow remove_after_debug=true）。
+	// 仅 shadow 度量用，承载本轮 raw upstream output 的 canonical 哈希和结构签名，不含原文。
+	DeltaShadowOutputHashes   [][32]byte
+	DeltaShadowOutputShapes   []string
+	DeltaShadowOutputCaptured bool
+	DeltaShadowRawClientEquiv bool
 }
 
 // ResolveUsageRequestID returns the stable request identifier shared by usage

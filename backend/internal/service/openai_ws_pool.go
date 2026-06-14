@@ -106,6 +106,44 @@ func TriggerOpenAIWSPoolReconcile() {
 	go hook()
 }
 
+var openAIWSConnEvictHook atomic.Pointer[func(connID string)]
+
+// RegisterOpenAIWSConnEvictHook 注册连接淘汰回调（幂等覆盖）。
+// 用于让 conn_id -> last_response_id 等外部映射在连接删除时同步失效。
+func RegisterOpenAIWSConnEvictHook(hook func(connID string)) {
+	if hook == nil {
+		openAIWSConnEvictHook.Store(nil)
+		return
+	}
+	openAIWSConnEvictHook.Store(&hook)
+}
+
+func triggerOpenAIWSConnEvict(connID string) {
+	id := stringsTrim(connID)
+	if id == "" {
+		return
+	}
+	hookPtr := openAIWSConnEvictHook.Load()
+	if hookPtr == nil || *hookPtr == nil {
+		return
+	}
+	(*hookPtr)(id)
+}
+
+// deleteOpenAIWSAccountConnLocked 统一删除 ap.conns 中的连接并触发淘汰回调，
+// 保证任何删除路径都不会泄漏陈旧的 conn_id -> last_response_id 映射。调用方须持有 ap.mu。
+func deleteOpenAIWSAccountConnLocked(ap *openAIWSAccountPool, connID string) {
+	if ap == nil {
+		return
+	}
+	id := stringsTrim(connID)
+	if id == "" {
+		return
+	}
+	delete(ap.conns, id)
+	triggerOpenAIWSConnEvict(id)
+}
+
 var (
 	errOpenAIWSConnClosed               = errors.New("openai ws connection closed")
 	errOpenAIWSConnQueueFull            = errors.New("openai ws connection queue full")
@@ -1251,7 +1289,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 
 	if (req.ForceNewConn || affinityOnlyReuse) && len(ap.conns)+ap.creating >= effectiveMaxConns {
 		if idle := p.pickOldestIdleConnLocked(ap); idle != nil {
-			delete(ap.conns, idle.id)
+			deleteOpenAIWSAccountConnLocked(ap, idle.id)
 			evicted = append(evicted, idle)
 			p.metrics.scaleDownTotal.Add(1)
 		}
@@ -1263,7 +1301,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 		neutralMax := p.neutralMaxConns(effectiveMaxConns)
 		if countConnsByProfileLocked(ap, openAIWSConnProfileNeutral)+ap.creatingForProfileLocked(openAIWSConnProfileNeutral) >= neutralMax {
 			if idle := p.pickOldestIdleNeutralConnLocked(ap); idle != nil {
-				delete(ap.conns, idle.id)
+				deleteOpenAIWSAccountConnLocked(ap, idle.id)
 				evicted = append(evicted, idle)
 				p.metrics.scaleDownTotal.Add(1)
 			}
@@ -1274,7 +1312,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 	} else if len(ap.conns)+ap.creating >= effectiveMaxConns {
 		// session_bound 请求要建连而总量已满时，优先淘汰一条空闲 neutral 腾出粘性预留容量。
 		if idle := p.pickOldestIdleNeutralConnLocked(ap); idle != nil {
-			delete(ap.conns, idle.id)
+			deleteOpenAIWSAccountConnLocked(ap, idle.id)
 			evicted = append(evicted, idle)
 			p.metrics.scaleDownTotal.Add(1)
 		}
@@ -1574,7 +1612,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 	evicted := make([]*openAIWSConn, 0)
 	for id, conn := range ap.conns {
 		if conn == nil {
-			delete(ap.conns, id)
+			deleteOpenAIWSAccountConnLocked(ap, id)
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, id)
 			}
@@ -1582,7 +1620,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 		}
 		select {
 		case <-conn.closedCh:
-			delete(ap.conns, id)
+			deleteOpenAIWSAccountConnLocked(ap, id)
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, id)
 			}
@@ -1594,7 +1632,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 			continue
 		}
 		if maxAge > 0 && !conn.isLeased() && conn.age(now) > maxAge {
-			delete(ap.conns, id)
+			deleteOpenAIWSAccountConnLocked(ap, id)
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, id)
 			}
@@ -1613,7 +1651,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 		idleConns := make([]*openAIWSConn, 0, len(ap.conns))
 		for id, conn := range ap.conns {
 			if conn == nil {
-				delete(ap.conns, id)
+				deleteOpenAIWSAccountConnLocked(ap, id)
 				if len(ap.pinnedConns) > 0 {
 					delete(ap.pinnedConns, id)
 				}
@@ -1639,7 +1677,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 		}
 		for i := 0; i < redundant; i++ {
 			conn := idleConns[i]
-			delete(ap.conns, conn.id)
+			deleteOpenAIWSAccountConnLocked(ap, conn.id)
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, conn.id)
 			}
@@ -1657,7 +1695,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 			if idle == nil {
 				break
 			}
-			delete(ap.conns, idle.id)
+			deleteOpenAIWSAccountConnLocked(ap, idle.id)
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, idle.id)
 			}
@@ -1928,7 +1966,7 @@ func (p *openAIWSConnPool) evictConn(accountID int64, connID string) {
 		ap.mu.Lock()
 		if c, exists := ap.conns[connID]; exists {
 			conn = c
-			delete(ap.conns, connID)
+			deleteOpenAIWSAccountConnLocked(ap, connID)
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, connID)
 			}

@@ -389,3 +389,139 @@ func TestOpenAIWSContinuationProbeLogMessageIncludesStoreAndTimingFields(t *test
 	require.Contains(t, msg, "conn_pick_ms=3")
 	require.Contains(t, msg, "queue_wait_ms=0")
 }
+
+func TestOpenAIWSDiagnosticStartLogMessageIncludesTemporaryStoreAndConnFields(t *testing.T) {
+	msg := openAIWSDiagnosticStartLogMessage(openAIWSDiagnosticStartLog{
+		RequestID:                 "req-local-1",
+		ClientRequestID:           "client-req-1",
+		AccountID:                 42,
+		AccountType:               AccountTypeOAuth,
+		ConnProfile:               openAIWSConnProfileSessionBound,
+		ConnID:                    "oa_ws_42_1",
+		ConnReused:                true,
+		Transport:                 "websocket",
+		Model:                     "gpt-5.5",
+		Stream:                    "true",
+		PayloadEventType:          "response.create",
+		PayloadBytes:              4567,
+		PayloadKeys:               "input,model,previous_response_id,store",
+		InputSummary:              "items=1",
+		PreviousResponseID:        "resp_prev_123",
+		PreviousResponseIDKind:    OpenAIPreviousResponseIDKindResponseID,
+		PreferredConnID:           "oa_ws_42_1",
+		StoreMode:                 openAIWSStoreModeIncremental,
+		StoreEnabled:              true,
+		StoreDisabled:             false,
+		StickyAccountHit:          true,
+		ConnAffinityHit:           true,
+		FallbackReason:            "",
+		DroppedPreviousResponseID: false,
+		UnsafeToolContinuation:    false,
+		ConnPickMs:                2,
+		QueueWaitMs:               0,
+		SessionHash:               "abcdef1234567890",
+		HeaderSessionID:           "session-header",
+		HeaderConversationID:      "conversation-header",
+		SessionIDSource:           "header",
+		ConversationIDSource:      "header",
+		HasTurnState:              true,
+		TurnStateLen:              12,
+		HasPromptCacheKey:         true,
+		HasTools:                  true,
+		HTTPIngressWSOneShot:      false,
+		ForceNewConn:              false,
+		AffinityOnlyReuse:         true,
+		StoreDisabledConnMode:     openAIWSStoreDisabledConnModeStrict,
+		ProxyEnabled:              true,
+	})
+
+	require.Contains(t, msg, "openai_ws_diag_start")
+	require.Contains(t, msg, "temporary_diag=ctx_pool_store_true")
+	require.Contains(t, msg, "remove_after_debug=true")
+	require.Contains(t, msg, "request_id=req-local-1")
+	require.Contains(t, msg, "client_request_id=client-req-1")
+	require.Contains(t, msg, "account_id=42")
+	require.Contains(t, msg, "conn_profile=session_bound")
+	require.Contains(t, msg, "conn_reused=true")
+	require.Contains(t, msg, "transport=websocket")
+	require.Contains(t, msg, "model=gpt-5.5")
+	require.Contains(t, msg, "payload_event=response.create")
+	require.Contains(t, msg, "payload_bytes=4567")
+	require.Contains(t, msg, "payload_keys=input,model,previous_response_id,store")
+	require.Contains(t, msg, "previous_response_id=resp_prev_123")
+	require.Contains(t, msg, "store_mode=incremental")
+	require.Contains(t, msg, "store_enabled=true")
+	require.Contains(t, msg, "sticky_account_hit=true")
+	require.Contains(t, msg, "conn_affinity_hit=true")
+	require.Contains(t, msg, "conn_pick_ms=2")
+	require.Contains(t, msg, "queue_wait_ms=0")
+	require.Contains(t, msg, "has_prompt_cache_key=true")
+	require.Contains(t, msg, "has_tools=true")
+	require.Contains(t, msg, "affinity_only_reuse=true")
+	require.Contains(t, msg, "proxy_enabled=true")
+}
+
+func TestOpenAIWSDiagnosticCompletedLogMessageIncludesTemporaryTTFTAndUsageFields(t *testing.T) {
+	msg := openAIWSDiagnosticCompletedLogMessage(openAIWSDiagnosticCompletedLog{
+		RequestID:              "req-local-2",
+		ClientRequestID:        "client-req-2",
+		AccountID:              43,
+		AccountType:            AccountTypeOAuth,
+		ConnProfile:            openAIWSConnProfileNeutral,
+		ConnID:                 "oa_ws_43_1",
+		ConnReused:             false,
+		ResponseID:             "resp_done_123",
+		Model:                  "gpt-5.4",
+		UpstreamModel:          "gpt-5.4",
+		Stream:                 true,
+		StoreMode:              openAIWSStoreModeFull,
+		StoreEnabled:           false,
+		StoreDisabled:          true,
+		HasPreviousResponseID:  false,
+		PreviousResponseIDKind: OpenAIPreviousResponseIDKindEmpty,
+		PayloadBytes:           98765,
+		DurationMs:             12345,
+		FirstTokenMs:           2345,
+		Events:                 12,
+		TokenEvents:            4,
+		TerminalEvents:         1,
+		BufferedEvents:         3,
+		BufferedFlushed:        3,
+		FirstEvent:             "response.created",
+		LastEvent:              "response.completed",
+		WroteDownstream:        true,
+		ClientDisconnected:     false,
+		HTTPIngressWSOneShot:   true,
+		InputTokens:            1200,
+		CacheReadTokens:        800,
+		CacheCreationTokens:    16,
+		OutputTokens:           321,
+	})
+
+	require.Contains(t, msg, "openai_ws_diag_completed")
+	require.Contains(t, msg, "temporary_diag=ctx_pool_store_true")
+	require.Contains(t, msg, "remove_after_debug=true")
+	require.Contains(t, msg, "request_id=req-local-2")
+	require.Contains(t, msg, "client_request_id=client-req-2")
+	require.Contains(t, msg, "account_id=43")
+	require.Contains(t, msg, "conn_profile=neutral")
+	require.Contains(t, msg, "conn_reused=false")
+	require.Contains(t, msg, "response_id=resp_done_123")
+	require.Contains(t, msg, "store_mode=full")
+	require.Contains(t, msg, "store_enabled=false")
+	require.Contains(t, msg, "store_disabled=true")
+	require.Contains(t, msg, "has_previous_response_id=false")
+	require.Contains(t, msg, "payload_bytes=98765")
+	require.Contains(t, msg, "duration_ms=12345")
+	require.Contains(t, msg, "first_token_ms=2345")
+	require.Contains(t, msg, "events=12")
+	require.Contains(t, msg, "token_events=4")
+	require.Contains(t, msg, "terminal_events=1")
+	require.Contains(t, msg, "first_event=response.created")
+	require.Contains(t, msg, "last_event=response.completed")
+	require.Contains(t, msg, "http_ingress_ws_one_shot=true")
+	require.Contains(t, msg, "input_tokens=1200")
+	require.Contains(t, msg, "cache_read_tokens=800")
+	require.Contains(t, msg, "cache_creation_tokens=16")
+	require.Contains(t, msg, "output_tokens=321")
+}
