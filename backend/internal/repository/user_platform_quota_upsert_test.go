@@ -101,6 +101,10 @@ func TestUpsertForUser_ReactivatesSoftDeleted(t *testing.T) {
 	}))
 	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
 	require.NoError(t, repo.IncrementUsageWithReset(ctx, userID, "anthropic", 3.5, now))
+	beforeDelete, err := repo.GetByUserPlatform(ctx, userID, "anthropic")
+	require.NoError(t, err)
+	require.NotNil(t, beforeDelete)
+	require.NotNil(t, beforeDelete.DailyWindowStart)
 	require.NoError(t, repo.UpsertForUser(ctx, userID, []UserPlatformQuotaRecord{}))
 
 	gone, err := repo.GetByUserPlatform(ctx, userID, "anthropic")
@@ -118,7 +122,7 @@ func TestUpsertForUser_ReactivatesSoftDeleted(t *testing.T) {
 	require.InDelta(t, 20.0, *back.DailyLimitUSD, 1e-9)
 	require.InDelta(t, 3.5, back.DailyUsageUSD, 1e-9, "reactivation must preserve usage")
 	require.NotNil(t, back.DailyWindowStart, "reactivation must preserve window start")
-	require.True(t, back.DailyWindowStart.Equal(now), "reactivation must preserve original window start")
+	require.True(t, back.DailyWindowStart.Equal(*beforeDelete.DailyWindowStart), "reactivation must preserve original window start")
 
 	allRows, err := client.UserPlatformQuota.Query().
 		Where(userplatformquota.UserIDEQ(userID), userplatformquota.PlatformEQ("anthropic")).

@@ -510,7 +510,7 @@ func (r *userRepository) ListWithFilters(ctx context.Context, params pagination.
 		return r.listWithUsageSort(ctx, q, params, filters)
 	}
 
-	total, err := q.Clone().Count(ctx)
+	total, err := q.Clone().Count(userCtx)
 	if err != nil {
 		return nil, nil, err
 	}
