@@ -1457,6 +1457,70 @@ func TestNormalizeOpenAIStrictFunctionToolSchemas_CleansInvalidRequiredEntries(t
 	require.Equal(t, []any{"filePath", "offset"}, required)
 }
 
+func TestApplyCodexOAuthTransform_NormalizeCodexTools_CoercesNullRequiredToArray(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.4",
+		"tools": []any{
+			map[string]any{
+				"type": "function",
+				"name": "ExitPlanMode",
+				"parameters": map[string]any{
+					"type":     "object",
+					"required": nil,
+					"properties": map[string]any{
+						"plan": map[string]any{
+							"type":     "object",
+							"required": nil,
+							"properties": map[string]any{
+								"summary": map[string]any{"type": "string"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, true, false)
+
+	require.True(t, result.Modified)
+	parameters := requireFirstToolParameters(t, reqBody)
+	require.Equal(t, []any{}, parameters["required"])
+	plan, ok := parameters["properties"].(map[string]any)["plan"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, []any{}, plan["required"])
+}
+
+func TestApplyCodexOAuthTransform_NormalizeCodexTools_AddsMissingArrayItems(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.4",
+		"tools": []any{
+			map[string]any{
+				"type": "function",
+				"name": "Workflow",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"steps": map[string]any{
+							"type": "array",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, true, false)
+
+	require.True(t, result.Modified)
+	parameters := requireFirstToolParameters(t, reqBody)
+	steps, ok := parameters["properties"].(map[string]any)["steps"].(map[string]any)
+	require.True(t, ok)
+	items, ok := steps["items"].(map[string]any)
+	require.True(t, ok)
+	require.Empty(t, items)
+}
+
 func TestNormalizeOpenAITextFormatSchema_RebuildsRequiredFromProperties(t *testing.T) {
 	reqBody := map[string]any{
 		"text": map[string]any{
@@ -1487,7 +1551,64 @@ func TestNormalizeOpenAITextFormatSchema_RebuildsRequiredFromProperties(t *testi
 	require.Equal(t, []any{"action_dispatch", "summary"}, schema["required"])
 }
 
+func TestNormalizeOpenAITextFormatSchema_AddsMissingArrayItems(t *testing.T) {
+	reqBody := map[string]any{
+		"text": map[string]any{
+			"format": map[string]any{
+				"type": "json_schema",
+				"name": "semantic_discovery",
+				"schema": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"nodes": map[string]any{
+							"type": "array",
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"bbox": map[string]any{
+										"type": "array",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	modified := normalizeOpenAIResponseFormatSchemas(reqBody)
+
+	require.True(t, modified)
+	text, ok := reqBody["text"].(map[string]any)
+	require.True(t, ok)
+	format, ok := text["format"].(map[string]any)
+	require.True(t, ok)
+	schema, ok := format["schema"].(map[string]any)
+	require.True(t, ok)
+	nodes, ok := schema["properties"].(map[string]any)["nodes"].(map[string]any)
+	require.True(t, ok)
+	nodeItems, ok := nodes["items"].(map[string]any)
+	require.True(t, ok)
+	bbox, ok := nodeItems["properties"].(map[string]any)["bbox"].(map[string]any)
+	require.True(t, ok)
+	bboxItems, ok := bbox["items"].(map[string]any)
+	require.True(t, ok)
+	require.Empty(t, bboxItems)
+}
+
 func requireFirstToolRequiredFields(t *testing.T, reqBody map[string]any) []any {
+	t.Helper()
+
+	parameters := requireFirstToolParameters(t, reqBody)
+
+	required, ok := parameters["required"].([]any)
+	require.True(t, ok)
+
+	return required
+}
+
+func requireFirstToolParameters(t *testing.T, reqBody map[string]any) map[string]any {
 	t.Helper()
 
 	tools, ok := reqBody["tools"].([]any)
@@ -1500,10 +1621,7 @@ func requireFirstToolRequiredFields(t *testing.T, reqBody map[string]any) []any 
 	parameters, ok := tool["parameters"].(map[string]any)
 	require.True(t, ok)
 
-	required, ok := parameters["required"].([]any)
-	require.True(t, ok)
-
-	return required
+	return parameters
 }
 
 func TestFilterCodexInput_DropsReasoningItemsRegardlessOfPreserveReferences(t *testing.T) {

@@ -742,7 +742,13 @@ func kiroModelFamily(model string) string {
 func isCompatibleKiroModelMappingPair(from, to string) bool {
 	fromFamily := kiroModelFamily(from)
 	toFamily := kiroModelFamily(to)
-	return fromFamily != "" && fromFamily == toFamily
+	// A custom source alias whose family cannot be resolved is passed through as
+	// long as the target resolves to a real kiro model. Known source families
+	// must still match the target family to keep the cross-family guard.
+	if fromFamily == "" {
+		return toFamily != ""
+	}
+	return fromFamily == toFamily
 }
 
 func stripKiroModelVariantSuffixes(value string) (base string, oneMillionContext bool) {

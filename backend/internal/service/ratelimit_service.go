@@ -2399,28 +2399,28 @@ func (s *RateLimitService) shouldDeferTempUnschedByThreshold(ctx context.Context
 	}
 
 	settings, err := s.settingService.GetTempUnschedThresholdSettings(ctx)
-	if err != nil || settings == nil || !settings.Enabled {
+	if err != nil {
+		slog.Warn("temp_unsched_threshold_settings_failed", "account_id", account.ID, "rule_index", ruleIndex, "rule_fingerprint", ruleFingerprint, "error", err)
+		return false
+	}
+	if settings == nil || !settings.Enabled {
 		return false
 	}
 	if settings.ThresholdCount <= 1 {
 		return false
 	}
 
-	count, err := s.tempUnschedCounter.IncrementTempUnschedCount(ctx, account.ID, ruleFingerprint, settings.ThresholdWindowMinutes)
+	count, reached, err := s.tempUnschedCounter.IncrementTempUnschedThreshold(ctx, account.ID, ruleFingerprint, settings.ThresholdWindowMinutes, settings.ThresholdCount)
 	if err != nil {
 		slog.Warn("temp_unsched_threshold_increment_failed", "account_id", account.ID, "rule_index", ruleIndex, "rule_fingerprint", ruleFingerprint, "error", err)
 		return false // fail-open：计数失败时按单次命中触发，避免坏账号继续被调度
 	}
 
-	if count < int64(settings.ThresholdCount) {
+	if !reached {
 		slog.Info("temp_unsched_threshold_not_reached", "account_id", account.ID, "rule_index", ruleIndex, "rule_fingerprint", ruleFingerprint, "count", count, "threshold", settings.ThresholdCount, "window_minutes", settings.ThresholdWindowMinutes)
 		return true
 	}
 
-	// 达阈值：清零计数，下一轮重新累计
-	if err := s.tempUnschedCounter.ResetTempUnschedCount(ctx, account.ID, ruleFingerprint); err != nil {
-		slog.Warn("temp_unsched_threshold_reset_failed", "account_id", account.ID, "rule_index", ruleIndex, "rule_fingerprint", ruleFingerprint, "error", err)
-	}
 	return false
 }
 

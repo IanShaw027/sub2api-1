@@ -1464,6 +1464,13 @@ type openAIWSCountingDialer struct {
 	dialCount int
 }
 
+type openAIWSBlockingDialer struct {
+	started   chan struct{}
+	release   chan struct{}
+	startOnce sync.Once
+	dialCount atomic.Int32
+}
+
 type openAIWSAlwaysFailDialer struct {
 	mu        sync.Mutex
 	dialCount int
@@ -1529,6 +1536,29 @@ func (d *openAIWSCountingDialer) DialCount() int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.dialCount
+}
+
+func (d *openAIWSBlockingDialer) Dial(
+	ctx context.Context,
+	wsURL string,
+	headers http.Header,
+	proxyURL string,
+) (openAIWSClientConn, int, http.Header, error) {
+	_ = wsURL
+	_ = headers
+	_ = proxyURL
+	d.dialCount.Add(1)
+	d.startOnce.Do(func() { close(d.started) })
+	select {
+	case <-ctx.Done():
+		return nil, 0, nil, ctx.Err()
+	case <-d.release:
+		return &openAIWSFakeConn{}, 0, nil, nil
+	}
+}
+
+func (d *openAIWSBlockingDialer) DialCount() int {
+	return int(d.dialCount.Load())
 }
 
 func (d *openAIWSAlwaysFailDialer) Dial(
@@ -1903,6 +1933,95 @@ func TestOpenAIWSConnPool_NeutralIdentityMismatchEvictsIdleWhenNeutralMaxReached
 	ap.mu.Unlock()
 	require.False(t, oldExists, "idle neutral with the previous identity should be evicted to make neutralMax room")
 	require.Equal(t, 1, neutralCount)
+}
+
+func TestOpenAIWSConnPool_NeutralPrewarmIgnoresSessionCreating(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 4
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 4
+	cfg.Gateway.OpenAIWS.StickyReservePercent = 50
+
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 904, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	ap := pool.getOrCreateAccountPool(account.ID)
+	ap.mu.Lock()
+	ap.creating = 1 // simulate a session_bound dial already in progress
+	ap.mu.Unlock()
+
+	pool.PrewarmNeutral(account.ID, openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		Profile: openAIWSConnProfileNeutral,
+	}, 1)
+
+	require.Equal(t, 1, dialer.DialCount(), "session_bound creating must not consume neutral prewarm capacity")
+}
+
+func TestOpenAIWSConnPool_NeutralCreateRechecksNeutralMaxBeforeInsert(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.StickyReservePercent = 50
+
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	dialer := &openAIWSBlockingDialer{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 905, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	req := openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		Profile: openAIWSConnProfileNeutral,
+	}
+
+	type acquireResult struct {
+		lease *openAIWSConnLease
+		err   error
+	}
+	resultCh := make(chan acquireResult, 1)
+	go func() {
+		lease, err := pool.Acquire(context.Background(), req)
+		resultCh <- acquireResult{lease: lease, err: err}
+	}()
+
+	select {
+	case <-dialer.started:
+	case <-time.After(time.Second):
+		t.Fatal("neutral dial did not start")
+	}
+
+	ap := pool.getOrCreateAccountPool(account.ID)
+	reuseKey := openAIWSConnReuseKeyForAcquire(req)
+	existing := newOpenAIWSConnWithProfileAndReuseKey("existing_neutral", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral, reuseKey)
+	ap.mu.Lock()
+	ap.conns[existing.id] = existing
+	ap.mu.Unlock()
+
+	close(dialer.release)
+
+	var result acquireResult
+	select {
+	case result = <-resultCh:
+	case <-time.After(time.Second):
+		t.Fatal("neutral acquire did not finish")
+	}
+	require.NoError(t, result.err)
+	t.Cleanup(result.lease.Release)
+	require.True(t, result.lease.Reused(), "raced neutral dial should be discarded and the existing neutral conn reused")
+
+	ap.mu.Lock()
+	neutralCount := countConnsByProfileLocked(ap, openAIWSConnProfileNeutral)
+	ap.mu.Unlock()
+	require.Equal(t, 1, neutralCount, "neutral create must recheck neutralMax before inserting the dialed conn")
+	require.Equal(t, 1, dialer.DialCount())
 }
 
 func TestOpenAIWSConnPool_NeutralMaxConns(t *testing.T) {

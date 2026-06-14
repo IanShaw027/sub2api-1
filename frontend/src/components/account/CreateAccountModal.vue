@@ -5224,7 +5224,8 @@ const handleValidateRefreshToken = (rt: string) => {
 const buildKiroModelMapping = () => buildModelMappingObject(
   modelRestrictionMode.value,
   allowedModels.value,
-  modelMappings.value
+  modelMappings.value,
+  'kiro'
 )
 
 const applyKiroModelRestriction = (credentials: Record<string, unknown>) => {

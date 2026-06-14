@@ -4009,7 +4009,7 @@ const applyKiroModelRestrictionPatch = (
   currentCredentials: Record<string, unknown>
 ) => {
   const modelMapping = normalizeKiroModelMappingObject(
-    buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+    buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value, 'kiro')
   )
   const currentModelMapping = normalizeKiroModelMappingObject(currentCredentials.model_mapping)
   if (modelMapping) {
@@ -4205,7 +4205,7 @@ function getKiroEffectiveDefaultMapping(account: Account | null): Record<string,
 
 function buildKiroCurrentMappingObject(): Record<string, string> | null {
   return normalizeKiroModelMappingObject(
-    buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+    buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value, 'kiro')
   )
 }
 

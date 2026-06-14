@@ -514,6 +514,19 @@ func TestMatchBlockedKeyword_CaseInsensitiveSubstring(t *testing.T) {
 	require.False(t, hit)
 }
 
+func TestMatchBlockedKeyword_AndRuleRequiresAllTerms(t *testing.T) {
+	keyword, hit := matchBlockedKeyword("please sell account with recharge balance", []string{"account && recharge"})
+	require.True(t, hit)
+	require.Equal(t, "account && recharge", keyword)
+
+	_, hit = matchBlockedKeyword("please sell account only", []string{"account && recharge"})
+	require.False(t, hit)
+
+	keyword, hit = matchBlockedKeyword("ACCOUNT transfer with RECHARGE balance", []string{"account && recharge"})
+	require.True(t, hit)
+	require.Equal(t, "account && recharge", keyword)
+}
+
 func TestContentModerationCheck_PreBlockKeywordHitSkipsUpstreamCall(t *testing.T) {
 	upstreamCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

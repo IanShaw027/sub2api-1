@@ -44,6 +44,7 @@ func (s *accountModelDefaultsSettingRepoStub) Delete(context.Context, string) er
 }
 
 func TestAdminServiceCreateAccount_InjectsPlatformDefaultModelConfig(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
 	repo := &kiroDefaultAccountRepoStub{}
 	settingRepo := &accountModelDefaultsSettingRepoStub{values: map[string]string{
 		SettingKeyPlatformDefaultAccountModelConfig: `{
@@ -81,7 +82,35 @@ func TestAdminServiceCreateAccount_InjectsPlatformDefaultModelConfig(t *testing.
 	}, account.Credentials["compact_model_mapping"])
 }
 
-func TestAdminServiceCreateAccount_DoesNotOverrideExplicitModelMapping(t *testing.T) {
+func TestAdminServiceCreateAccount_InjectsPlatformDefaultWhenModelMappingIsEmpty(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	settingRepo := &accountModelDefaultsSettingRepoStub{values: map[string]string{
+		SettingKeyPlatformDefaultAccountModelConfig: `{
+			"kiro": {"model_mapping": {"anthropic-opus-4-8": "claude-opus-4.8"}}
+		}`,
+	}}
+	svc := &adminServiceImpl{
+		accountRepo:    &kiroDefaultAccountRepoStub{},
+		settingService: NewSettingService(settingRepo, &config.Config{}),
+	}
+
+	account, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
+		Name:                 "kiro-pro",
+		Platform:             PlatformKiro,
+		Type:                 AccountTypeOAuth,
+		Credentials:          map[string]any{"refresh_token": "rt-test-valid-refresh-token-1234567890", "model_mapping": map[string]any{}},
+		SkipDefaultGroupBind: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, map[string]any{
+		"anthropic-opus-4-8": "claude-opus-4.8",
+	}, account.Credentials["model_mapping"])
+}
+
+func TestAdminServiceCreateAccount_DoesNotOverrideNonEmptyExplicitModelMapping(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
 	settingRepo := &accountModelDefaultsSettingRepoStub{values: map[string]string{
 		SettingKeyPlatformDefaultAccountModelConfig: `{
 			"openai": {"model_mapping": {"gpt-5.2": "gpt-5.4"}}
@@ -96,16 +125,17 @@ func TestAdminServiceCreateAccount_DoesNotOverrideExplicitModelMapping(t *testin
 		Name:                 "openai-key",
 		Platform:             PlatformOpenAI,
 		Type:                 AccountTypeAPIKey,
-		Credentials:          map[string]any{"api_key": "sk-test", "model_mapping": map[string]any{}},
+		Credentials:          map[string]any{"api_key": "sk-test", "model_mapping": map[string]any{"gpt-5.2": "gpt-account"}},
 		SkipDefaultGroupBind: true,
 	})
 
 	require.NoError(t, err)
 	require.NotNil(t, account)
-	require.Equal(t, map[string]any{}, account.Credentials["model_mapping"])
+	require.Equal(t, map[string]any{"gpt-5.2": "gpt-account"}, account.Credentials["model_mapping"])
 }
 
 func TestAdminServiceCreateAccount_InjectsKiroSubscriptionTypeDefaultModelConfig(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
 	repo := &kiroDefaultAccountRepoStub{}
 	settingRepo := &accountModelDefaultsSettingRepoStub{values: map[string]string{
 		SettingKeyPlatformDefaultAccountModelConfig: `{
@@ -145,6 +175,7 @@ func TestAdminServiceCreateAccount_InjectsKiroSubscriptionTypeDefaultModelConfig
 }
 
 func TestAdminServiceCreateAccount_InjectsKiroFreeDefaultsWhenSubscriptionMissing(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
 	repo := &kiroDefaultAccountRepoStub{}
 	settingRepo := &accountModelDefaultsSettingRepoStub{values: map[string]string{
 		SettingKeyPlatformDefaultAccountModelConfig: `{
@@ -180,6 +211,7 @@ func TestAdminServiceCreateAccount_InjectsKiroFreeDefaultsWhenSubscriptionMissin
 }
 
 func TestAdminServiceCreateAccount_InjectsTempUnschedAndCustomErrorCodeDefaults(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
 	repo := &kiroDefaultAccountRepoStub{}
 	settingRepo := &accountModelDefaultsSettingRepoStub{values: map[string]string{
 		SettingKeyPlatformDefaultAccountModelConfig: `{
@@ -226,6 +258,7 @@ func TestAdminServiceCreateAccount_InjectsTempUnschedAndCustomErrorCodeDefaults(
 }
 
 func TestAdminServiceCreateAccount_DoesNotOverrideExplicitTempUnschedRules(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
 	settingRepo := &accountModelDefaultsSettingRepoStub{values: map[string]string{
 		SettingKeyPlatformDefaultAccountModelConfig: `{
 			"openai": {

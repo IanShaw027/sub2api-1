@@ -1624,8 +1624,34 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	if requiredImageCapability != "" && requiredImageRoute == "" {
 		requiredImageRoute = GroupImageGenerationRouteCodex
 	}
+	req := OpenAIAccountScheduleRequest{
+		GroupID:                 groupID,
+		APIKeyID:                apiKeyID,
+		SessionHash:             sessionHash,
+		PreviousResponseID:      previousResponseID,
+		RequestedModel:          requestedModel,
+		RequiredTransport:       requiredTransport,
+		RequiredImageCapability: requiredImageCapability,
+		RequiredImageRoute:      requiredImageRoute,
+		RequireImageEnabled:     requireImageEnabled,
+		RequireOAuthAccount:     requireOAuthAccount,
+		RequireCompact:          requireCompact,
+		ExcludedIDs:             excludedIDs,
+	}
 	scheduler := s.getOpenAIAccountScheduler(ctx)
 	if scheduler == nil {
+		selection, previousHit, err := s.selectByPreviousResponseForScheduleRequest(ctx, req)
+		if err != nil {
+			return nil, decision, err
+		}
+		if previousHit {
+			decision.Layer = openAIAccountScheduleLayerPreviousResponse
+			decision.StickyPreviousHit = true
+			decision.SelectedAccountID = selection.Account.ID
+			decision.SelectedAccountType = selection.Account.Type
+			return selection, decision, nil
+		}
+
 		decision.Layer = openAIAccountScheduleLayerLoadBalance
 		useImageRouteFallback := (requiredTransport == OpenAIUpstreamTransportAny || requiredTransport == OpenAIUpstreamTransportHTTPSSE) &&
 			(requiredImageCapability != "" || strings.TrimSpace(requiredImageRoute) != "" || requireImageEnabled)
@@ -1700,9 +1726,9 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	}
 
 	return scheduler.Select(ctx, OpenAIAccountScheduleRequest{
-		GroupID:                 groupID,
-		APIKeyID:                apiKeyID,
-		SessionHash:             sessionHash,
+		GroupID:                 req.GroupID,
+		APIKeyID:                req.APIKeyID,
+		SessionHash:             req.SessionHash,
 		StickyAccountID:         stickyAccountID,
 		PreviousResponseID:      previousResponseID,
 		RequestedModel:          requestedModel,
@@ -1715,6 +1741,43 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		RequireCompact:          requireCompact,
 		ExcludedIDs:             excludedIDs,
 	})
+}
+
+func (s *OpenAIGatewayService) selectByPreviousResponseForScheduleRequest(
+	ctx context.Context,
+	req OpenAIAccountScheduleRequest,
+) (*AccountSelectionResult, bool, error) {
+	previousResponseID := strings.TrimSpace(req.PreviousResponseID)
+	if previousResponseID == "" {
+		return nil, false, nil
+	}
+
+	selection, err := s.SelectAccountByPreviousResponseID(
+		ctx,
+		req.GroupID,
+		req.APIKeyID,
+		previousResponseID,
+		req.RequestedModel,
+		req.ExcludedIDs,
+		req.RequireCompact,
+	)
+	if err != nil || selection == nil || selection.Account == nil {
+		return selection, false, err
+	}
+
+	compat := &defaultOpenAIAccountScheduler{service: s}
+	if !compat.isAccountTransportCompatible(selection.Account, req.RequiredTransport) ||
+		!compat.isAccountRequestCompatible(ctx, selection.Account, req) {
+		if selection.ReleaseFunc != nil {
+			selection.ReleaseFunc()
+		}
+		return nil, false, nil
+	}
+
+	if req.SessionHash != "" {
+		_ = s.BindStickySession(ctx, req.GroupID, req.SessionHash, selection.Account.ID)
+	}
+	return selection, true, nil
 }
 
 func (s *OpenAIGatewayService) loadGroupForImageRoute(ctx context.Context, groupID int64) *Group {

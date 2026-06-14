@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
@@ -763,6 +764,262 @@ func logOpenAIWSModeDebug(format string, args ...any) {
 	logger.LegacyPrintf("service.openai_gateway", "[debug] [OpenAI WS Mode][openai_ws_mode=true] "+format, args...)
 }
 
+type openAIWSContinuationProbeLog struct {
+	AccountID              int64
+	AccountType            string
+	ConnID                 string
+	PreviousResponseID     string
+	PreviousResponseIDKind string
+	PreferredConnID        string
+	ConnReused             bool
+	StoreDisabled          bool
+	StoreMode              string
+	StoreEnabled           bool
+	StickyAccountHit       bool
+	ConnAffinityHit        bool
+	FallbackReason         string
+	PayloadBytes           int
+	ConnPickMs             int64
+	QueueWaitMs            int64
+	SessionHash            string
+	HeaderSessionID        string
+	HeaderConversationID   string
+	SessionIDSource        string
+	ConversationIDSource   string
+	HasTurnState           bool
+	TurnStateLen           int
+	HasPromptCacheKey      bool
+}
+
+func openAIWSContinuationProbeLogMessage(v openAIWSContinuationProbeLog) string {
+	return fmt.Sprintf(
+		"continuation_probe account_id=%d account_type=%s conn_id=%s previous_response_id=%s previous_response_id_kind=%s preferred_conn_id=%s conn_reused=%v store_disabled=%v store_mode=%s store_enabled=%v sticky_account_hit=%v conn_affinity_hit=%v fallback_reason=%s payload_bytes=%d conn_pick_ms=%d queue_wait_ms=%d session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v",
+		v.AccountID,
+		normalizeOpenAIWSLogValue(v.AccountType),
+		truncateOpenAIWSLogValue(v.ConnID, openAIWSIDValueMaxLen),
+		truncateOpenAIWSLogValue(v.PreviousResponseID, openAIWSIDValueMaxLen),
+		normalizeOpenAIWSLogValue(v.PreviousResponseIDKind),
+		truncateOpenAIWSLogValue(v.PreferredConnID, openAIWSIDValueMaxLen),
+		v.ConnReused,
+		v.StoreDisabled,
+		normalizeOpenAIWSLogValue(v.StoreMode),
+		v.StoreEnabled,
+		v.StickyAccountHit,
+		v.ConnAffinityHit,
+		normalizeOpenAIWSLogValue(v.FallbackReason),
+		v.PayloadBytes,
+		v.ConnPickMs,
+		v.QueueWaitMs,
+		truncateOpenAIWSLogValue(v.SessionHash, 12),
+		normalizeOpenAIWSLogValue(v.HeaderSessionID),
+		normalizeOpenAIWSLogValue(v.HeaderConversationID),
+		normalizeOpenAIWSLogValue(v.SessionIDSource),
+		normalizeOpenAIWSLogValue(v.ConversationIDSource),
+		v.HasTurnState,
+		v.TurnStateLen,
+		v.HasPromptCacheKey,
+	)
+}
+
+func logOpenAIWSContinuationProbe(v openAIWSContinuationProbeLog) {
+	logOpenAIWSModeInfo("%s", openAIWSContinuationProbeLogMessage(v))
+}
+
+// TEMP_DIAG(ctx_pool_store_true): remove these INFO diagnostics after store=true coverage debugging.
+type openAIWSDiagnosticStartLog struct {
+	RequestID                 string
+	ClientRequestID           string
+	AccountID                 int64
+	AccountType               string
+	ConnProfile               openAIWSConnProfile
+	ConnID                    string
+	ConnReused                bool
+	Transport                 string
+	Model                     string
+	Stream                    string
+	PayloadEventType          string
+	PayloadBytes              int
+	PayloadKeys               string
+	InputSummary              string
+	PreviousResponseID        string
+	PreviousResponseIDKind    string
+	PreferredConnID           string
+	StoreMode                 string
+	StoreEnabled              bool
+	StoreDisabled             bool
+	StickyAccountHit          bool
+	ConnAffinityHit           bool
+	FallbackReason            string
+	DroppedPreviousResponseID bool
+	UnsafeToolContinuation    bool
+	ConnPickMs                int64
+	QueueWaitMs               int64
+	SessionHash               string
+	HeaderSessionID           string
+	HeaderConversationID      string
+	SessionIDSource           string
+	ConversationIDSource      string
+	HasTurnState              bool
+	TurnStateLen              int
+	HasPromptCacheKey         bool
+	HasTools                  bool
+	HTTPIngressWSOneShot      bool
+	ForceNewConn              bool
+	AffinityOnlyReuse         bool
+	StoreDisabledConnMode     string
+	ProxyEnabled              bool
+}
+
+func openAIWSDiagnosticStartLogMessage(v openAIWSDiagnosticStartLog) string {
+	return fmt.Sprintf(
+		"openai_ws_diag_start temporary_diag=ctx_pool_store_true remove_after_debug=true request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s model=%s stream=%s payload_event=%s payload_bytes=%d payload_keys=%s input_summary=%s previous_response_id=%s previous_response_id_kind=%s preferred_conn_id=%s store_mode=%s store_enabled=%v store_disabled=%v sticky_account_hit=%v conn_affinity_hit=%v fallback_reason=%s dropped_previous_response_id=%v unsafe_tool_continuation=%v conn_pick_ms=%d queue_wait_ms=%d session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v has_tools=%v http_ingress_ws_one_shot=%v force_new_conn=%v affinity_only_reuse=%v store_disabled_conn_mode=%s proxy_enabled=%v",
+		normalizeOpenAIWSLogValue(v.RequestID),
+		normalizeOpenAIWSLogValue(v.ClientRequestID),
+		v.AccountID,
+		normalizeOpenAIWSLogValue(v.AccountType),
+		normalizeOpenAIWSLogValue(openAIWSProfileUsageString(v.ConnProfile)),
+		truncateOpenAIWSLogValue(v.ConnID, openAIWSIDValueMaxLen),
+		v.ConnReused,
+		normalizeOpenAIWSLogValue(v.Transport),
+		normalizeOpenAIWSLogValue(v.Model),
+		normalizeOpenAIWSLogValue(v.Stream),
+		normalizeOpenAIWSLogValue(v.PayloadEventType),
+		v.PayloadBytes,
+		normalizeOpenAIWSLogValue(v.PayloadKeys),
+		normalizeOpenAIWSLogValue(v.InputSummary),
+		truncateOpenAIWSLogValue(v.PreviousResponseID, openAIWSIDValueMaxLen),
+		normalizeOpenAIWSLogValue(v.PreviousResponseIDKind),
+		truncateOpenAIWSLogValue(v.PreferredConnID, openAIWSIDValueMaxLen),
+		normalizeOpenAIWSLogValue(v.StoreMode),
+		v.StoreEnabled,
+		v.StoreDisabled,
+		v.StickyAccountHit,
+		v.ConnAffinityHit,
+		normalizeOpenAIWSLogValue(v.FallbackReason),
+		v.DroppedPreviousResponseID,
+		v.UnsafeToolContinuation,
+		v.ConnPickMs,
+		v.QueueWaitMs,
+		truncateOpenAIWSLogValue(v.SessionHash, 12),
+		normalizeOpenAIWSLogValue(v.HeaderSessionID),
+		normalizeOpenAIWSLogValue(v.HeaderConversationID),
+		normalizeOpenAIWSLogValue(v.SessionIDSource),
+		normalizeOpenAIWSLogValue(v.ConversationIDSource),
+		v.HasTurnState,
+		v.TurnStateLen,
+		v.HasPromptCacheKey,
+		v.HasTools,
+		v.HTTPIngressWSOneShot,
+		v.ForceNewConn,
+		v.AffinityOnlyReuse,
+		normalizeOpenAIWSLogValue(v.StoreDisabledConnMode),
+		v.ProxyEnabled,
+	)
+}
+
+func logOpenAIWSDiagnosticStart(v openAIWSDiagnosticStartLog) {
+	logOpenAIWSModeInfo("%s", openAIWSDiagnosticStartLogMessage(v))
+}
+
+type openAIWSDiagnosticCompletedLog struct {
+	RequestID              string
+	ClientRequestID        string
+	AccountID              int64
+	AccountType            string
+	ConnProfile            openAIWSConnProfile
+	ConnID                 string
+	ConnReused             bool
+	ResponseID             string
+	Model                  string
+	UpstreamModel          string
+	Stream                 bool
+	StoreMode              string
+	StoreEnabled           bool
+	StoreDisabled          bool
+	HasPreviousResponseID  bool
+	PreviousResponseIDKind string
+	PayloadBytes           int
+	DurationMs             int64
+	FirstTokenMs           int
+	Events                 int
+	TokenEvents            int
+	TerminalEvents         int
+	BufferedEvents         int
+	BufferedFlushed        int
+	FirstEvent             string
+	LastEvent              string
+	WroteDownstream        bool
+	ClientDisconnected     bool
+	HTTPIngressWSOneShot   bool
+	InputTokens            int
+	CacheReadTokens        int
+	CacheCreationTokens    int
+	OutputTokens           int
+}
+
+func openAIWSDiagnosticCompletedLogMessage(v openAIWSDiagnosticCompletedLog) string {
+	return fmt.Sprintf(
+		"openai_ws_diag_completed temporary_diag=ctx_pool_store_true remove_after_debug=true request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v response_id=%s model=%s upstream_model=%s stream=%v store_mode=%s store_enabled=%v store_disabled=%v has_previous_response_id=%v previous_response_id_kind=%s payload_bytes=%d duration_ms=%d first_token_ms=%d events=%d token_events=%d terminal_events=%d buffered_events=%d buffered_flushed=%d first_event=%s last_event=%s wrote_downstream=%v client_disconnected=%v http_ingress_ws_one_shot=%v input_tokens=%d cache_read_tokens=%d cache_creation_tokens=%d output_tokens=%d",
+		normalizeOpenAIWSLogValue(v.RequestID),
+		normalizeOpenAIWSLogValue(v.ClientRequestID),
+		v.AccountID,
+		normalizeOpenAIWSLogValue(v.AccountType),
+		normalizeOpenAIWSLogValue(openAIWSProfileUsageString(v.ConnProfile)),
+		truncateOpenAIWSLogValue(v.ConnID, openAIWSIDValueMaxLen),
+		v.ConnReused,
+		truncateOpenAIWSLogValue(v.ResponseID, openAIWSIDValueMaxLen),
+		normalizeOpenAIWSLogValue(v.Model),
+		normalizeOpenAIWSLogValue(v.UpstreamModel),
+		v.Stream,
+		normalizeOpenAIWSLogValue(v.StoreMode),
+		v.StoreEnabled,
+		v.StoreDisabled,
+		v.HasPreviousResponseID,
+		normalizeOpenAIWSLogValue(v.PreviousResponseIDKind),
+		v.PayloadBytes,
+		v.DurationMs,
+		v.FirstTokenMs,
+		v.Events,
+		v.TokenEvents,
+		v.TerminalEvents,
+		v.BufferedEvents,
+		v.BufferedFlushed,
+		truncateOpenAIWSLogValue(v.FirstEvent, openAIWSLogValueMaxLen),
+		truncateOpenAIWSLogValue(v.LastEvent, openAIWSLogValueMaxLen),
+		v.WroteDownstream,
+		v.ClientDisconnected,
+		v.HTTPIngressWSOneShot,
+		v.InputTokens,
+		v.CacheReadTokens,
+		v.CacheCreationTokens,
+		v.OutputTokens,
+	)
+}
+
+func logOpenAIWSDiagnosticCompleted(v openAIWSDiagnosticCompletedLog) {
+	logOpenAIWSModeInfo("%s", openAIWSDiagnosticCompletedLogMessage(v))
+}
+
+func openAIWSRequestLogIDs(c *gin.Context) (string, string) {
+	if c == nil || c.Request == nil {
+		return "", ""
+	}
+	requestID := ""
+	clientRequestID := ""
+	if c.Request.Context() != nil {
+		if value, _ := c.Request.Context().Value(ctxkey.RequestID).(string); strings.TrimSpace(value) != "" {
+			requestID = strings.TrimSpace(value)
+		}
+		if value, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(value) != "" {
+			clientRequestID = strings.TrimSpace(value)
+		}
+	}
+	if clientRequestID == "" {
+		clientRequestID = strings.TrimSpace(c.GetHeader("X-Client-Request-Id"))
+	}
+	return requestID, clientRequestID
+}
+
 func logOpenAIWSBindResponseAccountWarn(groupID, accountID int64, responseID string, err error) {
 	if err == nil {
 		return
@@ -998,6 +1255,11 @@ func (s *OpenAIGatewayService) getOpenAIWSStateStore() OpenAIWSStateStore {
 		if s.openaiWSStateStore == nil {
 			s.openaiWSStateStore = NewOpenAIWSStateStore(s.cache)
 		}
+		// 连接淘汰时同步失效 conn_id -> last_response_id 映射（strict-delta shadow 用）。
+		store := s.openaiWSStateStore
+		RegisterOpenAIWSConnEvictHook(func(connID string) {
+			store.DeleteConnLastResponse(connID)
+		})
 	})
 	return s.openaiWSStateStore
 }
@@ -2385,6 +2647,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		lease.Release()
 	}()
 	connID := strings.TrimSpace(lease.ConnID())
+	requestID, clientRequestID := openAIWSRequestLogIDs(c)
 	logOpenAIWSModeDebug(
 		"connected account_id=%d account_type=%s transport=%s conn_id=%s conn_reused=%v conn_pick_ms=%d queue_wait_ms=%d has_previous_response_id=%v",
 		account.ID,
@@ -2396,26 +2659,76 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		lease.QueueWaitDuration().Milliseconds(),
 		previousResponseID != "",
 	)
+	logOpenAIWSDiagnosticStart(openAIWSDiagnosticStartLog{
+		RequestID:                 requestID,
+		ClientRequestID:           clientRequestID,
+		AccountID:                 account.ID,
+		AccountType:               account.Type,
+		ConnProfile:               connProfile,
+		ConnID:                    connID,
+		ConnReused:                lease.Reused(),
+		Transport:                 string(decision.Transport),
+		Model:                     originalModel,
+		Stream:                    streamValue,
+		PayloadEventType:          payloadEventType,
+		PayloadBytes:              resolvePayloadBytes(),
+		PayloadKeys:               strings.Join(sortedKeys(payload), ","),
+		InputSummary:              summarizeOpenAIWSInput(payload["input"]),
+		PreviousResponseID:        previousResponseID,
+		PreviousResponseIDKind:    previousResponseIDKind,
+		PreferredConnID:           preferredConnID,
+		StoreMode:                 storeDecision.StoreMode,
+		StoreEnabled:              storeEnabled,
+		StoreDisabled:             storeDisabled,
+		StickyAccountHit:          storeDecision.StickyAccountHit,
+		ConnAffinityHit:           connAffinityHit,
+		FallbackReason:            storeDecision.FallbackReason,
+		DroppedPreviousResponseID: storeDecision.DroppedPreviousResponseID,
+		UnsafeToolContinuation:    storeDecision.UnsafeToolContinuation,
+		ConnPickMs:                lease.ConnPickDuration().Milliseconds(),
+		QueueWaitMs:               lease.QueueWaitDuration().Milliseconds(),
+		SessionHash:               sessionHash,
+		HeaderSessionID:           openAIWSHeaderValueForLog(wsHeaders, "session_id"),
+		HeaderConversationID:      openAIWSHeaderValueForLog(wsHeaders, "conversation_id"),
+		SessionIDSource:           sessionResolution.SessionSource,
+		ConversationIDSource:      sessionResolution.ConversationSource,
+		HasTurnState:              turnState != "",
+		TurnStateLen:              len(turnState),
+		HasPromptCacheKey:         promptCacheKey != "",
+		HasTools:                  hasTools,
+		HTTPIngressWSOneShot:      httpIngressWSOneShot,
+		ForceNewConn:              forceNewConn,
+		AffinityOnlyReuse:         affinityOnlyReuse,
+		StoreDisabledConnMode:     storeDisabledConnMode,
+		ProxyEnabled:              account.ProxyID != nil && account.Proxy != nil,
+	})
 	if previousResponseID != "" {
-		logOpenAIWSModeInfo(
-			"continuation_probe account_id=%d account_type=%s conn_id=%s previous_response_id=%s previous_response_id_kind=%s preferred_conn_id=%s conn_reused=%v store_disabled=%v session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v",
-			account.ID,
-			account.Type,
-			truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
-			truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
-			normalizeOpenAIWSLogValue(previousResponseIDKind),
-			truncateOpenAIWSLogValue(preferredConnID, openAIWSIDValueMaxLen),
-			lease.Reused(),
-			storeDisabled,
-			truncateOpenAIWSLogValue(sessionHash, 12),
-			openAIWSHeaderValueForLog(wsHeaders, "session_id"),
-			openAIWSHeaderValueForLog(wsHeaders, "conversation_id"),
-			normalizeOpenAIWSLogValue(sessionResolution.SessionSource),
-			normalizeOpenAIWSLogValue(sessionResolution.ConversationSource),
-			turnState != "",
-			len(turnState),
-			promptCacheKey != "",
-		)
+		logOpenAIWSContinuationProbe(openAIWSContinuationProbeLog{
+			AccountID:              account.ID,
+			AccountType:            account.Type,
+			ConnID:                 connID,
+			PreviousResponseID:     previousResponseID,
+			PreviousResponseIDKind: previousResponseIDKind,
+			PreferredConnID:        preferredConnID,
+			ConnReused:             lease.Reused(),
+			StoreDisabled:          storeDisabled,
+			StoreMode:              storeDecision.StoreMode,
+			StoreEnabled:           storeEnabled,
+			StickyAccountHit:       storeDecision.StickyAccountHit,
+			ConnAffinityHit:        connAffinityHit,
+			FallbackReason:         storeDecision.FallbackReason,
+			PayloadBytes:           resolvePayloadBytes(),
+			ConnPickMs:             lease.ConnPickDuration().Milliseconds(),
+			QueueWaitMs:            lease.QueueWaitDuration().Milliseconds(),
+			SessionHash:            sessionHash,
+			HeaderSessionID:        openAIWSHeaderValueForLog(wsHeaders, "session_id"),
+			HeaderConversationID:   openAIWSHeaderValueForLog(wsHeaders, "conversation_id"),
+			SessionIDSource:        sessionResolution.SessionSource,
+			ConversationIDSource:   sessionResolution.ConversationSource,
+			HasTurnState:           turnState != "",
+			TurnStateLen:           len(turnState),
+			HasPromptCacheKey:      promptCacheKey != "",
+		})
 	}
 	if c != nil {
 		SetOpsLatencyMs(c, OpsOpenAIWSConnPickMsKey, lease.ConnPickDuration().Milliseconds())
@@ -2460,6 +2773,42 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 	}
 
+	// TEMP_DIAG(openai_ws_delta_shadow): forward HTTP->upstream-WS 主路径的 strict-delta shadow。
+	// 只读评估，绝不改写 payload；one-shot neutral 路径没有稳定会话上下文，保持不参与。
+	deltaShadowEnabled := openAIWSDeltaShadowEnabled()
+	shadowOwner := false
+	if deltaShadowEnabled && !httpIngressWSOneShot && stateStore != nil && sessionHash != "" {
+		shadowOwner = stateStore.TrySessionInFlight(groupID, apiKeyID, sessionHash)
+		payloadRaw := payloadAsJSONBytes(payload)
+		if !shadowOwner {
+			logOpenAIWSDeltaShadow(openAIWSDeltaShadowLog{
+				RequestID:      requestID,
+				AccountID:      account.ID,
+				ConnID:         connID,
+				Candidate:      false,
+				FallbackReason: "same_session_in_flight",
+			})
+		} else {
+			cached, found := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
+			connMostRecent, _ := stateStore.GetConnLastResponse(connID)
+			logOpenAIWSDeltaShadow(evaluateOpenAIWSDeltaShadowCandidate(openAIWSDeltaShadowInput{
+				RequestID:                requestID,
+				AccountID:                account.ID,
+				LeaseConnID:              connID,
+				ConnMostRecentResponseID: connMostRecent,
+				CurrentPayload:           payloadRaw,
+				HasFunctionCallOutput:    HasToolContinuationOutputInRawPayload(payloadRaw),
+				Cached:                   cached,
+				CachedFound:              found,
+			}))
+		}
+	}
+	defer func() {
+		if shadowOwner {
+			stateStore.EndSessionInFlight(groupID, apiKeyID, sessionHash)
+		}
+	}()
+
 	if err := lease.WriteJSONWithContextTimeout(ctx, payload, s.openAIWSWriteTimeout()); err != nil {
 		lease.MarkBroken()
 		logOpenAIWSModeInfo(
@@ -2501,6 +2850,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	flushedBufferedEventCount := 0
 	firstEventType := ""
 	lastEventType := ""
+	var deltaShadowRawOutputHashes [][32]byte
+	var deltaShadowRawOutputShapes []string
+	deltaShadowOutputCaptured := false
+	deltaShadowRawClientEquiv := true
+	deltaShadowRawDoneItems := map[int]json.RawMessage{}
+	deltaShadowVisibleDoneItems := map[int]json.RawMessage{}
 
 	var flusher http.Flusher
 	if reqStream {
@@ -2624,6 +2979,22 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		if responseID == "" && eventResponseID != "" {
 			responseID = eventResponseID
 		}
+		if deltaShadowEnabled && !deltaShadowOutputCaptured && responseField.Exists() {
+			if outItems, ok := openAIWSExtractResponseOutputItems([]byte(responseField.Raw)); ok {
+				if hashes, hok := openAIWSCanonicalItemHashes(outItems); hok {
+					if shapes, sok := openAIWSItemShapes(outItems); sok {
+						deltaShadowRawOutputHashes = hashes
+						deltaShadowRawOutputShapes = shapes
+						deltaShadowOutputCaptured = true
+					}
+				}
+			}
+		}
+		if deltaShadowEnabled {
+			if outputIndex, item, ok := openAIWSExtractOutputItemDoneItem(message); ok {
+				deltaShadowRawDoneItems[outputIndex] = item
+			}
+		}
 
 		isTokenEvent := isOpenAIWSTokenEvent(eventType)
 		if isTokenEvent {
@@ -2658,6 +3029,37 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			if openAIWSEventMayContainToolCalls(eventType) && openAIWSMessageLikelyContainsToolCalls(message) {
 				if corrected, changed := s.toolCorrector.CorrectToolCallsInSSEBytes(message); changed {
 					message = corrected
+				}
+			}
+		}
+		if deltaShadowEnabled && !clientDisconnected {
+			if outputIndex, item, ok := openAIWSExtractOutputItemDoneItem(message); ok {
+				deltaShadowVisibleDoneItems[outputIndex] = item
+			}
+		}
+		if reqStream && isTerminalEvent && deltaShadowEnabled && deltaShadowOutputCaptured && !clientDisconnected {
+			responseRaw := gjson.GetBytes(message, "response")
+			if responseRaw.Exists() {
+				if cvItems, ok := openAIWSExtractResponseOutputItems([]byte(responseRaw.Raw)); ok {
+					if cvHashes, hok := openAIWSCanonicalItemHashes(cvItems); hok {
+						deltaShadowRawClientEquiv = openAIWSHashSlicesEqual(deltaShadowRawOutputHashes, cvHashes)
+					}
+				}
+			}
+		}
+		if reqStream && isTerminalEvent && deltaShadowEnabled && !deltaShadowOutputCaptured && len(deltaShadowRawDoneItems) > 0 {
+			rawItems := openAIWSOrderedOutputDoneItems(deltaShadowRawDoneItems)
+			if hashes, hok := openAIWSCanonicalItemHashes(rawItems); hok {
+				if shapes, sok := openAIWSItemShapes(rawItems); sok {
+					deltaShadowRawOutputHashes = hashes
+					deltaShadowRawOutputShapes = shapes
+					deltaShadowOutputCaptured = true
+					visibleItems := openAIWSOrderedOutputDoneItems(deltaShadowVisibleDoneItems)
+					if cvHashes, vok := openAIWSCanonicalItemHashes(visibleItems); vok {
+						deltaShadowRawClientEquiv = openAIWSHashSlicesEqual(deltaShadowRawOutputHashes, cvHashes)
+					} else {
+						deltaShadowRawClientEquiv = false
+					}
 				}
 			}
 		}
@@ -2835,6 +3237,13 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			finalResponse = s.replaceModelInResponseBody(finalResponse, mappedModel, originalModel)
 		}
 		finalResponse = s.correctToolCallsInResponseBody(finalResponse)
+		if deltaShadowEnabled && deltaShadowOutputCaptured && !clientDisconnected {
+			if cvItems, ok := openAIWSExtractResponseOutputItems(finalResponse); ok {
+				if cvHashes, hok := openAIWSCanonicalItemHashes(cvItems); hok {
+					deltaShadowRawClientEquiv = openAIWSHashSlicesEqual(deltaShadowRawOutputHashes, cvHashes)
+				}
+			}
+		}
 		populateOpenAIUsageFromResponseJSON(finalResponse, usage)
 		if responseID == "" {
 			responseID = strings.TrimSpace(gjson.GetBytes(finalResponse, "id").String())
@@ -2855,17 +3264,84 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	if !httpIngressWSOneShot && stateStore != nil && storeDisabled && sessionHash != "" && !clientDisconnected {
 		stateStore.BindSessionConn(groupID, sessionHash, lease.ConnID(), s.openAIWSSessionStickyTTL())
 	}
+	if shadowOwner && deltaShadowEnabled && stateStore != nil && responseID != "" && connID != "" &&
+		!clientDisconnected && deltaShadowOutputCaptured {
+		payloadRaw := payloadAsJSONBytes(payload)
+		if inputItems, _, ierr := openAIWSExtractNormalizedInputSequence(payloadRaw); ierr == nil {
+			if inputHashes, hok := openAIWSCanonicalItemHashes(inputItems); hok {
+				var materializedShapes []string
+				if inputShapes, sok := openAIWSItemShapes(inputItems); sok && len(deltaShadowRawOutputShapes) == len(deltaShadowRawOutputHashes) {
+					materializedShapes = make([]string, 0, len(inputShapes)+len(deltaShadowRawOutputShapes))
+					materializedShapes = append(materializedShapes, inputShapes...)
+					materializedShapes = append(materializedShapes, deltaShadowRawOutputShapes...)
+				}
+				materialized := make([][32]byte, 0, len(inputHashes)+len(deltaShadowRawOutputHashes))
+				materialized = append(materialized, inputHashes...)
+				materialized = append(materialized, deltaShadowRawOutputHashes...)
+				nonInputHash, _ := openAIWSNonInputHash(payloadRaw)
+				ttl := s.openAIWSSessionStickyTTL()
+				stateStore.BindConnLastResponse(connID, responseID, ttl)
+				stateStore.BindSessionContext(groupID, apiKeyID, sessionHash, openAIWSSessionContextValue{
+					accountID:               account.ID,
+					connID:                  connID,
+					lastResponseID:          responseID,
+					materializedHashes:      materialized,
+					materializedShapes:      materializedShapes,
+					materializedCount:       len(materialized),
+					inputCount:              len(inputHashes),
+					nonInputHash:            nonInputHash,
+					rawVsClientVisibleEqual: deltaShadowRawClientEquiv,
+				}, ttl)
+			}
+		}
+	}
 	firstTokenMsValue := -1
 	if firstTokenMs != nil {
 		firstTokenMsValue = *firstTokenMs
 	}
+	durationMs := time.Since(startTime).Milliseconds()
+	logOpenAIWSDiagnosticCompleted(openAIWSDiagnosticCompletedLog{
+		RequestID:              requestID,
+		ClientRequestID:        clientRequestID,
+		AccountID:              account.ID,
+		AccountType:            account.Type,
+		ConnProfile:            connProfile,
+		ConnID:                 connID,
+		ConnReused:             lease.Reused(),
+		ResponseID:             strings.TrimSpace(responseID),
+		Model:                  originalModel,
+		UpstreamModel:          mappedModel,
+		Stream:                 reqStream,
+		StoreMode:              storeDecision.StoreMode,
+		StoreEnabled:           storeEnabled,
+		StoreDisabled:          storeDisabled,
+		HasPreviousResponseID:  previousResponseID != "",
+		PreviousResponseIDKind: previousResponseIDKind,
+		PayloadBytes:           resolvePayloadBytes(),
+		DurationMs:             durationMs,
+		FirstTokenMs:           firstTokenMsValue,
+		Events:                 eventCount,
+		TokenEvents:            tokenEventCount,
+		TerminalEvents:         terminalEventCount,
+		BufferedEvents:         bufferedEventCount,
+		BufferedFlushed:        flushedBufferedEventCount,
+		FirstEvent:             firstEventType,
+		LastEvent:              lastEventType,
+		WroteDownstream:        wroteDownstream,
+		ClientDisconnected:     clientDisconnected,
+		HTTPIngressWSOneShot:   httpIngressWSOneShot,
+		InputTokens:            usage.InputTokens,
+		CacheReadTokens:        usage.CacheReadInputTokens,
+		CacheCreationTokens:    usage.CacheCreationInputTokens,
+		OutputTokens:           usage.OutputTokens,
+	})
 	logOpenAIWSModeDebug(
 		"completed account_id=%d conn_id=%s response_id=%s stream=%v duration_ms=%d events=%d token_events=%d terminal_events=%d buffered_events=%d buffered_flushed=%d first_event=%s last_event=%s first_token_ms=%d wrote_downstream=%v client_disconnected=%v http_ingress_ws_one_shot=%v",
 		account.ID,
 		connID,
 		truncateOpenAIWSLogValue(strings.TrimSpace(responseID), openAIWSIDValueMaxLen),
 		reqStream,
-		time.Since(startTime).Milliseconds(),
+		durationMs,
 		eventCount,
 		tokenEventCount,
 		terminalEventCount,
@@ -2907,6 +3383,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		ResponseHeaders:    lease.HandshakeHeaders(),
 		Duration:           time.Since(startTime),
 		FirstTokenMs:       firstTokenMs,
+
+		DeltaShadowOutputHashes:   deltaShadowRawOutputHashes,
+		DeltaShadowOutputShapes:   deltaShadowRawOutputShapes,
+		DeltaShadowOutputCaptured: deltaShadowOutputCaptured,
+		DeltaShadowRawClientEquiv: deltaShadowRawClientEquiv,
 	}, nil
 }
 
@@ -3656,6 +4137,15 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				mappedModelBytes = []byte(mappedModel)
 			}
 		}
+		// TEMP_DIAG(openai_ws_delta_shadow) remove_after_debug=true：捕获 raw upstream output 的
+		// canonical 哈希，并对比改写前后(raw vs client-visible)是否等价；仅度量，不改 payload。
+		deltaShadowEnabled := openAIWSDeltaShadowEnabled()
+		var deltaShadowRawOutputHashes [][32]byte
+		var deltaShadowRawOutputShapes []string
+		deltaShadowOutputCaptured := false
+		deltaShadowRawClientEquiv := true
+		deltaShadowRawDoneItems := map[int]json.RawMessage{}
+		deltaShadowVisibleDoneItems := map[int]json.RawMessage{}
 		for {
 			upstreamMessage, readErr := lease.ReadMessageWithContextTimeout(ctx, s.openAIWSReadTimeout())
 			if readErr != nil {
@@ -3667,9 +4157,26 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				)
 			}
 
-			eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(upstreamMessage)
+			eventType, eventResponseID, responseField := parseOpenAIWSEventEnvelope(upstreamMessage)
 			if responseID == "" && eventResponseID != "" {
 				responseID = eventResponseID
+			}
+			// raw upstream output 在改写(:3928 model/tool 改写)之前捕获，仅终端 completed 事件携带 output 数组。
+			if deltaShadowEnabled && !deltaShadowOutputCaptured && responseField.Exists() {
+				if outItems, ok := openAIWSExtractResponseOutputItems([]byte(responseField.Raw)); ok {
+					if hashes, hok := openAIWSCanonicalItemHashes(outItems); hok {
+						if shapes, sok := openAIWSItemShapes(outItems); sok {
+							deltaShadowRawOutputHashes = hashes
+							deltaShadowRawOutputShapes = shapes
+							deltaShadowOutputCaptured = true
+						}
+					}
+				}
+			}
+			if deltaShadowEnabled {
+				if outputIndex, item, ok := openAIWSExtractOutputItemDoneItem(upstreamMessage); ok {
+					deltaShadowRawDoneItems[outputIndex] = item
+				}
 			}
 			if eventType != "" {
 				eventCount++
@@ -3774,6 +4281,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					}
 				}
 				replayCollector.AddEvent(eventType, upstreamMessage)
+				if deltaShadowEnabled {
+					if outputIndex, item, ok := openAIWSExtractOutputItemDoneItem(upstreamMessage); ok {
+						deltaShadowVisibleDoneItems[outputIndex] = item
+					}
+				}
 				if err := writeClientMessage(upstreamMessage); err != nil {
 					if isOpenAIWSClientDisconnectError(err) {
 						clientDisconnected = true
@@ -3801,6 +4313,33 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				// 客户端已断连时，上游连接的 session 状态不可信，标记 broken 避免回池复用。
 				if clientDisconnected {
 					lease.MarkBroken()
+				}
+				// TEMP_DIAG(openai_ws_delta_shadow): 对比 client-visible(改写后)与 raw output 是否等价。
+				if deltaShadowEnabled && deltaShadowOutputCaptured && !clientDisconnected {
+					responseRaw := gjson.GetBytes(upstreamMessage, "response")
+					if responseRaw.Exists() {
+						if cvItems, ok := openAIWSExtractResponseOutputItems([]byte(responseRaw.Raw)); ok {
+							if cvHashes, hok := openAIWSCanonicalItemHashes(cvItems); hok {
+								deltaShadowRawClientEquiv = openAIWSHashSlicesEqual(deltaShadowRawOutputHashes, cvHashes)
+							}
+						}
+					}
+				}
+				if deltaShadowEnabled && !deltaShadowOutputCaptured && len(deltaShadowRawDoneItems) > 0 {
+					rawItems := openAIWSOrderedOutputDoneItems(deltaShadowRawDoneItems)
+					if hashes, hok := openAIWSCanonicalItemHashes(rawItems); hok {
+						if shapes, sok := openAIWSItemShapes(rawItems); sok {
+							deltaShadowRawOutputHashes = hashes
+							deltaShadowRawOutputShapes = shapes
+							deltaShadowOutputCaptured = true
+							visibleItems := openAIWSOrderedOutputDoneItems(deltaShadowVisibleDoneItems)
+							if cvHashes, vok := openAIWSCanonicalItemHashes(visibleItems); vok {
+								deltaShadowRawClientEquiv = openAIWSHashSlicesEqual(deltaShadowRawOutputHashes, cvHashes)
+							} else {
+								deltaShadowRawClientEquiv = false
+							}
+						}
+					}
 				}
 				firstTokenMsValue := -1
 				if firstTokenMs != nil {
@@ -3852,6 +4391,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					Duration:           time.Since(turnStart),
 					FirstTokenMs:       firstTokenMs,
 					ClientDisconnected: clientDisconnected,
+
+					DeltaShadowOutputHashes:   deltaShadowRawOutputHashes,
+					DeltaShadowOutputShapes:   deltaShadowRawOutputShapes,
+					DeltaShadowOutputCaptured: deltaShadowOutputCaptured,
+					DeltaShadowRawClientEquiv: deltaShadowRawClientEquiv,
 				}
 				if replayInput := replayCollector.Items(); len(replayInput) > 0 {
 					result.wsReplayInput = replayInput
@@ -4055,6 +4599,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		skipBeforeTurn = true
 		return true
 	}
+	// TEMP_DIAG(openai_ws_delta_shadow) remove_after_debug=true：strict-delta shadow 度量（不改 payload）。
+	deltaShadowEnabled := openAIWSDeltaShadowEnabled()
+	deltaShadowReqLogID, _ := openAIWSRequestLogIDs(c)
 	for {
 		if turn > 1 && !skipBeforeTurn && hooks != nil && hooks.BeforeRequest != nil {
 			if err := hooks.BeforeRequest(turn, currentPayload, currentOriginalModel); err != nil {
@@ -4365,8 +4912,41 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			)
 		}
 
+		// TEMP_DIAG(openai_ws_delta_shadow): owner 在发送前评估 strict-delta 候选（只读），
+		// owner 生命周期 = TryBegin → 评估 → (完成后)写状态 → End；non-owner 仅记录 same_session_in_flight。
+		shadowOwner := false
+		if deltaShadowEnabled && stateStore != nil && sessionHash != "" {
+			shadowOwner = stateStore.TrySessionInFlight(groupID, apiKeyID, sessionHash)
+			if !shadowOwner {
+				logOpenAIWSDeltaShadow(openAIWSDeltaShadowLog{
+					RequestID:      deltaShadowReqLogID,
+					AccountID:      account.ID,
+					ConnID:         connID,
+					Candidate:      false,
+					FallbackReason: "same_session_in_flight",
+				})
+			} else if turn > 1 {
+				cached, found := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
+				connMostRecent, _ := stateStore.GetConnLastResponse(connID)
+				logOpenAIWSDeltaShadow(evaluateOpenAIWSDeltaShadowCandidate(openAIWSDeltaShadowInput{
+					RequestID:                deltaShadowReqLogID,
+					AccountID:                account.ID,
+					LeaseConnID:              connID,
+					ConnMostRecentResponseID: connMostRecent,
+					CurrentPayload:           currentPayload,
+					HasFunctionCallOutput:    hasFunctionCallOutput,
+					Cached:                   cached,
+					CachedFound:              found,
+				}))
+			}
+		}
+
 		result, relayErr := sendAndRelay(turn, sessionLease, currentPayload, currentPayloadBytes, currentOriginalModel, currentImageBillingModel, currentImageSizeTier, currentImageInputSize)
 		if relayErr != nil {
+			if shadowOwner {
+				stateStore.EndSessionInFlight(groupID, apiKeyID, sessionHash)
+				shadowOwner = false
+			}
 			lastTurnClean = false
 			if recoverIngressPrevResponseNotFound(relayErr, turn, connID) {
 				continue
@@ -4385,6 +4965,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return finalErr
 		}
 		if result == nil {
+			if shadowOwner {
+				stateStore.EndSessionInFlight(groupID, apiKeyID, sessionHash)
+				shadowOwner = false
+			}
 			return errors.New("websocket turn result is nil")
 		}
 		turnRetry = 0
@@ -4430,6 +5014,45 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			if stateStore != nil && storeDisabled && sessionHash != "" && !result.ClientDisconnected {
 				stateStore.BindSessionConn(groupID, sessionHash, connID, s.openAIWSSessionStickyTTL())
+			}
+			// TEMP_DIAG(openai_ws_delta_shadow): owner 在干净完成且捕获到 output 时写会话上下文指纹，
+			// 用 input_N(本轮实际发送的 full input) ++ raw output_N 构成 materialized context。
+			if shadowOwner {
+				if deltaShadowEnabled && stateStore != nil && responseID != "" && connID != "" &&
+					!result.ClientDisconnected && result.DeltaShadowOutputCaptured {
+					if inputItems, _, ierr := openAIWSExtractNormalizedInputSequence(currentPayload); ierr == nil {
+						if inputHashes, hok := openAIWSCanonicalItemHashes(inputItems); hok {
+							var materializedShapes []string
+							if inputShapes, sok := openAIWSItemShapes(inputItems); sok && len(result.DeltaShadowOutputShapes) == len(result.DeltaShadowOutputHashes) {
+								materializedShapes = make([]string, 0, len(inputShapes)+len(result.DeltaShadowOutputShapes))
+								materializedShapes = append(materializedShapes, inputShapes...)
+								materializedShapes = append(materializedShapes, result.DeltaShadowOutputShapes...)
+							}
+							materialized := make([][32]byte, 0, len(inputHashes)+len(result.DeltaShadowOutputHashes))
+							materialized = append(materialized, inputHashes...)
+							materialized = append(materialized, result.DeltaShadowOutputHashes...)
+							nonInputHash, _ := openAIWSNonInputHash(currentPayload)
+							ttl := s.openAIWSSessionStickyTTL()
+							stateStore.BindConnLastResponse(connID, responseID, ttl)
+							stateStore.BindSessionContext(groupID, apiKeyID, sessionHash, openAIWSSessionContextValue{
+								accountID:               account.ID,
+								connID:                  connID,
+								lastResponseID:          responseID,
+								materializedHashes:      materialized,
+								materializedShapes:      materializedShapes,
+								materializedCount:       len(materialized),
+								inputCount:              len(inputHashes),
+								nonInputHash:            nonInputHash,
+								rawVsClientVisibleEqual: result.DeltaShadowRawClientEquiv,
+							}, ttl)
+						}
+					}
+				}
+				stateStore.EndSessionInFlight(groupID, apiKeyID, sessionHash)
+				shadowOwner = false
+			}
+			if connID != "" {
+				preferredConnID = connID
 			}
 		}
 

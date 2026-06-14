@@ -39,6 +39,30 @@ type openAIWSSessionConnBinding struct {
 	expiresAt time.Time
 }
 
+// openAIWSSessionContextValue 是 strict-delta shadow 阶段的会话上下文指纹。
+// 仅保存 canonical 哈希与必要 id/count，绝不保存请求/响应原文（隐私 + 内存有界）。
+type openAIWSSessionContextValue struct {
+	accountID               int64
+	connID                  string
+	lastResponseID          string
+	materializedHashes      [][32]byte // canonical hash of (input_N items ++ raw output_N items)
+	materializedShapes      []string   // no raw values; JSON path/type shape for mismatch diagnostics
+	materializedCount       int        // = len(input_N) + len(raw output_N)
+	inputCount              int        // = len(input_N); 用于区分 break 落在 input 前缀还是 output 边界
+	nonInputHash            [32]byte
+	rawVsClientVisibleEqual bool
+}
+
+type openAIWSSessionContextBinding struct {
+	value     openAIWSSessionContextValue
+	expiresAt time.Time
+}
+
+type openAIWSConnLastResponseBinding struct {
+	responseID string
+	expiresAt  time.Time
+}
+
 // OpenAIWSStateStore 管理 WSv2 的粘连状态。
 // - response_id -> account_id 用于续链路由
 // - response_id -> conn_id 用于连接内上下文复用
@@ -61,6 +85,19 @@ type OpenAIWSStateStore interface {
 	BindSessionConn(groupID int64, sessionHash, connID string, ttl time.Duration)
 	GetSessionConn(groupID int64, sessionHash string) (string, bool)
 	DeleteSessionConn(groupID int64, sessionHash string)
+
+	// strict-delta shadow 阶段状态。
+	BindSessionContext(groupID int64, apiKeyID int64, sessionHash string, value openAIWSSessionContextValue, ttl time.Duration)
+	GetSessionContext(groupID int64, apiKeyID int64, sessionHash string) (openAIWSSessionContextValue, bool)
+	DeleteSessionContext(groupID int64, apiKeyID int64, sessionHash string)
+
+	BindConnLastResponse(connID, responseID string, ttl time.Duration)
+	GetConnLastResponse(connID string) (string, bool)
+	DeleteConnLastResponse(connID string)
+
+	// 原子 per-session in-flight 标记，保证 shadow inert：仅 owner 读写状态，non-owner 不等待。
+	TrySessionInFlight(groupID int64, apiKeyID int64, sessionHash string) bool
+	EndSessionInFlight(groupID int64, apiKeyID int64, sessionHash string)
 }
 
 type defaultOpenAIWSStateStore struct {
@@ -75,6 +112,13 @@ type defaultOpenAIWSStateStore struct {
 	sessionToConnMu      sync.RWMutex
 	sessionToConn        map[string]openAIWSSessionConnBinding
 
+	sessionContextMu   sync.RWMutex
+	sessionContext     map[string]openAIWSSessionContextBinding
+	connLastResponseMu sync.RWMutex
+	connLastResponse   map[string]openAIWSConnLastResponseBinding
+	sessionInFlightMu  sync.Mutex
+	sessionInFlight    map[string]struct{}
+
 	lastCleanupUnixNano atomic.Int64
 }
 
@@ -86,6 +130,9 @@ func NewOpenAIWSStateStore(cache GatewayCache) OpenAIWSStateStore {
 		responseToConn:     make(map[string]openAIWSConnBinding, 256),
 		sessionToTurnState: make(map[string]openAIWSTurnStateBinding, 256),
 		sessionToConn:      make(map[string]openAIWSSessionConnBinding, 256),
+		sessionContext:     make(map[string]openAIWSSessionContextBinding, 256),
+		connLastResponse:   make(map[string]openAIWSConnLastResponseBinding, 256),
+		sessionInFlight:    make(map[string]struct{}, 256),
 	}
 	store.lastCleanupUnixNano.Store(time.Now().UnixNano())
 	return store
@@ -312,6 +359,119 @@ func (s *defaultOpenAIWSStateStore) DeleteSessionConn(groupID int64, sessionHash
 	s.sessionToConnMu.Unlock()
 }
 
+func (s *defaultOpenAIWSStateStore) BindSessionContext(groupID int64, apiKeyID int64, sessionHash string, value openAIWSSessionContextValue, ttl time.Duration) {
+	key := openAIWSSessionContextKey(groupID, apiKeyID, sessionHash)
+	if key == "" {
+		return
+	}
+	ttl = normalizeOpenAIWSTTL(ttl)
+	s.maybeCleanup()
+
+	s.sessionContextMu.Lock()
+	ensureBindingCapacity(s.sessionContext, key, openAIWSStateStoreMaxEntriesPerMap)
+	s.sessionContext[key] = openAIWSSessionContextBinding{
+		value:     value,
+		expiresAt: time.Now().Add(ttl),
+	}
+	s.sessionContextMu.Unlock()
+}
+
+func (s *defaultOpenAIWSStateStore) GetSessionContext(groupID int64, apiKeyID int64, sessionHash string) (openAIWSSessionContextValue, bool) {
+	key := openAIWSSessionContextKey(groupID, apiKeyID, sessionHash)
+	if key == "" {
+		return openAIWSSessionContextValue{}, false
+	}
+	s.maybeCleanup()
+
+	now := time.Now()
+	s.sessionContextMu.RLock()
+	binding, ok := s.sessionContext[key]
+	s.sessionContextMu.RUnlock()
+	if !ok || now.After(binding.expiresAt) {
+		return openAIWSSessionContextValue{}, false
+	}
+	return binding.value, true
+}
+
+func (s *defaultOpenAIWSStateStore) DeleteSessionContext(groupID int64, apiKeyID int64, sessionHash string) {
+	key := openAIWSSessionContextKey(groupID, apiKeyID, sessionHash)
+	if key == "" {
+		return
+	}
+	s.sessionContextMu.Lock()
+	delete(s.sessionContext, key)
+	s.sessionContextMu.Unlock()
+}
+
+func (s *defaultOpenAIWSStateStore) BindConnLastResponse(connID, responseID string, ttl time.Duration) {
+	conn := strings.TrimSpace(connID)
+	id := normalizeOpenAIWSResponseID(responseID)
+	if conn == "" || id == "" {
+		return
+	}
+	ttl = normalizeOpenAIWSTTL(ttl)
+	s.maybeCleanup()
+
+	s.connLastResponseMu.Lock()
+	ensureBindingCapacity(s.connLastResponse, conn, openAIWSStateStoreMaxEntriesPerMap)
+	s.connLastResponse[conn] = openAIWSConnLastResponseBinding{
+		responseID: id,
+		expiresAt:  time.Now().Add(ttl),
+	}
+	s.connLastResponseMu.Unlock()
+}
+
+func (s *defaultOpenAIWSStateStore) GetConnLastResponse(connID string) (string, bool) {
+	conn := strings.TrimSpace(connID)
+	if conn == "" {
+		return "", false
+	}
+	s.maybeCleanup()
+
+	now := time.Now()
+	s.connLastResponseMu.RLock()
+	binding, ok := s.connLastResponse[conn]
+	s.connLastResponseMu.RUnlock()
+	if !ok || now.After(binding.expiresAt) || strings.TrimSpace(binding.responseID) == "" {
+		return "", false
+	}
+	return binding.responseID, true
+}
+
+func (s *defaultOpenAIWSStateStore) DeleteConnLastResponse(connID string) {
+	conn := strings.TrimSpace(connID)
+	if conn == "" {
+		return
+	}
+	s.connLastResponseMu.Lock()
+	delete(s.connLastResponse, conn)
+	s.connLastResponseMu.Unlock()
+}
+
+func (s *defaultOpenAIWSStateStore) TrySessionInFlight(groupID int64, apiKeyID int64, sessionHash string) bool {
+	key := openAIWSSessionContextKey(groupID, apiKeyID, sessionHash)
+	if key == "" {
+		return false
+	}
+	s.sessionInFlightMu.Lock()
+	defer s.sessionInFlightMu.Unlock()
+	if _, exists := s.sessionInFlight[key]; exists {
+		return false
+	}
+	s.sessionInFlight[key] = struct{}{}
+	return true
+}
+
+func (s *defaultOpenAIWSStateStore) EndSessionInFlight(groupID int64, apiKeyID int64, sessionHash string) {
+	key := openAIWSSessionContextKey(groupID, apiKeyID, sessionHash)
+	if key == "" {
+		return
+	}
+	s.sessionInFlightMu.Lock()
+	delete(s.sessionInFlight, key)
+	s.sessionInFlightMu.Unlock()
+}
+
 func (s *defaultOpenAIWSStateStore) maybeCleanup() {
 	if s == nil {
 		return
@@ -341,6 +501,46 @@ func (s *defaultOpenAIWSStateStore) maybeCleanup() {
 	s.sessionToConnMu.Lock()
 	cleanupExpiredSessionConnBindings(s.sessionToConn, now, openAIWSStateStoreCleanupMaxPerMap)
 	s.sessionToConnMu.Unlock()
+
+	s.sessionContextMu.Lock()
+	cleanupExpiredSessionContextBindings(s.sessionContext, now, openAIWSStateStoreCleanupMaxPerMap)
+	s.sessionContextMu.Unlock()
+
+	s.connLastResponseMu.Lock()
+	cleanupExpiredConnLastResponseBindings(s.connLastResponse, now, openAIWSStateStoreCleanupMaxPerMap)
+	s.connLastResponseMu.Unlock()
+}
+
+func cleanupExpiredSessionContextBindings(bindings map[string]openAIWSSessionContextBinding, now time.Time, maxScan int) {
+	if len(bindings) == 0 || maxScan <= 0 {
+		return
+	}
+	scanned := 0
+	for key, binding := range bindings {
+		if now.After(binding.expiresAt) {
+			delete(bindings, key)
+		}
+		scanned++
+		if scanned >= maxScan {
+			break
+		}
+	}
+}
+
+func cleanupExpiredConnLastResponseBindings(bindings map[string]openAIWSConnLastResponseBinding, now time.Time, maxScan int) {
+	if len(bindings) == 0 || maxScan <= 0 {
+		return
+	}
+	scanned := 0
+	for key, binding := range bindings {
+		if now.After(binding.expiresAt) {
+			delete(bindings, key)
+		}
+		scanned++
+		if scanned >= maxScan {
+			break
+		}
+	}
 }
 
 func cleanupExpiredAccountBindings(bindings map[string]openAIWSAccountBinding, now time.Time, maxScan int) {
@@ -459,6 +659,15 @@ func openAIWSSessionTurnStateKey(groupID int64, sessionHash string) string {
 		return ""
 	}
 	return fmt.Sprintf("%d:%s", groupID, hash)
+}
+
+// openAIWSSessionContextKey 显式包含 apiKeyID（sessionHash 虽已 api-key-scoped，仍按 plan 显式区分）。
+func openAIWSSessionContextKey(groupID int64, apiKeyID int64, sessionHash string) string {
+	hash := strings.TrimSpace(sessionHash)
+	if hash == "" {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d:%s", groupID, apiKeyID, hash)
 }
 
 func withOpenAIWSStateStoreRedisTimeout(ctx context.Context) (context.Context, context.CancelFunc) {

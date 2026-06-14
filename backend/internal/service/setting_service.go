@@ -159,6 +159,8 @@ type cachedPlatformModelRoutingConfig struct {
 
 var platformModelRoutingConfigCache atomic.Value // *cachedPlatformModelRoutingConfig
 var platformModelRoutingConfigSF singleflight.Group
+var platformDefaultAccountModelConfigCache atomic.Value // *cachedPlatformModelRoutingConfig
+var platformDefaultAccountModelConfigSF singleflight.Group
 
 const platformModelRoutingConfigCacheTTL = 60 * time.Second
 const platformModelRoutingConfigErrorTTL = 5 * time.Second
@@ -2461,6 +2463,11 @@ func (s *SettingService) refreshCachedSettingsWithOptions(settings *SystemSettin
 			expiresAt: time.Now().Add(platformModelRoutingConfigCacheTTL).UnixNano(),
 		})
 	}
+	platformDefaultAccountModelConfigSF.Forget(SettingKeyPlatformDefaultAccountModelConfig)
+	platformDefaultAccountModelConfigCache.Store(&cachedPlatformModelRoutingConfig{
+		config:    clonePlatformModelConfigMap(normalizePlatformDefaultAccountModelConfig(settings.PlatformDefaultAccountModelConfig)),
+		expiresAt: time.Now().Add(platformModelRoutingConfigCacheTTL).UnixNano(),
+	})
 	s.antigravityUAVersionSF.Forget("antigravity_user_agent_version")
 	antigravityUserAgentVersion := antigravity.NormalizeUserAgentVersion(settings.AntigravityUserAgentVersion)
 	if antigravityUserAgentVersion == "" {

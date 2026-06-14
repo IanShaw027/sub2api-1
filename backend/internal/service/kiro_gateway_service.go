@@ -420,7 +420,7 @@ func resolveKiroRequestedModelWithRouting(ctx context.Context, settingService *S
 	if requestedModel == "" {
 		return "", nil
 	}
-	if _, hasSystemConfig := platformModelRoutingConfigForAccount(ctx, settingService, account); !hasSystemConfig {
+	if !hasModelRoutingConfigForAccount(ctx, settingService, account) {
 		return resolveKiroRequestedModel(account, requestedModel)
 	}
 	routing := ResolveEffectiveModelRouting(ctx, settingService, account, requestedModel, false)
