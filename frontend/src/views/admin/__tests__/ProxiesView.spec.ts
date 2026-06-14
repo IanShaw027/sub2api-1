@@ -20,6 +20,7 @@ vi.mock('@/api/admin', () => ({
       batchDelete: vi.fn(),
       exportData: vi.fn(),
       getProxyAccounts: vi.fn(),
+      getAllWithCount: vi.fn().mockResolvedValue([]),
     },
   },
 }))

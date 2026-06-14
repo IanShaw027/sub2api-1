@@ -205,4 +205,72 @@ describe('KeyUsageView daily detail', () => {
 
     wrapper.unmount()
   })
+
+  it('does not start ring animation after unmounting while success ticks are pending', async () => {
+    const requestFrame = vi.fn((_cb: FrameRequestCallback) => 1)
+    vi.stubGlobal('requestAnimationFrame', requestFrame)
+    let resolveFetch!: (response: { ok: boolean; json: () => Promise<unknown> }) => void
+    let resolveJson!: (body: unknown) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => {
+      resolveFetch = resolve
+    })))
+
+    const wrapper = mount(KeyUsageView, {
+      global: {
+        stubs: {
+          RouterLink: { template: '<a><slot /></a>' },
+          LocaleSwitcher: true,
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.find('input').setValue('sk-test-key')
+    await wrapper.find('input').trigger('keydown.enter')
+    resolveFetch({
+      ok: true,
+      json: () => new Promise(resolve => {
+        resolveJson = resolve
+      }),
+    })
+    await Promise.resolve()
+    resolveJson({
+      mode: 'quota_limited',
+      isValid: true,
+      status: 'active',
+      quota: {
+        limit: 10,
+        used: 1,
+        remaining: 9,
+        unit: 'USD',
+      },
+      usage: {
+        today: {
+          requests: 1,
+          input_tokens: 10,
+          output_tokens: 20,
+          cache_creation_tokens: 0,
+          cache_read_tokens: 0,
+          total_tokens: 30,
+          actual_cost: 0.01,
+        },
+        total: {
+          requests: 12,
+          input_tokens: 100,
+          output_tokens: 200,
+          cache_creation_tokens: 10,
+          cache_read_tokens: 30,
+          total_tokens: 340,
+          actual_cost: 0.12,
+        },
+      },
+    })
+    await Promise.resolve()
+
+    wrapper.unmount()
+    await nextTick()
+    await nextTick()
+
+    expect(requestFrame).not.toHaveBeenCalled()
+  })
 })

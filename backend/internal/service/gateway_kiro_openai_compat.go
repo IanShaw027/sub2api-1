@@ -25,12 +25,12 @@ func (s *GatewayService) forwardKiroAnthropicCapture(
 		return nil, nil, errors.New("kiro gateway service is not configured")
 	}
 
-	parsed, err := ParseGatewayRequest(anthropicBody, domain.PlatformAnthropic)
+	parsed, err := ParseGatewayRequest(NewRequestBodyRef(anthropicBody), domain.PlatformAnthropic)
 	if err != nil || parsed == nil {
 		parsed = &ParsedRequest{}
 	}
 	parsed.Model = strings.TrimSpace(model)
-	parsed.Body = anthropicBody
+	parsed.Body = NewRequestBodyRef(anthropicBody)
 	parsed.Stream = true
 	applyKiroRequestScopeFromContext(c, parsed)
 	anthropicBody, parsed = ensureKiroOpenAICompatSessionMetadata(sourceBody, c, parsed, anthropicBody)
@@ -94,7 +94,7 @@ func ensureKiroOpenAICompatSessionMetadata(
 	if !changed {
 		return anthropicBody, parsed
 	}
-	parsed.Body = updatedBody
+	parsed.Body = NewRequestBodyRef(updatedBody)
 	parsed.MetadataUserID = metadataUserID
 	return updatedBody, parsed
 }

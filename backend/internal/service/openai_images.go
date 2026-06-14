@@ -1001,7 +1001,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
 	}
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+		respBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
@@ -1719,22 +1719,23 @@ func resolveOpenAIImageBytes(
 	profile *OpenAIWebProfile,
 	conversationID string,
 	pointer openAIImagePointerInfo,
+	errorBodyReadLimit int64,
 ) ([]byte, error) {
 	headers = applyOpenAIConversationPageReferer(headers, conversationID)
 	if normalized := normalizeOpenAIImageBase64(pointer.B64JSON); normalized != "" {
 		return base64.StdEncoding.DecodeString(normalized)
 	}
 	if downloadURL := strings.TrimSpace(pointer.DownloadURL); downloadURL != "" {
-		return downloadOpenAIImageBytes(ctx, client, headers, profile, downloadURL)
+		return downloadOpenAIImageBytes(ctx, client, headers, profile, downloadURL, errorBodyReadLimit)
 	}
 	if strings.TrimSpace(pointer.Pointer) == "" {
 		return nil, fmt.Errorf("image asset is missing pointer, url, and base64 data")
 	}
-	downloadURL, err := fetchOpenAIImageDownloadURL(ctx, client, headers, profile, conversationID, pointer.Pointer)
+	downloadURL, err := fetchOpenAIImageDownloadURL(ctx, client, headers, profile, conversationID, pointer.Pointer, errorBodyReadLimit)
 	if err != nil {
 		return nil, err
 	}
-	return downloadOpenAIImageBytes(ctx, client, headers, profile, downloadURL)
+	return downloadOpenAIImageBytes(ctx, client, headers, profile, downloadURL, errorBodyReadLimit)
 }
 
 func normalizeOpenAIImageBase64(raw string) string {
@@ -1840,6 +1841,7 @@ func fetchOpenAIImageDownloadURL(
 	profile *OpenAIWebProfile,
 	conversationID string,
 	pointer string,
+	errorBodyReadLimit int64,
 ) (string, error) {
 	url := ""
 	allowConversationRetry := false
@@ -1878,7 +1880,7 @@ func fetchOpenAIImageDownloadURL(
 		} else if resp.IsSuccessState() && strings.TrimSpace(result.DownloadURL) != "" {
 			return strings.TrimSpace(result.DownloadURL), nil
 		} else {
-			statusErr := newOpenAIImageStatusError(resp, "fetch image download url failed")
+			statusErr := newOpenAIImageStatusError(resp, "fetch image download url failed", errorBodyReadLimit)
 			if !allowConversationRetry || !isOpenAIImageTransientConversationNotFoundError(statusErr) {
 				return "", statusErr
 			}
@@ -1903,7 +1905,7 @@ func fetchOpenAIImageDownloadURL(
 	return "", lastErr
 }
 
-func downloadOpenAIImageBytes(ctx context.Context, client *req.Client, headers http.Header, profile *OpenAIWebProfile, downloadURL string) ([]byte, error) {
+func downloadOpenAIImageBytes(ctx context.Context, client *req.Client, headers http.Header, profile *OpenAIWebProfile, downloadURL string, errorBodyReadLimit int64) ([]byte, error) {
 	request := client.R().
 		SetContext(ctx).
 		DisableAutoReadResponse()
@@ -1937,7 +1939,7 @@ func downloadOpenAIImageBytes(ctx context.Context, client *req.Client, headers h
 		}
 	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, newOpenAIImageStatusError(resp, "download image bytes failed")
+		return nil, newOpenAIImageStatusError(resp, "download image bytes failed", errorBodyReadLimit)
 	}
 	data, err := readAllWithLimitDetection(resp.Body, int64(openAIImageMaxDownloadBytes))
 	if err != nil {
@@ -1952,7 +1954,7 @@ func downloadOpenAIImageReferenceBytes(ctx context.Context, client *req.Client, 
 		return nil, fmt.Errorf("image url is required")
 	}
 	if strings.HasPrefix(trimmed, openAIChatGPTStartURL) {
-		return downloadOpenAIImageBytes(ctx, client, headers, profile, trimmed)
+		return downloadOpenAIImageBytes(ctx, client, headers, profile, trimmed, openAIUpstreamErrorBodyReadLimit)
 	}
 
 	requestHeaders := cloneHTTPHeader(headers)
@@ -1978,7 +1980,7 @@ func downloadOpenAIImageReferenceBytes(ctx context.Context, client *req.Client, 
 		}
 	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, newOpenAIImageStatusError(resp, "download image bytes failed")
+		return nil, newOpenAIImageStatusError(resp, "download image bytes failed", openAIUpstreamErrorBodyReadLimit)
 	}
 	data, err := readAllWithLimitDetection(resp.Body, int64(openAIImageMaxDownloadBytes))
 	if err != nil {
@@ -2049,7 +2051,7 @@ func (e *openAIImageStatusError) Error() string {
 	return "openai image backend request failed"
 }
 
-func newOpenAIImageStatusError(resp *req.Response, fallback string) error {
+func newOpenAIImageStatusError(resp *req.Response, fallback string, errorBodyReadLimit int64) error {
 	if resp == nil {
 		if strings.TrimSpace(fallback) == "" {
 			fallback = "openai image backend request failed"
@@ -2070,7 +2072,10 @@ func newOpenAIImageStatusError(resp *req.Response, fallback string) error {
 			requestURL = resp.Request.URL.String()
 		}
 		if resp.Body != nil {
-			body, _ = io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+			if errorBodyReadLimit <= 0 {
+				errorBodyReadLimit = openAIUpstreamErrorBodyReadLimit
+			}
+			body, _ = io.ReadAll(io.LimitReader(resp.Body, errorBodyReadLimit))
 			_ = resp.Body.Close()
 		}
 	}
@@ -2541,7 +2546,7 @@ func initializeOpenAIImageConversation(ctx context.Context, client *req.Client, 
 		return err
 	}
 	if !resp.IsSuccessState() {
-		return newOpenAIImageStatusError(resp, "conversation init failed")
+		return newOpenAIImageStatusError(resp, "conversation init failed", openAIUpstreamErrorBodyReadLimit)
 	}
 	if service != nil {
 		service.applyOpenAIBackendAPIResponseState(ctx, account, profile, headers, resp.Response)
@@ -2593,7 +2598,7 @@ func fetchOpenAIChatRequirements(ctx context.Context, client *req.Client, header
 		_ = json.Unmarshal(body, &prepareResult)
 	}
 	if !resp.IsSuccessState() {
-		return nil, newOpenAIImageStatusError(resp, "chat-requirements prepare failed")
+		return nil, newOpenAIImageStatusError(resp, "chat-requirements prepare failed", openAIUpstreamErrorBodyReadLimit)
 	}
 	if service != nil {
 		service.applyOpenAIBackendAPIResponseState(ctx, account, profile, headers, resp.Response)
@@ -2640,7 +2645,7 @@ func fetchOpenAIChatRequirements(ctx context.Context, client *req.Client, header
 		_ = resp.Body.Close()
 	}
 	if !resp.IsSuccessState() {
-		return nil, newOpenAIImageStatusError(resp, "chat-requirements finalize failed")
+		return nil, newOpenAIImageStatusError(resp, "chat-requirements finalize failed", openAIUpstreamErrorBodyReadLimit)
 	}
 	if service != nil {
 		service.applyOpenAIBackendAPIResponseState(ctx, account, profile, headers, resp.Response)
@@ -2709,7 +2714,7 @@ func prepareOpenAIImageConversation(
 		return "", err
 	}
 	if !resp.IsSuccessState() {
-		return "", newOpenAIImageStatusError(resp, "conversation prepare failed")
+		return "", newOpenAIImageStatusError(resp, "conversation prepare failed", openAIUpstreamErrorBodyReadLimit)
 	}
 	if resp != nil && resp.Body != nil {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -2773,7 +2778,7 @@ func uploadOpenAIImageFiles(ctx context.Context, client *req.Client, headers htt
 				service.applyOpenAIBackendAPIResponseState(ctx, account, profile, headers, createResp.Response)
 			}
 			if !createResp.IsSuccessState() {
-				return nil, newOpenAIImageStatusError(createResp, "create upload slot failed")
+				return nil, newOpenAIImageStatusError(createResp, "create upload slot failed", openAIUpstreamErrorBodyReadLimit)
 			}
 			var created struct {
 				Status    string `json:"status"`
@@ -2807,7 +2812,7 @@ func uploadOpenAIImageFiles(ctx context.Context, client *req.Client, headers htt
 				_ = putResp.Body.Close()
 			}
 			if putResp.StatusCode < 200 || putResp.StatusCode >= 300 {
-				return nil, newOpenAIImageStatusError(putResp, "upload image bytes failed")
+				return nil, newOpenAIImageStatusError(putResp, "upload image bytes failed", openAIUpstreamErrorBodyReadLimit)
 			}
 
 			processPayload := map[string]any{
@@ -2848,7 +2853,7 @@ func uploadOpenAIImageFiles(ctx context.Context, client *req.Client, headers htt
 					service.applyOpenAIBackendAPIResponseState(ctx, account, profile, headers, processResp.Response)
 				}
 				if !processResp.IsSuccessState() {
-					return nil, newOpenAIImageStatusError(processResp, "process upload stream failed")
+					return nil, newOpenAIImageStatusError(processResp, "process upload stream failed", openAIUpstreamErrorBodyReadLimit)
 				}
 				libraryFileID, err := parseOpenAIProcessedUploadLibraryFileID(body)
 				if err != nil {
@@ -2908,7 +2913,7 @@ func uploadOpenAIImageMaskFile(ctx context.Context, client *req.Client, headers 
 			service.applyOpenAIBackendAPIResponseState(ctx, account, profile, headers, createResp.Response)
 		}
 		if !createResp.IsSuccessState() {
-			return "", newOpenAIImageStatusError(createResp, "create mask upload slot failed")
+			return "", newOpenAIImageStatusError(createResp, "create mask upload slot failed", openAIUpstreamErrorBodyReadLimit)
 		}
 		var created struct {
 			FileID    string `json:"file_id"`
@@ -2941,7 +2946,7 @@ func uploadOpenAIImageMaskFile(ctx context.Context, client *req.Client, headers 
 			_ = putResp.Body.Close()
 		}
 		if putResp.StatusCode < 200 || putResp.StatusCode >= 300 {
-			return "", newOpenAIImageStatusError(putResp, "upload mask bytes failed")
+			return "", newOpenAIImageStatusError(putResp, "upload mask bytes failed", openAIUpstreamErrorBodyReadLimit)
 		}
 		processPayload := map[string]any{
 			"file_id":             created.FileID,
@@ -2970,7 +2975,7 @@ func uploadOpenAIImageMaskFile(ctx context.Context, client *req.Client, headers 
 			service.applyOpenAIBackendAPIResponseState(ctx, account, profile, headers, processResp.Response)
 		}
 		if !processResp.IsSuccessState() {
-			return "", newOpenAIImageStatusError(processResp, "process mask upload failed")
+			return "", newOpenAIImageStatusError(processResp, "process mask upload failed", openAIUpstreamErrorBodyReadLimit)
 		}
 		return created.FileID, nil
 	}
@@ -3114,7 +3119,7 @@ func fetchOpenAIConversationParentMessageID(
 		service.applyOpenAIBackendAPIResponseState(ctx, account, profile, headers, resp.Response)
 	}
 	if !resp.IsSuccessState() {
-		return "", newOpenAIImageStatusError(resp, "fetch conversation state failed")
+		return "", newOpenAIImageStatusError(resp, "fetch conversation state failed", openAIUpstreamErrorBodyReadLimit)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -3456,7 +3461,7 @@ func pollOpenAIImageConversation(ctx context.Context, client *req.Client, header
 				return pointers, nil
 			}
 		} else {
-			statusErr := newOpenAIImageStatusError(resp, "conversation poll failed")
+			statusErr := newOpenAIImageStatusError(resp, "conversation poll failed", openAIUpstreamErrorBodyReadLimit)
 			if isOpenAIImageTransientConversationNotFoundError(statusErr) {
 				lastErr = statusErr
 				goto waitNextPoll
@@ -3491,7 +3496,7 @@ func buildOpenAIImageResponse(
 ) ([]byte, int, error) {
 	results := make([]openAIResponsesImageResult, 0, len(pointers))
 	for _, pointer := range pointers {
-		data, err := resolveOpenAIImageBytes(ctx, client, headers, profile, conversationID, pointer)
+		data, err := resolveOpenAIImageBytes(ctx, client, headers, profile, conversationID, pointer, openAIUpstreamErrorBodyReadLimit)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -3551,7 +3556,7 @@ func (s *OpenAIGatewayService) writeOpenAIImagesLegacyBridgeStreamingResponse(
 }
 
 func handleOpenAIImageBackendError(resp *req.Response) error {
-	return newOpenAIImageStatusError(resp, "backend-api request failed")
+	return newOpenAIImageStatusError(resp, "backend-api request failed", openAIUpstreamErrorBodyReadLimit)
 }
 
 func newOpenAIImageSyntheticStatusError(statusCode int, message string, requestURL string) *openAIImageStatusError {

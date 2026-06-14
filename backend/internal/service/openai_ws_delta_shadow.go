@@ -76,11 +76,11 @@ var openAIWSNonInputDenylist = []string{
 // in text must change the hash. Only confirmed envelope-volatile id/status are dropped,
 // and only for known volatile item types.
 func openAIWSCanonicalItemHash(item []byte) ([32]byte, bool) {
-	var v interface{}
+	var v any
 	if err := json.Unmarshal(item, &v); err != nil {
 		return [32]byte{}, false
 	}
-	if obj, ok := v.(map[string]interface{}); ok {
+	if obj, ok := v.(map[string]any); ok {
 		openAIWSNormalizeCanonicalItemObject(obj)
 	}
 	canon, err := openAIWSCanonicalJSON(v)
@@ -90,7 +90,7 @@ func openAIWSCanonicalItemHash(item []byte) ([32]byte, bool) {
 	return sha256.Sum256(canon), true
 }
 
-func openAIWSNormalizeCanonicalItemObject(obj map[string]interface{}) {
+func openAIWSNormalizeCanonicalItemObject(obj map[string]any) {
 	itemType, _ := obj["type"].(string)
 	itemType = strings.TrimSpace(itemType)
 	if itemType != "" {
@@ -108,8 +108,8 @@ func openAIWSNormalizeCanonicalItemObject(obj map[string]interface{}) {
 	}
 }
 
-func openAIWSDropTurnIDMetadata(obj map[string]interface{}) {
-	meta, ok := obj["metadata"].(map[string]interface{})
+func openAIWSDropTurnIDMetadata(obj map[string]any) {
+	meta, ok := obj["metadata"].(map[string]any)
 	if !ok {
 		return
 	}
@@ -119,20 +119,20 @@ func openAIWSDropTurnIDMetadata(obj map[string]interface{}) {
 	}
 }
 
-func openAIWSDropEmptyArrayField(obj map[string]interface{}, key string) {
-	arr, ok := obj[key].([]interface{})
+func openAIWSDropEmptyArrayField(obj map[string]any, key string) {
+	arr, ok := obj[key].([]any)
 	if ok && len(arr) == 0 {
 		delete(obj, key)
 	}
 }
 
-func openAIWSNormalizeMessageContentEnvelope(obj map[string]interface{}) {
-	content, ok := obj["content"].([]interface{})
+func openAIWSNormalizeMessageContentEnvelope(obj map[string]any) {
+	content, ok := obj["content"].([]any)
 	if !ok {
 		return
 	}
 	for _, raw := range content {
-		contentObj, ok := raw.(map[string]interface{})
+		contentObj, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -169,7 +169,7 @@ func openAIWSItemShapes(items []json.RawMessage) ([]string, bool) {
 }
 
 func openAIWSItemShape(item []byte) (string, bool) {
-	var v interface{}
+	var v any
 	if err := json.Unmarshal(item, &v); err != nil {
 		return "", false
 	}
@@ -187,9 +187,9 @@ func openAIWSItemShape(item []byte) (string, bool) {
 	return "type=" + openAIWSSafeShapeToken(itemType) + ";paths=" + strings.Join(paths, "|"), true
 }
 
-func openAIWSCollectJSONShape(v interface{}, path string, out *[]string) {
+func openAIWSCollectJSONShape(v any, path string, out *[]string) {
 	switch t := v.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		if len(t) == 0 {
 			*out = append(*out, path+"{}")
 			return
@@ -202,7 +202,7 @@ func openAIWSCollectJSONShape(v interface{}, path string, out *[]string) {
 		for _, k := range keys {
 			openAIWSCollectJSONShape(t[k], path+"."+openAIWSSafeShapeToken(k), out)
 		}
-	case []interface{}:
+	case []any:
 		if len(t) == 0 {
 			*out = append(*out, path+"[]:empty")
 			return
@@ -250,15 +250,15 @@ func openAIWSSafeShapeToken(value string) string {
 	for _, r := range value {
 		switch {
 		case r >= 'a' && r <= 'z':
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		case r >= 'A' && r <= 'Z':
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		case r >= '0' && r <= '9':
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		case r == '_' || r == '-' || r == '.':
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		default:
-			b.WriteByte('_')
+			_ = b.WriteByte('_')
 		}
 	}
 	return b.String()
@@ -279,7 +279,7 @@ func openAIWSItemTypeFromShape(shape string) string {
 // openAIWSNonInputHash hashes the request payload minus the denylist fields, returning the
 // hash and the set of denylist keys that were actually present (for audit).
 func openAIWSNonInputHash(payload []byte) ([32]byte, []string) {
-	var v map[string]interface{}
+	var v map[string]any
 	if err := json.Unmarshal(payload, &v); err != nil {
 		return [32]byte{}, nil
 	}
@@ -298,9 +298,9 @@ func openAIWSNonInputHash(payload []byte) ([32]byte, []string) {
 }
 
 // openAIWSCanonicalJSON marshals with recursively sorted object keys. Go's json.Marshal
-// already sorts map[string]interface{} keys, so unmarshal→marshal is sufficient; this
+// already sorts object keys, so unmarshal→marshal is sufficient; this
 // wrapper exists to make the intent explicit and centralize future tweaks.
-func openAIWSCanonicalJSON(v interface{}) ([]byte, error) {
+func openAIWSCanonicalJSON(v any) ([]byte, error) {
 	return json.Marshal(v)
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
@@ -95,6 +96,22 @@ func (m *mockAntigravityProxyRepo) ExistsByHostPortAuth(context.Context, string,
 }
 
 func (m *mockAntigravityProxyRepo) CountAccountsByProxyID(context.Context, int64) (int64, error) {
+	panic("not impl")
+}
+
+func (m *mockAntigravityProxyRepo) SweepExpiredProxies(context.Context, time.Time) (int64, error) {
+	panic("not impl")
+}
+
+func (m *mockAntigravityProxyRepo) ListAllForFallback(context.Context) ([]Proxy, error) {
+	panic("not impl")
+}
+
+func (m *mockAntigravityProxyRepo) CountExpired(context.Context) (int64, error) {
+	panic("not impl")
+}
+
+func (m *mockAntigravityProxyRepo) CountExpiringSoon(context.Context, time.Time) (int64, error) {
 	panic("not impl")
 }
 

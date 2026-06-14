@@ -1348,7 +1348,7 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 
 	s.sendEvent(c, TestEvent{Type: "content", Text: "Downloading generated image...\n"})
 	for _, pointer := range pointerInfos {
-		data, err := resolveOpenAIImageBytes(ctx, client, headers, profile, conversationID, pointer)
+		data, err := resolveOpenAIImageBytes(ctx, client, headers, profile, conversationID, pointer, openAIUpstreamErrorBodyReadLimit)
 		if err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Image download failed: %s", err.Error()))
 		}

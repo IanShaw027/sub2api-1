@@ -157,6 +157,10 @@ func (s *accountCredentialsRepoStub) UpdateSessionWindow(ctx context.Context, id
 	return nil
 }
 
+func (s *accountCredentialsRepoStub) UpdateSessionWindowEnd(ctx context.Context, id int64, end time.Time) error {
+	return nil
+}
+
 func (s *accountCredentialsRepoStub) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
 	return nil
 }
@@ -170,6 +174,10 @@ func (s *accountCredentialsRepoStub) IncrementQuotaUsed(ctx context.Context, id 
 }
 
 func (s *accountCredentialsRepoStub) ResetQuotaUsed(ctx context.Context, id int64) error { return nil }
+
+func (s *accountCredentialsRepoStub) RevertProxyFallback(ctx context.Context, accountID int64) error {
+	return nil
+}
 
 func TestAccountService_TestCredentials_ValidatesPlatformCredentials(t *testing.T) {
 	tests := []struct {

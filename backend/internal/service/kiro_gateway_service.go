@@ -265,17 +265,22 @@ func prepareKiroConvertedRequestWithRoutingWithMeta(ctx context.Context, setting
 	}
 	meta := &kiroPreparedRequestMeta{}
 
-	billedInputTokens := estimateKiroInputTokens(parsed.Body)
+	rawBody := []byte(nil)
+	if parsed.Body != nil {
+		rawBody = parsed.Body.Bytes()
+	}
+
+	billedInputTokens := estimateKiroInputTokens(rawBody)
 	meta.ForwardInputTokens = billedInputTokens
 	if billedInputTokens >= kiroStandardContextPromoteThreshold && kiropkg.SupportsOneMillionContextModel(requestedModel) {
 		meta.PromotedContextWindow = true
 	}
 
-	forwardBody := parsed.Body
+	forwardBody := rawBody
 	contextBudget := kiroContextBudgetTokensForModel(requestedModel)
 	meta.ContextBudgetTokens = contextBudget
 	if billedInputTokens > contextBudget {
-		compactedBody, droppedMessages, compacted, compactErr := kiropkg.CompactAnthropicRequestToTokenBudget(parsed.Body, contextBudget)
+		compactedBody, droppedMessages, compacted, compactErr := kiropkg.CompactAnthropicRequestToTokenBudget(rawBody, contextBudget)
 		if compactErr != nil {
 			return nil, 0, nil, compactErr
 		}
@@ -492,13 +497,6 @@ func shouldApplyKiroThinking(parsed *ParsedRequest, runtimeSettings *KiroRuntime
 	return kiroThinkingEffortRank(effort) >= kiroThinkingEffortRank(threshold)
 }
 
-func kiroModelNeedsFreeThinkingPreparation(parsed *ParsedRequest) bool {
-	if parsed == nil {
-		return false
-	}
-	return kiroModelNeedsFreeThinkingPreparationForModel(parsed.Model)
-}
-
 func kiroModelNeedsFreeThinkingPreparationForModel(model string) bool {
 	mappedModel := strings.TrimSpace(kiropkg.MapModel(model))
 	return strings.HasPrefix(mappedModel, "claude-sonnet-4.5")
@@ -651,7 +649,7 @@ func (s *KiroGatewayService) shouldEmulateWebSearch(ctx context.Context, account
 	if s == nil || account == nil || parsed == nil || s.settingService == nil {
 		return false
 	}
-	if getWebSearchManager() == nil || !isOnlyWebSearchToolInBody(parsed.Body) {
+	if getWebSearchManager() == nil || !isOnlyWebSearchToolInBody(parsed.Body.Bytes()) {
 		return false
 	}
 	if !s.settingService.IsWebSearchEmulationEnabled(ctx) {
@@ -682,7 +680,7 @@ func (s *KiroGatewayService) handleWebSearchEmulation(
 	parsed *ParsedRequest,
 ) (*ForwardResult, error) {
 	startTime := time.Now()
-	query := extractSearchQueryFromBody(parsed.Body)
+	query := extractSearchQueryFromBody(parsed.Body.Bytes())
 	if query == "" {
 		return nil, fmt.Errorf("web search emulation: no query found in messages")
 	}
@@ -1653,7 +1651,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				return nil, readErr
 			}
 			if !streamStarted && firstForwardableTimeoutTriggered.Load() {
-				timeoutErr := fmt.Errorf("Kiro upstream did not emit a forwardable event within %s", kiroFirstForwardableEventTimeout)
+				timeoutErr := fmt.Errorf("kiro upstream did not emit a forwardable event within %s", kiroFirstForwardableEventTimeout)
 				return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusGatewayTimeout, kiroTransportFailureReasonKeyword, timeoutErr.Error(), readErr.Error())
 			}
 			if readErr == io.EOF {
@@ -2190,7 +2188,7 @@ func kiroFakeCachePlanBody(parsed *ParsedRequest, meta *kiroPreparedRequestMeta)
 	if parsed == nil {
 		return nil
 	}
-	return parsed.Body
+	return parsed.Body.Bytes()
 }
 
 func (s *KiroGatewayService) commitFakeCachePlan(plan *kiropkg.FakeCachePlan, runtimeSettings *KiroRuntimeSettings) {
@@ -2901,20 +2899,6 @@ func kiroVisibleToolStateCounts(states map[string]*kiroToolState, order []string
 		partial++
 	}
 	return visible, completed, partial
-}
-
-func kiroCompletedToolNames(states map[string]*kiroToolState, order []string) []string {
-	names := make([]string, 0, len(order))
-	for _, toolUseID := range order {
-		state := states[toolUseID]
-		if !kiroToolStateIsComplete(state) {
-			continue
-		}
-		if name := strings.TrimSpace(state.Name); name != "" {
-			names = append(names, name)
-		}
-	}
-	return names
 }
 
 func kiroStopReasonFromContextUsage(usagePercent float64) string {
@@ -3872,9 +3856,9 @@ func (s *KiroGatewayService) forwardWithFreeThinking(ctx context.Context, c *gin
 	thinkingContent := s.generateKiroFreeThinkingContent(ctx, account, parsed, runtimeSettings)
 
 	// 第二步：去掉 thinking 字段，正常请求
-	answerBody := stripKiroThinkingField(parsed.Body)
+	answerBody := stripKiroThinkingField(parsed.Body.Bytes())
 	answerParsed := *parsed
-	answerParsed.Body = answerBody
+	answerParsed.Body = NewRequestBodyRef(answerBody)
 	answerParsed.ThinkingEnabled = false
 
 	converted, billedInputTokens, meta, err := s.validateAndConvertRequest(c, account, &answerParsed, runtimeSettings)
@@ -3976,13 +3960,13 @@ func (s *KiroGatewayService) generateKiroFreeThinkingContent(ctx context.Context
 		return ""
 	}
 
-	thinkingBody := buildKiroFreeThinkingBody(parsed.Body, freePrompt)
+	thinkingBody := buildKiroFreeThinkingBody(parsed.Body.Bytes(), freePrompt)
 	if thinkingBody == nil {
 		return ""
 	}
 
 	thinkingParsed := *parsed
-	thinkingParsed.Body = thinkingBody
+	thinkingParsed.Body = NewRequestBodyRef(thinkingBody)
 	thinkingParsed.Stream = false
 	thinkingParsed.ThinkingEnabled = false
 	thinkingParsed.OnUpstreamAccepted = nil

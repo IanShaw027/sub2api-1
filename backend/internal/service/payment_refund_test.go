@@ -30,6 +30,9 @@ func (r *refundTestUserRepo) GetByID(_ context.Context, id int64) (*User, error)
 	}
 	return nil, ErrUserNotFound
 }
+func (r *refundTestUserRepo) GetByIDIncludeDeleted(context.Context, int64) (*User, error) {
+	panic("unexpected GetByIDIncludeDeleted call")
+}
 func (r *refundTestUserRepo) GetByEmail(context.Context, string) (*User, error) { panic("unexpected") }
 func (r *refundTestUserRepo) GetFirstAdmin(context.Context) (*User, error)      { panic("unexpected") }
 func (r *refundTestUserRepo) Update(context.Context, *User) error               { panic("unexpected") }

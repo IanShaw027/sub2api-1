@@ -147,7 +147,7 @@ func userPlatformQuotaDBRepoID(repo UserPlatformQuotaRepository) uintptr {
 		return 0
 	}
 	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Map, reflect.Ptr, reflect.UnsafePointer:
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.UnsafePointer:
 		if value.IsNil() {
 			return 0
 		}

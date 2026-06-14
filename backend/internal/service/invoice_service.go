@@ -800,18 +800,18 @@ func renderInvoiceOrderListHTML(rows []*dbent.InvoiceOrder) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString(`<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:13px;">`)
-	b.WriteString(`<thead><tr style="background:#fafafa;color:#71717a;">`)
-	b.WriteString(`<th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e4e4e7;">Order No.</th>`)
-	b.WriteString(`<th style="text-align:right;padding:6px 8px;border-bottom:1px solid #e4e4e7;">Amount</th>`)
-	b.WriteString(`</tr></thead><tbody>`)
+	_, _ = b.WriteString(`<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:13px;">`)
+	_, _ = b.WriteString(`<thead><tr style="background:#fafafa;color:#71717a;">`)
+	_, _ = b.WriteString(`<th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e4e4e7;">Order No.</th>`)
+	_, _ = b.WriteString(`<th style="text-align:right;padding:6px 8px;border-bottom:1px solid #e4e4e7;">Amount</th>`)
+	_, _ = b.WriteString(`</tr></thead><tbody>`)
 	for _, r := range rows {
-		b.WriteString(`<tr><td style="padding:6px 8px;border-bottom:1px solid #f4f4f5;font-family:ui-monospace,monospace;">`)
-		b.WriteString(html.EscapeString(r.OutTradeNo))
-		b.WriteString(`</td><td style="padding:6px 8px;text-align:right;border-bottom:1px solid #f4f4f5;">¥`)
-		b.WriteString(fmt.Sprintf("%.2f", r.PayAmountSnapshot))
-		b.WriteString(`</td></tr>`)
+		_, _ = b.WriteString(`<tr><td style="padding:6px 8px;border-bottom:1px solid #f4f4f5;font-family:ui-monospace,monospace;">`)
+		_, _ = b.WriteString(html.EscapeString(r.OutTradeNo))
+		_, _ = b.WriteString(`</td><td style="padding:6px 8px;text-align:right;border-bottom:1px solid #f4f4f5;">¥`)
+		fmt.Fprintf(&b, "%.2f", r.PayAmountSnapshot)
+		_, _ = b.WriteString(`</td></tr>`)
 	}
-	b.WriteString(`</tbody></table>`)
+	_, _ = b.WriteString(`</tbody></table>`)
 	return b.String()
 }

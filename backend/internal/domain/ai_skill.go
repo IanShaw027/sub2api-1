@@ -427,28 +427,28 @@ type AISkill struct {
 }
 
 type AISkillVersion struct {
-	ID             int64          `json:"id"`
-	SkillID        int64          `json:"skill_id"`
-	UserID         int64          `json:"user_id"`
-	Version        int            `json:"version"`
-	ReviewStatus   string         `json:"review_status"`
-	ApprovedArtifactDigest string `json:"approved_artifact_digest,omitempty"`
-	ContentFormat  string         `json:"content_format,omitempty"`
-	Runtime        string         `json:"runtime,omitempty"`
-	SourceContent  string         `json:"source_content,omitempty"`
-	Config         map[string]any `json:"config,omitempty"`
-	InputSchema    map[string]any `json:"input_schema,omitempty"`
-	OutputSchema   map[string]any `json:"output_schema,omitempty"`
-	ChangeNote     string         `json:"change_note,omitempty"`
-	SubmittedAt    *time.Time     `json:"submitted_at,omitempty"`
-	ReviewedAt     *time.Time     `json:"reviewed_at,omitempty"`
-	ReviewerUserID *int64         `json:"reviewer_user_id,omitempty"`
-	ReviewNote     string         `json:"review_note,omitempty"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
-	Trace          AITraceRef     `json:"trace"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	DeletedAt      *time.Time     `json:"deleted_at,omitempty"`
+	ID                     int64          `json:"id"`
+	SkillID                int64          `json:"skill_id"`
+	UserID                 int64          `json:"user_id"`
+	Version                int            `json:"version"`
+	ReviewStatus           string         `json:"review_status"`
+	ApprovedArtifactDigest string         `json:"approved_artifact_digest,omitempty"`
+	ContentFormat          string         `json:"content_format,omitempty"`
+	Runtime                string         `json:"runtime,omitempty"`
+	SourceContent          string         `json:"source_content,omitempty"`
+	Config                 map[string]any `json:"config,omitempty"`
+	InputSchema            map[string]any `json:"input_schema,omitempty"`
+	OutputSchema           map[string]any `json:"output_schema,omitempty"`
+	ChangeNote             string         `json:"change_note,omitempty"`
+	SubmittedAt            *time.Time     `json:"submitted_at,omitempty"`
+	ReviewedAt             *time.Time     `json:"reviewed_at,omitempty"`
+	ReviewerUserID         *int64         `json:"reviewer_user_id,omitempty"`
+	ReviewNote             string         `json:"review_note,omitempty"`
+	Metadata               map[string]any `json:"metadata,omitempty"`
+	Trace                  AITraceRef     `json:"trace"`
+	CreatedAt              time.Time      `json:"created_at"`
+	UpdatedAt              time.Time      `json:"updated_at"`
+	DeletedAt              *time.Time     `json:"deleted_at,omitempty"`
 }
 
 type AISkillReview struct {

@@ -539,6 +539,8 @@ func TestAPIContracts(t *testing.T) {
 					"total_input_tokens": 15,
 					"total_output_tokens": 35,
 					"total_cache_tokens": 3,
+					"total_cache_creation_tokens": 1,
+					"total_cache_read_tokens": 2,
 					"total_tokens": 53,
 					"total_cost": 0.75,
 					"total_actual_cost": 0.75,
@@ -592,6 +594,7 @@ func TestAPIContracts(t *testing.T) {
 								"request_type": "stream",
 								"openai_ws_conn_reused": false,
 								"openai_ws_mode": false,
+								"openai_ws_conn_reused": false,
 								"group_id": null,
 								"subscription_id": null,
 							"input_tokens": 10,
@@ -616,6 +619,8 @@ func TestAPIContracts(t *testing.T) {
 							"image_size": null,
 							"image_input_size": null,
 							"image_output_size": null,
+							"image_output_tokens": 0,
+							"image_output_cost": 0,
 							"image_size_source": null,
 							"image_size_breakdown": null,
 							"media_type": null,
@@ -814,10 +819,10 @@ func TestAPIContracts(t *testing.T) {
 					"auth_source_default_wechat_grant_on_signup": false,
 					"auth_source_default_wechat_grant_on_first_bind": false,
 					"force_email_on_third_party_signup": false,
+					"gateway_debug_timeline_body_max_kb": 32,
 					"gateway_debug_timeline_directory": "logs/gateway-debug",
 					"gateway_debug_timeline_enabled": false,
 					"gateway_debug_timeline_include_body": false,
-					"gateway_debug_timeline_body_max_kb": 32,
 					"gateway_debug_timeline_max_size_mb": 1024,
 					"gateway_debug_timeline_retention_days": 7,
 					"default_concurrency": 5,
@@ -889,6 +894,7 @@ func TestAPIContracts(t *testing.T) {
 						"openai_sticky_wait_timeout_seconds": 30,
 						"openai_ws_min_idle_per_account": 1,
 						"openai_ws_max_idle_per_account": 4,
+						"openai_allow_claude_code_codex_plugin": false,
 						"openai_fast_policy_settings": {
 						"rules": []
 					},
@@ -918,6 +924,7 @@ func TestAPIContracts(t *testing.T) {
 					"payment_cancel_rate_limit_window_mode": "",
 					"balance_low_notify_enabled": false,
 					"account_quota_notify_enabled": false,
+					"account_scheduling_thresholds": {"anthropic":100,"antigravity":100,"gemini":100,"kiro":100,"openai":100},
 					"balance_low_notify_threshold": 0,
 					"balance_low_notify_recharge_url": "",
 					"account_quota_notify_emails": [],
@@ -1172,6 +1179,7 @@ func TestAPIContracts(t *testing.T) {
 						"openai_sticky_wait_timeout_seconds": 30,
 						"openai_ws_min_idle_per_account": 1,
 						"openai_ws_max_idle_per_account": 4,
+						"openai_allow_claude_code_codex_plugin": false,
 						"openai_codex_user_agent": "",
 						"openai_fast_policy_settings": {
 						"rules": []
@@ -1200,6 +1208,7 @@ func TestAPIContracts(t *testing.T) {
 					"payment_alipay_force_qrcode": false,
 					"balance_low_notify_enabled": false,
 					"account_quota_notify_enabled": false,
+					"account_scheduling_thresholds": {"anthropic":100,"antigravity":100,"gemini":100,"kiro":100,"openai":100},
 					"subscription_expiry_notify_enabled": true,
 					"balance_low_notify_threshold": 0,
 					"balance_low_notify_recharge_url": "",
@@ -1269,10 +1278,10 @@ func TestAPIContracts(t *testing.T) {
 					"auth_source_default_wechat_grant_on_signup": false,
 					"auth_source_default_wechat_grant_on_first_bind": false,
 					"force_email_on_third_party_signup": false,
+					"gateway_debug_timeline_body_max_kb": 32,
 					"gateway_debug_timeline_directory": "logs/gateway-debug",
 					"gateway_debug_timeline_enabled": false,
 					"gateway_debug_timeline_include_body": false,
-					"gateway_debug_timeline_body_max_kb": 32,
 					"gateway_debug_timeline_max_size_mb": 1024,
 					"gateway_debug_timeline_retention_days": 7,
 					"kiro_commit": "",
@@ -1443,7 +1452,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
-	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
+	usageHandler := handler.NewUsageHandler(usageService, apiKeyService, nil, nil)
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil, nil, nil)
 	adminAccountHandler := adminhandler.NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
@@ -1656,6 +1665,10 @@ func (r *stubUserRepo) EnableTotp(ctx context.Context, userID int64) error {
 
 func (r *stubUserRepo) DisableTotp(ctx context.Context, userID int64) error {
 	return errors.New("not implemented")
+}
+
+func (r *stubUserRepo) GetByIDIncludeDeleted(ctx context.Context, id int64) (*service.User, error) {
+	panic("unexpected GetByIDIncludeDeleted call")
 }
 
 type stubApiKeyCache struct{}
@@ -1955,6 +1968,10 @@ func (s *stubAccountRepo) UpdateSessionWindow(ctx context.Context, id int64, sta
 	return errors.New("not implemented")
 }
 
+func (s *stubAccountRepo) UpdateSessionWindowEnd(ctx context.Context, id int64, end time.Time) error {
+	return errors.New("not implemented")
+}
+
 func (s *stubAccountRepo) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
 	return errors.New("not implemented")
 }
@@ -2004,6 +2021,10 @@ func (s *stubAccountRepo) BulkUpdate(ctx context.Context, ids []int64, updates s
 
 func (s *stubAccountRepo) ListCRSAccountIDs(ctx context.Context) (map[string]int64, error) {
 	return nil, errors.New("not implemented")
+}
+
+func (s *stubAccountRepo) RevertProxyFallback(ctx context.Context, accountID int64) error {
+	return nil
 }
 
 type stubProxyRepo struct{}
@@ -2058,6 +2079,22 @@ func (stubProxyRepo) CountAccountsByProxyID(ctx context.Context, proxyID int64) 
 
 func (stubProxyRepo) ListAccountSummariesByProxyID(ctx context.Context, proxyID int64) ([]service.ProxyAccountSummary, error) {
 	return nil, errors.New("not implemented")
+}
+
+func (stubProxyRepo) SweepExpiredProxies(ctx context.Context, now time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (stubProxyRepo) ListAllForFallback(ctx context.Context) ([]service.Proxy, error) {
+	return nil, nil
+}
+
+func (stubProxyRepo) CountExpired(ctx context.Context) (int64, error) {
+	return 0, nil
+}
+
+func (stubProxyRepo) CountExpiringSoon(ctx context.Context, now time.Time) (int64, error) {
+	return 0, nil
 }
 
 type stubRedeemCodeRepo struct {
@@ -2322,6 +2359,10 @@ func (r *stubApiKeyRepo) Delete(ctx context.Context, id int64) error {
 	delete(r.byID, id)
 	delete(r.byKey, key.Key)
 	return nil
+}
+
+func (r *stubApiKeyRepo) DeleteWithAudit(ctx context.Context, id int64) error {
+	return r.Delete(ctx, id)
 }
 
 func (r *stubApiKeyRepo) ListByUserID(ctx context.Context, userID int64, params pagination.PaginationParams, _ service.APIKeyListFilters) ([]service.APIKey, *pagination.PaginationResult, error) {
@@ -2591,6 +2632,8 @@ func (r *stubUsageLogRepo) GetUserStatsAggregated(ctx context.Context, userID in
 	var totalInputTokens int64
 	var totalOutputTokens int64
 	var totalCacheTokens int64
+	var totalCacheCreationTokens int64
+	var totalCacheReadTokens int64
 	var totalCost float64
 	var totalActualCost float64
 	var totalDuration int64
@@ -2601,6 +2644,8 @@ func (r *stubUsageLogRepo) GetUserStatsAggregated(ctx context.Context, userID in
 		totalInputTokens += int64(log.InputTokens)
 		totalOutputTokens += int64(log.OutputTokens)
 		totalCacheTokens += int64(log.CacheCreationTokens + log.CacheReadTokens)
+		totalCacheCreationTokens += int64(log.CacheCreationTokens)
+		totalCacheReadTokens += int64(log.CacheReadTokens)
 		totalCost += log.TotalCost
 		totalActualCost += log.ActualCost
 		if log.DurationMs != nil {
@@ -2615,14 +2660,16 @@ func (r *stubUsageLogRepo) GetUserStatsAggregated(ctx context.Context, userID in
 	}
 
 	return &usagestats.UsageStats{
-		TotalRequests:     totalRequests,
-		TotalInputTokens:  totalInputTokens,
-		TotalOutputTokens: totalOutputTokens,
-		TotalCacheTokens:  totalCacheTokens,
-		TotalTokens:       totalInputTokens + totalOutputTokens + totalCacheTokens,
-		TotalCost:         totalCost,
-		TotalActualCost:   totalActualCost,
-		AverageDurationMs: avgDuration,
+		TotalRequests:            totalRequests,
+		TotalInputTokens:         totalInputTokens,
+		TotalOutputTokens:        totalOutputTokens,
+		TotalCacheTokens:         totalCacheTokens,
+		TotalCacheCreationTokens: totalCacheCreationTokens,
+		TotalCacheReadTokens:     totalCacheReadTokens,
+		TotalTokens:              totalInputTokens + totalOutputTokens + totalCacheTokens,
+		TotalCost:                totalCost,
+		TotalActualCost:          totalActualCost,
+		AverageDurationMs:        avgDuration,
 	}, nil
 }
 

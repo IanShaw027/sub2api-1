@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -47,6 +48,18 @@ func (wireProxyRepoStub) CountAccountsByProxyID(ctx context.Context, proxyID int
 }
 func (wireProxyRepoStub) ListAccountSummariesByProxyID(ctx context.Context, proxyID int64) ([]ProxyAccountSummary, error) {
 	panic("unexpected ListAccountSummariesByProxyID call")
+}
+func (wireProxyRepoStub) SweepExpiredProxies(ctx context.Context, now time.Time) (int64, error) {
+	panic("unexpected SweepExpiredProxies call")
+}
+func (wireProxyRepoStub) ListAllForFallback(ctx context.Context) ([]Proxy, error) {
+	panic("unexpected ListAllForFallback call")
+}
+func (wireProxyRepoStub) CountExpired(ctx context.Context) (int64, error) {
+	panic("unexpected CountExpired call")
+}
+func (wireProxyRepoStub) CountExpiringSoon(ctx context.Context, now time.Time) (int64, error) {
+	panic("unexpected CountExpiringSoon call")
 }
 
 func TestProvideTokenRefreshService_InjectsKiroProxyRepo(t *testing.T) {

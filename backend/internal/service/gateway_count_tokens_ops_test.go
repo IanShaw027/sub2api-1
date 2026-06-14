@@ -123,7 +123,7 @@ func TestGatewayService_ForwardCountTokens_RecordsOpsContextAndLatency(t *testin
 	}
 
 	err := svc.ForwardCountTokens(context.Background(), c, account, &ParsedRequest{
-		Body:  []byte(`{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`),
+		Body:  NewRequestBodyRef([]byte(`{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)),
 		Model: "claude-3-5-sonnet",
 	})
 
@@ -216,7 +216,7 @@ func TestGatewayService_ForwardCountTokens_SignatureRetryTransportFailureKeepsBo
 
 	originalBody := []byte(`{"model":"claude-3-5-sonnet","thinking":{"type":"enabled","budget_tokens":1200},"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
 	err = svc.ForwardCountTokens(context.Background(), c, account, &ParsedRequest{
-		Body:  originalBody,
+		Body:  NewRequestBodyRef(originalBody),
 		Model: "claude-3-5-sonnet",
 	})
 

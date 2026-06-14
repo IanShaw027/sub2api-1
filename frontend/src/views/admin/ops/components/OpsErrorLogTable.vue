@@ -33,6 +33,12 @@
                 {{ `${t('admin.ops.errorLog.user')}/${t('admin.ops.errorLog.account')}` }}
               </th>
               <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
+                {{ t('admin.ops.errorLog.apiKey') }}
+              </th>
+              <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
+                {{ t('admin.ops.errorLog.account') }}
+              </th>
+              <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
                 {{ t('admin.ops.errorLog.status') }}
               </th>
               <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
@@ -45,7 +51,7 @@
           </thead>
           <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
             <tr v-if="rows.length === 0">
-              <td colspan="10" class="py-12 text-center text-sm text-gray-400 dark:text-dark-500">
+              <td colspan="12" class="py-12 text-center text-sm text-gray-400 dark:text-dark-500">
                 {{ t('admin.ops.errorLog.noErrors') }}
               </td>
             </tr>
@@ -127,11 +133,37 @@
                 <span v-else class="text-xs text-gray-400">-</span>
               </td>
 
-              <!-- User / Account -->
+              <!-- User -->
               <td class="px-4 py-2">
-                <el-tooltip v-if="identityTooltip(log)" :content="identityTooltip(log)" placement="top" :show-after="500">
+                <el-tooltip v-if="userTooltip(log)" :content="userTooltip(log)" placement="top" :show-after="500">
                   <span class="max-w-[100px] truncate text-xs font-medium text-gray-900 dark:text-gray-200">
-                    {{ identityLabel(log) }}
+                    {{ userLabel(log) }}
+                  </span>
+                </el-tooltip>
+                <span v-else class="text-xs text-gray-400">-</span>
+              </td>
+
+              <!-- API Key -->
+              <td class="px-4 py-2">
+                <el-tooltip v-if="apiKeyTooltip(log)" :content="apiKeyTooltip(log)" placement="top" :show-after="500">
+                  <span class="inline-flex max-w-[120px] items-center gap-1 truncate text-xs font-medium text-gray-900 dark:text-gray-200">
+                    <span class="truncate">{{ apiKeyLabel(log) }}</span>
+                    <span
+                      v-if="log.api_key_deleted"
+                      class="rounded bg-amber-100 px-1 py-px text-[10px] font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                    >
+                      {{ t('admin.ops.errorLog.keyDeletedBadge') }}
+                    </span>
+                  </span>
+                </el-tooltip>
+                <span v-else class="text-xs text-gray-400">-</span>
+              </td>
+
+              <!-- Account -->
+              <td class="px-4 py-2">
+                <el-tooltip v-if="accountTooltip(log)" :content="accountTooltip(log)" placement="top" :show-after="500">
+                  <span class="max-w-[120px] truncate text-xs font-medium text-gray-900 dark:text-gray-200">
+                    {{ accountLabel(log) }}
                   </span>
                 </el-tooltip>
                 <span v-else class="text-xs text-gray-400">-</span>
@@ -214,27 +246,31 @@ function isUpstreamRow(log: OpsErrorLog): boolean {
   return phase === 'upstream' && owner === 'provider'
 }
 
-function shouldShowAccount(log: OpsErrorLog): boolean {
-  if (isUpstreamRow(log)) return true
-  if (String(log.error_owner || '').toLowerCase() === 'account') return true
-  return !log.user_id && !!log.account_id
+function userTooltip(log: OpsErrorLog): string {
+  if (!log.user_id) return ''
+  return `${t('admin.ops.errorLog.userId')} ${log.user_id}`
 }
 
-function identityTooltip(log: OpsErrorLog): string {
-  if (shouldShowAccount(log) && log.account_id) {
-    return `${t('admin.ops.errorLog.accountId')} ${log.account_id}`
-  }
-  if (log.user_id) {
-    return `${t('admin.ops.errorLog.userId')} ${log.user_id}`
-  }
-  return ''
-}
-
-function identityLabel(log: OpsErrorLog): string {
-  if (shouldShowAccount(log)) {
-    return log.account_name || (log.account_id ? String(log.account_id) : '-')
-  }
+function userLabel(log: OpsErrorLog): string {
   return log.user_email || (log.user_id ? String(log.user_id) : '-')
+}
+
+function apiKeyTooltip(log: OpsErrorLog): string {
+  if (!log.api_key_id) return ''
+  return `${t('admin.ops.errorLog.apiKeyId')} ${log.api_key_id}`
+}
+
+function apiKeyLabel(log: OpsErrorLog): string {
+  return log.api_key_name || (log.api_key_id ? String(log.api_key_id) : '-')
+}
+
+function accountTooltip(log: OpsErrorLog): string {
+  if (!log.account_id) return ''
+  return `${t('admin.ops.errorLog.accountId')} ${log.account_id}`
+}
+
+function accountLabel(log: OpsErrorLog): string {
+  return log.account_name || (log.account_id ? String(log.account_id) : '-')
 }
 
 function formatEndpointTooltip(log: OpsErrorLog): string {

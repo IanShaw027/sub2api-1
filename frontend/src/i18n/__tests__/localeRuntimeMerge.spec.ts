@@ -87,6 +87,11 @@ describe('i18n runtime locale merge', () => {
     expect(messages.admin.accounts.accountNameOAuthPlaceholder).toContain('OAuth 可留空')
     expect(messages.admin.accounts.imageTestRouteLabel).toBe('测试路径')
     expect(messages.admin.accounts.vertexLabel).toBe('Vertex')
+    expect(messages.admin.accounts.openai.responsesMode).toBe('文本生成协议')
+    expect(messages.admin.accounts.openai.responsesModeForceResponses).toBe('强制 Responses')
+    expect(messages.admin.accounts.openai.endpointCapabilities).toBe('允许的端点能力')
+    expect(messages.admin.accounts.openai.endpointCapabilityChatCompletions).toBe('文本生成')
+    expect(messages.admin.accounts.openai.endpointCapabilityEmbeddings).toBe('Embeddings')
     expect(messages.admin.accounts.oauth.gemini.aiStudioNotConfiguredShort).toBe('未配置')
     expect(messages.admin.accounts.gemini.oauthType.badges.adminRequired).toBe('需要管理员')
     expect(messages.admin.accounts.kiro.refreshNowTitle).toContain('已保存的 refresh token')
@@ -153,6 +158,11 @@ describe('i18n runtime locale merge', () => {
     )
     expect(messages.admin.accounts.imageTestRouteLabel).toBe('Test route')
     expect(messages.admin.accounts.vertexLabel).toBe('Vertex')
+    expect(messages.admin.accounts.openai.responsesMode).toBe('Text generation protocol')
+    expect(messages.admin.accounts.openai.responsesModeForceResponses).toBe('Force Responses')
+    expect(messages.admin.accounts.openai.endpointCapabilities).toBe('Accepted endpoint capabilities')
+    expect(messages.admin.accounts.openai.endpointCapabilityChatCompletions).toBe('Text generation')
+    expect(messages.admin.accounts.openai.endpointCapabilityEmbeddings).toBe('Embeddings')
     expect(messages.admin.accounts.oauth.gemini.aiStudioNotConfiguredShort).toBe(
       'Not configured'
     )

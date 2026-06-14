@@ -1852,8 +1852,11 @@ func TestOpenAIResponsesWebSocket_ContentModerationBlocksFirstFrame(t *testing.T
 		require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
 		require.Contains(t, closeErr.Reason, "内容审计测试阻断")
 	}
-	logs := repo.logSnapshot()
-	require.Len(t, logs, 1)
+	var logs []service.ContentModerationLog
+	require.Eventually(t, func() bool {
+		logs = repo.logSnapshot()
+		return len(logs) == 1
+	}, time.Second, 10*time.Millisecond)
 	require.True(t, logs[0].Flagged)
 	require.Equal(t, service.ContentModerationActionBlock, logs[0].Action)
 	require.Equal(t, "bad prompt", logs[0].InputExcerpt)
@@ -2358,9 +2361,7 @@ func (s *openAIWSFailoverHandlerAccountRepoStub) ListByPlatform(ctx context.Cont
 
 func (s *openAIWSFailoverHandlerAccountRepoStub) ListByGroup(ctx context.Context, groupID int64) ([]service.Account, error) {
 	out := make([]service.Account, 0, len(s.accounts))
-	for _, account := range s.accounts {
-		out = append(out, account)
-	}
+	out = append(out, s.accounts...)
 	return out, nil
 }
 
@@ -3055,7 +3056,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentRejectsAfterLiveTo
 	require.NoError(t, err)
 
 	readCtx, cancelRead = context.WithTimeout(context.Background(), 5*time.Second)
-	_, event, err = clientConn.Read(readCtx)
+	_, _, err = clientConn.Read(readCtx)
 	cancelRead()
 	require.Error(t, err)
 	var closeErr coderws.CloseError
@@ -3235,7 +3236,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityRejectsAfterLiveTo
 	require.NoError(t, err)
 
 	readCtx, cancelRead = context.WithTimeout(context.Background(), 5*time.Second)
-	_, event, err = clientConn.Read(readCtx)
+	_, _, err = clientConn.Read(readCtx)
 	cancelRead()
 	require.Error(t, err)
 	var closeErr coderws.CloseError

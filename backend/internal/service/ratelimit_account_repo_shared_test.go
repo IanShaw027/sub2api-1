@@ -117,6 +117,11 @@ func (r *rateLimitAccountRepoStub) ClearModelRateLimits(context.Context, int64) 
 func (r *rateLimitAccountRepoStub) UpdateSessionWindow(context.Context, int64, *time.Time, *time.Time, string) error {
 	return nil
 }
+
+func (r *rateLimitAccountRepoStub) UpdateSessionWindowEnd(context.Context, int64, time.Time) error {
+	return nil
+}
+
 func (r *rateLimitAccountRepoStub) UpdateExtra(context.Context, int64, map[string]any) error {
 	return nil
 }
@@ -127,6 +132,11 @@ func (r *rateLimitAccountRepoStub) IncrementQuotaUsed(context.Context, int64, fl
 	return nil
 }
 func (r *rateLimitAccountRepoStub) ResetQuotaUsed(context.Context, int64) error { return nil }
+
+func (r *rateLimitAccountRepoStub) RevertProxyFallback(context.Context, int64) error {
+	return nil
+}
+
 func (r *rateLimitAccountRepoStub) UpdateCredentials(ctx context.Context, id int64, credentials map[string]any) error {
 	r.updateCredentialsCalls++
 	r.lastCredentials = cloneCredentials(credentials)

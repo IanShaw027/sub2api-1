@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -288,15 +290,25 @@ func TestResolveBedrockBetaTokensForRequest_PreservesBodyAnthropicBetaTokens(t *
 }
 
 func TestApplyBedrockCCCompat_IgnoresNonBedrockAccounts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest("POST", "/", nil)
+
 	svc := &GatewayService{}
 	body := []byte(`{"messages":[{"role":"user","content":"keep me"}]}`)
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
-	got := svc.ApplyBedrockCCCompat(context.Background(), body, "us.anthropic.claude-opus-4-6-v1", account, nil)
+	got := svc.ApplyBedrockCCCompat(c, body, "us.anthropic.claude-opus-4-6-v1", account, nil)
 	require.Equal(t, string(body), string(got))
 }
 
 func TestApplyBedrockCCCompat_DoesNotMutateInputSlice(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest("POST", "/", nil)
+
 	channelSvc := &ChannelService{}
 	channelSvc.cache.Store(&channelCache{
 		channelByGroupID: map[int64]*Channel{
@@ -319,7 +331,7 @@ func TestApplyBedrockCCCompat_DoesNotMutateInputSlice(t *testing.T) {
 	body := []byte(`{"service_tier":"standard","thinking":{"type":"enabled"},"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"toolu.01.Ab","name":"bash","input":{}}]}]}`)
 	original := append([]byte(nil), body...)
 
-	got := svc.ApplyBedrockCCCompat(context.Background(), body, "us.anthropic.claude-opus-4-6-v1", account, ptrInt64(10))
+	got := svc.ApplyBedrockCCCompat(c, body, "us.anthropic.claude-opus-4-6-v1", account, ptrInt64(10))
 	require.Equal(t, string(original), string(body))
 	require.Equal(t, "bedrock-2023-05-31", gjson.GetBytes(got, "anthropic_version").String())
 	require.Equal(t, "enabled", gjson.GetBytes(got, "thinking.type").String())

@@ -166,7 +166,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	setOpsRequestContext(c, "", false, body)
 
-	parsedReq, err := service.ParseGatewayRequest(body, domain.PlatformAnthropic)
+	bodyRef := service.NewRequestBodyRef(body)
+	parsedReq, err := service.ParseGatewayRequest(bodyRef, domain.PlatformAnthropic)
 	if err != nil {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
@@ -305,9 +306,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			c.GetHeader("session_id"),
 			c.GetHeader("conversation_id"),
 		)
-		if updatedBody, metadataUserID, changed := service.EnsureKiroMetadataUserIDForSession(parsedReq.Body, parsedReq.MetadataUserID, sessionSeed); changed {
+		if updatedBody, metadataUserID, changed := service.EnsureKiroMetadataUserIDForSession(parsedReq.Body.Bytes(), parsedReq.MetadataUserID, sessionSeed); changed {
 			body = updatedBody
-			parsedReq.Body = updatedBody
+			parsedReq.Body.Replace(updatedBody)
 			parsedReq.MetadataUserID = metadataUserID
 		}
 		reqLog.Info("gateway.kiro_request_entry",
@@ -481,7 +482,17 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 记录 Forward 前已写入字节数，Forward 后若增加则说明 SSE 内容已发，禁止 failover
 			writerSizeBeforeForward := c.Writer.Size()
 			if account.Platform == service.PlatformAntigravity {
-				result, err = h.antigravityGatewayService.ForwardGemini(requestCtx, c, account, reqModel, "generateContent", reqStream, body, hasBoundSession)
+				result, err = h.antigravityGatewayService.ForwardGemini(
+					requestCtx,
+					c,
+					account,
+					reqModel,
+					"generateContent",
+					reqStream,
+					body,
+					hasBoundSession,
+					service.WithForwardGeminiSession(derefGroupID(apiKey.GroupID), sessionKey),
+				)
 			} else {
 				result, err = h.geminiCompatService.Forward(requestCtx, c, account, body)
 			}
@@ -514,12 +525,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				if shouldSuppressForwardErrorResponse(c, err) {
 					return
 				}
+				upstreamErrorAlreadyCommunicated := c.Writer.Written()
 				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted, err)
 				forwardFailedFields := []zap.Field{
 					zap.Int64("account_id", account.ID),
 					zap.String("account_name", account.Name),
 					zap.String("account_platform", account.Platform),
 					zap.Bool("fallback_error_response_written", wroteFallback),
+					zap.Bool("upstream_error_response_already_written", upstreamErrorAlreadyCommunicated),
 					zap.Error(err),
 				}
 				if account.Proxy != nil {
@@ -558,11 +571,12 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 
 			// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
+			// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
+			forceCacheBilling := fs.ForceCacheBilling
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-			h.submitUsageRecordTask(wrapUsageRecordTaskWithRequestContext(c, func(ctx context.Context) {
+			h.submitUsageRecordTask(c.Request.Context(), wrapUsageRecordTaskWithRequestContext(c, func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 					Result:             result,
-					ParsedRequest:      parsedReq,
 					QuotaPlatform:      quotaPlatform,
 					APIKey:             apiKey,
 					User:               apiKey.User,
@@ -573,7 +587,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					UserAgent:          userAgent,
 					IPAddress:          clientIP,
 					RequestPayloadHash: requestPayloadHash,
-					ForceCacheBilling:  fs.ForceCacheBilling,
+					ForceCacheBilling:  forceCacheBilling,
 					APIKeyService:      h.apiKeyService,
 					ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 				}); err != nil {
@@ -612,6 +626,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 		for {
 			routingAttemptStart := time.Now()
+			attemptParsedReq := *parsedReq
+			attemptParsedReq.Body = service.NewRequestBodyRef(cloneGatewayRequestBody(parsedReq.Body.Bytes()))
 
 			// 选择支持该模型的账号
 			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), currentAPIKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
@@ -728,7 +744,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 			// ===== 用户消息串行队列 START =====
 			var queueRelease func()
-			umqMode := h.getUserMsgQueueMode(account, parsedReq)
+			umqMode := h.getUserMsgQueueMode(account, &attemptParsedReq)
 
 			switch umqMode {
 			case config.UMQModeSerialize:
@@ -775,12 +791,12 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 用 wrapReleaseOnDone 确保 context 取消时自动释放（仅 serialize 模式有 queueRelease）
 			queueRelease = wrapReleaseOnDone(c.Request.Context(), queueRelease)
 			// 注入回调到 ParsedRequest：使用外层 wrapper 以便提前清理 AfterFunc
-			parsedReq.OnUpstreamAccepted = queueRelease
+			attemptParsedReq.OnUpstreamAccepted = queueRelease
 			// ===== 用户消息串行队列 END =====
 
 			// 应用渠道模型映射到请求
-			forwardBody := cloneGatewayRequestBody(body)
-			forwardModel := parsedReq.Model
+			forwardBody := cloneGatewayRequestBody(attemptParsedReq.Body.Bytes())
+			forwardModel := attemptParsedReq.Model
 			if channelMapping.Mapped {
 				forwardModel = channelMapping.MappedModel
 				forwardBody = h.gatewayService.ReplaceModelInBody(forwardBody, channelMapping.MappedModel)
@@ -788,13 +804,13 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// Bedrock CC 兼容：渠道模型映射后，清理 Anthropic API 专有字段、注入 Bedrock 必需字段。
 			// 这里必须只改写本次 attempt 的 body，不能回写 parsedReq.Body，
 			// 否则 Bedrock attempt 的兼容字段会污染后续非 Bedrock 重试。
-			forwardBody = h.gatewayService.ApplyBedrockCCCompat(c.Request.Context(), forwardBody, forwardModel, account, apiKey.GroupID)
-			forwardParsedReq := *parsedReq
+			forwardBody = h.gatewayService.ApplyBedrockCCCompat(c, forwardBody, forwardModel, account, currentAPIKey.GroupID)
+			forwardParsedReq := attemptParsedReq
 			forwardParsedReq.Model = forwardModel
-			forwardParsedReq.Body = forwardBody
+			forwardParsedReq.Body = service.NewRequestBodyRef(forwardBody)
 
 			// 转发请求 - 根据账号平台分流
-			c.Set("parsed_request", parsedReq)
+			c.Set("parsed_request", &attemptParsedReq)
 			var result *service.ForwardResult
 			recordOpsRoutingLatency(c, routingAttemptStart)
 			forwardStart := time.Now()
@@ -816,7 +832,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				queueRelease()
 			}
 			// 清理回调引用，防止 failover 重试时旧回调被错误调用
-			parsedReq.OnUpstreamAccepted = nil
+			attemptParsedReq.OnUpstreamAccepted = nil
 
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
@@ -904,12 +920,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				if shouldSuppressForwardErrorResponse(c, err) {
 					return
 				}
+				upstreamErrorAlreadyCommunicated := c.Writer.Written()
 				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted, err)
 				forwardFailedFields := []zap.Field{
 					zap.Int64("account_id", account.ID),
 					zap.String("account_name", account.Name),
 					zap.String("account_platform", account.Platform),
 					zap.Bool("fallback_error_response_written", wroteFallback),
+					zap.Bool("upstream_error_response_already_written", upstreamErrorAlreadyCommunicated),
 					zap.Error(err),
 				}
 				if account.Proxy != nil {
@@ -939,20 +957,22 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 捕获请求信息（用于异步记录，避免在 goroutine 中访问 gin.Context）
 			userAgent := c.GetHeader("User-Agent")
 			clientIP := ip.GetClientIP(c)
-			requestPayloadHash := service.HashUsageRequestPayload(body)
+			// Forward 内部可能继续改写 body，usage 去重指纹必须使用最终上游接受的当前 body。
+			requestPayloadHash := service.HashUsageRequestPayload(attemptParsedReq.Body.Bytes())
 			inboundEndpoint := GetInboundEndpoint(c)
 			upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
 			if result.ReasoningEffort == nil {
-				result.ReasoningEffort = service.NormalizeClaudeOutputEffort(parsedReq.OutputEffort)
+				result.ReasoningEffort = service.NormalizeClaudeOutputEffort(attemptParsedReq.OutputEffort)
 			}
 
 			// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
+			// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
+			forceCacheBilling := fs.ForceCacheBilling
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), currentAPIKey)
-			h.submitUsageRecordTask(wrapUsageRecordTaskWithRequestContext(c, func(ctx context.Context) {
+			h.submitUsageRecordTask(c.Request.Context(), wrapUsageRecordTaskWithRequestContext(c, func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 					Result:             result,
-					ParsedRequest:      parsedReq,
 					QuotaPlatform:      quotaPlatform,
 					APIKey:             currentAPIKey,
 					User:               currentAPIKey.User,
@@ -963,7 +983,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					UserAgent:          userAgent,
 					IPAddress:          clientIP,
 					RequestPayloadHash: requestPayloadHash,
-					ForceCacheBilling:  fs.ForceCacheBilling,
+					ForceCacheBilling:  forceCacheBilling,
 					APIKeyService:      h.apiKeyService,
 					ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 				}); err != nil {
@@ -1507,10 +1527,10 @@ func (h *GatewayHandler) calculateSubscriptionRemaining(group *service.Group, su
 	return min
 }
 
-// handleConcurrencyError handles concurrency-related errors with proper 429 response
+// handleConcurrencyError handles concurrency-related acquire errors.
 func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
-	h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error",
-		fmt.Sprintf("Concurrency limit exceeded for %s, please retry later", slotType), streamStarted)
+	status, errType, message := concurrencyErrorResponse(err, slotType)
+	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
 }
 
 func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, platform string, streamStarted bool) {
@@ -1724,7 +1744,8 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 
 	setOpsRequestContext(c, "", false, body)
 
-	parsedReq, err := service.ParseGatewayRequest(body, domain.PlatformAnthropic)
+	bodyRef := service.NewRequestBodyRef(body)
+	parsedReq, err := service.ParseGatewayRequest(bodyRef, domain.PlatformAnthropic)
 	if err != nil {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
@@ -2103,18 +2124,18 @@ func (h *GatewayHandler) maybeLogCompatibilityFallbackMetrics(reqLog *zap.Logger
 	)
 }
 
-func (h *GatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
+func (h *GatewayHandler) submitUsageRecordTask(parent context.Context, task service.UsageRecordTask) {
 	if task == nil {
 		return
 	}
+	task = wrapUsageRecordTaskContext(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); mode != service.UsageRecordSubmitModeDropped {
 			return
 		}
 		logger.L().With(
 			zap.String("component", "handler.gateway.messages"),
-		).Warn("gateway.usage_record_task_sync_after_drop")
-		return
+		).Warn("gateway.usage_record_task_mandatory_sync_fallback")
 	}
 	// 回退路径：worker 池未注入时同步执行，避免退回到无界 goroutine 模式。
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -50,7 +50,7 @@ func TestKiroGatewayService_ResolveTLSProfile_UsesKiroResolver(t *testing.T) {
 }
 
 func TestKiroFakeCachePlanBodyPrefersForwardBody(t *testing.T) {
-	parsed := &ParsedRequest{Body: []byte(`{"metadata":{"user_id":"original"}}`)}
+	parsed := &ParsedRequest{Body: NewRequestBodyRef([]byte(`{"metadata":{"user_id":"original"}}`))}
 	meta := &kiroPreparedRequestMeta{ForwardBody: []byte(`{"metadata":{"user_id":"compacted"}}`)}
 
 	require.Equal(t, string(meta.ForwardBody), string(kiroFakeCachePlanBody(parsed, meta)))
@@ -258,7 +258,7 @@ func TestKiroGatewayService_FakeCacheSessionProgressCarriesCheckpointAcrossTurns
 		]
 	}`, sessionID))
 
-	firstPlan, firstHit := svc.prepareFakeCachePlan(account, &ParsedRequest{Model: "claude-sonnet-4", Body: firstBody, UserID: 1, APIKeyID: 2}, nil, settings)
+	firstPlan, firstHit := svc.prepareFakeCachePlan(account, &ParsedRequest{Model: "claude-sonnet-4", Body: NewRequestBodyRef(firstBody), UserID: 1, APIKeyID: 2}, nil, settings)
 	require.NotNil(t, firstPlan)
 	require.Zero(t, firstHit.CheckpointTokens)
 	firstCurrent := firstPlan.CurrentCheckpointTokens()
@@ -268,7 +268,7 @@ func TestKiroGatewayService_FakeCacheSessionProgressCarriesCheckpointAcrossTurns
 
 	svc.commitFakeCachePlan(firstPlan, settings)
 
-	secondPlan, secondHit := svc.prepareFakeCachePlan(account, &ParsedRequest{Model: "claude-sonnet-4", Body: secondBody, UserID: 1, APIKeyID: 2}, nil, settings)
+	secondPlan, secondHit := svc.prepareFakeCachePlan(account, &ParsedRequest{Model: "claude-sonnet-4", Body: NewRequestBodyRef(secondBody), UserID: 1, APIKeyID: 2}, nil, settings)
 	require.NotNil(t, secondPlan)
 	require.Greater(t, secondPlan.CurrentCheckpointTokens(), firstCurrent)
 	// Turn 1 committed its effective cached weight (== firstCacheable, since no
@@ -334,7 +334,7 @@ func TestKiroGatewayService_ForwardSnapshotsFakeCacheHitBeforeUpstreamRequest(t 
 	}
 	parsed := &ParsedRequest{
 		Model:    "claude-sonnet-4-5-20250929",
-		Body:     body,
+		Body:     NewRequestBodyRef(body),
 		UserID:   1,
 		APIKeyID: 2,
 	}
@@ -381,7 +381,7 @@ func TestKiroGatewayService_PrepareFakeCachePlanReusesAcrossAccountsForSameUserA
 
 	firstPlan, firstHit := svc.prepareFakeCachePlan(&Account{ID: 42, Platform: PlatformKiro, Type: AccountTypeOAuth}, &ParsedRequest{
 		Model:    "claude-sonnet-4",
-		Body:     firstBody,
+		Body:     NewRequestBodyRef(firstBody),
 		UserID:   1,
 		APIKeyID: 2,
 	}, nil, settings)
@@ -391,7 +391,7 @@ func TestKiroGatewayService_PrepareFakeCachePlanReusesAcrossAccountsForSameUserA
 
 	secondPlan, secondHit := svc.prepareFakeCachePlan(&Account{ID: 99, Platform: PlatformKiro, Type: AccountTypeOAuth}, &ParsedRequest{
 		Model:    "claude-sonnet-4",
-		Body:     secondBody,
+		Body:     NewRequestBodyRef(secondBody),
 		UserID:   1,
 		APIKeyID: 2,
 	}, nil, settings)
@@ -413,10 +413,10 @@ func TestKiroGatewayService_ForwardCountTokens_RejectsUnsupportedModel(t *testin
 		Type:     AccountTypeOAuth,
 	}, &ParsedRequest{
 		Model: "claude-unknown-9-9",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-unknown-9-9",
 			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-		}`),
+		}`)),
 	})
 
 	require.Error(t, err)
@@ -624,29 +624,29 @@ func TestShouldUseKiroFreeThinkingPath_ThinkingModes(t *testing.T) {
 		{name: "model_and_simulate_sonnet46", model: "claude-sonnet-4-6", mode: KiroThinkingModeModelAndSimulate, expected: false},
 	}
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				parsed := &ParsedRequest{Model: tt.model, ThinkingEnabled: true}
-				require.Equal(t, tt.expected, shouldUseKiroFreeThinkingPath(account, parsed, &KiroRuntimeSettings{ThinkingMode: tt.mode}))
-			})
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed := &ParsedRequest{Model: tt.model, ThinkingEnabled: true}
+			require.Equal(t, tt.expected, shouldUseKiroFreeThinkingPath(account, parsed, &KiroRuntimeSettings{ThinkingMode: tt.mode}))
+		})
 	}
+}
 
-	func TestShouldUseKiroFreeThinkingPathForModel_UsesEffectiveRoutedModel(t *testing.T) {
-		account := &Account{
-			ID:       43,
-			Platform: PlatformKiro,
-			Type:     AccountTypeOAuth,
-			Credentials: map[string]any{
-				"subscription_type": "free",
-			},
-		}
-		parsed := &ParsedRequest{Model: "claude-sonnet-4-6", ThinkingEnabled: true}
-		settings := &KiroRuntimeSettings{ThinkingMode: KiroThinkingModeModelAndSimulate}
-
-		require.False(t, shouldUseKiroFreeThinkingPathForModel(account, parsed, settings, "claude-sonnet-4.6"))
-		require.True(t, shouldUseKiroFreeThinkingPathForModel(account, parsed, settings, "claude-sonnet-4.5"))
+func TestShouldUseKiroFreeThinkingPathForModel_UsesEffectiveRoutedModel(t *testing.T) {
+	account := &Account{
+		ID:       43,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"subscription_type": "free",
+		},
 	}
+	parsed := &ParsedRequest{Model: "claude-sonnet-4-6", ThinkingEnabled: true}
+	settings := &KiroRuntimeSettings{ThinkingMode: KiroThinkingModeModelAndSimulate}
+
+	require.False(t, shouldUseKiroFreeThinkingPathForModel(account, parsed, settings, "claude-sonnet-4.6"))
+	require.True(t, shouldUseKiroFreeThinkingPathForModel(account, parsed, settings, "claude-sonnet-4.5"))
+}
 
 func TestRenderKiroThinkingSimulation_AddsVisibleThinkingForNativeThinkingModels(t *testing.T) {
 	settings := &KiroRuntimeSettings{
@@ -693,7 +693,7 @@ func TestPrepareKiroConvertedRequest_PromotesLargeContextToOneMillionModelWithou
 
 	converted, billedInputTokens, err := prepareKiroConvertedRequest(account, &ParsedRequest{
 		Model: "claude-sonnet-4-6",
-		Body:  body,
+		Body:  NewRequestBodyRef(body),
 	}, nil)
 	require.NoError(t, err)
 	require.Greater(t, billedInputTokens, kiroStandardContextBudgetTokens)
@@ -784,11 +784,11 @@ func TestKiroGatewayService_Forward_FreeSimulateModeUsesThinkingPreflight(t *tes
 		Model:           "claude-sonnet-4-5-20250929",
 		ThinkingEnabled: true,
 		OutputEffort:    "high",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4-5-20250929",
 			"thinking":{"type":"enabled","budget_tokens":5000},
 			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-		}`),
+		}`)),
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, parsed)
@@ -863,11 +863,11 @@ func TestKiroGatewayService_Forward_ModelAndSimulateFreeThinkingFallsBackToSimul
 		Model:           "claude-sonnet-4-5-20250929",
 		ThinkingEnabled: true,
 		OutputEffort:    "high",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4-5-20250929",
 			"thinking":{"type":"enabled","budget_tokens":5000},
 			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-		}`),
+		}`)),
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, parsed)
@@ -908,11 +908,11 @@ func TestKiroGatewayService_Forward_NativeThinkingBlocksUseUpstreamContent(t *te
 		Model:           "claude-opus-4-6",
 		ThinkingEnabled: true,
 		OutputEffort:    "high",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-opus-4-6",
 			"thinking":{"type":"enabled","budget_tokens":5000},
 			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-		}`),
+		}`)),
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, parsed)
@@ -1071,11 +1071,11 @@ func TestKiroGatewayService_ForwardNonStream_ReasoningContentEventEmitsThinkingB
 		Model:           "claude-opus-4-7",
 		ThinkingEnabled: true,
 		OutputEffort:    "high",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-opus-4-7",
 			"thinking":{"type":"enabled","budget_tokens":5000},
 			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-		}`),
+		}`)),
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, parsed)
@@ -1129,7 +1129,8 @@ func TestNormalizeKiroShadowToolHistory_RewritesServerToolHistoryToShadowToolPai
 	require.Equal(t, "tool_use", firstAssistantBlock["type"])
 	require.Equal(t, "toolu_search_1", firstAssistantBlock["id"])
 	require.Equal(t, "cc_srv_web_search", firstAssistantBlock["name"])
-	require.Equal(t, "golang", firstAssistantBlock["input"].(map[string]any)["query"])
+	firstAssistantInput, _ := firstAssistantBlock["input"].(map[string]any)
+	require.Equal(t, "golang", firstAssistantInput["query"])
 
 	user, ok := messages[1].(map[string]any)
 	require.True(t, ok)
@@ -1190,14 +1191,14 @@ func TestNormalizeKiroShadowToolHistory_RewritesWebFetchErrorToErrorToolResultAn
 
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(normalized, &payload))
-	messages := payload["messages"].([]any)
+	messages, _ := payload["messages"].([]any)
 
-	assistant := messages[0].(map[string]any)
-	assistantContent := assistant["content"].([]any)
-	firstAssistantBlock := assistantContent[0].(map[string]any)
+	assistant, _ := messages[0].(map[string]any)
+	assistantContent, _ := assistant["content"].([]any)
+	firstAssistantBlock, _ := assistantContent[0].(map[string]any)
 	require.Equal(t, "tool_use", firstAssistantBlock["type"])
 	require.Equal(t, "cc_srv_web_fetch", firstAssistantBlock["name"])
-	shadowBridge := firstAssistantBlock["_shadow_bridge"].(map[string]any)
+	shadowBridge, _ := firstAssistantBlock["_shadow_bridge"].(map[string]any)
 	require.Equal(t, "web_fetch", shadowBridge["anthropic_name"])
 	require.Equal(t, "web_fetch", shadowBridge["anthropic_type"])
 	require.Equal(t, float64(2), shadowBridge["max_uses"])
@@ -1205,12 +1206,12 @@ func TestNormalizeKiroShadowToolHistory_RewritesWebFetchErrorToErrorToolResultAn
 	require.Equal(t, []any{"example.com", "docs.example.com"}, shadowBridge["allowed_domains"])
 	require.Equal(t, []any{"blocked.example.com"}, shadowBridge["blocked_domains"])
 
-	user := messages[1].(map[string]any)
-	userContent := user["content"].([]any)
-	firstUserBlock := userContent[0].(map[string]any)
+	user, _ := messages[1].(map[string]any)
+	userContent, _ := user["content"].([]any)
+	firstUserBlock, _ := userContent[0].(map[string]any)
 	require.Equal(t, "tool_result", firstUserBlock["type"])
 	require.Equal(t, true, firstUserBlock["is_error"])
-	errorContent := firstUserBlock["content"].(map[string]any)
+	errorContent, _ := firstUserBlock["content"].(map[string]any)
 	require.Equal(t, "web_fetch_tool_error", errorContent["type"])
 	require.Equal(t, "url_not_accessible", errorContent["error_code"])
 }
@@ -1341,10 +1342,10 @@ func TestKiroGatewayService_ForwardCountTokens_RejectsInvalidConversationShape(t
 		Type:     AccountTypeOAuth,
 	}, &ParsedRequest{
 		Model: "claude-sonnet-4-6",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4-6",
 			"messages":[{"role":"assistant","content":[{"type":"text","text":"hello"}]}]
-		}`),
+		}`)),
 	})
 
 	require.Error(t, err)
@@ -1366,10 +1367,10 @@ func TestKiroGatewayService_ForwardCountTokens_UsesForwardValidationWithLocalEst
 		Type:     AccountTypeOAuth,
 	}, &ParsedRequest{
 		Model: "claude-sonnet-4-5-20250929",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4-5-20250929",
 			"messages":[{"role":"user","content":[{"type":"text","text":"hello from count tokens"}]}]
-		}`),
+		}`)),
 	})
 
 	require.NoError(t, err)
@@ -1627,10 +1628,10 @@ func TestKiroGatewayService_Forward_HTTPErrorRecordsOpsContext(t *testing.T) {
 		},
 		&ParsedRequest{
 			Model: "claude-sonnet-4-5-20250929",
-			Body: []byte(`{
+			Body: NewRequestBodyRef([]byte(`{
 				"model":"claude-sonnet-4-5-20250929",
 				"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-			}`),
+			}`)),
 		},
 	)
 
@@ -1701,10 +1702,10 @@ func TestKiroGatewayService_Forward_Kiro429MarksSameAccountRetry(t *testing.T) {
 		},
 		&ParsedRequest{
 			Model: "claude-sonnet-4-6",
-			Body: []byte(`{
+			Body: NewRequestBodyRef([]byte(`{
 				"model":"claude-sonnet-4-6",
 				"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-			}`),
+			}`)),
 		},
 	)
 
@@ -1752,10 +1753,10 @@ func TestKiroGatewayService_Forward_Kiro429SuspiciousActivityDoesNotMarkSameAcco
 		},
 		&ParsedRequest{
 			Model: "claude-sonnet-4-6",
-			Body: []byte(`{
+			Body: NewRequestBodyRef([]byte(`{
 				"model":"claude-sonnet-4-6",
 				"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-			}`),
+			}`)),
 		},
 	)
 
@@ -2724,7 +2725,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebSearchReturnsServerToolPau
 			Type:     AccountTypeOAuth,
 		},
 		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
-		&ParsedRequest{Model: "claude-sonnet-4", Body: []byte(`{}`)},
+		&ParsedRequest{Model: "claude-sonnet-4", Body: NewRequestBodyRef([]byte(`{}`))},
 		&kiropkg.ConvertResult{
 			Model: "claude-sonnet-4.5",
 			BridgeMetadata: &kiropkg.BridgeMetadata{
@@ -2845,7 +2846,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchReturnsServerToolPaus
 		c,
 		&Account{ID: 11, Platform: PlatformKiro, Type: AccountTypeOAuth},
 		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
-		&ParsedRequest{Model: "claude-sonnet-4", Body: []byte(`{}`)},
+		&ParsedRequest{Model: "claude-sonnet-4", Body: NewRequestBodyRef([]byte(`{}`))},
 		&kiropkg.ConvertResult{
 			Model: "claude-sonnet-4.5",
 			BridgeMetadata: &kiropkg.BridgeMetadata{
@@ -2907,7 +2908,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchFailureReturnsStructu
 		c,
 		&Account{ID: 111, Platform: PlatformKiro, Type: AccountTypeOAuth},
 		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
-		&ParsedRequest{Model: "claude-sonnet-4", Body: []byte(`{}`)},
+		&ParsedRequest{Model: "claude-sonnet-4", Body: NewRequestBodyRef([]byte(`{}`))},
 		&kiropkg.ConvertResult{
 			Model: "claude-sonnet-4.5",
 			BridgeMetadata: &kiropkg.BridgeMetadata{
@@ -2964,7 +2965,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchTruncatesToMaxContent
 		c,
 		&Account{ID: 112, Platform: PlatformKiro, Type: AccountTypeOAuth},
 		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
-		&ParsedRequest{Model: "claude-sonnet-4", Body: []byte(`{}`)},
+		&ParsedRequest{Model: "claude-sonnet-4", Body: NewRequestBodyRef([]byte(`{}`))},
 		&kiropkg.ConvertResult{
 			Model: "claude-sonnet-4.5",
 			BridgeMetadata: &kiropkg.BridgeMetadata{
@@ -2991,13 +2992,13 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchTruncatesToMaxContent
 
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
-	content := payload["content"].([]any)
-	resultBlock := content[1].(map[string]any)
-	fetchContent := resultBlock["content"].(map[string]any)
-	text := fetchContent["text"].(string)
+	content, _ := payload["content"].([]any)
+	resultBlock, _ := content[1].(map[string]any)
+	fetchContent, _ := resultBlock["content"].(map[string]any)
+	text, _ := fetchContent["text"].(string)
 	require.LessOrEqual(t, kiropkg.AccurateTokenCount(text), 4)
-	document := fetchContent["document"].(map[string]any)
-	source := document["source"].(map[string]any)
+	document, _ := fetchContent["document"].(map[string]any)
+	source, _ := document["source"].(map[string]any)
 	require.Equal(t, text, source["data"])
 }
 
@@ -3035,7 +3036,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebToolsExceedMaxUsesReturnsE
 		c,
 		&Account{ID: 113, Platform: PlatformKiro, Type: AccountTypeOAuth},
 		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
-		&ParsedRequest{Model: "claude-sonnet-4", Body: []byte(`{}`)},
+		&ParsedRequest{Model: "claude-sonnet-4", Body: NewRequestBodyRef([]byte(`{}`))},
 		&kiropkg.ConvertResult{
 			Model: "claude-sonnet-4.5",
 			BridgeMetadata: &kiropkg.BridgeMetadata{
@@ -3098,7 +3099,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchPreservesContextWindo
 		c,
 		&Account{ID: 211, Platform: PlatformKiro, Type: AccountTypeOAuth},
 		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
-		&ParsedRequest{Model: "claude-sonnet-4", Body: []byte(`{}`)},
+		&ParsedRequest{Model: "claude-sonnet-4", Body: NewRequestBodyRef([]byte(`{}`))},
 		&kiropkg.ConvertResult{
 			Model: "claude-sonnet-4.5",
 			BridgeMetadata: &kiropkg.BridgeMetadata{
@@ -3144,7 +3145,7 @@ func TestKiroGatewayService_ForwardNonStream_NormalToolBeforeShadowToolKeepsTool
 		c,
 		&Account{ID: 12, Platform: PlatformKiro, Type: AccountTypeOAuth},
 		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
-		&ParsedRequest{Model: "claude-sonnet-4", Body: []byte(`{}`)},
+		&ParsedRequest{Model: "claude-sonnet-4", Body: NewRequestBodyRef([]byte(`{}`))},
 		&kiropkg.ConvertResult{
 			Model: "claude-sonnet-4.5",
 			BridgeMetadata: &kiropkg.BridgeMetadata{
@@ -3191,7 +3192,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowToolFollowedByNormalToolRetur
 		c,
 		&Account{ID: 13, Platform: PlatformKiro, Type: AccountTypeOAuth},
 		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
-		&ParsedRequest{Model: "claude-sonnet-4", Body: []byte(`{}`)},
+		&ParsedRequest{Model: "claude-sonnet-4", Body: NewRequestBodyRef([]byte(`{}`))},
 		&kiropkg.ConvertResult{
 			Model: "claude-sonnet-4.5",
 			BridgeMetadata: &kiropkg.BridgeMetadata{
@@ -3405,7 +3406,7 @@ func TestKiroGatewayService_Forward_ContinuationReplaySendsShadowToolHistoryToKi
 	}
 	parsed := &ParsedRequest{
 		Model: "claude-sonnet-4",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4",
 			"tools":[{"type":"web_search_20250305","name":"web_search"}],
 			"messages":[
@@ -3416,7 +3417,7 @@ func TestKiroGatewayService_Forward_ContinuationReplaySendsShadowToolHistoryToKi
 					{"type":"text","text":"Summarize the result"}
 				]}
 			]
-		}`),
+		}`)),
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, parsed)
@@ -3452,11 +3453,11 @@ func TestKiroGatewayService_Forward_RejectsUnsupportedServerToolFamilies(t *test
 	}
 	parsed := &ParsedRequest{
 		Model: "claude-sonnet-4",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4",
 			"tools":[{"type":"computer_20250124","name":"computer","display_width_px":1024,"display_height_px":768}],
 			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-		}`),
+		}`)),
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, parsed)
@@ -3511,7 +3512,7 @@ func TestKiroGatewayService_Forward_ContinuationWithoutToolsStillBridgesShadowWe
 	}
 	parsed := &ParsedRequest{
 		Model: "claude-sonnet-4",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4",
 			"messages":[
 				{"role":"user","content":[{"type":"text","text":"Search for Go"}]},
@@ -3521,7 +3522,7 @@ func TestKiroGatewayService_Forward_ContinuationWithoutToolsStillBridgesShadowWe
 					{"type":"text","text":"Search Go 1.23 next"}
 				]}
 			]
-		}`),
+		}`)),
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, parsed)
@@ -3584,7 +3585,7 @@ func TestKiroGatewayService_Forward_ContinuationWithoutToolsRestoresShadowWebFet
 	}
 	parsed := &ParsedRequest{
 		Model: "claude-sonnet-4",
-		Body: []byte(`{
+		Body: NewRequestBodyRef([]byte(`{
 			"model":"claude-sonnet-4",
 			"messages":[
 				{"role":"user","content":[{"type":"text","text":"Fetch docs"}]},
@@ -3613,7 +3614,7 @@ func TestKiroGatewayService_Forward_ContinuationWithoutToolsRestoresShadowWebFet
 					{"type":"text","text":"Fetch the docs page next"}
 				]}
 			]
-		}`),
+		}`)),
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, parsed)

@@ -10,6 +10,7 @@ const (
 	recoverableFailureInvalidContinuation      recoverableFailureReason = "invalid_continuation"
 	recoverableFailureToolContext              recoverableFailureReason = "tool_context"
 	recoverableFailureToolContinuation         recoverableFailureReason = "tool_continuation"
+	recoverableFailureEmptyMessages            recoverableFailureReason = "empty_messages"
 )
 
 type recoverableReplayPolicy struct {
@@ -38,6 +39,9 @@ func classifyRecoverableFailureReason(message string) (recoverableFailureReason,
 	case strings.Contains(msg, "tool_result") && strings.Contains(msg, "tool_use") &&
 		containsAnyRecoverableFailureToken(msg, "missing", "without", "follow", "preced"):
 		return recoverableFailureToolContinuation, true
+	case strings.Contains(msg, "messages") &&
+		containsAnyRecoverableFailureToken(msg, "at least one message", "at least 1 message"):
+		return recoverableFailureEmptyMessages, true
 	default:
 		return "", false
 	}
@@ -49,7 +53,8 @@ func replayPolicyForRecoverableFailureReason(reason recoverableFailureReason) re
 		recoverableFailureInvalidAnchor,
 		recoverableFailureInvalidContinuation,
 		recoverableFailureToolContext,
-		recoverableFailureToolContinuation:
+		recoverableFailureToolContinuation,
+		recoverableFailureEmptyMessages:
 		return recoverableReplayPolicy{RetryWithFullReplay: true}
 	default:
 		return recoverableReplayPolicy{}

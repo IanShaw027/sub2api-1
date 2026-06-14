@@ -148,9 +148,9 @@ func extractOpenAIResponsesText(payload map[string]any) string {
 			return
 		}
 		if builder.Len() > 0 {
-			builder.WriteString("\n")
+			_, _ = builder.WriteString("\n")
 		}
-		builder.WriteString(text)
+		_, _ = builder.WriteString(text)
 	}
 
 	if outputText, ok := payload["output_text"].(string); ok {

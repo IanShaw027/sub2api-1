@@ -838,7 +838,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullFloat64{}, // account_stats_cost
 			now,
 			sql.NullString{}, // openai_ws_profile
-			false,             // openai_ws_conn_reused
+			false,            // openai_ws_conn_reused
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
@@ -893,7 +893,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullFloat64{}, // account_stats_cost
 			now,
 			sql.NullString{}, // openai_ws_profile
-			false,             // openai_ws_conn_reused
+			false,            // openai_ws_conn_reused
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
@@ -948,7 +948,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullFloat64{}, // account_stats_cost
 			now,
 			sql.NullString{}, // openai_ws_profile
-			false,             // openai_ws_conn_reused
+			false,            // openai_ws_conn_reused
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)

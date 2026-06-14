@@ -434,6 +434,7 @@ describe('OidcCallbackView', () => {
     getPublicSettings.mockResolvedValue({
       oidc_oauth_provider_name: 'ExampleID',
       invitation_code_enabled: true,
+      email_verify_enabled: true,
       turnstile_enabled: false,
       turnstile_site_key: ''
     })
@@ -490,6 +491,12 @@ describe('OidcCallbackView', () => {
   })
 
   it('starts with an empty create-account email when the upstream provider did not return one', async () => {
+    getPublicSettings.mockResolvedValue({
+      oidc_oauth_provider_name: 'ExampleID',
+      email_verify_enabled: true,
+      turnstile_enabled: false,
+      turnstile_site_key: ''
+    })
     exchangePendingOAuthCompletion.mockResolvedValue({
       error: 'email_required',
       redirect: '/welcome',
@@ -602,6 +609,12 @@ describe('OidcCallbackView', () => {
   })
 
   it('sends a verify code for pending oauth account creation', async () => {
+    getPublicSettings.mockResolvedValue({
+      oidc_oauth_provider_name: 'ExampleID',
+      email_verify_enabled: true,
+      turnstile_enabled: false,
+      turnstile_site_key: ''
+    })
     exchangePendingOAuthCompletion.mockResolvedValue({
       error: 'email_required',
       redirect: '/welcome'

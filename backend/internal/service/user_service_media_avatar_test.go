@@ -40,6 +40,9 @@ func (r *userServiceMediaAvatarRepo) GetByID(context.Context, int64) (*User, err
 	}
 	return &User{}, nil
 }
+func (r *userServiceMediaAvatarRepo) GetByIDIncludeDeleted(ctx context.Context, id int64) (*User, error) {
+	return r.GetByID(ctx, id)
+}
 func (r *userServiceMediaAvatarRepo) GetByEmail(context.Context, string) (*User, error) {
 	return &User{}, nil
 }

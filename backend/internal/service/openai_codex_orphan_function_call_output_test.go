@@ -18,7 +18,8 @@ func TestDropOrphanFunctionCallOutputs(t *testing.T) {
 		if len(got) != 1 {
 			t.Fatalf("expected 1 item kept, got %d", len(got))
 		}
-		if got[0].(map[string]any)["type"].(string) != "message" {
+		gotItem, _ := got[0].(map[string]any)
+		if gotType, _ := gotItem["type"].(string); gotType != "message" {
 			t.Fatalf("expected message kept, got %#v", got[0])
 		}
 	})
@@ -104,7 +105,8 @@ func TestDropOrphanFunctionCallOutputs(t *testing.T) {
 		if len(got) != 1 {
 			t.Fatalf("expected only later call source kept, got %d items", len(got))
 		}
-		if got[0].(map[string]any)["type"].(string) != "tool_search_call" {
+		gotItem, _ := got[0].(map[string]any)
+		if gotType, _ := gotItem["type"].(string); gotType != "tool_search_call" {
 			t.Fatalf("expected call source kept, got %#v", got[0])
 		}
 	})
@@ -135,7 +137,8 @@ func TestDropOrphanFunctionCallOutputs(t *testing.T) {
 		if len(got) != 1 {
 			t.Fatalf("expected only later item_reference kept, got %d items", len(got))
 		}
-		if got[0].(map[string]any)["type"].(string) != "item_reference" {
+		gotItem, _ := got[0].(map[string]any)
+		if gotType, _ := gotItem["type"].(string); gotType != "item_reference" {
 			t.Fatalf("expected item_reference kept, got %#v", got[0])
 		}
 	})
@@ -155,7 +158,8 @@ func TestFilterCodexInputWithOptions_DropOrphanFunctionCallOutputs(t *testing.T)
 	if len(filtered) != 1 {
 		t.Fatalf("expected 1 item kept, got %d (items=%#v)", len(filtered), filtered)
 	}
-	if filtered[0].(map[string]any)["type"].(string) != "message" {
+	filteredItem, _ := filtered[0].(map[string]any)
+	if filteredType, _ := filteredItem["type"].(string); filteredType != "message" {
 		t.Fatalf("expected message preserved, got %#v", filtered[0])
 	}
 }

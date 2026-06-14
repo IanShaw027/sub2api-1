@@ -93,7 +93,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 
 	// 1b. Extract reasoning effort and service tier from the raw body before any transformation.
 	reasoningEffort := extractOpenAIReasoningEffortFromBody(body, originalModel)
-	serviceTier := extractOpenAIServiceTierFromBody(body)
+	var serviceTier *string
 
 	// 2. Resolve model mapping (same as ForwardAsChatCompletions)
 	billingModel := resolveOpenAIForwardModelWithSettingsAndSelectedFallback(ctx, s.settingService, account, originalModel, defaultMappedModel, selectedFallbackModel)
@@ -218,7 +218,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 
 	// 7. Handle error response with failover
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+		respBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 

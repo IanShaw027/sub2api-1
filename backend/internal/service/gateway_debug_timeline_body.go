@@ -214,12 +214,12 @@ func (agg *KiroFrameAggregator) Append(frame *kiroFrame, assistantText string) {
 	}
 	if len(assistantText) > remaining {
 		safe := utf8SafePrefix(assistantText, remaining)
-		agg.textBuilder.WriteString(safe)
+		_, _ = agg.textBuilder.WriteString(safe)
 		agg.textBytes += len(safe)
 		agg.textTruncated = true
 		return
 	}
-	agg.textBuilder.WriteString(assistantText)
+	_, _ = agg.textBuilder.WriteString(assistantText)
 	agg.textBytes += len(assistantText)
 }
 

@@ -63,6 +63,18 @@ func (r *proxyServiceRepoStub) CountAccountsByProxyID(ctx context.Context, proxy
 func (r *proxyServiceRepoStub) ListAccountSummariesByProxyID(ctx context.Context, proxyID int64) ([]ProxyAccountSummary, error) {
 	panic("not implemented")
 }
+func (r *proxyServiceRepoStub) SweepExpiredProxies(ctx context.Context, now time.Time) (int64, error) {
+	panic("not implemented")
+}
+func (r *proxyServiceRepoStub) ListAllForFallback(ctx context.Context) ([]Proxy, error) {
+	panic("not implemented")
+}
+func (r *proxyServiceRepoStub) CountExpired(ctx context.Context) (int64, error) {
+	panic("not implemented")
+}
+func (r *proxyServiceRepoStub) CountExpiringSoon(ctx context.Context, now time.Time) (int64, error) {
+	panic("not implemented")
+}
 
 func TestProxyService_TestConnection_ProxyNotFound(t *testing.T) {
 	t.Parallel()
