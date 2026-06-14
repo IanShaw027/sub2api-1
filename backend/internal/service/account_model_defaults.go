@@ -414,11 +414,61 @@ func (s *SettingService) GetPlatformDefaultAccountModelConfig(ctx context.Contex
 	if s == nil || s.settingRepo == nil {
 		return map[string]DefaultAccountModelConfig{}
 	}
-	raw, err := s.settingRepo.GetValue(ctx, SettingKeyPlatformDefaultAccountModelConfig)
+	var staleConfig map[string]DefaultAccountModelConfig
+	if cached, ok := platformDefaultAccountModelConfigCache.Load().(*cachedPlatformModelRoutingConfig); ok {
+		if cached != nil {
+			staleConfig = clonePlatformModelConfigMap(cached.config)
+			if time.Now().UnixNano() < cached.expiresAt {
+				return clonePlatformModelConfigMap(cached.config)
+			}
+		}
+	}
+
+	result, err, _ := platformDefaultAccountModelConfigSF.Do(SettingKeyPlatformDefaultAccountModelConfig, func() (any, error) {
+		if cached, ok := platformDefaultAccountModelConfigCache.Load().(*cachedPlatformModelRoutingConfig); ok {
+			if cached != nil {
+				staleConfig = clonePlatformModelConfigMap(cached.config)
+				if time.Now().UnixNano() < cached.expiresAt {
+					return clonePlatformModelConfigMap(cached.config), nil
+				}
+			}
+		}
+
+		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), platformModelRoutingConfigDBTimeout)
+		defer cancel()
+
+		cacheShortTTL := func(cfg map[string]DefaultAccountModelConfig) map[string]DefaultAccountModelConfig {
+			platformDefaultAccountModelConfigCache.Store(&cachedPlatformModelRoutingConfig{
+				config:    clonePlatformModelConfigMap(cfg),
+				expiresAt: time.Now().Add(platformModelRoutingConfigErrorTTL).UnixNano(),
+			})
+			return clonePlatformModelConfigMap(cfg)
+		}
+		cacheNormalTTL := func(cfg map[string]DefaultAccountModelConfig) map[string]DefaultAccountModelConfig {
+			platformDefaultAccountModelConfigCache.Store(&cachedPlatformModelRoutingConfig{
+				config:    clonePlatformModelConfigMap(cfg),
+				expiresAt: time.Now().Add(platformModelRoutingConfigCacheTTL).UnixNano(),
+			})
+			return clonePlatformModelConfigMap(cfg)
+		}
+
+		raw, err := s.settingRepo.GetValue(dbCtx, SettingKeyPlatformDefaultAccountModelConfig)
+		if err != nil {
+			if !errors.Is(err, ErrSettingNotFound) && staleConfig != nil {
+				return cacheShortTTL(staleConfig), nil
+			}
+			return cacheShortTTL(map[string]DefaultAccountModelConfig{}), nil
+		}
+
+		return cacheNormalTTL(parsePlatformDefaultAccountModelConfig(raw)), nil
+	})
 	if err != nil {
 		return map[string]DefaultAccountModelConfig{}
 	}
-	return parsePlatformDefaultAccountModelConfig(raw)
+	if cfg, ok := result.(map[string]DefaultAccountModelConfig); ok {
+		return clonePlatformModelConfigMap(cfg)
+	}
+	return map[string]DefaultAccountModelConfig{}
 }
 
 func (s *SettingService) GetPlatformModelRoutingConfig(ctx context.Context) map[string]DefaultAccountModelConfig {
@@ -500,10 +550,7 @@ func applyDefaultAccountModelConfigForPlatform(platform string, credentials map[
 	if credentials == nil {
 		credentials = map[string]any{}
 	}
-	originalKeys := make(map[string]struct{}, len(credentials))
-	for key := range credentials {
-		originalKeys[key] = struct{}{}
-	}
+	originalKeys := explicitAccountDefaultCredentialKeys(credentials)
 	out := applyDefaultAccountModelConfigBaseWithOriginalKeys(credentials, cfg, originalKeys, false)
 	if strings.EqualFold(strings.TrimSpace(platform), PlatformKiro) && len(cfg.KiroSubscriptionTypeModelMap) > 0 {
 		subscriptionType := normalizeKiroSubscriptionTypeKey(resolveKiroSubscriptionTypeFromCredentials(out))
@@ -514,6 +561,31 @@ func applyDefaultAccountModelConfigForPlatform(platform string, credentials map[
 		}
 	}
 	return out
+}
+
+func explicitAccountDefaultCredentialKeys(credentials map[string]any) map[string]struct{} {
+	keys := make(map[string]struct{}, len(credentials))
+	for key, value := range credentials {
+		switch key {
+		case "model_mapping", "compact_model_mapping":
+			if !credentialStringMapHasEntries(value) {
+				continue
+			}
+		}
+		keys[key] = struct{}{}
+	}
+	return keys
+}
+
+func credentialStringMapHasEntries(raw any) bool {
+	switch value := raw.(type) {
+	case map[string]any:
+		return len(value) > 0
+	case map[string]string:
+		return len(value) > 0
+	default:
+		return false
+	}
 }
 
 func applyDefaultAccountModelConfigBaseWithOriginalKeys(credentials map[string]any, cfg DefaultAccountModelConfig, originalKeys map[string]struct{}, override bool) map[string]any {

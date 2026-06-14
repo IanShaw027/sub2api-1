@@ -56,6 +56,34 @@ func TestResolveEffectiveModelRouting_UsesSystemConfigWhenAccountHasNoModelRules
 	require.Equal(t, "gpt-3.5-turbo", unsupportedResult.Model)
 }
 
+func TestResolveEffectiveModelRouting_EmptyAccountMappingInheritsPlatformDefault(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyPlatformDefaultAccountModelConfig: `{
+				"kiro": {
+					"model_mapping": {
+						"anthropic-opus-4-8": "claude-opus-4.8"
+					}
+				}
+			}`,
+		},
+	}, &config.Config{})
+	account := &Account{
+		Platform: PlatformKiro,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{},
+		},
+	}
+
+	result := ResolveEffectiveModelRouting(context.Background(), svc, account, "anthropic-opus-4-8", false)
+
+	require.True(t, result.Supported)
+	require.True(t, result.Matched)
+	require.Equal(t, "claude-opus-4.8", result.Model)
+	require.Equal(t, "platform_default", result.Source)
+}
+
 func TestResolveEffectiveModelRouting_MappingOnlyDoesNotRestrictUnmappedModels(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{

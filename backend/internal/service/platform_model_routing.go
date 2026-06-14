@@ -44,6 +44,11 @@ func ResolveEffectiveModelRouting(ctx context.Context, settingService *SettingSe
 	}
 
 	cfg, hasSystemConfig := platformModelRoutingConfigForAccount(ctx, settingService, account)
+	source := "system"
+	if !hasSystemConfig {
+		cfg, hasSystemConfig = platformDefaultModelRoutingConfigForAccount(ctx, settingService, account)
+		source = "platform_default"
+	}
 	if !hasSystemConfig {
 		if account != nil {
 			result.Model = strings.TrimSpace(account.GetMappedModel(requestedModel))
@@ -63,7 +68,7 @@ func ResolveEffectiveModelRouting(ctx context.Context, settingService *SettingSe
 
 	mappedModel, matched, hasNormalRules := resolvePlatformModelRoutingBase(accountPlatform(account), cfg, requestedModel)
 	if hasNormalRules {
-		result.Source = "system"
+		result.Source = source
 		result.Supported = matched
 		result.Matched = matched
 		if matched && strings.TrimSpace(mappedModel) != "" {
@@ -83,7 +88,7 @@ func ResolveEffectiveModelRouting(ctx context.Context, settingService *SettingSe
 				result.Model = trimmed
 			}
 			result.Matched = true
-			result.Source = "system"
+			result.Source = source
 		}
 	}
 
@@ -106,14 +111,14 @@ func accountHasExplicitModelRouting(account *Account, compact bool) bool {
 	if account == nil || account.Credentials == nil {
 		return false
 	}
-	if _, ok := account.Credentials["model_mapping"]; ok {
+	if credentialStringMapHasEntries(account.Credentials["model_mapping"]) {
 		return true
 	}
-	if _, ok := account.Credentials["model_whitelist"]; ok {
+	if len(stringsFromRawSlice(account.Credentials["model_whitelist"])) > 0 {
 		return true
 	}
 	if compact {
-		if _, ok := account.Credentials["compact_model_mapping"]; ok {
+		if credentialStringMapHasEntries(account.Credentials["compact_model_mapping"]) {
 			return true
 		}
 	}
@@ -143,6 +148,69 @@ func platformModelRoutingConfigForAccount(ctx context.Context, settingService *S
 	}
 	cfg = normalizeDefaultAccountModelConfig(cfg)
 	return cfg, hasPlatformModelRoutingConfig(cfg)
+}
+
+func hasModelRoutingConfigForAccount(ctx context.Context, settingService *SettingService, account *Account) bool {
+	if _, ok := platformModelRoutingConfigForAccount(ctx, settingService, account); ok {
+		return true
+	}
+	_, ok := platformDefaultModelRoutingConfigForAccount(ctx, settingService, account)
+	return ok
+}
+
+func platformDefaultModelRoutingConfigForAccount(ctx context.Context, settingService *SettingService, account *Account) (DefaultAccountModelConfig, bool) {
+	platform := accountPlatform(account)
+	if platform == "" || settingService == nil {
+		return DefaultAccountModelConfig{}, false
+	}
+	all := settingService.GetPlatformDefaultAccountModelConfig(ctx)
+	if len(all) == 0 {
+		return DefaultAccountModelConfig{}, false
+	}
+	cfg, ok := all[strings.ToLower(strings.TrimSpace(platform))]
+	if !ok {
+		cfg, ok = all[strings.TrimSpace(platform)]
+	}
+	if !ok {
+		return DefaultAccountModelConfig{}, false
+	}
+	cfg = normalizeDefaultAccountModelConfig(cfg)
+	if strings.EqualFold(platform, PlatformKiro) && len(cfg.KiroSubscriptionTypeModelMap) > 0 {
+		subscriptionType := normalizeKiroSubscriptionTypeKey(resolveKiroSubscriptionTypeFromCredentials(account.Credentials))
+		if subscriptionType != "" {
+			if variantCfg, ok := cfg.KiroSubscriptionTypeModelMap[subscriptionType]; ok {
+				cfg = mergeKiroSubscriptionRuntimeModelConfig(cfg, variantCfg)
+			}
+		}
+	}
+	cfg = normalizePlatformModelRoutingConfigEntry(cfg)
+	return cfg, hasPlatformModelRoutingConfig(cfg)
+}
+
+func mergeKiroSubscriptionRuntimeModelConfig(base, variant DefaultAccountModelConfig) DefaultAccountModelConfig {
+	variant = normalizeDefaultAccountModelConfig(variant)
+	out := base
+	if len(variant.ModelWhitelist) > 0 {
+		out.ModelWhitelist = cloneStringSlice(variant.ModelWhitelist)
+	}
+	if len(variant.ModelMapping) > 0 {
+		out.ModelMapping = mergeStringMaps(out.ModelMapping, variant.ModelMapping)
+	}
+	if len(variant.CompactModelMapping) > 0 {
+		out.CompactModelMapping = mergeStringMaps(out.CompactModelMapping, variant.CompactModelMapping)
+	}
+	return out
+}
+
+func mergeStringMaps(base, override map[string]string) map[string]string {
+	out := copyStringMap(base)
+	if out == nil {
+		out = map[string]string{}
+	}
+	for key, value := range override {
+		out[key] = value
+	}
+	return out
 }
 
 func hasPlatformModelRoutingConfig(cfg DefaultAccountModelConfig) bool {
