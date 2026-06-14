@@ -3142,11 +3142,42 @@ func matchBlockedKeyword(text string, keywords []string) (string, bool) {
 		if kw == "" {
 			continue
 		}
+		if terms := splitBlockedKeywordAndTerms(kw); len(terms) > 1 {
+			if matchBlockedKeywordAndTerms(lower, terms) {
+				return kw, true
+			}
+			continue
+		}
 		if strings.Contains(lower, strings.ToLower(kw)) {
 			return kw, true
 		}
 	}
 	return "", false
+}
+
+func splitBlockedKeywordAndTerms(keyword string) []string {
+	if !strings.Contains(keyword, "&&") {
+		return nil
+	}
+	parts := strings.Split(keyword, "&&")
+	terms := make([]string, 0, len(parts))
+	for _, part := range parts {
+		term := strings.TrimSpace(part)
+		if term == "" {
+			continue
+		}
+		terms = append(terms, strings.ToLower(term))
+	}
+	return terms
+}
+
+func matchBlockedKeywordAndTerms(textLower string, terms []string) bool {
+	for _, term := range terms {
+		if !strings.Contains(textLower, term) {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeModerationAPIKeys(keys []string) []string {
