@@ -716,7 +716,7 @@ func TestContentModerationCheck_AttentionThresholdRecordsNonHit(t *testing.T) {
 	require.Equal(t, 0.5, logs[0].HighestScore)
 }
 
-func TestContentModerationCheck_PreBlockAuditFailureBlocksAfterRetries(t *testing.T) {
+func TestContentModerationCheck_PreBlockAuditFailureAllowsAfterRetries(t *testing.T) {
 	var attempts int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts++
@@ -758,12 +758,9 @@ func TestContentModerationCheck_PreBlockAuditFailureBlocksAfterRetries(t *testin
 
 	require.NoError(t, err)
 	require.Equal(t, 3, attempts)
-	require.False(t, decision.Allowed)
-	require.True(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionError, decision.Action)
-	logs := requireContentModerationLogCount(t, repo, 1)
-	require.Equal(t, ContentModerationActionError, logs[0].Action)
-	require.NotEmpty(t, logs[0].Error)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
 }
 
 func TestContentModerationCheck_PreBlockRateLimitFailureCanAllow(t *testing.T) {

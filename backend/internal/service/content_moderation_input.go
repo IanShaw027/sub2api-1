@@ -2,9 +2,29 @@ package service
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/tidwall/gjson"
+)
+
+var (
+	reAnyXMLTag = regexp.MustCompile(`</?[\w:.-]+(?:\s[^>]*)?>`)
+
+	moderationStripTags = []string{
+		"system-reminder",
+		"previous-summary",
+		"antml:thinking",
+		"thinking_mode",
+		"max_thinking_length",
+		"local-command-caveat",
+		"local-command-stdout",
+		"command-name",
+		"command-message",
+		"command-args",
+		"context",
+		"artifacts",
+	}
 )
 
 func ExtractContentModerationText(protocol string, body []byte) string {
@@ -300,29 +320,43 @@ func addModerationText(parts *[]string, text string) {
 }
 
 func stripAnthropicSystemReminderText(text string) string {
+	return stripXMLTagsForModeration(text)
+}
+
+func stripXMLTagsForModeration(text string) string {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""
 	}
-	const openTag = "<system-reminder>"
-	const closeTag = "</system-reminder>"
+	for _, tag := range moderationStripTags {
+		text = stripTagWithContent(text, tag)
+	}
+	text = reAnyXMLTag.ReplaceAllString(text, "")
+	return strings.TrimSpace(text)
+}
 
+func stripTagWithContent(text, tag string) string {
+	openTag := "<" + tag
+	closeTag := "</" + tag + ">"
 	for {
-		start := strings.Index(text, openTag)
+		start := strings.Index(strings.ToLower(text), strings.ToLower(openTag))
 		if start < 0 {
 			break
 		}
-		endRel := strings.Index(text[start+len(openTag):], closeTag)
-		if endRel < 0 {
-			text = text[:start] + text[start+len(openTag):]
+		tagEnd := strings.IndexByte(text[start:], '>')
+		if tagEnd < 0 {
+			text = text[:start]
 			break
 		}
-		end := start + len(openTag) + endRel
-		text = text[:start] + text[end+len(closeTag):]
+		closeStart := strings.Index(strings.ToLower(text[start+tagEnd+1:]), strings.ToLower(closeTag))
+		if closeStart < 0 {
+			text = text[:start] + text[start+tagEnd+1:]
+			continue
+		}
+		end := start + tagEnd + 1 + closeStart + len(closeTag)
+		text = text[:start] + text[end:]
 	}
-
-	text = strings.ReplaceAll(text, closeTag, "")
-	return strings.TrimSpace(text)
+	return text
 }
 
 func normalizeContentModerationText(text string) string {

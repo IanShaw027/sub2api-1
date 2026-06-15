@@ -12,6 +12,8 @@ import (
 )
 
 const contentModerationFlaggedHashSetKey = "content_moderation:flagged_hashes"
+const contentModerationFlaggedHashKeyPrefix = "content_moderation:fh:"
+const contentModerationFlaggedHashTTL = 7 * 24 * time.Hour
 const contentModerationAPIKeyQuotaKeyPrefix = "content_moderation:api_key_quota:"
 const contentModerationAPIKeyQuotaTTL = 48 * time.Hour
 
@@ -102,13 +104,24 @@ func (c *contentModerationHashCache) RecordFlaggedInputHash(ctx context.Context,
 	if c == nil || c.rdb == nil || inputHash == "" {
 		return nil
 	}
-	return c.rdb.SAdd(ctx, contentModerationFlaggedHashSetKey, inputHash).Err()
+	pipe := c.rdb.Pipeline()
+	pipe.SAdd(ctx, contentModerationFlaggedHashSetKey, inputHash)
+	pipe.Set(ctx, contentModerationFlaggedHashKeyPrefix+inputHash, "1", contentModerationFlaggedHashTTL)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func (c *contentModerationHashCache) HasFlaggedInputHash(ctx context.Context, inputHash string) (bool, error) {
 	inputHash = strings.TrimSpace(inputHash)
 	if c == nil || c.rdb == nil || inputHash == "" {
 		return false, nil
+	}
+	exists, err := c.rdb.Exists(ctx, contentModerationFlaggedHashKeyPrefix+inputHash).Result()
+	if err != nil {
+		return false, err
+	}
+	if exists > 0 {
+		return true, nil
 	}
 	return c.rdb.SIsMember(ctx, contentModerationFlaggedHashSetKey, inputHash).Result()
 }

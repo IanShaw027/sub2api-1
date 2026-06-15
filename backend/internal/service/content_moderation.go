@@ -572,6 +572,11 @@ type ContentModerationService struct {
 	lastCleanupDeletedNonHit atomic.Int64
 	keyHealthMu              sync.Mutex
 	keyHealth                map[string]*contentModerationKeyHealth
+	configCacheMu            sync.RWMutex
+	configCache              *ContentModerationConfig
+	configCacheAt            time.Time
+	riskEnabledCache         atomic.Value
+	riskEnabledCacheAt       atomic.Int64
 }
 
 type contentModerationTask struct {
@@ -822,6 +827,7 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if err := s.settingRepo.Set(ctx, SettingKeyContentModerationConfig, string(raw)); err != nil {
 		return nil, fmt.Errorf("save content moderation config: %w", err)
 	}
+	s.invalidateConfigCache()
 	return s.configView(cfg), nil
 }
 
@@ -1156,22 +1162,9 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		if queueDelay != nil {
 			s.asyncErrors.Add(1)
 		}
-		failClosed := allowBlock && cfg.Mode == ContentModerationModePreBlock
-		if failClosed && isModerationRateLimitError(err) && cfg.APIKeyRateLimitPolicy == ContentModerationRateLimitFailurePolicyAllow {
-			failClosed = false
-		}
-		if cfg.RecordNonHits || failClosed {
+		if cfg.RecordNonHits {
 			log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, content.ExcerptText(), &latency, queueDelay, err.Error())
 			_ = s.repo.CreateLog(ctx, log)
-		}
-		if failClosed {
-			return &ContentModerationDecision{
-				Allowed:    false,
-				Blocked:    true,
-				Message:    cfg.BlockMessage,
-				StatusCode: cfg.BlockStatus,
-				Action:     ContentModerationActionError,
-			}
 		}
 		return allow
 	}
@@ -1585,32 +1578,64 @@ func (s *ContentModerationService) runCleanupOnce() {
 }
 
 func (s *ContentModerationService) loadConfig(ctx context.Context) (*ContentModerationConfig, error) {
+	s.configCacheMu.RLock()
+	if s.configCache != nil && time.Since(s.configCacheAt) < 5*time.Second {
+		cfg := s.configCache
+		s.configCacheMu.RUnlock()
+		return cfg, nil
+	}
+	s.configCacheMu.RUnlock()
+
 	cfg := defaultContentModerationConfig()
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyContentModerationConfig)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
 			cfg.normalize()
+			s.cacheConfig(cfg)
 			return cfg, nil
 		}
 		return nil, fmt.Errorf("get content moderation config: %w", err)
 	}
 	if strings.TrimSpace(raw) == "" {
 		cfg.normalize()
+		s.cacheConfig(cfg)
 		return cfg, nil
 	}
 	if err := json.Unmarshal([]byte(raw), cfg); err != nil {
 		return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_CONFIG", "内容审计配置不是有效 JSON")
 	}
 	cfg.normalize()
+	s.cacheConfig(cfg)
 	return cfg, nil
 }
 
+func (s *ContentModerationService) cacheConfig(cfg *ContentModerationConfig) {
+	s.configCacheMu.Lock()
+	s.configCache = cfg
+	s.configCacheAt = time.Now()
+	s.configCacheMu.Unlock()
+}
+
+func (s *ContentModerationService) invalidateConfigCache() {
+	s.configCacheMu.Lock()
+	s.configCache = nil
+	s.configCacheMu.Unlock()
+}
+
 func (s *ContentModerationService) isRiskControlEnabled(ctx context.Context) bool {
+	if cached := s.riskEnabledCache.Load(); cached != nil {
+		if time.Now().Unix()-s.riskEnabledCacheAt.Load() < 5 {
+			return cached.(bool)
+		}
+	}
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRiskControlEnabled)
 	if err != nil {
 		return false
 	}
-	return raw == "true"
+	enabled := raw == "true"
+	s.riskEnabledCache.Store(enabled)
+	s.riskEnabledCacheAt.Store(time.Now().Unix())
+	return enabled
 }
 
 func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *ContentModerationConfig) error {
@@ -1804,7 +1829,7 @@ func (s *ContentModerationService) applyContentModerationPersistenceEffects(ctx 
 	autoBanJustApplied := false
 	if applySideEffects {
 		autoBanJustApplied = s.applyFlaggedAccountSideEffects(ctx, cfg, log)
-		s.sendFlaggedNotificationSideEffects(ctx, cfg, log, autoBanJustApplied)
+		go s.sendFlaggedNotificationSideEffects(context.Background(), cfg, log, autoBanJustApplied)
 	}
 }
 
@@ -2980,7 +3005,11 @@ func evaluateModerationScores(scores map[string]float64, thresholds map[string]f
 			highestScore = score
 			highestCategory = category
 		}
-		if score >= thresholds[category] {
+		threshold := thresholds[category]
+		if threshold <= 0 {
+			continue
+		}
+		if score >= threshold {
 			flagged = true
 		}
 	}
@@ -3152,11 +3181,46 @@ func matchBlockedKeyword(text string, keywords []string) (string, bool) {
 			}
 			continue
 		}
-		if strings.Contains(lower, strings.ToLower(kw)) {
+		kwLower := strings.ToLower(kw)
+		if containsKeywordWithBoundary(lower, kwLower) {
 			return kw, true
 		}
 	}
 	return "", false
+}
+
+func containsKeywordWithBoundary(text, keyword string) bool {
+	if hasCJK(keyword) {
+		return strings.Contains(text, keyword)
+	}
+	idx := 0
+	for {
+		pos := strings.Index(text[idx:], keyword)
+		if pos < 0 {
+			return false
+		}
+		start := idx + pos
+		end := start + len(keyword)
+		leftOK := start == 0 || !isWordChar(rune(text[start-1]))
+		rightOK := end == len(text) || !isWordChar(rune(text[end]))
+		if leftOK && rightOK {
+			return true
+		}
+		idx = start + 1
+	}
+}
+
+func hasCJK(s string) bool {
+	for _, r := range s {
+		if r >= 0x2E80 && r <= 0x9FFF || r >= 0xF900 && r <= 0xFAFF || r >= 0xFE30 && r <= 0xFE4F || r >= 0x20000 && r <= 0x2FA1F {
+			return true
+		}
+	}
+	return false
+}
+
+func isWordChar(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
 }
 
 func splitBlockedKeywordAndTerms(keyword string) []string {
@@ -3177,7 +3241,7 @@ func splitBlockedKeywordAndTerms(keyword string) []string {
 
 func matchBlockedKeywordAndTerms(textLower string, terms []string) bool {
 	for _, term := range terms {
-		if !strings.Contains(textLower, term) {
+		if !containsKeywordWithBoundary(textLower, term) {
 			return false
 		}
 	}
