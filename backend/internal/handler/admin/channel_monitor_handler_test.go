@@ -52,9 +52,13 @@ func (s *channelMonitorSettingRepoStub) Delete(context.Context, string) error {
 type channelMonitorAdjustRepoStub struct {
 	monitor   *service.ChannelMonitor
 	requested float64
+	createFn  func(context.Context, *service.ChannelMonitor) error
 }
 
-func (s *channelMonitorAdjustRepoStub) Create(context.Context, *service.ChannelMonitor) error {
+func (s *channelMonitorAdjustRepoStub) Create(ctx context.Context, monitor *service.ChannelMonitor) error {
+	if s.createFn != nil {
+		return s.createFn(ctx, monitor)
+	}
 	panic("unexpected Create call")
 }
 func (s *channelMonitorAdjustRepoStub) GetByID(context.Context, int64) (*service.ChannelMonitor, error) {
@@ -155,6 +159,50 @@ func TestChannelMonitorHandler_RejectsAdminAPIWhenFeatureDisabled(t *testing.T) 
 
 	require.Equal(t, http.StatusForbidden, rec.Code)
 	require.Contains(t, rec.Body.String(), "CHANNEL_MONITOR_DISABLED")
+}
+
+func TestChannelMonitorHandler_CreateAcceptsKiroProvider(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &channelMonitorAdjustRepoStub{}
+	repo.createFn = func(ctx context.Context, monitor *service.ChannelMonitor) error {
+		require.Equal(t, service.MonitorProviderKiro, monitor.Provider)
+		require.Equal(t, "kiro(pro号池)", monitor.GroupName)
+		monitor.ID = 25
+		monitor.CreatedAt = time.Now()
+		monitor.UpdatedAt = monitor.CreatedAt
+		return nil
+	}
+	svc := service.NewChannelMonitorService(repo, channelMonitorAdjustEncryptorStub{})
+	h := NewChannelMonitorHandler(svc)
+
+	router := gin.New()
+	router.POST("/api/v1/admin/channel-monitors", h.Create)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/admin/channel-monitors",
+		bytes.NewBufferString(`{
+			"name":"kiro(pro号池)",
+			"provider":"kiro",
+			"endpoint":"https://example.com",
+			"api_key":"sk-test-monitor-key",
+			"primary_model":"claude-haiku-4-5",
+			"group_name":"kiro(pro号池)",
+			"enabled":true,
+			"interval_seconds":300
+		}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var body struct {
+		Data channelMonitorResponse `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, service.MonitorProviderKiro, body.Data.Provider)
+	require.Equal(t, "kiro(pro号池)", body.Data.GroupName)
 }
 
 func TestChannelMonitorHandler_AdjustAvailability7dAcceptsZero(t *testing.T) {
