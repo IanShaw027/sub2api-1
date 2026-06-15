@@ -3139,6 +3139,18 @@
       "deleteConfirm": "确定要删除监控「{name}」吗？此操作不可撤销。",
       "nameRequired": "请输入监控名称",
       "primaryModelRequired": "请输入主模型",
+      "adjustAvailability": {
+        "action": "修正7天",
+        "title": "调整 7 天可用率",
+        "current": "当前：{value}",
+        "target": "目标可用率",
+        "placeholder": "0 - 100",
+        "hint": "会直接调整最近 7 天主模型历史明细。由于样本数量限制，最终值可能只能贴近目标百分比。",
+        "submit": "应用",
+        "invalid": "可用率必须在 0 到 100 之间",
+        "failed": "调整可用率失败",
+        "success": "可用率已调整到 {value}，修改 {rows} 条历史明细"
+      },
       "columns": {
         "name": "名称",
         "provider": "供应商",

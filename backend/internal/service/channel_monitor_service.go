@@ -27,6 +27,7 @@ type ChannelMonitorRepository interface {
 	MarkChecked(ctx context.Context, id int64, checkedAt time.Time) error
 	InsertHistoryBatch(ctx context.Context, rows []*ChannelMonitorHistoryRow) error
 	DeleteHistoryBefore(ctx context.Context, before time.Time) (int64, error)
+	AdjustAvailability7d(ctx context.Context, monitorID int64, model string, availabilityPct float64) (*ChannelMonitorAvailabilityAdjustResult, error)
 
 	// 历史记录
 	ListHistory(ctx context.Context, monitorID int64, model string, limit int) ([]*ChannelMonitorHistoryEntry, error)
@@ -286,6 +287,26 @@ func (s *ChannelMonitorService) ListHistory(ctx context.Context, id int64, model
 		return nil, fmt.Errorf("list history: %w", err)
 	}
 	return entries, nil
+}
+
+// AdjustPrimaryAvailability7d 通过调整主模型最近 7 天明细状态，修正管理侧和用户侧共同读取的可用率。
+func (s *ChannelMonitorService) AdjustPrimaryAvailability7d(ctx context.Context, id int64, availabilityPct float64) (*ChannelMonitorAvailabilityAdjustResult, error) {
+	if availabilityPct < 0 || availabilityPct > 100 {
+		return nil, ErrChannelMonitorInvalidAvailabilityPct
+	}
+	m, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	model := strings.TrimSpace(m.PrimaryModel)
+	if model == "" {
+		return nil, ErrChannelMonitorMissingPrimaryModel
+	}
+	result, err := s.repo.AdjustAvailability7d(ctx, id, model, availabilityPct)
+	if err != nil {
+		return nil, fmt.Errorf("adjust channel monitor availability: %w", err)
+	}
+	return result, nil
 }
 
 // ---------- 业务 ----------

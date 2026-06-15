@@ -75,6 +75,10 @@ type channelMonitorUpdateRequest struct {
 	BodyOverride     *map[string]any    `json:"body_override"`
 }
 
+type channelMonitorAvailabilityAdjustRequest struct {
+	AvailabilityPct *float64 `json:"availability_pct" binding:"required"`
+}
+
 type channelMonitorResponse struct {
 	ID                  int64                                `json:"id"`
 	Name                string                               `json:"name"`
@@ -433,6 +437,33 @@ func (h *ChannelMonitorHandler) Run(c *gin.Context) {
 		out = append(out, checkResultToResponse(r))
 	}
 	response.Success(c, gin.H{"results": out})
+}
+
+// AdjustAvailability7d POST /api/v1/admin/channel-monitors/:id/availability-7d
+func (h *ChannelMonitorHandler) AdjustAvailability7d(c *gin.Context) {
+	if !h.requireFeatureEnabled(c) {
+		return
+	}
+	id, ok := ParseChannelMonitorID(c)
+	if !ok {
+		return
+	}
+	var req channelMonitorAvailabilityAdjustRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
+		return
+	}
+	if req.AvailabilityPct == nil || *req.AvailabilityPct < 0 || *req.AvailabilityPct > 100 {
+		response.ErrorFrom(c, service.ErrChannelMonitorInvalidAvailabilityPct)
+		return
+	}
+
+	result, err := h.monitorService.AdjustPrimaryAvailability7d(c.Request.Context(), id, *req.AvailabilityPct)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
 }
 
 // History GET /api/v1/admin/channel-monitors/:id/history

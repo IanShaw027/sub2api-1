@@ -104,6 +104,23 @@ export interface RunNowResponse {
   results: CheckResult[]
 }
 
+export interface AvailabilityAdjustParams {
+  availability_pct: number
+}
+
+export interface AvailabilityAdjustResult {
+  monitor_id: number
+  model: string
+  total_checks: number
+  previous_operational_checks: number
+  target_operational_checks: number
+  actual_operational_checks: number
+  changed_rows: number
+  previous_availability_pct: number
+  requested_availability_pct: number
+  actual_availability_pct: number
+}
+
 export interface HistoryItem {
   id: number
   model: string
@@ -179,6 +196,20 @@ export async function runNow(id: number): Promise<RunNowResponse> {
 }
 
 /**
+ * Adjust the primary model's 7-day availability by mutating history rows.
+ */
+export async function adjustAvailability7d(
+  id: number,
+  params: AvailabilityAdjustParams
+): Promise<AvailabilityAdjustResult> {
+  const { data } = await apiClient.post<AvailabilityAdjustResult>(
+    `/admin/channel-monitors/${id}/availability-7d`,
+    params
+  )
+  return data
+}
+
+/**
  * List historical check results for a monitor.
  */
 export async function listHistory(
@@ -199,6 +230,7 @@ export const channelMonitorAPI = {
   update,
   del,
   runNow,
+  adjustAvailability7d,
   listHistory,
 }
 

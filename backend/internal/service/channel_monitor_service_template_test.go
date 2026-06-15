@@ -11,13 +11,14 @@ import (
 )
 
 type channelMonitorRepoStub struct {
-	createFn        func(ctx context.Context, m *ChannelMonitor) error
-	getByIDFn       func(ctx context.Context, id int64) (*ChannelMonitor, error)
-	updateFn        func(ctx context.Context, m *ChannelMonitor) error
-	insertHistoryFn func(ctx context.Context, rows []*ChannelMonitorHistoryRow) error
-	markCheckedFn   func(ctx context.Context, id int64, checkedAt time.Time) error
-	lockFn          func(ctx context.Context, monitorID int64) (func(), bool, error)
-	getTemplateByID func(ctx context.Context, id int64) (*ChannelMonitorRequestTemplate, error)
+	createFn               func(ctx context.Context, m *ChannelMonitor) error
+	getByIDFn              func(ctx context.Context, id int64) (*ChannelMonitor, error)
+	updateFn               func(ctx context.Context, m *ChannelMonitor) error
+	adjustAvailability7dFn func(ctx context.Context, monitorID int64, model string, availabilityPct float64) (*ChannelMonitorAvailabilityAdjustResult, error)
+	insertHistoryFn        func(ctx context.Context, rows []*ChannelMonitorHistoryRow) error
+	markCheckedFn          func(ctx context.Context, id int64, checkedAt time.Time) error
+	lockFn                 func(ctx context.Context, monitorID int64) (func(), bool, error)
+	getTemplateByID        func(ctx context.Context, id int64) (*ChannelMonitorRequestTemplate, error)
 }
 
 func (s *channelMonitorRepoStub) Create(ctx context.Context, m *ChannelMonitor) error {
@@ -41,6 +42,12 @@ func (s *channelMonitorRepoStub) Update(ctx context.Context, m *ChannelMonitor) 
 func (s *channelMonitorRepoStub) Delete(context.Context, int64) error { return nil }
 func (s *channelMonitorRepoStub) List(context.Context, ChannelMonitorListParams) ([]*ChannelMonitor, int64, error) {
 	return nil, 0, nil
+}
+func (s *channelMonitorRepoStub) AdjustAvailability7d(ctx context.Context, monitorID int64, model string, availabilityPct float64) (*ChannelMonitorAvailabilityAdjustResult, error) {
+	if s.adjustAvailability7dFn != nil {
+		return s.adjustAvailability7dFn(ctx, monitorID, model, availabilityPct)
+	}
+	return nil, nil
 }
 func (s *channelMonitorRepoStub) ListEnabled(context.Context) ([]*ChannelMonitor, error) {
 	return nil, nil
@@ -514,6 +521,68 @@ func (s manualRunSchedulerStub) Schedule(*ChannelMonitor) {}
 func (s manualRunSchedulerStub) Unschedule(int64)         {}
 func (s manualRunSchedulerStub) RunManual(ctx context.Context, id int64) ([]*CheckResult, error) {
 	return s.runFn(ctx, id)
+}
+
+func TestChannelMonitorAdjustPrimaryAvailability7d_UsesPrimaryModel(t *testing.T) {
+	repo := &channelMonitorRepoStub{
+		getByIDFn: func(ctx context.Context, id int64) (*ChannelMonitor, error) {
+			if id != 42 {
+				t.Fatalf("unexpected monitor id: %d", id)
+			}
+			return &ChannelMonitor{
+				ID:           42,
+				PrimaryModel: "claude-sonnet-4",
+				ExtraModels:  []string{"claude-haiku-4"},
+			}, nil
+		},
+		adjustAvailability7dFn: func(ctx context.Context, monitorID int64, model string, availabilityPct float64) (*ChannelMonitorAvailabilityAdjustResult, error) {
+			if monitorID != 42 {
+				t.Fatalf("unexpected adjusted monitor id: %d", monitorID)
+			}
+			if model != "claude-sonnet-4" {
+				t.Fatalf("expected primary model to be adjusted, got %q", model)
+			}
+			if availabilityPct != 75 {
+				t.Fatalf("expected requested availability 75, got %v", availabilityPct)
+			}
+			return &ChannelMonitorAvailabilityAdjustResult{
+				MonitorID:                 monitorID,
+				Model:                     model,
+				TotalChecks:               8,
+				PreviousOperationalChecks: 4,
+				TargetOperationalChecks:   6,
+				ActualOperationalChecks:   6,
+				ChangedRows:               2,
+				PreviousAvailabilityPct:   50,
+				RequestedAvailabilityPct:  availabilityPct,
+				ActualAvailabilityPct:     75,
+			}, nil
+		},
+	}
+	svc := NewChannelMonitorService(repo, channelMonitorEncryptorStub{})
+
+	got, err := svc.AdjustPrimaryAvailability7d(context.Background(), 42, 75)
+	if err != nil {
+		t.Fatalf("AdjustPrimaryAvailability7d returned error: %v", err)
+	}
+	if got.Model != "claude-sonnet-4" || got.ChangedRows != 2 || got.ActualAvailabilityPct != 75 {
+		t.Fatalf("unexpected adjustment result: %+v", got)
+	}
+}
+
+func TestChannelMonitorAdjustPrimaryAvailability7d_RejectsOutOfRange(t *testing.T) {
+	repo := &channelMonitorRepoStub{
+		getByIDFn: func(context.Context, int64) (*ChannelMonitor, error) {
+			t.Fatal("repo.GetByID should not be called for invalid percentage")
+			return nil, nil
+		},
+	}
+	svc := NewChannelMonitorService(repo, channelMonitorEncryptorStub{})
+
+	_, err := svc.AdjustPrimaryAvailability7d(context.Background(), 42, 100.01)
+	if !errors.Is(err, ErrChannelMonitorInvalidAvailabilityPct) {
+		t.Fatalf("expected ErrChannelMonitorInvalidAvailabilityPct, got %v", err)
+	}
 }
 
 func ptrInt64CM(v int64) *int64 { return &v }

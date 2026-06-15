@@ -169,6 +169,12 @@ var (
 	ErrChannelMonitorRunInFlight = infraerrors.Conflict(
 		"CHANNEL_MONITOR_RUN_IN_FLIGHT", "channel monitor run is already in flight",
 	)
+	ErrChannelMonitorInvalidAvailabilityPct = infraerrors.BadRequest(
+		"CHANNEL_MONITOR_INVALID_AVAILABILITY_PCT", "availability_pct must be between 0 and 100",
+	)
+	ErrChannelMonitorAvailabilityNoHistory = infraerrors.BadRequest(
+		"CHANNEL_MONITOR_AVAILABILITY_NO_HISTORY", "no primary model history exists in the last 7 days",
+	)
 	ErrChannelMonitorAPIKeyDecryptFailed = infraerrors.InternalServer(
 		"CHANNEL_MONITOR_KEY_DECRYPT_FAILED", "api key decryption failed; please re-edit the monitor with a fresh key",
 	)

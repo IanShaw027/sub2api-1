@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -266,6 +267,142 @@ func (r *channelMonitorRepository) InsertHistoryBatch(ctx context.Context, rows 
 		return fmt.Errorf("insert history bulk: %w", err)
 	}
 	return nil
+}
+
+const channelMonitorAvailabilityCountsSQL = `
+SELECT COUNT(*) AS total,
+       COUNT(*) FILTER (WHERE status IN ('operational','degraded')) AS ok
+FROM channel_monitor_histories
+WHERE monitor_id = $1
+  AND model = $2
+  AND checked_at >= NOW() - INTERVAL '7 days'
+`
+
+const channelMonitorAvailabilityRaiseSQL = `
+WITH candidates AS (
+    SELECT id
+    FROM channel_monitor_histories
+    WHERE monitor_id = $1
+      AND model = $2
+      AND checked_at >= NOW() - INTERVAL '7 days'
+      AND status NOT IN ('operational','degraded')
+    ORDER BY checked_at ASC, id ASC
+    LIMIT $3
+)
+UPDATE channel_monitor_histories
+SET status = 'operational',
+    message = 'availability adjusted by admin'
+WHERE id IN (SELECT id FROM candidates)
+`
+
+const channelMonitorAvailabilityLowerSQL = `
+WITH candidates AS (
+    SELECT id
+    FROM channel_monitor_histories
+    WHERE monitor_id = $1
+      AND model = $2
+      AND checked_at >= NOW() - INTERVAL '7 days'
+      AND status IN ('operational','degraded')
+    ORDER BY checked_at ASC, id ASC
+    LIMIT $3
+)
+UPDATE channel_monitor_histories
+SET status = 'error',
+    message = 'availability adjusted by admin'
+WHERE id IN (SELECT id FROM candidates)
+`
+
+// AdjustAvailability7d mutates primary-model history rows so the history-derived
+// 7-day availability gets as close as possible to availabilityPct.
+func (r *channelMonitorRepository) AdjustAvailability7d(ctx context.Context, monitorID int64, model string, availabilityPct float64) (*service.ChannelMonitorAvailabilityAdjustResult, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin availability adjustment: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	total, currentOK, err := scanMonitorAvailabilityCounts(ctx, tx, monitorID, model)
+	if err != nil {
+		return nil, err
+	}
+	if total == 0 {
+		return nil, service.ErrChannelMonitorAvailabilityNoHistory
+	}
+
+	targetOK := int(math.Round(float64(total) * availabilityPct / 100))
+	if targetOK < 0 {
+		targetOK = 0
+	}
+	if targetOK > total {
+		targetOK = total
+	}
+
+	changed, err := adjustMonitorAvailabilityRows(ctx, tx, monitorID, model, targetOK-currentOK)
+	if err != nil {
+		return nil, err
+	}
+
+	actualTotal, actualOK, err := scanMonitorAvailabilityCounts(ctx, tx, monitorID, model)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit availability adjustment: %w", err)
+	}
+	committed = true
+
+	return &service.ChannelMonitorAvailabilityAdjustResult{
+		MonitorID:                 monitorID,
+		Model:                     model,
+		TotalChecks:               actualTotal,
+		PreviousOperationalChecks: currentOK,
+		TargetOperationalChecks:   targetOK,
+		ActualOperationalChecks:   actualOK,
+		ChangedRows:               changed,
+		PreviousAvailabilityPct:   availabilityPctForCounts(currentOK, total),
+		RequestedAvailabilityPct:  availabilityPct,
+		ActualAvailabilityPct:     availabilityPctForCounts(actualOK, actualTotal),
+	}, nil
+}
+
+func scanMonitorAvailabilityCounts(ctx context.Context, tx *sql.Tx, monitorID int64, model string) (total, ok int, err error) {
+	if err := tx.QueryRowContext(ctx, channelMonitorAvailabilityCountsSQL, monitorID, model).Scan(&total, &ok); err != nil {
+		return 0, 0, fmt.Errorf("query availability counts: %w", err)
+	}
+	return total, ok, nil
+}
+
+func adjustMonitorAvailabilityRows(ctx context.Context, tx *sql.Tx, monitorID int64, model string, delta int) (int, error) {
+	if delta == 0 {
+		return 0, nil
+	}
+	query := channelMonitorAvailabilityRaiseSQL
+	limit := delta
+	if delta < 0 {
+		query = channelMonitorAvailabilityLowerSQL
+		limit = -delta
+	}
+	res, err := tx.ExecContext(ctx, query, monitorID, model, limit)
+	if err != nil {
+		return 0, fmt.Errorf("update availability history rows: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("availability rows affected: %w", err)
+	}
+	return int(affected), nil
+}
+
+func availabilityPctForCounts(ok, total int) float64 {
+	if total <= 0 {
+		return 0
+	}
+	return float64(ok) * 100 / float64(total)
 }
 
 // DeleteHistoryBefore 物理删 checked_at < before 的明细，分批 channelMonitorPruneBatchSize 行一批，

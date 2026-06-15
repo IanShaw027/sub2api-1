@@ -92,6 +92,7 @@
                   :running="runningId === row.id"
                   @run="handleRunNow"
                   @edit="openEditDialog"
+                  @adjust-availability="openAvailabilityAdjustDialog"
                   @delete="handleDelete"
                 />
               </template>
@@ -206,6 +207,7 @@
                     :running="runningId === row.id"
                     @run="handleRunNow"
                     @edit="openEditDialog"
+                    @adjust-availability="openAvailabilityAdjustDialog"
                     @delete="handleDelete"
                   />
                 </template>
@@ -247,6 +249,13 @@
       @close="showRunResult = false"
     />
 
+    <MonitorAvailabilityAdjustDialog
+      :show="showAvailabilityAdjust"
+      :monitor="adjustingAvailability"
+      @close="closeAvailabilityAdjustDialog"
+      @adjusted="handleAvailabilityAdjusted"
+    />
+
     <ConfirmDialog
       :show="showDeleteDialog"
       :title="t('common.delete')"
@@ -267,6 +276,7 @@ import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { adminAPI } from '@/api/admin'
 import type {
+  AvailabilityAdjustResult,
   ChannelMonitor,
   CheckResult,
   ListParams,
@@ -291,6 +301,7 @@ import MonitorFiltersBar from '@/components/admin/monitor/MonitorFiltersBar.vue'
 import MonitorFormDialog from '@/components/admin/monitor/MonitorFormDialog.vue'
 import MonitorTemplateManagerDialog from '@/components/admin/monitor/MonitorTemplateManagerDialog.vue'
 import MonitorRunResultDialog from '@/components/admin/monitor/MonitorRunResultDialog.vue'
+import MonitorAvailabilityAdjustDialog from '@/components/admin/monitor/MonitorAvailabilityAdjustDialog.vue'
 import MonitorPrimaryModelCell from '@/components/admin/monitor/MonitorPrimaryModelCell.vue'
 import MonitorActionsCell from '@/components/admin/monitor/MonitorActionsCell.vue'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
@@ -322,6 +333,8 @@ const showDeleteDialog = ref(false)
 const deleting = ref<ChannelMonitor | null>(null)
 const showRunResult = ref(false)
 const runResults = ref<CheckResult[]>([])
+const showAvailabilityAdjust = ref(false)
+const adjustingAvailability = ref<ChannelMonitor | null>(null)
 const collapsedProviders = ref<Record<string, boolean>>({})
 const openAIOAuthAccounts = ref<Account[]>([])
 const openAIOAuthAccountsLoaded = ref(false)
@@ -462,6 +475,25 @@ function openEditDialog(row: ChannelMonitor) {
 function closeDialog() {
   showDialog.value = false
   editing.value = null
+}
+
+function openAvailabilityAdjustDialog(row: ChannelMonitor) {
+  adjustingAvailability.value = row
+  showAvailabilityAdjust.value = true
+}
+
+function closeAvailabilityAdjustDialog() {
+  showAvailabilityAdjust.value = false
+  adjustingAvailability.value = null
+}
+
+function handleAvailabilityAdjusted(result: AvailabilityAdjustResult) {
+  appStore.showSuccess(t('admin.channelMonitor.adjustAvailability.success', {
+    value: `${result.actual_availability_pct.toFixed(2)}%`,
+    rows: result.changed_rows,
+  }))
+  closeAvailabilityAdjustDialog()
+  void reload()
 }
 
 async function toggleEnabled(row: ChannelMonitor) {

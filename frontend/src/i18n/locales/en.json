@@ -3052,6 +3052,18 @@
       "deleteConfirm": "Are you sure you want to delete monitor \"{name}\"? This action cannot be undone.",
       "nameRequired": "Please enter a monitor name",
       "primaryModelRequired": "Please enter a primary model",
+      "adjustAvailability": {
+        "action": "Fix 7d",
+        "title": "Adjust 7d Availability",
+        "current": "Current: {value}",
+        "target": "Target availability",
+        "placeholder": "0 - 100",
+        "hint": "This directly adjusts primary-model history rows in the last 7 days. The final value may be approximate because it is limited by the number of samples.",
+        "submit": "Apply",
+        "invalid": "Availability must be between 0 and 100",
+        "failed": "Failed to adjust availability",
+        "success": "Availability adjusted to {value}; changed {rows} history rows"
+      },
       "columns": {
         "name": "Name",
         "provider": "Provider",

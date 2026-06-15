@@ -206,6 +206,21 @@ type ChannelMonitorAvailability struct {
 	AvgLatencyMs      *int
 }
 
+// ChannelMonitorAvailabilityAdjustResult 描述一次 7 天可用率修正的结果。
+// 百分比只能按样本行数近似，ActualAvailabilityPct 是最终展示侧会读到的实际值。
+type ChannelMonitorAvailabilityAdjustResult struct {
+	MonitorID                 int64   `json:"monitor_id"`
+	Model                     string  `json:"model"`
+	TotalChecks               int     `json:"total_checks"`
+	PreviousOperationalChecks int     `json:"previous_operational_checks"`
+	TargetOperationalChecks   int     `json:"target_operational_checks"`
+	ActualOperationalChecks   int     `json:"actual_operational_checks"`
+	ChangedRows               int     `json:"changed_rows"`
+	PreviousAvailabilityPct   float64 `json:"previous_availability_pct"`
+	RequestedAvailabilityPct  float64 `json:"requested_availability_pct"`
+	ActualAvailabilityPct     float64 `json:"actual_availability_pct"`
+}
+
 // MonitorStatusSummary 监控状态聚合（admin list 用，单次 repo 查询消除前端 N+1）。
 // PrimaryStatus / PrimaryLatencyMs 描述主模型最近状态；Availability7d 是主模型 7 天可用率；
 // ExtraModels 描述附加模型最近状态（用于 hover 展示）。
