@@ -945,14 +945,14 @@ func TestOpenAIGatewayService_OAuthPassthrough_RetriesInvalidEncryptedContentWit
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.98.0")
 	c.Request.Header.Set("Content-Type", "application/json")
 
-	originalBody := []byte(`{"model":"gpt-5.5","stream":true,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"bad-ciphertext"},{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}]}`)
+	originalBody := []byte(`{"model":"gpt-5.5","stream":true,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}]}`)
 
 	upstream := &httpUpstreamRecorder{
 		responses: []*http.Response{
 			{
 				StatusCode: http.StatusBadRequest,
 				Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_invalid_encrypted"}},
-				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"The encrypted content bad-ciphertext could not be verified. Reason: Encrypted content could not be decrypted or parsed."}}`)),
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"The encrypted content could not be verified. Reason: Encrypted content could not be decrypted or parsed."}}`)),
 			},
 			{
 				StatusCode: http.StatusOK,

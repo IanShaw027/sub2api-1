@@ -464,3 +464,65 @@ func toUint8s(vals []uint16) []uint8 {
 	}
 	return out
 }
+
+// ChromeProfile returns a TLS fingerprint profile mimicking Chrome browser.
+// Use this for requests to chatgpt.com to avoid Cloudflare bot detection.
+func ChromeProfile() *Profile {
+	return &Profile{
+		Name:                "chrome_default",
+		EnableGREASE:        true,
+		CipherSuites:        chromeCipherSuites,
+		Curves:              chromeCurves,
+		PointFormats:        []uint16{0},
+		SignatureAlgorithms: chromeSignatureAlgorithms,
+		ALPNProtocols:       []string{"h2", "http/1.1"},
+		SupportedVersions:   []uint16{0x0304, 0x0303},
+		KeyShareGroups:      []uint16{0x001d, 0x0017}, // X25519, secp256r1
+		PSKModes:            []uint16{1},              // PSK_DHE_KE
+		Extensions:          chromeExtensionOrder,
+	}
+}
+
+var (
+	chromeCipherSuites = []uint16{
+		0x1301, 0x1302, 0x1303, // TLS 1.3
+		0xc02b, 0xc02f, 0xc02c, 0xc030, 0xcca9, 0xcca8, // ECDHE + AES-GCM/ChaCha20
+		0xc013, 0xc014, // ECDHE + CBC
+		0x009c, 0x009d, 0x002f, 0x0035, // RSA + AES
+	}
+
+	chromeCurves = []uint16{
+		0x001d, // X25519
+		0x0017, // secp256r1
+		0x0018, // secp384r1
+	}
+
+	chromeSignatureAlgorithms = []uint16{
+		0x0403, // ecdsa_secp256r1_sha256
+		0x0804, // rsa_pss_rsae_sha256
+		0x0401, // ecdsa_secp256r1_sha1
+		0x0503, // ecdsa_secp384r1_sha384
+		0x0805, // rsa_pss_rsae_sha384
+		0x0806, // rsa_pss_rsae_sha512
+		0x0201, // rsa_pkcs1_sha1 (legacy)
+	}
+
+	// chromeExtensionOrder mimics Chrome 131 extension ordering.
+	chromeExtensionOrder = []uint16{
+		0x0a0a, // GREASE
+		0,      // server_name
+		23,     // extended_master_secret
+		65281,  // renegotiation_info
+		10,     // supported_groups
+		11,     // ec_point_formats
+		35,     // session_ticket
+		16,     // alpn
+		5,      // status_request
+		13,     // signature_algorithms
+		18,     // signed_certificate_timestamp
+		51,     // key_share
+		45,     // psk_key_exchange_modes
+		43,     // supported_versions
+		0x0a0a, // GREASE
+	}
+)
