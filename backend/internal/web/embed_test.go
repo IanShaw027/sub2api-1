@@ -7,6 +7,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -540,6 +542,35 @@ func TestFrontendServer_Middleware(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Header().Get("Content-Type"), "image/png")
+	})
+
+	t.Run("serves_override_file_before_spa_fallback", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: map[string]string{"test": "value"},
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		overrideDir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(overrideDir, "assets"), 0o755))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(overrideDir, "assets", "stale-chunk.js"),
+			[]byte("console.log('patched stale chunk')"),
+			0o644,
+		))
+		server.overrideDir = overrideDir
+
+		router := gin.New()
+		router.Use(server.Middleware())
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/assets/stale-chunk.js", nil)
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Header().Get("Content-Type"), "javascript")
+		assert.Equal(t, "console.log('patched stale chunk')", strings.TrimSpace(w.Body.String()))
 	})
 }
 

@@ -3341,23 +3341,6 @@ async function loadTLSProfiles() {
   }
 }
 
-watch(
-  [() => props.show, () => props.account],
-  ([show, newAccount], [wasShow, previousAccount]) => {
-    if (!show || !newAccount) {
-      return
-    }
-    if (!wasShow || newAccount !== previousAccount) {
-      syncFormFromAccount(newAccount)
-      if (newAccount.platform === 'kiro') {
-        void adminSettingsStore.fetch()
-      }
-      loadTLSProfiles()
-    }
-  },
-  { immediate: true }
-)
-
 function loadModelRestrictionFromCredentials(
   credentials?: Record<string, unknown>,
   options: { forceMappingMode?: boolean } = {}
@@ -4142,6 +4125,23 @@ function resolveKiroModelSyncWarning(sync: boolean) {
     resolve(sync)
   }
 }
+
+watch(
+  [() => props.show, () => props.account],
+  ([show, newAccount], [wasShow, previousAccount]) => {
+    if (!show || !newAccount) {
+      return
+    }
+    if (!wasShow || newAccount !== previousAccount) {
+      syncFormFromAccount(newAccount)
+      if (newAccount.platform === 'kiro') {
+        void adminSettingsStore.fetch()
+      }
+      loadTLSProfiles()
+    }
+  },
+  { immediate: true }
+)
 
 // Methods
 const handleClose = () => {

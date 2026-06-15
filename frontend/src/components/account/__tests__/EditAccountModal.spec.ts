@@ -224,10 +224,10 @@ function resetCommonMocks() {
   checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
 }
 
-function mountModal(account = buildAccount()) {
+function mountModal(account = buildAccount(), show = false) {
   return mount(EditAccountModal, {
     props: {
-      show: false,
+      show,
       account,
       proxies: [],
       groups: []
@@ -246,6 +246,25 @@ function mountModal(account = buildAccount()) {
 }
 
 describe('EditAccountModal', () => {
+  it('mounts without initialization errors when initially opened for Kiro accounts', () => {
+    resetCommonMocks()
+    const account = {
+      ...buildAccount(),
+      id: 20,
+      name: 'Kiro OAuth',
+      platform: 'kiro',
+      type: 'oauth',
+      credentials: {
+        model_mapping: {
+          'claude-sonnet-*': 'claude-sonnet-4.5'
+        }
+      },
+      extra: {}
+    } as any
+
+    expect(() => mountModal(account, true)).not.toThrow()
+  })
+
   it('offers OpenAI service-unavailable temp-unschedulable presets as separate rules', async () => {
     resetCommonMocks()
     const wrapper = mountModal()
