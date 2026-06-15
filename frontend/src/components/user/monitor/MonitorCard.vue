@@ -89,6 +89,7 @@ const PROVIDER_TINT: Record<string, string> = {
   openai: 'text-emerald-600 dark:text-emerald-300',
   anthropic: 'text-orange-600 dark:text-orange-300',
   gemini: 'text-sky-600 dark:text-sky-300',
+  kiro: 'text-violet-600 dark:text-violet-300',
 }
 
 const props = defineProps<{

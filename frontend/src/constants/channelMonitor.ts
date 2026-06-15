@@ -12,6 +12,7 @@ import type { APIMode, Provider, MonitorStatus } from '@/api/admin/channelMonito
 export const PROVIDER_OPENAI: Provider = 'openai'
 export const PROVIDER_ANTHROPIC: Provider = 'anthropic'
 export const PROVIDER_GEMINI: Provider = 'gemini'
+export const PROVIDER_KIRO: Provider = 'kiro'
 
 export const API_MODE_CHAT_COMPLETIONS: APIMode = 'chat_completions'
 export const API_MODE_RESPONSES: APIMode = 'responses'
@@ -20,6 +21,7 @@ export const PROVIDERS: readonly Provider[] = [
   PROVIDER_OPENAI,
   PROVIDER_ANTHROPIC,
   PROVIDER_GEMINI,
+  PROVIDER_KIRO,
 ]
 
 export const API_MODES: readonly APIMode[] = [
