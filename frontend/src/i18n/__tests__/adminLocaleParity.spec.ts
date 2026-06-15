@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join, relative } from 'node:path'
 
 import { mergeLocaleMessages } from '../index'
 import enJson from '../locales/en.json'
@@ -23,6 +25,10 @@ const requiredRuntimeKeys = [
   'admin.settings.gatewayForwarding.openaiCodexUserAgent',
   'admin.settings.gatewayForwarding.openaiCodexUserAgentPlaceholder',
   'admin.settings.gatewayForwarding.openaiCodexUserAgentHint',
+  'admin.settings.gatewayForwarding.openaiAllowClaudeCodeCodexPlugin',
+  'admin.settings.gatewayForwarding.openaiAllowClaudeCodeCodexPluginDesc',
+  'admin.accounts.openai.codexCLIOnlyAllowClaudeCode',
+  'admin.accounts.openai.codexCLIOnlyAllowClaudeCodeDesc',
   'admin.settings.emailTemplates.title',
   'admin.settings.emailTemplates.description',
   'admin.settings.emailTemplates.preview',
@@ -82,6 +88,42 @@ function lookup(obj: unknown, path: string): unknown {
   }, obj)
 }
 
+function collectSourceFiles(dir: string, files: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      if (entry.name === '__tests__' || entry.name === 'locales') continue
+      collectSourceFiles(fullPath, files)
+      continue
+    }
+    if (/\.(vue|ts|js)$/.test(entry.name)) {
+      files.push(fullPath)
+    }
+  }
+  return files
+}
+
+function collectStaticTranslationKeys() {
+  const srcRoot = join(process.cwd(), 'src')
+  const files = collectSourceFiles(srcRoot)
+  const keys = new Map<string, Set<string>>()
+  const translationCall = /\b(?:t|\$t)\(\s*(['"])([A-Za-z0-9_.-]+)\1/g
+
+  for (const file of files) {
+    const text = readFileSync(file, 'utf8')
+    let match: RegExpExecArray | null
+    while ((match = translationCall.exec(text))) {
+      const key = match[2]
+      if (!key.includes('.') || key.endsWith('.')) continue
+      const relativeFile = relative(srcRoot, file)
+      if (!keys.has(key)) keys.set(key, new Set())
+      keys.get(key)?.add(relativeFile)
+    }
+  }
+
+  return keys
+}
+
 describe('admin locale parity', () => {
   it('keeps newly referenced admin keys present in runtime locales', () => {
     const localeSources = [
@@ -94,6 +136,24 @@ describe('admin locale parity', () => {
         expect(lookup(messages, key), `missing ${name} locale key: ${key}`).toBeTypeOf('string')
       }
     }
+  })
+
+  it('keeps static translation references present in runtime locales', () => {
+    const localeSources = [
+      { name: 'en runtime', messages: mergeLocaleMessages(enJson, enTs) },
+      { name: 'zh runtime', messages: mergeLocaleMessages(zhJson, zhTs) },
+    ]
+    const missing: string[] = []
+
+    for (const [key, files] of collectStaticTranslationKeys()) {
+      for (const { name, messages } of localeSources) {
+        if (typeof lookup(messages, key) === 'undefined') {
+          missing.push(`${name}: ${key} (${Array.from(files).slice(0, 3).join(', ')})`)
+        }
+      }
+    }
+
+    expect(missing).toEqual([])
   })
 
   it('keeps redeem batch-update keys present in JSON, TS, and runtime locales', () => {
