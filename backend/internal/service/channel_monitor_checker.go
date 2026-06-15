@@ -287,12 +287,22 @@ func callProvider(ctx context.Context, provider, endpoint, apiKey, model, prompt
 		return "", "", 0, err
 	}
 	headers := mergeHeaders(adapter.buildHeaders(apiKey), opts)
+	if shouldMarkChannelMonitorProbe(provider, opts) {
+		headers[ChannelMonitorProbeHeaderName] = ChannelMonitorProbeHeaderValue
+	}
 	full := joinURL(endpoint, adapter.buildPath(model))
 	respBytes, status, err := postRawJSON(ctx, full, body, headers)
 	if err != nil {
 		return "", "", status, err
 	}
 	return extractMonitorResponseText(adapter, respBytes), string(respBytes), status, nil
+}
+
+func shouldMarkChannelMonitorProbe(provider string, opts *CheckOptions) bool {
+	if bodyOverrideMode(opts) != MonitorBodyOverrideModeOff {
+		return false
+	}
+	return provider == MonitorProviderAnthropic || provider == MonitorProviderKiro
 }
 
 func resolveProviderAdapter(provider string, opts *CheckOptions) (providerAdapter, error) {

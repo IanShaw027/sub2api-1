@@ -94,6 +94,12 @@ const (
 	monitorAnthropicAPIVersion = "2023-06-01"
 	// monitorChallengeMaxTokens 单次 challenge 请求的 max_tokens（足够回答个位数算术）。
 	monitorChallengeMaxTokens = 50
+	// ChannelMonitorProbeHeaderName 标记 sub2api 自身渠道监控发出的轻量探活请求。
+	ChannelMonitorProbeHeaderName = "X-Sub2API-Channel-Monitor"
+	// ChannelMonitorProbeHeaderValue 是 ChannelMonitorProbeHeaderName 的固定取值。
+	ChannelMonitorProbeHeaderValue = "1"
+	// ChannelMonitorProbeMaxTokens 是默认 Anthropic/Kiro challenge 探活的 max_tokens。
+	ChannelMonitorProbeMaxTokens = monitorChallengeMaxTokens
 
 	// monitorRunOneBuffer runOne 的总超时缓冲（除请求超时与 ping 超时外的额外裕量）。
 	monitorRunOneBuffer = 10 * time.Second

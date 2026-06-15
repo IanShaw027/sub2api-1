@@ -166,6 +166,28 @@ func TestRunCheckForModel_OffMode_PreservesDefaultBody(t *testing.T) {
 	}
 }
 
+func TestRunCheckForModel_AnthropicDefaultRequestAddsChannelMonitorProbeHeader(t *testing.T) {
+	h := &captureHandler{respondText: "the answer is 42"}
+	endpoint := setupFakeAnthropic(t, h)
+
+	_ = runCheckForModel(context.Background(), MonitorProviderAnthropic, endpoint, "sk-fake", "claude-haiku-4-5", nil)
+
+	if h.lastHeaders.Get("X-Sub2API-Channel-Monitor") != "1" {
+		t.Fatalf("default Anthropic monitor request should mark itself as a channel monitor probe, headers=%v", h.lastHeaders)
+	}
+}
+
+func TestRunCheckForModel_KiroDefaultRequestAddsChannelMonitorProbeHeader(t *testing.T) {
+	h := &captureHandler{respondText: "the answer is 42"}
+	endpoint := setupFakeAnthropic(t, h)
+
+	_ = runCheckForModel(context.Background(), MonitorProviderKiro, endpoint, "sk-fake", "claude-haiku-4-5", nil)
+
+	if h.lastHeaders.Get("X-Sub2API-Channel-Monitor") != "1" {
+		t.Fatalf("default Kiro monitor request should mark itself as a channel monitor probe, headers=%v", h.lastHeaders)
+	}
+}
+
 func TestRunCheckForModel_OpenAI_DefaultChatRequest(t *testing.T) {
 	h := &openAICaptureHandler{}
 	endpoint := setupFakeOpenAI(t, h)

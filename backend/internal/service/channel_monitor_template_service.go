@@ -256,6 +256,7 @@ var forbiddenHeaderNames = map[string]bool{
 	"x-api-key":           true,
 	"x-goog-api-key":      true,
 	"anthropic-version":   true,
+	strings.ToLower(ChannelMonitorProbeHeaderName): true,
 }
 
 // IsForbiddenHeaderName 对外暴露，checker 运行时也会再过滤一次做兜底。

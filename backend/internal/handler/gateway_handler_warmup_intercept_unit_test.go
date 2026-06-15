@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -140,6 +143,10 @@ func (f *fakeConcurrencyCache) CleanupExpiredAccountSlots(context.Context, int64
 func (f *fakeConcurrencyCache) CleanupStaleProcessSlots(context.Context, string) error  { return nil }
 
 func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*service.Account) (*GatewayHandler, func()) {
+	return newTestGatewayHandlerWithUpstream(t, group, accounts, nil)
+}
+
+func newTestGatewayHandlerWithUpstream(t *testing.T, group *service.Group, accounts []*service.Account, upstream service.HTTPUpstream) (*GatewayHandler, func()) {
 	t.Helper()
 
 	schedulerCache := &fakeSchedulerCache{accounts: accounts}
@@ -161,7 +168,7 @@ func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*servi
 		nil, // rateLimitService
 		nil, // billingCacheService
 		nil, // identityService
-		nil, // httpUpstream
+		upstream,
 		nil, // deferredService
 		nil, // claudeTokenProvider
 		nil, // sessionLimitCache
@@ -195,6 +202,23 @@ func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*servi
 		billingCacheSvc.Stop()
 	}
 	return h, cleanup
+}
+
+type fakeGatewayHTTPUpstream struct {
+	calls int
+}
+
+func (f *fakeGatewayHTTPUpstream) Do(*http.Request, string, int64, int) (*http.Response, error) {
+	f.calls++
+	return &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(bytes.NewReader([]byte(`{"error":{"message":"unexpected upstream call"}}`))),
+	}, nil
+}
+
+func (f *fakeGatewayHTTPUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return f.Do(req, proxyURL, accountID, accountConcurrency)
 }
 
 func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_MixedSchedulingV1(t *testing.T) {
@@ -363,4 +387,86 @@ func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_ForcePlatform
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, "msg_mock_warmup", resp["id"])
 	require.Equal(t, "claude-sonnet-4-5", resp["model"])
+}
+
+func TestGatewayHandlerMessages_ChannelMonitorProbe_ReturnsLocalChallengeAnswerWithoutForward(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(2003)
+	accountID := int64(1003)
+
+	group := &service.Group{
+		ID:       groupID,
+		Hydrated: true,
+		Platform: service.PlatformAnthropic,
+		Status:   service.StatusActive,
+	}
+
+	account := &service.Account{
+		ID:          accountID,
+		Name:        "anthropic-probe",
+		Platform:    service.PlatformAnthropic,
+		Type:        service.AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "upstream-key", "base_url": "https://api.anthropic.com"},
+		Concurrency: 1,
+		Priority:    1,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		AccountGroups: []service.AccountGroup{
+			{AccountID: accountID, GroupID: groupID},
+		},
+	}
+
+	upstream := &fakeGatewayHTTPUpstream{}
+	h, cleanup := newTestGatewayHandlerWithUpstream(t, group, []*service.Account{account}, upstream)
+	defer cleanup()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	body := []byte(`{
+		"model": "claude-haiku-4-5",
+		"max_tokens": 50,
+		"messages": [{"role":"user","content":"Calculate and respond with ONLY the number, nothing else.\n\nQ: 3 + 5 = ?\nA: 8\n\nQ: 12 - 7 = ?\nA: 5\n\nQ: 16 + 5 = ?\nA:"}]
+	}`)
+	req := httptest.NewRequest("POST", "/v1/messages", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(service.ChannelMonitorProbeHeaderName, service.ChannelMonitorProbeHeaderValue)
+	req = req.WithContext(context.WithValue(req.Context(), ctxkey.Group, group))
+	c.Request = req
+
+	apiKey := &service.APIKey{
+		ID:      3003,
+		UserID:  4003,
+		GroupID: &groupID,
+		Status:  service.StatusActive,
+		User: &service.User{
+			ID:          4003,
+			Concurrency: 10,
+			Balance:     100,
+		},
+		Group: group,
+	}
+
+	c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.UserID, Concurrency: 10})
+
+	h.Messages(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Zero(t, upstream.calls, "channel monitor probes should not reach external upstream")
+
+	selected, ok := c.Get(opsAccountIDKey)
+	require.True(t, ok)
+	require.Equal(t, accountID, selected)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, "claude-haiku-4-5", resp["model"])
+	content, ok := resp["content"].([]any)
+	require.True(t, ok)
+	require.Len(t, content, 1)
+	first, ok := content[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "21", first["text"])
 }

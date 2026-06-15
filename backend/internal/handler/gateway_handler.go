@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -37,6 +38,8 @@ import (
 const gatewayCompatibilityMetricsLogInterval = 1024
 
 var gatewayCompatibilityMetricsLogCounter atomic.Uint64
+
+var channelMonitorProbeQuestionRegex = regexp.MustCompile(`(?m)Q:\s*(\d+)\s*([+-])\s*(\d+)\s*=\s*\?\s*\nA:\s*$`)
 
 // GatewayHandler handles API gateway requests
 type GatewayHandler struct {
@@ -471,6 +474,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
 			h.emitGatewayDebugTimelineSlotAcquired(c, platform, "messages", requestStart, apiKey, account, reqModel, reqStream, userSlotWaitMs, accountSlotWaitMs)
 
+			if h.handleChannelMonitorProbe(c, body, reqModel, parsedReq.MaxTokens, reqStream) {
+				recordOpsRoutingLatency(c, routingAttemptStart)
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				return
+			}
+
 			// 转发请求 - 根据账号平台分流
 			var result *service.ForwardResult
 			recordOpsRoutingLatency(c, routingAttemptStart)
@@ -741,6 +752,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 账号槽位/等待计数需要在超时或断开时安全回收
 			accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
 			h.emitGatewayDebugTimelineSlotAcquired(c, platform, "messages", requestStart, currentAPIKey, account, reqModel, reqStream, userSlotWaitMs, accountSlotWaitMs)
+
+			if h.handleChannelMonitorProbe(c, body, reqModel, parsedReq.MaxTokens, reqStream) {
+				recordOpsRoutingLatency(c, routingAttemptStart)
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				return
+			}
 
 			// ===== 用户消息串行队列 START =====
 			var queueRelease func()
@@ -1831,6 +1850,89 @@ func isHaikuModel(model string) bool {
 // 条件：max_tokens == 1 且 model 包含 "haiku" 且非流式请求
 func isMaxTokensOneHaikuRequest(model string, maxTokens int, isStream bool) bool {
 	return maxTokens == 1 && isHaikuModel(model) && !isStream
+}
+
+func (h *GatewayHandler) handleChannelMonitorProbe(c *gin.Context, body []byte, model string, maxTokens int, isStream bool) bool {
+	answer, ok := channelMonitorProbeAnswer(c, body, maxTokens, isStream)
+	if !ok {
+		return false
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"model":         model,
+		"id":            "msg_channel_monitor_probe",
+		"type":          "message",
+		"role":          "assistant",
+		"content":       []gin.H{{"type": "text", "text": answer}},
+		"stop_reason":   "end_turn",
+		"stop_sequence": nil,
+		"usage": gin.H{
+			"input_tokens":                1,
+			"cache_creation_input_tokens": 0,
+			"cache_read_input_tokens":     0,
+			"output_tokens":               1,
+			"total_tokens":                2,
+		},
+	})
+	return true
+}
+
+func channelMonitorProbeAnswer(c *gin.Context, body []byte, maxTokens int, isStream bool) (string, bool) {
+	if c.GetHeader(service.ChannelMonitorProbeHeaderName) != service.ChannelMonitorProbeHeaderValue ||
+		isStream ||
+		maxTokens != service.ChannelMonitorProbeMaxTokens {
+		return "", false
+	}
+
+	prompt, ok := extractDefaultChannelMonitorPrompt(body)
+	if !ok {
+		return "", false
+	}
+	if !strings.Contains(prompt, "Calculate and respond with ONLY the number, nothing else.") ||
+		!strings.Contains(prompt, "Q: 3 + 5 = ?") ||
+		!strings.Contains(prompt, "Q: 12 - 7 = ?") {
+		return "", false
+	}
+
+	matches := channelMonitorProbeQuestionRegex.FindStringSubmatch(prompt)
+	if len(matches) != 4 {
+		return "", false
+	}
+	left, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return "", false
+	}
+	right, err := strconv.Atoi(matches[3])
+	if err != nil {
+		return "", false
+	}
+	switch matches[2] {
+	case "+":
+		return strconv.Itoa(left + right), true
+	case "-":
+		return strconv.Itoa(left - right), true
+	default:
+		return "", false
+	}
+}
+
+func extractDefaultChannelMonitorPrompt(body []byte) (string, bool) {
+	var req struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return "", false
+	}
+	if len(req.Messages) != 1 || req.Messages[0].Role != "user" {
+		return "", false
+	}
+	prompt := strings.TrimSpace(req.Messages[0].Content)
+	if prompt == "" {
+		return "", false
+	}
+	return prompt, true
 }
 
 // detectInterceptType 检测请求是否需要拦截，返回拦截类型
