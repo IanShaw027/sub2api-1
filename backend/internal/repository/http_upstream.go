@@ -1172,13 +1172,14 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 //   - http/https: HTTP 代理，使用 HTTPProxyDialer（CONNECT 隧道 + utls 握手）
 //   - socks5: SOCKS5 代理，使用 SOCKS5ProxyDialer（SOCKS5 隧道 + utls 握手）
 func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *url.URL, profile *tlsfingerprint.Profile) (*http.Transport, error) {
+	transportProfile := tlsFingerprintHTTPTransportProfile(profile)
 	transport := &http.Transport{
 		MaxIdleConns:          settings.maxIdleConns,
 		MaxIdleConnsPerHost:   settings.maxIdleConnsPerHost,
 		MaxConnsPerHost:       settings.maxConnsPerHost,
 		IdleConnTimeout:       settings.idleConnTimeout,
 		ResponseHeaderTimeout: settings.responseHeaderTimeout,
-		// 禁用默认的 TLS，我们使用自定义的 DialTLSContext
+		// 自定义 uTLS DialTLSContext 目前只交给 net/http 的 HTTP/1.x RoundTrip 路径。
 		ForceAttemptHTTP2: false,
 	}
 
@@ -1186,7 +1187,7 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 	if proxyURL == nil {
 		// 直连：使用 TLSFingerprintDialer
 		slog.Debug("tls_fingerprint_transport_direct")
-		dialer := tlsfingerprint.NewDialer(profile, nil)
+		dialer := tlsfingerprint.NewDialer(transportProfile, nil)
 		transport.DialTLSContext = dialer.DialTLSContext
 	} else {
 		scheme := strings.ToLower(proxyURL.Scheme)
@@ -1194,12 +1195,12 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 		case "socks5", "socks5h":
 			// SOCKS5 代理：使用 SOCKS5ProxyDialer
 			slog.Debug("tls_fingerprint_transport_socks5", "proxy", proxyURL.Host)
-			socks5Dialer := tlsfingerprint.NewSOCKS5ProxyDialer(profile, proxyURL)
+			socks5Dialer := tlsfingerprint.NewSOCKS5ProxyDialer(transportProfile, proxyURL)
 			transport.DialTLSContext = socks5Dialer.DialTLSContext
 		case "http", "https":
 			// HTTP/HTTPS 代理：使用 HTTPProxyDialer（CONNECT 隧道）
 			slog.Debug("tls_fingerprint_transport_http_connect", "proxy", proxyURL.Host)
-			httpDialer := tlsfingerprint.NewHTTPProxyDialer(profile, proxyURL)
+			httpDialer := tlsfingerprint.NewHTTPProxyDialer(transportProfile, proxyURL)
 			transport.DialTLSContext = httpDialer.DialTLSContext
 		default:
 			// 未知代理类型，回退到普通代理配置（无 TLS 指纹）
@@ -1211,6 +1212,28 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 	}
 
 	return transport, nil
+}
+
+func tlsFingerprintHTTPTransportProfile(profile *tlsfingerprint.Profile) *tlsfingerprint.Profile {
+	if profile == nil {
+		return nil
+	}
+	transportProfile := *profile
+	if len(profile.ALPNProtocols) == 0 {
+		return &transportProfile
+	}
+	alpn := make([]string, 0, len(profile.ALPNProtocols))
+	for _, proto := range profile.ALPNProtocols {
+		if strings.EqualFold(strings.TrimSpace(proto), "h2") {
+			continue
+		}
+		alpn = append(alpn, proto)
+	}
+	if len(alpn) == 0 {
+		alpn = []string{"http/1.1"}
+	}
+	transportProfile.ALPNProtocols = alpn
+	return &transportProfile
 }
 
 // trackedBody 带跟踪功能的响应体包装器

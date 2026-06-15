@@ -132,6 +132,31 @@ func (s *HTTPUpstreamSuite) TestOpenAIProfileTLSFingerprintDoesNotInheritGeneric
 	require.Equal(s.T(), time.Duration(0), transport.ResponseHeaderTimeout, "OpenAI TLS path should not inherit generic header timeout")
 }
 
+func (s *HTTPUpstreamSuite) TestTLSFingerprintHTTPTransportProfileStripsHTTP2ALPN() {
+	profile := tlsfingerprint.ChromeProfile()
+	require.Contains(s.T(), profile.ALPNProtocols, "h2")
+
+	transportProfile := tlsFingerprintHTTPTransportProfile(profile)
+
+	require.NotSame(s.T(), profile, transportProfile)
+	require.Equal(s.T(), []string{"http/1.1"}, transportProfile.ALPNProtocols)
+	require.Contains(s.T(), profile.ALPNProtocols, "h2", "original profile should not be mutated")
+}
+
+func (s *HTTPUpstreamSuite) TestOpenAIProfileTLSFingerprintUsesHTTP1OnlyTransportProfile() {
+	s.cfg.Gateway = config.GatewayConfig{
+		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{
+			Enabled: true,
+		},
+	}
+	svc := s.newService()
+	entry, err := svc.getClientEntryWithTLS("", 1, 1, tlsfingerprint.ChromeProfile(), service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(s.T(), err)
+	transport, ok := entry.client.Transport.(*http.Transport)
+	require.True(s.T(), ok, "expected *http.Transport")
+	require.False(s.T(), transport.ForceAttemptHTTP2, "uTLS DialTLSContext transport must not advertise h2 unless it can hand off HTTP/2")
+}
+
 func (s *HTTPUpstreamSuite) TestOpenAIProfileHTTP2DisabledUsesHTTP1Transport() {
 	s.cfg.Gateway = config.GatewayConfig{
 		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{Enabled: false},
