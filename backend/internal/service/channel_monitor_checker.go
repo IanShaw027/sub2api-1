@@ -206,6 +206,24 @@ var providerAdapters = map[string]providerAdapter{
 		},
 		textPath: "candidates.0.content.parts.0.text",
 	},
+	MonitorProviderKiro: {
+		buildPath: func(string) string { return providerAnthropicPath },
+		buildBody: func(model, prompt string) ([]byte, error) {
+			return json.Marshal(map[string]any{
+				"model":      model,
+				"messages":   []map[string]string{{"role": "user", "content": prompt}},
+				"max_tokens": monitorChallengeMaxTokens,
+			})
+		},
+		buildHeaders: func(apiKey string) map[string]string {
+			return map[string]string{
+				"Authorization":     "Bearer " + apiKey,
+				"anthropic-version": monitorAnthropicAPIVersion,
+			}
+		},
+		textPath:    "content.0.text",
+		extractText: extractAnthropicMonitorText,
+	},
 }
 
 var openAIChatMonitorAdapter = providerAdapter{
@@ -439,6 +457,11 @@ func bodyMergeKeyDenyList(provider, apiMode string) map[string]bool {
 			"stream":   true,
 		}
 	case MonitorProviderAnthropic:
+		return map[string]bool{
+			"model":    true,
+			"messages": true,
+		}
+	case MonitorProviderKiro:
 		return map[string]bool{
 			"model":    true,
 			"messages": true,

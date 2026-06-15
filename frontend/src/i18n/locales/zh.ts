@@ -1592,7 +1592,8 @@ export default {
     providers: {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
-      gemini: 'Gemini'
+      gemini: 'Gemini',
+      kiro: 'Kiro'
     },
     extraModelsHeader: '附加模型',
     extraModelsEmpty: '无附加模型',
