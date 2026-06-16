@@ -2856,6 +2856,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	deltaShadowRawClientEquiv := true
 	deltaShadowRawDoneItems := map[int]json.RawMessage{}
 	deltaShadowVisibleDoneItems := map[int]json.RawMessage{}
+	nonStreamOutputDoneItems := map[int]json.RawMessage{}
 
 	var flusher http.Flusher
 	if reqStream {
@@ -2990,8 +2991,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				}
 			}
 		}
-		if deltaShadowEnabled {
-			if outputIndex, item, ok := openAIWSExtractOutputItemDoneItem(message); ok {
+		if outputIndex, item, ok := openAIWSExtractOutputItemDoneItem(message); ok {
+			if !reqStream {
+				nonStreamOutputDoneItems[outputIndex] = item
+			}
+			if deltaShadowEnabled {
 				deltaShadowRawDoneItems[outputIndex] = item
 			}
 		}
@@ -3236,6 +3240,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		if needModelReplace {
 			finalResponse = s.replaceModelInResponseBody(finalResponse, mappedModel, originalModel)
 		}
+		finalResponse = openAIWSMaterializeResponseOutputFromDoneItems(finalResponse, nonStreamOutputDoneItems)
 		finalResponse = s.correctToolCallsInResponseBody(finalResponse)
 		if deltaShadowEnabled && deltaShadowOutputCaptured && !clientDisconnected {
 			if cvItems, ok := openAIWSExtractResponseOutputItems(finalResponse); ok {
@@ -5335,6 +5340,29 @@ func payloadAsJSONBytes(payload map[string]any) []byte {
 		return []byte("{}")
 	}
 	return body
+}
+
+func openAIWSMaterializeResponseOutputFromDoneItems(response []byte, doneItems map[int]json.RawMessage) []byte {
+	if len(response) == 0 || len(doneItems) == 0 {
+		return response
+	}
+	output := gjson.GetBytes(response, "output")
+	if output.Exists() && (!output.IsArray() || len(output.Array()) > 0) {
+		return response
+	}
+	orderedItems := openAIWSOrderedOutputDoneItems(doneItems)
+	if len(orderedItems) == 0 {
+		return response
+	}
+	rawItems, err := json.Marshal(orderedItems)
+	if err != nil {
+		return response
+	}
+	next, err := sjson.SetRawBytes(response, "output", rawItems)
+	if err != nil {
+		return response
+	}
+	return next
 }
 
 func isOpenAIWSTerminalEvent(eventType string) bool {
