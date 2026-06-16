@@ -1577,9 +1577,10 @@ func (a *Account) IsOpenAIFreePlan() bool {
 }
 
 func openAIImageRouteExtraPrefix(route string) string {
-	switch NormalizeGroupImageGenerationRoute(route) {
-	case GroupImageGenerationRouteWeb2API:
+	if strings.EqualFold(strings.TrimSpace(route), GroupImageGenerationRouteWeb2API) {
 		return "openai_image_web2api"
+	}
+	switch NormalizeGroupImageGenerationRoute(route) {
 	case GroupImageGenerationRouteCodex:
 		return "openai_image_codex"
 	default:
