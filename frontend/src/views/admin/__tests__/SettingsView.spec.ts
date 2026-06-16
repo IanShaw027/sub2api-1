@@ -506,6 +506,8 @@ const baseSettingsResponse = {
   payment_visible_method_alipay_enabled: true,
   payment_visible_method_wxpay_enabled: true,
   openai_advanced_scheduler_enabled: false,
+  openai_ws_neutral_prewarm_percent: 20,
+  openai_ws_session_idle_ttl_seconds: 120,
   openai_oauth_image_bridge_disable_keepalives: false,
   openai_oauth_image_bridge_fresh_upstream_client: false,
   balance_low_notify_enabled: false,
@@ -854,21 +856,32 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
-  it("rejects OpenAI WS min idle greater than max idle before submitting settings", async () => {
+  it("submits OpenAI WS neutral prewarm percent and session idle TTL settings", async () => {
     const wrapper = mountView();
 
     await flushPromises();
     await openGatewayTab(wrapper);
 
     const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
+    setupState.form.openai_ws_neutral_prewarm_percent = 120;
+    setupState.form.openai_ws_session_idle_ttl_seconds = 0;
     setupState.form.openai_ws_min_idle_per_account = 5;
     setupState.form.openai_ws_max_idle_per_account = 2;
 
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 
-    expect(updateSettings).not.toHaveBeenCalled();
-    expect(showError).toHaveBeenCalled();
+    expect(showError).not.toHaveBeenCalled();
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    const payload = updateSettings.mock.calls[0][0];
+    expect(payload).toEqual(
+      expect.objectContaining({
+        openai_ws_neutral_prewarm_percent: 100,
+        openai_ws_session_idle_ttl_seconds: 1,
+      }),
+    );
+    expect(payload).not.toHaveProperty("openai_ws_min_idle_per_account");
+    expect(payload).not.toHaveProperty("openai_ws_max_idle_per_account");
   });
 
   it("updates provider enablement immediately and reloads providers", async () => {

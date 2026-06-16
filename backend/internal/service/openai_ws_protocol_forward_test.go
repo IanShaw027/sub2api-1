@@ -98,6 +98,9 @@ func TestOpenAIGatewayService_Forward_PreservePreviousResponseIDWhenWSEnabled(t 
 	cfg.Gateway.OpenAIWS.OAuthEnabled = true
 	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
 	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.RetryBackoffInitialMS = 1
+	cfg.Gateway.OpenAIWS.RetryBackoffMaxMS = 1
+	cfg.Gateway.OpenAIWS.RetryJitterRatio = 0
 
 	svc := &OpenAIGatewayService{
 		cfg:              cfg,
@@ -122,9 +125,11 @@ func TestOpenAIGatewayService_Forward_PreservePreviousResponseIDWhenWSEnabled(t 
 
 	body := []byte(`{"model":"gpt-5.1","stream":false,"previous_response_id":"resp_123","input":[{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Nil(t, upstream.lastReq, "WS 模式下失败时不应回退 HTTP")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq, "WS 普通异常应回退 HTTP")
+	require.Len(t, upstream.bodies, 1)
+	require.Equal(t, "resp_123", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
 }
 
 func TestOpenAIGatewayService_Forward_HTTPIngressStaysHTTPWhenWSEnabled(t *testing.T) {
@@ -1256,12 +1261,15 @@ func TestOpenAIGatewayService_Forward_WSv2Dial426FallbackHTTP(t *testing.T) {
 
 	body := []byte(`{"model":"gpt-5.1","stream":false,"previous_response_id":"resp_426","input":[{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Contains(t, err.Error(), "upgrade_required")
-	require.Nil(t, upstream.lastReq, "WS 模式下不应再回退 HTTP")
-	require.Equal(t, http.StatusUpgradeRequired, rec.Code)
-	require.Contains(t, rec.Body.String(), "426")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq, "WS 426 应回退 HTTP")
+	require.Len(t, upstream.bodies, 1)
+	require.Equal(t, "resp_426", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+	require.Equal(t, 8, result.Usage.InputTokens)
+	require.Equal(t, 9, result.Usage.OutputTokens)
+	require.Equal(t, 1, result.Usage.CacheReadInputTokens)
+	require.Equal(t, http.StatusOK, rec.Code)
 }
 
 func TestOpenAIGatewayService_Forward_WSv2FallbackCoolingSkipWS(t *testing.T) {
@@ -1294,6 +1302,9 @@ func TestOpenAIGatewayService_Forward_WSv2FallbackCoolingSkipWS(t *testing.T) {
 	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
 	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
 	cfg.Gateway.OpenAIWS.FallbackCooldownSeconds = 30
+	cfg.Gateway.OpenAIWS.RetryBackoffInitialMS = 1
+	cfg.Gateway.OpenAIWS.RetryBackoffMaxMS = 1
+	cfg.Gateway.OpenAIWS.RetryJitterRatio = 0
 
 	svc := &OpenAIGatewayService{
 		cfg:              cfg,
@@ -1319,9 +1330,11 @@ func TestOpenAIGatewayService_Forward_WSv2FallbackCoolingSkipWS(t *testing.T) {
 	svc.markOpenAIWSFallbackCooling(account.ID, "upgrade_required")
 	body := []byte(`{"model":"gpt-5.1","stream":false,"previous_response_id":"resp_cooling","input":[{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Nil(t, upstream.lastReq, "WS 模式下不应再回退 HTTP")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq, "WS 重试失败后应回退 HTTP")
+	require.Len(t, upstream.bodies, 1)
+	require.Equal(t, "resp_cooling", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
 
 	_, ok := c.Get("openai_ws_fallback_cooling")
 	require.False(t, ok, "已移除 fallback cooling 快捷回退路径")
@@ -1564,10 +1577,11 @@ func TestOpenAIGatewayService_Forward_WSv2StreamEarlyCloseFallbackHTTP(t *testin
 
 	body := []byte(`{"model":"gpt-5.3-codex","stream":true,"input":[{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Nil(t, upstream.lastReq, "WS 早期断连后不应再回退 HTTP")
-	require.Empty(t, rec.Body.String(), "未产出 token 前上游断连时不应写入下游半截流")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq, "WS 早期断连后应回退 HTTP")
+	require.Equal(t, "resp_http_fallback", result.ResponseID)
+	require.Contains(t, rec.Body.String(), `"delta":"ok"`)
 }
 
 func TestOpenAIGatewayService_Forward_WSv2SoftRateLimitAdvisoryReturnsFailover(t *testing.T) {
@@ -1744,9 +1758,10 @@ func TestOpenAIGatewayService_Forward_WSv2RetryFiveTimesThenFallbackHTTP(t *test
 
 	body := []byte(`{"model":"gpt-5.3-codex","stream":true,"input":[{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Nil(t, upstream.lastReq, "WS 重连耗尽后不应再回退 HTTP")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq, "WS 重连耗尽后应回退 HTTP")
+	require.Equal(t, "resp_retry_http_fallback", result.ResponseID)
 	require.Equal(t, int32(openAIWSReconnectRetryLimit+1), wsAttempts.Load())
 }
 
@@ -1825,9 +1840,11 @@ func TestOpenAIGatewayService_Forward_WSv2PolicyViolationFastFallbackHTTP(t *tes
 
 	body := []byte(`{"model":"gpt-5.3-codex","stream":false,"input":[{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Nil(t, upstream.lastReq, "策略违规关闭后不应回退 HTTP")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq, "策略违规关闭后应回退 HTTP")
+	require.Len(t, upstream.bodies, 1)
+	require.Equal(t, "hello", gjson.GetBytes(upstream.bodies[0], "input.0.text").String())
 	require.Equal(t, int32(1), wsAttempts.Load(), "策略违规不应进行 WS 重试")
 }
 

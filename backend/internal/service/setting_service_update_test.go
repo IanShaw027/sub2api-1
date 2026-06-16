@@ -291,7 +291,7 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 	require.Equal(t, "true", repo.updates[openAIAdvancedSchedulerSettingKey])
 }
 
-func TestSettingService_UpdateSettings_OpenAIWSIdleSettingsTriggerReconcile(t *testing.T) {
+func TestSettingService_UpdateSettings_OpenAIWSPoolRuntimeSettingsTriggerReconcile(t *testing.T) {
 	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
 	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
 	RegisterOpenAIWSPoolReconcileHook(nil)
@@ -304,18 +304,18 @@ func TestSettingService_UpdateSettings_OpenAIWSIdleSettingsTriggerReconcile(t *t
 	svc := NewSettingService(repo, &config.Config{})
 
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{
-		OpenAIWSMinIdlePerAccount: 2,
-		OpenAIWSMaxIdlePerAccount: 6,
+		OpenAIWSNeutralPrewarmPercent: 25,
+		OpenAIWSSessionIdleTTLSeconds: 180,
 	})
 	require.NoError(t, err)
-	require.Equal(t, "2", repo.updates[SettingKeyOpenAIWSMinIdlePerAccount])
-	require.Equal(t, "6", repo.updates[SettingKeyOpenAIWSMaxIdlePerAccount])
+	require.Equal(t, "25", repo.updates[SettingKeyOpenAIWSNeutralPrewarmPercent])
+	require.Equal(t, "180", repo.updates[SettingKeyOpenAIWSSessionIdleTTLSeconds])
 
 	// 运行时快照已写入。
-	minIdle, maxIdle, _, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
+	neutralPrewarmPercent, sessionIdleTTLSeconds, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
 	require.True(t, ok)
-	require.Equal(t, 2, minIdle)
-	require.Equal(t, 6, maxIdle)
+	require.Equal(t, 25, neutralPrewarmPercent)
+	require.Equal(t, 180, sessionIdleTTLSeconds)
 
 	// 首次变更应异步触发 reconcile 钩子。
 	select {
@@ -326,8 +326,8 @@ func TestSettingService_UpdateSettings_OpenAIWSIdleSettingsTriggerReconcile(t *t
 
 	// 相同值再次保存不应触发 reconcile。
 	err = svc.UpdateSettings(context.Background(), &SystemSettings{
-		OpenAIWSMinIdlePerAccount: 2,
-		OpenAIWSMaxIdlePerAccount: 6,
+		OpenAIWSNeutralPrewarmPercent: 25,
+		OpenAIWSSessionIdleTTLSeconds: 180,
 	})
 	require.NoError(t, err)
 	select {
@@ -337,7 +337,7 @@ func TestSettingService_UpdateSettings_OpenAIWSIdleSettingsTriggerReconcile(t *t
 	}
 }
 
-func TestSettingService_UpdateSettingsWithAuthSourceDefaults_OpenAIWSIdleSettingsTriggerReconcile(t *testing.T) {
+func TestSettingService_UpdateSettingsWithAuthSourceDefaults_OpenAIWSPoolRuntimeSettingsTriggerReconcile(t *testing.T) {
 	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
 	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
 	RegisterOpenAIWSPoolReconcileHook(nil)
@@ -350,12 +350,12 @@ func TestSettingService_UpdateSettingsWithAuthSourceDefaults_OpenAIWSIdleSetting
 	svc := NewSettingService(repo, &config.Config{})
 
 	err := svc.UpdateSettingsWithAuthSourceDefaults(context.Background(), &SystemSettings{
-		OpenAIWSMinIdlePerAccount: 3,
-		OpenAIWSMaxIdlePerAccount: 7,
+		OpenAIWSNeutralPrewarmPercent: 30,
+		OpenAIWSSessionIdleTTLSeconds: 240,
 	}, &AuthSourceDefaultSettings{})
 	require.NoError(t, err)
-	require.Equal(t, "3", repo.updates[SettingKeyOpenAIWSMinIdlePerAccount])
-	require.Equal(t, "7", repo.updates[SettingKeyOpenAIWSMaxIdlePerAccount])
+	require.Equal(t, "30", repo.updates[SettingKeyOpenAIWSNeutralPrewarmPercent])
+	require.Equal(t, "240", repo.updates[SettingKeyOpenAIWSSessionIdleTTLSeconds])
 
 	select {
 	case <-reconcileCalls:
@@ -370,48 +370,57 @@ func TestSettingService_GetAllSettings_LoadsOpenAIWSPoolRuntimeSettings(t *testi
 
 	repo := &kiroRuntimeSettingRepoStub{
 		values: map[string]string{
-			SettingKeyOpenAIWSMinIdlePerAccount:  "3",
-			SettingKeyOpenAIWSMaxIdlePerAccount:  "8",
-			SettingKeyOpenAIStickyReservePercent: "25",
+			SettingKeyOpenAIWSNeutralPrewarmPercent: "30",
+			SettingKeyOpenAIWSSessionIdleTTLSeconds: "180",
 		},
 	}
 	svc := NewSettingService(repo, &config.Config{})
 
 	settings, err := svc.GetAllSettings(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, 3, settings.OpenAIWSMinIdlePerAccount)
-	require.Equal(t, 8, settings.OpenAIWSMaxIdlePerAccount)
-	require.Equal(t, 25, settings.OpenAIStickyReservePercent)
+	require.Equal(t, 30, settings.OpenAIWSNeutralPrewarmPercent)
+	require.Equal(t, 180, settings.OpenAIWSSessionIdleTTLSeconds)
 
-	minIdle, maxIdle, stickyReserve, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
+	neutralPrewarmPercent, sessionIdleTTLSeconds, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
 	require.True(t, ok)
-	require.Equal(t, 3, minIdle)
-	require.Equal(t, 8, maxIdle)
-	require.Equal(t, 25, stickyReserve)
+	require.Equal(t, 30, neutralPrewarmPercent)
+	require.Equal(t, 180, sessionIdleTTLSeconds)
 }
 
-func TestSettingService_GetAllSettings_DefaultsOpenAIWSPoolStickyReserveToThirty(t *testing.T) {
+func TestSettingService_GetAllSettings_DefaultsOpenAIWSPoolRuntimeSettings(t *testing.T) {
 	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
 	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
 
 	repo := &kiroRuntimeSettingRepoStub{
 		values: map[string]string{
-			SettingKeyOpenAIWSMinIdlePerAccount: "2",
-			SettingKeyOpenAIWSMaxIdlePerAccount: "6",
+			SettingKeyOpenAIWSMinIdlePerAccount: "9",
+			SettingKeyOpenAIWSMaxIdlePerAccount: "12",
 		},
 	}
 	svc := NewSettingService(repo, &config.Config{})
 
 	settings, err := svc.GetAllSettings(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, defaultOpenAIWSStickyReservePercent, settings.OpenAIStickyReservePercent)
+	require.Equal(t, defaultOpenAIWSNeutralPrewarmPercent, settings.OpenAIWSNeutralPrewarmPercent)
+	require.Equal(t, defaultOpenAIWSSessionIdleTTLSeconds, settings.OpenAIWSSessionIdleTTLSeconds)
+	require.Equal(t, 9, settings.OpenAIWSMinIdlePerAccount, "legacy setting is still visible for compatibility")
+	require.Equal(t, 12, settings.OpenAIWSMaxIdlePerAccount, "legacy setting is still visible for compatibility")
 
-	_, _, stickyReserve, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
+	neutralPrewarmPercent, sessionIdleTTLSeconds, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
 	require.True(t, ok)
-	require.Equal(t, defaultOpenAIWSStickyReservePercent, stickyReserve)
+	require.Equal(t, defaultOpenAIWSNeutralPrewarmPercent, neutralPrewarmPercent)
+	require.Equal(t, defaultOpenAIWSSessionIdleTTLSeconds, sessionIdleTTLSeconds)
 }
 
-func TestSettingService_UpdateSettings_RejectsOpenAIWSMinIdleGreaterThanMaxIdle(t *testing.T) {
+func TestSettingService_UpdateSettings_LegacyOpenAIWSIdleSettingsDoNotDrivePoolRuntime(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+	RegisterOpenAIWSPoolReconcileHook(nil)
+	t.Cleanup(func() { RegisterOpenAIWSPoolReconcileHook(nil) })
+
+	reconcileCalls := make(chan struct{}, 1)
+	RegisterOpenAIWSPoolReconcileHook(func() { reconcileCalls <- struct{}{} })
+
 	repo := &settingUpdateRepoStub{}
 	svc := NewSettingService(repo, &config.Config{})
 
@@ -419,10 +428,20 @@ func TestSettingService_UpdateSettings_RejectsOpenAIWSMinIdleGreaterThanMaxIdle(
 		OpenAIWSMinIdlePerAccount: 5,
 		OpenAIWSMaxIdlePerAccount: 2,
 	})
+	require.NoError(t, err)
+	require.Equal(t, "5", repo.updates[SettingKeyOpenAIWSMinIdlePerAccount])
+	require.Equal(t, "2", repo.updates[SettingKeyOpenAIWSMaxIdlePerAccount])
 
-	require.Error(t, err)
-	require.Equal(t, "INVALID_OPENAI_WS_IDLE_SETTINGS", infraerrors.Reason(err))
-	require.Nil(t, repo.updates)
+	neutralPrewarmPercent, sessionIdleTTLSeconds, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
+	require.True(t, ok)
+	require.Equal(t, defaultOpenAIWSNeutralPrewarmPercent, neutralPrewarmPercent)
+	require.Equal(t, defaultOpenAIWSSessionIdleTTLSeconds, sessionIdleTTLSeconds)
+
+	select {
+	case <-reconcileCalls:
+		t.Fatal("legacy min/max idle changes must not trigger WS pool reconcile")
+	case <-time.After(200 * time.Millisecond):
+	}
 }
 
 func TestSettingService_UpdateSettings_OpenAIOAuthImageBridgeTransportSettings(t *testing.T) {

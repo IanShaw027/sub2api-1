@@ -80,24 +80,42 @@ func TestOpenAIWSPoolRuntimeSettings_AccessorPriority(t *testing.T) {
 	require.Equal(t, 0, pool.stickyReservePercent())
 }
 
-func TestOpenAIWSPool_NeutralMaxConns_StickyReserve(t *testing.T) {
+func TestOpenAIWSPoolRuntimeSettings_NeutralPrewarmPercentAndSessionTTLAccessors(t *testing.T) {
 	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
 	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
 
 	cfg := &config.Config{}
-	cfg.Gateway.OpenAIWS.StickyReservePercent = defaultOpenAIWSStickyReservePercent
 	pool := newOpenAIWSConnPool(cfg)
 	t.Cleanup(pool.Close)
 
-	// 默认 30% 预留：10 个连接 → neutral 上限 = floor(10 * 70/100) = 7。
-	require.Equal(t, 7, pool.neutralMaxConns(10))
+	require.Equal(t, defaultOpenAIWSNeutralPrewarmPercent, pool.neutralPrewarmPercent())
+	require.Equal(t, time.Duration(defaultOpenAIWSSessionIdleTTLSeconds)*time.Second, pool.sessionIdleTTL())
 
-	// 运行时设为 50%：neutral 上限 = 5。
-	StoreOpenAIWSPoolRuntimeSettings(1, 4, 50)
+	StoreOpenAIWSPoolRuntimeSettings(25, 180)
+	require.Equal(t, 25, pool.neutralPrewarmPercent())
+	require.Equal(t, 180*time.Second, pool.sessionIdleTTL())
+
+	StoreOpenAIWSPoolRuntimeSettings(0, 60)
+	require.Equal(t, 0, pool.neutralPrewarmPercent(), "0 disables proactive neutral prewarm")
+	require.Equal(t, 60*time.Second, pool.sessionIdleTTL())
+}
+
+func TestOpenAIWSPool_NeutralMaxConns_UsesPrewarmPercent(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+
+	cfg := &config.Config{}
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+
+	require.Equal(t, 2, pool.neutralMaxConns(10), "default 20 percent target")
+
+	StoreOpenAIWSPoolRuntimeSettings(50, 120)
 	require.Equal(t, 5, pool.neutralMaxConns(10))
 
-	// 总上限 0 → neutral 0。
+	StoreOpenAIWSPoolRuntimeSettings(0, 120)
 	require.Equal(t, 0, pool.neutralMaxConns(0))
+	require.Equal(t, 0, pool.neutralMaxConns(10), "0 percent disables proactive neutral target")
 }
 
 func TestOpenAIWSPool_PrewarmNeutral_ColdAccount(t *testing.T) {
@@ -119,7 +137,8 @@ func TestOpenAIWSPool_PrewarmNeutral_ColdAccount(t *testing.T) {
 		Profile: openAIWSConnProfileNeutral,
 	}
 
-	// 冷账号补足到 min_idle=2 条 neutral 连接。
+	StoreOpenAIWSPoolRuntimeSettings(25, 120)
+	// 冷账号按 8 * 25% 补足到 2 条 neutral 连接。
 	pool.PrewarmNeutral(account.ID, req, 2)
 
 	require.Equal(t, 2, dialer.DialCount())
@@ -128,7 +147,7 @@ func TestOpenAIWSPool_PrewarmNeutral_ColdAccount(t *testing.T) {
 	require.Equal(t, 0, waiters)
 	require.Equal(t, 2, conns)
 
-	// 已达目标后再次预热不重复拨号。
+	// 已达 percent target 后再次预热不重复拨号。
 	pool.PrewarmNeutral(account.ID, req, 2)
 	require.Equal(t, 2, dialer.DialCount())
 }
@@ -290,7 +309,7 @@ func TestOpenAIWSPool_PrewarmNeutralClearsCreatingAfterDial(t *testing.T) {
 	require.Equal(t, 0, ap.creating)
 }
 
-func TestOpenAIWSPool_ReconcileShrink_RespectsMaxIdle(t *testing.T) {
+func TestOpenAIWSPool_ReconcileShrink_RespectsNeutralPrewarmTarget(t *testing.T) {
 	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
 	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
 
@@ -308,14 +327,14 @@ func TestOpenAIWSPool_ReconcileShrink_RespectsMaxIdle(t *testing.T) {
 		Profile: openAIWSConnProfileNeutral,
 	}
 
-	// 先预热 5 条 neutral 空闲连接。
-	StoreOpenAIWSPoolRuntimeSettings(5, 5, 30)
+	// 先在 100% target 下预热 5 条 neutral 空闲连接。
+	StoreOpenAIWSPoolRuntimeSettings(100, 120)
 	pool.PrewarmNeutral(account.ID, req, 5)
 	_, _, conns := pool.AccountPoolLoad(account.ID)
 	require.Equal(t, 5, conns)
 
-	// 下调 max_idle=2 后 reconcile 收缩，多余空闲连接被回收。
-	StoreOpenAIWSPoolRuntimeSettings(2, 2, 30)
+	// 下调到 25% 后 target=2，reconcile 收缩多余 neutral。
+	StoreOpenAIWSPoolRuntimeSettings(25, 120)
 	pool.ReconcileShrink()
 
 	// 给收缩中关闭连接留出极短时间（cleanup 同步删表，close 同步执行）。

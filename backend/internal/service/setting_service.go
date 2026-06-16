@@ -1771,19 +1771,17 @@ func (s *SettingService) UpdateSettingsWithAuthSourceDefaults(ctx context.Contex
 }
 
 type openAIWSPoolRuntimeSettingsUpdateSnapshot struct {
-	minIdle       int
-	maxIdle       int
-	stickyReserve int
-	ok            bool
+	neutralPrewarmPercent int
+	sessionIdleTTLSeconds int
+	ok                    bool
 }
 
 func snapshotOpenAIWSPoolRuntimeSettingsForUpdate() openAIWSPoolRuntimeSettingsUpdateSnapshot {
-	minIdle, maxIdle, stickyReserve, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
+	neutralPrewarmPercent, sessionIdleTTLSeconds, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
 	return openAIWSPoolRuntimeSettingsUpdateSnapshot{
-		minIdle:       minIdle,
-		maxIdle:       maxIdle,
-		stickyReserve: stickyReserve,
-		ok:            ok,
+		neutralPrewarmPercent: neutralPrewarmPercent,
+		sessionIdleTTLSeconds: sessionIdleTTLSeconds,
+		ok:                    ok,
 	}
 }
 
@@ -1791,33 +1789,48 @@ func triggerOpenAIWSPoolReconcileIfRuntimeSettingsChanged(settings *SystemSettin
 	if settings == nil {
 		return
 	}
-	newMinIdle, newMaxIdle := normalizeOpenAIWSIdleSettingValues(settings.OpenAIWSMinIdlePerAccount, settings.OpenAIWSMaxIdlePerAccount)
-	newStickyReserve := boundedIntOrDefault(settings.OpenAIStickyReservePercent, 0, 100, 0)
+	if !hasOpenAIWSPoolRuntimeSettingsForUpdate(settings) {
+		return
+	}
+	newNeutralPrewarmPercent, newSessionIdleTTLSeconds := normalizeOpenAIWSPoolRuntimeSettingsForUpdate(settings)
 	poolSettingsChanged := !prev.ok ||
-		prev.minIdle != newMinIdle ||
-		prev.maxIdle != newMaxIdle ||
-		prev.stickyReserve != newStickyReserve
+		prev.neutralPrewarmPercent != newNeutralPrewarmPercent ||
+		prev.sessionIdleTTLSeconds != newSessionIdleTTLSeconds
 	if poolSettingsChanged {
 		TriggerOpenAIWSPoolReconcile()
 	}
 }
 
+func hasOpenAIWSPoolRuntimeSettingsForUpdate(settings *SystemSettings) bool {
+	if settings == nil {
+		return false
+	}
+	return settings.OpenAIWSNeutralPrewarmPercent != 0 || settings.OpenAIWSSessionIdleTTLSeconds != 0
+}
+
 func normalizeOpenAIWSIdleSettingValues(minIdle, maxIdle int) (int, int) {
 	minIdle = boundedIntOrDefault(minIdle, 0, openAIWSMaxIdlePerAccountUpperBound, defaultOpenAIWSMinIdlePerAccount)
 	maxIdle = boundedIntOrDefault(maxIdle, 0, openAIWSMaxIdlePerAccountUpperBound, defaultOpenAIWSMaxIdlePerAccount)
-	if minIdle > maxIdle {
-		maxIdle = minIdle
-	}
 	return minIdle, maxIdle
 }
 
-func validateOpenAIWSIdleSettingsForUpdate(minIdle, maxIdle int) (int, int, error) {
-	minIdle = boundedIntOrDefault(minIdle, 0, openAIWSMaxIdlePerAccountUpperBound, defaultOpenAIWSMinIdlePerAccount)
-	maxIdle = boundedIntOrDefault(maxIdle, 0, openAIWSMaxIdlePerAccountUpperBound, defaultOpenAIWSMaxIdlePerAccount)
-	if minIdle > maxIdle {
-		return 0, 0, infraerrors.BadRequest("INVALID_OPENAI_WS_IDLE_SETTINGS", "openai_ws_min_idle_per_account must be <= openai_ws_max_idle_per_account")
+func normalizeOpenAIWSNeutralPrewarmPercent(value int) int {
+	return boundedIntOrDefault(value, 0, 100, defaultOpenAIWSNeutralPrewarmPercent)
+}
+
+func normalizeOpenAIWSSessionIdleTTLSeconds(value int) int {
+	return boundedIntOrDefault(value, 1, openAIWSSessionIdleTTLSecondsUpperBound, defaultOpenAIWSSessionIdleTTLSeconds)
+}
+
+func normalizeOpenAIWSPoolRuntimeSettingsForUpdate(settings *SystemSettings) (int, int) {
+	if settings == nil {
+		return defaultOpenAIWSNeutralPrewarmPercent, defaultOpenAIWSSessionIdleTTLSeconds
 	}
-	return minIdle, maxIdle, nil
+	if settings.OpenAIWSNeutralPrewarmPercent == 0 && settings.OpenAIWSSessionIdleTTLSeconds == 0 {
+		return defaultOpenAIWSNeutralPrewarmPercent, defaultOpenAIWSSessionIdleTTLSeconds
+	}
+	return normalizeOpenAIWSNeutralPrewarmPercent(settings.OpenAIWSNeutralPrewarmPercent),
+		normalizeOpenAIWSSessionIdleTTLSeconds(settings.OpenAIWSSessionIdleTTLSeconds)
 }
 
 func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, settings *SystemSettings) (map[string]string, error) {
@@ -1845,13 +1858,11 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	}
 	settings.PaymentVisibleMethodAlipaySource = alipaySource
 	settings.PaymentVisibleMethodWxpaySource = wxpaySource
-	openAIWSMinIdle, openAIWSMaxIdle, err := validateOpenAIWSIdleSettingsForUpdate(
+	openAIWSMinIdle, openAIWSMaxIdle := normalizeOpenAIWSIdleSettingValues(
 		settings.OpenAIWSMinIdlePerAccount,
 		settings.OpenAIWSMaxIdlePerAccount,
 	)
-	if err != nil {
-		return nil, err
-	}
+	openAIWSNeutralPrewarmPercent, openAIWSSessionIdleTTLSeconds := normalizeOpenAIWSPoolRuntimeSettingsForUpdate(settings)
 	settings.WeChatConnectAppID = strings.TrimSpace(settings.WeChatConnectAppID)
 	settings.WeChatConnectAppSecret = strings.TrimSpace(settings.WeChatConnectAppSecret)
 	settings.WeChatConnectOpenAppID = strings.TrimSpace(firstNonEmpty(settings.WeChatConnectOpenAppID, settings.WeChatConnectAppID))
@@ -2188,6 +2199,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyOpenAIStickyWaitTimeoutSeconds] = strconv.Itoa(boundedIntOrDefault(settings.OpenAIStickyWaitTimeoutSeconds, 1, 300, 30))
 	updates[SettingKeyOpenAIWSMinIdlePerAccount] = strconv.Itoa(openAIWSMinIdle)
 	updates[SettingKeyOpenAIWSMaxIdlePerAccount] = strconv.Itoa(openAIWSMaxIdle)
+	updates[SettingKeyOpenAIWSNeutralPrewarmPercent] = strconv.Itoa(openAIWSNeutralPrewarmPercent)
+	updates[SettingKeyOpenAIWSSessionIdleTTLSeconds] = strconv.Itoa(openAIWSSessionIdleTTLSeconds)
 	updates[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives] = strconv.FormatBool(settings.OpenAIOAuthImageBridgeDisableKeepAlives)
 	updates[SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient] = strconv.FormatBool(settings.OpenAIOAuthImageBridgeFreshUpstreamClient)
 
@@ -2432,11 +2445,10 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		timeout:   time.Duration(boundedIntOrDefault(settings.OpenAIStickyWaitTimeoutSeconds, 1, 300, 30)) * time.Second,
 		expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 	})
-	openAIWSMinIdle, openAIWSMaxIdle := normalizeOpenAIWSIdleSettingValues(settings.OpenAIWSMinIdlePerAccount, settings.OpenAIWSMaxIdlePerAccount)
+	openAIWSNeutralPrewarmPercent, openAIWSSessionIdleTTLSeconds := normalizeOpenAIWSPoolRuntimeSettingsForUpdate(settings)
 	StoreOpenAIWSPoolRuntimeSettings(
-		openAIWSMinIdle,
-		openAIWSMaxIdle,
-		boundedIntOrDefault(settings.OpenAIStickyReservePercent, 0, 100, 0),
+		openAIWSNeutralPrewarmPercent,
+		openAIWSSessionIdleTTLSeconds,
 	)
 	openAIOAuthImageBridgeTransportSettingsSF.Forget(openAIOAuthImageBridgeTransportSettingsKey)
 	openAIOAuthImageBridgeTransportSettingsCache.Store(&cachedOpenAIOAuthImageBridgeTransportSettings{
@@ -3280,6 +3292,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyFallbackModelAntigravity:          "gemini-2.5-pro",
 		SettingKeyPlatformDefaultAccountModelConfig: defaultAccountModelConfigJSON(),
 		SettingKeyOpenAIStickyReservePercent:        strconv.Itoa(defaultOpenAIWSStickyReservePercent),
+		SettingKeyOpenAIWSNeutralPrewarmPercent:     strconv.Itoa(defaultOpenAIWSNeutralPrewarmPercent),
+		SettingKeyOpenAIWSSessionIdleTTLSeconds:     strconv.Itoa(defaultOpenAIWSSessionIdleTTLSeconds),
 		// Identity patch defaults
 		SettingKeyEnableIdentityPatch: "true",
 		SettingKeyIdentityPatchPrompt: "",
@@ -3827,6 +3841,16 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		openAIWSMaxIdle = v
 	}
 	result.OpenAIWSMinIdlePerAccount, result.OpenAIWSMaxIdlePerAccount = normalizeOpenAIWSIdleSettingValues(openAIWSMinIdle, openAIWSMaxIdle)
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyOpenAIWSNeutralPrewarmPercent])); err == nil {
+		result.OpenAIWSNeutralPrewarmPercent = normalizeOpenAIWSNeutralPrewarmPercent(v)
+	} else {
+		result.OpenAIWSNeutralPrewarmPercent = defaultOpenAIWSNeutralPrewarmPercent
+	}
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyOpenAIWSSessionIdleTTLSeconds])); err == nil {
+		result.OpenAIWSSessionIdleTTLSeconds = normalizeOpenAIWSSessionIdleTTLSeconds(v)
+	} else {
+		result.OpenAIWSSessionIdleTTLSeconds = defaultOpenAIWSSessionIdleTTLSeconds
+	}
 	if raw, ok := settings[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives]; ok && strings.TrimSpace(raw) != "" {
 		result.OpenAIOAuthImageBridgeDisableKeepAlives = strings.EqualFold(strings.TrimSpace(raw), "true")
 	} else if s.cfg != nil {

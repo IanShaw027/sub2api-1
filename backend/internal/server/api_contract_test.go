@@ -885,6 +885,8 @@ func TestAPIContracts(t *testing.T) {
 						"openai_sticky_wait_timeout_seconds": 30,
 						"openai_ws_min_idle_per_account": 1,
 						"openai_ws_max_idle_per_account": 4,
+						"openai_ws_neutral_prewarm_percent": 20,
+						"openai_ws_session_idle_ttl_seconds": 120,
 						"openai_allow_claude_code_codex_plugin": false,
 						"openai_fast_policy_settings": {
 						"rules": []
@@ -914,7 +916,7 @@ func TestAPIContracts(t *testing.T) {
 					"payment_cancel_rate_limit_window_mode": "",
 					"balance_low_notify_enabled": false,
 					"account_quota_notify_enabled": false,
-					"account_scheduling_thresholds": {"anthropic":100,"antigravity":100,"gemini":100,"kiro":100,"openai":100},
+					"account_scheduling_thresholds": {"anthropic":100,"openai":100},
 					"balance_low_notify_threshold": 0,
 					"balance_low_notify_recharge_url": "",
 					"account_quota_notify_emails": [],
@@ -1167,6 +1169,8 @@ func TestAPIContracts(t *testing.T) {
 						"openai_sticky_wait_timeout_seconds": 30,
 						"openai_ws_min_idle_per_account": 1,
 						"openai_ws_max_idle_per_account": 4,
+						"openai_ws_neutral_prewarm_percent": 20,
+						"openai_ws_session_idle_ttl_seconds": 120,
 						"openai_allow_claude_code_codex_plugin": false,
 						"openai_codex_user_agent": "",
 						"openai_fast_policy_settings": {
@@ -1195,7 +1199,7 @@ func TestAPIContracts(t *testing.T) {
 					"payment_alipay_force_qrcode": false,
 					"balance_low_notify_enabled": false,
 					"account_quota_notify_enabled": false,
-					"account_scheduling_thresholds": {"anthropic":100,"antigravity":100,"gemini":100,"kiro":100,"openai":100},
+					"account_scheduling_thresholds": {"anthropic":100,"openai":100},
 					"subscription_expiry_notify_enabled": true,
 					"balance_low_notify_threshold": 0,
 					"balance_low_notify_recharge_url": "",

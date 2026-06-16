@@ -78,8 +78,10 @@ var openAIWSIngressPreflightPingIdle = 20 * time.Second
 
 // openAIWSFallbackError 表示可安全回退到 HTTP 的 WS 错误（尚未写下游）。
 type openAIWSFallbackError struct {
-	Reason string
-	Err    error
+	Reason             string
+	Err                error
+	PreviousResponseID string
+	ActiveDelta        bool
 }
 
 func (e *openAIWSFallbackError) Error() string {
@@ -101,6 +103,15 @@ func (e *openAIWSFallbackError) Unwrap() error {
 
 func wrapOpenAIWSFallback(reason string, err error) error {
 	return &openAIWSFallbackError{Reason: strings.TrimSpace(reason), Err: err}
+}
+
+func wrapOpenAIWSFallbackWithPayloadState(reason string, err error, previousResponseID string, activeDelta bool) error {
+	return &openAIWSFallbackError{
+		Reason:             strings.TrimSpace(reason),
+		Err:                err,
+		PreviousResponseID: strings.TrimSpace(previousResponseID),
+		ActiveDelta:        activeDelta,
+	}
 }
 
 type openAIWSResponseFailedError struct {
@@ -852,6 +863,11 @@ type openAIWSDiagnosticStartLog struct {
 	FallbackReason            string
 	DroppedPreviousResponseID bool
 	UnsafeToolContinuation    bool
+	DeltaActive               bool
+	DeltaItems                int
+	DeltaBytes                int
+	FullItems                 int
+	FullBytes                 int
 	ConnPickMs                int64
 	QueueWaitMs               int64
 	SessionHash               string
@@ -872,7 +888,7 @@ type openAIWSDiagnosticStartLog struct {
 
 func openAIWSDiagnosticStartLogMessage(v openAIWSDiagnosticStartLog) string {
 	return fmt.Sprintf(
-		"openai_ws_diag_start temporary_diag=ctx_pool_store_true remove_after_debug=true request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s model=%s stream=%s payload_event=%s payload_bytes=%d payload_keys=%s input_summary=%s previous_response_id=%s previous_response_id_kind=%s preferred_conn_id=%s store_mode=%s store_enabled=%v store_disabled=%v sticky_account_hit=%v conn_affinity_hit=%v fallback_reason=%s dropped_previous_response_id=%v unsafe_tool_continuation=%v conn_pick_ms=%d queue_wait_ms=%d session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v has_tools=%v http_ingress_ws_one_shot=%v force_new_conn=%v affinity_only_reuse=%v store_disabled_conn_mode=%s proxy_enabled=%v",
+		"openai_ws_diag_start temporary_diag=ctx_pool_store_true remove_after_debug=true request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s model=%s stream=%s payload_event=%s payload_bytes=%d payload_keys=%s input_summary=%s previous_response_id=%s previous_response_id_kind=%s preferred_conn_id=%s store_mode=%s store_enabled=%v store_disabled=%v sticky_account_hit=%v conn_affinity_hit=%v fallback_reason=%s dropped_previous_response_id=%v unsafe_tool_continuation=%v delta_active=%v delta_items=%d delta_bytes=%d full_items=%d full_bytes=%d conn_pick_ms=%d queue_wait_ms=%d session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v has_tools=%v http_ingress_ws_one_shot=%v force_new_conn=%v affinity_only_reuse=%v store_disabled_conn_mode=%s proxy_enabled=%v",
 		normalizeOpenAIWSLogValue(v.RequestID),
 		normalizeOpenAIWSLogValue(v.ClientRequestID),
 		v.AccountID,
@@ -898,6 +914,11 @@ func openAIWSDiagnosticStartLogMessage(v openAIWSDiagnosticStartLog) string {
 		normalizeOpenAIWSLogValue(v.FallbackReason),
 		v.DroppedPreviousResponseID,
 		v.UnsafeToolContinuation,
+		v.DeltaActive,
+		v.DeltaItems,
+		v.DeltaBytes,
+		v.FullItems,
+		v.FullBytes,
 		v.ConnPickMs,
 		v.QueueWaitMs,
 		truncateOpenAIWSLogValue(v.SessionHash, 12),
@@ -955,11 +976,16 @@ type openAIWSDiagnosticCompletedLog struct {
 	CacheReadTokens        int
 	CacheCreationTokens    int
 	OutputTokens           int
+	DeltaActive            bool
+	DeltaItems             int
+	DeltaBytes             int
+	FullItems              int
+	FullBytes              int
 }
 
 func openAIWSDiagnosticCompletedLogMessage(v openAIWSDiagnosticCompletedLog) string {
 	return fmt.Sprintf(
-		"openai_ws_diag_completed temporary_diag=ctx_pool_store_true remove_after_debug=true request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v response_id=%s model=%s upstream_model=%s stream=%v store_mode=%s store_enabled=%v store_disabled=%v has_previous_response_id=%v previous_response_id_kind=%s payload_bytes=%d duration_ms=%d first_token_ms=%d events=%d token_events=%d terminal_events=%d buffered_events=%d buffered_flushed=%d first_event=%s last_event=%s wrote_downstream=%v client_disconnected=%v http_ingress_ws_one_shot=%v input_tokens=%d cache_read_tokens=%d cache_creation_tokens=%d output_tokens=%d",
+		"openai_ws_diag_completed temporary_diag=ctx_pool_store_true remove_after_debug=true request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v response_id=%s model=%s upstream_model=%s stream=%v store_mode=%s store_enabled=%v store_disabled=%v has_previous_response_id=%v previous_response_id_kind=%s payload_bytes=%d duration_ms=%d first_token_ms=%d events=%d token_events=%d terminal_events=%d buffered_events=%d buffered_flushed=%d first_event=%s last_event=%s wrote_downstream=%v client_disconnected=%v http_ingress_ws_one_shot=%v input_tokens=%d cache_read_tokens=%d cache_creation_tokens=%d output_tokens=%d delta_active=%v delta_items=%d delta_bytes=%d full_items=%d full_bytes=%d",
 		normalizeOpenAIWSLogValue(v.RequestID),
 		normalizeOpenAIWSLogValue(v.ClientRequestID),
 		v.AccountID,
@@ -993,6 +1019,11 @@ func openAIWSDiagnosticCompletedLogMessage(v openAIWSDiagnosticCompletedLog) str
 		v.CacheReadTokens,
 		v.CacheCreationTokens,
 		v.OutputTokens,
+		v.DeltaActive,
+		v.DeltaItems,
+		v.DeltaBytes,
+		v.FullItems,
+		v.FullBytes,
 	)
 }
 
@@ -1255,10 +1286,10 @@ func (s *OpenAIGatewayService) getOpenAIWSStateStore() OpenAIWSStateStore {
 		if s.openaiWSStateStore == nil {
 			s.openaiWSStateStore = NewOpenAIWSStateStore(s.cache)
 		}
-		// 连接淘汰时同步失效 conn_id -> last_response_id 映射（strict-delta shadow 用）。
+		// 连接淘汰时同步失效 conn 作用域 session/delta 状态，避免后续请求命中 stale affinity。
 		store := s.openaiWSStateStore
 		RegisterOpenAIWSConnEvictHook(func(connID string) {
-			store.DeleteConnLastResponse(connID)
+			store.DeleteConnScopedState(connID)
 		})
 	})
 	return s.openaiWSStateStore
@@ -2659,6 +2690,74 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		lease.QueueWaitDuration().Milliseconds(),
 		previousResponseID != "",
 	)
+
+	// active delta uses the full payload only as a verified source-of-truth for
+	// prefix matching and later context binding. The upstream write may be
+	// reduced to just the trailing input items.
+	contextPayloadRaw := payloadAsJSONBytes(payload)
+	deltaShadowEnabled := openAIWSDeltaShadowEnabled()
+	activeDeltaLog := openAIWSDeltaShadowLog{}
+	activeDeltaApplied := false
+	shadowOwner := false
+	if deltaShadowEnabled && !httpIngressWSOneShot && stateStore != nil && sessionHash != "" {
+		shadowOwner = stateStore.TrySessionInFlight(groupID, apiKeyID, sessionHash)
+		if !shadowOwner {
+			activeDeltaLog = openAIWSDeltaShadowLog{
+				RequestID:      requestID,
+				AccountID:      account.ID,
+				ConnID:         connID,
+				Candidate:      false,
+				FallbackReason: "same_session_in_flight",
+			}
+		} else {
+			cached, found := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
+			connMostRecent, _ := stateStore.GetConnLastResponse(connID)
+			shadowInput := openAIWSDeltaShadowInput{
+				RequestID:                requestID,
+				AccountID:                account.ID,
+				LeaseConnID:              connID,
+				ConnMostRecentResponseID: connMostRecent,
+				CurrentPayload:           contextPayloadRaw,
+				HasFunctionCallOutput:    HasToolContinuationOutputInRawPayload(contextPayloadRaw),
+				Cached:                   cached,
+				CachedFound:              found,
+			}
+			if openAIWSActiveDeltaEnabled() {
+				if deltaPayload, deltaLog, applied, buildErr := buildOpenAIWSActiveDeltaPayload(shadowInput); buildErr == nil && applied {
+					payload = deltaPayload
+					payloadBytes = -1
+					previousResponseID = openAIWSPayloadString(payload, "previous_response_id")
+					previousResponseIDKind = ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
+					storeEnabled = openAIWSPayloadStoreEnabled(payload)
+					storeDisabled = openAIWSPayloadStoreDisabled(payload)
+					storeDecision.StoreMode = openAIWSStoreModeIncremental
+					storeDecision.StoreEnabled = storeEnabled
+					storeDecision.StoreDisabled = storeDisabled
+					storeDecision.StickyAccountHit = true
+					storeDecision.ConnAffinityHit = true
+					storeDecision.FallbackReason = "active_delta"
+					connAffinityHit = true
+					activeDeltaLog = deltaLog
+					activeDeltaApplied = true
+				} else {
+					activeDeltaLog = deltaLog
+					if buildErr != nil {
+						activeDeltaLog.Candidate = false
+						activeDeltaLog.FallbackReason = "active_delta_build_error"
+					}
+				}
+			} else {
+				activeDeltaLog = evaluateOpenAIWSDeltaShadowCandidate(shadowInput)
+			}
+		}
+		logOpenAIWSDeltaShadow(activeDeltaLog)
+	}
+	defer func() {
+		if shadowOwner {
+			stateStore.EndSessionInFlight(groupID, apiKeyID, sessionHash)
+		}
+	}()
+
 	logOpenAIWSDiagnosticStart(openAIWSDiagnosticStartLog{
 		RequestID:                 requestID,
 		ClientRequestID:           clientRequestID,
@@ -2685,6 +2784,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		FallbackReason:            storeDecision.FallbackReason,
 		DroppedPreviousResponseID: storeDecision.DroppedPreviousResponseID,
 		UnsafeToolContinuation:    storeDecision.UnsafeToolContinuation,
+		DeltaActive:               activeDeltaApplied,
+		DeltaItems:                activeDeltaLog.DeltaItems,
+		DeltaBytes:                activeDeltaLog.DeltaBytes,
+		FullItems:                 activeDeltaLog.FullItems,
+		FullBytes:                 activeDeltaLog.FullBytes,
 		ConnPickMs:                lease.ConnPickDuration().Milliseconds(),
 		QueueWaitMs:               lease.QueueWaitDuration().Milliseconds(),
 		SessionHash:               sessionHash,
@@ -2772,42 +2876,6 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			return nil, err
 		}
 	}
-
-	// TEMP_DIAG(openai_ws_delta_shadow): forward HTTP->upstream-WS 主路径的 strict-delta shadow。
-	// 只读评估，绝不改写 payload；one-shot neutral 路径没有稳定会话上下文，保持不参与。
-	deltaShadowEnabled := openAIWSDeltaShadowEnabled()
-	shadowOwner := false
-	if deltaShadowEnabled && !httpIngressWSOneShot && stateStore != nil && sessionHash != "" {
-		shadowOwner = stateStore.TrySessionInFlight(groupID, apiKeyID, sessionHash)
-		payloadRaw := payloadAsJSONBytes(payload)
-		if !shadowOwner {
-			logOpenAIWSDeltaShadow(openAIWSDeltaShadowLog{
-				RequestID:      requestID,
-				AccountID:      account.ID,
-				ConnID:         connID,
-				Candidate:      false,
-				FallbackReason: "same_session_in_flight",
-			})
-		} else {
-			cached, found := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
-			connMostRecent, _ := stateStore.GetConnLastResponse(connID)
-			logOpenAIWSDeltaShadow(evaluateOpenAIWSDeltaShadowCandidate(openAIWSDeltaShadowInput{
-				RequestID:                requestID,
-				AccountID:                account.ID,
-				LeaseConnID:              connID,
-				ConnMostRecentResponseID: connMostRecent,
-				CurrentPayload:           payloadRaw,
-				HasFunctionCallOutput:    HasToolContinuationOutputInRawPayload(payloadRaw),
-				Cached:                   cached,
-				CachedFound:              found,
-			}))
-		}
-	}
-	defer func() {
-		if shadowOwner {
-			stateStore.EndSessionInFlight(groupID, apiKeyID, sessionHash)
-		}
-	}()
 
 	if err := lease.WriteJSONWithContextTimeout(ctx, payload, s.openAIWSWriteTimeout()); err != nil {
 		lease.MarkBroken()
@@ -3141,7 +3209,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			// error 事件后连接不再可复用，避免回池后污染下一请求。
 			lease.MarkBroken()
 			if !wroteDownstream && canFallback {
-				return nil, wrapOpenAIWSFallback(fallbackReason, errors.New(errMsg))
+				return nil, wrapOpenAIWSFallbackWithPayloadState(fallbackReason, errors.New(errMsg), previousResponseID, activeDeltaApplied)
 			}
 			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
 			setOpsUpstreamError(c, statusCode, errMsg, "")
@@ -3271,8 +3339,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 	if shadowOwner && deltaShadowEnabled && stateStore != nil && responseID != "" && connID != "" &&
 		!clientDisconnected && deltaShadowOutputCaptured {
-		payloadRaw := payloadAsJSONBytes(payload)
-		if inputItems, _, ierr := openAIWSExtractNormalizedInputSequence(payloadRaw); ierr == nil {
+		if inputItems, _, ierr := openAIWSExtractNormalizedInputSequence(contextPayloadRaw); ierr == nil {
 			if inputHashes, hok := openAIWSCanonicalItemHashes(inputItems); hok {
 				var materializedShapes []string
 				if inputShapes, sok := openAIWSItemShapes(inputItems); sok && len(deltaShadowRawOutputShapes) == len(deltaShadowRawOutputHashes) {
@@ -3283,7 +3350,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				materialized := make([][32]byte, 0, len(inputHashes)+len(deltaShadowRawOutputHashes))
 				materialized = append(materialized, inputHashes...)
 				materialized = append(materialized, deltaShadowRawOutputHashes...)
-				nonInputHash, _ := openAIWSNonInputHash(payloadRaw)
+				nonInputHash, _ := openAIWSNonInputHash(contextPayloadRaw)
 				ttl := s.openAIWSSessionStickyTTL()
 				stateStore.BindConnLastResponse(connID, responseID, ttl)
 				stateStore.BindSessionContext(groupID, apiKeyID, sessionHash, openAIWSSessionContextValue{
@@ -3339,6 +3406,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		CacheReadTokens:        usage.CacheReadInputTokens,
 		CacheCreationTokens:    usage.CacheCreationInputTokens,
 		OutputTokens:           usage.OutputTokens,
+		DeltaActive:            activeDeltaApplied,
+		DeltaItems:             activeDeltaLog.DeltaItems,
+		DeltaBytes:             activeDeltaLog.DeltaBytes,
+		FullItems:              activeDeltaLog.FullItems,
+		FullBytes:              activeDeltaLog.FullBytes,
 	})
 	logOpenAIWSModeDebug(
 		"completed account_id=%d conn_id=%s response_id=%s stream=%v duration_ms=%d events=%d token_events=%d terminal_events=%d buffered_events=%d buffered_flushed=%d first_event=%s last_event=%s first_token_ms=%d wrote_downstream=%v client_disconnected=%v http_ingress_ws_one_shot=%v",

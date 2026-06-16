@@ -150,6 +150,45 @@ func TestOpenAIWSStateStore_SessionConnTTL(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestOpenAIWSStateStore_DeleteConnScopedStateClearsOnlyMatchingSessionState(t *testing.T) {
+	store := NewOpenAIWSStateStore(nil)
+
+	store.BindSessionConn(7, "sess_a", "conn_a", time.Minute)
+	store.BindSessionConn(7, "sess_b", "conn_b", time.Minute)
+	store.BindSessionContext(7, 11, "sess_a", openAIWSSessionContextValue{
+		accountID:      101,
+		connID:         "conn_a",
+		lastResponseID: "resp_a",
+	}, time.Minute)
+	store.BindSessionContext(7, 11, "sess_b", openAIWSSessionContextValue{
+		accountID:      102,
+		connID:         "conn_b",
+		lastResponseID: "resp_b",
+	}, time.Minute)
+	store.BindConnLastResponse("conn_a", "resp_a", time.Minute)
+	store.BindConnLastResponse("conn_b", "resp_b", time.Minute)
+
+	store.DeleteConnScopedState("conn_a")
+
+	_, ok := store.GetSessionConn(7, "sess_a")
+	require.False(t, ok, "session -> conn binding for evicted conn must be cleared")
+	connID, ok := store.GetSessionConn(7, "sess_b")
+	require.True(t, ok)
+	require.Equal(t, "conn_b", connID)
+
+	_, ok = store.GetSessionContext(7, 11, "sess_a")
+	require.False(t, ok, "session context for evicted conn must be cleared")
+	ctx, ok := store.GetSessionContext(7, 11, "sess_b")
+	require.True(t, ok)
+	require.Equal(t, "conn_b", ctx.connID)
+
+	_, ok = store.GetConnLastResponse("conn_a")
+	require.False(t, ok, "conn last response for evicted conn must be cleared")
+	respID, ok := store.GetConnLastResponse("conn_b")
+	require.True(t, ok)
+	require.Equal(t, "resp_b", respID)
+}
+
 func TestOpenAIWSStateStore_GetResponseAccount_NoStaleAfterCacheMiss(t *testing.T) {
 	cache := &stubGatewayCache{sessionBindings: map[string]int64{}}
 	store := NewOpenAIWSStateStore(cache)

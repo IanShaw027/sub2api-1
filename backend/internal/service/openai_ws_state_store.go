@@ -94,6 +94,7 @@ type OpenAIWSStateStore interface {
 	BindConnLastResponse(connID, responseID string, ttl time.Duration)
 	GetConnLastResponse(connID string) (string, bool)
 	DeleteConnLastResponse(connID string)
+	DeleteConnScopedState(connID string)
 
 	// 原子 per-session in-flight 标记，保证 shadow inert：仅 owner 读写状态，non-owner 不等待。
 	TrySessionInFlight(groupID int64, apiKeyID int64, sessionHash string) bool
@@ -446,6 +447,39 @@ func (s *defaultOpenAIWSStateStore) DeleteConnLastResponse(connID string) {
 	s.connLastResponseMu.Lock()
 	delete(s.connLastResponse, conn)
 	s.connLastResponseMu.Unlock()
+}
+
+func (s *defaultOpenAIWSStateStore) DeleteConnScopedState(connID string) {
+	conn := strings.TrimSpace(connID)
+	if s == nil || conn == "" {
+		return
+	}
+
+	s.responseToConnMu.Lock()
+	for key, binding := range s.responseToConn {
+		if strings.TrimSpace(binding.connID) == conn {
+			delete(s.responseToConn, key)
+		}
+	}
+	s.responseToConnMu.Unlock()
+
+	s.sessionToConnMu.Lock()
+	for key, binding := range s.sessionToConn {
+		if strings.TrimSpace(binding.connID) == conn {
+			delete(s.sessionToConn, key)
+		}
+	}
+	s.sessionToConnMu.Unlock()
+
+	s.sessionContextMu.Lock()
+	for key, binding := range s.sessionContext {
+		if strings.TrimSpace(binding.value.connID) == conn {
+			delete(s.sessionContext, key)
+		}
+	}
+	s.sessionContextMu.Unlock()
+
+	s.DeleteConnLastResponse(conn)
 }
 
 func (s *defaultOpenAIWSStateStore) TrySessionInFlight(groupID int64, apiKeyID int64, sessionHash string) bool {

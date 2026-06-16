@@ -77,12 +77,11 @@ func (s *OpenAIGatewayService) runOpenAIWSPoolReconcileRound(ctx context.Context
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIWSReconcileTimeout)
 	defer cancel()
 
-	// 1) 收缩：按当前 max_idle / sticky_reserve 立即回收多余空闲连接。
+	// 1) 收缩：按 session TTL 与 neutral 目标立即回收多余空闲连接。
 	pool.ReconcileShrink()
 
-	// 2) 扩张：仅当 min_idle > 0 时为可调度账号预热 neutral 连接。
-	minIdle := pool.minIdlePerAccount()
-	if minIdle <= 0 {
+	// 2) 扩张：仅当 neutral prewarm percent > 0 时为可调度账号预热 neutral 连接。
+	if pool.neutralPrewarmPercent() <= 0 {
 		return
 	}
 
@@ -105,8 +104,12 @@ func (s *OpenAIGatewayService) runOpenAIWSPoolReconcileRound(ctx context.Context
 		if s.getOpenAIWSProtocolResolver().Resolve(acc).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
 			continue
 		}
+		target := pool.neutralPrewarmTargetForAccount(acc)
+		if target <= 0 {
+			continue
+		}
 		g.Go(func() error {
-			s.prewarmNeutralForAccount(gctx, pool, acc, minIdle)
+			s.prewarmNeutralForAccount(gctx, pool, acc, target)
 			return nil
 		})
 	}

@@ -655,6 +655,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		OpenAIStickyWaitTimeoutSeconds:            settings.OpenAIStickyWaitTimeoutSeconds,
 		OpenAIWSMinIdlePerAccount:                 settings.OpenAIWSMinIdlePerAccount,
 		OpenAIWSMaxIdlePerAccount:                 settings.OpenAIWSMaxIdlePerAccount,
+		OpenAIWSNeutralPrewarmPercent:             settings.OpenAIWSNeutralPrewarmPercent,
+		OpenAIWSSessionIdleTTLSeconds:             settings.OpenAIWSSessionIdleTTLSeconds,
 		OpenAIOAuthImageBridgeDisableKeepAlives:   settings.OpenAIOAuthImageBridgeDisableKeepAlives,
 		OpenAIOAuthImageBridgeFreshUpstreamClient: settings.OpenAIOAuthImageBridgeFreshUpstreamClient,
 		BalanceLowNotifyEnabled:                   settings.BalanceLowNotifyEnabled,
@@ -1013,6 +1015,8 @@ type UpdateSettingsRequest struct {
 	OpenAIStickyWaitTimeoutSeconds            *int  `json:"openai_sticky_wait_timeout_seconds"`
 	OpenAIWSMinIdlePerAccount                 *int  `json:"openai_ws_min_idle_per_account"`
 	OpenAIWSMaxIdlePerAccount                 *int  `json:"openai_ws_max_idle_per_account"`
+	OpenAIWSNeutralPrewarmPercent             *int  `json:"openai_ws_neutral_prewarm_percent"`
+	OpenAIWSSessionIdleTTLSeconds             *int  `json:"openai_ws_session_idle_ttl_seconds"`
 	OpenAIOAuthImageBridgeDisableKeepAlives   *bool `json:"openai_oauth_image_bridge_disable_keepalives"`
 	OpenAIOAuthImageBridgeFreshUpstreamClient *bool `json:"openai_oauth_image_bridge_fresh_upstream_client"`
 
@@ -2483,6 +2487,32 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAIWSMaxIdlePerAccount
 		}(),
+		OpenAIWSNeutralPrewarmPercent: func() int {
+			if req.OpenAIWSNeutralPrewarmPercent != nil {
+				value := *req.OpenAIWSNeutralPrewarmPercent
+				if value < 0 {
+					return 0
+				}
+				if value > 100 {
+					return 100
+				}
+				return value
+			}
+			return previousSettings.OpenAIWSNeutralPrewarmPercent
+		}(),
+		OpenAIWSSessionIdleTTLSeconds: func() int {
+			if req.OpenAIWSSessionIdleTTLSeconds != nil {
+				value := *req.OpenAIWSSessionIdleTTLSeconds
+				if value < 1 {
+					return 1
+				}
+				if value > 3600 {
+					return 3600
+				}
+				return value
+			}
+			return previousSettings.OpenAIWSSessionIdleTTLSeconds
+		}(),
 		OpenAIOAuthImageBridgeDisableKeepAlives: func() bool {
 			if req.OpenAIOAuthImageBridgeDisableKeepAlives != nil {
 				return *req.OpenAIOAuthImageBridgeDisableKeepAlives
@@ -2873,6 +2903,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		OpenAIStickyWaitTimeoutSeconds:            updatedSettings.OpenAIStickyWaitTimeoutSeconds,
 		OpenAIWSMinIdlePerAccount:                 updatedSettings.OpenAIWSMinIdlePerAccount,
 		OpenAIWSMaxIdlePerAccount:                 updatedSettings.OpenAIWSMaxIdlePerAccount,
+		OpenAIWSNeutralPrewarmPercent:             updatedSettings.OpenAIWSNeutralPrewarmPercent,
+		OpenAIWSSessionIdleTTLSeconds:             updatedSettings.OpenAIWSSessionIdleTTLSeconds,
 		OpenAIOAuthImageBridgeDisableKeepAlives:   updatedSettings.OpenAIOAuthImageBridgeDisableKeepAlives,
 		OpenAIOAuthImageBridgeFreshUpstreamClient: updatedSettings.OpenAIOAuthImageBridgeFreshUpstreamClient,
 		BalanceLowNotifyEnabled:                   updatedSettings.BalanceLowNotifyEnabled,
@@ -3412,6 +3444,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.OpenAIWSMaxIdlePerAccount != after.OpenAIWSMaxIdlePerAccount {
 		changed = append(changed, "openai_ws_max_idle_per_account")
+	}
+	if before.OpenAIWSNeutralPrewarmPercent != after.OpenAIWSNeutralPrewarmPercent {
+		changed = append(changed, "openai_ws_neutral_prewarm_percent")
+	}
+	if before.OpenAIWSSessionIdleTTLSeconds != after.OpenAIWSSessionIdleTTLSeconds {
+		changed = append(changed, "openai_ws_session_idle_ttl_seconds")
 	}
 	if before.OpenAIOAuthImageBridgeDisableKeepAlives != after.OpenAIOAuthImageBridgeDisableKeepAlives {
 		changed = append(changed, "openai_oauth_image_bridge_disable_keepalives")

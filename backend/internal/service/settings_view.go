@@ -238,6 +238,8 @@ type SystemSettings struct {
 	OpenAIStickyWaitTimeoutSeconds            int
 	OpenAIWSMinIdlePerAccount                 int
 	OpenAIWSMaxIdlePerAccount                 int
+	OpenAIWSNeutralPrewarmPercent             int
+	OpenAIWSSessionIdleTTLSeconds             int
 	OpenAIOAuthImageBridgeDisableKeepAlives   bool
 	OpenAIOAuthImageBridgeFreshUpstreamClient bool
 

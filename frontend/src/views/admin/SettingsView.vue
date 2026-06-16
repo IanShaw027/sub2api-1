@@ -3792,61 +3792,61 @@
 	                </p>
 	              </div>
 
-	              <div>
-	                <label class="label">
-	                  {{
-	                    localText(
-	                      "WS 每账号最小空闲连接数",
-	                      "WS Min Idle Connections Per Account",
-	                    )
-	                  }}
-	                </label>
-	                <input
-	                  v-model.number="form.openai_ws_min_idle_per_account"
-	                  type="number"
-	                  min="0"
-	                  max="64"
-	                  step="1"
-	                  class="input"
-	                  placeholder="1"
-	                />
-	                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-	                  {{
-	                    localText(
-	                      "连接池为每个可调度 OAuth 账号保持的最小空闲（中性）WS 连接数。0 表示不主动预热。修改保存后会立即对所有可调度账号收缩/补足空闲连接。",
-	                      "Minimum idle (neutral) WS connections the pool keeps warm per schedulable OAuth account. 0 disables proactive prewarming. Saving changes immediately reconciles idle connections across all schedulable accounts.",
-	                    )
-	                  }}
-	                </p>
-	              </div>
+              <div>
+                <label class="label">
+                  {{
+                    localText(
+                      "WS 中性预热占比",
+                      "WS Neutral Prewarm Percent",
+                    )
+                  }}
+                </label>
+                <input
+                  v-model.number="form.openai_ws_neutral_prewarm_percent"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  class="input"
+                  placeholder="20"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{
+                    localText(
+                      "按账号并发数的百分比预热中性 WS 连接。0 表示不主动预热；session 请求仍会创建自己的 WS 连接。",
+                      "Prewarm neutral WS connections as a percentage of account concurrency. 0 disables proactive prewarm; session requests still create their own WS connections.",
+                    )
+                  }}
+                </p>
+              </div>
 
-	              <div>
-	                <label class="label">
-	                  {{
-	                    localText(
-	                      "WS 每账号最大空闲连接数",
-	                      "WS Max Idle Connections Per Account",
-	                    )
-	                  }}
-	                </label>
-	                <input
-	                  v-model.number="form.openai_ws_max_idle_per_account"
-	                  type="number"
-	                  min="0"
-	                  max="64"
-	                  step="1"
-	                  class="input"
-	                  placeholder="4"
-	                />
-	                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-	                  {{
-	                    localText(
-	                      "连接池每账号保留的最大空闲 WS 连接数，超出的最旧空闲连接会被回收。应不小于最小空闲连接数。",
-	                      "Maximum idle WS connections retained per account; the oldest excess idle connections are reclaimed. Should be no less than the minimum idle count.",
-	                    )
-	                  }}
-	                </p>
-	              </div>
+              <div>
+                <label class="label">
+                  {{
+                    localText(
+                      "WS 会话空闲 TTL（秒）",
+                      "WS Session Idle TTL (Seconds)",
+                    )
+                  }}
+                </label>
+                <input
+                  v-model.number="form.openai_ws_session_idle_ttl_seconds"
+                  type="number"
+                  min="1"
+                  max="3600"
+                  step="1"
+                  class="input"
+                  placeholder="120"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{
+                    localText(
+                      "session-bound WS 响应结束后等待后续请求的最长时间；超过后统一 cleanup 回收，下次请求重新建连并回退全量 payload。",
+                      "Maximum time a session-bound WS waits for follow-up requests after a response. Cleanup reclaims expired connections; the next request creates a new connection and falls back to full payload.",
+                    )
+                  }}
+                </p>
+              </div>
 
 	              <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
 	                <div class="flex items-center justify-between gap-4">
@@ -8595,8 +8595,8 @@ const form = reactive<SettingsForm>({
   fallback_model_antigravity: "gemini-2.5-pro",
   openai_sticky_reserve_percent: 30,
   openai_sticky_wait_timeout_seconds: 30,
-  openai_ws_min_idle_per_account: 1,
-  openai_ws_max_idle_per_account: 4,
+  openai_ws_neutral_prewarm_percent: 20,
+  openai_ws_session_idle_ttl_seconds: 120,
   platform_default_account_model_config: {},
   // Identity patch (Claude -> Gemini)
   enable_identity_patch: true,
@@ -9420,18 +9420,18 @@ async function loadSettings() {
         Math.floor(Number(settings.openai_sticky_wait_timeout_seconds) || 30),
       ),
     );
-    form.openai_ws_min_idle_per_account = Math.max(
+    form.openai_ws_neutral_prewarm_percent = Math.max(
       0,
       Math.min(
-        64,
-        Math.floor(Number(settings.openai_ws_min_idle_per_account ?? 1)),
+        100,
+        Math.floor(Number(settings.openai_ws_neutral_prewarm_percent ?? 20)),
       ),
     );
-    form.openai_ws_max_idle_per_account = Math.max(
-      0,
+    form.openai_ws_session_idle_ttl_seconds = Math.max(
+      1,
       Math.min(
-        64,
-        Math.floor(Number(settings.openai_ws_max_idle_per_account ?? 4)),
+        3600,
+        Math.floor(Number(settings.openai_ws_session_idle_ttl_seconds) || 120),
       ),
     );
     // Load OpenAI fast/flex policy rules from bulk settings.
@@ -9610,29 +9610,21 @@ async function saveSettings() {
     form.table_default_page_size = normalizedTableDefaultPageSize;
     form.table_page_size_options = normalizedTablePageSizeOptions;
 
-    const normalizedOpenAIWSMinIdle = Math.max(
+    const normalizedOpenAIWSNeutralPrewarmPercent = Math.max(
       0,
       Math.min(
-        64,
-        Math.floor(Number(form.openai_ws_min_idle_per_account) || 0),
+        100,
+        Math.floor(Number(form.openai_ws_neutral_prewarm_percent) || 0),
       ),
     );
-    const normalizedOpenAIWSMaxIdle = Math.max(
-      0,
-      Math.min(
-        64,
-        Math.floor(Number(form.openai_ws_max_idle_per_account) || 0),
-      ),
+    const rawOpenAIWSSessionIdleTTLSeconds = Math.floor(
+      Number(form.openai_ws_session_idle_ttl_seconds),
     );
-    if (normalizedOpenAIWSMinIdle > normalizedOpenAIWSMaxIdle) {
-      appStore.showError(
-        localText(
-          "WS 每账号最小空闲连接数不能大于最大空闲连接数。",
-          "WS min idle connections per account cannot be greater than max idle connections per account.",
-        ),
-      );
-      return;
-    }
+    const normalizedOpenAIWSSessionIdleTTLSeconds = Number.isFinite(
+      rawOpenAIWSSessionIdleTTLSeconds,
+    )
+      ? Math.max(1, Math.min(3600, rawOpenAIWSSessionIdleTTLSeconds))
+      : 120;
 
     const normalizedLoginAgreementDocuments =
       normalizeLoginAgreementDocumentsForSave();
@@ -10053,8 +10045,10 @@ async function saveSettings() {
           Math.floor(Number(form.openai_sticky_wait_timeout_seconds) || 30),
         ),
       ),
-      openai_ws_min_idle_per_account: normalizedOpenAIWSMinIdle,
-      openai_ws_max_idle_per_account: normalizedOpenAIWSMaxIdle,
+      openai_ws_neutral_prewarm_percent:
+        normalizedOpenAIWSNeutralPrewarmPercent,
+      openai_ws_session_idle_ttl_seconds:
+        normalizedOpenAIWSSessionIdleTTLSeconds,
       openai_oauth_image_bridge_disable_keepalives:
         form.openai_oauth_image_bridge_disable_keepalives,
       openai_oauth_image_bridge_fresh_upstream_client:

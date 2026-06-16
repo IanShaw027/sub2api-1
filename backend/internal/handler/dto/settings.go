@@ -229,6 +229,8 @@ type SystemSettings struct {
 	OpenAIStickyWaitTimeoutSeconds            int  `json:"openai_sticky_wait_timeout_seconds"`
 	OpenAIWSMinIdlePerAccount                 int  `json:"openai_ws_min_idle_per_account"`
 	OpenAIWSMaxIdlePerAccount                 int  `json:"openai_ws_max_idle_per_account"`
+	OpenAIWSNeutralPrewarmPercent             int  `json:"openai_ws_neutral_prewarm_percent"`
+	OpenAIWSSessionIdleTTLSeconds             int  `json:"openai_ws_session_idle_ttl_seconds"`
 	OpenAIOAuthImageBridgeDisableKeepAlives   bool `json:"openai_oauth_image_bridge_disable_keepalives"`
 	OpenAIOAuthImageBridgeFreshUpstreamClient bool `json:"openai_oauth_image_bridge_fresh_upstream_client"`
 

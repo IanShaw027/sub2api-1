@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -218,10 +220,31 @@ func TestEvaluateDeltaShadowCandidate_FallbackReasons(t *testing.T) {
 	divergent.Cached = divCached
 	require.Equal(t, "raw_client_divergent", evaluateOpenAIWSDeltaShadowCandidate(divergent).FallbackReason)
 
-	// tool continuation
-	tool := base
-	tool.HasFunctionCallOutput = true
-	require.Equal(t, "tool_continuation", evaluateOpenAIWSDeltaShadowCandidate(tool).FallbackReason)
+	// tool continuation in the candidate delta is still blocked.
+	toolInput := `{"type":"message","role":"user","content":"call tool"}`
+	toolCall := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
+	toolOutput := `{"type":"function_call_output","call_id":"call_1","output":"ok"}`
+	toolPayload := []byte(`{"model":"gpt","input":[` + toolInput + `,` + toolCall + `,` + toolOutput + `]}`)
+	toolNonInput, _ := openAIWSNonInputHash(toolPayload)
+	tool := openAIWSDeltaShadowInput{
+		RequestID:                "r",
+		AccountID:                5,
+		LeaseConnID:              "conn_a",
+		ConnMostRecentResponseID: "resp_1",
+		CurrentPayload:           toolPayload,
+		CachedFound:              true,
+		Cached: openAIWSSessionContextValue{
+			accountID:               5,
+			connID:                  "conn_a",
+			lastResponseID:          "resp_1",
+			materializedHashes:      [][32]byte{mustItemHash(t, toolInput)},
+			materializedCount:       1,
+			inputCount:              1,
+			nonInputHash:            toolNonInput,
+			rawVsClientVisibleEqual: true,
+		},
+	}
+	require.Equal(t, "delta_tool_continuation_self_contained", evaluateOpenAIWSDeltaShadowCandidate(tool).FallbackReason)
 }
 
 func TestEvaluateDeltaShadowCandidate_OutputBoundaryBreak(t *testing.T) {
@@ -374,7 +397,7 @@ func TestOpenAIWSConnEvictHookInvalidatesConnLastResponse(t *testing.T) {
 	require.False(t, ok, "evict hook must invalidate conn_id -> last_response_id")
 }
 
-func TestOpenAIWSDeltaShadow_ForwardWSV2SessionBoundWritesContextAndStaysInert(t *testing.T) {
+func TestOpenAIWSActiveDelta_ForwardWSV2SessionBoundSendsOnlyTrailingInput(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -477,10 +500,326 @@ func TestOpenAIWSDeltaShadow_ForwardWSV2SessionBoundWritesContextAndStaysInert(t
 	captureConn.mu.Unlock()
 	require.Len(t, writes, 2)
 	secondWrite := requestToJSONString(writes[1])
-	require.False(t, gjson.Get(secondWrite, "previous_response_id").Exists(), "shadow phase must not mutate upstream payload")
-	require.Len(t, gjson.Get(secondWrite, "input").Array(), 3, "shadow phase must leave full replay input intact")
+	require.Equal(t, "resp_delta_forward_1", gjson.Get(secondWrite, "previous_response_id").String())
+	require.True(t, gjson.Get(secondWrite, "store").Exists())
+	require.False(t, gjson.Get(secondWrite, "store").Bool(), "active delta keeps store=false/ZDR behavior")
+	require.Len(t, gjson.Get(secondWrite, "input").Array(), 1, "active delta must send only the trailing new item")
+	require.Equal(t, "again", gjson.Get(secondWrite, "input.0.content.0.text").String())
 
 	cached, ok = stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
 	require.True(t, ok)
 	require.Equal(t, "resp_delta_forward_2", cached.lastResponseID)
+	require.Equal(t, 4, cached.materializedCount, "next context must still be based on full replay input + raw output")
+}
+
+func TestOpenAIWSActiveDelta_PreviousResponseNotFoundRetriesFullPayloadOverWS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
+	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.StoreDisabledConnMode = openAIWSStoreDisabledConnModeStrict
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.StickySessionTTLSeconds = 3600
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}`
+	output1 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}`
+	newInput := `{"type":"message","role":"user","content":[{"type":"input_text","text":"again"}]}`
+
+	firstConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.output_item.done","response_id":"resp_delta_prev_1","output_index":0,"item":` + output1 + `}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_delta_prev_1","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
+			[]byte(`{"type":"error","error":{"code":"previous_response_not_found","type":"invalid_request_error","message":"previous response not found"}}`),
+		},
+	}
+	secondConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_delta_prev_2","model":"gpt-5.1","usage":{"input_tokens":5,"output_tokens":2}}}`),
+		},
+	}
+	dialer := &openAIWSQueueDialer{conns: []openAIWSClientConn{firstConn, secondConn}}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(dialer)
+	t.Cleanup(pool.Close)
+
+	upstream := &httpUpstreamRecorder{}
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          78004,
+		Name:        "openai-delta-prev-recover",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "oauth-token-delta-prev"},
+		Extra:       map[string]any{"responses_websockets_v2_enabled": true},
+	}
+
+	groupID := int64(78012)
+	apiKeyID := int64(78013)
+	newContext := func() *gin.Context {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+		c.Request.Header.Set("originator", "codex_exec")
+		c.Request.Header.Set("session_id", "sess-delta-prev-recover")
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+		return c
+	}
+
+	firstBody := []byte(`{"model":"gpt-5.1","stream":true,"input":[` + input1 + `]}`)
+	firstResult, err := svc.Forward(context.Background(), newContext(), account, firstBody)
+	require.NoError(t, err)
+	require.Equal(t, "resp_delta_prev_1", firstResult.RequestID)
+
+	secondBody := []byte(`{"model":"gpt-5.1","stream":true,"input":[` + input1 + `,` + output1 + `,` + newInput + `]}`)
+	secondResult, err := svc.Forward(context.Background(), newContext(), account, secondBody)
+	require.NoError(t, err)
+	require.NotNil(t, secondResult)
+	require.Equal(t, "resp_delta_prev_2", secondResult.RequestID)
+	require.Nil(t, upstream.lastReq, "active-delta previous_response_not_found must recover over WS, not HTTP fallback")
+	require.Equal(t, 2, dialer.DialCount(), "recovery should replace the broken WS connection once")
+
+	firstConn.mu.Lock()
+	firstWrites := append([]map[string]any(nil), firstConn.writes...)
+	firstConn.mu.Unlock()
+	require.Len(t, firstWrites, 2)
+	deltaWrite := requestToJSONString(firstWrites[1])
+	require.Equal(t, "resp_delta_prev_1", gjson.Get(deltaWrite, "previous_response_id").String())
+	require.False(t, gjson.Get(deltaWrite, "store").Bool())
+	require.Len(t, gjson.Get(deltaWrite, "input").Array(), 1, "first second-turn attempt should be active delta")
+
+	secondConn.mu.Lock()
+	secondWrites := append([]map[string]any(nil), secondConn.writes...)
+	secondConn.mu.Unlock()
+	require.Len(t, secondWrites, 1)
+	retryWrite := requestToJSONString(secondWrites[0])
+	require.False(t, gjson.Get(retryWrite, "previous_response_id").Exists(), "recovery retry must full-create without the stale active-delta anchor")
+	require.True(t, gjson.Get(retryWrite, "store").Exists())
+	require.False(t, gjson.Get(retryWrite, "store").Bool())
+	require.Len(t, gjson.Get(retryWrite, "input").Array(), 3, "recovery retry must send the full original input sequence")
+	require.Equal(t, "again", gjson.Get(retryWrite, "input.2.content.0.text").String())
+}
+
+func TestOpenAIWSFallbackToHTTPUsesFullPayloadAfterWSError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+	c.Request.Header.Set("originator", "codex_exec")
+	c.Request.Header.Set("session_id", "sess-ws-http-fallback")
+	groupID := int64(78020)
+	apiKeyID := int64(78021)
+	c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.StoreDisabledConnMode = openAIWSStoreDisabledConnModeStrict
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.RetryBackoffInitialMS = 0
+	cfg.Gateway.OpenAIWS.RetryTotalBudgetMS = 1
+	cfg.Gateway.OpenAIWS.StickySessionTTLSeconds = 3600
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	captureConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"error","error":{"code":"upgrade_required","type":"invalid_request_error","message":"websocket upgrade required"}}`),
+		},
+	}
+	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(captureDialer)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			`data: {"type":"response.completed","response":{"id":"resp_http_fallback","object":"response","model":"gpt-5.1","status":"completed","output":[],"usage":{"input_tokens":9,"output_tokens":1,"total_tokens":10}}}` + "\n\n" +
+				"data: [DONE]\n\n",
+		)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          78002,
+		Name:        "openai-ws-http-fallback",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "oauth-token-ws-http-fallback"},
+		Extra:       map[string]any{"responses_websockets_v2_enabled": true},
+	}
+
+	body := []byte(`{"model":"gpt-5.1","stream":false,"store":false,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"two"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"three"}]}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_http_fallback", result.ResponseID)
+	require.Len(t, upstream.bodies, 1, "WS error before downstream output must fall back to one HTTP request")
+	httpBody := string(upstream.bodies[0])
+	require.False(t, gjson.Get(httpBody, "previous_response_id").Exists())
+	require.True(t, gjson.Get(httpBody, "store").Exists())
+	require.False(t, gjson.Get(httpBody, "store").Bool())
+	require.Len(t, gjson.Get(httpBody, "input").Array(), 3, "HTTP fallback must use the full original payload, not a delta")
+	require.Equal(t, "three", gjson.Get(httpBody, "input.2.content.0.text").String())
+}
+
+func TestOpenAIWSActiveDelta_AllowsFunctionCallOutputDeltaWithPreviousResponseID(t *testing.T) {
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	output1 := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
+	toolOutput := `{"type":"function_call_output","call_id":"call_1","output":"ok"}`
+	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[` + input1 + `,` + output1 + `,` + toolOutput + `]}`)
+	nonInputHash, _ := openAIWSNonInputHash(payload)
+
+	deltaPayload, deltaLog, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+		RequestID:                "req_tool_continuation",
+		AccountID:                78003,
+		LeaseConnID:              "oa_ws_78003_1",
+		ConnMostRecentResponseID: "resp_tool_1",
+		CurrentPayload:           payload,
+		HasFunctionCallOutput:    true,
+		CachedFound:              true,
+		Cached: openAIWSSessionContextValue{
+			accountID:               78003,
+			connID:                  "oa_ws_78003_1",
+			lastResponseID:          "resp_tool_1",
+			materializedHashes:      [][32]byte{mustItemHash(t, input1), mustItemHash(t, output1)},
+			materializedCount:       2,
+			inputCount:              1,
+			nonInputHash:            nonInputHash,
+			rawVsClientVisibleEqual: true,
+		},
+	})
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.True(t, deltaLog.Candidate)
+	require.True(t, deltaLog.Active)
+	require.Equal(t, 1, deltaLog.DeltaItems)
+	deltaJSON := requestToJSONString(deltaPayload)
+	require.Equal(t, "resp_tool_1", gjson.Get(deltaJSON, "previous_response_id").String())
+	require.False(t, gjson.Get(deltaJSON, "store").Bool())
+	require.Len(t, gjson.Get(deltaJSON, "input").Array(), 1)
+	require.Equal(t, "function_call_output", gjson.Get(deltaJSON, "input.0.type").String())
+	require.Equal(t, "call_1", gjson.Get(deltaJSON, "input.0.call_id").String())
+}
+
+func TestOpenAIWSActiveDelta_AllowsHistoricalFunctionCallOutputWhenDeltaIsUserMessage(t *testing.T) {
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	output1 := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
+	toolOutput := `{"type":"function_call_output","call_id":"call_1","output":"ok"}`
+	output2 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"tool ok"}]}`
+	newInput := `{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}`
+	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[` + input1 + `,` + output1 + `,` + toolOutput + `,` + output2 + `,` + newInput + `]}`)
+	nonInputHash, _ := openAIWSNonInputHash(payload)
+
+	deltaPayload, deltaLog, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+		RequestID:                "req_historical_tool_output",
+		AccountID:                78004,
+		LeaseConnID:              "oa_ws_78004_1",
+		ConnMostRecentResponseID: "resp_tool_2",
+		CurrentPayload:           payload,
+		HasFunctionCallOutput:    true,
+		CachedFound:              true,
+		Cached: openAIWSSessionContextValue{
+			accountID:      78004,
+			connID:         "oa_ws_78004_1",
+			lastResponseID: "resp_tool_2",
+			materializedHashes: [][32]byte{
+				mustItemHash(t, input1),
+				mustItemHash(t, output1),
+				mustItemHash(t, toolOutput),
+				mustItemHash(t, output2),
+			},
+			materializedCount:       4,
+			inputCount:              2,
+			nonInputHash:            nonInputHash,
+			rawVsClientVisibleEqual: true,
+		},
+	})
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.True(t, deltaLog.Candidate)
+	require.Equal(t, 1, deltaLog.DeltaItems)
+	deltaJSON := requestToJSONString(deltaPayload)
+	require.Equal(t, "resp_tool_2", gjson.Get(deltaJSON, "previous_response_id").String())
+	require.Len(t, gjson.Get(deltaJSON, "input").Array(), 1)
+	require.Equal(t, "continue", gjson.Get(deltaJSON, "input.0.content.0.text").String())
+}
+
+func TestOpenAIWSActiveDelta_SkipsSelfContainedFunctionCallOutputDelta(t *testing.T) {
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	toolCall := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
+	toolOutput := `{"type":"function_call_output","call_id":"call_1","output":"ok"}`
+	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[` + input1 + `,` + toolCall + `,` + toolOutput + `]}`)
+	nonInputHash, _ := openAIWSNonInputHash(payload)
+
+	deltaPayload, deltaLog, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+		RequestID:                "req_self_contained_tool_delta",
+		AccountID:                78005,
+		LeaseConnID:              "oa_ws_78005_1",
+		ConnMostRecentResponseID: "resp_tool_context_1",
+		CurrentPayload:           payload,
+		HasFunctionCallOutput:    true,
+		CachedFound:              true,
+		Cached: openAIWSSessionContextValue{
+			accountID:               78005,
+			connID:                  "oa_ws_78005_1",
+			lastResponseID:          "resp_tool_context_1",
+			materializedHashes:      [][32]byte{mustItemHash(t, input1)},
+			materializedCount:       1,
+			inputCount:              1,
+			nonInputHash:            nonInputHash,
+			rawVsClientVisibleEqual: true,
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, applied)
+	require.Nil(t, deltaPayload)
+	require.False(t, deltaLog.Candidate)
+	require.Equal(t, "delta_tool_continuation_self_contained", deltaLog.FallbackReason)
+	require.False(t, deltaLog.Active)
 }

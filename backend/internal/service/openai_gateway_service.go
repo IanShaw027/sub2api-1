@@ -1010,6 +1010,38 @@ func (s *OpenAIGatewayService) newOpenAIWSFailoverError(c *gin.Context, account 
 	}
 }
 
+func shouldFallbackOpenAIWSToHTTP(wsErr error) bool {
+	var fallbackErr *openAIWSFallbackError
+	if !errors.As(wsErr, &fallbackErr) || fallbackErr == nil {
+		return false
+	}
+	reason, _ := classifyOpenAIWSReconnectReason(wsErr)
+	reason = strings.TrimSpace(strings.TrimPrefix(reason, "prewarm_"))
+	switch reason {
+	case "":
+		return false
+	case "auth_failed",
+		"upstream_rate_limited",
+		"call_id",
+		"invalid_encrypted_content",
+		"model_unavailable",
+		"previous_response_not_found",
+		"response_failed",
+		"unsafe_tool_continuation":
+		return false
+	default:
+		return true
+	}
+}
+
+func openAIWSActiveDeltaPreviousResponseID(wsErr error) string {
+	var fallbackErr *openAIWSFallbackError
+	if !errors.As(wsErr, &fallbackErr) || fallbackErr == nil || !fallbackErr.ActiveDelta {
+		return ""
+	}
+	return strings.TrimSpace(fallbackErr.PreviousResponseID)
+}
+
 func (s *OpenAIGatewayService) prepareOpenAIWSContinuationFailoverBody(c *gin.Context, account *Account, wsErr error, wsReqBody map[string]any) bool {
 	reason, _ := classifyOpenAIWSReconnectReason(wsErr)
 	if strings.TrimPrefix(strings.TrimSpace(reason), "prewarm_") != "ws_connection_limit_reached" {
@@ -4589,8 +4621,10 @@ oauthTransformDone:
 	// Capture upstream request body for ops retry of this attempt.
 	setOpsUpstreamRequestBody(c, body)
 
-	// 命中 WS 时仅走 WebSocket Mode；不再自动回退 HTTP。
+	// 命中 WS 时优先走 WebSocket Mode；WS 传输异常且未写下游时可回退同账号 HTTP。
 	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
+		wsHTTPFallbackBody := append([]byte(nil), body...)
+		wsHTTPFallbackPromptCacheKey := promptCacheKey
 		// WS 分支需要结构化 payload 与重连恢复，命中后再触发 full-map decode。
 		wsReqBody, err := ensureReqBody()
 		if err != nil {
@@ -4666,6 +4700,11 @@ oauthTransformDone:
 				return false
 			}
 			previousResponseID := openAIWSPayloadString(wsReqBody, "previous_response_id")
+			activeDeltaRecovery := false
+			if previousResponseID == "" {
+				previousResponseID = openAIWSActiveDeltaPreviousResponseID(wsErr)
+				activeDeltaRecovery = previousResponseID != ""
+			}
 			if previousResponseID == "" {
 				logOpenAIWSModeInfo(
 					"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=missing_previous_response_id previous_response_id_present=false",
@@ -4676,9 +4715,10 @@ oauthTransformDone:
 			}
 			if HasFunctionCallOutput(wsReqBody) {
 				logOpenAIWSModeInfo(
-					"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=has_function_call_output previous_response_id_present=true",
+					"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=has_function_call_output previous_response_id_present=true active_delta=%v",
 					account.ID,
 					attempt,
+					activeDeltaRecovery,
 				)
 				return false
 			}
@@ -4702,11 +4742,12 @@ oauthTransformDone:
 			wsPrevResponseRecoveryTried = true
 			s.RecordOpenAIAccountRecoveryReason(account.ID, "previous_response_not_found")
 			logOpenAIWSModeInfo(
-				"reconnect_prev_response_recovery account_id=%d attempt=%d action=drop_previous_response_id retry=1 previous_response_id=%s previous_response_id_kind=%s",
+				"reconnect_prev_response_recovery account_id=%d attempt=%d action=drop_previous_response_id retry=1 previous_response_id=%s previous_response_id_kind=%s active_delta=%v",
 				account.ID,
 				attempt,
 				truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
 				normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
+				activeDeltaRecovery,
 			)
 			return true
 		}
@@ -5018,8 +5059,26 @@ oauthTransformDone:
 		if failoverErr := s.newOpenAIWSFailoverError(c, account, wsErr); failoverErr != nil {
 			return nil, failoverErr
 		}
-		s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
-		return nil, wsErr
+		if c != nil && c.Writer != nil && !c.Writer.Written() &&
+			shouldFallbackOpenAIWSToHTTP(wsErr) &&
+			!HasToolContinuationOutputInRawPayload(wsHTTPFallbackBody) {
+			reason, _ := classifyOpenAIWSReconnectReason(wsErr)
+			body = append([]byte(nil), wsHTTPFallbackBody...)
+			reqStream = gjson.GetBytes(body, "stream").Bool()
+			upstreamStream = reqStream
+			promptCacheKey = wsHTTPFallbackPromptCacheKey
+			clearOpenAIRequestBodyCache(c)
+			setOpsUpstreamRequestBody(c, body)
+			logOpenAIWSModeInfo(
+				"fallback_to_http account_id=%d reason=%s action=replay_full_payload bytes=%d",
+				account.ID,
+				normalizeOpenAIWSLogValue(reason),
+				len(body),
+			)
+		} else {
+			s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
+			return nil, wsErr
+		}
 	}
 
 	httpInvalidEncryptedContentRetryTried := false

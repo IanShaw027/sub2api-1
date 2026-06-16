@@ -449,6 +449,12 @@ const (
 	// SettingKeyOpenAIWSMaxIdlePerAccount stores the maximum number of idle WS
 	// connections retained per account before the pool shrinks the oldest ones.
 	SettingKeyOpenAIWSMaxIdlePerAccount = "openai_ws_max_idle_per_account"
+	// SettingKeyOpenAIWSNeutralPrewarmPercent stores the percentage of account
+	// concurrency used as the neutral WS prewarm target.
+	SettingKeyOpenAIWSNeutralPrewarmPercent = "openai_ws_neutral_prewarm_percent"
+	// SettingKeyOpenAIWSSessionIdleTTLSeconds stores how long an idle
+	// session-bound WS connection may wait for follow-up turns before eviction.
+	SettingKeyOpenAIWSSessionIdleTTLSeconds = "openai_ws_session_idle_ttl_seconds"
 
 	// =========================
 	// Sora S3 存储配置
