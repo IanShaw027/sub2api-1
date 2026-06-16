@@ -181,7 +181,7 @@ func TestForwardAsChatCompletions_APIKeyPropagatesPromptCacheKeyInResponsesBody(
 	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(99, "cache-key-123")), upstream.lastReq.Header.Get("session_id"))
 }
 
-func TestForwardAsChatCompletions_IgnoresPlatformDefaultModelRoutingConfig(t *testing.T) {
+func TestForwardAsChatCompletions_UsesPlatformDefaultModelRoutingConfig(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	resetPlatformModelRoutingConfigCacheForTest()
 
@@ -228,9 +228,9 @@ func TestForwardAsChatCompletions_IgnoresPlatformDefaultModelRoutingConfig(t *te
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "gpt-4o-mini", result.Model)
-	require.Equal(t, "gpt-4o-mini", result.BillingModel)
-	require.Equal(t, "gpt-4o-mini", result.UpstreamModel)
-	require.Equal(t, "gpt-4o-mini", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "gpt-5.4", result.BillingModel)
+	require.Equal(t, "gpt-5.4", result.UpstreamModel)
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.lastBody, "model").String())
 }
 
 func TestForwardAsChatCompletions_ClientDisconnectDrainsUpstreamUsage(t *testing.T) {

@@ -93,7 +93,7 @@ func TestOpenAIGatewayService_Forward_NonCompactRequestIgnoresCompactOnlyModelMa
 	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.lastBody, "model").String())
 }
 
-func TestOpenAIGatewayService_Forward_CompactIgnoresPlatformDefaultCompactMapping(t *testing.T) {
+func TestOpenAIGatewayService_Forward_CompactUsesPlatformDefaultCompactMapping(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	resetPlatformModelRoutingConfigCacheForTest()
 
@@ -141,11 +141,11 @@ func TestOpenAIGatewayService_Forward_CompactIgnoresPlatformDefaultCompactMappin
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "gpt-4o-mini", result.Model)
-	require.Equal(t, "gpt-4o-mini", result.UpstreamModel)
-	require.Equal(t, "gpt-4o-mini", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "gpt-5.4-mini", result.UpstreamModel)
+	require.Equal(t, "gpt-5.4-mini", gjson.GetBytes(upstream.lastBody, "model").String())
 }
 
-func TestOpenAIGatewayService_Forward_CompactFallbackIgnoresPlatformDefaultCompactMapping(t *testing.T) {
+func TestOpenAIGatewayService_Forward_CompactFallbackUsesPlatformDefaultCompactMapping(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	resetPlatformModelRoutingConfigCacheForTest()
 
@@ -203,7 +203,7 @@ func TestOpenAIGatewayService_Forward_CompactFallbackIgnoresPlatformDefaultCompa
 	require.Nil(t, result)
 	require.Len(t, upstream.bodies, 2)
 	require.Equal(t, "gpt6", gjson.GetBytes(upstream.bodies[0], "model").String())
-	require.Equal(t, "gpt-4o-mini", gjson.GetBytes(upstream.bodies[1], "model").String())
+	require.Equal(t, "gpt-5.4-mini", gjson.GetBytes(upstream.bodies[1], "model").String())
 }
 
 func TestOpenAIGatewayService_OAuthPassthrough_CompactOnlyModelMappingOverridesUpstreamModel(t *testing.T) {

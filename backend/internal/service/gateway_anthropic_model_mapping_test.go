@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestResolveGatewayAnthropicForwardModel_DefaultBuildIgnoresPlatformDefaultForOAuthAndServiceAccount(t *testing.T) {
+func TestResolveGatewayAnthropicForwardModel_DefaultBuildUsesPlatformDefaultWhenAccountHasNoRules(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
 		values: map[string]string{
@@ -26,9 +26,9 @@ func TestResolveGatewayAnthropicForwardModel_DefaultBuildIgnoresPlatformDefaultF
 		wantModel   string
 		wantSource  string
 	}{
-		{accountType: AccountTypeOAuth, wantModel: "claude-3-7-sonnet-20250219", wantSource: ""},
-		{accountType: AccountTypeServiceAccount, wantModel: "claude-3-7-sonnet@20250219", wantSource: "vertex"},
-		{accountType: AccountTypeSetupToken, wantModel: "claude-3-7-sonnet-20250219", wantSource: ""},
+		{accountType: AccountTypeOAuth, wantModel: "claude-sonnet-4-6", wantSource: "platform_default"},
+		{accountType: AccountTypeServiceAccount, wantModel: "claude-sonnet-4-6", wantSource: "platform_default"},
+		{accountType: AccountTypeSetupToken, wantModel: "claude-sonnet-4-6", wantSource: "platform_default"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.accountType, func(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestResolveKiroRequestedModelWithRouting_DefaultBuildIgnoresPlatformDefaultConfig(t *testing.T) {
+func TestResolveKiroRequestedModelWithRouting_DefaultBuildUsesPlatformDefaultConfig(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
 		values: map[string]string{
@@ -24,5 +24,5 @@ func TestResolveKiroRequestedModelWithRouting_DefaultBuildIgnoresPlatformDefault
 	model, err := resolveKiroRequestedModelWithRouting(context.Background(), svc, account, "claude-sonnet-4-5")
 
 	require.NoError(t, err)
-	require.Equal(t, "claude-sonnet-4-5", model)
+	require.Equal(t, "claude-sonnet-4.6", model)
 }
