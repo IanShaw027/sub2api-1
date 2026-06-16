@@ -283,6 +283,26 @@ describe('admin GroupsView edit hydration', () => {
     })
   })
 
+  it('includes Kiro in group platform selectors', async () => {
+    const wrapper = mountGroupsView()
+
+    await flushPromises()
+
+    const filterOptions = wrapper
+      .findAll('[data-test="select-stub"]')[0]
+      .findAll('option')
+      .map((option) => option.text())
+    expect(filterOptions).toContain('Kiro')
+
+    await wrapper.get('[data-tour="groups-create-btn"]').trigger('click')
+
+    const createOptions = wrapper
+      .get('select[data-tour="group-form-platform"]')
+      .findAll('option')
+      .map((option) => option.text())
+    expect(createOptions).toContain('Kiro')
+  })
+
   it('resets pagination to the first page when a filter dropdown changes', async () => {
     const wrapper = mountGroupsView()
 
