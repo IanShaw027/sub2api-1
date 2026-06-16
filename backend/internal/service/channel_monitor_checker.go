@@ -348,11 +348,15 @@ func extractAnthropicMonitorText(respBytes []byte, textPath string) string {
 }
 
 func extractOpenAIResponsesMonitorText(respBytes []byte, _ string) string {
-	text := strings.TrimSpace(gjson.GetBytes(respBytes, "output_text").String())
+	return extractOpenAIResponsesMonitorTextFromResult(gjson.ParseBytes(respBytes))
+}
+
+func extractOpenAIResponsesMonitorTextFromResult(resp gjson.Result) string {
+	text := strings.TrimSpace(resp.Get("output_text").String())
 	if text != "" {
 		return text
 	}
-	for _, item := range gjson.GetBytes(respBytes, "output").Array() {
+	for _, item := range resp.Get("output").Array() {
 		for _, block := range item.Get("content").Array() {
 			switch block.Get("type").String() {
 			case "output_text", "text":
@@ -362,6 +366,9 @@ func extractOpenAIResponsesMonitorText(respBytes []byte, _ string) string {
 				}
 			}
 		}
+	}
+	if wrapped := resp.Get("response"); wrapped.Exists() {
+		return extractOpenAIResponsesMonitorTextFromResult(wrapped)
 	}
 	return ""
 }

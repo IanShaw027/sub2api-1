@@ -70,6 +70,7 @@ type openAICaptureHandler struct {
 	lastPath                  string
 	status                    int
 	responsesLeadingReasoning bool
+	responsesEnvelope         bool
 }
 
 func (h *openAICaptureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -103,6 +104,13 @@ func (h *openAICaptureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 				{"type": "output_text", "text": answer},
 			},
 		})
+		if h.responsesEnvelope {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"type":     "response.completed",
+				"response": map[string]any{"output": output},
+			})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"output": output,
 		})
@@ -263,6 +271,22 @@ func TestRunCheckForModel_OpenAIResponses_SkipsLeadingReasoningItem(t *testing.T
 
 	if res.Status != MonitorStatusOperational {
 		t.Fatalf("responses request should find text after leading reasoning item, got status=%s message=%q", res.Status, res.Message)
+	}
+	if h.lastPath != providerOpenAIResponsesPath {
+		t.Fatalf("expected responses path %q, got %q", providerOpenAIResponsesPath, h.lastPath)
+	}
+}
+
+func TestRunCheckForModel_OpenAIResponses_ExtractsResponseCompletedEnvelope(t *testing.T) {
+	h := &openAICaptureHandler{responsesEnvelope: true}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-5.3-codex-spark", &CheckOptions{
+		APIMode: MonitorAPIModeResponses,
+	})
+
+	if res.Status != MonitorStatusOperational {
+		t.Fatalf("responses event envelope should pass challenge, got status=%s message=%q", res.Status, res.Message)
 	}
 	if h.lastPath != providerOpenAIResponsesPath {
 		t.Fatalf("expected responses path %q, got %q", providerOpenAIResponsesPath, h.lastPath)
