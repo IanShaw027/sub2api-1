@@ -748,6 +748,13 @@ func (s *OpenAIGatewayService) CloseOpenAIWSPool() {
 	}
 }
 
+var openAIWSOutboundPayloadHTTPFallbackThresholdBytes int64 = openAIWSMessageReadLimitBytes
+
+func shouldPreflightFallbackOpenAIWSPayloadToHTTP(body []byte) (bool, int64) {
+	threshold := openAIWSOutboundPayloadHTTPFallbackThresholdBytes
+	return threshold > 0 && int64(len(body)) > threshold, threshold
+}
+
 func (s *OpenAIGatewayService) logOpenAIWSModeBootstrap() {
 	if s == nil || s.cfg == nil {
 		return
@@ -1020,8 +1027,7 @@ func shouldFallbackOpenAIWSToHTTP(wsErr error) bool {
 	switch reason {
 	case "":
 		return false
-	case "auth_failed",
-		"upstream_rate_limited",
+	case "upstream_rate_limited",
 		"call_id",
 		"invalid_encrypted_content",
 		"model_unavailable",
@@ -4621,8 +4627,21 @@ oauthTransformDone:
 	// Capture upstream request body for ops retry of this attempt.
 	setOpsUpstreamRequestBody(c, body)
 
-	// 命中 WS 时优先走 WebSocket Mode；WS 传输异常且未写下游时可回退同账号 HTTP。
+	wsSkippedByPayloadPreflight := false
 	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
+		if skipWS, threshold := shouldPreflightFallbackOpenAIWSPayloadToHTTP(body); skipWS {
+			wsSkippedByPayloadPreflight = true
+			logOpenAIWSModeInfo(
+				"preflight_fallback_to_http account_id=%d reason=payload_too_large payload_bytes=%d threshold_bytes=%d action=replay_full_payload",
+				account.ID,
+				len(body),
+				threshold,
+			)
+		}
+	}
+
+	// 命中 WS 时优先走 WebSocket Mode；WS 传输异常且未写下游时可回退同账号 HTTP。
+	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 && !wsSkippedByPayloadPreflight {
 		wsHTTPFallbackBody := append([]byte(nil), body...)
 		wsHTTPFallbackPromptCacheKey := promptCacheKey
 		// WS 分支需要结构化 payload 与重连恢复，命中后再触发 full-map decode。
@@ -9929,6 +9948,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		UserID:                       user.ID,
 		APIKeyID:                     apiKey.ID,
 		AccountID:                    account.ID,
+		Provider:                     strings.TrimSpace(account.Platform),
 		RequestID:                    requestID,
 		Model:                        result.Model,
 		RequestedModel:               modelView.RequestedModel,

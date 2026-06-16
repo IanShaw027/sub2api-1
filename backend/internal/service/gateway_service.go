@@ -9543,6 +9543,7 @@ func (s *GatewayService) buildRecordUsageLog(
 		UserID:                user.ID,
 		APIKeyID:              apiKey.ID,
 		AccountID:             account.ID,
+		Provider:              strings.TrimSpace(account.Platform),
 		RequestID:             requestID,
 		Model:                 result.Model,
 		RequestedModel:        requestedModel,

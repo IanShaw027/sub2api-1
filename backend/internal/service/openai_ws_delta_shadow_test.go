@@ -52,6 +52,10 @@ func TestOpenAIWSCanonicalItemHash_ReplayEquivalentEnvelopeFields(t *testing.T) 
 	replayedMessage := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}`
 	require.Equal(t, mustItemHash(t, rawMessage), mustItemHash(t, replayedMessage))
 
+	rawOutputMessage := `{"type":"message","id":"msg_2","status":"completed","metadata":null,"content":[{"type":"output_text","text":"hello","annotations":[],"logprobs":[]}]}`
+	replayedOutputMessage := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}`
+	require.Equal(t, mustItemHash(t, rawOutputMessage), mustItemHash(t, replayedOutputMessage))
+
 	rawFunctionCall := `{"type":"function_call","id":"fc_1","status":"completed","metadata":{"turn_id":"turn_1"},"call_id":"call_1","name":"run","arguments":"{}"}`
 	replayedFunctionCall := `{"type":"function_call","call_id":"call_1","name":"run","arguments":"{}"}`
 	require.Equal(t, mustItemHash(t, rawFunctionCall), mustItemHash(t, replayedFunctionCall))
@@ -706,6 +710,85 @@ func TestOpenAIWSFallbackToHTTPUsesFullPayloadAfterWSError(t *testing.T) {
 	require.False(t, gjson.Get(httpBody, "store").Bool())
 	require.Len(t, gjson.Get(httpBody, "input").Array(), 3, "HTTP fallback must use the full original payload, not a delta")
 	require.Equal(t, "three", gjson.Get(httpBody, "input.2.content.0.text").String())
+}
+
+func TestOpenAIWSPreflightLargePayloadFallsBackToHTTPBeforeDial(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	previousThreshold := openAIWSOutboundPayloadHTTPFallbackThresholdBytes
+	openAIWSOutboundPayloadHTTPFallbackThresholdBytes = 64
+	t.Cleanup(func() {
+		openAIWSOutboundPayloadHTTPFallbackThresholdBytes = previousThreshold
+	})
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+	c.Request.Header.Set("originator", "codex_exec")
+	c.Request.Header.Set("session_id", "sess-ws-large-http-preflight")
+	groupID := int64(78030)
+	apiKeyID := int64(78031)
+	c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.StoreDisabledConnMode = openAIWSStoreDisabledConnModeStrict
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.StickySessionTTLSeconds = 3600
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	captureDialer := &openAIWSCaptureDialer{conn: &openAIWSCaptureConn{}}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(captureDialer)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			`data: {"type":"response.completed","response":{"id":"resp_large_http_preflight","object":"response","model":"gpt-5.1","status":"completed","output":[],"usage":{"input_tokens":9,"output_tokens":1,"total_tokens":10}}}` + "\n\n" +
+				"data: [DONE]\n\n",
+		)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          78032,
+		Name:        "openai-ws-large-http-preflight",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "oauth-token-ws-large-http-preflight"},
+		Extra:       map[string]any{"responses_websockets_v2_enabled": true},
+	}
+
+	largeText := strings.Repeat("x", 128)
+	body := []byte(`{"model":"gpt-5.1","stream":false,"store":false,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"` + largeText + `"}]}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 0, captureDialer.DialCount(), "large payload preflight should skip WS dial entirely")
+	require.Len(t, upstream.bodies, 1)
+	require.Equal(t, largeText, gjson.GetBytes(upstream.bodies[0], "input.0.content.0.text").String())
 }
 
 func TestOpenAIWSActiveDelta_AllowsFunctionCallOutputDeltaWithPreviousResponseID(t *testing.T) {

@@ -834,7 +834,7 @@ func TestOpenAIWSConn_ReadAndWriteCanProceedConcurrently(t *testing.T) {
 	require.NoError(t, <-readDone)
 }
 
-func TestOpenAIWSConnPool_BackgroundPingSweep_EvictsDeadIdleConn(t *testing.T) {
+func TestOpenAIWSConnPool_BackgroundPingSweep_DoesNotPingIdleConn(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
 	pool := newOpenAIWSConnPool(cfg)
@@ -851,7 +851,7 @@ func TestOpenAIWSConnPool_BackgroundPingSweep_EvictsDeadIdleConn(t *testing.T) {
 	ap.mu.Lock()
 	_, exists := ap.conns[conn.id]
 	ap.mu.Unlock()
-	require.False(t, exists, "后台 ping 失败的空闲连接应被回收")
+	require.True(t, exists, "idle WS has no reader to consume pong; background ping must not evict it")
 }
 
 func TestOpenAIWSConnPool_BackgroundCleanupSweep_WithoutAcquire(t *testing.T) {
@@ -1231,7 +1231,7 @@ func TestOpenAIWSConnPool_Close_ClosesOnlyIdleConnections(t *testing.T) {
 	pool.Close()
 }
 
-func TestOpenAIWSConnPool_RunBackgroundPingSweep_ConcurrencyLimit(t *testing.T) {
+func TestOpenAIWSConnPool_RunBackgroundPingSweep_NoopsForIdleConns(t *testing.T) {
 	cfg := &config.Config{}
 	pool := newOpenAIWSConnPool(cfg)
 	accountID := int64(505)
@@ -1257,18 +1257,17 @@ func TestOpenAIWSConnPool_RunBackgroundPingSweep_ConcurrencyLimit(t *testing.T) 
 		close(done)
 	}()
 
-	require.Eventually(t, func() bool {
-		return maxConcurrent.Load() >= 10
-	}, time.Second, 10*time.Millisecond)
-
-	close(release)
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("runBackgroundPingSweep 未在释放后完成")
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("runBackgroundPingSweep must not block on idle ping checks")
 	}
+	close(release)
 
-	require.LessOrEqual(t, maxConcurrent.Load(), int32(10))
+	require.Zero(t, maxConcurrent.Load(), "background sweep must not ping idle pooled connections")
+	ap.mu.Lock()
+	require.Len(t, ap.conns, 25)
+	ap.mu.Unlock()
 }
 
 func TestOpenAIWSConnLease_BasicGetterBranches(t *testing.T) {
@@ -1359,11 +1358,11 @@ func TestOpenAIWSConnPool_UtilityBranches(t *testing.T) {
 	_, ok = pool.getAccountPool(8)
 	require.False(t, ok)
 
-	// health check 条件
+	// idle WS 连接没有并发 reader，不能在 acquire 前主动 Ping；真实读写失败时再淘汰。
 	require.False(t, pool.shouldHealthCheckConn(nil))
 	conn := newOpenAIWSConn("health", 1, &openAIWSFakeConn{}, nil)
 	conn.lastUsedNano.Store(time.Now().Add(-openAIWSConnHealthCheckIdle - time.Second).UnixNano())
-	require.True(t, pool.shouldHealthCheckConn(conn))
+	require.False(t, pool.shouldHealthCheckConn(conn))
 }
 
 func TestOpenAIWSConn_LeaseAndTimeHelpers_NilAndClosedBranches(t *testing.T) {

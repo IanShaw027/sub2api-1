@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -40,7 +39,7 @@ const (
 	defaultOpenAIWSMaxIdlePerAccount        = 4
 	defaultOpenAIWSStickyReservePercent     = 30
 	defaultOpenAIWSNeutralPrewarmPercent    = 20
-	defaultOpenAIWSSessionIdleTTLSeconds    = 120
+	defaultOpenAIWSSessionIdleTTLSeconds    = 300
 	openAIWSMaxIdlePerAccountUpperBound     = 64
 	openAIWSSessionIdleTTLSecondsUpperBound = 3600
 )
@@ -884,25 +883,10 @@ func (p *openAIWSConnPool) runBackgroundPingWorker() {
 }
 
 func (p *openAIWSConnPool) runBackgroundPingSweep() {
-	if p == nil {
-		return
-	}
-	candidates := p.snapshotIdleConnsForPing()
-	var g errgroup.Group
-	g.SetLimit(10)
-	for _, item := range candidates {
-		item := item
-		if item.conn == nil || item.conn.isLeased() || item.conn.waiters.Load() > 0 {
-			continue
-		}
-		g.Go(func() error {
-			if err := item.conn.pingWithTimeout(openAIWSConnHealthCheckTO); err != nil {
-				p.evictConn(item.accountID, item.conn.id)
-			}
-			return nil
-		})
-	}
-	_ = g.Wait()
+	// coder/websocket Ping must run concurrently with Reader so the pong can be
+	// consumed. Idle pooled upstream conns have no reader, so active ping would
+	// turn healthy reusable conns into false failures. Actual write/read errors,
+	// max-age, and idle-TTL cleanup still evict stale connections.
 }
 
 func (p *openAIWSConnPool) snapshotIdleConnsForPing() []openAIWSIdlePingCandidate {
@@ -1911,10 +1895,10 @@ func (p *openAIWSConnPool) nextConnID(accountID int64) string {
 }
 
 func (p *openAIWSConnPool) shouldHealthCheckConn(conn *openAIWSConn) bool {
-	if conn == nil {
-		return false
-	}
-	return conn.idleDuration(time.Now()) >= openAIWSConnHealthCheckIdle
+	// Active Ping is unsafe for pooled idle conns because no Reader is running
+	// to consume pong frames. Let real write/read operations prove liveness.
+	_ = conn
+	return false
 }
 
 func (p *openAIWSConnPool) maxConnsHardCap() int {

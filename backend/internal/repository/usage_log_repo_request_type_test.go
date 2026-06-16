@@ -94,6 +94,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			createdAt,
 			sqlmock.AnyArg(), // openai_ws_profile
 			sqlmock.AnyArg(), // openai_ws_conn_reused
+			sqlmock.AnyArg(), // provider
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(99), createdAt))
 
@@ -180,6 +181,7 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			createdAt,
 			sqlmock.AnyArg(), // openai_ws_profile
 			sqlmock.AnyArg(), // openai_ws_conn_reused
+			sqlmock.AnyArg(), // provider
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(100), createdAt))
 
@@ -194,6 +196,7 @@ func TestBuildUsageLogBestEffortInsertQuery_IncludesRequestedModelColumn(t *test
 		UserID:         1,
 		APIKeyID:       2,
 		AccountID:      3,
+		Provider:       service.PlatformOpenAI,
 		RequestID:      "req-best-effort-query",
 		Model:          "gpt-5",
 		RequestedModel: "gpt-5",
@@ -206,8 +209,10 @@ func TestBuildUsageLogBestEffortInsertQuery_IncludesRequestedModelColumn(t *test
 	require.Contains(t, query, "\n\t\t\tmodel,\n\t\t\trequested_model,\n\t\t\tupstream_model,")
 	require.Contains(t, query, "\n\t\t\trequest_id,\n\t\t\tmodel,\n\t\t\trequested_model,\n\t\t\tupstream_model,")
 	require.Contains(t, query, "\n\t\t\tactual_cost,\n\t\t\trate_multiplier,\n\t\t\tbilled_by_higher_priced_upstream,\n\t\t\taccount_rate_multiplier,")
+	require.Contains(t, query, "\n\t\t\topenai_ws_conn_reused,\n\t\t\tprovider")
 	require.Len(t, args, len(prepared.args))
 	require.Equal(t, prepared.args[5], args[5])
+	require.Equal(t, service.PlatformOpenAI, args[len(args)-1])
 }
 
 func TestExecUsageLogInsertNoResult_PersistsRequestedModel(t *testing.T) {
@@ -243,6 +248,21 @@ func TestPrepareUsageLogInsert_ArgCountMatchesTypes(t *testing.T) {
 	})
 
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
+}
+
+func TestPrepareUsageLogInsert_PersistsProvider(t *testing.T) {
+	prepared := prepareUsageLogInsert(&service.UsageLog{
+		UserID:         1,
+		APIKeyID:       2,
+		AccountID:      3,
+		Provider:       " openai ",
+		RequestID:      "req-provider",
+		Model:          "gpt-5",
+		RequestedModel: "gpt-5",
+		CreatedAt:      time.Date(2025, 1, 5, 12, 0, 0, 0, time.UTC),
+	})
+
+	require.Equal(t, "openai", prepared.args[len(prepared.args)-1])
 }
 
 func TestPrepareUsageLogInsert_PersistsImageSizeMetadata(t *testing.T) {
@@ -768,6 +788,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			now,
 			sql.NullString{}, // openai_ws_profile
 			false,            // openai_ws_conn_reused
+			sql.NullString{}, // provider
 		}})
 		require.NoError(t, err)
 		require.Equal(t, 2, log.ImageCount)
@@ -839,8 +860,10 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			now,
 			sql.NullString{}, // openai_ws_profile
 			false,            // openai_ws_conn_reused
+			sql.NullString{Valid: true, String: service.PlatformOpenAI}, // provider
 		}})
 		require.NoError(t, err)
+		require.Equal(t, service.PlatformOpenAI, log.Provider)
 		require.NotNil(t, log.ServiceTier)
 		require.Equal(t, "priority", *log.ServiceTier)
 		require.Equal(t, service.RequestTypeWSV2, log.RequestType)
@@ -894,6 +917,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			now,
 			sql.NullString{}, // openai_ws_profile
 			false,            // openai_ws_conn_reused
+			sql.NullString{}, // provider
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
@@ -949,6 +973,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			now,
 			sql.NullString{}, // openai_ws_profile
 			false,            // openai_ws_conn_reused
+			sql.NullString{}, // provider
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)

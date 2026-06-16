@@ -112,11 +112,20 @@ func openAIWSNormalizeCanonicalItemObject(obj map[string]any) {
 		openAIWSDropEmptyArrayField(obj, "content")
 	case "message":
 		openAIWSNormalizeMessageContentEnvelope(obj)
+		openAIWSNormalizeOutputMessageRole(obj)
 	}
 }
 
 func openAIWSDropTurnIDMetadata(obj map[string]any) {
-	meta, ok := obj["metadata"].(map[string]any)
+	metaRaw, exists := obj["metadata"]
+	if !exists {
+		return
+	}
+	if metaRaw == nil {
+		delete(obj, "metadata")
+		return
+	}
+	meta, ok := metaRaw.(map[string]any)
 	if !ok {
 		return
 	}
@@ -146,6 +155,36 @@ func openAIWSNormalizeMessageContentEnvelope(obj map[string]any) {
 		openAIWSDropEmptyArrayField(contentObj, "annotations")
 		openAIWSDropEmptyArrayField(contentObj, "logprobs")
 	}
+}
+
+func openAIWSNormalizeOutputMessageRole(obj map[string]any) {
+	role, _ := obj["role"].(string)
+	if strings.TrimSpace(role) != "assistant" || !openAIWSMessageContentLooksLikeOutput(obj) {
+		return
+	}
+	delete(obj, "role")
+}
+
+func openAIWSMessageContentLooksLikeOutput(obj map[string]any) bool {
+	content, ok := obj["content"].([]any)
+	if !ok || len(content) == 0 {
+		return false
+	}
+	hasOutput := false
+	for _, raw := range content {
+		contentObj, ok := raw.(map[string]any)
+		if !ok {
+			return false
+		}
+		contentType, _ := contentObj["type"].(string)
+		switch strings.TrimSpace(contentType) {
+		case "input_text", "input_image", "input_file", "input_audio":
+			return false
+		case "output_text", "refusal":
+			hasOutput = true
+		}
+	}
+	return hasOutput
 }
 
 // openAIWSCanonicalItemHashes hashes a sequence of raw items.

@@ -172,6 +172,15 @@ func TestClassifyOpenAIWSReconnectReason(t *testing.T) {
 	require.False(t, retryable)
 }
 
+func TestShouldFallbackOpenAIWSToHTTP_AuthFailed(t *testing.T) {
+	err := wrapOpenAIWSFallback("auth_failed", &openAIWSDialError{
+		StatusCode: http.StatusUnauthorized,
+		Err:        errors.New("unauthorized websocket handshake"),
+	})
+
+	require.True(t, shouldFallbackOpenAIWSToHTTP(err))
+}
+
 func TestOpenAIWSErrorHTTPStatus(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, openAIWSErrorHTTPStatus([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_request","message":"invalid input"}}`)))
 	require.Equal(t, http.StatusUnauthorized, openAIWSErrorHTTPStatus([]byte(`{"type":"error","error":{"type":"authentication_error","code":"invalid_api_key","message":"auth failed"}}`)))
