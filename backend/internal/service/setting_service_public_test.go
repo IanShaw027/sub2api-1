@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -11,6 +12,7 @@ import (
 )
 
 type settingPublicRepoStub struct {
+	mu     sync.RWMutex
 	values map[string]string
 }
 
@@ -27,6 +29,8 @@ func (s *settingPublicRepoStub) Set(ctx context.Context, key, value string) erro
 }
 
 func (s *settingPublicRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	out := make(map[string]string, len(keys))
 	for _, key := range keys {
 		if value, ok := s.values[key]; ok {
@@ -46,6 +50,15 @@ func (s *settingPublicRepoStub) GetAll(ctx context.Context) (map[string]string, 
 
 func (s *settingPublicRepoStub) Delete(ctx context.Context, key string) error {
 	panic("unexpected Delete call")
+}
+
+func (s *settingPublicRepoStub) setValue(key, value string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.values == nil {
+		s.values = make(map[string]string)
+	}
+	s.values[key] = value
 }
 
 func TestSettingService_GetPublicSettings_ExposesRegistrationEmailSuffixWhitelist(t *testing.T) {

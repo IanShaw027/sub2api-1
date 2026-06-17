@@ -253,7 +253,7 @@ func TestWrapOpenAIImageBackendErrorFailsoverReal429WithoutHeadersWhenBodyHasRes
 }
 
 func newOpenAIImagesTelemetryTestContext() *gin.Context {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	return c

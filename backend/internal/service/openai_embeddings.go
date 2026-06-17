@@ -86,7 +86,9 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
+	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		setOpsUpstreamError(c, 0, safeErr, "")
@@ -107,6 +109,7 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 		respBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
+		_ = s.markOpenAICyberPolicyIfDetected(ctx, account, respBody)
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -147,6 +150,7 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 		}
 		return nil, fmt.Errorf("read upstream body: %w", err)
 	}
+	_ = s.markOpenAICyberPolicyIfDetected(ctx, account, respBody)
 
 	writeOpenAIEmbeddingsUpstreamResponse(c, resp, respBody, s.responseHeaderFilter)
 

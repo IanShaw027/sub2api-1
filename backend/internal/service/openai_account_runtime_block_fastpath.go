@@ -92,6 +92,20 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	return shouldDisable
 }
 
+func (s *OpenAIGatewayService) markOpenAICyberPolicyIfDetected(ctx context.Context, account *Account, responseBody []byte) bool {
+	stateCtx, cancel := openAIAccountStateContext(ctx)
+	defer cancel()
+
+	if s == nil || account == nil || s.rateLimitService == nil {
+		return false
+	}
+	if !s.rateLimitService.HandleOpenAICyberPolicy(stateCtx, account, responseBody) {
+		return false
+	}
+	s.BlockAccountScheduling(account, time.Time{}, "upstream_disable")
+	return true
+}
+
 func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context, account *Account, headers http.Header, responseBody []byte) {
 	if s == nil || !isOpenAIOAuthAccount(account) {
 		return

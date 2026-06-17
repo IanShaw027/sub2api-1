@@ -885,7 +885,47 @@ func TestGatewayService_SelectAccountForModelWithPlatform_NoModelSupport(t *test
 	acc, err := svc.selectAccountForModelWithPlatform(ctx, nil, "", "claude-3-5-sonnet-20241022", nil, PlatformAnthropic)
 	require.Error(t, err)
 	require.Nil(t, acc)
-	require.Contains(t, err.Error(), "supporting model")
+
+	var modelErr *GroupModelUnsupportedError
+	require.ErrorAs(t, err, &modelErr)
+	require.Equal(t, PlatformAnthropic, modelErr.Platform)
+	require.Equal(t, "claude-3-5-sonnet-20241022", modelErr.RequestedModel)
+	require.Contains(t, modelErr.AvailableModels, "claude-3-5-haiku-20241022")
+}
+
+func TestGatewayService_SelectAccountForModelWithPlatform_UnschedulableOnlyKeepsGenericError(t *testing.T) {
+	ctx := context.Background()
+
+	repo := &mockAccountRepoForPlatform{
+		accounts: []Account{
+			{
+				ID:          1,
+				Platform:    PlatformAnthropic,
+				Priority:    1,
+				Status:      StatusActive,
+				Schedulable: false,
+				Credentials: map[string]any{"model_mapping": map[string]any{"claude-3-5-haiku-20241022": "claude-3-5-haiku-20241022"}},
+			},
+		},
+		accountsByID: map[int64]*Account{},
+	}
+	for i := range repo.accounts {
+		repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+	}
+
+	svc := &GatewayService{
+		accountRepo: repo,
+		cache:       &mockGatewayCacheForPlatform{},
+		cfg:         testConfig(),
+	}
+
+	acc, err := svc.selectAccountForModelWithPlatform(ctx, nil, "", "claude-3-5-sonnet-20241022", nil, PlatformAnthropic)
+	require.Error(t, err)
+	require.Nil(t, acc)
+
+	var modelErr *GroupModelUnsupportedError
+	require.NotErrorAs(t, err, &modelErr)
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
 }
 
 func TestGatewayService_SelectAccountForModelWithPlatform_GeminiPreferOAuth(t *testing.T) {
@@ -962,7 +1002,11 @@ func TestGatewayService_SelectAccountForModelWithPlatform_GeminiAPIKeyModelMappi
 	acc, err = svc.selectAccountForModelWithPlatform(ctx, nil, "", "gemini-3-pro-preview", nil, PlatformGemini)
 	require.Error(t, err)
 	require.Nil(t, acc)
-	require.Contains(t, err.Error(), "supporting model")
+	var modelErr *GroupModelUnsupportedError
+	require.ErrorAs(t, err, &modelErr)
+	require.Equal(t, PlatformGemini, modelErr.Platform)
+	require.Equal(t, "gemini-3-pro-preview", modelErr.RequestedModel)
+	require.ElementsMatch(t, []string{"gemini-2.5-flash", "gemini-2.5-pro"}, modelErr.AvailableModels)
 }
 
 func TestGatewayService_SelectAccountForModelWithPlatform_StickyInGroup(t *testing.T) {
@@ -1873,7 +1917,11 @@ func TestGatewayService_selectAccountWithMixedScheduling(t *testing.T) {
 		acc, err := svc.selectAccountWithMixedScheduling(ctx, nil, "", "claude-3-5-sonnet-20241022", nil, PlatformAnthropic)
 		require.Error(t, err)
 		require.Nil(t, acc)
-		require.Contains(t, err.Error(), "supporting model")
+		var modelErr *GroupModelUnsupportedError
+		require.ErrorAs(t, err, &modelErr)
+		require.Equal(t, PlatformAnthropic, modelErr.Platform)
+		require.Equal(t, "claude-3-5-sonnet-20241022", modelErr.RequestedModel)
+		require.Contains(t, modelErr.AvailableModels, "claude-3-5-haiku-20241022")
 	})
 
 	t.Run("混合调度-优先未使用账号", func(t *testing.T) {
@@ -1902,6 +1950,53 @@ func TestGatewayService_selectAccountWithMixedScheduling(t *testing.T) {
 		require.NotNil(t, acc)
 		require.Equal(t, int64(2), acc.ID)
 	})
+}
+
+func TestGatewayService_SelectAccountWithMixedScheduling_NoModelSupportReturnsGroupModelUnsupported(t *testing.T) {
+	ctx := context.Background()
+
+	repo := &mockAccountRepoForPlatform{
+		accounts: []Account{
+			{
+				ID:          1,
+				Platform:    PlatformAnthropic,
+				Priority:    1,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{"model_mapping": map[string]any{"claude-3-5-haiku-20241022": "claude-3-5-haiku-20241022"}},
+			},
+			{
+				ID:          2,
+				Platform:    PlatformAntigravity,
+				Priority:    1,
+				Status:      StatusActive,
+				Schedulable: true,
+				Extra:       map[string]any{"mixed_scheduling": true},
+				Credentials: map[string]any{"model_mapping": map[string]any{"claude-sonnet-4-5": "claude-sonnet-4-5"}},
+			},
+		},
+		accountsByID: map[int64]*Account{},
+	}
+	for i := range repo.accounts {
+		repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+	}
+
+	svc := &GatewayService{
+		accountRepo: repo,
+		cache:       &mockGatewayCacheForPlatform{},
+		cfg:         testConfig(),
+	}
+
+	acc, err := svc.selectAccountWithMixedScheduling(ctx, nil, "", "claude-opus-4-7", nil, PlatformAnthropic)
+	require.Error(t, err)
+	require.Nil(t, acc)
+
+	var modelErr *GroupModelUnsupportedError
+	require.ErrorAs(t, err, &modelErr)
+	require.Equal(t, PlatformAnthropic, modelErr.Platform)
+	require.Equal(t, "claude-opus-4-7", modelErr.RequestedModel)
+	require.Contains(t, modelErr.AvailableModels, "claude-3-5-haiku-20241022")
+	require.Contains(t, modelErr.AvailableModels, "claude-sonnet-4-5")
 }
 
 // TestAccount_IsMixedSchedulingEnabled 测试混合调度开关检查

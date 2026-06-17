@@ -96,7 +96,7 @@ func (m *mockSmartRetryUpstream) DoWithTLS(req *http.Request, proxyURL string, a
 
 // TestHandleSmartRetry_URLLevelRateLimit 测试 URL 级别限流切换
 func TestHandleSmartRetry_URLLevelRateLimit(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/antigravity/v1beta/models/gemini:generateContent", nil)
@@ -150,7 +150,7 @@ func TestHandleSmartRetry_URLLevelRateLimit(t *testing.T) {
 
 // TestHandleSmartRetry_LongDelay_ReturnsSwitchError 测试 retryDelay >= 阈值时返回 switchError
 func TestHandleSmartRetry_LongDelay_ReturnsSwitchError(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/antigravity/v1beta/models/claude-sonnet-4-5:generateContent", nil)
@@ -223,7 +223,7 @@ func TestHandleSmartRetry_LongDelay_ReturnsSwitchError(t *testing.T) {
 
 // TestHandleSmartRetry_ShortDelay_SmartRetrySuccess 测试智能重试成功
 func TestHandleSmartRetry_ShortDelay_SmartRetrySuccess(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/antigravity/v1beta/models/gemini:generateContent", nil)
@@ -299,7 +299,7 @@ func TestHandleSmartRetry_ShortDelay_SmartRetrySuccess(t *testing.T) {
 
 // TestHandleSmartRetry_ShortDelay_SmartRetryFailed_ReturnsSwitchError 测试智能重试失败后返回 switchError
 func TestHandleSmartRetry_ShortDelay_SmartRetryFailed_ReturnsSwitchError(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/antigravity/v1beta/models/gemini-3-flash:generateContent", nil)

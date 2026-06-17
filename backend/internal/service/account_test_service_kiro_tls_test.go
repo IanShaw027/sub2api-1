@@ -54,7 +54,7 @@ func (s *accountTestKiroRuntimeSettingRepoStub) Delete(context.Context, string) 
 }
 
 func TestAccountTestService_TestKiroAccountConnection_UsesKiroTLSProfile(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -106,7 +106,7 @@ func TestAccountTestService_TestKiroAccountConnection_UsesKiroTLSProfile(t *test
 }
 
 func TestAccountTestService_TestKiroAccountConnection_UsesAPIKeyForManualAccounts(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -142,7 +142,7 @@ func TestAccountTestService_TestKiroAccountConnection_UsesAPIKeyForManualAccount
 }
 
 func TestAccountTestService_TestKiroAccountConnection_UsesSharedKiroModelMapping(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -183,7 +183,7 @@ func TestAccountTestService_TestKiroAccountConnection_UsesSharedKiroModelMapping
 }
 
 func TestAccountTestService_TestKiroAccountConnection_UsesRuntimeSettings(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	kiroRuntimeSettingsCache.Store((*cachedKiroRuntimeSettings)(nil))
 	kiroRuntimeSettingsSF.Forget("kiro_runtime")
 
@@ -232,7 +232,7 @@ func TestAccountTestService_TestKiroAccountConnection_UsesRuntimeSettings(t *tes
 }
 
 func TestAccountTestService_TestKiroAccountConnection_UsesAccountModelMapping(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -283,7 +283,7 @@ func TestAccountTestService_TestKiroAccountConnection_UsesAccountModelMapping(t 
 }
 
 func TestAccountTestService_TestKiroAccountConnection_IncludesUpstreamErrorDetail(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

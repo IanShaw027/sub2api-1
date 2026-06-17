@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	openaiwsv2 "github.com/Wei-Shaw/sub2api/internal/service/openai_ws_v2"
 	coderws "github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -41,7 +42,7 @@ type openAIWSClientConn interface {
 
 // openAIWSClientDialer 抽象 WS 建连器。
 type openAIWSClientDialer interface {
-	Dial(ctx context.Context, wsURL string, headers http.Header, proxyURL string) (openAIWSClientConn, int, http.Header, error)
+	Dial(ctx context.Context, wsURL string, headers http.Header, proxyURL string, tlsProfile *tlsfingerprint.Profile) (openAIWSClientConn, int, http.Header, error)
 }
 
 type openAIWSTransportMetricsDialer interface {
@@ -71,6 +72,7 @@ func (d *coderOpenAIWSClientDialer) Dial(
 	wsURL string,
 	headers http.Header,
 	proxyURL string,
+	tlsProfile *tlsfingerprint.Profile,
 ) (openAIWSClientConn, int, http.Header, error) {
 	targetURL := strings.TrimSpace(wsURL)
 	if targetURL == "" {
@@ -82,11 +84,17 @@ func (d *coderOpenAIWSClientDialer) Dial(
 		CompressionMode: coderws.CompressionContextTakeover,
 	}
 	if proxy := strings.TrimSpace(proxyURL); proxy != "" {
-		proxyClient, err := d.proxyHTTPClient(proxy)
+		proxyClient, err := d.httpClientForDial(proxy, tlsProfile)
 		if err != nil {
 			return nil, 0, nil, err
 		}
 		opts.HTTPClient = proxyClient
+	} else if tlsProfile != nil {
+		tlsClient, err := d.httpClientForDial("", tlsProfile)
+		if err != nil {
+			return nil, 0, nil, err
+		}
+		opts.HTTPClient = tlsClient
 	}
 
 	conn, resp, err := coderws.Dial(ctx, targetURL, opts)
@@ -107,6 +115,49 @@ func (d *coderOpenAIWSClientDialer) Dial(
 		respHeaders = cloneHeader(resp.Header)
 	}
 	return &coderOpenAIWSClientConn{conn: conn}, 0, respHeaders, nil
+}
+
+func (d *coderOpenAIWSClientDialer) httpClientForDial(proxy string, tlsProfile *tlsfingerprint.Profile) (*http.Client, error) {
+	if tlsProfile == nil {
+		return d.proxyHTTPClient(proxy)
+	}
+	return newOpenAIWSTLSFingerprintHTTPClient(proxy, tlsProfile)
+}
+
+func newOpenAIWSTLSFingerprintHTTPClient(proxy string, profile *tlsfingerprint.Profile) (*http.Client, error) {
+	if profile == nil {
+		return nil, errors.New("tls fingerprint profile is nil")
+	}
+	transport := &http.Transport{
+		MaxIdleConns:        openAIWSProxyTransportMaxIdleConns,
+		MaxIdleConnsPerHost: openAIWSProxyTransportMaxIdleConnsPerHost,
+		IdleConnTimeout:     openAIWSProxyTransportIdleConnTimeout,
+		TLSHandshakeTimeout: 10 * time.Second,
+		ForceAttemptHTTP2:   false,
+	}
+
+	normalizedProxy := strings.TrimSpace(proxy)
+	if normalizedProxy == "" {
+		dialer := tlsfingerprint.NewDialer(profile, nil)
+		transport.DialTLSContext = dialer.DialTLSContext
+		return &http.Client{Transport: transport}, nil
+	}
+
+	parsedProxyURL, err := url.Parse(normalizedProxy)
+	if err != nil {
+		return nil, fmt.Errorf("invalid proxy url: %w", err)
+	}
+	switch strings.ToLower(parsedProxyURL.Scheme) {
+	case "http", "https":
+		dialer := tlsfingerprint.NewHTTPProxyDialer(profile, parsedProxyURL)
+		transport.DialTLSContext = dialer.DialTLSContext
+	case "socks5", "socks5h":
+		dialer := tlsfingerprint.NewSOCKS5ProxyDialer(profile, parsedProxyURL)
+		transport.DialTLSContext = dialer.DialTLSContext
+	default:
+		return nil, fmt.Errorf("unsupported proxy scheme for tls fingerprint ws dial: %s", parsedProxyURL.Scheme)
+	}
+	return &http.Client{Transport: transport}, nil
 }
 
 func (d *coderOpenAIWSClientDialer) proxyHTTPClient(proxy string) (*http.Client, error) {

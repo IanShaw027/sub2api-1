@@ -161,7 +161,21 @@ func TestCursorMixedShape_JSONRoundtrip(t *testing.T) {
 // "Unsupported parameter: ...". The fix must remove them from the raw body
 // before it is forwarded, for BOTH OAuth and API Key account types.
 func TestCursorMixedShape_StripsUnsupportedFields(t *testing.T) {
-	cursorBody := []byte(`{"model":"gpt-5.4","stream":true,"temperature":0.2,"verbosity":"low","enable_thinking":true,"stop_sequences":["END"],"promptCacheKey":"legacy-cache","prompt_cache_retention":"24h","reasoningSummary":"auto","safety_identifier":"cursor-user-xyz","metadata":{"trace_id":"abc","caller":"cursor"},"stream_options":{"include_usage":true},"input":[{"role":"user","content":"hi"}]}`)
+	cursorBody := []byte(`{
+		"model": "gpt-5.4",
+		"stream": true,
+		"temperature": 0.2,
+		"verbosity": "low",
+		"enable_thinking": true,
+		"stop_sequences": ["END"],
+		"promptCacheKey": "legacy-cache",
+		"prompt_cache_retention": "24h",
+		"reasoningSummary": "auto",
+		"safety_identifier": "cursor-user-xyz",
+		"metadata": {"trace_id":"abc","caller":"cursor"},
+		"stream_options": {"include_usage": true},
+		"input": [{"role":"user","content":"hi"}]
+	}`)
 
 	// Sanity: the test fixture contains every field the production code strips.
 	for _, field := range cursorResponsesUnsupportedFields {

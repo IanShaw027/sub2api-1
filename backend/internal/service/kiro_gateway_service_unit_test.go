@@ -132,7 +132,7 @@ func (r *kiroGatewayRateLimitRepoStub) SetError(_ context.Context, id int64, err
 }
 
 func TestKiroGatewayService_Forward_EmulatesWebSearchBeforeKiroUpstream(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	manager := websearch.NewManager([]websearch.ProviderConfig{{Type: websearch.ProviderTypeBrave, APIKey: "key"}}, nil)
 	SetWebSearchManager(manager)
@@ -178,7 +178,7 @@ func TestKiroGatewayService_Forward_EmulatesWebSearchBeforeKiroUpstream(t *testi
 }
 
 func TestKiroGatewayService_Forward_RetriesOnceAfterInvalidTokenResponse(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -253,7 +253,7 @@ func TestKiroGatewayService_Forward_RetriesOnceAfterInvalidTokenResponse(t *test
 }
 
 func TestKiroGatewayService_Forward_InvalidTokenRetryFailureDoesNotLeakRetryError(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -292,7 +292,7 @@ func TestKiroGatewayService_Forward_InvalidTokenRetryFailureDoesNotLeakRetryErro
 }
 
 func TestKiroGatewayService_Forward_Kiro402QuotaExhaustedTriggersFailoverRateLimitPath(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -339,7 +339,7 @@ func TestKiroGatewayService_Forward_Kiro402QuotaExhaustedTriggersFailoverRateLim
 }
 
 func TestKiroGatewayService_Forward_WebSearchMalformedRequestDoesNotAcceptEarly(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	manager := websearch.NewManager([]websearch.ProviderConfig{{Type: websearch.ProviderTypeBrave, APIKey: "key"}}, nil)
 	SetWebSearchManager(manager)
@@ -396,7 +396,7 @@ func TestKiroGatewayService_Forward_WebSearchMalformedRequestDoesNotAcceptEarly(
 // 验证：上游 transport 故障（非客户端断开）时，handleKiroTransportError 应当返回
 // *UpstreamFailoverError 触发 handler 的账号 failover，并把当前账号置临时不可调度。
 func TestKiroGatewayService_Forward_TransportErr_UpstreamCancel_FailoverAndTempUnsched(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -473,7 +473,7 @@ func TestKiroGatewayService_Forward_TransportErr_UpstreamCancel_FailoverAndTempU
 }
 
 func TestKiroGatewayService_HandleKiroTransportError_ExpiredCtxStillMarksTempUnsched(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -517,7 +517,7 @@ func TestKiroGatewayService_HandleKiroTransportError_ExpiredCtxStillMarksTempUns
 }
 
 func TestKiroGatewayService_HandleKiroTransportError_CanceledRequestWithConnectionResetMarksTempUnsched(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -562,7 +562,7 @@ func TestKiroGatewayService_HandleKiroTransportError_CanceledRequestWithConnecti
 // 验证：客户端真正断开（gin.Request.Context() 已 Canceled）时，
 // 不返回 UpstreamFailoverError、不标记账号临时不可调度。
 func TestKiroGatewayService_Forward_TransportErr_ClientDisconnect_NoFailoverNoMark(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

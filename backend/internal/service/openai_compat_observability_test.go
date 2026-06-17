@@ -61,7 +61,7 @@ func TestApplyCodexOAuthTransform_RecordsCompatRuntimeMetrics(t *testing.T) {
 }
 
 func TestForwardAsAnthropic_RecordsCompatPromptCacheInjectionMetric(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	before := SnapshotOpenAICompatRuntimeMetrics()
 
@@ -114,7 +114,7 @@ func TestForwardAsAnthropic_RecordsCompatPromptCacheInjectionMetric(t *testing.T
 }
 
 func TestForwardAsAnthropic_RecordsCompatUpstream4xxMetricByModel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	before := SnapshotOpenAICompatRuntimeMetrics()
 

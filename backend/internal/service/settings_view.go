@@ -277,15 +277,26 @@ func DefaultOpenAIImageWebConversationSettings() *OpenAIImageWebConversationSett
 }
 
 type KiroRuntimeSettings struct {
-	KiroVersion             string `json:"kiro_version"`
-	KiroCommit              string `json:"kiro_commit"`
-	SystemVersion           string `json:"system_version"`
-	NodeVersion             string `json:"node_version"`
-	CacheHitRateScale       int    `json:"cache_hit_rate_scale"`
-	CacheMinBlockTokens     int    `json:"cache_min_block_tokens"`
-	CacheIndependentTTLSecs int    `json:"cache_independent_ttl_seconds"`
-	CachePrefixTTLSecs      int    `json:"cache_prefix_ttl_seconds"`
+	KiroVersion                string           `json:"kiro_version"`
+	KiroCommit                 string           `json:"kiro_commit"`
+	SystemVersion              string           `json:"system_version"`
+	NodeVersion                string           `json:"node_version"`
+	CacheHitRateScale          int              `json:"cache_hit_rate_scale"`
+	CacheMinBlockTokens        int              `json:"cache_min_block_tokens"`
+	CacheIndependentTTLSecs    int              `json:"cache_independent_ttl_seconds"`
+	CachePrefixTTLSecs         int              `json:"cache_prefix_ttl_seconds"`
+	ThinkingMode               KiroThinkingMode `json:"-"`
+	ThinkingEffortThreshold    string           `json:"-"`
+	ThinkingSimulationTemplate string           `json:"-"`
 }
+
+type KiroThinkingMode string
+
+const (
+	KiroThinkingModeDisabled         KiroThinkingMode = ""
+	KiroThinkingModeSimulate         KiroThinkingMode = "simulate"
+	KiroThinkingModeModelAndSimulate KiroThinkingMode = "model_and_simulate"
+)
 
 const (
 	defaultKiroVersion             = "0.10.0"

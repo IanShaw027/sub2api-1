@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent, h, nextTick, ref } from 'vue'
 
 const {
@@ -11,6 +11,7 @@ const {
   getWebSearchEmulationConfigMock,
   listTlsFingerprintProfilesMock,
   exchangeCodeMock,
+  listTlsFingerprintRoutersMock,
   kiroValidateRefreshTokenMock
 } = vi.hoisted(() => ({
   showErrorMock: vi.fn(),
@@ -21,6 +22,7 @@ const {
   getWebSearchEmulationConfigMock: vi.fn(),
   listTlsFingerprintProfilesMock: vi.fn(),
   exchangeCodeMock: vi.fn(),
+  listTlsFingerprintRoutersMock: vi.fn(),
   kiroValidateRefreshTokenMock: vi.fn()
 }))
 
@@ -45,6 +47,9 @@ vi.mock('@/api/admin', () => ({
     },
     tlsFingerprintProfiles: {
       list: listTlsFingerprintProfilesMock
+    },
+    tlsFingerprintRouters: {
+      list: listTlsFingerprintRoutersMock
     },
     accounts: {
       create: createMock,
@@ -300,6 +305,7 @@ describe('CreateAccountModal', () => {
     getWebSearchEmulationConfigMock.mockReset()
     listTlsFingerprintProfilesMock.mockReset()
     exchangeCodeMock.mockReset()
+    listTlsFingerprintRoutersMock.mockReset()
     kiroValidateRefreshTokenMock.mockReset()
 
     createMock.mockResolvedValue(undefined)
@@ -307,6 +313,7 @@ describe('CreateAccountModal', () => {
     getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
     listTlsFingerprintProfilesMock.mockResolvedValue([])
     exchangeCodeMock.mockResolvedValue({ access_token: 'at-cookie' })
+    listTlsFingerprintRoutersMock.mockResolvedValue([])
     kiroValidateRefreshTokenMock.mockResolvedValue({
       refresh_token: 'rt-test',
       access_token: 'at-test',
@@ -550,6 +557,7 @@ describe('CreateAccountModal', () => {
 
   it('creates an OpenAI API key account with TLS fingerprint settings', async () => {
     listTlsFingerprintProfilesMock.mockResolvedValue([{ id: 12, name: 'Chrome 124' }])
+    listTlsFingerprintRoutersMock.mockResolvedValue([{ id: 9, name: 'UA Router' }])
     const wrapper = mountModal()
     await flushPromises()
 
@@ -565,6 +573,8 @@ describe('CreateAccountModal', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="openai-tls-fingerprint-profile"]').text()).toContain('Chrome 124')
     await wrapper.get('[data-testid="openai-tls-fingerprint-profile"]').setValue('12')
+    expect(wrapper.get('[data-testid="openai-tls-fingerprint-router"]').text()).toContain('UA Router')
+    await wrapper.get('[data-testid="openai-tls-fingerprint-router"]').setValue('9')
     await nextTick()
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
@@ -575,7 +585,8 @@ describe('CreateAccountModal', () => {
       type: 'apikey',
       extra: expect.objectContaining({
         enable_tls_fingerprint: true,
-        tls_fingerprint_profile_id: 12
+        tls_fingerprint_profile_id: 12,
+        tls_fingerprint_router_id: 9
       })
     }))
   })

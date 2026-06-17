@@ -448,6 +448,29 @@ func TestRateLimitService_HandleUpstreamError_403FallsBackToRawBody(t *testing.T
 	require.NotContains(t, repo.lastErrorMsg, "account may be suspended or lack permissions")
 }
 
+func TestRateLimitService_HandleUpstreamError_OpenAICyberPolicyMarksAuthError(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       203,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}
+
+	shouldDisable := service.HandleUpstreamError(
+		context.Background(),
+		account,
+		200,
+		http.Header{},
+		[]byte(`{"response":{"error":{"code":"cyber_policy","message":"blocked by policy"}}}`),
+	)
+
+	require.True(t, shouldDisable)
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Contains(t, repo.lastErrorMsg, "被风控命中")
+	require.Contains(t, repo.lastErrorMsg, "cyber_policy")
+}
+
 func TestNormalizedCodexLimits_OnlySecondaryData(t *testing.T) {
 	// Test when only secondary has data, no window_minutes
 	sUsed := 60.0

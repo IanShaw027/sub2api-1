@@ -33,7 +33,7 @@ func (u *kiroDelegateHTTPUpstream) DoWithTLS(req *http.Request, proxyURL string,
 }
 
 func TestGatewayServiceForward_DelegatesKiroAccountsToKiroGateway(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -73,7 +73,7 @@ func TestGatewayServiceForward_DelegatesKiroAccountsToKiroGateway(t *testing.T) 
 }
 
 func TestGatewayServiceForwardCountTokens_DelegatesKiroAccountsToKiroGateway(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -96,7 +96,7 @@ func TestGatewayServiceForwardCountTokens_DelegatesKiroAccountsToKiroGateway(t *
 }
 
 func TestGatewayServiceForward_KiroReturnsConfiguredErrorWhenDelegateMissing(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -113,7 +113,7 @@ func TestGatewayServiceForward_KiroReturnsConfiguredErrorWhenDelegateMissing(t *
 }
 
 func TestGatewayServiceForwardCountTokens_KiroReturnsConfiguredErrorWhenDelegateMissing(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

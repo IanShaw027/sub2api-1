@@ -219,7 +219,7 @@ func TestNormalizeOpenAIPassthroughOAuthBody_DropsUnpersistedReasoningItemsWhenS
 }
 
 func TestFinalizeOpenAIResponsesOAuthUpstreamBody_EnforcesFinalOAuthResponsesConstraints(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -243,7 +243,7 @@ func TestFinalizeOpenAIResponsesOAuthUpstreamBody_EnforcesFinalOAuthResponsesCon
 }
 
 func TestFinalizeOpenAIResponsesOAuthUpstreamBody_CompactInjectsDefaultInstructions(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -266,7 +266,7 @@ func TestFinalizeOpenAIResponsesOAuthUpstreamBody_CompactInjectsDefaultInstructi
 }
 
 func TestFinalizeOpenAIResponsesOAuthUpstreamBody_NormalizesResponseFormatSchemaRequired(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -285,7 +285,7 @@ func TestFinalizeOpenAIResponsesOAuthUpstreamBody_NormalizesResponseFormatSchema
 }
 
 func TestFinalizeOpenAIResponsesOAuthUpstreamBody_ContextMarkedMessagesBridgeInjectsDefaultInstructions(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

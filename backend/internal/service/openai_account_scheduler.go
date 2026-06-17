@@ -773,7 +773,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		return nil, 0, 0, 0, err
 	}
 	if len(accounts) == 0 {
-		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false)
+		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, accounts)
 	}
 
 	// require_privacy_set: 获取分组信息
@@ -817,7 +817,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		})
 	}
 	if len(filtered) == 0 {
-		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false)
+		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, accounts)
 	}
 
 	loadMap := map[int64]*AccountLoadInfo{}
@@ -1022,7 +1022,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		waitSelectionOrder = buildSelectionOrder(waitCandidates)
 	}
 	if len(selectionOrder) == 0 && len(waitSelectionOrder) == 0 {
-		return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact && len(allCandidates) > 0)
+		return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact && len(allCandidates) > 0, accounts)
 	}
 
 	compactBlocked := false
@@ -1109,7 +1109,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		return selection, candidateCount, topK, loadSkew, err
 	}
 
-	return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, compactBlocked)
+	return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, compactBlocked, accounts)
 }
 
 func (s *defaultOpenAIAccountScheduler) isAccountTransportCompatible(account *Account, requiredTransport OpenAIUpstreamTransport) bool {

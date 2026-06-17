@@ -874,7 +874,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			respBody := s.readUpstreamErrorBody(resp)
 			_ = resp.Body.Close()
 
-			if isGeminiSignatureRelatedError(respBody) {
+			if isGeminiSignatureRelatedError(respBody) && ShouldRectifyThinkingSignatureError(req.Model) {
 				upstreamReqID := resp.Header.Get(requestIDHeader)
 				if upstreamReqID == "" {
 					upstreamReqID = resp.Header.Get("x-goog-request-id")
@@ -905,7 +905,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 				switch signatureRetryStage {
 				case 0:
 					// Stage 1: disable thinking + thinking->text
-					strippedClaudeBody = FilterThinkingBlocksForRetry(originalClaudeBody)
+					strippedClaudeBody = FilterThinkingBlocksForRetry(originalClaudeBody, req.Model)
 					stageName = "thinking-only"
 					signatureRetryStage = 1
 				default:

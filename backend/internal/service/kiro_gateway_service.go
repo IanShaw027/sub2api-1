@@ -348,6 +348,67 @@ func patchKiroThinkingForModel(forwardBody []byte, requestedModel string, output
 	return patched
 }
 
+func renderKiroThinkingSimulation(parsed *ParsedRequest, converted *kiropkg.ConvertResult, runtimeSettings *KiroRuntimeSettings) string {
+	if parsed == nil || runtimeSettings == nil {
+		return ""
+	}
+	if normalizeKiroThinkingMode(runtimeSettings.ThinkingMode) != KiroThinkingModeSimulate {
+		return ""
+	}
+	outputEffort := strings.ToLower(strings.TrimSpace(parsed.OutputEffort))
+	if outputEffort == "" {
+		return ""
+	}
+	threshold := strings.ToLower(strings.TrimSpace(runtimeSettings.ThinkingEffortThreshold))
+	if threshold != "" && !kiroThinkingEffortAtLeast(outputEffort, threshold) {
+		return ""
+	}
+	requestedModel := strings.TrimSpace(parsed.Model)
+	upstreamModel := requestedModel
+	if converted != nil && strings.TrimSpace(converted.Model) != "" {
+		upstreamModel = strings.TrimSpace(converted.Model)
+	}
+	template := strings.TrimSpace(runtimeSettings.ThinkingSimulationTemplate)
+	if template == "" {
+		template = "think {effort} {model} {upstream_model} {detail}"
+	}
+	detail := "failure modes"
+	rendered := strings.NewReplacer(
+		"{effort}", outputEffort,
+		"{model}", requestedModel,
+		"{upstream_model}", upstreamModel,
+		"{detail}", detail,
+	).Replace(template)
+	return strings.TrimSpace(rendered)
+}
+
+func normalizeKiroThinkingMode(mode KiroThinkingMode) KiroThinkingMode {
+	switch strings.ToLower(strings.TrimSpace(string(mode))) {
+	case string(KiroThinkingModeSimulate), string(KiroThinkingModeModelAndSimulate):
+		return KiroThinkingModeSimulate
+	default:
+		return KiroThinkingModeDisabled
+	}
+}
+
+func kiroThinkingEffortAtLeast(outputEffort, threshold string) bool {
+	rank := func(value string) int {
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "low":
+			return 1
+		case "medium":
+			return 2
+		case "high":
+			return 3
+		case "max":
+			return 4
+		default:
+			return 0
+		}
+	}
+	return rank(outputEffort) >= rank(threshold)
+}
+
 func budgetTokensToEffort(budget int) string {
 	switch {
 	case budget <= 4096:

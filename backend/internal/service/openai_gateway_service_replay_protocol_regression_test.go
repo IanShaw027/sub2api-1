@@ -15,7 +15,7 @@ import (
 )
 
 func TestOpenAIReplayProtocol_PassthroughStreamingPreservesSSEControlFields(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec, c := newOpenAIReplayProtocolContext()
 	body := strings.Join([]string{
@@ -45,7 +45,7 @@ func TestOpenAIReplayProtocol_PassthroughStreamingPreservesSSEControlFields(t *t
 }
 
 func TestOpenAIReplayProtocol_PassthroughRetryDedupeIgnoresNestedToolCallIDsOnSameAccountRetry(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec, c := newOpenAIReplayProtocolContext()
 	account := openAIReplayProtocolTestAccount(11)
@@ -76,7 +76,7 @@ func TestOpenAIReplayProtocol_PassthroughRetryDedupeIgnoresNestedToolCallIDsOnSa
 }
 
 func TestOpenAIReplayProtocol_PassthroughAccountSwitchDoesNotReuseReplayState(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec, c := newOpenAIReplayProtocolContext()
 
@@ -106,7 +106,7 @@ func TestOpenAIReplayProtocol_PassthroughAccountSwitchDoesNotReuseReplayState(t 
 }
 
 func TestOpenAIReplayProtocol_BufferedTerminalIgnoresTrailingOverloadAfterCompletion(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	body := []byte(strings.Join([]string{
 		`data: {"type":"response.completed","response":{"id":"resp_buffered_terminal","object":"response","model":"gpt-5.4","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":7,"output_tokens":3,"total_tokens":10}}}`,
@@ -224,7 +224,7 @@ func openAIReplayProtocolOverloadFailedEvent(responseID string) string {
 }
 
 func TestOpenAIReplayProtocol_PassthroughRetryDedupesFunctionCallArgumentDeltaPrefix(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec, c := newOpenAIReplayProtocolContext()
 	account := openAIReplayProtocolTestAccount(31)

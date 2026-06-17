@@ -90,7 +90,7 @@ func TestIsCreditsExhausted_UsesAICreditsKey(t *testing.T) {
 }
 
 func TestHandleSmartRetry_QuotaExhausted_UsesCreditsAndStoresIndependentState(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/antigravity/v1beta/models/claude-opus-4-6:generateContent", nil)

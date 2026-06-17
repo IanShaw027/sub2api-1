@@ -233,7 +233,7 @@ func TestResolveOpenAIWSFallbackErrorResponse(t *testing.T) {
 }
 
 func TestNewOpenAIWSFailoverError(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	t.Run("rate_limited_promotes_to_failover", func(t *testing.T) {
 		svc := &OpenAIGatewayService{cfg: &config.Config{}}

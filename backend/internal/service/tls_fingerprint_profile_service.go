@@ -145,6 +145,14 @@ func (s *TLSFingerprintProfileService) GetProfileByID(id int64) *tlsfingerprint.
 	return nil
 }
 
+// ResolveTLSProfileByID 根据模板 ID 解析运行时 TLS Profile。
+func (s *TLSFingerprintProfileService) ResolveTLSProfileByID(id int64) *tlsfingerprint.Profile {
+	if s == nil || id <= 0 {
+		return nil
+	}
+	return s.GetProfileByID(id)
+}
+
 // getRandomProfile 从本地缓存中随机选择一个 Profile
 func (s *TLSFingerprintProfileService) getRandomProfile() *tlsfingerprint.Profile {
 	s.localMu.RLock()

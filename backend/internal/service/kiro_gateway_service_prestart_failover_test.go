@@ -72,7 +72,7 @@ func (r *kiroFailingReadCloser) Close() error {
 }
 
 func TestKiroGatewayService_ForwardStream_PreStartReadErrorReturnsFailoverAndTempUnsched(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -117,7 +117,7 @@ func TestKiroGatewayService_ForwardStream_PreStartReadErrorReturnsFailoverAndTem
 }
 
 func TestKiroGatewayService_ForwardStream_PreStartClientCanceledReadErrorDoesNotFailoverOrTempUnsched(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -158,7 +158,7 @@ func TestKiroGatewayService_ForwardStream_PreStartClientCanceledReadErrorDoesNot
 }
 
 func TestKiroGatewayService_ForwardStream_PreFirstForwardableTimeoutReturnsFailoverAndTempUnsched(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	prevTimeout := kiroFirstForwardableEventTimeout
 	kiroFirstForwardableEventTimeout = 20 * time.Millisecond

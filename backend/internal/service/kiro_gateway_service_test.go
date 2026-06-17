@@ -283,7 +283,7 @@ func TestKiroGatewayService_FakeCacheSessionProgressCarriesCheckpointAcrossTurns
 }
 
 func TestKiroGatewayService_ForwardSnapshotsFakeCacheHitBeforeUpstreamRequest(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	sessionID := "123e4567-e89b-12d3-a456-426614174000"
 	longFirstPrompt := strings.Repeat("first prompt token ", 1200)
@@ -401,7 +401,7 @@ func TestKiroGatewayService_PrepareFakeCachePlanReusesAcrossAccountsForSameUserA
 }
 
 func TestKiroGatewayService_ForwardCountTokens_RejectsUnsupportedModel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -615,8 +615,31 @@ func TestPrepareKiroConvertedRequest_PromotesLargeContextToOneMillionModelWithou
 	require.Equal(t, "claude-sonnet-4.6", current["modelId"])
 }
 
+func TestRenderKiroThinkingSimulation_UsesConfiguredTemplateAndEffortThreshold(t *testing.T) {
+	settings := &KiroRuntimeSettings{
+		ThinkingMode:               KiroThinkingModeSimulate,
+		ThinkingEffortThreshold:    "high",
+		ThinkingSimulationTemplate: "think {effort} {model} {upstream_model} {detail}",
+	}
+
+	low := renderKiroThinkingSimulation(&ParsedRequest{
+		Model:           "claude-sonnet-4-5",
+		ThinkingEnabled: true,
+		OutputEffort:    "medium",
+	}, &kiropkg.ConvertResult{Model: "claude-sonnet-4.5"}, settings)
+	high := renderKiroThinkingSimulation(&ParsedRequest{
+		Model:           "claude-sonnet-4-5",
+		ThinkingEnabled: true,
+		OutputEffort:    "high",
+	}, &kiropkg.ConvertResult{Model: "claude-sonnet-4.5"}, settings)
+
+	require.Empty(t, low)
+	require.Contains(t, high, "think high claude-sonnet-4-5 claude-sonnet-4.5")
+	require.Contains(t, high, "failure modes")
+}
+
 func TestKiroGatewayService_Forward_FreeAccountThinkingRequestUsesSingleUpstreamCall(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -670,7 +693,7 @@ func TestKiroGatewayService_Forward_FreeAccountThinkingRequestUsesSingleUpstream
 }
 
 func TestKiroGatewayService_Forward_LegacyThinkingSettingsDoNotFallbackToSimulatedThinking(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	kiroRuntimeSettingsCache.Store((*cachedKiroRuntimeSettings)(nil))
 	kiroRuntimeSettingsSF.Forget("kiro_runtime")
@@ -742,7 +765,7 @@ func TestKiroGatewayService_Forward_LegacyThinkingSettingsDoNotFallbackToSimulat
 }
 
 func TestKiroGatewayService_Forward_NativeThinkingBlocksUseUpstreamContent(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -787,7 +810,7 @@ func TestKiroGatewayService_Forward_NativeThinkingBlocksUseUpstreamContent(t *te
 }
 
 func TestKiroGatewayService_ForwardStream_NativeThinkingBlocksUseUpstreamContent(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -837,7 +860,7 @@ func TestKiroGatewayService_ForwardStream_NativeThinkingBlocksUseUpstreamContent
 }
 
 func TestKiroGatewayService_ForwardStream_ReasoningContentEventEmitsThinkingBlock(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -895,7 +918,7 @@ func TestKiroGatewayService_ForwardStream_ReasoningContentEventEmitsThinkingBloc
 }
 
 func TestKiroGatewayService_ForwardNonStream_ReasoningContentEventEmitsThinkingBlock(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1078,7 +1101,7 @@ func TestNormalizeKiroShadowToolHistory_RewritesWebFetchErrorToErrorToolResultAn
 }
 
 func TestKiroGatewayService_ForwardStream_DoesNotSplitUTF8WhenBufferingThinkingMarkers(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1151,7 +1174,7 @@ func TestKiroResponseTelemetry_OmitsSimulatedThinkingFields(t *testing.T) {
 }
 
 func TestKiroGatewayService_ForwardCountTokens_RejectsInvalidConversationShape(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1175,7 +1198,7 @@ func TestKiroGatewayService_ForwardCountTokens_RejectsInvalidConversationShape(t
 }
 
 func TestKiroGatewayService_ForwardCountTokens_UsesForwardValidationWithLocalEstimate(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1209,7 +1232,7 @@ func TestKiroGatewayService_ForwardCountTokens_UsesForwardValidationWithLocalEst
 }
 
 func TestKiroGatewayService_ForwardNonStream_ExceptionDoesNotCommitFakeCache(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1267,7 +1290,7 @@ func TestKiroGatewayService_ForwardNonStream_ExceptionDoesNotCommitFakeCache(t *
 }
 
 func TestKiroGatewayService_ForwardStream_ExceptionDoesNotCommitFakeCacheOrEmitFinalStop(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1325,7 +1348,7 @@ func TestKiroGatewayService_ForwardStream_ExceptionDoesNotCommitFakeCacheOrEmitF
 }
 
 func TestKiroGatewayService_ForwardNonStream_UsageMatchesAnthropicCacheShape(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1379,7 +1402,7 @@ func TestKiroGatewayService_ForwardNonStream_UsageMatchesAnthropicCacheShape(t *
 }
 
 func TestKiroGatewayService_ForwardStream_PopulatesCacheCreationTTLBreakdown(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1418,7 +1441,7 @@ func TestKiroGatewayService_ForwardStream_PopulatesCacheCreationTTLBreakdown(t *
 }
 
 func TestKiroGatewayService_Forward_HTTPErrorRecordsOpsContext(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1492,7 +1515,7 @@ func TestKiroGatewayService_Forward_HTTPErrorRecordsOpsContext(t *testing.T) {
 }
 
 func TestKiroGatewayService_Forward_Kiro429MarksSameAccountRetry(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1543,7 +1566,7 @@ func TestKiroGatewayService_Forward_Kiro429MarksSameAccountRetry(t *testing.T) {
 }
 
 func TestKiroGatewayService_Forward_Kiro429SuspiciousActivityDoesNotMarkSameAccountRetry(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1592,7 +1615,7 @@ func TestKiroGatewayService_Forward_Kiro429SuspiciousActivityDoesNotMarkSameAcco
 }
 
 func TestKiroGatewayService_ForwardStream_PreStartExceptionReturnsFailover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1629,7 +1652,7 @@ func TestKiroGatewayService_ForwardStream_PreStartExceptionReturnsFailover(t *te
 }
 
 func TestKiroGatewayService_ForwardNonStream_IncompleteFrameDoesNotCommitFakeCache(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1670,7 +1693,7 @@ func TestKiroGatewayService_ForwardNonStream_IncompleteFrameDoesNotCommitFakeCac
 }
 
 func TestKiroGatewayService_ForwardStream_IncompleteFrameDoesNotCommitFakeCacheOrEmitFinalStop(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1713,7 +1736,7 @@ func TestKiroGatewayService_ForwardStream_IncompleteFrameDoesNotCommitFakeCacheO
 }
 
 func TestKiroGatewayService_ForwardNonStream_EmptyBodyFails(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1743,7 +1766,7 @@ func TestKiroGatewayService_ForwardNonStream_EmptyBodyFails(t *testing.T) {
 }
 
 func TestKiroGatewayService_ForwardStream_EmptyBodyFailsWithoutFinalEvents(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1780,7 +1803,7 @@ func TestKiroGatewayService_ForwardStream_EmptyBodyFailsWithoutFinalEvents(t *te
 }
 
 func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFailsWithoutStartingStream(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1821,7 +1844,7 @@ func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFailsWithoutStartingStr
 }
 
 func TestKiroGatewayService_ForwardNonStream_ContextOnlyBodyReturnsAnomaly(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1861,7 +1884,7 @@ func TestKiroGatewayService_ForwardNonStream_ContextOnlyBodyReturnsAnomaly(t *te
 }
 
 func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFailsWithoutThinkingFallback(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1895,7 +1918,7 @@ func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFailsWithoutThinkingFal
 }
 
 func TestKiroGatewayService_ForwardStream_PlaceholderOnlyBodyFailsWithoutThinkingFallback(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1929,7 +1952,7 @@ func TestKiroGatewayService_ForwardStream_PlaceholderOnlyBodyFailsWithoutThinkin
 }
 
 func TestKiroGatewayService_ForwardStream_PlaceholderOnlyBodyWithoutThinkingFailsBeforeStreamStart(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1970,7 +1993,7 @@ func TestKiroGatewayService_ForwardStream_PlaceholderOnlyBodyWithoutThinkingFail
 }
 
 func TestKiroGatewayService_ForwardNonStream_IncompleteToolUseReturnsRecoverableFailure(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -2019,7 +2042,7 @@ func TestKiroGatewayService_ForwardNonStream_IncompleteToolUseReturnsRecoverable
 }
 
 func TestKiroGatewayService_ForwardNonStream_ValidToolUseWithoutStopSucceeds(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -2122,7 +2145,7 @@ func TestKiroGatewayService_ForwardNonStream_SuppressesTrailingPlaceholderFragme
 }
 
 func TestKiroGatewayService_ForwardStream_ContextWindowExceededUsesStopReason(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -2172,7 +2195,7 @@ func TestKiroGatewayService_ForwardStream_ContextWindowExceededUsesStopReason(t 
 }
 
 func TestKiroGatewayService_ForwardStream_DoesNotBillContextUsagePercentageAsInputTokens(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -2243,7 +2266,7 @@ func TestParseKiroFrame_RejectsOversizedFrameLength(t *testing.T) {
 }
 
 func TestKiroGatewayService_ForwardStream_ToolFirstUsesMonotonicBlockIndexes(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -2286,7 +2309,7 @@ func TestKiroGatewayService_ForwardStream_ToolFirstUsesMonotonicBlockIndexes(t *
 }
 
 func TestKiroGatewayService_ForwardStream_ToolOnlyCountsOutputTokens(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -2321,7 +2344,7 @@ func TestKiroGatewayService_ForwardStream_ToolOnlyCountsOutputTokens(t *testing.
 }
 
 func TestKiroGatewayService_ForwardStream_IncompleteToolUseEOFReturnsRecoverableFailure(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -2371,7 +2394,7 @@ func TestKiroGatewayService_ForwardStream_IncompleteToolUseEOFReturnsRecoverable
 }
 
 func TestKiroGatewayService_ForwardStream_ValidToolUseWithoutStopCompletesAtEOF(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -2421,7 +2444,7 @@ func TestKiroGatewayService_ForwardStream_ValidToolUseWithoutStopCompletesAtEOF(
 }
 
 func TestKiroGatewayService_ForwardStream_TextToolTextClosesBlocksInOrder(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -2538,7 +2561,7 @@ func TestKiroGatewayService_ForwardStream_SuppressesBufferedPlaceholderFragmentB
 }
 
 func TestKiroGatewayService_ForwardStream_PreservesWhitespaceInContentAndInputDeltas(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -2607,7 +2630,7 @@ func TestKiroGatewayService_ForwardStream_PreservesWhitespaceInContentAndInputDe
 }
 
 func TestKiroGatewayService_ForwardNonStream_ShadowWebSearchReturnsServerToolPauseTurn(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	previousSearchExecutor := kiroShadowWebSearchExecutor
 	kiroShadowWebSearchExecutor = func(ctx context.Context, account *Account, query string) (*websearch.SearchResponse, string, error) {
@@ -2665,7 +2688,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebSearchReturnsServerToolPau
 }
 
 func TestKiroGatewayService_ForwardStream_ShadowWebSearchEmitsInputJSONDeltaAndPauseTurn(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	previousSearchExecutor := kiroShadowWebSearchExecutor
 	kiroShadowWebSearchExecutor = func(ctx context.Context, account *Account, query string) (*websearch.SearchResponse, string, error) {
@@ -2721,7 +2744,7 @@ func TestKiroGatewayService_ForwardStream_ShadowWebSearchEmitsInputJSONDeltaAndP
 }
 
 func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchReturnsServerToolPauseTurn(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	previousFetchExecutor := kiroShadowWebFetchExecutor
 	kiroShadowWebFetchExecutor = func(ctx context.Context, account *Account, req webfetch.FetchRequest) *webfetch.FetchResult {
@@ -2793,7 +2816,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchReturnsServerToolPaus
 }
 
 func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchFailureReturnsStructuredToolError(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	previousFetchExecutor := kiroShadowWebFetchExecutor
 	kiroShadowWebFetchExecutor = func(ctx context.Context, account *Account, req webfetch.FetchRequest) *webfetch.FetchResult {
@@ -2851,7 +2874,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchFailureReturnsStructu
 }
 
 func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchTruncatesToMaxContentTokens(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	previousFetchExecutor := kiroShadowWebFetchExecutor
 	kiroShadowWebFetchExecutor = func(ctx context.Context, account *Account, req webfetch.FetchRequest) *webfetch.FetchResult {
@@ -2918,7 +2941,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchTruncatesToMaxContent
 }
 
 func TestKiroGatewayService_ForwardNonStream_ShadowWebToolsExceedMaxUsesReturnsError(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	previousSearchExecutor := kiroShadowWebSearchExecutor
 	searchCalls := 0
@@ -2979,7 +3002,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebToolsExceedMaxUsesReturnsE
 }
 
 func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchPreservesContextWindowStopReason(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	previousFetchExecutor := kiroShadowWebFetchExecutor
 	kiroShadowWebFetchExecutor = func(ctx context.Context, account *Account, req webfetch.FetchRequest) *webfetch.FetchResult {
@@ -3038,7 +3061,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchPreservesContextWindo
 }
 
 func TestKiroGatewayService_ForwardNonStream_NormalToolBeforeShadowToolKeepsToolUseStopPath(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -3085,7 +3108,7 @@ func TestKiroGatewayService_ForwardNonStream_NormalToolBeforeShadowToolKeepsTool
 }
 
 func TestKiroGatewayService_ForwardNonStream_ShadowToolFollowedByNormalToolReturnsConflict(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -3130,7 +3153,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowToolFollowedByNormalToolRetur
 }
 
 func TestKiroGatewayService_ForwardStream_NormalToolBeforeShadowToolKeepsToolUseStopPath(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -3178,7 +3201,7 @@ func TestKiroGatewayService_ForwardStream_NormalToolBeforeShadowToolKeepsToolUse
 }
 
 func TestKiroGatewayService_ForwardStream_ShadowToolFollowedByNormalToolReturnsConflict(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	previousSearchExecutor := kiroShadowWebSearchExecutor
 	kiroShadowWebSearchExecutor = func(ctx context.Context, account *Account, query string) (*websearch.SearchResponse, string, error) {
@@ -3240,7 +3263,7 @@ func TestKiroGatewayService_ForwardStream_ShadowToolFollowedByNormalToolReturnsC
 }
 
 func TestGatewayForwardAsResponses_KiroWebSearchPauseTurnReturnsResponsesCall(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	previousSearchExecutor := kiroShadowWebSearchExecutor
 	kiroShadowWebSearchExecutor = func(ctx context.Context, account *Account, query string) (*websearch.SearchResponse, string, error) {
@@ -3296,7 +3319,7 @@ func TestGatewayForwardAsResponses_KiroWebSearchPauseTurnReturnsResponsesCall(t 
 }
 
 func TestKiroGatewayService_Forward_ContinuationReplaySendsShadowToolHistoryToKiro(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -3352,7 +3375,7 @@ func TestKiroGatewayService_Forward_ContinuationReplaySendsShadowToolHistoryToKi
 }
 
 func TestKiroGatewayService_Forward_RejectsUnsupportedServerToolFamilies(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -3386,7 +3409,7 @@ func TestKiroGatewayService_Forward_RejectsUnsupportedServerToolFamilies(t *test
 }
 
 func TestKiroGatewayService_Forward_ContinuationWithoutToolsStillBridgesShadowWebSearch(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	previousSearchExecutor := kiroShadowWebSearchExecutor
 	kiroShadowWebSearchExecutor = func(ctx context.Context, account *Account, query string) (*websearch.SearchResponse, string, error) {
@@ -3450,7 +3473,7 @@ func TestKiroGatewayService_Forward_ContinuationWithoutToolsStillBridgesShadowWe
 }
 
 func TestKiroGatewayService_Forward_ContinuationWithoutToolsRestoresShadowWebFetchConstraints(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	previousFetchExecutor := kiroShadowWebFetchExecutor
 	kiroShadowWebFetchExecutor = func(ctx context.Context, account *Account, req webfetch.FetchRequest) *webfetch.FetchResult {

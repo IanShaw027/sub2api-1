@@ -727,7 +727,7 @@ func TestGetOpenAIRequestBodyMap_RejectsTrailingJSON(t *testing.T) {
 }
 
 func TestGetOpenAIRequestBodyMap_DoesNotWriteContextCache(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 
@@ -738,7 +738,7 @@ func TestGetOpenAIRequestBodyMap_DoesNotWriteContextCache(t *testing.T) {
 }
 
 func TestClearOpenAICompatRequestState_RemovesCachedReplayState(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 

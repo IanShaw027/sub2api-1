@@ -85,7 +85,7 @@ func (s *geminiCompatHTTPUpstreamStub) DoWithTLS(req *http.Request, proxyURL str
 }
 
 func TestGeminiForwardAsChatCompletions_OAuthRoutesToGeminiAndReturnsChatFormat(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	upstreamBody := `data: {"response":{"candidates":[{"content":{"parts":[{"text":"hello from gemini"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":3}}}` + "\n\n" +
 		"data: [DONE]\n\n"
@@ -160,7 +160,7 @@ func TestGeminiForwardAsChatCompletions_OAuthRoutesToGeminiAndReturnsChatFormat(
 }
 
 func TestGeminiForwardAsChatCompletions_StreamsOpenAIChunksFromGeminiSSE(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	upstreamBody := `data: {"candidates":[{"content":{"parts":[{"text":"hel"}]}}],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":1}}` + "\n\n" +
 		`data: {"candidates":[{"content":{"parts":[{"text":"hello"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":2}}` + "\n\n" +
@@ -415,7 +415,7 @@ func TestRankAIStudioEndpointAccount_GoogleOneOAuthIsAccepted(t *testing.T) {
 }
 
 func TestGeminiHandleNativeNonStreamingResponse_DebugDisabledDoesNotEmitHeaderLogs(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	logSink, restore := captureStructuredLog(t)
 	defer restore()
 
@@ -451,7 +451,7 @@ func TestGeminiHandleNativeNonStreamingResponse_DebugDisabledDoesNotEmitHeaderLo
 }
 
 func TestGeminiMessagesCompatServiceForward_PreservesRequestedModelAndMappedUpstreamModel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
@@ -487,7 +487,7 @@ func TestGeminiMessagesCompatServiceForward_PreservesRequestedModelAndMappedUpst
 }
 
 func TestGeminiMessagesCompatService_MaybeRetryModelFallback_UpdatesOpsRequestBody(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -560,7 +560,7 @@ func TestGeminiMessagesCompatService_MaybeRetryModelFallback_UpdatesOpsRequestBo
 }
 
 func TestGeminiMessagesCompatService_MaybeRetryModelFallback_RequestErrorRestoresOpsRequestBody(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -621,7 +621,7 @@ func TestGeminiMessagesCompatService_MaybeRetryModelFallback_RequestErrorRestore
 }
 
 func TestGeminiMessagesCompatServiceForward_ImageBillingUsesMappedUpstreamModel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
@@ -658,7 +658,7 @@ func TestGeminiMessagesCompatServiceForward_ImageBillingUsesMappedUpstreamModel(
 }
 
 func TestGeminiMessagesCompatServiceForward_OAuthImageBillingUsesMappedUpstreamModel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
@@ -701,7 +701,7 @@ func TestGeminiMessagesCompatServiceForward_OAuthImageBillingUsesMappedUpstreamM
 }
 
 func TestGeminiMessagesCompatServiceForward_ProjectIDOnlyOAuthStaysAIStudio(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
@@ -742,7 +742,7 @@ func TestGeminiMessagesCompatServiceForward_ProjectIDOnlyOAuthStaysAIStudio(t *t
 }
 
 func TestGeminiMessagesCompatServiceForward_ServiceAccountUsesVertexEndpoint(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
@@ -780,7 +780,7 @@ func TestGeminiMessagesCompatServiceForward_ServiceAccountUsesVertexEndpoint(t *
 }
 
 func TestGeminiMessagesCompatServiceForwardNative_ServiceAccountUsesVertexEndpoint(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-2.5-pro:generateContent", nil)
@@ -818,7 +818,7 @@ func TestGeminiMessagesCompatServiceForwardNative_ServiceAccountUsesVertexEndpoi
 }
 
 func TestGeminiMessagesCompatServiceForwardNative_ProjectIDOnlyOAuthStaysAIStudio(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-2.5-pro:generateContent", nil)
@@ -859,7 +859,7 @@ func TestGeminiMessagesCompatServiceForwardNative_ProjectIDOnlyOAuthStaysAIStudi
 }
 
 func TestGeminiMessagesCompatServiceForwardNative_GoogleOneUsesAIStudioEndpoint(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-2.5-pro:generateContent", nil)
@@ -900,7 +900,7 @@ func TestGeminiMessagesCompatServiceForwardNative_GoogleOneUsesAIStudioEndpoint(
 }
 
 func TestGeminiMessagesCompatServiceForwardNative_GoogleOneCountTokensUsesAIStudioEndpoint(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-2.5-pro:countTokens", nil)
@@ -1006,7 +1006,7 @@ func TestGeminiMessagesCompatServiceHandleGeminiUpstreamError_CodeAssist403Valid
 }
 
 func TestGeminiMessagesCompatServiceForward_NormalizesWebSearchToolForAIStudio(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)

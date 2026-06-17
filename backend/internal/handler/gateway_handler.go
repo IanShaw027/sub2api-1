@@ -61,6 +61,15 @@ type GatewayHandler struct {
 	settingService            *service.SettingService
 }
 
+func (h *GatewayHandler) handleGroupModelUnsupportedError(c *gin.Context, err error, streamStarted bool) bool {
+	var modelErr *service.GroupModelUnsupportedError
+	if !errors.As(err, &modelErr) {
+		return false
+	}
+	h.handleStreamingAwareError(c, http.StatusForbidden, "permission_error", modelErr.Error(), streamStarted)
+	return true
+}
+
 // NewGatewayHandler creates a new GatewayHandler
 func NewGatewayHandler(
 	gatewayService *service.GatewayService,
@@ -372,6 +381,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						zap.String("platform", platform),
 						zap.Error(err),
 					)
+					if h.handleGroupModelUnsupportedError(c, err, streamStarted) {
+						return
+					}
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), streamStarted)
 					return
 				}
@@ -651,6 +663,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						zap.Bool("fallback_used", fallbackUsed),
 						zap.Error(err),
 					)
+					if h.handleGroupModelUnsupportedError(c, err, streamStarted) {
+						return
+					}
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), streamStarted)
 					return
 				}
@@ -1813,6 +1828,9 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	account, err := h.gatewayService.SelectAccountForModel(c.Request.Context(), apiKey.GroupID, sessionHash, parsedReq.Model)
 	if err != nil {
 		reqLog.Warn("gateway.count_tokens_select_account_failed", zap.Error(err))
+		if h.handleGroupModelUnsupportedError(c, err, false) {
+			return
+		}
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable")
 		return
 	}

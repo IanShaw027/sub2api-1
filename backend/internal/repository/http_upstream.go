@@ -4,7 +4,10 @@ import (
 	"compress/flate"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -344,9 +347,10 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	}
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
+	profileKey := tlsFingerprintProfileCacheKey(profile)
 	// TLS 指纹客户端使用独立的缓存键，加 "tls:" 前缀
-	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, upstreamProtocolModeDefault)
-	poolKey := buildPoolKey(settings, upstreamProtocolModeDefault) + ":tls"
+	cacheKey := "tls:" + profileKey + ":" + buildCacheKey(isolation, proxyKey, accountID, upstreamProtocolModeDefault)
+	poolKey := buildPoolKey(settings, upstreamProtocolModeDefault) + ":tls:" + profileKey
 
 	now := time.Now()
 	nowUnix := now.UnixNano()
@@ -423,6 +427,18 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	s.evictOverLimitLocked()
 	s.mu.Unlock()
 	return entry, nil
+}
+
+func tlsFingerprintProfileCacheKey(profile *tlsfingerprint.Profile) string {
+	if profile == nil {
+		return "default"
+	}
+	payload, err := json.Marshal(profile)
+	if err != nil {
+		return "profile:" + strings.TrimSpace(profile.Name)
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:8])
 }
 
 func (s *httpUpstreamService) shouldValidateResolvedIP() bool {

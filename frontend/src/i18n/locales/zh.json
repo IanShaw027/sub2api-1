@@ -4002,7 +4002,9 @@
           "label": "TLS 指纹模拟",
           "hint": "模拟 Node.js/Claude Code 客户端的 TLS 指纹",
           "defaultProfile": "内置默认",
-          "randomProfile": "随机"
+          "randomProfile": "随机",
+          "noRouter": "不使用路由器",
+          "routerHint": "可选：按入站 User-Agent 选择 TLS 指纹模板。"
         },
         "sessionIdMasking": {
           "label": "会话 ID 伪装",
@@ -7191,6 +7193,59 @@
       "loadFailed": "加载模板失败",
       "saveFailed": "保存模板失败",
       "deleteFailed": "删除模板失败"
+    },
+    "tlsFingerprintRouters": {
+      "title": "TLS 指纹路由器",
+      "description": "按入站 OpenAI User-Agent 匹配 TLS 指纹模板，并可覆盖上游请求头",
+      "createRouter": "创建路由器",
+      "editRouter": "编辑路由器",
+      "deleteRouter": "删除路由器",
+      "noRouters": "暂无路由器",
+      "createFirstRouter": "创建你的第一个 TLS 指纹路由器",
+      "ruleCount": "{count} 条规则",
+      "columns": {
+        "name": "名称",
+        "description": "描述",
+        "enabled": "启用",
+        "rules": "规则",
+        "actions": "操作"
+      },
+      "matchTypes": {
+        "contains": "包含",
+        "prefix": "前缀",
+        "exact": "精确",
+        "regex": "正则"
+      },
+      "form": {
+        "name": "路由器名称",
+        "namePlaceholder": "例如 OpenAI User-Agent 路由器",
+        "description": "描述",
+        "descriptionPlaceholder": "可选的路由器描述",
+        "enabled": "启用路由器",
+        "enabledHint": "禁用后账号不会使用此路由器规则",
+        "rules": "规则",
+        "addRule": "添加规则",
+        "noProfilesHint": "启用路由规则前，请至少创建一个 TLS 指纹模板。",
+        "ruleNamePlaceholder": "规则名称",
+        "matchType": "匹配类型",
+        "pattern": "匹配内容",
+        "patternPlaceholder": "例如 Chrome 或 ^Mozilla/",
+        "profile": "TLS 指纹模板",
+        "selectProfile": "选择模板",
+        "caseSensitive": "区分大小写",
+        "upstreamUserAgent": "上游 User-Agent",
+        "upstreamUserAgentPlaceholder": "可选的替换 User-Agent",
+        "upstreamOriginator": "上游 Originator",
+        "upstreamOriginatorPlaceholder": "可选的 originator 值"
+      },
+      "deleteConfirmMessage": "确定要删除路由器 \"{name}\" 吗？使用此路由器的账号将停止按 TLS 指纹规则路由。",
+      "createSuccess": "路由器创建成功",
+      "updateSuccess": "路由器更新成功",
+      "deleteSuccess": "路由器删除成功",
+      "loadFailed": "加载路由器失败",
+      "saveFailed": "保存路由器失败",
+      "deleteFailed": "删除路由器失败",
+      "toggleFailed": "切换路由器状态失败"
     }
   },
   "subscriptionProgress": {

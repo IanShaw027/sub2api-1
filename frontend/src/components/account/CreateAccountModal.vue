@@ -2882,6 +2882,13 @@
             <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
             <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
+          <select v-model="tlsFingerprintRouterId" class="input mt-2" data-testid="openai-tls-fingerprint-router">
+            <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.noRouter') }}</option>
+            <option v-for="router in tlsFingerprintRouters" :key="router.id" :value="router.id">{{ router.name }}</option>
+          </select>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.quotaControl.tlsFingerprint.routerHint') }}
+          </p>
         </div>
       </div>
 
@@ -3947,6 +3954,8 @@ const umqModeOptions = computed(() => [
 const tlsFingerprintEnabled = ref(false)
 const tlsFingerprintProfileId = ref<number | null>(null)
 const tlsFingerprintProfiles = ref<{ id: number; name: string }[]>([])
+const tlsFingerprintRouterId = ref<number | null>(null)
+const tlsFingerprintRouters = ref<{ id: number; name: string }[]>([])
 const sessionIdMaskingEnabled = ref(false)
 const cacheTTLOverrideEnabled = ref(false)
 const cacheTTLOverrideTarget = ref<string>('5m')
@@ -4176,6 +4185,9 @@ watch(
       adminAPI.tlsFingerprintProfiles.list()
         .then(profiles => { tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name })) })
         .catch(() => { tlsFingerprintProfiles.value = [] })
+      adminAPI.tlsFingerprintRouters.list()
+        .then(routers => { tlsFingerprintRouters.value = routers.map(router => ({ id: router.id, name: router.name })) })
+        .catch(() => { tlsFingerprintRouters.value = [] })
       // Modal opened - fill related models
       allowedModels.value = form.platform === 'kiro' ? [] : [...getModelsByPlatform(form.platform)]
       // Antigravity: 默认使用映射模式并填充默认映射
@@ -4724,6 +4736,7 @@ const resetForm = () => {
   userMsgQueueMode.value = ''
   tlsFingerprintEnabled.value = false
   tlsFingerprintProfileId.value = null
+  tlsFingerprintRouterId.value = null
   sessionIdMaskingEnabled.value = false
   cacheTTLOverrideEnabled.value = false
   cacheTTLOverrideTarget.value = '5m'
@@ -4827,9 +4840,16 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     } else {
       delete extra.tls_fingerprint_profile_id
     }
+    const routerId = toOptionalNumber(tlsFingerprintRouterId.value)
+    if (routerId != null) {
+      extra.tls_fingerprint_router_id = routerId
+    } else {
+      delete extra.tls_fingerprint_router_id
+    }
   } else {
     delete extra.enable_tls_fingerprint
     delete extra.tls_fingerprint_profile_id
+    delete extra.tls_fingerprint_router_id
   }
 
   return Object.keys(extra).length > 0 ? extra : undefined

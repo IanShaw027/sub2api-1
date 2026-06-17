@@ -9,7 +9,7 @@ import (
 )
 
 func TestDetectOpenAIPassthroughInstructionsRejectReason_RespectsForceCodexCLI(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest("POST", "/v1/responses", nil)

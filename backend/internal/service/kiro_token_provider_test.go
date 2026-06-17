@@ -105,8 +105,10 @@ func TestKiroTokenProvider_RefreshAccount_WaitsForLockHolderToPersist(t *testing
 
 	go func() {
 		time.Sleep(150 * time.Millisecond)
-		repo.account.Credentials["access_token"] = "fresh-access"
-		repo.account.Credentials["_token_version"] = "123"
+		_ = repo.UpdateCredentials(context.Background(), account.ID, MergeCredentials(account.Credentials, map[string]any{
+			"access_token":   "fresh-access",
+			"_token_version": "123",
+		}))
 	}()
 
 	refreshedAccount, err := provider.RefreshAccount(context.Background(), account)
@@ -229,9 +231,11 @@ func TestKiroTokenProvider_GetAccessToken_WaitsForLockHolderToPersist(t *testing
 
 	go func() {
 		time.Sleep(150 * time.Millisecond)
-		repo.account.Credentials["access_token"] = "fresh-access"
-		repo.account.Credentials["refresh_token"] = "fresh-refresh"
-		repo.account.Credentials["_token_version"] = "123"
+		_ = repo.UpdateCredentials(context.Background(), account.ID, MergeCredentials(account.Credentials, map[string]any{
+			"access_token":   "fresh-access",
+			"refresh_token":  "fresh-refresh",
+			"_token_version": "123",
+		}))
 	}()
 
 	token, err := provider.GetAccessToken(context.Background(), account)

@@ -33,7 +33,7 @@ func runForwardAsChatCompletionsGoldenFixture(
 ) {
 	t.Helper()
 
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	baseDir := filepath.Join("testdata", "openai_claude_compat", fixtureDir)
 	body := loadGoldenFixtureBytes(t, filepath.Join(baseDir, "chat_request.json"))
@@ -90,7 +90,7 @@ func runForwardAsChatCompletionsGoldenFixture(
 func runForwardAsAnthropicGoldenFixture(t *testing.T, fixtureDir, promptCacheKey, requestModel string) {
 	t.Helper()
 
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	baseDir := filepath.Join("testdata", "openai_claude_compat", fixtureDir)
 	body := loadGoldenFixtureBytes(t, filepath.Join(baseDir, "anthropic_request.json"))

@@ -544,6 +544,7 @@ type OpenAIGatewayService struct {
 	balanceNotifyService  *BalanceNotifyService
 	settingService        *SettingService
 	tlsFPProfileService   *TLSFingerprintProfileService
+	tlsFPRouterService    *TLSFingerprintRouterService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 
 	openaiWSPoolOnce              sync.Once
@@ -2299,11 +2300,35 @@ func (s *OpenAIGatewayService) SelectAccountForModelWithExclusions(ctx context.C
 	return s.selectAccountForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, excludedIDs, false, 0, "")
 }
 
+func shouldUseOpenAIGroupModelUnsupportedError(accounts []Account, requestedModel string) bool {
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" || len(accounts) == 0 {
+		return false
+	}
+	hasRelevantAccount := false
+	for i := range accounts {
+		acc := &accounts[i]
+		if !acc.IsOpenAI() || !acc.IsSchedulable() {
+			continue
+		}
+		hasRelevantAccount = true
+		if acc.IsModelSupported(requestedModel) {
+			return false
+		}
+	}
+	return hasRelevantAccount
+}
+
 // noAvailableOpenAISelectionError builds the standard "no account available" error
-// while preserving the compact-specific error when applicable.
-func noAvailableOpenAISelectionError(requestedModel string, compactBlocked bool) error {
+// while preserving compact and group-model-unsupported semantics when applicable.
+func noAvailableOpenAISelectionError(requestedModel string, compactBlocked bool, accounts ...[]Account) error {
 	if compactBlocked {
 		return ErrNoAvailableCompactAccounts
+	}
+	if len(accounts) > 0 && shouldUseOpenAIGroupModelUnsupportedError(accounts[0], requestedModel) {
+		if err := newGroupModelUnsupportedError(PlatformOpenAI, requestedModel, accounts[0]); err != nil {
+			return err
+		}
 	}
 	if requestedModel != "" {
 		return fmt.Errorf("no available OpenAI accounts supporting model: %s", requestedModel)
@@ -2851,7 +2876,7 @@ func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.C
 	selected, compactBlocked := s.selectBestAccount(ctx, groupID, accounts, requestedModel, excludedIDs, requireCompact, requiredImageRoute)
 
 	if selected == nil {
-		return nil, noAvailableOpenAISelectionError(requestedModel, compactBlocked)
+		return nil, noAvailableOpenAISelectionError(requestedModel, compactBlocked, accounts)
 	}
 
 	hydrated, err := s.hydrateSelectedAccount(ctx, selected)
@@ -5106,6 +5131,7 @@ oauthTransformDone:
 	httpInstructionsRetryTried := false
 	httpUnsupportedPreviousResponseIDRetryTried := false
 	httpReasoningEnabledRetryTried := false
+	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
 	for {
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, upstreamStream)
@@ -5114,6 +5140,7 @@ oauthTransformDone:
 		if err != nil {
 			return nil, err
 		}
+		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
 
 		// Get proxy URL
 		proxyURL := ""
@@ -5124,7 +5151,7 @@ oauthTransformDone:
 		// Send request
 		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
 		upstreamStart := time.Now()
-		resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.resolveOpenAITLSProfile(account))
+		resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
 			// Ensure the client receives an error response (handlers assume Forward writes on non-failover errors).
@@ -5752,6 +5779,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	invalidEncryptedContentRetryTried := false
 	previousResponseIDRetryTried := false
 	reasoningEnabledRetryTried := false
+	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
 	var upstreamReq *http.Request
 	var resp *http.Response
 	for {
@@ -5761,10 +5789,11 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		if err != nil {
 			return nil, err
 		}
+		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
 
 		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
 		upstreamStart := time.Now()
-		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.resolveOpenAITLSProfile(account))
+		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
@@ -6235,6 +6264,7 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 ) error {
 	MarkResponseCommitted(c)
 	body := s.readUpstreamErrorBody(resp)
+	_ = s.markOpenAICyberPolicyIfDetected(ctx, account, body)
 
 	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(body))
 	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -6857,6 +6887,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 
 		if hasData {
 			dataBytes := []byte(data)
+			_ = s.markOpenAICyberPolicyIfDetected(ctx, account, dataBytes)
 			if strings.TrimSpace(data) == "[DONE]" {
 				sawDone = true
 				if !sawFailedEvent {
@@ -7107,6 +7138,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if err != nil {
 		return nil, err
 	}
+	_ = s.markOpenAICyberPolicyIfDetected(ctx, account, body)
 
 	// Detect SSE responses from upstream and convert to JSON.
 	// Some upstreams (e.g. other sub2api instances) may return SSE even when
@@ -7163,6 +7195,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 			}
 		}
 		if terminalType == "response.failed" {
+			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, terminalPayload)
 			msg := extractOpenAISSEErrorMessage(terminalPayload)
 			if overloadMsg, matched := classifyOpenAIRetryableOverload(terminalPayload, msg); matched {
 				return nil, s.newOpenAIRetryableOverloadFailoverError(c.Request.Context(), c, account, true, resp.Header.Get("x-request-id"), terminalPayload, overloadMsg)
@@ -7207,6 +7240,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	} else {
 		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 		if terminalOK && terminalType == "response.failed" {
+			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, terminalPayload)
 			msg := extractOpenAISSEErrorMessage(terminalPayload)
 			if msg == "" {
 				msg = "Upstream compact response failed"
@@ -7420,6 +7454,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
+	_ = s.markOpenAICyberPolicyIfDetected(ctx, account, body)
 
 	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(body))
 	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -7625,6 +7660,11 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
+	requestCtx := context.Background()
+	if c != nil && c.Request != nil {
+		requestCtx = c.Request.Context()
+	}
+	_ = s.markOpenAICyberPolicyIfDetected(requestCtx, account, body)
 
 	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(body))
 	if upstreamMsg == "" {
@@ -7714,10 +7754,6 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	}
 
 	// Track rate limits and decide whether to trigger secondary failover.
-	requestCtx := context.Background()
-	if c != nil && c.Request != nil {
-		requestCtx = c.Request.Context()
-	}
 	var modelForCooldown string
 	if len(requestedModel) > 0 {
 		modelForCooldown = requestedModel[0]
@@ -8331,6 +8367,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		flushForFirstToken := false
 		if hasData {
 			dataBytes := []byte(data)
+			_ = s.markOpenAICyberPolicyIfDetected(ctx, account, dataBytes)
 			if strings.TrimSpace(data) == "[DONE]" && !sawFailedEvent {
 				sawSuccessfulTerminal = true
 			}
@@ -8982,6 +9019,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if err != nil {
 		return nil, err
 	}
+	_ = s.markOpenAICyberPolicyIfDetected(ctx, account, body)
 
 	// Detect SSE responses for ALL account types via Content-Type header.
 	// Some OpenAI-compatible upstreams (including other sub2api instances)
@@ -9053,6 +9091,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			}
 		}
 		if terminalType == "response.failed" {
+			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, terminalPayload)
 			msg := extractOpenAISSEErrorMessage(terminalPayload)
 			if overloadMsg, matched := classifyOpenAIRetryableOverload(terminalPayload, msg); matched {
 				return nil, s.newOpenAIRetryableOverloadFailoverError(c.Request.Context(), c, account, false, resp.Header.Get("x-request-id"), terminalPayload, overloadMsg)
@@ -9098,6 +9137,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	} else {
 		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 		if terminalOK && terminalType == "response.failed" {
+			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, terminalPayload)
 			msg := extractOpenAISSEErrorMessage(terminalPayload)
 			if msg == "" {
 				msg = "Upstream compact response failed"

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 
 const {
   showErrorMock,
@@ -9,6 +9,7 @@ const {
   getSettingsMock,
   getWebSearchEmulationConfigMock,
   listTlsFingerprintProfilesMock,
+  listTlsFingerprintRoutersMock,
   getPaymentConfigMock,
   adminSettingsStoreMock
 } = vi.hoisted(() => {
@@ -28,6 +29,7 @@ const {
     getSettingsMock: vi.fn(),
     getWebSearchEmulationConfigMock: vi.fn(),
     listTlsFingerprintProfilesMock: vi.fn(),
+    listTlsFingerprintRoutersMock: vi.fn(),
     getPaymentConfigMock: vi.fn(),
     adminSettingsStoreMock
   }
@@ -62,6 +64,9 @@ vi.mock('@/api/admin', () => ({
     },
     tlsFingerprintProfiles: {
       list: listTlsFingerprintProfilesMock
+    },
+    tlsFingerprintRouters: {
+      list: listTlsFingerprintRoutersMock
     },
     accounts: {
       update: updateAccountMock,
@@ -208,6 +213,7 @@ function resetCommonMocks() {
   getSettingsMock.mockReset()
   getWebSearchEmulationConfigMock.mockReset()
   listTlsFingerprintProfilesMock.mockReset()
+  listTlsFingerprintRoutersMock.mockReset()
   getPaymentConfigMock.mockReset()
   adminSettingsStoreMock.loaded = false
   adminSettingsStoreMock.platformDefaultAccountModelConfig = {}
@@ -220,6 +226,7 @@ function resetCommonMocks() {
   getSettingsMock.mockResolvedValue({})
   getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
   listTlsFingerprintProfilesMock.mockResolvedValue([])
+  listTlsFingerprintRoutersMock.mockResolvedValue([])
   getPaymentConfigMock.mockResolvedValue({ data: { enabled: false } })
   checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
 }
@@ -583,26 +590,32 @@ describe('EditAccountModal', () => {
     getSettingsMock.mockReset()
     getWebSearchEmulationConfigMock.mockReset()
     listTlsFingerprintProfilesMock.mockReset()
+    listTlsFingerprintRoutersMock.mockReset()
     checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
     getSettingsMock.mockResolvedValue({})
     getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
     listTlsFingerprintProfilesMock.mockResolvedValue([{ id: 12, name: 'Chrome 124' }])
+    listTlsFingerprintRoutersMock.mockResolvedValue([{ id: 9, name: 'UA Router' }])
     updateAccountMock.mockResolvedValue(account)
 
     const wrapper = mountModal(account)
     await wrapper.setProps({ show: true })
     await wrapper.vm.$nextTick()
+    await flushPromises()
 
     await wrapper.get('[data-testid="openai-tls-fingerprint-toggle"]').trigger('click')
     await wrapper.vm.$nextTick()
     await wrapper.get('[data-testid="openai-tls-fingerprint-profile"]').setValue('12')
+    expect(wrapper.get('[data-testid="openai-tls-fingerprint-router"]').text()).toContain('UA Router')
+    await wrapper.get('[data-testid="openai-tls-fingerprint-router"]').setValue('9')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual(expect.objectContaining({
       keep_flag: true,
       enable_tls_fingerprint: true,
-      tls_fingerprint_profile_id: 12
+      tls_fingerprint_profile_id: 12,
+      tls_fingerprint_router_id: 9
     }))
   })
 

@@ -1583,6 +1583,13 @@
             <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
             <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
+          <select v-model="tlsFingerprintRouterId" class="input mt-2" data-testid="openai-tls-fingerprint-router">
+            <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.noRouter') }}</option>
+            <option v-for="router in tlsFingerprintRouters" :key="router.id" :value="router.id">{{ router.name }}</option>
+          </select>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.quotaControl.tlsFingerprint.routerHint') }}
+          </p>
         </div>
       </div>
 
@@ -2661,6 +2668,8 @@ const umqModeOptions = computed(() => [
 const tlsFingerprintEnabled = ref(false)
 const tlsFingerprintProfileId = ref<number | null>(null)
 const tlsFingerprintProfiles = ref<{ id: number; name: string }[]>([])
+const tlsFingerprintRouterId = ref<number | null>(null)
+const tlsFingerprintRouters = ref<{ id: number; name: string }[]>([])
 const sessionIdMaskingEnabled = ref(false)
 const cacheTTLOverrideEnabled = ref(false)
 const cacheTTLOverrideTarget = ref<string>('5m')
@@ -3341,6 +3350,15 @@ async function loadTLSProfiles() {
   }
 }
 
+async function loadTLSRouters() {
+  try {
+    const routers = await adminAPI.tlsFingerprintRouters.list()
+    tlsFingerprintRouters.value = routers.map(router => ({ id: router.id, name: router.name }))
+  } catch {
+    tlsFingerprintRouters.value = []
+  }
+}
+
 function loadModelRestrictionFromCredentials(
   credentials?: Record<string, unknown>,
   options: { forceMappingMode?: boolean } = {}
@@ -3426,9 +3444,16 @@ const applyTLSFingerprintExtra = (extra: Record<string, unknown>) => {
     } else {
       delete extra.tls_fingerprint_profile_id
     }
+    const routerId = toOptionalNumber(tlsFingerprintRouterId.value)
+    if (routerId != null) {
+      extra.tls_fingerprint_router_id = routerId
+    } else {
+      delete extra.tls_fingerprint_router_id
+    }
   } else {
     delete extra.enable_tls_fingerprint
     delete extra.tls_fingerprint_profile_id
+    delete extra.tls_fingerprint_router_id
   }
 }
 
@@ -3693,6 +3718,7 @@ function loadQuotaControlSettings(account: Account) {
   userMsgQueueMode.value = ''
   tlsFingerprintEnabled.value = false
   tlsFingerprintProfileId.value = null
+  tlsFingerprintRouterId.value = null
   sessionIdMaskingEnabled.value = false
   cacheTTLOverrideEnabled.value = false
   cacheTTLOverrideTarget.value = '5m'
@@ -3704,6 +3730,7 @@ function loadQuotaControlSettings(account: Account) {
       tlsFingerprintEnabled.value = true
     }
     tlsFingerprintProfileId.value = account.tls_fingerprint_profile_id ?? null
+    tlsFingerprintRouterId.value = account.tls_fingerprint_router_id ?? null
     return
   }
 
@@ -3746,6 +3773,7 @@ function loadQuotaControlSettings(account: Account) {
     tlsFingerprintEnabled.value = true
   }
   tlsFingerprintProfileId.value = account.tls_fingerprint_profile_id ?? null
+  tlsFingerprintRouterId.value = account.tls_fingerprint_router_id ?? null
 
   // Load session ID masking setting
   if (account.session_id_masking_enabled === true) {
@@ -4138,6 +4166,7 @@ watch(
         void adminSettingsStore.fetch()
       }
       loadTLSProfiles()
+      loadTLSRouters()
     }
   },
   { immediate: true }

@@ -2601,6 +2601,58 @@ func (s *GatewayService) isAccountSchedulableForModelSelection(ctx context.Conte
 	return account.IsSchedulableForModelWithContext(ctx, requestedModel)
 }
 
+func (s *GatewayService) isAccountEligibleExceptModelSupport(ctx context.Context, account *Account, requestedModel string, platform string, excludedIDs map[int64]struct{}, useMixed bool, groupID *int64, schedGroup *Group) bool {
+	if account == nil {
+		return false
+	}
+	if _, excluded := excludedIDs[account.ID]; excluded {
+		return false
+	}
+	if !s.isAccountSchedulableForSelection(account) || !s.isAccountAllowedForPlatform(account, platform, useMixed) {
+		return false
+	}
+	if schedGroup != nil && schedGroup.RequirePrivacySet && !account.IsPrivacySet() {
+		return false
+	}
+	if !s.isAccountSchedulableForQuota(account) ||
+		!s.isAccountSchedulableForWindowCost(ctx, account, false) ||
+		!s.isAccountSchedulableForRPM(ctx, account, false) {
+		return false
+	}
+	if groupID != nil && s.needsUpstreamChannelRestrictionCheck(ctx, groupID) &&
+		s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel) {
+		return false
+	}
+	return true
+}
+
+func (s *GatewayService) shouldUseGroupModelUnsupportedError(ctx context.Context, accounts []Account, requestedModel string, platform string, excludedIDs map[int64]struct{}, useMixed bool, groupID *int64, schedGroup *Group) bool {
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" || len(accounts) == 0 {
+		return false
+	}
+
+	hasRelevantAccount := false
+	for i := range accounts {
+		acc := &accounts[i]
+		if !s.isAccountEligibleExceptModelSupport(ctx, acc, requestedModel, platform, excludedIDs, useMixed, groupID, schedGroup) {
+			continue
+		}
+		hasRelevantAccount = true
+		if s.isModelSupportedByAccountWithContext(ctx, acc, requestedModel) {
+			return false
+		}
+	}
+	return hasRelevantAccount
+}
+
+func (s *GatewayService) groupModelUnsupportedErrorIfApplicable(ctx context.Context, accounts []Account, requestedModel string, platform string, excludedIDs map[int64]struct{}, useMixed bool, groupID *int64, schedGroup *Group) error {
+	if !s.shouldUseGroupModelUnsupportedError(ctx, accounts, requestedModel, platform, excludedIDs, useMixed, groupID, schedGroup) {
+		return nil
+	}
+	return newGroupModelUnsupportedError(platform, requestedModel, accounts)
+}
+
 // isAccountInGroup checks if the account belongs to the specified group.
 // When groupID is nil, returns true only for ungrouped accounts (no group assignments).
 func (s *GatewayService) isAccountInGroup(account *Account, groupID *int64) bool {
@@ -3323,6 +3375,7 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 
 	var accounts []Account
 	accountsLoaded := false
+	useMixedScheduling := false
 
 	// ============ Model Routing (legacy path): apply before sticky session ============
 	// When load-awareness is disabled (e.g. concurrency service not configured), we still honor model routing
@@ -3361,7 +3414,7 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 			hasForcePlatform = false
 		}
 		var err error
-		accounts, _, err = s.listSchedulableAccounts(ctx, groupID, platform, hasForcePlatform)
+		accounts, useMixedScheduling, err = s.listSchedulableAccounts(ctx, groupID, platform, hasForcePlatform)
 		if err != nil {
 			return nil, fmt.Errorf("query accounts failed: %w", err)
 		}
@@ -3478,7 +3531,7 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 			hasForcePlatform = false
 		}
 		var err error
-		accounts, _, err = s.listSchedulableAccounts(ctx, groupID, platform, hasForcePlatform)
+		accounts, useMixedScheduling, err = s.listSchedulableAccounts(ctx, groupID, platform, hasForcePlatform)
 		if err != nil {
 			return nil, fmt.Errorf("query accounts failed: %w", err)
 		}
@@ -3554,6 +3607,9 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 	if selected == nil {
 		stats := s.logDetailedSelectionFailure(ctx, groupID, sessionHash, requestedModel, platform, accounts, excludedIDs, false)
 		if requestedModel != "" {
+			if err := s.groupModelUnsupportedErrorIfApplicable(ctx, accounts, requestedModel, platform, excludedIDs, useMixedScheduling, groupID, schedGroup); err != nil {
+				return nil, err
+			}
 			return nil, fmt.Errorf("%w supporting model: %s (%s)", ErrNoAvailableAccounts, requestedModel, summarizeSelectionFailureStats(stats))
 		}
 		return nil, ErrNoAvailableAccounts
@@ -3583,6 +3639,7 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 
 	var accounts []Account
 	accountsLoaded := false
+	useMixedScheduling := true
 
 	// ============ Model Routing (legacy path): apply before sticky session ============
 	if len(routingAccountIDs) > 0 {
@@ -3617,7 +3674,7 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 
 		// 2) Select an account from the routed candidates.
 		var err error
-		accounts, _, err = s.listSchedulableAccounts(ctx, groupID, nativePlatform, false)
+		accounts, useMixedScheduling, err = s.listSchedulableAccounts(ctx, groupID, nativePlatform, false)
 		if err != nil {
 			return nil, fmt.Errorf("query accounts failed: %w", err)
 		}
@@ -3736,7 +3793,7 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 	// 2. 获取可调度账号列表
 	if !accountsLoaded {
 		var err error
-		accounts, _, err = s.listSchedulableAccounts(ctx, groupID, nativePlatform, false)
+		accounts, useMixedScheduling, err = s.listSchedulableAccounts(ctx, groupID, nativePlatform, false)
 		if err != nil {
 			return nil, fmt.Errorf("query accounts failed: %w", err)
 		}
@@ -3815,6 +3872,9 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 	if selected == nil {
 		stats := s.logDetailedSelectionFailure(ctx, groupID, sessionHash, requestedModel, nativePlatform, accounts, excludedIDs, true)
 		if requestedModel != "" {
+			if err := s.groupModelUnsupportedErrorIfApplicable(ctx, accounts, requestedModel, nativePlatform, excludedIDs, useMixedScheduling, groupID, schedGroup); err != nil {
+				return nil, err
+			}
 			return nil, fmt.Errorf("%w supporting model: %s (%s)", ErrNoAvailableAccounts, requestedModel, summarizeSelectionFailureStats(stats))
 		}
 		return nil, ErrNoAvailableAccounts
@@ -4924,7 +4984,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			if readErr == nil {
 				_ = resp.Body.Close()
 
-				if s.shouldRectifySignatureError(ctx, account, respBody) {
+				if s.shouldRectifySignatureError(ctx, account, respBody, reqModel) {
 					appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 						Platform:           account.Platform,
 						AccountID:          account.ID,
@@ -4964,7 +5024,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 					// 2) Only if upstream still errors AND error message points to tool/function signature issues:
 					//    also downgrade tool_use/tool_result blocks to text.
 
-					filteredBody := FilterThinkingBlocksForRetry(body)
+					filteredBody := FilterThinkingBlocksForRetry(body, reqModel)
 					setOpsUpstreamRequestBody(c, filteredBody)
 					retryCtx, releaseRetryCtx := detachStreamUpstreamContext(ctx, reqStream)
 					retryReq, retryWireBody, buildErr := s.buildUpstreamRequest(retryCtx, c, account, filteredBody, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
@@ -7348,7 +7408,10 @@ func truncateForLog(b []byte, maxBytes int) string {
 
 // shouldRectifySignatureError 统一判断是否应触发签名整流（strip thinking blocks 并重试）。
 // 根据账号类型检查对应的开关和匹配模式。
-func (s *GatewayService) shouldRectifySignatureError(ctx context.Context, account *Account, respBody []byte) bool {
+func (s *GatewayService) shouldRectifySignatureError(ctx context.Context, account *Account, respBody []byte, modelID ...string) bool {
+	if len(modelID) > 0 && !ShouldRectifyThinkingSignatureError(modelID[0]) {
+		return false
+	}
 	if s.settingService == nil {
 		return false
 	}
@@ -9910,10 +9973,10 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	}
 
 	// 检测 thinking block 签名错误（400）并重试一次（过滤 thinking blocks）
-	if resp.StatusCode == 400 && s.shouldRectifySignatureError(ctx, account, respBody) {
+	if resp.StatusCode == 400 && s.shouldRectifySignatureError(ctx, account, respBody, reqModel) {
 		logger.LegacyPrintf("service.gateway", "Account %d: detected thinking block signature error on count_tokens, retrying with filtered thinking blocks", account.ID)
 
-		filteredBody := FilterThinkingBlocksForRetry(body)
+		filteredBody := FilterThinkingBlocksForRetry(body, reqModel)
 		retryReq, retryWireBody, buildErr := s.buildCountTokensRequest(ctx, c, account, filteredBody, token, tokenType, reqModel, shouldMimicClaudeCode)
 		if buildErr == nil {
 			retryStart := time.Now()
