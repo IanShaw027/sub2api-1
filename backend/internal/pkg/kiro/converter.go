@@ -65,6 +65,55 @@ func ToolTurnPlaceholderMatch(text string) (exact, prefix bool) {
 	return false, prefix
 }
 
+// IsPlaceholderFragment reports whether text (after trimming) is a trailing
+// word-boundary substring of a known placeholder. This catches partial echoes
+// like "call" (from "I will call the requested tools.") that appear in the
+// stream right before a tool_use event but are too short to match the prefix
+// check. Only fragments of 3+ characters are considered to avoid false
+// positives on common short words.
+func IsPlaceholderFragment(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if len(trimmed) < 3 {
+		return false
+	}
+	for _, ph := range []string{toolOnlyAssistantPlaceholder, toolOnlyUserPlaceholder} {
+		idx := strings.Index(ph, trimmed)
+		if idx < 0 {
+			continue
+		}
+		atStart := idx == 0
+		atWordBoundary := idx > 0 && (ph[idx-1] == ' ' || ph[idx-1] == '.')
+		endIdx := idx + len(trimmed)
+		atEnd := endIdx == len(ph)
+		atEndWordBoundary := endIdx < len(ph) && (ph[endIdx] == ' ' || ph[endIdx] == '.')
+		if (atStart || atWordBoundary) && (atEnd || atEndWordBoundary) {
+			return true
+		}
+	}
+	return false
+}
+
+// StripTrailingPlaceholderFragment removes a trailing line from assistant text
+// if it is a placeholder fragment. Used in non-streaming path when stop_reason
+// is tool_use.
+func StripTrailingPlaceholderFragment(assistantText string) string {
+	trimmed := strings.TrimRight(assistantText, "\n\r ")
+	lastNL := strings.LastIndex(trimmed, "\n")
+	var tail string
+	if lastNL >= 0 {
+		tail = trimmed[lastNL+1:]
+	} else {
+		tail = trimmed
+	}
+	if IsPlaceholderFragment(tail) {
+		if lastNL >= 0 {
+			return strings.TrimRight(trimmed[:lastNL], "\n\r ")
+		}
+		return ""
+	}
+	return assistantText
+}
+
 const kiroCompactionRecentWindow = 4
 
 const (

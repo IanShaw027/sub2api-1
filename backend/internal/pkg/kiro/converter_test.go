@@ -944,3 +944,50 @@ func TestToolTurnPlaceholderMatch(t *testing.T) {
 		}
 	}
 }
+
+func TestIsPlaceholderFragment(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"call", true},
+		{"call the requested tools.", true},
+		{"requested tools.", true},
+		{"I will call", true},
+		{"Here are the tool results.", true},
+		{"tool results.", true},
+		{"the tool results.", true},
+		{"Hello world", false},
+		{"re", false},    // too short
+		{"the", true},    // word boundary match in both placeholders
+		{"ll", false},    // too short
+		{"wil", false},   // not on word boundary
+		{"ool", false},   // not on word boundary
+		{" call ", true}, // trimmed to "call"
+		{"I will call the requested tools. Extra", false},
+	}
+	for _, tc := range cases {
+		if got := IsPlaceholderFragment(tc.in); got != tc.want {
+			t.Fatalf("IsPlaceholderFragment(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestStripTrailingPlaceholderFragment(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"Some real text.\ncall", "Some real text."},
+		{"Some real text.\n\ncall the requested tools.", "Some real text."},
+		{"call", ""},
+		{"Real content only.", "Real content only."},
+		{"Line one.\nLine two.\nI will call", "Line one.\nLine two."},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := StripTrailingPlaceholderFragment(tc.in); got != tc.want {
+			t.Fatalf("StripTrailingPlaceholderFragment(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
