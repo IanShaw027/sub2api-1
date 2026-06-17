@@ -706,6 +706,27 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	}()
 
 	assistantContentBuilder := strings.Builder{}
+	assistantTrailingHoldback := ""
+	flushAssistantTrailingHoldback := func() {
+		if assistantTrailingHoldback == "" {
+			return
+		}
+		_, _ = assistantContentBuilder.WriteString(assistantTrailingHoldback)
+		assistantTrailingHoldback = ""
+	}
+	appendAssistantContent := func(content string) {
+		if content == "" {
+			return
+		}
+		if assistantTrailingHoldback != "" {
+			flushAssistantTrailingHoldback()
+		}
+		if kiropkg.IsPlaceholderFragment(content) {
+			assistantTrailingHoldback = content
+			return
+		}
+		_, _ = assistantContentBuilder.WriteString(content)
+	}
 	reasoningTextBuilder := strings.Builder{}
 	reasoningSignatureBuilder := strings.Builder{}
 	toolOutputBuilder := strings.Builder{}
@@ -725,7 +746,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		switch frame.EventType {
 		case "assistantResponseEvent":
 			if content := rawStringField(frame.Payload, "content"); content != "" {
-				_, _ = assistantContentBuilder.WriteString(content)
+				appendAssistantContent(content)
 			}
 		case "reasoningContentEvent":
 			if text := rawStringField(frame.Payload, "text"); text != "" {
@@ -743,6 +764,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 				}
 			}
 		case "toolUseEvent":
+			assistantTrailingHoldback = ""
 			state := ensureKiroToolState(toolBuffers, controlStringField(frame.Payload, "toolUseId"), controlStringField(frame.Payload, "name"))
 			toolOrder = appendKiroToolStateOrder(toolOrder, state)
 			inputChunk := rawStringField(frame.Payload, "input")
@@ -754,6 +776,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 			}
 		}
 	}
+	flushAssistantTrailingHoldback()
 	visibleToolUses, completedToolUses, partialToolUses := kiroVisibleToolStateCounts(toolBuffers, toolOrder)
 	shadowToolBlocks, shadowHandledIDs, shadowToolNames, shadowToolOutput, shadowExecuted, shadowErr := s.executeKiroShadowTools(ctx, account, converted, toolBuffers, toolOrder)
 	if shadowErr != nil {
@@ -798,7 +821,11 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		content = append(content, block)
 		hasVisibleOutput = true
 	}
-	content, textOutput, nativeThinkingOutput := appendKiroNativeContentBlocks(kiropkg.StripToolTurnPlaceholders(assistantContentBuilder.String()), content)
+	assistantText := kiropkg.StripToolTurnPlaceholders(assistantContentBuilder.String())
+	if assistantText != "" && (stopReason == "tool_use" || stopReason == "pause_turn") {
+		assistantText = kiropkg.StripTrailingPlaceholderFragment(assistantText)
+	}
+	content, textOutput, nativeThinkingOutput := appendKiroNativeContentBlocks(assistantText, content)
 	if textOutput != "" || nativeThinkingOutput != "" {
 		hasVisibleOutput = true
 	}
@@ -944,6 +971,10 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	// has been emitted, suppression is disabled for the rest of the stream.
 	placeholderPending := ""
 	placeholderResolved := false
+	// Trailing holdback: after real text has been emitted, short fragments that
+	// look like placeholder echoes (e.g. "call") are held back until the next
+	// event confirms whether they are genuine text or pre-tool-use noise.
+	trailingHoldback := ""
 	debugAggregator := BeginKiroFrameAggregator(s.settingService, c)
 	defer func() {
 		debugAggregator.Finalize("upstream_response_body", map[string]any{
@@ -1039,11 +1070,31 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	// emitTextDelta wraps the raw emitter with leading-placeholder suppression.
 	// Until real text is confirmed, candidate placeholder text is buffered rather
 	// than streamed; an exact placeholder match is dropped, anything else flushes.
+	// After real text has been emitted, short trailing fragments that match known
+	// placeholder words are held back until the next event resolves them.
+	flushTrailingHoldback := func() error {
+		if trailingHoldback == "" {
+			return nil
+		}
+		flush := trailingHoldback
+		trailingHoldback = ""
+		return emitTextDeltaRaw(flush)
+	}
+	suppressTrailingHoldback := func() {
+		trailingHoldback = ""
+	}
 	emitTextDelta := func(text string) error {
 		if text == "" {
 			return nil
 		}
 		if placeholderResolved {
+			if err := flushTrailingHoldback(); err != nil {
+				return err
+			}
+			if kiropkg.IsPlaceholderFragment(text) {
+				trailingHoldback = text
+				return nil
+			}
 			return emitTextDeltaRaw(text)
 		}
 		placeholderPending += text
@@ -1065,6 +1116,9 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		return emitTextDeltaRaw(flush)
 	}
 	flushPendingPlaceholder = func() error {
+		if err := flushTrailingHoldback(); err != nil {
+			return err
+		}
 		if placeholderResolved || placeholderPending == "" {
 			placeholderPending = ""
 			return nil
@@ -1293,6 +1347,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						return nil, err
 					}
 				case "toolUseEvent":
+					suppressTrailingHoldback()
 					toolUseID := controlStringField(frame.Payload, "toolUseId")
 					state := ensureKiroToolState(toolStates, toolUseID, controlStringField(frame.Payload, "name"))
 					toolOrder = appendKiroToolStateOrder(toolOrder, state)
@@ -1340,6 +1395,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 								}
 								nativeThinkingBuffer = ""
 							}
+							suppressTrailingHoldback()
 							if err := closeTextBlock(); err != nil {
 								return nil, err
 							}
@@ -1406,6 +1462,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 							}
 							nativeThinkingBuffer = ""
 						}
+						suppressTrailingHoldback()
 						if err := closeTextBlock(); err != nil {
 							return nil, err
 						}

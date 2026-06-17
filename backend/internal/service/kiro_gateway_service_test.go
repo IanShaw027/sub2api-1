@@ -2068,6 +2068,59 @@ func TestKiroGatewayService_ForwardNonStream_ValidToolUseWithoutStopSucceeds(t *
 	require.False(t, ok)
 }
 
+func TestKiroGatewayService_ForwardNonStream_SuppressesTrailingPlaceholderFragmentBeforeToolUse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "Some real answer. "}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "call"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{
+			"toolUseId": "tool-1",
+			"name":      "search",
+			"input":     `{"q":"a"}`,
+			"stop":      true,
+		}),
+	}, nil)
+
+	result, err := svc.forwardNonStream(
+		context.Background(),
+		c,
+		&Account{ID: 7, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: false},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.6"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"text":"Some real answer. "`)
+	require.NotContains(t, rec.Body.String(), `"text":"Some real answer. call"`)
+	require.Contains(t, rec.Body.String(), `"type":"tool_use"`)
+	require.Contains(t, rec.Body.String(), `"name":"search"`)
+}
+
 func TestKiroGatewayService_ForwardStream_ContextWindowExceededUsesStopReason(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -2428,6 +2481,60 @@ func TestKiroGatewayService_ForwardStream_TextToolTextClosesBlocksInOrder(t *tes
 	require.Less(t, toolStart1, toolStop1)
 	require.Less(t, toolStop1, textStart2)
 	require.Less(t, textStart2, textStop2)
+}
+
+func TestKiroGatewayService_ForwardStream_SuppressesBufferedPlaceholderFragmentBeforeToolUse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "hello"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{"toolUseId": "tool-1", "name": "search", "input": `{"q":"a"}`, "stop": true}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "call"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{"toolUseId": "tool-2", "name": "lookup", "input": `{"q":"b"}`, "stop": true}),
+	}, nil)
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 6, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.5"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	output := rec.Body.String()
+	require.Contains(t, output, `"delta":{"text":"hello","type":"text_delta"}`)
+	require.NotContains(t, output, `"delta":{"text":"call","type":"text_delta"}`)
+	require.Contains(t, output, `"id":"tool-1"`)
+	require.Contains(t, output, `"id":"tool-2"`)
+	require.Contains(t, output, `"stop_reason":"tool_use"`)
 }
 
 func TestKiroGatewayService_ForwardStream_PreservesWhitespaceInContentAndInputDeltas(t *testing.T) {
