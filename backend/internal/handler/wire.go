@@ -50,6 +50,7 @@ func ProvideAdminHandlers(
 	channelMonitorTemplateHandler *admin.ChannelMonitorRequestTemplateHandler,
 	contentModerationHandler *admin.ContentModerationHandler,
 	paymentHandler *admin.PaymentHandler,
+	codexInviteResetHandler *admin.CodexInviteResetHandler,
 ) *AdminHandlers {
 	return &AdminHandlers{
 		AI:                     aiHandler,
@@ -87,6 +88,7 @@ func ProvideAdminHandlers(
 		ChannelMonitorTemplate: channelMonitorTemplateHandler,
 		ContentModeration:      contentModerationHandler,
 		Payment:                paymentHandler,
+		CodexInviteReset:       codexInviteResetHandler,
 	}
 }
 
@@ -265,6 +267,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewChannelMonitorRequestTemplateHandler,
 	admin.NewContentModerationHandler,
 	admin.NewPaymentHandler,
+	admin.NewCodexInviteResetHandler,
 
 	// AdminHandlers and Handlers constructors
 	ProvideAISkillModule,
