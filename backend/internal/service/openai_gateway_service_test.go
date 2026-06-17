@@ -1493,6 +1493,191 @@ func TestOpenAISelectAccountForModelWithExclusions_NoModelSupport(t *testing.T) 
 	require.Contains(t, modelErr.AvailableModels, "gpt-3.5-turbo")
 }
 
+func TestOpenAISelectAccountForModelWithExclusions_ModelSupportedButUnavailableKeepsGenericError(t *testing.T) {
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{
+			{
+				ID:          1,
+				Platform:    PlatformOpenAI,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{"model_mapping": map[string]any{"gpt-3.5-turbo": "gpt-3.5-turbo"}},
+			},
+			{
+				ID:          2,
+				Platform:    PlatformOpenAI,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{"model_mapping": map[string]any{"gpt-4": "gpt-4"}},
+				Extra: map[string]any{
+					modelRateLimitsKey: map[string]any{
+						"gpt-4": map[string]any{
+							"rate_limit_reset_at": time.Now().Add(10 * time.Minute).Format(time.RFC3339),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		accountRepo: repo,
+		cache:       &stubGatewayCache{},
+	}
+
+	acc, err := svc.SelectAccountForModelWithExclusions(context.Background(), nil, "", "gpt-4", nil)
+	require.Error(t, err)
+	require.Nil(t, acc)
+	var modelErr *GroupModelUnsupportedError
+	require.NotErrorAs(t, err, &modelErr)
+}
+
+func TestOpenAISelectAccountForModelWithExclusions_ExcludedUnsupportedKeepsGenericError(t *testing.T) {
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{
+			{
+				ID:          1,
+				Platform:    PlatformOpenAI,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{"model_mapping": map[string]any{"gpt-3.5-turbo": "gpt-3.5-turbo"}},
+			},
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		accountRepo: repo,
+		cache:       &stubGatewayCache{},
+	}
+
+	acc, err := svc.SelectAccountForModelWithExclusions(context.Background(), nil, "", "gpt-4", map[int64]struct{}{1: {}})
+	require.Error(t, err)
+	require.Nil(t, acc)
+	var modelErr *GroupModelUnsupportedError
+	require.NotErrorAs(t, err, &modelErr)
+}
+
+func TestOpenAISelectAccountForModelWithExclusions_RuntimeBlockedUnsupportedKeepsGenericError(t *testing.T) {
+	account := Account{
+		ID:          1,
+		Platform:    PlatformOpenAI,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{"model_mapping": map[string]any{"gpt-3.5-turbo": "gpt-3.5-turbo"}},
+	}
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{account},
+	}
+
+	svc := &OpenAIGatewayService{
+		accountRepo: repo,
+		cache:       &stubGatewayCache{},
+	}
+	svc.BlockAccountScheduling(&account, time.Now().Add(10*time.Minute), "test")
+
+	acc, err := svc.SelectAccountForModelWithExclusions(context.Background(), nil, "", "gpt-4", nil)
+	require.Error(t, err)
+	require.Nil(t, acc)
+	var modelErr *GroupModelUnsupportedError
+	require.NotErrorAs(t, err, &modelErr)
+}
+
+func TestOpenAISelectAccountForModelWithExclusions_ExcludedModelSupportedKeepsGenericError(t *testing.T) {
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{
+			{
+				ID:          1,
+				Platform:    PlatformOpenAI,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{"model_mapping": map[string]any{"gpt-3.5-turbo": "gpt-3.5-turbo"}},
+			},
+			{
+				ID:          2,
+				Platform:    PlatformOpenAI,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{"model_mapping": map[string]any{"gpt-4": "gpt-4"}},
+			},
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		accountRepo: repo,
+		cache:       &stubGatewayCache{},
+	}
+
+	acc, err := svc.SelectAccountForModelWithExclusions(context.Background(), nil, "", "gpt-4", map[int64]struct{}{2: {}})
+	require.Error(t, err)
+	require.Nil(t, acc)
+	var modelErr *GroupModelUnsupportedError
+	require.NotErrorAs(t, err, &modelErr)
+}
+
+func TestOpenAISelectAccountForModelWithExclusions_RuntimeBlockedModelSupportedKeepsGenericError(t *testing.T) {
+	supported := Account{
+		ID:          2,
+		Platform:    PlatformOpenAI,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{"model_mapping": map[string]any{"gpt-4": "gpt-4"}},
+	}
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{
+			{
+				ID:          1,
+				Platform:    PlatformOpenAI,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{"model_mapping": map[string]any{"gpt-3.5-turbo": "gpt-3.5-turbo"}},
+			},
+			supported,
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		accountRepo: repo,
+		cache:       &stubGatewayCache{},
+	}
+	svc.BlockAccountScheduling(&supported, time.Now().Add(10*time.Minute), "test")
+
+	acc, err := svc.SelectAccountForModelWithExclusions(context.Background(), nil, "", "gpt-4", nil)
+	require.Error(t, err)
+	require.Nil(t, acc)
+	var modelErr *GroupModelUnsupportedError
+	require.NotErrorAs(t, err, &modelErr)
+}
+
+func TestOpenAISelectAccountWithLoadAwarenessForImageRoute_RouteIncompatibleUnsupportedKeepsGenericError(t *testing.T) {
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{
+			{
+				ID:          3,
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeOAuth,
+				Status:      StatusActive,
+				Schedulable: true,
+				Concurrency: 1,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"gpt-3.5-turbo": "gpt-3.5-turbo"},
+					"plan_type":     "free",
+				},
+			},
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		accountRepo: repo,
+		cache:       &stubGatewayCache{},
+	}
+
+	selection, err := svc.selectAccountWithLoadAwarenessForImageRoute(context.Background(), nil, "", "gpt-4", nil, false, GroupImageGenerationRouteCodex, false)
+	require.Error(t, err)
+	require.Nil(t, selection)
+	var modelErr *GroupModelUnsupportedError
+	require.NotErrorAs(t, err, &modelErr)
+}
+
 func TestOpenAISelectAccountWithLoadAwareness_LoadBatchErrorFallback(t *testing.T) {
 	groupID := int64(1)
 	repo := stubOpenAIAccountRepo{

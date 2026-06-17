@@ -2635,13 +2635,22 @@ func (s *GatewayService) shouldUseGroupModelUnsupportedError(ctx context.Context
 	hasRelevantAccount := false
 	for i := range accounts {
 		acc := &accounts[i]
+		if acc == nil {
+			continue
+		}
+		if !s.isAccountAllowedForPlatform(acc, platform, useMixed) {
+			continue
+		}
+		if s.isModelSupportedByAccountWithContext(ctx, acc, requestedModel) {
+			return false
+		}
+		if _, excluded := excludedIDs[acc.ID]; excluded {
+			continue
+		}
 		if !s.isAccountEligibleExceptModelSupport(ctx, acc, requestedModel, platform, excludedIDs, useMixed, groupID, schedGroup) {
 			continue
 		}
 		hasRelevantAccount = true
-		if s.isModelSupportedByAccountWithContext(ctx, acc, requestedModel) {
-			return false
-		}
 	}
 	return hasRelevantAccount
 }

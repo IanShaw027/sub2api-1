@@ -781,6 +781,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	if req.GroupID != nil && s.service.schedulerSnapshot != nil {
 		schedGroup, _ = s.service.schedulerSnapshot.GetGroupByID(ctx, *req.GroupID)
 	}
+	errorAccounts := s.selectionErrorAccounts(ctx, req, accounts, schedGroup)
 
 	filtered := make([]*Account, 0, len(accounts))
 	loadReq := make([]AccountWithConcurrency, 0, len(accounts))
@@ -817,7 +818,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		})
 	}
 	if len(filtered) == 0 {
-		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, accounts)
+		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, errorAccounts)
 	}
 
 	loadMap := map[int64]*AccountLoadInfo{}
@@ -1022,7 +1023,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		waitSelectionOrder = buildSelectionOrder(waitCandidates)
 	}
 	if len(selectionOrder) == 0 && len(waitSelectionOrder) == 0 {
-		return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact && len(allCandidates) > 0, accounts)
+		return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact && len(allCandidates) > 0, errorAccounts)
 	}
 
 	compactBlocked := false
@@ -1109,7 +1110,35 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		return selection, candidateCount, topK, loadSkew, err
 	}
 
-	return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, compactBlocked, accounts)
+	return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, compactBlocked, errorAccounts)
+}
+
+func (s *defaultOpenAIAccountScheduler) selectionErrorAccounts(ctx context.Context, req OpenAIAccountScheduleRequest, accounts []Account, schedGroup *Group) []Account {
+	if s == nil || s.service == nil {
+		return nil
+	}
+	return s.service.openAISelectionErrorAccounts(accounts, req.RequestedModel, req.ExcludedIDs, func(account *Account) bool {
+		if !s.isLoadBalanceAccountSchedulableForRequest(account, req) {
+			return false
+		}
+		if paused, _ := shouldAutoPauseOpenAIAccountByQuota(ctx, account); paused {
+			return false
+		}
+		if schedGroup != nil && schedGroup.RequirePrivacySet && !account.IsPrivacySet() {
+			return false
+		}
+		if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
+			return false
+		}
+		if !accountSupportsOpenAICapabilities(account, req.RequiredCapability, req.RequiredImageCapability) {
+			return false
+		}
+		if req.GroupID != nil && s.service.needsUpstreamChannelRestrictionCheck(ctx, req.GroupID) &&
+			s.service.isUpstreamModelRestrictedByChannel(ctx, *req.GroupID, account, req.RequestedModel, req.RequireCompact) {
+			return false
+		}
+		return true
+	})
 }
 
 func (s *defaultOpenAIAccountScheduler) isAccountTransportCompatible(account *Account, requiredTransport OpenAIUpstreamTransport) bool {

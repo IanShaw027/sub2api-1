@@ -167,7 +167,7 @@
         <div class="space-y-3">
           <div class="flex items-center justify-between">
             <label class="input-label mb-0">{{ t('admin.tlsFingerprintRouters.form.rules') }}</label>
-            <button type="button" @click="addRule" class="btn btn-secondary btn-sm">
+            <button type="button" @click="addRule" :disabled="profiles.length === 0" class="btn btn-secondary btn-sm">
               <Icon name="plus" size="sm" class="mr-1" />
               {{ t('admin.tlsFingerprintRouters.form.addRule') }}
             </button>
@@ -324,12 +324,6 @@ const form = reactive<{
   rules: []
 })
 
-watch(() => props.show, (newVal) => {
-  if (newVal) {
-    loadData()
-  }
-})
-
 const loadData = async () => {
   loading.value = true
   try {
@@ -346,6 +340,12 @@ const loadData = async () => {
     loading.value = false
   }
 }
+
+watch(() => props.show, (newVal) => {
+  if (newVal) {
+    loadData()
+  }
+}, { immediate: true })
 
 const resetForm = () => {
   form.name = ''
@@ -367,7 +367,7 @@ const newRule = (): TLSFingerprintRouterRule => ({
 
 const openCreate = () => {
   resetForm()
-  form.rules = [newRule()]
+  form.rules = profiles.value.length > 0 ? [newRule()] : []
   showCreateModal.value = true
 }
 

@@ -2113,6 +2113,8 @@ func openAIWSAcquireIdentityKey(req openAIWSAcquireRequest) string {
 		"ws=" + stringsTrim(req.WSURL),
 		"proxy=" + stringsTrim(req.ProxyURL),
 		"tls=" + openAIWSTLSProfileIdentity(req.TLSProfile),
+		"auth=" + strings.TrimSpace(req.Headers.Get("authorization")),
+		"chatgpt_account=" + strings.TrimSpace(req.Headers.Get("chatgpt-account-id")),
 		"ua=" + strings.TrimSpace(req.Headers.Get("user-agent")),
 		"originator=" + strings.TrimSpace(req.Headers.Get("originator")),
 		"beta=" + strings.TrimSpace(req.Headers.Get("openai-beta")),

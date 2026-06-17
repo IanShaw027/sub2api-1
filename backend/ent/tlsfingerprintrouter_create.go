@@ -137,6 +137,10 @@ func (_c *TLSFingerprintRouterCreate) defaults() {
 		v := tlsfingerprintrouter.DefaultEnabled
 		_c.mutation.SetEnabled(v)
 	}
+	if _, ok := _c.mutation.Rules(); !ok {
+		v := tlsfingerprintrouter.DefaultRules()
+		_c.mutation.SetRules(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -157,6 +161,9 @@ func (_c *TLSFingerprintRouterCreate) check() error {
 	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		return &ValidationError{Name: "enabled", err: errors.New(`ent: missing required field "TLSFingerprintRouter.enabled"`)}
+	}
+	if _, ok := _c.mutation.Rules(); !ok {
+		return &ValidationError{Name: "rules", err: errors.New(`ent: missing required field "TLSFingerprintRouter.rules"`)}
 	}
 	return nil
 }
@@ -327,12 +334,6 @@ func (u *TLSFingerprintRouterUpsert) UpdateRules() *TLSFingerprintRouterUpsert {
 	return u
 }
 
-// ClearRules clears the value of the "rules" field.
-func (u *TLSFingerprintRouterUpsert) ClearRules() *TLSFingerprintRouterUpsert {
-	u.SetNull(tlsfingerprintrouter.FieldRules)
-	return u
-}
-
 // UpdateNewValues updates the mutable fields using the new values that were set on create.
 // Using this option is equivalent to using:
 //
@@ -452,13 +453,6 @@ func (u *TLSFingerprintRouterUpsertOne) SetRules(v []map[string]interface{}) *TL
 func (u *TLSFingerprintRouterUpsertOne) UpdateRules() *TLSFingerprintRouterUpsertOne {
 	return u.Update(func(s *TLSFingerprintRouterUpsert) {
 		s.UpdateRules()
-	})
-}
-
-// ClearRules clears the value of the "rules" field.
-func (u *TLSFingerprintRouterUpsertOne) ClearRules() *TLSFingerprintRouterUpsertOne {
-	return u.Update(func(s *TLSFingerprintRouterUpsert) {
-		s.ClearRules()
 	})
 }
 
@@ -747,13 +741,6 @@ func (u *TLSFingerprintRouterUpsertBulk) SetRules(v []map[string]interface{}) *T
 func (u *TLSFingerprintRouterUpsertBulk) UpdateRules() *TLSFingerprintRouterUpsertBulk {
 	return u.Update(func(s *TLSFingerprintRouterUpsert) {
 		s.UpdateRules()
-	})
-}
-
-// ClearRules clears the value of the "rules" field.
-func (u *TLSFingerprintRouterUpsertBulk) ClearRules() *TLSFingerprintRouterUpsertBulk {
-	return u.Update(func(s *TLSFingerprintRouterUpsert) {
-		s.ClearRules()
 	})
 }
 

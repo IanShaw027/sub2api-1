@@ -21,10 +21,12 @@ import (
 )
 
 type geminiCompatHTTPUpstreamStub struct {
-	response *http.Response
-	err      error
-	calls    int
-	lastReq  *http.Request
+	response      *http.Response
+	responses     []*http.Response
+	err           error
+	calls         int
+	lastReq       *http.Request
+	requestBodies []string
 }
 
 type geminiCompatTokenCacheStub struct {
@@ -70,8 +72,18 @@ func (s *geminiCompatTokenCacheStub) ReleaseRefreshLock(ctx context.Context, cac
 func (s *geminiCompatHTTPUpstreamStub) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
 	s.calls++
 	s.lastReq = req
+	if req != nil && req.Body != nil {
+		body, _ := io.ReadAll(req.Body)
+		s.requestBodies = append(s.requestBodies, string(body))
+		req.Body = io.NopCloser(bytes.NewReader(body))
+	}
 	if s.err != nil {
 		return nil, s.err
+	}
+	if len(s.responses) > 0 {
+		resp := *s.responses[0]
+		s.responses = s.responses[1:]
+		return &resp, nil
 	}
 	if s.response == nil {
 		return nil, fmt.Errorf("missing stub response")
@@ -484,6 +496,51 @@ func TestGeminiMessagesCompatServiceForward_PreservesRequestedModelAndMappedUpst
 	require.Equal(t, 1, httpStub.calls)
 	require.NotNil(t, httpStub.lastReq)
 	require.Contains(t, httpStub.lastReq.URL.String(), "/models/claude-sonnet-4-20250514:")
+}
+
+func TestGeminiMessagesCompatServiceForward_ThinkingRetryUsesMappedModelProtocol(t *testing.T) {
+	setGinTestMode()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"x-request-id": []string{"gemini-req-bad"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"Corrupted thought_signature"}}`)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"x-request-id": []string{"gemini-req-ok"}},
+				Body:       io.NopCloser(strings.NewReader(`{"candidates":[{"content":{"parts":[{"text":"ok"}]}}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":1}}`)),
+			},
+		},
+	}
+	svc := &GeminiMessagesCompatService{httpUpstream: httpStub, cfg: &config.Config{}}
+	account := &Account{
+		ID:   2,
+		Type: AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "test-key",
+			"model_mapping": map[string]any{
+				"deepseek-v4-pro": "claude-sonnet-4-5",
+			},
+		},
+	}
+	body := []byte(`{"model":"deepseek-v4-pro","max_tokens":16,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":"hello"},{"role":"assistant","content":[{"type":"thinking","thinking":"convert me","signature":""},{"type":"text","text":"answer"}]}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "deepseek-v4-pro", result.Model)
+	require.Equal(t, "claude-sonnet-4-5", result.UpstreamModel)
+	require.Equal(t, 2, httpStub.calls)
+	require.Len(t, httpStub.requestBodies, 2)
+	require.Contains(t, httpStub.requestBodies[0], "convert me")
+	require.Contains(t, httpStub.requestBodies[1], "convert me")
+	require.NotEqual(t, httpStub.requestBodies[0], httpStub.requestBodies[1], "mapped Claude-family retry should downgrade thinking history before rebuilding Gemini request")
 }
 
 func TestGeminiMessagesCompatService_MaybeRetryModelFallback_UpdatesOpsRequestBody(t *testing.T) {

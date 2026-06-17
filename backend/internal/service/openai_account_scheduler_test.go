@@ -471,6 +471,173 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_Require
 	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
 }
 
+func TestOpenAIGatewayService_SelectAccountWithScheduler_AdvancedExcludedUnsupportedKeepsGenericError(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	accounts := []Account{
+		{
+			ID:          36023,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Credentials: map[string]any{"model_mapping": map[string]any{"gpt-3.5-turbo": "gpt-3.5-turbo"}},
+		},
+	}
+	cfg := newSchedulerTestOpenAIWSV2Config()
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+	}
+
+	selection, _, err := svc.SelectAccountWithScheduler(
+		ctx,
+		nil,
+		"",
+		"",
+		"gpt-4",
+		map[int64]struct{}{36023: {}},
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+	require.Error(t, err)
+	require.Nil(t, selection)
+	var modelErr *GroupModelUnsupportedError
+	require.NotErrorAs(t, err, &modelErr)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_AdvancedRuntimeBlockedUnsupportedKeepsGenericError(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	account := Account{
+		ID:          36024,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{"model_mapping": map[string]any{"gpt-3.5-turbo": "gpt-3.5-turbo"}},
+	}
+	cfg := newSchedulerTestOpenAIWSV2Config()
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+	}
+	svc.BlockAccountScheduling(&account, time.Now().Add(10*time.Minute), "test")
+
+	selection, _, err := svc.SelectAccountWithScheduler(
+		ctx,
+		nil,
+		"",
+		"",
+		"gpt-4",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+	require.Error(t, err)
+	require.Nil(t, selection)
+	var modelErr *GroupModelUnsupportedError
+	require.NotErrorAs(t, err, &modelErr)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_AdvancedCapabilityIncompatibleUnsupportedKeepsGenericError(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	accounts := []Account{
+		{
+			ID:          36025,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Credentials: map[string]any{
+				"model_mapping":       map[string]any{"gpt-3.5-turbo": "gpt-3.5-turbo"},
+				"openai_capabilities": []any{"chat_completions"},
+			},
+		},
+	}
+	cfg := newSchedulerTestOpenAIWSV2Config()
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
+		ctx,
+		nil,
+		"",
+		"",
+		"gpt-4",
+		nil,
+		OpenAIUpstreamTransportAny,
+		OpenAIEndpointCapabilityEmbeddings,
+		false,
+	)
+	require.Error(t, err)
+	require.Nil(t, selection)
+	var modelErr *GroupModelUnsupportedError
+	require.NotErrorAs(t, err, &modelErr)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_AdvancedQuotaPausedUnsupportedKeepsGenericError(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	accounts := []Account{
+		{
+			ID:          36026,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Credentials: map[string]any{"model_mapping": map[string]any{"gpt-3.5-turbo": "gpt-3.5-turbo"}},
+			Extra: map[string]any{
+				"codex_5h_used_percent":   96.0,
+				"auto_pause_5h_threshold": 0.95,
+			},
+		},
+	}
+	cfg := newSchedulerTestOpenAIWSV2Config()
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+	}
+
+	selection, _, err := svc.SelectAccountWithScheduler(
+		ctx,
+		nil,
+		"",
+		"",
+		"gpt-4",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+	require.Error(t, err)
+	require.Nil(t, selection)
+	var modelErr *GroupModelUnsupportedError
+	require.NotErrorAs(t, err, &modelErr)
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_EmbeddingsSkipsChatOnlyAccount(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 

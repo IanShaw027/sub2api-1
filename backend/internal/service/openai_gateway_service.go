@@ -2308,15 +2308,44 @@ func shouldUseOpenAIGroupModelUnsupportedError(accounts []Account, requestedMode
 	hasRelevantAccount := false
 	for i := range accounts {
 		acc := &accounts[i]
-		if !acc.IsOpenAI() || !acc.IsSchedulable() {
+		if !acc.IsOpenAI() {
 			continue
 		}
-		hasRelevantAccount = true
 		if acc.IsModelSupported(requestedModel) {
 			return false
 		}
+		if !acc.IsSchedulable() {
+			continue
+		}
+		hasRelevantAccount = true
 	}
 	return hasRelevantAccount
+}
+
+func (s *OpenAIGatewayService) openAISelectionErrorAccounts(accounts []Account, requestedModel string, excludedIDs map[int64]struct{}, isRelevant func(*Account) bool) []Account {
+	if len(accounts) == 0 {
+		return nil
+	}
+	requestedModel = strings.TrimSpace(requestedModel)
+	filtered := make([]Account, 0, len(accounts))
+	for i := range accounts {
+		acc := &accounts[i]
+		if requestedModel != "" && acc.IsOpenAI() && acc.IsModelSupported(requestedModel) {
+			filtered = append(filtered, *acc)
+			continue
+		}
+		if _, excluded := excludedIDs[acc.ID]; excluded {
+			continue
+		}
+		if s.isOpenAIAccountRuntimeBlocked(acc) {
+			continue
+		}
+		if isRelevant != nil && !isRelevant(acc) {
+			continue
+		}
+		filtered = append(filtered, *acc)
+	}
+	return filtered
 }
 
 // noAvailableOpenAISelectionError builds the standard "no account available" error
@@ -2876,7 +2905,14 @@ func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.C
 	selected, compactBlocked := s.selectBestAccount(ctx, groupID, accounts, requestedModel, excludedIDs, requireCompact, requiredImageRoute)
 
 	if selected == nil {
-		return nil, noAvailableOpenAISelectionError(requestedModel, compactBlocked, accounts)
+		errorAccounts := s.openAISelectionErrorAccounts(accounts, requestedModel, excludedIDs, func(acc *Account) bool {
+			if !isOpenAIAccountEligibleForRequest(ctx, s.settingService, acc, "", requireCompact, requiredImageRoute, false) {
+				return false
+			}
+			return groupID == nil || !s.needsUpstreamChannelRestrictionCheck(ctx, groupID) ||
+				!s.isUpstreamModelRestrictedByChannel(ctx, *groupID, acc, requestedModel, requireCompact)
+		})
+		return nil, noAvailableOpenAISelectionError(requestedModel, compactBlocked, errorAccounts)
 	}
 
 	hydrated, err := s.hydrateSelectedAccount(ctx, selected)

@@ -2511,6 +2511,10 @@ func init() {
 	tlsfingerprintrouterDescEnabled := tlsfingerprintrouterFields[2].Descriptor()
 	// tlsfingerprintrouter.DefaultEnabled holds the default value on creation for the enabled field.
 	tlsfingerprintrouter.DefaultEnabled = tlsfingerprintrouterDescEnabled.Default.(bool)
+	// tlsfingerprintrouterDescRules is the schema descriptor for rules field.
+	tlsfingerprintrouterDescRules := tlsfingerprintrouterFields[3].Descriptor()
+	// tlsfingerprintrouter.DefaultRules holds the default value on creation for the rules field.
+	tlsfingerprintrouter.DefaultRules = tlsfingerprintrouterDescRules.Default.(func() []map[string]interface{})
 	usagecleanuptaskMixin := schema.UsageCleanupTask{}.Mixin()
 	usagecleanuptaskMixinFields0 := usagecleanuptaskMixin[0].Fields()
 	_ = usagecleanuptaskMixinFields0

@@ -61346,24 +61346,10 @@ func (m *TLSFingerprintRouterMutation) AppendedRules() ([]map[string]interface{}
 	return m.appendrules, true
 }
 
-// ClearRules clears the value of the "rules" field.
-func (m *TLSFingerprintRouterMutation) ClearRules() {
-	m.rules = nil
-	m.appendrules = nil
-	m.clearedFields[tlsfingerprintrouter.FieldRules] = struct{}{}
-}
-
-// RulesCleared returns if the "rules" field was cleared in this mutation.
-func (m *TLSFingerprintRouterMutation) RulesCleared() bool {
-	_, ok := m.clearedFields[tlsfingerprintrouter.FieldRules]
-	return ok
-}
-
 // ResetRules resets all changes to the "rules" field.
 func (m *TLSFingerprintRouterMutation) ResetRules() {
 	m.rules = nil
 	m.appendrules = nil
-	delete(m.clearedFields, tlsfingerprintrouter.FieldRules)
 }
 
 // Where appends a list predicates to the TLSFingerprintRouterMutation builder.
@@ -61544,9 +61530,6 @@ func (m *TLSFingerprintRouterMutation) ClearedFields() []string {
 	if m.FieldCleared(tlsfingerprintrouter.FieldDescription) {
 		fields = append(fields, tlsfingerprintrouter.FieldDescription)
 	}
-	if m.FieldCleared(tlsfingerprintrouter.FieldRules) {
-		fields = append(fields, tlsfingerprintrouter.FieldRules)
-	}
 	return fields
 }
 
@@ -61563,9 +61546,6 @@ func (m *TLSFingerprintRouterMutation) ClearField(name string) error {
 	switch name {
 	case tlsfingerprintrouter.FieldDescription:
 		m.ClearDescription()
-		return nil
-	case tlsfingerprintrouter.FieldRules:
-		m.ClearRules()
 		return nil
 	}
 	return fmt.Errorf("unknown TLSFingerprintRouter nullable field %s", name)

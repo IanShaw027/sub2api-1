@@ -61,6 +61,8 @@ var (
 	NameValidator func(string) error
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
+	// DefaultRules holds the default value on creation for the "rules" field.
+	DefaultRules func() []map[string]interface{}
 )
 
 // OrderOption defines the ordering options for the TLSFingerprintRouter queries.

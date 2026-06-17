@@ -49,7 +49,7 @@ func (TLSFingerprintRouter) Fields() []ent.Field {
 			Default(true),
 
 		field.JSON("rules", []map[string]any{}).
-			Optional().
+			Default(func() []map[string]any { return []map[string]any{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 	}
 }

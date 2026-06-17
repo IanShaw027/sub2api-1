@@ -2607,7 +2607,7 @@ var (
 		{Name: "name", Type: field.TypeString, Unique: true, Size: 100},
 		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
-		{Name: "rules", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "rules", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 	}
 	// TLSFingerprintRoutersTable holds the schema information for the "tls_fingerprint_routers" table.
 	TLSFingerprintRoutersTable = &schema.Table{

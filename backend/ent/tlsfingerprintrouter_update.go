@@ -95,12 +95,6 @@ func (_u *TLSFingerprintRouterUpdate) AppendRules(v []map[string]interface{}) *T
 	return _u
 }
 
-// ClearRules clears the value of the "rules" field.
-func (_u *TLSFingerprintRouterUpdate) ClearRules() *TLSFingerprintRouterUpdate {
-	_u.mutation.ClearRules()
-	return _u
-}
-
 // Mutation returns the TLSFingerprintRouterMutation object of the builder.
 func (_u *TLSFingerprintRouterUpdate) Mutation() *TLSFingerprintRouterMutation {
 	return _u.mutation
@@ -187,9 +181,6 @@ func (_u *TLSFingerprintRouterUpdate) sqlSave(ctx context.Context) (_node int, e
 			sqljson.Append(u, tlsfingerprintrouter.FieldRules, value)
 		})
 	}
-	if _u.mutation.RulesCleared() {
-		_spec.ClearField(tlsfingerprintrouter.FieldRules, field.TypeJSON)
-	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{tlsfingerprintrouter.Label}
@@ -273,12 +264,6 @@ func (_u *TLSFingerprintRouterUpdateOne) SetRules(v []map[string]interface{}) *T
 // AppendRules appends value to the "rules" field.
 func (_u *TLSFingerprintRouterUpdateOne) AppendRules(v []map[string]interface{}) *TLSFingerprintRouterUpdateOne {
 	_u.mutation.AppendRules(v)
-	return _u
-}
-
-// ClearRules clears the value of the "rules" field.
-func (_u *TLSFingerprintRouterUpdateOne) ClearRules() *TLSFingerprintRouterUpdateOne {
-	_u.mutation.ClearRules()
 	return _u
 }
 
@@ -397,9 +382,6 @@ func (_u *TLSFingerprintRouterUpdateOne) sqlSave(ctx context.Context) (_node *TL
 		_spec.AddModifier(func(u *sql.UpdateBuilder) {
 			sqljson.Append(u, tlsfingerprintrouter.FieldRules, value)
 		})
-	}
-	if _u.mutation.RulesCleared() {
-		_spec.ClearField(tlsfingerprintrouter.FieldRules, field.TypeJSON)
 	}
 	_node = &TLSFingerprintRouter{config: _u.config}
 	_spec.Assign = _node.assignValues

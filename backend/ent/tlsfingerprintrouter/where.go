@@ -309,16 +309,6 @@ func EnabledNEQ(v bool) predicate.TLSFingerprintRouter {
 	return predicate.TLSFingerprintRouter(sql.FieldNEQ(FieldEnabled, v))
 }
 
-// RulesIsNil applies the IsNil predicate on the "rules" field.
-func RulesIsNil() predicate.TLSFingerprintRouter {
-	return predicate.TLSFingerprintRouter(sql.FieldIsNull(FieldRules))
-}
-
-// RulesNotNil applies the NotNil predicate on the "rules" field.
-func RulesNotNil() predicate.TLSFingerprintRouter {
-	return predicate.TLSFingerprintRouter(sql.FieldNotNull(FieldRules))
-}
-
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.TLSFingerprintRouter) predicate.TLSFingerprintRouter {
 	return predicate.TLSFingerprintRouter(sql.AndPredicates(predicates...))

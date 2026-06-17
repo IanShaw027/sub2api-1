@@ -31,6 +31,9 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 	if s == nil || s.tlsFPRouterService == nil || account == nil {
 		return runtime
 	}
+	if !account.IsOpenAITLSFingerprintEnabled() {
+		return runtime
+	}
 	routerID := account.GetTLSFingerprintRouterID()
 	if routerID <= 0 {
 		return runtime
@@ -43,11 +46,14 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 	if !ok {
 		return runtime
 	}
-	if s.tlsFPProfileService != nil {
-		if profile := s.tlsFPProfileService.ResolveTLSProfileByID(match.ProfileID); profile != nil {
-			runtime.Profile = profile
-		}
+	if s.tlsFPProfileService == nil || match.ProfileID <= 0 {
+		return runtime
 	}
+	profile := s.tlsFPProfileService.ResolveTLSProfileByID(match.ProfileID)
+	if profile == nil {
+		return runtime
+	}
+	runtime.Profile = profile
 	runtime.UpstreamUserAgent = strings.TrimSpace(match.UpstreamUserAgent)
 	runtime.UpstreamOriginator = strings.TrimSpace(match.UpstreamOriginator)
 	runtime.Matched = true

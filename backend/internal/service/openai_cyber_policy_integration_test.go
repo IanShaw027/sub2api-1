@@ -51,3 +51,29 @@ func TestOpenAINonStreamingSSECyberPolicyMarksAccountError(t *testing.T) {
 	require.Contains(t, repo.setErrorMsg, "被风控命中(cyber_policy)")
 	require.Contains(t, repo.setErrorMsg, "policy denied")
 }
+
+func TestOpenAICyberPolicySkipsPoolModeWithoutCustomErrorCodes(t *testing.T) {
+	repo := &openAICyberPolicyAccountRepo{}
+	rateLimitSvc := NewRateLimitService(repo, nil, nil, nil, nil)
+	account := &Account{
+		ID:       654,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":   "sk-test",
+			"pool_mode": true,
+		},
+	}
+
+	disabled := rateLimitSvc.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusForbidden,
+		nil,
+		[]byte(`{"error":{"code":"cyber_policy","message":"policy denied"}}`),
+	)
+
+	require.False(t, disabled)
+	require.Zero(t, repo.setErrorID)
+	require.Empty(t, repo.setErrorMsg)
+}

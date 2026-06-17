@@ -2082,6 +2082,52 @@ func TestOpenAIWSConnPool_SeparatesConnectionsByTLSProfileIdentity(t *testing.T)
 	require.Equal(t, 2, dialer.DialCount())
 }
 
+func TestOpenAIWSConnPool_TLSProfileIdentityIncludesAuthHeaders(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 4
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 4
+
+	pool := newOpenAIWSConnPool(cfg)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 904, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	profile := &tlsfingerprint.Profile{
+		Name:          "Chrome Routed",
+		ALPNProtocols: []string{"h2", "http/1.1"},
+		CipherSuites:  []uint16{0x1301},
+	}
+
+	headersA := http.Header{}
+	headersA.Set("authorization", "Bearer token-a")
+	headersA.Set("chatgpt-account-id", "acct-a")
+	leaseA, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account:    account,
+		WSURL:      "wss://example.com/v1/responses",
+		Headers:    headersA,
+		TLSProfile: profile,
+		Profile:    openAIWSConnProfileNeutral,
+	})
+	require.NoError(t, err)
+	leaseA.Release()
+	require.Equal(t, 1, dialer.DialCount())
+
+	headersB := http.Header{}
+	headersB.Set("authorization", "Bearer token-b")
+	headersB.Set("chatgpt-account-id", "acct-b")
+	leaseB, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account:    account,
+		WSURL:      "wss://example.com/v1/responses",
+		Headers:    headersB,
+		TLSProfile: profile,
+		Profile:    openAIWSConnProfileNeutral,
+	})
+	require.NoError(t, err)
+	require.False(t, leaseB.Reused(), "TLS-routed neutral WS connections must not cross auth or ChatGPT account identities")
+	leaseB.Release()
+	require.Equal(t, 2, dialer.DialCount())
+}
+
 func TestOpenAIWSConnPool_SessionDoesNotEvictIdleNeutralWhenConcurrencyFull(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
