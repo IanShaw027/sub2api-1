@@ -552,6 +552,44 @@ func TestOpenAITokenProvider_MissingAccessToken(t *testing.T) {
 	require.Contains(t, repo.setErrorReason, "missing access_token")
 }
 
+func TestOpenAITokenProvider_MissingAccessTokenUsesLatestDBTokenBeforeSetError(t *testing.T) {
+	cache := newOpenAITokenCacheStub()
+	expiresAt := time.Now().Add(1 * time.Hour).Format(time.RFC3339)
+	accountID := int64(212)
+	latest := &Account{
+		ID:       accountID,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "latest-db-token",
+			"expires_at":   expiresAt,
+		},
+	}
+	repo := &openAITempUnschedRepoStub{
+		kiroDefaultAccountRepoStub: kiroDefaultAccountRepoStub{
+			accountsByID: map[int64]*Account{
+				accountID: latest,
+			},
+		},
+	}
+	staleSnapshot := &Account{
+		ID:       accountID,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"expires_at": expiresAt,
+		},
+	}
+	provider := NewOpenAITokenProvider(repo, cache, nil)
+
+	token, err := provider.GetAccessToken(context.Background(), staleSnapshot)
+
+	require.NoError(t, err)
+	require.Equal(t, "latest-db-token", token)
+	require.Equal(t, 0, repo.setErrorCalls)
+	require.Equal(t, "latest-db-token", cache.tokens[OpenAITokenCacheKey(latest)])
+}
+
 func TestOpenAITokenProvider_MissingAccessTokenRefreshesViaRefreshAPI(t *testing.T) {
 	repo := &openAITempUnschedRepoStub{
 		kiroDefaultAccountRepoStub: kiroDefaultAccountRepoStub{

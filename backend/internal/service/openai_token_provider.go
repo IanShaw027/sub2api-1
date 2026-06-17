@@ -227,7 +227,13 @@ func (p *OpenAITokenProvider) GetAccessToken(ctx context.Context, account *Accou
 
 	accessToken := account.GetCredential("access_token")
 	if strings.TrimSpace(accessToken) == "" {
-		return "", p.markCredentialErrorAndBuildFailover(account, "missing access_token on request path")
+		if latestAccount, latestToken := p.latestAccountWithAccessToken(ctx, account); strings.TrimSpace(latestToken) != "" {
+			account = latestAccount
+			accessToken = latestToken
+			expiresAt = account.GetCredentialAsTime("expires_at")
+		} else {
+			return "", p.markCredentialErrorAndBuildFailover(account, "missing access_token on request path")
+		}
 	}
 
 	// 3) Populate cache with TTL.
@@ -267,6 +273,29 @@ func (p *OpenAITokenProvider) GetAccessToken(ctx context.Context, account *Accou
 
 	return accessToken, nil
 }
+
+func (p *OpenAITokenProvider) latestAccountWithAccessToken(ctx context.Context, account *Account) (*Account, string) {
+	if p == nil || p.accountRepo == nil || account == nil {
+		return nil, ""
+	}
+	latestAccount, err := p.accountRepo.GetByID(ctx, account.ID)
+	if err != nil || latestAccount == nil {
+		if err != nil {
+			slog.Debug("openai_token_missing_access_token_db_reread_failed", "account_id", account.ID, "error", err)
+		}
+		return nil, ""
+	}
+	if latestAccount.Platform != PlatformOpenAI || latestAccount.Type != AccountTypeOAuth {
+		return nil, ""
+	}
+	accessToken := latestAccount.GetOpenAIAccessToken()
+	if strings.TrimSpace(accessToken) == "" {
+		return nil, ""
+	}
+	slog.Info("openai_token_missing_access_token_recovered_from_db", "account_id", account.ID)
+	return latestAccount, accessToken
+}
+
 func (p *OpenAITokenProvider) markCredentialErrorAndBuildFailover(account *Account, reason string) error {
 	if p != nil && p.accountRepo != nil && account != nil {
 		bgCtx := context.Background()
