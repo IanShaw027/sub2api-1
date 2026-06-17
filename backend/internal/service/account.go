@@ -1981,6 +1981,30 @@ func (a *Account) GetTLSFingerprintProfileID() int64 {
 	return 0
 }
 
+// GetTLSFingerprintRouterID 获取账号绑定的 TLS 指纹路由 ID。
+func (a *Account) GetTLSFingerprintRouterID() int64 {
+	if a.Extra == nil {
+		return 0
+	}
+	v, ok := a.Extra["tls_fingerprint_router_id"]
+	if !ok {
+		return 0
+	}
+	switch id := v.(type) {
+	case float64:
+		return int64(id)
+	case int64:
+		return id
+	case int:
+		return int64(id)
+	case json.Number:
+		if i, err := id.Int64(); err == nil {
+			return i
+		}
+	}
+	return 0
+}
+
 // GetUserMsgQueueMode 获取用户消息队列模式
 // "serialize" = 串行队列, "throttle" = 软性限速, "" = 未设置（使用全局配置）
 func (a *Account) GetUserMsgQueueMode() string {

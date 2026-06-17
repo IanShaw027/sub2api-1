@@ -23,7 +23,7 @@ func TestNormalizeOpenAIImageTestMode(t *testing.T) {
 }
 
 func TestResolveOpenAIImageExecutionMode_DefaultsToCodex(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	require.Equal(t, "codex", resolveOpenAIImageExecutionMode(c))
@@ -41,7 +41,7 @@ func TestAccountSupportsOpenAIImageRoute_Web2APIRequiresOAuth(t *testing.T) {
 }
 
 func TestAccountTestService_OpenAIImageOAuthDefaultCallsImagesEndpoint(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/1/test", nil)
@@ -107,7 +107,7 @@ func TestAccountTestService_OpenAIImageOAuthDefaultCallsImagesEndpoint(t *testin
 }
 
 func TestAccountTestService_OpenAIImageOAuthIgnoresCompactProbeMode(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/1/test", nil)
@@ -144,7 +144,7 @@ func TestAccountTestService_OpenAIImageOAuthIgnoresCompactProbeMode(t *testing.T
 }
 
 func TestAccountTestService_OpenAIImageOAuthPreservesInboundOriginator(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/1/test", nil)
@@ -181,7 +181,7 @@ func TestAccountTestService_OpenAIImageOAuthPreservesInboundOriginator(t *testin
 }
 
 func TestAccountTestService_OpenAIImageOAuthPromotesOfficialCodexUserAgentOriginator(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/1/test", nil)
@@ -233,7 +233,7 @@ func TestCollectOpenAIImageTestResults_IgnoresPartialImages(t *testing.T) {
 }
 
 func TestAccountTestService_OpenAIImageAPIKeyUsesConfiguredV1BaseURL(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/1/test", nil)

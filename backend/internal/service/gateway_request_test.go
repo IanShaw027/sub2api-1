@@ -343,6 +343,33 @@ func TestFilterThinkingBlocks(t *testing.T) {
 	}
 }
 
+func TestFilterThinkingBlocks_SkipsPassbackRequiredModels(t *testing.T) {
+	input := []byte(`{"model":"deepseek-v4-pro","messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"keep original","signature":""},{"type":"text","text":"Answer"}]}]}`)
+
+	out := FilterThinkingBlocks(input, "deepseek-v4-pro")
+
+	require.Equal(t, string(input), string(out))
+}
+
+func TestFilterThinkingBlocksForRetry_SkipsPassbackRequiredModels(t *testing.T) {
+	input := []byte(`{"model":"qwen3-235b-a22b-thinking-2507","thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"keep original","signature":""},{"type":"text","text":"Answer"}]}]}`)
+
+	out := FilterThinkingBlocksForRetry(input, "qwen3-235b-a22b-thinking-2507")
+
+	require.Equal(t, string(input), string(out))
+}
+
+func TestFilterThinkingBlocksForRetry_AppliesToAnthropicStrictModels(t *testing.T) {
+	input := []byte(`{"model":"claude-sonnet-4-5","thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"convert me","signature":""},{"type":"text","text":"Answer"}]}]}`)
+
+	out := FilterThinkingBlocksForRetry(input, "claude-sonnet-4-5")
+
+	require.NotEqual(t, string(input), string(out))
+	require.NotContains(t, string(out), `"thinking":{"type":"enabled"`)
+	require.Contains(t, string(out), `"type":"text"`)
+	require.Contains(t, string(out), `"text":"convert me"`)
+}
+
 func TestFilterThinkingBlocksForRetry_DisablesThinkingAndPreservesAsText(t *testing.T) {
 	input := []byte(`{
 		"model":"claude-3-5-sonnet-20241022",

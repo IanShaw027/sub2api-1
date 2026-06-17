@@ -69,7 +69,7 @@ func TestOpenAIWSTokenEventTreatsOutputItemAddedAsFirstClientOutput(t *testing.T
 }
 
 func TestOpenAIGatewayService_Forward_PreservePreviousResponseIDWhenWSEnabled(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -127,7 +127,7 @@ func TestOpenAIGatewayService_Forward_PreservePreviousResponseIDWhenWSEnabled(t 
 }
 
 func TestOpenAIGatewayService_Forward_HTTPIngressStaysHTTPWhenWSEnabled(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -193,7 +193,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressStaysHTTPWhenWSEnabled(t *testi
 }
 
 func TestOpenAIGatewayService_Forward_HTTPIngressUsesWSWhenEnabledWithSessionSignal(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	receivedCh := make(chan []byte, 1)
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
@@ -317,7 +317,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressUsesWSWhenEnabledWithSessionSig
 }
 
 func TestOpenAIGatewayService_Forward_HTTPIngressNoSessionUsesOneShotWS(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var connectionCount atomic.Int32
 	var requestCount atomic.Int32
@@ -467,7 +467,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressNoSessionUsesOneShotWS(t *testi
 }
 
 func TestOpenAIGatewayService_Forward_HTTPIngressWSClientDisconnectSkipsStickyBindings(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -588,7 +588,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressWSClientDisconnectSkipsStickyBi
 }
 
 func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentOnce(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -675,7 +675,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentO
 }
 
 func TestOpenAIGatewayService_Forward_HTTPIngressRetriesUnknownReasoningEnabledOnce(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -748,7 +748,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesUnknownReasoningEnabledO
 }
 
 func TestOpenAIGatewayService_Forward_HTTPIngressRetriesThinkingSignatureInvalidEncryptedContentOnce(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -829,7 +829,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesThinkingSignatureInvalid
 }
 
 func TestOpenAIGatewayService_Forward_HTTPIngressRetriesWrappedInvalidEncryptedContentOnce(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -914,7 +914,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesWrappedInvalidEncryptedC
 }
 
 func TestOpenAIGatewayService_Forward_HTTPIngressCompactRetryReappliesCodexShape(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -997,7 +997,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressCompactRetryReappliesCodexShape
 }
 
 func TestOpenAIGatewayService_Forward_HTTPIngressRetriesMalformedEncryptedContentOnce(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -1074,7 +1074,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesMalformedEncryptedConten
 }
 
 func TestOpenAIGatewayService_Forward_RemovePreviousResponseIDWhenWSDisabled(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -1130,7 +1130,7 @@ func TestOpenAIGatewayService_Forward_RemovePreviousResponseIDWhenWSDisabled(t *
 }
 
 func TestOpenAIGatewayService_Forward_DropsStoreFalseReasoningItemsOnHTTPResponsesPath(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -1186,7 +1186,7 @@ func TestOpenAIGatewayService_Forward_DropsStoreFalseReasoningItemsOnHTTPRespons
 }
 
 func TestOpenAIGatewayService_Forward_WSv2Dial426FallbackHTTP(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	ws426Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUpgradeRequired)
 		_, _ = w.Write([]byte(`upgrade required`))
@@ -1249,7 +1249,7 @@ func TestOpenAIGatewayService_Forward_WSv2Dial426FallbackHTTP(t *testing.T) {
 }
 
 func TestOpenAIGatewayService_Forward_WSv2FallbackCoolingSkipWS(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -1312,7 +1312,7 @@ func TestOpenAIGatewayService_Forward_WSv2FallbackCoolingSkipWS(t *testing.T) {
 }
 
 func TestOpenAIGatewayService_Forward_ReturnErrorWhenOnlyWSv1Enabled(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1402,7 +1402,7 @@ func TestNewOpenAIGatewayService_InitializesOpenAIWSResolver(t *testing.T) {
 }
 
 func TestOpenAIGatewayService_Forward_WSv2FallbackWhenResponseAlreadyWrittenReturnsWSError(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	ws426Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUpgradeRequired)
 		_, _ = w.Write([]byte(`upgrade required`))
@@ -1462,7 +1462,7 @@ func TestOpenAIGatewayService_Forward_WSv2FallbackWhenResponseAlreadyWrittenRetu
 }
 
 func TestOpenAIGatewayService_Forward_WSv2StreamEarlyCloseFallbackHTTP(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1555,7 +1555,7 @@ func TestOpenAIGatewayService_Forward_WSv2StreamEarlyCloseFallbackHTTP(t *testin
 }
 
 func TestOpenAIGatewayService_Forward_WSv2SoftRateLimitAdvisoryReturnsFailover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1653,7 +1653,7 @@ func TestOpenAIGatewayService_Forward_WSv2SoftRateLimitAdvisoryReturnsFailover(t
 }
 
 func TestOpenAIGatewayService_Forward_WSv2RetryFiveTimesThenFallbackHTTP(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
@@ -1735,7 +1735,7 @@ func TestOpenAIGatewayService_Forward_WSv2RetryFiveTimesThenFallbackHTTP(t *test
 }
 
 func TestOpenAIGatewayService_Forward_WSv2PolicyViolationFastFallbackHTTP(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
@@ -1816,7 +1816,7 @@ func TestOpenAIGatewayService_Forward_WSv2PolicyViolationFastFallbackHTTP(t *tes
 }
 
 func TestOpenAIGatewayService_Forward_WSv2ConnectionLimitReachedRetryThenFailover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
@@ -1907,7 +1907,7 @@ func TestOpenAIGatewayService_Forward_WSv2ConnectionLimitReachedRetryThenFailove
 }
 
 func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundRecoversByDroppingPreviousResponseID(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	var wsRequestPayloads [][]byte
@@ -2024,7 +2024,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundRecoversByDrop
 }
 
 func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundSkipsRecoveryForFunctionCallOutput(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	var wsRequestPayloads [][]byte
@@ -2122,7 +2122,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundSkipsRecoveryF
 }
 
 func TestOpenAIGatewayService_Forward_WSv2OAuthRetriesCodexCompatOnMissingToolCall(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	var wsRequestPayloads [][]byte
@@ -2246,7 +2246,7 @@ func TestOpenAIGatewayService_Forward_WSv2OAuthRetriesCodexCompatOnMissingToolCa
 }
 
 func TestOpenAIGatewayService_Forward_WSv2OAuthDoesNotCodexCompatRecoverNonCompatReason(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	var wsRequestPayloads [][]byte
@@ -2356,7 +2356,7 @@ func TestOpenAIGatewayService_Forward_WSv2OAuthDoesNotCodexCompatRecoverNonCompa
 }
 
 func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundSkipsRecoveryWithoutPreviousResponseID(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	var wsRequestPayloads [][]byte
@@ -2453,7 +2453,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundSkipsRecoveryW
 }
 
 func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundOnlyRecoversOnce(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	var wsRequestPayloads [][]byte
@@ -2551,7 +2551,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundOnlyRecoversOn
 }
 
 func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversOnce(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	var wsRequestPayloads [][]byte
@@ -2671,7 +2671,7 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversOnce(t 
 }
 
 func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentSkipsRecoveryWithoutReasoningItem(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	var wsRequestPayloads [][]byte
@@ -2770,7 +2770,7 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentSkipsRecoveryWi
 }
 
 func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversSingleObjectInputAndKeepsSummary(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	var wsRequestPayloads [][]byte
@@ -2886,7 +2886,7 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversSingleO
 }
 
 func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversMalformedInputItem(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	var wsRequestPayloads [][]byte
@@ -3003,7 +3003,7 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversMalform
 }
 
 func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentKeepsPreviousResponseIDForFunctionCallOutput(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var wsAttempts atomic.Int32
 	var wsRequestPayloads [][]byte
@@ -3149,4 +3149,31 @@ func TestBuildOpenAIWSNeutralHeaders_NoSessionIdentity(t *testing.T) {
 	} {
 		require.Empty(t, headers.Get(h), "中性头不应包含 %s", h)
 	}
+}
+
+func TestOpenAIWSFingerprintRuntimeHeadersOverrideDefaults(t *testing.T) {
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	account := &Account{
+		ID:       43,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"chatgpt_account_id": "acct_456",
+		},
+		Extra: map[string]any{
+			"openai_user_agent": "account-default/1.0",
+		},
+	}
+	decision := OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2}
+	runtime := openAITLSFingerprintRuntime{
+		UpstreamUserAgent:  "router-upstream/2.0",
+		UpstreamOriginator: "router-originator",
+		Matched:            true,
+	}
+
+	headers := svc.buildOpenAIWSNeutralHeaders(account, "tok_abc", decision, true)
+	applyOpenAIWSFingerprintRuntimeHeaders(headers, runtime)
+
+	require.Equal(t, "router-upstream/2.0", headers.Get("user-agent"))
+	require.Equal(t, "router-originator", headers.Get("originator"))
 }

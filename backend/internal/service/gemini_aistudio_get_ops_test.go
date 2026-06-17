@@ -28,7 +28,7 @@ func (r geminiAIStudioErrReadCloser) Close() error {
 
 func TestGeminiMessagesCompatService_ForwardAIStudioGET_SetsOpsUpstreamLatency(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -68,7 +68,7 @@ func TestGeminiMessagesCompatService_ForwardAIStudioGET_SetsOpsUpstreamLatency(t
 
 func TestGeminiMessagesCompatService_ForwardAIStudioGET_TooLargeBodyReturnsError(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -123,7 +123,7 @@ func TestGeminiMessagesCompatService_ForwardAIStudioGET_TooLargeBodyReturnsError
 
 func TestGeminiMessagesCompatService_ForwardAIStudioGET_ReadErrorRecordsOpsContext(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -182,7 +182,7 @@ func TestGeminiMessagesCompatService_ForwardAIStudioGET_ReadErrorRecordsOpsConte
 
 func TestGeminiMessagesCompatService_ForwardAIStudioGET_RequestErrorRecordsOpsContext(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -228,7 +228,7 @@ func TestGeminiMessagesCompatService_ForwardAIStudioGET_RequestErrorRecordsOpsCo
 
 func TestGeminiMessagesCompatService_ForwardAIStudioGET_HTTPErrorRecordsOpsContext(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -292,7 +292,7 @@ func TestGeminiMessagesCompatService_ForwardAIStudioGET_HTTPErrorRecordsOpsConte
 
 func TestGeminiMessagesCompatService_ForwardAIStudioGET_429UpdatesSchedulingState(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

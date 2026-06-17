@@ -59,7 +59,7 @@ func (u *queuedGatewayOpsUpstream) DoWithTLS(req *http.Request, proxyURL string,
 }
 
 func TestGatewayService_ForwardAsChatCompletions_RecordsOpsContextAndLatency(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -118,7 +118,7 @@ func TestGatewayService_ForwardAsChatCompletions_RecordsOpsContextAndLatency(t *
 }
 
 func TestGatewayService_ForwardAsResponses_RecordsOpsContextAndLatency(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -177,7 +177,7 @@ func TestGatewayService_ForwardAsResponses_RecordsOpsContextAndLatency(t *testin
 }
 
 func TestGatewayService_Forward_AccumulatesOpsUpstreamLatencyAcrossRetryAttempts(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -255,7 +255,7 @@ func TestGatewayService_Forward_AccumulatesOpsUpstreamLatencyAcrossRetryAttempts
 }
 
 func TestGatewayService_Forward_NativeMessagesHTTPErrorEventIncludesAccountAndUpstreamURL(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -316,7 +316,7 @@ func TestGatewayService_Forward_NativeMessagesHTTPErrorEventIncludesAccountAndUp
 }
 
 func TestGatewayService_Forward_NativeMessagesFailoverEventIncludesAccountAndUpstreamURL(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -378,7 +378,7 @@ func TestGatewayService_Forward_NativeMessagesFailoverEventIncludesAccountAndUps
 }
 
 func TestGatewayService_Forward_AnthropicPassthroughRecordsLatencyAndFailoverFields(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -437,7 +437,7 @@ func TestGatewayService_Forward_AnthropicPassthroughRecordsLatencyAndFailoverFie
 }
 
 func TestGatewayService_Forward_BedrockRecordsLatencyAndFailoverFields(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -508,7 +508,7 @@ func TestGatewayService_Forward_BedrockRecordsLatencyAndFailoverFields(t *testin
 }
 
 func TestGatewayService_Forward_NativeMessagesSignatureRetryFinalHTTPErrorUsesFilteredBody(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -589,7 +589,7 @@ func TestGatewayService_Forward_NativeMessagesSignatureRetryFinalHTTPErrorUsesFi
 }
 
 func TestGatewayService_Forward_NativeMessagesSignatureRetryRequestErrorRecordsFilteredBody(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -670,7 +670,7 @@ func TestGatewayService_Forward_NativeMessagesSignatureRetryRequestErrorRecordsF
 }
 
 func TestGatewayService_Forward_NativeMessagesBudgetRetryFinalHTTPErrorUsesRectifiedBody(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -743,7 +743,7 @@ func TestGatewayService_Forward_NativeMessagesBudgetRetryFinalHTTPErrorUsesRecti
 }
 
 func TestGatewayService_Forward_NativeMessagesToolDowngradeRetryRequestErrorUsesToolFilteredBody(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

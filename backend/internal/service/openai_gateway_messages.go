@@ -297,12 +297,14 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
+	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
 	httpCodexCompatRetryTried := false
 	var resp *http.Response
 	for {
+		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
 		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
 		upstreamStart := time.Now()
-		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
@@ -461,10 +463,10 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	var result *OpenAIForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleAnthropicStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, toolNameMap, startTime)
+		result, handleErr = s.handleAnthropicStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, toolNameMap, startTime)
 	} else {
 		// Client wants JSON: buffer the streaming response and assemble a JSON reply.
-		result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, toolNameMap, startTime)
+		result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, toolNameMap, startTime)
 	}
 
 	// Propagate ServiceTier and ReasoningEffort to result for billing
@@ -523,6 +525,7 @@ func (s *OpenAIGatewayService) handleAnthropicErrorResponse(
 func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	resp *http.Response,
 	c *gin.Context,
+	account *Account,
 	originalModel string,
 	billingModel string,
 	upstreamModel string,
@@ -530,7 +533,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
-	finalResponse, usage, acc, err := s.readOpenAICompatBufferedTerminal(resp, "openai messages buffered", requestID)
+	finalResponse, usage, acc, err := s.readOpenAICompatBufferedTerminal(c.Request.Context(), resp, "openai messages buffered", requestID, account)
 	if err != nil {
 		return nil, err
 	}
@@ -571,6 +574,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	resp *http.Response,
 	c *gin.Context,
+	account *Account,
 	originalModel string,
 	billingModel string,
 	upstreamModel string,
@@ -636,6 +640,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				zap.String("request_id", requestID),
 			)
 			return false
+		}
+		if event.Type == "response.failed" {
+			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, []byte(payload))
 		}
 
 		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(event.Type)
@@ -844,9 +851,11 @@ func isOpenAICompatDoneSentinelLine(line string) bool {
 }
 
 func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
+	ctx context.Context,
 	resp *http.Response,
 	logPrefix string,
 	requestID string,
+	account *Account,
 ) (*apicompat.ResponsesResponse, OpenAIUsage, *apicompat.BufferedResponseAccumulator, error) {
 	acc := apicompat.NewBufferedResponseAccumulator()
 	var usage OpenAIUsage
@@ -933,6 +942,9 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 					if err := json.Unmarshal([]byte(payload), &event); err == nil {
 						acc.ProcessEvent(&event)
 						if isOpenAICompatResponsesTerminalEvent(event.Type) && event.Response != nil {
+							if event.Type == "response.failed" {
+								_ = s.markOpenAICyberPolicyIfDetected(ctx, account, []byte(payload))
+							}
 							if event.Usage != nil {
 								usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
 								if event.Response.Usage == nil {
@@ -978,6 +990,9 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 
 			acc.ProcessEvent(&event)
 			if isOpenAICompatResponsesTerminalEvent(event.Type) && event.Response != nil {
+				if event.Type == "response.failed" {
+					_ = s.markOpenAICyberPolicyIfDetected(ctx, account, []byte(payload))
+				}
 				if event.Usage != nil {
 					usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
 					if event.Response.Usage == nil {

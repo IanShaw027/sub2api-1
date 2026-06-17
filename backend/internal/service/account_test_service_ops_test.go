@@ -16,7 +16,7 @@ import (
 
 func TestAccountTestServiceSendErrorAndEnd_RecordsUpstreamOpsError(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var captured *OpsInsertErrorLogInput
 	repo := &opsRepoMock{
@@ -68,7 +68,7 @@ func TestAccountTestServiceSendErrorAndEnd_RecordsUpstreamOpsError(t *testing.T)
 
 func TestAccountTestServiceSendErrorAndEnd_RecordsAuthOpsError(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var captured *OpsInsertErrorLogInput
 	repo := &opsRepoMock{
@@ -99,7 +99,7 @@ func TestAccountTestServiceSendErrorAndEnd_RecordsAuthOpsError(t *testing.T) {
 
 func TestAccountTestServiceSendErrorAndEnd_ClassifiesKiroFrameFailureAsUpstream(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var captured *OpsInsertErrorLogInput
 	repo := &opsRepoMock{
@@ -135,7 +135,7 @@ func TestAccountTestServiceSendErrorAndEnd_ClassifiesKiroFrameFailureAsUpstream(
 
 func TestAccountTestService_RunTestBackground_KiroDefaultModelRecordedInOpsError(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var captured *OpsInsertErrorLogInput
 	repo := &opsRepoMock{
@@ -186,7 +186,7 @@ func TestAccountTestService_RunTestBackground_KiroDefaultModelRecordedInOpsError
 
 func TestAccountTestServiceSendErrorAndEnd_SkipsIgnoredScheduledAccountNotFoundOpsError(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	inserted := 0
 	repo := &opsRepoMock{
@@ -214,7 +214,7 @@ func TestAccountTestServiceSendErrorAndEnd_SkipsIgnoredScheduledAccountNotFoundO
 
 func TestAccountTestService_TestAccountConnection_OpenAIDefaultModelRecordedInOpsError(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var captured *OpsInsertErrorLogInput
 	repo := &opsRepoMock{

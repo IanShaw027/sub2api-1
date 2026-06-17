@@ -17,6 +17,7 @@ import (
 // refreshAPIAccountRepo implements AccountRepository for OAuthRefreshAPI tests.
 type refreshAPIAccountRepo struct {
 	mockAccountRepoForGemini
+	mu                     sync.Mutex
 	account                *Account // returned by GetByID
 	getByIDErr             error
 	updateErr              error
@@ -25,18 +26,27 @@ type refreshAPIAccountRepo struct {
 }
 
 func (r *refreshAPIAccountRepo) GetByID(_ context.Context, _ int64) (*Account, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.getByIDErr != nil {
 		return nil, r.getByIDErr
 	}
-	return r.account, nil
+	return cloneAccountForRefreshAPITest(r.account), nil
 }
 
-func (r *refreshAPIAccountRepo) Update(_ context.Context, _ *Account) error {
+func (r *refreshAPIAccountRepo) Update(_ context.Context, account *Account) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.updateCalls++
+	if account != nil {
+		r.account = cloneAccountForRefreshAPITest(account)
+	}
 	return r.updateErr
 }
 
 func (r *refreshAPIAccountRepo) UpdateCredentials(_ context.Context, id int64, credentials map[string]any) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.updateCalls++
 	r.updateCredentialsCalls++
 	if r.updateErr != nil {
@@ -47,6 +57,16 @@ func (r *refreshAPIAccountRepo) UpdateCredentials(_ context.Context, id int64, c
 	}
 	r.account.Credentials = cloneCredentials(credentials)
 	return nil
+}
+
+func cloneAccountForRefreshAPITest(account *Account) *Account {
+	if account == nil {
+		return nil
+	}
+	copied := *account
+	copied.Credentials = cloneCredentials(account.Credentials)
+	copied.Extra = cloneCredentials(account.Extra)
+	return &copied
 }
 
 // refreshAPIExecutorStub implements OAuthRefreshExecutor for tests.

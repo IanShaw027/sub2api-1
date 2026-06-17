@@ -131,6 +131,12 @@
                       </span>
                       <span class="flex-1 text-left">{{ t('admin.tlsFingerprintProfiles.title') }}</span>
                     </button>
+                    <button class="account-tools-menu-item" @click="openTLSFingerprintRouters">
+                      <span class="account-tools-menu-icon bg-sky-50 text-sky-600 dark:bg-sky-900/30 dark:text-sky-300">
+                        <Icon name="shield" size="sm" />
+                      </span>
+                      <span class="flex-1 text-left">{{ t('admin.tlsFingerprintRouters.title') }}</span>
+                    </button>
 
                     <div class="my-2 border-t border-gray-100 dark:border-gray-700"></div>
                     <div class="px-2 py-2">
@@ -437,6 +443,11 @@
       :show="showTLSFingerprintProfiles"
       @close="showTLSFingerprintProfiles = false"
     />
+    <TLSFingerprintRoutersModal
+      v-if="showTLSFingerprintRouters"
+      :show="showTLSFingerprintRouters"
+      @close="showTLSFingerprintRouters = false"
+    />
   </AppLayout>
 </template>
 
@@ -485,6 +496,7 @@ const AccountStatsModal = defineAsyncComponent(() => import('@/components/admin/
 const ScheduledTestsPanel = defineAsyncComponent(() => import('@/components/admin/account/ScheduledTestsPanel.vue'))
 const ErrorPassthroughRulesModal = defineAsyncComponent(() => import('@/components/admin/ErrorPassthroughRulesModal.vue'))
 const TLSFingerprintProfilesModal = defineAsyncComponent(() => import('@/components/admin/TLSFingerprintProfilesModal.vue'))
+const TLSFingerprintRoutersModal = defineAsyncComponent(() => import('@/components/admin/TLSFingerprintRoutersModal.vue'))
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -548,6 +560,7 @@ const showTest = ref(false)
 const showStats = ref(false)
 const showErrorPassthrough = ref(false)
 const showTLSFingerprintProfiles = ref(false)
+const showTLSFingerprintRouters = ref(false)
 const edAcc = ref<Account | null>(null)
 let editDetailRequestSeq = 0
 const tempUnschedAcc = ref<Account | null>(null)
@@ -932,7 +945,8 @@ const isAnyModalOpen = computed(() => {
     showStats.value ||
     showSchedulePanel.value ||
     showErrorPassthrough.value ||
-    showTLSFingerprintProfiles.value
+    showTLSFingerprintProfiles.value ||
+    showTLSFingerprintRouters.value
   )
 })
 
@@ -1100,6 +1114,11 @@ const openErrorPassthrough = () => {
 const openTLSFingerprintProfiles = () => {
   closeAccountToolsDropdown()
   showTLSFingerprintProfiles.value = true
+}
+
+const openTLSFingerprintRouters = () => {
+  closeAccountToolsDropdown()
+  showTLSFingerprintRouters.value = true
 }
 
 const syncPendingListChanges = async () => {

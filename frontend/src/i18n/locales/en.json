@@ -3810,7 +3810,9 @@
           "label": "TLS Fingerprint Simulation",
           "hint": "Simulate Node.js/Claude Code client TLS fingerprint",
           "defaultProfile": "Built-in Default",
-          "randomProfile": "Random"
+          "randomProfile": "Random",
+          "noRouter": "No Router",
+          "routerHint": "Optional: choose a router to select profiles by inbound User-Agent."
         },
         "sessionIdMasking": {
           "label": "Session ID Masking",
@@ -6995,6 +6997,59 @@
       "loadFailed": "Failed to load profiles",
       "saveFailed": "Failed to save profile",
       "deleteFailed": "Failed to delete profile"
+    },
+    "tlsFingerprintRouters": {
+      "title": "TLS Fingerprint Routers",
+      "description": "Route inbound OpenAI User-Agent patterns to TLS fingerprint profiles and optional upstream headers",
+      "createRouter": "Create Router",
+      "editRouter": "Edit Router",
+      "deleteRouter": "Delete Router",
+      "noRouters": "No routers configured",
+      "createFirstRouter": "Create your first TLS fingerprint router",
+      "ruleCount": "{count} rule(s)",
+      "columns": {
+        "name": "Name",
+        "description": "Description",
+        "enabled": "Enabled",
+        "rules": "Rules",
+        "actions": "Actions"
+      },
+      "matchTypes": {
+        "contains": "Contains",
+        "prefix": "Prefix",
+        "exact": "Exact",
+        "regex": "Regex"
+      },
+      "form": {
+        "name": "Router Name",
+        "namePlaceholder": "e.g. OpenAI User-Agent Router",
+        "description": "Description",
+        "descriptionPlaceholder": "Optional description for this router",
+        "enabled": "Enable Router",
+        "enabledHint": "Disabled routers are ignored by account routing",
+        "rules": "Rules",
+        "addRule": "Add Rule",
+        "noProfilesHint": "Create at least one TLS fingerprint profile before enabling router rules.",
+        "ruleNamePlaceholder": "Rule name",
+        "matchType": "Match Type",
+        "pattern": "Pattern",
+        "patternPlaceholder": "e.g. Chrome or ^Mozilla/",
+        "profile": "TLS Fingerprint Profile",
+        "selectProfile": "Select profile",
+        "caseSensitive": "Case sensitive",
+        "upstreamUserAgent": "Upstream User-Agent",
+        "upstreamUserAgentPlaceholder": "Optional replacement User-Agent",
+        "upstreamOriginator": "Upstream Originator",
+        "upstreamOriginatorPlaceholder": "Optional originator value"
+      },
+      "deleteConfirmMessage": "Are you sure you want to delete router \"{name}\"? Accounts using this router will stop routing by TLS fingerprint rules.",
+      "createSuccess": "Router created successfully",
+      "updateSuccess": "Router updated successfully",
+      "deleteSuccess": "Router deleted successfully",
+      "loadFailed": "Failed to load routers",
+      "saveFailed": "Failed to save router",
+      "deleteFailed": "Failed to delete router",
+      "toggleFailed": "Failed to toggle router"
     }
   },
   "subscriptionProgress": {

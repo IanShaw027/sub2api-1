@@ -108,7 +108,7 @@ func TestNormalizeOpenAICompactRequestBodyForTest_AddsToolSearchForObjectDeferre
 
 func TestOpenAIGatewayService_Forward_OAuthCompactUsesCodexShape(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

@@ -21,7 +21,7 @@ type gatewaySSEAuditInvokeResult struct {
 func invokeGatewaySSEAuditHandler(t *testing.T, body string, passthrough bool) (*gatewaySSEAuditInvokeResult, error) {
 	t.Helper()
 
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)

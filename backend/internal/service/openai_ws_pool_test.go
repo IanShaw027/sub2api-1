@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1421,11 +1422,13 @@ func (d *openAIWSFakeDialer) Dial(
 	wsURL string,
 	headers http.Header,
 	proxyURL string,
+	tlsProfile *tlsfingerprint.Profile,
 ) (openAIWSClientConn, int, http.Header, error) {
 	_ = ctx
 	_ = wsURL
 	_ = headers
 	_ = proxyURL
+	_ = tlsProfile
 	return &openAIWSFakeConn{}, 0, nil, nil
 }
 
@@ -1484,11 +1487,13 @@ func (d *openAIWSCountingDialer) Dial(
 	wsURL string,
 	headers http.Header,
 	proxyURL string,
+	tlsProfile *tlsfingerprint.Profile,
 ) (openAIWSClientConn, int, http.Header, error) {
 	_ = ctx
 	_ = wsURL
 	_ = headers
 	_ = proxyURL
+	_ = tlsProfile
 	d.mu.Lock()
 	d.dialCount++
 	d.mu.Unlock()
@@ -1506,11 +1511,13 @@ func (d *openAIWSAlwaysFailDialer) Dial(
 	wsURL string,
 	headers http.Header,
 	proxyURL string,
+	tlsProfile *tlsfingerprint.Profile,
 ) (openAIWSClientConn, int, http.Header, error) {
 	_ = ctx
 	_ = wsURL
 	_ = headers
 	_ = proxyURL
+	_ = tlsProfile
 	d.mu.Lock()
 	d.dialCount++
 	d.mu.Unlock()
@@ -1663,11 +1670,13 @@ func (d *openAIWSNilConnDialer) Dial(
 	wsURL string,
 	headers http.Header,
 	proxyURL string,
+	tlsProfile *tlsfingerprint.Profile,
 ) (openAIWSClientConn, int, http.Header, error) {
 	_ = ctx
 	_ = wsURL
 	_ = headers
 	_ = proxyURL
+	_ = tlsProfile
 	return nil, 200, nil, nil
 }
 
@@ -1761,6 +1770,82 @@ func TestOpenAIWSConnPool_ProfileIsolation(t *testing.T) {
 	require.True(t, leaseSession2.Reused())
 	require.Equal(t, openAIWSConnProfileSessionBound, leaseSession2.conn.profile)
 	leaseSession2.Release()
+	require.Equal(t, 2, dialer.DialCount())
+}
+
+func TestOpenAIWSConnPool_SeparatesConnectionsByHandshakeIdentity(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 4
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 4
+
+	pool := newOpenAIWSConnPool(cfg)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 902, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	headersA := http.Header{}
+	headersA.Set("user-agent", "routed-a/1.0")
+	headersA.Set("originator", "routed-a")
+	leaseA, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		Headers: headersA,
+	})
+	require.NoError(t, err)
+	leaseA.Release()
+	require.Equal(t, 1, dialer.DialCount())
+
+	headersB := http.Header{}
+	headersB.Set("user-agent", "routed-b/1.0")
+	headersB.Set("originator", "routed-b")
+	leaseB, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		Headers: headersB,
+	})
+	require.NoError(t, err)
+	require.False(t, leaseB.Reused(), "different routed upstream headers must not reuse an existing WS connection")
+	leaseB.Release()
+	require.Equal(t, 2, dialer.DialCount())
+}
+
+func TestOpenAIWSConnPool_SeparatesConnectionsByTLSProfileIdentity(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 4
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 4
+
+	pool := newOpenAIWSConnPool(cfg)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 903, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	leaseA, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		TLSProfile: &tlsfingerprint.Profile{
+			Name:          "Chrome A",
+			ALPNProtocols: []string{"h2", "http/1.1"},
+			CipherSuites:  []uint16{0x1301},
+		},
+	})
+	require.NoError(t, err)
+	leaseA.Release()
+	require.Equal(t, 1, dialer.DialCount())
+
+	leaseB, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		TLSProfile: &tlsfingerprint.Profile{
+			Name:          "Chrome B",
+			ALPNProtocols: []string{"http/1.1"},
+			CipherSuites:  []uint16{0x1302},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, leaseB.Reused(), "different routed TLS profiles must not reuse an existing WS connection")
+	leaseB.Release()
 	require.Equal(t, 2, dialer.DialCount())
 }
 

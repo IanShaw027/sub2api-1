@@ -97,10 +97,10 @@ type OrderInvoiceLink struct {
 }
 
 type InvoiceService struct {
-	entClient    *dbent.Client
-	paymentSvc   *PaymentService
-	mediaSvc     InvoiceMediaService
-	emailSvc     *NotificationEmailService
+	entClient  *dbent.Client
+	paymentSvc *PaymentService
+	mediaSvc   InvoiceMediaService
+	emailSvc   *NotificationEmailService
 }
 
 func NewInvoiceService(entClient *dbent.Client, paymentSvc *PaymentService, mediaSvc InvoiceMediaService) *InvoiceService {

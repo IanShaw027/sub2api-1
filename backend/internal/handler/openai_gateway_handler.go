@@ -44,6 +44,15 @@ const openAIStreamRetryReplayStateContextKey = "openai_stream_retry_replay_state
 
 var errOpenAIWSLocalImageToggleUnavailable = errors.New("openai websocket local image-toggle unavailable")
 
+func (h *OpenAIGatewayHandler) handleOpenAIGroupModelUnsupportedError(c *gin.Context, err error, streamStarted bool) bool {
+	var modelErr *service.GroupModelUnsupportedError
+	if !errors.As(err, &modelErr) {
+		return false
+	}
+	h.handleStreamingAwareError(c, http.StatusForbidden, "permission_error", modelErr.Error(), streamStarted)
+	return true
+}
+
 type accountSlotAcquireStatus int
 
 const (
@@ -302,6 +311,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
 			if lastFailoverErr == nil {
+				if h.handleOpenAIGroupModelUnsupportedError(c, err, streamStarted) {
+					return
+				}
 				if errors.Is(err, service.ErrNoAvailableCompactAccounts) {
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available OpenAI accounts support /responses/compact", streamStarted)
 					return

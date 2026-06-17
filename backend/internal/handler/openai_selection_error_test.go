@@ -173,3 +173,53 @@ func TestOpenAIChatCompletions_SelectionFailure_ReturnsSupportingModelMessage(t 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.Contains(t, rec.Body.String(), `"message":"No available accounts supporting model: gpt-5"`)
 }
+
+func TestOpenAIResponses_GroupModelUnsupported_ReturnsPermissionError(t *testing.T) {
+	c, rec := newOpenAISelectionErrorTestContext("/v1/responses", `{"model":"gpt-5","input":"hello"}`)
+	h := newOpenAISelectionErrorTestHandler(t, []service.Account{unsupportedOpenAITestAccount()})
+
+	h.Responses(c)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Contains(t, rec.Body.String(), `"type":"permission_error"`)
+	require.Contains(t, rec.Body.String(), `requested model \"gpt-5\"`)
+	require.Contains(t, rec.Body.String(), "gpt-5.4-mini")
+}
+
+func TestOpenAIChatCompletions_GroupModelUnsupported_ReturnsPermissionError(t *testing.T) {
+	c, rec := newOpenAISelectionErrorTestContext("/v1/chat/completions", `{"model":"gpt-5","messages":[{"role":"user","content":"hello"}]}`)
+	h := newOpenAISelectionErrorTestHandler(t, []service.Account{unsupportedOpenAITestAccount()})
+
+	h.ChatCompletions(c)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Contains(t, rec.Body.String(), `"type":"permission_error"`)
+	require.Contains(t, rec.Body.String(), `requested model \"gpt-5\"`)
+	require.Contains(t, rec.Body.String(), "gpt-5.4-mini")
+}
+
+func TestOpenAIEmbeddings_GroupModelUnsupported_ReturnsPermissionError(t *testing.T) {
+	c, rec := newOpenAISelectionErrorTestContext("/v1/embeddings", `{"model":"gpt-5","input":"hello"}`)
+	h := newOpenAISelectionErrorTestHandler(t, []service.Account{unsupportedOpenAITestAccount()})
+
+	h.Embeddings(c)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Contains(t, rec.Body.String(), `"type":"permission_error"`)
+	require.Contains(t, rec.Body.String(), `requested model \"gpt-5\"`)
+	require.Contains(t, rec.Body.String(), "gpt-5.4-mini")
+}
+
+func unsupportedOpenAITestAccount() service.Account {
+	return service.Account{
+		ID:          1,
+		Platform:    service.PlatformOpenAI,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"gpt-5.4-mini": "gpt-5.4-mini",
+			},
+		},
+	}
+}

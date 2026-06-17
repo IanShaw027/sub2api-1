@@ -635,7 +635,7 @@ func TestRunner_FeatureDisableQuiescesAndReenableReloadsTasks(t *testing.T) {
 		return runnerTaskCount(r) == 2
 	})
 
-	repo.values[SettingKeyChannelMonitorEnabled] = "false"
+	repo.setValue(SettingKeyChannelMonitorEnabled, "false")
 	waitFor(t, 2*time.Second, "feature disable should quiesce all tasks", func() bool {
 		return runnerTaskCount(r) == 0
 	})
@@ -646,7 +646,7 @@ func TestRunner_FeatureDisableQuiescesAndReenableReloadsTasks(t *testing.T) {
 		t.Fatalf("expected no additional runs after quiesce, got %d -> %d", runCountAfterDisable, got)
 	}
 
-	repo.values[SettingKeyChannelMonitorEnabled] = "true"
+	repo.setValue(SettingKeyChannelMonitorEnabled, "true")
 	waitFor(t, 2*time.Second, "feature re-enable should reload enabled monitors", func() bool {
 		return runnerTaskCount(r) == 2
 	})

@@ -747,6 +747,7 @@ var ProviderSet = wire.NewSet(
 	NewTotpService,
 	NewErrorPassthroughService,
 	NewTLSFingerprintProfileService,
+	NewTLSFingerprintRouterService,
 	NewDigestSessionStore,
 	ProvideIdempotencyCoordinator,
 	ProvideSystemOperationLockService,
@@ -808,10 +809,11 @@ func ProvideOpenAIGatewayService(
 	channelService *ChannelService,
 	balanceNotifyService *BalanceNotifyService,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	tlsFPRouterService *TLSFingerprintRouterService,
 	settingService *SettingService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 ) *OpenAIGatewayService {
-	return NewOpenAIGatewayService(
+	svc := NewOpenAIGatewayService(
 		accountRepo,
 		usageLogRepo,
 		usageBillingRepo,
@@ -835,6 +837,8 @@ func ProvideOpenAIGatewayService(
 		settingService,
 		userPlatformQuotaRepo,
 	)
+	svc.SetTLSFingerprintRouterService(tlsFPRouterService)
+	return svc
 }
 
 // ProvideGeminiAccountAccessTokenProvider adapts GeminiTokenProvider to the

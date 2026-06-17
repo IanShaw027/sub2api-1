@@ -145,10 +145,10 @@ func TestDomainVersionToServiceNormalizesBillingPolicyModeToPerRun(t *testing.T)
 	version := &domain.AISkillVersion{
 		Metadata: map[string]any{
 			metaKeySkillBillingPolicy: map[string]any{
-				"mode":                    domain.AISkillBillingModePerRequest,
-				"price_per_run":           9.9,
+				"mode":                     domain.AISkillBillingModePerRequest,
+				"price_per_run":            9.9,
 				"platform_commission_rate": 0.2,
-				"currency":                "credit",
+				"currency":                 "credit",
 			},
 		},
 	}

@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -14,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -75,6 +79,8 @@ type openAIWSAcquireRequest struct {
 	WSURL           string
 	Headers         http.Header
 	ProxyURL        string
+	TLSProfile      *tlsfingerprint.Profile
+	IdentityKey     string
 	PreferredConnID string
 	Profile         openAIWSConnProfile
 	// ForceNewConn: 强制本次获取新连接（避免复用导致连接内续链状态互相污染）。
@@ -250,6 +256,7 @@ type openAIWSConn struct {
 	lastUsedNano  atomic.Int64
 	prewarmed     atomic.Bool
 	profile       openAIWSConnProfile
+	identityKey   string
 }
 
 func newOpenAIWSConn(id string, _ int64, ws openAIWSClientConn, handshakeHeaders http.Header) *openAIWSConn {
@@ -270,6 +277,17 @@ func newOpenAIWSConnWithProfile(id string, ws openAIWSClientConn, handshakeHeade
 	conn.createdAtNano.Store(now.UnixNano())
 	conn.lastUsedNano.Store(now.UnixNano())
 	return conn
+}
+
+func (c *openAIWSConn) matchesAcquire(req openAIWSAcquireRequest) bool {
+	if c == nil || c.profile != req.Profile {
+		return false
+	}
+	requiredIdentity := openAIWSAcquireIdentityKey(req)
+	if requiredIdentity == "" || c.identityKey == "" {
+		return true
+	}
+	return c.identityKey == requiredIdentity
 }
 
 func (c *openAIWSConn) tryAcquire() bool {
@@ -841,7 +859,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 				return nil, errOpenAIWSPreferredConnUnavailable
 			}
 			preferredConn, ok := ap.conns[preferredConnID]
-			if !ok || preferredConn == nil || preferredConn.profile != req.Profile {
+			if !ok || preferredConn == nil || !preferredConn.matchesAcquire(req) {
 				p.recordConnPickDuration(time.Since(pickStartedAt))
 				ap.mu.Unlock()
 				closeOpenAIWSConns(evicted)
@@ -922,7 +940,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 		}
 
 		if preferredConnID != "" {
-			if conn, ok := ap.conns[preferredConnID]; ok && conn.profile == req.Profile && conn.tryAcquire() {
+			if conn, ok := ap.conns[preferredConnID]; ok && conn.matchesAcquire(req) && conn.tryAcquire() {
 				connPick := time.Since(pickStartedAt)
 				p.recordConnPickDuration(connPick)
 				ap.mu.Unlock()
@@ -944,7 +962,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 			}
 		}
 
-		best := p.pickLeastBusyConnLocked(ap, "", req.Profile)
+		best := p.pickLeastBusyConnLocked(ap, "", req)
 		if best != nil && best.tryAcquire() {
 			connPick := time.Since(pickStartedAt)
 			p.recordConnPickDuration(connPick)
@@ -966,7 +984,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 			return lease, nil
 		}
 		for _, conn := range ap.conns {
-			if conn == nil || conn == best || conn.profile != req.Profile {
+			if conn == nil || conn == best || !conn.matchesAcquire(req) {
 				continue
 			}
 			if conn.tryAcquire() {
@@ -1059,7 +1077,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 		return nil, errOpenAIWSConnQueueFull
 	}
 
-	target := p.pickLeastBusyConnLocked(ap, req.PreferredConnID, req.Profile)
+	target := p.pickLeastBusyConnLocked(ap, req.PreferredConnID, req)
 	connPick := time.Since(pickStartedAt)
 	p.recordConnPickDuration(connPick)
 	if target == nil {
@@ -1326,13 +1344,13 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 	return evicted
 }
 
-func (p *openAIWSConnPool) pickLeastBusyConnLocked(ap *openAIWSAccountPool, preferredConnID string, profile openAIWSConnProfile) *openAIWSConn {
+func (p *openAIWSConnPool) pickLeastBusyConnLocked(ap *openAIWSAccountPool, preferredConnID string, req openAIWSAcquireRequest) *openAIWSConn {
 	if ap == nil || len(ap.conns) == 0 {
 		return nil
 	}
 	preferredConnID = stringsTrim(preferredConnID)
 	if preferredConnID != "" {
-		if conn, ok := ap.conns[preferredConnID]; ok && conn != nil && conn.profile == profile {
+		if conn, ok := ap.conns[preferredConnID]; ok && conn != nil && conn.matchesAcquire(req) {
 			return conn
 		}
 	}
@@ -1340,7 +1358,7 @@ func (p *openAIWSConnPool) pickLeastBusyConnLocked(ap *openAIWSAccountPool, pref
 	var bestWaiters int32
 	var bestLastUsed time.Time
 	for _, conn := range ap.conns {
-		if conn == nil || conn.profile != profile {
+		if conn == nil || !conn.matchesAcquire(req) {
 			continue
 		}
 		waiters := conn.waiters.Load()
@@ -1649,7 +1667,7 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 	if p == nil || p.clientDialer == nil {
 		return nil, errors.New("openai ws client dialer is nil")
 	}
-	conn, status, handshakeHeaders, err := p.clientDialer.Dial(ctx, req.WSURL, req.Headers, req.ProxyURL)
+	conn, status, handshakeHeaders, err := p.clientDialer.Dial(ctx, req.WSURL, req.Headers, req.ProxyURL, req.TLSProfile)
 	if err != nil {
 		return nil, &openAIWSDialError{
 			StatusCode:      status,
@@ -1665,7 +1683,9 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 		}
 	}
 	id := p.nextConnID(req.Account.ID)
-	return newOpenAIWSConnWithProfile(id, conn, handshakeHeaders, req.Profile), nil
+	wsConn := newOpenAIWSConnWithProfile(id, conn, handshakeHeaders, req.Profile)
+	wsConn.identityKey = openAIWSAcquireIdentityKey(req)
+	return wsConn, nil
 }
 
 func (p *openAIWSConnPool) nextConnID(accountID int64) string {
@@ -1831,8 +1851,37 @@ func cloneOpenAIWSAcquireRequest(req openAIWSAcquireRequest) openAIWSAcquireRequ
 	copied.Headers = cloneHeader(req.Headers)
 	copied.WSURL = stringsTrim(req.WSURL)
 	copied.ProxyURL = stringsTrim(req.ProxyURL)
+	copied.IdentityKey = stringsTrim(req.IdentityKey)
 	copied.PreferredConnID = stringsTrim(req.PreferredConnID)
 	return copied
+}
+
+func openAIWSAcquireIdentityKey(req openAIWSAcquireRequest) string {
+	if key := stringsTrim(req.IdentityKey); key != "" {
+		return key
+	}
+	parts := []string{
+		"profile=" + string(req.Profile),
+		"ws=" + stringsTrim(req.WSURL),
+		"proxy=" + stringsTrim(req.ProxyURL),
+		"tls=" + openAIWSTLSProfileIdentity(req.TLSProfile),
+		"ua=" + strings.TrimSpace(req.Headers.Get("user-agent")),
+		"originator=" + strings.TrimSpace(req.Headers.Get("originator")),
+		"beta=" + strings.TrimSpace(req.Headers.Get("openai-beta")),
+	}
+	return strings.Join(parts, "\n")
+}
+
+func openAIWSTLSProfileIdentity(profile *tlsfingerprint.Profile) string {
+	if profile == nil {
+		return "default"
+	}
+	payload, err := json.Marshal(profile)
+	if err != nil {
+		return "profile:" + strings.TrimSpace(profile.Name)
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:8])
 }
 
 func cloneOpenAIWSAcquireRequestPtr(req *openAIWSAcquireRequest) *openAIWSAcquireRequest {

@@ -11,7 +11,7 @@ import (
 )
 
 func TestEmitOpenAICacheProbeEvent_LogsCompactNormalizationSignals(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	logSink, restore := captureStructuredLog(t)
 	defer restore()
 
@@ -55,7 +55,7 @@ func TestEmitOpenAICacheProbeEvent_LogsCompactNormalizationSignals(t *testing.T)
 }
 
 func TestEmitOpenAICacheProbeEvent_LogsCompactContentSeedSource(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	logSink, restore := captureStructuredLog(t)
 	defer restore()
 
@@ -89,7 +89,7 @@ func TestEmitOpenAICacheProbeEvent_LogsCompactContentSeedSource(t *testing.T) {
 }
 
 func TestEmitOpenAICacheProbeEvent_SkipsNonCacheRequests(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	logSink, restore := captureStructuredLog(t)
 	defer restore()
 
@@ -112,7 +112,7 @@ func TestEmitOpenAICacheProbeEvent_SkipsNonCacheRequests(t *testing.T) {
 }
 
 func TestEmitOpenAICodexCompatFallbackEvent_LogsWithoutCacheProbe(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	logSink, restore := captureStructuredLog(t)
 	defer restore()
 

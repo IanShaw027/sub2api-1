@@ -1276,6 +1276,18 @@ func (s *OpenAIGatewayService) buildOpenAIWSNeutralHeaders(
 	return headers
 }
 
+func applyOpenAIWSFingerprintRuntimeHeaders(headers http.Header, runtime openAITLSFingerprintRuntime) {
+	if headers == nil {
+		return
+	}
+	if runtime.UpstreamUserAgent != "" {
+		headers.Set("user-agent", runtime.UpstreamUserAgent)
+	}
+	if runtime.UpstreamOriginator != "" {
+		headers.Set("originator", runtime.UpstreamOriginator)
+	}
+}
+
 func (s *OpenAIGatewayService) buildOpenAIWSCreatePayload(reqBody map[string]any, account *Account) map[string]any {
 	// OpenAI WS Mode 协议：response.create 字段与 HTTP /responses 基本一致。
 	// 保留 stream 字段（与 Codex CLI 一致），仅移除 background。
@@ -1961,12 +1973,16 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	forceNewConnByPolicy := shouldForceNewConnOnStoreDisabled(storeDisabledConnMode, lastFailureReason)
 	forceNewConn := forceNewConnByPolicy && storeDisabled && previousResponseID == "" && sessionHash != "" && preferredConnID == ""
 	connProfile := openAIWSConnProfileSessionBound
+	tlsFPRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
 	wsHeaders, sessionResolution := s.buildOpenAIWSHeaders(c, account, token, decision, isCodexCLI, turnState, turnMetadata, promptCacheKey)
+	applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
 	if httpIngressWSOneShot {
-		// 无会话 one-shot：用账号级中性握手头借用 neutral 连接池，避免每次新建+销毁。
+		// 无会话 one-shot：使用账号级中性握手头，但每次请求独占一条连接。
+		// 该路径没有 session/response 粘性身份，不能复用已有连接或把连接回池污染后续请求。
 		connProfile = openAIWSConnProfileNeutral
-		forceNewConn = false
+		forceNewConn = true
 		wsHeaders = s.buildOpenAIWSNeutralHeaders(account, token, decision, isCodexCLI)
+		applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
 	}
 	logOpenAIWSModeDebug(
 		"acquire_start account_id=%d account_type=%s transport=%s preferred_conn_id=%s has_previous_response_id=%v session_hash=%s has_turn_state=%v turn_state_len=%d has_turn_metadata=%v turn_metadata_len=%d store_disabled=%v store_disabled_conn_mode=%s retry_last_reason=%s force_new_conn=%v http_ingress_ws_one_shot=%v header_user_agent=%s header_openai_beta=%s header_originator=%s header_accept_language=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_prompt_cache_key=%v has_chatgpt_account_id=%v has_authorization=%v has_session_id=%v has_conversation_id=%v proxy_enabled=%v",
@@ -2008,6 +2024,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		Account:         account,
 		WSURL:           wsURL,
 		Headers:         wsHeaders,
+		TLSProfile:      tlsFPRuntime.Profile,
 		PreferredConnID: preferredConnID,
 		ForceNewConn:    forceNewConn,
 		Profile:         connProfile,
@@ -2053,7 +2070,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	cleanExit := false
 	clientDisconnected := false
 	defer func() {
-		if !cleanExit || clientDisconnected {
+		if httpIngressWSOneShot || !cleanExit || clientDisconnected {
 			lease.MarkBroken()
 		}
 		lease.Release()
@@ -2359,6 +2376,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 
 		if eventType == "error" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
+			_ = s.markOpenAICyberPolicyIfDetected(ctx, account, message)
 			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw)
 			errMsg := strings.TrimSpace(errMsgRaw)
 			if errMsg == "" {
@@ -2425,6 +2443,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			return nil, fmt.Errorf("openai ws error event: %s", errMsg)
 		}
 		if eventType == "response.failed" {
+			_ = s.markOpenAICyberPolicyIfDetected(ctx, account, message)
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSResponseFailedErrorFields(message)
 			errMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(errMsgRaw))
 			if errMsg == "" {
@@ -2912,11 +2931,14 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 
 	isCodexCLI := openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator")) || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI)
+	tlsFPRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
 	wsHeaders, _ := s.buildOpenAIWSHeaders(c, account, token, wsDecision, isCodexCLI, turnState, strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), firstPayload.promptCacheKey)
+	applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
 	baseAcquireReq := openAIWSAcquireRequest{
-		Account: account,
-		WSURL:   wsURL,
-		Headers: wsHeaders,
+		Account:    account,
+		WSURL:      wsURL,
+		Headers:    wsHeaders,
+		TLSProfile: tlsFPRuntime.Profile,
 		ProxyURL: func() string {
 			if account.ProxyID != nil && account.Proxy != nil {
 				return account.Proxy.URL()
@@ -3160,6 +3182,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			if eventType == "error" {
 				errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(upstreamMessage)
+				_ = s.markOpenAICyberPolicyIfDetected(ctx, account, upstreamMessage)
 				s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
 				fallbackReason, _ := classifyOpenAIWSErrorEventFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 				errCode, errType, errMessage := summarizeOpenAIWSErrorEventFieldsFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
@@ -3226,6 +3249,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						ResponseHeaders: cloneHeader(lease.HandshakeHeaders()),
 					}
 				}
+			}
+			if eventType == "response.failed" {
+				_ = s.markOpenAICyberPolicyIfDetected(ctx, account, upstreamMessage)
 			}
 			isTokenEvent := isOpenAIWSTokenEvent(eventType)
 			if isTokenEvent {
@@ -3887,6 +3913,18 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		nextClientMessage, readErr := readClientMessage()
 		if readErr != nil {
 			if isOpenAIWSClientDisconnectError(readErr) {
+				lastTurnClean = false
+				if sessionLease != nil {
+					sessionLease.MarkBroken()
+				}
+				if stateStore != nil {
+					if responseID != "" {
+						stateStore.DeleteResponseConn(groupID, apiKeyID, responseID)
+					}
+					if storeDisabled && sessionHash != "" {
+						stateStore.DeleteSessionConn(groupID, sessionHash)
+					}
+				}
 				closeStatus, closeReason := summarizeOpenAIWSReadCloseError(readErr)
 				logOpenAIWSModeInfo(
 					"ingress_ws_client_closed account_id=%d conn_id=%s close_status=%s close_reason=%s",
@@ -3908,6 +3946,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			// ingress 会话在整个客户端 WS 生命周期内复用同一上游连接；
 			// prompt_cache_key 对握手头的更新仅在未来需要重新建连时生效。
 			updatedHeaders, _ := s.buildOpenAIWSHeaders(c, account, token, wsDecision, isCodexCLI, turnState, strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), nextPayload.promptCacheKey)
+			applyOpenAIWSFingerprintRuntimeHeaders(updatedHeaders, tlsFPRuntime)
 			baseAcquireReq.Headers = updatedHeaders
 		}
 		if nextPayload.previousResponseID != "" {
@@ -4075,6 +4114,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 
 		if eventType == "error" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
+			_ = s.markOpenAICyberPolicyIfDetected(ctx, account, message)
 			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw)
 			errMsg := strings.TrimSpace(errMsgRaw)
 			if errMsg == "" {
@@ -4100,6 +4140,9 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 			return wrapOpenAIWSFallback("prewarm_error_event", errors.New(errMsg))
 		}
 
+		if eventType == "response.failed" {
+			_ = s.markOpenAICyberPolicyIfDetected(ctx, account, message)
+		}
 		if isOpenAIWSTerminalEvent(eventType) {
 			prewarmTerminalCount++
 			break

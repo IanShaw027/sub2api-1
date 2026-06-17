@@ -269,13 +269,15 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
+	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
 	httpCodexCompatRetryTried := false
 	httpRawChatFallbackRetryTried := false
 	var resp *http.Response
 	for {
+		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
 		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
 		upstreamStart := time.Now()
-		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
@@ -377,9 +379,9 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	var result *OpenAIForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleChatStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleChatStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
 	} else {
-		result, handleErr = s.handleChatBufferedStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleChatBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
 	}
 
 	// Propagate ServiceTier and ReasoningEffort to result for billing
@@ -908,6 +910,7 @@ func (s *OpenAIGatewayService) handleChatCompletionsErrorResponse(
 func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 	resp *http.Response,
 	c *gin.Context,
+	account *Account,
 	originalModel string,
 	billingModel string,
 	upstreamModel string,
@@ -944,6 +947,9 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 		if (event.Type == "response.completed" || event.Type == "response.done" ||
 			event.Type == "response.incomplete" || event.Type == "response.failed") &&
 			event.Response != nil {
+			if event.Type == "response.failed" {
+				_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, []byte(payload))
+			}
 			finalResponse = event.Response
 			finalEventType = event.Type
 			if event.Usage != nil {
@@ -1038,6 +1044,7 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	resp *http.Response,
 	c *gin.Context,
+	account *Account,
 	originalModel string,
 	billingModel string,
 	upstreamModel string,
@@ -1099,6 +1106,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			return false
 		}
 		if event.Type == "response.failed" {
+			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, []byte(payload))
 			streamFailed = true
 			errMessage := extractResponsesFailureMessage(event.Response, []byte(payload))
 			if errMessage == "" {

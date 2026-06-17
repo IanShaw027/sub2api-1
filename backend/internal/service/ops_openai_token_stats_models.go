@@ -23,9 +23,9 @@ func (f *OpsOpenAITokenStatsFilter) IsTopNMode() bool {
 }
 
 type OpsOpenAITokenStatsItem struct {
-	Model                  string   `json:"model"`
-	RequestCount           int64    `json:"request_count"`
-	AvgTokensPerSec        *float64 `json:"avg_tokens_per_sec"`
+	Model           string   `json:"model"`
+	RequestCount    int64    `json:"request_count"`
+	AvgTokensPerSec *float64 `json:"avg_tokens_per_sec"`
 	// AvgGenerationTokensPerSec 排除首字延迟后的生成速率：output_tokens/(duration_ms-first_token_ms)。
 	AvgGenerationTokensPerSec *float64 `json:"avg_generation_tokens_per_sec"`
 	AvgFirstTokenMs           *float64 `json:"avg_first_token_ms"`

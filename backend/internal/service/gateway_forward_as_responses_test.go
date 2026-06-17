@@ -29,7 +29,7 @@ func TestExtractResponsesReasoningEffortFromBody(t *testing.T) {
 
 func TestHandleResponsesBufferedStreamingResponse_PreservesMessageStartCacheUsage(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -62,7 +62,7 @@ func TestHandleResponsesBufferedStreamingResponse_PreservesMessageStartCacheUsag
 
 func TestHandleResponsesStreamingResponse_PreservesMessageStartCacheUsage(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -197,7 +197,7 @@ func TestClassifyResponsesAnthropicFailure(t *testing.T) {
 
 func TestForwardAsResponses_RetriesFullReplayOnceOnContinuationFailure(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -264,7 +264,7 @@ func TestForwardAsResponses_RetriesFullReplayOnceOnContinuationFailure(t *testin
 
 func TestForwardAsResponses_RetriesToolContinuationWhenMessagesProvideFunctionCallContext(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

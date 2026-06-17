@@ -78,7 +78,7 @@ func (u *countTokensQueuedUpstream) DoWithTLS(req *http.Request, proxyURL string
 }
 
 func TestGatewayService_ForwardCountTokens_RecordsOpsContextAndLatency(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -153,7 +153,7 @@ func TestGatewayService_ForwardCountTokens_RecordsOpsContextAndLatency(t *testin
 }
 
 func TestGatewayService_ForwardCountTokens_SignatureRetryTransportFailureKeepsBodyContext(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

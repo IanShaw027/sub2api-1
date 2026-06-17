@@ -332,7 +332,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	)
 
 	isCodexCLI := isOpenAICodexOfficialOrForcedClientRequest(c, s.cfg)
+	tlsFPRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
 	headers, _ := s.buildOpenAIWSHeaders(c, account, token, wsDecision, isCodexCLI, "", "", "")
+	applyOpenAIWSFingerprintRuntimeHeaders(headers, tlsFPRuntime)
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
@@ -345,7 +347,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 
 	dialCtx, cancelDial := context.WithTimeout(ctx, s.openAIWSDialTimeout())
 	defer cancelDial()
-	upstreamConn, statusCode, handshakeHeaders, err := dialer.Dial(dialCtx, wsURL, headers, proxyURL)
+	upstreamConn, statusCode, handshakeHeaders, err := dialer.Dial(dialCtx, wsURL, headers, proxyURL, tlsFPRuntime.Profile)
 	if err != nil {
 		logOpenAIWSV2Passthrough(
 			"relay_dial_failed account_id=%d status_code=%d err=%s",
@@ -562,7 +564,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				if msgType != coderws.MessageText || wroteDownstream {
 					return nil
 				}
-				if eventType, _, _ := parseOpenAIWSEventEnvelope(payload); eventType != "error" {
+				eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
+				if eventType == "error" || eventType == "response.failed" {
+					_ = s.markOpenAICyberPolicyIfDetected(ctx, account, payload)
+				}
+				if eventType != "error" {
 					return nil
 				}
 				errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(payload)

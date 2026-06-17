@@ -92,7 +92,7 @@ func newOpenAIImagesParseRequestContext(method, path string, body []byte, conten
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSON(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","size":"1024x1024","quality":"high","stream":true,"conversation_id":"conv-json","parent_message_id":"parent-json"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -118,7 +118,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSON(t *testing.T) {
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEdit(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -156,7 +156,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEdit(t *testing.T
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsMalformedInputs(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	tests := []struct {
 		name    string
@@ -254,7 +254,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsMalformedInputs(t *
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_PreservesImages2APIGenerationsEndpoint(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","response_format":"b64_json"}`)
 
 	c := newOpenAIImagesParseRequestContext(http.MethodPost, "/v1/images2api/generations", body, "application/json")
@@ -269,7 +269,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_PreservesImages2APIGenerat
 }
 
 func TestOpenAIGatewayServiceForwardImages_RejectsLegacyBridgeJSONRemoteImages(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-1.5","prompt":"replace background","images":[{"image_url":"https://example.com/source.png"}]}`)
 
 	c := newOpenAIImagesParseRequestContext(http.MethodPost, "/v1/images2api/edits", body, "application/json")
@@ -293,7 +293,7 @@ func TestOpenAIGatewayServiceForwardImages_RejectsLegacyBridgeJSONRemoteImages(t
 }
 
 func TestOpenAIGatewayServiceForwardImages_RejectsLegacyBridgeMultipartMaskWithoutInpaintingIDs(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -599,7 +599,7 @@ func TestOpenAIImagesRequestModerationBody_MultipartEditIncludesUploadsInMemory(
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_NormalizesOfficialAndCustomSizes(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	tests := []struct {
 		size     string
@@ -640,7 +640,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_NormalizesOfficialAndCusto
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsOfficiallyInvalidSizes(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	tests := []struct {
 		size    string
@@ -673,7 +673,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsOfficiallyInvalidSi
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_LegacyImageModelUnknownSizePassthrough(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-1.5","prompt":"draw a cat","size":"2048x1152"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -691,7 +691,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_LegacyImageModelUnknownSiz
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEditWithMaskAndNativeOptions(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -743,7 +743,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEditWithMaskAndNa
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEditAllowsFilesAbove20MB(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -774,7 +774,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEditAllowsFilesAb
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_PromptOnlyDefaultsRemainBasic(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"prompt":"draw a cat"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -792,7 +792,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_PromptOnlyDefaultsRemainBa
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_ExplicitSizeRequiresNativeCapability(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"prompt":"draw a cat","size":"1024x1024"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -809,7 +809,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_ExplicitSizeRequiresNative
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsNonImageModel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-5.4","prompt":"draw a cat"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -825,7 +825,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsNonImageModel(t *te
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONEditURLs(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{
 			"model":"gpt-image-1.5",
 			"prompt":"replace the background",
@@ -859,7 +859,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONEditURLs(t *testing.T)
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONEditFileIDs(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{
 			"model":"gpt-image-2",
 			"prompt":"replace the background",
@@ -888,7 +888,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONEditFileIDs(t *testing
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsResponseFormatURL(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","response_format":"url"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -904,7 +904,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsResponseFormatURL(t
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsOutOfRangeN(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","n":11}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -920,7 +920,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsOutOfRangeN(t *test
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsOutOfRangePartialImages(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","partial_images":4}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -936,7 +936,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsOutOfRangePartialIm
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsOutOfRangeOutputCompression(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","output_compression":101}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -952,7 +952,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsOutOfRangeOutputCom
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsInputFidelityForGPTImage2(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","input_fidelity":"high"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -968,7 +968,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsInputFidelityForGPT
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsTransparentBackgroundWithJPEG(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-1","prompt":"draw a cat","background":"transparent","output_format":"jpeg"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -984,7 +984,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsTransparentBackgrou
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_StripsTransparentBackgroundForGPTImage2(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","background":"transparent","output_format":"webp"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1002,7 +1002,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_StripsTransparentBackgroun
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsOutputCompressionWithPNG(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","output_format":"png","output_compression":80}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1152,7 +1152,7 @@ func findOpenAIImageTestSSEEvent(events []openAIImageTestSSEEvent, name string) 
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthUsesResponsesAPI(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","size":"1024x1024","quality":"high"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1230,7 +1230,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthUsesResponsesAPI(t *testing.T) {
 
 func TestOpenAIGatewayServiceForwardImages_OAuthAppliesUpstreamTransportExperimentFlags(t *testing.T) {
 	resetOpenAIOAuthImageBridgeTransportSettingsTestCache(t)
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","size":"1024x1024"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1289,7 +1289,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthAppliesUpstreamTransportExperime
 
 func TestOpenAIGatewayServiceForwardImages_OAuthAppliesUpstreamTransportExperimentFlagsFromSystemSettings(t *testing.T) {
 	resetOpenAIOAuthImageBridgeTransportSettingsTestCache(t)
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","size":"1024x1024"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1347,7 +1347,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthAppliesUpstreamTransportExperime
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthRejectsMultipleImages(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","n":2}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1377,7 +1377,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthRejectsMultipleImages(t *testing
 }
 
 func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationUsesConfiguredV1BaseURL(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","response_format":"b64_json"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1432,7 +1432,7 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationUsesConfiguredV1BaseU
 }
 
 func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationStripsOAuthOnlyPassthroughHeaders(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","response_format":"b64_json"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1482,7 +1482,7 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationStripsOAuthOnlyPassth
 }
 
 func TestOpenAIGatewayServiceForwardImages_APIKeyStreamJSONResponseBillsImage(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","stream":true,"response_format":"b64_json"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1531,7 +1531,7 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyStreamJSONResponseBillsImage(t 
 }
 
 func TestOpenAIGatewayServiceForwardImages_APIKeyStreamRawJSONEventStreamFallbackBillsImage(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","stream":true,"response_format":"b64_json"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1579,7 +1579,7 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyStreamRawJSONEventStreamFallbac
 }
 
 func TestOpenAIGatewayServiceForwardImages_APIKeyStreamMultilineSSEDataBillsImage(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","stream":true,"response_format":"b64_json"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1636,7 +1636,7 @@ func TestExtractOpenAIImagesBillableCountFromJSONBytes_CompletedEvent(t *testing
 }
 
 func TestOpenAIGatewayServiceForwardImages_APIKeyEditUsesConfiguredV1BaseURL(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -1699,7 +1699,7 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyEditUsesConfiguredV1BaseURL(t *
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthStreamingTransformsEvents(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","stream":true,"response_format":"b64_json"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1773,7 +1773,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthStreamingTransformsEvents(t *tes
 }
 
 func TestOpenAIGatewayServiceForwardImages_APIKeyStreamingDrainsAfterClientDisconnect(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","stream":true}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1828,7 +1828,7 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyStreamingDrainsAfterClientDisco
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthEditsMultipartUsesResponsesAPI(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -1908,7 +1908,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthEditsMultipartUsesResponsesAPI(t
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthEditsStreamingTransformsEvents(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{
 		"model":"gpt-image-2",
 		"prompt":"replace background with aurora",
@@ -1990,7 +1990,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthEditsStreamingTransformsEvents(t
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthEditsFileIDsUseResponsesAPI(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{
 		"model":"gpt-image-2",
 		"prompt":"replace background with aurora",
@@ -2106,7 +2106,7 @@ func TestBuildOpenAIImagesResponsesRequest_StripsStyle(t *testing.T) {
 }
 
 func TestBuildOpenAIImagesResponsesRequest_PreservesMixedImageReferenceOrder(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{
 		"model":"gpt-image-2",
 		"prompt":"replace background",
@@ -2177,7 +2177,7 @@ func TestCollectOpenAIImagesFromResponsesBody_MultilineSSE(t *testing.T) {
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthStreamingHandlesOutputItemDoneFallback(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","stream":true,"response_format":"b64_json"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -2234,7 +2234,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthStreamingHandlesOutputItemDoneFa
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthStreamingHandlesMultilineSSE(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","stream":true,"response_format":"b64_json"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -2289,7 +2289,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthStreamingHandlesMultilineSSE(t *
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthStreamingDrainsAfterClientDisconnect(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","stream":true,"response_format":"b64_json"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))

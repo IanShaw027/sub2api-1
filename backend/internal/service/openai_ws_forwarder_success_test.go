@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -23,7 +24,7 @@ import (
 )
 
 func TestOpenAIGatewayService_Forward_WSv2_SuccessAndBindSticky(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	type receivedPayload struct {
 		Type               string
@@ -172,7 +173,7 @@ func TestOpenAIGatewayService_Forward_WSv2_SuccessAndBindSticky(t *testing.T) {
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_ImageGenerationCountsOutputs(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -313,7 +314,7 @@ func TestLogOpenAIWSBindResponseAccountWarn(t *testing.T) {
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_RewriteModelAndToolCallsOnCompletedEvent(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -398,7 +399,7 @@ func TestOpenAIWSPayloadString_OnlyAcceptsStringValues(t *testing.T) {
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_PoolReuseNotOneToOne(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var upgradeCount atomic.Int64
 	var sequence atomic.Int64
@@ -509,7 +510,7 @@ func TestOpenAIGatewayService_Forward_WSv2_PoolReuseNotOneToOne(t *testing.T) {
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -628,7 +629,7 @@ func TestOpenAIGatewayService_BuildOpenAIWSCreatePayload_DropsUnpersistedReasoni
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	tests := []struct {
 		name           string
@@ -708,7 +709,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testi
 }
 
 func TestOpenAIGatewayService_BuildOpenAIWSHeaders_NonOfficialOAuthPreservesUserAgentWithoutForceCodexCLI(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -730,7 +731,7 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeaders_NonOfficialOAuthPreservesUser
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheKey(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -794,7 +795,7 @@ func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheK
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_PreservesTurnStateAndMetadata(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -862,7 +863,7 @@ func TestOpenAIGatewayService_Forward_WSv2_PreservesTurnStateAndMetadata(t *test
 }
 
 func TestOpenAIGatewayService_Forward_WSv1_Unsupported(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -922,7 +923,7 @@ func TestOpenAIGatewayService_Forward_WSv1_Unsupported(t *testing.T) {
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_TurnStateAndMetadataReplayOnReconnect(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var connIndex atomic.Int64
 	headersCh := make(chan http.Header, 4)
@@ -1041,7 +1042,7 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnStateAndMetadataReplayOnReconnect
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_GeneratePrewarm(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1161,7 +1162,7 @@ func TestOpenAIGatewayService_PrewarmReadHonorsParentContext(t *testing.T) {
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_TurnMetadataInPayloadOnConnReuse(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
@@ -1261,7 +1262,7 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnMetadataInPayloadOnConnReuse(t *t
 }
 
 func TestOpenAIGatewayService_Forward_WSv2StoreFalseSessionConnIsolation(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var upgradeCount atomic.Int64
 	var sequence atomic.Int64
@@ -1368,7 +1369,7 @@ func TestOpenAIGatewayService_Forward_WSv2StoreFalseSessionConnIsolation(t *test
 }
 
 func TestOpenAIGatewayService_Forward_WSv2StoreFalseDisableForceNewConnAllowsReuse(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	var upgradeCount atomic.Int64
 	var sequence atomic.Int64
@@ -1466,7 +1467,7 @@ func TestOpenAIGatewayService_Forward_WSv2StoreFalseDisableForceNewConnAllowsReu
 }
 
 func TestOpenAIGatewayService_Forward_WSv2ReadTimeoutAppliesPerRead(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1544,7 +1545,7 @@ func TestOpenAIGatewayService_Forward_WSv2ReadTimeoutAppliesPerRead(t *testing.T
 }
 
 func TestOpenAIGatewayService_Forward_WSv2ResponseFailedNoFailoverReturnsMappedError(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1620,7 +1621,7 @@ func TestOpenAIGatewayService_Forward_WSv2ResponseFailedNoFailoverReturnsMappedE
 }
 
 func TestOpenAIGatewayService_Forward_WSv2ResponseFailedRetryableKeepsFallbackSignal(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1710,10 +1711,12 @@ func (d *openAIWSCaptureDialer) Dial(
 	wsURL string,
 	headers http.Header,
 	proxyURL string,
+	tlsProfile *tlsfingerprint.Profile,
 ) (openAIWSClientConn, int, http.Header, error) {
 	_ = ctx
 	_ = wsURL
 	_ = proxyURL
+	_ = tlsProfile
 	d.mu.Lock()
 	d.lastHeaders = cloneHeader(headers)
 	d.dialCount++
