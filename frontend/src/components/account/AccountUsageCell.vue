@@ -130,6 +130,7 @@
           </template>
         </div>
       </div>
+
       <div v-else-if="loading" class="space-y-1.5">
         <div class="flex items-center gap-1">
           <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
@@ -143,7 +144,40 @@
         </div>
       </div>
       <div v-else class="text-xs text-gray-400">-</div>
+
+      <!-- Codex invite reset: inline query / reset + invite badge (always available for OpenAI OAuth, even without usage data) -->
+      <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
+        <button
+          type="button"
+          class="inline-flex items-center gap-0.5 rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50 transition-colors"
+          :title="t('admin.accounts.inviteResetOpenDialog')"
+          @click="openInviteResetModal"
+        >
+          <Icon name="gift" size="xs" />
+          {{ t('admin.accounts.inviteResetCountShort') }}
+          <span v-if="inviteResetStatus" class="tabular-nums">{{ inviteResetAvailableCount }}</span>
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
+          :disabled="activeQueryLoading || inviteResetQuerying"
+          @click="queryInviteResetAndUsage"
+        >
+          <Icon name="refresh" size="xs" :class="(activeQueryLoading || inviteResetQuerying) && 'animate-spin'" />
+          {{ t('admin.accounts.inviteResetQuery') }}
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-medium text-orange-600 hover:bg-orange-50 disabled:opacity-40 disabled:hover:bg-transparent dark:text-orange-400 dark:hover:bg-orange-900/30 transition-colors"
+          :disabled="inviteResetConsuming || !inviteResetHasCredit"
+          @click="consumeInviteReset"
+        >
+          <Icon name="sync" size="xs" :class="inviteResetConsuming && 'animate-spin'" />
+          {{ t('admin.accounts.inviteResetReset') }}
+        </button>
+      </div>
     </template>
+
 
     <!-- Kiro OAuth accounts: total quota display -->
     <template v-else-if="account.platform === 'kiro' && account.type === 'oauth'">
@@ -477,17 +511,30 @@
       <div v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota" class="text-xs text-gray-400">-</div>
     </div>
   </div>
+
+  <CodexInviteResetModal
+    v-if="isOpenAIOAuthAccount"
+    :show="showInviteResetModal"
+    :account="account"
+    :initial-status="inviteResetStatus"
+    @close="showInviteResetModal = false"
+    @updated="onInviteResetUpdated"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import type { Account, AccountUsageInfo, Group, KiroQuotaBreakdown, UsageProgress, WindowStats } from '@/types'
+import type { CodexInviteResetStatus } from '@/api/admin/accounts'
 import { buildGeminiUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber } from '@/utils/format'
+import { Icon } from '@/components/icons'
 import UsageProgressBar from './UsageProgressBar.vue'
+import CodexInviteResetModal from './CodexInviteResetModal.vue'
 
 // Module-level cache shared across all AccountUsageCell instances
 const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
@@ -1110,6 +1157,93 @@ const loadActiveUsage = async () => {
   } finally {
     activeQueryLoading.value = false
   }
+}
+
+// ===== Codex invite reset (OpenAI OAuth only) =====
+const isOpenAIOAuthAccount = computed(
+  () => props.account.platform === 'openai' && props.account.type === 'oauth'
+)
+const inviteResetStatus = ref<CodexInviteResetStatus | null>(null)
+const inviteResetQuerying = ref(false)
+const inviteResetConsuming = ref(false)
+const showInviteResetModal = ref(false)
+
+const inviteResetAvailableCredits = computed(() =>
+  (inviteResetStatus.value?.credits ?? []).filter((credit) => {
+    const state = credit.status?.toLowerCase()
+    return !state || state === 'available'
+  })
+)
+const inviteResetAvailableCount = computed(
+  () => inviteResetStatus.value?.available_count ?? inviteResetAvailableCredits.value.length
+)
+const inviteResetHasCredit = computed(() => inviteResetAvailableCredits.value.length > 0)
+
+const loadInviteResetStatus = async () => {
+  if (!isOpenAIOAuthAccount.value) return
+  inviteResetStatus.value = await adminAPI.accounts.getCodexInviteResetStatus(props.account.id)
+}
+
+// 查询同时刷新用量窗口和重置次数，两者互不阻塞。
+const queryInviteResetAndUsage = async () => {
+  if (inviteResetQuerying.value) return
+  inviteResetQuerying.value = true
+  try {
+    const [, statusResult] = await Promise.allSettled([loadActiveUsage(), loadInviteResetStatus()])
+    if (statusResult.status === 'rejected') {
+      const reason: any = statusResult.reason
+      useAppStore().showError(reason?.message || t('admin.accounts.inviteResetLoadFailed'))
+    }
+  } finally {
+    inviteResetQuerying.value = false
+  }
+}
+
+const consumeInviteReset = async () => {
+  if (inviteResetConsuming.value) return
+  const credit = inviteResetAvailableCredits.value[0]
+  if (!credit) {
+    useAppStore().showError(t('admin.accounts.inviteResetNoCredit'))
+    return
+  }
+  inviteResetConsuming.value = true
+  const appStore = useAppStore()
+  try {
+    const result = await adminAPI.accounts.consumeCodexInviteReset(props.account.id, credit.id)
+    if (!result.code || result.code === 'reset') {
+      appStore.showSuccess(t('admin.accounts.inviteResetConsumeSuccess'))
+    } else {
+      appStore.showError(inviteResetConsumeMessage(result.code))
+    }
+    await Promise.allSettled([loadActiveUsage(), loadInviteResetStatus()])
+  } catch (e: any) {
+    appStore.showError(e?.message || t('admin.accounts.inviteResetConsumeFailed'))
+  } finally {
+    inviteResetConsuming.value = false
+  }
+}
+
+const inviteResetConsumeMessage = (code: string) => {
+  if (code === 'nothing_to_reset') return t('admin.accounts.inviteResetNothingToReset')
+  if (code === 'already_redeemed') return t('admin.accounts.inviteResetAlreadyRedeemed')
+  if (code === 'no_credit') return t('admin.accounts.inviteResetNoCredit')
+  return t('admin.accounts.inviteResetConsumeFailed')
+}
+
+const openInviteResetModal = async () => {
+  showInviteResetModal.value = true
+  // 弹窗打开时若还没查过次数，顺带拉一次，让弹窗直接复用。
+  if (!inviteResetStatus.value) {
+    try {
+      await loadInviteResetStatus()
+    } catch {
+      // 弹窗内部会自行重试并提示，这里静默。
+    }
+  }
+}
+
+const onInviteResetUpdated = () => {
+  loadInviteResetStatus().catch(() => {})
 }
 
 // ===== API Key quota progress bars =====

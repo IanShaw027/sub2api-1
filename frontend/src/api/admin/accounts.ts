@@ -744,6 +744,92 @@ export async function setPrivacy(id: number): Promise<Account> {
   return data
 }
 
+export interface CodexInviteResetCredit {
+  id: string
+  status?: string
+  title?: string
+  description?: string
+  profile_user_id?: string
+  profile_image_url?: string
+}
+
+export interface CodexInviteResetStatus {
+  referral_key: string
+  invite_eligibility?: Record<string, unknown>
+  eligibility_rules?: string[]
+  requires_consent: boolean
+  available_count: number
+  credits: CodexInviteResetCredit[]
+}
+
+export interface CodexInviteResetInviteResult {
+  invites?: Array<Record<string, unknown>>
+  failed_emails?: string[]
+  message?: string
+}
+
+export interface CodexInviteResetConsumeResult {
+  code?: string
+  credit_id: string
+  redeem_request_id: string
+  available_count?: number
+  remaining_credits?: Array<Record<string, unknown>>
+}
+
+export async function getCodexInviteResetStatus(id: number): Promise<CodexInviteResetStatus> {
+  const { data } = await apiClient.get<CodexInviteResetStatus>(
+    `/admin/accounts/${id}/codex/invite-reset/status`
+  )
+  return data
+}
+
+export async function sendCodexInviteResetInvite(
+  id: number,
+  emails: string[]
+): Promise<CodexInviteResetInviteResult> {
+  const { data } = await apiClient.post<CodexInviteResetInviteResult>(
+    `/admin/accounts/${id}/codex/invite-reset/invite`,
+    { emails }
+  )
+  return data
+}
+
+export async function consumeCodexInviteReset(
+  id: number,
+  creditId: string
+): Promise<CodexInviteResetConsumeResult> {
+  const { data } = await apiClient.post<CodexInviteResetConsumeResult>(
+    `/admin/accounts/${id}/codex/invite-reset/consume`,
+    { credit_id: creditId }
+  )
+  return data
+}
+
+export interface CodexInviteResetHistoryEntry {
+  id: number
+  account_id: number
+  action_type: 'invite' | 'consume'
+  operator_user_id?: number
+  emails?: string[]
+  failed_emails?: string[]
+  credit_id?: string
+  success: boolean
+  result_code?: string
+  message?: string
+  created_at: string
+}
+
+export async function getCodexInviteResetHistory(
+  id: number,
+  params: { page?: number; page_size?: number } = {}
+): Promise<PaginatedResponse<CodexInviteResetHistoryEntry>> {
+  const { data } = await apiClient.get<PaginatedResponse<CodexInviteResetHistoryEntry>>(
+    `/admin/accounts/${id}/codex/invite-reset/history`,
+    { params }
+  )
+  return data
+}
+
 export const accountsAPI = {
   list,
   listWithEtag,
@@ -787,7 +873,11 @@ export const accountsAPI = {
   batchClearError,
   batchRefresh,
   setPrivacy,
-  revertProxyFallback
+  revertProxyFallback,
+  getCodexInviteResetStatus,
+  sendCodexInviteResetInvite,
+  consumeCodexInviteReset,
+  getCodexInviteResetHistory
 }
 
 export default accountsAPI
