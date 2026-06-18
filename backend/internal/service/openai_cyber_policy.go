@@ -49,9 +49,6 @@ func (s *RateLimitService) HandleOpenAICyberPolicy(ctx context.Context, account 
 	if s == nil || account == nil || account.Platform != PlatformOpenAI {
 		return false
 	}
-	if account.IsPoolMode() && !account.IsCustomErrorCodesEnabled() {
-		return false
-	}
 	matched, code, upstreamMsg := detectOpenAICyberPolicy(responseBody)
 	if !matched {
 		return false
