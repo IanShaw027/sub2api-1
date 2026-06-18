@@ -1548,6 +1548,80 @@ func TestOpenAISelectAccountForModelWithExclusions_ModelSupportedButUnavailableK
 	require.NotErrorAs(t, err, &modelErr)
 }
 
+func TestOpenAISelectAccountForModelWithExclusions_PlatformDefaultRoutedModelUnavailableKeepsGenericError(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	t.Cleanup(resetPlatformModelRoutingConfigCacheForTest)
+
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{
+			{
+				ID:          1,
+				Platform:    PlatformOpenAI,
+				Status:      StatusActive,
+				Schedulable: true,
+				Extra: map[string]any{
+					modelRateLimitsKey: map[string]any{
+						"gpt-4o-mini": map[string]any{
+							"rate_limit_reset_at": time.Now().Add(10 * time.Minute).Format(time.RFC3339),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		accountRepo: repo,
+		cache:       &stubGatewayCache{},
+		settingService: NewSettingService(&openAISettingRepoStub{
+			values: map[string]string{
+				SettingKeyPlatformDefaultAccountModelConfig: `{"openai":{"model_whitelist":["gpt-4o-mini"],"model_mapping":{"gpt-4o-mini":"gpt-5.4"}}}`,
+			},
+		}, &config.Config{}),
+	}
+
+	acc, err := svc.SelectAccountForModelWithExclusions(context.Background(), nil, "", "gpt-4o-mini", nil)
+	require.Error(t, err)
+	require.Nil(t, acc)
+	var modelErr *GroupModelUnsupportedError
+	require.NotErrorAs(t, err, &modelErr)
+}
+
+func TestOpenAISelectAccountForModelWithExclusions_PlatformDefaultUnsupportedModelReturnsGroupModelUnsupported(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	t.Cleanup(resetPlatformModelRoutingConfigCacheForTest)
+
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{
+			{
+				ID:          1,
+				Platform:    PlatformOpenAI,
+				Status:      StatusActive,
+				Schedulable: true,
+			},
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		accountRepo: repo,
+		cache:       &stubGatewayCache{},
+		settingService: NewSettingService(&openAISettingRepoStub{
+			values: map[string]string{
+				SettingKeyPlatformDefaultAccountModelConfig: `{"openai":{"model_whitelist":["gpt-4o-mini"],"model_mapping":{"gpt-4o-mini":"gpt-5.4"}}}`,
+			},
+		}, &config.Config{}),
+	}
+
+	acc, err := svc.SelectAccountForModelWithExclusions(context.Background(), nil, "", "gpt-unknown", nil)
+	require.Error(t, err)
+	require.Nil(t, acc)
+	var modelErr *GroupModelUnsupportedError
+	require.ErrorAs(t, err, &modelErr)
+	require.Equal(t, PlatformOpenAI, modelErr.Platform)
+	require.Equal(t, "gpt-unknown", modelErr.RequestedModel)
+	require.Contains(t, modelErr.AvailableModels, "gpt-4o-mini")
+}
+
 func TestOpenAISelectAccountForModelWithExclusions_ExcludedUnsupportedKeepsGenericError(t *testing.T) {
 	repo := stubOpenAIAccountRepo{
 		accounts: []Account{
@@ -1859,6 +1933,8 @@ func TestOpenAISelectAccountWithLoadAwareness_StickyWaitPlan(t *testing.T) {
 }
 
 func TestOpenAISelectAccountWithLoadAwareness_StickyTempUnschedulableWithinWaitBudgetKeepsSticky(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	t.Cleanup(resetPlatformModelRoutingConfigCacheForTest)
 	resetOpenAIStickyWaitTimeoutSettingCacheForTest()
 	defer resetOpenAIStickyWaitTimeoutSettingCacheForTest()
 
@@ -1907,6 +1983,8 @@ func TestOpenAISelectAccountWithLoadAwareness_StickyTempUnschedulableWithinWaitB
 }
 
 func TestOpenAISelectAccountWithLoadAwareness_StickyTempUnschedulableBeyondWaitBudgetSwitchesAndRebinds(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	t.Cleanup(resetPlatformModelRoutingConfigCacheForTest)
 	resetOpenAIStickyWaitTimeoutSettingCacheForTest()
 	defer resetOpenAIStickyWaitTimeoutSettingCacheForTest()
 
@@ -2267,6 +2345,8 @@ func TestOpenAISelectAccountWithLoadAwareness_PrefersLeastRecentlyUsedBeforeConc
 }
 
 func TestOpenAISelectAccountWithLoadAwareness_StickyReservePercentLimitsNewSessions(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	t.Cleanup(resetPlatformModelRoutingConfigCacheForTest)
 	resetOpenAIStickyReservePercentSettingCacheForTest()
 	defer resetOpenAIStickyReservePercentSettingCacheForTest()
 

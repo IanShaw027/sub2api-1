@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -101,6 +102,56 @@ func availableRequestModelsFromAccounts(accounts []Account, platform string) []s
 	return models
 }
 
+func availableRequestModelsFromAccountsWithRouting(ctx context.Context, settingService *SettingService, accounts []Account, platform string) []string {
+	modelSet := make(map[string]struct{})
+	for i := range accounts {
+		acc := &accounts[i]
+		if !acc.IsSchedulable() || !accountMatchesModelListPlatform(acc, platform) {
+			continue
+		}
+		models := requestModelIDsForAccountRouting(ctx, settingService, acc, platform)
+		for _, model := range models {
+			if model = strings.TrimSpace(model); model != "" {
+				modelSet[model] = struct{}{}
+			}
+		}
+	}
+	if len(modelSet) == 0 {
+		return nil
+	}
+	models := make([]string, 0, len(modelSet))
+	for model := range modelSet {
+		models = append(models, model)
+	}
+	sort.Strings(models)
+	return models
+}
+
+func requestModelIDsForAccountRouting(ctx context.Context, settingService *SettingService, account *Account, platform string) []string {
+	if accountHasExplicitModelRouting(account, false) {
+		mapping := account.GetModelMapping()
+		if len(mapping) == 0 {
+			return nil
+		}
+		models := make([]string, 0, len(mapping))
+		for model := range mapping {
+			models = append(models, model)
+		}
+		return models
+	}
+	if cfg, ok := platformDefaultModelRoutingConfigForAccount(ctx, settingService, account); ok {
+		models := make([]string, 0, len(cfg.ModelWhitelist)+len(cfg.ModelMapping))
+		models = append(models, cfg.ModelWhitelist...)
+		for model := range cfg.ModelMapping {
+			models = append(models, model)
+		}
+		if len(models) > 0 {
+			return models
+		}
+	}
+	return defaultRequestModelIDsForPlatform(platform)
+}
+
 func accountMatchesModelListPlatform(account *Account, platform string) bool {
 	if account == nil {
 		return false
@@ -122,5 +173,17 @@ func newGroupModelUnsupportedError(platform string, requestedModel string, accou
 		Platform:        platform,
 		RequestedModel:  requestedModel,
 		AvailableModels: availableRequestModelsFromAccounts(accounts, platform),
+	}
+}
+
+func newGroupModelUnsupportedErrorWithRouting(ctx context.Context, settingService *SettingService, platform string, requestedModel string, accounts []Account) error {
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" || len(accounts) == 0 {
+		return nil
+	}
+	return &GroupModelUnsupportedError{
+		Platform:        platform,
+		RequestedModel:  requestedModel,
+		AvailableModels: availableRequestModelsFromAccountsWithRouting(ctx, settingService, accounts, platform),
 	}
 }

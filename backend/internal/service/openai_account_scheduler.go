@@ -784,7 +784,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		return nil, 0, 0, 0, err
 	}
 	if len(accounts) == 0 {
-		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, accounts)
+		return nil, 0, 0, 0, noAvailableOpenAISelectionErrorWithRouting(ctx, s.service.settingService, req.RequestedModel, false, req.RequireCompact, accounts)
 	}
 
 	// require_privacy_set: 获取分组信息
@@ -829,7 +829,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		})
 	}
 	if len(filtered) == 0 {
-		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, errorAccounts)
+		return nil, 0, 0, 0, noAvailableOpenAISelectionErrorWithRouting(ctx, s.service.settingService, req.RequestedModel, false, req.RequireCompact, errorAccounts)
 	}
 
 	loadMap := map[int64]*AccountLoadInfo{}
@@ -1034,7 +1034,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		waitSelectionOrder = buildSelectionOrder(waitCandidates)
 	}
 	if len(selectionOrder) == 0 && len(waitSelectionOrder) == 0 {
-		return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact && len(allCandidates) > 0, errorAccounts)
+		return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionErrorWithRouting(ctx, s.service.settingService, req.RequestedModel, req.RequireCompact && len(allCandidates) > 0, req.RequireCompact, errorAccounts)
 	}
 
 	compactBlocked := false
@@ -1121,14 +1121,14 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		return selection, candidateCount, topK, loadSkew, err
 	}
 
-	return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, compactBlocked, errorAccounts)
+	return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionErrorWithRouting(ctx, s.service.settingService, req.RequestedModel, compactBlocked, req.RequireCompact, errorAccounts)
 }
 
 func (s *defaultOpenAIAccountScheduler) selectionErrorAccounts(ctx context.Context, req OpenAIAccountScheduleRequest, accounts []Account, schedGroup *Group) []Account {
 	if s == nil || s.service == nil {
 		return nil
 	}
-	return s.service.openAISelectionErrorAccounts(ctx, accounts, req.RequestedModel, req.ExcludedIDs, func(account *Account) bool {
+	return s.service.openAISelectionErrorAccounts(ctx, accounts, req.RequestedModel, req.RequireCompact, req.ExcludedIDs, func(account *Account) bool {
 		if !s.isLoadBalanceAccountSchedulableForRequest(account, req) {
 			return false
 		}
