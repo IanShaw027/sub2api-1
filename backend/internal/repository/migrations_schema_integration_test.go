@@ -249,6 +249,11 @@ func TestMigrationsRunner_AICenterCoreSchemaStayAligned(t *testing.T) {
 	requireColumn(t, tx, "ai_audit_logs", "entity_type", "character varying", 64, false)
 	requireColumn(t, tx, "ai_audit_logs", "created_at", "timestamp with time zone", 0, false)
 	requireIndex(t, tx, "ai_audit_logs", "aiauditlog_entity_type_entity_id_created_at")
+
+	requireColumn(t, tx, "ai_skill_installs", "skill_id", "bigint", 0, false)
+	requireColumn(t, tx, "ai_skill_installs", "user_id", "bigint", 0, false)
+	requireForeignKeyOnDelete(t, tx, "ai_skill_installs", "skill_id", "ai_skills", "CASCADE")
+	requireForeignKeyOnDelete(t, tx, "ai_skill_installs", "user_id", "users", "CASCADE")
 }
 
 func requireConstraint(t *testing.T, tx *sql.Tx, table, constraint string) {

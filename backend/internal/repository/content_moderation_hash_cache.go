@@ -131,28 +131,40 @@ func (c *contentModerationHashCache) DeleteFlaggedInputHash(ctx context.Context,
 	if c == nil || c.rdb == nil || inputHash == "" {
 		return false, nil
 	}
-	deleted, err := c.rdb.SRem(ctx, contentModerationFlaggedHashSetKey, inputHash).Result()
+	pipe := c.rdb.Pipeline()
+	srem := pipe.SRem(ctx, contentModerationFlaggedHashSetKey, inputHash)
+	pipe.Del(ctx, contentModerationFlaggedHashKeyPrefix+inputHash)
+	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return false, err
 	}
-	return deleted > 0, nil
+	return srem.Val() > 0, nil
 }
 
 func (c *contentModerationHashCache) ClearFlaggedInputHashes(ctx context.Context) (int64, error) {
 	if c == nil || c.rdb == nil {
 		return 0, nil
 	}
-	deleted, err := c.rdb.SCard(ctx, contentModerationFlaggedHashSetKey).Result()
+	hashes, err := c.rdb.SMembers(ctx, contentModerationFlaggedHashSetKey).Result()
 	if err != nil {
 		return 0, err
 	}
-	if deleted == 0 {
+	if len(hashes) == 0 {
 		return 0, nil
 	}
-	if err := c.rdb.Del(ctx, contentModerationFlaggedHashSetKey).Err(); err != nil {
+	pipe := c.rdb.Pipeline()
+	for _, inputHash := range hashes {
+		inputHash = strings.TrimSpace(inputHash)
+		if inputHash == "" {
+			continue
+		}
+		pipe.Del(ctx, contentModerationFlaggedHashKeyPrefix+inputHash)
+	}
+	pipe.Del(ctx, contentModerationFlaggedHashSetKey)
+	if _, err := pipe.Exec(ctx); err != nil {
 		return 0, err
 	}
-	return deleted, nil
+	return int64(len(hashes)), nil
 }
 
 func (c *contentModerationHashCache) CountFlaggedInputHashes(ctx context.Context) (int64, error) {
