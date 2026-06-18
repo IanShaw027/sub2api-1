@@ -4132,6 +4132,30 @@ func TestOpenAIValidateUpstreamBaseURLDisabledAllowsHTTP(t *testing.T) {
 	}
 }
 
+func TestOpenAIValidateUpstreamBaseURLDisabledStillBlocksPrivateHosts(t *testing.T) {
+	cfg := &config.Config{
+		Security: config.SecurityConfig{
+			URLAllowlist: config.URLAllowlistConfig{Enabled: false},
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	for _, raw := range []string{
+		"https://localhost",
+		"https://127.0.0.1",
+		"https://169.254.169.254/latest/meta-data",
+	} {
+		if _, err := svc.validateUpstreamBaseURL(raw); err == nil {
+			t.Fatalf("expected %s to be rejected when allowlist is disabled but private hosts are not allowed", raw)
+		}
+	}
+
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	if _, err := svc.validateUpstreamBaseURL("https://127.0.0.1"); err != nil {
+		t.Fatalf("expected private host to be allowed only when allow_private_hosts=true, got %v", err)
+	}
+}
+
 func TestOpenAIValidateUpstreamBaseURLEnabledEnforcesAllowlist(t *testing.T) {
 	cfg := &config.Config{
 		Security: config.SecurityConfig{

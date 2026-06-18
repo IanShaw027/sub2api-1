@@ -1927,6 +1927,7 @@ func TestOpenAIResponsesWebSocket_PassthroughBillingUsesPerTurnRequestPayloadHas
 	usageCfg.Default.RateMultiplier = 1
 	usageCfg.Security.URLAllowlist.Enabled = false
 	usageCfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	usageCfg.Security.URLAllowlist.AllowPrivateHosts = true
 	usageCfg.Gateway.OpenAIWS.Enabled = true
 	usageCfg.Gateway.OpenAIWS.APIKeyEnabled = true
 	usageCfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
@@ -1939,6 +1940,7 @@ func TestOpenAIResponsesWebSocket_PassthroughBillingUsesPerTurnRequestPayloadHas
 	eligibilityCfg.RunMode = config.RunModeSimple
 	eligibilityCfg.Security.URLAllowlist.Enabled = false
 	eligibilityCfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	eligibilityCfg.Security.URLAllowlist.AllowPrivateHosts = true
 
 	accountRepo := &openAIWSUsageHandlerAccountRepoStub{account: account}
 	usageRepo := &openAIWSUsageHandlerUsageLogRepoStub{created: make(chan *service.UsageLog, 2)}
@@ -2555,6 +2557,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 	cfg.Default.RateMultiplier = 1
 	cfg.Security.URLAllowlist.Enabled = false
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	cfg.Gateway.OpenAIWS.Enabled = true
 	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
 	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
@@ -2758,6 +2761,7 @@ func TestOpenAIResponsesWebSocket_FirstTurnPostModelMappingImageIntentSkipsImage
 	cfg.Default.RateMultiplier = 1
 	cfg.Security.URLAllowlist.Enabled = false
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	cfg.Gateway.OpenAIWS.Enabled = true
 	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
 	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
@@ -2924,6 +2928,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentRejectsAfterLiveTo
 	cfg.Default.RateMultiplier = 1
 	cfg.Security.URLAllowlist.Enabled = false
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	cfg.Gateway.OpenAIWS.Enabled = true
 	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
 	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
@@ -3108,6 +3113,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityRejectsAfterLiveTo
 	cfg.Default.RateMultiplier = 1
 	cfg.Security.URLAllowlist.Enabled = false
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	cfg.Gateway.OpenAIWS.Enabled = true
 	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
 	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
@@ -3288,6 +3294,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageIntentRejectsUnsupportedRoute(t 
 	cfg.Default.RateMultiplier = 1
 	cfg.Security.URLAllowlist.Enabled = false
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	cfg.Gateway.OpenAIWS.Enabled = true
 	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
 	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
@@ -3471,6 +3478,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnRejectsAfterLiveAccountStatusChange(t
 	cfg.Default.RateMultiplier = 1
 	cfg.Security.URLAllowlist.Enabled = false
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	cfg.Gateway.OpenAIWS.Enabled = true
 	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
 	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
@@ -3638,6 +3646,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnRespectsLiveConcurrencyDecrease(t *te
 	cfg.Default.RateMultiplier = 1
 	cfg.Security.URLAllowlist.Enabled = false
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	cfg.Gateway.OpenAIWS.Enabled = true
 	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
 	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
@@ -3835,6 +3844,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	cfg.Default.RateMultiplier = 1
 	cfg.Security.URLAllowlist.Enabled = false
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	cfg.Gateway.OpenAIWS.Enabled = true
 	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
 	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true

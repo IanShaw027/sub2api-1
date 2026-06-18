@@ -774,6 +774,31 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_BuildRequestRejectsInvalidBas
 	require.Error(t, err)
 }
 
+func TestGatewayServiceValidateUpstreamBaseURLDisabledStillBlocksPrivateHosts(t *testing.T) {
+	svc := &GatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{Enabled: false},
+			},
+		},
+	}
+
+	for _, raw := range []string{
+		"https://localhost",
+		"https://10.0.0.1",
+		"https://169.254.169.254/latest/meta-data",
+	} {
+		if _, err := svc.validateUpstreamBaseURL(raw); err == nil {
+			t.Fatalf("expected %s to be rejected when allowlist is disabled but private hosts are not allowed", raw)
+		}
+	}
+
+	svc.cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	if _, err := svc.validateUpstreamBaseURL("https://10.0.0.1"); err != nil {
+		t.Fatalf("expected private host to be allowed only when allow_private_hosts=true, got %v", err)
+	}
+}
+
 func TestGatewayService_AnthropicOAuth_NotAffectedByAPIKeyPassthroughToggle(t *testing.T) {
 	setGinTestMode()
 	rec := httptest.NewRecorder()

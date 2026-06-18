@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -67,6 +68,31 @@ func TestGetModelPricing_Gpt53CodexSparkUsesDedicatedStaticFallbackWhenRemoteMis
 	require.InDelta(t, 3.5e-6, got.InputCostPerTokenPriority, 1e-12)
 	require.InDelta(t, 2.8e-5, got.OutputCostPerTokenPriority, 1e-12)
 	require.InDelta(t, 3.5e-7, got.CacheReadInputTokenCostPriority, 1e-12)
+}
+
+func TestPricingValidateURLDisabledStillBlocksPrivateHosts(t *testing.T) {
+	svc := &PricingService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{Enabled: false},
+			},
+		},
+	}
+
+	for _, raw := range []string{
+		"https://localhost/pricing.json",
+		"https://127.0.0.1/pricing.json",
+		"https://169.254.169.254/latest/meta-data",
+	} {
+		if _, err := svc.validatePricingURL(raw); err == nil {
+			t.Fatalf("expected %s to be rejected when allowlist is disabled but private hosts are not allowed", raw)
+		}
+	}
+
+	svc.cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	if _, err := svc.validatePricingURL("https://127.0.0.1/pricing.json"); err != nil {
+		t.Fatalf("expected private host to be allowed only when allow_private_hosts=true, got %v", err)
+	}
 }
 
 func TestGetModelPricing_ClaudeFableUsesStaticFallbackWhenRemoteMissing(t *testing.T) {

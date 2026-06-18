@@ -382,6 +382,7 @@ func TestOpenAISelectAccountByPreviousResponseID_CapabilityMismatchKeepsSticky(t
 
 func newOpenAIWSV2TestConfig() *config.Config {
 	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	cfg.Gateway.OpenAIWS.Enabled = true
 	cfg.Gateway.OpenAIWS.OAuthEnabled = true
 	cfg.Gateway.OpenAIWS.APIKeyEnabled = true

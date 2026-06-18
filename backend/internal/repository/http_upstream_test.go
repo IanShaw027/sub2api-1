@@ -83,6 +83,18 @@ func (s *HTTPUpstreamSuite) TestGetOrCreateClient_InvalidURLReturnsError() {
 	require.Error(s.T(), err, "expected error for invalid proxy URL")
 }
 
+func (s *HTTPUpstreamSuite) TestShouldValidateResolvedIPDoesNotDependOnAllowlistEnabled() {
+	s.cfg.Security.URLAllowlist = config.URLAllowlistConfig{
+		Enabled:           false,
+		AllowPrivateHosts: false,
+	}
+	svc := s.newService()
+	require.True(s.T(), svc.shouldValidateResolvedIP(), "resolved IP validation must remain enabled when only host allowlist is disabled")
+
+	s.cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	require.False(s.T(), svc.shouldValidateResolvedIP(), "allow_private_hosts is the explicit escape hatch for private resolved IPs")
+}
+
 func (s *HTTPUpstreamSuite) TestOpenAIProfileDefaultsToHTTP2AndNoHeaderTimeout() {
 	s.cfg.Gateway = config.GatewayConfig{
 		ResponseHeaderTimeout: 600,

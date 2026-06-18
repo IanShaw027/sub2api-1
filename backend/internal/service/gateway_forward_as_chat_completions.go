@@ -151,8 +151,13 @@ func (s *GatewayService) ForwardAsChatCompletions(
 			Kind:               "request_error",
 			Message:            safeErr,
 		})
-		writeGatewayCCError(c, http.StatusBadGateway, detail.ErrorType, formatUpstreamRequestFailed(detail, "Upstream request failed"))
-		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
+		body, _ := json.Marshal(gin.H{
+			"error": gin.H{
+				"type":    detail.ErrorType,
+				"message": formatUpstreamRequestFailed(detail, "Upstream request failed"),
+			},
+		})
+		return nil, &UpstreamFailoverError{StatusCode: http.StatusBadGateway, ResponseBody: body}
 	}
 	defer func() { _ = resp.Body.Close() }()
 

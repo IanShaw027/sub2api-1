@@ -5208,23 +5208,7 @@ oauthTransformDone:
 		resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
-			// Ensure the client receives an error response (handlers assume Forward writes on non-failover errors).
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
-			detail := recordDetailedUpstreamTransportError(c, err)
-			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-				Platform:           account.Platform,
-				AccountID:          account.ID,
-				AccountName:        account.Name,
-				UpstreamStatusCode: 0,
-				Kind:               "request_error",
-				Message:            safeErr,
-			})
-			c.JSON(http.StatusBadGateway, gin.H{
-				"error": gin.H{
-					"type":    detail.ErrorType,
-					"message": formatUpstreamRequestFailed(detail, "Upstream request failed"),
-				},
-			})
 			emitOpenAICodexCompatFallbackEvent(
 				ctx,
 				c,
@@ -5238,7 +5222,7 @@ oauthTransformDone:
 				safeErr,
 				nil,
 			)
-			return nil, fmt.Errorf("upstream request failed: %s", safeErr)
+			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 		}
 
 		// Handle error response
@@ -5850,24 +5834,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
-			safeErr := sanitizeUpstreamErrorMessage(err.Error())
-			detail := recordDetailedUpstreamTransportError(c, err)
-			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-				Platform:           account.Platform,
-				AccountID:          account.ID,
-				AccountName:        account.Name,
-				UpstreamStatusCode: 0,
-				Passthrough:        true,
-				Kind:               "request_error",
-				Message:            safeErr,
-			})
-			c.JSON(http.StatusBadGateway, gin.H{
-				"error": gin.H{
-					"type":    detail.ErrorType,
-					"message": formatUpstreamRequestFailed(detail, "Upstream request failed"),
-				},
-			})
-			return nil, fmt.Errorf("upstream request failed: %s", safeErr)
+			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
 		}
 
 		if resp.StatusCode < 400 {
@@ -9529,17 +9496,22 @@ func (s *OpenAIGatewayService) replaceModelInSSEBody(body, fromModel, toModel st
 }
 
 func (s *OpenAIGatewayService) validateUpstreamBaseURL(raw string) (string, error) {
-	if s.cfg != nil && !s.cfg.Security.URLAllowlist.Enabled {
-		normalized, err := urlvalidator.ValidateURLFormat(raw, s.cfg.Security.URLAllowlist.AllowInsecureHTTP)
-		if err != nil {
-			return "", fmt.Errorf("invalid base_url: %w", err)
+	allowInsecureHTTP := false
+	allowPrivate := false
+	requireAllowlist := true
+	var allowedHosts []string
+	if s.cfg != nil {
+		allowInsecureHTTP = s.cfg.Security.URLAllowlist.AllowInsecureHTTP
+		allowPrivate = s.cfg.Security.URLAllowlist.AllowPrivateHosts
+		requireAllowlist = s.cfg.Security.URLAllowlist.Enabled
+		if requireAllowlist {
+			allowedHosts = s.cfg.Security.URLAllowlist.UpstreamHosts
 		}
-		return normalized, nil
 	}
-	normalized, err := urlvalidator.ValidateHTTPSURL(raw, urlvalidator.ValidationOptions{
-		AllowedHosts:     s.cfg.Security.URLAllowlist.UpstreamHosts,
-		RequireAllowlist: true,
-		AllowPrivate:     s.cfg.Security.URLAllowlist.AllowPrivateHosts,
+	normalized, err := urlvalidator.ValidateHTTPURL(raw, allowInsecureHTTP, urlvalidator.ValidationOptions{
+		AllowedHosts:     allowedHosts,
+		RequireAllowlist: requireAllowlist,
+		AllowPrivate:     allowPrivate,
 	})
 	if err != nil {
 		return "", fmt.Errorf("invalid base_url: %w", err)

@@ -174,8 +174,13 @@ func (s *GatewayService) ForwardAsResponses(
 				Kind:               "request_error",
 				Message:            safeErr,
 			})
-			writeResponsesError(c, http.StatusBadGateway, detail.ErrorType, formatUpstreamRequestFailed(detail, "Upstream request failed"))
-			return nil, fmt.Errorf("upstream request failed: %s", safeErr)
+			body, _ := json.Marshal(gin.H{
+				"error": gin.H{
+					"type":    detail.ErrorType,
+					"message": formatUpstreamRequestFailed(detail, "Upstream request failed"),
+				},
+			})
+			return nil, &UpstreamFailoverError{StatusCode: http.StatusBadGateway, ResponseBody: body}
 		}
 
 		if resp.StatusCode < 400 {
