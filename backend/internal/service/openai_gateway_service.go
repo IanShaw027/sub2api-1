@@ -3588,9 +3588,7 @@ func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accoun
 }
 
 func concurrencyForOpenAIAccountSelection(account *Account, requiredImageRoute string) int {
-	if NormalizeGroupImageGenerationRoute(requiredImageRoute) == GroupImageGenerationRouteWeb2API {
-		return 1
-	}
+	requiredImageRoute = openAIImageRouteForAccountScheduling(requiredImageRoute)
 	if account == nil || account.Concurrency <= 0 {
 		return 1
 	}

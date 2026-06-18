@@ -81,12 +81,20 @@ type OpenAIAccountScheduleRequest struct {
 
 func (r OpenAIAccountScheduleRequest) MaxConcurrencyFor(account *Account) int {
 	if r.RequiredImageCapability != "" {
-		return concurrencyForOpenAIAccountSelection(account, r.RequiredImageRoute)
+		return concurrencyForOpenAIAccountSelection(account, openAIImageRouteForAccountScheduling(r.RequiredImageRoute))
 	}
 	if account == nil || account.Concurrency <= 0 {
 		return 1
 	}
 	return account.Concurrency
+}
+
+func openAIImageRouteForAccountScheduling(route string) string {
+	normalized := NormalizeGroupImageGenerationRoute(route)
+	if normalized == GroupImageGenerationRouteWeb2API {
+		return GroupImageGenerationRouteCodex
+	}
+	return normalized
 }
 
 type OpenAIAccountScheduleDecision struct {
@@ -340,6 +348,9 @@ func (s *defaultOpenAIAccountScheduler) Select(
 	ctx context.Context,
 	req OpenAIAccountScheduleRequest,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	if strings.TrimSpace(req.RequiredImageRoute) != "" {
+		req.RequiredImageRoute = openAIImageRouteForAccountScheduling(req.RequiredImageRoute)
+	}
 	decision := OpenAIAccountScheduleDecision{}
 	start := time.Now()
 	defer func() {
@@ -500,7 +511,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	}
 
 	cfg := s.service.schedulingConfig()
-	// WaitPlan.MaxConcurrency 使用实际调度并发槽位；web2api 图片请求固定为 1，codex 路由共享账号并发。
+	// WaitPlan.MaxConcurrency uses the scheduler-normalized image route; legacy web2api groups share codex account slots.
 	if s.service.concurrencyService != nil {
 		selection, err := s.service.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 			AccountID:      accountID,
@@ -1073,7 +1084,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	}
 
 	cfg := s.service.schedulingConfig()
-	// WaitPlan.MaxConcurrency 使用实际调度并发槽位；web2api 图片请求固定为 1，codex 路由共享账号并发。
+	// WaitPlan.MaxConcurrency uses the scheduler-normalized image route; legacy web2api groups share codex account slots.
 	for _, candidate := range waitSelectionOrder {
 		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, candidate.account, req.RequestedModel, false, req.RequiredImageRoute)
 		if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.isAccountRequestCompatible(ctx, fresh, req) {
@@ -1567,7 +1578,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 		}
 	}
 	if strings.TrimSpace(requiredRoute) != "" {
-		requiredRoute = NormalizeGroupImageGenerationRoute(requiredRoute)
+		requiredRoute = openAIImageRouteForAccountScheduling(requiredRoute)
 	}
 	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, 0, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, requiredRoute, true, requireOAuthAccount, false)
 	if err == nil && selection != nil && selection.Account != nil {
@@ -1648,7 +1659,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	ctx = s.withOpenAIQuotaAutoPauseContext(ctx)
 	decision := OpenAIAccountScheduleDecision{}
 	if strings.TrimSpace(requiredImageRoute) != "" {
-		requiredImageRoute = NormalizeGroupImageGenerationRoute(requiredImageRoute)
+		requiredImageRoute = openAIImageRouteForAccountScheduling(requiredImageRoute)
 	}
 	if requiredImageCapability != "" && requiredImageRoute == "" {
 		requiredImageRoute = GroupImageGenerationRouteCodex
