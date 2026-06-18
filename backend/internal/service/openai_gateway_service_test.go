@@ -5146,6 +5146,24 @@ func TestOpenAICompatSSEFrameParserDispatchesPendingFrameBeforeDoneSentinel(t *t
 	require.Equal(t, "[DONE]", strings.TrimSpace(frame.Data))
 }
 
+func TestResponsesStreamEventMayContributeToOutputIncludesAccumulatorEvents(t *testing.T) {
+	outputEvents := []string{
+		"response.output_text.delta",
+		"response.output_item.added",
+		"response.function_call_arguments.delta",
+		"response.custom_tool_call_input.delta",
+		"response.reasoning_summary_text.delta",
+		"response.reasoning_text.delta",
+	}
+	for _, eventType := range outputEvents {
+		t.Run(eventType, func(t *testing.T) {
+			require.True(t, responsesStreamEventMayContributeToOutput(eventType))
+		})
+	}
+
+	require.False(t, responsesStreamEventMayContributeToOutput("response.created"))
+}
+
 func TestOpenAICompatSSEFrameParserDispatchesPendingFrameBeforeNextEvent(t *testing.T) {
 	var parser openAICompatSSEFrameParser
 
