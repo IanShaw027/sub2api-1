@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"strconv"
 
 	"github.com/Wei-Shaw/sub2api/internal/model"
@@ -105,8 +106,19 @@ func (h *TLSFingerprintRouterHandler) Update(c *gin.Context) {
 		response.BadRequest(c, "Invalid router ID")
 		return
 	}
+
+	rawBody, err := c.GetRawData()
+	if err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rawBody, &raw); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
 	var req UpdateTLSFingerprintRouterRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := json.Unmarshal(rawBody, &req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
@@ -131,7 +143,7 @@ func (h *TLSFingerprintRouterHandler) Update(c *gin.Context) {
 	if req.Name != nil {
 		router.Name = *req.Name
 	}
-	if req.Description != nil {
+	if _, ok := raw["description"]; ok {
 		router.Description = req.Description
 	}
 	if req.Enabled != nil {
