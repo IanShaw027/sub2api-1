@@ -825,6 +825,48 @@ func (_u *UsageLogUpdate) SetNillableCacheTTLOverridden(v *bool) *UsageLogUpdate
 	return _u
 }
 
+// SetOpenaiWsProfile sets the "openai_ws_profile" field.
+func (_u *UsageLogUpdate) SetOpenaiWsProfile(v string) *UsageLogUpdate {
+	_u.mutation.SetOpenaiWsProfile(v)
+	return _u
+}
+
+// SetNillableOpenaiWsProfile sets the "openai_ws_profile" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableOpenaiWsProfile(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetOpenaiWsProfile(*v)
+	}
+	return _u
+}
+
+// SetOpenaiWsConnReused sets the "openai_ws_conn_reused" field.
+func (_u *UsageLogUpdate) SetOpenaiWsConnReused(v bool) *UsageLogUpdate {
+	_u.mutation.SetOpenaiWsConnReused(v)
+	return _u
+}
+
+// SetNillableOpenaiWsConnReused sets the "openai_ws_conn_reused" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableOpenaiWsConnReused(v *bool) *UsageLogUpdate {
+	if v != nil {
+		_u.SetOpenaiWsConnReused(*v)
+	}
+	return _u
+}
+
+// SetProvider sets the "provider" field.
+func (_u *UsageLogUpdate) SetProvider(v string) *UsageLogUpdate {
+	_u.mutation.SetProvider(v)
+	return _u
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableProvider(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetProvider(*v)
+	}
+	return _u
+}
+
 // SetUser sets the "user" edge to the User entity.
 func (_u *UsageLogUpdate) SetUser(v *User) *UsageLogUpdate {
 	return _u.SetUserID(v.ID)
@@ -1212,6 +1254,15 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.CacheTTLOverridden(); ok {
 		_spec.SetField(usagelog.FieldCacheTTLOverridden, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.OpenaiWsProfile(); ok {
+		_spec.SetField(usagelog.FieldOpenaiWsProfile, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OpenaiWsConnReused(); ok {
+		_spec.SetField(usagelog.FieldOpenaiWsConnReused, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.Provider(); ok {
+		_spec.SetField(usagelog.FieldProvider, field.TypeString, value)
 	}
 	if _u.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -2171,6 +2222,48 @@ func (_u *UsageLogUpdateOne) SetNillableCacheTTLOverridden(v *bool) *UsageLogUpd
 	return _u
 }
 
+// SetOpenaiWsProfile sets the "openai_ws_profile" field.
+func (_u *UsageLogUpdateOne) SetOpenaiWsProfile(v string) *UsageLogUpdateOne {
+	_u.mutation.SetOpenaiWsProfile(v)
+	return _u
+}
+
+// SetNillableOpenaiWsProfile sets the "openai_ws_profile" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableOpenaiWsProfile(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetOpenaiWsProfile(*v)
+	}
+	return _u
+}
+
+// SetOpenaiWsConnReused sets the "openai_ws_conn_reused" field.
+func (_u *UsageLogUpdateOne) SetOpenaiWsConnReused(v bool) *UsageLogUpdateOne {
+	_u.mutation.SetOpenaiWsConnReused(v)
+	return _u
+}
+
+// SetNillableOpenaiWsConnReused sets the "openai_ws_conn_reused" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableOpenaiWsConnReused(v *bool) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetOpenaiWsConnReused(*v)
+	}
+	return _u
+}
+
+// SetProvider sets the "provider" field.
+func (_u *UsageLogUpdateOne) SetProvider(v string) *UsageLogUpdateOne {
+	_u.mutation.SetProvider(v)
+	return _u
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableProvider(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetProvider(*v)
+	}
+	return _u
+}
+
 // SetUser sets the "user" edge to the User entity.
 func (_u *UsageLogUpdateOne) SetUser(v *User) *UsageLogUpdateOne {
 	return _u.SetUserID(v.ID)
@@ -2588,6 +2681,15 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.CacheTTLOverridden(); ok {
 		_spec.SetField(usagelog.FieldCacheTTLOverridden, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.OpenaiWsProfile(); ok {
+		_spec.SetField(usagelog.FieldOpenaiWsProfile, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OpenaiWsConnReused(); ok {
+		_spec.SetField(usagelog.FieldOpenaiWsConnReused, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.Provider(); ok {
+		_spec.SetField(usagelog.FieldProvider, field.TypeString, value)
 	}
 	if _u.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{

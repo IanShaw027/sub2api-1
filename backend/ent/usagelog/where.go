@@ -250,6 +250,21 @@ func CacheTTLOverridden(v bool) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldCacheTTLOverridden, v))
 }
 
+// OpenaiWsProfile applies equality check predicate on the "openai_ws_profile" field. It's identical to OpenaiWsProfileEQ.
+func OpenaiWsProfile(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldOpenaiWsProfile, v))
+}
+
+// OpenaiWsConnReused applies equality check predicate on the "openai_ws_conn_reused" field. It's identical to OpenaiWsConnReusedEQ.
+func OpenaiWsConnReused(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldOpenaiWsConnReused, v))
+}
+
+// Provider applies equality check predicate on the "provider" field. It's identical to ProviderEQ.
+func Provider(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldProvider, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldCreatedAt, v))
@@ -2158,6 +2173,146 @@ func CacheTTLOverriddenEQ(v bool) predicate.UsageLog {
 // CacheTTLOverriddenNEQ applies the NEQ predicate on the "cache_ttl_overridden" field.
 func CacheTTLOverriddenNEQ(v bool) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNEQ(FieldCacheTTLOverridden, v))
+}
+
+// OpenaiWsProfileEQ applies the EQ predicate on the "openai_ws_profile" field.
+func OpenaiWsProfileEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldOpenaiWsProfile, v))
+}
+
+// OpenaiWsProfileNEQ applies the NEQ predicate on the "openai_ws_profile" field.
+func OpenaiWsProfileNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldOpenaiWsProfile, v))
+}
+
+// OpenaiWsProfileIn applies the In predicate on the "openai_ws_profile" field.
+func OpenaiWsProfileIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldOpenaiWsProfile, vs...))
+}
+
+// OpenaiWsProfileNotIn applies the NotIn predicate on the "openai_ws_profile" field.
+func OpenaiWsProfileNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldOpenaiWsProfile, vs...))
+}
+
+// OpenaiWsProfileGT applies the GT predicate on the "openai_ws_profile" field.
+func OpenaiWsProfileGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldOpenaiWsProfile, v))
+}
+
+// OpenaiWsProfileGTE applies the GTE predicate on the "openai_ws_profile" field.
+func OpenaiWsProfileGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldOpenaiWsProfile, v))
+}
+
+// OpenaiWsProfileLT applies the LT predicate on the "openai_ws_profile" field.
+func OpenaiWsProfileLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldOpenaiWsProfile, v))
+}
+
+// OpenaiWsProfileLTE applies the LTE predicate on the "openai_ws_profile" field.
+func OpenaiWsProfileLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldOpenaiWsProfile, v))
+}
+
+// OpenaiWsProfileContains applies the Contains predicate on the "openai_ws_profile" field.
+func OpenaiWsProfileContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldOpenaiWsProfile, v))
+}
+
+// OpenaiWsProfileHasPrefix applies the HasPrefix predicate on the "openai_ws_profile" field.
+func OpenaiWsProfileHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldOpenaiWsProfile, v))
+}
+
+// OpenaiWsProfileHasSuffix applies the HasSuffix predicate on the "openai_ws_profile" field.
+func OpenaiWsProfileHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldOpenaiWsProfile, v))
+}
+
+// OpenaiWsProfileEqualFold applies the EqualFold predicate on the "openai_ws_profile" field.
+func OpenaiWsProfileEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldOpenaiWsProfile, v))
+}
+
+// OpenaiWsProfileContainsFold applies the ContainsFold predicate on the "openai_ws_profile" field.
+func OpenaiWsProfileContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldOpenaiWsProfile, v))
+}
+
+// OpenaiWsConnReusedEQ applies the EQ predicate on the "openai_ws_conn_reused" field.
+func OpenaiWsConnReusedEQ(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldOpenaiWsConnReused, v))
+}
+
+// OpenaiWsConnReusedNEQ applies the NEQ predicate on the "openai_ws_conn_reused" field.
+func OpenaiWsConnReusedNEQ(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldOpenaiWsConnReused, v))
+}
+
+// ProviderEQ applies the EQ predicate on the "provider" field.
+func ProviderEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldProvider, v))
+}
+
+// ProviderNEQ applies the NEQ predicate on the "provider" field.
+func ProviderNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldProvider, v))
+}
+
+// ProviderIn applies the In predicate on the "provider" field.
+func ProviderIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldProvider, vs...))
+}
+
+// ProviderNotIn applies the NotIn predicate on the "provider" field.
+func ProviderNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldProvider, vs...))
+}
+
+// ProviderGT applies the GT predicate on the "provider" field.
+func ProviderGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldProvider, v))
+}
+
+// ProviderGTE applies the GTE predicate on the "provider" field.
+func ProviderGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldProvider, v))
+}
+
+// ProviderLT applies the LT predicate on the "provider" field.
+func ProviderLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldProvider, v))
+}
+
+// ProviderLTE applies the LTE predicate on the "provider" field.
+func ProviderLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldProvider, v))
+}
+
+// ProviderContains applies the Contains predicate on the "provider" field.
+func ProviderContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldProvider, v))
+}
+
+// ProviderHasPrefix applies the HasPrefix predicate on the "provider" field.
+func ProviderHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldProvider, v))
+}
+
+// ProviderHasSuffix applies the HasSuffix predicate on the "provider" field.
+func ProviderHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldProvider, v))
+}
+
+// ProviderEqualFold applies the EqualFold predicate on the "provider" field.
+func ProviderEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldProvider, v))
+}
+
+// ProviderContainsFold applies the ContainsFold predicate on the "provider" field.
+func ProviderContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldProvider, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

@@ -2702,8 +2702,20 @@ func init() {
 	usagelogDescCacheTTLOverridden := usagelogFields[39].Descriptor()
 	// usagelog.DefaultCacheTTLOverridden holds the default value on creation for the cache_ttl_overridden field.
 	usagelog.DefaultCacheTTLOverridden = usagelogDescCacheTTLOverridden.Default.(bool)
+	// usagelogDescOpenaiWsProfile is the schema descriptor for openai_ws_profile field.
+	usagelogDescOpenaiWsProfile := usagelogFields[40].Descriptor()
+	// usagelog.DefaultOpenaiWsProfile holds the default value on creation for the openai_ws_profile field.
+	usagelog.DefaultOpenaiWsProfile = usagelogDescOpenaiWsProfile.Default.(string)
+	// usagelogDescOpenaiWsConnReused is the schema descriptor for openai_ws_conn_reused field.
+	usagelogDescOpenaiWsConnReused := usagelogFields[41].Descriptor()
+	// usagelog.DefaultOpenaiWsConnReused holds the default value on creation for the openai_ws_conn_reused field.
+	usagelog.DefaultOpenaiWsConnReused = usagelogDescOpenaiWsConnReused.Default.(bool)
+	// usagelogDescProvider is the schema descriptor for provider field.
+	usagelogDescProvider := usagelogFields[42].Descriptor()
+	// usagelog.DefaultProvider holds the default value on creation for the provider field.
+	usagelog.DefaultProvider = usagelogDescProvider.Default.(string)
 	// usagelogDescCreatedAt is the schema descriptor for created_at field.
-	usagelogDescCreatedAt := usagelogFields[40].Descriptor()
+	usagelogDescCreatedAt := usagelogFields[43].Descriptor()
 	// usagelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagelog.DefaultCreatedAt = usagelogDescCreatedAt.Default.(func() time.Time)
 	userMixin := schema.User{}.Mixin()

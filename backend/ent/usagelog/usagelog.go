@@ -94,6 +94,12 @@ const (
 	FieldImageSizeBreakdown = "image_size_breakdown"
 	// FieldCacheTTLOverridden holds the string denoting the cache_ttl_overridden field in the database.
 	FieldCacheTTLOverridden = "cache_ttl_overridden"
+	// FieldOpenaiWsProfile holds the string denoting the openai_ws_profile field in the database.
+	FieldOpenaiWsProfile = "openai_ws_profile"
+	// FieldOpenaiWsConnReused holds the string denoting the openai_ws_conn_reused field in the database.
+	FieldOpenaiWsConnReused = "openai_ws_conn_reused"
+	// FieldProvider holds the string denoting the provider field in the database.
+	FieldProvider = "provider"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// EdgeUser holds the string denoting the user edge name in mutations.
@@ -188,6 +194,9 @@ var Columns = []string{
 	FieldImageSizeSource,
 	FieldImageSizeBreakdown,
 	FieldCacheTTLOverridden,
+	FieldOpenaiWsProfile,
+	FieldOpenaiWsConnReused,
+	FieldProvider,
 	FieldCreatedAt,
 }
 
@@ -262,6 +271,12 @@ var (
 	ImageSizeSourceValidator func(string) error
 	// DefaultCacheTTLOverridden holds the default value on creation for the "cache_ttl_overridden" field.
 	DefaultCacheTTLOverridden bool
+	// DefaultOpenaiWsProfile holds the default value on creation for the "openai_ws_profile" field.
+	DefaultOpenaiWsProfile string
+	// DefaultOpenaiWsConnReused holds the default value on creation for the "openai_ws_conn_reused" field.
+	DefaultOpenaiWsConnReused bool
+	// DefaultProvider holds the default value on creation for the "provider" field.
+	DefaultProvider string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )
@@ -467,6 +482,21 @@ func ByImageSizeSource(opts ...sql.OrderTermOption) OrderOption {
 // ByCacheTTLOverridden orders the results by the cache_ttl_overridden field.
 func ByCacheTTLOverridden(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCacheTTLOverridden, opts...).ToFunc()
+}
+
+// ByOpenaiWsProfile orders the results by the openai_ws_profile field.
+func ByOpenaiWsProfile(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOpenaiWsProfile, opts...).ToFunc()
+}
+
+// ByOpenaiWsConnReused orders the results by the openai_ws_conn_reused field.
+func ByOpenaiWsConnReused(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOpenaiWsConnReused, opts...).ToFunc()
+}
+
+// ByProvider orders the results by the provider field.
+func ByProvider(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProvider, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

@@ -55053,33 +55053,36 @@ func (m *PromoCodeUsageMutation) ResetEdge(name string) error {
 // ProxyMutation represents an operation that mutates the Proxy nodes in the graph.
 type ProxyMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *int64
-	created_at          *time.Time
-	updated_at          *time.Time
-	deleted_at          *time.Time
-	name                *string
-	protocol            *string
-	host                *string
-	port                *int
-	addport             *int
-	username            *string
-	password            *string
-	status              *string
-	expires_at          *time.Time
-	fallback_mode       *string
-	expiry_warn_days    *int
-	addexpiry_warn_days *int
-	clearedFields       map[string]struct{}
-	accounts            map[int64]struct{}
-	removedaccounts     map[int64]struct{}
-	clearedaccounts     bool
-	backup_proxy        *int64
-	clearedbackup_proxy bool
-	done                bool
-	oldValue            func(context.Context) (*Proxy, error)
-	predicates          []predicate.Proxy
+	op                      Op
+	typ                     string
+	id                      *int64
+	created_at              *time.Time
+	updated_at              *time.Time
+	deleted_at              *time.Time
+	name                    *string
+	protocol                *string
+	host                    *string
+	port                    *int
+	addport                 *int
+	username                *string
+	password                *string
+	status                  *string
+	expires_at              *time.Time
+	fallback_mode           *string
+	expiry_warn_days        *int
+	addexpiry_warn_days     *int
+	clearedFields           map[string]struct{}
+	accounts                map[int64]struct{}
+	removedaccounts         map[int64]struct{}
+	clearedaccounts         bool
+	backup_proxy            *int64
+	clearedbackup_proxy     bool
+	fallback_sources        map[int64]struct{}
+	removedfallback_sources map[int64]struct{}
+	clearedfallback_sources bool
+	done                    bool
+	oldValue                func(context.Context) (*Proxy, error)
+	predicates              []predicate.Proxy
 }
 
 var _ ent.Mutation = (*ProxyMutation)(nil)
@@ -55870,6 +55873,60 @@ func (m *ProxyMutation) ResetBackupProxy() {
 	m.clearedbackup_proxy = false
 }
 
+// AddFallbackSourceIDs adds the "fallback_sources" edge to the Proxy entity by ids.
+func (m *ProxyMutation) AddFallbackSourceIDs(ids ...int64) {
+	if m.fallback_sources == nil {
+		m.fallback_sources = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.fallback_sources[ids[i]] = struct{}{}
+	}
+}
+
+// ClearFallbackSources clears the "fallback_sources" edge to the Proxy entity.
+func (m *ProxyMutation) ClearFallbackSources() {
+	m.clearedfallback_sources = true
+}
+
+// FallbackSourcesCleared reports if the "fallback_sources" edge to the Proxy entity was cleared.
+func (m *ProxyMutation) FallbackSourcesCleared() bool {
+	return m.clearedfallback_sources
+}
+
+// RemoveFallbackSourceIDs removes the "fallback_sources" edge to the Proxy entity by IDs.
+func (m *ProxyMutation) RemoveFallbackSourceIDs(ids ...int64) {
+	if m.removedfallback_sources == nil {
+		m.removedfallback_sources = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.fallback_sources, ids[i])
+		m.removedfallback_sources[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedFallbackSources returns the removed IDs of the "fallback_sources" edge to the Proxy entity.
+func (m *ProxyMutation) RemovedFallbackSourcesIDs() (ids []int64) {
+	for id := range m.removedfallback_sources {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// FallbackSourcesIDs returns the "fallback_sources" edge IDs in the mutation.
+func (m *ProxyMutation) FallbackSourcesIDs() (ids []int64) {
+	for id := range m.fallback_sources {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetFallbackSources resets all changes to the "fallback_sources" edge.
+func (m *ProxyMutation) ResetFallbackSources() {
+	m.fallback_sources = nil
+	m.clearedfallback_sources = false
+	m.removedfallback_sources = nil
+}
+
 // Where appends a list predicates to the ProxyMutation builder.
 func (m *ProxyMutation) Where(ps ...predicate.Proxy) {
 	m.predicates = append(m.predicates, ps...)
@@ -56284,12 +56341,15 @@ func (m *ProxyMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *ProxyMutation) AddedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.accounts != nil {
 		edges = append(edges, proxy.EdgeAccounts)
 	}
 	if m.backup_proxy != nil {
 		edges = append(edges, proxy.EdgeBackupProxy)
+	}
+	if m.fallback_sources != nil {
+		edges = append(edges, proxy.EdgeFallbackSources)
 	}
 	return edges
 }
@@ -56308,15 +56368,24 @@ func (m *ProxyMutation) AddedIDs(name string) []ent.Value {
 		if id := m.backup_proxy; id != nil {
 			return []ent.Value{*id}
 		}
+	case proxy.EdgeFallbackSources:
+		ids := make([]ent.Value, 0, len(m.fallback_sources))
+		for id := range m.fallback_sources {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *ProxyMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.removedaccounts != nil {
 		edges = append(edges, proxy.EdgeAccounts)
+	}
+	if m.removedfallback_sources != nil {
+		edges = append(edges, proxy.EdgeFallbackSources)
 	}
 	return edges
 }
@@ -56331,18 +56400,27 @@ func (m *ProxyMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case proxy.EdgeFallbackSources:
+		ids := make([]ent.Value, 0, len(m.removedfallback_sources))
+		for id := range m.removedfallback_sources {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *ProxyMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.clearedaccounts {
 		edges = append(edges, proxy.EdgeAccounts)
 	}
 	if m.clearedbackup_proxy {
 		edges = append(edges, proxy.EdgeBackupProxy)
+	}
+	if m.clearedfallback_sources {
+		edges = append(edges, proxy.EdgeFallbackSources)
 	}
 	return edges
 }
@@ -56355,6 +56433,8 @@ func (m *ProxyMutation) EdgeCleared(name string) bool {
 		return m.clearedaccounts
 	case proxy.EdgeBackupProxy:
 		return m.clearedbackup_proxy
+	case proxy.EdgeFallbackSources:
+		return m.clearedfallback_sources
 	}
 	return false
 }
@@ -56379,6 +56459,9 @@ func (m *ProxyMutation) ResetEdge(name string) error {
 		return nil
 	case proxy.EdgeBackupProxy:
 		m.ResetBackupProxy()
+		return nil
+	case proxy.EdgeFallbackSources:
+		m.ResetFallbackSources()
 		return nil
 	}
 	return fmt.Errorf("unknown Proxy edge %s", name)
@@ -62768,6 +62851,9 @@ type UsageLogMutation struct {
 	image_size_source           *string
 	image_size_breakdown        *map[string]int
 	cache_ttl_overridden        *bool
+	openai_ws_profile           *string
+	openai_ws_conn_reused       *bool
+	provider                    *string
 	created_at                  *time.Time
 	clearedFields               map[string]struct{}
 	user                        *int64
@@ -64941,6 +65027,114 @@ func (m *UsageLogMutation) ResetCacheTTLOverridden() {
 	m.cache_ttl_overridden = nil
 }
 
+// SetOpenaiWsProfile sets the "openai_ws_profile" field.
+func (m *UsageLogMutation) SetOpenaiWsProfile(s string) {
+	m.openai_ws_profile = &s
+}
+
+// OpenaiWsProfile returns the value of the "openai_ws_profile" field in the mutation.
+func (m *UsageLogMutation) OpenaiWsProfile() (r string, exists bool) {
+	v := m.openai_ws_profile
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOpenaiWsProfile returns the old "openai_ws_profile" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldOpenaiWsProfile(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOpenaiWsProfile is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOpenaiWsProfile requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOpenaiWsProfile: %w", err)
+	}
+	return oldValue.OpenaiWsProfile, nil
+}
+
+// ResetOpenaiWsProfile resets all changes to the "openai_ws_profile" field.
+func (m *UsageLogMutation) ResetOpenaiWsProfile() {
+	m.openai_ws_profile = nil
+}
+
+// SetOpenaiWsConnReused sets the "openai_ws_conn_reused" field.
+func (m *UsageLogMutation) SetOpenaiWsConnReused(b bool) {
+	m.openai_ws_conn_reused = &b
+}
+
+// OpenaiWsConnReused returns the value of the "openai_ws_conn_reused" field in the mutation.
+func (m *UsageLogMutation) OpenaiWsConnReused() (r bool, exists bool) {
+	v := m.openai_ws_conn_reused
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOpenaiWsConnReused returns the old "openai_ws_conn_reused" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldOpenaiWsConnReused(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOpenaiWsConnReused is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOpenaiWsConnReused requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOpenaiWsConnReused: %w", err)
+	}
+	return oldValue.OpenaiWsConnReused, nil
+}
+
+// ResetOpenaiWsConnReused resets all changes to the "openai_ws_conn_reused" field.
+func (m *UsageLogMutation) ResetOpenaiWsConnReused() {
+	m.openai_ws_conn_reused = nil
+}
+
+// SetProvider sets the "provider" field.
+func (m *UsageLogMutation) SetProvider(s string) {
+	m.provider = &s
+}
+
+// Provider returns the value of the "provider" field in the mutation.
+func (m *UsageLogMutation) Provider() (r string, exists bool) {
+	v := m.provider
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProvider returns the old "provider" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldProvider(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProvider is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProvider requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProvider: %w", err)
+	}
+	return oldValue.Provider, nil
+}
+
+// ResetProvider resets all changes to the "provider" field.
+func (m *UsageLogMutation) ResetProvider() {
+	m.provider = nil
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *UsageLogMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -65146,7 +65340,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 41)
+	fields := make([]string, 0, 44)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -65267,6 +65461,15 @@ func (m *UsageLogMutation) Fields() []string {
 	if m.cache_ttl_overridden != nil {
 		fields = append(fields, usagelog.FieldCacheTTLOverridden)
 	}
+	if m.openai_ws_profile != nil {
+		fields = append(fields, usagelog.FieldOpenaiWsProfile)
+	}
+	if m.openai_ws_conn_reused != nil {
+		fields = append(fields, usagelog.FieldOpenaiWsConnReused)
+	}
+	if m.provider != nil {
+		fields = append(fields, usagelog.FieldProvider)
+	}
 	if m.created_at != nil {
 		fields = append(fields, usagelog.FieldCreatedAt)
 	}
@@ -65358,6 +65561,12 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.ImageSizeBreakdown()
 	case usagelog.FieldCacheTTLOverridden:
 		return m.CacheTTLOverridden()
+	case usagelog.FieldOpenaiWsProfile:
+		return m.OpenaiWsProfile()
+	case usagelog.FieldOpenaiWsConnReused:
+		return m.OpenaiWsConnReused()
+	case usagelog.FieldProvider:
+		return m.Provider()
 	case usagelog.FieldCreatedAt:
 		return m.CreatedAt()
 	}
@@ -65449,6 +65658,12 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldImageSizeBreakdown(ctx)
 	case usagelog.FieldCacheTTLOverridden:
 		return m.OldCacheTTLOverridden(ctx)
+	case usagelog.FieldOpenaiWsProfile:
+		return m.OldOpenaiWsProfile(ctx)
+	case usagelog.FieldOpenaiWsConnReused:
+		return m.OldOpenaiWsConnReused(ctx)
+	case usagelog.FieldProvider:
+		return m.OldProvider(ctx)
 	case usagelog.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	}
@@ -65739,6 +65954,27 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCacheTTLOverridden(v)
+		return nil
+	case usagelog.FieldOpenaiWsProfile:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOpenaiWsProfile(v)
+		return nil
+	case usagelog.FieldOpenaiWsConnReused:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOpenaiWsConnReused(v)
+		return nil
+	case usagelog.FieldProvider:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProvider(v)
 		return nil
 	case usagelog.FieldCreatedAt:
 		v, ok := value.(time.Time)
@@ -66257,6 +66493,15 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldCacheTTLOverridden:
 		m.ResetCacheTTLOverridden()
+		return nil
+	case usagelog.FieldOpenaiWsProfile:
+		m.ResetOpenaiWsProfile()
+		return nil
+	case usagelog.FieldOpenaiWsConnReused:
+		m.ResetOpenaiWsConnReused()
+		return nil
+	case usagelog.FieldProvider:
+		m.ResetProvider()
 		return nil
 	case usagelog.FieldCreatedAt:
 		m.ResetCreatedAt()
