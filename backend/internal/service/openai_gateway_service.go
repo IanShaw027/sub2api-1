@@ -738,6 +738,7 @@ func (s *OpenAIGatewayService) billingDeps() *billingDeps {
 		deferredService:       s.deferredService,
 		balanceNotifyService:  s.balanceNotifyService,
 		userPlatformQuotaRepo: s.userPlatformQuotaRepo,
+		cfg:                   s.cfg,
 	}
 }
 
@@ -2322,7 +2323,7 @@ func shouldUseOpenAIGroupModelUnsupportedError(accounts []Account, requestedMode
 	return hasRelevantAccount
 }
 
-func (s *OpenAIGatewayService) openAISelectionErrorAccounts(accounts []Account, requestedModel string, excludedIDs map[int64]struct{}, isRelevant func(*Account) bool) []Account {
+func (s *OpenAIGatewayService) openAISelectionErrorAccounts(ctx context.Context, accounts []Account, requestedModel string, excludedIDs map[int64]struct{}, isRelevant func(*Account) bool) []Account {
 	if len(accounts) == 0 {
 		return nil
 	}
@@ -2330,20 +2331,28 @@ func (s *OpenAIGatewayService) openAISelectionErrorAccounts(accounts []Account, 
 	filtered := make([]Account, 0, len(accounts))
 	for i := range accounts {
 		acc := &accounts[i]
-		if requestedModel != "" && acc.IsOpenAI() && acc.IsModelSupported(requestedModel) {
-			filtered = append(filtered, *acc)
+		latest := acc
+		if s != nil && s.schedulerSnapshot != nil && s.accountRepo != nil {
+			fresh, err := s.accountRepo.GetByID(ctx, acc.ID)
+			if err != nil || fresh == nil {
+				continue
+			}
+			latest = fresh
+		}
+		if requestedModel != "" && latest.IsOpenAI() && latest.IsModelSupported(requestedModel) {
+			filtered = append(filtered, *latest)
 			continue
 		}
-		if _, excluded := excludedIDs[acc.ID]; excluded {
+		if _, excluded := excludedIDs[latest.ID]; excluded {
 			continue
 		}
-		if s.isOpenAIAccountRuntimeBlocked(acc) {
+		if s.isOpenAIAccountRuntimeBlocked(latest) {
 			continue
 		}
-		if isRelevant != nil && !isRelevant(acc) {
+		if isRelevant != nil && !isRelevant(latest) {
 			continue
 		}
-		filtered = append(filtered, *acc)
+		filtered = append(filtered, *latest)
 	}
 	return filtered
 }
@@ -2905,7 +2914,7 @@ func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.C
 	selected, compactBlocked := s.selectBestAccount(ctx, groupID, accounts, requestedModel, excludedIDs, requireCompact, requiredImageRoute)
 
 	if selected == nil {
-		errorAccounts := s.openAISelectionErrorAccounts(accounts, requestedModel, excludedIDs, func(acc *Account) bool {
+		errorAccounts := s.openAISelectionErrorAccounts(ctx, accounts, requestedModel, excludedIDs, func(acc *Account) bool {
 			if !isOpenAIAccountEligibleForRequest(ctx, s.settingService, acc, "", requireCompact, requiredImageRoute, false) {
 				return false
 			}
@@ -3284,7 +3293,14 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	if len(candidates) == 0 {
-		return nil, ErrNoAvailableAccounts
+		errorAccounts := s.openAISelectionErrorAccounts(ctx, accounts, requestedModel, excludedIDs, func(acc *Account) bool {
+			if !isOpenAIAccountEligibleForRequest(ctx, s.settingService, acc, "", requireCompact, requiredImageRoute, requireOAuthAccount) {
+				return false
+			}
+			return groupID == nil || !needsUpstreamCheck ||
+				!s.isUpstreamModelRestrictedByChannel(ctx, *groupID, acc, requestedModel, requireCompact)
+		})
+		return nil, noAvailableOpenAISelectionError(requestedModel, false, errorAccounts)
 	}
 
 	accountLoads := make([]AccountWithConcurrency, 0, len(candidates))

@@ -511,6 +511,50 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_AdvancedExcludedUnsuppo
 	require.NotErrorAs(t, err, &modelErr)
 }
 
+func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultLoadAwareNoModelSupportReturnsGroupModelUnsupported(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	accounts := []Account{
+		{
+			ID:          360231,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Credentials: map[string]any{"model_mapping": map[string]any{"gpt-3.5-turbo": "gpt-3.5-turbo"}},
+		},
+	}
+	cfg := newSchedulerTestOpenAIWSV2Config()
+	cfg.Gateway.Scheduling.LoadBatchEnabled = true
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, decision, err := svc.SelectAccountWithScheduler(
+		ctx,
+		nil,
+		"",
+		"",
+		"gpt-4",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+	require.Error(t, err)
+	require.Nil(t, selection)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+	var modelErr *GroupModelUnsupportedError
+	require.ErrorAs(t, err, &modelErr)
+	require.Equal(t, PlatformOpenAI, modelErr.Platform)
+	require.Equal(t, "gpt-4", modelErr.RequestedModel)
+	require.Contains(t, modelErr.AvailableModels, "gpt-3.5-turbo")
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_AdvancedRuntimeBlockedUnsupportedKeepsGenericError(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 

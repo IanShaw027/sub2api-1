@@ -358,14 +358,7 @@ func (s *OpsService) executeRetry(ctx context.Context, errorLog *OpsErrorLogDeta
 	}
 
 	reqType := detectOpsRetryType(errorLog.RequestPath)
-	bodyBytes := []byte(errorLog.RequestBody)
-
-	switch reqType {
-	case opsRetryTypeMessages:
-		bodyBytes = FilterThinkingBlocksForRetry(bodyBytes)
-	case opsRetryTypeOpenAI, opsRetryTypeGeminiV1B:
-		// No-op
-	}
+	bodyBytes := prepareOpsRetryBody(errorLog)
 
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case OpsRetryModeUpstream:
@@ -384,6 +377,46 @@ func (s *OpsService) executeRetry(ctx context.Context, errorLog *OpsErrorLogDeta
 			errorMessage: "invalid retry mode",
 		}
 	}
+}
+
+func prepareOpsRetryBody(errorLog *OpsErrorLogDetail) []byte {
+	if errorLog == nil {
+		return nil
+	}
+	bodyBytes := []byte(errorLog.RequestBody)
+	switch detectOpsRetryType(errorLog.RequestPath) {
+	case opsRetryTypeMessages:
+		model := opsRetryThinkingProtocolModel(errorLog, bodyBytes)
+		if model != "" {
+			return FilterThinkingBlocksForRetry(bodyBytes, model)
+		}
+		return FilterThinkingBlocksForRetry(bodyBytes)
+	case opsRetryTypeOpenAI, opsRetryTypeGeminiV1B:
+		return bodyBytes
+	default:
+		return bodyBytes
+	}
+}
+
+func opsRetryThinkingProtocolModel(errorLog *OpsErrorLogDetail, body []byte) string {
+	if errorLog != nil {
+		for _, model := range []string{
+			errorLog.UpstreamModel,
+			errorLog.RequestedModel,
+			errorLog.Model,
+		} {
+			if trimmed := strings.TrimSpace(model); trimmed != "" {
+				return trimmed
+			}
+		}
+	}
+	var payload struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.Model)
 }
 
 func detectOpsRetryType(path string) opsRetryRequestType {

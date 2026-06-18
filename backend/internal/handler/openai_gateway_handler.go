@@ -42,7 +42,10 @@ type OpenAIGatewayHandler struct {
 
 const openAIStreamRetryReplayStateContextKey = "openai_stream_retry_replay_state"
 
-var errOpenAIWSLocalImageToggleUnavailable = errors.New("openai websocket local image-toggle unavailable")
+var (
+	errOpenAIWSLocalImageToggleUnavailable = errors.New("openai websocket local image-toggle unavailable")
+	errOpenAIWSTurnAccountUnavailable      = errors.New("openai websocket turn account unavailable")
+)
 
 func (h *OpenAIGatewayHandler) handleOpenAIGroupModelUnsupportedError(c *gin.Context, err error, streamStarted bool) bool {
 	var modelErr *service.GroupModelUnsupportedError
@@ -1561,9 +1564,13 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					writeContentModerationWSError(ctx, wsConn, decision)
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, decision.Message, nil)
 				}
-				if refreshedAccount := h.gatewayService.RefreshOpenAIResponsesTurnAccount(ctx, account, model); refreshedAccount != nil {
-					account = refreshedAccount
+				refreshedAccount := h.gatewayService.RefreshOpenAIResponsesTurnAccount(ctx, account, model)
+				if refreshedAccount == nil {
+					_ = h.gatewayService.ClearStickySession(ctx, apiKey.GroupID, sessionHash)
+					_ = h.gatewayService.ClearPreviousResponseBinding(ctx, apiKey.GroupID, apiKey.ID, previousResponseID)
+					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "no available account", errOpenAIWSTurnAccountUnavailable)
 				}
+				account = refreshedAccount
 				effectiveModel := resolveOpenAIResponsesEffectiveModel(account, model)
 				imageIntent, needsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveModel, payload)
 				if imageIntent && !allowImageGeneration {
@@ -1587,7 +1594,14 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					if !userAcquired {
 						return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "too many concurrent requests, please retry later", nil)
 					}
-					accountReleaseFunc, accountAcquired, err := h.concurrencyHelper.TryAcquireAccountSlotForGroup(ctx, account.ID, apiKey.GroupID, accountMaxConcurrency)
+					turnAccountMaxConcurrency := accountMaxConcurrency
+					if account != nil {
+						turnAccountMaxConcurrency = account.Concurrency
+						if turnAccountMaxConcurrency <= 0 {
+							turnAccountMaxConcurrency = 1
+						}
+					}
+					accountReleaseFunc, accountAcquired, err := h.concurrencyHelper.TryAcquireAccountSlotForGroup(ctx, account.ID, apiKey.GroupID, turnAccountMaxConcurrency)
 					if err != nil {
 						if userReleaseFunc != nil {
 							userReleaseFunc()
@@ -1810,7 +1824,8 @@ func (h *OpenAIGatewayHandler) missingResponsesDependencies() []string {
 }
 
 func shouldReportOpenAIWebSocketAccountFailure(err error) bool {
-	return !errors.Is(err, errOpenAIWSLocalImageToggleUnavailable)
+	return !errors.Is(err, errOpenAIWSLocalImageToggleUnavailable) &&
+		!errors.Is(err, errOpenAIWSTurnAccountUnavailable)
 }
 
 func parseOpenAIStreamField(body []byte) (bool, bool) {

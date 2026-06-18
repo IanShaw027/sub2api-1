@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -2254,6 +2255,18 @@ func (s *openAIWSUsageHandlerAccountRepoStub) SetOpenAIImageGenerationEnabled(en
 	s.account.Extra["openai_image_generation_enabled"] = enabled
 }
 
+func (s *openAIWSUsageHandlerAccountRepoStub) SetStatus(status string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.account.Status = status
+}
+
+func (s *openAIWSUsageHandlerAccountRepoStub) SetConcurrency(concurrency int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.account.Concurrency = concurrency
+}
+
 type openAIWSFailoverHandlerAccountRepoStub struct {
 	service.AccountRepository
 	accounts       []service.Account
@@ -3214,9 +3227,354 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityRejectsAfterLiveTo
 	}
 }
 
+func TestOpenAIResponsesWebSocket_LaterTurnRejectsAfterLiveAccountStatusChange(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	firstHitCh := make(chan []byte, 1)
+	secondHitCh := make(chan []byte, 1)
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
+		_, payload, readErr := conn.Read(readCtx)
+		cancelRead()
+		if readErr != nil {
+			return
+		}
+		firstHitCh <- payload
+
+		writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
+		_ = conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.completed","response":{"id":"resp_ws_turn_one_status","model":"gpt-5.4","usage":{"input_tokens":1,"output_tokens":1}}}`))
+		cancelWrite()
+
+		readCtx, cancelRead = context.WithTimeout(r.Context(), 750*time.Millisecond)
+		_, payload, readErr = conn.Read(readCtx)
+		cancelRead()
+		if readErr == nil {
+			secondHitCh <- payload
+			writeCtx, cancelWrite = context.WithTimeout(r.Context(), 3*time.Second)
+			_ = conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.completed","response":{"id":"resp_ws_turn_two_status","model":"gpt-5.4","usage":{"input_tokens":1,"output_tokens":1}}}`))
+			cancelWrite()
+		}
+	}))
+	defer upstreamServer.Close()
+
+	groupID := int64(6208)
+	account := service.Account{
+		ID:          12038,
+		Name:        "openai-ws-error-later-turn",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-ws-error-later-turn",
+			"base_url": upstreamServer.URL,
+		},
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_enabled": true,
+			"openai_apikey_responses_websockets_v2_mode":    service.OpenAIWSIngressModePassthrough,
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.RunMode = config.RunModeSimple
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	accountRepo := &openAIWSUsageHandlerAccountRepoStub{account: account}
+	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cfg,
+		nil,
+		nil,
+		service.NewBillingService(cfg, nil),
+		nil,
+		billingCacheSvc,
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	cache := &concurrencyCacheMock{
+		acquireUserSlotFn: func(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+		acquireAccountSlotFn: func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+	}
+	h := &OpenAIGatewayHandler{
+		gatewayService:      gatewaySvc,
+		billingCacheService: billingCacheSvc,
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+		maxAccountSwitches:  3,
+	}
+
+	apiKey := &service.APIKey{
+		ID:      9208,
+		GroupID: &groupID,
+		User:    &service.User{ID: 9108, Status: service.StatusActive},
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
+		c.Next()
+	})
+	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
+	handlerServer := httptest.NewServer(router)
+	defer handlerServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(
+		dialCtx,
+		"ws"+strings.TrimPrefix(handlerServer.URL, "http")+"/openai/v1/responses",
+		&coderws.DialOptions{CompressionMode: coderws.CompressionContextTakeover},
+	)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.4","stream":false}`))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 5*time.Second)
+	_, event, err := clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
+	require.Equal(t, "resp_ws_turn_one_status", gjson.GetBytes(event, "response.id").String())
+
+	accountRepo.SetStatus(service.StatusError)
+
+	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.4","stream":false,"input":"turn two"}`))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 5*time.Second)
+	_, _, err = clientConn.Read(readCtx)
+	cancelRead()
+	require.Error(t, err)
+	var closeErr coderws.CloseError
+	require.ErrorAs(t, err, &closeErr)
+	require.Equal(t, coderws.StatusTryAgainLater, closeErr.Code)
+	require.Contains(t, closeErr.Reason, "no available account")
+
+	select {
+	case payload := <-firstHitCh:
+		require.Equal(t, "gpt-5.4", gjson.GetBytes(payload, "model").String())
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for first websocket upstream request")
+	}
+
+	select {
+	case payload := <-secondHitCh:
+		t.Fatalf("error account later turn should not reach upstream: %s", string(payload))
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestOpenAIResponsesWebSocket_LaterTurnRespectsLiveConcurrencyDecrease(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		for _, responseID := range []string{"resp_ws_turn_one_concurrency", "resp_ws_turn_two_concurrency"} {
+			readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
+			_, _, readErr := conn.Read(readCtx)
+			cancelRead()
+			if readErr != nil {
+				return
+			}
+			writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
+			_ = conn.Write(writeCtx, coderws.MessageText, []byte(fmt.Sprintf(`{"type":"response.completed","response":{"id":"%s","model":"gpt-5.4","usage":{"input_tokens":1,"output_tokens":1}}}`, responseID)))
+			cancelWrite()
+		}
+	}))
+	defer upstreamServer.Close()
+
+	groupID := int64(6209)
+	account := service.Account{
+		ID:          12039,
+		Name:        "openai-ws-live-concurrency",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"api_key":  "sk-ws-live-concurrency",
+			"base_url": upstreamServer.URL,
+		},
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_enabled": true,
+			"openai_apikey_responses_websockets_v2_mode":    service.OpenAIWSIngressModePassthrough,
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.RunMode = config.RunModeSimple
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	accountRepo := &openAIWSUsageHandlerAccountRepoStub{account: account}
+	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cfg,
+		nil,
+		nil,
+		service.NewBillingService(cfg, nil),
+		nil,
+		billingCacheSvc,
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	var (
+		acquireMu   sync.Mutex
+		accountMaxs []int
+	)
+	cache := &concurrencyCacheMock{
+		acquireUserSlotFn: func(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+		acquireAccountSlotFn: func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+			acquireMu.Lock()
+			accountMaxs = append(accountMaxs, maxConcurrency)
+			acquireMu.Unlock()
+			return true, nil
+		},
+	}
+	h := &OpenAIGatewayHandler{
+		gatewayService:      gatewaySvc,
+		billingCacheService: billingCacheSvc,
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+		maxAccountSwitches:  3,
+	}
+
+	apiKey := &service.APIKey{
+		ID:      9209,
+		GroupID: &groupID,
+		User:    &service.User{ID: 9109, Status: service.StatusActive},
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
+		c.Next()
+	})
+	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
+	handlerServer := httptest.NewServer(router)
+	defer handlerServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(
+		dialCtx,
+		"ws"+strings.TrimPrefix(handlerServer.URL, "http")+"/openai/v1/responses",
+		&coderws.DialOptions{CompressionMode: coderws.CompressionContextTakeover},
+	)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.4","stream":false}`))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 5*time.Second)
+	_, event, err := clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "resp_ws_turn_one_concurrency", gjson.GetBytes(event, "response.id").String())
+
+	accountRepo.SetConcurrency(1)
+
+	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.4","stream":false,"input":"turn two"}`))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 5*time.Second)
+	_, event, err = clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "resp_ws_turn_two_concurrency", gjson.GetBytes(event, "response.id").String())
+
+	acquireMu.Lock()
+	defer acquireMu.Unlock()
+	require.NotEmpty(t, accountMaxs)
+	require.Equal(t, 1, accountMaxs[len(accountMaxs)-1], "later turn must use refreshed account concurrency")
+}
+
 func TestShouldReportOpenAIWebSocketAccountFailure_SkipsLocalImageToggleClose(t *testing.T) {
 	require.False(t, shouldReportOpenAIWebSocketAccountFailure(
 		service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "no available account", errOpenAIWSLocalImageToggleUnavailable),
+	))
+
+	require.False(t, shouldReportOpenAIWebSocketAccountFailure(
+		service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "no available account", errOpenAIWSTurnAccountUnavailable),
 	))
 
 	require.True(t, shouldReportOpenAIWebSocketAccountFailure(

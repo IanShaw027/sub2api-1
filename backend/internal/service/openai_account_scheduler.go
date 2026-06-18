@@ -1117,7 +1117,7 @@ func (s *defaultOpenAIAccountScheduler) selectionErrorAccounts(ctx context.Conte
 	if s == nil || s.service == nil {
 		return nil
 	}
-	return s.service.openAISelectionErrorAccounts(accounts, req.RequestedModel, req.ExcludedIDs, func(account *Account) bool {
+	return s.service.openAISelectionErrorAccounts(ctx, accounts, req.RequestedModel, req.ExcludedIDs, func(account *Account) bool {
 		if !s.isLoadBalanceAccountSchedulableForRequest(account, req) {
 			return false
 		}
