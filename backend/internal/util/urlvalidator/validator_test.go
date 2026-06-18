@@ -72,4 +72,24 @@ func TestValidateHTTPURL(t *testing.T) {
 	if _, err := ValidateHTTPURL("https://localhost", false, ValidationOptions{AllowPrivate: false}); err == nil {
 		t.Fatalf("expected localhost to be blocked when allow_private_hosts is false")
 	}
+	if _, err := ValidateHTTPURL("http://100.64.0.1", true, ValidationOptions{AllowPrivate: false}); err == nil {
+		t.Fatalf("expected CGNAT literal host to be blocked when allow_private_hosts is false")
+	}
+}
+
+func TestValidateResolvedIPBlocksSpecialUseNetworks(t *testing.T) {
+	tests := []string{
+		"100.64.0.1",
+		"198.18.0.1",
+		"224.0.0.1",
+		"240.0.0.1",
+		"255.255.255.255",
+	}
+	for _, host := range tests {
+		t.Run(host, func(t *testing.T) {
+			if err := ValidateResolvedIP(host); err == nil {
+				t.Fatalf("expected resolved special-use IP %s to be blocked", host)
+			}
+		})
+	}
 }

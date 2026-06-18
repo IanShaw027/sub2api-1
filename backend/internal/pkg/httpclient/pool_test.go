@@ -1,9 +1,13 @@
 package httpclient
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"io"
 	"net"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,7 +26,7 @@ func TestValidatedDialContext_PinsResolvedIPAddress(t *testing.T) {
 	validatedLookupIPAddr = func(_ context.Context, host string) ([]net.IPAddr, error) {
 		lookupCalls++
 		require.Equal(t, "api.openai.com", host)
-		return []net.IPAddr{{IP: net.ParseIP("203.0.113.10")}}, nil
+		return []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}, nil
 	}
 
 	var dialedAddr string
@@ -40,7 +44,7 @@ func TestValidatedDialContext_PinsResolvedIPAddress(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conn.Close())
 
-	require.Equal(t, "203.0.113.10:443", dialedAddr)
+	require.Equal(t, "93.184.216.34:443", dialedAddr)
 	require.EqualValues(t, 1, lookupCalls)
 }
 
@@ -56,7 +60,7 @@ func TestValidatedDialContext_CachesResolvedIPAddress(t *testing.T) {
 	validatedLookupIPAddr = func(_ context.Context, host string) ([]net.IPAddr, error) {
 		lookupCalls++
 		require.Equal(t, "api.openai.com", host)
-		return []net.IPAddr{{IP: net.ParseIP("203.0.113.11")}}, nil
+		return []net.IPAddr{{IP: net.ParseIP("93.184.216.35")}}, nil
 	}
 
 	var dialed []string
@@ -79,7 +83,7 @@ func TestValidatedDialContext_CachesResolvedIPAddress(t *testing.T) {
 	require.NoError(t, conn.Close())
 
 	require.EqualValues(t, 1, lookupCalls)
-	require.Equal(t, []string{"203.0.113.11:443", "203.0.113.11:443"}, dialed)
+	require.Equal(t, []string{"93.184.216.35:443", "93.184.216.35:443"}, dialed)
 }
 
 func TestValidatedDialContext_RejectsUnsafeResolvedIP(t *testing.T) {
@@ -92,7 +96,7 @@ func TestValidatedDialContext_RejectsUnsafeResolvedIP(t *testing.T) {
 
 	validatedLookupIPAddr = func(_ context.Context, _ string) ([]net.IPAddr, error) {
 		return []net.IPAddr{
-			{IP: net.ParseIP("203.0.113.12")},
+			{IP: net.ParseIP("93.184.216.36")},
 			{IP: net.ParseIP("127.0.0.1")},
 		}, nil
 	}
@@ -126,9 +130,9 @@ func TestValidatedDialContext_ExpiredCacheRevalidates(t *testing.T) {
 			require.Equal(t, "api.openai.com", host)
 			switch len(dialed) {
 			case 0:
-				return []net.IPAddr{{IP: net.ParseIP("203.0.113.20")}}, nil
+				return []net.IPAddr{{IP: net.ParseIP("93.184.216.37")}}, nil
 			default:
-				return []net.IPAddr{{IP: net.ParseIP("203.0.113.21")}}, nil
+				return []net.IPAddr{{IP: net.ParseIP("93.184.216.38")}}, nil
 			}
 		},
 		now: func() time.Time { return now },
@@ -144,5 +148,117 @@ func TestValidatedDialContext_ExpiredCacheRevalidates(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conn.Close())
 
-	require.Equal(t, []string{"203.0.113.20:443", "203.0.113.21:443"}, dialed)
+	require.Equal(t, []string{"93.184.216.37:443", "93.184.216.38:443"}, dialed)
+}
+
+func TestResolveValidatedIPBlocksSpecialUseNetworks(t *testing.T) {
+	tests := []string{
+		"100.64.0.1",
+		"198.18.0.1",
+		"224.0.0.1",
+		"240.0.0.1",
+		"255.255.255.255",
+	}
+	for _, ip := range tests {
+		t.Run(ip, func(t *testing.T) {
+			_, err := resolveValidatedIP(context.Background(), ip, nil)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestValidatedHTTPProxyRoundTripperRejectsUnsafeTargetBeforeProxyDial(t *testing.T) {
+	originalLookup := validatedLookupIPAddr
+	originalBaseDial := validatedBaseDialContext
+	defer func() {
+		validatedLookupIPAddr = originalLookup
+		validatedBaseDialContext = originalBaseDial
+	}()
+
+	validatedLookupIPAddr = func(_ context.Context, host string) ([]net.IPAddr, error) {
+		require.Equal(t, "api.openai.com", host)
+		return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
+	}
+
+	called := false
+	validatedBaseDialContext = func(_ context.Context, _, _ string) (net.Conn, error) {
+		called = true
+		return nil, errors.New("unexpected proxy dial")
+	}
+
+	client, err := buildClient(Options{
+		ProxyURL:           "http://proxy.example.com:8080",
+		ValidateResolvedIP: true,
+	})
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, "http://api.openai.com/v1/models", nil)
+	require.NoError(t, err)
+	_, err = client.Do(req)
+	require.Error(t, err)
+	require.False(t, called, "unsafe target resolution must not reach the proxy dialer")
+}
+
+func TestValidatedHTTPProxyRoundTripperDialsResolvedTargetIPAndPreservesHost(t *testing.T) {
+	originalLookup := validatedLookupIPAddr
+	originalBaseDial := validatedBaseDialContext
+	defer func() {
+		validatedLookupIPAddr = originalLookup
+		validatedBaseDialContext = originalBaseDial
+	}()
+
+	validatedLookupIPAddr = func(_ context.Context, host string) ([]net.IPAddr, error) {
+		require.Equal(t, "api.openai.com", host)
+		return []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}, nil
+	}
+
+	requestLineSeen := make(chan string, 1)
+	hostSeen := make(chan string, 1)
+	validatedBaseDialContext = func(_ context.Context, network, addr string) (net.Conn, error) {
+		require.Equal(t, "tcp", network)
+		require.Equal(t, "proxy.example.com:8080", addr)
+
+		clientConn, serverConn := net.Pipe()
+		go func() {
+			defer func() { _ = serverConn.Close() }()
+			reader := bufio.NewReader(serverConn)
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return
+			}
+			requestLineSeen <- strings.TrimSpace(line)
+
+			for {
+				line, err = reader.ReadString('\n')
+				if err != nil {
+					return
+				}
+				if strings.HasPrefix(strings.ToLower(line), "host:") {
+					hostSeen <- strings.TrimSpace(strings.TrimPrefix(line, "Host:"))
+				}
+				if line == "\r\n" {
+					_, _ = io.WriteString(serverConn, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nok")
+					return
+				}
+			}
+		}()
+		return clientConn, nil
+	}
+
+	client, err := buildClient(Options{
+		ProxyURL:           "http://proxy.example.com:8080",
+		ValidateResolvedIP: true,
+	})
+	require.NoError(t, err)
+
+	resp, err := client.Get("http://api.openai.com/v1/models")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	require.Equal(t, "GET http://93.184.216.34/v1/models HTTP/1.1", <-requestLineSeen)
+	require.Equal(t, "api.openai.com", <-hostSeen)
+	require.Equal(t, "api.openai.com", resp.Request.URL.Host)
+	require.Equal(t, "ok", string(body))
 }

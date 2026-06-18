@@ -1,14 +1,18 @@
 package webfetch
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -17,6 +21,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyutil"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"golang.org/x/net/html"
+	"golang.org/x/net/proxy"
 )
 
 const (
@@ -29,8 +34,29 @@ const (
 
 var errTooManyRedirects = errors.New("webfetch: too many redirects")
 var validateResolvedFetchHost = urlvalidator.ValidateResolvedIP
+var fetchLookupIPAddr = net.DefaultResolver.LookupIPAddr
+var fetchBaseDialContext = (&net.Dialer{Timeout: defaultDialTimeout}).DialContext
 
-type clientFactoryFunc func(proxyURL string) (*http.Client, error)
+var blockedFetchIPPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.88.99.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("ff00::/8"),
+}
+
+type fetchDialContextFunc func(context.Context, string, string) (net.Conn, error)
+type fetchLookupIPAddrFunc func(context.Context, string) ([]net.IPAddr, error)
+type clientFactoryFunc func(FetchRequest) (*http.Client, error)
 
 // Fetcher executes outbound web fetches with bounded redirects/content.
 type Fetcher struct {
@@ -39,7 +65,7 @@ type Fetcher struct {
 
 // NewFetcher creates a fetcher with the default proxy-aware HTTP client factory.
 func NewFetcher() *Fetcher {
-	return &Fetcher{clientFactory: newHTTPClient}
+	return &Fetcher{clientFactory: newHTTPClientForRequest}
 }
 
 // Fetch executes a single GET request and returns a structured success/error result.
@@ -67,10 +93,10 @@ func (f *Fetcher) Fetch(ctx context.Context, req FetchRequest) *FetchResult {
 
 	factory := f.clientFactory
 	if factory == nil {
-		factory = newHTTPClient
+		factory = newHTTPClientForRequest
 	}
 
-	client, clientErr := factory(req.ProxyURL)
+	client, clientErr := factory(req)
 	if clientErr != nil {
 		result.Error = &FetchError{
 			Code:    ErrorCodeClientConfig,
@@ -200,17 +226,30 @@ func validateFetchURL(rawURL string, req FetchRequest) (normalizedURL, host stri
 	return normalizedURL, host, nil
 }
 
-func newHTTPClient(proxyURL string) (*http.Client, error) {
+func newHTTPClientForRequest(req FetchRequest) (*http.Client, error) {
+	return newHTTPClient(req.ProxyURL, req.AllowPrivate)
+}
+
+func newHTTPClient(proxyURL string, allowPrivate bool) (*http.Client, error) {
 	_, parsedProxy, err := proxyurl.Parse(proxyURL)
 	if err != nil {
 		return nil, err
 	}
+	if parsedProxy != nil && !allowPrivate {
+		return &http.Client{
+			Transport: newFetchValidatedProxyRoundTripper(parsedProxy),
+			Timeout:   defaultRequestTimeout,
+		}, nil
+	}
 
 	transport := &http.Transport{
-		DialContext:           (&net.Dialer{Timeout: defaultDialTimeout}).DialContext,
+		DialContext:           fetchBaseDialContext,
 		TLSHandshakeTimeout:   defaultTLSHandshake,
 		ResponseHeaderTimeout: defaultRequestTimeout / 2,
 		ForceAttemptHTTP2:     true,
+	}
+	if parsedProxy == nil && !allowPrivate {
+		transport.DialContext = newFetchValidatedDialContext(fetchBaseDialContext).DialContext
 	}
 	if err := proxyutil.ConfigureTransportProxy(transport, parsedProxy); err != nil {
 		return nil, fmt.Errorf("configure proxy: %w", err)
@@ -220,6 +259,409 @@ func newHTTPClient(proxyURL string) (*http.Client, error) {
 		Transport: transport,
 		Timeout:   defaultRequestTimeout,
 	}, nil
+}
+
+type fetchValidatedDialer struct {
+	base   fetchDialContextFunc
+	lookup fetchLookupIPAddrFunc
+}
+
+func newFetchValidatedDialContext(base fetchDialContextFunc) *fetchValidatedDialer {
+	if base == nil {
+		base = fetchBaseDialContext
+	}
+	return &fetchValidatedDialer{
+		base:   base,
+		lookup: fetchLookupIPAddr,
+	}
+}
+
+func (d *fetchValidatedDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	if d == nil || d.base == nil {
+		return nil, &FetchError{
+			Code:    ErrorCodeClientConfig,
+			Message: "validated dialer base is nil",
+			Reason:  "client_config",
+		}
+	}
+
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return nil, &FetchError{Code: ErrorCodeInvalidURL, Message: "validated dialer host is empty", Reason: "invalid_url"}
+	}
+
+	selectedIP, err := resolveFetchValidatedIP(ctx, host, d.lookup)
+	if err != nil {
+		return nil, &FetchError{
+			Code:    ErrorCodeDomainBlocked,
+			Message: err.Error(),
+			Reason:  "resolved_private_ip",
+		}
+	}
+	return d.base(ctx, network, net.JoinHostPort(selectedIP, port))
+}
+
+func resolveFetchValidatedIP(ctx context.Context, host string, lookup fetchLookupIPAddrFunc) (string, error) {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return "", fmt.Errorf("validated dialer host is empty")
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		if isBlockedResolvedFetchIP(ip) {
+			return "", fmt.Errorf("resolved ip %s is not allowed", ip.String())
+		}
+		return ip.String(), nil
+	}
+
+	if lookup == nil {
+		lookup = fetchLookupIPAddr
+	}
+	addrs, err := lookup(ctx, host)
+	if err != nil {
+		return "", fmt.Errorf("dns resolution failed: %w", err)
+	}
+	if len(addrs) == 0 {
+		return "", fmt.Errorf("dns resolution returned no addresses for %s", host)
+	}
+
+	selected := ""
+	for _, addr := range addrs {
+		if isBlockedResolvedFetchIP(addr.IP) {
+			return "", fmt.Errorf("resolved ip %s is not allowed", addr.IP.String())
+		}
+		if selected == "" {
+			selected = addr.IP.String()
+		}
+	}
+	if selected == "" {
+		return "", fmt.Errorf("dns resolution returned no usable addresses for %s", host)
+	}
+	return selected, nil
+}
+
+func isBlockedResolvedFetchIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return true
+	}
+	return isBlockedFetchAddr(addr)
+}
+
+func isBlockedFetchAddr(addr netip.Addr) bool {
+	if !addr.IsValid() {
+		return true
+	}
+	addr = addr.Unmap()
+	if addr.IsUnspecified() || addr.IsLoopback() || addr.IsPrivate() ||
+		addr.IsLinkLocalUnicast() || addr.IsMulticast() {
+		return true
+	}
+	for _, prefix := range blockedFetchIPPrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+type fetchValidatedProxyRoundTripper struct {
+	proxyURL *url.URL
+	baseDial fetchDialContextFunc
+	lookup   fetchLookupIPAddrFunc
+}
+
+func newFetchValidatedProxyRoundTripper(proxyURL *url.URL) *fetchValidatedProxyRoundTripper {
+	return &fetchValidatedProxyRoundTripper{
+		proxyURL: proxyURL,
+		baseDial: fetchBaseDialContext,
+		lookup:   fetchLookupIPAddr,
+	}
+}
+
+func (rt *fetchValidatedProxyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if rt == nil || rt.proxyURL == nil {
+		return nil, &FetchError{Code: ErrorCodeClientConfig, Message: "validated proxy URL is nil", Reason: "client_config"}
+	}
+	if req == nil || req.URL == nil {
+		return nil, &FetchError{Code: ErrorCodeInvalidURL, Message: "request URL is nil", Reason: "invalid_url"}
+	}
+
+	originalHost := strings.ToLower(strings.TrimSpace(req.URL.Hostname()))
+	if originalHost == "" {
+		return nil, &FetchError{Code: ErrorCodeInvalidURL, Message: "validated proxy target host is empty", Reason: "invalid_url"}
+	}
+	selectedIP, err := resolveFetchValidatedIP(req.Context(), originalHost, rt.lookup)
+	if err != nil {
+		return nil, &FetchError{Code: ErrorCodeDomainBlocked, Message: err.Error(), Reason: "resolved_private_ip"}
+	}
+
+	outboundURL := *req.URL
+	outboundURL.Host = replaceURLHostWithIP(req.URL, selectedIP)
+	targetAddr := canonicalFetchTargetAddr(req.URL, selectedIP)
+	if targetAddr == "" {
+		return nil, &FetchError{Code: ErrorCodeInvalidURL, Message: "target address is empty", Reason: "invalid_url"}
+	}
+
+	scheme := strings.ToLower(rt.proxyURL.Scheme)
+	switch scheme {
+	case "http", "https":
+		return rt.roundTripViaHTTPProxy(req, &outboundURL, targetAddr, originalHost)
+	case "socks5", "socks5h":
+		return rt.roundTripViaSOCKSProxy(req, targetAddr, originalHost)
+	default:
+		return nil, &FetchError{Code: ErrorCodeClientConfig, Message: "unsupported proxy scheme: " + rt.proxyURL.Scheme, Reason: "client_config"}
+	}
+}
+
+func (rt *fetchValidatedProxyRoundTripper) roundTripViaHTTPProxy(req *http.Request, outboundURL *url.URL, targetAddr, serverName string) (*http.Response, error) {
+	conn, err := rt.dialHTTPProxy(req.Context())
+	if err != nil {
+		return nil, err
+	}
+	closeOnError := true
+	defer func() {
+		if closeOnError {
+			_ = conn.Close()
+		}
+	}()
+
+	if strings.EqualFold(req.URL.Scheme, "https") {
+		if err := writeFetchConnectRequest(conn, targetAddr, proxyAuthorizationHeader(rt.proxyURL)); err != nil {
+			return nil, err
+		}
+		connectResp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: http.MethodConnect})
+		if err != nil {
+			return nil, err
+		}
+		_ = connectResp.Body.Close()
+		if connectResp.StatusCode < 200 || connectResp.StatusCode >= 300 {
+			return nil, fmt.Errorf("proxy CONNECT failed with status %d", connectResp.StatusCode)
+		}
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: serverName})
+		if err := tlsConn.HandshakeContext(req.Context()); err != nil {
+			return nil, err
+		}
+		conn = tlsConn
+		if err := writeFetchOriginRequest(conn, req, req.URL, req.URL.Host); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := writeFetchProxyRequest(conn, req, outboundURL, req.URL.Host, proxyAuthorizationHeader(rt.proxyURL)); err != nil {
+			return nil, err
+		}
+	}
+
+	resp, err := readFetchResponse(conn, req)
+	if err != nil {
+		return nil, err
+	}
+	closeOnError = false
+	return resp, nil
+}
+
+func (rt *fetchValidatedProxyRoundTripper) roundTripViaSOCKSProxy(req *http.Request, targetAddr, serverName string) (*http.Response, error) {
+	dialer, err := proxy.FromURL(rt.proxyURL, proxy.Direct)
+	if err != nil {
+		return nil, fmt.Errorf("create socks5 dialer: %w", err)
+	}
+
+	var conn net.Conn
+	if contextDialer, ok := dialer.(proxy.ContextDialer); ok {
+		conn, err = contextDialer.DialContext(req.Context(), "tcp", targetAddr)
+	} else {
+		conn, err = dialer.Dial("tcp", targetAddr)
+	}
+	if err != nil {
+		return nil, err
+	}
+	closeOnError := true
+	defer func() {
+		if closeOnError {
+			_ = conn.Close()
+		}
+	}()
+
+	if strings.EqualFold(req.URL.Scheme, "https") {
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: serverName})
+		if err := tlsConn.HandshakeContext(req.Context()); err != nil {
+			return nil, err
+		}
+		conn = tlsConn
+	}
+	if err := writeFetchOriginRequest(conn, req, req.URL, req.URL.Host); err != nil {
+		return nil, err
+	}
+	resp, err := readFetchResponse(conn, req)
+	if err != nil {
+		return nil, err
+	}
+	closeOnError = false
+	return resp, nil
+}
+
+func (rt *fetchValidatedProxyRoundTripper) dialHTTPProxy(ctx context.Context) (net.Conn, error) {
+	addr := canonicalProxyAddr(rt.proxyURL)
+	if addr == "" {
+		return nil, &FetchError{Code: ErrorCodeClientConfig, Message: "proxy address is empty", Reason: "client_config"}
+	}
+	baseDial := rt.baseDial
+	if baseDial == nil {
+		baseDial = fetchBaseDialContext
+	}
+	conn, err := baseDial(ctx, "tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(rt.proxyURL.Scheme, "https") {
+		return conn, nil
+	}
+	tlsConn := tls.Client(conn, &tls.Config{ServerName: rt.proxyURL.Hostname()})
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return tlsConn, nil
+}
+
+func replaceURLHostWithIP(u *url.URL, ip string) string {
+	if u == nil {
+		return ip
+	}
+	port := u.Port()
+	if port != "" {
+		return net.JoinHostPort(ip, port)
+	}
+	if strings.Contains(ip, ":") {
+		return "[" + ip + "]"
+	}
+	return ip
+}
+
+func canonicalFetchTargetAddr(u *url.URL, ip string) string {
+	if u == nil || ip == "" {
+		return ""
+	}
+	port := u.Port()
+	if port == "" {
+		switch strings.ToLower(u.Scheme) {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
+		default:
+			return ""
+		}
+	}
+	return net.JoinHostPort(ip, port)
+}
+
+func canonicalProxyAddr(proxyURL *url.URL) string {
+	if proxyURL == nil || proxyURL.Hostname() == "" {
+		return ""
+	}
+	port := proxyURL.Port()
+	if port == "" {
+		if strings.EqualFold(proxyURL.Scheme, "https") {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return net.JoinHostPort(proxyURL.Hostname(), port)
+}
+
+func writeFetchConnectRequest(w io.Writer, targetAddr, proxyAuth string) error {
+	if _, err := fmt.Fprintf(w, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n", targetAddr, targetAddr); err != nil {
+		return err
+	}
+	if proxyAuth != "" {
+		if _, err := fmt.Fprintf(w, "Proxy-Authorization: %s\r\n", proxyAuth); err != nil {
+			return err
+		}
+	}
+	_, err := io.WriteString(w, "\r\n")
+	return err
+}
+
+func writeFetchProxyRequest(w io.Writer, req *http.Request, outboundURL *url.URL, host, proxyAuth string) error {
+	if _, err := fmt.Fprintf(w, "%s %s HTTP/1.1\r\n", req.Method, outboundURL.String()); err != nil {
+		return err
+	}
+	return writeFetchHeaders(w, req, host, proxyAuth)
+}
+
+func writeFetchOriginRequest(w io.Writer, req *http.Request, targetURL *url.URL, host string) error {
+	requestURI := "/"
+	if targetURL != nil && targetURL.RequestURI() != "" {
+		requestURI = targetURL.RequestURI()
+	}
+	if _, err := fmt.Fprintf(w, "%s %s HTTP/1.1\r\n", req.Method, requestURI); err != nil {
+		return err
+	}
+	return writeFetchHeaders(w, req, host, "")
+}
+
+func writeFetchHeaders(w io.Writer, req *http.Request, host, proxyAuth string) error {
+	if _, err := fmt.Fprintf(w, "Host: %s\r\nConnection: close\r\n", host); err != nil {
+		return err
+	}
+	if proxyAuth != "" {
+		if _, err := fmt.Fprintf(w, "Proxy-Authorization: %s\r\n", proxyAuth); err != nil {
+			return err
+		}
+	}
+	exclude := map[string]bool{
+		"Connection":          true,
+		"Host":                true,
+		"Proxy-Authorization": true,
+	}
+	if err := req.Header.WriteSubset(w, exclude); err != nil {
+		return err
+	}
+	_, err := io.WriteString(w, "\r\n")
+	return err
+}
+
+func readFetchResponse(conn net.Conn, req *http.Request) (*http.Response, error) {
+	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Request = req
+	resp.Body = &fetchConnBody{ReadCloser: resp.Body, conn: conn}
+	return resp, nil
+}
+
+type fetchConnBody struct {
+	io.ReadCloser
+	conn net.Conn
+}
+
+func (b *fetchConnBody) Close() error {
+	bodyErr := b.ReadCloser.Close()
+	connErr := b.conn.Close()
+	if bodyErr != nil {
+		return bodyErr
+	}
+	return connErr
+}
+
+func proxyAuthorizationHeader(proxyURL *url.URL) string {
+	if proxyURL == nil || proxyURL.User == nil {
+		return ""
+	}
+	username := proxyURL.User.Username()
+	password, _ := proxyURL.User.Password()
+	token := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	return "Basic " + token
 }
 
 func mapRequestError(err error) *FetchError {
@@ -272,7 +714,7 @@ func isPrivateLiteralHost(host string) bool {
 	if ip == nil {
 		return false
 	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+	return isBlockedResolvedFetchIP(ip)
 }
 
 func readBoundedBody(r io.Reader, maxBytes int) ([]byte, bool, error) {

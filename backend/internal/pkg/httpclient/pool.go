@@ -16,16 +16,24 @@
 package httpclient
 
 import (
+	"bufio"
 	"context"
+	"crypto/tls"
+	"encoding/base64"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/netip"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyutil"
+	"golang.org/x/net/proxy"
 )
 
 // Transport 连接池默认配置
@@ -37,6 +45,23 @@ const (
 	defaultTLSHandshakeTimeout = 5 * time.Second  // TLS 握手超时
 	validatedHostTTL           = 30 * time.Second // DNS Rebinding 校验缓存 TTL
 )
+
+var blockedResolvedIPPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.88.99.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("ff00::/8"),
+}
 
 // Options 定义共享 HTTP 客户端的构建参数
 type Options struct {
@@ -100,7 +125,7 @@ func buildClient(opts Options) (*http.Client, error) {
 			return nil, err
 		}
 		if parsed != nil {
-			rt = newValidatedRoundTripper(transport)
+			rt = newValidatedProxyRoundTripper(parsed)
 		}
 	}
 	return &http.Client{
@@ -190,45 +215,76 @@ func newValidatedDialContext(base func(context.Context, string, string) (net.Con
 	}
 }
 
-type validatedRoundTripper struct {
-	base   http.RoundTripper
-	lookup func(context.Context, string) ([]net.IPAddr, error)
-	now    func() time.Time
-	cache  sync.Map // map[string]validatedHostEntry
+type validatedProxyRoundTripper struct {
+	proxyURL *url.URL
+	base     func(context.Context, string, string) (net.Conn, error)
+	lookup   func(context.Context, string) ([]net.IPAddr, error)
+	now      func() time.Time
+	cache    sync.Map // map[string]validatedHostEntry
 }
 
-func newValidatedRoundTripper(base http.RoundTripper) *validatedRoundTripper {
-	return &validatedRoundTripper{
-		base:   base,
-		lookup: validatedLookupIPAddr,
-		now:    time.Now,
+func newValidatedProxyRoundTripper(proxyURL *url.URL) *validatedProxyRoundTripper {
+	return &validatedProxyRoundTripper{
+		proxyURL: proxyURL,
+		base:     validatedBaseDialContext,
+		lookup:   validatedLookupIPAddr,
+		now:      time.Now,
 	}
 }
 
-func (t *validatedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	if t == nil || t.base == nil {
-		return nil, fmt.Errorf("validated round tripper base is nil")
+func (t *validatedProxyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t == nil || t.proxyURL == nil {
+		return nil, fmt.Errorf("validated proxy URL is nil")
 	}
-	if req != nil && req.URL != nil {
-		host := strings.ToLower(strings.TrimSpace(req.URL.Hostname()))
-		if host != "" {
-			now := time.Now()
-			if t.now != nil {
-				now = t.now()
-			}
-			if _, ok := t.cachedIP(host, now); !ok {
-				ip, err := resolveValidatedIP(req.Context(), host, t.lookup)
-				if err != nil {
-					return nil, err
-				}
-				t.cache.Store(host, validatedHostEntry{ip: ip, expireAt: now.Add(validatedHostTTL)})
-			}
-		}
+	if req == nil || req.URL == nil {
+		return nil, fmt.Errorf("validated proxy request URL is nil")
 	}
-	return t.base.RoundTrip(req)
+
+	originalHost := strings.ToLower(strings.TrimSpace(req.URL.Hostname()))
+	if originalHost == "" {
+		return nil, fmt.Errorf("validated proxy target host is empty")
+	}
+	selectedIP, err := t.resolveTargetIP(req.Context(), originalHost)
+	if err != nil {
+		return nil, err
+	}
+
+	targetAddr := canonicalTargetAddr(req.URL, selectedIP)
+	if targetAddr == "" {
+		return nil, fmt.Errorf("validated proxy target address is empty")
+	}
+
+	scheme := strings.ToLower(t.proxyURL.Scheme)
+	switch scheme {
+	case "http", "https":
+		outboundURL := *req.URL
+		outboundURL.Host = replaceURLHostWithIP(req.URL, selectedIP)
+		return t.roundTripViaHTTPProxy(req, &outboundURL, targetAddr, originalHost)
+	case "socks5", "socks5h":
+		return t.roundTripViaSOCKSProxy(req, targetAddr, originalHost)
+	default:
+		return nil, fmt.Errorf("unsupported proxy scheme: %s", t.proxyURL.Scheme)
+	}
 }
 
-func (t *validatedRoundTripper) cachedIP(host string, now time.Time) (string, bool) {
+func (t *validatedProxyRoundTripper) resolveTargetIP(ctx context.Context, host string) (string, error) {
+	now := time.Now()
+	if t.now != nil {
+		now = t.now()
+	}
+	if cached, ok := t.cachedIP(host, now); ok {
+		return cached, nil
+	}
+
+	selected, err := resolveValidatedIP(ctx, host, t.lookup)
+	if err != nil {
+		return "", err
+	}
+	t.cache.Store(host, validatedHostEntry{ip: selected, expireAt: now.Add(validatedHostTTL)})
+	return selected, nil
+}
+
+func (t *validatedProxyRoundTripper) cachedIP(host string, now time.Time) (string, bool) {
 	if t == nil {
 		return "", false
 	}
@@ -250,6 +306,117 @@ func (t *validatedRoundTripper) cachedIP(host string, now time.Time) (string, bo
 		return "", false
 	}
 	return entry.ip, true
+}
+
+func (t *validatedProxyRoundTripper) roundTripViaHTTPProxy(req *http.Request, outboundURL *url.URL, targetAddr, serverName string) (*http.Response, error) {
+	conn, err := t.dialHTTPProxy(req.Context())
+	if err != nil {
+		return nil, err
+	}
+	closeOnError := true
+	defer func() {
+		if closeOnError {
+			_ = conn.Close()
+		}
+	}()
+
+	if strings.EqualFold(req.URL.Scheme, "https") {
+		if err := writeConnectRequest(conn, targetAddr, proxyAuthorizationHeader(t.proxyURL)); err != nil {
+			return nil, err
+		}
+		connectResp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: http.MethodConnect})
+		if err != nil {
+			return nil, err
+		}
+		_ = connectResp.Body.Close()
+		if connectResp.StatusCode < 200 || connectResp.StatusCode >= 300 {
+			return nil, fmt.Errorf("proxy CONNECT failed with status %d", connectResp.StatusCode)
+		}
+
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: serverName})
+		if err := tlsConn.HandshakeContext(req.Context()); err != nil {
+			return nil, err
+		}
+		conn = tlsConn
+		if err := writeOriginRequest(conn, req, req.URL.Host); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := writeProxyRequest(conn, req, outboundURL, req.URL.Host, proxyAuthorizationHeader(t.proxyURL)); err != nil {
+			return nil, err
+		}
+	}
+
+	resp, err := readProxyResponse(conn, req)
+	if err != nil {
+		return nil, err
+	}
+	closeOnError = false
+	return resp, nil
+}
+
+func (t *validatedProxyRoundTripper) roundTripViaSOCKSProxy(req *http.Request, targetAddr, serverName string) (*http.Response, error) {
+	dialer, err := proxy.FromURL(t.proxyURL, proxy.Direct)
+	if err != nil {
+		return nil, fmt.Errorf("create socks5 dialer: %w", err)
+	}
+
+	var conn net.Conn
+	if contextDialer, ok := dialer.(proxy.ContextDialer); ok {
+		conn, err = contextDialer.DialContext(req.Context(), "tcp", targetAddr)
+	} else {
+		conn, err = dialer.Dial("tcp", targetAddr)
+	}
+	if err != nil {
+		return nil, err
+	}
+	closeOnError := true
+	defer func() {
+		if closeOnError {
+			_ = conn.Close()
+		}
+	}()
+
+	if strings.EqualFold(req.URL.Scheme, "https") {
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: serverName})
+		if err := tlsConn.HandshakeContext(req.Context()); err != nil {
+			return nil, err
+		}
+		conn = tlsConn
+	}
+	if err := writeOriginRequest(conn, req, req.URL.Host); err != nil {
+		return nil, err
+	}
+	resp, err := readProxyResponse(conn, req)
+	if err != nil {
+		return nil, err
+	}
+	closeOnError = false
+	return resp, nil
+}
+
+func (t *validatedProxyRoundTripper) dialHTTPProxy(ctx context.Context) (net.Conn, error) {
+	addr := canonicalProxyAddr(t.proxyURL)
+	if addr == "" {
+		return nil, fmt.Errorf("proxy address is empty")
+	}
+	base := t.base
+	if base == nil {
+		base = validatedBaseDialContext
+	}
+	conn, err := base(ctx, "tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(t.proxyURL.Scheme, "https") {
+		return conn, nil
+	}
+	tlsConn := tls.Client(conn, &tls.Config{ServerName: t.proxyURL.Hostname()})
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return tlsConn, nil
 }
 
 func (t *validatedTransport) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -312,8 +479,28 @@ func isBlockedResolvedIP(ip net.IP) bool {
 	if ip == nil {
 		return true
 	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return true
+	}
+	return isBlockedResolvedAddr(addr)
+}
+
+func isBlockedResolvedAddr(addr netip.Addr) bool {
+	if !addr.IsValid() {
+		return true
+	}
+	addr = addr.Unmap()
+	if addr.IsUnspecified() || addr.IsLoopback() || addr.IsPrivate() ||
+		addr.IsLinkLocalUnicast() || addr.IsMulticast() {
+		return true
+	}
+	for _, prefix := range blockedResolvedIPPrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveValidatedIP(ctx context.Context, host string, lookup func(context.Context, string) ([]net.IPAddr, error)) (string, error) {
@@ -354,4 +541,176 @@ func resolveValidatedIP(ctx context.Context, host string, lookup func(context.Co
 		return "", &net.AddrError{Err: "no usable addresses for host", Addr: host}
 	}
 	return selected, nil
+}
+
+func replaceURLHostWithIP(u *url.URL, ip string) string {
+	if u == nil {
+		return ip
+	}
+	if port := u.Port(); port != "" {
+		return net.JoinHostPort(ip, port)
+	}
+	if strings.Contains(ip, ":") {
+		return "[" + ip + "]"
+	}
+	return ip
+}
+
+func canonicalTargetAddr(u *url.URL, ip string) string {
+	if u == nil || ip == "" {
+		return ""
+	}
+	port := u.Port()
+	if port == "" {
+		switch strings.ToLower(u.Scheme) {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
+		default:
+			return ""
+		}
+	}
+	return net.JoinHostPort(ip, port)
+}
+
+func canonicalProxyAddr(proxyURL *url.URL) string {
+	if proxyURL == nil || proxyURL.Hostname() == "" {
+		return ""
+	}
+	port := proxyURL.Port()
+	if port == "" {
+		if strings.EqualFold(proxyURL.Scheme, "https") {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return net.JoinHostPort(proxyURL.Hostname(), port)
+}
+
+func writeConnectRequest(w io.Writer, targetAddr, proxyAuth string) error {
+	if _, err := fmt.Fprintf(w, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n", targetAddr, targetAddr); err != nil {
+		return err
+	}
+	if proxyAuth != "" {
+		if _, err := fmt.Fprintf(w, "Proxy-Authorization: %s\r\n", proxyAuth); err != nil {
+			return err
+		}
+	}
+	_, err := io.WriteString(w, "\r\n")
+	return err
+}
+
+func writeProxyRequest(w io.Writer, req *http.Request, outboundURL *url.URL, host, proxyAuth string) error {
+	method := req.Method
+	if method == "" {
+		method = http.MethodGet
+	}
+	if _, err := fmt.Fprintf(w, "%s %s HTTP/1.1\r\n", method, outboundURL.String()); err != nil {
+		return err
+	}
+	return writeRequestHeadersAndBody(w, req, host, proxyAuth)
+}
+
+func writeOriginRequest(w io.Writer, req *http.Request, host string) error {
+	outReq := cloneRequestForWrite(req, host)
+	outReq.Header.Del("Proxy-Authorization")
+	return outReq.Write(w)
+}
+
+func cloneRequestForWrite(req *http.Request, host string) *http.Request {
+	outReq := req.Clone(req.Context())
+	outReq.Body = req.Body
+	outReq.GetBody = req.GetBody
+	outReq.Host = host
+	outReq.RequestURI = ""
+	outReq.Close = true
+	outReq.Header = req.Header.Clone()
+	return outReq
+}
+
+func writeRequestHeadersAndBody(w io.Writer, req *http.Request, host, proxyAuth string) error {
+	if _, err := fmt.Fprintf(w, "Host: %s\r\nConnection: close\r\n", host); err != nil {
+		return err
+	}
+	if proxyAuth != "" {
+		if _, err := fmt.Fprintf(w, "Proxy-Authorization: %s\r\n", proxyAuth); err != nil {
+			return err
+		}
+	}
+
+	shouldChunk := req.Body != nil && req.Body != http.NoBody && req.ContentLength <= 0
+	if req.ContentLength > 0 {
+		if _, err := fmt.Fprintf(w, "Content-Length: %d\r\n", req.ContentLength); err != nil {
+			return err
+		}
+	} else if shouldChunk {
+		if _, err := io.WriteString(w, "Transfer-Encoding: chunked\r\n"); err != nil {
+			return err
+		}
+	}
+
+	exclude := map[string]bool{
+		"Connection":          true,
+		"Content-Length":      true,
+		"Host":                true,
+		"Proxy-Authorization": true,
+		"Transfer-Encoding":   true,
+	}
+	if err := req.Header.WriteSubset(w, exclude); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, "\r\n"); err != nil {
+		return err
+	}
+
+	if req.Body == nil || req.Body == http.NoBody {
+		return nil
+	}
+	defer func() { _ = req.Body.Close() }()
+	if shouldChunk {
+		chunked := httputil.NewChunkedWriter(w)
+		if _, err := io.Copy(chunked, req.Body); err != nil {
+			_ = chunked.Close()
+			return err
+		}
+		return chunked.Close()
+	}
+	_, err := io.Copy(w, req.Body)
+	return err
+}
+
+func readProxyResponse(conn net.Conn, req *http.Request) (*http.Response, error) {
+	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Request = req
+	resp.Body = &proxyConnBody{ReadCloser: resp.Body, conn: conn}
+	return resp, nil
+}
+
+type proxyConnBody struct {
+	io.ReadCloser
+	conn net.Conn
+}
+
+func (b *proxyConnBody) Close() error {
+	bodyErr := b.ReadCloser.Close()
+	connErr := b.conn.Close()
+	if bodyErr != nil {
+		return bodyErr
+	}
+	return connErr
+}
+
+func proxyAuthorizationHeader(proxyURL *url.URL) string {
+	if proxyURL == nil || proxyURL.User == nil {
+		return ""
+	}
+	username := proxyURL.User.Username()
+	password, _ := proxyURL.User.Password()
+	token := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	return "Basic " + token
 }
