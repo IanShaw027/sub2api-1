@@ -17,6 +17,7 @@ package httpclient
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -24,7 +25,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/netip"
 	"net/url"
 	"strings"
@@ -33,6 +33,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyutil"
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"golang.org/x/net/proxy"
 )
 
@@ -45,23 +46,6 @@ const (
 	defaultTLSHandshakeTimeout = 5 * time.Second  // TLS 握手超时
 	validatedHostTTL           = 30 * time.Second // DNS Rebinding 校验缓存 TTL
 )
-
-var blockedResolvedIPPrefixes = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("192.0.0.0/24"),
-	netip.MustParsePrefix("192.0.2.0/24"),
-	netip.MustParsePrefix("192.88.99.0/24"),
-	netip.MustParsePrefix("198.18.0.0/15"),
-	netip.MustParsePrefix("198.51.100.0/24"),
-	netip.MustParsePrefix("203.0.113.0/24"),
-	netip.MustParsePrefix("240.0.0.0/4"),
-	netip.MustParsePrefix("100::/64"),
-	netip.MustParsePrefix("2001:db8::/32"),
-	netip.MustParsePrefix("fc00::/7"),
-	netip.MustParsePrefix("fe80::/10"),
-	netip.MustParsePrefix("ff00::/8"),
-}
 
 // Options 定义共享 HTTP 客户端的构建参数
 type Options struct {
@@ -476,31 +460,7 @@ func (t *validatedTransport) cachedIP(host string, now time.Time) (string, bool)
 }
 
 func isBlockedResolvedIP(ip net.IP) bool {
-	if ip == nil {
-		return true
-	}
-	addr, ok := netip.AddrFromSlice(ip)
-	if !ok {
-		return true
-	}
-	return isBlockedResolvedAddr(addr)
-}
-
-func isBlockedResolvedAddr(addr netip.Addr) bool {
-	if !addr.IsValid() {
-		return true
-	}
-	addr = addr.Unmap()
-	if addr.IsUnspecified() || addr.IsLoopback() || addr.IsPrivate() ||
-		addr.IsLinkLocalUnicast() || addr.IsMulticast() {
-		return true
-	}
-	for _, prefix := range blockedResolvedIPPrefixes {
-		if prefix.Contains(addr) {
-			return true
-		}
-	}
-	return false
+	return urlvalidator.IsBlockedResolvedIP(ip)
 }
 
 func resolveValidatedIP(ctx context.Context, host string, lookup func(context.Context, string) ([]net.IPAddr, error)) (string, error) {
@@ -509,11 +469,11 @@ func resolveValidatedIP(ctx context.Context, host string, lookup func(context.Co
 		return "", fmt.Errorf("validated dialer host is empty")
 	}
 
-	if ip := net.ParseIP(host); ip != nil {
-		if isBlockedResolvedIP(ip) {
+	if addr, err := netip.ParseAddr(host); err == nil {
+		if urlvalidator.IsBlockedResolvedAddr(addr) {
 			return "", &net.AddrError{Err: "blocked by DNS rebinding policy", Addr: host}
 		}
-		return ip.String(), nil
+		return addr.Unmap().String(), nil
 	}
 
 	if lookup == nil {
@@ -607,10 +567,20 @@ func writeProxyRequest(w io.Writer, req *http.Request, outboundURL *url.URL, hos
 	if method == "" {
 		method = http.MethodGet
 	}
-	if _, err := fmt.Fprintf(w, "%s %s HTTP/1.1\r\n", method, outboundURL.String()); err != nil {
+	outReq := cloneRequestForWrite(req, host)
+	if outboundURL != nil {
+		copiedURL := *outboundURL
+		outReq.URL = &copiedURL
+	}
+	if proxyAuth != "" {
+		outReq.Header.Set("Proxy-Authorization", proxyAuth)
+	}
+	firstLine := []byte(fmt.Sprintf("%s %s HTTP/1.1\r\n", method, outboundURL.String()))
+	rw := &requestLineRewriteWriter{dst: w, firstLine: firstLine}
+	if err := outReq.Write(rw); err != nil {
 		return err
 	}
-	return writeRequestHeadersAndBody(w, req, host, proxyAuth)
+	return rw.finish()
 }
 
 func writeOriginRequest(w io.Writer, req *http.Request, host string) error {
@@ -623,62 +593,60 @@ func cloneRequestForWrite(req *http.Request, host string) *http.Request {
 	outReq := req.Clone(req.Context())
 	outReq.Body = req.Body
 	outReq.GetBody = req.GetBody
-	outReq.Host = host
+	outReq.Host = requestHostForWrite(req, host)
 	outReq.RequestURI = ""
 	outReq.Close = true
 	outReq.Header = req.Header.Clone()
 	return outReq
 }
 
-func writeRequestHeadersAndBody(w io.Writer, req *http.Request, host, proxyAuth string) error {
-	if _, err := fmt.Fprintf(w, "Host: %s\r\nConnection: close\r\n", host); err != nil {
-		return err
+func requestHostForWrite(req *http.Request, fallback string) string {
+	if req != nil && strings.TrimSpace(req.Host) != "" {
+		return req.Host
 	}
-	if proxyAuth != "" {
-		if _, err := fmt.Fprintf(w, "Proxy-Authorization: %s\r\n", proxyAuth); err != nil {
-			return err
+	return fallback
+}
+
+type requestLineRewriteWriter struct {
+	dst       io.Writer
+	firstLine []byte
+	pending   []byte
+	replaced  bool
+}
+
+func (w *requestLineRewriteWriter) Write(p []byte) (int, error) {
+	originalLen := len(p)
+	if w.replaced {
+		if _, err := w.dst.Write(p); err != nil {
+			return 0, err
 		}
+		return originalLen, nil
 	}
 
-	shouldChunk := req.Body != nil && req.Body != http.NoBody && req.ContentLength <= 0
-	if req.ContentLength > 0 {
-		if _, err := fmt.Fprintf(w, "Content-Length: %d\r\n", req.ContentLength); err != nil {
-			return err
+	w.pending = append(w.pending, p...)
+	idx := bytes.Index(w.pending, []byte("\r\n"))
+	if idx < 0 {
+		return originalLen, nil
+	}
+	if _, err := w.dst.Write(w.firstLine); err != nil {
+		return 0, err
+	}
+	rest := w.pending[idx+2:]
+	if len(rest) > 0 {
+		if _, err := w.dst.Write(rest); err != nil {
+			return 0, err
 		}
-	} else if shouldChunk {
-		if _, err := io.WriteString(w, "Transfer-Encoding: chunked\r\n"); err != nil {
-			return err
-		}
 	}
+	w.pending = nil
+	w.replaced = true
+	return originalLen, nil
+}
 
-	exclude := map[string]bool{
-		"Connection":          true,
-		"Content-Length":      true,
-		"Host":                true,
-		"Proxy-Authorization": true,
-		"Transfer-Encoding":   true,
-	}
-	if err := req.Header.WriteSubset(w, exclude); err != nil {
-		return err
-	}
-	if _, err := io.WriteString(w, "\r\n"); err != nil {
-		return err
-	}
-
-	if req.Body == nil || req.Body == http.NoBody {
+func (w *requestLineRewriteWriter) finish() error {
+	if w.replaced {
 		return nil
 	}
-	defer func() { _ = req.Body.Close() }()
-	if shouldChunk {
-		chunked := httputil.NewChunkedWriter(w)
-		if _, err := io.Copy(chunked, req.Body); err != nil {
-			_ = chunked.Close()
-			return err
-		}
-		return chunked.Close()
-	}
-	_, err := io.Copy(w, req.Body)
-	return err
+	return fmt.Errorf("request line not found")
 }
 
 func readProxyResponse(conn net.Conn, req *http.Request) (*http.Response, error) {

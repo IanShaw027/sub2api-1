@@ -37,23 +37,6 @@ var validateResolvedFetchHost = urlvalidator.ValidateResolvedIP
 var fetchLookupIPAddr = net.DefaultResolver.LookupIPAddr
 var fetchBaseDialContext = (&net.Dialer{Timeout: defaultDialTimeout}).DialContext
 
-var blockedFetchIPPrefixes = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("192.0.0.0/24"),
-	netip.MustParsePrefix("192.0.2.0/24"),
-	netip.MustParsePrefix("192.88.99.0/24"),
-	netip.MustParsePrefix("198.18.0.0/15"),
-	netip.MustParsePrefix("198.51.100.0/24"),
-	netip.MustParsePrefix("203.0.113.0/24"),
-	netip.MustParsePrefix("240.0.0.0/4"),
-	netip.MustParsePrefix("100::/64"),
-	netip.MustParsePrefix("2001:db8::/32"),
-	netip.MustParsePrefix("fc00::/7"),
-	netip.MustParsePrefix("fe80::/10"),
-	netip.MustParsePrefix("ff00::/8"),
-}
-
 type fetchDialContextFunc func(context.Context, string, string) (net.Conn, error)
 type fetchLookupIPAddrFunc func(context.Context, string) ([]net.IPAddr, error)
 type clientFactoryFunc func(FetchRequest) (*http.Client, error)
@@ -311,11 +294,11 @@ func resolveFetchValidatedIP(ctx context.Context, host string, lookup fetchLooku
 		return "", fmt.Errorf("validated dialer host is empty")
 	}
 
-	if ip := net.ParseIP(host); ip != nil {
-		if isBlockedResolvedFetchIP(ip) {
-			return "", fmt.Errorf("resolved ip %s is not allowed", ip.String())
+	if addr, err := netip.ParseAddr(host); err == nil {
+		if urlvalidator.IsBlockedResolvedAddr(addr) {
+			return "", fmt.Errorf("resolved ip %s is not allowed", addr.String())
 		}
-		return ip.String(), nil
+		return addr.Unmap().String(), nil
 	}
 
 	if lookup == nil {
@@ -345,31 +328,7 @@ func resolveFetchValidatedIP(ctx context.Context, host string, lookup fetchLooku
 }
 
 func isBlockedResolvedFetchIP(ip net.IP) bool {
-	if ip == nil {
-		return true
-	}
-	addr, ok := netip.AddrFromSlice(ip)
-	if !ok {
-		return true
-	}
-	return isBlockedFetchAddr(addr)
-}
-
-func isBlockedFetchAddr(addr netip.Addr) bool {
-	if !addr.IsValid() {
-		return true
-	}
-	addr = addr.Unmap()
-	if addr.IsUnspecified() || addr.IsLoopback() || addr.IsPrivate() ||
-		addr.IsLinkLocalUnicast() || addr.IsMulticast() {
-		return true
-	}
-	for _, prefix := range blockedFetchIPPrefixes {
-		if prefix.Contains(addr) {
-			return true
-		}
-	}
-	return false
+	return urlvalidator.IsBlockedResolvedIP(ip)
 }
 
 type fetchValidatedProxyRoundTripper struct {

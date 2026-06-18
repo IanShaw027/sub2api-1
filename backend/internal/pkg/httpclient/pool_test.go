@@ -2,11 +2,13 @@ package httpclient
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -165,6 +167,46 @@ func TestResolveValidatedIPBlocksSpecialUseNetworks(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestResolveValidatedIPBlocksIPv6SpecialUseNetworks(t *testing.T) {
+	tests := []string{
+		"64:ff9b::0a00:1",
+		"64:ff9b:1::1",
+		"100:0:0:1::1",
+		"2001:2::1",
+		"3fff::1",
+		"5f00::1",
+		"::ffff:93.184.216.34",
+	}
+	for _, ip := range tests {
+		t.Run(ip, func(t *testing.T) {
+			_, err := resolveValidatedIP(context.Background(), ip, nil)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestWriteProxyRequestUsesStandardProxySemantics(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "http://api.openai.com/v1/chat", nil)
+	require.NoError(t, err)
+	req.Host = "tenant.example.com"
+	req.Body = http.NoBody
+	req.ContentLength = 0
+	req.Header.Set("Content-Type", "application/json")
+
+	outboundURL, err := url.Parse("http://93.184.216.34/v1/chat")
+	require.NoError(t, err)
+	var buf bytes.Buffer
+	err = writeProxyRequest(&buf, req, outboundURL, req.URL.Host, "Basic dXNlcjpwYXNz")
+	require.NoError(t, err)
+
+	raw := buf.String()
+	require.Contains(t, raw, "POST http://93.184.216.34/v1/chat HTTP/1.1\r\n")
+	require.Contains(t, raw, "Host: tenant.example.com\r\n")
+	require.Contains(t, raw, "Proxy-Authorization: Basic dXNlcjpwYXNz\r\n")
+	require.Contains(t, raw, "Content-Length: 0\r\n")
+	require.NotContains(t, raw, "Transfer-Encoding: chunked\r\n")
 }
 
 func TestValidatedHTTPProxyRoundTripperRejectsUnsafeTargetBeforeProxyDial(t *testing.T) {

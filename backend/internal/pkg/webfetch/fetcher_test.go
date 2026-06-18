@@ -379,6 +379,24 @@ func TestFetcherFetch_ProxyRejectsPrivateIPResolvedAtRoundTrip(t *testing.T) {
 	require.False(t, dialed.Load(), "unsafe target resolution must be blocked before dialing the proxy")
 }
 
+func TestResolveFetchValidatedIPBlocksIPv6SpecialUseNetworks(t *testing.T) {
+	tests := []string{
+		"64:ff9b::0a00:1",
+		"64:ff9b:1::1",
+		"100:0:0:1::1",
+		"2001:2::1",
+		"3fff::1",
+		"5f00::1",
+		"::ffff:93.184.216.34",
+	}
+	for _, ip := range tests {
+		t.Run(ip, func(t *testing.T) {
+			_, err := resolveFetchValidatedIP(context.Background(), ip, nil)
+			require.Error(t, err)
+		})
+	}
+}
+
 func TestFetcherFetch_HTTPProxyDialsValidatedTargetIPAndPreservesResultURL(t *testing.T) {
 	originalValidateResolvedHost := validateResolvedFetchHost
 	validateResolvedFetchHost = func(string) error { return nil }

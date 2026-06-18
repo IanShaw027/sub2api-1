@@ -1,6 +1,10 @@
 package urlvalidator
 
-import "testing"
+import (
+	"net"
+	"net/netip"
+	"testing"
+)
 
 func TestValidateURLFormat(t *testing.T) {
 	if _, err := ValidateURLFormat("", false); err == nil {
@@ -91,5 +95,27 @@ func TestValidateResolvedIPBlocksSpecialUseNetworks(t *testing.T) {
 				t.Fatalf("expected resolved special-use IP %s to be blocked", host)
 			}
 		})
+	}
+}
+
+func TestBlockedResolvedIPBlocksIPv6SpecialUseNetworks(t *testing.T) {
+	tests := []string{
+		"64:ff9b::0a00:1", // Well-Known Prefix NAT64 embedding 10.0.0.1
+		"64:ff9b:1::1",    // Local-use NAT64 prefix
+		"100:0:0:1::1",    // Dummy IPv6 prefix
+		"2001:2::1",       // Benchmarking
+		"3fff::1",         // Documentation
+		"5f00::1",         // SRv6 SIDs
+	}
+	for _, raw := range tests {
+		t.Run(raw, func(t *testing.T) {
+			if !isBlockedResolvedIP(net.ParseIP(raw)) {
+				t.Fatalf("expected %s to be blocked", raw)
+			}
+		})
+	}
+
+	if !IsBlockedResolvedAddr(netip.MustParseAddr("::ffff:93.184.216.34")) {
+		t.Fatal("expected IPv4-mapped literal address to be blocked")
 	}
 }

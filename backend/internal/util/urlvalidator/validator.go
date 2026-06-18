@@ -12,22 +12,35 @@ import (
 	"time"
 )
 
-var blockedLiteralIPPrefixes = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("192.0.0.0/24"),
-	netip.MustParsePrefix("192.0.2.0/24"),
-	netip.MustParsePrefix("192.88.99.0/24"),
-	netip.MustParsePrefix("198.18.0.0/15"),
-	netip.MustParsePrefix("198.51.100.0/24"),
-	netip.MustParsePrefix("203.0.113.0/24"),
-	netip.MustParsePrefix("240.0.0.0/4"),
-	netip.MustParsePrefix("100::/64"),
-	netip.MustParsePrefix("2001:db8::/32"),
-	netip.MustParsePrefix("fc00::/7"),
-	netip.MustParsePrefix("fe80::/10"),
-	netip.MustParsePrefix("ff00::/8"),
-}
+var (
+	ipv4MappedPrefix         = netip.MustParsePrefix("::ffff:0:0/96")
+	nat64WellKnownPrefix     = netip.MustParsePrefix("64:ff9b::/96")
+	blockedLiteralIPPrefixes = []netip.Prefix{
+		netip.MustParsePrefix("0.0.0.0/8"),
+		netip.MustParsePrefix("100.64.0.0/10"),
+		netip.MustParsePrefix("192.0.0.0/24"),
+		netip.MustParsePrefix("192.0.2.0/24"),
+		netip.MustParsePrefix("192.88.99.0/24"),
+		netip.MustParsePrefix("198.18.0.0/15"),
+		netip.MustParsePrefix("198.51.100.0/24"),
+		netip.MustParsePrefix("203.0.113.0/24"),
+		netip.MustParsePrefix("240.0.0.0/4"),
+		netip.MustParsePrefix("64:ff9b:1::/48"),
+		netip.MustParsePrefix("100::/64"),
+		netip.MustParsePrefix("100:0:0:1::/64"),
+		netip.MustParsePrefix("2001::/32"),
+		netip.MustParsePrefix("2001:2::/48"),
+		netip.MustParsePrefix("2001:10::/28"),
+		netip.MustParsePrefix("2001:20::/28"),
+		netip.MustParsePrefix("2001:db8::/32"),
+		netip.MustParsePrefix("2002::/16"),
+		netip.MustParsePrefix("3fff::/20"),
+		netip.MustParsePrefix("5f00::/16"),
+		netip.MustParsePrefix("fc00::/7"),
+		netip.MustParsePrefix("fe80::/10"),
+		netip.MustParsePrefix("ff00::/8"),
+	}
+)
 
 type ValidationOptions struct {
 	AllowedHosts     []string
@@ -184,25 +197,47 @@ func isBlockedHost(host string) bool {
 		return true
 	}
 	if addr, err := netip.ParseAddr(host); err == nil {
-		return isBlockedResolvedAddr(addr)
+		return IsBlockedResolvedAddr(addr)
 	}
 	return false
 }
 
 func isBlockedResolvedIP(ip net.IP) bool {
+	return IsBlockedResolvedIP(ip)
+}
+
+func IsBlockedResolvedIP(ip net.IP) bool {
 	if ip == nil {
 		return true
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return IsBlockedResolvedAddr(netip.AddrFrom4([4]byte{v4[0], v4[1], v4[2], v4[3]}))
 	}
 	addr, ok := netip.AddrFromSlice(ip)
 	if !ok {
 		return true
 	}
-	return isBlockedResolvedAddr(addr)
+	return IsBlockedResolvedAddr(addr)
 }
 
 func isBlockedResolvedAddr(addr netip.Addr) bool {
+	return IsBlockedResolvedAddr(addr)
+}
+
+func IsBlockedResolvedAddr(addr netip.Addr) bool {
 	if !addr.IsValid() {
 		return true
+	}
+	if ipv4MappedPrefix.Contains(addr) {
+		return true
+	}
+	if isBlockedNAT64EmbeddedAddr(addr) {
+		return true
+	}
+	for _, prefix := range blockedLiteralIPPrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
 	}
 	addr = addr.Unmap()
 	if addr.IsUnspecified() || addr.IsLoopback() || addr.IsPrivate() ||
@@ -215,4 +250,13 @@ func isBlockedResolvedAddr(addr netip.Addr) bool {
 		}
 	}
 	return false
+}
+
+func isBlockedNAT64EmbeddedAddr(addr netip.Addr) bool {
+	if !nat64WellKnownPrefix.Contains(addr) {
+		return false
+	}
+	raw := addr.As16()
+	embedded := netip.AddrFrom4([4]byte{raw[12], raw[13], raw[14], raw[15]})
+	return IsBlockedResolvedAddr(embedded)
 }
