@@ -32,3 +32,15 @@ func TestRequestBaseURLDoesNotTrustForwardedHost(t *testing.T) {
 
 	require.Equal(t, "https://admin.good.example", requestBaseURL(c))
 }
+
+func TestRequestBaseURLUsesForwardedProtoWithRequestHost(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "http://admin.good.example/path", nil)
+	c.Request.Header.Set("X-Forwarded-Proto", "https")
+	c.Request.Header.Set("X-Forwarded-Host", "evil.example")
+
+	require.Equal(t, "https://admin.good.example", requestBaseURL(c))
+}

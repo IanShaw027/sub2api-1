@@ -1895,7 +1895,8 @@ func (h *GatewayHandler) handleChannelMonitorProbe(c *gin.Context, body []byte, 
 }
 
 func channelMonitorProbeAnswer(c *gin.Context, body []byte, maxTokens int, isStream bool) (string, bool) {
-	if c.GetHeader(service.ChannelMonitorProbeHeaderName) != service.ChannelMonitorProbeHeaderValue ||
+	if !service.IsChannelMonitorProbeContext(c.Request.Context()) ||
+		c.GetHeader(service.ChannelMonitorProbeHeaderName) != service.ChannelMonitorProbeHeaderValue ||
 		isStream ||
 		maxTokens != service.ChannelMonitorProbeMaxTokens {
 		return "", false

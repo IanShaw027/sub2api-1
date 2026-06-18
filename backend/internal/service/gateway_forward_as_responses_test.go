@@ -46,6 +46,9 @@ func TestHandleResponsesBufferedStreamingResponse_PreservesMessageStartCacheUsag
 			`event: message_delta`,
 			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}`,
 			``,
+			`event: message_stop`,
+			`data: {"type":"message_stop"}`,
+			``,
 		}, "\n"))),
 	}
 
@@ -130,6 +133,36 @@ func TestHandleResponsesStreamingResponse_ReadErrorAfterMessageStartEmitsFailed(
 	require.NotContains(t, body, "event: response.completed\n")
 }
 
+func TestHandleResponsesStreamingResponse_CleanEOFWithoutMessageStopEmitsFailed(t *testing.T) {
+	t.Parallel()
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_stream_clean_eof"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_clean_eof","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.5","stop_reason":"","usage":{"input_tokens":20}}}`,
+			``,
+			`event: content_block_start`,
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"partial"}}`,
+			``,
+		}, "\n"))),
+	}
+
+	svc := &GatewayService{}
+	result, err := svc.handleResponsesStreamingResponse(resp, c, "claude-sonnet-4.5", "claude-sonnet-4.5", nil, time.Now())
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	body := rec.Body.String()
+	require.Contains(t, body, "event: response.failed\n")
+	require.Contains(t, body, "stream_read_error")
+	require.NotContains(t, body, "event: response.completed\n")
+}
+
 func TestHandleResponsesBufferedStreamingResponse_ReadErrorAfterMessageStartFails(t *testing.T) {
 	t.Parallel()
 	setGinTestMode()
@@ -150,6 +183,36 @@ func TestHandleResponsesBufferedStreamingResponse_ReadErrorAfterMessageStartFail
 			}, "\n")),
 			err: io.ErrUnexpectedEOF,
 		},
+	}
+
+	svc := &GatewayService{}
+	result, err := svc.handleResponsesBufferedStreamingResponse(resp, c, "claude-sonnet-4.5", "claude-sonnet-4.5", nil, time.Now())
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	body := rec.Body.String()
+	require.Contains(t, body, "stream_read_error")
+	require.NotContains(t, body, `"status":"completed"`)
+}
+
+func TestHandleResponsesBufferedStreamingResponse_CleanEOFWithoutMessageStopFails(t *testing.T) {
+	t.Parallel()
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_buffered_clean_eof"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_clean_eof_buffered","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.5","stop_reason":"","usage":{"input_tokens":12}}}`,
+			``,
+			`event: content_block_start`,
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"partial"}}`,
+			``,
+		}, "\n"))),
 	}
 
 	svc := &GatewayService{}
@@ -340,6 +403,9 @@ func runForwardAsResponsesFullReplayRetryTest(t *testing.T, upstreamMessage stri
 					``,
 					`event: message_delta`,
 					`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}}`,
+					``,
+					`event: message_stop`,
+					`data: {"type":"message_stop"}`,
 					``,
 				}, "\n"))),
 			},

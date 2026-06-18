@@ -398,6 +398,10 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 		writeResponsesError(c, http.StatusBadGateway, "server_error", "Upstream stream ended without a response")
 		return nil, fmt.Errorf("upstream stream ended without response")
 	}
+	if !sawMessageStop {
+		writeResponsesError(c, http.StatusBadGateway, "stream_read_error", "Upstream stream ended before a terminal event")
+		return nil, fmt.Errorf("upstream stream ended before terminal event")
+	}
 
 	// Update usage from accumulated delta
 	if usage.InputTokens > 0 || usage.OutputTokens > 0 {
@@ -596,6 +600,14 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 				return nil, fmt.Errorf("upstream stream read error before terminal event: %w", err)
 			}
 		}
+	}
+	if !sawMessageStop {
+		if writeErr := writeOpenAIResponsesFailedSSE(c.Writer, state.ResponseID, originalModel, "stream_read_error", "Upstream stream ended before a terminal event"); writeErr != nil {
+			return nil, fmt.Errorf("upstream stream ended before terminal event; failed to write response.failed: %v", writeErr)
+		}
+		c.Writer.Flush()
+		MarkResponseCommitted(c)
+		return nil, fmt.Errorf("upstream stream ended before terminal event")
 	}
 
 	return finalizeStream()

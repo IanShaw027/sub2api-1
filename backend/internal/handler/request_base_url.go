@@ -21,6 +21,8 @@ func requestBaseURL(c *gin.Context) string {
 	scheme := "http"
 	if c.Request.TLS != nil {
 		scheme = "https"
+	} else if forwarded := firstForwardedValue(c.Request.Header.Get("X-Forwarded-Proto")); isHTTPForwardedScheme(forwarded) {
+		scheme = forwarded
 	}
 
 	host := strings.TrimSpace(c.Request.Host)

@@ -16,6 +16,20 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+type channelMonitorProbeContextKey struct{}
+
+func WithChannelMonitorProbeContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, channelMonitorProbeContextKey{}, true)
+}
+
+func IsChannelMonitorProbeContext(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	v, ok := ctx.Value(channelMonitorProbeContextKey{}).(bool)
+	return ok && v
+}
+
 // monitorHTTPClient 共享一个 http.Client，避免每次检测重建 transport。
 // 自定义 Transport 在 dial 时强制再次校验 IP，防止 DNS rebinding 绕过 validateEndpoint。
 var monitorHTTPClient = newSSRFSafeHTTPClient(monitorRequestTimeout)
@@ -65,6 +79,8 @@ func runCheckForModel(ctx context.Context, provider, endpoint, apiKey, model str
 		Status:    MonitorStatusError,
 		CheckedAt: time.Now(),
 	}
+
+	ctx = WithChannelMonitorProbeContext(ctx)
 
 	challenge := generateChallenge()
 	mode := bodyOverrideMode(opts)

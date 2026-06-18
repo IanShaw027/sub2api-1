@@ -151,6 +151,10 @@ func newTestGatewayHandlerWithUpstream(t *testing.T, group *service.Group, accou
 
 	schedulerCache := &fakeSchedulerCache{accounts: accounts}
 	schedulerSnapshot := service.NewSchedulerSnapshotService(schedulerCache, nil, nil, nil, nil)
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	cfg.Security.URLAllowlist.Enabled = true
+	cfg.Security.URLAllowlist.UpstreamHosts = []string{"api.anthropic.com"}
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 
 	gwSvc := service.NewGatewayService(
 		nil, // accountRepo (not used: scheduler snapshot hit)
@@ -161,7 +165,7 @@ func newTestGatewayHandlerWithUpstream(t *testing.T, group *service.Group, accou
 		nil, // userSubRepo
 		nil, // userGroupRateRepo
 		nil, // cache (disable sticky)
-		nil, // cfg
+		cfg,
 		schedulerSnapshot,
 		nil, // concurrencyService (disable load-aware; tryAcquire always acquired)
 		nil, // billingService
@@ -183,7 +187,6 @@ func newTestGatewayHandlerWithUpstream(t *testing.T, group *service.Group, accou
 	)
 
 	// RunModeSimple：跳过计费检查，避免引入 repo/cache 依赖。
-	cfg := &config.Config{RunMode: config.RunModeSimple}
 	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 
 	concurrencySvc := service.NewConcurrencyService(&fakeConcurrencyCache{})
@@ -432,7 +435,9 @@ func TestGatewayHandlerMessages_ChannelMonitorProbe_ReturnsLocalChallengeAnswerW
 	req := httptest.NewRequest("POST", "/v1/messages", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(service.ChannelMonitorProbeHeaderName, service.ChannelMonitorProbeHeaderValue)
-	req = req.WithContext(context.WithValue(req.Context(), ctxkey.Group, group))
+	ctx := context.WithValue(req.Context(), ctxkey.Group, group)
+	ctx = service.WithChannelMonitorProbeContext(ctx)
+	req = req.WithContext(ctx)
 	c.Request = req
 
 	apiKey := &service.APIKey{
@@ -469,4 +474,69 @@ func TestGatewayHandlerMessages_ChannelMonitorProbe_ReturnsLocalChallengeAnswerW
 	first, ok := content[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "21", first["text"])
+}
+
+func TestGatewayHandlerMessages_ExternalChannelMonitorProbeHeaderDoesNotBypassUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(2004)
+	accountID := int64(1004)
+
+	group := &service.Group{
+		ID:       groupID,
+		Hydrated: true,
+		Platform: service.PlatformAnthropic,
+		Status:   service.StatusActive,
+	}
+	account := &service.Account{
+		ID:          accountID,
+		Name:        "anthropic-external-probe",
+		Platform:    service.PlatformAnthropic,
+		Type:        service.AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "upstream-key", "base_url": "https://api.anthropic.com"},
+		Concurrency: 1,
+		Priority:    1,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		AccountGroups: []service.AccountGroup{
+			{AccountID: accountID, GroupID: groupID},
+		},
+	}
+	upstream := &fakeGatewayHTTPUpstream{}
+	h, cleanup := newTestGatewayHandlerWithUpstream(t, group, []*service.Account{account}, upstream)
+	defer cleanup()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{
+		"model": "claude-haiku-4-5",
+		"max_tokens": 50,
+		"messages": [{"role":"user","content":"Calculate and respond with ONLY the number, nothing else.\n\nQ: 3 + 5 = ?\nA: 8\n\nQ: 12 - 7 = ?\nA: 5\n\nQ: 16 + 5 = ?\nA:"}]
+	}`)
+	req := httptest.NewRequest("POST", "/v1/messages", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(service.ChannelMonitorProbeHeaderName, service.ChannelMonitorProbeHeaderValue)
+	req = req.WithContext(context.WithValue(req.Context(), ctxkey.Group, group))
+	c.Request = req
+
+	apiKey := &service.APIKey{
+		ID:      3004,
+		UserID:  4004,
+		GroupID: &groupID,
+		Status:  service.StatusActive,
+		User: &service.User{
+			ID:          4004,
+			Concurrency: 10,
+			Balance:     100,
+		},
+		Group: group,
+	}
+	c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.UserID, Concurrency: 10})
+
+	h.Messages(c)
+
+	require.NotEqual(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, upstream.calls, "external headers alone must not trigger local channel monitor answer")
+	require.NotContains(t, rec.Body.String(), "msg_channel_monitor_probe")
 }
