@@ -360,7 +360,11 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 		return nil, nil, infraerrors.BadRequest("INVALID_AMOUNT", "invalid refund amount")
 	}
 	if amt <= 0 {
-		amt = remainingRefundAmount(o)
+		if o.Status == OrderStatusRefundRequested && o.RefundRequestedAmount > 0 {
+			amt = o.RefundRequestedAmount
+		} else {
+			amt = remainingRefundAmount(o)
+		}
 	}
 	remaining := remainingRefundAmount(o)
 	if amountCentsGreaterThan(amt, remaining) {
@@ -574,15 +578,6 @@ func (s *PaymentService) handleRefundProviderResponse(ctx context.Context, p *Re
 		return s.markRefundOk(ctx, p)
 	}
 	if status == payment.ProviderStatusPending {
-		if p.Order != nil && p.Order.Status == OrderStatusRefunding {
-			if !s.RollbackRefund(ctx, p, fmt.Errorf("gateway refund status: %s", status)) {
-				now := time.Now()
-				_, _ = s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(OrderStatusRefundFailed).SetFailedAt(now).SetFailedReason("gateway refund rollback failed").Save(ctx)
-				s.writeAuditLog(ctx, p.OrderID, "REFUND_GATEWAY_PENDING_ROLLBACK_FAILED", "admin", map[string]any{"refundID": refundID, "refundAmount": p.RefundAmount, "reason": p.Reason})
-				return nil, infraerrors.InternalServer("REFUND_ROLLBACK_FAILED", "gateway refund pending rollback failed")
-			}
-		}
-		s.restoreStatus(ctx, p)
 		s.writeAuditLog(ctx, p.OrderID, "REFUND_GATEWAY_PENDING", "admin", map[string]any{"refundID": refundID, "refundAmount": p.RefundAmount, "reason": p.Reason})
 		return &RefundResult{Success: false, Warning: "gateway refund is pending confirmation"}, nil
 	}

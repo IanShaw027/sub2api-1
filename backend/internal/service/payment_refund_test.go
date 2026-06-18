@@ -732,7 +732,7 @@ func TestExecuteRefundPendingProviderResponseDoesNotMarkSuccess(t *testing.T) {
 	require.Zero(t, reloaded.RefundAmount)
 }
 
-func TestPendingProviderResponseRollsBackAppliedBalanceDeduction(t *testing.T) {
+func TestPendingProviderResponseKeepsRefundingAndAppliedBalanceDeduction(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
 	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "pendingrollback")
@@ -746,18 +746,78 @@ func TestPendingProviderResponseRollsBackAppliedBalanceDeduction(t *testing.T) {
 
 	require.NoError(t, userRepo.DeductBalance(ctx, user.ID, plan.BalanceToDeduct))
 	require.Equal(t, 0.0, userRepo.users[user.ID].Balance)
+	_, err = client.PaymentOrder.UpdateOneID(order.ID).SetStatus(OrderStatusRefunding).Save(ctx)
+	require.NoError(t, err)
 	plan.Order.Status = OrderStatusRefunding
 
 	result, err = svc.handleRefundProviderResponse(ctx, plan, &payment.RefundResponse{RefundID: "refund-test-id", Status: payment.ProviderStatusPending})
 	require.NoError(t, err)
 	require.False(t, result.Success)
 	require.Contains(t, result.Warning, "pending")
-	require.Equal(t, 100.0, userRepo.users[user.ID].Balance)
+	require.Equal(t, 0.0, userRepo.users[user.ID].Balance)
 
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
-	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Equal(t, OrderStatusRefunding, reloaded.Status)
 	require.Zero(t, reloaded.RefundAmount)
+}
+
+func TestPrepareRefundUsesRequestedAmountWhenAdminApprovesRefundRequestWithoutAmount(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("refund-requested-default@example.com").
+		SetPasswordHash("hash").
+		SetUsername("refund-requested-default-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("alipay-refund-requested-default-instance").
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("REFUND-REQUESTED-DEFAULT").
+		SetOutTradeNo("sub2_refund_requested_default").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-refund-requested-default").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusRefundRequested).
+		SetRefundRequestedAmount(40).
+		SetRefundRequestReason("partial requested").
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(strconv.FormatInt(inst.ID, 10)).
+		SetProviderKey(payment.TypeAlipay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient: client,
+		userRepo:  &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}},
+	}
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 0, "", false, true)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	require.Equal(t, 40.0, plan.RefundAmount)
+	require.Equal(t, "partial requested", plan.Reason)
+	require.Equal(t, 40.0, plan.BalanceToDeduct)
 }
 
 func TestGwRefundRejectsAlipayMerchantIdentitySnapshotMismatch(t *testing.T) {
