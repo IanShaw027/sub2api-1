@@ -67,9 +67,7 @@ import type { Provider } from '@/api/admin/channelMonitor'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import {
-  PROVIDER_OPENAI,
-  PROVIDER_ANTHROPIC,
-  PROVIDER_GEMINI,
+  PROVIDERS,
 } from '@/constants/channelMonitor'
 
 defineProps<{
@@ -92,9 +90,10 @@ const { t } = useI18n()
 
 const providerFilterOptions = computed(() => [
   { value: '', label: t('admin.channelMonitor.allProviders') },
-  { value: PROVIDER_OPENAI, label: t('monitorCommon.providers.openai') },
-  { value: PROVIDER_ANTHROPIC, label: t('monitorCommon.providers.anthropic') },
-  { value: PROVIDER_GEMINI, label: t('monitorCommon.providers.gemini') },
+  ...PROVIDERS.map((value) => ({
+    value,
+    label: t(`monitorCommon.providers.${value}`),
+  })),
 ])
 
 const enabledFilterOptions = computed(() => [
