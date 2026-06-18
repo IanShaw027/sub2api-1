@@ -168,6 +168,10 @@ func (f *fakeFullCache) DeleteUserPlatformQuotaCache(_ context.Context, _ int64,
 	return nil
 }
 
+func (f *fakeFullCache) DeductUserBalance(context.Context, int64, float64) error {
+	return nil
+}
+
 func (f *fakeFullCache) IncrUserPlatformQuotaUsageCache(_ context.Context, userID int64, platform string, cost float64, _ time.Duration, markDirty bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -759,6 +763,39 @@ func TestCheckUserPlatformQuotaEligibility_NilDBWindowsBackfillCurrentWindowsFor
 	}
 	if snap.DailyUsageUSD != 0.25 || snap.WeeklyUsageUSD != 0.25 || snap.MonthlyUsageUSD != 0.25 {
 		t.Fatalf("unexpected snapshot usage: %+v", snap)
+	}
+}
+
+func TestFinalizePostUsageBilling_FlusherSkipsSentinelUserPlatformQuota(t *testing.T) {
+	cache := &fakeFullCache{entry: &UserPlatformQuotaCacheEntry{
+		SchemaVersion:      UserPlatformQuotaCacheSchemaV1,
+		DailyWindowStart:   currentDayStart(),
+		WeeklyWindowStart:  currentDayStart(),
+		MonthlyWindowStart: currentDayStart(),
+	}}
+	billingCacheSvc := newServiceForPreflight(t, &fakeQuotaRepo{}, cache)
+	billingCacheSvc.cfg.Database.UserPlatformQuotaFlusherEnabled = true
+
+	cfg := &config.Config{}
+	cfg.Database.UserPlatformQuotaFlusherEnabled = true
+	finalizePostUsageBilling(context.Background(), &postUsageBillingParams{
+		Cost:     &CostBreakdown{ActualCost: 0.25},
+		User:     &User{ID: 7},
+		Account:  &Account{ID: 17},
+		Platform: "openai",
+	}, &billingDeps{
+		billingCacheService:   billingCacheSvc,
+		deferredService:       &DeferredService{},
+		userPlatformQuotaRepo: &fakeQuotaRepo{},
+		cfg:                   cfg,
+	}, &UsageBillingApplyResult{Applied: true})
+
+	entry := cache.getEntry()
+	if entry.DailyUsageUSD != 0 || entry.WeeklyUsageUSD != 0 || entry.MonthlyUsageUSD != 0 {
+		t.Fatalf("sentinel quota entry must not be incremented: %#v", entry)
+	}
+	if len(cache.dirty) != 0 {
+		t.Fatalf("sentinel quota entry must not be marked dirty, got %+v", cache.dirty)
 	}
 }
 

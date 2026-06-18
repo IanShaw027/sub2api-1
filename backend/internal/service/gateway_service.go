@@ -9081,9 +9081,11 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 	//   - flusher_enabled=true:Redis 增量会标记 dirty,由 flusher 按绝对快照写 DB,避免 delta+snapshot 双计
 	//   - flusher_enabled=false:DB 聚合按 repo+user+platform 合并短时间窗口内的 cost,作为降级持久化
 	if !p.IsSubscriptionBill && p.Platform != "" && p.Cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil {
-		deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, p.Platform, p.Cost.ActualCost)
-		if deps.cfg == nil || !deps.cfg.Database.UserPlatformQuotaFlusherEnabled {
-			enqueueUserPlatformQuotaDBIncrement(deps.userPlatformQuotaRepo, p.User.ID, p.Platform, p.Cost.ActualCost)
+		if deps.billingCacheService.HasUserPlatformQuotaLimit(ctx, p.User.ID, p.Platform) {
+			deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, p.Platform, p.Cost.ActualCost)
+			if deps.cfg == nil || !deps.cfg.Database.UserPlatformQuotaFlusherEnabled {
+				enqueueUserPlatformQuotaDBIncrement(deps.userPlatformQuotaRepo, p.User.ID, p.Platform, p.Cost.ActualCost)
+			}
 		}
 	}
 
