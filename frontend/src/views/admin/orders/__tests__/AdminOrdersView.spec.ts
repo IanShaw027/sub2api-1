@@ -4,19 +4,22 @@ import { flushPromises, mount } from '@vue/test-utils'
 import type { PaymentOrder } from '@/types/payment'
 import AdminOrdersView from '../AdminOrdersView.vue'
 
-const { getOrders, getOrder, showError, showSuccess, adminPaymentAPI } = vi.hoisted(() => {
+const { getOrders, getOrder, getRefundPreview, showError, showSuccess, adminPaymentAPI } = vi.hoisted(() => {
   const getOrders = vi.fn()
   const getOrder = vi.fn()
+  const getRefundPreview = vi.fn()
   const showError = vi.fn()
   const showSuccess = vi.fn()
   return {
     getOrders,
     getOrder,
+    getRefundPreview,
     showError,
     showSuccess,
     adminPaymentAPI: {
       getOrders,
       getOrder,
+      getRefundPreview,
       cancelOrder: vi.fn(),
       retryRecharge: vi.fn(),
       refundOrder: vi.fn(),
@@ -81,7 +84,7 @@ const OrderTableStub = {
   `,
 }
 const AdminRefundDialogStub = {
-  props: ['show', 'order', 'submitting', 'requireForce', 'warning'],
+  props: ['show', 'order', 'submitting', 'requireForce', 'warning', 'refundPreview'],
   emits: ['confirm', 'cancel'],
   template: `
     <div
@@ -91,6 +94,7 @@ const AdminRefundDialogStub = {
       :data-submitting="String(Boolean(submitting))"
       :data-require-force="String(Boolean(requireForce))"
       :data-warning="warning || ''"
+      :data-max-refund="String(refundPreview?.max_refund_amount ?? '')"
     >
       <button type="button" class="refund-confirm" :disabled="submitting" @click="$emit('confirm', { amount: 1, reason: 'refund reason', deduct_balance: true, force: false })">confirm</button>
       <button type="button" class="refund-confirm-force" :disabled="submitting" @click="$emit('confirm', { amount: 1, reason: 'refund reason', deduct_balance: true, force: true })">confirm force</button>
@@ -132,11 +136,23 @@ describe('AdminOrdersView request races', () => {
   beforeEach(() => {
     getOrders.mockReset()
     getOrder.mockReset()
+    getRefundPreview.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
     adminPaymentAPI.cancelOrder.mockReset()
     adminPaymentAPI.retryRecharge.mockReset()
     adminPaymentAPI.refundOrder.mockReset()
+    getRefundPreview.mockResolvedValue({
+      data: {
+        order_id: 1,
+        order_type: 'balance',
+        order_amount: 99.5,
+        already_refunded: 0,
+        max_refund_amount: 99.5,
+        refund_enabled: true,
+        auto_refund: false,
+      },
+    })
   })
 
   it('cancels a pending search debounce before manual pagination loads a new page', async () => {
@@ -269,7 +285,7 @@ describe('AdminOrdersView request races', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('$12.34')
+    expect(wrapper.text()).toContain('¥12.34')
     expect(wrapper.text()).toContain('payment.status.refunding')
     expect(wrapper.text()).toContain('payment.status.partially_refunded')
   })
@@ -452,6 +468,69 @@ describe('AdminOrdersView request races', () => {
     expect(dialog.text()).not.toContain('order-old')
   })
 
+  it('formats order detail amounts with the order currency', async () => {
+    getOrders.mockResolvedValue({
+      data: {
+        items: [
+          createOrder({
+            id: 3,
+            out_trade_no: 'order-eur-detail',
+            status: 'COMPLETED',
+            currency: 'EUR',
+            amount: 12.34,
+            pay_amount: 12.34,
+          }),
+        ],
+        total: 1,
+      },
+    })
+    getOrder.mockResolvedValueOnce({
+      data: {
+        order: createOrder({
+          id: 3,
+          out_trade_no: 'order-eur-detail',
+          status: 'COMPLETED',
+          currency: 'EUR',
+          amount: 12.34,
+          pay_amount: 12.34,
+          refund_amount: 1.23,
+          refund_requested_amount: 4.56,
+        }),
+        auditLogs: [],
+      },
+    })
+
+    const wrapper = mount(AdminOrdersView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Pagination: PaginationStub,
+          Select: SelectStub,
+          Icon: IconStub,
+          AdminRefundDialog: true,
+          OrderStatusBadge: true,
+          OrderTable: OrderTableStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const viewButton = wrapper.findAll('button').find((button) => button.text().includes('common.view'))
+    expect(viewButton).toBeTruthy()
+
+    await viewButton!.trigger('click')
+    await flushPromises()
+
+    const dialogText = wrapper.get('[data-test="dialog"]').text()
+    expect(dialogText).toContain('€12.34')
+    expect(dialogText).toContain('€1.23')
+    expect(dialogText).toContain('€4.56')
+    expect(dialogText).not.toContain('$12.34')
+    expect(dialogText).not.toContain('¥12.34')
+  })
+
   it('does not keep a reopened refund dialog disabled or overwrite it with a stale refund response', async () => {
     getOrders.mockResolvedValue({
       data: {
@@ -562,6 +641,61 @@ describe('AdminOrdersView request races', () => {
     expect(showError).toHaveBeenCalledWith('order has an issued invoice; refund requires a credit note (use force)')
     expect(dialog.attributes('data-require-force')).toBe('true')
     expect(dialog.attributes('data-warning')).toBe('order has an issued invoice; refund requires a credit note (use force)')
+  })
+
+  it('loads refund preview and passes backend max refundable amount to the refund dialog', async () => {
+    getOrders.mockResolvedValue({
+      data: {
+        items: [
+          createOrder({
+            id: 1,
+            out_trade_no: 'order-subscription',
+            status: 'COMPLETED',
+            order_type: 'subscription',
+            amount: 100,
+            refund_amount: 0,
+          }),
+        ],
+        total: 1,
+      },
+    })
+    getRefundPreview.mockResolvedValueOnce({
+      data: {
+        order_id: 1,
+        order_type: 'subscription',
+        order_amount: 100,
+        already_refunded: 0,
+        max_refund_amount: 37.5,
+        refund_enabled: true,
+        auto_refund: false,
+      },
+    })
+
+    const wrapper = mount(AdminOrdersView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Pagination: PaginationStub,
+          Select: SelectStub,
+          Icon: IconStub,
+          AdminRefundDialog: AdminRefundDialogStub,
+          OrderStatusBadge: true,
+          OrderTable: OrderTableStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const refundButton = wrapper.findAll('button').find((button) => button.text().includes('payment.admin.refund'))
+    expect(refundButton).toBeTruthy()
+
+    await refundButton!.trigger('click')
+    await flushPromises()
+
+    expect(getRefundPreview).toHaveBeenCalledWith(1)
+    expect(wrapper.get('[data-test="refund-dialog"]').attributes('data-max-refund')).toBe('37.5')
   })
 
   it('requires admin confirmation and sends force when refunding an order with an invoice application', async () => {

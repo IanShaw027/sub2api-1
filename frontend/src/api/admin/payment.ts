@@ -9,7 +9,8 @@ import type {
   PaymentOrder,
   SubscriptionPlan,
   ProviderInstance,
-  Invoice
+  Invoice,
+  RefundPreview
 } from '@/types/payment'
 import type { BasePaginationResponse } from '@/types'
 
@@ -122,6 +123,11 @@ export const adminPaymentAPI = {
   /** Process a refund */
   refundOrder(id: number, data: { amount: number; reason: string; deduct_balance?: boolean; force?: boolean }) {
     return apiClient.post(`/admin/payment/orders/${id}/refund`, data)
+  },
+
+  /** Get refundable amount details for an order (admin) */
+  getRefundPreview(id: number) {
+    return apiClient.get<RefundPreview>(`/admin/payment/orders/${id}/refund-preview`)
   },
 
   // ==================== Subscription Plans ====================

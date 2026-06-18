@@ -233,6 +233,29 @@ func (s *PaymentService) GetRefundPreview(ctx context.Context, oid, uid int64) (
 	return preview, nil
 }
 
+func (s *PaymentService) GetAdminRefundPreview(ctx context.Context, oid int64) (*RefundPreview, error) {
+	o, err := s.entClient.PaymentOrder.Get(ctx, oid)
+	if err != nil {
+		return nil, infraerrors.NotFound("NOT_FOUND", "order not found")
+	}
+	ok := []string{OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusPartiallyRefunded, OrderStatusRefundFailed}
+	if !psSliceContains(ok, o.Status) {
+		return nil, infraerrors.BadRequest("INVALID_STATUS", "order status does not allow refund")
+	}
+	inst, instErr := s.getRefundOrderProviderInstance(ctx, o)
+	if instErr != nil {
+		slog.Warn("refund preview: provider instance lookup failed", "orderID", oid, "error", instErr)
+		return nil, infraerrors.InternalServer("PROVIDER_LOOKUP_FAILED", "failed to look up payment provider for this order")
+	}
+	if inst == nil {
+		return nil, infraerrors.Forbidden("REFUND_DISABLED", "refund is not available for this order")
+	}
+	if !inst.RefundEnabled {
+		return nil, infraerrors.Forbidden("REFUND_DISABLED", "refund is not enabled for this provider")
+	}
+	return s.refundPreviewForOrder(ctx, o, inst)
+}
+
 func (s *PaymentService) refundPreviewForOrder(ctx context.Context, o *dbent.PaymentOrder, inst *dbent.PaymentProviderInstance) (*RefundPreview, error) {
 	remaining := remainingRefundAmount(o)
 	p := &RefundPreview{
@@ -581,13 +604,11 @@ func (s *PaymentService) handleRefundProviderResponse(ctx context.Context, p *Re
 		return s.markRefundOk(ctx, p)
 	}
 	if status == payment.ProviderStatusPending {
-		rolledBack := s.RollbackRefund(ctx, p, fmt.Errorf("gateway refund pending"))
-		if rolledBack {
-			s.restoreStatus(ctx, p)
-		} else {
-			now := time.Now()
-			_, _ = s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(OrderStatusRefundFailed).SetFailedAt(now).SetFailedReason("gateway refund pending; local rollback failed").Save(ctx)
-		}
+		_, _ = s.entClient.PaymentOrder.UpdateOneID(p.OrderID).
+			SetStatus(OrderStatusRefunding).
+			ClearFailedAt().
+			ClearFailedReason().
+			Save(ctx)
 		s.writeAuditLog(ctx, p.OrderID, "REFUND_GATEWAY_PENDING", "admin", map[string]any{"refundID": refundID, "refundAmount": p.RefundAmount, "reason": p.Reason})
 		return &RefundResult{Success: false, Warning: "gateway refund is pending confirmation"}, nil
 	}

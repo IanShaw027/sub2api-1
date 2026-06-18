@@ -47,7 +47,7 @@
               {{ t('payment.admin.retry') }}
             </button>
             <template v-if="row.status === 'REFUND_REQUESTED'">
-              <span v-if="row.refund_requested_amount" class="rounded-full bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">{{ row.order_type === 'balance' ? '$' : '¥' }}{{ row.refund_requested_amount.toFixed(2) }}</span>
+              <span v-if="row.refund_requested_amount" class="rounded-full bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">{{ formatOrderAmount(row.refund_requested_amount, row) }}</span>
               <button @click="openRefundDialog(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/20">
                 <Icon name="check" size="sm" />
                 {{ t('payment.admin.approveRefund') }}
@@ -74,15 +74,15 @@
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderId') }}</p><p class="font-mono text-sm font-medium text-gray-900 dark:text-white">#{{ selectedOrder.id }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderNo') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ selectedOrder.out_trade_no }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.status') }}</p><OrderStatusBadge :status="selectedOrder.status" /></div>
-          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ selectedOrder.order_type === 'balance' ? '$' : '¥' }}{{ selectedOrder.amount.toFixed(2) }}</p></div>
-          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">¥{{ selectedOrder.pay_amount.toFixed(2) }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ formatOrderAmount(selectedOrder.amount, selectedOrder) }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ formatOrderAmount(selectedOrder.pay_amount, selectedOrder) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.paymentMethod') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ t(paymentMethodDisplayKey(selectedOrder.payment_type), selectedOrder.payment_type) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.feeRate') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ selectedOrder.fee_rate }}%</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.createdAt') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(selectedOrder.created_at) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.expiresAt') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(selectedOrder.expires_at) }}</p></div>
           <div v-if="selectedOrder.paid_at"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.paidAt') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(selectedOrder.paid_at) }}</p></div>
-          <div v-if="selectedOrder.refund_amount"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundAmount') }}</p><p class="text-sm font-medium text-red-600 dark:text-red-400">{{ selectedOrder.order_type === 'balance' ? '$' : '¥' }}{{ selectedOrder.refund_amount.toFixed(2) }}</p></div>
-          <div v-if="selectedOrder.refund_requested_amount"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundRequestedAmount') }}</p><p class="text-sm font-medium text-purple-600 dark:text-purple-400">{{ selectedOrder.order_type === 'balance' ? '$' : '¥' }}{{ selectedOrder.refund_requested_amount.toFixed(2) }}</p></div>
+          <div v-if="selectedOrder.refund_amount"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundAmount') }}</p><p class="text-sm font-medium text-red-600 dark:text-red-400">{{ formatOrderAmount(selectedOrder.refund_amount, selectedOrder) }}</p></div>
+          <div v-if="selectedOrder.refund_requested_amount"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundRequestedAmount') }}</p><p class="text-sm font-medium text-purple-600 dark:text-purple-400">{{ formatOrderAmount(selectedOrder.refund_requested_amount, selectedOrder) }}</p></div>
           <div v-if="selectedOrder.refund_reason" class="col-span-2"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundReason') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ selectedOrder.refund_reason }}</p></div>
           <!-- Refund request info -->
           <div v-if="selectedOrder.refund_requested_at" class="col-span-2 border-t border-gray-200 pt-3 dark:border-dark-600">
@@ -123,6 +123,8 @@
     <AdminRefundDialog
       :show="showRefundDialog"
       :order="selectedOrder"
+      :refund-preview="refundPreview"
+      :preview-loading="refundPreviewLoading"
       :submitting="refundSubmitting"
       :require-force="refundRequireForce"
       :warning="refundWarning"
@@ -141,7 +143,8 @@ import type { AdminPaymentOrderDetail } from '@/api/admin/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { paymentMethodDisplayKey } from '@/utils/i18n'
 import { formatOrderDateTime } from '@/components/payment/orderUtils'
-import type { PaymentOrder } from '@/types/payment'
+import { formatPaymentAmount } from '@/components/payment/currency'
+import type { PaymentOrder, RefundPreview } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -179,10 +182,13 @@ const showRefundDialog = ref(false)
 const refundSubmitting = ref(false)
 const refundRequireForce = ref(false)
 const refundWarning = ref('')
+const refundPreview = ref<RefundPreview | null>(null)
+const refundPreviewLoading = ref(false)
 const orderAuditLogs = ref<AuditLog[]>([])
 let orderListReqSeq = 0
 let orderDetailReqSeq = 0
 let refundReqSeq = 0
+let refundPreviewReqSeq = 0
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 function clearOrderSearchDebounce() {
@@ -306,6 +312,8 @@ function resetRefundSubmitting() {
 function resetRefundFeedback() {
   refundRequireForce.value = false
   refundWarning.value = ''
+  refundPreview.value = null
+  refundPreviewLoading.value = false
 }
 
 function hasActiveInvoice(order: PaymentOrder): boolean {
@@ -318,7 +326,7 @@ function invoiceRefundWarning(order: PaymentOrder): string {
   return t('payment.admin.invoiceRefundAppliedWarning')
 }
 
-function openRefundDialog(order: PaymentOrder) {
+async function openRefundDialog(order: PaymentOrder) {
   selectedOrder.value = order
   resetRefundSubmitting()
   resetRefundFeedback()
@@ -328,10 +336,23 @@ function openRefundDialog(order: PaymentOrder) {
     refundWarning.value = warning
   }
   showRefundDialog.value = true
+  const seq = ++refundPreviewReqSeq
+  refundPreviewLoading.value = true
+  try {
+    const res = await adminPaymentAPI.getRefundPreview(order.id)
+    if (seq !== refundPreviewReqSeq || !showRefundDialog.value || selectedOrder.value?.id !== order.id) return
+    refundPreview.value = res.data
+  } catch (err: unknown) {
+    if (seq !== refundPreviewReqSeq) return
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    if (seq === refundPreviewReqSeq) refundPreviewLoading.value = false
+  }
 }
 
 function closeRefundDialog() {
   showRefundDialog.value = false
+  refundPreviewReqSeq += 1
   resetRefundSubmitting()
   resetRefundFeedback()
 }
@@ -362,6 +383,10 @@ async function handleRefund(data: { amount: number; reason: string; deduct_balan
 
 function formatDateTime(dateStr: string): string { return formatOrderDateTime(dateStr) }
 
+function formatOrderAmount(value: number, order: PaymentOrder): string {
+  return formatPaymentAmount(Number(value || 0), order.currency)
+}
+
 onMounted(() => reloadOrders())
 
 onUnmounted(() => {
@@ -369,5 +394,6 @@ onUnmounted(() => {
   orderListReqSeq += 1
   orderDetailReqSeq += 1
   refundReqSeq += 1
+  refundPreviewReqSeq += 1
 })
 </script>

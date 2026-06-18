@@ -728,7 +728,77 @@ func TestExecuteRefundPendingProviderResponseDoesNotMarkSuccess(t *testing.T) {
 
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
-	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Equal(t, OrderStatusRefunding, reloaded.Status)
+	require.Zero(t, reloaded.RefundAmount)
+}
+
+func TestExecuteRefundPendingProviderResponsePreservesRefundingAndDeductedBalance(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("refund-pending-keep-refunding@example.com").
+		SetPasswordHash("hash").
+		SetUsername("refund-pending-keep-refunding-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("alipay-refund-pending-keep-refunding-instance").
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	instID := strconv.FormatInt(inst.ID, 10)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("REFUND-PENDING-KEEP-REFUNDING-ORDER").
+		SetOutTradeNo("sub2_refund_pending_keep_refunding_order").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-refund-pending-keep-refunding").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instID).
+		SetProviderKey(payment.TypeAlipay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	userRepo := &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}}
+	svc := &PaymentService{entClient: client, userRepo: userRepo}
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 100, "pending refund", false, true)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	require.Equal(t, 100.0, plan.BalanceToDeduct)
+
+	require.NoError(t, userRepo.DeductBalance(ctx, user.ID, plan.BalanceToDeduct))
+	plan.DeductionApplied = true
+	_, err = client.PaymentOrder.UpdateOneID(order.ID).SetStatus(OrderStatusRefunding).Save(ctx)
+	require.NoError(t, err)
+	plan.Order.Status = OrderStatusRefunding
+
+	result, err = svc.handleRefundProviderResponse(ctx, plan, &payment.RefundResponse{RefundID: "refund-test-id", Status: payment.ProviderStatusPending})
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.Equal(t, 0.0, userRepo.users[user.ID].Balance)
+	require.Equal(t, 100.0, userRepo.deductedAmount)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRefunding, reloaded.Status)
 	require.Zero(t, reloaded.RefundAmount)
 }
 
@@ -755,11 +825,11 @@ func TestPendingProviderResponseKeepsRefundingAndAppliedBalanceDeduction(t *test
 	require.NoError(t, err)
 	require.False(t, result.Success)
 	require.Contains(t, result.Warning, "pending")
-	require.Equal(t, 100.0, userRepo.users[user.ID].Balance)
+	require.Zero(t, userRepo.users[user.ID].Balance)
 
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
-	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Equal(t, OrderStatusRefunding, reloaded.Status)
 	require.Zero(t, reloaded.RefundAmount)
 }
 

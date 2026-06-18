@@ -140,4 +140,58 @@ describe('UserOrdersView refund visibility', () => {
     expect(wrapper.get('[data-test="row-actions-order-issued"]').text()).not.toContain('payment.orders.requestRefund')
     expect(wrapper.get('[data-test="row-actions-order-open"]').text()).toContain('payment.orders.requestRefund')
   })
+
+  it('formats the refund dialog amounts with the order currency', async () => {
+    paymentAPI.getMyOrders.mockResolvedValue({
+      data: {
+        items: [
+          createOrder({
+            id: 4,
+            out_trade_no: 'order-eur',
+            amount: 12.34,
+            pay_amount: 12.34,
+            currency: 'EUR',
+          }),
+        ],
+        total: 1,
+      },
+    })
+    paymentAPI.getRefundPreview.mockResolvedValue({
+      data: {
+        order_id: 4,
+        order_type: 'balance',
+        order_amount: 12.34,
+        already_refunded: 0,
+        max_refund_amount: 12.34,
+        refund_enabled: true,
+        auto_refund: false,
+      },
+    })
+
+    const wrapper = mount(UserOrdersView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          OrdersTabBar: OrdersTabBarStub,
+          BaseDialog: BaseDialogStub,
+          Pagination: PaginationStub,
+          Select: SelectStub,
+          Icon: IconStub,
+          OrderTable: OrderTableStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const refundButton = wrapper
+      .findAll('[data-test="row-actions-order-eur"] button')
+      .find((button) => button.text().includes('payment.orders.requestRefund'))
+    expect(refundButton).toBeTruthy()
+    await refundButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('€12.34')
+    expect(wrapper.text()).not.toContain('$12.34')
+  })
 })

@@ -103,7 +103,7 @@
           </div>
           <div class="mt-2 flex justify-between text-sm">
             <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</span>
-            <span class="text-gray-900 dark:text-white">${{ refundTarget.amount.toFixed(2) }}</span>
+            <span class="text-gray-900 dark:text-white">{{ formatRefundMoney(refundTarget.amount) }}</span>
           </div>
         </div>
         <div class="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm dark:border-blue-900/60 dark:bg-blue-900/20">
@@ -123,7 +123,7 @@
             <template v-else>
               <div class="flex justify-between">
                 <span>订阅已消耗额度</span>
-                <span class="font-medium">${{ formatNumber(refundPreview.usage_amount || 0) }}</span>
+                <span class="font-medium">{{ formatRefundMoney(refundPreview.usage_amount || 0) }}</span>
               </div>
               <div class="flex justify-between">
                 <span>订阅倍率 / 退款倍率</span>
@@ -235,6 +235,7 @@ import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { useTableSelection } from '@/composables/useTableSelection'
 import type { PaymentOrder, RefundPreview } from '@/types/payment'
+import { formatPaymentAmount } from '@/components/payment/currency'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -461,10 +462,7 @@ function formatNumber(value: number): string {
 }
 
 function formatRefundMoney(value: number): string {
-  if (refundTarget.value?.order_type === 'subscription') {
-    return `¥${Number(value || 0).toFixed(2)}`
-  }
-  return `$${Number(value || 0).toFixed(2)}`
+  return formatPaymentAmount(Number(value || 0), refundTarget.value?.currency)
 }
 
 function canRequestRefund(order: PaymentOrder): boolean {
