@@ -468,6 +468,7 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 	if c == 0 {
 		return nil, infraerrors.Conflict("CONFLICT", "order refund state changed")
 	}
+	p.Order.Status = OrderStatusRefunding
 	if p.DeductionType == payment.DeductionTypeBalance && p.BalanceToDeduct > 0 {
 		// Skip balance deduction on retry if previous attempt already deducted
 		// but failed to roll back (REFUND_ROLLBACK_FAILED in audit log).
@@ -569,10 +570,18 @@ func (s *PaymentService) handleRefundProviderResponse(ctx context.Context, p *Re
 		status = strings.TrimSpace(strings.ToLower(resp.Status))
 		refundID = strings.TrimSpace(resp.RefundID)
 	}
-	if status == "" || status == payment.ProviderStatusSuccess {
+	if status == "" || status == payment.ProviderStatusSuccess || status == payment.ProviderStatusRefunded {
 		return s.markRefundOk(ctx, p)
 	}
 	if status == payment.ProviderStatusPending {
+		if p.Order != nil && p.Order.Status == OrderStatusRefunding {
+			if !s.RollbackRefund(ctx, p, fmt.Errorf("gateway refund status: %s", status)) {
+				now := time.Now()
+				_, _ = s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(OrderStatusRefundFailed).SetFailedAt(now).SetFailedReason("gateway refund rollback failed").Save(ctx)
+				s.writeAuditLog(ctx, p.OrderID, "REFUND_GATEWAY_PENDING_ROLLBACK_FAILED", "admin", map[string]any{"refundID": refundID, "refundAmount": p.RefundAmount, "reason": p.Reason})
+				return nil, infraerrors.InternalServer("REFUND_ROLLBACK_FAILED", "gateway refund pending rollback failed")
+			}
+		}
 		s.restoreStatus(ctx, p)
 		s.writeAuditLog(ctx, p.OrderID, "REFUND_GATEWAY_PENDING", "admin", map[string]any{"refundID": refundID, "refundAmount": p.RefundAmount, "reason": p.Reason})
 		return &RefundResult{Success: false, Warning: "gateway refund is pending confirmation"}, nil

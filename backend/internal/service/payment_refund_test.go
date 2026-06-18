@@ -724,6 +724,35 @@ func TestExecuteRefundPendingProviderResponseDoesNotMarkSuccess(t *testing.T) {
 	require.False(t, result.Success)
 	require.Contains(t, result.Warning, "pending")
 	require.Zero(t, userRepo.deductedAmount)
+	require.Equal(t, 100.0, userRepo.users[user.ID].Balance)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Zero(t, reloaded.RefundAmount)
+}
+
+func TestPendingProviderResponseRollsBackAppliedBalanceDeduction(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "pendingrollback")
+	userRepo := &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}}
+	svc := &PaymentService{entClient: client, userRepo: userRepo}
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 100, "pending refund", false, true)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	require.Equal(t, 100.0, plan.BalanceToDeduct)
+
+	require.NoError(t, userRepo.DeductBalance(ctx, user.ID, plan.BalanceToDeduct))
+	require.Equal(t, 0.0, userRepo.users[user.ID].Balance)
+	plan.Order.Status = OrderStatusRefunding
+
+	result, err = svc.handleRefundProviderResponse(ctx, plan, &payment.RefundResponse{RefundID: "refund-test-id", Status: payment.ProviderStatusPending})
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.Contains(t, result.Warning, "pending")
+	require.Equal(t, 100.0, userRepo.users[user.ID].Balance)
 
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
@@ -879,6 +908,31 @@ func TestPartialRefundAllowsRemainingRefundAndMarksFinalRefunded(t *testing.T) {
 	require.True(t, result.Success)
 
 	reloaded, err = client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRefunded, reloaded.Status)
+	require.Equal(t, 100.0, reloaded.RefundAmount)
+}
+
+func TestProviderRefundedStatusMarksRefundSuccess(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "providerrefunded")
+	svc := &PaymentService{
+		entClient: client,
+		userRepo:  &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}},
+	}
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 100, "provider refunded", false, false)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	plan.BalanceToDeduct = 0
+	plan.DeductionType = ""
+
+	result, err = svc.handleRefundProviderResponse(ctx, plan, &payment.RefundResponse{RefundID: "refund-test-id", Status: payment.ProviderStatusRefunded})
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusRefunded, reloaded.Status)
 	require.Equal(t, 100.0, reloaded.RefundAmount)
