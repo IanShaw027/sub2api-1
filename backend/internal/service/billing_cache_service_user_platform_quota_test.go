@@ -906,6 +906,16 @@ func TestHasUserPlatformQuotaLimit(t *testing.T) {
 			want: true, // fail-safe
 		},
 		{
+			name: "nil_config_fail_safe",
+			setup: func() *BillingCacheService {
+				entry := &UserPlatformQuotaCacheEntry{DailyLimitUSD: &daily}
+				svc := newServiceForPreflight(t, &fakeQuotaRepo{}, &fakeFullCache{entry: entry})
+				svc.cfg = nil
+				return svc
+			},
+			want: true, // fail-safe
+		},
+		{
 			name: "simple_mode",
 			setup: func() *BillingCacheService {
 				entry := &UserPlatformQuotaCacheEntry{DailyLimitUSD: &daily}

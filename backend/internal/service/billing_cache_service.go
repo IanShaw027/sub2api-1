@@ -1383,6 +1383,9 @@ func monthlyQuotaWindowExpired(start *time.Time, now time.Time) bool {
 // 写入点守卫:无 limit 直接跳过 Redis 写 + 脏集标记,消除无谓写入。
 // fail-safe:任何不确定(simple 模式除外)都返回 true 维持写入。
 func (s *BillingCacheService) HasUserPlatformQuotaLimit(ctx context.Context, userID int64, platform string) bool {
+	if s == nil || s.cfg == nil {
+		return true
+	}
 	if s.cfg.RunMode == config.RunModeSimple {
 		return false
 	}
