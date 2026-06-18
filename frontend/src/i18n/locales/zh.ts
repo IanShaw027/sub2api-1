@@ -8440,6 +8440,7 @@ export default {
       refund: '退款',
       refundOrder: '退款订单',
       refundAmount: '退款金额',
+      refundRequestedAmount: '申请退款金额',
       maxRefundable: '最大可退金额',
       refundReason: '退款原因',
       refundReasonPlaceholder: '请输入退款原因',

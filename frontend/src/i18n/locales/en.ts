@@ -8263,6 +8263,7 @@ export default {
       refund: 'Refund',
       refundOrder: 'Refund Order',
       refundAmount: 'Refund Amount',
+      refundRequestedAmount: 'Requested Refund Amount',
       maxRefundable: 'Max Refundable',
       refundReason: 'Refund Reason',
       refundReasonPlaceholder: 'Please enter refund reason',

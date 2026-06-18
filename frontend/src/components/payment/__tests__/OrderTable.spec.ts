@@ -72,6 +72,7 @@ function createOrder(paymentType: string): PaymentOrder {
     created_at: '2026-05-07T12:00:00.000Z',
     expires_at: '2026-05-07T12:10:00.000Z',
     refund_amount: 0,
+    refund_requested_amount: 0,
   }
 }
 

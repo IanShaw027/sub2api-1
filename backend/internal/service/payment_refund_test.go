@@ -745,6 +745,7 @@ func TestPendingProviderResponseKeepsRefundingAndAppliedBalanceDeduction(t *test
 	require.Equal(t, 100.0, plan.BalanceToDeduct)
 
 	require.NoError(t, userRepo.DeductBalance(ctx, user.ID, plan.BalanceToDeduct))
+	plan.DeductionApplied = true
 	require.Equal(t, 0.0, userRepo.users[user.ID].Balance)
 	_, err = client.PaymentOrder.UpdateOneID(order.ID).SetStatus(OrderStatusRefunding).Save(ctx)
 	require.NoError(t, err)
@@ -754,12 +755,79 @@ func TestPendingProviderResponseKeepsRefundingAndAppliedBalanceDeduction(t *test
 	require.NoError(t, err)
 	require.False(t, result.Success)
 	require.Contains(t, result.Warning, "pending")
-	require.Equal(t, 0.0, userRepo.users[user.ID].Balance)
+	require.Equal(t, 100.0, userRepo.users[user.ID].Balance)
 
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
-	require.Equal(t, OrderStatusRefunding, reloaded.Status)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
 	require.Zero(t, reloaded.RefundAmount)
+}
+
+func TestGatewayRefundFailureRestoresRefundRequestedStatus(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "failrequested")
+	_, err := client.PaymentOrder.UpdateOneID(order.ID).
+		SetStatus(OrderStatusRefundRequested).
+		SetRefundRequestedAmount(40).
+		SetRefundRequestReason("partial requested").
+		Save(ctx)
+	require.NoError(t, err)
+	userRepo := &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}}
+	svc := &PaymentService{entClient: client, userRepo: userRepo}
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 0, "", false, true)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	require.NoError(t, userRepo.DeductBalance(ctx, user.ID, plan.BalanceToDeduct))
+	plan.DeductionApplied = true
+	_, err = client.PaymentOrder.UpdateOneID(order.ID).SetStatus(OrderStatusRefunding).Save(ctx)
+	require.NoError(t, err)
+	plan.Order.Status = OrderStatusRefunding
+
+	result, err = svc.handleGwFail(ctx, plan, errors.New("provider unavailable"))
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.Contains(t, result.Warning, "rolled back")
+	require.Equal(t, 100.0, userRepo.users[user.ID].Balance)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRefundRequested, reloaded.Status)
+	require.Zero(t, reloaded.RefundAmount)
+}
+
+func TestGatewayRefundFailureRestoresPartiallyRefundedStatus(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "failpartial")
+	_, err := client.PaymentOrder.UpdateOneID(order.ID).
+		SetStatus(OrderStatusPartiallyRefunded).
+		SetRefundAmount(30).
+		Save(ctx)
+	require.NoError(t, err)
+	userRepo := &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}}
+	svc := &PaymentService{entClient: client, userRepo: userRepo}
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 20, "second partial", false, true)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	require.NoError(t, userRepo.DeductBalance(ctx, user.ID, plan.BalanceToDeduct))
+	plan.DeductionApplied = true
+	_, err = client.PaymentOrder.UpdateOneID(order.ID).SetStatus(OrderStatusRefunding).Save(ctx)
+	require.NoError(t, err)
+	plan.Order.Status = OrderStatusRefunding
+
+	result, err = svc.handleGwFail(ctx, plan, errors.New("provider unavailable"))
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.Contains(t, result.Warning, "rolled back")
+	require.Equal(t, 100.0, userRepo.users[user.ID].Balance)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, reloaded.Status)
+	require.Equal(t, 30.0, reloaded.RefundAmount)
 }
 
 func TestPrepareRefundUsesRequestedAmountWhenAdminApprovesRefundRequestWithoutAmount(t *testing.T) {

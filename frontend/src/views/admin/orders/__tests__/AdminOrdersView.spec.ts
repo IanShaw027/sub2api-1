@@ -236,6 +236,44 @@ describe('AdminOrdersView request races', () => {
     expect(wrapper.get('[data-test="orders"]').text()).toBe('order-new')
   })
 
+  it('shows requested refund amount for refund requests and exposes all refund status filters', async () => {
+    getOrders.mockResolvedValue({
+      data: {
+        items: [
+          createOrder({
+            id: 1,
+            out_trade_no: 'order-refund-requested',
+            status: 'REFUND_REQUESTED',
+            refund_amount: 0,
+            refund_requested_amount: 12.34,
+          }),
+        ],
+        total: 1,
+      },
+    })
+
+    const wrapper = mount(AdminOrdersView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Pagination: PaginationStub,
+          Select: SelectStub,
+          Icon: IconStub,
+          AdminRefundDialog: true,
+          OrderStatusBadge: true,
+          OrderTable: OrderTableStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('$12.34')
+    expect(wrapper.text()).toContain('payment.status.refunding')
+    expect(wrapper.text()).toContain('payment.status.partially_refunded')
+  })
+
   it('clears a pending order search debounce when unmounted', async () => {
     vi.useFakeTimers()
     try {

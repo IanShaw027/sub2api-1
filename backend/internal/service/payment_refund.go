@@ -405,7 +405,7 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 	if rr == "" {
 		rr = fmt.Sprintf("refund order:%d", o.ID)
 	}
-	p := &RefundPlan{OrderID: oid, Order: o, RefundAmount: amt, GatewayAmount: ga, Reason: rr, Force: force, DeductBalance: deduct, DeductionType: payment.DeductionTypeNone}
+	p := &RefundPlan{OrderID: oid, Order: o, OriginalStatus: o.Status, RefundAmount: amt, GatewayAmount: ga, Reason: rr, Force: force, DeductBalance: deduct, DeductionType: payment.DeductionTypeNone}
 	if deduct {
 		if er := s.prepDeduct(ctx, o, p, force); er != nil {
 			return nil, er, nil
@@ -481,6 +481,7 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 				s.restoreStatus(ctx, p)
 				return nil, fmt.Errorf("deduction: %w", err)
 			}
+			p.DeductionApplied = true
 		} else {
 			slog.Warn("skipping balance deduction on retry (previous rollback failed)", "orderID", p.OrderID)
 			p.BalanceToDeduct = 0
@@ -497,12 +498,14 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 						s.restoreStatus(ctx, p)
 						return nil, fmt.Errorf("revoke subscription: %w", revokeErr)
 					}
+					p.DeductionApplied = true
 				} else {
 					// Other errors (DB failure, not found) — abort refund
 					s.restoreStatus(ctx, p)
 					return nil, fmt.Errorf("deduct subscription days: %w", err)
 				}
 			}
+			p.DeductionApplied = true
 		} else {
 			slog.Warn("skipping subscription deduction on retry (previous rollback failed)", "orderID", p.OrderID)
 			p.SubDaysToDeduct = 0
@@ -578,6 +581,13 @@ func (s *PaymentService) handleRefundProviderResponse(ctx context.Context, p *Re
 		return s.markRefundOk(ctx, p)
 	}
 	if status == payment.ProviderStatusPending {
+		rolledBack := s.RollbackRefund(ctx, p, fmt.Errorf("gateway refund pending"))
+		if rolledBack {
+			s.restoreStatus(ctx, p)
+		} else {
+			now := time.Now()
+			_, _ = s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(OrderStatusRefundFailed).SetFailedAt(now).SetFailedReason("gateway refund pending; local rollback failed").Save(ctx)
+		}
 		s.writeAuditLog(ctx, p.OrderID, "REFUND_GATEWAY_PENDING", "admin", map[string]any{"refundID": refundID, "refundAmount": p.RefundAmount, "reason": p.Reason})
 		return &RefundResult{Success: false, Warning: "gateway refund is pending confirmation"}, nil
 	}
@@ -752,6 +762,9 @@ func remainingRefundAmount(o *dbent.PaymentOrder) float64 {
 }
 
 func (s *PaymentService) RollbackRefund(ctx context.Context, p *RefundPlan, gErr error) bool {
+	if p != nil && !p.DeductionApplied {
+		return true
+	}
 	if p.DeductionType == payment.DeductionTypeBalance && p.BalanceToDeduct > 0 {
 		if err := s.userRepo.UpdateBalance(ctx, p.Order.UserID, p.BalanceToDeduct); err != nil {
 			slog.Error("[CRITICAL] rollback failed", "orderID", p.OrderID, "amount", p.BalanceToDeduct, "error", err)
@@ -771,8 +784,8 @@ func (s *PaymentService) RollbackRefund(ctx context.Context, p *RefundPlan, gErr
 
 func (s *PaymentService) restoreStatus(ctx context.Context, p *RefundPlan) {
 	rs := OrderStatusCompleted
-	if p.Order.Status == OrderStatusRefundRequested || p.Order.Status == OrderStatusPartiallyRefunded {
-		rs = p.Order.Status
+	if p.OriginalStatus == OrderStatusRefundRequested || p.OriginalStatus == OrderStatusPartiallyRefunded || p.OriginalStatus == OrderStatusRefundFailed {
+		rs = p.OriginalStatus
 	}
 	_, _ = s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(rs).Save(ctx)
 }

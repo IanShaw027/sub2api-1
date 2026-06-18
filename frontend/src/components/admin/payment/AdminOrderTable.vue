@@ -205,6 +205,8 @@ const statusFilterOptions = computed(() => [
   { value: 'FAILED', label: t('payment.status.failed') },
   { value: 'REFUNDED', label: t('payment.status.refunded') },
   { value: 'REFUND_REQUESTED', label: t('payment.status.refund_requested') },
+  { value: 'REFUNDING', label: t('payment.status.refunding') },
+  { value: 'PARTIALLY_REFUNDED', label: t('payment.status.partially_refunded') },
   { value: 'REFUND_FAILED', label: t('payment.status.refund_failed') },
 ])
 
