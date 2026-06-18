@@ -2274,7 +2274,7 @@ var (
 		{Name: "username", Type: field.TypeString, Nullable: true, Size: 100},
 		{Name: "password", Type: field.TypeString, Nullable: true, Size: 100},
 		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
-		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "fallback_mode", Type: field.TypeString, Size: 20, Default: "none"},
 		{Name: "expiry_warn_days", Type: field.TypeInt, Default: 7},
 		{Name: "backup_proxy_id", Type: field.TypeInt64, Nullable: true},
@@ -2473,6 +2473,13 @@ var (
 		Name:       "tls_fingerprint_routers",
 		Columns:    TLSFingerprintRoutersColumns,
 		PrimaryKey: []*schema.Column{TLSFingerprintRoutersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_tls_fingerprint_routers_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{TLSFingerprintRoutersColumns[5]},
+			},
+		},
 	}
 	// UsageCleanupTasksColumns holds the columns for the "usage_cleanup_tasks" table.
 	UsageCleanupTasksColumns = []*schema.Column{
@@ -2550,9 +2557,9 @@ var (
 		{Name: "image_size_source", Type: field.TypeString, Nullable: true, Size: 16},
 		{Name: "image_size_breakdown", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "cache_ttl_overridden", Type: field.TypeBool, Default: false},
-		{Name: "openai_ws_profile", Type: field.TypeString, Default: ""},
+		{Name: "openai_ws_profile", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "openai_ws_conn_reused", Type: field.TypeBool, Default: false},
-		{Name: "provider", Type: field.TypeString, Default: ""},
+		{Name: "provider", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "api_key_id", Type: field.TypeInt64},
 		{Name: "account_id", Type: field.TypeInt64},

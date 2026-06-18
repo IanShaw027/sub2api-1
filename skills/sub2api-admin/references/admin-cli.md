@@ -189,6 +189,27 @@ node scripts/sub2api-admin.js tls-profiles update 1 --file profile.json
 node scripts/sub2api-admin.js tls-profiles delete 1
 ```
 
+## Skill Review And Governance
+
+技能审核/治理接口尚未做一等 CLI 子命令时，使用 `api` 直通。先列队列，再对明确的 review ID 或 skill ID 执行动作。
+
+```bash
+node scripts/sub2api-admin.js api GET '/admin/skills/reviews?page=1&page_size=20&review_status=pending'
+node scripts/sub2api-admin.js api POST /admin/skills/reviews/18/approve \
+  --json '{"note":"approved after manual review"}'
+node scripts/sub2api-admin.js api POST /admin/skills/reviews/18/reject \
+  --json '{"reason":"missing safety notes"}'
+
+node scripts/sub2api-admin.js api GET '/admin/skills/governance?page=1&page_size=20'
+node scripts/sub2api-admin.js api POST /admin/skills/55/force-private \
+  --json '{"reason":"manual risk control"}'
+node scripts/sub2api-admin.js api POST /admin/skills/55/disable \
+  --json '{"reason":"policy violation"}'
+
+node scripts/sub2api-admin.js api GET '/admin/skills/runtime?page=1&page_size=20&health_status=warning'
+node scripts/sub2api-admin.js api GET '/admin/skills/settlements?page=1&page_size=20&settlement_status=pending'
+```
+
 ## Raw Admin API
 
 未封装或新版本后台接口可用 `api` 直通。路径可写 `/admin/...` 或 `/api/v1/admin/...`。
@@ -256,6 +277,14 @@ node scripts/sub2api-admin.js api POST /admin/accounts/bulk-update \
 - `POST /api/v1/admin/tls-fingerprint-profiles`
 - `PUT /api/v1/admin/tls-fingerprint-profiles/:id`
 - `DELETE /api/v1/admin/tls-fingerprint-profiles/:id`
+- `GET /api/v1/admin/skills/reviews`
+- `POST /api/v1/admin/skills/reviews/:id/approve`
+- `POST /api/v1/admin/skills/reviews/:id/reject`
+- `GET /api/v1/admin/skills/governance`
+- `POST /api/v1/admin/skills/:id/force-private`
+- `POST /api/v1/admin/skills/:id/disable`
+- `GET /api/v1/admin/skills/runtime`
+- `GET /api/v1/admin/skills/settlements`
 
 ## Notes
 

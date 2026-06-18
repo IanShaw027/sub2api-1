@@ -343,6 +343,41 @@ def parse_status_from_header_text(header_text: str) -> tuple[int | None, str]:
     return status_code, http_version
 
 
+def build_curl_http2_command(
+    url: str,
+    payload_path: pathlib.Path,
+    headers: dict[str, str],
+    headers_path: pathlib.Path,
+    body_path: pathlib.Path,
+    config_path: pathlib.Path,
+) -> list[str]:
+    auth = str(headers.get("authorization", "")).strip()
+    chatgpt_account_id = str(headers.get("chatgpt-account-id", "")).strip()
+    config_lines = [
+        "http2",
+        "no-buffer",
+        "silent",
+        "show-error",
+        'request = "POST"',
+    ]
+    for key, value in headers.items():
+        config_lines.append(f'header = "{key}: {value}"')
+    if not auth:
+        raise RuntimeError("missing authorization header")
+    if not chatgpt_account_id:
+        raise RuntimeError("missing chatgpt-account-id header")
+    config_lines.extend([
+        f'url = "{url}"',
+        f'data-binary = "@{payload_path}"',
+        f'output = "{body_path}"',
+        f'dump-header = "{headers_path}"',
+        'write-out = "__STATUS__:%{http_code}\\n__HTTP_VERSION__:%{http_version}\\n"',
+    ])
+    config_path.write_text("\n".join(config_lines) + "\n", encoding="utf-8")
+    config_path.chmod(0o600)
+    return ["curl", "--config", str(config_path)]
+
+
 def probe_with_curl_http2(
     url: str,
     payload: dict[str, Any],
@@ -354,28 +389,11 @@ def probe_with_curl_http2(
     headers_path = output_dir / "response_headers.txt"
     body_path = output_dir / "response_body.txt"
     stderr_path = output_dir / "curl_stderr.txt"
+    curl_config_path = output_dir / "curl_request.conf"
     payload_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     write_json(output_dir / "request_headers.json", sanitize_headers(headers))
 
-    cmd = [
-        "curl",
-        "--http2",
-        "--no-buffer",
-        "-sS",
-        "-X",
-        "POST",
-        "-D",
-        str(headers_path),
-        "-o",
-        str(body_path),
-        "-w",
-        "__STATUS__:%{http_code}\n__HTTP_VERSION__:%{http_version}\n",
-        url,
-        "--data-binary",
-        f"@{payload_path}",
-    ]
-    for key, value in headers.items():
-        cmd.extend(["-H", f"{key}: {value}"])
+    cmd = build_curl_http2_command(url, payload_path, headers, headers_path, body_path, curl_config_path)
 
     started = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

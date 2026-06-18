@@ -1,10 +1,23 @@
 package repository
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"io/fs"
+	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
+
+func currentMigrationChecksumForTest(t *testing.T, filename string) string {
+	t.Helper()
+	content, err := fs.ReadFile(migrations.FS, filename)
+	require.NoError(t, err)
+	sum := sha256.Sum256([]byte(strings.TrimSpace(string(content))))
+	return hex.EncodeToString(sum[:])
+}
 
 func TestIsMigrationChecksumCompatible(t *testing.T) {
 	t.Run("054历史checksum可兼容", func(t *testing.T) {
@@ -164,7 +177,7 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 			ok := isMigrationChecksumCompatible(
 				"131_affiliate_rebate_hardening.sql",
 				dbChecksum,
-				"da8f7e442df20609449c51b13c250a2f79d3bb95c50f1c11b96b8108e5dddb02",
+				currentMigrationChecksumForTest(t, "131_affiliate_rebate_hardening.sql"),
 			)
 			require.True(t, ok)
 		}
@@ -183,7 +196,7 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 		ok := isMigrationChecksumCompatible(
 			"132_affiliate_policy_limits.sql",
 			"51f95d399e30dc499e9d1bc3bdefc5a7f5b358726ac83242ec64a363a6bfe092",
-			"1b06272a1b5ed48a0cd4aaef5abf2ef098232cf011f49d309d586acb31b687b7",
+			currentMigrationChecksumForTest(t, "132_affiliate_policy_limits.sql"),
 		)
 		require.True(t, ok)
 	})
@@ -192,7 +205,7 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 		ok := isMigrationChecksumCompatible(
 			"138_subscription_fulfillment_claim_unique_notx.sql",
 			"fcdbbbcfa9010f6b2b0e9b6210a63d103eec5081358e70f591dec8a818c93009",
-			"7ba1fae1789f8845d5b7f7afba11ad1fb87849e45edb4a50b4687a4ab82f8d94",
+			currentMigrationChecksumForTest(t, "138_subscription_fulfillment_claim_unique_notx.sql"),
 		)
 		require.True(t, ok)
 	})

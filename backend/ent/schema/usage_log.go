@@ -153,11 +153,13 @@ func (UsageLog) Fields() []ent.Field {
 		field.Bool("cache_ttl_overridden").
 			Default(false),
 		field.String("openai_ws_profile").
-			Default(""),
+			Default("").
+			SchemaType(map[string]string{dialect.Postgres: "text"}),
 		field.Bool("openai_ws_conn_reused").
 			Default(false),
 		field.String("provider").
-			Default(""),
+			Default("").
+			SchemaType(map[string]string{dialect.Postgres: "text"}),
 
 		// 时间戳（只有 created_at，日志不可修改）
 		field.Time("created_at").

@@ -23,13 +23,15 @@ type migrationChecksum struct {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: sync_checksums <database_dsn>")
-		fmt.Println("Example: sync_checksums 'host=localhost port=5432 user=postgres password=yourpass dbname=sub2api sslmode=disable'")
+	dsn := strings.TrimSpace(os.Getenv("SUB2API_DATABASE_DSN"))
+	if dsn == "" && len(os.Args) >= 2 {
+		dsn = os.Args[1]
+	}
+	if dsn == "" {
+		fmt.Println("Usage: SUB2API_DATABASE_DSN='<database_dsn>' sync_checksums")
+		fmt.Println("Legacy argv input is still accepted for manual use, but deploy scripts should prefer the environment variable to keep secrets out of process arguments.")
 		os.Exit(1)
 	}
-
-	dsn := os.Args[1]
 
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {

@@ -184,10 +184,12 @@ class DeployScriptTest(unittest.TestCase):
                 exit 0
             fi
             if [ "$1" = "run" ]; then
+                shift
                 echo "go run $*" >> "$log_file"
                 exit 0
             fi
             if [ "$1" = "build" ]; then
+                shift
                 echo "go build $*" >> "$log_file"
                 out=""
                 ldflags=""
@@ -389,6 +391,10 @@ class DeployScriptTest(unittest.TestCase):
         self.assertLess(next(i for i, line in enumerate(log_lines) if line.startswith("go build ")), stop_index)
         self.assertLess(next(i for i, line in enumerate(log_lines) if line.startswith("go run ")), stop_index)
         self.assertTrue(
+            any(line.startswith("go run ./cmd/sync_checksums") for line in log_lines),
+            log_lines,
+        )
+        self.assertFalse(
             any("test-password" in line for line in log_lines if line.startswith("go run ")),
             log_lines,
         )

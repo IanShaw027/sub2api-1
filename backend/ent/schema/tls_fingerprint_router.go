@@ -9,6 +9,7 @@ import (
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
 	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
 )
 
 // TLSFingerprintRouter 定义 TLS 指纹路由规则的 schema。
@@ -51,5 +52,13 @@ func (TLSFingerprintRouter) Fields() []ent.Field {
 		field.JSON("rules", []map[string]any{}).
 			Default(func() []map[string]any { return []map[string]any{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+	}
+}
+
+// Indexes 定义数据库索引。
+func (TLSFingerprintRouter) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("enabled").
+			StorageKey("idx_tls_fingerprint_routers_enabled"),
 	}
 }

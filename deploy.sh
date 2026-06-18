@@ -412,7 +412,8 @@ fi
 
 echo "   使用配置文件: $CONFIG_FILE"
 DATABASE_DSN="$(build_database_dsn "$CONFIG_FILE")"
-go run ./cmd/sync_checksums "$DATABASE_DSN"
+SUB2API_DATABASE_DSN="$DATABASE_DSN" go run ./cmd/sync_checksums
+unset DATABASE_DSN
 echo "✓ 数据库校验和同步完成"
 
 # 停服窗口只保留停止、二进制替换、启动和状态检查。

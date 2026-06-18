@@ -4,6 +4,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 
 	"entgo.io/ent"
+	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
 	"entgo.io/ent/schema/edge"
@@ -54,6 +55,7 @@ func (Proxy) Fields() []ent.Field {
 			Default("active"),
 		field.Time("expires_at").
 			Optional().Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}).
 			Comment("Proxy expiration time (NULL means never expires)."),
 		field.String("fallback_mode").
 			MaxLen(20).Default("none").
