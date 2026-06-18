@@ -45,6 +45,7 @@ func TestOpenAITLSFingerprintRuntimeUsesRouterMatch(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, "/v1/responses", nil)
 	require.NoError(t, err)
 	req.Header.Set("User-Agent", "Cursor/1.2.3")
+	req.Header.Set("Originator", "codex_cli_rs")
 	c := &gin.Context{Request: req}
 	account := &Account{
 		ID:       1,
@@ -65,6 +66,49 @@ func TestOpenAITLSFingerprintRuntimeUsesRouterMatch(t *testing.T) {
 	applyOpenAITLSFingerprintRuntime(upstreamReq, runtime)
 	require.Equal(t, "codex_cli_rs/0.125.0", upstreamReq.Header.Get("User-Agent"))
 	require.Equal(t, "codex_cli_rs", upstreamReq.Header.Get("Originator"))
+}
+
+func TestOpenAITLSFingerprintRuntimeDoesNotOverrideOriginatorFromUserAgentOnly(t *testing.T) {
+	setGinTestMode()
+	router := &model.TLSFingerprintRouter{
+		ID:      11,
+		Name:    "openai guarded clients",
+		Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{
+			{
+				Name:                    "cursor",
+				Enabled:                 true,
+				MatchType:               model.TLSFingerprintRouterMatchPrefix,
+				Pattern:                 "Cursor/",
+				TLSFingerprintProfileID: 7,
+				UpstreamUserAgent:       "codex_cli_rs/0.125.0",
+				UpstreamOriginator:      "codex_cli_rs",
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		tlsFPRouterService: NewTLSFingerprintRouterService(&tlsFingerprintRouterRepoStub{routers: []*model.TLSFingerprintRouter{router}}, nil),
+		tlsFPProfileService: &TLSFingerprintProfileService{
+			localCache: map[int64]*model.TLSFingerprintProfile{
+				7: {ID: 7, Name: "Chrome Routed"},
+			},
+		},
+	}
+	req, err := http.NewRequest(http.MethodPost, "/v1/responses", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", "Cursor/1.2.3")
+	c := &gin.Context{Request: req}
+	account := &Account{
+		ID:       1,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Extra:    map[string]any{"enable_tls_fingerprint": true, "tls_fingerprint_router_id": float64(11)},
+	}
+
+	runtime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account)
+
+	require.False(t, runtime.Matched)
+	require.Empty(t, runtime.UpstreamOriginator)
 }
 
 func TestOpenAITLSFingerprintRuntimeSkipsRouterWhenTLSFingerprintDisabled(t *testing.T) {

@@ -39,10 +39,12 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 		return runtime
 	}
 	inboundUA := ""
+	inboundOriginator := ""
 	if c != nil && c.Request != nil {
 		inboundUA = c.Request.Header.Get("User-Agent")
+		inboundOriginator = c.Request.Header.Get("Originator")
 	}
-	match, ok := s.tlsFPRouterService.MatchUserAgent(ctx, routerID, inboundUA)
+	match, ok := s.tlsFPRouterService.MatchRequest(ctx, routerID, inboundUA, inboundOriginator)
 	if !ok {
 		return runtime
 	}

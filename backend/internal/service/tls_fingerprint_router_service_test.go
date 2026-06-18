@@ -88,11 +88,47 @@ func TestTLSFingerprintRouterServiceMatchUserAgent(t *testing.T) {
 	}
 	svc := NewTLSFingerprintRouterService(&tlsFingerprintRouterRepoStub{routers: []*model.TLSFingerprintRouter{router}}, nil)
 
-	result, ok := svc.MatchUserAgent(context.Background(), 10, "cursor/1.2.3")
+	result, ok := svc.MatchRequest(context.Background(), 10, "cursor/1.2.3", "codex_cli_rs")
 
 	require.True(t, ok)
 	require.Equal(t, int64(12), result.ProfileID)
 	require.Equal(t, "codex_cli_rs/0.125.0", result.UpstreamUserAgent)
+	require.Equal(t, "codex_cli_rs", result.UpstreamOriginator)
+}
+
+func TestTLSFingerprintRouterServiceRequiresInboundOriginatorBeforeOverridingOriginator(t *testing.T) {
+	router := &model.TLSFingerprintRouter{
+		ID:      11,
+		Name:    "originator guarded",
+		Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{
+			{
+				Name:                    "codex",
+				Enabled:                 true,
+				MatchType:               model.TLSFingerprintRouterMatchPrefix,
+				Pattern:                 "Codex/",
+				TLSFingerprintProfileID: 14,
+				UpstreamOriginator:      "codex_cli_rs",
+			},
+			{
+				Name:                    "fallback profile only",
+				Enabled:                 true,
+				MatchType:               model.TLSFingerprintRouterMatchPrefix,
+				Pattern:                 "Codex/",
+				TLSFingerprintProfileID: 15,
+			},
+		},
+	}
+	svc := NewTLSFingerprintRouterService(&tlsFingerprintRouterRepoStub{routers: []*model.TLSFingerprintRouter{router}}, nil)
+
+	result, ok := svc.MatchRequest(context.Background(), 11, "Codex/1.2.3", "")
+	require.True(t, ok)
+	require.Equal(t, int64(15), result.ProfileID)
+	require.Empty(t, result.UpstreamOriginator)
+
+	result, ok = svc.MatchRequest(context.Background(), 11, "Codex/1.2.3", "codex_cli_rs")
+	require.True(t, ok)
+	require.Equal(t, int64(14), result.ProfileID)
 	require.Equal(t, "codex_cli_rs", result.UpstreamOriginator)
 }
 

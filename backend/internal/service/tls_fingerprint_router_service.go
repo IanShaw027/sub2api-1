@@ -128,6 +128,12 @@ func (s *TLSFingerprintRouterService) Delete(ctx context.Context, id int64) erro
 
 // MatchUserAgent 匹配入站 User-Agent，采用 first-match-wins。
 func (s *TLSFingerprintRouterService) MatchUserAgent(ctx context.Context, routerID int64, userAgent string) (TLSFingerprintRouterMatchResult, bool) {
+	return s.MatchRequest(ctx, routerID, userAgent, "")
+}
+
+// MatchRequest 匹配入站请求头，采用 first-match-wins。规则若配置上游
+// Originator 覆写，入站 Originator 必须先匹配该值，避免仅凭 UA 触发身份头覆写。
+func (s *TLSFingerprintRouterService) MatchRequest(ctx context.Context, routerID int64, userAgent string, originator string) (TLSFingerprintRouterMatchResult, bool) {
 	if s == nil || routerID <= 0 {
 		return TLSFingerprintRouterMatchResult{}, false
 	}
@@ -143,6 +149,9 @@ func (s *TLSFingerprintRouterService) MatchUserAgent(ctx context.Context, router
 	}
 	for _, rule := range router.Rules {
 		if !rule.Enabled || !tlsFingerprintRouterRuleMatches(rule, userAgent) {
+			continue
+		}
+		if !tlsFingerprintRouterRuleOriginatorAllowed(rule, originator) {
 			continue
 		}
 		return TLSFingerprintRouterMatchResult{
@@ -188,6 +197,14 @@ func tlsFingerprintRouterRuleMatches(rule model.TLSFingerprintRouterRule, userAg
 	default:
 		return false
 	}
+}
+
+func tlsFingerprintRouterRuleOriginatorAllowed(rule model.TLSFingerprintRouterRule, originator string) bool {
+	upstreamOriginator := strings.TrimSpace(rule.UpstreamOriginator)
+	if upstreamOriginator == "" {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(originator), upstreamOriginator)
 }
 
 func (s *TLSFingerprintRouterService) refreshLocalCache(ctx context.Context) error {
