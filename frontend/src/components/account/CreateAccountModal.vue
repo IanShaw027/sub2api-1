@@ -2892,6 +2892,44 @@
         </div>
       </div>
 
+      <!-- Kiro OAuth TLS Fingerprint -->
+      <div
+        v-if="form.platform === 'kiro' && form.type === 'oauth'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.tlsFingerprint.label') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.quotaControl.tlsFingerprint.hint') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="kiro-tls-fingerprint-toggle"
+            @click="tlsFingerprintEnabled = !tlsFingerprintEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              tlsFingerprintEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                tlsFingerprintEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+        <div v-if="tlsFingerprintEnabled" class="mt-3">
+          <select v-model="tlsFingerprintProfileId" class="input" data-testid="kiro-tls-fingerprint-profile">
+            <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
+            <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
+            <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Anthropic API Key 自动透传开关 -->
       <div
         v-if="form.platform === 'anthropic' && accountCategory === 'apikey'"
@@ -3925,6 +3963,32 @@ const toOptionalNumber = (value: unknown): number | null => {
   return null
 }
 
+const applyTLSFingerprintExtra = (extra: Record<string, unknown>, includeRouter = false) => {
+  if (tlsFingerprintEnabled.value) {
+    extra.enable_tls_fingerprint = true
+    const profileId = toOptionalNumber(tlsFingerprintProfileId.value)
+    if (profileId != null) {
+      extra.tls_fingerprint_profile_id = profileId
+    } else {
+      delete extra.tls_fingerprint_profile_id
+    }
+    if (includeRouter) {
+      const routerId = toOptionalNumber(tlsFingerprintRouterId.value)
+      if (routerId != null) {
+        extra.tls_fingerprint_router_id = routerId
+      } else {
+        delete extra.tls_fingerprint_router_id
+      }
+    } else {
+      delete extra.tls_fingerprint_router_id
+    }
+  } else {
+    delete extra.enable_tls_fingerprint
+    delete extra.tls_fingerprint_profile_id
+    delete extra.tls_fingerprint_router_id
+  }
+}
+
 const showMixedChannelWarning = ref(false)
 const mixedChannelWarningDetails = ref<{ groupName: string; currentPlatform: string; otherPlatform: string } | null>(
   null
@@ -4832,25 +4896,7 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     delete extra.openai_responses_mode
   }
 
-  if (tlsFingerprintEnabled.value) {
-    extra.enable_tls_fingerprint = true
-    const profileId = toOptionalNumber(tlsFingerprintProfileId.value)
-    if (profileId != null) {
-      extra.tls_fingerprint_profile_id = profileId
-    } else {
-      delete extra.tls_fingerprint_profile_id
-    }
-    const routerId = toOptionalNumber(tlsFingerprintRouterId.value)
-    if (routerId != null) {
-      extra.tls_fingerprint_router_id = routerId
-    } else {
-      delete extra.tls_fingerprint_router_id
-    }
-  } else {
-    delete extra.enable_tls_fingerprint
-    delete extra.tls_fingerprint_profile_id
-    delete extra.tls_fingerprint_router_id
-  }
+  applyTLSFingerprintExtra(extra, true)
 
   return Object.keys(extra).length > 0 ? extra : undefined
 }
@@ -5266,6 +5312,7 @@ const handleKiroAuthorize = async (payload: {
   }
   const credentials = kiroOAuth.buildCredentials(tokenInfo, payload.credentials)
   const extra = kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
+  applyTLSFingerprintExtra(extra)
   applyKiroModelRestriction(credentials)
   applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
   await createAccountAndFinish('kiro', 'oauth', credentials, extra, kiroOAuth.buildAccountName(tokenInfo, form.name))
@@ -5314,6 +5361,7 @@ const handleKiroValidateRT = async (payload: {
         const tokenInfo = validatedCredentials as KiroTokenInfo
         const credentials = { ...validatedCredentials }
         const extra = kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
+        applyTLSFingerprintExtra(extra)
         applyKiroModelRestriction(credentials)
         applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
         if (!applyCredentialRuleConfigs(credentials)) {

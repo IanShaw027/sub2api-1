@@ -41,6 +41,7 @@ vi.mock('vue-i18n', async (importOriginal) => {
           'monitorCommon.providers.anthropic': 'Anthropic',
           'monitorCommon.providers.openai': 'OpenAI',
           'monitorCommon.providers.gemini': 'Gemini',
+          'monitorCommon.providers.kiro': 'Kiro',
           'admin.channelMonitor.template.managerTitle': 'Template Manager',
           'admin.channelMonitor.template.createButton': 'Create',
           'admin.channelMonitor.template.emptyState': 'No templates',
@@ -152,5 +153,17 @@ describe('MonitorTemplateManagerDialog', () => {
     expect(wrapper.text()).toContain('Use the Chat Completions request shape.')
     expect(wrapper.text()).toContain('Responses')
     expect(wrapper.text()).toContain('Use the Responses request shape.')
+  })
+
+  it('shows Kiro as a template provider option', async () => {
+    const wrapper = mountDialog()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Kiro')
+
+    await clickButtonByText(wrapper, 'Create')
+
+    const kiroButtons = wrapper.findAll('button').filter((candidate) => candidate.text().includes('Kiro'))
+    expect(kiroButtons.length).toBeGreaterThan(1)
   })
 })

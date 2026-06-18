@@ -907,6 +907,43 @@ describe('CreateAccountModal', () => {
     expect(createMock.mock.calls[0]?.[0]?.credentials).not.toHaveProperty('model_mapping')
   })
 
+  it('creates a Kiro OAuth account with TLS fingerprint profile settings', async () => {
+    listTlsFingerprintProfilesMock.mockResolvedValue([{ id: 12, name: 'Chrome 124' }])
+    listTlsFingerprintRoutersMock.mockResolvedValue([{ id: 9, name: 'UA Router' }])
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'Kiro').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="kiro-tls-fingerprint-toggle"]').trigger('click')
+    await nextTick()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="kiro-tls-fingerprint-profile"]').text()).toContain('Chrome 124')
+    await wrapper.get('[data-testid="kiro-tls-fingerprint-profile"]').setValue('12')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    await wrapper.getComponent(KiroAuthorizationFlowStub).vm.$emit('submit-refresh-token', {
+      credentials: {
+        refresh_token: 'rt-1',
+        auth_method: 'social',
+        region: 'us-east-1'
+      },
+      extra: {}
+    })
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      platform: 'kiro',
+      type: 'oauth',
+      extra: expect.objectContaining({
+        enable_tls_fingerprint: true,
+        tls_fingerprint_profile_id: 12
+      })
+    }))
+    expect(createMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('tls_fingerprint_router_id')
+  })
+
   it('renders localized account type entry labels instead of hardcoded english copy', async () => {
     const wrapper = mountModal()
     await flushPromises()

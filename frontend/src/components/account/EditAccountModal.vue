@@ -1593,6 +1593,44 @@
         </div>
       </div>
 
+      <!-- Kiro OAuth TLS Fingerprint -->
+      <div
+        v-if="account?.platform === 'kiro' && account?.type === 'oauth'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.tlsFingerprint.label') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.quotaControl.tlsFingerprint.hint') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="kiro-tls-fingerprint-toggle"
+            @click="tlsFingerprintEnabled = !tlsFingerprintEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              tlsFingerprintEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                tlsFingerprintEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+        <div v-if="tlsFingerprintEnabled" class="mt-3">
+          <select v-model="tlsFingerprintProfileId" class="input" data-testid="kiro-tls-fingerprint-profile">
+            <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
+            <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
+            <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+        </div>
+      </div>
+
       <div
         v-if="account?.platform === 'openai' && account?.type === 'apikey'"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
@@ -3435,7 +3473,7 @@ const toOptionalNumber = (value: unknown): number | null => {
   return null
 }
 
-const applyTLSFingerprintExtra = (extra: Record<string, unknown>) => {
+const applyTLSFingerprintExtra = (extra: Record<string, unknown>, includeRouter = true) => {
   if (tlsFingerprintEnabled.value) {
     extra.enable_tls_fingerprint = true
     const profileId = toOptionalNumber(tlsFingerprintProfileId.value)
@@ -3444,9 +3482,13 @@ const applyTLSFingerprintExtra = (extra: Record<string, unknown>) => {
     } else {
       delete extra.tls_fingerprint_profile_id
     }
-    const routerId = toOptionalNumber(tlsFingerprintRouterId.value)
-    if (routerId != null) {
-      extra.tls_fingerprint_router_id = routerId
+    if (includeRouter) {
+      const routerId = toOptionalNumber(tlsFingerprintRouterId.value)
+      if (routerId != null) {
+        extra.tls_fingerprint_router_id = routerId
+      } else {
+        delete extra.tls_fingerprint_router_id
+      }
     } else {
       delete extra.tls_fingerprint_router_id
     }
@@ -3731,6 +3773,15 @@ function loadQuotaControlSettings(account: Account) {
     }
     tlsFingerprintProfileId.value = account.tls_fingerprint_profile_id ?? null
     tlsFingerprintRouterId.value = account.tls_fingerprint_router_id ?? null
+    return
+  }
+
+  if (account.platform === 'kiro' && account.type === 'oauth') {
+    if (account.enable_tls_fingerprint === true) {
+      tlsFingerprintEnabled.value = true
+    }
+    tlsFingerprintProfileId.value = account.tls_fingerprint_profile_id ?? null
+    tlsFingerprintRouterId.value = null
     return
   }
 
@@ -4295,7 +4346,9 @@ const handleSubmit = async () => {
       }
 
       const currentExtra = (props.account.extra || {}) as Record<string, unknown>
-      updatePayload.extra = stripKiroRuntimeExtra(currentExtra)
+      const newExtra = stripKiroRuntimeExtra(currentExtra)
+      applyTLSFingerprintExtra(newExtra, false)
+      updatePayload.extra = newExtra
     } else if (props.account.platform === 'kiro' && props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newCredentials: Record<string, unknown> = {}
