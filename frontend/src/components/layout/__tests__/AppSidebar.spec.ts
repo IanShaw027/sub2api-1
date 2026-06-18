@@ -72,3 +72,10 @@ describe('AppSidebar custom menu dedupe', () => {
     expect(componentSource).not.toContain('seenLabels.add')
   })
 })
+
+describe('AppSidebar simple mode navigation', () => {
+  it('uses the shared simple mode route restriction helper', () => {
+    expect(componentSource).toContain("import { isSimpleModeRouteRestricted } from '@/navigation/simpleMode'")
+    expect(componentSource).toContain('!isSimpleModeRouteRestricted(item.path)')
+  })
+})

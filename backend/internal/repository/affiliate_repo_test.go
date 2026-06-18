@@ -11,6 +11,7 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/DATA-DOG/go-sqlmock"
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,4 +52,20 @@ func TestAffiliateRepositoryGetAccruedRebateFromInvitee_NetsReversals(t *testing
 	require.NoError(t, err)
 	require.InDelta(t, 3.5, total, 1e-9)
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAffiliateRepositorySupportsCreatorEarningsCredit(t *testing.T) {
+	db, _, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	drv := entsql.OpenDB(dialect.Postgres, db)
+	client := dbent.NewClient(dbent.Driver(drv))
+	t.Cleanup(func() { _ = client.Close() })
+
+	repo := NewAffiliateRepository(client, db)
+	_, ok := repo.(interface {
+		CreditCreatorEarnings(context.Context, service.AISkillCreatorEarningsInput) (float64, error)
+	})
+	require.True(t, ok, "production affiliate repository must support AI skill creator earnings")
 }

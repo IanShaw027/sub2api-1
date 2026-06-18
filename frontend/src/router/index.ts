@@ -11,6 +11,7 @@ import { useSkillsCenterStore } from '@/stores/skillsCenter'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { skillPaths } from '@/components/skills/paths'
+import { isSimpleModeRouteRestricted } from '@/navigation/simpleMode'
 import {
   FeatureFlags,
   isChannelMonitorRouteEnabled,
@@ -1295,15 +1296,7 @@ router.beforeEach(async (to, _from, next) => {
 
   // 简易模式下限制访问某些页面
   if (authStore.isSimpleMode) {
-    const restrictedPaths = [
-      '/admin/groups',
-      '/admin/subscriptions',
-      '/admin/redeem',
-      '/subscriptions',
-      '/redeem'
-    ]
-
-    if (restrictedPaths.some((path) => to.path.startsWith(path))) {
+    if (isSimpleModeRouteRestricted(to.path)) {
       // 简易模式下访问受限页面,重定向到仪表板
       next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
       return

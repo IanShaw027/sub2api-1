@@ -101,6 +101,128 @@ LIMIT 1`, u.ID)
 	require.InDelta(t, 12.34, historyAfter, 1e-9)
 }
 
+func TestAffiliateRepository_CreditCreatorEarnings_IdempotentBySkillRun(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+	creatorRepo, ok := repo.(interface {
+		CreditCreatorEarnings(context.Context, service.AISkillCreatorEarningsInput) (float64, error)
+	})
+	require.True(t, ok, "production affiliate repository must support creator earnings")
+
+	creator := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("skill-creator-earnings-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	buyer := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("skill-creator-buyer-%d@example.com", time.Now().UnixNano()+1),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+
+	skill, err := client.AISkill.Create().
+		SetUserID(creator.ID).
+		SetSkillType("prompt_chat").
+		SetTitle("Creator earnings fixture").
+		SetVisibility("private").
+		SetSourceVisibility("public").
+		SetBillingMode("per_request").
+		SetPrice(10).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	version, err := client.AISkillVersion.Create().
+		SetSkillID(skill.ID).
+		SetUserID(creator.ID).
+		SetVersion(1).
+		SetReviewStatus("approved").
+		SetContentFormat("prompt").
+		SetRuntime("openai_chat").
+		SetSourceContent("say hi").
+		Save(txCtx)
+	require.NoError(t, err)
+
+	run, err := client.AISkillRun.Create().
+		SetSkillID(skill.ID).
+		SetVersionID(version.ID).
+		SetUserID(buyer.ID).
+		SetRunMode("use").
+		SetStatus("succeeded").
+		SetBillingMode("per_request").
+		SetPrice(10).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	first, err := creatorRepo.CreditCreatorEarnings(txCtx, service.AISkillCreatorEarningsInput{
+		CreatorUserID: creator.ID,
+		BuyerUserID:   buyer.ID,
+		SkillID:       skill.ID,
+		VersionID:     version.ID,
+		RunID:         run.ID,
+		Amount:        7.5,
+		Currency:      "credit",
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 7.5, first, 1e-9)
+
+	second, err := creatorRepo.CreditCreatorEarnings(txCtx, service.AISkillCreatorEarningsInput{
+		CreatorUserID: creator.ID,
+		BuyerUserID:   buyer.ID,
+		SkillID:       skill.ID,
+		VersionID:     version.ID,
+		RunID:         run.ID,
+		Amount:        7.5,
+		Currency:      "credit",
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 7.5, second, 1e-9)
+
+	quota := querySingleFloat(t, txCtx, client,
+		"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", creator.ID)
+	require.InDelta(t, 7.5, quota, 1e-9)
+	history := querySingleFloat(t, txCtx, client,
+		"SELECT aff_history_quota::double precision FROM user_affiliates WHERE user_id = $1", creator.ID)
+	require.InDelta(t, 7.5, history, 1e-9)
+
+	ledgerCount := querySingleInt(t, txCtx, client, `
+SELECT COUNT(*)
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND source_skill_run_id = $2
+  AND action = 'creator_earning'`, creator.ID, run.ID)
+	require.Equal(t, 1, ledgerCount)
+
+	rows, err := client.QueryContext(txCtx, `
+SELECT amount::double precision,
+       source_user_id,
+       aff_quota_after::double precision,
+       aff_history_quota_after::double precision
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND source_skill_run_id = $2
+  AND action = 'creator_earning'
+LIMIT 1`, creator.ID, run.ID)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+	require.True(t, rows.Next(), "expected creator earning ledger")
+	var amount, quotaAfter, historyAfter float64
+	var sourceUserID int64
+	require.NoError(t, rows.Scan(&amount, &sourceUserID, &quotaAfter, &historyAfter))
+	require.InDelta(t, 7.5, amount, 1e-9)
+	require.Equal(t, buyer.ID, sourceUserID)
+	require.InDelta(t, 7.5, quotaAfter, 1e-9)
+	require.InDelta(t, 7.5, historyAfter, 1e-9)
+	require.NoError(t, rows.Err())
+}
+
 // TestAffiliateRepository_AccrueQuota_ReusesOuterTransaction guards the
 // cross-layer tx propagation invariant: when AccrueQuota is called with a ctx
 // that already carries a transaction (via dbent.NewTxContext), repo.withTx

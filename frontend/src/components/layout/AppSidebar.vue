@@ -265,6 +265,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
+import { isSimpleModeRouteRestricted } from '@/navigation/simpleMode'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 
@@ -907,7 +908,9 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
 // finalizeNav 合并三重过滤：featureFlag 过滤 + simple 模式过滤。
 function finalizeNav(items: NavItem[]): NavItem[] {
   const visible = applyFeatureFlags(items)
-  return authStore.isSimpleMode ? visible.filter(item => !item.hideInSimpleMode) : visible
+  return authStore.isSimpleMode
+    ? visible.filter(item => !item.hideInSimpleMode && !isSimpleModeRouteRestricted(item.path))
+    : visible
 }
 
 // User navigation items (for regular users)
@@ -1018,7 +1021,7 @@ const adminNavItems = computed((): NavItem[] => {
 
   // 简单模式下，在系统设置前插入 API密钥
   if (authStore.isSimpleMode) {
-    const filtered = visible.filter(item => !item.hideInSimpleMode)
+    const filtered = visible.filter(item => !item.hideInSimpleMode && !isSimpleModeRouteRestricted(item.path))
     filtered.push({ path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon })
     filtered.push({ path: '/admin/settings', label: t('nav.settings'), icon: CogIcon })
     for (const cm of customMenuItemsForAdmin.value) {

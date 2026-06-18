@@ -17,6 +17,7 @@ vi.mock('@/api/client', () => ({
 import {
   createSkillVersion,
   getSkillDetail,
+  getSkillRevenue,
   installSkill,
   listMySkills,
   listSkillMarket,
@@ -234,6 +235,40 @@ describe('skills api', () => {
 
     expect(post).toHaveBeenNthCalledWith(1, '/user/skills/33/install')
     expect(post).toHaveBeenNthCalledWith(2, '/user/skills/33/uninstall')
+  })
+
+  it('normalizes revenue order statuses without defaulting unknown values to paid', async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        summary: {
+          total_revenue: 80,
+          total_sales: 4,
+          total_runs: 5,
+          pending_amount: 20,
+          settled_amount: 80,
+          refunded_amount: 0,
+          currency: 'CNY',
+        },
+        trend: [],
+        orders: [
+          { id: 1, status: 'transferred', amount: 80, created_at: '2026-06-01T00:00:00Z' },
+          { id: 2, status: 'canceled', amount: 20, created_at: '2026-06-02T00:00:00Z' },
+          { id: 3, status: 'mystery', amount: 10, created_at: '2026-06-03T00:00:00Z' },
+        ],
+      },
+    })
+
+    await expect(getSkillRevenue(9)).resolves.toMatchObject({
+      orders: [
+        { id: 1, status: 'paid' },
+        { id: 2, status: 'cancelled' },
+        { id: 3, status: 'pending' },
+      ],
+    })
+
+    expect(get).toHaveBeenCalledWith('/user/skills/9/revenue', {
+      signal: undefined,
+    })
   })
 
   it('creates and updates skill versions on the version endpoints', async () => {

@@ -525,6 +525,138 @@ WHERE user_id = $1
 	return applied, balance, nil
 }
 
+func (r *affiliateRepository) CreditCreatorEarnings(ctx context.Context, input service.AISkillCreatorEarningsInput) (float64, error) {
+	if input.CreatorUserID <= 0 {
+		return 0, service.ErrUserNotFound
+	}
+	if input.Amount <= 0 || math.IsNaN(input.Amount) || math.IsInf(input.Amount, 0) {
+		return 0, nil
+	}
+	if input.RunID <= 0 {
+		return 0, fmt.Errorf("ai skill run id is required for creator earnings")
+	}
+
+	amount := roundTo8(input.Amount)
+	if amount <= 0 {
+		return 0, nil
+	}
+
+	var appliedAmount float64
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		if _, err := ensureUserAffiliateWithClient(txCtx, txClient, input.CreatorUserID); err != nil {
+			return err
+		}
+
+		var existingAmount float64
+		err := scanSingleRow(txCtx, txClient, `
+SELECT amount::double precision
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND source_skill_run_id = $2
+  AND action = 'creator_earning'
+LIMIT 1`, []any{input.CreatorUserID, input.RunID}, &existingAmount)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("check creator earnings duplicate: %w", err)
+		}
+		if err == nil {
+			appliedAmount = existingAmount
+			return nil
+		}
+
+		var currentQuota, frozenQuota, historyQuota float64
+		if err := scanSingleRow(txCtx, txClient, `
+SELECT aff_quota::double precision,
+       aff_frozen_quota::double precision,
+       aff_history_quota::double precision
+FROM user_affiliates
+WHERE user_id = $1
+FOR UPDATE`, []any{input.CreatorUserID}, &currentQuota, &frozenQuota, &historyQuota); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return service.ErrUserNotFound
+			}
+			return fmt.Errorf("lock affiliate creator for earnings: %w", err)
+		}
+
+		err = scanSingleRow(txCtx, txClient, `
+SELECT amount::double precision
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND source_skill_run_id = $2
+  AND action = 'creator_earning'
+LIMIT 1`, []any{input.CreatorUserID, input.RunID}, &existingAmount)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("recheck creator earnings duplicate: %w", err)
+		}
+		if err == nil {
+			appliedAmount = existingAmount
+			return nil
+		}
+
+		quotaAfter := roundTo8(currentQuota + amount)
+		historyAfter := roundTo8(historyQuota + amount)
+		res, err := txClient.ExecContext(txCtx, `
+INSERT INTO user_affiliate_ledger (
+    user_id,
+    action,
+    amount,
+    source_user_id,
+    source_skill_run_id,
+    aff_quota_after,
+    aff_frozen_quota_after,
+    aff_history_quota_after,
+    created_at,
+    updated_at
+)
+VALUES ($1, 'creator_earning', $2, $3, $4, $5, $6, $7, NOW(), NOW())
+ON CONFLICT DO NOTHING`,
+			input.CreatorUserID,
+			amount,
+			nullablePositiveInt64(input.BuyerUserID),
+			input.RunID,
+			quotaAfter,
+			frozenQuota,
+			historyAfter,
+		)
+		if err != nil {
+			return fmt.Errorf("insert creator earnings ledger: %w", err)
+		}
+		inserted, _ := res.RowsAffected()
+		if inserted == 0 {
+			if err := scanSingleRow(txCtx, txClient, `
+SELECT amount::double precision
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND source_skill_run_id = $2
+  AND action = 'creator_earning'
+LIMIT 1`, []any{input.CreatorUserID, input.RunID}, &appliedAmount); err != nil {
+				return fmt.Errorf("query creator earnings duplicate after conflict: %w", err)
+			}
+			return nil
+		}
+
+		res, err = txClient.ExecContext(txCtx, `
+UPDATE user_affiliates
+SET aff_quota = aff_quota + $1,
+    aff_history_quota = aff_history_quota + $1,
+    updated_at = NOW()
+WHERE user_id = $2`, amount, input.CreatorUserID)
+		if err != nil {
+			return fmt.Errorf("credit creator affiliate quota: %w", err)
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return service.ErrUserNotFound
+		}
+
+		appliedAmount = amount
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return appliedAmount, nil
+}
+
 func (r *affiliateRepository) CountRebatedInvitees(ctx context.Context, inviterID int64) (int, error) {
 	if inviterID <= 0 {
 		return 0, nil
@@ -1543,6 +1675,13 @@ func nullableFloat64Ptr(v sql.NullFloat64) *float64 {
 		return nil
 	}
 	return &v.Float64
+}
+
+func nullablePositiveInt64(v int64) any {
+	if v <= 0 {
+		return nil
+	}
+	return v
 }
 
 // roundTo8 rounds a monetary amount to 8 decimal places, matching the

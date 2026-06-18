@@ -271,14 +271,19 @@ function normalizeRevenueOrderStatus(value: unknown): SkillRevenueOrderStatus {
   switch (normalized) {
     case 'pending':
       return 'pending'
+    case 'cancelled':
+    case 'canceled':
+      return 'cancelled' as SkillRevenueOrderStatus
     case 'refunded':
     case 'refund':
       return 'refunded'
     case 'settled':
       return 'settled'
+    case 'transferred':
     case 'paid':
-    default:
       return 'paid'
+    default:
+      return 'pending'
   }
 }
 

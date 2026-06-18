@@ -273,11 +273,11 @@ func (q *Queries) GetSkillRevenue(ctx context.Context, ownerUserID, skillID int6
 	summary := RevenueSummary{Currency: "CNY"}
 	row := q.db.QueryRowContext(ctx, `
 SELECT
-  COALESCE(SUM(CASE WHEN st.status = 'transferred' THEN st.amount ELSE 0 END), 0)::double precision AS total_revenue,
+  COALESCE(SUM(CASE WHEN st.status = 'transferred' THEN COALESCE((st.metadata->>'creator_amount')::double precision, st.quota_amount, 0) ELSE 0 END), 0)::double precision AS total_revenue,
   COUNT(st.id) AS total_sales,
   COALESCE(COUNT(r.id), 0) AS total_runs,
-  COALESCE(SUM(CASE WHEN st.status = 'pending' THEN st.amount ELSE 0 END), 0)::double precision AS pending_amount,
-  COALESCE(SUM(CASE WHEN st.status = 'transferred' THEN st.amount ELSE 0 END), 0)::double precision AS settled_amount,
+  COALESCE(SUM(CASE WHEN st.status = 'pending' THEN COALESCE((st.metadata->>'creator_amount')::double precision, st.quota_amount, 0) ELSE 0 END), 0)::double precision AS pending_amount,
+  COALESCE(SUM(CASE WHEN st.status = 'transferred' THEN COALESCE((st.metadata->>'creator_amount')::double precision, st.quota_amount, 0) ELSE 0 END), 0)::double precision AS settled_amount,
   0::double precision AS refunded_amount,
   COALESCE(MAX(st.metadata->>'currency'), 'CNY') AS currency
 FROM ai_skills s
@@ -292,7 +292,7 @@ WHERE s.id = $1
 	trendRows, err := q.db.QueryContext(ctx, `
 SELECT
   TO_CHAR(DATE_TRUNC('day', COALESCE(st.created_at, r.created_at)), 'YYYY-MM-DD') AS day_label,
-  COALESCE(SUM(COALESCE(st.amount, 0)), 0)::double precision AS revenue,
+  COALESCE(SUM(COALESCE((st.metadata->>'creator_amount')::double precision, st.quota_amount, 0)), 0)::double precision AS revenue,
   COUNT(DISTINCT st.id) AS sales,
   COUNT(DISTINCT r.id) AS runs
 FROM ai_skill_runs r
@@ -322,7 +322,7 @@ SELECT
   st.id,
   COALESCE(u.username, '') AS buyer_name,
   COALESCE(v.metadata->>'version_name', 'v' || v.version::text) AS version_name,
-  st.amount::double precision AS amount,
+  COALESCE((st.metadata->>'creator_amount')::double precision, st.quota_amount, 0)::double precision AS amount,
   COALESCE(st.metadata->>'currency', 'CNY') AS currency,
   st.status,
   st.created_at
@@ -790,6 +790,10 @@ func (q *Queries) ListSettlements(ctx context.Context, params pagination.Paginat
 		case "pending", "ready":
 			where = append(where, "st.status = 'pending'")
 			where = append(where, "COALESCE(st.metadata->>'service_status', '') <> 'skipped'")
+		case "frozen":
+			where = append(where, "st.status = 'pending'")
+			where = append(where, "COALESCE((st.metadata->>'creator_amount')::double precision, st.quota_amount, 0) > 0")
+			where = append(where, "COALESCE(st.metadata->>'service_status', '') <> 'skipped'")
 		case "rejected":
 			where = append(where, "st.status = 'canceled'")
 		}
@@ -817,8 +821,8 @@ SELECT
   st.status,
   st.amount::double precision AS gross_amount,
   COALESCE((st.metadata->>'platform_amount')::double precision, 0)::double precision AS platform_fee_amount,
-  COALESCE((st.metadata->>'creator_amount')::double precision, st.quota_amount)::double precision AS payout_amount,
-	  CASE WHEN st.status = 'pending' THEN COALESCE((st.metadata->>'creator_amount')::double precision, st.quota_amount) ELSE 0 END AS frozen_amount,
+  COALESCE((st.metadata->>'creator_amount')::double precision, st.quota_amount, 0)::double precision AS payout_amount,
+	  CASE WHEN st.status = 'pending' THEN COALESCE((st.metadata->>'creator_amount')::double precision, st.quota_amount, 0) ELSE 0 END AS frozen_amount,
 	  COALESCE(st.metadata->>'currency', 'CNY') AS currency,
 	  COALESCE(st.metadata->>'failure_reason', '') AS note,
 	  COALESCE(st.metadata->>'service_status', '') AS service_status,

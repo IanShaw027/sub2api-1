@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { isSimpleModeRouteRestricted } from '@/navigation/simpleMode'
 import { isBackendModePublicRouteAllowed } from '../index'
 import { resolveCompletedSetupRedirectPath } from '@/router/setupRedirect'
 
@@ -105,14 +106,7 @@ function simulateGuard(
 
   // 简易模式限制
   if (authState.isSimpleMode) {
-    const restrictedPaths = [
-      '/admin/groups',
-      '/admin/subscriptions',
-      '/admin/redeem',
-      '/subscriptions',
-      '/redeem',
-    ]
-    if (restrictedPaths.some((path) => toPath.startsWith(path))) {
+    if (isSimpleModeRouteRestricted(toPath)) {
       return authState.isAdmin ? '/admin/dashboard' : '/dashboard'
     }
   }
@@ -249,7 +243,22 @@ describe('路由守卫逻辑', () => {
   // --- 简易模式 ---
 
   describe('简易模式受限路由', () => {
-    it('普通用户简易模式访问 /subscriptions 重定向到 /dashboard', () => {
+    const simpleUserRestrictedPaths = [
+      '/usage',
+      '/tickets',
+      '/tickets/create',
+      '/tickets/1',
+      '/available-channels',
+      '/subscriptions',
+      '/purchase',
+      '/orders',
+      '/orders/invoices',
+      '/orders/invoices/1',
+      '/redeem',
+      '/affiliate',
+    ]
+
+    it.each(simpleUserRestrictedPaths)('普通用户简易模式访问 %s 重定向到 /dashboard', (path) => {
       const authState: MockAuthState = {
         isAuthenticated: true,
         isAdmin: false,
@@ -257,23 +266,33 @@ describe('路由守卫逻辑', () => {
         backendModeEnabled: false,
         hasPendingAuthSession: false,
       }
-      const redirect = simulateGuard('/subscriptions', {}, authState)
+      const redirect = simulateGuard(path, {}, authState)
       expect(redirect).toBe('/dashboard')
     })
 
-    it('普通用户简易模式访问 /redeem 重定向到 /dashboard', () => {
-      const authState: MockAuthState = {
-        isAuthenticated: true,
-        isAdmin: false,
-        isSimpleMode: true,
-        backendModeEnabled: false,
-        hasPendingAuthSession: false,
-      }
-      const redirect = simulateGuard('/redeem', {}, authState)
-      expect(redirect).toBe('/dashboard')
-    })
+    const simpleAdminRestrictedPaths = [
+      '/usage',
+      '/purchase',
+      '/orders',
+      '/admin/users',
+      '/admin/groups',
+      '/admin/channels',
+      '/admin/channels/pricing',
+      '/admin/subscriptions',
+      '/admin/ai',
+      '/admin/ai/prompts',
+      '/admin/skills',
+      '/admin/skills/governance',
+      '/admin/risk-control',
+      '/admin/redeem',
+      '/admin/promo-codes',
+      '/admin/affiliates',
+      '/admin/affiliates/invites',
+      '/admin/orders',
+      '/admin/orders/dashboard',
+    ]
 
-    it('管理员简易模式访问 /admin/groups 重定向到 /admin/dashboard', () => {
+    it.each(simpleAdminRestrictedPaths)('管理员简易模式访问 %s 重定向到 /admin/dashboard', (path) => {
       const authState: MockAuthState = {
         isAuthenticated: true,
         isAdmin: true,
@@ -281,23 +300,7 @@ describe('路由守卫逻辑', () => {
         backendModeEnabled: false,
         hasPendingAuthSession: false,
       }
-      const redirect = simulateGuard('/admin/groups', { requiresAdmin: true }, authState)
-      expect(redirect).toBe('/admin/dashboard')
-    })
-
-    it('管理员简易模式访问 /admin/subscriptions 重定向', () => {
-      const authState: MockAuthState = {
-        isAuthenticated: true,
-        isAdmin: true,
-        isSimpleMode: true,
-        backendModeEnabled: false,
-        hasPendingAuthSession: false,
-      }
-      const redirect = simulateGuard(
-        '/admin/subscriptions',
-        { requiresAdmin: true },
-        authState
-      )
+      const redirect = simulateGuard(path, path.startsWith('/admin') ? { requiresAdmin: true } : {}, authState)
       expect(redirect).toBe('/admin/dashboard')
     })
 
