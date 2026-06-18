@@ -314,6 +314,7 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	// Accumulate the final Anthropic response from streaming events
 	var finalResp *apicompat.AnthropicResponse
 	var usage ClaudeUsage
+	sawMessageStop := false
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -340,6 +341,9 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 				zap.String("event_type", eventType),
 			)
 			continue
+		}
+		if event.Type == "message_stop" {
+			sawMessageStop = true
 		}
 
 		// message_start carries the initial response structure
@@ -383,6 +387,10 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 				zap.Error(err),
 				zap.String("request_id", requestID),
 			)
+			if !sawMessageStop {
+				writeResponsesError(c, http.StatusBadGateway, "stream_read_error", "Upstream stream ended before a terminal event")
+				return nil, fmt.Errorf("upstream stream read error before terminal event: %w", err)
+			}
 		}
 	}
 
@@ -458,6 +466,7 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	var usage ClaudeUsage
 	var firstTokenMs *int
 	firstChunk := true
+	sawMessageStop := false
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -494,6 +503,9 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 		// Also capture usage from message_start
 		if event.Type == "message_start" && event.Message != nil {
 			mergeAnthropicUsage(&usage, event.Message.Usage)
+		}
+		if event.Type == "message_stop" {
+			sawMessageStop = true
 		}
 
 		// Convert to Responses events
@@ -575,6 +587,14 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 				zap.Error(err),
 				zap.String("request_id", requestID),
 			)
+			if !sawMessageStop {
+				if writeErr := writeOpenAIResponsesFailedSSE(c.Writer, state.ResponseID, originalModel, "stream_read_error", "Upstream stream ended before a terminal event"); writeErr != nil {
+					return nil, fmt.Errorf("upstream stream read error before terminal event: %w; failed to write response.failed: %v", err, writeErr)
+				}
+				c.Writer.Flush()
+				MarkResponseCommitted(c)
+				return nil, fmt.Errorf("upstream stream read error before terminal event: %w", err)
+			}
 		}
 	}
 

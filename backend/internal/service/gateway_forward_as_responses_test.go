@@ -96,6 +96,73 @@ func TestHandleResponsesStreamingResponse_PreservesMessageStartCacheUsage(t *tes
 	require.Contains(t, rec.Body.String(), `response.completed`)
 }
 
+func TestHandleResponsesStreamingResponse_ReadErrorAfterMessageStartEmitsFailed(t *testing.T) {
+	t.Parallel()
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_stream_truncated"}},
+		Body: &errAfterDataReadCloser{
+			data: []byte(strings.Join([]string{
+				`event: message_start`,
+				`data: {"type":"message_start","message":{"id":"msg_truncated","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.5","stop_reason":"","usage":{"input_tokens":20}}}`,
+				``,
+				`event: content_block_start`,
+				`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"partial"}}`,
+				``,
+			}, "\n")),
+			err: io.ErrUnexpectedEOF,
+		},
+	}
+
+	svc := &GatewayService{}
+	result, err := svc.handleResponsesStreamingResponse(resp, c, "claude-sonnet-4.5", "claude-sonnet-4.5", nil, time.Now())
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	body := rec.Body.String()
+	require.Contains(t, body, "event: response.failed\n")
+	require.Contains(t, body, `"type":"response.failed"`)
+	require.Contains(t, body, "stream_read_error")
+	require.NotContains(t, body, "event: response.completed\n")
+}
+
+func TestHandleResponsesBufferedStreamingResponse_ReadErrorAfterMessageStartFails(t *testing.T) {
+	t.Parallel()
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_buffered_truncated"}},
+		Body: &errAfterDataReadCloser{
+			data: []byte(strings.Join([]string{
+				`event: message_start`,
+				`data: {"type":"message_start","message":{"id":"msg_truncated_buffered","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.5","stop_reason":"","usage":{"input_tokens":12}}}`,
+				``,
+				`event: content_block_start`,
+				`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"partial"}}`,
+				``,
+			}, "\n")),
+			err: io.ErrUnexpectedEOF,
+		},
+	}
+
+	svc := &GatewayService{}
+	result, err := svc.handleResponsesBufferedStreamingResponse(resp, c, "claude-sonnet-4.5", "claude-sonnet-4.5", nil, time.Now())
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	body := rec.Body.String()
+	require.Contains(t, body, "stream_read_error")
+	require.NotContains(t, body, `"status":"completed"`)
+}
+
 func TestPrepareResponsesAnthropicIngress_MergesMessagesWhenInputAlreadyExists(t *testing.T) {
 	t.Parallel()
 
