@@ -1,6 +1,7 @@
 package apicompat
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -41,6 +42,31 @@ func TestResponsesEventToChatChunks_CustomToolCallInputDelta(t *testing.T) {
 	assert.Equal(t, "*** Begin Patch", tc.Function.Arguments)
 }
 
+func TestResponsesEventToChatChunks_CustomToolCallInputDoneOnly(t *testing.T) {
+	state := NewResponsesEventToChatState()
+	state.Model = "gpt-5-codex"
+	state.SentRole = true
+
+	_ = ResponsesEventToChatChunks(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 1,
+		Item: &ResponsesOutput{
+			Type:   "custom_tool_call",
+			CallID: "call_patch",
+			Name:   "apply_patch",
+		},
+	}, state)
+
+	var evt ResponsesStreamEvent
+	require.NoError(t, json.Unmarshal([]byte(`{"type":"response.custom_tool_call_input.done","output_index":1,"input":"*** Begin Patch"}`), &evt))
+	chunks := ResponsesEventToChatChunks(&evt, state)
+	require.Len(t, chunks, 1)
+	tc := chunks[0].Choices[0].Delta.ToolCalls[0]
+	require.NotNil(t, tc.Index)
+	assert.Equal(t, 0, *tc.Index)
+	assert.Equal(t, "*** Begin Patch", tc.Function.Arguments)
+}
+
 // 原始推理文本增量 reasoning_text.delta 应像 reasoning_summary_text.delta 一样
 // 映射为 reasoning_content。
 func TestResponsesEventToChatChunks_ReasoningTextDelta(t *testing.T) {
@@ -75,4 +101,20 @@ func TestBufferedResponseAccumulator_CodexEvents(t *testing.T) {
 		Delta: "raw-reasoning",
 	})
 	require.True(t, acc.HasContent())
+}
+
+func TestBufferedResponseAccumulator_CustomToolCallInputDoneOnly(t *testing.T) {
+	acc := NewBufferedResponseAccumulator()
+	acc.ProcessEvent(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 0,
+		Item:        &ResponsesOutput{Type: "custom_tool_call", CallID: "c1", Name: "apply_patch"},
+	})
+	var evt ResponsesStreamEvent
+	require.NoError(t, json.Unmarshal([]byte(`{"type":"response.custom_tool_call_input.done","output_index":0,"input":"patch-body"}`), &evt))
+	acc.ProcessEvent(&evt)
+
+	output := acc.BuildOutput()
+	require.Len(t, output, 1)
+	assert.Equal(t, "patch-body", output[0].Arguments)
 }

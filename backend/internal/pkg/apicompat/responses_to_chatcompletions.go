@@ -157,6 +157,7 @@ type ResponsesEventToChatState struct {
 	Finalized              bool        // true after finish chunk has been emitted
 	NextToolCallIndex      int         // next sequential tool_call index to assign
 	OutputIndexToToolIndex map[int]int // Responses output_index → Chat tool_calls index
+	ToolArgDeltaSeen       map[int]bool
 	IncludeUsage           bool
 	Usage                  *ChatUsage
 }
@@ -167,6 +168,7 @@ func NewResponsesEventToChatState() *ResponsesEventToChatState {
 		ID:                     generateChatCmplID(),
 		Created:                time.Now().Unix(),
 		OutputIndexToToolIndex: make(map[int]int),
+		ToolArgDeltaSeen:       make(map[int]bool),
 	}
 }
 
@@ -185,6 +187,9 @@ func ResponsesEventToChatChunks(evt *ResponsesStreamEvent, state *ResponsesEvent
 		// 均按 OutputIndex 累加到对应工具调用。
 		"response.custom_tool_call_input.delta":
 		return resToChatHandleFuncArgsDelta(evt, state)
+	case "response.function_call_arguments.done",
+		"response.custom_tool_call_input.done":
+		return resToChatHandleFuncArgsDone(evt, state)
 	case "response.reasoning_summary_text.delta",
 		// 原始推理文本增量（真实 Codex 客户端消费的 reasoning_text.delta），
 		// 与 reasoning summary 一样映射为 reasoning_content。
@@ -304,6 +309,7 @@ func resToChatHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 	if !ok {
 		return nil
 	}
+	state.ToolArgDeltaSeen[evt.OutputIndex] = true
 
 	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{
 		ToolCalls: []ChatToolCall{{
@@ -313,6 +319,43 @@ func resToChatHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 			},
 		}},
 	})}
+}
+
+func resToChatHandleFuncArgsDone(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
+	if state.ToolArgDeltaSeen[evt.OutputIndex] {
+		return nil
+	}
+	args := responseEventDoneArguments(evt)
+	if args == "" {
+		return nil
+	}
+	idx, ok := state.OutputIndexToToolIndex[evt.OutputIndex]
+	if !ok {
+		return nil
+	}
+	state.ToolArgDeltaSeen[evt.OutputIndex] = true
+
+	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{
+		ToolCalls: []ChatToolCall{{
+			Index: &idx,
+			Function: ChatFunctionCall{
+				Arguments: args,
+			},
+		}},
+	})}
+}
+
+func responseEventDoneArguments(evt *ResponsesStreamEvent) string {
+	if evt.Arguments != "" {
+		return evt.Arguments
+	}
+	if evt.Input != "" {
+		return evt.Input
+	}
+	if evt.Item != nil {
+		return evt.Item.Arguments
+	}
+	return ""
 }
 
 func resToChatHandleReasoningDelta(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
@@ -466,9 +509,10 @@ func generateChatCmplID() string {
 // ---------------------------------------------------------------------------
 
 type bufferedFuncCall struct {
-	CallID string
-	Name   string
-	Args   strings.Builder
+	CallID      string
+	Name        string
+	Args        strings.Builder
+	HasArgDelta bool
 }
 
 // BufferedResponseAccumulator collects content from Responses SSE delta events
@@ -510,6 +554,15 @@ func (a *BufferedResponseAccumulator) ProcessEvent(event *ResponsesStreamEvent) 
 		if event.Delta != "" {
 			if idx, ok := a.outputIndexToFuncIdx[event.OutputIndex]; ok {
 				_, _ = a.funcCalls[idx].Args.WriteString(event.Delta)
+				a.funcCalls[idx].HasArgDelta = true
+			}
+		}
+	case "response.function_call_arguments.done", "response.custom_tool_call_input.done":
+		args := responseEventDoneArguments(event)
+		if args != "" {
+			if idx, ok := a.outputIndexToFuncIdx[event.OutputIndex]; ok && !a.funcCalls[idx].HasArgDelta {
+				_, _ = a.funcCalls[idx].Args.WriteString(args)
+				a.funcCalls[idx].HasArgDelta = true
 			}
 		}
 	case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
@@ -577,6 +630,7 @@ func (a *BufferedResponseAccumulator) SupplementResponseOutput(resp *ResponsesRe
 		resp.Output = a.BuildOutput()
 		return
 	}
+	a.supplementFunctionCallArguments(resp)
 	if a.text.Len() == 0 {
 		return
 	}
@@ -596,6 +650,31 @@ func (a *BufferedResponseAccumulator) SupplementResponseOutput(resp *ResponsesRe
 				resp.Output[i].Content[j].Text = a.text.String()
 				return
 			}
+		}
+	}
+}
+
+func (a *BufferedResponseAccumulator) supplementFunctionCallArguments(resp *ResponsesResponse) {
+	if len(a.funcCalls) == 0 {
+		return
+	}
+	byCallID := make(map[string]string, len(a.funcCalls))
+	for i := range a.funcCalls {
+		args := a.funcCalls[i].Args.String()
+		if args == "" || a.funcCalls[i].CallID == "" {
+			continue
+		}
+		byCallID[a.funcCalls[i].CallID] = args
+	}
+	if len(byCallID) == 0 {
+		return
+	}
+	for i := range resp.Output {
+		if resp.Output[i].Type != "function_call" || resp.Output[i].Arguments != "" {
+			continue
+		}
+		if args, ok := byCallID[resp.Output[i].CallID]; ok {
+			resp.Output[i].Arguments = args
 		}
 	}
 }

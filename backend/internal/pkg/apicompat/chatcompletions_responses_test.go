@@ -984,6 +984,64 @@ func TestResponsesEventToChatChunks_ToolCallDelta(t *testing.T) {
 	assert.Equal(t, 0, *tc.Index, "first tool arg delta must still use index 0")
 }
 
+func TestResponsesEventToChatChunks_FunctionCallArgumentsDoneOnly(t *testing.T) {
+	state := NewResponsesEventToChatState()
+	state.Model = "gpt-4o"
+	state.SentRole = true
+
+	_ = ResponsesEventToChatChunks(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 1,
+		Item: &ResponsesOutput{
+			Type:   "function_call",
+			CallID: "call_1",
+			Name:   "get_weather",
+		},
+	}, state)
+
+	chunks := ResponsesEventToChatChunks(&ResponsesStreamEvent{
+		Type:        "response.function_call_arguments.done",
+		OutputIndex: 1,
+		Arguments:   `{"city":"NYC"}`,
+	}, state)
+	require.Len(t, chunks, 1)
+	require.Len(t, chunks[0].Choices[0].Delta.ToolCalls, 1)
+	tc := chunks[0].Choices[0].Delta.ToolCalls[0]
+	require.NotNil(t, tc.Index)
+	assert.Equal(t, 0, *tc.Index)
+	assert.Equal(t, `{"city":"NYC"}`, tc.Function.Arguments)
+}
+
+func TestResponsesEventToChatChunks_FunctionCallArgumentsDoneDoesNotDuplicateDelta(t *testing.T) {
+	state := NewResponsesEventToChatState()
+	state.Model = "gpt-4o"
+	state.SentRole = true
+
+	_ = ResponsesEventToChatChunks(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 1,
+		Item: &ResponsesOutput{
+			Type:   "function_call",
+			CallID: "call_1",
+			Name:   "get_weather",
+		},
+	}, state)
+
+	chunks := ResponsesEventToChatChunks(&ResponsesStreamEvent{
+		Type:        "response.function_call_arguments.delta",
+		OutputIndex: 1,
+		Delta:       `{"city":"NYC"}`,
+	}, state)
+	require.Len(t, chunks, 1)
+
+	chunks = ResponsesEventToChatChunks(&ResponsesStreamEvent{
+		Type:        "response.function_call_arguments.done",
+		OutputIndex: 1,
+		Arguments:   `{"city":"NYC"}`,
+	}, state)
+	assert.Empty(t, chunks)
+}
+
 func TestChatCompletionsChunkToResponsesEvents_DoesNotDuplicateFirstToolArgumentDelta(t *testing.T) {
 	state := NewChatCompletionsToResponsesStreamState("gpt-4o")
 	firstChunk := &ChatCompletionsChunk{
@@ -1535,6 +1593,89 @@ func TestBufferedResponseAccumulator_ToolCalls(t *testing.T) {
 	assert.Equal(t, "call_abc", output[0].CallID)
 	assert.Equal(t, "get_weather", output[0].Name)
 	assert.Equal(t, `{"city":"NYC"}`, output[0].Arguments)
+}
+
+func TestBufferedResponseAccumulator_ToolCallArgumentsDoneOnly(t *testing.T) {
+	acc := NewBufferedResponseAccumulator()
+
+	acc.ProcessEvent(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 1,
+		Item: &ResponsesOutput{
+			Type:   "function_call",
+			CallID: "call_abc",
+			Name:   "get_weather",
+		},
+	})
+	acc.ProcessEvent(&ResponsesStreamEvent{
+		Type:        "response.function_call_arguments.done",
+		OutputIndex: 1,
+		Arguments:   `{"city":"NYC"}`,
+	})
+
+	output := acc.BuildOutput()
+	require.Len(t, output, 1)
+	assert.Equal(t, `{"city":"NYC"}`, output[0].Arguments)
+}
+
+func TestBufferedResponseAccumulator_ToolCallArgumentsDoneDoesNotDuplicateDelta(t *testing.T) {
+	acc := NewBufferedResponseAccumulator()
+
+	acc.ProcessEvent(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 1,
+		Item: &ResponsesOutput{
+			Type:   "function_call",
+			CallID: "call_abc",
+			Name:   "get_weather",
+		},
+	})
+	acc.ProcessEvent(&ResponsesStreamEvent{
+		Type:        "response.function_call_arguments.delta",
+		OutputIndex: 1,
+		Delta:       `{"city":"NYC"}`,
+	})
+	acc.ProcessEvent(&ResponsesStreamEvent{
+		Type:        "response.function_call_arguments.done",
+		OutputIndex: 1,
+		Arguments:   `{"city":"NYC"}`,
+	})
+
+	output := acc.BuildOutput()
+	require.Len(t, output, 1)
+	assert.Equal(t, `{"city":"NYC"}`, output[0].Arguments)
+}
+
+func TestBufferedResponseAccumulator_SupplementFunctionCallArgumentsDoneOnly(t *testing.T) {
+	acc := NewBufferedResponseAccumulator()
+	acc.ProcessEvent(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 1,
+		Item: &ResponsesOutput{
+			Type:   "function_call",
+			CallID: "call_abc",
+			Name:   "get_weather",
+		},
+	})
+	acc.ProcessEvent(&ResponsesStreamEvent{
+		Type:        "response.function_call_arguments.done",
+		OutputIndex: 1,
+		Arguments:   `{"city":"NYC"}`,
+	})
+
+	resp := &ResponsesResponse{
+		ID:     "resp_tools",
+		Status: "completed",
+		Output: []ResponsesOutput{{
+			Type:   "function_call",
+			CallID: "call_abc",
+			Name:   "get_weather",
+		}},
+	}
+	acc.SupplementResponseOutput(resp)
+
+	require.Len(t, resp.Output, 1)
+	assert.Equal(t, `{"city":"NYC"}`, resp.Output[0].Arguments)
 }
 
 func TestBufferedResponseAccumulator_Reasoning(t *testing.T) {

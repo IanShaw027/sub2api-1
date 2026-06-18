@@ -79,6 +79,18 @@ func TestWire_ReasoningItemSummaryAlwaysArray(t *testing.T) {
 	require.True(t, ok, "summary must be an array")
 }
 
+func TestWire_CustomToolCallInputDoneCarriesInput(t *testing.T) {
+	m := marshalEvent(t, ResponsesStreamEvent{
+		Type:        "response.custom_tool_call_input.done",
+		OutputIndex: 0,
+		Input:       "patch-body",
+	})
+
+	require.Equal(t, float64(0), m["output_index"])
+	require.Equal(t, "patch-body", m["input"])
+	require.NotContains(t, m, "arguments")
+}
+
 // TestWire_ContentPartCarriesAnnotationsLogprobs guards the output_text part shape.
 func TestWire_ContentPartCarriesAnnotationsLogprobs(t *testing.T) {
 	m := marshalEvent(t, ResponsesStreamEvent{
