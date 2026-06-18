@@ -40,6 +40,10 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	requireColumn(t, tx, "redeem_codes", "group_id", "bigint", 0, true)
 	requireColumn(t, tx, "redeem_codes", "validity_days", "integer", 0, false)
 
+	// groups: display_name should match the Ent schema MaxLen(100).
+	requireColumn(t, tx, "groups", "display_name", "character varying", 100, true)
+	requireColumn(t, tx, "groups", "user_selectable", "boolean", 0, false)
+
 	// usage_logs: billing_type used by filters/stats
 	requireColumn(t, tx, "usage_logs", "billing_type", "smallint", 0, false)
 	requireColumn(t, tx, "usage_logs", "request_type", "smallint", 0, false)

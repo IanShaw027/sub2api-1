@@ -80,12 +80,17 @@ func (AISkill) Edges() []ent.Edge {
 			Field("user_id").
 			Required().
 			Unique(),
-		edge.To("versions", AISkillVersion.Type),
-		edge.To("runs", AISkillRun.Type),
-		edge.To("reviews", AISkillReview.Type),
-		edge.To("likes", AISkillLike.Type),
+		edge.To("versions", AISkillVersion.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("runs", AISkillRun.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("reviews", AISkillReview.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("likes", AISkillLike.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.To("installs", AISkillInstall.Type),
-		edge.To("settlements", AISkillSettlement.Type),
+		edge.To("settlements", AISkillSettlement.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 	}
 }
 

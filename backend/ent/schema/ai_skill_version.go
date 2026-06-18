@@ -87,31 +87,37 @@ func (AISkillVersion) Edges() []ent.Edge {
 		edge.From("skill", AISkill.Type).
 			Ref("versions").
 			Field("skill_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)).
 			Required().
 			Unique(),
 		edge.From("user", User.Type).
 			Ref("ai_skill_versions").
 			Field("user_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)).
 			Required().
 			Unique(),
-		edge.To("runs", AISkillRun.Type),
-		edge.To("reviews", AISkillReview.Type),
-		edge.To("settlements", AISkillSettlement.Type),
+		edge.To("runs", AISkillRun.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("reviews", AISkillReview.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("settlements", AISkillSettlement.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 	}
 }
 
 func (AISkillVersion) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("skill_id"),
-		index.Fields("user_id"),
-		index.Fields("review_status"),
-		index.Fields("reviewer_user_id"),
-		index.Fields("submitted_at"),
-		index.Fields("reviewed_at"),
-		index.Fields("request_id"),
-		index.Fields("usage_log_id"),
-		index.Fields("api_key_id"),
-		index.Fields("group_id"),
-		index.Fields("skill_id", "version").Unique(),
+		index.Fields("skill_id").
+			StorageKey("idx_ai_skill_versions_skill_id").
+			Annotations(entsql.IndexWhere("deleted_at IS NULL")),
+		index.Fields("review_status").
+			StorageKey("idx_ai_skill_versions_review_status").
+			Annotations(entsql.IndexWhere("deleted_at IS NULL")),
+		index.Fields("reviewed_at").
+			StorageKey("idx_ai_skill_versions_reviewed_at").
+			Annotations(entsql.Desc(), entsql.IndexWhere("deleted_at IS NULL")),
+		index.Fields("skill_id", "version").
+			Unique().
+			StorageKey("idx_ai_skill_versions_skill_version"),
 	}
 }

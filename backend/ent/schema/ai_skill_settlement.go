@@ -67,26 +67,31 @@ func (AISkillSettlement) Edges() []ent.Edge {
 		edge.From("skill", AISkill.Type).
 			Ref("settlements").
 			Field("skill_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)).
 			Required().
 			Unique(),
 		edge.From("version", AISkillVersion.Type).
 			Ref("settlements").
 			Field("version_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)).
 			Required().
 			Unique(),
 		edge.From("run", AISkillRun.Type).
 			Ref("settlements").
 			Field("run_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)).
 			Required().
 			Unique(),
 		edge.From("owner_user", User.Type).
 			Ref("ai_skill_settlements_owned").
 			Field("owner_user_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)).
 			Required().
 			Unique(),
 		edge.From("buyer_user", User.Type).
 			Ref("ai_skill_settlements_bought").
 			Field("buyer_user_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)).
 			Required().
 			Unique(),
 	}
@@ -94,16 +99,15 @@ func (AISkillSettlement) Edges() []ent.Edge {
 
 func (AISkillSettlement) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("skill_id"),
-		index.Fields("version_id"),
-		index.Fields("run_id").Unique(),
-		index.Fields("owner_user_id"),
-		index.Fields("buyer_user_id"),
-		index.Fields("status"),
-		index.Fields("request_id"),
-		index.Fields("usage_log_id"),
-		index.Fields("api_key_id"),
-		index.Fields("group_id"),
-		index.Fields("owner_user_id", "created_at"),
+		index.Fields("skill_id").
+			StorageKey("idx_ai_skill_settlements_skill_id"),
+		index.Fields("run_id").
+			Unique().
+			StorageKey("idx_ai_skill_settlements_run_id"),
+		index.Fields("status").
+			StorageKey("idx_ai_skill_settlements_status"),
+		index.Fields("owner_user_id", "created_at").
+			StorageKey("idx_ai_skill_settlements_owner_created_at").
+			Annotations(entsql.Desc()),
 	}
 }

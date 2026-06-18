@@ -66,38 +66,39 @@ func (AISkillReview) Edges() []ent.Edge {
 		edge.From("skill", AISkill.Type).
 			Ref("reviews").
 			Field("skill_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)).
 			Required().
 			Unique(),
 		edge.From("version", AISkillVersion.Type).
 			Ref("reviews").
 			Field("version_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)).
 			Required().
 			Unique(),
 		edge.From("submitter_user", User.Type).
 			Ref("ai_skill_reviews_submitted").
 			Field("submitter_user_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)).
 			Required().
 			Unique(),
 		edge.From("reviewer_user", User.Type).
 			Ref("ai_skill_reviews_reviewed").
 			Field("reviewer_user_id").
+			Annotations(entsql.OnDelete(entsql.SetNull)).
 			Unique(),
 	}
 }
 
 func (AISkillReview) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("skill_id"),
-		index.Fields("submitter_user_id"),
-		index.Fields("reviewer_user_id"),
-		index.Fields("status"),
-		index.Fields("reviewed_at"),
-		index.Fields("request_id"),
-		index.Fields("usage_log_id"),
-		index.Fields("api_key_id"),
-		index.Fields("group_id"),
+		index.Fields("skill_id").
+			StorageKey("idx_ai_skill_reviews_skill_id"),
+		index.Fields("reviewer_user_id", "status").
+			StorageKey("idx_ai_skill_reviews_reviewer_status").
+			Annotations(entsql.IndexWhere("reviewer_user_id IS NOT NULL")),
 		index.Fields("version_id").
 			Unique().
+			StorageKey("idx_ai_skill_reviews_pending_version").
 			Annotations(entsql.IndexWhere("status = 'pending'")),
 	}
 }

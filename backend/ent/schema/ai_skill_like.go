@@ -43,11 +43,13 @@ func (AISkillLike) Edges() []ent.Edge {
 		edge.From("skill", AISkill.Type).
 			Ref("likes").
 			Field("skill_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)).
 			Required().
 			Unique(),
 		edge.From("user", User.Type).
 			Ref("ai_skill_likes").
 			Field("user_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)).
 			Required().
 			Unique(),
 	}
@@ -55,12 +57,10 @@ func (AISkillLike) Edges() []ent.Edge {
 
 func (AISkillLike) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("skill_id"),
-		index.Fields("user_id"),
-		index.Fields("request_id"),
-		index.Fields("usage_log_id"),
-		index.Fields("api_key_id"),
-		index.Fields("group_id"),
-		index.Fields("skill_id", "user_id").Unique(),
+		index.Fields("user_id").
+			StorageKey("idx_ai_skill_likes_user_id"),
+		index.Fields("skill_id", "user_id").
+			Unique().
+			StorageKey("idx_ai_skill_likes_skill_user"),
 	}
 }

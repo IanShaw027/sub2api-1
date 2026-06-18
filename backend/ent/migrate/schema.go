@@ -736,7 +736,7 @@ var (
 				Symbol:     "ai_skill_likes_ai_skills_likes",
 				Columns:    []*schema.Column{AiSkillLikesColumns[7]},
 				RefColumns: []*schema.Column{AiSkillsColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "ai_skill_likes_users_ai_skill_likes",
@@ -747,37 +747,12 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "aiskilllike_skill_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillLikesColumns[7]},
-			},
-			{
-				Name:    "aiskilllike_user_id",
+				Name:    "idx_ai_skill_likes_user_id",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillLikesColumns[8]},
 			},
 			{
-				Name:    "aiskilllike_request_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillLikesColumns[3]},
-			},
-			{
-				Name:    "aiskilllike_usage_log_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillLikesColumns[4]},
-			},
-			{
-				Name:    "aiskilllike_api_key_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillLikesColumns[5]},
-			},
-			{
-				Name:    "aiskilllike_group_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillLikesColumns[6]},
-			},
-			{
-				Name:    "aiskilllike_skill_id_user_id",
+				Name:    "idx_ai_skill_likes_skill_user",
 				Unique:  true,
 				Columns: []*schema.Column{AiSkillLikesColumns[7], AiSkillLikesColumns[8]},
 			},
@@ -813,13 +788,13 @@ var (
 				Symbol:     "ai_skill_reviews_ai_skills_reviews",
 				Columns:    []*schema.Column{AiSkillReviewsColumns[13]},
 				RefColumns: []*schema.Column{AiSkillsColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "ai_skill_reviews_ai_skill_versions_reviews",
 				Columns:    []*schema.Column{AiSkillReviewsColumns[14]},
 				RefColumns: []*schema.Column{AiSkillVersionsColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "ai_skill_reviews_users_ai_skill_reviews_submitted",
@@ -836,52 +811,20 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "aiskillreview_skill_id",
+				Name:    "idx_ai_skill_reviews_skill_id",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillReviewsColumns[13]},
 			},
 			{
-				Name:    "aiskillreview_submitter_user_id",
+				Name:    "idx_ai_skill_reviews_reviewer_status",
 				Unique:  false,
-				Columns: []*schema.Column{AiSkillReviewsColumns[15]},
+				Columns: []*schema.Column{AiSkillReviewsColumns[16], AiSkillReviewsColumns[3]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "reviewer_user_id IS NOT NULL",
+				},
 			},
 			{
-				Name:    "aiskillreview_reviewer_user_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillReviewsColumns[16]},
-			},
-			{
-				Name:    "aiskillreview_status",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillReviewsColumns[3]},
-			},
-			{
-				Name:    "aiskillreview_reviewed_at",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillReviewsColumns[8]},
-			},
-			{
-				Name:    "aiskillreview_request_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillReviewsColumns[9]},
-			},
-			{
-				Name:    "aiskillreview_usage_log_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillReviewsColumns[10]},
-			},
-			{
-				Name:    "aiskillreview_api_key_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillReviewsColumns[11]},
-			},
-			{
-				Name:    "aiskillreview_group_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillReviewsColumns[12]},
-			},
-			{
-				Name:    "aiskillreview_version_id",
+				Name:    "idx_ai_skill_reviews_pending_version",
 				Unique:  true,
 				Columns: []*schema.Column{AiSkillReviewsColumns[14]},
 				Annotation: &entsql.IndexAnnotation{
@@ -921,13 +864,13 @@ var (
 				Symbol:     "ai_skill_runs_ai_skills_runs",
 				Columns:    []*schema.Column{AiSkillRunsColumns[15]},
 				RefColumns: []*schema.Column{AiSkillsColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "ai_skill_runs_ai_skill_versions_runs",
 				Columns:    []*schema.Column{AiSkillRunsColumns[16]},
 				RefColumns: []*schema.Column{AiSkillVersionsColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "ai_skill_runs_users_ai_skill_runs",
@@ -938,54 +881,27 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "aiskillrun_skill_id",
+				Name:    "idx_ai_skill_runs_skill_id",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillRunsColumns[15]},
 			},
 			{
-				Name:    "aiskillrun_version_id",
+				Name:    "idx_ai_skill_runs_version_id",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillRunsColumns[16]},
 			},
 			{
-				Name:    "aiskillrun_user_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillRunsColumns[17]},
-			},
-			{
-				Name:    "aiskillrun_run_mode",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillRunsColumns[3]},
-			},
-			{
-				Name:    "aiskillrun_status",
+				Name:    "idx_ai_skill_runs_status",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillRunsColumns[4]},
 			},
 			{
-				Name:    "aiskillrun_request_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillRunsColumns[11]},
-			},
-			{
-				Name:    "aiskillrun_usage_log_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillRunsColumns[12]},
-			},
-			{
-				Name:    "aiskillrun_api_key_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillRunsColumns[13]},
-			},
-			{
-				Name:    "aiskillrun_group_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillRunsColumns[14]},
-			},
-			{
-				Name:    "aiskillrun_user_id_created_at",
+				Name:    "idx_ai_skill_runs_user_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillRunsColumns[17], AiSkillRunsColumns[1]},
+				Annotation: &entsql.IndexAnnotation{
+					Desc: true,
+				},
 			},
 		},
 	}
@@ -1021,19 +937,19 @@ var (
 				Symbol:     "ai_skill_settlements_ai_skills_settlements",
 				Columns:    []*schema.Column{AiSkillSettlementsColumns[14]},
 				RefColumns: []*schema.Column{AiSkillsColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "ai_skill_settlements_ai_skill_runs_settlements",
 				Columns:    []*schema.Column{AiSkillSettlementsColumns[15]},
 				RefColumns: []*schema.Column{AiSkillRunsColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "ai_skill_settlements_ai_skill_versions_settlements",
 				Columns:    []*schema.Column{AiSkillSettlementsColumns[16]},
 				RefColumns: []*schema.Column{AiSkillVersionsColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "ai_skill_settlements_users_ai_skill_settlements_owned",
@@ -1050,59 +966,27 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "aiskillsettlement_skill_id",
+				Name:    "idx_ai_skill_settlements_skill_id",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillSettlementsColumns[14]},
 			},
 			{
-				Name:    "aiskillsettlement_version_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillSettlementsColumns[16]},
-			},
-			{
-				Name:    "aiskillsettlement_run_id",
+				Name:    "idx_ai_skill_settlements_run_id",
 				Unique:  true,
 				Columns: []*schema.Column{AiSkillSettlementsColumns[15]},
 			},
 			{
-				Name:    "aiskillsettlement_owner_user_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillSettlementsColumns[17]},
-			},
-			{
-				Name:    "aiskillsettlement_buyer_user_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillSettlementsColumns[18]},
-			},
-			{
-				Name:    "aiskillsettlement_status",
+				Name:    "idx_ai_skill_settlements_status",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillSettlementsColumns[3]},
 			},
 			{
-				Name:    "aiskillsettlement_request_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillSettlementsColumns[10]},
-			},
-			{
-				Name:    "aiskillsettlement_usage_log_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillSettlementsColumns[11]},
-			},
-			{
-				Name:    "aiskillsettlement_api_key_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillSettlementsColumns[12]},
-			},
-			{
-				Name:    "aiskillsettlement_group_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillSettlementsColumns[13]},
-			},
-			{
-				Name:    "aiskillsettlement_owner_user_id_created_at",
+				Name:    "idx_ai_skill_settlements_owner_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillSettlementsColumns[17], AiSkillSettlementsColumns[1]},
+				Annotation: &entsql.IndexAnnotation{
+					Desc: true,
+				},
 			},
 		},
 	}
@@ -1144,7 +1028,7 @@ var (
 				Symbol:     "ai_skill_versions_ai_skills_versions",
 				Columns:    []*schema.Column{AiSkillVersionsColumns[23]},
 				RefColumns: []*schema.Column{AiSkillsColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "ai_skill_versions_users_ai_skill_versions",
@@ -1155,57 +1039,32 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "aiskillversion_skill_id",
+				Name:    "idx_ai_skill_versions_skill_id",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillVersionsColumns[23]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "deleted_at IS NULL",
+				},
 			},
 			{
-				Name:    "aiskillversion_user_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[24]},
-			},
-			{
-				Name:    "aiskillversion_review_status",
+				Name:    "idx_ai_skill_versions_review_status",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillVersionsColumns[5]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "deleted_at IS NULL",
+				},
 			},
 			{
-				Name:    "aiskillversion_reviewer_user_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[16]},
-			},
-			{
-				Name:    "aiskillversion_submitted_at",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[14]},
-			},
-			{
-				Name:    "aiskillversion_reviewed_at",
+				Name:    "idx_ai_skill_versions_reviewed_at",
 				Unique:  false,
 				Columns: []*schema.Column{AiSkillVersionsColumns[15]},
+				Annotation: &entsql.IndexAnnotation{
+					Desc:  true,
+					Where: "deleted_at IS NULL",
+				},
 			},
 			{
-				Name:    "aiskillversion_request_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[19]},
-			},
-			{
-				Name:    "aiskillversion_usage_log_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[20]},
-			},
-			{
-				Name:    "aiskillversion_api_key_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[21]},
-			},
-			{
-				Name:    "aiskillversion_group_id",
-				Unique:  false,
-				Columns: []*schema.Column{AiSkillVersionsColumns[22]},
-			},
-			{
-				Name:    "aiskillversion_skill_id_version",
+				Name:    "idx_ai_skill_versions_skill_version",
 				Unique:  true,
 				Columns: []*schema.Column{AiSkillVersionsColumns[23], AiSkillVersionsColumns[4]},
 			},
