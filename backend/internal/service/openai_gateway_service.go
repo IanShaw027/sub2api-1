@@ -8165,6 +8165,40 @@ func openAIStreamFrameString(frame openAICompatSSEFrame) string {
 	return builder.String()
 }
 
+func writeOpenAIResponsesFailedSSE(w io.Writer, responseID, model, code, message string) error {
+	responseID = strings.TrimSpace(responseID)
+	if responseID == "" {
+		responseID = "resp_failed"
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		code = "upstream_error"
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = code
+	}
+	payload, err := json.Marshal(gin.H{
+		"type": "response.failed",
+		"response": gin.H{
+			"id":     responseID,
+			"object": "response",
+			"model":  model,
+			"status": "failed",
+			"output": []any{},
+			"error": gin.H{
+				"code":    code,
+				"message": message,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "event: response.failed\ndata: %s\n\n", payload)
+	return err
+}
+
 func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string) (*openaiStreamingResult, error) {
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -8280,14 +8314,22 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			return
 		}
 		errorEventSent = true
-		payload := `{"type":"error","sequence_number":0,"error":{"type":"upstream_error","message":` + strconv.Quote(reason) + `,"code":` + strconv.Quote(reason) + `}}`
 		if err := flushBuffered(); err != nil {
 			clientDisconnected = true
 			return
 		}
-		if _, err := bufferedWriter.WriteString("data: " + payload + "\n\n"); err != nil {
-			clientDisconnected = true
-			return
+		if isOpenAIResponsesInboundPath(c) {
+			if err := writeOpenAIResponsesFailedSSE(bufferedWriter, responseID, originalModel, reason, reason); err != nil {
+				clientDisconnected = true
+				return
+			}
+			MarkResponseCommitted(c)
+		} else {
+			payload := `{"type":"error","sequence_number":0,"error":{"type":"upstream_error","message":` + strconv.Quote(reason) + `,"code":` + strconv.Quote(reason) + `}}`
+			if _, err := bufferedWriter.WriteString("data: " + payload + "\n\n"); err != nil {
+				clientDisconnected = true
+				return
+			}
 		}
 		if err := flushBuffered(); err != nil {
 			clientDisconnected = true

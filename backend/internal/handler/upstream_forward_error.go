@@ -118,6 +118,9 @@ func resolveUpstreamForwardErrorDetail(c *gin.Context, forwardErr error) upstrea
 }
 
 func shouldSuppressForwardErrorResponse(c *gin.Context, forwardErr error) bool {
+	if service.IsResponseCommitted(c) {
+		return true
+	}
 	if c == nil || c.Request == nil {
 		return false
 	}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -96,6 +97,24 @@ func TestGatewayEnsureForwardErrorResponse_ResponsesRouteAfterWrittenEmitsRespon
 	assert.Contains(t, body, ":\n\n")
 	assert.Contains(t, body, "event: response.failed\n")
 	assert.Contains(t, body, `"type":"response.failed"`)
+}
+
+func TestGatewayEnsureForwardErrorResponse_DoesNotAppendAfterServiceCommitted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, EndpointResponses, nil)
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	_, _ = c.Writer.WriteString("event: response.failed\n")
+	_, _ = c.Writer.WriteString(`data: {"type":"response.failed"}` + "\n\n")
+	service.MarkResponseCommitted(c)
+
+	h := &GatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, true, errors.New("stream read error"))
+
+	require.False(t, wrote)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, 1, strings.Count(w.Body.String(), "event: response.failed\n"))
 }
 
 func TestGatewayEnsureForwardErrorResponse_UsesDetailedForwardError(t *testing.T) {
