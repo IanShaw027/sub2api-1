@@ -2075,13 +2075,11 @@ func dropOrphanFunctionCallOutputs(input []any) ([]any, bool) {
 		if !isCallSourceType(typ) {
 			continue
 		}
-		// item_reference uses `id` to point at a server-side tool call;
-		// other call sources use `call_id`.
 		var ref string
 		if typ == "item_reference" {
 			ref, _ = m["id"].(string)
 		} else {
-			ref, _ = m["call_id"].(string)
+			ref = toolCallContextIDFromMap(m)
 		}
 		ref = strings.TrimSpace(ref)
 		if ref == "" {

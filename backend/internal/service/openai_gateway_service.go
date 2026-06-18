@@ -10955,14 +10955,11 @@ func sanitizeOpenAIResponsesOrphanToolOutputs(reqBody map[string]any, input []an
 			}
 			continue
 		}
-		callID, _ := m["call_id"].(string)
-		callID = strings.TrimSpace(callID)
-		if callID == "" {
-			continue
-		}
 		switch strings.TrimSpace(firstNonEmptyString(m["type"])) {
 		case "function_call", "tool_call", "local_shell_call", "tool_search_call", "custom_tool_call", "mcp_tool_call":
-			toolCallIDs[callID] = struct{}{}
+			if callID := toolCallContextIDFromMap(m); callID != "" {
+				toolCallIDs[callID] = struct{}{}
+			}
 		}
 	}
 

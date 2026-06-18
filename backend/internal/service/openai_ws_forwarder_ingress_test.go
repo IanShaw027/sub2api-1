@@ -875,6 +875,17 @@ func TestOpenAIWSRawItemsHasFunctionCallOutput(t *testing.T) {
 	}
 }
 
+func TestOpenAIWSRawItemsHaveToolCallContextForOutputsAcceptsIDOnlyToolCall(t *testing.T) {
+	t.Parallel()
+
+	items := []json.RawMessage{
+		json.RawMessage(`{"type":"tool_search_call","id":"fc_search_1","query":"docs"}`),
+		json.RawMessage(`{"type":"tool_search_output","call_id":"fc_search_1","output":"ok"}`),
+	}
+
+	require.True(t, openAIWSRawItemsHaveToolCallContextForOutputs(items))
+}
+
 func TestOpenAIWSRawPayloadHasToolCallOutput(t *testing.T) {
 	t.Parallel()
 

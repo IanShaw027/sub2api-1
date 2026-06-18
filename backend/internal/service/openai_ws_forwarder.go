@@ -2259,14 +2259,15 @@ func openAIWSRawItemsHaveToolCallContextForOutputs(items []json.RawMessage) bool
 	contextCallIDs := make(map[string]struct{})
 	outputCallIDs := make(map[string]struct{})
 	for _, item := range items {
-		itemType := gjson.GetBytes(item, "type").String()
-		callID := strings.TrimSpace(gjson.GetBytes(item, "call_id").String())
+		parsed := parseRawJSONView(item)
+		itemType := parsed.Get("type").String()
 		switch {
 		case isCodexToolCallContextItemType(itemType):
-			if callID != "" {
+			if callID := toolCallContextIDFromRaw(parsed); callID != "" {
 				contextCallIDs[callID] = struct{}{}
 			}
 		case isCodexToolCallOutputItemType(itemType):
+			callID := strings.TrimSpace(parsed.Get("call_id").String())
 			if callID == "" {
 				return false
 			}

@@ -93,6 +93,17 @@ func TestDropOrphanFunctionCallOutputs(t *testing.T) {
 		}
 	})
 
+	t.Run("id_only_tool_search_call_keeps_output", func(t *testing.T) {
+		input := []any{
+			map[string]any{"type": "tool_search_call", "id": "fc_search_1", "query": "docs"},
+			map[string]any{"type": "tool_search_output", "call_id": "fc_search_1", "output": "ok"},
+		}
+		_, dropped := dropOrphanFunctionCallOutputs(input)
+		if dropped {
+			t.Fatal("expected tool_search_call id to satisfy the call source check")
+		}
+	})
+
 	t.Run("drops_output_when_call_source_appears_later", func(t *testing.T) {
 		input := []any{
 			map[string]any{"type": "tool_search_output", "call_id": "call_late", "output": "ok"},
@@ -142,6 +153,27 @@ func TestDropOrphanFunctionCallOutputs(t *testing.T) {
 			t.Fatalf("expected item_reference kept, got %#v", got[0])
 		}
 	})
+}
+
+func TestSanitizeOpenAIResponsesOrphanToolOutputs_KeepsIDOnlyToolSearchCallOutput(t *testing.T) {
+	input := []any{
+		map[string]any{"type": "tool_search_call", "id": "fc_search_1", "query": "docs"},
+		map[string]any{"type": "tool_search_output", "call_id": "fc_search_1", "output": "ok"},
+	}
+	reqBody := map[string]any{"input": input}
+
+	modified := sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, input, false)
+
+	if modified {
+		t.Fatal("expected matched tool_search_output to be preserved")
+	}
+	gotInput, ok := reqBody["input"].([]any)
+	if !ok {
+		t.Fatalf("expected input array, got %#v", reqBody["input"])
+	}
+	if !reflect.DeepEqual(gotInput, input) {
+		t.Fatalf("expected input unchanged, got %#v", gotInput)
+	}
 }
 
 func TestFilterCodexInputWithOptions_DropOrphanFunctionCallOutputs(t *testing.T) {

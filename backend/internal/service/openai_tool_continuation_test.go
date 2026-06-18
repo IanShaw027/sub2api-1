@@ -57,7 +57,7 @@ func TestHasFunctionCallOutput(t *testing.T) {
 }
 
 func TestHasToolCallContext(t *testing.T) {
-	// 所有 Codex 工具调用上下文都必须包含 call_id，才能作为可关联上下文。
+	// 所有 Codex 工具调用上下文都必须包含 call_id 或 id，才能作为可关联上下文。
 	require.False(t, HasToolCallContext(nil))
 	for _, typ := range []string{
 		"tool_call",
@@ -74,6 +74,25 @@ func TestHasToolCallContext(t *testing.T) {
 	require.False(t, HasToolCallContext(map[string]any{
 		"input": []any{map[string]any{"type": "tool_call"}},
 	}))
+}
+
+func TestValidateFunctionCallOutputContextAcceptsIDOnlyToolCallContext(t *testing.T) {
+	body := map[string]any{
+		"input": []any{
+			map[string]any{"type": "tool_search_call", "id": "fc_search_1", "query": "docs"},
+			map[string]any{"type": "tool_search_output", "call_id": "fc_search_1", "output": "ok"},
+		},
+	}
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	validation := ValidateFunctionCallOutputContext(body)
+	require.True(t, validation.HasFunctionCallOutput)
+	require.True(t, validation.HasToolCallContext)
+
+	rawValidation := ValidateFunctionCallOutputContextBytes(raw)
+	require.True(t, rawValidation.HasFunctionCallOutput)
+	require.True(t, rawValidation.HasToolCallContext)
 }
 
 func TestFunctionCallOutputCallIDs(t *testing.T) {

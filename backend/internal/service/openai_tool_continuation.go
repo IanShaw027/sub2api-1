@@ -24,6 +24,17 @@ type FunctionCallOutputValidation struct {
 	HasItemReferenceForAllCallIDs      bool
 }
 
+func toolCallContextIDFromMap(item map[string]any) string {
+	if item == nil {
+		return ""
+	}
+	return firstNonEmptyString(item["call_id"], item["id"])
+}
+
+func toolCallContextIDFromRaw(item gjson.Result) string {
+	return firstNonEmptyString(item.Get("call_id").String(), item.Get("id").String())
+}
+
 func isToolContinuationOutputItemType(itemType string) bool {
 	return isCodexToolCallOutputItemType(itemType)
 }
@@ -156,8 +167,7 @@ func AnalyzeToolContinuationSignals(reqBody map[string]any) ToolContinuationSign
 		}
 		switch {
 		case isCodexToolCallContextItemType(itemType):
-			callID, _ := itemMap["call_id"].(string)
-			if strings.TrimSpace(callID) != "" {
+			if toolCallContextIDFromMap(itemMap) != "" {
 				signals.HasToolCallContext = true
 			}
 		case itemType == "item_reference":
@@ -223,7 +233,7 @@ func ValidateFunctionCallOutputContextBytes(body []byte) FunctionCallOutputValid
 			}
 			callIDs[callID] = struct{}{}
 		case isCodexToolCallContextItemType(itemType):
-			if strings.TrimSpace(item.Get("call_id").String()) != "" {
+			if toolCallContextIDFromRaw(item) != "" {
 				result.HasToolCallContext = true
 			}
 		case itemType == "item_reference":
@@ -276,8 +286,7 @@ func ValidateFunctionCallOutputContext(reqBody map[string]any) FunctionCallOutpu
 		case isCodexToolCallOutputItemType(itemType):
 			result.HasFunctionCallOutput = true
 		case isCodexToolCallContextItemType(itemType):
-			callID, _ := itemMap["call_id"].(string)
-			if strings.TrimSpace(callID) != "" {
+			if toolCallContextIDFromMap(itemMap) != "" {
 				result.HasToolCallContext = true
 			}
 		}
@@ -337,7 +346,7 @@ func HasFunctionCallOutput(reqBody map[string]any) bool {
 	return AnalyzeToolContinuationSignals(reqBody).HasFunctionCallOutput
 }
 
-// HasToolCallContext 判断 input 是否包含带 call_id 的工具调用上下文，
+// HasToolCallContext 判断 input 是否包含带 call_id/id 的工具调用上下文，
 // 用于判断 function_call_output 是否具备可关联的上下文。
 func HasToolCallContext(reqBody map[string]any) bool {
 	return AnalyzeToolContinuationSignals(reqBody).HasToolCallContext
