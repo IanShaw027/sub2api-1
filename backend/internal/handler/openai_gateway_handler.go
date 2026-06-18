@@ -1579,6 +1579,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if needsImageSlot && !account.OpenAIImageGenerationAllowed() {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "no available account", errOpenAIWSLocalImageToggleUnavailable)
 				}
+				if !openAIResponsesAccountSupportsImageIntent(account, apiKey.Group, imageIntent || needsImageSlot) {
+					_ = h.gatewayService.ClearStickySession(ctx, apiKey.GroupID, sessionHash)
+					_ = h.gatewayService.ClearPreviousResponseBinding(ctx, apiKey.GroupID, apiKey.ID, previousResponseID)
+					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "no available account", errOpenAIWSTurnAccountUnavailable)
+				}
 				currentTurnNeedsImageSlot = needsImageSlot
 				return nil
 			},

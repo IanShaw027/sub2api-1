@@ -125,6 +125,13 @@ func TestGroup_GetImagePriceForRequestType_Images2APIUnknownSizeFallsBackTo2K(t 
 	require.InDelta(t, 0.22, *result, 0.0001)
 }
 
+func TestNormalizeGroupImageGenerationRoute_PreservesWeb2API(t *testing.T) {
+	require.Equal(t, GroupImageGenerationRouteCodex, NormalizeGroupImageGenerationRoute(""))
+	require.Equal(t, GroupImageGenerationRouteCodex, NormalizeGroupImageGenerationRoute("codex"))
+	require.Equal(t, GroupImageGenerationRouteWeb2API, NormalizeGroupImageGenerationRoute("web2api"))
+	require.Equal(t, GroupImageGenerationRouteWeb2API, (&Group{ImageGenerationRoute: "web2api"}).EffectiveImageGenerationRoute())
+}
+
 func TestGroup_GetImagePriceConfigForRequestType_UsesImages2APIConfig(t *testing.T) {
 	price1K := 0.11
 	price2K := 0.22

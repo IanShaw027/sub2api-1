@@ -110,6 +110,8 @@ func NormalizeGroupImageGenerationRoute(route string) string {
 	switch strings.ToLower(strings.TrimSpace(route)) {
 	case "", GroupImageGenerationRouteCodex:
 		return GroupImageGenerationRouteCodex
+	case GroupImageGenerationRouteWeb2API:
+		return GroupImageGenerationRouteWeb2API
 	default:
 		return GroupImageGenerationRouteCodex
 	}

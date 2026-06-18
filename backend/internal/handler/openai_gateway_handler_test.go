@@ -3020,7 +3020,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentRejectsAfterLiveTo
 	accountRepo.SetOpenAIImageGenerationEnabled(false)
 
 	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
-	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.4","stream":false,"tool_choice":{"type":"image_generation"}}`))
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.4","stream":false,"tools":[{"type":"image_generation"}],"input":"draw a cat"}`))
 	cancelWrite()
 	require.NoError(t, err)
 
@@ -3223,6 +3223,190 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityRejectsAfterLiveTo
 	select {
 	case payload := <-secondHitCh:
 		t.Fatalf("disabled image tool later turn should not reach upstream: %s", string(payload))
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestOpenAIResponsesWebSocket_LaterTurnImageIntentRejectsUnsupportedRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	firstHitCh := make(chan []byte, 1)
+	secondHitCh := make(chan []byte, 1)
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
+		_, payload, readErr := conn.Read(readCtx)
+		cancelRead()
+		if readErr != nil {
+			return
+		}
+		firstHitCh <- payload
+
+		writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
+		_ = conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.completed","response":{"id":"resp_ws_turn_one_route","model":"gpt-5.4","usage":{"input_tokens":1,"output_tokens":1}}}`))
+		cancelWrite()
+
+		readCtx, cancelRead = context.WithTimeout(r.Context(), 750*time.Millisecond)
+		_, payload, readErr = conn.Read(readCtx)
+		cancelRead()
+		if readErr == nil {
+			secondHitCh <- payload
+			writeCtx, cancelWrite = context.WithTimeout(r.Context(), 3*time.Second)
+			_ = conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.completed","response":{"id":"resp_ws_turn_two_route","model":"gpt-5.4","usage":{"input_tokens":1,"output_tokens":1}}}`))
+			cancelWrite()
+		}
+	}))
+	defer upstreamServer.Close()
+
+	groupID := int64(6207)
+	account := service.Account{
+		ID:          12033,
+		Name:        "openai-ws-unsupported-later-image-route",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-ws-unsupported-later-image-route",
+			"base_url": upstreamServer.URL,
+		},
+		Extra: map[string]any{
+			"openai_image_generation_enabled":               true,
+			"openai_apikey_responses_websockets_v2_enabled": true,
+			"openai_apikey_responses_websockets_v2_mode":    service.OpenAIWSIngressModePassthrough,
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.RunMode = config.RunModeSimple
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	accountRepo := &openAIWSUsageHandlerAccountRepoStub{account: account}
+	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cfg,
+		nil,
+		nil,
+		service.NewBillingService(cfg, nil),
+		nil,
+		billingCacheSvc,
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	cache := &concurrencyCacheMock{
+		acquireUserSlotFn: func(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+		acquireAccountSlotFn: func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+	}
+	h := &OpenAIGatewayHandler{
+		gatewayService:      gatewaySvc,
+		billingCacheService: billingCacheSvc,
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+		maxAccountSwitches:  3,
+	}
+
+	apiKey := &service.APIKey{
+		ID:      9207,
+		GroupID: &groupID,
+		User:    &service.User{ID: 9107, Status: service.StatusActive},
+		Group: &service.Group{
+			ID:                   groupID,
+			Platform:             service.PlatformOpenAI,
+			Status:               service.StatusActive,
+			AllowImageGeneration: true,
+			ImageGenerationRoute: service.GroupImageGenerationRouteWeb2API,
+		},
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
+		c.Next()
+	})
+	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
+	handlerServer := httptest.NewServer(router)
+	defer handlerServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(
+		dialCtx,
+		"ws"+strings.TrimPrefix(handlerServer.URL, "http")+"/openai/v1/responses",
+		&coderws.DialOptions{CompressionMode: coderws.CompressionContextTakeover},
+	)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.4","stream":false}`))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 5*time.Second)
+	_, event, err := clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
+	require.Equal(t, "resp_ws_turn_one_route", gjson.GetBytes(event, "response.id").String())
+
+	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.4","stream":false,"tool_choice":{"type":"image_generation"}}`))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 5*time.Second)
+	_, _, err = clientConn.Read(readCtx)
+	cancelRead()
+	require.Error(t, err)
+	var closeErr coderws.CloseError
+	require.ErrorAs(t, err, &closeErr)
+	require.Equal(t, coderws.StatusTryAgainLater, closeErr.Code)
+	require.Contains(t, closeErr.Reason, "no available account")
+
+	select {
+	case payload := <-firstHitCh:
+		require.Equal(t, "gpt-5.4", gjson.GetBytes(payload, "model").String())
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for first websocket upstream request")
+	}
+
+	select {
+	case payload := <-secondHitCh:
+		t.Fatalf("unsupported image route later turn should not reach upstream: %s", string(payload))
 	case <-time.After(200 * time.Millisecond):
 	}
 }
