@@ -383,21 +383,12 @@ class DeployScriptTest(unittest.TestCase):
         self.assertIn("pnpm install", log_lines)
         self.assertIn("pnpm build", log_lines)
         self.assertTrue(any(line.startswith("go build ") for line in log_lines), log_lines)
-        self.assertTrue(any(line.startswith("go run ") for line in log_lines), log_lines)
+        self.assertFalse(any(line.startswith("go run ") for line in log_lines), log_lines)
         self.assertNotIn("go clean clean -cache", log_lines)
         stop_index = log_lines.index("systemctl stop sub2api-test")
         start_index = log_lines.index("systemctl start sub2api-test")
         self.assertLess(log_lines.index("pnpm build"), stop_index)
         self.assertLess(next(i for i, line in enumerate(log_lines) if line.startswith("go build ")), stop_index)
-        self.assertLess(next(i for i, line in enumerate(log_lines) if line.startswith("go run ")), stop_index)
-        self.assertTrue(
-            any(line.startswith("go run ./cmd/sync_checksums") for line in log_lines),
-            log_lines,
-        )
-        self.assertFalse(
-            any("test-password" in line for line in log_lines if line.startswith("go run ")),
-            log_lines,
-        )
         self.assertLess(stop_index, start_index)
         self.assertTrue((self.repo_root / "sub2api").is_file())
         self.assertFalse((self.repo_root / "sub2api.new").exists())

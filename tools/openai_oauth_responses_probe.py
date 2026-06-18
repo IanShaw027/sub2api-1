@@ -361,6 +361,8 @@ def build_curl_http2_command(
         'request = "POST"',
     ]
     for key, value in headers.items():
+        if key.lower() in {"authorization", "chatgpt-account-id"}:
+            continue
         config_lines.append(f'header = "{key}: {value}"')
     if not auth:
         raise RuntimeError("missing authorization header")
@@ -375,7 +377,17 @@ def build_curl_http2_command(
     ])
     config_path.write_text("\n".join(config_lines) + "\n", encoding="utf-8")
     config_path.chmod(0o600)
-    return ["curl", "--config", str(config_path)]
+    return ["curl", "--config", str(config_path), "--config", "-"]
+
+
+def build_curl_sensitive_config(headers: dict[str, str]) -> str:
+    config_lines: list[str] = []
+    for key, value in headers.items():
+        if key.lower() in {"authorization", "chatgpt-account-id"}:
+            config_lines.append(f'header = "{key}: {value}"')
+    if not config_lines:
+        raise RuntimeError("missing sensitive curl headers")
+    return "\n".join(config_lines) + "\n"
 
 
 def probe_with_curl_http2(
@@ -396,10 +408,10 @@ def probe_with_curl_http2(
     cmd = build_curl_http2_command(url, payload_path, headers, headers_path, body_path, curl_config_path)
 
     started = time.time()
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     timed_out = False
     try:
-        stdout_text, stderr_text = proc.communicate(timeout=args.stream_seconds)
+        stdout_text, stderr_text = proc.communicate(input=build_curl_sensitive_config(headers), timeout=args.stream_seconds)
     except subprocess.TimeoutExpired:
         timed_out = True
         proc.kill()

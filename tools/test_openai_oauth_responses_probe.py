@@ -20,7 +20,7 @@ def load_module():
 
 
 class OpenAIOAuthResponsesProbeContractTest(unittest.TestCase):
-    def test_curl_command_keeps_sensitive_headers_out_of_argv(self):
+    def test_curl_command_keeps_sensitive_headers_out_of_argv_and_config(self):
         module = load_module()
         token = "sensitive-access-token"
         account_id = "sensitive-account-id"
@@ -48,9 +48,19 @@ class OpenAIOAuthResponsesProbeContractTest(unittest.TestCase):
 
             config_path = pathlib.Path(command[2])
             config = config_path.read_text(encoding="utf-8")
-            self.assertIn(token, config)
-            self.assertIn(account_id, config)
+            self.assertNotIn(token, config)
+            self.assertNotIn(account_id, config)
             self.assertEqual(stat.S_IMODE(config_path.stat().st_mode), 0o600)
+
+            stdin_config = module.build_curl_sensitive_config(
+                {
+                    "authorization": f"Bearer {token}",
+                    "chatgpt-account-id": account_id,
+                    "accept": "text/event-stream",
+                }
+            )
+            self.assertIn(token, stdin_config)
+            self.assertIn(account_id, stdin_config)
 
 
 if __name__ == "__main__":

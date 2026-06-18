@@ -287,16 +287,21 @@ build_database_dsn() {
     dbname="${dbname:-sub2api}"
     sslmode="${sslmode:-disable}"
 
-    if [ -z "$password" ]; then
-        echo "❌ 无法确定数据库密码，请检查 config.yaml 或导出 DATABASE_PASSWORD" >&2
-        return 1
+    if [ -n "$password" ]; then
+        printf "host='%s' port='%s' user='%s' password='%s' dbname='%s' sslmode='%s'" \
+            "$(escape_pg_dsn_value "$host")" \
+            "$(escape_pg_dsn_value "$port")" \
+            "$(escape_pg_dsn_value "$user")" \
+            "$(escape_pg_dsn_value "$password")" \
+            "$(escape_pg_dsn_value "$dbname")" \
+            "$(escape_pg_dsn_value "$sslmode")"
+        return 0
     fi
 
-    printf "host='%s' port='%s' user='%s' password='%s' dbname='%s' sslmode='%s'" \
+    printf "host='%s' port='%s' user='%s' dbname='%s' sslmode='%s'" \
         "$(escape_pg_dsn_value "$host")" \
         "$(escape_pg_dsn_value "$port")" \
         "$(escape_pg_dsn_value "$user")" \
-        "$(escape_pg_dsn_value "$password")" \
         "$(escape_pg_dsn_value "$dbname")" \
         "$(escape_pg_dsn_value "$sslmode")"
 }
@@ -401,20 +406,6 @@ done
 if [ $BACKUP_WAIT_COUNT -gt 0 ]; then
     echo "✓ 备份已完成"
 fi
-
-# 基于当前配置显式同步数据库校验和；放在停服前，失败时不影响当前服务。
-echo "🔄 同步数据库校验和..."
-CONFIG_FILE="$(find_config_file || true)"
-if [ -z "$CONFIG_FILE" ]; then
-    echo "❌ 未找到 config.yaml，尝试过 /etc/sub2api/config.yaml、$REPO_ROOT/config.yaml、$REPO_ROOT/data/config.yaml" >&2
-    exit 1
-fi
-
-echo "   使用配置文件: $CONFIG_FILE"
-DATABASE_DSN="$(build_database_dsn "$CONFIG_FILE")"
-SUB2API_DATABASE_DSN="$DATABASE_DSN" go run ./cmd/sync_checksums
-unset DATABASE_DSN
-echo "✓ 数据库校验和同步完成"
 
 # 停服窗口只保留停止、二进制替换、启动和状态检查。
 echo "⏸️  停止服务..."
