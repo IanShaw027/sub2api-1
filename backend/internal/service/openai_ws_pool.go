@@ -167,6 +167,7 @@ var (
 type openAIWSDialError struct {
 	StatusCode      int
 	ResponseHeaders http.Header
+	ResponseBody    []byte
 	Err             error
 }
 
@@ -185,6 +186,13 @@ func (e *openAIWSDialError) Unwrap() error {
 		return nil
 	}
 	return e.Err
+}
+
+func (e *openAIWSDialError) OpenAIWSHandshakeBody() []byte {
+	if e == nil || len(e.ResponseBody) == 0 {
+		return nil
+	}
+	return append([]byte(nil), e.ResponseBody...)
 }
 
 // openAIWSConnProfile 标识连接的握手身份类别：
@@ -1910,6 +1918,7 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 		return nil, &openAIWSDialError{
 			StatusCode:      status,
 			ResponseHeaders: cloneHeader(handshakeHeaders),
+			ResponseBody:    openAIWSHandshakeBodyFromError(err),
 			Err:             err,
 		}
 	}

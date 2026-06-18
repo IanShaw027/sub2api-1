@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -33,6 +35,83 @@ type openAICodexSnapshotAsyncRepo struct {
 type openAICodexExtraListRepo struct {
 	stubOpenAIAccountRepo
 	rateLimitCh chan time.Time
+}
+
+type openAIWSAuthTokenInvalidatorRecorder struct {
+	accounts []*Account
+}
+
+type openAIWSAuth403CounterStub struct {
+	counts []int64
+}
+
+type openAIWSAuthFailureDialer struct {
+	statusCode int
+	body       []byte
+	dialCount  int
+}
+
+type openAIWSAuthFailureBodyError struct {
+	err  error
+	body []byte
+}
+
+func (r *openAIWSAuthTokenInvalidatorRecorder) InvalidateToken(_ context.Context, account *Account) error {
+	r.accounts = append(r.accounts, account)
+	return nil
+}
+
+func (d *openAIWSAuthFailureDialer) Dial(
+	ctx context.Context,
+	wsURL string,
+	headers http.Header,
+	proxyURL string,
+	tlsProfile *tlsfingerprint.Profile,
+) (openAIWSClientConn, int, http.Header, error) {
+	_ = ctx
+	_ = wsURL
+	_ = headers
+	_ = proxyURL
+	_ = tlsProfile
+	d.dialCount++
+	return nil, d.statusCode, http.Header{"Server": []string{"unit-test"}}, &openAIWSAuthFailureBodyError{
+		err:  errors.New("failed to WebSocket dial: expected handshake response status code 101"),
+		body: d.body,
+	}
+}
+
+func (e *openAIWSAuthFailureBodyError) Error() string {
+	if e == nil || e.err == nil {
+		return ""
+	}
+	return e.err.Error()
+}
+
+func (e *openAIWSAuthFailureBodyError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func (e *openAIWSAuthFailureBodyError) OpenAIWSHandshakeBody() []byte {
+	if e == nil {
+		return nil
+	}
+	return append([]byte(nil), e.body...)
+}
+
+func (s *openAIWSAuth403CounterStub) IncrementOpenAI403Count(_ context.Context, _ int64, _ int) (int64, error) {
+	if len(s.counts) == 0 {
+		return 1, nil
+	}
+	count := s.counts[0]
+	s.counts = s.counts[1:]
+	return count, nil
+}
+
+func (s *openAIWSAuth403CounterStub) ResetOpenAI403Count(_ context.Context, _ int64) error {
+	return nil
 }
 
 func (r *openAIWSRateLimitSignalRepo) SetRateLimited(_ context.Context, _ int64, resetAt time.Time) error {
@@ -242,6 +321,114 @@ func TestOpenAIGatewayService_Forward_WSv2Handshake429PersistsRateLimit(t *testi
 	require.Len(t, repo.rateLimitCalls, 1)
 	require.NotEmpty(t, repo.updateExtra, "握手 429 的 x-codex 头应立即落库")
 	require.Contains(t, repo.updateExtra[0], "codex_usage_updated_at")
+}
+
+func TestOpenAIGatewayService_Forward_WSv2Handshake401TokenRevokedSetsError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &rateLimitAccountRepoStub{}
+	svc, account := newOpenAIWSAuthFailureTestGateway(
+		t,
+		repo,
+		http.StatusUnauthorized,
+		[]byte(`{"error":{"code":"token_revoked","message":"Encountered invalidated oauth token for user, failing request"}}`),
+	)
+
+	_, _ = svc.Forward(context.Background(), newOpenAIWSAuthFailureTestContext(), account, []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"hello"}]}`))
+
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Equal(t, 0, repo.tempCalls)
+	require.Contains(t, repo.lastErrorMsg, "Token revoked (401)")
+	require.Contains(t, repo.lastErrorMsg, "Encountered invalidated oauth token")
+}
+
+func TestOpenAIGatewayService_Forward_WSv2Handshake401AppliesOAuthCooldown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &rateLimitAccountRepoStub{}
+	svc, account := newOpenAIWSAuthFailureTestGateway(t, repo, http.StatusUnauthorized, nil)
+	invalidator := &openAIWSAuthTokenInvalidatorRecorder{}
+	svc.rateLimitService.SetTokenCacheInvalidator(invalidator)
+
+	_, _ = svc.Forward(context.Background(), newOpenAIWSAuthFailureTestContext(), account, []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"hello"}]}`))
+
+	require.Equal(t, 0, repo.setErrorCalls)
+	require.Equal(t, 1, repo.tempCalls)
+	require.Contains(t, repo.lastTempReason, "Authentication failed (401)")
+	require.Len(t, invalidator.accounts, 1)
+}
+
+func TestOpenAIGatewayService_Forward_WSv2Handshake403AppliesOpenAI403Cooldown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &rateLimitAccountRepoStub{}
+	svc, account := newOpenAIWSAuthFailureTestGateway(t, repo, http.StatusForbidden, nil)
+	svc.rateLimitService.SetOpenAI403CounterCache(&openAIWSAuth403CounterStub{counts: []int64{1}})
+
+	_, _ = svc.Forward(context.Background(), newOpenAIWSAuthFailureTestContext(), account, []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"hello"}]}`))
+
+	require.Equal(t, 0, repo.setErrorCalls)
+	require.Equal(t, 1, repo.tempCalls)
+	require.Contains(t, repo.lastTempReason, "OpenAI 403 temporary cooldown (1/3)")
+}
+
+func newOpenAIWSAuthFailureTestContext() *gin.Context {
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "unit-test-agent/1.0")
+	return c
+}
+
+func newOpenAIWSAuthFailureTestGateway(t *testing.T, repo *rateLimitAccountRepoStub, statusCode int, handshakeBody []byte) (*OpenAIGatewayService, *Account) {
+	t.Helper()
+
+	cfg := newOpenAIWSV2TestConfig()
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(&openAIWSAuthFailureDialer{
+		statusCode: statusCode,
+		body:       handshakeBody,
+	})
+
+	rateSvc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_http_fallback","object":"response","output":[]}`)),
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:      repo,
+		rateLimitService: rateSvc,
+		httpUpstream:     upstream,
+		cache:            &stubGatewayCache{},
+		cfg:              cfg,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	rateSvc.SetAccountRuntimeBlocker(svc)
+
+	account := &Account{
+		ID:          68005,
+		Name:        "openai-ws-auth-failure",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":  "access-token",
+			"refresh_token": "refresh-token",
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+	return svc, account
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ErrorEventUsageLimitPersistsRateLimit(t *testing.T) {

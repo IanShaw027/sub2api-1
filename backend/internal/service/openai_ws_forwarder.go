@@ -2675,10 +2675,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			wsPath,
 			account.ProxyID != nil && account.Proxy != nil,
 		)
-		var dialErr *openAIWSDialError
-		if errors.As(err, &dialErr) && dialErr != nil && dialErr.StatusCode == http.StatusTooManyRequests {
-			s.persistOpenAIWSRateLimitSignal(ctx, account, dialErr.ResponseHeaders, nil, "rate_limit_exceeded", "rate_limit_error", strings.TrimSpace(err.Error()))
-		}
+		s.persistOpenAIWSDialFailureSignal(ctx, account, err)
 		return nil, wrapOpenAIWSFallback(classifyOpenAIWSAcquireError(err), err)
 	}
 	// cleanExit 标记正常终端事件退出，此时上游不会再发送帧，连接可安全归还复用。
@@ -4135,9 +4132,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				wsPath,
 				account.ProxyID != nil && account.Proxy != nil,
 			)
+			s.persistOpenAIWSDialFailureSignal(ctx, account, acquireErr)
 			var dialErr *openAIWSDialError
 			if errors.As(acquireErr, &dialErr) && dialErr != nil && dialErr.StatusCode == http.StatusTooManyRequests {
-				s.persistOpenAIWSRateLimitSignal(ctx, account, dialErr.ResponseHeaders, nil, "rate_limit_exceeded", "rate_limit_error", strings.TrimSpace(acquireErr.Error()))
 				return nil, &UpstreamFailoverError{
 					StatusCode:      http.StatusTooManyRequests,
 					ResponseHeaders: cloneHeader(dialErr.ResponseHeaders),
@@ -5801,6 +5798,28 @@ func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Contex
 		return
 	}
 	s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusTooManyRequests, headers, responseBody)
+}
+
+func (s *OpenAIGatewayService) persistOpenAIWSDialFailureSignal(ctx context.Context, account *Account, err error) {
+	if s == nil || s.rateLimitService == nil || account == nil || account.Platform != PlatformOpenAI || err == nil {
+		return
+	}
+
+	var dialErr *openAIWSDialError
+	if !errors.As(err, &dialErr) || dialErr == nil {
+		return
+	}
+
+	responseBody := dialErr.ResponseBody
+	if len(responseBody) == 0 {
+		responseBody = openAIWSHandshakeBodyFromError(dialErr.Err)
+	}
+	switch dialErr.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		s.handleOpenAIAccountUpstreamError(ctx, account, dialErr.StatusCode, dialErr.ResponseHeaders, responseBody)
+	case http.StatusTooManyRequests:
+		s.persistOpenAIWSRateLimitSignal(ctx, account, dialErr.ResponseHeaders, responseBody, "rate_limit_exceeded", "rate_limit_error", strings.TrimSpace(err.Error()))
+	}
 }
 
 // isOpenAIWSModelUnavailableEvent 精确判定 WS error event 是否为“模型不可用/不存在”。

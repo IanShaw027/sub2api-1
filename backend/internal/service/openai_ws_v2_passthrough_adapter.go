@@ -446,14 +446,20 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			statusCode,
 			truncateOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen),
 		)
+		dialErr := &openAIWSDialError{
+			StatusCode:      statusCode,
+			ResponseHeaders: cloneHeader(handshakeHeaders),
+			ResponseBody:    openAIWSHandshakeBodyFromError(err),
+			Err:             err,
+		}
+		s.persistOpenAIWSDialFailureSignal(ctx, account, dialErr)
 		if statusCode == http.StatusTooManyRequests {
-			s.persistOpenAIWSRateLimitSignal(ctx, account, handshakeHeaders, nil, "rate_limit_exceeded", "rate_limit_error", strings.TrimSpace(err.Error()))
 			return &UpstreamFailoverError{
 				StatusCode:      http.StatusTooManyRequests,
 				ResponseHeaders: cloneHeader(handshakeHeaders),
 			}
 		}
-		return s.mapOpenAIWSPassthroughDialError(err, statusCode, handshakeHeaders)
+		return s.mapOpenAIWSPassthroughDialError(dialErr, statusCode, handshakeHeaders)
 	}
 	defer func() {
 		_ = upstreamConn.Close()
@@ -821,6 +827,7 @@ func (s *OpenAIGatewayService) mapOpenAIWSPassthroughDialError(
 		wrappedErr = &openAIWSDialError{
 			StatusCode:      statusCode,
 			ResponseHeaders: cloneHeader(handshakeHeaders),
+			ResponseBody:    openAIWSHandshakeBodyFromError(err),
 			Err:             err,
 		}
 	}

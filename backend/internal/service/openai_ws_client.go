@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -18,6 +19,7 @@ import (
 )
 
 const openAIWSMessageReadLimitBytes int64 = 16 * 1024 * 1024
+const openAIWSHandshakeResponseBodyMaxBytes int64 = 64 * 1024
 const (
 	openAIWSProxyTransportMaxIdleConns        = 128
 	openAIWSProxyTransportMaxIdleConnsPerHost = 64
@@ -47,6 +49,36 @@ type openAIWSClientDialer interface {
 
 type openAIWSTransportMetricsDialer interface {
 	SnapshotTransportMetrics() OpenAIWSTransportMetricsSnapshot
+}
+
+type openAIWSHandshakeBodyProvider interface {
+	OpenAIWSHandshakeBody() []byte
+}
+
+type openAIWSHandshakeResponseBodyError struct {
+	err  error
+	body []byte
+}
+
+func (e *openAIWSHandshakeResponseBodyError) Error() string {
+	if e == nil || e.err == nil {
+		return ""
+	}
+	return e.err.Error()
+}
+
+func (e *openAIWSHandshakeResponseBodyError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func (e *openAIWSHandshakeResponseBodyError) OpenAIWSHandshakeBody() []byte {
+	if e == nil || len(e.body) == 0 {
+		return nil
+	}
+	return append([]byte(nil), e.body...)
 }
 
 func newDefaultOpenAIWSClientDialer() openAIWSClientDialer {
@@ -105,7 +137,7 @@ func (d *coderOpenAIWSClientDialer) Dial(
 			status = resp.StatusCode
 			respHeaders = cloneHeader(resp.Header)
 		}
-		return nil, status, respHeaders, err
+		return nil, status, respHeaders, wrapOpenAIWSHandshakeResponseBodyError(err, resp)
 	}
 	// coder/websocket 默认单消息读取上限为 32KB，Codex WS 事件（如 rate_limits/大 delta）
 	// 可能超过该阈值，需显式提高上限，避免本地 read_fail(message too big)。
@@ -158,6 +190,36 @@ func newOpenAIWSTLSFingerprintHTTPClient(proxy string, profile *tlsfingerprint.P
 		return nil, fmt.Errorf("unsupported proxy scheme for tls fingerprint ws dial: %s", parsedProxyURL.Scheme)
 	}
 	return &http.Client{Transport: transport}, nil
+}
+
+func wrapOpenAIWSHandshakeResponseBodyError(err error, resp *http.Response) error {
+	if err == nil || resp == nil || resp.Body == nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, openAIWSHandshakeResponseBodyMaxBytes+1))
+	if readErr != nil || len(body) == 0 {
+		return err
+	}
+	if int64(len(body)) > openAIWSHandshakeResponseBodyMaxBytes {
+		body = body[:openAIWSHandshakeResponseBodyMaxBytes]
+	}
+	return &openAIWSHandshakeResponseBodyError{
+		err:  err,
+		body: append([]byte(nil), body...),
+	}
+}
+
+func openAIWSHandshakeBodyFromError(err error) []byte {
+	if err == nil {
+		return nil
+	}
+	var provider openAIWSHandshakeBodyProvider
+	if errors.As(err, &provider) {
+		return provider.OpenAIWSHandshakeBody()
+	}
+	return nil
 }
 
 func (d *coderOpenAIWSClientDialer) proxyHTTPClient(proxy string) (*http.Client, error) {

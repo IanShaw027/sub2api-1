@@ -1,13 +1,28 @@
 package service
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestWrapOpenAIWSHandshakeResponseBodyErrorCapturesBody(t *testing.T) {
+	baseErr := errors.New("failed to WebSocket dial")
+	resp := &http.Response{
+		Body: io.NopCloser(strings.NewReader(`{"error":{"code":"token_revoked","message":"revoked"}}`)),
+	}
+
+	err := wrapOpenAIWSHandshakeResponseBodyError(baseErr, resp)
+
+	require.ErrorIs(t, err, baseErr)
+	require.JSONEq(t, `{"error":{"code":"token_revoked","message":"revoked"}}`, string(openAIWSHandshakeBodyFromError(err)))
+}
 
 func TestCoderOpenAIWSClientDialer_ProxyHTTPClientReuse(t *testing.T) {
 	dialer := newDefaultOpenAIWSClientDialer()
