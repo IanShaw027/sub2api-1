@@ -2291,6 +2291,7 @@ func buildKiroToolUseBlock(state *kiroToolState) (map[string]any, bool) {
 			input = parsed
 		}
 	}
+	input = repairKiroControlPlaneToolInput(state.Name, input)
 
 	return map[string]any{
 		"type":  "tool_use",
@@ -2298,6 +2299,35 @@ func buildKiroToolUseBlock(state *kiroToolState) (map[string]any, bool) {
 		"name":  strings.TrimSpace(state.Name),
 		"input": input,
 	}, true
+}
+
+func repairKiroControlPlaneToolInput(name string, input any) any {
+	if !strings.EqualFold(strings.TrimSpace(name), "AskUserQuestion") {
+		return input
+	}
+	obj, ok := input.(map[string]any)
+	if !ok {
+		return input
+	}
+	questions, ok := obj["questions"].([]any)
+	if !ok {
+		return input
+	}
+	for _, raw := range questions {
+		question, ok := raw.(map[string]any)
+		if !ok || strings.TrimSpace(anyString(question["question"])) != "" {
+			continue
+		}
+		if header := strings.TrimSpace(anyString(question["header"])); header != "" {
+			question["question"] = header
+		}
+	}
+	return obj
+}
+
+func anyString(value any) string {
+	text, _ := value.(string)
+	return text
 }
 
 func kiroShadowToolBridgeForState(converted *kiropkg.ConvertResult, state *kiroToolState) (kiropkg.ShadowToolBridge, bool) {
@@ -3079,17 +3109,17 @@ func kiroAccountStateContext(ctx context.Context) (context.Context, context.Canc
 // handleKiroTransportError 处理上游 transport 层失败（DoWithTLS 直接返回 err）。
 //
 // 调用方在 kiro 流式入口和双请求路径上调用。函数职责：
-//  1. 若是真正的客户端断开（gin context 已 Canceled），仅记录 ops 事件，不标记账号、不 failover。
+//  1. 若是真正的客户端断开（gin context 已 Canceled），不记录 upstream ops、不标记账号、不 failover。
 //  2. 否则视为上游 transport 故障：
 //     - 调用 SetTempUnschedulable 给账号一个短冷却，防止反复撞同一个不可达上游。
 //     - 返回 *UpstreamFailoverError 让 handler 主循环切到下一个账号。
 //
 // 注意：返回 failover 后 handler 会写最终响应，所以这里不能再 c.JSON。
 func (s *KiroGatewayService) handleKiroTransportError(ctx context.Context, c *gin.Context, account *Account, upstreamURL string, transportErr error) error {
-	s.recordOpsRequestError(c, account, upstreamURL, transportErr)
 	if isClientDisconnectError(c, transportErr) {
 		return transportErr
 	}
+	s.recordOpsRequestError(c, account, upstreamURL, transportErr)
 	stateCtx, cancel := kiroAccountStateContext(ctx)
 	defer cancel()
 	s.markKiroFailureUnschedulable(stateCtx, account, http.StatusBadGateway, kiroTransportFailureReasonKeyword, sanitizeUpstreamErrorMessage(transportErr.Error()), kiroTransportFailureCooldown)

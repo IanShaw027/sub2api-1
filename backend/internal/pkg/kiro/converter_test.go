@@ -301,6 +301,54 @@ func TestConvertAnthropicRequestWithModel_FiltersUnsupportedServerTools(t *testi
 	}
 }
 
+func TestConvertAnthropicRequestWithModel_ReinforcesAskUserQuestionSchema(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"clean disk safely"}],
+		"tools":[
+			{
+				"name":"AskUserQuestion",
+				"description":"Ask the user for a missing decision.",
+				"input_schema":{
+					"type":"object",
+					"properties":{
+						"questions":{
+							"type":"array",
+							"items":{
+								"type":"object",
+								"properties":{
+									"header":{"type":"string"},
+									"id":{"type":"string"},
+									"question":{"type":"string"},
+									"options":{"type":"array"}
+								}
+							}
+						}
+					},
+					"required":["questions"]
+				}
+			}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.NoError(t, err)
+
+	tools := convertedCurrentTools(t, result.Body)
+	require.Len(t, tools, 1)
+	spec := requireJSONObject(t, tools[0]["toolSpecification"], "toolSpecification")
+	require.Equal(t, "AskUserQuestion", spec["name"])
+	require.Contains(t, requireJSONString(t, spec["description"], "description"), "questions[].question")
+	schema := requireJSONObject(t, requireJSONObject(t, spec["inputSchema"], "inputSchema")["json"], "inputSchema.json")
+	require.Equal(t, []any{"questions"}, requireJSONArray(t, schema["required"], "root.required"))
+
+	properties := requireJSONObject(t, schema["properties"], "root.properties")
+	questions := requireJSONObject(t, properties["questions"], "properties.questions")
+	items := requireJSONObject(t, questions["items"], "questions.items")
+	require.Equal(t, []any{"question"}, requireJSONArray(t, items["required"], "questions.items.required"))
+	require.Equal(t, false, items["additionalProperties"])
+}
+
 func TestConvertAnthropicRequestWithModel_WebSearchShadowToolUsesStableName(t *testing.T) {
 	input := []byte(`{
 		"model":"claude-sonnet-4-6",

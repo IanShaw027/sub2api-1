@@ -97,6 +97,27 @@ func TestKiroGatewayService_BuildRequest_UsesRuntimeSettings(t *testing.T) {
 	require.Equal(t, "commit-123", req.Header.Get("x-amzn-kiro-commit"))
 }
 
+func TestBuildKiroToolUseBlock_RepairsAskUserQuestionMissingQuestion(t *testing.T) {
+	state := &kiroToolState{
+		ToolUseID: "toolu_ask",
+		Name:      "AskUserQuestion",
+	}
+	_, _ = state.InputBuilder.WriteString(`{"questions":[{"header":"QQ 数据清理范围选哪个？","id":"qq_cleanup","options":[{"label":"连聊天记录清 13.6G","description":"清理 QQ 聊天记录"}]}]}`)
+
+	block, ok := buildKiroToolUseBlock(state)
+	require.True(t, ok)
+
+	input, ok := block["input"].(map[string]any)
+	require.True(t, ok, "input has type %T", block["input"])
+	questions, ok := input["questions"].([]any)
+	require.True(t, ok, "questions has type %T", input["questions"])
+	require.Len(t, questions, 1)
+	question, ok := questions[0].(map[string]any)
+	require.True(t, ok, "questions[0] has type %T", questions[0])
+	require.Equal(t, "QQ 数据清理范围选哪个？", question["question"])
+	require.Equal(t, "QQ 数据清理范围选哪个？", question["header"])
+}
+
 func TestKiroGatewayService_ResolveAccessToken_UsesAPIKeyForAPIKeyAccounts(t *testing.T) {
 	svc := &KiroGatewayService{}
 

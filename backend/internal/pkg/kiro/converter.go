@@ -678,8 +678,9 @@ func convertTools(raw any) ([]map[string]any, map[string]string, *BridgeMetadata
 		}
 		shortName := shortenToolName(name)
 		rememberToolName(toolNameMap, shortName, name)
-		description := stringField(tool, "description")
+		description := reinforceControlPlaneToolDescription(name, stringField(tool, "description"))
 		schema := normalizeJSONSchema(jsonValue(tool["input_schema"]))
+		schema = reinforceControlPlaneToolSchema(name, schema)
 		tools = append(tools, map[string]any{
 			"toolSpecification": map[string]any{
 				"name":        shortName,
@@ -697,6 +698,92 @@ func convertTools(raw any) ([]map[string]any, map[string]string, *BridgeMetadata
 		bridgeMetadata = nil
 	}
 	return tools, toolNameMap, bridgeMetadata, nil
+}
+
+func reinforceControlPlaneToolDescription(name, description string) string {
+	if !strings.EqualFold(strings.TrimSpace(name), "AskUserQuestion") {
+		return description
+	}
+	if strings.Contains(description, "questions[].question") {
+		return description
+	}
+	suffix := "Payload contract: pass questions as an array, and every entry must include questions[].question with the exact user-facing prompt text."
+	if strings.TrimSpace(description) == "" {
+		return suffix
+	}
+	return strings.TrimSpace(description) + "\n\n" + suffix
+}
+
+func reinforceControlPlaneToolSchema(name string, schema map[string]any) map[string]any {
+	if !strings.EqualFold(strings.TrimSpace(name), "AskUserQuestion") {
+		return schema
+	}
+	if schema == nil {
+		schema = normalizeJSONSchema(nil)
+	}
+	appendRequiredString(schema, "questions")
+
+	properties := ensureJSONObjectField(schema, "properties")
+	questions := ensureJSONObjectField(properties, "questions")
+	if strings.TrimSpace(stringField(questions, "type")) == "" {
+		questions["type"] = "array"
+	}
+	items := ensureJSONObjectField(questions, "items")
+	if strings.TrimSpace(stringField(items, "type")) == "" {
+		items["type"] = "object"
+	}
+	itemProperties := ensureJSONObjectField(items, "properties")
+	question := ensureJSONObjectField(itemProperties, "question")
+	if strings.TrimSpace(stringField(question, "type")) == "" {
+		question["type"] = "string"
+	}
+	if strings.TrimSpace(stringField(question, "description")) == "" {
+		question["description"] = "The exact question text to show to the user."
+	}
+	appendRequiredString(items, "question")
+	if _, ok := items["additionalProperties"].(bool); !ok {
+		if _, ok := items["additionalProperties"].(map[string]any); !ok {
+			items["additionalProperties"] = false
+		}
+	}
+
+	return schema
+}
+
+func ensureJSONObjectField(parent map[string]any, key string) map[string]any {
+	if parent == nil {
+		return map[string]any{}
+	}
+	if value, ok := parent[key].(map[string]any); ok && value != nil {
+		return value
+	}
+	value := map[string]any{}
+	parent[key] = value
+	return value
+}
+
+func appendRequiredString(schema map[string]any, field string) {
+	if schema == nil || strings.TrimSpace(field) == "" {
+		return
+	}
+	switch required := schema["required"].(type) {
+	case []string:
+		for _, item := range required {
+			if item == field {
+				return
+			}
+		}
+		schema["required"] = append(required, field)
+	case []any:
+		for _, item := range required {
+			if text, ok := item.(string); ok && text == field {
+				return
+			}
+		}
+		schema["required"] = append(required, field)
+	default:
+		schema["required"] = []string{field}
+	}
 }
 
 func isUnsupportedServerTool(tool map[string]any) bool {

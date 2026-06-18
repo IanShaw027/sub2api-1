@@ -157,6 +157,39 @@ func TestKiroGatewayService_ForwardStream_PreStartClientCanceledReadErrorDoesNot
 	require.False(t, ok)
 }
 
+func TestKiroGatewayService_HandleTransportError_ClientCanceledDoesNotRecordOpsOrFailover(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(canceledCtx)
+
+	repo := &kiroPreStartAccountRepoStub{}
+	svc := &KiroGatewayService{
+		rateLimitService: &RateLimitService{
+			accountRepo: repo,
+		},
+	}
+
+	err := svc.handleKiroTransportError(
+		context.Background(),
+		c,
+		&Account{ID: 80, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		"https://q.us-east-1.amazonaws.com/generateAssistantResponse",
+		context.Canceled,
+	)
+
+	require.ErrorIs(t, err, context.Canceled)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr), "client disconnect must not trigger account failover")
+	require.Empty(t, rec.Body.String())
+	require.Empty(t, repo.calls)
+	_, ok := c.Get(OpsUpstreamErrorsKey)
+	require.False(t, ok)
+}
+
 func TestKiroGatewayService_ForwardStream_PreFirstForwardableTimeoutReturnsFailoverAndTempUnsched(t *testing.T) {
 	setGinTestMode()
 
