@@ -173,7 +173,7 @@ describe('SkillMySkillsView route-driven status filter', () => {
 
     await flushPromises()
 
-    expect(skillsStore.mySkillFilters.type).toBe('script')
+    expect(skillsStore.mySkillFilters.type).toBe('all')
     expect(skillsStore.mySkillFilters.status).toBe('published')
     expect(skillsStore.mySkillFilters.visibility).toBe('private')
     expect(skillsStore.mySkillFilters.search).toBe('poster')
@@ -186,7 +186,6 @@ describe('SkillMySkillsView route-driven status filter', () => {
 
     expect(routerReplace).toHaveBeenCalledWith({
       query: {
-        type: 'script',
         status: 'draft',
         visibility: 'private',
         search: 'poster',
@@ -203,7 +202,6 @@ describe('SkillMySkillsView route-driven status filter', () => {
       { value: 'all', label: '全部' },
       { value: 'prompt_chat', label: '对话提示词' },
       { value: 'prompt_image', label: '图像提示词' },
-      { value: 'script', label: '脚本' },
     ])
     expect(selectStubs[2]?.props('options')).toEqual([
       { value: 'all', label: '全部' },

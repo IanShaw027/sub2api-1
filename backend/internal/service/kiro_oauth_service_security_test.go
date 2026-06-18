@@ -212,6 +212,41 @@ func TestExchangeCallbackRejectsReplayedSession(t *testing.T) {
 	}
 }
 
+func TestExchangeCallbackRejectsAbsoluteCallbackFromDifferentHost(t *testing.T) {
+	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, nil, nil, nil)
+	svc.usageService = nil
+	defer svc.Stop()
+
+	originalExchange := kiroCodeExchangeFunc
+	exchangeCalls := int32(0)
+	kiroCodeExchangeFunc = func(ctx context.Context, code, verifier, redirect, proxy string) (map[string]any, error) {
+		atomic.AddInt32(&exchangeCalls, 1)
+		return map[string]any{"refreshToken": "refresh"}, nil
+	}
+	t.Cleanup(func() { kiroCodeExchangeFunc = originalExchange })
+
+	const (
+		sessionID = "session-host-bind"
+		state     = "state-host-bind"
+	)
+	svc.sessionStore.Set(sessionID, &KiroOAuthSession{
+		State:           state,
+		CodeVerifier:    "verifier",
+		RedirectURI:     "http://localhost:3128",
+		CallbackBaseURL: "http://localhost:3128",
+		CreatedAt:       time.Now(),
+	})
+
+	callbackURL := "https://attacker.example/oauth/callback?code=code-1&state=" + state + "&login_option=social"
+	_, err := svc.ExchangeCallback(context.Background(), &KiroExchangeCallbackInput{SessionID: sessionID, CallbackURL: callbackURL})
+	if err == nil {
+		t.Fatal("expected absolute callback from a different host to be rejected")
+	}
+	if got := atomic.LoadInt32(&exchangeCalls); got != 0 {
+		t.Fatalf("expected rejected callback not to exchange code, got %d calls", got)
+	}
+}
+
 func TestExchangeCallbackConcurrentRedeemConsumesOnce(t *testing.T) {
 	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, nil, nil, nil)
 	svc.usageService = nil

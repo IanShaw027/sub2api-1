@@ -331,6 +331,9 @@ func (s *MediaService) OpenSignedDownload(ctx context.Context, id int64, expires
 	if err != nil {
 		return nil, nil, err
 	}
+	if asset == nil || asset.Status != MediaStatusActive {
+		return nil, nil, ErrMediaNotFound
+	}
 	stream, err := s.openObject(ctx, asset, thumbnail)
 	if err != nil {
 		return nil, nil, err

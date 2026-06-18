@@ -206,7 +206,6 @@ const summary = reactive<SkillReviewSummary>({
   pending_count: 0,
   approved_count: 0,
   rejected_count: 0,
-  changes_requested_count: 0,
   high_risk_count: 0
 })
 
@@ -221,8 +220,7 @@ const reviewStatusOptions = [
   { value: 'all', label: t('common.all', '全部') },
   { value: 'pending', label: t('skills.admin.review.labels.pending') },
   { value: 'approved', label: t('skills.admin.review.labels.approved') },
-  { value: 'rejected', label: t('skills.admin.review.labels.rejected') },
-  { value: 'changes_requested', label: t('skills.admin.review.labels.changesRequested') }
+  { value: 'rejected', label: t('skills.admin.review.labels.rejected') }
 ]
 
 const riskOptions = [
@@ -345,8 +343,7 @@ function reviewStatusLabel(status: SkillReviewStatus): string {
   return {
     pending: t('skills.admin.review.labels.pending'),
     approved: t('skills.admin.review.labels.approved'),
-    rejected: t('skills.admin.review.labels.rejected'),
-    changes_requested: t('skills.admin.review.labels.changesRequested')
+    rejected: t('skills.admin.review.labels.rejected')
   }[status]
 }
 
@@ -385,7 +382,7 @@ function selectReview(row: SkillReviewItem) {
 
 function updateReviewStatusFilter(value: string | number | boolean | null) {
   const next = String(value ?? 'all')
-  filters.review_status = next === 'approved' || next === 'rejected' || next === 'changes_requested' || next === 'pending'
+  filters.review_status = next === 'approved' || next === 'rejected' || next === 'pending'
     ? next
     : 'all'
 }

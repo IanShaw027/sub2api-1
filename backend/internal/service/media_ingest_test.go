@@ -430,6 +430,31 @@ func TestBuildSignedDownloadURL_UsesAPIBaseURLOriginWithoutDuplicatingAPIPrefix(
 	}
 }
 
+func TestOpenSignedDownloadRejectsDeletedAsset(t *testing.T) {
+	cfg := newMediaIngestTestConfig()
+	asset := &MediaAsset{
+		ID:         44,
+		Bucket:     cfg.Media.Bucket,
+		ObjectKey:  "media/private/deleted.png",
+		Visibility: MediaVisibilityPrivate,
+		Status:     MediaStatusDeleted,
+	}
+	svc := NewMediaService(mediaURLTestRepo{
+		assetsByID: map[int64]*MediaAsset{44: asset},
+	}, &mediaIngestTestStore{}, cfg)
+	expires := time.Now().Add(time.Hour).Unix()
+	signature := svc.downloadSignature(asset.ID, expires, false)
+
+	stream, gotAsset, err := svc.OpenSignedDownload(context.Background(), asset.ID, expires, signature, false)
+
+	if err == nil {
+		t.Fatalf("OpenSignedDownload deleted asset error = nil, stream=%v asset=%v", stream, gotAsset)
+	}
+	if !errors.Is(err, ErrMediaNotFound) {
+		t.Fatalf("OpenSignedDownload deleted asset error = %v, want ErrMediaNotFound", err)
+	}
+}
+
 func TestManagedPublicMediaURLs_UseDirectObjectKeyAndRoundTripManagedID(t *testing.T) {
 	cfg := newMediaIngestTestConfig()
 	asset := &MediaAsset{

@@ -111,8 +111,7 @@ function reviewStatusLabel(status: SkillReviewStatus): string {
   return {
     pending: t('skills.admin.review.labels.pending'),
     approved: t('skills.admin.review.labels.approved'),
-    rejected: t('skills.admin.review.labels.rejected'),
-    changes_requested: t('skills.admin.review.labels.changesRequested')
+    rejected: t('skills.admin.review.labels.rejected')
   }[status]
 }
 

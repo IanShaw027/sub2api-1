@@ -178,8 +178,7 @@ function skillVisibilityLabel(visibility: SkillVisibility): string {
 const typeOptions = computed(() => [
   { value: 'all', label: t('common.all', '全部') },
   { value: 'prompt_chat', label: skillTypeLabel('prompt_chat') },
-  { value: 'prompt_image', label: skillTypeLabel('prompt_image') },
-  { value: 'script', label: skillTypeLabel('script') }
+  { value: 'prompt_image', label: skillTypeLabel('prompt_image') }
 ])
 
 const statusOptions = computed(() => [
@@ -218,7 +217,7 @@ const paidCount = computed(() =>
 )
 
 function normalizeType(value: string | number | boolean | null): SkillType | 'all' {
-  return value === 'prompt_chat' || value === 'prompt_image' || value === 'script' ? value : 'all'
+  return value === 'prompt_chat' || value === 'prompt_image' ? value : 'all'
 }
 
 function normalizeStatus(value: string | number | boolean | null): SkillStatus | 'all' {

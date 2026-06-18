@@ -160,14 +160,18 @@ func (h *AIHandler) CreateSkill(c *gin.Context) {
 	if !ok {
 		return
 	}
-	module, err := h.skillModuleOrErr()
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
 	var req skillUpsertRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request body")
+		return
+	}
+	if err := validateUserSkillCreateType(req.Type); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	module, err := h.skillModuleOrErr()
+	if err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 	executeUserIdempotentJSON(c, "skills:create", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
@@ -192,6 +196,13 @@ func (h *AIHandler) CreateSkill(c *gin.Context) {
 		}
 		return dto.SkillDetailFromDomain(skill, subject.UserID, true, nil, nil), nil
 	})
+}
+
+func validateUserSkillCreateType(rawType string) error {
+	if strings.EqualFold(strings.TrimSpace(rawType), service.AISkillTypeScript) {
+		return infraerrors.BadRequest("AI_SKILL_SCRIPT_CREATION_UNSUPPORTED", "script skills cannot be created until the runtime executor is available")
+	}
+	return nil
 }
 
 func (h *AIHandler) UpdateSkill(c *gin.Context) {

@@ -533,11 +533,10 @@ func SkillSettlementItemFromQuery(record skillkit.SettlementRecord) SkillSettlem
 
 func SkillReviewSummaryFromItems(items []SkillReviewItem) map[string]any {
 	summary := map[string]any{
-		"pending_count":           0,
-		"approved_count":          0,
-		"rejected_count":          0,
-		"changes_requested_count": 0,
-		"high_risk_count":         0,
+		"pending_count":   0,
+		"approved_count":  0,
+		"rejected_count":  0,
+		"high_risk_count": 0,
 	}
 	for _, item := range items {
 		switch item.ReviewStatus {

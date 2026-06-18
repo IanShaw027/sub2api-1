@@ -1,7 +1,7 @@
 import { apiClient } from '../client'
 import type { BasePaginationResponse } from '@/types'
 
-export type SkillReviewStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested'
+export type SkillReviewStatus = 'pending' | 'approved' | 'rejected'
 export type SkillVisibility = 'public' | 'private' | 'force_private'
 export type SkillRiskLevel = 'low' | 'medium' | 'high'
 export type SkillGovernanceStatus = 'online' | 'disabled' | 'force_private' | 'draft'
@@ -75,7 +75,6 @@ export interface SkillReviewSummary {
   pending_count: number
   approved_count: number
   rejected_count: number
-  changes_requested_count: number
   high_risk_count: number
 }
 
@@ -302,7 +301,6 @@ function normalizeReviewStatus(value: unknown): SkillReviewStatus {
   const normalized = asString(value).trim().toLowerCase()
   if (['approved', 'passed', 'published', 'released', 'live'].includes(normalized)) return 'approved'
   if (['rejected', 'declined', 'failed'].includes(normalized)) return 'rejected'
-  if (['changes_requested', 'needs_changes', 'revision_required'].includes(normalized)) return 'changes_requested'
   return 'pending'
 }
 
@@ -393,10 +391,6 @@ function normalizeReviewSummary(raw: unknown, items: SkillReviewItem[]): SkillRe
     pending_count: asNumber(source.pending_count, items.filter((item) => item.review_status === 'pending').length),
     approved_count: asNumber(source.approved_count, items.filter((item) => item.review_status === 'approved').length),
     rejected_count: asNumber(source.rejected_count, items.filter((item) => item.review_status === 'rejected').length),
-    changes_requested_count: asNumber(
-      source.changes_requested_count,
-      items.filter((item) => item.review_status === 'changes_requested').length
-    ),
     high_risk_count: asNumber(source.high_risk_count, items.filter((item) => item.risk_level === 'high').length)
   }
 }

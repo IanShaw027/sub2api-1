@@ -43,7 +43,6 @@ describe('admin skills api', () => {
           pending_count: 0,
           approved_count: 0,
           rejected_count: 0,
-          changes_requested_count: 0,
           high_risk_count: 0,
         },
       },

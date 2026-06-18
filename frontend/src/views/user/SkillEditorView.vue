@@ -15,7 +15,7 @@
             <div>
               <p class="text-xs uppercase tracking-[0.35em] text-white/60">{{ t('skills.center.label', 'Skill Center') }}</p>
               <h1 class="mt-2 text-2xl font-bold">{{ isEditing ? t('skills.editor.edit', '编辑技能') : t('skills.editor.create', '创建技能') }}</h1>
-              <p class="mt-1 text-sm text-white/70">{{ t('skills.editor.subtitle', '支持 prompt_chat / prompt_image / script，并可编辑变量 schema。') }}</p>
+              <p class="mt-1 text-sm text-white/70">{{ t('skills.editor.subtitle', '支持 prompt_chat / prompt_image，并可编辑变量 schema。') }}</p>
             </div>
             <div class="flex flex-wrap gap-3">
               <button class="btn btn-secondary bg-white/10 text-white hover:bg-white/15" :disabled="skillsStore.loadingEditor" @click="reloadEditor">
@@ -212,8 +212,7 @@ const tagsInput = computed(() => skillsStore.editorDraft.tags.join(', '))
 
 const typeOptions = [
   { value: 'prompt_chat', label: 'prompt_chat' },
-  { value: 'prompt_image', label: 'prompt_image' },
-  { value: 'script', label: 'script' }
+  { value: 'prompt_image', label: 'prompt_image' }
 ]
 
 const visibilityOptions = [
@@ -247,7 +246,7 @@ function updateTags(value: string): void {
 }
 
 function updateType(value: string | number | boolean | null): void {
-  const type: SkillType = value === 'prompt_image' || value === 'script' ? value : 'prompt_chat'
+  const type: SkillType = value === 'prompt_image' ? value : 'prompt_chat'
   skillsStore.setEditorType(type)
 }
 

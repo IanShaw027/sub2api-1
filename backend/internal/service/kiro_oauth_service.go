@@ -748,6 +748,13 @@ func parseKiroCallbackURL(rawValue, callbackBaseURL string) (*url.URL, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid kiro callback URL: %w", err)
 		}
+		base, err := url.Parse(strings.TrimRight(strings.TrimSpace(callbackBaseURL), "/"))
+		if err != nil || base == nil || base.Scheme == "" || base.Host == "" {
+			return nil, fmt.Errorf("invalid kiro callback base URL")
+		}
+		if !sameKiroCallbackOrigin(parsed, base) {
+			return nil, fmt.Errorf("kiro callback origin does not match this authorization session")
+		}
 		return parsed, nil
 	}
 
@@ -767,6 +774,13 @@ func parseKiroCallbackURL(rawValue, callbackBaseURL string) (*url.URL, error) {
 	}
 	parsed.Path = callbackPath
 	return parsed, nil
+}
+
+func sameKiroCallbackOrigin(a, b *url.URL) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return strings.EqualFold(a.Scheme, b.Scheme) && strings.EqualFold(a.Host, b.Host)
 }
 
 func defaultKiroCallbackPathFromInput(rawValue string) string {

@@ -308,6 +308,18 @@ func TestAIHandlerCreateSkillCleansUpUploadedCoverImageOnPersistenceFailure(t *t
 	require.Len(t, store.deleted, 1)
 }
 
+func TestAIHandlerCreateSkillRejectsScriptUntilRuntimeExecutorIsAvailable(t *testing.T) {
+	t.Parallel()
+
+	handler := &AIHandler{}
+	ctx, recorder := newAISkillHandlerJSONContext(t, http.MethodPost, "/api/v1/ai/skills", `{"name":"Script Skill","type":"script","content":{"type":"script","source_code":"console.log(1)"}}`)
+
+	handler.CreateSkill(ctx)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "AI_SKILL_SCRIPT_CREATION_UNSUPPORTED")
+}
+
 func TestAIHandlerRunSkillCleansUpUploadedAttachmentsOnExecutionFailure(t *testing.T) {
 	t.Parallel()
 
