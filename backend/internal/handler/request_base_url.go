@@ -9,9 +9,10 @@ import (
 )
 
 // requestBaseURL derives the inbound request's base URL (scheme://host) from
-// the gin context, honoring reverse-proxy headers. It is used to build
-// backend-proxied signed download links that point back at the host the caller
-// actually reached, rather than a statically configured object-storage domain.
+// the request object without trusting client-supplied forwarding headers. It is
+// used to build backend-proxied signed download links that point back at the
+// host the caller actually reached, rather than a statically configured
+// object-storage domain.
 func requestBaseURL(c *gin.Context) string {
 	if c == nil || c.Request == nil {
 		return ""
@@ -21,14 +22,8 @@ func requestBaseURL(c *gin.Context) string {
 	if c.Request.TLS != nil {
 		scheme = "https"
 	}
-	if xfProto := firstForwardedValue(c.GetHeader("X-Forwarded-Proto")); isHTTPForwardedScheme(xfProto) {
-		scheme = strings.ToLower(xfProto)
-	}
 
 	host := strings.TrimSpace(c.Request.Host)
-	if xfHost := firstForwardedValue(c.GetHeader("X-Forwarded-Host")); isForwardedHostSafe(xfHost) {
-		host = xfHost
-	}
 
 	if !isForwardedHostSafe(host) {
 		return ""

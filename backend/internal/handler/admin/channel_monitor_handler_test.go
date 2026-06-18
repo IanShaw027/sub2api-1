@@ -185,7 +185,7 @@ func TestChannelMonitorHandler_CreateAcceptsKiroProvider(t *testing.T) {
 		bytes.NewBufferString(`{
 			"name":"kiro(pro号池)",
 			"provider":"kiro",
-			"endpoint":"https://example.com",
+			"endpoint":"https://8.8.8.8",
 			"api_key":"sk-test-monitor-key",
 			"primary_model":"claude-haiku-4-5",
 			"group_name":"kiro(pro号池)",

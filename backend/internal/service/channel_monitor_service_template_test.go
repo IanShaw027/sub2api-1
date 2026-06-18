@@ -118,6 +118,8 @@ func (channelMonitorEncryptorStub) Encrypt(plaintext string) (string, error) {
 }
 func (channelMonitorEncryptorStub) Decrypt(ciphertext string) (string, error) { return ciphertext, nil }
 
+const channelMonitorTestPublicEndpoint = "https://8.8.8.8"
+
 func TestChannelMonitorCreate_TemplateNotFound(t *testing.T) {
 	called := false
 	repo := &channelMonitorRepoStub{
@@ -134,7 +136,7 @@ func TestChannelMonitorCreate_TemplateNotFound(t *testing.T) {
 	_, err := svc.Create(context.Background(), ChannelMonitorCreateParams{
 		Name:            "m1",
 		Provider:        MonitorProviderOpenAI,
-		Endpoint:        "https://api.openai.com",
+		Endpoint:        channelMonitorTestPublicEndpoint,
 		APIKey:          "sk",
 		PrimaryModel:    "gpt-4.1",
 		Enabled:         true,
@@ -165,7 +167,7 @@ func TestChannelMonitorCreate_TemplateProviderMismatch(t *testing.T) {
 	_, err := svc.Create(context.Background(), ChannelMonitorCreateParams{
 		Name:            "m1",
 		Provider:        MonitorProviderOpenAI,
-		Endpoint:        "https://api.openai.com",
+		Endpoint:        channelMonitorTestPublicEndpoint,
 		APIKey:          "sk",
 		PrimaryModel:    "gpt-4.1",
 		Enabled:         true,
@@ -201,7 +203,7 @@ func TestChannelMonitorCreate_TemplateAPIModeMismatch(t *testing.T) {
 		Name:            "m1",
 		Provider:        MonitorProviderOpenAI,
 		APIMode:         MonitorAPIModeChatCompletions,
-		Endpoint:        "https://api.openai.com",
+		Endpoint:        channelMonitorTestPublicEndpoint,
 		APIKey:          "sk",
 		PrimaryModel:    "gpt-4.1",
 		Enabled:         true,
@@ -310,7 +312,7 @@ func TestChannelMonitorCreate_RejectsTooManyExtraModels(t *testing.T) {
 	_, err := svc.Create(context.Background(), ChannelMonitorCreateParams{
 		Name:            "m1",
 		Provider:        MonitorProviderOpenAI,
-		Endpoint:        "https://api.openai.com",
+		Endpoint:        channelMonitorTestPublicEndpoint,
 		APIKey:          "sk",
 		PrimaryModel:    "gpt-4.1",
 		ExtraModels:     extras,
@@ -334,7 +336,7 @@ func TestChannelMonitorCreate_RejectsTooLongExtraModel(t *testing.T) {
 	_, err := svc.Create(context.Background(), ChannelMonitorCreateParams{
 		Name:            "m1",
 		Provider:        MonitorProviderOpenAI,
-		Endpoint:        "https://api.openai.com",
+		Endpoint:        channelMonitorTestPublicEndpoint,
 		APIKey:          "sk",
 		PrimaryModel:    "gpt-4.1",
 		ExtraModels:     []string{strings.Repeat("x", monitorExtraModelMaxLength+1)},
