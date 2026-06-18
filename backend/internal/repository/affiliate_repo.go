@@ -150,13 +150,7 @@ FOR UPDATE`, []any{input.InviterID}, &historyQuota)
 		}
 
 		if input.PerInviteeCap > 0 {
-			var inviteeTotal float64
-			err := scanSingleRow(txCtx, txClient, `
-SELECT COALESCE(SUM(amount), 0)::double precision
-FROM user_affiliate_ledger
-WHERE user_id = $1
-  AND source_user_id = $2
-  AND action = 'accrue'`, []any{input.InviterID, input.InviteeUserID}, &inviteeTotal)
+			inviteeTotal, err := queryAffiliateInviteeNetAccrued(txCtx, txClient, input.InviterID, input.InviteeUserID)
 			if err != nil {
 				return fmt.Errorf("query affiliate invitee accrued amount: %w", err)
 			}
@@ -287,11 +281,22 @@ VALUES ($1, 'accrue', $2, $3, $4, $5, $6, $7, NOW(), NOW()`
 
 func (r *affiliateRepository) GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error) {
 	client := clientFromContext(ctx, r.client)
-	rows, err := client.QueryContext(ctx,
-		`SELECT COALESCE(SUM(amount), 0)::double precision FROM user_affiliate_ledger WHERE user_id = $1 AND source_user_id = $2 AND action = 'accrue'`,
-		inviterID, inviteeUserID)
+	total, err := queryAffiliateInviteeNetAccrued(ctx, client, inviterID, inviteeUserID)
 	if err != nil {
 		return 0, fmt.Errorf("query accrued rebate from invitee: %w", err)
+	}
+	return total, nil
+}
+
+func queryAffiliateInviteeNetAccrued(ctx context.Context, client affiliateQueryExecer, inviterID, inviteeUserID int64) (float64, error) {
+	rows, err := client.QueryContext(ctx, `
+SELECT GREATEST(COALESCE(SUM(amount), 0), 0)::double precision
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND source_user_id = $2
+  AND action IN ('accrue', 'reverse')`, inviterID, inviteeUserID)
+	if err != nil {
+		return 0, err
 	}
 	defer func() { _ = rows.Close() }()
 	var total float64
@@ -299,6 +304,9 @@ func (r *affiliateRepository) GetAccruedRebateFromInvitee(ctx context.Context, i
 		if err := rows.Scan(&total); err != nil {
 			return 0, err
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
 	}
 	return total, rows.Close()
 }

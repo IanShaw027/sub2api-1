@@ -168,6 +168,25 @@ func (f *fakeFullCache) DeleteUserPlatformQuotaCache(_ context.Context, _ int64,
 	return nil
 }
 
+func (f *fakeFullCache) IncrUserPlatformQuotaUsageCache(_ context.Context, userID int64, platform string, cost float64, _ time.Duration, markDirty bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.entry == nil || f.entry.SchemaVersion != UserPlatformQuotaCacheSchemaV1 {
+		return nil
+	}
+	f.entry.DailyUsageUSD += cost
+	f.entry.WeeklyUsageUSD += cost
+	f.entry.MonthlyUsageUSD += cost
+	f.entry.Version++
+	if markDirty {
+		if f.dirty == nil {
+			f.dirty = make(map[UserPlatformQuotaKey]struct{})
+		}
+		f.dirty[UserPlatformQuotaKey{UserID: userID, Platform: platform}] = struct{}{}
+	}
+	return nil
+}
+
 func (f *fakeFullCache) PopDirtyUserPlatformQuotaKeys(_ context.Context, n int) ([]UserPlatformQuotaKey, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -702,6 +721,47 @@ func TestCheckUserPlatformQuotaEligibility_NoRow_WritesSentinel(t *testing.T) {
 	}
 }
 
+func TestCheckUserPlatformQuotaEligibility_NilDBWindowsBackfillCurrentWindowsForFlusher(t *testing.T) {
+	daily := 100.0
+	repo := &fakeQuotaRepo{rec: &UserPlatformQuotaRecord{
+		UserID:        7,
+		Platform:      "openai",
+		DailyLimitUSD: &daily,
+		// BulkInsertInitial creates rows with limits but nil window_start.
+	}}
+	cache := &fakeFullCache{}
+	svc := newServiceForPreflight(t, repo, cache)
+	svc.cfg.Database.UserPlatformQuotaFlusherEnabled = true
+
+	if err := svc.checkUserPlatformQuotaEligibility(context.Background(), 7, "openai"); err != nil {
+		t.Fatalf("expected quota check to pass, got %v", err)
+	}
+
+	entry := cache.getEntry()
+	if entry == nil {
+		t.Fatal("expected quota cache entry to be backfilled")
+	}
+	if entry.DailyWindowStart == nil || entry.WeeklyWindowStart == nil || entry.MonthlyWindowStart == nil {
+		t.Fatalf("backfilled cache entry must have non-nil windows: %#v", entry)
+	}
+
+	svc.IncrementUserPlatformQuotaUsage(7, "openai", 0.25)
+	writer := &mockQuotaSnapshotWriter{}
+	flusher := newTestFlusher(cache, writer)
+	flusher.flush()
+
+	if len(writer.receivedSnaps) != 1 {
+		t.Fatalf("expected flusher to write one snapshot, got %d", len(writer.receivedSnaps))
+	}
+	snap := writer.receivedSnaps[0]
+	if snap.UserID != 7 || snap.Platform != "openai" {
+		t.Fatalf("unexpected snapshot key: %+v", snap)
+	}
+	if snap.DailyUsageUSD != 0.25 || snap.WeeklyUsageUSD != 0.25 || snap.MonthlyUsageUSD != 0.25 {
+		t.Fatalf("unexpected snapshot usage: %+v", snap)
+	}
+}
+
 // TestCheckUserPlatformQuotaEligibility_RedisGetError_NoSentinelBackfill 验证:
 // Redis GET 故障(cacheErr!=nil)+ DB 无行时,不应回填 sentinel(与 "Redis 故障时不回填" 一致),且 fail-open。
 func TestCheckUserPlatformQuotaEligibility_RedisGetError_NoSentinelBackfill(t *testing.T) {
@@ -769,9 +829,9 @@ func TestHasUserPlatformQuotaLimit(t *testing.T) {
 	daily := 5.0
 
 	tests := []struct {
-		name    string
-		setup   func() *BillingCacheService
-		want    bool
+		name  string
+		setup func() *BillingCacheService
+		want  bool
 	}{
 		{
 			name: "has_limit",

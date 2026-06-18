@@ -9075,14 +9075,16 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 	deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
 
 	// Platform quota 累加：仅在 standard（余额）模式生效；订阅模式豁免
-	// Redis 同步写 + DB 聚合异步持久化:
+	// Redis 同步写 + DB 持久化:
 	//   - Redis 同步:确保下次 preflight 立即看到最新 usage,把 TOCTOU 超支窗口
 	//     限制在并发 in-flight 请求数量内（旧实现的异步入队会让超支无限累积直到 worker 处理）
-	//   - DB 聚合:按 repo+user+platform 合并短时间窗口内的 cost,避免高并发请求对同一
-	//     user_platform_quotas 行逐请求 SELECT FOR UPDATE,失败用 ALERT log 触发 oncall 对账
+	//   - flusher_enabled=true:Redis 增量会标记 dirty,由 flusher 按绝对快照写 DB,避免 delta+snapshot 双计
+	//   - flusher_enabled=false:DB 聚合按 repo+user+platform 合并短时间窗口内的 cost,作为降级持久化
 	if !p.IsSubscriptionBill && p.Platform != "" && p.Cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil {
 		deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, p.Platform, p.Cost.ActualCost)
-		enqueueUserPlatformQuotaDBIncrement(deps.userPlatformQuotaRepo, p.User.ID, p.Platform, p.Cost.ActualCost)
+		if deps.cfg == nil || !deps.cfg.Database.UserPlatformQuotaFlusherEnabled {
+			enqueueUserPlatformQuotaDBIncrement(deps.userPlatformQuotaRepo, p.User.ID, p.Platform, p.Cost.ActualCost)
+		}
 	}
 
 	// Notification checks run async — all parameters are already captured,

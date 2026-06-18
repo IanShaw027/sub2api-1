@@ -1106,6 +1106,45 @@ func TestPartialRefundReversesProportionalRebateCumulatively(t *testing.T) {
 	require.Equal(t, 100.0, stub.reverseUsed.RefundedAmount, "second partial passes cumulative total")
 }
 
+func TestExecuteRefundRejectsStalePreparedPlanAfterConcurrentPartialRefund(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, order := seedRefundBalanceOrder(t, ctx, client, 100, "staleplan")
+
+	stub := &paymentFulfillmentAffiliateRepoStub{reverseRet: 6}
+	svc := &PaymentService{
+		entClient:        client,
+		userRepo:         &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}},
+		affiliateService: affiliateServiceWithReverseStub(stub),
+	}
+
+	firstPlan, result, err := svc.PrepareRefund(ctx, order.ID, 60, "first partial", false, false)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	stalePlan, result, err := svc.PrepareRefund(ctx, order.ID, 50, "stale partial", false, false)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	firstPlan.Order.PaymentTradeNo = ""
+	stalePlan.Order.PaymentTradeNo = ""
+
+	result, err = svc.ExecuteRefund(ctx, firstPlan)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+	require.Equal(t, 1, stub.reverseHits)
+	require.Equal(t, 60.0, stub.reverseUsed.RefundedAmount)
+
+	result, err = svc.ExecuteRefund(ctx, stalePlan)
+	require.Error(t, err)
+	require.Equal(t, "CONFLICT", infraerrors.Reason(err))
+	require.Nil(t, result)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, reloaded.Status)
+	require.Equal(t, 60.0, reloaded.RefundAmount)
+	require.Equal(t, 1, stub.reverseHits, "stale plan must not trigger a second affiliate reversal with an old total")
+}
+
 // TestRefundReversalFailureDoesNotFailRefund ensures a clawback error is recorded
 // for follow-up but never rolls back the gateway-confirmed refund.
 func TestRefundReversalFailureDoesNotFailRefund(t *testing.T) {

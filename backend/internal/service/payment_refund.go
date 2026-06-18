@@ -454,12 +454,19 @@ func calculateSubscriptionRefundDays(subscriptionDays int, orderAmount, refundAm
 }
 
 func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*RefundResult, error) {
-	c, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(p.OrderID), paymentorder.StatusIn(OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusPartiallyRefunded, OrderStatusRefundFailed)).SetStatus(OrderStatusRefunding).Save(ctx)
+	c, err := s.entClient.PaymentOrder.Update().
+		Where(
+			paymentorder.IDEQ(p.OrderID),
+			paymentorder.StatusIn(OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusPartiallyRefunded, OrderStatusRefundFailed),
+			paymentorder.RefundAmountEQ(p.Order.RefundAmount),
+		).
+		SetStatus(OrderStatusRefunding).
+		Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("lock: %w", err)
 	}
 	if c == 0 {
-		return nil, infraerrors.Conflict("CONFLICT", "order status changed")
+		return nil, infraerrors.Conflict("CONFLICT", "order refund state changed")
 	}
 	if p.DeductionType == payment.DeductionTypeBalance && p.BalanceToDeduct > 0 {
 		// Skip balance deduction on retry if previous attempt already deducted

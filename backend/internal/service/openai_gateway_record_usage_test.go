@@ -1202,6 +1202,59 @@ func TestOpenAIGatewayServiceRecordUsage_AggregatesUserPlatformQuotaDBIncrements
 	require.InDelta(t, wantCost, calls[0].cost, 1e-10)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_FlusherEnabledSkipsUserPlatformQuotaDBIncrement(t *testing.T) {
+	previousAggregator := defaultUserPlatformQuotaDBAggregator
+	defaultUserPlatformQuotaDBAggregator = newUserPlatformQuotaDBAggregator(10 * time.Millisecond)
+	t.Cleanup(func() {
+		defaultUserPlatformQuotaDBAggregator.flushPending()
+		defaultUserPlatformQuotaDBAggregator = previousAggregator
+	})
+
+	groupID := int64(1019)
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	quotaRepo := &openAIRecordUsageUserPlatformQuotaRepoStub{
+		callCh: make(chan openAIRecordUsageUserPlatformQuotaCall, 1),
+	}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
+	svc.userPlatformQuotaRepo = quotaRepo
+	svc.cfg.Database.UserPlatformQuotaFlusherEnabled = true
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_quota_platform_flusher_enabled",
+			Usage: OpenAIUsage{
+				InputTokens:  120,
+				OutputTokens: 60,
+			},
+			Model:    "gpt-5.4",
+			Duration: time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      1019,
+			GroupID: i64p(groupID),
+			Group: &Group{
+				ID:             groupID,
+				Platform:       PlatformOpenAI,
+				RateMultiplier: 1.0,
+			},
+		},
+		User:          &User{ID: 2019},
+		Account:       &Account{ID: 3019, Type: AccountTypeAPIKey},
+		QuotaPlatform: PlatformAntigravity,
+	})
+	require.NoError(t, err)
+
+	select {
+	case call := <-quotaRepo.callCh:
+		t.Fatalf("flusher-enabled path must not enqueue DB delta increment, got %+v", call)
+	case <-time.After(100 * time.Millisecond):
+	}
+	require.Empty(t, quotaRepo.snapshotCalls())
+}
+
 func TestNormalizeOpenAIServiceTier(t *testing.T) {
 	t.Run("fast maps to priority", func(t *testing.T) {
 		got := normalizeOpenAIServiceTier(" fast ")

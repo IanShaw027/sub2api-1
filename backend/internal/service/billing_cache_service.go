@@ -1258,14 +1258,22 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 	dailyUsage := rec.DailyUsageUSD
 	weeklyUsage := rec.WeeklyUsageUSD
 	monthlyUsage := rec.MonthlyUsageUSD
-	if quotaWindowExpired(rec.DailyWindowStart, timezone.StartOfDay(now)) {
+	dailyWindowStart := rec.DailyWindowStart
+	weeklyWindowStart := rec.WeeklyWindowStart
+	monthlyWindowStart := rec.MonthlyWindowStart
+	currentDayStart := timezone.StartOfDay(now)
+	if quotaWindowExpired(rec.DailyWindowStart, currentDayStart) {
 		dailyUsage = 0
+		dailyWindowStart = &currentDayStart
 	}
-	if quotaWindowExpired(rec.WeeklyWindowStart, timezone.StartOfWeek(now)) {
+	currentWeekStart := timezone.StartOfWeek(now)
+	if quotaWindowExpired(rec.WeeklyWindowStart, currentWeekStart) {
 		weeklyUsage = 0
+		weeklyWindowStart = &currentWeekStart
 	}
 	if monthlyQuotaWindowExpired(rec.MonthlyWindowStart, now) {
 		monthlyUsage = 0
+		monthlyWindowStart = &now
 	}
 
 	// Redis 故障时 fail-open：不回填，直接用 DB 数据做一次性检查
@@ -1291,9 +1299,9 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 		DailyLimitUSD:      rec.DailyLimitUSD,
 		WeeklyLimitUSD:     rec.WeeklyLimitUSD,
 		MonthlyLimitUSD:    rec.MonthlyLimitUSD,
-		DailyWindowStart:   rec.DailyWindowStart,
-		WeeklyWindowStart:  rec.WeeklyWindowStart,
-		MonthlyWindowStart: rec.MonthlyWindowStart,
+		DailyWindowStart:   dailyWindowStart,
+		WeeklyWindowStart:  weeklyWindowStart,
+		MonthlyWindowStart: monthlyWindowStart,
 	}
 	if s.cache != nil {
 		ttl := time.Duration(s.cfg.Billing.UserPlatformQuotaCacheTTLSeconds) * time.Second

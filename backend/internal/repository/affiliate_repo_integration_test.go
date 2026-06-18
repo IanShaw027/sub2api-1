@@ -803,6 +803,31 @@ func seedReversalFixture(t *testing.T, ctx context.Context, txCtx context.Contex
 	return repo, inviter.ID, invitee.ID, order.ID
 }
 
+func mustCreateAffiliateBalanceOrder(t *testing.T, txCtx context.Context, client *dbent.Client, userID int64, amount float64, tag string) int64 {
+	t.Helper()
+
+	now := time.Now().UnixNano()
+	order, err := client.PaymentOrder.Create().
+		SetUserID(userID).
+		SetUserEmail(fmt.Sprintf("affiliate-order-user-%d@example.com", userID)).
+		SetUserName(fmt.Sprintf("affiliate-order-user-%d", userID)).
+		SetAmount(amount).
+		SetPayAmount(amount).
+		SetFeeRate(0).
+		SetRechargeCode(fmt.Sprintf("AFF-%s-%d", tag, now)).
+		SetOutTradeNo(fmt.Sprintf("sub2_aff_%s_%d", tag, now)).
+		SetPaymentType("alipay").
+		SetPaymentTradeNo("").
+		SetOrderType("balance").
+		SetStatus("COMPLETED").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetExpiresAt(time.Now().Add(24 * time.Hour)).
+		Save(txCtx)
+	require.NoError(t, err)
+	return order.ID
+}
+
 // TestAffiliateRepository_ReverseQuotaForOrder_DeductsFrozenFirst verifies that a
 // full refund of an order whose rebate is still frozen claws back from
 // aff_frozen_quota (and aff_history_quota), leaving balance untouched.
@@ -836,6 +861,46 @@ func TestAffiliateRepository_ReverseQuotaForOrder_DeductsFrozenFirst(t *testing.
 	balance := querySingleFloat(t, txCtx, client,
 		"SELECT balance::double precision FROM users WHERE id = $1", inviterID)
 	require.InDelta(t, 0.0, balance, 1e-9)
+}
+
+func TestAffiliateRepository_ReverseQuotaForOrder_FreesPerInviteeCap(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo, inviterID, inviteeID, orderID := seedReversalFixture(t, ctx, txCtx, client, 24, 100, 10)
+
+	reversed, gotInviter, err := repo.ReverseQuotaForOrder(txCtx, service.AffiliateReversalInput{
+		SourceOrderID:  orderID,
+		RefundedAmount: 100,
+		OrderAmount:    100,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 10.0, reversed, 1e-9)
+	require.Equal(t, inviterID, gotInviter)
+
+	netAccrued, err := repo.GetAccruedRebateFromInvitee(txCtx, inviterID, inviteeID)
+	require.NoError(t, err)
+	require.InDelta(t, 0.0, netAccrued, 1e-9)
+
+	secondOrderID := mustCreateAffiliateBalanceOrder(t, txCtx, client, inviteeID, 100, "CAP-FREE")
+	applied, err := repo.AccrueQuota(txCtx, service.AffiliateAccrualInput{
+		InviterID:     inviterID,
+		InviteeUserID: inviteeID,
+		Amount:        10,
+		BaseAmount:    100,
+		RebateCap:     100,
+		PerInviteeCap: 10,
+		SourceOrderID: secondOrderID,
+		FreezeHours:   24,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 10.0, applied, 1e-9)
+
+	netAccrued, err = repo.GetAccruedRebateFromInvitee(txCtx, inviterID, inviteeID)
+	require.NoError(t, err)
+	require.InDelta(t, 10.0, netAccrued, 1e-9)
 }
 
 // TestAffiliateRepository_ReverseQuotaForOrder_ClawsBackTransferredBalance is the
