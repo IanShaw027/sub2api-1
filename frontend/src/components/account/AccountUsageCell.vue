@@ -155,7 +155,7 @@
         >
           <Icon name="gift" size="xs" />
           {{ t('admin.accounts.inviteResetCountShort') }}
-          <span v-if="inviteResetStatus" class="tabular-nums">{{ inviteResetAvailableCount }}</span>
+          <span v-if="effectiveInviteResetStatus" class="tabular-nums">{{ inviteResetAvailableCount }}</span>
         </button>
         <button
           type="button"
@@ -516,7 +516,7 @@
     v-if="isOpenAIOAuthAccount"
     :show="showInviteResetModal"
     :account="account"
-    :initial-status="inviteResetStatus"
+    :initial-status="effectiveInviteResetStatus"
     @close="showInviteResetModal = false"
     @updated="onInviteResetUpdated"
   />
@@ -1168,14 +1168,40 @@ const inviteResetQuerying = ref(false)
 const inviteResetConsuming = ref(false)
 const showInviteResetModal = ref(false)
 
+const persistedInviteResetStatus = computed<CodexInviteResetStatus | null>(() => {
+  if (!isOpenAIOAuthAccount.value) return null
+  const extra = props.account.extra ?? {}
+  const count = Number(extra.codex_invite_reset_available_count)
+  if (!Number.isFinite(count)) return null
+  const credits = Array.isArray(extra.codex_invite_reset_credits)
+    ? extra.codex_invite_reset_credits
+      .filter((credit) => credit && typeof credit === 'object')
+      .map((credit: any) => ({
+        id: String(credit.id ?? ''),
+        status: typeof credit.status === 'string' ? credit.status : undefined,
+        title: typeof credit.title === 'string' ? credit.title : undefined,
+        description: typeof credit.description === 'string' ? credit.description : undefined,
+        profile_user_id: typeof credit.profile_user_id === 'string' ? credit.profile_user_id : undefined,
+        profile_image_url: typeof credit.profile_image_url === 'string' ? credit.profile_image_url : undefined
+      }))
+      .filter((credit) => credit.id)
+    : []
+  return {
+    referral_key: '',
+    requires_consent: true,
+    available_count: count,
+    credits
+  }
+})
+const effectiveInviteResetStatus = computed(() => inviteResetStatus.value ?? persistedInviteResetStatus.value)
 const inviteResetAvailableCredits = computed(() =>
-  (inviteResetStatus.value?.credits ?? []).filter((credit) => {
+  (effectiveInviteResetStatus.value?.credits ?? []).filter((credit) => {
     const state = credit.status?.toLowerCase()
     return !state || state === 'available'
   })
 )
 const inviteResetAvailableCount = computed(
-  () => inviteResetStatus.value?.available_count ?? inviteResetAvailableCredits.value.length
+  () => effectiveInviteResetStatus.value?.available_count ?? inviteResetAvailableCredits.value.length
 )
 const inviteResetHasCredit = computed(() => inviteResetAvailableCredits.value.length > 0)
 
@@ -1233,7 +1259,7 @@ const inviteResetConsumeMessage = (code: string) => {
 const openInviteResetModal = async () => {
   showInviteResetModal.value = true
   // 弹窗打开时若还没查过次数，顺带拉一次，让弹窗直接复用。
-  if (!inviteResetStatus.value) {
+  if (!effectiveInviteResetStatus.value) {
     try {
       await loadInviteResetStatus()
     } catch {

@@ -19,8 +19,11 @@ import (
 
 type codexInviteResetAdminServiceStub struct {
 	AdminService
-	account *Account
-	proxy   *Proxy
+	mu             sync.Mutex
+	account        *Account
+	proxy          *Proxy
+	extraUpdates   []map[string]any
+	extraUpdateIDs []int64
 }
 
 func (s codexInviteResetAdminServiceStub) GetAccount(ctx context.Context, id int64) (*Account, error) {
@@ -29,6 +32,18 @@ func (s codexInviteResetAdminServiceStub) GetAccount(ctx context.Context, id int
 
 func (s codexInviteResetAdminServiceStub) GetProxy(ctx context.Context, id int64) (*Proxy, error) {
 	return s.proxy, nil
+}
+
+func (s *codexInviteResetAdminServiceStub) UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	copied := make(map[string]any, len(updates))
+	for k, v := range updates {
+		copied[k] = v
+	}
+	s.extraUpdateIDs = append(s.extraUpdateIDs, id)
+	s.extraUpdates = append(s.extraUpdates, copied)
+	return nil
 }
 
 // codexInviteResetHistoryRepoStub 记录写入的历史条目，供断言。
@@ -125,7 +140,8 @@ func TestCodexInviteResetServiceGetStatusAggregatesDesktopEndpoints(t *testing.T
 		"/backend-api/wham/referrals/eligibility_rules": codexInviteResetJSONResponse(`{"rules":[{"text":"friend must send first Codex message"}]}`),
 		"/backend-api/wham/rate-limit-reset-credits":    codexInviteResetJSONResponse(`{"available_count":2,"credits":[{"id":"credit-1","status":"available","title":"Reset"},{"id":"credit-2","status":"available"}]}`),
 	}}
-	svc := NewCodexInviteResetService(codexInviteResetAdminServiceStub{account: account}, upstream, nil, nil, &codexInviteResetHistoryRepoStub{})
+	adminSvc := &codexInviteResetAdminServiceStub{account: account}
+	svc := NewCodexInviteResetService(adminSvc, upstream, nil, nil, &codexInviteResetHistoryRepoStub{})
 
 	status, err := svc.GetStatus(context.Background(), account.ID)
 	require.NoError(t, err)
@@ -149,6 +165,12 @@ func TestCodexInviteResetServiceGetStatusAggregatesDesktopEndpoints(t *testing.T
 	require.Equal(t, "1", eligibilityReq.Header.Get("X-OpenAI-Attach-Integrity-State"))
 	require.Equal(t, "chatgpt-acc", eligibilityReq.Header.Get("chatgpt-account-id"))
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(eligibilityReq.Context()))
+
+	require.Len(t, adminSvc.extraUpdates, 1)
+	require.Equal(t, account.ID, adminSvc.extraUpdateIDs[0])
+	require.Equal(t, 2, adminSvc.extraUpdates[0]["codex_invite_reset_available_count"])
+	require.Equal(t, []string{"credit-1", "credit-2"}, adminSvc.extraUpdates[0]["codex_invite_reset_credit_ids"])
+	require.NotEmpty(t, adminSvc.extraUpdates[0]["codex_invite_reset_updated_at"])
 }
 
 func TestCodexInviteResetServiceSendInviteNormalizesEmails(t *testing.T) {
@@ -162,7 +184,7 @@ func TestCodexInviteResetServiceSendInviteNormalizesEmails(t *testing.T) {
 		codexInviteResetJSONResponse(`{"invites":[{"email":"a@example.com"}],"message":"ok"}`),
 	}}
 	historyRepo := &codexInviteResetHistoryRepoStub{}
-	svc := NewCodexInviteResetService(codexInviteResetAdminServiceStub{account: account}, upstream, nil, nil, historyRepo)
+	svc := NewCodexInviteResetService(&codexInviteResetAdminServiceStub{account: account}, upstream, nil, nil, historyRepo)
 
 	operatorID := int64(1001)
 	result, err := svc.SendInvite(context.Background(), account.ID, []string{"a@example.com, b@example.com", "A@example.com"}, &operatorID)
@@ -197,7 +219,7 @@ func TestCodexInviteResetServiceConsumeSendsRedeemRequestID(t *testing.T) {
 		codexInviteResetJSONResponse(`{"code":"reset","available_count":0}`),
 	}}
 	historyRepo := &codexInviteResetHistoryRepoStub{}
-	svc := NewCodexInviteResetService(codexInviteResetAdminServiceStub{account: account}, upstream, nil, nil, historyRepo)
+	svc := NewCodexInviteResetService(&codexInviteResetAdminServiceStub{account: account}, upstream, nil, nil, historyRepo)
 
 	result, err := svc.Consume(context.Background(), account.ID, "credit-1", nil)
 	require.NoError(t, err)

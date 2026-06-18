@@ -1127,7 +1127,7 @@ export interface TempUnschedulableStatus {
 export type AccountCredentialsShape<TCredentials extends object = AccountDataRecord> =
   TCredentials & AccountDataRecord
 
-export interface AccountRuntimeExtra extends CodexUsageSnapshot {
+export interface AccountRuntimeExtra extends CodexUsageSnapshot, CodexInviteResetSnapshot {
   model_rate_limits?: Record<string, { rate_limited_at: string; rate_limit_reset_at: string }>
   antigravity_credits_overages?: Record<string, { activated_at: string; active_until: string }>
 }
@@ -1345,6 +1345,20 @@ export interface CodexUsageSnapshot {
   codex_7d_window_minutes?: number // 7d window in minutes (should be ~10080)
 
   codex_usage_updated_at?: string // Last update timestamp
+}
+
+export interface CodexInviteResetSnapshot {
+  codex_invite_reset_available_count?: number
+  codex_invite_reset_updated_at?: string
+  codex_invite_reset_credit_ids?: string[]
+  codex_invite_reset_credits?: Array<{
+    id: string
+    status?: string
+    title?: string
+    description?: string
+    profile_user_id?: string
+    profile_image_url?: string
+  }>
 }
 
 export type AccountRequestPayload<TPayload extends object = AccountDataRecord> =

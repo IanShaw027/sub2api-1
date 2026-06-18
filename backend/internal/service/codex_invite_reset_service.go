@@ -178,14 +178,16 @@ func (s *CodexInviteResetService) GetStatus(ctx context.Context, accountID int64
 		}
 	}
 
-	return &CodexInviteResetStatus{
+	status := &CodexInviteResetStatus{
 		ReferralKey:       codexInviteResetReferralKey,
 		InviteEligibility: eligibility,
 		EligibilityRules:  normalizeCodexInviteResetRules(rules),
 		RequiresConsent:   codexInviteResetBoolFromMapDefault(eligibility, "requires_explicit_confirmation", true),
 		AvailableCount:    availableCount,
 		Credits:           credits,
-	}, nil
+	}
+	s.persistStatusSnapshot(ctx, accountCtx.account, status)
+	return status, nil
 }
 
 // SendInvite 发送 Codex 邀请邮件。operatorUserID 为发起操作的管理员（nil 表示系统触发）。
@@ -303,6 +305,61 @@ func (s *CodexInviteResetService) recordHistory(ctx context.Context, entry *Code
 			"account_id", entry.AccountID,
 			"action_type", entry.ActionType,
 			"error", err)
+	}
+}
+
+// persistStatusSnapshot stores the latest query result on account.extra so
+// list/reload paths can show the last known reset count without re-querying upstream.
+func (s *CodexInviteResetService) persistStatusSnapshot(ctx context.Context, account *Account, status *CodexInviteResetStatus) {
+	if s == nil || s.adminService == nil || account == nil || account.ID <= 0 || status == nil {
+		return
+	}
+	updates := buildCodexInviteResetStatusExtraUpdates(status, time.Now().UTC())
+	if len(updates) == 0 {
+		return
+	}
+	if err := s.adminService.UpdateAccountExtra(ctx, account.ID, updates); err != nil {
+		slog.Warn("codex_invite_reset_status_persist_failed",
+			"account_id", account.ID,
+			"error", err)
+		return
+	}
+	mergeAccountExtra(account, updates)
+}
+
+func buildCodexInviteResetStatusExtraUpdates(status *CodexInviteResetStatus, now time.Time) map[string]any {
+	if status == nil {
+		return nil
+	}
+	creditIDs := make([]string, 0, len(status.Credits))
+	credits := make([]map[string]any, 0, len(status.Credits))
+	for _, credit := range status.Credits {
+		if strings.TrimSpace(credit.ID) != "" {
+			creditIDs = append(creditIDs, credit.ID)
+		}
+		creditMap := map[string]any{"id": credit.ID}
+		if credit.Status != "" {
+			creditMap["status"] = credit.Status
+		}
+		if credit.Title != "" {
+			creditMap["title"] = credit.Title
+		}
+		if credit.Description != "" {
+			creditMap["description"] = credit.Description
+		}
+		if credit.ProfileUserID != "" {
+			creditMap["profile_user_id"] = credit.ProfileUserID
+		}
+		if credit.ProfileImageURL != "" {
+			creditMap["profile_image_url"] = credit.ProfileImageURL
+		}
+		credits = append(credits, creditMap)
+	}
+	return map[string]any{
+		"codex_invite_reset_available_count": status.AvailableCount,
+		"codex_invite_reset_updated_at":      now.Format(time.RFC3339),
+		"codex_invite_reset_credit_ids":      creditIDs,
+		"codex_invite_reset_credits":         credits,
 	}
 }
 

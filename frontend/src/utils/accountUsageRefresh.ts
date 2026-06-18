@@ -24,7 +24,11 @@ export const buildOpenAIUsageRefreshKey = (account: Pick<Account, 'id' | 'platfo
     extra.codex_7d_used_percent,
     extra.codex_7d_reset_at,
     extra.codex_7d_reset_after_seconds,
-    extra.codex_7d_window_minutes
+    extra.codex_7d_window_minutes,
+    extra.codex_invite_reset_available_count,
+    extra.codex_invite_reset_updated_at,
+    JSON.stringify(extra.codex_invite_reset_credit_ids ?? []),
+    JSON.stringify(extra.codex_invite_reset_credits ?? [])
   ].map(normalizeUsageRefreshValue).join('|')
 }
 

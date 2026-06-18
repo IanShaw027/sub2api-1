@@ -50,6 +50,33 @@ describe('buildOpenAIUsageRefreshKey', () => {
     expect(buildOpenAIUsageRefreshKey(base)).not.toBe(buildOpenAIUsageRefreshKey(next))
   })
 
+  it('会在 Codex 重置次数快照变化时生成不同 key', () => {
+    const base = {
+      id: 4,
+      platform: 'openai',
+      type: 'oauth',
+      updated_at: '2026-03-07T10:00:00Z',
+      last_used_at: '2026-03-07T10:00:00Z',
+      extra: {
+        codex_invite_reset_available_count: 1,
+        codex_invite_reset_updated_at: '2026-03-07T10:00:00Z',
+        codex_invite_reset_credit_ids: ['credit-1']
+      }
+    } as any
+
+    const next = {
+      ...base,
+      extra: {
+        ...base.extra,
+        codex_invite_reset_available_count: 2,
+        codex_invite_reset_updated_at: '2026-03-07T10:01:00Z',
+        codex_invite_reset_credit_ids: ['credit-1', 'credit-2']
+      }
+    }
+
+    expect(buildOpenAIUsageRefreshKey(base)).not.toBe(buildOpenAIUsageRefreshKey(next))
+  })
+
   it('非 OpenAI OAuth 账号返回空 key', () => {
     expect(buildOpenAIUsageRefreshKey({
       id: 2,
