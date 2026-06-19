@@ -71,7 +71,7 @@ func (s *OpenAIGatewayService) EmitOpenAIGatewayDebugTimelineEvent(c *gin.Contex
 	addOpenAIGatewayTimelineResultFields(fields, in.Result)
 	addOpenAIGatewayTimelineOpenAIResultFields(fields, in.OpenAIResult)
 	if in.Err != nil {
-		fields["error"] = truncateOpenAIWSLogValue(in.Err.Error(), 512)
+		fields["error"] = truncateOpenAIWSLogValue(sanitizeUpstreamErrorMessage(in.Err.Error()), 512)
 	}
 
 	WriteGatewayDebugTimelineEvent(s.settingService, c, stage, fields)

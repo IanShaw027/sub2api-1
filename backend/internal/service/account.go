@@ -77,8 +77,10 @@ var kiroClaudeModelPattern = regexp.MustCompile(`^claude-(haiku|sonnet|opus)-4[.
 type OpenAIEndpointCapability string
 
 const (
-	OpenAIEndpointCapabilityChatCompletions OpenAIEndpointCapability = "chat_completions"
-	OpenAIEndpointCapabilityEmbeddings      OpenAIEndpointCapability = "embeddings"
+	OpenAIEndpointCapabilityChatCompletions          OpenAIEndpointCapability = "chat_completions"
+	OpenAIEndpointCapabilityEmbeddings               OpenAIEndpointCapability = "embeddings"
+	OpenAIEndpointCapabilityResponsesIngress         OpenAIEndpointCapability = "responses_ingress"
+	OpenAIEndpointCapabilityAnthropicMessagesIngress OpenAIEndpointCapability = "anthropic_messages_ingress"
 )
 
 const openAIEndpointCapabilitiesCredentialKey = "openai_capabilities"
@@ -1484,6 +1486,10 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	case OpenAIEndpointCapabilityChatCompletions:
 	case OpenAIEndpointCapabilityEmbeddings:
 		if a.Type != AccountTypeAPIKey {
+			return false
+		}
+	case OpenAIEndpointCapabilityResponsesIngress, OpenAIEndpointCapabilityAnthropicMessagesIngress:
+		if a.IsAnthropicMessagesUpstream() {
 			return false
 		}
 	default:

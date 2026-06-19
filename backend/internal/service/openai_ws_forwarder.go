@@ -2032,7 +2032,7 @@ func shouldUseOpenAIWSNeutralForColdSession(
 	if !signals.HasFunctionCallOutput {
 		return true
 	}
-	return signals.HasToolCallContext || signals.HasItemReferenceForAllCallIDs
+	return signals.HasToolCallContext
 }
 
 func shouldForceNewConnOnHTTPIngressWSOneShotRetry(lastFailureReason string) bool {

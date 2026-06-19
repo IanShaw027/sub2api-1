@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -168,6 +169,35 @@ func TestOpenAIGatewayServiceEmitDebugTimelineEvent_WritesOpenAIMetadata(t *test
 	}
 	if strings.Contains(content, `"body":`) {
 		t.Fatalf("OpenAI timeline should remain metadata-only, got %s", content)
+	}
+}
+
+func TestOpenAIGatewayServiceEmitDebugTimelineEvent_RedactsErrorMetadata(t *testing.T) {
+	resetGatewayDebugTimelineStateForTest(t)
+
+	dir := filepath.Join(t.TempDir(), "timeline")
+	settingService := testGatewayDebugTimelineSettingService(t, dir)
+	svc := &OpenAIGatewayService{settingService: settingService}
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.4"}`))
+
+	svc.EmitOpenAIGatewayDebugTimelineEvent(c, OpenAIGatewayDebugTimelineEventInput{
+		Stage:        "attempt_finished",
+		EndpointKind: "responses",
+		Err: errors.New(
+			`upstream https://example.invalid/callback?access_token=sk-secret-token&refresh_token=rt-secret failed with Authorization: Bearer sk-proj-secret`,
+		),
+	})
+
+	content := readGatewayDebugTimelineLog(t, dir)
+	if strings.Contains(content, "sk-secret-token") || strings.Contains(content, "rt-secret") || strings.Contains(content, "sk-proj-secret") {
+		t.Fatalf("timeline error metadata leaked secret: %s", content)
+	}
+	if !strings.Contains(content, "[REDACTED]") {
+		t.Fatalf("expected redacted marker in error metadata, got %s", content)
 	}
 }
 

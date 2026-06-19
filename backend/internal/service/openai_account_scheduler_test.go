@@ -24,6 +24,20 @@ type schedulerTestOpenAIAccountRepo struct {
 	accounts []Account
 }
 
+func TestAccountSupportsOpenAIEndpointCapability_ResponsesIngressExcludesAnthropicMessagesUpstream(t *testing.T) {
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Extra: map[string]any{
+			"anthropic_messages_upstream": true,
+		},
+	}
+
+	require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityChatCompletions))
+	require.False(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesIngress))
+	require.False(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAnthropicMessagesIngress))
+}
+
 func (r schedulerTestOpenAIAccountRepo) GetByID(ctx context.Context, id int64) (*Account, error) {
 	for i := range r.accounts {
 		if r.accounts[i].ID == id {

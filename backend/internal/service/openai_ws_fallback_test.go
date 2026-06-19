@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -189,6 +190,13 @@ func TestShouldFallbackOpenAIWSToHTTP_SessionPreempted(t *testing.T) {
 	require.False(t, shouldFallbackOpenAIWSToHTTP(wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted)))
 }
 
+func TestIsOpenAIWSSessionPreemptedError(t *testing.T) {
+	require.True(t, IsOpenAIWSSessionPreemptedError(wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted)))
+	require.True(t, IsOpenAIWSSessionPreemptedError(fmt.Errorf("wrapped: %w", errOpenAIWSSessionPreempted)))
+	require.False(t, IsOpenAIWSSessionPreemptedError(wrapOpenAIWSFallback("acquire_timeout", context.DeadlineExceeded)))
+	require.False(t, IsOpenAIWSSessionPreemptedError(context.Canceled))
+}
+
 func TestOpenAIWSErrorHTTPStatus(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, openAIWSErrorHTTPStatus([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_request","message":"invalid input"}}`)))
 	require.Equal(t, http.StatusUnauthorized, openAIWSErrorHTTPStatus([]byte(`{"type":"error","error":{"type":"authentication_error","code":"invalid_api_key","message":"auth failed"}}`)))
@@ -249,6 +257,29 @@ func TestResolveOpenAIWSFallbackErrorResponse(t *testing.T) {
 		_, _, _, _, ok := resolveOpenAIWSFallbackErrorResponse(errors.New("plain error"))
 		require.False(t, ok)
 	})
+}
+
+func TestWriteOpenAIWSFallbackErrorResponse_SessionPreemptedDoesNotSetOpsUpstreamError(t *testing.T) {
+	setGinTestMode()
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	wrote := svc.writeOpenAIWSFallbackErrorResponse(c, &Account{
+		ID:       1,
+		Platform: PlatformOpenAI,
+		Name:     "oauth",
+	}, wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted))
+
+	require.True(t, wrote)
+	require.Equal(t, 499, rec.Code)
+	_, hasType := c.Get(OpsUpstreamErrorTypeKey)
+	require.False(t, hasType)
+	_, hasMessage := c.Get(OpsUpstreamErrorMessageKey)
+	require.False(t, hasMessage)
+	_, hasEvents := c.Get(OpsUpstreamErrorsKey)
+	require.False(t, hasEvents)
 }
 
 func TestNewOpenAIWSFailoverError(t *testing.T) {
@@ -384,14 +415,14 @@ func TestShouldUseOpenAIWSNeutralForColdSessionToolContinuationContext(t *testin
 			want: true,
 		},
 		{
-			name: "tool_output_with_item_reference_context",
+			name: "tool_output_with_item_reference_context_stays_session_bound",
 			payload: map[string]any{
 				"input": []any{
 					map[string]any{"type": "item_reference", "id": "call_1"},
 					map[string]any{"type": "function_call_output", "call_id": "call_1", "output": "ok"},
 				},
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "orphan_tool_output_stays_session_bound",

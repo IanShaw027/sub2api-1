@@ -161,6 +161,12 @@ func TestOpenAIHandleStreamingAwareError_NonStreaming(t *testing.T) {
 	assert.Equal(t, "test error", errorObj["message"])
 }
 
+func TestShouldReportOpenAIAccountScheduleFailure(t *testing.T) {
+	require.True(t, shouldReportOpenAIAccountScheduleFailure(errors.New("upstream failed")))
+	require.False(t, shouldReportOpenAIAccountScheduleFailure(context.Canceled))
+	require.False(t, shouldReportOpenAIAccountScheduleFailure(service.NewOpenAIWSSessionPreemptedError()))
+}
+
 func TestOpenAIHandleStreamingAwareError_ChatCompletionsAppendsDone(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -179,6 +185,28 @@ func TestOpenAIHandleStreamingAwareError_ChatCompletionsAppendsDone(t *testing.T
 	assert.Contains(t, body, `"message":"boom"`)
 	// Chat-completions style SDKs need the [DONE] marker to close the stream cleanly.
 	assert.Contains(t, body, "data: [DONE]")
+}
+
+func TestOpenAIEnsureForwardErrorResponse_SessionPreemptedChatCompletionsSSEAppendsDone(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	_, _ = c.Writer.WriteString("data: {\"id\":\"chatcmpl_x\"}\n\n")
+
+	h := &OpenAIGatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false, service.NewOpenAIWSSessionPreemptedError())
+
+	require.True(t, wrote)
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "data: {\"id\":\"chatcmpl_x\"}\n\n")
+	assert.Contains(t, body, "event: error\n")
+	assert.Contains(t, body, `"type":"request_canceled"`)
+	assert.Contains(t, body, "Superseded by a newer request in the same session")
+	assert.Contains(t, body, "data: [DONE]")
+	assert.NotContains(t, body, `"upstream_error"`)
 }
 
 func TestOpenAIHandleStreamingAwareError_ResponsesPathStillEmitsResponseFailed(t *testing.T) {

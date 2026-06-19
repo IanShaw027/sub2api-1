@@ -184,7 +184,8 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	for {
 		routingAttemptStart := time.Now()
 
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
+		selectionCtx := service.WithGatewayOpenAICompatIngress(c.Request.Context(), service.GatewayOpenAICompatIngressResponses)
+		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(selectionCtx, apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {
 				markOpsRoutingCapacityLimitedIfNoAvailable(c, err)

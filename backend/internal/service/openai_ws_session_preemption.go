@@ -9,6 +9,10 @@ import (
 
 var errOpenAIWSSessionPreempted = errors.New("openai ws session preempted by newer request")
 
+func NewOpenAIWSSessionPreemptedError() error {
+	return errOpenAIWSSessionPreempted
+}
+
 type openAIWSSessionPreemptKey struct {
 	groupID     int64
 	apiKeyID    int64
@@ -104,4 +108,19 @@ func isOpenAIWSSessionPreempted(ctx context.Context) bool {
 		return false
 	}
 	return errors.Is(context.Cause(ctx), errOpenAIWSSessionPreempted)
+}
+
+func IsOpenAIWSSessionPreemptedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, errOpenAIWSSessionPreempted) {
+		return true
+	}
+	var fallbackErr *openAIWSFallbackError
+	if !errors.As(err, &fallbackErr) || fallbackErr == nil {
+		return false
+	}
+	reason := strings.TrimPrefix(strings.TrimSpace(fallbackErr.Reason), "prewarm_")
+	return reason == "session_preempted"
 }

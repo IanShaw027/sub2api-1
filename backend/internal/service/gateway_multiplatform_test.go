@@ -19,6 +19,27 @@ func testConfig() *config.Config {
 	return &config.Config{RunMode: config.RunModeStandard}
 }
 
+func TestGatewayServiceOpenAICompatIngressExcludesCCUpstreamAccounts(t *testing.T) {
+	svc := &GatewayService{}
+	compatAccount := &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Extra: map[string]any{
+			"openai_compat_cc_upstream": true,
+		},
+	}
+	regularAccount := &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+	}
+
+	require.True(t, svc.isAccountCompatibleWithOpenAICompatIngress(context.Background(), compatAccount))
+
+	ctx := WithGatewayOpenAICompatIngress(context.Background(), GatewayOpenAICompatIngressResponses)
+	require.False(t, svc.isAccountCompatibleWithOpenAICompatIngress(ctx, compatAccount))
+	require.True(t, svc.isAccountCompatibleWithOpenAICompatIngress(ctx, regularAccount))
+}
+
 // mockAccountRepoForPlatform 单平台测试用的 mock
 type mockAccountRepoForPlatform struct {
 	accounts         []Account

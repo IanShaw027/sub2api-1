@@ -62,6 +62,40 @@ func parseResponsesFailedSSE(t *testing.T, body string) (map[string]any, map[str
 	return resp, errObj
 }
 
+func parseResponsesCancelledSSE(t *testing.T, body string) map[string]any {
+	t.Helper()
+	require.True(t, strings.HasPrefix(body, "event: response.cancelled\n"),
+		"expect event: response.cancelled prefix, got: %q", body)
+	require.True(t, strings.HasSuffix(body, "\n\n"))
+
+	lines := strings.SplitN(strings.TrimSuffix(body, "\n\n"), "\n", 2)
+	require.Len(t, lines, 2)
+	require.True(t, strings.HasPrefix(lines[1], "data: "))
+	jsonStr := strings.TrimPrefix(lines[1], "data: ")
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal([]byte(jsonStr), &parsed), "data must be valid JSON: %s", jsonStr)
+	assert.Equal(t, "response.cancelled", parsed["type"])
+
+	resp, ok := parsed["response"].(map[string]any)
+	require.True(t, ok, "response object missing")
+	assert.Equal(t, "response", resp["object"])
+	assert.Equal(t, "cancelled", resp["status"])
+	return resp
+}
+
+func TestWriteResponsesCancelledSSE(t *testing.T) {
+	c, w := newGinContextForEndpoint(t, EndpointResponses)
+	setOpsRequestContext(c, "gpt-5.5", true)
+
+	require.True(t, writeResponsesCancelledSSE(c))
+
+	resp := parseResponsesCancelledSSE(t, w.Body.String())
+	assert.Equal(t, "gpt-5.5", resp["model"])
+	_, hasError := resp["error"]
+	assert.False(t, hasError, "cancelled terminal must not look like upstream failure")
+}
+
 // OpenAI handler: /v1/responses streaming, after stream started, must emit response.failed.
 func TestOpenAIHandleStreamingAwareError_ResponsesStreamingEmitsResponseFailed(t *testing.T) {
 	c, w := newGinContextForEndpoint(t, EndpointResponses)
