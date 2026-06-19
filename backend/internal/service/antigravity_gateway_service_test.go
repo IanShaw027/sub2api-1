@@ -206,7 +206,7 @@ func (s *antigravitySettingRepoStub) Set(ctx context.Context, key, value string)
 }
 
 func (s *antigravitySettingRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
-	panic("unexpected GetMultiple call")
+	return map[string]string{}, nil
 }
 
 func (s *antigravitySettingRepoStub) SetMultiple(ctx context.Context, settings map[string]string) error {
@@ -245,7 +245,17 @@ func (s *antigravityFallbackSettingRepoStub) Set(ctx context.Context, key, value
 }
 
 func (s *antigravityFallbackSettingRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
-	panic("unexpected GetMultiple call")
+	values := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if s.values == nil {
+			continue
+		}
+		value, ok := s.values[key]
+		if ok {
+			values[key] = value
+		}
+	}
+	return values, nil
 }
 
 func (s *antigravityFallbackSettingRepoStub) SetMultiple(ctx context.Context, settings map[string]string) error {

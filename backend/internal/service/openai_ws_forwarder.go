@@ -2006,6 +2006,35 @@ func shouldForceNewConnOnStoreDisabled(mode, lastFailureReason string) bool {
 	}
 }
 
+func shouldUseOpenAIWSNeutralForColdSession(
+	account *Account,
+	httpIngressWSOneShot bool,
+	storeDisabled bool,
+	previousResponseID string,
+	sessionHash string,
+	turnState string,
+	turnMetadata string,
+	payload map[string]any,
+) bool {
+	if account == nil || account.Type != AccountTypeOAuth {
+		return false
+	}
+	if httpIngressWSOneShot || !storeDisabled {
+		return false
+	}
+	if strings.TrimSpace(previousResponseID) != "" || strings.TrimSpace(sessionHash) == "" {
+		return false
+	}
+	if strings.TrimSpace(turnState) != "" || strings.TrimSpace(turnMetadata) != "" {
+		return false
+	}
+	signals := AnalyzeToolContinuationSignals(payload)
+	if !signals.HasFunctionCallOutput {
+		return true
+	}
+	return signals.HasToolCallContext || signals.HasItemReferenceForAllCallIDs
+}
+
 func shouldForceNewConnOnHTTPIngressWSOneShotRetry(lastFailureReason string) bool {
 	reason := strings.TrimSpace(lastFailureReason)
 	if reason == "" || strings.HasPrefix(reason, "prewarm_") {
@@ -2564,6 +2593,26 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	if httpIngressWSOneShot {
 		sessionHash = ""
 	}
+	requestID, clientRequestID := openAIWSRequestLogIDs(c)
+	if preemptCtx, cleanupPreempt, preemptEnabled := s.beginOpenAIWSSessionPreemptContext(
+		ctx,
+		account,
+		groupID,
+		apiKeyID,
+		sessionHash,
+		httpIngressWSOneShot,
+		requestID,
+	); preemptEnabled {
+		ctx = preemptCtx
+		defer cleanupPreempt()
+		logOpenAIWSModeInfo(
+			"session_preempt_register account_id=%d account_type=%s request_id=%s session_hash=%s",
+			account.ID,
+			account.Type,
+			truncateOpenAIWSLogValue(requestID, openAIWSIDValueMaxLen),
+			truncateOpenAIWSLogValue(sessionHash, 12),
+		)
+	}
 	if turnState == "" && stateStore != nil && sessionHash != "" {
 		if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, sessionHash); ok {
 			turnState = savedTurnState
@@ -2587,6 +2636,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	forceNewConnByPolicy := shouldForceNewConnOnStoreDisabled(storeDisabledConnMode, lastFailureReason)
 	forceNewConn := forceNewConnByPolicy && storeDisabled && previousResponseID == "" && sessionHash != "" && preferredConnID == ""
 	connProfile := openAIWSConnProfileSessionBound
+	promoteNeutralConnToSessionBound := false
+	pool := s.getOpenAIWSConnPool()
 	tlsFPRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
 	wsHeaders, sessionResolution := s.buildOpenAIWSHeaders(c, account, token, decision, isCodexCLI, turnState, turnMetadata, promptCacheKey)
 	applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
@@ -2598,6 +2649,25 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 		wsHeaders = s.buildOpenAIWSNeutralHeaders(account, token, decision, isCodexCLI)
 		applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
+	}
+	if shouldUseOpenAIWSNeutralForColdSession(account, httpIngressWSOneShot, storeDisabled, previousResponseID, sessionHash, turnState, turnMetadata, payload) {
+		useNeutral := preferredConnID == ""
+		if preferredConnID != "" {
+			if profile, ok := pool.ConnProfile(account.ID, preferredConnID); ok {
+				useNeutral = profile == openAIWSConnProfileNeutral
+			} else {
+				preferredConnID = ""
+				connAffinityHit = false
+				useNeutral = true
+			}
+		}
+		if useNeutral {
+			connProfile = openAIWSConnProfileNeutral
+			forceNewConn = false
+			wsHeaders = s.buildOpenAIWSNeutralHeaders(account, token, decision, isCodexCLI)
+			applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
+			promoteNeutralConnToSessionBound = true
+		}
 	}
 	affinityOnlyReuse := !httpIngressWSOneShot &&
 		connProfile == openAIWSConnProfileSessionBound &&
@@ -2653,7 +2723,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	acquireCtx, acquireCancel := context.WithTimeout(ctx, s.openAIWSAcquireTimeout())
 	defer acquireCancel()
 
-	lease, err := s.getOpenAIWSConnPool().Acquire(acquireCtx, openAIWSAcquireRequest{
+	lease, err := pool.Acquire(acquireCtx, openAIWSAcquireRequest{
 		Account:           account,
 		WSURL:             wsURL,
 		Headers:           wsHeaders,
@@ -2670,6 +2740,16 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}(),
 	})
 	if err != nil {
+		if isOpenAIWSSessionPreempted(ctx) {
+			logOpenAIWSModeInfo(
+				"session_preempted account_id=%d account_type=%s request_id=%s stage=acquire preferred_conn_id=%s",
+				account.ID,
+				account.Type,
+				truncateOpenAIWSLogValue(requestID, openAIWSIDValueMaxLen),
+				truncateOpenAIWSLogValue(preferredConnID, openAIWSIDValueMaxLen),
+			)
+			return nil, wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted)
+		}
 		dialStatus, dialClass, dialCloseStatus, dialCloseReason, dialRespServer, dialRespVia, dialRespCFRay, dialRespReqID := summarizeOpenAIWSDialError(err)
 		logOpenAIWSModeInfo(
 			"acquire_fail account_id=%d account_type=%s transport=%s reason=%s dial_status=%d dial_class=%s dial_close_status=%s dial_close_reason=%s dial_resp_server=%s dial_resp_via=%s dial_resp_cf_ray=%s dial_resp_x_request_id=%s cause=%s preferred_conn_id=%s force_new_conn=%v ws_host=%s ws_path=%s proxy_enabled=%v",
@@ -2707,7 +2787,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		lease.Release()
 	}()
 	connID := strings.TrimSpace(lease.ConnID())
-	requestID, clientRequestID := openAIWSRequestLogIDs(c)
+	if promoteNeutralConnToSessionBound {
+		pool.PromoteNeutralConnToSessionBound(account.ID, connID)
+	}
 	logOpenAIWSModeDebug(
 		"connected account_id=%d account_type=%s transport=%s conn_id=%s conn_reused=%v conn_pick_ms=%d queue_wait_ms=%d has_previous_response_id=%v",
 		account.ID,
@@ -2918,6 +3000,16 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 
 	if err := lease.WriteJSONWithContextTimeout(ctx, payload, s.openAIWSWriteTimeout()); err != nil {
 		lease.MarkBroken()
+		if isOpenAIWSSessionPreempted(ctx) {
+			logOpenAIWSModeInfo(
+				"session_preempted account_id=%d account_type=%s request_id=%s conn_id=%s stage=write",
+				account.ID,
+				account.Type,
+				truncateOpenAIWSLogValue(requestID, openAIWSIDValueMaxLen),
+				truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
+			)
+			return nil, wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted)
+		}
 		logOpenAIWSModeInfo(
 			"write_request_fail account_id=%d conn_id=%s cause=%s payload_bytes=%d",
 			account.ID,
@@ -3047,6 +3139,20 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		message, readErr := lease.ReadMessageWithContextTimeout(ctx, readTimeout)
 		if readErr != nil {
 			lease.MarkBroken()
+			if isOpenAIWSSessionPreempted(ctx) {
+				logOpenAIWSModeInfo(
+					"session_preempted account_id=%d account_type=%s request_id=%s conn_id=%s stage=read wrote_downstream=%v events=%d token_events=%d terminal_events=%d",
+					account.ID,
+					account.Type,
+					truncateOpenAIWSLogValue(requestID, openAIWSIDValueMaxLen),
+					truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
+					wroteDownstream,
+					eventCount,
+					tokenEventCount,
+					terminalEventCount,
+				)
+				return nil, wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted)
+			}
 			closeStatus, closeReason := summarizeOpenAIWSReadCloseError(readErr)
 			logOpenAIWSModeInfo(
 				"read_fail account_id=%d conn_id=%s wrote_downstream=%v close_status=%s close_reason=%s cause=%s events=%d token_events=%d terminal_events=%d buffered_pending=%d buffered_flushed=%d first_event=%s last_event=%s",

@@ -170,6 +170,10 @@ func TestClassifyOpenAIWSReconnectReason(t *testing.T) {
 	reason, retryable = classifyOpenAIWSReconnectReason(wrapOpenAIWSFallback("model_unavailable", errors.New("unsupported model")))
 	require.Equal(t, "model_unavailable", reason)
 	require.False(t, retryable)
+
+	reason, retryable = classifyOpenAIWSReconnectReason(wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted))
+	require.Equal(t, "session_preempted", reason)
+	require.False(t, retryable)
 }
 
 func TestShouldFallbackOpenAIWSToHTTP_AuthFailed(t *testing.T) {
@@ -179,6 +183,10 @@ func TestShouldFallbackOpenAIWSToHTTP_AuthFailed(t *testing.T) {
 	})
 
 	require.True(t, shouldFallbackOpenAIWSToHTTP(err))
+}
+
+func TestShouldFallbackOpenAIWSToHTTP_SessionPreempted(t *testing.T) {
+	require.False(t, shouldFallbackOpenAIWSToHTTP(wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted)))
 }
 
 func TestOpenAIWSErrorHTTPStatus(t *testing.T) {
@@ -224,6 +232,17 @@ func TestResolveOpenAIWSFallbackErrorResponse(t *testing.T) {
 		require.Equal(t, "invalid_request_error", errType)
 		require.Equal(t, "No tool call found for function call output with call_id call_1.", clientMessage)
 		require.Equal(t, "No tool call found for function call output with call_id call_1.", upstreamMessage)
+	})
+
+	t.Run("session_preempted_uses_client_canceled", func(t *testing.T) {
+		statusCode, errType, clientMessage, upstreamMessage, ok := resolveOpenAIWSFallbackErrorResponse(
+			wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted),
+		)
+		require.True(t, ok)
+		require.Equal(t, 499, statusCode)
+		require.Equal(t, "request_canceled", errType)
+		require.Equal(t, "Superseded by a newer request in the same session", clientMessage)
+		require.Equal(t, "Superseded by a newer request in the same session", upstreamMessage)
 	})
 
 	t.Run("non_fallback_error_not_resolved", func(t *testing.T) {
@@ -343,6 +362,60 @@ func TestShouldForceNewConnOnHTTPIngressWSOneShotRetry(t *testing.T) {
 	require.True(t, shouldForceNewConnOnHTTPIngressWSOneShotRetry("read_event"))
 	require.True(t, shouldForceNewConnOnHTTPIngressWSOneShotRetry("write_request"))
 	require.True(t, shouldForceNewConnOnHTTPIngressWSOneShotRetry("write"))
+}
+
+func TestShouldUseOpenAIWSNeutralForColdSessionToolContinuationContext(t *testing.T) {
+	account := &Account{Type: AccountTypeOAuth}
+
+	for _, tc := range []struct {
+		name    string
+		payload map[string]any
+		want    bool
+	}{
+		{
+			name: "tool_output_with_full_context",
+			payload: map[string]any{
+				"input": []any{
+					map[string]any{"type": "function_call", "call_id": "call_1", "name": "shell", "arguments": "{}"},
+					map[string]any{"type": "function_call_output", "call_id": "call_1", "output": "ok"},
+					map[string]any{"type": "message", "role": "user", "content": "continue"},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "tool_output_with_item_reference_context",
+			payload: map[string]any{
+				"input": []any{
+					map[string]any{"type": "item_reference", "id": "call_1"},
+					map[string]any{"type": "function_call_output", "call_id": "call_1", "output": "ok"},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "orphan_tool_output_stays_session_bound",
+			payload: map[string]any{
+				"input": []any{
+					map[string]any{"type": "function_call_output", "call_id": "call_1", "output": "ok"},
+				},
+			},
+			want: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, shouldUseOpenAIWSNeutralForColdSession(
+				account,
+				false,
+				true,
+				"",
+				"session-hash",
+				"",
+				"",
+				tc.payload,
+			))
+		})
+	}
 }
 
 func TestOpenAIWSRetryMetricsSnapshot(t *testing.T) {

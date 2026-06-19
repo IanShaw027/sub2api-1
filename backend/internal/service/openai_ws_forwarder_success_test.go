@@ -741,22 +741,20 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 
 	require.NotNil(t, captureConn.lastWrite)
 	requestJSON := requestToJSONString(captureConn.lastWrite)
-	isolatedSessionID := isolateOpenAISessionID(0, "sess-oauth-1")
-	isolatedConversationID := isolateOpenAISessionID(0, "conv-oauth-1")
 	isolatedWindowID := isolateOpenAIWSWindowID(0, "sess-oauth-1:0")
 	require.True(t, gjson.Get(requestJSON, "store").Exists(), "OAuth WSv2 应显式写入 store 字段")
 	require.False(t, gjson.Get(requestJSON, "store").Bool(), "默认策略应将 OAuth store 置为 false")
 	require.True(t, gjson.Get(requestJSON, "stream").Exists(), "WSv2 payload 应保留 stream 字段")
 	require.True(t, gjson.Get(requestJSON, "stream").Bool(), "OAuth Codex 规范化后应强制 stream=true")
 	require.Equal(t, openAIWSBetaV2Value, captureDialer.lastHeaders.Get("OpenAI-Beta"))
-	require.Equal(t, isolatedSessionID, captureDialer.lastHeaders.Get("session_id"))
-	require.Equal(t, isolatedConversationID, captureDialer.lastHeaders.Get("conversation_id"))
-	require.Equal(t, isolatedWindowID, captureDialer.lastHeaders.Get("x-codex-window-id"))
-	require.Equal(t, "memories,prevent_idle_sleep", captureDialer.lastHeaders.Get("x-codex-beta-features"))
-	require.Equal(t, "client-req-1", captureDialer.lastHeaders.Get("x-client-request-id"))
-	require.Equal(t, "install-1", captureDialer.lastHeaders.Get("x-codex-installation-id"))
-	require.Equal(t, "codex_exec/0.124.0", captureDialer.lastHeaders.Get("user-agent"))
-	require.Equal(t, "codex_exec", captureDialer.lastHeaders.Get("originator"))
+	require.Empty(t, captureDialer.lastHeaders.Get("session_id"))
+	require.Empty(t, captureDialer.lastHeaders.Get("conversation_id"))
+	require.Empty(t, captureDialer.lastHeaders.Get("x-codex-window-id"))
+	require.Empty(t, captureDialer.lastHeaders.Get("x-codex-beta-features"))
+	require.Empty(t, captureDialer.lastHeaders.Get("x-client-request-id"))
+	require.Empty(t, captureDialer.lastHeaders.Get("x-codex-installation-id"))
+	require.Equal(t, codexCLIUserAgent, captureDialer.lastHeaders.Get("user-agent"))
+	require.Equal(t, "codex_cli_rs", captureDialer.lastHeaders.Get("originator"))
 	require.Equal(t, "install-1", gjson.Get(requestJSON, "client_metadata.x-codex-installation-id").String())
 	require.Equal(t, isolatedWindowID, gjson.Get(requestJSON, "client_metadata.x-codex-window-id").String())
 	require.Equal(t, "memories,prevent_idle_sleep", gjson.Get(requestJSON, "client_metadata.x-codex-beta-features").String())
@@ -859,6 +857,214 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyPreviousResponseUsesStoreT
 	require.Equal(t, "resp_oauth_sticky_prev_1", gjson.Get(secondWrite, "previous_response_id").String())
 	require.True(t, gjson.Get(secondWrite, "store").Exists(), "sticky OAuth 续链应显式启用 store=true")
 	require.True(t, gjson.Get(secondWrite, "store").Bool(), "sticky OAuth 续链应启用服务端增量上下文")
+}
+
+func TestOpenAIGatewayService_Forward_WSv2_OAuthColdSessionUsesNeutralIdleConn(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.StoreDisabledConnMode = openAIWSStoreDisabledConnModeStrict
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	captureConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_oauth_cold_neutral_1","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
+		},
+	}
+	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(captureDialer)
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          131,
+		Name:        "openai-oauth-cold-neutral",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"access_token": "oauth-token-cold-neutral",
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	wsURL, err := svc.buildOpenAIResponsesWSURL(account)
+	require.NoError(t, err)
+	decision := OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2}
+	neutralHeaders := svc.buildOpenAIWSNeutralHeaders(account, account.GetOpenAIAccessToken(), decision, true)
+	seedLease, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   wsURL,
+		Headers: neutralHeaders,
+		Profile: openAIWSConnProfileNeutral,
+	})
+	require.NoError(t, err)
+	seedConnID := seedLease.ConnID()
+	seedLease.Release()
+	require.Equal(t, 1, captureDialer.DialCount(), "预置一条 neutral idle 连接")
+
+	groupID := int64(13101)
+	apiKeyID := int64(13102)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+	c.Request.Header.Set("originator", "codex_exec")
+	c.Request.Header.Set("session_id", "sess-oauth-cold-neutral")
+	c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+	sessionHash := svc.GenerateSessionHash(c, nil)
+
+	body := []byte(`{"model":"gpt-5.1","stream":false,"prompt_cache_key":"pcache-cold-neutral","input":[{"type":"input_text","text":"hello"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_oauth_cold_neutral_1", result.RequestID)
+	require.Equal(t, "neutral", result.OpenAIWSProfile)
+	require.True(t, result.OpenAIWSConnReused, "冷 session 首轮应复用 neutral idle 连接，而不是新建 session_bound 连接")
+	require.Equal(t, 1, captureDialer.DialCount(), "命中 neutral idle 后不应再新建 session_bound 连接")
+
+	connID, ok := svc.getOpenAIWSStateStore().GetSessionConn(groupID, sessionHash)
+	require.True(t, ok, "冷 session 完成后仍应绑定实际连接用于后续亲和")
+	require.Equal(t, seedConnID, connID)
+	profile, ok := pool.ConnProfile(account.ID, seedConnID)
+	require.True(t, ok)
+	require.Equal(t, openAIWSConnProfileSessionBound, profile, "neutral 启动连接被 session 使用后应转为 session-bound，避免跨 session 泛复用")
+}
+
+func TestOpenAIGatewayService_Forward_WSv2_SameSessionPreemptsInFlightRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.StoreDisabledConnMode = openAIWSStoreDisabledConnModeStrict
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 10
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	firstReadBlocked := make(chan struct{})
+	firstConn := &openAIWSCaptureConn{
+		readDelayStarted: firstReadBlocked,
+		events: [][]byte{
+			[]byte(`{"type":"response.output_text.delta","delta":"partial"}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_preempted","model":"gpt-5.5","usage":{"input_tokens":3,"output_tokens":2}}}`),
+		},
+		readDelays: []time.Duration{0, 5 * time.Second},
+	}
+	secondConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_replacement","model":"gpt-5.5","usage":{"input_tokens":4,"output_tokens":3}}}`),
+		},
+	}
+	captureDialer := &openAIWSSequentialCaptureDialer{conns: []*openAIWSCaptureConn{firstConn, secondConn}}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(captureDialer)
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          132,
+		Name:        "openai-oauth-session-preempt",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"access_token": "oauth-token-session-preempt",
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	groupID := int64(13201)
+	apiKeyID := int64(13202)
+	body := []byte(`{"model":"gpt-5.5","stream":true,"prompt_cache_key":"pcache-preempt","input":[{"type":"input_text","text":"hello"}]}`)
+	newContext := func(clientRequestID string) (*gin.Context, *httptest.ResponseRecorder) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+		c.Request.Header.Set("originator", "codex_exec")
+		c.Request.Header.Set("session_id", "sess-preempt")
+		c.Request.Header.Set("x-client-request-id", clientRequestID)
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+		return c, rec
+	}
+
+	firstCtx, _ := newContext("client-preempt-1")
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := svc.Forward(context.Background(), firstCtx, account, body)
+		firstDone <- err
+	}()
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-firstReadBlocked:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond, "first request should be blocked in upstream read")
+
+	secondCtx, _ := newContext("client-preempt-2")
+	secondResult, secondErr := svc.Forward(context.Background(), secondCtx, account, body)
+	require.NoError(t, secondErr)
+	require.NotNil(t, secondResult)
+	require.Equal(t, "resp_replacement", secondResult.RequestID)
+
+	select {
+	case firstErr := <-firstDone:
+		require.Error(t, firstErr)
+		var fallbackErr *openAIWSFallbackError
+		require.ErrorAs(t, firstErr, &fallbackErr)
+		require.Equal(t, "session_preempted", fallbackErr.Reason)
+	case <-time.After(time.Second):
+		t.Fatal("first same-session request was not preempted promptly")
+	}
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_OAuthUnboundPreviousResponseFallsBackStoreFalseNewConn(t *testing.T) {
@@ -1263,11 +1469,18 @@ func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheK
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "resp_prompt_cache_key", result.RequestID)
+	require.Equal(t, "neutral", result.OpenAIWSProfile)
 
-	require.Equal(t, isolateOpenAISessionID(0, "pcache_123"), captureDialer.lastHeaders.Get("session_id"))
+	require.Empty(t, captureDialer.lastHeaders.Get("session_id"))
 	require.Empty(t, captureDialer.lastHeaders.Get("conversation_id"))
 	require.NotNil(t, captureConn.lastWrite)
 	require.True(t, gjson.Get(requestToJSONString(captureConn.lastWrite), "stream").Exists())
+	sessionHash, _ := deriveOpenAIRequestScopedSessionHashes(c, "pcache_123")
+	connID, ok := svc.getOpenAIWSStateStore().GetSessionConn(0, sessionHash)
+	require.True(t, ok)
+	profile, ok := pool.ConnProfile(account.ID, connID)
+	require.True(t, ok)
+	require.Equal(t, openAIWSConnProfileSessionBound, profile)
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_PreservesTurnStateAndMetadata(t *testing.T) {
@@ -2218,13 +2431,47 @@ func (d *openAIWSCaptureDialer) DialCount() int {
 	return d.dialCount
 }
 
+type openAIWSSequentialCaptureDialer struct {
+	mu          sync.Mutex
+	conns       []*openAIWSCaptureConn
+	lastHeaders http.Header
+	dialCount   int
+}
+
+func (d *openAIWSSequentialCaptureDialer) Dial(
+	ctx context.Context,
+	wsURL string,
+	headers http.Header,
+	proxyURL string,
+	tlsProfile *tlsfingerprint.Profile,
+) (openAIWSClientConn, int, http.Header, error) {
+	_ = ctx
+	_ = wsURL
+	_ = proxyURL
+	_ = tlsProfile
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.lastHeaders = cloneHeader(headers)
+	d.dialCount++
+	idx := d.dialCount - 1
+	if idx >= len(d.conns) {
+		idx = len(d.conns) - 1
+	}
+	if idx < 0 {
+		return nil, 0, nil, errors.New("no capture websocket connections configured")
+	}
+	return d.conns[idx], 0, nil, nil
+}
+
 type openAIWSCaptureConn struct {
-	mu         sync.Mutex
-	readDelays []time.Duration
-	events     [][]byte
-	lastWrite  map[string]any
-	writes     []map[string]any
-	closed     bool
+	mu                   sync.Mutex
+	readDelays           []time.Duration
+	events               [][]byte
+	lastWrite            map[string]any
+	writes               []map[string]any
+	closed               bool
+	readDelayStarted     chan struct{}
+	readDelayStartedOnce sync.Once
 }
 
 func (c *openAIWSCaptureConn) WriteJSON(ctx context.Context, value any) error {
@@ -2276,6 +2523,9 @@ func (c *openAIWSCaptureConn) ReadMessage(ctx context.Context) ([]byte, error) {
 	c.events = c.events[1:]
 	c.mu.Unlock()
 	if delay > 0 {
+		if c.readDelayStarted != nil {
+			c.readDelayStartedOnce.Do(func() { close(c.readDelayStarted) })
+		}
 		timer := time.NewTimer(delay)
 		defer timer.Stop()
 		select {

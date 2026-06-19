@@ -560,6 +560,7 @@ type OpenAIGatewayService struct {
 
 	openaiWSFallbackUntil             sync.Map // key: int64(accountID), value: time.Time
 	openaiWSRetryMetrics              openAIWSRetryMetrics
+	openaiWSSessionPreemptions        openAIWSSessionPreemptRegistry
 	responseHeaderFilter              *responseheaders.CompiledHeaderFilter
 	codexSnapshotThrottle             *accountWriteThrottle
 	openaiCompatSessionResponses      sync.Map
@@ -833,6 +834,7 @@ func classifyOpenAIWSReconnectReason(err error) (string, bool) {
 		"invalid_encrypted_content",
 		"previous_response_not_found",
 		"unsafe_tool_continuation",
+		"session_preempted",
 		// 账户级并发上限：同账号盲目重试只会反复撞满，应快速 failover 到其他账号。
 		"ws_connection_limit_reached":
 		return reason, false
@@ -938,6 +940,14 @@ func resolveOpenAIWSFallbackErrorResponse(err error) (statusCode int, errType st
 		statusCode = openAIWSErrorHTTPStatusFromRaw(failedErr.code, failedErr.errType)
 		errType = "upstream_error"
 		upstreamMessage = sanitizeUpstreamErrorMessage(strings.TrimSpace(failedErr.message))
+	case "session_preempted":
+		if statusCode == 0 {
+			statusCode = 499
+		}
+		errType = "request_canceled"
+		if upstreamMessage == "" {
+			upstreamMessage = "Superseded by a newer request in the same session"
+		}
 	default:
 		if statusCode == 0 {
 			return 0, "", "", "", false
@@ -1035,6 +1045,7 @@ func shouldFallbackOpenAIWSToHTTP(wsErr error) bool {
 		"model_unavailable",
 		"previous_response_not_found",
 		"response_failed",
+		"session_preempted",
 		"unsafe_tool_continuation":
 		return false
 	default:

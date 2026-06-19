@@ -1734,6 +1734,50 @@ func (p *openAIWSConnPool) AccountPoolLoad(accountID int64) (inflight int, waite
 	return inflight, waiters, len(ap.conns)
 }
 
+func (p *openAIWSConnPool) ConnProfile(accountID int64, connID string) (openAIWSConnProfile, bool) {
+	if p == nil || accountID <= 0 {
+		return openAIWSConnProfileSessionBound, false
+	}
+	connID = stringsTrim(connID)
+	if connID == "" {
+		return openAIWSConnProfileSessionBound, false
+	}
+	ap, ok := p.getAccountPool(accountID)
+	if !ok || ap == nil {
+		return openAIWSConnProfileSessionBound, false
+	}
+	ap.mu.Lock()
+	defer ap.mu.Unlock()
+	conn, ok := ap.conns[connID]
+	if !ok || conn == nil {
+		return openAIWSConnProfileSessionBound, false
+	}
+	return conn.profile, true
+}
+
+func (p *openAIWSConnPool) PromoteNeutralConnToSessionBound(accountID int64, connID string) bool {
+	if p == nil || accountID <= 0 {
+		return false
+	}
+	connID = stringsTrim(connID)
+	if connID == "" {
+		return false
+	}
+	ap, ok := p.getAccountPool(accountID)
+	if !ok || ap == nil {
+		return false
+	}
+	ap.mu.Lock()
+	defer ap.mu.Unlock()
+	conn, ok := ap.conns[connID]
+	if !ok || conn == nil || conn.profile != openAIWSConnProfileNeutral {
+		return false
+	}
+	conn.profile = openAIWSConnProfileSessionBound
+	conn.reuseKey = ""
+	return true
+}
+
 func (p *openAIWSConnPool) ensureTargetIdleAsync(accountID int64) {
 	if p == nil || accountID <= 0 {
 		return
