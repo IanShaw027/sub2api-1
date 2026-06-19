@@ -222,7 +222,7 @@ func serveApplication(app *Application, quit <-chan os.Signal) error {
 
 	log.Println("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout())
 	defer cancel()
 
 	if err := app.Server.Shutdown(ctx); err != nil {
@@ -231,4 +231,18 @@ func serveApplication(app *Application, quit <-chan os.Signal) error {
 
 	log.Println("Server exited")
 	return nil
+}
+
+func serverShutdownTimeout() time.Duration {
+	const defaultTimeout = 10 * time.Second
+
+	raw := strings.TrimSpace(os.Getenv("SERVER_SHUTDOWN_TIMEOUT"))
+	if raw == "" {
+		return defaultTimeout
+	}
+	timeout, err := time.ParseDuration(raw)
+	if err != nil || timeout <= 0 {
+		return defaultTimeout
+	}
+	return timeout
 }

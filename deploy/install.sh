@@ -682,6 +682,7 @@ WorkingDirectory=/opt/sub2api
 ExecStart=/opt/sub2api/sub2api
 Restart=always
 RestartSec=5
+TimeoutStopSec=10s
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=sub2api

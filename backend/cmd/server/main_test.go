@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -40,5 +41,22 @@ func TestServeApplicationCleansUpOnBindError(t *testing.T) {
 	}
 	if !cleaned.Load() {
 		t.Fatal("serveApplication() did not run cleanup after bind error")
+	}
+}
+
+func TestServerShutdownTimeoutFromEnv(t *testing.T) {
+	t.Setenv("SERVER_SHUTDOWN_TIMEOUT", "")
+	if got := serverShutdownTimeout(); got != 10*time.Second {
+		t.Fatalf("default serverShutdownTimeout() = %s, want 10s", got)
+	}
+
+	t.Setenv("SERVER_SHUTDOWN_TIMEOUT", "10s")
+	if got := serverShutdownTimeout(); got != 10*time.Second {
+		t.Fatalf("serverShutdownTimeout() = %s, want 10s", got)
+	}
+
+	t.Setenv("SERVER_SHUTDOWN_TIMEOUT", "invalid")
+	if got := serverShutdownTimeout(); got != 10*time.Second {
+		t.Fatalf("invalid serverShutdownTimeout() = %s, want 10s fallback", got)
 	}
 }

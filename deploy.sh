@@ -9,6 +9,7 @@ NEW_BINARY_PATH="${NEW_BINARY_PATH:-$BINARY_PATH.new}"
 SERVICE_NAME="${SERVICE_NAME:-sub2api}"
 CACHE_DIR="${DEPLOY_CACHE_DIR:-$REPO_ROOT/deploy/.cache}"
 CACHE_FILE="${DEPLOY_CACHE_FILE:-$CACHE_DIR/deploy-state.env}"
+BINARY_BACKUP_DIR="${DEPLOY_BINARY_BACKUP_DIR:-$REPO_ROOT/deploy/.backup/binaries}"
 
 require_command() {
     local cmd="$1"
@@ -213,6 +214,18 @@ wait_for_service_active() {
     done
 
     return 1
+}
+
+backup_current_binary() {
+    if [ ! -e "$BINARY_PATH" ]; then
+        return 0
+    fi
+
+    mkdir -p "$BINARY_BACKUP_DIR"
+    local backup_path
+    backup_path="$BINARY_BACKUP_DIR/sub2api.$(date -u +"%Y%m%dT%H%M%SZ").bak"
+    cp -a "$BINARY_PATH" "$backup_path"
+    printf '%s\n' "$backup_path"
 }
 
 find_config_file() {
@@ -421,17 +434,20 @@ SUB2API_DATABASE_DSN="$DATABASE_DSN" go run ./cmd/sync_checksums
 unset DATABASE_DSN
 echo "✓ 数据库校验和同步完成"
 
-# 停服窗口只保留停止、二进制替换、启动和状态检查。
-echo "⏸️  停止服务..."
-systemctl stop "$SERVICE_NAME"
-
+BACKUP_BINARY_PATH=""
 if [ "$NEED_BACKEND_BUILD" -eq 1 ]; then
-    echo "🔁 替换二进制..."
+    echo "🧷 备份当前二进制..."
+    BACKUP_BINARY_PATH="$(backup_current_binary)"
+    if [ -n "$BACKUP_BINARY_PATH" ]; then
+        echo "   备份: $BACKUP_BINARY_PATH"
+    fi
+
+    echo "🔁 原子替换二进制..."
     mv -f "$NEW_BINARY_PATH" "$BINARY_PATH"
 fi
 
-echo "▶️  启动服务..."
-systemctl start "$SERVICE_NAME"
+echo "🔄 重启服务..."
+systemctl restart "$SERVICE_NAME"
 
 if wait_for_service_active; then
     write_deploy_cache "$FRONTEND_INPUT_HASH" "$FRONTEND_DIST_HASH" "$SOURCE_HASH"
@@ -440,5 +456,15 @@ if wait_for_service_active; then
 else
     echo "❌ 服务启动失败，查看日志："
     journalctl -u "$SERVICE_NAME" -n 20 --no-pager
+    if [ -n "$BACKUP_BINARY_PATH" ] && [ -f "$BACKUP_BINARY_PATH" ]; then
+        echo "↩️  尝试回滚到备份二进制..."
+        cp -a "$BACKUP_BINARY_PATH" "$BINARY_PATH"
+        systemctl restart "$SERVICE_NAME" || true
+        if wait_for_service_active; then
+            echo "✅ 已回滚到备份二进制并恢复服务"
+        else
+            echo "❌ 回滚后服务仍未恢复，请手动检查 systemd 日志" >&2
+        fi
+    fi
     exit 1
 fi

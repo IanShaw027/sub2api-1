@@ -14,6 +14,7 @@ Environment=DATA_DIR=/opt/sub2api/data
 ExecStart=/opt/sub2api/sub2api
 Restart=always
 RestartSec=5
+TimeoutStopSec=10s
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=sub2api
@@ -31,6 +32,7 @@ Environment=GIN_MODE=release
 Environment=SERVER_MODE=release
 Environment=SERVER_HOST=0.0.0.0
 Environment=SERVER_PORT=8080
+Environment=SERVER_SHUTDOWN_TIMEOUT=10s
 
 [Install]
 WantedBy=multi-user.target
