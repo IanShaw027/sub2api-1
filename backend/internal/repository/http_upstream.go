@@ -62,7 +62,7 @@ const (
 	// behavior is controlled by this layer instead of net/http zero-value drift.
 	defaultUpstreamDialTimeout       = 10 * time.Second
 	defaultUpstreamDialKeepAlive     = 30 * time.Second
-	defaultUpstreamDialFallbackDelay = -1 * time.Second
+	defaultUpstreamDialFallbackDelay = 300 * time.Millisecond
 	defaultUpstreamDNSCacheTTL       = 60 * time.Second
 )
 
@@ -1184,19 +1184,83 @@ func (d *upstreamDialer) DialContext(ctx context.Context, network, address strin
 	if len(ordered) == 0 {
 		return nil, fmt.Errorf("resolve %s: no IPs matching %s", host, network)
 	}
-	var lastErr error
-	for _, addr := range ordered {
+	return dialResolvedUpstreamIPAddrs(ctx, base, network, port, ordered)
+}
+
+type upstreamDialResult struct {
+	conn net.Conn
+	err  error
+}
+
+func dialResolvedUpstreamIPAddrs(ctx context.Context, base *net.Dialer, network string, port string, ordered []net.IPAddr) (net.Conn, error) {
+	if len(ordered) == 0 {
+		return nil, fmt.Errorf("dial: no address attempted")
+	}
+	if base == nil {
+		base = newUpstreamNetDialer()
+	}
+	fallbackDelay := base.FallbackDelay
+	if fallbackDelay <= 0 {
+		fallbackDelay = defaultUpstreamDialFallbackDelay
+	}
+	dialCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	results := make(chan upstreamDialResult, len(ordered))
+	startDial := func(addr net.IPAddr) {
 		target := net.JoinHostPort(addr.IP.String(), port)
-		conn, err := base.DialContext(ctx, network, target)
-		if err == nil {
-			return conn, nil
+		conn, err := base.DialContext(dialCtx, network, target)
+		results <- upstreamDialResult{conn: conn, err: err}
+	}
+
+	go startDial(ordered[0])
+	started := 1
+	completed := 0
+	var lastErr error
+	var timer *time.Timer
+	for completed < len(ordered) {
+		var timerC <-chan time.Time
+		if started < len(ordered) {
+			if timer == nil {
+				timer = time.NewTimer(fallbackDelay)
+			}
+			timerC = timer.C
 		}
-		lastErr = err
+		select {
+		case <-ctx.Done():
+			if timer != nil {
+				timer.Stop()
+			}
+			return nil, ctx.Err()
+		case <-timerC:
+			go startDial(ordered[started])
+			started++
+			timer = nil
+		case result := <-results:
+			completed++
+			if result.err == nil && result.conn != nil {
+				if timer != nil {
+					timer.Stop()
+				}
+				cancel()
+				return result.conn, nil
+			}
+			if result.err != nil {
+				lastErr = result.err
+			}
+			if started < len(ordered) && timer == nil {
+				go startDial(ordered[started])
+				started++
+			}
+		}
+	}
+	if timer != nil {
+		timer.Stop()
 	}
 	if lastErr != nil {
 		return nil, lastErr
 	}
-	return nil, fmt.Errorf("dial %s: no address attempted", address)
+	return nil, fmt.Errorf("dial: no address attempted")
 }
 
 func (d *upstreamDialer) lookupCachedIPAddrs(ctx context.Context, host string) ([]net.IPAddr, error) {

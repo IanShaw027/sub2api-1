@@ -89,7 +89,7 @@ func (s *HTTPUpstreamSuite) TestUpstreamDialerSettings() {
 	dialer := newUpstreamNetDialer()
 	require.Equal(s.T(), 10*time.Second, dialer.Timeout)
 	require.Equal(s.T(), 30*time.Second, dialer.KeepAlive)
-	require.Negative(s.T(), dialer.FallbackDelay, "negative fallback delay disables Happy Eyeballs fallback racing")
+	require.GreaterOrEqual(s.T(), dialer.FallbackDelay, time.Duration(0), "upstream dials should retain Happy Eyeballs fallback racing")
 }
 
 func (s *HTTPUpstreamSuite) TestUpstreamDialerCachesDNSLookups() {
