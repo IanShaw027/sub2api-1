@@ -335,6 +335,16 @@ func TestShouldForceNewConnOnStoreDisabled(t *testing.T) {
 	require.False(t, shouldForceNewConnOnStoreDisabled(openAIWSStoreDisabledConnModeAdaptive, "read_event"))
 }
 
+func TestShouldForceNewConnOnHTTPIngressWSOneShotRetry(t *testing.T) {
+	require.False(t, shouldForceNewConnOnHTTPIngressWSOneShotRetry(""))
+	require.False(t, shouldForceNewConnOnHTTPIngressWSOneShotRetry("policy_violation"))
+	require.False(t, shouldForceNewConnOnHTTPIngressWSOneShotRetry("prewarm_read_event"))
+
+	require.True(t, shouldForceNewConnOnHTTPIngressWSOneShotRetry("read_event"))
+	require.True(t, shouldForceNewConnOnHTTPIngressWSOneShotRetry("write_request"))
+	require.True(t, shouldForceNewConnOnHTTPIngressWSOneShotRetry("write"))
+}
+
 func TestOpenAIWSRetryMetricsSnapshot(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	svc.recordOpenAIWSRetryAttempt(150 * time.Millisecond)

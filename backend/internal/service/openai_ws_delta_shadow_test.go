@@ -48,6 +48,10 @@ func TestOpenAIWSCanonicalItemHash_ReplayEquivalentEnvelopeFields(t *testing.T) 
 	replayedReasoning := `{"type":"reasoning","summary":[],"encrypted_content":"enc"}`
 	require.Equal(t, mustItemHash(t, rawReasoning), mustItemHash(t, replayedReasoning))
 
+	rawReasoningWithInternalTurnID := `{"type":"reasoning","id":"rs_2","status":"completed","metadata":{"turn_id":"turn_1"},"internal_chat_message_metadata_passthrough":{"turn_id":"turn_1"},"content":[],"summary":[],"encrypted_content":"enc"}`
+	replayedReasoningWithoutInternalTurnID := `{"type":"reasoning","summary":[],"encrypted_content":"enc"}`
+	require.Equal(t, mustItemHash(t, rawReasoningWithInternalTurnID), mustItemHash(t, replayedReasoningWithoutInternalTurnID))
+
 	rawMessage := `{"type":"message","id":"msg_1","status":"completed","metadata":{"turn_id":"turn_1"},"role":"assistant","content":[{"type":"output_text","text":"hello","annotations":[],"logprobs":[]}]}`
 	replayedMessage := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}`
 	require.Equal(t, mustItemHash(t, rawMessage), mustItemHash(t, replayedMessage))
@@ -63,6 +67,18 @@ func TestOpenAIWSCanonicalItemHash_ReplayEquivalentEnvelopeFields(t *testing.T) 
 	rawCustomToolCall := `{"type":"custom_tool_call","id":"ctc_1","status":"completed","metadata":{"turn_id":"turn_1"},"call_id":"call_1","name":"apply_patch","input":"diff"}`
 	replayedCustomToolCall := `{"type":"custom_tool_call","status":"completed","call_id":"call_1","name":"apply_patch","input":"diff"}`
 	require.Equal(t, mustItemHash(t, rawCustomToolCall), mustItemHash(t, replayedCustomToolCall))
+
+	rawOutputText := `{"type":"message","id":"msg_3","status":"completed","metadata":{"turn_id":"turn_1"},"content":[{"type":"output_text","text":"hello","annotations":[],"logprobs":[]}]}`
+	replayedAssistantInputText := `{"type":"message","role":"assistant","content":[{"type":"input_text","text":"hello"}]}`
+	require.Equal(t, mustItemHash(t, rawOutputText), mustItemHash(t, replayedAssistantInputText))
+
+	rawPhasedOutputText := `{"type":"message","id":"msg_4","status":"completed","metadata":{"turn_id":"turn_1"},"phase":"final","content":[{"type":"output_text","text":"hello","annotations":[],"logprobs":[]}]}`
+	replayedAssistantInputTextWithoutType := `{"role":"assistant","content":[{"type":"input_text","text":"hello"}]}`
+	require.Equal(t, mustItemHash(t, rawPhasedOutputText), mustItemHash(t, replayedAssistantInputTextWithoutType))
+
+	rawToolSearchCall := `{"type":"tool_search_call","id":"ts_1","status":"completed","metadata":{"turn_id":"turn_1"},"execution":"complete","arguments":{"limit":10,"query":"hello"}}`
+	replayedToolSearchCall := `{"type":"tool_search_call","execution":"complete","arguments":{"query":"hello","limit":10}}`
+	require.Equal(t, mustItemHash(t, rawToolSearchCall), mustItemHash(t, replayedToolSearchCall))
 }
 
 func TestOpenAIWSCanonicalItemHash_DoesNotDropSemanticEnvelopeLookalikes(t *testing.T) {
@@ -192,6 +208,67 @@ func TestEvaluateDeltaShadowCandidate_Happy(t *testing.T) {
 	require.Less(t, log.DeltaBytes, log.FullBytes)
 }
 
+func TestEvaluateDeltaShadowCandidate_AllowsPerTurnGenerationParameterChanges(t *testing.T) {
+	msg1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	out1 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"two"}]}`
+	newMsg := `{"type":"message","role":"user","content":[{"type":"input_text","text":"three"}]}`
+	previousPayload := []byte(`{
+		"type":"response.create",
+		"model":"gpt-5.5",
+		"stream":true,
+		"prompt_cache_key":"session-a",
+		"store":false,
+		"instructions":"old instructions",
+		"include":["reasoning.encrypted_content"],
+		"parallel_tool_calls":true,
+		"reasoning":{"effort":"medium"},
+		"text":{"verbosity":"medium"},
+		"tool_choice":"auto",
+		"tools":[{"type":"function","name":"old_tool"}],
+		"input":[` + msg1 + `,` + out1 + `]
+	}`)
+	currentPayload := []byte(`{
+		"type":"response.create",
+		"model":"gpt-5.5",
+		"stream":true,
+		"prompt_cache_key":"session-a",
+		"store":false,
+		"instructions":"new turn instructions",
+		"include":["reasoning.encrypted_content","web_search_call.action.sources"],
+		"parallel_tool_calls":false,
+		"reasoning":{"effort":"high"},
+		"text":{"verbosity":"low"},
+		"tool_choice":{"type":"function","name":"new_tool"},
+		"tools":[{"type":"function","name":"new_tool"}],
+		"input":[` + msg1 + `,` + out1 + `,` + newMsg + `]
+	}`)
+	nonInput, _ := openAIWSNonInputHash(previousPayload)
+	cached := openAIWSSessionContextValue{
+		accountID: 5, connID: "conn_a", lastResponseID: "resp_1",
+		materializedHashes:      [][32]byte{mustItemHash(t, msg1), mustItemHash(t, out1)},
+		materializedCount:       2,
+		inputCount:              1,
+		nonInputHash:            nonInput,
+		rawVsClientVisibleEqual: true,
+	}
+
+	deltaPayload, log, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+		RequestID: "r", AccountID: 5, LeaseConnID: "conn_a",
+		ConnMostRecentResponseID: "resp_1", CurrentPayload: currentPayload,
+		Cached: cached, CachedFound: true,
+	})
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.True(t, log.Candidate)
+	require.Equal(t, 1, log.DeltaItems)
+	require.Equal(t, "resp_1", deltaPayload["previous_response_id"])
+	inputItems, ok := deltaPayload["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, inputItems, 1)
+	require.Equal(t, "new turn instructions", deltaPayload["instructions"])
+	require.Equal(t, false, deltaPayload["parallel_tool_calls"])
+}
+
 func TestEvaluateDeltaShadowCandidate_FallbackReasons(t *testing.T) {
 	payload, cached := buildShadowCandidateFixture(t)
 	base := openAIWSDeltaShadowInput{
@@ -316,6 +393,38 @@ func TestEvaluateDeltaShadowCandidate_OutputBoundaryBreakIncludesShapeDiagnostic
 	require.Contains(t, log.BreakCurrentShape, "content[]")
 	require.NotContains(t, log.BreakCachedShape, "hidden raw reasoning")
 	require.NotContains(t, log.BreakCurrentShape, "hidden raw reasoning")
+}
+
+func TestEvaluateDeltaShadowCandidate_ReplayedAssistantOutputWithoutTypeMatches(t *testing.T) {
+	msg1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}`
+	rawOutput := `{"type":"message","id":"msg_1","status":"completed","metadata":{"turn_id":"turn_1"},"phase":"final","content":[{"type":"output_text","text":"hello","annotations":[],"logprobs":[]}]}`
+	replayedOutput := `{"role":"assistant","content":[{"type":"input_text","text":"hello"}]}`
+	newMsg := `{"type":"message","role":"user","content":[{"type":"input_text","text":"again"}]}`
+	payload := []byte(`{"model":"gpt","input":[` + msg1 + `,` + replayedOutput + `,` + newMsg + `],"store":false}`)
+
+	nonInput, _ := openAIWSNonInputHash(payload)
+	cached := openAIWSSessionContextValue{
+		accountID: 5, connID: "conn_a", lastResponseID: "resp_1",
+		materializedHashes:      [][32]byte{mustItemHash(t, msg1), mustItemHash(t, rawOutput)},
+		materializedCount:       2,
+		inputCount:              1,
+		nonInputHash:            nonInput,
+		rawVsClientVisibleEqual: true,
+	}
+
+	deltaPayload, log, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+		RequestID: "r", AccountID: 5, LeaseConnID: "conn_a",
+		ConnMostRecentResponseID: "resp_1", CurrentPayload: payload,
+		Cached: cached, CachedFound: true,
+	})
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.True(t, log.Candidate)
+	require.Equal(t, "resp_1", deltaPayload["previous_response_id"])
+	require.False(t, deltaPayload["store"].(bool))
+	inputItems, ok := deltaPayload["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, inputItems, 1)
 }
 
 func TestEvaluateDeltaShadowCandidate_ItemCountDecreaseBreaks(t *testing.T) {

@@ -65,6 +65,7 @@ var openAIWSVolatileEnvelopeItemTypes = map[string]struct{}{
 	"mcp_call":              {},
 	"mcp_list_tools":        {},
 	"mcp_approval_request":  {},
+	"tool_search_call":      {},
 }
 
 // openAIWSNonInputDenylist: fields excluded from the non-input semantic fingerprint. All
@@ -75,6 +76,13 @@ var openAIWSNonInputDenylist = []string{
 	"previous_response_id",
 	"store",
 	"client_metadata",
+	"include",
+	"instructions",
+	"parallel_tool_calls",
+	"reasoning",
+	"text",
+	"tool_choice",
+	"tools",
 	"turn_metadata",
 }
 
@@ -100,6 +108,10 @@ func openAIWSCanonicalItemHash(item []byte) ([32]byte, bool) {
 func openAIWSNormalizeCanonicalItemObject(obj map[string]any) {
 	itemType, _ := obj["type"].(string)
 	itemType = strings.TrimSpace(itemType)
+	if itemType == "" && openAIWSObjectLooksLikeReplayMessage(obj) {
+		itemType = "message"
+		obj["type"] = itemType
+	}
 	if itemType != "" {
 		if _, volatile := openAIWSVolatileEnvelopeItemTypes[itemType]; volatile {
 			delete(obj, "id")
@@ -111,18 +123,38 @@ func openAIWSNormalizeCanonicalItemObject(obj map[string]any) {
 	case "reasoning":
 		openAIWSDropEmptyArrayField(obj, "content")
 	case "message":
+		delete(obj, "phase")
 		openAIWSNormalizeMessageContentEnvelope(obj)
 		openAIWSNormalizeOutputMessageRole(obj)
 	}
 }
 
+func openAIWSObjectLooksLikeReplayMessage(obj map[string]any) bool {
+	if obj == nil {
+		return false
+	}
+	role, _ := obj["role"].(string)
+	switch strings.TrimSpace(role) {
+	case "assistant", "user", "system", "developer":
+	default:
+		return false
+	}
+	_, hasContent := obj["content"]
+	return hasContent
+}
+
 func openAIWSDropTurnIDMetadata(obj map[string]any) {
-	metaRaw, exists := obj["metadata"]
+	openAIWSDropTurnIDObject(obj, "metadata")
+	openAIWSDropTurnIDObject(obj, "internal_chat_message_metadata_passthrough")
+}
+
+func openAIWSDropTurnIDObject(obj map[string]any, key string) {
+	metaRaw, exists := obj[key]
 	if !exists {
 		return
 	}
 	if metaRaw == nil {
-		delete(obj, "metadata")
+		delete(obj, key)
 		return
 	}
 	meta, ok := metaRaw.(map[string]any)
@@ -131,7 +163,7 @@ func openAIWSDropTurnIDMetadata(obj map[string]any) {
 	}
 	delete(meta, "turn_id")
 	if len(meta) == 0 {
-		delete(obj, "metadata")
+		delete(obj, key)
 	}
 }
 
@@ -147,6 +179,8 @@ func openAIWSNormalizeMessageContentEnvelope(obj map[string]any) {
 	if !ok {
 		return
 	}
+	role, _ := obj["role"].(string)
+	role = strings.TrimSpace(role)
 	for _, raw := range content {
 		contentObj, ok := raw.(map[string]any)
 		if !ok {
@@ -154,6 +188,20 @@ func openAIWSNormalizeMessageContentEnvelope(obj map[string]any) {
 		}
 		openAIWSDropEmptyArrayField(contentObj, "annotations")
 		openAIWSDropEmptyArrayField(contentObj, "logprobs")
+		openAIWSNormalizeAssistantTextContentType(role, contentObj)
+	}
+}
+
+func openAIWSNormalizeAssistantTextContentType(role string, contentObj map[string]any) {
+	contentType, _ := contentObj["type"].(string)
+	contentType = strings.TrimSpace(contentType)
+	switch contentType {
+	case "output_text":
+		contentObj["type"] = "assistant_text"
+	case "input_text":
+		if role == "assistant" {
+			contentObj["type"] = "assistant_text"
+		}
 	}
 }
 
@@ -180,7 +228,7 @@ func openAIWSMessageContentLooksLikeOutput(obj map[string]any) bool {
 		switch strings.TrimSpace(contentType) {
 		case "input_text", "input_image", "input_file", "input_audio":
 			return false
-		case "output_text", "refusal":
+		case "output_text", "assistant_text", "refusal":
 			hasOutput = true
 		}
 	}
