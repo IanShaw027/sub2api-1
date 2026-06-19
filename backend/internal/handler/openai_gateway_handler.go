@@ -203,8 +203,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 	previousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
+	previousResponseIDKind := ""
 	if previousResponseID != "" {
-		previousResponseIDKind := service.ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
+		previousResponseIDKind = service.ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
 		reqLog = reqLog.With(
 			zap.Bool("has_previous_response_id", true),
 			zap.String("previous_response_id_kind", previousResponseIDKind),
@@ -218,6 +219,23 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			return
 		}
 	}
+	h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+		Stage:          "request_received",
+		EndpointKind:   "responses",
+		RequestStart:   requestStart,
+		APIKey:         apiKey,
+		UserID:         subject.UserID,
+		RequestedModel: reqModel,
+		Stream:         reqStream,
+		Fields: map[string]any{
+			"inbound_endpoint":             GetInboundEndpoint(c),
+			"request_body_bytes":           len(body),
+			"previous_response_id_present": previousResponseID != "",
+			"previous_response_id_kind":    previousResponseIDKind,
+			"has_prompt_cache_key":         strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()) != "",
+			"has_tools":                    gjson.GetBytes(body, "tools").Exists(),
+		},
+	})
 
 	setOpsRequestContext(c, reqModel, reqStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
@@ -259,7 +277,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
 
+	userSlotStart := time.Now()
 	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted, reqLog)
+	userSlotWaitMs := time.Since(userSlotStart).Milliseconds()
 	if !acquired {
 		return
 	}
@@ -352,6 +372,31 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
+		h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+			Stage:          "account_selected",
+			EndpointKind:   "responses",
+			RequestStart:   requestStart,
+			APIKey:         apiKey,
+			Account:        account,
+			UserID:         subject.UserID,
+			RequestedModel: reqModel,
+			Stream:         reqStream,
+			SwitchCount:    switchCount,
+			Fields: map[string]any{
+				"inbound_endpoint":             GetInboundEndpoint(c),
+				"previous_response_id_present": previousResponseID != "",
+				"previous_response_id_kind":    previousResponseIDKind,
+				"session_hash_present":         strings.TrimSpace(sessionHash) != "",
+				"require_compact":              requireCompact,
+				"scheduler_layer":              scheduleDecision.Layer,
+				"sticky_previous_hit":          scheduleDecision.StickyPreviousHit,
+				"sticky_session_hit":           scheduleDecision.StickySessionHit,
+				"candidate_count":              scheduleDecision.CandidateCount,
+				"top_k":                        scheduleDecision.TopK,
+				"scheduler_latency_ms":         scheduleDecision.LatencyMs,
+				"load_skew":                    scheduleDecision.LoadSkew,
+			},
+		})
 
 		forwardBody := forwardPreviewBody
 		effectiveModel := resolveOpenAIResponsesEffectiveModel(account, routedPreviewModel)
@@ -373,7 +418,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			continue
 		}
 
+		accountSlotStart := time.Now()
 		accountReleaseFunc, acquireStatus := h.acquireResponsesAccountSlot(c, apiKey.GroupID, apiKey.ID, sessionHash, previousResponseID, selection, reqStream, &streamStarted, reqLog)
+		accountSlotWaitMs := time.Since(accountSlotStart).Milliseconds()
 		if acquireStatus == accountSlotAcquireRetry {
 			failedAccountIDs[account.ID] = struct{}{}
 			continue
@@ -381,6 +428,30 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if acquireStatus != accountSlotAcquireAcquired {
 			return
 		}
+		slotFields := map[string]any{
+			"inbound_endpoint":             GetInboundEndpoint(c),
+			"user_slot_wait_ms":            userSlotWaitMs,
+			"account_slot_wait_ms":         accountSlotWaitMs,
+			"previous_response_id_present": previousResponseID != "",
+			"session_hash_present":         strings.TrimSpace(sessionHash) != "",
+		}
+		if selection.WaitPlan != nil {
+			slotFields["account_wait_timeout_ms"] = selection.WaitPlan.Timeout.Milliseconds()
+			slotFields["account_max_concurrency"] = selection.WaitPlan.MaxConcurrency
+			slotFields["account_max_waiting"] = selection.WaitPlan.MaxWaiting
+		}
+		h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+			Stage:          "concurrency_slots_acquired",
+			EndpointKind:   "responses",
+			RequestStart:   requestStart,
+			APIKey:         apiKey,
+			Account:        account,
+			UserID:         subject.UserID,
+			RequestedModel: reqModel,
+			Stream:         reqStream,
+			SwitchCount:    switchCount,
+			Fields:         slotFields,
+		})
 
 		// Forward request
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
@@ -436,6 +507,27 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						retryLimit := account.GetPoolModeRetryCount()
 						if sameAccountRetryCount[account.ID] < retryLimit {
 							sameAccountRetryCount[account.ID]++
+							h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+								Stage:             "attempt_finished",
+								EndpointKind:      "responses",
+								RequestStart:      requestStart,
+								APIKey:            apiKey,
+								Account:           account,
+								UserID:            subject.UserID,
+								RequestedModel:    reqModel,
+								Stream:            reqStream,
+								SwitchCount:       switchCount,
+								ForwardDurationMs: forwardDurationMs,
+								OpenAIResult:      result,
+								Err:               err,
+								Fields: map[string]any{
+									"outcome":                  "retry_same_account",
+									"inbound_endpoint":         GetInboundEndpoint(c),
+									"upstream_status":          failoverErr.StatusCode,
+									"same_account_retry_count": sameAccountRetryCount[account.ID],
+									"same_account_retry_limit": retryLimit,
+								},
+							})
 							reqLog.Warn("openai.pool_mode_same_account_retry",
 								zap.Int64("account_id", account.ID),
 								zap.Int("upstream_status", failoverErr.StatusCode),
@@ -454,6 +546,27 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
 					lastFailoverAccount = account
+					h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+						Stage:             "attempt_finished",
+						EndpointKind:      "responses",
+						RequestStart:      requestStart,
+						APIKey:            apiKey,
+						Account:           account,
+						UserID:            subject.UserID,
+						RequestedModel:    reqModel,
+						Stream:            reqStream,
+						SwitchCount:       switchCount,
+						ForwardDurationMs: forwardDurationMs,
+						OpenAIResult:      result,
+						Err:               err,
+						Fields: map[string]any{
+							"outcome":            "failover",
+							"inbound_endpoint":   GetInboundEndpoint(c),
+							"upstream_status":    failoverErr.StatusCode,
+							"writer_size_before": writerSizeBeforeForward,
+							"writer_size_after":  c.Writer.Size(),
+						},
+					})
 					// 跨账号切换前的终态帧守卫：若本次 Forward 已向客户端写出
 					// 任意 SSE 帧，切换到下一个账号重放会产生重复的
 					// response.created/failed 终态帧（Codex CLI 报
@@ -492,6 +605,31 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				}
 				upstreamErrorAlreadyCommunicated := c.Writer.Written()
 				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted, err)
+				h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+					Stage:             "attempt_finished",
+					EndpointKind:      "responses",
+					RequestStart:      requestStart,
+					APIKey:            apiKey,
+					Account:           account,
+					UserID:            subject.UserID,
+					RequestedModel:    reqModel,
+					Stream:            reqStream,
+					SwitchCount:       switchCount,
+					ForwardDurationMs: forwardDurationMs,
+					OpenAIResult:      result,
+					Err:               err,
+					Fields: map[string]any{
+						"outcome":                                  "error",
+						"inbound_endpoint":                         GetInboundEndpoint(c),
+						"fallback_error_response_written":          wroteFallback,
+						"upstream_error_response_already_written":  upstreamErrorAlreadyCommunicated,
+						"stream_started":                           streamStarted,
+						"previous_response_id_present":             previousResponseID != "",
+						"writer_size_changed_during_forward":       c.Writer.Size() != writerSizeBeforeForward,
+						"writer_size_before_forward":               writerSizeBeforeForward,
+						"writer_size_after_forward_error_response": c.Writer.Size(),
+					},
+				})
 				fields := []zap.Field{
 					zap.Int64("account_id", account.ID),
 					zap.Bool("fallback_error_response_written", wroteFallback),
@@ -514,6 +652,29 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		} else {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
 		}
+		h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+			Stage:             "attempt_finished",
+			EndpointKind:      "responses",
+			RequestStart:      requestStart,
+			APIKey:            apiKey,
+			Account:           account,
+			UserID:            subject.UserID,
+			RequestedModel:    reqModel,
+			Stream:            reqStream,
+			SwitchCount:       switchCount,
+			ForwardDurationMs: forwardDurationMs,
+			OpenAIResult:      result,
+			Err:               err,
+			Fields: map[string]any{
+				"outcome":                      "success",
+				"inbound_endpoint":             GetInboundEndpoint(c),
+				"previous_response_id_present": previousResponseID != "",
+				"previous_response_id_kind":    previousResponseIDKind,
+				"session_hash_present":         strings.TrimSpace(sessionHash) != "",
+				"routed_model":                 routedPreviewModel,
+				"effective_model":              effectiveModel,
+			},
+		})
 
 		// 捕获请求信息（用于异步记录，避免在 goroutine 中访问 gin.Context）
 		userAgent := c.GetHeader("User-Agent")

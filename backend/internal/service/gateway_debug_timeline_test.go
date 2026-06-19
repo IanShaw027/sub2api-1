@@ -3,11 +3,15 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestWriteGatewayDebugTimelineEventRecreatesDeletedDirectory(t *testing.T) {
@@ -93,6 +97,77 @@ func TestRecordGatewayDebugTimelineBody_RedactsOversizedSensitiveJSON(t *testing
 	}
 	if !strings.Contains(bodyValue, "[REDACTED]") {
 		t.Fatalf("expected redacted marker in body, got %q", bodyValue)
+	}
+}
+
+func TestOpenAIGatewayServiceEmitDebugTimelineEvent_WritesOpenAIMetadata(t *testing.T) {
+	resetGatewayDebugTimelineStateForTest(t)
+
+	dir := filepath.Join(t.TempDir(), "timeline")
+	settingService := testGatewayDebugTimelineSettingService(t, dir)
+	svc := &OpenAIGatewayService{settingService: settingService}
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.4"}`))
+
+	groupID := int64(22)
+	apiKey := &APIKey{ID: 200, GroupID: &groupID}
+	account := &Account{
+		ID:          67225,
+		Name:        "MasonDobies01@outlook.com",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 64,
+	}
+	firstTokenMs := 1234
+	result := &ForwardResult{
+		RequestID:     "resp_timeline_1",
+		UpstreamModel: "gpt-5.4",
+		FirstTokenMs:  &firstTokenMs,
+		Usage: ClaudeUsage{
+			InputTokens:          100,
+			CacheReadInputTokens: 90,
+			OutputTokens:         10,
+		},
+	}
+
+	svc.EmitOpenAIGatewayDebugTimelineEvent(c, OpenAIGatewayDebugTimelineEventInput{
+		Stage:             "attempt_finished",
+		EndpointKind:      "responses",
+		RequestStart:      time.Now().Add(-1500 * time.Millisecond),
+		APIKey:            apiKey,
+		Account:           account,
+		RequestedModel:    "gpt-5.4",
+		Stream:            true,
+		SwitchCount:       2,
+		ForwardDurationMs: 1400,
+		Result:            result,
+		Fields: map[string]any{
+			"openai_ws_mode":        true,
+			"openai_ws_profile":     "session_bound",
+			"openai_ws_conn_reused": true,
+			"store_mode":            "incremental",
+			"delta_active":          true,
+		},
+	})
+
+	content := readGatewayDebugTimelineLog(t, dir)
+	if !strings.Contains(content, `"platform":"openai"`) {
+		t.Fatalf("expected openai platform timeline event, got %s", content)
+	}
+	if !strings.Contains(content, `"stage":"attempt_finished"`) {
+		t.Fatalf("expected attempt_finished stage, got %s", content)
+	}
+	if !strings.Contains(content, `"account_id":67225`) {
+		t.Fatalf("expected account metadata, got %s", content)
+	}
+	if !strings.Contains(content, `"openai_ws_profile":"session_bound"`) {
+		t.Fatalf("expected ws metadata, got %s", content)
+	}
+	if strings.Contains(content, `"body":`) {
+		t.Fatalf("OpenAI timeline should remain metadata-only, got %s", content)
 	}
 }
 
