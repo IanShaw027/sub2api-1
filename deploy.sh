@@ -407,6 +407,20 @@ if [ $BACKUP_WAIT_COUNT -gt 0 ]; then
     echo "✓ 备份已完成"
 fi
 
+# 基于当前源码显式同步数据库校验和；放在停服前，失败时不影响当前服务。
+echo "🔄 同步数据库校验和..."
+CONFIG_FILE="$(find_config_file || true)"
+if [ -z "$CONFIG_FILE" ]; then
+    echo "❌ 未找到 config.yaml，尝试过 /etc/sub2api/config.yaml、$REPO_ROOT/config.yaml、$REPO_ROOT/data/config.yaml" >&2
+    exit 1
+fi
+
+echo "   使用配置文件: $CONFIG_FILE"
+DATABASE_DSN="$(build_database_dsn "$CONFIG_FILE")"
+SUB2API_DATABASE_DSN="$DATABASE_DSN" go run ./cmd/sync_checksums
+unset DATABASE_DSN
+echo "✓ 数据库校验和同步完成"
+
 # 停服窗口只保留停止、二进制替换、启动和状态检查。
 echo "⏸️  停止服务..."
 systemctl stop "$SERVICE_NAME"
