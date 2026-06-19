@@ -21,6 +21,7 @@ import (
 
 const (
 	openAIWSConnMaxAge             = 60 * time.Minute
+	openAIWSNeutralIdleTTL         = 60 * time.Second
 	openAIWSConnHealthCheckIdle    = 90 * time.Second
 	openAIWSConnHealthCheckTO      = 2 * time.Second
 	openAIWSConnPrewarmExtraDelay  = 2 * time.Second
@@ -72,6 +73,19 @@ func StoreOpenAIWSPoolRuntimeSettings(neutralPrewarmPercent, sessionIdleTTLSecon
 		settings.legacyMaxIdle = sessionIdleTTLSeconds
 		settings.legacyStickyReserve = legacyStickyReserve[0]
 		settings.legacyIdleConfigured = true
+	}
+	openAIWSPoolRuntimeSettingsCache.Store(settings)
+}
+
+func StoreOpenAIWSPoolRuntimeSettingsWithIdle(neutralPrewarmPercent, sessionIdleTTLSeconds, minIdlePerAccount, maxIdlePerAccount, stickyReservePercent int) {
+	minIdlePerAccount, maxIdlePerAccount = normalizeOpenAIWSIdleSettingValues(minIdlePerAccount, maxIdlePerAccount)
+	settings := &openAIWSPoolRuntimeSettings{
+		neutralPrewarmPercent: neutralPrewarmPercent,
+		sessionIdleTTLSeconds: sessionIdleTTLSeconds,
+		legacyMinIdle:         minIdlePerAccount,
+		legacyMaxIdle:         maxIdlePerAccount,
+		legacyStickyReserve:   boundedIntOrDefault(stickyReservePercent, 0, 100, 0),
+		legacyIdleConfigured:  true,
 	}
 	openAIWSPoolRuntimeSettingsCache.Store(settings)
 }
@@ -970,10 +984,12 @@ func (p *openAIWSConnPool) runBackgroundCleanupSweep(now time.Time) {
 		return
 	}
 	type cleanupResult struct {
-		evicted []*openAIWSConn
+		accountID int64
+		evicted   []*openAIWSConn
 	}
 	results := make([]cleanupResult, 0)
-	p.accounts.Range(func(_ any, value any) bool {
+	p.accounts.Range(func(key any, value any) bool {
+		accountID, _ := key.(int64)
 		ap, ok := value.(*openAIWSAccountPool)
 		if !ok || ap == nil {
 			return true
@@ -989,12 +1005,15 @@ func (p *openAIWSConnPool) runBackgroundCleanupSweep(now time.Time) {
 		ap.lastCleanupAt = now
 		ap.mu.Unlock()
 		if len(evicted) > 0 {
-			results = append(results, cleanupResult{evicted: evicted})
+			results = append(results, cleanupResult{accountID: accountID, evicted: evicted})
 		}
 		return true
 	})
 	for _, result := range results {
 		closeOpenAIWSConns(result.evicted)
+	}
+	for _, result := range results {
+		p.ensureTargetIdleAsync(result.accountID)
 	}
 }
 
@@ -1599,6 +1618,16 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 		}
 		if conn.profile == openAIWSConnProfileSessionBound && sessionIdleTTL > 0 && now.Sub(conn.lastUsedAt()) > sessionIdleTTL {
 			p.logConnEvict(conn, "session_idle_ttl")
+			deleteOpenAIWSAccountConnLocked(ap, id)
+			if len(ap.pinnedConns) > 0 {
+				delete(ap.pinnedConns, id)
+			}
+			evicted = append(evicted, conn)
+			p.metrics.scaleDownTotal.Add(1)
+			continue
+		}
+		if conn.profile == openAIWSConnProfileNeutral && openAIWSNeutralIdleTTL > 0 && now.Sub(conn.lastUsedAt()) > openAIWSNeutralIdleTTL {
+			p.logConnEvict(conn, "neutral_idle_ttl")
 			deleteOpenAIWSAccountConnLocked(ap, id)
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, id)

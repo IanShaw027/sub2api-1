@@ -221,6 +221,82 @@ func TestOpenAIWSConnPool_CleanupEvictsSessionAfterTTLAndNeutralSurplus(t *testi
 	require.Equal(t, 2, countConnsByProfileLocked(ap, openAIWSConnProfileNeutral), "25 percent of concurrency 8 keeps 2 neutral conns")
 }
 
+func TestOpenAIWSConnPool_CleanupEvictsNeutralAfterIdleTTL(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 64
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	StoreOpenAIWSPoolRuntimeSettings(100, 120)
+
+	accountID := int64(69)
+	ap := pool.getOrCreateAccountPool(accountID)
+	now := time.Now()
+
+	neutralExpired := newOpenAIWSConnWithProfile("neutral_expired", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral)
+	neutralExpired.lastUsedNano.Store(now.Add(-(openAIWSNeutralIdleTTL + time.Second)).UnixNano())
+	neutralRecent := newOpenAIWSConnWithProfile("neutral_recent", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral)
+	neutralRecent.lastUsedNano.Store(now.Add(-(openAIWSNeutralIdleTTL - time.Second)).UnixNano())
+
+	ap.conns[neutralExpired.id] = neutralExpired
+	ap.conns[neutralRecent.id] = neutralRecent
+
+	evicted := pool.cleanupAccountLocked(ap, now, 4)
+	closeOpenAIWSConns(evicted)
+
+	require.Nil(t, ap.conns[neutralExpired.id], "neutral idle conn beyond TTL should be refreshed before serving real traffic")
+	require.NotNil(t, ap.conns[neutralRecent.id], "neutral idle conn below TTL should remain reusable")
+	require.Equal(t, 1, countConnsByProfileLocked(ap, openAIWSConnProfileNeutral))
+}
+
+func TestOpenAIWSConnPool_BackgroundCleanupRefreshesExpiredNeutralIdle(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+	StoreOpenAIWSPoolRuntimeSettings(50, 120)
+
+	account := &Account{ID: 70, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 4}
+	req := openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.invalid/ws",
+		Profile: openAIWSConnProfileNeutral,
+	}
+	reuseKey := openAIWSConnReuseKeyForAcquire(req)
+
+	ap := pool.getOrCreateAccountPool(account.ID)
+	now := time.Now()
+	expiredA := newOpenAIWSConnWithProfileAndReuseKey("neutral_expired_a", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral, reuseKey)
+	expiredA.lastUsedNano.Store(now.Add(-(openAIWSNeutralIdleTTL + time.Second)).UnixNano())
+	expiredB := newOpenAIWSConnWithProfileAndReuseKey("neutral_expired_b", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral, reuseKey)
+	expiredB.lastUsedNano.Store(now.Add(-(openAIWSNeutralIdleTTL + time.Second)).UnixNano())
+	ap.mu.Lock()
+	ap.lastNeutralAcquire = cloneOpenAIWSAcquireRequestPtr(&req)
+	ap.conns[expiredA.id] = expiredA
+	ap.conns[expiredB.id] = expiredB
+	ap.mu.Unlock()
+
+	pool.runBackgroundCleanupSweep(now)
+
+	require.Eventually(t, func() bool {
+		ap.mu.Lock()
+		defer ap.mu.Unlock()
+		_, hasExpiredA := ap.conns[expiredA.id]
+		_, hasExpiredB := ap.conns[expiredB.id]
+		return !hasExpiredA &&
+			!hasExpiredB &&
+			countConnsByProfileAndReuseKeyLocked(ap, openAIWSConnProfileNeutral, reuseKey) == 2 &&
+			dialer.DialCount() == 2
+	}, time.Second, 10*time.Millisecond)
+}
+
 func TestOpenAIWSConnPool_SessionAcquireCanCreateBeyondAccountConcurrencyWithoutEvictingIdleSession(t *testing.T) {
 	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
 	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)

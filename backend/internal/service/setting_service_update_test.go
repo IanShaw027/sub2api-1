@@ -412,7 +412,7 @@ func TestSettingService_GetAllSettings_DefaultsOpenAIWSPoolRuntimeSettings(t *te
 	require.Equal(t, defaultOpenAIWSSessionIdleTTLSeconds, sessionIdleTTLSeconds)
 }
 
-func TestSettingService_UpdateSettings_LegacyOpenAIWSIdleSettingsDoNotDrivePoolRuntime(t *testing.T) {
+func TestSettingService_UpdateSettings_OpenAIWSIdleSettingsDrivePoolRuntime(t *testing.T) {
 	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
 	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
 	RegisterOpenAIWSPoolReconcileHook(nil)
@@ -423,24 +423,35 @@ func TestSettingService_UpdateSettings_LegacyOpenAIWSIdleSettingsDoNotDrivePoolR
 
 	repo := &settingUpdateRepoStub{}
 	svc := NewSettingService(repo, &config.Config{})
+	pool := newOpenAIWSConnPool(&config.Config{})
+	t.Cleanup(pool.Close)
 
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{
-		OpenAIWSMinIdlePerAccount: 5,
-		OpenAIWSMaxIdlePerAccount: 2,
+		OpenAIStickyReservePercent:    20,
+		OpenAIWSMinIdlePerAccount:     6,
+		OpenAIWSMaxIdlePerAccount:     10,
+		OpenAIWSNeutralPrewarmPercent: 50,
+		OpenAIWSSessionIdleTTLSeconds: 900,
 	})
 	require.NoError(t, err)
-	require.Equal(t, "5", repo.updates[SettingKeyOpenAIWSMinIdlePerAccount])
-	require.Equal(t, "2", repo.updates[SettingKeyOpenAIWSMaxIdlePerAccount])
+	require.Equal(t, "20", repo.updates[SettingKeyOpenAIStickyReservePercent])
+	require.Equal(t, "6", repo.updates[SettingKeyOpenAIWSMinIdlePerAccount])
+	require.Equal(t, "10", repo.updates[SettingKeyOpenAIWSMaxIdlePerAccount])
+	require.Equal(t, "50", repo.updates[SettingKeyOpenAIWSNeutralPrewarmPercent])
+	require.Equal(t, "900", repo.updates[SettingKeyOpenAIWSSessionIdleTTLSeconds])
 
 	neutralPrewarmPercent, sessionIdleTTLSeconds, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
 	require.True(t, ok)
-	require.Equal(t, defaultOpenAIWSNeutralPrewarmPercent, neutralPrewarmPercent)
-	require.Equal(t, defaultOpenAIWSSessionIdleTTLSeconds, sessionIdleTTLSeconds)
+	require.Equal(t, 50, neutralPrewarmPercent)
+	require.Equal(t, 900, sessionIdleTTLSeconds)
+	require.Equal(t, 6, pool.minIdlePerAccount())
+	require.Equal(t, 10, pool.maxIdlePerAccount())
+	require.Equal(t, 20, pool.stickyReservePercent())
 
 	select {
 	case <-reconcileCalls:
-		t.Fatal("legacy min/max idle changes must not trigger WS pool reconcile")
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(time.Second):
+		t.Fatal("pool reconcile should fire when runtime WS pool settings change")
 	}
 }
 

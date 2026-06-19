@@ -1773,15 +1773,26 @@ func (s *SettingService) UpdateSettingsWithAuthSourceDefaults(ctx context.Contex
 type openAIWSPoolRuntimeSettingsUpdateSnapshot struct {
 	neutralPrewarmPercent int
 	sessionIdleTTLSeconds int
+	minIdlePerAccount     int
+	maxIdlePerAccount     int
+	stickyReservePercent  int
+	idleConfigured        bool
 	ok                    bool
 }
 
 func snapshotOpenAIWSPoolRuntimeSettingsForUpdate() openAIWSPoolRuntimeSettingsUpdateSnapshot {
-	neutralPrewarmPercent, sessionIdleTTLSeconds, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
+	cached, ok := loadOpenAIWSPoolRuntimeSettings()
+	if !ok {
+		return openAIWSPoolRuntimeSettingsUpdateSnapshot{}
+	}
 	return openAIWSPoolRuntimeSettingsUpdateSnapshot{
-		neutralPrewarmPercent: neutralPrewarmPercent,
-		sessionIdleTTLSeconds: sessionIdleTTLSeconds,
-		ok:                    ok,
+		neutralPrewarmPercent: cached.neutralPrewarmPercent,
+		sessionIdleTTLSeconds: cached.sessionIdleTTLSeconds,
+		minIdlePerAccount:     cached.legacyMinIdle,
+		maxIdlePerAccount:     cached.legacyMaxIdle,
+		stickyReservePercent:  cached.legacyStickyReserve,
+		idleConfigured:        cached.legacyIdleConfigured,
+		ok:                    true,
 	}
 }
 
@@ -1793,9 +1804,18 @@ func triggerOpenAIWSPoolReconcileIfRuntimeSettingsChanged(settings *SystemSettin
 		return
 	}
 	newNeutralPrewarmPercent, newSessionIdleTTLSeconds := normalizeOpenAIWSPoolRuntimeSettingsForUpdate(settings)
+	newMinIdlePerAccount, newMaxIdlePerAccount := normalizeOpenAIWSIdleSettingValues(
+		settings.OpenAIWSMinIdlePerAccount,
+		settings.OpenAIWSMaxIdlePerAccount,
+	)
+	newStickyReservePercent := boundedIntOrDefault(settings.OpenAIStickyReservePercent, 0, 100, 0)
 	poolSettingsChanged := !prev.ok ||
 		prev.neutralPrewarmPercent != newNeutralPrewarmPercent ||
-		prev.sessionIdleTTLSeconds != newSessionIdleTTLSeconds
+		prev.sessionIdleTTLSeconds != newSessionIdleTTLSeconds ||
+		!prev.idleConfigured ||
+		prev.minIdlePerAccount != newMinIdlePerAccount ||
+		prev.maxIdlePerAccount != newMaxIdlePerAccount ||
+		prev.stickyReservePercent != newStickyReservePercent
 	if poolSettingsChanged {
 		TriggerOpenAIWSPoolReconcile()
 	}
@@ -1805,7 +1825,11 @@ func hasOpenAIWSPoolRuntimeSettingsForUpdate(settings *SystemSettings) bool {
 	if settings == nil {
 		return false
 	}
-	return settings.OpenAIWSNeutralPrewarmPercent != 0 || settings.OpenAIWSSessionIdleTTLSeconds != 0
+	return settings.OpenAIWSNeutralPrewarmPercent != 0 ||
+		settings.OpenAIWSSessionIdleTTLSeconds != 0 ||
+		settings.OpenAIWSMinIdlePerAccount != 0 ||
+		settings.OpenAIWSMaxIdlePerAccount != 0 ||
+		settings.OpenAIStickyReservePercent != 0
 }
 
 func normalizeOpenAIWSIdleSettingValues(minIdle, maxIdle int) (int, int) {
@@ -2446,9 +2470,16 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 	})
 	openAIWSNeutralPrewarmPercent, openAIWSSessionIdleTTLSeconds := normalizeOpenAIWSPoolRuntimeSettingsForUpdate(settings)
-	StoreOpenAIWSPoolRuntimeSettings(
+	openAIWSMinIdlePerAccount, openAIWSMaxIdlePerAccount := normalizeOpenAIWSIdleSettingValues(
+		settings.OpenAIWSMinIdlePerAccount,
+		settings.OpenAIWSMaxIdlePerAccount,
+	)
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(
 		openAIWSNeutralPrewarmPercent,
 		openAIWSSessionIdleTTLSeconds,
+		openAIWSMinIdlePerAccount,
+		openAIWSMaxIdlePerAccount,
+		settings.OpenAIStickyReservePercent,
 	)
 	openAIOAuthImageBridgeTransportSettingsSF.Forget(openAIOAuthImageBridgeTransportSettingsKey)
 	openAIOAuthImageBridgeTransportSettingsCache.Store(&cachedOpenAIOAuthImageBridgeTransportSettings{

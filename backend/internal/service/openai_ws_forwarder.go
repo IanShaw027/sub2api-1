@@ -2006,6 +2006,19 @@ func shouldForceNewConnOnStoreDisabled(mode, lastFailureReason string) bool {
 	}
 }
 
+func shouldForceNewConnOnHTTPIngressWSOneShotRetry(lastFailureReason string) bool {
+	reason := strings.TrimSpace(lastFailureReason)
+	if reason == "" || strings.HasPrefix(reason, "prewarm_") {
+		return false
+	}
+	switch reason {
+	case "read_event", "write_request", "write":
+		return true
+	default:
+		return false
+	}
+}
+
 func dropPreviousResponseIDFromRawPayload(payload []byte) ([]byte, bool, error) {
 	return dropPreviousResponseIDFromRawPayloadWithDeleteFn(payload, sjson.DeleteBytes)
 }
@@ -2580,6 +2593,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	if httpIngressWSOneShot {
 		// 无会话 one-shot：使用账号级中性握手头，不绑定 session/response。
 		connProfile = openAIWSConnProfileNeutral
+		if shouldForceNewConnOnHTTPIngressWSOneShotRetry(lastFailureReason) {
+			forceNewConn = true
+		}
 		wsHeaders = s.buildOpenAIWSNeutralHeaders(account, token, decision, isCodexCLI)
 		applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
 	}
@@ -2771,7 +2787,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 	}()
 
-	logOpenAIWSDiagnosticStart(openAIWSDiagnosticStartLog{
+	diagnosticStart := openAIWSDiagnosticStartLog{
 		RequestID:                 requestID,
 		ClientRequestID:           clientRequestID,
 		AccountID:                 account.ID,
@@ -2818,6 +2834,16 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		AffinityOnlyReuse:         affinityOnlyReuse,
 		StoreDisabledConnMode:     storeDisabledConnMode,
 		ProxyEnabled:              account.ProxyID != nil && account.Proxy != nil,
+	}
+	logOpenAIWSDiagnosticStart(diagnosticStart)
+	s.EmitOpenAIGatewayDebugTimelineEvent(c, OpenAIGatewayDebugTimelineEventInput{
+		Stage:          "openai_ws_start",
+		EndpointKind:   "responses",
+		RequestStart:   startTime,
+		Account:        account,
+		RequestedModel: originalModel,
+		Stream:         reqStream,
+		Fields:         openAIWSDiagnosticStartTimelineFields(groupID, apiKeyID, diagnosticStart),
 	})
 	if previousResponseID != "" {
 		logOpenAIWSContinuationProbe(openAIWSContinuationProbeLog{
@@ -3387,7 +3413,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		firstTokenMsValue = *firstTokenMs
 	}
 	durationMs := time.Since(startTime).Milliseconds()
-	logOpenAIWSDiagnosticCompleted(openAIWSDiagnosticCompletedLog{
+	diagnosticCompleted := openAIWSDiagnosticCompletedLog{
 		RequestID:              requestID,
 		ClientRequestID:        clientRequestID,
 		AccountID:              account.ID,
@@ -3426,6 +3452,16 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		DeltaBytes:             activeDeltaLog.DeltaBytes,
 		FullItems:              activeDeltaLog.FullItems,
 		FullBytes:              activeDeltaLog.FullBytes,
+	}
+	logOpenAIWSDiagnosticCompleted(diagnosticCompleted)
+	s.EmitOpenAIGatewayDebugTimelineEvent(c, OpenAIGatewayDebugTimelineEventInput{
+		Stage:          "openai_ws_completed",
+		EndpointKind:   "responses",
+		RequestStart:   startTime,
+		Account:        account,
+		RequestedModel: originalModel,
+		Stream:         reqStream,
+		Fields:         openAIWSDiagnosticCompletedTimelineFields(groupID, apiKeyID, diagnosticCompleted),
 	})
 	logOpenAIWSModeDebug(
 		"completed account_id=%d conn_id=%s response_id=%s stream=%v duration_ms=%d events=%d token_events=%d terminal_events=%d buffered_events=%d buffered_flushed=%d first_event=%s last_event=%s first_token_ms=%d wrote_downstream=%v client_disconnected=%v http_ingress_ws_one_shot=%v",
