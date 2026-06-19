@@ -102,10 +102,10 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	// to the resolved upstream model. The downstream codex OAuth transform will
 	// still normalize store/stream/instructions/etc.
 	isResponsesShape := !gjson.GetBytes(body, "messages").Exists() && gjson.GetBytes(body, "input").Exists()
+	if account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey && account.IsAnthropicMessagesUpstream() && !isResponsesShape {
+		return s.forwardCCToAnthropicMessages(ctx, c, account, body, startTime)
+	}
 	if account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey && !openai_compat.ShouldUseResponsesAPI(account.Extra) {
-		if account.IsAnthropicMessagesUpstream() && !isResponsesShape {
-			return s.forwardCCToAnthropicMessages(ctx, c, account, body, startTime)
-		}
 		return s.forwardAsRawChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, selectedFallbackModel)
 	}
 

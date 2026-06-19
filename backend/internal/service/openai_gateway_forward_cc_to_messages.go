@@ -197,8 +197,11 @@ func (s *OpenAIGatewayService) streamAnthropicResponseAsCC(
 			}
 		}
 	}
+	if scanErr := scanner.Err(); scanErr != nil && !clientDisconnect {
+		return nil, fmt.Errorf("upstream stream read: %w", scanErr)
+	}
 
-	if clientStream {
+	if clientStream && !clientDisconnect {
 		if includeUsage && state.Usage != nil {
 			usageChunk := state.BuildUsageChunk()
 			chunkJSON, _ := json.Marshal(usageChunk)
@@ -240,8 +243,9 @@ func openAIUsageFromState(state *apicompat.AnthropicToCCChunkState) OpenAIUsage 
 		return OpenAIUsage{}
 	}
 	return OpenAIUsage{
-		InputTokens:          state.Usage.InputTokens,
-		OutputTokens:         state.Usage.OutputTokens,
-		CacheReadInputTokens: state.Usage.CacheReadInputTokens,
+		InputTokens:              state.Usage.InputTokens + state.Usage.CacheReadInputTokens + state.Usage.CacheCreationInputTokens,
+		OutputTokens:             state.Usage.OutputTokens,
+		CacheReadInputTokens:     state.Usage.CacheReadInputTokens,
+		CacheCreationInputTokens: state.Usage.CacheCreationInputTokens,
 	}
 }

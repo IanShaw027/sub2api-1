@@ -112,7 +112,14 @@ func anthropicMessageToChat(msg AnthropicMessage) ([]ChatMessage, error) {
 func anthropicUserBlocksToChat(blocks []AnthropicContentBlock) ([]ChatMessage, error) {
 	var msgs []ChatMessage
 	var parts []ChatContentPart
-	var toolResults []ChatMessage
+	flushParts := func() {
+		if len(parts) == 0 {
+			return
+		}
+		raw, _ := json.Marshal(parts)
+		msgs = append(msgs, ChatMessage{Role: "user", Content: raw})
+		parts = nil
+	}
 
 	for _, b := range blocks {
 		switch b.Type {
@@ -130,9 +137,10 @@ func anthropicUserBlocksToChat(blocks []AnthropicContentBlock) ([]ChatMessage, e
 				})
 			}
 		case "tool_result":
+			flushParts()
 			content := extractToolResultText(b.Content)
 			raw, _ := json.Marshal(content)
-			toolResults = append(toolResults, ChatMessage{
+			msgs = append(msgs, ChatMessage{
 				Role:       "tool",
 				Content:    raw,
 				ToolCallID: b.ToolUseID,
@@ -140,11 +148,7 @@ func anthropicUserBlocksToChat(blocks []AnthropicContentBlock) ([]ChatMessage, e
 		}
 	}
 
-	if len(parts) > 0 {
-		raw, _ := json.Marshal(parts)
-		msgs = append(msgs, ChatMessage{Role: "user", Content: raw})
-	}
-	msgs = append(msgs, toolResults...)
+	flushParts()
 	return msgs, nil
 }
 

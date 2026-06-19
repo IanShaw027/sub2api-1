@@ -228,6 +228,9 @@ func (s *GatewayService) streamCCResponseAsAnthropic(
 			c.Writer.Flush()
 		}
 	}
+	if scanErr := scanner.Err(); scanErr != nil && !clientDisconnect {
+		return ClaudeUsage{}, firstTokenMs, false, fmt.Errorf("upstream stream read: %w", scanErr)
+	}
 
 	if clientStream {
 		if lastStopReason == "" && !clientDisconnect {

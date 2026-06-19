@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -83,8 +84,9 @@ func FinalizeAnthropicStream(state *ChatChunkToAnthropicState, stopReason string
 		state.TextBlockOpen = false
 	}
 
-	for _, tc := range state.ActiveToolCalls {
-		if tc.sentStart {
+	for _, idx := range sortedActiveToolCallIndexes(state.ActiveToolCalls) {
+		tc := state.ActiveToolCalls[idx]
+		if tc != nil && tc.sentStart {
 			events = append(events, buildBlockStop(tc.blockIndex))
 		}
 	}
@@ -164,8 +166,9 @@ func (s *ChatChunkToAnthropicState) processChoice(choice *ChatChunkChoice) []Ant
 			events = append(events, s.buildContentBlockStop())
 			s.TextBlockOpen = false
 		}
-		for _, tc := range s.ActiveToolCalls {
-			if tc.sentStart {
+		for _, idx := range sortedActiveToolCallIndexes(s.ActiveToolCalls) {
+			tc := s.ActiveToolCalls[idx]
+			if tc != nil && tc.sentStart {
 				events = append(events, buildBlockStop(tc.blockIndex))
 			}
 		}
@@ -174,6 +177,15 @@ func (s *ChatChunkToAnthropicState) processChoice(choice *ChatChunkChoice) []Ant
 	}
 
 	return events
+}
+
+func sortedActiveToolCallIndexes(calls map[int]*activeToolCallState) []int {
+	indexes := make([]int, 0, len(calls))
+	for idx := range calls {
+		indexes = append(indexes, idx)
+	}
+	sort.Ints(indexes)
+	return indexes
 }
 
 func (s *ChatChunkToAnthropicState) processToolCall(idx int, tc *ChatToolCall) []AnthropicSSELine {
