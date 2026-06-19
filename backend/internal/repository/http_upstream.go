@@ -58,6 +58,12 @@ const (
 	defaultOpenAIHTTP2FallbackErrorThreshold = 2
 	defaultOpenAIHTTP2FallbackWindow         = 60 * time.Second
 	defaultOpenAIHTTP2FallbackTTL            = 10 * time.Minute
+	// Upstream TCP dialer defaults. Keep these explicit so upstream connection
+	// behavior is controlled by this layer instead of net/http zero-value drift.
+	defaultUpstreamDialTimeout       = 10 * time.Second
+	defaultUpstreamDialKeepAlive     = 30 * time.Second
+	defaultUpstreamDialFallbackDelay = -1 * time.Second
+	defaultUpstreamDNSCacheTTL       = 60 * time.Second
 )
 
 const (
@@ -1126,6 +1132,154 @@ func defaultPoolSettings(cfg *config.Config) poolSettings {
 	}
 }
 
+type upstreamDialer struct {
+	base         *net.Dialer
+	lookupIPAddr func(context.Context, string) ([]net.IPAddr, error)
+	now          func() time.Time
+	cache        sync.Map // map[string]upstreamDNSCacheEntry
+}
+
+type upstreamDNSCacheEntry struct {
+	addrs     []net.IPAddr
+	expiresAt time.Time
+}
+
+func newUpstreamNetDialer() *net.Dialer {
+	return &net.Dialer{
+		Timeout:       defaultUpstreamDialTimeout,
+		KeepAlive:     defaultUpstreamDialKeepAlive,
+		FallbackDelay: defaultUpstreamDialFallbackDelay,
+	}
+}
+
+func newUpstreamDialer() *upstreamDialer {
+	return &upstreamDialer{
+		base:         newUpstreamNetDialer(),
+		lookupIPAddr: net.DefaultResolver.LookupIPAddr,
+		now:          time.Now,
+	}
+}
+
+func (d *upstreamDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	base := newUpstreamNetDialer()
+	if d != nil && d.base != nil {
+		base = d.base
+	}
+	if !strings.HasPrefix(strings.ToLower(network), "tcp") {
+		return base.DialContext(ctx, network, address)
+	}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || strings.TrimSpace(host) == "" || strings.TrimSpace(port) == "" {
+		return base.DialContext(ctx, network, address)
+	}
+	host = strings.Trim(host, "[]")
+	if net.ParseIP(host) != nil {
+		return base.DialContext(ctx, network, address)
+	}
+	addrs, err := d.lookupCachedIPAddrs(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	ordered := orderUpstreamIPAddrs(addrs, network)
+	if len(ordered) == 0 {
+		return nil, fmt.Errorf("resolve %s: no IPs matching %s", host, network)
+	}
+	var lastErr error
+	for _, addr := range ordered {
+		target := net.JoinHostPort(addr.IP.String(), port)
+		conn, err := base.DialContext(ctx, network, target)
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("dial %s: no address attempted", address)
+}
+
+func (d *upstreamDialer) lookupCachedIPAddrs(ctx context.Context, host string) ([]net.IPAddr, error) {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return nil, errors.New("resolve host is empty")
+	}
+	now := time.Now()
+	if d != nil && d.now != nil {
+		now = d.now()
+	}
+	if d != nil {
+		if raw, ok := d.cache.Load(host); ok {
+			entry, ok := raw.(upstreamDNSCacheEntry)
+			if ok && now.Before(entry.expiresAt) && len(entry.addrs) > 0 {
+				return cloneUpstreamIPAddrs(entry.addrs), nil
+			}
+			d.cache.Delete(host)
+		}
+	}
+	lookup := net.DefaultResolver.LookupIPAddr
+	if d != nil && d.lookupIPAddr != nil {
+		lookup = d.lookupIPAddr
+	}
+	addrs, err := lookup(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	addrs = cloneUpstreamIPAddrs(addrs)
+	if len(addrs) == 0 {
+		return nil, fmt.Errorf("resolve %s: no IPs", host)
+	}
+	if d != nil {
+		d.cache.Store(host, upstreamDNSCacheEntry{
+			addrs:     cloneUpstreamIPAddrs(addrs),
+			expiresAt: now.Add(defaultUpstreamDNSCacheTTL),
+		})
+	}
+	return addrs, nil
+}
+
+func cloneUpstreamIPAddrs(addrs []net.IPAddr) []net.IPAddr {
+	if len(addrs) == 0 {
+		return nil
+	}
+	out := make([]net.IPAddr, 0, len(addrs))
+	for _, addr := range addrs {
+		copied := net.IPAddr{Zone: addr.Zone}
+		if addr.IP != nil {
+			copied.IP = append(net.IP(nil), addr.IP...)
+		}
+		out = append(out, copied)
+	}
+	return out
+}
+
+func orderUpstreamIPAddrs(addrs []net.IPAddr, network string) []net.IPAddr {
+	network = strings.ToLower(network)
+	ordered := make([]net.IPAddr, 0, len(addrs))
+	for _, addr := range addrs {
+		if addr.IP.To4() != nil && upstreamIPMatchesNetwork(addr.IP, network) {
+			ordered = append(ordered, addr)
+		}
+	}
+	for _, addr := range addrs {
+		if addr.IP.To4() == nil && upstreamIPMatchesNetwork(addr.IP, network) {
+			ordered = append(ordered, addr)
+		}
+	}
+	return ordered
+}
+
+func upstreamIPMatchesNetwork(ip net.IP, network string) bool {
+	switch network {
+	case "tcp4":
+		return ip.To4() != nil
+	case "tcp6":
+		return ip.To4() == nil
+	default:
+		return true
+	}
+}
+
 // buildUpstreamTransport 构建上游请求的 Transport
 // 使用配置文件中的连接池参数，支持生产环境调优
 //
@@ -1145,6 +1299,7 @@ func defaultPoolSettings(cfg *config.Config) poolSettings {
 //   - ResponseHeaderTimeout: 等待响应头超时（不影响流式传输）
 func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMode string) (*http.Transport, error) {
 	transport := &http.Transport{
+		DialContext:           newUpstreamDialer().DialContext,
 		MaxIdleConns:          settings.maxIdleConns,
 		MaxIdleConnsPerHost:   settings.maxIdleConnsPerHost,
 		MaxConnsPerHost:       settings.maxConnsPerHost,
@@ -1187,6 +1342,7 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *url.URL, profile *tlsfingerprint.Profile) (*http.Transport, error) {
 	transportProfile := tlsFingerprintHTTPTransportProfile(profile)
 	transport := &http.Transport{
+		DialContext:           newUpstreamDialer().DialContext,
 		MaxIdleConns:          settings.maxIdleConns,
 		MaxIdleConnsPerHost:   settings.maxIdleConnsPerHost,
 		MaxConnsPerHost:       settings.maxConnsPerHost,
@@ -1200,7 +1356,7 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 	if proxyURL == nil {
 		// 直连：使用 TLSFingerprintDialer
 		slog.Debug("tls_fingerprint_transport_direct")
-		dialer := tlsfingerprint.NewDialer(transportProfile, nil)
+		dialer := tlsfingerprint.NewDialer(transportProfile, newUpstreamDialer().DialContext)
 		transport.DialTLSContext = dialer.DialTLSContext
 	} else {
 		scheme := strings.ToLower(proxyURL.Scheme)

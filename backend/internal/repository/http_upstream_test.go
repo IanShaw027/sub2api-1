@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -73,6 +75,48 @@ func (s *HTTPUpstreamSuite) TestCustomResponseHeaderTimeout() {
 	transport, ok := entry.client.Transport.(*http.Transport)
 	require.True(s.T(), ok, "expected *http.Transport")
 	require.Equal(s.T(), 7*time.Second, transport.ResponseHeaderTimeout, "ResponseHeaderTimeout mismatch")
+}
+
+func (s *HTTPUpstreamSuite) TestTransportUsesExplicitDialContext() {
+	svc := s.newService()
+	entry := mustGetOrCreateClient(s.T(), svc, "", 0, 0)
+	transport, ok := entry.client.Transport.(*http.Transport)
+	require.True(s.T(), ok, "expected *http.Transport")
+	require.NotNil(s.T(), transport.DialContext, "upstream transport should set an explicit dialer for controllable timeout and keepalive")
+}
+
+func (s *HTTPUpstreamSuite) TestUpstreamDialerSettings() {
+	dialer := newUpstreamNetDialer()
+	require.Equal(s.T(), 10*time.Second, dialer.Timeout)
+	require.Equal(s.T(), 30*time.Second, dialer.KeepAlive)
+	require.Negative(s.T(), dialer.FallbackDelay, "negative fallback delay disables Happy Eyeballs fallback racing")
+}
+
+func (s *HTTPUpstreamSuite) TestUpstreamDialerCachesDNSLookups() {
+	now := time.Now()
+	var lookups int
+	dialer := &upstreamDialer{
+		base: newUpstreamNetDialer(),
+		lookupIPAddr: func(context.Context, string) ([]net.IPAddr, error) {
+			lookups++
+			return []net.IPAddr{{IP: net.ParseIP("203.0.113.10")}}, nil
+		},
+		now: func() time.Time { return now },
+	}
+
+	first, err := dialer.lookupCachedIPAddrs(context.Background(), "api.openai.com")
+	require.NoError(s.T(), err)
+	require.Len(s.T(), first, 1)
+
+	second, err := dialer.lookupCachedIPAddrs(context.Background(), "api.openai.com")
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), first, second)
+	require.Equal(s.T(), 1, lookups, "second lookup should hit DNS cache")
+
+	now = now.Add(defaultUpstreamDNSCacheTTL + time.Second)
+	_, err = dialer.lookupCachedIPAddrs(context.Background(), "api.openai.com")
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), 2, lookups, "expired cache entry should be refreshed")
 }
 
 // TestGetOrCreateClient_InvalidURLReturnsError 测试无效代理 URL 返回错误
