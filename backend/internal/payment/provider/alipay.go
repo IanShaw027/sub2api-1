@@ -37,6 +37,9 @@ var (
 	alipayTradePagePay = func(client *alipay.Client, param alipay.TradePagePay) (*url.URL, error) {
 		return client.TradePagePay(param)
 	}
+	alipayTradeRefund = func(ctx context.Context, client *alipay.Client, param alipay.TradeRefund) (*alipay.TradeRefundRsp, error) {
+		return client.TradeRefund(ctx, param)
+	}
 )
 
 // Alipay implements payment.Provider and payment.CancelableProvider using the smartwalle/alipay SDK.
@@ -333,7 +336,7 @@ func (a *Alipay) Refund(ctx context.Context, req payment.RefundRequest) (*paymen
 		return nil, err
 	}
 
-	result, err := client.TradeRefund(ctx, alipay.TradeRefund{
+	result, err := alipayTradeRefund(ctx, client, alipay.TradeRefund{
 		OutTradeNo:   req.OrderID,
 		RefundAmount: req.Amount,
 		RefundReason: req.Reason,
@@ -342,10 +345,14 @@ func (a *Alipay) Refund(ctx context.Context, req payment.RefundRequest) (*paymen
 	if err != nil {
 		return nil, fmt.Errorf("alipay TradeRefund: %w", err)
 	}
-
-	refundStatus := payment.ProviderStatusPending
-	if result.FundChange == alipayFundChangeYes {
-		refundStatus = payment.ProviderStatusSuccess
+	if result == nil {
+		return nil, fmt.Errorf("alipay TradeRefund: empty response")
+	}
+	if result.IsFailure() {
+		return nil, fmt.Errorf("alipay TradeRefund failed: code=%s sub_code=%s sub_msg=%s", result.Code, result.SubCode, result.SubMsg)
+	}
+	if strings.TrimSpace(result.FundChange) != alipayFundChangeYes {
+		return nil, fmt.Errorf("alipay TradeRefund returned fund_change=%q; refund did not change funds", result.FundChange)
 	}
 
 	refundID := result.TradeNo
@@ -355,7 +362,7 @@ func (a *Alipay) Refund(ctx context.Context, req payment.RefundRequest) (*paymen
 
 	return &payment.RefundResponse{
 		RefundID: refundID,
-		Status:   refundStatus,
+		Status:   payment.ProviderStatusSuccess,
 	}, nil
 }
 

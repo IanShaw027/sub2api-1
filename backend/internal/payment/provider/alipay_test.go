@@ -330,6 +330,73 @@ func TestCreateTradeUsesPrecreateForDesktopWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestAlipayRefundRejectsNoFundChangeResponse(t *testing.T) {
+	origRefund := alipayTradeRefund
+	t.Cleanup(func() {
+		alipayTradeRefund = origRefund
+	})
+
+	alipayTradeRefund = func(ctx context.Context, client *alipay.Client, param alipay.TradeRefund) (*alipay.TradeRefundRsp, error) {
+		if param.OutTradeNo != "sub2_refund_no_fund_change" {
+			t.Fatalf("out_trade_no = %q", param.OutTradeNo)
+		}
+		return &alipay.TradeRefundRsp{
+			Error:      alipay.Error{Code: alipay.CodeSuccess},
+			TradeNo:    "2026060523001446101455752161",
+			FundChange: "N",
+		}, nil
+	}
+
+	provider := &Alipay{client: &alipay.Client{}}
+	resp, err := provider.Refund(context.Background(), payment.RefundRequest{
+		OrderID: "sub2_refund_no_fund_change",
+		Amount:  "4.00",
+		Reason:  "admin refund",
+	})
+	if err == nil {
+		t.Fatal("expected no-fund-change refund response to return an error")
+	}
+	if resp != nil {
+		t.Fatalf("response = %#v, want nil", resp)
+	}
+	if !strings.Contains(err.Error(), "fund_change") {
+		t.Fatalf("error = %q, want fund_change context", err.Error())
+	}
+}
+
+func TestAlipayRefundReturnsBusinessFailure(t *testing.T) {
+	origRefund := alipayTradeRefund
+	t.Cleanup(func() {
+		alipayTradeRefund = origRefund
+	})
+
+	alipayTradeRefund = func(ctx context.Context, client *alipay.Client, param alipay.TradeRefund) (*alipay.TradeRefundRsp, error) {
+		return &alipay.TradeRefundRsp{
+			Error: alipay.Error{
+				Code:    alipay.CodeInvalidParam,
+				SubCode: "isv.illegal-client-ip",
+				SubMsg:  "当前调用IP不在可信名单中",
+			},
+		}, nil
+	}
+
+	provider := &Alipay{client: &alipay.Client{}}
+	resp, err := provider.Refund(context.Background(), payment.RefundRequest{
+		OrderID: "sub2_refund_illegal_ip",
+		Amount:  "4.00",
+		Reason:  "admin refund",
+	})
+	if err == nil {
+		t.Fatal("expected Alipay business failure to return an error")
+	}
+	if resp != nil {
+		t.Fatalf("response = %#v, want nil", resp)
+	}
+	if !strings.Contains(err.Error(), "isv.illegal-client-ip") {
+		t.Fatalf("error = %q, want Alipay sub_code", err.Error())
+	}
+}
+
 func TestAlipayMerchantIdentityMetadata(t *testing.T) {
 	t.Parallel()
 
