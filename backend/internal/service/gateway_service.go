@@ -4758,6 +4758,11 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		return s.handleWebSearchEmulation(ctx, c, account, parsed)
 	}
 
+	// OpenAI 兼容 CC 上游：将 Messages 请求转换为 Chat Completions 格式转发
+	if account != nil && account.IsOpenAICompatCCUpstream() {
+		return s.forwardMessagesToChatCompletions(ctx, c, account, parsed)
+	}
+
 	if account != nil && account.IsAnthropicAPIKeyPassthroughEnabled() {
 		passthroughBody := parsed.Body.Bytes()
 		passthroughModel := parsed.Model

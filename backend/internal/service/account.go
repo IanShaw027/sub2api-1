@@ -1951,6 +1951,30 @@ func (a *Account) IsAnthropicAPIKeyPassthroughEnabled() bool {
 	return ok && enabled
 }
 
+// IsOpenAICompatCCUpstream 返回该 Anthropic APIKey 账号是否应将 Messages 请求
+// 转换为 Chat Completions 格式后转发到上游 /v1/chat/completions 端点。
+// 用于 opencode.ai 等第三方 OpenAI 兼容上游在 Anthropic 分组中提供服务。
+// 字段：accounts.extra.openai_compat_cc_upstream。
+func (a *Account) IsOpenAICompatCCUpstream() bool {
+	if a == nil || a.Platform != PlatformAnthropic || a.Type != AccountTypeAPIKey || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra["openai_compat_cc_upstream"].(bool)
+	return ok && enabled
+}
+
+// IsAnthropicMessagesUpstream 返回该 OpenAI APIKey 账号是否应将 CC 请求
+// 转换为 Anthropic Messages 格式后转发到上游 /v1/messages 端点。
+// 用于 opencode.ai 等提供 Anthropic 兼容接口的第三方上游在 OpenAI 分组中提供服务。
+// 字段：accounts.extra.anthropic_messages_upstream。
+func (a *Account) IsAnthropicMessagesUpstream() bool {
+	if a == nil || a.Platform != PlatformOpenAI || a.Type != AccountTypeAPIKey || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra["anthropic_messages_upstream"].(bool)
+	return ok && enabled
+}
+
 // WebSearch 模拟三态常量
 const (
 	WebSearchModeDefault  = "default"  // 跟随渠道配置

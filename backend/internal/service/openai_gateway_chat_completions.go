@@ -103,6 +103,9 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	// still normalize store/stream/instructions/etc.
 	isResponsesShape := !gjson.GetBytes(body, "messages").Exists() && gjson.GetBytes(body, "input").Exists()
 	if account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey && !openai_compat.ShouldUseResponsesAPI(account.Extra) {
+		if account.IsAnthropicMessagesUpstream() && !isResponsesShape {
+			return s.forwardCCToAnthropicMessages(ctx, c, account, body, startTime)
+		}
 		return s.forwardAsRawChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, selectedFallbackModel)
 	}
 
