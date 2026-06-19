@@ -683,6 +683,7 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if err != nil {
 		return nil, err
 	}
+	cfg = cloneContentModerationConfig(cfg)
 	if input.Enabled != nil {
 		cfg.Enabled = *input.Enabled
 	}
@@ -1360,31 +1361,47 @@ func (s *ContentModerationService) worker(id int) {
 					slog.Error("content_moderation.worker_panic", "worker_id", id, "recover", r)
 				}
 			}()
-			if task.log != nil {
-				s.asyncActive.Add(1)
-				defer s.asyncActive.Add(-1)
-				queueDelay := int(time.Since(task.enqueuedAt).Milliseconds())
-				task.log.QueueDelayMS = &queueDelay
-				s.writeContentModerationLog(ctx, task.log)
-				s.asyncProcessed.Add(1)
-				return
-			}
-			if !cfg.Enabled || cfg.Mode == ContentModerationModeOff || len(cfg.apiKeys()) == 0 {
-				return
-			}
-			if !cfg.includesGroup(task.input.GroupID) {
-				return
-			}
-			if !cfg.includesModel(task.input.Model) {
-				return
-			}
-			s.asyncActive.Add(1)
-			defer s.asyncActive.Add(-1)
-			queueDelay := int(time.Since(task.enqueuedAt).Milliseconds())
-			_ = s.checkSync(ctx, task.input, cfg, task.content, task.inputHash, &queueDelay, false)
-			s.asyncProcessed.Add(1)
+			_ = s.processAsyncTaskWithConfig(ctx, id, cfg, task)
 		}()
 	}
+}
+
+func (s *ContentModerationService) processAsyncTask(ctx context.Context, id int, task contentModerationTask) bool {
+	cfg, err := s.loadConfig(ctx)
+	if err != nil || id >= cfg.WorkerCount {
+		return false
+	}
+	return s.processAsyncTaskWithConfig(ctx, id, cfg, task)
+}
+
+func (s *ContentModerationService) processAsyncTaskWithConfig(ctx context.Context, id int, cfg *ContentModerationConfig, task contentModerationTask) bool {
+	if task.log != nil {
+		s.asyncActive.Add(1)
+		defer s.asyncActive.Add(-1)
+		queueDelay := int(time.Since(task.enqueuedAt).Milliseconds())
+		task.log.QueueDelayMS = &queueDelay
+		s.writeContentModerationLog(ctx, task.log)
+		s.asyncProcessed.Add(1)
+		return true
+	}
+	if !cfg.Enabled || cfg.Mode == ContentModerationModeOff || len(cfg.apiKeys()) == 0 {
+		return false
+	}
+	if !cfg.includesGroup(task.input.GroupID) {
+		return false
+	}
+	if cfg.exemptsAPIKeyGroup(task.input.APIKeyID, task.input.GroupID) {
+		return false
+	}
+	if !cfg.includesModel(task.input.Model) {
+		return false
+	}
+	s.asyncActive.Add(1)
+	defer s.asyncActive.Add(-1)
+	queueDelay := int(time.Since(task.enqueuedAt).Milliseconds())
+	_ = s.checkSync(ctx, task.input, cfg, task.content, task.inputHash, &queueDelay, false)
+	s.asyncProcessed.Add(1)
+	return true
 }
 
 func (s *ContentModerationService) dequeueAsyncTask(ctx context.Context, idleWait time.Duration) (contentModerationTask, bool) {
@@ -1600,7 +1617,7 @@ func (s *ContentModerationService) runCleanupOnce() {
 func (s *ContentModerationService) loadConfig(ctx context.Context) (*ContentModerationConfig, error) {
 	s.configCacheMu.RLock()
 	if s.configCache != nil && time.Since(s.configCacheAt) < 5*time.Second {
-		cfg := s.configCache
+		cfg := cloneContentModerationConfig(s.configCache)
 		s.configCacheMu.RUnlock()
 		return cfg, nil
 	}
@@ -1612,26 +1629,26 @@ func (s *ContentModerationService) loadConfig(ctx context.Context) (*ContentMode
 		if errors.Is(err, ErrSettingNotFound) {
 			cfg.normalize()
 			s.cacheConfig(cfg)
-			return cfg, nil
+			return cloneContentModerationConfig(cfg), nil
 		}
 		return nil, fmt.Errorf("get content moderation config: %w", err)
 	}
 	if strings.TrimSpace(raw) == "" {
 		cfg.normalize()
 		s.cacheConfig(cfg)
-		return cfg, nil
+		return cloneContentModerationConfig(cfg), nil
 	}
 	if err := json.Unmarshal([]byte(raw), cfg); err != nil {
 		return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_CONFIG", "内容审计配置不是有效 JSON")
 	}
 	cfg.normalize()
 	s.cacheConfig(cfg)
-	return cfg, nil
+	return cloneContentModerationConfig(cfg), nil
 }
 
 func (s *ContentModerationService) cacheConfig(cfg *ContentModerationConfig) {
 	s.configCacheMu.Lock()
-	s.configCache = cfg
+	s.configCache = cloneContentModerationConfig(cfg)
 	s.configCacheAt = time.Now()
 	s.configCacheMu.Unlock()
 }
@@ -1681,6 +1698,24 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 		for _, groupID := range cfg.GroupIDs {
 			if _, err := s.groupRepo.GetByIDLite(ctx, groupID); err != nil {
 				return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_GROUP", fmt.Sprintf("审计分组不存在: %d", groupID))
+			}
+		}
+	}
+	if len(cfg.APIKeyExemptGroupIDs) > 0 && s.groupRepo != nil {
+		for _, groupID := range cfg.APIKeyExemptGroupIDs {
+			if _, err := s.groupRepo.GetByIDLite(ctx, groupID); err != nil {
+				return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_API_KEY_EXEMPT_GROUP", fmt.Sprintf("豁免分组不存在: %d", groupID))
+			}
+		}
+	}
+	if !cfg.AllGroups && len(cfg.APIKeyExemptGroupIDs) > 0 {
+		auditedGroupIDs := make(map[int64]struct{}, len(cfg.GroupIDs))
+		for _, groupID := range cfg.GroupIDs {
+			auditedGroupIDs[groupID] = struct{}{}
+		}
+		for _, groupID := range cfg.APIKeyExemptGroupIDs {
+			if _, ok := auditedGroupIDs[groupID]; !ok {
+				return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_API_KEY_EXEMPT_GROUP_SCOPE", fmt.Sprintf("豁免分组必须属于审计分组范围: %d", groupID))
 			}
 		}
 	}

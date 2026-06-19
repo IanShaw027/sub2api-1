@@ -779,7 +779,8 @@
                       :data-test="`risk-control-group-api-key-exempt-${group.id}`"
                       type="checkbox"
                       class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500 dark:bg-dark-900"
-                      :checked="isAPIKeyExemptGroup(group.id)"
+                      :checked="isGroupInAuditScope(group.id) && isAPIKeyExemptGroup(group.id)"
+                      :disabled="!isGroupInAuditScope(group.id)"
                       @change="toggleAPIKeyExemptGroup(group.id)"
                     />
                     <span class="leading-5">
@@ -1996,7 +1997,7 @@ async function saveConfig() {
       sample_rate: Number(configForm.sample_rate) || 0,
       all_groups: configForm.all_groups,
       group_ids: configForm.all_groups ? [] : [...configForm.group_ids],
-      api_key_exempt_group_ids: [...configForm.api_key_exempt_group_ids],
+      api_key_exempt_group_ids: scopedAPIKeyExemptGroupIDs(),
       record_non_hits: configForm.record_non_hits,
       record_attention_inputs: configForm.record_attention_inputs,
       attention_threshold: Number((clampPercent(attentionThreshold) / 100).toFixed(4)),
@@ -2312,6 +2313,7 @@ function toggleGroup(groupID: number) {
   const index = configForm.group_ids.indexOf(groupID)
   if (index >= 0) {
     configForm.group_ids.splice(index, 1)
+    removeAPIKeyExemptGroup(groupID)
   } else {
     configForm.group_ids.push(groupID)
   }
@@ -2326,6 +2328,7 @@ function isGroupInAuditScope(groupID: number): boolean {
 }
 
 function toggleAPIKeyExemptGroup(groupID: number) {
+  if (!isGroupInAuditScope(groupID)) return
   const index = configForm.api_key_exempt_group_ids.indexOf(groupID)
   if (index >= 0) {
     configForm.api_key_exempt_group_ids.splice(index, 1)
@@ -2336,6 +2339,21 @@ function toggleAPIKeyExemptGroup(groupID: number) {
 
 function isAPIKeyExemptGroup(groupID: number): boolean {
   return configForm.api_key_exempt_group_ids.includes(groupID)
+}
+
+function removeAPIKeyExemptGroup(groupID: number) {
+  const index = configForm.api_key_exempt_group_ids.indexOf(groupID)
+  if (index >= 0) {
+    configForm.api_key_exempt_group_ids.splice(index, 1)
+  }
+}
+
+function scopedAPIKeyExemptGroupIDs(): number[] {
+  if (configForm.all_groups) {
+    return [...configForm.api_key_exempt_group_ids]
+  }
+  const scopedGroupIDs = new Set(configForm.group_ids)
+  return configForm.api_key_exempt_group_ids.filter((groupID) => scopedGroupIDs.has(groupID))
 }
 
 function modeLabel(mode: ModerationMode): string {

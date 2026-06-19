@@ -76,6 +76,62 @@ func (r *contentModerationTestSettingRepo) Delete(ctx context.Context, key strin
 	return nil
 }
 
+type contentModerationTestGroupRepo struct {
+	groups map[int64]*Group
+}
+
+func (r *contentModerationTestGroupRepo) Create(ctx context.Context, group *Group) error {
+	panic("unexpected")
+}
+func (r *contentModerationTestGroupRepo) GetByID(ctx context.Context, id int64) (*Group, error) {
+	return r.GetByIDLite(ctx, id)
+}
+func (r *contentModerationTestGroupRepo) GetByIDLite(ctx context.Context, id int64) (*Group, error) {
+	if group, ok := r.groups[id]; ok {
+		return group, nil
+	}
+	return nil, ErrGroupNotFound
+}
+func (r *contentModerationTestGroupRepo) Update(ctx context.Context, group *Group) error {
+	panic("unexpected")
+}
+func (r *contentModerationTestGroupRepo) Delete(ctx context.Context, id int64) error {
+	panic("unexpected")
+}
+func (r *contentModerationTestGroupRepo) DeleteCascade(ctx context.Context, id int64) ([]int64, error) {
+	panic("unexpected")
+}
+func (r *contentModerationTestGroupRepo) List(ctx context.Context, params pagination.PaginationParams) ([]Group, *pagination.PaginationResult, error) {
+	panic("unexpected")
+}
+func (r *contentModerationTestGroupRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, status, search string, isExclusive *bool) ([]Group, *pagination.PaginationResult, error) {
+	panic("unexpected")
+}
+func (r *contentModerationTestGroupRepo) ListActive(ctx context.Context) ([]Group, error) {
+	panic("unexpected")
+}
+func (r *contentModerationTestGroupRepo) ListActiveByPlatform(ctx context.Context, platform string) ([]Group, error) {
+	panic("unexpected")
+}
+func (r *contentModerationTestGroupRepo) ExistsByName(ctx context.Context, name string) (bool, error) {
+	panic("unexpected")
+}
+func (r *contentModerationTestGroupRepo) GetAccountCount(ctx context.Context, groupID int64) (int64, int64, error) {
+	panic("unexpected")
+}
+func (r *contentModerationTestGroupRepo) DeleteAccountGroupsByGroupID(ctx context.Context, groupID int64) (int64, error) {
+	panic("unexpected")
+}
+func (r *contentModerationTestGroupRepo) BindAccountsToGroup(ctx context.Context, groupID int64, accountIDs []int64) error {
+	panic("unexpected")
+}
+func (r *contentModerationTestGroupRepo) GetAccountIDsByGroupIDs(ctx context.Context, groupIDs []int64) ([]int64, error) {
+	panic("unexpected")
+}
+func (r *contentModerationTestGroupRepo) UpdateSortOrders(ctx context.Context, updates []GroupSortOrderUpdate) error {
+	panic("unexpected")
+}
+
 type contentModerationTestRepo struct {
 	mu   sync.Mutex
 	logs []ContentModerationLog
@@ -1235,6 +1291,77 @@ func TestContentModerationUpdateConfig_SavesAPIKeyExemptGroupIDs(t *testing.T) {
 	var saved ContentModerationConfig
 	require.NoError(t, json.Unmarshal([]byte(repo.values[SettingKeyContentModerationConfig]), &saved))
 	require.Equal(t, []int64{7, 42}, saved.APIKeyExemptGroupIDs)
+}
+
+func TestContentModerationUpdateConfig_RejectsUnknownAPIKeyExemptGroupID(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyContentModerationConfig: string(rawCfg),
+	}}
+	groupRepo := &contentModerationTestGroupRepo{groups: map[int64]*Group{
+		7: {ID: 7, Name: "audited"},
+	}}
+	svc := NewContentModerationService(repo, nil, nil, groupRepo, nil, nil, nil)
+	groupIDs := []int64{7, 42}
+
+	_, err = svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
+		APIKeyExemptGroupIDs: &groupIDs,
+	})
+
+	require.ErrorContains(t, err, "豁免分组不存在: 42")
+}
+
+func TestContentModerationUpdateConfig_RejectsAPIKeyExemptGroupOutsideAuditScope(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.AllGroups = false
+	cfg.GroupIDs = []int64{7}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyContentModerationConfig: string(rawCfg),
+	}}
+	groupRepo := &contentModerationTestGroupRepo{groups: map[int64]*Group{
+		7:  {ID: 7, Name: "audited"},
+		42: {ID: 42, Name: "not-audited"},
+	}}
+	svc := NewContentModerationService(repo, nil, nil, groupRepo, nil, nil, nil)
+	exemptGroupIDs := []int64{42}
+
+	_, err = svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
+		APIKeyExemptGroupIDs: &exemptGroupIDs,
+	})
+
+	require.ErrorContains(t, err, "豁免分组必须属于审计分组范围: 42")
+}
+
+func TestContentModerationUpdateConfig_InvalidUpdateDoesNotMutateCachedConfig(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyContentModerationConfig: string(rawCfg),
+	}}
+	svc := NewContentModerationService(repo, nil, nil, nil, nil, nil, nil)
+	_, err = svc.GetConfig(context.Background())
+	require.NoError(t, err)
+
+	badMode := "invalid-mode"
+	groupIDs := []int64{42}
+	_, err = svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
+		Mode:                 &badMode,
+		APIKeyExemptGroupIDs: &groupIDs,
+	})
+	require.Error(t, err)
+
+	cached, err := svc.loadConfig(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, cached.APIKeyExemptGroupIDs)
+	require.NotEqual(t, badMode, cached.Mode)
 }
 
 func TestContentModerationCallModeration_PreventsRequestsPastLocalRPM(t *testing.T) {
@@ -2502,6 +2629,56 @@ func TestContentModerationCheck_AsyncFlaggedWritesRedisHashCache(t *testing.T) {
 	require.False(t, decision.Blocked)
 	requireRecordedHashCount(t, hashCache, 1)
 	requireContentModerationLogCount(t, repo, 1)
+}
+
+func TestContentModerationWorker_RechecksAPIKeyExemptGroupBeforeObserveAudit(t *testing.T) {
+	var upstreamCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
+			Results: []moderationAPIResult{{
+				CategoryScores: map[string]float64{"sexual": 0.9},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.APIKeyExemptGroupIDs = []int64{42}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := &ContentModerationService{
+		settingRepo: &contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo:        repo,
+		httpClient:  server.Client(),
+		workerCount: 1,
+		asyncQueue:  make(chan contentModerationTask, 1),
+		keyHealth:   make(map[string]*contentModerationKeyHealth),
+	}
+	groupID := int64(42)
+	processed := svc.processAsyncTask(context.Background(), 0, contentModerationTask{
+		input: ContentModerationCheckInput{
+			APIKeyID: 100,
+			GroupID:  &groupID,
+			Protocol: ContentModerationProtocolOpenAIChat,
+			Body:     []byte(`{"messages":[{"role":"user","content":"bad prompt"}]}`),
+		},
+		content:    ContentModerationInput{Text: "bad prompt"},
+		inputHash:  strings.Repeat("c", 64),
+		enqueuedAt: time.Now(),
+	})
+
+	require.False(t, processed)
+	require.Equal(t, 0, upstreamCalls)
+	requireContentModerationLogCount(t, repo, 0)
 }
 
 func TestBuildContentModerationAccountDisabledEmailBody_ContainsBanDetails(t *testing.T) {
