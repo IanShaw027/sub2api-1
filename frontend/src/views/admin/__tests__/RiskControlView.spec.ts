@@ -82,6 +82,7 @@ const baseConfig = (): ContentModerationConfig => ({
   sample_rate: 100,
   all_groups: true,
   group_ids: [],
+  api_key_exempt_group_ids: [],
   record_non_hits: false,
   worker_count: 4,
   queue_size: 32768,
@@ -239,6 +240,42 @@ describe('admin RiskControlView', () => {
         type: 'include',
         models: ['gpt-5.5', 'gpt-5.4'],
       },
+    }))
+    expect(showError).not.toHaveBeenCalled()
+  })
+
+  it('saves APIKey audit exemptions per group from the scope tab', async () => {
+    getGroups.mockResolvedValueOnce([
+      { id: 42, name: 'OpenAI VIP', platform: 'openai' },
+      { id: 7, name: 'Claude', platform: 'anthropic' },
+    ])
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.scope').trigger('click')
+    await wrapper.get('[data-test="risk-control-group-api-key-exempt-42"]').setValue(true)
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      all_groups: true,
+      group_ids: [],
+      api_key_exempt_group_ids: [42],
     }))
     expect(showError).not.toHaveBeenCalled()
   })

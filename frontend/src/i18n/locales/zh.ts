@@ -3384,6 +3384,8 @@ export default {
       selectedGroups: '指定分组',
       searchGroups: '搜索分组名称或平台',
       noGroups: '暂无可用分组',
+      apiKeyExemptGroup: 'APIKey 不生效',
+      apiKeyExemptGroupHint: '勾选后，该分组下通过网关 APIKey 发起的请求跳过内容审计。',
       modelFilter: '模型范围',
       modelFilterHint: '按客户端请求的模型名决定是否执行内容审计，模型映射后仍以请求模型判断。',
       modelFilterAll: '所有模型',

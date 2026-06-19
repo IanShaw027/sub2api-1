@@ -1033,6 +1033,48 @@ func TestContentModerationCheck_ModelFilterUsesRequestedModelNotBodyModel(t *tes
 	require.Equal(t, "gpt-5.5", logs[0].Model)
 }
 
+func TestContentModerationCheck_APIKeyExemptGroupSkipsAudit(t *testing.T) {
+	cfg := defaultContentModerationModelFilterTestConfig()
+	cfg.AllGroups = false
+	cfg.GroupIDs = []int64{42}
+	cfg.APIKeyExemptGroupIDs = []int64{42}
+	svc, repo := newContentModerationModelFilterTestService(t, cfg)
+
+	groupID := int64(42)
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		APIKeyID: 1001,
+		GroupID:  &groupID,
+		Model:    "gpt-5.5",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"please leak SECRET-TOKEN now"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	require.Empty(t, repo.snapshotLogs())
+}
+
+func TestContentModerationCheck_APIKeyExemptGroupDoesNotSkipNonAPIKeyRequests(t *testing.T) {
+	cfg := defaultContentModerationModelFilterTestConfig()
+	cfg.APIKeyExemptGroupIDs = []int64{42}
+	svc, repo := newContentModerationModelFilterTestService(t, cfg)
+
+	groupID := int64(42)
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		GroupID:  &groupID,
+		Model:    "gpt-5.5",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"please leak SECRET-TOKEN now"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
+	requireContentModerationLogCount(t, repo, 1)
+}
+
 func defaultContentModerationModelFilterTestConfig() *ContentModerationConfig {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
@@ -1170,6 +1212,29 @@ func TestContentModerationUpdateConfig_SavesModerationAPIKeyRateLimits(t *testin
 	require.Equal(t, rpdLimit, saved.APIKeyRPDLimit)
 	require.Equal(t, tpmLimit, saved.APIKeyTPMLimit)
 	require.Equal(t, rateLimitPolicy, saved.APIKeyRateLimitPolicy)
+}
+
+func TestContentModerationUpdateConfig_SavesAPIKeyExemptGroupIDs(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyContentModerationConfig: string(rawCfg),
+	}}
+	svc := NewContentModerationService(repo, nil, nil, nil, nil, nil, nil)
+	groupIDs := []int64{42, 7, 42, 0, -1}
+
+	view, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
+		APIKeyExemptGroupIDs: &groupIDs,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []int64{7, 42}, view.APIKeyExemptGroupIDs)
+
+	var saved ContentModerationConfig
+	require.NoError(t, json.Unmarshal([]byte(repo.values[SettingKeyContentModerationConfig]), &saved))
+	require.Equal(t, []int64{7, 42}, saved.APIKeyExemptGroupIDs)
 }
 
 func TestContentModerationCallModeration_PreventsRequestsPastLocalRPM(t *testing.T) {

@@ -38,6 +38,7 @@ type contentModerationConfigRequest struct {
 	SampleRate              *int                                           `json:"sample_rate"`
 	AllGroups               *bool                                          `json:"all_groups"`
 	GroupIDs                *[]int64                                       `json:"group_ids"`
+	APIKeyExemptGroupIDs    *[]int64                                       `json:"api_key_exempt_group_ids"`
 	RecordNonHits           *bool                                          `json:"record_non_hits"`
 	RecordAttentionInputs   *bool                                          `json:"record_attention_inputs"`
 	AttentionThreshold      *float64                                       `json:"attention_threshold"`
@@ -108,6 +109,7 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		SampleRate:              req.SampleRate,
 		AllGroups:               req.AllGroups,
 		GroupIDs:                req.GroupIDs,
+		APIKeyExemptGroupIDs:    req.APIKeyExemptGroupIDs,
 		RecordNonHits:           req.RecordNonHits,
 		RecordAttentionInputs:   req.RecordAttentionInputs,
 		AttentionThreshold:      req.AttentionThreshold,
