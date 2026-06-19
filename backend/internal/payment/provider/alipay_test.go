@@ -364,6 +364,37 @@ func TestAlipayRefundRejectsNoFundChangeResponse(t *testing.T) {
 	}
 }
 
+func TestAlipayRefundUsesStableRequestID(t *testing.T) {
+	origRefund := alipayTradeRefund
+	t.Cleanup(func() {
+		alipayTradeRefund = origRefund
+	})
+
+	var gotOutRequestNo string
+	alipayTradeRefund = func(ctx context.Context, client *alipay.Client, param alipay.TradeRefund) (*alipay.TradeRefundRsp, error) {
+		gotOutRequestNo = param.OutRequestNo
+		return &alipay.TradeRefundRsp{
+			Error:      alipay.Error{Code: alipay.CodeSuccess},
+			TradeNo:    "2026060523001446101455752161",
+			FundChange: "Y",
+		}, nil
+	}
+
+	provider := &Alipay{client: &alipay.Client{}}
+	_, err := provider.Refund(context.Background(), payment.RefundRequest{
+		OrderID:   "sub2_refund_stable_id",
+		Amount:    "4.00",
+		Reason:    "admin refund",
+		RequestID: "sub2api-refund-42-0-400",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotOutRequestNo != "sub2api-refund-42-0-400" {
+		t.Fatalf("out_request_no = %q, want stable request id", gotOutRequestNo)
+	}
+}
+
 func TestAlipayRefundReturnsBusinessFailure(t *testing.T) {
 	origRefund := alipayTradeRefund
 	t.Cleanup(func() {

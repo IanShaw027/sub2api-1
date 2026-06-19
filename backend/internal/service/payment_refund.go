@@ -560,10 +560,11 @@ func (s *PaymentService) gwRefund(ctx context.Context, p *RefundPlan) (*payment.
 		return nil, err
 	}
 	refundResp, err := prov.Refund(ctx, payment.RefundRequest{
-		TradeNo: p.Order.PaymentTradeNo,
-		OrderID: p.Order.OutTradeNo,
-		Amount:  formatGatewayRefundAmount(p.GatewayAmount, p.Order),
-		Reason:  p.Reason,
+		TradeNo:   p.Order.PaymentTradeNo,
+		OrderID:   p.Order.OutTradeNo,
+		Amount:    formatGatewayRefundAmount(p.GatewayAmount, p.Order),
+		Reason:    p.Reason,
+		RequestID: refundProviderRequestID(p),
 	})
 	if err != nil {
 		return nil, err
@@ -576,6 +577,22 @@ func (s *PaymentService) gwRefund(ctx context.Context, p *RefundPlan) (*payment.
 
 func formatGatewayRefundAmount(amount float64, order *dbent.PaymentOrder) string {
 	return payment.FormatAmountForCurrency(amount, PaymentOrderCurrency(order))
+}
+
+func refundProviderRequestID(p *RefundPlan) string {
+	if p == nil || p.Order == nil {
+		return ""
+	}
+	currency := PaymentOrderCurrency(p.Order)
+	refundedMinor, err := payment.AmountToMinorUnit(payment.FormatAmountForCurrency(p.Order.RefundAmount, currency), currency)
+	if err != nil {
+		refundedMinor = 0
+	}
+	refundMinor, err := payment.AmountToMinorUnit(formatGatewayRefundAmount(p.GatewayAmount, p.Order), currency)
+	if err != nil {
+		refundMinor = 0
+	}
+	return fmt.Sprintf("sub2api-refund-%d-%d-%d", p.OrderID, refundedMinor, refundMinor)
 }
 
 func validateRefundProviderResponse(resp *payment.RefundResponse) error {

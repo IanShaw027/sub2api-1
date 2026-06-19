@@ -1026,6 +1026,27 @@ func TestGwRefundRejectsAlipayMerchantIdentitySnapshotMismatch(t *testing.T) {
 	require.ErrorContains(t, err, "alipay app_id mismatch")
 }
 
+func TestRefundProviderRequestIDIsStableForSameRefundAttempt(t *testing.T) {
+	order := &dbent.PaymentOrder{
+		ID:           42,
+		OutTradeNo:   "sub2_refund_request_id",
+		RefundAmount: 0,
+	}
+	plan := &RefundPlan{
+		OrderID:       order.ID,
+		Order:         order,
+		GatewayAmount: 4,
+	}
+
+	first := refundProviderRequestID(plan)
+	second := refundProviderRequestID(plan)
+	require.Equal(t, "sub2api-refund-42-0-400", first)
+	require.Equal(t, first, second)
+
+	order.RefundAmount = 3
+	require.Equal(t, "sub2api-refund-42-300-400", refundProviderRequestID(plan))
+}
+
 func TestPartialRefundAllowsRemainingRefundAndMarksFinalRefunded(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
