@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -334,6 +335,44 @@ func TestSettingService_UpdateSettings_OpenAIWSPoolRuntimeSettingsTriggerReconci
 	case <-reconcileCalls:
 		t.Fatal("reconcile hook should not fire when pool settings unchanged")
 	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestSettingService_UpdateSettings_OpenAIWSPoolRuntimeSettingsRestoreDefaultsTriggersReconcile(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+	RegisterOpenAIWSPoolReconcileHook(nil)
+	t.Cleanup(func() { RegisterOpenAIWSPoolReconcileHook(nil) })
+
+	reconcileCalls := make(chan struct{}, 4)
+	RegisterOpenAIWSPoolReconcileHook(func() { reconcileCalls <- struct{}{} })
+
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		OpenAIWSNeutralPrewarmPercent: 50,
+		OpenAIWSSessionIdleTTLSeconds: 900,
+		OpenAIWSMinIdlePerAccount:     8,
+		OpenAIWSMaxIdlePerAccount:     16,
+		OpenAIStickyReservePercent:    20,
+	})
+	require.NoError(t, err)
+	select {
+	case <-reconcileCalls:
+	case <-time.After(time.Second):
+		t.Fatal("initial reconcile hook not triggered")
+	}
+
+	err = svc.UpdateSettings(context.Background(), &SystemSettings{})
+	require.NoError(t, err)
+	require.Equal(t, strconv.Itoa(defaultOpenAIWSNeutralPrewarmPercent), repo.updates[SettingKeyOpenAIWSNeutralPrewarmPercent])
+	require.Equal(t, strconv.Itoa(defaultOpenAIWSSessionIdleTTLSeconds), repo.updates[SettingKeyOpenAIWSSessionIdleTTLSeconds])
+
+	select {
+	case <-reconcileCalls:
+	case <-time.After(time.Second):
+		t.Fatal("reconcile hook not triggered when restoring default pool settings")
 	}
 }
 

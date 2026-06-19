@@ -1800,9 +1800,6 @@ func triggerOpenAIWSPoolReconcileIfRuntimeSettingsChanged(settings *SystemSettin
 	if settings == nil {
 		return
 	}
-	if !hasOpenAIWSPoolRuntimeSettingsForUpdate(settings) {
-		return
-	}
 	newNeutralPrewarmPercent, newSessionIdleTTLSeconds := normalizeOpenAIWSPoolRuntimeSettingsForUpdate(settings)
 	newMinIdlePerAccount, newMaxIdlePerAccount := normalizeOpenAIWSIdleSettingValues(
 		settings.OpenAIWSMinIdlePerAccount,
