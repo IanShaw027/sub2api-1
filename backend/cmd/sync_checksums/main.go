@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
+	"flag"
 	"fmt"
 	"io/fs"
 	"log"
@@ -23,12 +25,18 @@ type migrationChecksum struct {
 }
 
 func main() {
+	var backupFile string
+	var restoreFile string
+	flag.StringVar(&backupFile, "backup-file", "", "write current schema_migrations checksums to this JSON file before syncing")
+	flag.StringVar(&restoreFile, "restore-file", "", "restore schema_migrations checksums from this JSON file and exit")
+	flag.Parse()
+
 	dsn := strings.TrimSpace(os.Getenv("SUB2API_DATABASE_DSN"))
-	if dsn == "" && len(os.Args) >= 2 {
-		dsn = os.Args[1]
+	if dsn == "" && flag.NArg() >= 1 {
+		dsn = flag.Arg(0)
 	}
 	if dsn == "" {
-		fmt.Println("Usage: SUB2API_DATABASE_DSN='<database_dsn>' sync_checksums")
+		fmt.Println("Usage: SUB2API_DATABASE_DSN='<database_dsn>' sync_checksums [--backup-file path] [--restore-file path]")
 		fmt.Println("Legacy argv input is still accepted for manual use, but deploy scripts should prefer the environment variable to keep secrets out of process arguments.")
 		os.Exit(1)
 	}
@@ -46,6 +54,19 @@ func main() {
 		log.Fatalf("ping database: %v", err)
 	}
 
+	if strings.TrimSpace(restoreFile) != "" {
+		items, err := readChecksumSnapshot(restoreFile)
+		if err != nil {
+			log.Fatalf("read checksum snapshot: %v", err)
+		}
+		restored, err := restoreDatabaseChecksums(ctx, db, items)
+		if err != nil {
+			log.Fatalf("restore checksum snapshot: %v", err)
+		}
+		fmt.Printf("checksum restore complete: restored=%d checked=%d\n", restored, len(items))
+		return
+	}
+
 	fileChecksums, err := loadMigrationChecksums(migrations.FS)
 	if err != nil {
 		log.Fatalf("load migration checksums: %v", err)
@@ -54,6 +75,13 @@ func main() {
 	dbChecksums, err := loadDatabaseChecksums(ctx, db)
 	if err != nil {
 		log.Fatalf("load database checksums: %v", err)
+	}
+
+	if strings.TrimSpace(backupFile) != "" {
+		if err := writeChecksumSnapshot(backupFile, dbChecksums); err != nil {
+			log.Fatalf("write checksum snapshot: %v", err)
+		}
+		fmt.Printf("checksum snapshot written: %s\n", backupFile)
 	}
 
 	var updated int
@@ -100,6 +128,62 @@ func loadMigrationChecksums(fsys fs.FS) ([]migrationChecksum, error) {
 		})
 	}
 	return items, nil
+}
+
+func writeChecksumSnapshot(path string, items map[string]string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	snapshot := make([]migrationChecksum, 0, len(items))
+	for filename, checksum := range items {
+		snapshot = append(snapshot, migrationChecksum{Filename: filename, Checksum: checksum})
+	}
+	sort.Slice(snapshot, func(i, j int) bool {
+		return snapshot[i].Filename < snapshot[j].Filename
+	})
+	data, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0o600)
+}
+
+func readChecksumSnapshot(path string) ([]migrationChecksum, error) {
+	data, err := os.ReadFile(strings.TrimSpace(path))
+	if err != nil {
+		return nil, err
+	}
+	var items []migrationChecksum
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		if strings.TrimSpace(item.Filename) == "" {
+			return nil, fmt.Errorf("snapshot contains empty filename")
+		}
+	}
+	return items, nil
+}
+
+func restoreDatabaseChecksums(ctx context.Context, db *sql.DB, items []migrationChecksum) (int, error) {
+	var restored int
+	for _, item := range items {
+		result, err := db.ExecContext(ctx,
+			"UPDATE schema_migrations SET checksum = $1 WHERE filename = $2",
+			item.Checksum,
+			item.Filename,
+		)
+		if err != nil {
+			return restored, fmt.Errorf("update checksum for %s: %w", item.Filename, err)
+		}
+		affected, _ := result.RowsAffected()
+		if affected > 0 {
+			restored++
+		}
+	}
+	return restored, nil
 }
 
 func loadDatabaseChecksums(ctx context.Context, db *sql.DB) (map[string]string, error) {

@@ -186,6 +186,26 @@ class DeployScriptTest(unittest.TestCase):
             if [ "$1" = "run" ]; then
                 shift
                 echo "go run $*" >> "$log_file"
+                backup_file=""
+                restore_file=""
+                while [ "$#" -gt 0 ]; do
+                    if [ "$1" = "--backup-file" ]; then
+                        backup_file="$2"
+                        break
+                    fi
+                    if [ "$1" = "--restore-file" ]; then
+                        restore_file="$2"
+                        break
+                    fi
+                    shift
+                done
+                if [ -n "$restore_file" ] && [ "${DEPLOY_TEST_RESTORE_FAIL:-0}" = "1" ]; then
+                    exit 1
+                fi
+                if [ -n "$backup_file" ]; then
+                    mkdir -p "$(dirname "$backup_file")"
+                    printf '[{"Filename":"001_test.sql","Checksum":"old"}]\n' > "$backup_file"
+                fi
                 exit 0
             fi
             if [ "$1" = "build" ]; then
@@ -242,17 +262,24 @@ class DeployScriptTest(unittest.TestCase):
             r"""
             #!/bin/sh
             log_file="${DEPLOY_TEST_LOG:?}"
+            state_file="$log_file.service_state"
             active_state="${DEPLOY_TEST_SERVICE_ACTIVE:-active}"
+            if [ -f "$state_file" ]; then
+                active_state="$(cat "$state_file")"
+            fi
             exec_main_pid="${DEPLOY_TEST_EXEC_MAIN_PID:-0}"
             if [ "$1" = "show" ] && [ "$3" = "--property=ExecMainPID" ]; then
+                echo "systemctl show $2 --property=ExecMainPID --value" >> "$log_file"
                 echo "$exec_main_pid"
                 exit 0
             fi
             if [ "$1" = "show" ] && [ "$3" = "--property=ActiveState" ]; then
+                echo "systemctl show $2 --property=ActiveState --value" >> "$log_file"
                 echo "$active_state"
                 exit 0
             fi
             if [ "$1" = "show" ]; then
+                echo "systemctl show $2" >> "$log_file"
                 echo "ExecMainPID=$exec_main_pid"
                 echo "ActiveState=$active_state"
                 echo "SubState=running"
@@ -266,12 +293,28 @@ class DeployScriptTest(unittest.TestCase):
                 echo "mock status"
                 exit 0
             fi
+            if [ "$1" = "restart" ]; then
+                echo "systemctl restart $2" >> "$log_file"
+                if [ "${DEPLOY_TEST_RESTART_FAIL:-0}" = "1" ]; then
+                    exit 1
+                fi
+                echo "active" > "$state_file"
+                exit 0
+            fi
             if [ "$1" = "stop" ] || [ "$1" = "start" ]; then
                 echo "systemctl $1 $2" >> "$log_file"
                 exit 0
             fi
             echo "unexpected systemctl $*" >> "$log_file"
             exit 1
+            """,
+        )
+        write_executable(
+            self.mock_bin / "journalctl",
+            r"""
+            #!/bin/sh
+            echo "mock journalctl" >> "${DEPLOY_TEST_LOG:?}"
+            exit 0
             """,
         )
         write_executable(
@@ -288,6 +331,7 @@ class DeployScriptTest(unittest.TestCase):
         env["REPO_ROOT"] = str(self.repo_root)
         env["SERVICE_NAME"] = "sub2api-test"
         env["DEPLOY_TEST_LOG"] = str(self.log_path)
+        env["DEPLOY_START_WAIT_SECONDS"] = "0"
         if extra_env:
             env.update(extra_env)
         return subprocess.run(
@@ -342,6 +386,7 @@ class DeployScriptTest(unittest.TestCase):
         self.assertNotIn("go clean", log)
         self.assertNotIn("systemctl stop", log)
         self.assertNotIn("systemctl start", log)
+        self.assertNotIn("systemctl restart", log)
         self.assertIn("无需部署", result.stdout)
 
     def test_no_change_deploy_starts_service_when_binary_current_but_service_inactive(self) -> None:
@@ -354,9 +399,10 @@ class DeployScriptTest(unittest.TestCase):
         self.assertNotIn("pnpm install", log)
         self.assertNotIn("pnpm build", log)
         self.assertNotIn("go build", log)
-        self.assertIn("go run ./cmd/sync_checksums", log)
-        self.assertIn("systemctl stop sub2api-test", log)
-        self.assertIn("systemctl start sub2api-test", log)
+        self.assertIn("go run ./cmd/sync_checksums --backup-file", log)
+        self.assertIn("systemctl restart sub2api-test", log)
+        self.assertNotIn("systemctl stop", log)
+        self.assertNotIn("systemctl start", log)
         self.assertNotIn("无需部署", result.stdout)
 
     def test_generated_frontend_tsbuildinfo_does_not_invalidate_no_change_deploy(self) -> None:
@@ -374,6 +420,7 @@ class DeployScriptTest(unittest.TestCase):
         self.assertNotIn("pnpm build", log)
         self.assertNotIn("go build", log)
         self.assertNotIn("systemctl stop", log)
+        self.assertNotIn("systemctl restart", log)
         self.assertIn("无需部署", result.stdout)
 
     def test_changed_deploy_builds_before_stop_and_does_not_clean_go_cache(self) -> None:
@@ -384,16 +431,84 @@ class DeployScriptTest(unittest.TestCase):
         self.assertIn("pnpm install", log_lines)
         self.assertIn("pnpm build", log_lines)
         self.assertTrue(any(line.startswith("go build ") for line in log_lines), log_lines)
-        self.assertIn("go run ./cmd/sync_checksums", log_lines)
+        sync_index = next(
+            i for i, line in enumerate(log_lines) if line.startswith("go run ./cmd/sync_checksums --backup-file ")
+        )
         self.assertNotIn("go clean clean -cache", log_lines)
-        stop_index = log_lines.index("systemctl stop sub2api-test")
-        start_index = log_lines.index("systemctl start sub2api-test")
-        self.assertLess(log_lines.index("pnpm build"), stop_index)
-        self.assertLess(next(i for i, line in enumerate(log_lines) if line.startswith("go build ")), stop_index)
-        self.assertLess(log_lines.index("go run ./cmd/sync_checksums"), stop_index)
-        self.assertLess(stop_index, start_index)
+        restart_index = log_lines.index("systemctl restart sub2api-test")
+        self.assertLess(log_lines.index("pnpm build"), restart_index)
+        self.assertLess(next(i for i, line in enumerate(log_lines) if line.startswith("go build ")), restart_index)
+        self.assertLess(sync_index, restart_index)
+        self.assertEqual(log_lines.count("systemctl restart sub2api-test"), 1)
+        self.assertIn("systemctl show sub2api-test --property=ActiveState --value", log_lines)
+        self.assertIn("systemctl show sub2api-test --property=ExecMainPID --value", log_lines)
+        self.assertFalse(any(line.startswith("systemctl stop ") for line in log_lines), log_lines)
+        self.assertFalse(any(line.startswith("systemctl start ") for line in log_lines), log_lines)
         self.assertTrue((self.repo_root / "sub2api").is_file())
-        self.assertFalse((self.repo_root / "sub2api.new").exists())
+        self.assertFalse(list(self.repo_root.glob("sub2api.new*")))
+
+    def test_restart_failure_rolls_back_binary_and_checksum_snapshot(self) -> None:
+        old_binary = self.repo_root / "sub2api"
+        write_executable(
+            old_binary,
+            """
+            #!/bin/sh
+            if [ "$1" = "-version" ]; then
+                echo "Sub2API version=old commit=old built=old build_type=source dirty=clean source_hash=old frontend_dist_hash=old"
+                exit 0
+            fi
+            exit 0
+            """,
+        )
+
+        result = self.run_deploy({"DEPLOY_TEST_RESTART_FAIL": "1"})
+
+        self.assertNotEqual(result.returncode, 0)
+        log_lines = self.log_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(log_lines.count("systemctl restart sub2api-test"), 2, log_lines)
+        self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --backup-file ") for line in log_lines), log_lines)
+        self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --restore-file ") for line in log_lines), log_lines)
+        self.assertIn("version=old commit=old", old_binary.read_text(encoding="utf-8"))
+
+    def test_restart_failure_still_restarts_old_binary_when_checksum_restore_fails(self) -> None:
+        old_binary = self.repo_root / "sub2api"
+        write_executable(
+            old_binary,
+            """
+            #!/bin/sh
+            if [ "$1" = "-version" ]; then
+                echo "Sub2API version=old commit=old built=old build_type=source dirty=clean source_hash=old frontend_dist_hash=old"
+                exit 0
+            fi
+            exit 0
+            """,
+        )
+
+        result = self.run_deploy({
+            "DEPLOY_TEST_RESTART_FAIL": "1",
+            "DEPLOY_TEST_RESTORE_FAIL": "1",
+        })
+
+        self.assertNotEqual(result.returncode, 0)
+        log_lines = self.log_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(log_lines.count("systemctl restart sub2api-test"), 2, log_lines)
+        self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --restore-file ") for line in log_lines), log_lines)
+        self.assertIn("version=old commit=old", old_binary.read_text(encoding="utf-8"))
+
+    def test_restart_failure_without_backend_build_restores_checksum_snapshot(self) -> None:
+        self.prepare_current_binary_and_frontend_cache()
+
+        result = self.run_deploy({
+            "DEPLOY_FORCE_RESTART": "1",
+            "DEPLOY_TEST_RESTART_FAIL": "1",
+        })
+
+        self.assertNotEqual(result.returncode, 0)
+        log_lines = self.log_path.read_text(encoding="utf-8").splitlines()
+        self.assertNotIn("go build", "\n".join(log_lines))
+        self.assertEqual(log_lines.count("systemctl restart sub2api-test"), 2, log_lines)
+        self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --backup-file ") for line in log_lines), log_lines)
+        self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --restore-file ") for line in log_lines), log_lines)
 
 
 if __name__ == "__main__":

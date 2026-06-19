@@ -5,11 +5,30 @@ REPO_ROOT="${REPO_ROOT:-/opt/sub2api}"
 BACKEND_DIR="$REPO_ROOT/backend"
 FRONTEND_DIR="$REPO_ROOT/frontend"
 BINARY_PATH="$REPO_ROOT/sub2api"
-NEW_BINARY_PATH="${NEW_BINARY_PATH:-$BINARY_PATH.new}"
 SERVICE_NAME="${SERVICE_NAME:-sub2api}"
 CACHE_DIR="${DEPLOY_CACHE_DIR:-$REPO_ROOT/deploy/.cache}"
 CACHE_FILE="${DEPLOY_CACHE_FILE:-$CACHE_DIR/deploy-state.env}"
 BINARY_BACKUP_DIR="${DEPLOY_BINARY_BACKUP_DIR:-$REPO_ROOT/deploy/.backup/binaries}"
+DEPLOY_RUN_ID="${DEPLOY_RUN_ID:-$(date -u +"%Y%m%dT%H%M%SZ").$$}"
+NEW_BINARY_PATH="${NEW_BINARY_PATH:-$BINARY_PATH.new.$DEPLOY_RUN_ID}"
+DEPLOY_LOCK_DIR="${DEPLOY_LOCK_DIR:-$CACHE_DIR/deploy.lock}"
+LOCK_HELD=0
+
+cleanup_deploy_lock() {
+    if [ "$LOCK_HELD" -eq 1 ]; then
+        rmdir "$DEPLOY_LOCK_DIR" 2>/dev/null || true
+    fi
+}
+
+acquire_deploy_lock() {
+    mkdir -p "$CACHE_DIR"
+    if ! mkdir "$DEPLOY_LOCK_DIR" 2>/dev/null; then
+        echo "❌ 另一个部署正在运行: $DEPLOY_LOCK_DIR" >&2
+        exit 1
+    fi
+    LOCK_HELD=1
+    trap cleanup_deploy_lock EXIT
+}
 
 require_command() {
     local cmd="$1"
@@ -204,16 +223,31 @@ running_binary_matches_identity() {
 wait_for_service_active() {
     local attempts="${DEPLOY_START_WAIT_ATTEMPTS:-15}"
     local delay="${DEPLOY_START_WAIT_SECONDS:-1}"
-    local i
+    local stable_checks="${DEPLOY_ACTIVE_STABLE_CHECKS:-2}"
+    local i stable
+
+    if [ "$stable_checks" -lt 1 ]; then
+        stable_checks=1
+    fi
+    stable=0
 
     for ((i = 1; i <= attempts; i++)); do
         if systemctl is-active --quiet "$SERVICE_NAME"; then
-            return 0
+            stable=$((stable + 1))
+            if [ "$stable" -ge "$stable_checks" ]; then
+                return 0
+            fi
+        else
+            stable=0
         fi
         sleep "$delay"
     done
 
     return 1
+}
+
+wait_for_deployed_service_ready() {
+    wait_for_service_active && running_binary_matches_identity
 }
 
 backup_current_binary() {
@@ -223,9 +257,62 @@ backup_current_binary() {
 
     mkdir -p "$BINARY_BACKUP_DIR"
     local backup_path
-    backup_path="$BINARY_BACKUP_DIR/sub2api.$(date -u +"%Y%m%dT%H%M%SZ").bak"
+    backup_path="$BINARY_BACKUP_DIR/sub2api.$DEPLOY_RUN_ID.bak"
     cp -a "$BINARY_PATH" "$backup_path"
     printf '%s\n' "$backup_path"
+}
+
+restore_binary_backup() {
+    local backup_path="$1"
+    if [ -z "$backup_path" ] || [ ! -f "$backup_path" ]; then
+        return 1
+    fi
+
+    local rollback_path
+    rollback_path="$BINARY_PATH.rollback.$DEPLOY_RUN_ID"
+    cp -a "$backup_path" "$rollback_path"
+    mv -f "$rollback_path" "$BINARY_PATH"
+}
+
+restore_checksum_snapshot() {
+    if [ -z "${CHECKSUM_BACKUP_PATH:-}" ] || [ ! -f "$CHECKSUM_BACKUP_PATH" ]; then
+        return 0
+    fi
+    if [ -z "${DATABASE_DSN:-}" ]; then
+        echo "⚠️  缺少数据库 DSN，跳过 checksum 回滚" >&2
+        return 1
+    fi
+
+    SUB2API_DATABASE_DSN="$DATABASE_DSN" go run ./cmd/sync_checksums --restore-file "$CHECKSUM_BACKUP_PATH"
+}
+
+ROLLBACK_CHECKSUM_FAILED=0
+ROLLBACK_BINARY_FAILED=0
+ROLLBACK_SERVICE_RESTORED=0
+
+rollback_and_restart() {
+    local backup_path="${1:-}"
+
+    ROLLBACK_CHECKSUM_FAILED=0
+    ROLLBACK_BINARY_FAILED=0
+    ROLLBACK_SERVICE_RESTORED=0
+
+    echo "↩️  尝试恢复数据库 checksum、二进制和服务..."
+    if ! restore_checksum_snapshot; then
+        ROLLBACK_CHECKSUM_FAILED=1
+        echo "⚠️  checksum 回滚失败，继续尝试恢复服务" >&2
+    fi
+    if [ -n "$backup_path" ] && [ -f "$backup_path" ]; then
+        if ! restore_binary_backup "$backup_path"; then
+            ROLLBACK_BINARY_FAILED=1
+            echo "⚠️  二进制回滚失败，继续尝试启动当前二进制" >&2
+        fi
+    fi
+
+    systemctl restart "$SERVICE_NAME" || return 1
+    wait_for_service_active || return 1
+    ROLLBACK_SERVICE_RESTORED=1
+    [ "$ROLLBACK_BINARY_FAILED" -eq 0 ]
 }
 
 find_config_file() {
@@ -324,6 +411,7 @@ require_command git
 require_command go
 require_command pnpm
 require_command sha256sum
+acquire_deploy_lock
 
 echo "🧾 计算前端输入身份..."
 FRONTEND_INPUT_HASH="$(compute_frontend_input_hash)"
@@ -430,8 +518,8 @@ fi
 
 echo "   使用配置文件: $CONFIG_FILE"
 DATABASE_DSN="$(build_database_dsn "$CONFIG_FILE")"
-SUB2API_DATABASE_DSN="$DATABASE_DSN" go run ./cmd/sync_checksums
-unset DATABASE_DSN
+CHECKSUM_BACKUP_PATH="$CACHE_DIR/schema-migrations.$DEPLOY_RUN_ID.json"
+SUB2API_DATABASE_DSN="$DATABASE_DSN" go run ./cmd/sync_checksums --backup-file "$CHECKSUM_BACKUP_PATH"
 echo "✓ 数据库校验和同步完成"
 
 BACKUP_BINARY_PATH=""
@@ -447,24 +535,39 @@ if [ "$NEED_BACKEND_BUILD" -eq 1 ]; then
 fi
 
 echo "🔄 重启服务..."
-systemctl restart "$SERVICE_NAME"
+RESTART_FAILED=0
+if ! systemctl restart "$SERVICE_NAME"; then
+    RESTART_FAILED=1
+fi
 
-if wait_for_service_active; then
+if [ "$RESTART_FAILED" -eq 0 ] && wait_for_deployed_service_ready; then
+    unset DATABASE_DSN
     write_deploy_cache "$FRONTEND_INPUT_HASH" "$FRONTEND_DIST_HASH" "$SOURCE_HASH"
     echo "✅ 部署成功！服务正常运行"
     systemctl status "$SERVICE_NAME" --no-pager -l | head -15
 else
-    echo "❌ 服务启动失败，查看日志："
-    journalctl -u "$SERVICE_NAME" -n 20 --no-pager
-    if [ -n "$BACKUP_BINARY_PATH" ] && [ -f "$BACKUP_BINARY_PATH" ]; then
-        echo "↩️  尝试回滚到备份二进制..."
-        cp -a "$BACKUP_BINARY_PATH" "$BINARY_PATH"
-        systemctl restart "$SERVICE_NAME" || true
-        if wait_for_service_active; then
+    if [ "$RESTART_FAILED" -ne 0 ]; then
+        echo "❌ 服务重启命令失败，查看日志："
+    else
+        echo "❌ 服务启动失败，查看日志："
+    fi
+    journalctl -u "$SERVICE_NAME" -n 20 --no-pager || true
+    if rollback_and_restart "$BACKUP_BINARY_PATH"; then
+        if [ -n "$BACKUP_BINARY_PATH" ] && [ -f "$BACKUP_BINARY_PATH" ]; then
             echo "✅ 已回滚到备份二进制并恢复服务"
+        else
+            echo "✅ 已恢复服务并回滚数据库 checksum"
+        fi
+        if [ "$ROLLBACK_CHECKSUM_FAILED" -ne 0 ]; then
+            echo "⚠️  服务已恢复，但数据库 checksum 回滚失败，请手动检查 schema_migrations" >&2
+        fi
+    else
+        if [ "$ROLLBACK_SERVICE_RESTORED" -eq 1 ]; then
+            echo "⚠️  服务已恢复，但回滚不完整，请手动检查二进制和 schema_migrations" >&2
         else
             echo "❌ 回滚后服务仍未恢复，请手动检查 systemd 日志" >&2
         fi
     fi
+    unset DATABASE_DSN
     exit 1
 fi
