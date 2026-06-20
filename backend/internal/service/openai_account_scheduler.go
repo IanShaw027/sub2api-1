@@ -1671,6 +1671,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		PreviousResponseID:      previousResponseID,
 		RequestedModel:          requestedModel,
 		RequiredTransport:       requiredTransport,
+		RequiredCapability:      requiredCapability,
 		RequiredImageCapability: requiredImageCapability,
 		RequiredImageRoute:      requiredImageRoute,
 		RequireImageEnabled:     requireImageEnabled,

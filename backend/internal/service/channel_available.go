@@ -205,13 +205,14 @@ func (s *ChannelService) fillGlobalPricingFallback(models []SupportedModel) {
 	}
 }
 
-// filterCapabilityModelsForAvailable keeps only models backed by channel mapping/capability
-// for the user-facing available-channels view. Pricing-only catalog entries are not
-// schedulability proof and must not be presented as available models.
+// filterCapabilityModelsForAvailable keeps models that are either backed by
+// channel mapping/capability OR have explicit channel pricing configured.
+// This ensures that models with pricing entries are visible in the available
+// channels view even without a corresponding mapping entry.
 func filterCapabilityModelsForAvailable(models []SupportedModel) []SupportedModel {
 	out := make([]SupportedModel, 0, len(models))
 	for i := range models {
-		if models[i].IsCapability {
+		if models[i].IsCapability || models[i].Pricing != nil {
 			out = append(out, models[i])
 		}
 	}

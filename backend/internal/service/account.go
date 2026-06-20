@@ -84,6 +84,7 @@ const (
 )
 
 const openAIEndpointCapabilitiesCredentialKey = "openai_capabilities"
+const textEndpointAutoRouteExtraKey = "text_endpoint_auto_route"
 
 type TempUnschedulableRule struct {
 	ErrorCode       int      `json:"error_code"`
@@ -1489,7 +1490,7 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 			return false
 		}
 	case OpenAIEndpointCapabilityResponsesIngress, OpenAIEndpointCapabilityAnthropicMessagesIngress:
-		if a.IsAnthropicMessagesUpstream() {
+		if a.IsAnthropicMessagesUpstream() && !a.TextEndpointAutoRouteEnabled() {
 			return false
 		}
 	default:
@@ -1499,6 +1500,10 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	configured, found := a.openAIEndpointCapabilitySet()
 	if !found {
 		return true
+	}
+	if (capability == OpenAIEndpointCapabilityResponsesIngress || capability == OpenAIEndpointCapabilityAnthropicMessagesIngress) &&
+		a.TextEndpointAutoRouteEnabled() {
+		return configured[string(OpenAIEndpointCapabilityChatCompletions)]
 	}
 	return configured[string(capability)]
 }
@@ -1978,6 +1983,14 @@ func (a *Account) IsAnthropicMessagesUpstream() bool {
 		return false
 	}
 	enabled, ok := a.Extra["anthropic_messages_upstream"].(bool)
+	return ok && enabled
+}
+
+func (a *Account) TextEndpointAutoRouteEnabled() bool {
+	if a == nil || a.Platform != PlatformOpenAI || a.Type != AccountTypeAPIKey || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra[textEndpointAutoRouteExtraKey].(bool)
 	return ok && enabled
 }
 

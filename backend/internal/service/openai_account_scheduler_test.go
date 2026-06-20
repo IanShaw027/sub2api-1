@@ -38,6 +38,33 @@ func TestAccountSupportsOpenAIEndpointCapability_ResponsesIngressExcludesAnthrop
 	require.False(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAnthropicMessagesIngress))
 }
 
+func TestAccountSupportsOpenAIEndpointCapability_TextEndpointAutoRouteAllowsConvertibleIngress(t *testing.T) {
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Extra: map[string]any{
+			"anthropic_messages_upstream": true,
+			"text_endpoint_auto_route":    true,
+		},
+	}
+
+	require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityChatCompletions))
+	require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesIngress))
+	require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAnthropicMessagesIngress))
+
+	account.Credentials = map[string]any{
+		"openai_capabilities": []any{"chat_completions"},
+	}
+	require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesIngress))
+	require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAnthropicMessagesIngress))
+
+	account.Credentials = map[string]any{
+		"openai_capabilities": []any{"embeddings"},
+	}
+	require.False(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesIngress))
+	require.False(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAnthropicMessagesIngress))
+}
+
 func (r schedulerTestOpenAIAccountRepo) GetByID(ctx context.Context, id int64) (*Account, error) {
 	for i := range r.accounts {
 		if r.accounts[i].ID == id {
@@ -389,6 +416,176 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabledStillHon
 	require.Equal(t, openAIAccountScheduleLayerPreviousResponse, decision.Layer)
 	require.True(t, decision.StickyPreviousHit)
 	require.Equal(t, int64(36001), cache.sessionBindings["openai:session_hash_disabled_previous"])
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabledPreviousResponseRequiresResponsesIngress(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	groupID := int64(10107)
+	accounts := []Account{
+		{
+			ID:          36101,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+			Extra: map[string]any{
+				"anthropic_messages_upstream": true,
+			},
+		},
+		{
+			ID:          36102,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    5,
+		},
+	}
+	cfg := newSchedulerTestOpenAIWSV2Config()
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	cache := &schedulerTestGatewayCache{}
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              cache,
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	store := svc.getOpenAIWSStateStore()
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, 0, "resp_disabled_unsupported", 36101, time.Hour))
+	require.False(t, svc.isOpenAIAdvancedSchedulerEnabled(ctx))
+
+	selection, decision, err := svc.SelectAccountWithSchedulerForResponses(
+		ctx,
+		&groupID,
+		0,
+		"resp_disabled_unsupported",
+		"session_hash_disabled_unsupported",
+		"gpt-5.1",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+		false,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(36102), selection.Account.ID)
+	require.NotEqual(t, openAIAccountScheduleLayerPreviousResponse, decision.Layer)
+	require.False(t, decision.StickyPreviousHit)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_TextEndpointAutoRouteAllowsChatOnlyAccount(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	groupID := int64(10108)
+	accounts := []Account{
+		{
+			ID:          36111,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    1,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{"glm-5.2": "glm-5.2"},
+			},
+			Extra: map[string]any{
+				"anthropic_messages_upstream": true,
+				"openai_responses_mode":       "force_chat_completions",
+				"openai_responses_supported":  false,
+				"text_endpoint_auto_route":    true,
+			},
+		},
+	}
+	cfg := newSchedulerTestOpenAIWSV2Config()
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, decision, err := svc.SelectAccountWithSchedulerForResponses(
+		ctx,
+		&groupID,
+		0,
+		"",
+		"session_hash_text_auto_route_responses",
+		"glm-5.2",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+		false,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(36111), selection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForMessages_TextEndpointAutoRouteAllowsChatOnlyAccount(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	groupID := int64(10109)
+	accounts := []Account{
+		{
+			ID:          36112,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    1,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{"glm-5.2": "glm-5.2"},
+			},
+			Extra: map[string]any{
+				"anthropic_messages_upstream": true,
+				"openai_responses_mode":       "force_chat_completions",
+				"openai_responses_supported":  false,
+				"text_endpoint_auto_route":    true,
+			},
+		},
+	}
+	cfg := newSchedulerTestOpenAIWSV2Config()
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, decision, err := svc.SelectAccountWithSchedulerForCapability(
+		ctx,
+		&groupID,
+		"",
+		"session_hash_text_auto_route_messages",
+		"glm-5.2",
+		nil,
+		OpenAIUpstreamTransportAny,
+		OpenAIEndpointCapabilityAnthropicMessagesIngress,
+		false,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(36112), selection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
 }
 
 func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_RequiredWSV2_SkipsHTTPOnlyAccount(t *testing.T) {
