@@ -50,6 +50,13 @@ func ShouldForwardOpenAITextMessagesViaChatCompletions(account *Account) bool {
 		!configured[string(OpenAIEndpointCapabilityAnthropicMessagesIngress)]
 }
 
+func ShouldForwardOpenAITextResponsesViaAnthropicMessages(account *Account) bool {
+	if account == nil || !account.IsAnthropicMessagesUpstream() || !account.TextEndpointAutoRouteEnabled() {
+		return false
+	}
+	return openai_compat.ResolveResponsesSupport(account.Extra) != openai_compat.ResponsesSupportNo
+}
+
 func (s *OpenAIGatewayService) forwardAnthropicMessagesViaRawChatCompletions(
 	ctx context.Context,
 	c *gin.Context,
@@ -71,6 +78,34 @@ func (s *OpenAIGatewayService) forwardAnthropicMessagesViaRawChatCompletions(
 	result, err := gateway.forwardMessagesToChatCompletions(ctx, c, account, parsed)
 	if result == nil {
 		return nil, err
+	}
+	return openAIForwardResultFromGatewayResult(result), err
+}
+
+func (s *OpenAIGatewayService) forwardResponsesToAnthropicMessages(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+) (*OpenAIForwardResult, error) {
+	gateway := &GatewayService{
+		cfg:                  s.cfg,
+		httpUpstream:         s.httpUpstream,
+		rateLimitService:     s.rateLimitService,
+		settingService:       s.settingService,
+		responseHeaderFilter: s.responseHeaderFilter,
+		tlsFPProfileService:  s.tlsFPProfileService,
+	}
+	result, err := gateway.ForwardAsResponses(ctx, c, account, body, nil)
+	if result == nil {
+		return nil, err
+	}
+	return openAIForwardResultFromGatewayResult(result), err
+}
+
+func openAIForwardResultFromGatewayResult(result *ForwardResult) *OpenAIForwardResult {
+	if result == nil {
+		return nil
 	}
 	return &OpenAIForwardResult{
 		RequestID: result.RequestID,
@@ -96,7 +131,7 @@ func (s *OpenAIGatewayService) forwardAnthropicMessagesViaRawChatCompletions(
 		ImageOutputSizes:   result.ImageOutputSizes,
 		ImageSizeSource:    result.ImageSizeSource,
 		ImageSizeBreakdown: result.ImageSizeBreakdown,
-	}, err
+	}
 }
 
 // ForwardAsAnthropic accepts an Anthropic Messages request body, converts it

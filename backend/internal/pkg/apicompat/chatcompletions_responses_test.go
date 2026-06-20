@@ -762,6 +762,56 @@ func TestResponsesToChatCompletionsRequest_MapsServerToolsToNativeTools(t *testi
 	require.JSONEq(t, `{"type":"web_search"}`, string(out.ToolChoice))
 }
 
+func TestResponsesToChatCompletionsRequest_RejectsUnsupportedServerTools(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-4o",
+		Input: json.RawMessage(`"hello"`),
+		Tools: []ResponsesTool{
+			{Type: "image_generation"},
+		},
+	}
+
+	_, err := ResponsesToChatCompletionsRequest(req)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported responses tool for chat completions")
+}
+
+func TestResponsesToChatCompletionsRequest_RejectsUnsupportedServerToolChoice(t *testing.T) {
+	req := &ResponsesRequest{
+		Model:      "gpt-4o",
+		Input:      json.RawMessage(`"hello"`),
+		ToolChoice: json.RawMessage(`{"type":"image_generation"}`),
+	}
+
+	_, err := ResponsesToChatCompletionsRequest(req)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported responses tool_choice for chat completions")
+}
+
+func TestResponsesToChatCompletionsRequest_MapsStringServerToolChoice(t *testing.T) {
+	req := &ResponsesRequest{
+		Model:      "gpt-4o",
+		Input:      json.RawMessage(`"hello"`),
+		ToolChoice: json.RawMessage(`"google_search"`),
+	}
+
+	out, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"type":"web_search"}`, string(out.ToolChoice))
+}
+
+func TestResponsesToChatCompletionsRequest_RejectsUnsupportedStringToolChoice(t *testing.T) {
+	req := &ResponsesRequest{
+		Model:      "gpt-4o",
+		Input:      json.RawMessage(`"hello"`),
+		ToolChoice: json.RawMessage(`"image_generation"`),
+	}
+
+	_, err := ResponsesToChatCompletionsRequest(req)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported responses tool_choice for chat completions")
+}
+
 func TestResponsesToChatCompletions_CachedTokens(t *testing.T) {
 	resp := &ResponsesResponse{
 		ID:     "resp_cache",

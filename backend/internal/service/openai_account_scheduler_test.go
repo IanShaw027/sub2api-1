@@ -74,6 +74,10 @@ func TestAccountTextEndpointAutoRouteEnabled_IsAccountLevelForOpenAIAndAnthropic
 	}
 
 	for _, account := range []*Account{
+		{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{"text_endpoint_auto_route": true}},
+		{Platform: PlatformAnthropic, Type: AccountTypeOAuth, Extra: map[string]any{"text_endpoint_auto_route": true}},
+		{Platform: PlatformAnthropic, Type: AccountTypeUpstream, Extra: map[string]any{"text_endpoint_auto_route": true}},
+		{Platform: PlatformAnthropic, Type: AccountTypeBedrock, Extra: map[string]any{"text_endpoint_auto_route": true}},
 		{Platform: PlatformGemini, Type: AccountTypeOAuth, Extra: map[string]any{"text_endpoint_auto_route": true}},
 		{Platform: PlatformKiro, Type: AccountTypeOAuth, Extra: map[string]any{"text_endpoint_auto_route": true}},
 	} {

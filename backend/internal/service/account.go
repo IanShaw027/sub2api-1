@@ -1990,6 +1990,9 @@ func (a *Account) TextEndpointAutoRouteEnabled() bool {
 	if a == nil || a.Extra == nil {
 		return false
 	}
+	if a.Type != AccountTypeAPIKey {
+		return false
+	}
 	if a.Platform != PlatformOpenAI && a.Platform != PlatformAnthropic {
 		return false
 	}

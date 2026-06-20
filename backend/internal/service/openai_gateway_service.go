@@ -4189,6 +4189,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		bodyModified = true
 		disablePatch()
 	}
+	if ShouldForwardOpenAITextResponsesViaAnthropicMessages(account) {
+		return s.forwardResponsesToAnthropicMessages(ctx, c, account, body)
+	}
 	if account.Platform == PlatformOpenAI &&
 		account.Type == AccountTypeAPIKey &&
 		openai_compat.ResolveResponsesSupport(account.Extra) == openai_compat.ResponsesSupportNo {

@@ -40,7 +40,11 @@ func ResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsR
 		out.Tools = tools
 	}
 	if len(req.ToolChoice) > 0 {
-		out.ToolChoice = responsesToolChoiceToChatToolChoice(req.ToolChoice)
+		toolChoice, err := responsesToolChoiceToChatToolChoice(req.ToolChoice)
+		if err != nil {
+			return nil, err
+		}
+		out.ToolChoice = toolChoice
 	}
 
 	return out, nil
@@ -440,8 +444,7 @@ func responsesToolsToChatTools(tools []ResponsesTool) ([]ChatTool, error) {
 			continue
 		}
 		if tool.Type != "function" {
-			out = append(out, responsesServerToolToChatFunctionFallback(tool))
-			continue
+			return nil, fmt.Errorf("unsupported responses tool for chat completions: %s", tool.Type)
 		}
 		out = append(out, ChatTool{
 			Type: "function",
@@ -551,28 +554,53 @@ func sanitizeChatFunctionName(value string) string {
 	return strings.Trim(b.String(), "_-")
 }
 
-func responsesToolChoiceToChatToolChoice(raw json.RawMessage) json.RawMessage {
+func responsesToolChoiceToChatToolChoice(raw json.RawMessage) (json.RawMessage, error) {
+	var choiceString string
+	if err := json.Unmarshal(raw, &choiceString); err == nil {
+		choiceString = strings.TrimSpace(choiceString)
+		switch choiceString {
+		case "auto", "none", "required":
+			return raw, nil
+		}
+		if chatTool, ok := responsesServerToolToNativeChatTool(ResponsesTool{Type: choiceString}); ok {
+			out, err := json.Marshal(map[string]any{"type": chatTool.Type})
+			if err != nil {
+				return raw, nil
+			}
+			return out, nil
+		}
+		return nil, fmt.Errorf("unsupported responses tool_choice for chat completions: %s", choiceString)
+	}
+
 	var choice map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &choice); err != nil {
-		return raw
+		return raw, nil
 	}
 	choiceType := rawString(choice["type"])
 	if choiceType != "function" {
+		switch choiceType {
+		case "auto", "none", "required":
+			out, err := json.Marshal(choiceType)
+			if err != nil {
+				return raw, nil
+			}
+			return out, nil
+		}
 		if chatTool, ok := responsesServerToolToNativeChatTool(ResponsesTool{Type: choiceType}); ok {
 			out, err := json.Marshal(map[string]any{"type": chatTool.Type})
 			if err != nil {
-				return raw
+				return raw, nil
 			}
-			return out
+			return out, nil
 		}
-		return raw
+		return nil, fmt.Errorf("unsupported responses tool_choice for chat completions: %s", choiceType)
 	}
 	name := rawString(choice["name"])
 	if name == "" {
 		name = rawNestedString(choice["function"], "name")
 	}
 	if name == "" {
-		return raw
+		return raw, nil
 	}
 	out, err := json.Marshal(map[string]any{
 		"type": "function",
@@ -581,9 +609,9 @@ func responsesToolChoiceToChatToolChoice(raw json.RawMessage) json.RawMessage {
 		},
 	})
 	if err != nil {
-		return raw
+		return raw, nil
 	}
-	return out
+	return out, nil
 }
 
 // ChatCompletionsResponseToResponses converts a non-streaming Chat Completions

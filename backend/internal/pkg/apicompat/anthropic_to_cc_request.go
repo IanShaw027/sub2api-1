@@ -1,6 +1,10 @@
 package apicompat
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
 
 // AnthropicRequestToChatCompletions converts an Anthropic Messages request body
 // into a Chat Completions request. This enables forwarding Anthropic-format
@@ -45,8 +49,16 @@ func AnthropicRequestToChatCompletions(req *AnthropicRequest) (*ChatCompletionsR
 		cc.Messages = append(cc.Messages, chatMsgs...)
 	}
 
-	// Convert tools
+	serverToolChoiceTypes := make(map[string]string)
 	for _, tool := range req.Tools {
+		if chatTool, ok := anthropicServerToolToNativeChatTool(tool); ok {
+			cc.Tools = append(cc.Tools, chatTool)
+			recordAnthropicServerToolChoiceType(serverToolChoiceTypes, tool, chatTool.Type)
+			continue
+		}
+		if strings.TrimSpace(tool.Type) != "" {
+			return nil, fmt.Errorf("unsupported anthropic server tool for chat completions: %s", tool.Type)
+		}
 		cc.Tools = append(cc.Tools, ChatTool{
 			Type: "function",
 			Function: &ChatFunction{
@@ -59,7 +71,7 @@ func AnthropicRequestToChatCompletions(req *AnthropicRequest) (*ChatCompletionsR
 
 	// Convert tool_choice
 	if len(req.ToolChoice) > 0 {
-		cc.ToolChoice = convertAnthropicToolChoiceToCC(req.ToolChoice)
+		cc.ToolChoice = convertAnthropicToolChoiceToCC(req.ToolChoice, serverToolChoiceTypes)
 	}
 
 	// Convert thinking/reasoning effort
@@ -71,6 +83,30 @@ func AnthropicRequestToChatCompletions(req *AnthropicRequest) (*ChatCompletionsR
 	}
 
 	return cc, nil
+}
+
+func anthropicServerToolToNativeChatTool(tool AnthropicTool) (ChatTool, bool) {
+	toolType := strings.ToLower(strings.TrimSpace(tool.Type))
+	switch {
+	case strings.HasPrefix(toolType, "web_search"):
+		return ChatTool{Type: "web_search"}, true
+	case strings.HasPrefix(toolType, "web_fetch"):
+		return ChatTool{Type: "web_fetch"}, true
+	default:
+		return ChatTool{}, false
+	}
+}
+
+func recordAnthropicServerToolChoiceType(serverToolChoiceTypes map[string]string, tool AnthropicTool, chatType string) {
+	if serverToolChoiceTypes == nil || chatType == "" {
+		return
+	}
+	for _, key := range []string{tool.Name, tool.Type, chatType} {
+		key = strings.ToLower(strings.TrimSpace(key))
+		if key != "" {
+			serverToolChoiceTypes[key] = chatType
+		}
+	}
 }
 
 func extractSystemText(raw json.RawMessage) string {
@@ -202,7 +238,7 @@ func extractToolResultText(raw json.RawMessage) string {
 	return string(raw)
 }
 
-func convertAnthropicToolChoiceToCC(raw json.RawMessage) json.RawMessage {
+func convertAnthropicToolChoiceToCC(raw json.RawMessage, serverToolChoiceTypes map[string]string) json.RawMessage {
 	var tc struct {
 		Type string `json:"type"`
 		Name string `json:"name,omitempty"`
@@ -218,6 +254,12 @@ func convertAnthropicToolChoiceToCC(raw json.RawMessage) json.RawMessage {
 		out, _ := json.Marshal("required")
 		return out
 	case "tool":
+		if chatToolType := serverToolChoiceTypes[strings.ToLower(strings.TrimSpace(tc.Name))]; chatToolType != "" {
+			out, _ := json.Marshal(struct {
+				Type string `json:"type"`
+			}{Type: chatToolType})
+			return out
+		}
 		out, _ := json.Marshal(struct {
 			Type     string `json:"type"`
 			Function struct {

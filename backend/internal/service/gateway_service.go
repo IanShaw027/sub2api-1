@@ -4821,8 +4821,9 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		return s.handleWebSearchEmulation(ctx, c, account, parsed)
 	}
 
-	// OpenAI 兼容 CC 上游：将 Messages 请求转换为 Chat Completions 格式转发
-	if account != nil && account.IsOpenAICompatCCUpstream() {
+	// OpenAI 兼容 CC 上游：账号显式开启文本端点自动路由后，才将
+	// Messages 请求转换为 Chat Completions 格式转发。
+	if shouldAutoRouteOpenAICompatCCUpstream(account) {
 		return s.forwardMessagesToChatCompletions(ctx, c, account, parsed)
 	}
 
@@ -6672,7 +6673,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			if err != nil {
 				return nil, nil, err
 			}
-			targetURL = validatedURL + "/v1/messages?beta=true"
+			targetURL = buildMessagesTargetURL(validatedURL) + "?beta=true"
 		}
 	} else if account.IsCustomBaseURLEnabled() {
 		customURL := account.GetCustomBaseURL()

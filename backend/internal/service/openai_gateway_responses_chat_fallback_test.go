@@ -176,6 +176,61 @@ func TestForwardResponses_AutoSupportedAccountStillUsesResponsesEndpoint(t *test
 	require.Equal(t, "ok", gjson.Get(rec.Body.String(), "output.0.content.0.text").String())
 }
 
+func TestForwardResponses_TextEndpointAutoRouteAnthropicMessagesUpstreamUsesMessagesEndpoint(t *testing.T) {
+	setGinTestMode()
+
+	body := []byte(`{"model":"claude-sonnet-4.5","input":"hello","stream":false,"tools":[{"type":"web_search"}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/event-stream"},
+			"x-request-id": []string{"rid_resp_messages"},
+		},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_resp_messages","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.5","stop_reason":"","usage":{"input_tokens":8,"cache_read_input_tokens":2}}}`,
+			``,
+			`event: content_block_start`,
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"ok"}}`,
+			``,
+			`event: message_delta`,
+			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}`,
+			``,
+			`event: message_stop`,
+			`data: {"type":"message_stop"}`,
+			``,
+		}, "\n"))),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+	account := rawChatCompletionsTestAccount()
+	account.Extra = map[string]any{
+		"anthropic_messages_upstream": true,
+		"text_endpoint_auto_route":    true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "http://upstream.example/v1/messages?beta=true", upstream.lastReq.URL.String())
+	require.Equal(t, "sk-test", getHeaderRaw(upstream.lastReq.Header, "x-api-key"))
+	require.Equal(t, "claude-sonnet-4.5", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "web_search_20250305", gjson.GetBytes(upstream.lastBody, "tools.0.type").String())
+	require.Equal(t, "web_search", gjson.GetBytes(upstream.lastBody, "tools.0.name").String())
+	require.Equal(t, "ok", gjson.Get(rec.Body.String(), "output.0.content.0.text").String())
+	require.Equal(t, 8, result.Usage.InputTokens)
+	require.Equal(t, 3, result.Usage.OutputTokens)
+	require.Equal(t, 2, result.Usage.CacheReadInputTokens)
+}
+
 func forceChatResponsesFallbackAccount() *Account {
 	account := rawChatCompletionsTestAccount()
 	account.Extra = map[string]any{

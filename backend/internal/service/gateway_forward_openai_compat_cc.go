@@ -536,19 +536,29 @@ func claudeUsageFromChatUsage(usage *apicompat.ChatUsage) ClaudeUsage {
 	if usage == nil {
 		return ClaudeUsage{}
 	}
-	out := ClaudeUsage{
-		InputTokens:  usage.PromptTokens,
-		OutputTokens: usage.CompletionTokens,
-	}
+	cacheReadInputTokens := 0
 	if usage.PromptTokensDetails != nil {
-		out.CacheReadInputTokens = usage.PromptTokensDetails.CachedTokens
+		cacheReadInputTokens = usage.PromptTokensDetails.CachedTokens
+	}
+	inputTokens := usage.PromptTokens - cacheReadInputTokens
+	if inputTokens < 0 {
+		inputTokens = 0
+	}
+	out := ClaudeUsage{
+		InputTokens:          inputTokens,
+		OutputTokens:         usage.CompletionTokens,
+		CacheReadInputTokens: cacheReadInputTokens,
 	}
 	return out
 }
 
 func claudeUsageFromOpenAIUsage(usage OpenAIUsage) ClaudeUsage {
+	inputTokens := usage.InputTokens - usage.CacheReadInputTokens
+	if inputTokens < 0 {
+		inputTokens = 0
+	}
 	return ClaudeUsage{
-		InputTokens:          usage.InputTokens,
+		InputTokens:          inputTokens,
 		OutputTokens:         usage.OutputTokens,
 		CacheReadInputTokens: usage.CacheReadInputTokens,
 	}
