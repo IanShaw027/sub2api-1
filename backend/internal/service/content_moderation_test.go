@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,10 +19,13 @@ import (
 )
 
 type contentModerationTestSettingRepo struct {
+	mu     sync.Mutex
 	values map[string]string
 }
 
 func (r *contentModerationTestSettingRepo) Get(ctx context.Context, key string) (*Setting, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if value, ok := r.values[key]; ok {
 		return &Setting{Key: key, Value: value}, nil
 	}
@@ -29,6 +33,8 @@ func (r *contentModerationTestSettingRepo) Get(ctx context.Context, key string) 
 }
 
 func (r *contentModerationTestSettingRepo) GetValue(ctx context.Context, key string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if value, ok := r.values[key]; ok {
 		return value, nil
 	}
@@ -36,6 +42,8 @@ func (r *contentModerationTestSettingRepo) GetValue(ctx context.Context, key str
 }
 
 func (r *contentModerationTestSettingRepo) Set(ctx context.Context, key, value string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.values == nil {
 		r.values = map[string]string{}
 	}
@@ -44,6 +52,8 @@ func (r *contentModerationTestSettingRepo) Set(ctx context.Context, key, value s
 }
 
 func (r *contentModerationTestSettingRepo) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	out := map[string]string{}
 	for _, key := range keys {
 		if value, ok := r.values[key]; ok {
@@ -54,6 +64,8 @@ func (r *contentModerationTestSettingRepo) GetMultiple(ctx context.Context, keys
 }
 
 func (r *contentModerationTestSettingRepo) SetMultiple(ctx context.Context, settings map[string]string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.values == nil {
 		r.values = map[string]string{}
 	}
@@ -64,6 +76,8 @@ func (r *contentModerationTestSettingRepo) SetMultiple(ctx context.Context, sett
 }
 
 func (r *contentModerationTestSettingRepo) GetAll(ctx context.Context) (map[string]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	out := make(map[string]string, len(r.values))
 	for key, value := range r.values {
 		out[key] = value
@@ -72,8 +86,31 @@ func (r *contentModerationTestSettingRepo) GetAll(ctx context.Context) (map[stri
 }
 
 func (r *contentModerationTestSettingRepo) Delete(ctx context.Context, key string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	delete(r.values, key)
 	return nil
+}
+
+type contentModerationBlockingSettingRepo struct {
+	*contentModerationTestSettingRepo
+	once    sync.Once
+	started chan struct{}
+	release chan struct{}
+}
+
+func (r *contentModerationBlockingSettingRepo) GetValue(ctx context.Context, key string) (string, error) {
+	value, err := r.contentModerationTestSettingRepo.GetValue(ctx, key)
+	if key == SettingKeyContentModerationConfig {
+		r.once.Do(func() {
+			close(r.started)
+			select {
+			case <-r.release:
+			case <-ctx.Done():
+			}
+		})
+	}
+	return value, err
 }
 
 type contentModerationTestGroupRepo struct {
@@ -2679,6 +2716,131 @@ func TestContentModerationWorker_RechecksAPIKeyExemptGroupBeforeObserveAudit(t *
 	require.False(t, processed)
 	require.Equal(t, 0, upstreamCalls)
 	requireContentModerationLogCount(t, repo, 0)
+}
+
+func TestContentModerationWorkerLoadsConfigAfterDequeue(t *testing.T) {
+	var upstreamCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls.Add(1)
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
+			Results: []moderationAPIResult{{
+				CategoryScores: map[string]float64{"sexual": 0.9},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	staleCfg := defaultContentModerationConfig()
+	staleCfg.Enabled = true
+	staleCfg.Mode = ContentModerationModeObserve
+	staleCfg.BaseURL = server.URL
+	staleCfg.APIKeys = []string{"sk-test"}
+	staleCfg.WorkerCount = 1
+	staleRaw, err := json.Marshal(staleCfg)
+	require.NoError(t, err)
+
+	freshCfg := cloneContentModerationConfig(staleCfg)
+	freshCfg.APIKeyExemptGroupIDs = []int64{42}
+	freshRaw, err := json.Marshal(freshCfg)
+	require.NoError(t, err)
+
+	baseSettings := &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyContentModerationConfig: string(staleRaw),
+	}}
+	settingRepo := &contentModerationBlockingSettingRepo{
+		contentModerationTestSettingRepo: baseSettings,
+		started:                          make(chan struct{}),
+		release:                          make(chan struct{}),
+	}
+	repo := &contentModerationTestRepo{}
+	svc := &ContentModerationService{
+		settingRepo: settingRepo,
+		repo:        repo,
+		httpClient:  server.Client(),
+		workerCount: 1,
+		asyncQueue:  make(chan contentModerationTask, 1),
+		keyHealth:   make(map[string]*contentModerationKeyHealth),
+	}
+
+	go svc.worker(0)
+	select {
+	case <-settingRepo.started:
+		require.NoError(t, baseSettings.Set(context.Background(), SettingKeyContentModerationConfig, string(freshRaw)))
+		close(settingRepo.release)
+	case <-time.After(50 * time.Millisecond):
+		require.NoError(t, baseSettings.Set(context.Background(), SettingKeyContentModerationConfig, string(freshRaw)))
+		close(settingRepo.release)
+	}
+
+	groupID := int64(42)
+	svc.asyncQueue <- contentModerationTask{
+		input: ContentModerationCheckInput{
+			APIKeyID: 100,
+			GroupID:  &groupID,
+			Protocol: ContentModerationProtocolOpenAIChat,
+			Body:     []byte(`{"messages":[{"role":"user","content":"bad prompt"}]}`),
+		},
+		content:    ContentModerationInput{Text: "bad prompt"},
+		inputHash:  strings.Repeat("d", 64),
+		enqueuedAt: time.Now(),
+	}
+
+	require.Never(t, func() bool {
+		return upstreamCalls.Load() > 0 || len(repo.snapshotLogs()) > 0
+	}, 200*time.Millisecond, 10*time.Millisecond)
+}
+
+func TestContentModerationWorkerRequeuesTaskWhenWorkerDisabledAfterDequeue(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.WorkerCount = 1
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	baseSettings := &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyContentModerationConfig: string(rawCfg),
+	}}
+	settingRepo := &contentModerationBlockingSettingRepo{
+		contentModerationTestSettingRepo: baseSettings,
+		started:                          make(chan struct{}),
+		release:                          make(chan struct{}),
+	}
+	svc := &ContentModerationService{
+		settingRepo: settingRepo,
+		repo:        &contentModerationTestRepo{},
+		httpClient:  http.DefaultClient,
+		workerCount: 1,
+		asyncQueue:  make(chan contentModerationTask, 1),
+		keyHealth:   make(map[string]*contentModerationKeyHealth),
+	}
+
+	svc.asyncQueue <- contentModerationTask{
+		input: ContentModerationCheckInput{
+			APIKeyID: 100,
+			Protocol: ContentModerationProtocolOpenAIChat,
+			Body:     []byte(`{"messages":[{"role":"user","content":"bad prompt"}]}`),
+		},
+		content:    ContentModerationInput{Text: "bad prompt"},
+		inputHash:  strings.Repeat("e", 64),
+		enqueuedAt: time.Now(),
+	}
+
+	go svc.worker(99)
+	require.Eventually(t, func() bool {
+		select {
+		case <-settingRepo.started:
+			return len(svc.asyncQueue) == 0
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	close(settingRepo.release)
+
+	require.Eventually(t, func() bool {
+		return len(svc.asyncQueue) == 1
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestBuildContentModerationAccountDisabledEmailBody_ContainsBanDetails(t *testing.T) {

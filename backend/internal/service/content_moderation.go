@@ -1343,12 +1343,6 @@ func (s *ContentModerationService) enqueueRecord(ctx context.Context, input Cont
 func (s *ContentModerationService) worker(id int) {
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), maxContentModerationTimeoutMS*time.Millisecond+10*time.Second)
-		cfg, err := s.loadConfig(ctx)
-		if err != nil || id >= cfg.WorkerCount {
-			cancel()
-			time.Sleep(time.Second)
-			continue
-		}
 		task, ok := s.dequeueAsyncTask(ctx, time.Second)
 		if !ok {
 			cancel()
@@ -1361,8 +1355,42 @@ func (s *ContentModerationService) worker(id int) {
 					slog.Error("content_moderation.worker_panic", "worker_id", id, "recover", r)
 				}
 			}()
+			if task.log != nil {
+				_ = s.processAsyncTaskWithConfig(ctx, id, &ContentModerationConfig{}, task)
+				return
+			}
+			cfg, err := s.loadConfig(ctx)
+			if err != nil || id >= cfg.WorkerCount {
+				if !s.requeueAsyncTask(task) {
+					slog.Warn("content_moderation.worker_requeue_failed",
+						"worker_id", id,
+						"api_key_id", task.input.APIKeyID,
+						"endpoint", task.input.Endpoint)
+				}
+				time.Sleep(time.Second)
+				return
+			}
 			_ = s.processAsyncTaskWithConfig(ctx, id, cfg, task)
 		}()
+	}
+}
+
+func (s *ContentModerationService) requeueAsyncTask(task contentModerationTask) bool {
+	if s == nil || s.asyncQueue == nil {
+		return false
+	}
+	select {
+	case s.asyncQueue <- task:
+		return true
+	default:
+		if task.log != nil {
+			queueDelay := int(time.Since(task.enqueuedAt).Milliseconds())
+			task.log.QueueDelayMS = &queueDelay
+			s.writeContentModerationLog(context.Background(), task.log)
+		} else {
+			s.asyncDropped.Add(1)
+		}
+		return false
 	}
 }
 
