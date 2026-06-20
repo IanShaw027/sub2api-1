@@ -38,4 +38,11 @@ func TestClassifyUpstreamForwardError(t *testing.T) {
 		require.Contains(t, detail.Detail, "refresh_token=***")
 		require.Contains(t, detail.Detail, "key=***")
 	})
+
+	t.Run("sanitizes bearer tokens", func(t *testing.T) {
+		detail := classifyUpstreamForwardError(errors.New(`proxy failed Authorization: Bearer sk-secret-token, retrying`))
+		require.Equal(t, "upstream_transport_error", detail.ErrorType)
+		require.NotContains(t, detail.Detail, "sk-secret-token")
+		require.Contains(t, detail.Detail, "Authorization: Bearer ***")
+	})
 }

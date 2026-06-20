@@ -13,6 +13,7 @@ import (
 
 var upstreamHTTP2StreamErrorPattern = regexp.MustCompile(`stream error: stream ID \d+; ([A-Z_]+)(?:;|$)`)
 var upstreamForwardSensitiveQueryParamPattern = regexp.MustCompile(`(?i)([?&](?:key|client_secret|access_token|refresh_token)=)[^&"\s]+`)
+var upstreamForwardSensitiveBearerPattern = regexp.MustCompile(`(?i)(authorization:\s*bearer\s+)[^,"\s]+`)
 
 type upstreamForwardErrorDetail struct {
 	ErrorType string
@@ -183,7 +184,8 @@ func sanitizeUpstreamForwardErrorDetail(msg string) string {
 	if msg == "" {
 		return msg
 	}
-	return upstreamForwardSensitiveQueryParamPattern.ReplaceAllString(msg, `$1***`)
+	msg = upstreamForwardSensitiveQueryParamPattern.ReplaceAllString(msg, `$1***`)
+	return upstreamForwardSensitiveBearerPattern.ReplaceAllString(msg, `${1}***`)
 }
 
 func parseUpstreamHTTP2StreamError(detail string) string {

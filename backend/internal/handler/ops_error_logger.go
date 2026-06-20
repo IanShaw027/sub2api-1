@@ -775,6 +775,9 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 					errorType = s
 				}
 			}
+			if errorType == "upstream_canceled_error" {
+				return
+			}
 
 			entry := &service.OpsInsertErrorLogInput{
 				RequestID:       requestID,

@@ -322,6 +322,42 @@ func TestOpsErrorLoggerMiddleware_RecordsRecoveredUpstreamErrorOnSuccessfulReque
 	}
 }
 
+func TestOpsErrorLoggerMiddleware_SkipsRecoveredUpstreamCanceledOnSuccessfulRequest(t *testing.T) {
+	resetOpsErrorLoggerStateForTest(t)
+	t.Cleanup(func() { resetOpsErrorLoggerStateForTest(t) })
+	gin.SetMode(gin.TestMode)
+
+	opsErrorLogOnce.Do(func() {})
+	opsErrorLogMu.Lock()
+	opsErrorLogQueue = make(chan opsErrorLogJob, 1)
+	opsErrorLogMu.Unlock()
+
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := gin.New()
+	r.POST("/v1/responses", OpsErrorLoggerMiddleware(ops), func(c *gin.Context) {
+		body := []byte(`{"model":"gpt-5.5","input":"hi","stream":true}`)
+		setOpsRequestContext(c, "gpt-5.5", true, body)
+		setOpsEndpointContext(c, "gpt-5.5", int16(service.RequestTypeSync))
+		c.Set(service.OpsUpstreamErrorTypeKey, "upstream_canceled_error")
+		c.Set(service.OpsUpstreamErrorsKey, []*service.OpsUpstreamErrorEvent{{
+			Platform:  service.PlatformOpenAI,
+			AccountID: 67124,
+			Kind:      "transport_error",
+			Message:   "Upstream request was canceled",
+			Detail:    "failed to get reader: context canceled",
+		}})
+		c.JSON(http.StatusOK, gin.H{"id": "resp_123"})
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(0), OpsErrorLogEnqueuedTotal())
+	require.Equal(t, int64(0), OpsErrorLogQueueLength())
+}
+
 func TestShouldSkipOpsErrorLog_NewAdvancedFilters(t *testing.T) {
 	repo := &opsLoggerSettingRepoStub{values: map[string]string{}}
 	raw, err := json.Marshal(map[string]any{

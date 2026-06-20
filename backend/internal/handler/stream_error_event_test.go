@@ -222,6 +222,16 @@ func TestGatewayHandleStreamingAwareError_MessagesStreamingKeepsLegacy(t *testin
 	assert.True(t, strings.HasPrefix(body, `data: {"type":"error"`), "got: %q", body)
 }
 
+func TestGatewayHandleStreamingAwareError_BareChatCompletionsStreamingAppendsDone(t *testing.T) {
+	c, w := newGinContextForEndpoint(t, "/chat/completions")
+	h := &GatewayHandler{}
+	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "boom", true)
+
+	body := w.Body.String()
+	assert.True(t, strings.HasPrefix(body, `data: {"type":"error"`), "got: %q", body)
+	assert.Contains(t, body, "data: [DONE]\n\n")
+}
+
 // 项目里 /responses 注册在多组路由：/v1/responses（gateway）、裸 /responses（top-level）、
 // /backend-api/codex/responses（codex direct）。我们 fix 必须覆盖全部，
 // 否则一些客户端走的路径就不会发 response.failed，照样报 stream closed。
