@@ -229,9 +229,23 @@ func TestListAvailable_FiltersPricingOnlyModelsBySchedulableCapabilities(t *test
 			{ID: 11, Platform: "anthropic", Models: []string{"pricing-only-model"}, InputPrice: testPtrFloat64(9e-6)},
 		},
 	}}
-	svc := newAvailableChannelService(channels, &stubGroupRepoForAvailable{
+	groupRepo := &stubGroupRepoForAvailable{
 		activeGroups: []Group{{ID: 1, Name: "g1", Platform: "anthropic"}},
-	})
+	}
+	accountRepo := &stubAccountRepoForAvailable{
+		accountsByGroupPlatform: map[availableGroupPlatformKey][]Account{
+			{groupID: 1, platform: "anthropic"}: {{
+				ID:          10,
+				Platform:    "anthropic",
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"schedulable-model": "schedulable-model"},
+				},
+			}},
+		},
+	}
+	svc := newAvailableChannelServiceWithAccounts(channels, groupRepo, accountRepo)
 
 	out, err := svc.ListAvailable(context.Background())
 	require.NoError(t, err)
