@@ -26,7 +26,7 @@ func TestResponsesToAnthropicRequest_ConvertsStringInput(t *testing.T) {
 	assert.JSONEq(t, `"Hello, Anthropic"`, string(out.Messages[0].Content))
 }
 
-func TestResponsesToAnthropicRequest_MapsWebFetchToolDefinitionToFunctionTool(t *testing.T) {
+func TestResponsesToAnthropicRequest_MapsWebFetchToolDefinitionToServerTool(t *testing.T) {
 	req := &ResponsesRequest{
 		Model:           "gpt-5.4",
 		Input:           json.RawMessage(`"Fetch this page"`),
@@ -44,10 +44,60 @@ func TestResponsesToAnthropicRequest_MapsWebFetchToolDefinitionToFunctionTool(t 
 	out, err := ResponsesToAnthropicRequest(req)
 	require.NoError(t, err)
 	require.Len(t, out.Tools, 1)
-	assert.Empty(t, out.Tools[0].Type)
-	assert.Equal(t, "webfetch", out.Tools[0].Name)
-	assert.Equal(t, "Fetch a specific URL", out.Tools[0].Description)
-	assert.JSONEq(t, `{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}`, string(out.Tools[0].InputSchema))
+	assert.Equal(t, "web_fetch_20250910", out.Tools[0].Type)
+	assert.Equal(t, "web_fetch", out.Tools[0].Name)
+	assert.Empty(t, out.Tools[0].Description)
+	assert.Empty(t, out.Tools[0].InputSchema)
+}
+
+func TestResponsesToAnthropicRequest_MapsServerToolChoice(t *testing.T) {
+	tests := []struct {
+		name       string
+		toolType   string
+		choice     string
+		wantName   string
+		wantChoice string
+	}{
+		{
+			name:       "web_search",
+			toolType:   "web_search",
+			choice:     `{"type":"web_search"}`,
+			wantName:   "web_search",
+			wantChoice: `{"type":"tool","name":"web_search"}`,
+		},
+		{
+			name:       "google_search",
+			toolType:   "google_search",
+			choice:     `{"type":"google_search"}`,
+			wantName:   "web_search",
+			wantChoice: `{"type":"tool","name":"web_search"}`,
+		},
+		{
+			name:       "web_fetch",
+			toolType:   "web_fetch",
+			choice:     `{"type":"web_fetch"}`,
+			wantName:   "web_fetch",
+			wantChoice: `{"type":"tool","name":"web_fetch"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &ResponsesRequest{
+				Model:           "gpt-5.4",
+				Input:           json.RawMessage(`"Use the server tool"`),
+				MaxOutputTokens: intPtr(256),
+				Tools:          []ResponsesTool{{Type: tt.toolType}},
+				ToolChoice:     json.RawMessage(tt.choice),
+			}
+
+			out, err := ResponsesToAnthropicRequest(req)
+			require.NoError(t, err)
+			require.Len(t, out.Tools, 1)
+			assert.Equal(t, tt.wantName, out.Tools[0].Name)
+			require.JSONEq(t, tt.wantChoice, string(out.ToolChoice))
+		})
+	}
 }
 
 func TestResponsesToAnthropicRequest_DefaultsMaxOutputTokensWhenUnsetOrZero(t *testing.T) {

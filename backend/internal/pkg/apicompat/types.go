@@ -587,8 +587,10 @@ type ChatImageURL struct {
 
 // ChatTool describes a tool available to the model.
 type ChatTool struct {
-	Type     string        `json:"type"` // "function"
-	Function *ChatFunction `json:"function,omitempty"`
+	Type      string          `json:"type"` // "function" | "web_search" | "google_search" | "web_fetch"
+	Function  *ChatFunction   `json:"function,omitempty"`
+	WebSearch json.RawMessage `json:"web_search,omitempty"`
+	WebFetch  json.RawMessage `json:"web_fetch,omitempty"`
 }
 
 // ChatFunction describes a function tool definition.

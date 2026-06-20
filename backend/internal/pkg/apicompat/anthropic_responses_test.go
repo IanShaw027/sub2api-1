@@ -147,6 +147,26 @@ func TestAnthropicToResponses_ToolUse(t *testing.T) {
 	assert.Equal(t, "Sunny, 72°F", items[3].Output)
 }
 
+func TestAnthropicToResponses_MapsWebFetchToolDefinition(t *testing.T) {
+	req := &AnthropicRequest{
+		Model:     "gpt-5.4",
+		MaxTokens: 1024,
+		Messages: []AnthropicMessage{
+			{Role: "user", Content: json.RawMessage(`"Fetch https://example.com"`)},
+		},
+		Tools: []AnthropicTool{
+			{Type: "web_fetch_20250910", Name: "web_fetch"},
+		},
+	}
+
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
+	require.Len(t, resp.Tools, 1)
+	assert.Equal(t, "web_fetch", resp.Tools[0].Type)
+	assert.Empty(t, resp.Tools[0].Name)
+	assert.Empty(t, resp.Tools[0].Parameters)
+}
+
 func TestAnthropicToResponses_PreservesToolReferenceInToolResult(t *testing.T) {
 	req := &AnthropicRequest{
 		Model:     "gpt-5.4",

@@ -617,10 +617,8 @@ func convertResponsesToAnthropicTools(tools []ResponsesTool) []AnthropicTool {
 			})
 		case "web_fetch", "web_fetch_20250910":
 			out = append(out, AnthropicTool{
-				Name:        "webfetch",
-				Description: t.Description,
-				InputSchema: normalizeAnthropicInputSchema(t.Parameters),
-				Strict:      t.Strict,
+				Type: "web_fetch_20250910",
+				Name: "web_fetch",
 			})
 		case "function":
 			out = append(out, AnthropicTool{
@@ -685,14 +683,19 @@ func convertResponsesToAnthropicToolChoice(raw json.RawMessage, parallelToolCall
 		} `json:"function"`
 	}
 	if err := json.Unmarshal(raw, &tc); err == nil {
-		switch tc.Type {
-		case "auto":
+		choiceType := strings.ToLower(strings.TrimSpace(tc.Type))
+		switch {
+		case choiceType == "auto":
 			return marshalAnthropicToolChoice("auto", "", disableParallel)
-		case "required":
+		case choiceType == "required":
 			return marshalAnthropicToolChoice("any", "", disableParallel)
-		case "none":
+		case choiceType == "none":
 			return marshalAnthropicToolChoice("none", "", disableParallel)
-		case "function":
+		case choiceType == "google_search" || strings.HasPrefix(choiceType, "web_search"):
+			return marshalAnthropicToolChoice("tool", "web_search", disableParallel)
+		case strings.HasPrefix(choiceType, "web_fetch"):
+			return marshalAnthropicToolChoice("tool", "web_fetch", disableParallel)
+		case choiceType == "function":
 			name := strings.TrimSpace(tc.Name)
 			if name == "" {
 				name = strings.TrimSpace(tc.Function.Name)

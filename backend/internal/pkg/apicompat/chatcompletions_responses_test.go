@@ -138,6 +138,36 @@ func TestChatCompletionsToResponses_FunctionToolParametersNormalized(t *testing.
 	assert.JSONEq(t, `{"type":"object","properties":{}}`, string(resp.Tools[0].Parameters))
 }
 
+func TestChatCompletionsToResponses_MapsNativeServerTools(t *testing.T) {
+	req := &ChatCompletionsRequest{
+		Model: "gpt-4o",
+		Messages: []ChatMessage{
+			{Role: "user", Content: json.RawMessage(`"Search the web"`)},
+		},
+		Tools: []ChatTool{
+			{Type: "web_search"},
+			{Type: "google_search"},
+			{Type: "web_fetch"},
+			{
+				Type: "function",
+				Function: &ChatFunction{
+					Name:       "lookup",
+					Parameters: json.RawMessage(`{"type":"object"}`),
+				},
+			},
+		},
+	}
+
+	resp, err := ChatCompletionsToResponses(req)
+	require.NoError(t, err)
+	require.Len(t, resp.Tools, 4)
+	assert.Equal(t, "web_search", resp.Tools[0].Type)
+	assert.Equal(t, "google_search", resp.Tools[1].Type)
+	assert.Equal(t, "web_fetch", resp.Tools[2].Type)
+	assert.Equal(t, "function", resp.Tools[3].Type)
+	assert.Equal(t, "lookup", resp.Tools[3].Name)
+}
+
 func TestChatCompletionsToResponses_MaxTokens(t *testing.T) {
 	t.Run("max_tokens", func(t *testing.T) {
 		maxTokens := 100
@@ -710,16 +740,26 @@ func TestChatCompletionsResponseToResponses_ContentFilterMapsToIncomplete(t *tes
 	assert.Equal(t, "blocked", out.Output[0].Content[0].Text)
 }
 
-func TestResponsesToChatCompletionsRequest_RejectsUnsupportedToolTypes(t *testing.T) {
+func TestResponsesToChatCompletionsRequest_MapsServerToolsToNativeTools(t *testing.T) {
 	req := &ResponsesRequest{
 		Model: "gpt-4o",
 		Input: json.RawMessage(`"hello"`),
-		Tools: []ResponsesTool{{Type: "web_search", Name: "search"}},
+		Tools: []ResponsesTool{
+			{Type: "web_search", Name: "search"},
+			{Type: "web_fetch"},
+			{Type: "google_search"},
+		},
+		ToolChoice: json.RawMessage(`{"type":"google_search"}`),
 	}
 
-	_, err := ResponsesToChatCompletionsRequest(req)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unsupported Responses tool type")
+	out, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.Len(t, out.Tools, 2)
+	require.Equal(t, "web_search", out.Tools[0].Type)
+	require.Nil(t, out.Tools[0].Function)
+	require.Equal(t, "web_fetch", out.Tools[1].Type)
+	require.Nil(t, out.Tools[1].Function)
+	require.JSONEq(t, `{"type":"web_search"}`, string(out.ToolChoice))
 }
 
 func TestResponsesToChatCompletions_CachedTokens(t *testing.T) {

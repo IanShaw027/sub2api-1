@@ -523,6 +523,10 @@ func convertAnthropicToolsToResponses(tools []AnthropicTool) []ResponsesTool {
 			out = append(out, ResponsesTool{Type: "web_search"})
 			continue
 		}
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(t.Type)), "web_fetch") {
+			out = append(out, ResponsesTool{Type: "web_fetch"})
+			continue
+		}
 		out = append(out, ResponsesTool{
 			Type:        "function",
 			Name:        t.Name,

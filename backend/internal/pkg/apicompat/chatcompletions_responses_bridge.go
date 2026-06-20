@@ -429,9 +429,19 @@ func chatContentFromSingleResponsesPart(partType string, part map[string]json.Ra
 
 func responsesToolsToChatTools(tools []ResponsesTool) ([]ChatTool, error) {
 	out := make([]ChatTool, 0, len(tools))
+	seenServerTools := make(map[string]struct{})
 	for _, tool := range tools {
+		if chatTool, ok := responsesServerToolToNativeChatTool(tool); ok {
+			if _, seen := seenServerTools[chatTool.Type]; seen {
+				continue
+			}
+			seenServerTools[chatTool.Type] = struct{}{}
+			out = append(out, chatTool)
+			continue
+		}
 		if tool.Type != "function" {
-			return nil, fmt.Errorf("unsupported Responses tool type %q", tool.Type)
+			out = append(out, responsesServerToolToChatFunctionFallback(tool))
+			continue
 		}
 		out = append(out, ChatTool{
 			Type: "function",
@@ -446,12 +456,115 @@ func responsesToolsToChatTools(tools []ResponsesTool) ([]ChatTool, error) {
 	return out, nil
 }
 
+func responsesServerToolToNativeChatTool(tool ResponsesTool) (ChatTool, bool) {
+	toolType := strings.ToLower(strings.TrimSpace(tool.Type))
+	switch {
+	case toolType == "google_search" || strings.HasPrefix(toolType, "web_search"):
+		return ChatTool{Type: "web_search"}, true
+	case strings.HasPrefix(toolType, "web_fetch"):
+		return ChatTool{Type: "web_fetch"}, true
+	default:
+		return ChatTool{}, false
+	}
+}
+
+func responsesServerToolToChatFunctionFallback(tool ResponsesTool) ChatTool {
+	name := canonicalResponsesServerToolFunctionName(tool)
+	description := strings.TrimSpace(tool.Description)
+	if description == "" {
+		description = defaultResponsesServerToolDescription(name)
+	}
+	parameters := bytesTrimSpace(tool.Parameters)
+	if len(parameters) == 0 || string(parameters) == "null" {
+		parameters = defaultResponsesServerToolParameters(name)
+	}
+	return ChatTool{
+		Type: "function",
+		Function: &ChatFunction{
+			Name:        name,
+			Description: description,
+			Parameters:  parameters,
+			Strict:      tool.Strict,
+		},
+	}
+}
+
+func canonicalResponsesServerToolFunctionName(tool ResponsesTool) string {
+	toolType := strings.ToLower(strings.TrimSpace(tool.Type))
+	switch {
+	case toolType == "google_search" || strings.HasPrefix(toolType, "web_search"):
+		return "web_search"
+	case strings.HasPrefix(toolType, "web_fetch"):
+		return "web_fetch"
+	}
+	if name := sanitizeChatFunctionName(tool.Name); name != "" {
+		return name
+	}
+	if name := sanitizeChatFunctionName(tool.Type); name != "" {
+		return name
+	}
+	return "tool"
+}
+
+func defaultResponsesServerToolDescription(name string) string {
+	switch name {
+	case "web_search":
+		return "Search the web for current information."
+	case "web_fetch":
+		return "Fetch a web page by URL."
+	default:
+		return "Invoke the requested tool."
+	}
+}
+
+func defaultResponsesServerToolParameters(name string) json.RawMessage {
+	switch name {
+	case "web_search":
+		return json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}`)
+	case "web_fetch":
+		return json.RawMessage(`{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"}},"required":["url"]}`)
+	default:
+		return json.RawMessage(`{"type":"object","properties":{}}`)
+	}
+}
+
+func sanitizeChatFunctionName(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '_' || r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return strings.Trim(b.String(), "_-")
+}
+
 func responsesToolChoiceToChatToolChoice(raw json.RawMessage) json.RawMessage {
 	var choice map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &choice); err != nil {
 		return raw
 	}
-	if rawString(choice["type"]) != "function" {
+	choiceType := rawString(choice["type"])
+	if choiceType != "function" {
+		if chatTool, ok := responsesServerToolToNativeChatTool(ResponsesTool{Type: choiceType}); ok {
+			out, err := json.Marshal(map[string]any{"type": chatTool.Type})
+			if err != nil {
+				return raw
+			}
+			return out
+		}
 		return raw
 	}
 	name := rawString(choice["name"])

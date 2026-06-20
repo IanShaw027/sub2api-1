@@ -473,17 +473,24 @@ func convertChatToolsToResponses(tools []ChatTool, functions []ChatFunction) []R
 	var out []ResponsesTool
 
 	for _, t := range tools {
-		if t.Type != "function" || t.Function == nil {
+		toolType := strings.ToLower(strings.TrimSpace(t.Type))
+		switch {
+		case toolType == "google_search" || strings.HasPrefix(toolType, "web_search"):
+			out = append(out, ResponsesTool{Type: t.Type})
 			continue
+		case strings.HasPrefix(toolType, "web_fetch"):
+			out = append(out, ResponsesTool{Type: t.Type})
+			continue
+		case t.Type == "function" && t.Function != nil:
+			rt := ResponsesTool{
+				Type:        "function",
+				Name:        t.Function.Name,
+				Description: t.Function.Description,
+				Parameters:  normalizeToolParameters(t.Function.Parameters),
+				Strict:      t.Function.Strict,
+			}
+			out = append(out, rt)
 		}
-		rt := ResponsesTool{
-			Type:        "function",
-			Name:        t.Function.Name,
-			Description: t.Function.Description,
-			Parameters:  normalizeToolParameters(t.Function.Parameters),
-			Strict:      t.Function.Strict,
-		}
-		out = append(out, rt)
 	}
 
 	// Legacy functions[] are treated as function-type tools.
