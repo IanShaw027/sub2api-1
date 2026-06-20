@@ -44,7 +44,7 @@ const (
 	defaultOpenAIWSMaxIdlePerAccount        = 4
 	defaultOpenAIWSStickyReservePercent     = 30
 	defaultOpenAIWSNeutralPrewarmPercent    = 20
-	defaultOpenAIWSSessionIdleTTLSeconds    = 300
+	defaultOpenAIWSSessionIdleTTLSeconds    = 30
 	openAIWSMaxIdlePerAccountUpperBound     = 64
 	openAIWSSessionIdleTTLSecondsUpperBound = 3600
 )

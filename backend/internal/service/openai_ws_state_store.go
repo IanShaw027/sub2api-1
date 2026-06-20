@@ -49,6 +49,7 @@ type openAIWSSessionContextValue struct {
 	materializedShapes      []string   // no raw values; JSON path/type shape for mismatch diagnostics
 	materializedCount       int        // = len(input_N) + len(raw output_N)
 	inputCount              int        // = len(input_N); 用于区分 break 落在 input 前缀还是 output 边界
+	inputOnlyContext        bool       // raw output 未捕获时的降级上下文；后续需裁掉历史 replay 输出项
 	nonInputHash            [32]byte
 	rawVsClientVisibleEqual bool
 }
@@ -470,14 +471,6 @@ func (s *defaultOpenAIWSStateStore) DeleteConnScopedState(connID string) {
 		}
 	}
 	s.sessionToConnMu.Unlock()
-
-	s.sessionContextMu.Lock()
-	for key, binding := range s.sessionContext {
-		if strings.TrimSpace(binding.value.connID) == conn {
-			delete(s.sessionContext, key)
-		}
-	}
-	s.sessionContextMu.Unlock()
 
 	s.DeleteConnLastResponse(conn)
 }

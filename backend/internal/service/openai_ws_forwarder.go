@@ -2006,6 +2006,35 @@ func shouldForceNewConnOnStoreDisabled(mode, lastFailureReason string) bool {
 	}
 }
 
+func isOpenAIWSDeltaConnReanchorRetryReason(lastFailureReason string) bool {
+	reason := strings.TrimPrefix(strings.TrimSpace(lastFailureReason), "prewarm_")
+	switch reason {
+	case "write_request", "write":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldAllowOpenAIWSDeltaConnReanchor(
+	lastFailureReason string,
+	stateStore OpenAIWSStateStore,
+	groupID int64,
+	apiKeyID int64,
+	sessionHash string,
+	account *Account,
+) bool {
+	if !isOpenAIWSDeltaConnReanchorRetryReason(lastFailureReason) || stateStore == nil || account == nil ||
+		strings.TrimSpace(sessionHash) == "" {
+		return false
+	}
+	cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
+	if !ok {
+		return false
+	}
+	return cached.accountID == account.ID && strings.TrimSpace(cached.lastResponseID) != ""
+}
+
 func shouldUseOpenAIWSNeutralForColdSession(
 	account *Account,
 	httpIngressWSOneShot bool,
@@ -2531,6 +2560,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	previousResponseID := openAIWSPayloadString(payload, "previous_response_id")
 	previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
 	promptCacheKey := openAIWSPayloadString(payload, "prompt_cache_key")
+	if promptCacheKey == "" {
+		promptCacheKey = getOpenAIRoutingPromptCacheKey(c)
+	}
 	_, hasTools := payload["tools"]
 	debugEnabled := isOpenAIWSModeDebugEnabled()
 	payloadBytes := -1
@@ -2635,6 +2667,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	storeDisabledConnMode := s.openAIWSStoreDisabledConnMode()
 	forceNewConnByPolicy := shouldForceNewConnOnStoreDisabled(storeDisabledConnMode, lastFailureReason)
 	forceNewConn := forceNewConnByPolicy && storeDisabled && previousResponseID == "" && sessionHash != "" && preferredConnID == ""
+	allowDeltaConnReanchor := shouldAllowOpenAIWSDeltaConnReanchor(lastFailureReason, stateStore, groupID, apiKeyID, sessionHash, account)
+	if allowDeltaConnReanchor {
+		forceNewConn = true
+	}
 	connProfile := openAIWSConnProfileSessionBound
 	promoteNeutralConnToSessionBound := false
 	pool := s.getOpenAIWSConnPool()
@@ -2661,7 +2697,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				useNeutral = true
 			}
 		}
-		if useNeutral {
+		if useNeutral && !allowDeltaConnReanchor {
 			connProfile = openAIWSConnProfileNeutral
 			forceNewConn = false
 			wsHeaders = s.buildOpenAIWSNeutralHeaders(account, token, decision, isCodexCLI)
@@ -2830,6 +2866,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				ConnMostRecentResponseID: connMostRecent,
 				CurrentPayload:           contextPayloadRaw,
 				HasFunctionCallOutput:    HasToolContinuationOutputInRawPayload(contextPayloadRaw),
+				AllowConnReanchor:        allowDeltaConnReanchor,
 				Cached:                   cached,
 				CachedFound:              found,
 			}
@@ -3485,7 +3522,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		stateStore.BindSessionConn(groupID, sessionHash, lease.ConnID(), s.openAIWSSessionStickyTTL())
 	}
 	if shadowOwner && deltaShadowEnabled && stateStore != nil && responseID != "" && connID != "" &&
-		!clientDisconnected && deltaShadowOutputCaptured {
+		!clientDisconnected {
 		if inputItems, _, ierr := openAIWSExtractNormalizedInputSequence(contextPayloadRaw); ierr == nil {
 			if inputHashes, hok := openAIWSCanonicalItemHashes(inputItems); hok {
 				var materializedShapes []string
@@ -3508,6 +3545,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 					materializedShapes:      materializedShapes,
 					materializedCount:       len(materialized),
 					inputCount:              len(inputHashes),
+					inputOnlyContext:        !deltaShadowOutputCaptured,
 					nonInputHash:            nonInputHash,
 					rawVsClientVisibleEqual: deltaShadowRawClientEquiv,
 				}, ttl)
@@ -5257,11 +5295,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if stateStore != nil && storeDisabled && sessionHash != "" && !result.ClientDisconnected {
 				stateStore.BindSessionConn(groupID, sessionHash, connID, s.openAIWSSessionStickyTTL())
 			}
-			// TEMP_DIAG(openai_ws_delta_shadow): owner 在干净完成且捕获到 output 时写会话上下文指纹，
-			// 用 input_N(本轮实际发送的 full input) ++ raw output_N 构成 materialized context。
+			// TEMP_DIAG(openai_ws_delta_shadow): owner 在干净完成后写会话上下文指纹；
+			// 优先用 input_N(本轮实际发送的 full input) ++ raw output_N，缺少 raw output 时降级为 input-only context。
 			if shadowOwner {
 				if deltaShadowEnabled && stateStore != nil && responseID != "" && connID != "" &&
-					!result.ClientDisconnected && result.DeltaShadowOutputCaptured {
+					!result.ClientDisconnected {
 					if inputItems, _, ierr := openAIWSExtractNormalizedInputSequence(currentPayload); ierr == nil {
 						if inputHashes, hok := openAIWSCanonicalItemHashes(inputItems); hok {
 							var materializedShapes []string
@@ -5284,6 +5322,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 								materializedShapes:      materializedShapes,
 								materializedCount:       len(materialized),
 								inputCount:              len(inputHashes),
+								inputOnlyContext:        !result.DeltaShadowOutputCaptured,
 								nonInputHash:            nonInputHash,
 								rawVsClientVisibleEqual: result.DeltaShadowRawClientEquiv,
 							}, ttl)

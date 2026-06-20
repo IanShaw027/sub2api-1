@@ -547,6 +547,7 @@ type openAIWSDeltaShadowInput struct {
 	ConnMostRecentResponseID string // GetConnLastResponse(leaseConnID)
 	CurrentPayload           []byte
 	HasFunctionCallOutput    bool
+	AllowConnReanchor        bool
 	Cached                   openAIWSSessionContextValue
 	CachedFound              bool
 }
@@ -580,6 +581,8 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 	log.ConnMatch = strings.TrimSpace(in.Cached.connID) != "" && in.Cached.connID == strings.TrimSpace(in.LeaseConnID)
 	log.MostRecentMatch = strings.TrimSpace(in.ConnMostRecentResponseID) != "" &&
 		in.ConnMostRecentResponseID == strings.TrimSpace(in.Cached.lastResponseID)
+	connAnchorMatch := log.ConnMatch && log.MostRecentMatch
+	connReanchorMatch := in.AllowConnReanchor && strings.TrimSpace(in.Cached.lastResponseID) != ""
 	log.RawClientEquiv = in.Cached.rawVsClientVisibleEqual
 
 	currentNonInput, _ := openAIWSNonInputHash(in.CurrentPayload)
@@ -616,13 +619,18 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 			log.FallbackReason = "materialized_count_invalid"
 			return log
 		}
-		delta := fullItems[in.Cached.materializedCount:]
+		deltaStart, ok := openAIWSActiveDeltaStartIndex(fullItems, in.Cached)
+		if !ok {
+			log.FallbackReason = "materialized_count_invalid"
+			return log
+		}
+		delta := fullItems[deltaStart:]
 		log.DeltaItems = len(delta)
 		log.DeltaBytes = openAIWSRawItemsByteLen(delta)
 		deltaToolFallbackReason = openAIWSActiveDeltaToolContinuationFallbackReason(delta)
 	}
 
-	log.Candidate = accountMatch && log.ConnMatch && log.MostRecentMatch && log.NonInputMatch &&
+	log.Candidate = accountMatch && (connAnchorMatch || connReanchorMatch) && log.NonInputMatch &&
 		log.RawClientEquiv && matched && deltaToolFallbackReason == ""
 
 	if log.Candidate {
@@ -633,9 +641,9 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 	switch {
 	case !accountMatch:
 		log.FallbackReason = "account_mismatch"
-	case !log.ConnMatch:
+	case !log.ConnMatch && !connReanchorMatch:
 		log.FallbackReason = "conn_mismatch"
-	case !log.MostRecentMatch:
+	case !log.MostRecentMatch && !connReanchorMatch:
 		log.FallbackReason = "not_most_recent"
 	case !log.NonInputMatch:
 		log.FallbackReason = "non_input_mismatch"
@@ -670,12 +678,13 @@ func buildOpenAIWSActiveDeltaPayload(in openAIWSDeltaShadowInput) (map[string]an
 		log.FallbackReason = "input_parse_error"
 		return nil, log, false, err
 	}
-	if in.Cached.materializedCount < 0 || in.Cached.materializedCount > len(fullItems) {
+	deltaStart, ok := openAIWSActiveDeltaStartIndex(fullItems, in.Cached)
+	if !ok {
 		log.Candidate = false
 		log.FallbackReason = "materialized_count_invalid"
 		return nil, log, false, nil
 	}
-	deltaItems := fullItems[in.Cached.materializedCount:]
+	deltaItems := fullItems[deltaStart:]
 	if len(deltaItems) == 0 {
 		log.Candidate = false
 		log.FallbackReason = "empty_delta"
@@ -709,6 +718,47 @@ func buildOpenAIWSActiveDeltaPayload(in openAIWSDeltaShadowInput) (map[string]an
 	log.DeltaItems = len(deltaItems)
 	log.DeltaBytes = openAIWSRawItemsByteLen(deltaItems)
 	return payload, log, true, nil
+}
+
+func openAIWSActiveDeltaStartIndex(fullItems []json.RawMessage, cached openAIWSSessionContextValue) (int, bool) {
+	if cached.materializedCount < 0 || cached.materializedCount > len(fullItems) {
+		return 0, false
+	}
+	start := cached.materializedCount
+	if cached.inputOnlyContext && cached.inputCount >= 0 && cached.materializedCount == cached.inputCount {
+		start = openAIWSSkipReplayedOutputItems(fullItems, start)
+	}
+	return start, true
+}
+
+func openAIWSSkipReplayedOutputItems(items []json.RawMessage, start int) int {
+	for start < len(items) && openAIWSItemLooksLikeReplayedResponseOutput(items[start]) {
+		start++
+	}
+	return start
+}
+
+func openAIWSItemLooksLikeReplayedResponseOutput(item json.RawMessage) bool {
+	parsed := gjson.ParseBytes(item)
+	itemType := strings.TrimSpace(parsed.Get("type").String())
+	role := strings.TrimSpace(parsed.Get("role").String())
+	switch itemType {
+	case "reasoning",
+		"web_search_call",
+		"file_search_call",
+		"computer_call",
+		"code_interpreter_call",
+		"image_generation_call",
+		"mcp_list_tools",
+		"mcp_approval_request":
+		return true
+	case "message":
+		return role == "" || role == "assistant"
+	}
+	if itemType == "" && role == "assistant" {
+		return true
+	}
+	return isCodexToolCallContextItemType(itemType)
 }
 
 func openAIWSActiveDeltaToolContinuationFallbackReason(delta []json.RawMessage) string {
@@ -748,7 +798,10 @@ func openAIWSActiveDeltaToolContinuationFallbackReason(delta []json.RawMessage) 
 	if openAIWSRawItemsHaveToolCallContextForOutputs(delta) {
 		return "delta_tool_continuation_self_contained"
 	}
-	return "delta_tool_continuation_mixed_context"
+	// Mixed deltas can contain a function_call_output that belongs to the
+	// previous response plus unrelated new tool-call context. The injected
+	// previous_response_id is the required anchor for that output.
+	return ""
 }
 
 // openAIWSRawItemsByteLen sums the raw byte length of a sequence of items (approx transmission size).

@@ -90,7 +90,7 @@ func TestOpenAIWSPoolRuntimeSettings_NeutralPrewarmPercentAndSessionTTLAccessors
 
 	require.Equal(t, defaultOpenAIWSNeutralPrewarmPercent, pool.neutralPrewarmPercent())
 	require.Equal(t, time.Duration(defaultOpenAIWSSessionIdleTTLSeconds)*time.Second, pool.sessionIdleTTL())
-	require.Equal(t, 5*time.Minute, pool.sessionIdleTTL())
+	require.Equal(t, 30*time.Second, pool.sessionIdleTTL())
 
 	StoreOpenAIWSPoolRuntimeSettings(25, 180)
 	require.Equal(t, 25, pool.neutralPrewarmPercent())

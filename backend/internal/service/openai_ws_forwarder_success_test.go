@@ -1483,6 +1483,106 @@ func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheK
 	require.Equal(t, openAIWSConnProfileSessionBound, profile)
 }
 
+func TestOpenAIGatewayService_Forward_WSv2_UsesRoutingPromptCacheKeyWhenPayloadKeyWasStripped(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.98.0")
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+	groupID := int64(1401)
+	apiKeyID := int64(2401)
+	c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+	c.Set(openAIRoutingPromptCacheKeyKey, "pcache_routing_only")
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+
+	captureConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_routing_prompt_cache","model":"gpt-5.1","usage":{"input_tokens":2,"output_tokens":1}}}`),
+		},
+	}
+	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(captureDialer)
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          32,
+		Name:        "openai-oauth",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "oauth-token-1",
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	reqBody := map[string]any{
+		"model":  "gpt-5.1",
+		"stream": true,
+		"store":  false,
+		"input": []any{
+			map[string]any{"type": "input_text", "text": "hi"},
+		},
+	}
+	result, err := svc.forwardOpenAIWSV2(
+		context.Background(),
+		c,
+		account,
+		reqBody,
+		"oauth-token-1",
+		OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2},
+		true,
+		true,
+		"gpt-5.1",
+		"gpt-5.1",
+		time.Now(),
+		1,
+		"",
+	)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_routing_prompt_cache", result.RequestID)
+	_, oneShot := c.Get("openai_http_ingress_ws_one_shot")
+	require.False(t, oneShot, "routing prompt_cache_key must prevent HTTP ingress one-shot even when upstream payload key was stripped")
+
+	require.NotNil(t, captureConn.lastWrite)
+	requestJSON := requestToJSONString(captureConn.lastWrite)
+	require.False(t, gjson.Get(requestJSON, "prompt_cache_key").Exists(), "routing-only prompt_cache_key must not be re-added to upstream payload")
+	sessionHash, _ := deriveOpenAIRequestScopedSessionHashes(c, "pcache_routing_only")
+	connID, ok := svc.getOpenAIWSStateStore().GetSessionConn(groupID, sessionHash)
+	require.True(t, ok, "routing prompt_cache_key should bind a session connection")
+	require.NotEmpty(t, connID)
+	profile, ok := pool.ConnProfile(account.ID, connID)
+	require.True(t, ok)
+	require.Equal(t, openAIWSConnProfileSessionBound, profile)
+}
+
 func TestOpenAIGatewayService_Forward_WSv2_PreservesTurnStateAndMetadata(t *testing.T) {
 	setGinTestMode()
 
