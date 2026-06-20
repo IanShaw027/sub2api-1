@@ -149,6 +149,22 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('OpenAI API Key 仅支持 embeddings 时不显示文本端点自动转换开关', () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['apikey'],
+      target: {
+        mode: 'selected',
+        accountIds: [1, 2],
+        selectedPlatforms: ['openai'],
+        selectedTypes: ['apikey'],
+        textEndpointAutoRouteConfigurable: false
+      }
+    })
+
+    expect(wrapper.find('#bulk-edit-text-endpoint-auto-route-enabled').exists()).toBe(false)
+  })
+
   it('OpenAI OAuth 批量编辑应提交 OAuth 专属 WS mode 字段', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],

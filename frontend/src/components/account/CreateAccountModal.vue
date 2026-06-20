@@ -4100,7 +4100,9 @@ const currentTextEndpointAutoRouteType = computed<AccountType>(() => {
 })
 
 const showTextEndpointAutoRoute = computed(() =>
-  supportsTextEndpointAutoRoute(form.platform, currentTextEndpointAutoRouteType.value)
+  supportsTextEndpointAutoRoute(form.platform, currentTextEndpointAutoRouteType.value, {
+    openAIEndpointCapabilities: openAIEndpointCapabilities.value
+  })
 )
 
 const mixedChannelWarningMessageText = computed(() => {
@@ -4962,7 +4964,12 @@ const buildTextEndpointAutoRouteExtra = (
   base?: Record<string, unknown>
 ): Record<string, unknown> | undefined => {
   const extra: Record<string, unknown> = { ...(base || {}) }
-  if (supportsTextEndpointAutoRoute(platform, type) && textEndpointAutoRouteEnabled.value) {
+  if (
+    supportsTextEndpointAutoRoute(platform, type, {
+      openAIEndpointCapabilities: openAIEndpointCapabilities.value
+    }) &&
+    textEndpointAutoRouteEnabled.value
+  ) {
     extra.text_endpoint_auto_route = true
   } else {
     delete extra.text_endpoint_auto_route

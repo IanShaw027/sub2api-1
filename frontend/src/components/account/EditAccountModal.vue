@@ -2886,7 +2886,9 @@ const isOpenAIModelRestrictionDisabled = computed(() =>
   props.account?.platform === 'openai' && openaiPassthroughEnabled.value
 )
 const showTextEndpointAutoRoute = computed(() =>
-  supportsTextEndpointAutoRoute(props.account?.platform, props.account?.type)
+  supportsTextEndpointAutoRoute(props.account?.platform, props.account?.type, {
+    openAIEndpointCapabilities: openAIEndpointCapabilities.value
+  })
 )
 const openAICompactStatusKey = computed(() => {
   if (!props.account || props.account.platform !== 'openai') return ''
@@ -3138,7 +3140,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   codexCLIOnlyEnabled.value = false
   codexCLIOnlyAllowClaudeCodeEnabled.value = false
   textEndpointAutoRouteEnabled.value =
-    supportsTextEndpointAutoRoute(newAccount.platform, newAccount.type) && extra?.text_endpoint_auto_route === true
+    supportsTextEndpointAutoRoute(newAccount.platform, newAccount.type, {
+      openAIEndpointCapabilities: normalizeOpenAIEndpointCapabilities(credentials?.openai_capabilities)
+    }) && extra?.text_endpoint_auto_route === true
   openAIEndpointCapabilities.value = [...OPENAI_ENDPOINT_CAPABILITIES]
   openAIResponsesMode.value = 'auto'
   const legacyOpenAIImageGenerationEnabled = extra?.openai_image_generation_enabled
@@ -4941,6 +4945,15 @@ const handleSubmit = async () => {
       }
       // Quota notify config
       writeQuotaNotifyToExtra(newExtra, 'update')
+      updatePayload.extra = newExtra
+    }
+
+    if (!showTextEndpointAutoRoute.value) {
+      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
+        (props.account.extra as Record<string, unknown>) ||
+        {}
+      const newExtra: Record<string, unknown> = { ...currentExtra }
+      delete newExtra.text_endpoint_auto_route
       updatePayload.extra = newExtra
     }
 

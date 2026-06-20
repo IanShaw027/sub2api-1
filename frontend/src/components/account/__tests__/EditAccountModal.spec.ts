@@ -1341,6 +1341,29 @@ describe('EditAccountModal', () => {
     expect(wrapper.find('[data-testid="text-endpoint-auto-route-toggle"]').exists()).toBe(false)
   })
 
+  it('hides and strips text endpoint auto-route for OpenAI API keys without Chat Completions capability', async () => {
+    const account = buildAccount()
+    account.credentials.openai_capabilities = ['embeddings']
+    account.extra = {
+      text_endpoint_auto_route: true
+    }
+    resetCommonMocks()
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.find('[data-testid="text-endpoint-auto-route-toggle"]').exists()).toBe(false)
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('text_endpoint_auto_route')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.openai_capabilities).toEqual([
+      'embeddings'
+    ])
+  })
+
   it('keeps at least one OpenAI APIKey endpoint capability selected', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset()

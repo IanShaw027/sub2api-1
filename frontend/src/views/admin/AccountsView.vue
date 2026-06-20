@@ -503,6 +503,10 @@ import { collectGeminiTierMetadataSources } from '@/utils/geminiExtra'
 import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 import { inferGeminiOAuthType } from '@/utils/geminiOAuthType'
 import type { Account, AccountPlatform, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
+import {
+  normalizeOpenAIEndpointCapabilities,
+  supportsTextEndpointAutoRoute
+} from '@/components/account/textEndpointAutoRoute'
 
 const CreateAccountModal = defineAsyncComponent(() => import('@/components/account/CreateAccountModal.vue'))
 const EditAccountModal = defineAsyncComponent(() => import('@/components/account/EditAccountModal.vue'))
@@ -532,6 +536,7 @@ type AccountBulkEditTarget =
       accountIds: number[]
       selectedPlatforms: AccountPlatform[]
       selectedTypes: AccountType[]
+      textEndpointAutoRouteConfigurable: boolean
     }
   | {
       mode: 'filtered'
@@ -548,6 +553,7 @@ type AccountBulkEditTarget =
       previewCount: number
       selectedPlatforms: AccountPlatform[]
       selectedTypes: AccountType[]
+      textEndpointAutoRouteConfigurable: boolean
     }
 const selPlatforms = computed<AccountPlatform[]>(() => {
   const platforms = new Set(
@@ -1648,7 +1654,15 @@ const buildBulkEditFilterSnapshot = () => {
 const collectSelectionMetadata = (rows: Account[]) => {
   const selectedPlatforms = Array.from(new Set(rows.map(account => account.platform)))
   const selectedTypes = Array.from(new Set(rows.map(account => account.type)))
-  return { selectedPlatforms, selectedTypes }
+  const textEndpointAutoRouteConfigurable = rows.length > 0 && rows.every(account =>
+    supportsTextEndpointAutoRoute(account.platform, account.type, {
+      openAIEndpointCapabilities:
+        account.platform === 'openai' && account.type === 'apikey'
+          ? normalizeOpenAIEndpointCapabilities(account.credentials?.openai_capabilities)
+          : undefined
+    })
+  )
+  return { selectedPlatforms, selectedTypes, textEndpointAutoRouteConfigurable }
 }
 
 const BULK_EDIT_FILTERED_PREVIEW_PAGE_SIZE = 100
@@ -1661,11 +1675,12 @@ const collectFilteredSelectionMetadata = async (filters: Record<string, unknown>
       const result = await adminAPI.accounts.list(page, BULK_EDIT_FILTERED_PREVIEW_PAGE_SIZE, filters)
       rows.push(...result.items)
     }
-    const { selectedPlatforms, selectedTypes } = collectSelectionMetadata(rows)
+    const { selectedPlatforms, selectedTypes, textEndpointAutoRouteConfigurable } = collectSelectionMetadata(rows)
     return {
       previewCount: firstPage.total,
       selectedPlatforms,
-      selectedTypes
+      selectedTypes,
+      textEndpointAutoRouteConfigurable
     }
   } catch (error) {
     console.error('Failed to load filtered bulk edit preview:', error)
@@ -1675,11 +1690,15 @@ const collectFilteredSelectionMetadata = async (filters: Record<string, unknown>
 }
 
 const openBulkEditSelected = () => {
+  const { textEndpointAutoRouteConfigurable } = collectSelectionMetadata(
+    accounts.value.filter(a => isSelected(a.id))
+  )
   bulkEditTarget.value = {
     mode: 'selected',
     accountIds: [...selIds.value],
     selectedPlatforms: [...selPlatforms.value],
-    selectedTypes: [...selTypes.value]
+    selectedTypes: [...selTypes.value],
+    textEndpointAutoRouteConfigurable
   }
   showBulkEdit.value = true
 }

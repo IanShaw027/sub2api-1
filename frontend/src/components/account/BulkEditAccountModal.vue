@@ -1266,10 +1266,12 @@ interface Props {
   selectedTypes: AccountType[]
   target?: {
     mode: 'selected' | 'filtered'
+    accountIds?: number[]
     filters?: Record<string, unknown>
     previewCount?: number
     selectedPlatforms?: AccountPlatform[]
     selectedTypes?: AccountType[]
+    textEndpointAutoRouteConfigurable?: boolean
   }
   proxies: ProxyConfig[]
   groups: AdminGroup[]
@@ -1321,11 +1323,13 @@ const allOpenAIAPIKey = computed(() => {
 const allOpenAIImageGenerationConfigurable = computed(() => allOpenAIPassthroughCapable.value)
 
 const allTextEndpointAutoRouteConfigurable = computed(() =>
-  targetSelectedPlatforms.value.length > 0 &&
-  targetSelectedTypes.value.length > 0 &&
-  targetSelectedPlatforms.value.every(platform =>
-    targetSelectedTypes.value.every(type => supportsTextEndpointAutoRoute(platform, type))
-  )
+  typeof props.target?.textEndpointAutoRouteConfigurable === 'boolean'
+    ? props.target.textEndpointAutoRouteConfigurable
+    : targetSelectedPlatforms.value.length > 0 &&
+      targetSelectedTypes.value.length > 0 &&
+      targetSelectedPlatforms.value.every(platform =>
+        targetSelectedTypes.value.every(type => supportsTextEndpointAutoRoute(platform, type))
+      )
 )
 
 // 是否全部为 Anthropic OAuth/SetupToken（RPM 配置仅在此条件下显示）

@@ -592,6 +592,37 @@ describe('CreateAccountModal', () => {
     expect(wrapper.find('[data-testid="text-endpoint-auto-route-toggle"]').exists()).toBe(false)
   })
 
+  it('does not submit text endpoint auto-route when OpenAI API key disables Chat Completions capability', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await findAccountTypeButton(wrapper, 1).trigger('click')
+    await nextTick()
+
+    await wrapper.get('[data-testid="text-endpoint-auto-route-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="openai-endpoint-capability-chat_completions"]').setValue(false)
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="text-endpoint-auto-route-toggle"]').exists()).toBe(false)
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('openai-embeddings')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'openai-embeddings',
+      platform: 'openai',
+      type: 'apikey',
+      credentials: expect.objectContaining({
+        openai_capabilities: ['embeddings']
+      })
+    }))
+    expect(createMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('text_endpoint_auto_route')
+  })
+
   it('creates an OpenAI API key account with TLS fingerprint settings', async () => {
     listTlsFingerprintProfilesMock.mockResolvedValue([{ id: 12, name: 'Chrome 124' }])
     listTlsFingerprintRoutersMock.mockResolvedValue([{ id: 9, name: 'UA Router' }])
