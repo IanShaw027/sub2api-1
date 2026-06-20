@@ -61,6 +61,42 @@ func (s *GeminiMessagesCompatService) ForwardAsChatCompletions(
 	return s.forwardClaudeBodyAsChatCompletions(ctx, c, account, claudeBody, originalModel, clientStream, includeUsage, startTime, body)
 }
 
+// ForwardAsResponses serves OpenAI Responses clients through Gemini accounts.
+// It preserves the client-facing Responses shape while using Gemini native
+// generateContent/streamGenerateContent upstream endpoints.
+func (s *GeminiMessagesCompatService) ForwardAsResponses(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+) (*ForwardResult, error) {
+	startTime := time.Now()
+
+	var responsesReq apicompat.ResponsesRequest
+	if err := json.Unmarshal(body, &responsesReq); err != nil {
+		writeResponsesError(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return nil, fmt.Errorf("parse responses request: %w", err)
+	}
+	if strings.TrimSpace(responsesReq.Model) == "" {
+		writeResponsesError(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return nil, fmt.Errorf("missing model in responses request")
+	}
+
+	anthropicReq, err := apicompat.ResponsesToAnthropicRequest(&responsesReq)
+	if err != nil {
+		writeResponsesError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return nil, fmt.Errorf("convert responses to anthropic: %w", err)
+	}
+	anthropicReq.Stream = responsesReq.Stream
+
+	claudeBody, err := json.Marshal(anthropicReq)
+	if err != nil {
+		return nil, fmt.Errorf("marshal responses compat request: %w", err)
+	}
+
+	return s.forwardClaudeBodyAsResponses(ctx, c, account, claudeBody, responsesReq.Model, responsesReq.Stream, startTime, body)
+}
+
 func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 	ctx context.Context,
 	c *gin.Context,
@@ -284,6 +320,224 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 	}, nil
 }
 
+func (s *GeminiMessagesCompatService) forwardClaudeBodyAsResponses(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	claudeBody []byte,
+	originalModel string,
+	clientStream bool,
+	startTime time.Time,
+	originalResponsesBody []byte,
+) (*ForwardResult, error) {
+	var req struct {
+		Model  string `json:"model"`
+		Stream bool   `json:"stream"`
+	}
+	if err := json.Unmarshal(claudeBody, &req); err != nil {
+		writeResponsesError(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return nil, fmt.Errorf("parse converted responses request: %w", err)
+	}
+	if strings.TrimSpace(req.Model) == "" {
+		writeResponsesError(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return nil, fmt.Errorf("missing model in converted responses request")
+	}
+
+	mappedModel := req.Model
+	if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
+		mappedModel = account.GetMappedModel(req.Model)
+	}
+
+	geminiReq, err := convertClaudeMessagesToGeminiGenerateContent(claudeBody)
+	if err != nil {
+		writeResponsesError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return nil, fmt.Errorf("convert anthropic to gemini: %w", err)
+	}
+	geminiReq = ensureGeminiFunctionCallThoughtSignatures(geminiReq)
+
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+
+	useUpstreamStream := clientStream
+	if account.Type == AccountTypeOAuth && !clientStream && strings.TrimSpace(account.GetCredential("project_id")) != "" {
+		useUpstreamStream = true
+	}
+
+	buildReq, requestIDHeader := s.buildGeminiChatCompletionsUpstreamRequestFunc(
+		account,
+		mappedModel,
+		geminiReq,
+		clientStream,
+		useUpstreamStream,
+	)
+
+	var resp *http.Response
+	for attempt := 1; attempt <= geminiMaxRetries; attempt++ {
+		upstreamReq, idHeader, err := buildReq(ctx)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err
+			}
+			writeResponsesError(c, http.StatusBadGateway, "upstream_error", err.Error())
+			return nil, err
+		}
+		requestIDHeader = idHeader
+
+		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		if err != nil {
+			safeErr := sanitizeUpstreamErrorMessage(err.Error())
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: 0,
+				Kind:               "request_error",
+				Message:            safeErr,
+			})
+			if attempt < geminiMaxRetries {
+				logger.LegacyPrintf("service.gemini_responses_compat", "Gemini account %d: upstream request failed, retry %d/%d: %v", account.ID, attempt, geminiMaxRetries, err)
+				sleepGeminiBackoff(attempt)
+				continue
+			}
+			detail := recordDetailedUpstreamTransportError(c, err)
+			writeResponsesError(c, http.StatusBadGateway, detail.ErrorType, formatUpstreamRequestFailedAfterRetries(detail))
+			return nil, err
+		}
+
+		if matched, rebuilt := s.checkErrorPolicyInLoop(ctx, account, resp); matched {
+			resp = rebuilt
+			break
+		} else {
+			resp = rebuilt
+		}
+
+		if resp.StatusCode >= 400 && s.shouldRetryGeminiUpstreamError(account, resp.StatusCode) {
+			respBody := s.readUpstreamErrorBody(resp)
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusForbidden && isGeminiInsufficientScope(resp.Header, respBody) {
+				resp = &http.Response{
+					StatusCode: resp.StatusCode,
+					Header:     resp.Header.Clone(),
+					Body:       io.NopCloser(bytes.NewReader(respBody)),
+				}
+				break
+			}
+			if resp.StatusCode == http.StatusTooManyRequests {
+				s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+			}
+			if attempt < geminiMaxRetries {
+				upstreamReqID := resp.Header.Get(requestIDHeader)
+				if upstreamReqID == "" {
+					upstreamReqID = resp.Header.Get("x-goog-request-id")
+				}
+				upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
+				upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+					Platform:           account.Platform,
+					AccountID:          account.ID,
+					AccountName:        account.Name,
+					UpstreamStatusCode: resp.StatusCode,
+					UpstreamRequestID:  upstreamReqID,
+					Kind:               "retry",
+					Message:            upstreamMsg,
+				})
+				logger.LegacyPrintf("service.gemini_responses_compat", "Gemini account %d: upstream status %d, retry %d/%d", account.ID, resp.StatusCode, attempt, geminiMaxRetries)
+				sleepGeminiBackoff(attempt)
+				continue
+			}
+			resp = &http.Response{
+				StatusCode: resp.StatusCode,
+				Header:     resp.Header.Clone(),
+				Body:       io.NopCloser(bytes.NewReader(respBody)),
+			}
+			break
+		}
+
+		break
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	requestID := resp.Header.Get(requestIDHeader)
+	if requestID == "" {
+		requestID = resp.Header.Get("x-goog-request-id")
+	}
+	if requestID != "" {
+		c.Header("x-request-id", requestID)
+	}
+
+	isOAuth := account.Type == AccountTypeOAuth
+	if resp.StatusCode >= 400 {
+		respBody := s.readUpstreamErrorBody(resp)
+		s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+		evBody := unwrapIfNeeded(isOAuth, respBody)
+		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(evBody))
+		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+
+		if s.shouldFailoverGeminiUpstreamError(resp.StatusCode) {
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: resp.StatusCode,
+				UpstreamRequestID:  requestID,
+				Kind:               "failover",
+				Message:            upstreamMsg,
+			})
+			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: evBody}
+		}
+		writeResponsesError(c, mapUpstreamStatusCode(resp.StatusCode), "server_error", upstreamMsg)
+		return nil, fmt.Errorf("gemini upstream error: %d %s", resp.StatusCode, upstreamMsg)
+	}
+
+	reasoningEffort := ExtractResponsesReasoningEffortFromBody(originalResponsesBody)
+	var usage *ClaudeUsage
+	var firstTokenMs *int
+	if clientStream {
+		streamRes, err := s.handleResponsesStreamingResponseFromGemini(c, resp, startTime, originalModel, isOAuth)
+		if err != nil {
+			return nil, err
+		}
+		usage = streamRes.usage
+		firstTokenMs = streamRes.firstTokenMs
+	} else if useUpstreamStream {
+		collected, usageObj, _, err := collectGeminiSSE(resp.Body, isOAuth)
+		if err != nil {
+			writeResponsesError(c, http.StatusBadGateway, "upstream_error", "Failed to read upstream stream")
+			return nil, err
+		}
+		collectedBytes, _ := json.Marshal(collected)
+		responsesResp, usageObj2, err := geminiResponseToResponses(collected, originalModel, collectedBytes, usageObj)
+		if err != nil {
+			writeResponsesError(c, http.StatusBadGateway, "upstream_error", "Failed to parse upstream response")
+			return nil, err
+		}
+		c.JSON(http.StatusOK, responsesResp)
+		usage = usageObj2
+	} else {
+		usageResp, err := s.handleResponsesNonStreamingResponseFromGemini(c, resp, originalModel, isOAuth)
+		if err != nil {
+			return nil, err
+		}
+		usage = usageResp
+	}
+	if usage == nil {
+		usage = &ClaudeUsage{}
+	}
+
+	return &ForwardResult{
+		RequestID:       requestID,
+		Usage:           *usage,
+		Model:           originalModel,
+		UpstreamModel:   mappedModel,
+		Stream:          clientStream,
+		Duration:        time.Since(startTime),
+		FirstTokenMs:    firstTokenMs,
+		ReasoningEffort: reasoningEffort,
+	}, nil
+}
+
 func (s *GeminiMessagesCompatService) buildGeminiChatCompletionsUpstreamRequestFunc(
 	account *Account,
 	mappedModel string,
@@ -484,6 +738,74 @@ func geminiResponseToChatCompletions(
 	}
 	responsesResp := apicompat.AnthropicToResponsesResponse(&anthropicResp)
 	return apicompat.ResponsesToChatCompletions(responsesResp, originalModel), usage, nil
+}
+
+func geminiResponseToResponses(
+	geminiResp map[string]any,
+	originalModel string,
+	rawData []byte,
+	usageOverride *ClaudeUsage,
+) (*apicompat.ResponsesResponse, *ClaudeUsage, error) {
+	claudeRespMap, usage := convertGeminiToClaudeMessage(geminiResp, originalModel, rawData)
+	if usageOverride != nil && (usageOverride.InputTokens > 0 || usageOverride.OutputTokens > 0 || usageOverride.CacheReadInputTokens > 0) {
+		usage = usageOverride
+		if usageMap, ok := claudeRespMap["usage"].(map[string]any); ok {
+			usageMap["input_tokens"] = usage.InputTokens
+			usageMap["output_tokens"] = usage.OutputTokens
+			usageMap["cache_read_input_tokens"] = usage.CacheReadInputTokens
+		}
+	}
+
+	claudeBytes, err := json.Marshal(claudeRespMap)
+	if err != nil {
+		return nil, nil, err
+	}
+	var anthropicResp apicompat.AnthropicResponse
+	if err := json.Unmarshal(claudeBytes, &anthropicResp); err != nil {
+		return nil, nil, err
+	}
+	responsesResp := apicompat.AnthropicToResponsesResponse(&anthropicResp)
+	responsesResp.Model = originalModel
+	return responsesResp, usage, nil
+}
+
+func (s *GeminiMessagesCompatService) handleResponsesNonStreamingResponseFromGemini(
+	c *gin.Context,
+	resp *http.Response,
+	originalModel string,
+	isOAuth bool,
+) (*ClaudeUsage, error) {
+	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
+	if err != nil {
+		return nil, err
+	}
+	if isOAuth {
+		if unwrappedBody, uwErr := unwrapGeminiResponse(respBody); uwErr == nil {
+			respBody = unwrappedBody
+		}
+	}
+
+	var geminiResp map[string]any
+	if err := json.Unmarshal(respBody, &geminiResp); err != nil {
+		writeResponsesError(c, http.StatusBadGateway, "upstream_error", "Failed to parse upstream response")
+		return nil, err
+	}
+
+	responsesResp, usage, err := geminiResponseToResponses(geminiResp, originalModel, respBody, nil)
+	if err != nil {
+		writeResponsesError(c, http.StatusBadGateway, "upstream_error", "Failed to parse upstream response")
+		return nil, err
+	}
+
+	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if respBytes, err := json.Marshal(responsesResp); err == nil {
+		respBytes = reverseToolNamesIfPresent(c, respBytes)
+		c.Data(http.StatusOK, "application/json; charset=utf-8", respBytes)
+	} else {
+		c.JSON(http.StatusOK, responsesResp)
+	}
+	return usage, nil
 }
 
 func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFromGemini(
@@ -779,6 +1101,284 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 	}
 
 	_, _ = io.WriteString(c.Writer, "data: [DONE]\n\n")
+	flusher.Flush()
+
+	return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+}
+
+func (s *GeminiMessagesCompatService) handleResponsesStreamingResponseFromGemini(
+	c *gin.Context,
+	resp *http.Response,
+	startTime time.Time,
+	originalModel string,
+	isOAuth bool,
+) (*geminiStreamResult, error) {
+	if s.responseHeaderFilter != nil {
+		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	}
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.WriteHeader(http.StatusOK)
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		return nil, errors.New("streaming not supported")
+	}
+
+	anthState := apicompat.NewAnthropicEventToResponsesState()
+	anthState.Model = originalModel
+
+	var usage ClaudeUsage
+	var firstTokenMs *int
+	firstChunk := true
+
+	writeResponsesEvents := func(events []apicompat.ResponsesStreamEvent) bool {
+		for _, event := range events {
+			sse, err := apicompat.ResponsesEventToSSE(event)
+			if err != nil {
+				continue
+			}
+			out := string(reverseToolNamesIfPresent(c, []byte(sse)))
+			if _, err := io.WriteString(c.Writer, out); err != nil {
+				return true
+			}
+		}
+		if len(events) > 0 {
+			flusher.Flush()
+		}
+		return false
+	}
+
+	emitAnthropicEvent := func(evt *apicompat.AnthropicStreamEvent) bool {
+		return writeResponsesEvents(apicompat.AnthropicEventToResponsesEvents(evt, anthState))
+	}
+
+	messageID := "msg_" + randomHex(12)
+	if emitAnthropicEvent(&apicompat.AnthropicStreamEvent{
+		Type: "message_start",
+		Message: &apicompat.AnthropicResponse{
+			ID:      messageID,
+			Type:    "message",
+			Role:    "assistant",
+			Model:   originalModel,
+			Content: []apicompat.AnthropicContentBlock{},
+			Usage:   apicompat.AnthropicUsage{},
+		},
+	}) {
+		return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+	}
+
+	finishReason := ""
+	sawToolUse := false
+	nextBlockIndex := 0
+	openBlockIndex := -1
+	openBlockType := ""
+	seenText := ""
+	openToolIndex := -1
+	openToolName := ""
+	seenToolJSON := ""
+
+	closeOpenBlock := func() bool {
+		if openBlockIndex < 0 {
+			return false
+		}
+		disconnected := emitAnthropicEvent(&apicompat.AnthropicStreamEvent{Type: "content_block_stop"})
+		openBlockIndex = -1
+		openBlockType = ""
+		return disconnected
+	}
+	closeOpenTool := func() bool {
+		if openToolIndex < 0 {
+			return false
+		}
+		disconnected := emitAnthropicEvent(&apicompat.AnthropicStreamEvent{Type: "content_block_stop"})
+		openToolIndex = -1
+		openToolName = ""
+		seenToolJSON = ""
+		return disconnected
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadString('\n')
+		if len(line) > 0 {
+			trimmed := strings.TrimRight(line, "\r\n")
+			if strings.HasPrefix(trimmed, "data:") {
+				payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+				if payload != "" && payload != "[DONE]" {
+					rawBytes := []byte(payload)
+					if isOAuth {
+						if innerBytes, uwErr := unwrapGeminiResponse(rawBytes); uwErr == nil {
+							rawBytes = innerBytes
+						}
+					}
+
+					var geminiResp map[string]any
+					if err := json.Unmarshal(rawBytes, &geminiResp); err == nil {
+						if firstChunk {
+							firstChunk = false
+							ms := int(time.Since(startTime).Milliseconds())
+							firstTokenMs = &ms
+						}
+						if fr := extractGeminiFinishReason(geminiResp); fr != "" {
+							finishReason = fr
+						}
+						if u := extractGeminiUsage(rawBytes); u != nil {
+							usage = *u
+						}
+
+						for _, part := range extractGeminiParts(geminiResp) {
+							if text, ok := part["text"].(string); ok && text != "" {
+								if openToolIndex >= 0 {
+									if closeOpenTool() {
+										return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+									}
+								}
+								delta, newSeen := computeGeminiTextDelta(seenText, text)
+								seenText = newSeen
+								if delta == "" {
+									continue
+								}
+								if openBlockType != "text" {
+									if closeOpenBlock() {
+										return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+									}
+									idx := nextBlockIndex
+									nextBlockIndex++
+									openBlockIndex = idx
+									openBlockType = "text"
+									if emitAnthropicEvent(&apicompat.AnthropicStreamEvent{
+										Type:  "content_block_start",
+										Index: &idx,
+										ContentBlock: &apicompat.AnthropicContentBlock{
+											Type: "text",
+											Text: "",
+										},
+									}) {
+										return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+									}
+								}
+								if emitAnthropicEvent(&apicompat.AnthropicStreamEvent{
+									Type: "content_block_delta",
+									Delta: &apicompat.AnthropicDelta{
+										Type: "text_delta",
+										Text: delta,
+									},
+								}) {
+									return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+								}
+								continue
+							}
+
+							if fc, ok := part["functionCall"].(map[string]any); ok && fc != nil {
+								name, _ := fc["name"].(string)
+								if strings.TrimSpace(name) == "" {
+									name = "tool"
+								}
+								if closeOpenBlock() {
+									return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+								}
+								if openToolIndex >= 0 && openToolName != name {
+									if closeOpenTool() {
+										return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+									}
+								}
+								if openToolIndex < 0 {
+									idx := nextBlockIndex
+									nextBlockIndex++
+									openToolIndex = idx
+									openToolName = name
+									sawToolUse = true
+									if emitAnthropicEvent(&apicompat.AnthropicStreamEvent{
+										Type:  "content_block_start",
+										Index: &idx,
+										ContentBlock: &apicompat.AnthropicContentBlock{
+											Type:  "tool_use",
+											ID:    "toolu_" + randomHex(8),
+											Name:  name,
+											Input: json.RawMessage(`{}`),
+										},
+									}) {
+										return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+									}
+								}
+
+								argsJSONText := "{}"
+								switch v := fc["args"].(type) {
+								case nil:
+								case string:
+									if strings.TrimSpace(v) != "" {
+										argsJSONText = v
+									}
+								default:
+									if b, err := json.Marshal(v); err == nil && len(b) > 0 {
+										argsJSONText = string(b)
+									}
+								}
+								delta, newSeen := computeGeminiTextDelta(seenToolJSON, argsJSONText)
+								seenToolJSON = newSeen
+								if delta != "" {
+									if emitAnthropicEvent(&apicompat.AnthropicStreamEvent{
+										Type: "content_block_delta",
+										Delta: &apicompat.AnthropicDelta{
+											Type:        "input_json_delta",
+											PartialJSON: delta,
+										},
+									}) {
+										return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("stream read error: %w", err)
+		}
+	}
+
+	if closeOpenBlock() {
+		return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+	}
+	if closeOpenTool() {
+		return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+	}
+
+	stopReason := mapGeminiFinishReasonToClaudeStopReason(finishReason)
+	if sawToolUse {
+		stopReason = "tool_use"
+	}
+	anthState.InputTokens = usage.InputTokens
+	anthState.CacheReadInputTokens = usage.CacheReadInputTokens
+	if emitAnthropicEvent(&apicompat.AnthropicStreamEvent{
+		Type: "message_delta",
+		Delta: &apicompat.AnthropicDelta{
+			Type:       "message_delta",
+			StopReason: stopReason,
+		},
+		Usage: &apicompat.AnthropicUsage{
+			InputTokens:          usage.InputTokens,
+			OutputTokens:         usage.OutputTokens,
+			CacheReadInputTokens: usage.CacheReadInputTokens,
+		},
+	}) {
+		return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+	}
+	if emitAnthropicEvent(&apicompat.AnthropicStreamEvent{Type: "message_stop"}) {
+		return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+	}
+
+	if writeResponsesEvents(apicompat.FinalizeAnthropicResponsesStream(anthState)) {
+		return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+	}
 	flusher.Flush()
 
 	return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil

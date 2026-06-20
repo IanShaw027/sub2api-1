@@ -3125,6 +3125,14 @@ func convertGeminiToClaudeMessage(geminiResp map[string]any, originalModel strin
 			"output_tokens": usage.OutputTokens,
 		},
 	}
+	if usageMap, ok := resp["usage"].(map[string]any); ok {
+		if usage.CacheReadInputTokens > 0 {
+			usageMap["cache_read_input_tokens"] = usage.CacheReadInputTokens
+		}
+		if usage.CacheCreationInputTokens > 0 {
+			usageMap["cache_creation_input_tokens"] = usage.CacheCreationInputTokens
+		}
+	}
 
 	return resp, usage
 }
