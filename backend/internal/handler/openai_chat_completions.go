@@ -124,6 +124,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
 	promptCacheKey := h.gatewayService.ExtractSessionID(c, body)
+	requiredCapability := openAIChatCompletionsRequiredCapability(body)
 
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
@@ -142,7 +143,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			reqModel,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportAny,
-			service.OpenAIEndpointCapabilityChatCompletions,
+			requiredCapability,
 			false,
 		)
 		if err != nil {
@@ -331,6 +332,13 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		)
 		return
 	}
+}
+
+func openAIChatCompletionsRequiredCapability(body []byte) service.OpenAIEndpointCapability {
+	if !gjson.GetBytes(body, "messages").Exists() && gjson.GetBytes(body, "input").Exists() {
+		return service.OpenAIEndpointCapabilityResponsesIngress
+	}
+	return service.OpenAIEndpointCapabilityChatCompletions
 }
 
 // resolveRawCCUpstreamEndpoint returns the actual upstream endpoint for

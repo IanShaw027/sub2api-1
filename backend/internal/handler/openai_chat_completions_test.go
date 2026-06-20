@@ -72,3 +72,14 @@ func TestOpenAIChatCompletions_ClearsCompatRequestStateOnEarlyReturn(t *testing.
 	require.False(t, exists)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
+
+func TestOpenAIChatCompletionsRequiredCapabilityUsesResponsesIngressForResponsesShape(t *testing.T) {
+	require.Equal(t,
+		service.OpenAIEndpointCapabilityResponsesIngress,
+		openAIChatCompletionsRequiredCapability([]byte(`{"model":"gpt-5.5","input":"hello"}`)),
+	)
+	require.Equal(t,
+		service.OpenAIEndpointCapabilityChatCompletions,
+		openAIChatCompletionsRequiredCapability([]byte(`{"model":"gpt-5.5","messages":[{"role":"user","content":"hello"}]}`)),
+	)
+}

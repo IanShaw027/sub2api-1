@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,6 +72,35 @@ func TestStreamAnthropicResponseAsCCReturnsScannerError(t *testing.T) {
 	require.ErrorContains(t, err, "upstream stream truncated")
 }
 
+func TestStreamAnthropicResponseAsCCClientDisconnectDoesNotWriteJSON(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	resp := &http.Response{
+		Body: io.NopCloser(strings.NewReader(`data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"claude-test","usage":{"input_tokens":10,"output_tokens":0}}}` + "\n\n")),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result, err := (&OpenAIGatewayService{}).streamAnthropicResponseAsCC(
+		ctx,
+		c,
+		resp,
+		"gpt-test",
+		"claude-test",
+		true,
+		true,
+		time.Now(),
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.ClientDisconnect)
+	require.NotContains(t, w.Body.String(), `"choices"`)
+	require.NotContains(t, w.Body.String(), `"usage"`)
+	require.NotContains(t, w.Body.String(), "data: [DONE]")
+}
+
 func TestOpenAIUsageFromStateIncludesAnthropicCacheDetails(t *testing.T) {
 	state := apicompat.NewAnthropicToCCChunkState("gpt-test")
 	state.Usage = &apicompat.AnthropicUsage{
@@ -81,7 +112,7 @@ func TestOpenAIUsageFromStateIncludesAnthropicCacheDetails(t *testing.T) {
 
 	got := openAIUsageFromState(state)
 
-	require.Equal(t, 20, got.InputTokens)
+	require.Equal(t, 10, got.InputTokens)
 	require.Equal(t, 2, got.OutputTokens)
 	require.Equal(t, 7, got.CacheReadInputTokens)
 	require.Equal(t, 3, got.CacheCreationInputTokens)

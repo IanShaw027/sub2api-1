@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -36,6 +37,68 @@ func shouldApplyAnthropicCompatFullReplayGuard(account *Account, previousRespons
 	return true
 }
 
+func ShouldForwardOpenAITextMessagesViaChatCompletions(account *Account) bool {
+	if account == nil || !account.TextEndpointAutoRouteEnabled() {
+		return false
+	}
+	if !openai_compat.ShouldUseResponsesAPI(account.Extra) {
+		return true
+	}
+	configured, found := account.openAIEndpointCapabilitySet()
+	return found && configured[string(OpenAIEndpointCapabilityChatCompletions)] &&
+		!configured[string(OpenAIEndpointCapabilityResponsesIngress)] &&
+		!configured[string(OpenAIEndpointCapabilityAnthropicMessagesIngress)]
+}
+
+func (s *OpenAIGatewayService) forwardAnthropicMessagesViaRawChatCompletions(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+) (*OpenAIForwardResult, error) {
+	parsed, err := ParseGatewayRequest(NewRequestBodyRef(body), "messages")
+	if err != nil {
+		return nil, err
+	}
+	gateway := &GatewayService{
+		cfg:                  s.cfg,
+		httpUpstream:         s.httpUpstream,
+		rateLimitService:     s.rateLimitService,
+		settingService:       s.settingService,
+		responseHeaderFilter: s.responseHeaderFilter,
+		tlsFPProfileService:  s.tlsFPProfileService,
+	}
+	result, err := gateway.forwardMessagesToChatCompletions(ctx, c, account, parsed)
+	if result == nil {
+		return nil, err
+	}
+	return &OpenAIForwardResult{
+		RequestID: result.RequestID,
+		Usage: OpenAIUsage{
+			InputTokens:              result.Usage.InputTokens,
+			OutputTokens:             result.Usage.OutputTokens,
+			CacheCreationInputTokens: result.Usage.CacheCreationInputTokens,
+			CacheReadInputTokens:     result.Usage.CacheReadInputTokens,
+			ImageOutputTokens:        result.Usage.ImageOutputTokens,
+		},
+		Model:              result.Model,
+		UpstreamModel:      result.UpstreamModel,
+		ReasoningEffort:    result.ReasoningEffort,
+		Stream:             result.Stream,
+		Duration:           result.Duration,
+		FirstTokenMs:       result.FirstTokenMs,
+		ClientDisconnected: result.ClientDisconnect,
+		ClientDisconnect:   result.ClientDisconnect,
+		ImageCount:         result.ImageCount,
+		ImageSize:          result.ImageSize,
+		ImageInputSize:     result.ImageInputSize,
+		ImageOutputSize:    result.ImageOutputSize,
+		ImageOutputSizes:   result.ImageOutputSizes,
+		ImageSizeSource:    result.ImageSizeSource,
+		ImageSizeBreakdown: result.ImageSizeBreakdown,
+	}, err
+}
+
 // ForwardAsAnthropic accepts an Anthropic Messages request body, converts it
 // to OpenAI Responses API format, forwards to the OpenAI upstream, and converts
 // the response back to Anthropic Messages format. This enables Claude Code
@@ -50,6 +113,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
 	clearOpenAICodexCompatContext(c)
+	if ShouldForwardOpenAITextMessagesViaChatCompletions(account) {
+		return s.forwardAnthropicMessagesViaRawChatCompletions(ctx, c, account, body)
+	}
 
 	// 1. Parse Anthropic request
 	var anthropicReq apicompat.AnthropicRequest

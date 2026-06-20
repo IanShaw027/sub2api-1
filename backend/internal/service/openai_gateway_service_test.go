@@ -2385,6 +2385,26 @@ func TestOpenAISelectAccountWithLoadAwareness_StickyReservePercentLimitsNewSessi
 	}
 }
 
+func TestStickyReserveSlots_FloorsSmallConcurrencyReserve(t *testing.T) {
+	tests := []struct {
+		name           string
+		maxConcurrency int
+		reservePercent int
+		want           int
+	}{
+		{name: "thirty percent of three keeps all slots available", maxConcurrency: 3, reservePercent: 30, want: 0},
+		{name: "thirty percent of ten still reserves three slots", maxConcurrency: 10, reservePercent: 30, want: 3},
+		{name: "fifty percent of three reserves one slot", maxConcurrency: 3, reservePercent: 50, want: 1},
+		{name: "never reserves all slots", maxConcurrency: 2, reservePercent: 100, want: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, stickyReserveSlots(tt.maxConcurrency, tt.reservePercent))
+		})
+	}
+}
+
 func TestOpenAISelectionResult_HotUpdatesSchedulerSnapshotLastUsed(t *testing.T) {
 	groupID := int64(1)
 	account := &Account{ID: 1, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 1}

@@ -209,7 +209,7 @@ func (s *OpenAIGatewayService) streamAnthropicResponseAsCC(
 		}
 		_, _ = fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
 		c.Writer.Flush()
-	} else {
+	} else if !clientStream {
 		ccResp := state.BuildNonStreamingResponse(allChunks)
 		c.JSON(http.StatusOK, ccResp)
 	}
@@ -243,7 +243,7 @@ func openAIUsageFromState(state *apicompat.AnthropicToCCChunkState) OpenAIUsage 
 		return OpenAIUsage{}
 	}
 	return OpenAIUsage{
-		InputTokens:              state.Usage.InputTokens + state.Usage.CacheReadInputTokens + state.Usage.CacheCreationInputTokens,
+		InputTokens:              state.Usage.InputTokens,
 		OutputTokens:             state.Usage.OutputTokens,
 		CacheReadInputTokens:     state.Usage.CacheReadInputTokens,
 		CacheCreationInputTokens: state.Usage.CacheCreationInputTokens,

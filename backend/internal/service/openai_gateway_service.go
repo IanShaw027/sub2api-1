@@ -66,6 +66,7 @@ const (
 	openAICodexTransformObsKey           = "openai_codex_transform_observability"
 	openAICodexCompatFallbackKey         = "openai_codex_compat_fallback"
 	openAICodexCompatFallbackReasonKey   = "openai_codex_compat_fallback_reason"
+	openAIRoutingPromptCacheKeyKey       = "openai_routing_prompt_cache_key"
 	openAIMessagesDispatchForcedModelKey = "openai_messages_dispatch_forced_model"
 	openAIFailoverRequestBodyKey         = "openai_failover_request_body"
 	openAITTFTWatchdogBypassKey          = "openai_ttft_watchdog_bypass"
@@ -162,6 +163,26 @@ func getOpenAIFailoverRequestBody(c *gin.Context, fallback []byte) ([]byte, bool
 		return fallback, false
 	}
 	return append([]byte(nil), body...), true
+}
+
+func setOpenAIRoutingPromptCacheKey(c *gin.Context, promptCacheKey string) {
+	if c == nil {
+		return
+	}
+	if promptCacheKey = strings.TrimSpace(promptCacheKey); promptCacheKey != "" {
+		c.Set(openAIRoutingPromptCacheKeyKey, promptCacheKey)
+	}
+}
+
+func getOpenAIRoutingPromptCacheKey(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	value, ok := c.Get(openAIRoutingPromptCacheKeyKey)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(firstNonEmptyString(value))
 }
 
 func setOpenAITTFTWatchdogBypass(c *gin.Context, bypass bool) {
@@ -3656,7 +3677,7 @@ func stickyReserveSlots(maxConcurrency int, reservePercent int) int {
 	if reservePercent > 100 {
 		reservePercent = 100
 	}
-	reserved := (maxConcurrency*reservePercent + 99) / 100
+	reserved := (maxConcurrency * reservePercent) / 100
 	if reserved >= maxConcurrency {
 		return maxConcurrency - 1
 	}
@@ -4047,6 +4068,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	originalBody := body
 	requestView := newOpenAIRequestView(body)
 	reqModel, reqStream, promptCacheKey := requestView.Model, requestView.Stream, requestView.PromptCacheKey
+	setOpenAIRoutingPromptCacheKey(c, promptCacheKey)
 	originalModel := reqModel
 	allowImageGeneration := true
 	if apiKey := getAPIKeyFromContext(c); apiKey != nil {
@@ -4500,6 +4522,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 		if codexResult.PromptCacheKey != "" {
 			promptCacheKey = codexResult.PromptCacheKey
+			setOpenAIRoutingPromptCacheKey(c, promptCacheKey)
 		}
 		if isMessagesBridgeRequest {
 			if _, hasPromptCacheKey := reqBody["prompt_cache_key"]; hasPromptCacheKey {
@@ -4802,7 +4825,12 @@ oauthTransformDone:
 			}
 			body = nextBody
 			reqStream = gjson.GetBytes(body, "stream").Bool()
-			promptCacheKey = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+			if bodyPromptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()); bodyPromptCacheKey != "" {
+				promptCacheKey = bodyPromptCacheKey
+				setOpenAIRoutingPromptCacheKey(c, promptCacheKey)
+			} else if promptCacheKey == "" {
+				promptCacheKey = getOpenAIRoutingPromptCacheKey(c)
+			}
 			clearOpenAIRequestBodyCache(c)
 			setOpsUpstreamRequestBody(c, body)
 			return true
@@ -5028,6 +5056,7 @@ oauthTransformDone:
 			}
 			if strings.TrimSpace(codexResult.PromptCacheKey) != "" {
 				promptCacheKey = strings.TrimSpace(codexResult.PromptCacheKey)
+				setOpenAIRoutingPromptCacheKey(c, promptCacheKey)
 			}
 			wsCodexCompatRecoveryTried = true
 			s.RecordOpenAIAccountRecoveryReason(account.ID, reason)
@@ -5455,6 +5484,7 @@ oauthTransformDone:
 					if err != nil {
 						return nil, fmt.Errorf("serialize codex compat fallback body: %w", err)
 					}
+					setOpenAIRoutingPromptCacheKey(c, promptCacheKey)
 					if c != nil {
 						c.Set(openAICodexTransformObsKey, codexResult.Observability)
 					}

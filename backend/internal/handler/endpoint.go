@@ -185,3 +185,14 @@ func GetUpstreamEndpoint(c *gin.Context, platform string) string {
 	}
 	return DeriveUpstreamEndpoint(inbound, rawPath, platform)
 }
+
+func resolveOpenAIMessagesUpstreamEndpoint(c *gin.Context, account *service.Account) string {
+	if service.ShouldForwardOpenAITextMessagesViaChatCompletions(account) {
+		return EndpointChatCompletions
+	}
+	platform := ""
+	if account != nil {
+		platform = account.Platform
+	}
+	return GetUpstreamEndpoint(c, platform)
+}
