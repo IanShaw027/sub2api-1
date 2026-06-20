@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -237,6 +238,40 @@ func TestAirwallexRefundRejectsUnsettledStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAirwallexRefundUsesStableRequestID(t *testing.T) {
+	t.Parallel()
+
+	var refundRequest airwallexCreateRefundRequest
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/authentication/login":
+			_, _ = w.Write([]byte(`{"token":"token-1","expires_at":"2099-01-01T00:00:00Z"}`))
+		case "/api/v1/pa/refunds/create":
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			require.NoError(t, json.Unmarshal(body, &refundRequest))
+			_, _ = w.Write([]byte(`{"id":"ref_123","payment_intent_id":"int_123","amount":12.34,"currency":"CNY","status":"SETTLED"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	prov := mustTestAirwallexProvider(t, server)
+	resp, err := prov.Refund(context.Background(), payment.RefundRequest{
+		TradeNo:   "int_123",
+		Amount:    "12.34",
+		Reason:    "test refund",
+		RequestID: "refund-request-123",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "ref_123", resp.RefundID)
+	require.Equal(t, airwallexDeterministicRequestID("refund-request", "refund-request-123"), refundRequest.RequestID)
+	require.NotEqual(t, "refund-request-123", refundRequest.RequestID)
+	require.NoError(t, uuid.Validate(refundRequest.RequestID))
 }
 
 func TestAirwallexAuthErrorIncludesCredentialGuidance(t *testing.T) {

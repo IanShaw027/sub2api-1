@@ -220,17 +220,10 @@ func parseStripePaymentIntent(event *stripe.Event, status string, rawBody string
 func (s *Stripe) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
 	s.ensureInit()
 
-	amountInMinorUnit, err := payment.AmountToMinorUnit(req.Amount, s.currency())
+	params, err := stripeRefundCreateParams(ctx, req, s.currency())
 	if err != nil {
-		return nil, fmt.Errorf("stripe refund: %w", err)
+		return nil, err
 	}
-
-	params := &stripe.RefundCreateParams{
-		PaymentIntent: stripe.String(req.TradeNo),
-		Amount:        stripe.Int64(amountInMinorUnit),
-		Reason:        stripe.String(string(stripe.RefundReasonRequestedByCustomer)),
-	}
-	params.Context = ctx
 
 	r, err := s.sc.V1Refunds.Create(ctx, params)
 	if err != nil {
@@ -246,6 +239,25 @@ func (s *Stripe) Refund(ctx context.Context, req payment.RefundRequest) (*paymen
 		RefundID: r.ID,
 		Status:   refundStatus,
 	}, nil
+}
+
+func stripeRefundCreateParams(ctx context.Context, req payment.RefundRequest, currency string) (*stripe.RefundCreateParams, error) {
+	amountInMinorUnit, err := payment.AmountToMinorUnit(req.Amount, currency)
+	if err != nil {
+		return nil, fmt.Errorf("stripe refund: %w", err)
+	}
+
+	params := &stripe.RefundCreateParams{
+		PaymentIntent: stripe.String(req.TradeNo),
+		Amount:        stripe.Int64(amountInMinorUnit),
+		Reason:        stripe.String(string(stripe.RefundReasonRequestedByCustomer)),
+	}
+	if requestID := strings.TrimSpace(req.RequestID); requestID != "" {
+		params.SetIdempotencyKey(requestID)
+	}
+	params.Context = ctx
+
+	return params, nil
 }
 
 func stripeIntentCurrency(raw stripe.Currency, fallback string) string {

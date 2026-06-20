@@ -273,8 +273,14 @@ func (a *Airwallex) Refund(ctx context.Context, req payment.RefundRequest) (*pay
 		return nil, fmt.Errorf("airwallex auth: %w", err)
 	}
 
+	requestID := strings.TrimSpace(req.RequestID)
+	if requestID != "" {
+		requestID = airwallexDeterministicRequestID("refund-request", requestID)
+	} else {
+		requestID = airwallexDeterministicRequestID("refund", intentID, req.Amount)
+	}
 	payload := airwallexCreateRefundRequest{
-		RequestID:       airwallexDeterministicRequestID("refund", intentID, req.Amount),
+		RequestID:       requestID,
 		PaymentIntentID: intentID,
 		Amount:          newAirwallexRequestAmount(amount),
 		Reason:          strings.TrimSpace(req.Reason),

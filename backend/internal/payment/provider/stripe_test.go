@@ -29,3 +29,15 @@ func TestStripeVerifyNotificationIncludesCurrencyMetadata(t *testing.T) {
 	require.Equal(t, payment.ProviderStatusSuccess, notification.Status)
 	require.Equal(t, "USD", notification.Metadata["currency"])
 }
+
+func TestStripeRefundCreateParamsUsesStableRequestID(t *testing.T) {
+	params, err := stripeRefundCreateParams(context.Background(), payment.RefundRequest{
+		TradeNo:   "pi_123",
+		Amount:    "12.34",
+		RequestID: "refund-request-123",
+	}, payment.DefaultPaymentCurrency)
+
+	require.NoError(t, err)
+	require.NotNil(t, params.IdempotencyKey)
+	require.Equal(t, "refund-request-123", *params.IdempotencyKey)
+}

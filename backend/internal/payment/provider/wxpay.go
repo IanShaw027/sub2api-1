@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -473,7 +472,7 @@ func (w *Wxpay) Refund(ctx context.Context, req payment.RefundRequest) (*payment
 	cur := wxpayCurrency
 	res, _, err := rs.Create(ctx, refunddomestic.CreateRequest{
 		OutTradeNo:  core.String(req.OrderID),
-		OutRefundNo: core.String(fmt.Sprintf("%s-refund-%d", req.OrderID, time.Now().UnixNano())),
+		OutRefundNo: core.String(wxpayRefundOutRefundNo(req)),
 		Reason:      core.String(req.Reason),
 		Amount:      &refunddomestic.AmountReq{Refund: core.Int64(rf), Total: core.Int64(tf), Currency: &cur},
 	})
@@ -489,6 +488,16 @@ func (w *Wxpay) Refund(ctx context.Context, req payment.RefundRequest) (*payment
 		st = payment.ProviderStatusSuccess
 	}
 	return &payment.RefundResponse{RefundID: rid, Status: st}, nil
+}
+
+func wxpayRefundOutRefundNo(req payment.RefundRequest) string {
+	if requestID := strings.TrimSpace(req.RequestID); requestID != "" {
+		return requestID
+	}
+	if orderID := strings.TrimSpace(req.OrderID); orderID != "" {
+		return orderID + "-refund"
+	}
+	return "refund"
 }
 
 func (w *Wxpay) queryOrderTotalFen(ctx context.Context, c *core.Client, orderID string) (int64, error) {

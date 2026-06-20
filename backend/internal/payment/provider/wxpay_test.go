@@ -128,6 +128,25 @@ func TestWxSV(t *testing.T) {
 	}
 }
 
+func TestWxpayRefundOutRefundNoUsesStableRequestID(t *testing.T) {
+	got := wxpayRefundOutRefundNo(payment.RefundRequest{
+		OrderID:   "order_123",
+		RequestID: "refund-request-123",
+	})
+
+	if got != "refund-request-123" {
+		t.Fatalf("wxpayRefundOutRefundNo() = %q, want stable request id", got)
+	}
+}
+
+func TestWxpayRefundOutRefundNoFallbackIsDeterministic(t *testing.T) {
+	got := wxpayRefundOutRefundNo(payment.RefundRequest{OrderID: "order_123"})
+
+	if got != "order_123-refund" {
+		t.Fatalf("wxpayRefundOutRefundNo fallback = %q, want deterministic order refund id", got)
+	}
+}
+
 func TestBuildWxpayTransactionMetadata(t *testing.T) {
 	t.Parallel()
 
