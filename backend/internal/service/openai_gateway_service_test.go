@@ -2546,7 +2546,7 @@ func TestOpenAIGatewayService_SelectOpenAIImageCodexRouteLimitedAccountWaits(t *
 	require.False(t, selection.Acquired)
 	require.NotNil(t, selection.WaitPlan)
 	require.Equal(t, int64(47021), selection.WaitPlan.AccountID)
-	require.Equal(t, 2, selection.WaitPlan.MaxConcurrency)
+	require.Equal(t, 3, selection.WaitPlan.MaxConcurrency)
 	require.NotNil(t, selection.WaitPlan.NotBefore)
 	require.True(t, selection.WaitPlan.NotBefore.Equal(resetAt))
 }
@@ -2580,7 +2580,7 @@ func TestOpenAIGatewayService_SelectAccountWithLoadAwarenessForImageRoute_CodexS
 	require.NotNil(t, selection.Account)
 	require.Equal(t, int64(47041), selection.Account.ID)
 	require.True(t, selection.Acquired)
-	require.Equal(t, 4, acquireMax[47041])
+	require.Equal(t, 5, acquireMax[47041])
 }
 
 func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimited(t *testing.T) {

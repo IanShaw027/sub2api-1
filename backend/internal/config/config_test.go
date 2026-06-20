@@ -159,6 +159,9 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if cfg.Gateway.OpenAIWS.ClientReadLimitBytes != 64*1024*1024 {
 		t.Fatalf("Gateway.OpenAIWS.ClientReadLimitBytes = %d, want %d", cfg.Gateway.OpenAIWS.ClientReadLimitBytes, 64*1024*1024)
 	}
+	if cfg.Gateway.OpenAIWS.OutboundPayloadHTTPFallbackThresholdBytes != 0 {
+		t.Fatalf("Gateway.OpenAIWS.OutboundPayloadHTTPFallbackThresholdBytes = %d, want 0", cfg.Gateway.OpenAIWS.OutboundPayloadHTTPFallbackThresholdBytes)
+	}
 	if !cfg.Gateway.OpenAIWS.HTTPBridgeEnabled {
 		t.Fatalf("Gateway.OpenAIWS.HTTPBridgeEnabled = false, want true")
 	}
@@ -1762,6 +1765,11 @@ func TestValidateConfig_OpenAIWSRules(t *testing.T) {
 			name:    "queue_limit_per_conn 必须为正数",
 			mutate:  func(c *Config) { c.Gateway.OpenAIWS.QueueLimitPerConn = 0 },
 			wantErr: "gateway.openai_ws.queue_limit_per_conn",
+		},
+		{
+			name:    "outbound_payload_http_fallback_threshold_bytes 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.OutboundPayloadHTTPFallbackThresholdBytes = -1 },
+			wantErr: "gateway.openai_ws.outbound_payload_http_fallback_threshold_bytes",
 		},
 		{
 			name:    "fallback_cooldown_seconds 不能为负数",

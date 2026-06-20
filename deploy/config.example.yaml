@@ -270,6 +270,10 @@ gateway:
     store_disabled_force_new_conn: true
     # 是否启用 WSv2 generate=false 预热（默认 false）
     prewarm_generate_enabled: false
+    # 入站客户端 WS 单帧读取上限；HTTP 入站转上游 WS 的 payload 预检默认继承该值。
+    client_read_limit_bytes: 67108864
+    # HTTP 入站转上游 WS 的请求体预检阈值；0 表示继承 client_read_limit_bytes。
+    outbound_payload_http_fallback_threshold_bytes: 0
     # 协议 feature 开关，v2 优先于 v1
     responses_websockets: false
     responses_websockets_v2: true
@@ -306,6 +310,8 @@ gateway:
     payload_log_sample_rate: 0.2
     # 调度与粘连参数
     lb_top_k: 7
+    # session_bound WS 连接空闲保留时间（秒）；过短会降低增量续链命中率。
+    session_idle_ttl_seconds: 600
     sticky_session_ttl_seconds: 3600
     # 会话哈希迁移兼容开关：新 key 未命中时回退读取旧 SHA-256 key
     session_hash_read_old_fallback: true

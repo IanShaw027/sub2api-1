@@ -886,7 +886,7 @@ func TestAPIContracts(t *testing.T) {
 						"openai_ws_min_idle_per_account": 1,
 						"openai_ws_max_idle_per_account": 4,
 						"openai_ws_neutral_prewarm_percent": 20,
-						"openai_ws_session_idle_ttl_seconds": 30,
+						"openai_ws_session_idle_ttl_seconds": 600,
 						"openai_allow_claude_code_codex_plugin": false,
 						"openai_fast_policy_settings": {
 						"rules": []
@@ -1170,7 +1170,7 @@ func TestAPIContracts(t *testing.T) {
 						"openai_ws_min_idle_per_account": 1,
 						"openai_ws_max_idle_per_account": 4,
 						"openai_ws_neutral_prewarm_percent": 20,
-						"openai_ws_session_idle_ttl_seconds": 30,
+						"openai_ws_session_idle_ttl_seconds": 600,
 						"openai_allow_claude_code_codex_plugin": false,
 						"openai_codex_user_agent": "",
 						"openai_fast_policy_settings": {

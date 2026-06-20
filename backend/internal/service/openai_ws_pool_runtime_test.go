@@ -90,15 +90,17 @@ func TestOpenAIWSPoolRuntimeSettings_NeutralPrewarmPercentAndSessionTTLAccessors
 
 	require.Equal(t, defaultOpenAIWSNeutralPrewarmPercent, pool.neutralPrewarmPercent())
 	require.Equal(t, time.Duration(defaultOpenAIWSSessionIdleTTLSeconds)*time.Second, pool.sessionIdleTTL())
-	require.Equal(t, 30*time.Second, pool.sessionIdleTTL())
+	require.Equal(t, pool.sessionIdleTTL(), pool.neutralIdleTTL())
 
 	StoreOpenAIWSPoolRuntimeSettings(25, 180)
 	require.Equal(t, 25, pool.neutralPrewarmPercent())
 	require.Equal(t, 180*time.Second, pool.sessionIdleTTL())
+	require.Equal(t, pool.sessionIdleTTL(), pool.neutralIdleTTL())
 
 	StoreOpenAIWSPoolRuntimeSettings(0, 60)
 	require.Equal(t, 0, pool.neutralPrewarmPercent(), "0 disables proactive neutral prewarm")
 	require.Equal(t, 60*time.Second, pool.sessionIdleTTL())
+	require.Equal(t, pool.sessionIdleTTL(), pool.neutralIdleTTL())
 }
 
 func TestOpenAIWSPool_NeutralMaxConns_UsesPrewarmPercent(t *testing.T) {

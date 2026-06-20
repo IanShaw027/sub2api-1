@@ -38,7 +38,7 @@ func shouldApplyAnthropicCompatFullReplayGuard(account *Account, previousRespons
 }
 
 func ShouldForwardOpenAITextMessagesViaChatCompletions(account *Account) bool {
-	if account == nil || !account.TextEndpointAutoRouteEnabled() {
+	if account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey || !account.TextEndpointAutoRouteEnabled() {
 		return false
 	}
 	if !openai_compat.ShouldUseResponsesAPI(account.Extra) {

@@ -1048,6 +1048,137 @@ func TestOpenAIWSActiveDelta_PreviousResponseNotFoundRetriesFullPayloadOverWS(t 
 	require.Equal(t, "again", gjson.Get(retryWrite, "input.2.content.0.text").String())
 }
 
+func TestOpenAIWSActiveDelta_PreviousResponseNotFoundRetriesFunctionCallOutputWithFullPayloadOverWS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
+	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.StoreDisabledConnMode = openAIWSStoreDisabledConnModeStrict
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.StickySessionTTLSeconds = 3600
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"run shell"}]}`
+	toolCall := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
+	toolOutput := `{"type":"function_call_output","call_id":"call_1","output":"ok"}`
+	finalOutput := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"tool ok"}]}`
+
+	firstConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.output_item.done","response_id":"resp_tool_prev_1","output_index":0,"item":` + toolCall + `}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_tool_prev_1","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
+			[]byte(`{"type":"error","error":{"code":"previous_response_not_found","type":"invalid_request_error","message":"previous response not found"}}`),
+		},
+	}
+	secondConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.output_item.done","response_id":"resp_tool_prev_2","output_index":0,"item":` + finalOutput + `}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_tool_prev_2","model":"gpt-5.1","usage":{"input_tokens":5,"output_tokens":2}}}`),
+		},
+	}
+	dialer := &openAIWSQueueDialer{conns: []openAIWSClientConn{firstConn, secondConn}}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(dialer)
+	t.Cleanup(pool.Close)
+
+	upstream := &httpUpstreamRecorder{}
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          78009,
+		Name:        "openai-delta-prev-tool-recover",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "oauth-token-delta-prev-tool"},
+		Extra:       map[string]any{"responses_websockets_v2_enabled": true},
+	}
+
+	groupID := int64(78018)
+	apiKeyID := int64(78019)
+	newContext := func() *gin.Context {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+		c.Request.Header.Set("originator", "codex_exec")
+		c.Request.Header.Set("session_id", "sess-delta-prev-tool-recover")
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+		return c
+	}
+
+	firstCtx := newContext()
+	sessionHash := svc.GenerateSessionHash(firstCtx, nil)
+	require.NotEmpty(t, sessionHash)
+	firstResult, err := svc.Forward(context.Background(), firstCtx, account, []byte(`{"model":"gpt-5.1","stream":true,"input":[`+input1+`]}`))
+	require.NoError(t, err)
+	require.Equal(t, "resp_tool_prev_1", firstResult.RequestID)
+
+	secondResult, err := svc.Forward(context.Background(), newContext(), account, []byte(`{"model":"gpt-5.1","stream":true,"input":[`+input1+`,`+toolCall+`,`+toolOutput+`]}`))
+	require.NoError(t, err)
+	require.NotNil(t, secondResult)
+	require.Equal(t, "resp_tool_prev_2", secondResult.RequestID)
+	require.Nil(t, upstream.lastReq, "function_call_output previous_response_not_found must recover over WS, not HTTP fallback")
+	require.Equal(t, 2, dialer.DialCount(), "recovery should replace the broken WS connection once")
+
+	firstConn.mu.Lock()
+	firstWrites := append([]map[string]any(nil), firstConn.writes...)
+	firstConn.mu.Unlock()
+	require.Len(t, firstWrites, 2)
+	deltaWrite := requestToJSONString(firstWrites[1])
+	require.Equal(t, "resp_tool_prev_1", gjson.Get(deltaWrite, "previous_response_id").String())
+	require.False(t, gjson.Get(deltaWrite, "store").Bool())
+	require.Len(t, gjson.Get(deltaWrite, "input").Array(), 1, "first second-turn attempt should be active delta")
+	require.Equal(t, "function_call_output", gjson.Get(deltaWrite, "input.0.type").String())
+	require.Equal(t, "call_1", gjson.Get(deltaWrite, "input.0.call_id").String())
+
+	secondConn.mu.Lock()
+	secondWrites := append([]map[string]any(nil), secondConn.writes...)
+	secondConn.mu.Unlock()
+	require.Len(t, secondWrites, 1)
+	retryWrite := requestToJSONString(secondWrites[0])
+	require.False(t, gjson.Get(retryWrite, "previous_response_id").Exists(), "recovery retry must full-create without the stale active-delta anchor")
+	require.True(t, gjson.Get(retryWrite, "store").Exists())
+	require.False(t, gjson.Get(retryWrite, "store").Bool())
+	require.Len(t, gjson.Get(retryWrite, "input").Array(), 3, "recovery retry must send the full original input sequence")
+	require.Equal(t, "function_call", gjson.Get(retryWrite, "input.1.type").String())
+	require.Equal(t, "call_1", gjson.Get(retryWrite, "input.1.call_id").String())
+	require.Equal(t, "function_call_output", gjson.Get(retryWrite, "input.2.type").String())
+	require.Equal(t, "call_1", gjson.Get(retryWrite, "input.2.call_id").String())
+
+	stateStore := svc.getOpenAIWSStateStore()
+	stickyAccountID, err := stateStore.GetResponseAccount(context.Background(), groupID, apiKeyID, "resp_tool_prev_2")
+	require.NoError(t, err)
+	require.Equal(t, account.ID, stickyAccountID, "successful recovery must bind the new response id to the account")
+	connID, ok := stateStore.GetResponseConn(groupID, apiKeyID, "resp_tool_prev_2")
+	require.True(t, ok, "successful recovery must bind the new response id to the replacement WS conn")
+	require.NotEmpty(t, connID)
+	cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
+	require.True(t, ok, "successful recovery must update the session delta context")
+	require.Equal(t, "resp_tool_prev_2", cached.lastResponseID)
+}
+
 func TestOpenAIWSFallbackToHTTPUsesFullPayloadAfterWSError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1135,12 +1266,6 @@ func TestOpenAIWSFallbackToHTTPUsesFullPayloadAfterWSError(t *testing.T) {
 func TestOpenAIWSPreflightLargePayloadFallsBackToHTTPBeforeDial(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	previousThreshold := openAIWSOutboundPayloadHTTPFallbackThresholdBytes
-	openAIWSOutboundPayloadHTTPFallbackThresholdBytes = 64
-	t.Cleanup(func() {
-		openAIWSOutboundPayloadHTTPFallbackThresholdBytes = previousThreshold
-	})
-
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
@@ -1166,6 +1291,7 @@ func TestOpenAIWSPreflightLargePayloadFallsBackToHTTPBeforeDial(t *testing.T) {
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ClientReadLimitBytes = 64
 	cfg.Gateway.OpenAIWS.StickySessionTTLSeconds = 3600
 	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
 
@@ -1209,6 +1335,20 @@ func TestOpenAIWSPreflightLargePayloadFallsBackToHTTPBeforeDial(t *testing.T) {
 	require.Equal(t, 0, captureDialer.DialCount(), "large payload preflight should skip WS dial entirely")
 	require.Len(t, upstream.bodies, 1)
 	require.Equal(t, largeText, gjson.GetBytes(upstream.bodies[0], "input.0.content.0.text").String())
+}
+
+func TestOpenAIWSPreflightPayloadFallbackThresholdUsesConfiguredReadLimit(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.ClientReadLimitBytes = 256
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	skipWS, threshold := svc.shouldPreflightFallbackOpenAIWSPayloadToHTTP(make([]byte, 256))
+	require.False(t, skipWS)
+	require.Equal(t, int64(256), threshold)
+
+	skipWS, threshold = svc.shouldPreflightFallbackOpenAIWSPayloadToHTTP(make([]byte, 257))
+	require.True(t, skipWS)
+	require.Equal(t, int64(256), threshold)
 }
 
 func TestOpenAIWSActiveDelta_AllowsFunctionCallOutputDeltaWithPreviousResponseID(t *testing.T) {

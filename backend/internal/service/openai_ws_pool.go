@@ -21,7 +21,6 @@ import (
 
 const (
 	openAIWSConnMaxAge             = 60 * time.Minute
-	openAIWSNeutralIdleTTL         = 60 * time.Second
 	openAIWSConnHealthCheckIdle    = 90 * time.Second
 	openAIWSConnHealthCheckTO      = 2 * time.Second
 	openAIWSConnPrewarmExtraDelay  = 2 * time.Second
@@ -44,7 +43,7 @@ const (
 	defaultOpenAIWSMaxIdlePerAccount        = 4
 	defaultOpenAIWSStickyReservePercent     = 30
 	defaultOpenAIWSNeutralPrewarmPercent    = 20
-	defaultOpenAIWSSessionIdleTTLSeconds    = 30
+	defaultOpenAIWSSessionIdleTTLSeconds    = 600
 	openAIWSMaxIdlePerAccountUpperBound     = 64
 	openAIWSSessionIdleTTLSecondsUpperBound = 3600
 )
@@ -1479,6 +1478,10 @@ func (p *openAIWSConnPool) sessionIdleTTL() time.Duration {
 	return time.Duration(defaultOpenAIWSSessionIdleTTLSeconds) * time.Second
 }
 
+func (p *openAIWSConnPool) neutralIdleTTL() time.Duration {
+	return p.sessionIdleTTL()
+}
+
 func (p *openAIWSConnPool) neutralPrewarmTargetForAccount(account *Account) int {
 	if account == nil {
 		return 0
@@ -1582,6 +1585,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 	}
 	maxAge := p.maxConnAge()
 	sessionIdleTTL := p.sessionIdleTTL()
+	neutralIdleTTL := p.neutralIdleTTL()
 
 	evicted := make([]*openAIWSConn, 0)
 	for id, conn := range ap.conns {
@@ -1626,7 +1630,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 			p.metrics.scaleDownTotal.Add(1)
 			continue
 		}
-		if conn.profile == openAIWSConnProfileNeutral && openAIWSNeutralIdleTTL > 0 && now.Sub(conn.lastUsedAt()) > openAIWSNeutralIdleTTL {
+		if conn.profile == openAIWSConnProfileNeutral && neutralIdleTTL > 0 && now.Sub(conn.lastUsedAt()) > neutralIdleTTL {
 			p.logConnEvict(conn, "neutral_idle_ttl")
 			deleteOpenAIWSAccountConnLocked(ap, id)
 			if len(ap.pinnedConns) > 0 {

@@ -2605,7 +2605,7 @@ func TestOpenAIGatewayService_Forward_WSv2CodexCompatRecoverySyncsOpsBody(t *tes
 	require.Equal(t, "fc_1", gjson.GetBytes(opsBody, "input.1.call_id").String(), "ops body should reflect codex compat retry payload")
 }
 
-func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundSkipsRecoveryForFunctionCallOutput(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundSkipsRecoveryWithoutToolCallContext(t *testing.T) {
 	setGinTestMode()
 
 	var wsAttempts atomic.Int32
@@ -2693,7 +2693,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundSkipsRecoveryF
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.Nil(t, upstream.lastReq, "previous_response_not_found 不应回退 HTTP")
-	require.Equal(t, int32(1), wsAttempts.Load(), "function_call_output 场景应跳过 previous_response_not_found 自动恢复")
+	require.Equal(t, int32(1), wsAttempts.Load(), "缺少工具调用上下文时应跳过 previous_response_not_found 自动恢复")
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Contains(t, strings.ToLower(rec.Body.String()), "previous response not found")
 

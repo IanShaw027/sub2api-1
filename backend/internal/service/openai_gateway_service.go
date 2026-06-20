@@ -772,10 +772,18 @@ func (s *OpenAIGatewayService) CloseOpenAIWSPool() {
 	}
 }
 
-var openAIWSOutboundPayloadHTTPFallbackThresholdBytes int64 = openAIWSMessageReadLimitBytes
+func ResolveOpenAIWSOutboundPayloadHTTPFallbackThresholdBytes(cfg *config.Config) int64 {
+	if cfg != nil && cfg.Gateway.OpenAIWS.OutboundPayloadHTTPFallbackThresholdBytes > 0 {
+		return cfg.Gateway.OpenAIWS.OutboundPayloadHTTPFallbackThresholdBytes
+	}
+	return ResolveOpenAIWSClientReadLimitBytes(cfg)
+}
 
-func shouldPreflightFallbackOpenAIWSPayloadToHTTP(body []byte) (bool, int64) {
-	threshold := openAIWSOutboundPayloadHTTPFallbackThresholdBytes
+func (s *OpenAIGatewayService) shouldPreflightFallbackOpenAIWSPayloadToHTTP(body []byte) (bool, int64) {
+	threshold := ResolveOpenAIWSOutboundPayloadHTTPFallbackThresholdBytes(nil)
+	if s != nil {
+		threshold = ResolveOpenAIWSOutboundPayloadHTTPFallbackThresholdBytes(s.cfg)
+	}
 	return threshold > 0 && int64(len(body)) > threshold, threshold
 }
 
@@ -785,7 +793,7 @@ func (s *OpenAIGatewayService) logOpenAIWSModeBootstrap() {
 	}
 	wsCfg := s.cfg.Gateway.OpenAIWS
 	logOpenAIWSModeInfo(
-		"bootstrap enabled=%v oauth_enabled=%v apikey_enabled=%v force_http=%v responses_websockets_v2=%v responses_websockets=%v payload_log_sample_rate=%.3f event_flush_batch_size=%d event_flush_interval_ms=%d prewarm_cooldown_ms=%d retry_backoff_initial_ms=%d retry_backoff_max_ms=%d retry_jitter_ratio=%.3f retry_total_budget_ms=%d ws_read_limit_bytes=%d",
+		"bootstrap enabled=%v oauth_enabled=%v apikey_enabled=%v force_http=%v responses_websockets_v2=%v responses_websockets=%v payload_log_sample_rate=%.3f event_flush_batch_size=%d event_flush_interval_ms=%d prewarm_cooldown_ms=%d retry_backoff_initial_ms=%d retry_backoff_max_ms=%d retry_jitter_ratio=%.3f retry_total_budget_ms=%d ws_read_limit_bytes=%d outbound_payload_http_fallback_threshold_bytes=%d",
 		wsCfg.Enabled,
 		wsCfg.OAuthEnabled,
 		wsCfg.APIKeyEnabled,
@@ -801,6 +809,7 @@ func (s *OpenAIGatewayService) logOpenAIWSModeBootstrap() {
 		wsCfg.RetryJitterRatio,
 		wsCfg.RetryTotalBudgetMS,
 		openAIWSMessageReadLimitBytes,
+		ResolveOpenAIWSOutboundPayloadHTTPFallbackThresholdBytes(s.cfg),
 	)
 }
 
@@ -4745,7 +4754,7 @@ oauthTransformDone:
 
 	wsSkippedByPayloadPreflight := false
 	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
-		if skipWS, threshold := shouldPreflightFallbackOpenAIWSPayloadToHTTP(body); skipWS {
+		if skipWS, threshold := s.shouldPreflightFallbackOpenAIWSPayloadToHTTP(body); skipWS {
 			wsSkippedByPayloadPreflight = true
 			logOpenAIWSModeInfo(
 				"preflight_fallback_to_http account_id=%d reason=payload_too_large payload_bytes=%d threshold_bytes=%d action=replay_full_payload",
@@ -4854,40 +4863,57 @@ oauthTransformDone:
 				return false
 			}
 			if HasFunctionCallOutput(wsReqBody) {
-				logOpenAIWSModeInfo(
-					"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=has_function_call_output previous_response_id_present=true active_delta=%v",
-					account.ID,
-					attempt,
-					activeDeltaRecovery,
-				)
-				return false
+				replayReqBody := map[string]any{}
+				if err := json.Unmarshal(wsHTTPFallbackBody, &replayReqBody); err != nil {
+					wsErr = wrapOpenAIWSFallback("previous_response_recovery_parse", err)
+					logOpenAIWSModeInfo(
+						"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=parse_full_payload previous_response_id_present=true active_delta=%v cause=%s",
+						account.ID,
+						attempt,
+						activeDeltaRecovery,
+						truncateOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen),
+					)
+					return false
+				}
+				replayInputItems, replayInputExists, replayInputErr := openAIWSExtractNormalizedInputSequence(wsHTTPFallbackBody)
+				if replayInputErr != nil {
+					wsErr = wrapOpenAIWSFallback("previous_response_recovery_input_parse", replayInputErr)
+					logOpenAIWSModeInfo(
+						"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=parse_full_input previous_response_id_present=true active_delta=%v cause=%s",
+						account.ID,
+						attempt,
+						activeDeltaRecovery,
+						truncateOpenAIWSLogValue(replayInputErr.Error(), openAIWSLogValueMaxLen),
+					)
+					return false
+				}
+				if !replayInputExists || !openAIWSRawItemsHaveToolCallContextForOutputs(replayInputItems) {
+					logOpenAIWSModeInfo(
+						"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=missing_tool_call_context previous_response_id_present=true active_delta=%v",
+						account.ID,
+						attempt,
+						activeDeltaRecovery,
+					)
+					return false
+				}
+				wsReqBody = replayReqBody
 			}
 			delete(wsReqBody, "previous_response_id")
 			wsReqBody["store"] = false
 			trimOpenAIStoreFalseReasoningItems(wsReqBody)
-			updatedBody, marshalErr := marshalOpenAIResponsesRequestBodyOrdered(wsReqBody)
-			if marshalErr != nil {
-				wsErr = wrapOpenAIWSFallback("previous_response_recovery_serialize", marshalErr)
-				logOpenAIWSModeInfo(
-					"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=serialize cause=%s",
-					account.ID,
-					attempt,
-					truncateOpenAIWSLogValue(marshalErr.Error(), openAIWSLogValueMaxLen),
-				)
+			if !syncWSRecoveredBody("prev_response_recovery") {
 				return false
 			}
-			body = updatedBody
-			clearOpenAIRequestBodyCache(c)
-			setOpsUpstreamRequestBody(c, body)
 			wsPrevResponseRecoveryTried = true
 			s.RecordOpenAIAccountRecoveryReason(account.ID, "previous_response_not_found")
 			logOpenAIWSModeInfo(
-				"reconnect_prev_response_recovery account_id=%d attempt=%d action=drop_previous_response_id retry=1 previous_response_id=%s previous_response_id_kind=%s active_delta=%v",
+				"reconnect_prev_response_recovery account_id=%d attempt=%d action=drop_previous_response_id_full_replay retry=1 previous_response_id=%s previous_response_id_kind=%s active_delta=%v has_function_call_output=%v",
 				account.ID,
 				attempt,
 				truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
 				normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
 				activeDeltaRecovery,
+				HasFunctionCallOutput(wsReqBody),
 			)
 			return true
 		}

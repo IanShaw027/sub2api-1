@@ -234,11 +234,12 @@ func TestOpenAIWSConnPool_CleanupEvictsNeutralAfterIdleTTL(t *testing.T) {
 	accountID := int64(69)
 	ap := pool.getOrCreateAccountPool(accountID)
 	now := time.Now()
+	neutralIdleTTL := pool.neutralIdleTTL()
 
 	neutralExpired := newOpenAIWSConnWithProfile("neutral_expired", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral)
-	neutralExpired.lastUsedNano.Store(now.Add(-(openAIWSNeutralIdleTTL + time.Second)).UnixNano())
+	neutralExpired.lastUsedNano.Store(now.Add(-(neutralIdleTTL + time.Second)).UnixNano())
 	neutralRecent := newOpenAIWSConnWithProfile("neutral_recent", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral)
-	neutralRecent.lastUsedNano.Store(now.Add(-(openAIWSNeutralIdleTTL - time.Second)).UnixNano())
+	neutralRecent.lastUsedNano.Store(now.Add(-(neutralIdleTTL - time.Second)).UnixNano())
 
 	ap.conns[neutralExpired.id] = neutralExpired
 	ap.conns[neutralRecent.id] = neutralRecent
@@ -273,10 +274,11 @@ func TestOpenAIWSConnPool_BackgroundCleanupRefreshesExpiredNeutralIdle(t *testin
 
 	ap := pool.getOrCreateAccountPool(account.ID)
 	now := time.Now()
+	neutralIdleTTL := pool.neutralIdleTTL()
 	expiredA := newOpenAIWSConnWithProfileAndReuseKey("neutral_expired_a", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral, reuseKey)
-	expiredA.lastUsedNano.Store(now.Add(-(openAIWSNeutralIdleTTL + time.Second)).UnixNano())
+	expiredA.lastUsedNano.Store(now.Add(-(neutralIdleTTL + time.Second)).UnixNano())
 	expiredB := newOpenAIWSConnWithProfileAndReuseKey("neutral_expired_b", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral, reuseKey)
-	expiredB.lastUsedNano.Store(now.Add(-(openAIWSNeutralIdleTTL + time.Second)).UnixNano())
+	expiredB.lastUsedNano.Store(now.Add(-(neutralIdleTTL + time.Second)).UnixNano())
 	ap.mu.Lock()
 	ap.lastNeutralAcquire = cloneOpenAIWSAcquireRequestPtr(&req)
 	ap.conns[expiredA.id] = expiredA
