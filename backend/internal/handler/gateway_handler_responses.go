@@ -346,7 +346,8 @@ func (h *GatewayHandler) responsesErrorResponse(c *gin.Context, status int, code
 // handleResponsesFailoverExhausted writes a failover-exhausted error in Responses format.
 func (h *GatewayHandler) handleResponsesFailoverExhausted(c *gin.Context, lastErr *service.UpstreamFailoverError, streamStarted bool) {
 	if streamStarted {
-		return // Can't write error after stream started
+		h.handleStreamingAwareError(c, http.StatusBadGateway, "server_error", "All available accounts exhausted", true)
+		return
 	}
 	copyFailoverResponseHeaders(c, lastErr)
 	statusCode := http.StatusBadGateway

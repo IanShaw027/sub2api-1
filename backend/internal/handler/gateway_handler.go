@@ -1648,6 +1648,11 @@ func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, e
 			if _, err := fmt.Fprint(c.Writer, errorEvent); err != nil {
 				_ = c.Error(err)
 			}
+			if inboundIsChatCompletions(c) {
+				if _, err := fmt.Fprint(c.Writer, "data: [DONE]\n\n"); err != nil {
+					_ = c.Error(err)
+				}
+			}
 			flusher.Flush()
 		}
 		return
@@ -2378,7 +2383,7 @@ func (h *GatewayHandler) emitGatewayDebugTimelineAttemptFinished(c *gin.Context,
 		fields["usage_output_tokens"] = result.Usage.OutputTokens
 	}
 	if err != nil {
-		fields["error"] = truncateString(err.Error(), 512)
+		fields["error"] = truncateString(sanitizeUpstreamForwardErrorDetail(err.Error()), 512)
 	}
 	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "attempt_finished", fields)
 }

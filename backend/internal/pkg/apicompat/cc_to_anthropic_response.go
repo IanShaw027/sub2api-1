@@ -405,12 +405,18 @@ func CcUsageToAnthropic(u *ChatUsage) *AnthropicUsage {
 	if u == nil {
 		return nil
 	}
-	au := &AnthropicUsage{
-		InputTokens:  u.PromptTokens,
-		OutputTokens: u.CompletionTokens,
-	}
+	cacheReadTokens := 0
 	if u.PromptTokensDetails != nil {
-		au.CacheReadInputTokens = u.PromptTokensDetails.CachedTokens
+		cacheReadTokens = u.PromptTokensDetails.CachedTokens
+	}
+	inputTokens := u.PromptTokens - cacheReadTokens
+	if inputTokens < 0 {
+		inputTokens = 0
+	}
+	au := &AnthropicUsage{
+		InputTokens:          inputTokens,
+		OutputTokens:         u.CompletionTokens,
+		CacheReadInputTokens: cacheReadTokens,
 	}
 	return au
 }
