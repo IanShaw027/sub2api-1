@@ -3836,7 +3836,7 @@
                   max="3600"
                   step="1"
                   class="input"
-                  placeholder="300"
+                  placeholder="30"
                 />
                 <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                   {{
@@ -8596,7 +8596,7 @@ const form = reactive<SettingsForm>({
   openai_sticky_reserve_percent: 30,
   openai_sticky_wait_timeout_seconds: 30,
   openai_ws_neutral_prewarm_percent: 20,
-  openai_ws_session_idle_ttl_seconds: 300,
+  openai_ws_session_idle_ttl_seconds: 30,
   platform_default_account_model_config: {},
   // Identity patch (Claude -> Gemini)
   enable_identity_patch: true,
@@ -9431,7 +9431,7 @@ async function loadSettings() {
       1,
       Math.min(
         3600,
-        Math.floor(Number(settings.openai_ws_session_idle_ttl_seconds) || 300),
+        Math.floor(Number(settings.openai_ws_session_idle_ttl_seconds) || 30),
       ),
     );
     // Load OpenAI fast/flex policy rules from bulk settings.
@@ -9624,7 +9624,7 @@ async function saveSettings() {
       rawOpenAIWSSessionIdleTTLSeconds,
     )
       ? Math.max(1, Math.min(3600, rawOpenAIWSSessionIdleTTLSeconds))
-      : 300;
+      : 30;
 
     const normalizedLoginAgreementDocuments =
       normalizeLoginAgreementDocumentsForSave();

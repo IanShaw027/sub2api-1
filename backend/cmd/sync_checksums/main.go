@@ -84,21 +84,9 @@ func main() {
 		fmt.Printf("checksum snapshot written: %s\n", backupFile)
 	}
 
-	var updated int
-	for _, item := range fileChecksums {
-		dbChecksum, ok := dbChecksums[item.Filename]
-		if !ok || dbChecksum == item.Checksum {
-			continue
-		}
-		if _, err := db.ExecContext(ctx,
-			"UPDATE schema_migrations SET checksum = $1 WHERE filename = $2",
-			item.Checksum,
-			item.Filename,
-		); err != nil {
-			log.Fatalf("update checksum for %s: %v", item.Filename, err)
-		}
-		updated++
-		fmt.Printf("updated %s\n", item.Filename)
+	updated, err := syncDatabaseChecksums(ctx, db, fileChecksums, dbChecksums)
+	if err != nil {
+		log.Fatalf("sync checksum: %v", err)
 	}
 
 	fmt.Printf("checksum sync complete: updated=%d checked=%d\n", updated, len(fileChecksums))
@@ -168,14 +156,19 @@ func readChecksumSnapshot(path string) ([]migrationChecksum, error) {
 }
 
 func restoreDatabaseChecksums(ctx context.Context, db *sql.DB, items []migrationChecksum) (int, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
 	var restored int
 	for _, item := range items {
-		result, err := db.ExecContext(ctx,
+		result, err := tx.ExecContext(ctx,
 			"UPDATE schema_migrations SET checksum = $1 WHERE filename = $2",
 			item.Checksum,
 			item.Filename,
 		)
 		if err != nil {
+			_ = tx.Rollback()
 			return restored, fmt.Errorf("update checksum for %s: %w", item.Filename, err)
 		}
 		affected, _ := result.RowsAffected()
@@ -183,7 +176,38 @@ func restoreDatabaseChecksums(ctx context.Context, db *sql.DB, items []migration
 			restored++
 		}
 	}
+	if err := tx.Commit(); err != nil {
+		return restored, err
+	}
 	return restored, nil
+}
+
+func syncDatabaseChecksums(ctx context.Context, db *sql.DB, fileChecksums []migrationChecksum, dbChecksums map[string]string) (int, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	var updated int
+	for _, item := range fileChecksums {
+		dbChecksum, ok := dbChecksums[item.Filename]
+		if !ok || dbChecksum == item.Checksum {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			"UPDATE schema_migrations SET checksum = $1 WHERE filename = $2",
+			item.Checksum,
+			item.Filename,
+		); err != nil {
+			_ = tx.Rollback()
+			return updated, fmt.Errorf("update checksum for %s: %w", item.Filename, err)
+		}
+		updated++
+		fmt.Printf("updated %s\n", item.Filename)
+	}
+	if err := tx.Commit(); err != nil {
+		return updated, err
+	}
+	return updated, nil
 }
 
 func loadDatabaseChecksums(ctx context.Context, db *sql.DB) (map[string]string, error) {

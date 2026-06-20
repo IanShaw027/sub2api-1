@@ -3727,6 +3727,8 @@
         "endpointCapabilitiesDesc": "Restricts which OpenAI-compatible endpoints this API key account can serve. At least one capability must remain selected.",
         "endpointCapabilityChatCompletions": "Text generation",
         "endpointCapabilityEmbeddings": "Embeddings",
+        "textEndpointAutoRoute": "Auto-route text endpoints",
+        "textEndpointAutoRouteDesc": "Allows Responses, Messages, and Chat Completions text ingress to convert to the text upstream endpoint this account can use. Use it for chat-only upstreams serving Codex /responses or /messages requests.",
         "compactSupported": "Compact supported",
         "compactUnsupported": "Compact unsupported",
         "compactUnknown": "Compact unknown",

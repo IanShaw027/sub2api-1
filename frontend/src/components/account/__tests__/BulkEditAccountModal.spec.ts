@@ -236,6 +236,25 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('OpenAI API Key 批量编辑应提交文本端点自动转换开关', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['apikey']
+    })
+
+    await wrapper.get('#bulk-edit-openai-text-endpoint-auto-route-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-openai-text-endpoint-auto-route-toggle').trigger('click')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        text_endpoint_auto_route: true
+      }
+    })
+  })
+
   it('批量编辑保存前拒绝小数 custom_error_codes', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],

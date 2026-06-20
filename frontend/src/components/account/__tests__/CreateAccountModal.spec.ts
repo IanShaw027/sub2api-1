@@ -555,6 +555,31 @@ describe('CreateAccountModal', () => {
     }))
   })
 
+  it('serializes OpenAI API key text endpoint auto-route on create', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await findAccountTypeButton(wrapper, 1).trigger('click')
+    await nextTick()
+
+    await wrapper.get('[data-testid="openai-text-endpoint-auto-route-toggle"]').trigger('click')
+    await wrapper.get('[data-tour="account-form-name"]').setValue('openai-api')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'openai-api',
+      platform: 'openai',
+      type: 'apikey',
+      extra: expect.objectContaining({
+        text_endpoint_auto_route: true
+      })
+    }))
+  })
+
   it('creates an OpenAI API key account with TLS fingerprint settings', async () => {
     listTlsFingerprintProfilesMock.mockResolvedValue([{ id: 12, name: 'Chrome 124' }])
     listTlsFingerprintRoutersMock.mockResolvedValue([{ id: 9, name: 'UA Router' }])

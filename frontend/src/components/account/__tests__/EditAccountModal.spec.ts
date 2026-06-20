@@ -1307,6 +1307,27 @@ describe('EditAccountModal', () => {
     expect(wrapper.find('[data-testid="openai-responses-mode-select"]').exists()).toBe(false)
   })
 
+  it('hydrates and clears OpenAI APIKey text endpoint auto-route', async () => {
+    const account = buildAccount()
+    account.extra = {
+      text_endpoint_auto_route: true
+    }
+    resetCommonMocks()
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    const toggle = wrapper.get('[data-testid="openai-text-endpoint-auto-route-toggle"]')
+    expect(toggle.classes()).toContain('bg-primary-600')
+
+    await toggle.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('text_endpoint_auto_route')
+  })
+
   it('keeps at least one OpenAI APIKey endpoint capability selected', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset()

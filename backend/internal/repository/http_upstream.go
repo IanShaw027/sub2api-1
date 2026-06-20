@@ -1193,13 +1193,22 @@ type upstreamDialResult struct {
 }
 
 func dialResolvedUpstreamIPAddrs(ctx context.Context, base *net.Dialer, network string, port string, ordered []net.IPAddr) (net.Conn, error) {
-	if len(ordered) == 0 {
-		return nil, fmt.Errorf("dial: no address attempted")
-	}
 	if base == nil {
 		base = newUpstreamNetDialer()
 	}
 	fallbackDelay := base.FallbackDelay
+	return dialResolvedUpstreamIPAddrsWithDial(ctx, network, port, ordered, fallbackDelay, base.DialContext)
+}
+
+type upstreamDialContextFunc func(ctx context.Context, network, address string) (net.Conn, error)
+
+func dialResolvedUpstreamIPAddrsWithDial(ctx context.Context, network string, port string, ordered []net.IPAddr, fallbackDelay time.Duration, dial upstreamDialContextFunc) (net.Conn, error) {
+	if len(ordered) == 0 {
+		return nil, fmt.Errorf("dial: no address attempted")
+	}
+	if dial == nil {
+		return nil, fmt.Errorf("dial: no dialer")
+	}
 	if fallbackDelay <= 0 {
 		fallbackDelay = defaultUpstreamDialFallbackDelay
 	}
@@ -1209,8 +1218,21 @@ func dialResolvedUpstreamIPAddrs(ctx context.Context, base *net.Dialer, network 
 	results := make(chan upstreamDialResult, len(ordered))
 	startDial := func(addr net.IPAddr) {
 		target := net.JoinHostPort(addr.IP.String(), port)
-		conn, err := base.DialContext(dialCtx, network, target)
+		conn, err := dial(dialCtx, network, target)
 		results <- upstreamDialResult{conn: conn, err: err}
+	}
+	drainStarted := func(remaining int) {
+		if remaining <= 0 {
+			return
+		}
+		go func() {
+			for i := 0; i < remaining; i++ {
+				result := <-results
+				if result.conn != nil {
+					_ = result.conn.Close()
+				}
+			}
+		}()
 	}
 
 	go startDial(ordered[0])
@@ -1231,6 +1253,8 @@ func dialResolvedUpstreamIPAddrs(ctx context.Context, base *net.Dialer, network 
 			if timer != nil {
 				timer.Stop()
 			}
+			cancel()
+			drainStarted(started - completed)
 			return nil, ctx.Err()
 		case <-timerC:
 			go startDial(ordered[started])
@@ -1243,6 +1267,7 @@ func dialResolvedUpstreamIPAddrs(ctx context.Context, base *net.Dialer, network 
 					timer.Stop()
 				}
 				cancel()
+				drainStarted(started - completed)
 				return result.conn, nil
 			}
 			if result.err != nil {

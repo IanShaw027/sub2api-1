@@ -1655,6 +1655,35 @@
         v-if="account?.platform === 'openai' && account?.type === 'apikey'"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.openai.textEndpointAutoRoute') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.textEndpointAutoRouteDesc') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="openai-text-endpoint-auto-route-toggle"
+            @click="openAITextEndpointAutoRouteEnabled = !openAITextEndpointAutoRouteEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              openAITextEndpointAutoRouteEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                openAITextEndpointAutoRouteEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+      <div
+        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
           <label class="input-label mb-2 block">{{ t('admin.accounts.openai.endpointCapabilities') }}</label>
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label
@@ -2724,6 +2753,7 @@ const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OF
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAllowClaudeCodeEnabled = ref(false)
 const openaiImageGenerationEnabled = ref(true)
+const openAITextEndpointAutoRouteEnabled = ref(false)
 type CodexImageGenerationBridgeMode = 'inherit' | 'enabled' | 'disabled'
 const codexImageGenerationBridgeMode = ref<CodexImageGenerationBridgeMode>('inherit')
 type OpenAIEndpointCapability = 'chat_completions' | 'embeddings'
@@ -3106,6 +3136,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   codexCLIOnlyEnabled.value = false
   codexCLIOnlyAllowClaudeCodeEnabled.value = false
+  openAITextEndpointAutoRouteEnabled.value = false
   openAIEndpointCapabilities.value = [...OPENAI_ENDPOINT_CAPABILITIES]
   openAIResponsesMode.value = 'auto'
   const legacyOpenAIImageGenerationEnabled = extra?.openai_image_generation_enabled
@@ -3123,6 +3154,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     openAIResponsesMode.value = newAccount.type === 'apikey' && isOpenAIResponsesMode(extra?.openai_responses_mode)
       ? extra.openai_responses_mode
       : 'auto'
+    openAITextEndpointAutoRouteEnabled.value = newAccount.type === 'apikey' && extra?.text_endpoint_auto_route === true
     openAICompactSupported.value = typeof extra?.openai_compact_supported === 'boolean'
       ? extra.openai_compact_supported
       : null
@@ -4815,6 +4847,11 @@ const handleSubmit = async () => {
         }
       } else {
         delete newExtra.openai_responses_mode
+      }
+      if (props.account.type === 'apikey' && openAITextEndpointAutoRouteEnabled.value) {
+        newExtra.text_endpoint_auto_route = true
+      } else {
+        delete newExtra.text_endpoint_auto_route
       }
 
       delete newExtra.codex_image_generation_bridge_enabled

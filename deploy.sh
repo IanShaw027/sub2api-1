@@ -290,6 +290,18 @@ ROLLBACK_CHECKSUM_FAILED=0
 ROLLBACK_BINARY_FAILED=0
 ROLLBACK_SERVICE_RESTORED=0
 
+restore_checksum_then_restart_service() {
+    if ! restore_checksum_snapshot; then
+        ROLLBACK_CHECKSUM_FAILED=1
+        echo "⚠️  checksum 回滚失败，仍会尝试再次启动服务，请手动检查 schema_migrations" >&2
+    fi
+
+    systemctl restart "$SERVICE_NAME" || return 1
+    wait_for_service_active || return 1
+    ROLLBACK_SERVICE_RESTORED=1
+    [ "$ROLLBACK_CHECKSUM_FAILED" -eq 0 ]
+}
+
 rollback_and_restart() {
     local backup_path="${1:-}"
 
@@ -297,11 +309,7 @@ rollback_and_restart() {
     ROLLBACK_BINARY_FAILED=0
     ROLLBACK_SERVICE_RESTORED=0
 
-    echo "↩️  尝试恢复数据库 checksum、二进制和服务..."
-    if ! restore_checksum_snapshot; then
-        ROLLBACK_CHECKSUM_FAILED=1
-        echo "⚠️  checksum 回滚失败，继续尝试恢复服务" >&2
-    fi
+    echo "↩️  尝试恢复二进制并重启服务..."
     if [ -n "$backup_path" ] && [ -f "$backup_path" ]; then
         if ! restore_binary_backup "$backup_path"; then
             ROLLBACK_BINARY_FAILED=1
@@ -309,10 +317,24 @@ rollback_and_restart() {
         fi
     fi
 
-    systemctl restart "$SERVICE_NAME" || return 1
-    wait_for_service_active || return 1
+    if ! systemctl restart "$SERVICE_NAME"; then
+        restore_checksum_then_restart_service || return 1
+        [ "$ROLLBACK_BINARY_FAILED" -eq 0 ] && [ "$ROLLBACK_CHECKSUM_FAILED" -eq 0 ]
+        return
+    fi
+    if ! wait_for_service_active; then
+        restore_checksum_then_restart_service || return 1
+        [ "$ROLLBACK_BINARY_FAILED" -eq 0 ] && [ "$ROLLBACK_CHECKSUM_FAILED" -eq 0 ]
+        return
+    fi
     ROLLBACK_SERVICE_RESTORED=1
-    [ "$ROLLBACK_BINARY_FAILED" -eq 0 ]
+
+    if ! restore_checksum_snapshot; then
+        ROLLBACK_CHECKSUM_FAILED=1
+        echo "⚠️  checksum 回滚失败，服务已先恢复，请手动检查 schema_migrations" >&2
+    fi
+
+    [ "$ROLLBACK_BINARY_FAILED" -eq 0 ] && [ "$ROLLBACK_CHECKSUM_FAILED" -eq 0 ]
 }
 
 find_config_file() {

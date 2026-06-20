@@ -202,6 +202,9 @@ class DeployScriptTest(unittest.TestCase):
                 if [ -n "$restore_file" ] && [ "${DEPLOY_TEST_RESTORE_FAIL:-0}" = "1" ]; then
                     exit 1
                 fi
+                if [ -n "$restore_file" ]; then
+                    echo "restored" > "$log_file.checksum_restored"
+                fi
                 if [ -n "$backup_file" ]; then
                     mkdir -p "$(dirname "$backup_file")"
                     printf '[{"Filename":"001_test.sql","Checksum":"old"}]\n' > "$backup_file"
@@ -287,6 +290,10 @@ class DeployScriptTest(unittest.TestCase):
                 exit 0
             fi
             if [ "$1" = "is-active" ]; then
+                if [ "${DEPLOY_TEST_IS_ACTIVE_FAIL_UNTIL_RESTORE:-0}" = "1" ] && [ ! -f "$log_file.checksum_restored" ]; then
+                    echo "systemctl is-active $3" >> "$log_file"
+                    exit 1
+                fi
                 exit 0
             fi
             if [ "$1" = "status" ]; then
@@ -295,6 +302,18 @@ class DeployScriptTest(unittest.TestCase):
             fi
             if [ "$1" = "restart" ]; then
                 echo "systemctl restart $2" >> "$log_file"
+                if [ "${DEPLOY_TEST_RESTART_FAIL_ONCE:-0}" = "1" ]; then
+                    restart_count_file="$log_file.restart_count"
+                    restart_count=0
+                    if [ -f "$restart_count_file" ]; then
+                        restart_count="$(cat "$restart_count_file")"
+                    fi
+                    restart_count=$((restart_count + 1))
+                    echo "$restart_count" > "$restart_count_file"
+                    if [ "$restart_count" -eq 1 ]; then
+                        exit 1
+                    fi
+                fi
                 if [ "${DEPLOY_TEST_RESTART_FAIL:-0}" = "1" ]; then
                     exit 1
                 fi
@@ -465,9 +484,63 @@ class DeployScriptTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         log_lines = self.log_path.read_text(encoding="utf-8").splitlines()
-        self.assertEqual(log_lines.count("systemctl restart sub2api-test"), 2, log_lines)
+        self.assertEqual(log_lines.count("systemctl restart sub2api-test"), 3, log_lines)
         self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --backup-file ") for line in log_lines), log_lines)
         self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --restore-file ") for line in log_lines), log_lines)
+        self.assertIn("version=old commit=old", old_binary.read_text(encoding="utf-8"))
+
+    def test_restart_failure_restarts_old_binary_before_checksum_restore(self) -> None:
+        old_binary = self.repo_root / "sub2api"
+        write_executable(
+            old_binary,
+            """
+            #!/bin/sh
+            if [ "$1" = "-version" ]; then
+                echo "Sub2API version=old commit=old built=old build_type=source dirty=clean source_hash=old frontend_dist_hash=old"
+                exit 0
+            fi
+            exit 0
+            """,
+        )
+
+        result = self.run_deploy({"DEPLOY_TEST_RESTART_FAIL_ONCE": "1"})
+
+        self.assertNotEqual(result.returncode, 0)
+        log_lines = self.log_path.read_text(encoding="utf-8").splitlines()
+        restart_indexes = [i for i, line in enumerate(log_lines) if line == "systemctl restart sub2api-test"]
+        restore_index = next(i for i, line in enumerate(log_lines) if line.startswith("go run ./cmd/sync_checksums --restore-file "))
+        self.assertEqual(len(restart_indexes), 2, log_lines)
+        self.assertLess(restart_indexes[1], restore_index, log_lines)
+        self.assertIn("version=old commit=old", old_binary.read_text(encoding="utf-8"))
+
+    def test_rollback_restarts_again_after_checksum_restore_if_old_binary_not_active(self) -> None:
+        old_binary = self.repo_root / "sub2api"
+        write_executable(
+            old_binary,
+            """
+            #!/bin/sh
+            if [ "$1" = "-version" ]; then
+                echo "Sub2API version=old commit=old built=old build_type=source dirty=clean source_hash=old frontend_dist_hash=old"
+                exit 0
+            fi
+            exit 0
+            """,
+        )
+
+        result = self.run_deploy({
+            "DEPLOY_TEST_IS_ACTIVE_FAIL_UNTIL_RESTORE": "1",
+            "DEPLOY_START_WAIT_ATTEMPTS": "1",
+            "DEPLOY_START_WAIT_SECONDS": "0",
+            "DEPLOY_ACTIVE_STABLE_CHECKS": "1",
+        })
+
+        self.assertNotEqual(result.returncode, 0)
+        log_lines = self.log_path.read_text(encoding="utf-8").splitlines()
+        restart_indexes = [i for i, line in enumerate(log_lines) if line == "systemctl restart sub2api-test"]
+        restore_index = next(i for i, line in enumerate(log_lines) if line.startswith("go run ./cmd/sync_checksums --restore-file "))
+        self.assertEqual(len(restart_indexes), 3, log_lines)
+        self.assertLess(restart_indexes[1], restore_index, log_lines)
+        self.assertGreater(restart_indexes[2], restore_index, log_lines)
         self.assertIn("version=old commit=old", old_binary.read_text(encoding="utf-8"))
 
     def test_restart_failure_still_restarts_old_binary_when_checksum_restore_fails(self) -> None:
@@ -491,7 +564,7 @@ class DeployScriptTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         log_lines = self.log_path.read_text(encoding="utf-8").splitlines()
-        self.assertEqual(log_lines.count("systemctl restart sub2api-test"), 2, log_lines)
+        self.assertEqual(log_lines.count("systemctl restart sub2api-test"), 3, log_lines)
         self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --restore-file ") for line in log_lines), log_lines)
         self.assertIn("version=old commit=old", old_binary.read_text(encoding="utf-8"))
 
@@ -506,7 +579,7 @@ class DeployScriptTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         log_lines = self.log_path.read_text(encoding="utf-8").splitlines()
         self.assertNotIn("go build", "\n".join(log_lines))
-        self.assertEqual(log_lines.count("systemctl restart sub2api-test"), 2, log_lines)
+        self.assertEqual(log_lines.count("systemctl restart sub2api-test"), 3, log_lines)
         self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --backup-file ") for line in log_lines), log_lines)
         self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --restore-file ") for line in log_lines), log_lines)
 
