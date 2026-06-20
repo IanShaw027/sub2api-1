@@ -2006,6 +2006,11 @@ func shouldForceNewConnOnStoreDisabled(mode, lastFailureReason string) bool {
 	}
 }
 
+func shouldForceNewConnOnRecoveredFullReplay(lastFailureReason string) bool {
+	reason := strings.TrimPrefix(strings.TrimSpace(lastFailureReason), "prewarm_")
+	return reason == "previous_response_not_found"
+}
+
 func isOpenAIWSDeltaConnReanchorRetryReason(lastFailureReason string) bool {
 	reason := strings.TrimPrefix(strings.TrimSpace(lastFailureReason), "prewarm_")
 	switch reason {
@@ -2658,7 +2663,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 	storeDisabled := openAIWSPayloadStoreDisabled(payload)
 	storeEnabled := openAIWSPayloadStoreEnabled(payload)
-	if !httpIngressWSOneShot && stateStore != nil && storeDisabled && previousResponseID == "" && sessionHash != "" {
+	forceNewConnForRecoveredFullReplay := shouldForceNewConnOnRecoveredFullReplay(lastFailureReason)
+	if !forceNewConnForRecoveredFullReplay && !httpIngressWSOneShot && stateStore != nil && storeDisabled && previousResponseID == "" && sessionHash != "" {
 		if connID, ok := stateStore.GetSessionConn(groupID, sessionHash); ok {
 			preferredConnID = connID
 			connAffinityHit = true
@@ -2667,6 +2673,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	storeDisabledConnMode := s.openAIWSStoreDisabledConnMode()
 	forceNewConnByPolicy := shouldForceNewConnOnStoreDisabled(storeDisabledConnMode, lastFailureReason)
 	forceNewConn := forceNewConnByPolicy && storeDisabled && previousResponseID == "" && sessionHash != "" && preferredConnID == ""
+	if forceNewConnForRecoveredFullReplay && storeDisabled && previousResponseID == "" {
+		preferredConnID = ""
+		connAffinityHit = false
+		forceNewConn = true
+	}
 	allowDeltaConnReanchor := shouldAllowOpenAIWSDeltaConnReanchor(lastFailureReason, stateStore, groupID, apiKeyID, sessionHash, account)
 	if allowDeltaConnReanchor {
 		forceNewConn = true
@@ -2699,7 +2710,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 		if useNeutral && !allowDeltaConnReanchor {
 			connProfile = openAIWSConnProfileNeutral
-			forceNewConn = false
+			if !forceNewConnForRecoveredFullReplay {
+				forceNewConn = false
+			}
 			wsHeaders = s.buildOpenAIWSNeutralHeaders(account, token, decision, isCodexCLI)
 			applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
 			promoteNeutralConnToSessionBound = true
