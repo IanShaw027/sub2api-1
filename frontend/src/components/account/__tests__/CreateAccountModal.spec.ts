@@ -555,29 +555,41 @@ describe('CreateAccountModal', () => {
     }))
   })
 
-  it('serializes OpenAI API key text endpoint auto-route on create', async () => {
+  it('serializes account-level text endpoint auto-route on create', async () => {
     const wrapper = mountModal()
     await flushPromises()
 
-    await findButtonByText(wrapper, 'OpenAI').trigger('click')
-    await nextTick()
-    await findAccountTypeButton(wrapper, 1).trigger('click')
+    ;(wrapper.vm as any).form.platform = 'anthropic'
+    ;(wrapper.vm as any).accountCategory = 'apikey'
+    ;(wrapper.vm as any).form.type = 'apikey'
     await nextTick()
 
-    await wrapper.get('[data-testid="openai-text-endpoint-auto-route-toggle"]').trigger('click')
-    await wrapper.get('[data-tour="account-form-name"]').setValue('openai-api')
-    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('[data-testid="text-endpoint-auto-route-toggle"]').trigger('click')
+    await wrapper.get('[data-tour="account-form-name"]').setValue('anthropic-compat')
+    await wrapper.get('input[placeholder="sk-ant-..."]').setValue('sk-ant-test')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
     expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'openai-api',
-      platform: 'openai',
+      name: 'anthropic-compat',
+      platform: 'anthropic',
       type: 'apikey',
       extra: expect.objectContaining({
         text_endpoint_auto_route: true
       })
     }))
+  })
+
+  it('hides text endpoint auto-route for non-text conversion create platforms', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    ;(wrapper.vm as any).form.platform = 'sora'
+    ;(wrapper.vm as any).accountCategory = 'apikey'
+    ;(wrapper.vm as any).form.type = 'apikey'
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="text-endpoint-auto-route-toggle"]').exists()).toBe(false)
   })
 
   it('creates an OpenAI API key account with TLS fingerprint settings', async () => {

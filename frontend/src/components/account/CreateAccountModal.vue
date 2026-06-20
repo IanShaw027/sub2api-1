@@ -3061,10 +3061,7 @@
         <p class="input-hint">{{ t('admin.accounts.openai.endpointCapabilitiesDesc') }}</p>
       </div>
 
-      <div
-        v-if="form.platform === 'openai' && accountCategory === 'apikey'"
-        class="border-t border-gray-200 pt-4 dark:border-dark-600"
-      >
+      <div v-if="showTextEndpointAutoRoute" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="flex items-center justify-between">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.openai.textEndpointAutoRoute') }}</label>
@@ -3074,17 +3071,17 @@
           </div>
           <button
             type="button"
-            data-testid="openai-text-endpoint-auto-route-toggle"
-            @click="openAITextEndpointAutoRouteEnabled = !openAITextEndpointAutoRouteEnabled"
+            data-testid="text-endpoint-auto-route-toggle"
+            @click="textEndpointAutoRouteEnabled = !textEndpointAutoRouteEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              openAITextEndpointAutoRouteEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              textEndpointAutoRouteEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
             ]"
           >
             <span
               :class="[
                 'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                openAITextEndpointAutoRouteEnabled ? 'translate-x-5' : 'translate-x-0'
+                textEndpointAutoRouteEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
           </button>
@@ -3668,6 +3665,7 @@ import {
   buildTempUnschedRulesResult,
   type TempUnschedRuleForm
 } from '@/components/account/tempUnschedRules'
+import { supportsTextEndpointAutoRoute } from '@/components/account/textEndpointAutoRoute'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
@@ -3857,7 +3855,7 @@ const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAllowClaudeCodeEnabled = ref(false)
-const openAITextEndpointAutoRouteEnabled = ref(false)
+const textEndpointAutoRouteEnabled = ref(false)
 type OpenAIEndpointCapability = 'chat_completions' | 'embeddings'
 const OPENAI_ENDPOINT_CAPABILITIES: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings']
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>([...OPENAI_ENDPOINT_CAPABILITIES])
@@ -4086,6 +4084,23 @@ const openAIWSModeConcurrencyHintKey = computed(() =>
 
 const isOpenAIModelRestrictionDisabled = computed(() =>
   form.platform === 'openai' && openaiPassthroughEnabled.value
+)
+
+const currentTextEndpointAutoRouteType = computed<AccountType>(() => {
+  if (form.platform === 'antigravity' && antigravityAccountType.value === 'upstream') {
+    return 'upstream'
+  }
+  if (form.platform === 'kiro') {
+    return kiroAccountType.value
+  }
+  if (form.platform !== 'anthropic' && accountCategory.value === 'oauth-based') {
+    return 'oauth'
+  }
+  return form.type
+})
+
+const showTextEndpointAutoRoute = computed(() =>
+  supportsTextEndpointAutoRoute(form.platform, currentTextEndpointAutoRouteType.value)
 )
 
 const mixedChannelWarningMessageText = computed(() => {
@@ -4736,10 +4751,19 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
   }
 }
 
+const finalizeCreateAccountPayload = (payload: CreateAccountRequest): CreateAccountRequest => ({
+  ...payload,
+  extra: buildTextEndpointAutoRouteExtra(payload.platform, payload.type, payload.extra as Record<string, unknown> | undefined)
+})
+
+const createAccountRequest = async (payload: CreateAccountRequest) => {
+  await adminAPI.accounts.create(withAntigravityConfirmFlag(finalizeCreateAccountPayload(payload)))
+}
+
 const submitCreateAccount = async (payload: CreateAccountRequest) => {
   submitting.value = true
   try {
-    await adminAPI.accounts.create(withAntigravityConfirmFlag(payload))
+    await createAccountRequest(payload)
     appStore.showSuccess(t('admin.accounts.accountCreated'))
     emit('created')
     handleClose()
@@ -4813,7 +4837,7 @@ const resetForm = () => {
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   codexCLIOnlyEnabled.value = false
   codexCLIOnlyAllowClaudeCodeEnabled.value = false
-  openAITextEndpointAutoRouteEnabled.value = false
+  textEndpointAutoRouteEnabled.value = false
   openAIEndpointCapabilities.value = [...OPENAI_ENDPOINT_CAPABILITIES]
   openAIResponsesMode.value = 'auto'
   anthropicPassthroughEnabled.value = false
@@ -4927,14 +4951,22 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
   } else {
     delete extra.openai_responses_mode
   }
-  if (accountCategory.value === 'apikey' && openAITextEndpointAutoRouteEnabled.value) {
+  applyTLSFingerprintExtra(extra, true)
+
+  return Object.keys(extra).length > 0 ? extra : undefined
+}
+
+const buildTextEndpointAutoRouteExtra = (
+  platform: AccountPlatform,
+  type: AccountType,
+  base?: Record<string, unknown>
+): Record<string, unknown> | undefined => {
+  const extra: Record<string, unknown> = { ...(base || {}) }
+  if (supportsTextEndpointAutoRoute(platform, type) && textEndpointAutoRouteEnabled.value) {
     extra.text_endpoint_auto_route = true
   } else {
     delete extra.text_endpoint_auto_route
   }
-
-  applyTLSFingerprintExtra(extra, true)
-
   return Object.keys(extra).length > 0 ? extra : undefined
 }
 
@@ -5277,7 +5309,7 @@ const handleSubmit = async () => {
   }
 
   form.credentials = credentials
-  const extra = buildAnthropicExtra(buildOpenAIExtra())
+  const extra = buildTextEndpointAutoRouteExtra(form.platform, form.type, buildAnthropicExtra(buildOpenAIExtra()))
 
   await doCreateAccount({
     ...form,
@@ -5408,7 +5440,7 @@ const handleKiroValidateRT = async (payload: {
         const baseName = kiroOAuth.buildAccountName(tokenInfo, form.name)
         const accountName = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
 
-        await adminAPI.accounts.create({
+        await createAccountRequest({
           name: accountName,
           notes: form.notes,
           platform: 'kiro',
@@ -5560,7 +5592,7 @@ const handleOpenAIExchange = async (authCode: string) => {
 
     const credentials = oauthClient.buildCredentials(tokenInfo)
     const oauthExtra = oauthClient.buildExtraInfo(tokenInfo) as Record<string, unknown> | undefined
-    const extra = buildOpenAIExtra(oauthExtra)
+    const extra = buildTextEndpointAutoRouteExtra(form.platform, 'oauth', buildOpenAIExtra(oauthExtra))
     const accountName = oauthClient.buildAccountName(tokenInfo, form.name)
     const shouldCreateOpenAI = form.platform === 'openai'
 
@@ -5584,7 +5616,7 @@ const handleOpenAIExchange = async (authCode: string) => {
     }
 
     if (shouldCreateOpenAI) {
-      await adminAPI.accounts.create({
+      await createAccountRequest({
         name: accountName,
         notes: form.notes,
         platform: 'openai',
@@ -5663,7 +5695,7 @@ const handleOpenAIImportCodexSession = async (content: string) => {
   oauthClient.error.value = ''
 
   try {
-    const extra = buildOpenAIExtra()
+    const extra = buildTextEndpointAutoRouteExtra('openai', 'oauth', buildOpenAIExtra())
     const result = await adminAPI.accounts.importCodexSession({
       content: trimmed,
       name: form.name,
@@ -5767,7 +5799,7 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
           credentials.client_id = clientId
         }
         const oauthExtra = oauthClient.buildExtraInfo(tokenInfo) as Record<string, unknown> | undefined
-        const extra = buildOpenAIExtra(oauthExtra)
+        const extra = buildTextEndpointAutoRouteExtra('openai', 'oauth', buildOpenAIExtra(oauthExtra))
 
         // Add model mapping for OpenAI OAuth accounts（透传模式下不应用）
         if (shouldCreateOpenAI && !isOpenAIModelRestrictionDisabled.value) {
@@ -5788,7 +5820,7 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
         const accountName = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
 
         if (shouldCreateOpenAI) {
-          await adminAPI.accounts.create({
+          await createAccountRequest({
             name: accountName,
             notes: form.notes,
             platform: 'openai',
@@ -5885,7 +5917,7 @@ const handleAntigravityValidateRT = async (refreshTokenInput: string) => {
         const baseName = antigravityOAuth.buildAccountName(tokenInfo, form.name)
         const accountName = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
 
-        const createPayload = withAntigravityConfirmFlag({
+        const createPayload: CreateAccountRequest = {
           name: accountName,
           notes: form.notes,
           platform: 'antigravity',
@@ -5900,8 +5932,8 @@ const handleAntigravityValidateRT = async (refreshTokenInput: string) => {
           group_ids: form.group_ids,
           expires_at: form.expires_at,
           auto_pause_on_expired: autoPauseOnExpired.value
-        })
-        await adminAPI.accounts.create(createPayload)
+        }
+        await createAccountRequest(createPayload)
         successCount++
       } catch (error: any) {
         failedCount++
@@ -6245,7 +6277,7 @@ const handleCookieAuth = async (sessionKey: string) => {
           return
         }
 
-        await adminAPI.accounts.create({
+        await createAccountRequest({
           name: accountName,
           notes: form.notes,
           platform: form.platform,

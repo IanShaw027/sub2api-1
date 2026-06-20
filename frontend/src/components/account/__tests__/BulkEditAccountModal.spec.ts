@@ -236,14 +236,14 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
-  it('OpenAI API Key 批量编辑应提交文本端点自动转换开关', async () => {
+  it('批量编辑应提交账号级文本端点自动转换开关', async () => {
     const wrapper = mountModal({
-      selectedPlatforms: ['openai'],
+      selectedPlatforms: ['anthropic'],
       selectedTypes: ['apikey']
     })
 
-    await wrapper.get('#bulk-edit-openai-text-endpoint-auto-route-enabled').setValue(true)
-    await wrapper.get('#bulk-edit-openai-text-endpoint-auto-route-toggle').trigger('click')
+    await wrapper.get('#bulk-edit-text-endpoint-auto-route-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-text-endpoint-auto-route-toggle').trigger('click')
     await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
     await flushPromises()
 
@@ -253,6 +253,34 @@ describe('BulkEditAccountModal', () => {
         text_endpoint_auto_route: true
       }
     })
+  })
+
+  it('批量编辑应提交关闭文本端点自动转换开关的 false 值', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['apikey']
+    })
+
+    await wrapper.get('#bulk-edit-text-endpoint-auto-route-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        text_endpoint_auto_route: false
+      }
+    })
+  })
+
+  it('批量编辑不向非文本转换平台显示文本端点自动转换开关', () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['sora'],
+      selectedTypes: ['apikey']
+    })
+
+    expect(wrapper.find('#bulk-edit-text-endpoint-auto-route-enabled').exists()).toBe(false)
+    expect(wrapper.find('#bulk-edit-text-endpoint-auto-route-toggle').exists()).toBe(false)
   })
 
   it('批量编辑保存前拒绝小数 custom_error_codes', async () => {

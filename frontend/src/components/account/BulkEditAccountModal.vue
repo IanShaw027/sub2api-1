@@ -132,6 +132,56 @@
         </div>
       </div>
 
+      <div
+        v-if="allTextEndpointAutoRouteConfigurable"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="mb-3 flex items-center justify-between">
+          <div class="flex-1 pr-4">
+            <label
+              id="bulk-edit-text-endpoint-auto-route-label"
+              class="input-label mb-0"
+              for="bulk-edit-text-endpoint-auto-route-enabled"
+            >
+              {{ t('admin.accounts.openai.textEndpointAutoRoute') }}
+            </label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.textEndpointAutoRouteDesc') }}
+            </p>
+          </div>
+          <input
+            v-model="enableTextEndpointAutoRoute"
+            id="bulk-edit-text-endpoint-auto-route-enabled"
+            type="checkbox"
+            aria-controls="bulk-edit-text-endpoint-auto-route-body"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+        </div>
+        <div
+          id="bulk-edit-text-endpoint-auto-route-body"
+          :class="!enableTextEndpointAutoRoute && 'pointer-events-none opacity-50'"
+          role="group"
+          aria-labelledby="bulk-edit-text-endpoint-auto-route-label"
+        >
+          <button
+            id="bulk-edit-text-endpoint-auto-route-toggle"
+            type="button"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              textEndpointAutoRouteEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+            @click="textEndpointAutoRouteEnabled = !textEndpointAutoRouteEnabled"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                textEndpointAutoRouteEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
       <!-- Base URL (API Key only) -->
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
@@ -1208,6 +1258,7 @@ import {
 } from '@/utils/openaiWsMode'
 import type { OpenAIWSMode } from '@/utils/openaiWsMode'
 import { buildCustomErrorCodesResult, isValidCustomErrorCode } from '@/components/account/customErrorCodes'
+import { supportsTextEndpointAutoRoute } from '@/components/account/textEndpointAutoRoute'
 interface Props {
   show: boolean
   accountIds: number[]
@@ -1269,6 +1320,14 @@ const allOpenAIAPIKey = computed(() => {
 
 const allOpenAIImageGenerationConfigurable = computed(() => allOpenAIPassthroughCapable.value)
 
+const allTextEndpointAutoRouteConfigurable = computed(() =>
+  targetSelectedPlatforms.value.length > 0 &&
+  targetSelectedTypes.value.length > 0 &&
+  targetSelectedPlatforms.value.every(platform =>
+    targetSelectedTypes.value.every(type => supportsTextEndpointAutoRoute(platform, type))
+  )
+)
+
 // 是否全部为 Anthropic OAuth/SetupToken（RPM 配置仅在此条件下显示）
 const allAnthropicOAuthOrSetupToken = computed(() => {
   return (
@@ -1314,6 +1373,7 @@ const enableStatus = ref(false)
 const enableGroups = ref(false)
 const enableOpenAIPassthrough = ref(false)
 const enableOpenAIImageGeneration = ref(false)
+const enableTextEndpointAutoRoute = ref(false)
 const enableOpenAIWSMode = ref(false)
 const enableOpenAIAPIKeyWSMode = ref(false)
 const enableCodexCLIOnly = ref(false)
@@ -1343,6 +1403,7 @@ const status = ref<'active' | 'inactive'>('active')
 const groupIds = ref<number[]>([])
 const openaiPassthroughEnabled = ref(false)
 const openaiImageGenerationEnabled = ref(true)
+const textEndpointAutoRouteEnabled = ref(false)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
@@ -1568,6 +1629,11 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     extra.openai_image_generation_enabled = openaiImageGenerationEnabled.value
   }
 
+  if (enableTextEndpointAutoRoute.value && allTextEndpointAutoRouteConfigurable.value) {
+    const extra = ensureExtra()
+    extra.text_endpoint_auto_route = textEndpointAutoRouteEnabled.value
+  }
+
   if (enableModelRestriction.value && !isOpenAIModelRestrictionDisabled.value) {
     // 统一使用 model_mapping 字段
     if (modelRestrictionMode.value === 'whitelist') {
@@ -1722,6 +1788,7 @@ const handleSubmit = async () => {
     enableBaseUrl.value ||
     enableOpenAIPassthrough.value ||
     enableOpenAIImageGeneration.value ||
+    (enableTextEndpointAutoRoute.value && allTextEndpointAutoRouteConfigurable.value) ||
     enableModelRestriction.value ||
     enableCustomErrorCodes.value ||
     enableInterceptWarmup.value ||
@@ -1841,6 +1908,7 @@ watch(
       enableGroups.value = false
       enableOpenAIPassthrough.value = false
       enableOpenAIImageGeneration.value = false
+      enableTextEndpointAutoRoute.value = false
       enableOpenAIWSMode.value = false
       enableOpenAIAPIKeyWSMode.value = false
       enableCodexCLIOnly.value = false
@@ -1868,6 +1936,7 @@ watch(
       openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       openaiImageGenerationEnabled.value = true
+      textEndpointAutoRouteEnabled.value = false
       codexCLIOnlyEnabled.value = false
       codexCLIOnlyAllowClaudeCodeEnabled.value = false
       openAICompactMode.value = 'auto'

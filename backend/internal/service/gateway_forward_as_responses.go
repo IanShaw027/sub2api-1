@@ -34,6 +34,10 @@ func (s *GatewayService) ForwardAsResponses(
 	body []byte,
 	parsed *ParsedRequest,
 ) (*ForwardResult, error) {
+	if shouldAutoRouteOpenAICompatCCUpstream(account) {
+		return s.forwardResponsesToOpenAICompatCC(ctx, c, account, body)
+	}
+
 	_ = parsed
 	startTime := time.Now()
 

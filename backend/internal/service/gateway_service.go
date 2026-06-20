@@ -1639,7 +1639,7 @@ func gatewayOpenAICompatIngressFromContext(ctx context.Context) GatewayOpenAICom
 func (s *GatewayService) isAccountCompatibleWithOpenAICompatIngress(ctx context.Context, account *Account) bool {
 	switch gatewayOpenAICompatIngressFromContext(ctx) {
 	case GatewayOpenAICompatIngressChatCompletions, GatewayOpenAICompatIngressResponses:
-		return account == nil || !account.IsOpenAICompatCCUpstream()
+		return account == nil || !account.IsOpenAICompatCCUpstream() || account.TextEndpointAutoRouteEnabled()
 	default:
 		return true
 	}

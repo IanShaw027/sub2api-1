@@ -3883,6 +3883,8 @@
         "endpointCapabilitiesDesc": "限制该 OpenAI-compatible API Key 账号可承载的端点；至少保留一项能力。",
         "endpointCapabilityChatCompletions": "文本生成",
         "endpointCapabilityEmbeddings": "Embeddings",
+        "textEndpointAutoRoute": "文本端点自动转换",
+        "textEndpointAutoRouteDesc": "允许 Responses、Messages、Chat Completions 文本入口自动转换到该账号可用的文本上游端点。用于 Chat-only 上游承载 Codex /responses 或 /messages 请求。",
         "compactSupported": "支持 Compact",
         "compactUnsupported": "不支持 Compact",
         "compactUnknown": "Compact 未知",

@@ -40,6 +40,24 @@ func TestGatewayServiceOpenAICompatIngressExcludesCCUpstreamAccounts(t *testing.
 	require.True(t, svc.isAccountCompatibleWithOpenAICompatIngress(ctx, regularAccount))
 }
 
+func TestGatewayServiceOpenAICompatIngressAllowsCCUpstreamWhenAutoRouteEnabled(t *testing.T) {
+	svc := &GatewayService{}
+	account := &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Extra: map[string]any{
+			"openai_compat_cc_upstream": true,
+			"text_endpoint_auto_route":  true,
+		},
+	}
+
+	responsesCtx := WithGatewayOpenAICompatIngress(context.Background(), GatewayOpenAICompatIngressResponses)
+	chatCtx := WithGatewayOpenAICompatIngress(context.Background(), GatewayOpenAICompatIngressChatCompletions)
+
+	require.True(t, svc.isAccountCompatibleWithOpenAICompatIngress(responsesCtx, account))
+	require.True(t, svc.isAccountCompatibleWithOpenAICompatIngress(chatCtx, account))
+}
+
 // mockAccountRepoForPlatform 单平台测试用的 mock
 type mockAccountRepoForPlatform struct {
 	accounts         []Account

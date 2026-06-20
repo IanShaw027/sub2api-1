@@ -1987,7 +1987,10 @@ func (a *Account) IsAnthropicMessagesUpstream() bool {
 }
 
 func (a *Account) TextEndpointAutoRouteEnabled() bool {
-	if a == nil || a.Platform != PlatformOpenAI || a.Type != AccountTypeAPIKey || a.Extra == nil {
+	if a == nil || a.Extra == nil {
+		return false
+	}
+	if a.Platform != PlatformOpenAI && a.Platform != PlatformAnthropic {
 		return false
 	}
 	enabled, ok := a.Extra[textEndpointAutoRouteExtraKey].(bool)

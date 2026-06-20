@@ -1307,8 +1307,9 @@ describe('EditAccountModal', () => {
     expect(wrapper.find('[data-testid="openai-responses-mode-select"]').exists()).toBe(false)
   })
 
-  it('hydrates and clears OpenAI APIKey text endpoint auto-route', async () => {
+  it('hydrates and clears account-level text endpoint auto-route', async () => {
     const account = buildAccount()
+    account.platform = 'anthropic'
     account.extra = {
       text_endpoint_auto_route: true
     }
@@ -1318,7 +1319,7 @@ describe('EditAccountModal', () => {
     const wrapper = mountModal(account)
     await wrapper.setProps({ show: true })
 
-    const toggle = wrapper.get('[data-testid="openai-text-endpoint-auto-route-toggle"]')
+    const toggle = wrapper.get('[data-testid="text-endpoint-auto-route-toggle"]')
     expect(toggle.classes()).toContain('bg-primary-600')
 
     await toggle.trigger('click')
@@ -1326,6 +1327,18 @@ describe('EditAccountModal', () => {
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('text_endpoint_auto_route')
+  })
+
+  it('hides text endpoint auto-route for non-text conversion edit platforms', async () => {
+    const account = buildAccount()
+    account.platform = 'sora'
+    account.type = 'apikey'
+    resetCommonMocks()
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.find('[data-testid="text-endpoint-auto-route-toggle"]').exists()).toBe(false)
   })
 
   it('keeps at least one OpenAI APIKey endpoint capability selected', async () => {

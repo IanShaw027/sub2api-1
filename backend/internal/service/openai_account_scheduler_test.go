@@ -65,6 +65,22 @@ func TestAccountSupportsOpenAIEndpointCapability_TextEndpointAutoRouteAllowsConv
 	require.False(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAnthropicMessagesIngress))
 }
 
+func TestAccountTextEndpointAutoRouteEnabled_IsAccountLevelForOpenAIAndAnthropic(t *testing.T) {
+	for _, account := range []*Account{
+		{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{"text_endpoint_auto_route": true}},
+		{Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Extra: map[string]any{"text_endpoint_auto_route": true}},
+	} {
+		require.True(t, account.TextEndpointAutoRouteEnabled(), "%s/%s should honor account-level text endpoint auto-route", account.Platform, account.Type)
+	}
+
+	for _, account := range []*Account{
+		{Platform: PlatformGemini, Type: AccountTypeOAuth, Extra: map[string]any{"text_endpoint_auto_route": true}},
+		{Platform: PlatformKiro, Type: AccountTypeOAuth, Extra: map[string]any{"text_endpoint_auto_route": true}},
+	} {
+		require.False(t, account.TextEndpointAutoRouteEnabled(), "%s/%s should stay out of OpenAI/Anthropic text endpoint auto-route", account.Platform, account.Type)
+	}
+}
+
 func (r schedulerTestOpenAIAccountRepo) GetByID(ctx context.Context, id int64) (*Account, error) {
 	for i := range r.accounts {
 		if r.accounts[i].ID == id {
