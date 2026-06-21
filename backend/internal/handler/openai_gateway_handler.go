@@ -2329,6 +2329,18 @@ func openAIStreamingResponseStarted(c *gin.Context, streamStarted bool) bool {
 	return strings.Contains(contentType, "text/event-stream")
 }
 
+func openAIRequestWantsStream(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	if v, ok := c.Get(opsStreamKey); ok {
+		if stream, ok := v.(bool); ok {
+			return stream
+		}
+	}
+	return false
+}
+
 // ensureForwardErrorResponse 在 Forward 返回错误但尚未写响应时补写统一错误响应。
 func (h *OpenAIGatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarted bool, forwardErr error) bool {
 	if c == nil || c.Writer == nil {
@@ -2344,10 +2356,10 @@ func (h *OpenAIGatewayHandler) ensureForwardErrorResponse(c *gin.Context, stream
 		streamStarted = true
 	}
 	if service.IsOpenAIWSSessionPreemptedError(forwardErr) {
+		if inboundIsResponses(c) && (streamStarted || openAIRequestWantsStream(c)) {
+			return writeResponsesCancelledSSE(c)
+		}
 		if streamStarted {
-			if inboundIsResponses(c) {
-				return writeResponsesCancelledSSE(c)
-			}
 			h.handleStreamingAwareError(c, 499, "request_canceled", "Superseded by a newer request in the same session", true)
 			return true
 		}

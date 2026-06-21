@@ -760,6 +760,15 @@ func applyOpenAIWSRetryPayloadStrategy(payload map[string]any, attempt int) (str
 	return "trim_optional_fields", removed
 }
 
+func stripOpenAIWSCreatePayloadUnsupportedFields(payload map[string]any) {
+	if len(payload) == 0 {
+		return
+	}
+	for _, field := range openAIResponsesUnsupportedFields {
+		delete(payload, field)
+	}
+}
+
 func logOpenAIWSModeInfo(format string, args ...any) {
 	logger.LegacyPrintf("service.openai_gateway", "[OpenAI WS Mode][openai_ws_mode=true] "+format, args...)
 }
@@ -1597,6 +1606,8 @@ func (s *OpenAIGatewayService) buildOpenAIWSCreatePayload(reqBody map[string]any
 	}
 
 	delete(payload, "background")
+	stripOpenAIWSCreatePayloadUnsupportedFields(payload)
+	extractSystemMessagesFromInput(payload)
 	if _, exists := payload["stream"]; !exists {
 		payload["stream"] = true
 	}

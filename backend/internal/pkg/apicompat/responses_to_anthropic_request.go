@@ -127,8 +127,11 @@ func convertResponsesInputToAnthropic(inputRaw json.RawMessage) (json.RawMessage
 
 		case item.Type == "function_call":
 			if strings.TrimSpace(item.Name) == "webfetch" {
-				if assistantMsg, userMsg, ok := webFetchHistoryMessagesFromFunctionCall(item); ok {
-					messages = append(messages, assistantMsg, userMsg)
+				if assistantMsg, userMsg, hasResult, ok := webFetchHistoryMessagesFromFunctionCall(item); ok {
+					messages = append(messages, assistantMsg)
+					if hasResult {
+						messages = append(messages, userMsg)
+					}
 					continue
 				}
 			}
@@ -151,7 +154,10 @@ func convertResponsesInputToAnthropic(inputRaw json.RawMessage) (json.RawMessage
 
 		case item.Type == "web_search_call":
 			assistantMsg, userMsg := webSearchHistoryMessagesFromCall(item)
-			messages = append(messages, assistantMsg, userMsg)
+			messages = append(messages, assistantMsg)
+			if len(webSearchSourcesFromCall(item)) > 0 {
+				messages = append(messages, userMsg)
+			}
 
 		case item.Type == "function_call_output":
 			// function_call_output → user message with tool_result block
@@ -306,16 +312,8 @@ func anthropicMessageFromBlocks(role string, blocks []AnthropicContentBlock) Ant
 
 func webSearchHistoryMessagesFromCall(item ResponsesInputItem) (AnthropicMessage, AnthropicMessage) {
 	query := ""
-	sources := make([]map[string]any, 0)
 	if item.Action != nil {
 		query = strings.TrimSpace(item.Action.Query)
-		for _, source := range item.Action.Sources {
-			sources = append(sources, map[string]any{
-				"type":  "web_search_result",
-				"url":   source.URL,
-				"title": source.Title,
-			})
-		}
 	}
 	input, _ := json.Marshal(map[string]any{"query": query})
 	assistantBlocks, _ := json.Marshal([]AnthropicContentBlock{{
@@ -324,7 +322,7 @@ func webSearchHistoryMessagesFromCall(item ResponsesInputItem) (AnthropicMessage
 		Name:  "web_search",
 		Input: input,
 	}})
-	userContent, _ := json.Marshal(sources)
+	userContent, _ := json.Marshal(webSearchSourcesFromCall(item))
 	userBlocks, _ := json.Marshal([]AnthropicContentBlock{{
 		Type:      "web_search_tool_result",
 		ToolUseID: restoreResponsesServerToolID(item.ID),
@@ -333,21 +331,31 @@ func webSearchHistoryMessagesFromCall(item ResponsesInputItem) (AnthropicMessage
 	return AnthropicMessage{Role: "assistant", Content: assistantBlocks}, AnthropicMessage{Role: "user", Content: userBlocks}
 }
 
-func webFetchHistoryMessagesFromFunctionCall(item ResponsesInputItem) (AnthropicMessage, AnthropicMessage, bool) {
+func webSearchSourcesFromCall(item ResponsesInputItem) []map[string]any {
+	if item.Action == nil || len(item.Action.Sources) == 0 {
+		return nil
+	}
+	sources := make([]map[string]any, 0, len(item.Action.Sources))
+	for _, source := range item.Action.Sources {
+		sources = append(sources, map[string]any{
+			"type":  "web_search_result",
+			"url":   source.URL,
+			"title": source.Title,
+		})
+	}
+	return sources
+}
+
+func webFetchHistoryMessagesFromFunctionCall(item ResponsesInputItem) (AnthropicMessage, AnthropicMessage, bool, bool) {
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(item.Arguments), &payload); err != nil {
-		return AnthropicMessage{}, AnthropicMessage{}, false
+		return AnthropicMessage{}, AnthropicMessage{}, false, false
 	}
 	rawResult, ok := payload["_sub2api_server_tool_result"]
-	if !ok {
-		return AnthropicMessage{}, AnthropicMessage{}, false
+	if ok {
+		delete(payload, "_sub2api_server_tool_result")
 	}
-	delete(payload, "_sub2api_server_tool_result")
 	input, _ := json.Marshal(payload)
-	resultJSON, err := json.Marshal(rawResult)
-	if err != nil {
-		return AnthropicMessage{}, AnthropicMessage{}, false
-	}
 	callID := fromResponsesCallIDToAnthropic(item.CallID)
 	assistantBlocks, _ := json.Marshal([]AnthropicContentBlock{{
 		Type:  "server_tool_use",
@@ -355,12 +363,19 @@ func webFetchHistoryMessagesFromFunctionCall(item ResponsesInputItem) (Anthropic
 		Name:  "web_fetch",
 		Input: input,
 	}})
+	if !ok {
+		return AnthropicMessage{Role: "assistant", Content: assistantBlocks}, AnthropicMessage{}, false, true
+	}
+	resultJSON, err := json.Marshal(rawResult)
+	if err != nil {
+		return AnthropicMessage{}, AnthropicMessage{}, false, false
+	}
 	userBlocks, _ := json.Marshal([]AnthropicContentBlock{{
 		Type:      "web_fetch_tool_result",
 		ToolUseID: callID,
 		Content:   resultJSON,
 	}})
-	return AnthropicMessage{Role: "assistant", Content: assistantBlocks}, AnthropicMessage{Role: "user", Content: userBlocks}, true
+	return AnthropicMessage{Role: "assistant", Content: assistantBlocks}, AnthropicMessage{Role: "user", Content: userBlocks}, true, true
 }
 
 func restoreResponsesServerToolID(id string) string {

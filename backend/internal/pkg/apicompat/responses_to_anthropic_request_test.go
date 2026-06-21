@@ -87,8 +87,8 @@ func TestResponsesToAnthropicRequest_MapsServerToolChoice(t *testing.T) {
 				Model:           "gpt-5.4",
 				Input:           json.RawMessage(`"Use the server tool"`),
 				MaxOutputTokens: intPtr(256),
-				Tools:          []ResponsesTool{{Type: tt.toolType}},
-				ToolChoice:     json.RawMessage(tt.choice),
+				Tools:           []ResponsesTool{{Type: tt.toolType}},
+				ToolChoice:      json.RawMessage(tt.choice),
 			}
 
 			out, err := ResponsesToAnthropicRequest(req)
@@ -370,6 +370,37 @@ func TestResponsesToAnthropicRequest_ConvertsWebSearchCallInputToServerToolHisto
 	assert.JSONEq(t, `[{"type":"web_search_result","url":"https://go.dev","title":"The Go Programming Language"}]`, string(userBlocks[0].Content))
 }
 
+func TestResponsesToAnthropicRequest_WebSearchCallWithoutSourcesDoesNotInventToolResult(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.4",
+		Input: json.RawMessage(`[
+			{
+				"type":"web_search_call",
+				"id":"search_native_1",
+				"status":"completed",
+				"action":{
+					"type":"search",
+					"query":"kiro native"
+				}
+			}
+		]`),
+		MaxOutputTokens: intPtr(256),
+	}
+
+	out, err := ResponsesToAnthropicRequest(req)
+	require.NoError(t, err)
+	require.Len(t, out.Messages, 1)
+	assert.Equal(t, "assistant", out.Messages[0].Role)
+
+	var assistantBlocks []AnthropicContentBlock
+	require.NoError(t, json.Unmarshal(out.Messages[0].Content, &assistantBlocks))
+	require.Len(t, assistantBlocks, 1)
+	assert.Equal(t, "server_tool_use", assistantBlocks[0].Type)
+	assert.Equal(t, "srvtoolu_search_native_1", assistantBlocks[0].ID)
+	assert.Equal(t, "web_search", assistantBlocks[0].Name)
+	assert.JSONEq(t, `{"query":"kiro native"}`, string(assistantBlocks[0].Input))
+}
+
 func TestResponsesToAnthropicRequest_RestoresWebFetchServerToolHistoryFromFunctionCallEnvelope(t *testing.T) {
 	req := &ResponsesRequest{
 		Model: "gpt-5.4",
@@ -404,6 +435,34 @@ func TestResponsesToAnthropicRequest_RestoresWebFetchServerToolHistoryFromFuncti
 	assert.Equal(t, "web_fetch_tool_result", userBlocks[0].Type)
 	assert.Equal(t, "srvtoolu_fetch_1", userBlocks[0].ToolUseID)
 	assert.JSONEq(t, `{"type":"web_fetch_result","url":"https://example.com","title":"Example","text":"Hello from fetch"}`, string(userBlocks[0].Content))
+}
+
+func TestResponsesToAnthropicRequest_WebFetchFunctionCallWithoutResultStaysServerToolUse(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.4",
+		Input: json.RawMessage(`[
+			{
+				"type":"function_call",
+				"call_id":"srvtoolu_fetch_native_1",
+				"name":"webfetch",
+				"arguments":"{\"url\":\"https://example.com\"}"
+			}
+		]`),
+		MaxOutputTokens: intPtr(256),
+	}
+
+	out, err := ResponsesToAnthropicRequest(req)
+	require.NoError(t, err)
+	require.Len(t, out.Messages, 1)
+	assert.Equal(t, "assistant", out.Messages[0].Role)
+
+	var assistantBlocks []AnthropicContentBlock
+	require.NoError(t, json.Unmarshal(out.Messages[0].Content, &assistantBlocks))
+	require.Len(t, assistantBlocks, 1)
+	assert.Equal(t, "server_tool_use", assistantBlocks[0].Type)
+	assert.Equal(t, "srvtoolu_fetch_native_1", assistantBlocks[0].ID)
+	assert.Equal(t, "web_fetch", assistantBlocks[0].Name)
+	assert.JSONEq(t, `{"url":"https://example.com"}`, string(assistantBlocks[0].Input))
 }
 
 func intPtr(v int) *int {

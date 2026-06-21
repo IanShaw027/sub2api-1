@@ -169,6 +169,8 @@ func TestCursorMixedShape_StripsUnsupportedFields(t *testing.T) {
 		"enable_thinking": true,
 		"stop_sequences": ["END"],
 		"promptCacheKey": "legacy-cache",
+		"repeat_penalty": 1.1,
+		"top_k": 40,
 		"prompt_cache_retention": "24h",
 		"reasoningSummary": "auto",
 		"safety_identifier": "cursor-user-xyz",

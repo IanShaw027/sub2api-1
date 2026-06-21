@@ -115,6 +115,8 @@ var openAIResponsesUnsupportedFields = []string{
 	"enable_thinking",
 	"stop_sequences",
 	"promptCacheKey",
+	"repeat_penalty",
+	"top_k",
 }
 
 type openAICodexCompatFallbackState struct {
@@ -4795,6 +4797,7 @@ oauthTransformDone:
 		wsInvalidEncryptedContentRecoveryTried := false
 		wsCodexCompatRecoveryTried := false
 		wsModelFallbackRecoveryTried := false
+		wsUnsafeToolContinuationRecoveryTried := false
 		syncWSRecoveredBody := func(stage string) bool {
 			nextBody, marshalErr := marshalOpenAIResponsesRequestBodyOrdered(wsReqBody)
 			if marshalErr != nil {
@@ -4916,6 +4919,60 @@ oauthTransformDone:
 				truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
 				normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
 				activeDeltaRecovery,
+				HasFunctionCallOutput(wsReqBody),
+			)
+			return true
+		}
+		recoverUnsafeToolContinuation := func(attempt int) bool {
+			if wsUnsafeToolContinuationRecoveryTried {
+				return false
+			}
+			if !HasFunctionCallOutput(wsReqBody) {
+				return false
+			}
+			replayReqBody := map[string]any{}
+			if err := json.Unmarshal(wsHTTPFallbackBody, &replayReqBody); err != nil {
+				wsErr = wrapOpenAIWSFallback("unsafe_tool_continuation_recovery_parse", err)
+				logOpenAIWSModeInfo(
+					"reconnect_unsafe_tool_continuation_recovery_skip account_id=%d attempt=%d reason=parse_full_payload cause=%s",
+					account.ID,
+					attempt,
+					truncateOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen),
+				)
+				return false
+			}
+			replayInputItems, replayInputExists, replayInputErr := openAIWSExtractNormalizedInputSequence(wsHTTPFallbackBody)
+			if replayInputErr != nil {
+				wsErr = wrapOpenAIWSFallback("unsafe_tool_continuation_recovery_input_parse", replayInputErr)
+				logOpenAIWSModeInfo(
+					"reconnect_unsafe_tool_continuation_recovery_skip account_id=%d attempt=%d reason=parse_full_input cause=%s",
+					account.ID,
+					attempt,
+					truncateOpenAIWSLogValue(replayInputErr.Error(), openAIWSLogValueMaxLen),
+				)
+				return false
+			}
+			if !replayInputExists || !openAIWSRawItemsHaveToolCallContextForOutputs(replayInputItems) {
+				logOpenAIWSModeInfo(
+					"reconnect_unsafe_tool_continuation_recovery_skip account_id=%d attempt=%d reason=missing_tool_call_context",
+					account.ID,
+					attempt,
+				)
+				return false
+			}
+			wsReqBody = replayReqBody
+			delete(wsReqBody, "previous_response_id")
+			wsReqBody["store"] = false
+			trimOpenAIStoreFalseReasoningItems(wsReqBody)
+			if !syncWSRecoveredBody("unsafe_tool_continuation_recovery") {
+				return false
+			}
+			wsUnsafeToolContinuationRecoveryTried = true
+			s.RecordOpenAIAccountRecoveryReason(account.ID, "unsafe_tool_continuation_full_replay")
+			logOpenAIWSModeInfo(
+				"reconnect_unsafe_tool_continuation_recovery account_id=%d attempt=%d action=drop_previous_response_id_full_replay retry=1 has_function_call_output=%v",
+				account.ID,
+				attempt,
 				HasFunctionCallOutput(wsReqBody),
 			)
 			return true
@@ -5131,6 +5188,9 @@ oauthTransformDone:
 			// previous_response_not_found 说明续链锚点不可用：
 			// 对非 function_call_output 场景，允许一次“去掉 previous_response_id 后重放”。
 			if reason == "previous_response_not_found" && recoverPrevResponseNotFound(attempt) {
+				continue
+			}
+			if reason == "unsafe_tool_continuation" && recoverUnsafeToolContinuation(attempt) {
 				continue
 			}
 			if reason == "invalid_encrypted_content" && recoverInvalidEncryptedContent(attempt) {
@@ -6812,7 +6872,7 @@ func (s *OpenAIGatewayService) newOpenAIRetryableOverloadFailoverError(
 }
 
 func (s *OpenAIGatewayService) newOpenAISoftRateLimitFailoverError(
-	_ context.Context,
+	ctx context.Context,
 	c *gin.Context,
 	account *Account,
 	passthrough bool,
@@ -6824,6 +6884,7 @@ func (s *OpenAIGatewayService) newOpenAISoftRateLimitFailoverError(
 	if message == "" {
 		message = "Approaching upstream rate limits; switch account and retry"
 	}
+	s.persistOpenAIWSSoftRateLimitAdvisory(ctx, account, payload)
 	detail := ""
 	if len(payload) > 0 && s != nil && s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 		maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -10557,6 +10618,140 @@ func buildCodexUsageExtraUpdates(snapshot *OpenAICodexUsageSnapshot, fallbackNow
 	}
 
 	return updates
+}
+
+func parseOpenAIWSCodexRateLimitSnapshot(payload []byte, now time.Time) *OpenAICodexUsageSnapshot {
+	if len(payload) == 0 || strings.TrimSpace(gjson.GetBytes(payload, "type").String()) != "codex.rate_limits" {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	now = now.UTC().Truncate(time.Second)
+
+	parseWindow := func(prefix string) (used *float64, resetAfter *int, windowMinutes *int, hasData bool) {
+		if value := gjson.GetBytes(payload, prefix+".used_percent"); value.Exists() {
+			v := value.Float()
+			used = &v
+			hasData = true
+		}
+		if value := gjson.GetBytes(payload, prefix+".window_minutes"); value.Exists() {
+			v := int(value.Int())
+			windowMinutes = &v
+			hasData = true
+		}
+		if value := gjson.GetBytes(payload, prefix+".reset_at"); value.Exists() {
+			resetAt := time.Unix(value.Int(), 0)
+			seconds := int(resetAt.Sub(now).Seconds())
+			if seconds < 0 {
+				seconds = 0
+			}
+			resetAfter = &seconds
+			hasData = true
+		}
+		return used, resetAfter, windowMinutes, hasData
+	}
+
+	snapshot := &OpenAICodexUsageSnapshot{UpdatedAt: now.Format(time.RFC3339)}
+	hasData := false
+	if used, resetAfter, windowMinutes, ok := parseWindow("rate_limits.primary"); ok {
+		snapshot.PrimaryUsedPercent = used
+		snapshot.PrimaryResetAfterSeconds = resetAfter
+		snapshot.PrimaryWindowMinutes = windowMinutes
+		hasData = true
+	}
+	if used, resetAfter, windowMinutes, ok := parseWindow("rate_limits.secondary"); ok {
+		snapshot.SecondaryUsedPercent = used
+		snapshot.SecondaryResetAfterSeconds = resetAfter
+		snapshot.SecondaryWindowMinutes = windowMinutes
+		hasData = true
+	}
+	if value := gjson.GetBytes(payload, "rate_limits.primary_over_secondary_limit_percent"); value.Exists() {
+		v := value.Float()
+		snapshot.PrimaryOverSecondaryPercent = &v
+		hasData = true
+	}
+	if !hasData {
+		return nil
+	}
+	return snapshot
+}
+
+func openAIWSSoftRateLimitTempUnschedUntil(updates map[string]any, now time.Time) *time.Time {
+	var until *time.Time
+	for _, window := range []string{"5h", "7d"} {
+		if schedulingPercentValue(updates["codex_"+window+"_used_percent"]) < openAIWSSoftRateLimitAdvisoryThreshold {
+			continue
+		}
+		parsed := parseSchedulingResetAt(updates["codex_"+window+"_reset_at"])
+		if parsed == nil || !parsed.After(now) {
+			continue
+		}
+		if until == nil || parsed.After(*until) {
+			until = parsed
+		}
+	}
+	return until
+}
+
+func openAIWSSoftRateLimitMaxUsedPercent(updates map[string]any) float64 {
+	maxUsed := 0.0
+	for _, key := range []string{"codex_5h_used_percent", "codex_7d_used_percent"} {
+		if used := schedulingPercentValue(updates[key]); used > maxUsed {
+			maxUsed = used
+		}
+	}
+	return maxUsed
+}
+
+func (s *OpenAIGatewayService) persistOpenAIWSSoftRateLimitAdvisory(ctx context.Context, account *Account, payload []byte) {
+	if s == nil || s.accountRepo == nil || account == nil || account.ID <= 0 || account.Platform != PlatformOpenAI {
+		return
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	snapshot := parseOpenAIWSCodexRateLimitSnapshot(payload, now)
+	updates := buildCodexUsageExtraUpdates(snapshot, now)
+	if len(updates) == 0 {
+		return
+	}
+
+	until := openAIWSSoftRateLimitTempUnschedUntil(updates, now)
+	maxUsed := openAIWSSoftRateLimitMaxUsedPercent(updates)
+	reason := ""
+	if until != nil {
+		reason = BuildDetailedAccountSchedulingThresholdReason(AccountSchedulingThresholdReasonInput{
+			Platform:         PlatformOpenAI,
+			Window:           "codex",
+			ThresholdPercent: int(openAIWSSoftRateLimitAdvisoryThreshold),
+			UsedPercent:      maxUsed,
+			Until:            *until,
+			Now:              now,
+		})
+	}
+
+	go func() {
+		updateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		defer cancel()
+		if err := s.accountRepo.UpdateExtra(updateCtx, account.ID, updates); err != nil {
+			slog.Warn("openai_ws_soft_rate_limit_snapshot_persist_failed", "account_id", account.ID, "error", err)
+			return
+		}
+		if until == nil {
+			return
+		}
+		if err := s.accountRepo.SetTempUnschedulable(updateCtx, account.ID, *until, reason); err != nil {
+			slog.Warn("openai_ws_soft_rate_limit_temp_unsched_failed", "account_id", account.ID, "until", until.UTC(), "error", err)
+			return
+		}
+		if s.rateLimitService != nil && s.rateLimitService.tempUnschedCache != nil {
+			if state := tempUnschedStateFromStoredReason(reason, until.Unix()); state != nil {
+				if err := s.rateLimitService.tempUnschedCache.SetTempUnsched(updateCtx, account.ID, state); err != nil {
+					slog.Warn("openai_ws_soft_rate_limit_temp_unsched_cache_failed", "account_id", account.ID, "error", err)
+				}
+			}
+		}
+		slog.Info("openai_ws_soft_rate_limit_temp_unschedulable", "account_id", account.ID, "used_percent", maxUsed, "until", until.UTC())
+	}()
 }
 
 // updateCodexUsageSnapshot saves the Codex usage snapshot to account's Extra field

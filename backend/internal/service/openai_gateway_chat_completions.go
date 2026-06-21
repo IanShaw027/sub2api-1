@@ -43,6 +43,8 @@ var cursorResponsesUnsupportedFields = []string{
 	"enable_thinking",
 	"stop_sequences",
 	"promptCacheKey",
+	"repeat_penalty",
+	"top_k",
 }
 
 // ForwardAsChatCompletions accepts a Chat Completions request body, converts it

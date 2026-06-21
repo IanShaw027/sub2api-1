@@ -42,6 +42,35 @@ func TestAnthropicToResponsesResponse_MapsWebSearchServerToolBlocksToWebSearchCa
 	assert.Equal(t, "The Go Programming Language", out.Output[0].Action.Sources[0].Title)
 }
 
+func TestAnthropicToResponsesResponse_MapsWebSearchServerToolUseWithoutResult(t *testing.T) {
+	resp := &AnthropicResponse{
+		ID:         "msg_web_search_pause",
+		Type:       "message",
+		Role:       "assistant",
+		Model:      "claude-opus-4-8",
+		StopReason: "tool_use",
+		Content: []AnthropicContentBlock{
+			{
+				Type:  "server_tool_use",
+				ID:    "srvtoolu_search_2",
+				Name:  "web_search",
+				Input: []byte(`{"query":"kiro native web search"}`),
+			},
+		},
+	}
+
+	out := AnthropicToResponsesResponse(resp)
+	require.Len(t, out.Output, 1)
+	assert.Equal(t, "completed", out.Status)
+	assert.Equal(t, "web_search_call", out.Output[0].Type)
+	assert.Equal(t, "search_2", out.Output[0].ID)
+	assert.Equal(t, "completed", out.Output[0].Status)
+	require.NotNil(t, out.Output[0].Action)
+	assert.Equal(t, "search", out.Output[0].Action.Type)
+	assert.Equal(t, "kiro native web search", out.Output[0].Action.Query)
+	assert.Empty(t, out.Output[0].Action.Sources)
+}
+
 func TestAnthropicToResponsesResponse_MapsWebFetchServerToolBlocksToFunctionCall(t *testing.T) {
 	resp := &AnthropicResponse{
 		ID:         "msg_web_fetch",
@@ -75,6 +104,70 @@ func TestAnthropicToResponsesResponse_MapsWebFetchServerToolBlocksToFunctionCall
 	}`, out.Output[0].Arguments)
 	assert.Equal(t, "srvtoolu_fetch_1", out.Output[0].CallID)
 	assert.Equal(t, "completed", out.Output[0].Status)
+}
+
+func TestAnthropicEventToResponsesEvents_WebSearchServerToolUseWithoutResultStillCompletesOutputItem(t *testing.T) {
+	state := NewAnthropicEventToResponsesState()
+
+	events := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_start",
+		Message: &AnthropicResponse{
+			ID:    "msg_web_search_native",
+			Type:  "message",
+			Role:  "assistant",
+			Model: "claude-opus-4-8",
+		},
+	}, state)
+	require.Len(t, events, 1)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_start",
+		ContentBlock: &AnthropicContentBlock{
+			Type:  "server_tool_use",
+			ID:    "srvtoolu_search_3",
+			Name:  "web_search",
+			Input: []byte(`{}`),
+		},
+	}, state)
+	require.Len(t, events, 1)
+	require.NotNil(t, events[0].Item)
+	assert.Equal(t, "web_search_call", events[0].Item.Type)
+	assert.Equal(t, "in_progress", events[0].Item.Status)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_delta",
+		Delta: &AnthropicDelta{
+			Type:        "input_json_delta",
+			PartialJSON: `{"query":"kiro native"}`,
+		},
+	}, state)
+	require.Empty(t, events)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{Type: "content_block_stop"}, state)
+	require.Empty(t, events)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_delta",
+		Delta: &AnthropicDelta{
+			StopReason: "tool_use",
+		},
+	}, state)
+	require.Empty(t, events)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{Type: "message_stop"}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "response.output_item.done", events[0].Type)
+	require.NotNil(t, events[0].Item)
+	assert.Equal(t, "web_search_call", events[0].Item.Type)
+	assert.Equal(t, "completed", events[0].Item.Status)
+	require.NotNil(t, events[0].Item.Action)
+	assert.Equal(t, "search", events[0].Item.Action.Type)
+	assert.Equal(t, "kiro native", events[0].Item.Action.Query)
+	assert.Empty(t, events[0].Item.Action.Sources)
+	assert.Equal(t, "response.completed", events[1].Type)
+	require.NotNil(t, events[1].Response)
+	require.Len(t, events[1].Response.Output, 1)
+	assert.Equal(t, "web_search_call", events[1].Response.Output[0].Type)
 }
 
 func TestAnthropicToResponsesResponse_RefusalExplanationWithoutTextCreatesRefusalPart(t *testing.T) {

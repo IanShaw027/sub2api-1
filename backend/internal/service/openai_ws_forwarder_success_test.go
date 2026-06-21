@@ -1437,6 +1437,59 @@ func TestOpenAIGatewayService_BuildOpenAIWSCreatePayload_DropsUnpersistedReasoni
 	require.False(t, gjson.Get(requestToJSONString(payload), "store").Bool())
 }
 
+func TestOpenAIGatewayService_BuildOpenAIWSCreatePayload_StripsUnsupportedParameters(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{
+		Type: AccountTypeOAuth,
+	}
+	reqBody := map[string]any{
+		"model":          "gpt-5.5",
+		"input":          []any{map[string]any{"role": "user", "content": "hi"}},
+		"instructions":   "be brief",
+		"repeat_penalty": 1.1,
+		"top_k":          40,
+		"store":          false,
+	}
+
+	payload := svc.buildOpenAIWSCreatePayload(reqBody, account)
+	payloadJSON := requestToJSONString(payload)
+	require.False(t, gjson.Get(payloadJSON, "repeat_penalty").Exists())
+	require.False(t, gjson.Get(payloadJSON, "top_k").Exists())
+	require.Equal(t, "gpt-5.5", gjson.Get(payloadJSON, "model").String())
+	require.Equal(t, "be brief", gjson.Get(payloadJSON, "instructions").String())
+}
+
+func TestOpenAIGatewayService_BuildOpenAIWSCreatePayload_ExtractsSystemMessages(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{
+		Type: AccountTypeOAuth,
+	}
+	reqBody := map[string]any{
+		"model":        "gpt-5.5",
+		"instructions": "existing instructions",
+		"store":        false,
+		"input": []any{
+			map[string]any{
+				"type":    "message",
+				"role":    "system",
+				"content": "repo policy",
+			},
+			map[string]any{
+				"type":    "message",
+				"role":    "user",
+				"content": "hello",
+			},
+		},
+	}
+
+	payload := svc.buildOpenAIWSCreatePayload(reqBody, account)
+	payloadJSON := requestToJSONString(payload)
+	require.False(t, gjson.Get(payloadJSON, `input.#(role=="system")`).Exists())
+	require.Equal(t, "repo policy\n\nexisting instructions", gjson.Get(payloadJSON, "instructions").String())
+	require.Equal(t, "user", gjson.Get(payloadJSON, "input.0.role").String())
+	require.Equal(t, "hello", gjson.Get(payloadJSON, "input.0.content").String())
+}
+
 func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testing.T) {
 	setGinTestMode()
 

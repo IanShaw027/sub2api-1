@@ -2761,6 +2761,122 @@ func TestOpenAIGatewayService_Forward_WSv2OAuthUnboundToolContinuationReturnsCon
 	require.Equal(t, int32(1), wsURLBuilds.Load(), "WS URL may be resolved, but upstream must not be dialed")
 }
 
+func TestOpenAIGatewayService_Forward_WSv2OAuthToolContinuationWithFullContextRecoversWhenConnBindingMissing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var wsAttempts atomic.Int32
+	var wsRequestPayloads [][]byte
+	var wsRequestMu sync.Mutex
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wsAttempts.Add(1)
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket failed: %v", err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		var req map[string]any
+		if err := conn.ReadJSON(&req); err != nil {
+			t.Errorf("read ws request failed: %v", err)
+			return
+		}
+		reqRaw, _ := json.Marshal(req)
+		wsRequestMu.Lock()
+		wsRequestPayloads = append(wsRequestPayloads, reqRaw)
+		wsRequestMu.Unlock()
+
+		_ = conn.WriteJSON(map[string]any{
+			"type": "response.completed",
+			"response": map[string]any{
+				"id":    "resp_ws_full_tool_context_replay_ok",
+				"model": "gpt-5.4",
+				"usage": map[string]any{
+					"input_tokens":  1,
+					"output_tokens": 1,
+				},
+			},
+		})
+	}))
+	defer wsServer.Close()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "custom-client/1.0")
+	groupID := int64(10701)
+	apiKeyID := int64(10702)
+	c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+
+	upstream := &httpUpstreamRecorder{}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.FallbackCooldownSeconds = 1
+
+	wsURL := "ws" + strings.TrimPrefix(wsServer.URL, "http")
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSURLBuilder: func(account *Account) (string, error) {
+			return wsURL, nil
+		},
+	}
+
+	account := &Account{
+		ID:          107,
+		Name:        "openai-oauth-account-bound-tool-continuation",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Extra: map[string]any{
+			"openai_oauth_responses_websockets_v2_enabled": true,
+		},
+	}
+
+	previousResponseID := "resp_account_bound_no_conn_tool_full"
+	require.NoError(t, svc.getOpenAIWSStateStore().BindResponseAccount(
+		context.Background(),
+		groupID,
+		apiKeyID,
+		previousResponseID,
+		account.ID,
+		time.Hour,
+	))
+
+	body := []byte(`{"model":"gpt-5.4","stream":false,"previous_response_id":"resp_account_bound_no_conn_tool_full","input":[{"type":"function_call","call_id":"call_1","name":"lookup","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_ws_full_tool_context_replay_ok", result.RequestID)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Nil(t, upstream.lastReq, "safe tool full replay must stay on WS, not HTTP")
+	require.Equal(t, int32(1), wsAttempts.Load(), "preflight recovery should only dial after rewriting to full replay")
+
+	wsRequestMu.Lock()
+	requests := append([][]byte(nil), wsRequestPayloads...)
+	wsRequestMu.Unlock()
+	require.Len(t, requests, 1)
+	require.False(t, gjson.GetBytes(requests[0], "previous_response_id").Exists())
+	require.True(t, gjson.GetBytes(requests[0], "store").Exists())
+	require.False(t, gjson.GetBytes(requests[0], "store").Bool())
+	require.Equal(t, "function_call", gjson.GetBytes(requests[0], "input.0.type").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(requests[0], "input.1.type").String())
+}
+
 func TestOpenAIGatewayService_Forward_WSv2OAuthRetriesCodexCompatOnMissingToolCall(t *testing.T) {
 	setGinTestMode()
 

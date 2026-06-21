@@ -209,6 +209,36 @@ func TestOpenAIEnsureForwardErrorResponse_SessionPreemptedChatCompletionsSSEAppe
 	assert.NotContains(t, body, `"upstream_error"`)
 }
 
+func TestOpenAIEnsureForwardErrorResponse_SessionPreemptedResponsesStreamBeforeFirstWriteEmitsCancelled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	called := false
+	router.POST("/v1/responses", func(c *gin.Context) {
+		setOpsRequestContext(c, "gpt-5.5", true)
+
+		h := &OpenAIGatewayHandler{}
+		wrote := h.ensureForwardErrorResponse(c, false, service.NewOpenAIWSSessionPreemptedError())
+
+		require.True(t, wrote)
+		called = true
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	router.ServeHTTP(w, req)
+
+	require.True(t, called)
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "event: response.cancelled\n")
+	assert.Contains(t, body, `"type":"response.cancelled"`)
+	assert.Contains(t, body, `"status":"cancelled"`)
+	assert.Contains(t, body, `"model":"gpt-5.5"`)
+	assert.NotContains(t, body, `"error"`)
+	assert.NotContains(t, body, `"request_canceled"`)
+	assert.NotContains(t, body, "Superseded by a newer request in the same session")
+}
+
 func TestOpenAIHandleStreamingAwareError_ResponsesPathStillEmitsResponseFailed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

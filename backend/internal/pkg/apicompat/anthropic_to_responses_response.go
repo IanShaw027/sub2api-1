@@ -31,6 +31,7 @@ func AnthropicToResponsesResponse(resp *AnthropicResponse) *ResponsesResponse {
 	var outputs []ResponsesOutput
 	var msgParts []ResponsesContentPart
 	serverToolUses := make(map[string]AnthropicContentBlock)
+	emittedServerToolUses := make(map[string]bool)
 
 	for _, block := range resp.Content {
 		switch block.Type {
@@ -81,6 +82,7 @@ func AnthropicToResponsesResponse(resp *AnthropicResponse) *ResponsesResponse {
 			if !ok || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(toolUse.Name)), "web_search") {
 				continue
 			}
+			emittedServerToolUses[block.ToolUseID] = true
 			outputs = append(outputs, ResponsesOutput{
 				Type: "web_search_call",
 				ID:   responsesServerToolCallID(toolUse.ID),
@@ -95,12 +97,43 @@ func AnthropicToResponsesResponse(resp *AnthropicResponse) *ResponsesResponse {
 			if !ok || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(toolUse.Name)), "web_fetch") {
 				continue
 			}
+			emittedServerToolUses[block.ToolUseID] = true
 			outputs = append(outputs, ResponsesOutput{
 				Type:      "function_call",
 				ID:        generateItemID(),
 				CallID:    toResponsesCallID(toolUse.ID),
 				Name:      "webfetch",
 				Arguments: mergeWebFetchArguments(toolUse.Input, block.Content),
+				Status:    "completed",
+			})
+		}
+	}
+	for _, block := range resp.Content {
+		if block.Type != "server_tool_use" || emittedServerToolUses[block.ID] {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(strings.ToLower(strings.TrimSpace(block.Name)), "web_search"):
+			outputs = append(outputs, ResponsesOutput{
+				Type:   "web_search_call",
+				ID:     responsesServerToolCallID(block.ID),
+				Status: "completed",
+				Action: &WebSearchAction{
+					Type:  "search",
+					Query: anthropicServerToolQuery(block.Input),
+				},
+			})
+		case strings.HasPrefix(strings.ToLower(strings.TrimSpace(block.Name)), "web_fetch"):
+			args := "{}"
+			if len(block.Input) > 0 {
+				args = string(block.Input)
+			}
+			outputs = append(outputs, ResponsesOutput{
+				Type:      "function_call",
+				ID:        generateItemID(),
+				CallID:    toResponsesCallID(block.ID),
+				Name:      "webfetch",
+				Arguments: args,
 				Status:    "completed",
 			})
 		}
@@ -658,6 +691,12 @@ func closeCurrentResponsesItem(state *AnthropicEventToResponsesState) []Response
 		item.Arguments = state.CurrentArgs
 	case "web_search_call":
 		item.Action = state.CurrentWebSearch
+		if item.Action == nil {
+			item.Action = &WebSearchAction{
+				Type:  "search",
+				Query: anthropicServerToolQuery(json.RawMessage(state.CurrentArgs)),
+			}
+		}
 	case "message":
 		item.Role = "assistant"
 	}
