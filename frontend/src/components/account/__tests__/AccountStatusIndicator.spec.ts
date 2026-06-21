@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import AccountStatusIndicator from '../AccountStatusIndicator.vue'
 import type { Account } from '@/types'
 import { accountStatusI18nKey, paymentOrderTypeI18nKey } from '@/utils/i18n'
@@ -44,6 +45,15 @@ function makeAccount(overrides: Partial<Account>): Account {
 }
 
 describe('AccountStatusIndicator', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-17T00:00:00Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('normalizes historical account status aliases to canonical i18n keys', () => {
     expect(accountStatusI18nKey('temp_unschedulable')).toBe('admin.accounts.status.tempUnschedulable')
   })
@@ -132,6 +142,31 @@ describe('AccountStatusIndicator', () => {
     })
 
     expect(wrapper.text()).toContain('admin.accounts.status.creditsExhausted')
+  })
+
+  it('temp unschedulable badge expires after the clock advances past until', async () => {
+    const wrapper = mount(AccountStatusIndicator, {
+      props: {
+        account: makeAccount({
+          temp_unschedulable_until: '2026-03-17T00:00:30Z'
+        })
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('admin.accounts.status.tempUnschedulable')
+    expect(wrapper.find('button').exists()).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain('admin.accounts.status.tempUnschedulable')
+    expect(wrapper.text()).toContain('admin.accounts.status.active')
+    expect(wrapper.find('button').exists()).toBe(false)
   })
 
   it('模型限流 + overages 启用 + AICredits key 生效 → 普通限流样式（积分耗尽，无 ⚡）', () => {
