@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"math/rand/v2"
+	"strings"
 	"sync"
 	"time"
 
@@ -153,8 +154,8 @@ func (s *TLSFingerprintProfileService) ResolveTLSProfileByID(id int64) *tlsfinge
 	return s.GetProfileByID(id)
 }
 
-// getRandomProfile 从本地缓存中随机选择一个 Profile
-func (s *TLSFingerprintProfileService) getRandomProfile() *tlsfingerprint.Profile {
+// getRandomProfileForPlatform 从同平台或 shared 模板中随机选择一个 Profile。
+func (s *TLSFingerprintProfileService) getRandomProfileForPlatform(platform string) *tlsfingerprint.Profile {
 	s.localMu.RLock()
 	defer s.localMu.RUnlock()
 
@@ -162,10 +163,14 @@ func (s *TLSFingerprintProfileService) getRandomProfile() *tlsfingerprint.Profil
 		return nil
 	}
 
-	// 收集所有 profile
+	normalizedPlatform := strings.ToLower(strings.TrimSpace(platform))
 	profiles := make([]*model.TLSFingerprintProfile, 0, len(s.localCache))
 	for _, p := range s.localCache {
-		if p != nil {
+		if p == nil {
+			continue
+		}
+		profilePlatform := strings.ToLower(strings.TrimSpace(p.Platform))
+		if profilePlatform == "" || profilePlatform == normalizedPlatform {
 			profiles = append(profiles, p)
 		}
 	}
@@ -193,8 +198,8 @@ func (s *TLSFingerprintProfileService) ResolveTLSProfile(account *Account) *tlsf
 		}
 	}
 	if id == -1 {
-		// 随机选择一个 profile
-		if p := s.getRandomProfile(); p != nil {
+		// 随机选择一个同平台或 shared profile
+		if p := s.getRandomProfileForPlatform(account.Platform); p != nil {
 			return p
 		}
 	}

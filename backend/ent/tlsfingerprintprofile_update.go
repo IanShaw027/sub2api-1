@@ -49,6 +49,20 @@ func (_u *TLSFingerprintProfileUpdate) SetNillableName(v *string) *TLSFingerprin
 	return _u
 }
 
+// SetPlatform sets the "platform" field.
+func (_u *TLSFingerprintProfileUpdate) SetPlatform(v string) *TLSFingerprintProfileUpdate {
+	_u.mutation.SetPlatform(v)
+	return _u
+}
+
+// SetNillablePlatform sets the "platform" field if the given value is not nil.
+func (_u *TLSFingerprintProfileUpdate) SetNillablePlatform(v *string) *TLSFingerprintProfileUpdate {
+	if v != nil {
+		_u.SetPlatform(*v)
+	}
+	return _u
+}
+
 // SetDescription sets the "description" field.
 func (_u *TLSFingerprintProfileUpdate) SetDescription(v string) *TLSFingerprintProfileUpdate {
 	_u.mutation.SetDescription(v)
@@ -245,6 +259,60 @@ func (_u *TLSFingerprintProfileUpdate) ClearExtensions() *TLSFingerprintProfileU
 	return _u
 }
 
+// SetCompressCertAlgos sets the "compress_cert_algos" field.
+func (_u *TLSFingerprintProfileUpdate) SetCompressCertAlgos(v []uint16) *TLSFingerprintProfileUpdate {
+	_u.mutation.SetCompressCertAlgos(v)
+	return _u
+}
+
+// AppendCompressCertAlgos appends value to the "compress_cert_algos" field.
+func (_u *TLSFingerprintProfileUpdate) AppendCompressCertAlgos(v []uint16) *TLSFingerprintProfileUpdate {
+	_u.mutation.AppendCompressCertAlgos(v)
+	return _u
+}
+
+// ClearCompressCertAlgos clears the value of the "compress_cert_algos" field.
+func (_u *TLSFingerprintProfileUpdate) ClearCompressCertAlgos() *TLSFingerprintProfileUpdate {
+	_u.mutation.ClearCompressCertAlgos()
+	return _u
+}
+
+// SetDelegatedCredentialsAlgorithms sets the "delegated_credentials_algorithms" field.
+func (_u *TLSFingerprintProfileUpdate) SetDelegatedCredentialsAlgorithms(v []uint16) *TLSFingerprintProfileUpdate {
+	_u.mutation.SetDelegatedCredentialsAlgorithms(v)
+	return _u
+}
+
+// AppendDelegatedCredentialsAlgorithms appends value to the "delegated_credentials_algorithms" field.
+func (_u *TLSFingerprintProfileUpdate) AppendDelegatedCredentialsAlgorithms(v []uint16) *TLSFingerprintProfileUpdate {
+	_u.mutation.AppendDelegatedCredentialsAlgorithms(v)
+	return _u
+}
+
+// ClearDelegatedCredentialsAlgorithms clears the value of the "delegated_credentials_algorithms" field.
+func (_u *TLSFingerprintProfileUpdate) ClearDelegatedCredentialsAlgorithms() *TLSFingerprintProfileUpdate {
+	_u.mutation.ClearDelegatedCredentialsAlgorithms()
+	return _u
+}
+
+// SetApplicationSettingsProtocols sets the "application_settings_protocols" field.
+func (_u *TLSFingerprintProfileUpdate) SetApplicationSettingsProtocols(v []string) *TLSFingerprintProfileUpdate {
+	_u.mutation.SetApplicationSettingsProtocols(v)
+	return _u
+}
+
+// AppendApplicationSettingsProtocols appends value to the "application_settings_protocols" field.
+func (_u *TLSFingerprintProfileUpdate) AppendApplicationSettingsProtocols(v []string) *TLSFingerprintProfileUpdate {
+	_u.mutation.AppendApplicationSettingsProtocols(v)
+	return _u
+}
+
+// ClearApplicationSettingsProtocols clears the value of the "application_settings_protocols" field.
+func (_u *TLSFingerprintProfileUpdate) ClearApplicationSettingsProtocols() *TLSFingerprintProfileUpdate {
+	_u.mutation.ClearApplicationSettingsProtocols()
+	return _u
+}
+
 // Mutation returns the TLSFingerprintProfileMutation object of the builder.
 func (_u *TLSFingerprintProfileUpdate) Mutation() *TLSFingerprintProfileMutation {
 	return _u.mutation
@@ -293,6 +361,11 @@ func (_u *TLSFingerprintProfileUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Platform(); ok {
+		if err := tlsfingerprintprofile.PlatformValidator(v); err != nil {
+			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.platform": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -313,6 +386,9 @@ func (_u *TLSFingerprintProfileUpdate) sqlSave(ctx context.Context) (_node int, 
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Platform(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldPlatform, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldDescription, field.TypeString, value)
@@ -422,6 +498,39 @@ func (_u *TLSFingerprintProfileUpdate) sqlSave(ctx context.Context) (_node int, 
 	if _u.mutation.ExtensionsCleared() {
 		_spec.ClearField(tlsfingerprintprofile.FieldExtensions, field.TypeJSON)
 	}
+	if value, ok := _u.mutation.CompressCertAlgos(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldCompressCertAlgos, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedCompressCertAlgos(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, tlsfingerprintprofile.FieldCompressCertAlgos, value)
+		})
+	}
+	if _u.mutation.CompressCertAlgosCleared() {
+		_spec.ClearField(tlsfingerprintprofile.FieldCompressCertAlgos, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.DelegatedCredentialsAlgorithms(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedDelegatedCredentialsAlgorithms(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms, value)
+		})
+	}
+	if _u.mutation.DelegatedCredentialsAlgorithmsCleared() {
+		_spec.ClearField(tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.ApplicationSettingsProtocols(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldApplicationSettingsProtocols, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedApplicationSettingsProtocols(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, tlsfingerprintprofile.FieldApplicationSettingsProtocols, value)
+		})
+	}
+	if _u.mutation.ApplicationSettingsProtocolsCleared() {
+		_spec.ClearField(tlsfingerprintprofile.FieldApplicationSettingsProtocols, field.TypeJSON)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{tlsfingerprintprofile.Label}
@@ -458,6 +567,20 @@ func (_u *TLSFingerprintProfileUpdateOne) SetName(v string) *TLSFingerprintProfi
 func (_u *TLSFingerprintProfileUpdateOne) SetNillableName(v *string) *TLSFingerprintProfileUpdateOne {
 	if v != nil {
 		_u.SetName(*v)
+	}
+	return _u
+}
+
+// SetPlatform sets the "platform" field.
+func (_u *TLSFingerprintProfileUpdateOne) SetPlatform(v string) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.SetPlatform(v)
+	return _u
+}
+
+// SetNillablePlatform sets the "platform" field if the given value is not nil.
+func (_u *TLSFingerprintProfileUpdateOne) SetNillablePlatform(v *string) *TLSFingerprintProfileUpdateOne {
+	if v != nil {
+		_u.SetPlatform(*v)
 	}
 	return _u
 }
@@ -658,6 +781,60 @@ func (_u *TLSFingerprintProfileUpdateOne) ClearExtensions() *TLSFingerprintProfi
 	return _u
 }
 
+// SetCompressCertAlgos sets the "compress_cert_algos" field.
+func (_u *TLSFingerprintProfileUpdateOne) SetCompressCertAlgos(v []uint16) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.SetCompressCertAlgos(v)
+	return _u
+}
+
+// AppendCompressCertAlgos appends value to the "compress_cert_algos" field.
+func (_u *TLSFingerprintProfileUpdateOne) AppendCompressCertAlgos(v []uint16) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.AppendCompressCertAlgos(v)
+	return _u
+}
+
+// ClearCompressCertAlgos clears the value of the "compress_cert_algos" field.
+func (_u *TLSFingerprintProfileUpdateOne) ClearCompressCertAlgos() *TLSFingerprintProfileUpdateOne {
+	_u.mutation.ClearCompressCertAlgos()
+	return _u
+}
+
+// SetDelegatedCredentialsAlgorithms sets the "delegated_credentials_algorithms" field.
+func (_u *TLSFingerprintProfileUpdateOne) SetDelegatedCredentialsAlgorithms(v []uint16) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.SetDelegatedCredentialsAlgorithms(v)
+	return _u
+}
+
+// AppendDelegatedCredentialsAlgorithms appends value to the "delegated_credentials_algorithms" field.
+func (_u *TLSFingerprintProfileUpdateOne) AppendDelegatedCredentialsAlgorithms(v []uint16) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.AppendDelegatedCredentialsAlgorithms(v)
+	return _u
+}
+
+// ClearDelegatedCredentialsAlgorithms clears the value of the "delegated_credentials_algorithms" field.
+func (_u *TLSFingerprintProfileUpdateOne) ClearDelegatedCredentialsAlgorithms() *TLSFingerprintProfileUpdateOne {
+	_u.mutation.ClearDelegatedCredentialsAlgorithms()
+	return _u
+}
+
+// SetApplicationSettingsProtocols sets the "application_settings_protocols" field.
+func (_u *TLSFingerprintProfileUpdateOne) SetApplicationSettingsProtocols(v []string) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.SetApplicationSettingsProtocols(v)
+	return _u
+}
+
+// AppendApplicationSettingsProtocols appends value to the "application_settings_protocols" field.
+func (_u *TLSFingerprintProfileUpdateOne) AppendApplicationSettingsProtocols(v []string) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.AppendApplicationSettingsProtocols(v)
+	return _u
+}
+
+// ClearApplicationSettingsProtocols clears the value of the "application_settings_protocols" field.
+func (_u *TLSFingerprintProfileUpdateOne) ClearApplicationSettingsProtocols() *TLSFingerprintProfileUpdateOne {
+	_u.mutation.ClearApplicationSettingsProtocols()
+	return _u
+}
+
 // Mutation returns the TLSFingerprintProfileMutation object of the builder.
 func (_u *TLSFingerprintProfileUpdateOne) Mutation() *TLSFingerprintProfileMutation {
 	return _u.mutation
@@ -719,6 +896,11 @@ func (_u *TLSFingerprintProfileUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Platform(); ok {
+		if err := tlsfingerprintprofile.PlatformValidator(v); err != nil {
+			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.platform": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -756,6 +938,9 @@ func (_u *TLSFingerprintProfileUpdateOne) sqlSave(ctx context.Context) (_node *T
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Platform(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldPlatform, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldDescription, field.TypeString, value)
@@ -864,6 +1049,39 @@ func (_u *TLSFingerprintProfileUpdateOne) sqlSave(ctx context.Context) (_node *T
 	}
 	if _u.mutation.ExtensionsCleared() {
 		_spec.ClearField(tlsfingerprintprofile.FieldExtensions, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.CompressCertAlgos(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldCompressCertAlgos, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedCompressCertAlgos(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, tlsfingerprintprofile.FieldCompressCertAlgos, value)
+		})
+	}
+	if _u.mutation.CompressCertAlgosCleared() {
+		_spec.ClearField(tlsfingerprintprofile.FieldCompressCertAlgos, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.DelegatedCredentialsAlgorithms(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedDelegatedCredentialsAlgorithms(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms, value)
+		})
+	}
+	if _u.mutation.DelegatedCredentialsAlgorithmsCleared() {
+		_spec.ClearField(tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.ApplicationSettingsProtocols(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldApplicationSettingsProtocols, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedApplicationSettingsProtocols(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, tlsfingerprintprofile.FieldApplicationSettingsProtocols, value)
+		})
+	}
+	if _u.mutation.ApplicationSettingsProtocolsCleared() {
+		_spec.ClearField(tlsfingerprintprofile.FieldApplicationSettingsProtocols, field.TypeJSON)
 	}
 	_node = &TLSFingerprintProfile{config: _u.config}
 	_spec.Assign = _node.assignValues

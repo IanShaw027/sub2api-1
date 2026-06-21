@@ -43,6 +43,12 @@ func (TLSFingerprintProfile) Fields() []ent.Field {
 			NotEmpty().
 			Unique(),
 
+		// platform: optional classification for filtering in admin UI and account binding.
+		// Empty string means the template is shared by all platforms.
+		field.String("platform").
+			MaxLen(50).
+			Default(""),
+
 		// description: 模板描述
 		field.Text("description").
 			Optional().
@@ -94,6 +100,21 @@ func (TLSFingerprintProfile) Fields() []ent.Field {
 
 		// extensions: TLS 扩展类型 ID 列表，按发送顺序排列
 		field.JSON("extensions", []uint16{}).
+			Optional().
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+
+		// compress_cert_algos: compress_certificate(27) extension algorithms.
+		field.JSON("compress_cert_algos", []uint16{}).
+			Optional().
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+
+		// delegated_credentials_algorithms: delegated_credentials(34) signature algorithms.
+		field.JSON("delegated_credentials_algorithms", []uint16{}).
+			Optional().
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+
+		// application_settings_protocols: ALPS/application_settings(17513/17613) protocols.
+		field.JSON("application_settings_protocols", []string{}).
 			Optional().
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 	}

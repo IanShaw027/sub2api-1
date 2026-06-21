@@ -24,6 +24,8 @@ type TLSFingerprintProfile struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
+	// Platform holds the value of the "platform" field.
+	Platform string `json:"platform,omitempty"`
 	// Description holds the value of the "description" field.
 	Description *string `json:"description,omitempty"`
 	// EnableGrease holds the value of the "enable_grease" field.
@@ -45,8 +47,14 @@ type TLSFingerprintProfile struct {
 	// PskModes holds the value of the "psk_modes" field.
 	PskModes []uint16 `json:"psk_modes,omitempty"`
 	// Extensions holds the value of the "extensions" field.
-	Extensions   []uint16 `json:"extensions,omitempty"`
-	selectValues sql.SelectValues
+	Extensions []uint16 `json:"extensions,omitempty"`
+	// CompressCertAlgos holds the value of the "compress_cert_algos" field.
+	CompressCertAlgos []uint16 `json:"compress_cert_algos,omitempty"`
+	// DelegatedCredentialsAlgorithms holds the value of the "delegated_credentials_algorithms" field.
+	DelegatedCredentialsAlgorithms []uint16 `json:"delegated_credentials_algorithms,omitempty"`
+	// ApplicationSettingsProtocols holds the value of the "application_settings_protocols" field.
+	ApplicationSettingsProtocols []string `json:"application_settings_protocols,omitempty"`
+	selectValues                 sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -54,13 +62,13 @@ func (*TLSFingerprintProfile) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case tlsfingerprintprofile.FieldCipherSuites, tlsfingerprintprofile.FieldCurves, tlsfingerprintprofile.FieldPointFormats, tlsfingerprintprofile.FieldSignatureAlgorithms, tlsfingerprintprofile.FieldAlpnProtocols, tlsfingerprintprofile.FieldSupportedVersions, tlsfingerprintprofile.FieldKeyShareGroups, tlsfingerprintprofile.FieldPskModes, tlsfingerprintprofile.FieldExtensions:
+		case tlsfingerprintprofile.FieldCipherSuites, tlsfingerprintprofile.FieldCurves, tlsfingerprintprofile.FieldPointFormats, tlsfingerprintprofile.FieldSignatureAlgorithms, tlsfingerprintprofile.FieldAlpnProtocols, tlsfingerprintprofile.FieldSupportedVersions, tlsfingerprintprofile.FieldKeyShareGroups, tlsfingerprintprofile.FieldPskModes, tlsfingerprintprofile.FieldExtensions, tlsfingerprintprofile.FieldCompressCertAlgos, tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms, tlsfingerprintprofile.FieldApplicationSettingsProtocols:
 			values[i] = new([]byte)
 		case tlsfingerprintprofile.FieldEnableGrease:
 			values[i] = new(sql.NullBool)
 		case tlsfingerprintprofile.FieldID:
 			values[i] = new(sql.NullInt64)
-		case tlsfingerprintprofile.FieldName, tlsfingerprintprofile.FieldDescription:
+		case tlsfingerprintprofile.FieldName, tlsfingerprintprofile.FieldPlatform, tlsfingerprintprofile.FieldDescription:
 			values[i] = new(sql.NullString)
 		case tlsfingerprintprofile.FieldCreatedAt, tlsfingerprintprofile.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -102,6 +110,12 @@ func (_m *TLSFingerprintProfile) assignValues(columns []string, values []any) er
 				return fmt.Errorf("unexpected type %T for field name", values[i])
 			} else if value.Valid {
 				_m.Name = value.String
+			}
+		case tlsfingerprintprofile.FieldPlatform:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field platform", values[i])
+			} else if value.Valid {
+				_m.Platform = value.String
 			}
 		case tlsfingerprintprofile.FieldDescription:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -188,6 +202,30 @@ func (_m *TLSFingerprintProfile) assignValues(columns []string, values []any) er
 					return fmt.Errorf("unmarshal field extensions: %w", err)
 				}
 			}
+		case tlsfingerprintprofile.FieldCompressCertAlgos:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field compress_cert_algos", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.CompressCertAlgos); err != nil {
+					return fmt.Errorf("unmarshal field compress_cert_algos: %w", err)
+				}
+			}
+		case tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field delegated_credentials_algorithms", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.DelegatedCredentialsAlgorithms); err != nil {
+					return fmt.Errorf("unmarshal field delegated_credentials_algorithms: %w", err)
+				}
+			}
+		case tlsfingerprintprofile.FieldApplicationSettingsProtocols:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field application_settings_protocols", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.ApplicationSettingsProtocols); err != nil {
+					return fmt.Errorf("unmarshal field application_settings_protocols: %w", err)
+				}
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -233,6 +271,9 @@ func (_m *TLSFingerprintProfile) String() string {
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)
 	builder.WriteString(", ")
+	builder.WriteString("platform=")
+	builder.WriteString(_m.Platform)
+	builder.WriteString(", ")
 	if v := _m.Description; v != nil {
 		builder.WriteString("description=")
 		builder.WriteString(*v)
@@ -267,6 +308,15 @@ func (_m *TLSFingerprintProfile) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("extensions=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Extensions))
+	builder.WriteString(", ")
+	builder.WriteString("compress_cert_algos=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CompressCertAlgos))
+	builder.WriteString(", ")
+	builder.WriteString("delegated_credentials_algorithms=")
+	builder.WriteString(fmt.Sprintf("%v", _m.DelegatedCredentialsAlgorithms))
+	builder.WriteString(", ")
+	builder.WriteString("application_settings_protocols=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ApplicationSettingsProtocols))
 	builder.WriteByte(')')
 	return builder.String()
 }

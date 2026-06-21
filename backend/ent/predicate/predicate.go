@@ -132,6 +132,12 @@ type Setting func(*sql.Selector)
 // SubscriptionPlan is the predicate function for subscriptionplan builders.
 type SubscriptionPlan func(*sql.Selector)
 
+// TLSFingerprintCaptureSample is the predicate function for tlsfingerprintcapturesample builders.
+type TLSFingerprintCaptureSample func(*sql.Selector)
+
+// TLSFingerprintCaptureTask is the predicate function for tlsfingerprintcapturetask builders.
+type TLSFingerprintCaptureTask func(*sql.Selector)
+
 // TLSFingerprintProfile is the predicate function for tlsfingerprintprofile builders.
 type TLSFingerprintProfile func(*sql.Selector)
 

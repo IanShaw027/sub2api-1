@@ -57,6 +57,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesample"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturetask"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintrouter"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
@@ -160,6 +162,10 @@ type Client struct {
 	Setting *SettingClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
+	// TLSFingerprintCaptureSample is the client for interacting with the TLSFingerprintCaptureSample builders.
+	TLSFingerprintCaptureSample *TLSFingerprintCaptureSampleClient
+	// TLSFingerprintCaptureTask is the client for interacting with the TLSFingerprintCaptureTask builders.
+	TLSFingerprintCaptureTask *TLSFingerprintCaptureTaskClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
 	TLSFingerprintProfile *TLSFingerprintProfileClient
 	// TLSFingerprintRouter is the client for interacting with the TLSFingerprintRouter builders.
@@ -233,6 +239,8 @@ func (c *Client) init() {
 	c.SecuritySecret = NewSecuritySecretClient(c.config)
 	c.Setting = NewSettingClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
+	c.TLSFingerprintCaptureSample = NewTLSFingerprintCaptureSampleClient(c.config)
+	c.TLSFingerprintCaptureTask = NewTLSFingerprintCaptureTaskClient(c.config)
 	c.TLSFingerprintProfile = NewTLSFingerprintProfileClient(c.config)
 	c.TLSFingerprintRouter = NewTLSFingerprintRouterClient(c.config)
 	c.UsageCleanupTask = NewUsageCleanupTaskClient(c.config)
@@ -377,6 +385,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
+		TLSFingerprintCaptureSample:   NewTLSFingerprintCaptureSampleClient(cfg),
+		TLSFingerprintCaptureTask:     NewTLSFingerprintCaptureTaskClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		TLSFingerprintRouter:          NewTLSFingerprintRouterClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
@@ -448,6 +458,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
+		TLSFingerprintCaptureSample:   NewTLSFingerprintCaptureSampleClient(cfg),
+		TLSFingerprintCaptureTask:     NewTLSFingerprintCaptureTaskClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		TLSFingerprintRouter:          NewTLSFingerprintRouterClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
@@ -497,10 +509,11 @@ func (c *Client) Use(hooks ...Hook) {
 		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.Invoice, c.InvoiceOrder,
 		c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
 		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
-		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintProfile,
-		c.TLSFingerprintRouter, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintCaptureSample,
+		c.TLSFingerprintCaptureTask, c.TLSFingerprintProfile, c.TLSFingerprintRouter,
+		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -520,10 +533,11 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.Invoice, c.InvoiceOrder,
 		c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
 		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
-		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintProfile,
-		c.TLSFingerprintRouter, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintCaptureSample,
+		c.TLSFingerprintCaptureTask, c.TLSFingerprintProfile, c.TLSFingerprintRouter,
+		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -616,6 +630,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Setting.mutate(ctx, m)
 	case *SubscriptionPlanMutation:
 		return c.SubscriptionPlan.mutate(ctx, m)
+	case *TLSFingerprintCaptureSampleMutation:
+		return c.TLSFingerprintCaptureSample.mutate(ctx, m)
+	case *TLSFingerprintCaptureTaskMutation:
+		return c.TLSFingerprintCaptureTask.mutate(ctx, m)
 	case *TLSFingerprintProfileMutation:
 		return c.TLSFingerprintProfile.mutate(ctx, m)
 	case *TLSFingerprintRouterMutation:
@@ -7604,6 +7622,272 @@ func (c *SubscriptionPlanClient) mutate(ctx context.Context, m *SubscriptionPlan
 	}
 }
 
+// TLSFingerprintCaptureSampleClient is a client for the TLSFingerprintCaptureSample schema.
+type TLSFingerprintCaptureSampleClient struct {
+	config
+}
+
+// NewTLSFingerprintCaptureSampleClient returns a client for the TLSFingerprintCaptureSample from the given config.
+func NewTLSFingerprintCaptureSampleClient(c config) *TLSFingerprintCaptureSampleClient {
+	return &TLSFingerprintCaptureSampleClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `tlsfingerprintcapturesample.Hooks(f(g(h())))`.
+func (c *TLSFingerprintCaptureSampleClient) Use(hooks ...Hook) {
+	c.hooks.TLSFingerprintCaptureSample = append(c.hooks.TLSFingerprintCaptureSample, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `tlsfingerprintcapturesample.Intercept(f(g(h())))`.
+func (c *TLSFingerprintCaptureSampleClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TLSFingerprintCaptureSample = append(c.inters.TLSFingerprintCaptureSample, interceptors...)
+}
+
+// Create returns a builder for creating a TLSFingerprintCaptureSample entity.
+func (c *TLSFingerprintCaptureSampleClient) Create() *TLSFingerprintCaptureSampleCreate {
+	mutation := newTLSFingerprintCaptureSampleMutation(c.config, OpCreate)
+	return &TLSFingerprintCaptureSampleCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TLSFingerprintCaptureSample entities.
+func (c *TLSFingerprintCaptureSampleClient) CreateBulk(builders ...*TLSFingerprintCaptureSampleCreate) *TLSFingerprintCaptureSampleCreateBulk {
+	return &TLSFingerprintCaptureSampleCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TLSFingerprintCaptureSampleClient) MapCreateBulk(slice any, setFunc func(*TLSFingerprintCaptureSampleCreate, int)) *TLSFingerprintCaptureSampleCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TLSFingerprintCaptureSampleCreateBulk{err: fmt.Errorf("calling to TLSFingerprintCaptureSampleClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TLSFingerprintCaptureSampleCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TLSFingerprintCaptureSampleCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TLSFingerprintCaptureSample.
+func (c *TLSFingerprintCaptureSampleClient) Update() *TLSFingerprintCaptureSampleUpdate {
+	mutation := newTLSFingerprintCaptureSampleMutation(c.config, OpUpdate)
+	return &TLSFingerprintCaptureSampleUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TLSFingerprintCaptureSampleClient) UpdateOne(_m *TLSFingerprintCaptureSample) *TLSFingerprintCaptureSampleUpdateOne {
+	mutation := newTLSFingerprintCaptureSampleMutation(c.config, OpUpdateOne, withTLSFingerprintCaptureSample(_m))
+	return &TLSFingerprintCaptureSampleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TLSFingerprintCaptureSampleClient) UpdateOneID(id int64) *TLSFingerprintCaptureSampleUpdateOne {
+	mutation := newTLSFingerprintCaptureSampleMutation(c.config, OpUpdateOne, withTLSFingerprintCaptureSampleID(id))
+	return &TLSFingerprintCaptureSampleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TLSFingerprintCaptureSample.
+func (c *TLSFingerprintCaptureSampleClient) Delete() *TLSFingerprintCaptureSampleDelete {
+	mutation := newTLSFingerprintCaptureSampleMutation(c.config, OpDelete)
+	return &TLSFingerprintCaptureSampleDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TLSFingerprintCaptureSampleClient) DeleteOne(_m *TLSFingerprintCaptureSample) *TLSFingerprintCaptureSampleDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TLSFingerprintCaptureSampleClient) DeleteOneID(id int64) *TLSFingerprintCaptureSampleDeleteOne {
+	builder := c.Delete().Where(tlsfingerprintcapturesample.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TLSFingerprintCaptureSampleDeleteOne{builder}
+}
+
+// Query returns a query builder for TLSFingerprintCaptureSample.
+func (c *TLSFingerprintCaptureSampleClient) Query() *TLSFingerprintCaptureSampleQuery {
+	return &TLSFingerprintCaptureSampleQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTLSFingerprintCaptureSample},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TLSFingerprintCaptureSample entity by its id.
+func (c *TLSFingerprintCaptureSampleClient) Get(ctx context.Context, id int64) (*TLSFingerprintCaptureSample, error) {
+	return c.Query().Where(tlsfingerprintcapturesample.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TLSFingerprintCaptureSampleClient) GetX(ctx context.Context, id int64) *TLSFingerprintCaptureSample {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TLSFingerprintCaptureSampleClient) Hooks() []Hook {
+	return c.hooks.TLSFingerprintCaptureSample
+}
+
+// Interceptors returns the client interceptors.
+func (c *TLSFingerprintCaptureSampleClient) Interceptors() []Interceptor {
+	return c.inters.TLSFingerprintCaptureSample
+}
+
+func (c *TLSFingerprintCaptureSampleClient) mutate(ctx context.Context, m *TLSFingerprintCaptureSampleMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TLSFingerprintCaptureSampleCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TLSFingerprintCaptureSampleUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TLSFingerprintCaptureSampleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TLSFingerprintCaptureSampleDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TLSFingerprintCaptureSample mutation op: %q", m.Op())
+	}
+}
+
+// TLSFingerprintCaptureTaskClient is a client for the TLSFingerprintCaptureTask schema.
+type TLSFingerprintCaptureTaskClient struct {
+	config
+}
+
+// NewTLSFingerprintCaptureTaskClient returns a client for the TLSFingerprintCaptureTask from the given config.
+func NewTLSFingerprintCaptureTaskClient(c config) *TLSFingerprintCaptureTaskClient {
+	return &TLSFingerprintCaptureTaskClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `tlsfingerprintcapturetask.Hooks(f(g(h())))`.
+func (c *TLSFingerprintCaptureTaskClient) Use(hooks ...Hook) {
+	c.hooks.TLSFingerprintCaptureTask = append(c.hooks.TLSFingerprintCaptureTask, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `tlsfingerprintcapturetask.Intercept(f(g(h())))`.
+func (c *TLSFingerprintCaptureTaskClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TLSFingerprintCaptureTask = append(c.inters.TLSFingerprintCaptureTask, interceptors...)
+}
+
+// Create returns a builder for creating a TLSFingerprintCaptureTask entity.
+func (c *TLSFingerprintCaptureTaskClient) Create() *TLSFingerprintCaptureTaskCreate {
+	mutation := newTLSFingerprintCaptureTaskMutation(c.config, OpCreate)
+	return &TLSFingerprintCaptureTaskCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TLSFingerprintCaptureTask entities.
+func (c *TLSFingerprintCaptureTaskClient) CreateBulk(builders ...*TLSFingerprintCaptureTaskCreate) *TLSFingerprintCaptureTaskCreateBulk {
+	return &TLSFingerprintCaptureTaskCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TLSFingerprintCaptureTaskClient) MapCreateBulk(slice any, setFunc func(*TLSFingerprintCaptureTaskCreate, int)) *TLSFingerprintCaptureTaskCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TLSFingerprintCaptureTaskCreateBulk{err: fmt.Errorf("calling to TLSFingerprintCaptureTaskClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TLSFingerprintCaptureTaskCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TLSFingerprintCaptureTaskCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TLSFingerprintCaptureTask.
+func (c *TLSFingerprintCaptureTaskClient) Update() *TLSFingerprintCaptureTaskUpdate {
+	mutation := newTLSFingerprintCaptureTaskMutation(c.config, OpUpdate)
+	return &TLSFingerprintCaptureTaskUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TLSFingerprintCaptureTaskClient) UpdateOne(_m *TLSFingerprintCaptureTask) *TLSFingerprintCaptureTaskUpdateOne {
+	mutation := newTLSFingerprintCaptureTaskMutation(c.config, OpUpdateOne, withTLSFingerprintCaptureTask(_m))
+	return &TLSFingerprintCaptureTaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TLSFingerprintCaptureTaskClient) UpdateOneID(id int64) *TLSFingerprintCaptureTaskUpdateOne {
+	mutation := newTLSFingerprintCaptureTaskMutation(c.config, OpUpdateOne, withTLSFingerprintCaptureTaskID(id))
+	return &TLSFingerprintCaptureTaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TLSFingerprintCaptureTask.
+func (c *TLSFingerprintCaptureTaskClient) Delete() *TLSFingerprintCaptureTaskDelete {
+	mutation := newTLSFingerprintCaptureTaskMutation(c.config, OpDelete)
+	return &TLSFingerprintCaptureTaskDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TLSFingerprintCaptureTaskClient) DeleteOne(_m *TLSFingerprintCaptureTask) *TLSFingerprintCaptureTaskDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TLSFingerprintCaptureTaskClient) DeleteOneID(id int64) *TLSFingerprintCaptureTaskDeleteOne {
+	builder := c.Delete().Where(tlsfingerprintcapturetask.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TLSFingerprintCaptureTaskDeleteOne{builder}
+}
+
+// Query returns a query builder for TLSFingerprintCaptureTask.
+func (c *TLSFingerprintCaptureTaskClient) Query() *TLSFingerprintCaptureTaskQuery {
+	return &TLSFingerprintCaptureTaskQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTLSFingerprintCaptureTask},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TLSFingerprintCaptureTask entity by its id.
+func (c *TLSFingerprintCaptureTaskClient) Get(ctx context.Context, id int64) (*TLSFingerprintCaptureTask, error) {
+	return c.Query().Where(tlsfingerprintcapturetask.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TLSFingerprintCaptureTaskClient) GetX(ctx context.Context, id int64) *TLSFingerprintCaptureTask {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TLSFingerprintCaptureTaskClient) Hooks() []Hook {
+	return c.hooks.TLSFingerprintCaptureTask
+}
+
+// Interceptors returns the client interceptors.
+func (c *TLSFingerprintCaptureTaskClient) Interceptors() []Interceptor {
+	return c.inters.TLSFingerprintCaptureTask
+}
+
+func (c *TLSFingerprintCaptureTaskClient) mutate(ctx context.Context, m *TLSFingerprintCaptureTaskMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TLSFingerprintCaptureTaskCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TLSFingerprintCaptureTaskUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TLSFingerprintCaptureTaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TLSFingerprintCaptureTaskDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TLSFingerprintCaptureTask mutation op: %q", m.Op())
+	}
+}
+
 // TLSFingerprintProfileClient is a client for the TLSFingerprintProfile schema.
 type TLSFingerprintProfileClient struct {
 	config
@@ -9513,9 +9797,10 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, Invoice, InvoiceOrder,
 		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
 		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
-		SubscriptionPlan, TLSFingerprintProfile, TLSFingerprintRouter,
-		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Hook
+		SubscriptionPlan, TLSFingerprintCaptureSample, TLSFingerprintCaptureTask,
+		TLSFingerprintProfile, TLSFingerprintRouter, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
 		AIAsset, AIAuditLog, AIGenerationJob, AIPromptTemplate, AIPromptTemplateVersion,
@@ -9527,9 +9812,10 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, Invoice, InvoiceOrder,
 		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
 		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
-		SubscriptionPlan, TLSFingerprintProfile, TLSFingerprintRouter,
-		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Interceptor
+		SubscriptionPlan, TLSFingerprintCaptureSample, TLSFingerprintCaptureTask,
+		TLSFingerprintProfile, TLSFingerprintRouter, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )
 

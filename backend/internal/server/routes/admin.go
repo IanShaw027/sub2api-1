@@ -703,6 +703,13 @@ func registerTLSFingerprintProfileRoutes(admin *gin.RouterGroup, h *handler.Hand
 	profiles := admin.Group("/tls-fingerprint-profiles")
 	{
 		profiles.GET("", h.Admin.TLSFingerprintProfile.List)
+		profiles.POST("/import-captures", h.Admin.TLSFingerprintProfile.ImportCaptures)
+		profiles.GET("/capture-tasks", h.Admin.TLSFingerprintProfile.ListCaptureTasks)
+		profiles.POST("/capture-tasks", h.Admin.TLSFingerprintProfile.StartCaptureTask)
+		profiles.GET("/capture-tasks/:id", h.Admin.TLSFingerprintProfile.GetCaptureTask)
+		profiles.POST("/capture-tasks/:id/stop", h.Admin.TLSFingerprintProfile.StopCaptureTask)
+		profiles.GET("/capture-tasks/:id/samples", h.Admin.TLSFingerprintProfile.ListCaptureSamples)
+		profiles.POST("/capture-tasks/:id/import", h.Admin.TLSFingerprintProfile.ImportCaptureTaskSamples)
 		profiles.GET("/:id", h.Admin.TLSFingerprintProfile.GetByID)
 		profiles.POST("", h.Admin.TLSFingerprintProfile.Create)
 		profiles.PUT("/:id", h.Admin.TLSFingerprintProfile.Update)

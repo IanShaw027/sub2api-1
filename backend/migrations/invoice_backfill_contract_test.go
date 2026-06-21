@@ -22,6 +22,15 @@ func TestMigration158FailsLoudlyWhenInvoiceTargetsAlreadyContainData(t *testing.
 	require.NotContains(t, sql, "RAISE NOTICE 'invoices/invoice_orders 已有数据")
 }
 
+func TestTLSFingerprintSeedCleanupOnlyTargetsExactSeededAccountExtra(t *testing.T) {
+	content, err := FS.ReadFile("172_cleanup_synthetic_tls_fingerprint_seed.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.NotContains(t, sql, "extra @>", "cleanup must not remove manually configured TLS fingerprint settings from richer account extra JSON")
+	require.Contains(t, sql, `COALESCE(extra, '{}'::jsonb) = '{"enable_tls_fingerprint": true, "tls_fingerprint_profile_id": -1}'::jsonb`)
+}
+
 func TestMigrationFilenameNumericPrefixesStayDeliberate(t *testing.T) {
 	files, err := fs.Glob(FS, "*.sql")
 	require.NoError(t, err)

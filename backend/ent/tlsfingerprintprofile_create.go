@@ -56,6 +56,20 @@ func (_c *TLSFingerprintProfileCreate) SetName(v string) *TLSFingerprintProfileC
 	return _c
 }
 
+// SetPlatform sets the "platform" field.
+func (_c *TLSFingerprintProfileCreate) SetPlatform(v string) *TLSFingerprintProfileCreate {
+	_c.mutation.SetPlatform(v)
+	return _c
+}
+
+// SetNillablePlatform sets the "platform" field if the given value is not nil.
+func (_c *TLSFingerprintProfileCreate) SetNillablePlatform(v *string) *TLSFingerprintProfileCreate {
+	if v != nil {
+		_c.SetPlatform(*v)
+	}
+	return _c
+}
+
 // SetDescription sets the "description" field.
 func (_c *TLSFingerprintProfileCreate) SetDescription(v string) *TLSFingerprintProfileCreate {
 	_c.mutation.SetDescription(v)
@@ -138,6 +152,24 @@ func (_c *TLSFingerprintProfileCreate) SetExtensions(v []uint16) *TLSFingerprint
 	return _c
 }
 
+// SetCompressCertAlgos sets the "compress_cert_algos" field.
+func (_c *TLSFingerprintProfileCreate) SetCompressCertAlgos(v []uint16) *TLSFingerprintProfileCreate {
+	_c.mutation.SetCompressCertAlgos(v)
+	return _c
+}
+
+// SetDelegatedCredentialsAlgorithms sets the "delegated_credentials_algorithms" field.
+func (_c *TLSFingerprintProfileCreate) SetDelegatedCredentialsAlgorithms(v []uint16) *TLSFingerprintProfileCreate {
+	_c.mutation.SetDelegatedCredentialsAlgorithms(v)
+	return _c
+}
+
+// SetApplicationSettingsProtocols sets the "application_settings_protocols" field.
+func (_c *TLSFingerprintProfileCreate) SetApplicationSettingsProtocols(v []string) *TLSFingerprintProfileCreate {
+	_c.mutation.SetApplicationSettingsProtocols(v)
+	return _c
+}
+
 // Mutation returns the TLSFingerprintProfileMutation object of the builder.
 func (_c *TLSFingerprintProfileCreate) Mutation() *TLSFingerprintProfileMutation {
 	return _c.mutation
@@ -181,6 +213,10 @@ func (_c *TLSFingerprintProfileCreate) defaults() {
 		v := tlsfingerprintprofile.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.Platform(); !ok {
+		v := tlsfingerprintprofile.DefaultPlatform
+		_c.mutation.SetPlatform(v)
+	}
 	if _, ok := _c.mutation.EnableGrease(); !ok {
 		v := tlsfingerprintprofile.DefaultEnableGrease
 		_c.mutation.SetEnableGrease(v)
@@ -201,6 +237,14 @@ func (_c *TLSFingerprintProfileCreate) check() error {
 	if v, ok := _c.mutation.Name(); ok {
 		if err := tlsfingerprintprofile.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.name": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Platform(); !ok {
+		return &ValidationError{Name: "platform", err: errors.New(`ent: missing required field "TLSFingerprintProfile.platform"`)}
+	}
+	if v, ok := _c.mutation.Platform(); ok {
+		if err := tlsfingerprintprofile.PlatformValidator(v); err != nil {
+			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.platform": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.EnableGrease(); !ok {
@@ -245,6 +289,10 @@ func (_c *TLSFingerprintProfileCreate) createSpec() (*TLSFingerprintProfile, *sq
 		_spec.SetField(tlsfingerprintprofile.FieldName, field.TypeString, value)
 		_node.Name = value
 	}
+	if value, ok := _c.mutation.Platform(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldPlatform, field.TypeString, value)
+		_node.Platform = value
+	}
 	if value, ok := _c.mutation.Description(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldDescription, field.TypeString, value)
 		_node.Description = &value
@@ -288,6 +336,18 @@ func (_c *TLSFingerprintProfileCreate) createSpec() (*TLSFingerprintProfile, *sq
 	if value, ok := _c.mutation.Extensions(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldExtensions, field.TypeJSON, value)
 		_node.Extensions = value
+	}
+	if value, ok := _c.mutation.CompressCertAlgos(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldCompressCertAlgos, field.TypeJSON, value)
+		_node.CompressCertAlgos = value
+	}
+	if value, ok := _c.mutation.DelegatedCredentialsAlgorithms(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms, field.TypeJSON, value)
+		_node.DelegatedCredentialsAlgorithms = value
+	}
+	if value, ok := _c.mutation.ApplicationSettingsProtocols(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldApplicationSettingsProtocols, field.TypeJSON, value)
+		_node.ApplicationSettingsProtocols = value
 	}
 	return _node, _spec
 }
@@ -362,6 +422,18 @@ func (u *TLSFingerprintProfileUpsert) SetName(v string) *TLSFingerprintProfileUp
 // UpdateName sets the "name" field to the value that was provided on create.
 func (u *TLSFingerprintProfileUpsert) UpdateName() *TLSFingerprintProfileUpsert {
 	u.SetExcluded(tlsfingerprintprofile.FieldName)
+	return u
+}
+
+// SetPlatform sets the "platform" field.
+func (u *TLSFingerprintProfileUpsert) SetPlatform(v string) *TLSFingerprintProfileUpsert {
+	u.Set(tlsfingerprintprofile.FieldPlatform, v)
+	return u
+}
+
+// UpdatePlatform sets the "platform" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsert) UpdatePlatform() *TLSFingerprintProfileUpsert {
+	u.SetExcluded(tlsfingerprintprofile.FieldPlatform)
 	return u
 }
 
@@ -557,6 +629,60 @@ func (u *TLSFingerprintProfileUpsert) ClearExtensions() *TLSFingerprintProfileUp
 	return u
 }
 
+// SetCompressCertAlgos sets the "compress_cert_algos" field.
+func (u *TLSFingerprintProfileUpsert) SetCompressCertAlgos(v []uint16) *TLSFingerprintProfileUpsert {
+	u.Set(tlsfingerprintprofile.FieldCompressCertAlgos, v)
+	return u
+}
+
+// UpdateCompressCertAlgos sets the "compress_cert_algos" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsert) UpdateCompressCertAlgos() *TLSFingerprintProfileUpsert {
+	u.SetExcluded(tlsfingerprintprofile.FieldCompressCertAlgos)
+	return u
+}
+
+// ClearCompressCertAlgos clears the value of the "compress_cert_algos" field.
+func (u *TLSFingerprintProfileUpsert) ClearCompressCertAlgos() *TLSFingerprintProfileUpsert {
+	u.SetNull(tlsfingerprintprofile.FieldCompressCertAlgos)
+	return u
+}
+
+// SetDelegatedCredentialsAlgorithms sets the "delegated_credentials_algorithms" field.
+func (u *TLSFingerprintProfileUpsert) SetDelegatedCredentialsAlgorithms(v []uint16) *TLSFingerprintProfileUpsert {
+	u.Set(tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms, v)
+	return u
+}
+
+// UpdateDelegatedCredentialsAlgorithms sets the "delegated_credentials_algorithms" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsert) UpdateDelegatedCredentialsAlgorithms() *TLSFingerprintProfileUpsert {
+	u.SetExcluded(tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms)
+	return u
+}
+
+// ClearDelegatedCredentialsAlgorithms clears the value of the "delegated_credentials_algorithms" field.
+func (u *TLSFingerprintProfileUpsert) ClearDelegatedCredentialsAlgorithms() *TLSFingerprintProfileUpsert {
+	u.SetNull(tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms)
+	return u
+}
+
+// SetApplicationSettingsProtocols sets the "application_settings_protocols" field.
+func (u *TLSFingerprintProfileUpsert) SetApplicationSettingsProtocols(v []string) *TLSFingerprintProfileUpsert {
+	u.Set(tlsfingerprintprofile.FieldApplicationSettingsProtocols, v)
+	return u
+}
+
+// UpdateApplicationSettingsProtocols sets the "application_settings_protocols" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsert) UpdateApplicationSettingsProtocols() *TLSFingerprintProfileUpsert {
+	u.SetExcluded(tlsfingerprintprofile.FieldApplicationSettingsProtocols)
+	return u
+}
+
+// ClearApplicationSettingsProtocols clears the value of the "application_settings_protocols" field.
+func (u *TLSFingerprintProfileUpsert) ClearApplicationSettingsProtocols() *TLSFingerprintProfileUpsert {
+	u.SetNull(tlsfingerprintprofile.FieldApplicationSettingsProtocols)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create.
 // Using this option is equivalent to using:
 //
@@ -627,6 +753,20 @@ func (u *TLSFingerprintProfileUpsertOne) SetName(v string) *TLSFingerprintProfil
 func (u *TLSFingerprintProfileUpsertOne) UpdateName() *TLSFingerprintProfileUpsertOne {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
 		s.UpdateName()
+	})
+}
+
+// SetPlatform sets the "platform" field.
+func (u *TLSFingerprintProfileUpsertOne) SetPlatform(v string) *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetPlatform(v)
+	})
+}
+
+// UpdatePlatform sets the "platform" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertOne) UpdatePlatform() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdatePlatform()
 	})
 }
 
@@ -851,6 +991,69 @@ func (u *TLSFingerprintProfileUpsertOne) UpdateExtensions() *TLSFingerprintProfi
 func (u *TLSFingerprintProfileUpsertOne) ClearExtensions() *TLSFingerprintProfileUpsertOne {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
 		s.ClearExtensions()
+	})
+}
+
+// SetCompressCertAlgos sets the "compress_cert_algos" field.
+func (u *TLSFingerprintProfileUpsertOne) SetCompressCertAlgos(v []uint16) *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetCompressCertAlgos(v)
+	})
+}
+
+// UpdateCompressCertAlgos sets the "compress_cert_algos" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertOne) UpdateCompressCertAlgos() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateCompressCertAlgos()
+	})
+}
+
+// ClearCompressCertAlgos clears the value of the "compress_cert_algos" field.
+func (u *TLSFingerprintProfileUpsertOne) ClearCompressCertAlgos() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.ClearCompressCertAlgos()
+	})
+}
+
+// SetDelegatedCredentialsAlgorithms sets the "delegated_credentials_algorithms" field.
+func (u *TLSFingerprintProfileUpsertOne) SetDelegatedCredentialsAlgorithms(v []uint16) *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetDelegatedCredentialsAlgorithms(v)
+	})
+}
+
+// UpdateDelegatedCredentialsAlgorithms sets the "delegated_credentials_algorithms" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertOne) UpdateDelegatedCredentialsAlgorithms() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateDelegatedCredentialsAlgorithms()
+	})
+}
+
+// ClearDelegatedCredentialsAlgorithms clears the value of the "delegated_credentials_algorithms" field.
+func (u *TLSFingerprintProfileUpsertOne) ClearDelegatedCredentialsAlgorithms() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.ClearDelegatedCredentialsAlgorithms()
+	})
+}
+
+// SetApplicationSettingsProtocols sets the "application_settings_protocols" field.
+func (u *TLSFingerprintProfileUpsertOne) SetApplicationSettingsProtocols(v []string) *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetApplicationSettingsProtocols(v)
+	})
+}
+
+// UpdateApplicationSettingsProtocols sets the "application_settings_protocols" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertOne) UpdateApplicationSettingsProtocols() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateApplicationSettingsProtocols()
+	})
+}
+
+// ClearApplicationSettingsProtocols clears the value of the "application_settings_protocols" field.
+func (u *TLSFingerprintProfileUpsertOne) ClearApplicationSettingsProtocols() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.ClearApplicationSettingsProtocols()
 	})
 }
 
@@ -1093,6 +1296,20 @@ func (u *TLSFingerprintProfileUpsertBulk) UpdateName() *TLSFingerprintProfileUps
 	})
 }
 
+// SetPlatform sets the "platform" field.
+func (u *TLSFingerprintProfileUpsertBulk) SetPlatform(v string) *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetPlatform(v)
+	})
+}
+
+// UpdatePlatform sets the "platform" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertBulk) UpdatePlatform() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdatePlatform()
+	})
+}
+
 // SetDescription sets the "description" field.
 func (u *TLSFingerprintProfileUpsertBulk) SetDescription(v string) *TLSFingerprintProfileUpsertBulk {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
@@ -1314,6 +1531,69 @@ func (u *TLSFingerprintProfileUpsertBulk) UpdateExtensions() *TLSFingerprintProf
 func (u *TLSFingerprintProfileUpsertBulk) ClearExtensions() *TLSFingerprintProfileUpsertBulk {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
 		s.ClearExtensions()
+	})
+}
+
+// SetCompressCertAlgos sets the "compress_cert_algos" field.
+func (u *TLSFingerprintProfileUpsertBulk) SetCompressCertAlgos(v []uint16) *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetCompressCertAlgos(v)
+	})
+}
+
+// UpdateCompressCertAlgos sets the "compress_cert_algos" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertBulk) UpdateCompressCertAlgos() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateCompressCertAlgos()
+	})
+}
+
+// ClearCompressCertAlgos clears the value of the "compress_cert_algos" field.
+func (u *TLSFingerprintProfileUpsertBulk) ClearCompressCertAlgos() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.ClearCompressCertAlgos()
+	})
+}
+
+// SetDelegatedCredentialsAlgorithms sets the "delegated_credentials_algorithms" field.
+func (u *TLSFingerprintProfileUpsertBulk) SetDelegatedCredentialsAlgorithms(v []uint16) *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetDelegatedCredentialsAlgorithms(v)
+	})
+}
+
+// UpdateDelegatedCredentialsAlgorithms sets the "delegated_credentials_algorithms" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertBulk) UpdateDelegatedCredentialsAlgorithms() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateDelegatedCredentialsAlgorithms()
+	})
+}
+
+// ClearDelegatedCredentialsAlgorithms clears the value of the "delegated_credentials_algorithms" field.
+func (u *TLSFingerprintProfileUpsertBulk) ClearDelegatedCredentialsAlgorithms() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.ClearDelegatedCredentialsAlgorithms()
+	})
+}
+
+// SetApplicationSettingsProtocols sets the "application_settings_protocols" field.
+func (u *TLSFingerprintProfileUpsertBulk) SetApplicationSettingsProtocols(v []string) *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetApplicationSettingsProtocols(v)
+	})
+}
+
+// UpdateApplicationSettingsProtocols sets the "application_settings_protocols" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertBulk) UpdateApplicationSettingsProtocols() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateApplicationSettingsProtocols()
+	})
+}
+
+// ClearApplicationSettingsProtocols clears the value of the "application_settings_protocols" field.
+func (u *TLSFingerprintProfileUpsertBulk) ClearApplicationSettingsProtocols() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.ClearApplicationSettingsProtocols()
 	})
 }
 

@@ -513,6 +513,30 @@ func (f SubscriptionPlanFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.V
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SubscriptionPlanMutation", m)
 }
 
+// The TLSFingerprintCaptureSampleFunc type is an adapter to allow the use of ordinary
+// function as TLSFingerprintCaptureSample mutator.
+type TLSFingerprintCaptureSampleFunc func(context.Context, *ent.TLSFingerprintCaptureSampleMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TLSFingerprintCaptureSampleFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TLSFingerprintCaptureSampleMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TLSFingerprintCaptureSampleMutation", m)
+}
+
+// The TLSFingerprintCaptureTaskFunc type is an adapter to allow the use of ordinary
+// function as TLSFingerprintCaptureTask mutator.
+type TLSFingerprintCaptureTaskFunc func(context.Context, *ent.TLSFingerprintCaptureTaskMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TLSFingerprintCaptureTaskFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TLSFingerprintCaptureTaskMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TLSFingerprintCaptureTaskMutation", m)
+}
+
 // The TLSFingerprintProfileFunc type is an adapter to allow the use of ordinary
 // function as TLSFingerprintProfile mutator.
 type TLSFingerprintProfileFunc func(context.Context, *ent.TLSFingerprintProfileMutation) (ent.Value, error)

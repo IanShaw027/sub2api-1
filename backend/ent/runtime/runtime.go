@@ -48,6 +48,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesample"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturetask"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintrouter"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
@@ -2437,6 +2439,98 @@ func init() {
 	subscriptionplan.DefaultUpdatedAt = subscriptionplanDescUpdatedAt.Default.(func() time.Time)
 	// subscriptionplan.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	subscriptionplan.UpdateDefaultUpdatedAt = subscriptionplanDescUpdatedAt.UpdateDefault.(func() time.Time)
+	tlsfingerprintcapturesampleMixin := schema.TLSFingerprintCaptureSample{}.Mixin()
+	tlsfingerprintcapturesampleMixinFields0 := tlsfingerprintcapturesampleMixin[0].Fields()
+	_ = tlsfingerprintcapturesampleMixinFields0
+	tlsfingerprintcapturesampleFields := schema.TLSFingerprintCaptureSample{}.Fields()
+	_ = tlsfingerprintcapturesampleFields
+	// tlsfingerprintcapturesampleDescCreatedAt is the schema descriptor for created_at field.
+	tlsfingerprintcapturesampleDescCreatedAt := tlsfingerprintcapturesampleMixinFields0[0].Descriptor()
+	// tlsfingerprintcapturesample.DefaultCreatedAt holds the default value on creation for the created_at field.
+	tlsfingerprintcapturesample.DefaultCreatedAt = tlsfingerprintcapturesampleDescCreatedAt.Default.(func() time.Time)
+	// tlsfingerprintcapturesampleDescUpdatedAt is the schema descriptor for updated_at field.
+	tlsfingerprintcapturesampleDescUpdatedAt := tlsfingerprintcapturesampleMixinFields0[1].Descriptor()
+	// tlsfingerprintcapturesample.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	tlsfingerprintcapturesample.DefaultUpdatedAt = tlsfingerprintcapturesampleDescUpdatedAt.Default.(func() time.Time)
+	// tlsfingerprintcapturesample.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	tlsfingerprintcapturesample.UpdateDefaultUpdatedAt = tlsfingerprintcapturesampleDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// tlsfingerprintcapturesampleDescPlatform is the schema descriptor for platform field.
+	tlsfingerprintcapturesampleDescPlatform := tlsfingerprintcapturesampleFields[1].Descriptor()
+	// tlsfingerprintcapturesample.DefaultPlatform holds the default value on creation for the platform field.
+	tlsfingerprintcapturesample.DefaultPlatform = tlsfingerprintcapturesampleDescPlatform.Default.(string)
+	// tlsfingerprintcapturesample.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.PlatformValidator = tlsfingerprintcapturesampleDescPlatform.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesampleDescUserAgent is the schema descriptor for user_agent field.
+	tlsfingerprintcapturesampleDescUserAgent := tlsfingerprintcapturesampleFields[2].Descriptor()
+	// tlsfingerprintcapturesample.DefaultUserAgent holds the default value on creation for the user_agent field.
+	tlsfingerprintcapturesample.DefaultUserAgent = tlsfingerprintcapturesampleDescUserAgent.Default.(string)
+	// tlsfingerprintcapturesampleDescFingerprintHash is the schema descriptor for fingerprint_hash field.
+	tlsfingerprintcapturesampleDescFingerprintHash := tlsfingerprintcapturesampleFields[3].Descriptor()
+	// tlsfingerprintcapturesample.FingerprintHashValidator is a validator for the "fingerprint_hash" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.FingerprintHashValidator = func() func(string) error {
+		validators := tlsfingerprintcapturesampleDescFingerprintHash.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(fingerprint_hash string) error {
+			for _, fn := range fns {
+				if err := fn(fingerprint_hash); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// tlsfingerprintcapturesampleDescRawPayload is the schema descriptor for raw_payload field.
+	tlsfingerprintcapturesampleDescRawPayload := tlsfingerprintcapturesampleFields[5].Descriptor()
+	// tlsfingerprintcapturesample.DefaultRawPayload holds the default value on creation for the raw_payload field.
+	tlsfingerprintcapturesample.DefaultRawPayload = tlsfingerprintcapturesampleDescRawPayload.Default.(string)
+	tlsfingerprintcapturetaskMixin := schema.TLSFingerprintCaptureTask{}.Mixin()
+	tlsfingerprintcapturetaskMixinFields0 := tlsfingerprintcapturetaskMixin[0].Fields()
+	_ = tlsfingerprintcapturetaskMixinFields0
+	tlsfingerprintcapturetaskFields := schema.TLSFingerprintCaptureTask{}.Fields()
+	_ = tlsfingerprintcapturetaskFields
+	// tlsfingerprintcapturetaskDescCreatedAt is the schema descriptor for created_at field.
+	tlsfingerprintcapturetaskDescCreatedAt := tlsfingerprintcapturetaskMixinFields0[0].Descriptor()
+	// tlsfingerprintcapturetask.DefaultCreatedAt holds the default value on creation for the created_at field.
+	tlsfingerprintcapturetask.DefaultCreatedAt = tlsfingerprintcapturetaskDescCreatedAt.Default.(func() time.Time)
+	// tlsfingerprintcapturetaskDescUpdatedAt is the schema descriptor for updated_at field.
+	tlsfingerprintcapturetaskDescUpdatedAt := tlsfingerprintcapturetaskMixinFields0[1].Descriptor()
+	// tlsfingerprintcapturetask.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	tlsfingerprintcapturetask.DefaultUpdatedAt = tlsfingerprintcapturetaskDescUpdatedAt.Default.(func() time.Time)
+	// tlsfingerprintcapturetask.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	tlsfingerprintcapturetask.UpdateDefaultUpdatedAt = tlsfingerprintcapturetaskDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// tlsfingerprintcapturetaskDescName is the schema descriptor for name field.
+	tlsfingerprintcapturetaskDescName := tlsfingerprintcapturetaskFields[0].Descriptor()
+	// tlsfingerprintcapturetask.DefaultName holds the default value on creation for the name field.
+	tlsfingerprintcapturetask.DefaultName = tlsfingerprintcapturetaskDescName.Default.(string)
+	// tlsfingerprintcapturetask.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	tlsfingerprintcapturetask.NameValidator = tlsfingerprintcapturetaskDescName.Validators[0].(func(string) error)
+	// tlsfingerprintcapturetaskDescStatus is the schema descriptor for status field.
+	tlsfingerprintcapturetaskDescStatus := tlsfingerprintcapturetaskFields[1].Descriptor()
+	// tlsfingerprintcapturetask.DefaultStatus holds the default value on creation for the status field.
+	tlsfingerprintcapturetask.DefaultStatus = tlsfingerprintcapturetaskDescStatus.Default.(string)
+	// tlsfingerprintcapturetask.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	tlsfingerprintcapturetask.StatusValidator = tlsfingerprintcapturetaskDescStatus.Validators[0].(func(string) error)
+	// tlsfingerprintcapturetaskDescToken is the schema descriptor for token field.
+	tlsfingerprintcapturetaskDescToken := tlsfingerprintcapturetaskFields[2].Descriptor()
+	// tlsfingerprintcapturetask.TokenValidator is a validator for the "token" field. It is called by the builders before save.
+	tlsfingerprintcapturetask.TokenValidator = func() func(string) error {
+		validators := tlsfingerprintcapturetaskDescToken.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(token string) error {
+			for _, fn := range fns {
+				if err := fn(token); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	tlsfingerprintprofileMixin := schema.TLSFingerprintProfile{}.Mixin()
 	tlsfingerprintprofileMixinFields0 := tlsfingerprintprofileMixin[0].Fields()
 	_ = tlsfingerprintprofileMixinFields0
@@ -2470,8 +2564,14 @@ func init() {
 			return nil
 		}
 	}()
+	// tlsfingerprintprofileDescPlatform is the schema descriptor for platform field.
+	tlsfingerprintprofileDescPlatform := tlsfingerprintprofileFields[1].Descriptor()
+	// tlsfingerprintprofile.DefaultPlatform holds the default value on creation for the platform field.
+	tlsfingerprintprofile.DefaultPlatform = tlsfingerprintprofileDescPlatform.Default.(string)
+	// tlsfingerprintprofile.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
+	tlsfingerprintprofile.PlatformValidator = tlsfingerprintprofileDescPlatform.Validators[0].(func(string) error)
 	// tlsfingerprintprofileDescEnableGrease is the schema descriptor for enable_grease field.
-	tlsfingerprintprofileDescEnableGrease := tlsfingerprintprofileFields[2].Descriptor()
+	tlsfingerprintprofileDescEnableGrease := tlsfingerprintprofileFields[3].Descriptor()
 	// tlsfingerprintprofile.DefaultEnableGrease holds the default value on creation for the enable_grease field.
 	tlsfingerprintprofile.DefaultEnableGrease = tlsfingerprintprofileDescEnableGrease.Default.(bool)
 	tlsfingerprintrouterMixin := schema.TLSFingerprintRouter{}.Mixin()

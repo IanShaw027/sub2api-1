@@ -2434,12 +2434,69 @@ var (
 			},
 		},
 	}
+	// TLSFingerprintCaptureSamplesColumns holds the columns for the "tls_fingerprint_capture_samples" table.
+	TLSFingerprintCaptureSamplesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "task_id", Type: field.TypeInt64},
+		{Name: "platform", Type: field.TypeString, Size: 50, Default: ""},
+		{Name: "user_agent", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "fingerprint_hash", Type: field.TypeString, Size: 64},
+		{Name: "profile", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "raw_payload", Type: field.TypeString, Size: 2147483647, Default: ""},
+	}
+	// TLSFingerprintCaptureSamplesTable holds the schema information for the "tls_fingerprint_capture_samples" table.
+	TLSFingerprintCaptureSamplesTable = &schema.Table{
+		Name:       "tls_fingerprint_capture_samples",
+		Columns:    TLSFingerprintCaptureSamplesColumns,
+		PrimaryKey: []*schema.Column{TLSFingerprintCaptureSamplesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "tlsfingerprintcapturesample_task_id_fingerprint_hash",
+				Unique:  true,
+				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[6]},
+			},
+			{
+				Name:    "tlsfingerprintcapturesample_task_id_platform",
+				Unique:  false,
+				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[4]},
+			},
+		},
+	}
+	// TLSFingerprintCaptureTasksColumns holds the columns for the "tls_fingerprint_capture_tasks" table.
+	TLSFingerprintCaptureTasksColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "name", Type: field.TypeString, Size: 120, Default: "TLS fingerprint capture"},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "running"},
+		{Name: "token", Type: field.TypeString, Unique: true, Size: 96},
+		{Name: "targets", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "counts", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "ua_keywords", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+	}
+	// TLSFingerprintCaptureTasksTable holds the schema information for the "tls_fingerprint_capture_tasks" table.
+	TLSFingerprintCaptureTasksTable = &schema.Table{
+		Name:       "tls_fingerprint_capture_tasks",
+		Columns:    TLSFingerprintCaptureTasksColumns,
+		PrimaryKey: []*schema.Column{TLSFingerprintCaptureTasksColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "tlsfingerprintcapturetask_status_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{TLSFingerprintCaptureTasksColumns[4], TLSFingerprintCaptureTasksColumns[1]},
+			},
+		},
+	}
 	// TLSFingerprintProfilesColumns holds the columns for the "tls_fingerprint_profiles" table.
 	TLSFingerprintProfilesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "name", Type: field.TypeString, Unique: true, Size: 100},
+		{Name: "platform", Type: field.TypeString, Size: 50, Default: ""},
 		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "enable_grease", Type: field.TypeBool, Default: false},
 		{Name: "cipher_suites", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
@@ -2451,6 +2508,9 @@ var (
 		{Name: "key_share_groups", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "psk_modes", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "extensions", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "compress_cert_algos", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "delegated_credentials_algorithms", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "application_settings_protocols", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 	}
 	// TLSFingerprintProfilesTable holds the schema information for the "tls_fingerprint_profiles" table.
 	TLSFingerprintProfilesTable = &schema.Table{
@@ -3012,6 +3072,8 @@ var (
 		SecuritySecretsTable,
 		SettingsTable,
 		SubscriptionPlansTable,
+		TLSFingerprintCaptureSamplesTable,
+		TLSFingerprintCaptureTasksTable,
 		TLSFingerprintProfilesTable,
 		TLSFingerprintRoutersTable,
 		UsageCleanupTasksTable,
@@ -3199,6 +3261,12 @@ func init() {
 	}
 	SubscriptionPlansTable.Annotation = &entsql.Annotation{
 		Table: "subscription_plans",
+	}
+	TLSFingerprintCaptureSamplesTable.Annotation = &entsql.Annotation{
+		Table: "tls_fingerprint_capture_samples",
+	}
+	TLSFingerprintCaptureTasksTable.Annotation = &entsql.Annotation{
+		Table: "tls_fingerprint_capture_tasks",
 	}
 	TLSFingerprintProfilesTable.Annotation = &entsql.Annotation{
 		Table: "tls_fingerprint_profiles",

@@ -19,6 +19,8 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
+	// FieldPlatform holds the string denoting the platform field in the database.
+	FieldPlatform = "platform"
 	// FieldDescription holds the string denoting the description field in the database.
 	FieldDescription = "description"
 	// FieldEnableGrease holds the string denoting the enable_grease field in the database.
@@ -41,6 +43,12 @@ const (
 	FieldPskModes = "psk_modes"
 	// FieldExtensions holds the string denoting the extensions field in the database.
 	FieldExtensions = "extensions"
+	// FieldCompressCertAlgos holds the string denoting the compress_cert_algos field in the database.
+	FieldCompressCertAlgos = "compress_cert_algos"
+	// FieldDelegatedCredentialsAlgorithms holds the string denoting the delegated_credentials_algorithms field in the database.
+	FieldDelegatedCredentialsAlgorithms = "delegated_credentials_algorithms"
+	// FieldApplicationSettingsProtocols holds the string denoting the application_settings_protocols field in the database.
+	FieldApplicationSettingsProtocols = "application_settings_protocols"
 	// Table holds the table name of the tlsfingerprintprofile in the database.
 	Table = "tls_fingerprint_profiles"
 )
@@ -51,6 +59,7 @@ var Columns = []string{
 	FieldCreatedAt,
 	FieldUpdatedAt,
 	FieldName,
+	FieldPlatform,
 	FieldDescription,
 	FieldEnableGrease,
 	FieldCipherSuites,
@@ -62,6 +71,9 @@ var Columns = []string{
 	FieldKeyShareGroups,
 	FieldPskModes,
 	FieldExtensions,
+	FieldCompressCertAlgos,
+	FieldDelegatedCredentialsAlgorithms,
+	FieldApplicationSettingsProtocols,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -83,6 +95,10 @@ var (
 	UpdateDefaultUpdatedAt func() time.Time
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
+	// DefaultPlatform holds the default value on creation for the "platform" field.
+	DefaultPlatform string
+	// PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
+	PlatformValidator func(string) error
 	// DefaultEnableGrease holds the default value on creation for the "enable_grease" field.
 	DefaultEnableGrease bool
 )
@@ -108,6 +124,11 @@ func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByName orders the results by the name field.
 func ByName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldName, opts...).ToFunc()
+}
+
+// ByPlatform orders the results by the platform field.
+func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPlatform, opts...).ToFunc()
 }
 
 // ByDescription orders the results by the description field.

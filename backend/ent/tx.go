@@ -98,6 +98,10 @@ type Tx struct {
 	Setting *SettingClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
+	// TLSFingerprintCaptureSample is the client for interacting with the TLSFingerprintCaptureSample builders.
+	TLSFingerprintCaptureSample *TLSFingerprintCaptureSampleClient
+	// TLSFingerprintCaptureTask is the client for interacting with the TLSFingerprintCaptureTask builders.
+	TLSFingerprintCaptureTask *TLSFingerprintCaptureTaskClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
 	TLSFingerprintProfile *TLSFingerprintProfileClient
 	// TLSFingerprintRouter is the client for interacting with the TLSFingerprintRouter builders.
@@ -291,6 +295,8 @@ func (tx *Tx) init() {
 	tx.SecuritySecret = NewSecuritySecretClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
 	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)
+	tx.TLSFingerprintCaptureSample = NewTLSFingerprintCaptureSampleClient(tx.config)
+	tx.TLSFingerprintCaptureTask = NewTLSFingerprintCaptureTaskClient(tx.config)
 	tx.TLSFingerprintProfile = NewTLSFingerprintProfileClient(tx.config)
 	tx.TLSFingerprintRouter = NewTLSFingerprintRouterClient(tx.config)
 	tx.UsageCleanupTask = NewUsageCleanupTaskClient(tx.config)

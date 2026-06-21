@@ -50,6 +50,7 @@ func (r *tlsFingerprintProfileRepository) GetByID(ctx context.Context, id int64)
 func (r *tlsFingerprintProfileRepository) Create(ctx context.Context, p *model.TLSFingerprintProfile) (*model.TLSFingerprintProfile, error) {
 	builder := r.client.TLSFingerprintProfile.Create().
 		SetName(p.Name).
+		SetPlatform(p.Platform).
 		SetEnableGrease(p.EnableGREASE)
 
 	if p.Description != nil {
@@ -82,6 +83,15 @@ func (r *tlsFingerprintProfileRepository) Create(ctx context.Context, p *model.T
 	if len(p.Extensions) > 0 {
 		builder.SetExtensions(p.Extensions)
 	}
+	if len(p.CompressCertAlgos) > 0 {
+		builder.SetCompressCertAlgos(p.CompressCertAlgos)
+	}
+	if len(p.DelegatedCredentialsAlgorithms) > 0 {
+		builder.SetDelegatedCredentialsAlgorithms(p.DelegatedCredentialsAlgorithms)
+	}
+	if len(p.ApplicationSettingsProtocols) > 0 {
+		builder.SetApplicationSettingsProtocols(p.ApplicationSettingsProtocols)
+	}
 
 	created, err := builder.Save(ctx)
 	if err != nil {
@@ -94,6 +104,7 @@ func (r *tlsFingerprintProfileRepository) Create(ctx context.Context, p *model.T
 func (r *tlsFingerprintProfileRepository) Update(ctx context.Context, p *model.TLSFingerprintProfile) (*model.TLSFingerprintProfile, error) {
 	builder := r.client.TLSFingerprintProfile.UpdateOneID(p.ID).
 		SetName(p.Name).
+		SetPlatform(p.Platform).
 		SetEnableGrease(p.EnableGREASE)
 
 	if p.Description != nil {
@@ -147,6 +158,21 @@ func (r *tlsFingerprintProfileRepository) Update(ctx context.Context, p *model.T
 	} else {
 		builder.ClearExtensions()
 	}
+	if len(p.CompressCertAlgos) > 0 {
+		builder.SetCompressCertAlgos(p.CompressCertAlgos)
+	} else {
+		builder.ClearCompressCertAlgos()
+	}
+	if len(p.DelegatedCredentialsAlgorithms) > 0 {
+		builder.SetDelegatedCredentialsAlgorithms(p.DelegatedCredentialsAlgorithms)
+	} else {
+		builder.ClearDelegatedCredentialsAlgorithms()
+	}
+	if len(p.ApplicationSettingsProtocols) > 0 {
+		builder.SetApplicationSettingsProtocols(p.ApplicationSettingsProtocols)
+	} else {
+		builder.ClearApplicationSettingsProtocols()
+	}
 
 	updated, err := builder.Save(ctx)
 	if err != nil {
@@ -163,21 +189,25 @@ func (r *tlsFingerprintProfileRepository) Delete(ctx context.Context, id int64) 
 // toModel 将 Ent 实体转换为服务模型
 func (r *tlsFingerprintProfileRepository) toModel(e *ent.TLSFingerprintProfile) *model.TLSFingerprintProfile {
 	p := &model.TLSFingerprintProfile{
-		ID:                  e.ID,
-		Name:                e.Name,
-		Description:         e.Description,
-		EnableGREASE:        e.EnableGrease,
-		CipherSuites:        e.CipherSuites,
-		Curves:              e.Curves,
-		PointFormats:        e.PointFormats,
-		SignatureAlgorithms: e.SignatureAlgorithms,
-		ALPNProtocols:       e.AlpnProtocols,
-		SupportedVersions:   e.SupportedVersions,
-		KeyShareGroups:      e.KeyShareGroups,
-		PSKModes:            e.PskModes,
-		Extensions:          e.Extensions,
-		CreatedAt:           e.CreatedAt,
-		UpdatedAt:           e.UpdatedAt,
+		ID:                             e.ID,
+		Platform:                       e.Platform,
+		Name:                           e.Name,
+		Description:                    e.Description,
+		EnableGREASE:                   e.EnableGrease,
+		CipherSuites:                   e.CipherSuites,
+		Curves:                         e.Curves,
+		PointFormats:                   e.PointFormats,
+		SignatureAlgorithms:            e.SignatureAlgorithms,
+		ALPNProtocols:                  e.AlpnProtocols,
+		SupportedVersions:              e.SupportedVersions,
+		KeyShareGroups:                 e.KeyShareGroups,
+		PSKModes:                       e.PskModes,
+		Extensions:                     e.Extensions,
+		CompressCertAlgos:              e.CompressCertAlgos,
+		DelegatedCredentialsAlgorithms: e.DelegatedCredentialsAlgorithms,
+		ApplicationSettingsProtocols:   e.ApplicationSettingsProtocols,
+		CreatedAt:                      e.CreatedAt,
+		UpdatedAt:                      e.UpdatedAt,
 	}
 
 	// 确保切片不为 nil
@@ -207,6 +237,15 @@ func (r *tlsFingerprintProfileRepository) toModel(e *ent.TLSFingerprintProfile) 
 	}
 	if p.Extensions == nil {
 		p.Extensions = []uint16{}
+	}
+	if p.CompressCertAlgos == nil {
+		p.CompressCertAlgos = []uint16{}
+	}
+	if p.DelegatedCredentialsAlgorithms == nil {
+		p.DelegatedCredentialsAlgorithms = []uint16{}
+	}
+	if p.ApplicationSettingsProtocols == nil {
+		p.ApplicationSettingsProtocols = []string{}
 	}
 
 	return p

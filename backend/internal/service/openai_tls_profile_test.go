@@ -145,3 +145,23 @@ func TestTLSFingerprintProfileService_ResolveTLSProfile_OpenAIDisabledReturnsNil
 
 	require.Nil(t, profile)
 }
+
+func TestTLSFingerprintProfileService_ResolveTLSProfile_RandomModeDoesNotUseOtherPlatformProfile(t *testing.T) {
+	svc := &TLSFingerprintProfileService{
+		localCache: map[int64]*model.TLSFingerprintProfile{
+			7: {ID: 7, Platform: PlatformAnthropic, Name: "Anthropic TLS Profile"},
+		},
+	}
+
+	profile := svc.ResolveTLSProfile(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(-1),
+		},
+	})
+
+	require.NotNil(t, profile)
+	require.Equal(t, "Built-in Default (Node.js 24.x)", profile.Name)
+}

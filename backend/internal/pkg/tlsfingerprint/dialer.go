@@ -19,17 +19,20 @@ import (
 // Profile contains TLS fingerprint configuration.
 // All slice fields use built-in defaults when empty.
 type Profile struct {
-	Name                string // Profile name for identification
-	CipherSuites        []uint16
-	Curves              []uint16
-	PointFormats        []uint16
-	EnableGREASE        bool
-	SignatureAlgorithms []uint16 // Empty uses defaultSignatureAlgorithms
-	ALPNProtocols       []string // Empty uses ["http/1.1"]
-	SupportedVersions   []uint16 // Empty uses [TLS1.3, TLS1.2]
-	KeyShareGroups      []uint16 // Empty uses [X25519]
-	PSKModes            []uint16 // Empty uses [psk_dhe_ke]
-	Extensions          []uint16 // Extension type IDs in order; empty uses default Node.js 24.x order
+	Name                           string // Profile name for identification
+	CipherSuites                   []uint16
+	Curves                         []uint16
+	PointFormats                   []uint16
+	EnableGREASE                   bool
+	SignatureAlgorithms            []uint16 // Empty uses defaultSignatureAlgorithms
+	ALPNProtocols                  []string // Empty uses ["http/1.1"]
+	SupportedVersions              []uint16 // Empty uses [TLS1.3, TLS1.2]
+	KeyShareGroups                 []uint16 // Empty uses [X25519]
+	PSKModes                       []uint16 // Empty uses [psk_dhe_ke]
+	Extensions                     []uint16 // Extension type IDs in order; empty uses default Node.js 24.x order
+	CompressCertAlgos              []uint16 // compress_certificate algorithms for extension 27
+	DelegatedCredentialsAlgorithms []uint16 // signature algorithms for extension 34
+	ApplicationSettingsProtocols   []string // ALPS/application_settings protocols for extensions 17513/17613
 }
 
 // Dialer creates TLS connections with custom fingerprints.
@@ -378,6 +381,21 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 		pskModes = profile.PSKModes
 	}
 
+	compressCertAlgos := []utls.CertCompressionAlgo(nil)
+	if profile != nil && len(profile.CompressCertAlgos) > 0 {
+		compressCertAlgos = toUTLSCertCompressionAlgos(profile.CompressCertAlgos)
+	}
+
+	delegatedCredentialsAlgorithms := []utls.SignatureScheme(nil)
+	if profile != nil && len(profile.DelegatedCredentialsAlgorithms) > 0 {
+		delegatedCredentialsAlgorithms = toUTLSSignatureSchemes(profile.DelegatedCredentialsAlgorithms)
+	}
+
+	applicationSettingsProtocols := alpnProtocols
+	if profile != nil && len(profile.ApplicationSettingsProtocols) > 0 {
+		applicationSettingsProtocols = profile.ApplicationSettingsProtocols
+	}
+
 	enableGREASE := profile != nil && profile.EnableGREASE
 
 	// Build key shares
@@ -418,6 +436,10 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 			extensions = append(extensions, &utls.SCTExtension{})
 		case 23: // extended_master_secret
 			extensions = append(extensions, &utls.ExtendedMasterSecretExtension{})
+		case 27: // compress_certificate
+			extensions = append(extensions, &utls.UtlsCompressCertExtension{Algorithms: compressCertAlgos})
+		case 34: // delegated_credentials
+			extensions = append(extensions, &utls.FakeDelegatedCredentialsExtension{SupportedSignatureAlgorithms: delegatedCredentialsAlgorithms})
 		case 35: // session_ticket
 			extensions = append(extensions, &utls.SessionTicketExtension{})
 		case 43: // supported_versions
@@ -428,6 +450,10 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 			extensions = append(extensions, &utls.SignatureAlgorithmsCertExtension{SupportedSignatureAlgorithms: signatureAlgorithms})
 		case 51: // key_share
 			extensions = append(extensions, &utls.KeyShareExtension{KeyShares: keyShares})
+		case 17513: // application_settings (ALPS draft/original codepoint)
+			extensions = append(extensions, &utls.ApplicationSettingsExtension{SupportedProtocols: applicationSettingsProtocols})
+		case 17613: // application_settings (new codepoint)
+			extensions = append(extensions, &utls.ApplicationSettingsExtensionNew{SupportedProtocols: applicationSettingsProtocols})
 		case 0xfe0d: // encrypted_client_hello (ECH, 65037)
 			// Send GREASE ECH with random payload — mimics Node.js behavior when no real ECHConfig is available.
 			// An empty GenericExtension causes "error decoding message" from servers that validate ECH format.
@@ -461,6 +487,22 @@ func toUint8s(vals []uint16) []uint8 {
 	out := make([]uint8, len(vals))
 	for i, v := range vals {
 		out[i] = uint8(v)
+	}
+	return out
+}
+
+func toUTLSCertCompressionAlgos(vals []uint16) []utls.CertCompressionAlgo {
+	out := make([]utls.CertCompressionAlgo, len(vals))
+	for i, v := range vals {
+		out[i] = utls.CertCompressionAlgo(v)
+	}
+	return out
+}
+
+func toUTLSSignatureSchemes(vals []uint16) []utls.SignatureScheme {
+	out := make([]utls.SignatureScheme, len(vals))
+	for i, v := range vals {
+		out[i] = utls.SignatureScheme(v)
 	}
 	return out
 }

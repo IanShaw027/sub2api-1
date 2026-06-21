@@ -69,6 +69,11 @@ func Name(v string) predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldName, v))
 }
 
+// Platform applies equality check predicate on the "platform" field. It's identical to PlatformEQ.
+func Platform(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldPlatform, v))
+}
+
 // Description applies equality check predicate on the "description" field. It's identical to DescriptionEQ.
 func Description(v string) predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldDescription, v))
@@ -222,6 +227,71 @@ func NameEqualFold(v string) predicate.TLSFingerprintProfile {
 // NameContainsFold applies the ContainsFold predicate on the "name" field.
 func NameContainsFold(v string) predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldContainsFold(FieldName, v))
+}
+
+// PlatformEQ applies the EQ predicate on the "platform" field.
+func PlatformEQ(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldPlatform, v))
+}
+
+// PlatformNEQ applies the NEQ predicate on the "platform" field.
+func PlatformNEQ(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNEQ(FieldPlatform, v))
+}
+
+// PlatformIn applies the In predicate on the "platform" field.
+func PlatformIn(vs ...string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldIn(FieldPlatform, vs...))
+}
+
+// PlatformNotIn applies the NotIn predicate on the "platform" field.
+func PlatformNotIn(vs ...string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNotIn(FieldPlatform, vs...))
+}
+
+// PlatformGT applies the GT predicate on the "platform" field.
+func PlatformGT(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldGT(FieldPlatform, v))
+}
+
+// PlatformGTE applies the GTE predicate on the "platform" field.
+func PlatformGTE(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldGTE(FieldPlatform, v))
+}
+
+// PlatformLT applies the LT predicate on the "platform" field.
+func PlatformLT(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldLT(FieldPlatform, v))
+}
+
+// PlatformLTE applies the LTE predicate on the "platform" field.
+func PlatformLTE(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldLTE(FieldPlatform, v))
+}
+
+// PlatformContains applies the Contains predicate on the "platform" field.
+func PlatformContains(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldContains(FieldPlatform, v))
+}
+
+// PlatformHasPrefix applies the HasPrefix predicate on the "platform" field.
+func PlatformHasPrefix(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldHasPrefix(FieldPlatform, v))
+}
+
+// PlatformHasSuffix applies the HasSuffix predicate on the "platform" field.
+func PlatformHasSuffix(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldHasSuffix(FieldPlatform, v))
+}
+
+// PlatformEqualFold applies the EqualFold predicate on the "platform" field.
+func PlatformEqualFold(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEqualFold(FieldPlatform, v))
+}
+
+// PlatformContainsFold applies the ContainsFold predicate on the "platform" field.
+func PlatformContainsFold(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldContainsFold(FieldPlatform, v))
 }
 
 // DescriptionEQ applies the EQ predicate on the "description" field.
@@ -397,6 +467,36 @@ func ExtensionsIsNil() predicate.TLSFingerprintProfile {
 // ExtensionsNotNil applies the NotNil predicate on the "extensions" field.
 func ExtensionsNotNil() predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldNotNull(FieldExtensions))
+}
+
+// CompressCertAlgosIsNil applies the IsNil predicate on the "compress_cert_algos" field.
+func CompressCertAlgosIsNil() predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldIsNull(FieldCompressCertAlgos))
+}
+
+// CompressCertAlgosNotNil applies the NotNil predicate on the "compress_cert_algos" field.
+func CompressCertAlgosNotNil() predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNotNull(FieldCompressCertAlgos))
+}
+
+// DelegatedCredentialsAlgorithmsIsNil applies the IsNil predicate on the "delegated_credentials_algorithms" field.
+func DelegatedCredentialsAlgorithmsIsNil() predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldIsNull(FieldDelegatedCredentialsAlgorithms))
+}
+
+// DelegatedCredentialsAlgorithmsNotNil applies the NotNil predicate on the "delegated_credentials_algorithms" field.
+func DelegatedCredentialsAlgorithmsNotNil() predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNotNull(FieldDelegatedCredentialsAlgorithms))
+}
+
+// ApplicationSettingsProtocolsIsNil applies the IsNil predicate on the "application_settings_protocols" field.
+func ApplicationSettingsProtocolsIsNil() predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldIsNull(FieldApplicationSettingsProtocols))
+}
+
+// ApplicationSettingsProtocolsNotNil applies the NotNil predicate on the "application_settings_protocols" field.
+func ApplicationSettingsProtocolsNotNil() predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNotNull(FieldApplicationSettingsProtocols))
 }
 
 // And groups predicates with the AND operator between them.
