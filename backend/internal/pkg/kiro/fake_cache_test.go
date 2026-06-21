@@ -389,17 +389,40 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAndHonorsMinBlock(t 
 		MinBlockTokens: 16,
 	})
 
-	// With 95% hit rate under the chained effective-cache model:
-	// - read (ideal): Independent 20 + PreviousPrefix 60 = 80 (both already cached)
+	// With 95% hit rate:
+	// - ideal read: Independent 20 + PreviousPrefix 60 = 80
 	// - currentTokens: Independent 20 + CurrentPrefix 80 = 100
-	// - growth = 100 - 80 = 20 (the new tokens to write this turn)
-	// - created = 20 * 95% = 19; the 1 missed token falls back into input
-	// - input = 140 - 80 - 19 = 41 (non-cacheable tail 40 + 1 missed write)
+	// - scaled read = 80 * 95% = 76
+	// - created = 100 - 76 = 24
+	// - input remains the non-cacheable tail: 140 - 100 = 40
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              41,
-		CacheCreationInputTokens: 19,
-		CacheReadInputTokens:     80,
+		InputTokens:              40,
+		CacheCreationInputTokens: 24,
+		CacheReadInputTokens:     76,
 	}, usage)
+}
+
+func TestFakeCachePlanResolveUsageWithConfig_ScalesCachedPortionWithoutChangingTotalInput(t *testing.T) {
+	plan := &FakeCachePlan{
+		IndependentCacheableTokens:    20,
+		CurrentPrefixCacheableTokens:  80,
+		PreviousPrefixCacheableTokens: 60,
+		IndependentKey:                "independent",
+		CurrentPrefixKey:              "prefix:current",
+		PreviousPrefixKey:             "prefix:previous",
+	}
+
+	usage := plan.ResolveUsageWithConfig(140, FakeCacheHitState{
+		Independent: true,
+		Prefix:      true,
+	}, FakeCacheUsageConfig{
+		HitRateScale: 95,
+	})
+
+	require.Equal(t, 140, usage.InputTokens+usage.CacheCreationInputTokens+usage.CacheReadInputTokens)
+	require.Equal(t, 76, usage.CacheReadInputTokens)
+	require.Equal(t, 24, usage.CacheCreationInputTokens)
+	require.Equal(t, 40, usage.InputTokens)
 }
 
 func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAt98Percent(t *testing.T) {
@@ -416,32 +439,30 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAt98Percent(t *testi
 		HitRateScale: 98,
 	})
 
-	// 98% hit rate: read = PreviousPrefix 60; growth = 100 - 60 = 40;
-	// created = 40 * 98% = 39; the 1 missed write falls back into input.
+	// 98% hit rate is applied after the ideal split. The 2% missed read moves
+	// from cache_read to cache_creation; total input accounting stays unchanged.
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              41,
-		CacheCreationInputTokens: 39,
-		CacheReadInputTokens:     60,
+		InputTokens:              40,
+		CacheCreationInputTokens: 42,
+		CacheReadInputTokens:     58,
 	}, usage)
 }
 
 func TestFakeCachePlanResolveUsageWithConfig_ChainsEffectiveCacheAcrossTurns(t *testing.T) {
-	// Turn 1: cold start, nothing cached yet. With 95% hit rate, 5% of the
-	// cacheable growth misses and falls back into input; the rest is cache write.
+	// Turn 1: cold start, nothing cached yet. Hit-rate scale does not change a
+	// cold write because there is no read to scale down.
 	turn1 := &FakeCachePlan{
 		CurrentPrefixCacheableTokens: 1000,
 		CurrentPrefixKey:             "prefix:current",
 	}
 	u1 := turn1.ResolveUsageWithConfig(1000, FakeCacheHitState{}, FakeCacheUsageConfig{HitRateScale: 95})
-	// read=0 (cold), growth=1000, created=950, missed 50 -> input.
-	require.Equal(t, 950, u1.CacheCreationInputTokens)
+	require.Equal(t, 1000, u1.CacheCreationInputTokens)
 	require.Equal(t, 0, u1.CacheReadInputTokens)
-	require.Equal(t, 50, u1.InputTokens)
-	// Effective cached carried forward is read+created = 950, NOT the ideal 1000.
-	require.Equal(t, 950, turn1.RecordedEffectiveCachedTokens)
+	require.Equal(t, 0, u1.InputTokens)
+	require.Equal(t, 1000, turn1.RecordedEffectiveCachedTokens)
 
-	// Turn 2: prefix hit, ideal read would be 1000, but the effective cap from
-	// turn 1 (950) holds it back — this is the chained effect of the prior miss.
+	// Turn 2: ideal read is 1000 and ideal growth is 200. The 95% scale moves
+	// 5% of the ideal read into cache_creation, not into input.
 	turn2 := &FakeCachePlan{
 		CurrentPrefixCacheableTokens:  1200,
 		PreviousPrefixCacheableTokens: 1000,
@@ -450,14 +471,12 @@ func TestFakeCachePlanResolveUsageWithConfig_ChainsEffectiveCacheAcrossTurns(t *
 	}
 	u2 := turn2.ResolveUsageWithConfig(1200, FakeCacheHitState{
 		Prefix:                true,
-		EffectiveCachedTokens: turn1.RecordedEffectiveCachedTokens, // 950
+		EffectiveCachedTokens: turn1.RecordedEffectiveCachedTokens,
 	}, FakeCacheUsageConfig{HitRateScale: 95})
-	// read capped at 950 (not the ideal 1000); growth = 1200 - 950 = 250;
-	// created = 250 * 95% = 237; missed 13 -> input.
 	require.Equal(t, 950, u2.CacheReadInputTokens)
-	require.Equal(t, 237, u2.CacheCreationInputTokens)
-	require.Equal(t, 1200-950-237, u2.InputTokens)
-	require.Equal(t, 950+237, turn2.RecordedEffectiveCachedTokens)
+	require.Equal(t, 250, u2.CacheCreationInputTokens)
+	require.Equal(t, 0, u2.InputTokens)
+	require.Equal(t, 1200, turn2.RecordedEffectiveCachedTokens)
 }
 
 func TestFakeCachePlanResolveUsageWithConfig_ZeroHitRateScaleIsValid(t *testing.T) {
@@ -474,14 +493,12 @@ func TestFakeCachePlanResolveUsageWithConfig_ZeroHitRateScaleIsValid(t *testing.
 		HitRateScale: 0,
 	})
 
-	// With 0% hit rate, none of this turn's NEW growth is cached. The previously
-	// cached prefix (read = 60) is still read — 0% governs new writes, not what was
-	// already cached. growth = 100 - 60 = 40, created = 40 * 0% = 0, so all 40
-	// missed writes fall back into input: input = 140 - 60 - 0 = 80.
+	// With 0% hit rate, the ideal cache read is shifted into cache creation.
+	// Pure input remains the non-cacheable tail.
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              80,
-		CacheCreationInputTokens: 0,
-		CacheReadInputTokens:     60,
+		InputTokens:              40,
+		CacheCreationInputTokens: 100,
+		CacheReadInputTokens:     0,
 	}, usage)
 }
 

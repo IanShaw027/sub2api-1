@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestDefaultModels_IncludeClaude45To47Variants(t *testing.T) {
+func TestDefaultModels_IncludeClaude45To48Variants(t *testing.T) {
 	required := map[string]bool{
 		"claude-haiku-4-6":              false,
 		"claude-haiku-4-6-1m":           false,
@@ -13,6 +13,8 @@ func TestDefaultModels_IncludeClaude45To47Variants(t *testing.T) {
 		"claude-sonnet-4-7-1m":          false,
 		"claude-opus-4-7":               false,
 		"claude-opus-4-7-1m":            false,
+		"claude-opus-4-8":               false,
+		"claude-opus-4-8-1m":            false,
 		"claude-haiku-4-5-20251001-1m":  false,
 		"claude-sonnet-4-5-20250929-1m": false,
 		"claude-opus-4-5-20251101-1m":   false,
@@ -45,6 +47,8 @@ func TestMapModel_MapsPublishedAliases(t *testing.T) {
 		"claude-opus-4.7[1m]":                 "claude-opus-4.7",
 		"claude-opus-4-7[1m]":                 "claude-opus-4.7",
 		"claude-opus-4-7":                     "claude-opus-4.7",
+		"claude-opus-4-8":                     "claude-opus-4.8",
+		"claude-opus-4.8-1m":                  "claude-opus-4.8",
 		"claude-haiku-4-5-20251001":           "claude-haiku-4.5",
 	}
 	for input, want := range tests {
@@ -102,12 +106,29 @@ func TestSupportsOneMillionContextModel(t *testing.T) {
 		"claude-sonnet-4.6-1m":       true,
 		"claude-opus-4.6":            true,
 		"claude-opus-4.7[1m]":        true,
+		"claude-opus-4-8-1m":         true,
 		"claude-sonnet-4-5-20250929": false,
 		"claude-haiku-4.6":           false,
 	}
 	for input, want := range tests {
 		if got := SupportsOneMillionContextModel(input); got != want {
 			t.Fatalf("SupportsOneMillionContextModel(%q) = %v, want %v", input, got, want)
+		}
+	}
+}
+
+func TestSupportsExtendedThinking_IncludesRequiredClaude46To48Models(t *testing.T) {
+	tests := map[string]bool{
+		"claude-sonnet-4-6":  true,
+		"claude-opus-4-6":    true,
+		"claude-opus-4-7":    true,
+		"claude-opus-4-8":    true,
+		"claude-haiku-4.6":   false,
+		"totally-not-claude": false,
+	}
+	for input, want := range tests {
+		if got := SupportsExtendedThinking(input); got != want {
+			t.Fatalf("SupportsExtendedThinking(%q) = %v, want %v", input, got, want)
 		}
 	}
 }

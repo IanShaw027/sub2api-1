@@ -130,10 +130,21 @@ type ConvertResult struct {
 	RequestedModel string
 	ToolNameMap    map[string]string
 	BridgeMetadata *BridgeMetadata
+	ToolMetadata   *ToolMetadata
 }
 
 type BridgeMetadata struct {
 	ShadowTools map[string]ShadowToolBridge
+}
+
+type ToolMetadata struct {
+	ResponseTools map[string]ResponseToolBridge
+}
+
+type ResponseToolBridge struct {
+	AnthropicType string
+	AnthropicName string
+	Family        string
 }
 
 type ShadowToolBridge struct {
@@ -181,11 +192,12 @@ func ConvertAnthropicRequestWithModel(body []byte, requestedModelOverride string
 	}
 
 	currentContent, currentImages, currentToolResults := processUserContent(lastMessageMap["content"])
-	tools, toolNameMap, bridgeMetadata, err := convertTools(req["tools"])
+	tools, toolNameMap, bridgeMetadata, toolMetadata, err := convertTools(req["tools"])
 	if err != nil {
 		return nil, err
 	}
 	tools, bridgeMetadata = ensureHistoryShadowTools(rawMessages[:len(rawMessages)-1], tools, bridgeMetadata)
+	tools, toolMetadata = ensureHistoryNativeServerTools(rawMessages[:len(rawMessages)-1], tools, toolMetadata)
 	tools = ensureHistoryTools(rawMessages[:len(rawMessages)-1], tools, toolNameMap)
 
 	currentContext := map[string]any{}
@@ -243,6 +255,7 @@ func ConvertAnthropicRequestWithModel(body []byte, requestedModelOverride string
 		RequestedModel: requestedModel,
 		ToolNameMap:    toolNameMap,
 		BridgeMetadata: bridgeMetadata,
+		ToolMetadata:   toolMetadata,
 	}, nil
 }
 
@@ -597,22 +610,8 @@ func processUserContent(content any) (string, []map[string]any, []map[string]any
 				if image := convertImage(block); image != nil {
 					images = append(images, image)
 				}
-			case "tool_result":
-				toolResult := map[string]any{
-					"toolUseId": stringField(block, "tool_use_id"),
-					"content": []map[string]any{
-						{
-							"text": toolResultContent(block["content"]),
-						},
-					},
-				}
-				if isError, ok := block["is_error"].(bool); ok && isError {
-					toolResult["status"] = "error"
-					toolResult["isError"] = true
-				} else {
-					toolResult["status"] = "success"
-				}
-				toolResults = append(toolResults, toolResult)
+			case "tool_result", "web_search_tool_result", "web_fetch_tool_result":
+				toolResults = append(toolResults, kiroHistoryToolResultFromAnthropicBlock(block))
 			}
 		}
 	}
@@ -636,12 +635,24 @@ func processAssistantContent(content any, toolNameMap map[string]string) (string
 					textParts = append(textParts, text)
 				}
 			case "tool_use":
-				name := shortenToolName(stringField(block, "name"))
+				name, input := KiroHistoryToolUseFromAnthropicBlock(block)
+				name = shortenToolName(name)
 				rememberToolName(toolNameMap, name, stringField(block, "name"))
 				toolUses = append(toolUses, map[string]any{
 					"toolUseId": stringField(block, "id"),
 					"name":      name,
-					"input":     jsonValue(block["input"]),
+					"input":     input,
+				})
+			case "server_tool_use":
+				name, input, ok := KiroHistoryServerToolUseFromAnthropicBlock(block)
+				if !ok {
+					continue
+				}
+				name = shortenToolName(name)
+				toolUses = append(toolUses, map[string]any{
+					"toolUseId": stringField(block, "id"),
+					"name":      name,
+					"input":     input,
 				})
 			case "thinking", "redacted_thinking":
 				continue
@@ -652,17 +663,179 @@ func processAssistantContent(content any, toolNameMap map[string]string) (string
 	return strings.Join(textParts, "\n"), toolUses
 }
 
-func convertTools(raw any) ([]map[string]any, map[string]string, *BridgeMetadata, error) {
+func kiroHistoryToolResultFromAnthropicBlock(block map[string]any) map[string]any {
+	toolResult := map[string]any{
+		"toolUseId": stringField(block, "tool_use_id"),
+		"content": []map[string]any{
+			{
+				"text": toolResultContent(block["content"]),
+			},
+		},
+	}
+	if isError, ok := block["is_error"].(bool); ok && isError {
+		toolResult["status"] = "error"
+		toolResult["isError"] = true
+	} else {
+		toolResult["status"] = "success"
+	}
+	return toolResult
+}
+
+func KiroHistoryToolUseFromAnthropicBlock(block map[string]any) (string, any) {
+	name := strings.TrimSpace(stringField(block, "name"))
+	input := jsonValue(block["input"])
+	switch name {
+	case "bash":
+		return "Bash", input
+	case "str_replace_based_edit_tool":
+		mappedName, mappedInput := KiroTextEditorToolFromAnthropicInput(input)
+		return mappedName, mappedInput
+	default:
+		return name, input
+	}
+}
+
+func KiroHistoryServerToolUseFromAnthropicBlock(block map[string]any) (string, any, bool) {
+	name := strings.TrimSpace(stringField(block, "name"))
+	input := jsonValue(block["input"])
+	switch {
+	case strings.EqualFold(name, "google_search"):
+		return "web_search", input, true
+	case strings.HasPrefix(strings.ToLower(name), "web_search"):
+		return "web_search", input, true
+	case strings.HasPrefix(strings.ToLower(name), "web_fetch"):
+		return "web_fetch", input, true
+	default:
+		return "", nil, false
+	}
+}
+
+func KiroTextEditorToolFromAnthropicInput(input any) (string, any) {
+	obj, _ := input.(map[string]any)
+	if obj == nil {
+		return "Edit", input
+	}
+	command := strings.TrimSpace(stringField(obj, "command"))
+	switch command {
+	case "view":
+		return "Read", map[string]any{
+			"file_path": firstNonEmptyKiroString(obj, "path", "file_path"),
+		}
+	case "create":
+		return "Write", map[string]any{
+			"file_path": firstNonEmptyKiroString(obj, "path", "file_path"),
+			"content":   firstNonEmptyKiroString(obj, "file_text", "content"),
+		}
+	case "str_replace":
+		return "Edit", map[string]any{
+			"file_path":  firstNonEmptyKiroString(obj, "path", "file_path"),
+			"old_string": firstNonEmptyKiroString(obj, "old_str", "old_string"),
+			"new_string": firstNonEmptyKiroString(obj, "new_str", "new_string"),
+		}
+	default:
+		return "Edit", input
+	}
+}
+
+func AnthropicToolUseFromKiroToolUse(name string, input any, metadata *ToolMetadata) (string, any) {
+	name = strings.TrimSpace(name)
+	if metadata == nil || metadata.ResponseTools == nil {
+		return name, input
+	}
+	bridge, ok := metadata.ResponseTools[name]
+	if !ok || strings.TrimSpace(bridge.AnthropicName) == "" {
+		return name, input
+	}
+	switch bridge.Family {
+	case "anthropic_text_editor":
+		return bridge.AnthropicName, AnthropicTextEditorInputFromKiroToolUse(name, input)
+	default:
+		return bridge.AnthropicName, input
+	}
+}
+
+func AnthropicServerToolUseFromKiroToolUse(name string, input any, metadata *ToolMetadata) (map[string]any, bool) {
+	name = strings.TrimSpace(name)
+	if metadata == nil || metadata.ResponseTools == nil {
+		return nil, false
+	}
+	bridge, ok := metadata.ResponseTools[name]
+	if !ok || !isAnthropicServerToolFamily(bridge.Family) {
+		return nil, false
+	}
+	return map[string]any{
+		"type":  "server_tool_use",
+		"name":  firstNonEmptyKiroString(map[string]any{"name": bridge.AnthropicName}, "name"),
+		"input": input,
+	}, true
+}
+
+func AnthropicTextEditorInputFromKiroToolUse(name string, input any) any {
+	obj, _ := input.(map[string]any)
+	if obj == nil {
+		return input
+	}
+	switch strings.TrimSpace(name) {
+	case "Read":
+		return map[string]any{
+			"command": "view",
+			"path":    firstNonEmptyKiroString(obj, "file_path", "path"),
+		}
+	case "Write":
+		return map[string]any{
+			"command":   "create",
+			"path":      firstNonEmptyKiroString(obj, "file_path", "path"),
+			"file_text": firstNonEmptyKiroString(obj, "content", "file_text"),
+		}
+	case "Edit":
+		return map[string]any{
+			"command": "str_replace",
+			"path":    firstNonEmptyKiroString(obj, "file_path", "path"),
+			"old_str": firstNonEmptyKiroString(obj, "old_string", "old_str"),
+			"new_str": firstNonEmptyKiroString(obj, "new_string", "new_str"),
+		}
+	default:
+		return input
+	}
+}
+
+func firstNonEmptyKiroString(obj map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(stringField(obj, key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func convertTools(raw any) ([]map[string]any, map[string]string, *BridgeMetadata, *ToolMetadata, error) {
 	items, _ := raw.([]any)
 	tools := make([]map[string]any, 0, len(items))
 	toolNameMap := make(map[string]string)
 	bridgeMetadata := &BridgeMetadata{ShadowTools: map[string]ShadowToolBridge{}}
+	toolMetadata := &ToolMetadata{ResponseTools: map[string]ResponseToolBridge{}}
 	for _, item := range items {
 		tool, _ := item.(map[string]any)
 		if unsupportedFamily := unsupportedServerToolFamily(tool); unsupportedFamily != "" {
-			return nil, nil, nil, fmt.Errorf("unsupported server-side tool family for Kiro bridge: %s", unsupportedFamily)
+			return nil, nil, nil, nil, fmt.Errorf("unsupported server-side tool family for Kiro bridge: %s", unsupportedFamily)
 		}
 		if isUnsupportedServerTool(tool) {
+			continue
+		}
+		if nativeTool, bridge, ok := supportedNativeServerTool(tool); ok {
+			tools = append(tools, nativeTool)
+			if _, exists := toolMetadata.ResponseTools[bridge.AnthropicName]; !exists {
+				toolMetadata.ResponseTools[bridge.AnthropicName] = bridge
+			}
+			continue
+		}
+		if officialTools, bridges, ok := supportedOfficialClientTools(tool); ok {
+			tools = append(tools, officialTools...)
+			for name, bridge := range bridges {
+				if _, exists := toolMetadata.ResponseTools[name]; !exists {
+					toolMetadata.ResponseTools[name] = bridge
+				}
+			}
 			continue
 		}
 		if shadowName, bridge, ok := supportedShadowTool(tool); ok {
@@ -697,7 +870,10 @@ func convertTools(raw any) ([]map[string]any, map[string]string, *BridgeMetadata
 	if len(bridgeMetadata.ShadowTools) == 0 {
 		bridgeMetadata = nil
 	}
-	return tools, toolNameMap, bridgeMetadata, nil
+	if len(toolMetadata.ResponseTools) == 0 {
+		toolMetadata = nil
+	}
+	return tools, toolNameMap, bridgeMetadata, toolMetadata, nil
 }
 
 func reinforceControlPlaneToolDescription(name, description string) string {
@@ -809,11 +985,166 @@ func unsupportedServerToolFamily(tool map[string]any) string {
 	case strings.HasPrefix(toolType, "computer_"):
 		return toolType
 	case strings.HasPrefix(toolType, "bash_"):
-		return toolType
+		return ""
 	case strings.HasPrefix(toolType, "text_editor_"):
-		return toolType
+		return ""
 	default:
 		return toolType
+	}
+}
+
+func supportedOfficialClientTools(tool map[string]any) ([]map[string]any, map[string]ResponseToolBridge, bool) {
+	toolType := strings.ToLower(strings.TrimSpace(stringField(tool, "type")))
+	switch {
+	case strings.HasPrefix(toolType, "bash_"):
+		return []map[string]any{makeOfficialBashToolSpecification()}, map[string]ResponseToolBridge{
+			"Bash": {AnthropicType: toolType, AnthropicName: "bash", Family: "anthropic_bash"},
+		}, true
+	case strings.HasPrefix(toolType, "text_editor_"):
+		bridge := ResponseToolBridge{AnthropicType: toolType, AnthropicName: "str_replace_based_edit_tool", Family: "anthropic_text_editor"}
+		return []map[string]any{
+				makeOfficialTextEditorReadToolSpecification(),
+				makeOfficialTextEditorWriteToolSpecification(),
+				makeOfficialTextEditorEditToolSpecification(),
+			}, map[string]ResponseToolBridge{
+				"Read":  bridge,
+				"Write": bridge,
+				"Edit":  bridge,
+			}, true
+	default:
+		return nil, nil, false
+	}
+}
+
+func supportedNativeServerTool(tool map[string]any) (map[string]any, ResponseToolBridge, bool) {
+	toolType := strings.ToLower(strings.TrimSpace(stringField(tool, "type")))
+	switch {
+	case toolType == "google_search", strings.HasPrefix(toolType, "web_search"):
+		return makeNativeServerToolSpecification("web_search", "Search the web using Kiro's native web_search tool.", "query"), ResponseToolBridge{
+			AnthropicType: toolType,
+			AnthropicName: "web_search",
+			Family:        "anthropic_web_search",
+		}, true
+	case strings.HasPrefix(toolType, "web_fetch"):
+		return makeNativeServerToolSpecification("web_fetch", "Fetch a URL using Kiro's native web_fetch tool.", "url"), ResponseToolBridge{
+			AnthropicType: toolType,
+			AnthropicName: "web_fetch",
+			Family:        "anthropic_web_fetch",
+		}, true
+	default:
+		return nil, ResponseToolBridge{}, false
+	}
+}
+
+func isAnthropicServerToolFamily(family string) bool {
+	switch strings.TrimSpace(family) {
+	case "anthropic_web_search", "anthropic_web_fetch":
+		return true
+	default:
+		return false
+	}
+}
+
+func makeNativeServerToolSpecification(name, description, requiredField string) map[string]any {
+	return map[string]any{
+		"toolSpecification": map[string]any{
+			"name":        name,
+			"description": description,
+			"inputSchema": map[string]any{
+				"json": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						requiredField: map[string]any{"type": "string"},
+					},
+					"required":             []string{requiredField},
+					"additionalProperties": false,
+				},
+			},
+		},
+	}
+}
+
+func makeOfficialBashToolSpecification() map[string]any {
+	return map[string]any{
+		"toolSpecification": map[string]any{
+			"name":        "Bash",
+			"description": "Execute shell commands for the user. Use this only for the Anthropic bash tool family.",
+			"inputSchema": map[string]any{
+				"json": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"command":     map[string]any{"type": "string"},
+						"description": map[string]any{"type": "string"},
+						"timeout":     map[string]any{"type": "integer"},
+					},
+					"required":             []string{"command"},
+					"additionalProperties": false,
+				},
+			},
+		},
+	}
+}
+
+func makeOfficialTextEditorReadToolSpecification() map[string]any {
+	return map[string]any{
+		"toolSpecification": map[string]any{
+			"name":        "Read",
+			"description": "Read a file for the Anthropic text editor tool family.",
+			"inputSchema": map[string]any{
+				"json": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"file_path": map[string]any{"type": "string"},
+						"offset":    map[string]any{"type": "integer"},
+						"limit":     map[string]any{"type": "integer"},
+					},
+					"required":             []string{"file_path"},
+					"additionalProperties": false,
+				},
+			},
+		},
+	}
+}
+
+func makeOfficialTextEditorWriteToolSpecification() map[string]any {
+	return map[string]any{
+		"toolSpecification": map[string]any{
+			"name":        "Write",
+			"description": "Create or overwrite a file for the Anthropic text editor tool family.",
+			"inputSchema": map[string]any{
+				"json": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"file_path": map[string]any{"type": "string"},
+						"content":   map[string]any{"type": "string"},
+					},
+					"required":             []string{"file_path", "content"},
+					"additionalProperties": false,
+				},
+			},
+		},
+	}
+}
+
+func makeOfficialTextEditorEditToolSpecification() map[string]any {
+	return map[string]any{
+		"toolSpecification": map[string]any{
+			"name":        "Edit",
+			"description": "Replace text in a file for the Anthropic text editor tool family.",
+			"inputSchema": map[string]any{
+				"json": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"file_path":   map[string]any{"type": "string"},
+						"old_string":  map[string]any{"type": "string"},
+						"new_string":  map[string]any{"type": "string"},
+						"replace_all": map[string]any{"type": "boolean"},
+					},
+					"required":             []string{"file_path", "old_string", "new_string"},
+					"additionalProperties": false,
+				},
+			},
+		},
 	}
 }
 
@@ -912,6 +1243,77 @@ func ensureHistoryShadowTools(history []any, tools []map[string]any, bridgeMetad
 		bridgeMetadata = nil
 	}
 	return tools, bridgeMetadata
+}
+
+func ensureHistoryNativeServerTools(history []any, tools []map[string]any, toolMetadata *ToolMetadata) ([]map[string]any, *ToolMetadata) {
+	required := historyNativeServerTools(history)
+	if len(required) == 0 {
+		return tools, toolMetadata
+	}
+
+	seen := make(map[string]struct{}, len(tools))
+	for _, tool := range tools {
+		spec, _ := tool["toolSpecification"].(map[string]any)
+		name := strings.TrimSpace(stringField(spec, "name"))
+		if name != "" {
+			seen[strings.ToLower(name)] = struct{}{}
+		}
+	}
+	for name, bridge := range required {
+		if _, ok := seen[name]; !ok {
+			tools = append(tools, nativeServerToolSpecificationForBridge(bridge))
+			seen[name] = struct{}{}
+		}
+		if toolMetadata == nil {
+			toolMetadata = &ToolMetadata{ResponseTools: map[string]ResponseToolBridge{}}
+		}
+		if toolMetadata.ResponseTools == nil {
+			toolMetadata.ResponseTools = map[string]ResponseToolBridge{}
+		}
+		if _, ok := toolMetadata.ResponseTools[name]; !ok {
+			toolMetadata.ResponseTools[name] = bridge
+		}
+	}
+	return tools, toolMetadata
+}
+
+func historyNativeServerTools(history []any) map[string]ResponseToolBridge {
+	out := map[string]ResponseToolBridge{}
+	for _, item := range history {
+		msg, _ := item.(map[string]any)
+		blocks, _ := msg["content"].([]any)
+		if len(blocks) == 0 {
+			continue
+		}
+		for _, rawBlock := range blocks {
+			block, _ := rawBlock.(map[string]any)
+			blockType := strings.TrimSpace(stringField(block, "type"))
+			switch blockType {
+			case "server_tool_use":
+				name := strings.ToLower(strings.TrimSpace(stringField(block, "name")))
+				if name == "google_search" || strings.HasPrefix(name, "web_search") {
+					out["web_search"] = ResponseToolBridge{AnthropicType: "web_search", AnthropicName: "web_search", Family: "anthropic_web_search"}
+				}
+				if strings.HasPrefix(name, "web_fetch") {
+					out["web_fetch"] = ResponseToolBridge{AnthropicType: "web_fetch", AnthropicName: "web_fetch", Family: "anthropic_web_fetch"}
+				}
+			case "web_search_tool_result":
+				out["web_search"] = ResponseToolBridge{AnthropicType: "web_search", AnthropicName: "web_search", Family: "anthropic_web_search"}
+			case "web_fetch_tool_result":
+				out["web_fetch"] = ResponseToolBridge{AnthropicType: "web_fetch", AnthropicName: "web_fetch", Family: "anthropic_web_fetch"}
+			}
+		}
+	}
+	return out
+}
+
+func nativeServerToolSpecificationForBridge(bridge ResponseToolBridge) map[string]any {
+	switch bridge.AnthropicName {
+	case "web_fetch":
+		return makeNativeServerToolSpecification("web_fetch", "Fetch a URL using Kiro's native web_fetch tool.", "url")
+	default:
+		return makeNativeServerToolSpecification("web_search", "Search the web using Kiro's native web_search tool.", "query")
+	}
 }
 
 func ensureHistoryTools(history []any, tools []map[string]any, toolNameMap map[string]string) []map[string]any {

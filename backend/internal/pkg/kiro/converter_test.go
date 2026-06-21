@@ -258,47 +258,28 @@ func TestConvertAnthropicRequestWithModel_FiltersUnsupportedServerTools(t *testi
 		name, _ := spec["name"].(string)
 		gotNames[name] = true
 		switch name {
-		case "cc_srv_web_search":
+		case "web_search":
 			schema := requireJSONObject(t, requireJSONObject(t, spec["inputSchema"], "inputSchema")["json"], "inputSchema.json")
 			require.Equal(t, "object", schema["type"])
 			require.Equal(t, []any{"query"}, requireJSONArray(t, schema["required"], fmt.Sprintf("tools[%d].required", i)))
-		case "cc_srv_web_fetch":
+		case "web_fetch":
 			schema := requireJSONObject(t, requireJSONObject(t, spec["inputSchema"], "inputSchema")["json"], "inputSchema.json")
 			require.Equal(t, "object", schema["type"])
 			require.Equal(t, []any{"url"}, requireJSONArray(t, schema["required"], fmt.Sprintf("tools[%d].required", i)))
 		}
 	}
-	for _, expected := range []string{"local_tool", "cc_srv_web_search", "cc_srv_web_fetch"} {
+	for _, expected := range []string{"local_tool", "web_search", "web_fetch"} {
 		if !gotNames[expected] {
 			t.Fatalf("tools missing %q, got names: %v", expected, gotNames)
 		}
 	}
-	if gotNames["web_search_20250305"] || gotNames["web_fetch_20250910"] {
+	if gotNames["cc_srv_web_search"] || gotNames["cc_srv_web_fetch"] || gotNames["web_search_20250305"] || gotNames["web_fetch_20250910"] {
 		t.Fatalf("raw server tool names leaked into converted tools: %v", gotNames)
 	}
-
-	bridgeField := bridgeMetadataFieldValue(t, result)
-	shadowTools := bridgeField.Elem().FieldByName("ShadowTools")
-	if !shadowTools.IsValid() {
-		t.Fatal("BridgeMetadata.ShadowTools field not found")
-	}
-	if shadowTools.Len() != 2 {
-		t.Fatalf("BridgeMetadata.ShadowTools length = %d, want 2", shadowTools.Len())
-	}
-	webSearch := shadowTools.MapIndex(reflect.ValueOf("cc_srv_web_search"))
-	if !webSearch.IsValid() {
-		t.Fatal("BridgeMetadata missing cc_srv_web_search")
-	}
-	if got := webSearch.FieldByName("AnthropicType").String(); got != "web_search_20250305" {
-		t.Fatalf("cc_srv_web_search AnthropicType = %q, want %q", got, "web_search_20250305")
-	}
-	webFetch := shadowTools.MapIndex(reflect.ValueOf("cc_srv_web_fetch"))
-	if !webFetch.IsValid() {
-		t.Fatal("BridgeMetadata missing cc_srv_web_fetch")
-	}
-	if got := webFetch.FieldByName("AnthropicType").String(); got != "web_fetch_20250910" {
-		t.Fatalf("cc_srv_web_fetch AnthropicType = %q, want %q", got, "web_fetch_20250910")
-	}
+	require.Nil(t, result.BridgeMetadata)
+	require.NotNil(t, result.ToolMetadata)
+	require.Equal(t, "anthropic_web_search", result.ToolMetadata.ResponseTools["web_search"].Family)
+	require.Equal(t, "anthropic_web_fetch", result.ToolMetadata.ResponseTools["web_fetch"].Family)
 }
 
 func TestConvertAnthropicRequestWithModel_ReinforcesAskUserQuestionSchema(t *testing.T) {
@@ -349,7 +330,7 @@ func TestConvertAnthropicRequestWithModel_ReinforcesAskUserQuestionSchema(t *tes
 	require.Equal(t, false, items["additionalProperties"])
 }
 
-func TestConvertAnthropicRequestWithModel_WebSearchShadowToolUsesStableName(t *testing.T) {
+func TestConvertAnthropicRequestWithModel_WebSearchDoesNotUseShadowToolByDefault(t *testing.T) {
 	input := []byte(`{
 		"model":"claude-sonnet-4-6",
 		"messages":[{"role":"user","content":"search"}],
@@ -366,10 +347,112 @@ func TestConvertAnthropicRequestWithModel_WebSearchShadowToolUsesStableName(t *t
 	tools := convertedCurrentTools(t, result.Body)
 	require.Len(t, tools, 1)
 	spec := requireJSONObject(t, tools[0]["toolSpecification"], "toolSpecification")
-	require.Equal(t, "cc_srv_web_search", requireJSONString(t, spec["name"], "toolSpecification.name"))
+	require.Equal(t, "web_search", requireJSONString(t, spec["name"], "toolSpecification.name"))
+	require.NotEqual(t, "cc_srv_web_search", requireJSONString(t, spec["name"], "toolSpecification.name"))
 }
 
-func TestConvertAnthropicRequestWithModel_GoogleSearchUsesWebSearchShadowTool(t *testing.T) {
+func TestConvertAnthropicRequestWithModel_WebSearchContinuationKeepsNativeHistoryTool(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"tools":[{"type":"web_search_20250305","name":"web_search","description":"search v2"}],
+		"messages":[
+			{"role":"user","content":[{"type":"text","text":"Search for Go"}]},
+			{"role":"assistant","content":[{"type":"server_tool_use","id":"srvtoolu_search_1","name":"web_search","input":{"query":"golang"}}]},
+			{"role":"user","content":[
+				{"type":"web_search_tool_result","tool_use_id":"srvtoolu_search_1","content":[{"type":"url","url":"https://go.dev","title":"The Go Programming Language"}]},
+				{"type":"text","text":"Summarize the result"}
+			]}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.NoError(t, err)
+	require.NotNil(t, result.ToolMetadata)
+	require.Nil(t, result.BridgeMetadata)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(result.Body, &payload))
+	state := requireJSONObject(t, payload["conversationState"], "conversationState")
+	history := requireJSONArray(t, state["history"], "conversationState.history")
+	require.GreaterOrEqual(t, len(history), 2)
+	assistantEntry := requireJSONObject(t, history[1], "history[1]")
+	assistantMessage := requireJSONObject(t, assistantEntry["assistantResponseMessage"], "history[1].assistantResponseMessage")
+	toolUses := requireJSONArray(t, assistantMessage["toolUses"], "assistantResponseMessage.toolUses")
+	require.Len(t, toolUses, 1)
+	toolUse := requireJSONObject(t, toolUses[0], "toolUses[0]")
+	require.Equal(t, "web_search", requireJSONString(t, toolUse["name"], "toolUses[0].name"))
+	require.NotEqual(t, "cc_srv_web_search", requireJSONString(t, toolUse["name"], "toolUses[0].name"))
+}
+
+func TestConvertAnthropicRequestWithModel_WebSearchContinuationWithoutToolsRestoresNativeTool(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[
+			{"role":"user","content":[{"type":"text","text":"Search for Go"}]},
+			{"role":"assistant","content":[{"type":"server_tool_use","id":"srvtoolu_search_1","name":"web_search","input":{"query":"golang"}}]},
+			{"role":"user","content":[
+				{"type":"web_search_tool_result","tool_use_id":"srvtoolu_search_1","content":[{"type":"url","url":"https://go.dev","title":"The Go Programming Language"}]},
+				{"type":"text","text":"Search again if needed"}
+			]}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.NoError(t, err)
+	require.NotNil(t, result.ToolMetadata)
+	require.Nil(t, result.BridgeMetadata)
+	require.Equal(t, "anthropic_web_search", result.ToolMetadata.ResponseTools["web_search"].Family)
+
+	tools := convertedCurrentTools(t, result.Body)
+	require.Len(t, tools, 1)
+	spec := requireJSONObject(t, tools[0]["toolSpecification"], "toolSpecification")
+	require.Equal(t, "web_search", requireJSONString(t, spec["name"], "toolSpecification.name"))
+	schema := requireJSONObject(t, requireJSONObject(t, spec["inputSchema"], "inputSchema")["json"], "inputSchema.json")
+	require.Equal(t, []any{"query"}, requireJSONArray(t, schema["required"], "web_search.required"))
+}
+
+func TestConvertAnthropicRequestWithModel_WebFetchContinuationWithoutToolsRestoresNativeTool(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[
+			{"role":"user","content":[{"type":"text","text":"Fetch docs"}]},
+			{"role":"assistant","content":[{"type":"server_tool_use","id":"srvtoolu_fetch_1","name":"web_fetch","input":{"url":"https://example.com/start"}}]},
+			{"role":"user","content":[
+				{"type":"web_fetch_tool_result","tool_use_id":"srvtoolu_fetch_1","content":{"type":"web_fetch_result","url":"https://example.com/start","text":"start body"}},
+				{"type":"text","text":"Fetch again if needed"}
+			]}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.NoError(t, err)
+	require.NotNil(t, result.ToolMetadata)
+	require.Nil(t, result.BridgeMetadata)
+	require.Equal(t, "anthropic_web_fetch", result.ToolMetadata.ResponseTools["web_fetch"].Family)
+
+	tools := convertedCurrentTools(t, result.Body)
+	require.Len(t, tools, 1)
+	spec := requireJSONObject(t, tools[0]["toolSpecification"], "toolSpecification")
+	require.Equal(t, "web_fetch", requireJSONString(t, spec["name"], "toolSpecification.name"))
+	schema := requireJSONObject(t, requireJSONObject(t, spec["inputSchema"], "inputSchema")["json"], "inputSchema.json")
+	require.Equal(t, []any{"url"}, requireJSONArray(t, schema["required"], "web_fetch.required"))
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(result.Body, &payload))
+	state := requireJSONObject(t, payload["conversationState"], "conversationState")
+	history := requireJSONArray(t, state["history"], "conversationState.history")
+	require.GreaterOrEqual(t, len(history), 2)
+	assistantEntry := requireJSONObject(t, history[1], "history[1]")
+	assistantMessage := requireJSONObject(t, assistantEntry["assistantResponseMessage"], "history[1].assistantResponseMessage")
+	toolUses := requireJSONArray(t, assistantMessage["toolUses"], "assistantResponseMessage.toolUses")
+	require.Len(t, toolUses, 1)
+	toolUse := requireJSONObject(t, toolUses[0], "toolUses[0]")
+	require.Equal(t, "web_fetch", requireJSONString(t, toolUse["name"], "toolUses[0].name"))
+	inputObj := requireJSONObject(t, toolUse["input"], "toolUses[0].input")
+	require.Equal(t, "https://example.com/start", inputObj["url"])
+}
+
+func TestConvertAnthropicRequestWithModel_GoogleSearchUsesNativeWebSearchTool(t *testing.T) {
 	input := []byte(`{
 		"model":"claude-sonnet-4-6",
 		"messages":[{"role":"user","content":"search"}],
@@ -386,13 +469,172 @@ func TestConvertAnthropicRequestWithModel_GoogleSearchUsesWebSearchShadowTool(t 
 	tools := convertedCurrentTools(t, result.Body)
 	require.Len(t, tools, 1)
 	spec := requireJSONObject(t, tools[0]["toolSpecification"], "toolSpecification")
-	require.Equal(t, "cc_srv_web_search", requireJSONString(t, spec["name"], "toolSpecification.name"))
+	require.Equal(t, "web_search", requireJSONString(t, spec["name"], "toolSpecification.name"))
+	require.Nil(t, result.BridgeMetadata)
+}
 
-	bridgeField := bridgeMetadataFieldValue(t, result)
-	shadowTools := bridgeField.Elem().FieldByName("ShadowTools")
-	webSearch := shadowTools.MapIndex(reflect.ValueOf("cc_srv_web_search"))
-	require.True(t, webSearch.IsValid())
-	require.Equal(t, "google_search", webSearch.FieldByName("AnthropicType").String())
+func TestConvertAnthropicRequestWithModel_WebFetchUsesNativeKiroTool(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"fetch docs"}],
+		"tools":[
+			{"type":"web_fetch_20260318","name":"web_fetch","description":"fetch v2"}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.NoError(t, err)
+	require.Nil(t, result.BridgeMetadata)
+	require.NotNil(t, result.ToolMetadata)
+	require.Equal(t, "anthropic_web_fetch", result.ToolMetadata.ResponseTools["web_fetch"].Family)
+
+	tools := convertedCurrentTools(t, result.Body)
+	require.Len(t, tools, 1)
+	spec := requireJSONObject(t, tools[0]["toolSpecification"], "toolSpecification")
+	require.Equal(t, "web_fetch", requireJSONString(t, spec["name"], "toolSpecification.name"))
+	require.NotEqual(t, "cc_srv_web_fetch", requireJSONString(t, spec["name"], "toolSpecification.name"))
+	schema := requireJSONObject(t, requireJSONObject(t, spec["inputSchema"], "inputSchema")["json"], "inputSchema.json")
+	require.Equal(t, []any{"url"}, requireJSONArray(t, schema["required"], "web_fetch.required"))
+}
+
+func TestConvertAnthropicRequestWithModel_AcceptsOfficialBashToolFamily(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"run pwd"}],
+		"tools":[
+			{"type":"bash_20250124","name":"bash","description":"Run shell commands"}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.NoError(t, err)
+
+	tools := convertedCurrentTools(t, result.Body)
+	require.Len(t, tools, 1)
+	spec := requireJSONObject(t, tools[0]["toolSpecification"], "toolSpecification")
+	require.Equal(t, "Bash", requireJSONString(t, spec["name"], "toolSpecification.name"))
+	schema := requireJSONObject(t, requireJSONObject(t, spec["inputSchema"], "inputSchema")["json"], "inputSchema.json")
+	require.Contains(t, requireJSONArray(t, schema["required"], "required"), "command")
+}
+
+func TestConvertAnthropicRequestWithModel_AcceptsOfficialTextEditorToolFamily(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"inspect repo files"}],
+		"tools":[
+			{"type":"text_editor_20250728","name":"str_replace_based_edit_tool","description":"Edit text files"}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.NoError(t, err)
+
+	tools := convertedCurrentTools(t, result.Body)
+	require.Len(t, tools, 3)
+	gotNames := make(map[string]bool, len(tools))
+	for _, entry := range tools {
+		spec := requireJSONObject(t, entry["toolSpecification"], "toolSpecification")
+		gotNames[requireJSONString(t, spec["name"], "toolSpecification.name")] = true
+	}
+	for _, expected := range []string{"Read", "Write", "Edit"} {
+		require.True(t, gotNames[expected], "missing %s in %v", expected, gotNames)
+	}
+	require.False(t, gotNames["str_replace_based_edit_tool"], "official Anthropic tool name should not be sent to Kiro directly")
+}
+
+func TestConvertAnthropicRequestWithModel_CustomBashWithoutTypeRemainsCustom(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"use custom bash"}],
+		"tools":[
+			{"name":"Bash","description":"Custom tool named Bash","input_schema":{"type":"object","properties":{"script":{"type":"string"}},"required":["script"]}}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.NoError(t, err)
+
+	tools := convertedCurrentTools(t, result.Body)
+	require.Len(t, tools, 1)
+	spec := requireJSONObject(t, tools[0]["toolSpecification"], "toolSpecification")
+	require.Equal(t, "Bash", requireJSONString(t, spec["name"], "toolSpecification.name"))
+	schema := requireJSONObject(t, requireJSONObject(t, spec["inputSchema"], "inputSchema")["json"], "inputSchema.json")
+	require.Contains(t, requireJSONArray(t, schema["required"], "required"), "script")
+	require.NotContains(t, requireJSONArray(t, schema["required"], "required"), "command")
+}
+
+func TestConvertAnthropicRequestWithModel_ReplaysOfficialBashHistoryAsKiroBash(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[
+			{"role":"user","content":"run pwd"},
+			{"role":"assistant","content":[{"type":"tool_use","id":"toolu_bash","name":"bash","input":{"command":"pwd"}}]},
+			{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_bash","content":"\/tmp"}]},
+			{"role":"user","content":"continue"}
+		],
+		"tools":[{"type":"bash_20250124","name":"bash"}]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.NoError(t, err)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(result.Body, &payload))
+	history := requireJSONArray(t, requireJSONObject(t, payload["conversationState"], "conversationState")["history"], "history")
+	var found bool
+	for _, raw := range history {
+		entry := requireJSONObject(t, raw, "history entry")
+		assistant, ok := entry["assistantResponseMessage"].(map[string]any)
+		if !ok {
+			continue
+		}
+		toolUses := requireJSONArray(t, assistant["toolUses"], "toolUses")
+		require.Len(t, toolUses, 1)
+		toolUse := requireJSONObject(t, toolUses[0], "toolUses[0]")
+		require.Equal(t, "Bash", toolUse["name"])
+		inputObj := requireJSONObject(t, toolUse["input"], "toolUses[0].input")
+		require.Equal(t, "pwd", inputObj["command"])
+		found = true
+	}
+	require.True(t, found, "assistant tool history not found")
+}
+
+func TestConvertAnthropicRequestWithModel_ReplaysOfficialTextEditorHistoryAsKiroFileTool(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[
+			{"role":"user","content":"edit file"},
+			{"role":"assistant","content":[{"type":"tool_use","id":"toolu_edit","name":"str_replace_based_edit_tool","input":{"command":"str_replace","path":"\/tmp\/a.txt","old_str":"old","new_str":"new"}}]},
+			{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_edit","content":"ok"}]},
+			{"role":"user","content":"continue"}
+		],
+		"tools":[{"type":"text_editor_20250728","name":"str_replace_based_edit_tool"}]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.NoError(t, err)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(result.Body, &payload))
+	history := requireJSONArray(t, requireJSONObject(t, payload["conversationState"], "conversationState")["history"], "history")
+	var found bool
+	for _, raw := range history {
+		entry := requireJSONObject(t, raw, "history entry")
+		assistant, ok := entry["assistantResponseMessage"].(map[string]any)
+		if !ok {
+			continue
+		}
+		toolUses := requireJSONArray(t, assistant["toolUses"], "toolUses")
+		require.Len(t, toolUses, 1)
+		toolUse := requireJSONObject(t, toolUses[0], "toolUses[0]")
+		require.Equal(t, "Edit", toolUse["name"])
+		inputObj := requireJSONObject(t, toolUse["input"], "toolUses[0].input")
+		require.Equal(t, "/tmp/a.txt", inputObj["file_path"])
+		require.Equal(t, "old", inputObj["old_string"])
+		require.Equal(t, "new", inputObj["new_string"])
+		found = true
+	}
+	require.True(t, found, "assistant text editor tool history not found")
 }
 
 func TestConvertAnthropicRequestWithModel_RejectsUnsupportedServerToolFamilies(t *testing.T) {
@@ -500,23 +742,23 @@ func TestConvertAnthropicRequestWithModel_HistoryShadowWebFetchRestoresBridgeCon
 	require.Equal(t, []string{"blocked.example.com"}, webFetch.FieldByName("BlockedDomains").Interface())
 }
 
-func TestConvertAnthropicRequestWithModel_DowngradesOpus47EnabledThinkingToAdaptivePrefix(t *testing.T) {
+func TestConvertAnthropicRequestWithModel_DowngradesUnsupportedEnabledThinkingToAdaptivePrefix(t *testing.T) {
 	enabledInput := []byte(`{
-		"model":"claude-opus-4.7",
+		"model":"claude-haiku-4.6",
 		"thinking":{"type":"enabled","budget_tokens":2048},
 		"messages":[{"role":"user","content":"Reply with OK only."}]
 	}`)
 	adaptiveInput := []byte(`{
-		"model":"claude-opus-4.7",
+		"model":"claude-haiku-4.6",
 		"thinking":{"type":"adaptive","thinking_effort":"low","display":"summarized"},
 		"messages":[{"role":"user","content":"Reply with OK only."}]
 	}`)
 
-	enabledResult, err := ConvertAnthropicRequestWithModel(enabledInput, "claude-opus-4.7")
+	enabledResult, err := ConvertAnthropicRequestWithModel(enabledInput, "claude-haiku-4.6")
 	if err != nil {
 		t.Fatalf("ConvertAnthropicRequestWithModel enabled error: %v", err)
 	}
-	adaptiveResult, err := ConvertAnthropicRequestWithModel(adaptiveInput, "claude-opus-4.7")
+	adaptiveResult, err := ConvertAnthropicRequestWithModel(adaptiveInput, "claude-haiku-4.6")
 	if err != nil {
 		t.Fatalf("ConvertAnthropicRequestWithModel adaptive error: %v", err)
 	}
@@ -532,6 +774,25 @@ func TestConvertAnthropicRequestWithModel_DowngradesOpus47EnabledThinkingToAdapt
 	}
 	if strings.Contains(enabledPrefix, "<thinking_mode>enabled</thinking_mode>") {
 		t.Fatalf("unexpected enabled thinking prefix: %q", enabledPrefix)
+	}
+}
+
+func TestConvertAnthropicRequestWithModel_PreservesEnabledThinkingForSupportedOpus47And48(t *testing.T) {
+	for _, model := range []string{"claude-opus-4.7", "claude-opus-4.8"} {
+		t.Run(model, func(t *testing.T) {
+			input := []byte(fmt.Sprintf(`{
+				"model":%q,
+				"thinking":{"type":"enabled","budget_tokens":2048},
+				"messages":[{"role":"user","content":"Reply with OK only."}]
+			}`, model))
+
+			result, err := ConvertAnthropicRequestWithModel(input, model)
+			require.NoError(t, err)
+			prefix := convertedHistoryPrefix(t, result.Body)
+			require.Contains(t, prefix, "<thinking_mode>enabled</thinking_mode>")
+			require.Contains(t, prefix, "<max_thinking_length>2048</max_thinking_length>")
+			require.NotContains(t, prefix, "<thinking_mode>adaptive</thinking_mode>")
+		})
 	}
 }
 

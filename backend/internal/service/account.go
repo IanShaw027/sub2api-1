@@ -72,7 +72,7 @@ type Account struct {
 	modelMappingCacheWhitelistSig   uint64
 }
 
-var kiroClaudeModelPattern = regexp.MustCompile(`^claude-(haiku|sonnet|opus)-4[.-]([567])(?:-\d{8})?$`)
+var kiroClaudeModelPattern = regexp.MustCompile(`^claude-(haiku|sonnet|opus)-4[.-]([5678])(?:-\d{8})?$`)
 
 type OpenAIEndpointCapability string
 
@@ -706,6 +706,8 @@ func normalizeKiroModelName(raw string) string {
 		"claude-opus-4.6":            "claude-opus-4.6",
 		"claude-opus-4-7":            "claude-opus-4.7",
 		"claude-opus-4.7":            "claude-opus-4.7",
+		"claude-opus-4-8":            "claude-opus-4.8",
+		"claude-opus-4.8":            "claude-opus-4.8",
 		"claude-haiku-4":             "claude-haiku-4.5",
 		"claude-haiku-4-5":           "claude-haiku-4.5",
 		"claude-haiku-4.5":           "claude-haiku-4.5",

@@ -32,10 +32,10 @@ type FakeCachePlan struct {
 	PreviousPrefixCacheableTokens int
 	CurrentPrefixCacheableTokens  int
 	Checkpoints                   []FakeCacheCheckpoint
-	// RecordedEffectiveCachedTokens is the effective cached weight (cache read +
-	// cache creation) computed by the most recent ResolveUsageWithConfig call.
-	// commitFakeCachePlan persists it to SessionProgress so the next turn can use
-	// it as the read basis, chaining the effect of an imperfect hit rate forward.
+	// RecordedEffectiveCachedTokens is the cacheable weight recorded by the most
+	// recent ResolveUsageWithConfig call. commitFakeCachePlan persists it to
+	// SessionProgress so the next turn can cap cache reads to the cacheable span
+	// that was visible at the end of this turn.
 	RecordedEffectiveCachedTokens int
 }
 
@@ -54,11 +54,10 @@ type FakeCacheHitState struct {
 	Independent      bool
 	Prefix           bool
 	CheckpointTokens int
-	// EffectiveCachedTokens is the effective cached weight carried over from the
-	// previous turn (persisted under SessionProgressKey). It caps how much of the
-	// current turn can be billed as cache read: anything beyond it is new growth
-	// that must be (re)written this turn. When zero, the read basis falls back to
-	// the plan's ideal cumulative, preserving cold-start behavior.
+	// EffectiveCachedTokens is the cacheable weight carried over from the
+	// previous turn (persisted under SessionProgressKey). It caps the ideal cache
+	// read basis so compacted or changed histories cannot read beyond the
+	// cacheable span that existed at the end of the previous turn.
 	EffectiveCachedTokens int
 }
 
@@ -196,64 +195,60 @@ func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCac
 	return p.resolveFakeCacheUsage(totalInputTokens, currentTokens, idealRead, hit.EffectiveCachedTokens, config.HitRateScale)
 }
 
-// resolveFakeCacheUsage splits the request into cache read, cache creation, and
-// billable input under a chained, effective-cache model:
+// resolveFakeCacheUsage splits the request into Anthropic-style non-cached
+// input, cache read, and cache creation:
 //
-//   - read is the portion already cached. It starts from the ideal cumulative
-//     implied by the cache-key hits, then is capped by effectiveCap — the
-//     effective cached weight carried from the previous turn. A sub-100% hit
-//   - read is the portion already cached. effectiveCap — the effective cached
-//     weight carried from the previous turn — is the source of truth when present:
-//     it reflects how much was really in the cache at the end of last turn, so an
-//     earlier sub-100% hit rate that shrank it holds read below this turn's ideal
-//     and the shortfall reappears as fresh growth. idealRead (from this turn's
-//     cache-key hits) is only the cold-start basis when no cap exists yet.
-//     currentTokens caps read so a compacted history can't read more than exists.
-//   - growth = currentTokens − read is what must be written this turn.
-//   - hitRateScale governs how much of growth is actually cached: created =
-//     growth × scale. The missed remainder (growth × (1−scale)) is NOT rewritten
-//     into cache; it falls back into billable input, exactly as Anthropic bills
-//     content that never made it into a cache breakpoint.
-//   - RecordedEffectiveCachedTokens = read + created is persisted so the next
-//     turn reads from this shrunken basis, chaining the effect forward.
+//   - currentTokens is the cacheable prefix visible this turn. It is the upper
+//     bound for cache_read + cache_creation.
+//   - idealRead is the cacheable prefix known to have existed before this turn,
+//     capped by the previous session progress when available.
+//   - hitRateScale reduces only the reported cache_read portion. The scaled-away
+//     read stays inside the cacheable prefix and is reported as cache_creation,
+//     so the non-cacheable input tail remains stable.
+//   - inputTokens is totalInputTokens - currentTokens, matching Anthropic's
+//     "tokens after the last cache breakpoint" usage shape.
+//   - RecordedEffectiveCachedTokens stores currentTokens, not scaled read+write,
+//     because the scale is a reporting calibration knob rather than a real cache
+//     capacity limiter.
 func (p *FakeCachePlan) resolveFakeCacheUsage(totalInputTokens, currentTokens, idealRead, effectiveCap, hitRateScale int) FakeCacheUsage {
 	read := idealRead
 	if effectiveCap > 0 {
-		read = effectiveCap
+		if read == 0 || effectiveCap < read {
+			read = effectiveCap
+		}
 	}
 	if read > currentTokens {
 		read = currentTokens
 	}
 	read = clampFakeCacheTokens(read, totalInputTokens)
-
-	growth := currentTokens - read
-	if growth < 0 {
-		growth = 0
-	}
-	growth = clampFakeCacheTokens(growth, totalInputTokens-read)
-
-	created := growth
+	currentTokens = clampFakeCacheTokens(currentTokens, totalInputTokens)
+	scaledRead := read
 	if hitRateScale < 100 {
-		created = growth * hitRateScale / 100
-		if created < 0 {
-			created = 0
-		}
+		scaledRead = read * hitRateScale / 100
 	}
-	// The missed remainder (growth − created) is intentionally left out of cache
-	// creation so it surfaces as billable input below.
-	inputTokens := totalInputTokens - read - created
+	if scaledRead < 0 {
+		scaledRead = 0
+	}
+	if scaledRead > currentTokens {
+		scaledRead = currentTokens
+	}
+	created := currentTokens - scaledRead
+	if created < 0 {
+		created = 0
+	}
+	inputTokens := totalInputTokens - currentTokens
 	if inputTokens < 0 {
 		inputTokens = 0
 	}
 
 	if p != nil {
-		p.RecordedEffectiveCachedTokens = read + created
+		p.RecordedEffectiveCachedTokens = currentTokens
 	}
 
 	return FakeCacheUsage{
 		InputTokens:              inputTokens,
 		CacheCreationInputTokens: created,
-		CacheReadInputTokens:     read,
+		CacheReadInputTokens:     scaledRead,
 	}
 }
 

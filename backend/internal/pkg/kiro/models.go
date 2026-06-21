@@ -81,6 +81,18 @@ var DefaultModels = []claude.Model{
 		CreatedAt:   "2026-04-17T00:00:00Z",
 	},
 	{
+		ID:          "claude-opus-4-8",
+		Type:        "model",
+		DisplayName: "Claude Opus 4.8",
+		CreatedAt:   "2026-06-20T00:00:00Z",
+	},
+	{
+		ID:          "claude-opus-4-8-1m",
+		Type:        "model",
+		DisplayName: "Claude Opus 4.8 (1M)",
+		CreatedAt:   "2026-06-20T00:00:00Z",
+	},
+	{
 		ID:          "claude-haiku-4-5-20251001",
 		Type:        "model",
 		DisplayName: "Claude Haiku 4.5",
@@ -141,6 +153,8 @@ var kiroModelAliases = map[string]string{
 	"claude-opus-4.6":            "claude-opus-4.6",
 	"claude-opus-4-7":            "claude-opus-4.7",
 	"claude-opus-4.7":            "claude-opus-4.7",
+	"claude-opus-4-8":            "claude-opus-4.8",
+	"claude-opus-4.8":            "claude-opus-4.8",
 	"claude-haiku-4":             "claude-haiku-4.5",
 	"claude-haiku-4-5":           "claude-haiku-4.5",
 	"claude-haiku-4.5":           "claude-haiku-4.5",
@@ -159,6 +173,8 @@ var kiroOneMillionContextModels = map[string]struct{}{
 var kiroExtendedThinkingModels = map[string]struct{}{
 	"claude-opus-4.5":   {},
 	"claude-opus-4.6":   {},
+	"claude-opus-4.7":   {},
+	"claude-opus-4.8":   {},
 	"claude-sonnet-4.5": {},
 	"claude-sonnet-4.6": {},
 	"claude-haiku-4.5":  {},

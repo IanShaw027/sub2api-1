@@ -82,3 +82,36 @@ func TestKiroAccountResolvesCustomAliasMapping(t *testing.T) {
 		t.Fatalf("mapKiroModel = %q, want %q", got, "claude-opus-4.8")
 	}
 }
+
+func TestKiroAccountNormalizesClaude48HyphenAndDotAliases(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		Platform: PlatformKiro,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"claude-sonnet-4-6": "claude-sonnet-4.6",
+				"claude-opus-4-6":   "claude-opus-4.6",
+				"claude-opus-4-7":   "claude-opus-4.7",
+				"claude-opus-4-8":   "claude-opus-4.8",
+			},
+		},
+	}
+
+	tests := map[string]string{
+		"claude-sonnet-4-6": "claude-sonnet-4.6",
+		"claude-opus-4-6":   "claude-opus-4.6",
+		"claude-opus-4-7":   "claude-opus-4.7",
+		"claude-opus-4-8":   "claude-opus-4.8",
+		"claude-opus-4.8":   "claude-opus-4.8",
+	}
+	for requested, want := range tests {
+		mapped, matched := account.ResolveMappedModel(requested)
+		if !matched {
+			t.Fatalf("ResolveMappedModel(%q) did not match", requested)
+		}
+		if mapped != want {
+			t.Fatalf("ResolveMappedModel(%q) = %q, want %q", requested, mapped, want)
+		}
+	}
+}
