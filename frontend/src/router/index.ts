@@ -183,6 +183,15 @@ const routes: RouteRecordRaw[] = [
       title: 'Legal Document'
     }
   },
+  {
+    path: '/tls-fingerprint-collector',
+    name: 'TLSFingerprintCollector',
+    component: () => import('@/views/public/TLSFingerprintCollectorView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'TLS Fingerprint Collector'
+    }
+  },
 
   // ==================== User Routes ====================
   {
@@ -1142,6 +1151,7 @@ export const BACKEND_MODE_ALLOWED_PATHS = [
   '/payment/stripe-popup',
   '/payment/airwallex',
   '/legal',
+  '/tls-fingerprint-collector',
 ]
 export const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',

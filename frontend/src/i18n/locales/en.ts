@@ -2035,6 +2035,34 @@ export default {
     selectDateRange: 'Select date range'
   },
 
+  tlsCollector: {
+    eyebrow: 'Gateway Collector',
+    title: 'TLS Fingerprint Collector',
+    description: 'Paste a captured ClientHello payload and submit it to this gateway capture task. This page is public, but submissions require a running task token.',
+    backHome: 'Back Home',
+    endpoint: 'Submit Endpoint',
+    platform: 'Platform',
+    token: 'Capture Token',
+    userAgent: 'User-Agent',
+    payload: 'Captured Payload',
+    payloadPlaceholder: 'Paste collector YAML or JSON here...',
+    submit: 'Submit Capture',
+    submitting: 'Submitting...',
+    copyJSON: 'Copy Submit JSON',
+    required: 'Token, platform, and payload are required',
+    failed: 'Failed to submit capture',
+    accepted: 'Capture accepted ({counts})',
+    duplicate: 'Duplicate fingerprint ignored ({counts})',
+    copied: 'Submit JSON copied',
+    copyFailed: 'Failed to copy submit JSON',
+    ignored: {
+      platform_not_targeted: 'This platform is not targeted by the capture task',
+      platform_target_reached: 'This platform has reached its target count for the capture task',
+      user_agent_not_matched: 'User-Agent does not match the capture task keywords',
+      unknown: 'Capture was ignored'
+    }
+  },
+
   // Admin
   admin: {
     // Dashboard
@@ -4338,6 +4366,8 @@ export default {
           hint: 'Simulate Node.js/Claude Code client TLS fingerprint',
           defaultProfile: 'Built-in Default',
           randomProfile: 'Random',
+          sharedProfile: 'shared',
+          platformMismatch: 'platform mismatch',
           noRouter: 'No Router',
           routerHint: 'Optional: choose a router to select profiles by inbound User-Agent.'
         },
@@ -7620,8 +7650,12 @@ export default {
       deleteProfile: 'Delete Profile',
       noProfiles: 'No profiles configured',
       createFirstProfile: 'Create your first TLS fingerprint profile',
+      filterPlatform: 'Platform',
+      allPlatforms: 'All platforms',
+      profileCount: '{count} profiles',
 
       columns: {
+        platform: 'Platform',
         name: 'Name',
         description: 'Description',
         grease: 'GREASE',
@@ -7630,6 +7664,8 @@ export default {
       },
 
       form: {
+        platform: 'Platform',
+        platformPlaceholder: 'e.g. openai / anthropic / gemini',
         pasteYaml: 'Paste YAML Configuration',
         pasteYamlPlaceholder: 'Paste YAML output from TLS Fingerprint Collector here...',
         pasteYamlHint: 'Paste the YAML copied from TLS Fingerprint Collector to auto-fill all fields.',
@@ -7654,7 +7690,51 @@ export default {
         supportedVersions: 'Supported TLS Versions',
         keyShareGroups: 'Key Share Groups',
         pskModes: 'PSK Modes',
-        extensions: 'Extensions'
+        extensions: 'Extensions',
+        compressCertAlgos: 'Certificate Compression Algorithms',
+        delegatedCredentialsAlgorithms: 'Delegated Credentials Algorithms',
+        applicationSettingsProtocols: 'Application Settings Protocols'
+      },
+
+      capture: {
+        title: 'Real Request Fingerprint Capture',
+        description: 'Collect complete replayable TLS ClientHello fingerprints from the current gateway/collector submissions. Deduplication uses TLS fields only, not platform or User-Agent.',
+        taskName: 'Task name',
+        taskNamePlaceholder: 'e.g. Codex CLI/Desktop live capture',
+        uaKeywords: 'User-Agent keywords',
+        uaKeywordsPlaceholder: 'codex, Codex Desktop, codex-tui',
+        uaKeywordsHint: 'Comma-separated. Empty accepts all UAs. Keywords filter capture only and are not part of dedupe.',
+        targets: 'Per-platform targets',
+        targetsHint: '0 disables a platform',
+        customPlatform: 'Custom platform',
+        start: 'Start capture',
+        stop: 'Stop',
+        startSuccess: 'Capture task started',
+        startFailed: 'Failed to start capture task',
+        stopSuccess: 'Capture task stopped',
+        stopFailed: 'Failed to stop capture task',
+        loadFailed: 'Failed to load capture tasks',
+        samplesLoadFailed: 'Failed to load capture samples',
+        targetRequired: 'Set at least one platform target above 0',
+        noTasks: 'No capture tasks yet',
+        selectedTaskHint: 'Collectors submit token, platform, user_agent, and complete TLS payload to the endpoint below.',
+        copyConfig: 'Copy submit config',
+        copySuccess: 'Submit config copied',
+        copyFailed: 'Failed to copy submit config',
+        noSamples: 'No captured samples yet',
+        userAgent: 'User-Agent',
+        hash: 'Fingerprint hash',
+        details: 'Details',
+        viewDetails: 'View',
+        importSelected: 'Import selected ({count})',
+        importAll: 'Import all',
+        importSuccess: 'Imported {imported} profiles, skipped {duplicates} duplicates',
+        importFailed: 'Failed to import captured samples',
+        status: {
+          running: 'Running',
+          completed: 'Completed',
+          stopped: 'Stopped'
+        }
       },
 
       deleteConfirm: 'Delete Profile',

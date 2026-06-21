@@ -2031,6 +2031,34 @@ export default {
     selectDateRange: '选择日期范围'
   },
 
+  tlsCollector: {
+    eyebrow: '网关采集器',
+    title: 'TLS 指纹采集器',
+    description: '粘贴已采集的 ClientHello payload，并提交到当前网关的采集任务。页面本身公开访问，但提交必须携带运行中的任务 token。',
+    backHome: '返回首页',
+    endpoint: '提交地址',
+    platform: '平台',
+    token: '采集 Token',
+    userAgent: 'User-Agent',
+    payload: '采集 Payload',
+    payloadPlaceholder: '在这里粘贴采集器输出的 YAML 或 JSON...',
+    submit: '提交采集',
+    submitting: '提交中...',
+    copyJSON: '复制提交 JSON',
+    required: 'Token、平台和 payload 必填',
+    failed: '提交采集失败',
+    accepted: '采集已接收 ({counts})',
+    duplicate: '重复指纹已忽略 ({counts})',
+    copied: '提交 JSON 已复制',
+    copyFailed: '复制提交 JSON 失败',
+    ignored: {
+      platform_not_targeted: '该平台不在当前采集任务目标内',
+      platform_target_reached: '该平台已达到当前采集任务目标数量',
+      user_agent_not_matched: 'User-Agent 未匹配当前采集任务关键词',
+      unknown: '采集被忽略'
+    }
+  },
+
   // Admin
   admin: {
     // Dashboard
@@ -4501,6 +4529,8 @@ export default {
           hint: '模拟 Node.js/Claude Code 客户端的 TLS 指纹',
           defaultProfile: '内置默认',
           randomProfile: '随机',
+          sharedProfile: '共享',
+          platformMismatch: '平台不匹配',
           noRouter: '不使用路由器',
           routerHint: '可选：按入站 User-Agent 选择 TLS 指纹模板。'
         },
@@ -7772,8 +7802,12 @@ export default {
       deleteProfile: '删除模板',
       noProfiles: '暂无模板',
       createFirstProfile: '创建你的第一个 TLS 指纹模板',
+      filterPlatform: '平台',
+      allPlatforms: '全部平台',
+      profileCount: '{count} 个模板',
 
       columns: {
+        platform: '平台',
         name: '名称',
         description: '描述',
         grease: 'GREASE',
@@ -7782,6 +7816,8 @@ export default {
       },
 
       form: {
+        platform: '平台分类',
+        platformPlaceholder: '例如 openai / anthropic / gemini',
         pasteYaml: '粘贴 YAML 配置',
         pasteYamlPlaceholder: '将 TLS 指纹采集器复制的 YAML 粘贴到这里...',
         pasteYamlHint: '粘贴从 TLS 指纹采集器复制的 YAML 配置，自动填充所有字段。',
@@ -7806,7 +7842,51 @@ export default {
         supportedVersions: '支持的 TLS 版本',
         keyShareGroups: '密钥共享组',
         pskModes: 'PSK 模式',
-        extensions: '扩展'
+        extensions: '扩展',
+        compressCertAlgos: '证书压缩算法',
+        delegatedCredentialsAlgorithms: 'Delegated Credentials 签名算法',
+        applicationSettingsProtocols: 'Application Settings 协议'
+      },
+
+      capture: {
+        title: '真实请求指纹采集',
+        description: '从当前网关/采集器提交的真实 TLS ClientHello 中去重采集完整可回放指纹。去重只看 TLS 字段，不按平台或 User-Agent 去重。',
+        taskName: '任务名称',
+        taskNamePlaceholder: '例如 Codex CLI/Desktop 真实采集',
+        uaKeywords: 'User-Agent 关键词',
+        uaKeywordsPlaceholder: 'codex, Codex Desktop, codex-tui',
+        uaKeywordsHint: '逗号分隔；为空时接收所有 UA。关键词只用于过滤，不参与去重。',
+        targets: '各平台目标数',
+        targetsHint: '0 表示不采集该平台',
+        customPlatform: '自定义平台',
+        start: '开始采集',
+        stop: '停止',
+        startSuccess: '采集任务已启动',
+        startFailed: '启动采集任务失败',
+        stopSuccess: '采集任务已停止',
+        stopFailed: '停止采集任务失败',
+        loadFailed: '加载采集任务失败',
+        samplesLoadFailed: '加载采集样本失败',
+        targetRequired: '至少设置一个大于 0 的平台目标数',
+        noTasks: '暂无采集任务',
+        selectedTaskHint: '采集器向下方地址提交 token、platform、user_agent 和完整 TLS payload。',
+        copyConfig: '复制提交配置',
+        copySuccess: '提交配置已复制',
+        copyFailed: '复制提交配置失败',
+        noSamples: '暂无采集样本',
+        userAgent: 'User-Agent',
+        hash: '指纹 Hash',
+        details: '详情',
+        viewDetails: '查看',
+        importSelected: '导入选中 ({count})',
+        importAll: '导入全部',
+        importSuccess: '已导入 {imported} 个模板，跳过 {duplicates} 个重复项',
+        importFailed: '导入采集样本失败',
+        status: {
+          running: '采集中',
+          completed: '已完成',
+          stopped: '已停止'
+        }
       },
 
       deleteConfirm: '删除模板',
