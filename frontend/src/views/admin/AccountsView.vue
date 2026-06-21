@@ -1707,13 +1707,14 @@ const openBulkEditFiltered = async () => {
   const filters = buildBulkEditFilterSnapshot()
   const result = await collectFilteredSelectionMetadata(filters)
   if (!result) return
-  const { previewCount, selectedPlatforms, selectedTypes } = result
+  const { previewCount, selectedPlatforms, selectedTypes, textEndpointAutoRouteConfigurable } = result
   bulkEditTarget.value = {
     mode: 'filtered',
     filters,
     previewCount,
     selectedPlatforms,
-    selectedTypes
+    selectedTypes,
+    textEndpointAutoRouteConfigurable
   }
   showBulkEdit.value = true
 }

@@ -619,6 +619,34 @@ describe('EditAccountModal', () => {
     }))
   })
 
+  it('filters OpenAI TLS fingerprint profiles to shared and OpenAI templates', async () => {
+    const account = {
+      ...buildAccount(),
+      extra: {
+        enable_tls_fingerprint: false
+      }
+    }
+    resetCommonMocks()
+    listTlsFingerprintProfilesMock.mockResolvedValue([
+      { id: 10, name: 'Shared Node', platform: '' },
+      { id: 11, name: 'OpenAI Codex CLI', platform: 'openai' },
+      { id: 12, name: 'Kiro Desktop', platform: 'kiro' }
+    ])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="openai-tls-fingerprint-toggle"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const profileSelectText = wrapper.get('[data-testid="openai-tls-fingerprint-profile"]').text()
+    expect(profileSelectText).toContain('Shared Node')
+    expect(profileSelectText).toContain('OpenAI Codex CLI')
+    expect(profileSelectText).not.toContain('Kiro Desktop')
+  })
+
   it('removes Kiro runtime version overrides from extra without resending unchanged Kiro OAuth credentials', async () => {
     const account = {
       id: 2,
@@ -1242,9 +1270,31 @@ describe('EditAccountModal', () => {
     ])
   })
 
+  it('preserves backend-only OpenAI APIKey endpoint capabilities when saving', async () => {
+    const account = buildAccount()
+    account.credentials.openai_capabilities = ['chat_completions', 'responses_ingress']
+    resetCommonMocks()
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.openai_capabilities).toEqual([
+      'chat_completions',
+      'responses_ingress'
+    ])
+  })
+
   it('clears OpenAI APIKey endpoint capability override when restoring both capabilities', async () => {
     const account = buildAccount()
     account.credentials.openai_capabilities = ['embeddings']
+    resetCommonMocks()
     updateAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset()
     checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })

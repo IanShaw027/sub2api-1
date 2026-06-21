@@ -1580,8 +1580,8 @@
         <div v-if="tlsFingerprintEnabled" class="mt-3">
           <select v-model="tlsFingerprintProfileId" class="input" data-testid="openai-tls-fingerprint-profile">
             <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
-            <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
-            <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+            <option v-if="hasSelectableTLSFingerprintProfiles" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
+            <option v-for="p in selectableTLSFingerprintProfiles" :key="p.id" :value="p.id">{{ tlsFingerprintProfileOptionLabel(p) }}</option>
           </select>
           <select v-model="tlsFingerprintRouterId" class="input mt-2" data-testid="openai-tls-fingerprint-router">
             <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.noRouter') }}</option>
@@ -1625,8 +1625,8 @@
         <div v-if="tlsFingerprintEnabled" class="mt-3">
           <select v-model="tlsFingerprintProfileId" class="input" data-testid="kiro-tls-fingerprint-profile">
             <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
-            <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
-            <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+            <option v-if="hasSelectableTLSFingerprintProfiles" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
+            <option v-for="p in selectableTLSFingerprintProfiles" :key="p.id" :value="p.id">{{ tlsFingerprintProfileOptionLabel(p) }}</option>
           </select>
         </div>
       </div>
@@ -2266,8 +2266,8 @@
           <div v-if="tlsFingerprintEnabled" class="mt-3">
             <select v-model="tlsFingerprintProfileId" class="input">
               <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
-              <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
-              <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+              <option v-if="hasSelectableTLSFingerprintProfiles" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
+              <option v-for="p in selectableTLSFingerprintProfiles" :key="p.id" :value="p.id">{{ tlsFingerprintProfileOptionLabel(p) }}</option>
             </select>
           </div>
         </div>
@@ -2555,7 +2555,17 @@ import {
   loadTempUnschedRules,
   type TempUnschedRuleForm
 } from '@/components/account/tempUnschedRules'
-import { supportsTextEndpointAutoRoute } from '@/components/account/textEndpointAutoRoute'
+import {
+  normalizeKnownOpenAIEndpointCapabilities,
+  preserveUnknownOpenAIEndpointCapabilities,
+  supportsTextEndpointAutoRoute
+} from '@/components/account/textEndpointAutoRoute'
+import {
+  formatTLSFingerprintProfileOptionLabel,
+  getSelectableTLSFingerprintProfiles,
+  type SelectableTLSFingerprintProfileOption,
+  type TLSFingerprintProfileOption
+} from '@/components/account/tlsFingerprintProfileOptions'
 import { stripKiroRuntimeExtra } from '@/composables/useKiroOAuth'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
@@ -2732,9 +2742,24 @@ const umqModeOptions = computed(() => [
 ])
 const tlsFingerprintEnabled = ref(false)
 const tlsFingerprintProfileId = ref<number | null>(null)
-const tlsFingerprintProfiles = ref<{ id: number; name: string }[]>([])
+const tlsFingerprintProfiles = ref<TLSFingerprintProfileOption[]>([])
 const tlsFingerprintRouterId = ref<number | null>(null)
 const tlsFingerprintRouters = ref<{ id: number; name: string }[]>([])
+const selectableTLSFingerprintProfiles = computed(() =>
+  getSelectableTLSFingerprintProfiles(
+    tlsFingerprintProfiles.value,
+    props.account?.platform,
+    tlsFingerprintProfileId.value
+  )
+)
+const hasSelectableTLSFingerprintProfiles = computed(() =>
+  selectableTLSFingerprintProfiles.value.some(profile => !profile.isPlatformMismatch)
+)
+const tlsFingerprintProfileOptionLabel = (profile: SelectableTLSFingerprintProfileOption) =>
+  formatTLSFingerprintProfileOptionLabel(profile, {
+    shared: t('admin.accounts.quotaControl.tlsFingerprint.sharedProfile'),
+    mismatch: t('admin.accounts.quotaControl.tlsFingerprint.platformMismatch')
+  })
 const sessionIdMaskingEnabled = ref(false)
 const cacheTTLOverrideEnabled = ref(false)
 const cacheTTLOverrideTarget = ref<string>('5m')
@@ -2903,16 +2928,7 @@ const openAICompactStatusKey = computed(() => {
 })
 
 function normalizeOpenAIEndpointCapabilities(raw: unknown): OpenAIEndpointCapability[] {
-  if (!Array.isArray(raw)) return [...OPENAI_ENDPOINT_CAPABILITIES]
-  const selected = new Set<OpenAIEndpointCapability>()
-  for (const value of raw) {
-    if (value === 'chat_completions' || value === 'embeddings') {
-      selected.add(value)
-    }
-  }
-  return selected.size > 0
-    ? OPENAI_ENDPOINT_CAPABILITIES.filter((capability) => selected.has(capability))
-    : [...OPENAI_ENDPOINT_CAPABILITIES]
+  return normalizeKnownOpenAIEndpointCapabilities(raw)
 }
 
 function isOpenAIResponsesMode(value: unknown): value is OpenAIResponsesMode {
@@ -2934,8 +2950,13 @@ function toggleOpenAIEndpointCapability(capability: OpenAIEndpointCapability, ev
 }
 
 function applyOpenAIEndpointCapabilities(credentials: Record<string, unknown>): void {
-  const capabilities = normalizeOpenAIEndpointCapabilities(openAIEndpointCapabilities.value)
-  if (capabilities.length === OPENAI_ENDPOINT_CAPABILITIES.length) {
+  const selectedKnown = normalizeOpenAIEndpointCapabilities(openAIEndpointCapabilities.value)
+  const originalCapabilities = (props.account?.credentials as Record<string, unknown> | undefined)?.openai_capabilities
+  const capabilities = preserveUnknownOpenAIEndpointCapabilities(originalCapabilities, selectedKnown)
+  const hasUnknownCapabilities = capabilities.some((capability) => {
+    return !OPENAI_ENDPOINT_CAPABILITIES.includes(capability as OpenAIEndpointCapability)
+  })
+  if (!hasUnknownCapabilities && selectedKnown.length === OPENAI_ENDPOINT_CAPABILITIES.length) {
     if (Object.prototype.hasOwnProperty.call(credentials, 'openai_capabilities')) {
       credentials.openai_capabilities = null
     } else {
@@ -3419,7 +3440,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 async function loadTLSProfiles() {
   try {
     const profiles = await adminAPI.tlsFingerprintProfiles.list()
-    tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name }))
+    tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name, platform: p.platform || '' }))
   } catch {
     tlsFingerprintProfiles.value = []
   }

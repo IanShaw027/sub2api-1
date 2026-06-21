@@ -659,6 +659,29 @@ describe('CreateAccountModal', () => {
     }))
   })
 
+  it('clears a direct TLS fingerprint profile selection when switching to an incompatible platform', async () => {
+    listTlsFingerprintProfilesMock.mockResolvedValue([
+      { id: 10, name: 'OpenAI Codex CLI', platform: 'openai' },
+      { id: 12, name: 'Kiro Desktop', platform: 'kiro' }
+    ])
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await findAccountTypeButton(wrapper, 1).trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="openai-tls-fingerprint-toggle"]').trigger('click')
+    await nextTick()
+    await flushPromises()
+    await wrapper.get('[data-testid="openai-tls-fingerprint-profile"]').setValue('10')
+
+    await findButtonByText(wrapper, 'Kiro').trigger('click')
+    await nextTick()
+
+    expect((wrapper.vm as any).tlsFingerprintProfileId).toBeNull()
+  })
+
   it('shows the OpenAI image generation toggle only for OpenAI flows and defaults it to enabled', async () => {
     const wrapper = mountModal()
     await flushPromises()

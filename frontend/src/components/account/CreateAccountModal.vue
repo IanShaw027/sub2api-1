@@ -2613,8 +2613,8 @@
           <div v-if="tlsFingerprintEnabled" class="mt-3">
             <select v-model="tlsFingerprintProfileId" class="input">
               <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
-              <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
-              <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+              <option v-if="hasSelectableTLSFingerprintProfiles" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
+              <option v-for="p in selectableTLSFingerprintProfiles" :key="p.id" :value="p.id">{{ tlsFingerprintProfileOptionLabel(p) }}</option>
             </select>
           </div>
         </div>
@@ -2879,8 +2879,8 @@
         <div v-if="tlsFingerprintEnabled" class="mt-3">
           <select v-model="tlsFingerprintProfileId" class="input" data-testid="openai-tls-fingerprint-profile">
             <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
-            <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
-            <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+            <option v-if="hasSelectableTLSFingerprintProfiles" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
+            <option v-for="p in selectableTLSFingerprintProfiles" :key="p.id" :value="p.id">{{ tlsFingerprintProfileOptionLabel(p) }}</option>
           </select>
           <select v-model="tlsFingerprintRouterId" class="input mt-2" data-testid="openai-tls-fingerprint-router">
             <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.noRouter') }}</option>
@@ -2924,8 +2924,8 @@
         <div v-if="tlsFingerprintEnabled" class="mt-3">
           <select v-model="tlsFingerprintProfileId" class="input" data-testid="kiro-tls-fingerprint-profile">
             <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
-            <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
-            <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+            <option v-if="hasSelectableTLSFingerprintProfiles" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
+            <option v-for="p in selectableTLSFingerprintProfiles" :key="p.id" :value="p.id">{{ tlsFingerprintProfileOptionLabel(p) }}</option>
           </select>
         </div>
       </div>
@@ -3666,6 +3666,13 @@ import {
   type TempUnschedRuleForm
 } from '@/components/account/tempUnschedRules'
 import { supportsTextEndpointAutoRoute } from '@/components/account/textEndpointAutoRoute'
+import {
+  formatTLSFingerprintProfileOptionLabel,
+  getSelectableTLSFingerprintProfiles,
+  normalizeTLSFingerprintProfilePlatform,
+  type SelectableTLSFingerprintProfileOption,
+  type TLSFingerprintProfileOption
+} from '@/components/account/tlsFingerprintProfileOptions'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
@@ -4046,9 +4053,24 @@ const umqModeOptions = computed(() => [
 ])
 const tlsFingerprintEnabled = ref(false)
 const tlsFingerprintProfileId = ref<number | null>(null)
-const tlsFingerprintProfiles = ref<{ id: number; name: string }[]>([])
+const tlsFingerprintProfiles = ref<TLSFingerprintProfileOption[]>([])
 const tlsFingerprintRouterId = ref<number | null>(null)
 const tlsFingerprintRouters = ref<{ id: number; name: string }[]>([])
+const selectableTLSFingerprintProfiles = computed(() =>
+  getSelectableTLSFingerprintProfiles(
+    tlsFingerprintProfiles.value,
+    form.platform,
+    tlsFingerprintProfileId.value
+  )
+)
+const hasSelectableTLSFingerprintProfiles = computed(() =>
+  selectableTLSFingerprintProfiles.value.some(profile => !profile.isPlatformMismatch)
+)
+const tlsFingerprintProfileOptionLabel = (profile: SelectableTLSFingerprintProfileOption) =>
+  formatTLSFingerprintProfileOptionLabel(profile, {
+    shared: t('admin.accounts.quotaControl.tlsFingerprint.sharedProfile'),
+    mismatch: t('admin.accounts.quotaControl.tlsFingerprint.platformMismatch')
+  })
 const sessionIdMaskingEnabled = ref(false)
 const cacheTTLOverrideEnabled = ref(false)
 const cacheTTLOverrideTarget = ref<string>('5m')
@@ -4295,7 +4317,7 @@ watch(
     if (newVal) {
       // Load TLS fingerprint profiles
       adminAPI.tlsFingerprintProfiles.list()
-        .then(profiles => { tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name })) })
+        .then(profiles => { tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name, platform: p.platform || '' })) })
         .catch(() => { tlsFingerprintProfiles.value = [] })
       adminAPI.tlsFingerprintRouters.list()
         .then(routers => { tlsFingerprintRouters.value = routers.map(router => ({ id: router.id, name: router.name })) })
@@ -4364,6 +4386,16 @@ watch(
     // Clear model-related settings
     allowedModels.value = []
     modelMappings.value = []
+    if (tlsFingerprintProfileId.value === -1 && !hasSelectableTLSFingerprintProfiles.value) {
+      tlsFingerprintProfileId.value = null
+    } else if (tlsFingerprintProfileId.value != null && tlsFingerprintProfileId.value > 0) {
+      const selectedProfile = tlsFingerprintProfiles.value.find(profile => profile.id === tlsFingerprintProfileId.value)
+      const selectedPlatform = normalizeTLSFingerprintProfilePlatform(selectedProfile?.platform)
+      const currentPlatform = normalizeTLSFingerprintProfilePlatform(newPlatform)
+      if (selectedPlatform && selectedPlatform !== currentPlatform) {
+        tlsFingerprintProfileId.value = null
+      }
+    }
     // Antigravity: 默认使用映射模式并填充默认映射
     if (newPlatform === 'antigravity') {
       antigravityModelRestrictionMode.value = 'mapping'
