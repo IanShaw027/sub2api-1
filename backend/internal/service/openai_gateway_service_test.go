@@ -833,6 +833,53 @@ func TestOpenAIGatewayService_Forward_DowngradesOrphanToolRoleWithoutContinuatio
 	require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.call_id").Exists())
 }
 
+func TestOpenAIGatewayService_Forward_TruncatesToolOutputBeforeUpstream(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("Accept", "text/event-stream")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid-truncated-tool-output"}},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_truncated_tool_output\",\"model\":\"gpt-5.4\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n",
+		)),
+	}}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.OpenAIWS.Enabled = false
+	svc := &OpenAIGatewayService{
+		cfg:          cfg,
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:             22,
+		Name:           "apikey-tool-output-truncate",
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeAPIKey,
+		Concurrency:    1,
+		Credentials:    map[string]any{"api_key": "sk-test"},
+		Status:         StatusActive,
+		Schedulable:    true,
+		RateMultiplier: f64p(1),
+	}
+
+	oversized := strings.Repeat("x", codexToolOutputMaxChars+1)
+	body := []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"item_reference","id":"call_1"},{"type":"function_call_output","call_id":"call_1","output":` + fmt.Sprintf("%q", oversized) + `}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	output := gjson.GetBytes(upstream.lastBody, "input.1.output").String()
+	require.Len(t, output, codexToolOutputMaxChars)
+	require.Equal(t, strings.Repeat("x", codexToolOutputMaxChars), output)
+}
+
 func TestOpenAIGatewayService_Forward_CodexCompatFallbackDropsOrdinaryIDsForInputSchema(t *testing.T) {
 	setGinTestMode()
 

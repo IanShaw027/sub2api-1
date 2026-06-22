@@ -100,6 +100,18 @@ func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 	}
 }
 
+func TestOpenAIGatewayAttemptTimelineFieldsAddsTransportPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	service.SetOpsOpenAIWSTransportPath(c, "http_after_ws_fallback")
+
+	fields := openAIGatewayAttemptTimelineFields(c, map[string]any{"outcome": "success"})
+
+	require.Equal(t, "success", fields["outcome"])
+	require.Equal(t, "http_after_ws_fallback", fields["transport_path"])
+}
+
 func TestResolveOpenAIMessagesMetadataSession_DoesNotDerivePromptCacheKey(t *testing.T) {
 	body := []byte(`{"model":"claude-sonnet-4-5","metadata":{"user_id":"claude-code-session"},"messages":[{"role":"user","content":"hello"}]}`)
 

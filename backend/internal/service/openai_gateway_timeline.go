@@ -140,6 +140,20 @@ func addOpenAIGatewayTimelineOpenAIResultFields(fields map[string]any, result *O
 		fields["openai_ws_profile"] = strings.TrimSpace(result.OpenAIWSProfile)
 	}
 	fields["openai_ws_conn_reused"] = result.OpenAIWSConnReused
+	if result.OpenAIWSMode {
+		if strings.TrimSpace(result.OpenAIWSStoreMode) != "" {
+			fields["store_mode"] = strings.TrimSpace(result.OpenAIWSStoreMode)
+		}
+		fields["delta_active"] = result.OpenAIWSDeltaActive
+		fields["payload_bytes"] = result.OpenAIWSPayloadBytes
+		fields["delta_items"] = result.OpenAIWSDeltaItems
+		fields["delta_bytes"] = result.OpenAIWSDeltaBytes
+		fields["full_items"] = result.OpenAIWSFullItems
+		fields["full_bytes"] = result.OpenAIWSFullBytes
+		fields["conn_pick_ms"] = result.OpenAIWSConnPickMs
+		fields["queue_wait_ms"] = result.OpenAIWSQueueWaitMs
+		fields["http_ingress_ws_one_shot"] = result.OpenAIWSOneShot
+	}
 	fields["client_disconnected"] = result.ClientDisconnected || result.ClientDisconnect
 	if result.ImageCount > 0 {
 		fields["image_count"] = result.ImageCount

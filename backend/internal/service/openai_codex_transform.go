@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -162,6 +163,7 @@ const (
 	codexImageGenerationBridgeText   = codexImageGenerationBridgeMarker + "\nWhen the user asks for raster image generation or editing, use the OpenAI Responses native `image_generation` tool attached to this request. The local Codex client may not expose an `image_gen` namespace, but that does not mean image generation is unavailable. Do not ask the user to switch to CLI fallback solely because `image_gen` is absent.\n</sub2api-codex-image-generation>"
 	codexSparkImageUnsupportedMarker = "<sub2api-codex-spark-image-unsupported>"
 	codexSparkImageUnsupportedText   = codexSparkImageUnsupportedMarker + "\nThe current model is gpt-5.3-codex-spark, which does not support image generation, image editing, image input, the `image_generation` tool, or Codex `image_gen`/`$imagegen` workflows. If the user asks for image generation or image editing, clearly explain this model limitation and ask them to switch to a non-Spark Codex model such as gpt-5.3-codex or gpt-5.4. Do not claim that the local environment merely lacks image_gen tooling, and do not suggest CLI fallback as the primary fix while the model remains Spark.\n</sub2api-codex-spark-image-unsupported>"
+	codexToolOutputMaxChars          = 10000000
 )
 
 func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact bool) codexTransformResult {
@@ -1959,6 +1961,16 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 					modified = true
 				}
 			}
+
+			if isCodexToolCallOutputItemType(typ) {
+				if output, ok := m["output"].(string); ok {
+					if truncated, didTruncate := truncateCodexToolOutput(output); didTruncate {
+						ensureCopy()
+						newItem["output"] = truncated
+						modified = true
+					}
+				}
+			}
 		}
 
 		if !isCodexToolCallItemType(typ) {
@@ -2144,6 +2156,101 @@ func sanitizeCodexInputItem(item map[string]any) (map[string]any, bool) {
 		return item, false
 	}
 	return sanitized, true
+}
+
+func truncateOpenAIResponsesToolOutputs(reqBody map[string]any) bool {
+	if reqBody == nil {
+		return false
+	}
+	input, ok := reqBody["input"].([]any)
+	if !ok || len(input) == 0 {
+		return false
+	}
+	modified := false
+	for _, item := range input {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		itemType := strings.TrimSpace(firstNonEmptyString(m["type"]))
+		if isCodexToolCallOutputItemType(itemType) {
+			if output, ok := m["output"].(string); ok {
+				if truncated, didTruncate := truncateCodexToolOutput(output); didTruncate {
+					m["output"] = truncated
+					modified = true
+				}
+			}
+		}
+		if truncateOpenAIResponsesMessageContentText(m) {
+			modified = true
+		}
+	}
+	return modified
+}
+
+func needsReqBodyForToolOutputTruncation(body []byte) bool {
+	if len(body) <= codexToolOutputMaxChars {
+		return false
+	}
+	if bytes.Contains(body, []byte(`"text"`)) && bytes.Contains(body, []byte(`"content"`)) {
+		return true
+	}
+	for _, itemType := range []string{
+		"function_call_output",
+		"tool_search_output",
+		"custom_tool_call_output",
+		"mcp_tool_call_output",
+	} {
+		if bytes.Contains(body, []byte(itemType)) {
+			return true
+		}
+	}
+	return false
+}
+
+func truncateOpenAIResponsesMessageContentText(item map[string]any) bool {
+	if item == nil || strings.TrimSpace(firstNonEmptyString(item["type"])) != "message" {
+		return false
+	}
+	parts, ok := item["content"].([]any)
+	if !ok || len(parts) == 0 {
+		return false
+	}
+	modified := false
+	for _, rawPart := range parts {
+		part, ok := rawPart.(map[string]any)
+		if !ok {
+			continue
+		}
+		text, ok := part["text"].(string)
+		if !ok {
+			continue
+		}
+		truncated, didTruncate := truncateCodexToolOutput(text)
+		if !didTruncate {
+			continue
+		}
+		part["text"] = truncated
+		modified = true
+	}
+	return modified
+}
+
+func truncateCodexToolOutput(output string) (string, bool) {
+	if codexToolOutputMaxChars <= 0 {
+		return "", output != ""
+	}
+	if len(output) <= codexToolOutputMaxChars {
+		return output, false
+	}
+	chars := 0
+	for idx := range output {
+		if chars == codexToolOutputMaxChars {
+			return output[:idx], true
+		}
+		chars++
+	}
+	return output, false
 }
 
 func isCodexToolCallItemType(typ string) bool {

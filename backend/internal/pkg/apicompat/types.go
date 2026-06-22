@@ -685,7 +685,20 @@ type ChatDelta struct {
 	Role             string         `json:"role,omitempty"`
 	Content          *string        `json:"content,omitempty"` // pointer: omit when not present, null vs "" matters
 	ReasoningContent *string        `json:"reasoning_content,omitempty"`
+	Reasoning        *string        `json:"reasoning,omitempty"` // kimi/moonshot non-standard field
 	ToolCalls        []ChatToolCall `json:"tool_calls,omitempty"`
+}
+
+// EffectiveReasoningContent returns the reasoning text from a delta, handling
+// both the standard reasoning_content field and kimi's non-standard reasoning field.
+func (d *ChatDelta) EffectiveReasoningContent() string {
+	if d.ReasoningContent != nil && *d.ReasoningContent != "" {
+		return *d.ReasoningContent
+	}
+	if d.Reasoning != nil && *d.Reasoning != "" {
+		return *d.Reasoning
+	}
+	return ""
 }
 
 // ---------------------------------------------------------------------------

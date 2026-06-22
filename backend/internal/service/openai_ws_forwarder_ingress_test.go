@@ -268,6 +268,7 @@ func TestResolveOpenAIWSContinuationStoreDecisionOAuthRequiresStickyAccountHit(t
 	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	store := NewOpenAIWSStateStore(nil)
 	require.NoError(t, store.BindResponseAccount(context.Background(), 7, 11, "resp_bound", account.ID, time.Minute))
+	store.BindResponseConn(7, 11, "resp_bound", "conn_bound", time.Minute)
 
 	payload := map[string]any{
 		"type":                 "response.create",
@@ -283,6 +284,8 @@ func TestResolveOpenAIWSContinuationStoreDecisionOAuthRequiresStickyAccountHit(t
 	require.True(t, decision.StoreEnabled)
 	require.False(t, decision.StoreDisabled)
 	require.Equal(t, openAIWSStoreModeIncremental, decision.StoreMode)
+	require.True(t, decision.ConnAffinityHit)
+	require.Equal(t, "conn_bound", decision.PreferredConnID)
 	require.Equal(t, "resp_bound", payload["previous_response_id"])
 	require.Equal(t, true, payload["store"])
 }
@@ -313,6 +316,33 @@ func TestResolveOpenAIWSContinuationStoreDecisionOAuthToolContinuationRequiresCo
 	require.NotContains(t, payload, "store")
 }
 
+func TestResolveOpenAIWSContinuationStoreDecisionOAuthAccountBoundWithoutConnDropsToFullCreate(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	store := NewOpenAIWSStateStore(nil)
+	require.NoError(t, store.BindResponseAccount(context.Background(), 7, 11, "resp_bound_no_conn", account.ID, time.Minute))
+
+	payload := map[string]any{
+		"type":                 "response.create",
+		"model":                "gpt-5.1",
+		"store":                false,
+		"previous_response_id": "resp_bound_no_conn",
+		"input":                []any{map[string]any{"type": "input_text", "text": "hello"}},
+	}
+
+	decision := svc.resolveOpenAIWSContinuationStoreDecision(context.Background(), payload, account, store, 7, 11)
+
+	require.True(t, decision.StickyAccountHit)
+	require.False(t, decision.ConnAffinityHit)
+	require.Equal(t, "conn_affinity_miss", decision.FallbackReason)
+	require.True(t, decision.DroppedPreviousResponseID)
+	require.Equal(t, openAIWSStoreModeFull, decision.StoreMode)
+	require.False(t, decision.StoreEnabled)
+	require.True(t, decision.StoreDisabled)
+	require.NotContains(t, payload, "previous_response_id")
+	require.Equal(t, false, payload["store"])
+}
+
 func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthToolContinuationRequiresConnAffinity(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
@@ -330,6 +360,27 @@ func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthToolContinuationRequire
 	require.Empty(t, decision.PreferredConnID)
 	require.Equal(t, "resp_bound_no_conn", gjson.GetBytes(updated, "previous_response_id").String())
 	require.False(t, gjson.GetBytes(updated, "store").Exists())
+}
+
+func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthAccountBoundWithoutConnDropsToFullCreate(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	store := NewOpenAIWSStateStore(nil)
+	require.NoError(t, store.BindResponseAccount(context.Background(), 7, 11, "resp_bound_no_conn", account.ID, time.Minute))
+	payload := []byte(`{"type":"response.create","model":"gpt-5.1","store":true,"previous_response_id":"resp_bound_no_conn","input":[{"type":"input_text","text":"hello"}]}`)
+
+	updated, decision, err := svc.resolveOpenAIWSContinuationStoreDecisionRaw(context.Background(), payload, account, store, 7, 11)
+
+	require.NoError(t, err)
+	require.True(t, decision.StickyAccountHit)
+	require.False(t, decision.ConnAffinityHit)
+	require.Equal(t, "conn_affinity_miss", decision.FallbackReason)
+	require.True(t, decision.DroppedPreviousResponseID)
+	require.Equal(t, openAIWSStoreModeFull, decision.StoreMode)
+	require.False(t, decision.StoreEnabled)
+	require.True(t, decision.StoreDisabled)
+	require.False(t, gjson.GetBytes(updated, "previous_response_id").Exists())
+	require.False(t, gjson.GetBytes(updated, "store").Bool())
 }
 
 func TestResolveOpenAIWSContinuationStoreDecisionOAuthStickyMismatchDropsPreviousResponseID(t *testing.T) {

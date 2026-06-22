@@ -1228,7 +1228,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuth
 	require.Equal(t, "full replay", gjson.Get(upstreamWrite, "input.0.text").String())
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuthAccountBoundPreviousResponseKeepsPrevAndStoreTrue(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuthAccountBoundPreviousResponseDropsPrevAndStoreFalse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -1352,9 +1352,9 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuth
 	require.Equal(t, 1, captureDialer.DialCount())
 	require.Len(t, upstreamConn.writes, 1)
 	upstreamWrite := requestToJSONString(upstreamConn.writes[0])
-	require.Equal(t, "resp_passthrough_bound_prev", gjson.Get(upstreamWrite, "previous_response_id").String())
+	require.False(t, gjson.Get(upstreamWrite, "previous_response_id").Exists(), "passthrough new relay must not continue an account-only previous_response_id")
 	require.True(t, gjson.Get(upstreamWrite, "store").Exists())
-	require.True(t, gjson.Get(upstreamWrite, "store").Bool(), "OAuth same-account binding should enable store=true in passthrough")
+	require.False(t, gjson.Get(upstreamWrite, "store").Bool(), "passthrough account-only previous_response_id must fall back to store=false full create")
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuthUnboundPreviousResponseOnFollowupDropsPrevAndStoreFalse(t *testing.T) {
@@ -1526,12 +1526,12 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuth
 	stateStore := svc.getOpenAIWSStateStore()
 	accountID, err := stateStore.GetResponseAccount(context.Background(), groupID, apiKeyID, "resp_passthrough_oauth_followup_1")
 	require.NoError(t, err)
-	require.Equal(t, account.ID, accountID)
+	require.Zero(t, accountID, "passthrough relay response ids must not persist cross-connection account affinity")
 	accountID, err = stateStore.GetResponseAccount(context.Background(), groupID, apiKeyID, "resp_passthrough_oauth_followup_2")
 	require.NoError(t, err)
-	require.Equal(t, account.ID, accountID)
+	require.Zero(t, accountID, "passthrough relay response ids must stay live-relay scoped")
 	_, ok := stateStore.GetResponseConn(groupID, apiKeyID, "resp_passthrough_oauth_followup_1")
-	require.False(t, ok, "passthrough has no pool conn_id to bind")
+	require.False(t, ok, "passthrough relay response ids must not bind a pool conn_id")
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuthToolContinuationReusesLiveRelayConn(t *testing.T) {

@@ -176,6 +176,7 @@ func (s *GatewayService) streamCCResponseAsAnthropic(
 	var finalUsage *apicompat.AnthropicUsage
 	clientDisconnect := false
 	var textBuf strings.Builder
+	var thinkingBuf strings.Builder
 	var toolUseBlocks []apicompat.AnthropicContentBlock
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -208,6 +209,9 @@ func (s *GatewayService) streamCCResponseAsAnthropic(
 		for _, choice := range chunk.Choices {
 			if choice.Delta.Content != nil {
 				textBuf.WriteString(*choice.Delta.Content)
+			}
+			if reasoning := choice.Delta.EffectiveReasoningContent(); reasoning != "" {
+				thinkingBuf.WriteString(reasoning)
 			}
 			if choice.FinishReason != nil {
 				lastStopReason = *choice.FinishReason
@@ -244,7 +248,7 @@ func (s *GatewayService) streamCCResponseAsAnthropic(
 	} else {
 		toolUseBlocks = apicompat.BuildToolUseBlocks(state)
 		stopReason := apicompat.CcFinishReasonToAnthropicStop(lastStopReason)
-		anthropicResp := buildNonStreamingAnthropicResponse(state.MessageID, model, stopReason, textBuf.String(), toolUseBlocks, finalUsage)
+		anthropicResp := buildNonStreamingAnthropicResponse(state.MessageID, model, stopReason, textBuf.String(), thinkingBuf.String(), toolUseBlocks, finalUsage)
 		c.JSON(http.StatusOK, anthropicResp)
 	}
 
@@ -259,10 +263,11 @@ func (s *GatewayService) streamCCResponseAsAnthropic(
 	return usage, firstTokenMs, clientDisconnect, nil
 }
 
-func buildNonStreamingAnthropicResponse(id, model, stopReason, text string, toolUseBlocks []apicompat.AnthropicContentBlock, usage *apicompat.AnthropicUsage) apicompat.AnthropicResponse {
+func buildNonStreamingAnthropicResponse(id, model, stopReason, text, thinking string, toolUseBlocks []apicompat.AnthropicContentBlock, usage *apicompat.AnthropicUsage) apicompat.AnthropicResponse {
 	var content []apicompat.AnthropicContentBlock
-	if text != "" {
-		content = append(content, apicompat.AnthropicContentBlock{Type: "text", Text: text})
+	combined := thinking + text
+	if combined != "" {
+		content = append(content, apicompat.AnthropicContentBlock{Type: "text", Text: combined})
 	}
 	content = append(content, toolUseBlocks...)
 

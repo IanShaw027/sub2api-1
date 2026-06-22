@@ -34,10 +34,11 @@ const (
 	// sent, including request normalization, token lookup, and request build.
 	OpsOpenAIForwardPrepareLatencyMsKey = "ops_openai_forward_prepare_latency_ms"
 	// OpenAI WS 关键观测字段
-	OpsOpenAIWSQueueWaitMsKey = "ops_openai_ws_queue_wait_ms"
-	OpsOpenAIWSConnPickMsKey  = "ops_openai_ws_conn_pick_ms"
-	OpsOpenAIWSConnReusedKey  = "ops_openai_ws_conn_reused"
-	OpsOpenAIWSConnIDKey      = "ops_openai_ws_conn_id"
+	OpsOpenAIWSQueueWaitMsKey   = "ops_openai_ws_queue_wait_ms"
+	OpsOpenAIWSConnPickMsKey    = "ops_openai_ws_conn_pick_ms"
+	OpsOpenAIWSConnReusedKey    = "ops_openai_ws_conn_reused"
+	OpsOpenAIWSConnIDKey        = "ops_openai_ws_conn_id"
+	OpsOpenAIWSTransportPathKey = "ops_openai_ws_transport_path"
 
 	// OpsSkipPassthroughKey 由 applyErrorPassthroughRule 在命中 skip_monitoring=true 的规则时设置。
 	// ops_error_logger 中间件检查此 key，为 true 时跳过错误记录。
@@ -98,6 +99,27 @@ func SetOpsLatencyMs(c *gin.Context, key string, value int64) {
 		return
 	}
 	c.Set(key, value)
+}
+
+func SetOpsOpenAIWSTransportPath(c *gin.Context, path string) {
+	if c == nil {
+		return
+	}
+	if path = strings.TrimSpace(path); path != "" {
+		c.Set(OpsOpenAIWSTransportPathKey, path)
+	}
+}
+
+func GetOpsOpenAIWSTransportPath(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	v, ok := c.Get(OpsOpenAIWSTransportPathKey)
+	if !ok {
+		return ""
+	}
+	path, _ := v.(string)
+	return strings.TrimSpace(path)
 }
 
 func MarkOpsClientBusinessLimited(c *gin.Context, reason string) {

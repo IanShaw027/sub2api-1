@@ -74,16 +74,7 @@ var openAIWSVolatileEnvelopeItemTypes = map[string]struct{}{
 var openAIWSNonInputDenylist = []string{
 	"input",
 	"previous_response_id",
-	"store",
 	"client_metadata",
-	"include",
-	"instructions",
-	"parallel_tool_calls",
-	"reasoning",
-	"text",
-	"tool_choice",
-	"tools",
-	"turn_metadata",
 }
 
 // openAIWSCanonicalItemHash hashes one input/output item. JSON key order is canonicalized

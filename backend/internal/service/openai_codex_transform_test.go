@@ -171,6 +171,34 @@ func TestApplyCodexOAuthTransform_CustomAndMCPToolOutputsPreserveCallID(t *testi
 	require.Equal(t, "fc_mcp", second["call_id"])
 }
 
+func TestApplyCodexOAuthTransform_TruncatesOversizedToolOutputs(t *testing.T) {
+	oversized := strings.Repeat("a", codexToolOutputMaxChars+1)
+	reqBody := map[string]any{
+		"model": "gpt-5.2",
+		"input": []any{
+			map[string]any{"type": "function_call_output", "call_id": "call_1", "output": oversized},
+			map[string]any{"type": "tool_search_output", "call_id": "call_2", "output": oversized},
+			map[string]any{"type": "custom_tool_call_output", "call_id": "call_3", "output": oversized},
+			map[string]any{"type": "mcp_tool_call_output", "call_id": "call_4", "output": oversized},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, false, false)
+
+	require.True(t, result.Modified)
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 4)
+	for _, raw := range input {
+		item, ok := raw.(map[string]any)
+		require.True(t, ok)
+		output, ok := item["output"].(string)
+		require.True(t, ok)
+		require.Len(t, output, codexToolOutputMaxChars)
+		require.Equal(t, strings.Repeat("a", codexToolOutputMaxChars), output)
+	}
+}
+
 func TestApplyCodexOAuthTransform_ImageAndWebSearchCallsDoNotGainCallID(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "gpt-5.2",
@@ -225,6 +253,103 @@ func TestApplyCodexOAuthTransform_ConvertsToolRoleMessageToFunctionCallOutput(t 
 	require.Equal(t, "ok", item["output"])
 	_, hasRole := item["role"]
 	require.False(t, hasRole)
+}
+
+func TestApplyCodexOAuthTransform_TruncatesToolRoleMessageOutput(t *testing.T) {
+	oversized := strings.Repeat("b", codexToolOutputMaxChars+1)
+	reqBody := map[string]any{
+		"model": "gpt-5.4",
+		"input": []any{
+			map[string]any{
+				"type":         "message",
+				"role":         "tool",
+				"tool_call_id": "call_1",
+				"content":      oversized,
+			},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, true, false)
+
+	require.True(t, result.Modified)
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 1)
+
+	item, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function_call_output", item["type"])
+	output, ok := item["output"].(string)
+	require.True(t, ok)
+	require.Len(t, output, codexToolOutputMaxChars)
+	require.Equal(t, strings.Repeat("b", codexToolOutputMaxChars), output)
+}
+
+func TestTruncateOpenAIResponsesToolOutputs_TruncatesWithoutCodexTransform(t *testing.T) {
+	oversized := strings.Repeat("中", codexToolOutputMaxChars+1)
+	reqBody := map[string]any{
+		"input": []any{
+			map[string]any{"type": "item_reference", "id": "call_1"},
+			map[string]any{"type": "function_call_output", "call_id": "call_1", "output": oversized},
+		},
+	}
+
+	require.True(t, truncateOpenAIResponsesToolOutputs(reqBody))
+
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	item, ok := input[1].(map[string]any)
+	require.True(t, ok)
+	output, ok := item["output"].(string)
+	require.True(t, ok)
+	require.Len(t, []rune(output), codexToolOutputMaxChars)
+	require.Equal(t, strings.Repeat("中", codexToolOutputMaxChars), output)
+}
+
+func TestTruncateOpenAIResponsesToolOutputs_TruncatesOversizedMessageContentText(t *testing.T) {
+	oversizedOutput := strings.Repeat("a", codexToolOutputMaxChars+1)
+	oversizedText := strings.Repeat("中", codexToolOutputMaxChars+1)
+	reqBody := map[string]any{
+		"input": []any{
+			map[string]any{"type": "function_call_output", "call_id": "call_1", "output": oversizedOutput},
+			map[string]any{
+				"type": "message",
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "input_text", "text": "short"},
+					map[string]any{"type": "input_text", "text": oversizedText},
+				},
+			},
+		},
+	}
+
+	require.True(t, truncateOpenAIResponsesToolOutputs(reqBody))
+
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+
+	outputItem, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	output, ok := outputItem["output"].(string)
+	require.True(t, ok)
+	require.Len(t, output, codexToolOutputMaxChars)
+
+	message, ok := input[1].(map[string]any)
+	require.True(t, ok)
+	content, ok := message["content"].([]any)
+	require.True(t, ok)
+	part, ok := content[1].(map[string]any)
+	require.True(t, ok)
+	text, ok := part["text"].(string)
+	require.True(t, ok)
+	require.Len(t, []rune(text), codexToolOutputMaxChars)
+	require.Equal(t, strings.Repeat("中", codexToolOutputMaxChars), text)
+}
+
+func TestNeedsReqBodyForToolOutputTruncation_DetectsOversizedMessageContentText(t *testing.T) {
+	body := []byte(`{"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"` + strings.Repeat("x", codexToolOutputMaxChars+1) + `"}]}]}`)
+
+	require.True(t, needsReqBodyForToolOutputTruncation(body))
 }
 
 func TestApplyCodexOAuthTransform_StringifiesNonStringMessageContentText(t *testing.T) {

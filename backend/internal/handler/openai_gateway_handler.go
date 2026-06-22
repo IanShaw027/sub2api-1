@@ -520,13 +520,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 								ForwardDurationMs: forwardDurationMs,
 								OpenAIResult:      result,
 								Err:               err,
-								Fields: map[string]any{
+								Fields: openAIGatewayAttemptTimelineFields(c, map[string]any{
 									"outcome":                  "retry_same_account",
 									"inbound_endpoint":         GetInboundEndpoint(c),
 									"upstream_status":          failoverErr.StatusCode,
 									"same_account_retry_count": sameAccountRetryCount[account.ID],
 									"same_account_retry_limit": retryLimit,
-								},
+								}),
 							})
 							reqLog.Warn("openai.pool_mode_same_account_retry",
 								zap.Int64("account_id", account.ID),
@@ -559,13 +559,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						ForwardDurationMs: forwardDurationMs,
 						OpenAIResult:      result,
 						Err:               err,
-						Fields: map[string]any{
+						Fields: openAIGatewayAttemptTimelineFields(c, map[string]any{
 							"outcome":            "failover",
 							"inbound_endpoint":   GetInboundEndpoint(c),
 							"upstream_status":    failoverErr.StatusCode,
 							"writer_size_before": writerSizeBeforeForward,
 							"writer_size_after":  c.Writer.Size(),
-						},
+						}),
 					})
 					// 跨账号切换前的终态帧守卫：若本次 Forward 已向客户端写出
 					// 任意 SSE 帧，切换到下一个账号重放会产生重复的
@@ -618,7 +618,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					ForwardDurationMs: forwardDurationMs,
 					OpenAIResult:      result,
 					Err:               err,
-					Fields: map[string]any{
+					Fields: openAIGatewayAttemptTimelineFields(c, map[string]any{
 						"outcome":                                  "error",
 						"inbound_endpoint":                         GetInboundEndpoint(c),
 						"fallback_error_response_written":          wroteFallback,
@@ -628,7 +628,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						"writer_size_changed_during_forward":       c.Writer.Size() != writerSizeBeforeForward,
 						"writer_size_before_forward":               writerSizeBeforeForward,
 						"writer_size_after_forward_error_response": c.Writer.Size(),
-					},
+					}),
 				})
 				fields := []zap.Field{
 					zap.Int64("account_id", account.ID),
@@ -665,7 +665,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			ForwardDurationMs: forwardDurationMs,
 			OpenAIResult:      result,
 			Err:               err,
-			Fields: map[string]any{
+			Fields: openAIGatewayAttemptTimelineFields(c, map[string]any{
 				"outcome":                      "success",
 				"inbound_endpoint":             GetInboundEndpoint(c),
 				"previous_response_id_present": previousResponseID != "",
@@ -673,7 +673,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				"session_hash_present":         strings.TrimSpace(sessionHash) != "",
 				"routed_model":                 routedPreviewModel,
 				"effective_model":              effectiveModel,
-			},
+			}),
 		})
 
 		// 捕获请求信息（用于异步记录，避免在 goroutine 中访问 gin.Context）
@@ -2137,6 +2137,16 @@ func resolveOpenAIResponsesEffectiveModel(account *service.Account, requestModel
 		return mappedModel
 	}
 	return model
+}
+
+func openAIGatewayAttemptTimelineFields(c *gin.Context, fields map[string]any) map[string]any {
+	if fields == nil {
+		fields = map[string]any{}
+	}
+	if path := service.GetOpsOpenAIWSTransportPath(c); path != "" {
+		fields["transport_path"] = path
+	}
+	return fields
 }
 
 func resolveOpenAIResponsesRequiredImageRoute(group *service.Group, imageIntent bool) string {

@@ -956,7 +956,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthColdSessionUsesNeutralIdleConn(t
 	require.Equal(t, openAIWSConnProfileSessionBound, profile, "neutral 启动连接被 session 使用后应转为 session-bound，避免跨 session 泛复用")
 }
 
-func TestOpenAIGatewayService_Forward_WSv2PreviousResponseRecoverySkipsNeutralIdle(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2AccountOnlyPreviousResponseFallsBackFullAndCanUseNeutralIdle(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -981,18 +981,8 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseRecoverySkipsNeutralId
 			[]byte(`{"type":"response.completed","response":{"id":"resp_reused_neutral_should_not_use","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
 		},
 	}
-	firstAttemptConn := &openAIWSCaptureConn{
-		events: [][]byte{
-			[]byte(`{"type":"error","error":{"code":"previous_response_not_found","type":"invalid_request_error","message":"previous response not found"}}`),
-		},
-	}
-	recoveryConn := &openAIWSCaptureConn{
-		events: [][]byte{
-			[]byte(`{"type":"response.completed","response":{"id":"resp_new_recovery_ok","model":"gpt-5.1","usage":{"input_tokens":4,"output_tokens":2}}}`),
-		},
-	}
 	dialer := &openAIWSSequentialCaptureDialer{
-		conns: []*openAIWSCaptureConn{neutralSeed, firstAttemptConn, recoveryConn},
+		conns: []*openAIWSCaptureConn{neutralSeed},
 	}
 	pool := newOpenAIWSConnPool(cfg)
 	pool.setClientDialerForTest(dialer)
@@ -1059,30 +1049,19 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseRecoverySkipsNeutralId
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, "resp_new_recovery_ok", result.RequestID)
-	require.Nil(t, upstream.lastReq, "previous_response_not_found recovery must stay on WS, not HTTP fallback")
-	require.Equal(t, 3, dialer.DialCount(), "恢复重试必须新建 WS 连接，不能复用已有 neutral idle")
+	require.Equal(t, "resp_reused_neutral_should_not_use", result.RequestID)
+	require.Nil(t, upstream.lastReq, "account-only previous_response_id downgrade must stay on WS, not HTTP fallback")
+	require.Equal(t, 1, dialer.DialCount(), "降级为 full create 后可复用预热 neutral idle 连接")
 
 	neutralSeed.mu.Lock()
-	neutralWrites := len(neutralSeed.writes)
+	neutralWrites := append([]map[string]any(nil), neutralSeed.writes...)
 	neutralSeed.mu.Unlock()
-	require.Zero(t, neutralWrites, "恢复重试不应写入预置的 neutral idle 连接")
-
-	firstAttemptConn.mu.Lock()
-	firstWrites := append([]map[string]any(nil), firstAttemptConn.writes...)
-	firstAttemptConn.mu.Unlock()
-	require.Len(t, firstWrites, 1)
-	firstWrite := requestToJSONString(firstWrites[0])
-	require.Equal(t, "resp_missing", gjson.Get(firstWrite, "previous_response_id").String())
-
-	recoveryConn.mu.Lock()
-	recoveryWrites := append([]map[string]any(nil), recoveryConn.writes...)
-	recoveryConn.mu.Unlock()
-	require.Len(t, recoveryWrites, 1)
-	recoveryWrite := requestToJSONString(recoveryWrites[0])
-	require.False(t, gjson.Get(recoveryWrite, "previous_response_id").Exists())
-	require.True(t, gjson.Get(recoveryWrite, "store").Exists())
-	require.False(t, gjson.Get(recoveryWrite, "store").Bool())
+	require.Len(t, neutralWrites, 1)
+	fullCreateWrite := requestToJSONString(neutralWrites[0])
+	require.False(t, gjson.Get(fullCreateWrite, "previous_response_id").Exists(), "account-only binding must not be continued on a new WS")
+	require.True(t, gjson.Get(fullCreateWrite, "store").Exists())
+	require.False(t, gjson.Get(fullCreateWrite, "store").Bool())
+	require.Equal(t, "hello", gjson.Get(fullCreateWrite, "input.0.text").String())
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_SameSessionPreemptsInFlightRequest(t *testing.T) {
@@ -1305,7 +1284,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthUnboundPreviousResponseFallsBack
 	require.Equal(t, "full replay from client", gjson.Get(secondWrite, "input.0.text").String())
 }
 
-func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyAccountWithoutConnFullReplaysOnNewConn(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyAccountWithoutConnFallsBackFullOnNewConn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -1407,9 +1386,9 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyAccountWithoutConnFullRepl
 	secondConn.mu.Unlock()
 	require.Len(t, secondWrites, 1)
 	secondWrite := requestToJSONString(secondWrites[0])
-	require.False(t, gjson.Get(secondWrite, "previous_response_id").Exists(), "new conn must not carry an old previous_response_id")
+	require.False(t, gjson.Get(secondWrite, "previous_response_id").Exists(), "account-only binding must not be continued without conn affinity")
 	require.True(t, gjson.Get(secondWrite, "store").Exists())
-	require.False(t, gjson.Get(secondWrite, "store").Bool(), "new conn must full replay with store=false")
+	require.False(t, gjson.Get(secondWrite, "store").Bool(), "account-only binding must downgrade to store=false full create")
 	require.Equal(t, "delta only", gjson.Get(secondWrite, "input.0.text").String())
 }
 

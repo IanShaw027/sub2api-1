@@ -1040,6 +1040,158 @@ func logOpenAIWSDiagnosticCompleted(v openAIWSDiagnosticCompletedLog) {
 	logOpenAIWSModeInfo("%s", openAIWSDiagnosticCompletedLogMessage(v))
 }
 
+func openAIWSTransportPathFromStart(v openAIWSDiagnosticStartLog) string {
+	profile := openAIWSProfileUsageString(v.ConnProfile)
+	if profile == "" {
+		profile = "unknown"
+	}
+	reuse := "new"
+	if v.ConnReused {
+		reuse = "reused"
+	}
+	mode := "full_or_non_delta"
+	if v.DeltaActive {
+		mode = "incremental_delta"
+	}
+	return profile + "_ws_" + reuse + "_" + mode
+}
+
+type openAIWSReadFailLog struct {
+	RequestID              string
+	ClientRequestID        string
+	AccountID              int64
+	AccountType            string
+	Model                  string
+	UpstreamModel          string
+	ConnProfile            openAIWSConnProfile
+	ConnID                 string
+	ConnReused             bool
+	Transport              string
+	Attempt                int
+	ConnPickMs             int64
+	QueueWaitMs            int64
+	PayloadBytes           int
+	PreviousResponseID     string
+	PreviousResponseIDKind string
+	StoreMode              string
+	StoreEnabled           bool
+	StoreDisabled          bool
+	SessionHash            string
+	HasPromptCacheKey      bool
+	HasTurnState           bool
+	TurnStateLen           int
+	ProxyEnabled           bool
+	ProxyID                int64
+	WroteDownstream        bool
+	CloseStatus            string
+	CloseReason            string
+	Cause                  string
+	Events                 int
+	TokenEvents            int
+	TerminalEvents         int
+	BufferedPending        int
+	BufferedFlushed        int
+	FirstEvent             string
+	LastEvent              string
+}
+
+func openAIWSReadFailLogMessage(v openAIWSReadFailLog) string {
+	return fmt.Sprintf(
+		"read_fail request_id=%s client_request_id=%s account_id=%d account_type=%s model=%s upstream_model=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s attempt=%d conn_pick_ms=%d queue_wait_ms=%d payload_bytes=%d previous_response_id=%s previous_response_id_kind=%s store_mode=%s store_enabled=%v store_disabled=%v session_hash=%s has_prompt_cache_key=%v has_turn_state=%v turn_state_len=%d proxy_enabled=%v proxy_id=%d wrote_downstream=%v close_status=%s close_reason=%s cause=%s events=%d token_events=%d terminal_events=%d buffered_pending=%d buffered_flushed=%d first_event=%s last_event=%s",
+		normalizeOpenAIWSLogValue(v.RequestID),
+		normalizeOpenAIWSLogValue(v.ClientRequestID),
+		v.AccountID,
+		normalizeOpenAIWSLogValue(v.AccountType),
+		normalizeOpenAIWSLogValue(v.Model),
+		normalizeOpenAIWSLogValue(v.UpstreamModel),
+		normalizeOpenAIWSLogValue(openAIWSProfileUsageString(v.ConnProfile)),
+		truncateOpenAIWSLogValue(v.ConnID, openAIWSIDValueMaxLen),
+		v.ConnReused,
+		normalizeOpenAIWSLogValue(v.Transport),
+		v.Attempt,
+		v.ConnPickMs,
+		v.QueueWaitMs,
+		v.PayloadBytes,
+		truncateOpenAIWSLogValue(v.PreviousResponseID, openAIWSIDValueMaxLen),
+		normalizeOpenAIWSLogValue(v.PreviousResponseIDKind),
+		normalizeOpenAIWSLogValue(v.StoreMode),
+		v.StoreEnabled,
+		v.StoreDisabled,
+		truncateOpenAIWSLogValue(v.SessionHash, 12),
+		v.HasPromptCacheKey,
+		v.HasTurnState,
+		v.TurnStateLen,
+		v.ProxyEnabled,
+		v.ProxyID,
+		v.WroteDownstream,
+		normalizeOpenAIWSLogValue(v.CloseStatus),
+		truncateOpenAIWSLogValue(strings.ReplaceAll(v.CloseReason, " ", "_"), openAIWSHeaderValueMaxLen),
+		truncateOpenAIWSLogValue(v.Cause, openAIWSLogValueMaxLen),
+		v.Events,
+		v.TokenEvents,
+		v.TerminalEvents,
+		v.BufferedPending,
+		v.BufferedFlushed,
+		truncateOpenAIWSLogValue(v.FirstEvent, openAIWSLogValueMaxLen),
+		truncateOpenAIWSLogValue(v.LastEvent, openAIWSLogValueMaxLen),
+	)
+}
+
+func logOpenAIWSReadFail(v openAIWSReadFailLog) {
+	logOpenAIWSModeInfo("%s", openAIWSReadFailLogMessage(v))
+}
+
+func buildOpenAIWSSyntheticReadFailureEvent(responseID, model, message string, usage *OpenAIUsage) []byte {
+	responseID = strings.TrimSpace(responseID)
+	if responseID == "" {
+		responseID = "resp_synthetic_ws_eof"
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "upstream websocket read failed after downstream stream started"
+	}
+	response := map[string]any{
+		"id":     responseID,
+		"object": "response",
+		"status": "failed",
+		"output": []any{},
+		"error": map[string]any{
+			"type":    "upstream_error",
+			"code":    "upstream_websocket_read_failed",
+			"message": message,
+		},
+	}
+	if model = strings.TrimSpace(model); model != "" {
+		response["model"] = model
+	}
+	if usage != nil && (usage.InputTokens != 0 || usage.OutputTokens != 0 || usage.CacheCreationInputTokens != 0 || usage.CacheReadInputTokens != 0 || usage.ImageOutputTokens != 0) {
+		usageBody := map[string]any{
+			"input_tokens":  usage.InputTokens,
+			"output_tokens": usage.OutputTokens,
+			"total_tokens":  usage.InputTokens + usage.OutputTokens,
+		}
+		if usage.CacheReadInputTokens != 0 || usage.CacheCreationInputTokens != 0 {
+			usageBody["input_tokens_details"] = map[string]any{
+				"cached_tokens": usage.CacheReadInputTokens,
+			}
+		}
+		if usage.ImageOutputTokens != 0 {
+			usageBody["output_tokens_details"] = map[string]any{
+				"image_tokens": usage.ImageOutputTokens,
+			}
+		}
+		response["usage"] = usageBody
+	}
+	payload, err := json.Marshal(map[string]any{
+		"type":     "response.failed",
+		"response": response,
+	})
+	if err != nil {
+		return []byte(`{"type":"response.failed","response":{"id":"` + responseID + `","object":"response","status":"failed","output":[],"error":{"type":"upstream_error","code":"upstream_websocket_read_failed","message":"upstream websocket read failed after downstream stream started"}}}`)
+	}
+	return payload
+}
+
 func openAIWSRequestLogIDs(c *gin.Context) (string, string) {
 	if c == nil || c.Request == nil {
 		return "", ""
@@ -1685,6 +1837,21 @@ func (d openAIWSContinuationStoreDecision) unsafeToolContinuationError() error {
 	return fmt.Errorf("tool continuation requires previous_response_id binding: %s", reason)
 }
 
+func openAIWSActiveDeltaContextPayloadRaw(payload map[string]any, decision openAIWSContinuationStoreDecision) []byte {
+	if len(payload) == 0 {
+		return payloadAsJSONBytes(payload)
+	}
+	if decision.StoreMode != openAIWSStoreModeIncremental || !decision.StickyAccountHit || !decision.ConnAffinityHit {
+		return payloadAsJSONBytes(payload)
+	}
+	contextPayload := make(map[string]any, len(payload))
+	for key, value := range payload {
+		contextPayload[key] = value
+	}
+	contextPayload["store"] = false
+	return payloadAsJSONBytes(contextPayload)
+}
+
 func openAIWSPayloadStoreEnabled(payload map[string]any) bool {
 	if len(payload) == 0 {
 		return false
@@ -1778,6 +1945,7 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecision(
 	if stickyAccountID != account.ID {
 		return dropToFullCreate("sticky_account_mismatch")
 	}
+	decision.StickyAccountHit = true
 
 	if connID, ok := stateStore.GetResponseConn(groupID, apiKeyID, previousResponseID); ok {
 		decision.PreferredConnID = connID
@@ -1785,7 +1953,6 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecision(
 	} else {
 		if HasFunctionCallOutput(payload) {
 			decision.UnsafeToolContinuation = true
-			decision.StickyAccountHit = true
 			decision.FallbackReason = "conn_affinity_miss"
 			return decision
 		}
@@ -1797,7 +1964,6 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecision(
 	decision.StoreEnabled = true
 	decision.StoreDisabled = false
 	decision.StickyAccountHit = true
-	decision.FallbackReason = ""
 	return decision
 }
 
@@ -1894,6 +2060,20 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecisionRawWithOp
 		return updated, decision, nil
 	}
 
+	if options.AllowLiveRelayContinuation {
+		updated, err := setOpenAIWSRawPayloadStore(payload, true)
+		if err != nil {
+			return payload, decision, err
+		}
+		decision.StoreMode = openAIWSStoreModeIncremental
+		decision.StoreEnabled = true
+		decision.StoreDisabled = false
+		decision.StickyAccountHit = true
+		decision.ConnAffinityHit = true
+		decision.FallbackReason = ""
+		return updated, decision, nil
+	}
+
 	dropToFullCreate := func(reason string) ([]byte, openAIWSContinuationStoreDecision, error) {
 		if HasToolContinuationOutputInRawPayload(payload) {
 			decision.UnsafeToolContinuation = true
@@ -1928,16 +2108,14 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecisionRawWithOp
 	if stickyAccountID != account.ID {
 		return dropToFullCreate("sticky_account_mismatch")
 	}
+	decision.StickyAccountHit = true
 
 	if connID, ok := stateStore.GetResponseConn(groupID, apiKeyID, previousResponseID); ok {
 		decision.PreferredConnID = connID
 		decision.ConnAffinityHit = true
 	} else {
-		if options.AllowLiveRelayContinuation {
-			decision.StickyAccountHit = true
-		} else if HasToolContinuationOutputInRawPayload(payload) {
+		if HasToolContinuationOutputInRawPayload(payload) {
 			decision.UnsafeToolContinuation = true
-			decision.StickyAccountHit = true
 			decision.FallbackReason = "conn_affinity_miss"
 			return payload, decision, nil
 		} else {
@@ -2682,7 +2860,16 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		connAffinityHit = false
 		forceNewConn = true
 	}
-	allowDeltaConnReanchor := false
+	allowDeltaConnReanchor := !sessionPreemptedPrevious &&
+		attempt <= 1 &&
+		strings.TrimSpace(lastFailureReason) == "" &&
+		!httpIngressWSOneShot &&
+		account.Type == AccountTypeOAuth &&
+		stateStore != nil &&
+		storeDisabled &&
+		previousResponseID == "" &&
+		sessionHash != "" &&
+		!HasFunctionCallOutput(payload)
 	if sessionPreemptedPrevious {
 		preferredConnID = ""
 		connAffinityHit = false
@@ -2861,7 +3048,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	// active delta uses the full payload only as a verified source-of-truth for
 	// prefix matching and later context binding. The upstream write may be
 	// reduced to just the trailing input items.
-	contextPayloadRaw := payloadAsJSONBytes(payload)
+	contextPayloadRaw := openAIWSActiveDeltaContextPayloadRaw(payload, storeDecision)
 	deltaShadowEnabled := openAIWSDeltaShadowEnabled()
 	activeDeltaLog := openAIWSDeltaShadowLog{}
 	activeDeltaApplied := false
@@ -2975,6 +3162,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		ProxyEnabled:              account.ProxyID != nil && account.Proxy != nil,
 	}
 	logOpenAIWSDiagnosticStart(diagnosticStart)
+	SetOpsOpenAIWSTransportPath(c, openAIWSTransportPathFromStart(diagnosticStart))
 	s.EmitOpenAIGatewayDebugTimelineEvent(c, OpenAIGatewayDebugTimelineEventInput{
 		Stage:          "openai_ws_start",
 		EndpointKind:   "responses",
@@ -3104,6 +3292,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	terminalEventCount := 0
 	bufferedEventCount := 0
 	flushedBufferedEventCount := 0
+	recoveredUpstreamTransportEOF := false
 	firstEventType := ""
 	lastEventType := ""
 	var deltaShadowRawOutputHashes [][32]byte
@@ -3211,30 +3400,74 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				return nil, wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted)
 			}
 			closeStatus, closeReason := summarizeOpenAIWSReadCloseError(readErr)
-			logOpenAIWSModeInfo(
-				"read_fail account_id=%d conn_id=%s wrote_downstream=%v close_status=%s close_reason=%s cause=%s events=%d token_events=%d terminal_events=%d buffered_pending=%d buffered_flushed=%d first_event=%s last_event=%s",
-				account.ID,
-				connID,
-				wroteDownstream,
-				closeStatus,
-				closeReason,
-				truncateOpenAIWSLogValue(readErr.Error(), openAIWSLogValueMaxLen),
-				eventCount,
-				tokenEventCount,
-				terminalEventCount,
-				len(bufferedStreamEvents),
-				flushedBufferedEventCount,
-				truncateOpenAIWSLogValue(firstEventType, openAIWSLogValueMaxLen),
-				truncateOpenAIWSLogValue(lastEventType, openAIWSLogValueMaxLen),
-			)
+			proxyID := int64(0)
+			if account.ProxyID != nil {
+				proxyID = *account.ProxyID
+			}
+			logOpenAIWSReadFail(openAIWSReadFailLog{
+				RequestID:              requestID,
+				ClientRequestID:        clientRequestID,
+				AccountID:              account.ID,
+				AccountType:            account.Type,
+				Model:                  originalModel,
+				UpstreamModel:          mappedModel,
+				ConnProfile:            connProfile,
+				ConnID:                 connID,
+				ConnReused:             lease.Reused(),
+				Transport:              string(decision.Transport),
+				Attempt:                attempt,
+				ConnPickMs:             lease.ConnPickDuration().Milliseconds(),
+				QueueWaitMs:            lease.QueueWaitDuration().Milliseconds(),
+				PayloadBytes:           resolvePayloadBytes(),
+				PreviousResponseID:     previousResponseID,
+				PreviousResponseIDKind: previousResponseIDKind,
+				StoreMode:              storeDecision.StoreMode,
+				StoreEnabled:           storeEnabled,
+				StoreDisabled:          storeDisabled,
+				SessionHash:            sessionHash,
+				HasPromptCacheKey:      promptCacheKey != "",
+				HasTurnState:           turnState != "",
+				TurnStateLen:           len(turnState),
+				ProxyEnabled:           account.ProxyID != nil && account.Proxy != nil,
+				ProxyID:                proxyID,
+				WroteDownstream:        wroteDownstream,
+				CloseStatus:            closeStatus,
+				CloseReason:            closeReason,
+				Cause:                  readErr.Error(),
+				Events:                 eventCount,
+				TokenEvents:            tokenEventCount,
+				TerminalEvents:         terminalEventCount,
+				BufferedPending:        len(bufferedStreamEvents),
+				BufferedFlushed:        flushedBufferedEventCount,
+				FirstEvent:             firstEventType,
+				LastEvent:              lastEventType,
+			})
 			if !wroteDownstream {
 				return nil, wrapOpenAIWSFallback(classifyOpenAIWSReadFallbackReason(readErr), readErr)
 			}
 			if clientDisconnected {
 				break
 			}
-			recordDetailedUpstreamTransportError(c, readErr)
-			return nil, fmt.Errorf("openai ws read event: %w", readErr)
+			detail := recordDetailedUpstreamTransportError(c, readErr)
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:    account.Platform,
+				AccountID:   account.ID,
+				AccountName: account.Name,
+				Kind:        "request_error",
+				Message:     detail.Message,
+				Detail:      "upstream websocket read failed after downstream stream started: " + detail.Detail,
+			})
+			errMessage := "upstream websocket read failed after downstream stream started"
+			if detail.Message != "" {
+				errMessage = detail.Message
+			}
+			syntheticFailed := buildOpenAIWSSyntheticReadFailureEvent(responseID, originalModel, errMessage, usage)
+			emitStreamMessage(syntheticFailed, true)
+			recoveredUpstreamTransportEOF = true
+			terminalEventCount++
+			lastEventType = "response.failed"
+			cleanExit = false
+			return nil, fmt.Errorf("openai ws read event after downstream stream started: %w", readErr)
 		}
 
 		eventType, eventResponseID, responseField := parseOpenAIWSEventEnvelope(message)
@@ -3531,18 +3764,18 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		flushStreamWriter(true)
 	}
 
-	if responseID != "" && stateStore != nil && !clientDisconnected {
+	if responseID != "" && stateStore != nil && !clientDisconnected && !recoveredUpstreamTransportEOF {
 		ttl := s.openAIWSResponseStickyTTL()
 		logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, apiKeyID, responseID, account.ID, ttl))
 		if !httpIngressWSOneShot {
 			stateStore.BindResponseConn(groupID, apiKeyID, responseID, lease.ConnID(), ttl)
 		}
 	}
-	if !httpIngressWSOneShot && stateStore != nil && storeDisabled && sessionHash != "" && !clientDisconnected {
+	if !httpIngressWSOneShot && stateStore != nil && storeDisabled && sessionHash != "" && !clientDisconnected && !recoveredUpstreamTransportEOF {
 		stateStore.BindSessionConn(groupID, sessionHash, lease.ConnID(), s.openAIWSSessionStickyTTL())
 	}
 	if shadowOwner && deltaShadowEnabled && stateStore != nil && responseID != "" && connID != "" &&
-		!clientDisconnected {
+		!clientDisconnected && !recoveredUpstreamTransportEOF {
 		if inputItems, _, ierr := openAIWSExtractNormalizedInputSequence(contextPayloadRaw); ierr == nil {
 			if inputHashes, hok := openAIWSCanonicalItemHashes(inputItems); hok {
 				var materializedShapes []string
@@ -3658,23 +3891,33 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 
 	return &OpenAIForwardResult{
-		RequestID:          responseID,
-		Usage:              *usage,
-		Model:              originalModel,
-		UpstreamModel:      mappedModel,
-		ImageCount:         imageCount,
-		ImageSize:          imageSizeTier,
-		BillingModel:       imageBillingModel,
-		ServiceTier:        extractOpenAIServiceTier(reqBody),
-		ReasoningEffort:    extractOpenAIReasoningEffort(reqBody, originalModel),
-		Stream:             reqStream,
-		OpenAIWSMode:       true,
-		OpenAIWSProfile:    openAIWSProfileUsageString(connProfile),
-		OpenAIWSConnReused: lease.Reused(),
-		ClientDisconnected: clientDisconnected,
-		ResponseHeaders:    lease.HandshakeHeaders(),
-		Duration:           time.Since(startTime),
-		FirstTokenMs:       firstTokenMs,
+		RequestID:            responseID,
+		Usage:                *usage,
+		Model:                originalModel,
+		UpstreamModel:        mappedModel,
+		ImageCount:           imageCount,
+		ImageSize:            imageSizeTier,
+		BillingModel:         imageBillingModel,
+		ServiceTier:          extractOpenAIServiceTier(reqBody),
+		ReasoningEffort:      extractOpenAIReasoningEffort(reqBody, originalModel),
+		Stream:               reqStream,
+		OpenAIWSMode:         true,
+		OpenAIWSProfile:      openAIWSProfileUsageString(connProfile),
+		OpenAIWSConnReused:   lease.Reused(),
+		OpenAIWSStoreMode:    diagnosticCompleted.StoreMode,
+		OpenAIWSDeltaActive:  diagnosticCompleted.DeltaActive,
+		OpenAIWSPayloadBytes: diagnosticCompleted.PayloadBytes,
+		OpenAIWSDeltaItems:   diagnosticCompleted.DeltaItems,
+		OpenAIWSDeltaBytes:   diagnosticCompleted.DeltaBytes,
+		OpenAIWSFullItems:    diagnosticCompleted.FullItems,
+		OpenAIWSFullBytes:    diagnosticCompleted.FullBytes,
+		OpenAIWSConnPickMs:   lease.ConnPickDuration().Milliseconds(),
+		OpenAIWSQueueWaitMs:  lease.QueueWaitDuration().Milliseconds(),
+		OpenAIWSOneShot:      diagnosticCompleted.HTTPIngressWSOneShot,
+		ClientDisconnected:   clientDisconnected,
+		ResponseHeaders:      lease.HandshakeHeaders(),
+		Duration:             time.Since(startTime),
+		FirstTokenMs:         firstTokenMs,
 
 		DeltaShadowOutputHashes:   deltaShadowRawOutputHashes,
 		DeltaShadowOutputShapes:   deltaShadowRawOutputShapes,

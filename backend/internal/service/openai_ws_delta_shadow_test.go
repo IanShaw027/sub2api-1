@@ -118,13 +118,13 @@ func TestOpenAIWSCanonicalItemHash_WhitespaceInContentBreaksHash(t *testing.T) {
 		"whitespace inside text content must change the hash")
 }
 
-func TestOpenAIWSNonInputHash_DenylistIgnoresVolatileFields(t *testing.T) {
-	p1 := []byte(`{"model":"gpt","tools":[{"type":"x"}],"input":[{"a":1}],"previous_response_id":"resp_1","store":false,"client_metadata":{"x-client-request-id":"a"},"turn_metadata":"t1"}`)
-	p2 := []byte(`{"model":"gpt","tools":[{"type":"x"}],"input":[{"b":2},{"c":3}],"previous_response_id":"resp_9","store":true,"client_metadata":{"x-client-request-id":"z"},"turn_metadata":"t2"}`)
+func TestOpenAIWSNonInputHash_DenylistIgnoresOnlyCodexVolatileFields(t *testing.T) {
+	p1 := []byte(`{"model":"gpt","tools":[{"type":"x"}],"input":[{"a":1}],"previous_response_id":"resp_1","store":false,"client_metadata":{"x-client-request-id":"a"}}`)
+	p2 := []byte(`{"model":"gpt","tools":[{"type":"x"}],"input":[{"b":2},{"c":3}],"previous_response_id":"resp_9","store":false,"client_metadata":{"x-client-request-id":"z"}}`)
 	h1, ig1 := openAIWSNonInputHash(p1)
 	h2, _ := openAIWSNonInputHash(p2)
 	require.Equal(t, h1, h2, "denylist fields must not affect the non-input fingerprint")
-	require.Subset(t, ig1, []string{"input", "previous_response_id", "store", "client_metadata", "turn_metadata"})
+	require.ElementsMatch(t, []string{"input", "previous_response_id", "client_metadata"}, ig1)
 
 	// a semantic change (model) must change the fingerprint.
 	p3 := []byte(`{"model":"gpt-other","tools":[{"type":"x"}],"input":[{"a":1}]}`)
@@ -135,6 +135,52 @@ func TestOpenAIWSNonInputHash_DenylistIgnoresVolatileFields(t *testing.T) {
 	p4 := []byte(`{"model":"gpt","tools":[{"type":"x"}],"future_param":true}`)
 	h4, _ := openAIWSNonInputHash(p4)
 	require.NotEqual(t, h1, h4, "unknown fields must be included so future params can't false-match")
+}
+
+func TestOpenAIWSNonInputHash_CodexRequestPropertiesAreSemantic(t *testing.T) {
+	base := []byte(`{
+		"type":"response.create",
+		"model":"gpt-5.1",
+		"instructions":"same",
+		"tools":[{"type":"function","name":"same"}],
+		"tool_choice":"auto",
+		"parallel_tool_calls":true,
+		"reasoning":{"effort":"medium"},
+		"store":false,
+		"stream":true,
+		"include":["reasoning.encrypted_content"],
+		"service_tier":"auto",
+		"prompt_cache_key":"session-a",
+		"text":{"verbosity":"medium"},
+		"input":[{"type":"message","role":"user","content":"hi"}],
+		"client_metadata":{"x-client-request-id":"a"},
+		"previous_response_id":"resp_1"
+	}`)
+	baseHash, _ := openAIWSNonInputHash(base)
+
+	cases := []struct {
+		name    string
+		payload []byte
+	}{
+		{"instructions", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"changed","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
+		{"tools", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"changed"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
+		{"tool_choice", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":{"type":"function","name":"same"},"parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
+		{"parallel_tool_calls", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":false,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
+		{"reasoning", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"high"},"store":false,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
+		{"store", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":true,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
+		{"stream", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":false,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
+		{"include", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":[],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
+		{"service_tier", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"priority","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
+		{"prompt_cache_key", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-b","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
+		{"text", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"low"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
+		{"turn_metadata", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"turn_metadata":"changed","input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			hash, _ := openAIWSNonInputHash(tc.payload)
+			require.NotEqual(t, baseHash, hash)
+		})
+	}
 }
 
 func TestOpenAIWSExtractResponseOutputItems(t *testing.T) {
@@ -228,7 +274,7 @@ func TestEvaluateDeltaShadowCandidate_Happy(t *testing.T) {
 	require.Less(t, log.DeltaBytes, log.FullBytes)
 }
 
-func TestEvaluateDeltaShadowCandidate_AllowsPerTurnGenerationParameterChanges(t *testing.T) {
+func TestEvaluateDeltaShadowCandidate_RejectsCodexRequestPropertyChanges(t *testing.T) {
 	msg1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
 	out1 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"two"}]}`
 	newMsg := `{"type":"message","role":"user","content":[{"type":"input_text","text":"three"}]}`
@@ -278,15 +324,11 @@ func TestEvaluateDeltaShadowCandidate_AllowsPerTurnGenerationParameterChanges(t 
 		Cached: cached, CachedFound: true,
 	})
 	require.NoError(t, err)
-	require.True(t, applied)
-	require.True(t, log.Candidate)
-	require.Equal(t, 1, log.DeltaItems)
-	require.Equal(t, "resp_1", deltaPayload["previous_response_id"])
-	inputItems, ok := deltaPayload["input"].([]any)
-	require.True(t, ok)
-	require.Len(t, inputItems, 1)
-	require.Equal(t, "new turn instructions", deltaPayload["instructions"])
-	require.Equal(t, false, deltaPayload["parallel_tool_calls"])
+	require.False(t, applied)
+	require.False(t, log.Candidate)
+	require.False(t, log.NonInputMatch)
+	require.Equal(t, "non_input_mismatch", log.FallbackReason)
+	require.Nil(t, deltaPayload)
 }
 
 func TestEvaluateDeltaShadowCandidate_FallbackReasons(t *testing.T) {
@@ -346,6 +388,32 @@ func TestEvaluateDeltaShadowCandidate_FallbackReasons(t *testing.T) {
 		},
 	}
 	require.Equal(t, "delta_tool_continuation_self_contained", evaluateOpenAIWSDeltaShadowCandidate(tool).FallbackReason)
+}
+
+func TestOpenAIWSActiveDeltaContextPayloadRawRequiresConnAffinity(t *testing.T) {
+	payload := map[string]any{
+		"type":                 "response.create",
+		"model":                "gpt-5.5",
+		"store":                true,
+		"previous_response_id": "resp_prev",
+		"input":                []any{map[string]any{"type": "input_text", "text": "hello"}},
+	}
+
+	raw := openAIWSActiveDeltaContextPayloadRaw(payload, openAIWSContinuationStoreDecision{
+		StoreMode:        openAIWSStoreModeIncremental,
+		StickyAccountHit: true,
+		ConnAffinityHit:  false,
+	})
+
+	require.True(t, gjson.GetBytes(raw, "store").Bool(), "account-only continuation must not be treated as active-delta context")
+	require.Equal(t, "resp_prev", gjson.GetBytes(raw, "previous_response_id").String())
+
+	raw = openAIWSActiveDeltaContextPayloadRaw(payload, openAIWSContinuationStoreDecision{
+		StoreMode:        openAIWSStoreModeIncremental,
+		StickyAccountHit: true,
+		ConnAffinityHit:  true,
+	})
+	require.False(t, gjson.GetBytes(raw, "store").Bool(), "conn-affine continuation should keep full context with store=false for active-delta matching")
 }
 
 func TestEvaluateDeltaShadowCandidate_OutputBoundaryBreak(t *testing.T) {
@@ -721,6 +789,101 @@ func TestOpenAIWSActiveDelta_ForwardWSV2SessionBoundSendsOnlyTrailingInput(t *te
 	require.Equal(t, 4, cached.materializedCount, "next context must still be based on full replay input + raw output")
 }
 
+func TestOpenAIWSActiveDelta_StickyPreviousResponseFullReplayStillSendsOnlyTrailingInput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.StoreDisabledConnMode = openAIWSStoreDisabledConnModeStrict
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.StickySessionTTLSeconds = 3600
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}`
+	output1 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}`
+	newInput := `{"type":"message","role":"user","content":[{"type":"input_text","text":"again"}]}`
+	output2 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}`
+
+	captureConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.output_item.done","response_id":"resp_delta_sticky_1","output_index":0,"item":` + output1 + `}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_delta_sticky_1","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
+			[]byte(`{"type":"response.output_item.done","response_id":"resp_delta_sticky_2","output_index":0,"item":` + output2 + `}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_delta_sticky_2","model":"gpt-5.1","usage":{"input_tokens":5,"output_tokens":2}}}`),
+		},
+	}
+	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(captureDialer)
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          78021,
+		Name:        "openai-delta-sticky-prev",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "oauth-token-delta-sticky-prev"},
+		Extra:       map[string]any{"responses_websockets_v2_enabled": true},
+	}
+
+	groupID := int64(78022)
+	apiKeyID := int64(78023)
+	newContext := func() *gin.Context {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+		c.Request.Header.Set("originator", "codex_exec")
+		c.Request.Header.Set("session_id", "sess-delta-sticky-prev")
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+		return c
+	}
+
+	firstCtx := newContext()
+	firstBody := []byte(`{"model":"gpt-5.1","stream":true,"input":[` + input1 + `]}`)
+	firstResult, err := svc.Forward(context.Background(), firstCtx, account, firstBody)
+	require.NoError(t, err)
+	require.Equal(t, "resp_delta_sticky_1", firstResult.RequestID)
+
+	secondCtx := newContext()
+	secondBody := []byte(`{"model":"gpt-5.1","stream":true,"previous_response_id":"resp_delta_sticky_1","input":[` + input1 + `,` + output1 + `,` + newInput + `]}`)
+	secondResult, err := svc.Forward(context.Background(), secondCtx, account, secondBody)
+	require.NoError(t, err)
+	require.Equal(t, "resp_delta_sticky_2", secondResult.RequestID)
+
+	captureConn.mu.Lock()
+	writes := append([]map[string]any(nil), captureConn.writes...)
+	captureConn.mu.Unlock()
+	require.Len(t, writes, 2)
+	secondWrite := requestToJSONString(writes[1])
+	require.Equal(t, "resp_delta_sticky_1", gjson.Get(secondWrite, "previous_response_id").String())
+	require.True(t, gjson.Get(secondWrite, "store").Exists())
+	require.False(t, gjson.Get(secondWrite, "store").Bool(), "active delta keeps store=false even when sticky continuation was client-provided")
+	require.Len(t, gjson.Get(secondWrite, "input").Array(), 1, "active delta must not be blocked by internal sticky store=true rewrite")
+	require.Equal(t, "again", gjson.Get(secondWrite, "input.0.content.0.text").String())
+}
+
 func TestOpenAIWSActiveDelta_ResponseConnMissUsesSessionConnAndStillSendsDelta(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
@@ -824,6 +987,126 @@ func TestOpenAIWSActiveDelta_ResponseConnMissUsesSessionConnAndStillSendsDelta(t
 	cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
 	require.True(t, ok)
 	require.Equal(t, "resp_conn_miss_next", cached.lastResponseID)
+}
+
+func TestOpenAIWSActiveDelta_MissingPreviousResponseReanchorsOnNewSessionConn(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
+	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.StoreDisabledConnMode = openAIWSStoreDisabledConnModeStrict
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.StickySessionTTLSeconds = 3600
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}`
+	output1 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}`
+	input2 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"again"}]}`
+	output2 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}`
+
+	firstConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.output_item.done","response_id":"resp_reanchor_seed","output_index":0,"item":` + output1 + `}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_reanchor_seed","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
+		},
+	}
+	secondConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.output_item.done","response_id":"resp_reanchor_next","output_index":0,"item":` + output2 + `}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_reanchor_next","model":"gpt-5.1","usage":{"input_tokens":5,"output_tokens":2}}}`),
+		},
+	}
+	dialer := &openAIWSQueueDialer{conns: []openAIWSClientConn{firstConn, secondConn}}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(dialer)
+	t.Cleanup(pool.Close)
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          78067,
+		Name:        "openai-delta-missing-prev-reanchor",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{"access_token": "oauth-token-delta-reanchor"},
+		Extra:       map[string]any{"responses_websockets_v2_enabled": true},
+	}
+
+	groupID := int64(78068)
+	apiKeyID := int64(78069)
+	newContext := func() *gin.Context {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+		c.Request.Header.Set("originator", "codex_exec")
+		c.Request.Header.Set("session_id", "sess-delta-reanchor")
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+		return c
+	}
+
+	firstCtx := newContext()
+	sessionHash := svc.GenerateSessionHash(firstCtx, nil)
+	require.NotEmpty(t, sessionHash)
+	firstResult, err := svc.Forward(context.Background(), firstCtx, account, []byte(`{"model":"gpt-5.1","stream":true,"input":[`+input1+`]}`))
+	require.NoError(t, err)
+	require.Equal(t, "resp_reanchor_seed", firstResult.RequestID)
+
+	stateStore := svc.getOpenAIWSStateStore()
+	cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
+	require.True(t, ok)
+	require.Equal(t, "resp_reanchor_seed", cached.lastResponseID)
+	stateStore.DeleteResponseConn(groupID, apiKeyID, "resp_reanchor_seed")
+	stateStore.DeleteSessionConn(groupID, sessionHash)
+	pool.evictConn(account.ID, cached.connID, "test_idle_cleanup")
+
+	secondBody := []byte(`{"model":"gpt-5.1","stream":true,"input":[` + input1 + `,` + output1 + `,` + input2 + `]}`)
+	secondResult, err := svc.Forward(context.Background(), newContext(), account, secondBody)
+	require.NoError(t, err)
+	require.Equal(t, "resp_reanchor_next", secondResult.RequestID)
+	require.Equal(t, 2, dialer.DialCount(), "missing previous_response_id should use a new session-bound WS after old conn cleanup")
+
+	firstConn.mu.Lock()
+	firstWrites := append([]map[string]any(nil), firstConn.writes...)
+	firstConn.mu.Unlock()
+	require.Len(t, firstWrites, 1)
+
+	secondConn.mu.Lock()
+	secondWrites := append([]map[string]any(nil), secondConn.writes...)
+	secondConn.mu.Unlock()
+	require.Len(t, secondWrites, 1)
+	secondWrite := requestToJSONString(secondWrites[0])
+	require.Equal(t, "resp_reanchor_seed", gjson.Get(secondWrite, "previous_response_id").String())
+	require.True(t, gjson.Get(secondWrite, "store").Exists())
+	require.False(t, gjson.Get(secondWrite, "store").Bool())
+	require.Len(t, gjson.Get(secondWrite, "input").Array(), 1, "safe re-anchor should send only trailing input on the new WS")
+	require.Equal(t, "again", gjson.Get(secondWrite, "input.0.content.0.text").String())
+
+	cached, ok = stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
+	require.True(t, ok)
+	require.Equal(t, "resp_reanchor_next", cached.lastResponseID)
 }
 
 func TestOpenAIWSActiveDelta_SameSessionPreemptReplacementUsesNewFullWS(t *testing.T) {

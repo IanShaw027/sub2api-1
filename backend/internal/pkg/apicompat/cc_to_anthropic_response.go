@@ -145,6 +145,16 @@ func (s *ChatChunkToAnthropicState) buildMessageStart() AnthropicSSELine {
 func (s *ChatChunkToAnthropicState) processChoice(choice *ChatChunkChoice) []AnthropicSSELine {
 	var events []AnthropicSSELine
 
+	// Handle reasoning content (reasoning_content or kimi's reasoning field).
+	// Emit as text block since clients may reject unsigned thinking blocks.
+	if reasoning := choice.Delta.EffectiveReasoningContent(); reasoning != "" {
+		if !s.TextBlockOpen {
+			events = append(events, s.buildContentBlockStart("text", ""))
+			s.TextBlockOpen = true
+		}
+		events = append(events, s.buildTextDelta(reasoning))
+	}
+
 	if choice.Delta.Content != nil && *choice.Delta.Content != "" {
 		if !s.TextBlockOpen {
 			events = append(events, s.buildContentBlockStart("text", ""))
@@ -283,6 +293,20 @@ func (s *ChatChunkToAnthropicState) buildTextDelta(text string) AnthropicSSELine
 		Type:  "content_block_delta",
 		Index: idx,
 		Delta: AnthropicDelta{Type: "text_delta", Text: text},
+	})
+	return AnthropicSSELine{Event: "content_block_delta", Data: data}
+}
+
+func (s *ChatChunkToAnthropicState) buildThinkingDelta(thinking string) AnthropicSSELine {
+	idx := s.ContentIndex - 1
+	data, _ := json.Marshal(struct {
+		Type  string         `json:"type"`
+		Index int            `json:"index"`
+		Delta AnthropicDelta `json:"delta"`
+	}{
+		Type:  "content_block_delta",
+		Index: idx,
+		Delta: AnthropicDelta{Type: "thinking_delta", Thinking: thinking},
 	})
 	return AnthropicSSELine{Event: "content_block_delta", Data: data}
 }

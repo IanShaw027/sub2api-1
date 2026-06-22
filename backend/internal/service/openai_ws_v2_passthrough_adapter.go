@@ -683,14 +683,6 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 					turnResult.Usage.OutputTokens,
 					turnResult.Usage.CacheReadInputTokens,
 				)
-				if stateStore != nil && strings.TrimSpace(turnResult.RequestID) != "" {
-					logOpenAIWSBindResponseAccountWarn(
-						groupID,
-						account.ID,
-						turnResult.RequestID,
-						stateStore.BindResponseAccount(ctx, groupID, apiKeyID, turnResult.RequestID, account.ID, s.openAIWSResponseStickyTTL()),
-					)
-				}
 				liveRelayResponseIDs.Remember(turnResult.RequestID)
 				if hooks != nil && hooks.AfterTurn != nil {
 					hooks.AfterTurn(turnNo, dequeueTurnPayload(), turnResult, nil)

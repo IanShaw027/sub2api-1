@@ -429,6 +429,16 @@ type OpenAIForwardResult struct {
 	OpenAIWSMode         bool
 	OpenAIWSProfile      string
 	OpenAIWSConnReused   bool
+	OpenAIWSStoreMode    string
+	OpenAIWSDeltaActive  bool
+	OpenAIWSPayloadBytes int
+	OpenAIWSDeltaItems   int
+	OpenAIWSDeltaBytes   int
+	OpenAIWSFullItems    int
+	OpenAIWSFullBytes    int
+	OpenAIWSConnPickMs   int64
+	OpenAIWSQueueWaitMs  int64
+	OpenAIWSOneShot      bool
 	EffectiveRequestType RequestType
 	ResponseHeaders      http.Header
 	Duration             time.Duration
@@ -935,6 +945,7 @@ func resolveOpenAIWSFallbackErrorResponse(err error) (statusCode int, errType st
 		if upstreamMessage == "" {
 			upstreamMessage = "previous response not found"
 		}
+		clientMessage = "OpenAI websocket continuation expired; retry the request without previous_response_id."
 	case "unsafe_tool_continuation":
 		if statusCode == 0 {
 			statusCode = http.StatusConflict
@@ -1003,7 +1014,9 @@ func resolveOpenAIWSFallbackErrorResponse(err error) (statusCode int, errType st
 			errType = "upstream_error"
 		}
 	}
-	clientMessage = upstreamMessage
+	if clientMessage == "" {
+		clientMessage = upstreamMessage
+	}
 	return statusCode, errType, clientMessage, upstreamMessage, true
 }
 
@@ -1094,9 +1107,6 @@ func (s *OpenAIGatewayService) prepareOpenAIWSContinuationFailoverBody(c *gin.Co
 		return false
 	}
 	previousResponseID := openAIWSPayloadString(wsReqBody, "previous_response_id")
-	if previousResponseID == "" {
-		return false
-	}
 	if HasFunctionCallOutput(wsReqBody) {
 		logOpenAIWSModeInfo(
 			"reconnect_ws_connection_limit_failover_skip account_id=%d reason=tool_continuation previous_response_id=%s",
@@ -1104,6 +1114,9 @@ func (s *OpenAIGatewayService) prepareOpenAIWSContinuationFailoverBody(c *gin.Co
 			truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
 		)
 		return true
+	}
+	if previousResponseID == "" && !openAIWSPayloadStoreDisabled(wsReqBody) {
+		return false
 	}
 	failoverReqBody := make(map[string]any, len(wsReqBody))
 	for k, v := range wsReqBody {
@@ -4744,6 +4757,19 @@ oauthTransformDone:
 			resetRawBodyView(bodyWithInstructions)
 		}
 	}
+	if needsReqBodyForToolOutputTruncation(body) {
+		decoded, decodeErr := ensureReqBody()
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if truncateOpenAIResponsesToolOutputs(decoded) {
+			truncatedBody, marshalErr := marshalOpenAIResponsesRequestBodyOrdered(decoded)
+			if marshalErr != nil {
+				return nil, fmt.Errorf("serialize truncated tool output body: %w", marshalErr)
+			}
+			resetRawBodyView(truncatedBody)
+		}
+	}
 	upstreamStream = gjson.GetBytes(body, "stream").Bool()
 	// Get access token
 	token, _, err := s.GetAccessToken(ctx, account)
@@ -4758,8 +4784,12 @@ oauthTransformDone:
 	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
 		if skipWS, threshold := s.shouldPreflightFallbackOpenAIWSPayloadToHTTP(body); skipWS {
 			wsSkippedByPayloadPreflight = true
+			requestID, clientRequestID := openAIWSRequestLogIDs(c)
+			SetOpsOpenAIWSTransportPath(c, "http_preflight_ws_payload_too_large")
 			logOpenAIWSModeInfo(
-				"preflight_fallback_to_http account_id=%d reason=payload_too_large payload_bytes=%d threshold_bytes=%d action=replay_full_payload",
+				"preflight_fallback_to_http request_id=%s client_request_id=%s account_id=%d reason=payload_too_large payload_bytes=%d threshold_bytes=%d action=replay_full_payload fallback_scope=http_preflight transport_path=http_preflight_ws_payload_too_large",
+				normalizeOpenAIWSLogValue(requestID),
+				normalizeOpenAIWSLogValue(clientRequestID),
 				account.ID,
 				len(body),
 				threshold,
@@ -4770,7 +4800,6 @@ oauthTransformDone:
 	// 命中 WS 时优先走 WebSocket Mode；WS 传输异常且未写下游时可回退同账号 HTTP。
 	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 && !wsSkippedByPayloadPreflight {
 		wsHTTPFallbackBody := append([]byte(nil), body...)
-		wsHTTPFallbackPromptCacheKey := promptCacheKey
 		// WS 分支需要结构化 payload 与重连恢复，命中后再触发 full-map decode。
 		wsReqBody, err := ensureReqBody()
 		if err != nil {
@@ -4846,6 +4875,32 @@ oauthTransformDone:
 			clearOpenAIRequestBodyCache(c)
 			setOpsUpstreamRequestBody(c, body)
 			return true
+		}
+		if account.Type == AccountTypeOAuth && openAIWSPayloadString(wsReqBody, "previous_response_id") != "" && !HasFunctionCallOutput(wsReqBody) {
+			decision := s.resolveOpenAIWSContinuationStoreDecision(
+				ctx,
+				wsReqBody,
+				account,
+				s.getOpenAIWSStateStore(),
+				getOpenAIGroupIDFromContext(c),
+				getAPIKeyIDFromContext(c),
+			)
+			if decision.DroppedPreviousResponseID || decision.StoreDisabled || decision.StoreEnabled {
+				if !syncWSRecoveredBody("continuation_store_decision") {
+					return nil, wsErr
+				}
+			}
+		}
+		if openAIWSPayloadStoreDisabled(wsReqBody) && openAIWSPayloadString(wsReqBody, "previous_response_id") == "" && !HasFunctionCallOutput(wsReqBody) {
+			if removedReasoningItems := trimOpenAIEncryptedReasoningItems(wsReqBody); removedReasoningItems {
+				if !syncWSRecoveredBody("invalid_encrypted_content_preflight") {
+					return nil, wsErr
+				}
+				logOpenAIWSModeInfo(
+					"preflight_invalid_encrypted_content account_id=%d action=drop_encrypted_reasoning_items previous_response_id_present=false store_disabled=true has_function_call_output=false",
+					account.ID,
+				)
+			}
 		}
 		recoverPrevResponseNotFound := func(attempt int) bool {
 			if wsPrevResponseRecoveryTried {
@@ -5288,16 +5343,24 @@ oauthTransformDone:
 		}
 		if c != nil && c.Writer != nil && !c.Writer.Written() &&
 			shouldFallbackOpenAIWSToHTTP(wsErr) &&
-			!HasToolContinuationOutputInRawPayload(wsHTTPFallbackBody) {
+			!HasToolContinuationOutputInRawPayload(wsHTTPFallbackBody) &&
+			!HasToolContinuationOutputInRawPayload(body) {
 			reason, _ := classifyOpenAIWSReconnectReason(wsErr)
-			body = append([]byte(nil), wsHTTPFallbackBody...)
+			requestID, clientRequestID := openAIWSRequestLogIDs(c)
+			body = append([]byte(nil), body...)
 			reqStream = gjson.GetBytes(body, "stream").Bool()
 			upstreamStream = reqStream
-			promptCacheKey = wsHTTPFallbackPromptCacheKey
+			if bodyPromptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()); bodyPromptCacheKey != "" {
+				promptCacheKey = bodyPromptCacheKey
+				setOpenAIRoutingPromptCacheKey(c, promptCacheKey)
+			}
 			clearOpenAIRequestBodyCache(c)
 			setOpsUpstreamRequestBody(c, body)
+			SetOpsOpenAIWSTransportPath(c, "http_after_ws_fallback")
 			logOpenAIWSModeInfo(
-				"fallback_to_http account_id=%d reason=%s action=replay_full_payload bytes=%d",
+				"fallback_to_http request_id=%s client_request_id=%s account_id=%d reason=%s action=replay_current_payload bytes=%d fallback_scope=http_after_ws_error transport_path=http_after_ws_fallback",
+				normalizeOpenAIWSLogValue(requestID),
+				normalizeOpenAIWSLogValue(clientRequestID),
 				account.ID,
 				normalizeOpenAIWSLogValue(reason),
 				len(body),

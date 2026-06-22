@@ -20,13 +20,14 @@ import (
 )
 
 const (
-	openAIWSConnMaxAge             = 60 * time.Minute
-	openAIWSConnHealthCheckIdle    = 90 * time.Second
-	openAIWSConnHealthCheckTO      = 2 * time.Second
-	openAIWSConnPrewarmExtraDelay  = 2 * time.Second
-	openAIWSAcquireCleanupInterval = 3 * time.Second
-	openAIWSBackgroundPingInterval = 30 * time.Second
-	openAIWSBackgroundSweepTicker  = 30 * time.Second
+	openAIWSConnMaxAge              = 60 * time.Minute
+	openAIWSConnHealthCheckIdle     = 90 * time.Second
+	openAIWSConnHealthCheckTO       = 2 * time.Second
+	openAIWSConnPrewarmExtraDelay   = 2 * time.Second
+	openAIWSAcquireCleanupInterval  = 3 * time.Second
+	openAIWSBackgroundPingInterval  = 30 * time.Second
+	openAIWSBackgroundSweepTicker   = 30 * time.Second
+	openAIWSNeutralAcquireStaleIdle = 5 * time.Minute
 
 	openAIWSPrewarmFailureWindow   = 30 * time.Second
 	openAIWSPrewarmFailureSuppress = 2
@@ -45,7 +46,7 @@ const (
 	defaultOpenAIWSNeutralPrewarmPercent    = 20
 	defaultOpenAIWSSessionIdleTTLSeconds    = 600
 	openAIWSMaxIdlePerAccountUpperBound     = 64
-	openAIWSSessionIdleTTLSecondsUpperBound = 3600
+	openAIWSSessionIdleTTLSecondsUpperBound = 600
 )
 
 // openAIWSPoolRuntimeSettings 是连接池运行时可配参数的进程内快照，
@@ -65,7 +66,7 @@ var openAIWSPoolRuntimeSettingsCache atomic.Value // *openAIWSPoolRuntimeSetting
 func StoreOpenAIWSPoolRuntimeSettings(neutralPrewarmPercent, sessionIdleTTLSeconds int, legacyStickyReserve ...int) {
 	settings := &openAIWSPoolRuntimeSettings{
 		neutralPrewarmPercent: neutralPrewarmPercent,
-		sessionIdleTTLSeconds: sessionIdleTTLSeconds,
+		sessionIdleTTLSeconds: normalizeOpenAIWSSessionIdleTTLSeconds(sessionIdleTTLSeconds),
 	}
 	if len(legacyStickyReserve) > 0 {
 		settings.legacyMinIdle = neutralPrewarmPercent
@@ -80,7 +81,7 @@ func StoreOpenAIWSPoolRuntimeSettingsWithIdle(neutralPrewarmPercent, sessionIdle
 	minIdlePerAccount, maxIdlePerAccount = normalizeOpenAIWSIdleSettingValues(minIdlePerAccount, maxIdlePerAccount)
 	settings := &openAIWSPoolRuntimeSettings{
 		neutralPrewarmPercent: neutralPrewarmPercent,
-		sessionIdleTTLSeconds: sessionIdleTTLSeconds,
+		sessionIdleTTLSeconds: normalizeOpenAIWSSessionIdleTTLSeconds(sessionIdleTTLSeconds),
 		legacyMinIdle:         minIdlePerAccount,
 		legacyMaxIdle:         maxIdlePerAccount,
 		legacyStickyReserve:   boundedIntOrDefault(stickyReservePercent, 0, 100, 0),
@@ -782,6 +783,7 @@ type OpenAIWSPoolMetricsSnapshot struct {
 	AcquireTotal            int64
 	AcquireReuseTotal       int64
 	AcquireCreateTotal      int64
+	AcquireStaleEvictTotal  int64
 	AcquireQueueWaitTotal   int64
 	AcquireQueueWaitMsTotal int64
 	ConnPickTotal           int64
@@ -794,6 +796,7 @@ type openAIWSPoolMetrics struct {
 	acquireTotal          atomic.Int64
 	acquireReuseTotal     atomic.Int64
 	acquireCreateTotal    atomic.Int64
+	acquireStaleEvict     atomic.Int64
 	acquireQueueWaitTotal atomic.Int64
 	acquireQueueWaitMs    atomic.Int64
 	connPickTotal         atomic.Int64
@@ -835,6 +838,7 @@ func (p *openAIWSConnPool) SnapshotMetrics() OpenAIWSPoolMetricsSnapshot {
 		AcquireTotal:            p.metrics.acquireTotal.Load(),
 		AcquireReuseTotal:       p.metrics.acquireReuseTotal.Load(),
 		AcquireCreateTotal:      p.metrics.acquireCreateTotal.Load(),
+		AcquireStaleEvictTotal:  p.metrics.acquireStaleEvict.Load(),
 		AcquireQueueWaitTotal:   p.metrics.acquireQueueWaitTotal.Load(),
 		AcquireQueueWaitMsTotal: p.metrics.acquireQueueWaitMs.Load(),
 		ConnPickTotal:           p.metrics.connPickTotal.Load(),
@@ -1101,6 +1105,8 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 	if ap.lastCleanupAt.IsZero() || now.Sub(ap.lastCleanupAt) >= openAIWSAcquireCleanupInterval {
 		evicted = p.cleanupAccountLocked(ap, now, accountConcurrency)
 		ap.lastCleanupAt = now
+	} else if !req.ForceNewConn {
+		evicted = append(evicted, p.cleanupExpiredReusableConnsLocked(ap, now)...)
 	}
 	pickStartedAt := time.Now()
 	allowReuse := !req.ForceNewConn
@@ -1493,7 +1499,21 @@ func (p *openAIWSConnPool) neutralPrewarmTargetForConcurrency(concurrency int) i
 	if concurrency <= 0 {
 		return 0
 	}
-	return concurrency * p.neutralPrewarmPercent() / 100
+	percent := p.neutralPrewarmPercent()
+	if percent <= 0 {
+		return 0
+	}
+	target := concurrency * percent / 100
+	if minIdle := p.minIdlePerAccount(); minIdle > 0 && target < minIdle {
+		target = minIdle
+	}
+	if maxIdle := p.maxIdlePerAccount(); maxIdle > 0 && target > maxIdle {
+		target = maxIdle
+	}
+	if target > concurrency {
+		target = concurrency
+	}
+	return target
 }
 
 // neutralMaxConns is retained for legacy tests/callers; new pool behavior uses
@@ -1579,6 +1599,85 @@ func (p *openAIWSConnPool) logConnEvict(conn *openAIWSConn, reason string) {
 	)
 }
 
+func (p *openAIWSConnPool) idleConnEvictionReason(conn *openAIWSConn, now time.Time) string {
+	if conn == nil {
+		return ""
+	}
+	if maxAge := p.maxConnAge(); maxAge > 0 && conn.age(now) >= maxAge {
+		return "conn_max_age"
+	}
+	switch conn.profile {
+	case openAIWSConnProfileSessionBound:
+		if ttl := p.sessionIdleTTL(); ttl > 0 && now.Sub(conn.lastUsedAt()) >= ttl {
+			return "session_idle_ttl"
+		}
+	case openAIWSConnProfileNeutral:
+		if ttl := p.neutralIdleTTL(); ttl > 0 && now.Sub(conn.lastUsedAt()) >= ttl {
+			return "neutral_idle_ttl"
+		}
+	}
+	return ""
+}
+
+func (p *openAIWSConnPool) acquireIdleConnEvictionReason(conn *openAIWSConn, now time.Time) string {
+	if reason := p.idleConnEvictionReason(conn, now); reason != "" {
+		return reason
+	}
+	if conn != nil && conn.profile == openAIWSConnProfileNeutral && openAIWSNeutralAcquireStaleIdle > 0 &&
+		now.Sub(conn.lastUsedAt()) >= openAIWSNeutralAcquireStaleIdle {
+		return "neutral_acquire_stale_idle"
+	}
+	return ""
+}
+
+func (p *openAIWSConnPool) removeConnLocked(ap *openAIWSAccountPool, conn *openAIWSConn, reason string) {
+	if ap == nil || conn == nil {
+		return
+	}
+	p.logConnEvict(conn, reason)
+	deleteOpenAIWSAccountConnLocked(ap, conn.id)
+	if len(ap.pinnedConns) > 0 {
+		delete(ap.pinnedConns, conn.id)
+	}
+}
+
+func (p *openAIWSConnPool) cleanupExpiredReusableConnsLocked(ap *openAIWSAccountPool, now time.Time) []*openAIWSConn {
+	if ap == nil {
+		return nil
+	}
+	evicted := make([]*openAIWSConn, 0)
+	for id, conn := range ap.conns {
+		if conn == nil {
+			deleteOpenAIWSAccountConnLocked(ap, id)
+			if len(ap.pinnedConns) > 0 {
+				delete(ap.pinnedConns, id)
+			}
+			continue
+		}
+		select {
+		case <-conn.closedCh:
+			p.removeConnLocked(ap, conn, "closed")
+			evicted = append(evicted, conn)
+			continue
+		default:
+		}
+		if p.isConnPinnedLocked(ap, id) || conn.isLeased() || conn.waiters.Load() > 0 {
+			continue
+		}
+		reason := p.acquireIdleConnEvictionReason(conn, now)
+		if reason == "" {
+			continue
+		}
+		p.removeConnLocked(ap, conn, reason)
+		evicted = append(evicted, conn)
+		p.metrics.scaleDownTotal.Add(1)
+		if reason == "neutral_acquire_stale_idle" {
+			p.metrics.acquireStaleEvict.Add(1)
+		}
+	}
+	return evicted
+}
+
 func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now time.Time, accountConcurrency int) []*openAIWSConn {
 	if ap == nil {
 		return nil
@@ -1610,7 +1709,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 		if p.isConnPinnedLocked(ap, id) || conn.isLeased() || conn.waiters.Load() > 0 {
 			continue
 		}
-		if maxAge > 0 && conn.age(now) > maxAge {
+		if maxAge > 0 && conn.age(now) >= maxAge {
 			p.logConnEvict(conn, "conn_max_age")
 			deleteOpenAIWSAccountConnLocked(ap, id)
 			if len(ap.pinnedConns) > 0 {
@@ -1620,7 +1719,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 			p.metrics.scaleDownTotal.Add(1)
 			continue
 		}
-		if conn.profile == openAIWSConnProfileSessionBound && sessionIdleTTL > 0 && now.Sub(conn.lastUsedAt()) > sessionIdleTTL {
+		if conn.profile == openAIWSConnProfileSessionBound && sessionIdleTTL > 0 && now.Sub(conn.lastUsedAt()) >= sessionIdleTTL {
 			p.logConnEvict(conn, "session_idle_ttl")
 			deleteOpenAIWSAccountConnLocked(ap, id)
 			if len(ap.pinnedConns) > 0 {
@@ -1630,7 +1729,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 			p.metrics.scaleDownTotal.Add(1)
 			continue
 		}
-		if conn.profile == openAIWSConnProfileNeutral && neutralIdleTTL > 0 && now.Sub(conn.lastUsedAt()) > neutralIdleTTL {
+		if conn.profile == openAIWSConnProfileNeutral && neutralIdleTTL > 0 && now.Sub(conn.lastUsedAt()) >= neutralIdleTTL {
 			p.logConnEvict(conn, "neutral_idle_ttl")
 			deleteOpenAIWSAccountConnLocked(ap, id)
 			if len(ap.pinnedConns) > 0 {

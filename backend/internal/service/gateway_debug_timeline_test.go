@@ -149,6 +149,7 @@ func TestOpenAIGatewayServiceEmitDebugTimelineEvent_WritesOpenAIMetadata(t *test
 			"openai_ws_mode":        true,
 			"openai_ws_profile":     "session_bound",
 			"openai_ws_conn_reused": true,
+			"transport_path":        "session_ws_incremental_delta",
 			"store_mode":            "incremental",
 			"delta_active":          true,
 		},
@@ -167,8 +168,69 @@ func TestOpenAIGatewayServiceEmitDebugTimelineEvent_WritesOpenAIMetadata(t *test
 	if !strings.Contains(content, `"openai_ws_profile":"session_bound"`) {
 		t.Fatalf("expected ws metadata, got %s", content)
 	}
+	if !strings.Contains(content, `"transport_path":"session_ws_incremental_delta"`) {
+		t.Fatalf("expected transport path metadata, got %s", content)
+	}
 	if strings.Contains(content, `"body":`) {
 		t.Fatalf("OpenAI timeline should remain metadata-only, got %s", content)
+	}
+}
+
+func TestOpenAIGatewayServiceEmitDebugTimelineEvent_WritesOpenAIWSResultBreakdown(t *testing.T) {
+	resetGatewayDebugTimelineStateForTest(t)
+
+	dir := filepath.Join(t.TempDir(), "timeline")
+	settingService := testGatewayDebugTimelineSettingService(t, dir)
+	svc := &OpenAIGatewayService{settingService: settingService}
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.4"}`))
+
+	account := &Account{ID: 67238, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	result := &OpenAIForwardResult{
+		RequestID:            "resp_ws_timeline",
+		UpstreamModel:        "gpt-5.4",
+		OpenAIWSMode:         true,
+		OpenAIWSProfile:      "session_bound",
+		OpenAIWSConnReused:   true,
+		OpenAIWSStoreMode:    "incremental",
+		OpenAIWSDeltaActive:  true,
+		OpenAIWSPayloadBytes: 512,
+		OpenAIWSDeltaItems:   1,
+		OpenAIWSDeltaBytes:   128,
+		OpenAIWSFullItems:    42,
+		OpenAIWSFullBytes:    8192,
+		OpenAIWSConnPickMs:   3,
+		OpenAIWSQueueWaitMs:  7,
+	}
+
+	svc.EmitOpenAIGatewayDebugTimelineEvent(c, OpenAIGatewayDebugTimelineEventInput{
+		Stage:          "attempt_finished",
+		EndpointKind:   "responses",
+		RequestStart:   time.Now().Add(-1500 * time.Millisecond),
+		Account:        account,
+		RequestedModel: "gpt-5.4",
+		Stream:         true,
+		OpenAIResult:   result,
+	})
+
+	content := readGatewayDebugTimelineLog(t, dir)
+	for _, expected := range []string{
+		`"store_mode":"incremental"`,
+		`"delta_active":true`,
+		`"payload_bytes":512`,
+		`"delta_items":1`,
+		`"delta_bytes":128`,
+		`"full_items":42`,
+		`"full_bytes":8192`,
+		`"conn_pick_ms":3`,
+		`"queue_wait_ms":7`,
+	} {
+		if !strings.Contains(content, expected) {
+			t.Fatalf("expected %s in timeline event, got %s", expected, content)
+		}
 	}
 }
 

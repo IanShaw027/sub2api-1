@@ -213,7 +213,7 @@ func TestResolveOpenAIWSFallbackErrorResponse(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, http.StatusBadRequest, statusCode)
 		require.Equal(t, "invalid_request_error", errType)
-		require.Equal(t, "previous response not found", clientMessage)
+		require.Equal(t, "OpenAI websocket continuation expired; retry the request without previous_response_id.", clientMessage)
 		require.Equal(t, "previous response not found", upstreamMessage)
 	})
 
@@ -646,4 +646,92 @@ func TestOpenAIWSDiagnosticCompletedLogMessageIncludesTemporaryTTFTAndUsageField
 	require.Contains(t, msg, "cache_read_tokens=800")
 	require.Contains(t, msg, "cache_creation_tokens=16")
 	require.Contains(t, msg, "output_tokens=321")
+}
+
+func TestOpenAIWSReadFailLogMessageIncludesRequestAndConnectionContext(t *testing.T) {
+	msg := openAIWSReadFailLogMessage(openAIWSReadFailLog{
+		RequestID:              "req-read-fail",
+		ClientRequestID:        "client-read-fail",
+		AccountID:              44,
+		AccountType:            AccountTypeOAuth,
+		Model:                  "gpt-5.4",
+		UpstreamModel:          "gpt-5.4-codex",
+		ConnProfile:            openAIWSConnProfileSessionBound,
+		ConnID:                 "oa_ws_44_2",
+		ConnReused:             true,
+		Transport:              string(OpenAIUpstreamTransportResponsesWebsocketV2),
+		Attempt:                2,
+		ConnPickMs:             5,
+		QueueWaitMs:            7,
+		PayloadBytes:           1234,
+		PreviousResponseID:     "resp_prev_read_fail",
+		PreviousResponseIDKind: OpenAIPreviousResponseIDKindResponseID,
+		StoreMode:              openAIWSStoreModeIncremental,
+		StoreEnabled:           true,
+		StoreDisabled:          false,
+		SessionHash:            "abcdef1234567890",
+		HasPromptCacheKey:      true,
+		HasTurnState:           true,
+		TurnStateLen:           22,
+		ProxyEnabled:           true,
+		ProxyID:                57,
+		WroteDownstream:        true,
+		CloseStatus:            "1006",
+		CloseReason:            "abnormal closure",
+		Cause:                  "websocket: close 1006",
+		Events:                 198,
+		TokenEvents:            117,
+		TerminalEvents:         0,
+		BufferedPending:        0,
+		BufferedFlushed:        3,
+		FirstEvent:             "response.created",
+		LastEvent:              "response.output_text.delta",
+	})
+
+	require.Contains(t, msg, "read_fail")
+	require.Contains(t, msg, "request_id=req-read-fail")
+	require.Contains(t, msg, "client_request_id=client-read-fail")
+	require.Contains(t, msg, "account_id=44")
+	require.Contains(t, msg, "account_type=oauth")
+	require.Contains(t, msg, "model=gpt-5.4")
+	require.Contains(t, msg, "upstream_model=gpt-5.4-codex")
+	require.Contains(t, msg, "conn_profile=session_bound")
+	require.Contains(t, msg, "conn_id=oa_ws_44_2")
+	require.Contains(t, msg, "conn_reused=true")
+	require.Contains(t, msg, "transport=responses_websockets_v2")
+	require.Contains(t, msg, "attempt=2")
+	require.Contains(t, msg, "conn_pick_ms=5")
+	require.Contains(t, msg, "queue_wait_ms=7")
+	require.Contains(t, msg, "payload_bytes=1234")
+	require.Contains(t, msg, "previous_response_id=resp_prev_read_fail")
+	require.Contains(t, msg, "previous_response_id_kind=response_id")
+	require.Contains(t, msg, "store_mode=incremental")
+	require.Contains(t, msg, "store_enabled=true")
+	require.Contains(t, msg, "store_disabled=false")
+	require.Contains(t, msg, "session_hash=abcdef123456")
+	require.Contains(t, msg, "has_prompt_cache_key=true")
+	require.Contains(t, msg, "has_turn_state=true")
+	require.Contains(t, msg, "turn_state_len=22")
+	require.Contains(t, msg, "proxy_enabled=true")
+	require.Contains(t, msg, "proxy_id=57")
+	require.Contains(t, msg, "wrote_downstream=true")
+	require.Contains(t, msg, "close_status=1006")
+	require.Contains(t, msg, "close_reason=abnormal_closure")
+	require.Contains(t, msg, "events=198")
+	require.Contains(t, msg, "token_events=117")
+	require.Contains(t, msg, "terminal_events=0")
+	require.Contains(t, msg, "last_event=response.output_text.delta")
+}
+
+func TestOpenAIWSTransportPathFromStartClassifiesReuseAndDelta(t *testing.T) {
+	require.Equal(t, "session_bound_ws_reused_incremental_delta", openAIWSTransportPathFromStart(openAIWSDiagnosticStartLog{
+		ConnProfile: openAIWSConnProfileSessionBound,
+		ConnReused:  true,
+		DeltaActive: true,
+	}))
+	require.Equal(t, "neutral_ws_new_full_or_non_delta", openAIWSTransportPathFromStart(openAIWSDiagnosticStartLog{
+		ConnProfile: openAIWSConnProfileNeutral,
+		ConnReused:  false,
+		DeltaActive: false,
+	}))
 }
