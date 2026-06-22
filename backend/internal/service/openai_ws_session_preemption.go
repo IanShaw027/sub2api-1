@@ -39,9 +39,9 @@ type openAIWSSessionPreemptRegistry struct {
 	active map[openAIWSSessionPreemptKey]openAIWSSessionPreemptEntry
 }
 
-func (r *openAIWSSessionPreemptRegistry) Begin(key openAIWSSessionPreemptKey, requestID string, cancel func()) func() {
+func (r *openAIWSSessionPreemptRegistry) Begin(key openAIWSSessionPreemptKey, requestID string, cancel func()) (func(), bool) {
 	if r == nil || strings.TrimSpace(key.sessionHash) == "" {
-		return func() {}
+		return func() {}, false
 	}
 
 	r.mu.Lock()
@@ -70,7 +70,7 @@ func (r *openAIWSSessionPreemptRegistry) Begin(key openAIWSSessionPreemptKey, re
 			return
 		}
 		delete(r.active, key)
-	}
+	}, hadPrevious
 }
 
 func (s *OpenAIGatewayService) beginOpenAIWSSessionPreemptContext(
@@ -81,26 +81,26 @@ func (s *OpenAIGatewayService) beginOpenAIWSSessionPreemptContext(
 	sessionHash string,
 	httpIngressWSOneShot bool,
 	requestID string,
-) (context.Context, func(), bool) {
+) (context.Context, func(), bool, bool) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if s == nil || account == nil || account.Type != AccountTypeOAuth || httpIngressWSOneShot {
-		return ctx, func() {}, false
+		return ctx, func() {}, false, false
 	}
 	key, ok := newOpenAIWSSessionPreemptKey(groupID, apiKeyID, sessionHash)
 	if !ok {
-		return ctx, func() {}, false
+		return ctx, func() {}, false, false
 	}
 
 	preemptCtx, cancel := context.WithCancelCause(ctx)
-	cleanup := s.openaiWSSessionPreemptions.Begin(key, requestID, func() {
+	cleanup, preemptedPrevious := s.openaiWSSessionPreemptions.Begin(key, requestID, func() {
 		cancel(errOpenAIWSSessionPreempted)
 	})
 	return preemptCtx, func() {
 		cleanup()
 		cancel(nil)
-	}, true
+	}, true, preemptedPrevious
 }
 
 func isOpenAIWSSessionPreempted(ctx context.Context) bool {

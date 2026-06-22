@@ -1194,6 +1194,11 @@ func TestOpenAIGatewayService_Forward_WSv2_SameSessionPreemptsInFlightRequest(t 
 	case <-time.After(time.Second):
 		t.Fatal("first same-session request was not preempted promptly")
 	}
+
+	firstConn.mu.Lock()
+	firstClosed := firstConn.closed
+	firstConn.mu.Unlock()
+	require.True(t, firstClosed, "preempted request must close its upstream WS instead of returning it to the pool")
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_OAuthUnboundPreviousResponseFallsBackStoreFalseNewConn(t *testing.T) {

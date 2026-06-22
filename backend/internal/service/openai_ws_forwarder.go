@@ -2642,7 +2642,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		sessionHash = ""
 	}
 	requestID, clientRequestID := openAIWSRequestLogIDs(c)
-	if preemptCtx, cleanupPreempt, preemptEnabled := s.beginOpenAIWSSessionPreemptContext(
+	sessionPreemptedPrevious := false
+	if preemptCtx, cleanupPreempt, preemptEnabled, preemptedPrevious := s.beginOpenAIWSSessionPreemptContext(
 		ctx,
 		account,
 		groupID,
@@ -2652,16 +2653,32 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		requestID,
 	); preemptEnabled {
 		ctx = preemptCtx
+		sessionPreemptedPrevious = preemptedPrevious
 		defer cleanupPreempt()
 		logOpenAIWSModeInfo(
-			"session_preempt_register account_id=%d account_type=%s request_id=%s session_hash=%s",
+			"session_preempt_register account_id=%d account_type=%s request_id=%s session_hash=%s preempted_previous=%v",
 			account.ID,
 			account.Type,
 			truncateOpenAIWSLogValue(requestID, openAIWSIDValueMaxLen),
 			truncateOpenAIWSLogValue(sessionHash, 12),
+			sessionPreemptedPrevious,
 		)
 	}
-	if turnState == "" && stateStore != nil && sessionHash != "" {
+	if sessionPreemptedPrevious && stateStore != nil && sessionHash != "" {
+		stateStore.DeleteSessionTurnState(groupID, sessionHash)
+		stateStore.DeleteSessionConn(groupID, sessionHash)
+		stateStore.DeleteSessionContext(groupID, apiKeyID, sessionHash)
+		storeDecision.PreferredConnID = ""
+		storeDecision.ConnAffinityHit = false
+		storeDecision.StickyAccountHit = false
+		storeDecision.FallbackReason = "session_preempted_full_replay"
+		delete(payload, "previous_response_id")
+		payload["store"] = false
+		previousResponseID = ""
+		previousResponseIDKind = ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
+		turnState = ""
+	}
+	if turnState == "" && !sessionPreemptedPrevious && stateStore != nil && sessionHash != "" {
 		if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, sessionHash); ok {
 			turnState = savedTurnState
 		}
@@ -2675,7 +2692,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	storeDisabled := openAIWSPayloadStoreDisabled(payload)
 	storeEnabled := openAIWSPayloadStoreEnabled(payload)
 	forceNewConnForRecoveredFullReplay := shouldForceNewConnOnRecoveredFullReplay(lastFailureReason)
-	if !forceNewConnForRecoveredFullReplay && !httpIngressWSOneShot && stateStore != nil && storeDisabled && previousResponseID == "" && sessionHash != "" {
+	if !sessionPreemptedPrevious && !forceNewConnForRecoveredFullReplay && !httpIngressWSOneShot && stateStore != nil && storeDisabled && previousResponseID == "" && sessionHash != "" {
 		if connID, ok := stateStore.GetSessionConn(groupID, sessionHash); ok {
 			preferredConnID = connID
 			connAffinityHit = true
@@ -2691,6 +2708,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 	allowDeltaConnReanchor := shouldAllowOpenAIWSDeltaConnReanchor(lastFailureReason, stateStore, groupID, apiKeyID, sessionHash, account)
 	if allowDeltaConnReanchor {
+		forceNewConn = true
+	}
+	if sessionPreemptedPrevious {
+		preferredConnID = ""
+		connAffinityHit = false
+		allowDeltaConnReanchor = false
 		forceNewConn = true
 	}
 	connProfile := openAIWSConnProfileSessionBound
@@ -2870,7 +2893,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	activeDeltaLog := openAIWSDeltaShadowLog{}
 	activeDeltaApplied := false
 	shadowOwner := false
-	if deltaShadowEnabled && !httpIngressWSOneShot && stateStore != nil && sessionHash != "" {
+	if deltaShadowEnabled && !sessionPreemptedPrevious && !httpIngressWSOneShot && stateStore != nil && sessionHash != "" {
 		shadowOwner = stateStore.TrySessionInFlight(groupID, apiKeyID, sessionHash)
 		if !shadowOwner {
 			activeDeltaLog = openAIWSDeltaShadowLog{

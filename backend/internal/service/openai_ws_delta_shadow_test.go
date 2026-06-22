@@ -721,6 +721,131 @@ func TestOpenAIWSActiveDelta_ForwardWSV2SessionBoundSendsOnlyTrailingInput(t *te
 	require.Equal(t, 4, cached.materializedCount, "next context must still be based on full replay input + raw output")
 }
 
+func TestOpenAIWSActiveDelta_SameSessionPreemptReplacementUsesNewFullWS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
+	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.StoreDisabledConnMode = openAIWSStoreDisabledConnModeStrict
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.StickySessionTTLSeconds = 3600
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}`
+	output1 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}`
+	newInput := `{"type":"message","role":"user","content":[{"type":"input_text","text":"again"}]}`
+	output2 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}`
+
+	reusedConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.output_item.done","response_id":"resp_preempt_seed","output_index":0,"item":` + output1 + `}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_preempt_seed","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
+			[]byte(`{"type":"response.output_item.done","response_id":"resp_preempt_reused_delta","output_index":0,"item":` + output2 + `}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_preempt_reused_delta","model":"gpt-5.1","usage":{"input_tokens":4,"output_tokens":2}}}`),
+		},
+	}
+	replacementConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.output_item.done","response_id":"resp_preempt_full","output_index":0,"item":` + output2 + `}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_preempt_full","model":"gpt-5.1","usage":{"input_tokens":6,"output_tokens":2}}}`),
+		},
+	}
+	dialer := &openAIWSQueueDialer{conns: []openAIWSClientConn{reusedConn, replacementConn}}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(dialer)
+	t.Cleanup(pool.Close)
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          78021,
+		Name:        "openai-delta-preempt-full",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{"access_token": "oauth-token-delta-preempt-full"},
+		Extra:       map[string]any{"responses_websockets_v2_enabled": true},
+	}
+
+	groupID := int64(78022)
+	apiKeyID := int64(78023)
+	newContext := func() *gin.Context {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+		c.Request.Header.Set("originator", "codex_exec")
+		c.Request.Header.Set("session_id", "sess-delta-preempt-full")
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+		return c
+	}
+
+	firstCtx := newContext()
+	sessionHash := svc.GenerateSessionHash(firstCtx, nil)
+	require.NotEmpty(t, sessionHash)
+	firstResult, err := svc.Forward(context.Background(), firstCtx, account, []byte(`{"model":"gpt-5.1","stream":true,"input":[`+input1+`]}`))
+	require.NoError(t, err)
+	require.Equal(t, "resp_preempt_seed", firstResult.RequestID)
+
+	key, ok := newOpenAIWSSessionPreemptKey(groupID, apiKeyID, sessionHash)
+	require.True(t, ok)
+	dummyCanceled := make(chan struct{})
+	cleanupDummy, preemptedPrevious := svc.openaiWSSessionPreemptions.Begin(key, "dummy-in-flight", func() { close(dummyCanceled) })
+	defer cleanupDummy()
+	require.False(t, preemptedPrevious)
+
+	secondBody := []byte(`{"model":"gpt-5.1","stream":true,"input":[` + input1 + `,` + output1 + `,` + newInput + `]}`)
+	secondResult, err := svc.Forward(context.Background(), newContext(), account, secondBody)
+	require.NoError(t, err)
+	require.Equal(t, "resp_preempt_full", secondResult.RequestID)
+	require.Equal(t, 2, dialer.DialCount(), "same-session preempt replacement must dial a fresh WS instead of reusing prior session state")
+
+	select {
+	case <-dummyCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("replacement request did not cancel the older in-flight same-session request")
+	}
+
+	reusedConn.mu.Lock()
+	reusedWrites := append([]map[string]any(nil), reusedConn.writes...)
+	reusedClosed := reusedConn.closed
+	reusedConn.mu.Unlock()
+	require.Len(t, reusedWrites, 1, "replacement must not write an active-delta request to the previous session WS")
+	require.False(t, reusedClosed, "idle seed conn is superseded by state cleanup, not by this dummy request owning its lease")
+
+	replacementConn.mu.Lock()
+	replacementWrites := append([]map[string]any(nil), replacementConn.writes...)
+	replacementConn.mu.Unlock()
+	require.Len(t, replacementWrites, 1)
+	replacementWrite := requestToJSONString(replacementWrites[0])
+	require.False(t, gjson.Get(replacementWrite, "previous_response_id").Exists(), "preempt replacement must not anchor to old session response")
+	require.True(t, gjson.Get(replacementWrite, "store").Exists())
+	require.False(t, gjson.Get(replacementWrite, "store").Bool())
+	require.Len(t, gjson.Get(replacementWrite, "input").Array(), 3, "preempt replacement must send the full replay payload")
+	require.Equal(t, "again", gjson.Get(replacementWrite, "input.2.content.0.text").String())
+}
+
 func TestOpenAIWSActiveDelta_ForwardWSV2BindsInputOnlyContextWithoutOutputCapture(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

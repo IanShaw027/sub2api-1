@@ -13,15 +13,18 @@ func TestOpenAIWSSessionPreemptRegistry_BeginCancelsPreviousSameSessionOnly(t *t
 	otherKey := openAIWSSessionPreemptKey{groupID: 7, apiKeyID: 12, sessionHash: "sess"}
 
 	firstCtx, firstCancel := context.WithCancel(context.Background())
-	firstCleanup := registry.Begin(key, "req_1", firstCancel)
+	firstCleanup, preemptedPrevious := registry.Begin(key, "req_1", firstCancel)
 	t.Cleanup(firstCleanup)
+	require.False(t, preemptedPrevious)
 
 	otherCtx, otherCancel := context.WithCancel(context.Background())
-	otherCleanup := registry.Begin(otherKey, "req_other", otherCancel)
+	otherCleanup, preemptedPrevious := registry.Begin(otherKey, "req_other", otherCancel)
 	t.Cleanup(otherCleanup)
+	require.False(t, preemptedPrevious)
 
 	secondCtx, secondCancel := context.WithCancel(context.Background())
-	secondCleanup := registry.Begin(key, "req_2", secondCancel)
+	secondCleanup, preemptedPrevious := registry.Begin(key, "req_2", secondCancel)
+	require.True(t, preemptedPrevious)
 
 	require.ErrorIs(t, firstCtx.Err(), context.Canceled, "new same-session request must cancel the previous in-flight request")
 	require.NoError(t, secondCtx.Err(), "current request must remain active")
@@ -34,7 +37,8 @@ func TestOpenAIWSSessionPreemptRegistry_BeginCancelsPreviousSameSessionOnly(t *t
 	require.NoError(t, secondCtx.Err(), "own cleanup unregisters without canceling the completed request")
 
 	replacementCtx, replacementCancel := context.WithCancel(context.Background())
-	replacementCleanup := registry.Begin(key, "req_3", replacementCancel)
+	replacementCleanup, preemptedPrevious := registry.Begin(key, "req_3", replacementCancel)
 	defer replacementCleanup()
+	require.False(t, preemptedPrevious)
 	require.NoError(t, replacementCtx.Err(), "completed registration should not block later same-session requests")
 }
