@@ -11,6 +11,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/draw"
+	_ "image/jpeg"
+	"image/png"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -33,6 +37,8 @@ import (
 	"github.com/imroc/req/v3"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	xdraw "golang.org/x/image/draw"
+	_ "golang.org/x/image/webp"
 )
 
 const (
@@ -344,6 +350,7 @@ func (s *OpenAIGatewayService) ParseOpenAIImagesRequest(c *gin.Context, body []b
 	if err := validateOpenAIImagesModel(req.Model); err != nil {
 		return nil, err
 	}
+	req.Size = normalizeOpenAIImageSize(req.Size)
 	if err := validateOpenAIImageSize(req.Size); err != nil {
 		return nil, err
 	}
@@ -591,6 +598,9 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 	if len(req.Uploads) == 0 && req.IsEdits() {
 		return fmt.Errorf("image file is required")
 	}
+	if err := normalizeOpenAIImagesMaskUpload(req); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -611,8 +621,117 @@ func readAllWithLimitDetection(r io.Reader, limit int64) ([]byte, error) {
 	return data, nil
 }
 
-func parseOpenAIImageDimensions(_ textproto.MIMEHeader) (int, int) {
+func parseOpenAIImageDimensions(header textproto.MIMEHeader) (int, int) {
+	for _, keys := range [][]string{
+		{"X-Image-Width", "X-Image-Height"},
+		{"Width", "Height"},
+	} {
+		width, _ := strconv.Atoi(strings.TrimSpace(header.Get(keys[0])))
+		height, _ := strconv.Atoi(strings.TrimSpace(header.Get(keys[1])))
+		if width > 0 && height > 0 {
+			return width, height
+		}
+	}
 	return 0, 0
+}
+
+func openAIImageDimensionsFromBytes(data []byte) (int, int, bool) {
+	if len(data) == 0 {
+		return 0, 0, false
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return 0, 0, false
+	}
+	return cfg.Width, cfg.Height, true
+}
+
+func validateOpenAIImageDecodePixelLimit(label string, width, height int) error {
+	if width <= 0 || height <= 0 {
+		return fmt.Errorf("%s dimensions are invalid", label)
+	}
+	totalPixels := int64(width) * int64(height)
+	if totalPixels > openAIImageMaxPixels {
+		return fmt.Errorf("%s exceeds %d pixels", label, openAIImageMaxPixels)
+	}
+	return nil
+}
+
+func resizeOpenAIImageMask(maskData []byte, width, height int) ([]byte, error) {
+	if len(maskData) == 0 || width <= 0 || height <= 0 {
+		return maskData, nil
+	}
+	if err := validateOpenAIImageDecodePixelLimit("mask resize target", width, height); err != nil {
+		return nil, err
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(maskData))
+	if err != nil {
+		return nil, fmt.Errorf("decode mask image: %w", err)
+	}
+	if err := validateOpenAIImageDecodePixelLimit("mask image", cfg.Width, cfg.Height); err != nil {
+		return nil, err
+	}
+	if cfg.Width == width && cfg.Height == height {
+		return maskData, nil
+	}
+	src, _, err := image.Decode(bytes.NewReader(maskData))
+	if err != nil {
+		return nil, fmt.Errorf("decode mask image: %w", err)
+	}
+	bounds := src.Bounds()
+	if err := validateOpenAIImageDecodePixelLimit("decoded mask image", bounds.Dx(), bounds.Dy()); err != nil {
+		return nil, err
+	}
+	if bounds.Dx() == width && bounds.Dy() == height {
+		return maskData, nil
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, width, height))
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, bounds, draw.Src, nil)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, dst); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func normalizeOpenAIImagesMaskUpload(req *OpenAIImagesRequest) error {
+	if req == nil || req.MaskUpload == nil || len(req.Uploads) == 0 {
+		return nil
+	}
+	imageUpload := &req.Uploads[0]
+	if imageUpload.Width <= 0 || imageUpload.Height <= 0 {
+		if width, height, ok := openAIImageDimensionsFromBytes(imageUpload.Data); ok {
+			imageUpload.Width = width
+			imageUpload.Height = height
+		}
+	}
+	if req.MaskUpload.Width <= 0 || req.MaskUpload.Height <= 0 {
+		if width, height, ok := openAIImageDimensionsFromBytes(req.MaskUpload.Data); ok {
+			req.MaskUpload.Width = width
+			req.MaskUpload.Height = height
+		}
+	}
+	if imageUpload.Width <= 0 || imageUpload.Height <= 0 || req.MaskUpload.Width <= 0 || req.MaskUpload.Height <= 0 {
+		return nil
+	}
+	if imageUpload.Width == req.MaskUpload.Width && imageUpload.Height == req.MaskUpload.Height {
+		return nil
+	}
+	resized, err := resizeOpenAIImageMask(req.MaskUpload.Data, imageUpload.Width, imageUpload.Height)
+	if err != nil {
+		return err
+	}
+	if len(resized) == 0 {
+		return nil
+	}
+	req.MaskUpload.Data = resized
+	req.MaskUpload.Width = imageUpload.Width
+	req.MaskUpload.Height = imageUpload.Height
+	req.MaskUpload.ContentType = "image/png"
+	if strings.TrimSpace(req.MaskUpload.FileName) == "" {
+		req.MaskUpload.FileName = "mask.png"
+	}
+	return nil
 }
 
 func applyOpenAIImagesDefaults(req *OpenAIImagesRequest) {
@@ -793,6 +912,29 @@ func parseOpenAIImageSizeDimensions(size string) (int, int, bool) {
 		return 0, 0, false
 	}
 	return width, height, true
+}
+
+func normalizeOpenAIImageSize(size string) string {
+	trimmed := strings.TrimSpace(size)
+	if trimmed == "" || strings.EqualFold(trimmed, "auto") {
+		if strings.EqualFold(trimmed, "auto") {
+			return "auto"
+		}
+		return ""
+	}
+	switch strings.ToLower(trimmed) {
+	case "1k":
+		return "1024x1024"
+	case "2k":
+		return "2048x2048"
+	case "4k":
+		return "3840x2160"
+	}
+	width, height, ok := parseOpenAIImageSizeDimensions(trimmed)
+	if !ok {
+		return trimmed
+	}
+	return fmt.Sprintf("%dx%d", width, height)
 }
 
 func validateOpenAIImageSize(size string) error {
@@ -1141,19 +1283,103 @@ func normalizeOpenAIImagesForwardBody(body []byte, contentType string, parsed *O
 	if parsed == nil {
 		return body, contentType, nil
 	}
-	if strings.ToLower(strings.TrimSpace(parsed.Model)) != "gpt-image-2" || strings.TrimSpace(parsed.Background) != "" {
-		return body, contentType, nil
-	}
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err == nil && strings.EqualFold(mediaType, "multipart/form-data") {
-		rewrittenBody, rewrittenType, rewriteErr := rewriteOpenAIImagesMultipartWithoutField(body, contentType, "background")
+		rewrittenBody, rewrittenType, rewriteErr := rewriteOpenAIImagesMultipartForParsedRequest(body, contentType, parsed)
 		return rewrittenBody, rewrittenType, rewriteErr
 	}
-	rewritten, err := sjson.DeleteBytes(body, "background")
-	if err != nil {
-		return nil, "", fmt.Errorf("rewrite image request background: %w", err)
+	rewritten := body
+	if strings.TrimSpace(parsed.Size) != "" {
+		rewritten, err = sjson.SetBytes(rewritten, "size", parsed.Size)
+		if err != nil {
+			return nil, "", fmt.Errorf("rewrite image request size: %w", err)
+		}
+	}
+	if strings.ToLower(strings.TrimSpace(parsed.Model)) == "gpt-image-2" && strings.TrimSpace(parsed.Background) == "" {
+		rewritten, err = sjson.DeleteBytes(rewritten, "background")
+		if err != nil {
+			return nil, "", fmt.Errorf("rewrite image request background: %w", err)
+		}
 	}
 	return rewritten, contentType, nil
+}
+
+func rewriteOpenAIImagesMultipartForParsedRequest(body []byte, contentType string, parsed *OpenAIImagesRequest) ([]byte, string, error) {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse multipart content-type: %w", err)
+	}
+	boundary := strings.TrimSpace(params["boundary"])
+	if boundary == "" {
+		return nil, "", fmt.Errorf("multipart boundary is required")
+	}
+
+	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	var buffer bytes.Buffer
+	writer := multipart.NewWriter(&buffer)
+	sizeWritten := false
+	skipBackground := strings.ToLower(strings.TrimSpace(parsed.Model)) == "gpt-image-2" && strings.TrimSpace(parsed.Background) == ""
+
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("read multipart body: %w", err)
+		}
+
+		formName := strings.TrimSpace(part.FormName())
+		fileName := strings.TrimSpace(part.FileName())
+		if fileName == "" && skipBackground && formName == "background" {
+			_ = part.Close()
+			continue
+		}
+		if fileName == "" && formName == "size" && strings.TrimSpace(parsed.Size) != "" {
+			if err := writer.WriteField("size", parsed.Size); err != nil {
+				_ = part.Close()
+				return nil, "", fmt.Errorf("rewrite multipart size: %w", err)
+			}
+			sizeWritten = true
+			_ = part.Close()
+			continue
+		}
+
+		partHeader := cloneMultipartHeader(part.Header)
+		var partDataOverride []byte
+		if formName == "mask" && parsed.MaskUpload != nil && len(parsed.MaskUpload.Data) > 0 {
+			partDataOverride = parsed.MaskUpload.Data
+			partHeader.Set("Content-Type", coalesceOpenAIFileName(parsed.MaskUpload.ContentType, "image/png"))
+		}
+		target, err := writer.CreatePart(partHeader)
+		if err != nil {
+			_ = part.Close()
+			return nil, "", fmt.Errorf("create multipart part: %w", err)
+		}
+		if partDataOverride != nil {
+			if _, err := target.Write(partDataOverride); err != nil {
+				_ = part.Close()
+				return nil, "", fmt.Errorf("rewrite multipart mask: %w", err)
+			}
+			_ = part.Close()
+			continue
+		}
+		if _, err := io.Copy(target, part); err != nil {
+			_ = part.Close()
+			return nil, "", fmt.Errorf("copy multipart part: %w", err)
+		}
+		_ = part.Close()
+	}
+
+	if !sizeWritten && strings.TrimSpace(parsed.Size) != "" {
+		if err := writer.WriteField("size", parsed.Size); err != nil {
+			return nil, "", fmt.Errorf("append multipart size field: %w", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, "", fmt.Errorf("finalize multipart body: %w", err)
+	}
+	return buffer.Bytes(), writer.FormDataContentType(), nil
 }
 
 func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model string) ([]byte, string, error) {

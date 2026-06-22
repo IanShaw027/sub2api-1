@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"sync"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
 
 type openAIImagesHTTPUpstreamRecorder struct {
+	mu       sync.Mutex
 	lastReq  *http.Request
 	lastBody []byte
 	requests []*http.Request
@@ -20,6 +22,8 @@ type openAIImagesHTTPUpstreamRecorder struct {
 }
 
 func (u *openAIImagesHTTPUpstreamRecorder) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	u.lastReq = req
 	if req != nil && req.Body != nil {
 		b, _ := io.ReadAll(req.Body)
