@@ -83,6 +83,8 @@ type TLSFingerprintCaptureRepository interface {
 	GetTaskByID(ctx context.Context, id int64) (*TLSFingerprintCaptureTask, error)
 	GetRunningTaskByToken(ctx context.Context, token string) (*TLSFingerprintCaptureTask, error)
 	UpdateTask(ctx context.Context, task *TLSFingerprintCaptureTask) (*TLSFingerprintCaptureTask, error)
+	DeleteTask(ctx context.Context, id int64) error
+	DeleteSamplesByTask(ctx context.Context, taskID int64) error
 	CreateSampleIfAbsent(ctx context.Context, sample *TLSFingerprintCaptureSample) (*TLSFingerprintCaptureSample, bool, error)
 	GetSampleByTaskHash(ctx context.Context, taskID int64, fingerprintHash string) (*TLSFingerprintCaptureSample, error)
 	ListSamplesByTask(ctx context.Context, taskID int64) ([]*TLSFingerprintCaptureSample, error)
@@ -189,6 +191,51 @@ func (s *TLSFingerprintCaptureService) StopTask(ctx context.Context, id int64) (
 	now := time.Now().UTC()
 	task.Status = TLSFingerprintCaptureStatusStopped
 	task.CompletedAt = &now
+	updated, err := s.repo.UpdateTask(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+	return s.decorateCaptureTask(updated), nil
+}
+
+func (s *TLSFingerprintCaptureService) DeleteTask(ctx context.Context, id int64) error {
+	task, err := s.GetTaskByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if task == nil {
+		return &model.ValidationError{Field: "id", Message: "capture task not found"}
+	}
+	if task.Status == TLSFingerprintCaptureStatusRunning {
+		return &model.ValidationError{Field: "status", Message: "cannot delete a running task; stop it first"}
+	}
+	if err := s.repo.DeleteSamplesByTask(ctx, id); err != nil {
+		return err
+	}
+	return s.repo.DeleteTask(ctx, id)
+}
+
+func (s *TLSFingerprintCaptureService) RestartTask(ctx context.Context, id int64) (*TLSFingerprintCaptureTask, error) {
+	task, err := s.GetTaskByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, &model.ValidationError{Field: "id", Message: "capture task not found"}
+	}
+	if task.Status == TLSFingerprintCaptureStatusRunning {
+		return nil, &model.ValidationError{Field: "status", Message: "task is already running"}
+	}
+	token, err := newTLSFingerprintCaptureToken()
+	if err != nil {
+		return nil, err
+	}
+	task.Status = TLSFingerprintCaptureStatusRunning
+	task.Token = token
+	task.CompletedAt = nil
+	for platform := range task.Counts {
+		task.Counts[platform] = 0
+	}
 	updated, err := s.repo.UpdateTask(ctx, task)
 	if err != nil {
 		return nil, err

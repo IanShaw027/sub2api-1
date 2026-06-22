@@ -137,6 +137,31 @@ func (r *tlsFingerprintCaptureRepoStub) ListSamplesByTask(_ context.Context, tas
 	return out, nil
 }
 
+func (r *tlsFingerprintCaptureRepoStub) DeleteTask(_ context.Context, id int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i, task := range r.tasks {
+		if task.ID == id {
+			r.tasks = append(r.tasks[:i], r.tasks[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}
+
+func (r *tlsFingerprintCaptureRepoStub) DeleteSamplesByTask(_ context.Context, taskID int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	filtered := r.samples[:0]
+	for _, sample := range r.samples {
+		if sample.TaskID != taskID {
+			filtered = append(filtered, sample)
+		}
+	}
+	r.samples = filtered
+	return nil
+}
+
 func cloneTLSFingerprintCaptureTask(task *TLSFingerprintCaptureTask) *TLSFingerprintCaptureTask {
 	if task == nil {
 		return nil

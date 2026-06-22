@@ -89,6 +89,22 @@
               >
                 {{ t('admin.tlsFingerprintProfiles.capture.stop') }}
               </button>
+              <button
+                v-if="selectedTask && selectedTask.status !== 'running'"
+                @click="restartSelectedTask"
+                :disabled="captureSubmitting"
+                class="btn btn-secondary btn-sm"
+              >
+                {{ t('admin.tlsFingerprintProfiles.capture.restart') }}
+              </button>
+              <button
+                v-if="selectedTask && selectedTask.status !== 'running'"
+                @click="showDeleteTaskDialog = true"
+                :disabled="captureSubmitting"
+                class="btn btn-danger btn-sm"
+              >
+                {{ t('admin.tlsFingerprintProfiles.capture.delete') }}
+              </button>
             </template>
           </div>
         </div>
@@ -651,6 +667,17 @@
       @confirm="confirmDelete"
       @cancel="showDeleteDialog = false"
     />
+
+    <ConfirmDialog
+      :show="showDeleteTaskDialog"
+      :title="t('admin.tlsFingerprintProfiles.capture.delete')"
+      :message="t('admin.tlsFingerprintProfiles.capture.deleteConfirmMessage', { name: selectedTask?.name })"
+      :confirm-text="t('common.delete')"
+      :cancel-text="t('common.cancel')"
+      :danger="true"
+      @confirm="confirmDeleteTask"
+      @cancel="showDeleteTaskDialog = false"
+    />
   </BaseDialog>
 </template>
 
@@ -987,6 +1014,47 @@ const stopSelectedTask = async () => {
     appStore.showError(error?.message || t('admin.tlsFingerprintProfiles.capture.stopFailed'))
     console.error('Error stopping TLS fingerprint capture task:', error)
   } finally {
+    captureSubmitting.value = false
+  }
+}
+
+const restartSelectedTask = async () => {
+  if (!selectedTask.value) return
+  captureSubmitting.value = true
+  try {
+    const task = await adminAPI.tlsFingerprintProfiles.restartCaptureTask(selectedTask.value.id)
+    captureTasks.value = captureTasks.value.map(item => item.id === task.id ? task : item)
+    startCapturePolling()
+    appStore.showSuccess(t('admin.tlsFingerprintProfiles.capture.restartSuccess'))
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.tlsFingerprintProfiles.capture.restartFailed'))
+    console.error('Error restarting TLS fingerprint capture task:', error)
+  } finally {
+    captureSubmitting.value = false
+  }
+}
+
+const showDeleteTaskDialog = ref(false)
+
+const confirmDeleteTask = async () => {
+  if (!selectedTask.value) return
+  captureSubmitting.value = true
+  try {
+    await adminAPI.tlsFingerprintProfiles.deleteCaptureTask(selectedTask.value.id)
+    captureTasks.value = captureTasks.value.filter(item => item.id !== selectedTask.value!.id)
+    selectedTaskID.value = captureTasks.value[0]?.id || null
+    captureSamples.value = []
+    selectedSampleIDs.value = []
+    if (captureTasks.value.length === 0) {
+      captureView.value = 'form'
+    }
+    updateCapturePollingState()
+    appStore.showSuccess(t('admin.tlsFingerprintProfiles.capture.deleteSuccess'))
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.tlsFingerprintProfiles.capture.deleteFailed'))
+    console.error('Error deleting TLS fingerprint capture task:', error)
+  } finally {
+    showDeleteTaskDialog.value = false
     captureSubmitting.value = false
   }
 }

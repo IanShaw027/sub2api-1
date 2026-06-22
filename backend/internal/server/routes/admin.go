@@ -708,6 +708,8 @@ func registerTLSFingerprintProfileRoutes(admin *gin.RouterGroup, h *handler.Hand
 		profiles.POST("/capture-tasks", h.Admin.TLSFingerprintProfile.StartCaptureTask)
 		profiles.GET("/capture-tasks/:id", h.Admin.TLSFingerprintProfile.GetCaptureTask)
 		profiles.POST("/capture-tasks/:id/stop", h.Admin.TLSFingerprintProfile.StopCaptureTask)
+		profiles.POST("/capture-tasks/:id/restart", h.Admin.TLSFingerprintProfile.RestartCaptureTask)
+		profiles.DELETE("/capture-tasks/:id", h.Admin.TLSFingerprintProfile.DeleteCaptureTask)
 		profiles.GET("/capture-tasks/:id/samples", h.Admin.TLSFingerprintProfile.ListCaptureSamples)
 		profiles.POST("/capture-tasks/:id/import", h.Admin.TLSFingerprintProfile.ImportCaptureTaskSamples)
 		profiles.GET("/:id", h.Admin.TLSFingerprintProfile.GetByID)

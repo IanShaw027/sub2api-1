@@ -175,6 +175,16 @@ export async function stopCaptureTask(id: number): Promise<TLSFingerprintCapture
   return data
 }
 
+export async function restartCaptureTask(id: number): Promise<TLSFingerprintCaptureTask> {
+  const { data } = await apiClient.post<TLSFingerprintCaptureTask>(`/admin/tls-fingerprint-profiles/capture-tasks/${id}/restart`)
+  return data
+}
+
+export async function deleteCaptureTask(id: number): Promise<{ message: string }> {
+  const { data } = await apiClient.delete<{ message: string }>(`/admin/tls-fingerprint-profiles/capture-tasks/${id}`)
+  return data
+}
+
 export async function listCaptureSamples(taskId: number): Promise<TLSFingerprintCaptureSample[]> {
   const { data } = await apiClient.get<TLSFingerprintCaptureSample[]>(`/admin/tls-fingerprint-profiles/capture-tasks/${taskId}/samples`)
   return data
@@ -201,6 +211,8 @@ export const tlsFingerprintProfileAPI = {
   startCaptureTask,
   getCaptureTask,
   stopCaptureTask,
+  restartCaptureTask,
+  deleteCaptureTask,
   listCaptureSamples,
   importCaptureTaskSamples
 }

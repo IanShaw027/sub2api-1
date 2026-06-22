@@ -94,6 +94,17 @@ func (r *tlsFingerprintCaptureRepository) UpdateTask(ctx context.Context, task *
 	return tlsCaptureTaskToService(updated), nil
 }
 
+func (r *tlsFingerprintCaptureRepository) DeleteTask(ctx context.Context, id int64) error {
+	return r.client.TLSFingerprintCaptureTask.DeleteOneID(id).Exec(ctx)
+}
+
+func (r *tlsFingerprintCaptureRepository) DeleteSamplesByTask(ctx context.Context, taskID int64) error {
+	_, err := r.client.TLSFingerprintCaptureSample.Delete().
+		Where(tlsfingerprintcapturesample.TaskID(taskID)).
+		Exec(ctx)
+	return err
+}
+
 func (r *tlsFingerprintCaptureRepository) CreateSampleIfAbsent(ctx context.Context, sample *service.TLSFingerprintCaptureSample) (*service.TLSFingerprintCaptureSample, bool, error) {
 	profile := sample.Profile
 	if profile == nil {

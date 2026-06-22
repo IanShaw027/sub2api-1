@@ -263,6 +263,46 @@ func (h *TLSFingerprintProfileHandler) StopCaptureTask(c *gin.Context) {
 	response.Success(c, task)
 }
 
+// DeleteCaptureTask deletes a stopped/completed capture task and its samples.
+// DELETE /api/v1/admin/tls-fingerprint-profiles/capture-tasks/:id
+func (h *TLSFingerprintProfileHandler) DeleteCaptureTask(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid capture task ID")
+		return
+	}
+	err = h.captureService.DeleteTask(c.Request.Context(), id)
+	if err != nil {
+		if _, ok := err.(*model.ValidationError); ok {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "capture task deleted"})
+}
+
+// RestartCaptureTask restarts a stopped/completed capture task with a new token.
+// POST /api/v1/admin/tls-fingerprint-profiles/capture-tasks/:id/restart
+func (h *TLSFingerprintProfileHandler) RestartCaptureTask(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid capture task ID")
+		return
+	}
+	task, err := h.captureService.RestartTask(c.Request.Context(), id)
+	if err != nil {
+		if _, ok := err.(*model.ValidationError); ok {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, task)
+}
+
 // ListCaptureSamples lists samples captured by one task.
 // GET /api/v1/admin/tls-fingerprint-profiles/capture-tasks/:id/samples
 func (h *TLSFingerprintProfileHandler) ListCaptureSamples(c *gin.Context) {
