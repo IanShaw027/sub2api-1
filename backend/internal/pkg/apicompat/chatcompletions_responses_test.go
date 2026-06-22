@@ -762,6 +762,61 @@ func TestResponsesToChatCompletionsRequest_MapsServerToolsToNativeTools(t *testi
 	require.JSONEq(t, `{"type":"web_search"}`, string(out.ToolChoice))
 }
 
+func TestResponsesToChatCompletionsRequest_FlattensNamespaceTools(t *testing.T) {
+	var req ResponsesRequest
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"model": "gpt-4o",
+		"input": "hello",
+		"tools": [
+			{
+				"type": "namespace",
+				"name": "browser.tools",
+				"description": "Browser tools",
+				"tools": [
+					{
+						"type": "function",
+						"name": "open.url",
+						"description": "Open a URL",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"url": {"type": "string"}
+							},
+							"required": ["url"]
+						}
+					},
+					{
+						"type": "function",
+						"name": "find",
+						"description": "Find text",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"pattern": {"type": "string"}
+							},
+							"required": ["pattern"]
+						}
+					}
+				]
+			}
+		],
+		"tool_choice": {"type": "function", "name": "browser.tools.open.url"}
+	}`), &req))
+
+	out, err := ResponsesToChatCompletionsRequest(&req)
+	require.NoError(t, err)
+	require.Len(t, out.Tools, 2)
+	require.Equal(t, "function", out.Tools[0].Type)
+	require.NotNil(t, out.Tools[0].Function)
+	require.Equal(t, "browser_tools_open_url", out.Tools[0].Function.Name)
+	require.Equal(t, "Open a URL", out.Tools[0].Function.Description)
+	require.JSONEq(t, `{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}`, string(out.Tools[0].Function.Parameters))
+	require.Equal(t, "function", out.Tools[1].Type)
+	require.NotNil(t, out.Tools[1].Function)
+	require.Equal(t, "browser_tools_find", out.Tools[1].Function.Name)
+	require.JSONEq(t, `{"type":"function","function":{"name":"browser_tools_open_url"}}`, string(out.ToolChoice))
+}
+
 func TestResponsesToChatCompletionsRequest_RejectsUnsupportedServerTools(t *testing.T) {
 	req := &ResponsesRequest{
 		Model: "gpt-4o",

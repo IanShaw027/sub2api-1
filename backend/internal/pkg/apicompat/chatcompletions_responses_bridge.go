@@ -15,7 +15,19 @@ func ResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsR
 		return nil, fmt.Errorf("responses request is nil")
 	}
 
-	messages, err := responsesInputToChatMessages(req.Instructions, req.Input)
+	functionNameMap := responsesNamespaceFunctionNameMap(req.Tools)
+	input := req.Input
+	if len(functionNameMap) > 0 {
+		var modified bool
+		input, modified = remapResponsesInputFunctionNames(input, functionNameMap)
+		if modified {
+			reqCopy := *req
+			reqCopy.Input = input
+			req = &reqCopy
+		}
+	}
+
+	messages, err := responsesInputToChatMessages(req.Instructions, input)
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +52,7 @@ func ResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsR
 		out.Tools = tools
 	}
 	if len(req.ToolChoice) > 0 {
-		toolChoice, err := responsesToolChoiceToChatToolChoice(req.ToolChoice)
+		toolChoice, err := responsesToolChoiceToChatToolChoice(req.ToolChoice, functionNameMap)
 		if err != nil {
 			return nil, err
 		}
@@ -434,7 +446,16 @@ func chatContentFromSingleResponsesPart(partType string, part map[string]json.Ra
 func responsesToolsToChatTools(tools []ResponsesTool) ([]ChatTool, error) {
 	out := make([]ChatTool, 0, len(tools))
 	seenServerTools := make(map[string]struct{})
+	seenFunctionTools := make(map[string]struct{})
 	for _, tool := range tools {
+		if strings.EqualFold(strings.TrimSpace(tool.Type), "namespace") {
+			namespaceTools, err := responsesNamespaceToolsToChatTools(tool, seenFunctionTools)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, namespaceTools...)
+			continue
+		}
 		if chatTool, ok := responsesServerToolToNativeChatTool(tool); ok {
 			if _, seen := seenServerTools[chatTool.Type]; seen {
 				continue
@@ -446,17 +467,136 @@ func responsesToolsToChatTools(tools []ResponsesTool) ([]ChatTool, error) {
 		if tool.Type != "function" {
 			return nil, fmt.Errorf("unsupported responses tool for chat completions: %s", tool.Type)
 		}
-		out = append(out, ChatTool{
-			Type: "function",
-			Function: &ChatFunction{
-				Name:        tool.Name,
-				Description: tool.Description,
-				Parameters:  tool.Parameters,
-				Strict:      tool.Strict,
-			},
-		})
+		chatTool := responsesFunctionToolToChatTool(tool, "")
+		if chatTool.Function == nil || chatTool.Function.Name == "" {
+			continue
+		}
+		if _, seen := seenFunctionTools[chatTool.Function.Name]; seen {
+			continue
+		}
+		seenFunctionTools[chatTool.Function.Name] = struct{}{}
+		out = append(out, chatTool)
 	}
 	return out, nil
+}
+
+func responsesNamespaceToolsToChatTools(namespace ResponsesTool, seen map[string]struct{}) ([]ChatTool, error) {
+	namespaceName := strings.TrimSpace(namespace.Name)
+	out := make([]ChatTool, 0, len(namespace.Tools))
+	for _, child := range namespace.Tools {
+		if strings.EqualFold(strings.TrimSpace(child.Type), "namespace") {
+			if namespaceName != "" {
+				child.Name = strings.TrimSpace(namespaceName + "." + child.Name)
+			}
+			nested, err := responsesNamespaceToolsToChatTools(child, seen)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, nested...)
+			continue
+		}
+		if child.Type != "function" {
+			return nil, fmt.Errorf("unsupported responses namespace tool for chat completions: %s", child.Type)
+		}
+		chatTool := responsesFunctionToolToChatTool(child, namespaceName)
+		if chatTool.Function == nil || chatTool.Function.Name == "" {
+			continue
+		}
+		if _, ok := seen[chatTool.Function.Name]; ok {
+			continue
+		}
+		seen[chatTool.Function.Name] = struct{}{}
+		out = append(out, chatTool)
+	}
+	return out, nil
+}
+
+func responsesFunctionToolToChatTool(tool ResponsesTool, namespace string) ChatTool {
+	name := responseFunctionChatName(tool.Name, namespace)
+	return ChatTool{
+		Type: "function",
+		Function: &ChatFunction{
+			Name:        name,
+			Description: tool.Description,
+			Parameters:  tool.Parameters,
+			Strict:      tool.Strict,
+		},
+	}
+}
+
+func responsesNamespaceFunctionNameMap(tools []ResponsesTool) map[string]string {
+	out := make(map[string]string)
+	for _, tool := range tools {
+		collectResponsesNamespaceFunctionNames(tool, "", out)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func collectResponsesNamespaceFunctionNames(tool ResponsesTool, namespace string, out map[string]string) {
+	toolType := strings.TrimSpace(tool.Type)
+	switch {
+	case strings.EqualFold(toolType, "namespace"):
+		nextNamespace := strings.TrimSpace(tool.Name)
+		if namespace != "" && nextNamespace != "" {
+			nextNamespace = namespace + "." + nextNamespace
+		} else if nextNamespace == "" {
+			nextNamespace = namespace
+		}
+		for _, child := range tool.Tools {
+			collectResponsesNamespaceFunctionNames(child, nextNamespace, out)
+		}
+	case toolType == "function":
+		original := strings.TrimSpace(tool.Name)
+		mapped := responseFunctionChatName(original, namespace)
+		if original != "" && mapped != "" {
+			out[original] = mapped
+			if namespace != "" {
+				out[namespace+"."+original] = mapped
+			}
+		}
+	}
+}
+
+func responseFunctionChatName(name string, namespace string) string {
+	name = strings.TrimSpace(name)
+	namespace = strings.TrimSpace(namespace)
+	if namespace != "" {
+		name = namespace + "." + name
+	}
+	return sanitizeChatFunctionName(name)
+}
+
+func remapResponsesInputFunctionNames(input json.RawMessage, nameMap map[string]string) (json.RawMessage, bool) {
+	if len(nameMap) == 0 {
+		return input, false
+	}
+	var items []map[string]any
+	if err := json.Unmarshal(input, &items); err != nil {
+		return input, false
+	}
+	modified := false
+	for _, item := range items {
+		itemType, _ := item["type"].(string)
+		if itemType != "function_call" && itemType != "custom_tool_call" && itemType != "mcp_tool_call" {
+			continue
+		}
+		name, _ := item["name"].(string)
+		if mapped := nameMap[strings.TrimSpace(name)]; mapped != "" && mapped != name {
+			item["name"] = mapped
+			modified = true
+		}
+	}
+	if !modified {
+		return input, false
+	}
+	rebuilt, err := json.Marshal(items)
+	if err != nil {
+		return input, false
+	}
+	return rebuilt, true
 }
 
 func responsesServerToolToNativeChatTool(tool ResponsesTool) (ChatTool, bool) {
@@ -554,7 +694,7 @@ func sanitizeChatFunctionName(value string) string {
 	return strings.Trim(b.String(), "_-")
 }
 
-func responsesToolChoiceToChatToolChoice(raw json.RawMessage) (json.RawMessage, error) {
+func responsesToolChoiceToChatToolChoice(raw json.RawMessage, functionNameMap map[string]string) (json.RawMessage, error) {
 	var choiceString string
 	if err := json.Unmarshal(raw, &choiceString); err == nil {
 		choiceString = strings.TrimSpace(choiceString)
@@ -601,6 +741,11 @@ func responsesToolChoiceToChatToolChoice(raw json.RawMessage) (json.RawMessage, 
 	}
 	if name == "" {
 		return raw, nil
+	}
+	if mapped := functionNameMap[strings.TrimSpace(name)]; mapped != "" {
+		name = mapped
+	} else {
+		name = sanitizeChatFunctionName(name)
 	}
 	out, err := json.Marshal(map[string]any{
 		"type": "function",
