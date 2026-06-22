@@ -187,7 +187,7 @@ func TestOpenAIHandleStreamingAwareError_ChatCompletionsAppendsDone(t *testing.T
 	assert.Contains(t, body, "data: [DONE]")
 }
 
-func TestOpenAIEnsureForwardErrorResponse_SessionPreemptedChatCompletionsSSEAppendsDone(t *testing.T) {
+func TestOpenAIEnsureForwardErrorResponse_SessionPreemptedSuppressed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -198,18 +198,15 @@ func TestOpenAIEnsureForwardErrorResponse_SessionPreemptedChatCompletionsSSEAppe
 	h := &OpenAIGatewayHandler{}
 	wrote := h.ensureForwardErrorResponse(c, false, service.NewOpenAIWSSessionPreemptedError())
 
-	require.True(t, wrote)
-	require.Equal(t, http.StatusOK, w.Code)
+	require.False(t, wrote)
 	body := w.Body.String()
 	assert.Contains(t, body, "data: {\"id\":\"chatcmpl_x\"}\n\n")
-	assert.Contains(t, body, "event: error\n")
-	assert.Contains(t, body, `"type":"request_canceled"`)
-	assert.Contains(t, body, "Superseded by a newer request in the same session")
-	assert.Contains(t, body, "data: [DONE]")
-	assert.NotContains(t, body, `"upstream_error"`)
+	assert.NotContains(t, body, "event: error\n")
+	assert.NotContains(t, body, `"request_canceled"`)
+	assert.NotContains(t, body, "Superseded by a newer request in the same session")
 }
 
-func TestOpenAIEnsureForwardErrorResponse_SessionPreemptedResponsesStreamBeforeFirstWriteEmitsCancelled(t *testing.T) {
+func TestOpenAIEnsureForwardErrorResponse_SessionPreemptedResponsesSuppressed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	called := false
@@ -219,7 +216,7 @@ func TestOpenAIEnsureForwardErrorResponse_SessionPreemptedResponsesStreamBeforeF
 		h := &OpenAIGatewayHandler{}
 		wrote := h.ensureForwardErrorResponse(c, false, service.NewOpenAIWSSessionPreemptedError())
 
-		require.True(t, wrote)
+		require.False(t, wrote)
 		called = true
 	})
 
@@ -228,13 +225,8 @@ func TestOpenAIEnsureForwardErrorResponse_SessionPreemptedResponsesStreamBeforeF
 	router.ServeHTTP(w, req)
 
 	require.True(t, called)
-	require.Equal(t, http.StatusOK, w.Code)
 	body := w.Body.String()
-	assert.Contains(t, body, "event: response.cancelled\n")
-	assert.Contains(t, body, `"type":"response.cancelled"`)
-	assert.Contains(t, body, `"status":"cancelled"`)
-	assert.Contains(t, body, `"model":"gpt-5.5"`)
-	assert.NotContains(t, body, `"error"`)
+	assert.NotContains(t, body, "event: response.cancelled\n")
 	assert.NotContains(t, body, `"request_canceled"`)
 	assert.NotContains(t, body, "Superseded by a newer request in the same session")
 }

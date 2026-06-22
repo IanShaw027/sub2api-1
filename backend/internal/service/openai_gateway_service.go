@@ -10734,7 +10734,6 @@ func (s *OpenAIGatewayService) persistOpenAIWSSoftRateLimitAdvisory(ctx context.
 		defer cancel()
 		if err := s.accountRepo.UpdateExtra(updateCtx, account.ID, updates); err != nil {
 			slog.Warn("openai_ws_soft_rate_limit_snapshot_persist_failed", "account_id", account.ID, "error", err)
-			return
 		}
 		if until == nil {
 			return

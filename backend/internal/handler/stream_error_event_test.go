@@ -94,6 +94,10 @@ func TestWriteResponsesCancelledSSE(t *testing.T) {
 	assert.Equal(t, "gpt-5.5", resp["model"])
 	_, hasError := resp["error"]
 	assert.False(t, hasError, "cancelled terminal must not look like upstream failure")
+	assert.Equal(t, "text/event-stream", w.Header().Get("Content-Type"))
+	assert.Equal(t, "no-cache", w.Header().Get("Cache-Control"))
+	assert.Equal(t, "keep-alive", w.Header().Get("Connection"))
+	assert.Equal(t, "no", w.Header().Get("X-Accel-Buffering"))
 }
 
 // OpenAI handler: /v1/responses streaming, after stream started, must emit response.failed.
@@ -109,6 +113,10 @@ func TestOpenAIHandleStreamingAwareError_ResponsesStreamingEmitsResponseFailed(t
 	assert.True(t, strings.HasPrefix(id, "resp_"), "id should start with resp_, got %q", id)
 	assert.Equal(t, "rate_limit_exceeded", errObj["code"])
 	assert.Equal(t, "Concurrency limit exceeded for user, please retry later", errObj["message"])
+	assert.Equal(t, "text/event-stream", w.Header().Get("Content-Type"))
+	assert.Equal(t, "no-cache", w.Header().Get("Cache-Control"))
+	assert.Equal(t, "keep-alive", w.Header().Get("Connection"))
+	assert.Equal(t, "no", w.Header().Get("X-Accel-Buffering"))
 }
 
 // 当 setOpsRequestContext 写过 model，合成事件应回填该字段（与 codebase 已有 makeResponsesCompletedEvent 对齐）。

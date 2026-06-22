@@ -24,6 +24,7 @@ type openAIWSRateLimitSignalRepo struct {
 	stubOpenAIAccountRepo
 	rateLimitCalls []time.Time
 	updateExtra    []map[string]any
+	updateExtraErr  error
 	tempUnsched    []openAIWSTempUnschedCall
 }
 
@@ -136,6 +137,9 @@ func (r *openAIWSRateLimitSignalRepo) UpdateExtra(_ context.Context, _ int64, up
 		copied[k] = v
 	}
 	r.updateExtra = append(r.updateExtra, copied)
+	if r.updateExtraErr != nil {
+		return r.updateExtraErr
+	}
 	return nil
 }
 
@@ -352,6 +356,37 @@ func TestOpenAIGatewayService_Forward_WSv2ErrorEventUsageLimitPersistsRateLimit(
 	require.Nil(t, upstream.lastReq, "WS 限流 error event 不应回退到同账号 HTTP")
 	require.Len(t, repo.rateLimitCalls, 1)
 	require.WithinDuration(t, time.Unix(resetAt, 0), repo.rateLimitCalls[0], 2*time.Second)
+}
+
+func TestOpenAIGatewayService_PersistSoftRateLimitAdvisoryContinuesTempUnschedWhenSnapshotPersistFails(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	resetAt := now.Add(7 * time.Hour)
+	repo := &openAIWSRateLimitSignalRepo{updateExtraErr: errors.New("update extra failed")}
+	cache := &openAIWSTempUnschedCacheRecorder{}
+	svc := &OpenAIGatewayService{
+		accountRepo: repo,
+		rateLimitService: &RateLimitService{
+			tempUnschedCache: cache,
+		},
+	}
+	account := &Account{
+		ID:          84211,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Name:        "soft-limit-failed-extra@example.com",
+	}
+	payload := []byte(`{"type":"codex.rate_limits","metered_limit_name":"codex","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":94,"window_minutes":10080,"reset_at":` + strconv.FormatInt(resetAt.Unix(), 10) + `},"secondary":{"used_percent":1,"window_minutes":300,"reset_at":` + strconv.FormatInt(now.Add(3*time.Hour).Unix(), 10) + `}},"credits":{"has_credits":false,"unlimited":false,"balance":null}}`)
+
+	svc.persistOpenAIWSSoftRateLimitAdvisory(context.Background(), account, payload)
+
+	require.Eventually(t, func() bool {
+		return len(repo.updateExtra) == 1 && len(repo.tempUnsched) == 1 && len(cache.states) == 1
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, int64(84211), repo.tempUnsched[0].id)
+	require.WithinDuration(t, resetAt, repo.tempUnsched[0].until, time.Second)
+	require.Equal(t, resetAt.Unix(), cache.states[0].UntilUnix)
 }
 
 func TestOpenAIGatewayService_Forward_WSv2Handshake429PersistsRateLimit(t *testing.T) {

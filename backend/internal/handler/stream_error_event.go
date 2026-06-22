@@ -48,6 +48,16 @@ type responsesCancelledEvent struct {
 	Response responsesCancelledBody `json:"response"`
 }
 
+func setResponsesSSEHeaders(c *gin.Context) {
+	if c == nil || c.Writer == nil {
+		return
+	}
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+}
+
 // writeResponsesFailedSSE emits a `response.failed` SSE event in the OpenAI
 // Responses API protocol after the stream has already started.
 //
@@ -70,6 +80,7 @@ func writeResponsesFailedSSE(c *gin.Context, errType, message string) bool {
 	if !ok {
 		return false
 	}
+	setResponsesSSEHeaders(c)
 
 	payload, err := json.Marshal(responsesFailedEvent{
 		Type: "response.failed",
@@ -103,6 +114,7 @@ func writeResponsesCancelledSSE(c *gin.Context) bool {
 	if !ok {
 		return false
 	}
+	setResponsesSSEHeaders(c)
 
 	payload, err := json.Marshal(responsesCancelledEvent{
 		Type: "response.cancelled",
