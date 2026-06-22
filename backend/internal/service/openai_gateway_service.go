@@ -972,14 +972,6 @@ func resolveOpenAIWSFallbackErrorResponse(err error) (statusCode int, errType st
 		statusCode = openAIWSErrorHTTPStatusFromRaw(failedErr.code, failedErr.errType)
 		errType = "upstream_error"
 		upstreamMessage = sanitizeUpstreamErrorMessage(strings.TrimSpace(failedErr.message))
-	case "session_preempted":
-		if statusCode == 0 {
-			statusCode = 499
-		}
-		errType = "request_canceled"
-		if upstreamMessage == "" {
-			upstreamMessage = "Superseded by a newer request in the same session"
-		}
 	default:
 		if statusCode == 0 {
 			return 0, "", "", "", false
@@ -1141,6 +1133,9 @@ func (s *OpenAIGatewayService) prepareOpenAIWSContinuationFailoverBody(c *gin.Co
 
 func (s *OpenAIGatewayService) writeOpenAIWSFallbackErrorResponse(c *gin.Context, account *Account, wsErr error) bool {
 	if c == nil || c.Writer == nil || c.Writer.Written() {
+		return false
+	}
+	if IsOpenAIWSSessionPreemptedError(wsErr) {
 		return false
 	}
 	statusCode, errType, clientMessage, upstreamMessage, ok := resolveOpenAIWSFallbackErrorResponse(wsErr)

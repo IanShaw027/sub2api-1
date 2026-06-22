@@ -242,15 +242,11 @@ func TestResolveOpenAIWSFallbackErrorResponse(t *testing.T) {
 		require.Equal(t, "No tool call found for function call output with call_id call_1.", upstreamMessage)
 	})
 
-	t.Run("session_preempted_uses_client_canceled", func(t *testing.T) {
-		statusCode, errType, clientMessage, upstreamMessage, ok := resolveOpenAIWSFallbackErrorResponse(
+	t.Run("session_preempted_not_client_visible", func(t *testing.T) {
+		_, _, _, _, ok := resolveOpenAIWSFallbackErrorResponse(
 			wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted),
 		)
-		require.True(t, ok)
-		require.Equal(t, 499, statusCode)
-		require.Equal(t, "request_canceled", errType)
-		require.Equal(t, "Superseded by a newer request in the same session", clientMessage)
-		require.Equal(t, "Superseded by a newer request in the same session", upstreamMessage)
+		require.False(t, ok)
 	})
 
 	t.Run("non_fallback_error_not_resolved", func(t *testing.T) {
