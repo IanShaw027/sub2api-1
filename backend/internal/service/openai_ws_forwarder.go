@@ -1782,11 +1782,14 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecision(
 	if connID, ok := stateStore.GetResponseConn(groupID, apiKeyID, previousResponseID); ok {
 		decision.PreferredConnID = connID
 		decision.ConnAffinityHit = true
-	} else if HasFunctionCallOutput(payload) {
-		decision.UnsafeToolContinuation = true
-		decision.StickyAccountHit = true
-		decision.FallbackReason = "conn_affinity_miss"
-		return decision
+	} else {
+		if HasFunctionCallOutput(payload) {
+			decision.UnsafeToolContinuation = true
+			decision.StickyAccountHit = true
+			decision.FallbackReason = "conn_affinity_miss"
+			return decision
+		}
+		return dropToFullCreate("conn_affinity_miss")
 	}
 
 	payload["store"] = true
@@ -1846,7 +1849,7 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecisionRaw(
 }
 
 type openAIWSContinuationStoreDecisionOptions struct {
-	AllowLiveRelayToolContinuation bool
+	AllowLiveRelayContinuation bool
 }
 
 func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecisionRawWithOptions(
@@ -1929,14 +1932,16 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecisionRawWithOp
 	if connID, ok := stateStore.GetResponseConn(groupID, apiKeyID, previousResponseID); ok {
 		decision.PreferredConnID = connID
 		decision.ConnAffinityHit = true
-	} else if HasToolContinuationOutputInRawPayload(payload) {
-		if options.AllowLiveRelayToolContinuation {
+	} else {
+		if options.AllowLiveRelayContinuation {
 			decision.StickyAccountHit = true
-		} else {
+		} else if HasToolContinuationOutputInRawPayload(payload) {
 			decision.UnsafeToolContinuation = true
 			decision.StickyAccountHit = true
 			decision.FallbackReason = "conn_affinity_miss"
 			return payload, decision, nil
+		} else {
+			return dropToFullCreate("conn_affinity_miss")
 		}
 	}
 
@@ -2020,35 +2025,6 @@ func shouldForceNewConnOnStoreDisabled(mode, lastFailureReason string) bool {
 func shouldForceNewConnOnRecoveredFullReplay(lastFailureReason string) bool {
 	reason := strings.TrimPrefix(strings.TrimSpace(lastFailureReason), "prewarm_")
 	return reason == "previous_response_not_found"
-}
-
-func isOpenAIWSDeltaConnReanchorRetryReason(lastFailureReason string) bool {
-	reason := strings.TrimPrefix(strings.TrimSpace(lastFailureReason), "prewarm_")
-	switch reason {
-	case "write_request", "write":
-		return true
-	default:
-		return false
-	}
-}
-
-func shouldAllowOpenAIWSDeltaConnReanchor(
-	lastFailureReason string,
-	stateStore OpenAIWSStateStore,
-	groupID int64,
-	apiKeyID int64,
-	sessionHash string,
-	account *Account,
-) bool {
-	if !isOpenAIWSDeltaConnReanchorRetryReason(lastFailureReason) || stateStore == nil || account == nil ||
-		strings.TrimSpace(sessionHash) == "" {
-		return false
-	}
-	cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
-	if !ok {
-		return false
-	}
-	return cached.accountID == account.ID && strings.TrimSpace(cached.lastResponseID) != ""
 }
 
 func shouldUseOpenAIWSNeutralForColdSession(
@@ -2706,10 +2682,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		connAffinityHit = false
 		forceNewConn = true
 	}
-	allowDeltaConnReanchor := shouldAllowOpenAIWSDeltaConnReanchor(lastFailureReason, stateStore, groupID, apiKeyID, sessionHash, account)
-	if allowDeltaConnReanchor {
-		forceNewConn = true
-	}
+	allowDeltaConnReanchor := false
 	if sessionPreemptedPrevious {
 		preferredConnID = ""
 		connAffinityHit = false

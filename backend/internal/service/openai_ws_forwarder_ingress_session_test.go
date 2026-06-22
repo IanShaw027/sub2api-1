@@ -2437,7 +2437,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CtxPoolOAuthUnbo
 	require.Empty(t, captureConn.writes)
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CtxPoolOAuthAccountBoundPreviousResponseWithoutConnCreatesNewStoreTrue(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CtxPoolOAuthAccountBoundPreviousResponseWithoutConnFullReplays(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -2565,9 +2565,9 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CtxPoolOAuthAcco
 	require.Equal(t, 1, captureDialer.DialCount(), "账号绑定命中但 conn 亲和缺失时应新建连接")
 	require.Len(t, captureConn.writes, 1)
 	upstreamWrite := requestToJSONString(captureConn.writes[0])
-	require.Equal(t, "resp_account_bound_no_conn", gjson.Get(upstreamWrite, "previous_response_id").String())
+	require.False(t, gjson.Get(upstreamWrite, "previous_response_id").Exists(), "new conn must not carry an old previous_response_id")
 	require.True(t, gjson.Get(upstreamWrite, "store").Exists())
-	require.True(t, gjson.Get(upstreamWrite, "store").Bool(), "账号绑定命中时应启用 store=true")
+	require.False(t, gjson.Get(upstreamWrite, "store").Bool(), "new conn must full replay with store=false")
 	require.Equal(t, "delta", gjson.Get(upstreamWrite, "input.0.text").String())
 }
 

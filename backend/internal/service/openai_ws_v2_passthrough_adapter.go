@@ -325,7 +325,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			groupID,
 			apiKeyID,
 			openAIWSContinuationStoreDecisionOptions{
-				AllowLiveRelayToolContinuation: previousResponseID != "" && liveRelayAffinity,
+				AllowLiveRelayContinuation: previousResponseID != "" && liveRelayAffinity,
 			},
 		)
 		if err != nil {

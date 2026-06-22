@@ -1305,7 +1305,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthUnboundPreviousResponseFallsBack
 	require.Equal(t, "full replay from client", gjson.Get(secondWrite, "input.0.text").String())
 }
 
-func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyAccountWithoutConnUsesStoreTrueNewConn(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyAccountWithoutConnFullReplaysOnNewConn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -1407,9 +1407,9 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyAccountWithoutConnUsesStor
 	secondConn.mu.Unlock()
 	require.Len(t, secondWrites, 1)
 	secondWrite := requestToJSONString(secondWrites[0])
-	require.Equal(t, "resp_oauth_account_only_prev", gjson.Get(secondWrite, "previous_response_id").String())
+	require.False(t, gjson.Get(secondWrite, "previous_response_id").Exists(), "new conn must not carry an old previous_response_id")
 	require.True(t, gjson.Get(secondWrite, "store").Exists())
-	require.True(t, gjson.Get(secondWrite, "store").Bool(), "账号粘连有效时应启用 store=true 增量")
+	require.False(t, gjson.Get(secondWrite, "store").Bool(), "new conn must full replay with store=false")
 	require.Equal(t, "delta only", gjson.Get(secondWrite, "input.0.text").String())
 }
 
