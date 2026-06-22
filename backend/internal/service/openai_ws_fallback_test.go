@@ -259,7 +259,7 @@ func TestResolveOpenAIWSFallbackErrorResponse(t *testing.T) {
 	})
 }
 
-func TestWriteOpenAIWSFallbackErrorResponse_SessionPreemptedDoesNotSetOpsUpstreamError(t *testing.T) {
+func TestWriteOpenAIWSFallbackErrorResponse_SessionPreemptedIsSuppressed(t *testing.T) {
 	setGinTestMode()
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 	rec := httptest.NewRecorder()
@@ -272,8 +272,11 @@ func TestWriteOpenAIWSFallbackErrorResponse_SessionPreemptedDoesNotSetOpsUpstrea
 		Name:     "oauth",
 	}, wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted))
 
-	require.True(t, wrote)
-	require.Equal(t, 499, rec.Code)
+	// 会话抢占必须被完全静默：不向客户端写任何响应(避免 499 错误体)，
+	// 也不设置 ops 上游错误键(避免被 ops 错误日志记录)。
+	require.False(t, wrote)
+	require.False(t, c.Writer.Written())
+	require.Empty(t, rec.Body.String())
 	_, hasType := c.Get(OpsUpstreamErrorTypeKey)
 	require.False(t, hasType)
 	_, hasMessage := c.Get(OpsUpstreamErrorMessageKey)

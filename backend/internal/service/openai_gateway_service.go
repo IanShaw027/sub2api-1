@@ -1154,19 +1154,21 @@ func (s *OpenAIGatewayService) writeOpenAIWSFallbackErrorResponse(c *gin.Context
 		upstreamMessage = clientMessage
 	}
 
-	isSessionPreempted := IsOpenAIWSSessionPreemptedError(wsErr)
-	if !isSessionPreempted {
-		setOpsUpstreamError(c, statusCode, upstreamMessage, "")
-		if account != nil {
-			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-				Platform:           account.Platform,
-				AccountID:          account.ID,
-				AccountName:        account.Name,
-				UpstreamStatusCode: statusCode,
-				Kind:               "ws_error",
-				Message:            upstreamMessage,
-			})
-		}
+	// 旧请求被同会话内的新请求抢占属正常事件：静默旧请求(不写 499)，交 handler 的
+	// shouldSuppressForwardErrorResponse 收尾，避免向客户端报错并被 ops 日志按状态码记录。新请求在独立 context 上不受影响。
+	if IsOpenAIWSSessionPreemptedError(wsErr) {
+		return false
+	}
+	setOpsUpstreamError(c, statusCode, upstreamMessage, "")
+	if account != nil {
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: statusCode,
+			Kind:               "ws_error",
+			Message:            upstreamMessage,
+		})
 	}
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{
