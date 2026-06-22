@@ -3833,7 +3833,7 @@
                   v-model.number="form.openai_ws_session_idle_ttl_seconds"
                   type="number"
                   min="1"
-                  max="3600"
+                  max="600"
                   step="1"
                   class="input"
                   placeholder="30"
@@ -9430,7 +9430,7 @@ async function loadSettings() {
     form.openai_ws_session_idle_ttl_seconds = Math.max(
       1,
       Math.min(
-        3600,
+        600,
         Math.floor(Number(settings.openai_ws_session_idle_ttl_seconds) || 600),
       ),
     );
@@ -9623,8 +9623,8 @@ async function saveSettings() {
     const normalizedOpenAIWSSessionIdleTTLSeconds = Number.isFinite(
       rawOpenAIWSSessionIdleTTLSeconds,
     )
-      ? Math.max(1, Math.min(3600, rawOpenAIWSSessionIdleTTLSeconds))
-      : 30;
+      ? Math.max(1, Math.min(600, rawOpenAIWSSessionIdleTTLSeconds))
+      : 600;
 
     const normalizedLoginAgreementDocuments =
       normalizeLoginAgreementDocumentsForSave();
