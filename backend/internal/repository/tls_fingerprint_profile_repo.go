@@ -51,6 +51,8 @@ func (r *tlsFingerprintProfileRepository) Create(ctx context.Context, p *model.T
 	builder := r.client.TLSFingerprintProfile.Create().
 		SetName(p.Name).
 		SetPlatform(p.Platform).
+		SetUserAgent(p.UserAgent).
+		SetOriginator(p.Originator).
 		SetEnableGrease(p.EnableGREASE)
 
 	if p.Description != nil {
@@ -105,6 +107,8 @@ func (r *tlsFingerprintProfileRepository) Update(ctx context.Context, p *model.T
 	builder := r.client.TLSFingerprintProfile.UpdateOneID(p.ID).
 		SetName(p.Name).
 		SetPlatform(p.Platform).
+		SetUserAgent(p.UserAgent).
+		SetOriginator(p.Originator).
 		SetEnableGrease(p.EnableGREASE)
 
 	if p.Description != nil {
@@ -192,6 +196,8 @@ func (r *tlsFingerprintProfileRepository) toModel(e *ent.TLSFingerprintProfile) 
 		ID:                             e.ID,
 		Platform:                       e.Platform,
 		Name:                           e.Name,
+		UserAgent:                      e.UserAgent,
+		Originator:                     e.Originator,
 		Description:                    e.Description,
 		EnableGREASE:                   e.EnableGrease,
 		CipherSuites:                   e.CipherSuites,

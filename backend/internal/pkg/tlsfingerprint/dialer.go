@@ -20,6 +20,8 @@ import (
 // All slice fields use built-in defaults when empty.
 type Profile struct {
 	Name                           string // Profile name for identification
+	UserAgent                      string // Optional upstream User-Agent carried alongside the fingerprint; unused by the dialer
+	Originator                     string // Optional upstream Originator carried alongside the fingerprint; unused by the dialer
 	CipherSuites                   []uint16
 	Curves                         []uint16
 	PointFormats                   []uint16

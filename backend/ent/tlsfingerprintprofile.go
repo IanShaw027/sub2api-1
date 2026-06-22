@@ -26,6 +26,10 @@ type TLSFingerprintProfile struct {
 	Name string `json:"name,omitempty"`
 	// Platform holds the value of the "platform" field.
 	Platform string `json:"platform,omitempty"`
+	// UserAgent holds the value of the "user_agent" field.
+	UserAgent string `json:"user_agent,omitempty"`
+	// Originator holds the value of the "originator" field.
+	Originator string `json:"originator,omitempty"`
 	// Description holds the value of the "description" field.
 	Description *string `json:"description,omitempty"`
 	// EnableGrease holds the value of the "enable_grease" field.
@@ -68,7 +72,7 @@ func (*TLSFingerprintProfile) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case tlsfingerprintprofile.FieldID:
 			values[i] = new(sql.NullInt64)
-		case tlsfingerprintprofile.FieldName, tlsfingerprintprofile.FieldPlatform, tlsfingerprintprofile.FieldDescription:
+		case tlsfingerprintprofile.FieldName, tlsfingerprintprofile.FieldPlatform, tlsfingerprintprofile.FieldUserAgent, tlsfingerprintprofile.FieldOriginator, tlsfingerprintprofile.FieldDescription:
 			values[i] = new(sql.NullString)
 		case tlsfingerprintprofile.FieldCreatedAt, tlsfingerprintprofile.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -116,6 +120,18 @@ func (_m *TLSFingerprintProfile) assignValues(columns []string, values []any) er
 				return fmt.Errorf("unexpected type %T for field platform", values[i])
 			} else if value.Valid {
 				_m.Platform = value.String
+			}
+		case tlsfingerprintprofile.FieldUserAgent:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field user_agent", values[i])
+			} else if value.Valid {
+				_m.UserAgent = value.String
+			}
+		case tlsfingerprintprofile.FieldOriginator:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field originator", values[i])
+			} else if value.Valid {
+				_m.Originator = value.String
 			}
 		case tlsfingerprintprofile.FieldDescription:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -273,6 +289,12 @@ func (_m *TLSFingerprintProfile) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("platform=")
 	builder.WriteString(_m.Platform)
+	builder.WriteString(", ")
+	builder.WriteString("user_agent=")
+	builder.WriteString(_m.UserAgent)
+	builder.WriteString(", ")
+	builder.WriteString("originator=")
+	builder.WriteString(_m.Originator)
 	builder.WriteString(", ")
 	if v := _m.Description; v != nil {
 		builder.WriteString("description=")

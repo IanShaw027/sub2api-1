@@ -21,6 +21,10 @@ const (
 	FieldName = "name"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
+	// FieldUserAgent holds the string denoting the user_agent field in the database.
+	FieldUserAgent = "user_agent"
+	// FieldOriginator holds the string denoting the originator field in the database.
+	FieldOriginator = "originator"
 	// FieldDescription holds the string denoting the description field in the database.
 	FieldDescription = "description"
 	// FieldEnableGrease holds the string denoting the enable_grease field in the database.
@@ -60,6 +64,8 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldName,
 	FieldPlatform,
+	FieldUserAgent,
+	FieldOriginator,
 	FieldDescription,
 	FieldEnableGrease,
 	FieldCipherSuites,
@@ -99,6 +105,14 @@ var (
 	DefaultPlatform string
 	// PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
 	PlatformValidator func(string) error
+	// DefaultUserAgent holds the default value on creation for the "user_agent" field.
+	DefaultUserAgent string
+	// UserAgentValidator is a validator for the "user_agent" field. It is called by the builders before save.
+	UserAgentValidator func(string) error
+	// DefaultOriginator holds the default value on creation for the "originator" field.
+	DefaultOriginator string
+	// OriginatorValidator is a validator for the "originator" field. It is called by the builders before save.
+	OriginatorValidator func(string) error
 	// DefaultEnableGrease holds the default value on creation for the "enable_grease" field.
 	DefaultEnableGrease bool
 )
@@ -129,6 +143,16 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByPlatform orders the results by the platform field.
 func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPlatform, opts...).ToFunc()
+}
+
+// ByUserAgent orders the results by the user_agent field.
+func ByUserAgent(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUserAgent, opts...).ToFunc()
+}
+
+// ByOriginator orders the results by the originator field.
+func ByOriginator(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOriginator, opts...).ToFunc()
 }
 
 // ByDescription orders the results by the description field.

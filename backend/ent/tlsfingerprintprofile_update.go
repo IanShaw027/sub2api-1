@@ -63,6 +63,34 @@ func (_u *TLSFingerprintProfileUpdate) SetNillablePlatform(v *string) *TLSFinger
 	return _u
 }
 
+// SetUserAgent sets the "user_agent" field.
+func (_u *TLSFingerprintProfileUpdate) SetUserAgent(v string) *TLSFingerprintProfileUpdate {
+	_u.mutation.SetUserAgent(v)
+	return _u
+}
+
+// SetNillableUserAgent sets the "user_agent" field if the given value is not nil.
+func (_u *TLSFingerprintProfileUpdate) SetNillableUserAgent(v *string) *TLSFingerprintProfileUpdate {
+	if v != nil {
+		_u.SetUserAgent(*v)
+	}
+	return _u
+}
+
+// SetOriginator sets the "originator" field.
+func (_u *TLSFingerprintProfileUpdate) SetOriginator(v string) *TLSFingerprintProfileUpdate {
+	_u.mutation.SetOriginator(v)
+	return _u
+}
+
+// SetNillableOriginator sets the "originator" field if the given value is not nil.
+func (_u *TLSFingerprintProfileUpdate) SetNillableOriginator(v *string) *TLSFingerprintProfileUpdate {
+	if v != nil {
+		_u.SetOriginator(*v)
+	}
+	return _u
+}
+
 // SetDescription sets the "description" field.
 func (_u *TLSFingerprintProfileUpdate) SetDescription(v string) *TLSFingerprintProfileUpdate {
 	_u.mutation.SetDescription(v)
@@ -366,6 +394,16 @@ func (_u *TLSFingerprintProfileUpdate) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.UserAgent(); ok {
+		if err := tlsfingerprintprofile.UserAgentValidator(v); err != nil {
+			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.user_agent": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.Originator(); ok {
+		if err := tlsfingerprintprofile.OriginatorValidator(v); err != nil {
+			return &ValidationError{Name: "originator", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.originator": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -389,6 +427,12 @@ func (_u *TLSFingerprintProfileUpdate) sqlSave(ctx context.Context) (_node int, 
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldPlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.UserAgent(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldUserAgent, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Originator(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldOriginator, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldDescription, field.TypeString, value)
@@ -581,6 +625,34 @@ func (_u *TLSFingerprintProfileUpdateOne) SetPlatform(v string) *TLSFingerprintP
 func (_u *TLSFingerprintProfileUpdateOne) SetNillablePlatform(v *string) *TLSFingerprintProfileUpdateOne {
 	if v != nil {
 		_u.SetPlatform(*v)
+	}
+	return _u
+}
+
+// SetUserAgent sets the "user_agent" field.
+func (_u *TLSFingerprintProfileUpdateOne) SetUserAgent(v string) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.SetUserAgent(v)
+	return _u
+}
+
+// SetNillableUserAgent sets the "user_agent" field if the given value is not nil.
+func (_u *TLSFingerprintProfileUpdateOne) SetNillableUserAgent(v *string) *TLSFingerprintProfileUpdateOne {
+	if v != nil {
+		_u.SetUserAgent(*v)
+	}
+	return _u
+}
+
+// SetOriginator sets the "originator" field.
+func (_u *TLSFingerprintProfileUpdateOne) SetOriginator(v string) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.SetOriginator(v)
+	return _u
+}
+
+// SetNillableOriginator sets the "originator" field if the given value is not nil.
+func (_u *TLSFingerprintProfileUpdateOne) SetNillableOriginator(v *string) *TLSFingerprintProfileUpdateOne {
+	if v != nil {
+		_u.SetOriginator(*v)
 	}
 	return _u
 }
@@ -901,6 +973,16 @@ func (_u *TLSFingerprintProfileUpdateOne) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.UserAgent(); ok {
+		if err := tlsfingerprintprofile.UserAgentValidator(v); err != nil {
+			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.user_agent": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.Originator(); ok {
+		if err := tlsfingerprintprofile.OriginatorValidator(v); err != nil {
+			return &ValidationError{Name: "originator", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.originator": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -941,6 +1023,12 @@ func (_u *TLSFingerprintProfileUpdateOne) sqlSave(ctx context.Context) (_node *T
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldPlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.UserAgent(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldUserAgent, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Originator(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldOriginator, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldDescription, field.TypeString, value)

@@ -49,6 +49,18 @@ func (TLSFingerprintProfile) Fields() []ent.Field {
 			MaxLen(50).
 			Default(""),
 
+		// user_agent: optional upstream User-Agent sent when this template is applied.
+		// Empty string falls back to the built-in default (e.g. Codex CLI UA).
+		field.String("user_agent").
+			MaxLen(255).
+			Default(""),
+
+		// originator: optional upstream Originator header sent when this template is applied.
+		// Empty string falls back to the built-in default originator.
+		field.String("originator").
+			MaxLen(50).
+			Default(""),
+
 		// description: 模板描述
 		field.Text("description").
 			Optional().

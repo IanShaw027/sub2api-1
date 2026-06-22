@@ -70,6 +70,34 @@ func (_c *TLSFingerprintProfileCreate) SetNillablePlatform(v *string) *TLSFinger
 	return _c
 }
 
+// SetUserAgent sets the "user_agent" field.
+func (_c *TLSFingerprintProfileCreate) SetUserAgent(v string) *TLSFingerprintProfileCreate {
+	_c.mutation.SetUserAgent(v)
+	return _c
+}
+
+// SetNillableUserAgent sets the "user_agent" field if the given value is not nil.
+func (_c *TLSFingerprintProfileCreate) SetNillableUserAgent(v *string) *TLSFingerprintProfileCreate {
+	if v != nil {
+		_c.SetUserAgent(*v)
+	}
+	return _c
+}
+
+// SetOriginator sets the "originator" field.
+func (_c *TLSFingerprintProfileCreate) SetOriginator(v string) *TLSFingerprintProfileCreate {
+	_c.mutation.SetOriginator(v)
+	return _c
+}
+
+// SetNillableOriginator sets the "originator" field if the given value is not nil.
+func (_c *TLSFingerprintProfileCreate) SetNillableOriginator(v *string) *TLSFingerprintProfileCreate {
+	if v != nil {
+		_c.SetOriginator(*v)
+	}
+	return _c
+}
+
 // SetDescription sets the "description" field.
 func (_c *TLSFingerprintProfileCreate) SetDescription(v string) *TLSFingerprintProfileCreate {
 	_c.mutation.SetDescription(v)
@@ -217,6 +245,14 @@ func (_c *TLSFingerprintProfileCreate) defaults() {
 		v := tlsfingerprintprofile.DefaultPlatform
 		_c.mutation.SetPlatform(v)
 	}
+	if _, ok := _c.mutation.UserAgent(); !ok {
+		v := tlsfingerprintprofile.DefaultUserAgent
+		_c.mutation.SetUserAgent(v)
+	}
+	if _, ok := _c.mutation.Originator(); !ok {
+		v := tlsfingerprintprofile.DefaultOriginator
+		_c.mutation.SetOriginator(v)
+	}
 	if _, ok := _c.mutation.EnableGrease(); !ok {
 		v := tlsfingerprintprofile.DefaultEnableGrease
 		_c.mutation.SetEnableGrease(v)
@@ -245,6 +281,22 @@ func (_c *TLSFingerprintProfileCreate) check() error {
 	if v, ok := _c.mutation.Platform(); ok {
 		if err := tlsfingerprintprofile.PlatformValidator(v); err != nil {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.platform": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.UserAgent(); !ok {
+		return &ValidationError{Name: "user_agent", err: errors.New(`ent: missing required field "TLSFingerprintProfile.user_agent"`)}
+	}
+	if v, ok := _c.mutation.UserAgent(); ok {
+		if err := tlsfingerprintprofile.UserAgentValidator(v); err != nil {
+			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.user_agent": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Originator(); !ok {
+		return &ValidationError{Name: "originator", err: errors.New(`ent: missing required field "TLSFingerprintProfile.originator"`)}
+	}
+	if v, ok := _c.mutation.Originator(); ok {
+		if err := tlsfingerprintprofile.OriginatorValidator(v); err != nil {
+			return &ValidationError{Name: "originator", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.originator": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.EnableGrease(); !ok {
@@ -292,6 +344,14 @@ func (_c *TLSFingerprintProfileCreate) createSpec() (*TLSFingerprintProfile, *sq
 	if value, ok := _c.mutation.Platform(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldPlatform, field.TypeString, value)
 		_node.Platform = value
+	}
+	if value, ok := _c.mutation.UserAgent(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldUserAgent, field.TypeString, value)
+		_node.UserAgent = value
+	}
+	if value, ok := _c.mutation.Originator(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldOriginator, field.TypeString, value)
+		_node.Originator = value
 	}
 	if value, ok := _c.mutation.Description(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldDescription, field.TypeString, value)
@@ -434,6 +494,30 @@ func (u *TLSFingerprintProfileUpsert) SetPlatform(v string) *TLSFingerprintProfi
 // UpdatePlatform sets the "platform" field to the value that was provided on create.
 func (u *TLSFingerprintProfileUpsert) UpdatePlatform() *TLSFingerprintProfileUpsert {
 	u.SetExcluded(tlsfingerprintprofile.FieldPlatform)
+	return u
+}
+
+// SetUserAgent sets the "user_agent" field.
+func (u *TLSFingerprintProfileUpsert) SetUserAgent(v string) *TLSFingerprintProfileUpsert {
+	u.Set(tlsfingerprintprofile.FieldUserAgent, v)
+	return u
+}
+
+// UpdateUserAgent sets the "user_agent" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsert) UpdateUserAgent() *TLSFingerprintProfileUpsert {
+	u.SetExcluded(tlsfingerprintprofile.FieldUserAgent)
+	return u
+}
+
+// SetOriginator sets the "originator" field.
+func (u *TLSFingerprintProfileUpsert) SetOriginator(v string) *TLSFingerprintProfileUpsert {
+	u.Set(tlsfingerprintprofile.FieldOriginator, v)
+	return u
+}
+
+// UpdateOriginator sets the "originator" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsert) UpdateOriginator() *TLSFingerprintProfileUpsert {
+	u.SetExcluded(tlsfingerprintprofile.FieldOriginator)
 	return u
 }
 
@@ -767,6 +851,34 @@ func (u *TLSFingerprintProfileUpsertOne) SetPlatform(v string) *TLSFingerprintPr
 func (u *TLSFingerprintProfileUpsertOne) UpdatePlatform() *TLSFingerprintProfileUpsertOne {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetUserAgent sets the "user_agent" field.
+func (u *TLSFingerprintProfileUpsertOne) SetUserAgent(v string) *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetUserAgent(v)
+	})
+}
+
+// UpdateUserAgent sets the "user_agent" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertOne) UpdateUserAgent() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateUserAgent()
+	})
+}
+
+// SetOriginator sets the "originator" field.
+func (u *TLSFingerprintProfileUpsertOne) SetOriginator(v string) *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetOriginator(v)
+	})
+}
+
+// UpdateOriginator sets the "originator" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertOne) UpdateOriginator() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateOriginator()
 	})
 }
 
@@ -1307,6 +1419,34 @@ func (u *TLSFingerprintProfileUpsertBulk) SetPlatform(v string) *TLSFingerprintP
 func (u *TLSFingerprintProfileUpsertBulk) UpdatePlatform() *TLSFingerprintProfileUpsertBulk {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetUserAgent sets the "user_agent" field.
+func (u *TLSFingerprintProfileUpsertBulk) SetUserAgent(v string) *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetUserAgent(v)
+	})
+}
+
+// UpdateUserAgent sets the "user_agent" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertBulk) UpdateUserAgent() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateUserAgent()
+	})
+}
+
+// SetOriginator sets the "originator" field.
+func (u *TLSFingerprintProfileUpsertBulk) SetOriginator(v string) *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetOriginator(v)
+	})
+}
+
+// UpdateOriginator sets the "originator" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertBulk) UpdateOriginator() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateOriginator()
 	})
 }
 

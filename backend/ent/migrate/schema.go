@@ -2499,6 +2499,8 @@ var (
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "name", Type: field.TypeString, Unique: true, Size: 100},
 		{Name: "platform", Type: field.TypeString, Size: 50, Default: ""},
+		{Name: "user_agent", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "originator", Type: field.TypeString, Size: 50, Default: ""},
 		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "enable_grease", Type: field.TypeBool, Default: false},
 		{Name: "cipher_suites", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
