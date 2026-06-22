@@ -515,6 +515,26 @@
               :placeholder="t('admin.tlsFingerprintProfiles.form.descriptionPlaceholder')"
             />
           </div>
+          <div class="col-span-2">
+            <label class="input-label">{{ t('admin.tlsFingerprintProfiles.form.userAgent') }}</label>
+            <input
+              v-model="form.user_agent"
+              type="text"
+              class="input font-mono text-xs"
+              :placeholder="t('admin.tlsFingerprintProfiles.form.userAgentPlaceholder')"
+            />
+            <p class="input-hint text-xs">{{ t('admin.tlsFingerprintProfiles.form.userAgentHint') }}</p>
+          </div>
+          <div class="col-span-2">
+            <label class="input-label">{{ t('admin.tlsFingerprintProfiles.form.originator') }}</label>
+            <input
+              v-model="form.originator"
+              type="text"
+              class="input font-mono text-xs"
+              :placeholder="t('admin.tlsFingerprintProfiles.form.originatorPlaceholder')"
+            />
+            <p class="input-hint text-xs">{{ t('admin.tlsFingerprintProfiles.form.originatorHint') }}</p>
+          </div>
         </div>
 
         <div class="flex items-center gap-3">
@@ -719,6 +739,8 @@ const fieldInputs = reactive({
 const form = reactive({
   platform: 'openai',
   name: '',
+  user_agent: '',
+  originator: '',
   description: null as string | null,
   enable_grease: false
 })
@@ -1072,6 +1094,8 @@ const normalizeCaptureURL = (value: string): string => {
 const resetForm = () => {
   form.platform = 'openai'
   form.name = ''
+  form.user_agent = ''
+  form.originator = ''
   form.description = null
   form.enable_grease = false
   fieldInputs.cipher_suites = ''
@@ -1109,6 +1133,12 @@ const parseYamlInput = () => {
     switch (key) {
       case 'platform':
         form.platform = value.replace(/^["']|["']$/g, '')
+        break
+      case 'user_agent':
+        form.user_agent = value.replace(/^["']|["']$/g, '')
+        break
+      case 'originator':
+        form.originator = value.replace(/^["']|["']$/g, '')
         break
       case 'name': {
         const unquoted = value.replace(/^["']|["']$/g, '')
@@ -1207,6 +1237,8 @@ const handleEdit = (profile: TLSFingerprintProfile) => {
   editingProfile.value = profile
   form.platform = profile.platform || ''
   form.name = profile.name
+  form.user_agent = profile.user_agent || ''
+  form.originator = profile.originator || ''
   form.description = profile.description
   form.enable_grease = profile.enable_grease
   fieldInputs.cipher_suites = formatNumericArray(profile.cipher_suites)
@@ -1240,6 +1272,8 @@ const handleSubmit = async () => {
     const data = {
       platform: form.platform.trim(),
       name: form.name.trim(),
+      user_agent: form.user_agent.trim(),
+      originator: form.originator.trim(),
       description: form.description?.trim() || null,
       enable_grease: form.enable_grease,
       cipher_suites: parseNumericArray(fieldInputs.cipher_suites),
