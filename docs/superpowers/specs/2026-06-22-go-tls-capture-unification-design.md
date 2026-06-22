@@ -90,6 +90,9 @@ capture_task
 capture_session
   - one TLS connection / negotiated session
 
+capture_session_event
+  - one request, stream, message, mock emission, or session error event
+
 capture_sample
   - one canonical replayable asset with a confirmed transport
 ```
@@ -120,23 +123,26 @@ New fields:
 - `by_client_type`
 - `by_platform`
 
+Task completion semantics:
+- `targets` continue to mean canonical sample targets by platform.
+- `transport_targets` mean canonical sample targets by transport.
+- If `transport_targets` is empty, task completion is governed only by `targets`.
+- If `transport_targets` is set, the task completes only after both configured platform targets and configured transport targets are satisfied by canonical samples that passed filtering.
+
 ### `capture_session`
-One TLS connection creates one session row.
+One task-qualified TLS connection creates one session row after the first accepted request, stream, or message resolves task identity.
 
 Required fields:
 - `task_id`
 - `session_id`
-- `platform`
-- `token`
 - `client_ip`
 - `alpn_negotiated`
 - `raw_client_hello`
 - `observed_client_hello`
 - `replay_profile`
 - `derived_fingerprint`
-- `user_agent`
-- `originator`
-- `stainless_metadata`
+- `session_status`
+- `error_summary`
 - `opened_at`
 - `closed_at`
 
@@ -170,7 +176,44 @@ Required fields:
 - `ja3_hash`
 - `ja4`
 - `alpn_fingerprint`
+- `http2_fingerprint`
 - `parse_version`
+
+### `capture_session_event`
+Persist per-request, per-stream, per-message, and per-mock-response session facts that must not be collapsed into a single canonical sample.
+
+Required fields:
+- `task_id`
+- `session_id`
+- `event_id`
+- `event_type`
+- `transport`
+- `request_sequence`
+- `stream_id`
+- `request_path`
+- `http_method`
+- `is_websocket`
+- `websocket_protocol`
+- `client_type`
+- `model`
+- `request_kind`
+- `streaming`
+- `response_mode`
+- `user_agent`
+- `originator`
+- `stainless_metadata`
+- `headers_snapshot`
+- `body_summary`
+- `event_status`
+- `event_error`
+- `created_at`
+
+`capture_session_event` is the persistence target for:
+- later WebSocket turns after the canonical sample is fixed
+- additional HTTP/2 streams after the canonical sample is fixed
+- mock response emission facts
+- parse or replayability failures that should appear in admin inspection
+- prewarm versus turn distinctions used by the mock responders
 
 ### `capture_sample`
 Only canonical, complete, replayable, transport-confirmed assets become samples.
@@ -186,6 +229,9 @@ Required fields:
 - `websocket_protocol`
 - `client_type`
 - `model`
+- `request_kind`
+- `streaming`
+- `response_mode`
 - `user_agent`
 - `originator`
 - `stainless_metadata`
@@ -194,13 +240,17 @@ Required fields:
 - `ja3_raw`
 - `ja3_hash`
 - `ja4`
+- `http2_fingerprint`
 - `raw_client_hello`
 - `captured_at`
 
 Behavior:
 - `capture_session` is the connection-level truth.
+- `capture_session_event` is the request/message-level truth.
 - `capture_sample` is the durable replayable asset.
-- A session may carry multiple requests or messages, but default canonical sampling takes the first valid sample that satisfies replayability and task filters after transport is fully known.
+- A session may carry multiple requests or messages.
+- A session may produce up to one canonical sample per transport identity observed on that session.
+- Within one transport identity, default canonical sampling takes the first valid interaction that satisfies replayability and task filters after transport is fully known.
 
 ## Dedupe and Replay Rules
 
@@ -216,6 +266,23 @@ Rationale:
 - `replay_hash` remains the primary replay identity.
 - JA3 and JA4 are secondary derived analysis keys only.
 - Replay truth comes from `replay_profile`, not from JA3 or JA4.
+
+### Transport Replay Contract
+Transport replay means the system can replay the captured sample through the same transport family and protocol shape:
+- `http1`
+- `h2`
+- `websocket-http1`
+- `websocket-h2`
+
+It does not require replaying the entire original client session transcript or every original request header byte-for-byte.
+
+Protocol-specific replay metadata that must be persisted on the canonical sample or derivable from the session includes:
+- `transport`
+- `request_path`
+- `http_method`
+- `websocket_protocol`
+- `http2_fingerprint` when the transport family is `h2` or `websocket-h2`
+- request mode metadata such as `request_kind`, `streaming`, and `response_mode` when they affect transport behavior
 
 ### Profile Import
 - Import from canonical capture samples into long-term TLS profiles must continue to use only `replay_profile`.
@@ -268,9 +335,10 @@ Contains richer observational metadata that is useful for analysis and debugging
 ### HTTP/2
 - When ALPN negotiates `h2`, enter an HTTP/2 session.
 - Parse per-stream `:method`, `:path`, optional `:protocol`, and body content.
+- Capture and derive the client HTTP/2 fingerprint from connection-level settings and retain it for canonical samples and event inspection.
 - Support normal JSON responses and `/v1/responses` SSE-style success responses.
 - One connection may carry multiple streams.
-- Default canonical sampling still uses the first stream that yields a valid replayable sample and matches task filters.
+- Default canonical sampling still uses the first valid stream for the `h2` transport identity that yields a replayable sample and matches task filters.
 
 ### WebSocket over HTTP/1.1
 - Complete HTTP/1.1 upgrade first.
@@ -324,9 +392,10 @@ The collector is responsible for allowing clients to complete a successful captu
 - If the interaction does not satisfy task filters:
   - client-facing success behavior may still complete
   - no canonical sample is persisted
+  - the interaction may still be recorded as a session event
 - If the interaction is not fully replayable:
   - do not persist a canonical sample
-  - record the session failure for admin inspection
+  - record the failure as a session event for admin inspection
 
 ## Code Organization
 Do not keep expanding the current listener and service files. Introduce a new structure.
@@ -336,10 +405,12 @@ backend/internal/pkg/tlsfingerprint/
   parser/
   replay/
   transport/
+  http2/
 
 backend/internal/service/tls_capture/
   listener/
   session/
+  event/
   sample/
   mock/
   task/
@@ -357,6 +428,9 @@ backend/internal/service/tls_capture/
   - transport enum
   - session ids
   - request metadata types
+- `http2/`
+  - HTTP/2 settings capture
+  - HTTP/2 fingerprint derivation
 
 ### `backend/internal/service/tls_capture/`
 - `listener/`
@@ -368,6 +442,8 @@ backend/internal/service/tls_capture/
   - HTTP/2 session
   - WebSocket over HTTP/1.1 session
   - WebSocket over HTTP/2 session
+- `event/`
+  - session/request/message/mock-response event persistence
 - `sample/`
   - session/request event -> canonical sample
 - `mock/`
@@ -411,6 +487,7 @@ Cover:
 - HTTP/1.1 `/v1/responses` SSE
 - HTTP/2 JSON
 - HTTP/2 SSE
+- HTTP/2 settings capture and `http2_fingerprint` derivation
 - WebSocket over HTTP/1.1 single-turn
 - WebSocket over HTTP/1.1 multi-turn
 - fragmented WebSocket frames
@@ -424,6 +501,8 @@ Cover:
 - target counting
 - task completion
 - task filters
+- task completion with both `targets` and `transport_targets`
+- one session producing canonical samples for more than one transport identity when applicable
 - non-replayable interactions rejected from canonical samples
 - successful client flow with filtered-out sample
 
