@@ -305,26 +305,6 @@ func (h *TLSFingerprintProfileHandler) ImportCaptureTaskSamples(c *gin.Context) 
 	response.Success(c, result)
 }
 
-// SubmitCapture accepts collector payloads protected only by capture task token.
-// POST /api/v1/tls-fingerprint-captures/submit
-func (h *TLSFingerprintProfileHandler) SubmitCapture(c *gin.Context) {
-	var req service.TLSFingerprintCaptureSubmitRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request: "+err.Error())
-		return
-	}
-	result, err := h.captureService.SubmitCapture(c.Request.Context(), req)
-	if err != nil {
-		if _, ok := err.(*model.ValidationError); ok {
-			response.BadRequest(c, err.Error())
-			return
-		}
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, result)
-}
-
 // Update 更新模板（支持部分更新）
 // PUT /api/v1/admin/tls-fingerprint-profiles/:id
 func (h *TLSFingerprintProfileHandler) Update(c *gin.Context) {

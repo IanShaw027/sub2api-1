@@ -79,6 +79,11 @@ func UserAgent(v string) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldUserAgent, v))
 }
 
+// Originator applies equality check predicate on the "originator" field. It's identical to OriginatorEQ.
+func Originator(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldOriginator, v))
+}
+
 // FingerprintHash applies equality check predicate on the "fingerprint_hash" field. It's identical to FingerprintHashEQ.
 func FingerprintHash(v string) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldFingerprintHash, v))
@@ -87,6 +92,11 @@ func FingerprintHash(v string) predicate.TLSFingerprintCaptureSample {
 // RawPayload applies equality check predicate on the "raw_payload" field. It's identical to RawPayloadEQ.
 func RawPayload(v string) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldRawPayload, v))
+}
+
+// RawClientHello applies equality check predicate on the "raw_client_hello" field. It's identical to RawClientHelloEQ.
+func RawClientHello(v []byte) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldRawClientHello, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
@@ -339,6 +349,71 @@ func UserAgentContainsFold(v string) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldUserAgent, v))
 }
 
+// OriginatorEQ applies the EQ predicate on the "originator" field.
+func OriginatorEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldOriginator, v))
+}
+
+// OriginatorNEQ applies the NEQ predicate on the "originator" field.
+func OriginatorNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldOriginator, v))
+}
+
+// OriginatorIn applies the In predicate on the "originator" field.
+func OriginatorIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldOriginator, vs...))
+}
+
+// OriginatorNotIn applies the NotIn predicate on the "originator" field.
+func OriginatorNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldOriginator, vs...))
+}
+
+// OriginatorGT applies the GT predicate on the "originator" field.
+func OriginatorGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldOriginator, v))
+}
+
+// OriginatorGTE applies the GTE predicate on the "originator" field.
+func OriginatorGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldOriginator, v))
+}
+
+// OriginatorLT applies the LT predicate on the "originator" field.
+func OriginatorLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldOriginator, v))
+}
+
+// OriginatorLTE applies the LTE predicate on the "originator" field.
+func OriginatorLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldOriginator, v))
+}
+
+// OriginatorContains applies the Contains predicate on the "originator" field.
+func OriginatorContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldOriginator, v))
+}
+
+// OriginatorHasPrefix applies the HasPrefix predicate on the "originator" field.
+func OriginatorHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldOriginator, v))
+}
+
+// OriginatorHasSuffix applies the HasSuffix predicate on the "originator" field.
+func OriginatorHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldOriginator, v))
+}
+
+// OriginatorEqualFold applies the EqualFold predicate on the "originator" field.
+func OriginatorEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldOriginator, v))
+}
+
+// OriginatorContainsFold applies the ContainsFold predicate on the "originator" field.
+func OriginatorContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldOriginator, v))
+}
+
 // FingerprintHashEQ applies the EQ predicate on the "fingerprint_hash" field.
 func FingerprintHashEQ(v string) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldFingerprintHash, v))
@@ -467,6 +542,56 @@ func RawPayloadEqualFold(v string) predicate.TLSFingerprintCaptureSample {
 // RawPayloadContainsFold applies the ContainsFold predicate on the "raw_payload" field.
 func RawPayloadContainsFold(v string) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldRawPayload, v))
+}
+
+// RawClientHelloEQ applies the EQ predicate on the "raw_client_hello" field.
+func RawClientHelloEQ(v []byte) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldRawClientHello, v))
+}
+
+// RawClientHelloNEQ applies the NEQ predicate on the "raw_client_hello" field.
+func RawClientHelloNEQ(v []byte) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldRawClientHello, v))
+}
+
+// RawClientHelloIn applies the In predicate on the "raw_client_hello" field.
+func RawClientHelloIn(vs ...[]byte) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldRawClientHello, vs...))
+}
+
+// RawClientHelloNotIn applies the NotIn predicate on the "raw_client_hello" field.
+func RawClientHelloNotIn(vs ...[]byte) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldRawClientHello, vs...))
+}
+
+// RawClientHelloGT applies the GT predicate on the "raw_client_hello" field.
+func RawClientHelloGT(v []byte) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldRawClientHello, v))
+}
+
+// RawClientHelloGTE applies the GTE predicate on the "raw_client_hello" field.
+func RawClientHelloGTE(v []byte) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldRawClientHello, v))
+}
+
+// RawClientHelloLT applies the LT predicate on the "raw_client_hello" field.
+func RawClientHelloLT(v []byte) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldRawClientHello, v))
+}
+
+// RawClientHelloLTE applies the LTE predicate on the "raw_client_hello" field.
+func RawClientHelloLTE(v []byte) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldRawClientHello, v))
+}
+
+// RawClientHelloIsNil applies the IsNil predicate on the "raw_client_hello" field.
+func RawClientHelloIsNil() predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIsNull(FieldRawClientHello))
+}
+
+// RawClientHelloNotNil applies the NotNil predicate on the "raw_client_hello" field.
+func RawClientHelloNotNil() predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotNull(FieldRawClientHello))
 }
 
 // And groups predicates with the AND operator between them.

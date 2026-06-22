@@ -14,6 +14,7 @@ backend/bin/
 backend/server
 backend/sub2api
 backend/main
+backend/kiro_native_capture
 
 # Go 测试二进制
 *.test

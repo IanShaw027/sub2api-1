@@ -84,6 +84,20 @@ func (_u *TLSFingerprintCaptureSampleUpdate) SetNillableUserAgent(v *string) *TL
 	return _u
 }
 
+// SetOriginator sets the "originator" field.
+func (_u *TLSFingerprintCaptureSampleUpdate) SetOriginator(v string) *TLSFingerprintCaptureSampleUpdate {
+	_u.mutation.SetOriginator(v)
+	return _u
+}
+
+// SetNillableOriginator sets the "originator" field if the given value is not nil.
+func (_u *TLSFingerprintCaptureSampleUpdate) SetNillableOriginator(v *string) *TLSFingerprintCaptureSampleUpdate {
+	if v != nil {
+		_u.SetOriginator(*v)
+	}
+	return _u
+}
+
 // SetFingerprintHash sets the "fingerprint_hash" field.
 func (_u *TLSFingerprintCaptureSampleUpdate) SetFingerprintHash(v string) *TLSFingerprintCaptureSampleUpdate {
 	_u.mutation.SetFingerprintHash(v)
@@ -115,6 +129,18 @@ func (_u *TLSFingerprintCaptureSampleUpdate) SetNillableRawPayload(v *string) *T
 	if v != nil {
 		_u.SetRawPayload(*v)
 	}
+	return _u
+}
+
+// SetRawClientHello sets the "raw_client_hello" field.
+func (_u *TLSFingerprintCaptureSampleUpdate) SetRawClientHello(v []byte) *TLSFingerprintCaptureSampleUpdate {
+	_u.mutation.SetRawClientHello(v)
+	return _u
+}
+
+// ClearRawClientHello clears the value of the "raw_client_hello" field.
+func (_u *TLSFingerprintCaptureSampleUpdate) ClearRawClientHello() *TLSFingerprintCaptureSampleUpdate {
+	_u.mutation.ClearRawClientHello()
 	return _u
 }
 
@@ -166,6 +192,11 @@ func (_u *TLSFingerprintCaptureSampleUpdate) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Originator(); ok {
+		if err := tlsfingerprintcapturesample.OriginatorValidator(v); err != nil {
+			return &ValidationError{Name: "originator", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.originator": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.FingerprintHash(); ok {
 		if err := tlsfingerprintcapturesample.FingerprintHashValidator(v); err != nil {
 			return &ValidationError{Name: "fingerprint_hash", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.fingerprint_hash": %w`, err)}
@@ -206,6 +237,9 @@ func (_u *TLSFingerprintCaptureSampleUpdate) sqlSave(ctx context.Context) (_node
 	if value, ok := _u.mutation.UserAgent(); ok {
 		_spec.SetField(tlsfingerprintcapturesample.FieldUserAgent, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.Originator(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldOriginator, field.TypeString, value)
+	}
 	if value, ok := _u.mutation.FingerprintHash(); ok {
 		_spec.SetField(tlsfingerprintcapturesample.FieldFingerprintHash, field.TypeString, value)
 	}
@@ -214,6 +248,12 @@ func (_u *TLSFingerprintCaptureSampleUpdate) sqlSave(ctx context.Context) (_node
 	}
 	if value, ok := _u.mutation.RawPayload(); ok {
 		_spec.SetField(tlsfingerprintcapturesample.FieldRawPayload, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RawClientHello(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldRawClientHello, field.TypeBytes, value)
+	}
+	if _u.mutation.RawClientHelloCleared() {
+		_spec.ClearField(tlsfingerprintcapturesample.FieldRawClientHello, field.TypeBytes)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -290,6 +330,20 @@ func (_u *TLSFingerprintCaptureSampleUpdateOne) SetNillableUserAgent(v *string) 
 	return _u
 }
 
+// SetOriginator sets the "originator" field.
+func (_u *TLSFingerprintCaptureSampleUpdateOne) SetOriginator(v string) *TLSFingerprintCaptureSampleUpdateOne {
+	_u.mutation.SetOriginator(v)
+	return _u
+}
+
+// SetNillableOriginator sets the "originator" field if the given value is not nil.
+func (_u *TLSFingerprintCaptureSampleUpdateOne) SetNillableOriginator(v *string) *TLSFingerprintCaptureSampleUpdateOne {
+	if v != nil {
+		_u.SetOriginator(*v)
+	}
+	return _u
+}
+
 // SetFingerprintHash sets the "fingerprint_hash" field.
 func (_u *TLSFingerprintCaptureSampleUpdateOne) SetFingerprintHash(v string) *TLSFingerprintCaptureSampleUpdateOne {
 	_u.mutation.SetFingerprintHash(v)
@@ -321,6 +375,18 @@ func (_u *TLSFingerprintCaptureSampleUpdateOne) SetNillableRawPayload(v *string)
 	if v != nil {
 		_u.SetRawPayload(*v)
 	}
+	return _u
+}
+
+// SetRawClientHello sets the "raw_client_hello" field.
+func (_u *TLSFingerprintCaptureSampleUpdateOne) SetRawClientHello(v []byte) *TLSFingerprintCaptureSampleUpdateOne {
+	_u.mutation.SetRawClientHello(v)
+	return _u
+}
+
+// ClearRawClientHello clears the value of the "raw_client_hello" field.
+func (_u *TLSFingerprintCaptureSampleUpdateOne) ClearRawClientHello() *TLSFingerprintCaptureSampleUpdateOne {
+	_u.mutation.ClearRawClientHello()
 	return _u
 }
 
@@ -385,6 +451,11 @@ func (_u *TLSFingerprintCaptureSampleUpdateOne) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Originator(); ok {
+		if err := tlsfingerprintcapturesample.OriginatorValidator(v); err != nil {
+			return &ValidationError{Name: "originator", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.originator": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.FingerprintHash(); ok {
 		if err := tlsfingerprintcapturesample.FingerprintHashValidator(v); err != nil {
 			return &ValidationError{Name: "fingerprint_hash", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.fingerprint_hash": %w`, err)}
@@ -442,6 +513,9 @@ func (_u *TLSFingerprintCaptureSampleUpdateOne) sqlSave(ctx context.Context) (_n
 	if value, ok := _u.mutation.UserAgent(); ok {
 		_spec.SetField(tlsfingerprintcapturesample.FieldUserAgent, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.Originator(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldOriginator, field.TypeString, value)
+	}
 	if value, ok := _u.mutation.FingerprintHash(); ok {
 		_spec.SetField(tlsfingerprintcapturesample.FieldFingerprintHash, field.TypeString, value)
 	}
@@ -450,6 +524,12 @@ func (_u *TLSFingerprintCaptureSampleUpdateOne) sqlSave(ctx context.Context) (_n
 	}
 	if value, ok := _u.mutation.RawPayload(); ok {
 		_spec.SetField(tlsfingerprintcapturesample.FieldRawPayload, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RawClientHello(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldRawClientHello, field.TypeBytes, value)
+	}
+	if _u.mutation.RawClientHelloCleared() {
+		_spec.ClearField(tlsfingerprintcapturesample.FieldRawClientHello, field.TypeBytes)
 	}
 	_node = &TLSFingerprintCaptureSample{config: _u.config}
 	_spec.Assign = _node.assignValues

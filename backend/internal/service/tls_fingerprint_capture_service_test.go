@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"net"
 	"testing"
 
+	utls "github.com/refraction-networking/utls"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,22 +20,24 @@ func TestTLSFingerprintCaptureServiceCountsDifferentFingerprintsForSameUserAgent
 	})
 	require.NoError(t, err)
 
-	first, err := svc.SubmitCapture(context.Background(), TLSFingerprintCaptureSubmitRequest{
-		Token:     task.Token,
-		Platform:  "openai",
-		UserAgent: "Codex Desktop/0.140.0-alpha.2 (Windows 11; x86_64)",
-		Payload:   capturePayloadWithExtensions("[0,11,10,13,43,45,51]"),
+	first, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "Codex Desktop/0.140.0-alpha.2 (Windows 11; x86_64)",
+		Originator:  "codex_cli_rs",
+		ClientHello: captureServiceTestClientHello(t, 0),
 	})
 	require.NoError(t, err)
 	require.True(t, first.Accepted)
 	require.False(t, first.Duplicate)
 	require.Equal(t, map[string]int{"openai": 1}, first.Counts)
 
-	second, err := svc.SubmitCapture(context.Background(), TLSFingerprintCaptureSubmitRequest{
-		Token:     task.Token,
-		Platform:  "openai",
-		UserAgent: "Codex Desktop/0.140.0-alpha.2 (Windows 11; x86_64)",
-		Payload:   capturePayloadWithExtensions("[0,11,10,13,43,45,51,65037]"),
+	second, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "Codex Desktop/0.140.0-alpha.2 (Windows 11; x86_64)",
+		Originator:  "codex_cli_rs",
+		ClientHello: captureServiceTestClientHello(t, 1),
 	})
 	require.NoError(t, err)
 	require.True(t, second.Accepted)
@@ -53,21 +57,23 @@ func TestTLSFingerprintCaptureServiceDedupesSameFingerprintAcrossUserAgents(t *t
 	})
 	require.NoError(t, err)
 
-	first, err := svc.SubmitCapture(context.Background(), TLSFingerprintCaptureSubmitRequest{
-		Token:     task.Token,
-		Platform:  "openai",
-		UserAgent: "codex-tui/0.140.0 (Debian GNU/Linux 12; x86_64)",
-		Payload:   capturePayloadWithExtensions("[0,11,10,13,43,45,51]"),
+	first, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "codex-tui/0.140.0 (Debian GNU/Linux 12; x86_64)",
+		Originator:  "codex_cli_rs",
+		ClientHello: captureServiceTestClientHello(t, 0),
 	})
 	require.NoError(t, err)
 	require.True(t, first.Accepted)
 	require.False(t, first.Duplicate)
 
-	second, err := svc.SubmitCapture(context.Background(), TLSFingerprintCaptureSubmitRequest{
-		Token:     task.Token,
-		Platform:  "openai",
-		UserAgent: "codex_exec/0.140.0 (macOS 15.5; arm64)",
-		Payload:   capturePayloadWithExtensions("[0,11,10,13,43,45,51]"),
+	second, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "codex_exec/0.140.0 (macOS 15.5; arm64)",
+		Originator:  "codex_exec",
+		ClientHello: captureServiceTestClientHello(t, 0),
 	})
 	require.NoError(t, err)
 	require.True(t, second.Accepted)
@@ -87,22 +93,24 @@ func TestTLSFingerprintCaptureServiceStopsCollectingPlatformAfterTargetReached(t
 	})
 	require.NoError(t, err)
 
-	openaiFirst, err := svc.SubmitCapture(context.Background(), TLSFingerprintCaptureSubmitRequest{
-		Token:     task.Token,
-		Platform:  "openai",
-		UserAgent: "codex-tui/0.140.0",
-		Payload:   capturePayloadWithExtensions("[0,11,10,13,43,45,51]"),
+	openaiFirst, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "codex-tui/0.140.0",
+		Originator:  "codex_cli_rs",
+		ClientHello: captureServiceTestClientHello(t, 0),
 	})
 	require.NoError(t, err)
 	require.True(t, openaiFirst.Accepted)
 	require.Equal(t, map[string]int{"openai": 1, "kiro": 0}, openaiFirst.Counts)
 	require.Equal(t, TLSFingerprintCaptureStatusRunning, openaiFirst.Task.Status)
 
-	openaiSecond, err := svc.SubmitCapture(context.Background(), TLSFingerprintCaptureSubmitRequest{
-		Token:     task.Token,
-		Platform:  "openai",
-		UserAgent: "codex_exec/0.140.0",
-		Payload:   capturePayloadWithExtensions("[0,11,10,13,43,45,51,65037]"),
+	openaiSecond, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "codex_exec/0.140.0",
+		Originator:  "codex_exec",
+		ClientHello: captureServiceTestClientHello(t, 1),
 	})
 	require.NoError(t, err)
 	require.False(t, openaiSecond.Accepted)
@@ -110,11 +118,12 @@ func TestTLSFingerprintCaptureServiceStopsCollectingPlatformAfterTargetReached(t
 	require.Equal(t, map[string]int{"openai": 1, "kiro": 0}, openaiSecond.Counts)
 	require.Len(t, repo.samples, 1)
 
-	kiroFirst, err := svc.SubmitCapture(context.Background(), TLSFingerprintCaptureSubmitRequest{
-		Token:     task.Token,
-		Platform:  "kiro",
-		UserAgent: "Kiro/0.1",
-		Payload:   capturePayloadWithExtensions("[0,11,10,13,43,45,51,65037]"),
+	kiroFirst, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "kiro",
+		UserAgent:   "Kiro/0.1",
+		Originator:  "kiro",
+		ClientHello: captureServiceTestClientHello(t, 1),
 	})
 	require.NoError(t, err)
 	require.True(t, kiroFirst.Accepted)
@@ -133,11 +142,12 @@ func TestTLSFingerprintCaptureServiceTreatsConcurrentDuplicateCreateAsDuplicate(
 	})
 	require.NoError(t, err)
 
-	result, err := svc.SubmitCapture(context.Background(), TLSFingerprintCaptureSubmitRequest{
-		Token:     task.Token,
-		Platform:  "openai",
-		UserAgent: "codex-tui/0.140.0",
-		Payload:   capturePayloadWithExtensions("[0,11,10,13,43,45,51]"),
+	result, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "codex-tui/0.140.0",
+		Originator:  "codex_cli_rs",
+		ClientHello: captureServiceTestClientHello(t, 0),
 	})
 	require.NoError(t, err)
 	require.True(t, result.Accepted)
@@ -156,7 +166,7 @@ func TestTLSFingerprintCaptureServiceRecountsAfterConcurrentDifferentFingerprint
 			UserAgent:       "codex_exec/0.140.0",
 			FingerprintHash: sample.FingerprintHash + "-concurrent",
 			Profile:         cloneTLSFingerprintProfile(sample.Profile),
-			RawPayload:      sample.RawPayload,
+			RawClientHello:  append([]byte(nil), sample.RawClientHello...),
 			CreatedAt:       sample.CreatedAt,
 		})
 		repo.nextSampleID++
@@ -169,11 +179,12 @@ func TestTLSFingerprintCaptureServiceRecountsAfterConcurrentDifferentFingerprint
 	})
 	require.NoError(t, err)
 
-	result, err := svc.SubmitCapture(context.Background(), TLSFingerprintCaptureSubmitRequest{
-		Token:     task.Token,
-		Platform:  "openai",
-		UserAgent: "codex-tui/0.140.0",
-		Payload:   capturePayloadWithExtensions("[0,11,10,13,43,45,51]"),
+	result, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "codex-tui/0.140.0",
+		Originator:  "codex_cli_rs",
+		ClientHello: captureServiceTestClientHello(t, 0),
 	})
 	require.NoError(t, err)
 	require.False(t, result.Duplicate)
@@ -192,11 +203,12 @@ func TestTLSFingerprintCaptureServiceIgnoresNonMatchingUserAgent(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	result, err := svc.SubmitCapture(context.Background(), TLSFingerprintCaptureSubmitRequest{
-		Token:     task.Token,
-		Platform:  "openai",
-		UserAgent: "curl/8.9.1",
-		Payload:   capturePayloadWithExtensions("[0,11,10,13,43,45,51]"),
+	result, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "curl/8.9.1",
+		Originator:  "curl",
+		ClientHello: captureServiceTestClientHello(t, 0),
 	})
 	require.NoError(t, err)
 	require.False(t, result.Accepted)
@@ -242,18 +254,20 @@ func TestTLSFingerprintCaptureServiceImportsTaskSamplesToProfiles(t *testing.T) 
 	})
 	require.NoError(t, err)
 
-	first, err := svc.SubmitCapture(context.Background(), TLSFingerprintCaptureSubmitRequest{
-		Token:     task.Token,
-		Platform:  "openai",
-		UserAgent: "codex-tui/0.140.0",
-		Payload:   capturePayloadWithExtensions("[0,11,10,13,43,45,51]"),
+	first, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "codex-tui/0.140.0",
+		Originator:  "codex_cli_rs",
+		ClientHello: captureServiceTestClientHello(t, 0),
 	})
 	require.NoError(t, err)
-	second, err := svc.SubmitCapture(context.Background(), TLSFingerprintCaptureSubmitRequest{
-		Token:     task.Token,
-		Platform:  "openai",
-		UserAgent: "Codex Desktop/0.140.0",
-		Payload:   capturePayloadWithExtensions("[0,11,10,13,43,45,51,65037]"),
+	second, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "Codex Desktop/0.140.0",
+		Originator:  "codex_cli_rs",
+		ClientHello: captureServiceTestClientHello(t, 1),
 	})
 	require.NoError(t, err)
 
@@ -269,20 +283,49 @@ func TestTLSFingerprintCaptureServiceImportsTaskSamplesToProfiles(t *testing.T) 
 	require.Equal(t, "openai", profileRepo.profiles[1].Platform)
 }
 
-func capturePayloadWithExtensions(extensions string) string {
-	return `{
-  "name": "captured codex",
-  "enable_grease": false,
-  "cipher_suites": [4865,4866,4867,49195],
-  "curves": [29,23,24],
-  "point_formats": [0],
-  "signature_algorithms": [1027,2052,1025],
-  "alpn_protocols": ["http/1.1"],
-  "supported_versions": [772,771],
-  "key_share_groups": [29],
-  "psk_modes": [1],
-  "extensions": ` + extensions + `
-	}`
+func captureServiceTestClientHello(t *testing.T, variant int) []byte {
+	t.Helper()
+
+	alpnProtocols := []string{"http/1.1"}
+	if variant > 0 {
+		alpnProtocols = []string{"h2", "http/1.1"}
+	}
+
+	spec := &utls.ClientHelloSpec{
+		CipherSuites: []uint16{
+			utls.TLS_AES_128_GCM_SHA256,
+			utls.TLS_AES_256_GCM_SHA384,
+			utls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		},
+		CompressionMethods: []uint8{0},
+		Extensions: []utls.TLSExtension{
+			&utls.SNIExtension{},
+			&utls.SupportedCurvesExtension{Curves: []utls.CurveID{utls.X25519, utls.CurveP256}},
+			&utls.SupportedPointsExtension{SupportedPoints: []uint8{0}},
+			&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: []utls.SignatureScheme{0x0403, 0x0804, 0x0401}},
+			&utls.ALPNExtension{AlpnProtocols: alpnProtocols},
+			&utls.SupportedVersionsExtension{Versions: []uint16{utls.VersionTLS13, utls.VersionTLS12}},
+			&utls.PSKKeyExchangeModesExtension{Modes: []uint8{utls.PskModeDHE}},
+			&utls.KeyShareExtension{KeyShares: []utls.KeyShare{{Group: utls.X25519}}},
+		},
+		TLSVersMin: utls.VersionTLS12,
+		TLSVersMax: utls.VersionTLS13,
+	}
+	uconn := utls.UClient(&net.TCPConn{}, &utls.Config{ServerName: "cloud.example"}, utls.HelloCustom)
+	require.NoError(t, uconn.ApplyPreset(spec))
+	require.NoError(t, uconn.MarshalClientHello())
+	require.NotEmpty(t, uconn.HandshakeState.Hello.Raw)
+
+	handshake := uconn.HandshakeState.Hello.Raw
+	record := make([]byte, 5+len(handshake))
+	recordVersion := uint16(utls.VersionTLS12)
+	record[0] = 22
+	record[1] = byte(recordVersion >> 8)
+	record[2] = byte(recordVersion)
+	record[3] = byte(len(handshake) >> 8)
+	record[4] = byte(len(handshake))
+	copy(record[5:], handshake)
+	return record
 }
 
 type tlsFingerprintCaptureDuplicateCreateRepoStub struct {

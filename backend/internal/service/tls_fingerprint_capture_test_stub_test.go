@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 )
@@ -12,6 +13,8 @@ type tlsFingerprintCaptureRepoStub struct {
 	nextSampleID int64
 	tasks        []*TLSFingerprintCaptureTask
 	samples      []*TLSFingerprintCaptureSample
+
+	getRunningTaskByTokenErr error
 
 	beforeCreateSampleLocked func(*tlsFingerprintCaptureRepoStub, *TLSFingerprintCaptureSample)
 }
@@ -57,12 +60,24 @@ func (r *tlsFingerprintCaptureRepoStub) GetTaskByID(_ context.Context, id int64)
 func (r *tlsFingerprintCaptureRepoStub) GetRunningTaskByToken(_ context.Context, token string) (*TLSFingerprintCaptureTask, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.getRunningTaskByTokenErr != nil {
+		return nil, r.getRunningTaskByTokenErr
+	}
 	for _, task := range r.tasks {
 		if task.Token == token && task.Status == TLSFingerprintCaptureStatusRunning {
 			return cloneTLSFingerprintCaptureTask(task), nil
 		}
 	}
 	return nil, nil
+}
+
+func (r *tlsFingerprintCaptureRepoStub) FailGetRunningTaskByToken(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err == nil {
+		err = errors.New("get running task failed")
+	}
+	r.getRunningTaskByTokenErr = err
 }
 
 func (r *tlsFingerprintCaptureRepoStub) UpdateTask(_ context.Context, task *TLSFingerprintCaptureTask) (*TLSFingerprintCaptureTask, error) {
@@ -143,5 +158,6 @@ func cloneTLSFingerprintCaptureSample(sample *TLSFingerprintCaptureSample) *TLSF
 	}
 	clone := *sample
 	clone.Profile = cloneTLSFingerprintProfile(sample.Profile)
+	clone.RawClientHello = append([]byte(nil), sample.RawClientHello...)
 	return &clone
 }

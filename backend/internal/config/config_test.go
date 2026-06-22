@@ -814,6 +814,108 @@ func TestLoadDefaultUsageCleanupConfig(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultTLSFingerprintCaptureConfig(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.TLSFingerprintCapture.Enabled {
+		t.Fatalf("TLSFingerprintCapture.Enabled = true, want false")
+	}
+	if cfg.TLSFingerprintCapture.Host != "0.0.0.0" {
+		t.Fatalf("TLSFingerprintCapture.Host = %q, want 0.0.0.0", cfg.TLSFingerprintCapture.Host)
+	}
+	if cfg.TLSFingerprintCapture.Port != 8444 {
+		t.Fatalf("TLSFingerprintCapture.Port = %d, want 8444", cfg.TLSFingerprintCapture.Port)
+	}
+	if cfg.TLSFingerprintCapture.Address() != "0.0.0.0:8444" {
+		t.Fatalf("TLSFingerprintCapture.Address() = %q, want 0.0.0.0:8444", cfg.TLSFingerprintCapture.Address())
+	}
+}
+
+func TestValidateTLSFingerprintCaptureConfigEnabled(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	base, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*Config)
+		wantErr string
+	}{
+		{
+			name: "missing host",
+			mutate: func(c *Config) {
+				c.TLSFingerprintCapture.Enabled = true
+				c.TLSFingerprintCapture.Host = ""
+			},
+			wantErr: "tls_fingerprint_capture.host",
+		},
+		{
+			name: "invalid port",
+			mutate: func(c *Config) {
+				c.TLSFingerprintCapture.Enabled = true
+				c.TLSFingerprintCapture.Port = 70000
+			},
+			wantErr: "tls_fingerprint_capture.port",
+		},
+		{
+			name: "ephemeral port requires public base url",
+			mutate: func(c *Config) {
+				c.TLSFingerprintCapture.Enabled = true
+				c.TLSFingerprintCapture.Port = 0
+				c.TLSFingerprintCapture.PublicBaseURL = ""
+			},
+			wantErr: "tls_fingerprint_capture.public_base_url",
+		},
+		{
+			name: "cert without key",
+			mutate: func(c *Config) {
+				c.TLSFingerprintCapture.Enabled = true
+				c.TLSFingerprintCapture.CertFile = "/tmp/cert.pem"
+			},
+			wantErr: "tls_fingerprint_capture.cert_file and tls_fingerprint_capture.key_file",
+		},
+		{
+			name: "key without cert",
+			mutate: func(c *Config) {
+				c.TLSFingerprintCapture.Enabled = true
+				c.TLSFingerprintCapture.KeyFile = "/tmp/key.pem"
+			},
+			wantErr: "tls_fingerprint_capture.cert_file and tls_fingerprint_capture.key_file",
+		},
+		{
+			name: "invalid public base url",
+			mutate: func(c *Config) {
+				c.TLSFingerprintCapture.Enabled = true
+				c.TLSFingerprintCapture.PublicBaseURL = "capture.example"
+			},
+			wantErr: "tls_fingerprint_capture.public_base_url",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := *base
+			tt.mutate(&cfg)
+
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatalf("Validate() expected error containing %q, got nil", tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateUsageCleanupConfigEnabled(t *testing.T) {
 	resetViperWithJWTSecret(t)
 

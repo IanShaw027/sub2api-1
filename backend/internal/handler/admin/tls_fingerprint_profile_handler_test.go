@@ -5,9 +5,9 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	utls "github.com/refraction-networking/utls"
 	"github.com/stretchr/testify/require"
 )
 
@@ -133,7 +134,6 @@ func TestTLSFingerprintProfileHandlerCaptureTaskLifecycle(t *testing.T) {
 	router.GET("/api/v1/admin/tls-fingerprint-profiles/capture-tasks", handler.ListCaptureTasks)
 	router.GET("/api/v1/admin/tls-fingerprint-profiles/capture-tasks/:id/samples", handler.ListCaptureSamples)
 	router.POST("/api/v1/admin/tls-fingerprint-profiles/capture-tasks/:id/import", handler.ImportCaptureTaskSamples)
-	router.POST("/api/v1/tls-fingerprint-captures/submit", handler.SubmitCapture)
 
 	startBody := `{"name":"Codex live","targets":{"openai":2},"ua_keywords":["codex"]}`
 	startRec := httptest.NewRecorder()
@@ -153,12 +153,14 @@ func TestTLSFingerprintProfileHandlerCaptureTaskLifecycle(t *testing.T) {
 	require.NotEmpty(t, started.Data.Token)
 	require.Equal(t, service.TLSFingerprintCaptureStatusRunning, started.Data.Status)
 
-	submitBody := `{"token":` + strconv.Quote(started.Data.Token) + `,"platform":"openai","user_agent":"codex-tui/0.140.0","payload":` + strconv.Quote(`{"name":"Codex TUI live","enable_grease":false,"cipher_suites":[4865,4866],"curves":[29,23],"point_formats":[0],"signature_algorithms":[1027],"alpn_protocols":["http/1.1"],"supported_versions":[772,771],"key_share_groups":[29],"psk_modes":[1],"extensions":[0,11,10,13,43,45,51]}`) + `}`
-	submitRec := httptest.NewRecorder()
-	submitReq := httptest.NewRequest(http.MethodPost, "/api/v1/tls-fingerprint-captures/submit", strings.NewReader(submitBody))
-	submitReq.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(submitRec, submitReq)
-	require.Equal(t, http.StatusOK, submitRec.Code, submitRec.Body.String())
+	_, err := captureSvc.SubmitNativeCapture(context.Background(), service.TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       started.Data.Token,
+		Platform:    "openai",
+		UserAgent:   "codex-tui/0.140.0",
+		Originator:  "codex_cli_rs",
+		ClientHello: nativeCaptureHandlerClientHello(t),
+	})
+	require.NoError(t, err)
 
 	samplesRec := httptest.NewRecorder()
 	samplesReq := httptest.NewRequest(http.MethodGet, "/api/v1/admin/tls-fingerprint-profiles/capture-tasks/1/samples", nil)
@@ -352,4 +354,43 @@ func cloneStringIntMap(in map[string]int) map[string]int {
 		out[k] = v
 	}
 	return out
+}
+
+func nativeCaptureHandlerClientHello(t *testing.T) []byte {
+	t.Helper()
+
+	uconn := utls.UClient(&net.TCPConn{}, &utls.Config{ServerName: "cloud.example"}, utls.HelloCustom)
+	require.NoError(t, uconn.ApplyPreset(&utls.ClientHelloSpec{
+		CipherSuites: []uint16{
+			utls.TLS_AES_128_GCM_SHA256,
+			utls.TLS_AES_256_GCM_SHA384,
+			utls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		},
+		CompressionMethods: []uint8{0},
+		Extensions: []utls.TLSExtension{
+			&utls.SNIExtension{},
+			&utls.SupportedCurvesExtension{Curves: []utls.CurveID{utls.X25519, utls.CurveP256}},
+			&utls.SupportedPointsExtension{SupportedPoints: []uint8{0}},
+			&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: []utls.SignatureScheme{0x0403, 0x0804, 0x0401}},
+			&utls.ALPNExtension{AlpnProtocols: []string{"http/1.1"}},
+			&utls.SupportedVersionsExtension{Versions: []uint16{utls.VersionTLS13, utls.VersionTLS12}},
+			&utls.PSKKeyExchangeModesExtension{Modes: []uint8{utls.PskModeDHE}},
+			&utls.KeyShareExtension{KeyShares: []utls.KeyShare{{Group: utls.X25519}}},
+		},
+		TLSVersMin: utls.VersionTLS12,
+		TLSVersMax: utls.VersionTLS13,
+	}))
+	require.NoError(t, uconn.MarshalClientHello())
+	require.NotEmpty(t, uconn.HandshakeState.Hello.Raw)
+
+	handshake := uconn.HandshakeState.Hello.Raw
+	record := make([]byte, 5+len(handshake))
+	recordVersion := uint16(utls.VersionTLS12)
+	record[0] = 22
+	record[1] = byte(recordVersion >> 8)
+	record[2] = byte(recordVersion)
+	record[3] = byte(len(handshake) >> 8)
+	record[4] = byte(len(handshake))
+	copy(record[5:], handshake)
+	return record
 }

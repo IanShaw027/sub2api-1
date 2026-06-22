@@ -85,6 +85,20 @@ func (_c *TLSFingerprintCaptureSampleCreate) SetNillableUserAgent(v *string) *TL
 	return _c
 }
 
+// SetOriginator sets the "originator" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetOriginator(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetOriginator(v)
+	return _c
+}
+
+// SetNillableOriginator sets the "originator" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableOriginator(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetOriginator(*v)
+	}
+	return _c
+}
+
 // SetFingerprintHash sets the "fingerprint_hash" field.
 func (_c *TLSFingerprintCaptureSampleCreate) SetFingerprintHash(v string) *TLSFingerprintCaptureSampleCreate {
 	_c.mutation.SetFingerprintHash(v)
@@ -108,6 +122,12 @@ func (_c *TLSFingerprintCaptureSampleCreate) SetNillableRawPayload(v *string) *T
 	if v != nil {
 		_c.SetRawPayload(*v)
 	}
+	return _c
+}
+
+// SetRawClientHello sets the "raw_client_hello" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetRawClientHello(v []byte) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetRawClientHello(v)
 	return _c
 }
 
@@ -162,6 +182,10 @@ func (_c *TLSFingerprintCaptureSampleCreate) defaults() {
 		v := tlsfingerprintcapturesample.DefaultUserAgent
 		_c.mutation.SetUserAgent(v)
 	}
+	if _, ok := _c.mutation.Originator(); !ok {
+		v := tlsfingerprintcapturesample.DefaultOriginator
+		_c.mutation.SetOriginator(v)
+	}
 	if _, ok := _c.mutation.RawPayload(); !ok {
 		v := tlsfingerprintcapturesample.DefaultRawPayload
 		_c.mutation.SetRawPayload(v)
@@ -189,6 +213,14 @@ func (_c *TLSFingerprintCaptureSampleCreate) check() error {
 	}
 	if _, ok := _c.mutation.UserAgent(); !ok {
 		return &ValidationError{Name: "user_agent", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.user_agent"`)}
+	}
+	if _, ok := _c.mutation.Originator(); !ok {
+		return &ValidationError{Name: "originator", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.originator"`)}
+	}
+	if v, ok := _c.mutation.Originator(); ok {
+		if err := tlsfingerprintcapturesample.OriginatorValidator(v); err != nil {
+			return &ValidationError{Name: "originator", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.originator": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.FingerprintHash(); !ok {
 		return &ValidationError{Name: "fingerprint_hash", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.fingerprint_hash"`)}
@@ -256,6 +288,10 @@ func (_c *TLSFingerprintCaptureSampleCreate) createSpec() (*TLSFingerprintCaptur
 		_spec.SetField(tlsfingerprintcapturesample.FieldUserAgent, field.TypeString, value)
 		_node.UserAgent = value
 	}
+	if value, ok := _c.mutation.Originator(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldOriginator, field.TypeString, value)
+		_node.Originator = value
+	}
 	if value, ok := _c.mutation.FingerprintHash(); ok {
 		_spec.SetField(tlsfingerprintcapturesample.FieldFingerprintHash, field.TypeString, value)
 		_node.FingerprintHash = value
@@ -267,6 +303,10 @@ func (_c *TLSFingerprintCaptureSampleCreate) createSpec() (*TLSFingerprintCaptur
 	if value, ok := _c.mutation.RawPayload(); ok {
 		_spec.SetField(tlsfingerprintcapturesample.FieldRawPayload, field.TypeString, value)
 		_node.RawPayload = value
+	}
+	if value, ok := _c.mutation.RawClientHello(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldRawClientHello, field.TypeBytes, value)
+		_node.RawClientHello = &value
 	}
 	return _node, _spec
 }
@@ -374,6 +414,18 @@ func (u *TLSFingerprintCaptureSampleUpsert) UpdateUserAgent() *TLSFingerprintCap
 	return u
 }
 
+// SetOriginator sets the "originator" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetOriginator(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldOriginator, v)
+	return u
+}
+
+// UpdateOriginator sets the "originator" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateOriginator() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldOriginator)
+	return u
+}
+
 // SetFingerprintHash sets the "fingerprint_hash" field.
 func (u *TLSFingerprintCaptureSampleUpsert) SetFingerprintHash(v string) *TLSFingerprintCaptureSampleUpsert {
 	u.Set(tlsfingerprintcapturesample.FieldFingerprintHash, v)
@@ -407,6 +459,24 @@ func (u *TLSFingerprintCaptureSampleUpsert) SetRawPayload(v string) *TLSFingerpr
 // UpdateRawPayload sets the "raw_payload" field to the value that was provided on create.
 func (u *TLSFingerprintCaptureSampleUpsert) UpdateRawPayload() *TLSFingerprintCaptureSampleUpsert {
 	u.SetExcluded(tlsfingerprintcapturesample.FieldRawPayload)
+	return u
+}
+
+// SetRawClientHello sets the "raw_client_hello" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetRawClientHello(v []byte) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldRawClientHello, v)
+	return u
+}
+
+// UpdateRawClientHello sets the "raw_client_hello" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateRawClientHello() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldRawClientHello)
+	return u
+}
+
+// ClearRawClientHello clears the value of the "raw_client_hello" field.
+func (u *TLSFingerprintCaptureSampleUpsert) ClearRawClientHello() *TLSFingerprintCaptureSampleUpsert {
+	u.SetNull(tlsfingerprintcapturesample.FieldRawClientHello)
 	return u
 }
 
@@ -518,6 +588,20 @@ func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateUserAgent() *TLSFingerprint
 	})
 }
 
+// SetOriginator sets the "originator" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetOriginator(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetOriginator(v)
+	})
+}
+
+// UpdateOriginator sets the "originator" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateOriginator() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateOriginator()
+	})
+}
+
 // SetFingerprintHash sets the "fingerprint_hash" field.
 func (u *TLSFingerprintCaptureSampleUpsertOne) SetFingerprintHash(v string) *TLSFingerprintCaptureSampleUpsertOne {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
@@ -557,6 +641,27 @@ func (u *TLSFingerprintCaptureSampleUpsertOne) SetRawPayload(v string) *TLSFinge
 func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateRawPayload() *TLSFingerprintCaptureSampleUpsertOne {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
 		s.UpdateRawPayload()
+	})
+}
+
+// SetRawClientHello sets the "raw_client_hello" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetRawClientHello(v []byte) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetRawClientHello(v)
+	})
+}
+
+// UpdateRawClientHello sets the "raw_client_hello" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateRawClientHello() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateRawClientHello()
+	})
+}
+
+// ClearRawClientHello clears the value of the "raw_client_hello" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) ClearRawClientHello() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.ClearRawClientHello()
 	})
 }
 
@@ -834,6 +939,20 @@ func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateUserAgent() *TLSFingerprin
 	})
 }
 
+// SetOriginator sets the "originator" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetOriginator(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetOriginator(v)
+	})
+}
+
+// UpdateOriginator sets the "originator" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateOriginator() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateOriginator()
+	})
+}
+
 // SetFingerprintHash sets the "fingerprint_hash" field.
 func (u *TLSFingerprintCaptureSampleUpsertBulk) SetFingerprintHash(v string) *TLSFingerprintCaptureSampleUpsertBulk {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
@@ -873,6 +992,27 @@ func (u *TLSFingerprintCaptureSampleUpsertBulk) SetRawPayload(v string) *TLSFing
 func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateRawPayload() *TLSFingerprintCaptureSampleUpsertBulk {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
 		s.UpdateRawPayload()
+	})
+}
+
+// SetRawClientHello sets the "raw_client_hello" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetRawClientHello(v []byte) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetRawClientHello(v)
+	})
+}
+
+// UpdateRawClientHello sets the "raw_client_hello" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateRawClientHello() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateRawClientHello()
+	})
+}
+
+// ClearRawClientHello clears the value of the "raw_client_hello" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) ClearRawClientHello() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.ClearRawClientHello()
 	})
 }
 

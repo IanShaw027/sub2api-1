@@ -2464,8 +2464,14 @@ func init() {
 	tlsfingerprintcapturesampleDescUserAgent := tlsfingerprintcapturesampleFields[2].Descriptor()
 	// tlsfingerprintcapturesample.DefaultUserAgent holds the default value on creation for the user_agent field.
 	tlsfingerprintcapturesample.DefaultUserAgent = tlsfingerprintcapturesampleDescUserAgent.Default.(string)
+	// tlsfingerprintcapturesampleDescOriginator is the schema descriptor for originator field.
+	tlsfingerprintcapturesampleDescOriginator := tlsfingerprintcapturesampleFields[3].Descriptor()
+	// tlsfingerprintcapturesample.DefaultOriginator holds the default value on creation for the originator field.
+	tlsfingerprintcapturesample.DefaultOriginator = tlsfingerprintcapturesampleDescOriginator.Default.(string)
+	// tlsfingerprintcapturesample.OriginatorValidator is a validator for the "originator" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.OriginatorValidator = tlsfingerprintcapturesampleDescOriginator.Validators[0].(func(string) error)
 	// tlsfingerprintcapturesampleDescFingerprintHash is the schema descriptor for fingerprint_hash field.
-	tlsfingerprintcapturesampleDescFingerprintHash := tlsfingerprintcapturesampleFields[3].Descriptor()
+	tlsfingerprintcapturesampleDescFingerprintHash := tlsfingerprintcapturesampleFields[4].Descriptor()
 	// tlsfingerprintcapturesample.FingerprintHashValidator is a validator for the "fingerprint_hash" field. It is called by the builders before save.
 	tlsfingerprintcapturesample.FingerprintHashValidator = func() func(string) error {
 		validators := tlsfingerprintcapturesampleDescFingerprintHash.Validators
@@ -2483,7 +2489,7 @@ func init() {
 		}
 	}()
 	// tlsfingerprintcapturesampleDescRawPayload is the schema descriptor for raw_payload field.
-	tlsfingerprintcapturesampleDescRawPayload := tlsfingerprintcapturesampleFields[5].Descriptor()
+	tlsfingerprintcapturesampleDescRawPayload := tlsfingerprintcapturesampleFields[6].Descriptor()
 	// tlsfingerprintcapturesample.DefaultRawPayload holds the default value on creation for the raw_payload field.
 	tlsfingerprintcapturesample.DefaultRawPayload = tlsfingerprintcapturesampleDescRawPayload.Default.(string)
 	tlsfingerprintcapturetaskMixin := schema.TLSFingerprintCaptureTask{}.Mixin()

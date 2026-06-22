@@ -99,14 +99,18 @@ func (r *tlsFingerprintCaptureRepository) CreateSampleIfAbsent(ctx context.Conte
 	if profile == nil {
 		profile = &model.TLSFingerprintProfile{}
 	}
-	created, err := r.client.TLSFingerprintCaptureSample.Create().
+	create := r.client.TLSFingerprintCaptureSample.Create().
 		SetTaskID(sample.TaskID).
 		SetPlatform(sample.Platform).
 		SetUserAgent(sample.UserAgent).
+		SetOriginator(sample.Originator).
 		SetFingerprintHash(sample.FingerprintHash).
 		SetProfile(profile).
-		SetRawPayload(sample.RawPayload).
-		Save(ctx)
+		SetRawPayload(sample.RawPayload)
+	if len(sample.RawClientHello) > 0 {
+		create.SetRawClientHello(sample.RawClientHello)
+	}
+	saved, err := create.Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
 			existing, getErr := r.GetSampleByTaskHash(ctx, sample.TaskID, sample.FingerprintHash)
@@ -119,7 +123,7 @@ func (r *tlsFingerprintCaptureRepository) CreateSampleIfAbsent(ctx context.Conte
 		}
 		return nil, false, err
 	}
-	return tlsCaptureSampleToService(created), true, nil
+	return tlsCaptureSampleToService(saved), true, nil
 }
 
 func (r *tlsFingerprintCaptureRepository) GetSampleByTaskHash(ctx context.Context, taskID int64, fingerprintHash string) (*service.TLSFingerprintCaptureSample, error) {
@@ -194,9 +198,18 @@ func tlsCaptureSampleToService(sample *ent.TLSFingerprintCaptureSample) *service
 		TaskID:          sample.TaskID,
 		Platform:        sample.Platform,
 		UserAgent:       sample.UserAgent,
+		Originator:      sample.Originator,
 		FingerprintHash: sample.FingerprintHash,
 		Profile:         profile,
 		RawPayload:      sample.RawPayload,
+		RawClientHello:  cloneBytesPtr(sample.RawClientHello),
 		CreatedAt:       sample.CreatedAt,
 	}
+}
+
+func cloneBytesPtr(in *[]byte) []byte {
+	if in == nil {
+		return nil
+	}
+	return append([]byte(nil), (*in)...)
 }

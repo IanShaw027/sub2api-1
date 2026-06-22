@@ -37,6 +37,9 @@ func (TLSFingerprintCaptureSample) Fields() []ent.Field {
 			Default(""),
 		field.Text("user_agent").
 			Default(""),
+		field.String("originator").
+			MaxLen(50).
+			Default(""),
 		field.String("fingerprint_hash").
 			MaxLen(64).
 			NotEmpty(),
@@ -44,6 +47,9 @@ func (TLSFingerprintCaptureSample) Fields() []ent.Field {
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.Text("raw_payload").
 			Default(""),
+		field.Bytes("raw_client_hello").
+			Optional().
+			Nillable(),
 	}
 }
 

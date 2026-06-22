@@ -2442,9 +2442,11 @@ var (
 		{Name: "task_id", Type: field.TypeInt64},
 		{Name: "platform", Type: field.TypeString, Size: 50, Default: ""},
 		{Name: "user_agent", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "originator", Type: field.TypeString, Size: 50, Default: ""},
 		{Name: "fingerprint_hash", Type: field.TypeString, Size: 64},
 		{Name: "profile", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "raw_payload", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "raw_client_hello", Type: field.TypeBytes, Nullable: true},
 	}
 	// TLSFingerprintCaptureSamplesTable holds the schema information for the "tls_fingerprint_capture_samples" table.
 	TLSFingerprintCaptureSamplesTable = &schema.Table{
@@ -2455,7 +2457,7 @@ var (
 			{
 				Name:    "tlsfingerprintcapturesample_task_id_fingerprint_hash",
 				Unique:  true,
-				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[6]},
+				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[7]},
 			},
 			{
 				Name:    "tlsfingerprintcapturesample_task_id_platform",

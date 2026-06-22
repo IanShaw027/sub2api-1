@@ -61,6 +61,7 @@ const DefaultUpstreamResponseReadMaxBytes int64 = 128 * 1024 * 1024
 
 type Config struct {
 	Server                  ServerConfig                  `mapstructure:"server"`
+	TLSFingerprintCapture   TLSFingerprintCaptureConfig   `mapstructure:"tls_fingerprint_capture"`
 	Log                     LogConfig                     `mapstructure:"log"`
 	CORS                    CORSConfig                    `mapstructure:"cors"`
 	Security                SecurityConfig                `mapstructure:"security"`
@@ -572,6 +573,19 @@ type ServerConfig struct {
 	TrustedProxies     []string  `mapstructure:"trusted_proxies"`       // 可信代理列表（CIDR/IP）
 	MaxRequestBodySize int64     `mapstructure:"max_request_body_size"` // 全局最大请求体限制
 	H2C                H2CConfig `mapstructure:"h2c"`                   // HTTP/2 Cleartext 配置
+}
+
+type TLSFingerprintCaptureConfig struct {
+	Enabled       bool   `mapstructure:"enabled"`
+	Host          string `mapstructure:"host"`
+	Port          int    `mapstructure:"port"`
+	CertFile      string `mapstructure:"cert_file"`
+	KeyFile       string `mapstructure:"key_file"`
+	PublicBaseURL string `mapstructure:"public_base_url"`
+}
+
+func (c *TLSFingerprintCaptureConfig) Address() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
 }
 
 // H2CConfig HTTP/2 Cleartext 配置
@@ -1443,6 +1457,10 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 		cfg.Server.Mode = "debug"
 	}
 	cfg.Server.FrontendURL = strings.TrimSpace(cfg.Server.FrontendURL)
+	cfg.TLSFingerprintCapture.Host = strings.TrimSpace(cfg.TLSFingerprintCapture.Host)
+	cfg.TLSFingerprintCapture.CertFile = strings.TrimSpace(cfg.TLSFingerprintCapture.CertFile)
+	cfg.TLSFingerprintCapture.KeyFile = strings.TrimSpace(cfg.TLSFingerprintCapture.KeyFile)
+	cfg.TLSFingerprintCapture.PublicBaseURL = strings.TrimRight(strings.TrimSpace(cfg.TLSFingerprintCapture.PublicBaseURL), "/")
 	cfg.JWT.Secret = strings.TrimSpace(cfg.JWT.Secret)
 	cfg.LinuxDo.ClientID = strings.TrimSpace(cfg.LinuxDo.ClientID)
 	cfg.LinuxDo.ClientSecret = strings.TrimSpace(cfg.LinuxDo.ClientSecret)
@@ -1595,6 +1613,13 @@ func setDefaults() {
 	viper.SetDefault("server.h2c.max_read_frame_size", 1<<20)              // 1MB（够用）
 	viper.SetDefault("server.h2c.max_upload_buffer_per_connection", 2<<20) // 2MB
 	viper.SetDefault("server.h2c.max_upload_buffer_per_stream", 512<<10)   // 512KB
+
+	viper.SetDefault("tls_fingerprint_capture.enabled", false)
+	viper.SetDefault("tls_fingerprint_capture.host", "0.0.0.0")
+	viper.SetDefault("tls_fingerprint_capture.port", 8444)
+	viper.SetDefault("tls_fingerprint_capture.cert_file", "")
+	viper.SetDefault("tls_fingerprint_capture.key_file", "")
+	viper.SetDefault("tls_fingerprint_capture.public_base_url", "")
 
 	// Log
 	viper.SetDefault("log.level", "info")
@@ -2122,6 +2147,26 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("server.frontend_url invalid: must not include userinfo")
 		}
 		warnIfInsecureURL("server.frontend_url", c.Server.FrontendURL)
+	}
+	if c.TLSFingerprintCapture.Enabled {
+		if strings.TrimSpace(c.TLSFingerprintCapture.Host) == "" {
+			return fmt.Errorf("tls_fingerprint_capture.host is required when tls_fingerprint_capture.enabled=true")
+		}
+		if c.TLSFingerprintCapture.Port < 0 || c.TLSFingerprintCapture.Port > 65535 {
+			return fmt.Errorf("tls_fingerprint_capture.port must be between 0 and 65535")
+		}
+		if c.TLSFingerprintCapture.Port == 0 && strings.TrimSpace(c.TLSFingerprintCapture.PublicBaseURL) == "" {
+			return fmt.Errorf("tls_fingerprint_capture.public_base_url is required when tls_fingerprint_capture.enabled=true and tls_fingerprint_capture.port=0")
+		}
+		if (strings.TrimSpace(c.TLSFingerprintCapture.CertFile) == "") != (strings.TrimSpace(c.TLSFingerprintCapture.KeyFile) == "") {
+			return fmt.Errorf("tls_fingerprint_capture.cert_file and tls_fingerprint_capture.key_file must be both set or both empty")
+		}
+	}
+	if strings.TrimSpace(c.TLSFingerprintCapture.PublicBaseURL) != "" {
+		if err := ValidateAbsoluteHTTPURL(c.TLSFingerprintCapture.PublicBaseURL); err != nil {
+			return fmt.Errorf("tls_fingerprint_capture.public_base_url invalid: %w", err)
+		}
+		warnIfInsecureURL("tls_fingerprint_capture.public_base_url", c.TLSFingerprintCapture.PublicBaseURL)
 	}
 	if c.Media.Enabled {
 		if strings.TrimSpace(c.Media.Endpoint) == "" {

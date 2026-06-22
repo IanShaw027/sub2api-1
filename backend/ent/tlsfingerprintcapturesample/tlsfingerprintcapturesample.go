@@ -23,12 +23,16 @@ const (
 	FieldPlatform = "platform"
 	// FieldUserAgent holds the string denoting the user_agent field in the database.
 	FieldUserAgent = "user_agent"
+	// FieldOriginator holds the string denoting the originator field in the database.
+	FieldOriginator = "originator"
 	// FieldFingerprintHash holds the string denoting the fingerprint_hash field in the database.
 	FieldFingerprintHash = "fingerprint_hash"
 	// FieldProfile holds the string denoting the profile field in the database.
 	FieldProfile = "profile"
 	// FieldRawPayload holds the string denoting the raw_payload field in the database.
 	FieldRawPayload = "raw_payload"
+	// FieldRawClientHello holds the string denoting the raw_client_hello field in the database.
+	FieldRawClientHello = "raw_client_hello"
 	// Table holds the table name of the tlsfingerprintcapturesample in the database.
 	Table = "tls_fingerprint_capture_samples"
 )
@@ -41,9 +45,11 @@ var Columns = []string{
 	FieldTaskID,
 	FieldPlatform,
 	FieldUserAgent,
+	FieldOriginator,
 	FieldFingerprintHash,
 	FieldProfile,
 	FieldRawPayload,
+	FieldRawClientHello,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -69,6 +75,10 @@ var (
 	PlatformValidator func(string) error
 	// DefaultUserAgent holds the default value on creation for the "user_agent" field.
 	DefaultUserAgent string
+	// DefaultOriginator holds the default value on creation for the "originator" field.
+	DefaultOriginator string
+	// OriginatorValidator is a validator for the "originator" field. It is called by the builders before save.
+	OriginatorValidator func(string) error
 	// FingerprintHashValidator is a validator for the "fingerprint_hash" field. It is called by the builders before save.
 	FingerprintHashValidator func(string) error
 	// DefaultRawPayload holds the default value on creation for the "raw_payload" field.
@@ -106,6 +116,11 @@ func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 // ByUserAgent orders the results by the user_agent field.
 func ByUserAgent(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUserAgent, opts...).ToFunc()
+}
+
+// ByOriginator orders the results by the originator field.
+func ByOriginator(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOriginator, opts...).ToFunc()
 }
 
 // ByFingerprintHash orders the results by the fingerprint_hash field.

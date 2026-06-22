@@ -31,6 +31,16 @@ func TestTLSFingerprintSeedCleanupOnlyTargetsExactSeededAccountExtra(t *testing.
 	require.Contains(t, sql, `COALESCE(extra, '{}'::jsonb) = '{"enable_tls_fingerprint": true, "tls_fingerprint_profile_id": -1}'::jsonb`)
 }
 
+func TestTLSFingerprintCaptureSampleNativeColumnsMigration(t *testing.T) {
+	content, err := FS.ReadFile("174_tls_fingerprint_capture_sample_native_columns.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "ALTER TABLE tls_fingerprint_capture_samples")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS originator VARCHAR(50) NOT NULL DEFAULT ''")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS raw_client_hello BYTEA")
+}
+
 func TestMigrationFilenameNumericPrefixesStayDeliberate(t *testing.T) {
 	files, err := fs.Glob(FS, "*.sql")
 	require.NoError(t, err)

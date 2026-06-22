@@ -59717,9 +59717,11 @@ type TLSFingerprintCaptureSampleMutation struct {
 	addtask_id       *int64
 	platform         *string
 	user_agent       *string
+	originator       *string
 	fingerprint_hash *string
 	profile          **model.TLSFingerprintProfile
 	raw_payload      *string
+	raw_client_hello *[]byte
 	clearedFields    map[string]struct{}
 	done             bool
 	oldValue         func(context.Context) (*TLSFingerprintCaptureSample, error)
@@ -60024,6 +60026,42 @@ func (m *TLSFingerprintCaptureSampleMutation) ResetUserAgent() {
 	m.user_agent = nil
 }
 
+// SetOriginator sets the "originator" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetOriginator(s string) {
+	m.originator = &s
+}
+
+// Originator returns the value of the "originator" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) Originator() (r string, exists bool) {
+	v := m.originator
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOriginator returns the old "originator" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldOriginator(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOriginator is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOriginator requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOriginator: %w", err)
+	}
+	return oldValue.Originator, nil
+}
+
+// ResetOriginator resets all changes to the "originator" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetOriginator() {
+	m.originator = nil
+}
+
 // SetFingerprintHash sets the "fingerprint_hash" field.
 func (m *TLSFingerprintCaptureSampleMutation) SetFingerprintHash(s string) {
 	m.fingerprint_hash = &s
@@ -60132,6 +60170,55 @@ func (m *TLSFingerprintCaptureSampleMutation) ResetRawPayload() {
 	m.raw_payload = nil
 }
 
+// SetRawClientHello sets the "raw_client_hello" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetRawClientHello(b []byte) {
+	m.raw_client_hello = &b
+}
+
+// RawClientHello returns the value of the "raw_client_hello" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) RawClientHello() (r []byte, exists bool) {
+	v := m.raw_client_hello
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRawClientHello returns the old "raw_client_hello" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldRawClientHello(ctx context.Context) (v *[]byte, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRawClientHello is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRawClientHello requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRawClientHello: %w", err)
+	}
+	return oldValue.RawClientHello, nil
+}
+
+// ClearRawClientHello clears the value of the "raw_client_hello" field.
+func (m *TLSFingerprintCaptureSampleMutation) ClearRawClientHello() {
+	m.raw_client_hello = nil
+	m.clearedFields[tlsfingerprintcapturesample.FieldRawClientHello] = struct{}{}
+}
+
+// RawClientHelloCleared returns if the "raw_client_hello" field was cleared in this mutation.
+func (m *TLSFingerprintCaptureSampleMutation) RawClientHelloCleared() bool {
+	_, ok := m.clearedFields[tlsfingerprintcapturesample.FieldRawClientHello]
+	return ok
+}
+
+// ResetRawClientHello resets all changes to the "raw_client_hello" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetRawClientHello() {
+	m.raw_client_hello = nil
+	delete(m.clearedFields, tlsfingerprintcapturesample.FieldRawClientHello)
+}
+
 // Where appends a list predicates to the TLSFingerprintCaptureSampleMutation builder.
 func (m *TLSFingerprintCaptureSampleMutation) Where(ps ...predicate.TLSFingerprintCaptureSample) {
 	m.predicates = append(m.predicates, ps...)
@@ -60166,7 +60253,7 @@ func (m *TLSFingerprintCaptureSampleMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TLSFingerprintCaptureSampleMutation) Fields() []string {
-	fields := make([]string, 0, 8)
+	fields := make([]string, 0, 10)
 	if m.created_at != nil {
 		fields = append(fields, tlsfingerprintcapturesample.FieldCreatedAt)
 	}
@@ -60182,6 +60269,9 @@ func (m *TLSFingerprintCaptureSampleMutation) Fields() []string {
 	if m.user_agent != nil {
 		fields = append(fields, tlsfingerprintcapturesample.FieldUserAgent)
 	}
+	if m.originator != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldOriginator)
+	}
 	if m.fingerprint_hash != nil {
 		fields = append(fields, tlsfingerprintcapturesample.FieldFingerprintHash)
 	}
@@ -60190,6 +60280,9 @@ func (m *TLSFingerprintCaptureSampleMutation) Fields() []string {
 	}
 	if m.raw_payload != nil {
 		fields = append(fields, tlsfingerprintcapturesample.FieldRawPayload)
+	}
+	if m.raw_client_hello != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldRawClientHello)
 	}
 	return fields
 }
@@ -60209,12 +60302,16 @@ func (m *TLSFingerprintCaptureSampleMutation) Field(name string) (ent.Value, boo
 		return m.Platform()
 	case tlsfingerprintcapturesample.FieldUserAgent:
 		return m.UserAgent()
+	case tlsfingerprintcapturesample.FieldOriginator:
+		return m.Originator()
 	case tlsfingerprintcapturesample.FieldFingerprintHash:
 		return m.FingerprintHash()
 	case tlsfingerprintcapturesample.FieldProfile:
 		return m.Profile()
 	case tlsfingerprintcapturesample.FieldRawPayload:
 		return m.RawPayload()
+	case tlsfingerprintcapturesample.FieldRawClientHello:
+		return m.RawClientHello()
 	}
 	return nil, false
 }
@@ -60234,12 +60331,16 @@ func (m *TLSFingerprintCaptureSampleMutation) OldField(ctx context.Context, name
 		return m.OldPlatform(ctx)
 	case tlsfingerprintcapturesample.FieldUserAgent:
 		return m.OldUserAgent(ctx)
+	case tlsfingerprintcapturesample.FieldOriginator:
+		return m.OldOriginator(ctx)
 	case tlsfingerprintcapturesample.FieldFingerprintHash:
 		return m.OldFingerprintHash(ctx)
 	case tlsfingerprintcapturesample.FieldProfile:
 		return m.OldProfile(ctx)
 	case tlsfingerprintcapturesample.FieldRawPayload:
 		return m.OldRawPayload(ctx)
+	case tlsfingerprintcapturesample.FieldRawClientHello:
+		return m.OldRawClientHello(ctx)
 	}
 	return nil, fmt.Errorf("unknown TLSFingerprintCaptureSample field %s", name)
 }
@@ -60284,6 +60385,13 @@ func (m *TLSFingerprintCaptureSampleMutation) SetField(name string, value ent.Va
 		}
 		m.SetUserAgent(v)
 		return nil
+	case tlsfingerprintcapturesample.FieldOriginator:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOriginator(v)
+		return nil
 	case tlsfingerprintcapturesample.FieldFingerprintHash:
 		v, ok := value.(string)
 		if !ok {
@@ -60304,6 +60412,13 @@ func (m *TLSFingerprintCaptureSampleMutation) SetField(name string, value ent.Va
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRawPayload(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldRawClientHello:
+		v, ok := value.([]byte)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRawClientHello(v)
 		return nil
 	}
 	return fmt.Errorf("unknown TLSFingerprintCaptureSample field %s", name)
@@ -60349,7 +60464,11 @@ func (m *TLSFingerprintCaptureSampleMutation) AddField(name string, value ent.Va
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *TLSFingerprintCaptureSampleMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(tlsfingerprintcapturesample.FieldRawClientHello) {
+		fields = append(fields, tlsfingerprintcapturesample.FieldRawClientHello)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -60362,6 +60481,11 @@ func (m *TLSFingerprintCaptureSampleMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *TLSFingerprintCaptureSampleMutation) ClearField(name string) error {
+	switch name {
+	case tlsfingerprintcapturesample.FieldRawClientHello:
+		m.ClearRawClientHello()
+		return nil
+	}
 	return fmt.Errorf("unknown TLSFingerprintCaptureSample nullable field %s", name)
 }
 
@@ -60384,6 +60508,9 @@ func (m *TLSFingerprintCaptureSampleMutation) ResetField(name string) error {
 	case tlsfingerprintcapturesample.FieldUserAgent:
 		m.ResetUserAgent()
 		return nil
+	case tlsfingerprintcapturesample.FieldOriginator:
+		m.ResetOriginator()
+		return nil
 	case tlsfingerprintcapturesample.FieldFingerprintHash:
 		m.ResetFingerprintHash()
 		return nil
@@ -60392,6 +60519,9 @@ func (m *TLSFingerprintCaptureSampleMutation) ResetField(name string) error {
 		return nil
 	case tlsfingerprintcapturesample.FieldRawPayload:
 		m.ResetRawPayload()
+		return nil
+	case tlsfingerprintcapturesample.FieldRawClientHello:
+		m.ResetRawClientHello()
 		return nil
 	}
 	return fmt.Errorf("unknown TLSFingerprintCaptureSample field %s", name)

@@ -29,13 +29,17 @@ type TLSFingerprintCaptureSample struct {
 	Platform string `json:"platform,omitempty"`
 	// UserAgent holds the value of the "user_agent" field.
 	UserAgent string `json:"user_agent,omitempty"`
+	// Originator holds the value of the "originator" field.
+	Originator string `json:"originator,omitempty"`
 	// FingerprintHash holds the value of the "fingerprint_hash" field.
 	FingerprintHash string `json:"fingerprint_hash,omitempty"`
 	// Profile holds the value of the "profile" field.
 	Profile *model.TLSFingerprintProfile `json:"profile,omitempty"`
 	// RawPayload holds the value of the "raw_payload" field.
-	RawPayload   string `json:"raw_payload,omitempty"`
-	selectValues sql.SelectValues
+	RawPayload string `json:"raw_payload,omitempty"`
+	// RawClientHello holds the value of the "raw_client_hello" field.
+	RawClientHello *[]byte `json:"raw_client_hello,omitempty"`
+	selectValues   sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -43,11 +47,11 @@ func (*TLSFingerprintCaptureSample) scanValues(columns []string) ([]any, error) 
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case tlsfingerprintcapturesample.FieldProfile:
+		case tlsfingerprintcapturesample.FieldProfile, tlsfingerprintcapturesample.FieldRawClientHello:
 			values[i] = new([]byte)
 		case tlsfingerprintcapturesample.FieldID, tlsfingerprintcapturesample.FieldTaskID:
 			values[i] = new(sql.NullInt64)
-		case tlsfingerprintcapturesample.FieldPlatform, tlsfingerprintcapturesample.FieldUserAgent, tlsfingerprintcapturesample.FieldFingerprintHash, tlsfingerprintcapturesample.FieldRawPayload:
+		case tlsfingerprintcapturesample.FieldPlatform, tlsfingerprintcapturesample.FieldUserAgent, tlsfingerprintcapturesample.FieldOriginator, tlsfingerprintcapturesample.FieldFingerprintHash, tlsfingerprintcapturesample.FieldRawPayload:
 			values[i] = new(sql.NullString)
 		case tlsfingerprintcapturesample.FieldCreatedAt, tlsfingerprintcapturesample.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -102,6 +106,12 @@ func (_m *TLSFingerprintCaptureSample) assignValues(columns []string, values []a
 			} else if value.Valid {
 				_m.UserAgent = value.String
 			}
+		case tlsfingerprintcapturesample.FieldOriginator:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field originator", values[i])
+			} else if value.Valid {
+				_m.Originator = value.String
+			}
 		case tlsfingerprintcapturesample.FieldFingerprintHash:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field fingerprint_hash", values[i])
@@ -121,6 +131,12 @@ func (_m *TLSFingerprintCaptureSample) assignValues(columns []string, values []a
 				return fmt.Errorf("unexpected type %T for field raw_payload", values[i])
 			} else if value.Valid {
 				_m.RawPayload = value.String
+			}
+		case tlsfingerprintcapturesample.FieldRawClientHello:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field raw_client_hello", values[i])
+			} else if value != nil {
+				_m.RawClientHello = value
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -173,6 +189,9 @@ func (_m *TLSFingerprintCaptureSample) String() string {
 	builder.WriteString("user_agent=")
 	builder.WriteString(_m.UserAgent)
 	builder.WriteString(", ")
+	builder.WriteString("originator=")
+	builder.WriteString(_m.Originator)
+	builder.WriteString(", ")
 	builder.WriteString("fingerprint_hash=")
 	builder.WriteString(_m.FingerprintHash)
 	builder.WriteString(", ")
@@ -181,6 +200,11 @@ func (_m *TLSFingerprintCaptureSample) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("raw_payload=")
 	builder.WriteString(_m.RawPayload)
+	builder.WriteString(", ")
+	if v := _m.RawClientHello; v != nil {
+		builder.WriteString("raw_client_hello=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }
