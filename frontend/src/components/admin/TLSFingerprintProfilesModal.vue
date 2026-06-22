@@ -52,7 +52,7 @@
       </div>
 
       <section v-show="activeTab === 'capture'" class="rounded-xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
-        <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h4 class="text-sm font-semibold text-blue-950 dark:text-blue-100">
               {{ t('admin.tlsFingerprintProfiles.capture.title') }}
@@ -61,76 +61,90 @@
               {{ t('admin.tlsFingerprintProfiles.capture.description') }}
             </p>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <button @click="startCaptureTask" :disabled="captureSubmitting" class="btn btn-primary btn-sm">
-              <Icon v-if="captureSubmitting" name="refresh" size="sm" class="mr-1 animate-spin" />
-              <Icon v-else name="play" size="sm" class="mr-1" />
-              {{ t('admin.tlsFingerprintProfiles.capture.start') }}
-            </button>
-            <button
-              v-if="selectedTask?.status === 'running'"
-              @click="stopSelectedTask"
-              :disabled="captureSubmitting"
-              class="btn btn-secondary btn-sm"
-            >
-              {{ t('admin.tlsFingerprintProfiles.capture.stop') }}
-            </button>
+          <div class="flex flex-shrink-0 flex-wrap gap-2">
+            <template v-if="captureView === 'form'">
+              <button
+                v-if="captureTasks.length > 0"
+                @click="captureView = 'detail'"
+                class="btn btn-secondary btn-sm"
+              >
+                {{ t('admin.tlsFingerprintProfiles.capture.backToTasks') }}
+              </button>
+              <button @click="startCaptureTask" :disabled="captureSubmitting" class="btn btn-primary btn-sm">
+                <Icon v-if="captureSubmitting" name="refresh" size="sm" class="mr-1 animate-spin" />
+                <Icon v-else name="play" size="sm" class="mr-1" />
+                {{ t('admin.tlsFingerprintProfiles.capture.start') }}
+              </button>
+            </template>
+            <template v-else>
+              <button @click="captureView = 'form'" class="btn btn-secondary btn-sm">
+                <Icon name="plus" size="sm" class="mr-1" />
+                {{ t('admin.tlsFingerprintProfiles.capture.newTask') }}
+              </button>
+              <button
+                v-if="selectedTask?.status === 'running'"
+                @click="stopSelectedTask"
+                :disabled="captureSubmitting"
+                class="btn btn-secondary btn-sm"
+              >
+                {{ t('admin.tlsFingerprintProfiles.capture.stop') }}
+              </button>
+            </template>
           </div>
         </div>
 
-        <div class="grid gap-4 lg:grid-cols-[1.1fr_1.4fr]">
-          <div class="min-w-0 space-y-3">
-            <div>
-              <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.capture.taskName') }}</label>
-              <input
-                v-model="captureForm.name"
-                type="text"
-                class="input"
-                :placeholder="t('admin.tlsFingerprintProfiles.capture.taskNamePlaceholder')"
-              />
-            </div>
+        <!-- Form view: shown when creating a task -->
+        <div v-if="captureView === 'form'" class="space-y-3">
+          <div>
+            <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.capture.taskName') }}</label>
+            <input
+              v-model="captureForm.name"
+              type="text"
+              class="input"
+              :placeholder="t('admin.tlsFingerprintProfiles.capture.taskNamePlaceholder')"
+            />
+          </div>
 
-            <div>
-              <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.capture.uaKeywords') }}</label>
-              <textarea
-                v-model="captureForm.uaKeywords"
-                rows="2"
-                class="input font-mono text-xs"
-                :placeholder="t('admin.tlsFingerprintProfiles.capture.uaKeywordsPlaceholder')"
-              />
-              <p class="input-hint text-xs">{{ t('admin.tlsFingerprintProfiles.capture.uaKeywordsHint') }}</p>
-            </div>
+          <div>
+            <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.capture.uaKeywords') }}</label>
+            <textarea
+              v-model="captureForm.uaKeywords"
+              rows="2"
+              class="input font-mono text-xs"
+              :placeholder="t('admin.tlsFingerprintProfiles.capture.uaKeywordsPlaceholder')"
+            />
+            <p class="input-hint text-xs">{{ t('admin.tlsFingerprintProfiles.capture.uaKeywordsHint') }}</p>
+          </div>
 
-            <div>
-              <div class="mb-2 flex items-center justify-between">
-                <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.capture.targets') }}</label>
-                <span class="text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('admin.tlsFingerprintProfiles.capture.targetsHint') }}
+          <div>
+            <div class="mb-2 flex items-center justify-between">
+              <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.capture.targets') }}</label>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.tlsFingerprintProfiles.capture.targetsHint') }}
+              </span>
+            </div>
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <label
+                v-for="target in captureTargets"
+                :key="target.platform"
+                class="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-dark-600 dark:bg-dark-800"
+              >
+                <span class="min-w-0 truncate text-xs font-medium text-gray-700 dark:text-gray-300">
+                  {{ target.label }}
                 </span>
-              </div>
-              <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <label
-                  v-for="target in captureTargets"
-                  :key="target.platform"
-                  class="rounded-lg border border-gray-200 bg-white p-2 dark:border-dark-600 dark:bg-dark-800"
-                >
-                  <span class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    {{ target.label }}
-                  </span>
-                  <input
-                    v-model.number="target.count"
-                    type="number"
-                    min="0"
-                    max="500"
-                    class="input text-sm"
-                  />
-                </label>
-              </div>
-              <div class="mt-2 grid grid-cols-[1fr_90px] gap-2">
+                <input
+                  v-model.number="target.count"
+                  type="number"
+                  min="0"
+                  max="500"
+                  class="input w-16 flex-shrink-0 px-2 py-1 text-center text-sm"
+                />
+              </label>
+              <label class="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white px-3 py-2 dark:border-dark-600 dark:bg-dark-800">
                 <input
                   v-model="customCaptureTarget.platform"
                   type="text"
-                  class="input text-sm"
+                  class="input min-w-0 flex-1 px-2 py-1 text-sm"
                   :placeholder="t('admin.tlsFingerprintProfiles.capture.customPlatform')"
                 />
                 <input
@@ -138,28 +152,31 @@
                   type="number"
                   min="0"
                   max="500"
-                  class="input text-sm"
+                  class="input w-16 flex-shrink-0 px-2 py-1 text-center text-sm"
                 />
-              </div>
+              </label>
             </div>
           </div>
+        </div>
 
-          <div class="min-w-0 space-y-3">
-            <div v-if="captureLoading" class="flex items-center justify-center rounded-lg bg-white py-8 dark:bg-dark-800">
-              <Icon name="refresh" size="lg" class="animate-spin text-gray-400" />
-            </div>
+        <!-- Detail view: shown after a capture task is started/selected -->
+        <div v-else class="space-y-3">
+          <div v-if="captureLoading" class="flex items-center justify-center rounded-lg bg-white py-8 dark:bg-dark-800">
+            <Icon name="refresh" size="lg" class="animate-spin text-gray-400" />
+          </div>
 
-            <div v-else-if="captureTasks.length === 0" class="rounded-lg bg-white p-4 text-sm text-gray-500 dark:bg-dark-800 dark:text-gray-400">
-              {{ t('admin.tlsFingerprintProfiles.capture.noTasks') }}
-            </div>
+          <div v-else-if="captureTasks.length === 0" class="rounded-lg bg-white p-6 text-center text-sm text-gray-500 dark:bg-dark-800 dark:text-gray-400">
+            {{ t('admin.tlsFingerprintProfiles.capture.noTasks') }}
+          </div>
 
-            <div v-else class="grid gap-2 sm:grid-cols-2">
+          <template v-else>
+            <div class="flex gap-2 overflow-x-auto pb-1">
               <button
                 v-for="task in captureTasks"
                 :key="task.id"
                 type="button"
                 :class="[
-                  'min-w-0 rounded-lg border p-3 text-left transition',
+                  'w-56 flex-shrink-0 rounded-lg border p-3 text-left transition',
                   selectedTask?.id === task.id
                     ? 'border-primary-500 bg-primary-50 dark:border-primary-500 dark:bg-primary-900/20'
                     : 'border-gray-200 bg-white hover:border-primary-300 dark:border-dark-600 dark:bg-dark-800'
@@ -171,7 +188,7 @@
                     <div class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ task.name }}</div>
                     <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ formatDateTime(task.created_at) }}</div>
                   </div>
-                  <span :class="['badge text-xs', captureStatusClass(task.status)]">
+                  <span :class="['badge flex-shrink-0 whitespace-nowrap text-xs', captureStatusClass(task.status)]">
                     {{ t(`admin.tlsFingerprintProfiles.capture.status.${task.status}`) }}
                   </span>
                 </div>
@@ -179,7 +196,7 @@
                   <div
                     v-for="platform in Object.keys(task.targets || {})"
                     :key="platform"
-                    class="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300"
+                    class="flex items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-300"
                   >
                     <span>{{ platform }}</span>
                     <span>{{ task.counts?.[platform] || 0 }} / {{ task.targets?.[platform] || 0 }}</span>
@@ -189,62 +206,57 @@
             </div>
 
             <div v-if="selectedTask" class="rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-600 dark:bg-dark-800">
-              <div class="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ selectedTask.name }}</div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.tlsFingerprintProfiles.capture.selectedTaskHint') }}
-                  </div>
-                </div>
-                <div class="flex flex-wrap gap-2">
-                  <button @click="loadSelectedTaskSamples" :disabled="samplesLoading" class="btn btn-secondary btn-sm">
-                    <Icon
-                      name="refresh"
-                      size="sm"
-                      :class="['mr-1', samplesLoading ? 'animate-spin' : '']"
-                    />
-                    {{ t('common.refresh') }}
-                  </button>
-                  <button @click="importSelectedSamples" :disabled="importingSamples || selectedSamples.length === 0" class="btn btn-primary btn-sm">
-                    <Icon v-if="importingSamples" name="refresh" size="sm" class="mr-1 animate-spin" />
-                    {{ t('admin.tlsFingerprintProfiles.capture.importSelected', { count: selectedSamples.length }) }}
-                  </button>
-                  <button @click="importAllSamples" :disabled="importingSamples || captureSamples.length === 0" class="btn btn-secondary btn-sm">
-                    {{ t('admin.tlsFingerprintProfiles.capture.importAll') }}
-                  </button>
+              <div class="mb-3">
+                <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ selectedTask.name }}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.tlsFingerprintProfiles.capture.selectedTaskHint') }}
                 </div>
               </div>
 
-              <div class="mb-3 grid gap-2 text-xs lg:grid-cols-[minmax(0,1fr)_auto]">
-                <div class="min-w-0 space-y-2 rounded-md bg-gray-50 p-2 text-gray-700 dark:bg-dark-700 dark:text-gray-200">
-                  <div>
-                    <div class="font-medium text-gray-500 dark:text-gray-400">{{ t('admin.tlsFingerprintProfiles.capture.captureUrl') }}</div>
-                    <div class="truncate font-mono">{{ selectedCaptureURL }}</div>
-                  </div>
-                  <div>
-                    <div class="font-medium text-gray-500 dark:text-gray-400">{{ t('admin.tlsFingerprintProfiles.capture.platformBaseUrl') }}</div>
-                    <div class="truncate font-mono">{{ selectedPlatformBaseURL }}</div>
-                  </div>
-                  <div>
-                    <div class="font-medium text-gray-500 dark:text-gray-400">{{ t('admin.tlsFingerprintProfiles.capture.token') }}</div>
-                    <div class="truncate font-mono">{{ selectedTask.token }}</div>
-                  </div>
-                  <div>
-                    <div class="font-medium text-gray-500 dark:text-gray-400">{{ t('admin.tlsFingerprintProfiles.capture.collectorUrl') }}</div>
-                    <div class="truncate font-mono">{{ collectorURL }}</div>
-                  </div>
-                </div>
-                <div class="flex flex-wrap gap-2 lg:flex-col">
-                  <a
-                    :href="collectorURL"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="btn btn-secondary btn-sm"
+              <div class="mb-3 flex flex-wrap gap-2">
+                <button @click="loadSelectedTaskSamples" :disabled="samplesLoading" class="btn btn-secondary btn-sm">
+                  <Icon
+                    name="refresh"
+                    size="sm"
+                    :class="['mr-1', samplesLoading ? 'animate-spin' : '']"
+                  />
+                  {{ t('common.refresh') }}
+                </button>
+                <button @click="importSelectedSamples" :disabled="importingSamples || selectedSamples.length === 0" class="btn btn-primary btn-sm">
+                  <Icon v-if="importingSamples" name="refresh" size="sm" class="mr-1 animate-spin" />
+                  {{ t('admin.tlsFingerprintProfiles.capture.importSelected', { count: selectedSamples.length }) }}
+                </button>
+                <button @click="importAllSamples" :disabled="importingSamples || captureSamples.length === 0" class="btn btn-secondary btn-sm">
+                  {{ t('admin.tlsFingerprintProfiles.capture.importAll') }}
+                </button>
+                <a
+                  :href="collectorURL"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="btn btn-secondary btn-sm"
+                >
+                  {{ t('admin.tlsFingerprintProfiles.form.openCollector') }}
+                </a>
+                <button @click="copyCaptureConfig" class="btn btn-secondary btn-sm">
+                  {{ t('admin.tlsFingerprintProfiles.capture.copyConfig') }}
+                </button>
+              </div>
+
+              <div class="mb-3 space-y-1.5 rounded-md bg-gray-50 p-3 text-xs dark:bg-dark-700">
+                <div
+                  v-for="row in captureInfoRows"
+                  :key="row.label"
+                  class="flex items-center gap-3"
+                >
+                  <span class="w-24 flex-shrink-0 font-medium text-gray-500 dark:text-gray-400">{{ row.label }}</span>
+                  <span class="min-w-0 flex-1 truncate font-mono text-gray-700 dark:text-gray-200">{{ row.value }}</span>
+                  <button
+                    type="button"
+                    @click="copyText(row.value)"
+                    class="flex-shrink-0 rounded p-1 text-gray-400 transition hover:bg-gray-200 hover:text-primary-600 dark:hover:bg-dark-600 dark:hover:text-primary-400"
+                    :title="t('common.copy')"
                   >
-                    {{ t('admin.tlsFingerprintProfiles.form.openCollector') }}
-                  </a>
-                  <button @click="copyCaptureConfig" class="btn btn-secondary btn-sm">
-                    {{ t('admin.tlsFingerprintProfiles.capture.copyConfig') }}
+                    <Icon name="copy" size="sm" />
                   </button>
                 </div>
               </div>
@@ -257,7 +269,7 @@
                 {{ t('admin.tlsFingerprintProfiles.capture.noSamples') }}
               </div>
 
-              <div v-else class="max-h-80 overflow-auto rounded-lg border border-gray-200 dark:border-dark-600">
+              <div v-else class="max-h-[28rem] overflow-auto rounded-lg border border-gray-200 dark:border-dark-600">
                 <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
                   <thead class="sticky top-0 bg-gray-50 dark:bg-dark-700">
                     <tr>
@@ -313,7 +325,7 @@
                 </table>
               </div>
             </div>
-          </div>
+          </template>
         </div>
       </section>
 
@@ -668,6 +680,7 @@ const captureSubmitting = ref(false)
 const samplesLoading = ref(false)
 const importingSamples = ref(false)
 const activeTab = ref<'profiles' | 'capture'>('profiles')
+const captureView = ref<'form' | 'detail'>('form')
 let capturePollTimer: ReturnType<typeof setInterval> | null = null
 
 const captureForm = reactive({
@@ -751,6 +764,16 @@ const collectorURL = computed(() => {
   return `${base}/tls-fingerprint-collector?${params.toString()}`
 })
 
+const captureInfoRows = computed(() => {
+  if (!selectedTask.value) return []
+  return [
+    { label: t('admin.tlsFingerprintProfiles.capture.captureUrl'), value: selectedCaptureURL.value },
+    { label: t('admin.tlsFingerprintProfiles.capture.platformBaseUrl'), value: selectedPlatformBaseURL.value },
+    { label: t('admin.tlsFingerprintProfiles.capture.token'), value: selectedTask.value.token || '' },
+    { label: t('admin.tlsFingerprintProfiles.capture.collectorUrl'), value: collectorURL.value }
+  ]
+})
+
 const selectedSamples = computed(() => {
   const selected = new Set(selectedSampleIDs.value)
   return captureSamples.value.filter(sample => selected.has(sample.id))
@@ -769,23 +792,6 @@ const filteredProfiles = computed(() => {
     return profiles.value
   }
   return profiles.value.filter(profile => (profile.platform || '') === profilePlatformFilter.value)
-})
-
-watch(
-  () => props.show,
-  (newVal) => {
-    if (newVal) {
-      refreshAll()
-      startCapturePolling()
-    } else {
-      stopCapturePolling()
-    }
-  },
-  { immediate: true }
-)
-
-onBeforeUnmount(() => {
-  stopCapturePolling()
 })
 
 const refreshAll = async () => {
@@ -880,6 +886,29 @@ const updateCapturePollingState = () => {
   stopCapturePolling()
 }
 
+watch(
+  () => props.show,
+  (newVal) => {
+    if (newVal) {
+      refreshAll()
+      startCapturePolling()
+    } else {
+      stopCapturePolling()
+    }
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => {
+  stopCapturePolling()
+})
+
+watch(activeTab, (tab) => {
+  if (tab === 'capture') {
+    captureView.value = captureTasks.value.length > 0 ? 'detail' : 'form'
+  }
+})
+
 const buildCaptureTargets = (): Record<string, number> => {
   const targets: Record<string, number> = {}
   for (const target of captureTargets) {
@@ -913,6 +942,7 @@ const startCaptureTask = async () => {
     selectedTaskID.value = task.id
     captureSamples.value = []
     selectedSampleIDs.value = []
+    captureView.value = 'detail'
     startCapturePolling()
     appStore.showSuccess(t('admin.tlsFingerprintProfiles.capture.startSuccess'))
   } catch (error: any) {
@@ -995,6 +1025,16 @@ const copyCaptureConfig = async () => {
     appStore.showSuccess(t('admin.tlsFingerprintProfiles.capture.copySuccess'))
   } catch {
     appStore.showError(t('admin.tlsFingerprintProfiles.capture.copyFailed'))
+  }
+}
+
+const copyText = async (value: string) => {
+  if (!value) return
+  try {
+    await navigator.clipboard.writeText(value)
+    appStore.showSuccess(t('admin.tlsFingerprintProfiles.capture.copyValueSuccess'))
+  } catch {
+    appStore.showError(t('admin.tlsFingerprintProfiles.capture.copyValueFailed'))
   }
 }
 
