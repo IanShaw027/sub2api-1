@@ -215,6 +215,22 @@ func TestTLSFingerprintProfileServiceImportCapturesRequiresParametricReplayExten
 	require.Len(t, repo.profiles, 0)
 }
 
+func TestTLSFingerprintProfileServiceImportCapturesAllowsTLS12FingerprintWithoutTLS13Fields(t *testing.T) {
+	repo := &tlsFingerprintProfileImportRepoStub{}
+	svc := NewTLSFingerprintProfileService(repo, nil)
+
+	// A faithful TLS 1.2 ClientHello carries no supported_versions(43), key_share(51),
+	// or psk_key_exchange_modes(45) extensions, so those fields are legitimately empty
+	// and must not be required for a complete replayable fingerprint.
+	result, err := svc.ImportTLSFingerprintCaptures(context.Background(), TLSFingerprintCaptureImportRequest{
+		Profiles: []string{`{"name":"TLS 1.2 fingerprint","cipher_suites":[49195,49199,52393],"curves":[29,23,24],"point_formats":[0],"signature_algorithms":[1027,1025],"alpn_protocols":["http/1.1"],"extensions":[0,11,10,13,16,23,35,5]}`},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, repo.profiles, 1)
+}
+
 func cloneTLSFingerprintProfile(profile *model.TLSFingerprintProfile) *model.TLSFingerprintProfile {
 	if profile == nil {
 		return nil

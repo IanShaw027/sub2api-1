@@ -218,15 +218,24 @@ func validateCompleteTLSFingerprintProfile(profile *model.TLSFingerprintProfile)
 		{name: "point_formats", ok: len(profile.PointFormats) > 0},
 		{name: "signature_algorithms", ok: len(profile.SignatureAlgorithms) > 0},
 		{name: "alpn_protocols", ok: len(profile.ALPNProtocols) > 0},
-		{name: "supported_versions", ok: len(profile.SupportedVersions) > 0},
-		{name: "key_share_groups", ok: len(profile.KeyShareGroups) > 0},
-		{name: "psk_modes", ok: len(profile.PSKModes) > 0},
 		{name: "extensions", ok: len(profile.Extensions) > 0},
 	}
 	for _, field := range required {
 		if !field.ok {
 			return fmt.Errorf("%s is required for a complete replayable TLS fingerprint", field.name)
 		}
+	}
+	// supported_versions(43), key_share(51) and psk_key_exchange_modes(45) are
+	// TLS 1.3-only extensions. A faithful TLS 1.2 ClientHello carries none of them,
+	// so their parametric fields are required only when the extension is present.
+	if containsUint16(profile.Extensions, 43) && len(profile.SupportedVersions) == 0 {
+		return fmt.Errorf("supported_versions is required for a complete replayable TLS fingerprint when extension 43 is present")
+	}
+	if containsUint16(profile.Extensions, 51) && len(profile.KeyShareGroups) == 0 {
+		return fmt.Errorf("key_share_groups is required for a complete replayable TLS fingerprint when extension 51 is present")
+	}
+	if containsUint16(profile.Extensions, 45) && len(profile.PSKModes) == 0 {
+		return fmt.Errorf("psk_modes is required for a complete replayable TLS fingerprint when extension 45 is present")
 	}
 	if containsUint16(profile.Extensions, 27) && len(profile.CompressCertAlgos) == 0 {
 		return fmt.Errorf("compress_cert_algos is required for a complete replayable TLS fingerprint when extension 27 is present")
