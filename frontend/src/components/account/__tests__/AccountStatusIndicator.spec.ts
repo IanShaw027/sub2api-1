@@ -15,6 +15,21 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
+vi.mock('@/i18n', () => ({
+  getLocale: () => 'en',
+  i18n: {
+    global: {
+      t: (key: string, params?: Record<string, unknown>) => {
+        if (key === 'common.time.countdown.daysHours') return `${params?.d}d ${params?.h}h`
+        if (key === 'common.time.countdown.hoursMinutes') return `${params?.h}h ${params?.m}m`
+        if (key === 'common.time.countdown.minutes') return `${params?.m}m`
+        if (key === 'common.time.countdown.withSuffix') return `${params?.time} to lift`
+        return key
+      }
+    }
+  }
+}))
+
 function makeAccount(overrides: Partial<Account>): Account {
   return {
     id: 1,
@@ -167,6 +182,84 @@ describe('AccountStatusIndicator', () => {
     expect(wrapper.text()).not.toContain('admin.accounts.status.tempUnschedulable')
     expect(wrapper.text()).toContain('admin.accounts.status.active')
     expect(wrapper.find('button').exists()).toBe(false)
+  })
+
+  it('rate limit badge expires after the clock advances past reset time', async () => {
+    const wrapper = mount(AccountStatusIndicator, {
+      props: {
+        account: makeAccount({
+          rate_limit_reset_at: '2026-03-17T00:00:30Z'
+        })
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('admin.accounts.status.rateLimited')
+    expect(wrapper.text()).toContain('429')
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain('admin.accounts.status.rateLimited')
+    expect(wrapper.text()).not.toContain('429')
+  })
+
+  it('overload badge expires after the clock advances past overload time', async () => {
+    const wrapper = mount(AccountStatusIndicator, {
+      props: {
+        account: makeAccount({
+          overload_until: '2026-03-17T00:00:30Z'
+        })
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('admin.accounts.status.overloaded')
+    expect(wrapper.text()).toContain('529')
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain('admin.accounts.status.overloaded')
+    expect(wrapper.text()).not.toContain('529')
+  })
+
+  it('model rate limit badge expires after the clock advances past reset time', async () => {
+    const wrapper = mount(AccountStatusIndicator, {
+      props: {
+        account: makeAccount({
+          extra: {
+            model_rate_limits: {
+              'claude-sonnet-4-5': {
+                rate_limited_at: '2026-03-17T00:00:00Z',
+                rate_limit_reset_at: '2026-03-17T00:00:30Z'
+              }
+            }
+          }
+        })
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('CSon45')
+    expect(wrapper.text()).toContain('30s')
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain('CSon45')
   })
 
   it('模型限流 + overages 启用 + AICredits key 生效 → 普通限流样式（积分耗尽，无 ⚡）', () => {

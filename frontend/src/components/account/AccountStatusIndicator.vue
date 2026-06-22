@@ -277,8 +277,7 @@ const formatScopeName = (scope: string): string => {
 
 const formatModelResetTime = (resetAt: string): string => {
   const date = new Date(resetAt)
-  const now = new Date()
-  const diffMs = date.getTime() - now.getTime()
+  const diffMs = date.getTime() - now.value
   if (diffMs <= 0) return ''
   const totalSecs = Math.floor(diffMs / 1000)
   const h = Math.floor(totalSecs / 3600)
@@ -301,8 +300,12 @@ const isTempUnschedulable = computed(() => {
   return new Date(props.account.temp_unschedulable_until).getTime() > now.value
 })
 
+const hasActiveCountdown = computed(() => {
+  return isTempUnschedulable.value || isRateLimited.value || isOverloaded.value || activeModelStatuses.value.length > 0
+})
+
 watch(
-  isTempUnschedulable,
+  hasActiveCountdown,
   (active) => {
     if (active) {
       startClock()
@@ -334,7 +337,9 @@ const isQuotaExceeded = computed(() => {
 
 // Computed: countdown text for rate limit (429)
 const rateLimitCountdown = computed(() => {
-  return formatCountdown(props.account.rate_limit_reset_at)
+  if (!props.account.rate_limit_reset_at) return ''
+  const diffMs = new Date(props.account.rate_limit_reset_at).getTime() - now.value
+  return diffMs > 0 ? formatCountdown(props.account.rate_limit_reset_at) : ''
 })
 
 const rateLimitResumeText = computed(() => {
@@ -344,7 +349,9 @@ const rateLimitResumeText = computed(() => {
 
 // Computed: countdown text for overload (529)
 const overloadCountdown = computed(() => {
-  return formatCountdownWithSuffix(props.account.overload_until)
+  if (!props.account.overload_until) return ''
+  const diffMs = new Date(props.account.overload_until).getTime() - now.value
+  return diffMs > 0 ? formatCountdownWithSuffix(props.account.overload_until) : ''
 })
 
 // Computed: status badge class

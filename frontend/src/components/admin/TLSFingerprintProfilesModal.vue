@@ -37,13 +37,20 @@
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
-            <button @click="startCaptureTask" :disabled="captureSubmitting" class="btn btn-primary btn-sm">
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              @click="capturePanelExpanded = !capturePanelExpanded"
+            >
+              {{ capturePanelExpanded ? t('common.collapse') : t('common.expand') }}
+            </button>
+            <button v-if="capturePanelExpanded" @click="startCaptureTask" :disabled="captureSubmitting" class="btn btn-primary btn-sm">
               <Icon v-if="captureSubmitting" name="refresh" size="sm" class="mr-1 animate-spin" />
               <Icon v-else name="play" size="sm" class="mr-1" />
               {{ t('admin.tlsFingerprintProfiles.capture.start') }}
             </button>
             <button
-              v-if="selectedTask?.status === 'running'"
+              v-if="capturePanelExpanded && selectedTask?.status === 'running'"
               @click="stopSelectedTask"
               :disabled="captureSubmitting"
               class="btn btn-secondary btn-sm"
@@ -53,7 +60,7 @@
           </div>
         </div>
 
-        <div class="grid gap-4 lg:grid-cols-[1.1fr_1.4fr]">
+        <div v-if="capturePanelExpanded" class="grid gap-4 lg:grid-cols-[1.1fr_1.4fr]">
           <div class="space-y-3">
             <div>
               <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.capture.taskName') }}</label>
@@ -191,10 +198,23 @@
               </div>
 
               <div class="mb-3 grid gap-2 text-xs lg:grid-cols-[1fr_auto]">
-                <div class="rounded-md bg-gray-50 p-2 font-mono text-gray-700 dark:bg-dark-700 dark:text-gray-200">
-                  <div class="truncate">{{ submitURL }}</div>
-                  <div class="mt-1 truncate">{{ selectedTask.token }}</div>
-                  <div class="mt-1 truncate">{{ collectorURL }}</div>
+                <div class="space-y-2 rounded-md bg-gray-50 p-2 text-gray-700 dark:bg-dark-700 dark:text-gray-200">
+                  <div>
+                    <div class="font-medium text-gray-500 dark:text-gray-400">{{ t('admin.tlsFingerprintProfiles.capture.captureUrl') }}</div>
+                    <div class="truncate font-mono">{{ selectedCaptureURL }}</div>
+                  </div>
+                  <div>
+                    <div class="font-medium text-gray-500 dark:text-gray-400">{{ t('admin.tlsFingerprintProfiles.capture.platformBaseUrl') }}</div>
+                    <div class="truncate font-mono">{{ selectedPlatformBaseURL }}</div>
+                  </div>
+                  <div>
+                    <div class="font-medium text-gray-500 dark:text-gray-400">{{ t('admin.tlsFingerprintProfiles.capture.token') }}</div>
+                    <div class="truncate font-mono">{{ selectedTask.token }}</div>
+                  </div>
+                  <div>
+                    <div class="font-medium text-gray-500 dark:text-gray-400">{{ t('admin.tlsFingerprintProfiles.capture.collectorUrl') }}</div>
+                    <div class="truncate font-mono">{{ collectorURL }}</div>
+                  </div>
                 </div>
                 <div class="flex flex-wrap gap-2 lg:flex-col">
                   <a
@@ -237,6 +257,9 @@
                         {{ t('admin.tlsFingerprintProfiles.capture.userAgent') }}
                       </th>
                       <th class="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+                        {{ t('admin.tlsFingerprintProfiles.capture.originator') }}
+                      </th>
+                      <th class="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
                         {{ t('admin.tlsFingerprintProfiles.capture.hash') }}
                       </th>
                       <th class="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
@@ -252,6 +275,9 @@
                       <td class="px-2 py-2 text-xs text-gray-700 dark:text-gray-300">{{ sample.platform || 'shared' }}</td>
                       <td class="px-2 py-2">
                         <div class="max-w-sm truncate text-xs text-gray-700 dark:text-gray-300">{{ sample.user_agent || '—' }}</div>
+                      </td>
+                      <td class="px-2 py-2">
+                        <div class="max-w-xs truncate text-xs text-gray-700 dark:text-gray-300">{{ sample.originator || '—' }}</div>
                       </td>
                       <td class="px-2 py-2">
                         <code class="text-xs text-gray-500 dark:text-gray-400">{{ sample.fingerprint_hash.slice(0, 12) }}</code>
@@ -621,6 +647,7 @@ const captureLoading = ref(false)
 const captureSubmitting = ref(false)
 const samplesLoading = ref(false)
 const importingSamples = ref(false)
+const capturePanelExpanded = ref(false)
 let capturePollTimer: ReturnType<typeof setInterval> | null = null
 
 const captureForm = reactive({
@@ -667,27 +694,39 @@ const selectedTask = computed(() => {
   return captureTasks.value.find(task => task.id === selectedTaskID.value) || null
 })
 
-const submitURL = computed(() => {
-  const base = typeof window === 'undefined' ? '' : window.location.origin
-  return `${base}/api/v1/tls-fingerprint-captures/submit`
+const selectedCapturePlatform = computed(() => {
+  const firstTargetPlatform = Object.keys(selectedTask.value?.targets || {})[0]
+  return firstTargetPlatform || form.platform || 'openai'
+})
+
+const selectedCaptureURL = computed(() => {
+  const task = selectedTask.value
+  if (task?.capture_url) {
+    return trimTrailingSlash(task.capture_url)
+  }
+  if (task?.capture_base_url) {
+    return normalizeCaptureURL(task.capture_base_url)
+  }
+  if (typeof window === 'undefined') {
+    return 'https://localhost:8444/capture'
+  }
+  return `https://${window.location.hostname}:8444/capture`
+})
+
+const selectedPlatformBaseURL = computed(() => {
+  return `${selectedCaptureURL.value}/${encodeURIComponent(selectedCapturePlatform.value)}/v1`
 })
 
 const collectorURL = computed(() => {
   const base = typeof window === 'undefined' ? '' : window.location.origin
   const params = new URLSearchParams()
-  params.set('endpoint', submitURL.value)
+  params.set('capture_url', selectedCaptureURL.value)
 
   if (selectedTask.value?.token) {
     params.set('token', selectedTask.value.token)
   }
 
-  const firstTargetPlatform = Object.keys(selectedTask.value?.targets || {})[0]
-  params.set('platform', firstTargetPlatform || form.platform || 'openai')
-
-  const firstUAKeyword = parseStringArray(captureForm.uaKeywords)[0]
-  if (firstUAKeyword) {
-    params.set('user_agent', firstUAKeyword)
-  }
+  params.set('platform', selectedCapturePlatform.value)
 
   return `${base}/tls-fingerprint-collector?${params.toString()}`
 })
@@ -923,7 +962,10 @@ const copyCaptureConfig = async () => {
   if (!selectedTask.value) return
   const config = JSON.stringify({
     collector_url: collectorURL.value,
-    endpoint: submitURL.value,
+    capture_url: selectedCaptureURL.value,
+    platform_base_url: selectedPlatformBaseURL.value,
+    api_key: selectedTask.value.token,
+    authorization: `Bearer ${selectedTask.value.token || ''}`,
     token: selectedTask.value.token,
     targets: selectedTask.value.targets,
     ua_keywords: selectedTask.value.ua_keywords
@@ -947,10 +989,24 @@ const formatSampleDetail = (sample: TLSFingerprintCaptureSample): string => {
   return JSON.stringify({
     platform: sample.platform,
     user_agent: sample.user_agent,
+    originator: sample.originator,
     fingerprint_hash: sample.fingerprint_hash,
     profile: sample.profile,
-    raw_payload: sample.raw_payload
+    raw_payload: sample.raw_payload,
+    raw_client_hello: sample.raw_client_hello
   }, null, 2)
+}
+
+const trimTrailingSlash = (value: string): string => {
+  return value.trim().replace(/\/+$/, '')
+}
+
+const normalizeCaptureURL = (value: string): string => {
+  const normalized = trimTrailingSlash(value)
+  if (!normalized) {
+    return ''
+  }
+  return normalized.endsWith('/capture') ? normalized : `${normalized}/capture`
 }
 
 const resetForm = () => {

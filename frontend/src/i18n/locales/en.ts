@@ -2038,28 +2038,67 @@ export default {
   tlsCollector: {
     eyebrow: 'Gateway Collector',
     title: 'TLS Fingerprint Collector',
-    description: 'Paste a captured ClientHello payload and submit it to this gateway capture task. This page is public, but submissions require a running task token.',
+    description: 'Point each real client at this native capture endpoint, send one minimal request, and sub2api records the raw TLS ClientHello, User-Agent, and originator headers before the request is handled.',
     backHome: 'Back Home',
-    endpoint: 'Submit Endpoint',
+    captureURL: 'Native Capture URL',
+    platformBaseURL: 'Client Base URL',
+    probeURL: 'Probe URL',
     platform: 'Platform',
     token: 'Capture Token',
-    userAgent: 'User-Agent',
-    payload: 'Captured Payload',
-    payloadPlaceholder: 'Paste collector YAML or JSON here...',
-    submit: 'Submit Capture',
-    submitting: 'Submitting...',
-    copyJSON: 'Copy Submit JSON',
-    required: 'Token, platform, and payload are required',
-    failed: 'Failed to submit capture',
-    accepted: 'Capture accepted ({counts})',
-    duplicate: 'Duplicate fingerprint ignored ({counts})',
-    copied: 'Submit JSON copied',
-    copyFailed: 'Failed to copy submit JSON',
-    ignored: {
-      platform_not_targeted: 'This platform is not targeted by the capture task',
-      platform_target_reached: 'This platform has reached its target count for the capture task',
-      user_agent_not_matched: 'User-Agent does not match the capture task keywords',
-      unknown: 'Capture was ignored'
+    copied: 'Copied',
+    copyAll: 'Copy all',
+    howItWorksTitle: 'No JSON submit flow',
+    howItWorksBody: 'The capture listener peeks the TLS record from the same connection opened by Codex, Claude, Node, Python, or curl. The HTTP response can be 204 or a validation error; the ClientHello has already been captured by then.',
+    requiredTitle: 'Capture checklist',
+    required: {
+      token: 'Use the capture task token as the API key or Bearer token.',
+      url: 'Set the client base URL to the platform URL shown here.',
+      request: 'Send one real HTTPS request from the exact CLI, desktop app, or SDK runtime you want to fingerprint.',
+      headers: 'Keep the real User-Agent and originator/Originator header so routing rules can match the sample later.',
+      cert: 'Use a certificate trusted by that client, or explicitly trust the capture listener certificate for this probe.'
+    },
+    capturesTitle: 'Stored sample fields',
+    captures: {
+      rawClientHello: 'Raw ClientHello bytes, including extension order and GREASE-visible wire data.',
+      userAgent: 'User-Agent from the request that opened the TLS connection.',
+      originator: 'originator / Originator header when the client sends one.',
+      platform: 'Platform from the capture URL path or platform query parameter.'
+    },
+    clientGuidesTitle: 'Client instructions',
+    clientGuidesHint: 'Open the client family you are testing, copy the command/config, and run one minimal request.',
+    guides: {
+      codexCli: {
+        title: 'Codex CLI interactive',
+        body: 'Use a one-off custom Codex provider so the interactive CLI connects to the capture listener with the real Codex TLS stack.'
+      },
+      codexExec: {
+        title: 'codex exec',
+        body: 'Non-interactive Codex uses the same provider configuration path, so run the same capture provider with a short prompt.'
+      },
+      codexDesktop: {
+        title: 'Codex Desktop',
+        body: 'Add the temporary provider to Codex Desktop config, set the token in the launch environment, then start one short chat.'
+      },
+      claudeCode: {
+        title: 'Claude Code interactive',
+        body: 'Point Claude Code at the Anthropic-compatible capture URL and use the capture token as the auth token.'
+      },
+      claudePrint: {
+        title: 'claude -p',
+        body: 'Print mode uses the same environment variables; the separate example makes non-interactive capture explicit.'
+      },
+      node: {
+        title: 'Node OpenAI SDK',
+        body: 'Run this from the same Node version and runtime environment you want to capture.'
+      },
+      python: {
+        title: 'Python OpenAI SDK',
+        body: 'Run this from the same Python interpreter and TLS/OpenSSL environment you want to capture.'
+      },
+      curl: {
+        title: 'curl raw probe',
+        body: 'Use curl only as a connectivity/certificate sanity check, not as a replacement for CLI or SDK fingerprints.'
+      }
     }
   },
 
@@ -7717,12 +7756,17 @@ export default {
         samplesLoadFailed: 'Failed to load capture samples',
         targetRequired: 'Set at least one platform target above 0',
         noTasks: 'No capture tasks yet',
-        selectedTaskHint: 'Collectors submit token, platform, user_agent, and complete TLS payload to the endpoint below.',
-        copyConfig: 'Copy submit config',
-        copySuccess: 'Submit config copied',
-        copyFailed: 'Failed to copy submit config',
+        selectedTaskHint: 'Point the real client at the platform base URL below. The listener captures raw ClientHello, User-Agent, and originator from that same connection.',
+        captureUrl: 'Capture URL',
+        platformBaseUrl: 'Platform base URL',
+        token: 'Token / API key',
+        collectorUrl: 'Instruction page',
+        copyConfig: 'Copy native config',
+        copySuccess: 'Native capture config copied',
+        copyFailed: 'Failed to copy native capture config',
         noSamples: 'No captured samples yet',
         userAgent: 'User-Agent',
+        originator: 'Originator',
         hash: 'Fingerprint hash',
         details: 'Details',
         viewDetails: 'View',

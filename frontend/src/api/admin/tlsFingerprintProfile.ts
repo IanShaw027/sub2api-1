@@ -82,6 +82,8 @@ export interface TLSFingerprintCaptureTask {
   targets: Record<string, number>
   counts: Record<string, number>
   ua_keywords: string[]
+  capture_base_url?: string
+  capture_url?: string
   created_at: string
   updated_at: string
   completed_at?: string | null
@@ -92,9 +94,11 @@ export interface TLSFingerprintCaptureSample {
   task_id: number
   platform: string
   user_agent: string
+  originator?: string
   fingerprint_hash: string
   profile: TLSFingerprintProfile
   raw_payload: string
+  raw_client_hello?: string | number[]
   created_at: string
 }
 
@@ -102,23 +106,6 @@ export interface StartCaptureTaskRequest {
   name?: string
   targets: Record<string, number>
   ua_keywords?: string[]
-}
-
-export interface SubmitCaptureRequest {
-  token: string
-  platform: string
-  user_agent: string
-  payload: string
-}
-
-export interface CaptureSubmitResult {
-  accepted: boolean
-  duplicate: boolean
-  ignored_reason?: string
-  fingerprint_hash?: string
-  task: TLSFingerprintCaptureTask
-  sample?: TLSFingerprintCaptureSample
-  counts: Record<string, number>
 }
 
 export interface ImportCaptureTaskSamplesRequest {
@@ -198,19 +185,6 @@ export async function importCaptureTaskSamples(
   return data
 }
 
-export async function submitCapture(request: SubmitCaptureRequest): Promise<CaptureSubmitResult> {
-  const { data } = await apiClient.post<CaptureSubmitResult>('/tls-fingerprint-captures/submit', request)
-  return data
-}
-
-export async function submitCaptureToEndpoint(
-  endpoint: string,
-  request: SubmitCaptureRequest
-): Promise<CaptureSubmitResult> {
-  const { data } = await apiClient.post<CaptureSubmitResult>(endpoint, request)
-  return data
-}
-
 export const tlsFingerprintProfileAPI = {
   list,
   getById,
@@ -222,9 +196,7 @@ export const tlsFingerprintProfileAPI = {
   getCaptureTask,
   stopCaptureTask,
   listCaptureSamples,
-  importCaptureTaskSamples,
-  submitCapture,
-  submitCaptureToEndpoint
+  importCaptureTaskSamples
 }
 
 export default tlsFingerprintProfileAPI

@@ -2034,28 +2034,67 @@ export default {
   tlsCollector: {
     eyebrow: '网关采集器',
     title: 'TLS 指纹采集器',
-    description: '粘贴已采集的 ClientHello payload，并提交到当前网关的采集任务。页面本身公开访问，但提交必须携带运行中的任务 token。',
+    description: '把真实客户端指向这个原生采集端点，发送一次最小请求，sub2api 会在处理请求前记录原始 TLS ClientHello、User-Agent 和 originator 头。',
     backHome: '返回首页',
-    endpoint: '提交地址',
+    captureURL: '原生采集地址',
+    platformBaseURL: '客户端 Base URL',
+    probeURL: '探针 URL',
     platform: '平台',
     token: '采集 Token',
-    userAgent: 'User-Agent',
-    payload: '采集 Payload',
-    payloadPlaceholder: '在这里粘贴采集器输出的 YAML 或 JSON...',
-    submit: '提交采集',
-    submitting: '提交中...',
-    copyJSON: '复制提交 JSON',
-    required: 'Token、平台和 payload 必填',
-    failed: '提交采集失败',
-    accepted: '采集已接收 ({counts})',
-    duplicate: '重复指纹已忽略 ({counts})',
-    copied: '提交 JSON 已复制',
-    copyFailed: '复制提交 JSON 失败',
-    ignored: {
-      platform_not_targeted: '该平台不在当前采集任务目标内',
-      platform_target_reached: '该平台已达到当前采集任务目标数量',
-      user_agent_not_matched: 'User-Agent 未匹配当前采集任务关键词',
-      unknown: '采集被忽略'
+    copied: '已复制',
+    copyAll: '复制全部',
+    howItWorksTitle: '不再使用 JSON 提交流程',
+    howItWorksBody: '采集 listener 会从 Codex、Claude、Node、Python 或 curl 打开的同一个 TLS 连接里读取 TLS record。HTTP 响应可能是 204 或校验错误；到这一步时 ClientHello 已经被采集。',
+    requiredTitle: '采集检查项',
+    required: {
+      token: '把采集任务 token 作为 API key 或 Bearer token 使用。',
+      url: '把客户端 base URL 设置为这里显示的平台 URL。',
+      request: '从需要采集的真实 CLI、桌面应用或 SDK 运行环境发送一次 HTTPS 请求。',
+      headers: '保留真实 User-Agent 和 originator/Originator 头，后续路由规则才能匹配样本。',
+      cert: '使用该客户端信任的证书，或为本次探针显式信任采集 listener 证书。'
+    },
+    capturesTitle: '样本保存字段',
+    captures: {
+      rawClientHello: '原始 ClientHello 字节，包含扩展顺序和可见的 GREASE wire data。',
+      userAgent: '打开 TLS 连接的请求里的 User-Agent。',
+      originator: '客户端发送的 originator / Originator 头。',
+      platform: '从采集 URL 路径或 platform query 参数识别的平台。'
+    },
+    clientGuidesTitle: '客户端指引',
+    clientGuidesHint: '展开要测试的客户端类型，复制命令/配置，然后发送一次最小请求。',
+    guides: {
+      codexCli: {
+        title: 'Codex CLI 交互式',
+        body: '使用一次性的自定义 Codex provider，让交互式 CLI 通过真实 Codex TLS 栈连接采集 listener。'
+      },
+      codexExec: {
+        title: 'codex exec',
+        body: '非交互式 Codex 使用同一套 provider 配置路径，所以用同一个采集 provider 运行一个短 prompt。'
+      },
+      codexDesktop: {
+        title: 'Codex Desktop',
+        body: '把临时 provider 加到 Codex Desktop 配置里，在启动环境中设置 token，然后开始一个短对话。'
+      },
+      claudeCode: {
+        title: 'Claude Code 交互式',
+        body: '把 Claude Code 指向 Anthropic 兼容的采集 URL，并把采集 token 用作 auth token。'
+      },
+      claudePrint: {
+        title: 'claude -p',
+        body: 'print mode 使用同样的环境变量；这里单独列出是为了明确非交互式采集方式。'
+      },
+      node: {
+        title: 'Node OpenAI SDK',
+        body: '从你要采集的同一个 Node 版本和运行环境里执行。'
+      },
+      python: {
+        title: 'Python OpenAI SDK',
+        body: '从你要采集的同一个 Python 解释器和 TLS/OpenSSL 环境里执行。'
+      },
+      curl: {
+        title: 'curl 原始探针',
+        body: 'curl 只用于检查连通性和证书，不应替代 CLI 或 SDK 指纹。'
+      }
     }
   },
 
@@ -7869,12 +7908,17 @@ export default {
         samplesLoadFailed: '加载采集样本失败',
         targetRequired: '至少设置一个大于 0 的平台目标数',
         noTasks: '暂无采集任务',
-        selectedTaskHint: '采集器向下方地址提交 token、platform、user_agent 和完整 TLS payload。',
-        copyConfig: '复制提交配置',
-        copySuccess: '提交配置已复制',
-        copyFailed: '复制提交配置失败',
+        selectedTaskHint: '把真实客户端指向下方平台 base URL。listener 会从同一个连接里采集原始 ClientHello、User-Agent 和 originator。',
+        captureUrl: '采集地址',
+        platformBaseUrl: '平台 Base URL',
+        token: 'Token / API key',
+        collectorUrl: '指引页面',
+        copyConfig: '复制原生采集配置',
+        copySuccess: '原生采集配置已复制',
+        copyFailed: '复制原生采集配置失败',
         noSamples: '暂无采集样本',
         userAgent: 'User-Agent',
+        originator: 'Originator',
         hash: '指纹 Hash',
         details: '详情',
         viewDetails: '查看',
