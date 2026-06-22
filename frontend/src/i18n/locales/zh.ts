@@ -7836,6 +7836,10 @@ export default {
     tlsFingerprintProfiles: {
       title: 'TLS 指纹模板',
       description: '管理 TLS 指纹模板，用于模拟特定客户端的 TLS 握手特征',
+      tabs: {
+        profiles: '模板列表',
+        capture: '实时采集'
+      },
       createProfile: '创建模板',
       editProfile: '编辑模板',
       deleteProfile: '删除模板',

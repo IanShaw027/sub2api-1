@@ -7684,6 +7684,10 @@ export default {
     tlsFingerprintProfiles: {
       title: 'TLS Fingerprint Profiles',
       description: 'Manage TLS fingerprint profiles for simulating specific client TLS handshake characteristics',
+      tabs: {
+        profiles: 'Profiles',
+        capture: 'Live Capture'
+      },
       createProfile: 'Create Profile',
       editProfile: 'Edit Profile',
       deleteProfile: 'Delete Profile',

@@ -26,7 +26,32 @@
         </div>
       </div>
 
-      <section class="rounded-xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
+      <div class="border-b border-gray-200 dark:border-dark-600">
+        <nav class="-mb-px flex gap-6">
+          <button
+            type="button"
+            class="border-b-2 px-1 pb-2 text-sm font-medium transition-colors"
+            :class="activeTab === 'profiles'
+              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+              : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
+            @click="activeTab = 'profiles'"
+          >
+            {{ t('admin.tlsFingerprintProfiles.tabs.profiles') }}
+          </button>
+          <button
+            type="button"
+            class="border-b-2 px-1 pb-2 text-sm font-medium transition-colors"
+            :class="activeTab === 'capture'
+              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+              : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
+            @click="activeTab = 'capture'"
+          >
+            {{ t('admin.tlsFingerprintProfiles.tabs.capture') }}
+          </button>
+        </nav>
+      </div>
+
+      <section v-show="activeTab === 'capture'" class="rounded-xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
         <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h4 class="text-sm font-semibold text-blue-950 dark:text-blue-100">
@@ -37,20 +62,13 @@
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
-            <button
-              type="button"
-              class="btn btn-secondary btn-sm"
-              @click="capturePanelExpanded = !capturePanelExpanded"
-            >
-              {{ capturePanelExpanded ? t('common.collapse') : t('common.expand') }}
-            </button>
-            <button v-if="capturePanelExpanded" @click="startCaptureTask" :disabled="captureSubmitting" class="btn btn-primary btn-sm">
+            <button @click="startCaptureTask" :disabled="captureSubmitting" class="btn btn-primary btn-sm">
               <Icon v-if="captureSubmitting" name="refresh" size="sm" class="mr-1 animate-spin" />
               <Icon v-else name="play" size="sm" class="mr-1" />
               {{ t('admin.tlsFingerprintProfiles.capture.start') }}
             </button>
             <button
-              v-if="capturePanelExpanded && selectedTask?.status === 'running'"
+              v-if="selectedTask?.status === 'running'"
               @click="stopSelectedTask"
               :disabled="captureSubmitting"
               class="btn btn-secondary btn-sm"
@@ -60,8 +78,8 @@
           </div>
         </div>
 
-        <div v-if="capturePanelExpanded" class="grid gap-4 lg:grid-cols-[1.1fr_1.4fr]">
-          <div class="space-y-3">
+        <div class="grid gap-4 lg:grid-cols-[1.1fr_1.4fr]">
+          <div class="min-w-0 space-y-3">
             <div>
               <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.capture.taskName') }}</label>
               <input
@@ -126,7 +144,7 @@
             </div>
           </div>
 
-          <div class="space-y-3">
+          <div class="min-w-0 space-y-3">
             <div v-if="captureLoading" class="flex items-center justify-center rounded-lg bg-white py-8 dark:bg-dark-800">
               <Icon name="refresh" size="lg" class="animate-spin text-gray-400" />
             </div>
@@ -141,7 +159,7 @@
                 :key="task.id"
                 type="button"
                 :class="[
-                  'rounded-lg border p-3 text-left transition',
+                  'min-w-0 rounded-lg border p-3 text-left transition',
                   selectedTask?.id === task.id
                     ? 'border-primary-500 bg-primary-50 dark:border-primary-500 dark:bg-primary-900/20'
                     : 'border-gray-200 bg-white hover:border-primary-300 dark:border-dark-600 dark:bg-dark-800'
@@ -197,8 +215,8 @@
                 </div>
               </div>
 
-              <div class="mb-3 grid gap-2 text-xs lg:grid-cols-[1fr_auto]">
-                <div class="space-y-2 rounded-md bg-gray-50 p-2 text-gray-700 dark:bg-dark-700 dark:text-gray-200">
+              <div class="mb-3 grid gap-2 text-xs lg:grid-cols-[minmax(0,1fr)_auto]">
+                <div class="min-w-0 space-y-2 rounded-md bg-gray-50 p-2 text-gray-700 dark:bg-dark-700 dark:text-gray-200">
                   <div>
                     <div class="font-medium text-gray-500 dark:text-gray-400">{{ t('admin.tlsFingerprintProfiles.capture.captureUrl') }}</div>
                     <div class="truncate font-mono">{{ selectedCaptureURL }}</div>
@@ -299,6 +317,7 @@
         </div>
       </section>
 
+      <div v-show="activeTab === 'profiles'" class="space-y-5">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex items-center gap-2">
           <label class="text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -413,6 +432,7 @@
             </tr>
           </tbody>
         </table>
+      </div>
       </div>
     </div>
 
@@ -647,7 +667,7 @@ const captureLoading = ref(false)
 const captureSubmitting = ref(false)
 const samplesLoading = ref(false)
 const importingSamples = ref(false)
-const capturePanelExpanded = ref(false)
+const activeTab = ref<'profiles' | 'capture'>('profiles')
 let capturePollTimer: ReturnType<typeof setInterval> | null = null
 
 const captureForm = reactive({
