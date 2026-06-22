@@ -145,16 +145,6 @@ func (s *ChatChunkToAnthropicState) buildMessageStart() AnthropicSSELine {
 func (s *ChatChunkToAnthropicState) processChoice(choice *ChatChunkChoice) []AnthropicSSELine {
 	var events []AnthropicSSELine
 
-	// Handle reasoning content (reasoning_content or kimi's reasoning field).
-	// Emit as text block since clients may reject unsigned thinking blocks.
-	if reasoning := choice.Delta.EffectiveReasoningContent(); reasoning != "" {
-		if !s.TextBlockOpen {
-			events = append(events, s.buildContentBlockStart("text", ""))
-			s.TextBlockOpen = true
-		}
-		events = append(events, s.buildTextDelta(reasoning))
-	}
-
 	if choice.Delta.Content != nil && *choice.Delta.Content != "" {
 		if !s.TextBlockOpen {
 			events = append(events, s.buildContentBlockStart("text", ""))

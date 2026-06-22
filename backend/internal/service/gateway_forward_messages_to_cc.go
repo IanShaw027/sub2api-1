@@ -265,9 +265,14 @@ func (s *GatewayService) streamCCResponseAsAnthropic(
 
 func buildNonStreamingAnthropicResponse(id, model, stopReason, text, thinking string, toolUseBlocks []apicompat.AnthropicContentBlock, usage *apicompat.AnthropicUsage) apicompat.AnthropicResponse {
 	var content []apicompat.AnthropicContentBlock
-	combined := thinking + text
-	if combined != "" {
-		content = append(content, apicompat.AnthropicContentBlock{Type: "text", Text: combined})
+	// Use text content if available; fall back to reasoning when content is empty
+	// (model spent all tokens on reasoning without producing final output).
+	effectiveText := text
+	if effectiveText == "" && thinking != "" {
+		effectiveText = thinking
+	}
+	if effectiveText != "" {
+		content = append(content, apicompat.AnthropicContentBlock{Type: "text", Text: effectiveText})
 	}
 	content = append(content, toolUseBlocks...)
 
