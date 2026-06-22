@@ -28,6 +28,10 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 	if s != nil {
 		runtime.Profile = s.resolveOpenAITLSProfile(account)
 	}
+	// The account-bound template can carry an upstream UA/Originator. A router
+	// match may override these below; an empty router value falls back to here,
+	// and an empty template value falls back to the built-in defaults in apply().
+	seedTLSFingerprintRuntimeHeaders(&runtime, runtime.Profile)
 	if s == nil || s.tlsFPRouterService == nil || account == nil {
 		return runtime
 	}
@@ -58,8 +62,25 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 	runtime.Profile = profile
 	runtime.UpstreamUserAgent = strings.TrimSpace(match.UpstreamUserAgent)
 	runtime.UpstreamOriginator = strings.TrimSpace(match.UpstreamOriginator)
+	// A router match overrides the headers, but an empty override falls back to
+	// the matched template's own UA/Originator.
+	seedTLSFingerprintRuntimeHeaders(&runtime, profile)
 	runtime.Matched = true
 	return runtime
+}
+
+// seedTLSFingerprintRuntimeHeaders fills any empty runtime UA/Originator from the
+// template profile. Existing non-empty values (e.g. a router override) win.
+func seedTLSFingerprintRuntimeHeaders(runtime *openAITLSFingerprintRuntime, profile *tlsfingerprint.Profile) {
+	if runtime == nil || profile == nil {
+		return
+	}
+	if runtime.UpstreamUserAgent == "" {
+		runtime.UpstreamUserAgent = strings.TrimSpace(profile.UserAgent)
+	}
+	if runtime.UpstreamOriginator == "" {
+		runtime.UpstreamOriginator = strings.TrimSpace(profile.Originator)
+	}
 }
 
 func applyOpenAITLSFingerprintRuntime(req *http.Request, runtime openAITLSFingerprintRuntime) {

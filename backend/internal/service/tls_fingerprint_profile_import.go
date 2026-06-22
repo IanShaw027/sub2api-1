@@ -162,6 +162,8 @@ func ParseTLSFingerprintCaptureProfile(raw string) (*model.TLSFingerprintProfile
 		CompressCertAlgos:              uint16SliceField(payload, "compress_cert_algos"),
 		DelegatedCredentialsAlgorithms: uint16SliceField(payload, "delegated_credentials_algorithms"),
 		ApplicationSettingsProtocols:   stringSliceField(payload, "application_settings_protocols"),
+		UserAgent:                      stringField(payload, "user_agent"),
+		Originator:                     stringField(payload, "originator"),
 	}
 	if desc := stringField(payload, "description"); desc != "" {
 		profile.Description = &desc
