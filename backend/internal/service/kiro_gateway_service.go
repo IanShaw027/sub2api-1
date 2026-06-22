@@ -839,7 +839,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	}
 	flushAssistantTrailingHoldback()
 	visibleToolUses, completedToolUses, partialToolUses := kiroVisibleToolStateCounts(toolBuffers, toolOrder)
-	shadowToolBlocks, shadowHandledIDs, shadowToolNames, shadowToolOutput, shadowExecuted, shadowErr := s.executeKiroShadowTools(ctx, account, converted, toolBuffers, toolOrder)
+	shadowToolBlocks, shadowHandledIDs, shadowToolNames, shadowToolOutput, shadowExecuted, unresolvedFallback, shadowErr := s.executeKiroShadowTools(ctx, account, converted, toolBuffers, toolOrder)
 	if shadowErr != nil {
 		return nil, shadowErr
 	}
@@ -868,7 +868,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		if stopReason == "end_turn" || stopReason == "tool_use" {
 			stopReason = "pause_turn"
 		}
-	} else if len(toolUses) > 0 && stopReason == "end_turn" {
+	} else if (unresolvedFallback || len(toolUses) > 0) && stopReason == "end_turn" {
 		stopReason = "tool_use"
 	}
 	content := make([]map[string]any, 0, 2+len(toolUses))
@@ -1412,19 +1412,21 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					toolUseID := controlStringField(frame.Payload, "toolUseId")
 					state := ensureKiroToolState(toolStates, toolUseID, controlStringField(frame.Payload, "name"))
 					toolOrder = appendKiroToolStateOrder(toolOrder, state)
-					if shadowBridge, ok := kiroShadowToolBridgeForState(converted, state); ok {
+					if shadowBridge, ok, isNativeRunnable := kiroRunnableWebToolBridgeForState(converted, state); ok {
 						shadowMaxUsesLimit = mergeShadowMaxUsesLimit(shadowMaxUsesLimit, shadowBridge.MaxUses)
 						inputChunk := rawStringField(frame.Payload, "input")
 						if inputChunk != "" {
 							_, _ = state.InputBuilder.WriteString(inputChunk)
 						}
-						if normalToolSeen {
+						if normalToolSeen && !isNativeRunnable {
 							if booleanField(frame.Payload, "stop") {
 								state.Stopped = true
 							}
 							continue
 						}
-						shadowToolSeen = true
+						if !isNativeRunnable {
+							shadowToolSeen = true
+						}
 						if !streamStarted {
 							if err := startStream(inputTokens); err != nil {
 								return nil, err
@@ -1461,8 +1463,12 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 								return nil, err
 							}
 							shadowBlocks, shadowOutput, shadowErr := s.executeKiroShadowTool(ctx, account, state, shadowBridge)
-							if shadowErr != nil {
+							if shadowErr != nil && !isNativeRunnable {
 								return nil, shadowErr
+							}
+							if shadowErr != nil {
+								shadowBlocks = []map[string]any{kiroLegacyShadowToolUseBlock(state, shadowBridge)}
+								shadowOutput = state.Name
 							}
 							rawShadowInput := state.InputBuilder.String()
 							for _, block := range shadowBlocks {
@@ -1472,13 +1478,21 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 									return nil, err
 								}
 							}
-							if stopReason == "end_turn" || stopReason == "tool_use" {
+							if shadowErr != nil {
+								if stopReason == "end_turn" {
+									stopReason = "tool_use"
+								}
+							} else if stopReason == "end_turn" || stopReason == "tool_use" {
 								stopReason = "pause_turn"
 							}
 							state.Stopped = true
 							completedToolUses++
 							completedShadowToolUses++
-							if name := kiroShadowAnthropicToolName(shadowBridge, state.Name); name != "" {
+							if shadowErr != nil {
+								if name := strings.TrimSpace(kiroShadowStringField(shadowBlocks[0], "name")); name != "" {
+									toolNames = append(toolNames, name)
+								}
+							} else if name := kiroShadowAnthropicToolName(shadowBridge, state.Name); name != "" {
 								toolNames = append(toolNames, name)
 							}
 							_, _ = toolOutputBuilder.WriteString(shadowOutput)
@@ -2207,11 +2221,9 @@ func (s *KiroGatewayService) commitFakeCachePlan(plan *kiropkg.FakeCachePlan, ru
 		s.fakeCache.Set(checkpoint.Key, struct{}{}, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
 	}
 	if plan.SessionProgressKey != "" {
-		// Persist the effective cached weight (cache read + cache creation) recorded
-		// for this turn, not the ideal cumulative. A sub-100% hit rate makes this
-		// smaller than the ideal, so the next turn reads from a shrunken basis and
-		// the imperfect-hit-rate effect chains forward. Falls back to the ideal
-		// cumulative when no usage was resolved (RecordedEffectiveCachedTokens == 0).
+		// Persist session progress on the ideal cumulative cacheable basis. Hit-rate
+		// scaling only reclassifies part of the current turn from read to creation;
+		// it must not shrink the next turn's cache basis.
 		effectiveTokens := plan.RecordedEffectiveCachedTokens
 		if effectiveTokens <= 0 {
 			effectiveTokens = plan.CurrentCacheableTokens
@@ -2427,7 +2439,83 @@ func kiroShadowToolBridgeForState(converted *kiropkg.ConvertResult, state *kiroT
 	return bridge, ok
 }
 
+func kiroRunnableWebToolBridgeForState(converted *kiropkg.ConvertResult, state *kiroToolState) (kiropkg.ShadowToolBridge, bool, bool) {
+	if bridge, ok := kiroShadowToolBridgeForState(converted, state); ok {
+		return bridge, true, false
+	}
+	if converted == nil || converted.ToolMetadata == nil || state == nil {
+		return kiropkg.ShadowToolBridge{}, false, false
+	}
+	responseBridge, ok := converted.ToolMetadata.ResponseTools[strings.TrimSpace(state.Name)]
+	if !ok || !kiroResponseToolFamilyIsRunnableWeb(responseBridge.Family) {
+		return kiropkg.ShadowToolBridge{}, false, false
+	}
+	bridge := kiropkg.ShadowToolBridge{
+		AnthropicType:    strings.TrimSpace(responseBridge.AnthropicType),
+		AnthropicName:    strings.TrimSpace(responseBridge.AnthropicName),
+		AllowedDomains:   append([]string(nil), responseBridge.AllowedDomains...),
+		BlockedDomains:   append([]string(nil), responseBridge.BlockedDomains...),
+		MaxUses:          responseBridge.MaxUses,
+		MaxContentTokens: responseBridge.MaxContentTokens,
+	}
+	if bridge.AnthropicName == "" {
+		bridge.AnthropicName = strings.TrimSpace(state.Name)
+	}
+	if bridge.AnthropicType == "" {
+		bridge.AnthropicType = bridge.AnthropicName
+	}
+	return bridge, true, true
+}
+
+func kiroResponseToolFamilyIsRunnableWeb(family string) bool {
+	switch strings.TrimSpace(family) {
+	case "anthropic_web_search", "anthropic_web_fetch":
+		return true
+	default:
+		return false
+	}
+}
+
 func kiroShadowToolNameForAnthropicName(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "google_search", kiropkg.ShadowToolWebSearch:
+		return kiropkg.ShadowToolWebSearch
+	case kiropkg.ShadowToolWebFetch:
+		return kiropkg.ShadowToolWebFetch
+	default:
+		return ""
+	}
+}
+
+func kiroLegacyShadowToolUseBlock(state *kiroToolState, bridge kiropkg.ShadowToolBridge) map[string]any {
+	input, _ := kiroShadowToolInput(state)
+	shadowName := kiroLegacyShadowToolNameForBridge(state, bridge)
+	block := map[string]any{
+		"type":  "tool_use",
+		"id":    state.ToolUseID,
+		"name":  shadowName,
+		"input": input,
+	}
+	if bridgePayload := kiroShadowBridgePayload(bridge); len(bridgePayload) > 0 {
+		block["_shadow_bridge"] = bridgePayload
+	}
+	return block
+}
+
+func kiroLegacyShadowToolNameForBridge(state *kiroToolState, bridge kiropkg.ShadowToolBridge) string {
+	candidates := []string{bridge.AnthropicName, bridge.AnthropicType}
+	if state != nil {
+		candidates = append(candidates, state.Name)
+	}
+	for _, candidate := range candidates {
+		name := strings.ToLower(strings.TrimSpace(candidate))
+		switch {
+		case name == "google_search" || strings.HasPrefix(name, "web_search"):
+			return kiropkg.ShadowToolWebSearch
+		case strings.HasPrefix(name, "web_fetch"):
+			return kiropkg.ShadowToolWebFetch
+		}
+	}
 	return ""
 }
 
@@ -2437,15 +2525,16 @@ func (s *KiroGatewayService) executeKiroShadowTools(
 	converted *kiropkg.ConvertResult,
 	states map[string]*kiroToolState,
 	order []string,
-) (map[string][]map[string]any, map[string]struct{}, []string, string, bool, error) {
+) (map[string][]map[string]any, map[string]struct{}, []string, string, bool, bool, error) {
 	shadowHandledIDs, shadowExecutableIDs, err := kiroShadowToolExecutionPlan(converted, states, order)
 	if err != nil {
-		return nil, nil, nil, "", false, err
+		return nil, nil, nil, "", false, false, err
 	}
 	blocksByID := make(map[string][]map[string]any)
 	toolNames := make([]string, 0, len(order))
 	var outputBuilder strings.Builder
 	shadowExecuted := false
+	unresolvedFallback := false
 	shadowUsed := 0
 	shadowMaxUsesLimit := 0
 	for _, toolUseID := range order {
@@ -2453,14 +2542,22 @@ func (s *KiroGatewayService) executeKiroShadowTools(
 			continue
 		}
 		state := states[toolUseID]
-		bridge, _ := kiroShadowToolBridgeForState(converted, state)
+		bridge, _, isNative := kiroRunnableWebToolBridgeForState(converted, state)
 		shadowMaxUsesLimit = mergeShadowMaxUsesLimit(shadowMaxUsesLimit, bridge.MaxUses)
 		if err := ensureShadowMaxUsesNotExceeded(shadowUsed, shadowMaxUsesLimit); err != nil {
-			return nil, nil, nil, "", false, err
+			return nil, nil, nil, "", false, false, err
 		}
 		blocks, outputText, err := s.executeKiroShadowTool(ctx, account, state, bridge)
 		if err != nil {
-			return nil, nil, nil, "", false, err
+			if !isNative {
+				return nil, nil, nil, "", false, false, err
+			}
+			blocksByID[toolUseID] = []map[string]any{kiroLegacyShadowToolUseBlock(state, bridge)}
+			if name := strings.TrimSpace(kiroShadowStringField(blocksByID[toolUseID][0], "name")); name != "" {
+				toolNames = append(toolNames, name)
+			}
+			unresolvedFallback = true
+			continue
 		}
 		blocksByID[toolUseID] = blocks
 		if name := kiroShadowAnthropicToolName(bridge, state.Name); name != "" {
@@ -2470,7 +2567,7 @@ func (s *KiroGatewayService) executeKiroShadowTools(
 		shadowExecuted = true
 		shadowUsed++
 	}
-	return blocksByID, shadowHandledIDs, toolNames, outputBuilder.String(), shadowExecuted, nil
+	return blocksByID, shadowHandledIDs, toolNames, outputBuilder.String(), shadowExecuted, unresolvedFallback, nil
 }
 
 func (s *KiroGatewayService) executeKiroShadowTool(
@@ -2525,6 +2622,9 @@ func (s *KiroGatewayService) executeKiroShadowTool(
 			AllowPrivate:      s.kiroShadowAllowPrivateHosts(),
 			AllowInsecureHTTP: s.kiroShadowAllowInsecureHTTP(),
 		})
+		if fetchResult == nil {
+			return nil, "", errors.New("web fetch returned no result")
+		}
 		fetchResult = applyShadowWebFetchContentLimit(fetchResult, bridge.MaxContentTokens)
 		return []map[string]any{
 			serverToolUse,
@@ -2550,8 +2650,8 @@ func kiroShadowToolExecutionPlan(converted *kiropkg.ConvertResult, states map[st
 		if !kiroToolStateHasVisibleOutput(state) {
 			continue
 		}
-		_, isShadow := kiroShadowToolBridgeForState(converted, state)
-		if !isShadow {
+		_, isRunnable, isNative := kiroRunnableWebToolBridgeForState(converted, state)
+		if !isRunnable {
 			if shadowToolSeen {
 				return nil, nil, kiroShadowToolConflictError(state.Name)
 			}
@@ -2560,10 +2660,12 @@ func kiroShadowToolExecutionPlan(converted *kiropkg.ConvertResult, states map[st
 		}
 
 		handledShadowIDs[toolUseID] = struct{}{}
-		if normalToolSeen {
+		if !isNative && normalToolSeen {
 			continue
 		}
-		shadowToolSeen = true
+		if !isNative {
+			shadowToolSeen = true
+		}
 		if kiroToolStateIsComplete(state) {
 			executableShadowIDs[toolUseID] = struct{}{}
 		}

@@ -32,10 +32,10 @@ type FakeCachePlan struct {
 	PreviousPrefixCacheableTokens int
 	CurrentPrefixCacheableTokens  int
 	Checkpoints                   []FakeCacheCheckpoint
-	// RecordedEffectiveCachedTokens is the cacheable weight recorded by the most
-	// recent ResolveUsageWithConfig call. commitFakeCachePlan persists it to
-	// SessionProgress so the next turn can cap cache reads to the cacheable span
-	// that was visible at the end of this turn.
+	// RecordedEffectiveCachedTokens is the effective cached weight (cache read +
+	// cache creation) computed by the most recent ResolveUsageWithConfig call.
+	// commitFakeCachePlan persists it to SessionProgress so the next turn can
+	// use the last successfully written cache span as the read basis.
 	RecordedEffectiveCachedTokens int
 }
 
@@ -56,8 +56,8 @@ type FakeCacheHitState struct {
 	CheckpointTokens int
 	// EffectiveCachedTokens is the cacheable weight carried over from the
 	// previous turn (persisted under SessionProgressKey). It caps the ideal cache
-	// read basis so compacted or changed histories cannot read beyond the
-	// cacheable span that existed at the end of the previous turn.
+	// read basis so a sub-100% hit-rate scale does not let later turns read
+	// tokens that were never effectively written.
 	EffectiveCachedTokens int
 }
 
@@ -200,55 +200,53 @@ func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCac
 //
 //   - currentTokens is the cacheable prefix visible this turn. It is the upper
 //     bound for cache_read + cache_creation.
-//   - idealRead is the cacheable prefix known to have existed before this turn,
-//     capped by the previous session progress when available.
-//   - hitRateScale reduces only the reported cache_read portion. The scaled-away
-//     read stays inside the cacheable prefix and is reported as cache_creation,
-//     so the non-cacheable input tail remains stable.
-//   - inputTokens is totalInputTokens - currentTokens, matching Anthropic's
-//     "tokens after the last cache breakpoint" usage shape.
-//   - RecordedEffectiveCachedTokens stores currentTokens, not scaled read+write,
-//     because the scale is a reporting calibration knob rather than a real cache
-//     capacity limiter.
+//   - idealRead is the cacheable prefix known to have existed before this turn.
+//     SessionProgress caps it when available because that value reflects the
+//     effective cache span actually written by prior scaled turns.
+//   - hitRateScale governs how much new cacheable growth is written this turn.
+//     The missed growth remains billable input.
+//   - RecordedEffectiveCachedTokens stores read + creation so the next turn's
+//     cache read can continue from the effective written span.
 func (p *FakeCachePlan) resolveFakeCacheUsage(totalInputTokens, currentTokens, idealRead, effectiveCap, hitRateScale int) FakeCacheUsage {
 	read := idealRead
 	if effectiveCap > 0 {
-		if read == 0 || effectiveCap < read {
-			read = effectiveCap
-		}
+		read = effectiveCap
 	}
 	if read > currentTokens {
 		read = currentTokens
 	}
 	read = clampFakeCacheTokens(read, totalInputTokens)
 	currentTokens = clampFakeCacheTokens(currentTokens, totalInputTokens)
-	scaledRead := read
+
+	growth := currentTokens - read
+	if growth < 0 {
+		growth = 0
+	}
+	growth = clampFakeCacheTokens(growth, totalInputTokens-read)
+
+	created := growth
 	if hitRateScale < 100 {
-		scaledRead = read * hitRateScale / 100
+		created = growth * hitRateScale / 100
 	}
-	if scaledRead < 0 {
-		scaledRead = 0
-	}
-	if scaledRead > currentTokens {
-		scaledRead = currentTokens
-	}
-	created := currentTokens - scaledRead
 	if created < 0 {
 		created = 0
 	}
-	inputTokens := totalInputTokens - currentTokens
+	if created > growth {
+		created = growth
+	}
+	inputTokens := totalInputTokens - read - created
 	if inputTokens < 0 {
 		inputTokens = 0
 	}
 
 	if p != nil {
-		p.RecordedEffectiveCachedTokens = currentTokens
+		p.RecordedEffectiveCachedTokens = read + created
 	}
 
 	return FakeCacheUsage{
 		InputTokens:              inputTokens,
 		CacheCreationInputTokens: created,
-		CacheReadInputTokens:     scaledRead,
+		CacheReadInputTokens:     read,
 	}
 }
 
@@ -463,17 +461,10 @@ func fakeCacheUserContent(content any) string {
 				if text := stringField(block, "text"); text != "" {
 					parts = append(parts, text)
 				}
-			case "tool_result":
-				status := "success"
-				if isError, ok := block["is_error"].(bool); ok && isError {
-					status = "error"
+			case "tool_result", "web_search_tool_result", "web_fetch_tool_result":
+				if rendered := fakeCacheToolResultBlock(block); rendered != "" {
+					parts = append(parts, rendered)
 				}
-				parts = append(parts,
-					"tool_result:"+
-						"\ntool_use_id:"+stringField(block, "tool_use_id")+
-						"\nstatus:"+status+
-						"\ncontent:"+strings.TrimSpace(toolResultContent(block["content"])),
-				)
 			case "image":
 				parts = append(parts, "image:"+fakeCacheJSON(block))
 			}
@@ -518,13 +509,10 @@ func fakeCacheAssistantContent(content any) string {
 				if text := stringField(block, "text"); text != "" {
 					parts = append(parts, text)
 				}
-			case "tool_use":
-				parts = append(parts,
-					"tool_use:"+
-						"\nid:"+stringField(block, "id")+
-						"\nname:"+stringField(block, "name")+
-						"\ninput:"+fakeCacheJSON(jsonValue(block["input"])),
-				)
+			case "tool_use", "server_tool_use":
+				if rendered := fakeCacheToolUseBlock(block); rendered != "" {
+					parts = append(parts, rendered)
+				}
 			}
 		}
 		return strings.TrimSpace(strings.Join(parts, "\n"))
@@ -558,15 +546,8 @@ func fakeCacheUserBlock(block map[string]any) string {
 	switch strings.TrimSpace(stringField(block, "type")) {
 	case "text":
 		return stringField(block, "text")
-	case "tool_result":
-		status := "success"
-		if isError, ok := block["is_error"].(bool); ok && isError {
-			status = "error"
-		}
-		return "tool_result:" +
-			"\ntool_use_id:" + stringField(block, "tool_use_id") +
-			"\nstatus:" + status +
-			"\ncontent:" + strings.TrimSpace(toolResultContent(block["content"]))
+	case "tool_result", "web_search_tool_result", "web_fetch_tool_result":
+		return fakeCacheToolResultBlock(block)
 	case "image":
 		return "image:" + fakeCacheJSON(block)
 	default:
@@ -578,14 +559,37 @@ func fakeCacheAssistantBlock(block map[string]any) string {
 	switch strings.TrimSpace(stringField(block, "type")) {
 	case "text":
 		return stringField(block, "text")
-	case "tool_use":
-		return "tool_use:" +
-			"\nid:" + stringField(block, "id") +
-			"\nname:" + stringField(block, "name") +
-			"\ninput:" + fakeCacheJSON(jsonValue(block["input"]))
+	case "tool_use", "server_tool_use":
+		return fakeCacheToolUseBlock(block)
 	default:
 		return ""
 	}
+}
+
+func fakeCacheToolUseBlock(block map[string]any) string {
+	blockType := strings.TrimSpace(stringField(block, "type"))
+	if blockType == "" {
+		blockType = "tool_use"
+	}
+	return blockType + ":" +
+		"\nid:" + stringField(block, "id") +
+		"\nname:" + stringField(block, "name") +
+		"\ninput:" + fakeCacheJSON(jsonValue(block["input"]))
+}
+
+func fakeCacheToolResultBlock(block map[string]any) string {
+	blockType := strings.TrimSpace(stringField(block, "type"))
+	if blockType == "" {
+		blockType = "tool_result"
+	}
+	status := "success"
+	if isError, ok := block["is_error"].(bool); ok && isError {
+		status = "error"
+	}
+	return blockType + ":" +
+		"\ntool_use_id:" + stringField(block, "tool_use_id") +
+		"\nstatus:" + status +
+		"\ncontent:" + strings.TrimSpace(toolResultContent(block["content"]))
 }
 
 func hasFakeCacheControl(block map[string]any) bool {

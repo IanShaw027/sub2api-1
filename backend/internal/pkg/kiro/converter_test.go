@@ -349,6 +349,9 @@ func TestConvertAnthropicRequestWithModel_WebSearchDoesNotUseShadowToolByDefault
 	spec := requireJSONObject(t, tools[0]["toolSpecification"], "toolSpecification")
 	require.Equal(t, "web_search", requireJSONString(t, spec["name"], "toolSpecification.name"))
 	require.NotEqual(t, "cc_srv_web_search", requireJSONString(t, spec["name"], "toolSpecification.name"))
+	require.Nil(t, result.BridgeMetadata)
+	require.NotNil(t, result.ToolMetadata)
+	require.Equal(t, "web_search_20250305", result.ToolMetadata.ResponseTools["web_search"].AnthropicType)
 }
 
 func TestConvertAnthropicRequestWithModel_WebSearchContinuationKeepsNativeHistoryTool(t *testing.T) {
@@ -471,6 +474,9 @@ func TestConvertAnthropicRequestWithModel_GoogleSearchUsesNativeWebSearchTool(t 
 	spec := requireJSONObject(t, tools[0]["toolSpecification"], "toolSpecification")
 	require.Equal(t, "web_search", requireJSONString(t, spec["name"], "toolSpecification.name"))
 	require.Nil(t, result.BridgeMetadata)
+	require.NotNil(t, result.ToolMetadata)
+	require.Equal(t, "google_search", result.ToolMetadata.ResponseTools["web_search"].AnthropicType)
+	require.Equal(t, "web_search", result.ToolMetadata.ResponseTools["web_search"].AnthropicName)
 }
 
 func TestConvertAnthropicRequestWithModel_WebFetchUsesNativeKiroTool(t *testing.T) {
@@ -486,7 +492,8 @@ func TestConvertAnthropicRequestWithModel_WebFetchUsesNativeKiroTool(t *testing.
 	require.NoError(t, err)
 	require.Nil(t, result.BridgeMetadata)
 	require.NotNil(t, result.ToolMetadata)
-	require.Equal(t, "anthropic_web_fetch", result.ToolMetadata.ResponseTools["web_fetch"].Family)
+	require.Equal(t, "web_fetch_20260318", result.ToolMetadata.ResponseTools["web_fetch"].AnthropicType)
+	require.Equal(t, "web_fetch", result.ToolMetadata.ResponseTools["web_fetch"].AnthropicName)
 
 	tools := convertedCurrentTools(t, result.Body)
 	require.Len(t, tools, 1)
@@ -604,7 +611,7 @@ func TestConvertAnthropicRequestWithModel_ReplaysOfficialTextEditorHistoryAsKiro
 		"model":"claude-sonnet-4-6",
 		"messages":[
 			{"role":"user","content":"edit file"},
-			{"role":"assistant","content":[{"type":"tool_use","id":"toolu_edit","name":"str_replace_based_edit_tool","input":{"command":"str_replace","path":"\/tmp\/a.txt","old_str":"old","new_str":"new"}}]},
+			{"role":"assistant","content":[{"type":"tool_use","id":"toolu_edit","name":"str_replace_based_edit_tool","input":{"command":"str_replace","path":"\/tmp\/a.txt","offset":12,"limit":34,"old_str":"old","new_str":"new","replace_all":true}}]},
 			{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_edit","content":"ok"}]},
 			{"role":"user","content":"continue"}
 		],
@@ -632,9 +639,44 @@ func TestConvertAnthropicRequestWithModel_ReplaysOfficialTextEditorHistoryAsKiro
 		require.Equal(t, "/tmp/a.txt", inputObj["file_path"])
 		require.Equal(t, "old", inputObj["old_string"])
 		require.Equal(t, "new", inputObj["new_string"])
+		require.Equal(t, float64(12), inputObj["offset"])
+		require.Equal(t, float64(34), inputObj["limit"])
+		require.Equal(t, true, inputObj["replace_all"])
 		found = true
 	}
 	require.True(t, found, "assistant text editor tool history not found")
+}
+
+func TestIntAnyFieldRejectsFractionalNumbers(t *testing.T) {
+	obj := map[string]any{
+		"int":             12,
+		"integer_float":   float64(34),
+		"fraction_float":  float64(12.9),
+		"huge_float":      float64(1e100),
+		"integer_number":  json.Number("56"),
+		"fraction_number": json.Number("78.1"),
+	}
+
+	value, ok := intAnyField(obj, "int")
+	require.True(t, ok)
+	require.Equal(t, 12, value)
+
+	value, ok = intAnyField(obj, "integer_float")
+	require.True(t, ok)
+	require.Equal(t, 34, value)
+
+	_, ok = intAnyField(obj, "fraction_float")
+	require.False(t, ok)
+
+	_, ok = intAnyField(obj, "huge_float")
+	require.False(t, ok)
+
+	value, ok = intAnyField(obj, "integer_number")
+	require.True(t, ok)
+	require.Equal(t, 56, value)
+
+	_, ok = intAnyField(obj, "fraction_number")
+	require.False(t, ok)
 }
 
 func TestConvertAnthropicRequestWithModel_RejectsUnsupportedServerToolFamilies(t *testing.T) {
@@ -1159,6 +1201,36 @@ func TestEstimateInputTokens_IncludesToolSchemasAndAssistantToolUseInput(t *test
 	if richTokens <= leanTokens {
 		t.Fatalf("rich token estimate = %d, want greater than lean estimate = %d", richTokens, leanTokens)
 	}
+}
+
+func TestEstimateInputTokens_IncludesNativeWebToolHistory(t *testing.T) {
+	rich := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[
+			{"role":"user","content":"search go docs"},
+			{"role":"assistant","content":[{"type":"server_tool_use","id":"srvtoolu_search_1","name":"web_search","input":{"query":"golang documentation"}}]},
+			{"role":"user","content":[{"type":"web_search_tool_result","tool_use_id":"srvtoolu_search_1","content":[{"type":"url","url":"https://go.dev","title":"The Go Programming Language"}]}]},
+			{"role":"assistant","content":[{"type":"server_tool_use","id":"srvtoolu_fetch_1","name":"web_fetch","input":{"url":"https://go.dev/doc"}}]},
+			{"role":"user","content":[{"type":"web_fetch_tool_result","tool_use_id":"srvtoolu_fetch_1","content":{"type":"web_fetch_result","url":"https://go.dev/doc","text":"Go documentation body"}}]},
+			{"role":"user","content":"continue"}
+		]
+	}`)
+	lean := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[
+			{"role":"user","content":"search go docs"},
+			{"role":"assistant","content":[{"type":"server_tool_use","id":"srvtoolu_search_1","name":"web_search","input":{}}]},
+			{"role":"user","content":[{"type":"web_search_tool_result","tool_use_id":"srvtoolu_search_1","content":[]}]},
+			{"role":"assistant","content":[{"type":"server_tool_use","id":"srvtoolu_fetch_1","name":"web_fetch","input":{}}]},
+			{"role":"user","content":[{"type":"web_fetch_tool_result","tool_use_id":"srvtoolu_fetch_1","content":{}}]},
+			{"role":"user","content":"continue"}
+		]
+	}`)
+
+	richTokens := EstimateInputTokens(rich)
+	leanTokens := EstimateInputTokens(lean)
+	require.Greater(t, richTokens, leanTokens)
+	require.GreaterOrEqual(t, richTokens-leanTokens, kiroTokenEstimatePerToolBlock)
 }
 
 func TestEstimateInputTokens_HandlesSystemPolymorphism(t *testing.T) {

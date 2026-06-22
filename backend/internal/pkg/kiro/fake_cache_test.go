@@ -262,6 +262,100 @@ func TestBuildFakeCachePlanPrefixKeysIncludeAssistantAndToolHistory(t *testing.T
 	}
 }
 
+func TestBuildFakeCachePlanPrefixKeysIncludeNativeWebToolHistory(t *testing.T) {
+	base := requireFakeCachePlan(t, `{
+		"model":"claude-sonnet-4",
+		"metadata":{"user_id":"user_x_account__session_123e4567-e89b-12d3-a456-426614174020"},
+		"messages":[
+			{"role":"user","content":"search go docs"},
+			{"role":"assistant","content":[
+				{"type":"server_tool_use","id":"srvtoolu_search_1","name":"web_search","input":{"query":"golang"}}
+			]},
+			{"role":"user","content":[
+				{"type":"web_search_tool_result","tool_use_id":"srvtoolu_search_1","content":[{"type":"url","url":"https://go.dev","title":"The Go Programming Language"}]}
+			]},
+			{"role":"assistant","content":[
+				{"type":"server_tool_use","id":"srvtoolu_fetch_1","name":"web_fetch","input":{"url":"https://go.dev"}}
+			]},
+			{"role":"user","content":[
+				{"type":"web_fetch_tool_result","tool_use_id":"srvtoolu_fetch_1","content":{"type":"web_fetch_result","url":"https://go.dev","text":"Go docs"}}
+			]},
+			{"role":"user","content":"continue"}
+		]
+	}`)
+
+	cases := map[string]string{
+		"server_tool_use_input": `{
+			"model":"claude-sonnet-4",
+			"metadata":{"user_id":"user_x_account__session_123e4567-e89b-12d3-a456-426614174020"},
+			"messages":[
+				{"role":"user","content":"search go docs"},
+				{"role":"assistant","content":[
+					{"type":"server_tool_use","id":"srvtoolu_search_1","name":"web_search","input":{"query":"rust"}}
+				]},
+				{"role":"user","content":[
+					{"type":"web_search_tool_result","tool_use_id":"srvtoolu_search_1","content":[{"type":"url","url":"https://go.dev","title":"The Go Programming Language"}]}
+				]},
+				{"role":"assistant","content":[
+					{"type":"server_tool_use","id":"srvtoolu_fetch_1","name":"web_fetch","input":{"url":"https://go.dev"}}
+				]},
+				{"role":"user","content":[
+					{"type":"web_fetch_tool_result","tool_use_id":"srvtoolu_fetch_1","content":{"type":"web_fetch_result","url":"https://go.dev","text":"Go docs"}}
+				]},
+				{"role":"user","content":"continue"}
+			]
+		}`,
+		"web_search_result": `{
+			"model":"claude-sonnet-4",
+			"metadata":{"user_id":"user_x_account__session_123e4567-e89b-12d3-a456-426614174020"},
+			"messages":[
+				{"role":"user","content":"search go docs"},
+				{"role":"assistant","content":[
+					{"type":"server_tool_use","id":"srvtoolu_search_1","name":"web_search","input":{"query":"golang"}}
+				]},
+				{"role":"user","content":[
+					{"type":"web_search_tool_result","tool_use_id":"srvtoolu_search_1","content":[{"type":"url","url":"https://pkg.go.dev","title":"Go Packages"}]}
+				]},
+				{"role":"assistant","content":[
+					{"type":"server_tool_use","id":"srvtoolu_fetch_1","name":"web_fetch","input":{"url":"https://go.dev"}}
+				]},
+				{"role":"user","content":[
+					{"type":"web_fetch_tool_result","tool_use_id":"srvtoolu_fetch_1","content":{"type":"web_fetch_result","url":"https://go.dev","text":"Go docs"}}
+				]},
+				{"role":"user","content":"continue"}
+			]
+		}`,
+		"web_fetch_result": `{
+			"model":"claude-sonnet-4",
+			"metadata":{"user_id":"user_x_account__session_123e4567-e89b-12d3-a456-426614174020"},
+			"messages":[
+				{"role":"user","content":"search go docs"},
+				{"role":"assistant","content":[
+					{"type":"server_tool_use","id":"srvtoolu_search_1","name":"web_search","input":{"query":"golang"}}
+				]},
+				{"role":"user","content":[
+					{"type":"web_search_tool_result","tool_use_id":"srvtoolu_search_1","content":[{"type":"url","url":"https://go.dev","title":"The Go Programming Language"}]}
+				]},
+				{"role":"assistant","content":[
+					{"type":"server_tool_use","id":"srvtoolu_fetch_1","name":"web_fetch","input":{"url":"https://go.dev"}}
+				]},
+				{"role":"user","content":[
+					{"type":"web_fetch_tool_result","tool_use_id":"srvtoolu_fetch_1","content":{"type":"web_fetch_result","url":"https://go.dev","text":"Updated Go docs"}}
+				]},
+				{"role":"user","content":"continue"}
+			]
+		}`,
+	}
+
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			changed := requireFakeCachePlan(t, body)
+			require.NotEqual(t, base.CurrentPrefixKey, changed.CurrentPrefixKey)
+			require.NotEqual(t, base.PreviousPrefixKey, changed.PreviousPrefixKey)
+		})
+	}
+}
+
 func TestBuildFakeCachePlanBuildsCacheControlCheckpoints(t *testing.T) {
 	plan := requireFakeCachePlan(t, `{
 		"model":"claude-sonnet-4",
@@ -392,17 +486,17 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAndHonorsMinBlock(t 
 	// With 95% hit rate:
 	// - ideal read: Independent 20 + PreviousPrefix 60 = 80
 	// - currentTokens: Independent 20 + CurrentPrefix 80 = 100
-	// - scaled read = 80 * 95% = 76
-	// - created = 100 - 76 = 24
-	// - input remains the non-cacheable tail: 140 - 100 = 40
+	// - existing read remains 80
+	// - new growth is 20, 95% of it is written: 19
+	// - the unwritten growth token remains input
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              40,
-		CacheCreationInputTokens: 24,
-		CacheReadInputTokens:     76,
+		InputTokens:              41,
+		CacheCreationInputTokens: 19,
+		CacheReadInputTokens:     80,
 	}, usage)
 }
 
-func TestFakeCachePlanResolveUsageWithConfig_ScalesCachedPortionWithoutChangingTotalInput(t *testing.T) {
+func TestFakeCachePlanResolveUsageWithConfig_ScalesNewGrowthIntoInput(t *testing.T) {
 	plan := &FakeCachePlan{
 		IndependentCacheableTokens:    20,
 		CurrentPrefixCacheableTokens:  80,
@@ -420,9 +514,9 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCachedPortionWithoutChangingT
 	})
 
 	require.Equal(t, 140, usage.InputTokens+usage.CacheCreationInputTokens+usage.CacheReadInputTokens)
-	require.Equal(t, 76, usage.CacheReadInputTokens)
-	require.Equal(t, 24, usage.CacheCreationInputTokens)
-	require.Equal(t, 40, usage.InputTokens)
+	require.Equal(t, 80, usage.CacheReadInputTokens)
+	require.Equal(t, 19, usage.CacheCreationInputTokens)
+	require.Equal(t, 41, usage.InputTokens)
 }
 
 func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAt98Percent(t *testing.T) {
@@ -439,30 +533,25 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAt98Percent(t *testi
 		HitRateScale: 98,
 	})
 
-	// 98% hit rate is applied after the ideal split. The 2% missed read moves
-	// from cache_read to cache_creation; total input accounting stays unchanged.
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              40,
-		CacheCreationInputTokens: 42,
-		CacheReadInputTokens:     58,
+		InputTokens:              41,
+		CacheCreationInputTokens: 39,
+		CacheReadInputTokens:     60,
 	}, usage)
+	require.Equal(t, usage.CacheReadInputTokens+usage.CacheCreationInputTokens, plan.RecordedEffectiveCachedTokens)
 }
 
 func TestFakeCachePlanResolveUsageWithConfig_ChainsEffectiveCacheAcrossTurns(t *testing.T) {
-	// Turn 1: cold start, nothing cached yet. Hit-rate scale does not change a
-	// cold write because there is no read to scale down.
 	turn1 := &FakeCachePlan{
 		CurrentPrefixCacheableTokens: 1000,
 		CurrentPrefixKey:             "prefix:current",
 	}
 	u1 := turn1.ResolveUsageWithConfig(1000, FakeCacheHitState{}, FakeCacheUsageConfig{HitRateScale: 95})
-	require.Equal(t, 1000, u1.CacheCreationInputTokens)
+	require.Equal(t, 950, u1.CacheCreationInputTokens)
 	require.Equal(t, 0, u1.CacheReadInputTokens)
-	require.Equal(t, 0, u1.InputTokens)
-	require.Equal(t, 1000, turn1.RecordedEffectiveCachedTokens)
+	require.Equal(t, 50, u1.InputTokens)
+	require.Equal(t, u1.CacheReadInputTokens+u1.CacheCreationInputTokens, turn1.RecordedEffectiveCachedTokens)
 
-	// Turn 2: ideal read is 1000 and ideal growth is 200. The 95% scale moves
-	// 5% of the ideal read into cache_creation, not into input.
 	turn2 := &FakeCachePlan{
 		CurrentPrefixCacheableTokens:  1200,
 		PreviousPrefixCacheableTokens: 1000,
@@ -474,9 +563,72 @@ func TestFakeCachePlanResolveUsageWithConfig_ChainsEffectiveCacheAcrossTurns(t *
 		EffectiveCachedTokens: turn1.RecordedEffectiveCachedTokens,
 	}, FakeCacheUsageConfig{HitRateScale: 95})
 	require.Equal(t, 950, u2.CacheReadInputTokens)
-	require.Equal(t, 250, u2.CacheCreationInputTokens)
-	require.Equal(t, 0, u2.InputTokens)
-	require.Equal(t, 1200, turn2.RecordedEffectiveCachedTokens)
+	require.Equal(t, 237, u2.CacheCreationInputTokens)
+	require.Equal(t, 13, u2.InputTokens)
+	require.Equal(t, u2.CacheReadInputTokens+u2.CacheCreationInputTokens, turn2.RecordedEffectiveCachedTokens)
+
+	turn3 := &FakeCachePlan{
+		CurrentPrefixCacheableTokens:  1300,
+		PreviousPrefixCacheableTokens: 1200,
+		CurrentPrefixKey:              "prefix:current",
+		PreviousPrefixKey:             "prefix:previous",
+	}
+	u3 := turn3.ResolveUsageWithConfig(1300, FakeCacheHitState{
+		Prefix:                true,
+		EffectiveCachedTokens: turn2.RecordedEffectiveCachedTokens,
+	}, FakeCacheUsageConfig{HitRateScale: 95})
+	require.Equal(t, u2.CacheReadInputTokens+u2.CacheCreationInputTokens, u3.CacheReadInputTokens)
+	require.Equal(t, 107, u3.CacheCreationInputTokens)
+	require.Equal(t, 6, u3.InputTokens)
+	require.Equal(t, u3.CacheReadInputTokens+u3.CacheCreationInputTokens, turn3.RecordedEffectiveCachedTokens)
+}
+
+func TestFakeCachePlanResolveUsageWithConfig_UsesSessionProgressWhenPrefixKeyMisses(t *testing.T) {
+	plan := &FakeCachePlan{
+		IndependentCacheableTokens:   34000,
+		CurrentPrefixCacheableTokens: 76000,
+		IndependentKey:               "independent",
+		CurrentPrefixKey:             "prefix:current",
+	}
+
+	usage := plan.ResolveUsageWithConfig(110000, FakeCacheHitState{
+		Independent:           true,
+		EffectiveCachedTokens: 100000,
+	}, FakeCacheUsageConfig{
+		HitRateScale: 95,
+	})
+
+	require.Equal(t, FakeCacheUsage{
+		InputTokens:              500,
+		CacheCreationInputTokens: 9500,
+		CacheReadInputTokens:     100000,
+	}, usage)
+	require.Equal(t, usage.CacheReadInputTokens+usage.CacheCreationInputTokens, plan.RecordedEffectiveCachedTokens)
+}
+
+func TestFakeCachePlanResolveUsageWithConfig_CapsLongerRealHitToSessionProgress(t *testing.T) {
+	plan := &FakeCachePlan{
+		CurrentPrefixKey: "prefix:current",
+		Checkpoints: []FakeCacheCheckpoint{
+			{Key: "checkpoint:previous", Tokens: 2800},
+			{Key: "checkpoint:current", Tokens: 2920},
+		},
+	}
+
+	usage := plan.ResolveUsageWithConfig(3300, FakeCacheHitState{
+		CheckpointTokens:      2800,
+		EffectiveCachedTokens: 1000,
+	}, FakeCacheUsageConfig{
+		HitRateScale:   100,
+		MinBlockTokens: 1024,
+	})
+
+	require.Equal(t, FakeCacheUsage{
+		InputTokens:              380,
+		CacheCreationInputTokens: 1920,
+		CacheReadInputTokens:     1000,
+	}, usage)
+	require.Equal(t, 2920, plan.RecordedEffectiveCachedTokens)
 }
 
 func TestFakeCachePlanResolveUsageWithConfig_ZeroHitRateScaleIsValid(t *testing.T) {
@@ -493,12 +645,12 @@ func TestFakeCachePlanResolveUsageWithConfig_ZeroHitRateScaleIsValid(t *testing.
 		HitRateScale: 0,
 	})
 
-	// With 0% hit rate, the ideal cache read is shifted into cache creation.
-	// Pure input remains the non-cacheable tail.
+	// With 0% hit rate, existing cache remains readable but no new growth is
+	// written. The unwritten growth is reported as input.
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              40,
-		CacheCreationInputTokens: 100,
-		CacheReadInputTokens:     0,
+		InputTokens:              80,
+		CacheCreationInputTokens: 0,
+		CacheReadInputTokens:     60,
 	}, usage)
 }
 

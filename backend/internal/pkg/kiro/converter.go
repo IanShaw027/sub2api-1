@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 
@@ -142,9 +143,13 @@ type ToolMetadata struct {
 }
 
 type ResponseToolBridge struct {
-	AnthropicType string
-	AnthropicName string
-	Family        string
+	AnthropicType    string
+	AnthropicName    string
+	Family           string
+	AllowedDomains   []string
+	BlockedDomains   []string
+	MaxUses          int
+	MaxContentTokens int
 }
 
 type ShadowToolBridge struct {
@@ -355,8 +360,8 @@ func EstimateInputTokens(body []byte) int {
 	return calibrateKiroInputTokens(contentTokens, messageCount, toolCount, toolSchemaTokens, toolBlockCount)
 }
 
-// countKiroToolBlocks counts tool_use and tool_result blocks in a message's
-// content so their structural billing overhead can be added during calibration.
+// countKiroToolBlocks counts tool-use/result blocks in a message's content so
+// their structural billing overhead can be added during calibration.
 func countKiroToolBlocks(content any) int {
 	blocks, ok := content.([]any)
 	if !ok {
@@ -366,7 +371,7 @@ func countKiroToolBlocks(content any) int {
 	for _, item := range blocks {
 		block, _ := item.(map[string]any)
 		switch strings.TrimSpace(stringField(block, "type")) {
-		case "tool_use", "tool_result":
+		case "tool_use", "server_tool_use", "tool_result", "web_search_tool_result", "web_fetch_tool_result":
 			n++
 		}
 	}
@@ -727,11 +732,21 @@ func KiroTextEditorToolFromAnthropicInput(input any) (string, any) {
 			"content":   firstNonEmptyKiroString(obj, "file_text", "content"),
 		}
 	case "str_replace":
-		return "Edit", map[string]any{
+		mapped := map[string]any{
 			"file_path":  firstNonEmptyKiroString(obj, "path", "file_path"),
 			"old_string": firstNonEmptyKiroString(obj, "old_str", "old_string"),
 			"new_string": firstNonEmptyKiroString(obj, "new_str", "new_string"),
 		}
+		if v, ok := intAnyField(obj, "offset"); ok {
+			mapped["offset"] = v
+		}
+		if v, ok := intAnyField(obj, "limit"); ok {
+			mapped["limit"] = v
+		}
+		if v, ok := boolAnyField(obj, "replace_all"); ok {
+			mapped["replace_all"] = v
+		}
+		return "Edit", mapped
 	default:
 		return "Edit", input
 	}
@@ -788,12 +803,22 @@ func AnthropicTextEditorInputFromKiroToolUse(name string, input any) any {
 			"file_text": firstNonEmptyKiroString(obj, "content", "file_text"),
 		}
 	case "Edit":
-		return map[string]any{
+		out := map[string]any{
 			"command": "str_replace",
 			"path":    firstNonEmptyKiroString(obj, "file_path", "path"),
 			"old_str": firstNonEmptyKiroString(obj, "old_string", "old_str"),
 			"new_str": firstNonEmptyKiroString(obj, "new_string", "new_str"),
 		}
+		if v, ok := intAnyField(obj, "offset"); ok {
+			out["offset"] = v
+		}
+		if v, ok := intAnyField(obj, "limit"); ok {
+			out["limit"] = v
+		}
+		if v, ok := boolAnyField(obj, "replace_all"); ok {
+			out["replace_all"] = v
+		}
+		return out
 	default:
 		return input
 	}
@@ -806,6 +831,56 @@ func firstNonEmptyKiroString(obj map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func intAnyField(obj map[string]any, key string) (int, bool) {
+	value, ok := obj[key]
+	if !ok || value == nil {
+		return 0, false
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int8:
+		return int(typed), true
+	case int16:
+		return int(typed), true
+	case int32:
+		return int(typed), true
+	case int64:
+		return int(typed), true
+	case float32:
+		return intIntegralFloat64(float64(typed))
+	case float64:
+		return intIntegralFloat64(typed)
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil {
+			return int(parsed), true
+		}
+		if parsed, err := typed.Float64(); err == nil {
+			return intIntegralFloat64(parsed)
+		}
+	}
+	return 0, false
+}
+
+func intIntegralFloat64(value float64) (int, bool) {
+	if math.IsNaN(value) || math.IsInf(value, 0) || math.Trunc(value) != value {
+		return 0, false
+	}
+	if value < float64(math.MinInt) || value > float64(math.MaxInt) {
+		return 0, false
+	}
+	return int(value), true
+}
+
+func boolAnyField(obj map[string]any, key string) (bool, bool) {
+	value, ok := obj[key]
+	if !ok || value == nil {
+		return false, false
+	}
+	typed, ok := value.(bool)
+	return typed, ok
 }
 
 func convertTools(raw any) ([]map[string]any, map[string]string, *BridgeMetadata, *ToolMetadata, error) {
@@ -1027,9 +1102,13 @@ func supportedNativeServerTool(tool map[string]any) (map[string]any, ResponseToo
 		}, true
 	case strings.HasPrefix(toolType, "web_fetch"):
 		return makeNativeServerToolSpecification("web_fetch", "Fetch a URL using Kiro's native web_fetch tool.", "url"), ResponseToolBridge{
-			AnthropicType: toolType,
-			AnthropicName: "web_fetch",
-			Family:        "anthropic_web_fetch",
+			AnthropicType:    toolType,
+			AnthropicName:    "web_fetch",
+			Family:           "anthropic_web_fetch",
+			AllowedDomains:   stringArrayField(tool["allowed_domains"]),
+			BlockedDomains:   stringArrayField(tool["blocked_domains"]),
+			MaxUses:          intField(tool["max_uses"]),
+			MaxContentTokens: intField(tool["max_content_tokens"]),
 		}, true
 	default:
 		return nil, ResponseToolBridge{}, false
@@ -1687,11 +1766,11 @@ func appendKiroTokenEstimateContent(builder *strings.Builder, content any) {
 			switch strings.TrimSpace(stringField(block, "type")) {
 			case "text":
 				appendKiroTokenEstimateText(builder, stringField(block, "text"))
-			case "tool_use":
+			case "tool_use", "server_tool_use":
 				appendKiroTokenEstimateText(builder, stringField(block, "name"))
 				appendKiroTokenEstimateText(builder, stringField(block, "id"))
 				appendKiroTokenEstimateJSON(builder, block["input"])
-			case "tool_result":
+			case "tool_result", "web_search_tool_result", "web_fetch_tool_result":
 				appendKiroTokenEstimateText(builder, stringField(block, "tool_use_id"))
 				appendKiroTokenEstimateText(builder, toolResultContent(block["content"]))
 			}
