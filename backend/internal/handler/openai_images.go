@@ -83,6 +83,22 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		zap.String("capability", string(parsed.RequiredCapability)),
 	)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeImage))
+	h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+		Stage:          "request_received",
+		EndpointKind:   "images",
+		RequestStart:   requestStart,
+		APIKey:         apiKey,
+		UserID:         subject.UserID,
+		RequestedModel: requestModel,
+		Stream:         parsed.Stream,
+		Fields: map[string]any{
+			"inbound_endpoint":   GetInboundEndpoint(c),
+			"request_body_bytes": len(body),
+			"image_endpoint":     parsed.Endpoint,
+			"multipart":          parsed.Multipart,
+			"capability":         string(parsed.RequiredCapability),
+		},
+	})
 
 	if !service.GroupAllowsImageGeneration(apiKey.Group) {
 		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
@@ -124,7 +140,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
 
+	userSlotStart := time.Now()
 	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, parsed.Stream, &streamStarted, reqLog)
+	userSlotWaitMs := time.Since(userSlotStart).Milliseconds()
 	if !acquired {
 		return
 	}
@@ -205,8 +223,34 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.images.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
+		h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+			Stage:          "account_selected",
+			EndpointKind:   "images",
+			RequestStart:   requestStart,
+			APIKey:         apiKey,
+			Account:        account,
+			UserID:         subject.UserID,
+			RequestedModel: requestModel,
+			Stream:         parsed.Stream,
+			SwitchCount:    switchCount,
+			Fields: map[string]any{
+				"inbound_endpoint":     GetInboundEndpoint(c),
+				"image_endpoint":       parsed.Endpoint,
+				"multipart":            parsed.Multipart,
+				"capability":           string(parsed.RequiredCapability),
+				"session_hash_present": strings.TrimSpace(sessionHash) != "",
+				"scheduler_layer":      scheduleDecision.Layer,
+				"sticky_session_hit":   scheduleDecision.StickySessionHit,
+				"candidate_count":      scheduleDecision.CandidateCount,
+				"top_k":                scheduleDecision.TopK,
+				"scheduler_latency_ms": scheduleDecision.LatencyMs,
+				"load_skew":            scheduleDecision.LoadSkew,
+			},
+		})
 
+		accountSlotStart := time.Now()
 		accountReleaseFunc, acquireStatus := h.acquireResponsesAccountSlot(c, apiKey.GroupID, apiKey.ID, sessionHash, "", selection, parsed.Stream, &streamStarted, reqLog)
+		accountSlotWaitMs := time.Since(accountSlotStart).Milliseconds()
 		if acquireStatus == accountSlotAcquireRetry {
 			failedAccountIDs[account.ID] = struct{}{}
 			continue
@@ -214,6 +258,30 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		if acquireStatus != accountSlotAcquireAcquired {
 			return
 		}
+		slotFields := map[string]any{
+			"inbound_endpoint":     GetInboundEndpoint(c),
+			"image_endpoint":       parsed.Endpoint,
+			"user_slot_wait_ms":    userSlotWaitMs,
+			"account_slot_wait_ms": accountSlotWaitMs,
+			"session_hash_present": strings.TrimSpace(sessionHash) != "",
+		}
+		if selection.WaitPlan != nil {
+			slotFields["account_wait_timeout_ms"] = selection.WaitPlan.Timeout.Milliseconds()
+			slotFields["account_max_concurrency"] = selection.WaitPlan.MaxConcurrency
+			slotFields["account_max_waiting"] = selection.WaitPlan.MaxWaiting
+		}
+		h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+			Stage:          "concurrency_slots_acquired",
+			EndpointKind:   "images",
+			RequestStart:   requestStart,
+			APIKey:         apiKey,
+			Account:        account,
+			UserID:         subject.UserID,
+			RequestedModel: requestModel,
+			Stream:         parsed.Stream,
+			SwitchCount:    switchCount,
+			Fields:         slotFields,
+		})
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
@@ -250,6 +318,28 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						retryLimit := account.GetPoolModeRetryCount()
 						if sameAccountRetryCount[account.ID] < retryLimit {
 							sameAccountRetryCount[account.ID]++
+							h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+								Stage:             "attempt_finished",
+								EndpointKind:      "images",
+								RequestStart:      requestStart,
+								APIKey:            apiKey,
+								Account:           account,
+								UserID:            subject.UserID,
+								RequestedModel:    requestModel,
+								Stream:            parsed.Stream,
+								SwitchCount:       switchCount,
+								ForwardDurationMs: forwardDurationMs,
+								OpenAIResult:      result,
+								Err:               err,
+								Fields: map[string]any{
+									"outcome":                  "retry_same_account",
+									"inbound_endpoint":         GetInboundEndpoint(c),
+									"image_endpoint":           parsed.Endpoint,
+									"upstream_status":          failoverErr.StatusCode,
+									"same_account_retry_count": sameAccountRetryCount[account.ID],
+									"same_account_retry_limit": retryLimit,
+								},
+							})
 							reqLog.Warn("openai.images.pool_mode_same_account_retry",
 								zap.Int64("account_id", account.ID),
 								zap.Int("upstream_status", failoverErr.StatusCode),
@@ -268,6 +358,26 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
 					lastFailoverAccount = account
+					h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+						Stage:             "attempt_finished",
+						EndpointKind:      "images",
+						RequestStart:      requestStart,
+						APIKey:            apiKey,
+						Account:           account,
+						UserID:            subject.UserID,
+						RequestedModel:    requestModel,
+						Stream:            parsed.Stream,
+						SwitchCount:       switchCount,
+						ForwardDurationMs: forwardDurationMs,
+						OpenAIResult:      result,
+						Err:               err,
+						Fields: map[string]any{
+							"outcome":          "failover",
+							"inbound_endpoint": GetInboundEndpoint(c),
+							"image_endpoint":   parsed.Endpoint,
+							"upstream_status":  failoverErr.StatusCode,
+						},
+					})
 					if switchCount >= maxAccountSwitches {
 						h.handleFailoverExhausted(c, failoverErr, account, streamStarted)
 						return
@@ -291,6 +401,28 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				}
 				upstreamErrorAlreadyCommunicated := c.Writer.Written()
 				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted, err)
+				h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+					Stage:             "attempt_finished",
+					EndpointKind:      "images",
+					RequestStart:      requestStart,
+					APIKey:            apiKey,
+					Account:           account,
+					UserID:            subject.UserID,
+					RequestedModel:    requestModel,
+					Stream:            parsed.Stream,
+					SwitchCount:       switchCount,
+					ForwardDurationMs: forwardDurationMs,
+					OpenAIResult:      result,
+					Err:               err,
+					Fields: map[string]any{
+						"outcome":                                 "error",
+						"inbound_endpoint":                        GetInboundEndpoint(c),
+						"image_endpoint":                          parsed.Endpoint,
+						"fallback_error_response_written":         wroteFallback,
+						"upstream_error_response_already_written": upstreamErrorAlreadyCommunicated,
+						"stream_started":                          streamStarted,
+					},
+				})
 				fields := []zap.Field{
 					zap.Int64("account_id", account.ID),
 					zap.Bool("fallback_error_response_written", wroteFallback),
@@ -313,6 +445,27 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		} else {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
 		}
+		h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
+			Stage:             "attempt_finished",
+			EndpointKind:      "images",
+			RequestStart:      requestStart,
+			APIKey:            apiKey,
+			Account:           account,
+			UserID:            subject.UserID,
+			RequestedModel:    requestModel,
+			Stream:            parsed.Stream,
+			SwitchCount:       switchCount,
+			ForwardDurationMs: forwardDurationMs,
+			OpenAIResult:      result,
+			Err:               err,
+			Fields: map[string]any{
+				"outcome":              "success",
+				"inbound_endpoint":     GetInboundEndpoint(c),
+				"image_endpoint":       parsed.Endpoint,
+				"session_hash_present": strings.TrimSpace(sessionHash) != "",
+				"routed_model":         channelMapping.MappedModel,
+			},
+		})
 
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)

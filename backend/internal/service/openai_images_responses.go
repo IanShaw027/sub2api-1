@@ -629,6 +629,29 @@ func (s *OpenAIGatewayService) openAIImagesStreamFailedDetail(payload []byte) st
 	return truncateString(string(payload), maxBytes)
 }
 
+func openAIImagesOAuthDebugTimelineFields(account *Account, parsed *OpenAIImagesRequest, requestedModel string) map[string]any {
+	fields := map[string]any{
+		"component":       "gateway_debug_timeline",
+		"platform":        PlatformOpenAI,
+		"endpoint_kind":   "images",
+		"requested_model": strings.TrimSpace(requestedModel),
+	}
+	if account != nil {
+		fields["account_id"] = account.ID
+		fields["account_name"] = strings.TrimSpace(account.Name)
+		fields["account_type"] = strings.TrimSpace(string(account.Type))
+		fields["account_platform"] = strings.TrimSpace(account.Platform)
+	}
+	if parsed != nil {
+		fields["image_endpoint"] = strings.TrimSpace(parsed.Endpoint)
+		fields["stream"] = parsed.Stream
+		fields["multipart"] = parsed.Multipart
+		fields["image_size"] = strings.TrimSpace(parsed.SizeTier)
+		fields["response_format"] = strings.TrimSpace(parsed.ResponseFormat)
+	}
+	return fields
+}
+
 func (s *OpenAIGatewayService) writeOpenAIImagesStreamEvent(c *gin.Context, flusher http.Flusher, eventName string, payload []byte) error {
 	if strings.TrimSpace(eventName) != "" {
 		if _, err := fmt.Fprintf(c.Writer, "event: %s\n", eventName); err != nil {
@@ -668,6 +691,13 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 		return OpenAIUsage{}, 0, err
 	}
 	if len(results) == 0 {
+		fields := openAIImagesOAuthDebugTimelineFields(account, nil, fallbackModel)
+		fields["upstream_request_id"] = strings.TrimSpace(resp.Header.Get("x-request-id"))
+		fields["upstream_status_code"] = resp.StatusCode
+		fields["error"] = "upstream did not return image output"
+		fields["image_count"] = 0
+		fields["body_event"] = "empty_image_output"
+		RecordGatewayDebugTimelineBody(s.settingService, c, "upstream_response_body", body, resp.Header.Get("Content-Type"), fields)
 		return OpenAIUsage{}, 0, fmt.Errorf("upstream did not return image output")
 	}
 	if strings.TrimSpace(firstMeta.Model) == "" {
@@ -825,6 +855,14 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 			}
 			if len(finalResults) == 0 {
 				processErr = fmt.Errorf("upstream did not return image output")
+				fields := openAIImagesOAuthDebugTimelineFields(account, nil, fallbackModel)
+				fields["upstream_request_id"] = strings.TrimSpace(resp.Header.Get("x-request-id"))
+				fields["upstream_status_code"] = resp.StatusCode
+				fields["error"] = processErr.Error()
+				fields["image_count"] = 0
+				fields["body_event"] = "empty_image_output"
+				fields["sse_event_type"] = "response.completed"
+				RecordGatewayDebugTimelineBody(s.settingService, c, "upstream_response_body", dataBytes, "application/json", fields)
 				_ = tryWriteEvent("error", buildOpenAIImagesStreamErrorBody(processErr.Error()))
 				return
 			}
@@ -851,6 +889,13 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 			errCodeRaw, errTypeRaw, _ := parseOpenAIWSResponseFailedErrorFields(dataBytes)
 			upstreamStatus := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
 			upstreamDetail := s.openAIImagesStreamFailedDetail(dataBytes)
+			fields := openAIImagesOAuthDebugTimelineFields(account, nil, fallbackModel)
+			fields["upstream_request_id"] = strings.TrimSpace(resp.Header.Get("x-request-id"))
+			fields["upstream_status_code"] = upstreamStatus
+			fields["error"] = failedMessage
+			fields["body_event"] = "response_failed"
+			fields["sse_event_type"] = "response.failed"
+			RecordGatewayDebugTimelineBody(s.settingService, c, "upstream_response_body", dataBytes, "application/json", fields)
 			setOpsUpstreamError(c, upstreamStatus, failedMessage, upstreamDetail)
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
@@ -977,6 +1022,12 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Accept", "text/event-stream")
 	upstreamReq = s.applyOpenAIOAuthImageBridgeUpstreamOptions(upstreamReq)
+	requestFields := openAIImagesOAuthDebugTimelineFields(account, parsed, requestModel)
+	requestFields["upstream_endpoint"] = safeUpstreamURL(upstreamReq.URL.String())
+	requestFields["upstream_method"] = upstreamReq.Method
+	requestFields["upstream_accept"] = upstreamReq.Header.Get("Accept")
+	requestFields["main_model"] = mainModel
+	RecordGatewayDebugTimelineBody(s.settingService, c, "upstream_request_body", responsesBody, upstreamReq.Header.Get("Content-Type"), requestFields)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {

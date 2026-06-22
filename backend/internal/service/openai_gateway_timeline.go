@@ -77,6 +77,13 @@ func (s *OpenAIGatewayService) EmitOpenAIGatewayDebugTimelineEvent(c *gin.Contex
 	WriteGatewayDebugTimelineEvent(s.settingService, c, stage, fields)
 }
 
+func (s *OpenAIGatewayService) RecordOpenAIGatewayDebugTimelineBody(c *gin.Context, stage string, body []byte, contentType string, fields map[string]any) {
+	if s == nil {
+		return
+	}
+	RecordGatewayDebugTimelineBody(s.settingService, c, stage, body, contentType, fields)
+}
+
 func addOpenAIGatewayTimelineAPIKeyFields(fields map[string]any, apiKey *APIKey) {
 	if apiKey == nil {
 		return

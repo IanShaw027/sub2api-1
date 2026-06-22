@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -1226,6 +1227,71 @@ func TestOpenAIGatewayServiceForwardImages_OAuthUsesResponsesAPI(t *testing.T) {
 	require.Equal(t, "gpt-image-2", gjson.Get(rec.Body.String(), "model").String())
 	require.Equal(t, "aGVsbG8=", gjson.Get(rec.Body.String(), "data.0.b64_json").String())
 	require.Equal(t, "draw a cat", gjson.Get(rec.Body.String(), "data.0.revised_prompt").String())
+}
+
+func TestOpenAIGatewayServiceForwardImages_OAuthRecordsEmptyOutputTimeline(t *testing.T) {
+	resetGatewayDebugTimelineStateForTest(t)
+	setGinTestMode()
+	dir := filepath.Join(t.TempDir(), "timeline")
+	settingService := testGatewayDebugTimelineSettingService(t, dir)
+	require.NoError(t, settingService.settingRepo.SetMultiple(context.TODO(), map[string]string{
+		SettingKeyGatewayDebugTimelineIncludeBody: "true",
+		SettingKeyGatewayDebugTimelineBodyMaxKB:   "32",
+	}))
+	gatewayDebugTimelineSettingsSF.Forget("gateway_debug_timeline")
+	gatewayDebugTimelineSettingsCache.Store(&cachedGatewayDebugTimelineSettings{
+		settings:  DefaultGatewayDebugTimelineSettings(),
+		expiresAt: 0,
+	})
+
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","size":"1024x1024","quality":"high"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+	c.Set("api_key", &APIKey{ID: 42})
+
+	svc := &OpenAIGatewayService{settingService: settingService}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+
+	upstream := &openAIImagesHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type": []string{"text/event-stream"},
+				"X-Request-Id": []string{"req_img_empty"},
+			},
+			Body: io.NopCloser(strings.NewReader(
+				"data: {\"type\":\"response.completed\",\"response\":{\"created_at\":1710000000,\"usage\":{\"input_tokens\":11,\"output_tokens\":22},\"output\":[]}}\n\n" +
+					"data: [DONE]\n\n",
+			)),
+		},
+	}
+	svc.httpUpstream = upstream
+	account := &Account{
+		ID:       7,
+		Name:     "openai-oauth",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "token-123",
+		},
+	}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "upstream did not return image output")
+
+	content := readGatewayDebugTimelineLog(t, dir)
+	require.Contains(t, content, `"stage":"upstream_request_body"`)
+	require.Contains(t, content, `"stage":"upstream_response_body"`)
+	require.Contains(t, content, `"endpoint_kind":"images"`)
+	require.Contains(t, content, `"account_id":7`)
+	require.Contains(t, content, `"upstream_request_id":"req_img_empty"`)
+	require.Contains(t, content, "response.completed")
+	require.Contains(t, content, "upstream did not return image output")
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthAppliesUpstreamTransportExperimentFlags(t *testing.T) {
