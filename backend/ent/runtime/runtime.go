@@ -2804,22 +2804,26 @@ func init() {
 	tlsfingerprintcapturesessioneventDescBodySummary := tlsfingerprintcapturesessioneventFields[22].Descriptor()
 	// tlsfingerprintcapturesessionevent.DefaultBodySummary holds the default value on creation for the body_summary field.
 	tlsfingerprintcapturesessionevent.DefaultBodySummary = tlsfingerprintcapturesessioneventDescBodySummary.Default.(string)
+	// tlsfingerprintcapturesessioneventDescRawPayload is the schema descriptor for raw_payload field.
+	tlsfingerprintcapturesessioneventDescRawPayload := tlsfingerprintcapturesessioneventFields[23].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultRawPayload holds the default value on creation for the raw_payload field.
+	tlsfingerprintcapturesessionevent.DefaultRawPayload = tlsfingerprintcapturesessioneventDescRawPayload.Default.(string)
 	// tlsfingerprintcapturesessioneventDescEventStatus is the schema descriptor for event_status field.
-	tlsfingerprintcapturesessioneventDescEventStatus := tlsfingerprintcapturesessioneventFields[23].Descriptor()
+	tlsfingerprintcapturesessioneventDescEventStatus := tlsfingerprintcapturesessioneventFields[24].Descriptor()
 	// tlsfingerprintcapturesessionevent.DefaultEventStatus holds the default value on creation for the event_status field.
 	tlsfingerprintcapturesessionevent.DefaultEventStatus = tlsfingerprintcapturesessioneventDescEventStatus.Default.(string)
 	// tlsfingerprintcapturesessionevent.EventStatusValidator is a validator for the "event_status" field. It is called by the builders before save.
 	tlsfingerprintcapturesessionevent.EventStatusValidator = tlsfingerprintcapturesessioneventDescEventStatus.Validators[0].(func(string) error)
 	// tlsfingerprintcapturesessioneventDescEventError is the schema descriptor for event_error field.
-	tlsfingerprintcapturesessioneventDescEventError := tlsfingerprintcapturesessioneventFields[24].Descriptor()
+	tlsfingerprintcapturesessioneventDescEventError := tlsfingerprintcapturesessioneventFields[25].Descriptor()
 	// tlsfingerprintcapturesessionevent.DefaultEventError holds the default value on creation for the event_error field.
 	tlsfingerprintcapturesessionevent.DefaultEventError = tlsfingerprintcapturesessioneventDescEventError.Default.(string)
 	// tlsfingerprintcapturesessioneventDescReplayable is the schema descriptor for replayable field.
-	tlsfingerprintcapturesessioneventDescReplayable := tlsfingerprintcapturesessioneventFields[25].Descriptor()
+	tlsfingerprintcapturesessioneventDescReplayable := tlsfingerprintcapturesessioneventFields[26].Descriptor()
 	// tlsfingerprintcapturesessionevent.DefaultReplayable holds the default value on creation for the replayable field.
 	tlsfingerprintcapturesessionevent.DefaultReplayable = tlsfingerprintcapturesessioneventDescReplayable.Default.(bool)
 	// tlsfingerprintcapturesessioneventDescReplayHash is the schema descriptor for replay_hash field.
-	tlsfingerprintcapturesessioneventDescReplayHash := tlsfingerprintcapturesessioneventFields[27].Descriptor()
+	tlsfingerprintcapturesessioneventDescReplayHash := tlsfingerprintcapturesessioneventFields[28].Descriptor()
 	// tlsfingerprintcapturesessionevent.DefaultReplayHash holds the default value on creation for the replay_hash field.
 	tlsfingerprintcapturesessionevent.DefaultReplayHash = tlsfingerprintcapturesessioneventDescReplayHash.Default.(string)
 	// tlsfingerprintcapturesessionevent.ReplayHashValidator is a validator for the "replay_hash" field. It is called by the builders before save.

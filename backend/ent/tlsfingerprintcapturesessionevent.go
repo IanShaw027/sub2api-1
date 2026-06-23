@@ -68,6 +68,8 @@ type TLSFingerprintCaptureSessionEvent struct {
 	HeadersSnapshot map[string]interface{} `json:"headers_snapshot,omitempty"`
 	// BodySummary holds the value of the "body_summary" field.
 	BodySummary string `json:"body_summary,omitempty"`
+	// RawPayload holds the value of the "raw_payload" field.
+	RawPayload string `json:"raw_payload,omitempty"`
 	// EventStatus holds the value of the "event_status" field.
 	EventStatus string `json:"event_status,omitempty"`
 	// EventError holds the value of the "event_error" field.
@@ -92,7 +94,7 @@ func (*TLSFingerprintCaptureSessionEvent) scanValues(columns []string) ([]any, e
 			values[i] = new(sql.NullBool)
 		case tlsfingerprintcapturesessionevent.FieldID, tlsfingerprintcapturesessionevent.FieldTaskID, tlsfingerprintcapturesessionevent.FieldSessionRef, tlsfingerprintcapturesessionevent.FieldRequestSequence, tlsfingerprintcapturesessionevent.FieldSampleID:
 			values[i] = new(sql.NullInt64)
-		case tlsfingerprintcapturesessionevent.FieldSessionID, tlsfingerprintcapturesessionevent.FieldEventID, tlsfingerprintcapturesessionevent.FieldPlatform, tlsfingerprintcapturesessionevent.FieldTransport, tlsfingerprintcapturesessionevent.FieldEventType, tlsfingerprintcapturesessionevent.FieldStreamID, tlsfingerprintcapturesessionevent.FieldRequestPath, tlsfingerprintcapturesessionevent.FieldHTTPMethod, tlsfingerprintcapturesessionevent.FieldWebsocketProtocol, tlsfingerprintcapturesessionevent.FieldClientType, tlsfingerprintcapturesessionevent.FieldModel, tlsfingerprintcapturesessionevent.FieldRequestKind, tlsfingerprintcapturesessionevent.FieldResponseMode, tlsfingerprintcapturesessionevent.FieldUserAgent, tlsfingerprintcapturesessionevent.FieldOriginator, tlsfingerprintcapturesessionevent.FieldBodySummary, tlsfingerprintcapturesessionevent.FieldEventStatus, tlsfingerprintcapturesessionevent.FieldEventError, tlsfingerprintcapturesessionevent.FieldReplayHash:
+		case tlsfingerprintcapturesessionevent.FieldSessionID, tlsfingerprintcapturesessionevent.FieldEventID, tlsfingerprintcapturesessionevent.FieldPlatform, tlsfingerprintcapturesessionevent.FieldTransport, tlsfingerprintcapturesessionevent.FieldEventType, tlsfingerprintcapturesessionevent.FieldStreamID, tlsfingerprintcapturesessionevent.FieldRequestPath, tlsfingerprintcapturesessionevent.FieldHTTPMethod, tlsfingerprintcapturesessionevent.FieldWebsocketProtocol, tlsfingerprintcapturesessionevent.FieldClientType, tlsfingerprintcapturesessionevent.FieldModel, tlsfingerprintcapturesessionevent.FieldRequestKind, tlsfingerprintcapturesessionevent.FieldResponseMode, tlsfingerprintcapturesessionevent.FieldUserAgent, tlsfingerprintcapturesessionevent.FieldOriginator, tlsfingerprintcapturesessionevent.FieldBodySummary, tlsfingerprintcapturesessionevent.FieldRawPayload, tlsfingerprintcapturesessionevent.FieldEventStatus, tlsfingerprintcapturesessionevent.FieldEventError, tlsfingerprintcapturesessionevent.FieldReplayHash:
 			values[i] = new(sql.NullString)
 		case tlsfingerprintcapturesessionevent.FieldCreatedAt, tlsfingerprintcapturesessionevent.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -272,6 +274,12 @@ func (_m *TLSFingerprintCaptureSessionEvent) assignValues(columns []string, valu
 			} else if value.Valid {
 				_m.BodySummary = value.String
 			}
+		case tlsfingerprintcapturesessionevent.FieldRawPayload:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field raw_payload", values[i])
+			} else if value.Valid {
+				_m.RawPayload = value.String
+			}
 		case tlsfingerprintcapturesessionevent.FieldEventStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field event_status", values[i])
@@ -415,6 +423,9 @@ func (_m *TLSFingerprintCaptureSessionEvent) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("body_summary=")
 	builder.WriteString(_m.BodySummary)
+	builder.WriteString(", ")
+	builder.WriteString("raw_payload=")
+	builder.WriteString(_m.RawPayload)
 	builder.WriteString(", ")
 	builder.WriteString("event_status=")
 	builder.WriteString(_m.EventStatus)

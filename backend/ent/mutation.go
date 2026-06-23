@@ -62852,6 +62852,7 @@ type TLSFingerprintCaptureSessionEventMutation struct {
 	stainless_metadata  *map[string]interface{}
 	headers_snapshot    *map[string]interface{}
 	body_summary        *string
+	raw_payload         *string
 	event_status        *string
 	event_error         *string
 	replayable          *bool
@@ -63936,6 +63937,42 @@ func (m *TLSFingerprintCaptureSessionEventMutation) ResetBodySummary() {
 	m.body_summary = nil
 }
 
+// SetRawPayload sets the "raw_payload" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetRawPayload(s string) {
+	m.raw_payload = &s
+}
+
+// RawPayload returns the value of the "raw_payload" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) RawPayload() (r string, exists bool) {
+	v := m.raw_payload
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRawPayload returns the old "raw_payload" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldRawPayload(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRawPayload is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRawPayload requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRawPayload: %w", err)
+	}
+	return oldValue.RawPayload, nil
+}
+
+// ResetRawPayload resets all changes to the "raw_payload" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetRawPayload() {
+	m.raw_payload = nil
+}
+
 // SetEventStatus sets the "event_status" field.
 func (m *TLSFingerprintCaptureSessionEventMutation) SetEventStatus(s string) {
 	m.event_status = &s
@@ -64184,7 +64221,7 @@ func (m *TLSFingerprintCaptureSessionEventMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TLSFingerprintCaptureSessionEventMutation) Fields() []string {
-	fields := make([]string, 0, 30)
+	fields := make([]string, 0, 31)
 	if m.created_at != nil {
 		fields = append(fields, tlsfingerprintcapturesessionevent.FieldCreatedAt)
 	}
@@ -64260,6 +64297,9 @@ func (m *TLSFingerprintCaptureSessionEventMutation) Fields() []string {
 	if m.body_summary != nil {
 		fields = append(fields, tlsfingerprintcapturesessionevent.FieldBodySummary)
 	}
+	if m.raw_payload != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldRawPayload)
+	}
 	if m.event_status != nil {
 		fields = append(fields, tlsfingerprintcapturesessionevent.FieldEventStatus)
 	}
@@ -64333,6 +64373,8 @@ func (m *TLSFingerprintCaptureSessionEventMutation) Field(name string) (ent.Valu
 		return m.HeadersSnapshot()
 	case tlsfingerprintcapturesessionevent.FieldBodySummary:
 		return m.BodySummary()
+	case tlsfingerprintcapturesessionevent.FieldRawPayload:
+		return m.RawPayload()
 	case tlsfingerprintcapturesessionevent.FieldEventStatus:
 		return m.EventStatus()
 	case tlsfingerprintcapturesessionevent.FieldEventError:
@@ -64402,6 +64444,8 @@ func (m *TLSFingerprintCaptureSessionEventMutation) OldField(ctx context.Context
 		return m.OldHeadersSnapshot(ctx)
 	case tlsfingerprintcapturesessionevent.FieldBodySummary:
 		return m.OldBodySummary(ctx)
+	case tlsfingerprintcapturesessionevent.FieldRawPayload:
+		return m.OldRawPayload(ctx)
 	case tlsfingerprintcapturesessionevent.FieldEventStatus:
 		return m.OldEventStatus(ctx)
 	case tlsfingerprintcapturesessionevent.FieldEventError:
@@ -64595,6 +64639,13 @@ func (m *TLSFingerprintCaptureSessionEventMutation) SetField(name string, value 
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetBodySummary(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldRawPayload:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRawPayload(v)
 		return nil
 	case tlsfingerprintcapturesessionevent.FieldEventStatus:
 		v, ok := value.(string)
@@ -64820,6 +64871,9 @@ func (m *TLSFingerprintCaptureSessionEventMutation) ResetField(name string) erro
 		return nil
 	case tlsfingerprintcapturesessionevent.FieldBodySummary:
 		m.ResetBodySummary()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldRawPayload:
+		m.ResetRawPayload()
 		return nil
 	case tlsfingerprintcapturesessionevent.FieldEventStatus:
 		m.ResetEventStatus()

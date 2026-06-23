@@ -101,7 +101,7 @@ func provideCleanup(
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
 	channelMonitorRunner *service.ChannelMonitorRunner,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
-	tlsCaptureListener *service.TLSFingerprintNativeCaptureListener,
+	tlsCaptureListener *service.TLSCaptureListener,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -266,7 +266,7 @@ func provideCleanup(
 				}
 				return nil
 			}},
-			{"TLSFingerprintNativeCaptureListener", func() error {
+			{"TLSCaptureListener", func() error {
 				if tlsCaptureListener != nil {
 					return tlsCaptureListener.Stop(ctx)
 				}

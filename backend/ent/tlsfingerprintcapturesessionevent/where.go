@@ -169,6 +169,11 @@ func BodySummary(v string) predicate.TLSFingerprintCaptureSessionEvent {
 	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldEQ(FieldBodySummary, v))
 }
 
+// RawPayload applies equality check predicate on the "raw_payload" field. It's identical to RawPayloadEQ.
+func RawPayload(v string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldEQ(FieldRawPayload, v))
+}
+
 // EventStatus applies equality check predicate on the "event_status" field. It's identical to EventStatusEQ.
 func EventStatus(v string) predicate.TLSFingerprintCaptureSessionEvent {
 	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldEQ(FieldEventStatus, v))
@@ -1462,6 +1467,71 @@ func BodySummaryEqualFold(v string) predicate.TLSFingerprintCaptureSessionEvent 
 // BodySummaryContainsFold applies the ContainsFold predicate on the "body_summary" field.
 func BodySummaryContainsFold(v string) predicate.TLSFingerprintCaptureSessionEvent {
 	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldContainsFold(FieldBodySummary, v))
+}
+
+// RawPayloadEQ applies the EQ predicate on the "raw_payload" field.
+func RawPayloadEQ(v string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldEQ(FieldRawPayload, v))
+}
+
+// RawPayloadNEQ applies the NEQ predicate on the "raw_payload" field.
+func RawPayloadNEQ(v string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldNEQ(FieldRawPayload, v))
+}
+
+// RawPayloadIn applies the In predicate on the "raw_payload" field.
+func RawPayloadIn(vs ...string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldIn(FieldRawPayload, vs...))
+}
+
+// RawPayloadNotIn applies the NotIn predicate on the "raw_payload" field.
+func RawPayloadNotIn(vs ...string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldNotIn(FieldRawPayload, vs...))
+}
+
+// RawPayloadGT applies the GT predicate on the "raw_payload" field.
+func RawPayloadGT(v string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldGT(FieldRawPayload, v))
+}
+
+// RawPayloadGTE applies the GTE predicate on the "raw_payload" field.
+func RawPayloadGTE(v string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldGTE(FieldRawPayload, v))
+}
+
+// RawPayloadLT applies the LT predicate on the "raw_payload" field.
+func RawPayloadLT(v string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldLT(FieldRawPayload, v))
+}
+
+// RawPayloadLTE applies the LTE predicate on the "raw_payload" field.
+func RawPayloadLTE(v string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldLTE(FieldRawPayload, v))
+}
+
+// RawPayloadContains applies the Contains predicate on the "raw_payload" field.
+func RawPayloadContains(v string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldContains(FieldRawPayload, v))
+}
+
+// RawPayloadHasPrefix applies the HasPrefix predicate on the "raw_payload" field.
+func RawPayloadHasPrefix(v string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldHasPrefix(FieldRawPayload, v))
+}
+
+// RawPayloadHasSuffix applies the HasSuffix predicate on the "raw_payload" field.
+func RawPayloadHasSuffix(v string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldHasSuffix(FieldRawPayload, v))
+}
+
+// RawPayloadEqualFold applies the EqualFold predicate on the "raw_payload" field.
+func RawPayloadEqualFold(v string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldEqualFold(FieldRawPayload, v))
+}
+
+// RawPayloadContainsFold applies the ContainsFold predicate on the "raw_payload" field.
+func RawPayloadContainsFold(v string) predicate.TLSFingerprintCaptureSessionEvent {
+	return predicate.TLSFingerprintCaptureSessionEvent(sql.FieldContainsFold(FieldRawPayload, v))
 }
 
 // EventStatusEQ applies the EQ predicate on the "event_status" field.

@@ -12,7 +12,7 @@ import (
 	"entgo.io/ent/schema/index"
 )
 
-// TLSFingerprintCaptureSample stores one unique captured TLS fingerprint.
+// TLSFingerprintCaptureSample stores one unique replayable capture request observation.
 type TLSFingerprintCaptureSample struct {
 	ent.Schema
 }
@@ -102,8 +102,8 @@ func (TLSFingerprintCaptureSample) Fields() []ent.Field {
 
 func (TLSFingerprintCaptureSample) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("task_id", "replay_hash", "transport").Unique(),
-		index.Fields("task_id", "fingerprint_hash"),
+		index.Fields("task_id", "fingerprint_hash").Unique(),
+		index.Fields("task_id", "replay_hash", "transport", "platform"),
 		index.Fields("task_id", "session_id", "transport"),
 		index.Fields("task_id", "platform"),
 	}

@@ -340,6 +340,20 @@ func (_c *TLSFingerprintCaptureSessionEventCreate) SetNillableBodySummary(v *str
 	return _c
 }
 
+// SetRawPayload sets the "raw_payload" field.
+func (_c *TLSFingerprintCaptureSessionEventCreate) SetRawPayload(v string) *TLSFingerprintCaptureSessionEventCreate {
+	_c.mutation.SetRawPayload(v)
+	return _c
+}
+
+// SetNillableRawPayload sets the "raw_payload" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSessionEventCreate) SetNillableRawPayload(v *string) *TLSFingerprintCaptureSessionEventCreate {
+	if v != nil {
+		_c.SetRawPayload(*v)
+	}
+	return _c
+}
+
 // SetEventStatus sets the "event_status" field.
 func (_c *TLSFingerprintCaptureSessionEventCreate) SetEventStatus(v string) *TLSFingerprintCaptureSessionEventCreate {
 	_c.mutation.SetEventStatus(v)
@@ -533,6 +547,10 @@ func (_c *TLSFingerprintCaptureSessionEventCreate) defaults() {
 		v := tlsfingerprintcapturesessionevent.DefaultBodySummary
 		_c.mutation.SetBodySummary(v)
 	}
+	if _, ok := _c.mutation.RawPayload(); !ok {
+		v := tlsfingerprintcapturesessionevent.DefaultRawPayload
+		_c.mutation.SetRawPayload(v)
+	}
 	if _, ok := _c.mutation.EventStatus(); !ok {
 		v := tlsfingerprintcapturesessionevent.DefaultEventStatus
 		_c.mutation.SetEventStatus(v)
@@ -690,6 +708,9 @@ func (_c *TLSFingerprintCaptureSessionEventCreate) check() error {
 	if _, ok := _c.mutation.BodySummary(); !ok {
 		return &ValidationError{Name: "body_summary", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSessionEvent.body_summary"`)}
 	}
+	if _, ok := _c.mutation.RawPayload(); !ok {
+		return &ValidationError{Name: "raw_payload", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSessionEvent.raw_payload"`)}
+	}
 	if _, ok := _c.mutation.EventStatus(); !ok {
 		return &ValidationError{Name: "event_status", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSessionEvent.event_status"`)}
 	}
@@ -838,6 +859,10 @@ func (_c *TLSFingerprintCaptureSessionEventCreate) createSpec() (*TLSFingerprint
 	if value, ok := _c.mutation.BodySummary(); ok {
 		_spec.SetField(tlsfingerprintcapturesessionevent.FieldBodySummary, field.TypeString, value)
 		_node.BodySummary = value
+	}
+	if value, ok := _c.mutation.RawPayload(); ok {
+		_spec.SetField(tlsfingerprintcapturesessionevent.FieldRawPayload, field.TypeString, value)
+		_node.RawPayload = value
 	}
 	if value, ok := _c.mutation.EventStatus(); ok {
 		_spec.SetField(tlsfingerprintcapturesessionevent.FieldEventStatus, field.TypeString, value)
@@ -1220,6 +1245,18 @@ func (u *TLSFingerprintCaptureSessionEventUpsert) SetBodySummary(v string) *TLSF
 // UpdateBodySummary sets the "body_summary" field to the value that was provided on create.
 func (u *TLSFingerprintCaptureSessionEventUpsert) UpdateBodySummary() *TLSFingerprintCaptureSessionEventUpsert {
 	u.SetExcluded(tlsfingerprintcapturesessionevent.FieldBodySummary)
+	return u
+}
+
+// SetRawPayload sets the "raw_payload" field.
+func (u *TLSFingerprintCaptureSessionEventUpsert) SetRawPayload(v string) *TLSFingerprintCaptureSessionEventUpsert {
+	u.Set(tlsfingerprintcapturesessionevent.FieldRawPayload, v)
+	return u
+}
+
+// UpdateRawPayload sets the "raw_payload" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSessionEventUpsert) UpdateRawPayload() *TLSFingerprintCaptureSessionEventUpsert {
+	u.SetExcluded(tlsfingerprintcapturesessionevent.FieldRawPayload)
 	return u
 }
 
@@ -1701,6 +1738,20 @@ func (u *TLSFingerprintCaptureSessionEventUpsertOne) SetBodySummary(v string) *T
 func (u *TLSFingerprintCaptureSessionEventUpsertOne) UpdateBodySummary() *TLSFingerprintCaptureSessionEventUpsertOne {
 	return u.Update(func(s *TLSFingerprintCaptureSessionEventUpsert) {
 		s.UpdateBodySummary()
+	})
+}
+
+// SetRawPayload sets the "raw_payload" field.
+func (u *TLSFingerprintCaptureSessionEventUpsertOne) SetRawPayload(v string) *TLSFingerprintCaptureSessionEventUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSessionEventUpsert) {
+		s.SetRawPayload(v)
+	})
+}
+
+// UpdateRawPayload sets the "raw_payload" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSessionEventUpsertOne) UpdateRawPayload() *TLSFingerprintCaptureSessionEventUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSessionEventUpsert) {
+		s.UpdateRawPayload()
 	})
 }
 
@@ -2360,6 +2411,20 @@ func (u *TLSFingerprintCaptureSessionEventUpsertBulk) SetBodySummary(v string) *
 func (u *TLSFingerprintCaptureSessionEventUpsertBulk) UpdateBodySummary() *TLSFingerprintCaptureSessionEventUpsertBulk {
 	return u.Update(func(s *TLSFingerprintCaptureSessionEventUpsert) {
 		s.UpdateBodySummary()
+	})
+}
+
+// SetRawPayload sets the "raw_payload" field.
+func (u *TLSFingerprintCaptureSessionEventUpsertBulk) SetRawPayload(v string) *TLSFingerprintCaptureSessionEventUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSessionEventUpsert) {
+		s.SetRawPayload(v)
+	})
+}
+
+// UpdateRawPayload sets the "raw_payload" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSessionEventUpsertBulk) UpdateRawPayload() *TLSFingerprintCaptureSessionEventUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSessionEventUpsert) {
+		s.UpdateRawPayload()
 	})
 }
 

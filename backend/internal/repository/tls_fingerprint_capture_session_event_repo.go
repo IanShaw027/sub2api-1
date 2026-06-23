@@ -40,6 +40,7 @@ func (r *tlsFingerprintCaptureSessionEventRepo) CreateSessionEvent(ctx context.C
 		SetStainlessMetadata(copyStringAnyMapOrEmpty(event.StainlessMetadata)).
 		SetHeadersSnapshot(copyStringAnyMapOrEmpty(event.HeadersSnapshot)).
 		SetBodySummary(event.BodySummary).
+		SetRawPayload(event.RawPayload).
 		SetEventStatus(defaultString(strings.TrimSpace(event.EventStatus), "recorded")).
 		SetEventError(strings.TrimSpace(event.Error)).
 		SetReplayable(event.Replayable).

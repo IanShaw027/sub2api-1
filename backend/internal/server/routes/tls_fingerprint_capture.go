@@ -8,7 +8,7 @@ import (
 
 // RegisterTLSFingerprintCaptureRoutes is intentionally empty.
 //
-// Raw ClientHello capture runs on the dedicated TLSFingerprintNativeCaptureListener
+// Raw ClientHello capture runs on the dedicated TLSCaptureListener
 // so the gateway API no longer exposes a JSON submit endpoint.
 func RegisterTLSFingerprintCaptureRoutes(v1 *gin.RouterGroup, h *handler.Handlers) {
 	_, _ = v1, h

@@ -2473,14 +2473,14 @@ var (
 		PrimaryKey: []*schema.Column{TLSFingerprintCaptureSamplesColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "tlsfingerprintcapturesample_task_id_replay_hash_transport",
+				Name:    "tlsfingerprintcapturesample_task_id_fingerprint_hash",
 				Unique:  true,
-				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[10], TLSFingerprintCaptureSamplesColumns[6]},
+				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[9]},
 			},
 			{
-				Name:    "tlsfingerprintcapturesample_task_id_fingerprint_hash",
+				Name:    "tlsfingerprintcapturesample_task_id_replay_hash_transport_platform",
 				Unique:  false,
-				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[9]},
+				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[10], TLSFingerprintCaptureSamplesColumns[6], TLSFingerprintCaptureSamplesColumns[5]},
 			},
 			{
 				Name:    "tlsfingerprintcapturesample_task_id_session_id_transport",
@@ -2561,6 +2561,7 @@ var (
 		{Name: "stainless_metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "headers_snapshot", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "body_summary", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "raw_payload", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "event_status", Type: field.TypeString, Size: 64, Default: "observed"},
 		{Name: "event_error", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "replayable", Type: field.TypeBool, Default: true},
@@ -2586,7 +2587,7 @@ var (
 			{
 				Name:    "tlsfingerprintcapturesessionevent_task_id_sample_id",
 				Unique:  false,
-				Columns: []*schema.Column{TLSFingerprintCaptureSessionEventsColumns[3], TLSFingerprintCaptureSessionEventsColumns[29]},
+				Columns: []*schema.Column{TLSFingerprintCaptureSessionEventsColumns[3], TLSFingerprintCaptureSessionEventsColumns[30]},
 			},
 		},
 	}

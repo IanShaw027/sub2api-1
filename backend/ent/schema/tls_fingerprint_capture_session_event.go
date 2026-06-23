@@ -91,6 +91,8 @@ func (TLSFingerprintCaptureSessionEvent) Fields() []ent.Field {
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.Text("body_summary").
 			Default(""),
+		field.Text("raw_payload").
+			Default(""),
 		field.String("event_status").
 			MaxLen(64).
 			Default("observed"),

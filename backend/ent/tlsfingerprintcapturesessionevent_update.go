@@ -367,6 +367,20 @@ func (_u *TLSFingerprintCaptureSessionEventUpdate) SetNillableBodySummary(v *str
 	return _u
 }
 
+// SetRawPayload sets the "raw_payload" field.
+func (_u *TLSFingerprintCaptureSessionEventUpdate) SetRawPayload(v string) *TLSFingerprintCaptureSessionEventUpdate {
+	_u.mutation.SetRawPayload(v)
+	return _u
+}
+
+// SetNillableRawPayload sets the "raw_payload" field if the given value is not nil.
+func (_u *TLSFingerprintCaptureSessionEventUpdate) SetNillableRawPayload(v *string) *TLSFingerprintCaptureSessionEventUpdate {
+	if v != nil {
+		_u.SetRawPayload(*v)
+	}
+	return _u
+}
+
 // SetEventStatus sets the "event_status" field.
 func (_u *TLSFingerprintCaptureSessionEventUpdate) SetEventStatus(v string) *TLSFingerprintCaptureSessionEventUpdate {
 	_u.mutation.SetEventStatus(v)
@@ -666,6 +680,9 @@ func (_u *TLSFingerprintCaptureSessionEventUpdate) sqlSave(ctx context.Context) 
 	}
 	if value, ok := _u.mutation.BodySummary(); ok {
 		_spec.SetField(tlsfingerprintcapturesessionevent.FieldBodySummary, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RawPayload(); ok {
+		_spec.SetField(tlsfingerprintcapturesessionevent.FieldRawPayload, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.EventStatus(); ok {
 		_spec.SetField(tlsfingerprintcapturesessionevent.FieldEventStatus, field.TypeString, value)
@@ -1047,6 +1064,20 @@ func (_u *TLSFingerprintCaptureSessionEventUpdateOne) SetNillableBodySummary(v *
 	return _u
 }
 
+// SetRawPayload sets the "raw_payload" field.
+func (_u *TLSFingerprintCaptureSessionEventUpdateOne) SetRawPayload(v string) *TLSFingerprintCaptureSessionEventUpdateOne {
+	_u.mutation.SetRawPayload(v)
+	return _u
+}
+
+// SetNillableRawPayload sets the "raw_payload" field if the given value is not nil.
+func (_u *TLSFingerprintCaptureSessionEventUpdateOne) SetNillableRawPayload(v *string) *TLSFingerprintCaptureSessionEventUpdateOne {
+	if v != nil {
+		_u.SetRawPayload(*v)
+	}
+	return _u
+}
+
 // SetEventStatus sets the "event_status" field.
 func (_u *TLSFingerprintCaptureSessionEventUpdateOne) SetEventStatus(v string) *TLSFingerprintCaptureSessionEventUpdateOne {
 	_u.mutation.SetEventStatus(v)
@@ -1376,6 +1407,9 @@ func (_u *TLSFingerprintCaptureSessionEventUpdateOne) sqlSave(ctx context.Contex
 	}
 	if value, ok := _u.mutation.BodySummary(); ok {
 		_spec.SetField(tlsfingerprintcapturesessionevent.FieldBodySummary, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RawPayload(); ok {
+		_spec.SetField(tlsfingerprintcapturesessionevent.FieldRawPayload, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.EventStatus(); ok {
 		_spec.SetField(tlsfingerprintcapturesessionevent.FieldEventStatus, field.TypeString, value)

@@ -193,6 +193,7 @@ func tlsCaptureSessionEventToService(event *ent.TLSFingerprintCaptureSessionEven
 		StainlessMetadata: copyStringAnyMapOrEmpty(event.StainlessMetadata),
 		HeadersSnapshot:   copyStringAnyMapOrEmpty(event.HeadersSnapshot),
 		BodySummary:       event.BodySummary,
+		RawPayload:        event.RawPayload,
 		EventStatus:       strings.TrimSpace(event.EventStatus),
 		Error:             event.EventError,
 		Replayable:        event.Replayable,

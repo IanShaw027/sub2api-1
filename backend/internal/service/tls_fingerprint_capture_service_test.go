@@ -62,7 +62,7 @@ func TestTLSCaptureTaskCompletionRequiresTargetsAndTransportTargets(t *testing.T
 	require.Len(t, repo.sessionEvents, 2)
 }
 
-func TestTLSCaptureSampleDedupesByReplayHashAndTransport(t *testing.T) {
+func TestTLSCaptureSampleDedupesExactReplayableObservation(t *testing.T) {
 	repo := newTLSFingerprintCaptureRepoStub()
 	svc := NewTLSFingerprintCaptureService(repo, nil)
 
@@ -80,6 +80,9 @@ func TestTLSCaptureSampleDedupesByReplayHashAndTransport(t *testing.T) {
 		SessionID:   "sess-a",
 		UserAgent:   "codex-tui/0.140.0",
 		Originator:  "codex_cli_rs",
+		RequestPath: "/v1/responses",
+		HTTPMethod:  "POST",
+		RawPayload:  `{"model":"gpt-5.4","input":"same"}`,
 		ClientHello: captureServiceTestClientHello(t, 0),
 	})
 	require.NoError(t, err)
@@ -92,8 +95,11 @@ func TestTLSCaptureSampleDedupesByReplayHashAndTransport(t *testing.T) {
 		Platform:    "openai",
 		Transport:   string(tlsfpTransport.WebSocketH1),
 		SessionID:   "sess-b",
-		UserAgent:   "codex_exec/0.140.0",
-		Originator:  "codex_exec",
+		UserAgent:   "codex-tui/0.140.0",
+		Originator:  "codex_cli_rs",
+		RequestPath: "/v1/responses",
+		HTTPMethod:  "POST",
+		RawPayload:  `{"model":"gpt-5.4","input":"same"}`,
 		ClientHello: captureServiceTestClientHello(t, 0),
 	})
 	require.NoError(t, err)
@@ -150,7 +156,7 @@ func TestTLSCaptureSessionReplayabilityFailureCreatesSessionEventOnly(t *testing
 	require.Len(t, repo.sessionEvents, 1)
 }
 
-func TestTLSCaptureSessionSameTransportProducesEventButSingleCanonicalSample(t *testing.T) {
+func TestTLSCaptureSessionSameTransportDistinctPayloadCreatesReplayableSamples(t *testing.T) {
 	repo := newTLSFingerprintCaptureRepoStub()
 	svc := NewTLSFingerprintCaptureService(repo, nil)
 
@@ -162,38 +168,46 @@ func TestTLSCaptureSessionSameTransportProducesEventButSingleCanonicalSample(t *
 	require.NoError(t, err)
 
 	first, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
-		Token:       task.Token,
-		Platform:    "openai",
-		Transport:   string(tlsfpTransport.WebSocketH1),
-		SessionID:   "sess-sticky",
-		UserAgent:   "codex-tui/0.140.0",
-		Originator:  "codex_cli_rs",
-		ClientHello: captureServiceTestClientHello(t, 0),
+		Token:           task.Token,
+		Platform:        "openai",
+		Transport:       string(tlsfpTransport.WebSocketH1),
+		SessionID:       "sess-sticky",
+		UserAgent:       "codex-tui/0.140.0",
+		Originator:      "codex_cli_rs",
+		RequestPath:     "/v1/responses",
+		HTTPMethod:      "POST",
+		RawPayload:      `{"model":"gpt-5.4","input":"capture-1"}`,
+		RequestSequence: 1,
+		ClientHello:     captureServiceTestClientHello(t, 0),
 	})
 	require.NoError(t, err)
 	require.True(t, first.Accepted)
 	require.NotNil(t, first.Sample)
 
 	second, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
-		Token:       task.Token,
-		Platform:    "openai",
-		Transport:   string(tlsfpTransport.WebSocketH1),
-		SessionID:   "sess-sticky",
-		UserAgent:   "codex-tui/0.140.0",
-		Originator:  "codex_cli_rs",
-		ClientHello: captureServiceTestClientHello(t, 1),
+		Token:           task.Token,
+		Platform:        "openai",
+		Transport:       string(tlsfpTransport.WebSocketH1),
+		SessionID:       "sess-sticky",
+		UserAgent:       "codex-tui/0.140.0",
+		Originator:      "codex_cli_rs",
+		RequestPath:     "/v1/responses",
+		HTTPMethod:      "POST",
+		RawPayload:      `{"model":"gpt-5.4","input":"capture-2"}`,
+		RequestSequence: 2,
+		ClientHello:     captureServiceTestClientHello(t, 1),
 	})
 	require.NoError(t, err)
 	require.True(t, second.Accepted)
-	require.True(t, second.Duplicate)
+	require.False(t, second.Duplicate)
 	require.NotNil(t, second.Session)
 	require.NotNil(t, second.SessionEvent)
 	require.NotNil(t, second.Sample)
-	require.Equal(t, first.Sample.ID, second.Sample.ID)
-	require.Equal(t, map[string]int{"openai": 1}, second.Counts)
-	require.Equal(t, map[string]int{string(tlsfpTransport.WebSocketH1): 1}, second.Task.TransportCounts)
-	require.Equal(t, TLSFingerprintCaptureStatusRunning, second.Task.Status)
-	require.Len(t, repo.samples, 1)
+	require.NotEqual(t, first.Sample.ID, second.Sample.ID)
+	require.Equal(t, map[string]int{"openai": 2}, second.Counts)
+	require.Equal(t, map[string]int{string(tlsfpTransport.WebSocketH1): 2}, second.Task.TransportCounts)
+	require.Equal(t, TLSFingerprintCaptureStatusCompleted, second.Task.Status)
+	require.Len(t, repo.samples, 2)
 	require.Len(t, repo.sessions, 1)
 	require.Len(t, repo.sessionEvents, 2)
 }
@@ -330,7 +344,7 @@ func TestTLSFingerprintCaptureServiceCountsDifferentFingerprintsForSameUserAgent
 	require.Equal(t, TLSFingerprintCaptureStatusCompleted, second.Task.Status)
 }
 
-func TestTLSFingerprintCaptureServiceDedupesSameFingerprintAcrossUserAgents(t *testing.T) {
+func TestTLSFingerprintCaptureServiceKeepsDistinctUserAgentsAsSeparateSamples(t *testing.T) {
 	repo := newTLSFingerprintCaptureRepoStub()
 	svc := NewTLSFingerprintCaptureService(repo, nil)
 
@@ -361,10 +375,54 @@ func TestTLSFingerprintCaptureServiceDedupesSameFingerprintAcrossUserAgents(t *t
 	})
 	require.NoError(t, err)
 	require.True(t, second.Accepted)
-	require.True(t, second.Duplicate)
-	require.Equal(t, map[string]int{"openai": 1}, second.Counts)
-	require.Equal(t, TLSFingerprintCaptureStatusRunning, second.Task.Status)
-	require.Len(t, repo.samples, 1)
+	require.False(t, second.Duplicate)
+	require.Equal(t, map[string]int{"openai": 2}, second.Counts)
+	require.Equal(t, TLSFingerprintCaptureStatusCompleted, second.Task.Status)
+	require.Len(t, repo.samples, 2)
+}
+
+func TestTLSFingerprintCaptureServiceDoesNotDedupeAcrossPlatformsWithSameReplayHash(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Name:    "multi platform exact replay hash",
+		Targets: map[string]int{"openai": 1, "kiro": 1},
+	})
+	require.NoError(t, err)
+
+	first, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "codex_exec/0.140.0",
+		Originator:  "codex_exec",
+		RequestPath: "/v1/responses",
+		HTTPMethod:  "POST",
+		RawPayload:  `{"model":"gpt-5.4","input":"capture-platform-a"}`,
+		ClientHello: captureServiceTestClientHello(t, 0),
+	})
+	require.NoError(t, err)
+	require.True(t, first.Accepted)
+	require.False(t, first.Duplicate)
+
+	second, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "kiro",
+		UserAgent:   "kiro/0.140.0",
+		Originator:  "kiro",
+		RequestPath: "/v1/responses",
+		HTTPMethod:  "POST",
+		RawPayload:  `{"model":"gpt-5.4","input":"capture-platform-b"}`,
+		ClientHello: captureServiceTestClientHello(t, 0),
+	})
+	require.NoError(t, err)
+	require.True(t, second.Accepted)
+	require.False(t, second.Duplicate)
+	require.Equal(t, map[string]int{"openai": 1, "kiro": 1}, second.Counts)
+	require.Equal(t, TLSFingerprintCaptureStatusCompleted, second.Task.Status)
+	require.Len(t, repo.samples, 2)
+	require.Equal(t, "openai", repo.samples[0].Platform)
+	require.Equal(t, "kiro", repo.samples[1].Platform)
 }
 
 func TestTLSFingerprintCaptureServiceStopsCollectingPlatformAfterTargetReached(t *testing.T) {

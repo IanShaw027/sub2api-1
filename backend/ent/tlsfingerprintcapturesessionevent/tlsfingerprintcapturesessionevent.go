@@ -63,6 +63,8 @@ const (
 	FieldHeadersSnapshot = "headers_snapshot"
 	// FieldBodySummary holds the string denoting the body_summary field in the database.
 	FieldBodySummary = "body_summary"
+	// FieldRawPayload holds the string denoting the raw_payload field in the database.
+	FieldRawPayload = "raw_payload"
 	// FieldEventStatus holds the string denoting the event_status field in the database.
 	FieldEventStatus = "event_status"
 	// FieldEventError holds the string denoting the event_error field in the database.
@@ -105,6 +107,7 @@ var Columns = []string{
 	FieldStainlessMetadata,
 	FieldHeadersSnapshot,
 	FieldBodySummary,
+	FieldRawPayload,
 	FieldEventStatus,
 	FieldEventError,
 	FieldReplayable,
@@ -195,6 +198,8 @@ var (
 	DefaultHeadersSnapshot func() map[string]interface{}
 	// DefaultBodySummary holds the default value on creation for the "body_summary" field.
 	DefaultBodySummary string
+	// DefaultRawPayload holds the default value on creation for the "raw_payload" field.
+	DefaultRawPayload string
 	// DefaultEventStatus holds the default value on creation for the "event_status" field.
 	DefaultEventStatus string
 	// EventStatusValidator is a validator for the "event_status" field. It is called by the builders before save.
@@ -330,6 +335,11 @@ func ByOriginator(opts ...sql.OrderTermOption) OrderOption {
 // ByBodySummary orders the results by the body_summary field.
 func ByBodySummary(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBodySummary, opts...).ToFunc()
+}
+
+// ByRawPayload orders the results by the raw_payload field.
+func ByRawPayload(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRawPayload, opts...).ToFunc()
 }
 
 // ByEventStatus orders the results by the event_status field.

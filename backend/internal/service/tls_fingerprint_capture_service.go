@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -120,6 +121,7 @@ type TLSFingerprintCaptureSessionEvent struct {
 	StainlessMetadata map[string]any `json:"stainless_metadata,omitempty"`
 	HeadersSnapshot   map[string]any `json:"headers_snapshot,omitempty"`
 	BodySummary       string         `json:"body_summary,omitempty"`
+	RawPayload        string         `json:"raw_payload,omitempty"`
 	EventStatus       string         `json:"event_status,omitempty"`
 	Error             string         `json:"error,omitempty"`
 	Replayable        bool           `json:"replayable"`
@@ -157,6 +159,7 @@ type TLSFingerprintCaptureNativeSubmitRequest struct {
 	StainlessMetadata map[string]any `json:"stainless_metadata,omitempty"`
 	HeadersSnapshot   map[string]any `json:"headers_snapshot,omitempty"`
 	BodySummary       string         `json:"body_summary,omitempty"`
+	RawPayload        string         `json:"raw_payload,omitempty"`
 	EventID           string         `json:"event_id,omitempty"`
 	RequestSequence   int            `json:"request_sequence,omitempty"`
 	StreamID          string         `json:"stream_id,omitempty"`
@@ -495,7 +498,7 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 		if sessionErr != nil {
 			return nil, sessionErr
 		}
-		if _, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, "", nil, false); eventErr != nil {
+		if _, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, "", nil, false, false); eventErr != nil {
 			return nil, eventErr
 		}
 		return nil, &model.ValidationError{Field: "client_hello", Message: err.Error()}
@@ -512,53 +515,30 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 	}
 	profile := parsed.Profile
 	hash := parsed.Derived.ReplayHash
+	sampleFingerprint := buildTLSCaptureSampleFingerprint(platform, transport, hash, req)
 
 	if replayable := tlsCaptureReplayable(req.Replayable); !replayable {
-		event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, hash, nil, replayable)
+		event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, hash, nil, false, replayable)
 		if eventErr != nil {
 			return nil, eventErr
 		}
-		task, err = s.updateTaskProgress(ctx, task, counts, transportCounts)
+		task, counts, transportCounts, err = s.refreshTaskProgress(ctx, task)
 		if err != nil {
 			return nil, err
 		}
 		return ignoredTLSCaptureResultWithSession(task, "capture_not_replayable", session, event), nil
 	}
 
-	existing, err := s.findSampleByReplayKey(ctx, task, hash, transport)
+	existing, err := s.repo.GetSampleByTaskHash(ctx, task.ID, sampleFingerprint)
 	if err != nil {
 		return nil, err
 	}
 	if existing != nil {
-		event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, hash, idPointer(existing.ID), true)
+		event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, hash, idPointer(existing.ID), false, true)
 		if eventErr != nil {
 			return nil, eventErr
 		}
-		task, err = s.updateTaskProgress(ctx, task, counts, transportCounts)
-		if err != nil {
-			return nil, err
-		}
-		return &TLSFingerprintCaptureSubmitResult{
-			Accepted:        true,
-			Duplicate:       true,
-			FingerprintHash: existing.FingerprintHash,
-			Task:            task,
-			Sample:          existing,
-			Session:         session,
-			SessionEvent:    event,
-			Counts:          copyStringIntMap(counts),
-		}, nil
-	}
-
-	if existing, err = s.findSampleBySessionTransport(ctx, task, strings.TrimSpace(req.SessionID), transport); err != nil {
-		return nil, err
-	}
-	if existing != nil {
-		event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, existing.ReplayHash, idPointer(existing.ID), true)
-		if eventErr != nil {
-			return nil, eventErr
-		}
-		task, err = s.updateTaskProgress(ctx, task, counts, transportCounts)
+		task, counts, transportCounts, err = s.refreshTaskProgress(ctx, task)
 		if err != nil {
 			return nil, err
 		}
@@ -575,7 +555,7 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 	}
 
 	if tlsCaptureSubmissionQuotaReached(task, counts, transportCounts, platform, transport) {
-		task, err = s.updateTaskProgress(ctx, task, counts, transportCounts)
+		task, counts, transportCounts, err = s.refreshTaskProgress(ctx, task)
 		if err != nil {
 			return nil, err
 		}
@@ -586,10 +566,6 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 		return ignoredTLSCaptureResult(task, reason), nil
 	}
 
-	fingerprintHash := hash
-	if transport != "" {
-		fingerprintHash = hash + "::" + transport
-	}
 	rawClientHello := append([]byte(nil), req.ClientHello...)
 	sample := &TLSFingerprintCaptureSample{
 		TaskID:            task.ID,
@@ -598,7 +574,7 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 		SessionID:         strings.TrimSpace(req.SessionID),
 		UserAgent:         strings.TrimSpace(req.UserAgent),
 		Originator:        strings.TrimSpace(req.Originator),
-		FingerprintHash:   fingerprintHash,
+		FingerprintHash:   sampleFingerprint,
 		ReplayHash:        hash,
 		JA3Raw:            strings.TrimSpace(parsed.Derived.JA3Raw),
 		JA3Hash:           strings.TrimSpace(parsed.Derived.JA3Hash),
@@ -615,6 +591,7 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 		HTTP2Fingerprint:  defaultString(strings.TrimSpace(req.HTTP2Fingerprint), strings.TrimSpace(parsed.Derived.Http2Fingerprint)),
 		StainlessMetadata: copyStringAnyMap(req.StainlessMetadata),
 		Profile:           profile,
+		RawPayload:        req.RawPayload,
 		RawClientHello:    rawClientHello,
 		CapturedAt:        time.Now().UTC(),
 	}
@@ -627,7 +604,7 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, hash, idPointer(created.ID), true)
+	event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, hash, idPointer(created.ID), inserted, true)
 	if eventErr != nil {
 		return nil, eventErr
 	}
@@ -639,7 +616,7 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 	return &TLSFingerprintCaptureSubmitResult{
 		Accepted:        true,
 		Duplicate:       !inserted,
-		FingerprintHash: fingerprintHash,
+		FingerprintHash: created.FingerprintHash,
 		Task:            task,
 		Sample:          created,
 		Session:         session,
@@ -668,6 +645,18 @@ func (s *TLSFingerprintCaptureService) updateTaskProgress(ctx context.Context, t
 		return nil, err
 	}
 	return s.decorateCaptureTask(updated), nil
+}
+
+func (s *TLSFingerprintCaptureService) refreshTaskProgress(ctx context.Context, task *TLSFingerprintCaptureTask) (*TLSFingerprintCaptureTask, map[string]int, map[string]int, error) {
+	counts, transportCounts, err := s.countSamples(ctx, task)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	updated, err := s.updateTaskProgress(ctx, task, counts, transportCounts)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return updated, counts, transportCounts, nil
 }
 
 func (s *TLSFingerprintCaptureService) decorateCaptureTask(task *TLSFingerprintCaptureTask) *TLSFingerprintCaptureTask {
@@ -871,12 +860,13 @@ func (s *TLSFingerprintCaptureService) createCaptureSessionEvent(
 	req TLSFingerprintCaptureNativeSubmitRequest,
 	platform, transport, replayHash string,
 	sampleID *int64,
+	sampleRecorded bool,
 	replayable bool,
 ) (*TLSFingerprintCaptureSessionEvent, error) {
 	eventType := strings.TrimSpace(req.SessionEventType)
 	if eventType == "" {
-		if sampleID != nil {
-			eventType = "canonical_sample_recorded"
+		if sampleRecorded {
+			eventType = "replayable_sample_recorded"
 		} else {
 			eventType = "session_observed"
 		}
@@ -904,7 +894,8 @@ func (s *TLSFingerprintCaptureService) createCaptureSessionEvent(
 		StainlessMetadata: copyStringAnyMap(req.StainlessMetadata),
 		HeadersSnapshot:   copyStringAnyMap(req.HeadersSnapshot),
 		BodySummary:       req.BodySummary,
-		EventStatus:       defaultTLSCaptureEventStatus(req, sampleID, replayable),
+		RawPayload:        req.RawPayload,
+		EventStatus:       defaultTLSCaptureEventStatus(req, sampleRecorded, replayable),
 		Error:             strings.TrimSpace(req.SessionEventError),
 		Replayable:        replayable,
 		SampleID:          sampleID,
@@ -945,11 +936,11 @@ func defaultTLSCaptureTransport(req TLSFingerprintCaptureNativeSubmitRequest) st
 	return string(tlsfpTransport.HTTP1)
 }
 
-func defaultTLSCaptureEventStatus(req TLSFingerprintCaptureNativeSubmitRequest, sampleID *int64, replayable bool) string {
+func defaultTLSCaptureEventStatus(req TLSFingerprintCaptureNativeSubmitRequest, sampleRecorded bool, replayable bool) string {
 	if status := strings.TrimSpace(req.SessionEventError); status != "" {
 		return "error"
 	}
-	if sampleID != nil && *sampleID > 0 {
+	if sampleRecorded {
 		return "recorded"
 	}
 	if !replayable {
@@ -996,49 +987,6 @@ func structToStringAnyMap(value any) map[string]any {
 	return out
 }
 
-func (s *TLSFingerprintCaptureService) findSampleByReplayKey(ctx context.Context, task *TLSFingerprintCaptureTask, replayHash, transport string) (*TLSFingerprintCaptureSample, error) {
-	key := replayHash
-	if transport != "" {
-		key = replayHash + "::" + transport
-	}
-	sample, err := s.repo.GetSampleByTaskHash(ctx, task.ID, key)
-	if err != nil || sample != nil {
-		return sample, err
-	}
-	samples, err := s.repo.ListSamplesByTask(ctx, task.ID)
-	if err != nil {
-		return nil, err
-	}
-	for _, existing := range samples {
-		if existing == nil {
-			continue
-		}
-		if strings.TrimSpace(existing.ReplayHash) == replayHash && normalizeTLSCaptureTransport(existing.Transport) == transport {
-			return existing, nil
-		}
-	}
-	return nil, nil
-}
-
-func (s *TLSFingerprintCaptureService) findSampleBySessionTransport(ctx context.Context, task *TLSFingerprintCaptureTask, sessionID, transport string) (*TLSFingerprintCaptureSample, error) {
-	if strings.TrimSpace(sessionID) == "" || transport == "" {
-		return nil, nil
-	}
-	samples, err := s.repo.ListSamplesByTask(ctx, task.ID)
-	if err != nil {
-		return nil, err
-	}
-	for _, sample := range samples {
-		if sample == nil {
-			continue
-		}
-		if strings.TrimSpace(sample.SessionID) == sessionID && normalizeTLSCaptureTransport(sample.Transport) == transport {
-			return sample, nil
-		}
-	}
-	return nil, nil
-}
-
 func filterTLSCaptureSamples(samples []*TLSFingerprintCaptureSample, sampleIDs []int64) []*TLSFingerprintCaptureSample {
 	if len(sampleIDs) == 0 {
 		return samples
@@ -1066,8 +1014,8 @@ func tlsCaptureSamplePayload(sample *TLSFingerprintCaptureSample) (string, error
 		return "", fmt.Errorf("capture sample is required")
 	}
 	if sample.Profile == nil {
-		if raw := strings.TrimSpace(sample.RawPayload); raw != "" {
-			return raw, nil
+		if sample.RawPayload != "" {
+			return sample.RawPayload, nil
 		}
 		return "", &model.ValidationError{Field: "replay_profile", Message: "captured sample replay profile is required"}
 	}
@@ -1076,6 +1024,42 @@ func tlsCaptureSamplePayload(sample *TLSFingerprintCaptureSample) (string, error
 		return "", err
 	}
 	return string(encoded), nil
+}
+
+func buildTLSCaptureSampleFingerprint(platform, transport, replayHash string, req TLSFingerprintCaptureNativeSubmitRequest) string {
+	stainlessJSON, _ := json.Marshal(copyStringAnyMap(req.StainlessMetadata))
+	material := strings.Join([]string{
+		fingerprintComponent(strings.TrimSpace(platform)),
+		fingerprintComponent(normalizeTLSCaptureTransport(transport)),
+		fingerprintComponent(strings.TrimSpace(replayHash)),
+		fingerprintComponent(strings.TrimSpace(req.UserAgent)),
+		fingerprintComponent(strings.TrimSpace(req.Originator)),
+		fingerprintComponent(req.RequestPath),
+		fingerprintComponent(strings.TrimSpace(req.HTTPMethod)),
+		fingerprintComponent(boolFingerprintComponent(req.IsWebsocket)),
+		fingerprintComponent(strings.TrimSpace(req.WebsocketProtocol)),
+		fingerprintComponent(strings.TrimSpace(req.ClientType)),
+		fingerprintComponent(strings.TrimSpace(req.Model)),
+		fingerprintComponent(strings.TrimSpace(req.RequestKind)),
+		fingerprintComponent(boolFingerprintComponent(req.Streaming)),
+		fingerprintComponent(strings.TrimSpace(req.ResponseMode)),
+		fingerprintComponent(strings.TrimSpace(req.HTTP2Fingerprint)),
+		fingerprintComponent(string(stainlessJSON)),
+		fingerprintComponent(req.RawPayload),
+	}, "|")
+	sum := sha256.Sum256([]byte(material))
+	return hex.EncodeToString(sum[:])
+}
+
+func fingerprintComponent(value string) string {
+	return fmt.Sprintf("%d:%s", len(value), value)
+}
+
+func boolFingerprintComponent(value bool) string {
+	if value {
+		return "1"
+	}
+	return "0"
 }
 
 func parseTLSFingerprintClientHello(raw []byte, platform, transport, userAgent, originator string) (*tlsFingerprintParsedCapture, error) {

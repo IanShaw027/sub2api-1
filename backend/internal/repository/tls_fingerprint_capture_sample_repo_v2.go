@@ -64,11 +64,6 @@ func (r *tlsFingerprintCaptureSampleRepoV2) CreateSampleIfAbsent(ctx context.Con
 	saved, err := create.Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			if existing, getErr := r.getSampleByReplayTransport(ctx, sample.TaskID, normalizeTLSCaptureStoredReplayHash(sample.ReplayHash, sample.FingerprintHash), strings.TrimSpace(sample.Transport)); getErr != nil {
-				return nil, false, getErr
-			} else if existing != nil {
-				return existing, false, nil
-			}
 			existing, getErr := r.GetSampleByTaskHash(ctx, sample.TaskID, sample.FingerprintHash)
 			if getErr != nil {
 				return nil, false, getErr
@@ -76,44 +71,10 @@ func (r *tlsFingerprintCaptureSampleRepoV2) CreateSampleIfAbsent(ctx context.Con
 			if existing != nil {
 				return existing, false, nil
 			}
-			if strings.TrimSpace(sample.ReplayHash) != "" {
-				samples, listErr := r.ListSamplesByTask(ctx, sample.TaskID)
-				if listErr != nil {
-					return nil, false, listErr
-				}
-				for _, existing := range samples {
-					if existing == nil {
-						continue
-					}
-					if existing.ReplayHash == sample.ReplayHash && existing.Transport == sample.Transport {
-						return existing, false, nil
-					}
-				}
-			}
 		}
 		return nil, false, err
 	}
 	return tlsCaptureSampleToService(saved), true, nil
-}
-
-func (r *tlsFingerprintCaptureSampleRepoV2) getSampleByReplayTransport(ctx context.Context, taskID int64, replayHash, transport string) (*service.TLSFingerprintCaptureSample, error) {
-	if strings.TrimSpace(replayHash) == "" {
-		return nil, nil
-	}
-	sample, err := clientFromContext(ctx, r.client).TLSFingerprintCaptureSample.Query().
-		Where(
-			tlsfingerprintcapturesample.TaskID(taskID),
-			tlsfingerprintcapturesample.ReplayHash(strings.TrimSpace(replayHash)),
-			tlsfingerprintcapturesample.Transport(strings.TrimSpace(transport)),
-		).
-		Only(ctx)
-	if err == nil {
-		return tlsCaptureSampleToService(sample), nil
-	}
-	if ent.IsNotFound(err) {
-		return nil, nil
-	}
-	return nil, err
 }
 
 func (r *tlsFingerprintCaptureSampleRepoV2) GetSampleByTaskHash(ctx context.Context, taskID int64, fingerprintHash string) (*service.TLSFingerprintCaptureSample, error) {
