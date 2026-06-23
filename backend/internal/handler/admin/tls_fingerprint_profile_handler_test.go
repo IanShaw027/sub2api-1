@@ -202,15 +202,19 @@ func TestTLSFingerprintProfileHandlerCaptureTaskLifecycle(t *testing.T) {
 }
 
 type tlsFingerprintCaptureHandlerRepoStub struct {
-	mu           sync.Mutex
-	nextTaskID   int64
-	nextSampleID int64
-	tasks        []*service.TLSFingerprintCaptureTask
-	samples      []*service.TLSFingerprintCaptureSample
+	mu            sync.Mutex
+	nextTaskID    int64
+	nextSampleID  int64
+	nextSessionID int64
+	nextEventID   int64
+	tasks         []*service.TLSFingerprintCaptureTask
+	samples       []*service.TLSFingerprintCaptureSample
+	sessions      []*service.TLSFingerprintCaptureSession
+	sessionEvents []*service.TLSFingerprintCaptureSessionEvent
 }
 
 func newTLSFingerprintCaptureHandlerRepoStub() *tlsFingerprintCaptureHandlerRepoStub {
-	return &tlsFingerprintCaptureHandlerRepoStub{nextTaskID: 1, nextSampleID: 1}
+	return &tlsFingerprintCaptureHandlerRepoStub{nextTaskID: 1, nextSampleID: 1, nextSessionID: 1, nextEventID: 1}
 }
 
 func (r *tlsFingerprintCaptureHandlerRepoStub) CreateTask(_ context.Context, task *service.TLSFingerprintCaptureTask) (*service.TLSFingerprintCaptureTask, error) {
@@ -273,6 +277,32 @@ func (r *tlsFingerprintCaptureHandlerRepoStub) UpdateTask(_ context.Context, tas
 	return cloneTLSFingerprintCaptureHandlerTask(updated), nil
 }
 
+func (r *tlsFingerprintCaptureHandlerRepoStub) DeleteTask(_ context.Context, id int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	next := r.tasks[:0]
+	for _, task := range r.tasks {
+		if task.ID != id {
+			next = append(next, task)
+		}
+	}
+	r.tasks = next
+	return nil
+}
+
+func (r *tlsFingerprintCaptureHandlerRepoStub) DeleteSamplesByTask(_ context.Context, taskID int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	next := r.samples[:0]
+	for _, sample := range r.samples {
+		if sample.TaskID != taskID {
+			next = append(next, sample)
+		}
+	}
+	r.samples = next
+	return nil
+}
+
 func (r *tlsFingerprintCaptureHandlerRepoStub) CreateSampleIfAbsent(_ context.Context, sample *service.TLSFingerprintCaptureSample) (*service.TLSFingerprintCaptureSample, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -287,6 +317,35 @@ func (r *tlsFingerprintCaptureHandlerRepoStub) CreateSampleIfAbsent(_ context.Co
 	created.CreatedAt = time.Now().UTC()
 	r.samples = append(r.samples, created)
 	return cloneTLSFingerprintCaptureHandlerSample(created), true, nil
+}
+
+func (r *tlsFingerprintCaptureHandlerRepoStub) CreateSessionIfAbsent(_ context.Context, session *service.TLSFingerprintCaptureSession) (*service.TLSFingerprintCaptureSession, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, existing := range r.sessions {
+		if existing.TaskID == session.TaskID && existing.SessionID == session.SessionID {
+			return cloneTLSFingerprintCaptureHandlerSession(existing), false, nil
+		}
+	}
+	created := cloneTLSFingerprintCaptureHandlerSession(session)
+	created.ID = r.nextSessionID
+	r.nextSessionID++
+	now := time.Now().UTC()
+	created.CreatedAt = now
+	created.UpdatedAt = now
+	r.sessions = append(r.sessions, created)
+	return cloneTLSFingerprintCaptureHandlerSession(created), true, nil
+}
+
+func (r *tlsFingerprintCaptureHandlerRepoStub) CreateSessionEvent(_ context.Context, event *service.TLSFingerprintCaptureSessionEvent) (*service.TLSFingerprintCaptureSessionEvent, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	created := cloneTLSFingerprintCaptureHandlerSessionEvent(event)
+	created.ID = r.nextEventID
+	r.nextEventID++
+	created.CreatedAt = time.Now().UTC()
+	r.sessionEvents = append(r.sessionEvents, created)
+	return cloneTLSFingerprintCaptureHandlerSessionEvent(created), nil
 }
 
 func (r *tlsFingerprintCaptureHandlerRepoStub) GetSampleByTaskHash(_ context.Context, taskID int64, fingerprintHash string) (*service.TLSFingerprintCaptureSample, error) {
@@ -319,7 +378,12 @@ func cloneTLSFingerprintCaptureHandlerTask(task *service.TLSFingerprintCaptureTa
 	clone := *task
 	clone.Targets = cloneStringIntMap(task.Targets)
 	clone.Counts = cloneStringIntMap(task.Counts)
+	clone.TransportTargets = cloneStringIntMap(task.TransportTargets)
+	clone.TransportCounts = cloneStringIntMap(task.TransportCounts)
+	clone.CaptureFilters = cloneStringAnyMapHandler(task.CaptureFilters)
+	clone.TaskStats = cloneStringAnyMapHandler(task.TaskStats)
 	clone.UAKeywords = append([]string(nil), task.UAKeywords...)
+	clone.SampleSchemaVersion = task.SampleSchemaVersion
 	if task.CompletedAt != nil {
 		completedAt := *task.CompletedAt
 		clone.CompletedAt = &completedAt
@@ -338,13 +402,20 @@ func cloneTLSFingerprintCaptureHandlerSample(sample *service.TLSFingerprintCaptu
 		profile.Curves = append([]uint16(nil), sample.Profile.Curves...)
 		profile.PointFormats = append([]uint16(nil), sample.Profile.PointFormats...)
 		profile.SignatureAlgorithms = append([]uint16(nil), sample.Profile.SignatureAlgorithms...)
+		profile.SignatureAlgorithmsCert = append([]uint16(nil), sample.Profile.SignatureAlgorithmsCert...)
 		profile.ALPNProtocols = append([]string(nil), sample.Profile.ALPNProtocols...)
 		profile.SupportedVersions = append([]uint16(nil), sample.Profile.SupportedVersions...)
 		profile.KeyShareGroups = append([]uint16(nil), sample.Profile.KeyShareGroups...)
 		profile.PSKModes = append([]uint16(nil), sample.Profile.PSKModes...)
 		profile.Extensions = append([]uint16(nil), sample.Profile.Extensions...)
+		profile.ExtensionPayloads = cloneUint16BytesMapHandler(sample.Profile.ExtensionPayloads)
+		profile.CompressCertAlgos = append([]uint16(nil), sample.Profile.CompressCertAlgos...)
+		profile.DelegatedCredentialsAlgorithms = append([]uint16(nil), sample.Profile.DelegatedCredentialsAlgorithms...)
+		profile.ApplicationSettingsProtocols = append([]string(nil), sample.Profile.ApplicationSettingsProtocols...)
 		clone.Profile = &profile
 	}
+	clone.StainlessMetadata = cloneStringAnyMapHandler(sample.StainlessMetadata)
+	clone.RawClientHello = append([]byte(nil), sample.RawClientHello...)
 	return &clone
 }
 
@@ -352,6 +423,58 @@ func cloneStringIntMap(in map[string]int) map[string]int {
 	out := make(map[string]int, len(in))
 	for k, v := range in {
 		out[k] = v
+	}
+	return out
+}
+
+func cloneTLSFingerprintCaptureHandlerSession(session *service.TLSFingerprintCaptureSession) *service.TLSFingerprintCaptureSession {
+	if session == nil {
+		return nil
+	}
+	clone := *session
+	clone.RawClientHello = append([]byte(nil), session.RawClientHello...)
+	clone.ObservedClientHello = cloneStringAnyMapHandler(session.ObservedClientHello)
+	clone.ReplayProfile = cloneStringAnyMapHandler(session.ReplayProfile)
+	clone.DerivedFingerprint = cloneStringAnyMapHandler(session.DerivedFingerprint)
+	if session.ClosedAt != nil {
+		closed := *session.ClosedAt
+		clone.ClosedAt = &closed
+	}
+	return &clone
+}
+
+func cloneTLSFingerprintCaptureHandlerSessionEvent(event *service.TLSFingerprintCaptureSessionEvent) *service.TLSFingerprintCaptureSessionEvent {
+	if event == nil {
+		return nil
+	}
+	clone := *event
+	clone.StainlessMetadata = cloneStringAnyMapHandler(event.StainlessMetadata)
+	clone.HeadersSnapshot = cloneStringAnyMapHandler(event.HeadersSnapshot)
+	if event.SampleID != nil {
+		sampleID := *event.SampleID
+		clone.SampleID = &sampleID
+	}
+	return &clone
+}
+
+func cloneStringAnyMapHandler(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneUint16BytesMapHandler(in map[uint16][]byte) map[uint16][]byte {
+	if len(in) == 0 {
+		return map[uint16][]byte{}
+	}
+	out := make(map[uint16][]byte, len(in))
+	for k, v := range in {
+		out[k] = append([]byte(nil), v...)
 	}
 	return out
 }

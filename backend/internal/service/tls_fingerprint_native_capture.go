@@ -1,14 +1,17 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log/slog"
 	"math/big"
 	"net"
@@ -21,8 +24,9 @@ import (
 )
 
 const (
-	tlsFingerprintNativeCaptureHeaderTimeout = 10 * time.Second
-	tlsFingerprintNativeCaptureIdleTimeout   = 30 * time.Second
+	tlsFingerprintNativeCaptureHeaderTimeout    = 10 * time.Second
+	tlsFingerprintNativeCaptureIdleTimeout      = 30 * time.Second
+	tlsFingerprintNativeCaptureBodySummaryLimit = 16 << 10
 )
 
 type TLSFingerprintNativeCaptureListenerConfig struct {
@@ -178,11 +182,31 @@ func (l *TLSFingerprintNativeCaptureListener) handleCapture(w http.ResponseWrite
 		return
 	}
 	req := TLSFingerprintCaptureNativeSubmitRequest{
-		Token:       nativeCaptureRequestToken(r),
-		Platform:    nativeCaptureRequestPlatform(r),
-		UserAgent:   strings.TrimSpace(r.Header.Get("User-Agent")),
-		Originator:  firstNonEmptyHeader(r.Header, "Originator", "originator"),
-		ClientHello: raw,
+		Token:             nativeCaptureRequestToken(r),
+		Platform:          nativeCaptureRequestPlatform(r),
+		Transport:         nativeCaptureRequestTransport(r),
+		SessionID:         nativeCaptureRequestSessionID(r),
+		ClientIP:          remoteIPFromRequest(r),
+		ALPNNegotiated:    nativeCaptureNegotiatedALPN(r),
+		UserAgent:         strings.TrimSpace(r.Header.Get("User-Agent")),
+		Originator:        firstNonEmptyHeader(r.Header, "Originator", "originator"),
+		RequestPath:       nativeCaptureRequestPath(r),
+		HTTPMethod:        r.Method,
+		IsWebsocket:       nativeCaptureIsWebsocketRequest(r),
+		WebsocketProtocol: strings.TrimSpace(r.Header.Get("Sec-WebSocket-Protocol")),
+		ClientType:        nativeCaptureRequestClientType(r),
+		Model:             nativeCaptureRequestModel(r),
+		RequestKind:       nativeCaptureRequestKind(r),
+		Streaming:         nativeCaptureRequestStreaming(r),
+		ResponseMode:      nativeCaptureRequestResponseMode(r),
+		HTTP2Fingerprint:  strings.TrimSpace(firstNonEmptyHeader(r.Header, "X-TLS-Fingerprint-HTTP2", "X-HTTP2-Fingerprint")),
+		StainlessMetadata: nativeCaptureStainlessMetadata(r.Header),
+		HeadersSnapshot:   nativeCaptureHeadersSnapshot(r.Header),
+		BodySummary:       nativeCaptureBodySummary(r),
+		EventID:           strings.TrimSpace(firstNonEmptyHeader(r.Header, "X-Client-Request-Id", "x-client-request-id", "X-Request-Id", "x-request-id")),
+		RequestSequence:   nativeCaptureRequestSequence(r),
+		StreamID:          strings.TrimSpace(firstNonEmptyHeader(r.Header, "X-Stream-Id", "x-stream-id")),
+		ClientHello:       raw,
 	}
 	result, err := l.cfg.Service.SubmitNativeCapture(r.Context(), req)
 	if err != nil {
@@ -298,6 +322,281 @@ func nativeCaptureRequestPlatform(r *http.Request) string {
 	}
 	return strings.TrimSpace(path)
 }
+
+func nativeCaptureRequestTransport(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if transport := strings.TrimSpace(r.URL.Query().Get("transport")); transport != "" {
+		return transport
+	}
+	if transport := strings.TrimSpace(firstNonEmptyHeader(r.Header, "X-TLS-Fingerprint-Transport", "X-Transport")); transport != "" {
+		return transport
+	}
+	return ""
+}
+
+func nativeCaptureRequestSessionID(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	return strings.TrimSpace(firstNonEmptyHeader(
+		r.Header,
+		"X-TLS-Fingerprint-Session-Id",
+		"X-Session-Id",
+		"X-Claude-Code-Session-Id",
+		"OAI-Session-Id",
+	))
+}
+
+func nativeCaptureNegotiatedALPN(r *http.Request) string {
+	if r == nil || r.TLS == nil {
+		return ""
+	}
+	return strings.TrimSpace(r.TLS.NegotiatedProtocol)
+}
+
+func remoteIPFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
+}
+
+func nativeCaptureIsWebsocketRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(r.Header.Get("Upgrade")), "websocket")
+}
+
+func nativeCaptureRequestClientType(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if clientType := strings.TrimSpace(firstNonEmptyHeader(r.Header, "X-TLS-Fingerprint-Client-Type", "X-Client-Type")); clientType != "" {
+		return clientType
+	}
+	originator := strings.ToLower(strings.TrimSpace(firstNonEmptyHeader(r.Header, "Originator", "originator")))
+	userAgent := strings.ToLower(strings.TrimSpace(r.Header.Get("User-Agent")))
+	switch {
+	case strings.Contains(originator, "codex") || strings.Contains(userAgent, "codex"):
+		return "codex"
+	case strings.Contains(originator, "claude") || strings.Contains(userAgent, "claude"):
+		return "claude"
+	default:
+		return "unknown"
+	}
+}
+
+func nativeCaptureRequestModel(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if model := strings.TrimSpace(r.URL.Query().Get("model")); model != "" {
+		return model
+	}
+	body := nativeCaptureParsedRequestBody(r)
+	if body == nil {
+		return ""
+	}
+	switch value := body["model"].(type) {
+	case string:
+		return strings.TrimSpace(value)
+	default:
+		return ""
+	}
+}
+
+func nativeCaptureRequestKind(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	path := strings.Trim(strings.ToLower(strings.TrimSpace(r.URL.Path)), "/")
+	switch {
+	case strings.Contains(path, "/v1/responses"):
+		return "responses"
+	case strings.Contains(path, "/v1/chat/completions"):
+		return "chat_completions"
+	default:
+		return ""
+	}
+}
+
+func nativeCaptureRequestStreaming(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("stream")); raw != "" {
+		return strings.EqualFold(raw, "true") || raw == "1"
+	}
+	body := nativeCaptureParsedRequestBody(r)
+	if body == nil {
+		return false
+	}
+	switch value := body["stream"].(type) {
+	case bool:
+		return value
+	case string:
+		return strings.EqualFold(strings.TrimSpace(value), "true") || strings.TrimSpace(value) == "1"
+	default:
+		return false
+	}
+}
+
+func nativeCaptureRequestResponseMode(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if nativeCaptureIsWebsocketRequest(r) {
+		return "websocket"
+	}
+	if nativeCaptureRequestStreaming(r) {
+		return "stream"
+	}
+	if strings.Contains(strings.ToLower(strings.TrimSpace(r.Header.Get("Accept"))), "text/event-stream") {
+		return "sse"
+	}
+	return "json"
+}
+
+func nativeCaptureRequestPath(r *http.Request) string {
+	if r == nil || r.URL == nil {
+		return "/"
+	}
+	path := strings.TrimSpace(r.URL.Path)
+	if path == "" {
+		return "/"
+	}
+	platform := nativeCaptureRequestPlatform(r)
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "capture" {
+		return "/"
+	}
+	if strings.HasPrefix(trimmed, "capture/") {
+		rest := strings.TrimPrefix(trimmed, "capture/")
+		if platform != "" {
+			if rest == platform {
+				return "/"
+			}
+			prefix := platform + "/"
+			if strings.HasPrefix(rest, prefix) {
+				rest = strings.TrimPrefix(rest, prefix)
+			}
+		}
+		if rest == "" {
+			return "/"
+		}
+		return "/" + strings.TrimLeft(rest, "/")
+	}
+	return path
+}
+
+func nativeCaptureRequestSequence(r *http.Request) int {
+	if r == nil {
+		return 0
+	}
+	raw := strings.TrimSpace(firstNonEmptyHeader(r.Header, "X-Request-Sequence", "x-request-sequence"))
+	if raw == "" {
+		return 0
+	}
+	var seq int
+	_, _ = fmt.Sscanf(raw, "%d", &seq)
+	return seq
+}
+
+func nativeCaptureStainlessMetadata(header http.Header) map[string]any {
+	if header == nil {
+		return nil
+	}
+	values := map[string]any{}
+	add := func(key, value string) {
+		if strings.TrimSpace(value) != "" {
+			values[key] = strings.TrimSpace(value)
+		}
+	}
+	add("lang", header.Get("X-Stainless-Lang"))
+	add("package_version", header.Get("X-Stainless-Package-Version"))
+	add("os", header.Get("X-Stainless-OS"))
+	add("arch", header.Get("X-Stainless-Arch"))
+	add("runtime", header.Get("X-Stainless-Runtime"))
+	add("runtime_version", header.Get("X-Stainless-Runtime-Version"))
+	add("retry_count", header.Get("X-Stainless-Retry-Count"))
+	add("timeout", header.Get("X-Stainless-Timeout"))
+	add("helper_method", firstNonEmptyHeader(header, "x-stainless-helper-method", "X-Stainless-Helper-Method"))
+	if len(values) == 0 {
+		return nil
+	}
+	return values
+}
+
+func nativeCaptureHeadersSnapshot(header http.Header) map[string]any {
+	if header == nil {
+		return nil
+	}
+	out := make(map[string]any, len(header))
+	for key, values := range header {
+		lowerKey := strings.ToLower(strings.TrimSpace(key))
+		if lowerKey == "" {
+			continue
+		}
+		redacted := make([]string, 0, len(values))
+		for _, value := range values {
+			if isSensitiveKey(lowerKey) {
+				redacted = append(redacted, "[REDACTED]")
+				continue
+			}
+			redacted = append(redacted, strings.TrimSpace(value))
+		}
+		out[lowerKey] = redacted
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func nativeCaptureBodySummary(r *http.Request) string {
+	body := nativeCaptureRawBody(r)
+	if len(body) == 0 {
+		return ""
+	}
+	summary, _, _ := sanitizeAndTrimRequestBody(body, tlsFingerprintNativeCaptureBodySummaryLimit)
+	return summary
+}
+
+func nativeCaptureRawBody(r *http.Request) []byte {
+	if r == nil || r.Body == nil {
+		return nil
+	}
+	if body, ok := r.Context().Value(tlsFingerprintNativeCaptureBodyContextKey{}).([]byte); ok {
+		return append([]byte(nil), body...)
+	}
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil
+	}
+	r.Body = io.NopCloser(bytes.NewReader(raw))
+	return raw
+}
+
+func nativeCaptureParsedRequestBody(r *http.Request) map[string]any {
+	body := nativeCaptureRawBody(r)
+	if len(body) == 0 {
+		return nil
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil
+	}
+	return decoded
+}
+
+type tlsFingerprintNativeCaptureBodyContextKey struct{}
 
 type tlsFingerprintNativeCaptureConnContextKey struct{}
 

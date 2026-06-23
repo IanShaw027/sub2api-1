@@ -135,6 +135,12 @@ type SubscriptionPlan func(*sql.Selector)
 // TLSFingerprintCaptureSample is the predicate function for tlsfingerprintcapturesample builders.
 type TLSFingerprintCaptureSample func(*sql.Selector)
 
+// TLSFingerprintCaptureSession is the predicate function for tlsfingerprintcapturesession builders.
+type TLSFingerprintCaptureSession func(*sql.Selector)
+
+// TLSFingerprintCaptureSessionEvent is the predicate function for tlsfingerprintcapturesessionevent builders.
+type TLSFingerprintCaptureSessionEvent func(*sql.Selector)
+
 // TLSFingerprintCaptureTask is the predicate function for tlsfingerprintcapturetask builders.
 type TLSFingerprintCaptureTask func(*sql.Selector)
 

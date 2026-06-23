@@ -8,14 +8,14 @@ import (
 )
 
 type tlsFingerprintCaptureRepoStub struct {
-	mu           sync.Mutex
-	nextTaskID   int64
-	nextSampleID int64
+	mu            sync.Mutex
+	nextTaskID    int64
+	nextSampleID  int64
 	nextSessionID int64
 	nextEventID   int64
-	tasks        []*TLSFingerprintCaptureTask
-	samples      []*TLSFingerprintCaptureSample
-	sessions     []*TLSFingerprintCaptureSession
+	tasks         []*TLSFingerprintCaptureTask
+	samples       []*TLSFingerprintCaptureSample
+	sessions      []*TLSFingerprintCaptureSession
 	sessionEvents []*TLSFingerprintCaptureSessionEvent
 
 	getRunningTaskByTokenErr error
@@ -204,6 +204,8 @@ func cloneTLSFingerprintCaptureTask(task *TLSFingerprintCaptureTask) *TLSFingerp
 	clone.Counts = copyStringIntMap(task.Counts)
 	clone.TransportTargets = copyStringIntMap(task.TransportTargets)
 	clone.TransportCounts = copyStringIntMap(task.TransportCounts)
+	clone.CaptureFilters = cloneStringAnyMap(task.CaptureFilters)
+	clone.TaskStats = cloneStringAnyMap(task.TaskStats)
 	clone.UAKeywords = append([]string(nil), task.UAKeywords...)
 	if task.CompletedAt != nil {
 		completedAt := *task.CompletedAt
@@ -219,6 +221,7 @@ func cloneTLSFingerprintCaptureSample(sample *TLSFingerprintCaptureSample) *TLSF
 	clone := *sample
 	clone.Profile = cloneTLSFingerprintProfile(sample.Profile)
 	clone.RawClientHello = append([]byte(nil), sample.RawClientHello...)
+	clone.StainlessMetadata = cloneStringAnyMap(sample.StainlessMetadata)
 	return &clone
 }
 
@@ -227,6 +230,14 @@ func cloneTLSFingerprintCaptureSession(session *TLSFingerprintCaptureSession) *T
 		return nil
 	}
 	clone := *session
+	clone.RawClientHello = append([]byte(nil), session.RawClientHello...)
+	clone.ObservedClientHello = cloneStringAnyMap(session.ObservedClientHello)
+	clone.ReplayProfile = cloneStringAnyMap(session.ReplayProfile)
+	clone.DerivedFingerprint = cloneStringAnyMap(session.DerivedFingerprint)
+	if session.ClosedAt != nil {
+		closedAt := *session.ClosedAt
+		clone.ClosedAt = &closedAt
+	}
 	return &clone
 }
 
@@ -239,5 +250,18 @@ func cloneTLSFingerprintCaptureSessionEvent(event *TLSFingerprintCaptureSessionE
 		sampleID := *event.SampleID
 		clone.SampleID = &sampleID
 	}
+	clone.StainlessMetadata = cloneStringAnyMap(event.StainlessMetadata)
+	clone.HeadersSnapshot = cloneStringAnyMap(event.HeadersSnapshot)
 	return &clone
+}
+
+func cloneStringAnyMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }

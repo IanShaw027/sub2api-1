@@ -140,6 +140,36 @@ application_settings_protocols: ["h2"]
 	require.NotEmpty(t, result.Profiles[0].FingerprintHash)
 }
 
+func TestTLSFingerprintProfileServiceImportCapturesParsesSignatureAlgorithmsCertAndExtensionPayloads(t *testing.T) {
+	repo := &tlsFingerprintProfileImportRepoStub{}
+	svc := NewTLSFingerprintProfileService(repo, nil)
+	payload := `{
+  "name":"Replay profile with unknown extension payloads",
+  "enable_grease":false,
+  "cipher_suites":[4865,4866],
+  "curves":[29,23],
+  "point_formats":[0],
+  "signature_algorithms":[1027,2052],
+  "signature_algorithms_cert":[1284],
+  "alpn_protocols":["http/1.1"],
+  "supported_versions":[772,771],
+  "key_share_groups":[29],
+  "psk_modes":[1],
+  "extensions":[0,11,10,13,43,45,50,51,65010],
+  "extension_payloads":{"65010":"AQID"}
+}`
+
+	result, err := svc.ImportTLSFingerprintCaptures(context.Background(), TLSFingerprintCaptureImportRequest{
+		Profiles: []string{payload},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Imported)
+	imported := result.Profiles[0].Profile
+	require.Equal(t, []uint16{1284}, imported.SignatureAlgorithmsCert)
+	require.Equal(t, map[uint16][]byte{65010: {1, 2, 3}}, imported.ExtensionPayloads)
+}
+
 func TestTLSFingerprintProfileServiceImportCapturesDedupesByFingerprintFields(t *testing.T) {
 	repo := &tlsFingerprintProfileImportRepoStub{}
 	svc := NewTLSFingerprintProfileService(repo, nil)
@@ -187,6 +217,58 @@ func TestTLSFingerprintProfileReplayHashIncludesParametricReplayExtensions(t *te
 	require.NotEqual(t, baseHash, changedHash)
 }
 
+func TestTLSFingerprintProfileReplayHashChangesWhenSignatureAlgorithmsCertChanges(t *testing.T) {
+	base := &model.TLSFingerprintProfile{
+		Name:                    "base",
+		CipherSuites:            []uint16{4865, 4866},
+		Curves:                  []uint16{29, 23},
+		PointFormats:            []uint16{0},
+		SignatureAlgorithms:     []uint16{1027, 2052},
+		SignatureAlgorithmsCert: []uint16{1025},
+		ALPNProtocols:           []string{"http/1.1"},
+		SupportedVersions:       []uint16{772, 771},
+		KeyShareGroups:          []uint16{29},
+		PSKModes:                []uint16{1},
+		Extensions:              []uint16{0, 11, 10, 13, 43, 45, 50, 51},
+	}
+	changed := cloneTLSFingerprintProfile(base)
+	changed.SignatureAlgorithmsCert = []uint16{1284}
+
+	baseHash, err := TLSFingerprintProfileReplayHash(base)
+	require.NoError(t, err)
+	changedHash, err := TLSFingerprintProfileReplayHash(changed)
+	require.NoError(t, err)
+	require.NotEqual(t, baseHash, changedHash)
+}
+
+func TestTLSFingerprintProfileReplayHashChangesWhenUnknownExtensionPayloadChanges(t *testing.T) {
+	base := &model.TLSFingerprintProfile{
+		Name:                "base",
+		CipherSuites:        []uint16{4865, 4866},
+		Curves:              []uint16{29, 23},
+		PointFormats:        []uint16{0},
+		SignatureAlgorithms: []uint16{1027, 2052},
+		ALPNProtocols:       []string{"http/1.1"},
+		SupportedVersions:   []uint16{772, 771},
+		KeyShareGroups:      []uint16{29},
+		PSKModes:            []uint16{1},
+		Extensions:          []uint16{0, 11, 10, 13, 43, 45, 51, 65010},
+		ExtensionPayloads: map[uint16][]byte{
+			65010: {1, 2, 3},
+		},
+	}
+	changed := cloneTLSFingerprintProfile(base)
+	changed.ExtensionPayloads = map[uint16][]byte{
+		65010: {1, 2, 4},
+	}
+
+	baseHash, err := TLSFingerprintProfileReplayHash(base)
+	require.NoError(t, err)
+	changedHash, err := TLSFingerprintProfileReplayHash(changed)
+	require.NoError(t, err)
+	require.NotEqual(t, baseHash, changedHash)
+}
+
 func TestTLSFingerprintProfileServiceImportCapturesRequiresCompleteCurrentSchemaFingerprint(t *testing.T) {
 	repo := &tlsFingerprintProfileImportRepoStub{}
 	svc := NewTLSFingerprintProfileService(repo, nil)
@@ -215,6 +297,34 @@ func TestTLSFingerprintProfileServiceImportCapturesRequiresParametricReplayExten
 	require.Len(t, repo.profiles, 0)
 }
 
+func TestTLSFingerprintProfileServiceImportCapturesRequiresSignatureAlgorithmsCertWhenExtension50Present(t *testing.T) {
+	repo := &tlsFingerprintProfileImportRepoStub{}
+	svc := NewTLSFingerprintProfileService(repo, nil)
+
+	result, err := svc.ImportTLSFingerprintCaptures(context.Background(), TLSFingerprintCaptureImportRequest{
+		Profiles: []string{`{"name":"missing sig cert params","cipher_suites":[4865],"curves":[29],"point_formats":[0],"signature_algorithms":[1027],"alpn_protocols":["http/1.1"],"supported_versions":[772],"key_share_groups":[29],"psk_modes":[1],"extensions":[0,10,11,13,43,45,50,51]}`},
+	})
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Contains(t, err.Error(), "signature_algorithms_cert is required")
+	require.Len(t, repo.profiles, 0)
+}
+
+func TestTLSFingerprintProfileServiceImportCapturesRequiresUnknownExtensionPayloads(t *testing.T) {
+	repo := &tlsFingerprintProfileImportRepoStub{}
+	svc := NewTLSFingerprintProfileService(repo, nil)
+
+	result, err := svc.ImportTLSFingerprintCaptures(context.Background(), TLSFingerprintCaptureImportRequest{
+		Profiles: []string{`{"name":"missing unknown ext payload","cipher_suites":[4865],"curves":[29],"point_formats":[0],"signature_algorithms":[1027],"alpn_protocols":["http/1.1"],"supported_versions":[772],"key_share_groups":[29],"psk_modes":[1],"extensions":[0,10,11,13,43,45,51,65010]}`},
+	})
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Contains(t, err.Error(), "extension_payloads is required")
+	require.Len(t, repo.profiles, 0)
+}
+
 func TestTLSFingerprintProfileServiceImportCapturesAllowsTLS12FingerprintWithoutTLS13Fields(t *testing.T) {
 	repo := &tlsFingerprintProfileImportRepoStub{}
 	svc := NewTLSFingerprintProfileService(repo, nil)
@@ -240,11 +350,18 @@ func cloneTLSFingerprintProfile(profile *model.TLSFingerprintProfile) *model.TLS
 	clone.Curves = append([]uint16(nil), profile.Curves...)
 	clone.PointFormats = append([]uint16(nil), profile.PointFormats...)
 	clone.SignatureAlgorithms = append([]uint16(nil), profile.SignatureAlgorithms...)
+	clone.SignatureAlgorithmsCert = append([]uint16(nil), profile.SignatureAlgorithmsCert...)
 	clone.ALPNProtocols = append([]string(nil), profile.ALPNProtocols...)
 	clone.SupportedVersions = append([]uint16(nil), profile.SupportedVersions...)
 	clone.KeyShareGroups = append([]uint16(nil), profile.KeyShareGroups...)
 	clone.PSKModes = append([]uint16(nil), profile.PSKModes...)
 	clone.Extensions = append([]uint16(nil), profile.Extensions...)
+	if len(profile.ExtensionPayloads) > 0 {
+		clone.ExtensionPayloads = make(map[uint16][]byte, len(profile.ExtensionPayloads))
+		for key, value := range profile.ExtensionPayloads {
+			clone.ExtensionPayloads[key] = append([]byte(nil), value...)
+		}
+	}
 	clone.CompressCertAlgos = append([]uint16(nil), profile.CompressCertAlgos...)
 	clone.DelegatedCredentialsAlgorithms = append([]uint16(nil), profile.DelegatedCredentialsAlgorithms...)
 	clone.ApplicationSettingsProtocols = append([]string(nil), profile.ApplicationSettingsProtocols...)

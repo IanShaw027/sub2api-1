@@ -39,6 +39,8 @@ const (
 	FieldPointFormats = "point_formats"
 	// FieldSignatureAlgorithms holds the string denoting the signature_algorithms field in the database.
 	FieldSignatureAlgorithms = "signature_algorithms"
+	// FieldSignatureAlgorithmsCert holds the string denoting the signature_algorithms_cert field in the database.
+	FieldSignatureAlgorithmsCert = "signature_algorithms_cert"
 	// FieldAlpnProtocols holds the string denoting the alpn_protocols field in the database.
 	FieldAlpnProtocols = "alpn_protocols"
 	// FieldSupportedVersions holds the string denoting the supported_versions field in the database.
@@ -49,6 +51,8 @@ const (
 	FieldPskModes = "psk_modes"
 	// FieldExtensions holds the string denoting the extensions field in the database.
 	FieldExtensions = "extensions"
+	// FieldExtensionPayloads holds the string denoting the extension_payloads field in the database.
+	FieldExtensionPayloads = "extension_payloads"
 	// FieldCompressCertAlgos holds the string denoting the compress_cert_algos field in the database.
 	FieldCompressCertAlgos = "compress_cert_algos"
 	// FieldDelegatedCredentialsAlgorithms holds the string denoting the delegated_credentials_algorithms field in the database.
@@ -75,11 +79,13 @@ var Columns = []string{
 	FieldCurves,
 	FieldPointFormats,
 	FieldSignatureAlgorithms,
+	FieldSignatureAlgorithmsCert,
 	FieldAlpnProtocols,
 	FieldSupportedVersions,
 	FieldKeyShareGroups,
 	FieldPskModes,
 	FieldExtensions,
+	FieldExtensionPayloads,
 	FieldCompressCertAlgos,
 	FieldDelegatedCredentialsAlgorithms,
 	FieldApplicationSettingsProtocols,

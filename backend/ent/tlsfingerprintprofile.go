@@ -44,6 +44,8 @@ type TLSFingerprintProfile struct {
 	PointFormats []uint16 `json:"point_formats,omitempty"`
 	// SignatureAlgorithms holds the value of the "signature_algorithms" field.
 	SignatureAlgorithms []uint16 `json:"signature_algorithms,omitempty"`
+	// SignatureAlgorithmsCert holds the value of the "signature_algorithms_cert" field.
+	SignatureAlgorithmsCert []uint16 `json:"signature_algorithms_cert,omitempty"`
 	// AlpnProtocols holds the value of the "alpn_protocols" field.
 	AlpnProtocols []string `json:"alpn_protocols,omitempty"`
 	// SupportedVersions holds the value of the "supported_versions" field.
@@ -54,6 +56,8 @@ type TLSFingerprintProfile struct {
 	PskModes []uint16 `json:"psk_modes,omitempty"`
 	// Extensions holds the value of the "extensions" field.
 	Extensions []uint16 `json:"extensions,omitempty"`
+	// ExtensionPayloads holds the value of the "extension_payloads" field.
+	ExtensionPayloads map[uint16][]uint8 `json:"extension_payloads,omitempty"`
 	// CompressCertAlgos holds the value of the "compress_cert_algos" field.
 	CompressCertAlgos []uint16 `json:"compress_cert_algos,omitempty"`
 	// DelegatedCredentialsAlgorithms holds the value of the "delegated_credentials_algorithms" field.
@@ -68,7 +72,7 @@ func (*TLSFingerprintProfile) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case tlsfingerprintprofile.FieldCipherSuites, tlsfingerprintprofile.FieldCurves, tlsfingerprintprofile.FieldPointFormats, tlsfingerprintprofile.FieldSignatureAlgorithms, tlsfingerprintprofile.FieldAlpnProtocols, tlsfingerprintprofile.FieldSupportedVersions, tlsfingerprintprofile.FieldKeyShareGroups, tlsfingerprintprofile.FieldPskModes, tlsfingerprintprofile.FieldExtensions, tlsfingerprintprofile.FieldCompressCertAlgos, tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms, tlsfingerprintprofile.FieldApplicationSettingsProtocols:
+		case tlsfingerprintprofile.FieldCipherSuites, tlsfingerprintprofile.FieldCurves, tlsfingerprintprofile.FieldPointFormats, tlsfingerprintprofile.FieldSignatureAlgorithms, tlsfingerprintprofile.FieldSignatureAlgorithmsCert, tlsfingerprintprofile.FieldAlpnProtocols, tlsfingerprintprofile.FieldSupportedVersions, tlsfingerprintprofile.FieldKeyShareGroups, tlsfingerprintprofile.FieldPskModes, tlsfingerprintprofile.FieldExtensions, tlsfingerprintprofile.FieldExtensionPayloads, tlsfingerprintprofile.FieldCompressCertAlgos, tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms, tlsfingerprintprofile.FieldApplicationSettingsProtocols:
 			values[i] = new([]byte)
 		case tlsfingerprintprofile.FieldEnableGrease:
 			values[i] = new(sql.NullBool)
@@ -186,6 +190,14 @@ func (_m *TLSFingerprintProfile) assignValues(columns []string, values []any) er
 					return fmt.Errorf("unmarshal field signature_algorithms: %w", err)
 				}
 			}
+		case tlsfingerprintprofile.FieldSignatureAlgorithmsCert:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field signature_algorithms_cert", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.SignatureAlgorithmsCert); err != nil {
+					return fmt.Errorf("unmarshal field signature_algorithms_cert: %w", err)
+				}
+			}
 		case tlsfingerprintprofile.FieldAlpnProtocols:
 			if value, ok := values[i].(*[]byte); !ok {
 				return fmt.Errorf("unexpected type %T for field alpn_protocols", values[i])
@@ -224,6 +236,14 @@ func (_m *TLSFingerprintProfile) assignValues(columns []string, values []any) er
 			} else if value != nil && len(*value) > 0 {
 				if err := json.Unmarshal(*value, &_m.Extensions); err != nil {
 					return fmt.Errorf("unmarshal field extensions: %w", err)
+				}
+			}
+		case tlsfingerprintprofile.FieldExtensionPayloads:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field extension_payloads", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.ExtensionPayloads); err != nil {
+					return fmt.Errorf("unmarshal field extension_payloads: %w", err)
 				}
 			}
 		case tlsfingerprintprofile.FieldCompressCertAlgos:
@@ -327,6 +347,9 @@ func (_m *TLSFingerprintProfile) String() string {
 	builder.WriteString("signature_algorithms=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SignatureAlgorithms))
 	builder.WriteString(", ")
+	builder.WriteString("signature_algorithms_cert=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SignatureAlgorithmsCert))
+	builder.WriteString(", ")
 	builder.WriteString("alpn_protocols=")
 	builder.WriteString(fmt.Sprintf("%v", _m.AlpnProtocols))
 	builder.WriteString(", ")
@@ -341,6 +364,9 @@ func (_m *TLSFingerprintProfile) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("extensions=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Extensions))
+	builder.WriteString(", ")
+	builder.WriteString("extension_payloads=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ExtensionPayloads))
 	builder.WriteString(", ")
 	builder.WriteString("compress_cert_algos=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CompressCertAlgos))

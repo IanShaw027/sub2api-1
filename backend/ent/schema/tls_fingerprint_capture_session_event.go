@@ -2,7 +2,6 @@ package schema
 
 import (
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
-	"github.com/Wei-Shaw/sub2api/internal/model"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
@@ -12,27 +11,33 @@ import (
 	"entgo.io/ent/schema/index"
 )
 
-// TLSFingerprintCaptureSample stores one unique captured TLS fingerprint.
-type TLSFingerprintCaptureSample struct {
+// TLSFingerprintCaptureSessionEvent stores one observation event for a capture session.
+type TLSFingerprintCaptureSessionEvent struct {
 	ent.Schema
 }
 
-func (TLSFingerprintCaptureSample) Annotations() []schema.Annotation {
+func (TLSFingerprintCaptureSessionEvent) Annotations() []schema.Annotation {
 	return []schema.Annotation{
-		entsql.Annotation{Table: "tls_fingerprint_capture_samples"},
+		entsql.Annotation{Table: "tls_fingerprint_capture_session_events"},
 	}
 }
 
-func (TLSFingerprintCaptureSample) Mixin() []ent.Mixin {
+func (TLSFingerprintCaptureSessionEvent) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		mixins.TimeMixin{},
 	}
 }
 
-func (TLSFingerprintCaptureSample) Fields() []ent.Field {
+func (TLSFingerprintCaptureSessionEvent) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("task_id"),
+		field.Int64("session_ref").
+			Optional().
+			Nillable(),
 		field.String("session_id").
+			MaxLen(128).
+			Default(""),
+		field.String("event_id").
 			MaxLen(128).
 			Default(""),
 		field.String("platform").
@@ -41,23 +46,12 @@ func (TLSFingerprintCaptureSample) Fields() []ent.Field {
 		field.String("transport").
 			MaxLen(32).
 			Default(""),
-		field.Text("user_agent").
-			Default(""),
-		field.String("originator").
-			MaxLen(50).
-			Default(""),
-		field.String("fingerprint_hash").
-			MaxLen(128).
+		field.String("event_type").
+			MaxLen(64).
 			NotEmpty(),
-		field.String("replay_hash").
-			MaxLen(64).
-			Default(""),
-		field.Text("ja3_raw").
-			Default(""),
-		field.String("ja3_hash").
-			MaxLen(64).
-			Default(""),
-		field.String("ja4").
+		field.Int("request_sequence").
+			Default(0),
+		field.String("stream_id").
 			MaxLen(128).
 			Default(""),
 		field.Text("request_path").
@@ -84,27 +78,39 @@ func (TLSFingerprintCaptureSample) Fields() []ent.Field {
 		field.String("response_mode").
 			MaxLen(64).
 			Default(""),
-		field.Text("http2_fingerprint").
+		field.Text("user_agent").
+			Default(""),
+		field.String("originator").
+			MaxLen(50).
 			Default(""),
 		field.JSON("stainless_metadata", map[string]any{}).
 			Default(func() map[string]any { return map[string]any{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
-		field.JSON("replay_profile", &model.TLSFingerprintProfile{}).
+		field.JSON("headers_snapshot", map[string]any{}).
+			Default(func() map[string]any { return map[string]any{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
-		field.Text("raw_payload").
+		field.Text("body_summary").
 			Default(""),
-		field.Bytes("raw_client_hello").
+		field.String("event_status").
+			MaxLen(64).
+			Default("observed"),
+		field.Text("event_error").
+			Default(""),
+		field.Bool("replayable").
+			Default(true),
+		field.Int64("sample_id").
 			Optional().
 			Nillable(),
-		field.Time("captured_at"),
+		field.String("replay_hash").
+			MaxLen(64).
+			Default(""),
 	}
 }
 
-func (TLSFingerprintCaptureSample) Indexes() []ent.Index {
+func (TLSFingerprintCaptureSessionEvent) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("task_id", "replay_hash", "transport").Unique(),
-		index.Fields("task_id", "fingerprint_hash"),
-		index.Fields("task_id", "session_id", "transport"),
-		index.Fields("task_id", "platform"),
+		index.Fields("task_id", "session_ref", "created_at"),
+		index.Fields("task_id", "session_id", "created_at"),
+		index.Fields("task_id", "sample_id"),
 	}
 }

@@ -96,6 +96,11 @@ func (TLSFingerprintProfile) Fields() []ent.Field {
 			Optional().
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 
+		// signature_algorithms_cert: signature_algorithms_cert(50) 列表
+		field.JSON("signature_algorithms_cert", []uint16{}).
+			Optional().
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+
 		// alpn_protocols: ALPN 协议列表（如 ["http/1.1"]）
 		field.JSON("alpn_protocols", []string{}).
 			Optional().
@@ -118,6 +123,11 @@ func (TLSFingerprintProfile) Fields() []ent.Field {
 
 		// extensions: TLS 扩展类型 ID 列表，按发送顺序排列
 		field.JSON("extensions", []uint16{}).
+			Optional().
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+
+		// extension_payloads: unknown/generic extension payloads required for faithful replay.
+		field.JSON("extension_payloads", map[uint16][]byte{}).
 			Optional().
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 

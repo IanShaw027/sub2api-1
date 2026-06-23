@@ -525,6 +525,30 @@ func (f TLSFingerprintCaptureSampleFunc) Mutate(ctx context.Context, m ent.Mutat
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TLSFingerprintCaptureSampleMutation", m)
 }
 
+// The TLSFingerprintCaptureSessionFunc type is an adapter to allow the use of ordinary
+// function as TLSFingerprintCaptureSession mutator.
+type TLSFingerprintCaptureSessionFunc func(context.Context, *ent.TLSFingerprintCaptureSessionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TLSFingerprintCaptureSessionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TLSFingerprintCaptureSessionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TLSFingerprintCaptureSessionMutation", m)
+}
+
+// The TLSFingerprintCaptureSessionEventFunc type is an adapter to allow the use of ordinary
+// function as TLSFingerprintCaptureSessionEvent mutator.
+type TLSFingerprintCaptureSessionEventFunc func(context.Context, *ent.TLSFingerprintCaptureSessionEventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TLSFingerprintCaptureSessionEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TLSFingerprintCaptureSessionEventMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TLSFingerprintCaptureSessionEventMutation", m)
+}
+
 // The TLSFingerprintCaptureTaskFunc type is an adapter to allow the use of ordinary
 // function as TLSFingerprintCaptureTask mutator.
 type TLSFingerprintCaptureTaskFunc func(context.Context, *ent.TLSFingerprintCaptureTaskMutation) (ent.Value, error)

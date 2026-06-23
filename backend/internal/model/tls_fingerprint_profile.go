@@ -28,6 +28,7 @@ type TLSFingerprintProfile struct {
 	KeyShareGroups                 []uint16  `json:"key_share_groups"`
 	PSKModes                       []uint16  `json:"psk_modes"`
 	Extensions                     []uint16  `json:"extensions"`
+	ExtensionPayloads              map[uint16][]byte `json:"extension_payloads"`
 	CompressCertAlgos              []uint16  `json:"compress_cert_algos"`
 	DelegatedCredentialsAlgorithms []uint16  `json:"delegated_credentials_algorithms"`
 	ApplicationSettingsProtocols   []string  `json:"application_settings_protocols"`
@@ -69,6 +70,7 @@ func (p *TLSFingerprintProfile) ToTLSProfile() *tlsfingerprint.Profile {
 		KeyShareGroups:                 p.KeyShareGroups,
 		PSKModes:                       p.PSKModes,
 		Extensions:                     p.Extensions,
+		ExtensionPayloads:              p.ExtensionPayloads,
 		CompressCertAlgos:              p.CompressCertAlgos,
 		DelegatedCredentialsAlgorithms: p.DelegatedCredentialsAlgorithms,
 		ApplicationSettingsProtocols:   p.ApplicationSettingsProtocols,

@@ -89,6 +89,51 @@ func (_u *TLSFingerprintCaptureTaskUpdate) SetCounts(v map[string]int) *TLSFinge
 	return _u
 }
 
+// SetTransportTargets sets the "transport_targets" field.
+func (_u *TLSFingerprintCaptureTaskUpdate) SetTransportTargets(v map[string]int) *TLSFingerprintCaptureTaskUpdate {
+	_u.mutation.SetTransportTargets(v)
+	return _u
+}
+
+// SetTransportCounts sets the "transport_counts" field.
+func (_u *TLSFingerprintCaptureTaskUpdate) SetTransportCounts(v map[string]int) *TLSFingerprintCaptureTaskUpdate {
+	_u.mutation.SetTransportCounts(v)
+	return _u
+}
+
+// SetCaptureFilters sets the "capture_filters" field.
+func (_u *TLSFingerprintCaptureTaskUpdate) SetCaptureFilters(v map[string]interface{}) *TLSFingerprintCaptureTaskUpdate {
+	_u.mutation.SetCaptureFilters(v)
+	return _u
+}
+
+// SetSampleSchemaVersion sets the "sample_schema_version" field.
+func (_u *TLSFingerprintCaptureTaskUpdate) SetSampleSchemaVersion(v int) *TLSFingerprintCaptureTaskUpdate {
+	_u.mutation.ResetSampleSchemaVersion()
+	_u.mutation.SetSampleSchemaVersion(v)
+	return _u
+}
+
+// SetNillableSampleSchemaVersion sets the "sample_schema_version" field if the given value is not nil.
+func (_u *TLSFingerprintCaptureTaskUpdate) SetNillableSampleSchemaVersion(v *int) *TLSFingerprintCaptureTaskUpdate {
+	if v != nil {
+		_u.SetSampleSchemaVersion(*v)
+	}
+	return _u
+}
+
+// AddSampleSchemaVersion adds value to the "sample_schema_version" field.
+func (_u *TLSFingerprintCaptureTaskUpdate) AddSampleSchemaVersion(v int) *TLSFingerprintCaptureTaskUpdate {
+	_u.mutation.AddSampleSchemaVersion(v)
+	return _u
+}
+
+// SetTaskStats sets the "task_stats" field.
+func (_u *TLSFingerprintCaptureTaskUpdate) SetTaskStats(v map[string]interface{}) *TLSFingerprintCaptureTaskUpdate {
+	_u.mutation.SetTaskStats(v)
+	return _u
+}
+
 // SetUaKeywords sets the "ua_keywords" field.
 func (_u *TLSFingerprintCaptureTaskUpdate) SetUaKeywords(v []string) *TLSFingerprintCaptureTaskUpdate {
 	_u.mutation.SetUaKeywords(v)
@@ -212,6 +257,24 @@ func (_u *TLSFingerprintCaptureTaskUpdate) sqlSave(ctx context.Context) (_node i
 	if value, ok := _u.mutation.Counts(); ok {
 		_spec.SetField(tlsfingerprintcapturetask.FieldCounts, field.TypeJSON, value)
 	}
+	if value, ok := _u.mutation.TransportTargets(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldTransportTargets, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.TransportCounts(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldTransportCounts, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.CaptureFilters(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldCaptureFilters, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.SampleSchemaVersion(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldSampleSchemaVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedSampleSchemaVersion(); ok {
+		_spec.AddField(tlsfingerprintcapturetask.FieldSampleSchemaVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.TaskStats(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldTaskStats, field.TypeJSON, value)
+	}
 	if value, ok := _u.mutation.UaKeywords(); ok {
 		_spec.SetField(tlsfingerprintcapturetask.FieldUaKeywords, field.TypeJSON, value)
 	}
@@ -303,6 +366,51 @@ func (_u *TLSFingerprintCaptureTaskUpdateOne) SetTargets(v map[string]int) *TLSF
 // SetCounts sets the "counts" field.
 func (_u *TLSFingerprintCaptureTaskUpdateOne) SetCounts(v map[string]int) *TLSFingerprintCaptureTaskUpdateOne {
 	_u.mutation.SetCounts(v)
+	return _u
+}
+
+// SetTransportTargets sets the "transport_targets" field.
+func (_u *TLSFingerprintCaptureTaskUpdateOne) SetTransportTargets(v map[string]int) *TLSFingerprintCaptureTaskUpdateOne {
+	_u.mutation.SetTransportTargets(v)
+	return _u
+}
+
+// SetTransportCounts sets the "transport_counts" field.
+func (_u *TLSFingerprintCaptureTaskUpdateOne) SetTransportCounts(v map[string]int) *TLSFingerprintCaptureTaskUpdateOne {
+	_u.mutation.SetTransportCounts(v)
+	return _u
+}
+
+// SetCaptureFilters sets the "capture_filters" field.
+func (_u *TLSFingerprintCaptureTaskUpdateOne) SetCaptureFilters(v map[string]interface{}) *TLSFingerprintCaptureTaskUpdateOne {
+	_u.mutation.SetCaptureFilters(v)
+	return _u
+}
+
+// SetSampleSchemaVersion sets the "sample_schema_version" field.
+func (_u *TLSFingerprintCaptureTaskUpdateOne) SetSampleSchemaVersion(v int) *TLSFingerprintCaptureTaskUpdateOne {
+	_u.mutation.ResetSampleSchemaVersion()
+	_u.mutation.SetSampleSchemaVersion(v)
+	return _u
+}
+
+// SetNillableSampleSchemaVersion sets the "sample_schema_version" field if the given value is not nil.
+func (_u *TLSFingerprintCaptureTaskUpdateOne) SetNillableSampleSchemaVersion(v *int) *TLSFingerprintCaptureTaskUpdateOne {
+	if v != nil {
+		_u.SetSampleSchemaVersion(*v)
+	}
+	return _u
+}
+
+// AddSampleSchemaVersion adds value to the "sample_schema_version" field.
+func (_u *TLSFingerprintCaptureTaskUpdateOne) AddSampleSchemaVersion(v int) *TLSFingerprintCaptureTaskUpdateOne {
+	_u.mutation.AddSampleSchemaVersion(v)
+	return _u
+}
+
+// SetTaskStats sets the "task_stats" field.
+func (_u *TLSFingerprintCaptureTaskUpdateOne) SetTaskStats(v map[string]interface{}) *TLSFingerprintCaptureTaskUpdateOne {
+	_u.mutation.SetTaskStats(v)
 	return _u
 }
 
@@ -458,6 +566,24 @@ func (_u *TLSFingerprintCaptureTaskUpdateOne) sqlSave(ctx context.Context) (_nod
 	}
 	if value, ok := _u.mutation.Counts(); ok {
 		_spec.SetField(tlsfingerprintcapturetask.FieldCounts, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.TransportTargets(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldTransportTargets, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.TransportCounts(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldTransportCounts, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.CaptureFilters(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldCaptureFilters, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.SampleSchemaVersion(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldSampleSchemaVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedSampleSchemaVersion(); ok {
+		_spec.AddField(tlsfingerprintcapturetask.FieldSampleSchemaVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.TaskStats(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldTaskStats, field.TypeJSON, value)
 	}
 	if value, ok := _u.mutation.UaKeywords(); ok {
 		_spec.SetField(tlsfingerprintcapturetask.FieldUaKeywords, field.TypeJSON, value)

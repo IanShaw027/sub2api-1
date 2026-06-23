@@ -2,14 +2,13 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/model"
+	tlsfpParser "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -33,22 +32,6 @@ type TLSFingerprintCaptureImportRecord struct {
 	Profile         *model.TLSFingerprintProfile `json:"profile"`
 	Duplicate       bool                         `json:"duplicate"`
 	FingerprintHash string                       `json:"fingerprint_hash"`
-}
-
-type tlsFingerprintHashInput struct {
-	EnableGREASE                   bool     `json:"enable_grease"`
-	CipherSuites                   []uint16 `json:"cipher_suites"`
-	Curves                         []uint16 `json:"curves"`
-	PointFormats                   []uint16 `json:"point_formats"`
-	SignatureAlgorithms            []uint16 `json:"signature_algorithms"`
-	ALPNProtocols                  []string `json:"alpn_protocols"`
-	SupportedVersions              []uint16 `json:"supported_versions"`
-	KeyShareGroups                 []uint16 `json:"key_share_groups"`
-	PSKModes                       []uint16 `json:"psk_modes"`
-	Extensions                     []uint16 `json:"extensions"`
-	CompressCertAlgos              []uint16 `json:"compress_cert_algos"`
-	DelegatedCredentialsAlgorithms []uint16 `json:"delegated_credentials_algorithms"`
-	ApplicationSettingsProtocols   []string `json:"application_settings_protocols"`
 }
 
 // ImportTLSFingerprintCaptures imports real collector payloads and deduplicates
@@ -154,11 +137,13 @@ func ParseTLSFingerprintCaptureProfile(raw string) (*model.TLSFingerprintProfile
 		Curves:                         uint16SliceField(payload, "curves"),
 		PointFormats:                   uint16SliceField(payload, "point_formats"),
 		SignatureAlgorithms:            uint16SliceField(payload, "signature_algorithms"),
+		SignatureAlgorithmsCert:        uint16SliceField(payload, "signature_algorithms_cert"),
 		ALPNProtocols:                  stringSliceField(payload, "alpn_protocols"),
 		SupportedVersions:              uint16SliceField(payload, "supported_versions"),
 		KeyShareGroups:                 uint16SliceField(payload, "key_share_groups"),
 		PSKModes:                       uint16SliceField(payload, "psk_modes"),
 		Extensions:                     uint16SliceField(payload, "extensions"),
+		ExtensionPayloads:              extensionPayloadsField(payload, "extension_payloads"),
 		CompressCertAlgos:              uint16SliceField(payload, "compress_cert_algos"),
 		DelegatedCredentialsAlgorithms: uint16SliceField(payload, "delegated_credentials_algorithms"),
 		ApplicationSettingsProtocols:   stringSliceField(payload, "application_settings_protocols"),
@@ -184,27 +169,28 @@ func TLSFingerprintProfileReplayHash(profile *model.TLSFingerprintProfile) (stri
 	if profile == nil {
 		return "", fmt.Errorf("profile is required")
 	}
-	input := tlsFingerprintHashInput{
-		EnableGREASE:                   profile.EnableGREASE,
+	observed := &tlsfpParser.ObservedClientHello{
 		CipherSuites:                   append([]uint16(nil), profile.CipherSuites...),
 		Curves:                         append([]uint16(nil), profile.Curves...),
 		PointFormats:                   append([]uint16(nil), profile.PointFormats...),
 		SignatureAlgorithms:            append([]uint16(nil), profile.SignatureAlgorithms...),
+		SignatureAlgorithmsCert:        append([]uint16(nil), profile.SignatureAlgorithmsCert...),
+		ExtensionsOrder:                append([]uint16(nil), profile.Extensions...),
+		ExtensionMetadata:              cloneExtensionPayloads(profile.ExtensionPayloads),
 		ALPNProtocols:                  append([]string(nil), profile.ALPNProtocols...),
 		SupportedVersions:              append([]uint16(nil), profile.SupportedVersions...),
 		KeyShareGroups:                 append([]uint16(nil), profile.KeyShareGroups...),
 		PSKModes:                       append([]uint16(nil), profile.PSKModes...),
-		Extensions:                     append([]uint16(nil), profile.Extensions...),
 		CompressCertAlgos:              append([]uint16(nil), profile.CompressCertAlgos...),
 		DelegatedCredentialsAlgorithms: append([]uint16(nil), profile.DelegatedCredentialsAlgorithms...),
 		ApplicationSettingsProtocols:   append([]string(nil), profile.ApplicationSettingsProtocols...),
+		EnableGREASE:                   profile.EnableGREASE,
 	}
-	encoded, err := json.Marshal(input)
+	derived, err := tlsfpParser.DeriveFingerprints(observed)
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256(encoded)
-	return hex.EncodeToString(sum[:]), nil
+	return derived.ReplayHash, nil
 }
 
 func validateCompleteTLSFingerprintProfile(profile *model.TLSFingerprintProfile) error {
@@ -239,6 +225,9 @@ func validateCompleteTLSFingerprintProfile(profile *model.TLSFingerprintProfile)
 	if containsUint16(profile.Extensions, 45) && len(profile.PSKModes) == 0 {
 		return fmt.Errorf("psk_modes is required for a complete replayable TLS fingerprint when extension 45 is present")
 	}
+	if containsUint16(profile.Extensions, 50) && len(profile.SignatureAlgorithmsCert) == 0 {
+		return fmt.Errorf("signature_algorithms_cert is required for a complete replayable TLS fingerprint when extension 50 is present")
+	}
 	if containsUint16(profile.Extensions, 27) && len(profile.CompressCertAlgos) == 0 {
 		return fmt.Errorf("compress_cert_algos is required for a complete replayable TLS fingerprint when extension 27 is present")
 	}
@@ -247,6 +236,14 @@ func validateCompleteTLSFingerprintProfile(profile *model.TLSFingerprintProfile)
 	}
 	if (containsUint16(profile.Extensions, 17513) || containsUint16(profile.Extensions, 17613)) && len(profile.ApplicationSettingsProtocols) == 0 {
 		return fmt.Errorf("application_settings_protocols is required for a complete replayable TLS fingerprint when application_settings is present")
+	}
+	for _, extID := range profile.Extensions {
+		if tlsFingerprintReplayModeledExtension(extID) || tlsFingerprintReplayIsGREASE(extID) {
+			continue
+		}
+		if _, ok := profile.ExtensionPayloads[extID]; !ok {
+			return fmt.Errorf("extension_payloads is required for a complete replayable TLS fingerprint when extension %d is present", extID)
+		}
 	}
 	return nil
 }
@@ -338,6 +335,41 @@ func boolField(obj map[string]any, key string) bool {
 
 func uint16SliceField(obj map[string]any, key string) []uint16 {
 	return toUint16Slice(obj[key])
+}
+
+func extensionPayloadsField(obj map[string]any, key string) map[uint16][]byte {
+	value, ok := obj[key]
+	if !ok {
+		return nil
+	}
+	payloads := toExtensionPayloads(value)
+	if len(payloads) == 0 {
+		return nil
+	}
+	return payloads
+}
+
+func toExtensionPayloads(value any) map[uint16][]byte {
+	obj, ok := asStringAnyMap(value)
+	if !ok {
+		return nil
+	}
+	out := make(map[uint16][]byte, len(obj))
+	for rawKey, rawValue := range obj {
+		key, ok := parseUint16String(rawKey)
+		if !ok {
+			continue
+		}
+		payload, ok := toByteSlice(rawValue)
+		if !ok {
+			continue
+		}
+		out[key] = payload
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func toUint16Slice(value any) []uint16 {
@@ -454,6 +486,49 @@ func stringSliceField(obj map[string]any, key string) []string {
 	}
 }
 
+func toByteSlice(value any) ([]byte, bool) {
+	switch typed := value.(type) {
+	case []byte:
+		return append([]byte(nil), typed...), true
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return nil, true
+		}
+		decoded, err := base64.StdEncoding.DecodeString(trimmed)
+		if err != nil {
+			return nil, false
+		}
+		return decoded, true
+	case []any:
+		out := make([]byte, 0, len(typed))
+		for _, item := range typed {
+			switch v := item.(type) {
+			case int:
+				if v < 0 || v > 255 {
+					return nil, false
+				}
+				out = append(out, byte(v))
+			case int64:
+				if v < 0 || v > 255 {
+					return nil, false
+				}
+				out = append(out, byte(v))
+			case float64:
+				if v != float64(byte(v)) {
+					return nil, false
+				}
+				out = append(out, byte(v))
+			default:
+				return nil, false
+			}
+		}
+		return out, true
+	default:
+		return nil, false
+	}
+}
+
 func deriveTLSFingerprintProfileName(payload map[string]any) string {
 	for _, key := range []string{"client", "client_name", "user_agent"} {
 		if value := stringField(payload, key); value != "" {
@@ -499,4 +574,28 @@ func trimTLSFingerprintProfileName(name string) string {
 		return name
 	}
 	return strings.TrimSpace(name[:100])
+}
+
+func cloneExtensionPayloads(in map[uint16][]byte) map[uint16][]byte {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[uint16][]byte, len(in))
+	for key, value := range in {
+		out[key] = append([]byte(nil), value...)
+	}
+	return out
+}
+
+func tlsFingerprintReplayModeledExtension(id uint16) bool {
+	switch id {
+	case 0, 5, 10, 11, 13, 16, 18, 23, 27, 34, 35, 43, 45, 50, 51, 17513, 17613, 0xfe0d, 0xff01:
+		return true
+	default:
+		return false
+	}
+}
+
+func tlsFingerprintReplayIsGREASE(v uint16) bool {
+	return v&0x0f0f == 0x0a0a && v>>8 == v&0xff
 }

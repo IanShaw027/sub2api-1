@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	tlsfpTransport "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/transport"
 	utls "github.com/refraction-networking/utls"
 	"github.com/stretchr/testify/require"
 )
@@ -172,6 +173,85 @@ func TestNativeTLSCaptureListenerAcceptsBearerTokenAndPathPlatform(t *testing.T)
 	require.Equal(t, "codex_exec/0.140.0", samples[0].UserAgent)
 	require.Equal(t, "codex_exec", samples[0].Originator)
 	require.NotEmpty(t, samples[0].RawClientHello)
+}
+
+func TestNativeTLSCaptureListenerPersistsRequestMetadata(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets:    map[string]int{"openai": 1},
+		UAKeywords: []string{"codex"},
+	})
+	require.NoError(t, err)
+
+	listener := NewTLSFingerprintNativeCaptureListener(TLSFingerprintNativeCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, err := net.DialTimeout("tcp", listener.Addr().String(), 5*time.Second)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	uconn := utls.UClient(conn, &utls.Config{
+		ServerName:         "localhost",
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"h2", "http/1.1"},
+	}, utls.HelloCustom)
+	require.NoError(t, uconn.ApplyPreset(nativeClientHelloSpec()))
+	require.NoError(t, uconn.Handshake())
+	payload := `{"model":"gpt-5.4","stream":true}`
+	_, err = fmt.Fprintf(
+		uconn,
+		"POST /capture/openai/v1/responses HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer %s\r\nUser-Agent: codex_exec/0.140.0\r\nOriginator: codex_exec\r\nX-Claude-Code-Session-Id: session-123\r\nX-Client-Request-Id: req-123\r\nX-Stainless-Lang: js\r\nX-Stainless-Package-Version: 0.94.0\r\nX-Stainless-OS: Linux\r\nX-Stainless-Arch: arm64\r\nX-Stainless-Runtime: node\r\nX-Stainless-Runtime-Version: v24.3.0\r\nAccept: text/event-stream\r\ncontent-type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+		listener.Addr().String(),
+		task.Token,
+		len(payload),
+		payload,
+	)
+	require.NoError(t, err)
+
+	resp, err := http.ReadResponse(bufio.NewReader(uconn), nil)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+	require.Len(t, repo.samples, 1)
+	require.Len(t, repo.sessions, 1)
+	require.Len(t, repo.sessionEvents, 1)
+
+	sample := repo.samples[0]
+	session := repo.sessions[0]
+	event := repo.sessionEvents[0]
+	require.Equal(t, "/v1/responses", sample.RequestPath)
+	require.Equal(t, http.MethodPost, sample.HTTPMethod)
+	require.Equal(t, string(tlsfpTransport.HTTP1), sample.Transport)
+	require.Equal(t, "responses", sample.RequestKind)
+	require.True(t, sample.Streaming)
+	require.Equal(t, "stream", sample.ResponseMode)
+	require.Equal(t, "gpt-5.4", sample.Model)
+	require.Equal(t, "codex", sample.ClientType)
+	require.Equal(t, "session-123", sample.SessionID)
+	require.Equal(t, "js", sample.StainlessMetadata["lang"])
+	require.Equal(t, "Linux", sample.StainlessMetadata["os"])
+	require.Equal(t, "node", sample.StainlessMetadata["runtime"])
+
+	require.Equal(t, "session-123", session.SessionID)
+	require.Equal(t, "openai", session.Platform)
+	require.Equal(t, "127.0.0.1", session.ClientIP)
+	require.Equal(t, "http/1.1", session.ALPNNegotiated)
+
+	require.Equal(t, "req-123", event.EventID)
+	require.Equal(t, "/v1/responses", event.RequestPath)
+	require.Equal(t, http.MethodPost, event.HTTPMethod)
+	require.Equal(t, "recorded", event.EventStatus)
+	require.Equal(t, "js", event.StainlessMetadata["lang"])
+	require.Equal(t, "Linux", event.StainlessMetadata["os"])
+	require.Equal(t, []string{"[REDACTED]"}, event.HeadersSnapshot["authorization"])
+	require.Contains(t, event.BodySummary, "\"model\":\"gpt-5.4\"")
 }
 
 func TestNativeTLSCaptureListenerDoesNotLeakInternalSubmitErrors(t *testing.T) {

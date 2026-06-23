@@ -100,6 +100,10 @@ type Tx struct {
 	SubscriptionPlan *SubscriptionPlanClient
 	// TLSFingerprintCaptureSample is the client for interacting with the TLSFingerprintCaptureSample builders.
 	TLSFingerprintCaptureSample *TLSFingerprintCaptureSampleClient
+	// TLSFingerprintCaptureSession is the client for interacting with the TLSFingerprintCaptureSession builders.
+	TLSFingerprintCaptureSession *TLSFingerprintCaptureSessionClient
+	// TLSFingerprintCaptureSessionEvent is the client for interacting with the TLSFingerprintCaptureSessionEvent builders.
+	TLSFingerprintCaptureSessionEvent *TLSFingerprintCaptureSessionEventClient
 	// TLSFingerprintCaptureTask is the client for interacting with the TLSFingerprintCaptureTask builders.
 	TLSFingerprintCaptureTask *TLSFingerprintCaptureTaskClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
@@ -296,6 +300,8 @@ func (tx *Tx) init() {
 	tx.Setting = NewSettingClient(tx.config)
 	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)
 	tx.TLSFingerprintCaptureSample = NewTLSFingerprintCaptureSampleClient(tx.config)
+	tx.TLSFingerprintCaptureSession = NewTLSFingerprintCaptureSessionClient(tx.config)
+	tx.TLSFingerprintCaptureSessionEvent = NewTLSFingerprintCaptureSessionEventClient(tx.config)
 	tx.TLSFingerprintCaptureTask = NewTLSFingerprintCaptureTaskClient(tx.config)
 	tx.TLSFingerprintProfile = NewTLSFingerprintProfileClient(tx.config)
 	tx.TLSFingerprintRouter = NewTLSFingerprintRouterClient(tx.config)
