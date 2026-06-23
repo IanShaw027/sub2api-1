@@ -817,7 +817,7 @@ func TestResponsesToChatCompletionsRequest_FlattensNamespaceTools(t *testing.T) 
 	require.JSONEq(t, `{"type":"function","function":{"name":"browser_tools_open_url"}}`, string(out.ToolChoice))
 }
 
-func TestResponsesToChatCompletionsRequest_RejectsUnsupportedServerTools(t *testing.T) {
+func TestResponsesToChatCompletionsRequest_SkipsUnsupportedServerTools(t *testing.T) {
 	req := &ResponsesRequest{
 		Model: "gpt-4o",
 		Input: json.RawMessage(`"hello"`),
@@ -826,21 +826,21 @@ func TestResponsesToChatCompletionsRequest_RejectsUnsupportedServerTools(t *test
 		},
 	}
 
-	_, err := ResponsesToChatCompletionsRequest(req)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unsupported responses tool for chat completions")
+	out, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.Empty(t, out.Tools)
 }
 
-func TestResponsesToChatCompletionsRequest_RejectsUnsupportedServerToolChoice(t *testing.T) {
+func TestResponsesToChatCompletionsRequest_FallsBackUnsupportedServerToolChoice(t *testing.T) {
 	req := &ResponsesRequest{
 		Model:      "gpt-4o",
 		Input:      json.RawMessage(`"hello"`),
 		ToolChoice: json.RawMessage(`{"type":"image_generation"}`),
 	}
 
-	_, err := ResponsesToChatCompletionsRequest(req)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unsupported responses tool_choice for chat completions")
+	out, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.JSONEq(t, `"auto"`, string(out.ToolChoice))
 }
 
 func TestResponsesToChatCompletionsRequest_MapsStringServerToolChoice(t *testing.T) {
@@ -855,16 +855,16 @@ func TestResponsesToChatCompletionsRequest_MapsStringServerToolChoice(t *testing
 	require.JSONEq(t, `{"type":"web_search"}`, string(out.ToolChoice))
 }
 
-func TestResponsesToChatCompletionsRequest_RejectsUnsupportedStringToolChoice(t *testing.T) {
+func TestResponsesToChatCompletionsRequest_FallsBackUnsupportedStringToolChoice(t *testing.T) {
 	req := &ResponsesRequest{
 		Model:      "gpt-4o",
 		Input:      json.RawMessage(`"hello"`),
 		ToolChoice: json.RawMessage(`"image_generation"`),
 	}
 
-	_, err := ResponsesToChatCompletionsRequest(req)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unsupported responses tool_choice for chat completions")
+	out, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.JSONEq(t, `"auto"`, string(out.ToolChoice))
 }
 
 func TestResponsesToChatCompletions_CachedTokens(t *testing.T) {
