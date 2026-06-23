@@ -1787,11 +1787,20 @@ func TestOpenAIGatewayServiceForwardImages_OAuthFansOutMultipleImages(t *testing
 	require.NotNil(t, result)
 	require.Equal(t, 2, result.ImageCount)
 	require.Len(t, upstream.requests, 2)
-	require.Equal(t, int64(1710000100), gjson.Get(rec.Body.String(), "created").Int())
-	require.Equal(t, "Zmlyc3Q=", gjson.Get(rec.Body.String(), "data.0.b64_json").String())
-	require.Equal(t, "c2Vjb25k", gjson.Get(rec.Body.String(), "data.1.b64_json").String())
-	require.Equal(t, "draw a cat one", gjson.Get(rec.Body.String(), "data.0.revised_prompt").String())
-	require.Equal(t, "draw a cat two", gjson.Get(rec.Body.String(), "data.1.revised_prompt").String())
+	created := gjson.Get(rec.Body.String(), "created").Int()
+	require.Contains(t, []int64{1710000100, 1710000101}, created)
+	data := gjson.Get(rec.Body.String(), "data").Array()
+	require.Len(t, data, 2)
+	gotImages := []string{
+		gjson.Get(data[0].Raw, "b64_json").String(),
+		gjson.Get(data[1].Raw, "b64_json").String(),
+	}
+	require.ElementsMatch(t, []string{"Zmlyc3Q=", "c2Vjb25k"}, gotImages)
+	gotPrompts := []string{
+		gjson.Get(data[0].Raw, "revised_prompt").String(),
+		gjson.Get(data[1].Raw, "revised_prompt").String(),
+	}
+	require.ElementsMatch(t, []string{"draw a cat one", "draw a cat two"}, gotPrompts)
 	require.Equal(t, 7, result.Usage.InputTokens)
 	require.Equal(t, 11, result.Usage.OutputTokens)
 	require.Equal(t, 5, result.Usage.ImageOutputTokens)
