@@ -52,3 +52,37 @@ func TestBuildClientHelloSpecUsesParametricReplayExtensions(t *testing.T) {
 		t.Fatalf("new application settings protocol = %q, want %q", got, want)
 	}
 }
+
+func TestBuildClientHelloSpecClampsTLSMaxWhenSupportedVersionsExtensionMissing(t *testing.T) {
+	legacyTLS12Profile := &Profile{
+		Name:                "legacy-http-profile",
+		CipherSuites:        []uint16{255, 49196, 49195, 49188, 49187, 49162, 49161, 49160, 49200, 49199, 49192, 49191, 49172, 49171, 49170, 157, 156, 61, 60, 53, 47, 10},
+		Curves:              []uint16{23, 24, 25},
+		PointFormats:        []uint16{0},
+		SignatureAlgorithms: []uint16{1025, 513, 1281, 1537, 1027, 515, 1283, 1539},
+		SupportedVersions:   []uint16{utls.VersionTLS13, utls.VersionTLS12},
+		KeyShareGroups:      []uint16{29},
+		PSKModes:            []uint16{1},
+		Extensions:          []uint16{0, 10, 11, 13, 5, 18, 23},
+	}
+
+	spec := buildClientHelloSpecFromProfile(legacyTLS12Profile)
+	if got, want := spec.TLSVersMax, uint16(utls.VersionTLS12); got != want {
+		t.Fatalf("TLSVersMax = 0x%04x, want 0x%04x when extension 43 is absent", got, want)
+	}
+}
+
+func TestBuildClientHelloSpecKeepsTLS13WhenSupportedVersionsExtensionPresent(t *testing.T) {
+	profile := &Profile{
+		Name:              "tls13-http-profile",
+		SupportedVersions: []uint16{utls.VersionTLS13, utls.VersionTLS12},
+		KeyShareGroups:    []uint16{29},
+		PSKModes:          []uint16{1},
+		Extensions:        []uint16{0, 10, 11, 13, 23, 43, 45, 51},
+	}
+
+	spec := buildClientHelloSpecFromProfile(profile)
+	if got, want := spec.TLSVersMax, uint16(utls.VersionTLS13); got != want {
+		t.Fatalf("TLSVersMax = 0x%04x, want 0x%04x when extension 43 is present", got, want)
+	}
+}

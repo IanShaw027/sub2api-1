@@ -214,11 +214,15 @@ func (l *TLSFingerprintNativeCaptureListener) handleCapture(w http.ResponseWrite
 		http.Error(w, "capture submission failed", http.StatusBadRequest)
 		return
 	}
-	if result != nil && !result.Accepted {
-		http.Error(w, result.IgnoredReason, http.StatusBadRequest)
+	if nativeCaptureShouldReturnStream(req) {
+		writeNativeCaptureSSEResponse(w)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	if result != nil && !result.Accepted {
+		writeNativeCaptureJSONSuccess(w, result)
+		return
+	}
+	writeNativeCaptureJSONSuccess(w, result)
 }
 
 func (l *TLSFingerprintNativeCaptureListener) storeRawClientHello(conn net.Conn, raw []byte) {
@@ -462,6 +466,53 @@ func nativeCaptureRequestResponseMode(r *http.Request) string {
 		return "sse"
 	}
 	return "json"
+}
+
+func nativeCaptureShouldReturnStream(req TLSFingerprintCaptureNativeSubmitRequest) bool {
+	if req.Streaming {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(req.ResponseMode), "stream") || strings.EqualFold(strings.TrimSpace(req.ResponseMode), "sse")
+}
+
+func writeNativeCaptureJSONSuccess(w http.ResponseWriter, result *TLSFingerprintCaptureSubmitResult) {
+	if w == nil {
+		return
+	}
+	body := map[string]any{
+		"id":     "resp_capture_mock",
+		"object": "response",
+		"status": "completed",
+	}
+	if result != nil {
+		body["accepted"] = result.Accepted
+		if result.IgnoredReason != "" {
+			body["ignored_reason"] = result.IgnoredReason
+		}
+		if result.FingerprintHash != "" {
+			body["fingerprint_hash"] = result.FingerprintHash
+		}
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		http.Error(w, "capture response encode failed", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(encoded)
+}
+
+func writeNativeCaptureSSEResponse(w http.ResponseWriter) {
+	if w == nil {
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, "event: response.created\ndata: {\"id\":\"resp_capture_mock\",\"status\":\"in_progress\"}\n\n")
+	_, _ = io.WriteString(w, "event: response.completed\ndata: {\"id\":\"resp_capture_mock\",\"status\":\"completed\"}\n\n")
 }
 
 func nativeCaptureRequestPath(r *http.Request) string {

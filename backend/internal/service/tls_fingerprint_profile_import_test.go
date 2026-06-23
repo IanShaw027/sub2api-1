@@ -108,6 +108,34 @@ ja4: ignored-for-storage
 	require.NotEmpty(t, result.Profiles[0].FingerprintHash)
 }
 
+func TestTLSFingerprintProfileServiceImportCapturesParsesTransport(t *testing.T) {
+	repo := &tlsFingerprintProfileImportRepoStub{}
+	svc := NewTLSFingerprintProfileService(repo, nil)
+
+	result, err := svc.ImportTLSFingerprintCaptures(context.Background(), TLSFingerprintCaptureImportRequest{
+		Profiles: []string{`
+name: "Codex Desktop over h2"
+transport: "h2"
+enable_grease: false
+cipher_suites: [4865, 4866, 4867]
+curves: [29, 23, 24]
+point_formats: [0]
+signature_algorithms: [1027, 2052, 1025]
+alpn_protocols: ["h2", "http/1.1"]
+supported_versions: [772, 771]
+key_share_groups: [29]
+psk_modes: [1]
+extensions: [0, 10, 11, 13, 16, 43, 45, 51]
+`},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Imported)
+	require.Len(t, result.Profiles, 1)
+	require.Equal(t, "h2", result.Profiles[0].Profile.Transport)
+	require.Equal(t, "h2", repo.profiles[0].Transport)
+}
+
 func TestTLSFingerprintProfileServiceImportCapturesParsesParametricReplayExtensions(t *testing.T) {
 	repo := &tlsFingerprintProfileImportRepoStub{}
 	svc := NewTLSFingerprintProfileService(repo, nil)
@@ -191,6 +219,25 @@ func TestTLSFingerprintProfileServiceImportCapturesDedupesByFingerprintFields(t 
 	require.Len(t, repo.profiles, 1)
 }
 
+func TestTLSFingerprintProfileServiceImportCapturesDoesNotDedupeDifferentTransport(t *testing.T) {
+	repo := &tlsFingerprintProfileImportRepoStub{}
+	svc := NewTLSFingerprintProfileService(repo, nil)
+
+	payloadHTTP1 := `{"name":"Same TLS over HTTP1","transport":"http1","enable_grease":false,"cipher_suites":[4865,4866],"curves":[29,23],"point_formats":[0],"signature_algorithms":[1027],"alpn_protocols":["http/1.1"],"supported_versions":[772,771],"key_share_groups":[29],"psk_modes":[1],"extensions":[0,11,10,13,43,45,51]}`
+	payloadH2 := `{"name":"Same TLS over H2","transport":"h2","enable_grease":false,"cipher_suites":[4865,4866],"curves":[29,23],"point_formats":[0],"signature_algorithms":[1027],"alpn_protocols":["http/1.1"],"supported_versions":[772,771],"key_share_groups":[29],"psk_modes":[1],"extensions":[0,11,10,13,43,45,51]}`
+
+	result, err := svc.ImportTLSFingerprintCaptures(context.Background(), TLSFingerprintCaptureImportRequest{
+		Profiles: []string{payloadHTTP1, payloadH2},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 2, result.Imported)
+	require.Equal(t, 0, result.Duplicates)
+	require.Len(t, repo.profiles, 2)
+	require.Equal(t, "http1", repo.profiles[0].Transport)
+	require.Equal(t, "h2", repo.profiles[1].Transport)
+}
+
 func TestTLSFingerprintProfileReplayHashIncludesParametricReplayExtensions(t *testing.T) {
 	base := &model.TLSFingerprintProfile{
 		Name:                           "base",
@@ -209,6 +256,30 @@ func TestTLSFingerprintProfileReplayHashIncludesParametricReplayExtensions(t *te
 	}
 	changed := cloneTLSFingerprintProfile(base)
 	changed.CompressCertAlgos = []uint16{1}
+
+	baseHash, err := TLSFingerprintProfileReplayHash(base)
+	require.NoError(t, err)
+	changedHash, err := TLSFingerprintProfileReplayHash(changed)
+	require.NoError(t, err)
+	require.NotEqual(t, baseHash, changedHash)
+}
+
+func TestTLSFingerprintProfileReplayHashChangesWhenTransportChanges(t *testing.T) {
+	base := &model.TLSFingerprintProfile{
+		Name:                "base",
+		Transport:           "http1",
+		CipherSuites:        []uint16{4865, 4866},
+		Curves:              []uint16{29, 23},
+		PointFormats:        []uint16{0},
+		SignatureAlgorithms: []uint16{1027, 2052},
+		ALPNProtocols:       []string{"http/1.1"},
+		SupportedVersions:   []uint16{772, 771},
+		KeyShareGroups:      []uint16{29},
+		PSKModes:            []uint16{1},
+		Extensions:          []uint16{0, 11, 10, 13, 43, 45, 51},
+	}
+	changed := cloneTLSFingerprintProfile(base)
+	changed.Transport = "h2"
 
 	baseHash, err := TLSFingerprintProfileReplayHash(base)
 	require.NoError(t, err)

@@ -131,6 +131,7 @@ func ParseTLSFingerprintCaptureProfile(raw string) (*model.TLSFingerprintProfile
 	}
 
 	profile := &model.TLSFingerprintProfile{
+		Transport:                      stringField(payload, "transport"),
 		Name:                           stringField(payload, "name"),
 		EnableGREASE:                   boolField(payload, "enable_grease"),
 		CipherSuites:                   uint16SliceField(payload, "cipher_suites"),
@@ -190,7 +191,28 @@ func TLSFingerprintProfileReplayHash(profile *model.TLSFingerprintProfile) (stri
 	if err != nil {
 		return "", err
 	}
-	return derived.ReplayHash, nil
+	transport := normalizeTLSCaptureImportTransport(profile.Transport)
+	if transport == "" {
+		return derived.ReplayHash, nil
+	}
+	return derived.ReplayHash + "::" + transport, nil
+}
+
+func normalizeTLSCaptureImportTransport(transport string) string {
+	switch strings.ToLower(strings.TrimSpace(transport)) {
+	case "":
+		return ""
+	case "http", "https", "http/1.1", "h1", "http1":
+		return "http1"
+	case "h2":
+		return "h2"
+	case "ws", "wss", "websocket", "websocket-http1":
+		return "websocket-http1"
+	case "websocket-h2":
+		return "websocket-h2"
+	default:
+		return strings.ToLower(strings.TrimSpace(transport))
+	}
 }
 
 func validateCompleteTLSFingerprintProfile(profile *model.TLSFingerprintProfile) error {

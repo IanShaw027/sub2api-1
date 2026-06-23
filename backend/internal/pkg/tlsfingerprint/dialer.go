@@ -422,6 +422,11 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 		extOrder = profile.Extensions
 	}
 
+	tlsVersMax := uint16(utls.VersionTLS13)
+	if profile != nil && len(profile.Extensions) > 0 && !hasExtensionID(extOrder, 43) {
+		tlsVersMax = utls.VersionTLS12
+	}
+
 	// Build extensions list from the ordered IDs.
 	// Parametric extensions (curves, sigalgs, etc.) are populated with resolved profile values.
 	// Unknown IDs use GenericExtension (sends type ID with empty data).
@@ -492,9 +497,18 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 		CipherSuites:       cipherSuites,
 		CompressionMethods: []uint8{0}, // null compression only (standard)
 		Extensions:         extensions,
-		TLSVersMax:         utls.VersionTLS13,
+		TLSVersMax:         tlsVersMax,
 		TLSVersMin:         utls.VersionTLS10,
 	}
+}
+
+func hasExtensionID(exts []uint16, target uint16) bool {
+	for _, id := range exts {
+		if id == target {
+			return true
+		}
+	}
+	return false
 }
 
 // toUint8s converts []uint16 to []uint8 (for utls fields that require []uint8).
