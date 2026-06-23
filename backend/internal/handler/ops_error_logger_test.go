@@ -322,6 +322,48 @@ func TestOpsErrorLoggerMiddleware_RecordsRecoveredUpstreamErrorOnSuccessfulReque
 	}
 }
 
+func TestOpsErrorLoggerMiddleware_ResponsesFailedSSEUsesFailureStatus(t *testing.T) {
+	resetOpsErrorLoggerStateForTest(t)
+	t.Cleanup(func() { resetOpsErrorLoggerStateForTest(t) })
+	gin.SetMode(gin.TestMode)
+
+	opsErrorLogOnce.Do(func() {})
+	opsErrorLogMu.Lock()
+	opsErrorLogQueue = make(chan opsErrorLogJob, 1)
+	opsErrorLogMu.Unlock()
+
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := gin.New()
+	r.POST("/v1/responses", OpsErrorLoggerMiddleware(ops), func(c *gin.Context) {
+		body := []byte(`{"model":"gpt-5.5","input":"hi","stream":true}`)
+		setOpsRequestContext(c, "gpt-5.5", true, body)
+		setOpsEndpointContext(c, "gpt-5.5", int16(service.RequestTypeSync))
+
+		h := &OpenAIGatewayHandler{}
+		h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", true)
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "streaming response already started, recorder keeps HTTP 200")
+	require.Equal(t, int64(1), OpsErrorLogEnqueuedTotal())
+	require.Equal(t, int64(1), OpsErrorLogQueueLength())
+
+	select {
+	case job := <-opsErrorLogQueue:
+		opsErrorLogQueueLen.Add(-1)
+		require.NotNil(t, job.entry)
+		require.Equal(t, http.StatusTooManyRequests, job.entry.StatusCode, "client-visible stream failure must not be persisted as 200")
+		require.NotEqual(t, http.StatusOK, job.entry.StatusCode)
+		require.Contains(t, job.entry.ErrorBody, `"type":"response.failed"`)
+		require.Contains(t, job.entry.ErrorMessage, "Too many pending requests")
+	default:
+		t.Fatal("expected response.failed streaming error to be enqueued")
+	}
+}
+
 func TestOpsErrorLoggerMiddleware_SkipsRecoveredUpstreamCanceledOnSuccessfulRequest(t *testing.T) {
 	resetOpsErrorLoggerStateForTest(t)
 	t.Cleanup(func() { resetOpsErrorLoggerStateForTest(t) })
