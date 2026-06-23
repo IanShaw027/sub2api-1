@@ -27,11 +27,13 @@ type Profile struct {
 	PointFormats                   []uint16
 	EnableGREASE                   bool
 	SignatureAlgorithms            []uint16 // Empty uses defaultSignatureAlgorithms
+	SignatureAlgorithmsCert        []uint16 // Empty falls back to SignatureAlgorithms
 	ALPNProtocols                  []string // Empty uses ["http/1.1"]
 	SupportedVersions              []uint16 // Empty uses [TLS1.3, TLS1.2]
 	KeyShareGroups                 []uint16 // Empty uses [X25519]
 	PSKModes                       []uint16 // Empty uses [psk_dhe_ke]
 	Extensions                     []uint16 // Extension type IDs in order; empty uses default Node.js 24.x order
+	ExtensionPayloads              map[uint16][]byte
 	CompressCertAlgos              []uint16 // compress_certificate algorithms for extension 27
 	DelegatedCredentialsAlgorithms []uint16 // signature algorithms for extension 34
 	ApplicationSettingsProtocols   []string // ALPS/application_settings protocols for extensions 17513/17613
@@ -363,6 +365,14 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 		}
 	}
 
+	signatureAlgorithmsCert := signatureAlgorithms
+	if profile != nil && len(profile.SignatureAlgorithmsCert) > 0 {
+		signatureAlgorithmsCert = make([]utls.SignatureScheme, len(profile.SignatureAlgorithmsCert))
+		for i, s := range profile.SignatureAlgorithmsCert {
+			signatureAlgorithmsCert[i] = utls.SignatureScheme(s)
+		}
+	}
+
 	alpnProtocols := []string{"http/1.1"}
 	if profile != nil && len(profile.ALPNProtocols) > 0 {
 		alpnProtocols = profile.ALPNProtocols
@@ -449,7 +459,7 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 		case 45: // psk_key_exchange_modes
 			extensions = append(extensions, &utls.PSKKeyExchangeModesExtension{Modes: toUint8s(pskModes)})
 		case 50: // signature_algorithms_cert
-			extensions = append(extensions, &utls.SignatureAlgorithmsCertExtension{SupportedSignatureAlgorithms: signatureAlgorithms})
+			extensions = append(extensions, &utls.SignatureAlgorithmsCertExtension{SupportedSignatureAlgorithms: signatureAlgorithmsCert})
 		case 51: // key_share
 			extensions = append(extensions, &utls.KeyShareExtension{KeyShares: keyShares})
 		case 17513: // application_settings (ALPS draft/original codepoint)
@@ -465,7 +475,10 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 		default:
 			// Unknown extension — send as GenericExtension (type ID + empty data).
 			// This covers encrypt_then_mac(22) and any future extensions.
-			extensions = append(extensions, &utls.GenericExtension{Id: id})
+			extensions = append(extensions, &utls.GenericExtension{
+				Id:   id,
+				Data: cloneExtensionPayload(profile, id),
+			})
 		}
 	}
 
@@ -490,6 +503,19 @@ func toUint8s(vals []uint16) []uint8 {
 	for i, v := range vals {
 		out[i] = uint8(v)
 	}
+	return out
+}
+
+func cloneExtensionPayload(profile *Profile, id uint16) []byte {
+	if profile == nil || len(profile.ExtensionPayloads) == 0 {
+		return nil
+	}
+	payload, ok := profile.ExtensionPayloads[id]
+	if !ok {
+		return nil
+	}
+	out := make([]byte, len(payload))
+	copy(out, payload)
 	return out
 }
 
