@@ -21,6 +21,8 @@ const (
 	FieldName = "name"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
+	// FieldTransport holds the string denoting the transport field in the database.
+	FieldTransport = "transport"
 	// FieldUserAgent holds the string denoting the user_agent field in the database.
 	FieldUserAgent = "user_agent"
 	// FieldOriginator holds the string denoting the originator field in the database.
@@ -64,6 +66,7 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldName,
 	FieldPlatform,
+	FieldTransport,
 	FieldUserAgent,
 	FieldOriginator,
 	FieldDescription,
@@ -105,6 +108,10 @@ var (
 	DefaultPlatform string
 	// PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
 	PlatformValidator func(string) error
+	// DefaultTransport holds the default value on creation for the "transport" field.
+	DefaultTransport string
+	// TransportValidator is a validator for the "transport" field. It is called by the builders before save.
+	TransportValidator func(string) error
 	// DefaultUserAgent holds the default value on creation for the "user_agent" field.
 	DefaultUserAgent string
 	// UserAgentValidator is a validator for the "user_agent" field. It is called by the builders before save.
@@ -143,6 +150,11 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByPlatform orders the results by the platform field.
 func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPlatform, opts...).ToFunc()
+}
+
+// ByTransport orders the results by the transport field.
+func ByTransport(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTransport, opts...).ToFunc()
 }
 
 // ByUserAgent orders the results by the user_agent field.

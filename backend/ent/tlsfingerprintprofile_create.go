@@ -70,6 +70,20 @@ func (_c *TLSFingerprintProfileCreate) SetNillablePlatform(v *string) *TLSFinger
 	return _c
 }
 
+// SetTransport sets the "transport" field.
+func (_c *TLSFingerprintProfileCreate) SetTransport(v string) *TLSFingerprintProfileCreate {
+	_c.mutation.SetTransport(v)
+	return _c
+}
+
+// SetNillableTransport sets the "transport" field if the given value is not nil.
+func (_c *TLSFingerprintProfileCreate) SetNillableTransport(v *string) *TLSFingerprintProfileCreate {
+	if v != nil {
+		_c.SetTransport(*v)
+	}
+	return _c
+}
+
 // SetUserAgent sets the "user_agent" field.
 func (_c *TLSFingerprintProfileCreate) SetUserAgent(v string) *TLSFingerprintProfileCreate {
 	_c.mutation.SetUserAgent(v)
@@ -245,6 +259,10 @@ func (_c *TLSFingerprintProfileCreate) defaults() {
 		v := tlsfingerprintprofile.DefaultPlatform
 		_c.mutation.SetPlatform(v)
 	}
+	if _, ok := _c.mutation.Transport(); !ok {
+		v := tlsfingerprintprofile.DefaultTransport
+		_c.mutation.SetTransport(v)
+	}
 	if _, ok := _c.mutation.UserAgent(); !ok {
 		v := tlsfingerprintprofile.DefaultUserAgent
 		_c.mutation.SetUserAgent(v)
@@ -281,6 +299,14 @@ func (_c *TLSFingerprintProfileCreate) check() error {
 	if v, ok := _c.mutation.Platform(); ok {
 		if err := tlsfingerprintprofile.PlatformValidator(v); err != nil {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.platform": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Transport(); !ok {
+		return &ValidationError{Name: "transport", err: errors.New(`ent: missing required field "TLSFingerprintProfile.transport"`)}
+	}
+	if v, ok := _c.mutation.Transport(); ok {
+		if err := tlsfingerprintprofile.TransportValidator(v); err != nil {
+			return &ValidationError{Name: "transport", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.transport": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.UserAgent(); !ok {
@@ -344,6 +370,10 @@ func (_c *TLSFingerprintProfileCreate) createSpec() (*TLSFingerprintProfile, *sq
 	if value, ok := _c.mutation.Platform(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldPlatform, field.TypeString, value)
 		_node.Platform = value
+	}
+	if value, ok := _c.mutation.Transport(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldTransport, field.TypeString, value)
+		_node.Transport = value
 	}
 	if value, ok := _c.mutation.UserAgent(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldUserAgent, field.TypeString, value)
@@ -494,6 +524,18 @@ func (u *TLSFingerprintProfileUpsert) SetPlatform(v string) *TLSFingerprintProfi
 // UpdatePlatform sets the "platform" field to the value that was provided on create.
 func (u *TLSFingerprintProfileUpsert) UpdatePlatform() *TLSFingerprintProfileUpsert {
 	u.SetExcluded(tlsfingerprintprofile.FieldPlatform)
+	return u
+}
+
+// SetTransport sets the "transport" field.
+func (u *TLSFingerprintProfileUpsert) SetTransport(v string) *TLSFingerprintProfileUpsert {
+	u.Set(tlsfingerprintprofile.FieldTransport, v)
+	return u
+}
+
+// UpdateTransport sets the "transport" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsert) UpdateTransport() *TLSFingerprintProfileUpsert {
+	u.SetExcluded(tlsfingerprintprofile.FieldTransport)
 	return u
 }
 
@@ -851,6 +893,20 @@ func (u *TLSFingerprintProfileUpsertOne) SetPlatform(v string) *TLSFingerprintPr
 func (u *TLSFingerprintProfileUpsertOne) UpdatePlatform() *TLSFingerprintProfileUpsertOne {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetTransport sets the "transport" field.
+func (u *TLSFingerprintProfileUpsertOne) SetTransport(v string) *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetTransport(v)
+	})
+}
+
+// UpdateTransport sets the "transport" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertOne) UpdateTransport() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateTransport()
 	})
 }
 
@@ -1419,6 +1475,20 @@ func (u *TLSFingerprintProfileUpsertBulk) SetPlatform(v string) *TLSFingerprintP
 func (u *TLSFingerprintProfileUpsertBulk) UpdatePlatform() *TLSFingerprintProfileUpsertBulk {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetTransport sets the "transport" field.
+func (u *TLSFingerprintProfileUpsertBulk) SetTransport(v string) *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetTransport(v)
+	})
+}
+
+// UpdateTransport sets the "transport" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertBulk) UpdateTransport() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateTransport()
 	})
 }
 

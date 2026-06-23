@@ -26,6 +26,8 @@ type TLSFingerprintProfile struct {
 	Name string `json:"name,omitempty"`
 	// Platform holds the value of the "platform" field.
 	Platform string `json:"platform,omitempty"`
+	// Transport holds the value of the "transport" field.
+	Transport string `json:"transport,omitempty"`
 	// UserAgent holds the value of the "user_agent" field.
 	UserAgent string `json:"user_agent,omitempty"`
 	// Originator holds the value of the "originator" field.
@@ -72,7 +74,7 @@ func (*TLSFingerprintProfile) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case tlsfingerprintprofile.FieldID:
 			values[i] = new(sql.NullInt64)
-		case tlsfingerprintprofile.FieldName, tlsfingerprintprofile.FieldPlatform, tlsfingerprintprofile.FieldUserAgent, tlsfingerprintprofile.FieldOriginator, tlsfingerprintprofile.FieldDescription:
+		case tlsfingerprintprofile.FieldName, tlsfingerprintprofile.FieldPlatform, tlsfingerprintprofile.FieldTransport, tlsfingerprintprofile.FieldUserAgent, tlsfingerprintprofile.FieldOriginator, tlsfingerprintprofile.FieldDescription:
 			values[i] = new(sql.NullString)
 		case tlsfingerprintprofile.FieldCreatedAt, tlsfingerprintprofile.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -120,6 +122,12 @@ func (_m *TLSFingerprintProfile) assignValues(columns []string, values []any) er
 				return fmt.Errorf("unexpected type %T for field platform", values[i])
 			} else if value.Valid {
 				_m.Platform = value.String
+			}
+		case tlsfingerprintprofile.FieldTransport:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field transport", values[i])
+			} else if value.Valid {
+				_m.Transport = value.String
 			}
 		case tlsfingerprintprofile.FieldUserAgent:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -289,6 +297,9 @@ func (_m *TLSFingerprintProfile) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("platform=")
 	builder.WriteString(_m.Platform)
+	builder.WriteString(", ")
+	builder.WriteString("transport=")
+	builder.WriteString(_m.Transport)
 	builder.WriteString(", ")
 	builder.WriteString("user_agent=")
 	builder.WriteString(_m.UserAgent)

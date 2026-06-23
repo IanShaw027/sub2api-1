@@ -49,6 +49,12 @@ func (TLSFingerprintProfile) Fields() []ent.Field {
 			MaxLen(50).
 			Default(""),
 
+		// transport: upstream transport type (http/websocket).
+		// Empty string means unspecified.
+		field.String("transport").
+			MaxLen(20).
+			Default(""),
+
 		// user_agent: optional upstream User-Agent sent when this template is applied.
 		// Empty string falls back to the built-in default (e.g. Codex CLI UA).
 		field.String("user_agent").

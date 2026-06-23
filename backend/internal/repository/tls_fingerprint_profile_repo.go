@@ -51,6 +51,7 @@ func (r *tlsFingerprintProfileRepository) Create(ctx context.Context, p *model.T
 	builder := r.client.TLSFingerprintProfile.Create().
 		SetName(p.Name).
 		SetPlatform(p.Platform).
+		SetTransport(p.Transport).
 		SetUserAgent(p.UserAgent).
 		SetOriginator(p.Originator).
 		SetEnableGrease(p.EnableGREASE)
@@ -107,6 +108,7 @@ func (r *tlsFingerprintProfileRepository) Update(ctx context.Context, p *model.T
 	builder := r.client.TLSFingerprintProfile.UpdateOneID(p.ID).
 		SetName(p.Name).
 		SetPlatform(p.Platform).
+		SetTransport(p.Transport).
 		SetUserAgent(p.UserAgent).
 		SetOriginator(p.Originator).
 		SetEnableGrease(p.EnableGREASE)
@@ -120,62 +122,62 @@ func (r *tlsFingerprintProfileRepository) Update(ctx context.Context, p *model.T
 	if len(p.CipherSuites) > 0 {
 		builder.SetCipherSuites(p.CipherSuites)
 	} else {
-		builder.ClearCipherSuites()
+		builder.SetCipherSuites([]uint16{})
 	}
 	if len(p.Curves) > 0 {
 		builder.SetCurves(p.Curves)
 	} else {
-		builder.ClearCurves()
+		builder.SetCurves([]uint16{})
 	}
 	if len(p.PointFormats) > 0 {
 		builder.SetPointFormats(p.PointFormats)
 	} else {
-		builder.ClearPointFormats()
+		builder.SetPointFormats([]uint16{})
 	}
 	if len(p.SignatureAlgorithms) > 0 {
 		builder.SetSignatureAlgorithms(p.SignatureAlgorithms)
 	} else {
-		builder.ClearSignatureAlgorithms()
+		builder.SetSignatureAlgorithms([]uint16{})
 	}
 	if len(p.ALPNProtocols) > 0 {
 		builder.SetAlpnProtocols(p.ALPNProtocols)
 	} else {
-		builder.ClearAlpnProtocols()
+		builder.SetAlpnProtocols([]string{})
 	}
 	if len(p.SupportedVersions) > 0 {
 		builder.SetSupportedVersions(p.SupportedVersions)
 	} else {
-		builder.ClearSupportedVersions()
+		builder.SetSupportedVersions([]uint16{})
 	}
 	if len(p.KeyShareGroups) > 0 {
 		builder.SetKeyShareGroups(p.KeyShareGroups)
 	} else {
-		builder.ClearKeyShareGroups()
+		builder.SetKeyShareGroups([]uint16{})
 	}
 	if len(p.PSKModes) > 0 {
 		builder.SetPskModes(p.PSKModes)
 	} else {
-		builder.ClearPskModes()
+		builder.SetPskModes([]uint16{})
 	}
 	if len(p.Extensions) > 0 {
 		builder.SetExtensions(p.Extensions)
 	} else {
-		builder.ClearExtensions()
+		builder.SetExtensions([]uint16{})
 	}
 	if len(p.CompressCertAlgos) > 0 {
 		builder.SetCompressCertAlgos(p.CompressCertAlgos)
 	} else {
-		builder.ClearCompressCertAlgos()
+		builder.SetCompressCertAlgos([]uint16{})
 	}
 	if len(p.DelegatedCredentialsAlgorithms) > 0 {
 		builder.SetDelegatedCredentialsAlgorithms(p.DelegatedCredentialsAlgorithms)
 	} else {
-		builder.ClearDelegatedCredentialsAlgorithms()
+		builder.SetDelegatedCredentialsAlgorithms([]uint16{})
 	}
 	if len(p.ApplicationSettingsProtocols) > 0 {
 		builder.SetApplicationSettingsProtocols(p.ApplicationSettingsProtocols)
 	} else {
-		builder.ClearApplicationSettingsProtocols()
+		builder.SetApplicationSettingsProtocols([]string{})
 	}
 
 	updated, err := builder.Save(ctx)
@@ -195,6 +197,7 @@ func (r *tlsFingerprintProfileRepository) toModel(e *ent.TLSFingerprintProfile) 
 	p := &model.TLSFingerprintProfile{
 		ID:                             e.ID,
 		Platform:                       e.Platform,
+		Transport:                      e.Transport,
 		Name:                           e.Name,
 		UserAgent:                      e.UserAgent,
 		Originator:                     e.Originator,

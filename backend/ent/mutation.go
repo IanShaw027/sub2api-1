@@ -61381,6 +61381,7 @@ type TLSFingerprintProfileMutation struct {
 	updated_at                             *time.Time
 	name                                   *string
 	platform                               *string
+	transport                              *string
 	user_agent                             *string
 	originator                             *string
 	description                            *string
@@ -61655,6 +61656,42 @@ func (m *TLSFingerprintProfileMutation) OldPlatform(ctx context.Context) (v stri
 // ResetPlatform resets all changes to the "platform" field.
 func (m *TLSFingerprintProfileMutation) ResetPlatform() {
 	m.platform = nil
+}
+
+// SetTransport sets the "transport" field.
+func (m *TLSFingerprintProfileMutation) SetTransport(s string) {
+	m.transport = &s
+}
+
+// Transport returns the value of the "transport" field in the mutation.
+func (m *TLSFingerprintProfileMutation) Transport() (r string, exists bool) {
+	v := m.transport
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTransport returns the old "transport" field's value of the TLSFingerprintProfile entity.
+// If the TLSFingerprintProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintProfileMutation) OldTransport(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTransport is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTransport requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTransport: %w", err)
+	}
+	return oldValue.Transport, nil
+}
+
+// ResetTransport resets all changes to the "transport" field.
+func (m *TLSFingerprintProfileMutation) ResetTransport() {
+	m.transport = nil
 }
 
 // SetUserAgent sets the "user_agent" field.
@@ -62628,7 +62665,7 @@ func (m *TLSFingerprintProfileMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TLSFingerprintProfileMutation) Fields() []string {
-	fields := make([]string, 0, 20)
+	fields := make([]string, 0, 21)
 	if m.created_at != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldCreatedAt)
 	}
@@ -62640,6 +62677,9 @@ func (m *TLSFingerprintProfileMutation) Fields() []string {
 	}
 	if m.platform != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldPlatform)
+	}
+	if m.transport != nil {
+		fields = append(fields, tlsfingerprintprofile.FieldTransport)
 	}
 	if m.user_agent != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldUserAgent)
@@ -62705,6 +62745,8 @@ func (m *TLSFingerprintProfileMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case tlsfingerprintprofile.FieldPlatform:
 		return m.Platform()
+	case tlsfingerprintprofile.FieldTransport:
+		return m.Transport()
 	case tlsfingerprintprofile.FieldUserAgent:
 		return m.UserAgent()
 	case tlsfingerprintprofile.FieldOriginator:
@@ -62754,6 +62796,8 @@ func (m *TLSFingerprintProfileMutation) OldField(ctx context.Context, name strin
 		return m.OldName(ctx)
 	case tlsfingerprintprofile.FieldPlatform:
 		return m.OldPlatform(ctx)
+	case tlsfingerprintprofile.FieldTransport:
+		return m.OldTransport(ctx)
 	case tlsfingerprintprofile.FieldUserAgent:
 		return m.OldUserAgent(ctx)
 	case tlsfingerprintprofile.FieldOriginator:
@@ -62822,6 +62866,13 @@ func (m *TLSFingerprintProfileMutation) SetField(name string, value ent.Value) e
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPlatform(v)
+		return nil
+	case tlsfingerprintprofile.FieldTransport:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTransport(v)
 		return nil
 	case tlsfingerprintprofile.FieldUserAgent:
 		v, ok := value.(string)
@@ -63076,6 +63127,9 @@ func (m *TLSFingerprintProfileMutation) ResetField(name string) error {
 		return nil
 	case tlsfingerprintprofile.FieldPlatform:
 		m.ResetPlatform()
+		return nil
+	case tlsfingerprintprofile.FieldTransport:
+		m.ResetTransport()
 		return nil
 	case tlsfingerprintprofile.FieldUserAgent:
 		m.ResetUserAgent()

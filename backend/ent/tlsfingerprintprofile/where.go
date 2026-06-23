@@ -74,6 +74,11 @@ func Platform(v string) predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldPlatform, v))
 }
 
+// Transport applies equality check predicate on the "transport" field. It's identical to TransportEQ.
+func Transport(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldTransport, v))
+}
+
 // UserAgent applies equality check predicate on the "user_agent" field. It's identical to UserAgentEQ.
 func UserAgent(v string) predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldUserAgent, v))
@@ -302,6 +307,71 @@ func PlatformEqualFold(v string) predicate.TLSFingerprintProfile {
 // PlatformContainsFold applies the ContainsFold predicate on the "platform" field.
 func PlatformContainsFold(v string) predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldContainsFold(FieldPlatform, v))
+}
+
+// TransportEQ applies the EQ predicate on the "transport" field.
+func TransportEQ(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldTransport, v))
+}
+
+// TransportNEQ applies the NEQ predicate on the "transport" field.
+func TransportNEQ(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNEQ(FieldTransport, v))
+}
+
+// TransportIn applies the In predicate on the "transport" field.
+func TransportIn(vs ...string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldIn(FieldTransport, vs...))
+}
+
+// TransportNotIn applies the NotIn predicate on the "transport" field.
+func TransportNotIn(vs ...string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNotIn(FieldTransport, vs...))
+}
+
+// TransportGT applies the GT predicate on the "transport" field.
+func TransportGT(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldGT(FieldTransport, v))
+}
+
+// TransportGTE applies the GTE predicate on the "transport" field.
+func TransportGTE(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldGTE(FieldTransport, v))
+}
+
+// TransportLT applies the LT predicate on the "transport" field.
+func TransportLT(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldLT(FieldTransport, v))
+}
+
+// TransportLTE applies the LTE predicate on the "transport" field.
+func TransportLTE(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldLTE(FieldTransport, v))
+}
+
+// TransportContains applies the Contains predicate on the "transport" field.
+func TransportContains(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldContains(FieldTransport, v))
+}
+
+// TransportHasPrefix applies the HasPrefix predicate on the "transport" field.
+func TransportHasPrefix(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldHasPrefix(FieldTransport, v))
+}
+
+// TransportHasSuffix applies the HasSuffix predicate on the "transport" field.
+func TransportHasSuffix(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldHasSuffix(FieldTransport, v))
+}
+
+// TransportEqualFold applies the EqualFold predicate on the "transport" field.
+func TransportEqualFold(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEqualFold(FieldTransport, v))
+}
+
+// TransportContainsFold applies the ContainsFold predicate on the "transport" field.
+func TransportContainsFold(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldContainsFold(FieldTransport, v))
 }
 
 // UserAgentEQ applies the EQ predicate on the "user_agent" field.

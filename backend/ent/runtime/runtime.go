@@ -2576,20 +2576,26 @@ func init() {
 	tlsfingerprintprofile.DefaultPlatform = tlsfingerprintprofileDescPlatform.Default.(string)
 	// tlsfingerprintprofile.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
 	tlsfingerprintprofile.PlatformValidator = tlsfingerprintprofileDescPlatform.Validators[0].(func(string) error)
+	// tlsfingerprintprofileDescTransport is the schema descriptor for transport field.
+	tlsfingerprintprofileDescTransport := tlsfingerprintprofileFields[2].Descriptor()
+	// tlsfingerprintprofile.DefaultTransport holds the default value on creation for the transport field.
+	tlsfingerprintprofile.DefaultTransport = tlsfingerprintprofileDescTransport.Default.(string)
+	// tlsfingerprintprofile.TransportValidator is a validator for the "transport" field. It is called by the builders before save.
+	tlsfingerprintprofile.TransportValidator = tlsfingerprintprofileDescTransport.Validators[0].(func(string) error)
 	// tlsfingerprintprofileDescUserAgent is the schema descriptor for user_agent field.
-	tlsfingerprintprofileDescUserAgent := tlsfingerprintprofileFields[2].Descriptor()
+	tlsfingerprintprofileDescUserAgent := tlsfingerprintprofileFields[3].Descriptor()
 	// tlsfingerprintprofile.DefaultUserAgent holds the default value on creation for the user_agent field.
 	tlsfingerprintprofile.DefaultUserAgent = tlsfingerprintprofileDescUserAgent.Default.(string)
 	// tlsfingerprintprofile.UserAgentValidator is a validator for the "user_agent" field. It is called by the builders before save.
 	tlsfingerprintprofile.UserAgentValidator = tlsfingerprintprofileDescUserAgent.Validators[0].(func(string) error)
 	// tlsfingerprintprofileDescOriginator is the schema descriptor for originator field.
-	tlsfingerprintprofileDescOriginator := tlsfingerprintprofileFields[3].Descriptor()
+	tlsfingerprintprofileDescOriginator := tlsfingerprintprofileFields[4].Descriptor()
 	// tlsfingerprintprofile.DefaultOriginator holds the default value on creation for the originator field.
 	tlsfingerprintprofile.DefaultOriginator = tlsfingerprintprofileDescOriginator.Default.(string)
 	// tlsfingerprintprofile.OriginatorValidator is a validator for the "originator" field. It is called by the builders before save.
 	tlsfingerprintprofile.OriginatorValidator = tlsfingerprintprofileDescOriginator.Validators[0].(func(string) error)
 	// tlsfingerprintprofileDescEnableGrease is the schema descriptor for enable_grease field.
-	tlsfingerprintprofileDescEnableGrease := tlsfingerprintprofileFields[5].Descriptor()
+	tlsfingerprintprofileDescEnableGrease := tlsfingerprintprofileFields[6].Descriptor()
 	// tlsfingerprintprofile.DefaultEnableGrease holds the default value on creation for the enable_grease field.
 	tlsfingerprintprofile.DefaultEnableGrease = tlsfingerprintprofileDescEnableGrease.Default.(bool)
 	tlsfingerprintrouterMixin := schema.TLSFingerprintRouter{}.Mixin()

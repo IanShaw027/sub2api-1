@@ -387,6 +387,9 @@
                 {{ t('admin.tlsFingerprintProfiles.columns.platform') }}
               </th>
               <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+                {{ t('admin.tlsFingerprintProfiles.columns.transport') }}
+              </th>
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
                 {{ t('admin.tlsFingerprintProfiles.columns.name') }}
               </th>
               <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
@@ -407,6 +410,10 @@
             <tr v-for="profile in filteredProfiles" :key="profile.id" class="hover:bg-gray-50 dark:hover:bg-dark-700">
               <td class="px-3 py-2">
                 <span class="badge badge-gray text-xs">{{ profile.platform || 'shared' }}</span>
+              </td>
+              <td class="px-3 py-2">
+                <span v-if="profile.transport" class="badge badge-primary text-xs">{{ profile.transport }}</span>
+                <span v-else class="text-xs text-gray-400 dark:text-gray-600">—</span>
               </td>
               <td class="px-3 py-2">
                 <div class="text-sm font-medium text-gray-900 dark:text-white">{{ profile.name }}</div>
@@ -511,6 +518,14 @@
               class="input"
               :placeholder="t('admin.tlsFingerprintProfiles.form.platformPlaceholder')"
             />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.tlsFingerprintProfiles.form.transport') }}</label>
+            <select v-model="form.transport" class="input">
+              <option value="">{{ t('admin.tlsFingerprintProfiles.form.transportAny') }}</option>
+              <option value="http">HTTP</option>
+              <option value="websocket">WebSocket</option>
+            </select>
           </div>
           <div>
             <label class="input-label">{{ t('admin.tlsFingerprintProfiles.form.name') }}</label>
@@ -765,6 +780,7 @@ const fieldInputs = reactive({
 
 const form = reactive({
   platform: 'openai',
+  transport: '' as '' | 'http' | 'websocket',
   name: '',
   user_agent: '',
   originator: '',
@@ -1161,6 +1177,7 @@ const normalizeCaptureURL = (value: string): string => {
 
 const resetForm = () => {
   form.platform = 'openai'
+  form.transport = ''
   form.name = ''
   form.user_agent = ''
   form.originator = ''
@@ -1304,6 +1321,7 @@ const formatPlainNumericArray = (arr: number[] | null | undefined): string => (a
 const handleEdit = (profile: TLSFingerprintProfile) => {
   editingProfile.value = profile
   form.platform = profile.platform || ''
+  form.transport = (profile.transport || '') as '' | 'http' | 'websocket'
   form.name = profile.name
   form.user_agent = profile.user_agent || ''
   form.originator = profile.originator || ''
@@ -1339,6 +1357,7 @@ const handleSubmit = async () => {
   try {
     const data = {
       platform: form.platform.trim(),
+      transport: form.transport,
       name: form.name.trim(),
       user_agent: form.user_agent.trim(),
       originator: form.originator.trim(),

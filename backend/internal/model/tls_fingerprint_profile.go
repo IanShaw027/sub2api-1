@@ -12,6 +12,7 @@ import (
 type TLSFingerprintProfile struct {
 	ID                             int64     `json:"id"`
 	Platform                       string    `json:"platform"`
+	Transport                      string    `json:"transport"`
 	Name                           string    `json:"name"`
 	UserAgent                      string    `json:"user_agent"`
 	Originator                     string    `json:"originator"`
@@ -21,6 +22,7 @@ type TLSFingerprintProfile struct {
 	Curves                         []uint16  `json:"curves"`
 	PointFormats                   []uint16  `json:"point_formats"`
 	SignatureAlgorithms            []uint16  `json:"signature_algorithms"`
+	SignatureAlgorithmsCert        []uint16  `json:"signature_algorithms_cert"`
 	ALPNProtocols                  []string  `json:"alpn_protocols"`
 	SupportedVersions              []uint16  `json:"supported_versions"`
 	KeyShareGroups                 []uint16  `json:"key_share_groups"`
@@ -41,6 +43,11 @@ func (p *TLSFingerprintProfile) Validate() error {
 	if len(p.Platform) > 50 {
 		return &ValidationError{Field: "platform", Message: "platform is too long"}
 	}
+	switch p.Transport {
+	case "", TLSFingerprintRouterTransportHTTP, TLSFingerprintRouterTransportWebSocket:
+	default:
+		return &ValidationError{Field: "transport", Message: "transport must be empty, http, or websocket"}
+	}
 	return nil
 }
 
@@ -56,6 +63,7 @@ func (p *TLSFingerprintProfile) ToTLSProfile() *tlsfingerprint.Profile {
 		Curves:                         p.Curves,
 		PointFormats:                   p.PointFormats,
 		SignatureAlgorithms:            p.SignatureAlgorithms,
+		SignatureAlgorithmsCert:        p.SignatureAlgorithmsCert,
 		ALPNProtocols:                  p.ALPNProtocols,
 		SupportedVersions:              p.SupportedVersions,
 		KeyShareGroups:                 p.KeyShareGroups,

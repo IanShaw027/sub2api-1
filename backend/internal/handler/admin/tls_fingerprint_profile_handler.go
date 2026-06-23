@@ -24,6 +24,7 @@ func NewTLSFingerprintProfileHandler(profileService *service.TLSFingerprintProfi
 // CreateTLSFingerprintProfileRequest 创建模板请求
 type CreateTLSFingerprintProfileRequest struct {
 	Platform                       string   `json:"platform"`
+	Transport                      string   `json:"transport"`
 	Name                           string   `json:"name" binding:"required"`
 	UserAgent                      string   `json:"user_agent"`
 	Originator                     string   `json:"originator"`
@@ -46,6 +47,7 @@ type CreateTLSFingerprintProfileRequest struct {
 // UpdateTLSFingerprintProfileRequest 更新模板请求（部分更新）
 type UpdateTLSFingerprintProfileRequest struct {
 	Platform                       *string  `json:"platform"`
+	Transport                      *string  `json:"transport"`
 	Name                           *string  `json:"name"`
 	UserAgent                      *string  `json:"user_agent"`
 	Originator                     *string  `json:"originator"`
@@ -119,6 +121,7 @@ func (h *TLSFingerprintProfileHandler) Create(c *gin.Context) {
 
 	profile := &model.TLSFingerprintProfile{
 		Platform:                       req.Platform,
+		Transport:                      req.Transport,
 		Name:                           req.Name,
 		UserAgent:                      req.UserAgent,
 		Originator:                     req.Originator,
@@ -380,6 +383,7 @@ func (h *TLSFingerprintProfileHandler) Update(c *gin.Context) {
 	profile := &model.TLSFingerprintProfile{
 		ID:                             id,
 		Platform:                       existing.Platform,
+		Transport:                      existing.Transport,
 		Name:                           existing.Name,
 		UserAgent:                      existing.UserAgent,
 		Originator:                     existing.Originator,
@@ -404,6 +408,9 @@ func (h *TLSFingerprintProfileHandler) Update(c *gin.Context) {
 	}
 	if req.Platform != nil {
 		profile.Platform = *req.Platform
+	}
+	if req.Transport != nil {
+		profile.Transport = *req.Transport
 	}
 	if req.UserAgent != nil {
 		profile.UserAgent = *req.UserAgent
