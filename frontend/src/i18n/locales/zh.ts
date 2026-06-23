@@ -2044,7 +2044,7 @@ export default {
     copied: '已复制',
     copyAll: '复制全部',
     howItWorksTitle: '不再使用 JSON 提交流程',
-    howItWorksBody: '采集 listener 会从 Codex、Claude、Node、Python 或 curl 打开的同一个 TLS 连接里读取 TLS record。HTTP 响应可能是 204 或校验错误；到这一步时 ClientHello 已经被采集。',
+    howItWorksBody: '采集 listener 会从 Codex、Claude、Node、Python 或 curl 打开的同一个 TLS 连接里读取 TLS record，并返回最小成功响应，让客户端在采集完成后正常结束这次请求。',
     requiredTitle: '采集检查项',
     required: {
       token: '把采集任务 token 作为 API key 或 Bearer token 使用。',
@@ -2059,6 +2059,21 @@ export default {
       userAgent: '打开 TLS 连接的请求里的 User-Agent。',
       originator: '客户端发送的 originator / Originator 头。',
       platform: '从采集 URL 路径或 platform query 参数识别的平台。'
+    },
+    supportedTransportsTitle: '支持的传输类型',
+    supportedTransportsHint: '采集样本会显式区分 TLS 相同但传输协议不同的连接，导入与去重都会按 transport 分开处理。',
+    supportedTransports: {
+      http1: 'HTTP/1.1 请求会生成 http1 样本。',
+      h2: '协商到 h2 的客户端会生成 h2 样本，并记录 HTTP/2 指纹。',
+      websocketHttp1: 'HTTP/1.1 升级到 WebSocket 的连接会生成 websocket-http1 样本。',
+      websocketH2: 'HTTP/2 extended CONNECT WebSocket 会生成 websocket-h2 样本。'
+    },
+    successBehaviorTitle: '成功响应行为',
+    successBehaviorHint: '采集器返回的是最小成功 mock，不是空 204，也不是业务失败响应。',
+    successBehavior: {
+      json: '普通 JSON 请求返回 success JSON，客户端可按成功完成一次最小调用。',
+      sse: 'stream=true 或 SSE 请求返回最小事件流，包含开始与完成事件。',
+      filtered: '即使命中过滤或没有形成 canonical sample，客户端仍看到成功响应，避免把采集结果误判为请求失败。'
     },
     clientGuidesTitle: '客户端指引',
     clientGuidesHint: '展开要测试的客户端类型，复制命令/配置，然后发送一次最小请求。',

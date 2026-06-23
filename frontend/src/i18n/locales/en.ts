@@ -2048,7 +2048,7 @@ export default {
     copied: 'Copied',
     copyAll: 'Copy all',
     howItWorksTitle: 'No JSON submit flow',
-    howItWorksBody: 'The capture listener peeks the TLS record from the same connection opened by Codex, Claude, Node, Python, or curl. The HTTP response can be 204 or a validation error; the ClientHello has already been captured by then.',
+    howItWorksBody: 'The capture listener peeks the TLS record from the same connection opened by Codex, Claude, Node, Python, or curl, then returns a minimal success response so the client can finish the probe normally.',
     requiredTitle: 'Capture checklist',
     required: {
       token: 'Use the capture task token as the API key or Bearer token.',
@@ -2063,6 +2063,21 @@ export default {
       userAgent: 'User-Agent from the request that opened the TLS connection.',
       originator: 'originator / Originator header when the client sends one.',
       platform: 'Platform from the capture URL path or platform query parameter.'
+    },
+    supportedTransportsTitle: 'Supported transports',
+    supportedTransportsHint: 'Capture samples keep TLS-identical connections separated by transport, and import/dedupe treats each transport as its own replayable identity.',
+    supportedTransports: {
+      http1: 'HTTP/1.1 requests produce `http1` samples.',
+      h2: 'Clients negotiated to `h2` produce `h2` samples and record an HTTP/2 fingerprint.',
+      websocketHttp1: 'HTTP/1.1 upgrade WebSocket connections produce `websocket-http1` samples.',
+      websocketH2: 'HTTP/2 extended CONNECT WebSocket connections produce `websocket-h2` samples.'
+    },
+    successBehaviorTitle: 'Success response behavior',
+    successBehaviorHint: 'The collector returns a minimal success mock, not an empty 204 and not a business-error payload.',
+    successBehavior: {
+      json: 'Normal JSON requests receive a success JSON response so the client can complete one minimal call.',
+      sse: 'Requests using `stream=true` or SSE receive a minimal event stream with start and completion events.',
+      filtered: 'Even filtered interactions or requests that do not become canonical samples still receive a client-visible success response, so the probe is not mistaken for a failed request.'
     },
     clientGuidesTitle: 'Client instructions',
     clientGuidesHint: 'Open the client family you are testing, copy the command/config, and run one minimal request.',

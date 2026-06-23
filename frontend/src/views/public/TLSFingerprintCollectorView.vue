@@ -76,6 +76,27 @@
               <div class="rounded-xl bg-white/5 px-3 py-2">{{ t('tlsCollector.captures.platform') }}</div>
             </div>
           </section>
+
+          <section class="rounded-[1.75rem] border border-white/10 bg-stone-950/70 p-5 backdrop-blur">
+            <h2 class="text-lg font-black text-white">{{ t('tlsCollector.supportedTransportsTitle') }}</h2>
+            <p class="mt-1 text-sm text-stone-400">{{ t('tlsCollector.supportedTransportsHint') }}</p>
+            <div class="mt-4 grid gap-2 text-sm text-stone-300">
+              <div class="rounded-xl bg-white/5 px-3 py-2">{{ t('tlsCollector.supportedTransports.http1') }}</div>
+              <div class="rounded-xl bg-white/5 px-3 py-2">{{ t('tlsCollector.supportedTransports.h2') }}</div>
+              <div class="rounded-xl bg-white/5 px-3 py-2">{{ t('tlsCollector.supportedTransports.websocketHttp1') }}</div>
+              <div class="rounded-xl bg-white/5 px-3 py-2">{{ t('tlsCollector.supportedTransports.websocketH2') }}</div>
+            </div>
+          </section>
+
+          <section class="rounded-[1.75rem] border border-white/10 bg-stone-950/70 p-5 backdrop-blur">
+            <h2 class="text-lg font-black text-white">{{ t('tlsCollector.successBehaviorTitle') }}</h2>
+            <p class="mt-1 text-sm text-stone-400">{{ t('tlsCollector.successBehaviorHint') }}</p>
+            <div class="mt-4 grid gap-2 text-sm text-stone-300">
+              <div class="rounded-xl bg-white/5 px-3 py-2">{{ t('tlsCollector.successBehavior.json') }}</div>
+              <div class="rounded-xl bg-white/5 px-3 py-2">{{ t('tlsCollector.successBehavior.sse') }}</div>
+              <div class="rounded-xl bg-white/5 px-3 py-2">{{ t('tlsCollector.successBehavior.filtered') }}</div>
+            </div>
+          </section>
         </div>
 
         <section class="rounded-[1.75rem] border border-white/10 bg-stone-950/70 p-5 backdrop-blur">

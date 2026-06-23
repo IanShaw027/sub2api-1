@@ -3307,7 +3307,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   if (newAccount.platform === 'kiro') {
     const kiroCredentials = (newAccount.credentials || {}) as KiroCredentials & Record<string, unknown>
 
-    loadModelRestrictionFromCredentials(kiroCredentials)
+    loadModelRestrictionFromCredentials(kiroCredentials, { normalizeKiro: true })
     kiroModelSyncDismissedSignature.value = ''
   }
 
@@ -3457,13 +3457,19 @@ async function loadTLSRouters() {
 
 function loadModelRestrictionFromCredentials(
   credentials?: Record<string, unknown>,
-  options: { forceMappingMode?: boolean } = {}
+  options: { forceMappingMode?: boolean; normalizeKiro?: boolean } = {}
 ) {
-  const whitelistModels = normalizeKiroModelWhitelist(credentials?.model_whitelist)
+  // Kiro 专用归一化（别名、通配符、1m 后缀等）只能用于 Kiro 平台，
+  // 对 anthropic/openai/bedrock 等平台会把实际映射改写成 Kiro 规范名，
+  // 导致编辑时显示的不是真实存储的映射。
+  const normalizeKiro = options.normalizeKiro === true
+  const whitelistModels = normalizeKiro
+    ? normalizeKiroModelWhitelist(credentials?.model_whitelist)
+    : normalizeModelWhitelist(credentials?.model_whitelist)
 
   const existingMappings = credentials?.model_mapping as Record<string, string> | undefined
   if (existingMappings && typeof existingMappings === 'object') {
-    const normalizedMappings = normalizeKiroModelMappingObject(existingMappings)
+    const normalizedMappings = normalizeKiro ? normalizeKiroModelMappingObject(existingMappings) : null
     const entries = normalizedMappings ? Object.entries(normalizedMappings) : Object.entries(existingMappings)
     modelMappings.value = entries.map(([from, to]) => ({ from, to }))
 
@@ -4134,6 +4140,20 @@ function normalizeKiroModelWhitelist(models: unknown): string[] {
   const out: string[] = []
   for (const model of models) {
     const normalized = normalizeKiroModelName(model)
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    out.push(normalized)
+  }
+  return out
+}
+
+// 通用白名单归一化：仅 trim + 去重，保留原始模型名，不做 Kiro 别名改写。
+function normalizeModelWhitelist(models: unknown): string[] {
+  if (!Array.isArray(models)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const model of models) {
+    const normalized = String(model ?? '').trim()
     if (!normalized || seen.has(normalized)) continue
     seen.add(normalized)
     out.push(normalized)
