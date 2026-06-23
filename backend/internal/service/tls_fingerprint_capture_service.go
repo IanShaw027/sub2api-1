@@ -21,45 +21,82 @@ const (
 )
 
 type TLSFingerprintCaptureTask struct {
-	ID             int64          `json:"id"`
-	Name           string         `json:"name"`
-	Status         string         `json:"status"`
-	Token          string         `json:"token,omitempty"`
-	Targets        map[string]int `json:"targets"`
-	Counts         map[string]int `json:"counts"`
-	UAKeywords     []string       `json:"ua_keywords"`
-	CaptureBaseURL string         `json:"capture_base_url,omitempty"`
-	CaptureURL     string         `json:"capture_url,omitempty"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	CompletedAt    *time.Time     `json:"completed_at,omitempty"`
+	ID               int64          `json:"id"`
+	Name             string         `json:"name"`
+	Status           string         `json:"status"`
+	Token            string         `json:"token,omitempty"`
+	Targets          map[string]int `json:"targets"`
+	Counts           map[string]int `json:"counts"`
+	TransportTargets map[string]int `json:"transport_targets,omitempty"`
+	TransportCounts  map[string]int `json:"transport_counts,omitempty"`
+	UAKeywords       []string       `json:"ua_keywords"`
+	CaptureBaseURL   string         `json:"capture_base_url,omitempty"`
+	CaptureURL       string         `json:"capture_url,omitempty"`
+	CreatedAt        time.Time      `json:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at"`
+	CompletedAt      *time.Time     `json:"completed_at,omitempty"`
 }
 
 type TLSFingerprintCaptureSample struct {
 	ID              int64                        `json:"id"`
 	TaskID          int64                        `json:"task_id"`
 	Platform        string                       `json:"platform"`
+	Transport       string                       `json:"transport,omitempty"`
+	SessionID       string                       `json:"session_id,omitempty"`
 	UserAgent       string                       `json:"user_agent"`
 	Originator      string                       `json:"originator"`
 	FingerprintHash string                       `json:"fingerprint_hash"`
+	ReplayHash      string                       `json:"replay_hash,omitempty"`
 	Profile         *model.TLSFingerprintProfile `json:"profile"`
 	RawPayload      string                       `json:"raw_payload"`
 	RawClientHello  []byte                       `json:"raw_client_hello,omitempty"`
 	CreatedAt       time.Time                    `json:"created_at"`
 }
 
+type TLSFingerprintCaptureSession struct {
+	ID         int64     `json:"id"`
+	TaskID     int64     `json:"task_id"`
+	SessionID  string    `json:"session_id"`
+	Platform   string    `json:"platform,omitempty"`
+	UserAgent  string    `json:"user_agent,omitempty"`
+	Originator string    `json:"originator,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type TLSFingerprintCaptureSessionEvent struct {
+	ID         int64     `json:"id"`
+	TaskID     int64     `json:"task_id"`
+	SessionRef int64     `json:"session_ref,omitempty"`
+	SessionID  string    `json:"session_id,omitempty"`
+	Platform   string    `json:"platform,omitempty"`
+	Transport  string    `json:"transport,omitempty"`
+	EventType  string    `json:"event_type"`
+	Error      string    `json:"error,omitempty"`
+	Replayable bool      `json:"replayable"`
+	SampleID   *int64    `json:"sample_id,omitempty"`
+	ReplayHash string    `json:"replay_hash,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 type TLSFingerprintCaptureStartRequest struct {
-	Name       string         `json:"name"`
-	Targets    map[string]int `json:"targets"`
-	UAKeywords []string       `json:"ua_keywords"`
+	Name             string         `json:"name"`
+	Targets          map[string]int `json:"targets"`
+	TransportTargets map[string]int `json:"transport_targets"`
+	UAKeywords       []string       `json:"ua_keywords"`
 }
 
 type TLSFingerprintCaptureNativeSubmitRequest struct {
-	Token       string `json:"token"`
-	Platform    string `json:"platform"`
-	UserAgent   string `json:"user_agent"`
-	Originator  string `json:"originator"`
-	ClientHello []byte `json:"client_hello"`
+	Token             string `json:"token"`
+	Platform          string `json:"platform"`
+	Transport         string `json:"transport,omitempty"`
+	SessionID         string `json:"session_id,omitempty"`
+	UserAgent         string `json:"user_agent"`
+	Originator        string `json:"originator"`
+	ClientHello       []byte `json:"client_hello"`
+	Replayable        *bool  `json:"replayable,omitempty"`
+	SessionEventType  string `json:"session_event_type,omitempty"`
+	SessionEventError string `json:"session_event_error,omitempty"`
 }
 
 type TLSFingerprintCaptureTaskImportRequest struct {
@@ -74,7 +111,14 @@ type TLSFingerprintCaptureSubmitResult struct {
 	FingerprintHash string                       `json:"fingerprint_hash,omitempty"`
 	Task            *TLSFingerprintCaptureTask   `json:"task"`
 	Sample          *TLSFingerprintCaptureSample `json:"sample,omitempty"`
+	Session         *TLSFingerprintCaptureSession      `json:"session,omitempty"`
+	SessionEvent    *TLSFingerprintCaptureSessionEvent `json:"session_event,omitempty"`
 	Counts          map[string]int               `json:"counts"`
+}
+
+type tlsFingerprintCaptureSessionRepository interface {
+	CreateSessionIfAbsent(ctx context.Context, session *TLSFingerprintCaptureSession) (*TLSFingerprintCaptureSession, bool, error)
+	CreateSessionEvent(ctx context.Context, event *TLSFingerprintCaptureSessionEvent) (*TLSFingerprintCaptureSessionEvent, error)
 }
 
 type TLSFingerprintCaptureRepository interface {
@@ -132,15 +176,20 @@ func (s *TLSFingerprintCaptureService) StartTask(ctx context.Context, req TLSFin
 		name = "TLS fingerprint capture"
 	}
 	task := &TLSFingerprintCaptureTask{
-		Name:       name,
-		Status:     TLSFingerprintCaptureStatusRunning,
-		Token:      token,
-		Targets:    targets,
-		Counts:     make(map[string]int, len(targets)),
-		UAKeywords: normalizeTLSCaptureKeywords(req.UAKeywords),
+		Name:             name,
+		Status:           TLSFingerprintCaptureStatusRunning,
+		Token:            token,
+		Targets:          targets,
+		Counts:           make(map[string]int, len(targets)),
+		TransportTargets: normalizeTLSCaptureTargets(req.TransportTargets),
+		TransportCounts:  make(map[string]int, len(req.TransportTargets)),
+		UAKeywords:       normalizeTLSCaptureKeywords(req.UAKeywords),
 	}
 	for platform := range targets {
 		task.Counts[platform] = 0
+	}
+	for transport := range task.TransportTargets {
+		task.TransportCounts[transport] = 0
 	}
 	created, err := s.repo.CreateTask(ctx, task)
 	if err != nil {
@@ -235,6 +284,9 @@ func (s *TLSFingerprintCaptureService) RestartTask(ctx context.Context, id int64
 	task.CompletedAt = nil
 	for platform := range task.Counts {
 		task.Counts[platform] = 0
+	}
+	for transport := range task.TransportCounts {
+		task.TransportCounts[transport] = 0
 	}
 	updated, err := s.repo.UpdateTask(ctx, task)
 	if err != nil {
@@ -339,6 +391,15 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 	if _, ok := task.Targets[platform]; !ok {
 		return ignoredTLSCaptureResult(task, "platform_not_targeted"), nil
 	}
+	transport := normalizeTLSCaptureTransport(req.Transport)
+	if len(task.TransportTargets) > 0 {
+		if transport == "" {
+			return ignoredTLSCaptureResult(task, "transport_required"), nil
+		}
+		if _, ok := task.TransportTargets[transport]; !ok {
+			return ignoredTLSCaptureResult(task, "transport_not_targeted"), nil
+		}
+	}
 	if !tlsCaptureUserAgentMatches(task.UAKeywords, req.UserAgent) {
 		return ignoredTLSCaptureResult(task, "user_agent_not_matched"), nil
 	}
@@ -346,16 +407,14 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 		return ignoredTLSCaptureResult(task, "client_hello_required"), nil
 	}
 
-	counts, err := s.countSamples(ctx, task)
+	session, sessionErr := s.ensureCaptureSession(ctx, task, req, platform)
+	if sessionErr != nil {
+		return nil, sessionErr
+	}
+
+	counts, transportCounts, err := s.countSamples(ctx, task)
 	if err != nil {
 		return nil, err
-	}
-	if tlsCapturePlatformTargetReached(task.Targets, counts, platform) {
-		task, err = s.updateTaskProgress(ctx, task, counts)
-		if err != nil {
-			return nil, err
-		}
-		return ignoredTLSCaptureResult(task, "platform_target_reached"), nil
 	}
 
 	profile, err := parseTLSFingerprintClientHello(req.ClientHello)
@@ -368,32 +427,89 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 		return nil, err
 	}
 
-	existing, err := s.repo.GetSampleByTaskHash(ctx, task.ID, hash)
+	if replayable := tlsCaptureReplayable(req.Replayable); !replayable {
+		event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, hash, nil, replayable)
+		if eventErr != nil {
+			return nil, eventErr
+		}
+		task, err = s.updateTaskProgress(ctx, task, counts, transportCounts)
+		if err != nil {
+			return nil, err
+		}
+		return ignoredTLSCaptureResultWithSession(task, "capture_not_replayable", session, event), nil
+	}
+
+	existing, err := s.findSampleByReplayKey(ctx, task, hash, transport)
 	if err != nil {
 		return nil, err
 	}
 	if existing != nil {
-		task, err = s.updateTaskProgress(ctx, task, counts)
+		event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, hash, idPointer(existing.ID), true)
+		if eventErr != nil {
+			return nil, eventErr
+		}
+		task, err = s.updateTaskProgress(ctx, task, counts, transportCounts)
 		if err != nil {
 			return nil, err
 		}
 		return &TLSFingerprintCaptureSubmitResult{
 			Accepted:        true,
 			Duplicate:       true,
-			FingerprintHash: hash,
+			FingerprintHash: existing.FingerprintHash,
 			Task:            task,
 			Sample:          existing,
+			Session:         session,
+			SessionEvent:    event,
 			Counts:          copyStringIntMap(counts),
 		}, nil
 	}
 
+	if existing, err = s.findSampleBySessionTransport(ctx, task, strings.TrimSpace(req.SessionID), transport); err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, existing.ReplayHash, idPointer(existing.ID), true)
+		if eventErr != nil {
+			return nil, eventErr
+		}
+		task, err = s.updateTaskProgress(ctx, task, counts, transportCounts)
+		if err != nil {
+			return nil, err
+		}
+		return &TLSFingerprintCaptureSubmitResult{
+			Accepted:        true,
+			Duplicate:       true,
+			FingerprintHash: existing.FingerprintHash,
+			Task:            task,
+			Sample:          existing,
+			Session:         session,
+			SessionEvent:    event,
+			Counts:          copyStringIntMap(counts),
+		}, nil
+	}
+
+	if tlsCaptureSubmissionQuotaReached(task, counts, transportCounts, platform, transport) {
+		task, err = s.updateTaskProgress(ctx, task, counts, transportCounts)
+		if err != nil {
+			return nil, err
+		}
+		return ignoredTLSCaptureResult(task, "capture_targets_reached"), nil
+	}
+
+	fingerprintHash := hash
+	if transport != "" {
+		fingerprintHash = hash + "::" + transport
+	}
 	rawClientHello := append([]byte(nil), req.ClientHello...)
 	sample := &TLSFingerprintCaptureSample{
 		TaskID:          task.ID,
 		Platform:        platform,
+		Transport:       transport,
+		SessionID:       strings.TrimSpace(req.SessionID),
 		UserAgent:       strings.TrimSpace(req.UserAgent),
 		Originator:      strings.TrimSpace(req.Originator),
-		FingerprintHash: hash,
+		FingerprintHash: fingerprintHash,
+		ReplayHash:      hash,
 		Profile:         profile,
 		RawClientHello:  rawClientHello,
 	}
@@ -402,11 +518,15 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 		return nil, err
 	}
 
-	counts, err = s.countSamples(ctx, task)
+	counts, transportCounts, err = s.countSamples(ctx, task)
 	if err != nil {
 		return nil, err
 	}
-	task, err = s.updateTaskProgress(ctx, task, counts)
+	event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, hash, idPointer(created.ID), true)
+	if eventErr != nil {
+		return nil, eventErr
+	}
+	task, err = s.updateTaskProgress(ctx, task, counts, transportCounts)
 	if err != nil {
 		return nil, err
 	}
@@ -414,14 +534,16 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 	return &TLSFingerprintCaptureSubmitResult{
 		Accepted:        true,
 		Duplicate:       !inserted,
-		FingerprintHash: hash,
+		FingerprintHash: fingerprintHash,
 		Task:            task,
 		Sample:          created,
+		Session:         session,
+		SessionEvent:    event,
 		Counts:          copyStringIntMap(counts),
 	}, nil
 }
 
-func (s *TLSFingerprintCaptureService) updateTaskProgress(ctx context.Context, task *TLSFingerprintCaptureTask, counts map[string]int) (*TLSFingerprintCaptureTask, error) {
+func (s *TLSFingerprintCaptureService) updateTaskProgress(ctx context.Context, task *TLSFingerprintCaptureTask, counts, transportCounts map[string]int) (*TLSFingerprintCaptureTask, error) {
 	latest, err := s.repo.GetTaskByID(ctx, task.ID)
 	if err != nil {
 		return nil, err
@@ -430,7 +552,8 @@ func (s *TLSFingerprintCaptureService) updateTaskProgress(ctx context.Context, t
 		return nil, &model.ValidationError{Field: "task_id", Message: "capture task not found"}
 	}
 	latest.Counts = counts
-	if latest.Status == TLSFingerprintCaptureStatusRunning && tlsCaptureTargetsReached(latest.Targets, counts) {
+	latest.TransportCounts = transportCounts
+	if latest.Status == TLSFingerprintCaptureStatusRunning && tlsCaptureTargetsReached(latest.Targets, counts) && tlsCaptureTargetsReached(latest.TransportTargets, transportCounts) {
 		now := time.Now().UTC()
 		latest.Status = TLSFingerprintCaptureStatusCompleted
 		latest.CompletedAt = &now
@@ -462,14 +585,18 @@ func (s *TLSFingerprintCaptureService) decorateCaptureTask(task *TLSFingerprintC
 	return task
 }
 
-func (s *TLSFingerprintCaptureService) countSamples(ctx context.Context, task *TLSFingerprintCaptureTask) (map[string]int, error) {
+func (s *TLSFingerprintCaptureService) countSamples(ctx context.Context, task *TLSFingerprintCaptureTask) (map[string]int, map[string]int, error) {
 	counts := make(map[string]int, len(task.Targets))
 	for platform := range task.Targets {
 		counts[platform] = 0
 	}
+	transportCounts := make(map[string]int, len(task.TransportTargets))
+	for transport := range task.TransportTargets {
+		transportCounts[transport] = 0
+	}
 	samples, err := s.repo.ListSamplesByTask(ctx, task.ID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, sample := range samples {
 		if sample == nil {
@@ -478,8 +605,11 @@ func (s *TLSFingerprintCaptureService) countSamples(ctx context.Context, task *T
 		if _, ok := task.Targets[sample.Platform]; ok {
 			counts[sample.Platform]++
 		}
+		if _, ok := task.TransportTargets[sample.Transport]; ok {
+			transportCounts[sample.Transport]++
+		}
 	}
-	return counts, nil
+	return counts, transportCounts, nil
 }
 
 func ignoredTLSCaptureResult(task *TLSFingerprintCaptureTask, reason string) *TLSFingerprintCaptureSubmitResult {
@@ -490,6 +620,13 @@ func ignoredTLSCaptureResult(task *TLSFingerprintCaptureTask, reason string) *TL
 		Task:          task,
 		Counts:        copyStringIntMap(task.Counts),
 	}
+}
+
+func ignoredTLSCaptureResultWithSession(task *TLSFingerprintCaptureTask, reason string, session *TLSFingerprintCaptureSession, event *TLSFingerprintCaptureSessionEvent) *TLSFingerprintCaptureSubmitResult {
+	result := ignoredTLSCaptureResult(task, reason)
+	result.Session = session
+	result.SessionEvent = event
+	return result
 }
 
 func tlsCaptureUserAgentMatches(keywords []string, userAgent string) bool {
@@ -519,6 +656,25 @@ func tlsCapturePlatformTargetReached(targets, counts map[string]int, platform st
 	return target > 0 && counts[platform] >= target
 }
 
+func tlsCaptureTransportTargetReached(targets, counts map[string]int, transport string) bool {
+	target := targets[transport]
+	return target > 0 && counts[transport] >= target
+}
+
+func tlsCaptureSubmissionQuotaReached(task *TLSFingerprintCaptureTask, counts, transportCounts map[string]int, platform, transport string) bool {
+	platformNeeded := true
+	if target := task.Targets[platform]; target > 0 {
+		platformNeeded = counts[platform] < target
+	}
+	transportNeeded := false
+	if len(task.TransportTargets) > 0 {
+		if target := task.TransportTargets[transport]; target > 0 {
+			transportNeeded = transportCounts[transport] < target
+		}
+	}
+	return !platformNeeded && !transportNeeded
+}
+
 func normalizeTLSCaptureTargets(targets map[string]int) map[string]int {
 	out := make(map[string]int, len(targets))
 	for platform, target := range targets {
@@ -529,6 +685,10 @@ func normalizeTLSCaptureTargets(targets map[string]int) map[string]int {
 		out[platform] = target
 	}
 	return out
+}
+
+func normalizeTLSCaptureTransport(transport string) string {
+	return strings.ToLower(strings.TrimSpace(transport))
 }
 
 func normalizeTLSCaptureKeywords(keywords []string) []string {
@@ -555,6 +715,122 @@ func copyStringIntMap(in map[string]int) map[string]int {
 		out[k] = v
 	}
 	return out
+}
+
+func tlsCaptureReplayable(replayable *bool) bool {
+	if replayable == nil {
+		return true
+	}
+	return *replayable
+}
+
+func idPointer(id int64) *int64 {
+	if id <= 0 {
+		return nil
+	}
+	v := id
+	return &v
+}
+
+func (s *TLSFingerprintCaptureService) ensureCaptureSession(ctx context.Context, task *TLSFingerprintCaptureTask, req TLSFingerprintCaptureNativeSubmitRequest, platform string) (*TLSFingerprintCaptureSession, error) {
+	repo, ok := s.repo.(tlsFingerprintCaptureSessionRepository)
+	if !ok {
+		return nil, nil
+	}
+	sessionID := strings.TrimSpace(req.SessionID)
+	if sessionID == "" {
+		return nil, nil
+	}
+	session := &TLSFingerprintCaptureSession{
+		TaskID:     task.ID,
+		SessionID:  sessionID,
+		Platform:   platform,
+		UserAgent:  strings.TrimSpace(req.UserAgent),
+		Originator: strings.TrimSpace(req.Originator),
+	}
+	created, _, err := repo.CreateSessionIfAbsent(ctx, session)
+	return created, err
+}
+
+func (s *TLSFingerprintCaptureService) createCaptureSessionEvent(
+	ctx context.Context,
+	session *TLSFingerprintCaptureSession,
+	task *TLSFingerprintCaptureTask,
+	req TLSFingerprintCaptureNativeSubmitRequest,
+	platform, transport, replayHash string,
+	sampleID *int64,
+	replayable bool,
+) (*TLSFingerprintCaptureSessionEvent, error) {
+	repo, ok := s.repo.(tlsFingerprintCaptureSessionRepository)
+	if !ok {
+		return nil, nil
+	}
+	eventType := strings.TrimSpace(req.SessionEventType)
+	if eventType == "" {
+		if sampleID != nil {
+			eventType = "canonical_sample_recorded"
+		} else {
+			eventType = "session_observed"
+		}
+	}
+	event := &TLSFingerprintCaptureSessionEvent{
+		TaskID:     task.ID,
+		SessionID:  strings.TrimSpace(req.SessionID),
+		Platform:   platform,
+		Transport:  transport,
+		EventType:  eventType,
+		Error:      strings.TrimSpace(req.SessionEventError),
+		Replayable: replayable,
+		SampleID:   sampleID,
+		ReplayHash: replayHash,
+	}
+	if session != nil {
+		event.SessionRef = session.ID
+	}
+	return repo.CreateSessionEvent(ctx, event)
+}
+
+func (s *TLSFingerprintCaptureService) findSampleByReplayKey(ctx context.Context, task *TLSFingerprintCaptureTask, replayHash, transport string) (*TLSFingerprintCaptureSample, error) {
+	key := replayHash
+	if transport != "" {
+		key = replayHash + "::" + transport
+	}
+	sample, err := s.repo.GetSampleByTaskHash(ctx, task.ID, key)
+	if err != nil || sample != nil {
+		return sample, err
+	}
+	samples, err := s.repo.ListSamplesByTask(ctx, task.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, existing := range samples {
+		if existing == nil {
+			continue
+		}
+		if strings.TrimSpace(existing.ReplayHash) == replayHash && normalizeTLSCaptureTransport(existing.Transport) == transport {
+			return existing, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *TLSFingerprintCaptureService) findSampleBySessionTransport(ctx context.Context, task *TLSFingerprintCaptureTask, sessionID, transport string) (*TLSFingerprintCaptureSample, error) {
+	if strings.TrimSpace(sessionID) == "" || transport == "" {
+		return nil, nil
+	}
+	samples, err := s.repo.ListSamplesByTask(ctx, task.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, sample := range samples {
+		if sample == nil {
+			continue
+		}
+		if strings.TrimSpace(sample.SessionID) == sessionID && normalizeTLSCaptureTransport(sample.Transport) == transport {
+			return sample, nil
+		}
+	}
+	return nil, nil
 }
 
 func filterTLSCaptureSamples(samples []*TLSFingerprintCaptureSample, sampleIDs []int64) []*TLSFingerprintCaptureSample {

@@ -11,8 +11,12 @@ type tlsFingerprintCaptureRepoStub struct {
 	mu           sync.Mutex
 	nextTaskID   int64
 	nextSampleID int64
+	nextSessionID int64
+	nextEventID   int64
 	tasks        []*TLSFingerprintCaptureTask
 	samples      []*TLSFingerprintCaptureSample
+	sessions     []*TLSFingerprintCaptureSession
+	sessionEvents []*TLSFingerprintCaptureSessionEvent
 
 	getRunningTaskByTokenErr error
 
@@ -20,7 +24,7 @@ type tlsFingerprintCaptureRepoStub struct {
 }
 
 func newTLSFingerprintCaptureRepoStub() *tlsFingerprintCaptureRepoStub {
-	return &tlsFingerprintCaptureRepoStub{nextTaskID: 1, nextSampleID: 1}
+	return &tlsFingerprintCaptureRepoStub{nextTaskID: 1, nextSampleID: 1, nextSessionID: 1, nextEventID: 1}
 }
 
 func (r *tlsFingerprintCaptureRepoStub) CreateTask(_ context.Context, task *TLSFingerprintCaptureTask) (*TLSFingerprintCaptureTask, error) {
@@ -162,6 +166,35 @@ func (r *tlsFingerprintCaptureRepoStub) DeleteSamplesByTask(_ context.Context, t
 	return nil
 }
 
+func (r *tlsFingerprintCaptureRepoStub) CreateSessionIfAbsent(_ context.Context, session *TLSFingerprintCaptureSession) (*TLSFingerprintCaptureSession, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, existing := range r.sessions {
+		if existing.TaskID == session.TaskID && existing.SessionID == session.SessionID {
+			return cloneTLSFingerprintCaptureSession(existing), false, nil
+		}
+	}
+	created := cloneTLSFingerprintCaptureSession(session)
+	created.ID = r.nextSessionID
+	r.nextSessionID++
+	now := time.Now().UTC()
+	created.CreatedAt = now
+	created.UpdatedAt = now
+	r.sessions = append(r.sessions, created)
+	return cloneTLSFingerprintCaptureSession(created), true, nil
+}
+
+func (r *tlsFingerprintCaptureRepoStub) CreateSessionEvent(_ context.Context, event *TLSFingerprintCaptureSessionEvent) (*TLSFingerprintCaptureSessionEvent, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	created := cloneTLSFingerprintCaptureSessionEvent(event)
+	created.ID = r.nextEventID
+	r.nextEventID++
+	created.CreatedAt = time.Now().UTC()
+	r.sessionEvents = append(r.sessionEvents, created)
+	return cloneTLSFingerprintCaptureSessionEvent(created), nil
+}
+
 func cloneTLSFingerprintCaptureTask(task *TLSFingerprintCaptureTask) *TLSFingerprintCaptureTask {
 	if task == nil {
 		return nil
@@ -169,6 +202,8 @@ func cloneTLSFingerprintCaptureTask(task *TLSFingerprintCaptureTask) *TLSFingerp
 	clone := *task
 	clone.Targets = copyStringIntMap(task.Targets)
 	clone.Counts = copyStringIntMap(task.Counts)
+	clone.TransportTargets = copyStringIntMap(task.TransportTargets)
+	clone.TransportCounts = copyStringIntMap(task.TransportCounts)
 	clone.UAKeywords = append([]string(nil), task.UAKeywords...)
 	if task.CompletedAt != nil {
 		completedAt := *task.CompletedAt
@@ -184,5 +219,25 @@ func cloneTLSFingerprintCaptureSample(sample *TLSFingerprintCaptureSample) *TLSF
 	clone := *sample
 	clone.Profile = cloneTLSFingerprintProfile(sample.Profile)
 	clone.RawClientHello = append([]byte(nil), sample.RawClientHello...)
+	return &clone
+}
+
+func cloneTLSFingerprintCaptureSession(session *TLSFingerprintCaptureSession) *TLSFingerprintCaptureSession {
+	if session == nil {
+		return nil
+	}
+	clone := *session
+	return &clone
+}
+
+func cloneTLSFingerprintCaptureSessionEvent(event *TLSFingerprintCaptureSessionEvent) *TLSFingerprintCaptureSessionEvent {
+	if event == nil {
+		return nil
+	}
+	clone := *event
+	if event.SampleID != nil {
+		sampleID := *event.SampleID
+		clone.SampleID = &sampleID
+	}
 	return &clone
 }
