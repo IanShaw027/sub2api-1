@@ -892,6 +892,7 @@ const (
 	openAIImageMaxN        = 10
 	openAIImageMaxParts    = 3
 	openAIImageMaxQuality  = 100
+	openAIImageDefaultSize = "1024x1024"
 )
 
 func parseOpenAIImageSizeDimensions(size string) (int, int, bool) {
@@ -932,9 +933,58 @@ func normalizeOpenAIImageSize(size string) string {
 	}
 	width, height, ok := parseOpenAIImageSizeDimensions(trimmed)
 	if !ok {
-		return trimmed
+		return openAIImageDefaultSize
 	}
-	return fmt.Sprintf("%dx%d", width, height)
+	return nearestOpenAIImageSize(width, height)
+}
+
+func nearestOpenAIImageSize(width, height int) string {
+	if width <= 0 || height <= 0 {
+		return openAIImageDefaultSize
+	}
+	bestWidth, bestHeight := 0, 0
+	bestFound := false
+	bestDistance := 0.0
+	bestAreaDelta := 0.0
+	for candidateWidth := 16; candidateWidth <= openAIImageMaxEdge; candidateWidth += 16 {
+		for candidateHeight := 16; candidateHeight <= openAIImageMaxEdge; candidateHeight += 16 {
+			if err := validateOpenAIImageDimensions(candidateWidth, candidateHeight); err != nil {
+				continue
+			}
+			distance := openAIImageSizeDistance(width, height, candidateWidth, candidateHeight)
+			areaDelta := openAIImageAreaDelta(width, height, candidateWidth, candidateHeight)
+			if bestFound && distance > bestDistance {
+				continue
+			}
+			if bestFound && distance == bestDistance && areaDelta >= bestAreaDelta {
+				continue
+			}
+			bestWidth = candidateWidth
+			bestHeight = candidateHeight
+			bestFound = true
+			bestDistance = distance
+			bestAreaDelta = areaDelta
+		}
+	}
+	if bestWidth <= 0 || bestHeight <= 0 {
+		return openAIImageDefaultSize
+	}
+	return fmt.Sprintf("%dx%d", bestWidth, bestHeight)
+}
+
+func openAIImageSizeDistance(sourceWidth, sourceHeight, targetWidth, targetHeight int) float64 {
+	deltaWidth := float64(sourceWidth) - float64(targetWidth)
+	deltaHeight := float64(sourceHeight) - float64(targetHeight)
+	return deltaWidth*deltaWidth + deltaHeight*deltaHeight
+}
+
+func openAIImageAreaDelta(sourceWidth, sourceHeight, targetWidth, targetHeight int) float64 {
+	sourceArea := float64(sourceWidth) * float64(sourceHeight)
+	targetArea := float64(targetWidth) * float64(targetHeight)
+	if sourceArea >= targetArea {
+		return sourceArea - targetArea
+	}
+	return targetArea - sourceArea
 }
 
 func validateOpenAIImageSize(size string) error {
@@ -947,6 +997,10 @@ func validateOpenAIImageSize(size string) error {
 	if !ok {
 		return fmt.Errorf("invalid size format: expected widthxheight, got %q", size)
 	}
+	return validateOpenAIImageDimensions(width, height)
+}
+
+func validateOpenAIImageDimensions(width, height int) error {
 	if width%16 != 0 || height%16 != 0 {
 		return fmt.Errorf("size must use widthxheight with both edges as multiples of 16")
 	}

@@ -93,6 +93,11 @@ func TestHasOpenAIImageGenerationToolCapability(t *testing.T) {
 	require.False(t, HasOpenAIImageGenerationToolCapability([]byte(`{"input":"write code"}`)))
 }
 
+func TestOpenAIRequestBodyImageGenerationToolNeedsNormalization_AutoCorrectsInvalidSize(t *testing.T) {
+	require.True(t, openAIRequestBodyImageGenerationToolNeedsNormalization([]byte(`{"tools":[{"type":"image_generation","size":"2048x1153"}]}`)))
+	require.False(t, openAIRequestBodyImageGenerationToolNeedsNormalization([]byte(`{"tools":[{"type":"image_generation","size":"2048x1152"}]}`)))
+}
+
 func TestResolveOpenAIResponsesImageBillingConfigToolModelWins(t *testing.T) {
 	imageModel, imageSize, err := resolveOpenAIResponsesImageBillingConfigFromBody(
 		[]byte(`{"model":"mapped-text-model","tools":[{"type":"image_generation","model":"gpt-image-2","size":"1536x1024"}]}`),
