@@ -54,7 +54,7 @@ func TestOpenAITLSFingerprintRuntimeUsesRouterMatch(t *testing.T) {
 		Extra:    map[string]any{"enable_tls_fingerprint": true, "tls_fingerprint_router_id": float64(10)},
 	}
 
-	runtime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account)
+	runtime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account, "")
 
 	require.True(t, runtime.Matched)
 	require.NotNil(t, runtime.Profile)
@@ -68,11 +68,11 @@ func TestOpenAITLSFingerprintRuntimeUsesRouterMatch(t *testing.T) {
 	require.Equal(t, "codex_cli_rs", upstreamReq.Header.Get("Originator"))
 }
 
-func TestOpenAITLSFingerprintRuntimeDoesNotOverrideOriginatorFromUserAgentOnly(t *testing.T) {
+func TestOpenAITLSFingerprintRuntimeOriginatorIsReplacementOnly(t *testing.T) {
 	setGinTestMode()
 	router := &model.TLSFingerprintRouter{
 		ID:      11,
-		Name:    "openai guarded clients",
+		Name:    "openai clients",
 		Enabled: true,
 		Rules: []model.TLSFingerprintRouterRule{
 			{
@@ -105,10 +105,10 @@ func TestOpenAITLSFingerprintRuntimeDoesNotOverrideOriginatorFromUserAgentOnly(t
 		Extra:    map[string]any{"enable_tls_fingerprint": true, "tls_fingerprint_router_id": float64(11)},
 	}
 
-	runtime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account)
+	runtime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account, "")
 
-	require.False(t, runtime.Matched)
-	require.Empty(t, runtime.UpstreamOriginator)
+	require.True(t, runtime.Matched)
+	require.Equal(t, "codex_cli_rs", runtime.UpstreamOriginator)
 }
 
 func TestOpenAITLSFingerprintRuntimeSkipsRouterWhenTLSFingerprintDisabled(t *testing.T) {
@@ -148,7 +148,7 @@ func TestOpenAITLSFingerprintRuntimeSkipsRouterWhenTLSFingerprintDisabled(t *tes
 		Extra:    map[string]any{"tls_fingerprint_router_id": float64(10)},
 	}
 
-	runtime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account)
+	runtime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account, "")
 
 	require.False(t, runtime.Matched)
 	require.Nil(t, runtime.Profile)
@@ -189,7 +189,7 @@ func TestOpenAITLSFingerprintRuntimeIgnoresRouterMatchWithMissingProfile(t *test
 		Extra:    map[string]any{"enable_tls_fingerprint": true, "tls_fingerprint_router_id": float64(10)},
 	}
 
-	runtime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account)
+	runtime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account, "")
 
 	require.False(t, runtime.Matched)
 	require.NotNil(t, runtime.Profile)

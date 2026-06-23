@@ -6,10 +6,12 @@
 import { apiClient } from '../client'
 
 export type TLSFingerprintRouterMatchType = 'contains' | 'prefix' | 'exact' | 'regex'
+export type TLSFingerprintRouterTransport = '' | 'http' | 'websocket'
 
 export interface TLSFingerprintRouterRule {
   name: string
   enabled: boolean
+  transport?: TLSFingerprintRouterTransport
   match_type: TLSFingerprintRouterMatchType
   pattern: string
   case_sensitive: boolean

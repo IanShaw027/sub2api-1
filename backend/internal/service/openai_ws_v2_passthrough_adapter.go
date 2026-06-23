@@ -423,7 +423,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		turnState = strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
 		turnMetadata = strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader))
 	}
-	tlsFPRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
+	tlsFPRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "websocket")
 	headers, _ := s.buildOpenAIWSHeaders(c, account, token, wsDecision, isCodexCLI, turnState, turnMetadata, promptCacheKey)
 	applyOpenAIWSFingerprintRuntimeHeaders(headers, tlsFPRuntime)
 	proxyURL := ""

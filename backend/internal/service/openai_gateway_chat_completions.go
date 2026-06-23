@@ -291,7 +291,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
+	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "http")
 	httpCodexCompatRetryTried := false
 	httpRawChatFallbackRetryTried := false
 	var resp *http.Response

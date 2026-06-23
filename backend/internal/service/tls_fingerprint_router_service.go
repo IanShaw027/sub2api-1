@@ -131,9 +131,9 @@ func (s *TLSFingerprintRouterService) MatchUserAgent(ctx context.Context, router
 	return s.MatchRequest(ctx, routerID, userAgent, "")
 }
 
-// MatchRequest 匹配入站请求头，采用 first-match-wins。规则若配置上游
-// Originator 覆写，入站 Originator 必须先匹配该值，避免仅凭 UA 触发身份头覆写。
-func (s *TLSFingerprintRouterService) MatchRequest(ctx context.Context, routerID int64, userAgent string, originator string) (TLSFingerprintRouterMatchResult, bool) {
+// MatchRequest 匹配入站请求头，采用 first-match-wins。
+// transport 为对上游的传输类型（"http"/"websocket"/""），空字符串表示不过滤。
+func (s *TLSFingerprintRouterService) MatchRequest(ctx context.Context, routerID int64, userAgent string, transport string) (TLSFingerprintRouterMatchResult, bool) {
 	if s == nil || routerID <= 0 {
 		return TLSFingerprintRouterMatchResult{}, false
 	}
@@ -151,7 +151,7 @@ func (s *TLSFingerprintRouterService) MatchRequest(ctx context.Context, routerID
 		if !rule.Enabled || !tlsFingerprintRouterRuleMatches(rule, userAgent) {
 			continue
 		}
-		if !tlsFingerprintRouterRuleOriginatorAllowed(rule, originator) {
+		if !tlsFingerprintRouterRuleTransportAllowed(rule, transport) {
 			continue
 		}
 		return TLSFingerprintRouterMatchResult{
@@ -199,12 +199,12 @@ func tlsFingerprintRouterRuleMatches(rule model.TLSFingerprintRouterRule, userAg
 	}
 }
 
-func tlsFingerprintRouterRuleOriginatorAllowed(rule model.TLSFingerprintRouterRule, originator string) bool {
-	upstreamOriginator := strings.TrimSpace(rule.UpstreamOriginator)
-	if upstreamOriginator == "" {
+func tlsFingerprintRouterRuleTransportAllowed(rule model.TLSFingerprintRouterRule, transport string) bool {
+	ruleTransport := strings.TrimSpace(rule.Transport)
+	if ruleTransport == "" {
 		return true
 	}
-	return strings.EqualFold(strings.TrimSpace(originator), upstreamOriginator)
+	return strings.EqualFold(ruleTransport, strings.TrimSpace(transport))
 }
 
 func (s *TLSFingerprintRouterService) refreshLocalCache(ctx context.Context) error {

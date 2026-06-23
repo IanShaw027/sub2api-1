@@ -5377,7 +5377,7 @@ oauthTransformDone:
 	httpInstructionsRetryTried := false
 	httpUnsupportedPreviousResponseIDRetryTried := false
 	httpReasoningEnabledRetryTried := false
-	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
+	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "http")
 	for {
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, upstreamStream)
@@ -6010,7 +6010,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	invalidEncryptedContentRetryTried := false
 	previousResponseIDRetryTried := false
 	reasoningEnabledRetryTried := false
-	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
+	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "http")
 	var upstreamReq *http.Request
 	var resp *http.Response
 	for {

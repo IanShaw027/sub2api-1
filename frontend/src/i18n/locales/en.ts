@@ -7699,6 +7699,7 @@ export default {
 
       columns: {
         platform: 'Platform',
+        transport: 'Transport',
         name: 'Name',
         description: 'Description',
         grease: 'GREASE',
@@ -7709,6 +7710,8 @@ export default {
       form: {
         platform: 'Platform',
         platformPlaceholder: 'e.g. openai / anthropic / gemini',
+        transport: 'Transport',
+        transportAny: 'Any',
         pasteYaml: 'Paste YAML Configuration',
         pasteYamlPlaceholder: 'Paste YAML output from TLS Fingerprint Collector here...',
         pasteYamlHint: 'Paste the YAML copied from TLS Fingerprint Collector to auto-fill all fields.',
@@ -7849,6 +7852,8 @@ export default {
         addRule: 'Add Rule',
         noProfilesHint: 'Create at least one TLS fingerprint profile before enabling router rules.',
         ruleNamePlaceholder: 'Rule name',
+        transport: 'Transport',
+        transportAny: 'Any',
         matchType: 'Match Type',
         pattern: 'Pattern',
         patternPlaceholder: 'e.g. Chrome or ^Mozilla/',

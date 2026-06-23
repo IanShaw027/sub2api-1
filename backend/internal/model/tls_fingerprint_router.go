@@ -13,6 +13,9 @@ const (
 	TLSFingerprintRouterMatchPrefix   = "prefix"
 	TLSFingerprintRouterMatchExact    = "exact"
 	TLSFingerprintRouterMatchRegex    = "regex"
+
+	TLSFingerprintRouterTransportHTTP      = "http"
+	TLSFingerprintRouterTransportWebSocket = "websocket"
 )
 
 // TLSFingerprintRouter TLS 指纹路由规则集。
@@ -30,6 +33,7 @@ type TLSFingerprintRouter struct {
 type TLSFingerprintRouterRule struct {
 	Name                    string `json:"name"`
 	Enabled                 bool   `json:"enabled"`
+	Transport               string `json:"transport,omitempty"`
 	MatchType               string `json:"match_type"`
 	Pattern                 string `json:"pattern"`
 	CaseSensitive           bool   `json:"case_sensitive"`
@@ -65,6 +69,11 @@ func (r *TLSFingerprintRouterRule) Validate(index int) error {
 	}
 	if r.TLSFingerprintProfileID <= 0 {
 		return &ValidationError{Field: prefix + ".tls_fingerprint_profile_id", Message: "tls fingerprint profile is required"}
+	}
+	switch strings.TrimSpace(r.Transport) {
+	case "", TLSFingerprintRouterTransportHTTP, TLSFingerprintRouterTransportWebSocket:
+	default:
+		return &ValidationError{Field: prefix + ".transport", Message: "transport must be empty, http, or websocket"}
 	}
 	switch strings.TrimSpace(r.MatchType) {
 	case TLSFingerprintRouterMatchContains, TLSFingerprintRouterMatchPrefix, TLSFingerprintRouterMatchExact:

@@ -2879,7 +2879,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	connProfile := openAIWSConnProfileSessionBound
 	promoteNeutralConnToSessionBound := false
 	pool := s.getOpenAIWSConnPool()
-	tlsFPRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
+	tlsFPRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "websocket")
 	wsHeaders, sessionResolution := s.buildOpenAIWSHeaders(c, account, token, decision, isCodexCLI, turnState, turnMetadata, promptCacheKey)
 	applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
 	if httpIngressWSOneShot {
@@ -4469,7 +4469,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 
 	isCodexCLI = openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator")) || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI)
-	tlsFPRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
+	tlsFPRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "websocket")
 	wsHeaders, _ := s.buildOpenAIWSHeaders(c, account, token, wsDecision, isCodexCLI, turnState, strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), firstPayload.promptCacheKey)
 	applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
 	baseAcquireReq := openAIWSAcquireRequest{

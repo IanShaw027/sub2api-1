@@ -389,7 +389,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account)
+	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "http")
 	httpCodexCompatRetryTried := false
 	var resp *http.Response
 	for {

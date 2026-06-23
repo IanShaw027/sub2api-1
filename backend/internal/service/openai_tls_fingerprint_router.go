@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
 )
@@ -23,7 +24,7 @@ func (s *OpenAIGatewayService) SetTLSFingerprintRouterService(routerService *TLS
 	s.tlsFPRouterService = routerService
 }
 
-func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Context, c *gin.Context, account *Account) openAITLSFingerprintRuntime {
+func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Context, c *gin.Context, account *Account, transport string) openAITLSFingerprintRuntime {
 	runtime := openAITLSFingerprintRuntime{}
 	if s != nil {
 		runtime.Profile = s.resolveOpenAITLSProfile(account)
@@ -43,13 +44,12 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 		return runtime
 	}
 	inboundUA := ""
-	inboundOriginator := ""
 	if c != nil && c.Request != nil {
 		inboundUA = c.Request.Header.Get("User-Agent")
-		inboundOriginator = c.Request.Header.Get("Originator")
 	}
-	match, ok := s.tlsFPRouterService.MatchRequest(ctx, routerID, inboundUA, inboundOriginator)
+	match, ok := s.tlsFPRouterService.MatchRequest(ctx, routerID, inboundUA, transport)
 	if !ok {
+		logger.LegacyPrintf("service.tls_fp_router", "[TLSFPRouter] no_match account_id=%d transport=%s router_id=%d inbound_ua=%s", account.ID, transport, routerID, inboundUA)
 		return runtime
 	}
 	if s.tlsFPProfileService == nil || match.ProfileID <= 0 {
@@ -66,6 +66,13 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 	// the matched template's own UA/Originator.
 	seedTLSFingerprintRuntimeHeaders(&runtime, profile)
 	runtime.Matched = true
+	logger.LegacyPrintf("service.tls_fp_router",
+		"[TLSFPRouter] matched account_id=%d transport=%s profile=%s cipher_suites=%v curves=%v extensions=%v supported_versions=%v key_share_groups=%v psk_modes=%v signature_algorithms=%v alpn=%v upstream_ua=%s upstream_originator=%s",
+		account.ID, transport, profile.Name,
+		profile.CipherSuites, profile.Curves, profile.Extensions,
+		profile.SupportedVersions, profile.KeyShareGroups, profile.PSKModes,
+		profile.SignatureAlgorithms, profile.ALPNProtocols,
+		runtime.UpstreamUserAgent, runtime.UpstreamOriginator)
 	return runtime
 }
 

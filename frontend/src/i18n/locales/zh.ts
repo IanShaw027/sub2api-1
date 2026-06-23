@@ -7851,6 +7851,7 @@ export default {
 
       columns: {
         platform: '平台',
+        transport: '传输',
         name: '名称',
         description: '描述',
         grease: 'GREASE',
@@ -7861,6 +7862,8 @@ export default {
       form: {
         platform: '平台分类',
         platformPlaceholder: '例如 openai / anthropic / gemini',
+        transport: '传输类型',
+        transportAny: '不限',
         pasteYaml: '粘贴 YAML 配置',
         pasteYamlPlaceholder: '将 TLS 指纹采集器复制的 YAML 粘贴到这里...',
         pasteYamlHint: '粘贴从 TLS 指纹采集器复制的 YAML 配置，自动填充所有字段。',
@@ -8001,6 +8004,8 @@ export default {
         addRule: '添加规则',
         noProfilesHint: '启用路由规则前，请至少创建一个 TLS 指纹模板。',
         ruleNamePlaceholder: '规则名称',
+        transport: '传输类型',
+        transportAny: '不限',
         matchType: '匹配类型',
         pattern: '匹配内容',
         patternPlaceholder: '例如 Chrome 或 ^Mozilla/',
