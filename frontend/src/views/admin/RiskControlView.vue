@@ -770,24 +770,6 @@
                       <Icon name="check" size="xs" :stroke-width="2" />
                     </span>
                   </span>
-                  <span
-                    class="flex items-start gap-2 rounded-md bg-white/70 px-2.5 py-2 text-xs text-gray-600 dark:bg-dark-800/70 dark:text-gray-300"
-                    @click.stop
-                    @keydown.stop
-                  >
-                    <input
-                      :data-test="`risk-control-group-api-key-exempt-${group.id}`"
-                      type="checkbox"
-                      class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500 dark:bg-dark-900"
-                      :checked="isGroupInAuditScope(group.id) && isAPIKeyExemptGroup(group.id)"
-                      :disabled="!isGroupInAuditScope(group.id)"
-                      @change="toggleAPIKeyExemptGroup(group.id)"
-                    />
-                    <span class="leading-5">
-                      <span class="block font-medium text-gray-700 dark:text-gray-200">{{ t('admin.riskControl.apiKeyExemptGroup') }}</span>
-                      <span class="block text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.apiKeyExemptGroupHint') }}</span>
-                    </span>
-                  </span>
                 </div>
                 <p v-if="filteredGroups.length === 0" class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.noGroups') }}</p>
               </div>
@@ -1342,7 +1324,6 @@ const configForm = reactive({
   sample_rate: 100,
   all_groups: true,
   group_ids: [] as number[],
-  api_key_exempt_group_ids: [] as number[],
   record_non_hits: false,
   record_attention_inputs: false,
   attention_threshold: 50,
@@ -1880,7 +1861,6 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.sample_rate = config.sample_rate ?? 100
   configForm.all_groups = config.all_groups
   configForm.group_ids = Array.isArray(config.group_ids) ? [...config.group_ids] : []
-  configForm.api_key_exempt_group_ids = Array.isArray(config.api_key_exempt_group_ids) ? [...config.api_key_exempt_group_ids] : []
   configForm.record_non_hits = config.record_non_hits
   configForm.record_attention_inputs = config.record_attention_inputs ?? false
   configForm.attention_threshold = Math.round((config.attention_threshold ?? 0.5) * 100)
@@ -1997,7 +1977,6 @@ async function saveConfig() {
       sample_rate: Number(configForm.sample_rate) || 0,
       all_groups: configForm.all_groups,
       group_ids: configForm.all_groups ? [] : [...configForm.group_ids],
-      api_key_exempt_group_ids: scopedAPIKeyExemptGroupIDs(),
       record_non_hits: configForm.record_non_hits,
       record_attention_inputs: configForm.record_attention_inputs,
       attention_threshold: Number((clampPercent(attentionThreshold) / 100).toFixed(4)),
@@ -2313,7 +2292,6 @@ function toggleGroup(groupID: number) {
   const index = configForm.group_ids.indexOf(groupID)
   if (index >= 0) {
     configForm.group_ids.splice(index, 1)
-    removeAPIKeyExemptGroup(groupID)
   } else {
     configForm.group_ids.push(groupID)
   }
@@ -2325,35 +2303,6 @@ function isGroupSelected(groupID: number): boolean {
 
 function isGroupInAuditScope(groupID: number): boolean {
   return configForm.all_groups || isGroupSelected(groupID)
-}
-
-function toggleAPIKeyExemptGroup(groupID: number) {
-  if (!isGroupInAuditScope(groupID)) return
-  const index = configForm.api_key_exempt_group_ids.indexOf(groupID)
-  if (index >= 0) {
-    configForm.api_key_exempt_group_ids.splice(index, 1)
-  } else {
-    configForm.api_key_exempt_group_ids.push(groupID)
-  }
-}
-
-function isAPIKeyExemptGroup(groupID: number): boolean {
-  return configForm.api_key_exempt_group_ids.includes(groupID)
-}
-
-function removeAPIKeyExemptGroup(groupID: number) {
-  const index = configForm.api_key_exempt_group_ids.indexOf(groupID)
-  if (index >= 0) {
-    configForm.api_key_exempt_group_ids.splice(index, 1)
-  }
-}
-
-function scopedAPIKeyExemptGroupIDs(): number[] {
-  if (configForm.all_groups) {
-    return [...configForm.api_key_exempt_group_ids]
-  }
-  const scopedGroupIDs = new Set(configForm.group_ids)
-  return configForm.api_key_exempt_group_ids.filter((groupID) => scopedGroupIDs.has(groupID))
 }
 
 function modeLabel(mode: ModerationMode): string {

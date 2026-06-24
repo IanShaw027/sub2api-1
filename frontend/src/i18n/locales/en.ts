@@ -3400,8 +3400,6 @@ export default {
       selectedGroups: 'Selected Groups',
       searchGroups: 'Search group name or platform',
       noGroups: 'No groups available',
-      apiKeyExemptGroup: 'Exclude APIKey',
-      apiKeyExemptGroupHint: 'When checked, gateway APIKey requests in this group skip content moderation.',
       modelFilter: 'Model scope',
       modelFilterHint: 'Moderate by the client-requested model name; channel model mappings do not change this match.',
       modelFilterAll: 'All models',

@@ -158,7 +158,6 @@ type ContentModerationConfig struct {
 	SampleRate              int                               `json:"sample_rate"`
 	AllGroups               bool                              `json:"all_groups"`
 	GroupIDs                []int64                           `json:"group_ids"`
-	APIKeyExemptGroupIDs    []int64                           `json:"api_key_exempt_group_ids"`
 	RecordNonHits           bool                              `json:"record_non_hits"`
 	RecordAttentionInputs   bool                              `json:"record_attention_inputs"`
 	AttentionThreshold      float64                           `json:"attention_threshold"`
@@ -200,7 +199,6 @@ type ContentModerationConfigView struct {
 	SampleRate              int                             `json:"sample_rate"`
 	AllGroups               bool                            `json:"all_groups"`
 	GroupIDs                []int64                         `json:"group_ids"`
-	APIKeyExemptGroupIDs    []int64                         `json:"api_key_exempt_group_ids"`
 	RecordNonHits           bool                            `json:"record_non_hits"`
 	RecordAttentionInputs   bool                            `json:"record_attention_inputs"`
 	AttentionThreshold      float64                         `json:"attention_threshold"`
@@ -319,7 +317,6 @@ type UpdateContentModerationConfigInput struct {
 	SampleRate              *int                                   `json:"sample_rate"`
 	AllGroups               *bool                                  `json:"all_groups"`
 	GroupIDs                *[]int64                               `json:"group_ids"`
-	APIKeyExemptGroupIDs    *[]int64                               `json:"api_key_exempt_group_ids"`
 	RecordNonHits           *bool                                  `json:"record_non_hits"`
 	RecordAttentionInputs   *bool                                  `json:"record_attention_inputs"`
 	AttentionThreshold      *float64                               `json:"attention_threshold"`
@@ -753,9 +750,6 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if input.GroupIDs != nil {
 		cfg.GroupIDs = normalizeInt64IDs(*input.GroupIDs)
 	}
-	if input.APIKeyExemptGroupIDs != nil {
-		cfg.APIKeyExemptGroupIDs = normalizeInt64IDs(*input.APIKeyExemptGroupIDs)
-	}
 	if input.RecordNonHits != nil {
 		cfg.RecordNonHits = *input.RecordNonHits
 	}
@@ -942,7 +936,6 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return allow, nil
 	}
 	inGroupScope := cfg.includesGroup(input.GroupID)
-	apiKeyGroupExempt := cfg.exemptsAPIKeyGroup(input.APIKeyID, input.GroupID)
 	inModelScope := cfg.includesModel(input.Model)
 	slog.Info("content_moderation.config_loaded",
 		"user_id", input.UserID,
@@ -958,8 +951,6 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		"all_groups", cfg.AllGroups,
 		"configured_group_ids", cfg.GroupIDs,
 		"in_group_scope", inGroupScope,
-		"api_key_exempt_group_ids", cfg.APIKeyExemptGroupIDs,
-		"api_key_group_exempt", apiKeyGroupExempt,
 		"model_filter_type", cfg.ModelFilter.Type,
 		"configured_models", cfg.ModelFilter.Models,
 		"in_model_scope", inModelScope,
@@ -995,17 +986,6 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"protocol", input.Protocol,
 			"all_groups", cfg.AllGroups,
 			"configured_group_ids", cfg.GroupIDs)
-		return allow, nil
-	}
-	if apiKeyGroupExempt {
-		slog.Info("content_moderation.skip_api_key_exempt_group",
-			"user_id", input.UserID,
-			"api_key_id", input.APIKeyID,
-			"group_id", contentModerationLogGroupID(input.GroupID),
-			"group_name", input.GroupName,
-			"endpoint", input.Endpoint,
-			"protocol", input.Protocol,
-			"api_key_exempt_group_ids", cfg.APIKeyExemptGroupIDs)
 		return allow, nil
 	}
 	if !inModelScope {
@@ -1418,9 +1398,6 @@ func (s *ContentModerationService) processAsyncTaskWithConfig(ctx context.Contex
 	if !cfg.includesGroup(task.input.GroupID) {
 		return false
 	}
-	if cfg.exemptsAPIKeyGroup(task.input.APIKeyID, task.input.GroupID) {
-		return false
-	}
 	if !cfg.includesModel(task.input.Model) {
 		return false
 	}
@@ -1726,24 +1703,6 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 		for _, groupID := range cfg.GroupIDs {
 			if _, err := s.groupRepo.GetByIDLite(ctx, groupID); err != nil {
 				return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_GROUP", fmt.Sprintf("审计分组不存在: %d", groupID))
-			}
-		}
-	}
-	if len(cfg.APIKeyExemptGroupIDs) > 0 && s.groupRepo != nil {
-		for _, groupID := range cfg.APIKeyExemptGroupIDs {
-			if _, err := s.groupRepo.GetByIDLite(ctx, groupID); err != nil {
-				return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_API_KEY_EXEMPT_GROUP", fmt.Sprintf("豁免分组不存在: %d", groupID))
-			}
-		}
-	}
-	if !cfg.AllGroups && len(cfg.APIKeyExemptGroupIDs) > 0 {
-		auditedGroupIDs := make(map[int64]struct{}, len(cfg.GroupIDs))
-		for _, groupID := range cfg.GroupIDs {
-			auditedGroupIDs[groupID] = struct{}{}
-		}
-		for _, groupID := range cfg.APIKeyExemptGroupIDs {
-			if _, ok := auditedGroupIDs[groupID]; !ok {
-				return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_API_KEY_EXEMPT_GROUP_SCOPE", fmt.Sprintf("豁免分组必须属于审计分组范围: %d", groupID))
 			}
 		}
 	}
@@ -2133,7 +2092,6 @@ func defaultContentModerationConfig() *ContentModerationConfig {
 		SampleRate:              100,
 		AllGroups:               true,
 		GroupIDs:                []int64{},
-		APIKeyExemptGroupIDs:    []int64{},
 		RecordNonHits:           false,
 		RecordAttentionInputs:   false,
 		AttentionThreshold:      0,
@@ -2169,7 +2127,6 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 	clone.APIKeys = append([]string(nil), cfg.APIKeys...)
 	clone.APIKeyMetadata = append([]ContentModerationAPIKeyMetadata(nil), cfg.APIKeyMetadata...)
 	clone.GroupIDs = append([]int64(nil), cfg.GroupIDs...)
-	clone.APIKeyExemptGroupIDs = append([]int64(nil), cfg.APIKeyExemptGroupIDs...)
 	clone.AutoBanExemptUserIDs = append([]int64(nil), cfg.AutoBanExemptUserIDs...)
 	clone.AutoBanExemptUserEmails = append([]string(nil), cfg.AutoBanExemptUserEmails...)
 	clone.BlockedKeywords = append([]string(nil), cfg.BlockedKeywords...)
@@ -2281,7 +2238,6 @@ func (cfg *ContentModerationConfig) normalize() {
 		cfg.NonHitRetentionDays = maxContentModerationNonHitRetentionDays
 	}
 	cfg.GroupIDs = normalizeInt64IDs(cfg.GroupIDs)
-	cfg.APIKeyExemptGroupIDs = normalizeInt64IDs(cfg.APIKeyExemptGroupIDs)
 	cfg.AutoBanExemptUserIDs = normalizeInt64IDs(cfg.AutoBanExemptUserIDs)
 	cfg.AutoBanExemptUserEmails = normalizeContentModerationEmailList(cfg.AutoBanExemptUserEmails)
 	cfg.Thresholds = mergeContentModerationThresholds(ContentModerationDefaultThresholds(), cfg.Thresholds)
@@ -2298,18 +2254,6 @@ func (cfg *ContentModerationConfig) includesGroup(groupID *int64) bool {
 		return false
 	}
 	for _, id := range cfg.GroupIDs {
-		if id == *groupID {
-			return true
-		}
-	}
-	return false
-}
-
-func (cfg *ContentModerationConfig) exemptsAPIKeyGroup(apiKeyID int64, groupID *int64) bool {
-	if cfg == nil || apiKeyID <= 0 || groupID == nil {
-		return false
-	}
-	for _, id := range cfg.APIKeyExemptGroupIDs {
 		if id == *groupID {
 			return true
 		}
@@ -2697,7 +2641,6 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		SampleRate:              cfg.SampleRate,
 		AllGroups:               cfg.AllGroups,
 		GroupIDs:                append([]int64(nil), cfg.GroupIDs...),
-		APIKeyExemptGroupIDs:    append([]int64(nil), cfg.APIKeyExemptGroupIDs...),
 		RecordNonHits:           cfg.RecordNonHits,
 		RecordAttentionInputs:   cfg.RecordAttentionInputs,
 		AttentionThreshold:      cfg.AttentionThreshold,

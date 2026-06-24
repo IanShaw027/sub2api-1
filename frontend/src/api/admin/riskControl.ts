@@ -28,7 +28,6 @@ export interface ContentModerationConfig {
   sample_rate: number
   all_groups: boolean
   group_ids: number[]
-  api_key_exempt_group_ids: number[]
   record_non_hits: boolean
   record_attention_inputs: boolean
   attention_threshold: number
@@ -125,7 +124,6 @@ export interface UpdateContentModerationConfig {
   sample_rate?: number
   all_groups?: boolean
   group_ids?: number[]
-  api_key_exempt_group_ids?: number[]
   record_non_hits?: boolean
   record_attention_inputs?: boolean
   attention_threshold?: number

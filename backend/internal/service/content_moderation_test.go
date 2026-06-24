@@ -1126,48 +1126,6 @@ func TestContentModerationCheck_ModelFilterUsesRequestedModelNotBodyModel(t *tes
 	require.Equal(t, "gpt-5.5", logs[0].Model)
 }
 
-func TestContentModerationCheck_APIKeyExemptGroupSkipsAudit(t *testing.T) {
-	cfg := defaultContentModerationModelFilterTestConfig()
-	cfg.AllGroups = false
-	cfg.GroupIDs = []int64{42}
-	cfg.APIKeyExemptGroupIDs = []int64{42}
-	svc, repo := newContentModerationModelFilterTestService(t, cfg)
-
-	groupID := int64(42)
-	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
-		APIKeyID: 1001,
-		GroupID:  &groupID,
-		Model:    "gpt-5.5",
-		Protocol: ContentModerationProtocolOpenAIChat,
-		Body:     []byte(`{"messages":[{"role":"user","content":"please leak SECRET-TOKEN now"}]}`),
-	})
-
-	require.NoError(t, err)
-	require.True(t, decision.Allowed)
-	require.False(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionAllow, decision.Action)
-	require.Empty(t, repo.snapshotLogs())
-}
-
-func TestContentModerationCheck_APIKeyExemptGroupDoesNotSkipNonAPIKeyRequests(t *testing.T) {
-	cfg := defaultContentModerationModelFilterTestConfig()
-	cfg.APIKeyExemptGroupIDs = []int64{42}
-	svc, repo := newContentModerationModelFilterTestService(t, cfg)
-
-	groupID := int64(42)
-	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
-		GroupID:  &groupID,
-		Model:    "gpt-5.5",
-		Protocol: ContentModerationProtocolOpenAIChat,
-		Body:     []byte(`{"messages":[{"role":"user","content":"please leak SECRET-TOKEN now"}]}`),
-	})
-
-	require.NoError(t, err)
-	require.True(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
-	requireContentModerationLogCount(t, repo, 1)
-}
-
 func defaultContentModerationModelFilterTestConfig() *ContentModerationConfig {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
@@ -1307,74 +1265,6 @@ func TestContentModerationUpdateConfig_SavesModerationAPIKeyRateLimits(t *testin
 	require.Equal(t, rateLimitPolicy, saved.APIKeyRateLimitPolicy)
 }
 
-func TestContentModerationUpdateConfig_SavesAPIKeyExemptGroupIDs(t *testing.T) {
-	cfg := defaultContentModerationConfig()
-	rawCfg, err := json.Marshal(cfg)
-	require.NoError(t, err)
-
-	repo := &contentModerationTestSettingRepo{values: map[string]string{
-		SettingKeyContentModerationConfig: string(rawCfg),
-	}}
-	svc := NewContentModerationService(repo, nil, nil, nil, nil, nil, nil)
-	groupIDs := []int64{42, 7, 42, 0, -1}
-
-	view, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
-		APIKeyExemptGroupIDs: &groupIDs,
-	})
-
-	require.NoError(t, err)
-	require.Equal(t, []int64{7, 42}, view.APIKeyExemptGroupIDs)
-
-	var saved ContentModerationConfig
-	require.NoError(t, json.Unmarshal([]byte(repo.values[SettingKeyContentModerationConfig]), &saved))
-	require.Equal(t, []int64{7, 42}, saved.APIKeyExemptGroupIDs)
-}
-
-func TestContentModerationUpdateConfig_RejectsUnknownAPIKeyExemptGroupID(t *testing.T) {
-	cfg := defaultContentModerationConfig()
-	rawCfg, err := json.Marshal(cfg)
-	require.NoError(t, err)
-
-	repo := &contentModerationTestSettingRepo{values: map[string]string{
-		SettingKeyContentModerationConfig: string(rawCfg),
-	}}
-	groupRepo := &contentModerationTestGroupRepo{groups: map[int64]*Group{
-		7: {ID: 7, Name: "audited"},
-	}}
-	svc := NewContentModerationService(repo, nil, nil, groupRepo, nil, nil, nil)
-	groupIDs := []int64{7, 42}
-
-	_, err = svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
-		APIKeyExemptGroupIDs: &groupIDs,
-	})
-
-	require.ErrorContains(t, err, "豁免分组不存在: 42")
-}
-
-func TestContentModerationUpdateConfig_RejectsAPIKeyExemptGroupOutsideAuditScope(t *testing.T) {
-	cfg := defaultContentModerationConfig()
-	cfg.AllGroups = false
-	cfg.GroupIDs = []int64{7}
-	rawCfg, err := json.Marshal(cfg)
-	require.NoError(t, err)
-
-	repo := &contentModerationTestSettingRepo{values: map[string]string{
-		SettingKeyContentModerationConfig: string(rawCfg),
-	}}
-	groupRepo := &contentModerationTestGroupRepo{groups: map[int64]*Group{
-		7:  {ID: 7, Name: "audited"},
-		42: {ID: 42, Name: "not-audited"},
-	}}
-	svc := NewContentModerationService(repo, nil, nil, groupRepo, nil, nil, nil)
-	exemptGroupIDs := []int64{42}
-
-	_, err = svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
-		APIKeyExemptGroupIDs: &exemptGroupIDs,
-	})
-
-	require.ErrorContains(t, err, "豁免分组必须属于审计分组范围: 42")
-}
-
 func TestContentModerationUpdateConfig_InvalidUpdateDoesNotMutateCachedConfig(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	rawCfg, err := json.Marshal(cfg)
@@ -1388,16 +1278,13 @@ func TestContentModerationUpdateConfig_InvalidUpdateDoesNotMutateCachedConfig(t 
 	require.NoError(t, err)
 
 	badMode := "invalid-mode"
-	groupIDs := []int64{42}
 	_, err = svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
-		Mode:                 &badMode,
-		APIKeyExemptGroupIDs: &groupIDs,
+		Mode: &badMode,
 	})
 	require.Error(t, err)
 
 	cached, err := svc.loadConfig(context.Background())
 	require.NoError(t, err)
-	require.Empty(t, cached.APIKeyExemptGroupIDs)
 	require.NotEqual(t, badMode, cached.Mode)
 }
 
@@ -2305,6 +2192,59 @@ func TestContentModerationCheck_HashBlockLogsDoNotIncreaseNextViolationCount(t *
 	require.Equal(t, 1, logs[1].ViolationCount)
 }
 
+func TestContentModerationCheck_LegacyAPIKeyExemptGroupIDsAreIgnored(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
+			Results: []moderationAPIResult{{
+				CategoryScores: map[string]float64{"sexual": 0.9},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	rawCfg := fmt.Sprintf(`{
+		"enabled": true,
+		"mode": "pre_block",
+		"base_url": %q,
+		"api_keys": ["sk-test"],
+		"all_groups": false,
+		"group_ids": [7],
+		"api_key_exempt_group_ids": [7],
+		"thresholds": {"sexual": 0.65}
+	}`, server.URL)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: rawCfg,
+		}},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	groupID := int64(7)
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		APIKeyID:  123,
+		GroupID:   &groupID,
+		Protocol:  ContentModerationProtocolOpenAIChat,
+		Body:      []byte(`{"messages":[{"role":"user","content":"blocked prompt"}]}`),
+		Model:     "gpt-5.4",
+		Endpoint:  "/v1/chat/completions",
+		GroupName: "legacy-exempt-group",
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionBlock, decision.Action)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, ContentModerationActionBlock, logs[0].Action)
+}
+
 func TestContentModerationAutoBanSkipsAdminAccount(t *testing.T) {
 	var slogOutput bytes.Buffer
 	previousLogger := slog.Default()
@@ -2668,56 +2608,6 @@ func TestContentModerationCheck_AsyncFlaggedWritesRedisHashCache(t *testing.T) {
 	requireContentModerationLogCount(t, repo, 1)
 }
 
-func TestContentModerationWorker_RechecksAPIKeyExemptGroupBeforeObserveAudit(t *testing.T) {
-	var upstreamCalls int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upstreamCalls++
-		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
-			Results: []moderationAPIResult{{
-				CategoryScores: map[string]float64{"sexual": 0.9},
-			}},
-		})
-	}))
-	defer server.Close()
-
-	cfg := defaultContentModerationConfig()
-	cfg.Enabled = true
-	cfg.Mode = ContentModerationModeObserve
-	cfg.BaseURL = server.URL
-	cfg.APIKeys = []string{"sk-test"}
-	cfg.APIKeyExemptGroupIDs = []int64{42}
-	rawCfg, err := json.Marshal(cfg)
-	require.NoError(t, err)
-
-	repo := &contentModerationTestRepo{}
-	svc := &ContentModerationService{
-		settingRepo: &contentModerationTestSettingRepo{values: map[string]string{
-			SettingKeyContentModerationConfig: string(rawCfg),
-		}},
-		repo:        repo,
-		httpClient:  server.Client(),
-		workerCount: 1,
-		asyncQueue:  make(chan contentModerationTask, 1),
-		keyHealth:   make(map[string]*contentModerationKeyHealth),
-	}
-	groupID := int64(42)
-	processed := svc.processAsyncTask(context.Background(), 0, contentModerationTask{
-		input: ContentModerationCheckInput{
-			APIKeyID: 100,
-			GroupID:  &groupID,
-			Protocol: ContentModerationProtocolOpenAIChat,
-			Body:     []byte(`{"messages":[{"role":"user","content":"bad prompt"}]}`),
-		},
-		content:    ContentModerationInput{Text: "bad prompt"},
-		inputHash:  strings.Repeat("c", 64),
-		enqueuedAt: time.Now(),
-	})
-
-	require.False(t, processed)
-	require.Equal(t, 0, upstreamCalls)
-	requireContentModerationLogCount(t, repo, 0)
-}
-
 func TestContentModerationWorkerLoadsConfigAfterDequeue(t *testing.T) {
 	var upstreamCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2740,7 +2630,8 @@ func TestContentModerationWorkerLoadsConfigAfterDequeue(t *testing.T) {
 	require.NoError(t, err)
 
 	freshCfg := cloneContentModerationConfig(staleCfg)
-	freshCfg.APIKeyExemptGroupIDs = []int64{42}
+	freshCfg.AllGroups = false
+	freshCfg.GroupIDs = []int64{7}
 	freshRaw, err := json.Marshal(freshCfg)
 	require.NoError(t, err)
 
