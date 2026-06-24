@@ -1014,6 +1014,10 @@ func resolveOpenAIWSFallbackErrorResponse(err error) (statusCode int, errType st
 			errType = "upstream_error"
 		}
 	}
+	if isOpenAIBillingLimitError(statusCode, upstreamMessage, "") {
+		errType = "rate_limit_error"
+		clientMessage = openAIBillingLimitClientMessage()
+	}
 	if clientMessage == "" {
 		clientMessage = upstreamMessage
 	}
@@ -7845,6 +7849,11 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		errType = "upstream_error"
 		errMsg = "Upstream request failed"
 	}
+	if isOpenAIBillingLimitError(resp.StatusCode, upstreamMsg, extractUpstreamErrorCode(body)) {
+		statusCode = http.StatusTooManyRequests
+		errType = "rate_limit_error"
+		errMsg = openAIBillingLimitClientMessage()
+	}
 
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{
@@ -8013,8 +8022,13 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	case resp.StatusCode >= 500:
 		errType = "api_error"
 	}
+	clientMessage := safeCompatUpstreamErrorMessage(resp.StatusCode)
+	if isOpenAIBillingLimitError(resp.StatusCode, upstreamMsg, extractUpstreamErrorCode(body)) {
+		errType = "rate_limit_error"
+		clientMessage = openAIBillingLimitClientMessage()
+	}
 
-	writeError(c, resp.StatusCode, errType, safeCompatUpstreamErrorMessage(resp.StatusCode))
+	writeError(c, resp.StatusCode, errType, clientMessage)
 	return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
 }
 
@@ -8031,12 +8045,42 @@ func safeCompatUpstreamErrorMessage(statusCode int) string {
 	}
 }
 
+func openAIBillingLimitClientMessage() string {
+	return "Upstream billing or quota limit reached, please retry later"
+}
+
+func isOpenAIBillingLimitError(statusCode int, upstreamMsg, codeRaw string) bool {
+	lowerMsg := strings.ToLower(strings.TrimSpace(upstreamMsg))
+	lowerCode := strings.ToLower(strings.TrimSpace(codeRaw))
+
+	if strings.Contains(lowerCode, "billing_hard_limit") ||
+		strings.Contains(lowerCode, "insufficient_quota") {
+		return true
+	}
+	if strings.Contains(lowerMsg, "usage limit") && strings.Contains(lowerMsg, "reached") {
+		return true
+	}
+	if strings.Contains(lowerMsg, "insufficient quota") {
+		return true
+	}
+	if strings.Contains(lowerMsg, "billing hard limit") {
+		return true
+	}
+	if strings.Contains(lowerMsg, "upgrade to plus") && strings.Contains(lowerMsg, "usage limit") {
+		return true
+	}
+	return statusCode == http.StatusPaymentRequired
+}
+
 func shouldExposeOpenAIUpstreamClientError(statusCode int, upstreamMsg string) bool {
 	if statusCode < http.StatusBadRequest || statusCode >= http.StatusInternalServerError {
 		return false
 	}
 	switch statusCode {
 	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusTooManyRequests:
+		return false
+	}
+	if isOpenAIBillingLimitError(statusCode, upstreamMsg, "") {
 		return false
 	}
 	if isOpenAITransientCapacityError(upstreamMsg) {

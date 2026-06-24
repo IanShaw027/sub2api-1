@@ -1066,6 +1066,25 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 					}
 				}
 			}
+			// Streamed Responses/OpenAI failures can already carry the upstream-visible
+			// error in the captured SSE body even when service-layer context still holds
+			// a generic fallback like "Upstream transport error". Prefer the parsed SSE
+			// message/type for Ops enrichment so the admin UI shows the real upstream
+			// cause for /v1/responses stream failures.
+			if parsed.StreamFailure {
+				if msg := strings.TrimSpace(parsed.Message); msg != "" {
+					if entry.UpstreamErrorMessage == nil || strings.EqualFold(strings.TrimSpace(*entry.UpstreamErrorMessage), "Upstream transport error") {
+						msgCopy := msg
+						entry.UpstreamErrorMessage = &msgCopy
+					}
+				}
+				if entry.UpstreamStatusCode == nil {
+					if inferred := inferStreamFailureStatus(c, parsed); inferred >= 400 {
+						code := inferred
+						entry.UpstreamStatusCode = &code
+					}
+				}
+			}
 		}
 
 		if apiKey != nil {

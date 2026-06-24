@@ -364,6 +364,53 @@ func TestOpsErrorLoggerMiddleware_ResponsesFailedSSEUsesFailureStatus(t *testing
 	}
 }
 
+func TestOpsErrorLoggerMiddleware_StreamFailurePrefersParsedMessageForUpstreamContext(t *testing.T) {
+	resetOpsErrorLoggerStateForTest(t)
+	t.Cleanup(func() { resetOpsErrorLoggerStateForTest(t) })
+	gin.SetMode(gin.TestMode)
+
+	opsErrorLogOnce.Do(func() {})
+	opsErrorLogMu.Lock()
+	opsErrorLogQueue = make(chan opsErrorLogJob, 1)
+	opsErrorLogMu.Unlock()
+
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := gin.New()
+	r.POST("/v1/responses", OpsErrorLoggerMiddleware(ops), func(c *gin.Context) {
+		body := []byte(`{"model":"gpt-5.5","input":"hi","stream":true}`)
+		setOpsRequestContext(c, "gpt-5.5", true, body)
+		setOpsEndpointContext(c, "gpt-5.5", int16(service.RequestTypeSync))
+		service.SetOpsUpstreamErrorWithType(c, "invalid_request_error", 0, "Upstream transport error", `upstream response failed: Your input exceeds the context window of this model. Please adjust your input and try again.`)
+		c.Status(http.StatusOK)
+		_, _ = c.Writer.WriteString(
+			"event: error\n" +
+				`data: {"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again."}}` +
+				"\n\n",
+		)
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(1), OpsErrorLogEnqueuedTotal())
+	require.Equal(t, int64(1), OpsErrorLogQueueLength())
+
+	select {
+	case job := <-opsErrorLogQueue:
+		opsErrorLogQueueLen.Add(-1)
+		require.NotNil(t, job.entry)
+		require.Equal(t, http.StatusBadRequest, job.entry.StatusCode)
+		require.NotNil(t, job.entry.UpstreamErrorMessage)
+		require.Equal(t, "Your input exceeds the context window of this model. Please adjust your input and try again.", *job.entry.UpstreamErrorMessage)
+		require.NotNil(t, job.entry.UpstreamStatusCode)
+		require.Equal(t, http.StatusBadRequest, *job.entry.UpstreamStatusCode)
+	default:
+		t.Fatal("expected parsed stream failure log to be enqueued")
+	}
+}
+
 func TestOpsErrorLoggerMiddleware_SkipsRecoveredUpstreamCanceledOnSuccessfulRequest(t *testing.T) {
 	resetOpsErrorLoggerStateForTest(t)
 	t.Cleanup(func() { resetOpsErrorLoggerStateForTest(t) })
