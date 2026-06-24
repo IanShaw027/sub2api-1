@@ -341,6 +341,133 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).not.toHaveBeenCalled()
   })
 
+  it('clears OpenAI API key custom error code settings explicitly when disabled', async () => {
+    resetCommonMocks()
+    const account = buildAccount()
+    account.credentials = {
+      ...account.credentials,
+      custom_error_codes_enabled: true,
+      custom_error_codes: [429, 503]
+    }
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    ;(wrapper.vm as any).customErrorCodesEnabled = false
+    ;(wrapper.vm as any).selectedErrorCodes = []
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.custom_error_codes_enabled).toBe(false)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.custom_error_codes).toBeNull()
+  })
+
+  it('clears OpenAI API key pool mode settings explicitly when disabled', async () => {
+    resetCommonMocks()
+    const account = buildAccount()
+    account.credentials = {
+      ...account.credentials,
+      pool_mode: true,
+      pool_mode_retry_count: 7,
+      pool_mode_retry_status_codes: [401, 429, 503]
+    }
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    ;(wrapper.vm as any).poolModeEnabled = false
+    ;(wrapper.vm as any).poolModeRetryCount = 3
+    ;(wrapper.vm as any).poolModeRetryStatusCodesInput = ''
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.pool_mode).toBe(false)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.pool_mode_retry_count).toBe(null)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.pool_mode_retry_status_codes).toBeNull()
+  })
+
+  it('clears OpenAI API key model mapping explicitly when returning to allow-all access', async () => {
+    resetCommonMocks()
+    const account = buildAccount()
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    ;(wrapper.vm as any).modelRestrictionMode = 'whitelist'
+    ;(wrapper.vm as any).allowedModels = []
+    ;(wrapper.vm as any).modelMappings = []
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_mapping).toEqual({})
+  })
+
+  it('clears OpenAI API key compact model mapping explicitly when emptied', async () => {
+    resetCommonMocks()
+    const account = buildAccount()
+    account.credentials = {
+      ...account.credentials,
+      compact_model_mapping: {
+        'gpt-5.4': 'gpt-5.4-openai-compact'
+      }
+    }
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    ;(wrapper.vm as any).openAICompactModelMappings = []
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.compact_model_mapping).toEqual({})
+  })
+
+  it('clears OpenAI API key intercept warmup setting explicitly when disabled', async () => {
+    resetCommonMocks()
+    const account = buildAccount()
+    account.credentials = {
+      ...account.credentials,
+      intercept_warmup_requests: true
+    }
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    ;(wrapper.vm as any).interceptWarmupRequests = false
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.intercept_warmup_requests).toBe(false)
+  })
+
+  it('clears OpenAI API key custom pool retry status override when input is emptied', async () => {
+    resetCommonMocks()
+    const account = buildAccount()
+    account.credentials = {
+      ...account.credentials,
+      pool_mode: true,
+      pool_mode_retry_count: 5,
+      pool_mode_retry_status_codes: [401, 429, 503]
+    }
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    ;(wrapper.vm as any).poolModeEnabled = true
+    ;(wrapper.vm as any).poolModeRetryStatusCodesInput = ''
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.pool_mode).toBe(true)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.pool_mode_retry_status_codes).toBeNull()
+  })
+
   it('edits account scheduling threshold override for supported OpenAI accounts', async () => {
     resetCommonMocks()
     const account = buildAccount()
