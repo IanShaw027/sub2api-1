@@ -325,6 +325,341 @@ func TestOpenAIGatewayService_Forward_HTTPIngressUsesWSWhenEnabledWithSessionSig
 	require.NotEmpty(t, connID)
 }
 
+func TestOpenAIGatewayService_Forward_HTTPIngressOAuthContinuationKeepsStoreFalseOnWS(t *testing.T) {
+	setGinTestMode()
+
+	var connectionCount atomic.Int32
+	var requestCount atomic.Int32
+	var requestConnMu sync.Mutex
+	requestConnIDs := map[int32]int32{}
+	requestBodies := make(map[int32][]byte)
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connID := connectionCount.Add(1)
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket failed: %v", err)
+			return
+		}
+		defer func() {
+			_ = conn.Close()
+		}()
+
+		for {
+			var req map[string]any
+			if err := conn.ReadJSON(&req); err != nil {
+				return
+			}
+			reqRaw, _ := json.Marshal(req)
+			seq := requestCount.Add(1)
+			requestConnMu.Lock()
+			requestConnIDs[seq] = connID
+			requestBodies[seq] = reqRaw
+			requestConnMu.Unlock()
+
+			responseID := "resp_http_ingress_oauth_seed"
+			if seq == 2 {
+				responseID = "resp_http_ingress_oauth_followup"
+			}
+			if err := conn.WriteJSON(map[string]any{
+				"type": "response.completed",
+				"response": map[string]any{
+					"id":    responseID,
+					"model": "gpt-5.1",
+					"usage": map[string]any{
+						"input_tokens":  1,
+						"output_tokens": 1,
+						"input_tokens_details": map[string]any{
+							"cached_tokens": 0,
+						},
+					},
+				},
+			}); err != nil {
+				t.Errorf("write response.completed failed: %v", err)
+				return
+			}
+		}
+	}))
+	defer wsServer.Close()
+
+	groupID := int64(1103)
+	apiKeyID := int64(2203)
+	newHTTPContext := func() (*httptest.ResponseRecorder, *gin.Context) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("User-Agent", "custom-client/1.0")
+		c.Request.Header.Set("session_id", "oauth-http-ingress-session")
+		SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+		return rec, c
+	}
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_http_should_not_happen","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 30
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 10
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+	wsURL := "ws" + strings.TrimPrefix(wsServer.URL, "http")
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSURLBuilder: func(account *Account) (string, error) {
+			return wsURL, nil
+		},
+	}
+
+	account := &Account{
+		ID:          108,
+		Name:        "openai-oauth-http-ingress-continuation",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Extra: map[string]any{
+			"openai_oauth_responses_websockets_v2_enabled": true,
+		},
+	}
+
+	_, firstCtx := newHTTPContext()
+	firstBody := []byte(`{"model":"gpt-5.1","stream":false,"input":[{"type":"input_text","text":"hello"}]}`)
+	firstResult, err := svc.Forward(context.Background(), firstCtx, account, firstBody)
+	require.NoError(t, err)
+	require.NotNil(t, firstResult)
+	require.True(t, firstResult.OpenAIWSMode)
+	require.Equal(t, "resp_http_ingress_oauth_seed", firstResult.RequestID)
+
+	_, secondCtx := newHTTPContext()
+	secondBody := []byte(`{"model":"gpt-5.1","stream":false,"store":true,"previous_response_id":"resp_http_ingress_oauth_seed","input":[{"type":"input_text","text":"followup"}]}`)
+	secondResult, err := svc.Forward(context.Background(), secondCtx, account, secondBody)
+	require.NoError(t, err)
+	require.NotNil(t, secondResult)
+	require.True(t, secondResult.OpenAIWSMode)
+	require.Equal(t, "resp_http_ingress_oauth_followup", secondResult.RequestID)
+
+	require.Nil(t, upstream.lastReq, "HTTP ingress OAuth continuation should stay on WS")
+	require.Equal(t, int32(1), connectionCount.Load(), "same-session OAuth continuation should reuse the live upstream WS")
+	require.Equal(t, int32(2), requestCount.Load())
+
+	requestConnMu.Lock()
+	firstConnID := requestConnIDs[1]
+	secondConnID := requestConnIDs[2]
+	firstReq := append([]byte(nil), requestBodies[1]...)
+	secondReq := append([]byte(nil), requestBodies[2]...)
+	requestConnMu.Unlock()
+
+	require.NotZero(t, firstConnID)
+	require.Equal(t, firstConnID, secondConnID, "sticky account + conn affinity should keep the same upstream WS")
+	require.False(t, gjson.GetBytes(firstReq, "store").Bool(), "OAuth first turn should already be normalized to store=false")
+	require.Equal(t, "resp_http_ingress_oauth_seed", gjson.GetBytes(secondReq, "previous_response_id").String())
+	require.False(t, gjson.GetBytes(secondReq, "store").Bool(), "OAuth continuation over HTTP ingress WS must keep store=false")
+	require.Equal(t, "followup", gjson.GetBytes(secondReq, "input.0.text").String())
+}
+
+func TestOpenAIGatewayService_Forward_HTTPIngressOAuthPreviousResponseNotFoundUsesSessionWindowRebuild(t *testing.T) {
+	setGinTestMode()
+
+	var wsRequests atomic.Int32
+	var wsRequestMu sync.Mutex
+	var wsRequestPayloads [][]byte
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket failed: %v", err)
+			return
+		}
+		defer func() {
+			_ = conn.Close()
+		}()
+
+		for {
+			var req map[string]any
+			if err := conn.ReadJSON(&req); err != nil {
+				return
+			}
+			requestSeq := wsRequests.Add(1)
+			reqRaw, _ := json.Marshal(req)
+			wsRequestMu.Lock()
+			wsRequestPayloads = append(wsRequestPayloads, reqRaw)
+			wsRequestMu.Unlock()
+
+			if requestSeq == 1 {
+				_ = conn.WriteJSON(map[string]any{
+					"type": "response.completed",
+					"response": map[string]any{
+						"id":    "resp_missing_prev",
+						"model": "gpt-5.1",
+						"usage": map[string]any{
+							"input_tokens":  1,
+							"output_tokens": 1,
+							"input_tokens_details": map[string]any{
+								"cached_tokens": 0,
+							},
+						},
+					},
+				})
+				continue
+			}
+
+			if requestSeq == 2 {
+				_ = conn.WriteJSON(map[string]any{
+					"type": "error",
+					"error": map[string]any{
+						"code":    "previous_response_not_found",
+						"type":    "invalid_request_error",
+						"message": "missing anchor",
+					},
+				})
+				return
+			}
+
+			_ = conn.WriteJSON(map[string]any{
+				"type": "response.completed",
+				"response": map[string]any{
+					"id":    "resp_oauth_window_rebuild_ok",
+					"model": "gpt-5.1",
+					"usage": map[string]any{
+						"input_tokens":  2,
+						"output_tokens": 1,
+						"input_tokens_details": map[string]any{
+							"cached_tokens": 0,
+						},
+					},
+				},
+			})
+			return
+		}
+	}))
+	defer wsServer.Close()
+
+	groupID := int64(1104)
+	apiKeyID := int64(2204)
+	newHTTPContext := func() (*httptest.ResponseRecorder, *gin.Context) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("User-Agent", "custom-client/1.0")
+		c.Request.Header.Set("session_id", "oauth-http-ingress-rebuild-session")
+		SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+		return rec, c
+	}
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_http_should_not_happen","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 30
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 10
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+	wsURL := "ws" + strings.TrimPrefix(wsServer.URL, "http")
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSURLBuilder: func(account *Account) (string, error) {
+			return wsURL, nil
+		},
+	}
+
+		account := &Account{
+		ID:          109,
+		Name:        "openai-oauth-http-ingress-rebuild",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Extra: map[string]any{
+			"openai_oauth_responses_websockets_v2_enabled": true,
+		},
+	}
+
+	seedBody := []byte(`{"model":"gpt-5.1","stream":false,"store":false,"input":[{"type":"input_text","text":"history"}]}`)
+	_, seedCtx := newHTTPContext()
+	seedResult, err := svc.Forward(context.Background(), seedCtx, account, seedBody)
+	require.NoError(t, err)
+	require.NotNil(t, seedResult)
+	require.Equal(t, "resp_missing_prev", seedResult.RequestID)
+	seedSessionHash := svc.GenerateSessionHash(seedCtx, seedBody)
+	require.NotEmpty(t, seedSessionHash)
+	seedWindow, ok := svc.getOpenAIWSStateStore().GetSessionWindow(context.Background(), groupID, apiKeyID, seedSessionHash)
+	require.True(t, ok, "seed success should persist a session rebuild window")
+	require.Equal(t, "resp_missing_prev", seedWindow.LatestResponseID)
+	require.Equal(t, "history", gjson.GetBytes(seedWindow.ReplayInputRaw, "0.text").String())
+
+	body := []byte(`{"model":"gpt-5.1","stream":false,"store":false,"previous_response_id":"resp_missing_prev","input":[{"type":"input_text","text":"followup"}]}`)
+	rec, forwardCtx := newHTTPContext()
+	result, err := svc.Forward(context.Background(), forwardCtx, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_oauth_window_rebuild_ok", result.RequestID)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Nil(t, upstream.lastReq, "previous_response_not_found rebuild must stay on WS")
+	require.Equal(t, int32(3), wsRequests.Load(), "seed + failing continuation + rebuild retry")
+
+	wsRequestMu.Lock()
+	requests := append([][]byte(nil), wsRequestPayloads...)
+	wsRequestMu.Unlock()
+	require.Len(t, requests, 3)
+	require.Equal(t, "history", gjson.GetBytes(requests[0], "input.0.text").String())
+	require.Equal(t, "resp_missing_prev", gjson.GetBytes(requests[1], "previous_response_id").String())
+	require.Equal(t, "followup", gjson.GetBytes(requests[1], "input.0.text").String())
+	require.False(t, gjson.GetBytes(requests[2], "previous_response_id").Exists(), "rebuild retry must drop previous_response_id")
+	require.False(t, gjson.GetBytes(requests[2], "store").Bool(), "rebuild retry must keep store=false")
+	require.Equal(t, "history", gjson.GetBytes(requests[2], "input.0.text").String())
+	require.Equal(t, "followup", gjson.GetBytes(requests[2], "input.1.text").String())
+}
+
 func TestOpenAIGatewayService_Forward_HTTPIngressNoSessionUsesOneShotWS(t *testing.T) {
 	setGinTestMode()
 

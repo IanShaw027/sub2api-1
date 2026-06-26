@@ -1,6 +1,8 @@
 package service
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -40,4 +42,19 @@ func openAIResponsesSessionWindowCacheKey(apiKeyID int64, sessionHash string) st
 		return ""
 	}
 	return fmt.Sprintf("%d:%s", apiKeyID, hash)
+}
+
+func parseOpenAIResponsesSessionWindowReplayInput(raw []byte) ([]json.RawMessage, bool, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return nil, false, nil
+	}
+	if bytes.HasPrefix(trimmed, []byte("[")) {
+		var items []json.RawMessage
+		if err := json.Unmarshal(trimmed, &items); err != nil {
+			return nil, true, err
+		}
+		return items, true, nil
+	}
+	return []json.RawMessage{append(json.RawMessage(nil), trimmed...)}, true, nil
 }
