@@ -1930,6 +1930,16 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecision(
 		decision.FallbackReason = reason
 		return decision
 	}
+	continueOnFreshConn := func(reason string) openAIWSContinuationStoreDecision {
+		payload["store"] = false
+		decision.StoreMode = openAIWSStoreModeIncremental
+		decision.StoreEnabled = false
+		decision.StoreDisabled = true
+		decision.PreferredConnID = ""
+		decision.ConnAffinityHit = false
+		decision.FallbackReason = reason
+		return decision
+	}
 
 	if stateStore == nil {
 		return dropToFullCreate("state_store_missing")
@@ -1956,7 +1966,7 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecision(
 			decision.FallbackReason = "conn_affinity_miss"
 			return decision
 		}
-		return dropToFullCreate("conn_affinity_miss")
+		return continueOnFreshConn("conn_affinity_miss")
 	}
 
 	// OAuth Responses continuation can remain incremental while still forcing
@@ -2096,6 +2106,19 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecisionRawWithOp
 		decision.FallbackReason = reason
 		return updated, decision, nil
 	}
+	continueOnFreshConn := func(reason string) ([]byte, openAIWSContinuationStoreDecision, error) {
+		updated, err := setOpenAIWSRawPayloadStore(payload, false)
+		if err != nil {
+			return payload, decision, err
+		}
+		decision.StoreMode = openAIWSStoreModeIncremental
+		decision.StoreEnabled = false
+		decision.StoreDisabled = true
+		decision.PreferredConnID = ""
+		decision.ConnAffinityHit = false
+		decision.FallbackReason = reason
+		return updated, decision, nil
+	}
 
 	if stateStore == nil {
 		return dropToFullCreate("state_store_missing")
@@ -2121,9 +2144,8 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecisionRawWithOp
 			decision.UnsafeToolContinuation = true
 			decision.FallbackReason = "conn_affinity_miss"
 			return payload, decision, nil
-		} else {
-			return dropToFullCreate("conn_affinity_miss")
 		}
+		return continueOnFreshConn("conn_affinity_miss")
 	}
 
 	updated, err := setOpenAIWSRawPayloadStore(payload, false)
