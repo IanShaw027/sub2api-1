@@ -283,9 +283,13 @@ describe('admin AccountsView bulk edit scope', () => {
     const wrapper = mountAccountsView()
 
     await flushPromises()
+    expect(getAllGroups).toHaveBeenCalledTimes(1)
+    expect(getAllProxies).not.toHaveBeenCalled()
+
     await wrapper.get('[data-test="edit-filtered"]').trigger('click')
     await flushPromises()
 
+    expect(getAllProxies).toHaveBeenCalledTimes(1)
     expect(wrapper.get('[data-test="bulk-edit-modal"]').attributes('data-show')).toBe('true')
     expect(wrapper.get('[data-test="bulk-edit-modal"]').attributes('data-target-mode')).toBe('filtered')
   })

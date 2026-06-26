@@ -1,5 +1,5 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import GroupRateMultipliersModal from '../GroupRateMultipliersModal.vue'
 import GroupRPMOverridesModal from '../GroupRPMOverridesModal.vue'
@@ -23,6 +23,10 @@ vi.mock('@/stores/app', () => ({
   }),
 }))
 
+const { listUsers } = vi.hoisted(() => ({
+  listUsers: vi.fn(),
+}))
+
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     groups: {
@@ -33,7 +37,7 @@ vi.mock('@/api/admin', () => ({
       clearGroupRPMOverrides: vi.fn(),
     },
     users: {
-      list: vi.fn(),
+      list: listUsers,
     },
   },
 }))
@@ -68,6 +72,12 @@ function mountWithPlatform(component: unknown, platform: string) {
 }
 
 describe('group platform fallback labels in group modals', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    listUsers.mockReset()
+    listUsers.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 10, pages: 1 })
+  })
+
   it.each([
     ['claude', 'Claude'],
     ['openai', 'OpenAI'],
@@ -94,5 +104,69 @@ describe('group platform fallback labels in group modals', () => {
     expect(rateWrapper.text()).not.toContain('claude')
     expect(rpmWrapper.text()).toContain('Claude')
     expect(rpmWrapper.text()).not.toContain('claude')
+  })
+
+  it('searches users without subscriptions or usage stats in the rate multiplier modal', async () => {
+    const wrapper = mount(GroupRateMultipliersModal, {
+      props: {
+        show: true,
+        group: {
+          ...baseGroup,
+          platform: 'openai',
+        },
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /></div>',
+          },
+          PlatformIcon: true,
+          Pagination: true,
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.get('input.input').setValue('retro')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+
+    expect(listUsers).toHaveBeenCalledWith(1, 10, {
+      search: 'retro',
+      include_subscriptions: false,
+      include_usage_stats: false,
+    })
+  })
+
+  it('searches users without subscriptions or usage stats in the RPM override modal', async () => {
+    const wrapper = mount(GroupRPMOverridesModal, {
+      props: {
+        show: true,
+        group: {
+          ...baseGroup,
+          platform: 'openai',
+        },
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /></div>',
+          },
+          PlatformIcon: true,
+          Pagination: true,
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.get('input.input').setValue('retro')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+
+    expect(listUsers).toHaveBeenCalledWith(1, 10, {
+      search: 'retro',
+      include_subscriptions: false,
+      include_usage_stats: false,
+    })
   })
 })

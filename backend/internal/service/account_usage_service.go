@@ -340,17 +340,43 @@ func NewAccountUsageService(
 	}
 }
 
-// GetUsage 获取账号使用量
-// OAuth账号: 调用Anthropic API获取真实数据（需要profile scope），API响应缓存10分钟，窗口统计缓存1分钟
-// Setup Token账号: 根据session_window推算5h窗口，7d数据不可用（没有profile scope）
-// API Key账号: 不支持usage查询
-func (s *AccountUsageService) GetUsage(ctx context.Context, accountID int64, force ...bool) (*UsageInfo, error) {
-	forceProbe := len(force) > 0 && force[0]
-
-	account, err := s.accountRepo.GetByID(ctx, accountID)
-	if err != nil {
-		return nil, fmt.Errorf("get account failed: %w", err)
+func supportsAnthropicPassiveUsage(account *Account) bool {
+	if account == nil || account.Platform != PlatformAnthropic {
+		return false
 	}
+	switch account.Type {
+	case AccountTypeOAuth, AccountTypeSetupToken, AccountTypeServiceAccount:
+		return true
+	default:
+		return false
+	}
+}
+
+func batchUsageErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	switch infraerrors.Code(err) {
+	case 400:
+		return "bad request: " + infraerrors.Message(err)
+	case 401:
+		return "unauthorized: " + infraerrors.Message(err)
+	case 403:
+		return "forbidden: " + infraerrors.Message(err)
+	case 404:
+		return "not found: " + infraerrors.Message(err)
+	case 429:
+		return "too many requests: " + infraerrors.Message(err)
+	default:
+		return err.Error()
+	}
+}
+
+func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *Account, forceProbe bool) (*UsageInfo, error) {
+	if account == nil {
+		return nil, fmt.Errorf("account is nil")
+	}
+	accountID := account.ID
 
 	if account.Platform == PlatformOpenAI && account.Type == AccountTypeOAuth {
 		usage, err := s.getOpenAIUsage(ctx, account, forceProbe)
@@ -477,6 +503,96 @@ func (s *AccountUsageService) GetUsage(ctx context.Context, accountID int64, for
 		"ACCOUNT_USAGE_UNSUPPORTED",
 		fmt.Sprintf("account type %s does not support usage query", account.Type),
 	)
+}
+
+// GetUsage 获取账号使用量
+// OAuth账号: 调用Anthropic API获取真实数据（需要profile scope），API响应缓存10分钟，窗口统计缓存1分钟
+// Setup Token账号: 根据session_window推算5h窗口，7d数据不可用（没有profile scope）
+// API Key账号: 不支持usage查询
+func (s *AccountUsageService) GetUsage(ctx context.Context, accountID int64, force ...bool) (*UsageInfo, error) {
+	forceProbe := len(force) > 0 && force[0]
+
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("get account failed: %w", err)
+	}
+
+	return s.getUsageForAccount(ctx, account, forceProbe)
+}
+
+// GetUsageBatch 批量获取账号使用量。
+// Anthropic OAuth/SetupToken/service_account 统一走 passive 链路，其他账号复用现有主动查询逻辑。
+// 单个账号失败不会中断整批请求，错误会按账号返回。
+func (s *AccountUsageService) GetUsageBatch(ctx context.Context, accountIDs []int64, force bool) (map[int64]*UsageInfo, map[int64]string, error) {
+	uniqueIDs := make([]int64, 0, len(accountIDs))
+	seen := make(map[int64]struct{}, len(accountIDs))
+	for _, accountID := range accountIDs {
+		if accountID <= 0 {
+			continue
+		}
+		if _, ok := seen[accountID]; ok {
+			continue
+		}
+		seen[accountID] = struct{}{}
+		uniqueIDs = append(uniqueIDs, accountID)
+	}
+
+	usageByAccount := make(map[int64]*UsageInfo, len(uniqueIDs))
+	errorsByAccount := make(map[int64]string)
+	if len(uniqueIDs) == 0 {
+		return usageByAccount, errorsByAccount, nil
+	}
+
+	accounts, err := s.accountRepo.GetByIDs(ctx, uniqueIDs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get accounts failed: %w", err)
+	}
+
+	accountsByID := make(map[int64]*Account, len(accounts))
+	for _, account := range accounts {
+		if account == nil {
+			continue
+		}
+		accountsByID[account.ID] = account
+	}
+
+	var mu sync.Mutex
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(6)
+
+	for _, accountID := range uniqueIDs {
+		id := accountID
+		account := accountsByID[id]
+		if account == nil {
+			errorsByAccount[id] = ErrAccountNotFound.Error()
+			continue
+		}
+
+		g.Go(func() error {
+			var usage *UsageInfo
+			var usageErr error
+			if supportsAnthropicPassiveUsage(account) {
+				usage, usageErr = s.getPassiveUsageForAccount(gctx, account)
+			} else {
+				usage, usageErr = s.getUsageForAccount(gctx, account, force)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+			if usageErr != nil {
+				errorsByAccount[id] = batchUsageErrorMessage(usageErr)
+				return nil
+			}
+			usageByAccount[id] = usage
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, nil, err
+	}
+
+	return usageByAccount, errorsByAccount, nil
 }
 
 func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account) (*UsageInfo, error) {
@@ -774,15 +890,19 @@ func (s *AccountUsageService) invalidateKiroTokenCache(ctx context.Context, acco
 }
 
 // GetPassiveUsage 从 Account.Extra 中的被动采样数据构建 UsageInfo，不调用外部 API。
-// 仅适用于 Anthropic OAuth / SetupToken 账号。
+// 仅适用于 Anthropic OAuth / SetupToken / service_account 账号。
 func (s *AccountUsageService) GetPassiveUsage(ctx context.Context, accountID int64) (*UsageInfo, error) {
 	account, err := s.accountRepo.GetByID(ctx, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("get account failed: %w", err)
 	}
 
-	if !account.IsAnthropicOAuthOrSetupToken() {
-		return nil, fmt.Errorf("passive usage only supported for Anthropic OAuth/SetupToken accounts")
+	return s.getPassiveUsageForAccount(ctx, account)
+}
+
+func (s *AccountUsageService) getPassiveUsageForAccount(ctx context.Context, account *Account) (*UsageInfo, error) {
+	if !supportsAnthropicPassiveUsage(account) {
+		return nil, fmt.Errorf("passive usage only supported for Anthropic OAuth/SetupToken/service_account accounts")
 	}
 
 	// 复用 estimateSetupTokenUsage 构建 5h 窗口（OAuth 和 SetupToken 逻辑一致）
@@ -1475,6 +1595,9 @@ func (s *AccountUsageService) addWindowStats(ctx context.Context, account *Accou
 		if err != nil {
 			log.Printf("Failed to get window stats for account %d: %v", account.ID, err)
 			return
+		}
+		if stats == nil {
+			stats = &usagestats.AccountStats{}
 		}
 
 		windowStats = &WindowStats{

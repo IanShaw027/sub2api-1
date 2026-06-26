@@ -73,6 +73,7 @@ const DataTableStub = {
     <div data-test="groups-table">
       <div v-for="row in data" :key="row.id" :data-test="['group-row', row.id].join('-')">
         <slot name="cell-account_count" :row="row" />
+        <slot name="cell-usage" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
     </div>
@@ -92,6 +93,12 @@ function deferred<T>() {
     reject = rej
   })
   return { promise, resolve, reject }
+}
+
+async function settleAsyncState() {
+  await flushPromises()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await flushPromises()
 }
 
 function buildGroup(id: number, name: string, modelRouting: Record<string, number[]>) {
@@ -205,6 +212,71 @@ describe('admin GroupsView edit hydration', () => {
     getModelsListCandidates.mockResolvedValue([])
     createGroup.mockResolvedValue({})
     updateGroup.mockResolvedValue({})
+  })
+
+  it('requests usage summary only for the current page groups', async () => {
+    mountGroupsView()
+
+    await flushPromises()
+
+    expect(getUsageSummary).toHaveBeenCalledTimes(1)
+    expect(getUsageSummary).toHaveBeenCalledWith(
+      expect.any(String),
+      [1, 2]
+    )
+  })
+
+  it('ignores stale usage summary responses after the visible group page changes', async () => {
+    const firstUsageSummary = deferred<Array<{ group_id: number; today_cost: number; total_cost: number }>>()
+    const secondUsageSummary = deferred<Array<{ group_id: number; today_cost: number; total_cost: number }>>()
+    getUsageSummary
+      .mockImplementationOnce(() => firstUsageSummary.promise)
+      .mockImplementationOnce(() => secondUsageSummary.promise)
+
+    const wrapper = mountGroupsView()
+    await flushPromises()
+
+    expect(getUsageSummary).toHaveBeenCalledTimes(1)
+    expect(getUsageSummary).toHaveBeenLastCalledWith(expect.any(String), [1, 2])
+
+    listGroups.mockResolvedValueOnce({
+      items: [
+        buildGroup(3, 'Gamma', { 'gpt-4.1': [303] }),
+        buildGroup(4, 'Delta', { 'gpt-4.1-mini': [404] }),
+      ],
+      total: 2,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+
+    await wrapper.get('button[title="common.refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(getUsageSummary).toHaveBeenCalledTimes(2)
+    expect(getUsageSummary).toHaveBeenLastCalledWith(expect.any(String), [3, 4])
+
+    secondUsageSummary.resolve([
+      { group_id: 3, today_cost: 3.3, total_cost: 33.3 },
+      { group_id: 4, today_cost: 4.4, total_cost: 44.4 },
+    ])
+    await settleAsyncState()
+    expect(getUsageSummary).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-test="group-row-3"]').text()).toContain('3.30')
+    expect(wrapper.find('[data-test="group-row-4"]').text()).toContain('44.40')
+    expect(wrapper.find('[data-test="group-row-1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="group-row-2"]').exists()).toBe(false)
+
+    firstUsageSummary.resolve([
+      { group_id: 1, today_cost: 1.1, total_cost: 11.1 },
+      { group_id: 2, today_cost: 2.2, total_cost: 22.2 },
+    ])
+    await settleAsyncState()
+
+    expect(wrapper.find('[data-test="group-row-3"]').text()).toContain('3.30')
+    expect(wrapper.find('[data-test="group-row-4"]').text()).toContain('44.40')
+    expect(wrapper.find('[data-test="group-row-1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="group-row-2"]').exists()).toBe(false)
   })
 
   it('ignores stale async hydration when edit is clicked again before the first request resolves', async () => {

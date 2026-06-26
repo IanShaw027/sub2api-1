@@ -547,12 +547,20 @@ const props = withDefaults(
     todayStatsLoading?: boolean
     manualRefreshToken?: number
     activeGroupId?: number | null
+    batchedUsage?: AccountUsageInfo | null
+    batchedUsageError?: string | null
+    batchedUsageLoading?: boolean
+    requestBatchedUsage?: ((account: Account, options?: { force?: boolean }) => void) | null
   }>(),
   {
     todayStats: null,
     todayStatsLoading: false,
     manualRefreshToken: 0,
-    activeGroupId: null
+    activeGroupId: null,
+    batchedUsage: null,
+    batchedUsageError: null,
+    batchedUsageLoading: false,
+    requestBatchedUsage: null
   }
 )
 
@@ -606,6 +614,8 @@ const shouldFetchUsage = computed(() => {
   }
   return false
 })
+
+const isBatchManaged = computed(() => typeof props.requestBatchedUsage === 'function')
 
 const openAIResponseUsageBars = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return []
@@ -1065,6 +1075,18 @@ const isAnthropicUsageAccount = computed(() => {
   return props.account.platform === 'anthropic' && (props.account.type === 'oauth' || props.account.type === 'setup-token' || props.account.type === 'service_account')
 })
 
+const requestParentBatchUsage = (options?: { force?: boolean }) => {
+  if (!isBatchManaged.value || !shouldFetchUsage.value) return
+  props.requestBatchedUsage?.(props.account, options)
+}
+
+const syncManagedUsageState = () => {
+  if (!isBatchManaged.value) return
+  usageInfo.value = props.batchedUsage ?? null
+  error.value = props.batchedUsageError ?? null
+  loading.value = props.batchedUsageLoading === true
+}
+
 const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?: boolean }) => {
   if (!shouldFetchUsage.value) return
 
@@ -1373,14 +1395,40 @@ onMounted(() => {
     }
   }
 
+  if (isBatchManaged.value) {
+    syncManagedUsageState()
+    requestParentBatchUsage()
+    return
+  }
+
   if (!shouldAutoLoadUsageOnMount.value) return
   const source = isAnthropicUsageAccount.value ? 'passive' : undefined
   requestAutoLoad(source)
 })
 
+watch(
+  () => [props.batchedUsage, props.batchedUsageError, props.batchedUsageLoading, isBatchManaged.value] as const,
+  () => {
+    syncManagedUsageState()
+  },
+  { immediate: true, deep: true }
+)
+
+watch(isBatchManaged, (managed, wasManaged) => {
+  if (managed && !wasManaged) {
+    syncManagedUsageState()
+    requestParentBatchUsage()
+  }
+})
+
 watch(openAIUsageRefreshKey, (nextKey, prevKey) => {
   if (!prevKey || nextKey === prevKey) return
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return
+
+  if (isBatchManaged.value) {
+    requestParentBatchUsage({ force: true })
+    return
+  }
 
   _usageCache.delete(props.account.id)
   requestAutoLoad()
@@ -1389,6 +1437,11 @@ watch(openAIUsageRefreshKey, (nextKey, prevKey) => {
 watch(geminiUsageRefreshKey, (nextKey, prevKey) => {
   if (!prevKey || nextKey === prevKey) return
   if (props.account.platform !== 'gemini') return
+
+  if (isBatchManaged.value) {
+    requestParentBatchUsage({ force: true })
+    return
+  }
 
   _usageCache.delete(props.account.id)
   requestAutoLoad()
@@ -1399,6 +1452,11 @@ watch(
   (nextToken, prevToken) => {
     if (nextToken === prevToken) return
     if (!shouldFetchUsage.value) return
+
+    if (isBatchManaged.value) {
+      requestParentBatchUsage({ force: true })
+      return
+    }
 
     const source = isAnthropicUsageAccount.value ? 'passive' : undefined
     _usageCache.delete(props.account.id)
