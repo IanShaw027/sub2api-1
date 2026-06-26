@@ -902,6 +902,12 @@ type GatewayOpenAIWSConfig struct {
 	IngressModeDefault string `mapstructure:"ingress_mode_default"`
 	// HttpIngressUpstreamWSEnabled: 允许 HTTP /v1/responses 入站显式走上游 WSv2（默认 false）
 	HttpIngressUpstreamWSEnabled bool `mapstructure:"http_ingress_upstream_ws_enabled"`
+	// HTTPIncrementalContinuationEnabled: 允许显式 durable HTTP continuation 保留 previous_response_id（默认 false）
+	HTTPIncrementalContinuationEnabled bool `mapstructure:"http_incremental_continuation_enabled"`
+	// HTTPIncrementalStickyEnabled: 允许显式 durable HTTP continuation 复用 previous_response_id -> account sticky（默认 false）
+	HTTPIncrementalStickyEnabled bool `mapstructure:"http_incremental_sticky_enabled"`
+	// RebuildFallbackEnabled: 允许 primary lane 使用 rebuild window 做 continuation fallback（默认 true）
+	RebuildFallbackEnabled bool `mapstructure:"rebuild_fallback_enabled"`
 	// Enabled: 全局总开关（默认 true）
 	Enabled bool `mapstructure:"enabled"`
 	// OAuthEnabled: 是否允许 OpenAI OAuth 账号使用 WS
@@ -1912,6 +1918,9 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.mode_router_v2_enabled", false)
 	viper.SetDefault("gateway.openai_ws.ingress_mode_default", "ctx_pool")
 	viper.SetDefault("gateway.openai_ws.http_ingress_upstream_ws_enabled", false)
+	viper.SetDefault("gateway.openai_ws.http_incremental_continuation_enabled", false)
+	viper.SetDefault("gateway.openai_ws.http_incremental_sticky_enabled", false)
+	viper.SetDefault("gateway.openai_ws.rebuild_fallback_enabled", true)
 	viper.SetDefault("gateway.openai_ws.oauth_enabled", true)
 	viper.SetDefault("gateway.openai_ws.apikey_enabled", true)
 	viper.SetDefault("gateway.openai_ws.force_http", false)

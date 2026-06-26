@@ -6056,10 +6056,12 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
 		return nil, nil
 	}
-	// 非 WSv2 场景（如 force_http/全局关闭）不应使用 previous_response_id 粘连，
-	// 以保持“回滚到 HTTP”后的历史行为一致性。
-	if s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
-		return nil, nil
+	// 非 WSv2 场景默认不使用 previous_response_id 粘连，避免伪造 HTTP continuation。
+	// 仅当显式 durable HTTP lane 打开时，才允许 OAuth 账号在 HTTP SSE 上复用 sticky account。
+	if transport := s.getOpenAIWSProtocolResolver().Resolve(account).Transport; transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
+		if transport != OpenAIUpstreamTransportHTTPSSE || !s.allowOpenAIDurableHTTPSticky(account) {
+			return nil, nil
+		}
 	}
 	stickyWaitTimeout := s.openAIStickyWaitTimeout(ctx)
 	if shouldClearOpenAIStickyAccount(account, requestedModel, "", stickyWaitTimeout) || !isOpenAIStickyCandidateCompatible(ctx, s.settingService, account, requestedModel, requireCompact, "", false, false) {

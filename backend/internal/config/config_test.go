@@ -198,6 +198,15 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if cfg.Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled {
 		t.Fatalf("Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled = true, want false")
 	}
+	if cfg.Gateway.OpenAIWS.HTTPIncrementalContinuationEnabled {
+		t.Fatalf("Gateway.OpenAIWS.HTTPIncrementalContinuationEnabled = true, want false")
+	}
+	if cfg.Gateway.OpenAIWS.HTTPIncrementalStickyEnabled {
+		t.Fatalf("Gateway.OpenAIWS.HTTPIncrementalStickyEnabled = true, want false")
+	}
+	if !cfg.Gateway.OpenAIWS.RebuildFallbackEnabled {
+		t.Fatalf("Gateway.OpenAIWS.RebuildFallbackEnabled = false, want true")
+	}
 }
 
 func TestLoadDefaultOpenAIHTTP2Enabled(t *testing.T) {

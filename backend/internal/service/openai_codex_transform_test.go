@@ -77,6 +77,26 @@ func TestApplyCodexOAuthTransform_MessagesBridgePromptCacheKeyIsHeaderOnly(t *te
 	require.NotContains(t, reqBody, "prompt_cache_key")
 }
 
+func TestApplyCodexOAuthTransform_PreservesPromptCacheKeyAndReasoningInclude(t *testing.T) {
+	reqBody := map[string]any{
+		"model":            "gpt-5.1",
+		"store":            false,
+		"prompt_cache_key": "pcache_1",
+		"reasoning":        map[string]any{"effort": "medium"},
+		"input": []any{
+			map[string]any{"type": "message", "role": "user", "content": "hello"},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, false, false)
+
+	require.Equal(t, "pcache_1", reqBody["prompt_cache_key"])
+	include, ok := reqBody["include"].([]any)
+	require.True(t, ok)
+	require.Contains(t, include, "reasoning.encrypted_content")
+	require.True(t, result.Modified)
+}
+
 func TestApplyCodexOAuthTransform_ToolContinuationPreservesNativeMessageAndReasoningIDs(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "gpt-5.2",

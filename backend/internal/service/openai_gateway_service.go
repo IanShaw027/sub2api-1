@@ -847,6 +847,51 @@ func (s *OpenAIGatewayService) getOpenAIWSProtocolResolver() OpenAIWSProtocolRes
 	return NewOpenAIWSProtocolResolver(cfg)
 }
 
+func (s *OpenAIGatewayService) openAIHTTPIncrementalContinuationEnabled() bool {
+	return s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.HTTPIncrementalContinuationEnabled
+}
+
+func (s *OpenAIGatewayService) openAIHTTPIncrementalStickyEnabled() bool {
+	return s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.HTTPIncrementalStickyEnabled
+}
+
+func (s *OpenAIGatewayService) openAIRebuildFallbackEnabled() bool {
+	if s == nil || s.cfg == nil {
+		return true
+	}
+	wsCfg := s.cfg.Gateway.OpenAIWS
+	if wsCfg.RebuildFallbackEnabled {
+		return true
+	}
+	// Many focused tests and lightweight call sites construct partial configs
+	// directly instead of flowing through config.Load defaults. For the current
+	// continuation architecture, OAuth WS/rebuild paths should stay enabled in
+	// those zero-value configs rather than silently degrading back to the old
+	// drop-anchor behavior.
+	return wsCfg.Enabled ||
+		wsCfg.ResponsesWebsocketsV2 ||
+		wsCfg.HttpIngressUpstreamWSEnabled ||
+		wsCfg.OAuthEnabled ||
+		wsCfg.APIKeyEnabled
+}
+
+func (s *OpenAIGatewayService) allowOpenAIDurableHTTPContinuation(account *Account, payload []byte) bool {
+	if account == nil || account.Type != AccountTypeOAuth || !s.openAIHTTPIncrementalContinuationEnabled() {
+		return false
+	}
+	if s.isOpenAIWSStoreDisabledInRequestRaw(payload, account) {
+		return false
+	}
+	return true
+}
+
+func (s *OpenAIGatewayService) allowOpenAIDurableHTTPSticky(account *Account) bool {
+	if account == nil || account.Type != AccountTypeOAuth {
+		return false
+	}
+	return s.openAIHTTPIncrementalContinuationEnabled() && s.openAIHTTPIncrementalStickyEnabled()
+}
+
 func classifyOpenAIWSReconnectReason(err error) (string, bool) {
 	if err == nil {
 		return "", false
@@ -1189,6 +1234,27 @@ func (s *OpenAIGatewayService) writeOpenAIWSFallbackErrorResponse(c *gin.Context
 		},
 	})
 	return true
+}
+
+func (s *OpenAIGatewayService) rejectUnsafeOpenAIHTTPToolContinuation(c *gin.Context, account *Account, body []byte, transport OpenAIUpstreamTransport) error {
+	if account == nil || account.Type != AccountTypeOAuth || transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
+		return nil
+	}
+	if !s.isOpenAIWSStoreDisabledInRequestRaw(body, account) || !gjson.GetBytes(body, "previous_response_id").Exists() {
+		return nil
+	}
+	validation := ValidateFunctionCallOutputContextBytes(body)
+	if !validation.HasFunctionCallOutput {
+		return nil
+	}
+	if validation.HasToolCallContext || validation.HasItemReferenceForAllCallIDs {
+		return nil
+	}
+	wsErr := wrapOpenAIWSFallback("unsafe_tool_continuation", errors.New("previous response binding unavailable for tool continuation"))
+	if c != nil {
+		s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
+	}
+	return wsErr
 }
 
 func (s *OpenAIGatewayService) openAIWSRetryBackoff(attempt int) time.Duration {
@@ -4658,7 +4724,9 @@ oauthTransformDone:
 			}
 		}
 	}
-	if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 && gjson.GetBytes(body, "previous_response_id").Exists() {
+	if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
+		gjson.GetBytes(body, "previous_response_id").Exists() &&
+		!s.allowOpenAIDurableHTTPContinuation(account, body) {
 		markPatchDelete("previous_response_id")
 	}
 	if openAIRequestBodyMayContainEmptyBase64InputImage(body) {
@@ -4680,6 +4748,10 @@ oauthTransformDone:
 			// Preserve prompt-cache-friendly field ordering after any body rewrite.
 			disablePatch()
 		}
+	}
+
+	if err := s.rejectUnsafeOpenAIHTTPToolContinuation(c, account, body, wsDecision.Transport); err != nil {
+		return nil, err
 	}
 
 	if bodyModified {
@@ -9342,6 +9414,9 @@ func (s *OpenAIGatewayService) buildOpenAIResponsesSessionWindowCandidate(
 	if s == nil || c == nil || account == nil || account.Type != AccountTypeOAuth || !openAIWSPayloadStoreDisabled(reqBody) {
 		return "", openAIResponsesSessionWindow{}, false
 	}
+	if !s.openAIRebuildFallbackEnabled() {
+		return "", openAIResponsesSessionWindow{}, false
+	}
 
 	sessionHash := s.GenerateSessionHash(c, payload)
 	if sessionHash == "" {
@@ -9401,6 +9476,9 @@ func (s *OpenAIGatewayService) bindOpenAIResponsesSessionWindow(
 	if s == nil || c == nil || account == nil {
 		return
 	}
+	if !s.openAIRebuildFallbackEnabled() {
+		return
+	}
 	responseID = strings.TrimSpace(responseID)
 	if sessionHash == "" || responseID == "" {
 		return
@@ -9430,6 +9508,9 @@ func (s *OpenAIGatewayService) rebuildOpenAIResponsesPayloadFromSessionWindow(
 	payload []byte,
 ) ([]byte, bool, error) {
 	if s == nil || c == nil {
+		return payload, false, nil
+	}
+	if !s.openAIRebuildFallbackEnabled() {
 		return payload, false, nil
 	}
 	sessionHash := s.GenerateSessionHash(c, payload)
