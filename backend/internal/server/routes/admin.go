@@ -495,6 +495,8 @@ func registerProxyRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		proxies.POST("", h.Admin.Proxy.Create)
 		proxies.PUT("/:id", h.Admin.Proxy.Update)
 		proxies.DELETE("/:id", h.Admin.Proxy.Delete)
+		proxies.POST("/batch-test", h.Admin.Proxy.BatchTest)
+		proxies.POST("/batch-quality-check", h.Admin.Proxy.BatchQualityCheck)
 		proxies.POST("/:id/test", h.Admin.Proxy.Test)
 		proxies.POST("/:id/quality-check", h.Admin.Proxy.CheckQuality)
 		proxies.GET("/:id/stats", h.Admin.Proxy.GetStats)
