@@ -111,6 +111,63 @@ func newOpenAISelectionErrorTestHandler(t *testing.T, accounts []service.Account
 	}
 }
 
+func newOpenAISelectionErrorTestHandlerWithAccountAcquire(
+	t *testing.T,
+	accounts []service.Account,
+	acquireAccountSlotFn func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error),
+) *OpenAIGatewayHandler {
+	t.Helper()
+
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	cfg.Gateway.Scheduling.FallbackWaitTimeout = 5 * time.Millisecond
+	cfg.Gateway.Scheduling.FallbackMaxWaiting = 1
+
+	cache := &concurrencyCacheMock{
+		acquireUserSlotFn: func(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+		acquireAccountSlotFn: acquireAccountSlotFn,
+	}
+
+	billingCacheService := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billingCacheService.Stop)
+
+	concurrencySvc := service.NewConcurrencyService(cache)
+	gatewayService := service.NewOpenAIGatewayService(
+		openAISelectionErrorAccountRepoStub{accounts: accounts},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cfg,
+		nil,
+		concurrencySvc,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	return &OpenAIGatewayHandler{
+		gatewayService:      gatewayService,
+		billingCacheService: billingCacheService,
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   NewConcurrencyHelper(concurrencySvc, SSEPingFormatNone, time.Millisecond),
+		cfg:                 cfg,
+	}
+}
+
 func newOpenAISelectionErrorTestContext(path string, body string) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
 
@@ -162,6 +219,39 @@ func TestOpenAIResponses_SelectionFailure_ReturnsSupportingModelMessage(t *testi
 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.Contains(t, rec.Body.String(), `"message":"No available accounts supporting model: gpt-5"`)
+}
+
+func TestOpenAIResponses_SelectionFailureAfterLocalExclusion_ReturnsNoAvailableAccounts(t *testing.T) {
+	c, rec := newOpenAISelectionErrorTestContext("/v1/responses", `{"model":"gpt-5","input":"hello"}`)
+	accounts := []service.Account{
+		{
+			ID:          1,
+			Platform:    service.PlatformOpenAI,
+			Type:        service.AccountTypeAPIKey,
+			Status:      service.StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{"gpt-5": "gpt-5"},
+			},
+			Extra: map[string]any{
+				"openai_responses_supported": true,
+			},
+		},
+	}
+	h := newOpenAISelectionErrorTestHandlerWithAccountAcquire(
+		t,
+		accounts,
+		func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+			return false, nil
+		},
+	)
+
+	h.Responses(c)
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Contains(t, rec.Body.String(), `"message":"No available accounts"`)
+	require.NotContains(t, rec.Body.String(), `"message":"No available accounts supporting model: gpt-5"`)
 }
 
 func TestOpenAIChatCompletions_SelectionFailure_ReturnsSupportingModelMessage(t *testing.T) {
