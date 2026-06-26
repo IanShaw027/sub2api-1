@@ -1427,6 +1427,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		req.LinuxDoConnectClientID = strings.TrimSpace(req.LinuxDoConnectClientID)
 		req.LinuxDoConnectClientSecret = strings.TrimSpace(req.LinuxDoConnectClientSecret)
 		req.LinuxDoConnectRedirectURL = strings.TrimSpace(req.LinuxDoConnectRedirectURL)
+		req.LinuxDoConnectClientID = strings.TrimSpace(firstNonEmpty(req.LinuxDoConnectClientID, previousSettings.LinuxDoConnectClientID))
+		req.LinuxDoConnectRedirectURL = strings.TrimSpace(firstNonEmpty(req.LinuxDoConnectRedirectURL, previousSettings.LinuxDoConnectRedirectURL))
 
 		if req.LinuxDoConnectClientID == "" {
 			response.BadRequest(c, "LinuxDo Client ID is required when enabled")
@@ -2099,6 +2101,37 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if req.SupportQRCodes != nil {
 		supportQRCodes = mustMarshalSupportQRCodes(req.SupportQRCodes)
 	}
+	linuxDoConnectEnabled := boolJSONFieldOrDefault(rawFields, "linuxdo_connect_enabled", req.LinuxDoConnectEnabled, previousSettings.LinuxDoConnectEnabled)
+	linuxDoConnectClientID := stringJSONFieldOrDefault(rawFields, "linuxdo_connect_client_id", req.LinuxDoConnectClientID, previousSettings.LinuxDoConnectClientID)
+	linuxDoConnectClientSecret := stringJSONFieldOrDefault(rawFields, "linuxdo_connect_client_secret", req.LinuxDoConnectClientSecret, previousSettings.LinuxDoConnectClientSecret)
+	linuxDoConnectRedirectURL := stringJSONFieldOrDefault(rawFields, "linuxdo_connect_redirect_url", req.LinuxDoConnectRedirectURL, previousSettings.LinuxDoConnectRedirectURL)
+	oidcConnectEnabled := boolJSONFieldOrDefault(rawFields, "oidc_connect_enabled", req.OIDCConnectEnabled, previousSettings.OIDCConnectEnabled)
+	oidcConnectProviderName := stringJSONFieldOrDefault(rawFields, "oidc_connect_provider_name", req.OIDCConnectProviderName, previousSettings.OIDCConnectProviderName)
+	oidcConnectClientID := stringJSONFieldOrDefault(rawFields, "oidc_connect_client_id", req.OIDCConnectClientID, previousSettings.OIDCConnectClientID)
+	oidcConnectClientSecret := stringJSONFieldOrDefault(rawFields, "oidc_connect_client_secret", req.OIDCConnectClientSecret, previousSettings.OIDCConnectClientSecret)
+	oidcConnectIssuerURL := stringJSONFieldOrDefault(rawFields, "oidc_connect_issuer_url", req.OIDCConnectIssuerURL, previousSettings.OIDCConnectIssuerURL)
+	oidcConnectDiscoveryURL := stringJSONFieldOrDefault(rawFields, "oidc_connect_discovery_url", req.OIDCConnectDiscoveryURL, previousSettings.OIDCConnectDiscoveryURL)
+	oidcConnectAuthorizeURL := stringJSONFieldOrDefault(rawFields, "oidc_connect_authorize_url", req.OIDCConnectAuthorizeURL, previousSettings.OIDCConnectAuthorizeURL)
+	oidcConnectTokenURL := stringJSONFieldOrDefault(rawFields, "oidc_connect_token_url", req.OIDCConnectTokenURL, previousSettings.OIDCConnectTokenURL)
+	oidcConnectUserInfoURL := stringJSONFieldOrDefault(rawFields, "oidc_connect_userinfo_url", req.OIDCConnectUserInfoURL, previousSettings.OIDCConnectUserInfoURL)
+	oidcConnectJWKSURL := stringJSONFieldOrDefault(rawFields, "oidc_connect_jwks_url", req.OIDCConnectJWKSURL, previousSettings.OIDCConnectJWKSURL)
+	oidcConnectScopes := stringJSONFieldOrDefault(rawFields, "oidc_connect_scopes", req.OIDCConnectScopes, previousSettings.OIDCConnectScopes)
+	oidcConnectRedirectURL := stringJSONFieldOrDefault(rawFields, "oidc_connect_redirect_url", req.OIDCConnectRedirectURL, previousSettings.OIDCConnectRedirectURL)
+	oidcConnectFrontendRedirectURL := stringJSONFieldOrDefault(rawFields, "oidc_connect_frontend_redirect_url", req.OIDCConnectFrontendRedirectURL, previousSettings.OIDCConnectFrontendRedirectURL)
+	oidcConnectTokenAuthMethod := stringJSONFieldOrDefault(rawFields, "oidc_connect_token_auth_method", req.OIDCConnectTokenAuthMethod, previousSettings.OIDCConnectTokenAuthMethod)
+	oidcConnectAllowedSigningAlgs := stringJSONFieldOrDefault(rawFields, "oidc_connect_allowed_signing_algs", req.OIDCConnectAllowedSigningAlgs, previousSettings.OIDCConnectAllowedSigningAlgs)
+	oidcConnectClockSkewSeconds := intJSONFieldOrDefault(rawFields, "oidc_connect_clock_skew_seconds", req.OIDCConnectClockSkewSeconds, previousSettings.OIDCConnectClockSkewSeconds)
+	oidcConnectRequireEmailVerified := boolJSONFieldOrDefault(rawFields, "oidc_connect_require_email_verified", req.OIDCConnectRequireEmailVerified, previousSettings.OIDCConnectRequireEmailVerified)
+	oidcConnectUserInfoEmailPath := stringJSONFieldOrDefault(rawFields, "oidc_connect_userinfo_email_path", req.OIDCConnectUserInfoEmailPath, previousSettings.OIDCConnectUserInfoEmailPath)
+	oidcConnectUserInfoIDPath := stringJSONFieldOrDefault(rawFields, "oidc_connect_userinfo_id_path", req.OIDCConnectUserInfoIDPath, previousSettings.OIDCConnectUserInfoIDPath)
+	oidcConnectUserInfoUsernamePath := stringJSONFieldOrDefault(rawFields, "oidc_connect_userinfo_username_path", req.OIDCConnectUserInfoUsernamePath, previousSettings.OIDCConnectUserInfoUsernamePath)
+	siteName := stringJSONFieldOrDefault(rawFields, "site_name", req.SiteName, previousSettings.SiteName)
+	siteSubtitle := stringJSONFieldOrDefault(rawFields, "site_subtitle", req.SiteSubtitle, previousSettings.SiteSubtitle)
+	enableModelFallback := boolJSONFieldOrDefault(rawFields, "enable_model_fallback", req.EnableModelFallback, previousSettings.EnableModelFallback)
+	fallbackModelAnthropic := stringJSONFieldOrDefault(rawFields, "fallback_model_anthropic", req.FallbackModelAnthropic, previousSettings.FallbackModelAnthropic)
+	fallbackModelOpenAI := stringJSONFieldOrDefault(rawFields, "fallback_model_openai", req.FallbackModelOpenAI, previousSettings.FallbackModelOpenAI)
+	fallbackModelGemini := stringJSONFieldOrDefault(rawFields, "fallback_model_gemini", req.FallbackModelGemini, previousSettings.FallbackModelGemini)
+	fallbackModelAntigravity := stringJSONFieldOrDefault(rawFields, "fallback_model_antigravity", req.FallbackModelAntigravity, previousSettings.FallbackModelAntigravity)
 
 	settings := &service.SystemSettings{
 		// 系统全局 platform quota 默认值（整体替换语义）
@@ -2133,10 +2166,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.APIKeyACLTrustForwardedIP
 		}(),
-		LinuxDoConnectEnabled:                  req.LinuxDoConnectEnabled,
-		LinuxDoConnectClientID:                 req.LinuxDoConnectClientID,
-		LinuxDoConnectClientSecret:             req.LinuxDoConnectClientSecret,
-		LinuxDoConnectRedirectURL:              req.LinuxDoConnectRedirectURL,
+		LinuxDoConnectEnabled:                  linuxDoConnectEnabled,
+		LinuxDoConnectClientID:                 linuxDoConnectClientID,
+		LinuxDoConnectClientSecret:             linuxDoConnectClientSecret,
+		LinuxDoConnectRedirectURL:              linuxDoConnectRedirectURL,
 		DingTalkConnectEnabled:                 req.DingTalkConnectEnabled,
 		DingTalkConnectClientID:                req.DingTalkConnectClientID,
 		DingTalkConnectClientSecret:            req.DingTalkConnectClientSecret,
@@ -2169,28 +2202,28 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		WeChatConnectScopes:                    req.WeChatConnectScopes,
 		WeChatConnectRedirectURL:               req.WeChatConnectRedirectURL,
 		WeChatConnectFrontendRedirectURL:       req.WeChatConnectFrontendRedirectURL,
-		OIDCConnectEnabled:                     req.OIDCConnectEnabled,
-		OIDCConnectProviderName:                req.OIDCConnectProviderName,
-		OIDCConnectClientID:                    req.OIDCConnectClientID,
-		OIDCConnectClientSecret:                req.OIDCConnectClientSecret,
-		OIDCConnectIssuerURL:                   req.OIDCConnectIssuerURL,
-		OIDCConnectDiscoveryURL:                req.OIDCConnectDiscoveryURL,
-		OIDCConnectAuthorizeURL:                req.OIDCConnectAuthorizeURL,
-		OIDCConnectTokenURL:                    req.OIDCConnectTokenURL,
-		OIDCConnectUserInfoURL:                 req.OIDCConnectUserInfoURL,
-		OIDCConnectJWKSURL:                     req.OIDCConnectJWKSURL,
-		OIDCConnectScopes:                      req.OIDCConnectScopes,
-		OIDCConnectRedirectURL:                 req.OIDCConnectRedirectURL,
-		OIDCConnectFrontendRedirectURL:         req.OIDCConnectFrontendRedirectURL,
-		OIDCConnectTokenAuthMethod:             req.OIDCConnectTokenAuthMethod,
+		OIDCConnectEnabled:                     oidcConnectEnabled,
+		OIDCConnectProviderName:                oidcConnectProviderName,
+		OIDCConnectClientID:                    oidcConnectClientID,
+		OIDCConnectClientSecret:                oidcConnectClientSecret,
+		OIDCConnectIssuerURL:                   oidcConnectIssuerURL,
+		OIDCConnectDiscoveryURL:                oidcConnectDiscoveryURL,
+		OIDCConnectAuthorizeURL:                oidcConnectAuthorizeURL,
+		OIDCConnectTokenURL:                    oidcConnectTokenURL,
+		OIDCConnectUserInfoURL:                 oidcConnectUserInfoURL,
+		OIDCConnectJWKSURL:                     oidcConnectJWKSURL,
+		OIDCConnectScopes:                      oidcConnectScopes,
+		OIDCConnectRedirectURL:                 oidcConnectRedirectURL,
+		OIDCConnectFrontendRedirectURL:         oidcConnectFrontendRedirectURL,
+		OIDCConnectTokenAuthMethod:             oidcConnectTokenAuthMethod,
 		OIDCConnectUsePKCE:                     oidcUsePKCE,
 		OIDCConnectValidateIDToken:             oidcValidateIDToken,
-		OIDCConnectAllowedSigningAlgs:          req.OIDCConnectAllowedSigningAlgs,
-		OIDCConnectClockSkewSeconds:            req.OIDCConnectClockSkewSeconds,
-		OIDCConnectRequireEmailVerified:        req.OIDCConnectRequireEmailVerified,
-		OIDCConnectUserInfoEmailPath:           req.OIDCConnectUserInfoEmailPath,
-		OIDCConnectUserInfoIDPath:              req.OIDCConnectUserInfoIDPath,
-		OIDCConnectUserInfoUsernamePath:        req.OIDCConnectUserInfoUsernamePath,
+		OIDCConnectAllowedSigningAlgs:          oidcConnectAllowedSigningAlgs,
+		OIDCConnectClockSkewSeconds:            oidcConnectClockSkewSeconds,
+		OIDCConnectRequireEmailVerified:        oidcConnectRequireEmailVerified,
+		OIDCConnectUserInfoEmailPath:           oidcConnectUserInfoEmailPath,
+		OIDCConnectUserInfoIDPath:              oidcConnectUserInfoIDPath,
+		OIDCConnectUserInfoUsernamePath:        oidcConnectUserInfoUsernamePath,
 		GitHubOAuthEnabled:                     req.GitHubOAuthEnabled,
 		GitHubOAuthClientID:                    req.GitHubOAuthClientID,
 		GitHubOAuthClientSecret:                req.GitHubOAuthClientSecret,
@@ -2201,14 +2234,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		GoogleOAuthClientSecret:                req.GoogleOAuthClientSecret,
 		GoogleOAuthRedirectURL:                 req.GoogleOAuthRedirectURL,
 		GoogleOAuthFrontendRedirectURL:         req.GoogleOAuthFrontendRedirectURL,
-		SiteName:                               req.SiteName,
+		SiteName:                               siteName,
 		SiteLogo: func() string {
 			if hasSiteLogoField {
 				return strings.TrimSpace(req.SiteLogo)
 			}
 			return previousSettings.SiteLogo
 		}(),
-		SiteSubtitle:                 req.SiteSubtitle,
+		SiteSubtitle:                 siteSubtitle,
 		APIBaseURL:                   req.APIBaseURL,
 		ContactInfo:                  req.ContactInfo,
 		SupportQRCodes:               supportQRCodes,
@@ -2234,11 +2267,11 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebatePerInviteeCap: affiliateRebatePerInviteeCap,
 		DefaultUserRPMLimit:          req.DefaultUserRPMLimit,
 		DefaultSubscriptions:         defaultSubscriptions,
-		EnableModelFallback:          req.EnableModelFallback,
-		FallbackModelAnthropic:       req.FallbackModelAnthropic,
-		FallbackModelOpenAI:          req.FallbackModelOpenAI,
-		FallbackModelGemini:          req.FallbackModelGemini,
-		FallbackModelAntigravity:     req.FallbackModelAntigravity,
+		EnableModelFallback:          enableModelFallback,
+		FallbackModelAnthropic:       fallbackModelAnthropic,
+		FallbackModelOpenAI:          fallbackModelOpenAI,
+		FallbackModelGemini:          fallbackModelGemini,
+		FallbackModelAntigravity:     fallbackModelAntigravity,
 		PlatformDefaultAccountModelConfig: fromOptionalDTODefaultAccountModelConfig(
 			req.PlatformDefaultAccountModelConfig,
 			previousSettings.PlatformDefaultAccountModelConfig,
@@ -3680,6 +3713,27 @@ func boolValueOrDefault(value *bool, fallback bool) bool {
 		return fallback
 	}
 	return *value
+}
+
+func stringJSONFieldOrDefault(rawFields map[string]json.RawMessage, field, value, fallback string) string {
+	if _, ok := rawFields[field]; !ok {
+		return fallback
+	}
+	return value
+}
+
+func intJSONFieldOrDefault(rawFields map[string]json.RawMessage, field string, value, fallback int) int {
+	if _, ok := rawFields[field]; !ok {
+		return fallback
+	}
+	return value
+}
+
+func boolJSONFieldOrDefault(rawFields map[string]json.RawMessage, field string, value, fallback bool) bool {
+	if _, ok := rawFields[field]; !ok {
+		return fallback
+	}
+	return value
 }
 
 func defaultSubscriptionsValueOrDefault(input *[]dto.DefaultSubscriptionSetting, fallback []service.DefaultSubscriptionSetting) []service.DefaultSubscriptionSetting {
