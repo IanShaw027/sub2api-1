@@ -1670,7 +1670,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuth
 	require.Len(t, upstreamConn.writes, 2)
 	secondWrite := requestToJSONString(upstreamConn.writes[1])
 	require.Equal(t, "resp_passthrough_tool_1", gjson.Get(secondWrite, "previous_response_id").String())
-	require.True(t, gjson.Get(secondWrite, "store").Bool())
+	require.False(t, gjson.Get(secondWrite, "store").Bool(), "live relay tool continuation should keep OAuth store=false")
 	require.Equal(t, "function_call_output", gjson.Get(secondWrite, "input.0.type").String())
 }
 

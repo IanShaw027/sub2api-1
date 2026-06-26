@@ -1959,10 +1959,13 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecision(
 		return dropToFullCreate("conn_affinity_miss")
 	}
 
-	payload["store"] = true
+	// OAuth Responses continuation can remain incremental while still forcing
+	// store=false. previous_response_id + sticky conn affinity are sufficient
+	// for this path; re-enabling store trips upstream validation.
+	payload["store"] = false
 	decision.StoreMode = openAIWSStoreModeIncremental
-	decision.StoreEnabled = true
-	decision.StoreDisabled = false
+	decision.StoreEnabled = false
+	decision.StoreDisabled = true
 	decision.StickyAccountHit = true
 	return decision
 }
@@ -2061,13 +2064,13 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecisionRawWithOp
 	}
 
 	if options.AllowLiveRelayContinuation {
-		updated, err := setOpenAIWSRawPayloadStore(payload, true)
+		updated, err := setOpenAIWSRawPayloadStore(payload, false)
 		if err != nil {
 			return payload, decision, err
 		}
 		decision.StoreMode = openAIWSStoreModeIncremental
-		decision.StoreEnabled = true
-		decision.StoreDisabled = false
+		decision.StoreEnabled = false
+		decision.StoreDisabled = true
 		decision.StickyAccountHit = true
 		decision.ConnAffinityHit = true
 		decision.FallbackReason = ""
@@ -2123,13 +2126,13 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecisionRawWithOp
 		}
 	}
 
-	updated, err := setOpenAIWSRawPayloadStore(payload, true)
+	updated, err := setOpenAIWSRawPayloadStore(payload, false)
 	if err != nil {
 		return payload, decision, err
 	}
 	decision.StoreMode = openAIWSStoreModeIncremental
-	decision.StoreEnabled = true
-	decision.StoreDisabled = false
+	decision.StoreEnabled = false
+	decision.StoreDisabled = true
 	decision.StickyAccountHit = true
 	decision.FallbackReason = ""
 	return updated, decision, nil
