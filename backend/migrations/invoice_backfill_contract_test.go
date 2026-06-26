@@ -92,6 +92,7 @@ func TestMigrationFilenameNumericPrefixesStayDeliberate(t *testing.T) {
 		"152": {"152_add_group_openai_image_main_model.sql", "152_payment_refund_self_service.sql"},
 		"161": {"161_add_opus48_to_model_mapping.sql", "161_channel_monitor_add_kiro_provider.sql"},
 		"162": {"162_create_codex_invite_reset_history.sql", "162_create_tls_fingerprint_routers.sql", "162_deleted_api_key_audit.sql"},
+		"176": {"176_add_tls_fingerprint_profile_transport.sql", "176_tls_fingerprint_capture_unification.sql"},
 	}
 
 	byPrefix := make(map[string][]string)

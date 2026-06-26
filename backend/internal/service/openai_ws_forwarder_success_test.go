@@ -764,7 +764,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 	require.Equal(t, "client-req-1", gjson.Get(requestJSON, "client_metadata.x-client-request-id").String())
 }
 
-func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyPreviousResponseUsesStoreTrue(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyPreviousResponseKeepsStoreFalse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -858,8 +858,8 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyPreviousResponseUsesStoreT
 
 	secondWrite := requestToJSONString(writes[1])
 	require.Equal(t, "resp_oauth_sticky_prev_1", gjson.Get(secondWrite, "previous_response_id").String())
-	require.True(t, gjson.Get(secondWrite, "store").Exists(), "sticky OAuth 续链应显式启用 store=true")
-	require.True(t, gjson.Get(secondWrite, "store").Bool(), "sticky OAuth 续链应启用服务端增量上下文")
+	require.True(t, gjson.Get(secondWrite, "store").Exists(), "sticky OAuth continuation should keep explicit store=false")
+	require.False(t, gjson.Get(secondWrite, "store").Bool(), "sticky OAuth continuation must stay on store=false")
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_OAuthColdSessionUsesNeutralIdleConn(t *testing.T) {

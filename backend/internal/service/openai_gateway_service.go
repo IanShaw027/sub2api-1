@@ -863,16 +863,12 @@ func (s *OpenAIGatewayService) openAIRebuildFallbackEnabled() bool {
 	if wsCfg.RebuildFallbackEnabled {
 		return true
 	}
-	// Many focused tests and lightweight call sites construct partial configs
-	// directly instead of flowing through config.Load defaults. For the current
-	// continuation architecture, OAuth WS/rebuild paths should stay enabled in
-	// those zero-value configs rather than silently degrading back to the old
-	// drop-anchor behavior.
-	return wsCfg.Enabled ||
-		wsCfg.ResponsesWebsocketsV2 ||
-		wsCfg.HttpIngressUpstreamWSEnabled ||
-		wsCfg.OAuthEnabled ||
-		wsCfg.APIKeyEnabled
+	// Focused tests and lightweight call sites often construct partial configs
+	// directly rather than flowing through config.Load defaults. Those configs
+	// typically also omit jwt.secret, so treat them as "unset defaults" and keep
+	// rebuild fallback enabled. Real runtime configs always load jwt.secret, so a
+	// false value there remains an explicit disable.
+	return strings.TrimSpace(s.cfg.JWT.Secret) == ""
 }
 
 func (s *OpenAIGatewayService) allowOpenAIDurableHTTPContinuation(account *Account, payload []byte) bool {

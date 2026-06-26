@@ -2338,8 +2338,10 @@ type openAIWSFailoverHandlerAccountRepoStub struct {
 }
 
 type openAIHandlerGatewayCacheStub struct {
-	sessionBindings map[string]int64
-	deletedSessions map[string]int
+	sessionBindings      map[string]int64
+	deletedSessions      map[string]int
+	sessionWindowPayload map[string][]byte
+	deletedWindows       map[string]int
 }
 
 func (s *openAIHandlerGatewayCacheStub) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
@@ -2369,6 +2371,32 @@ func (s *openAIHandlerGatewayCacheStub) DeleteSessionAccountID(ctx context.Conte
 	}
 	s.deletedSessions[sessionHash]++
 	delete(s.sessionBindings, sessionHash)
+	return nil
+}
+
+func (s *openAIHandlerGatewayCacheStub) GetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) ([]byte, error) {
+	if s != nil && s.sessionWindowPayload != nil {
+		if payload, ok := s.sessionWindowPayload[sessionHash]; ok {
+			return append([]byte(nil), payload...), nil
+		}
+	}
+	return nil, errors.New("not found")
+}
+
+func (s *openAIHandlerGatewayCacheStub) SetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, payload []byte, ttl time.Duration) error {
+	if s.sessionWindowPayload == nil {
+		s.sessionWindowPayload = make(map[string][]byte)
+	}
+	s.sessionWindowPayload[sessionHash] = append([]byte(nil), payload...)
+	return nil
+}
+
+func (s *openAIHandlerGatewayCacheStub) DeleteOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) error {
+	if s.deletedWindows == nil {
+		s.deletedWindows = make(map[string]int)
+	}
+	s.deletedWindows[sessionHash]++
+	delete(s.sessionWindowPayload, sessionHash)
 	return nil
 }
 
