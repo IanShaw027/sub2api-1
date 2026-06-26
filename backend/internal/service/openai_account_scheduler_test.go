@@ -213,8 +213,10 @@ func (c schedulerTestConcurrencyCache) GetAccountWaitingCount(ctx context.Contex
 }
 
 type schedulerTestGatewayCache struct {
-	sessionBindings map[string]int64
-	deletedSessions map[string]int
+	sessionBindings      map[string]int64
+	deletedSessions      map[string]int
+	sessionWindowPayload map[string][]byte
+	deletedWindows       map[string]int
 }
 
 func (c *schedulerTestGatewayCache) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
@@ -245,6 +247,33 @@ func (c *schedulerTestGatewayCache) DeleteSessionAccountID(ctx context.Context, 
 	}
 	c.deletedSessions[sessionHash]++
 	delete(c.sessionBindings, sessionHash)
+	return nil
+}
+
+func (c *schedulerTestGatewayCache) GetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) ([]byte, error) {
+	if payload, ok := c.sessionWindowPayload[sessionHash]; ok {
+		return append([]byte(nil), payload...), nil
+	}
+	return nil, errors.New("not found")
+}
+
+func (c *schedulerTestGatewayCache) SetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, payload []byte, ttl time.Duration) error {
+	if c.sessionWindowPayload == nil {
+		c.sessionWindowPayload = make(map[string][]byte)
+	}
+	c.sessionWindowPayload[sessionHash] = append([]byte(nil), payload...)
+	return nil
+}
+
+func (c *schedulerTestGatewayCache) DeleteOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) error {
+	if c.sessionWindowPayload == nil {
+		return nil
+	}
+	if c.deletedWindows == nil {
+		c.deletedWindows = make(map[string]int)
+	}
+	c.deletedWindows[sessionHash]++
+	delete(c.sessionWindowPayload, sessionHash)
 	return nil
 }
 

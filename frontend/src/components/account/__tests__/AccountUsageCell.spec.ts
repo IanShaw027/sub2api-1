@@ -207,6 +207,34 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).toContain('7d|62|2026-03-13T12:00:00Z')
   })
 
+  it('父级接管 batch usage 时不再自发调用逐个 getUsage', async () => {
+    const requestBatchedUsage = vi.fn()
+
+    mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 1999,
+          platform: 'openai',
+          type: 'oauth',
+          extra: {}
+        }),
+        requestBatchedUsage
+      } as any,
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(requestBatchedUsage).toHaveBeenCalledTimes(1)
+    expect(requestBatchedUsage).toHaveBeenCalledWith(expect.objectContaining({ id: 1999 }), undefined)
+    expect(getUsage).not.toHaveBeenCalled()
+  })
+
 
   it('OpenAI OAuth 快照已过期时首屏会重新请求 usage', async () => {
     getUsage.mockResolvedValue({
@@ -476,6 +504,40 @@ describe('AccountUsageCell', () => {
     expect(getUsage).toHaveBeenCalledWith(2010, undefined)
     // 单一数据源：始终使用 /usage API 值
     expect(wrapper.text()).toContain('5h|18|900')
+  })
+
+  it('父级接管 batch usage 时手动刷新改为重新请求 batch', async () => {
+    const requestBatchedUsage = vi.fn()
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 2012,
+          platform: 'openai',
+          type: 'oauth',
+          extra: {}
+        }),
+        manualRefreshToken: 0,
+        requestBatchedUsage
+      } as any,
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+    expect(requestBatchedUsage).toHaveBeenCalledTimes(1)
+    expect(getUsage).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ manualRefreshToken: 1 })
+    await flushPromises()
+
+    expect(requestBatchedUsage).toHaveBeenCalledTimes(2)
+    expect(requestBatchedUsage).toHaveBeenLastCalledWith(expect.objectContaining({ id: 2012 }), { force: true })
+    expect(getUsage).not.toHaveBeenCalled()
   })
 
   it('OpenAI OAuth usage 接口返回空窗口时不渲染 0% 占位条', async () => {

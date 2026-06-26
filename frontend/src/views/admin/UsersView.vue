@@ -936,6 +936,7 @@ const toggleColumn = (key: string) => {
 // Check if column is visible (not in hidden set)
 const isColumnVisible = (key: string) => FORCED_VISIBLE_COLUMNS.has(key) || !hiddenColumns.has(key)
 const hasVisibleGroupsColumn = computed(() => isColumnVisible('groups'))
+const hasVisibleSubscriptionsColumn = computed(() => isColumnVisible('subscriptions'))
 const hasVisiblePlatformQuotaColumn = computed(() => isColumnVisible('balance_platform_quota'))
 const hasVisibleAttributeColumns = computed(() =>
   attributeDefinitions.value.some((def) => def.enabled && !hiddenColumns.has(`attr_${def.id}`))
@@ -1220,9 +1221,15 @@ const deletingUser = ref<AdminUser | null>(null)
 const viewingUser = ref<AdminUser | null>(null)
 const platformQuotaUser = ref<AdminUser | null>(null)
 
-const handlePlatformQuota = (user: AdminUser) => {
-  platformQuotaUser.value = user
-  showPlatformQuotaModal.value = true
+const handlePlatformQuota = async (user: AdminUser) => {
+  try {
+    platformQuotaUser.value = await adminAPI.users.getById(user.id)
+  } catch (e) {
+    console.error('Failed to load user detail for platform quota modal:', e)
+    platformQuotaUser.value = user
+  } finally {
+    showPlatformQuotaModal.value = true
+  }
 }
 
 const closePlatformQuotaModal = () => {
@@ -1460,8 +1467,7 @@ const loadUsers = async () => {
         group_name: filters.group || undefined,
         api_key_group_id: filters.apiKeyGroup ?? undefined,
         attributes: Object.keys(attrFilters).length > 0 ? attrFilters : undefined,
-        // 始终请求 subscriptions：列隐藏时仍需用于 UserPlatformQuotaModal 的 active-subscription 警示 banner
-        include_subscriptions: true,
+        include_subscriptions: hasVisibleSubscriptionsColumn.value,
         sort_by: sortState.sort_by,
         sort_order: sortState.sort_order
       },

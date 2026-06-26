@@ -822,7 +822,7 @@ var ProviderSet = wire.NewSet(
 	NewErrorPassthroughService,
 	NewTLSFingerprintProfileService,
 	ProvideTLSFingerprintCaptureService,
-	ProvideTLSFingerprintNativeCaptureListener,
+	ProvideTLSCaptureListener,
 	NewTLSFingerprintRouterService,
 	NewDigestSessionStore,
 	ProvideIdempotencyCoordinator,

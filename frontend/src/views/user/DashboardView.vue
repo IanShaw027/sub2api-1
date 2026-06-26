@@ -60,8 +60,11 @@ const granularity = ref('day')
 const loadStats = async () => {
   loading.value = true
   try {
-    await authStore.refreshUser({ touchActive: true })
-    stats.value = await usageAPI.getDashboardStats()
+    const [, dashboardStats] = await Promise.all([
+      authStore.refreshUser({ touchActive: true }),
+      usageAPI.getDashboardStats(),
+    ])
+    stats.value = dashboardStats
   } catch (error) {
     console.error('Failed to load dashboard stats:', error)
   } finally {
@@ -95,7 +98,7 @@ const loadCharts = async () => {
 const loadRecent = async () => {
   loadingUsage.value = true
   try {
-    const res = await usageAPI.getByDateRange(startDate.value, endDate.value)
+    const res = await usageAPI.getByDateRange(startDate.value, endDate.value, undefined, 5)
     recentUsage.value = res.items.slice(0, 5)
   } catch (error) {
     console.error('Failed to load recent usage:', error)

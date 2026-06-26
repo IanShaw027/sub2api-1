@@ -14,7 +14,7 @@
           <AccountTableActions
             :loading="loading"
             @refresh="handleManualRefresh"
-            @create="showCreate = true"
+            @create="openCreateModal"
           >
             <template #after>
               <!-- Auto Refresh Dropdown -->
@@ -308,6 +308,10 @@
               :today-stats-loading="todayStatsLoading"
               :manual-refresh-token="usageManualRefreshToken"
               :active-group-id="params.group && params.group !== ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE ? Number(params.group) : null"
+              :batched-usage="usageBatchByAccountId[String(row.id)] ?? null"
+              :batched-usage-error="usageBatchErrorByAccountId[String(row.id)] ?? null"
+              :batched-usage-loading="usageBatchLoadingByAccountId[String(row.id)] === true"
+              :request-batched-usage="isDesktopViewport ? queueBatchedUsage : null"
             />
           </template>
           <template #cell-proxy="{ row }">
@@ -505,7 +509,7 @@ import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
 import { collectGeminiTierMetadataSources } from '@/utils/geminiExtra'
 import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 import { inferGeminiOAuthType } from '@/utils/geminiOAuthType'
-import type { Account, AccountPlatform, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
+import type { Account, AccountPlatform, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, AccountUsageInfo } from '@/types'
 import {
   normalizeOpenAIEndpointCapabilities,
   supportsTextEndpointAutoRoute
@@ -531,6 +535,8 @@ const authStore = useAuthStore()
 
 const proxies = ref<AccountProxy[]>([])
 const groups = ref<AdminGroup[]>([])
+const proxyOptionsLoaded = ref(false)
+let proxyOptionsLoadPromise: Promise<void> | null = null
 const accountTableRef = ref<HTMLElement | null>(null)
 const dataTableRef = ref<InstanceType<typeof DataTable> | null>(null)
 type AccountBulkEditTarget =
@@ -660,12 +666,28 @@ const autoRefreshFetching = ref(false)
 const AUTO_REFRESH_SILENT_WINDOW_MS = 15000
 const autoRefreshSilentUntil = ref(0)
 const hasPendingListSync = ref(false)
+const desktopViewportQuery = '(min-width: 768px)'
+const isDesktopViewport = ref(
+  typeof window === 'undefined' ? true : window.matchMedia(desktopViewportQuery).matches
+)
+let desktopViewportMediaQuery: MediaQueryList | null = null
+let desktopViewportListener: ((event: MediaQueryListEvent) => void) | null = null
 const todayStatsByAccountId = ref<Record<string, WindowStats>>({})
 const todayStatsLoading = ref(false)
 const todayStatsError = ref<string | null>(null)
 const todayStatsReqSeq = ref(0)
 const pendingTodayStatsRefresh = ref(false)
 const usageManualRefreshToken = ref(0)
+const usageBatchByAccountId = ref<Record<string, AccountUsageInfo | null>>({})
+const usageBatchErrorByAccountId = ref<Record<string, string | null>>({})
+const usageBatchLoadingByAccountId = ref<Record<string, boolean>>({})
+const usageBatchRequestTokenByAccountId = ref<Record<string, number>>({})
+const usageBatchCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
+const USAGE_BATCH_CACHE_TTL = 5 * 60 * 1000
+const pendingUsageBatchIds = new Set<number>()
+let usageBatchFlushTimer: ReturnType<typeof setTimeout> | null = null
+let queuedUsageBatchForce = false
+let usageBatchRequestToken = 0
 
 const buildDefaultTodayStats = (): WindowStats => ({
   requests: 0,
@@ -674,6 +696,133 @@ const buildDefaultTodayStats = (): WindowStats => ({
   standard_cost: 0,
   user_cost: 0
 })
+
+const accountSupportsBatchUsage = (account: Account) => {
+  if (account.platform === 'anthropic') {
+    return account.type === 'oauth' || account.type === 'setup-token' || account.type === 'service_account'
+  }
+  if (account.platform === 'gemini') return true
+  if (account.platform === 'kiro') return account.type === 'oauth'
+  if (account.platform === 'antigravity') return account.type === 'oauth'
+  if (account.platform === 'openai') return account.type === 'oauth'
+  return false
+}
+
+const setUsageBatchLoading = (accountID: number, loadingState: boolean) => {
+  usageBatchLoadingByAccountId.value = {
+    ...usageBatchLoadingByAccountId.value,
+    [String(accountID)]: loadingState
+  }
+}
+
+const setUsageBatchState = (accountID: number, usage: AccountUsageInfo | null, error: string | null) => {
+  const key = String(accountID)
+  usageBatchByAccountId.value = {
+    ...usageBatchByAccountId.value,
+    [key]: usage
+  }
+  usageBatchErrorByAccountId.value = {
+    ...usageBatchErrorByAccountId.value,
+    [key]: error
+  }
+}
+
+const flushQueuedUsageBatch = async () => {
+  usageBatchFlushTimer = null
+  const accountIDs = Array.from(pendingUsageBatchIds)
+  const force = queuedUsageBatchForce
+  pendingUsageBatchIds.clear()
+  queuedUsageBatchForce = false
+
+  if (accountIDs.length === 0) return
+
+  const requestTokensByAccount = accountIDs.reduce<Record<string, number>>((acc, accountID) => {
+    acc[String(accountID)] = usageBatchRequestTokenByAccountId.value[String(accountID)] ?? 0
+    return acc
+  }, {})
+
+  try {
+    const result = await adminAPI.accounts.getBatchUsage(accountIDs, force)
+
+    const usageMap = result.usage ?? {}
+    const errorMap = result.errors ?? {}
+    const now = Date.now()
+    const nextUsage = { ...usageBatchByAccountId.value }
+    const nextErrors = { ...usageBatchErrorByAccountId.value }
+    const nextLoading = { ...usageBatchLoadingByAccountId.value }
+
+    for (const accountID of accountIDs) {
+      const key = String(accountID)
+      if ((usageBatchRequestTokenByAccountId.value[key] ?? 0) !== requestTokensByAccount[key]) {
+        continue
+      }
+      const usage = usageMap[key] ?? null
+      nextUsage[key] = usage
+      nextErrors[key] = errorMap[key] ?? null
+      nextLoading[key] = false
+      if (usage) {
+        usageBatchCache.set(accountID, { data: usage, ts: now })
+      } else {
+        usageBatchCache.delete(accountID)
+      }
+    }
+
+    usageBatchByAccountId.value = nextUsage
+    usageBatchErrorByAccountId.value = nextErrors
+    usageBatchLoadingByAccountId.value = nextLoading
+  } catch (error) {
+    const nextErrors = { ...usageBatchErrorByAccountId.value }
+    const nextLoading = { ...usageBatchLoadingByAccountId.value }
+    for (const accountID of accountIDs) {
+      const key = String(accountID)
+      if ((usageBatchRequestTokenByAccountId.value[key] ?? 0) !== requestTokensByAccount[key]) {
+        continue
+      }
+      nextErrors[key] = 'Failed'
+      nextLoading[key] = false
+    }
+    usageBatchErrorByAccountId.value = nextErrors
+    usageBatchLoadingByAccountId.value = nextLoading
+    console.error('Failed to load account usage batch:', error)
+  }
+}
+
+const queueBatchedUsage = (account: Account, options?: { force?: boolean }) => {
+  if (!isDesktopViewport.value) return
+  if (!accountSupportsBatchUsage(account)) return
+
+  const force = options?.force === true
+  const cacheKey = account.id
+  const key = String(cacheKey)
+
+  if (force) {
+    usageBatchCache.delete(cacheKey)
+  } else {
+    const cached = usageBatchCache.get(cacheKey)
+    if (cached && Date.now() - cached.ts < USAGE_BATCH_CACHE_TTL) {
+      setUsageBatchState(cacheKey, cached.data, null)
+      setUsageBatchLoading(cacheKey, false)
+      return
+    }
+  }
+
+  usageBatchErrorByAccountId.value = {
+    ...usageBatchErrorByAccountId.value,
+    [key]: null
+  }
+  usageBatchRequestTokenByAccountId.value = {
+    ...usageBatchRequestTokenByAccountId.value,
+    [key]: ++usageBatchRequestToken
+  }
+  setUsageBatchLoading(cacheKey, true)
+  pendingUsageBatchIds.add(cacheKey)
+  queuedUsageBatchForce = queuedUsageBatchForce || force
+
+  if (usageBatchFlushTimer !== null) return
+  usageBatchFlushTimer = setTimeout(() => {
+    void flushQueuedUsageBatch()
+  }, 0)
+}
 
 const refreshTodayStatsBatch = async () => {
   // Why this checks both columns:
@@ -958,6 +1107,22 @@ watch(loading, (isLoading, wasLoading) => {
       console.error('Failed to refresh account today stats after table load:', error)
     })
   }
+})
+
+watch(accounts, (rows) => {
+  const visibleIDs = new Set(rows.map((row) => String(row.id)))
+  usageBatchByAccountId.value = Object.fromEntries(
+    Object.entries(usageBatchByAccountId.value).filter(([key]) => visibleIDs.has(key))
+  )
+  usageBatchErrorByAccountId.value = Object.fromEntries(
+    Object.entries(usageBatchErrorByAccountId.value).filter(([key]) => visibleIDs.has(key))
+  )
+  usageBatchLoadingByAccountId.value = Object.fromEntries(
+    Object.entries(usageBatchLoadingByAccountId.value).filter(([key]) => visibleIDs.has(key))
+  )
+  usageBatchRequestTokenByAccountId.value = Object.fromEntries(
+    Object.entries(usageBatchRequestTokenByAccountId.value).filter(([key]) => visibleIDs.has(key))
+  )
 })
 
 const isAnyModalOpen = computed(() => {
@@ -1440,9 +1605,36 @@ const ensureAccountDetail = async (account: Account) => {
   return adminAPI.accounts.getById(account.id)
 }
 
+const ensureProxyOptionsLoaded = async () => {
+  if (proxyOptionsLoaded.value) {
+    return
+  }
+  if (!proxyOptionsLoadPromise) {
+    proxyOptionsLoadPromise = adminAPI.proxies.getAll()
+      .then((items) => {
+        proxies.value = items
+        proxyOptionsLoaded.value = true
+      })
+      .catch((error) => {
+        console.error('Failed to load account proxy options:', error)
+        throw error
+      })
+      .finally(() => {
+        proxyOptionsLoadPromise = null
+      })
+  }
+  return proxyOptionsLoadPromise
+}
+
+const openCreateModal = () => {
+  void ensureProxyOptionsLoaded()
+  showCreate.value = true
+}
+
 const handleEdit = async (a: Account) => {
   const requestSeq = ++editDetailRequestSeq
   try {
+    void ensureProxyOptionsLoaded()
     const accountDetail = await ensureAccountDetail(a)
     if (requestSeq !== editDetailRequestSeq) {
       return
@@ -1705,6 +1897,7 @@ const openBulkEditSelected = () => {
     selectedTypes: [...selTypes.value],
     textEndpointAutoRouteConfigurable
   }
+  void ensureProxyOptionsLoaded()
   showBulkEdit.value = true
 }
 
@@ -1721,6 +1914,7 @@ const openBulkEditFiltered = async () => {
     selectedTypes,
     textEndpointAutoRouteConfigurable
   }
+  void ensureProxyOptionsLoaded()
   showBulkEdit.value = true
 }
 
@@ -2073,13 +2267,24 @@ const handleClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
+  if (typeof window !== 'undefined') {
+    desktopViewportMediaQuery = window.matchMedia(desktopViewportQuery)
+    isDesktopViewport.value = desktopViewportMediaQuery.matches
+    desktopViewportListener = (event: MediaQueryListEvent) => {
+      isDesktopViewport.value = event.matches
+    }
+    if (typeof desktopViewportMediaQuery.addEventListener === 'function') {
+      desktopViewportMediaQuery.addEventListener('change', desktopViewportListener)
+    } else {
+      desktopViewportMediaQuery.addListener(desktopViewportListener)
+    }
+  }
+
   load()
   try {
-    const [p, g] = await Promise.all([adminAPI.proxies.getAll(), adminAPI.groups.getAll()])
-    proxies.value = p
-    groups.value = g
+    groups.value = await adminAPI.groups.getAll()
   } catch (error) {
-    console.error('Failed to load proxies/groups:', error)
+    console.error('Failed to load account groups:', error)
   }
   window.addEventListener('scroll', handleScroll, true)
   document.addEventListener('click', handleClickOutside)
@@ -2094,8 +2299,22 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopAutoRefresh()
+  if (usageBatchFlushTimer !== null) {
+    clearTimeout(usageBatchFlushTimer)
+    usageBatchFlushTimer = null
+  }
+  pendingUsageBatchIds.clear()
   window.removeEventListener('scroll', handleScroll, true)
   document.removeEventListener('click', handleClickOutside)
+  if (desktopViewportMediaQuery && desktopViewportListener) {
+    if (typeof desktopViewportMediaQuery.removeEventListener === 'function') {
+      desktopViewportMediaQuery.removeEventListener('change', desktopViewportListener)
+    } else {
+      desktopViewportMediaQuery.removeListener(desktopViewportListener)
+    }
+  }
+  desktopViewportListener = null
+  desktopViewportMediaQuery = null
 })
 </script>
 

@@ -281,13 +281,59 @@ func TestResolveOpenAIWSContinuationStoreDecisionOAuthRequiresStickyAccountHit(t
 	decision := svc.resolveOpenAIWSContinuationStoreDecision(context.Background(), payload, account, store, 7, 11)
 
 	require.True(t, decision.StickyAccountHit)
-	require.True(t, decision.StoreEnabled)
-	require.False(t, decision.StoreDisabled)
+	require.False(t, decision.StoreEnabled)
+	require.True(t, decision.StoreDisabled)
 	require.Equal(t, openAIWSStoreModeIncremental, decision.StoreMode)
 	require.True(t, decision.ConnAffinityHit)
 	require.Equal(t, "conn_bound", decision.PreferredConnID)
 	require.Equal(t, "resp_bound", payload["previous_response_id"])
-	require.Equal(t, true, payload["store"])
+	require.Equal(t, false, payload["store"])
+}
+
+func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthRequiresStickyAccountHit(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	store := NewOpenAIWSStateStore(nil)
+	require.NoError(t, store.BindResponseAccount(context.Background(), 7, 11, "resp_bound", account.ID, time.Minute))
+	store.BindResponseConn(7, 11, "resp_bound", "conn_bound", time.Minute)
+	payload := []byte(`{"type":"response.create","model":"gpt-5.1","store":true,"previous_response_id":"resp_bound","input":[{"type":"input_text","text":"hello"}]}`)
+
+	updated, decision, err := svc.resolveOpenAIWSContinuationStoreDecisionRaw(context.Background(), payload, account, store, 7, 11)
+
+	require.NoError(t, err)
+	require.True(t, decision.StickyAccountHit)
+	require.False(t, decision.StoreEnabled)
+	require.True(t, decision.StoreDisabled)
+	require.Equal(t, openAIWSStoreModeIncremental, decision.StoreMode)
+	require.True(t, decision.ConnAffinityHit)
+	require.Equal(t, "conn_bound", decision.PreferredConnID)
+	require.Equal(t, "resp_bound", gjson.GetBytes(updated, "previous_response_id").String())
+	require.False(t, gjson.GetBytes(updated, "store").Bool())
+}
+
+func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthLiveRelayContinuationKeepsStoreFalse(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	payload := []byte(`{"type":"response.create","model":"gpt-5.1","store":true,"previous_response_id":"resp_live_relay","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
+
+	updated, decision, err := svc.resolveOpenAIWSContinuationStoreDecisionRawWithOptions(
+		context.Background(),
+		payload,
+		account,
+		NewOpenAIWSStateStore(nil),
+		7,
+		11,
+		openAIWSContinuationStoreDecisionOptions{AllowLiveRelayContinuation: true},
+	)
+
+	require.NoError(t, err)
+	require.True(t, decision.StickyAccountHit)
+	require.True(t, decision.ConnAffinityHit)
+	require.False(t, decision.StoreEnabled)
+	require.True(t, decision.StoreDisabled)
+	require.Equal(t, openAIWSStoreModeIncremental, decision.StoreMode)
+	require.Equal(t, "resp_live_relay", gjson.GetBytes(updated, "previous_response_id").String())
+	require.False(t, gjson.GetBytes(updated, "store").Bool())
 }
 
 func TestResolveOpenAIWSContinuationStoreDecisionOAuthToolContinuationRequiresConnAffinity(t *testing.T) {

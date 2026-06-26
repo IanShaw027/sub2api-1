@@ -340,6 +340,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
 			if lastFailoverErr == nil {
+				if len(failedAccountIDs) > 0 {
+					markOpsRoutingCapacityLimited(c)
+					msg := buildOpenAISelectionExhaustedMessage(err, "No available accounts", true)
+					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", msg, streamStarted)
+					return
+				}
 				if h.handleOpenAIGroupModelUnsupportedError(c, err, streamStarted) {
 					return
 				}

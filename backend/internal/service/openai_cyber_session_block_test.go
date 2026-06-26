@@ -133,6 +133,15 @@ func (c *comboCacheAndStore) RefreshSessionTTL(_ context.Context, _ int64, _ str
 func (c *comboCacheAndStore) DeleteSessionAccountID(_ context.Context, _ int64, _ string) error {
 	return nil
 }
+func (c *comboCacheAndStore) GetOpenAIResponsesSessionWindow(_ context.Context, _ int64, _ string) ([]byte, error) {
+	return nil, errors.New("stub")
+}
+func (c *comboCacheAndStore) SetOpenAIResponsesSessionWindow(_ context.Context, _ int64, _ string, _ []byte, _ time.Duration) error {
+	return nil
+}
+func (c *comboCacheAndStore) DeleteOpenAIResponsesSessionWindow(_ context.Context, _ int64, _ string) error {
+	return nil
+}
 func (c *comboCacheAndStore) SetCyberSessionBlocked(ctx context.Context, key string, ttl time.Duration) error {
 	return c.store.SetCyberSessionBlocked(ctx, key, ttl)
 }

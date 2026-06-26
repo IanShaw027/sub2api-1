@@ -159,6 +159,10 @@ func openAIRequestBodyImageGenerationToolNeedsNormalization(body []byte) bool {
 			needsNormalization = true
 			return false
 		}
+		if size := openAIJSONString(item.Get("size")); strings.TrimSpace(size) != "" && normalizeOpenAIImageSize(size) != size {
+			needsNormalization = true
+			return false
+		}
 		return true
 	})
 	return needsNormalization

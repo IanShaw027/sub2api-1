@@ -52,6 +52,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesample"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesession"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesessionevent"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturetask"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintrouter"
@@ -1282,6 +1284,60 @@ func (f TraverseTLSFingerprintCaptureSample) Traverse(ctx context.Context, q ent
 	return fmt.Errorf("unexpected query type %T. expect *ent.TLSFingerprintCaptureSampleQuery", q)
 }
 
+// The TLSFingerprintCaptureSessionFunc type is an adapter to allow the use of ordinary function as a Querier.
+type TLSFingerprintCaptureSessionFunc func(context.Context, *ent.TLSFingerprintCaptureSessionQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f TLSFingerprintCaptureSessionFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.TLSFingerprintCaptureSessionQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.TLSFingerprintCaptureSessionQuery", q)
+}
+
+// The TraverseTLSFingerprintCaptureSession type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseTLSFingerprintCaptureSession func(context.Context, *ent.TLSFingerprintCaptureSessionQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseTLSFingerprintCaptureSession) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseTLSFingerprintCaptureSession) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.TLSFingerprintCaptureSessionQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.TLSFingerprintCaptureSessionQuery", q)
+}
+
+// The TLSFingerprintCaptureSessionEventFunc type is an adapter to allow the use of ordinary function as a Querier.
+type TLSFingerprintCaptureSessionEventFunc func(context.Context, *ent.TLSFingerprintCaptureSessionEventQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f TLSFingerprintCaptureSessionEventFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.TLSFingerprintCaptureSessionEventQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.TLSFingerprintCaptureSessionEventQuery", q)
+}
+
+// The TraverseTLSFingerprintCaptureSessionEvent type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseTLSFingerprintCaptureSessionEvent func(context.Context, *ent.TLSFingerprintCaptureSessionEventQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseTLSFingerprintCaptureSessionEvent) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseTLSFingerprintCaptureSessionEvent) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.TLSFingerprintCaptureSessionEventQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.TLSFingerprintCaptureSessionEventQuery", q)
+}
+
 // The TLSFingerprintCaptureTaskFunc type is an adapter to allow the use of ordinary function as a Querier.
 type TLSFingerprintCaptureTaskFunc func(context.Context, *ent.TLSFingerprintCaptureTaskQuery) (ent.Value, error)
 
@@ -1668,6 +1724,10 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.SubscriptionPlanQuery, predicate.SubscriptionPlan, subscriptionplan.OrderOption]{typ: ent.TypeSubscriptionPlan, tq: q}, nil
 	case *ent.TLSFingerprintCaptureSampleQuery:
 		return &query[*ent.TLSFingerprintCaptureSampleQuery, predicate.TLSFingerprintCaptureSample, tlsfingerprintcapturesample.OrderOption]{typ: ent.TypeTLSFingerprintCaptureSample, tq: q}, nil
+	case *ent.TLSFingerprintCaptureSessionQuery:
+		return &query[*ent.TLSFingerprintCaptureSessionQuery, predicate.TLSFingerprintCaptureSession, tlsfingerprintcapturesession.OrderOption]{typ: ent.TypeTLSFingerprintCaptureSession, tq: q}, nil
+	case *ent.TLSFingerprintCaptureSessionEventQuery:
+		return &query[*ent.TLSFingerprintCaptureSessionEventQuery, predicate.TLSFingerprintCaptureSessionEvent, tlsfingerprintcapturesessionevent.OrderOption]{typ: ent.TypeTLSFingerprintCaptureSessionEvent, tq: q}, nil
 	case *ent.TLSFingerprintCaptureTaskQuery:
 		return &query[*ent.TLSFingerprintCaptureTaskQuery, predicate.TLSFingerprintCaptureTask, tlsfingerprintcapturetask.OrderOption]{typ: ent.TypeTLSFingerprintCaptureTask, tq: q}, nil
 	case *ent.TLSFingerprintProfileQuery:

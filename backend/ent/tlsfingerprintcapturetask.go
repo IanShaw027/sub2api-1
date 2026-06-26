@@ -32,6 +32,16 @@ type TLSFingerprintCaptureTask struct {
 	Targets map[string]int `json:"targets,omitempty"`
 	// Counts holds the value of the "counts" field.
 	Counts map[string]int `json:"counts,omitempty"`
+	// TransportTargets holds the value of the "transport_targets" field.
+	TransportTargets map[string]int `json:"transport_targets,omitempty"`
+	// TransportCounts holds the value of the "transport_counts" field.
+	TransportCounts map[string]int `json:"transport_counts,omitempty"`
+	// CaptureFilters holds the value of the "capture_filters" field.
+	CaptureFilters map[string]interface{} `json:"capture_filters,omitempty"`
+	// SampleSchemaVersion holds the value of the "sample_schema_version" field.
+	SampleSchemaVersion int `json:"sample_schema_version,omitempty"`
+	// TaskStats holds the value of the "task_stats" field.
+	TaskStats map[string]interface{} `json:"task_stats,omitempty"`
 	// UaKeywords holds the value of the "ua_keywords" field.
 	UaKeywords []string `json:"ua_keywords,omitempty"`
 	// CompletedAt holds the value of the "completed_at" field.
@@ -44,9 +54,9 @@ func (*TLSFingerprintCaptureTask) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case tlsfingerprintcapturetask.FieldTargets, tlsfingerprintcapturetask.FieldCounts, tlsfingerprintcapturetask.FieldUaKeywords:
+		case tlsfingerprintcapturetask.FieldTargets, tlsfingerprintcapturetask.FieldCounts, tlsfingerprintcapturetask.FieldTransportTargets, tlsfingerprintcapturetask.FieldTransportCounts, tlsfingerprintcapturetask.FieldCaptureFilters, tlsfingerprintcapturetask.FieldTaskStats, tlsfingerprintcapturetask.FieldUaKeywords:
 			values[i] = new([]byte)
-		case tlsfingerprintcapturetask.FieldID:
+		case tlsfingerprintcapturetask.FieldID, tlsfingerprintcapturetask.FieldSampleSchemaVersion:
 			values[i] = new(sql.NullInt64)
 		case tlsfingerprintcapturetask.FieldName, tlsfingerprintcapturetask.FieldStatus, tlsfingerprintcapturetask.FieldToken:
 			values[i] = new(sql.NullString)
@@ -117,6 +127,44 @@ func (_m *TLSFingerprintCaptureTask) assignValues(columns []string, values []any
 			} else if value != nil && len(*value) > 0 {
 				if err := json.Unmarshal(*value, &_m.Counts); err != nil {
 					return fmt.Errorf("unmarshal field counts: %w", err)
+				}
+			}
+		case tlsfingerprintcapturetask.FieldTransportTargets:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field transport_targets", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.TransportTargets); err != nil {
+					return fmt.Errorf("unmarshal field transport_targets: %w", err)
+				}
+			}
+		case tlsfingerprintcapturetask.FieldTransportCounts:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field transport_counts", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.TransportCounts); err != nil {
+					return fmt.Errorf("unmarshal field transport_counts: %w", err)
+				}
+			}
+		case tlsfingerprintcapturetask.FieldCaptureFilters:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field capture_filters", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.CaptureFilters); err != nil {
+					return fmt.Errorf("unmarshal field capture_filters: %w", err)
+				}
+			}
+		case tlsfingerprintcapturetask.FieldSampleSchemaVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field sample_schema_version", values[i])
+			} else if value.Valid {
+				_m.SampleSchemaVersion = int(value.Int64)
+			}
+		case tlsfingerprintcapturetask.FieldTaskStats:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field task_stats", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.TaskStats); err != nil {
+					return fmt.Errorf("unmarshal field task_stats: %w", err)
 				}
 			}
 		case tlsfingerprintcapturetask.FieldUaKeywords:
@@ -190,6 +238,21 @@ func (_m *TLSFingerprintCaptureTask) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("counts=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Counts))
+	builder.WriteString(", ")
+	builder.WriteString("transport_targets=")
+	builder.WriteString(fmt.Sprintf("%v", _m.TransportTargets))
+	builder.WriteString(", ")
+	builder.WriteString("transport_counts=")
+	builder.WriteString(fmt.Sprintf("%v", _m.TransportCounts))
+	builder.WriteString(", ")
+	builder.WriteString("capture_filters=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CaptureFilters))
+	builder.WriteString(", ")
+	builder.WriteString("sample_schema_version=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SampleSchemaVersion))
+	builder.WriteString(", ")
+	builder.WriteString("task_stats=")
+	builder.WriteString(fmt.Sprintf("%v", _m.TaskStats))
 	builder.WriteString(", ")
 	builder.WriteString("ua_keywords=")
 	builder.WriteString(fmt.Sprintf("%v", _m.UaKeywords))

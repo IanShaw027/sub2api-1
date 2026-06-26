@@ -465,7 +465,7 @@ func responsesToolsToChatTools(tools []ResponsesTool) ([]ChatTool, error) {
 			continue
 		}
 		if tool.Type != "function" {
-			return nil, fmt.Errorf("unsupported responses tool for chat completions: %s", tool.Type)
+			continue
 		}
 		chatTool := responsesFunctionToolToChatTool(tool, "")
 		if chatTool.Function == nil || chatTool.Function.Name == "" {
@@ -496,7 +496,7 @@ func responsesNamespaceToolsToChatTools(namespace ResponsesTool, seen map[string
 			continue
 		}
 		if child.Type != "function" {
-			return nil, fmt.Errorf("unsupported responses namespace tool for chat completions: %s", child.Type)
+			continue
 		}
 		chatTool := responsesFunctionToolToChatTool(child, namespaceName)
 		if chatTool.Function == nil || chatTool.Function.Name == "" {
@@ -709,7 +709,7 @@ func responsesToolChoiceToChatToolChoice(raw json.RawMessage, functionNameMap ma
 			}
 			return out, nil
 		}
-		return nil, fmt.Errorf("unsupported responses tool_choice for chat completions: %s", choiceString)
+		return json.Marshal("auto")
 	}
 
 	var choice map[string]json.RawMessage
@@ -733,7 +733,7 @@ func responsesToolChoiceToChatToolChoice(raw json.RawMessage, functionNameMap ma
 			}
 			return out, nil
 		}
-		return nil, fmt.Errorf("unsupported responses tool_choice for chat completions: %s", choiceType)
+		return json.Marshal("auto")
 	}
 	name := rawString(choice["name"])
 	if name == "" {

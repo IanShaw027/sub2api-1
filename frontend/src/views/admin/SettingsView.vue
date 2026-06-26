@@ -8382,6 +8382,8 @@ type SettingsTab =
   | "email"
   | "backup";
 const activeTab = ref<SettingsTab>("general");
+const securityTabLoaded = ref(false);
+const gatewayTabLoaded = ref(false);
 const settingsTabsScrollRef = ref<HTMLElement | null>(null);
 const settingsTabs = [
   { key: "general" as SettingsTab, icon: "home" as const },
@@ -10092,8 +10094,6 @@ async function loadSettings() {
       openaiFastPolicyLoaded.value = true;
     }
 
-    // Load web search emulation config separately
-    await loadWebSearchConfig();
   } catch (error: unknown) {
     loadFailed.value = true;
     appStore.showError(
@@ -10114,6 +10114,26 @@ async function loadSubscriptionGroups() {
   } catch (_error: unknown) {
     subscriptionGroups.value = [];
   }
+}
+
+async function ensureSecurityTabLoaded() {
+  if (securityTabLoaded.value) return;
+  await loadAdminApiKey();
+  securityTabLoaded.value = true;
+}
+
+async function ensureGatewayTabLoaded() {
+  if (gatewayTabLoaded.value) return;
+  await Promise.all([
+    loadOverloadCooldownSettings(),
+    loadRateLimit429CooldownSettings(),
+    loadStreamTimeoutSettings(),
+    loadTempUnschedThresholdSettings(),
+    loadRectifierSettings(),
+    loadBetaPolicySettings(),
+    loadWebSearchConfig(),
+  ]);
+  gatewayTabLoaded.value = true;
 }
 
 function findNextAvailableSubscriptionGroup(
@@ -11760,13 +11780,6 @@ async function handleDeleteProvider() {
 onMounted(() => {
   loadSettings();
   loadSubscriptionGroups();
-  loadAdminApiKey();
-  loadOverloadCooldownSettings();
-  loadRateLimit429CooldownSettings();
-  loadStreamTimeoutSettings();
-  loadTempUnschedThresholdSettings();
-  loadRectifierSettings();
-  loadBetaPolicySettings();
   void nextTick(centerActiveSettingsTab);
 });
 
@@ -11791,6 +11804,12 @@ watch(
 
 watch(activeTab, () => {
   void nextTick(centerActiveSettingsTab);
+  if (activeTab.value === "security") {
+    void ensureSecurityTabLoaded();
+  }
+  if (activeTab.value === "gateway") {
+    void ensureGatewayTabLoaded();
+  }
 });
 
 // =========================

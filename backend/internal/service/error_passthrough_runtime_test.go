@@ -92,6 +92,61 @@ func TestOpenAIHandleErrorResponse_NoRuleExposesClientVisible4xx(t *testing.T) {
 	assert.Equal(t, "Stream must be set to true", upstreamMessage)
 }
 
+func TestOpenAIHandleErrorResponse_HidesBillingLimitMessage(t *testing.T) {
+	setGinTestMode()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &OpenAIGatewayService{}
+	respBody := []byte(`{"error":{"type":"usage_limit_reached","code":"billing_hard_limit","message":"You've hit your usage limit. Upgrade to Plus to continue using Codex, or try again after 1:00 PM."}}`)
+	resp := &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Body:       io.NopCloser(bytes.NewReader(respBody)),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 13, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account, nil)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusTooManyRequests, rec.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	errField, ok := payload["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "rate_limit_error", errField["type"])
+	assert.Equal(t, "Upstream billing or quota limit reached, please retry later", errField["message"])
+
+	upstreamMessage, _ := c.Get(OpsUpstreamErrorMessageKey)
+	assert.Equal(t, "You've hit your usage limit. Upgrade to Plus to continue using Codex, or try again after 1:00 PM.", upstreamMessage)
+}
+
+func TestOpenAIHandleCompatErrorResponse_HidesBillingLimitMessage(t *testing.T) {
+	setGinTestMode()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &OpenAIGatewayService{}
+	respBody := []byte(`{"error":{"type":"usage_limit_reached","code":"insufficient_quota","message":"The usage limit has been reached"}}`)
+	resp := &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Body:       io.NopCloser(bytes.NewReader(respBody)),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 25, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	_, err := svc.handleCompatErrorResponse(resp, c, account, writeChatCompletionsError)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusTooManyRequests, rec.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	errField, ok := payload["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "rate_limit_error", errField["type"])
+	assert.Equal(t, "Upstream billing or quota limit reached, please retry later", errField["message"])
+}
+
 func TestGeminiWriteGeminiMappedError_NoRuleKeepsDefault(t *testing.T) {
 	setGinTestMode()
 	rec := httptest.NewRecorder()

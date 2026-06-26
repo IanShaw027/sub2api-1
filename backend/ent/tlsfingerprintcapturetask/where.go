@@ -79,6 +79,11 @@ func Token(v string) predicate.TLSFingerprintCaptureTask {
 	return predicate.TLSFingerprintCaptureTask(sql.FieldEQ(FieldToken, v))
 }
 
+// SampleSchemaVersion applies equality check predicate on the "sample_schema_version" field. It's identical to SampleSchemaVersionEQ.
+func SampleSchemaVersion(v int) predicate.TLSFingerprintCaptureTask {
+	return predicate.TLSFingerprintCaptureTask(sql.FieldEQ(FieldSampleSchemaVersion, v))
+}
+
 // CompletedAt applies equality check predicate on the "completed_at" field. It's identical to CompletedAtEQ.
 func CompletedAt(v time.Time) predicate.TLSFingerprintCaptureTask {
 	return predicate.TLSFingerprintCaptureTask(sql.FieldEQ(FieldCompletedAt, v))
@@ -357,6 +362,46 @@ func TokenEqualFold(v string) predicate.TLSFingerprintCaptureTask {
 // TokenContainsFold applies the ContainsFold predicate on the "token" field.
 func TokenContainsFold(v string) predicate.TLSFingerprintCaptureTask {
 	return predicate.TLSFingerprintCaptureTask(sql.FieldContainsFold(FieldToken, v))
+}
+
+// SampleSchemaVersionEQ applies the EQ predicate on the "sample_schema_version" field.
+func SampleSchemaVersionEQ(v int) predicate.TLSFingerprintCaptureTask {
+	return predicate.TLSFingerprintCaptureTask(sql.FieldEQ(FieldSampleSchemaVersion, v))
+}
+
+// SampleSchemaVersionNEQ applies the NEQ predicate on the "sample_schema_version" field.
+func SampleSchemaVersionNEQ(v int) predicate.TLSFingerprintCaptureTask {
+	return predicate.TLSFingerprintCaptureTask(sql.FieldNEQ(FieldSampleSchemaVersion, v))
+}
+
+// SampleSchemaVersionIn applies the In predicate on the "sample_schema_version" field.
+func SampleSchemaVersionIn(vs ...int) predicate.TLSFingerprintCaptureTask {
+	return predicate.TLSFingerprintCaptureTask(sql.FieldIn(FieldSampleSchemaVersion, vs...))
+}
+
+// SampleSchemaVersionNotIn applies the NotIn predicate on the "sample_schema_version" field.
+func SampleSchemaVersionNotIn(vs ...int) predicate.TLSFingerprintCaptureTask {
+	return predicate.TLSFingerprintCaptureTask(sql.FieldNotIn(FieldSampleSchemaVersion, vs...))
+}
+
+// SampleSchemaVersionGT applies the GT predicate on the "sample_schema_version" field.
+func SampleSchemaVersionGT(v int) predicate.TLSFingerprintCaptureTask {
+	return predicate.TLSFingerprintCaptureTask(sql.FieldGT(FieldSampleSchemaVersion, v))
+}
+
+// SampleSchemaVersionGTE applies the GTE predicate on the "sample_schema_version" field.
+func SampleSchemaVersionGTE(v int) predicate.TLSFingerprintCaptureTask {
+	return predicate.TLSFingerprintCaptureTask(sql.FieldGTE(FieldSampleSchemaVersion, v))
+}
+
+// SampleSchemaVersionLT applies the LT predicate on the "sample_schema_version" field.
+func SampleSchemaVersionLT(v int) predicate.TLSFingerprintCaptureTask {
+	return predicate.TLSFingerprintCaptureTask(sql.FieldLT(FieldSampleSchemaVersion, v))
+}
+
+// SampleSchemaVersionLTE applies the LTE predicate on the "sample_schema_version" field.
+func SampleSchemaVersionLTE(v int) predicate.TLSFingerprintCaptureTask {
+	return predicate.TLSFingerprintCaptureTask(sql.FieldLTE(FieldSampleSchemaVersion, v))
 }
 
 // CompletedAtEQ applies the EQ predicate on the "completed_at" field.

@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -451,13 +452,46 @@ func (h *GroupHandler) GetUsageSummary(c *gin.Context) {
 	now := timezone.NowInUserLocation(userTZ)
 	todayStart := timezone.StartOfDayInUserLocation(now, userTZ)
 
-	results, err := h.dashboardService.GetGroupUsageSummary(c.Request.Context(), todayStart)
+	groupIDs, err := parsePositiveInt64ListQuery(c.Query("ids"))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	var results []usagestats.GroupUsageSummary
+	if len(groupIDs) > 0 {
+		results, err = h.dashboardService.GetGroupUsageSummaryByIDs(c.Request.Context(), groupIDs, todayStart)
+	} else {
+		results, err = h.dashboardService.GetGroupUsageSummary(c.Request.Context(), todayStart)
+	}
 	if err != nil {
 		response.Error(c, 500, "Failed to get group usage summary")
 		return
 	}
 
 	response.Success(c, results)
+}
+
+func parsePositiveInt64ListQuery(raw string) ([]int64, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	parts := strings.Split(trimmed, ",")
+	ids := make([]int64, 0, len(parts))
+	for _, part := range parts {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("Invalid IDs query")
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 // GetCapacitySummary returns aggregated capacity (concurrency/sessions/RPM) for all active groups.

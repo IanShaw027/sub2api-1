@@ -25,21 +25,57 @@ type TLSFingerprintCaptureSample struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// TaskID holds the value of the "task_id" field.
 	TaskID int64 `json:"task_id,omitempty"`
+	// SessionID holds the value of the "session_id" field.
+	SessionID string `json:"session_id,omitempty"`
 	// Platform holds the value of the "platform" field.
 	Platform string `json:"platform,omitempty"`
+	// Transport holds the value of the "transport" field.
+	Transport string `json:"transport,omitempty"`
 	// UserAgent holds the value of the "user_agent" field.
 	UserAgent string `json:"user_agent,omitempty"`
 	// Originator holds the value of the "originator" field.
 	Originator string `json:"originator,omitempty"`
 	// FingerprintHash holds the value of the "fingerprint_hash" field.
 	FingerprintHash string `json:"fingerprint_hash,omitempty"`
-	// Profile holds the value of the "profile" field.
-	Profile *model.TLSFingerprintProfile `json:"profile,omitempty"`
+	// ReplayHash holds the value of the "replay_hash" field.
+	ReplayHash string `json:"replay_hash,omitempty"`
+	// Ja3Raw holds the value of the "ja3_raw" field.
+	Ja3Raw string `json:"ja3_raw,omitempty"`
+	// Ja3Hash holds the value of the "ja3_hash" field.
+	Ja3Hash string `json:"ja3_hash,omitempty"`
+	// Ja4 holds the value of the "ja4" field.
+	Ja4 string `json:"ja4,omitempty"`
+	// RequestPath holds the value of the "request_path" field.
+	RequestPath string `json:"request_path,omitempty"`
+	// HTTPMethod holds the value of the "http_method" field.
+	HTTPMethod string `json:"http_method,omitempty"`
+	// IsWebsocket holds the value of the "is_websocket" field.
+	IsWebsocket bool `json:"is_websocket,omitempty"`
+	// WebsocketProtocol holds the value of the "websocket_protocol" field.
+	WebsocketProtocol string `json:"websocket_protocol,omitempty"`
+	// ClientType holds the value of the "client_type" field.
+	ClientType string `json:"client_type,omitempty"`
+	// Model holds the value of the "model" field.
+	Model string `json:"model,omitempty"`
+	// RequestKind holds the value of the "request_kind" field.
+	RequestKind string `json:"request_kind,omitempty"`
+	// Streaming holds the value of the "streaming" field.
+	Streaming bool `json:"streaming,omitempty"`
+	// ResponseMode holds the value of the "response_mode" field.
+	ResponseMode string `json:"response_mode,omitempty"`
+	// Http2Fingerprint holds the value of the "http2_fingerprint" field.
+	Http2Fingerprint string `json:"http2_fingerprint,omitempty"`
+	// StainlessMetadata holds the value of the "stainless_metadata" field.
+	StainlessMetadata map[string]interface{} `json:"stainless_metadata,omitempty"`
+	// ReplayProfile holds the value of the "replay_profile" field.
+	ReplayProfile *model.TLSFingerprintProfile `json:"replay_profile,omitempty"`
 	// RawPayload holds the value of the "raw_payload" field.
 	RawPayload string `json:"raw_payload,omitempty"`
 	// RawClientHello holds the value of the "raw_client_hello" field.
 	RawClientHello *[]byte `json:"raw_client_hello,omitempty"`
-	selectValues   sql.SelectValues
+	// CapturedAt holds the value of the "captured_at" field.
+	CapturedAt   time.Time `json:"captured_at,omitempty"`
+	selectValues sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -47,13 +83,15 @@ func (*TLSFingerprintCaptureSample) scanValues(columns []string) ([]any, error) 
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case tlsfingerprintcapturesample.FieldProfile, tlsfingerprintcapturesample.FieldRawClientHello:
+		case tlsfingerprintcapturesample.FieldStainlessMetadata, tlsfingerprintcapturesample.FieldReplayProfile, tlsfingerprintcapturesample.FieldRawClientHello:
 			values[i] = new([]byte)
+		case tlsfingerprintcapturesample.FieldIsWebsocket, tlsfingerprintcapturesample.FieldStreaming:
+			values[i] = new(sql.NullBool)
 		case tlsfingerprintcapturesample.FieldID, tlsfingerprintcapturesample.FieldTaskID:
 			values[i] = new(sql.NullInt64)
-		case tlsfingerprintcapturesample.FieldPlatform, tlsfingerprintcapturesample.FieldUserAgent, tlsfingerprintcapturesample.FieldOriginator, tlsfingerprintcapturesample.FieldFingerprintHash, tlsfingerprintcapturesample.FieldRawPayload:
+		case tlsfingerprintcapturesample.FieldSessionID, tlsfingerprintcapturesample.FieldPlatform, tlsfingerprintcapturesample.FieldTransport, tlsfingerprintcapturesample.FieldUserAgent, tlsfingerprintcapturesample.FieldOriginator, tlsfingerprintcapturesample.FieldFingerprintHash, tlsfingerprintcapturesample.FieldReplayHash, tlsfingerprintcapturesample.FieldJa3Raw, tlsfingerprintcapturesample.FieldJa3Hash, tlsfingerprintcapturesample.FieldJa4, tlsfingerprintcapturesample.FieldRequestPath, tlsfingerprintcapturesample.FieldHTTPMethod, tlsfingerprintcapturesample.FieldWebsocketProtocol, tlsfingerprintcapturesample.FieldClientType, tlsfingerprintcapturesample.FieldModel, tlsfingerprintcapturesample.FieldRequestKind, tlsfingerprintcapturesample.FieldResponseMode, tlsfingerprintcapturesample.FieldHttp2Fingerprint, tlsfingerprintcapturesample.FieldRawPayload:
 			values[i] = new(sql.NullString)
-		case tlsfingerprintcapturesample.FieldCreatedAt, tlsfingerprintcapturesample.FieldUpdatedAt:
+		case tlsfingerprintcapturesample.FieldCreatedAt, tlsfingerprintcapturesample.FieldUpdatedAt, tlsfingerprintcapturesample.FieldCapturedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -94,11 +132,23 @@ func (_m *TLSFingerprintCaptureSample) assignValues(columns []string, values []a
 			} else if value.Valid {
 				_m.TaskID = value.Int64
 			}
+		case tlsfingerprintcapturesample.FieldSessionID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field session_id", values[i])
+			} else if value.Valid {
+				_m.SessionID = value.String
+			}
 		case tlsfingerprintcapturesample.FieldPlatform:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field platform", values[i])
 			} else if value.Valid {
 				_m.Platform = value.String
+			}
+		case tlsfingerprintcapturesample.FieldTransport:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field transport", values[i])
+			} else if value.Valid {
+				_m.Transport = value.String
 			}
 		case tlsfingerprintcapturesample.FieldUserAgent:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -118,12 +168,104 @@ func (_m *TLSFingerprintCaptureSample) assignValues(columns []string, values []a
 			} else if value.Valid {
 				_m.FingerprintHash = value.String
 			}
-		case tlsfingerprintcapturesample.FieldProfile:
+		case tlsfingerprintcapturesample.FieldReplayHash:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field replay_hash", values[i])
+			} else if value.Valid {
+				_m.ReplayHash = value.String
+			}
+		case tlsfingerprintcapturesample.FieldJa3Raw:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field ja3_raw", values[i])
+			} else if value.Valid {
+				_m.Ja3Raw = value.String
+			}
+		case tlsfingerprintcapturesample.FieldJa3Hash:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field ja3_hash", values[i])
+			} else if value.Valid {
+				_m.Ja3Hash = value.String
+			}
+		case tlsfingerprintcapturesample.FieldJa4:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field ja4", values[i])
+			} else if value.Valid {
+				_m.Ja4 = value.String
+			}
+		case tlsfingerprintcapturesample.FieldRequestPath:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field request_path", values[i])
+			} else if value.Valid {
+				_m.RequestPath = value.String
+			}
+		case tlsfingerprintcapturesample.FieldHTTPMethod:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field http_method", values[i])
+			} else if value.Valid {
+				_m.HTTPMethod = value.String
+			}
+		case tlsfingerprintcapturesample.FieldIsWebsocket:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field is_websocket", values[i])
+			} else if value.Valid {
+				_m.IsWebsocket = value.Bool
+			}
+		case tlsfingerprintcapturesample.FieldWebsocketProtocol:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field websocket_protocol", values[i])
+			} else if value.Valid {
+				_m.WebsocketProtocol = value.String
+			}
+		case tlsfingerprintcapturesample.FieldClientType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field client_type", values[i])
+			} else if value.Valid {
+				_m.ClientType = value.String
+			}
+		case tlsfingerprintcapturesample.FieldModel:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field model", values[i])
+			} else if value.Valid {
+				_m.Model = value.String
+			}
+		case tlsfingerprintcapturesample.FieldRequestKind:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field request_kind", values[i])
+			} else if value.Valid {
+				_m.RequestKind = value.String
+			}
+		case tlsfingerprintcapturesample.FieldStreaming:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field streaming", values[i])
+			} else if value.Valid {
+				_m.Streaming = value.Bool
+			}
+		case tlsfingerprintcapturesample.FieldResponseMode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field response_mode", values[i])
+			} else if value.Valid {
+				_m.ResponseMode = value.String
+			}
+		case tlsfingerprintcapturesample.FieldHttp2Fingerprint:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field http2_fingerprint", values[i])
+			} else if value.Valid {
+				_m.Http2Fingerprint = value.String
+			}
+		case tlsfingerprintcapturesample.FieldStainlessMetadata:
 			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field profile", values[i])
+				return fmt.Errorf("unexpected type %T for field stainless_metadata", values[i])
 			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.Profile); err != nil {
-					return fmt.Errorf("unmarshal field profile: %w", err)
+				if err := json.Unmarshal(*value, &_m.StainlessMetadata); err != nil {
+					return fmt.Errorf("unmarshal field stainless_metadata: %w", err)
+				}
+			}
+		case tlsfingerprintcapturesample.FieldReplayProfile:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field replay_profile", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.ReplayProfile); err != nil {
+					return fmt.Errorf("unmarshal field replay_profile: %w", err)
 				}
 			}
 		case tlsfingerprintcapturesample.FieldRawPayload:
@@ -137,6 +279,12 @@ func (_m *TLSFingerprintCaptureSample) assignValues(columns []string, values []a
 				return fmt.Errorf("unexpected type %T for field raw_client_hello", values[i])
 			} else if value != nil {
 				_m.RawClientHello = value
+			}
+		case tlsfingerprintcapturesample.FieldCapturedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field captured_at", values[i])
+			} else if value.Valid {
+				_m.CapturedAt = value.Time
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -183,8 +331,14 @@ func (_m *TLSFingerprintCaptureSample) String() string {
 	builder.WriteString("task_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TaskID))
 	builder.WriteString(", ")
+	builder.WriteString("session_id=")
+	builder.WriteString(_m.SessionID)
+	builder.WriteString(", ")
 	builder.WriteString("platform=")
 	builder.WriteString(_m.Platform)
+	builder.WriteString(", ")
+	builder.WriteString("transport=")
+	builder.WriteString(_m.Transport)
 	builder.WriteString(", ")
 	builder.WriteString("user_agent=")
 	builder.WriteString(_m.UserAgent)
@@ -195,8 +349,53 @@ func (_m *TLSFingerprintCaptureSample) String() string {
 	builder.WriteString("fingerprint_hash=")
 	builder.WriteString(_m.FingerprintHash)
 	builder.WriteString(", ")
-	builder.WriteString("profile=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Profile))
+	builder.WriteString("replay_hash=")
+	builder.WriteString(_m.ReplayHash)
+	builder.WriteString(", ")
+	builder.WriteString("ja3_raw=")
+	builder.WriteString(_m.Ja3Raw)
+	builder.WriteString(", ")
+	builder.WriteString("ja3_hash=")
+	builder.WriteString(_m.Ja3Hash)
+	builder.WriteString(", ")
+	builder.WriteString("ja4=")
+	builder.WriteString(_m.Ja4)
+	builder.WriteString(", ")
+	builder.WriteString("request_path=")
+	builder.WriteString(_m.RequestPath)
+	builder.WriteString(", ")
+	builder.WriteString("http_method=")
+	builder.WriteString(_m.HTTPMethod)
+	builder.WriteString(", ")
+	builder.WriteString("is_websocket=")
+	builder.WriteString(fmt.Sprintf("%v", _m.IsWebsocket))
+	builder.WriteString(", ")
+	builder.WriteString("websocket_protocol=")
+	builder.WriteString(_m.WebsocketProtocol)
+	builder.WriteString(", ")
+	builder.WriteString("client_type=")
+	builder.WriteString(_m.ClientType)
+	builder.WriteString(", ")
+	builder.WriteString("model=")
+	builder.WriteString(_m.Model)
+	builder.WriteString(", ")
+	builder.WriteString("request_kind=")
+	builder.WriteString(_m.RequestKind)
+	builder.WriteString(", ")
+	builder.WriteString("streaming=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Streaming))
+	builder.WriteString(", ")
+	builder.WriteString("response_mode=")
+	builder.WriteString(_m.ResponseMode)
+	builder.WriteString(", ")
+	builder.WriteString("http2_fingerprint=")
+	builder.WriteString(_m.Http2Fingerprint)
+	builder.WriteString(", ")
+	builder.WriteString("stainless_metadata=")
+	builder.WriteString(fmt.Sprintf("%v", _m.StainlessMetadata))
+	builder.WriteString(", ")
+	builder.WriteString("replay_profile=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ReplayProfile))
 	builder.WriteString(", ")
 	builder.WriteString("raw_payload=")
 	builder.WriteString(_m.RawPayload)
@@ -205,6 +404,9 @@ func (_m *TLSFingerprintCaptureSample) String() string {
 		builder.WriteString("raw_client_hello=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("captured_at=")
+	builder.WriteString(_m.CapturedAt.Format(time.ANSIC))
 	builder.WriteByte(')')
 	return builder.String()
 }

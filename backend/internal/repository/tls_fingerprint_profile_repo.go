@@ -71,6 +71,9 @@ func (r *tlsFingerprintProfileRepository) Create(ctx context.Context, p *model.T
 	if len(p.SignatureAlgorithms) > 0 {
 		builder.SetSignatureAlgorithms(p.SignatureAlgorithms)
 	}
+	if len(p.SignatureAlgorithmsCert) > 0 {
+		builder.SetSignatureAlgorithmsCert(p.SignatureAlgorithmsCert)
+	}
 	if len(p.ALPNProtocols) > 0 {
 		builder.SetAlpnProtocols(p.ALPNProtocols)
 	}
@@ -85,6 +88,9 @@ func (r *tlsFingerprintProfileRepository) Create(ctx context.Context, p *model.T
 	}
 	if len(p.Extensions) > 0 {
 		builder.SetExtensions(p.Extensions)
+	}
+	if len(p.ExtensionPayloads) > 0 {
+		builder.SetExtensionPayloads(p.ExtensionPayloads)
 	}
 	if len(p.CompressCertAlgos) > 0 {
 		builder.SetCompressCertAlgos(p.CompressCertAlgos)
@@ -139,6 +145,11 @@ func (r *tlsFingerprintProfileRepository) Update(ctx context.Context, p *model.T
 	} else {
 		builder.SetSignatureAlgorithms([]uint16{})
 	}
+	if len(p.SignatureAlgorithmsCert) > 0 {
+		builder.SetSignatureAlgorithmsCert(p.SignatureAlgorithmsCert)
+	} else {
+		builder.SetSignatureAlgorithmsCert([]uint16{})
+	}
 	if len(p.ALPNProtocols) > 0 {
 		builder.SetAlpnProtocols(p.ALPNProtocols)
 	} else {
@@ -163,6 +174,11 @@ func (r *tlsFingerprintProfileRepository) Update(ctx context.Context, p *model.T
 		builder.SetExtensions(p.Extensions)
 	} else {
 		builder.SetExtensions([]uint16{})
+	}
+	if len(p.ExtensionPayloads) > 0 {
+		builder.SetExtensionPayloads(p.ExtensionPayloads)
+	} else {
+		builder.SetExtensionPayloads(map[uint16][]byte{})
 	}
 	if len(p.CompressCertAlgos) > 0 {
 		builder.SetCompressCertAlgos(p.CompressCertAlgos)
@@ -207,11 +223,13 @@ func (r *tlsFingerprintProfileRepository) toModel(e *ent.TLSFingerprintProfile) 
 		Curves:                         e.Curves,
 		PointFormats:                   e.PointFormats,
 		SignatureAlgorithms:            e.SignatureAlgorithms,
+		SignatureAlgorithmsCert:        e.SignatureAlgorithmsCert,
 		ALPNProtocols:                  e.AlpnProtocols,
 		SupportedVersions:              e.SupportedVersions,
 		KeyShareGroups:                 e.KeyShareGroups,
 		PSKModes:                       e.PskModes,
 		Extensions:                     e.Extensions,
+		ExtensionPayloads:              e.ExtensionPayloads,
 		CompressCertAlgos:              e.CompressCertAlgos,
 		DelegatedCredentialsAlgorithms: e.DelegatedCredentialsAlgorithms,
 		ApplicationSettingsProtocols:   e.ApplicationSettingsProtocols,
@@ -232,6 +250,9 @@ func (r *tlsFingerprintProfileRepository) toModel(e *ent.TLSFingerprintProfile) 
 	if p.SignatureAlgorithms == nil {
 		p.SignatureAlgorithms = []uint16{}
 	}
+	if p.SignatureAlgorithmsCert == nil {
+		p.SignatureAlgorithmsCert = []uint16{}
+	}
 	if p.ALPNProtocols == nil {
 		p.ALPNProtocols = []string{}
 	}
@@ -246,6 +267,9 @@ func (r *tlsFingerprintProfileRepository) toModel(e *ent.TLSFingerprintProfile) 
 	}
 	if p.Extensions == nil {
 		p.Extensions = []uint16{}
+	}
+	if p.ExtensionPayloads == nil {
+		p.ExtensionPayloads = map[uint16][]byte{}
 	}
 	if p.CompressCertAlgos == nil {
 		p.CompressCertAlgos = []uint16{}

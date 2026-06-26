@@ -104,6 +104,23 @@ func (s *GatewayCacheSuite) TestGetSessionAccountID_CorruptedValue() {
 	require.False(s.T(), errors.Is(err, redis.Nil), "expected parsing error, not redis.Nil")
 }
 
+func (s *GatewayCacheSuite) TestSetAndGetOpenAIResponsesSessionWindow() {
+	sessionID := "11:session_hash_1"
+	groupID := int64(1)
+	sessionTTL := 1 * time.Minute
+	payload := []byte(`{"latest_response_id":"resp_latest_1","prompt_cache_key":"pcache_1"}`)
+
+	require.NoError(s.T(), s.cache.SetOpenAIResponsesSessionWindow(s.ctx, groupID, sessionID, payload, sessionTTL))
+
+	got, err := s.cache.GetOpenAIResponsesSessionWindow(s.ctx, groupID, sessionID)
+	require.NoError(s.T(), err)
+	require.JSONEq(s.T(), string(payload), string(got))
+
+	require.NoError(s.T(), s.cache.DeleteOpenAIResponsesSessionWindow(s.ctx, groupID, sessionID))
+	_, err = s.cache.GetOpenAIResponsesSessionWindow(s.ctx, groupID, sessionID)
+	require.True(s.T(), errors.Is(err, redis.Nil), "expected redis.Nil after delete")
+}
+
 func TestGatewayCacheSuite(t *testing.T) {
 	suite.Run(t, new(GatewayCacheSuite))
 }

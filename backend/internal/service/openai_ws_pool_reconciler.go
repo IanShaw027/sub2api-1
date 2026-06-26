@@ -32,8 +32,8 @@ func (s *OpenAIGatewayService) registerOpenAIWSPoolReconcileHook() {
 }
 
 // ReconcileOpenAIWSPool 在连接池设置变更后执行一轮 reconcile：
-// 先按新的 max_idle / sticky_reserve 收缩多余空闲连接，
-// 再为所有可调度 OAuth OpenAI 账号补足 neutral 空闲连接到 min_idle。
+// 先按新的 idle TTL / neutral target 收缩多余空闲连接，
+// 再为所有可调度 OAuth OpenAI 账号补足 neutral 空闲连接到当前 target。
 func (s *OpenAIGatewayService) ReconcileOpenAIWSPool(ctx context.Context) {
 	if s == nil {
 		return

@@ -78,6 +78,11 @@ func TestOpenAIWSPoolRuntimeSettings_AccessorPriority(t *testing.T) {
 	// 0 是有效的运行时设置，表示不为 sticky 会话预留 neutral 之外的容量。
 	StoreOpenAIWSPoolRuntimeSettings(2, 6, 0)
 	require.Equal(t, 0, pool.stickyReservePercent())
+
+	// 不包含 idle/sticky 兼容快照时，sticky reserve 应回退静态 cfg，而不是硬编码默认值。
+	cfg.Gateway.OpenAIWS.StickyReservePercent = 17
+	StoreOpenAIWSPoolRuntimeSettings(25, 120)
+	require.Equal(t, 17, pool.stickyReservePercent())
 }
 
 func TestOpenAIWSPoolRuntimeSettings_NeutralPrewarmPercentAndSessionTTLAccessors(t *testing.T) {
@@ -105,6 +110,17 @@ func TestOpenAIWSPoolRuntimeSettings_NeutralPrewarmPercentAndSessionTTLAccessors
 	StoreOpenAIWSPoolRuntimeSettings(25, 900)
 	require.Equal(t, 600*time.Second, pool.sessionIdleTTL(), "WS idle reuse must not exceed the conservative upstream-safe threshold")
 	require.Equal(t, pool.sessionIdleTTL(), pool.neutralIdleTTL())
+}
+
+func TestOpenAIWSPool_NeutralAcquireStaleIdleAccessor(t *testing.T) {
+	cfg := &config.Config{}
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+
+	require.Equal(t, openAIWSNeutralAcquireStaleIdle, pool.neutralAcquireStaleIdle())
+
+	cfg.Gateway.OpenAIWS.NeutralAcquireStaleIdleSeconds = 7
+	require.Equal(t, 7*time.Second, pool.neutralAcquireStaleIdle())
 }
 
 func TestOpenAIWSPool_NeutralMaxConns_UsesPrewarmPercent(t *testing.T) {
@@ -191,6 +207,7 @@ func TestOpenAIWSPool_NeutralAcquireDoesNotReuseDifferentHandshakeIdentity(t *te
 		Profile: openAIWSConnProfileNeutral,
 	}, 1)
 	require.Equal(t, 1, dialer.DialCount())
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(0, 120, 0, 4, 0)
 
 	lease, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
 		Account: account,
@@ -215,6 +232,7 @@ func TestOpenAIWSPool_NeutralAcquireDoesNotReuseDifferentAuthorization(t *testin
 	t.Cleanup(pool.Close)
 	dialer := &openAIWSCountingDialer{}
 	pool.setClientDialerForTest(dialer)
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(0, 120, 0, 4, 0)
 
 	account := &Account{ID: 4245, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 8}
 	headersA := http.Header{}

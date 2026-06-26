@@ -848,6 +848,47 @@ func (s *OpenAIGatewayService) getOpenAIWSProtocolResolver() OpenAIWSProtocolRes
 	return NewOpenAIWSProtocolResolver(cfg)
 }
 
+func (s *OpenAIGatewayService) openAIHTTPIncrementalContinuationEnabled() bool {
+	return s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.HTTPIncrementalContinuationEnabled
+}
+
+func (s *OpenAIGatewayService) openAIHTTPIncrementalStickyEnabled() bool {
+	return s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.HTTPIncrementalStickyEnabled
+}
+
+func (s *OpenAIGatewayService) openAIRebuildFallbackEnabled() bool {
+	if s == nil || s.cfg == nil {
+		return true
+	}
+	wsCfg := s.cfg.Gateway.OpenAIWS
+	if wsCfg.RebuildFallbackEnabled {
+		return true
+	}
+	// Focused tests and lightweight call sites often construct partial configs
+	// directly rather than flowing through config.Load defaults. Those configs
+	// typically also omit jwt.secret, so treat them as "unset defaults" and keep
+	// rebuild fallback enabled. Real runtime configs always load jwt.secret, so a
+	// false value there remains an explicit disable.
+	return strings.TrimSpace(s.cfg.JWT.Secret) == ""
+}
+
+func (s *OpenAIGatewayService) allowOpenAIDurableHTTPContinuation(account *Account, payload []byte) bool {
+	if account == nil || account.Type != AccountTypeOAuth || !s.openAIHTTPIncrementalContinuationEnabled() {
+		return false
+	}
+	if s.isOpenAIWSStoreDisabledInRequestRaw(payload, account) {
+		return false
+	}
+	return true
+}
+
+func (s *OpenAIGatewayService) allowOpenAIDurableHTTPSticky(account *Account) bool {
+	if account == nil || account.Type != AccountTypeOAuth {
+		return false
+	}
+	return s.openAIHTTPIncrementalContinuationEnabled() && s.openAIHTTPIncrementalStickyEnabled()
+}
+
 func classifyOpenAIWSReconnectReason(err error) (string, bool) {
 	if err == nil {
 		return "", false
@@ -1014,6 +1055,10 @@ func resolveOpenAIWSFallbackErrorResponse(err error) (statusCode int, errType st
 		} else {
 			errType = "upstream_error"
 		}
+	}
+	if isOpenAIBillingLimitError(statusCode, upstreamMessage, "") {
+		errType = "rate_limit_error"
+		clientMessage = openAIBillingLimitClientMessage()
 	}
 	if clientMessage == "" {
 		clientMessage = upstreamMessage
@@ -1186,6 +1231,27 @@ func (s *OpenAIGatewayService) writeOpenAIWSFallbackErrorResponse(c *gin.Context
 		},
 	})
 	return true
+}
+
+func (s *OpenAIGatewayService) rejectUnsafeOpenAIHTTPToolContinuation(c *gin.Context, account *Account, body []byte, transport OpenAIUpstreamTransport) error {
+	if account == nil || account.Type != AccountTypeOAuth || transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
+		return nil
+	}
+	if !s.isOpenAIWSStoreDisabledInRequestRaw(body, account) || !gjson.GetBytes(body, "previous_response_id").Exists() {
+		return nil
+	}
+	validation := ValidateFunctionCallOutputContextBytes(body)
+	if !validation.HasFunctionCallOutput {
+		return nil
+	}
+	if validation.HasToolCallContext || validation.HasItemReferenceForAllCallIDs {
+		return nil
+	}
+	wsErr := wrapOpenAIWSFallback("unsafe_tool_continuation", errors.New("previous response binding unavailable for tool continuation"))
+	if c != nil {
+		s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
+	}
+	return wsErr
 }
 
 func (s *OpenAIGatewayService) openAIWSRetryBackoff(attempt int) time.Duration {
@@ -4281,6 +4347,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if normalizeOpenAIResponsesImageGenerationTools(reqBody) {
 		bodyModified = true
 		disablePatch()
+		reqBody, _ = ensureReqBody()
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized /responses image_generation tool payload")
 	}
 	if normalizeOpenAIStrictFunctionToolSchemas(reqBody) {
@@ -4670,7 +4737,9 @@ oauthTransformDone:
 			}
 		}
 	}
-	if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 && gjson.GetBytes(body, "previous_response_id").Exists() {
+	if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
+		gjson.GetBytes(body, "previous_response_id").Exists() &&
+		!s.allowOpenAIDurableHTTPContinuation(account, body) {
 		markPatchDelete("previous_response_id")
 	}
 	if openAIRequestBodyMayContainEmptyBase64InputImage(body) {
@@ -4692,6 +4761,10 @@ oauthTransformDone:
 			// Preserve prompt-cache-friendly field ordering after any body rewrite.
 			disablePatch()
 		}
+	}
+
+	if err := s.rejectUnsafeOpenAIHTTPToolContinuation(c, account, body, wsDecision.Transport); err != nil {
+		return nil, err
 	}
 
 	if bodyModified {
@@ -4936,6 +5009,57 @@ oauthTransformDone:
 					attempt,
 				)
 				return false
+			}
+			if account.Type == AccountTypeOAuth && openAIWSPayloadStoreDisabled(wsReqBody) {
+				rebuiltPayload, rebuilt, rebuildErr := s.rebuildOpenAIResponsesPayloadFromSessionWindow(ctx, c, body)
+				if rebuildErr != nil {
+					wsErr = wrapOpenAIWSFallback("previous_response_recovery_rebuild_window", rebuildErr)
+					logOpenAIWSModeInfo(
+						"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=session_window_error previous_response_id_present=true active_delta=%v cause=%s",
+						account.ID,
+						attempt,
+						activeDeltaRecovery,
+						truncateOpenAIWSLogValue(rebuildErr.Error(), openAIWSLogValueMaxLen),
+					)
+					return false
+				}
+				if !rebuilt {
+					logOpenAIWSModeInfo(
+						"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=missing_session_window previous_response_id_present=true active_delta=%v",
+						account.ID,
+						attempt,
+						activeDeltaRecovery,
+					)
+					return false
+				}
+				rebuiltReqBody := map[string]any{}
+				if err := json.Unmarshal(rebuiltPayload, &rebuiltReqBody); err != nil {
+					wsErr = wrapOpenAIWSFallback("previous_response_recovery_rebuild_parse", err)
+					logOpenAIWSModeInfo(
+						"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=parse_rebuilt_window previous_response_id_present=true active_delta=%v cause=%s",
+						account.ID,
+						attempt,
+						activeDeltaRecovery,
+						truncateOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen),
+					)
+					return false
+				}
+				wsReqBody = rebuiltReqBody
+				if !syncWSRecoveredBody("prev_response_recovery_session_window") {
+					return false
+				}
+				wsPrevResponseRecoveryTried = true
+				s.RecordOpenAIAccountRecoveryReason(account.ID, "previous_response_not_found")
+				logOpenAIWSModeInfo(
+					"reconnect_prev_response_recovery account_id=%d attempt=%d action=session_window_full_rebuild retry=1 previous_response_id=%s previous_response_id_kind=%s active_delta=%v has_function_call_output=%v",
+					account.ID,
+					attempt,
+					truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
+					normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
+					activeDeltaRecovery,
+					HasFunctionCallOutput(wsReqBody),
+				)
+				return true
 			}
 			if HasFunctionCallOutput(wsReqBody) {
 				replayReqBody := map[string]any{}
@@ -5348,6 +5472,9 @@ oauthTransformDone:
 				firstTokenMs,
 				wsAttempts,
 			)
+			if sessionHash, sessionWindow, ok := s.buildOpenAIResponsesSessionWindowCandidate(ctx, c, account, body, wsReqBody); ok {
+				s.bindOpenAIResponsesSessionWindow(ctx, c, account, sessionHash, sessionWindow, requestID)
+			}
 			wsResult.UpstreamModel = upstreamModel
 			return wsResult, nil
 		}
@@ -7915,6 +8042,11 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		errType = "upstream_error"
 		errMsg = "Upstream request failed"
 	}
+	if isOpenAIBillingLimitError(resp.StatusCode, upstreamMsg, extractUpstreamErrorCode(body)) {
+		statusCode = http.StatusTooManyRequests
+		errType = "rate_limit_error"
+		errMsg = openAIBillingLimitClientMessage()
+	}
 
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{
@@ -8106,8 +8238,13 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	case resp.StatusCode >= 500:
 		errType = "api_error"
 	}
+	clientMessage := safeCompatUpstreamErrorMessage(resp.StatusCode)
+	if isOpenAIBillingLimitError(resp.StatusCode, upstreamMsg, extractUpstreamErrorCode(body)) {
+		errType = "rate_limit_error"
+		clientMessage = openAIBillingLimitClientMessage()
+	}
 
-	writeError(c, resp.StatusCode, errType, safeCompatUpstreamErrorMessage(resp.StatusCode))
+	writeError(c, resp.StatusCode, errType, clientMessage)
 	return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
 }
 
@@ -8124,12 +8261,42 @@ func safeCompatUpstreamErrorMessage(statusCode int) string {
 	}
 }
 
+func openAIBillingLimitClientMessage() string {
+	return "Upstream billing or quota limit reached, please retry later"
+}
+
+func isOpenAIBillingLimitError(statusCode int, upstreamMsg, codeRaw string) bool {
+	lowerMsg := strings.ToLower(strings.TrimSpace(upstreamMsg))
+	lowerCode := strings.ToLower(strings.TrimSpace(codeRaw))
+
+	if strings.Contains(lowerCode, "billing_hard_limit") ||
+		strings.Contains(lowerCode, "insufficient_quota") {
+		return true
+	}
+	if strings.Contains(lowerMsg, "usage limit") && strings.Contains(lowerMsg, "reached") {
+		return true
+	}
+	if strings.Contains(lowerMsg, "insufficient quota") {
+		return true
+	}
+	if strings.Contains(lowerMsg, "billing hard limit") {
+		return true
+	}
+	if strings.Contains(lowerMsg, "upgrade to plus") && strings.Contains(lowerMsg, "usage limit") {
+		return true
+	}
+	return statusCode == http.StatusPaymentRequired
+}
+
 func shouldExposeOpenAIUpstreamClientError(statusCode int, upstreamMsg string) bool {
 	if statusCode < http.StatusBadRequest || statusCode >= http.StatusInternalServerError {
 		return false
 	}
 	switch statusCode {
 	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusTooManyRequests:
+		return false
+	}
+	if isOpenAIBillingLimitError(statusCode, upstreamMsg, "") {
 		return false
 	}
 	if isOpenAITransientCapacityError(upstreamMsg) {
@@ -9338,6 +9505,154 @@ func (s *OpenAIGatewayService) bindHTTPResponseAccount(ctx context.Context, c *g
 	apiKeyID := getAPIKeyIDFromContext(c)
 	ttl := s.openAIWSResponseStickyTTL()
 	logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, store.BindResponseAccount(ctx, groupID, apiKeyID, responseID, account.ID, ttl))
+}
+
+func (s *OpenAIGatewayService) buildOpenAIResponsesSessionWindowCandidate(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	payload []byte,
+	reqBody map[string]any,
+) (string, openAIResponsesSessionWindow, bool) {
+	if s == nil || c == nil || account == nil || account.Type != AccountTypeOAuth || !openAIWSPayloadStoreDisabled(reqBody) {
+		return "", openAIResponsesSessionWindow{}, false
+	}
+	if !s.openAIRebuildFallbackEnabled() {
+		return "", openAIResponsesSessionWindow{}, false
+	}
+
+	sessionHash := s.GenerateSessionHash(c, payload)
+	if sessionHash == "" {
+		return "", openAIResponsesSessionWindow{}, false
+	}
+
+	_, currentExists, err := openAIWSExtractNormalizedInputSequence(payload)
+	if err != nil || !currentExists {
+		return "", openAIResponsesSessionWindow{}, false
+	}
+
+	groupID := getOpenAIGroupIDFromContext(c)
+	apiKeyID := getAPIKeyIDFromContext(c)
+	store := s.getOpenAIWSStateStore()
+
+	previousResponseID := openAIWSPayloadString(reqBody, "previous_response_id")
+	promptCacheKey := openAIWSPayloadString(reqBody, "prompt_cache_key")
+	var previousFullInput []json.RawMessage
+	previousFullInputExists := false
+	if previousResponseID != "" && store != nil {
+		if previousWindow, ok := store.GetSessionWindow(ctx, groupID, apiKeyID, sessionHash); ok {
+			if promptCacheKey == "" {
+				promptCacheKey = previousWindow.PromptCacheKey
+			}
+			if items, exists, inputErr := parseOpenAIResponsesSessionWindowReplayInput(previousWindow.ReplayInputRaw); inputErr == nil && exists {
+				previousFullInput = items
+				previousFullInputExists = true
+			}
+		}
+	}
+
+	fullInput, fullInputExists, err := buildOpenAIWSReplayInputSequence(previousFullInput, previousFullInputExists, payload, previousResponseID != "")
+	if err != nil || !fullInputExists {
+		return "", openAIResponsesSessionWindow{}, false
+	}
+
+	inputRaw, err := json.Marshal(fullInput)
+	if err != nil {
+		return "", openAIResponsesSessionWindow{}, false
+	}
+
+	return sessionHash, openAIResponsesSessionWindow{
+		PromptCacheKey: promptCacheKey,
+		ReplayInputRaw: inputRaw,
+		Compacted:      isOpenAIResponsesCompactPath(c),
+	}, true
+}
+
+func (s *OpenAIGatewayService) bindOpenAIResponsesSessionWindow(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	sessionHash string,
+	window openAIResponsesSessionWindow,
+	responseID string,
+) {
+	if s == nil || c == nil || account == nil {
+		return
+	}
+	if !s.openAIRebuildFallbackEnabled() {
+		return
+	}
+	responseID = strings.TrimSpace(responseID)
+	if sessionHash == "" || responseID == "" {
+		return
+	}
+	store := s.getOpenAIWSStateStore()
+	if store == nil {
+		return
+	}
+	window = normalizeOpenAIResponsesSessionWindow(window)
+	window.LatestResponseID = responseID
+	if !openAIResponsesSessionWindowHasData(window) {
+		return
+	}
+	_ = store.BindSessionWindow(
+		ctx,
+		getOpenAIGroupIDFromContext(c),
+		getAPIKeyIDFromContext(c),
+		sessionHash,
+		window,
+		s.openAIWSResponseStickyTTL(),
+	)
+}
+
+func (s *OpenAIGatewayService) rebuildOpenAIResponsesPayloadFromSessionWindow(
+	ctx context.Context,
+	c *gin.Context,
+	payload []byte,
+) ([]byte, bool, error) {
+	if s == nil || c == nil {
+		return payload, false, nil
+	}
+	if !s.openAIRebuildFallbackEnabled() {
+		return payload, false, nil
+	}
+	sessionHash := s.GenerateSessionHash(c, payload)
+	if sessionHash == "" {
+		return payload, false, nil
+	}
+	store := s.getOpenAIWSStateStore()
+	if store == nil {
+		return payload, false, nil
+	}
+	window, ok := store.GetSessionWindow(ctx, getOpenAIGroupIDFromContext(c), getAPIKeyIDFromContext(c), sessionHash)
+	if !ok {
+		return payload, false, nil
+	}
+	previousFullInput, previousFullInputExists, err := parseOpenAIResponsesSessionWindowReplayInput(window.ReplayInputRaw)
+	if err != nil || !previousFullInputExists {
+		return payload, false, err
+	}
+	replayInput, replayInputExists, err := buildOpenAIWSReplayInputSequence(
+		previousFullInput,
+		previousFullInputExists,
+		payload,
+		strings.TrimSpace(openAIWSPayloadStringFromRaw(payload, "previous_response_id")) != "",
+	)
+	if err != nil || !replayInputExists {
+		return payload, false, err
+	}
+	if openAIWSRawPayloadHasToolCallOutput(payload) && !openAIWSRawItemsHaveToolCallContextForOutputs(replayInput) {
+		return payload, false, nil
+	}
+	updatedPayload, _, err := forceOpenAIWSRawPayloadFullCreate(payload)
+	if err != nil {
+		return payload, false, err
+	}
+	updatedPayload, err = setOpenAIWSPayloadInputSequence(updatedPayload, replayInput, replayInputExists)
+	if err != nil {
+		return payload, false, err
+	}
+	return updatedPayload, true, nil
 }
 
 func openAIUsageFromGJSON(value gjson.Result) (OpenAIUsage, bool) {

@@ -369,7 +369,11 @@ const handleSearchUsers = () => {
   }
   searchTimeout = setTimeout(async () => {
     try {
-      const res = await adminAPI.users.list(1, 10, { search: searchQuery.value.trim() })
+      const res = await adminAPI.users.list(1, 10, {
+        search: searchQuery.value.trim(),
+        include_subscriptions: false,
+        include_usage_stats: false,
+      })
       searchResults.value = res.items
       showDropdown.value = true
     } catch {

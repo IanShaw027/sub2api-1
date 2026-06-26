@@ -3307,7 +3307,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   if (newAccount.platform === 'kiro') {
     const kiroCredentials = (newAccount.credentials || {}) as KiroCredentials & Record<string, unknown>
 
-    loadModelRestrictionFromCredentials(kiroCredentials)
+    loadModelRestrictionFromCredentials(kiroCredentials, { normalizeKiro: true })
     kiroModelSyncDismissedSignature.value = ''
   }
 
@@ -3457,13 +3457,19 @@ async function loadTLSRouters() {
 
 function loadModelRestrictionFromCredentials(
   credentials?: Record<string, unknown>,
-  options: { forceMappingMode?: boolean } = {}
+  options: { forceMappingMode?: boolean; normalizeKiro?: boolean } = {}
 ) {
-  const whitelistModels = normalizeKiroModelWhitelist(credentials?.model_whitelist)
+  // Kiro 专用归一化（别名、通配符、1m 后缀等）只能用于 Kiro 平台，
+  // 对 anthropic/openai/bedrock 等平台会把实际映射改写成 Kiro 规范名，
+  // 导致编辑时显示的不是真实存储的映射。
+  const normalizeKiro = options.normalizeKiro === true
+  const whitelistModels = normalizeKiro
+    ? normalizeKiroModelWhitelist(credentials?.model_whitelist)
+    : normalizeModelWhitelist(credentials?.model_whitelist)
 
   const existingMappings = credentials?.model_mapping as Record<string, string> | undefined
   if (existingMappings && typeof existingMappings === 'object') {
-    const normalizedMappings = normalizeKiroModelMappingObject(existingMappings)
+    const normalizedMappings = normalizeKiro ? normalizeKiroModelMappingObject(existingMappings) : null
     const entries = normalizedMappings ? Object.entries(normalizedMappings) : Object.entries(existingMappings)
     modelMappings.value = entries.map(([from, to]) => ({ from, to }))
 
@@ -3593,47 +3599,6 @@ const moveResponseRewriteRule = (index: number, direction: number) => {
   rules[target] = current
 }
 
-const applyTempUnschedConfig = (credentials: Record<string, unknown>) => {
-  if (!tempUnschedEnabled.value) {
-    delete credentials.temp_unschedulable_enabled
-    delete credentials.temp_unschedulable_rules
-    return true
-  }
-
-  const result = buildTempUnschedRulesResult(tempUnschedRules.value)
-  if (result.invalid || result.rules.length === 0) {
-    appStore.showError(t('admin.accounts.tempUnschedulable.rulesInvalid'))
-    return false
-  }
-
-  credentials.temp_unschedulable_enabled = true
-  credentials.temp_unschedulable_rules = result.rules
-  return true
-}
-
-const applyResponseRewriteConfig = (
-  credentials: Record<string, unknown>,
-  platform: Account['platform'] | undefined = props.account?.platform
-) => {
-  if (platform !== 'openai') {
-    delete credentials.response_rewrite_rules
-    return true
-  }
-
-  const rules = buildResponseRewriteRules(responseRewriteRules.value)
-  if (rules.length === 0) {
-    if (hasResponseRewriteRuleInputs(responseRewriteRules.value)) {
-      appStore.showError(t('admin.accounts.responseRewrite.rulesInvalid'))
-      return false
-    }
-    delete credentials.response_rewrite_rules
-    return true
-  }
-
-  credentials.response_rewrite_rules = rules
-  return true
-}
-
 const supportsAccountSchedulingThresholdOverridePlatform = (platform: Account['platform'] | undefined) =>
   platform === 'openai' || platform === 'anthropic'
 
@@ -3671,21 +3636,6 @@ const loadAccountSchedulingThresholdOverride = (
   accountSchedulingThresholdOverrideValue.value = value ?? 100
 }
 
-const applyAccountSchedulingThresholdOverrideConfig = (
-  credentials: Record<string, unknown>,
-  platform: Account['platform'] | undefined = props.account?.platform
-) => {
-  if (!supportsAccountSchedulingThresholdOverridePlatform(platform)) {
-    return
-  }
-  if (!accountSchedulingThresholdOverrideEnabled.value) {
-    delete credentials[ACCOUNT_SCHEDULING_THRESHOLD_CREDENTIAL_KEY]
-    return
-  }
-  credentials[ACCOUNT_SCHEDULING_THRESHOLD_CREDENTIAL_KEY] =
-    clampAccountSchedulingThresholdOverride(accountSchedulingThresholdOverrideValue.value)
-}
-
 const applyAccountSchedulingThresholdOverridePatch = (
   credentials: Record<string, unknown>,
   currentCredentials: Record<string, unknown>,
@@ -3707,20 +3657,6 @@ const applyAccountSchedulingThresholdOverridePatch = (
   if (current !== next) {
     credentials[ACCOUNT_SCHEDULING_THRESHOLD_CREDENTIAL_KEY] = next
   }
-}
-
-const applyCredentialRuleConfigs = (
-  credentials: Record<string, unknown>,
-  platform: Account['platform'] | undefined = props.account?.platform
-) => {
-  applyAccountSchedulingThresholdOverrideConfig(credentials, platform)
-  if (!applyTempUnschedConfig(credentials)) {
-    return false
-  }
-  if (!applyResponseRewriteConfig(credentials, platform)) {
-    return false
-  }
-  return true
 }
 
 const applyTempUnschedPatch = (
@@ -4141,6 +4077,20 @@ function normalizeKiroModelWhitelist(models: unknown): string[] {
   return out
 }
 
+// 通用白名单归一化：仅 trim + 去重，保留原始模型名，不做 Kiro 别名改写。
+function normalizeModelWhitelist(models: unknown): string[] {
+  if (!Array.isArray(models)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const model of models) {
+    const normalized = String(model ?? '').trim()
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    out.push(normalized)
+  }
+  return out
+}
+
 function normalizeKiroModelMappingObject(mapping: unknown): Record<string, string> | null {
   if (!mapping || Array.isArray(mapping) || typeof mapping !== 'object') return null
   const out: Record<string, string> = {}
@@ -4475,6 +4425,8 @@ const handleSubmit = async () => {
         const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
         if (modelMapping) {
           newCredentials.model_mapping = modelMapping
+        } else if (currentCredentials.model_mapping && Object.keys(currentCredentials.model_mapping as Record<string, unknown>).length > 0) {
+          newCredentials.model_mapping = {}
         } else {
           delete newCredentials.model_mapping
         }
@@ -4486,6 +4438,11 @@ const handleSubmit = async () => {
         const compactModelMapping = buildModelMappingObject('mapping', [], openAICompactModelMappings.value)
         if (compactModelMapping) {
           newCredentials.compact_model_mapping = compactModelMapping
+        } else if (
+          currentCredentials.compact_model_mapping &&
+          Object.keys(currentCredentials.compact_model_mapping as Record<string, unknown>).length > 0
+        ) {
+          newCredentials.compact_model_mapping = {}
         } else {
           delete newCredentials.compact_model_mapping
         }
@@ -4496,15 +4453,30 @@ const handleSubmit = async () => {
         newCredentials.pool_mode = true
         newCredentials.pool_mode_retry_count = normalizePoolModeRetryCount(poolModeRetryCount.value)
         const parsedRetryStatusCodes = parsePoolModeRetryStatusCodes(poolModeRetryStatusCodesInput.value)
+        const currentRetryStatusCodes = parsePoolModeRetryStatusCodes(
+          formatPoolModeRetryStatusCodes(currentCredentials.pool_mode_retry_status_codes)
+        )
         if (parsedRetryStatusCodes.length > 0) {
           newCredentials.pool_mode_retry_status_codes = parsedRetryStatusCodes
+        } else if (currentRetryStatusCodes.length > 0) {
+          newCredentials.pool_mode_retry_status_codes = null
         } else {
           delete newCredentials.pool_mode_retry_status_codes
         }
       } else {
-        delete newCredentials.pool_mode
-        delete newCredentials.pool_mode_retry_count
-        delete newCredentials.pool_mode_retry_status_codes
+        const hadPoolMode =
+          currentCredentials.pool_mode === true ||
+          currentCredentials.pool_mode_retry_count !== undefined ||
+          currentCredentials.pool_mode_retry_status_codes !== undefined
+        if (hadPoolMode) {
+          newCredentials.pool_mode = false
+          newCredentials.pool_mode_retry_count = null
+          newCredentials.pool_mode_retry_status_codes = null
+        } else {
+          delete newCredentials.pool_mode
+          delete newCredentials.pool_mode_retry_count
+          delete newCredentials.pool_mode_retry_status_codes
+        }
       }
 
       // Add custom error codes if enabled
@@ -4517,12 +4489,20 @@ const handleSubmit = async () => {
         newCredentials.custom_error_codes_enabled = true
         newCredentials.custom_error_codes = customErrorCodesResult.codes
       } else {
-        delete newCredentials.custom_error_codes_enabled
-        delete newCredentials.custom_error_codes
+        const hadCustomErrorCodes =
+          currentCredentials.custom_error_codes_enabled === true ||
+          currentCredentials.custom_error_codes !== undefined
+        if (hadCustomErrorCodes) {
+          newCredentials.custom_error_codes_enabled = false
+          newCredentials.custom_error_codes = null
+        } else {
+          delete newCredentials.custom_error_codes_enabled
+          delete newCredentials.custom_error_codes
+        }
       }
 
       // Add intercept warmup requests setting
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
+      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit', currentCredentials)
       if (!applyCredentialRulePatches(newCredentials, currentCredentials)) {
         return
       }
@@ -4539,9 +4519,9 @@ const handleSubmit = async () => {
       }
 
       // Add intercept warmup requests setting
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
+      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit', currentCredentials)
 
-      if (!applyCredentialRuleConfigs(newCredentials)) {
+      if (!applyCredentialRulePatches(newCredentials, currentCredentials)) {
         return
       }
 
@@ -4582,12 +4562,14 @@ const handleSubmit = async () => {
       const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
       if (modelMapping) {
         newCredentials.model_mapping = modelMapping
+      } else if (currentCredentials.model_mapping && Object.keys(currentCredentials.model_mapping as Record<string, unknown>).length > 0) {
+        newCredentials.model_mapping = {}
       } else {
         delete newCredentials.model_mapping
       }
 
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      if (!applyCredentialRuleConfigs(newCredentials)) {
+      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit', currentCredentials)
+      if (!applyCredentialRulePatches(newCredentials, currentCredentials)) {
         return
       }
 
@@ -4599,6 +4581,8 @@ const handleSubmit = async () => {
       newCredentials.aws_region = editBedrockRegion.value.trim()
       if (editBedrockForceGlobal.value) {
         newCredentials.aws_force_global = 'true'
+      } else if (currentCredentials.aws_force_global !== undefined) {
+        newCredentials.aws_force_global = null
       } else {
         delete newCredentials.aws_force_global
       }
@@ -4624,27 +4608,44 @@ const handleSubmit = async () => {
         newCredentials.pool_mode = true
         newCredentials.pool_mode_retry_count = normalizePoolModeRetryCount(poolModeRetryCount.value)
         const parsedRetryStatusCodes = parsePoolModeRetryStatusCodes(poolModeRetryStatusCodesInput.value)
+        const currentRetryStatusCodes = parsePoolModeRetryStatusCodes(
+          formatPoolModeRetryStatusCodes(currentCredentials.pool_mode_retry_status_codes)
+        )
         if (parsedRetryStatusCodes.length > 0) {
           newCredentials.pool_mode_retry_status_codes = parsedRetryStatusCodes
+        } else if (currentRetryStatusCodes.length > 0) {
+          newCredentials.pool_mode_retry_status_codes = null
         } else {
           delete newCredentials.pool_mode_retry_status_codes
         }
       } else {
-        delete newCredentials.pool_mode
-        delete newCredentials.pool_mode_retry_count
-        delete newCredentials.pool_mode_retry_status_codes
+        const hadPoolMode =
+          currentCredentials.pool_mode === true ||
+          currentCredentials.pool_mode_retry_count !== undefined ||
+          currentCredentials.pool_mode_retry_status_codes !== undefined
+        if (hadPoolMode) {
+          newCredentials.pool_mode = false
+          newCredentials.pool_mode_retry_count = null
+          newCredentials.pool_mode_retry_status_codes = null
+        } else {
+          delete newCredentials.pool_mode
+          delete newCredentials.pool_mode_retry_count
+          delete newCredentials.pool_mode_retry_status_codes
+        }
       }
 
       // Model mapping
       const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
       if (modelMapping) {
         newCredentials.model_mapping = modelMapping
+      } else if (currentCredentials.model_mapping && Object.keys(currentCredentials.model_mapping as Record<string, unknown>).length > 0) {
+        newCredentials.model_mapping = {}
       } else {
         delete newCredentials.model_mapping
       }
 
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      if (!applyCredentialRuleConfigs(newCredentials)) {
+      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit', currentCredentials)
+      if (!applyCredentialRulePatches(newCredentials, currentCredentials)) {
         return
       }
 
@@ -4654,8 +4655,8 @@ const handleSubmit = async () => {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newCredentials: Record<string, unknown> = { ...currentCredentials }
 
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      if (!applyCredentialRuleConfigs(newCredentials)) {
+      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit', currentCredentials)
+      if (!applyCredentialRulePatches(newCredentials, currentCredentials)) {
         return
       }
 

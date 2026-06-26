@@ -2441,13 +2441,31 @@ var (
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "task_id", Type: field.TypeInt64},
+		{Name: "session_id", Type: field.TypeString, Size: 128, Default: ""},
 		{Name: "platform", Type: field.TypeString, Size: 50, Default: ""},
+		{Name: "transport", Type: field.TypeString, Size: 32, Default: ""},
 		{Name: "user_agent", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "originator", Type: field.TypeString, Size: 50, Default: ""},
-		{Name: "fingerprint_hash", Type: field.TypeString, Size: 64},
-		{Name: "profile", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "fingerprint_hash", Type: field.TypeString, Size: 128},
+		{Name: "replay_hash", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "ja3_raw", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "ja3_hash", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "ja4", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "request_path", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "http_method", Type: field.TypeString, Size: 16, Default: ""},
+		{Name: "is_websocket", Type: field.TypeBool, Default: false},
+		{Name: "websocket_protocol", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "client_type", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "model", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "request_kind", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "streaming", Type: field.TypeBool, Default: false},
+		{Name: "response_mode", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "http2_fingerprint", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "stainless_metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "replay_profile", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "raw_payload", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "raw_client_hello", Type: field.TypeBytes, Nullable: true},
+		{Name: "captured_at", Type: field.TypeTime},
 	}
 	// TLSFingerprintCaptureSamplesTable holds the schema information for the "tls_fingerprint_capture_samples" table.
 	TLSFingerprintCaptureSamplesTable = &schema.Table{
@@ -2458,12 +2476,119 @@ var (
 			{
 				Name:    "tlsfingerprintcapturesample_task_id_fingerprint_hash",
 				Unique:  true,
-				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[7]},
+				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[9]},
+			},
+			{
+				Name:    "tlsfingerprintcapturesample_task_id_replay_hash_transport_platform",
+				Unique:  false,
+				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[10], TLSFingerprintCaptureSamplesColumns[6], TLSFingerprintCaptureSamplesColumns[5]},
+			},
+			{
+				Name:    "tlsfingerprintcapturesample_task_id_session_id_transport",
+				Unique:  false,
+				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[4], TLSFingerprintCaptureSamplesColumns[6]},
 			},
 			{
 				Name:    "tlsfingerprintcapturesample_task_id_platform",
 				Unique:  false,
-				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[4]},
+				Columns: []*schema.Column{TLSFingerprintCaptureSamplesColumns[3], TLSFingerprintCaptureSamplesColumns[5]},
+			},
+		},
+	}
+	// TLSFingerprintCaptureSessionsColumns holds the columns for the "tls_fingerprint_capture_sessions" table.
+	TLSFingerprintCaptureSessionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "task_id", Type: field.TypeInt64},
+		{Name: "session_id", Type: field.TypeString, Size: 128},
+		{Name: "client_ip", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "platform", Type: field.TypeString, Size: 50, Default: ""},
+		{Name: "user_agent", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "originator", Type: field.TypeString, Size: 50, Default: ""},
+		{Name: "alpn_negotiated", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "raw_client_hello", Type: field.TypeBytes, Nullable: true},
+		{Name: "observed_client_hello", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "replay_profile", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "derived_fingerprint", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "session_status", Type: field.TypeString, Size: 64, Default: "observed"},
+		{Name: "error_summary", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "opened_at", Type: field.TypeTime},
+		{Name: "closed_at", Type: field.TypeTime, Nullable: true},
+	}
+	// TLSFingerprintCaptureSessionsTable holds the schema information for the "tls_fingerprint_capture_sessions" table.
+	TLSFingerprintCaptureSessionsTable = &schema.Table{
+		Name:       "tls_fingerprint_capture_sessions",
+		Columns:    TLSFingerprintCaptureSessionsColumns,
+		PrimaryKey: []*schema.Column{TLSFingerprintCaptureSessionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "tlsfingerprintcapturesession_task_id_session_id",
+				Unique:  true,
+				Columns: []*schema.Column{TLSFingerprintCaptureSessionsColumns[3], TLSFingerprintCaptureSessionsColumns[4]},
+			},
+			{
+				Name:    "tlsfingerprintcapturesession_task_id_platform",
+				Unique:  false,
+				Columns: []*schema.Column{TLSFingerprintCaptureSessionsColumns[3], TLSFingerprintCaptureSessionsColumns[6]},
+			},
+		},
+	}
+	// TLSFingerprintCaptureSessionEventsColumns holds the columns for the "tls_fingerprint_capture_session_events" table.
+	TLSFingerprintCaptureSessionEventsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "task_id", Type: field.TypeInt64},
+		{Name: "session_ref", Type: field.TypeInt64, Nullable: true},
+		{Name: "session_id", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "event_id", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "platform", Type: field.TypeString, Size: 50, Default: ""},
+		{Name: "transport", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "event_type", Type: field.TypeString, Size: 64},
+		{Name: "request_sequence", Type: field.TypeInt, Default: 0},
+		{Name: "stream_id", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "request_path", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "http_method", Type: field.TypeString, Size: 16, Default: ""},
+		{Name: "is_websocket", Type: field.TypeBool, Default: false},
+		{Name: "websocket_protocol", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "client_type", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "model", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "request_kind", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "streaming", Type: field.TypeBool, Default: false},
+		{Name: "response_mode", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "user_agent", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "originator", Type: field.TypeString, Size: 50, Default: ""},
+		{Name: "stainless_metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "headers_snapshot", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "body_summary", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "raw_payload", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "event_status", Type: field.TypeString, Size: 64, Default: "observed"},
+		{Name: "event_error", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "replayable", Type: field.TypeBool, Default: true},
+		{Name: "sample_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "replay_hash", Type: field.TypeString, Size: 64, Default: ""},
+	}
+	// TLSFingerprintCaptureSessionEventsTable holds the schema information for the "tls_fingerprint_capture_session_events" table.
+	TLSFingerprintCaptureSessionEventsTable = &schema.Table{
+		Name:       "tls_fingerprint_capture_session_events",
+		Columns:    TLSFingerprintCaptureSessionEventsColumns,
+		PrimaryKey: []*schema.Column{TLSFingerprintCaptureSessionEventsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "tlsfingerprintcapturesessionevent_task_id_session_ref_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{TLSFingerprintCaptureSessionEventsColumns[3], TLSFingerprintCaptureSessionEventsColumns[4], TLSFingerprintCaptureSessionEventsColumns[1]},
+			},
+			{
+				Name:    "tlsfingerprintcapturesessionevent_task_id_session_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{TLSFingerprintCaptureSessionEventsColumns[3], TLSFingerprintCaptureSessionEventsColumns[5], TLSFingerprintCaptureSessionEventsColumns[1]},
+			},
+			{
+				Name:    "tlsfingerprintcapturesessionevent_task_id_sample_id",
+				Unique:  false,
+				Columns: []*schema.Column{TLSFingerprintCaptureSessionEventsColumns[3], TLSFingerprintCaptureSessionEventsColumns[30]},
 			},
 		},
 	}
@@ -2477,6 +2602,11 @@ var (
 		{Name: "token", Type: field.TypeString, Unique: true, Size: 96},
 		{Name: "targets", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "counts", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "transport_targets", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "transport_counts", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "capture_filters", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "sample_schema_version", Type: field.TypeInt, Default: 2},
+		{Name: "task_stats", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "ua_keywords", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
 	}
@@ -2509,11 +2639,13 @@ var (
 		{Name: "curves", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "point_formats", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "signature_algorithms", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "signature_algorithms_cert", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "alpn_protocols", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "supported_versions", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "key_share_groups", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "psk_modes", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "extensions", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "extension_payloads", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "compress_cert_algos", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "delegated_credentials_algorithms", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "application_settings_protocols", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
@@ -3079,6 +3211,8 @@ var (
 		SettingsTable,
 		SubscriptionPlansTable,
 		TLSFingerprintCaptureSamplesTable,
+		TLSFingerprintCaptureSessionsTable,
+		TLSFingerprintCaptureSessionEventsTable,
 		TLSFingerprintCaptureTasksTable,
 		TLSFingerprintProfilesTable,
 		TLSFingerprintRoutersTable,
@@ -3270,6 +3404,12 @@ func init() {
 	}
 	TLSFingerprintCaptureSamplesTable.Annotation = &entsql.Annotation{
 		Table: "tls_fingerprint_capture_samples",
+	}
+	TLSFingerprintCaptureSessionsTable.Annotation = &entsql.Annotation{
+		Table: "tls_fingerprint_capture_sessions",
+	}
+	TLSFingerprintCaptureSessionEventsTable.Annotation = &entsql.Annotation{
+		Table: "tls_fingerprint_capture_session_events",
 	}
 	TLSFingerprintCaptureTasksTable.Annotation = &entsql.Annotation{
 		Table: "tls_fingerprint_capture_tasks",

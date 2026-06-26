@@ -308,6 +308,30 @@ func (c *openAIWSStateStoreTimeoutProbeCache) DeleteSessionAccountID(ctx context
 	return nil
 }
 
+func (c *openAIWSStateStoreTimeoutProbeCache) GetOpenAIResponsesSessionWindow(ctx context.Context, _ int64, _ string) ([]byte, error) {
+	if deadline, ok := ctx.Deadline(); ok {
+		c.getHasDeadline = true
+		c.getDeadlineDelta = time.Until(deadline)
+	}
+	return nil, errors.New("not found")
+}
+
+func (c *openAIWSStateStoreTimeoutProbeCache) SetOpenAIResponsesSessionWindow(ctx context.Context, _ int64, _ string, _ []byte, _ time.Duration) error {
+	if deadline, ok := ctx.Deadline(); ok {
+		c.setHasDeadline = true
+		c.setDeadlineDelta = time.Until(deadline)
+	}
+	return errors.New("set failed")
+}
+
+func (c *openAIWSStateStoreTimeoutProbeCache) DeleteOpenAIResponsesSessionWindow(ctx context.Context, _ int64, _ string) error {
+	if deadline, ok := ctx.Deadline(); ok {
+		c.deleteHasDeadline = true
+		c.delDeadlineDelta = time.Until(deadline)
+	}
+	return nil
+}
+
 func TestOpenAIWSStateStore_RedisOpsUseShortTimeout(t *testing.T) {
 	probe := &openAIWSStateStoreTimeoutProbeCache{}
 	store := NewOpenAIWSStateStore(probe)

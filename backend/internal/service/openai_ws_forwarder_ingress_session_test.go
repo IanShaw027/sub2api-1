@@ -1670,7 +1670,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuth
 	require.Len(t, upstreamConn.writes, 2)
 	secondWrite := requestToJSONString(upstreamConn.writes[1])
 	require.Equal(t, "resp_passthrough_tool_1", gjson.Get(secondWrite, "previous_response_id").String())
-	require.True(t, gjson.Get(secondWrite, "store").Bool())
+	require.False(t, gjson.Get(secondWrite, "store").Bool(), "live relay tool continuation should keep OAuth store=false")
 	require.Equal(t, "function_call_output", gjson.Get(secondWrite, "input.0.type").String())
 }
 
@@ -1910,11 +1910,6 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPrevResponseStrictDropBeforePreflightPingFailReconnects(t *testing.T) {
 	setGinTestMode()
-	prevPreflightPingIdle := openAIWSIngressPreflightPingIdle
-	openAIWSIngressPreflightPingIdle = 0
-	defer func() {
-		openAIWSIngressPreflightPingIdle = prevPreflightPingIdle
-	}()
 
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
@@ -1927,6 +1922,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.IngressPreflightPingIdleSeconds = 0
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
@@ -3649,11 +3645,6 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledFun
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PreflightPingFailReconnectsBeforeTurn(t *testing.T) {
 	setGinTestMode()
-	prevPreflightPingIdle := openAIWSIngressPreflightPingIdle
-	openAIWSIngressPreflightPingIdle = 0
-	defer func() {
-		openAIWSIngressPreflightPingIdle = prevPreflightPingIdle
-	}()
 
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
@@ -3666,6 +3657,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PreflightPingFai
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.IngressPreflightPingIdleSeconds = 0
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
@@ -3791,11 +3783,6 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PreflightPingFai
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledStrictAffinityPreflightPingFailAutoRecoveryReconnects(t *testing.T) {
 	setGinTestMode()
-	prevPreflightPingIdle := openAIWSIngressPreflightPingIdle
-	openAIWSIngressPreflightPingIdle = 0
-	defer func() {
-		openAIWSIngressPreflightPingIdle = prevPreflightPingIdle
-	}()
 
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
@@ -3808,6 +3795,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledStr
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.IngressPreflightPingIdleSeconds = 0
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
@@ -3943,11 +3931,6 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledStr
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPreflightPingFailReplaysFunctionCallOutputWithContext(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	prevPreflightPingIdle := openAIWSIngressPreflightPingIdle
-	openAIWSIngressPreflightPingIdle = 0
-	defer func() {
-		openAIWSIngressPreflightPingIdle = prevPreflightPingIdle
-	}()
 
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
@@ -3960,6 +3943,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.IngressPreflightPingIdleSeconds = 0
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
@@ -4098,11 +4082,6 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPreflightPingFailClosesWhenFunctionCallOutputNeedsPreviousResponseID(t *testing.T) {
 	setGinTestMode()
-	prevPreflightPingIdle := openAIWSIngressPreflightPingIdle
-	openAIWSIngressPreflightPingIdle = 0
-	defer func() {
-		openAIWSIngressPreflightPingIdle = prevPreflightPingIdle
-	}()
 
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
@@ -4115,6 +4094,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.IngressPreflightPingIdleSeconds = 0
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
@@ -4244,11 +4224,6 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPreflightPingFailClosesWhenReplayHasFunctionCallOutput(t *testing.T) {
 	setGinTestMode()
-	prevPreflightPingIdle := openAIWSIngressPreflightPingIdle
-	openAIWSIngressPreflightPingIdle = 0
-	defer func() {
-		openAIWSIngressPreflightPingIdle = prevPreflightPingIdle
-	}()
 
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
@@ -4261,6 +4236,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.IngressPreflightPingIdleSeconds = 0
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
@@ -4390,11 +4366,6 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPreflightPingFailClosesWhenReplayHasToolSearchOutput(t *testing.T) {
 	setGinTestMode()
-	prevPreflightPingIdle := openAIWSIngressPreflightPingIdle
-	openAIWSIngressPreflightPingIdle = 0
-	defer func() {
-		openAIWSIngressPreflightPingIdle = prevPreflightPingIdle
-	}()
 
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
@@ -4407,6 +4378,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.IngressPreflightPingIdleSeconds = 0
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3

@@ -13,6 +13,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 )
 
+type groupUsageSummaryByIDsReader interface {
+	GetGroupUsageSummaryByIDs(ctx context.Context, groupIDs []int64, todayStart time.Time) ([]usagestats.GroupUsageSummary, error)
+}
+
 const (
 	defaultDashboardStatsFreshTTL       = 15 * time.Second
 	defaultDashboardStatsCacheTTL       = 30 * time.Second
@@ -194,6 +198,36 @@ func (s *DashboardService) GetGroupUsageSummary(ctx context.Context, todayStart 
 		return nil, fmt.Errorf("get group usage summary: %w", err)
 	}
 	return results, nil
+}
+
+func (s *DashboardService) GetGroupUsageSummaryByIDs(ctx context.Context, groupIDs []int64, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
+	if len(groupIDs) == 0 {
+		return []usagestats.GroupUsageSummary{}, nil
+	}
+
+	if reader, ok := s.usageRepo.(groupUsageSummaryByIDsReader); ok {
+		results, err := reader.GetGroupUsageSummaryByIDs(ctx, groupIDs, todayStart)
+		if err != nil {
+			return nil, fmt.Errorf("get group usage summary by ids: %w", err)
+		}
+		return results, nil
+	}
+
+	results, err := s.GetGroupUsageSummary(ctx, todayStart)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make(map[int64]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		allowed[groupID] = struct{}{}
+	}
+	filtered := make([]usagestats.GroupUsageSummary, 0, len(groupIDs))
+	for _, result := range results {
+		if _, ok := allowed[result.GroupID]; ok {
+			filtered = append(filtered, result)
+		}
+	}
+	return filtered, nil
 }
 
 func (s *DashboardService) getCachedDashboardStats(ctx context.Context) (*usagestats.DashboardStats, bool, error) {

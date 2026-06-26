@@ -10,6 +10,7 @@ import (
 )
 
 const stickySessionPrefix = "sticky_session:"
+const openAIResponsesSessionWindowPrefix = "openai_responses_session_window:"
 
 type gatewayCache struct {
 	rdb *redis.Client
@@ -23,6 +24,10 @@ func NewGatewayCache(rdb *redis.Client) service.GatewayCache {
 // 格式: sticky_session:{groupID}:{sessionHash}
 func buildSessionKey(groupID int64, sessionHash string) string {
 	return fmt.Sprintf("%s%d:%s", stickySessionPrefix, groupID, sessionHash)
+}
+
+func buildOpenAIResponsesSessionWindowKey(groupID int64, sessionHash string) string {
+	return fmt.Sprintf("%s%d:%s", openAIResponsesSessionWindowPrefix, groupID, sessionHash)
 }
 
 func (c *gatewayCache) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
@@ -70,4 +75,19 @@ func (c *gatewayCache) IsCyberSessionBlocked(ctx context.Context, key string) (b
 		return false, err
 	}
 	return n > 0, nil
+}
+
+func (c *gatewayCache) GetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) ([]byte, error) {
+	key := buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)
+	return c.rdb.Get(ctx, key).Bytes()
+}
+
+func (c *gatewayCache) SetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, payload []byte, ttl time.Duration) error {
+	key := buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)
+	return c.rdb.Set(ctx, key, payload, ttl).Err()
+}
+
+func (c *gatewayCache) DeleteOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) error {
+	key := buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)
+	return c.rdb.Del(ctx, key).Err()
 }

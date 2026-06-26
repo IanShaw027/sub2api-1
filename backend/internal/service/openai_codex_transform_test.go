@@ -77,6 +77,26 @@ func TestApplyCodexOAuthTransform_MessagesBridgePromptCacheKeyIsHeaderOnly(t *te
 	require.NotContains(t, reqBody, "prompt_cache_key")
 }
 
+func TestApplyCodexOAuthTransform_PreservesPromptCacheKeyAndReasoningInclude(t *testing.T) {
+	reqBody := map[string]any{
+		"model":            "gpt-5.1",
+		"store":            false,
+		"prompt_cache_key": "pcache_1",
+		"reasoning":        map[string]any{"effort": "medium"},
+		"input": []any{
+			map[string]any{"type": "message", "role": "user", "content": "hello"},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, false, false)
+
+	require.Equal(t, "pcache_1", reqBody["prompt_cache_key"])
+	include, ok := reqBody["include"].([]any)
+	require.True(t, ok)
+	require.Contains(t, include, "reasoning.encrypted_content")
+	require.True(t, result.Modified)
+}
+
 func TestApplyCodexOAuthTransform_ToolContinuationPreservesNativeMessageAndReasoningIDs(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "gpt-5.2",
@@ -811,6 +831,26 @@ func TestNormalizeOpenAIResponsesImageGenerationTools_RewritesLegacyFields(t *te
 	require.False(t, hasFormat)
 	_, hasCompression := first["compression"]
 	require.False(t, hasCompression)
+}
+
+func TestNormalizeOpenAIResponsesImageGenerationTools_AutoCorrectsInvalidSize(t *testing.T) {
+	reqBody := map[string]any{
+		"tools": []any{
+			map[string]any{
+				"type": "image_generation",
+				"size": "2048x1153",
+			},
+		},
+	}
+
+	modified := normalizeOpenAIResponsesImageGenerationTools(reqBody)
+	require.True(t, modified)
+
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	first, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "2048x1152", first["size"])
 }
 
 func TestEnsureOpenAIResponsesImageGenerationTool_NoTools(t *testing.T) {

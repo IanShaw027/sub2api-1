@@ -2,170 +2,76 @@ package repository
 
 import (
 	"context"
+	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesample"
-	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturetask"
 	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
 type tlsFingerprintCaptureRepository struct {
-	client *ent.Client
+	taskRepo         *tlsFingerprintCaptureTaskRepoV2
+	sampleRepo       *tlsFingerprintCaptureSampleRepoV2
+	sessionRepo      *tlsFingerprintCaptureSessionRepo
+	sessionEventRepo *tlsFingerprintCaptureSessionEventRepo
 }
 
 func NewTLSFingerprintCaptureRepository(client *ent.Client) service.TLSFingerprintCaptureRepository {
-	return &tlsFingerprintCaptureRepository{client: client}
+	return &tlsFingerprintCaptureRepository{
+		taskRepo:         NewTLSFingerprintCaptureTaskRepoV2(client),
+		sampleRepo:       NewTLSFingerprintCaptureSampleRepoV2(client),
+		sessionRepo:      NewTLSFingerprintCaptureSessionRepo(client),
+		sessionEventRepo: NewTLSFingerprintCaptureSessionEventRepo(client),
+	}
 }
 
 func (r *tlsFingerprintCaptureRepository) CreateTask(ctx context.Context, task *service.TLSFingerprintCaptureTask) (*service.TLSFingerprintCaptureTask, error) {
-	created, err := r.client.TLSFingerprintCaptureTask.Create().
-		SetName(task.Name).
-		SetStatus(task.Status).
-		SetToken(task.Token).
-		SetTargets(task.Targets).
-		SetCounts(task.Counts).
-		SetUaKeywords(task.UAKeywords).
-		Save(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return tlsCaptureTaskToService(created), nil
+	return r.taskRepo.CreateTask(ctx, task)
 }
 
 func (r *tlsFingerprintCaptureRepository) ListTasks(ctx context.Context) ([]*service.TLSFingerprintCaptureTask, error) {
-	tasks, err := r.client.TLSFingerprintCaptureTask.Query().
-		Order(ent.Desc(tlsfingerprintcapturetask.FieldCreatedAt)).
-		All(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*service.TLSFingerprintCaptureTask, 0, len(tasks))
-	for _, task := range tasks {
-		out = append(out, tlsCaptureTaskToService(task))
-	}
-	return out, nil
+	return r.taskRepo.ListTasks(ctx)
 }
 
 func (r *tlsFingerprintCaptureRepository) GetTaskByID(ctx context.Context, id int64) (*service.TLSFingerprintCaptureTask, error) {
-	task, err := r.client.TLSFingerprintCaptureTask.Get(ctx, id)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return tlsCaptureTaskToService(task), nil
+	return r.taskRepo.GetTaskByID(ctx, id)
 }
 
 func (r *tlsFingerprintCaptureRepository) GetRunningTaskByToken(ctx context.Context, token string) (*service.TLSFingerprintCaptureTask, error) {
-	task, err := r.client.TLSFingerprintCaptureTask.Query().
-		Where(
-			tlsfingerprintcapturetask.Token(token),
-			tlsfingerprintcapturetask.Status(service.TLSFingerprintCaptureStatusRunning),
-		).
-		Only(ctx)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return tlsCaptureTaskToService(task), nil
+	return r.taskRepo.GetRunningTaskByToken(ctx, token)
 }
 
 func (r *tlsFingerprintCaptureRepository) UpdateTask(ctx context.Context, task *service.TLSFingerprintCaptureTask) (*service.TLSFingerprintCaptureTask, error) {
-	builder := r.client.TLSFingerprintCaptureTask.UpdateOneID(task.ID).
-		SetName(task.Name).
-		SetStatus(task.Status).
-		SetToken(task.Token).
-		SetTargets(task.Targets).
-		SetCounts(task.Counts).
-		SetUaKeywords(task.UAKeywords)
-	if task.CompletedAt != nil {
-		builder.SetCompletedAt(*task.CompletedAt)
-	} else {
-		builder.ClearCompletedAt()
-	}
-	updated, err := builder.Save(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return tlsCaptureTaskToService(updated), nil
+	return r.taskRepo.UpdateTask(ctx, task)
 }
 
 func (r *tlsFingerprintCaptureRepository) DeleteTask(ctx context.Context, id int64) error {
-	return r.client.TLSFingerprintCaptureTask.DeleteOneID(id).Exec(ctx)
+	return r.taskRepo.DeleteTask(ctx, id)
 }
 
 func (r *tlsFingerprintCaptureRepository) DeleteSamplesByTask(ctx context.Context, taskID int64) error {
-	_, err := r.client.TLSFingerprintCaptureSample.Delete().
-		Where(tlsfingerprintcapturesample.TaskID(taskID)).
-		Exec(ctx)
-	return err
+	return r.sampleRepo.DeleteSamplesByTask(ctx, taskID)
 }
 
 func (r *tlsFingerprintCaptureRepository) CreateSampleIfAbsent(ctx context.Context, sample *service.TLSFingerprintCaptureSample) (*service.TLSFingerprintCaptureSample, bool, error) {
-	profile := sample.Profile
-	if profile == nil {
-		profile = &model.TLSFingerprintProfile{}
-	}
-	create := r.client.TLSFingerprintCaptureSample.Create().
-		SetTaskID(sample.TaskID).
-		SetPlatform(sample.Platform).
-		SetUserAgent(sample.UserAgent).
-		SetOriginator(sample.Originator).
-		SetFingerprintHash(sample.FingerprintHash).
-		SetProfile(profile).
-		SetRawPayload(sample.RawPayload)
-	if len(sample.RawClientHello) > 0 {
-		create.SetRawClientHello(sample.RawClientHello)
-	}
-	saved, err := create.Save(ctx)
-	if err != nil {
-		if ent.IsConstraintError(err) {
-			existing, getErr := r.GetSampleByTaskHash(ctx, sample.TaskID, sample.FingerprintHash)
-			if getErr != nil {
-				return nil, false, getErr
-			}
-			if existing != nil {
-				return existing, false, nil
-			}
-		}
-		return nil, false, err
-	}
-	return tlsCaptureSampleToService(saved), true, nil
+	return r.sampleRepo.CreateSampleIfAbsent(ctx, sample)
 }
 
 func (r *tlsFingerprintCaptureRepository) GetSampleByTaskHash(ctx context.Context, taskID int64, fingerprintHash string) (*service.TLSFingerprintCaptureSample, error) {
-	sample, err := r.client.TLSFingerprintCaptureSample.Query().
-		Where(
-			tlsfingerprintcapturesample.TaskID(taskID),
-			tlsfingerprintcapturesample.FingerprintHash(fingerprintHash),
-		).
-		Only(ctx)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return tlsCaptureSampleToService(sample), nil
+	return r.sampleRepo.GetSampleByTaskHash(ctx, taskID, fingerprintHash)
 }
 
 func (r *tlsFingerprintCaptureRepository) ListSamplesByTask(ctx context.Context, taskID int64) ([]*service.TLSFingerprintCaptureSample, error) {
-	samples, err := r.client.TLSFingerprintCaptureSample.Query().
-		Where(tlsfingerprintcapturesample.TaskID(taskID)).
-		Order(ent.Asc(tlsfingerprintcapturesample.FieldID)).
-		All(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*service.TLSFingerprintCaptureSample, 0, len(samples))
-	for _, sample := range samples {
-		out = append(out, tlsCaptureSampleToService(sample))
-	}
-	return out, nil
+	return r.sampleRepo.ListSamplesByTask(ctx, taskID)
+}
+
+func (r *tlsFingerprintCaptureRepository) CreateSessionIfAbsent(ctx context.Context, session *service.TLSFingerprintCaptureSession) (*service.TLSFingerprintCaptureSession, bool, error) {
+	return r.sessionRepo.CreateSessionIfAbsent(ctx, session)
+}
+
+func (r *tlsFingerprintCaptureRepository) CreateSessionEvent(ctx context.Context, event *service.TLSFingerprintCaptureSessionEvent) (*service.TLSFingerprintCaptureSessionEvent, error) {
+	return r.sessionEventRepo.CreateSessionEvent(ctx, event)
 }
 
 func tlsCaptureTaskToService(task *ent.TLSFingerprintCaptureTask) *service.TLSFingerprintCaptureTask {
@@ -173,25 +79,21 @@ func tlsCaptureTaskToService(task *ent.TLSFingerprintCaptureTask) *service.TLSFi
 		return nil
 	}
 	out := &service.TLSFingerprintCaptureTask{
-		ID:          task.ID,
-		Name:        task.Name,
-		Status:      task.Status,
-		Token:       task.Token,
-		Targets:     task.Targets,
-		Counts:      task.Counts,
-		UAKeywords:  task.UaKeywords,
-		CreatedAt:   task.CreatedAt,
-		UpdatedAt:   task.UpdatedAt,
-		CompletedAt: task.CompletedAt,
-	}
-	if out.Targets == nil {
-		out.Targets = map[string]int{}
-	}
-	if out.Counts == nil {
-		out.Counts = map[string]int{}
-	}
-	if out.UAKeywords == nil {
-		out.UAKeywords = []string{}
+		ID:                  task.ID,
+		Name:                task.Name,
+		Status:              task.Status,
+		Token:               task.Token,
+		Targets:             copyStringIntMapOrEmpty(task.Targets),
+		Counts:              copyStringIntMapOrEmpty(task.Counts),
+		TransportTargets:    copyStringIntMapOrEmpty(task.TransportTargets),
+		TransportCounts:     copyStringIntMapOrEmpty(task.TransportCounts),
+		CaptureFilters:      copyStringAnyMapOrEmpty(task.CaptureFilters),
+		SampleSchemaVersion: defaultInt(task.SampleSchemaVersion, 2),
+		TaskStats:           copyStringAnyMapOrEmpty(task.TaskStats),
+		UAKeywords:          copyStringSliceOrEmpty(task.UaKeywords),
+		CreatedAt:           task.CreatedAt,
+		UpdatedAt:           task.UpdatedAt,
+		CompletedAt:         task.CompletedAt,
 	}
 	return out
 }
@@ -200,22 +102,135 @@ func tlsCaptureSampleToService(sample *ent.TLSFingerprintCaptureSample) *service
 	if sample == nil {
 		return nil
 	}
-	profile := sample.Profile
+	profile := sample.ReplayProfile
 	if profile == nil {
 		profile = &model.TLSFingerprintProfile{}
 	}
 	return &service.TLSFingerprintCaptureSample{
-		ID:              sample.ID,
-		TaskID:          sample.TaskID,
-		Platform:        sample.Platform,
-		UserAgent:       sample.UserAgent,
-		Originator:      sample.Originator,
-		FingerprintHash: sample.FingerprintHash,
-		Profile:         profile,
-		RawPayload:      sample.RawPayload,
-		RawClientHello:  cloneBytesPtr(sample.RawClientHello),
-		CreatedAt:       sample.CreatedAt,
+		ID:                sample.ID,
+		TaskID:            sample.TaskID,
+		Platform:          strings.TrimSpace(sample.Platform),
+		Transport:         strings.TrimSpace(sample.Transport),
+		SessionID:         strings.TrimSpace(sample.SessionID),
+		UserAgent:         sample.UserAgent,
+		Originator:        strings.TrimSpace(sample.Originator),
+		FingerprintHash:   strings.TrimSpace(sample.FingerprintHash),
+		ReplayHash:        normalizeTLSCaptureStoredReplayHash(sample.ReplayHash, sample.FingerprintHash),
+		JA3Raw:            strings.TrimSpace(sample.Ja3Raw),
+		JA3Hash:           strings.TrimSpace(sample.Ja3Hash),
+		JA4:               strings.TrimSpace(sample.Ja4),
+		RequestPath:       sample.RequestPath,
+		HTTPMethod:        sample.HTTPMethod,
+		IsWebsocket:       sample.IsWebsocket,
+		WebsocketProtocol: sample.WebsocketProtocol,
+		ClientType:        sample.ClientType,
+		Model:             sample.Model,
+		RequestKind:       sample.RequestKind,
+		Streaming:         sample.Streaming,
+		ResponseMode:      sample.ResponseMode,
+		HTTP2Fingerprint:  sample.Http2Fingerprint,
+		StainlessMetadata: copyStringAnyMapOrEmpty(sample.StainlessMetadata),
+		Profile:           profile,
+		RawPayload:        sample.RawPayload,
+		RawClientHello:    cloneBytesPtr(sample.RawClientHello),
+		CapturedAt:        coalesceTime(sample.CapturedAt, sample.CreatedAt),
+		CreatedAt:         sample.CreatedAt,
 	}
+}
+
+func tlsCaptureSessionToService(session *ent.TLSFingerprintCaptureSession) *service.TLSFingerprintCaptureSession {
+	if session == nil {
+		return nil
+	}
+	return &service.TLSFingerprintCaptureSession{
+		ID:                  session.ID,
+		TaskID:              session.TaskID,
+		SessionID:           strings.TrimSpace(session.SessionID),
+		ClientIP:            strings.TrimSpace(session.ClientIP),
+		Platform:            strings.TrimSpace(session.Platform),
+		UserAgent:           session.UserAgent,
+		Originator:          strings.TrimSpace(session.Originator),
+		ALPNNegotiated:      strings.TrimSpace(session.AlpnNegotiated),
+		RawClientHello:      cloneBytesPtr(session.RawClientHello),
+		ObservedClientHello: copyStringAnyMapOrEmpty(session.ObservedClientHello),
+		ReplayProfile:       copyStringAnyMapOrEmpty(session.ReplayProfile),
+		DerivedFingerprint:  copyStringAnyMapOrEmpty(session.DerivedFingerprint),
+		SessionStatus:       strings.TrimSpace(session.SessionStatus),
+		ErrorSummary:        session.ErrorSummary,
+		OpenedAt:            session.OpenedAt,
+		ClosedAt:            cloneTimePtr(session.ClosedAt),
+		CreatedAt:           session.CreatedAt,
+		UpdatedAt:           session.UpdatedAt,
+	}
+}
+
+func tlsCaptureSessionEventToService(event *ent.TLSFingerprintCaptureSessionEvent) *service.TLSFingerprintCaptureSessionEvent {
+	if event == nil {
+		return nil
+	}
+	return &service.TLSFingerprintCaptureSessionEvent{
+		ID:                event.ID,
+		TaskID:            event.TaskID,
+		SessionRef:        valueOrZero(event.SessionRef),
+		SessionID:         strings.TrimSpace(event.SessionID),
+		EventID:           strings.TrimSpace(event.EventID),
+		Platform:          strings.TrimSpace(event.Platform),
+		Transport:         strings.TrimSpace(event.Transport),
+		EventType:         strings.TrimSpace(event.EventType),
+		RequestSequence:   event.RequestSequence,
+		StreamID:          strings.TrimSpace(event.StreamID),
+		RequestPath:       event.RequestPath,
+		HTTPMethod:        event.HTTPMethod,
+		IsWebsocket:       event.IsWebsocket,
+		WebsocketProtocol: strings.TrimSpace(event.WebsocketProtocol),
+		ClientType:        strings.TrimSpace(event.ClientType),
+		Model:             event.Model,
+		RequestKind:       strings.TrimSpace(event.RequestKind),
+		Streaming:         event.Streaming,
+		ResponseMode:      strings.TrimSpace(event.ResponseMode),
+		UserAgent:         event.UserAgent,
+		Originator:        strings.TrimSpace(event.Originator),
+		StainlessMetadata: copyStringAnyMapOrEmpty(event.StainlessMetadata),
+		HeadersSnapshot:   copyStringAnyMapOrEmpty(event.HeadersSnapshot),
+		BodySummary:       event.BodySummary,
+		RawPayload:        event.RawPayload,
+		EventStatus:       strings.TrimSpace(event.EventStatus),
+		Error:             event.EventError,
+		Replayable:        event.Replayable,
+		SampleID:          cloneInt64Ptr(event.SampleID),
+		ReplayHash:        strings.TrimSpace(event.ReplayHash),
+		CreatedAt:         event.CreatedAt,
+	}
+}
+
+func normalizeTLSCaptureStoredReplayHash(replayHash, fingerprintHash string) string {
+	replayHash = strings.TrimSpace(replayHash)
+	if replayHash != "" {
+		return replayHash
+	}
+	fingerprintHash = strings.TrimSpace(fingerprintHash)
+	if idx := strings.Index(fingerprintHash, "::"); idx >= 0 {
+		return fingerprintHash[:idx]
+	}
+	return fingerprintHash
+}
+
+func copyStringIntMapOrEmpty(in map[string]int) map[string]int {
+	if len(in) == 0 {
+		return map[string]int{}
+	}
+	out := make(map[string]int, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func copyStringSliceOrEmpty(in []string) []string {
+	if len(in) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), in...)
 }
 
 func cloneBytesPtr(in *[]byte) []byte {
@@ -223,4 +238,61 @@ func cloneBytesPtr(in *[]byte) []byte {
 		return nil
 	}
 	return append([]byte(nil), (*in)...)
+}
+
+func cloneInt64Ptr(in *int64) *int64 {
+	if in == nil {
+		return nil
+	}
+	v := *in
+	return &v
+}
+
+func cloneTimePtr(in *time.Time) *time.Time {
+	if in == nil {
+		return nil
+	}
+	v := *in
+	return &v
+}
+
+func coalesceTime(values ...time.Time) time.Time {
+	for _, value := range values {
+		if !value.IsZero() {
+			return value
+		}
+	}
+	return time.Time{}
+}
+
+func valueOrZero(in *int64) int64 {
+	if in == nil {
+		return 0
+	}
+	return *in
+}
+
+func defaultString(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func defaultInt(value, fallback int) int {
+	if value == 0 {
+		return fallback
+	}
+	return value
+}
+
+func copyStringAnyMapOrEmpty(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }

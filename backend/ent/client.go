@@ -58,6 +58,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesample"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesession"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesessionevent"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturetask"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintrouter"
@@ -164,6 +166,10 @@ type Client struct {
 	SubscriptionPlan *SubscriptionPlanClient
 	// TLSFingerprintCaptureSample is the client for interacting with the TLSFingerprintCaptureSample builders.
 	TLSFingerprintCaptureSample *TLSFingerprintCaptureSampleClient
+	// TLSFingerprintCaptureSession is the client for interacting with the TLSFingerprintCaptureSession builders.
+	TLSFingerprintCaptureSession *TLSFingerprintCaptureSessionClient
+	// TLSFingerprintCaptureSessionEvent is the client for interacting with the TLSFingerprintCaptureSessionEvent builders.
+	TLSFingerprintCaptureSessionEvent *TLSFingerprintCaptureSessionEventClient
 	// TLSFingerprintCaptureTask is the client for interacting with the TLSFingerprintCaptureTask builders.
 	TLSFingerprintCaptureTask *TLSFingerprintCaptureTaskClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
@@ -240,6 +246,8 @@ func (c *Client) init() {
 	c.Setting = NewSettingClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
 	c.TLSFingerprintCaptureSample = NewTLSFingerprintCaptureSampleClient(c.config)
+	c.TLSFingerprintCaptureSession = NewTLSFingerprintCaptureSessionClient(c.config)
+	c.TLSFingerprintCaptureSessionEvent = NewTLSFingerprintCaptureSessionEventClient(c.config)
 	c.TLSFingerprintCaptureTask = NewTLSFingerprintCaptureTaskClient(c.config)
 	c.TLSFingerprintProfile = NewTLSFingerprintProfileClient(c.config)
 	c.TLSFingerprintRouter = NewTLSFingerprintRouterClient(c.config)
@@ -341,62 +349,64 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:                           ctx,
-		config:                        cfg,
-		AIAsset:                       NewAIAssetClient(cfg),
-		AIAuditLog:                    NewAIAuditLogClient(cfg),
-		AIGenerationJob:               NewAIGenerationJobClient(cfg),
-		AIPromptTemplate:              NewAIPromptTemplateClient(cfg),
-		AIPromptTemplateVersion:       NewAIPromptTemplateVersionClient(cfg),
-		AISession:                     NewAISessionClient(cfg),
-		AISessionMessage:              NewAISessionMessageClient(cfg),
-		AISkill:                       NewAISkillClient(cfg),
-		AISkillInstall:                NewAISkillInstallClient(cfg),
-		AISkillLike:                   NewAISkillLikeClient(cfg),
-		AISkillReview:                 NewAISkillReviewClient(cfg),
-		AISkillRun:                    NewAISkillRunClient(cfg),
-		AISkillSettlement:             NewAISkillSettlementClient(cfg),
-		AISkillVersion:                NewAISkillVersionClient(cfg),
-		APIKey:                        NewAPIKeyClient(cfg),
-		Account:                       NewAccountClient(cfg),
-		AccountGroup:                  NewAccountGroupClient(cfg),
-		Announcement:                  NewAnnouncementClient(cfg),
-		AnnouncementRead:              NewAnnouncementReadClient(cfg),
-		AuthIdentity:                  NewAuthIdentityClient(cfg),
-		AuthIdentityChannel:           NewAuthIdentityChannelClient(cfg),
-		ChannelMonitor:                NewChannelMonitorClient(cfg),
-		ChannelMonitorDailyRollup:     NewChannelMonitorDailyRollupClient(cfg),
-		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
-		ChannelMonitorRequestTemplate: NewChannelMonitorRequestTemplateClient(cfg),
-		ErrorPassthroughRule:          NewErrorPassthroughRuleClient(cfg),
-		Group:                         NewGroupClient(cfg),
-		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
-		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
-		Invoice:                       NewInvoiceClient(cfg),
-		InvoiceOrder:                  NewInvoiceOrderClient(cfg),
-		PaymentAuditLog:               NewPaymentAuditLogClient(cfg),
-		PaymentOrder:                  NewPaymentOrderClient(cfg),
-		PaymentProviderInstance:       NewPaymentProviderInstanceClient(cfg),
-		PendingAuthSession:            NewPendingAuthSessionClient(cfg),
-		PromoCode:                     NewPromoCodeClient(cfg),
-		PromoCodeUsage:                NewPromoCodeUsageClient(cfg),
-		Proxy:                         NewProxyClient(cfg),
-		RedeemCode:                    NewRedeemCodeClient(cfg),
-		SecuritySecret:                NewSecuritySecretClient(cfg),
-		Setting:                       NewSettingClient(cfg),
-		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
-		TLSFingerprintCaptureSample:   NewTLSFingerprintCaptureSampleClient(cfg),
-		TLSFingerprintCaptureTask:     NewTLSFingerprintCaptureTaskClient(cfg),
-		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
-		TLSFingerprintRouter:          NewTLSFingerprintRouterClient(cfg),
-		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
-		UsageLog:                      NewUsageLogClient(cfg),
-		User:                          NewUserClient(cfg),
-		UserAllowedGroup:              NewUserAllowedGroupClient(cfg),
-		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
-		UserAttributeValue:            NewUserAttributeValueClient(cfg),
-		UserPlatformQuota:             NewUserPlatformQuotaClient(cfg),
-		UserSubscription:              NewUserSubscriptionClient(cfg),
+		ctx:                               ctx,
+		config:                            cfg,
+		AIAsset:                           NewAIAssetClient(cfg),
+		AIAuditLog:                        NewAIAuditLogClient(cfg),
+		AIGenerationJob:                   NewAIGenerationJobClient(cfg),
+		AIPromptTemplate:                  NewAIPromptTemplateClient(cfg),
+		AIPromptTemplateVersion:           NewAIPromptTemplateVersionClient(cfg),
+		AISession:                         NewAISessionClient(cfg),
+		AISessionMessage:                  NewAISessionMessageClient(cfg),
+		AISkill:                           NewAISkillClient(cfg),
+		AISkillInstall:                    NewAISkillInstallClient(cfg),
+		AISkillLike:                       NewAISkillLikeClient(cfg),
+		AISkillReview:                     NewAISkillReviewClient(cfg),
+		AISkillRun:                        NewAISkillRunClient(cfg),
+		AISkillSettlement:                 NewAISkillSettlementClient(cfg),
+		AISkillVersion:                    NewAISkillVersionClient(cfg),
+		APIKey:                            NewAPIKeyClient(cfg),
+		Account:                           NewAccountClient(cfg),
+		AccountGroup:                      NewAccountGroupClient(cfg),
+		Announcement:                      NewAnnouncementClient(cfg),
+		AnnouncementRead:                  NewAnnouncementReadClient(cfg),
+		AuthIdentity:                      NewAuthIdentityClient(cfg),
+		AuthIdentityChannel:               NewAuthIdentityChannelClient(cfg),
+		ChannelMonitor:                    NewChannelMonitorClient(cfg),
+		ChannelMonitorDailyRollup:         NewChannelMonitorDailyRollupClient(cfg),
+		ChannelMonitorHistory:             NewChannelMonitorHistoryClient(cfg),
+		ChannelMonitorRequestTemplate:     NewChannelMonitorRequestTemplateClient(cfg),
+		ErrorPassthroughRule:              NewErrorPassthroughRuleClient(cfg),
+		Group:                             NewGroupClient(cfg),
+		IdempotencyRecord:                 NewIdempotencyRecordClient(cfg),
+		IdentityAdoptionDecision:          NewIdentityAdoptionDecisionClient(cfg),
+		Invoice:                           NewInvoiceClient(cfg),
+		InvoiceOrder:                      NewInvoiceOrderClient(cfg),
+		PaymentAuditLog:                   NewPaymentAuditLogClient(cfg),
+		PaymentOrder:                      NewPaymentOrderClient(cfg),
+		PaymentProviderInstance:           NewPaymentProviderInstanceClient(cfg),
+		PendingAuthSession:                NewPendingAuthSessionClient(cfg),
+		PromoCode:                         NewPromoCodeClient(cfg),
+		PromoCodeUsage:                    NewPromoCodeUsageClient(cfg),
+		Proxy:                             NewProxyClient(cfg),
+		RedeemCode:                        NewRedeemCodeClient(cfg),
+		SecuritySecret:                    NewSecuritySecretClient(cfg),
+		Setting:                           NewSettingClient(cfg),
+		SubscriptionPlan:                  NewSubscriptionPlanClient(cfg),
+		TLSFingerprintCaptureSample:       NewTLSFingerprintCaptureSampleClient(cfg),
+		TLSFingerprintCaptureSession:      NewTLSFingerprintCaptureSessionClient(cfg),
+		TLSFingerprintCaptureSessionEvent: NewTLSFingerprintCaptureSessionEventClient(cfg),
+		TLSFingerprintCaptureTask:         NewTLSFingerprintCaptureTaskClient(cfg),
+		TLSFingerprintProfile:             NewTLSFingerprintProfileClient(cfg),
+		TLSFingerprintRouter:              NewTLSFingerprintRouterClient(cfg),
+		UsageCleanupTask:                  NewUsageCleanupTaskClient(cfg),
+		UsageLog:                          NewUsageLogClient(cfg),
+		User:                              NewUserClient(cfg),
+		UserAllowedGroup:                  NewUserAllowedGroupClient(cfg),
+		UserAttributeDefinition:           NewUserAttributeDefinitionClient(cfg),
+		UserAttributeValue:                NewUserAttributeValueClient(cfg),
+		UserPlatformQuota:                 NewUserPlatformQuotaClient(cfg),
+		UserSubscription:                  NewUserSubscriptionClient(cfg),
 	}, nil
 }
 
@@ -414,62 +424,64 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:                           ctx,
-		config:                        cfg,
-		AIAsset:                       NewAIAssetClient(cfg),
-		AIAuditLog:                    NewAIAuditLogClient(cfg),
-		AIGenerationJob:               NewAIGenerationJobClient(cfg),
-		AIPromptTemplate:              NewAIPromptTemplateClient(cfg),
-		AIPromptTemplateVersion:       NewAIPromptTemplateVersionClient(cfg),
-		AISession:                     NewAISessionClient(cfg),
-		AISessionMessage:              NewAISessionMessageClient(cfg),
-		AISkill:                       NewAISkillClient(cfg),
-		AISkillInstall:                NewAISkillInstallClient(cfg),
-		AISkillLike:                   NewAISkillLikeClient(cfg),
-		AISkillReview:                 NewAISkillReviewClient(cfg),
-		AISkillRun:                    NewAISkillRunClient(cfg),
-		AISkillSettlement:             NewAISkillSettlementClient(cfg),
-		AISkillVersion:                NewAISkillVersionClient(cfg),
-		APIKey:                        NewAPIKeyClient(cfg),
-		Account:                       NewAccountClient(cfg),
-		AccountGroup:                  NewAccountGroupClient(cfg),
-		Announcement:                  NewAnnouncementClient(cfg),
-		AnnouncementRead:              NewAnnouncementReadClient(cfg),
-		AuthIdentity:                  NewAuthIdentityClient(cfg),
-		AuthIdentityChannel:           NewAuthIdentityChannelClient(cfg),
-		ChannelMonitor:                NewChannelMonitorClient(cfg),
-		ChannelMonitorDailyRollup:     NewChannelMonitorDailyRollupClient(cfg),
-		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
-		ChannelMonitorRequestTemplate: NewChannelMonitorRequestTemplateClient(cfg),
-		ErrorPassthroughRule:          NewErrorPassthroughRuleClient(cfg),
-		Group:                         NewGroupClient(cfg),
-		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
-		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
-		Invoice:                       NewInvoiceClient(cfg),
-		InvoiceOrder:                  NewInvoiceOrderClient(cfg),
-		PaymentAuditLog:               NewPaymentAuditLogClient(cfg),
-		PaymentOrder:                  NewPaymentOrderClient(cfg),
-		PaymentProviderInstance:       NewPaymentProviderInstanceClient(cfg),
-		PendingAuthSession:            NewPendingAuthSessionClient(cfg),
-		PromoCode:                     NewPromoCodeClient(cfg),
-		PromoCodeUsage:                NewPromoCodeUsageClient(cfg),
-		Proxy:                         NewProxyClient(cfg),
-		RedeemCode:                    NewRedeemCodeClient(cfg),
-		SecuritySecret:                NewSecuritySecretClient(cfg),
-		Setting:                       NewSettingClient(cfg),
-		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
-		TLSFingerprintCaptureSample:   NewTLSFingerprintCaptureSampleClient(cfg),
-		TLSFingerprintCaptureTask:     NewTLSFingerprintCaptureTaskClient(cfg),
-		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
-		TLSFingerprintRouter:          NewTLSFingerprintRouterClient(cfg),
-		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
-		UsageLog:                      NewUsageLogClient(cfg),
-		User:                          NewUserClient(cfg),
-		UserAllowedGroup:              NewUserAllowedGroupClient(cfg),
-		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
-		UserAttributeValue:            NewUserAttributeValueClient(cfg),
-		UserPlatformQuota:             NewUserPlatformQuotaClient(cfg),
-		UserSubscription:              NewUserSubscriptionClient(cfg),
+		ctx:                               ctx,
+		config:                            cfg,
+		AIAsset:                           NewAIAssetClient(cfg),
+		AIAuditLog:                        NewAIAuditLogClient(cfg),
+		AIGenerationJob:                   NewAIGenerationJobClient(cfg),
+		AIPromptTemplate:                  NewAIPromptTemplateClient(cfg),
+		AIPromptTemplateVersion:           NewAIPromptTemplateVersionClient(cfg),
+		AISession:                         NewAISessionClient(cfg),
+		AISessionMessage:                  NewAISessionMessageClient(cfg),
+		AISkill:                           NewAISkillClient(cfg),
+		AISkillInstall:                    NewAISkillInstallClient(cfg),
+		AISkillLike:                       NewAISkillLikeClient(cfg),
+		AISkillReview:                     NewAISkillReviewClient(cfg),
+		AISkillRun:                        NewAISkillRunClient(cfg),
+		AISkillSettlement:                 NewAISkillSettlementClient(cfg),
+		AISkillVersion:                    NewAISkillVersionClient(cfg),
+		APIKey:                            NewAPIKeyClient(cfg),
+		Account:                           NewAccountClient(cfg),
+		AccountGroup:                      NewAccountGroupClient(cfg),
+		Announcement:                      NewAnnouncementClient(cfg),
+		AnnouncementRead:                  NewAnnouncementReadClient(cfg),
+		AuthIdentity:                      NewAuthIdentityClient(cfg),
+		AuthIdentityChannel:               NewAuthIdentityChannelClient(cfg),
+		ChannelMonitor:                    NewChannelMonitorClient(cfg),
+		ChannelMonitorDailyRollup:         NewChannelMonitorDailyRollupClient(cfg),
+		ChannelMonitorHistory:             NewChannelMonitorHistoryClient(cfg),
+		ChannelMonitorRequestTemplate:     NewChannelMonitorRequestTemplateClient(cfg),
+		ErrorPassthroughRule:              NewErrorPassthroughRuleClient(cfg),
+		Group:                             NewGroupClient(cfg),
+		IdempotencyRecord:                 NewIdempotencyRecordClient(cfg),
+		IdentityAdoptionDecision:          NewIdentityAdoptionDecisionClient(cfg),
+		Invoice:                           NewInvoiceClient(cfg),
+		InvoiceOrder:                      NewInvoiceOrderClient(cfg),
+		PaymentAuditLog:                   NewPaymentAuditLogClient(cfg),
+		PaymentOrder:                      NewPaymentOrderClient(cfg),
+		PaymentProviderInstance:           NewPaymentProviderInstanceClient(cfg),
+		PendingAuthSession:                NewPendingAuthSessionClient(cfg),
+		PromoCode:                         NewPromoCodeClient(cfg),
+		PromoCodeUsage:                    NewPromoCodeUsageClient(cfg),
+		Proxy:                             NewProxyClient(cfg),
+		RedeemCode:                        NewRedeemCodeClient(cfg),
+		SecuritySecret:                    NewSecuritySecretClient(cfg),
+		Setting:                           NewSettingClient(cfg),
+		SubscriptionPlan:                  NewSubscriptionPlanClient(cfg),
+		TLSFingerprintCaptureSample:       NewTLSFingerprintCaptureSampleClient(cfg),
+		TLSFingerprintCaptureSession:      NewTLSFingerprintCaptureSessionClient(cfg),
+		TLSFingerprintCaptureSessionEvent: NewTLSFingerprintCaptureSessionEventClient(cfg),
+		TLSFingerprintCaptureTask:         NewTLSFingerprintCaptureTaskClient(cfg),
+		TLSFingerprintProfile:             NewTLSFingerprintProfileClient(cfg),
+		TLSFingerprintRouter:              NewTLSFingerprintRouterClient(cfg),
+		UsageCleanupTask:                  NewUsageCleanupTaskClient(cfg),
+		UsageLog:                          NewUsageLogClient(cfg),
+		User:                              NewUserClient(cfg),
+		UserAllowedGroup:                  NewUserAllowedGroupClient(cfg),
+		UserAttributeDefinition:           NewUserAttributeDefinitionClient(cfg),
+		UserAttributeValue:                NewUserAttributeValueClient(cfg),
+		UserPlatformQuota:                 NewUserPlatformQuotaClient(cfg),
+		UserSubscription:                  NewUserSubscriptionClient(cfg),
 	}, nil
 }
 
@@ -510,6 +522,7 @@ func (c *Client) Use(hooks ...Hook) {
 		c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
 		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
 		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintCaptureSample,
+		c.TLSFingerprintCaptureSession, c.TLSFingerprintCaptureSessionEvent,
 		c.TLSFingerprintCaptureTask, c.TLSFingerprintProfile, c.TLSFingerprintRouter,
 		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
 		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
@@ -534,6 +547,7 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
 		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
 		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintCaptureSample,
+		c.TLSFingerprintCaptureSession, c.TLSFingerprintCaptureSessionEvent,
 		c.TLSFingerprintCaptureTask, c.TLSFingerprintProfile, c.TLSFingerprintRouter,
 		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
 		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
@@ -632,6 +646,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.SubscriptionPlan.mutate(ctx, m)
 	case *TLSFingerprintCaptureSampleMutation:
 		return c.TLSFingerprintCaptureSample.mutate(ctx, m)
+	case *TLSFingerprintCaptureSessionMutation:
+		return c.TLSFingerprintCaptureSession.mutate(ctx, m)
+	case *TLSFingerprintCaptureSessionEventMutation:
+		return c.TLSFingerprintCaptureSessionEvent.mutate(ctx, m)
 	case *TLSFingerprintCaptureTaskMutation:
 		return c.TLSFingerprintCaptureTask.mutate(ctx, m)
 	case *TLSFingerprintProfileMutation:
@@ -7755,6 +7773,272 @@ func (c *TLSFingerprintCaptureSampleClient) mutate(ctx context.Context, m *TLSFi
 	}
 }
 
+// TLSFingerprintCaptureSessionClient is a client for the TLSFingerprintCaptureSession schema.
+type TLSFingerprintCaptureSessionClient struct {
+	config
+}
+
+// NewTLSFingerprintCaptureSessionClient returns a client for the TLSFingerprintCaptureSession from the given config.
+func NewTLSFingerprintCaptureSessionClient(c config) *TLSFingerprintCaptureSessionClient {
+	return &TLSFingerprintCaptureSessionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `tlsfingerprintcapturesession.Hooks(f(g(h())))`.
+func (c *TLSFingerprintCaptureSessionClient) Use(hooks ...Hook) {
+	c.hooks.TLSFingerprintCaptureSession = append(c.hooks.TLSFingerprintCaptureSession, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `tlsfingerprintcapturesession.Intercept(f(g(h())))`.
+func (c *TLSFingerprintCaptureSessionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TLSFingerprintCaptureSession = append(c.inters.TLSFingerprintCaptureSession, interceptors...)
+}
+
+// Create returns a builder for creating a TLSFingerprintCaptureSession entity.
+func (c *TLSFingerprintCaptureSessionClient) Create() *TLSFingerprintCaptureSessionCreate {
+	mutation := newTLSFingerprintCaptureSessionMutation(c.config, OpCreate)
+	return &TLSFingerprintCaptureSessionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TLSFingerprintCaptureSession entities.
+func (c *TLSFingerprintCaptureSessionClient) CreateBulk(builders ...*TLSFingerprintCaptureSessionCreate) *TLSFingerprintCaptureSessionCreateBulk {
+	return &TLSFingerprintCaptureSessionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TLSFingerprintCaptureSessionClient) MapCreateBulk(slice any, setFunc func(*TLSFingerprintCaptureSessionCreate, int)) *TLSFingerprintCaptureSessionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TLSFingerprintCaptureSessionCreateBulk{err: fmt.Errorf("calling to TLSFingerprintCaptureSessionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TLSFingerprintCaptureSessionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TLSFingerprintCaptureSessionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TLSFingerprintCaptureSession.
+func (c *TLSFingerprintCaptureSessionClient) Update() *TLSFingerprintCaptureSessionUpdate {
+	mutation := newTLSFingerprintCaptureSessionMutation(c.config, OpUpdate)
+	return &TLSFingerprintCaptureSessionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TLSFingerprintCaptureSessionClient) UpdateOne(_m *TLSFingerprintCaptureSession) *TLSFingerprintCaptureSessionUpdateOne {
+	mutation := newTLSFingerprintCaptureSessionMutation(c.config, OpUpdateOne, withTLSFingerprintCaptureSession(_m))
+	return &TLSFingerprintCaptureSessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TLSFingerprintCaptureSessionClient) UpdateOneID(id int64) *TLSFingerprintCaptureSessionUpdateOne {
+	mutation := newTLSFingerprintCaptureSessionMutation(c.config, OpUpdateOne, withTLSFingerprintCaptureSessionID(id))
+	return &TLSFingerprintCaptureSessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TLSFingerprintCaptureSession.
+func (c *TLSFingerprintCaptureSessionClient) Delete() *TLSFingerprintCaptureSessionDelete {
+	mutation := newTLSFingerprintCaptureSessionMutation(c.config, OpDelete)
+	return &TLSFingerprintCaptureSessionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TLSFingerprintCaptureSessionClient) DeleteOne(_m *TLSFingerprintCaptureSession) *TLSFingerprintCaptureSessionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TLSFingerprintCaptureSessionClient) DeleteOneID(id int64) *TLSFingerprintCaptureSessionDeleteOne {
+	builder := c.Delete().Where(tlsfingerprintcapturesession.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TLSFingerprintCaptureSessionDeleteOne{builder}
+}
+
+// Query returns a query builder for TLSFingerprintCaptureSession.
+func (c *TLSFingerprintCaptureSessionClient) Query() *TLSFingerprintCaptureSessionQuery {
+	return &TLSFingerprintCaptureSessionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTLSFingerprintCaptureSession},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TLSFingerprintCaptureSession entity by its id.
+func (c *TLSFingerprintCaptureSessionClient) Get(ctx context.Context, id int64) (*TLSFingerprintCaptureSession, error) {
+	return c.Query().Where(tlsfingerprintcapturesession.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TLSFingerprintCaptureSessionClient) GetX(ctx context.Context, id int64) *TLSFingerprintCaptureSession {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TLSFingerprintCaptureSessionClient) Hooks() []Hook {
+	return c.hooks.TLSFingerprintCaptureSession
+}
+
+// Interceptors returns the client interceptors.
+func (c *TLSFingerprintCaptureSessionClient) Interceptors() []Interceptor {
+	return c.inters.TLSFingerprintCaptureSession
+}
+
+func (c *TLSFingerprintCaptureSessionClient) mutate(ctx context.Context, m *TLSFingerprintCaptureSessionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TLSFingerprintCaptureSessionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TLSFingerprintCaptureSessionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TLSFingerprintCaptureSessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TLSFingerprintCaptureSessionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TLSFingerprintCaptureSession mutation op: %q", m.Op())
+	}
+}
+
+// TLSFingerprintCaptureSessionEventClient is a client for the TLSFingerprintCaptureSessionEvent schema.
+type TLSFingerprintCaptureSessionEventClient struct {
+	config
+}
+
+// NewTLSFingerprintCaptureSessionEventClient returns a client for the TLSFingerprintCaptureSessionEvent from the given config.
+func NewTLSFingerprintCaptureSessionEventClient(c config) *TLSFingerprintCaptureSessionEventClient {
+	return &TLSFingerprintCaptureSessionEventClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `tlsfingerprintcapturesessionevent.Hooks(f(g(h())))`.
+func (c *TLSFingerprintCaptureSessionEventClient) Use(hooks ...Hook) {
+	c.hooks.TLSFingerprintCaptureSessionEvent = append(c.hooks.TLSFingerprintCaptureSessionEvent, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `tlsfingerprintcapturesessionevent.Intercept(f(g(h())))`.
+func (c *TLSFingerprintCaptureSessionEventClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TLSFingerprintCaptureSessionEvent = append(c.inters.TLSFingerprintCaptureSessionEvent, interceptors...)
+}
+
+// Create returns a builder for creating a TLSFingerprintCaptureSessionEvent entity.
+func (c *TLSFingerprintCaptureSessionEventClient) Create() *TLSFingerprintCaptureSessionEventCreate {
+	mutation := newTLSFingerprintCaptureSessionEventMutation(c.config, OpCreate)
+	return &TLSFingerprintCaptureSessionEventCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TLSFingerprintCaptureSessionEvent entities.
+func (c *TLSFingerprintCaptureSessionEventClient) CreateBulk(builders ...*TLSFingerprintCaptureSessionEventCreate) *TLSFingerprintCaptureSessionEventCreateBulk {
+	return &TLSFingerprintCaptureSessionEventCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TLSFingerprintCaptureSessionEventClient) MapCreateBulk(slice any, setFunc func(*TLSFingerprintCaptureSessionEventCreate, int)) *TLSFingerprintCaptureSessionEventCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TLSFingerprintCaptureSessionEventCreateBulk{err: fmt.Errorf("calling to TLSFingerprintCaptureSessionEventClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TLSFingerprintCaptureSessionEventCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TLSFingerprintCaptureSessionEventCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TLSFingerprintCaptureSessionEvent.
+func (c *TLSFingerprintCaptureSessionEventClient) Update() *TLSFingerprintCaptureSessionEventUpdate {
+	mutation := newTLSFingerprintCaptureSessionEventMutation(c.config, OpUpdate)
+	return &TLSFingerprintCaptureSessionEventUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TLSFingerprintCaptureSessionEventClient) UpdateOne(_m *TLSFingerprintCaptureSessionEvent) *TLSFingerprintCaptureSessionEventUpdateOne {
+	mutation := newTLSFingerprintCaptureSessionEventMutation(c.config, OpUpdateOne, withTLSFingerprintCaptureSessionEvent(_m))
+	return &TLSFingerprintCaptureSessionEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TLSFingerprintCaptureSessionEventClient) UpdateOneID(id int64) *TLSFingerprintCaptureSessionEventUpdateOne {
+	mutation := newTLSFingerprintCaptureSessionEventMutation(c.config, OpUpdateOne, withTLSFingerprintCaptureSessionEventID(id))
+	return &TLSFingerprintCaptureSessionEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TLSFingerprintCaptureSessionEvent.
+func (c *TLSFingerprintCaptureSessionEventClient) Delete() *TLSFingerprintCaptureSessionEventDelete {
+	mutation := newTLSFingerprintCaptureSessionEventMutation(c.config, OpDelete)
+	return &TLSFingerprintCaptureSessionEventDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TLSFingerprintCaptureSessionEventClient) DeleteOne(_m *TLSFingerprintCaptureSessionEvent) *TLSFingerprintCaptureSessionEventDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TLSFingerprintCaptureSessionEventClient) DeleteOneID(id int64) *TLSFingerprintCaptureSessionEventDeleteOne {
+	builder := c.Delete().Where(tlsfingerprintcapturesessionevent.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TLSFingerprintCaptureSessionEventDeleteOne{builder}
+}
+
+// Query returns a query builder for TLSFingerprintCaptureSessionEvent.
+func (c *TLSFingerprintCaptureSessionEventClient) Query() *TLSFingerprintCaptureSessionEventQuery {
+	return &TLSFingerprintCaptureSessionEventQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTLSFingerprintCaptureSessionEvent},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TLSFingerprintCaptureSessionEvent entity by its id.
+func (c *TLSFingerprintCaptureSessionEventClient) Get(ctx context.Context, id int64) (*TLSFingerprintCaptureSessionEvent, error) {
+	return c.Query().Where(tlsfingerprintcapturesessionevent.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TLSFingerprintCaptureSessionEventClient) GetX(ctx context.Context, id int64) *TLSFingerprintCaptureSessionEvent {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TLSFingerprintCaptureSessionEventClient) Hooks() []Hook {
+	return c.hooks.TLSFingerprintCaptureSessionEvent
+}
+
+// Interceptors returns the client interceptors.
+func (c *TLSFingerprintCaptureSessionEventClient) Interceptors() []Interceptor {
+	return c.inters.TLSFingerprintCaptureSessionEvent
+}
+
+func (c *TLSFingerprintCaptureSessionEventClient) mutate(ctx context.Context, m *TLSFingerprintCaptureSessionEventMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TLSFingerprintCaptureSessionEventCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TLSFingerprintCaptureSessionEventUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TLSFingerprintCaptureSessionEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TLSFingerprintCaptureSessionEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TLSFingerprintCaptureSessionEvent mutation op: %q", m.Op())
+	}
+}
+
 // TLSFingerprintCaptureTaskClient is a client for the TLSFingerprintCaptureTask schema.
 type TLSFingerprintCaptureTaskClient struct {
 	config
@@ -9797,7 +10081,8 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, Invoice, InvoiceOrder,
 		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
 		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
-		SubscriptionPlan, TLSFingerprintCaptureSample, TLSFingerprintCaptureTask,
+		SubscriptionPlan, TLSFingerprintCaptureSample, TLSFingerprintCaptureSession,
+		TLSFingerprintCaptureSessionEvent, TLSFingerprintCaptureTask,
 		TLSFingerprintProfile, TLSFingerprintRouter, UsageCleanupTask, UsageLog, User,
 		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
 		UserPlatformQuota, UserSubscription []ent.Hook
@@ -9812,7 +10097,8 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, Invoice, InvoiceOrder,
 		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
 		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
-		SubscriptionPlan, TLSFingerprintCaptureSample, TLSFingerprintCaptureTask,
+		SubscriptionPlan, TLSFingerprintCaptureSample, TLSFingerprintCaptureSession,
+		TLSFingerprintCaptureSessionEvent, TLSFingerprintCaptureTask,
 		TLSFingerprintProfile, TLSFingerprintRouter, UsageCleanupTask, UsageLog, User,
 		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
 		UserPlatformQuota, UserSubscription []ent.Interceptor

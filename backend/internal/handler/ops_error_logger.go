@@ -568,7 +568,7 @@ func releaseOpsCaptureWriter(w *opsCaptureWriter) {
 }
 
 func (w *opsCaptureWriter) Write(b []byte) (int, error) {
-	if w.Status() >= 400 && w.limit > 0 && w.buf.Len() < w.limit {
+	if shouldCaptureOpsResponseChunkBytes(b, w.Status()) && w.limit > 0 && w.buf.Len() < w.limit {
 		remaining := w.limit - w.buf.Len()
 		if len(b) > remaining {
 			_, _ = w.buf.Write(b[:remaining])
@@ -580,7 +580,7 @@ func (w *opsCaptureWriter) Write(b []byte) (int, error) {
 }
 
 func (w *opsCaptureWriter) WriteString(s string) (int, error) {
-	if w.Status() >= 400 && w.limit > 0 && w.buf.Len() < w.limit {
+	if shouldCaptureOpsResponseChunkString(s, w.Status()) && w.limit > 0 && w.buf.Len() < w.limit {
 		remaining := w.limit - w.buf.Len()
 		if len(s) > remaining {
 			_, _ = w.buf.WriteString(s[:remaining])
@@ -589,6 +589,24 @@ func (w *opsCaptureWriter) WriteString(s string) (int, error) {
 		}
 	}
 	return w.ResponseWriter.WriteString(s)
+}
+
+func shouldCaptureOpsResponseChunkBytes(b []byte, status int) bool {
+	if status >= 400 {
+		return true
+	}
+	return bytes.Contains(b, []byte("event: response.failed\n")) ||
+		bytes.Contains(b, []byte("event: error\n")) ||
+		bytes.Contains(b, []byte(`data: {"type":"error"`))
+}
+
+func shouldCaptureOpsResponseChunkString(s string, status int) bool {
+	if status >= 400 {
+		return true
+	}
+	return strings.Contains(s, "event: response.failed\n") ||
+		strings.Contains(s, "event: error\n") ||
+		strings.Contains(s, `data: {"type":"error"`)
 }
 
 // OpsErrorLoggerMiddleware records error responses (status >= 400) into ops_error_logs.
@@ -624,46 +642,51 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 
 		status := c.Writer.Status()
 		if status < 400 {
-			// Even when the client request succeeds, we still want to persist upstream error attempts
-			// (retries/failover) so ops can observe upstream instability that gets "covered" by retries.
-			var events []*service.OpsUpstreamErrorEvent
-			if v, ok := c.Get(service.OpsUpstreamErrorsKey); ok {
-				if arr, ok := v.([]*service.OpsUpstreamErrorEvent); ok && len(arr) > 0 {
-					events = arr
-				}
-			}
-			// Also accept single upstream fields set by gateway services (rare for successful requests).
-			hasUpstreamContext := len(events) > 0
-			if !hasUpstreamContext {
-				if v, ok := c.Get(service.OpsUpstreamStatusCodeKey); ok {
-					switch t := v.(type) {
-					case int:
-						hasUpstreamContext = t > 0
-					case int64:
-						hasUpstreamContext = t > 0
+			body := w.buf.Bytes()
+			parsed := parseOpsErrorResponse(body)
+			if parsed.StreamFailure {
+				status = inferStreamFailureStatus(c, parsed)
+			} else {
+				// Even when the client request succeeds, we still want to persist upstream error attempts
+				// (retries/failover) so ops can observe upstream instability that gets "covered" by retries.
+				var events []*service.OpsUpstreamErrorEvent
+				if v, ok := c.Get(service.OpsUpstreamErrorsKey); ok {
+					if arr, ok := v.([]*service.OpsUpstreamErrorEvent); ok && len(arr) > 0 {
+						events = arr
 					}
 				}
-			}
-			if !hasUpstreamContext {
-				if v, ok := c.Get(service.OpsUpstreamErrorMessageKey); ok {
-					if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-						hasUpstreamContext = true
+				// Also accept single upstream fields set by gateway services (rare for successful requests).
+				hasUpstreamContext := len(events) > 0
+				if !hasUpstreamContext {
+					if v, ok := c.Get(service.OpsUpstreamStatusCodeKey); ok {
+						switch t := v.(type) {
+						case int:
+							hasUpstreamContext = t > 0
+						case int64:
+							hasUpstreamContext = t > 0
+						}
 					}
 				}
-			}
-			if !hasUpstreamContext {
-				if v, ok := c.Get(service.OpsUpstreamErrorDetailKey); ok {
-					if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-						hasUpstreamContext = true
+				if !hasUpstreamContext {
+					if v, ok := c.Get(service.OpsUpstreamErrorMessageKey); ok {
+						if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+							hasUpstreamContext = true
+						}
 					}
 				}
-			}
-			if !hasUpstreamContext {
-				return
-			}
+				if !hasUpstreamContext {
+					if v, ok := c.Get(service.OpsUpstreamErrorDetailKey); ok {
+						if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+							hasUpstreamContext = true
+						}
+					}
+				}
+				if !hasUpstreamContext {
+					return
+				}
 
-			apiKey := getOpsAPIKey(c)
-			clientRequestID, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string)
+				apiKey := getOpsAPIKey(c)
+				clientRequestID, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string)
 
 			model, _ := c.Get(opsModelKey)
 			streamV, _ := c.Get(opsStreamKey)
@@ -754,10 +777,10 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 				}
 			}
 
-			// If we still have nothing meaningful, skip.
-			if upstreamStatusCode == nil && upstreamErrorMessage == nil && upstreamErrorDetail == nil && len(events) == 0 {
-				return
-			}
+				// If we still have nothing meaningful, skip.
+				if upstreamStatusCode == nil && upstreamErrorMessage == nil && upstreamErrorDetail == nil && len(events) == 0 {
+					return
+				}
 
 			effectiveUpstreamStatus := 0
 			if upstreamStatusCode != nil {
@@ -879,8 +902,9 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 				}
 			}
 
-			enqueueOpsErrorLog(ops, entry)
-			return
+				enqueueOpsErrorLog(ops, entry)
+				return
+			}
 		}
 
 		body := w.buf.Bytes()
@@ -1046,6 +1070,25 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 					}
 				}
 			}
+			// Streamed Responses/OpenAI failures can already carry the upstream-visible
+			// error in the captured SSE body even when service-layer context still holds
+			// a generic fallback like "Upstream transport error". Prefer the parsed SSE
+			// message/type for Ops enrichment so the admin UI shows the real upstream
+			// cause for /v1/responses stream failures.
+			if parsed.StreamFailure {
+				if msg := strings.TrimSpace(parsed.Message); msg != "" {
+					if entry.UpstreamErrorMessage == nil || strings.EqualFold(strings.TrimSpace(*entry.UpstreamErrorMessage), "Upstream transport error") {
+						msgCopy := msg
+						entry.UpstreamErrorMessage = &msgCopy
+					}
+				}
+				if entry.UpstreamStatusCode == nil {
+					if inferred := inferStreamFailureStatus(c, parsed); inferred >= 400 {
+						code := inferred
+						entry.UpstreamStatusCode = &code
+					}
+				}
+			}
 		}
 
 		if apiKey != nil {
@@ -1160,11 +1203,107 @@ type parsedOpsError struct {
 	ErrorType string
 	Message   string
 	Code      string
+	StreamFailure bool
 }
 
 func parseOpsErrorResponse(body []byte) parsedOpsError {
 	if len(body) == 0 {
 		return parsedOpsError{}
+	}
+
+	trimmed := strings.TrimSpace(string(body))
+	if strings.HasPrefix(trimmed, "event: response.failed\n") {
+		dataPrefix := "data: "
+		idx := strings.Index(trimmed, "\n"+dataPrefix)
+		if idx < 0 {
+			idx = strings.Index(trimmed, dataPrefix)
+			if idx != 0 {
+				idx = -1
+			}
+		} else {
+			idx++
+		}
+		if idx >= 0 {
+			jsonStr := strings.TrimSpace(strings.TrimPrefix(trimmed[idx:], dataPrefix))
+			var evt map[string]any
+			if err := json.Unmarshal([]byte(jsonStr), &evt); err == nil {
+				if errObj, ok := evt["error"].(map[string]any); ok {
+					t, _ := errObj["type"].(string)
+					msg, _ := errObj["message"].(string)
+					code, _ := errObj["code"].(string)
+					if t == "" {
+						t = inferResponsesFailedOpsErrorType(code)
+					}
+					if t == "" {
+						t = "upstream_error"
+					}
+					return parsedOpsError{
+						ErrorType:     t,
+						Message:       msg,
+						Code:          code,
+						StreamFailure: true,
+					}
+				}
+				if resp, ok := evt["response"].(map[string]any); ok {
+					if errObj, ok := resp["error"].(map[string]any); ok {
+						t, _ := errObj["type"].(string)
+						msg, _ := errObj["message"].(string)
+						code, _ := errObj["code"].(string)
+						if t == "" {
+							t = inferResponsesFailedOpsErrorType(code)
+						}
+						if t == "" {
+							t = "upstream_error"
+						}
+						return parsedOpsError{
+							ErrorType:     t,
+							Message:       msg,
+							Code:          code,
+							StreamFailure: true,
+						}
+					}
+				}
+			}
+		}
+		return parsedOpsError{
+			ErrorType:     "upstream_error",
+			Message:       truncateString(trimmed, 1024),
+			StreamFailure: true,
+		}
+	}
+
+	if strings.HasPrefix(trimmed, "event: error\n") || strings.HasPrefix(trimmed, `data: {"type":"error"`) {
+		line := trimmed
+		if strings.HasPrefix(line, "event: error\n") {
+			line = strings.TrimPrefix(line, "event: error\n")
+		}
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "data: ") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "data: "))
+		}
+		if idx := strings.Index(line, "\n\n"); idx >= 0 {
+			line = line[:idx]
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err == nil {
+			if errObj, ok := m["error"].(map[string]any); ok {
+				t, _ := errObj["type"].(string)
+				msg, _ := errObj["message"].(string)
+				if t == "" {
+					t = "api_error"
+				}
+				return parsedOpsError{
+					ErrorType:     t,
+					Message:       msg,
+					StreamFailure: true,
+				}
+			}
+		}
+		return parsedOpsError{
+			ErrorType:     "api_error",
+			Message:       truncateString(trimmed, 1024),
+			StreamFailure: true,
+		}
 	}
 
 	// Fast path: attempt to decode into a generic map.
@@ -1499,6 +1638,68 @@ func hasOpsUpstreamErrorContext(c *gin.Context) bool {
 		}
 	}
 	return false
+}
+
+func inferResponsesFailedOpsErrorType(code string) string {
+	switch strings.TrimSpace(code) {
+	case "rate_limit_exceeded":
+		return "rate_limit_error"
+	case "permission_denied":
+		return "permission_error"
+	case "invalid_request":
+		return "invalid_request_error"
+	case "server_is_overloaded":
+		return "overloaded_error"
+	case "authentication_failed":
+		return "authentication_error"
+	default:
+		return ""
+	}
+}
+
+func inferStreamFailureStatus(c *gin.Context, parsed parsedOpsError) int {
+	if c != nil {
+		if v, ok := c.Get(service.OpsUpstreamStatusCodeKey); ok {
+			switch code := v.(type) {
+			case int:
+				if code >= 400 {
+					return code
+				}
+			case int64:
+				if code >= 400 {
+					return int(code)
+				}
+			}
+		}
+	}
+
+	switch strings.TrimSpace(parsed.Code) {
+	case "rate_limit_exceeded":
+		return 429
+	case "permission_denied":
+		return 403
+	case "invalid_request":
+		return 400
+	case "server_is_overloaded":
+		return 503
+	case "authentication_failed":
+		return 401
+	}
+
+	switch strings.TrimSpace(parsed.ErrorType) {
+	case "rate_limit_error":
+		return 429
+	case "permission_error", "forbidden_error":
+		return 403
+	case "authentication_error":
+		return 401
+	case "invalid_request_error":
+		return 400
+	case "overloaded_error":
+		return 503
+	default:
+		return 502
+	}
 }
 
 func classifyOpsErrorOwner(phase, errType, message, code string) string {

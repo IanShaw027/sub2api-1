@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -118,8 +119,12 @@ func WriteGatewayDebugTimelineEvent(settingService *SettingService, c *gin.Conte
 	}
 	cleanupGatewayDebugTimelineLocked(dir, retentionDays, now)
 	if maxSizeBytes > 0 {
+		pendingWriteBytes := int64(len(line) + 1)
 		sizeBytes := gatewayDebugTimelineDirSize(dir)
-		if sizeBytes >= maxSizeBytes {
+		if sizeBytes+pendingWriteBytes > maxSizeBytes {
+			sizeBytes = cleanupGatewayDebugTimelineSizePressureLocked(dir, maxSizeBytes, pendingWriteBytes)
+		}
+		if sizeBytes+pendingWriteBytes > maxSizeBytes {
 			gatewayDebugTimelineState.disabled = true
 			if !gatewayDebugTimelineState.warnedFull {
 				gatewayDebugTimelineState.warnedFull = true
@@ -176,27 +181,105 @@ func ensureGatewayDebugTimelineDirLocked(dir string) error {
 	return nil
 }
 
+type gatewayDebugTimelineFile struct {
+	name string
+	day  time.Time
+	size int64
+}
+
 func gatewayDebugTimelineDirSize(dir string) int64 {
-	var total int64
-	entries, err := os.ReadDir(dir)
+	files, err := listGatewayDebugTimelineFiles(dir)
 	if err != nil {
 		return 0
 	}
+	var total int64
+	for _, file := range files {
+		total += file.size
+	}
+	return total
+}
+
+func cleanupGatewayDebugTimelineSizePressureLocked(dir string, maxSizeBytes, pendingWriteBytes int64) int64 {
+	files, err := listGatewayDebugTimelineFiles(dir)
+	if err != nil {
+		return 0
+	}
+	var sizeBytes int64
+	for _, file := range files {
+		sizeBytes += file.size
+	}
+	if sizeBytes+pendingWriteBytes <= maxSizeBytes {
+		return sizeBytes
+	}
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].day.Equal(files[j].day) {
+			return files[i].name < files[j].name
+		}
+		return files[i].day.Before(files[j].day)
+	})
+	for _, file := range files {
+		if sizeBytes+pendingWriteBytes <= maxSizeBytes {
+			break
+		}
+		if err := os.Remove(filepath.Join(dir, file.name)); err != nil {
+			logger.LegacyPrintf(
+				"service.gateway_debug_timeline",
+				"size-pressure cleanup remove failed file=%s err=%v",
+				file.name,
+				err,
+			)
+			continue
+		}
+		sizeBytes -= file.size
+	}
+	return gatewayDebugTimelineDirSize(dir)
+}
+
+func listGatewayDebugTimelineFiles(dir string) ([]gatewayDebugTimelineFile, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]gatewayDebugTimelineFile, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
-		name := entry.Name()
-		if !strings.HasPrefix(name, gatewayDebugTimelineFilenamePrefix) || !strings.HasSuffix(name, ".log") {
+		day, ok := parseGatewayDebugTimelineFileDay(entry.Name())
+		if !ok {
 			continue
 		}
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
-		total += info.Size()
+		files = append(files, gatewayDebugTimelineFile{
+			name: entry.Name(),
+			day:  day,
+			size: info.Size(),
+		})
 	}
-	return total
+	return files, nil
+}
+
+func parseGatewayDebugTimelineFileDay(name string) (time.Time, bool) {
+	if !strings.HasPrefix(name, gatewayDebugTimelineFilenamePrefix) {
+		return time.Time{}, false
+	}
+	datePart := strings.TrimPrefix(name, gatewayDebugTimelineFilenamePrefix)
+	switch {
+	case strings.HasSuffix(datePart, ".log.gz"):
+		datePart = strings.TrimSuffix(datePart, ".log.gz")
+	case strings.HasSuffix(datePart, ".log"):
+		datePart = strings.TrimSuffix(datePart, ".log")
+	default:
+		return time.Time{}, false
+	}
+	day, err := time.Parse("2006-01-02", datePart)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return day, true
 }
 
 func cleanupGatewayDebugTimelineLocked(dir string, retentionDays int, now time.Time) {

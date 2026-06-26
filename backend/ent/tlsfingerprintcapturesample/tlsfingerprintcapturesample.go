@@ -19,20 +19,56 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// FieldTaskID holds the string denoting the task_id field in the database.
 	FieldTaskID = "task_id"
+	// FieldSessionID holds the string denoting the session_id field in the database.
+	FieldSessionID = "session_id"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
+	// FieldTransport holds the string denoting the transport field in the database.
+	FieldTransport = "transport"
 	// FieldUserAgent holds the string denoting the user_agent field in the database.
 	FieldUserAgent = "user_agent"
 	// FieldOriginator holds the string denoting the originator field in the database.
 	FieldOriginator = "originator"
 	// FieldFingerprintHash holds the string denoting the fingerprint_hash field in the database.
 	FieldFingerprintHash = "fingerprint_hash"
-	// FieldProfile holds the string denoting the profile field in the database.
-	FieldProfile = "profile"
+	// FieldReplayHash holds the string denoting the replay_hash field in the database.
+	FieldReplayHash = "replay_hash"
+	// FieldJa3Raw holds the string denoting the ja3_raw field in the database.
+	FieldJa3Raw = "ja3_raw"
+	// FieldJa3Hash holds the string denoting the ja3_hash field in the database.
+	FieldJa3Hash = "ja3_hash"
+	// FieldJa4 holds the string denoting the ja4 field in the database.
+	FieldJa4 = "ja4"
+	// FieldRequestPath holds the string denoting the request_path field in the database.
+	FieldRequestPath = "request_path"
+	// FieldHTTPMethod holds the string denoting the http_method field in the database.
+	FieldHTTPMethod = "http_method"
+	// FieldIsWebsocket holds the string denoting the is_websocket field in the database.
+	FieldIsWebsocket = "is_websocket"
+	// FieldWebsocketProtocol holds the string denoting the websocket_protocol field in the database.
+	FieldWebsocketProtocol = "websocket_protocol"
+	// FieldClientType holds the string denoting the client_type field in the database.
+	FieldClientType = "client_type"
+	// FieldModel holds the string denoting the model field in the database.
+	FieldModel = "model"
+	// FieldRequestKind holds the string denoting the request_kind field in the database.
+	FieldRequestKind = "request_kind"
+	// FieldStreaming holds the string denoting the streaming field in the database.
+	FieldStreaming = "streaming"
+	// FieldResponseMode holds the string denoting the response_mode field in the database.
+	FieldResponseMode = "response_mode"
+	// FieldHttp2Fingerprint holds the string denoting the http2_fingerprint field in the database.
+	FieldHttp2Fingerprint = "http2_fingerprint"
+	// FieldStainlessMetadata holds the string denoting the stainless_metadata field in the database.
+	FieldStainlessMetadata = "stainless_metadata"
+	// FieldReplayProfile holds the string denoting the replay_profile field in the database.
+	FieldReplayProfile = "replay_profile"
 	// FieldRawPayload holds the string denoting the raw_payload field in the database.
 	FieldRawPayload = "raw_payload"
 	// FieldRawClientHello holds the string denoting the raw_client_hello field in the database.
 	FieldRawClientHello = "raw_client_hello"
+	// FieldCapturedAt holds the string denoting the captured_at field in the database.
+	FieldCapturedAt = "captured_at"
 	// Table holds the table name of the tlsfingerprintcapturesample in the database.
 	Table = "tls_fingerprint_capture_samples"
 )
@@ -43,13 +79,31 @@ var Columns = []string{
 	FieldCreatedAt,
 	FieldUpdatedAt,
 	FieldTaskID,
+	FieldSessionID,
 	FieldPlatform,
+	FieldTransport,
 	FieldUserAgent,
 	FieldOriginator,
 	FieldFingerprintHash,
-	FieldProfile,
+	FieldReplayHash,
+	FieldJa3Raw,
+	FieldJa3Hash,
+	FieldJa4,
+	FieldRequestPath,
+	FieldHTTPMethod,
+	FieldIsWebsocket,
+	FieldWebsocketProtocol,
+	FieldClientType,
+	FieldModel,
+	FieldRequestKind,
+	FieldStreaming,
+	FieldResponseMode,
+	FieldHttp2Fingerprint,
+	FieldStainlessMetadata,
+	FieldReplayProfile,
 	FieldRawPayload,
 	FieldRawClientHello,
+	FieldCapturedAt,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -69,10 +123,18 @@ var (
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
+	// DefaultSessionID holds the default value on creation for the "session_id" field.
+	DefaultSessionID string
+	// SessionIDValidator is a validator for the "session_id" field. It is called by the builders before save.
+	SessionIDValidator func(string) error
 	// DefaultPlatform holds the default value on creation for the "platform" field.
 	DefaultPlatform string
 	// PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
 	PlatformValidator func(string) error
+	// DefaultTransport holds the default value on creation for the "transport" field.
+	DefaultTransport string
+	// TransportValidator is a validator for the "transport" field. It is called by the builders before save.
+	TransportValidator func(string) error
 	// DefaultUserAgent holds the default value on creation for the "user_agent" field.
 	DefaultUserAgent string
 	// DefaultOriginator holds the default value on creation for the "originator" field.
@@ -81,6 +143,54 @@ var (
 	OriginatorValidator func(string) error
 	// FingerprintHashValidator is a validator for the "fingerprint_hash" field. It is called by the builders before save.
 	FingerprintHashValidator func(string) error
+	// DefaultReplayHash holds the default value on creation for the "replay_hash" field.
+	DefaultReplayHash string
+	// ReplayHashValidator is a validator for the "replay_hash" field. It is called by the builders before save.
+	ReplayHashValidator func(string) error
+	// DefaultJa3Raw holds the default value on creation for the "ja3_raw" field.
+	DefaultJa3Raw string
+	// DefaultJa3Hash holds the default value on creation for the "ja3_hash" field.
+	DefaultJa3Hash string
+	// Ja3HashValidator is a validator for the "ja3_hash" field. It is called by the builders before save.
+	Ja3HashValidator func(string) error
+	// DefaultJa4 holds the default value on creation for the "ja4" field.
+	DefaultJa4 string
+	// Ja4Validator is a validator for the "ja4" field. It is called by the builders before save.
+	Ja4Validator func(string) error
+	// DefaultRequestPath holds the default value on creation for the "request_path" field.
+	DefaultRequestPath string
+	// DefaultHTTPMethod holds the default value on creation for the "http_method" field.
+	DefaultHTTPMethod string
+	// HTTPMethodValidator is a validator for the "http_method" field. It is called by the builders before save.
+	HTTPMethodValidator func(string) error
+	// DefaultIsWebsocket holds the default value on creation for the "is_websocket" field.
+	DefaultIsWebsocket bool
+	// DefaultWebsocketProtocol holds the default value on creation for the "websocket_protocol" field.
+	DefaultWebsocketProtocol string
+	// WebsocketProtocolValidator is a validator for the "websocket_protocol" field. It is called by the builders before save.
+	WebsocketProtocolValidator func(string) error
+	// DefaultClientType holds the default value on creation for the "client_type" field.
+	DefaultClientType string
+	// ClientTypeValidator is a validator for the "client_type" field. It is called by the builders before save.
+	ClientTypeValidator func(string) error
+	// DefaultModel holds the default value on creation for the "model" field.
+	DefaultModel string
+	// ModelValidator is a validator for the "model" field. It is called by the builders before save.
+	ModelValidator func(string) error
+	// DefaultRequestKind holds the default value on creation for the "request_kind" field.
+	DefaultRequestKind string
+	// RequestKindValidator is a validator for the "request_kind" field. It is called by the builders before save.
+	RequestKindValidator func(string) error
+	// DefaultStreaming holds the default value on creation for the "streaming" field.
+	DefaultStreaming bool
+	// DefaultResponseMode holds the default value on creation for the "response_mode" field.
+	DefaultResponseMode string
+	// ResponseModeValidator is a validator for the "response_mode" field. It is called by the builders before save.
+	ResponseModeValidator func(string) error
+	// DefaultHttp2Fingerprint holds the default value on creation for the "http2_fingerprint" field.
+	DefaultHttp2Fingerprint string
+	// DefaultStainlessMetadata holds the default value on creation for the "stainless_metadata" field.
+	DefaultStainlessMetadata func() map[string]interface{}
 	// DefaultRawPayload holds the default value on creation for the "raw_payload" field.
 	DefaultRawPayload string
 )
@@ -108,9 +218,19 @@ func ByTaskID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTaskID, opts...).ToFunc()
 }
 
+// BySessionID orders the results by the session_id field.
+func BySessionID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSessionID, opts...).ToFunc()
+}
+
 // ByPlatform orders the results by the platform field.
 func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPlatform, opts...).ToFunc()
+}
+
+// ByTransport orders the results by the transport field.
+func ByTransport(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTransport, opts...).ToFunc()
 }
 
 // ByUserAgent orders the results by the user_agent field.
@@ -128,7 +248,82 @@ func ByFingerprintHash(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFingerprintHash, opts...).ToFunc()
 }
 
+// ByReplayHash orders the results by the replay_hash field.
+func ByReplayHash(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldReplayHash, opts...).ToFunc()
+}
+
+// ByJa3Raw orders the results by the ja3_raw field.
+func ByJa3Raw(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldJa3Raw, opts...).ToFunc()
+}
+
+// ByJa3Hash orders the results by the ja3_hash field.
+func ByJa3Hash(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldJa3Hash, opts...).ToFunc()
+}
+
+// ByJa4 orders the results by the ja4 field.
+func ByJa4(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldJa4, opts...).ToFunc()
+}
+
+// ByRequestPath orders the results by the request_path field.
+func ByRequestPath(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRequestPath, opts...).ToFunc()
+}
+
+// ByHTTPMethod orders the results by the http_method field.
+func ByHTTPMethod(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldHTTPMethod, opts...).ToFunc()
+}
+
+// ByIsWebsocket orders the results by the is_websocket field.
+func ByIsWebsocket(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldIsWebsocket, opts...).ToFunc()
+}
+
+// ByWebsocketProtocol orders the results by the websocket_protocol field.
+func ByWebsocketProtocol(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldWebsocketProtocol, opts...).ToFunc()
+}
+
+// ByClientType orders the results by the client_type field.
+func ByClientType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldClientType, opts...).ToFunc()
+}
+
+// ByModel orders the results by the model field.
+func ByModel(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldModel, opts...).ToFunc()
+}
+
+// ByRequestKind orders the results by the request_kind field.
+func ByRequestKind(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRequestKind, opts...).ToFunc()
+}
+
+// ByStreaming orders the results by the streaming field.
+func ByStreaming(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldStreaming, opts...).ToFunc()
+}
+
+// ByResponseMode orders the results by the response_mode field.
+func ByResponseMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldResponseMode, opts...).ToFunc()
+}
+
+// ByHttp2Fingerprint orders the results by the http2_fingerprint field.
+func ByHttp2Fingerprint(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldHttp2Fingerprint, opts...).ToFunc()
+}
+
 // ByRawPayload orders the results by the raw_payload field.
 func ByRawPayload(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRawPayload, opts...).ToFunc()
+}
+
+// ByCapturedAt orders the results by the captured_at field.
+func ByCapturedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCapturedAt, opts...).ToFunc()
 }

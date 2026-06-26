@@ -56,6 +56,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesample"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesession"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesessionevent"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturetask"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintrouter"
@@ -80,60 +82,62 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeAIAsset                       = "AIAsset"
-	TypeAIAuditLog                    = "AIAuditLog"
-	TypeAIGenerationJob               = "AIGenerationJob"
-	TypeAIPromptTemplate              = "AIPromptTemplate"
-	TypeAIPromptTemplateVersion       = "AIPromptTemplateVersion"
-	TypeAISession                     = "AISession"
-	TypeAISessionMessage              = "AISessionMessage"
-	TypeAISkill                       = "AISkill"
-	TypeAISkillInstall                = "AISkillInstall"
-	TypeAISkillLike                   = "AISkillLike"
-	TypeAISkillReview                 = "AISkillReview"
-	TypeAISkillRun                    = "AISkillRun"
-	TypeAISkillSettlement             = "AISkillSettlement"
-	TypeAISkillVersion                = "AISkillVersion"
-	TypeAPIKey                        = "APIKey"
-	TypeAccount                       = "Account"
-	TypeAccountGroup                  = "AccountGroup"
-	TypeAnnouncement                  = "Announcement"
-	TypeAnnouncementRead              = "AnnouncementRead"
-	TypeAuthIdentity                  = "AuthIdentity"
-	TypeAuthIdentityChannel           = "AuthIdentityChannel"
-	TypeChannelMonitor                = "ChannelMonitor"
-	TypeChannelMonitorDailyRollup     = "ChannelMonitorDailyRollup"
-	TypeChannelMonitorHistory         = "ChannelMonitorHistory"
-	TypeChannelMonitorRequestTemplate = "ChannelMonitorRequestTemplate"
-	TypeErrorPassthroughRule          = "ErrorPassthroughRule"
-	TypeGroup                         = "Group"
-	TypeIdempotencyRecord             = "IdempotencyRecord"
-	TypeIdentityAdoptionDecision      = "IdentityAdoptionDecision"
-	TypeInvoice                       = "Invoice"
-	TypeInvoiceOrder                  = "InvoiceOrder"
-	TypePaymentAuditLog               = "PaymentAuditLog"
-	TypePaymentOrder                  = "PaymentOrder"
-	TypePaymentProviderInstance       = "PaymentProviderInstance"
-	TypePendingAuthSession            = "PendingAuthSession"
-	TypePromoCode                     = "PromoCode"
-	TypePromoCodeUsage                = "PromoCodeUsage"
-	TypeProxy                         = "Proxy"
-	TypeRedeemCode                    = "RedeemCode"
-	TypeSecuritySecret                = "SecuritySecret"
-	TypeSetting                       = "Setting"
-	TypeSubscriptionPlan              = "SubscriptionPlan"
-	TypeTLSFingerprintCaptureSample   = "TLSFingerprintCaptureSample"
-	TypeTLSFingerprintCaptureTask     = "TLSFingerprintCaptureTask"
-	TypeTLSFingerprintProfile         = "TLSFingerprintProfile"
-	TypeTLSFingerprintRouter          = "TLSFingerprintRouter"
-	TypeUsageCleanupTask              = "UsageCleanupTask"
-	TypeUsageLog                      = "UsageLog"
-	TypeUser                          = "User"
-	TypeUserAllowedGroup              = "UserAllowedGroup"
-	TypeUserAttributeDefinition       = "UserAttributeDefinition"
-	TypeUserAttributeValue            = "UserAttributeValue"
-	TypeUserPlatformQuota             = "UserPlatformQuota"
-	TypeUserSubscription              = "UserSubscription"
+	TypeAIAsset                           = "AIAsset"
+	TypeAIAuditLog                        = "AIAuditLog"
+	TypeAIGenerationJob                   = "AIGenerationJob"
+	TypeAIPromptTemplate                  = "AIPromptTemplate"
+	TypeAIPromptTemplateVersion           = "AIPromptTemplateVersion"
+	TypeAISession                         = "AISession"
+	TypeAISessionMessage                  = "AISessionMessage"
+	TypeAISkill                           = "AISkill"
+	TypeAISkillInstall                    = "AISkillInstall"
+	TypeAISkillLike                       = "AISkillLike"
+	TypeAISkillReview                     = "AISkillReview"
+	TypeAISkillRun                        = "AISkillRun"
+	TypeAISkillSettlement                 = "AISkillSettlement"
+	TypeAISkillVersion                    = "AISkillVersion"
+	TypeAPIKey                            = "APIKey"
+	TypeAccount                           = "Account"
+	TypeAccountGroup                      = "AccountGroup"
+	TypeAnnouncement                      = "Announcement"
+	TypeAnnouncementRead                  = "AnnouncementRead"
+	TypeAuthIdentity                      = "AuthIdentity"
+	TypeAuthIdentityChannel               = "AuthIdentityChannel"
+	TypeChannelMonitor                    = "ChannelMonitor"
+	TypeChannelMonitorDailyRollup         = "ChannelMonitorDailyRollup"
+	TypeChannelMonitorHistory             = "ChannelMonitorHistory"
+	TypeChannelMonitorRequestTemplate     = "ChannelMonitorRequestTemplate"
+	TypeErrorPassthroughRule              = "ErrorPassthroughRule"
+	TypeGroup                             = "Group"
+	TypeIdempotencyRecord                 = "IdempotencyRecord"
+	TypeIdentityAdoptionDecision          = "IdentityAdoptionDecision"
+	TypeInvoice                           = "Invoice"
+	TypeInvoiceOrder                      = "InvoiceOrder"
+	TypePaymentAuditLog                   = "PaymentAuditLog"
+	TypePaymentOrder                      = "PaymentOrder"
+	TypePaymentProviderInstance           = "PaymentProviderInstance"
+	TypePendingAuthSession                = "PendingAuthSession"
+	TypePromoCode                         = "PromoCode"
+	TypePromoCodeUsage                    = "PromoCodeUsage"
+	TypeProxy                             = "Proxy"
+	TypeRedeemCode                        = "RedeemCode"
+	TypeSecuritySecret                    = "SecuritySecret"
+	TypeSetting                           = "Setting"
+	TypeSubscriptionPlan                  = "SubscriptionPlan"
+	TypeTLSFingerprintCaptureSample       = "TLSFingerprintCaptureSample"
+	TypeTLSFingerprintCaptureSession      = "TLSFingerprintCaptureSession"
+	TypeTLSFingerprintCaptureSessionEvent = "TLSFingerprintCaptureSessionEvent"
+	TypeTLSFingerprintCaptureTask         = "TLSFingerprintCaptureTask"
+	TypeTLSFingerprintProfile             = "TLSFingerprintProfile"
+	TypeTLSFingerprintRouter              = "TLSFingerprintRouter"
+	TypeUsageCleanupTask                  = "UsageCleanupTask"
+	TypeUsageLog                          = "UsageLog"
+	TypeUser                              = "User"
+	TypeUserAllowedGroup                  = "UserAllowedGroup"
+	TypeUserAttributeDefinition           = "UserAttributeDefinition"
+	TypeUserAttributeValue                = "UserAttributeValue"
+	TypeUserPlatformQuota                 = "UserPlatformQuota"
+	TypeUserSubscription                  = "UserSubscription"
 )
 
 // AIAssetMutation represents an operation that mutates the AIAsset nodes in the graph.
@@ -59795,24 +59799,42 @@ func (m *SubscriptionPlanMutation) ResetEdge(name string) error {
 // TLSFingerprintCaptureSampleMutation represents an operation that mutates the TLSFingerprintCaptureSample nodes in the graph.
 type TLSFingerprintCaptureSampleMutation struct {
 	config
-	op               Op
-	typ              string
-	id               *int64
-	created_at       *time.Time
-	updated_at       *time.Time
-	task_id          *int64
-	addtask_id       *int64
-	platform         *string
-	user_agent       *string
-	originator       *string
-	fingerprint_hash *string
-	profile          **model.TLSFingerprintProfile
-	raw_payload      *string
-	raw_client_hello *[]byte
-	clearedFields    map[string]struct{}
-	done             bool
-	oldValue         func(context.Context) (*TLSFingerprintCaptureSample, error)
-	predicates       []predicate.TLSFingerprintCaptureSample
+	op                 Op
+	typ                string
+	id                 *int64
+	created_at         *time.Time
+	updated_at         *time.Time
+	task_id            *int64
+	addtask_id         *int64
+	session_id         *string
+	platform           *string
+	transport          *string
+	user_agent         *string
+	originator         *string
+	fingerprint_hash   *string
+	replay_hash        *string
+	ja3_raw            *string
+	ja3_hash           *string
+	ja4                *string
+	request_path       *string
+	http_method        *string
+	is_websocket       *bool
+	websocket_protocol *string
+	client_type        *string
+	model              *string
+	request_kind       *string
+	streaming          *bool
+	response_mode      *string
+	http2_fingerprint  *string
+	stainless_metadata *map[string]interface{}
+	replay_profile     **model.TLSFingerprintProfile
+	raw_payload        *string
+	raw_client_hello   *[]byte
+	captured_at        *time.Time
+	clearedFields      map[string]struct{}
+	done               bool
+	oldValue           func(context.Context) (*TLSFingerprintCaptureSample, error)
+	predicates         []predicate.TLSFingerprintCaptureSample
 }
 
 var _ ent.Mutation = (*TLSFingerprintCaptureSampleMutation)(nil)
@@ -60041,6 +60063,42 @@ func (m *TLSFingerprintCaptureSampleMutation) ResetTaskID() {
 	m.addtask_id = nil
 }
 
+// SetSessionID sets the "session_id" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetSessionID(s string) {
+	m.session_id = &s
+}
+
+// SessionID returns the value of the "session_id" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) SessionID() (r string, exists bool) {
+	v := m.session_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSessionID returns the old "session_id" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldSessionID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSessionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSessionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSessionID: %w", err)
+	}
+	return oldValue.SessionID, nil
+}
+
+// ResetSessionID resets all changes to the "session_id" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetSessionID() {
+	m.session_id = nil
+}
+
 // SetPlatform sets the "platform" field.
 func (m *TLSFingerprintCaptureSampleMutation) SetPlatform(s string) {
 	m.platform = &s
@@ -60075,6 +60133,42 @@ func (m *TLSFingerprintCaptureSampleMutation) OldPlatform(ctx context.Context) (
 // ResetPlatform resets all changes to the "platform" field.
 func (m *TLSFingerprintCaptureSampleMutation) ResetPlatform() {
 	m.platform = nil
+}
+
+// SetTransport sets the "transport" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetTransport(s string) {
+	m.transport = &s
+}
+
+// Transport returns the value of the "transport" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) Transport() (r string, exists bool) {
+	v := m.transport
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTransport returns the old "transport" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldTransport(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTransport is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTransport requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTransport: %w", err)
+	}
+	return oldValue.Transport, nil
+}
+
+// ResetTransport resets all changes to the "transport" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetTransport() {
+	m.transport = nil
 }
 
 // SetUserAgent sets the "user_agent" field.
@@ -60185,40 +60279,580 @@ func (m *TLSFingerprintCaptureSampleMutation) ResetFingerprintHash() {
 	m.fingerprint_hash = nil
 }
 
-// SetProfile sets the "profile" field.
-func (m *TLSFingerprintCaptureSampleMutation) SetProfile(mfp *model.TLSFingerprintProfile) {
-	m.profile = &mfp
+// SetReplayHash sets the "replay_hash" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetReplayHash(s string) {
+	m.replay_hash = &s
 }
 
-// Profile returns the value of the "profile" field in the mutation.
-func (m *TLSFingerprintCaptureSampleMutation) Profile() (r *model.TLSFingerprintProfile, exists bool) {
-	v := m.profile
+// ReplayHash returns the value of the "replay_hash" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) ReplayHash() (r string, exists bool) {
+	v := m.replay_hash
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldProfile returns the old "profile" field's value of the TLSFingerprintCaptureSample entity.
+// OldReplayHash returns the old "replay_hash" field's value of the TLSFingerprintCaptureSample entity.
 // If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *TLSFingerprintCaptureSampleMutation) OldProfile(ctx context.Context) (v *model.TLSFingerprintProfile, err error) {
+func (m *TLSFingerprintCaptureSampleMutation) OldReplayHash(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldProfile is only allowed on UpdateOne operations")
+		return v, errors.New("OldReplayHash is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldProfile requires an ID field in the mutation")
+		return v, errors.New("OldReplayHash requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldProfile: %w", err)
+		return v, fmt.Errorf("querying old value for OldReplayHash: %w", err)
 	}
-	return oldValue.Profile, nil
+	return oldValue.ReplayHash, nil
 }
 
-// ResetProfile resets all changes to the "profile" field.
-func (m *TLSFingerprintCaptureSampleMutation) ResetProfile() {
-	m.profile = nil
+// ResetReplayHash resets all changes to the "replay_hash" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetReplayHash() {
+	m.replay_hash = nil
+}
+
+// SetJa3Raw sets the "ja3_raw" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetJa3Raw(s string) {
+	m.ja3_raw = &s
+}
+
+// Ja3Raw returns the value of the "ja3_raw" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) Ja3Raw() (r string, exists bool) {
+	v := m.ja3_raw
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldJa3Raw returns the old "ja3_raw" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldJa3Raw(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldJa3Raw is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldJa3Raw requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldJa3Raw: %w", err)
+	}
+	return oldValue.Ja3Raw, nil
+}
+
+// ResetJa3Raw resets all changes to the "ja3_raw" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetJa3Raw() {
+	m.ja3_raw = nil
+}
+
+// SetJa3Hash sets the "ja3_hash" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetJa3Hash(s string) {
+	m.ja3_hash = &s
+}
+
+// Ja3Hash returns the value of the "ja3_hash" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) Ja3Hash() (r string, exists bool) {
+	v := m.ja3_hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldJa3Hash returns the old "ja3_hash" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldJa3Hash(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldJa3Hash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldJa3Hash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldJa3Hash: %w", err)
+	}
+	return oldValue.Ja3Hash, nil
+}
+
+// ResetJa3Hash resets all changes to the "ja3_hash" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetJa3Hash() {
+	m.ja3_hash = nil
+}
+
+// SetJa4 sets the "ja4" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetJa4(s string) {
+	m.ja4 = &s
+}
+
+// Ja4 returns the value of the "ja4" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) Ja4() (r string, exists bool) {
+	v := m.ja4
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldJa4 returns the old "ja4" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldJa4(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldJa4 is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldJa4 requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldJa4: %w", err)
+	}
+	return oldValue.Ja4, nil
+}
+
+// ResetJa4 resets all changes to the "ja4" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetJa4() {
+	m.ja4 = nil
+}
+
+// SetRequestPath sets the "request_path" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetRequestPath(s string) {
+	m.request_path = &s
+}
+
+// RequestPath returns the value of the "request_path" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) RequestPath() (r string, exists bool) {
+	v := m.request_path
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestPath returns the old "request_path" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldRequestPath(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestPath is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestPath requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestPath: %w", err)
+	}
+	return oldValue.RequestPath, nil
+}
+
+// ResetRequestPath resets all changes to the "request_path" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetRequestPath() {
+	m.request_path = nil
+}
+
+// SetHTTPMethod sets the "http_method" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetHTTPMethod(s string) {
+	m.http_method = &s
+}
+
+// HTTPMethod returns the value of the "http_method" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) HTTPMethod() (r string, exists bool) {
+	v := m.http_method
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHTTPMethod returns the old "http_method" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldHTTPMethod(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHTTPMethod is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHTTPMethod requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHTTPMethod: %w", err)
+	}
+	return oldValue.HTTPMethod, nil
+}
+
+// ResetHTTPMethod resets all changes to the "http_method" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetHTTPMethod() {
+	m.http_method = nil
+}
+
+// SetIsWebsocket sets the "is_websocket" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetIsWebsocket(b bool) {
+	m.is_websocket = &b
+}
+
+// IsWebsocket returns the value of the "is_websocket" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) IsWebsocket() (r bool, exists bool) {
+	v := m.is_websocket
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIsWebsocket returns the old "is_websocket" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldIsWebsocket(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIsWebsocket is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIsWebsocket requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIsWebsocket: %w", err)
+	}
+	return oldValue.IsWebsocket, nil
+}
+
+// ResetIsWebsocket resets all changes to the "is_websocket" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetIsWebsocket() {
+	m.is_websocket = nil
+}
+
+// SetWebsocketProtocol sets the "websocket_protocol" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetWebsocketProtocol(s string) {
+	m.websocket_protocol = &s
+}
+
+// WebsocketProtocol returns the value of the "websocket_protocol" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) WebsocketProtocol() (r string, exists bool) {
+	v := m.websocket_protocol
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWebsocketProtocol returns the old "websocket_protocol" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldWebsocketProtocol(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWebsocketProtocol is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWebsocketProtocol requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWebsocketProtocol: %w", err)
+	}
+	return oldValue.WebsocketProtocol, nil
+}
+
+// ResetWebsocketProtocol resets all changes to the "websocket_protocol" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetWebsocketProtocol() {
+	m.websocket_protocol = nil
+}
+
+// SetClientType sets the "client_type" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetClientType(s string) {
+	m.client_type = &s
+}
+
+// ClientType returns the value of the "client_type" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) ClientType() (r string, exists bool) {
+	v := m.client_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClientType returns the old "client_type" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldClientType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClientType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClientType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClientType: %w", err)
+	}
+	return oldValue.ClientType, nil
+}
+
+// ResetClientType resets all changes to the "client_type" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetClientType() {
+	m.client_type = nil
+}
+
+// SetModel sets the "model" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetModel(s string) {
+	m.model = &s
+}
+
+// Model returns the value of the "model" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) Model() (r string, exists bool) {
+	v := m.model
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModel returns the old "model" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldModel(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModel: %w", err)
+	}
+	return oldValue.Model, nil
+}
+
+// ResetModel resets all changes to the "model" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetModel() {
+	m.model = nil
+}
+
+// SetRequestKind sets the "request_kind" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetRequestKind(s string) {
+	m.request_kind = &s
+}
+
+// RequestKind returns the value of the "request_kind" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) RequestKind() (r string, exists bool) {
+	v := m.request_kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestKind returns the old "request_kind" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldRequestKind(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestKind: %w", err)
+	}
+	return oldValue.RequestKind, nil
+}
+
+// ResetRequestKind resets all changes to the "request_kind" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetRequestKind() {
+	m.request_kind = nil
+}
+
+// SetStreaming sets the "streaming" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetStreaming(b bool) {
+	m.streaming = &b
+}
+
+// Streaming returns the value of the "streaming" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) Streaming() (r bool, exists bool) {
+	v := m.streaming
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStreaming returns the old "streaming" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldStreaming(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStreaming is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStreaming requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStreaming: %w", err)
+	}
+	return oldValue.Streaming, nil
+}
+
+// ResetStreaming resets all changes to the "streaming" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetStreaming() {
+	m.streaming = nil
+}
+
+// SetResponseMode sets the "response_mode" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetResponseMode(s string) {
+	m.response_mode = &s
+}
+
+// ResponseMode returns the value of the "response_mode" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) ResponseMode() (r string, exists bool) {
+	v := m.response_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResponseMode returns the old "response_mode" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldResponseMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResponseMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResponseMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResponseMode: %w", err)
+	}
+	return oldValue.ResponseMode, nil
+}
+
+// ResetResponseMode resets all changes to the "response_mode" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetResponseMode() {
+	m.response_mode = nil
+}
+
+// SetHttp2Fingerprint sets the "http2_fingerprint" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetHttp2Fingerprint(s string) {
+	m.http2_fingerprint = &s
+}
+
+// Http2Fingerprint returns the value of the "http2_fingerprint" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) Http2Fingerprint() (r string, exists bool) {
+	v := m.http2_fingerprint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHttp2Fingerprint returns the old "http2_fingerprint" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldHttp2Fingerprint(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHttp2Fingerprint is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHttp2Fingerprint requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHttp2Fingerprint: %w", err)
+	}
+	return oldValue.Http2Fingerprint, nil
+}
+
+// ResetHttp2Fingerprint resets all changes to the "http2_fingerprint" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetHttp2Fingerprint() {
+	m.http2_fingerprint = nil
+}
+
+// SetStainlessMetadata sets the "stainless_metadata" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetStainlessMetadata(value map[string]interface{}) {
+	m.stainless_metadata = &value
+}
+
+// StainlessMetadata returns the value of the "stainless_metadata" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) StainlessMetadata() (r map[string]interface{}, exists bool) {
+	v := m.stainless_metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStainlessMetadata returns the old "stainless_metadata" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldStainlessMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStainlessMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStainlessMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStainlessMetadata: %w", err)
+	}
+	return oldValue.StainlessMetadata, nil
+}
+
+// ResetStainlessMetadata resets all changes to the "stainless_metadata" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetStainlessMetadata() {
+	m.stainless_metadata = nil
+}
+
+// SetReplayProfile sets the "replay_profile" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetReplayProfile(mfp *model.TLSFingerprintProfile) {
+	m.replay_profile = &mfp
+}
+
+// ReplayProfile returns the value of the "replay_profile" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) ReplayProfile() (r *model.TLSFingerprintProfile, exists bool) {
+	v := m.replay_profile
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReplayProfile returns the old "replay_profile" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldReplayProfile(ctx context.Context) (v *model.TLSFingerprintProfile, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReplayProfile is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReplayProfile requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReplayProfile: %w", err)
+	}
+	return oldValue.ReplayProfile, nil
+}
+
+// ResetReplayProfile resets all changes to the "replay_profile" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetReplayProfile() {
+	m.replay_profile = nil
 }
 
 // SetRawPayload sets the "raw_payload" field.
@@ -60306,6 +60940,42 @@ func (m *TLSFingerprintCaptureSampleMutation) ResetRawClientHello() {
 	delete(m.clearedFields, tlsfingerprintcapturesample.FieldRawClientHello)
 }
 
+// SetCapturedAt sets the "captured_at" field.
+func (m *TLSFingerprintCaptureSampleMutation) SetCapturedAt(t time.Time) {
+	m.captured_at = &t
+}
+
+// CapturedAt returns the value of the "captured_at" field in the mutation.
+func (m *TLSFingerprintCaptureSampleMutation) CapturedAt() (r time.Time, exists bool) {
+	v := m.captured_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCapturedAt returns the old "captured_at" field's value of the TLSFingerprintCaptureSample entity.
+// If the TLSFingerprintCaptureSample object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSampleMutation) OldCapturedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCapturedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCapturedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCapturedAt: %w", err)
+	}
+	return oldValue.CapturedAt, nil
+}
+
+// ResetCapturedAt resets all changes to the "captured_at" field.
+func (m *TLSFingerprintCaptureSampleMutation) ResetCapturedAt() {
+	m.captured_at = nil
+}
+
 // Where appends a list predicates to the TLSFingerprintCaptureSampleMutation builder.
 func (m *TLSFingerprintCaptureSampleMutation) Where(ps ...predicate.TLSFingerprintCaptureSample) {
 	m.predicates = append(m.predicates, ps...)
@@ -60340,7 +61010,7 @@ func (m *TLSFingerprintCaptureSampleMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TLSFingerprintCaptureSampleMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 28)
 	if m.created_at != nil {
 		fields = append(fields, tlsfingerprintcapturesample.FieldCreatedAt)
 	}
@@ -60350,8 +61020,14 @@ func (m *TLSFingerprintCaptureSampleMutation) Fields() []string {
 	if m.task_id != nil {
 		fields = append(fields, tlsfingerprintcapturesample.FieldTaskID)
 	}
+	if m.session_id != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldSessionID)
+	}
 	if m.platform != nil {
 		fields = append(fields, tlsfingerprintcapturesample.FieldPlatform)
+	}
+	if m.transport != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldTransport)
 	}
 	if m.user_agent != nil {
 		fields = append(fields, tlsfingerprintcapturesample.FieldUserAgent)
@@ -60362,14 +61038,62 @@ func (m *TLSFingerprintCaptureSampleMutation) Fields() []string {
 	if m.fingerprint_hash != nil {
 		fields = append(fields, tlsfingerprintcapturesample.FieldFingerprintHash)
 	}
-	if m.profile != nil {
-		fields = append(fields, tlsfingerprintcapturesample.FieldProfile)
+	if m.replay_hash != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldReplayHash)
+	}
+	if m.ja3_raw != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldJa3Raw)
+	}
+	if m.ja3_hash != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldJa3Hash)
+	}
+	if m.ja4 != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldJa4)
+	}
+	if m.request_path != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldRequestPath)
+	}
+	if m.http_method != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldHTTPMethod)
+	}
+	if m.is_websocket != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldIsWebsocket)
+	}
+	if m.websocket_protocol != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldWebsocketProtocol)
+	}
+	if m.client_type != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldClientType)
+	}
+	if m.model != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldModel)
+	}
+	if m.request_kind != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldRequestKind)
+	}
+	if m.streaming != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldStreaming)
+	}
+	if m.response_mode != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldResponseMode)
+	}
+	if m.http2_fingerprint != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldHttp2Fingerprint)
+	}
+	if m.stainless_metadata != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldStainlessMetadata)
+	}
+	if m.replay_profile != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldReplayProfile)
 	}
 	if m.raw_payload != nil {
 		fields = append(fields, tlsfingerprintcapturesample.FieldRawPayload)
 	}
 	if m.raw_client_hello != nil {
 		fields = append(fields, tlsfingerprintcapturesample.FieldRawClientHello)
+	}
+	if m.captured_at != nil {
+		fields = append(fields, tlsfingerprintcapturesample.FieldCapturedAt)
 	}
 	return fields
 }
@@ -60385,20 +61109,56 @@ func (m *TLSFingerprintCaptureSampleMutation) Field(name string) (ent.Value, boo
 		return m.UpdatedAt()
 	case tlsfingerprintcapturesample.FieldTaskID:
 		return m.TaskID()
+	case tlsfingerprintcapturesample.FieldSessionID:
+		return m.SessionID()
 	case tlsfingerprintcapturesample.FieldPlatform:
 		return m.Platform()
+	case tlsfingerprintcapturesample.FieldTransport:
+		return m.Transport()
 	case tlsfingerprintcapturesample.FieldUserAgent:
 		return m.UserAgent()
 	case tlsfingerprintcapturesample.FieldOriginator:
 		return m.Originator()
 	case tlsfingerprintcapturesample.FieldFingerprintHash:
 		return m.FingerprintHash()
-	case tlsfingerprintcapturesample.FieldProfile:
-		return m.Profile()
+	case tlsfingerprintcapturesample.FieldReplayHash:
+		return m.ReplayHash()
+	case tlsfingerprintcapturesample.FieldJa3Raw:
+		return m.Ja3Raw()
+	case tlsfingerprintcapturesample.FieldJa3Hash:
+		return m.Ja3Hash()
+	case tlsfingerprintcapturesample.FieldJa4:
+		return m.Ja4()
+	case tlsfingerprintcapturesample.FieldRequestPath:
+		return m.RequestPath()
+	case tlsfingerprintcapturesample.FieldHTTPMethod:
+		return m.HTTPMethod()
+	case tlsfingerprintcapturesample.FieldIsWebsocket:
+		return m.IsWebsocket()
+	case tlsfingerprintcapturesample.FieldWebsocketProtocol:
+		return m.WebsocketProtocol()
+	case tlsfingerprintcapturesample.FieldClientType:
+		return m.ClientType()
+	case tlsfingerprintcapturesample.FieldModel:
+		return m.Model()
+	case tlsfingerprintcapturesample.FieldRequestKind:
+		return m.RequestKind()
+	case tlsfingerprintcapturesample.FieldStreaming:
+		return m.Streaming()
+	case tlsfingerprintcapturesample.FieldResponseMode:
+		return m.ResponseMode()
+	case tlsfingerprintcapturesample.FieldHttp2Fingerprint:
+		return m.Http2Fingerprint()
+	case tlsfingerprintcapturesample.FieldStainlessMetadata:
+		return m.StainlessMetadata()
+	case tlsfingerprintcapturesample.FieldReplayProfile:
+		return m.ReplayProfile()
 	case tlsfingerprintcapturesample.FieldRawPayload:
 		return m.RawPayload()
 	case tlsfingerprintcapturesample.FieldRawClientHello:
 		return m.RawClientHello()
+	case tlsfingerprintcapturesample.FieldCapturedAt:
+		return m.CapturedAt()
 	}
 	return nil, false
 }
@@ -60414,20 +61174,56 @@ func (m *TLSFingerprintCaptureSampleMutation) OldField(ctx context.Context, name
 		return m.OldUpdatedAt(ctx)
 	case tlsfingerprintcapturesample.FieldTaskID:
 		return m.OldTaskID(ctx)
+	case tlsfingerprintcapturesample.FieldSessionID:
+		return m.OldSessionID(ctx)
 	case tlsfingerprintcapturesample.FieldPlatform:
 		return m.OldPlatform(ctx)
+	case tlsfingerprintcapturesample.FieldTransport:
+		return m.OldTransport(ctx)
 	case tlsfingerprintcapturesample.FieldUserAgent:
 		return m.OldUserAgent(ctx)
 	case tlsfingerprintcapturesample.FieldOriginator:
 		return m.OldOriginator(ctx)
 	case tlsfingerprintcapturesample.FieldFingerprintHash:
 		return m.OldFingerprintHash(ctx)
-	case tlsfingerprintcapturesample.FieldProfile:
-		return m.OldProfile(ctx)
+	case tlsfingerprintcapturesample.FieldReplayHash:
+		return m.OldReplayHash(ctx)
+	case tlsfingerprintcapturesample.FieldJa3Raw:
+		return m.OldJa3Raw(ctx)
+	case tlsfingerprintcapturesample.FieldJa3Hash:
+		return m.OldJa3Hash(ctx)
+	case tlsfingerprintcapturesample.FieldJa4:
+		return m.OldJa4(ctx)
+	case tlsfingerprintcapturesample.FieldRequestPath:
+		return m.OldRequestPath(ctx)
+	case tlsfingerprintcapturesample.FieldHTTPMethod:
+		return m.OldHTTPMethod(ctx)
+	case tlsfingerprintcapturesample.FieldIsWebsocket:
+		return m.OldIsWebsocket(ctx)
+	case tlsfingerprintcapturesample.FieldWebsocketProtocol:
+		return m.OldWebsocketProtocol(ctx)
+	case tlsfingerprintcapturesample.FieldClientType:
+		return m.OldClientType(ctx)
+	case tlsfingerprintcapturesample.FieldModel:
+		return m.OldModel(ctx)
+	case tlsfingerprintcapturesample.FieldRequestKind:
+		return m.OldRequestKind(ctx)
+	case tlsfingerprintcapturesample.FieldStreaming:
+		return m.OldStreaming(ctx)
+	case tlsfingerprintcapturesample.FieldResponseMode:
+		return m.OldResponseMode(ctx)
+	case tlsfingerprintcapturesample.FieldHttp2Fingerprint:
+		return m.OldHttp2Fingerprint(ctx)
+	case tlsfingerprintcapturesample.FieldStainlessMetadata:
+		return m.OldStainlessMetadata(ctx)
+	case tlsfingerprintcapturesample.FieldReplayProfile:
+		return m.OldReplayProfile(ctx)
 	case tlsfingerprintcapturesample.FieldRawPayload:
 		return m.OldRawPayload(ctx)
 	case tlsfingerprintcapturesample.FieldRawClientHello:
 		return m.OldRawClientHello(ctx)
+	case tlsfingerprintcapturesample.FieldCapturedAt:
+		return m.OldCapturedAt(ctx)
 	}
 	return nil, fmt.Errorf("unknown TLSFingerprintCaptureSample field %s", name)
 }
@@ -60458,12 +61254,26 @@ func (m *TLSFingerprintCaptureSampleMutation) SetField(name string, value ent.Va
 		}
 		m.SetTaskID(v)
 		return nil
+	case tlsfingerprintcapturesample.FieldSessionID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSessionID(v)
+		return nil
 	case tlsfingerprintcapturesample.FieldPlatform:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPlatform(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldTransport:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTransport(v)
 		return nil
 	case tlsfingerprintcapturesample.FieldUserAgent:
 		v, ok := value.(string)
@@ -60486,12 +61296,117 @@ func (m *TLSFingerprintCaptureSampleMutation) SetField(name string, value ent.Va
 		}
 		m.SetFingerprintHash(v)
 		return nil
-	case tlsfingerprintcapturesample.FieldProfile:
+	case tlsfingerprintcapturesample.FieldReplayHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReplayHash(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldJa3Raw:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetJa3Raw(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldJa3Hash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetJa3Hash(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldJa4:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetJa4(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldRequestPath:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestPath(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldHTTPMethod:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHTTPMethod(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldIsWebsocket:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIsWebsocket(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldWebsocketProtocol:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWebsocketProtocol(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldClientType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClientType(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldModel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModel(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldRequestKind:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestKind(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldStreaming:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStreaming(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldResponseMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResponseMode(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldHttp2Fingerprint:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHttp2Fingerprint(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldStainlessMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStainlessMetadata(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldReplayProfile:
 		v, ok := value.(*model.TLSFingerprintProfile)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetProfile(v)
+		m.SetReplayProfile(v)
 		return nil
 	case tlsfingerprintcapturesample.FieldRawPayload:
 		v, ok := value.(string)
@@ -60506,6 +61421,13 @@ func (m *TLSFingerprintCaptureSampleMutation) SetField(name string, value ent.Va
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRawClientHello(v)
+		return nil
+	case tlsfingerprintcapturesample.FieldCapturedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCapturedAt(v)
 		return nil
 	}
 	return fmt.Errorf("unknown TLSFingerprintCaptureSample field %s", name)
@@ -60589,8 +61511,14 @@ func (m *TLSFingerprintCaptureSampleMutation) ResetField(name string) error {
 	case tlsfingerprintcapturesample.FieldTaskID:
 		m.ResetTaskID()
 		return nil
+	case tlsfingerprintcapturesample.FieldSessionID:
+		m.ResetSessionID()
+		return nil
 	case tlsfingerprintcapturesample.FieldPlatform:
 		m.ResetPlatform()
+		return nil
+	case tlsfingerprintcapturesample.FieldTransport:
+		m.ResetTransport()
 		return nil
 	case tlsfingerprintcapturesample.FieldUserAgent:
 		m.ResetUserAgent()
@@ -60601,14 +61529,62 @@ func (m *TLSFingerprintCaptureSampleMutation) ResetField(name string) error {
 	case tlsfingerprintcapturesample.FieldFingerprintHash:
 		m.ResetFingerprintHash()
 		return nil
-	case tlsfingerprintcapturesample.FieldProfile:
-		m.ResetProfile()
+	case tlsfingerprintcapturesample.FieldReplayHash:
+		m.ResetReplayHash()
+		return nil
+	case tlsfingerprintcapturesample.FieldJa3Raw:
+		m.ResetJa3Raw()
+		return nil
+	case tlsfingerprintcapturesample.FieldJa3Hash:
+		m.ResetJa3Hash()
+		return nil
+	case tlsfingerprintcapturesample.FieldJa4:
+		m.ResetJa4()
+		return nil
+	case tlsfingerprintcapturesample.FieldRequestPath:
+		m.ResetRequestPath()
+		return nil
+	case tlsfingerprintcapturesample.FieldHTTPMethod:
+		m.ResetHTTPMethod()
+		return nil
+	case tlsfingerprintcapturesample.FieldIsWebsocket:
+		m.ResetIsWebsocket()
+		return nil
+	case tlsfingerprintcapturesample.FieldWebsocketProtocol:
+		m.ResetWebsocketProtocol()
+		return nil
+	case tlsfingerprintcapturesample.FieldClientType:
+		m.ResetClientType()
+		return nil
+	case tlsfingerprintcapturesample.FieldModel:
+		m.ResetModel()
+		return nil
+	case tlsfingerprintcapturesample.FieldRequestKind:
+		m.ResetRequestKind()
+		return nil
+	case tlsfingerprintcapturesample.FieldStreaming:
+		m.ResetStreaming()
+		return nil
+	case tlsfingerprintcapturesample.FieldResponseMode:
+		m.ResetResponseMode()
+		return nil
+	case tlsfingerprintcapturesample.FieldHttp2Fingerprint:
+		m.ResetHttp2Fingerprint()
+		return nil
+	case tlsfingerprintcapturesample.FieldStainlessMetadata:
+		m.ResetStainlessMetadata()
+		return nil
+	case tlsfingerprintcapturesample.FieldReplayProfile:
+		m.ResetReplayProfile()
 		return nil
 	case tlsfingerprintcapturesample.FieldRawPayload:
 		m.ResetRawPayload()
 		return nil
 	case tlsfingerprintcapturesample.FieldRawClientHello:
 		m.ResetRawClientHello()
+		return nil
+	case tlsfingerprintcapturesample.FieldCapturedAt:
+		m.ResetCapturedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown TLSFingerprintCaptureSample field %s", name)
@@ -60662,26 +61638,3423 @@ func (m *TLSFingerprintCaptureSampleMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown TLSFingerprintCaptureSample edge %s", name)
 }
 
+// TLSFingerprintCaptureSessionMutation represents an operation that mutates the TLSFingerprintCaptureSession nodes in the graph.
+type TLSFingerprintCaptureSessionMutation struct {
+	config
+	op                    Op
+	typ                   string
+	id                    *int64
+	created_at            *time.Time
+	updated_at            *time.Time
+	task_id               *int64
+	addtask_id            *int64
+	session_id            *string
+	client_ip             *string
+	platform              *string
+	user_agent            *string
+	originator            *string
+	alpn_negotiated       *string
+	raw_client_hello      *[]byte
+	observed_client_hello *map[string]interface{}
+	replay_profile        *map[string]interface{}
+	derived_fingerprint   *map[string]interface{}
+	session_status        *string
+	error_summary         *string
+	opened_at             *time.Time
+	closed_at             *time.Time
+	clearedFields         map[string]struct{}
+	done                  bool
+	oldValue              func(context.Context) (*TLSFingerprintCaptureSession, error)
+	predicates            []predicate.TLSFingerprintCaptureSession
+}
+
+var _ ent.Mutation = (*TLSFingerprintCaptureSessionMutation)(nil)
+
+// tlsfingerprintcapturesessionOption allows management of the mutation configuration using functional options.
+type tlsfingerprintcapturesessionOption func(*TLSFingerprintCaptureSessionMutation)
+
+// newTLSFingerprintCaptureSessionMutation creates new mutation for the TLSFingerprintCaptureSession entity.
+func newTLSFingerprintCaptureSessionMutation(c config, op Op, opts ...tlsfingerprintcapturesessionOption) *TLSFingerprintCaptureSessionMutation {
+	m := &TLSFingerprintCaptureSessionMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeTLSFingerprintCaptureSession,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withTLSFingerprintCaptureSessionID sets the ID field of the mutation.
+func withTLSFingerprintCaptureSessionID(id int64) tlsfingerprintcapturesessionOption {
+	return func(m *TLSFingerprintCaptureSessionMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *TLSFingerprintCaptureSession
+		)
+		m.oldValue = func(ctx context.Context) (*TLSFingerprintCaptureSession, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().TLSFingerprintCaptureSession.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withTLSFingerprintCaptureSession sets the old TLSFingerprintCaptureSession of the mutation.
+func withTLSFingerprintCaptureSession(node *TLSFingerprintCaptureSession) tlsfingerprintcapturesessionOption {
+	return func(m *TLSFingerprintCaptureSessionMutation) {
+		m.oldValue = func(context.Context) (*TLSFingerprintCaptureSession, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m TLSFingerprintCaptureSessionMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m TLSFingerprintCaptureSessionMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *TLSFingerprintCaptureSessionMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().TLSFingerprintCaptureSession.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetTaskID sets the "task_id" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetTaskID(i int64) {
+	m.task_id = &i
+	m.addtask_id = nil
+}
+
+// TaskID returns the value of the "task_id" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) TaskID() (r int64, exists bool) {
+	v := m.task_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaskID returns the old "task_id" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldTaskID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaskID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaskID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaskID: %w", err)
+	}
+	return oldValue.TaskID, nil
+}
+
+// AddTaskID adds i to the "task_id" field.
+func (m *TLSFingerprintCaptureSessionMutation) AddTaskID(i int64) {
+	if m.addtask_id != nil {
+		*m.addtask_id += i
+	} else {
+		m.addtask_id = &i
+	}
+}
+
+// AddedTaskID returns the value that was added to the "task_id" field in this mutation.
+func (m *TLSFingerprintCaptureSessionMutation) AddedTaskID() (r int64, exists bool) {
+	v := m.addtask_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTaskID resets all changes to the "task_id" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetTaskID() {
+	m.task_id = nil
+	m.addtask_id = nil
+}
+
+// SetSessionID sets the "session_id" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetSessionID(s string) {
+	m.session_id = &s
+}
+
+// SessionID returns the value of the "session_id" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) SessionID() (r string, exists bool) {
+	v := m.session_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSessionID returns the old "session_id" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldSessionID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSessionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSessionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSessionID: %w", err)
+	}
+	return oldValue.SessionID, nil
+}
+
+// ResetSessionID resets all changes to the "session_id" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetSessionID() {
+	m.session_id = nil
+}
+
+// SetClientIP sets the "client_ip" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetClientIP(s string) {
+	m.client_ip = &s
+}
+
+// ClientIP returns the value of the "client_ip" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) ClientIP() (r string, exists bool) {
+	v := m.client_ip
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClientIP returns the old "client_ip" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldClientIP(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClientIP is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClientIP requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClientIP: %w", err)
+	}
+	return oldValue.ClientIP, nil
+}
+
+// ResetClientIP resets all changes to the "client_ip" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetClientIP() {
+	m.client_ip = nil
+}
+
+// SetPlatform sets the "platform" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetPlatform(s string) {
+	m.platform = &s
+}
+
+// Platform returns the value of the "platform" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) Platform() (r string, exists bool) {
+	v := m.platform
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlatform returns the old "platform" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldPlatform(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlatform is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlatform requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlatform: %w", err)
+	}
+	return oldValue.Platform, nil
+}
+
+// ResetPlatform resets all changes to the "platform" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetPlatform() {
+	m.platform = nil
+}
+
+// SetUserAgent sets the "user_agent" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetUserAgent(s string) {
+	m.user_agent = &s
+}
+
+// UserAgent returns the value of the "user_agent" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) UserAgent() (r string, exists bool) {
+	v := m.user_agent
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserAgent returns the old "user_agent" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldUserAgent(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserAgent is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserAgent requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserAgent: %w", err)
+	}
+	return oldValue.UserAgent, nil
+}
+
+// ResetUserAgent resets all changes to the "user_agent" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetUserAgent() {
+	m.user_agent = nil
+}
+
+// SetOriginator sets the "originator" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetOriginator(s string) {
+	m.originator = &s
+}
+
+// Originator returns the value of the "originator" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) Originator() (r string, exists bool) {
+	v := m.originator
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOriginator returns the old "originator" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldOriginator(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOriginator is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOriginator requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOriginator: %w", err)
+	}
+	return oldValue.Originator, nil
+}
+
+// ResetOriginator resets all changes to the "originator" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetOriginator() {
+	m.originator = nil
+}
+
+// SetAlpnNegotiated sets the "alpn_negotiated" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetAlpnNegotiated(s string) {
+	m.alpn_negotiated = &s
+}
+
+// AlpnNegotiated returns the value of the "alpn_negotiated" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) AlpnNegotiated() (r string, exists bool) {
+	v := m.alpn_negotiated
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAlpnNegotiated returns the old "alpn_negotiated" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldAlpnNegotiated(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAlpnNegotiated is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAlpnNegotiated requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAlpnNegotiated: %w", err)
+	}
+	return oldValue.AlpnNegotiated, nil
+}
+
+// ResetAlpnNegotiated resets all changes to the "alpn_negotiated" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetAlpnNegotiated() {
+	m.alpn_negotiated = nil
+}
+
+// SetRawClientHello sets the "raw_client_hello" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetRawClientHello(b []byte) {
+	m.raw_client_hello = &b
+}
+
+// RawClientHello returns the value of the "raw_client_hello" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) RawClientHello() (r []byte, exists bool) {
+	v := m.raw_client_hello
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRawClientHello returns the old "raw_client_hello" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldRawClientHello(ctx context.Context) (v *[]byte, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRawClientHello is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRawClientHello requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRawClientHello: %w", err)
+	}
+	return oldValue.RawClientHello, nil
+}
+
+// ClearRawClientHello clears the value of the "raw_client_hello" field.
+func (m *TLSFingerprintCaptureSessionMutation) ClearRawClientHello() {
+	m.raw_client_hello = nil
+	m.clearedFields[tlsfingerprintcapturesession.FieldRawClientHello] = struct{}{}
+}
+
+// RawClientHelloCleared returns if the "raw_client_hello" field was cleared in this mutation.
+func (m *TLSFingerprintCaptureSessionMutation) RawClientHelloCleared() bool {
+	_, ok := m.clearedFields[tlsfingerprintcapturesession.FieldRawClientHello]
+	return ok
+}
+
+// ResetRawClientHello resets all changes to the "raw_client_hello" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetRawClientHello() {
+	m.raw_client_hello = nil
+	delete(m.clearedFields, tlsfingerprintcapturesession.FieldRawClientHello)
+}
+
+// SetObservedClientHello sets the "observed_client_hello" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetObservedClientHello(value map[string]interface{}) {
+	m.observed_client_hello = &value
+}
+
+// ObservedClientHello returns the value of the "observed_client_hello" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) ObservedClientHello() (r map[string]interface{}, exists bool) {
+	v := m.observed_client_hello
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldObservedClientHello returns the old "observed_client_hello" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldObservedClientHello(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldObservedClientHello is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldObservedClientHello requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldObservedClientHello: %w", err)
+	}
+	return oldValue.ObservedClientHello, nil
+}
+
+// ResetObservedClientHello resets all changes to the "observed_client_hello" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetObservedClientHello() {
+	m.observed_client_hello = nil
+}
+
+// SetReplayProfile sets the "replay_profile" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetReplayProfile(value map[string]interface{}) {
+	m.replay_profile = &value
+}
+
+// ReplayProfile returns the value of the "replay_profile" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) ReplayProfile() (r map[string]interface{}, exists bool) {
+	v := m.replay_profile
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReplayProfile returns the old "replay_profile" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldReplayProfile(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReplayProfile is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReplayProfile requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReplayProfile: %w", err)
+	}
+	return oldValue.ReplayProfile, nil
+}
+
+// ResetReplayProfile resets all changes to the "replay_profile" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetReplayProfile() {
+	m.replay_profile = nil
+}
+
+// SetDerivedFingerprint sets the "derived_fingerprint" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetDerivedFingerprint(value map[string]interface{}) {
+	m.derived_fingerprint = &value
+}
+
+// DerivedFingerprint returns the value of the "derived_fingerprint" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) DerivedFingerprint() (r map[string]interface{}, exists bool) {
+	v := m.derived_fingerprint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDerivedFingerprint returns the old "derived_fingerprint" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldDerivedFingerprint(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDerivedFingerprint is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDerivedFingerprint requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDerivedFingerprint: %w", err)
+	}
+	return oldValue.DerivedFingerprint, nil
+}
+
+// ResetDerivedFingerprint resets all changes to the "derived_fingerprint" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetDerivedFingerprint() {
+	m.derived_fingerprint = nil
+}
+
+// SetSessionStatus sets the "session_status" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetSessionStatus(s string) {
+	m.session_status = &s
+}
+
+// SessionStatus returns the value of the "session_status" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) SessionStatus() (r string, exists bool) {
+	v := m.session_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSessionStatus returns the old "session_status" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldSessionStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSessionStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSessionStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSessionStatus: %w", err)
+	}
+	return oldValue.SessionStatus, nil
+}
+
+// ResetSessionStatus resets all changes to the "session_status" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetSessionStatus() {
+	m.session_status = nil
+}
+
+// SetErrorSummary sets the "error_summary" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetErrorSummary(s string) {
+	m.error_summary = &s
+}
+
+// ErrorSummary returns the value of the "error_summary" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) ErrorSummary() (r string, exists bool) {
+	v := m.error_summary
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorSummary returns the old "error_summary" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldErrorSummary(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorSummary is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorSummary requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorSummary: %w", err)
+	}
+	return oldValue.ErrorSummary, nil
+}
+
+// ResetErrorSummary resets all changes to the "error_summary" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetErrorSummary() {
+	m.error_summary = nil
+}
+
+// SetOpenedAt sets the "opened_at" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetOpenedAt(t time.Time) {
+	m.opened_at = &t
+}
+
+// OpenedAt returns the value of the "opened_at" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) OpenedAt() (r time.Time, exists bool) {
+	v := m.opened_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOpenedAt returns the old "opened_at" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldOpenedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOpenedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOpenedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOpenedAt: %w", err)
+	}
+	return oldValue.OpenedAt, nil
+}
+
+// ResetOpenedAt resets all changes to the "opened_at" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetOpenedAt() {
+	m.opened_at = nil
+}
+
+// SetClosedAt sets the "closed_at" field.
+func (m *TLSFingerprintCaptureSessionMutation) SetClosedAt(t time.Time) {
+	m.closed_at = &t
+}
+
+// ClosedAt returns the value of the "closed_at" field in the mutation.
+func (m *TLSFingerprintCaptureSessionMutation) ClosedAt() (r time.Time, exists bool) {
+	v := m.closed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClosedAt returns the old "closed_at" field's value of the TLSFingerprintCaptureSession entity.
+// If the TLSFingerprintCaptureSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionMutation) OldClosedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClosedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClosedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClosedAt: %w", err)
+	}
+	return oldValue.ClosedAt, nil
+}
+
+// ClearClosedAt clears the value of the "closed_at" field.
+func (m *TLSFingerprintCaptureSessionMutation) ClearClosedAt() {
+	m.closed_at = nil
+	m.clearedFields[tlsfingerprintcapturesession.FieldClosedAt] = struct{}{}
+}
+
+// ClosedAtCleared returns if the "closed_at" field was cleared in this mutation.
+func (m *TLSFingerprintCaptureSessionMutation) ClosedAtCleared() bool {
+	_, ok := m.clearedFields[tlsfingerprintcapturesession.FieldClosedAt]
+	return ok
+}
+
+// ResetClosedAt resets all changes to the "closed_at" field.
+func (m *TLSFingerprintCaptureSessionMutation) ResetClosedAt() {
+	m.closed_at = nil
+	delete(m.clearedFields, tlsfingerprintcapturesession.FieldClosedAt)
+}
+
+// Where appends a list predicates to the TLSFingerprintCaptureSessionMutation builder.
+func (m *TLSFingerprintCaptureSessionMutation) Where(ps ...predicate.TLSFingerprintCaptureSession) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the TLSFingerprintCaptureSessionMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *TLSFingerprintCaptureSessionMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.TLSFingerprintCaptureSession, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *TLSFingerprintCaptureSessionMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *TLSFingerprintCaptureSessionMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (TLSFingerprintCaptureSession).
+func (m *TLSFingerprintCaptureSessionMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *TLSFingerprintCaptureSessionMutation) Fields() []string {
+	fields := make([]string, 0, 17)
+	if m.created_at != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldUpdatedAt)
+	}
+	if m.task_id != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldTaskID)
+	}
+	if m.session_id != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldSessionID)
+	}
+	if m.client_ip != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldClientIP)
+	}
+	if m.platform != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldPlatform)
+	}
+	if m.user_agent != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldUserAgent)
+	}
+	if m.originator != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldOriginator)
+	}
+	if m.alpn_negotiated != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldAlpnNegotiated)
+	}
+	if m.raw_client_hello != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldRawClientHello)
+	}
+	if m.observed_client_hello != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldObservedClientHello)
+	}
+	if m.replay_profile != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldReplayProfile)
+	}
+	if m.derived_fingerprint != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldDerivedFingerprint)
+	}
+	if m.session_status != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldSessionStatus)
+	}
+	if m.error_summary != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldErrorSummary)
+	}
+	if m.opened_at != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldOpenedAt)
+	}
+	if m.closed_at != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldClosedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *TLSFingerprintCaptureSessionMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case tlsfingerprintcapturesession.FieldCreatedAt:
+		return m.CreatedAt()
+	case tlsfingerprintcapturesession.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case tlsfingerprintcapturesession.FieldTaskID:
+		return m.TaskID()
+	case tlsfingerprintcapturesession.FieldSessionID:
+		return m.SessionID()
+	case tlsfingerprintcapturesession.FieldClientIP:
+		return m.ClientIP()
+	case tlsfingerprintcapturesession.FieldPlatform:
+		return m.Platform()
+	case tlsfingerprintcapturesession.FieldUserAgent:
+		return m.UserAgent()
+	case tlsfingerprintcapturesession.FieldOriginator:
+		return m.Originator()
+	case tlsfingerprintcapturesession.FieldAlpnNegotiated:
+		return m.AlpnNegotiated()
+	case tlsfingerprintcapturesession.FieldRawClientHello:
+		return m.RawClientHello()
+	case tlsfingerprintcapturesession.FieldObservedClientHello:
+		return m.ObservedClientHello()
+	case tlsfingerprintcapturesession.FieldReplayProfile:
+		return m.ReplayProfile()
+	case tlsfingerprintcapturesession.FieldDerivedFingerprint:
+		return m.DerivedFingerprint()
+	case tlsfingerprintcapturesession.FieldSessionStatus:
+		return m.SessionStatus()
+	case tlsfingerprintcapturesession.FieldErrorSummary:
+		return m.ErrorSummary()
+	case tlsfingerprintcapturesession.FieldOpenedAt:
+		return m.OpenedAt()
+	case tlsfingerprintcapturesession.FieldClosedAt:
+		return m.ClosedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *TLSFingerprintCaptureSessionMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case tlsfingerprintcapturesession.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case tlsfingerprintcapturesession.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case tlsfingerprintcapturesession.FieldTaskID:
+		return m.OldTaskID(ctx)
+	case tlsfingerprintcapturesession.FieldSessionID:
+		return m.OldSessionID(ctx)
+	case tlsfingerprintcapturesession.FieldClientIP:
+		return m.OldClientIP(ctx)
+	case tlsfingerprintcapturesession.FieldPlatform:
+		return m.OldPlatform(ctx)
+	case tlsfingerprintcapturesession.FieldUserAgent:
+		return m.OldUserAgent(ctx)
+	case tlsfingerprintcapturesession.FieldOriginator:
+		return m.OldOriginator(ctx)
+	case tlsfingerprintcapturesession.FieldAlpnNegotiated:
+		return m.OldAlpnNegotiated(ctx)
+	case tlsfingerprintcapturesession.FieldRawClientHello:
+		return m.OldRawClientHello(ctx)
+	case tlsfingerprintcapturesession.FieldObservedClientHello:
+		return m.OldObservedClientHello(ctx)
+	case tlsfingerprintcapturesession.FieldReplayProfile:
+		return m.OldReplayProfile(ctx)
+	case tlsfingerprintcapturesession.FieldDerivedFingerprint:
+		return m.OldDerivedFingerprint(ctx)
+	case tlsfingerprintcapturesession.FieldSessionStatus:
+		return m.OldSessionStatus(ctx)
+	case tlsfingerprintcapturesession.FieldErrorSummary:
+		return m.OldErrorSummary(ctx)
+	case tlsfingerprintcapturesession.FieldOpenedAt:
+		return m.OldOpenedAt(ctx)
+	case tlsfingerprintcapturesession.FieldClosedAt:
+		return m.OldClosedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown TLSFingerprintCaptureSession field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TLSFingerprintCaptureSessionMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case tlsfingerprintcapturesession.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldTaskID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaskID(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldSessionID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSessionID(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldClientIP:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClientIP(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldPlatform:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlatform(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldUserAgent:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserAgent(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldOriginator:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOriginator(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldAlpnNegotiated:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAlpnNegotiated(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldRawClientHello:
+		v, ok := value.([]byte)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRawClientHello(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldObservedClientHello:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetObservedClientHello(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldReplayProfile:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReplayProfile(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldDerivedFingerprint:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDerivedFingerprint(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldSessionStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSessionStatus(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldErrorSummary:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorSummary(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldOpenedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOpenedAt(v)
+		return nil
+	case tlsfingerprintcapturesession.FieldClosedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClosedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown TLSFingerprintCaptureSession field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *TLSFingerprintCaptureSessionMutation) AddedFields() []string {
+	var fields []string
+	if m.addtask_id != nil {
+		fields = append(fields, tlsfingerprintcapturesession.FieldTaskID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *TLSFingerprintCaptureSessionMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case tlsfingerprintcapturesession.FieldTaskID:
+		return m.AddedTaskID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TLSFingerprintCaptureSessionMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case tlsfingerprintcapturesession.FieldTaskID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTaskID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown TLSFingerprintCaptureSession numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *TLSFingerprintCaptureSessionMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(tlsfingerprintcapturesession.FieldRawClientHello) {
+		fields = append(fields, tlsfingerprintcapturesession.FieldRawClientHello)
+	}
+	if m.FieldCleared(tlsfingerprintcapturesession.FieldClosedAt) {
+		fields = append(fields, tlsfingerprintcapturesession.FieldClosedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *TLSFingerprintCaptureSessionMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *TLSFingerprintCaptureSessionMutation) ClearField(name string) error {
+	switch name {
+	case tlsfingerprintcapturesession.FieldRawClientHello:
+		m.ClearRawClientHello()
+		return nil
+	case tlsfingerprintcapturesession.FieldClosedAt:
+		m.ClearClosedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown TLSFingerprintCaptureSession nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *TLSFingerprintCaptureSessionMutation) ResetField(name string) error {
+	switch name {
+	case tlsfingerprintcapturesession.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case tlsfingerprintcapturesession.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case tlsfingerprintcapturesession.FieldTaskID:
+		m.ResetTaskID()
+		return nil
+	case tlsfingerprintcapturesession.FieldSessionID:
+		m.ResetSessionID()
+		return nil
+	case tlsfingerprintcapturesession.FieldClientIP:
+		m.ResetClientIP()
+		return nil
+	case tlsfingerprintcapturesession.FieldPlatform:
+		m.ResetPlatform()
+		return nil
+	case tlsfingerprintcapturesession.FieldUserAgent:
+		m.ResetUserAgent()
+		return nil
+	case tlsfingerprintcapturesession.FieldOriginator:
+		m.ResetOriginator()
+		return nil
+	case tlsfingerprintcapturesession.FieldAlpnNegotiated:
+		m.ResetAlpnNegotiated()
+		return nil
+	case tlsfingerprintcapturesession.FieldRawClientHello:
+		m.ResetRawClientHello()
+		return nil
+	case tlsfingerprintcapturesession.FieldObservedClientHello:
+		m.ResetObservedClientHello()
+		return nil
+	case tlsfingerprintcapturesession.FieldReplayProfile:
+		m.ResetReplayProfile()
+		return nil
+	case tlsfingerprintcapturesession.FieldDerivedFingerprint:
+		m.ResetDerivedFingerprint()
+		return nil
+	case tlsfingerprintcapturesession.FieldSessionStatus:
+		m.ResetSessionStatus()
+		return nil
+	case tlsfingerprintcapturesession.FieldErrorSummary:
+		m.ResetErrorSummary()
+		return nil
+	case tlsfingerprintcapturesession.FieldOpenedAt:
+		m.ResetOpenedAt()
+		return nil
+	case tlsfingerprintcapturesession.FieldClosedAt:
+		m.ResetClosedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown TLSFingerprintCaptureSession field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *TLSFingerprintCaptureSessionMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *TLSFingerprintCaptureSessionMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *TLSFingerprintCaptureSessionMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *TLSFingerprintCaptureSessionMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *TLSFingerprintCaptureSessionMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *TLSFingerprintCaptureSessionMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *TLSFingerprintCaptureSessionMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown TLSFingerprintCaptureSession unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *TLSFingerprintCaptureSessionMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown TLSFingerprintCaptureSession edge %s", name)
+}
+
+// TLSFingerprintCaptureSessionEventMutation represents an operation that mutates the TLSFingerprintCaptureSessionEvent nodes in the graph.
+type TLSFingerprintCaptureSessionEventMutation struct {
+	config
+	op                  Op
+	typ                 string
+	id                  *int64
+	created_at          *time.Time
+	updated_at          *time.Time
+	task_id             *int64
+	addtask_id          *int64
+	session_ref         *int64
+	addsession_ref      *int64
+	session_id          *string
+	event_id            *string
+	platform            *string
+	transport           *string
+	event_type          *string
+	request_sequence    *int
+	addrequest_sequence *int
+	stream_id           *string
+	request_path        *string
+	http_method         *string
+	is_websocket        *bool
+	websocket_protocol  *string
+	client_type         *string
+	model               *string
+	request_kind        *string
+	streaming           *bool
+	response_mode       *string
+	user_agent          *string
+	originator          *string
+	stainless_metadata  *map[string]interface{}
+	headers_snapshot    *map[string]interface{}
+	body_summary        *string
+	raw_payload         *string
+	event_status        *string
+	event_error         *string
+	replayable          *bool
+	sample_id           *int64
+	addsample_id        *int64
+	replay_hash         *string
+	clearedFields       map[string]struct{}
+	done                bool
+	oldValue            func(context.Context) (*TLSFingerprintCaptureSessionEvent, error)
+	predicates          []predicate.TLSFingerprintCaptureSessionEvent
+}
+
+var _ ent.Mutation = (*TLSFingerprintCaptureSessionEventMutation)(nil)
+
+// tlsfingerprintcapturesessioneventOption allows management of the mutation configuration using functional options.
+type tlsfingerprintcapturesessioneventOption func(*TLSFingerprintCaptureSessionEventMutation)
+
+// newTLSFingerprintCaptureSessionEventMutation creates new mutation for the TLSFingerprintCaptureSessionEvent entity.
+func newTLSFingerprintCaptureSessionEventMutation(c config, op Op, opts ...tlsfingerprintcapturesessioneventOption) *TLSFingerprintCaptureSessionEventMutation {
+	m := &TLSFingerprintCaptureSessionEventMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeTLSFingerprintCaptureSessionEvent,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withTLSFingerprintCaptureSessionEventID sets the ID field of the mutation.
+func withTLSFingerprintCaptureSessionEventID(id int64) tlsfingerprintcapturesessioneventOption {
+	return func(m *TLSFingerprintCaptureSessionEventMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *TLSFingerprintCaptureSessionEvent
+		)
+		m.oldValue = func(ctx context.Context) (*TLSFingerprintCaptureSessionEvent, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().TLSFingerprintCaptureSessionEvent.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withTLSFingerprintCaptureSessionEvent sets the old TLSFingerprintCaptureSessionEvent of the mutation.
+func withTLSFingerprintCaptureSessionEvent(node *TLSFingerprintCaptureSessionEvent) tlsfingerprintcapturesessioneventOption {
+	return func(m *TLSFingerprintCaptureSessionEventMutation) {
+		m.oldValue = func(context.Context) (*TLSFingerprintCaptureSessionEvent, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m TLSFingerprintCaptureSessionEventMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m TLSFingerprintCaptureSessionEventMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *TLSFingerprintCaptureSessionEventMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().TLSFingerprintCaptureSessionEvent.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetTaskID sets the "task_id" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetTaskID(i int64) {
+	m.task_id = &i
+	m.addtask_id = nil
+}
+
+// TaskID returns the value of the "task_id" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) TaskID() (r int64, exists bool) {
+	v := m.task_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaskID returns the old "task_id" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldTaskID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaskID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaskID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaskID: %w", err)
+	}
+	return oldValue.TaskID, nil
+}
+
+// AddTaskID adds i to the "task_id" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) AddTaskID(i int64) {
+	if m.addtask_id != nil {
+		*m.addtask_id += i
+	} else {
+		m.addtask_id = &i
+	}
+}
+
+// AddedTaskID returns the value that was added to the "task_id" field in this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) AddedTaskID() (r int64, exists bool) {
+	v := m.addtask_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTaskID resets all changes to the "task_id" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetTaskID() {
+	m.task_id = nil
+	m.addtask_id = nil
+}
+
+// SetSessionRef sets the "session_ref" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetSessionRef(i int64) {
+	m.session_ref = &i
+	m.addsession_ref = nil
+}
+
+// SessionRef returns the value of the "session_ref" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) SessionRef() (r int64, exists bool) {
+	v := m.session_ref
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSessionRef returns the old "session_ref" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldSessionRef(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSessionRef is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSessionRef requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSessionRef: %w", err)
+	}
+	return oldValue.SessionRef, nil
+}
+
+// AddSessionRef adds i to the "session_ref" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) AddSessionRef(i int64) {
+	if m.addsession_ref != nil {
+		*m.addsession_ref += i
+	} else {
+		m.addsession_ref = &i
+	}
+}
+
+// AddedSessionRef returns the value that was added to the "session_ref" field in this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) AddedSessionRef() (r int64, exists bool) {
+	v := m.addsession_ref
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearSessionRef clears the value of the "session_ref" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ClearSessionRef() {
+	m.session_ref = nil
+	m.addsession_ref = nil
+	m.clearedFields[tlsfingerprintcapturesessionevent.FieldSessionRef] = struct{}{}
+}
+
+// SessionRefCleared returns if the "session_ref" field was cleared in this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) SessionRefCleared() bool {
+	_, ok := m.clearedFields[tlsfingerprintcapturesessionevent.FieldSessionRef]
+	return ok
+}
+
+// ResetSessionRef resets all changes to the "session_ref" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetSessionRef() {
+	m.session_ref = nil
+	m.addsession_ref = nil
+	delete(m.clearedFields, tlsfingerprintcapturesessionevent.FieldSessionRef)
+}
+
+// SetSessionID sets the "session_id" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetSessionID(s string) {
+	m.session_id = &s
+}
+
+// SessionID returns the value of the "session_id" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) SessionID() (r string, exists bool) {
+	v := m.session_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSessionID returns the old "session_id" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldSessionID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSessionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSessionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSessionID: %w", err)
+	}
+	return oldValue.SessionID, nil
+}
+
+// ResetSessionID resets all changes to the "session_id" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetSessionID() {
+	m.session_id = nil
+}
+
+// SetEventID sets the "event_id" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetEventID(s string) {
+	m.event_id = &s
+}
+
+// EventID returns the value of the "event_id" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) EventID() (r string, exists bool) {
+	v := m.event_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEventID returns the old "event_id" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldEventID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEventID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEventID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEventID: %w", err)
+	}
+	return oldValue.EventID, nil
+}
+
+// ResetEventID resets all changes to the "event_id" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetEventID() {
+	m.event_id = nil
+}
+
+// SetPlatform sets the "platform" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetPlatform(s string) {
+	m.platform = &s
+}
+
+// Platform returns the value of the "platform" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) Platform() (r string, exists bool) {
+	v := m.platform
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlatform returns the old "platform" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldPlatform(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlatform is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlatform requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlatform: %w", err)
+	}
+	return oldValue.Platform, nil
+}
+
+// ResetPlatform resets all changes to the "platform" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetPlatform() {
+	m.platform = nil
+}
+
+// SetTransport sets the "transport" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetTransport(s string) {
+	m.transport = &s
+}
+
+// Transport returns the value of the "transport" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) Transport() (r string, exists bool) {
+	v := m.transport
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTransport returns the old "transport" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldTransport(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTransport is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTransport requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTransport: %w", err)
+	}
+	return oldValue.Transport, nil
+}
+
+// ResetTransport resets all changes to the "transport" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetTransport() {
+	m.transport = nil
+}
+
+// SetEventType sets the "event_type" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetEventType(s string) {
+	m.event_type = &s
+}
+
+// EventType returns the value of the "event_type" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) EventType() (r string, exists bool) {
+	v := m.event_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEventType returns the old "event_type" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldEventType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEventType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEventType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEventType: %w", err)
+	}
+	return oldValue.EventType, nil
+}
+
+// ResetEventType resets all changes to the "event_type" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetEventType() {
+	m.event_type = nil
+}
+
+// SetRequestSequence sets the "request_sequence" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetRequestSequence(i int) {
+	m.request_sequence = &i
+	m.addrequest_sequence = nil
+}
+
+// RequestSequence returns the value of the "request_sequence" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) RequestSequence() (r int, exists bool) {
+	v := m.request_sequence
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestSequence returns the old "request_sequence" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldRequestSequence(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestSequence is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestSequence requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestSequence: %w", err)
+	}
+	return oldValue.RequestSequence, nil
+}
+
+// AddRequestSequence adds i to the "request_sequence" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) AddRequestSequence(i int) {
+	if m.addrequest_sequence != nil {
+		*m.addrequest_sequence += i
+	} else {
+		m.addrequest_sequence = &i
+	}
+}
+
+// AddedRequestSequence returns the value that was added to the "request_sequence" field in this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) AddedRequestSequence() (r int, exists bool) {
+	v := m.addrequest_sequence
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRequestSequence resets all changes to the "request_sequence" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetRequestSequence() {
+	m.request_sequence = nil
+	m.addrequest_sequence = nil
+}
+
+// SetStreamID sets the "stream_id" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetStreamID(s string) {
+	m.stream_id = &s
+}
+
+// StreamID returns the value of the "stream_id" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) StreamID() (r string, exists bool) {
+	v := m.stream_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStreamID returns the old "stream_id" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldStreamID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStreamID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStreamID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStreamID: %w", err)
+	}
+	return oldValue.StreamID, nil
+}
+
+// ResetStreamID resets all changes to the "stream_id" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetStreamID() {
+	m.stream_id = nil
+}
+
+// SetRequestPath sets the "request_path" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetRequestPath(s string) {
+	m.request_path = &s
+}
+
+// RequestPath returns the value of the "request_path" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) RequestPath() (r string, exists bool) {
+	v := m.request_path
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestPath returns the old "request_path" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldRequestPath(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestPath is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestPath requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestPath: %w", err)
+	}
+	return oldValue.RequestPath, nil
+}
+
+// ResetRequestPath resets all changes to the "request_path" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetRequestPath() {
+	m.request_path = nil
+}
+
+// SetHTTPMethod sets the "http_method" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetHTTPMethod(s string) {
+	m.http_method = &s
+}
+
+// HTTPMethod returns the value of the "http_method" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) HTTPMethod() (r string, exists bool) {
+	v := m.http_method
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHTTPMethod returns the old "http_method" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldHTTPMethod(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHTTPMethod is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHTTPMethod requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHTTPMethod: %w", err)
+	}
+	return oldValue.HTTPMethod, nil
+}
+
+// ResetHTTPMethod resets all changes to the "http_method" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetHTTPMethod() {
+	m.http_method = nil
+}
+
+// SetIsWebsocket sets the "is_websocket" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetIsWebsocket(b bool) {
+	m.is_websocket = &b
+}
+
+// IsWebsocket returns the value of the "is_websocket" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) IsWebsocket() (r bool, exists bool) {
+	v := m.is_websocket
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIsWebsocket returns the old "is_websocket" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldIsWebsocket(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIsWebsocket is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIsWebsocket requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIsWebsocket: %w", err)
+	}
+	return oldValue.IsWebsocket, nil
+}
+
+// ResetIsWebsocket resets all changes to the "is_websocket" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetIsWebsocket() {
+	m.is_websocket = nil
+}
+
+// SetWebsocketProtocol sets the "websocket_protocol" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetWebsocketProtocol(s string) {
+	m.websocket_protocol = &s
+}
+
+// WebsocketProtocol returns the value of the "websocket_protocol" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) WebsocketProtocol() (r string, exists bool) {
+	v := m.websocket_protocol
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWebsocketProtocol returns the old "websocket_protocol" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldWebsocketProtocol(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWebsocketProtocol is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWebsocketProtocol requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWebsocketProtocol: %w", err)
+	}
+	return oldValue.WebsocketProtocol, nil
+}
+
+// ResetWebsocketProtocol resets all changes to the "websocket_protocol" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetWebsocketProtocol() {
+	m.websocket_protocol = nil
+}
+
+// SetClientType sets the "client_type" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetClientType(s string) {
+	m.client_type = &s
+}
+
+// ClientType returns the value of the "client_type" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) ClientType() (r string, exists bool) {
+	v := m.client_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClientType returns the old "client_type" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldClientType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClientType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClientType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClientType: %w", err)
+	}
+	return oldValue.ClientType, nil
+}
+
+// ResetClientType resets all changes to the "client_type" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetClientType() {
+	m.client_type = nil
+}
+
+// SetModel sets the "model" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetModel(s string) {
+	m.model = &s
+}
+
+// Model returns the value of the "model" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) Model() (r string, exists bool) {
+	v := m.model
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModel returns the old "model" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldModel(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModel: %w", err)
+	}
+	return oldValue.Model, nil
+}
+
+// ResetModel resets all changes to the "model" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetModel() {
+	m.model = nil
+}
+
+// SetRequestKind sets the "request_kind" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetRequestKind(s string) {
+	m.request_kind = &s
+}
+
+// RequestKind returns the value of the "request_kind" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) RequestKind() (r string, exists bool) {
+	v := m.request_kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestKind returns the old "request_kind" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldRequestKind(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestKind: %w", err)
+	}
+	return oldValue.RequestKind, nil
+}
+
+// ResetRequestKind resets all changes to the "request_kind" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetRequestKind() {
+	m.request_kind = nil
+}
+
+// SetStreaming sets the "streaming" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetStreaming(b bool) {
+	m.streaming = &b
+}
+
+// Streaming returns the value of the "streaming" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) Streaming() (r bool, exists bool) {
+	v := m.streaming
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStreaming returns the old "streaming" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldStreaming(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStreaming is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStreaming requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStreaming: %w", err)
+	}
+	return oldValue.Streaming, nil
+}
+
+// ResetStreaming resets all changes to the "streaming" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetStreaming() {
+	m.streaming = nil
+}
+
+// SetResponseMode sets the "response_mode" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetResponseMode(s string) {
+	m.response_mode = &s
+}
+
+// ResponseMode returns the value of the "response_mode" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResponseMode() (r string, exists bool) {
+	v := m.response_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResponseMode returns the old "response_mode" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldResponseMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResponseMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResponseMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResponseMode: %w", err)
+	}
+	return oldValue.ResponseMode, nil
+}
+
+// ResetResponseMode resets all changes to the "response_mode" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetResponseMode() {
+	m.response_mode = nil
+}
+
+// SetUserAgent sets the "user_agent" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetUserAgent(s string) {
+	m.user_agent = &s
+}
+
+// UserAgent returns the value of the "user_agent" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) UserAgent() (r string, exists bool) {
+	v := m.user_agent
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserAgent returns the old "user_agent" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldUserAgent(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserAgent is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserAgent requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserAgent: %w", err)
+	}
+	return oldValue.UserAgent, nil
+}
+
+// ResetUserAgent resets all changes to the "user_agent" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetUserAgent() {
+	m.user_agent = nil
+}
+
+// SetOriginator sets the "originator" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetOriginator(s string) {
+	m.originator = &s
+}
+
+// Originator returns the value of the "originator" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) Originator() (r string, exists bool) {
+	v := m.originator
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOriginator returns the old "originator" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldOriginator(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOriginator is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOriginator requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOriginator: %w", err)
+	}
+	return oldValue.Originator, nil
+}
+
+// ResetOriginator resets all changes to the "originator" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetOriginator() {
+	m.originator = nil
+}
+
+// SetStainlessMetadata sets the "stainless_metadata" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetStainlessMetadata(value map[string]interface{}) {
+	m.stainless_metadata = &value
+}
+
+// StainlessMetadata returns the value of the "stainless_metadata" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) StainlessMetadata() (r map[string]interface{}, exists bool) {
+	v := m.stainless_metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStainlessMetadata returns the old "stainless_metadata" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldStainlessMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStainlessMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStainlessMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStainlessMetadata: %w", err)
+	}
+	return oldValue.StainlessMetadata, nil
+}
+
+// ResetStainlessMetadata resets all changes to the "stainless_metadata" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetStainlessMetadata() {
+	m.stainless_metadata = nil
+}
+
+// SetHeadersSnapshot sets the "headers_snapshot" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetHeadersSnapshot(value map[string]interface{}) {
+	m.headers_snapshot = &value
+}
+
+// HeadersSnapshot returns the value of the "headers_snapshot" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) HeadersSnapshot() (r map[string]interface{}, exists bool) {
+	v := m.headers_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHeadersSnapshot returns the old "headers_snapshot" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldHeadersSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHeadersSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHeadersSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHeadersSnapshot: %w", err)
+	}
+	return oldValue.HeadersSnapshot, nil
+}
+
+// ResetHeadersSnapshot resets all changes to the "headers_snapshot" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetHeadersSnapshot() {
+	m.headers_snapshot = nil
+}
+
+// SetBodySummary sets the "body_summary" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetBodySummary(s string) {
+	m.body_summary = &s
+}
+
+// BodySummary returns the value of the "body_summary" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) BodySummary() (r string, exists bool) {
+	v := m.body_summary
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBodySummary returns the old "body_summary" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldBodySummary(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBodySummary is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBodySummary requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBodySummary: %w", err)
+	}
+	return oldValue.BodySummary, nil
+}
+
+// ResetBodySummary resets all changes to the "body_summary" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetBodySummary() {
+	m.body_summary = nil
+}
+
+// SetRawPayload sets the "raw_payload" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetRawPayload(s string) {
+	m.raw_payload = &s
+}
+
+// RawPayload returns the value of the "raw_payload" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) RawPayload() (r string, exists bool) {
+	v := m.raw_payload
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRawPayload returns the old "raw_payload" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldRawPayload(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRawPayload is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRawPayload requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRawPayload: %w", err)
+	}
+	return oldValue.RawPayload, nil
+}
+
+// ResetRawPayload resets all changes to the "raw_payload" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetRawPayload() {
+	m.raw_payload = nil
+}
+
+// SetEventStatus sets the "event_status" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetEventStatus(s string) {
+	m.event_status = &s
+}
+
+// EventStatus returns the value of the "event_status" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) EventStatus() (r string, exists bool) {
+	v := m.event_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEventStatus returns the old "event_status" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldEventStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEventStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEventStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEventStatus: %w", err)
+	}
+	return oldValue.EventStatus, nil
+}
+
+// ResetEventStatus resets all changes to the "event_status" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetEventStatus() {
+	m.event_status = nil
+}
+
+// SetEventError sets the "event_error" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetEventError(s string) {
+	m.event_error = &s
+}
+
+// EventError returns the value of the "event_error" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) EventError() (r string, exists bool) {
+	v := m.event_error
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEventError returns the old "event_error" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldEventError(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEventError is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEventError requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEventError: %w", err)
+	}
+	return oldValue.EventError, nil
+}
+
+// ResetEventError resets all changes to the "event_error" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetEventError() {
+	m.event_error = nil
+}
+
+// SetReplayable sets the "replayable" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetReplayable(b bool) {
+	m.replayable = &b
+}
+
+// Replayable returns the value of the "replayable" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) Replayable() (r bool, exists bool) {
+	v := m.replayable
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReplayable returns the old "replayable" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldReplayable(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReplayable is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReplayable requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReplayable: %w", err)
+	}
+	return oldValue.Replayable, nil
+}
+
+// ResetReplayable resets all changes to the "replayable" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetReplayable() {
+	m.replayable = nil
+}
+
+// SetSampleID sets the "sample_id" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetSampleID(i int64) {
+	m.sample_id = &i
+	m.addsample_id = nil
+}
+
+// SampleID returns the value of the "sample_id" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) SampleID() (r int64, exists bool) {
+	v := m.sample_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSampleID returns the old "sample_id" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldSampleID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSampleID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSampleID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSampleID: %w", err)
+	}
+	return oldValue.SampleID, nil
+}
+
+// AddSampleID adds i to the "sample_id" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) AddSampleID(i int64) {
+	if m.addsample_id != nil {
+		*m.addsample_id += i
+	} else {
+		m.addsample_id = &i
+	}
+}
+
+// AddedSampleID returns the value that was added to the "sample_id" field in this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) AddedSampleID() (r int64, exists bool) {
+	v := m.addsample_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearSampleID clears the value of the "sample_id" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ClearSampleID() {
+	m.sample_id = nil
+	m.addsample_id = nil
+	m.clearedFields[tlsfingerprintcapturesessionevent.FieldSampleID] = struct{}{}
+}
+
+// SampleIDCleared returns if the "sample_id" field was cleared in this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) SampleIDCleared() bool {
+	_, ok := m.clearedFields[tlsfingerprintcapturesessionevent.FieldSampleID]
+	return ok
+}
+
+// ResetSampleID resets all changes to the "sample_id" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetSampleID() {
+	m.sample_id = nil
+	m.addsample_id = nil
+	delete(m.clearedFields, tlsfingerprintcapturesessionevent.FieldSampleID)
+}
+
+// SetReplayHash sets the "replay_hash" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetReplayHash(s string) {
+	m.replay_hash = &s
+}
+
+// ReplayHash returns the value of the "replay_hash" field in the mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) ReplayHash() (r string, exists bool) {
+	v := m.replay_hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReplayHash returns the old "replay_hash" field's value of the TLSFingerprintCaptureSessionEvent entity.
+// If the TLSFingerprintCaptureSessionEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldReplayHash(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReplayHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReplayHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReplayHash: %w", err)
+	}
+	return oldValue.ReplayHash, nil
+}
+
+// ResetReplayHash resets all changes to the "replay_hash" field.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetReplayHash() {
+	m.replay_hash = nil
+}
+
+// Where appends a list predicates to the TLSFingerprintCaptureSessionEventMutation builder.
+func (m *TLSFingerprintCaptureSessionEventMutation) Where(ps ...predicate.TLSFingerprintCaptureSessionEvent) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the TLSFingerprintCaptureSessionEventMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *TLSFingerprintCaptureSessionEventMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.TLSFingerprintCaptureSessionEvent, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *TLSFingerprintCaptureSessionEventMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (TLSFingerprintCaptureSessionEvent).
+func (m *TLSFingerprintCaptureSessionEventMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *TLSFingerprintCaptureSessionEventMutation) Fields() []string {
+	fields := make([]string, 0, 31)
+	if m.created_at != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldUpdatedAt)
+	}
+	if m.task_id != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldTaskID)
+	}
+	if m.session_ref != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldSessionRef)
+	}
+	if m.session_id != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldSessionID)
+	}
+	if m.event_id != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldEventID)
+	}
+	if m.platform != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldPlatform)
+	}
+	if m.transport != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldTransport)
+	}
+	if m.event_type != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldEventType)
+	}
+	if m.request_sequence != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldRequestSequence)
+	}
+	if m.stream_id != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldStreamID)
+	}
+	if m.request_path != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldRequestPath)
+	}
+	if m.http_method != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldHTTPMethod)
+	}
+	if m.is_websocket != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldIsWebsocket)
+	}
+	if m.websocket_protocol != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldWebsocketProtocol)
+	}
+	if m.client_type != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldClientType)
+	}
+	if m.model != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldModel)
+	}
+	if m.request_kind != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldRequestKind)
+	}
+	if m.streaming != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldStreaming)
+	}
+	if m.response_mode != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldResponseMode)
+	}
+	if m.user_agent != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldUserAgent)
+	}
+	if m.originator != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldOriginator)
+	}
+	if m.stainless_metadata != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldStainlessMetadata)
+	}
+	if m.headers_snapshot != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldHeadersSnapshot)
+	}
+	if m.body_summary != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldBodySummary)
+	}
+	if m.raw_payload != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldRawPayload)
+	}
+	if m.event_status != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldEventStatus)
+	}
+	if m.event_error != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldEventError)
+	}
+	if m.replayable != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldReplayable)
+	}
+	if m.sample_id != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldSampleID)
+	}
+	if m.replay_hash != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldReplayHash)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *TLSFingerprintCaptureSessionEventMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case tlsfingerprintcapturesessionevent.FieldCreatedAt:
+		return m.CreatedAt()
+	case tlsfingerprintcapturesessionevent.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case tlsfingerprintcapturesessionevent.FieldTaskID:
+		return m.TaskID()
+	case tlsfingerprintcapturesessionevent.FieldSessionRef:
+		return m.SessionRef()
+	case tlsfingerprintcapturesessionevent.FieldSessionID:
+		return m.SessionID()
+	case tlsfingerprintcapturesessionevent.FieldEventID:
+		return m.EventID()
+	case tlsfingerprintcapturesessionevent.FieldPlatform:
+		return m.Platform()
+	case tlsfingerprintcapturesessionevent.FieldTransport:
+		return m.Transport()
+	case tlsfingerprintcapturesessionevent.FieldEventType:
+		return m.EventType()
+	case tlsfingerprintcapturesessionevent.FieldRequestSequence:
+		return m.RequestSequence()
+	case tlsfingerprintcapturesessionevent.FieldStreamID:
+		return m.StreamID()
+	case tlsfingerprintcapturesessionevent.FieldRequestPath:
+		return m.RequestPath()
+	case tlsfingerprintcapturesessionevent.FieldHTTPMethod:
+		return m.HTTPMethod()
+	case tlsfingerprintcapturesessionevent.FieldIsWebsocket:
+		return m.IsWebsocket()
+	case tlsfingerprintcapturesessionevent.FieldWebsocketProtocol:
+		return m.WebsocketProtocol()
+	case tlsfingerprintcapturesessionevent.FieldClientType:
+		return m.ClientType()
+	case tlsfingerprintcapturesessionevent.FieldModel:
+		return m.Model()
+	case tlsfingerprintcapturesessionevent.FieldRequestKind:
+		return m.RequestKind()
+	case tlsfingerprintcapturesessionevent.FieldStreaming:
+		return m.Streaming()
+	case tlsfingerprintcapturesessionevent.FieldResponseMode:
+		return m.ResponseMode()
+	case tlsfingerprintcapturesessionevent.FieldUserAgent:
+		return m.UserAgent()
+	case tlsfingerprintcapturesessionevent.FieldOriginator:
+		return m.Originator()
+	case tlsfingerprintcapturesessionevent.FieldStainlessMetadata:
+		return m.StainlessMetadata()
+	case tlsfingerprintcapturesessionevent.FieldHeadersSnapshot:
+		return m.HeadersSnapshot()
+	case tlsfingerprintcapturesessionevent.FieldBodySummary:
+		return m.BodySummary()
+	case tlsfingerprintcapturesessionevent.FieldRawPayload:
+		return m.RawPayload()
+	case tlsfingerprintcapturesessionevent.FieldEventStatus:
+		return m.EventStatus()
+	case tlsfingerprintcapturesessionevent.FieldEventError:
+		return m.EventError()
+	case tlsfingerprintcapturesessionevent.FieldReplayable:
+		return m.Replayable()
+	case tlsfingerprintcapturesessionevent.FieldSampleID:
+		return m.SampleID()
+	case tlsfingerprintcapturesessionevent.FieldReplayHash:
+		return m.ReplayHash()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *TLSFingerprintCaptureSessionEventMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case tlsfingerprintcapturesessionevent.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case tlsfingerprintcapturesessionevent.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case tlsfingerprintcapturesessionevent.FieldTaskID:
+		return m.OldTaskID(ctx)
+	case tlsfingerprintcapturesessionevent.FieldSessionRef:
+		return m.OldSessionRef(ctx)
+	case tlsfingerprintcapturesessionevent.FieldSessionID:
+		return m.OldSessionID(ctx)
+	case tlsfingerprintcapturesessionevent.FieldEventID:
+		return m.OldEventID(ctx)
+	case tlsfingerprintcapturesessionevent.FieldPlatform:
+		return m.OldPlatform(ctx)
+	case tlsfingerprintcapturesessionevent.FieldTransport:
+		return m.OldTransport(ctx)
+	case tlsfingerprintcapturesessionevent.FieldEventType:
+		return m.OldEventType(ctx)
+	case tlsfingerprintcapturesessionevent.FieldRequestSequence:
+		return m.OldRequestSequence(ctx)
+	case tlsfingerprintcapturesessionevent.FieldStreamID:
+		return m.OldStreamID(ctx)
+	case tlsfingerprintcapturesessionevent.FieldRequestPath:
+		return m.OldRequestPath(ctx)
+	case tlsfingerprintcapturesessionevent.FieldHTTPMethod:
+		return m.OldHTTPMethod(ctx)
+	case tlsfingerprintcapturesessionevent.FieldIsWebsocket:
+		return m.OldIsWebsocket(ctx)
+	case tlsfingerprintcapturesessionevent.FieldWebsocketProtocol:
+		return m.OldWebsocketProtocol(ctx)
+	case tlsfingerprintcapturesessionevent.FieldClientType:
+		return m.OldClientType(ctx)
+	case tlsfingerprintcapturesessionevent.FieldModel:
+		return m.OldModel(ctx)
+	case tlsfingerprintcapturesessionevent.FieldRequestKind:
+		return m.OldRequestKind(ctx)
+	case tlsfingerprintcapturesessionevent.FieldStreaming:
+		return m.OldStreaming(ctx)
+	case tlsfingerprintcapturesessionevent.FieldResponseMode:
+		return m.OldResponseMode(ctx)
+	case tlsfingerprintcapturesessionevent.FieldUserAgent:
+		return m.OldUserAgent(ctx)
+	case tlsfingerprintcapturesessionevent.FieldOriginator:
+		return m.OldOriginator(ctx)
+	case tlsfingerprintcapturesessionevent.FieldStainlessMetadata:
+		return m.OldStainlessMetadata(ctx)
+	case tlsfingerprintcapturesessionevent.FieldHeadersSnapshot:
+		return m.OldHeadersSnapshot(ctx)
+	case tlsfingerprintcapturesessionevent.FieldBodySummary:
+		return m.OldBodySummary(ctx)
+	case tlsfingerprintcapturesessionevent.FieldRawPayload:
+		return m.OldRawPayload(ctx)
+	case tlsfingerprintcapturesessionevent.FieldEventStatus:
+		return m.OldEventStatus(ctx)
+	case tlsfingerprintcapturesessionevent.FieldEventError:
+		return m.OldEventError(ctx)
+	case tlsfingerprintcapturesessionevent.FieldReplayable:
+		return m.OldReplayable(ctx)
+	case tlsfingerprintcapturesessionevent.FieldSampleID:
+		return m.OldSampleID(ctx)
+	case tlsfingerprintcapturesessionevent.FieldReplayHash:
+		return m.OldReplayHash(ctx)
+	}
+	return nil, fmt.Errorf("unknown TLSFingerprintCaptureSessionEvent field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TLSFingerprintCaptureSessionEventMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case tlsfingerprintcapturesessionevent.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldTaskID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaskID(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldSessionRef:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSessionRef(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldSessionID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSessionID(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldEventID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEventID(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldPlatform:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlatform(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldTransport:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTransport(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldEventType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEventType(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldRequestSequence:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestSequence(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldStreamID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStreamID(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldRequestPath:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestPath(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldHTTPMethod:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHTTPMethod(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldIsWebsocket:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIsWebsocket(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldWebsocketProtocol:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWebsocketProtocol(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldClientType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClientType(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldModel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModel(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldRequestKind:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestKind(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldStreaming:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStreaming(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldResponseMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResponseMode(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldUserAgent:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserAgent(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldOriginator:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOriginator(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldStainlessMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStainlessMetadata(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldHeadersSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHeadersSnapshot(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldBodySummary:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBodySummary(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldRawPayload:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRawPayload(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldEventStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEventStatus(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldEventError:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEventError(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldReplayable:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReplayable(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldSampleID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSampleID(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldReplayHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReplayHash(v)
+		return nil
+	}
+	return fmt.Errorf("unknown TLSFingerprintCaptureSessionEvent field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) AddedFields() []string {
+	var fields []string
+	if m.addtask_id != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldTaskID)
+	}
+	if m.addsession_ref != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldSessionRef)
+	}
+	if m.addrequest_sequence != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldRequestSequence)
+	}
+	if m.addsample_id != nil {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldSampleID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *TLSFingerprintCaptureSessionEventMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case tlsfingerprintcapturesessionevent.FieldTaskID:
+		return m.AddedTaskID()
+	case tlsfingerprintcapturesessionevent.FieldSessionRef:
+		return m.AddedSessionRef()
+	case tlsfingerprintcapturesessionevent.FieldRequestSequence:
+		return m.AddedRequestSequence()
+	case tlsfingerprintcapturesessionevent.FieldSampleID:
+		return m.AddedSampleID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TLSFingerprintCaptureSessionEventMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case tlsfingerprintcapturesessionevent.FieldTaskID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTaskID(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldSessionRef:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSessionRef(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldRequestSequence:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRequestSequence(v)
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldSampleID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSampleID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown TLSFingerprintCaptureSessionEvent numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(tlsfingerprintcapturesessionevent.FieldSessionRef) {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldSessionRef)
+	}
+	if m.FieldCleared(tlsfingerprintcapturesessionevent.FieldSampleID) {
+		fields = append(fields, tlsfingerprintcapturesessionevent.FieldSampleID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *TLSFingerprintCaptureSessionEventMutation) ClearField(name string) error {
+	switch name {
+	case tlsfingerprintcapturesessionevent.FieldSessionRef:
+		m.ClearSessionRef()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldSampleID:
+		m.ClearSampleID()
+		return nil
+	}
+	return fmt.Errorf("unknown TLSFingerprintCaptureSessionEvent nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetField(name string) error {
+	switch name {
+	case tlsfingerprintcapturesessionevent.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldTaskID:
+		m.ResetTaskID()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldSessionRef:
+		m.ResetSessionRef()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldSessionID:
+		m.ResetSessionID()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldEventID:
+		m.ResetEventID()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldPlatform:
+		m.ResetPlatform()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldTransport:
+		m.ResetTransport()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldEventType:
+		m.ResetEventType()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldRequestSequence:
+		m.ResetRequestSequence()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldStreamID:
+		m.ResetStreamID()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldRequestPath:
+		m.ResetRequestPath()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldHTTPMethod:
+		m.ResetHTTPMethod()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldIsWebsocket:
+		m.ResetIsWebsocket()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldWebsocketProtocol:
+		m.ResetWebsocketProtocol()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldClientType:
+		m.ResetClientType()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldModel:
+		m.ResetModel()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldRequestKind:
+		m.ResetRequestKind()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldStreaming:
+		m.ResetStreaming()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldResponseMode:
+		m.ResetResponseMode()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldUserAgent:
+		m.ResetUserAgent()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldOriginator:
+		m.ResetOriginator()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldStainlessMetadata:
+		m.ResetStainlessMetadata()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldHeadersSnapshot:
+		m.ResetHeadersSnapshot()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldBodySummary:
+		m.ResetBodySummary()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldRawPayload:
+		m.ResetRawPayload()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldEventStatus:
+		m.ResetEventStatus()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldEventError:
+		m.ResetEventError()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldReplayable:
+		m.ResetReplayable()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldSampleID:
+		m.ResetSampleID()
+		return nil
+	case tlsfingerprintcapturesessionevent.FieldReplayHash:
+		m.ResetReplayHash()
+		return nil
+	}
+	return fmt.Errorf("unknown TLSFingerprintCaptureSessionEvent field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *TLSFingerprintCaptureSessionEventMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *TLSFingerprintCaptureSessionEventMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown TLSFingerprintCaptureSessionEvent unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *TLSFingerprintCaptureSessionEventMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown TLSFingerprintCaptureSessionEvent edge %s", name)
+}
+
 // TLSFingerprintCaptureTaskMutation represents an operation that mutates the TLSFingerprintCaptureTask nodes in the graph.
 type TLSFingerprintCaptureTaskMutation struct {
 	config
-	op                Op
-	typ               string
-	id                *int64
-	created_at        *time.Time
-	updated_at        *time.Time
-	name              *string
-	status            *string
-	token             *string
-	targets           *map[string]int
-	counts            *map[string]int
-	ua_keywords       *[]string
-	appendua_keywords []string
-	completed_at      *time.Time
-	clearedFields     map[string]struct{}
-	done              bool
-	oldValue          func(context.Context) (*TLSFingerprintCaptureTask, error)
-	predicates        []predicate.TLSFingerprintCaptureTask
+	op                       Op
+	typ                      string
+	id                       *int64
+	created_at               *time.Time
+	updated_at               *time.Time
+	name                     *string
+	status                   *string
+	token                    *string
+	targets                  *map[string]int
+	counts                   *map[string]int
+	transport_targets        *map[string]int
+	transport_counts         *map[string]int
+	capture_filters          *map[string]interface{}
+	sample_schema_version    *int
+	addsample_schema_version *int
+	task_stats               *map[string]interface{}
+	ua_keywords              *[]string
+	appendua_keywords        []string
+	completed_at             *time.Time
+	clearedFields            map[string]struct{}
+	done                     bool
+	oldValue                 func(context.Context) (*TLSFingerprintCaptureTask, error)
+	predicates               []predicate.TLSFingerprintCaptureTask
 }
 
 var _ ent.Mutation = (*TLSFingerprintCaptureTaskMutation)(nil)
@@ -61034,6 +65407,206 @@ func (m *TLSFingerprintCaptureTaskMutation) ResetCounts() {
 	m.counts = nil
 }
 
+// SetTransportTargets sets the "transport_targets" field.
+func (m *TLSFingerprintCaptureTaskMutation) SetTransportTargets(value map[string]int) {
+	m.transport_targets = &value
+}
+
+// TransportTargets returns the value of the "transport_targets" field in the mutation.
+func (m *TLSFingerprintCaptureTaskMutation) TransportTargets() (r map[string]int, exists bool) {
+	v := m.transport_targets
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTransportTargets returns the old "transport_targets" field's value of the TLSFingerprintCaptureTask entity.
+// If the TLSFingerprintCaptureTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureTaskMutation) OldTransportTargets(ctx context.Context) (v map[string]int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTransportTargets is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTransportTargets requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTransportTargets: %w", err)
+	}
+	return oldValue.TransportTargets, nil
+}
+
+// ResetTransportTargets resets all changes to the "transport_targets" field.
+func (m *TLSFingerprintCaptureTaskMutation) ResetTransportTargets() {
+	m.transport_targets = nil
+}
+
+// SetTransportCounts sets the "transport_counts" field.
+func (m *TLSFingerprintCaptureTaskMutation) SetTransportCounts(value map[string]int) {
+	m.transport_counts = &value
+}
+
+// TransportCounts returns the value of the "transport_counts" field in the mutation.
+func (m *TLSFingerprintCaptureTaskMutation) TransportCounts() (r map[string]int, exists bool) {
+	v := m.transport_counts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTransportCounts returns the old "transport_counts" field's value of the TLSFingerprintCaptureTask entity.
+// If the TLSFingerprintCaptureTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureTaskMutation) OldTransportCounts(ctx context.Context) (v map[string]int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTransportCounts is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTransportCounts requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTransportCounts: %w", err)
+	}
+	return oldValue.TransportCounts, nil
+}
+
+// ResetTransportCounts resets all changes to the "transport_counts" field.
+func (m *TLSFingerprintCaptureTaskMutation) ResetTransportCounts() {
+	m.transport_counts = nil
+}
+
+// SetCaptureFilters sets the "capture_filters" field.
+func (m *TLSFingerprintCaptureTaskMutation) SetCaptureFilters(value map[string]interface{}) {
+	m.capture_filters = &value
+}
+
+// CaptureFilters returns the value of the "capture_filters" field in the mutation.
+func (m *TLSFingerprintCaptureTaskMutation) CaptureFilters() (r map[string]interface{}, exists bool) {
+	v := m.capture_filters
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCaptureFilters returns the old "capture_filters" field's value of the TLSFingerprintCaptureTask entity.
+// If the TLSFingerprintCaptureTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureTaskMutation) OldCaptureFilters(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCaptureFilters is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCaptureFilters requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCaptureFilters: %w", err)
+	}
+	return oldValue.CaptureFilters, nil
+}
+
+// ResetCaptureFilters resets all changes to the "capture_filters" field.
+func (m *TLSFingerprintCaptureTaskMutation) ResetCaptureFilters() {
+	m.capture_filters = nil
+}
+
+// SetSampleSchemaVersion sets the "sample_schema_version" field.
+func (m *TLSFingerprintCaptureTaskMutation) SetSampleSchemaVersion(i int) {
+	m.sample_schema_version = &i
+	m.addsample_schema_version = nil
+}
+
+// SampleSchemaVersion returns the value of the "sample_schema_version" field in the mutation.
+func (m *TLSFingerprintCaptureTaskMutation) SampleSchemaVersion() (r int, exists bool) {
+	v := m.sample_schema_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSampleSchemaVersion returns the old "sample_schema_version" field's value of the TLSFingerprintCaptureTask entity.
+// If the TLSFingerprintCaptureTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureTaskMutation) OldSampleSchemaVersion(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSampleSchemaVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSampleSchemaVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSampleSchemaVersion: %w", err)
+	}
+	return oldValue.SampleSchemaVersion, nil
+}
+
+// AddSampleSchemaVersion adds i to the "sample_schema_version" field.
+func (m *TLSFingerprintCaptureTaskMutation) AddSampleSchemaVersion(i int) {
+	if m.addsample_schema_version != nil {
+		*m.addsample_schema_version += i
+	} else {
+		m.addsample_schema_version = &i
+	}
+}
+
+// AddedSampleSchemaVersion returns the value that was added to the "sample_schema_version" field in this mutation.
+func (m *TLSFingerprintCaptureTaskMutation) AddedSampleSchemaVersion() (r int, exists bool) {
+	v := m.addsample_schema_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSampleSchemaVersion resets all changes to the "sample_schema_version" field.
+func (m *TLSFingerprintCaptureTaskMutation) ResetSampleSchemaVersion() {
+	m.sample_schema_version = nil
+	m.addsample_schema_version = nil
+}
+
+// SetTaskStats sets the "task_stats" field.
+func (m *TLSFingerprintCaptureTaskMutation) SetTaskStats(value map[string]interface{}) {
+	m.task_stats = &value
+}
+
+// TaskStats returns the value of the "task_stats" field in the mutation.
+func (m *TLSFingerprintCaptureTaskMutation) TaskStats() (r map[string]interface{}, exists bool) {
+	v := m.task_stats
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaskStats returns the old "task_stats" field's value of the TLSFingerprintCaptureTask entity.
+// If the TLSFingerprintCaptureTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintCaptureTaskMutation) OldTaskStats(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaskStats is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaskStats requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaskStats: %w", err)
+	}
+	return oldValue.TaskStats, nil
+}
+
+// ResetTaskStats resets all changes to the "task_stats" field.
+func (m *TLSFingerprintCaptureTaskMutation) ResetTaskStats() {
+	m.task_stats = nil
+}
+
 // SetUaKeywords sets the "ua_keywords" field.
 func (m *TLSFingerprintCaptureTaskMutation) SetUaKeywords(s []string) {
 	m.ua_keywords = &s
@@ -61168,7 +65741,7 @@ func (m *TLSFingerprintCaptureTaskMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TLSFingerprintCaptureTaskMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 14)
 	if m.created_at != nil {
 		fields = append(fields, tlsfingerprintcapturetask.FieldCreatedAt)
 	}
@@ -61189,6 +65762,21 @@ func (m *TLSFingerprintCaptureTaskMutation) Fields() []string {
 	}
 	if m.counts != nil {
 		fields = append(fields, tlsfingerprintcapturetask.FieldCounts)
+	}
+	if m.transport_targets != nil {
+		fields = append(fields, tlsfingerprintcapturetask.FieldTransportTargets)
+	}
+	if m.transport_counts != nil {
+		fields = append(fields, tlsfingerprintcapturetask.FieldTransportCounts)
+	}
+	if m.capture_filters != nil {
+		fields = append(fields, tlsfingerprintcapturetask.FieldCaptureFilters)
+	}
+	if m.sample_schema_version != nil {
+		fields = append(fields, tlsfingerprintcapturetask.FieldSampleSchemaVersion)
+	}
+	if m.task_stats != nil {
+		fields = append(fields, tlsfingerprintcapturetask.FieldTaskStats)
 	}
 	if m.ua_keywords != nil {
 		fields = append(fields, tlsfingerprintcapturetask.FieldUaKeywords)
@@ -61218,6 +65806,16 @@ func (m *TLSFingerprintCaptureTaskMutation) Field(name string) (ent.Value, bool)
 		return m.Targets()
 	case tlsfingerprintcapturetask.FieldCounts:
 		return m.Counts()
+	case tlsfingerprintcapturetask.FieldTransportTargets:
+		return m.TransportTargets()
+	case tlsfingerprintcapturetask.FieldTransportCounts:
+		return m.TransportCounts()
+	case tlsfingerprintcapturetask.FieldCaptureFilters:
+		return m.CaptureFilters()
+	case tlsfingerprintcapturetask.FieldSampleSchemaVersion:
+		return m.SampleSchemaVersion()
+	case tlsfingerprintcapturetask.FieldTaskStats:
+		return m.TaskStats()
 	case tlsfingerprintcapturetask.FieldUaKeywords:
 		return m.UaKeywords()
 	case tlsfingerprintcapturetask.FieldCompletedAt:
@@ -61245,6 +65843,16 @@ func (m *TLSFingerprintCaptureTaskMutation) OldField(ctx context.Context, name s
 		return m.OldTargets(ctx)
 	case tlsfingerprintcapturetask.FieldCounts:
 		return m.OldCounts(ctx)
+	case tlsfingerprintcapturetask.FieldTransportTargets:
+		return m.OldTransportTargets(ctx)
+	case tlsfingerprintcapturetask.FieldTransportCounts:
+		return m.OldTransportCounts(ctx)
+	case tlsfingerprintcapturetask.FieldCaptureFilters:
+		return m.OldCaptureFilters(ctx)
+	case tlsfingerprintcapturetask.FieldSampleSchemaVersion:
+		return m.OldSampleSchemaVersion(ctx)
+	case tlsfingerprintcapturetask.FieldTaskStats:
+		return m.OldTaskStats(ctx)
 	case tlsfingerprintcapturetask.FieldUaKeywords:
 		return m.OldUaKeywords(ctx)
 	case tlsfingerprintcapturetask.FieldCompletedAt:
@@ -61307,6 +65915,41 @@ func (m *TLSFingerprintCaptureTaskMutation) SetField(name string, value ent.Valu
 		}
 		m.SetCounts(v)
 		return nil
+	case tlsfingerprintcapturetask.FieldTransportTargets:
+		v, ok := value.(map[string]int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTransportTargets(v)
+		return nil
+	case tlsfingerprintcapturetask.FieldTransportCounts:
+		v, ok := value.(map[string]int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTransportCounts(v)
+		return nil
+	case tlsfingerprintcapturetask.FieldCaptureFilters:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCaptureFilters(v)
+		return nil
+	case tlsfingerprintcapturetask.FieldSampleSchemaVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSampleSchemaVersion(v)
+		return nil
+	case tlsfingerprintcapturetask.FieldTaskStats:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaskStats(v)
+		return nil
 	case tlsfingerprintcapturetask.FieldUaKeywords:
 		v, ok := value.([]string)
 		if !ok {
@@ -61328,13 +65971,21 @@ func (m *TLSFingerprintCaptureTaskMutation) SetField(name string, value ent.Valu
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *TLSFingerprintCaptureTaskMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addsample_schema_version != nil {
+		fields = append(fields, tlsfingerprintcapturetask.FieldSampleSchemaVersion)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *TLSFingerprintCaptureTaskMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case tlsfingerprintcapturetask.FieldSampleSchemaVersion:
+		return m.AddedSampleSchemaVersion()
+	}
 	return nil, false
 }
 
@@ -61343,6 +65994,13 @@ func (m *TLSFingerprintCaptureTaskMutation) AddedField(name string) (ent.Value, 
 // type.
 func (m *TLSFingerprintCaptureTaskMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case tlsfingerprintcapturetask.FieldSampleSchemaVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSampleSchemaVersion(v)
+		return nil
 	}
 	return fmt.Errorf("unknown TLSFingerprintCaptureTask numeric field %s", name)
 }
@@ -61399,6 +66057,21 @@ func (m *TLSFingerprintCaptureTaskMutation) ResetField(name string) error {
 		return nil
 	case tlsfingerprintcapturetask.FieldCounts:
 		m.ResetCounts()
+		return nil
+	case tlsfingerprintcapturetask.FieldTransportTargets:
+		m.ResetTransportTargets()
+		return nil
+	case tlsfingerprintcapturetask.FieldTransportCounts:
+		m.ResetTransportCounts()
+		return nil
+	case tlsfingerprintcapturetask.FieldCaptureFilters:
+		m.ResetCaptureFilters()
+		return nil
+	case tlsfingerprintcapturetask.FieldSampleSchemaVersion:
+		m.ResetSampleSchemaVersion()
+		return nil
+	case tlsfingerprintcapturetask.FieldTaskStats:
+		m.ResetTaskStats()
 		return nil
 	case tlsfingerprintcapturetask.FieldUaKeywords:
 		m.ResetUaKeywords()
@@ -61481,6 +66154,8 @@ type TLSFingerprintProfileMutation struct {
 	appendpoint_formats                    []uint16
 	signature_algorithms                   *[]uint16
 	appendsignature_algorithms             []uint16
+	signature_algorithms_cert              *[]uint16
+	appendsignature_algorithms_cert        []uint16
 	alpn_protocols                         *[]string
 	appendalpn_protocols                   []string
 	supported_versions                     *[]uint16
@@ -61491,6 +66166,7 @@ type TLSFingerprintProfileMutation struct {
 	appendpsk_modes                        []uint16
 	extensions                             *[]uint16
 	appendextensions                       []uint16
+	extension_payloads                     *map[uint16][]uint8
 	compress_cert_algos                    *[]uint16
 	appendcompress_cert_algos              []uint16
 	delegated_credentials_algorithms       *[]uint16
@@ -62198,6 +66874,71 @@ func (m *TLSFingerprintProfileMutation) ResetSignatureAlgorithms() {
 	delete(m.clearedFields, tlsfingerprintprofile.FieldSignatureAlgorithms)
 }
 
+// SetSignatureAlgorithmsCert sets the "signature_algorithms_cert" field.
+func (m *TLSFingerprintProfileMutation) SetSignatureAlgorithmsCert(u []uint16) {
+	m.signature_algorithms_cert = &u
+	m.appendsignature_algorithms_cert = nil
+}
+
+// SignatureAlgorithmsCert returns the value of the "signature_algorithms_cert" field in the mutation.
+func (m *TLSFingerprintProfileMutation) SignatureAlgorithmsCert() (r []uint16, exists bool) {
+	v := m.signature_algorithms_cert
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSignatureAlgorithmsCert returns the old "signature_algorithms_cert" field's value of the TLSFingerprintProfile entity.
+// If the TLSFingerprintProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintProfileMutation) OldSignatureAlgorithmsCert(ctx context.Context) (v []uint16, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSignatureAlgorithmsCert is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSignatureAlgorithmsCert requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSignatureAlgorithmsCert: %w", err)
+	}
+	return oldValue.SignatureAlgorithmsCert, nil
+}
+
+// AppendSignatureAlgorithmsCert adds u to the "signature_algorithms_cert" field.
+func (m *TLSFingerprintProfileMutation) AppendSignatureAlgorithmsCert(u []uint16) {
+	m.appendsignature_algorithms_cert = append(m.appendsignature_algorithms_cert, u...)
+}
+
+// AppendedSignatureAlgorithmsCert returns the list of values that were appended to the "signature_algorithms_cert" field in this mutation.
+func (m *TLSFingerprintProfileMutation) AppendedSignatureAlgorithmsCert() ([]uint16, bool) {
+	if len(m.appendsignature_algorithms_cert) == 0 {
+		return nil, false
+	}
+	return m.appendsignature_algorithms_cert, true
+}
+
+// ClearSignatureAlgorithmsCert clears the value of the "signature_algorithms_cert" field.
+func (m *TLSFingerprintProfileMutation) ClearSignatureAlgorithmsCert() {
+	m.signature_algorithms_cert = nil
+	m.appendsignature_algorithms_cert = nil
+	m.clearedFields[tlsfingerprintprofile.FieldSignatureAlgorithmsCert] = struct{}{}
+}
+
+// SignatureAlgorithmsCertCleared returns if the "signature_algorithms_cert" field was cleared in this mutation.
+func (m *TLSFingerprintProfileMutation) SignatureAlgorithmsCertCleared() bool {
+	_, ok := m.clearedFields[tlsfingerprintprofile.FieldSignatureAlgorithmsCert]
+	return ok
+}
+
+// ResetSignatureAlgorithmsCert resets all changes to the "signature_algorithms_cert" field.
+func (m *TLSFingerprintProfileMutation) ResetSignatureAlgorithmsCert() {
+	m.signature_algorithms_cert = nil
+	m.appendsignature_algorithms_cert = nil
+	delete(m.clearedFields, tlsfingerprintprofile.FieldSignatureAlgorithmsCert)
+}
+
 // SetAlpnProtocols sets the "alpn_protocols" field.
 func (m *TLSFingerprintProfileMutation) SetAlpnProtocols(s []string) {
 	m.alpn_protocols = &s
@@ -62523,6 +67264,55 @@ func (m *TLSFingerprintProfileMutation) ResetExtensions() {
 	delete(m.clearedFields, tlsfingerprintprofile.FieldExtensions)
 }
 
+// SetExtensionPayloads sets the "extension_payloads" field.
+func (m *TLSFingerprintProfileMutation) SetExtensionPayloads(value map[uint16][]uint8) {
+	m.extension_payloads = &value
+}
+
+// ExtensionPayloads returns the value of the "extension_payloads" field in the mutation.
+func (m *TLSFingerprintProfileMutation) ExtensionPayloads() (r map[uint16][]uint8, exists bool) {
+	v := m.extension_payloads
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExtensionPayloads returns the old "extension_payloads" field's value of the TLSFingerprintProfile entity.
+// If the TLSFingerprintProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintProfileMutation) OldExtensionPayloads(ctx context.Context) (v map[uint16][]uint8, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExtensionPayloads is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExtensionPayloads requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExtensionPayloads: %w", err)
+	}
+	return oldValue.ExtensionPayloads, nil
+}
+
+// ClearExtensionPayloads clears the value of the "extension_payloads" field.
+func (m *TLSFingerprintProfileMutation) ClearExtensionPayloads() {
+	m.extension_payloads = nil
+	m.clearedFields[tlsfingerprintprofile.FieldExtensionPayloads] = struct{}{}
+}
+
+// ExtensionPayloadsCleared returns if the "extension_payloads" field was cleared in this mutation.
+func (m *TLSFingerprintProfileMutation) ExtensionPayloadsCleared() bool {
+	_, ok := m.clearedFields[tlsfingerprintprofile.FieldExtensionPayloads]
+	return ok
+}
+
+// ResetExtensionPayloads resets all changes to the "extension_payloads" field.
+func (m *TLSFingerprintProfileMutation) ResetExtensionPayloads() {
+	m.extension_payloads = nil
+	delete(m.clearedFields, tlsfingerprintprofile.FieldExtensionPayloads)
+}
+
 // SetCompressCertAlgos sets the "compress_cert_algos" field.
 func (m *TLSFingerprintProfileMutation) SetCompressCertAlgos(u []uint16) {
 	m.compress_cert_algos = &u
@@ -62752,7 +67542,7 @@ func (m *TLSFingerprintProfileMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TLSFingerprintProfileMutation) Fields() []string {
-	fields := make([]string, 0, 21)
+	fields := make([]string, 0, 23)
 	if m.created_at != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldCreatedAt)
 	}
@@ -62792,6 +67582,9 @@ func (m *TLSFingerprintProfileMutation) Fields() []string {
 	if m.signature_algorithms != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldSignatureAlgorithms)
 	}
+	if m.signature_algorithms_cert != nil {
+		fields = append(fields, tlsfingerprintprofile.FieldSignatureAlgorithmsCert)
+	}
 	if m.alpn_protocols != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldAlpnProtocols)
 	}
@@ -62806,6 +67599,9 @@ func (m *TLSFingerprintProfileMutation) Fields() []string {
 	}
 	if m.extensions != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldExtensions)
+	}
+	if m.extension_payloads != nil {
+		fields = append(fields, tlsfingerprintprofile.FieldExtensionPayloads)
 	}
 	if m.compress_cert_algos != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldCompressCertAlgos)
@@ -62850,6 +67646,8 @@ func (m *TLSFingerprintProfileMutation) Field(name string) (ent.Value, bool) {
 		return m.PointFormats()
 	case tlsfingerprintprofile.FieldSignatureAlgorithms:
 		return m.SignatureAlgorithms()
+	case tlsfingerprintprofile.FieldSignatureAlgorithmsCert:
+		return m.SignatureAlgorithmsCert()
 	case tlsfingerprintprofile.FieldAlpnProtocols:
 		return m.AlpnProtocols()
 	case tlsfingerprintprofile.FieldSupportedVersions:
@@ -62860,6 +67658,8 @@ func (m *TLSFingerprintProfileMutation) Field(name string) (ent.Value, bool) {
 		return m.PskModes()
 	case tlsfingerprintprofile.FieldExtensions:
 		return m.Extensions()
+	case tlsfingerprintprofile.FieldExtensionPayloads:
+		return m.ExtensionPayloads()
 	case tlsfingerprintprofile.FieldCompressCertAlgos:
 		return m.CompressCertAlgos()
 	case tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms:
@@ -62901,6 +67701,8 @@ func (m *TLSFingerprintProfileMutation) OldField(ctx context.Context, name strin
 		return m.OldPointFormats(ctx)
 	case tlsfingerprintprofile.FieldSignatureAlgorithms:
 		return m.OldSignatureAlgorithms(ctx)
+	case tlsfingerprintprofile.FieldSignatureAlgorithmsCert:
+		return m.OldSignatureAlgorithmsCert(ctx)
 	case tlsfingerprintprofile.FieldAlpnProtocols:
 		return m.OldAlpnProtocols(ctx)
 	case tlsfingerprintprofile.FieldSupportedVersions:
@@ -62911,6 +67713,8 @@ func (m *TLSFingerprintProfileMutation) OldField(ctx context.Context, name strin
 		return m.OldPskModes(ctx)
 	case tlsfingerprintprofile.FieldExtensions:
 		return m.OldExtensions(ctx)
+	case tlsfingerprintprofile.FieldExtensionPayloads:
+		return m.OldExtensionPayloads(ctx)
 	case tlsfingerprintprofile.FieldCompressCertAlgos:
 		return m.OldCompressCertAlgos(ctx)
 	case tlsfingerprintprofile.FieldDelegatedCredentialsAlgorithms:
@@ -63017,6 +67821,13 @@ func (m *TLSFingerprintProfileMutation) SetField(name string, value ent.Value) e
 		}
 		m.SetSignatureAlgorithms(v)
 		return nil
+	case tlsfingerprintprofile.FieldSignatureAlgorithmsCert:
+		v, ok := value.([]uint16)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSignatureAlgorithmsCert(v)
+		return nil
 	case tlsfingerprintprofile.FieldAlpnProtocols:
 		v, ok := value.([]string)
 		if !ok {
@@ -63051,6 +67862,13 @@ func (m *TLSFingerprintProfileMutation) SetField(name string, value ent.Value) e
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetExtensions(v)
+		return nil
+	case tlsfingerprintprofile.FieldExtensionPayloads:
+		v, ok := value.(map[uint16][]uint8)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExtensionPayloads(v)
 		return nil
 	case tlsfingerprintprofile.FieldCompressCertAlgos:
 		v, ok := value.([]uint16)
@@ -63118,6 +67936,9 @@ func (m *TLSFingerprintProfileMutation) ClearedFields() []string {
 	if m.FieldCleared(tlsfingerprintprofile.FieldSignatureAlgorithms) {
 		fields = append(fields, tlsfingerprintprofile.FieldSignatureAlgorithms)
 	}
+	if m.FieldCleared(tlsfingerprintprofile.FieldSignatureAlgorithmsCert) {
+		fields = append(fields, tlsfingerprintprofile.FieldSignatureAlgorithmsCert)
+	}
 	if m.FieldCleared(tlsfingerprintprofile.FieldAlpnProtocols) {
 		fields = append(fields, tlsfingerprintprofile.FieldAlpnProtocols)
 	}
@@ -63132,6 +67953,9 @@ func (m *TLSFingerprintProfileMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(tlsfingerprintprofile.FieldExtensions) {
 		fields = append(fields, tlsfingerprintprofile.FieldExtensions)
+	}
+	if m.FieldCleared(tlsfingerprintprofile.FieldExtensionPayloads) {
+		fields = append(fields, tlsfingerprintprofile.FieldExtensionPayloads)
 	}
 	if m.FieldCleared(tlsfingerprintprofile.FieldCompressCertAlgos) {
 		fields = append(fields, tlsfingerprintprofile.FieldCompressCertAlgos)
@@ -63171,6 +67995,9 @@ func (m *TLSFingerprintProfileMutation) ClearField(name string) error {
 	case tlsfingerprintprofile.FieldSignatureAlgorithms:
 		m.ClearSignatureAlgorithms()
 		return nil
+	case tlsfingerprintprofile.FieldSignatureAlgorithmsCert:
+		m.ClearSignatureAlgorithmsCert()
+		return nil
 	case tlsfingerprintprofile.FieldAlpnProtocols:
 		m.ClearAlpnProtocols()
 		return nil
@@ -63185,6 +68012,9 @@ func (m *TLSFingerprintProfileMutation) ClearField(name string) error {
 		return nil
 	case tlsfingerprintprofile.FieldExtensions:
 		m.ClearExtensions()
+		return nil
+	case tlsfingerprintprofile.FieldExtensionPayloads:
+		m.ClearExtensionPayloads()
 		return nil
 	case tlsfingerprintprofile.FieldCompressCertAlgos:
 		m.ClearCompressCertAlgos()
@@ -63242,6 +68072,9 @@ func (m *TLSFingerprintProfileMutation) ResetField(name string) error {
 	case tlsfingerprintprofile.FieldSignatureAlgorithms:
 		m.ResetSignatureAlgorithms()
 		return nil
+	case tlsfingerprintprofile.FieldSignatureAlgorithmsCert:
+		m.ResetSignatureAlgorithmsCert()
+		return nil
 	case tlsfingerprintprofile.FieldAlpnProtocols:
 		m.ResetAlpnProtocols()
 		return nil
@@ -63256,6 +68089,9 @@ func (m *TLSFingerprintProfileMutation) ResetField(name string) error {
 		return nil
 	case tlsfingerprintprofile.FieldExtensions:
 		m.ResetExtensions()
+		return nil
+	case tlsfingerprintprofile.FieldExtensionPayloads:
+		m.ResetExtensionPayloads()
 		return nil
 	case tlsfingerprintprofile.FieldCompressCertAlgos:
 		m.ResetCompressCertAlgos()

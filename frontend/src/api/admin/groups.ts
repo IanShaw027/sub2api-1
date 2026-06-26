@@ -307,12 +307,18 @@ export async function clearGroupRPMOverrides(id: number): Promise<{ message: str
  * @returns Array of group usage summaries
  */
 export async function getUsageSummary(
-  timezone?: string
+  timezone?: string,
+  groupIds?: number[]
 ): Promise<{ group_id: number; today_cost: number; total_cost: number }[]> {
+  const params: Record<string, string> = {}
+  if (timezone) params.timezone = timezone
+  if (groupIds && groupIds.length > 0) {
+    params.ids = groupIds.join(',')
+  }
   const { data } = await apiClient.get<
     { group_id: number; today_cost: number; total_cost: number }[]
   >('/admin/groups/usage-summary', {
-    params: timezone ? { timezone } : undefined
+    params: Object.keys(params).length > 0 ? params : undefined
   })
   return data
 }

@@ -27,6 +27,16 @@ const (
 	FieldTargets = "targets"
 	// FieldCounts holds the string denoting the counts field in the database.
 	FieldCounts = "counts"
+	// FieldTransportTargets holds the string denoting the transport_targets field in the database.
+	FieldTransportTargets = "transport_targets"
+	// FieldTransportCounts holds the string denoting the transport_counts field in the database.
+	FieldTransportCounts = "transport_counts"
+	// FieldCaptureFilters holds the string denoting the capture_filters field in the database.
+	FieldCaptureFilters = "capture_filters"
+	// FieldSampleSchemaVersion holds the string denoting the sample_schema_version field in the database.
+	FieldSampleSchemaVersion = "sample_schema_version"
+	// FieldTaskStats holds the string denoting the task_stats field in the database.
+	FieldTaskStats = "task_stats"
 	// FieldUaKeywords holds the string denoting the ua_keywords field in the database.
 	FieldUaKeywords = "ua_keywords"
 	// FieldCompletedAt holds the string denoting the completed_at field in the database.
@@ -45,6 +55,11 @@ var Columns = []string{
 	FieldToken,
 	FieldTargets,
 	FieldCounts,
+	FieldTransportTargets,
+	FieldTransportCounts,
+	FieldCaptureFilters,
+	FieldSampleSchemaVersion,
+	FieldTaskStats,
 	FieldUaKeywords,
 	FieldCompletedAt,
 }
@@ -76,6 +91,22 @@ var (
 	StatusValidator func(string) error
 	// TokenValidator is a validator for the "token" field. It is called by the builders before save.
 	TokenValidator func(string) error
+	// DefaultTargets holds the default value on creation for the "targets" field.
+	DefaultTargets func() map[string]int
+	// DefaultCounts holds the default value on creation for the "counts" field.
+	DefaultCounts func() map[string]int
+	// DefaultTransportTargets holds the default value on creation for the "transport_targets" field.
+	DefaultTransportTargets func() map[string]int
+	// DefaultTransportCounts holds the default value on creation for the "transport_counts" field.
+	DefaultTransportCounts func() map[string]int
+	// DefaultCaptureFilters holds the default value on creation for the "capture_filters" field.
+	DefaultCaptureFilters func() map[string]interface{}
+	// DefaultSampleSchemaVersion holds the default value on creation for the "sample_schema_version" field.
+	DefaultSampleSchemaVersion int
+	// DefaultTaskStats holds the default value on creation for the "task_stats" field.
+	DefaultTaskStats func() map[string]interface{}
+	// DefaultUaKeywords holds the default value on creation for the "ua_keywords" field.
+	DefaultUaKeywords func() []string
 )
 
 // OrderOption defines the ordering options for the TLSFingerprintCaptureTask queries.
@@ -109,6 +140,11 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 // ByToken orders the results by the token field.
 func ByToken(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldToken, opts...).ToFunc()
+}
+
+// BySampleSchemaVersion orders the results by the sample_schema_version field.
+func BySampleSchemaVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSampleSchemaVersion, opts...).ToFunc()
 }
 
 // ByCompletedAt orders the results by the completed_at field.

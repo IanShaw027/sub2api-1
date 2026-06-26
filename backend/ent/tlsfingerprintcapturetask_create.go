@@ -96,6 +96,44 @@ func (_c *TLSFingerprintCaptureTaskCreate) SetCounts(v map[string]int) *TLSFinge
 	return _c
 }
 
+// SetTransportTargets sets the "transport_targets" field.
+func (_c *TLSFingerprintCaptureTaskCreate) SetTransportTargets(v map[string]int) *TLSFingerprintCaptureTaskCreate {
+	_c.mutation.SetTransportTargets(v)
+	return _c
+}
+
+// SetTransportCounts sets the "transport_counts" field.
+func (_c *TLSFingerprintCaptureTaskCreate) SetTransportCounts(v map[string]int) *TLSFingerprintCaptureTaskCreate {
+	_c.mutation.SetTransportCounts(v)
+	return _c
+}
+
+// SetCaptureFilters sets the "capture_filters" field.
+func (_c *TLSFingerprintCaptureTaskCreate) SetCaptureFilters(v map[string]interface{}) *TLSFingerprintCaptureTaskCreate {
+	_c.mutation.SetCaptureFilters(v)
+	return _c
+}
+
+// SetSampleSchemaVersion sets the "sample_schema_version" field.
+func (_c *TLSFingerprintCaptureTaskCreate) SetSampleSchemaVersion(v int) *TLSFingerprintCaptureTaskCreate {
+	_c.mutation.SetSampleSchemaVersion(v)
+	return _c
+}
+
+// SetNillableSampleSchemaVersion sets the "sample_schema_version" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureTaskCreate) SetNillableSampleSchemaVersion(v *int) *TLSFingerprintCaptureTaskCreate {
+	if v != nil {
+		_c.SetSampleSchemaVersion(*v)
+	}
+	return _c
+}
+
+// SetTaskStats sets the "task_stats" field.
+func (_c *TLSFingerprintCaptureTaskCreate) SetTaskStats(v map[string]interface{}) *TLSFingerprintCaptureTaskCreate {
+	_c.mutation.SetTaskStats(v)
+	return _c
+}
+
 // SetUaKeywords sets the "ua_keywords" field.
 func (_c *TLSFingerprintCaptureTaskCreate) SetUaKeywords(v []string) *TLSFingerprintCaptureTaskCreate {
 	_c.mutation.SetUaKeywords(v)
@@ -167,6 +205,38 @@ func (_c *TLSFingerprintCaptureTaskCreate) defaults() {
 		v := tlsfingerprintcapturetask.DefaultStatus
 		_c.mutation.SetStatus(v)
 	}
+	if _, ok := _c.mutation.Targets(); !ok {
+		v := tlsfingerprintcapturetask.DefaultTargets()
+		_c.mutation.SetTargets(v)
+	}
+	if _, ok := _c.mutation.Counts(); !ok {
+		v := tlsfingerprintcapturetask.DefaultCounts()
+		_c.mutation.SetCounts(v)
+	}
+	if _, ok := _c.mutation.TransportTargets(); !ok {
+		v := tlsfingerprintcapturetask.DefaultTransportTargets()
+		_c.mutation.SetTransportTargets(v)
+	}
+	if _, ok := _c.mutation.TransportCounts(); !ok {
+		v := tlsfingerprintcapturetask.DefaultTransportCounts()
+		_c.mutation.SetTransportCounts(v)
+	}
+	if _, ok := _c.mutation.CaptureFilters(); !ok {
+		v := tlsfingerprintcapturetask.DefaultCaptureFilters()
+		_c.mutation.SetCaptureFilters(v)
+	}
+	if _, ok := _c.mutation.SampleSchemaVersion(); !ok {
+		v := tlsfingerprintcapturetask.DefaultSampleSchemaVersion
+		_c.mutation.SetSampleSchemaVersion(v)
+	}
+	if _, ok := _c.mutation.TaskStats(); !ok {
+		v := tlsfingerprintcapturetask.DefaultTaskStats()
+		_c.mutation.SetTaskStats(v)
+	}
+	if _, ok := _c.mutation.UaKeywords(); !ok {
+		v := tlsfingerprintcapturetask.DefaultUaKeywords()
+		_c.mutation.SetUaKeywords(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -206,6 +276,21 @@ func (_c *TLSFingerprintCaptureTaskCreate) check() error {
 	}
 	if _, ok := _c.mutation.Counts(); !ok {
 		return &ValidationError{Name: "counts", err: errors.New(`ent: missing required field "TLSFingerprintCaptureTask.counts"`)}
+	}
+	if _, ok := _c.mutation.TransportTargets(); !ok {
+		return &ValidationError{Name: "transport_targets", err: errors.New(`ent: missing required field "TLSFingerprintCaptureTask.transport_targets"`)}
+	}
+	if _, ok := _c.mutation.TransportCounts(); !ok {
+		return &ValidationError{Name: "transport_counts", err: errors.New(`ent: missing required field "TLSFingerprintCaptureTask.transport_counts"`)}
+	}
+	if _, ok := _c.mutation.CaptureFilters(); !ok {
+		return &ValidationError{Name: "capture_filters", err: errors.New(`ent: missing required field "TLSFingerprintCaptureTask.capture_filters"`)}
+	}
+	if _, ok := _c.mutation.SampleSchemaVersion(); !ok {
+		return &ValidationError{Name: "sample_schema_version", err: errors.New(`ent: missing required field "TLSFingerprintCaptureTask.sample_schema_version"`)}
+	}
+	if _, ok := _c.mutation.TaskStats(); !ok {
+		return &ValidationError{Name: "task_stats", err: errors.New(`ent: missing required field "TLSFingerprintCaptureTask.task_stats"`)}
 	}
 	if _, ok := _c.mutation.UaKeywords(); !ok {
 		return &ValidationError{Name: "ua_keywords", err: errors.New(`ent: missing required field "TLSFingerprintCaptureTask.ua_keywords"`)}
@@ -264,6 +349,26 @@ func (_c *TLSFingerprintCaptureTaskCreate) createSpec() (*TLSFingerprintCaptureT
 	if value, ok := _c.mutation.Counts(); ok {
 		_spec.SetField(tlsfingerprintcapturetask.FieldCounts, field.TypeJSON, value)
 		_node.Counts = value
+	}
+	if value, ok := _c.mutation.TransportTargets(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldTransportTargets, field.TypeJSON, value)
+		_node.TransportTargets = value
+	}
+	if value, ok := _c.mutation.TransportCounts(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldTransportCounts, field.TypeJSON, value)
+		_node.TransportCounts = value
+	}
+	if value, ok := _c.mutation.CaptureFilters(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldCaptureFilters, field.TypeJSON, value)
+		_node.CaptureFilters = value
+	}
+	if value, ok := _c.mutation.SampleSchemaVersion(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldSampleSchemaVersion, field.TypeInt, value)
+		_node.SampleSchemaVersion = value
+	}
+	if value, ok := _c.mutation.TaskStats(); ok {
+		_spec.SetField(tlsfingerprintcapturetask.FieldTaskStats, field.TypeJSON, value)
+		_node.TaskStats = value
 	}
 	if value, ok := _c.mutation.UaKeywords(); ok {
 		_spec.SetField(tlsfingerprintcapturetask.FieldUaKeywords, field.TypeJSON, value)
@@ -394,6 +499,72 @@ func (u *TLSFingerprintCaptureTaskUpsert) SetCounts(v map[string]int) *TLSFinger
 // UpdateCounts sets the "counts" field to the value that was provided on create.
 func (u *TLSFingerprintCaptureTaskUpsert) UpdateCounts() *TLSFingerprintCaptureTaskUpsert {
 	u.SetExcluded(tlsfingerprintcapturetask.FieldCounts)
+	return u
+}
+
+// SetTransportTargets sets the "transport_targets" field.
+func (u *TLSFingerprintCaptureTaskUpsert) SetTransportTargets(v map[string]int) *TLSFingerprintCaptureTaskUpsert {
+	u.Set(tlsfingerprintcapturetask.FieldTransportTargets, v)
+	return u
+}
+
+// UpdateTransportTargets sets the "transport_targets" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsert) UpdateTransportTargets() *TLSFingerprintCaptureTaskUpsert {
+	u.SetExcluded(tlsfingerprintcapturetask.FieldTransportTargets)
+	return u
+}
+
+// SetTransportCounts sets the "transport_counts" field.
+func (u *TLSFingerprintCaptureTaskUpsert) SetTransportCounts(v map[string]int) *TLSFingerprintCaptureTaskUpsert {
+	u.Set(tlsfingerprintcapturetask.FieldTransportCounts, v)
+	return u
+}
+
+// UpdateTransportCounts sets the "transport_counts" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsert) UpdateTransportCounts() *TLSFingerprintCaptureTaskUpsert {
+	u.SetExcluded(tlsfingerprintcapturetask.FieldTransportCounts)
+	return u
+}
+
+// SetCaptureFilters sets the "capture_filters" field.
+func (u *TLSFingerprintCaptureTaskUpsert) SetCaptureFilters(v map[string]interface{}) *TLSFingerprintCaptureTaskUpsert {
+	u.Set(tlsfingerprintcapturetask.FieldCaptureFilters, v)
+	return u
+}
+
+// UpdateCaptureFilters sets the "capture_filters" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsert) UpdateCaptureFilters() *TLSFingerprintCaptureTaskUpsert {
+	u.SetExcluded(tlsfingerprintcapturetask.FieldCaptureFilters)
+	return u
+}
+
+// SetSampleSchemaVersion sets the "sample_schema_version" field.
+func (u *TLSFingerprintCaptureTaskUpsert) SetSampleSchemaVersion(v int) *TLSFingerprintCaptureTaskUpsert {
+	u.Set(tlsfingerprintcapturetask.FieldSampleSchemaVersion, v)
+	return u
+}
+
+// UpdateSampleSchemaVersion sets the "sample_schema_version" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsert) UpdateSampleSchemaVersion() *TLSFingerprintCaptureTaskUpsert {
+	u.SetExcluded(tlsfingerprintcapturetask.FieldSampleSchemaVersion)
+	return u
+}
+
+// AddSampleSchemaVersion adds v to the "sample_schema_version" field.
+func (u *TLSFingerprintCaptureTaskUpsert) AddSampleSchemaVersion(v int) *TLSFingerprintCaptureTaskUpsert {
+	u.Add(tlsfingerprintcapturetask.FieldSampleSchemaVersion, v)
+	return u
+}
+
+// SetTaskStats sets the "task_stats" field.
+func (u *TLSFingerprintCaptureTaskUpsert) SetTaskStats(v map[string]interface{}) *TLSFingerprintCaptureTaskUpsert {
+	u.Set(tlsfingerprintcapturetask.FieldTaskStats, v)
+	return u
+}
+
+// UpdateTaskStats sets the "task_stats" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsert) UpdateTaskStats() *TLSFingerprintCaptureTaskUpsert {
+	u.SetExcluded(tlsfingerprintcapturetask.FieldTaskStats)
 	return u
 }
 
@@ -553,6 +724,83 @@ func (u *TLSFingerprintCaptureTaskUpsertOne) SetCounts(v map[string]int) *TLSFin
 func (u *TLSFingerprintCaptureTaskUpsertOne) UpdateCounts() *TLSFingerprintCaptureTaskUpsertOne {
 	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
 		s.UpdateCounts()
+	})
+}
+
+// SetTransportTargets sets the "transport_targets" field.
+func (u *TLSFingerprintCaptureTaskUpsertOne) SetTransportTargets(v map[string]int) *TLSFingerprintCaptureTaskUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.SetTransportTargets(v)
+	})
+}
+
+// UpdateTransportTargets sets the "transport_targets" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsertOne) UpdateTransportTargets() *TLSFingerprintCaptureTaskUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.UpdateTransportTargets()
+	})
+}
+
+// SetTransportCounts sets the "transport_counts" field.
+func (u *TLSFingerprintCaptureTaskUpsertOne) SetTransportCounts(v map[string]int) *TLSFingerprintCaptureTaskUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.SetTransportCounts(v)
+	})
+}
+
+// UpdateTransportCounts sets the "transport_counts" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsertOne) UpdateTransportCounts() *TLSFingerprintCaptureTaskUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.UpdateTransportCounts()
+	})
+}
+
+// SetCaptureFilters sets the "capture_filters" field.
+func (u *TLSFingerprintCaptureTaskUpsertOne) SetCaptureFilters(v map[string]interface{}) *TLSFingerprintCaptureTaskUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.SetCaptureFilters(v)
+	})
+}
+
+// UpdateCaptureFilters sets the "capture_filters" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsertOne) UpdateCaptureFilters() *TLSFingerprintCaptureTaskUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.UpdateCaptureFilters()
+	})
+}
+
+// SetSampleSchemaVersion sets the "sample_schema_version" field.
+func (u *TLSFingerprintCaptureTaskUpsertOne) SetSampleSchemaVersion(v int) *TLSFingerprintCaptureTaskUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.SetSampleSchemaVersion(v)
+	})
+}
+
+// AddSampleSchemaVersion adds v to the "sample_schema_version" field.
+func (u *TLSFingerprintCaptureTaskUpsertOne) AddSampleSchemaVersion(v int) *TLSFingerprintCaptureTaskUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.AddSampleSchemaVersion(v)
+	})
+}
+
+// UpdateSampleSchemaVersion sets the "sample_schema_version" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsertOne) UpdateSampleSchemaVersion() *TLSFingerprintCaptureTaskUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.UpdateSampleSchemaVersion()
+	})
+}
+
+// SetTaskStats sets the "task_stats" field.
+func (u *TLSFingerprintCaptureTaskUpsertOne) SetTaskStats(v map[string]interface{}) *TLSFingerprintCaptureTaskUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.SetTaskStats(v)
+	})
+}
+
+// UpdateTaskStats sets the "task_stats" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsertOne) UpdateTaskStats() *TLSFingerprintCaptureTaskUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.UpdateTaskStats()
 	})
 }
 
@@ -883,6 +1131,83 @@ func (u *TLSFingerprintCaptureTaskUpsertBulk) SetCounts(v map[string]int) *TLSFi
 func (u *TLSFingerprintCaptureTaskUpsertBulk) UpdateCounts() *TLSFingerprintCaptureTaskUpsertBulk {
 	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
 		s.UpdateCounts()
+	})
+}
+
+// SetTransportTargets sets the "transport_targets" field.
+func (u *TLSFingerprintCaptureTaskUpsertBulk) SetTransportTargets(v map[string]int) *TLSFingerprintCaptureTaskUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.SetTransportTargets(v)
+	})
+}
+
+// UpdateTransportTargets sets the "transport_targets" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsertBulk) UpdateTransportTargets() *TLSFingerprintCaptureTaskUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.UpdateTransportTargets()
+	})
+}
+
+// SetTransportCounts sets the "transport_counts" field.
+func (u *TLSFingerprintCaptureTaskUpsertBulk) SetTransportCounts(v map[string]int) *TLSFingerprintCaptureTaskUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.SetTransportCounts(v)
+	})
+}
+
+// UpdateTransportCounts sets the "transport_counts" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsertBulk) UpdateTransportCounts() *TLSFingerprintCaptureTaskUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.UpdateTransportCounts()
+	})
+}
+
+// SetCaptureFilters sets the "capture_filters" field.
+func (u *TLSFingerprintCaptureTaskUpsertBulk) SetCaptureFilters(v map[string]interface{}) *TLSFingerprintCaptureTaskUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.SetCaptureFilters(v)
+	})
+}
+
+// UpdateCaptureFilters sets the "capture_filters" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsertBulk) UpdateCaptureFilters() *TLSFingerprintCaptureTaskUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.UpdateCaptureFilters()
+	})
+}
+
+// SetSampleSchemaVersion sets the "sample_schema_version" field.
+func (u *TLSFingerprintCaptureTaskUpsertBulk) SetSampleSchemaVersion(v int) *TLSFingerprintCaptureTaskUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.SetSampleSchemaVersion(v)
+	})
+}
+
+// AddSampleSchemaVersion adds v to the "sample_schema_version" field.
+func (u *TLSFingerprintCaptureTaskUpsertBulk) AddSampleSchemaVersion(v int) *TLSFingerprintCaptureTaskUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.AddSampleSchemaVersion(v)
+	})
+}
+
+// UpdateSampleSchemaVersion sets the "sample_schema_version" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsertBulk) UpdateSampleSchemaVersion() *TLSFingerprintCaptureTaskUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.UpdateSampleSchemaVersion()
+	})
+}
+
+// SetTaskStats sets the "task_stats" field.
+func (u *TLSFingerprintCaptureTaskUpsertBulk) SetTaskStats(v map[string]interface{}) *TLSFingerprintCaptureTaskUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.SetTaskStats(v)
+	})
+}
+
+// UpdateTaskStats sets the "task_stats" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureTaskUpsertBulk) UpdateTaskStats() *TLSFingerprintCaptureTaskUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureTaskUpsert) {
+		s.UpdateTaskStats()
 	})
 }
 

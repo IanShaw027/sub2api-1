@@ -3517,6 +3517,7 @@ const usageMap = ref<Map<number, { today_cost: number; total_cost: number }>>(
   new Map(),
 );
 const usageLoading = ref(false);
+let usageSummaryReqSeq = 0;
 const capacityMap = ref<
   Map<
     number,
@@ -4092,12 +4093,28 @@ const formatCost = (cost: number): string => {
 };
 
 const loadUsageSummary = async () => {
+  const groupIds = groups.value.map((group) => group.id)
+  const reqSeq = ++usageSummaryReqSeq
+  if (groupIds.length === 0) {
+    if (reqSeq === usageSummaryReqSeq) {
+      usageMap.value = new Map()
+      usageLoading.value = false
+    }
+    return
+  }
   usageLoading.value = true;
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const data = await adminAPI.groups.getUsageSummary(tz);
+    const data = await adminAPI.groups.getUsageSummary(tz, groupIds);
+    if (reqSeq !== usageSummaryReqSeq) {
+      return;
+    }
+    const visibleGroupIDs = new Set(groups.value.map((group) => group.id));
     const map = new Map<number, { today_cost: number; total_cost: number }>();
     for (const item of data) {
+      if (!visibleGroupIDs.has(item.group_id)) {
+        continue;
+      }
       map.set(item.group_id, {
         today_cost: item.today_cost,
         total_cost: item.total_cost,
@@ -4105,9 +4122,14 @@ const loadUsageSummary = async () => {
     }
     usageMap.value = map;
   } catch (error) {
+    if (reqSeq !== usageSummaryReqSeq) {
+      return;
+    }
     console.error("Error loading group usage summary:", error);
   } finally {
-    usageLoading.value = false;
+    if (reqSeq === usageSummaryReqSeq) {
+      usageLoading.value = false;
+    }
   }
 };
 

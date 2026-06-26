@@ -180,10 +180,73 @@ describe('admin UsersView', () => {
       1,
       20,
       expect.objectContaining({
+        include_subscriptions: false,
         sort_by: 'created_at',
         sort_order: 'desc'
       }),
       expect.any(Object)
+    )
+  })
+
+  it('loads full user detail on demand before opening the platform quota modal', async () => {
+    const detailedUser = createAdminUser({
+      subscriptions: [
+        {
+          id: 7,
+          user_id: 42,
+          plan_id: 3,
+          plan_name: 'Pro',
+          status: 'active',
+          billing_cycle: 'monthly',
+          start_date: '2026-04-01T00:00:00Z',
+          end_date: '2026-05-01T00:00:00Z',
+          created_at: '2026-04-01T00:00:00Z',
+          updated_at: '2026-04-01T00:00:00Z'
+        } as any
+      ]
+    })
+    getById.mockResolvedValueOnce(detailedUser)
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          UserPlatformQuotaModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    await (wrapper.vm as unknown as {
+      handlePlatformQuota: (user: AdminUser) => Promise<void>
+    }).handlePlatformQuota(createAdminUser())
+    await flushPromises()
+
+    expect(getById).toHaveBeenCalledWith(42)
+    expect((wrapper.vm as unknown as { showPlatformQuotaModal: boolean }).showPlatformQuotaModal).toBe(true)
+    expect((wrapper.vm as unknown as { platformQuotaUser: AdminUser | null }).platformQuotaUser?.subscriptions).toEqual(
+      detailedUser.subscriptions
     )
   })
 

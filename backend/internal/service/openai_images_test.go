@@ -695,20 +695,21 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_NormalizesOfficialAndCusto
 	}
 }
 
-func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsOfficiallyInvalidSizes(t *testing.T) {
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_AutoCorrectsInvalidSizes(t *testing.T) {
 	setGinTestMode()
 
 	tests := []struct {
-		size    string
-		wantErr string
+		size     string
+		wantSize string
+		wantTier string
 	}{
-		{size: "2048x1153", wantErr: "size must use widthxheight with both edges as multiples of 16"},
-		{size: "4096x1024", wantErr: "size exceeds the maximum edge length of 3840px"},
-		{size: "3840x1024", wantErr: "size aspect ratio exceeds 3:1"},
-		{size: "512x512", wantErr: "size must contain between 655360 and 8294400 total pixels"},
-		{size: "3840x3840", wantErr: "size must contain between 655360 and 8294400 total pixels"},
-		{size: "invalid", wantErr: "invalid size format"},
-		{size: "999999999999999999999999999x2", wantErr: "invalid size format"},
+		{size: "2048x1153", wantSize: "2048x1152", wantTier: "2K"},
+		{size: "4096x1024", wantSize: "3840x1280", wantTier: "4K"},
+		{size: "3840x1024", wantSize: "3744x1248", wantTier: "4K"},
+		{size: "512x512", wantSize: "816x816", wantTier: "2K"},
+		{size: "3840x3840", wantSize: "2880x2880", wantTier: "4K"},
+		{size: "invalid", wantSize: "1024x1024", wantTier: "1K"},
+		{size: "999999999999999999999999999x2", wantSize: "1024x1024", wantTier: "1K"},
 	}
 
 	svc := &OpenAIGatewayService{}
@@ -723,10 +724,39 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsOfficiallyInvalidSi
 			c.Request = req
 
 			parsed, err := svc.ParseOpenAIImagesRequest(c, body)
-			require.Nil(t, parsed)
-			require.ErrorContains(t, err, tt.wantErr)
+			require.NoError(t, err)
+			require.NotNil(t, parsed)
+			require.Equal(t, tt.wantSize, parsed.Size)
+			require.Equal(t, tt.wantTier, parsed.SizeTier)
 		})
 	}
+}
+
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_AutoCorrectsInvalidMultipartEditSize(t *testing.T) {
+	setGinTestMode()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "gpt-image-2"))
+	require.NoError(t, writer.WriteField("prompt", "replace background"))
+	require.NoError(t, writer.WriteField("size", "2048x1153"))
+	part, err := writer.CreateFormFile("image", "source.png")
+	require.NoError(t, err)
+	_, err = part.Write(openAIImagesTestPNG(t, 256, 256))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	parsed, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body.Bytes())
+	require.NoError(t, err)
+	require.NotNil(t, parsed)
+	require.Equal(t, "2048x1152", parsed.Size)
+	require.Equal(t, "2K", parsed.SizeTier)
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_ResizesMultipartMaskToImage(t *testing.T) {
@@ -1757,11 +1787,20 @@ func TestOpenAIGatewayServiceForwardImages_OAuthFansOutMultipleImages(t *testing
 	require.NotNil(t, result)
 	require.Equal(t, 2, result.ImageCount)
 	require.Len(t, upstream.requests, 2)
-	require.Equal(t, int64(1710000100), gjson.Get(rec.Body.String(), "created").Int())
-	require.Equal(t, "Zmlyc3Q=", gjson.Get(rec.Body.String(), "data.0.b64_json").String())
-	require.Equal(t, "c2Vjb25k", gjson.Get(rec.Body.String(), "data.1.b64_json").String())
-	require.Equal(t, "draw a cat one", gjson.Get(rec.Body.String(), "data.0.revised_prompt").String())
-	require.Equal(t, "draw a cat two", gjson.Get(rec.Body.String(), "data.1.revised_prompt").String())
+	created := gjson.Get(rec.Body.String(), "created").Int()
+	require.Contains(t, []int64{1710000100, 1710000101}, created)
+	data := gjson.Get(rec.Body.String(), "data").Array()
+	require.Len(t, data, 2)
+	gotImages := []string{
+		gjson.Get(data[0].Raw, "b64_json").String(),
+		gjson.Get(data[1].Raw, "b64_json").String(),
+	}
+	require.ElementsMatch(t, []string{"Zmlyc3Q=", "c2Vjb25k"}, gotImages)
+	gotPrompts := []string{
+		gjson.Get(data[0].Raw, "revised_prompt").String(),
+		gjson.Get(data[1].Raw, "revised_prompt").String(),
+	}
+	require.ElementsMatch(t, []string{"draw a cat one", "draw a cat two"}, gotPrompts)
 	require.Equal(t, 7, result.Usage.InputTokens)
 	require.Equal(t, 11, result.Usage.OutputTokens)
 	require.Equal(t, 5, result.Usage.ImageOutputTokens)

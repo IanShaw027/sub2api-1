@@ -3554,6 +3554,42 @@ func (r *usageLogRepository) GetAllGroupUsageSummary(ctx context.Context, todayS
 	return results, nil
 }
 
+func (r *usageLogRepository) GetGroupUsageSummaryByIDs(ctx context.Context, groupIDs []int64, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
+	if len(groupIDs) == 0 {
+		return []usagestats.GroupUsageSummary{}, nil
+	}
+
+	query := `
+		SELECT
+			g.id AS group_id,
+			COALESCE(SUM(ul.actual_cost), 0) AS total_cost,
+			COALESCE(SUM(CASE WHEN ul.created_at >= $2 THEN ul.actual_cost ELSE 0 END), 0) AS today_cost
+		FROM groups g
+		LEFT JOIN usage_logs ul ON ul.group_id = g.id
+		WHERE g.id = ANY($1)
+		GROUP BY g.id
+	`
+
+	rows, err := r.sql.QueryContext(ctx, query, pq.Array(groupIDs), todayStart)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	results := make([]usagestats.GroupUsageSummary, 0, len(groupIDs))
+	for rows.Next() {
+		var row usagestats.GroupUsageSummary
+		if err := rows.Scan(&row.GroupID, &row.TotalCost, &row.TodayCost); err != nil {
+			return nil, err
+		}
+		results = append(results, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 // resolveModelDimensionExpression maps model source type to a safe SQL expression.
 func resolveModelDimensionExpression(modelType string) string {
 	requestedExpr := "COALESCE(NULLIF(TRIM(requested_model), ''), model)"

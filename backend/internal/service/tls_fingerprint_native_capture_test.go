@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	tlsfpTransport "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/transport"
 	utls "github.com/refraction-networking/utls"
 	"github.com/stretchr/testify/require"
 )
@@ -81,7 +82,7 @@ func TestNativeTLSCaptureListenerCapturesClientHelloAndHeaders(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	listener := NewTLSFingerprintNativeCaptureListener(TLSFingerprintNativeCaptureListenerConfig{
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
 		Address: "127.0.0.1:0",
 		Service: svc,
 	})
@@ -96,9 +97,9 @@ func TestNativeTLSCaptureListenerCapturesClientHelloAndHeaders(t *testing.T) {
 	uconn := utls.UClient(conn, &utls.Config{
 		ServerName:         "localhost",
 		InsecureSkipVerify: true,
-		NextProtos:         []string{"h2", "http/1.1"},
+		NextProtos:         []string{"http/1.1"},
 	}, utls.HelloCustom)
-	require.NoError(t, uconn.ApplyPreset(nativeClientHelloSpec()))
+	require.NoError(t, uconn.ApplyPreset(nativeClientHelloSpecHTTP1Only()))
 	require.NoError(t, uconn.Handshake())
 	_, err = fmt.Fprintf(
 		uconn,
@@ -110,7 +111,12 @@ func TestNativeTLSCaptureListenerCapturesClientHelloAndHeaders(t *testing.T) {
 	resp, err := http.ReadResponse(bufio.NewReader(uconn), nil)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
-	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Content-Type"), "application/json")
+	require.Contains(t, string(body), "\"status\":\"completed\"")
+	require.Contains(t, string(body), "\"accepted\":true")
 
 	require.Eventually(t, func() bool {
 		samples, err := svc.ListSamplesByTask(context.Background(), task.ID)
@@ -134,7 +140,7 @@ func TestNativeTLSCaptureListenerAcceptsBearerTokenAndPathPlatform(t *testing.T)
 	})
 	require.NoError(t, err)
 
-	listener := NewTLSFingerprintNativeCaptureListener(TLSFingerprintNativeCaptureListenerConfig{
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
 		Address: "127.0.0.1:0",
 		Service: svc,
 	})
@@ -149,9 +155,9 @@ func TestNativeTLSCaptureListenerAcceptsBearerTokenAndPathPlatform(t *testing.T)
 	uconn := utls.UClient(conn, &utls.Config{
 		ServerName:         "localhost",
 		InsecureSkipVerify: true,
-		NextProtos:         []string{"h2", "http/1.1"},
+		NextProtos:         []string{"http/1.1"},
 	}, utls.HelloCustom)
-	require.NoError(t, uconn.ApplyPreset(nativeClientHelloSpec()))
+	require.NoError(t, uconn.ApplyPreset(nativeClientHelloSpecHTTP1Only()))
 	require.NoError(t, uconn.Handshake())
 	_, err = fmt.Fprintf(
 		uconn,
@@ -163,7 +169,12 @@ func TestNativeTLSCaptureListenerAcceptsBearerTokenAndPathPlatform(t *testing.T)
 	resp, err := http.ReadResponse(bufio.NewReader(uconn), nil)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
-	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Content-Type"), "application/json")
+	require.Contains(t, string(body), "\"status\":\"completed\"")
+	require.Contains(t, string(body), "\"accepted\":true")
 
 	samples, err := svc.ListSamplesByTask(context.Background(), task.ID)
 	require.NoError(t, err)
@@ -172,6 +183,261 @@ func TestNativeTLSCaptureListenerAcceptsBearerTokenAndPathPlatform(t *testing.T)
 	require.Equal(t, "codex_exec/0.140.0", samples[0].UserAgent)
 	require.Equal(t, "codex_exec", samples[0].Originator)
 	require.NotEmpty(t, samples[0].RawClientHello)
+}
+
+func TestNativeTLSCaptureListenerPersistsRequestMetadata(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets:    map[string]int{"openai": 1},
+		UAKeywords: []string{"codex"},
+	})
+	require.NoError(t, err)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, err := net.DialTimeout("tcp", listener.Addr().String(), 5*time.Second)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	uconn := utls.UClient(conn, &utls.Config{
+		ServerName:         "localhost",
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"http/1.1"},
+	}, utls.HelloCustom)
+	require.NoError(t, uconn.ApplyPreset(nativeClientHelloSpecHTTP1Only()))
+	require.NoError(t, uconn.Handshake())
+	payload := `{"model":"gpt-5.4","stream":true}`
+	_, err = fmt.Fprintf(
+		uconn,
+		"POST /capture/openai/v1/responses HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer %s\r\nUser-Agent: codex_exec/0.140.0\r\nOriginator: codex_exec\r\nX-Claude-Code-Session-Id: session-123\r\nX-Client-Request-Id: req-123\r\nX-Stainless-Lang: js\r\nX-Stainless-Package-Version: 0.94.0\r\nX-Stainless-OS: Linux\r\nX-Stainless-Arch: arm64\r\nX-Stainless-Runtime: node\r\nX-Stainless-Runtime-Version: v24.3.0\r\nAccept: text/event-stream\r\ncontent-type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+		listener.Addr().String(),
+		task.Token,
+		len(payload),
+		payload,
+	)
+	require.NoError(t, err)
+
+	resp, err := http.ReadResponse(bufio.NewReader(uconn), nil)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Content-Type"), "text/event-stream")
+	require.Contains(t, string(body), "event: response.created")
+	require.Contains(t, string(body), "event: response.completed")
+
+	require.Len(t, repo.samples, 1)
+	require.Len(t, repo.sessions, 1)
+	require.Len(t, repo.sessionEvents, 1)
+
+	sample := repo.samples[0]
+	session := repo.sessions[0]
+	event := repo.sessionEvents[0]
+	require.Equal(t, "/v1/responses", sample.RequestPath)
+	require.Equal(t, http.MethodPost, sample.HTTPMethod)
+	require.Equal(t, string(tlsfpTransport.HTTP1), sample.Transport)
+	require.Equal(t, "responses", sample.RequestKind)
+	require.True(t, sample.Streaming)
+	require.Equal(t, "stream", sample.ResponseMode)
+	require.Equal(t, "gpt-5.4", sample.Model)
+	require.Equal(t, "codex", sample.ClientType)
+	require.Equal(t, "session-123", sample.SessionID)
+	require.Equal(t, "js", sample.StainlessMetadata["lang"])
+	require.Equal(t, "Linux", sample.StainlessMetadata["os"])
+	require.Equal(t, "node", sample.StainlessMetadata["runtime"])
+
+	require.Equal(t, "session-123", session.SessionID)
+	require.Equal(t, "openai", session.Platform)
+	require.Equal(t, "127.0.0.1", session.ClientIP)
+	require.Equal(t, "http/1.1", session.ALPNNegotiated)
+
+	require.Equal(t, "req-123", event.EventID)
+	require.Equal(t, "/v1/responses", event.RequestPath)
+	require.Equal(t, http.MethodPost, event.HTTPMethod)
+	require.Equal(t, "recorded", event.EventStatus)
+	require.Equal(t, "js", event.StainlessMetadata["lang"])
+	require.Equal(t, "Linux", event.StainlessMetadata["os"])
+	require.Equal(t, []string{"[REDACTED]"}, event.HeadersSnapshot["authorization"])
+	require.Contains(t, event.BodySummary, "\"model\":\"gpt-5.4\"")
+	require.JSONEq(t, payload, event.RawPayload)
+}
+
+func TestNativeTLSCaptureListenerResponsesStreamReturnsSSESuccess(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets:    map[string]int{"openai": 1},
+		UAKeywords: []string{"codex"},
+	})
+	require.NoError(t, err)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, err := net.DialTimeout("tcp", listener.Addr().String(), 5*time.Second)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	uconn := utls.UClient(conn, &utls.Config{
+		ServerName:         "localhost",
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"http/1.1"},
+	}, utls.HelloCustom)
+	require.NoError(t, uconn.ApplyPreset(nativeClientHelloSpecHTTP1Only()))
+	require.NoError(t, uconn.Handshake())
+
+	payload := `{"model":"gpt-5.4","stream":true,"input":"capture"}`
+	_, err = fmt.Fprintf(
+		uconn,
+		"POST /capture/openai/v1/responses HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer %s\r\nUser-Agent: codex_exec/0.140.0\r\nOriginator: codex_exec\r\nAccept: text/event-stream\r\ncontent-type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+		listener.Addr().String(),
+		task.Token,
+		len(payload),
+		payload,
+	)
+	require.NoError(t, err)
+
+	resp, err := http.ReadResponse(bufio.NewReader(uconn), nil)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Content-Type"), "text/event-stream")
+	require.Contains(t, string(body), "event: response.created")
+	require.Contains(t, string(body), "event: response.completed")
+	require.Len(t, repo.samples, 1)
+}
+
+func TestNativeTLSCaptureListenerHTTP1KeepAliveReusesCapturedClientHello(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets: map[string]int{"openai": 2},
+	})
+	require.NoError(t, err)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, err := net.DialTimeout("tcp", listener.Addr().String(), 5*time.Second)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	uconn := utls.UClient(conn, &utls.Config{
+		ServerName:         "localhost",
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"http/1.1"},
+	}, utls.HelloCustom)
+	require.NoError(t, uconn.ApplyPreset(nativeClientHelloSpecHTTP1Only()))
+	require.NoError(t, uconn.Handshake())
+
+	firstPayload := `{"input":"first"}`
+	_, err = fmt.Fprintf(
+		uconn,
+		"POST /capture/openai/v1/responses HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer %s\r\nUser-Agent: codex_exec/0.140.0\r\nOriginator: codex_exec\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n%s",
+		listener.Addr().String(),
+		task.Token,
+		len(firstPayload),
+		firstPayload,
+	)
+	require.NoError(t, err)
+	firstResp, err := http.ReadResponse(bufio.NewReader(uconn), nil)
+	require.NoError(t, err)
+	_, err = io.ReadAll(firstResp.Body)
+	require.NoError(t, err)
+	require.NoError(t, firstResp.Body.Close())
+	require.Equal(t, http.StatusOK, firstResp.StatusCode)
+
+	secondPayload := `{"input":"second"}`
+	_, err = fmt.Fprintf(
+		uconn,
+		"POST /capture/openai/v1/responses HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer %s\r\nUser-Agent: codex_exec/0.140.0\r\nOriginator: codex_exec\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+		listener.Addr().String(),
+		task.Token,
+		len(secondPayload),
+		secondPayload,
+	)
+	require.NoError(t, err)
+	secondResp, err := http.ReadResponse(bufio.NewReader(uconn), nil)
+	require.NoError(t, err)
+	_, err = io.ReadAll(secondResp.Body)
+	require.NoError(t, err)
+	require.NoError(t, secondResp.Body.Close())
+	require.Equal(t, http.StatusOK, secondResp.StatusCode)
+	require.Len(t, repo.samples, 2)
+}
+
+func TestNativeTLSCaptureListenerFilteredOutStillReturnsSuccessWithoutCanonicalSample(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets:    map[string]int{"openai": 1},
+		UAKeywords: []string{"codex"},
+	})
+	require.NoError(t, err)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, err := net.DialTimeout("tcp", listener.Addr().String(), 5*time.Second)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	uconn := utls.UClient(conn, &utls.Config{
+		ServerName:         "localhost",
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"http/1.1"},
+	}, utls.HelloCustom)
+	require.NoError(t, uconn.ApplyPreset(nativeClientHelloSpecHTTP1Only()))
+	require.NoError(t, uconn.Handshake())
+
+	payload := `{"model":"gpt-5.4","stream":true,"input":"capture"}`
+	_, err = fmt.Fprintf(
+		uconn,
+		"POST /capture/openai/v1/responses HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer %s\r\nUser-Agent: curl/8.9.1\r\nOriginator: curl\r\nAccept: text/event-stream\r\ncontent-type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+		listener.Addr().String(),
+		task.Token,
+		len(payload),
+		payload,
+	)
+	require.NoError(t, err)
+
+	resp, err := http.ReadResponse(bufio.NewReader(uconn), nil)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Content-Type"), "text/event-stream")
+	require.Contains(t, string(body), "event: response.created")
+	require.Contains(t, string(body), "event: response.completed")
+	require.Len(t, repo.samples, 0)
 }
 
 func TestNativeTLSCaptureListenerDoesNotLeakInternalSubmitErrors(t *testing.T) {
@@ -184,7 +450,7 @@ func TestNativeTLSCaptureListenerDoesNotLeakInternalSubmitErrors(t *testing.T) {
 	require.NoError(t, err)
 	repo.FailGetRunningTaskByToken(errors.New("db password secret-host.internal connection refused"))
 
-	listener := NewTLSFingerprintNativeCaptureListener(TLSFingerprintNativeCaptureListenerConfig{
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
 		Address: "127.0.0.1:0",
 		Service: svc,
 	})
@@ -199,9 +465,9 @@ func TestNativeTLSCaptureListenerDoesNotLeakInternalSubmitErrors(t *testing.T) {
 	uconn := utls.UClient(conn, &utls.Config{
 		ServerName:         "localhost",
 		InsecureSkipVerify: true,
-		NextProtos:         []string{"h2", "http/1.1"},
+		NextProtos:         []string{"http/1.1"},
 	}, utls.HelloCustom)
-	require.NoError(t, uconn.ApplyPreset(nativeClientHelloSpec()))
+	require.NoError(t, uconn.ApplyPreset(nativeClientHelloSpecHTTP1Only()))
 	require.NoError(t, uconn.Handshake())
 	_, err = fmt.Fprintf(
 		uconn,
@@ -223,7 +489,7 @@ func TestNativeTLSCaptureListenerDoesNotLeakInternalSubmitErrors(t *testing.T) {
 }
 
 func TestNativeTLSCaptureConnCloseClearsStoredClientHello(t *testing.T) {
-	listener := NewTLSFingerprintNativeCaptureListener(TLSFingerprintNativeCaptureListenerConfig{})
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{})
 	serverConn, clientConn := net.Pipe()
 	t.Cleanup(func() { _ = clientConn.Close() })
 
@@ -238,15 +504,15 @@ func TestNativeTLSCaptureConnCloseClearsStoredClientHello(t *testing.T) {
 	require.Equal(t, 0, nativeCaptureRawClientHelloEntryCount(listener))
 }
 
-func TestProvideTLSFingerprintNativeCaptureListenerHonorsEnabledConfig(t *testing.T) {
+func TestProvideTLSCaptureListenerHonorsEnabledConfig(t *testing.T) {
 	repo := newTLSFingerprintCaptureRepoStub()
 	svc := NewTLSFingerprintCaptureService(repo, nil)
 
-	disabled, err := ProvideTLSFingerprintNativeCaptureListener(nil, svc)
+	disabled, err := ProvideTLSCaptureListener(nil, svc)
 	require.NoError(t, err)
 	require.Nil(t, disabled)
 
-	enabled, err := ProvideTLSFingerprintNativeCaptureListener(&config.Config{
+	enabled, err := ProvideTLSCaptureListener(&config.Config{
 		TLSFingerprintCapture: config.TLSFingerprintCaptureConfig{
 			Enabled: true,
 			Host:    "127.0.0.1",
@@ -263,7 +529,7 @@ func TestNativeTLSCaptureListenerConfiguresIdleTimeout(t *testing.T) {
 	repo := newTLSFingerprintCaptureRepoStub()
 	svc := NewTLSFingerprintCaptureService(repo, nil)
 
-	listener := NewTLSFingerprintNativeCaptureListener(TLSFingerprintNativeCaptureListenerConfig{
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
 		Address: "127.0.0.1:0",
 		Service: svc,
 	})
@@ -277,14 +543,14 @@ func TestNativeTLSCaptureListenerConfiguresIdleTimeout(t *testing.T) {
 	require.Equal(t, 30*time.Second, server.IdleTimeout)
 }
 
-func stopNativeCaptureListener(t *testing.T, listener *TLSFingerprintNativeCaptureListener) {
+func stopNativeCaptureListener(t *testing.T, listener *TLSCaptureListener) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	require.NoError(t, listener.Stop(ctx))
 }
 
-func nativeCaptureRawClientHelloEntryCount(listener *TLSFingerprintNativeCaptureListener) int {
+func nativeCaptureRawClientHelloEntryCount(listener *TLSCaptureListener) int {
 	listener.mu.RLock()
 	defer listener.mu.RUnlock()
 	return len(listener.rawByConn)

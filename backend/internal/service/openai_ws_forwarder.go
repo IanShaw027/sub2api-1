@@ -51,7 +51,6 @@ const (
 	openAIWSEventFlushBatchSizeDefault    = 4
 	openAIWSEventFlushIntervalDefault     = 25 * time.Millisecond
 	openAIWSPayloadLogSampleDefault       = 0.2
-	openAIWSPassthroughIdleTimeoutDefault = time.Hour
 
 	openAIWSStoreDisabledConnModeStrict   = "strict"
 	openAIWSStoreDisabledConnModeAdaptive = "adaptive"
@@ -74,7 +73,15 @@ var openAIWSLogValueReplacer = strings.NewReplacer(
 	"failed", "fail",
 )
 
-var openAIWSIngressPreflightPingIdle = 20 * time.Second
+const defaultOpenAIWSIngressPreflightPingIdle = 20 * time.Second
+
+type openAIWSTransportTimeouts struct {
+	Dial            time.Duration
+	Acquire         time.Duration
+	Read            time.Duration
+	Write           time.Duration
+	PassthroughIdle time.Duration
+}
 
 // openAIWSFallbackError 表示可安全回退到 HTTP 的 WS 错误（尚未写下游）。
 type openAIWSFallbackError struct {
@@ -1474,24 +1481,56 @@ func (s *OpenAIGatewayService) openAIWSIngressPreviousResponseRecoveryEnabled() 
 }
 
 func (s *OpenAIGatewayService) openAIWSReadTimeout() time.Duration {
-	if s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.ReadTimeoutSeconds > 0 {
-		return time.Duration(s.cfg.Gateway.OpenAIWS.ReadTimeoutSeconds) * time.Second
-	}
-	return 15 * time.Minute
+	return s.openAIWSTransportTimeouts().Read
 }
 
 func (s *OpenAIGatewayService) openAIWSPassthroughIdleTimeout() time.Duration {
-	if timeout := s.openAIWSReadTimeout(); timeout > 0 {
-		return timeout
-	}
-	return openAIWSPassthroughIdleTimeoutDefault
+	return s.openAIWSTransportTimeouts().PassthroughIdle
 }
 
 func (s *OpenAIGatewayService) openAIWSWriteTimeout() time.Duration {
-	if s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.WriteTimeoutSeconds > 0 {
-		return time.Duration(s.cfg.Gateway.OpenAIWS.WriteTimeoutSeconds) * time.Second
+	return s.openAIWSTransportTimeouts().Write
+}
+
+func (s *OpenAIGatewayService) openAIWSDialTimeout() time.Duration {
+	return s.openAIWSTransportTimeouts().Dial
+}
+
+func (s *OpenAIGatewayService) openAIWSAcquireTimeout() time.Duration {
+	return s.openAIWSTransportTimeouts().Acquire
+}
+
+func (s *OpenAIGatewayService) openAIWSIngressPreflightPingIdle() time.Duration {
+	if s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.IngressPreflightPingIdleSeconds >= 0 {
+		return time.Duration(s.cfg.Gateway.OpenAIWS.IngressPreflightPingIdleSeconds) * time.Second
 	}
-	return 2 * time.Minute
+	return defaultOpenAIWSIngressPreflightPingIdle
+}
+
+func (s *OpenAIGatewayService) openAIWSTransportTimeouts() openAIWSTransportTimeouts {
+	dial := defaultOpenAIWSDialTimeout
+	read := defaultOpenAIWSReadTimeout
+	write := defaultOpenAIWSWriteTimeout
+	acquireExtra := openAIWSAcquireTimeoutExtra
+	if s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.ReadTimeoutSeconds > 0 {
+		read = time.Duration(s.cfg.Gateway.OpenAIWS.ReadTimeoutSeconds) * time.Second
+	}
+	if s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.WriteTimeoutSeconds > 0 {
+		write = time.Duration(s.cfg.Gateway.OpenAIWS.WriteTimeoutSeconds) * time.Second
+	}
+	if s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.DialTimeoutSeconds > 0 {
+		dial = time.Duration(s.cfg.Gateway.OpenAIWS.DialTimeoutSeconds) * time.Second
+	}
+	if s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.AcquireTimeoutExtraMS > 0 {
+		acquireExtra = time.Duration(s.cfg.Gateway.OpenAIWS.AcquireTimeoutExtraMS) * time.Millisecond
+	}
+	return openAIWSTransportTimeouts{
+		Dial:            dial,
+		Acquire:         dial + acquireExtra,
+		Read:            read,
+		Write:           write,
+		PassthroughIdle: read,
+	}
 }
 
 func (s *OpenAIGatewayService) openAIWSEventFlushBatchSize() int {
@@ -1545,23 +1584,6 @@ func (s *OpenAIGatewayService) shouldEmitOpenAIWSPayloadSchema(attempt int) bool
 		return false
 	}
 	return logger.L().Core().Enabled(zap.DebugLevel)
-}
-
-func (s *OpenAIGatewayService) openAIWSDialTimeout() time.Duration {
-	if s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.DialTimeoutSeconds > 0 {
-		return time.Duration(s.cfg.Gateway.OpenAIWS.DialTimeoutSeconds) * time.Second
-	}
-	return 10 * time.Second
-}
-
-func (s *OpenAIGatewayService) openAIWSAcquireTimeout() time.Duration {
-	// Acquire 覆盖“连接复用命中/排队/新建连接”三个阶段。
-	// 这里不再叠加 write_timeout，避免高并发排队时把 TTFT 长尾拉到分钟级。
-	dial := s.openAIWSDialTimeout()
-	if dial <= 0 {
-		dial = 10 * time.Second
-	}
-	return dial + 2*time.Second
 }
 
 func (s *OpenAIGatewayService) buildOpenAIResponsesWSURL(account *Account) (string, error) {
@@ -1930,7 +1952,6 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecision(
 		decision.FallbackReason = reason
 		return decision
 	}
-
 	if stateStore == nil {
 		return dropToFullCreate("state_store_missing")
 	}
@@ -1959,10 +1980,13 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecision(
 		return dropToFullCreate("conn_affinity_miss")
 	}
 
-	payload["store"] = true
+	// OAuth Responses continuation can remain incremental while still forcing
+	// store=false. previous_response_id + sticky conn affinity are sufficient
+	// for this path; re-enabling store trips upstream validation.
+	payload["store"] = false
 	decision.StoreMode = openAIWSStoreModeIncremental
-	decision.StoreEnabled = true
-	decision.StoreDisabled = false
+	decision.StoreEnabled = false
+	decision.StoreDisabled = true
 	decision.StickyAccountHit = true
 	return decision
 }
@@ -2061,13 +2085,13 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecisionRawWithOp
 	}
 
 	if options.AllowLiveRelayContinuation {
-		updated, err := setOpenAIWSRawPayloadStore(payload, true)
+		updated, err := setOpenAIWSRawPayloadStore(payload, false)
 		if err != nil {
 			return payload, decision, err
 		}
 		decision.StoreMode = openAIWSStoreModeIncremental
-		decision.StoreEnabled = true
-		decision.StoreDisabled = false
+		decision.StoreEnabled = false
+		decision.StoreDisabled = true
 		decision.StickyAccountHit = true
 		decision.ConnAffinityHit = true
 		decision.FallbackReason = ""
@@ -2093,7 +2117,6 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecisionRawWithOp
 		decision.FallbackReason = reason
 		return updated, decision, nil
 	}
-
 	if stateStore == nil {
 		return dropToFullCreate("state_store_missing")
 	}
@@ -2118,18 +2141,17 @@ func (s *OpenAIGatewayService) resolveOpenAIWSContinuationStoreDecisionRawWithOp
 			decision.UnsafeToolContinuation = true
 			decision.FallbackReason = "conn_affinity_miss"
 			return payload, decision, nil
-		} else {
-			return dropToFullCreate("conn_affinity_miss")
 		}
+		return dropToFullCreate("conn_affinity_miss")
 	}
 
-	updated, err := setOpenAIWSRawPayloadStore(payload, true)
+	updated, err := setOpenAIWSRawPayloadStore(payload, false)
 	if err != nil {
 		return payload, decision, err
 	}
 	decision.StoreMode = openAIWSStoreModeIncremental
-	decision.StoreEnabled = true
-	decision.StoreDisabled = false
+	decision.StoreEnabled = false
+	decision.StoreDisabled = true
 	decision.StickyAccountHit = true
 	decision.FallbackReason = ""
 	return updated, decision, nil
@@ -5375,8 +5397,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 		}
 		shouldPreflightPing := turn > 1 && sessionLease != nil && turnRetry == 0
-		if shouldPreflightPing && openAIWSIngressPreflightPingIdle > 0 && !lastTurnFinishedAt.IsZero() {
-			if time.Since(lastTurnFinishedAt) < openAIWSIngressPreflightPingIdle {
+		preflightPingIdle := s.openAIWSIngressPreflightPingIdle()
+		if shouldPreflightPing && preflightPingIdle > 0 && !lastTurnFinishedAt.IsZero() {
+			if time.Since(lastTurnFinishedAt) < preflightPingIdle {
 				shouldPreflightPing = false
 			}
 		}
@@ -6103,10 +6126,12 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
 		return nil, nil
 	}
-	// 非 WSv2 场景（如 force_http/全局关闭）不应使用 previous_response_id 粘连，
-	// 以保持“回滚到 HTTP”后的历史行为一致性。
-	if s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
-		return nil, nil
+	// 非 WSv2 场景默认不使用 previous_response_id 粘连，避免伪造 HTTP continuation。
+	// 仅当显式 durable HTTP lane 打开时，才允许 OAuth 账号在 HTTP SSE 上复用 sticky account。
+	if transport := s.getOpenAIWSProtocolResolver().Resolve(account).Transport; transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
+		if transport != OpenAIUpstreamTransportHTTPSSE || !s.allowOpenAIDurableHTTPSticky(account) {
+			return nil, nil
+		}
 	}
 	stickyWaitTimeout := s.openAIStickyWaitTimeout(ctx)
 	if shouldClearOpenAIStickyAccount(account, requestedModel, "", stickyWaitTimeout) || !isOpenAIStickyCandidateCompatible(ctx, s.settingService, account, requestedModel, requireCompact, "", false, false) {

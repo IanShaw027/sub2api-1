@@ -105,6 +105,8 @@ function formatCustomTimeRangeLabel(startTime: string, endTime: string): string 
 }
 
 const groups = ref<Array<{ id: number; name: string; platform: string }>>([])
+const groupsLoaded = ref(false)
+let groupsLoadPromise: Promise<void> | null = null
 
 const platformOptions = computed(() => [
   { value: '', label: t('common.all') },
@@ -151,14 +153,29 @@ watch(
 )
 
 onMounted(async () => {
-  try {
-    const list = await adminAPI.groups.getAll()
-    groups.value = list.map((g) => ({ id: g.id, name: g.name, platform: g.platform }))
-  } catch (e) {
-    console.error('[OpsDashboardHeader] Failed to load groups', e)
-    groups.value = []
+  if (props.groupId !== null) {
+    await ensureGroupsLoaded()
   }
 })
+
+async function ensureGroupsLoaded() {
+  if (groupsLoaded.value) return
+  if (!groupsLoadPromise) {
+    groupsLoadPromise = adminAPI.groups.getAll()
+      .then((list) => {
+        groups.value = list.map((g) => ({ id: g.id, name: g.name, platform: g.platform }))
+        groupsLoaded.value = true
+      })
+      .catch((e) => {
+        console.error('[OpsDashboardHeader] Failed to load groups', e)
+        groups.value = []
+      })
+      .finally(() => {
+        groupsLoadPromise = null
+      })
+  }
+  await groupsLoadPromise
+}
 
 function handlePlatformChange(val: string | number | boolean | null) {
   emit('update:platform', String(val || ''))
@@ -906,6 +923,7 @@ function handleToolbarRefresh() {
             :model-value="groupId"
             :options="groupOptions"
             class="w-full sm:w-[160px]"
+            @click="ensureGroupsLoaded"
             @update:model-value="handleGroupChange"
           />
 

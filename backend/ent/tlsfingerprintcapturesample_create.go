@@ -57,6 +57,20 @@ func (_c *TLSFingerprintCaptureSampleCreate) SetTaskID(v int64) *TLSFingerprintC
 	return _c
 }
 
+// SetSessionID sets the "session_id" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetSessionID(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetSessionID(v)
+	return _c
+}
+
+// SetNillableSessionID sets the "session_id" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableSessionID(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetSessionID(*v)
+	}
+	return _c
+}
+
 // SetPlatform sets the "platform" field.
 func (_c *TLSFingerprintCaptureSampleCreate) SetPlatform(v string) *TLSFingerprintCaptureSampleCreate {
 	_c.mutation.SetPlatform(v)
@@ -67,6 +81,20 @@ func (_c *TLSFingerprintCaptureSampleCreate) SetPlatform(v string) *TLSFingerpri
 func (_c *TLSFingerprintCaptureSampleCreate) SetNillablePlatform(v *string) *TLSFingerprintCaptureSampleCreate {
 	if v != nil {
 		_c.SetPlatform(*v)
+	}
+	return _c
+}
+
+// SetTransport sets the "transport" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetTransport(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetTransport(v)
+	return _c
+}
+
+// SetNillableTransport sets the "transport" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableTransport(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetTransport(*v)
 	}
 	return _c
 }
@@ -105,9 +133,211 @@ func (_c *TLSFingerprintCaptureSampleCreate) SetFingerprintHash(v string) *TLSFi
 	return _c
 }
 
-// SetProfile sets the "profile" field.
-func (_c *TLSFingerprintCaptureSampleCreate) SetProfile(v *model.TLSFingerprintProfile) *TLSFingerprintCaptureSampleCreate {
-	_c.mutation.SetProfile(v)
+// SetReplayHash sets the "replay_hash" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetReplayHash(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetReplayHash(v)
+	return _c
+}
+
+// SetNillableReplayHash sets the "replay_hash" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableReplayHash(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetReplayHash(*v)
+	}
+	return _c
+}
+
+// SetJa3Raw sets the "ja3_raw" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetJa3Raw(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetJa3Raw(v)
+	return _c
+}
+
+// SetNillableJa3Raw sets the "ja3_raw" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableJa3Raw(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetJa3Raw(*v)
+	}
+	return _c
+}
+
+// SetJa3Hash sets the "ja3_hash" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetJa3Hash(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetJa3Hash(v)
+	return _c
+}
+
+// SetNillableJa3Hash sets the "ja3_hash" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableJa3Hash(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetJa3Hash(*v)
+	}
+	return _c
+}
+
+// SetJa4 sets the "ja4" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetJa4(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetJa4(v)
+	return _c
+}
+
+// SetNillableJa4 sets the "ja4" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableJa4(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetJa4(*v)
+	}
+	return _c
+}
+
+// SetRequestPath sets the "request_path" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetRequestPath(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetRequestPath(v)
+	return _c
+}
+
+// SetNillableRequestPath sets the "request_path" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableRequestPath(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetRequestPath(*v)
+	}
+	return _c
+}
+
+// SetHTTPMethod sets the "http_method" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetHTTPMethod(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetHTTPMethod(v)
+	return _c
+}
+
+// SetNillableHTTPMethod sets the "http_method" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableHTTPMethod(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetHTTPMethod(*v)
+	}
+	return _c
+}
+
+// SetIsWebsocket sets the "is_websocket" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetIsWebsocket(v bool) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetIsWebsocket(v)
+	return _c
+}
+
+// SetNillableIsWebsocket sets the "is_websocket" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableIsWebsocket(v *bool) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetIsWebsocket(*v)
+	}
+	return _c
+}
+
+// SetWebsocketProtocol sets the "websocket_protocol" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetWebsocketProtocol(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetWebsocketProtocol(v)
+	return _c
+}
+
+// SetNillableWebsocketProtocol sets the "websocket_protocol" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableWebsocketProtocol(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetWebsocketProtocol(*v)
+	}
+	return _c
+}
+
+// SetClientType sets the "client_type" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetClientType(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetClientType(v)
+	return _c
+}
+
+// SetNillableClientType sets the "client_type" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableClientType(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetClientType(*v)
+	}
+	return _c
+}
+
+// SetModel sets the "model" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetModel(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetModel(v)
+	return _c
+}
+
+// SetNillableModel sets the "model" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableModel(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetModel(*v)
+	}
+	return _c
+}
+
+// SetRequestKind sets the "request_kind" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetRequestKind(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetRequestKind(v)
+	return _c
+}
+
+// SetNillableRequestKind sets the "request_kind" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableRequestKind(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetRequestKind(*v)
+	}
+	return _c
+}
+
+// SetStreaming sets the "streaming" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetStreaming(v bool) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetStreaming(v)
+	return _c
+}
+
+// SetNillableStreaming sets the "streaming" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableStreaming(v *bool) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetStreaming(*v)
+	}
+	return _c
+}
+
+// SetResponseMode sets the "response_mode" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetResponseMode(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetResponseMode(v)
+	return _c
+}
+
+// SetNillableResponseMode sets the "response_mode" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableResponseMode(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetResponseMode(*v)
+	}
+	return _c
+}
+
+// SetHttp2Fingerprint sets the "http2_fingerprint" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetHttp2Fingerprint(v string) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetHttp2Fingerprint(v)
+	return _c
+}
+
+// SetNillableHttp2Fingerprint sets the "http2_fingerprint" field if the given value is not nil.
+func (_c *TLSFingerprintCaptureSampleCreate) SetNillableHttp2Fingerprint(v *string) *TLSFingerprintCaptureSampleCreate {
+	if v != nil {
+		_c.SetHttp2Fingerprint(*v)
+	}
+	return _c
+}
+
+// SetStainlessMetadata sets the "stainless_metadata" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetStainlessMetadata(v map[string]interface{}) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetStainlessMetadata(v)
+	return _c
+}
+
+// SetReplayProfile sets the "replay_profile" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetReplayProfile(v *model.TLSFingerprintProfile) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetReplayProfile(v)
 	return _c
 }
 
@@ -128,6 +358,12 @@ func (_c *TLSFingerprintCaptureSampleCreate) SetNillableRawPayload(v *string) *T
 // SetRawClientHello sets the "raw_client_hello" field.
 func (_c *TLSFingerprintCaptureSampleCreate) SetRawClientHello(v []byte) *TLSFingerprintCaptureSampleCreate {
 	_c.mutation.SetRawClientHello(v)
+	return _c
+}
+
+// SetCapturedAt sets the "captured_at" field.
+func (_c *TLSFingerprintCaptureSampleCreate) SetCapturedAt(v time.Time) *TLSFingerprintCaptureSampleCreate {
+	_c.mutation.SetCapturedAt(v)
 	return _c
 }
 
@@ -174,9 +410,17 @@ func (_c *TLSFingerprintCaptureSampleCreate) defaults() {
 		v := tlsfingerprintcapturesample.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.SessionID(); !ok {
+		v := tlsfingerprintcapturesample.DefaultSessionID
+		_c.mutation.SetSessionID(v)
+	}
 	if _, ok := _c.mutation.Platform(); !ok {
 		v := tlsfingerprintcapturesample.DefaultPlatform
 		_c.mutation.SetPlatform(v)
+	}
+	if _, ok := _c.mutation.Transport(); !ok {
+		v := tlsfingerprintcapturesample.DefaultTransport
+		_c.mutation.SetTransport(v)
 	}
 	if _, ok := _c.mutation.UserAgent(); !ok {
 		v := tlsfingerprintcapturesample.DefaultUserAgent
@@ -185,6 +429,66 @@ func (_c *TLSFingerprintCaptureSampleCreate) defaults() {
 	if _, ok := _c.mutation.Originator(); !ok {
 		v := tlsfingerprintcapturesample.DefaultOriginator
 		_c.mutation.SetOriginator(v)
+	}
+	if _, ok := _c.mutation.ReplayHash(); !ok {
+		v := tlsfingerprintcapturesample.DefaultReplayHash
+		_c.mutation.SetReplayHash(v)
+	}
+	if _, ok := _c.mutation.Ja3Raw(); !ok {
+		v := tlsfingerprintcapturesample.DefaultJa3Raw
+		_c.mutation.SetJa3Raw(v)
+	}
+	if _, ok := _c.mutation.Ja3Hash(); !ok {
+		v := tlsfingerprintcapturesample.DefaultJa3Hash
+		_c.mutation.SetJa3Hash(v)
+	}
+	if _, ok := _c.mutation.Ja4(); !ok {
+		v := tlsfingerprintcapturesample.DefaultJa4
+		_c.mutation.SetJa4(v)
+	}
+	if _, ok := _c.mutation.RequestPath(); !ok {
+		v := tlsfingerprintcapturesample.DefaultRequestPath
+		_c.mutation.SetRequestPath(v)
+	}
+	if _, ok := _c.mutation.HTTPMethod(); !ok {
+		v := tlsfingerprintcapturesample.DefaultHTTPMethod
+		_c.mutation.SetHTTPMethod(v)
+	}
+	if _, ok := _c.mutation.IsWebsocket(); !ok {
+		v := tlsfingerprintcapturesample.DefaultIsWebsocket
+		_c.mutation.SetIsWebsocket(v)
+	}
+	if _, ok := _c.mutation.WebsocketProtocol(); !ok {
+		v := tlsfingerprintcapturesample.DefaultWebsocketProtocol
+		_c.mutation.SetWebsocketProtocol(v)
+	}
+	if _, ok := _c.mutation.ClientType(); !ok {
+		v := tlsfingerprintcapturesample.DefaultClientType
+		_c.mutation.SetClientType(v)
+	}
+	if _, ok := _c.mutation.Model(); !ok {
+		v := tlsfingerprintcapturesample.DefaultModel
+		_c.mutation.SetModel(v)
+	}
+	if _, ok := _c.mutation.RequestKind(); !ok {
+		v := tlsfingerprintcapturesample.DefaultRequestKind
+		_c.mutation.SetRequestKind(v)
+	}
+	if _, ok := _c.mutation.Streaming(); !ok {
+		v := tlsfingerprintcapturesample.DefaultStreaming
+		_c.mutation.SetStreaming(v)
+	}
+	if _, ok := _c.mutation.ResponseMode(); !ok {
+		v := tlsfingerprintcapturesample.DefaultResponseMode
+		_c.mutation.SetResponseMode(v)
+	}
+	if _, ok := _c.mutation.Http2Fingerprint(); !ok {
+		v := tlsfingerprintcapturesample.DefaultHttp2Fingerprint
+		_c.mutation.SetHttp2Fingerprint(v)
+	}
+	if _, ok := _c.mutation.StainlessMetadata(); !ok {
+		v := tlsfingerprintcapturesample.DefaultStainlessMetadata()
+		_c.mutation.SetStainlessMetadata(v)
 	}
 	if _, ok := _c.mutation.RawPayload(); !ok {
 		v := tlsfingerprintcapturesample.DefaultRawPayload
@@ -203,12 +507,28 @@ func (_c *TLSFingerprintCaptureSampleCreate) check() error {
 	if _, ok := _c.mutation.TaskID(); !ok {
 		return &ValidationError{Name: "task_id", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.task_id"`)}
 	}
+	if _, ok := _c.mutation.SessionID(); !ok {
+		return &ValidationError{Name: "session_id", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.session_id"`)}
+	}
+	if v, ok := _c.mutation.SessionID(); ok {
+		if err := tlsfingerprintcapturesample.SessionIDValidator(v); err != nil {
+			return &ValidationError{Name: "session_id", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.session_id": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.Platform(); !ok {
 		return &ValidationError{Name: "platform", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.platform"`)}
 	}
 	if v, ok := _c.mutation.Platform(); ok {
 		if err := tlsfingerprintcapturesample.PlatformValidator(v); err != nil {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.platform": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Transport(); !ok {
+		return &ValidationError{Name: "transport", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.transport"`)}
+	}
+	if v, ok := _c.mutation.Transport(); ok {
+		if err := tlsfingerprintcapturesample.TransportValidator(v); err != nil {
+			return &ValidationError{Name: "transport", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.transport": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.UserAgent(); !ok {
@@ -230,16 +550,109 @@ func (_c *TLSFingerprintCaptureSampleCreate) check() error {
 			return &ValidationError{Name: "fingerprint_hash", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.fingerprint_hash": %w`, err)}
 		}
 	}
-	if _, ok := _c.mutation.Profile(); !ok {
-		return &ValidationError{Name: "profile", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.profile"`)}
+	if _, ok := _c.mutation.ReplayHash(); !ok {
+		return &ValidationError{Name: "replay_hash", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.replay_hash"`)}
 	}
-	if v, ok := _c.mutation.Profile(); ok {
+	if v, ok := _c.mutation.ReplayHash(); ok {
+		if err := tlsfingerprintcapturesample.ReplayHashValidator(v); err != nil {
+			return &ValidationError{Name: "replay_hash", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.replay_hash": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Ja3Raw(); !ok {
+		return &ValidationError{Name: "ja3_raw", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.ja3_raw"`)}
+	}
+	if _, ok := _c.mutation.Ja3Hash(); !ok {
+		return &ValidationError{Name: "ja3_hash", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.ja3_hash"`)}
+	}
+	if v, ok := _c.mutation.Ja3Hash(); ok {
+		if err := tlsfingerprintcapturesample.Ja3HashValidator(v); err != nil {
+			return &ValidationError{Name: "ja3_hash", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.ja3_hash": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Ja4(); !ok {
+		return &ValidationError{Name: "ja4", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.ja4"`)}
+	}
+	if v, ok := _c.mutation.Ja4(); ok {
+		if err := tlsfingerprintcapturesample.Ja4Validator(v); err != nil {
+			return &ValidationError{Name: "ja4", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.ja4": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.RequestPath(); !ok {
+		return &ValidationError{Name: "request_path", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.request_path"`)}
+	}
+	if _, ok := _c.mutation.HTTPMethod(); !ok {
+		return &ValidationError{Name: "http_method", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.http_method"`)}
+	}
+	if v, ok := _c.mutation.HTTPMethod(); ok {
+		if err := tlsfingerprintcapturesample.HTTPMethodValidator(v); err != nil {
+			return &ValidationError{Name: "http_method", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.http_method": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.IsWebsocket(); !ok {
+		return &ValidationError{Name: "is_websocket", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.is_websocket"`)}
+	}
+	if _, ok := _c.mutation.WebsocketProtocol(); !ok {
+		return &ValidationError{Name: "websocket_protocol", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.websocket_protocol"`)}
+	}
+	if v, ok := _c.mutation.WebsocketProtocol(); ok {
+		if err := tlsfingerprintcapturesample.WebsocketProtocolValidator(v); err != nil {
+			return &ValidationError{Name: "websocket_protocol", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.websocket_protocol": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ClientType(); !ok {
+		return &ValidationError{Name: "client_type", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.client_type"`)}
+	}
+	if v, ok := _c.mutation.ClientType(); ok {
+		if err := tlsfingerprintcapturesample.ClientTypeValidator(v); err != nil {
+			return &ValidationError{Name: "client_type", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.client_type": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Model(); !ok {
+		return &ValidationError{Name: "model", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.model"`)}
+	}
+	if v, ok := _c.mutation.Model(); ok {
+		if err := tlsfingerprintcapturesample.ModelValidator(v); err != nil {
+			return &ValidationError{Name: "model", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.model": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.RequestKind(); !ok {
+		return &ValidationError{Name: "request_kind", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.request_kind"`)}
+	}
+	if v, ok := _c.mutation.RequestKind(); ok {
+		if err := tlsfingerprintcapturesample.RequestKindValidator(v); err != nil {
+			return &ValidationError{Name: "request_kind", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.request_kind": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Streaming(); !ok {
+		return &ValidationError{Name: "streaming", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.streaming"`)}
+	}
+	if _, ok := _c.mutation.ResponseMode(); !ok {
+		return &ValidationError{Name: "response_mode", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.response_mode"`)}
+	}
+	if v, ok := _c.mutation.ResponseMode(); ok {
+		if err := tlsfingerprintcapturesample.ResponseModeValidator(v); err != nil {
+			return &ValidationError{Name: "response_mode", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.response_mode": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Http2Fingerprint(); !ok {
+		return &ValidationError{Name: "http2_fingerprint", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.http2_fingerprint"`)}
+	}
+	if _, ok := _c.mutation.StainlessMetadata(); !ok {
+		return &ValidationError{Name: "stainless_metadata", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.stainless_metadata"`)}
+	}
+	if _, ok := _c.mutation.ReplayProfile(); !ok {
+		return &ValidationError{Name: "replay_profile", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.replay_profile"`)}
+	}
+	if v, ok := _c.mutation.ReplayProfile(); ok {
 		if err := v.Validate(); err != nil {
-			return &ValidationError{Name: "profile", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.profile": %w`, err)}
+			return &ValidationError{Name: "replay_profile", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintCaptureSample.replay_profile": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.RawPayload(); !ok {
 		return &ValidationError{Name: "raw_payload", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.raw_payload"`)}
+	}
+	if _, ok := _c.mutation.CapturedAt(); !ok {
+		return &ValidationError{Name: "captured_at", err: errors.New(`ent: missing required field "TLSFingerprintCaptureSample.captured_at"`)}
 	}
 	return nil
 }
@@ -280,9 +693,17 @@ func (_c *TLSFingerprintCaptureSampleCreate) createSpec() (*TLSFingerprintCaptur
 		_spec.SetField(tlsfingerprintcapturesample.FieldTaskID, field.TypeInt64, value)
 		_node.TaskID = value
 	}
+	if value, ok := _c.mutation.SessionID(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldSessionID, field.TypeString, value)
+		_node.SessionID = value
+	}
 	if value, ok := _c.mutation.Platform(); ok {
 		_spec.SetField(tlsfingerprintcapturesample.FieldPlatform, field.TypeString, value)
 		_node.Platform = value
+	}
+	if value, ok := _c.mutation.Transport(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldTransport, field.TypeString, value)
+		_node.Transport = value
 	}
 	if value, ok := _c.mutation.UserAgent(); ok {
 		_spec.SetField(tlsfingerprintcapturesample.FieldUserAgent, field.TypeString, value)
@@ -296,9 +717,69 @@ func (_c *TLSFingerprintCaptureSampleCreate) createSpec() (*TLSFingerprintCaptur
 		_spec.SetField(tlsfingerprintcapturesample.FieldFingerprintHash, field.TypeString, value)
 		_node.FingerprintHash = value
 	}
-	if value, ok := _c.mutation.Profile(); ok {
-		_spec.SetField(tlsfingerprintcapturesample.FieldProfile, field.TypeJSON, value)
-		_node.Profile = value
+	if value, ok := _c.mutation.ReplayHash(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldReplayHash, field.TypeString, value)
+		_node.ReplayHash = value
+	}
+	if value, ok := _c.mutation.Ja3Raw(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldJa3Raw, field.TypeString, value)
+		_node.Ja3Raw = value
+	}
+	if value, ok := _c.mutation.Ja3Hash(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldJa3Hash, field.TypeString, value)
+		_node.Ja3Hash = value
+	}
+	if value, ok := _c.mutation.Ja4(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldJa4, field.TypeString, value)
+		_node.Ja4 = value
+	}
+	if value, ok := _c.mutation.RequestPath(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldRequestPath, field.TypeString, value)
+		_node.RequestPath = value
+	}
+	if value, ok := _c.mutation.HTTPMethod(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldHTTPMethod, field.TypeString, value)
+		_node.HTTPMethod = value
+	}
+	if value, ok := _c.mutation.IsWebsocket(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldIsWebsocket, field.TypeBool, value)
+		_node.IsWebsocket = value
+	}
+	if value, ok := _c.mutation.WebsocketProtocol(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldWebsocketProtocol, field.TypeString, value)
+		_node.WebsocketProtocol = value
+	}
+	if value, ok := _c.mutation.ClientType(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldClientType, field.TypeString, value)
+		_node.ClientType = value
+	}
+	if value, ok := _c.mutation.Model(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldModel, field.TypeString, value)
+		_node.Model = value
+	}
+	if value, ok := _c.mutation.RequestKind(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldRequestKind, field.TypeString, value)
+		_node.RequestKind = value
+	}
+	if value, ok := _c.mutation.Streaming(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldStreaming, field.TypeBool, value)
+		_node.Streaming = value
+	}
+	if value, ok := _c.mutation.ResponseMode(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldResponseMode, field.TypeString, value)
+		_node.ResponseMode = value
+	}
+	if value, ok := _c.mutation.Http2Fingerprint(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldHttp2Fingerprint, field.TypeString, value)
+		_node.Http2Fingerprint = value
+	}
+	if value, ok := _c.mutation.StainlessMetadata(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldStainlessMetadata, field.TypeJSON, value)
+		_node.StainlessMetadata = value
+	}
+	if value, ok := _c.mutation.ReplayProfile(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldReplayProfile, field.TypeJSON, value)
+		_node.ReplayProfile = value
 	}
 	if value, ok := _c.mutation.RawPayload(); ok {
 		_spec.SetField(tlsfingerprintcapturesample.FieldRawPayload, field.TypeString, value)
@@ -307,6 +788,10 @@ func (_c *TLSFingerprintCaptureSampleCreate) createSpec() (*TLSFingerprintCaptur
 	if value, ok := _c.mutation.RawClientHello(); ok {
 		_spec.SetField(tlsfingerprintcapturesample.FieldRawClientHello, field.TypeBytes, value)
 		_node.RawClientHello = &value
+	}
+	if value, ok := _c.mutation.CapturedAt(); ok {
+		_spec.SetField(tlsfingerprintcapturesample.FieldCapturedAt, field.TypeTime, value)
+		_node.CapturedAt = value
 	}
 	return _node, _spec
 }
@@ -390,6 +875,18 @@ func (u *TLSFingerprintCaptureSampleUpsert) AddTaskID(v int64) *TLSFingerprintCa
 	return u
 }
 
+// SetSessionID sets the "session_id" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetSessionID(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldSessionID, v)
+	return u
+}
+
+// UpdateSessionID sets the "session_id" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateSessionID() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldSessionID)
+	return u
+}
+
 // SetPlatform sets the "platform" field.
 func (u *TLSFingerprintCaptureSampleUpsert) SetPlatform(v string) *TLSFingerprintCaptureSampleUpsert {
 	u.Set(tlsfingerprintcapturesample.FieldPlatform, v)
@@ -399,6 +896,18 @@ func (u *TLSFingerprintCaptureSampleUpsert) SetPlatform(v string) *TLSFingerprin
 // UpdatePlatform sets the "platform" field to the value that was provided on create.
 func (u *TLSFingerprintCaptureSampleUpsert) UpdatePlatform() *TLSFingerprintCaptureSampleUpsert {
 	u.SetExcluded(tlsfingerprintcapturesample.FieldPlatform)
+	return u
+}
+
+// SetTransport sets the "transport" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetTransport(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldTransport, v)
+	return u
+}
+
+// UpdateTransport sets the "transport" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateTransport() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldTransport)
 	return u
 }
 
@@ -438,15 +947,195 @@ func (u *TLSFingerprintCaptureSampleUpsert) UpdateFingerprintHash() *TLSFingerpr
 	return u
 }
 
-// SetProfile sets the "profile" field.
-func (u *TLSFingerprintCaptureSampleUpsert) SetProfile(v *model.TLSFingerprintProfile) *TLSFingerprintCaptureSampleUpsert {
-	u.Set(tlsfingerprintcapturesample.FieldProfile, v)
+// SetReplayHash sets the "replay_hash" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetReplayHash(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldReplayHash, v)
 	return u
 }
 
-// UpdateProfile sets the "profile" field to the value that was provided on create.
-func (u *TLSFingerprintCaptureSampleUpsert) UpdateProfile() *TLSFingerprintCaptureSampleUpsert {
-	u.SetExcluded(tlsfingerprintcapturesample.FieldProfile)
+// UpdateReplayHash sets the "replay_hash" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateReplayHash() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldReplayHash)
+	return u
+}
+
+// SetJa3Raw sets the "ja3_raw" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetJa3Raw(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldJa3Raw, v)
+	return u
+}
+
+// UpdateJa3Raw sets the "ja3_raw" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateJa3Raw() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldJa3Raw)
+	return u
+}
+
+// SetJa3Hash sets the "ja3_hash" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetJa3Hash(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldJa3Hash, v)
+	return u
+}
+
+// UpdateJa3Hash sets the "ja3_hash" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateJa3Hash() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldJa3Hash)
+	return u
+}
+
+// SetJa4 sets the "ja4" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetJa4(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldJa4, v)
+	return u
+}
+
+// UpdateJa4 sets the "ja4" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateJa4() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldJa4)
+	return u
+}
+
+// SetRequestPath sets the "request_path" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetRequestPath(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldRequestPath, v)
+	return u
+}
+
+// UpdateRequestPath sets the "request_path" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateRequestPath() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldRequestPath)
+	return u
+}
+
+// SetHTTPMethod sets the "http_method" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetHTTPMethod(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldHTTPMethod, v)
+	return u
+}
+
+// UpdateHTTPMethod sets the "http_method" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateHTTPMethod() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldHTTPMethod)
+	return u
+}
+
+// SetIsWebsocket sets the "is_websocket" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetIsWebsocket(v bool) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldIsWebsocket, v)
+	return u
+}
+
+// UpdateIsWebsocket sets the "is_websocket" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateIsWebsocket() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldIsWebsocket)
+	return u
+}
+
+// SetWebsocketProtocol sets the "websocket_protocol" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetWebsocketProtocol(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldWebsocketProtocol, v)
+	return u
+}
+
+// UpdateWebsocketProtocol sets the "websocket_protocol" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateWebsocketProtocol() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldWebsocketProtocol)
+	return u
+}
+
+// SetClientType sets the "client_type" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetClientType(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldClientType, v)
+	return u
+}
+
+// UpdateClientType sets the "client_type" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateClientType() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldClientType)
+	return u
+}
+
+// SetModel sets the "model" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetModel(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldModel, v)
+	return u
+}
+
+// UpdateModel sets the "model" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateModel() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldModel)
+	return u
+}
+
+// SetRequestKind sets the "request_kind" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetRequestKind(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldRequestKind, v)
+	return u
+}
+
+// UpdateRequestKind sets the "request_kind" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateRequestKind() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldRequestKind)
+	return u
+}
+
+// SetStreaming sets the "streaming" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetStreaming(v bool) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldStreaming, v)
+	return u
+}
+
+// UpdateStreaming sets the "streaming" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateStreaming() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldStreaming)
+	return u
+}
+
+// SetResponseMode sets the "response_mode" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetResponseMode(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldResponseMode, v)
+	return u
+}
+
+// UpdateResponseMode sets the "response_mode" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateResponseMode() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldResponseMode)
+	return u
+}
+
+// SetHttp2Fingerprint sets the "http2_fingerprint" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetHttp2Fingerprint(v string) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldHttp2Fingerprint, v)
+	return u
+}
+
+// UpdateHttp2Fingerprint sets the "http2_fingerprint" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateHttp2Fingerprint() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldHttp2Fingerprint)
+	return u
+}
+
+// SetStainlessMetadata sets the "stainless_metadata" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetStainlessMetadata(v map[string]interface{}) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldStainlessMetadata, v)
+	return u
+}
+
+// UpdateStainlessMetadata sets the "stainless_metadata" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateStainlessMetadata() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldStainlessMetadata)
+	return u
+}
+
+// SetReplayProfile sets the "replay_profile" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetReplayProfile(v *model.TLSFingerprintProfile) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldReplayProfile, v)
+	return u
+}
+
+// UpdateReplayProfile sets the "replay_profile" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateReplayProfile() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldReplayProfile)
 	return u
 }
 
@@ -477,6 +1166,18 @@ func (u *TLSFingerprintCaptureSampleUpsert) UpdateRawClientHello() *TLSFingerpri
 // ClearRawClientHello clears the value of the "raw_client_hello" field.
 func (u *TLSFingerprintCaptureSampleUpsert) ClearRawClientHello() *TLSFingerprintCaptureSampleUpsert {
 	u.SetNull(tlsfingerprintcapturesample.FieldRawClientHello)
+	return u
+}
+
+// SetCapturedAt sets the "captured_at" field.
+func (u *TLSFingerprintCaptureSampleUpsert) SetCapturedAt(v time.Time) *TLSFingerprintCaptureSampleUpsert {
+	u.Set(tlsfingerprintcapturesample.FieldCapturedAt, v)
+	return u
+}
+
+// UpdateCapturedAt sets the "captured_at" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsert) UpdateCapturedAt() *TLSFingerprintCaptureSampleUpsert {
+	u.SetExcluded(tlsfingerprintcapturesample.FieldCapturedAt)
 	return u
 }
 
@@ -560,6 +1261,20 @@ func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateTaskID() *TLSFingerprintCap
 	})
 }
 
+// SetSessionID sets the "session_id" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetSessionID(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetSessionID(v)
+	})
+}
+
+// UpdateSessionID sets the "session_id" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateSessionID() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateSessionID()
+	})
+}
+
 // SetPlatform sets the "platform" field.
 func (u *TLSFingerprintCaptureSampleUpsertOne) SetPlatform(v string) *TLSFingerprintCaptureSampleUpsertOne {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
@@ -571,6 +1286,20 @@ func (u *TLSFingerprintCaptureSampleUpsertOne) SetPlatform(v string) *TLSFingerp
 func (u *TLSFingerprintCaptureSampleUpsertOne) UpdatePlatform() *TLSFingerprintCaptureSampleUpsertOne {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetTransport sets the "transport" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetTransport(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetTransport(v)
+	})
+}
+
+// UpdateTransport sets the "transport" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateTransport() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateTransport()
 	})
 }
 
@@ -616,17 +1345,227 @@ func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateFingerprintHash() *TLSFinge
 	})
 }
 
-// SetProfile sets the "profile" field.
-func (u *TLSFingerprintCaptureSampleUpsertOne) SetProfile(v *model.TLSFingerprintProfile) *TLSFingerprintCaptureSampleUpsertOne {
+// SetReplayHash sets the "replay_hash" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetReplayHash(v string) *TLSFingerprintCaptureSampleUpsertOne {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
-		s.SetProfile(v)
+		s.SetReplayHash(v)
 	})
 }
 
-// UpdateProfile sets the "profile" field to the value that was provided on create.
-func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateProfile() *TLSFingerprintCaptureSampleUpsertOne {
+// UpdateReplayHash sets the "replay_hash" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateReplayHash() *TLSFingerprintCaptureSampleUpsertOne {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
-		s.UpdateProfile()
+		s.UpdateReplayHash()
+	})
+}
+
+// SetJa3Raw sets the "ja3_raw" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetJa3Raw(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetJa3Raw(v)
+	})
+}
+
+// UpdateJa3Raw sets the "ja3_raw" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateJa3Raw() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateJa3Raw()
+	})
+}
+
+// SetJa3Hash sets the "ja3_hash" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetJa3Hash(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetJa3Hash(v)
+	})
+}
+
+// UpdateJa3Hash sets the "ja3_hash" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateJa3Hash() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateJa3Hash()
+	})
+}
+
+// SetJa4 sets the "ja4" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetJa4(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetJa4(v)
+	})
+}
+
+// UpdateJa4 sets the "ja4" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateJa4() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateJa4()
+	})
+}
+
+// SetRequestPath sets the "request_path" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetRequestPath(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetRequestPath(v)
+	})
+}
+
+// UpdateRequestPath sets the "request_path" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateRequestPath() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateRequestPath()
+	})
+}
+
+// SetHTTPMethod sets the "http_method" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetHTTPMethod(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetHTTPMethod(v)
+	})
+}
+
+// UpdateHTTPMethod sets the "http_method" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateHTTPMethod() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateHTTPMethod()
+	})
+}
+
+// SetIsWebsocket sets the "is_websocket" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetIsWebsocket(v bool) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetIsWebsocket(v)
+	})
+}
+
+// UpdateIsWebsocket sets the "is_websocket" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateIsWebsocket() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateIsWebsocket()
+	})
+}
+
+// SetWebsocketProtocol sets the "websocket_protocol" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetWebsocketProtocol(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetWebsocketProtocol(v)
+	})
+}
+
+// UpdateWebsocketProtocol sets the "websocket_protocol" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateWebsocketProtocol() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateWebsocketProtocol()
+	})
+}
+
+// SetClientType sets the "client_type" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetClientType(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetClientType(v)
+	})
+}
+
+// UpdateClientType sets the "client_type" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateClientType() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateClientType()
+	})
+}
+
+// SetModel sets the "model" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetModel(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetModel(v)
+	})
+}
+
+// UpdateModel sets the "model" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateModel() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateModel()
+	})
+}
+
+// SetRequestKind sets the "request_kind" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetRequestKind(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetRequestKind(v)
+	})
+}
+
+// UpdateRequestKind sets the "request_kind" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateRequestKind() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateRequestKind()
+	})
+}
+
+// SetStreaming sets the "streaming" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetStreaming(v bool) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetStreaming(v)
+	})
+}
+
+// UpdateStreaming sets the "streaming" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateStreaming() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateStreaming()
+	})
+}
+
+// SetResponseMode sets the "response_mode" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetResponseMode(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetResponseMode(v)
+	})
+}
+
+// UpdateResponseMode sets the "response_mode" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateResponseMode() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateResponseMode()
+	})
+}
+
+// SetHttp2Fingerprint sets the "http2_fingerprint" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetHttp2Fingerprint(v string) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetHttp2Fingerprint(v)
+	})
+}
+
+// UpdateHttp2Fingerprint sets the "http2_fingerprint" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateHttp2Fingerprint() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateHttp2Fingerprint()
+	})
+}
+
+// SetStainlessMetadata sets the "stainless_metadata" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetStainlessMetadata(v map[string]interface{}) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetStainlessMetadata(v)
+	})
+}
+
+// UpdateStainlessMetadata sets the "stainless_metadata" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateStainlessMetadata() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateStainlessMetadata()
+	})
+}
+
+// SetReplayProfile sets the "replay_profile" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetReplayProfile(v *model.TLSFingerprintProfile) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetReplayProfile(v)
+	})
+}
+
+// UpdateReplayProfile sets the "replay_profile" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateReplayProfile() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateReplayProfile()
 	})
 }
 
@@ -662,6 +1601,20 @@ func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateRawClientHello() *TLSFinger
 func (u *TLSFingerprintCaptureSampleUpsertOne) ClearRawClientHello() *TLSFingerprintCaptureSampleUpsertOne {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
 		s.ClearRawClientHello()
+	})
+}
+
+// SetCapturedAt sets the "captured_at" field.
+func (u *TLSFingerprintCaptureSampleUpsertOne) SetCapturedAt(v time.Time) *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetCapturedAt(v)
+	})
+}
+
+// UpdateCapturedAt sets the "captured_at" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertOne) UpdateCapturedAt() *TLSFingerprintCaptureSampleUpsertOne {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateCapturedAt()
 	})
 }
 
@@ -911,6 +1864,20 @@ func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateTaskID() *TLSFingerprintCa
 	})
 }
 
+// SetSessionID sets the "session_id" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetSessionID(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetSessionID(v)
+	})
+}
+
+// UpdateSessionID sets the "session_id" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateSessionID() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateSessionID()
+	})
+}
+
 // SetPlatform sets the "platform" field.
 func (u *TLSFingerprintCaptureSampleUpsertBulk) SetPlatform(v string) *TLSFingerprintCaptureSampleUpsertBulk {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
@@ -922,6 +1889,20 @@ func (u *TLSFingerprintCaptureSampleUpsertBulk) SetPlatform(v string) *TLSFinger
 func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdatePlatform() *TLSFingerprintCaptureSampleUpsertBulk {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetTransport sets the "transport" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetTransport(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetTransport(v)
+	})
+}
+
+// UpdateTransport sets the "transport" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateTransport() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateTransport()
 	})
 }
 
@@ -967,17 +1948,227 @@ func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateFingerprintHash() *TLSFing
 	})
 }
 
-// SetProfile sets the "profile" field.
-func (u *TLSFingerprintCaptureSampleUpsertBulk) SetProfile(v *model.TLSFingerprintProfile) *TLSFingerprintCaptureSampleUpsertBulk {
+// SetReplayHash sets the "replay_hash" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetReplayHash(v string) *TLSFingerprintCaptureSampleUpsertBulk {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
-		s.SetProfile(v)
+		s.SetReplayHash(v)
 	})
 }
 
-// UpdateProfile sets the "profile" field to the value that was provided on create.
-func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateProfile() *TLSFingerprintCaptureSampleUpsertBulk {
+// UpdateReplayHash sets the "replay_hash" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateReplayHash() *TLSFingerprintCaptureSampleUpsertBulk {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
-		s.UpdateProfile()
+		s.UpdateReplayHash()
+	})
+}
+
+// SetJa3Raw sets the "ja3_raw" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetJa3Raw(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetJa3Raw(v)
+	})
+}
+
+// UpdateJa3Raw sets the "ja3_raw" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateJa3Raw() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateJa3Raw()
+	})
+}
+
+// SetJa3Hash sets the "ja3_hash" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetJa3Hash(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetJa3Hash(v)
+	})
+}
+
+// UpdateJa3Hash sets the "ja3_hash" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateJa3Hash() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateJa3Hash()
+	})
+}
+
+// SetJa4 sets the "ja4" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetJa4(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetJa4(v)
+	})
+}
+
+// UpdateJa4 sets the "ja4" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateJa4() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateJa4()
+	})
+}
+
+// SetRequestPath sets the "request_path" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetRequestPath(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetRequestPath(v)
+	})
+}
+
+// UpdateRequestPath sets the "request_path" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateRequestPath() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateRequestPath()
+	})
+}
+
+// SetHTTPMethod sets the "http_method" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetHTTPMethod(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetHTTPMethod(v)
+	})
+}
+
+// UpdateHTTPMethod sets the "http_method" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateHTTPMethod() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateHTTPMethod()
+	})
+}
+
+// SetIsWebsocket sets the "is_websocket" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetIsWebsocket(v bool) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetIsWebsocket(v)
+	})
+}
+
+// UpdateIsWebsocket sets the "is_websocket" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateIsWebsocket() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateIsWebsocket()
+	})
+}
+
+// SetWebsocketProtocol sets the "websocket_protocol" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetWebsocketProtocol(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetWebsocketProtocol(v)
+	})
+}
+
+// UpdateWebsocketProtocol sets the "websocket_protocol" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateWebsocketProtocol() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateWebsocketProtocol()
+	})
+}
+
+// SetClientType sets the "client_type" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetClientType(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetClientType(v)
+	})
+}
+
+// UpdateClientType sets the "client_type" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateClientType() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateClientType()
+	})
+}
+
+// SetModel sets the "model" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetModel(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetModel(v)
+	})
+}
+
+// UpdateModel sets the "model" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateModel() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateModel()
+	})
+}
+
+// SetRequestKind sets the "request_kind" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetRequestKind(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetRequestKind(v)
+	})
+}
+
+// UpdateRequestKind sets the "request_kind" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateRequestKind() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateRequestKind()
+	})
+}
+
+// SetStreaming sets the "streaming" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetStreaming(v bool) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetStreaming(v)
+	})
+}
+
+// UpdateStreaming sets the "streaming" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateStreaming() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateStreaming()
+	})
+}
+
+// SetResponseMode sets the "response_mode" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetResponseMode(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetResponseMode(v)
+	})
+}
+
+// UpdateResponseMode sets the "response_mode" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateResponseMode() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateResponseMode()
+	})
+}
+
+// SetHttp2Fingerprint sets the "http2_fingerprint" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetHttp2Fingerprint(v string) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetHttp2Fingerprint(v)
+	})
+}
+
+// UpdateHttp2Fingerprint sets the "http2_fingerprint" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateHttp2Fingerprint() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateHttp2Fingerprint()
+	})
+}
+
+// SetStainlessMetadata sets the "stainless_metadata" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetStainlessMetadata(v map[string]interface{}) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetStainlessMetadata(v)
+	})
+}
+
+// UpdateStainlessMetadata sets the "stainless_metadata" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateStainlessMetadata() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateStainlessMetadata()
+	})
+}
+
+// SetReplayProfile sets the "replay_profile" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetReplayProfile(v *model.TLSFingerprintProfile) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetReplayProfile(v)
+	})
+}
+
+// UpdateReplayProfile sets the "replay_profile" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateReplayProfile() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateReplayProfile()
 	})
 }
 
@@ -1013,6 +2204,20 @@ func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateRawClientHello() *TLSFinge
 func (u *TLSFingerprintCaptureSampleUpsertBulk) ClearRawClientHello() *TLSFingerprintCaptureSampleUpsertBulk {
 	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
 		s.ClearRawClientHello()
+	})
+}
+
+// SetCapturedAt sets the "captured_at" field.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) SetCapturedAt(v time.Time) *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.SetCapturedAt(v)
+	})
+}
+
+// UpdateCapturedAt sets the "captured_at" field to the value that was provided on create.
+func (u *TLSFingerprintCaptureSampleUpsertBulk) UpdateCapturedAt() *TLSFingerprintCaptureSampleUpsertBulk {
+	return u.Update(func(s *TLSFingerprintCaptureSampleUpsert) {
+		s.UpdateCapturedAt()
 	})
 }
 

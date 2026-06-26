@@ -211,6 +211,24 @@ func (_u *TLSFingerprintProfileUpdate) ClearSignatureAlgorithms() *TLSFingerprin
 	return _u
 }
 
+// SetSignatureAlgorithmsCert sets the "signature_algorithms_cert" field.
+func (_u *TLSFingerprintProfileUpdate) SetSignatureAlgorithmsCert(v []uint16) *TLSFingerprintProfileUpdate {
+	_u.mutation.SetSignatureAlgorithmsCert(v)
+	return _u
+}
+
+// AppendSignatureAlgorithmsCert appends value to the "signature_algorithms_cert" field.
+func (_u *TLSFingerprintProfileUpdate) AppendSignatureAlgorithmsCert(v []uint16) *TLSFingerprintProfileUpdate {
+	_u.mutation.AppendSignatureAlgorithmsCert(v)
+	return _u
+}
+
+// ClearSignatureAlgorithmsCert clears the value of the "signature_algorithms_cert" field.
+func (_u *TLSFingerprintProfileUpdate) ClearSignatureAlgorithmsCert() *TLSFingerprintProfileUpdate {
+	_u.mutation.ClearSignatureAlgorithmsCert()
+	return _u
+}
+
 // SetAlpnProtocols sets the "alpn_protocols" field.
 func (_u *TLSFingerprintProfileUpdate) SetAlpnProtocols(v []string) *TLSFingerprintProfileUpdate {
 	_u.mutation.SetAlpnProtocols(v)
@@ -298,6 +316,18 @@ func (_u *TLSFingerprintProfileUpdate) AppendExtensions(v []uint16) *TLSFingerpr
 // ClearExtensions clears the value of the "extensions" field.
 func (_u *TLSFingerprintProfileUpdate) ClearExtensions() *TLSFingerprintProfileUpdate {
 	_u.mutation.ClearExtensions()
+	return _u
+}
+
+// SetExtensionPayloads sets the "extension_payloads" field.
+func (_u *TLSFingerprintProfileUpdate) SetExtensionPayloads(v map[uint16][]uint8) *TLSFingerprintProfileUpdate {
+	_u.mutation.SetExtensionPayloads(v)
+	return _u
+}
+
+// ClearExtensionPayloads clears the value of the "extension_payloads" field.
+func (_u *TLSFingerprintProfileUpdate) ClearExtensionPayloads() *TLSFingerprintProfileUpdate {
+	_u.mutation.ClearExtensionPayloads()
 	return _u
 }
 
@@ -509,6 +539,17 @@ func (_u *TLSFingerprintProfileUpdate) sqlSave(ctx context.Context) (_node int, 
 	if _u.mutation.SignatureAlgorithmsCleared() {
 		_spec.ClearField(tlsfingerprintprofile.FieldSignatureAlgorithms, field.TypeJSON)
 	}
+	if value, ok := _u.mutation.SignatureAlgorithmsCert(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldSignatureAlgorithmsCert, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSignatureAlgorithmsCert(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, tlsfingerprintprofile.FieldSignatureAlgorithmsCert, value)
+		})
+	}
+	if _u.mutation.SignatureAlgorithmsCertCleared() {
+		_spec.ClearField(tlsfingerprintprofile.FieldSignatureAlgorithmsCert, field.TypeJSON)
+	}
 	if value, ok := _u.mutation.AlpnProtocols(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldAlpnProtocols, field.TypeJSON, value)
 	}
@@ -563,6 +604,12 @@ func (_u *TLSFingerprintProfileUpdate) sqlSave(ctx context.Context) (_node int, 
 	}
 	if _u.mutation.ExtensionsCleared() {
 		_spec.ClearField(tlsfingerprintprofile.FieldExtensions, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.ExtensionPayloads(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldExtensionPayloads, field.TypeJSON, value)
+	}
+	if _u.mutation.ExtensionPayloadsCleared() {
+		_spec.ClearField(tlsfingerprintprofile.FieldExtensionPayloads, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.CompressCertAlgos(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldCompressCertAlgos, field.TypeJSON, value)
@@ -799,6 +846,24 @@ func (_u *TLSFingerprintProfileUpdateOne) ClearSignatureAlgorithms() *TLSFingerp
 	return _u
 }
 
+// SetSignatureAlgorithmsCert sets the "signature_algorithms_cert" field.
+func (_u *TLSFingerprintProfileUpdateOne) SetSignatureAlgorithmsCert(v []uint16) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.SetSignatureAlgorithmsCert(v)
+	return _u
+}
+
+// AppendSignatureAlgorithmsCert appends value to the "signature_algorithms_cert" field.
+func (_u *TLSFingerprintProfileUpdateOne) AppendSignatureAlgorithmsCert(v []uint16) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.AppendSignatureAlgorithmsCert(v)
+	return _u
+}
+
+// ClearSignatureAlgorithmsCert clears the value of the "signature_algorithms_cert" field.
+func (_u *TLSFingerprintProfileUpdateOne) ClearSignatureAlgorithmsCert() *TLSFingerprintProfileUpdateOne {
+	_u.mutation.ClearSignatureAlgorithmsCert()
+	return _u
+}
+
 // SetAlpnProtocols sets the "alpn_protocols" field.
 func (_u *TLSFingerprintProfileUpdateOne) SetAlpnProtocols(v []string) *TLSFingerprintProfileUpdateOne {
 	_u.mutation.SetAlpnProtocols(v)
@@ -886,6 +951,18 @@ func (_u *TLSFingerprintProfileUpdateOne) AppendExtensions(v []uint16) *TLSFinge
 // ClearExtensions clears the value of the "extensions" field.
 func (_u *TLSFingerprintProfileUpdateOne) ClearExtensions() *TLSFingerprintProfileUpdateOne {
 	_u.mutation.ClearExtensions()
+	return _u
+}
+
+// SetExtensionPayloads sets the "extension_payloads" field.
+func (_u *TLSFingerprintProfileUpdateOne) SetExtensionPayloads(v map[uint16][]uint8) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.SetExtensionPayloads(v)
+	return _u
+}
+
+// ClearExtensionPayloads clears the value of the "extension_payloads" field.
+func (_u *TLSFingerprintProfileUpdateOne) ClearExtensionPayloads() *TLSFingerprintProfileUpdateOne {
+	_u.mutation.ClearExtensionPayloads()
 	return _u
 }
 
@@ -1127,6 +1204,17 @@ func (_u *TLSFingerprintProfileUpdateOne) sqlSave(ctx context.Context) (_node *T
 	if _u.mutation.SignatureAlgorithmsCleared() {
 		_spec.ClearField(tlsfingerprintprofile.FieldSignatureAlgorithms, field.TypeJSON)
 	}
+	if value, ok := _u.mutation.SignatureAlgorithmsCert(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldSignatureAlgorithmsCert, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSignatureAlgorithmsCert(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, tlsfingerprintprofile.FieldSignatureAlgorithmsCert, value)
+		})
+	}
+	if _u.mutation.SignatureAlgorithmsCertCleared() {
+		_spec.ClearField(tlsfingerprintprofile.FieldSignatureAlgorithmsCert, field.TypeJSON)
+	}
 	if value, ok := _u.mutation.AlpnProtocols(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldAlpnProtocols, field.TypeJSON, value)
 	}
@@ -1181,6 +1269,12 @@ func (_u *TLSFingerprintProfileUpdateOne) sqlSave(ctx context.Context) (_node *T
 	}
 	if _u.mutation.ExtensionsCleared() {
 		_spec.ClearField(tlsfingerprintprofile.FieldExtensions, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.ExtensionPayloads(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldExtensionPayloads, field.TypeJSON, value)
+	}
+	if _u.mutation.ExtensionPayloadsCleared() {
+		_spec.ClearField(tlsfingerprintprofile.FieldExtensionPayloads, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.CompressCertAlgos(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldCompressCertAlgos, field.TypeJSON, value)

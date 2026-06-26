@@ -242,6 +242,22 @@ func TestResolveOpenAIWSFallbackErrorResponse(t *testing.T) {
 		require.Equal(t, "No tool call found for function call output with call_id call_1.", upstreamMessage)
 	})
 
+	t.Run("response_failed_usage_limit_is_sanitized", func(t *testing.T) {
+		statusCode, errType, clientMessage, upstreamMessage, ok := resolveOpenAIWSFallbackErrorResponse(
+			wrapOpenAIWSFallback("response_failed", &openAIWSResponseFailedError{
+				code:      "billing_hard_limit",
+				errType:   "usage_limit_reached",
+				message:   "You've hit your usage limit. Upgrade to Plus to continue using Codex, or try again after 1:00 PM.",
+				retryable: false,
+			}),
+		)
+		require.True(t, ok)
+		require.Equal(t, http.StatusTooManyRequests, statusCode)
+		require.Equal(t, "rate_limit_error", errType)
+		require.Equal(t, "Upstream billing or quota limit reached, please retry later", clientMessage)
+		require.Equal(t, "You've hit your usage limit. Upgrade to Plus to continue using Codex, or try again after 1:00 PM.", upstreamMessage)
+	})
+
 	t.Run("session_preempted_not_client_visible", func(t *testing.T) {
 		_, _, _, _, ok := resolveOpenAIWSFallbackErrorResponse(
 			wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted),
@@ -299,7 +315,7 @@ func TestNewOpenAIWSFailoverError(t *testing.T) {
 		require.NotNil(t, failoverErr)
 		require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
 		require.Contains(t, string(failoverErr.ResponseBody), `"type":"rate_limit_error"`)
-		require.Contains(t, string(failoverErr.ResponseBody), "usage limit")
+		require.Contains(t, string(failoverErr.ResponseBody), "Upstream billing or quota limit reached, please retry later")
 		require.False(t, c.Writer.Written())
 	})
 

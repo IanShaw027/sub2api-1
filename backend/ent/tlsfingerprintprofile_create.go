@@ -164,6 +164,12 @@ func (_c *TLSFingerprintProfileCreate) SetSignatureAlgorithms(v []uint16) *TLSFi
 	return _c
 }
 
+// SetSignatureAlgorithmsCert sets the "signature_algorithms_cert" field.
+func (_c *TLSFingerprintProfileCreate) SetSignatureAlgorithmsCert(v []uint16) *TLSFingerprintProfileCreate {
+	_c.mutation.SetSignatureAlgorithmsCert(v)
+	return _c
+}
+
 // SetAlpnProtocols sets the "alpn_protocols" field.
 func (_c *TLSFingerprintProfileCreate) SetAlpnProtocols(v []string) *TLSFingerprintProfileCreate {
 	_c.mutation.SetAlpnProtocols(v)
@@ -191,6 +197,12 @@ func (_c *TLSFingerprintProfileCreate) SetPskModes(v []uint16) *TLSFingerprintPr
 // SetExtensions sets the "extensions" field.
 func (_c *TLSFingerprintProfileCreate) SetExtensions(v []uint16) *TLSFingerprintProfileCreate {
 	_c.mutation.SetExtensions(v)
+	return _c
+}
+
+// SetExtensionPayloads sets the "extension_payloads" field.
+func (_c *TLSFingerprintProfileCreate) SetExtensionPayloads(v map[uint16][]uint8) *TLSFingerprintProfileCreate {
+	_c.mutation.SetExtensionPayloads(v)
 	return _c
 }
 
@@ -407,6 +419,10 @@ func (_c *TLSFingerprintProfileCreate) createSpec() (*TLSFingerprintProfile, *sq
 		_spec.SetField(tlsfingerprintprofile.FieldSignatureAlgorithms, field.TypeJSON, value)
 		_node.SignatureAlgorithms = value
 	}
+	if value, ok := _c.mutation.SignatureAlgorithmsCert(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldSignatureAlgorithmsCert, field.TypeJSON, value)
+		_node.SignatureAlgorithmsCert = value
+	}
 	if value, ok := _c.mutation.AlpnProtocols(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldAlpnProtocols, field.TypeJSON, value)
 		_node.AlpnProtocols = value
@@ -426,6 +442,10 @@ func (_c *TLSFingerprintProfileCreate) createSpec() (*TLSFingerprintProfile, *sq
 	if value, ok := _c.mutation.Extensions(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldExtensions, field.TypeJSON, value)
 		_node.Extensions = value
+	}
+	if value, ok := _c.mutation.ExtensionPayloads(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldExtensionPayloads, field.TypeJSON, value)
+		_node.ExtensionPayloads = value
 	}
 	if value, ok := _c.mutation.CompressCertAlgos(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldCompressCertAlgos, field.TypeJSON, value)
@@ -665,6 +685,24 @@ func (u *TLSFingerprintProfileUpsert) ClearSignatureAlgorithms() *TLSFingerprint
 	return u
 }
 
+// SetSignatureAlgorithmsCert sets the "signature_algorithms_cert" field.
+func (u *TLSFingerprintProfileUpsert) SetSignatureAlgorithmsCert(v []uint16) *TLSFingerprintProfileUpsert {
+	u.Set(tlsfingerprintprofile.FieldSignatureAlgorithmsCert, v)
+	return u
+}
+
+// UpdateSignatureAlgorithmsCert sets the "signature_algorithms_cert" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsert) UpdateSignatureAlgorithmsCert() *TLSFingerprintProfileUpsert {
+	u.SetExcluded(tlsfingerprintprofile.FieldSignatureAlgorithmsCert)
+	return u
+}
+
+// ClearSignatureAlgorithmsCert clears the value of the "signature_algorithms_cert" field.
+func (u *TLSFingerprintProfileUpsert) ClearSignatureAlgorithmsCert() *TLSFingerprintProfileUpsert {
+	u.SetNull(tlsfingerprintprofile.FieldSignatureAlgorithmsCert)
+	return u
+}
+
 // SetAlpnProtocols sets the "alpn_protocols" field.
 func (u *TLSFingerprintProfileUpsert) SetAlpnProtocols(v []string) *TLSFingerprintProfileUpsert {
 	u.Set(tlsfingerprintprofile.FieldAlpnProtocols, v)
@@ -752,6 +790,24 @@ func (u *TLSFingerprintProfileUpsert) UpdateExtensions() *TLSFingerprintProfileU
 // ClearExtensions clears the value of the "extensions" field.
 func (u *TLSFingerprintProfileUpsert) ClearExtensions() *TLSFingerprintProfileUpsert {
 	u.SetNull(tlsfingerprintprofile.FieldExtensions)
+	return u
+}
+
+// SetExtensionPayloads sets the "extension_payloads" field.
+func (u *TLSFingerprintProfileUpsert) SetExtensionPayloads(v map[uint16][]uint8) *TLSFingerprintProfileUpsert {
+	u.Set(tlsfingerprintprofile.FieldExtensionPayloads, v)
+	return u
+}
+
+// UpdateExtensionPayloads sets the "extension_payloads" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsert) UpdateExtensionPayloads() *TLSFingerprintProfileUpsert {
+	u.SetExcluded(tlsfingerprintprofile.FieldExtensionPayloads)
+	return u
+}
+
+// ClearExtensionPayloads clears the value of the "extension_payloads" field.
+func (u *TLSFingerprintProfileUpsert) ClearExtensionPayloads() *TLSFingerprintProfileUpsert {
+	u.SetNull(tlsfingerprintprofile.FieldExtensionPayloads)
 	return u
 }
 
@@ -1057,6 +1113,27 @@ func (u *TLSFingerprintProfileUpsertOne) ClearSignatureAlgorithms() *TLSFingerpr
 	})
 }
 
+// SetSignatureAlgorithmsCert sets the "signature_algorithms_cert" field.
+func (u *TLSFingerprintProfileUpsertOne) SetSignatureAlgorithmsCert(v []uint16) *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetSignatureAlgorithmsCert(v)
+	})
+}
+
+// UpdateSignatureAlgorithmsCert sets the "signature_algorithms_cert" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertOne) UpdateSignatureAlgorithmsCert() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateSignatureAlgorithmsCert()
+	})
+}
+
+// ClearSignatureAlgorithmsCert clears the value of the "signature_algorithms_cert" field.
+func (u *TLSFingerprintProfileUpsertOne) ClearSignatureAlgorithmsCert() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.ClearSignatureAlgorithmsCert()
+	})
+}
+
 // SetAlpnProtocols sets the "alpn_protocols" field.
 func (u *TLSFingerprintProfileUpsertOne) SetAlpnProtocols(v []string) *TLSFingerprintProfileUpsertOne {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
@@ -1159,6 +1236,27 @@ func (u *TLSFingerprintProfileUpsertOne) UpdateExtensions() *TLSFingerprintProfi
 func (u *TLSFingerprintProfileUpsertOne) ClearExtensions() *TLSFingerprintProfileUpsertOne {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
 		s.ClearExtensions()
+	})
+}
+
+// SetExtensionPayloads sets the "extension_payloads" field.
+func (u *TLSFingerprintProfileUpsertOne) SetExtensionPayloads(v map[uint16][]uint8) *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetExtensionPayloads(v)
+	})
+}
+
+// UpdateExtensionPayloads sets the "extension_payloads" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertOne) UpdateExtensionPayloads() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateExtensionPayloads()
+	})
+}
+
+// ClearExtensionPayloads clears the value of the "extension_payloads" field.
+func (u *TLSFingerprintProfileUpsertOne) ClearExtensionPayloads() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.ClearExtensionPayloads()
 	})
 }
 
@@ -1639,6 +1737,27 @@ func (u *TLSFingerprintProfileUpsertBulk) ClearSignatureAlgorithms() *TLSFingerp
 	})
 }
 
+// SetSignatureAlgorithmsCert sets the "signature_algorithms_cert" field.
+func (u *TLSFingerprintProfileUpsertBulk) SetSignatureAlgorithmsCert(v []uint16) *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetSignatureAlgorithmsCert(v)
+	})
+}
+
+// UpdateSignatureAlgorithmsCert sets the "signature_algorithms_cert" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertBulk) UpdateSignatureAlgorithmsCert() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateSignatureAlgorithmsCert()
+	})
+}
+
+// ClearSignatureAlgorithmsCert clears the value of the "signature_algorithms_cert" field.
+func (u *TLSFingerprintProfileUpsertBulk) ClearSignatureAlgorithmsCert() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.ClearSignatureAlgorithmsCert()
+	})
+}
+
 // SetAlpnProtocols sets the "alpn_protocols" field.
 func (u *TLSFingerprintProfileUpsertBulk) SetAlpnProtocols(v []string) *TLSFingerprintProfileUpsertBulk {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
@@ -1741,6 +1860,27 @@ func (u *TLSFingerprintProfileUpsertBulk) UpdateExtensions() *TLSFingerprintProf
 func (u *TLSFingerprintProfileUpsertBulk) ClearExtensions() *TLSFingerprintProfileUpsertBulk {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
 		s.ClearExtensions()
+	})
+}
+
+// SetExtensionPayloads sets the "extension_payloads" field.
+func (u *TLSFingerprintProfileUpsertBulk) SetExtensionPayloads(v map[uint16][]uint8) *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetExtensionPayloads(v)
+	})
+}
+
+// UpdateExtensionPayloads sets the "extension_payloads" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertBulk) UpdateExtensionPayloads() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateExtensionPayloads()
+	})
+}
+
+// ClearExtensionPayloads clears the value of the "extension_payloads" field.
+func (u *TLSFingerprintProfileUpsertBulk) ClearExtensionPayloads() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.ClearExtensionPayloads()
 	})
 }
 

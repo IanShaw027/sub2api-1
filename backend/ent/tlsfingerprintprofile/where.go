@@ -629,6 +629,16 @@ func SignatureAlgorithmsNotNil() predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldNotNull(FieldSignatureAlgorithms))
 }
 
+// SignatureAlgorithmsCertIsNil applies the IsNil predicate on the "signature_algorithms_cert" field.
+func SignatureAlgorithmsCertIsNil() predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldIsNull(FieldSignatureAlgorithmsCert))
+}
+
+// SignatureAlgorithmsCertNotNil applies the NotNil predicate on the "signature_algorithms_cert" field.
+func SignatureAlgorithmsCertNotNil() predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNotNull(FieldSignatureAlgorithmsCert))
+}
+
 // AlpnProtocolsIsNil applies the IsNil predicate on the "alpn_protocols" field.
 func AlpnProtocolsIsNil() predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldIsNull(FieldAlpnProtocols))
@@ -677,6 +687,16 @@ func ExtensionsIsNil() predicate.TLSFingerprintProfile {
 // ExtensionsNotNil applies the NotNil predicate on the "extensions" field.
 func ExtensionsNotNil() predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldNotNull(FieldExtensions))
+}
+
+// ExtensionPayloadsIsNil applies the IsNil predicate on the "extension_payloads" field.
+func ExtensionPayloadsIsNil() predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldIsNull(FieldExtensionPayloads))
+}
+
+// ExtensionPayloadsNotNil applies the NotNil predicate on the "extension_payloads" field.
+func ExtensionPayloadsNotNil() predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNotNull(FieldExtensionPayloads))
 }
 
 // CompressCertAlgosIsNil applies the IsNil predicate on the "compress_cert_algos" field.

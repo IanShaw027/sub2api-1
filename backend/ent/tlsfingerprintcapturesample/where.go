@@ -69,9 +69,19 @@ func TaskID(v int64) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldTaskID, v))
 }
 
+// SessionID applies equality check predicate on the "session_id" field. It's identical to SessionIDEQ.
+func SessionID(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldSessionID, v))
+}
+
 // Platform applies equality check predicate on the "platform" field. It's identical to PlatformEQ.
 func Platform(v string) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldPlatform, v))
+}
+
+// Transport applies equality check predicate on the "transport" field. It's identical to TransportEQ.
+func Transport(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldTransport, v))
 }
 
 // UserAgent applies equality check predicate on the "user_agent" field. It's identical to UserAgentEQ.
@@ -89,6 +99,76 @@ func FingerprintHash(v string) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldFingerprintHash, v))
 }
 
+// ReplayHash applies equality check predicate on the "replay_hash" field. It's identical to ReplayHashEQ.
+func ReplayHash(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldReplayHash, v))
+}
+
+// Ja3Raw applies equality check predicate on the "ja3_raw" field. It's identical to Ja3RawEQ.
+func Ja3Raw(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldJa3Raw, v))
+}
+
+// Ja3Hash applies equality check predicate on the "ja3_hash" field. It's identical to Ja3HashEQ.
+func Ja3Hash(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldJa3Hash, v))
+}
+
+// Ja4 applies equality check predicate on the "ja4" field. It's identical to Ja4EQ.
+func Ja4(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldJa4, v))
+}
+
+// RequestPath applies equality check predicate on the "request_path" field. It's identical to RequestPathEQ.
+func RequestPath(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldRequestPath, v))
+}
+
+// HTTPMethod applies equality check predicate on the "http_method" field. It's identical to HTTPMethodEQ.
+func HTTPMethod(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldHTTPMethod, v))
+}
+
+// IsWebsocket applies equality check predicate on the "is_websocket" field. It's identical to IsWebsocketEQ.
+func IsWebsocket(v bool) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldIsWebsocket, v))
+}
+
+// WebsocketProtocol applies equality check predicate on the "websocket_protocol" field. It's identical to WebsocketProtocolEQ.
+func WebsocketProtocol(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldWebsocketProtocol, v))
+}
+
+// ClientType applies equality check predicate on the "client_type" field. It's identical to ClientTypeEQ.
+func ClientType(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldClientType, v))
+}
+
+// Model applies equality check predicate on the "model" field. It's identical to ModelEQ.
+func Model(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldModel, v))
+}
+
+// RequestKind applies equality check predicate on the "request_kind" field. It's identical to RequestKindEQ.
+func RequestKind(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldRequestKind, v))
+}
+
+// Streaming applies equality check predicate on the "streaming" field. It's identical to StreamingEQ.
+func Streaming(v bool) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldStreaming, v))
+}
+
+// ResponseMode applies equality check predicate on the "response_mode" field. It's identical to ResponseModeEQ.
+func ResponseMode(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldResponseMode, v))
+}
+
+// Http2Fingerprint applies equality check predicate on the "http2_fingerprint" field. It's identical to Http2FingerprintEQ.
+func Http2Fingerprint(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldHttp2Fingerprint, v))
+}
+
 // RawPayload applies equality check predicate on the "raw_payload" field. It's identical to RawPayloadEQ.
 func RawPayload(v string) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldRawPayload, v))
@@ -97,6 +177,11 @@ func RawPayload(v string) predicate.TLSFingerprintCaptureSample {
 // RawClientHello applies equality check predicate on the "raw_client_hello" field. It's identical to RawClientHelloEQ.
 func RawClientHello(v []byte) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldRawClientHello, v))
+}
+
+// CapturedAt applies equality check predicate on the "captured_at" field. It's identical to CapturedAtEQ.
+func CapturedAt(v time.Time) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldCapturedAt, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
@@ -219,6 +304,71 @@ func TaskIDLTE(v int64) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldTaskID, v))
 }
 
+// SessionIDEQ applies the EQ predicate on the "session_id" field.
+func SessionIDEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldSessionID, v))
+}
+
+// SessionIDNEQ applies the NEQ predicate on the "session_id" field.
+func SessionIDNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldSessionID, v))
+}
+
+// SessionIDIn applies the In predicate on the "session_id" field.
+func SessionIDIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldSessionID, vs...))
+}
+
+// SessionIDNotIn applies the NotIn predicate on the "session_id" field.
+func SessionIDNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldSessionID, vs...))
+}
+
+// SessionIDGT applies the GT predicate on the "session_id" field.
+func SessionIDGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldSessionID, v))
+}
+
+// SessionIDGTE applies the GTE predicate on the "session_id" field.
+func SessionIDGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldSessionID, v))
+}
+
+// SessionIDLT applies the LT predicate on the "session_id" field.
+func SessionIDLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldSessionID, v))
+}
+
+// SessionIDLTE applies the LTE predicate on the "session_id" field.
+func SessionIDLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldSessionID, v))
+}
+
+// SessionIDContains applies the Contains predicate on the "session_id" field.
+func SessionIDContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldSessionID, v))
+}
+
+// SessionIDHasPrefix applies the HasPrefix predicate on the "session_id" field.
+func SessionIDHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldSessionID, v))
+}
+
+// SessionIDHasSuffix applies the HasSuffix predicate on the "session_id" field.
+func SessionIDHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldSessionID, v))
+}
+
+// SessionIDEqualFold applies the EqualFold predicate on the "session_id" field.
+func SessionIDEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldSessionID, v))
+}
+
+// SessionIDContainsFold applies the ContainsFold predicate on the "session_id" field.
+func SessionIDContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldSessionID, v))
+}
+
 // PlatformEQ applies the EQ predicate on the "platform" field.
 func PlatformEQ(v string) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldPlatform, v))
@@ -282,6 +432,71 @@ func PlatformEqualFold(v string) predicate.TLSFingerprintCaptureSample {
 // PlatformContainsFold applies the ContainsFold predicate on the "platform" field.
 func PlatformContainsFold(v string) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldPlatform, v))
+}
+
+// TransportEQ applies the EQ predicate on the "transport" field.
+func TransportEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldTransport, v))
+}
+
+// TransportNEQ applies the NEQ predicate on the "transport" field.
+func TransportNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldTransport, v))
+}
+
+// TransportIn applies the In predicate on the "transport" field.
+func TransportIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldTransport, vs...))
+}
+
+// TransportNotIn applies the NotIn predicate on the "transport" field.
+func TransportNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldTransport, vs...))
+}
+
+// TransportGT applies the GT predicate on the "transport" field.
+func TransportGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldTransport, v))
+}
+
+// TransportGTE applies the GTE predicate on the "transport" field.
+func TransportGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldTransport, v))
+}
+
+// TransportLT applies the LT predicate on the "transport" field.
+func TransportLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldTransport, v))
+}
+
+// TransportLTE applies the LTE predicate on the "transport" field.
+func TransportLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldTransport, v))
+}
+
+// TransportContains applies the Contains predicate on the "transport" field.
+func TransportContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldTransport, v))
+}
+
+// TransportHasPrefix applies the HasPrefix predicate on the "transport" field.
+func TransportHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldTransport, v))
+}
+
+// TransportHasSuffix applies the HasSuffix predicate on the "transport" field.
+func TransportHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldTransport, v))
+}
+
+// TransportEqualFold applies the EqualFold predicate on the "transport" field.
+func TransportEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldTransport, v))
+}
+
+// TransportContainsFold applies the ContainsFold predicate on the "transport" field.
+func TransportContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldTransport, v))
 }
 
 // UserAgentEQ applies the EQ predicate on the "user_agent" field.
@@ -479,6 +694,806 @@ func FingerprintHashContainsFold(v string) predicate.TLSFingerprintCaptureSample
 	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldFingerprintHash, v))
 }
 
+// ReplayHashEQ applies the EQ predicate on the "replay_hash" field.
+func ReplayHashEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldReplayHash, v))
+}
+
+// ReplayHashNEQ applies the NEQ predicate on the "replay_hash" field.
+func ReplayHashNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldReplayHash, v))
+}
+
+// ReplayHashIn applies the In predicate on the "replay_hash" field.
+func ReplayHashIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldReplayHash, vs...))
+}
+
+// ReplayHashNotIn applies the NotIn predicate on the "replay_hash" field.
+func ReplayHashNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldReplayHash, vs...))
+}
+
+// ReplayHashGT applies the GT predicate on the "replay_hash" field.
+func ReplayHashGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldReplayHash, v))
+}
+
+// ReplayHashGTE applies the GTE predicate on the "replay_hash" field.
+func ReplayHashGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldReplayHash, v))
+}
+
+// ReplayHashLT applies the LT predicate on the "replay_hash" field.
+func ReplayHashLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldReplayHash, v))
+}
+
+// ReplayHashLTE applies the LTE predicate on the "replay_hash" field.
+func ReplayHashLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldReplayHash, v))
+}
+
+// ReplayHashContains applies the Contains predicate on the "replay_hash" field.
+func ReplayHashContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldReplayHash, v))
+}
+
+// ReplayHashHasPrefix applies the HasPrefix predicate on the "replay_hash" field.
+func ReplayHashHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldReplayHash, v))
+}
+
+// ReplayHashHasSuffix applies the HasSuffix predicate on the "replay_hash" field.
+func ReplayHashHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldReplayHash, v))
+}
+
+// ReplayHashEqualFold applies the EqualFold predicate on the "replay_hash" field.
+func ReplayHashEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldReplayHash, v))
+}
+
+// ReplayHashContainsFold applies the ContainsFold predicate on the "replay_hash" field.
+func ReplayHashContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldReplayHash, v))
+}
+
+// Ja3RawEQ applies the EQ predicate on the "ja3_raw" field.
+func Ja3RawEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldJa3Raw, v))
+}
+
+// Ja3RawNEQ applies the NEQ predicate on the "ja3_raw" field.
+func Ja3RawNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldJa3Raw, v))
+}
+
+// Ja3RawIn applies the In predicate on the "ja3_raw" field.
+func Ja3RawIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldJa3Raw, vs...))
+}
+
+// Ja3RawNotIn applies the NotIn predicate on the "ja3_raw" field.
+func Ja3RawNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldJa3Raw, vs...))
+}
+
+// Ja3RawGT applies the GT predicate on the "ja3_raw" field.
+func Ja3RawGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldJa3Raw, v))
+}
+
+// Ja3RawGTE applies the GTE predicate on the "ja3_raw" field.
+func Ja3RawGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldJa3Raw, v))
+}
+
+// Ja3RawLT applies the LT predicate on the "ja3_raw" field.
+func Ja3RawLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldJa3Raw, v))
+}
+
+// Ja3RawLTE applies the LTE predicate on the "ja3_raw" field.
+func Ja3RawLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldJa3Raw, v))
+}
+
+// Ja3RawContains applies the Contains predicate on the "ja3_raw" field.
+func Ja3RawContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldJa3Raw, v))
+}
+
+// Ja3RawHasPrefix applies the HasPrefix predicate on the "ja3_raw" field.
+func Ja3RawHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldJa3Raw, v))
+}
+
+// Ja3RawHasSuffix applies the HasSuffix predicate on the "ja3_raw" field.
+func Ja3RawHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldJa3Raw, v))
+}
+
+// Ja3RawEqualFold applies the EqualFold predicate on the "ja3_raw" field.
+func Ja3RawEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldJa3Raw, v))
+}
+
+// Ja3RawContainsFold applies the ContainsFold predicate on the "ja3_raw" field.
+func Ja3RawContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldJa3Raw, v))
+}
+
+// Ja3HashEQ applies the EQ predicate on the "ja3_hash" field.
+func Ja3HashEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldJa3Hash, v))
+}
+
+// Ja3HashNEQ applies the NEQ predicate on the "ja3_hash" field.
+func Ja3HashNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldJa3Hash, v))
+}
+
+// Ja3HashIn applies the In predicate on the "ja3_hash" field.
+func Ja3HashIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldJa3Hash, vs...))
+}
+
+// Ja3HashNotIn applies the NotIn predicate on the "ja3_hash" field.
+func Ja3HashNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldJa3Hash, vs...))
+}
+
+// Ja3HashGT applies the GT predicate on the "ja3_hash" field.
+func Ja3HashGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldJa3Hash, v))
+}
+
+// Ja3HashGTE applies the GTE predicate on the "ja3_hash" field.
+func Ja3HashGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldJa3Hash, v))
+}
+
+// Ja3HashLT applies the LT predicate on the "ja3_hash" field.
+func Ja3HashLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldJa3Hash, v))
+}
+
+// Ja3HashLTE applies the LTE predicate on the "ja3_hash" field.
+func Ja3HashLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldJa3Hash, v))
+}
+
+// Ja3HashContains applies the Contains predicate on the "ja3_hash" field.
+func Ja3HashContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldJa3Hash, v))
+}
+
+// Ja3HashHasPrefix applies the HasPrefix predicate on the "ja3_hash" field.
+func Ja3HashHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldJa3Hash, v))
+}
+
+// Ja3HashHasSuffix applies the HasSuffix predicate on the "ja3_hash" field.
+func Ja3HashHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldJa3Hash, v))
+}
+
+// Ja3HashEqualFold applies the EqualFold predicate on the "ja3_hash" field.
+func Ja3HashEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldJa3Hash, v))
+}
+
+// Ja3HashContainsFold applies the ContainsFold predicate on the "ja3_hash" field.
+func Ja3HashContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldJa3Hash, v))
+}
+
+// Ja4EQ applies the EQ predicate on the "ja4" field.
+func Ja4EQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldJa4, v))
+}
+
+// Ja4NEQ applies the NEQ predicate on the "ja4" field.
+func Ja4NEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldJa4, v))
+}
+
+// Ja4In applies the In predicate on the "ja4" field.
+func Ja4In(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldJa4, vs...))
+}
+
+// Ja4NotIn applies the NotIn predicate on the "ja4" field.
+func Ja4NotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldJa4, vs...))
+}
+
+// Ja4GT applies the GT predicate on the "ja4" field.
+func Ja4GT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldJa4, v))
+}
+
+// Ja4GTE applies the GTE predicate on the "ja4" field.
+func Ja4GTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldJa4, v))
+}
+
+// Ja4LT applies the LT predicate on the "ja4" field.
+func Ja4LT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldJa4, v))
+}
+
+// Ja4LTE applies the LTE predicate on the "ja4" field.
+func Ja4LTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldJa4, v))
+}
+
+// Ja4Contains applies the Contains predicate on the "ja4" field.
+func Ja4Contains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldJa4, v))
+}
+
+// Ja4HasPrefix applies the HasPrefix predicate on the "ja4" field.
+func Ja4HasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldJa4, v))
+}
+
+// Ja4HasSuffix applies the HasSuffix predicate on the "ja4" field.
+func Ja4HasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldJa4, v))
+}
+
+// Ja4EqualFold applies the EqualFold predicate on the "ja4" field.
+func Ja4EqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldJa4, v))
+}
+
+// Ja4ContainsFold applies the ContainsFold predicate on the "ja4" field.
+func Ja4ContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldJa4, v))
+}
+
+// RequestPathEQ applies the EQ predicate on the "request_path" field.
+func RequestPathEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldRequestPath, v))
+}
+
+// RequestPathNEQ applies the NEQ predicate on the "request_path" field.
+func RequestPathNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldRequestPath, v))
+}
+
+// RequestPathIn applies the In predicate on the "request_path" field.
+func RequestPathIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldRequestPath, vs...))
+}
+
+// RequestPathNotIn applies the NotIn predicate on the "request_path" field.
+func RequestPathNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldRequestPath, vs...))
+}
+
+// RequestPathGT applies the GT predicate on the "request_path" field.
+func RequestPathGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldRequestPath, v))
+}
+
+// RequestPathGTE applies the GTE predicate on the "request_path" field.
+func RequestPathGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldRequestPath, v))
+}
+
+// RequestPathLT applies the LT predicate on the "request_path" field.
+func RequestPathLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldRequestPath, v))
+}
+
+// RequestPathLTE applies the LTE predicate on the "request_path" field.
+func RequestPathLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldRequestPath, v))
+}
+
+// RequestPathContains applies the Contains predicate on the "request_path" field.
+func RequestPathContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldRequestPath, v))
+}
+
+// RequestPathHasPrefix applies the HasPrefix predicate on the "request_path" field.
+func RequestPathHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldRequestPath, v))
+}
+
+// RequestPathHasSuffix applies the HasSuffix predicate on the "request_path" field.
+func RequestPathHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldRequestPath, v))
+}
+
+// RequestPathEqualFold applies the EqualFold predicate on the "request_path" field.
+func RequestPathEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldRequestPath, v))
+}
+
+// RequestPathContainsFold applies the ContainsFold predicate on the "request_path" field.
+func RequestPathContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldRequestPath, v))
+}
+
+// HTTPMethodEQ applies the EQ predicate on the "http_method" field.
+func HTTPMethodEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldHTTPMethod, v))
+}
+
+// HTTPMethodNEQ applies the NEQ predicate on the "http_method" field.
+func HTTPMethodNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldHTTPMethod, v))
+}
+
+// HTTPMethodIn applies the In predicate on the "http_method" field.
+func HTTPMethodIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldHTTPMethod, vs...))
+}
+
+// HTTPMethodNotIn applies the NotIn predicate on the "http_method" field.
+func HTTPMethodNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldHTTPMethod, vs...))
+}
+
+// HTTPMethodGT applies the GT predicate on the "http_method" field.
+func HTTPMethodGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldHTTPMethod, v))
+}
+
+// HTTPMethodGTE applies the GTE predicate on the "http_method" field.
+func HTTPMethodGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldHTTPMethod, v))
+}
+
+// HTTPMethodLT applies the LT predicate on the "http_method" field.
+func HTTPMethodLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldHTTPMethod, v))
+}
+
+// HTTPMethodLTE applies the LTE predicate on the "http_method" field.
+func HTTPMethodLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldHTTPMethod, v))
+}
+
+// HTTPMethodContains applies the Contains predicate on the "http_method" field.
+func HTTPMethodContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldHTTPMethod, v))
+}
+
+// HTTPMethodHasPrefix applies the HasPrefix predicate on the "http_method" field.
+func HTTPMethodHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldHTTPMethod, v))
+}
+
+// HTTPMethodHasSuffix applies the HasSuffix predicate on the "http_method" field.
+func HTTPMethodHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldHTTPMethod, v))
+}
+
+// HTTPMethodEqualFold applies the EqualFold predicate on the "http_method" field.
+func HTTPMethodEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldHTTPMethod, v))
+}
+
+// HTTPMethodContainsFold applies the ContainsFold predicate on the "http_method" field.
+func HTTPMethodContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldHTTPMethod, v))
+}
+
+// IsWebsocketEQ applies the EQ predicate on the "is_websocket" field.
+func IsWebsocketEQ(v bool) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldIsWebsocket, v))
+}
+
+// IsWebsocketNEQ applies the NEQ predicate on the "is_websocket" field.
+func IsWebsocketNEQ(v bool) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldIsWebsocket, v))
+}
+
+// WebsocketProtocolEQ applies the EQ predicate on the "websocket_protocol" field.
+func WebsocketProtocolEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldWebsocketProtocol, v))
+}
+
+// WebsocketProtocolNEQ applies the NEQ predicate on the "websocket_protocol" field.
+func WebsocketProtocolNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldWebsocketProtocol, v))
+}
+
+// WebsocketProtocolIn applies the In predicate on the "websocket_protocol" field.
+func WebsocketProtocolIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldWebsocketProtocol, vs...))
+}
+
+// WebsocketProtocolNotIn applies the NotIn predicate on the "websocket_protocol" field.
+func WebsocketProtocolNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldWebsocketProtocol, vs...))
+}
+
+// WebsocketProtocolGT applies the GT predicate on the "websocket_protocol" field.
+func WebsocketProtocolGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldWebsocketProtocol, v))
+}
+
+// WebsocketProtocolGTE applies the GTE predicate on the "websocket_protocol" field.
+func WebsocketProtocolGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldWebsocketProtocol, v))
+}
+
+// WebsocketProtocolLT applies the LT predicate on the "websocket_protocol" field.
+func WebsocketProtocolLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldWebsocketProtocol, v))
+}
+
+// WebsocketProtocolLTE applies the LTE predicate on the "websocket_protocol" field.
+func WebsocketProtocolLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldWebsocketProtocol, v))
+}
+
+// WebsocketProtocolContains applies the Contains predicate on the "websocket_protocol" field.
+func WebsocketProtocolContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldWebsocketProtocol, v))
+}
+
+// WebsocketProtocolHasPrefix applies the HasPrefix predicate on the "websocket_protocol" field.
+func WebsocketProtocolHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldWebsocketProtocol, v))
+}
+
+// WebsocketProtocolHasSuffix applies the HasSuffix predicate on the "websocket_protocol" field.
+func WebsocketProtocolHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldWebsocketProtocol, v))
+}
+
+// WebsocketProtocolEqualFold applies the EqualFold predicate on the "websocket_protocol" field.
+func WebsocketProtocolEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldWebsocketProtocol, v))
+}
+
+// WebsocketProtocolContainsFold applies the ContainsFold predicate on the "websocket_protocol" field.
+func WebsocketProtocolContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldWebsocketProtocol, v))
+}
+
+// ClientTypeEQ applies the EQ predicate on the "client_type" field.
+func ClientTypeEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldClientType, v))
+}
+
+// ClientTypeNEQ applies the NEQ predicate on the "client_type" field.
+func ClientTypeNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldClientType, v))
+}
+
+// ClientTypeIn applies the In predicate on the "client_type" field.
+func ClientTypeIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldClientType, vs...))
+}
+
+// ClientTypeNotIn applies the NotIn predicate on the "client_type" field.
+func ClientTypeNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldClientType, vs...))
+}
+
+// ClientTypeGT applies the GT predicate on the "client_type" field.
+func ClientTypeGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldClientType, v))
+}
+
+// ClientTypeGTE applies the GTE predicate on the "client_type" field.
+func ClientTypeGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldClientType, v))
+}
+
+// ClientTypeLT applies the LT predicate on the "client_type" field.
+func ClientTypeLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldClientType, v))
+}
+
+// ClientTypeLTE applies the LTE predicate on the "client_type" field.
+func ClientTypeLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldClientType, v))
+}
+
+// ClientTypeContains applies the Contains predicate on the "client_type" field.
+func ClientTypeContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldClientType, v))
+}
+
+// ClientTypeHasPrefix applies the HasPrefix predicate on the "client_type" field.
+func ClientTypeHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldClientType, v))
+}
+
+// ClientTypeHasSuffix applies the HasSuffix predicate on the "client_type" field.
+func ClientTypeHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldClientType, v))
+}
+
+// ClientTypeEqualFold applies the EqualFold predicate on the "client_type" field.
+func ClientTypeEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldClientType, v))
+}
+
+// ClientTypeContainsFold applies the ContainsFold predicate on the "client_type" field.
+func ClientTypeContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldClientType, v))
+}
+
+// ModelEQ applies the EQ predicate on the "model" field.
+func ModelEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldModel, v))
+}
+
+// ModelNEQ applies the NEQ predicate on the "model" field.
+func ModelNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldModel, v))
+}
+
+// ModelIn applies the In predicate on the "model" field.
+func ModelIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldModel, vs...))
+}
+
+// ModelNotIn applies the NotIn predicate on the "model" field.
+func ModelNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldModel, vs...))
+}
+
+// ModelGT applies the GT predicate on the "model" field.
+func ModelGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldModel, v))
+}
+
+// ModelGTE applies the GTE predicate on the "model" field.
+func ModelGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldModel, v))
+}
+
+// ModelLT applies the LT predicate on the "model" field.
+func ModelLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldModel, v))
+}
+
+// ModelLTE applies the LTE predicate on the "model" field.
+func ModelLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldModel, v))
+}
+
+// ModelContains applies the Contains predicate on the "model" field.
+func ModelContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldModel, v))
+}
+
+// ModelHasPrefix applies the HasPrefix predicate on the "model" field.
+func ModelHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldModel, v))
+}
+
+// ModelHasSuffix applies the HasSuffix predicate on the "model" field.
+func ModelHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldModel, v))
+}
+
+// ModelEqualFold applies the EqualFold predicate on the "model" field.
+func ModelEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldModel, v))
+}
+
+// ModelContainsFold applies the ContainsFold predicate on the "model" field.
+func ModelContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldModel, v))
+}
+
+// RequestKindEQ applies the EQ predicate on the "request_kind" field.
+func RequestKindEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldRequestKind, v))
+}
+
+// RequestKindNEQ applies the NEQ predicate on the "request_kind" field.
+func RequestKindNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldRequestKind, v))
+}
+
+// RequestKindIn applies the In predicate on the "request_kind" field.
+func RequestKindIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldRequestKind, vs...))
+}
+
+// RequestKindNotIn applies the NotIn predicate on the "request_kind" field.
+func RequestKindNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldRequestKind, vs...))
+}
+
+// RequestKindGT applies the GT predicate on the "request_kind" field.
+func RequestKindGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldRequestKind, v))
+}
+
+// RequestKindGTE applies the GTE predicate on the "request_kind" field.
+func RequestKindGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldRequestKind, v))
+}
+
+// RequestKindLT applies the LT predicate on the "request_kind" field.
+func RequestKindLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldRequestKind, v))
+}
+
+// RequestKindLTE applies the LTE predicate on the "request_kind" field.
+func RequestKindLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldRequestKind, v))
+}
+
+// RequestKindContains applies the Contains predicate on the "request_kind" field.
+func RequestKindContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldRequestKind, v))
+}
+
+// RequestKindHasPrefix applies the HasPrefix predicate on the "request_kind" field.
+func RequestKindHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldRequestKind, v))
+}
+
+// RequestKindHasSuffix applies the HasSuffix predicate on the "request_kind" field.
+func RequestKindHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldRequestKind, v))
+}
+
+// RequestKindEqualFold applies the EqualFold predicate on the "request_kind" field.
+func RequestKindEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldRequestKind, v))
+}
+
+// RequestKindContainsFold applies the ContainsFold predicate on the "request_kind" field.
+func RequestKindContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldRequestKind, v))
+}
+
+// StreamingEQ applies the EQ predicate on the "streaming" field.
+func StreamingEQ(v bool) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldStreaming, v))
+}
+
+// StreamingNEQ applies the NEQ predicate on the "streaming" field.
+func StreamingNEQ(v bool) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldStreaming, v))
+}
+
+// ResponseModeEQ applies the EQ predicate on the "response_mode" field.
+func ResponseModeEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldResponseMode, v))
+}
+
+// ResponseModeNEQ applies the NEQ predicate on the "response_mode" field.
+func ResponseModeNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldResponseMode, v))
+}
+
+// ResponseModeIn applies the In predicate on the "response_mode" field.
+func ResponseModeIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldResponseMode, vs...))
+}
+
+// ResponseModeNotIn applies the NotIn predicate on the "response_mode" field.
+func ResponseModeNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldResponseMode, vs...))
+}
+
+// ResponseModeGT applies the GT predicate on the "response_mode" field.
+func ResponseModeGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldResponseMode, v))
+}
+
+// ResponseModeGTE applies the GTE predicate on the "response_mode" field.
+func ResponseModeGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldResponseMode, v))
+}
+
+// ResponseModeLT applies the LT predicate on the "response_mode" field.
+func ResponseModeLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldResponseMode, v))
+}
+
+// ResponseModeLTE applies the LTE predicate on the "response_mode" field.
+func ResponseModeLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldResponseMode, v))
+}
+
+// ResponseModeContains applies the Contains predicate on the "response_mode" field.
+func ResponseModeContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldResponseMode, v))
+}
+
+// ResponseModeHasPrefix applies the HasPrefix predicate on the "response_mode" field.
+func ResponseModeHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldResponseMode, v))
+}
+
+// ResponseModeHasSuffix applies the HasSuffix predicate on the "response_mode" field.
+func ResponseModeHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldResponseMode, v))
+}
+
+// ResponseModeEqualFold applies the EqualFold predicate on the "response_mode" field.
+func ResponseModeEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldResponseMode, v))
+}
+
+// ResponseModeContainsFold applies the ContainsFold predicate on the "response_mode" field.
+func ResponseModeContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldResponseMode, v))
+}
+
+// Http2FingerprintEQ applies the EQ predicate on the "http2_fingerprint" field.
+func Http2FingerprintEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintNEQ applies the NEQ predicate on the "http2_fingerprint" field.
+func Http2FingerprintNEQ(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintIn applies the In predicate on the "http2_fingerprint" field.
+func Http2FingerprintIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldHttp2Fingerprint, vs...))
+}
+
+// Http2FingerprintNotIn applies the NotIn predicate on the "http2_fingerprint" field.
+func Http2FingerprintNotIn(vs ...string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldHttp2Fingerprint, vs...))
+}
+
+// Http2FingerprintGT applies the GT predicate on the "http2_fingerprint" field.
+func Http2FingerprintGT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintGTE applies the GTE predicate on the "http2_fingerprint" field.
+func Http2FingerprintGTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintLT applies the LT predicate on the "http2_fingerprint" field.
+func Http2FingerprintLT(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintLTE applies the LTE predicate on the "http2_fingerprint" field.
+func Http2FingerprintLTE(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintContains applies the Contains predicate on the "http2_fingerprint" field.
+func Http2FingerprintContains(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContains(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintHasPrefix applies the HasPrefix predicate on the "http2_fingerprint" field.
+func Http2FingerprintHasPrefix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasPrefix(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintHasSuffix applies the HasSuffix predicate on the "http2_fingerprint" field.
+func Http2FingerprintHasSuffix(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldHasSuffix(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintEqualFold applies the EqualFold predicate on the "http2_fingerprint" field.
+func Http2FingerprintEqualFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEqualFold(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintContainsFold applies the ContainsFold predicate on the "http2_fingerprint" field.
+func Http2FingerprintContainsFold(v string) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldContainsFold(FieldHttp2Fingerprint, v))
+}
+
 // RawPayloadEQ applies the EQ predicate on the "raw_payload" field.
 func RawPayloadEQ(v string) predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldRawPayload, v))
@@ -592,6 +1607,46 @@ func RawClientHelloIsNil() predicate.TLSFingerprintCaptureSample {
 // RawClientHelloNotNil applies the NotNil predicate on the "raw_client_hello" field.
 func RawClientHelloNotNil() predicate.TLSFingerprintCaptureSample {
 	return predicate.TLSFingerprintCaptureSample(sql.FieldNotNull(FieldRawClientHello))
+}
+
+// CapturedAtEQ applies the EQ predicate on the "captured_at" field.
+func CapturedAtEQ(v time.Time) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldEQ(FieldCapturedAt, v))
+}
+
+// CapturedAtNEQ applies the NEQ predicate on the "captured_at" field.
+func CapturedAtNEQ(v time.Time) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNEQ(FieldCapturedAt, v))
+}
+
+// CapturedAtIn applies the In predicate on the "captured_at" field.
+func CapturedAtIn(vs ...time.Time) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldIn(FieldCapturedAt, vs...))
+}
+
+// CapturedAtNotIn applies the NotIn predicate on the "captured_at" field.
+func CapturedAtNotIn(vs ...time.Time) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldNotIn(FieldCapturedAt, vs...))
+}
+
+// CapturedAtGT applies the GT predicate on the "captured_at" field.
+func CapturedAtGT(v time.Time) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGT(FieldCapturedAt, v))
+}
+
+// CapturedAtGTE applies the GTE predicate on the "captured_at" field.
+func CapturedAtGTE(v time.Time) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldGTE(FieldCapturedAt, v))
+}
+
+// CapturedAtLT applies the LT predicate on the "captured_at" field.
+func CapturedAtLT(v time.Time) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLT(FieldCapturedAt, v))
+}
+
+// CapturedAtLTE applies the LTE predicate on the "captured_at" field.
+func CapturedAtLTE(v time.Time) predicate.TLSFingerprintCaptureSample {
+	return predicate.TLSFingerprintCaptureSample(sql.FieldLTE(FieldCapturedAt, v))
 }
 
 // And groups predicates with the AND operator between them.

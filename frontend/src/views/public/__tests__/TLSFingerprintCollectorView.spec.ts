@@ -56,6 +56,8 @@ describe('TLSFingerprintCollectorView', () => {
     expect(text).toContain('tlsCollector.guides.claudePrint.title')
     expect(text).toContain('tlsCollector.guides.node.title')
     expect(text).toContain('tlsCollector.guides.python.title')
+    expect(text).toContain('tlsCollector.supportedTransportsTitle')
+    expect(text).toContain('tlsCollector.successBehaviorTitle')
     expect(wrapper.find('textarea').exists()).toBe(false)
   })
 

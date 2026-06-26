@@ -746,6 +746,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 	require.False(t, gjson.Get(requestJSON, "store").Bool(), "默认策略应将 OAuth store 置为 false")
 	require.True(t, gjson.Get(requestJSON, "stream").Exists(), "WSv2 payload 应保留 stream 字段")
 	require.True(t, gjson.Get(requestJSON, "stream").Bool(), "OAuth Codex 规范化后应强制 stream=true")
+	require.Equal(t, "neutral", result.OpenAIWSProfile, "OAuth store=false 首轮请求应使用账号级 neutral 握手")
 	require.Equal(t, openAIWSBetaV2Value, captureDialer.lastHeaders.Get("OpenAI-Beta"))
 	require.Empty(t, captureDialer.lastHeaders.Get("session_id"))
 	require.Empty(t, captureDialer.lastHeaders.Get("conversation_id"))
@@ -761,7 +762,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 	require.Equal(t, "client-req-1", gjson.Get(requestJSON, "client_metadata.x-client-request-id").String())
 }
 
-func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyPreviousResponseUsesStoreTrue(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyPreviousResponseKeepsStoreFalse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -855,8 +856,8 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyPreviousResponseUsesStoreT
 
 	secondWrite := requestToJSONString(writes[1])
 	require.Equal(t, "resp_oauth_sticky_prev_1", gjson.Get(secondWrite, "previous_response_id").String())
-	require.True(t, gjson.Get(secondWrite, "store").Exists(), "sticky OAuth 续链应显式启用 store=true")
-	require.True(t, gjson.Get(secondWrite, "store").Bool(), "sticky OAuth 续链应启用服务端增量上下文")
+	require.True(t, gjson.Get(secondWrite, "store").Exists(), "sticky OAuth continuation should keep explicit store=false")
+	require.False(t, gjson.Get(secondWrite, "store").Bool(), "sticky OAuth continuation must stay on store=false")
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_OAuthColdSessionUsesNeutralIdleConn(t *testing.T) {
@@ -945,15 +946,18 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthColdSessionUsesNeutralIdleConn(t
 	require.NotNil(t, result)
 	require.Equal(t, "resp_oauth_cold_neutral_1", result.RequestID)
 	require.Equal(t, "neutral", result.OpenAIWSProfile)
-	require.True(t, result.OpenAIWSConnReused, "冷 session 首轮应复用 neutral idle 连接，而不是新建 session_bound 连接")
-	require.Equal(t, 1, captureDialer.DialCount(), "命中 neutral idle 后不应再新建 session_bound 连接")
+	require.True(t, result.OpenAIWSConnReused, "冷 session 首轮 store=false 请求应复用账号级 neutral idle 连接")
+	require.Equal(t, 1, captureDialer.DialCount(), "冷 session 首轮不应为了 session 绑定新建连接")
 
 	connID, ok := svc.getOpenAIWSStateStore().GetSessionConn(groupID, sessionHash)
 	require.True(t, ok, "冷 session 完成后仍应绑定实际连接用于后续亲和")
 	require.Equal(t, seedConnID, connID)
 	profile, ok := pool.ConnProfile(account.ID, seedConnID)
 	require.True(t, ok)
-	require.Equal(t, openAIWSConnProfileSessionBound, profile, "neutral 启动连接被 session 使用后应转为 session-bound，避免跨 session 泛复用")
+	require.Equal(t, openAIWSConnProfileSessionBound, profile, "成功服务冷 session 后应晋升为 session_bound 供后续亲和")
+	profile, ok = pool.ConnProfile(account.ID, connID)
+	require.True(t, ok)
+	require.Equal(t, openAIWSConnProfileSessionBound, profile)
 }
 
 func TestOpenAIGatewayService_Forward_WSv2AccountOnlyPreviousResponseFallsBackFullAndCanUseNeutralIdle(t *testing.T) {
@@ -1050,8 +1054,9 @@ func TestOpenAIGatewayService_Forward_WSv2AccountOnlyPreviousResponseFallsBackFu
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "resp_reused_neutral_should_not_use", result.RequestID)
+	require.Equal(t, "neutral", result.OpenAIWSProfile)
 	require.Nil(t, upstream.lastReq, "account-only previous_response_id downgrade must stay on WS, not HTTP fallback")
-	require.Equal(t, 1, dialer.DialCount(), "降级为 full create 后可复用预热 neutral idle 连接")
+	require.Equal(t, 1, dialer.DialCount(), "降级为 full create 后应复用 neutral idle 连接")
 
 	neutralSeed.mu.Lock()
 	neutralWrites := append([]map[string]any(nil), neutralSeed.writes...)

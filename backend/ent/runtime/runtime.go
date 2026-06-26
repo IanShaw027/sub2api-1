@@ -49,6 +49,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesample"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesession"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesessionevent"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturetask"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintrouter"
@@ -2460,24 +2462,36 @@ func init() {
 	tlsfingerprintcapturesample.DefaultUpdatedAt = tlsfingerprintcapturesampleDescUpdatedAt.Default.(func() time.Time)
 	// tlsfingerprintcapturesample.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	tlsfingerprintcapturesample.UpdateDefaultUpdatedAt = tlsfingerprintcapturesampleDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// tlsfingerprintcapturesampleDescSessionID is the schema descriptor for session_id field.
+	tlsfingerprintcapturesampleDescSessionID := tlsfingerprintcapturesampleFields[1].Descriptor()
+	// tlsfingerprintcapturesample.DefaultSessionID holds the default value on creation for the session_id field.
+	tlsfingerprintcapturesample.DefaultSessionID = tlsfingerprintcapturesampleDescSessionID.Default.(string)
+	// tlsfingerprintcapturesample.SessionIDValidator is a validator for the "session_id" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.SessionIDValidator = tlsfingerprintcapturesampleDescSessionID.Validators[0].(func(string) error)
 	// tlsfingerprintcapturesampleDescPlatform is the schema descriptor for platform field.
-	tlsfingerprintcapturesampleDescPlatform := tlsfingerprintcapturesampleFields[1].Descriptor()
+	tlsfingerprintcapturesampleDescPlatform := tlsfingerprintcapturesampleFields[2].Descriptor()
 	// tlsfingerprintcapturesample.DefaultPlatform holds the default value on creation for the platform field.
 	tlsfingerprintcapturesample.DefaultPlatform = tlsfingerprintcapturesampleDescPlatform.Default.(string)
 	// tlsfingerprintcapturesample.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
 	tlsfingerprintcapturesample.PlatformValidator = tlsfingerprintcapturesampleDescPlatform.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesampleDescTransport is the schema descriptor for transport field.
+	tlsfingerprintcapturesampleDescTransport := tlsfingerprintcapturesampleFields[3].Descriptor()
+	// tlsfingerprintcapturesample.DefaultTransport holds the default value on creation for the transport field.
+	tlsfingerprintcapturesample.DefaultTransport = tlsfingerprintcapturesampleDescTransport.Default.(string)
+	// tlsfingerprintcapturesample.TransportValidator is a validator for the "transport" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.TransportValidator = tlsfingerprintcapturesampleDescTransport.Validators[0].(func(string) error)
 	// tlsfingerprintcapturesampleDescUserAgent is the schema descriptor for user_agent field.
-	tlsfingerprintcapturesampleDescUserAgent := tlsfingerprintcapturesampleFields[2].Descriptor()
+	tlsfingerprintcapturesampleDescUserAgent := tlsfingerprintcapturesampleFields[4].Descriptor()
 	// tlsfingerprintcapturesample.DefaultUserAgent holds the default value on creation for the user_agent field.
 	tlsfingerprintcapturesample.DefaultUserAgent = tlsfingerprintcapturesampleDescUserAgent.Default.(string)
 	// tlsfingerprintcapturesampleDescOriginator is the schema descriptor for originator field.
-	tlsfingerprintcapturesampleDescOriginator := tlsfingerprintcapturesampleFields[3].Descriptor()
+	tlsfingerprintcapturesampleDescOriginator := tlsfingerprintcapturesampleFields[5].Descriptor()
 	// tlsfingerprintcapturesample.DefaultOriginator holds the default value on creation for the originator field.
 	tlsfingerprintcapturesample.DefaultOriginator = tlsfingerprintcapturesampleDescOriginator.Default.(string)
 	// tlsfingerprintcapturesample.OriginatorValidator is a validator for the "originator" field. It is called by the builders before save.
 	tlsfingerprintcapturesample.OriginatorValidator = tlsfingerprintcapturesampleDescOriginator.Validators[0].(func(string) error)
 	// tlsfingerprintcapturesampleDescFingerprintHash is the schema descriptor for fingerprint_hash field.
-	tlsfingerprintcapturesampleDescFingerprintHash := tlsfingerprintcapturesampleFields[4].Descriptor()
+	tlsfingerprintcapturesampleDescFingerprintHash := tlsfingerprintcapturesampleFields[6].Descriptor()
 	// tlsfingerprintcapturesample.FingerprintHashValidator is a validator for the "fingerprint_hash" field. It is called by the builders before save.
 	tlsfingerprintcapturesample.FingerprintHashValidator = func() func(string) error {
 		validators := tlsfingerprintcapturesampleDescFingerprintHash.Validators
@@ -2494,10 +2508,332 @@ func init() {
 			return nil
 		}
 	}()
+	// tlsfingerprintcapturesampleDescReplayHash is the schema descriptor for replay_hash field.
+	tlsfingerprintcapturesampleDescReplayHash := tlsfingerprintcapturesampleFields[7].Descriptor()
+	// tlsfingerprintcapturesample.DefaultReplayHash holds the default value on creation for the replay_hash field.
+	tlsfingerprintcapturesample.DefaultReplayHash = tlsfingerprintcapturesampleDescReplayHash.Default.(string)
+	// tlsfingerprintcapturesample.ReplayHashValidator is a validator for the "replay_hash" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.ReplayHashValidator = tlsfingerprintcapturesampleDescReplayHash.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesampleDescJa3Raw is the schema descriptor for ja3_raw field.
+	tlsfingerprintcapturesampleDescJa3Raw := tlsfingerprintcapturesampleFields[8].Descriptor()
+	// tlsfingerprintcapturesample.DefaultJa3Raw holds the default value on creation for the ja3_raw field.
+	tlsfingerprintcapturesample.DefaultJa3Raw = tlsfingerprintcapturesampleDescJa3Raw.Default.(string)
+	// tlsfingerprintcapturesampleDescJa3Hash is the schema descriptor for ja3_hash field.
+	tlsfingerprintcapturesampleDescJa3Hash := tlsfingerprintcapturesampleFields[9].Descriptor()
+	// tlsfingerprintcapturesample.DefaultJa3Hash holds the default value on creation for the ja3_hash field.
+	tlsfingerprintcapturesample.DefaultJa3Hash = tlsfingerprintcapturesampleDescJa3Hash.Default.(string)
+	// tlsfingerprintcapturesample.Ja3HashValidator is a validator for the "ja3_hash" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.Ja3HashValidator = tlsfingerprintcapturesampleDescJa3Hash.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesampleDescJa4 is the schema descriptor for ja4 field.
+	tlsfingerprintcapturesampleDescJa4 := tlsfingerprintcapturesampleFields[10].Descriptor()
+	// tlsfingerprintcapturesample.DefaultJa4 holds the default value on creation for the ja4 field.
+	tlsfingerprintcapturesample.DefaultJa4 = tlsfingerprintcapturesampleDescJa4.Default.(string)
+	// tlsfingerprintcapturesample.Ja4Validator is a validator for the "ja4" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.Ja4Validator = tlsfingerprintcapturesampleDescJa4.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesampleDescRequestPath is the schema descriptor for request_path field.
+	tlsfingerprintcapturesampleDescRequestPath := tlsfingerprintcapturesampleFields[11].Descriptor()
+	// tlsfingerprintcapturesample.DefaultRequestPath holds the default value on creation for the request_path field.
+	tlsfingerprintcapturesample.DefaultRequestPath = tlsfingerprintcapturesampleDescRequestPath.Default.(string)
+	// tlsfingerprintcapturesampleDescHTTPMethod is the schema descriptor for http_method field.
+	tlsfingerprintcapturesampleDescHTTPMethod := tlsfingerprintcapturesampleFields[12].Descriptor()
+	// tlsfingerprintcapturesample.DefaultHTTPMethod holds the default value on creation for the http_method field.
+	tlsfingerprintcapturesample.DefaultHTTPMethod = tlsfingerprintcapturesampleDescHTTPMethod.Default.(string)
+	// tlsfingerprintcapturesample.HTTPMethodValidator is a validator for the "http_method" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.HTTPMethodValidator = tlsfingerprintcapturesampleDescHTTPMethod.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesampleDescIsWebsocket is the schema descriptor for is_websocket field.
+	tlsfingerprintcapturesampleDescIsWebsocket := tlsfingerprintcapturesampleFields[13].Descriptor()
+	// tlsfingerprintcapturesample.DefaultIsWebsocket holds the default value on creation for the is_websocket field.
+	tlsfingerprintcapturesample.DefaultIsWebsocket = tlsfingerprintcapturesampleDescIsWebsocket.Default.(bool)
+	// tlsfingerprintcapturesampleDescWebsocketProtocol is the schema descriptor for websocket_protocol field.
+	tlsfingerprintcapturesampleDescWebsocketProtocol := tlsfingerprintcapturesampleFields[14].Descriptor()
+	// tlsfingerprintcapturesample.DefaultWebsocketProtocol holds the default value on creation for the websocket_protocol field.
+	tlsfingerprintcapturesample.DefaultWebsocketProtocol = tlsfingerprintcapturesampleDescWebsocketProtocol.Default.(string)
+	// tlsfingerprintcapturesample.WebsocketProtocolValidator is a validator for the "websocket_protocol" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.WebsocketProtocolValidator = tlsfingerprintcapturesampleDescWebsocketProtocol.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesampleDescClientType is the schema descriptor for client_type field.
+	tlsfingerprintcapturesampleDescClientType := tlsfingerprintcapturesampleFields[15].Descriptor()
+	// tlsfingerprintcapturesample.DefaultClientType holds the default value on creation for the client_type field.
+	tlsfingerprintcapturesample.DefaultClientType = tlsfingerprintcapturesampleDescClientType.Default.(string)
+	// tlsfingerprintcapturesample.ClientTypeValidator is a validator for the "client_type" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.ClientTypeValidator = tlsfingerprintcapturesampleDescClientType.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesampleDescModel is the schema descriptor for model field.
+	tlsfingerprintcapturesampleDescModel := tlsfingerprintcapturesampleFields[16].Descriptor()
+	// tlsfingerprintcapturesample.DefaultModel holds the default value on creation for the model field.
+	tlsfingerprintcapturesample.DefaultModel = tlsfingerprintcapturesampleDescModel.Default.(string)
+	// tlsfingerprintcapturesample.ModelValidator is a validator for the "model" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.ModelValidator = tlsfingerprintcapturesampleDescModel.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesampleDescRequestKind is the schema descriptor for request_kind field.
+	tlsfingerprintcapturesampleDescRequestKind := tlsfingerprintcapturesampleFields[17].Descriptor()
+	// tlsfingerprintcapturesample.DefaultRequestKind holds the default value on creation for the request_kind field.
+	tlsfingerprintcapturesample.DefaultRequestKind = tlsfingerprintcapturesampleDescRequestKind.Default.(string)
+	// tlsfingerprintcapturesample.RequestKindValidator is a validator for the "request_kind" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.RequestKindValidator = tlsfingerprintcapturesampleDescRequestKind.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesampleDescStreaming is the schema descriptor for streaming field.
+	tlsfingerprintcapturesampleDescStreaming := tlsfingerprintcapturesampleFields[18].Descriptor()
+	// tlsfingerprintcapturesample.DefaultStreaming holds the default value on creation for the streaming field.
+	tlsfingerprintcapturesample.DefaultStreaming = tlsfingerprintcapturesampleDescStreaming.Default.(bool)
+	// tlsfingerprintcapturesampleDescResponseMode is the schema descriptor for response_mode field.
+	tlsfingerprintcapturesampleDescResponseMode := tlsfingerprintcapturesampleFields[19].Descriptor()
+	// tlsfingerprintcapturesample.DefaultResponseMode holds the default value on creation for the response_mode field.
+	tlsfingerprintcapturesample.DefaultResponseMode = tlsfingerprintcapturesampleDescResponseMode.Default.(string)
+	// tlsfingerprintcapturesample.ResponseModeValidator is a validator for the "response_mode" field. It is called by the builders before save.
+	tlsfingerprintcapturesample.ResponseModeValidator = tlsfingerprintcapturesampleDescResponseMode.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesampleDescHttp2Fingerprint is the schema descriptor for http2_fingerprint field.
+	tlsfingerprintcapturesampleDescHttp2Fingerprint := tlsfingerprintcapturesampleFields[20].Descriptor()
+	// tlsfingerprintcapturesample.DefaultHttp2Fingerprint holds the default value on creation for the http2_fingerprint field.
+	tlsfingerprintcapturesample.DefaultHttp2Fingerprint = tlsfingerprintcapturesampleDescHttp2Fingerprint.Default.(string)
+	// tlsfingerprintcapturesampleDescStainlessMetadata is the schema descriptor for stainless_metadata field.
+	tlsfingerprintcapturesampleDescStainlessMetadata := tlsfingerprintcapturesampleFields[21].Descriptor()
+	// tlsfingerprintcapturesample.DefaultStainlessMetadata holds the default value on creation for the stainless_metadata field.
+	tlsfingerprintcapturesample.DefaultStainlessMetadata = tlsfingerprintcapturesampleDescStainlessMetadata.Default.(func() map[string]interface{})
 	// tlsfingerprintcapturesampleDescRawPayload is the schema descriptor for raw_payload field.
-	tlsfingerprintcapturesampleDescRawPayload := tlsfingerprintcapturesampleFields[6].Descriptor()
+	tlsfingerprintcapturesampleDescRawPayload := tlsfingerprintcapturesampleFields[23].Descriptor()
 	// tlsfingerprintcapturesample.DefaultRawPayload holds the default value on creation for the raw_payload field.
 	tlsfingerprintcapturesample.DefaultRawPayload = tlsfingerprintcapturesampleDescRawPayload.Default.(string)
+	tlsfingerprintcapturesessionMixin := schema.TLSFingerprintCaptureSession{}.Mixin()
+	tlsfingerprintcapturesessionMixinFields0 := tlsfingerprintcapturesessionMixin[0].Fields()
+	_ = tlsfingerprintcapturesessionMixinFields0
+	tlsfingerprintcapturesessionFields := schema.TLSFingerprintCaptureSession{}.Fields()
+	_ = tlsfingerprintcapturesessionFields
+	// tlsfingerprintcapturesessionDescCreatedAt is the schema descriptor for created_at field.
+	tlsfingerprintcapturesessionDescCreatedAt := tlsfingerprintcapturesessionMixinFields0[0].Descriptor()
+	// tlsfingerprintcapturesession.DefaultCreatedAt holds the default value on creation for the created_at field.
+	tlsfingerprintcapturesession.DefaultCreatedAt = tlsfingerprintcapturesessionDescCreatedAt.Default.(func() time.Time)
+	// tlsfingerprintcapturesessionDescUpdatedAt is the schema descriptor for updated_at field.
+	tlsfingerprintcapturesessionDescUpdatedAt := tlsfingerprintcapturesessionMixinFields0[1].Descriptor()
+	// tlsfingerprintcapturesession.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	tlsfingerprintcapturesession.DefaultUpdatedAt = tlsfingerprintcapturesessionDescUpdatedAt.Default.(func() time.Time)
+	// tlsfingerprintcapturesession.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	tlsfingerprintcapturesession.UpdateDefaultUpdatedAt = tlsfingerprintcapturesessionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// tlsfingerprintcapturesessionDescSessionID is the schema descriptor for session_id field.
+	tlsfingerprintcapturesessionDescSessionID := tlsfingerprintcapturesessionFields[1].Descriptor()
+	// tlsfingerprintcapturesession.SessionIDValidator is a validator for the "session_id" field. It is called by the builders before save.
+	tlsfingerprintcapturesession.SessionIDValidator = func() func(string) error {
+		validators := tlsfingerprintcapturesessionDescSessionID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(session_id string) error {
+			for _, fn := range fns {
+				if err := fn(session_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// tlsfingerprintcapturesessionDescClientIP is the schema descriptor for client_ip field.
+	tlsfingerprintcapturesessionDescClientIP := tlsfingerprintcapturesessionFields[2].Descriptor()
+	// tlsfingerprintcapturesession.DefaultClientIP holds the default value on creation for the client_ip field.
+	tlsfingerprintcapturesession.DefaultClientIP = tlsfingerprintcapturesessionDescClientIP.Default.(string)
+	// tlsfingerprintcapturesession.ClientIPValidator is a validator for the "client_ip" field. It is called by the builders before save.
+	tlsfingerprintcapturesession.ClientIPValidator = tlsfingerprintcapturesessionDescClientIP.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessionDescPlatform is the schema descriptor for platform field.
+	tlsfingerprintcapturesessionDescPlatform := tlsfingerprintcapturesessionFields[3].Descriptor()
+	// tlsfingerprintcapturesession.DefaultPlatform holds the default value on creation for the platform field.
+	tlsfingerprintcapturesession.DefaultPlatform = tlsfingerprintcapturesessionDescPlatform.Default.(string)
+	// tlsfingerprintcapturesession.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
+	tlsfingerprintcapturesession.PlatformValidator = tlsfingerprintcapturesessionDescPlatform.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessionDescUserAgent is the schema descriptor for user_agent field.
+	tlsfingerprintcapturesessionDescUserAgent := tlsfingerprintcapturesessionFields[4].Descriptor()
+	// tlsfingerprintcapturesession.DefaultUserAgent holds the default value on creation for the user_agent field.
+	tlsfingerprintcapturesession.DefaultUserAgent = tlsfingerprintcapturesessionDescUserAgent.Default.(string)
+	// tlsfingerprintcapturesessionDescOriginator is the schema descriptor for originator field.
+	tlsfingerprintcapturesessionDescOriginator := tlsfingerprintcapturesessionFields[5].Descriptor()
+	// tlsfingerprintcapturesession.DefaultOriginator holds the default value on creation for the originator field.
+	tlsfingerprintcapturesession.DefaultOriginator = tlsfingerprintcapturesessionDescOriginator.Default.(string)
+	// tlsfingerprintcapturesession.OriginatorValidator is a validator for the "originator" field. It is called by the builders before save.
+	tlsfingerprintcapturesession.OriginatorValidator = tlsfingerprintcapturesessionDescOriginator.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessionDescAlpnNegotiated is the schema descriptor for alpn_negotiated field.
+	tlsfingerprintcapturesessionDescAlpnNegotiated := tlsfingerprintcapturesessionFields[6].Descriptor()
+	// tlsfingerprintcapturesession.DefaultAlpnNegotiated holds the default value on creation for the alpn_negotiated field.
+	tlsfingerprintcapturesession.DefaultAlpnNegotiated = tlsfingerprintcapturesessionDescAlpnNegotiated.Default.(string)
+	// tlsfingerprintcapturesession.AlpnNegotiatedValidator is a validator for the "alpn_negotiated" field. It is called by the builders before save.
+	tlsfingerprintcapturesession.AlpnNegotiatedValidator = tlsfingerprintcapturesessionDescAlpnNegotiated.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessionDescObservedClientHello is the schema descriptor for observed_client_hello field.
+	tlsfingerprintcapturesessionDescObservedClientHello := tlsfingerprintcapturesessionFields[8].Descriptor()
+	// tlsfingerprintcapturesession.DefaultObservedClientHello holds the default value on creation for the observed_client_hello field.
+	tlsfingerprintcapturesession.DefaultObservedClientHello = tlsfingerprintcapturesessionDescObservedClientHello.Default.(func() map[string]interface{})
+	// tlsfingerprintcapturesessionDescReplayProfile is the schema descriptor for replay_profile field.
+	tlsfingerprintcapturesessionDescReplayProfile := tlsfingerprintcapturesessionFields[9].Descriptor()
+	// tlsfingerprintcapturesession.DefaultReplayProfile holds the default value on creation for the replay_profile field.
+	tlsfingerprintcapturesession.DefaultReplayProfile = tlsfingerprintcapturesessionDescReplayProfile.Default.(func() map[string]interface{})
+	// tlsfingerprintcapturesessionDescDerivedFingerprint is the schema descriptor for derived_fingerprint field.
+	tlsfingerprintcapturesessionDescDerivedFingerprint := tlsfingerprintcapturesessionFields[10].Descriptor()
+	// tlsfingerprintcapturesession.DefaultDerivedFingerprint holds the default value on creation for the derived_fingerprint field.
+	tlsfingerprintcapturesession.DefaultDerivedFingerprint = tlsfingerprintcapturesessionDescDerivedFingerprint.Default.(func() map[string]interface{})
+	// tlsfingerprintcapturesessionDescSessionStatus is the schema descriptor for session_status field.
+	tlsfingerprintcapturesessionDescSessionStatus := tlsfingerprintcapturesessionFields[11].Descriptor()
+	// tlsfingerprintcapturesession.DefaultSessionStatus holds the default value on creation for the session_status field.
+	tlsfingerprintcapturesession.DefaultSessionStatus = tlsfingerprintcapturesessionDescSessionStatus.Default.(string)
+	// tlsfingerprintcapturesession.SessionStatusValidator is a validator for the "session_status" field. It is called by the builders before save.
+	tlsfingerprintcapturesession.SessionStatusValidator = tlsfingerprintcapturesessionDescSessionStatus.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessionDescErrorSummary is the schema descriptor for error_summary field.
+	tlsfingerprintcapturesessionDescErrorSummary := tlsfingerprintcapturesessionFields[12].Descriptor()
+	// tlsfingerprintcapturesession.DefaultErrorSummary holds the default value on creation for the error_summary field.
+	tlsfingerprintcapturesession.DefaultErrorSummary = tlsfingerprintcapturesessionDescErrorSummary.Default.(string)
+	tlsfingerprintcapturesessioneventMixin := schema.TLSFingerprintCaptureSessionEvent{}.Mixin()
+	tlsfingerprintcapturesessioneventMixinFields0 := tlsfingerprintcapturesessioneventMixin[0].Fields()
+	_ = tlsfingerprintcapturesessioneventMixinFields0
+	tlsfingerprintcapturesessioneventFields := schema.TLSFingerprintCaptureSessionEvent{}.Fields()
+	_ = tlsfingerprintcapturesessioneventFields
+	// tlsfingerprintcapturesessioneventDescCreatedAt is the schema descriptor for created_at field.
+	tlsfingerprintcapturesessioneventDescCreatedAt := tlsfingerprintcapturesessioneventMixinFields0[0].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	tlsfingerprintcapturesessionevent.DefaultCreatedAt = tlsfingerprintcapturesessioneventDescCreatedAt.Default.(func() time.Time)
+	// tlsfingerprintcapturesessioneventDescUpdatedAt is the schema descriptor for updated_at field.
+	tlsfingerprintcapturesessioneventDescUpdatedAt := tlsfingerprintcapturesessioneventMixinFields0[1].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	tlsfingerprintcapturesessionevent.DefaultUpdatedAt = tlsfingerprintcapturesessioneventDescUpdatedAt.Default.(func() time.Time)
+	// tlsfingerprintcapturesessionevent.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	tlsfingerprintcapturesessionevent.UpdateDefaultUpdatedAt = tlsfingerprintcapturesessioneventDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// tlsfingerprintcapturesessioneventDescSessionID is the schema descriptor for session_id field.
+	tlsfingerprintcapturesessioneventDescSessionID := tlsfingerprintcapturesessioneventFields[2].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultSessionID holds the default value on creation for the session_id field.
+	tlsfingerprintcapturesessionevent.DefaultSessionID = tlsfingerprintcapturesessioneventDescSessionID.Default.(string)
+	// tlsfingerprintcapturesessionevent.SessionIDValidator is a validator for the "session_id" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.SessionIDValidator = tlsfingerprintcapturesessioneventDescSessionID.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessioneventDescEventID is the schema descriptor for event_id field.
+	tlsfingerprintcapturesessioneventDescEventID := tlsfingerprintcapturesessioneventFields[3].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultEventID holds the default value on creation for the event_id field.
+	tlsfingerprintcapturesessionevent.DefaultEventID = tlsfingerprintcapturesessioneventDescEventID.Default.(string)
+	// tlsfingerprintcapturesessionevent.EventIDValidator is a validator for the "event_id" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.EventIDValidator = tlsfingerprintcapturesessioneventDescEventID.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessioneventDescPlatform is the schema descriptor for platform field.
+	tlsfingerprintcapturesessioneventDescPlatform := tlsfingerprintcapturesessioneventFields[4].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultPlatform holds the default value on creation for the platform field.
+	tlsfingerprintcapturesessionevent.DefaultPlatform = tlsfingerprintcapturesessioneventDescPlatform.Default.(string)
+	// tlsfingerprintcapturesessionevent.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.PlatformValidator = tlsfingerprintcapturesessioneventDescPlatform.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessioneventDescTransport is the schema descriptor for transport field.
+	tlsfingerprintcapturesessioneventDescTransport := tlsfingerprintcapturesessioneventFields[5].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultTransport holds the default value on creation for the transport field.
+	tlsfingerprintcapturesessionevent.DefaultTransport = tlsfingerprintcapturesessioneventDescTransport.Default.(string)
+	// tlsfingerprintcapturesessionevent.TransportValidator is a validator for the "transport" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.TransportValidator = tlsfingerprintcapturesessioneventDescTransport.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessioneventDescEventType is the schema descriptor for event_type field.
+	tlsfingerprintcapturesessioneventDescEventType := tlsfingerprintcapturesessioneventFields[6].Descriptor()
+	// tlsfingerprintcapturesessionevent.EventTypeValidator is a validator for the "event_type" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.EventTypeValidator = func() func(string) error {
+		validators := tlsfingerprintcapturesessioneventDescEventType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(event_type string) error {
+			for _, fn := range fns {
+				if err := fn(event_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// tlsfingerprintcapturesessioneventDescRequestSequence is the schema descriptor for request_sequence field.
+	tlsfingerprintcapturesessioneventDescRequestSequence := tlsfingerprintcapturesessioneventFields[7].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultRequestSequence holds the default value on creation for the request_sequence field.
+	tlsfingerprintcapturesessionevent.DefaultRequestSequence = tlsfingerprintcapturesessioneventDescRequestSequence.Default.(int)
+	// tlsfingerprintcapturesessioneventDescStreamID is the schema descriptor for stream_id field.
+	tlsfingerprintcapturesessioneventDescStreamID := tlsfingerprintcapturesessioneventFields[8].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultStreamID holds the default value on creation for the stream_id field.
+	tlsfingerprintcapturesessionevent.DefaultStreamID = tlsfingerprintcapturesessioneventDescStreamID.Default.(string)
+	// tlsfingerprintcapturesessionevent.StreamIDValidator is a validator for the "stream_id" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.StreamIDValidator = tlsfingerprintcapturesessioneventDescStreamID.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessioneventDescRequestPath is the schema descriptor for request_path field.
+	tlsfingerprintcapturesessioneventDescRequestPath := tlsfingerprintcapturesessioneventFields[9].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultRequestPath holds the default value on creation for the request_path field.
+	tlsfingerprintcapturesessionevent.DefaultRequestPath = tlsfingerprintcapturesessioneventDescRequestPath.Default.(string)
+	// tlsfingerprintcapturesessioneventDescHTTPMethod is the schema descriptor for http_method field.
+	tlsfingerprintcapturesessioneventDescHTTPMethod := tlsfingerprintcapturesessioneventFields[10].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultHTTPMethod holds the default value on creation for the http_method field.
+	tlsfingerprintcapturesessionevent.DefaultHTTPMethod = tlsfingerprintcapturesessioneventDescHTTPMethod.Default.(string)
+	// tlsfingerprintcapturesessionevent.HTTPMethodValidator is a validator for the "http_method" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.HTTPMethodValidator = tlsfingerprintcapturesessioneventDescHTTPMethod.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessioneventDescIsWebsocket is the schema descriptor for is_websocket field.
+	tlsfingerprintcapturesessioneventDescIsWebsocket := tlsfingerprintcapturesessioneventFields[11].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultIsWebsocket holds the default value on creation for the is_websocket field.
+	tlsfingerprintcapturesessionevent.DefaultIsWebsocket = tlsfingerprintcapturesessioneventDescIsWebsocket.Default.(bool)
+	// tlsfingerprintcapturesessioneventDescWebsocketProtocol is the schema descriptor for websocket_protocol field.
+	tlsfingerprintcapturesessioneventDescWebsocketProtocol := tlsfingerprintcapturesessioneventFields[12].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultWebsocketProtocol holds the default value on creation for the websocket_protocol field.
+	tlsfingerprintcapturesessionevent.DefaultWebsocketProtocol = tlsfingerprintcapturesessioneventDescWebsocketProtocol.Default.(string)
+	// tlsfingerprintcapturesessionevent.WebsocketProtocolValidator is a validator for the "websocket_protocol" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.WebsocketProtocolValidator = tlsfingerprintcapturesessioneventDescWebsocketProtocol.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessioneventDescClientType is the schema descriptor for client_type field.
+	tlsfingerprintcapturesessioneventDescClientType := tlsfingerprintcapturesessioneventFields[13].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultClientType holds the default value on creation for the client_type field.
+	tlsfingerprintcapturesessionevent.DefaultClientType = tlsfingerprintcapturesessioneventDescClientType.Default.(string)
+	// tlsfingerprintcapturesessionevent.ClientTypeValidator is a validator for the "client_type" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.ClientTypeValidator = tlsfingerprintcapturesessioneventDescClientType.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessioneventDescModel is the schema descriptor for model field.
+	tlsfingerprintcapturesessioneventDescModel := tlsfingerprintcapturesessioneventFields[14].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultModel holds the default value on creation for the model field.
+	tlsfingerprintcapturesessionevent.DefaultModel = tlsfingerprintcapturesessioneventDescModel.Default.(string)
+	// tlsfingerprintcapturesessionevent.ModelValidator is a validator for the "model" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.ModelValidator = tlsfingerprintcapturesessioneventDescModel.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessioneventDescRequestKind is the schema descriptor for request_kind field.
+	tlsfingerprintcapturesessioneventDescRequestKind := tlsfingerprintcapturesessioneventFields[15].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultRequestKind holds the default value on creation for the request_kind field.
+	tlsfingerprintcapturesessionevent.DefaultRequestKind = tlsfingerprintcapturesessioneventDescRequestKind.Default.(string)
+	// tlsfingerprintcapturesessionevent.RequestKindValidator is a validator for the "request_kind" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.RequestKindValidator = tlsfingerprintcapturesessioneventDescRequestKind.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessioneventDescStreaming is the schema descriptor for streaming field.
+	tlsfingerprintcapturesessioneventDescStreaming := tlsfingerprintcapturesessioneventFields[16].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultStreaming holds the default value on creation for the streaming field.
+	tlsfingerprintcapturesessionevent.DefaultStreaming = tlsfingerprintcapturesessioneventDescStreaming.Default.(bool)
+	// tlsfingerprintcapturesessioneventDescResponseMode is the schema descriptor for response_mode field.
+	tlsfingerprintcapturesessioneventDescResponseMode := tlsfingerprintcapturesessioneventFields[17].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultResponseMode holds the default value on creation for the response_mode field.
+	tlsfingerprintcapturesessionevent.DefaultResponseMode = tlsfingerprintcapturesessioneventDescResponseMode.Default.(string)
+	// tlsfingerprintcapturesessionevent.ResponseModeValidator is a validator for the "response_mode" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.ResponseModeValidator = tlsfingerprintcapturesessioneventDescResponseMode.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessioneventDescUserAgent is the schema descriptor for user_agent field.
+	tlsfingerprintcapturesessioneventDescUserAgent := tlsfingerprintcapturesessioneventFields[18].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultUserAgent holds the default value on creation for the user_agent field.
+	tlsfingerprintcapturesessionevent.DefaultUserAgent = tlsfingerprintcapturesessioneventDescUserAgent.Default.(string)
+	// tlsfingerprintcapturesessioneventDescOriginator is the schema descriptor for originator field.
+	tlsfingerprintcapturesessioneventDescOriginator := tlsfingerprintcapturesessioneventFields[19].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultOriginator holds the default value on creation for the originator field.
+	tlsfingerprintcapturesessionevent.DefaultOriginator = tlsfingerprintcapturesessioneventDescOriginator.Default.(string)
+	// tlsfingerprintcapturesessionevent.OriginatorValidator is a validator for the "originator" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.OriginatorValidator = tlsfingerprintcapturesessioneventDescOriginator.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessioneventDescStainlessMetadata is the schema descriptor for stainless_metadata field.
+	tlsfingerprintcapturesessioneventDescStainlessMetadata := tlsfingerprintcapturesessioneventFields[20].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultStainlessMetadata holds the default value on creation for the stainless_metadata field.
+	tlsfingerprintcapturesessionevent.DefaultStainlessMetadata = tlsfingerprintcapturesessioneventDescStainlessMetadata.Default.(func() map[string]interface{})
+	// tlsfingerprintcapturesessioneventDescHeadersSnapshot is the schema descriptor for headers_snapshot field.
+	tlsfingerprintcapturesessioneventDescHeadersSnapshot := tlsfingerprintcapturesessioneventFields[21].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultHeadersSnapshot holds the default value on creation for the headers_snapshot field.
+	tlsfingerprintcapturesessionevent.DefaultHeadersSnapshot = tlsfingerprintcapturesessioneventDescHeadersSnapshot.Default.(func() map[string]interface{})
+	// tlsfingerprintcapturesessioneventDescBodySummary is the schema descriptor for body_summary field.
+	tlsfingerprintcapturesessioneventDescBodySummary := tlsfingerprintcapturesessioneventFields[22].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultBodySummary holds the default value on creation for the body_summary field.
+	tlsfingerprintcapturesessionevent.DefaultBodySummary = tlsfingerprintcapturesessioneventDescBodySummary.Default.(string)
+	// tlsfingerprintcapturesessioneventDescRawPayload is the schema descriptor for raw_payload field.
+	tlsfingerprintcapturesessioneventDescRawPayload := tlsfingerprintcapturesessioneventFields[23].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultRawPayload holds the default value on creation for the raw_payload field.
+	tlsfingerprintcapturesessionevent.DefaultRawPayload = tlsfingerprintcapturesessioneventDescRawPayload.Default.(string)
+	// tlsfingerprintcapturesessioneventDescEventStatus is the schema descriptor for event_status field.
+	tlsfingerprintcapturesessioneventDescEventStatus := tlsfingerprintcapturesessioneventFields[24].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultEventStatus holds the default value on creation for the event_status field.
+	tlsfingerprintcapturesessionevent.DefaultEventStatus = tlsfingerprintcapturesessioneventDescEventStatus.Default.(string)
+	// tlsfingerprintcapturesessionevent.EventStatusValidator is a validator for the "event_status" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.EventStatusValidator = tlsfingerprintcapturesessioneventDescEventStatus.Validators[0].(func(string) error)
+	// tlsfingerprintcapturesessioneventDescEventError is the schema descriptor for event_error field.
+	tlsfingerprintcapturesessioneventDescEventError := tlsfingerprintcapturesessioneventFields[25].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultEventError holds the default value on creation for the event_error field.
+	tlsfingerprintcapturesessionevent.DefaultEventError = tlsfingerprintcapturesessioneventDescEventError.Default.(string)
+	// tlsfingerprintcapturesessioneventDescReplayable is the schema descriptor for replayable field.
+	tlsfingerprintcapturesessioneventDescReplayable := tlsfingerprintcapturesessioneventFields[26].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultReplayable holds the default value on creation for the replayable field.
+	tlsfingerprintcapturesessionevent.DefaultReplayable = tlsfingerprintcapturesessioneventDescReplayable.Default.(bool)
+	// tlsfingerprintcapturesessioneventDescReplayHash is the schema descriptor for replay_hash field.
+	tlsfingerprintcapturesessioneventDescReplayHash := tlsfingerprintcapturesessioneventFields[28].Descriptor()
+	// tlsfingerprintcapturesessionevent.DefaultReplayHash holds the default value on creation for the replay_hash field.
+	tlsfingerprintcapturesessionevent.DefaultReplayHash = tlsfingerprintcapturesessioneventDescReplayHash.Default.(string)
+	// tlsfingerprintcapturesessionevent.ReplayHashValidator is a validator for the "replay_hash" field. It is called by the builders before save.
+	tlsfingerprintcapturesessionevent.ReplayHashValidator = tlsfingerprintcapturesessioneventDescReplayHash.Validators[0].(func(string) error)
 	tlsfingerprintcapturetaskMixin := schema.TLSFingerprintCaptureTask{}.Mixin()
 	tlsfingerprintcapturetaskMixinFields0 := tlsfingerprintcapturetaskMixin[0].Fields()
 	_ = tlsfingerprintcapturetaskMixinFields0
@@ -2543,6 +2879,38 @@ func init() {
 			return nil
 		}
 	}()
+	// tlsfingerprintcapturetaskDescTargets is the schema descriptor for targets field.
+	tlsfingerprintcapturetaskDescTargets := tlsfingerprintcapturetaskFields[3].Descriptor()
+	// tlsfingerprintcapturetask.DefaultTargets holds the default value on creation for the targets field.
+	tlsfingerprintcapturetask.DefaultTargets = tlsfingerprintcapturetaskDescTargets.Default.(func() map[string]int)
+	// tlsfingerprintcapturetaskDescCounts is the schema descriptor for counts field.
+	tlsfingerprintcapturetaskDescCounts := tlsfingerprintcapturetaskFields[4].Descriptor()
+	// tlsfingerprintcapturetask.DefaultCounts holds the default value on creation for the counts field.
+	tlsfingerprintcapturetask.DefaultCounts = tlsfingerprintcapturetaskDescCounts.Default.(func() map[string]int)
+	// tlsfingerprintcapturetaskDescTransportTargets is the schema descriptor for transport_targets field.
+	tlsfingerprintcapturetaskDescTransportTargets := tlsfingerprintcapturetaskFields[5].Descriptor()
+	// tlsfingerprintcapturetask.DefaultTransportTargets holds the default value on creation for the transport_targets field.
+	tlsfingerprintcapturetask.DefaultTransportTargets = tlsfingerprintcapturetaskDescTransportTargets.Default.(func() map[string]int)
+	// tlsfingerprintcapturetaskDescTransportCounts is the schema descriptor for transport_counts field.
+	tlsfingerprintcapturetaskDescTransportCounts := tlsfingerprintcapturetaskFields[6].Descriptor()
+	// tlsfingerprintcapturetask.DefaultTransportCounts holds the default value on creation for the transport_counts field.
+	tlsfingerprintcapturetask.DefaultTransportCounts = tlsfingerprintcapturetaskDescTransportCounts.Default.(func() map[string]int)
+	// tlsfingerprintcapturetaskDescCaptureFilters is the schema descriptor for capture_filters field.
+	tlsfingerprintcapturetaskDescCaptureFilters := tlsfingerprintcapturetaskFields[7].Descriptor()
+	// tlsfingerprintcapturetask.DefaultCaptureFilters holds the default value on creation for the capture_filters field.
+	tlsfingerprintcapturetask.DefaultCaptureFilters = tlsfingerprintcapturetaskDescCaptureFilters.Default.(func() map[string]interface{})
+	// tlsfingerprintcapturetaskDescSampleSchemaVersion is the schema descriptor for sample_schema_version field.
+	tlsfingerprintcapturetaskDescSampleSchemaVersion := tlsfingerprintcapturetaskFields[8].Descriptor()
+	// tlsfingerprintcapturetask.DefaultSampleSchemaVersion holds the default value on creation for the sample_schema_version field.
+	tlsfingerprintcapturetask.DefaultSampleSchemaVersion = tlsfingerprintcapturetaskDescSampleSchemaVersion.Default.(int)
+	// tlsfingerprintcapturetaskDescTaskStats is the schema descriptor for task_stats field.
+	tlsfingerprintcapturetaskDescTaskStats := tlsfingerprintcapturetaskFields[9].Descriptor()
+	// tlsfingerprintcapturetask.DefaultTaskStats holds the default value on creation for the task_stats field.
+	tlsfingerprintcapturetask.DefaultTaskStats = tlsfingerprintcapturetaskDescTaskStats.Default.(func() map[string]interface{})
+	// tlsfingerprintcapturetaskDescUaKeywords is the schema descriptor for ua_keywords field.
+	tlsfingerprintcapturetaskDescUaKeywords := tlsfingerprintcapturetaskFields[10].Descriptor()
+	// tlsfingerprintcapturetask.DefaultUaKeywords holds the default value on creation for the ua_keywords field.
+	tlsfingerprintcapturetask.DefaultUaKeywords = tlsfingerprintcapturetaskDescUaKeywords.Default.(func() []string)
 	tlsfingerprintprofileMixin := schema.TLSFingerprintProfile{}.Mixin()
 	tlsfingerprintprofileMixinFields0 := tlsfingerprintprofileMixin[0].Fields()
 	_ = tlsfingerprintprofileMixinFields0

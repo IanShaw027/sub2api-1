@@ -41,10 +41,27 @@ func (TLSFingerprintCaptureTask) Fields() []ent.Field {
 			NotEmpty().
 			Unique(),
 		field.JSON("targets", map[string]int{}).
+			Default(func() map[string]int { return map[string]int{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.JSON("counts", map[string]int{}).
+			Default(func() map[string]int { return map[string]int{} }).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+		field.JSON("transport_targets", map[string]int{}).
+			Default(func() map[string]int { return map[string]int{} }).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+		field.JSON("transport_counts", map[string]int{}).
+			Default(func() map[string]int { return map[string]int{} }).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+		field.JSON("capture_filters", map[string]any{}).
+			Default(func() map[string]any { return map[string]any{} }).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+		field.Int("sample_schema_version").
+			Default(2),
+		field.JSON("task_stats", map[string]any{}).
+			Default(func() map[string]any { return map[string]any{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.JSON("ua_keywords", []string{}).
+			Default(func() []string { return []string{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.Time("completed_at").
 			Optional().

@@ -146,6 +146,25 @@ export async function testProxy(id: number): Promise<{
   return data
 }
 
+export async function batchTestAllFiltered(filters?: {
+  protocol?: string
+  status?: 'active' | 'inactive' | 'expired'
+  search?: string
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
+}): Promise<{
+  total: number
+  success: number
+  failed: number
+}> {
+  const { data } = await apiClient.post<{
+    total: number
+    success: number
+    failed: number
+  }>('/admin/proxies/batch-test', filters ?? {})
+  return data
+}
+
 /**
  * Check proxy quality across common AI targets
  * @param id - Proxy ID
@@ -153,6 +172,29 @@ export async function testProxy(id: number): Promise<{
  */
 export async function checkProxyQuality(id: number): Promise<ProxyQualityCheckResult> {
   const { data } = await apiClient.post<ProxyQualityCheckResult>(`/admin/proxies/${id}/quality-check`)
+  return data
+}
+
+export async function batchQualityCheckAllFiltered(filters?: {
+  protocol?: string
+  status?: 'active' | 'inactive' | 'expired'
+  search?: string
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
+}): Promise<{
+  total: number
+  healthy: number
+  warn: number
+  challenge: number
+  failed: number
+}> {
+  const { data } = await apiClient.post<{
+    total: number
+    healthy: number
+    warn: number
+    challenge: number
+    failed: number
+  }>('/admin/proxies/batch-quality-check', filters ?? {})
   return data
 }
 
@@ -265,7 +307,9 @@ export const proxiesAPI = {
   delete: deleteProxy,
   toggleStatus,
   testProxy,
+  batchTestAllFiltered,
   checkProxyQuality,
+  batchQualityCheckAllFiltered,
   getStats,
   getProxyAccounts,
   batchCreate,
