@@ -509,6 +509,10 @@ type GatewayCache interface {
 	// DeleteSessionAccountID 删除粘性会话绑定，用于账号不可用时主动清理
 	// Delete sticky session binding, used to proactively clean up when account becomes unavailable
 	DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error
+
+	GetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) ([]byte, error)
+	SetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, payload []byte, ttl time.Duration) error
+	DeleteOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) error
 }
 
 // derefGroupID safely dereferences *int64 to int64, returning 0 if nil

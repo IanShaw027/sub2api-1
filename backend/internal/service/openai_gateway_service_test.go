@@ -1227,8 +1227,10 @@ func (c stubConcurrencyCache) GetAccountWaitingCount(ctx context.Context, accoun
 }
 
 type stubGatewayCache struct {
-	sessionBindings map[string]int64
-	deletedSessions map[string]int
+	sessionBindings      map[string]int64
+	deletedSessions      map[string]int
+	sessionWindowPayload map[string][]byte
+	deletedWindows       map[string]int
 }
 
 func (c *stubGatewayCache) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
@@ -1259,6 +1261,33 @@ func (c *stubGatewayCache) DeleteSessionAccountID(ctx context.Context, groupID i
 	}
 	c.deletedSessions[sessionHash]++
 	delete(c.sessionBindings, sessionHash)
+	return nil
+}
+
+func (c *stubGatewayCache) GetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) ([]byte, error) {
+	if payload, ok := c.sessionWindowPayload[sessionHash]; ok {
+		return append([]byte(nil), payload...), nil
+	}
+	return nil, errors.New("not found")
+}
+
+func (c *stubGatewayCache) SetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, payload []byte, ttl time.Duration) error {
+	if c.sessionWindowPayload == nil {
+		c.sessionWindowPayload = make(map[string][]byte)
+	}
+	c.sessionWindowPayload[sessionHash] = append([]byte(nil), payload...)
+	return nil
+}
+
+func (c *stubGatewayCache) DeleteOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) error {
+	if c.sessionWindowPayload == nil {
+		return nil
+	}
+	if c.deletedWindows == nil {
+		c.deletedWindows = make(map[string]int)
+	}
+	c.deletedWindows[sessionHash]++
+	delete(c.sessionWindowPayload, sessionHash)
 	return nil
 }
 

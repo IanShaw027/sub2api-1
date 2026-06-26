@@ -246,8 +246,10 @@ var _ AccountRepository = (*mockAccountRepoForPlatform)(nil)
 
 // mockGatewayCacheForPlatform 单平台测试用的 cache mock
 type mockGatewayCacheForPlatform struct {
-	sessionBindings map[string]int64
-	deletedSessions map[string]int
+	sessionBindings      map[string]int64
+	deletedSessions      map[string]int
+	sessionWindowPayload map[string][]byte
+	deletedWindows       map[string]int
 }
 
 func (m *mockGatewayCacheForPlatform) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
@@ -278,6 +280,33 @@ func (m *mockGatewayCacheForPlatform) DeleteSessionAccountID(ctx context.Context
 	}
 	m.deletedSessions[sessionHash]++
 	delete(m.sessionBindings, sessionHash)
+	return nil
+}
+
+func (m *mockGatewayCacheForPlatform) GetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) ([]byte, error) {
+	if payload, ok := m.sessionWindowPayload[sessionHash]; ok {
+		return append([]byte(nil), payload...), nil
+	}
+	return nil, errors.New("not found")
+}
+
+func (m *mockGatewayCacheForPlatform) SetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, payload []byte, ttl time.Duration) error {
+	if m.sessionWindowPayload == nil {
+		m.sessionWindowPayload = make(map[string][]byte)
+	}
+	m.sessionWindowPayload[sessionHash] = append([]byte(nil), payload...)
+	return nil
+}
+
+func (m *mockGatewayCacheForPlatform) DeleteOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) error {
+	if m.sessionWindowPayload == nil {
+		return nil
+	}
+	if m.deletedWindows == nil {
+		m.deletedWindows = make(map[string]int)
+	}
+	m.deletedWindows[sessionHash]++
+	delete(m.sessionWindowPayload, sessionHash)
 	return nil
 }
 
