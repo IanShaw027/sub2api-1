@@ -28,6 +28,10 @@ const (
 	openAIWSBackgroundPingInterval  = 30 * time.Second
 	openAIWSBackgroundSweepTicker   = 30 * time.Second
 	openAIWSNeutralAcquireStaleIdle = 5 * time.Minute
+	defaultOpenAIWSDialTimeout      = 10 * time.Second
+	defaultOpenAIWSReadTimeout      = 15 * time.Minute
+	defaultOpenAIWSWriteTimeout     = 2 * time.Minute
+	openAIWSAcquireTimeoutExtra     = 2 * time.Second
 
 	openAIWSPrewarmFailureWindow   = 30 * time.Second
 	openAIWSPrewarmFailureSuppress = 2

@@ -967,8 +967,12 @@ type GatewayOpenAIWSConfig struct {
 	EventFlushBatchSize int `mapstructure:"event_flush_batch_size"`
 	// EventFlushIntervalMS: WS 流式写出最大等待时间（毫秒）；0 表示仅按 batch 触发
 	EventFlushIntervalMS int `mapstructure:"event_flush_interval_ms"`
+	// IngressPreflightPingIdleSeconds: ingress 多 turn 复用同一 WS 时，距离上轮完成超过该空闲时长才做 preflight ping
+	IngressPreflightPingIdleSeconds int `mapstructure:"ingress_preflight_ping_idle_seconds"`
 	// PrewarmCooldownMS: 连接池预热触发冷却时间（毫秒）
 	PrewarmCooldownMS int `mapstructure:"prewarm_cooldown_ms"`
+	// NeutralAcquireStaleIdleSeconds: neutral 连接在 acquire 前超过该空闲时长即视为 stale，优先重拨
+	NeutralAcquireStaleIdleSeconds int `mapstructure:"neutral_acquire_stale_idle_seconds"`
 	// FallbackCooldownSeconds: WS 回退冷却窗口，避免 WS/HTTP 抖动；0 表示关闭冷却
 	FallbackCooldownSeconds int `mapstructure:"fallback_cooldown_seconds"`
 	// RetryBackoffInitialMS: WS 重试初始退避（毫秒）；<=0 表示关闭退避
@@ -979,6 +983,8 @@ type GatewayOpenAIWSConfig struct {
 	RetryJitterRatio float64 `mapstructure:"retry_jitter_ratio"`
 	// RetryTotalBudgetMS: WS 单次请求重试总预算（毫秒）；0 表示关闭预算限制
 	RetryTotalBudgetMS int `mapstructure:"retry_total_budget_ms"`
+	// AcquireTimeoutExtraMS: acquire 在 dial 超时之外追加的预算（毫秒），覆盖复用排队/新建连接尾段
+	AcquireTimeoutExtraMS int `mapstructure:"acquire_timeout_extra_ms"`
 	// PayloadLogSampleRate: payload_schema 日志采样率（0-1）
 	PayloadLogSampleRate float64 `mapstructure:"payload_log_sample_rate"`
 
@@ -1949,12 +1955,15 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.queue_limit_per_conn", 64)
 	viper.SetDefault("gateway.openai_ws.event_flush_batch_size", 1)
 	viper.SetDefault("gateway.openai_ws.event_flush_interval_ms", 10)
+	viper.SetDefault("gateway.openai_ws.ingress_preflight_ping_idle_seconds", 20)
 	viper.SetDefault("gateway.openai_ws.prewarm_cooldown_ms", 300)
+	viper.SetDefault("gateway.openai_ws.neutral_acquire_stale_idle_seconds", 300)
 	viper.SetDefault("gateway.openai_ws.fallback_cooldown_seconds", 30)
 	viper.SetDefault("gateway.openai_ws.retry_backoff_initial_ms", 120)
 	viper.SetDefault("gateway.openai_ws.retry_backoff_max_ms", 2000)
 	viper.SetDefault("gateway.openai_ws.retry_jitter_ratio", 0.2)
 	viper.SetDefault("gateway.openai_ws.retry_total_budget_ms", 5000)
+	viper.SetDefault("gateway.openai_ws.acquire_timeout_extra_ms", 2000)
 	viper.SetDefault("gateway.openai_ws.payload_log_sample_rate", 0.2)
 	viper.SetDefault("gateway.openai_ws.lb_top_k", 7)
 	viper.SetDefault("gateway.openai_ws.sticky_session_ttl_seconds", 3600)
@@ -2725,8 +2734,14 @@ func (c *Config) Validate() error {
 	if c.Gateway.OpenAIWS.EventFlushIntervalMS < 0 {
 		return fmt.Errorf("gateway.openai_ws.event_flush_interval_ms must be non-negative")
 	}
+	if c.Gateway.OpenAIWS.IngressPreflightPingIdleSeconds < 0 {
+		return fmt.Errorf("gateway.openai_ws.ingress_preflight_ping_idle_seconds must be non-negative")
+	}
 	if c.Gateway.OpenAIWS.PrewarmCooldownMS < 0 {
 		return fmt.Errorf("gateway.openai_ws.prewarm_cooldown_ms must be non-negative")
+	}
+	if c.Gateway.OpenAIWS.NeutralAcquireStaleIdleSeconds < 0 {
+		return fmt.Errorf("gateway.openai_ws.neutral_acquire_stale_idle_seconds must be non-negative")
 	}
 	if c.Gateway.OpenAIWS.ClientReadLimitBytes <= 0 {
 		return fmt.Errorf("gateway.openai_ws.client_read_limit_bytes must be positive")
@@ -2758,6 +2773,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIWS.RetryTotalBudgetMS < 0 {
 		return fmt.Errorf("gateway.openai_ws.retry_total_budget_ms must be non-negative")
+	}
+	if c.Gateway.OpenAIWS.AcquireTimeoutExtraMS < 0 {
+		return fmt.Errorf("gateway.openai_ws.acquire_timeout_extra_ms must be non-negative")
 	}
 	if mode := strings.ToLower(strings.TrimSpace(c.Gateway.OpenAIWS.IngressModeDefault)); mode != "" {
 		switch mode {

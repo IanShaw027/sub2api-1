@@ -153,8 +153,14 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if cfg.Gateway.OpenAIWS.EventFlushIntervalMS != 10 {
 		t.Fatalf("Gateway.OpenAIWS.EventFlushIntervalMS = %d, want 10", cfg.Gateway.OpenAIWS.EventFlushIntervalMS)
 	}
+	if cfg.Gateway.OpenAIWS.IngressPreflightPingIdleSeconds != 20 {
+		t.Fatalf("Gateway.OpenAIWS.IngressPreflightPingIdleSeconds = %d, want 20", cfg.Gateway.OpenAIWS.IngressPreflightPingIdleSeconds)
+	}
 	if cfg.Gateway.OpenAIWS.PrewarmCooldownMS != 300 {
 		t.Fatalf("Gateway.OpenAIWS.PrewarmCooldownMS = %d, want 300", cfg.Gateway.OpenAIWS.PrewarmCooldownMS)
+	}
+	if cfg.Gateway.OpenAIWS.NeutralAcquireStaleIdleSeconds != 300 {
+		t.Fatalf("Gateway.OpenAIWS.NeutralAcquireStaleIdleSeconds = %d, want 300", cfg.Gateway.OpenAIWS.NeutralAcquireStaleIdleSeconds)
 	}
 	if cfg.Gateway.OpenAIWS.ClientReadLimitBytes != 64*1024*1024 {
 		t.Fatalf("Gateway.OpenAIWS.ClientReadLimitBytes = %d, want %d", cfg.Gateway.OpenAIWS.ClientReadLimitBytes, 64*1024*1024)
@@ -179,6 +185,9 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	}
 	if cfg.Gateway.OpenAIWS.RetryTotalBudgetMS != 5000 {
 		t.Fatalf("Gateway.OpenAIWS.RetryTotalBudgetMS = %d, want 5000", cfg.Gateway.OpenAIWS.RetryTotalBudgetMS)
+	}
+	if cfg.Gateway.OpenAIWS.AcquireTimeoutExtraMS != 2000 {
+		t.Fatalf("Gateway.OpenAIWS.AcquireTimeoutExtraMS = %d, want 2000", cfg.Gateway.OpenAIWS.AcquireTimeoutExtraMS)
 	}
 	if cfg.Gateway.OpenAIWS.PayloadLogSampleRate != 0.2 {
 		t.Fatalf("Gateway.OpenAIWS.PayloadLogSampleRate = %v, want 0.2", cfg.Gateway.OpenAIWS.PayloadLogSampleRate)
@@ -1903,9 +1912,24 @@ func TestValidateConfig_OpenAIWSRules(t *testing.T) {
 			wantErr: "gateway.openai_ws.payload_log_sample_rate",
 		},
 		{
+			name:    "ingress_preflight_ping_idle_seconds 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.IngressPreflightPingIdleSeconds = -1 },
+			wantErr: "gateway.openai_ws.ingress_preflight_ping_idle_seconds",
+		},
+		{
 			name:    "retry_total_budget_ms 不能为负数",
 			mutate:  func(c *Config) { c.Gateway.OpenAIWS.RetryTotalBudgetMS = -1 },
 			wantErr: "gateway.openai_ws.retry_total_budget_ms",
+		},
+		{
+			name:    "neutral_acquire_stale_idle_seconds 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.NeutralAcquireStaleIdleSeconds = -1 },
+			wantErr: "gateway.openai_ws.neutral_acquire_stale_idle_seconds",
+		},
+		{
+			name:    "acquire_timeout_extra_ms 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.AcquireTimeoutExtraMS = -1 },
+			wantErr: "gateway.openai_ws.acquire_timeout_extra_ms",
 		},
 		{
 			name:    "lb_top_k 必须为正数",
