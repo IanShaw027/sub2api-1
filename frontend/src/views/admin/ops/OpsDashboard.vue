@@ -68,7 +68,11 @@
       </div>
 
       <!-- Row: Visual Analysis (baseline 3-up grid) -->
-      <div v-if="opsEnabled && !(loading && !hasLoadedOnce)" class="grid grid-cols-1 gap-6 md:grid-cols-3">
+      <div
+        v-if="showVisualAnalysisSection"
+        ref="visualAnalysisSectionRef"
+        class="grid grid-cols-1 gap-6 md:grid-cols-3"
+      >
         <OpsLatencyChart :latency-data="latencyHistogram" :loading="loadingLatency" />
         <OpsErrorDistributionChart
           :data="errorDistribution"
@@ -85,23 +89,41 @@
       </div>
 
       <!-- Row: OpenAI Token Stats -->
-      <div v-if="shouldMountOpenAITokenStatsCard" class="grid grid-cols-1 gap-6">
+      <div
+        v-if="showOpenAITokenStatsSection"
+        ref="openAITokenStatsSectionRef"
+        class="grid grid-cols-1 gap-6"
+      >
         <AsyncOpsOpenAITokenStatsCard
+          v-if="shouldMountOpenAITokenStatsCard"
           :platform-filter="platform"
           :group-id-filter="groupId"
           :refresh-token="dashboardRefreshToken"
         />
+        <div v-else class="min-h-[160px]" />
       </div>
 
       <!-- Alert Events -->
-      <AsyncOpsAlertEventsCard v-if="shouldMountAlertEventsCard" />
+      <div
+        v-if="showAlertEventsSection"
+        ref="alertEventsSectionRef"
+      >
+        <AsyncOpsAlertEventsCard v-if="shouldMountAlertEventsCard" />
+        <div v-else class="min-h-[160px]" />
+      </div>
 
       <!-- System Logs -->
-      <AsyncOpsSystemLogTable
-        v-if="shouldMountSystemLogTable"
-        :platform-filter="platform"
-        :refresh-token="dashboardRefreshToken"
-      />
+      <div
+        v-if="showSystemLogTableSection"
+        ref="systemLogTableSectionRef"
+      >
+        <AsyncOpsSystemLogTable
+          v-if="shouldMountSystemLogTable"
+          :platform-filter="platform"
+          :refresh-token="dashboardRefreshToken"
+        />
+        <div v-else class="min-h-[160px]" />
+      </div>
 
       <!-- Settings Dialog (hidden in fullscreen mode) -->
       <template v-if="!isFullscreen">
@@ -151,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -411,6 +433,23 @@ const requestDetailsPreset = ref<OpsRequestDetailsPreset>({
 
 const showSettingsDialog = ref(false)
 const showAlertRulesCard = ref(false)
+let skipAdvancedSettingsReloadOnClose = false
+
+const visualAnalysisSectionRef = ref<HTMLElement | null>(null)
+const openAITokenStatsSectionRef = ref<HTMLElement | null>(null)
+const alertEventsSectionRef = ref<HTMLElement | null>(null)
+const systemLogTableSectionRef = ref<HTMLElement | null>(null)
+
+type DeferredPanel = 'visualAnalysis' | 'openaiTokenStats' | 'alertEvents' | 'systemLogTable'
+
+const deferredPanelMounted = reactive<Record<DeferredPanel, boolean>>({
+  visualAnalysis: false,
+  openaiTokenStats: false,
+  alertEvents: false,
+  systemLogTable: false
+})
+
+const deferredPanelObservers: Partial<Record<DeferredPanel, IntersectionObserver>> = {}
 
 applyRouteQueryToState()
 
@@ -425,17 +464,74 @@ let countdownTimer: ReturnType<typeof setInterval> | null = null
 // Used to trigger child component refreshes in a single shared cadence.
 const dashboardRefreshToken = ref(0)
 
-const shouldMountOpenAITokenStatsCard = computed(() => {
+const showVisualAnalysisSection = computed(() => {
+  return opsEnabled.value && !(loading.value && !hasLoadedOnce.value)
+})
+
+const showOpenAITokenStatsSection = computed(() => {
   return opsEnabled.value && showOpenAITokenStats.value && !(loading.value && !hasLoadedOnce.value)
 })
 
-const shouldMountAlertEventsCard = computed(() => {
+const shouldMountOpenAITokenStatsCard = computed(() => {
+  return showOpenAITokenStatsSection.value && deferredPanelMounted.openaiTokenStats
+})
+
+const showAlertEventsSection = computed(() => {
   return opsEnabled.value && showAlertEvents.value && !(loading.value && !hasLoadedOnce.value)
 })
 
-const shouldMountSystemLogTable = computed(() => {
+const shouldMountAlertEventsCard = computed(() => {
+  return showAlertEventsSection.value && deferredPanelMounted.alertEvents
+})
+
+const showSystemLogTableSection = computed(() => {
   return opsEnabled.value && !(loading.value && !hasLoadedOnce.value)
 })
+
+const shouldMountSystemLogTable = computed(() => {
+  return showSystemLogTableSection.value && deferredPanelMounted.systemLogTable
+})
+
+function detachDeferredPanelObserver(panel: DeferredPanel) {
+  deferredPanelObservers[panel]?.disconnect()
+  delete deferredPanelObservers[panel]
+}
+
+function markDeferredPanelVisible(panel: DeferredPanel) {
+  deferredPanelMounted[panel] = true
+  detachDeferredPanelObserver(panel)
+}
+
+function attachDeferredPanelObserver(
+  panel: DeferredPanel,
+  enabled: boolean,
+  target: HTMLElement | null
+) {
+  if (deferredPanelMounted[panel]) return
+  if (!enabled) {
+    detachDeferredPanelObserver(panel)
+    return
+  }
+  if (!target) return
+  if (typeof window === 'undefined' || typeof IntersectionObserver === 'undefined') {
+    markDeferredPanelVisible(panel)
+    return
+  }
+  if (deferredPanelObservers[panel]) {
+    return
+  }
+
+  deferredPanelObservers[panel] = new IntersectionObserver((entries) => {
+    if (!entries.some((entry) => entry.isIntersecting)) return
+    markDeferredPanelVisible(panel)
+  }, {
+    root: null,
+    rootMargin: '200px 0px',
+    threshold: 0.01
+  })
+
+  deferredPanelObservers[panel]?.observe(target)
+}
 
 // Countdown timer (drives auto refresh; updates every second)
 function tickAutoRefreshCountdown() {
@@ -528,6 +624,7 @@ function onCustomTimeRangeChange(startTime: string, endTime: string) {
 }
 
 async function onSettingsSaved() {
+  skipAdvancedSettingsReloadOnClose = true
   await loadDashboardAdvancedSettings()
   loadThresholds()
   fetchData()
@@ -738,6 +835,12 @@ async function refreshDeferredPanels(fetchSeq: number, signal: AbortSignal) {
   ])
 }
 
+function refreshDeferredPanelsForCurrentState() {
+  if (!opsEnabled.value || !deferredPanelMounted.visualAnalysis) return
+  const signal = dashboardFetchController?.signal ?? new AbortController().signal
+  void refreshDeferredPanels(dashboardFetchSeq, signal)
+}
+
 function isOpsDisabledError(err: unknown): boolean {
   return (
     !!err &&
@@ -775,8 +878,10 @@ async function fetchData() {
       autoRefreshCountdown.value = Math.floor(autoRefreshIntervalMs.value / 1000)
     }
 
-    // Defer non-core visual panels to reduce initial blocking.
-    void refreshDeferredPanels(fetchSeq, dashboardFetchController.signal)
+    // Defer non-core visual panels until the section has actually entered the viewport.
+    if (deferredPanelMounted.visualAnalysis) {
+      void refreshDeferredPanels(fetchSeq, dashboardFetchController.signal)
+    }
   } catch (err) {
     if (!isOpsDisabledError(err)) {
       console.error('[ops] failed to fetch dashboard data', err)
@@ -868,6 +973,10 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
   abortDashboardFetch()
   pauseCountdown()
+  detachDeferredPanelObserver('visualAnalysis')
+  detachDeferredPanelObserver('openaiTokenStats')
+  detachDeferredPanelObserver('alertEvents')
+  detachDeferredPanelObserver('systemLogTable')
   if (syncQueryTimer !== null) {
     clearTimeout(syncQueryTimer)
     syncQueryTimer = null
@@ -885,9 +994,34 @@ watch(autoRefreshEnabled, (enabled) => {
   }
 })
 
+watch([showVisualAnalysisSection, visualAnalysisSectionRef], ([enabled, target]) => {
+  attachDeferredPanelObserver('visualAnalysis', enabled, target)
+}, { flush: 'post' })
+
+watch([showOpenAITokenStatsSection, openAITokenStatsSectionRef], ([enabled, target]) => {
+  attachDeferredPanelObserver('openaiTokenStats', enabled, target)
+}, { flush: 'post' })
+
+watch([showAlertEventsSection, alertEventsSectionRef], ([enabled, target]) => {
+  attachDeferredPanelObserver('alertEvents', enabled, target)
+}, { flush: 'post' })
+
+watch([showSystemLogTableSection, systemLogTableSectionRef], ([enabled, target]) => {
+  attachDeferredPanelObserver('systemLogTable', enabled, target)
+}, { flush: 'post' })
+
+watch(() => deferredPanelMounted.visualAnalysis, (mounted) => {
+  if (!mounted) return
+  refreshDeferredPanelsForCurrentState()
+})
+
 // Reload auto refresh settings after settings dialog is closed
 watch(showSettingsDialog, async (show) => {
   if (!show) {
+    if (skipAdvancedSettingsReloadOnClose) {
+      skipAdvancedSettingsReloadOnClose = false
+      return
+    }
     await loadDashboardAdvancedSettings()
   }
 })

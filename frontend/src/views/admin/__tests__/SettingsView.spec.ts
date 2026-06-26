@@ -694,6 +694,35 @@ describe("admin SettingsView payment visible method controls", () => {
     adminSettingsFetch.mockResolvedValue(undefined);
   });
 
+  it("does not eagerly load security and gateway secondary settings before the tabs are opened", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+
+    expect(getSettings).toHaveBeenCalledTimes(1);
+    expect(getGroups).toHaveBeenCalledTimes(1);
+    expect(getAdminApiKey).not.toHaveBeenCalled();
+    expect(getOverloadCooldownSettings).not.toHaveBeenCalled();
+    expect(getRateLimit429CooldownSettings).not.toHaveBeenCalled();
+    expect(getStreamTimeoutSettings).not.toHaveBeenCalled();
+    expect(getTempUnschedThresholdSettings).not.toHaveBeenCalled();
+    expect(getRectifierSettings).not.toHaveBeenCalled();
+    expect(getBetaPolicySettings).not.toHaveBeenCalled();
+    expect(getWebSearchEmulationConfig).not.toHaveBeenCalled();
+
+    await openSecurityTab(wrapper);
+    expect(getAdminApiKey).toHaveBeenCalledTimes(1);
+
+    await openGatewayTab(wrapper);
+    expect(getOverloadCooldownSettings).toHaveBeenCalledTimes(1);
+    expect(getRateLimit429CooldownSettings).toHaveBeenCalledTimes(1);
+    expect(getStreamTimeoutSettings).toHaveBeenCalledTimes(1);
+    expect(getTempUnschedThresholdSettings).toHaveBeenCalledTimes(1);
+    expect(getRectifierSettings).toHaveBeenCalledTimes(1);
+    expect(getBetaPolicySettings).toHaveBeenCalledTimes(1);
+    expect(getWebSearchEmulationConfig).toHaveBeenCalledTimes(1);
+  });
+
   it("does not render legacy visible payment method controls", async () => {
     const wrapper = mountView();
 
