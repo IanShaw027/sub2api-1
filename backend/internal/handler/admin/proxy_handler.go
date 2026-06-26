@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
@@ -11,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/sync/errgroup"
 )
 
 // ProxyHandler handles admin proxy management
@@ -53,6 +55,34 @@ type UpdateProxyRequest struct {
 	BackupProxyID  *int64 `json:"backup_proxy_id"`
 	ExpiryWarnDays int    `json:"expiry_warn_days" binding:"omitempty,min=0"`
 }
+
+type BatchProxyFiltersRequest struct {
+	Protocol  string `json:"protocol"`
+	Status    string `json:"status" binding:"omitempty,oneof=active inactive expired"`
+	Search    string `json:"search"`
+	SortBy    string `json:"sort_by"`
+	SortOrder string `json:"sort_order" binding:"omitempty,oneof=asc desc ASC DESC"`
+}
+
+type ProxyBatchTestSummary struct {
+	Total   int `json:"total"`
+	Success int `json:"success"`
+	Failed  int `json:"failed"`
+}
+
+type ProxyBatchQualitySummary struct {
+	Total     int `json:"total"`
+	Healthy   int `json:"healthy"`
+	Warn      int `json:"warn"`
+	Challenge int `json:"challenge"`
+	Failed    int `json:"failed"`
+}
+
+const (
+	proxyBatchListPageSize       = 200
+	proxyBatchTestConcurrency    = 5
+	proxyBatchQualityConcurrency = 3
+)
 
 // List handles listing all proxies with pagination
 // GET /api/v1/admin/proxies
@@ -266,6 +296,54 @@ func (h *ProxyHandler) Test(c *gin.Context) {
 	response.Success(c, result)
 }
 
+// BatchTest handles testing all proxies that match the provided filters.
+// POST /api/v1/admin/proxies/batch-test
+func (h *ProxyHandler) BatchTest(c *gin.Context) {
+	var req BatchProxyFiltersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	filters := normalizeBatchProxyFilters(req)
+	ids, err := h.listAllFilteredProxyIDs(c.Request.Context(), filters)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	summary := ProxyBatchTestSummary{Total: len(ids)}
+	if len(ids) == 0 {
+		response.Success(c, summary)
+		return
+	}
+
+	var (
+		mu sync.Mutex
+		g  errgroup.Group
+	)
+	g.SetLimit(proxyBatchTestConcurrency)
+
+	for _, id := range ids {
+		proxyID := id
+		g.Go(func() error {
+			result, err := h.adminService.TestProxy(c.Request.Context(), proxyID)
+
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil || result == nil || !result.Success {
+				summary.Failed++
+				return nil
+			}
+			summary.Success++
+			return nil
+		})
+	}
+
+	_ = g.Wait()
+	response.Success(c, summary)
+}
+
 // CheckQuality handles checking proxy quality across common AI targets.
 // POST /api/v1/admin/proxies/:id/quality-check
 func (h *ProxyHandler) CheckQuality(c *gin.Context) {
@@ -282,6 +360,64 @@ func (h *ProxyHandler) CheckQuality(c *gin.Context) {
 	}
 
 	response.Success(c, result)
+}
+
+// BatchQualityCheck handles checking proxy quality for all proxies that match the provided filters.
+// POST /api/v1/admin/proxies/batch-quality-check
+func (h *ProxyHandler) BatchQualityCheck(c *gin.Context) {
+	var req BatchProxyFiltersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	filters := normalizeBatchProxyFilters(req)
+	ids, err := h.listAllFilteredProxyIDs(c.Request.Context(), filters)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	summary := ProxyBatchQualitySummary{Total: len(ids)}
+	if len(ids) == 0 {
+		response.Success(c, summary)
+		return
+	}
+
+	var (
+		mu sync.Mutex
+		g  errgroup.Group
+	)
+	g.SetLimit(proxyBatchQualityConcurrency)
+
+	for _, id := range ids {
+		proxyID := id
+		g.Go(func() error {
+			result, err := h.adminService.CheckProxyQuality(c.Request.Context(), proxyID)
+
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil || result == nil {
+				summary.Failed++
+				return nil
+			}
+
+			switch {
+			case result.ChallengeCount > 0:
+				summary.Challenge++
+			case result.FailedCount > 0:
+				summary.Failed++
+			case result.WarnCount > 0:
+				summary.Warn++
+			default:
+				summary.Healthy++
+			}
+			return nil
+		})
+	}
+
+	_ = g.Wait()
+	response.Success(c, summary)
 }
 
 // GetStats handles getting proxy statistics
@@ -302,6 +438,66 @@ func (h *ProxyHandler) GetStats(c *gin.Context) {
 		"success_rate":    100.0,
 		"average_latency": 0,
 	})
+}
+
+func normalizeBatchProxyFilters(req BatchProxyFiltersRequest) BatchProxyFiltersRequest {
+	req.Protocol = strings.TrimSpace(req.Protocol)
+	req.Status = strings.TrimSpace(req.Status)
+	req.Search = strings.TrimSpace(req.Search)
+	if len(req.Search) > 100 {
+		req.Search = req.Search[:100]
+	}
+	req.SortBy = strings.TrimSpace(req.SortBy)
+	if req.SortBy == "" {
+		req.SortBy = "id"
+	}
+	req.SortOrder = strings.ToLower(strings.TrimSpace(req.SortOrder))
+	if req.SortOrder != "asc" {
+		req.SortOrder = "desc"
+	}
+	return req
+}
+
+func (h *ProxyHandler) listAllFilteredProxyIDs(ctx context.Context, filters BatchProxyFiltersRequest) ([]int64, error) {
+	page := 1
+	total := int64(0)
+	ids := make([]int64, 0)
+
+	for {
+		proxies, currentTotal, err := h.adminService.ListProxies(
+			ctx,
+			page,
+			proxyBatchListPageSize,
+			filters.Protocol,
+			filters.Status,
+			filters.Search,
+			filters.SortBy,
+			filters.SortOrder,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if page == 1 {
+			total = currentTotal
+			if total > 0 {
+				ids = make([]int64, 0, total)
+			}
+		}
+		if len(proxies) == 0 {
+			break
+		}
+
+		for i := range proxies {
+			ids = append(ids, proxies[i].ID)
+		}
+
+		if int64(page*proxyBatchListPageSize) >= total {
+			break
+		}
+		page++
+	}
+
+	return ids, nil
 }
 
 // GetProxyAccounts handles getting accounts using a proxy

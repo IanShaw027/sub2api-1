@@ -5282,6 +5282,7 @@ export default {
       testFailed: 'Failed',
       latencyFailed: 'Connection failed',
       batchTestEmpty: 'No proxies available for testing',
+      batchTestAllFilteredConfirm: 'No proxies are selected. Run batch tests against all {count} proxies in the current filtered result?',
       batchTestDone: 'Batch test completed for {count} proxies',
       batchTestFailed: 'Batch test failed',
       batchDeleteAction: 'Delete',
@@ -5340,6 +5341,7 @@ export default {
       proxyTestFailed: 'Proxy test failed',
       qualityCheckDone: 'Quality check completed: score {score} ({grade})',
       qualityCheckFailed: 'Failed to run proxy quality check',
+      batchQualityAllFilteredConfirm: 'No proxies are selected. Run batch quality checks against all {count} proxies in the current filtered result?',
       batchQualityDone:
         'Batch quality check completed for {count} proxies: healthy {healthy}, warn {warn}, challenge {challenge}, abnormal {failed}',
       batchQualityFailed: 'Batch quality check failed',

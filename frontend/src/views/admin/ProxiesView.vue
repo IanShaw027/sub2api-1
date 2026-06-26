@@ -820,6 +820,24 @@
       @cancel="showBatchDeleteDialog = false"
     />
     <ConfirmDialog
+      :show="showBatchTestConfirmDialog"
+      :title="t('admin.proxies.testConnection')"
+      :message="t('admin.proxies.batchTestAllFilteredConfirm', { count: pagination.total })"
+      :confirm-text="t('common.confirm')"
+      :cancel-text="t('common.cancel')"
+      @confirm="confirmBatchTestAllFiltered"
+      @cancel="showBatchTestConfirmDialog = false"
+    />
+    <ConfirmDialog
+      :show="showBatchQualityConfirmDialog"
+      :title="t('admin.proxies.batchQualityCheck')"
+      :message="t('admin.proxies.batchQualityAllFilteredConfirm', { count: pagination.total })"
+      :confirm-text="t('common.confirm')"
+      :cancel-text="t('common.cancel')"
+      @confirm="confirmBatchQualityAllFiltered"
+      @cancel="showBatchQualityConfirmDialog = false"
+    />
+    <ConfirmDialog
       :show="showExportDataDialog"
       :title="t('admin.proxies.dataExport')"
       :message="t('admin.proxies.dataExportConfirmMessage')"
@@ -959,7 +977,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
@@ -1061,6 +1079,8 @@ const editPasswordDirty = ref(false)
 const showImportData = ref(false)
 const showDeleteDialog = ref(false)
 const showBatchDeleteDialog = ref(false)
+const showBatchTestConfirmDialog = ref(false)
+const showBatchQualityConfirmDialog = ref(false)
 const showExportDataDialog = ref(false)
 const showAccountsModal = ref(false)
 const submitting = ref(false)
@@ -1145,13 +1165,20 @@ const editForm = reactive({
 })
 
 const allProxiesForBackup = ref<Proxy[]>([])
+const backupProxyOptionsLoaded = ref(false)
 const loadBackupProxyOptions = async () => {
   allProxiesForBackup.value = await adminAPI.proxies.getAllWithCount()
+  backupProxyOptionsLoaded.value = true
 }
 const backupProxyOptions = (excludeId?: number) =>
   allProxiesForBackup.value
     .filter(p => p.id !== excludeId)
     .map(p => ({ label: `${p.name} (${p.host}:${p.port})`, value: p.id }))
+
+const ensureBackupProxyOptionsLoaded = async () => {
+  if (backupProxyOptionsLoaded.value) return
+  await loadBackupProxyOptions()
+}
 
 let abortController: AbortController | null = null
 
@@ -1439,6 +1466,12 @@ const closeEditModal = () => {
   editPasswordVisible.value = false
   editPasswordDirty.value = false
 }
+
+watch([showCreateModal, showEditModal], ([createOpen, editOpen]) => {
+  if (createOpen || editOpen) {
+    void ensureBackupProxyOptionsLoaded()
+  }
+})
 
 const handleUpdateProxy = async () => {
   if (!editingProxy.value) return
@@ -1815,32 +1848,6 @@ const qualityTargetLabel = (target: string) => {
   }
 }
 
-const fetchAllProxiesForBatch = async (): Promise<Proxy[]> => {
-  const pageSize = 200
-  const result: Proxy[] = []
-  let page = 1
-  let totalPages = 1
-
-  while (page <= totalPages) {
-    const response = await adminAPI.proxies.list(
-      page,
-      pageSize,
-      {
-        protocol: filters.protocol || undefined,
-        status: filters.status as any,
-        search: searchQuery.value || undefined,
-        sort_by: sortState.sort_by,
-        sort_order: sortState.sort_order
-      }
-    )
-    result.push(...response.items)
-    totalPages = response.pages || 1
-    page++
-  }
-
-  return result
-}
-
 const runBatchProxyTests = async (ids: number[]) => {
   if (ids.length === 0) return
   const concurrency = 5
@@ -1858,19 +1865,11 @@ const runBatchProxyTests = async (ids: number[]) => {
   await Promise.all(workers)
 }
 
-const handleBatchTest = async () => {
+const executeBatchTest = async (ids: number[]) => {
   if (batchTesting.value) return
 
   batchTesting.value = true
   try {
-    let ids: number[] = []
-    if (selectedCount.value > 0) {
-      ids = Array.from(selectedProxyIds.value)
-    } else {
-      const allProxies = await fetchAllProxiesForBatch()
-      ids = allProxies.map((proxy) => proxy.id)
-    }
-
     if (ids.length === 0) {
       appStore.showInfo(t('admin.proxies.batchTestEmpty'))
       return
@@ -1887,19 +1886,11 @@ const handleBatchTest = async () => {
   }
 }
 
-const handleBatchQualityCheck = async () => {
+const executeBatchQualityCheck = async (ids: number[]) => {
   if (batchQualityChecking.value) return
 
   batchQualityChecking.value = true
   try {
-    let ids: number[] = []
-    if (selectedCount.value > 0) {
-      ids = Array.from(selectedProxyIds.value)
-    } else {
-      const allProxies = await fetchAllProxiesForBatch()
-      ids = allProxies.map((proxy) => proxy.id)
-    }
-
     if (ids.length === 0) {
       appStore.showInfo(t('admin.proxies.batchQualityEmpty'))
       return
@@ -1919,6 +1910,74 @@ const handleBatchQualityCheck = async () => {
   } catch (error: any) {
     appStore.showError(error.response?.data?.detail || t('admin.proxies.batchQualityFailed'))
     console.error('Error batch checking quality:', error)
+  } finally {
+    batchQualityChecking.value = false
+  }
+}
+
+const handleBatchTest = async () => {
+  if (batchTesting.value) return
+  if (selectedCount.value === 0) {
+    showBatchTestConfirmDialog.value = true
+    return
+  }
+  await executeBatchTest(Array.from(selectedProxyIds.value))
+}
+
+const confirmBatchTestAllFiltered = async () => {
+  showBatchTestConfirmDialog.value = false
+  if (batchTesting.value) return
+
+  batchTesting.value = true
+  try {
+    const summary = await adminAPI.proxies.batchTestAllFiltered(buildProxyQueryFilters())
+    if (summary.total === 0) {
+      appStore.showInfo(t('admin.proxies.batchTestEmpty'))
+      return
+    }
+    appStore.showSuccess(t('admin.proxies.batchTestDone', { count: summary.total }))
+    loadProxies()
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('admin.proxies.batchTestFailed'))
+    console.error('Error batch testing filtered proxies:', error)
+  } finally {
+    batchTesting.value = false
+  }
+}
+
+const handleBatchQualityCheck = async () => {
+  if (batchQualityChecking.value) return
+  if (selectedCount.value === 0) {
+    showBatchQualityConfirmDialog.value = true
+    return
+  }
+  await executeBatchQualityCheck(Array.from(selectedProxyIds.value))
+}
+
+const confirmBatchQualityAllFiltered = async () => {
+  showBatchQualityConfirmDialog.value = false
+  if (batchQualityChecking.value) return
+
+  batchQualityChecking.value = true
+  try {
+    const summary = await adminAPI.proxies.batchQualityCheckAllFiltered(buildProxyQueryFilters())
+    if (summary.total === 0) {
+      appStore.showInfo(t('admin.proxies.batchQualityEmpty'))
+      return
+    }
+    appStore.showSuccess(
+      t('admin.proxies.batchQualityDone', {
+        count: summary.total,
+        healthy: summary.healthy,
+        warn: summary.warn,
+        challenge: summary.challenge,
+        failed: summary.failed
+      })
+    )
+    loadProxies()
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('admin.proxies.batchQualityFailed'))
+    console.error('Error batch checking filtered proxy quality:', error)
   } finally {
     batchQualityChecking.value = false
   }
@@ -2088,7 +2147,6 @@ function closeCopyMenu() {
 
 onMounted(() => {
   loadProxies()
-  loadBackupProxyOptions()
   document.addEventListener('click', closeCopyMenu)
 })
 
