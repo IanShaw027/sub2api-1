@@ -962,7 +962,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthColdSessionUsesNeutralIdleConn(t
 	require.Equal(t, openAIWSConnProfileSessionBound, profile)
 }
 
-func TestOpenAIGatewayService_Forward_WSv2AccountOnlyPreviousResponseContinuesOnFreshConn(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2AccountOnlyPreviousResponseFallsBackFullAndCanUseNeutralIdle(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -1057,18 +1057,18 @@ func TestOpenAIGatewayService_Forward_WSv2AccountOnlyPreviousResponseContinuesOn
 	require.NotNil(t, result)
 	require.Equal(t, "resp_reused_neutral_should_not_use", result.RequestID)
 	require.Equal(t, "session_bound", result.OpenAIWSProfile)
-	require.Nil(t, upstream.lastReq, "account-only previous_response_id continuation must stay on WS, not HTTP fallback")
-	require.Equal(t, 2, dialer.DialCount(), "sticky account 命中但无 conn 绑定时应允许 fresh conn continuation")
+	require.Nil(t, upstream.lastReq, "account-only previous_response_id downgrade must stay on WS, not HTTP fallback")
+	require.Equal(t, 2, dialer.DialCount(), "当前 strict store=false 语义下，降级为 full create 后仍会新建 session-bound 连接")
 
 	neutralSeed.mu.Lock()
 	neutralWrites := append([]map[string]any(nil), neutralSeed.writes...)
 	neutralSeed.mu.Unlock()
 	require.Len(t, neutralWrites, 1)
-	continuationWrite := requestToJSONString(neutralWrites[0])
-	require.Equal(t, "resp_missing", gjson.Get(continuationWrite, "previous_response_id").String(), "account-only binding should keep previous_response_id on the fresh WS")
-	require.True(t, gjson.Get(continuationWrite, "store").Exists())
-	require.False(t, gjson.Get(continuationWrite, "store").Bool())
-	require.Equal(t, "hello", gjson.Get(continuationWrite, "input.0.text").String())
+	fullCreateWrite := requestToJSONString(neutralWrites[0])
+	require.False(t, gjson.Get(fullCreateWrite, "previous_response_id").Exists(), "account-only binding must not be continued on a new WS")
+	require.True(t, gjson.Get(fullCreateWrite, "store").Exists())
+	require.False(t, gjson.Get(fullCreateWrite, "store").Bool())
+	require.Equal(t, "hello", gjson.Get(fullCreateWrite, "input.0.text").String())
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_SameSessionPreemptsInFlightRequest(t *testing.T) {
@@ -1291,7 +1291,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthUnboundPreviousResponseFallsBack
 	require.Equal(t, "full replay from client", gjson.Get(secondWrite, "input.0.text").String())
 }
 
-func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyAccountWithoutConnContinuesOnNewConn(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyAccountWithoutConnFallsBackFullOnNewConn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -1393,9 +1393,9 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyAccountWithoutConnContinue
 	secondConn.mu.Unlock()
 	require.Len(t, secondWrites, 1)
 	secondWrite := requestToJSONString(secondWrites[0])
-	require.Equal(t, "resp_oauth_account_only_prev", gjson.Get(secondWrite, "previous_response_id").String(), "account-only binding should keep previous_response_id without conn affinity")
+	require.False(t, gjson.Get(secondWrite, "previous_response_id").Exists(), "account-only binding must not be continued without conn affinity")
 	require.True(t, gjson.Get(secondWrite, "store").Exists())
-	require.False(t, gjson.Get(secondWrite, "store").Bool(), "account-only binding must stay on store=false incremental semantics")
+	require.False(t, gjson.Get(secondWrite, "store").Bool(), "account-only binding must downgrade to store=false full create")
 	require.Equal(t, "delta only", gjson.Get(secondWrite, "input.0.text").String())
 }
 
