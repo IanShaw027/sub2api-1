@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -54,6 +55,59 @@ func TestWriteGatewayDebugTimelineEventRecoversAfterInitFailure(t *testing.T) {
 	content := readGatewayDebugTimelineLog(t, dir)
 	if !strings.Contains(content, `"stage":"after_recover"`) {
 		t.Fatalf("expected recovered log to contain stage, got %s", content)
+	}
+}
+
+func TestWriteGatewayDebugTimelineEventCleansOldFilesWhenSizeLimitReached(t *testing.T) {
+	resetGatewayDebugTimelineStateForTest(t)
+
+	dir := filepath.Join(t.TempDir(), "timeline")
+	settingService := testGatewayDebugTimelineSettingService(t, dir)
+	repo := settingService.settingRepo
+	if repo == nil {
+		t.Fatal("expected setting repo")
+	}
+	if err := repo.SetMultiple(context.TODO(), map[string]string{
+		SettingKeyGatewayDebugTimelineMaxSizeMB: "1",
+	}); err != nil {
+		t.Fatalf("seed gateway debug timeline size setting: %v", err)
+	}
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir timeline dir: %v", err)
+	}
+	oldestGzipName := gatewayDebugTimelineFilenamePrefix + time.Now().AddDate(0, 0, -3).Format("2006-01-02") + ".log.gz"
+	olderLogName := gatewayDebugTimelineFilenamePrefix + time.Now().AddDate(0, 0, -2).Format("2006-01-02") + ".log"
+	newerLogName := gatewayDebugTimelineFilenamePrefix + time.Now().AddDate(0, 0, -1).Format("2006-01-02") + ".log"
+	writeGatewayDebugTimelineSizedFile(t, dir, oldestGzipName, 200*1024)
+	writeGatewayDebugTimelineSizedFile(t, dir, olderLogName, 700*1024)
+	writeGatewayDebugTimelineSizedFile(t, dir, newerLogName, 400*1024)
+
+	WriteGatewayDebugTimelineEvent(settingService, nil, "after_cleanup", map[string]any{"component": "test"})
+	WriteGatewayDebugTimelineEvent(settingService, nil, "follow_up", map[string]any{"component": "test"})
+
+	content := readGatewayDebugTimelineLog(t, dir)
+	if !strings.Contains(content, `"stage":"after_cleanup"`) {
+		t.Fatalf("expected size-pressure cleanup to preserve current write, got %s", content)
+	}
+	if !strings.Contains(content, `"stage":"follow_up"`) {
+		t.Fatalf("expected timeline to remain writable after cleanup, got %s", content)
+	}
+	if _, err := os.Stat(filepath.Join(dir, oldestGzipName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected oldest gzip file to be removed, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, olderLogName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected older log file to be removed after gzip cleanup was insufficient, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, newerLogName)); err != nil {
+		t.Fatalf("expected newer file to remain after cleanup, got err=%v", err)
+	}
+
+	gatewayDebugTimelineState.Lock()
+	disabled := gatewayDebugTimelineState.disabled
+	gatewayDebugTimelineState.Unlock()
+	if disabled {
+		t.Fatal("expected timeline writer to stay enabled after cleanup")
 	}
 }
 
@@ -340,6 +394,15 @@ func resetGatewayDebugTimelineStateForTest(t *testing.T) {
 		settings:  DefaultGatewayDebugTimelineSettings(),
 		expiresAt: 0,
 	})
+}
+
+func writeGatewayDebugTimelineSizedFile(t *testing.T, dir, name string, size int) {
+	t.Helper()
+
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, bytes.Repeat([]byte("x"), size), 0o644); err != nil {
+		t.Fatalf("write sized timeline file %s: %v", name, err)
+	}
 }
 
 func readGatewayDebugTimelineLog(t *testing.T, dir string) string {
