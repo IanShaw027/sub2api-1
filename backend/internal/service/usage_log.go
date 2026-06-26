@@ -20,11 +20,12 @@ const (
 	RequestTypeWSV2           RequestType = 3
 	RequestTypeImage          RequestType = 4
 	RequestTypeImageWebBridge RequestType = 5
+	RequestTypeCyberBlocked   RequestType = 6 // cyber_policy 命中（透传但被上游安全策略拒绝）
 )
 
 func (t RequestType) IsValid() bool {
 	switch t {
-	case RequestTypeUnknown, RequestTypeSync, RequestTypeStream, RequestTypeWSV2, RequestTypeImage, RequestTypeImageWebBridge:
+	case RequestTypeUnknown, RequestTypeSync, RequestTypeStream, RequestTypeWSV2, RequestTypeImage, RequestTypeImageWebBridge, RequestTypeCyberBlocked:
 		return true
 	default:
 		return false
@@ -50,6 +51,8 @@ func (t RequestType) String() string {
 		return "image"
 	case RequestTypeImageWebBridge:
 		return "image_web_bridge"
+	case RequestTypeCyberBlocked:
+		return "cyber"
 	default:
 		return "unknown"
 	}
@@ -73,8 +76,10 @@ func ParseUsageRequestType(value string) (RequestType, error) {
 		return RequestTypeImage, nil
 	case "image_web_bridge":
 		return RequestTypeImageWebBridge, nil
+	case "cyber":
+		return RequestTypeCyberBlocked, nil
 	default:
-		return RequestTypeUnknown, fmt.Errorf("invalid request_type, allowed values: unknown, sync, stream, ws_v2, image, image_web_bridge")
+		return RequestTypeUnknown, fmt.Errorf("invalid request_type, allowed values: unknown, sync, stream, ws_v2, image, image_web_bridge, cyber")
 	}
 }
 

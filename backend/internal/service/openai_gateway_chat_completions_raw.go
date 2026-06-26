@@ -98,6 +98,8 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	// 2. Resolve model mapping (same as ForwardAsChatCompletions)
 	billingModel := resolveOpenAIForwardModelWithSettingsAndSelectedFallback(ctx, s.settingService, account, originalModel, defaultMappedModel, selectedFallbackModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
+	// 国产模型默认 effort 补充：需要 mappedModel 判定，推迟到 billingModel 算出之后。
+	reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, billingModel)
 
 	// 3. Rewrite model in body (no protocol conversion)
 	upstreamBody := body
@@ -120,6 +122,9 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 			upstreamBody = updatedBody
 			recordOpenAICompatPromptCacheInjected()
 		}
+	}
+	if normalizedBody, normalized := NormalizeGLMOpenAIReasoningEffort(upstreamBody, upstreamModel); normalized {
+		upstreamBody = normalizedBody
 	}
 
 	// 4. Apply OpenAI fast policy on the CC body

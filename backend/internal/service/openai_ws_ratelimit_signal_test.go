@@ -24,7 +24,7 @@ type openAIWSRateLimitSignalRepo struct {
 	stubOpenAIAccountRepo
 	rateLimitCalls []time.Time
 	updateExtra    []map[string]any
-	updateExtraErr  error
+	updateExtraErr error
 	tempUnsched    []openAIWSTempUnschedCall
 }
 

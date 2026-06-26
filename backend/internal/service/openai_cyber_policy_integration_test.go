@@ -26,7 +26,7 @@ func (r *openAICyberPolicyAccountRepo) SetError(_ context.Context, id int64, err
 	return nil
 }
 
-func TestOpenAINonStreamingSSECyberPolicyMarksAccountError(t *testing.T) {
+func TestOpenAINonStreamingSSECyberPolicyDoesNotMarkAccountError(t *testing.T) {
 	repo := &openAICyberPolicyAccountRepo{}
 	rateLimitSvc := NewRateLimitService(repo, nil, nil, nil, nil)
 	svc := &OpenAIGatewayService{rateLimitService: rateLimitSvc}
@@ -47,12 +47,11 @@ func TestOpenAINonStreamingSSECyberPolicyMarksAccountError(t *testing.T) {
 	_, err := svc.handleSSEToJSON(resp, c, account, body, "gpt-5.4", "gpt-5.4")
 
 	require.Error(t, err)
-	require.Equal(t, account.ID, repo.setErrorID)
-	require.Contains(t, repo.setErrorMsg, "被风控命中(cyber_policy)")
-	require.Contains(t, repo.setErrorMsg, "policy denied")
+	require.Zero(t, repo.setErrorID)
+	require.Empty(t, repo.setErrorMsg)
 }
 
-func TestOpenAICyberPolicyPoolModeWithoutCustomErrorCodesMarksAccountError(t *testing.T) {
+func TestOpenAICyberPolicyPoolModeWithoutCustomErrorCodesDoesNotMarkAccountError(t *testing.T) {
 	repo := &openAICyberPolicyAccountRepo{}
 	rateLimitSvc := NewRateLimitService(repo, nil, nil, nil, nil)
 	account := &Account{
@@ -73,8 +72,7 @@ func TestOpenAICyberPolicyPoolModeWithoutCustomErrorCodesMarksAccountError(t *te
 		[]byte(`{"error":{"code":"cyber_policy","message":"policy denied"}}`),
 	)
 
-	require.True(t, disabled)
-	require.Equal(t, account.ID, repo.setErrorID)
-	require.Contains(t, repo.setErrorMsg, "被风控命中(cyber_policy)")
-	require.Contains(t, repo.setErrorMsg, "policy denied")
+	require.False(t, disabled)
+	require.Zero(t, repo.setErrorID)
+	require.Empty(t, repo.setErrorMsg)
 }

@@ -1140,10 +1140,10 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			})
 			if s.rateLimitService != nil {
 				if !s.rateLimitService.handleOpenAIImageRoute429(upstreamCtx, account, imageRoute, resp.StatusCode, resp.Header, respBody, true) {
-					s.handleFailoverSideEffects(upstreamCtx, resp, account, upstreamModel)
+					s.handleFailoverSideEffects(upstreamCtx, resp, account, respBody, upstreamModel)
 				}
 			} else {
-				s.handleFailoverSideEffects(upstreamCtx, resp, account, upstreamModel)
+				s.handleFailoverSideEffects(upstreamCtx, resp, account, respBody, upstreamModel)
 			}
 			return nil, &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,

@@ -50,6 +50,7 @@ export interface ContentModerationConfig {
   blocked_keywords: string[]
   keyword_blocking_mode: KeywordBlockingMode
   model_filter: ContentModerationModelFilter
+  cyber_policy_exclude_from_ban_count: boolean
 }
 
 export type ContentModerationAPIKeyStatusValue = 'unknown' | 'ok' | 'error' | 'frozen'
@@ -147,6 +148,7 @@ export interface UpdateContentModerationConfig {
   blocked_keywords?: string[]
   keyword_blocking_mode?: KeywordBlockingMode
   model_filter?: ContentModerationModelFilter
+  cyber_policy_exclude_from_ban_count?: boolean
 }
 
 export interface ContentModerationRuntimeStatus {
@@ -179,6 +181,32 @@ export interface ContentModerationRuntimeStatus {
   last_cleanup_at?: string
   last_cleanup_deleted_hit: number
   last_cleanup_deleted_non_hit: number
+}
+
+export type ContentModerationHashSortBy = 'created_at' | 'hits_7d' | 'hits_30d'
+export type SortOrder = 'asc' | 'desc'
+
+export interface ContentModerationHashItem {
+  input_hash: string
+  created_at: string
+  expires_at: string
+  hit_count_7d: number
+  hit_count_30d: number
+}
+
+export interface ListContentModerationHashesParams {
+  page?: number
+  page_size?: number
+  sort_by?: ContentModerationHashSortBy
+  sort_order?: SortOrder
+}
+
+export interface ContentModerationHashesResponse {
+  items: ContentModerationHashItem[]
+  total: number
+  page: number
+  page_size: number
+  pages: number
 }
 
 export interface ContentModerationAPIKeyLoad {
@@ -265,6 +293,10 @@ export interface ClearFlaggedHashesResponse {
   deleted: number
 }
 
+export interface BatchDeleteFlaggedHashesResponse {
+  deleted: number
+}
+
 export async function getConfig(): Promise<ContentModerationConfig> {
   const { data } = await apiClient.get<ContentModerationConfig>('/admin/risk-control/config')
   return data
@@ -305,9 +337,27 @@ export async function unbanUser(userID: number): Promise<ContentModerationUnbanU
   return data
 }
 
+export async function listFlaggedHashes(
+  params: ListContentModerationHashesParams = {}
+): Promise<ContentModerationHashesResponse> {
+  const { data } = await apiClient.get<ContentModerationHashesResponse>('/admin/risk-control/hashes', {
+    params,
+  })
+  return data
+}
+
 export async function deleteFlaggedHash(inputHash: string): Promise<DeleteFlaggedHashResponse> {
   const { data } = await apiClient.delete<DeleteFlaggedHashResponse>('/admin/risk-control/hashes', {
     data: { input_hash: inputHash },
+  })
+  return data
+}
+
+export async function deleteFlaggedHashes(
+  inputHashes: string[]
+): Promise<BatchDeleteFlaggedHashesResponse> {
+  const { data } = await apiClient.delete<BatchDeleteFlaggedHashesResponse>('/admin/risk-control/hashes/batch', {
+    data: { input_hashes: inputHashes },
   })
   return data
 }
@@ -324,7 +374,9 @@ export const riskControlAPI = {
   testAPIKeys,
   listLogs,
   unbanUser,
+  listFlaggedHashes,
   deleteFlaggedHash,
+  deleteFlaggedHashes,
   clearFlaggedHashes,
 }
 

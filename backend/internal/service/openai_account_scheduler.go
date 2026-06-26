@@ -583,6 +583,161 @@ type openAIAccountCandidateScore struct {
 	hasTTFT   bool
 }
 
+// openAIAccountLoadPlan 汇总一次负载均衡选择中的候选账号及其打分结果。
+type openAIAccountLoadPlan struct {
+	allCandidates  []openAIAccountCandidateScore
+	candidates     []openAIAccountCandidateScore
+	candidateCount int
+	topK           int
+	loadSkew       float64
+}
+
+// buildOpenAIAccountLoadPlan 基于过滤后的账号集合计算各候选账号的负载均衡打分。
+// 打分维度：优先级 / 负载 / 队列 / 错误率 / 首字时延，以及可选的 Reset
+// （use-it-or-lose-it）因子——会话窗口剩余时间越短得分越高，默认权重 0 关闭。
+func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
+	req OpenAIAccountScheduleRequest,
+	filtered []*Account,
+	loadMap map[int64]*AccountLoadInfo,
+) openAIAccountLoadPlan {
+	allCandidates := make([]openAIAccountCandidateScore, 0, len(filtered))
+	for _, account := range filtered {
+		loadInfo := loadMap[account.ID]
+		if loadInfo == nil {
+			loadInfo = &AccountLoadInfo{AccountID: account.ID}
+		}
+		errorRate, ttft, hasTTFT := 0.0, 0.0, false
+		if s.stats != nil {
+			errorRate, ttft, hasTTFT = s.stats.snapshot(account.ID)
+		}
+		allCandidates = append(allCandidates, openAIAccountCandidateScore{
+			account:   account,
+			loadInfo:  loadInfo,
+			errorRate: errorRate,
+			ttft:      ttft,
+			hasTTFT:   hasTTFT,
+		})
+	}
+
+	plan := openAIAccountLoadPlan{
+		allCandidates:  allCandidates,
+		candidates:     allCandidates,
+		candidateCount: len(allCandidates),
+	}
+	if len(allCandidates) == 0 {
+		return plan
+	}
+
+	candidates := allCandidates
+	minPriority, maxPriority := candidates[0].account.Priority, candidates[0].account.Priority
+	maxWaiting := 1
+	loadRateSum := 0.0
+	loadRateSumSquares := 0.0
+	minTTFT, maxTTFT := 0.0, 0.0
+	hasTTFTSample := false
+	for _, candidate := range candidates {
+		if candidate.account.Priority < minPriority {
+			minPriority = candidate.account.Priority
+		}
+		if candidate.account.Priority > maxPriority {
+			maxPriority = candidate.account.Priority
+		}
+		if candidate.loadInfo.WaitingCount > maxWaiting {
+			maxWaiting = candidate.loadInfo.WaitingCount
+		}
+		if candidate.hasTTFT && candidate.ttft > 0 {
+			if !hasTTFTSample {
+				minTTFT, maxTTFT = candidate.ttft, candidate.ttft
+				hasTTFTSample = true
+			} else {
+				if candidate.ttft < minTTFT {
+					minTTFT = candidate.ttft
+				}
+				if candidate.ttft > maxTTFT {
+					maxTTFT = candidate.ttft
+				}
+			}
+		}
+		loadRate := float64(candidate.loadInfo.LoadRate)
+		loadRateSum += loadRate
+		loadRateSumSquares += loadRate * loadRate
+	}
+	plan.loadSkew = calcLoadSkewByMoments(loadRateSum, loadRateSumSquares, len(candidates))
+
+	weights := s.service.openAIWSSchedulerWeights()
+
+	// Reset 因子（use-it-or-lose-it）：在拥有「未来会话窗口结束时间」的账号中，
+	// 剩余时间越短 → 因子越接近 1（越早重置越优先用尽）。无活跃窗口的账号因子为 0。
+	// 仅在 weights.Reset > 0 时计算，默认关闭不影响原有行为。
+	minResetRemaining, maxResetRemaining := 0.0, 0.0
+	hasResetSample := false
+	now := time.Now()
+	if weights.Reset > 0 {
+		for _, candidate := range candidates {
+			end := candidate.account.SessionWindowEnd
+			if end == nil || !now.Before(*end) {
+				continue
+			}
+			remaining := end.Sub(now).Seconds()
+			if !hasResetSample {
+				minResetRemaining, maxResetRemaining = remaining, remaining
+				hasResetSample = true
+				continue
+			}
+			if remaining < minResetRemaining {
+				minResetRemaining = remaining
+			}
+			if remaining > maxResetRemaining {
+				maxResetRemaining = remaining
+			}
+		}
+	}
+
+	for i := range candidates {
+		item := &candidates[i]
+		priorityFactor := 1.0
+		if maxPriority > minPriority {
+			priorityFactor = 1 - float64(item.account.Priority-minPriority)/float64(maxPriority-minPriority)
+		}
+		loadFactor := 1 - clamp01(float64(item.loadInfo.LoadRate)/100.0)
+		queueFactor := 1 - clamp01(float64(item.loadInfo.WaitingCount)/float64(maxWaiting))
+		errorFactor := 1 - clamp01(item.errorRate)
+		ttftFactor := 0.5
+		if item.hasTTFT && hasTTFTSample && maxTTFT > minTTFT {
+			ttftFactor = 1 - clamp01((item.ttft-minTTFT)/(maxTTFT-minTTFT))
+		}
+		resetFactor := 0.0
+		if weights.Reset > 0 && hasResetSample {
+			if end := item.account.SessionWindowEnd; end != nil && now.Before(*end) {
+				if maxResetRemaining > minResetRemaining {
+					resetFactor = 1 - clamp01((end.Sub(now).Seconds()-minResetRemaining)/(maxResetRemaining-minResetRemaining))
+				} else {
+					// 所有有窗口的账号剩余时间相同：一律给满分，让其优于无窗口账号。
+					resetFactor = 1
+				}
+			}
+		}
+
+		item.score = weights.Priority*priorityFactor +
+			weights.Load*loadFactor +
+			weights.Queue*queueFactor +
+			weights.ErrorRate*errorFactor +
+			weights.TTFT*ttftFactor +
+			weights.Reset*resetFactor
+	}
+	plan.candidates = candidates
+
+	plan.topK = s.service.openAIWSLBTopK()
+	if plan.topK > len(candidates) {
+		plan.topK = len(candidates)
+	}
+	if plan.topK <= 0 {
+		plan.topK = 1
+	}
+
+	return plan
+}
+
 type openAIAccountCandidateHeap []openAIAccountCandidateScore
 
 func (h openAIAccountCandidateHeap) Len() int {
@@ -1967,6 +2122,7 @@ func (s *OpenAIGatewayService) openAIWSSchedulerWeights() GatewayOpenAIWSSchedul
 			Queue:     s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Queue,
 			ErrorRate: s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate,
 			TTFT:      s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT,
+			Reset:     s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Reset,
 		}
 	}
 	return GatewayOpenAIWSSchedulerScoreWeightsView{
@@ -1984,6 +2140,7 @@ type GatewayOpenAIWSSchedulerScoreWeightsView struct {
 	Queue     float64
 	ErrorRate float64
 	TTFT      float64
+	Reset     float64
 }
 
 func clamp01(value float64) float64 {

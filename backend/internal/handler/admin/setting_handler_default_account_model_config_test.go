@@ -14,9 +14,9 @@ import (
 func TestDefaultAccountModelConfigConverter_RoundTrip(t *testing.T) {
 	src := map[string]service.DefaultAccountModelConfig{
 		"openai": {
-			ModelWhitelist:      []string{"gpt-5.4", "gpt-*"},
-			ModelMapping:        map[string]string{"gpt-5.2": "gpt-5.4"},
-			CompactModelMapping: map[string]string{"gpt-5.2-mini": "gpt-5.4-mini"},
+			ModelWhitelist:           []string{"gpt-5.4", "gpt-*"},
+			ModelMapping:             map[string]string{"gpt-5.2": "gpt-5.4"},
+			CompactModelMapping:      map[string]string{"gpt-5.2-mini": "gpt-5.4-mini"},
 			TempUnschedulableEnabled: true,
 			TempUnschedulableRules: []service.TempUnschedulableRule{
 				{ErrorCode: 502, Keywords: []string{"Upstream request failed"}, DurationMinutes: 10, Description: "d"},

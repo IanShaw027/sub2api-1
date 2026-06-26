@@ -2205,6 +2205,29 @@ func shouldForceNewConnOnRecoveredFullReplay(lastFailureReason string) bool {
 	return reason == "previous_response_not_found"
 }
 
+// openAIWSHasDeltaReanchorTarget reports whether a strict-delta connection
+// reanchor can actually engage for this session: it requires a cached session
+// context bound to the same account with a prior response to anchor onto.
+// Cold sessions (no cached context) have nothing to reanchor, so they must fall
+// through to neutral idle-connection reuse instead of forcing a new
+// session-bound connection.
+func openAIWSHasDeltaReanchorTarget(
+	stateStore OpenAIWSStateStore,
+	groupID int64,
+	apiKeyID int64,
+	sessionHash string,
+	accountID int64,
+) bool {
+	if stateStore == nil || sessionHash == "" {
+		return false
+	}
+	cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
+	if !ok {
+		return false
+	}
+	return cached.accountID == accountID && strings.TrimSpace(cached.lastResponseID) != ""
+}
+
 func shouldUseOpenAIWSNeutralForColdSession(
 	account *Account,
 	httpIngressWSOneShot bool,
@@ -2869,7 +2892,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		storeDisabled &&
 		previousResponseID == "" &&
 		sessionHash != "" &&
-		!HasFunctionCallOutput(payload)
+		!HasFunctionCallOutput(payload) &&
+		openAIWSHasDeltaReanchorTarget(stateStore, groupID, apiKeyID, sessionHash, account.ID)
 	if sessionPreemptedPrevious {
 		preferredConnID = ""
 		connAffinityHit = false
@@ -3590,6 +3614,19 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			}
 			setOpsUpstreamError(c, http.StatusTooManyRequests, advisoryMsg, "")
 			return nil, fmt.Errorf("openai ws soft rate limit advisory: %s", advisoryMsg)
+		}
+
+		if eventType == "response.failed" {
+			if hit, code, msg := detectOpenAICyberPolicy(message); hit {
+				MarkOpsCyberPolicy(c, CyberPolicyMark{
+					Code:           code,
+					Message:        msg,
+					Body:           truncateString(string(message), 4096),
+					UpstreamStatus: http.StatusOK,
+					UpstreamInTok:  usage.InputTokens,
+					UpstreamOutTok: usage.OutputTokens,
+				})
+			}
 		}
 
 		if eventType == "error" {
@@ -4814,6 +4851,19 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			imageCounter.AddSSEData(upstreamMessage)
 
+			if eventType == "response.failed" {
+				if hit, code, msg := detectOpenAICyberPolicy(upstreamMessage); hit {
+					MarkOpsCyberPolicy(c, CyberPolicyMark{
+						Code:           code,
+						Message:        msg,
+						Body:           truncateString(string(upstreamMessage), 4096),
+						UpstreamStatus: http.StatusOK,
+						UpstreamInTok:  usage.InputTokens,
+						UpstreamOutTok: usage.OutputTokens,
+					})
+				}
+			}
+
 			if !clientDisconnected {
 				if needModelReplace && len(mappedModelBytes) > 0 && openAIWSEventMayContainModel(eventType) && bytes.Contains(upstreamMessage, mappedModelBytes) {
 					upstreamMessage = replaceOpenAIWSMessageModel(upstreamMessage, mappedModel, originalModel)
@@ -4925,7 +4975,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					Model:              originalModel,
 					UpstreamModel:      mappedModel,
 					ServiceTier:        extractOpenAIServiceTierFromBody(payload),
-					ReasoningEffort:    extractOpenAIReasoningEffortFromBody(payload, originalModel),
+					ReasoningEffort:    ApplyThinkingEnabledFallback(extractOpenAIReasoningEffortFromBody(payload, originalModel), payload, mappedModel),
 					Stream:             reqStream,
 					OpenAIWSMode:       true,
 					OpenAIWSProfile:    openAIWSProfileUsageString(openAIWSConnProfileSessionBound),

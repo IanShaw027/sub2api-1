@@ -888,15 +888,30 @@
                     </p>
                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.flaggedHashHint') }}</p>
                   </div>
-                  <button
-                    type="button"
-                    class="btn btn-secondary inline-flex items-center justify-center gap-2 text-red-600 hover:text-red-700 dark:text-red-300"
-                    :disabled="hashActionLoading || (status?.flagged_hash_count ?? 0) === 0"
-                    @click="clearFlaggedHashes"
-                  >
-                    <Icon name="trash" size="sm" :class="hashActionLoading ? 'animate-pulse' : ''" />
-                    {{ t('admin.riskControl.clearFlaggedHashes') }}
-                  </button>
+                  <div class="flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-secondary inline-flex items-center justify-center gap-2" :disabled="hashesLoading" @click="loadFlaggedHashes(false)">
+                      <Icon name="refresh" size="sm" :class="hashesLoading ? 'animate-spin' : ''" />
+                      {{ t('common.refresh') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-secondary inline-flex items-center justify-center gap-2"
+                      :disabled="hashActionLoading || selectedFlaggedHashes.length === 0"
+                      @click="deleteSelectedFlaggedHashes"
+                    >
+                      <Icon name="trash" size="sm" />
+                      {{ t('admin.riskControl.deleteSelectedFlaggedHashes', { count: selectedFlaggedHashes.length }) }}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-secondary inline-flex items-center justify-center gap-2 text-red-600 hover:text-red-700 dark:text-red-300"
+                      :disabled="hashActionLoading || (status?.flagged_hash_count ?? 0) === 0"
+                      @click="clearFlaggedHashes"
+                    >
+                      <Icon name="trash" size="sm" :class="hashActionLoading ? 'animate-pulse' : ''" />
+                      {{ t('admin.riskControl.clearFlaggedHashes') }}
+                    </button>
+                  </div>
                 </div>
                 <div class="mt-3 flex flex-col gap-2 sm:flex-row">
                   <input
@@ -914,6 +929,84 @@
                     <Icon name="trash" size="sm" />
                     {{ t('admin.riskControl.deleteFlaggedHash') }}
                   </button>
+                </div>
+                <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800">
+                  <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-100 dark:divide-dark-700">
+                      <thead class="bg-gray-50 dark:bg-dark-900/60">
+                        <tr>
+                          <th class="w-12 px-4 py-3 text-left">
+                            <input
+                              type="checkbox"
+                              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800"
+                              :checked="allVisibleFlaggedHashesSelected"
+                              :indeterminate="someVisibleFlaggedHashesSelected && !allVisibleFlaggedHashesSelected"
+                              @change="toggleVisibleFlaggedHashes"
+                            />
+                          </th>
+                          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.hashValue') }}</th>
+                          <th class="px-4 py-3 text-left">
+                            <button type="button" class="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400" @click="changeHashSort('created_at')">
+                              {{ t('admin.riskControl.hashCreatedAt') }}
+                              <Icon :name="hashSortIcon('created_at')" size="xs" />
+                            </button>
+                          </th>
+                          <th class="px-4 py-3 text-left">
+                            <button type="button" class="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400" @click="changeHashSort('hits_7d')">
+                              {{ t('admin.riskControl.hashHits7d') }}
+                              <Icon :name="hashSortIcon('hits_7d')" size="xs" />
+                            </button>
+                          </th>
+                          <th class="px-4 py-3 text-left">
+                            <button type="button" class="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400" @click="changeHashSort('hits_30d')">
+                              {{ t('admin.riskControl.hashHits30d') }}
+                              <Icon :name="hashSortIcon('hits_30d')" size="xs" />
+                            </button>
+                          </th>
+                          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.hashExpiresAt') }}</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
+                        <tr v-if="hashesLoading">
+                          <td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                            {{ t('common.loading') }}
+                          </td>
+                        </tr>
+                        <tr v-else-if="flaggedHashes.length === 0">
+                          <td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                            {{ t('admin.riskControl.noFlaggedHashes') }}
+                          </td>
+                        </tr>
+                        <tr v-for="item in flaggedHashes" v-else :key="item.input_hash" class="hover:bg-gray-50 dark:hover:bg-dark-700/50">
+                          <td class="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800"
+                              :checked="selectedFlaggedHashSet.has(item.input_hash)"
+                              @change="toggleFlaggedHashSelection(item.input_hash)"
+                            />
+                          </td>
+                          <td class="max-w-[360px] px-4 py-3 font-mono text-xs text-gray-700 dark:text-gray-300">
+                            <span class="block truncate" :title="item.input_hash">{{ item.input_hash }}</span>
+                          </td>
+                          <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{{ formatDateTime(item.created_at) }}</td>
+                          <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{{ formatNumber(item.hit_count_7d) }}</td>
+                          <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{{ formatNumber(item.hit_count_30d) }}</td>
+                          <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{{ formatDateTime(item.expires_at) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="border-t border-gray-100 p-3 dark:border-dark-700">
+                    <Pagination
+                      v-if="hashPagination.total > 0"
+                      :page="hashPagination.page"
+                      :total="hashPagination.total"
+                      :page-size="hashPagination.page_size"
+                      @update:page="onHashPageChange"
+                      @update:pageSize="onHashPageSizeChange"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -942,6 +1035,13 @@
                   <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.autoBanHint') }}</p>
                 </div>
                 <Toggle v-model="configForm.auto_ban_enabled" />
+              </div>
+              <div class="flex items-center justify-between rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
+                <div>
+                  <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.cyberPolicyExcludeBan') }}</p>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.cyberPolicyExcludeBanHint') }}</p>
+                </div>
+                <Toggle v-model="configForm.cyber_policy_exclude_from_ban_count" />
               </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.banThreshold') }}</label>
@@ -1227,6 +1327,8 @@ import type {
   ContentModerationAPIKeyLoad,
   ContentModerationAPIKeyStatus,
   ContentModerationConfig,
+  ContentModerationHashItem,
+  ContentModerationHashSortBy,
   ContentModerationLog,
   ContentModerationModelFilter,
   ContentModerationModelFilterType,
@@ -1246,6 +1348,7 @@ type SettingsTab = 'basic' | 'scope' | 'runtime' | 'response' | 'riskThresholds'
 type WorkerSlotState = 'active' | 'idle' | 'disabled'
 type APIKeysWriteMode = 'append' | 'replace'
 type OverviewIcon = 'shield' | 'key' | 'users' | 'document'
+type SortOrder = 'asc' | 'desc'
 type OverviewItem = {
   key: string
   label: string
@@ -1295,6 +1398,7 @@ const appStore = useAppStore()
 const loading = ref(true)
 const saving = ref(false)
 const logsLoading = ref(false)
+const hashesLoading = ref(false)
 const statusLoading = ref(false)
 const apiKeyTesting = ref(false)
 const hashActionLoading = ref(false)
@@ -1303,8 +1407,10 @@ const settingsOpen = ref(false)
 const activeSettingsTab = ref<SettingsTab>('basic')
 const groupSearch = ref('')
 const flaggedHashInput = ref('')
+const selectedFlaggedHashes = ref<string[]>([])
 const groups = ref<AdminGroup[]>([])
 const logs = ref<ContentModerationLog[]>([])
+const flaggedHashes = ref<ContentModerationHashItem[]>([])
 const status = ref<ContentModerationRuntimeStatus | null>(null)
 const testedApiKeyStatuses = ref<ContentModerationAPIKeyStatus[]>([])
 const pendingDeleteApiKeyHashes = ref<string[]>([])
@@ -1316,6 +1422,7 @@ const inputDetailRow = ref<ContentModerationLog | null>(null)
 let statusTimer: number | null = null
 let lastAppliedConfig: ContentModerationConfig | null = null
 let logsRequestSeq = 0
+let hashesRequestSeq = 0
 let statusRequestSeq = 0
 let loadAllRequestSeq = 0
 let isUnmounted = false
@@ -1352,6 +1459,7 @@ const configForm = reactive({
   block_message: '内容审计命中风险规则，请调整输入后重试',
   email_on_hit: true,
   auto_ban_enabled: true,
+  cyber_policy_exclude_from_ban_count: false,
   ban_threshold: 10,
   auto_ban_exempt_users: [] as { id: number; email: string }[],
   auto_ban_exempt_users_text: '',
@@ -1371,6 +1479,18 @@ const pagination = reactive({
   page_size: 20,
   total: 0,
   pages: 1,
+})
+
+const hashPagination = reactive({
+  page: 1,
+  page_size: 10,
+  total: 0,
+  pages: 1,
+})
+
+const hashSort = reactive({
+  sort_by: 'created_at' as ContentModerationHashSortBy,
+  sort_order: 'desc' as SortOrder,
 })
 
 const filters = reactive({
@@ -1617,6 +1737,19 @@ const hasModerationAuditInput = computed(() => {
 })
 
 const isFlaggedHashInputValid = computed(() => /^[a-fA-F0-9]{64}$/.test(flaggedHashInput.value.trim()))
+
+const selectedFlaggedHashSet = computed(() => new Set(selectedFlaggedHashes.value))
+
+const visibleFlaggedHashIds = computed(() => flaggedHashes.value.map((item) => item.input_hash))
+
+const allVisibleFlaggedHashesSelected = computed(() => (
+  visibleFlaggedHashIds.value.length > 0
+  && visibleFlaggedHashIds.value.every((hash) => selectedFlaggedHashSet.value.has(hash))
+))
+
+const someVisibleFlaggedHashesSelected = computed(() => (
+  visibleFlaggedHashIds.value.some((hash) => selectedFlaggedHashSet.value.has(hash))
+))
 
 const storedApiKeyTestButtonText = computed(() => {
   if (apiKeyTesting.value) return t('admin.riskControl.testingApiKeys')
@@ -1890,6 +2023,7 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.block_message = config.block_message || '内容审计命中风险规则，请调整输入后重试'
   configForm.email_on_hit = config.email_on_hit ?? true
   configForm.auto_ban_enabled = config.auto_ban_enabled ?? true
+  configForm.cyber_policy_exclude_from_ban_count = config.cyber_policy_exclude_from_ban_count ?? false
   configForm.ban_threshold = config.ban_threshold || 10
   configForm.auto_ban_exempt_users = formatAutoBanExemptUsers(config.auto_ban_exempt_user_ids, config.auto_ban_exempt_user_emails)
   configForm.auto_ban_exempt_users_text = formatAutoBanExemptText(config.auto_ban_exempt_user_emails)
@@ -1931,7 +2065,7 @@ async function loadAll() {
       configForm.api_key_statuses = [...runtimeStatus.api_key_statuses]
       prunePendingDeleteAPIKeyHashes()
     }
-    await loadLogs()
+    await Promise.all([loadLogs(), loadFlaggedHashes(true)])
   } catch (err: unknown) {
     if (requestSeq !== loadAllRequestSeq || isUnmounted) return
     appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.loadFailed')))
@@ -1961,6 +2095,35 @@ async function loadStatus(silent = true) {
   } finally {
     if (requestSeq === statusRequestSeq && !isUnmounted) {
       statusLoading.value = false
+    }
+  }
+}
+
+async function loadFlaggedHashes(silent = false) {
+  const requestSeq = ++hashesRequestSeq
+  hashesLoading.value = true
+  try {
+    const result = await adminAPI.riskControl.listFlaggedHashes({
+      page: hashPagination.page,
+      page_size: hashPagination.page_size,
+      sort_by: hashSort.sort_by,
+      sort_order: hashSort.sort_order,
+    })
+    if (requestSeq !== hashesRequestSeq || isUnmounted) return
+    flaggedHashes.value = result.items
+    hashPagination.total = result.total
+    hashPagination.page = result.page
+    hashPagination.page_size = result.page_size
+    hashPagination.pages = result.pages
+    pruneSelectedFlaggedHashes()
+  } catch (err: unknown) {
+    if (requestSeq !== hashesRequestSeq || isUnmounted) return
+    if (!silent) {
+      appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.flaggedHashesLoadFailed')))
+    }
+  } finally {
+    if (requestSeq === hashesRequestSeq && !isUnmounted) {
+      hashesLoading.value = false
     }
   }
 }
@@ -2008,6 +2171,7 @@ async function saveConfig() {
       block_message: configForm.block_message || '内容审计命中风险规则，请调整输入后重试',
       email_on_hit: configForm.email_on_hit,
       auto_ban_enabled: configForm.auto_ban_enabled,
+      cyber_policy_exclude_from_ban_count: configForm.cyber_policy_exclude_from_ban_count,
       ban_threshold: Number(configForm.ban_threshold) || 10,
       ...buildAutoBanExemptUsersPayload(configForm.auto_ban_exempt_users, configForm.auto_ban_exempt_users_text),
       violation_window_hours: Number(configForm.violation_window_hours) || 720,
@@ -2115,7 +2279,7 @@ async function deleteFlaggedHash() {
   try {
     const result = await adminAPI.riskControl.deleteFlaggedHash(flaggedHashInput.value)
     flaggedHashInput.value = ''
-    await loadStatus(true)
+    await Promise.all([loadStatus(true), loadFlaggedHashes(true)])
     appStore.showSuccess(result.deleted ? t('admin.riskControl.flaggedHashDeleted') : t('admin.riskControl.flaggedHashNotFound'))
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.flaggedHashDeleteFailed')))
@@ -2131,13 +2295,82 @@ async function clearFlaggedHashes() {
   hashActionLoading.value = true
   try {
     const result = await adminAPI.riskControl.clearFlaggedHashes()
-    await loadStatus(true)
+    selectedFlaggedHashes.value = []
+    await Promise.all([loadStatus(true), loadFlaggedHashes(true)])
     appStore.showSuccess(t('admin.riskControl.flaggedHashesCleared', { count: result.deleted }))
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.flaggedHashesClearFailed')))
   } finally {
     hashActionLoading.value = false
   }
+}
+
+async function deleteSelectedFlaggedHashes() {
+  if (hashActionLoading.value || selectedFlaggedHashes.value.length === 0) return
+  const confirmed = window.confirm(t('admin.riskControl.deleteSelectedFlaggedHashesConfirm', { count: selectedFlaggedHashes.value.length }))
+  if (!confirmed) return
+  hashActionLoading.value = true
+  try {
+    const result = await adminAPI.riskControl.deleteFlaggedHashes([...selectedFlaggedHashes.value])
+    selectedFlaggedHashes.value = []
+    await Promise.all([loadStatus(true), loadFlaggedHashes(true)])
+    appStore.showSuccess(t('admin.riskControl.flaggedHashesDeleted', { count: result.deleted }))
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.flaggedHashDeleteFailed')))
+  } finally {
+    hashActionLoading.value = false
+  }
+}
+
+function toggleFlaggedHashSelection(inputHash: string) {
+  const index = selectedFlaggedHashes.value.indexOf(inputHash)
+  if (index >= 0) {
+    selectedFlaggedHashes.value.splice(index, 1)
+    return
+  }
+  selectedFlaggedHashes.value.push(inputHash)
+}
+
+function toggleVisibleFlaggedHashes() {
+  if (allVisibleFlaggedHashesSelected.value) {
+    selectedFlaggedHashes.value = selectedFlaggedHashes.value.filter((hash) => !visibleFlaggedHashIds.value.includes(hash))
+    return
+  }
+  const next = new Set(selectedFlaggedHashes.value)
+  visibleFlaggedHashIds.value.forEach((hash) => next.add(hash))
+  selectedFlaggedHashes.value = [...next]
+}
+
+function pruneSelectedFlaggedHashes() {
+  const existing = new Set(flaggedHashes.value.map((item) => item.input_hash))
+  selectedFlaggedHashes.value = selectedFlaggedHashes.value.filter((hash) => existing.has(hash))
+}
+
+function changeHashSort(sortBy: ContentModerationHashSortBy) {
+  if (hashSort.sort_by === sortBy) {
+    hashSort.sort_order = hashSort.sort_order === 'asc' ? 'desc' : 'asc'
+  } else {
+    hashSort.sort_by = sortBy
+    hashSort.sort_order = 'desc'
+  }
+  hashPagination.page = 1
+  void loadFlaggedHashes()
+}
+
+function onHashPageChange(page: number) {
+  hashPagination.page = page
+  void loadFlaggedHashes()
+}
+
+function onHashPageSizeChange(pageSize: number) {
+  hashPagination.page = 1
+  hashPagination.page_size = pageSize
+  void loadFlaggedHashes()
+}
+
+function hashSortIcon(sortBy: ContentModerationHashSortBy): 'arrowsUpDown' | 'chevronUp' | 'chevronDown' {
+  if (hashSort.sort_by !== sortBy) return 'arrowsUpDown'
+  return hashSort.sort_order === 'asc' ? 'chevronUp' : 'chevronDown'
 }
 
 function openSettings() {
@@ -2371,6 +2604,7 @@ function modeDescription(mode: ModerationMode): string {
 }
 
 function resultLabel(row: ContentModerationLog): string {
+  if (row.action === 'cyber_policy') return t('admin.riskControl.action.cyberPolicy')
   if (row.action === 'keyword_block') return t('admin.riskControl.action.keywordBlock')
   if (row.action === 'block') return t('admin.riskControl.action.block')
   if (row.action === 'attention') return t('admin.riskControl.action.attention')
@@ -2380,7 +2614,7 @@ function resultLabel(row: ContentModerationLog): string {
 }
 
 function resultBadgeClass(row: ContentModerationLog): string {
-  if (row.action === 'block' || row.action === 'keyword_block') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  if (row.action === 'block' || row.action === 'keyword_block' || row.action === 'cyber_policy') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
   if (row.action === 'attention') return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
   if (row.action === 'error' || row.error) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
   if (row.flagged) return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300'
@@ -2660,6 +2894,7 @@ function parseBlockedKeywords(value: string): string[] {
 
 function violationCountText(row: ContentModerationLog): string {
   if (!row.flagged) return '-'
+  if (row.violation_count === 0) return t('admin.riskControl.violationNotCounted')
   return t('admin.riskControl.violationCount', { count: row.violation_count || 1 })
 }
 

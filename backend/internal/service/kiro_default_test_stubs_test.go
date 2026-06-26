@@ -322,6 +322,10 @@ func (s *kiroDefaultAccountRepoStub) RevertProxyFallback(ctx context.Context, ac
 	return nil
 }
 
+func (s *kiroDefaultAccountRepoStub) ListOAuthRefreshCandidates(ctx context.Context) ([]Account, error) {
+	return nil, nil
+}
+
 type kiroDefaultGroupRepoStub struct {
 	getByID *Group
 	getErr  error

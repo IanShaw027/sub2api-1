@@ -8,14 +8,14 @@ import (
 )
 
 type tlsFingerprintCaptureRepoStub struct {
-	mu           sync.Mutex
-	nextTaskID   int64
-	nextSampleID int64
+	mu            sync.Mutex
+	nextTaskID    int64
+	nextSampleID  int64
 	nextSessionID int64
 	nextEventID   int64
-	tasks        []*TLSFingerprintCaptureTask
-	samples      []*TLSFingerprintCaptureSample
-	sessions     []*TLSFingerprintCaptureSession
+	tasks         []*TLSFingerprintCaptureTask
+	samples       []*TLSFingerprintCaptureSample
+	sessions      []*TLSFingerprintCaptureSession
 	sessionEvents []*TLSFingerprintCaptureSessionEvent
 
 	getRunningTaskByTokenErr error

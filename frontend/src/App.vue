@@ -4,9 +4,9 @@ import { onMounted, onBeforeUnmount, watch } from 'vue'
 import Toast from '@/components/common/Toast.vue'
 import NavigationProgress from '@/components/common/NavigationProgress.vue'
 import AdminComplianceDialog from '@/components/admin/AdminComplianceDialog.vue'
-import { resolveDocumentTitle } from '@/router/title'
+import { resolveRouteDocumentTitle } from '@/router/title'
 import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
-import { useAiStudioStore, useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore, useAdminComplianceStore } from '@/stores'
+import { useAiStudioStore, useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore, useAdminComplianceStore, useAdminSettingsStore } from '@/stores'
 import { getSetupStatus } from '@/api/setup'
 
 const router = useRouter()
@@ -17,6 +17,15 @@ const subscriptionStore = useSubscriptionStore()
 const announcementStore = useAnnouncementStore()
 const aiStudioStore = useAiStudioStore()
 const adminComplianceStore = useAdminComplianceStore()
+const adminSettingsStore = useAdminSettingsStore()
+
+function updateDocumentTitle() {
+  const customMenuItems = [
+    ...(appStore.cachedPublicSettings?.custom_menu_items ?? []),
+    ...(authStore.isAdmin ? adminSettingsStore.customMenuItems : []),
+  ]
+  document.title = resolveRouteDocumentTitle(route, appStore.siteName, customMenuItems)
+}
 
 /**
  * Update favicon dynamically
@@ -43,6 +52,20 @@ watch(
     }
   },
   { immediate: true }
+)
+
+watch(
+  [
+    () => route.fullPath,
+    () => route.meta.title,
+    () => route.meta.titleKey,
+    () => appStore.siteName,
+    () => appStore.cachedPublicSettings?.custom_menu_items,
+    () => authStore.isAdmin,
+    () => adminSettingsStore.customMenuItems,
+  ],
+  updateDocumentTitle,
+  { deep: true }
 )
 
 // Watch for authentication state and manage subscription data + announcements
@@ -125,8 +148,8 @@ onMounted(async () => {
   // feature-gated sidebar entries visible after settings were changed.
   await appStore.fetchPublicSettings(true)
 
-  // Re-resolve document title now that siteName is available
-  document.title = resolveDocumentTitle(route.meta.title, appStore.siteName, route.meta.titleKey as string)
+  // Re-resolve document title now that site settings are available
+  updateDocumentTitle()
 })
 </script>
 

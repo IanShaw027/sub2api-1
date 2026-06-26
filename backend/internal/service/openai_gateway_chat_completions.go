@@ -394,6 +394,15 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		result, handleErr = s.handleChatBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
 	}
 
+	// cyber_policy：标记已设、error 已按 Chat Completions 格式发给客户端。丢弃 result、
+	// 返回哨兵，使 handler 落入 tokens=0 免费用量行（对齐 /v1/responses），不计费、不 failover。
+	if GetOpsCyberPolicy(c) != nil {
+		if handleErr == nil {
+			handleErr = errOpenAICyberPolicyForwarded
+		}
+		return nil, handleErr
+	}
+
 	// Propagate ServiceTier and ReasoningEffort to result for billing
 	if handleErr == nil && result != nil {
 		if responsesReq.ServiceTier != "" {
@@ -1027,6 +1036,24 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 		if errMessage == "" {
 			errMessage = "Upstream response failed"
 		}
+		// cyber_policy 致命不可重试：不 failover，以 Chat Completions 错误格式回写（F4），
+		// 标记供 handler 事后写风控/邮件/tokens=0 用量行。
+		if hit, code, msg := detectOpenAICyberPolicy(finalFailurePayload); hit {
+			MarkOpsCyberPolicy(c, CyberPolicyMark{
+				Code:           code,
+				Message:        msg,
+				Body:           truncateString(string(finalFailurePayload), 4096),
+				UpstreamStatus: http.StatusOK,
+				UpstreamInTok:  usage.InputTokens,
+				UpstreamOutTok: usage.OutputTokens,
+			})
+			clientMsg := msg
+			if clientMsg == "" {
+				clientMsg = "Request blocked by upstream cyber-security policy"
+			}
+			writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", clientMsg)
+			return nil, fmt.Errorf("openai cyber_policy: %s", msg)
+		}
 		if !openAIStreamFailedEventShouldFailover(finalFailurePayload, errMessage) {
 			writeChatCompletionsError(c, http.StatusBadGateway, "upstream_error", errMessage)
 			return nil, fmt.Errorf("upstream response failed: %s", errMessage)
@@ -1158,11 +1185,44 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			return false
 		}
 		if event.Type == "response.failed" {
-			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, []byte(payload))
+			payloadBytes := []byte(payload)
+			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, payloadBytes)
 			streamFailed = true
-			errMessage := extractResponsesFailureMessage(event.Response, []byte(payload))
+			errMessage := extractResponsesFailureMessage(event.Response, payloadBytes)
 			if errMessage == "" {
 				errMessage = "Upstream response failed"
+			}
+			// cyber_policy 硬阻断：致命且不可重试，绝不 failover/换号。先解析 response.failed
+			// 自带的真实 usage 再打请求级标记（供 handler 事后审计/计费），以 Chat Completions
+			// 错误格式 + [DONE] 透传给客户端，使程序化客户端停止重试。
+			if hit, code, msg := detectOpenAICyberPolicy(payloadBytes); hit {
+				if event.Usage != nil {
+					usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
+				}
+				if event.Response != nil && event.Response.Usage != nil {
+					usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
+				}
+				MarkOpsCyberPolicy(c, CyberPolicyMark{
+					Code:           code,
+					Message:        msg,
+					Body:           truncateString(string(payloadBytes), 4096),
+					UpstreamStatus: http.StatusOK,
+					UpstreamInTok:  usage.InputTokens,
+					UpstreamOutTok: usage.OutputTokens,
+				})
+				clientMsg := msg
+				if clientMsg == "" {
+					clientMsg = "Request blocked by upstream cyber-security policy"
+				}
+				if !clientDisconnected {
+					_ = writeChatCompletionsStreamError(c.Writer, clientMsg)
+					_, _ = fmt.Fprint(c.Writer, "data: [DONE]\n\n")
+					c.Writer.Flush()
+				}
+				downstreamFlushed = true
+				clientDisconnected = true
+				streamFailedErr = fmt.Errorf("openai cyber_policy: %s", msg)
+				return true
 			}
 			if !downstreamFlushed && !c.Writer.Written() {
 				if openAIStreamFailedEventShouldFailover([]byte(payload), errMessage) {
@@ -1484,4 +1544,22 @@ func writeChatCompletionsError(c *gin.Context, statusCode int, errType, message 
 			"message": message,
 		},
 	})
+}
+
+// buildChatStreamErrorSSE builds one SSE data frame carrying an OpenAI chat
+// streaming error object. Used when the stream must terminate with a visible
+// error (e.g. upstream cyber_policy), so programmatic clients stop retrying.
+// Marshal 失败的兜底会丢弃 message 原文，仅保留 code 与固定提示。
+func buildChatStreamErrorSSE(code, message string) string {
+	payload, err := json.Marshal(gin.H{
+		"error": gin.H{
+			"type":    "invalid_request_error",
+			"code":    code,
+			"message": message,
+		},
+	})
+	if err != nil {
+		return "data: {\"error\":{\"type\":\"invalid_request_error\",\"code\":\"" + code + "\",\"message\":\"upstream error\"}}\n\n"
+	}
+	return "data: " + string(payload) + "\n\n"
 }

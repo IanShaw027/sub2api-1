@@ -145,6 +145,9 @@
       </div>
       <div v-else class="text-xs text-gray-400">-</div>
 
+      <!-- Upstream OpenAI/Codex quota reset: on-demand query + reset, always available -->
+      <OpenAIQuotaResetCell :account="account" class="mt-1" />
+
       <!-- Codex invite reset: inline query / reset + invite badge (always available for OpenAI OAuth, even without usage data) -->
       <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
         <button
@@ -535,6 +538,7 @@ import { formatCompactNumber } from '@/utils/format'
 import { Icon } from '@/components/icons'
 import UsageProgressBar from './UsageProgressBar.vue'
 import CodexInviteResetModal from './CodexInviteResetModal.vue'
+import OpenAIQuotaResetCell from './OpenAIQuotaResetCell.vue'
 
 // Module-level cache shared across all AccountUsageCell instances
 const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
