@@ -8,6 +8,7 @@ import {
   sanitizePlatformQuotasMap,
   type UpdateSettingsRequest,
   type AuthSourcePlatformQuotaOverridesMap,
+  type DefaultPlatformQuotasMap,
 } from "@/api/admin/settings";
 
 const allInheritedOverrides: AuthSourcePlatformQuotaOverridesMap = {
@@ -16,6 +17,7 @@ const allInheritedOverrides: AuthSourcePlatformQuotaOverridesMap = {
   gemini: { daily: undefined, weekly: undefined, monthly: undefined },
   antigravity: { daily: undefined, weekly: undefined, monthly: undefined },
   kiro: { daily: undefined, weekly: undefined, monthly: undefined },
+  grok: { daily: undefined, weekly: undefined, monthly: undefined },
 };
 
 describe("admin settings auth source defaults helpers", () => {
@@ -283,16 +285,14 @@ describe("normalizePlatformQuotasMap", () => {
     expect(result.anthropic).toEqual({ daily: 5, weekly: null, monthly: null });
     expect(result.openai).toEqual({ daily: null, weekly: null, monthly: null });
     expect(result.gemini).toEqual({ daily: null, weekly: null, monthly: null });
-    expect(result.antigravity).toEqual({
-      daily: null,
-      weekly: null,
-      monthly: null,
-    });
+    expect(result.antigravity).toEqual({ daily: null, weekly: null, monthly: null });
+    expect(result.kiro).toEqual({ daily: null, weekly: null, monthly: null });
+    expect(result.grok).toEqual({ daily: null, weekly: null, monthly: null });
   });
 
   it("returns all-null quotas when input is omitted", () => {
     const result = normalizePlatformQuotasMap();
-    expect(Object.keys(result)).toHaveLength(5);
+    expect(Object.keys(result)).toHaveLength(6);
     for (const value of Object.values(result)) {
       expect(value).toEqual({ daily: null, weekly: null, monthly: null });
     }
@@ -344,7 +344,7 @@ describe("sanitizePlatformQuotasMap", () => {
 
   it("fills missing platforms with all-null quotas", () => {
     const result = sanitizePlatformQuotasMap({});
-    expect(Object.keys(result)).toHaveLength(5);
+    expect(Object.keys(result)).toHaveLength(6);
     for (const value of Object.values(result)) {
       expect(value).toEqual({ daily: null, weekly: null, monthly: null });
     }

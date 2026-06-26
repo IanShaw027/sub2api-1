@@ -993,6 +993,7 @@ func TestOpenAIResponses_HTTPPostRoutingImageIntentSkipsImageDisabledAccount(t *
 		&service.DeferredService{},
 		nil,
 		nil,
+		nil,
 		channelSvc,
 		nil,
 		nil,
@@ -1131,6 +1132,7 @@ func TestOpenAIResponses_HTTPPostImageToolCapabilityKeepsImageDisabledAccount(t 
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	cache := &concurrencyCacheMock{
@@ -1247,6 +1249,7 @@ func TestOpenAIResponses_HTTPPostRoutingImageIntentRejectsImageDisabledOnlyAccou
 		billingCacheSvc,
 		upstream,
 		&service.DeferredService{},
+		nil,
 		nil,
 		nil,
 		channelSvc,
@@ -1367,6 +1370,7 @@ func TestOpenAIResponses_HTTPPostAccountMappedImageOnlyModel_CodexRouteUsesImage
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	cache := &concurrencyCacheMock{
@@ -1458,6 +1462,7 @@ func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_WaitTimeoutRequestsRese
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 	h := &OpenAIGatewayHandler{
 		gatewayService:    gatewaySvc,
@@ -1536,6 +1541,7 @@ func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_WaitTimeoutClearsPrevio
 		nil,
 		nil,
 		&service.DeferredService{},
+		nil,
 		nil,
 		nil,
 		nil,
@@ -2028,6 +2034,7 @@ func TestOpenAIResponsesWebSocket_PassthroughBillingUsesPerTurnRequestPayloadHas
 		service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, usageCfg, nil),
 		nil,
 		&service.DeferredService{},
+		nil,
 		nil,
 		nil,
 		nil,
@@ -2687,6 +2694,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	cache := &concurrencyCacheMock{
@@ -2890,6 +2898,7 @@ func TestOpenAIResponsesWebSocket_FirstTurnPostModelMappingImageIntentSkipsImage
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	cache := &concurrencyCacheMock{
@@ -3054,6 +3063,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentRejectsAfterLiveTo
 		billingCacheSvc,
 		nil,
 		&service.DeferredService{},
+		nil,
 		nil,
 		nil,
 		nil,
@@ -3241,6 +3251,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityRejectsAfterLiveTo
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	cache := &concurrencyCacheMock{
@@ -3415,6 +3426,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageIntentRejectsUnsupportedRoute(t 
 		billingCacheSvc,
 		nil,
 		&service.DeferredService{},
+		nil,
 		nil,
 		nil,
 		nil,
@@ -3606,6 +3618,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnRejectsAfterLiveAccountStatusChange(t
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	cache := &concurrencyCacheMock{
@@ -3767,6 +3780,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnRespectsLiveConcurrencyDecrease(t *te
 		billingCacheSvc,
 		nil,
 		&service.DeferredService{},
+		nil,
 		nil,
 		nil,
 		nil,
@@ -3981,6 +3995,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		billingCacheSvc,
 		nil,
 		&service.DeferredService{},
+		nil,
 		nil,
 		nil,
 		channelSvc,

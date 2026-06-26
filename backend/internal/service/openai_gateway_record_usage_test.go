@@ -293,6 +293,7 @@ func newOpenAIRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo U
 		nil,
 		nil,
 		nil,
+		nil, // balanceNotifyService
 		nil, // tlsFPProfileService
 		nil, // settingService
 		nil, // userPlatformQuotaRepo

@@ -1031,6 +1031,13 @@ func ChatCompletionsChunkToResponsesEvents(
 					copyCall.ID = generateItemID()
 				}
 				copyCall.Type = "function"
+				// Arguments are accumulated by the shared block below so the
+				// emitted delta and the stored value stay in sync. Some upstreams
+				// (e.g. GLM/Zhipu) pack id+name+arguments into the first tool_call
+				// chunk; without this reset the first chunk's arguments would be
+				// counted twice (once from this copy, once from the += below),
+				// producing a doubled, invalid JSON like {"a":1}{"a":1}.
+				copyCall.Function.Arguments = ""
 				state.ToolCalls[idx] = &copyCall
 				stored = &copyCall
 				itemID := generateItemID()
@@ -1054,7 +1061,7 @@ func ChatCompletionsChunkToResponsesEvents(
 					stored.Function.Name = toolCall.Function.Name
 				}
 			}
-			if ok && toolCall.Function.Arguments != "" {
+			if toolCall.Function.Arguments != "" {
 				stored.Function.Arguments += toolCall.Function.Arguments
 			}
 			if toolCall.Function.Arguments != "" {

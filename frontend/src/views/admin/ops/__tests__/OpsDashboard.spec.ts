@@ -223,7 +223,7 @@ describe('OpsDashboard request orchestration', () => {
   })
 
   it('does not fetch deferred visual analysis data until the section enters the viewport', async () => {
-    const wrapper = mountView()
+    mountView()
 
     await flushPromises()
 

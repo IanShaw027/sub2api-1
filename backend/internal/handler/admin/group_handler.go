@@ -87,7 +87,7 @@ type CreateGroupRequest struct {
 	Name                 string             `json:"name" binding:"required"`
 	DisplayName          *string            `json:"display_name"`
 	Description          string             `json:"description"`
-	Platform             string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity sora kiro"`
+	Platform             string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity sora kiro grok"`
 	RateMultiplier       float64            `json:"rate_multiplier"`
 	RefundRateMultiplier float64            `json:"refund_rate_multiplier"`
 	IsExclusive          bool               `json:"is_exclusive"`
@@ -132,7 +132,7 @@ type UpdateGroupRequest struct {
 	Name                 string             `json:"name"`
 	DisplayName          *string            `json:"display_name"`
 	Description          *string            `json:"description"`
-	Platform             string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity sora kiro"`
+	Platform             string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity sora kiro grok"`
 	RateMultiplier       *float64           `json:"rate_multiplier"`
 	RefundRateMultiplier *float64           `json:"refund_rate_multiplier"`
 	IsExclusive          *bool              `json:"is_exclusive"`

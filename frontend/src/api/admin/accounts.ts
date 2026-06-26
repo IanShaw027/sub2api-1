@@ -19,6 +19,7 @@ import type {
   CodexSessionImportRequest,
   CodexSessionImportResult,
   ArchiveImportResult,
+  OpenAICodexPATCreateRequest,
   CheckMixedChannelRequest,
   CheckMixedChannelResponse
 } from '@/types'
@@ -664,6 +665,11 @@ export async function importArchive(
   return data
 }
 
+export async function createOpenAICodexPAT(payload: OpenAICodexPATCreateRequest): Promise<Account> {
+  const { data } = await apiClient.post<Account>('/admin/openai/create-from-codex-pat', payload)
+  return data
+}
+
 /**
  * Get Antigravity default model mapping from backend
  * @returns Default model mapping (from -> to)
@@ -953,6 +959,7 @@ export const accountsAPI = {
   importData,
   importCodexSession,
   importArchive,
+  createOpenAICodexPAT,
   getAntigravityDefaultModelMapping,
   batchClearError,
   batchRefresh,

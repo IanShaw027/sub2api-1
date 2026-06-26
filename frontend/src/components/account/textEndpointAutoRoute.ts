@@ -55,7 +55,8 @@ const supportedTypesByPlatform: Record<AccountPlatform, ReadonlySet<AccountType>
   gemini: new Set(),
   kiro: new Set(),
   antigravity: new Set(),
-  sora: new Set()
+  sora: new Set(),
+  grok: new Set()
 }
 
 export function supportsTextEndpointAutoRoute(

@@ -77,9 +77,8 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 	inbound = strings.TrimSpace(inbound)
 
 	switch platform {
-	case service.PlatformOpenAI:
-		if inbound == EndpointEmbeddings ||
-			inbound == EndpointImagesGenerations || inbound == EndpointImagesEdits {
+	case service.PlatformOpenAI, service.PlatformGrok:
+		if inbound == EndpointEmbeddings || inbound == EndpointImagesGenerations || inbound == EndpointImagesEdits {
 			return inbound
 		}
 		// OpenAI forwards everything to the Responses API.

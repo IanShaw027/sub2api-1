@@ -303,6 +303,7 @@
           </template>
           <template #cell-usage="{ row }">
             <AccountUsageCell
+              :key="row.id"
               :account="row"
               :today-stats="todayStatsByAccountId[String(row.id)] ?? null"
               :today-stats-loading="todayStatsLoading"

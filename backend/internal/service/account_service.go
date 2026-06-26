@@ -143,7 +143,7 @@ type AccountService struct {
 
 func requiresOAuthOnlyAccount(platform string) bool {
 	switch platform {
-	case PlatformOpenAI, PlatformAntigravity, PlatformAnthropic, PlatformGemini, PlatformKiro:
+	case PlatformOpenAI, PlatformAntigravity, PlatformAnthropic, PlatformGemini, PlatformKiro, PlatformGrok:
 		return true
 	default:
 		return false
@@ -566,6 +566,19 @@ func (s *AccountService) Create(ctx context.Context, req CreateAccountRequest) (
 		return nil, fmt.Errorf("create account: %w", err)
 	}
 
+	// require_oauth_only 检查：apikey 类型账号不可加入限制分组
+	if account.Type == AccountTypeAPIKey && len(req.GroupIDs) > 0 {
+		for _, gid := range req.GroupIDs {
+			g, err := s.groupRepo.GetByID(ctx, gid)
+			if err != nil {
+				return nil, err
+			}
+			if g.RequireOAuthOnly && (g.Platform == PlatformOpenAI || g.Platform == PlatformAntigravity || g.Platform == PlatformAnthropic || g.Platform == PlatformGemini || g.Platform == PlatformGrok) {
+				return nil, fmt.Errorf("分组 [%s] 仅允许 OAuth 账号，apikey 类型账号无法加入", g.Name)
+			}
+		}
+	}
+
 	// 绑定分组
 	if len(req.GroupIDs) > 0 {
 		if err := s.accountRepo.BindGroups(ctx, account.ID, req.GroupIDs); err != nil {
@@ -682,6 +695,19 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 	// 执行更新
 	if err := s.accountRepo.Update(ctx, account); err != nil {
 		return nil, fmt.Errorf("update account: %w", err)
+	}
+
+	// require_oauth_only 检查
+	if account.Type == AccountTypeAPIKey && req.GroupIDs != nil {
+		for _, gid := range *req.GroupIDs {
+			g, err := s.groupRepo.GetByID(ctx, gid)
+			if err != nil {
+				return nil, err
+			}
+			if g.RequireOAuthOnly && (g.Platform == PlatformOpenAI || g.Platform == PlatformAntigravity || g.Platform == PlatformAnthropic || g.Platform == PlatformGemini || g.Platform == PlatformGrok) {
+				return nil, fmt.Errorf("分组 [%s] 仅允许 OAuth 账号，apikey 类型账号无法加入", g.Name)
+			}
+		}
 	}
 
 	// 绑定分组
@@ -809,6 +835,9 @@ func (s *AccountService) TestCredentials(ctx context.Context, id int64) error {
 	switch account.Platform {
 	case PlatformAnthropic, PlatformOpenAI, PlatformGemini:
 		return validateAccountTestCredentials(account)
+	case PlatformGrok:
+		// Grok OAuth credentials are validated via token exchange/refresh and request-path probes.
+		return nil
 	default:
 		return fmt.Errorf("unsupported platform: %s", account.Platform)
 	}

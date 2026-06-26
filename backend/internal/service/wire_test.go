@@ -75,6 +75,7 @@ func TestProvideTokenRefreshService_InjectsKiroProxyRepo(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 		&config.Config{},
 		nil,
 		nil,

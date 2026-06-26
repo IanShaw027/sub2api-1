@@ -212,16 +212,9 @@ func applyCodexOAuthTransformWithInputModeAndOptions(
 func applyCodexOAuthTransformWithOptions(reqBody map[string]any, opts codexOAuthTransformOptions) codexTransformResult {
 	result := applyCodexOAuthTransformWithInputModeAndOptions(reqBody, false, false, codexTransformInputModeStrict, opts)
 	if opts.SkipDefaultInstructions {
-		if instructions, ok := reqBody["instructions"].(string); ok {
-			defaultInstructions := strings.TrimSpace(openai.DefaultInstructions)
-			if defaultInstructions == "" {
-				defaultInstructions = "You are a helpful coding assistant."
-			}
-			if strings.TrimSpace(instructions) == defaultInstructions {
-				delete(reqBody, "instructions")
-				result.Modified = true
-				result.Observability.DefaultInstructionsApplied = false
-			}
+		if removeEmbeddedDefaultInstructions(reqBody) {
+			result.Modified = true
+			result.Observability.DefaultInstructionsApplied = false
 		}
 	}
 	if v, ok := reqBody["prompt_cache_key"].(string); ok {
@@ -425,6 +418,11 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
 	if isCodexSparkModel(normalizedModel) && applyCodexSparkImageUnsupportedInstructions(reqBody) {
 		result.Modified = true
 		result.Observability.SparkInstructionsApplied = true
+	}
+	// gpt-5.3-codex-spark rejects the image_generation tool upstream (HTTP 400,
+	// param=tools); Codex CLI advertises it by default, so strip it for spark.
+	if isCodexSparkModel(normalizedModel) && stripCodexSparkImageGenerationTools(reqBody) {
+		result.Modified = true
 	}
 
 	// 续链场景保留 item_reference 与 id，避免 call_id 上下文丢失。
@@ -997,6 +995,13 @@ func stripOpenAIImageGenerationTools(reqBody map[string]any) bool {
 	return true
 }
 
+// stripCodexSparkImageGenerationTools removes image_generation tool entries from
+// reqBody["tools"]. gpt-5.3-codex-spark rejects that tool upstream with HTTP 400
+// (invalid_request_error, param=tools), and Codex CLI advertises it by default.
+func stripCodexSparkImageGenerationTools(reqBody map[string]any) bool {
+	return stripOpenAIImageGenerationTools(reqBody)
+}
+
 func stripOpenAIImageGenerationToolsBytes(body []byte) ([]byte, bool, error) {
 	if len(body) == 0 {
 		return body, false, nil
@@ -1387,11 +1392,30 @@ func applyEmbeddedDefaultInstructions(reqBody map[string]any) bool {
 	if !isInstructionsEmpty(reqBody) {
 		return false
 	}
+	reqBody["instructions"] = embeddedDefaultInstructions()
+	return true
+}
+
+func embeddedDefaultInstructions() string {
 	instructions := strings.TrimSpace(openai.DefaultInstructions)
 	if instructions == "" {
-		instructions = "You are a helpful coding assistant."
+		return "You are a helpful coding assistant."
 	}
-	reqBody["instructions"] = instructions
+	return instructions
+}
+
+func removeEmbeddedDefaultInstructions(reqBody map[string]any) bool {
+	if reqBody == nil {
+		return false
+	}
+	instructions, ok := reqBody["instructions"].(string)
+	if !ok {
+		return false
+	}
+	if strings.TrimSpace(instructions) != embeddedDefaultInstructions() {
+		return false
+	}
+	delete(reqBody, "instructions")
 	return true
 }
 

@@ -7,6 +7,23 @@ const STORAGE_KEY = 'table-page-size'
  * 不再使用本地持久化缓存，所有页面统一以通用表格设置为准。
  */
 export function getPersistedPageSize(fallback = getConfiguredTableDefaultPageSize()): number {
+  if (typeof window !== 'undefined' && window.__APP_CONFIG__?.table_default_page_size !== undefined) {
+    return normalizeTablePageSize(getConfiguredTableDefaultPageSize())
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY)
+      if (stored !== null) {
+        const parsed = Number(stored)
+        if (Number.isFinite(parsed)) {
+          return normalizeTablePageSize(parsed)
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to read persisted page size:', error)
+    }
+  }
   return normalizeTablePageSize(getConfiguredTableDefaultPageSize() || fallback)
 }
 

@@ -100,6 +100,7 @@ func newOpenAISelectionErrorTestHandler(t *testing.T, accounts []service.Account
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	return &OpenAIGatewayHandler{
@@ -145,6 +146,7 @@ func newOpenAISelectionErrorTestHandlerWithAccountAcquire(
 		cfg,
 		nil,
 		concurrencySvc,
+		nil,
 		nil,
 		nil,
 		nil,
@@ -304,6 +306,7 @@ func unsupportedOpenAITestAccount() service.Account {
 	return service.Account{
 		ID:          1,
 		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
 		Status:      service.StatusActive,
 		Schedulable: true,
 		Credentials: map[string]any{

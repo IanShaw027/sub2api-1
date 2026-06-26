@@ -366,6 +366,7 @@ describe('admin AccountsView usage batch loading', () => {
     visibleRowCount.value = 2
     await waitForBatchQueue()
 
+    expect(wrapper.find('[data-test="row-102"]').exists()).toBe(true)
     expect(getBatchUsage).toHaveBeenCalledTimes(2)
     expect(getBatchUsage).toHaveBeenLastCalledWith([102], false)
     expect((wrapper.vm as any).usageBatchLoadingByAccountId['102']).toBe(true)

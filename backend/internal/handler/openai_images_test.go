@@ -61,6 +61,7 @@ func TestOpenAIImages_SelectionFailureWritesDebugTimeline(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 		handlerGatewayDebugTimelineSettingService(dir),
 		nil,
 	)

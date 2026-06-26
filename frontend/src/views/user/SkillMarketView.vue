@@ -166,7 +166,7 @@ const categoryOptions = computed(() => [
 ])
 
 function normalizeType(value: string | number | boolean | null): SkillType | 'all' {
-  return value === 'prompt_chat' || value === 'prompt_image' ? value : 'all'
+  return value === 'prompt_chat' || value === 'prompt_image' || value === 'script' ? value : 'all'
 }
 
 function normalizePriceMode(value: string | number | boolean | null): SkillPriceMode | 'all' {
