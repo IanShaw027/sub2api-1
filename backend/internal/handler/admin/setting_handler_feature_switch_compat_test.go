@@ -153,6 +153,87 @@ func TestSettingHandler_UpdateSettings_PreservesOmittedFieldsOnGatewayDebugTimel
 	require.Equal(t, float64(512), data["gateway_debug_timeline_body_max_kb"])
 }
 
+func TestSettingHandler_UpdateSettings_PreservesOmittedGenericScalarFieldsOnPartialPatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyGitHubOAuthEnabled:              "true",
+			service.SettingKeyGitHubOAuthClientID:             "github-client",
+			service.SettingKeyGitHubOAuthClientSecret:         "github-secret",
+			service.SettingKeyGitHubOAuthRedirectURL:          "https://example.com/api/v1/auth/oauth/github/callback",
+			service.SettingKeyGitHubOAuthFrontendRedirectURL:  "/auth/oauth/callback",
+			service.SettingKeyEnableIdentityPatch:             "true",
+			service.SettingKeyIdentityPatchPrompt:             "Keep the old patch prompt",
+			service.SettingKeyMinClaudeCodeVersion:            "1.2.3",
+			service.SettingKeyMaxClaudeCodeVersion:            "9.9.9",
+			service.SettingKeyAllowUngroupedKeyScheduling:     "true",
+			service.SettingKeyBackendModeEnabled:              "true",
+			service.SettingKeyGatewayDebugTimelineIncludeBody: "true",
+			service.SettingKeyGatewayDebugTimelineBodyMaxKB:   "128",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+	rawBody, err := json.Marshal(map[string]any{
+		"gateway_debug_timeline_include_body": false,
+		"gateway_debug_timeline_body_max_kb":  512,
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "true", repo.values[service.SettingKeyGitHubOAuthEnabled])
+	require.Equal(t, "github-client", repo.values[service.SettingKeyGitHubOAuthClientID])
+	require.Equal(t, "github-secret", repo.values[service.SettingKeyGitHubOAuthClientSecret])
+	require.Equal(t, "https://example.com/api/v1/auth/oauth/github/callback", repo.values[service.SettingKeyGitHubOAuthRedirectURL])
+	require.Equal(t, "/auth/oauth/callback", repo.values[service.SettingKeyGitHubOAuthFrontendRedirectURL])
+	require.Equal(t, "true", repo.values[service.SettingKeyEnableIdentityPatch])
+	require.Equal(t, "Keep the old patch prompt", repo.values[service.SettingKeyIdentityPatchPrompt])
+	require.Equal(t, "1.2.3", repo.values[service.SettingKeyMinClaudeCodeVersion])
+	require.Equal(t, "9.9.9", repo.values[service.SettingKeyMaxClaudeCodeVersion])
+	require.Equal(t, "true", repo.values[service.SettingKeyAllowUngroupedKeyScheduling])
+	require.Equal(t, "true", repo.values[service.SettingKeyBackendModeEnabled])
+	require.Equal(t, "false", repo.values[service.SettingKeyGatewayDebugTimelineIncludeBody])
+	require.Equal(t, "512", repo.values[service.SettingKeyGatewayDebugTimelineBodyMaxKB])
+}
+
+func TestSettingHandler_UpdateSettings_RejectsClearingLinuxDoClientIDWhenEffectiveStateStaysEnabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyLinuxDoConnectEnabled:      "true",
+			service.SettingKeyLinuxDoConnectClientID:     "linuxdo-client",
+			service.SettingKeyLinuxDoConnectClientSecret: "linuxdo-secret",
+			service.SettingKeyLinuxDoConnectRedirectURL:  "https://example.com/auth/linuxdo/callback",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+	rawBody, err := json.Marshal(map[string]any{
+		"linuxdo_connect_client_id": "",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, "linuxdo-client", repo.values[service.SettingKeyLinuxDoConnectClientID])
+	require.Equal(t, "true", repo.values[service.SettingKeyLinuxDoConnectEnabled])
+}
+
 func TestSettingHandler_UpdateSettings_ClampsAffiliatePolicyFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &settingHandlerRepoStub{

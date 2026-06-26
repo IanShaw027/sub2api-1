@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -1199,6 +1200,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	preserveOmittedSettingsFields(rawFields, &req, previousSettings)
 	previousAuthSourceDefaults, err := h.settingService.GetAuthSourceDefaultSettings(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -1427,8 +1429,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		req.LinuxDoConnectClientID = strings.TrimSpace(req.LinuxDoConnectClientID)
 		req.LinuxDoConnectClientSecret = strings.TrimSpace(req.LinuxDoConnectClientSecret)
 		req.LinuxDoConnectRedirectURL = strings.TrimSpace(req.LinuxDoConnectRedirectURL)
-		req.LinuxDoConnectClientID = strings.TrimSpace(firstNonEmpty(req.LinuxDoConnectClientID, previousSettings.LinuxDoConnectClientID))
-		req.LinuxDoConnectRedirectURL = strings.TrimSpace(firstNonEmpty(req.LinuxDoConnectRedirectURL, previousSettings.LinuxDoConnectRedirectURL))
+		req.LinuxDoConnectClientID = stringJSONFieldOrFirstNonEmpty(
+			rawFields,
+			"linuxdo_connect_client_id",
+			req.LinuxDoConnectClientID,
+			previousSettings.LinuxDoConnectClientID,
+		)
+		req.LinuxDoConnectRedirectURL = stringJSONFieldOrFirstNonEmpty(
+			rawFields,
+			"linuxdo_connect_redirect_url",
+			req.LinuxDoConnectRedirectURL,
+			previousSettings.LinuxDoConnectRedirectURL,
+		)
 
 		if req.LinuxDoConnectClientID == "" {
 			response.BadRequest(c, "LinuxDo Client ID is required when enabled")
@@ -1522,9 +1534,24 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		req.WeChatConnectScopes = strings.TrimSpace(req.WeChatConnectScopes)
 		req.WeChatConnectRedirectURL = strings.TrimSpace(req.WeChatConnectRedirectURL)
 		req.WeChatConnectFrontendRedirectURL = strings.TrimSpace(req.WeChatConnectFrontendRedirectURL)
-		req.WeChatConnectAppID = strings.TrimSpace(firstNonEmpty(req.WeChatConnectAppID, previousSettings.WeChatConnectAppID))
-		req.WeChatConnectRedirectURL = strings.TrimSpace(firstNonEmpty(req.WeChatConnectRedirectURL, previousSettings.WeChatConnectRedirectURL))
-		req.WeChatConnectFrontendRedirectURL = strings.TrimSpace(firstNonEmpty(req.WeChatConnectFrontendRedirectURL, previousSettings.WeChatConnectFrontendRedirectURL))
+		req.WeChatConnectAppID = stringJSONFieldOrFirstNonEmpty(
+			rawFields,
+			"wechat_connect_app_id",
+			req.WeChatConnectAppID,
+			previousSettings.WeChatConnectAppID,
+		)
+		req.WeChatConnectRedirectURL = stringJSONFieldOrFirstNonEmpty(
+			rawFields,
+			"wechat_connect_redirect_url",
+			req.WeChatConnectRedirectURL,
+			previousSettings.WeChatConnectRedirectURL,
+		)
+		req.WeChatConnectFrontendRedirectURL = stringJSONFieldOrFirstNonEmpty(
+			rawFields,
+			"wechat_connect_frontend_redirect_url",
+			req.WeChatConnectFrontendRedirectURL,
+			previousSettings.WeChatConnectFrontendRedirectURL,
+		)
 		if req.WeChatConnectMode == "" {
 			req.WeChatConnectMode = strings.ToLower(strings.TrimSpace(previousSettings.WeChatConnectMode))
 		}
@@ -1564,9 +1591,30 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 		}
 
-		req.WeChatConnectOpenAppID = strings.TrimSpace(firstNonEmpty(req.WeChatConnectOpenAppID, req.WeChatConnectAppID, previousSettings.WeChatConnectOpenAppID, previousSettings.WeChatConnectAppID))
-		req.WeChatConnectMPAppID = strings.TrimSpace(firstNonEmpty(req.WeChatConnectMPAppID, req.WeChatConnectAppID, previousSettings.WeChatConnectMPAppID, previousSettings.WeChatConnectAppID))
-		req.WeChatConnectMobileAppID = strings.TrimSpace(firstNonEmpty(req.WeChatConnectMobileAppID, req.WeChatConnectAppID, previousSettings.WeChatConnectMobileAppID, previousSettings.WeChatConnectAppID))
+		req.WeChatConnectOpenAppID = stringJSONFieldOrFirstNonEmpty(
+			rawFields,
+			"wechat_connect_open_app_id",
+			req.WeChatConnectOpenAppID,
+			req.WeChatConnectAppID,
+			previousSettings.WeChatConnectOpenAppID,
+			previousSettings.WeChatConnectAppID,
+		)
+		req.WeChatConnectMPAppID = stringJSONFieldOrFirstNonEmpty(
+			rawFields,
+			"wechat_connect_mp_app_id",
+			req.WeChatConnectMPAppID,
+			req.WeChatConnectAppID,
+			previousSettings.WeChatConnectMPAppID,
+			previousSettings.WeChatConnectAppID,
+		)
+		req.WeChatConnectMobileAppID = stringJSONFieldOrFirstNonEmpty(
+			rawFields,
+			"wechat_connect_mobile_app_id",
+			req.WeChatConnectMobileAppID,
+			req.WeChatConnectAppID,
+			previousSettings.WeChatConnectMobileAppID,
+			previousSettings.WeChatConnectAppID,
+		)
 
 		if req.WeChatConnectOpenAppSecret == "" {
 			req.WeChatConnectOpenAppSecret = strings.TrimSpace(firstNonEmpty(previousSettings.WeChatConnectOpenAppSecret, previousSettings.WeChatConnectAppSecret, req.WeChatConnectAppSecret))
@@ -1662,22 +1710,22 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		req.OIDCConnectUserInfoEmailPath = strings.TrimSpace(req.OIDCConnectUserInfoEmailPath)
 		req.OIDCConnectUserInfoIDPath = strings.TrimSpace(req.OIDCConnectUserInfoIDPath)
 		req.OIDCConnectUserInfoUsernamePath = strings.TrimSpace(req.OIDCConnectUserInfoUsernamePath)
-		req.OIDCConnectProviderName = strings.TrimSpace(firstNonEmpty(req.OIDCConnectProviderName, previousSettings.OIDCConnectProviderName, "OIDC"))
-		req.OIDCConnectClientID = strings.TrimSpace(firstNonEmpty(req.OIDCConnectClientID, previousSettings.OIDCConnectClientID))
-		req.OIDCConnectIssuerURL = strings.TrimSpace(firstNonEmpty(req.OIDCConnectIssuerURL, previousSettings.OIDCConnectIssuerURL))
-		req.OIDCConnectDiscoveryURL = strings.TrimSpace(firstNonEmpty(req.OIDCConnectDiscoveryURL, previousSettings.OIDCConnectDiscoveryURL))
-		req.OIDCConnectAuthorizeURL = strings.TrimSpace(firstNonEmpty(req.OIDCConnectAuthorizeURL, previousSettings.OIDCConnectAuthorizeURL))
-		req.OIDCConnectTokenURL = strings.TrimSpace(firstNonEmpty(req.OIDCConnectTokenURL, previousSettings.OIDCConnectTokenURL))
-		req.OIDCConnectUserInfoURL = strings.TrimSpace(firstNonEmpty(req.OIDCConnectUserInfoURL, previousSettings.OIDCConnectUserInfoURL))
-		req.OIDCConnectJWKSURL = strings.TrimSpace(firstNonEmpty(req.OIDCConnectJWKSURL, previousSettings.OIDCConnectJWKSURL))
-		req.OIDCConnectScopes = strings.TrimSpace(firstNonEmpty(req.OIDCConnectScopes, previousSettings.OIDCConnectScopes, "openid email profile"))
-		req.OIDCConnectRedirectURL = strings.TrimSpace(firstNonEmpty(req.OIDCConnectRedirectURL, previousSettings.OIDCConnectRedirectURL))
-		req.OIDCConnectFrontendRedirectURL = strings.TrimSpace(firstNonEmpty(req.OIDCConnectFrontendRedirectURL, previousSettings.OIDCConnectFrontendRedirectURL, "/auth/oidc/callback"))
-		req.OIDCConnectTokenAuthMethod = strings.ToLower(strings.TrimSpace(firstNonEmpty(req.OIDCConnectTokenAuthMethod, previousSettings.OIDCConnectTokenAuthMethod, "client_secret_post")))
-		req.OIDCConnectAllowedSigningAlgs = strings.TrimSpace(firstNonEmpty(req.OIDCConnectAllowedSigningAlgs, previousSettings.OIDCConnectAllowedSigningAlgs, "RS256,ES256,PS256"))
-		req.OIDCConnectUserInfoEmailPath = strings.TrimSpace(firstNonEmpty(req.OIDCConnectUserInfoEmailPath, previousSettings.OIDCConnectUserInfoEmailPath))
-		req.OIDCConnectUserInfoIDPath = strings.TrimSpace(firstNonEmpty(req.OIDCConnectUserInfoIDPath, previousSettings.OIDCConnectUserInfoIDPath))
-		req.OIDCConnectUserInfoUsernamePath = strings.TrimSpace(firstNonEmpty(req.OIDCConnectUserInfoUsernamePath, previousSettings.OIDCConnectUserInfoUsernamePath))
+		req.OIDCConnectProviderName = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_provider_name", req.OIDCConnectProviderName, previousSettings.OIDCConnectProviderName, "OIDC")
+		req.OIDCConnectClientID = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_client_id", req.OIDCConnectClientID, previousSettings.OIDCConnectClientID)
+		req.OIDCConnectIssuerURL = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_issuer_url", req.OIDCConnectIssuerURL, previousSettings.OIDCConnectIssuerURL)
+		req.OIDCConnectDiscoveryURL = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_discovery_url", req.OIDCConnectDiscoveryURL, previousSettings.OIDCConnectDiscoveryURL)
+		req.OIDCConnectAuthorizeURL = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_authorize_url", req.OIDCConnectAuthorizeURL, previousSettings.OIDCConnectAuthorizeURL)
+		req.OIDCConnectTokenURL = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_token_url", req.OIDCConnectTokenURL, previousSettings.OIDCConnectTokenURL)
+		req.OIDCConnectUserInfoURL = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_userinfo_url", req.OIDCConnectUserInfoURL, previousSettings.OIDCConnectUserInfoURL)
+		req.OIDCConnectJWKSURL = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_jwks_url", req.OIDCConnectJWKSURL, previousSettings.OIDCConnectJWKSURL)
+		req.OIDCConnectScopes = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_scopes", req.OIDCConnectScopes, previousSettings.OIDCConnectScopes, "openid email profile")
+		req.OIDCConnectRedirectURL = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_redirect_url", req.OIDCConnectRedirectURL, previousSettings.OIDCConnectRedirectURL)
+		req.OIDCConnectFrontendRedirectURL = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_frontend_redirect_url", req.OIDCConnectFrontendRedirectURL, previousSettings.OIDCConnectFrontendRedirectURL, "/auth/oidc/callback")
+		req.OIDCConnectTokenAuthMethod = strings.ToLower(stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_token_auth_method", req.OIDCConnectTokenAuthMethod, previousSettings.OIDCConnectTokenAuthMethod, "client_secret_post"))
+		req.OIDCConnectAllowedSigningAlgs = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_allowed_signing_algs", req.OIDCConnectAllowedSigningAlgs, previousSettings.OIDCConnectAllowedSigningAlgs, "RS256,ES256,PS256")
+		req.OIDCConnectUserInfoEmailPath = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_userinfo_email_path", req.OIDCConnectUserInfoEmailPath, previousSettings.OIDCConnectUserInfoEmailPath)
+		req.OIDCConnectUserInfoIDPath = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_userinfo_id_path", req.OIDCConnectUserInfoIDPath, previousSettings.OIDCConnectUserInfoIDPath)
+		req.OIDCConnectUserInfoUsernamePath = stringJSONFieldOrFirstNonEmpty(rawFields, "oidc_connect_userinfo_username_path", req.OIDCConnectUserInfoUsernamePath, previousSettings.OIDCConnectUserInfoUsernamePath)
 		if req.OIDCConnectUsePKCE != nil {
 			oidcUsePKCE = *req.OIDCConnectUsePKCE
 		}
@@ -1779,10 +1827,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	if req.GitHubOAuthEnabled {
-		req.GitHubOAuthClientID = strings.TrimSpace(firstNonEmpty(req.GitHubOAuthClientID, previousSettings.GitHubOAuthClientID))
+		req.GitHubOAuthClientID = stringJSONFieldOrFirstNonEmpty(rawFields, "github_oauth_client_id", req.GitHubOAuthClientID, previousSettings.GitHubOAuthClientID)
 		req.GitHubOAuthClientSecret = strings.TrimSpace(req.GitHubOAuthClientSecret)
-		req.GitHubOAuthRedirectURL = strings.TrimSpace(firstNonEmpty(req.GitHubOAuthRedirectURL, previousSettings.GitHubOAuthRedirectURL))
-		req.GitHubOAuthFrontendRedirectURL = strings.TrimSpace(firstNonEmpty(req.GitHubOAuthFrontendRedirectURL, previousSettings.GitHubOAuthFrontendRedirectURL, "/auth/oauth/callback"))
+		req.GitHubOAuthRedirectURL = stringJSONFieldOrFirstNonEmpty(rawFields, "github_oauth_redirect_url", req.GitHubOAuthRedirectURL, previousSettings.GitHubOAuthRedirectURL)
+		req.GitHubOAuthFrontendRedirectURL = stringJSONFieldOrFirstNonEmpty(rawFields, "github_oauth_frontend_redirect_url", req.GitHubOAuthFrontendRedirectURL, previousSettings.GitHubOAuthFrontendRedirectURL, "/auth/oauth/callback")
 
 		if req.GitHubOAuthClientID == "" {
 			response.BadRequest(c, "GitHub OAuth Client ID is required when enabled")
@@ -1814,10 +1862,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	if req.GoogleOAuthEnabled {
-		req.GoogleOAuthClientID = strings.TrimSpace(firstNonEmpty(req.GoogleOAuthClientID, previousSettings.GoogleOAuthClientID))
+		req.GoogleOAuthClientID = stringJSONFieldOrFirstNonEmpty(rawFields, "google_oauth_client_id", req.GoogleOAuthClientID, previousSettings.GoogleOAuthClientID)
 		req.GoogleOAuthClientSecret = strings.TrimSpace(req.GoogleOAuthClientSecret)
-		req.GoogleOAuthRedirectURL = strings.TrimSpace(firstNonEmpty(req.GoogleOAuthRedirectURL, previousSettings.GoogleOAuthRedirectURL))
-		req.GoogleOAuthFrontendRedirectURL = strings.TrimSpace(firstNonEmpty(req.GoogleOAuthFrontendRedirectURL, previousSettings.GoogleOAuthFrontendRedirectURL, "/auth/oauth/callback"))
+		req.GoogleOAuthRedirectURL = stringJSONFieldOrFirstNonEmpty(rawFields, "google_oauth_redirect_url", req.GoogleOAuthRedirectURL, previousSettings.GoogleOAuthRedirectURL)
+		req.GoogleOAuthFrontendRedirectURL = stringJSONFieldOrFirstNonEmpty(rawFields, "google_oauth_frontend_redirect_url", req.GoogleOAuthFrontendRedirectURL, previousSettings.GoogleOAuthFrontendRedirectURL, "/auth/oauth/callback")
 
 		if req.GoogleOAuthClientID == "" {
 			response.BadRequest(c, "Google OAuth Client ID is required when enabled")
@@ -3715,11 +3763,97 @@ func boolValueOrDefault(value *bool, fallback bool) bool {
 	return *value
 }
 
+func preserveOmittedSettingsFields(rawFields map[string]json.RawMessage, req *UpdateSettingsRequest, previous *service.SystemSettings) {
+	if req == nil || previous == nil {
+		return
+	}
+	reqValue := reflect.ValueOf(req)
+	if reqValue.Kind() != reflect.Pointer || reqValue.IsNil() {
+		return
+	}
+	reqValue = reqValue.Elem()
+	previousValue := reflect.ValueOf(previous)
+	if previousValue.Kind() != reflect.Pointer || previousValue.IsNil() {
+		return
+	}
+	previousValue = previousValue.Elem()
+	reqType := reqValue.Type()
+
+	for i := 0; i < reqType.NumField(); i++ {
+		field := reqType.Field(i)
+		if field.PkgPath != "" {
+			continue
+		}
+		jsonName := field.Tag.Get("json")
+		if idx := strings.IndexByte(jsonName, ','); idx >= 0 {
+			jsonName = jsonName[:idx]
+		}
+		jsonName = strings.TrimSpace(jsonName)
+		if jsonName == "" || jsonName == "-" {
+			continue
+		}
+		if jsonName == "site_logo" {
+			continue
+		}
+		if _, ok := rawFields[jsonName]; ok {
+			continue
+		}
+		if !preserveOmittedSettingsFieldType(field.Type) {
+			continue
+		}
+
+		reqField := reqValue.Field(i)
+		if !reqField.CanSet() {
+			continue
+		}
+		previousField := previousValue.FieldByName(field.Name)
+		if !previousField.IsValid() || !previousField.Type().AssignableTo(field.Type) {
+			continue
+		}
+		reqField.Set(previousField)
+	}
+}
+
+func preserveOmittedSettingsFieldType(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Bool,
+		reflect.String,
+		reflect.Int,
+		reflect.Int8,
+		reflect.Int16,
+		reflect.Int32,
+		reflect.Int64,
+		reflect.Uint,
+		reflect.Uint8,
+		reflect.Uint16,
+		reflect.Uint32,
+		reflect.Uint64,
+		reflect.Uintptr,
+		reflect.Float32,
+		reflect.Float64,
+		reflect.Slice,
+		reflect.Map:
+		return true
+	default:
+		return false
+	}
+}
+
 func stringJSONFieldOrDefault(rawFields map[string]json.RawMessage, field, value, fallback string) string {
 	if _, ok := rawFields[field]; !ok {
 		return fallback
 	}
 	return value
+}
+
+func stringJSONFieldOrFirstNonEmpty(rawFields map[string]json.RawMessage, field, value string, fallbacks ...string) string {
+	if _, ok := rawFields[field]; ok {
+		return strings.TrimSpace(value)
+	}
+	values := make([]string, 0, len(fallbacks)+1)
+	values = append(values, value)
+	values = append(values, fallbacks...)
+	return strings.TrimSpace(firstNonEmpty(values...))
 }
 
 func intJSONFieldOrDefault(rawFields map[string]json.RawMessage, field string, value, fallback int) int {
