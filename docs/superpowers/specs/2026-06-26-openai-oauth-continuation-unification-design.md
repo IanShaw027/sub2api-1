@@ -16,7 +16,7 @@
 本轮覆盖：
 
 1. OpenAI OAuth `/v1/responses` continuation 统一决策
-2. WS 热续链、HTTP 冷续链、full/compacted rebuild 三层 ladder
+2. OAuth `store=false` 主 lane 的 `Hot WS -> Full Rebuild` ladder，以及可选 durable continuation lane
 3. `previous_response_id`、sticky account、sticky conn、session rebuild window 的统一状态管理
 4. `previous_response_not_found`、unsafe tool continuation、compact cutover 等恢复策略
 5. 相关配置开关、可观测性、回归测试
@@ -72,11 +72,10 @@
 1. `session -> latest_response_id`
 2. `session -> canonical rebuild window`
 
-这样可以把 continuation 设计成三层 ladder：
+这样可以把 continuation 设计成两条 lane：
 
-1. **热续链**：活跃 WS + 最新 response + sticky conn/account 命中
-2. **冷续链**：无活跃 WS，但 anchor 仍可用，且账号/窗口条件满足
-3. **重建链**：anchor 不可信或语义不安全时，用 full/compacted rebuild window 开新链
+1. **OAuth `store=false` 主 lane**：`Hot WS Incremental -> Full Rebuild`
+2. **可选 durable lane**：仅在显式允许 persisted continuation 时，才允许 `Cold HTTP Incremental`
 
 ## Continuation Lanes
 
@@ -98,14 +97,14 @@
 3. 维持同连接/同账号 sticky
 4. OpenAI OAuth 主 lane 固定保持 `store=false`
 
-### Lane B: Cold HTTP Incremental
+### Lane B: Cold Durable Incremental
 
 触发条件：
 
-1. 没有可用活跃 WS，或 transport 被显式 force 到 HTTP
+1. 请求不走活跃 WS 热路径
 2. 请求带 `previous_response_id`
-3. 本地仍有该 anchor 的账号粘连，或 planner 判断可安全走冷续链
-4. 请求不需要活跃 socket 上下文才能成立
+3. lane 被显式标记为允许 persisted continuation
+4. planner 已确认该 anchor 不依赖活跃 WS 的内存缓存
 5. 未处于 compact cutover
 6. 未命中 `previous_response_not_found`
 
@@ -114,18 +113,20 @@
 1. 保留 `previous_response_id`
 2. 只发送新增 input
 3. 优先同账号 continuation
-4. 对 OAuth lane 仍保持 `store=false`
+4. 不属于 OAuth `store=false` 主 lane 默认行为
+5. 仅在显式 durable/实验 lane 下启用
 
 ### Lane C: Full Rebuild
 
 触发条件：
 
-1. `previous_response_not_found`
-2. tool continuation 缺少足够 replay context
-3. reasoning continuation 缺少必要恢复窗口
-4. standalone compact 之后的 cutover
-5. 明确从旧分叉点继续，而不是最近一轮
-6. planner 判定当前 continuation 高风险或不安全
+1. OAuth `store=false` 主 lane 失去热 WS continuation 条件
+2. `previous_response_not_found`
+3. tool continuation 缺少足够 replay context
+4. reasoning continuation 缺少必要恢复窗口
+5. standalone compact 之后的 cutover
+6. 明确从旧分叉点继续，而不是最近一轮
+7. planner 判定当前 continuation 高风险或不安全
 
 行为：
 
@@ -172,6 +173,8 @@ planner 输入结构建议包含：
 13. `SessionWindowAvailable`
 14. `CompactCutover`
 15. `RecoveryReason`
+16. `DurableContinuationAllowed`
+17. `PersistedContinuationAvailable`
 
 planner 输出结构：
 
@@ -187,6 +190,7 @@ planner 输出结构：
 1. planner 决定 continuation 策略
 2. transport executor 只负责执行 planner 的决定
 3. 所有 fallback 先转换为 planner 输入，再统一决定动作
+4. OAuth `store=false` 主 lane 不把 HTTP cold continuation 作为默认 fallback
 
 ## Sticky Model
 
@@ -211,17 +215,19 @@ planner 输出结构：
 本轮调整为：
 
 1. `force_http` 仅表示 transport forced to HTTP
-2. 不再默认禁用 continuation
-3. 是否继续增量由 planner 决定
+2. 对 OAuth `store=false` 主 lane，不再尝试“默认 HTTP 冷续链”
+3. planner 需在 `force_http` 下优先判定：
+   - 是否存在显式 durable continuation lane
+   - 否则直接 `FullRebuild`
 
-这样可以让 `force_http` 从“回到旧行为”升级为“HTTP continuation only”。
+这样可以让 `force_http` 从“忽略 sticky 的旧行为”升级为“禁止热 WS，但不伪造 HTTP persisted continuation”。
 
 ### Sticky Scope
 
 同账号 sticky 应继续作用于：
 
 1. WS hot continuation
-2. HTTP cold continuation
+2. 显式 durable cold continuation
 3. rebuild 后的后续新链
 
 同连接 sticky 只作用于：
@@ -236,7 +242,7 @@ planner 输出结构：
 - `backend/internal/service/openai_responses_session_window.go`
 - `backend/internal/service/openai_responses_session_window_test.go`
 
-该窗口是 cold recovery 与 new-chain rebuild 的 canonical source-of-truth。
+该窗口是 recovery 与 new-chain rebuild 的 canonical source-of-truth。
 
 它不保存无限原文，而是保存“下一次恢复所需最小窗口”：
 
@@ -255,7 +261,19 @@ planner 输出结构：
 2. 上一轮局部内存状态
 3. 活跃 WS 的热上下文
 
-这对 tool/reasoning 场景不够稳定，也无法支撑可靠 HTTP 冷恢复。
+这对 tool/reasoning 场景不够稳定，也无法支撑可靠 rebuild fallback。
+
+### Storage Requirements
+
+该窗口不能只存在进程内内存。
+
+最低要求：
+
+1. 本地热缓存用于低延迟读取
+2. 共享缓存（GatewayCache/Redis）用于跨进程恢复
+3. 共享缓存不可用时，系统只能降级成“同进程 best-effort”
+
+若没有共享状态，就不能把该方案称为“最佳 fallback”。
 
 ### Relationship With Existing WS State Store
 
@@ -274,6 +292,23 @@ planner 输出结构：
 
 两者都属于 continuation state，但职责不同，不应混成单一“热缓存”。
 
+## Performance Levers
+
+本轮 continuation 重构只是性能优化的一部分。若目标是最佳 TTFT 和更高有效输出速率，还必须显式纳入以下杠杆：
+
+1. `context_management.compact_threshold`
+   - 优先减少超长链导致的上下文膨胀
+2. WS warm-up / `generate:false`
+   - 在工具密集场景下预热热连接
+3. `service_tier=priority`
+   - 对高价值、低延迟敏感流量显式使用优先级
+4. 稳定的 `prompt_cache_key`
+   - 保持会话级缓存与窗口标识稳定
+5. 每会话单 active response
+   - 避免单连接并发 response 拉长尾延迟
+
+因此，“最佳 TTFT / token throughput”必须作为单独 phase 规划，而不是默认由 continuation 重构自动获得。
+
 ## Error Prevention
 
 planner 必须在请求进入 transport 前完成以下静态规避：
@@ -285,7 +320,7 @@ planner 必须在请求进入 transport 前完成以下静态规避：
 3. `function_call_output` 缺少 replay context
    - 不发上游，直接 `RejectUnsafeContinuation`
 4. `reasoning` 但本地没有恢复材料
-   - 不做冷续链，直接 `FullRebuild`
+   - 不做 continuation，直接 `FullRebuild`
 5. standalone compact cutover
    - 禁止继续旧 anchor
 6. 明确旧分叉 continuation
@@ -301,12 +336,16 @@ planner 必须在请求进入 transport 前完成以下静态规避：
 
 ## Fallback Ladder
 
-统一 ladder：
+OAuth `store=false` 主 lane 的统一 ladder：
 
 1. `HotWSIncremental`
-2. `ColdHTTPIncremental`
-3. `FullRebuild`
-4. `RejectUnsafeContinuation`
+2. `FullRebuild`
+3. `RejectUnsafeContinuation`
+
+可选 durable lane 才允许：
+
+1. `ColdHTTPIncremental`
+2. `FullRebuild`
 
 ### previous_response_not_found
 
@@ -315,7 +354,7 @@ planner 必须在请求进入 transport 前完成以下静态规避：
 1. 一旦命中 `previous_response_not_found`
 2. 立刻废弃该 anchor
 3. 不再继续“删 anchor 后只发当前 turn”
-4. planner 改判为 `FullRebuild`
+4. OAuth `store=false` 主 lane 直接改判为 `FullRebuild`
 5. 用 canonical rebuild window 开新链
 
 ### Tool Continuation
@@ -352,13 +391,16 @@ planner 必须在请求进入 transport 前完成以下静态规避：
    - `session_window`
    - `compacted_window`
    - `full_replay`
+8. `continuation_lane`
+   - `oauth_store_false_primary`
+   - `durable_optional`
 
 ### Why It Matters
 
 没有这层统一观测，就无法区分：
 
 1. 真正高命中的 hot continuation
-2. 被动退化到 cold continuation
+2. 被动退化到 rebuild 或 durable continuation
 3. 因条件不满足而频繁重建链
 
 这会让“尽可能增量发送”的目标无法量化。
@@ -373,9 +415,9 @@ planner 必须在请求进入 transport 前完成以下静态规避：
 
 默认：
 
-1. Phase 1 只开 `http_incremental_continuation_enabled`
-2. Phase 2 再开 `http_incremental_sticky_enabled`
-3. Phase 3 最后开 `rebuild_fallback_enabled`
+1. Phase 1 先开 `rebuild_fallback_enabled`
+2. Phase 2 再评估 `http_incremental_continuation_enabled`
+3. Phase 3 最后按 durable lane 灰度 `http_incremental_sticky_enabled`
 
 ## Rollout Strategy
 
@@ -387,41 +429,40 @@ planner 必须在请求进入 transport 前完成以下静态规避：
 
 ### Phase 1
 
-打通 HTTP continuation correctness：
+先建立正确 fallback 面：
 
 1. 新增 planner
-2. 非 WS transport 不再无条件删除 `previous_response_id`
-3. 先不改 `force_http` sticky 语义
-4. 先不改 `previous_response_not_found` ladder
+2. 新增共享 session rebuild window
+3. `previous_response_not_found` 切到 `FullRebuild`
+4. 暂不开放默认 HTTP cold continuation
 
 ### Phase 2
 
-补 sticky 与 session window：
+补显式 durable continuation：
 
-1. HTTP 冷续链支持 same-account sticky
-2. 新增 canonical rebuild window
-3. `force_http` 变成“HTTP continuation only”
+1. 仅在显式 durable lane 下允许 HTTP continuation
+2. durable lane 支持 same-account sticky
+3. `force_http` 变成“禁止热 WS，但不伪造 persisted continuation”
 
 ### Phase 3
 
-统一恢复链：
+性能专项：
 
-1. `previous_response_not_found`
-2. unsafe tool continuation
-3. compact cutover
-
-全部进入 planner + rebuild ladder
+1. `context_management.compact_threshold`
+2. WS warm-up / `generate:false`
+3. `service_tier=priority`
+4. 统一 TTFT / throughput telemetry
 
 ## Testing Strategy
 
 必须新增以下测试面：
 
-1. HTTP direct continuation 保留 `previous_response_id`
-2. `force_http` 下 same-account sticky 仍能 continuation
-3. WS fail -> HTTP cold continuation
-4. `previous_response_not_found` -> rebuild window -> 新链
-5. tool continuation 缺上下文时本地拒绝
-6. standalone compact cutover 禁用旧 anchor
+1. OAuth `store=false` 主 lane：失去热 WS 后直接 rebuild
+2. `previous_response_not_found` -> rebuild window -> 新链
+3. tool continuation 缺上下文时本地拒绝
+4. standalone compact cutover 禁用旧 anchor
+5. durable lane 下 HTTP continuation correctness
+6. `force_http` 下 durable lane 的 same-account sticky
 
 主要测试文件：
 
@@ -446,8 +487,9 @@ planner 必须在请求进入 transport 前完成以下静态规避：
 直接按本 spec 推进：
 
 1. 统一 planner
-2. canonical rebuild window
-3. hot/cold/rebuild ladder
-4. feature-flag phased rollout
+2. 共享 canonical rebuild window
+3. `Hot WS -> Full Rebuild` 主 ladder
+4. durable lane 灰度 continuation
+5. 性能专项 phase
 
 这是在当前仓库上实现“尽可能增量发送 + 低错误 + 最佳回退 + 尽量 sticky”的最稳方案。
