@@ -248,6 +248,24 @@ func TestOpenAIWSStateStore_DeleteConnScopedStateWriteFailKeepsSessionContextFor
 	require.False(t, ok)
 }
 
+func TestOpenAIWSStateStore_DeleteConnScopedStateWriteFailNoReanchorDeletesSessionContext(t *testing.T) {
+	store := NewOpenAIWSStateStore(nil)
+
+	store.BindSessionContext(7, 11, "sess_write_fail_no_reanchor", openAIWSSessionContextValue{
+		accountID:      101,
+		connID:         "conn_write_fail_no_reanchor",
+		lastResponseID: "resp_write_fail_no_reanchor",
+	}, time.Minute)
+	store.BindConnLastResponse("conn_write_fail_no_reanchor", "resp_write_fail_no_reanchor", time.Minute)
+
+	store.DeleteConnScopedState("conn_write_fail_no_reanchor", "write_request_fail_no_reanchor")
+
+	_, ok := store.GetSessionContext(7, 11, "sess_write_fail_no_reanchor")
+	require.False(t, ok, "write-failed request that cannot reanchor must not leave stale session context")
+	_, ok = store.GetConnLastResponse("conn_write_fail_no_reanchor")
+	require.False(t, ok)
+}
+
 func TestOpenAIWSStateStore_DeleteConnScopedStateErrEventDeletesMatchingSessionContext(t *testing.T) {
 	store := NewOpenAIWSStateStore(nil)
 

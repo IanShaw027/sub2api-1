@@ -838,6 +838,7 @@ func TestOpenAIWSErrorEventLogMessageIncludesRequestBindingAndUpstreamFields(t *
 		ConnAffinityHit:           true,
 		PreferredConnID:           "oa_ws_46_4",
 		StoreFallbackReason:       "active_delta",
+		CleanupReason:             "error_event",
 		ActiveDelta:               true,
 		DeltaItems:                2,
 		FullItems:                 99,
@@ -873,6 +874,7 @@ func TestOpenAIWSErrorEventLogMessageIncludesRequestBindingAndUpstreamFields(t *
 	require.Contains(t, msg, "conn_affinity_hit=true")
 	require.Contains(t, msg, "preferred_conn_id=oa_ws_46_4")
 	require.Contains(t, msg, "store_fallback_reason=active_delta")
+	require.Contains(t, msg, "cleanup_reason=error_event")
 	require.Contains(t, msg, "active_delta=true")
 	require.Contains(t, msg, "fallback_reason=previous_response_not_found")
 	require.Contains(t, msg, "can_fallback=true")
@@ -908,6 +910,7 @@ func TestOpenAIWSSessionContextStickySnapshotLogMessageShowsStickyAndCachedConte
 		CachedLastResponseID:     "resp_cached_123",
 		AccountMatch:             false,
 		AccountMatchState:        "mismatch",
+		AccountMatchReason:       "cached_account_differs_from_sticky",
 		BoundConnID:              "oa_ws_67238_7",
 		BoundConnHit:             true,
 		BoundConnMatch:           true,
@@ -935,6 +938,7 @@ func TestOpenAIWSSessionContextStickySnapshotLogMessageShowsStickyAndCachedConte
 	require.Contains(t, msg, "cached_last_response_id=resp_cached_123")
 	require.Contains(t, msg, "account_match=false")
 	require.Contains(t, msg, "account_match_state=mismatch")
+	require.Contains(t, msg, "account_match_reason=cached_account_differs_from_sticky")
 	require.Contains(t, msg, "bound_conn_id=oa_ws_67238_7")
 	require.Contains(t, msg, "bound_conn_hit=true")
 	require.Contains(t, msg, "bound_conn_match=true")
@@ -1127,6 +1131,7 @@ func TestOpenAIWSWriteRequestFailLogMessageIncludesRequestAndReanchorContext(t *
 		ConnAffinityHit:          true,
 		PreferredConnID:          "oa_ws_45_3",
 		StoreFallbackReason:      "active_delta",
+		CleanupReason:            "write_request_fail_no_reanchor",
 		AllowDeltaConnReanchor:   false,
 		ConnReanchorBlockers:     "has_function_call_output",
 		SessionHash:              "abcdef1234567890",
@@ -1172,6 +1177,7 @@ func TestOpenAIWSWriteRequestFailLogMessageIncludesRequestAndReanchorContext(t *
 	require.Contains(t, msg, "conn_affinity_hit=true")
 	require.Contains(t, msg, "preferred_conn_id=oa_ws_45_3")
 	require.Contains(t, msg, "store_fallback_reason=active_delta")
+	require.Contains(t, msg, "cleanup_reason=write_request_fail_no_reanchor")
 	require.Contains(t, msg, "allow_delta_conn_reanchor=false")
 	require.Contains(t, msg, "conn_reanchor_blockers=has_function_call_output")
 	require.Contains(t, msg, "session_hash=abcdef123456")

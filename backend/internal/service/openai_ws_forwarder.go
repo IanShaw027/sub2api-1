@@ -1246,6 +1246,7 @@ type openAIWSWriteRequestFailLog struct {
 	ConnAffinityHit          bool
 	PreferredConnID          string
 	StoreFallbackReason      string
+	CleanupReason            string
 	AllowDeltaConnReanchor   bool
 	ConnReanchorBlockers     string
 	SessionHash              string
@@ -1292,6 +1293,7 @@ type openAIWSErrorEventLog struct {
 	ConnAffinityHit           bool
 	PreferredConnID           string
 	StoreFallbackReason       string
+	CleanupReason             string
 	ActiveDelta               bool
 	DeltaItems                int
 	FullItems                 int
@@ -1314,7 +1316,7 @@ type openAIWSErrorEventLog struct {
 
 func openAIWSWriteRequestFailLogMessage(v openAIWSWriteRequestFailLog) string {
 	return fmt.Sprintf(
-		"write_request_fail request_id=%s client_request_id=%s account_id=%d account_type=%s model=%s upstream_model=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s attempt=%d conn_pick_ms=%d queue_wait_ms=%d conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d payload_bytes=%d previous_response_id=%s previous_response_id_kind=%s previous_response_id_source=%s store_mode=%s store_enabled=%v store_disabled=%v sticky_account_id=%d sticky_account_hit=%v conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s allow_delta_conn_reanchor=%v conn_reanchor_blockers=%s session_hash=%s has_prompt_cache_key=%v has_turn_state=%v turn_state_len=%d http_ingress_ws_one_shot=%v force_new_conn=%v affinity_only_reuse=%v has_function_call_output=%v active_delta=%v delta_items=%d delta_bytes=%d full_items=%d full_bytes=%d proxy_enabled=%v proxy_id=%d cause=%s",
+		"write_request_fail request_id=%s client_request_id=%s account_id=%d account_type=%s model=%s upstream_model=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s attempt=%d conn_pick_ms=%d queue_wait_ms=%d conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d payload_bytes=%d previous_response_id=%s previous_response_id_kind=%s previous_response_id_source=%s store_mode=%s store_enabled=%v store_disabled=%v sticky_account_id=%d sticky_account_hit=%v conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s cleanup_reason=%s allow_delta_conn_reanchor=%v conn_reanchor_blockers=%s session_hash=%s has_prompt_cache_key=%v has_turn_state=%v turn_state_len=%d http_ingress_ws_one_shot=%v force_new_conn=%v affinity_only_reuse=%v has_function_call_output=%v active_delta=%v delta_items=%d delta_bytes=%d full_items=%d full_bytes=%d proxy_enabled=%v proxy_id=%d cause=%s",
 		normalizeOpenAIWSLogValue(v.RequestID),
 		normalizeOpenAIWSLogValue(v.ClientRequestID),
 		v.AccountID,
@@ -1343,6 +1345,7 @@ func openAIWSWriteRequestFailLogMessage(v openAIWSWriteRequestFailLog) string {
 		v.ConnAffinityHit,
 		truncateOpenAIWSLogValue(v.PreferredConnID, openAIWSIDValueMaxLen),
 		normalizeOpenAIWSLogValue(v.StoreFallbackReason),
+		normalizeOpenAIWSLogValueNoReplace(v.CleanupReason),
 		v.AllowDeltaConnReanchor,
 		normalizeOpenAIWSLogValue(v.ConnReanchorBlockers),
 		truncateOpenAIWSLogValue(v.SessionHash, 12),
@@ -1366,7 +1369,7 @@ func openAIWSWriteRequestFailLogMessage(v openAIWSWriteRequestFailLog) string {
 
 func openAIWSErrorEventLogMessage(v openAIWSErrorEventLog) string {
 	return fmt.Sprintf(
-		"error_event request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s attempt=%d conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d payload_bytes=%d response_id=%s previous_response_id=%s previous_response_id_kind=%s previous_response_id_source=%s original_previous_response_id_present=%v store_mode=%s store_disabled=%v sticky_account_id=%d sticky_account_hit=%v conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s active_delta=%v delta_items=%d full_items=%d idx=%d fallback_reason=%s can_fallback=%v err_code=%s err_type=%s err_message=%s session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s http_ingress_ws_one_shot=%v has_prompt_cache_key=%v has_turn_state=%v turn_state_len=%d",
+		"error_event request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s attempt=%d conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d payload_bytes=%d response_id=%s previous_response_id=%s previous_response_id_kind=%s previous_response_id_source=%s original_previous_response_id_present=%v store_mode=%s store_disabled=%v sticky_account_id=%d sticky_account_hit=%v conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s cleanup_reason=%s active_delta=%v delta_items=%d full_items=%d idx=%d fallback_reason=%s can_fallback=%v err_code=%s err_type=%s err_message=%s session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s http_ingress_ws_one_shot=%v has_prompt_cache_key=%v has_turn_state=%v turn_state_len=%d",
 		normalizeOpenAIWSLogValue(v.RequestID),
 		normalizeOpenAIWSLogValue(v.ClientRequestID),
 		v.AccountID,
@@ -1392,6 +1395,7 @@ func openAIWSErrorEventLogMessage(v openAIWSErrorEventLog) string {
 		v.ConnAffinityHit,
 		truncateOpenAIWSLogValue(v.PreferredConnID, openAIWSIDValueMaxLen),
 		normalizeOpenAIWSLogValue(v.StoreFallbackReason),
+		normalizeOpenAIWSLogValueNoReplace(v.CleanupReason),
 		v.ActiveDelta,
 		v.DeltaItems,
 		v.FullItems,
@@ -4232,7 +4236,30 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			)
 			return nil, wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted)
 		}
-		lease.MarkBrokenFor("write_request_fail")
+		cleanupReason := "write_request_fail"
+		if !allowDeltaConnReanchor {
+			cleanupReason = "write_request_fail_no_reanchor"
+		}
+		s.logOpenAIWSBindingSnapshot(
+			ctx,
+			"write_request_fail",
+			requestID,
+			account,
+			stateStore,
+			pool,
+			groupID,
+			apiKeyID,
+			sessionHash,
+			previousResponseID,
+			originalPreviousResponseIDPresent,
+			connID,
+			preferredConnID,
+			storeDecision,
+			"write_request_fail",
+			cleanupReason,
+			"transport_write",
+		)
+		lease.MarkBrokenFor(cleanupReason)
 		var proxyID int64
 		if account.ProxyID != nil {
 			proxyID = *account.ProxyID
@@ -4266,6 +4293,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			ConnAffinityHit:          connAffinityHit,
 			PreferredConnID:          preferredConnID,
 			StoreFallbackReason:      storeDecision.FallbackReason,
+			CleanupReason:            cleanupReason,
 			AllowDeltaConnReanchor:   allowDeltaConnReanchor,
 			ConnReanchorBlockers:     deltaConnReanchorBlockers,
 			SessionHash:              sessionHash,
@@ -4713,6 +4741,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				ConnAffinityHit:           connAffinityHit,
 				PreferredConnID:           preferredConnID,
 				StoreFallbackReason:       storeDecision.FallbackReason,
+				CleanupReason:             "error_event",
 				ActiveDelta:               activeDeltaApplied,
 				DeltaItems:                activeDeltaLog.DeltaItems,
 				FullItems:                 activeDeltaLog.FullItems,
