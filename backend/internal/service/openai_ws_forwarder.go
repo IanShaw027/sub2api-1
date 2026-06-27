@@ -827,6 +827,9 @@ type openAIWSContinuationProbeLog struct {
 	PayloadBytes              int
 	ConnPickMs                int64
 	QueueWaitMs               int64
+	ConnAgeMs                 int64
+	ConnIdleMs                int64
+	ConnLeaseCount            int64
 	SessionHash               string
 	HeaderSessionID           string
 	HeaderConversationID      string
@@ -839,7 +842,7 @@ type openAIWSContinuationProbeLog struct {
 
 func openAIWSContinuationProbeLogMessage(v openAIWSContinuationProbeLog) string {
 	return fmt.Sprintf(
-		"continuation_probe account_id=%d account_type=%s conn_id=%s previous_response_id=%s previous_response_id_kind=%s previous_response_id_source=%s original_previous_response_id_present=%v preferred_conn_id=%s conn_reused=%v store_disabled=%v store_mode=%s store_enabled=%v sticky_account_hit=%v conn_affinity_hit=%v fallback_reason=%s payload_bytes=%d conn_pick_ms=%d queue_wait_ms=%d session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v",
+		"continuation_probe account_id=%d account_type=%s conn_id=%s previous_response_id=%s previous_response_id_kind=%s previous_response_id_source=%s original_previous_response_id_present=%v preferred_conn_id=%s conn_reused=%v store_disabled=%v store_mode=%s store_enabled=%v sticky_account_hit=%v conn_affinity_hit=%v fallback_reason=%s payload_bytes=%d conn_pick_ms=%d queue_wait_ms=%d conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v",
 		v.AccountID,
 		normalizeOpenAIWSLogValue(v.AccountType),
 		truncateOpenAIWSLogValue(v.ConnID, openAIWSIDValueMaxLen),
@@ -858,6 +861,9 @@ func openAIWSContinuationProbeLogMessage(v openAIWSContinuationProbeLog) string 
 		v.PayloadBytes,
 		v.ConnPickMs,
 		v.QueueWaitMs,
+		v.ConnAgeMs,
+		v.ConnIdleMs,
+		v.ConnLeaseCount,
 		truncateOpenAIWSLogValue(v.SessionHash, 12),
 		normalizeOpenAIWSLogValue(v.HeaderSessionID),
 		normalizeOpenAIWSLogValue(v.HeaderConversationID),
@@ -909,6 +915,9 @@ type openAIWSDiagnosticStartLog struct {
 	FullBytes                 int
 	ConnPickMs                int64
 	QueueWaitMs               int64
+	ConnAgeMs                 int64
+	ConnIdleMs                int64
+	ConnLeaseCount            int64
 	SessionHash               string
 	HeaderSessionID           string
 	HeaderConversationID      string
@@ -927,7 +936,7 @@ type openAIWSDiagnosticStartLog struct {
 
 func openAIWSDiagnosticStartLogMessage(v openAIWSDiagnosticStartLog) string {
 	return fmt.Sprintf(
-		"openai_ws_diag_start temporary_diag=ctx_pool_store_true remove_after_debug=true request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s model=%s stream=%s payload_event=%s payload_bytes=%d payload_keys=%s input_summary=%s previous_response_id=%s previous_response_id_kind=%s previous_response_id_source=%s original_previous_response_id_present=%v preferred_conn_id=%s store_mode=%s store_enabled=%v store_disabled=%v sticky_account_hit=%v conn_affinity_hit=%v fallback_reason=%s dropped_previous_response_id=%v unsafe_tool_continuation=%v delta_active=%v delta_items=%d delta_bytes=%d full_items=%d full_bytes=%d conn_pick_ms=%d queue_wait_ms=%d session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v has_tools=%v http_ingress_ws_one_shot=%v force_new_conn=%v affinity_only_reuse=%v store_disabled_conn_mode=%s proxy_enabled=%v",
+		"openai_ws_diag_start temporary_diag=ctx_pool_store_true remove_after_debug=true request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s model=%s stream=%s payload_event=%s payload_bytes=%d payload_keys=%s input_summary=%s previous_response_id=%s previous_response_id_kind=%s previous_response_id_source=%s original_previous_response_id_present=%v preferred_conn_id=%s store_mode=%s store_enabled=%v store_disabled=%v sticky_account_hit=%v conn_affinity_hit=%v fallback_reason=%s dropped_previous_response_id=%v unsafe_tool_continuation=%v delta_active=%v delta_items=%d delta_bytes=%d full_items=%d full_bytes=%d conn_pick_ms=%d queue_wait_ms=%d conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v has_tools=%v http_ingress_ws_one_shot=%v force_new_conn=%v affinity_only_reuse=%v store_disabled_conn_mode=%s proxy_enabled=%v",
 		normalizeOpenAIWSLogValue(v.RequestID),
 		normalizeOpenAIWSLogValue(v.ClientRequestID),
 		v.AccountID,
@@ -962,6 +971,9 @@ func openAIWSDiagnosticStartLogMessage(v openAIWSDiagnosticStartLog) string {
 		v.FullBytes,
 		v.ConnPickMs,
 		v.QueueWaitMs,
+		v.ConnAgeMs,
+		v.ConnIdleMs,
+		v.ConnLeaseCount,
 		truncateOpenAIWSLogValue(v.SessionHash, 12),
 		normalizeOpenAIWSLogValue(v.HeaderSessionID),
 		normalizeOpenAIWSLogValue(v.HeaderConversationID),
@@ -1024,6 +1036,9 @@ type openAIWSDiagnosticCompletedLog struct {
 	PreviousResponseIDSource    string
 	OriginalPreviousIDPresent   bool
 	PayloadBytes                int
+	ConnAgeMs                   int64
+	ConnIdleMs                  int64
+	ConnLeaseCount              int64
 	WriteSentMs                 int
 	DurationMs                  int64
 	FirstTokenMs                int
@@ -1053,7 +1068,7 @@ type openAIWSDiagnosticCompletedLog struct {
 
 func openAIWSDiagnosticCompletedLogMessage(v openAIWSDiagnosticCompletedLog) string {
 	return fmt.Sprintf(
-		"openai_ws_diag_completed temporary_diag=ctx_pool_store_true remove_after_debug=true request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v response_id=%s model=%s upstream_model=%s stream=%v store_mode=%s store_enabled=%v store_disabled=%v has_previous_response_id=%v previous_response_id_kind=%s previous_response_id_source=%s original_previous_response_id_present=%v payload_bytes=%d write_sent_ms=%d duration_ms=%d first_token_ms=%d first_event_ms=%d first_token_event=%s first_token_after_first_event_ms=%d events=%d token_events=%d terminal_events=%d buffered_events=%d buffered_flushed=%d first_event=%s last_event=%s wrote_downstream=%v client_disconnected=%v http_ingress_ws_one_shot=%v input_tokens=%d cache_read_tokens=%d cache_creation_tokens=%d output_tokens=%d delta_active=%v delta_items=%d delta_bytes=%d full_items=%d full_bytes=%d",
+		"openai_ws_diag_completed temporary_diag=ctx_pool_store_true remove_after_debug=true request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v response_id=%s model=%s upstream_model=%s stream=%v store_mode=%s store_enabled=%v store_disabled=%v has_previous_response_id=%v previous_response_id_kind=%s previous_response_id_source=%s original_previous_response_id_present=%v payload_bytes=%d conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d write_sent_ms=%d duration_ms=%d first_token_ms=%d first_event_ms=%d first_token_event=%s first_token_after_first_event_ms=%d events=%d token_events=%d terminal_events=%d buffered_events=%d buffered_flushed=%d first_event=%s last_event=%s wrote_downstream=%v client_disconnected=%v http_ingress_ws_one_shot=%v input_tokens=%d cache_read_tokens=%d cache_creation_tokens=%d output_tokens=%d delta_active=%v delta_items=%d delta_bytes=%d full_items=%d full_bytes=%d",
 		normalizeOpenAIWSLogValue(v.RequestID),
 		normalizeOpenAIWSLogValue(v.ClientRequestID),
 		v.AccountID,
@@ -1073,6 +1088,9 @@ func openAIWSDiagnosticCompletedLogMessage(v openAIWSDiagnosticCompletedLog) str
 		normalizeOpenAIWSLogValue(v.PreviousResponseIDSource),
 		v.OriginalPreviousIDPresent,
 		v.PayloadBytes,
+		v.ConnAgeMs,
+		v.ConnIdleMs,
+		v.ConnLeaseCount,
 		v.WriteSentMs,
 		v.DurationMs,
 		v.FirstTokenMs,
@@ -1135,6 +1153,9 @@ type openAIWSReadFailLog struct {
 	Attempt                int
 	ConnPickMs             int64
 	QueueWaitMs            int64
+	ConnAgeMs              int64
+	ConnIdleMs             int64
+	ConnLeaseCount         int64
 	PayloadBytes           int
 	PreviousResponseID     string
 	PreviousResponseIDKind string
@@ -1264,7 +1285,7 @@ func openAIWSWriteRequestFailLogMessage(v openAIWSWriteRequestFailLog) string {
 
 func openAIWSReadFailLogMessage(v openAIWSReadFailLog) string {
 	return fmt.Sprintf(
-		"read_fail request_id=%s client_request_id=%s account_id=%d account_type=%s model=%s upstream_model=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s attempt=%d conn_pick_ms=%d queue_wait_ms=%d payload_bytes=%d previous_response_id=%s previous_response_id_kind=%s store_mode=%s store_enabled=%v store_disabled=%v session_hash=%s has_prompt_cache_key=%v has_turn_state=%v turn_state_len=%d proxy_enabled=%v proxy_id=%d wrote_downstream=%v close_status=%s close_reason=%s cause=%s events=%d token_events=%d terminal_events=%d first_event_ms=%d first_token_ms=%d first_token_event=%s buffered_pending=%d buffered_flushed=%d first_event=%s last_event=%s",
+		"read_fail request_id=%s client_request_id=%s account_id=%d account_type=%s model=%s upstream_model=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s attempt=%d conn_pick_ms=%d queue_wait_ms=%d conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d payload_bytes=%d previous_response_id=%s previous_response_id_kind=%s store_mode=%s store_enabled=%v store_disabled=%v session_hash=%s has_prompt_cache_key=%v has_turn_state=%v turn_state_len=%d proxy_enabled=%v proxy_id=%d wrote_downstream=%v close_status=%s close_reason=%s cause=%s events=%d token_events=%d terminal_events=%d first_event_ms=%d first_token_ms=%d first_token_event=%s buffered_pending=%d buffered_flushed=%d first_event=%s last_event=%s",
 		normalizeOpenAIWSLogValue(v.RequestID),
 		normalizeOpenAIWSLogValue(v.ClientRequestID),
 		v.AccountID,
@@ -1278,6 +1299,9 @@ func openAIWSReadFailLogMessage(v openAIWSReadFailLog) string {
 		v.Attempt,
 		v.ConnPickMs,
 		v.QueueWaitMs,
+		v.ConnAgeMs,
+		v.ConnIdleMs,
+		v.ConnLeaseCount,
 		v.PayloadBytes,
 		truncateOpenAIWSLogValue(v.PreviousResponseID, openAIWSIDValueMaxLen),
 		normalizeOpenAIWSLogValue(v.PreviousResponseIDKind),
@@ -3428,7 +3452,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	clientDisconnected := false
 	defer func() {
 		if !cleanExit || clientDisconnected {
-			lease.MarkBroken()
+			reason := "unclean_exit"
+			if clientDisconnected {
+				reason = "client_disconnected"
+			}
+			lease.MarkBrokenFor(reason)
 		}
 		lease.Release()
 	}()
@@ -3528,6 +3556,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		storeDecision.DroppedPreviousResponseID,
 	)
 	originalPreviousResponseIDPresent := strings.TrimSpace(storeDecision.OriginalPreviousResponseID) != ""
+	connAgeMs := lease.ConnAge().Milliseconds()
+	connIdleMs := lease.ConnIdleDuration().Milliseconds()
+	connLeaseCount := lease.ConnLeaseCount()
 	diagnosticStart := openAIWSDiagnosticStartLog{
 		RequestID:                 requestID,
 		ClientRequestID:           clientRequestID,
@@ -3563,6 +3594,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		FullBytes:                 activeDeltaLog.FullBytes,
 		ConnPickMs:                lease.ConnPickDuration().Milliseconds(),
 		QueueWaitMs:               lease.QueueWaitDuration().Milliseconds(),
+		ConnAgeMs:                 connAgeMs,
+		ConnIdleMs:                connIdleMs,
+		ConnLeaseCount:            connLeaseCount,
 		SessionHash:               sessionHash,
 		HeaderSessionID:           openAIWSHeaderValueForLog(wsHeaders, "session_id"),
 		HeaderConversationID:      openAIWSHeaderValueForLog(wsHeaders, "conversation_id"),
@@ -3609,6 +3643,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			PayloadBytes:              resolvePayloadBytes(),
 			ConnPickMs:                lease.ConnPickDuration().Milliseconds(),
 			QueueWaitMs:               lease.QueueWaitDuration().Milliseconds(),
+			ConnAgeMs:                 connAgeMs,
+			ConnIdleMs:                connIdleMs,
+			ConnLeaseCount:            connLeaseCount,
 			SessionHash:               sessionHash,
 			HeaderSessionID:           openAIWSHeaderValueForLog(wsHeaders, "session_id"),
 			HeaderConversationID:      openAIWSHeaderValueForLog(wsHeaders, "conversation_id"),
@@ -3667,8 +3704,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		connAgeMs := lease.ConnAge().Milliseconds()
 		connIdleMs := lease.ConnIdleDuration().Milliseconds()
 		connLeaseCount := lease.ConnLeaseCount()
-		lease.MarkBroken()
 		if isOpenAIWSSessionPreempted(ctx) {
+			lease.MarkBrokenFor("session_preempted_write")
 			logOpenAIWSModeInfo(
 				"session_preempted account_id=%d account_type=%s request_id=%s conn_id=%s stage=write",
 				account.ID,
@@ -3678,6 +3715,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			)
 			return nil, wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted)
 		}
+		lease.MarkBrokenFor("write_request_fail")
 		var proxyID int64
 		if account.ProxyID != nil {
 			proxyID = *account.ProxyID
@@ -3784,7 +3822,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		c.Header("X-Accel-Buffering", "no")
 		f, ok := c.Writer.(http.Flusher)
 		if !ok {
-			lease.MarkBroken()
+			lease.MarkBrokenFor("streaming_not_supported")
 			return nil, wrapOpenAIWSFallback("streaming_not_supported", errors.New("streaming not supported"))
 		}
 		flusher = f
@@ -3854,8 +3892,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	for {
 		message, readErr := lease.ReadMessageWithContextTimeout(ctx, readTimeout)
 		if readErr != nil {
-			lease.MarkBroken()
 			if isOpenAIWSSessionPreempted(ctx) {
+				lease.MarkBrokenFor("session_preempted_read")
 				logOpenAIWSModeInfo(
 					"session_preempted account_id=%d account_type=%s request_id=%s conn_id=%s stage=read wrote_downstream=%v events=%d token_events=%d terminal_events=%d",
 					account.ID,
@@ -3869,6 +3907,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				)
 				return nil, wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted)
 			}
+			lease.MarkBrokenFor("read_fail")
 			closeStatus, closeReason := summarizeOpenAIWSReadCloseError(readErr)
 			proxyID := int64(0)
 			if account.ProxyID != nil {
@@ -3896,6 +3935,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				Attempt:                attempt,
 				ConnPickMs:             lease.ConnPickDuration().Milliseconds(),
 				QueueWaitMs:            lease.QueueWaitDuration().Milliseconds(),
+				ConnAgeMs:              lease.ConnAge().Milliseconds(),
+				ConnIdleMs:             lease.ConnIdleDuration().Milliseconds(),
+				ConnLeaseCount:         lease.ConnLeaseCount(),
 				PayloadBytes:           resolvePayloadBytes(),
 				PreviousResponseID:     previousResponseID,
 				PreviousResponseIDKind: previousResponseIDKind,
@@ -4068,7 +4110,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				truncateOpenAIWSLogValue(eventType, openAIWSLogValueMaxLen),
 				truncateOpenAIWSLogValue(advisoryMsg, openAIWSLogValueMaxLen),
 			)
-			lease.MarkBroken()
+			lease.MarkBrokenFor("soft_rate_limit_advisory")
 			if !wroteDownstream {
 				return nil, wrapOpenAIWSFallback("upstream_rate_limited", errors.New(advisoryMsg))
 			}
@@ -4140,7 +4182,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				)
 			}
 			// error 事件后连接不再可复用，避免回池后污染下一请求。
-			lease.MarkBroken()
+			lease.MarkBrokenFor("error_event")
 			if !wroteDownstream && canFallback {
 				return nil, wrapOpenAIWSFallbackWithPayloadState(fallbackReason, errors.New(errMsg), previousResponseID, activeDeltaApplied)
 			}
@@ -4172,7 +4214,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				message:   errMsg,
 				retryable: openAIStreamFailedEventShouldFailover(message, errMsg),
 			}
-			lease.MarkBroken()
+			lease.MarkBrokenFor("response_failed")
 			if !wroteDownstream {
 				return nil, wrapOpenAIWSFallback("response_failed", failedErr)
 			}
@@ -4335,6 +4377,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		PreviousResponseIDSource:    previousResponseIDSource,
 		OriginalPreviousIDPresent:   originalPreviousResponseIDPresent,
 		PayloadBytes:                resolvePayloadBytes(),
+		ConnAgeMs:                   lease.ConnAge().Milliseconds(),
+		ConnIdleMs:                  lease.ConnIdleDuration().Milliseconds(),
+		ConnLeaseCount:              lease.ConnLeaseCount(),
 		WriteSentMs:                 writeSentMs,
 		DurationMs:                  durationMs,
 		FirstTokenMs:                firstTokenMsValue,
@@ -5292,7 +5337,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		for {
 			upstreamMessage, readErr := lease.ReadMessageWithContextTimeout(ctx, s.openAIWSReadTimeout())
 			if readErr != nil {
-				lease.MarkBroken()
+				lease.MarkBrokenFor("ingress_read_upstream")
 				return nil, wrapOpenAIWSIngressTurnError(
 					"read_upstream",
 					fmt.Errorf("read upstream websocket event: %w", readErr),
@@ -5378,7 +5423,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				// previous_response_not_found 在 ingress 模式支持单次恢复重试：
 				// 不把该 error 直接下发客户端，而是由上层去掉 previous_response_id 后重放当前 turn。
 				if recoverablePrevNotFound {
-					lease.MarkBroken()
+					lease.MarkBrokenFor("ingress_previous_response_not_found")
 					errMsg := strings.TrimSpace(errMsgRaw)
 					if errMsg == "" {
 						errMsg = "previous response not found"
@@ -5390,7 +5435,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					)
 				}
 				if !wroteDownstream && isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw) {
-					lease.MarkBroken()
+					lease.MarkBrokenFor("ingress_rate_limit")
 					return nil, &UpstreamFailoverError{
 						StatusCode:      http.StatusTooManyRequests,
 						ResponseBody:    append([]byte(nil), upstreamMessage...),
@@ -5469,7 +5514,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if isTerminalEvent {
 				// 客户端已断连时，上游连接的 session 状态不可信，标记 broken 避免回池复用。
 				if clientDisconnected {
-					lease.MarkBroken()
+					lease.MarkBrokenFor("ingress_client_disconnected")
 				}
 				// TEMP_DIAG(openai_ws_delta_shadow): 对比 client-visible(改写后)与 raw output 是否等价。
 				if deltaShadowEnabled && deltaShadowOutputCaptured && !clientDisconnected {
@@ -5617,7 +5662,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return
 		}
 		if !lastTurnClean {
-			sessionLease.MarkBroken()
+			sessionLease.MarkBrokenFor("ingress_unclean_turn")
 		}
 		unpinSessionConn(sessionConnID)
 		sessionLease.Release()
@@ -5654,7 +5699,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return
 		}
 		if markBroken {
-			sessionLease.MarkBroken()
+			sessionLease.MarkBrokenFor("ingress_reset")
 		}
 		releaseSessionLease()
 		sessionLease = nil
@@ -6115,7 +6160,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if hooks != nil && hooks.AfterTurn != nil {
 				hooks.AfterTurn(turn, cloneOpenAIWSPayloadBytes(currentPayload), nil, finalErr)
 			}
-			sessionLease.MarkBroken()
+			sessionLease.MarkBrokenFor("ingress_relay_error")
 			return finalErr
 		}
 		if result == nil {
@@ -6221,7 +6266,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					bindCleanTurnResponseAccount()
 					lastTurnClean = false
 					if sessionLease != nil {
-						sessionLease.MarkBroken()
+						sessionLease.MarkBrokenFor("ingress_client_closed")
 					}
 					if stateStore != nil {
 						if responseID != "" {
@@ -6426,7 +6471,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	prewarmPayloadJSON := payloadAsJSONBytes(prewarmPayload)
 
 	if err := lease.WriteJSONWithContextTimeout(ctx, prewarmPayload, s.openAIWSWriteTimeout()); err != nil {
-		lease.MarkBroken()
+		lease.MarkBrokenFor("prewarm_write_fail")
 		logOpenAIWSModeInfo(
 			"prewarm_write_fail account_id=%d conn_id=%s cause=%s",
 			account.ID,
@@ -6443,7 +6488,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	for {
 		message, readErr := lease.ReadMessageWithContextTimeout(ctx, s.openAIWSReadTimeout())
 		if readErr != nil {
-			lease.MarkBroken()
+			lease.MarkBrokenFor("prewarm_read_fail")
 			closeStatus, closeReason := summarizeOpenAIWSReadCloseError(readErr)
 			logOpenAIWSModeInfo(
 				"prewarm_read_fail account_id=%d conn_id=%s close_status=%s close_reason=%s cause=%s events=%d",
@@ -6499,7 +6544,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 				errType,
 				errMessage,
 			)
-			lease.MarkBroken()
+			lease.MarkBrokenFor("prewarm_error_event")
 			if canFallback {
 				return wrapOpenAIWSFallback("prewarm_"+fallbackReason, errors.New(errMsg))
 			}

@@ -409,10 +409,14 @@ func (l *openAIWSConnLease) PingWithTimeout(timeout time.Duration) error {
 }
 
 func (l *openAIWSConnLease) MarkBroken() {
+	l.MarkBrokenFor("evict")
+}
+
+func (l *openAIWSConnLease) MarkBrokenFor(reason string) {
 	if l == nil || l.pool == nil || l.conn == nil || l.released.Load() {
 		return
 	}
-	l.pool.evictConn(l.accountID, l.conn.id)
+	l.pool.evictConn(l.accountID, l.conn.id, reason)
 }
 
 func (l *openAIWSConnLease) Release() {

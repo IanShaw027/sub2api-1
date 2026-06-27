@@ -452,6 +452,32 @@ func TestSettingService_GetAllSettings_DefaultsOpenAIWSPoolRuntimeSettings(t *te
 	require.Equal(t, defaultOpenAIWSSessionIdleTTLSeconds, sessionIdleTTLSeconds)
 }
 
+func TestSettingService_LoadOpenAIWSPoolRuntimeSettingsInitializesCache(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyOpenAIWSNeutralPrewarmPercent: "30",
+			SettingKeyOpenAIWSSessionIdleTTLSeconds: "80",
+			SettingKeyOpenAIWSMinIdlePerAccount:     "1",
+			SettingKeyOpenAIWSMaxIdlePerAccount:     "8",
+			SettingKeyOpenAIStickyReservePercent:    "30",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	require.NoError(t, svc.LoadOpenAIWSPoolRuntimeSettings(context.Background()))
+
+	neutralPrewarmPercent, sessionIdleTTLSeconds, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
+	require.True(t, ok)
+	require.Equal(t, 30, neutralPrewarmPercent)
+	require.Equal(t, 80, sessionIdleTTLSeconds)
+	pool := newOpenAIWSConnPool(&config.Config{})
+	t.Cleanup(pool.Close)
+	require.Equal(t, 80*time.Second, pool.neutralIdleTTL())
+}
+
 func TestSettingService_UpdateSettings_OpenAIWSIdleSettingsDrivePoolRuntime(t *testing.T) {
 	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
 	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)

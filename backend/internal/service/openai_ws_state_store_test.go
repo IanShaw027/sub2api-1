@@ -193,6 +193,61 @@ func TestOpenAIWSStateStore_DeleteConnScopedStateDeletesMatchingSessionContext(t
 	require.Equal(t, "resp_b", respID)
 }
 
+func TestOpenAIWSStateStore_DeleteConnScopedStateEvictDeletesMatchingSessionContext(t *testing.T) {
+	store := NewOpenAIWSStateStore(nil)
+
+	store.BindSessionContext(7, 11, "sess_evict", openAIWSSessionContextValue{
+		accountID:      101,
+		connID:         "conn_evict",
+		lastResponseID: "resp_evict",
+	}, time.Minute)
+	store.BindConnLastResponse("conn_evict", "resp_evict", time.Minute)
+
+	store.DeleteConnScopedState("conn_evict", "evict")
+
+	_, ok := store.GetSessionContext(7, 11, "sess_evict")
+	require.False(t, ok, "generic broken-connection evict must clear session context to avoid stale conn_mismatch retry")
+	_, ok = store.GetConnLastResponse("conn_evict")
+	require.False(t, ok)
+}
+
+func TestOpenAIWSStateStore_DeleteConnScopedStateReadFailDeletesMatchingSessionContext(t *testing.T) {
+	store := NewOpenAIWSStateStore(nil)
+
+	store.BindSessionContext(7, 11, "sess_read_fail", openAIWSSessionContextValue{
+		accountID:      101,
+		connID:         "conn_read_fail",
+		lastResponseID: "resp_read_fail",
+	}, time.Minute)
+	store.BindConnLastResponse("conn_read_fail", "resp_read_fail", time.Minute)
+
+	store.DeleteConnScopedState("conn_read_fail", "read_fail")
+
+	_, ok := store.GetSessionContext(7, 11, "sess_read_fail")
+	require.False(t, ok, "read-failed upstream conn must not leave stale session context")
+	_, ok = store.GetConnLastResponse("conn_read_fail")
+	require.False(t, ok)
+}
+
+func TestOpenAIWSStateStore_DeleteConnScopedStateWriteFailKeepsSessionContextForReanchor(t *testing.T) {
+	store := NewOpenAIWSStateStore(nil)
+
+	store.BindSessionContext(7, 11, "sess_write_fail", openAIWSSessionContextValue{
+		accountID:      101,
+		connID:         "conn_write_fail",
+		lastResponseID: "resp_write_fail",
+	}, time.Minute)
+	store.BindConnLastResponse("conn_write_fail", "resp_write_fail", time.Minute)
+
+	store.DeleteConnScopedState("conn_write_fail", "write_request_fail")
+
+	cached, ok := store.GetSessionContext(7, 11, "sess_write_fail")
+	require.True(t, ok, "write-failed request can safely reanchor cached previous_response_id on a replacement conn")
+	require.Equal(t, "resp_write_fail", cached.lastResponseID)
+	_, ok = store.GetConnLastResponse("conn_write_fail")
+	require.False(t, ok)
+}
+
 func TestOpenAIWSStateStore_GetResponseAccount_NoStaleAfterCacheMiss(t *testing.T) {
 	cache := &stubGatewayCache{sessionBindings: map[string]int64{}}
 	store := NewOpenAIWSStateStore(cache)

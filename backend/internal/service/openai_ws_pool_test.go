@@ -1764,6 +1764,34 @@ func TestOpenAIWSConnLease_MarkBrokenEvictsConn(t *testing.T) {
 	require.False(t, conn.tryAcquire(), "被标记为 broken 的连接应被关闭")
 }
 
+func TestOpenAIWSConnLease_MarkBrokenForPropagatesEvictReason(t *testing.T) {
+	pool := newOpenAIWSConnPool(&config.Config{})
+	accountID := int64(5002)
+	conn := newOpenAIWSConn("broken_for_reason", accountID, &openAIWSFakeConn{}, nil)
+	ap := pool.getOrCreateAccountPool(accountID)
+	ap.mu.Lock()
+	ap.conns[conn.id] = conn
+	ap.mu.Unlock()
+
+	var gotConnID string
+	var gotReason string
+	RegisterOpenAIWSConnEvictHook(func(connID string, reason string) {
+		gotConnID = connID
+		gotReason = reason
+	})
+	t.Cleanup(func() { RegisterOpenAIWSConnEvictHook(nil) })
+
+	lease := &openAIWSConnLease{
+		pool:      pool,
+		accountID: accountID,
+		conn:      conn,
+	}
+	lease.MarkBrokenFor("read_fail")
+
+	require.Equal(t, conn.id, gotConnID)
+	require.Equal(t, "read_fail", gotReason)
+}
+
 func TestOpenAIWSConnPool_TargetConnCountAndPrewarmBranches(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1

@@ -788,6 +788,38 @@ func (s *SettingService) GetAllSettings(ctx context.Context) (*SystemSettings, e
 	return parsed, nil
 }
 
+// LoadOpenAIWSPoolRuntimeSettings initializes the process-local WS pool knobs
+// from DB-backed settings during startup, before admin settings are requested.
+func (s *SettingService) LoadOpenAIWSPoolRuntimeSettings(ctx context.Context) error {
+	if s == nil || s.settingRepo == nil {
+		return nil
+	}
+	values, err := s.settingRepo.GetMultiple(ctx, []string{
+		SettingKeyOpenAIWSMinIdlePerAccount,
+		SettingKeyOpenAIWSMaxIdlePerAccount,
+		SettingKeyOpenAIWSNeutralPrewarmPercent,
+		SettingKeyOpenAIWSSessionIdleTTLSeconds,
+		SettingKeyOpenAIStickyReservePercent,
+	})
+	if err != nil {
+		return fmt.Errorf("get openai ws pool runtime settings: %w", err)
+	}
+	parsed := s.parseSettings(values)
+	openAIWSNeutralPrewarmPercent, openAIWSSessionIdleTTLSeconds := normalizeOpenAIWSPoolRuntimeSettingsForUpdate(parsed)
+	openAIWSMinIdlePerAccount, openAIWSMaxIdlePerAccount := normalizeOpenAIWSIdleSettingValues(
+		parsed.OpenAIWSMinIdlePerAccount,
+		parsed.OpenAIWSMaxIdlePerAccount,
+	)
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(
+		openAIWSNeutralPrewarmPercent,
+		openAIWSSessionIdleTTLSeconds,
+		openAIWSMinIdlePerAccount,
+		openAIWSMaxIdlePerAccount,
+		parsed.OpenAIStickyReservePercent,
+	)
+	return nil
+}
+
 // GetFrontendURL 获取前端基础URL（数据库优先，fallback 到配置文件）
 func (s *SettingService) GetFrontendURL(ctx context.Context) string {
 	val, err := s.settingRepo.GetValue(ctx, SettingKeyFrontendURL)

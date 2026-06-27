@@ -603,11 +603,25 @@ func (s *defaultOpenAIWSStateStore) DeleteConnScopedState(connID string, reasons
 }
 
 func openAIWSConnEvictReasonInvalidatesSessionContext(reason string) bool {
-	switch strings.TrimSpace(reason) {
-	case "closed", "conn_max_age", "session_idle_ttl", "neutral_idle_ttl", "neutral_acquire_stale_idle", "neutral_over_target", "idle_over_max", "nil_conn":
+	reason = strings.TrimSpace(reason)
+	switch reason {
+	case "write_request_fail", "prewarm_write_fail":
+		return false
+	case "closed", "evict", "conn_max_age", "session_idle_ttl", "neutral_idle_ttl", "neutral_acquire_stale_idle", "neutral_over_target", "idle_over_max", "nil_conn":
 		return true
 	default:
-		return false
+		return strings.HasSuffix(reason, "_fail") ||
+			strings.HasSuffix(reason, "_failed") ||
+			strings.HasPrefix(reason, "read_fail") ||
+			strings.HasPrefix(reason, "write_request_fail") ||
+			strings.HasPrefix(reason, "error_event") ||
+			strings.HasPrefix(reason, "response_failed") ||
+			strings.HasPrefix(reason, "session_preempted") ||
+			strings.HasPrefix(reason, "client_disconnected") ||
+			strings.HasPrefix(reason, "unclean_exit") ||
+			strings.HasPrefix(reason, "ingress_") ||
+			strings.HasPrefix(reason, "prewarm_") ||
+			strings.HasPrefix(reason, "soft_rate_limit")
 	}
 }
 

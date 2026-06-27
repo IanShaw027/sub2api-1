@@ -509,6 +509,9 @@ func TestOpenAIWSContinuationProbeLogMessageIncludesStoreAndTimingFields(t *test
 		PayloadBytes:              3210,
 		ConnPickMs:                3,
 		QueueWaitMs:               0,
+		ConnAgeMs:                 81000,
+		ConnIdleMs:                79000,
+		ConnLeaseCount:            4,
 		SessionHash:               "abcdef1234567890",
 		HeaderSessionID:           "session-header",
 		HeaderConversationID:      "conversation-header",
@@ -530,6 +533,9 @@ func TestOpenAIWSContinuationProbeLogMessageIncludesStoreAndTimingFields(t *test
 	require.Contains(t, msg, "payload_bytes=3210")
 	require.Contains(t, msg, "conn_pick_ms=3")
 	require.Contains(t, msg, "queue_wait_ms=0")
+	require.Contains(t, msg, "conn_age_ms=81000")
+	require.Contains(t, msg, "conn_idle_ms=79000")
+	require.Contains(t, msg, "conn_lease_count=4")
 }
 
 func TestOpenAIWSDiagnosticStartLogMessageIncludesTemporaryStoreAndConnFields(t *testing.T) {
@@ -563,6 +569,9 @@ func TestOpenAIWSDiagnosticStartLogMessageIncludesTemporaryStoreAndConnFields(t 
 		UnsafeToolContinuation:    false,
 		ConnPickMs:                2,
 		QueueWaitMs:               0,
+		ConnAgeMs:                 82000,
+		ConnIdleMs:                80000,
+		ConnLeaseCount:            5,
 		SessionHash:               "abcdef1234567890",
 		HeaderSessionID:           "session-header",
 		HeaderConversationID:      "conversation-header",
@@ -601,6 +610,9 @@ func TestOpenAIWSDiagnosticStartLogMessageIncludesTemporaryStoreAndConnFields(t 
 	require.Contains(t, msg, "conn_affinity_hit=true")
 	require.Contains(t, msg, "conn_pick_ms=2")
 	require.Contains(t, msg, "queue_wait_ms=0")
+	require.Contains(t, msg, "conn_age_ms=82000")
+	require.Contains(t, msg, "conn_idle_ms=80000")
+	require.Contains(t, msg, "conn_lease_count=5")
 	require.Contains(t, msg, "has_prompt_cache_key=true")
 	require.Contains(t, msg, "has_tools=true")
 	require.Contains(t, msg, "affinity_only_reuse=true")
@@ -628,6 +640,9 @@ func TestOpenAIWSDiagnosticCompletedLogMessageIncludesTemporaryTTFTAndUsageField
 		PreviousResponseIDSource:    "none",
 		OriginalPreviousIDPresent:   false,
 		PayloadBytes:                98765,
+		ConnAgeMs:                   83000,
+		ConnIdleMs:                  100,
+		ConnLeaseCount:              6,
 		WriteSentMs:                 345,
 		DurationMs:                  12345,
 		FirstTokenMs:                2345,
@@ -666,6 +681,9 @@ func TestOpenAIWSDiagnosticCompletedLogMessageIncludesTemporaryTTFTAndUsageField
 	require.Contains(t, msg, "previous_response_id_source=none")
 	require.Contains(t, msg, "original_previous_response_id_present=false")
 	require.Contains(t, msg, "payload_bytes=98765")
+	require.Contains(t, msg, "conn_age_ms=83000")
+	require.Contains(t, msg, "conn_idle_ms=100")
+	require.Contains(t, msg, "conn_lease_count=6")
 	require.Contains(t, msg, "write_sent_ms=345")
 	require.Contains(t, msg, "duration_ms=12345")
 	require.Contains(t, msg, "first_token_ms=2345")
@@ -699,6 +717,9 @@ func TestOpenAIWSReadFailLogMessageIncludesRequestAndConnectionContext(t *testin
 		Attempt:                2,
 		ConnPickMs:             5,
 		QueueWaitMs:            7,
+		ConnAgeMs:              91000,
+		ConnIdleMs:             88000,
+		ConnLeaseCount:         2,
 		PayloadBytes:           1234,
 		PreviousResponseID:     "resp_prev_read_fail",
 		PreviousResponseIDKind: OpenAIPreviousResponseIDKindResponseID,
@@ -741,6 +762,9 @@ func TestOpenAIWSReadFailLogMessageIncludesRequestAndConnectionContext(t *testin
 	require.Contains(t, msg, "attempt=2")
 	require.Contains(t, msg, "conn_pick_ms=5")
 	require.Contains(t, msg, "queue_wait_ms=7")
+	require.Contains(t, msg, "conn_age_ms=91000")
+	require.Contains(t, msg, "conn_idle_ms=88000")
+	require.Contains(t, msg, "conn_lease_count=2")
 	require.Contains(t, msg, "payload_bytes=1234")
 	require.Contains(t, msg, "previous_response_id=resp_prev_read_fail")
 	require.Contains(t, msg, "previous_response_id_kind=response_id")
