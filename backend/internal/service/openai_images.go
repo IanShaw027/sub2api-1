@@ -1559,7 +1559,8 @@ func (s *OpenAIGatewayService) handleOpenAIImagesNonStreamingResponse(ctx contex
 	if err != nil {
 		return OpenAIUsage{}, 0, err
 	}
-	_ = s.markOpenAICyberPolicyIfDetected(ctx, account, body)
+	usage, _ := extractOpenAIUsageFromJSONBytes(body)
+	_ = markOpsCyberPolicyIfDetected(c, body, resp.StatusCode, usage.InputTokens, usage.OutputTokens)
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	contentType := "application/json"
 	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {
@@ -1569,7 +1570,6 @@ func (s *OpenAIGatewayService) handleOpenAIImagesNonStreamingResponse(ctx contex
 	}
 	c.Data(resp.StatusCode, contentType, body)
 
-	usage, _ := extractOpenAIUsageFromJSONBytes(body)
 	return usage, extractOpenAIImageCountFromJSONBytes(body), nil
 }
 
@@ -1609,8 +1609,8 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 		seenSSEData = true
 		fallbackBody.Reset()
 		fallbackBytes = 0
-		_ = s.markOpenAICyberPolicyIfDetected(ctx, account, dataBytes)
 		mergeOpenAIUsage(&usage, dataBytes)
+		_ = markOpsCyberPolicyIfDetected(c, dataBytes, resp.StatusCode, usage.InputTokens, usage.OutputTokens)
 		imageCounter.AddSSEData(dataBytes)
 	}
 
@@ -1660,8 +1660,8 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 		if len(body) == 0 {
 			return
 		}
-		_ = s.markOpenAICyberPolicyIfDetected(ctx, account, body)
 		mergeOpenAIUsage(&usage, body)
+		_ = markOpsCyberPolicyIfDetected(c, body, resp.StatusCode, usage.InputTokens, usage.OutputTokens)
 		imageCounter.AddJSONResponse(body)
 	}
 

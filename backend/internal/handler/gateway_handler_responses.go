@@ -242,6 +242,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			accountReleaseFunc()
 		}
 		recordOpsForwardLatencies(c, forwardDurationMs, result, err)
+		h.recordGatewayCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, err != nil, service.CyberSessionBlockKey(apiKey.ID, c, body), channelMapping.ToUsageFields(reqModel, ""), service.ContentModerationProtocolOpenAIResponses, body)
 
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError

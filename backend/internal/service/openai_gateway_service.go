@@ -5295,6 +5295,9 @@ func (s *OpenAIGatewayService) shouldFailoverUpstreamError(statusCode int) bool 
 }
 
 func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+	if matched, _, _ := detectOpenAICyberPolicy(upstreamBody); matched {
+		return false
+	}
 	if s.shouldFailoverUpstreamError(statusCode) {
 		return true
 	}
@@ -7779,6 +7782,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 }
 
 func shouldFailoverOpenAIPassthroughResponse(statusCode int, responseBody []byte) bool {
+	if matched, _, _ := detectOpenAICyberPolicy(responseBody); matched {
+		return false
+	}
 	switch statusCode {
 	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, 520, 524, 529:
 		return true
@@ -7840,7 +7846,6 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 ) error {
 	MarkResponseCommitted(c)
 	body := s.readUpstreamErrorBody(resp)
-	_ = s.markOpenAICyberPolicyIfDetected(ctx, account, body)
 
 	// cyber_policy：透传账号本就把原始 body 回给客户端（下方 c.Data），此处仅打标记，
 	// 供 handler 事后写风控/邮件。cyber 是上游网络安全策略拦截，不冷却账号，
@@ -8487,7 +8492,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 
 		if hasData {
 			dataBytes := []byte(data)
-			_ = s.markOpenAICyberPolicyIfDetected(ctx, account, dataBytes)
 			if normalizedData, normalized := normalizeOpenAIResponsesFunctionCallArguments(dataBytes); normalized {
 				openAICompatSetSSEFrameData(&frame, string(normalizedData))
 				eventType, data = openAIStreamFrameEventTypeAndData(frame)
@@ -8765,7 +8769,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if err != nil {
 		return nil, err
 	}
-	_ = s.markOpenAICyberPolicyIfDetected(ctx, account, body)
+	_ = markOpsCyberPolicyIfDetectedWithUsage(c, body, resp.StatusCode)
 
 	// Detect SSE responses from upstream and convert to JSON.
 	// Some upstreams (e.g. other sub2api instances) may return SSE even when
@@ -8822,7 +8826,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 			}
 		}
 		if terminalType == "response.failed" {
-			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, terminalPayload)
+			_ = markOpsCyberPolicyIfDetectedWithUsage(c, terminalPayload, http.StatusOK)
 			msg := extractOpenAISSEErrorMessage(terminalPayload)
 			if overloadMsg, matched := classifyOpenAIRetryableOverload(terminalPayload, msg); matched {
 				return nil, s.newOpenAIRetryableOverloadFailoverError(c.Request.Context(), c, account, true, resp.Header.Get("x-request-id"), terminalPayload, overloadMsg)
@@ -8867,7 +8871,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	} else {
 		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 		if terminalOK && terminalType == "response.failed" {
-			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, terminalPayload)
+			_ = markOpsCyberPolicyIfDetectedWithUsage(c, terminalPayload, http.StatusOK)
 			msg := extractOpenAISSEErrorMessage(terminalPayload)
 			if msg == "" {
 				msg = "Upstream compact response failed"
@@ -9077,7 +9081,6 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
-	_ = s.markOpenAICyberPolicyIfDetected(ctx, account, body)
 
 	// cyber_policy 硬阻断：透传上游原始错误体给客户端（不重包成通用 502），不冷却账号。
 	// 当前请求恒透传（需求1）；标记供 handler 事后写风控/邮件。400 cyber 不可 failover
@@ -9315,7 +9318,6 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	if c != nil && c.Request != nil {
 		requestCtx = c.Request.Context()
 	}
-	_ = s.markOpenAICyberPolicyIfDetected(requestCtx, account, body)
 
 	// cyber_policy：兼容路径（Chat Completions / Anthropic）以各自格式回写错误，
 	// 不原样透传 responses 格式的 cyber body（否则对下游格式不合法）。cyber 是上游网络
@@ -10118,7 +10120,6 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		flushForFirstToken := false
 		if hasData {
 			dataBytes := []byte(data)
-			_ = s.markOpenAICyberPolicyIfDetected(ctx, account, dataBytes)
 			if strings.TrimSpace(data) == "[DONE]" && !sawFailedEvent {
 				sawSuccessfulTerminal = true
 			}
@@ -11032,7 +11033,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if err != nil {
 		return nil, err
 	}
-	_ = s.markOpenAICyberPolicyIfDetected(ctx, account, body)
+	_ = markOpsCyberPolicyIfDetectedWithUsage(c, body, resp.StatusCode)
 
 	// Detect SSE responses for ALL account types via Content-Type header.
 	// Some OpenAI-compatible upstreams (including other sub2api instances)
@@ -11104,7 +11105,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			}
 		}
 		if terminalType == "response.failed" {
-			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, terminalPayload)
+			_ = markOpsCyberPolicyIfDetectedWithUsage(c, terminalPayload, http.StatusOK)
 			msg := extractOpenAISSEErrorMessage(terminalPayload)
 			if overloadMsg, matched := classifyOpenAIRetryableOverload(terminalPayload, msg); matched {
 				return nil, s.newOpenAIRetryableOverloadFailoverError(c.Request.Context(), c, account, false, resp.Header.Get("x-request-id"), terminalPayload, overloadMsg)
@@ -11150,7 +11151,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	} else {
 		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 		if terminalOK && terminalType == "response.failed" {
-			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, terminalPayload)
+			_ = markOpsCyberPolicyIfDetectedWithUsage(c, terminalPayload, http.StatusOK)
 			msg := extractOpenAISSEErrorMessage(terminalPayload)
 			if msg == "" {
 				msg = "Upstream compact response failed"

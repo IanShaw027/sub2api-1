@@ -174,9 +174,16 @@ func TestOpenAIHandleStreamingAwareError_NonStreaming(t *testing.T) {
 }
 
 func TestShouldReportOpenAIAccountScheduleFailure(t *testing.T) {
-	require.True(t, shouldReportOpenAIAccountScheduleFailure(errors.New("upstream failed")))
-	require.False(t, shouldReportOpenAIAccountScheduleFailure(context.Canceled))
-	require.False(t, shouldReportOpenAIAccountScheduleFailure(service.NewOpenAIWSSessionPreemptedError()))
+	require.True(t, shouldReportOpenAIAccountScheduleFailure(nil, errors.New("upstream failed")))
+	require.False(t, shouldReportOpenAIAccountScheduleFailure(nil, context.Canceled))
+	require.False(t, shouldReportOpenAIAccountScheduleFailure(nil, service.NewOpenAIWSSessionPreemptedError()))
+	require.False(t, shouldReportOpenAIAccountScheduleFailure(nil, errors.New("openai cyber_policy: blocked by policy")))
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	service.MarkOpsCyberPolicy(c, service.CyberPolicyMark{Code: "cyber_policy", Message: "blocked by policy"})
+	require.False(t, shouldReportOpenAIAccountScheduleFailure(c, errors.New("upstream error: 403 message=blocked by policy")))
 }
 
 func TestOpenAIHandleStreamingAwareError_ChatCompletionsAppendsDone(t *testing.T) {

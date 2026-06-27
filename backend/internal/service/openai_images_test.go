@@ -2202,6 +2202,114 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationUsesConfiguredV1BaseU
 	require.Equal(t, "aGVsbG8=", gjson.Get(rec.Body.String(), "data.0.b64_json").String())
 }
 
+func TestOpenAIGatewayServiceForwardImages_APIKeyCyberPolicyMarksAndDoesNotFailover(t *testing.T) {
+	setGinTestMode()
+	body := []byte(`{"model":"gpt-image-2","prompt":"blocked image","response_format":"b64_json"}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	upstreamBody := `{"error":{"code":"cyber_policy","message":"blocked by policy"}}`
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{},
+		httpUpstream: &openAIImagesHTTPUpstreamRecorder{
+			resp: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+					"X-Request-Id": []string{"req_img_cyber"},
+				},
+				Body: io.NopCloser(strings.NewReader(upstreamBody)),
+			},
+		},
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+
+	account := &Account{
+		ID:       7,
+		Name:     "openai-apikey",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "test-api-key",
+		},
+	}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.JSONEq(t, upstreamBody, rec.Body.String())
+	mark := GetOpsCyberPolicy(c)
+	require.NotNil(t, mark)
+	require.Equal(t, "cyber_policy", mark.Code)
+	require.Equal(t, "blocked by policy", mark.Message)
+	require.Equal(t, http.StatusForbidden, mark.UpstreamStatus)
+}
+
+func TestOpenAIGatewayServiceForwardImages_OAuthNonStreamCyberPolicyDoesNotFailover(t *testing.T) {
+	setGinTestMode()
+	body := []byte(`{"model":"gpt-image-2","prompt":"blocked image","response_format":"b64_json"}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	upstreamBody := "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_img_cyber\",\"error\":{\"code\":\"cyber_policy\",\"message\":\"blocked by policy\"},\"usage\":{\"input_tokens\":13,\"output_tokens\":0}}}\n\n"
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{},
+		httpUpstream: &openAIImagesHTTPUpstreamRecorder{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"text/event-stream"},
+					"X-Request-Id": []string{"req_img_oauth_cyber"},
+				},
+				Body: io.NopCloser(strings.NewReader(upstreamBody)),
+			},
+		},
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+
+	account := &Account{
+		ID:       8,
+		Name:     "openai-oauth",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "test-oauth-token",
+		},
+	}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr))
+	var upstreamErr *OpenAIImagesUpstreamError
+	require.ErrorAs(t, err, &upstreamErr)
+	require.False(t, IsOpenAIImagesRetryableUpstreamError(upstreamErr))
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, "cyber_policy", gjson.Get(rec.Body.String(), "error.code").String())
+	mark := GetOpsCyberPolicy(c)
+	require.NotNil(t, mark)
+	require.Equal(t, "cyber_policy", mark.Code)
+	require.Equal(t, "blocked by policy", mark.Message)
+	require.Equal(t, http.StatusOK, mark.UpstreamStatus)
+	require.Equal(t, 13, mark.UpstreamInTok)
+}
+
 func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationStripsOAuthOnlyPassthroughHeaders(t *testing.T) {
 	setGinTestMode()
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","response_format":"b64_json"}`)

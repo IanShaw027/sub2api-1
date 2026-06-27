@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -46,6 +47,10 @@ func (r openAIImagesFailoverAccountRepo) ListSchedulableUngroupedByPlatform(_ co
 	return r.accountsForPlatform(platform), nil
 }
 
+func (r openAIImagesFailoverAccountRepo) ListByPlatform(_ context.Context, platform string) ([]service.Account, error) {
+	return r.accountsForPlatform(platform), nil
+}
+
 func (r openAIImagesFailoverAccountRepo) accountsForPlatform(platform string) []service.Account {
 	out := make([]service.Account, 0, len(r.accounts))
 	for _, account := range r.accounts {
@@ -63,19 +68,27 @@ type openAIImagesFailoverHTTPUpstream struct {
 }
 
 func (u *openAIImagesFailoverHTTPUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+	return u.response(accountID), nil
+}
+
+func (u *openAIImagesFailoverHTTPUpstream) DoWithTLS(_ *http.Request, _ string, accountID int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.response(accountID), nil
+}
+
+func (u *openAIImagesFailoverHTTPUpstream) response(accountID int64) *http.Response {
 	u.mu.Lock()
 	u.accountIDs = append(u.accountIDs, accountID)
 	u.mu.Unlock()
 	return &http.Response{
-		StatusCode: http.StatusOK,
+		StatusCode: http.StatusInternalServerError,
 		Header: http.Header{
-			"Content-Type": []string{"text/event-stream"},
+			"Content-Type": []string{"application/json"},
 			"X-Request-Id": []string{"req_img_failover"},
 		},
 		Body: io.NopCloser(bytes.NewBufferString(
-			"data: {\"type\":\"error\",\"error\":{\"type\":\"server_error\",\"code\":\"server_error\",\"message\":\"image backend unavailable\"}}\n\n",
+			`{"error":{"type":"server_error","code":"server_error","message":"image backend unavailable"}}`,
 		)),
-	}, nil
+	}
 }
 
 func (u *openAIImagesFailoverHTTPUpstream) calls() []int64 {
@@ -92,23 +105,23 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 			ID:          1,
 			Name:        "image-account-1",
 			Platform:    service.PlatformOpenAI,
-			Type:        service.AccountTypeOAuth,
+			Type:        service.AccountTypeAPIKey,
 			Status:      service.StatusActive,
 			Schedulable: true,
 			Concurrency: 0,
 			Priority:    0,
-			Credentials: map[string]any{"access_token": "token-1"},
+			Credentials: map[string]any{"api_key": "sk-token-1"},
 		},
 		{
 			ID:          2,
 			Name:        "image-account-2",
 			Platform:    service.PlatformOpenAI,
-			Type:        service.AccountTypeOAuth,
+			Type:        service.AccountTypeAPIKey,
 			Status:      service.StatusActive,
 			Schedulable: true,
 			Concurrency: 0,
 			Priority:    1,
-			Credentials: map[string]any{"access_token": "token-2"},
+			Credentials: map[string]any{"api_key": "sk-token-2"},
 		},
 	}
 	accountRepo := openAIImagesFailoverAccountRepo{accounts: accounts}
@@ -129,6 +142,7 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 		nil,
 		nil,
 		upstream,
+		nil,
 		nil,
 		nil,
 		nil,

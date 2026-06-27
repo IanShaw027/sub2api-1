@@ -99,6 +99,20 @@ func TestOpenAIWSCyberPolicyMark_ResponseFailed(t *testing.T) {
 	require.Equal(t, "Request blocked by content policy.", GetOpsCyberPolicy(c).Message, "second MarkOpsCyberPolicy call must not overwrite first")
 }
 
+func TestOpenAIWSPassthroughCyberPolicyMarkCapturesUsage(t *testing.T) {
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	payload := []byte(`{"type":"response.failed","response":{"id":"resp_abc","status":"failed","error":{"code":"cyber_policy","message":"Request blocked by content policy."},"usage":{"input_tokens":31,"output_tokens":4}}}`)
+
+	require.True(t, markOpenAIWSPassthroughCyberPolicy(c, payload))
+	mark := GetOpsCyberPolicy(c)
+	require.NotNil(t, mark)
+	require.Equal(t, "cyber_policy", mark.Code)
+	require.Equal(t, 200, mark.UpstreamStatus)
+	require.Equal(t, 31, mark.UpstreamInTok)
+	require.Equal(t, 4, mark.UpstreamOutTok)
+}
+
 // TestOpenAIWSCyberPolicyMark_NonCyberPayload 验证非 cyber_policy 的 response.failed 不触发标记。
 func TestOpenAIWSCyberPolicyMark_NonCyberPayload(t *testing.T) {
 	payload := []byte(`{"type":"response.failed","response":{"id":"resp_xyz","status":"failed","error":{"code":"server_error","message":"Internal error"}}}`)

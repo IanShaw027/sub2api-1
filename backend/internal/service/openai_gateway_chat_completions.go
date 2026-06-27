@@ -421,7 +421,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	var result *OpenAIForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleChatStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleChatStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime, len(body))
 	} else {
 		result, handleErr = s.handleChatBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
 	}
@@ -999,9 +999,6 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 		if (event.Type == "response.completed" || event.Type == "response.done" ||
 			event.Type == "response.incomplete" || event.Type == "response.failed") &&
 			event.Response != nil {
-			if event.Type == "response.failed" {
-				_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, []byte(payload))
-			}
 			finalResponse = event.Response
 			finalEventType = event.Type
 			if event.Type == "response.failed" {
@@ -1130,9 +1127,14 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	billingModel string,
 	upstreamModel string,
 	startTime time.Time,
-	_ ...int,
+	requestBodyBytes ...int,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
+	requestBodyLen := 0
+	if len(requestBodyBytes) > 0 {
+		requestBodyLen = requestBodyBytes[0]
+	}
+	silentRefusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -1216,9 +1218,11 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			)
 			return false
 		}
+		if silentRefusalDetector.Enabled() {
+			silentRefusalDetector.ObservePayload([]byte(payload))
+		}
 		if event.Type == "response.failed" {
 			payloadBytes := []byte(payload)
-			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, payloadBytes)
 			streamFailed = true
 			errMessage := extractResponsesFailureMessage(event.Response, payloadBytes)
 			if errMessage == "" {
@@ -1279,6 +1283,9 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			return true
 		}
 		eventStartsOutput := openAIStreamDataStartsClientOutput(payload, event.Type)
+		if silentRefusalDetector.Enabled() && !silentRefusalDetector.ShouldReleaseClientOutput() {
+			eventStartsOutput = false
+		}
 		if firstChunk && eventStartsOutput {
 			firstChunk = false
 			ms := int(time.Since(startTime).Milliseconds())
@@ -1337,6 +1344,9 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		}
 		if clientDisconnected {
 			return resultWithUsage(), nil
+		}
+		if silentRefusalDetector.IsSilentRefusal() && !downstreamFlushed && !c.Writer.Written() {
+			return nil, s.newOpenAISilentRefusalFailoverError(c, account, requestID, resp.Header)
 		}
 		if finalChunks := apicompat.FinalizeResponsesChatStream(state); len(finalChunks) > 0 {
 			wroteFinalChunk := false

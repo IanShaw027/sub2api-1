@@ -770,7 +770,6 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		}
 		if event.Type == "response.failed" {
 			payloadBytes := []byte(payload)
-			_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, payloadBytes)
 			// cyber_policy 致命且不可重试：绝不 failover/换号。先解析 response.failed
 			// 自带的真实 usage 再打请求级标记（供 handler 事后审计/按真实 token 计费），
 			// 以 Anthropic SSE error 事件回写让客户端停止重试，丢弃后续转换输出。
@@ -1134,9 +1133,6 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 					if err := json.Unmarshal([]byte(payload), &event); err == nil {
 						acc.ProcessEvent(&event)
 						if isOpenAICompatResponsesTerminalEvent(event.Type) && event.Response != nil {
-							if event.Type == "response.failed" {
-								_ = s.markOpenAICyberPolicyIfDetected(ctx, account, []byte(payload))
-							}
 							if event.Usage != nil {
 								usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
 								if event.Response.Usage == nil {
@@ -1182,9 +1178,6 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 
 			acc.ProcessEvent(&event)
 			if isOpenAICompatResponsesTerminalEvent(event.Type) && event.Response != nil {
-				if event.Type == "response.failed" {
-					_ = s.markOpenAICyberPolicyIfDetected(ctx, account, []byte(payload))
-				}
 				if event.Usage != nil {
 					usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
 					if event.Response.Usage == nil {

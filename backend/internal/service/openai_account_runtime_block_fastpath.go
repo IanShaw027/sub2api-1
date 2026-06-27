@@ -96,11 +96,6 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	return shouldDisable
 }
 
-func (s *OpenAIGatewayService) markOpenAICyberPolicyIfDetected(ctx context.Context, account *Account, responseBody []byte) bool {
-	matched, _, _ := detectOpenAICyberPolicy(responseBody)
-	return matched
-}
-
 func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context, account *Account, headers http.Header, responseBody []byte) {
 	if s == nil || !isOpenAIOAuthAccount(account) {
 		return

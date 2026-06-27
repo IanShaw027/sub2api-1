@@ -545,7 +545,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			} else {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
-					h.reportOpenAIAccountScheduleFailure(account.ID, err)
+					h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
 					// 池模式：同账号重试
 					if failoverErr.RetryableOnSameAccount {
 						retryLimit := account.GetPoolModeRetryCount()
@@ -643,7 +643,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					)
 					continue
 				}
-				h.reportOpenAIAccountScheduleFailure(account.ID, err)
+				h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
 				if shouldSuppressForwardErrorResponse(c, err) {
 					return
 				}
@@ -1090,7 +1090,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, true)
 						return
 					}
-					h.reportOpenAIAccountScheduleFailure(account.ID, err)
+					h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
 					// 池模式：同账号重试
 					if failoverErr.RetryableOnSameAccount {
 						retryLimit := account.GetPoolModeRetryCount()
@@ -1138,7 +1138,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					)
 					return
 				}
-				h.reportOpenAIAccountScheduleFailure(account.ID, err)
+				h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
 				wroteFallback := h.ensureAnthropicErrorResponse(c, streamStarted)
 				reqLog.Warn("openai_messages.forward_failed",
 					zap.Int64("account_id", account.ID),
@@ -1923,7 +1923,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
-				h.reportOpenAIAccountScheduleFailure(account.ID, err)
+				h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
 				releaseAccountScopedSlots()
 				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr
@@ -1964,7 +1964,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				}
 			}
 
-			h.reportOpenAIAccountScheduleFailure(account.ID, err)
+			h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
 			closeStatus, closeReason := summarizeWSCloseErrorForLog(err)
 			reqLog.Warn("openai.websocket_proxy_failed",
 				zap.Int64("account_id", account.ID),
@@ -2899,6 +2899,15 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 		apiKeyPrefix = keyPrefix(apiKey.Key, 8)
 	}
 	requestBodyCopy := append([]byte(nil), requestBody...)
+	if cmSvc != nil {
+		hashParent := context.Background()
+		if c.Request != nil {
+			hashParent = context.WithoutCancel(c.Request.Context())
+		}
+		hashCtx, cancel := context.WithTimeout(hashParent, 5*time.Second)
+		cmSvc.RecordCyberPolicyFlaggedHashes(hashCtx, requestProtocol, requestBodyCopy)
+		cancel()
+	}
 	opsMeta := cyberPolicyOpsErrorMeta{
 		RequestID:       requestID,
 		ClientRequestID: clientRequestID,
@@ -2937,6 +2946,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				UpstreamStatus:  mark.UpstreamStatus,
 				UpstreamInTok:   mark.UpstreamInTok,
 				UpstreamOutTok:  mark.UpstreamOutTok,
+				SkipHashRecord:  true,
 			})
 		}
 		if forwardErrored && gwSvc != nil {

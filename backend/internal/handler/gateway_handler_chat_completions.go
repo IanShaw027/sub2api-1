@@ -237,6 +237,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			accountReleaseFunc()
 		}
 		recordOpsForwardLatencies(c, time.Since(forwardStart).Milliseconds(), result, err)
+		h.recordGatewayCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, err != nil, service.CyberSessionBlockKey(apiKey.ID, c, body), channelMapping.ToUsageFields(reqModel, ""), service.ContentModerationProtocolOpenAIChat, body)
 
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError

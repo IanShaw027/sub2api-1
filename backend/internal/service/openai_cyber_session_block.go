@@ -48,9 +48,27 @@ func (s *OpenAIGatewayService) cyberSessionBlockStore() CyberSessionBlockStore {
 	return store
 }
 
+func (s *GatewayService) cyberSessionBlockStore() CyberSessionBlockStore {
+	if s == nil || s.cache == nil {
+		return nil
+	}
+	store, ok := s.cache.(CyberSessionBlockStore)
+	if !ok {
+		return nil
+	}
+	return store
+}
+
 // CyberSessionBlockRuntime 返回 (开关, TTL)。开关默认关。
 // 委托给 SettingService.GetCyberSessionBlockRuntime，进程内缓存避免热路径 DB 往返。
 func (s *OpenAIGatewayService) CyberSessionBlockRuntime(ctx context.Context) (bool, time.Duration) {
+	if s == nil || s.settingService == nil {
+		return false, time.Hour
+	}
+	return s.settingService.GetCyberSessionBlockRuntime(ctx)
+}
+
+func (s *GatewayService) CyberSessionBlockRuntime(ctx context.Context) (bool, time.Duration) {
 	if s == nil || s.settingService == nil {
 		return false, time.Hour
 	}
@@ -76,6 +94,23 @@ func (s *OpenAIGatewayService) MarkCyberSessionBlocked(ctx context.Context, key 
 	}
 }
 
+func (s *GatewayService) MarkCyberSessionBlocked(ctx context.Context, key string) {
+	if key == "" {
+		return
+	}
+	enabled, ttl := s.CyberSessionBlockRuntime(ctx)
+	if !enabled {
+		return
+	}
+	store := s.cyberSessionBlockStore()
+	if store == nil {
+		return
+	}
+	if err := store.SetCyberSessionBlocked(ctx, key, ttl); err != nil {
+		logger.LegacyPrintf("service.gateway", "cyber session block write failed: err=%v", err)
+	}
+}
+
 // IsCyberSessionBlocked 查询会话是否被屏蔽（拦截点）。开关关闭、key 为空、
 // 存储不可用或查询出错时返回 false（fail-open：屏蔽是增强防护，不阻断主链路）。
 func (s *OpenAIGatewayService) IsCyberSessionBlocked(ctx context.Context, key string) bool {
@@ -93,6 +128,26 @@ func (s *OpenAIGatewayService) IsCyberSessionBlocked(ctx context.Context, key st
 	blocked, err := store.IsCyberSessionBlocked(ctx, key)
 	if err != nil {
 		logger.LegacyPrintf("service.openai_gateway", "cyber session block read failed: err=%v", err)
+		return false
+	}
+	return blocked
+}
+
+func (s *GatewayService) IsCyberSessionBlocked(ctx context.Context, key string) bool {
+	if key == "" {
+		return false
+	}
+	enabled, _ := s.CyberSessionBlockRuntime(ctx)
+	if !enabled {
+		return false
+	}
+	store := s.cyberSessionBlockStore()
+	if store == nil {
+		return false
+	}
+	blocked, err := store.IsCyberSessionBlocked(ctx, key)
+	if err != nil {
+		logger.LegacyPrintf("service.gateway", "cyber session block read failed: err=%v", err)
 		return false
 	}
 	return blocked

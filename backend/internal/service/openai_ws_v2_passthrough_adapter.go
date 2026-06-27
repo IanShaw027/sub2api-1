@@ -694,7 +694,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				}
 				eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
 				if eventType == "error" || eventType == "response.failed" {
-					_ = s.markOpenAICyberPolicyIfDetected(ctx, account, payload)
+					_ = markOpenAIWSPassthroughCyberPolicy(c, payload)
 				}
 				if eventType != "error" {
 					return nil

@@ -1338,6 +1338,32 @@ func TestResponsesEventToChatChunks_Completed(t *testing.T) {
 	assert.Equal(t, 30, chunks[1].Usage.PromptTokensDetails.CachedTokens)
 }
 
+func TestResponsesEventToChatChunks_CompletedWithRefusal(t *testing.T) {
+	state := NewResponsesEventToChatState()
+	state.Model = "gpt-4o"
+
+	chunks := ResponsesEventToChatChunks(&ResponsesStreamEvent{
+		Type: "response.completed",
+		Response: &ResponsesResponse{
+			Status: "completed",
+			Output: []ResponsesOutput{{
+				Type: "message",
+				Role: "assistant",
+				Content: []ResponsesContentPart{{
+					Type:    "refusal",
+					Refusal: "I can't help with that.",
+				}},
+			}},
+		},
+	}, state)
+
+	require.Len(t, chunks, 2)
+	require.NotNil(t, chunks[0].Choices[0].Delta.Refusal)
+	assert.Equal(t, "I can't help with that.", *chunks[0].Choices[0].Delta.Refusal)
+	require.NotNil(t, chunks[1].Choices[0].FinishReason)
+	assert.Equal(t, "stop", *chunks[1].Choices[0].FinishReason)
+}
+
 func TestResponsesEventToChatChunks_CompletedWithReasoningTokens(t *testing.T) {
 	state := NewResponsesEventToChatState()
 	state.Model = "gpt-5.5"

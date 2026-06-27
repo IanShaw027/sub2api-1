@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -31,13 +32,23 @@ type CyberPolicyMark struct {
 	UpstreamOutTok int    // 上游已报 output tokens（如有）
 }
 
-// MarkOpsCyberPolicy 记录 cyber 标记；首个写入生效，后续忽略（同一 turn 只记一次）。
+// MarkOpsCyberPolicy 记录 cyber 标记；首个写入生效，后续只允许补齐首次未捕获的
+// upstream token/status 字段（同一 turn 只记一次 message/body）。
 // WS 多轮场景由 handler 在每个 turn 结束后调用 ClearOpsCyberPolicy 重置。
 func MarkOpsCyberPolicy(c *gin.Context, mark CyberPolicyMark) {
 	if c == nil {
 		return
 	}
-	if GetOpsCyberPolicy(c) != nil {
+	if existing := GetOpsCyberPolicy(c); existing != nil {
+		if existing.UpstreamStatus == 0 && mark.UpstreamStatus != 0 {
+			existing.UpstreamStatus = mark.UpstreamStatus
+		}
+		if existing.UpstreamInTok == 0 && mark.UpstreamInTok != 0 {
+			existing.UpstreamInTok = mark.UpstreamInTok
+		}
+		if existing.UpstreamOutTok == 0 && mark.UpstreamOutTok != 0 {
+			existing.UpstreamOutTok = mark.UpstreamOutTok
+		}
 		return
 	}
 	mark.Code = "cyber_policy"
@@ -109,6 +120,31 @@ func detectOpenAICyberPolicy(payload []byte) (matched bool, code, msg string) {
 	}
 
 	return false, "", ""
+}
+
+func markOpsCyberPolicyIfDetected(c *gin.Context, payload []byte, upstreamStatus int, upstreamInTok int, upstreamOutTok int) bool {
+	matched, code, msg := detectOpenAICyberPolicy(payload)
+	if !matched {
+		return false
+	}
+	MarkOpsCyberPolicy(c, CyberPolicyMark{
+		Code:           code,
+		Message:        msg,
+		Body:           truncateString(string(payload), 4096),
+		UpstreamStatus: upstreamStatus,
+		UpstreamInTok:  upstreamInTok,
+		UpstreamOutTok: upstreamOutTok,
+	})
+	return true
+}
+
+func markOpsCyberPolicyIfDetectedWithUsage(c *gin.Context, payload []byte, upstreamStatus int) bool {
+	usage, _ := extractOpenAIUsageFromJSONBytes(payload)
+	return markOpsCyberPolicyIfDetected(c, payload, upstreamStatus, usage.InputTokens, usage.OutputTokens)
+}
+
+func markOpenAIWSPassthroughCyberPolicy(c *gin.Context, payload []byte) bool {
+	return markOpsCyberPolicyIfDetectedWithUsage(c, payload, http.StatusOK)
 }
 
 // HandleOpenAICyberPolicy 仅保留 cyber_policy 识别入口的兼容壳。

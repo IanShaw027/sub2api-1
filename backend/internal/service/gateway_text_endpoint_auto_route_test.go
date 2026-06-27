@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -271,4 +272,76 @@ func TestGatewayForwardAsResponses_AutoRouteCCUpstreamStreamsUsage(t *testing.T)
 	require.Equal(t, 4, result.Usage.OutputTokens)
 	require.Equal(t, 3, result.Usage.CacheReadInputTokens)
 	require.True(t, result.Stream)
+}
+
+func TestGatewayForwardAsChatCompletions_AutoRouteCCCyberPolicyMarksAndDoesNotFailover(t *testing.T) {
+	setGinTestMode()
+
+	body := []byte(`{"model":"glm-5.2","messages":[{"role":"user","content":"hello"}],"stream":false}`)
+	c, rec := newGatewayTextEndpointContext(http.MethodPost, "/v1/chat/completions", body)
+	upstream := &anthropicHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"upstream-chat-cyber"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"cyber_policy","message":"blocked by upstream cyber policy"}}`)),
+		},
+	}
+	svc := &GatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, newOpenAICompatCCAutoRouteAccountForTest(), body, &ParsedRequest{
+		Model:  "glm-5.2",
+		Stream: false,
+	})
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr), "cyber_policy must not retry/fail over to upstream again")
+	mark := GetOpsCyberPolicy(c)
+	require.NotNil(t, mark, "compat-CC cyber_policy must be marked for handler-side audit/hash recording")
+	require.Equal(t, "cyber_policy", mark.Code)
+	require.Equal(t, http.StatusInternalServerError, mark.UpstreamStatus)
+	require.Contains(t, rec.Body.String(), "blocked by upstream cyber policy")
+}
+
+func TestGatewayForwardAsChatCompletions_AutoRouteCCStreamCyberPolicyMarksOpsContext(t *testing.T) {
+	setGinTestMode()
+
+	body := []byte(`{"model":"glm-5.2","messages":[{"role":"user","content":"hello"}],"stream":true}`)
+	c, rec := newGatewayTextEndpointContext(http.MethodPost, "/v1/chat/completions", body)
+	upstreamBody := strings.Join([]string{
+		`data: {"error":{"code":"cyber_policy","message":"blocked in stream"},"usage":{"prompt_tokens":19,"completion_tokens":6,"total_tokens":25}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	upstream := &anthropicHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"upstream-chat-cyber-stream"}},
+			Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+		},
+	}
+	svc := &GatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, newOpenAICompatCCAutoRouteAccountForTest(), body, &ParsedRequest{
+		Model:  "glm-5.2",
+		Stream: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	mark := GetOpsCyberPolicy(c)
+	require.NotNil(t, mark, "compat-CC stream cyber_policy must be marked for handler-side audit/hash recording")
+	require.Equal(t, "cyber_policy", mark.Code)
+	require.Equal(t, http.StatusOK, mark.UpstreamStatus)
+	require.Equal(t, 19, mark.UpstreamInTok)
+	require.Equal(t, 6, mark.UpstreamOutTok)
+	require.Contains(t, rec.Body.String(), "cyber_policy")
 }

@@ -9347,6 +9347,28 @@ type RecordUsageInput struct {
 	ChannelUsageFields // 渠道映射信息（由 handler 在 Forward 前解析）
 }
 
+// GatewayCyberPolicyUsageInput 是普通 Gateway 兼容路径在上游 cyber_policy
+// 拒绝且 handler 不会进入正常 RecordUsage 时补写 cyber 用量行的入参。
+type GatewayCyberPolicyUsageInput struct {
+	APIKey             *APIKey
+	User               *User
+	Account            *Account
+	Subscription       *UserSubscription
+	RequestID          string
+	Model              string
+	Stream             bool
+	InputTokens        int
+	OutputTokens       int
+	InboundEndpoint    string
+	UpstreamEndpoint   string
+	UserAgent          string
+	IPAddress          string
+	RequestPayloadHash string
+	APIKeyService      APIKeyQuotaUpdater
+	QuotaPlatform      string
+	ChannelUsageFields
+}
+
 // APIKeyQuotaUpdater defines the interface for updating API Key quota and rate limit usage
 type APIKeyQuotaUpdater interface {
 	UpdateQuotaUsed(ctx context.Context, apiKeyID int64, cost float64) error
@@ -9899,6 +9921,46 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 	})
 }
 
+// RecordCyberPolicyUsageLog records a cyber_policy usage row for gateway paths
+// whose forwarder returned an error after the upstream already consumed the
+// request, so the handler will not reach the normal RecordUsage path.
+func (s *GatewayService) RecordCyberPolicyUsageLog(ctx context.Context, in GatewayCyberPolicyUsageInput) {
+	user := in.User
+	if user == nil && in.APIKey != nil {
+		user = in.APIKey.User
+	}
+	if s == nil || in.APIKey == nil || user == nil || in.Account == nil || strings.TrimSpace(in.Model) == "" {
+		return
+	}
+	result := &ForwardResult{
+		RequestID: in.RequestID,
+		Model:     in.Model,
+		Stream:    in.Stream,
+		Usage: ClaudeUsage{
+			InputTokens:  in.InputTokens,
+			OutputTokens: in.OutputTokens,
+		},
+	}
+	if err := s.recordUsageCore(ctx, &recordUsageCoreInput{
+		Result:             result,
+		APIKey:             in.APIKey,
+		User:               user,
+		Account:            in.Account,
+		Subscription:       in.Subscription,
+		InboundEndpoint:    in.InboundEndpoint,
+		UpstreamEndpoint:   in.UpstreamEndpoint,
+		UserAgent:          in.UserAgent,
+		IPAddress:          in.IPAddress,
+		RequestPayloadHash: in.RequestPayloadHash,
+		APIKeyService:      in.APIKeyService,
+		QuotaPlatform:      in.QuotaPlatform,
+		CyberBlocked:       true,
+		ChannelUsageFields: in.ChannelUsageFields,
+	}, &recordUsageOpts{}); err != nil {
+		logger.LegacyPrintf("service.gateway", "cyber usage record failed: request_id=%s err=%v", in.RequestID, err)
+	}
+}
+
 // recordUsageCoreInput 是 recordUsageCore 的公共输入字段，从两种输入结构体中提取。
 type recordUsageCoreInput struct {
 	Result             *ForwardResult
@@ -9914,6 +9976,7 @@ type recordUsageCoreInput struct {
 	ForceCacheBilling  bool
 	APIKeyService      APIKeyQuotaUpdater
 	QuotaPlatform      string
+	CyberBlocked       bool
 	ChannelUsageFields
 }
 
@@ -9993,6 +10056,9 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	accountRateMultiplier := account.BillingRateMultiplier()
 	usageLog := s.buildRecordUsageLog(ctx, input, result, apiKey, user, account, subscription,
 		requestedModel, multiplier, imageMultiplier, accountRateMultiplier, billingType, cacheTTLOverridden, cost, opts)
+	if input.CyberBlocked {
+		usageLog.RequestType = RequestTypeCyberBlocked
+	}
 	usageLog.BilledByHigherPricedUpstream = selectedCost.BilledByHigherPricedUpstream
 
 	// 计算账号统计定价费用（使用最终上游模型匹配自定义规则）

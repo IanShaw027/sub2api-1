@@ -51,6 +51,45 @@ func TestOpenAINonStreamingSSECyberPolicyDoesNotMarkAccountError(t *testing.T) {
 	require.Empty(t, repo.setErrorMsg)
 }
 
+func TestOpenAINonStreamingSSECyberPolicyCapturesUsageInMark(t *testing.T) {
+	body := []byte("event: response.failed\n" +
+		`data: {"type":"response.failed","response":{"error":{"code":"cyber_policy","message":"policy denied"},"usage":{"input_tokens":321,"output_tokens":9}}}` +
+		"\n\n")
+
+	for _, tc := range []struct {
+		name        string
+		passthrough bool
+	}{
+		{name: "standard", passthrough: false},
+		{name: "passthrough", passthrough: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &OpenAIGatewayService{}
+			account := &Account{ID: 321, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       io.NopCloser(bytes.NewReader(body)),
+			}
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+
+			if tc.passthrough {
+				_, _ = svc.handleNonStreamingResponsePassthrough(context.Background(), resp, c, account, "gpt-5.4", "gpt-5.4")
+			} else {
+				_, _ = svc.handleNonStreamingResponse(context.Background(), resp, c, account, "gpt-5.4", "gpt-5.4")
+			}
+
+			mark := GetOpsCyberPolicy(c)
+			require.NotNil(t, mark, "cyber_policy SSE must be marked")
+			require.Equal(t, "cyber_policy", mark.Code)
+			require.Equal(t, 321, mark.UpstreamInTok)
+			require.Equal(t, 9, mark.UpstreamOutTok)
+		})
+	}
+}
+
 func TestOpenAICyberPolicyPoolModeWithoutCustomErrorCodesDoesNotMarkAccountError(t *testing.T) {
 	repo := &openAICyberPolicyAccountRepo{}
 	rateLimitSvc := NewRateLimitService(repo, nil, nil, nil, nil)

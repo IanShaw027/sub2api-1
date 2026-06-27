@@ -210,18 +210,6 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
 	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
-		safeErr := sanitizeUpstreamErrorMessage(err.Error())
-		detail := recordDetailedUpstreamTransportError(c, err)
-		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-			Platform:           account.Platform,
-			AccountID:          account.ID,
-			AccountName:        account.Name,
-			UpstreamStatusCode: 0,
-			Kind:               "request_error",
-			Message:            safeErr,
-		})
-		writeChatCompletionsError(c, http.StatusBadGateway, detail.ErrorType, formatUpstreamRequestFailed(detail, "Upstream request failed"))
-		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -319,6 +307,9 @@ func isOpenAIChatVisibleOutputChunk(payload string) bool {
 			return true
 		}
 		if strings.TrimSpace(choice.Get("delta.content").String()) != "" {
+			return true
+		}
+		if strings.TrimSpace(choice.Get("delta.refusal").String()) != "" {
 			return true
 		}
 	}
@@ -425,10 +416,12 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)
 			if trimmedPayload != "[DONE]" {
-				_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, []byte(payload))
 				usageOnlyChunk := isOpenAIChatUsageOnlyStreamChunk(payload)
 				if u := extractCCStreamUsage(payload); u != nil {
 					usage = *u
+					_ = markOpsCyberPolicyIfDetected(c, []byte(payload), http.StatusOK, u.InputTokens, u.OutputTokens)
+				} else {
+					_ = markOpsCyberPolicyIfDetected(c, []byte(payload), http.StatusOK, 0, 0)
 				}
 				if isOpenAIChatVisibleOutputChunk(payload) {
 					sawVisibleOutput = true
@@ -578,8 +571,6 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 		}
 		return nil, fmt.Errorf("read upstream body: %w", err)
 	}
-	_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, respBody)
-
 	var ccResp apicompat.ChatCompletionsResponse
 	var usage OpenAIUsage
 	if err := json.Unmarshal(respBody, &ccResp); err == nil && ccResp.Usage != nil {
@@ -591,6 +582,7 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 			usage.CacheReadInputTokens = ccResp.Usage.PromptTokensDetails.CachedTokens
 		}
 	}
+	_ = markOpsCyberPolicyIfDetected(c, respBody, http.StatusOK, usage.InputTokens, usage.OutputTokens)
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)

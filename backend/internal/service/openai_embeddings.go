@@ -109,7 +109,21 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 		respBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
-		_ = s.markOpenAICyberPolicyIfDetected(ctx, account, respBody)
+
+		if hit, code, cyberMsg := detectOpenAICyberPolicy(respBody); hit {
+			MarkOpsCyberPolicy(c, CyberPolicyMark{
+				Code:           code,
+				Message:        cyberMsg,
+				Body:           truncateString(string(respBody), 4096),
+				UpstreamStatus: resp.StatusCode,
+			})
+			setOpsUpstreamError(c, resp.StatusCode, cyberMsg, truncateString(string(respBody), 2048))
+			writeOpenAIEmbeddingsUpstreamResponse(c, resp, respBody, s.responseHeaderFilter)
+			if cyberMsg == "" {
+				return nil, fmt.Errorf("openai cyber_policy: %d", resp.StatusCode)
+			}
+			return nil, fmt.Errorf("openai cyber_policy: %s", cyberMsg)
+		}
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -150,7 +164,7 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 		}
 		return nil, fmt.Errorf("read upstream body: %w", err)
 	}
-	_ = s.markOpenAICyberPolicyIfDetected(ctx, account, respBody)
+	_ = markOpsCyberPolicyIfDetected(c, respBody, resp.StatusCode, 0, 0)
 
 	writeOpenAIEmbeddingsUpstreamResponse(c, resp, respBody, s.responseHeaderFilter)
 

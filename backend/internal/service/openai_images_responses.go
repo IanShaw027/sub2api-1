@@ -203,6 +203,7 @@ func openAIImagesSSEErrorStatus(errType, code string) int {
 		return http.StatusNotFound
 	case strings.Contains(errType, "invalid_request"),
 		errType == "image_generation_user_error",
+		code == "cyber_policy",
 		code == "moderation_blocked",
 		strings.Contains(code, "content_policy"),
 		strings.Contains(code, "policy_violation"),
@@ -1313,8 +1314,6 @@ func (s *OpenAIGatewayService) collectOpenAIImagesOAuthNonStreamingResponse(
 	if err != nil {
 		return nil, s.newOpenAIImagesOAuthUpstreamFailover(c, account, parsed, resp, upstreamURL, fallbackModel, err.Error(), "stream_error", "read_error", body, resp.Header.Get("Content-Type"))
 	}
-	_ = s.markOpenAICyberPolicyIfDetected(ctx, account, body)
-
 	var usage OpenAIUsage
 	if parsedUsage, ok := extractOpenAIUsageFromJSONBytes(body); ok {
 		usage = parsedUsage
@@ -1322,8 +1321,31 @@ func (s *OpenAIGatewayService) collectOpenAIImagesOAuthNonStreamingResponse(
 	forEachOpenAISSEDataPayload(string(body), func(dataBytes []byte) {
 		s.parseSSEUsageBytes(dataBytes, &usage)
 	})
+	cyberPolicyMarked := markOpsCyberPolicyIfDetected(c, body, resp.StatusCode, usage.InputTokens, usage.OutputTokens)
 	results, createdAt, usageRaw, firstMeta, _, err := collectOpenAIImagesFromResponsesBody(body)
 	if err != nil {
+		if cyberPolicyMarked {
+			if upstreamErr := extractOpenAIImagesUpstreamError(body); upstreamErr != nil {
+				if strings.TrimSpace(upstreamErr.UpstreamRequestID) == "" {
+					upstreamErr.UpstreamRequestID = strings.TrimSpace(resp.Header.Get("x-request-id"))
+				}
+				writeOpenAIImagesUpstreamErrorResponse(c, upstreamErr)
+				return nil, upstreamErr
+			}
+			msg := "Request blocked by upstream content policy"
+			if mark := GetOpsCyberPolicy(c); mark != nil && strings.TrimSpace(mark.Message) != "" {
+				msg = mark.Message
+			}
+			upstreamErr := &OpenAIImagesUpstreamError{
+				StatusCode:        http.StatusBadRequest,
+				ErrorType:         "upstream_error",
+				Code:              "cyber_policy",
+				Message:           sanitizeUpstreamErrorMessage(msg),
+				UpstreamRequestID: strings.TrimSpace(resp.Header.Get("x-request-id")),
+			}
+			writeOpenAIImagesUpstreamErrorResponse(c, upstreamErr)
+			return nil, upstreamErr
+		}
 		return nil, s.newOpenAIImagesOAuthUpstreamFailover(c, account, parsed, resp, upstreamURL, fallbackModel, err.Error(), "response_error", "response_error", body, resp.Header.Get("Content-Type"))
 	}
 	if len(results) == 0 {
@@ -1477,12 +1499,12 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 		if processErr != nil || streamCompleted || len(dataBytes) == 0 {
 			return
 		}
-		_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, dataBytes)
 		if firstTokenMs == nil {
 			ms := int(time.Since(startTime).Milliseconds())
 			firstTokenMs = &ms
 		}
 		s.parseSSEUsageBytes(dataBytes, &usage)
+		_ = markOpsCyberPolicyIfDetected(c, dataBytes, http.StatusOK, usage.InputTokens, usage.OutputTokens)
 		if !gjson.ValidBytes(dataBytes) {
 			return
 		}
