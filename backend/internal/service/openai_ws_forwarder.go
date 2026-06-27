@@ -276,8 +276,27 @@ func normalizeOpenAIWSLogValue(value string) string {
 	return openAIWSLogValueReplacer.Replace(trimmed)
 }
 
+func normalizeOpenAIWSLogValueNoReplace(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "-"
+	}
+	return trimmed
+}
+
 func truncateOpenAIWSLogValue(value string, maxLen int) string {
 	normalized := normalizeOpenAIWSLogValue(value)
+	if normalized == "-" || maxLen <= 0 {
+		return normalized
+	}
+	if len(normalized) <= maxLen {
+		return normalized
+	}
+	return normalized[:maxLen] + "..."
+}
+
+func truncateOpenAIWSLogValueNoReplace(value string, maxLen int) string {
+	normalized := normalizeOpenAIWSLogValueNoReplace(value)
 	if normalized == "-" || maxLen <= 0 {
 		return normalized
 	}
@@ -1392,6 +1411,229 @@ func openAIWSErrorEventLogMessage(v openAIWSErrorEventLog) string {
 		v.HasTurnState,
 		v.TurnStateLen,
 	)
+}
+
+type openAIWSBindingSnapshotLog struct {
+	Trigger                         string
+	RequestID                       string
+	AccountID                       int64
+	AccountType                     string
+	ConnID                          string
+	PreviousResponseID              string
+	OriginalPreviousIDPresent       bool
+	PreviousBoundAccountID          int64
+	PreviousBoundAccountHit         bool
+	PreviousBoundConnID             string
+	PreviousBoundConnHit            bool
+	PreferredConnID                 string
+	PreferredConnInPool             bool
+	PreferredConnProfile            openAIWSConnProfile
+	PreferredConnAgeMS              int64
+	PreferredConnIdleMS             int64
+	PreferredConnLeaseCount         int64
+	LeaseConnLastResponseID         string
+	LeaseConnLastResponseHit        bool
+	SessionHash                     string
+	SessionContextFound             bool
+	SessionContextAccountID         int64
+	SessionContextAccountMatch      bool
+	SessionContextConnID            string
+	SessionContextLastResponseID    string
+	SessionContextLastResponseMatch bool
+	SessionConnCachedAccountID      int64
+	SessionConnCachedID             string
+	SessionConnCachedHit            bool
+	SessionConnCachedMatch          bool
+	SessionConnCurrentID            string
+	SessionConnCurrentHit           bool
+	SessionConnCurrentMatch         bool
+	CachedConnInPool                bool
+	CachedConnProfile               openAIWSConnProfile
+	CachedConnAgeMS                 int64
+	CachedConnIdleMS                int64
+	CachedConnLeaseCount            int64
+	CachedConnLastResponseID        string
+	CachedConnLastResponseHit       bool
+	StickyAccountID                 int64
+	StickyAccountHit                bool
+	StickyAccountMismatch           bool
+	ConnAffinityHit                 bool
+	StoreFallbackReason             string
+	FallbackReason                  string
+	ErrorCode                       string
+	ErrorType                       string
+}
+
+func openAIWSBindingSnapshotLogMessage(v openAIWSBindingSnapshotLog) string {
+	return fmt.Sprintf(
+		"openai_ws_binding_snapshot temporary_diag=sticky_select remove_after_debug=true trigger=%s request_id=%s account_id=%d account_type=%s conn_id=%s previous_response_id=%s original_previous_response_id_present=%v previous_bound_account_id=%d previous_bound_account_hit=%v previous_bound_conn_id=%s previous_bound_conn_hit=%v preferred_conn_id=%s preferred_conn_in_pool=%v preferred_conn_profile=%s preferred_conn_age_ms=%d preferred_conn_idle_ms=%d preferred_conn_lease_count=%d lease_conn_last_response_id=%s lease_conn_last_response_hit=%v session_hash=%s session_context_found=%v session_context_account_id=%d session_context_account_match=%v session_context_conn_id=%s session_context_last_response_id=%s session_context_last_response_match=%v session_conn_cached_account_id=%d session_conn_cached_id=%s session_conn_cached_hit=%v session_conn_cached_match=%v session_conn_current_id=%s session_conn_current_hit=%v session_conn_current_match=%v cached_conn_in_pool=%v cached_conn_profile=%s cached_conn_age_ms=%d cached_conn_idle_ms=%d cached_conn_lease_count=%d cached_conn_last_response_id=%s cached_conn_last_response_hit=%v sticky_account_id=%d sticky_account_hit=%v sticky_account_conflict=%v conn_affinity_hit=%v store_fallback_reason=%s fallback_reason=%s err_code=%s err_type=%s",
+		truncateOpenAIWSLogValueNoReplace(v.Trigger, openAIWSLogValueMaxLen),
+		normalizeOpenAIWSLogValue(v.RequestID),
+		v.AccountID,
+		normalizeOpenAIWSLogValue(v.AccountType),
+		truncateOpenAIWSLogValue(v.ConnID, openAIWSIDValueMaxLen),
+		truncateOpenAIWSLogValue(v.PreviousResponseID, openAIWSIDValueMaxLen),
+		v.OriginalPreviousIDPresent,
+		v.PreviousBoundAccountID,
+		v.PreviousBoundAccountHit,
+		truncateOpenAIWSLogValue(v.PreviousBoundConnID, openAIWSIDValueMaxLen),
+		v.PreviousBoundConnHit,
+		truncateOpenAIWSLogValue(v.PreferredConnID, openAIWSIDValueMaxLen),
+		v.PreferredConnInPool,
+		openAIWSConnProfileSnapshotLogValue(v.PreferredConnProfile, v.PreferredConnInPool),
+		v.PreferredConnAgeMS,
+		v.PreferredConnIdleMS,
+		v.PreferredConnLeaseCount,
+		truncateOpenAIWSLogValue(v.LeaseConnLastResponseID, openAIWSIDValueMaxLen),
+		v.LeaseConnLastResponseHit,
+		truncateOpenAIWSLogValue(v.SessionHash, 12),
+		v.SessionContextFound,
+		v.SessionContextAccountID,
+		v.SessionContextAccountMatch,
+		truncateOpenAIWSLogValue(v.SessionContextConnID, openAIWSIDValueMaxLen),
+		truncateOpenAIWSLogValue(v.SessionContextLastResponseID, openAIWSIDValueMaxLen),
+		v.SessionContextLastResponseMatch,
+		v.SessionConnCachedAccountID,
+		truncateOpenAIWSLogValue(v.SessionConnCachedID, openAIWSIDValueMaxLen),
+		v.SessionConnCachedHit,
+		v.SessionConnCachedMatch,
+		truncateOpenAIWSLogValue(v.SessionConnCurrentID, openAIWSIDValueMaxLen),
+		v.SessionConnCurrentHit,
+		v.SessionConnCurrentMatch,
+		v.CachedConnInPool,
+		openAIWSConnProfileSnapshotLogValue(v.CachedConnProfile, v.CachedConnInPool),
+		v.CachedConnAgeMS,
+		v.CachedConnIdleMS,
+		v.CachedConnLeaseCount,
+		truncateOpenAIWSLogValue(v.CachedConnLastResponseID, openAIWSIDValueMaxLen),
+		v.CachedConnLastResponseHit,
+		v.StickyAccountID,
+		v.StickyAccountHit,
+		v.StickyAccountMismatch,
+		v.ConnAffinityHit,
+		normalizeOpenAIWSLogValue(v.StoreFallbackReason),
+		normalizeOpenAIWSLogValue(v.FallbackReason),
+		normalizeOpenAIWSLogValue(v.ErrorCode),
+		normalizeOpenAIWSLogValue(v.ErrorType),
+	)
+}
+
+func shouldLogOpenAIWSContinuationBindingSnapshot(decision openAIWSContinuationStoreDecision) bool {
+	reason := strings.TrimSpace(decision.FallbackReason)
+	if decision.StickyAccountMismatch {
+		return true
+	}
+	switch reason {
+	case "sticky_account_error", "sticky_account_miss", "sticky_account_mismatch", "conn_affinity_miss", "session_context_conn_reanchor":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *OpenAIGatewayService) logOpenAIWSBindingSnapshot(
+	ctx context.Context,
+	trigger string,
+	requestID string,
+	account *Account,
+	stateStore OpenAIWSStateStore,
+	pool *openAIWSConnPool,
+	groupID int64,
+	apiKeyID int64,
+	sessionHash string,
+	previousResponseID string,
+	originalPreviousIDPresent bool,
+	leaseConnID string,
+	preferredConnID string,
+	decision openAIWSContinuationStoreDecision,
+	fallbackReason string,
+	errCode string,
+	errType string,
+) {
+	if account == nil || stateStore == nil || account.Type != AccountTypeOAuth {
+		return
+	}
+	prevID := strings.TrimSpace(previousResponseID)
+	sess := strings.TrimSpace(sessionHash)
+	leaseConn := strings.TrimSpace(leaseConnID)
+	preferredConn := strings.TrimSpace(preferredConnID)
+	if prevID == "" && sess == "" && preferredConn == "" && leaseConn == "" {
+		return
+	}
+	log := openAIWSBindingSnapshotLog{
+		Trigger:                   trigger,
+		RequestID:                 requestID,
+		AccountID:                 account.ID,
+		AccountType:               account.Type,
+		ConnID:                    leaseConn,
+		PreviousResponseID:        prevID,
+		OriginalPreviousIDPresent: originalPreviousIDPresent,
+		PreferredConnID:           preferredConn,
+		SessionHash:               sess,
+		StickyAccountID:           decision.StickyAccountID,
+		StickyAccountHit:          decision.StickyAccountHit,
+		StickyAccountMismatch:     decision.StickyAccountMismatch,
+		ConnAffinityHit:           decision.ConnAffinityHit,
+		StoreFallbackReason:       decision.FallbackReason,
+		FallbackReason:            fallbackReason,
+		ErrorCode:                 errCode,
+		ErrorType:                 errType,
+	}
+	if prevID != "" {
+		if accountID, err := stateStore.GetResponseAccount(ctx, groupID, apiKeyID, prevID); err == nil && accountID > 0 {
+			log.PreviousBoundAccountID = accountID
+			log.PreviousBoundAccountHit = true
+		}
+		if connID, ok := stateStore.GetResponseConn(groupID, apiKeyID, prevID); ok {
+			log.PreviousBoundConnID = connID
+			log.PreviousBoundConnHit = true
+		}
+	}
+	if leaseConn != "" {
+		log.LeaseConnLastResponseID, log.LeaseConnLastResponseHit = stateStore.GetConnLastResponse(leaseConn)
+	}
+	if sess != "" {
+		if cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sess); ok {
+			log.SessionContextFound = true
+			log.SessionContextAccountID = cached.accountID
+			log.SessionContextAccountMatch = cached.accountID == account.ID
+			log.SessionContextConnID = cached.connID
+			log.SessionContextLastResponseID = cached.lastResponseID
+			log.SessionContextLastResponseMatch = strings.TrimSpace(cached.lastResponseID) != "" &&
+				strings.TrimSpace(cached.lastResponseID) == prevID
+			if connID, hit := stateStore.GetSessionConn(groupID, apiKeyID, cached.accountID, sess); hit {
+				log.SessionConnCachedAccountID = cached.accountID
+				log.SessionConnCachedID = connID
+				log.SessionConnCachedHit = true
+				log.SessionConnCachedMatch = strings.TrimSpace(connID) == strings.TrimSpace(cached.connID)
+			}
+			if cached.connID != "" {
+				log.CachedConnLastResponseID, log.CachedConnLastResponseHit = stateStore.GetConnLastResponse(cached.connID)
+				if pool != nil {
+					snapshot := pool.ConnSnapshot(cached.accountID, cached.connID)
+					log.CachedConnInPool = snapshot.Exists
+					log.CachedConnProfile = snapshot.Profile
+					log.CachedConnAgeMS = snapshot.Age.Milliseconds()
+					log.CachedConnIdleMS = snapshot.Idle.Milliseconds()
+					log.CachedConnLeaseCount = snapshot.LeaseCount
+				}
+			}
+		}
+		if connID, hit := stateStore.GetSessionConn(groupID, apiKeyID, account.ID, sess); hit {
+			log.SessionConnCurrentID = connID
+			log.SessionConnCurrentHit = true
+			log.SessionConnCurrentMatch = strings.TrimSpace(connID) == leaseConn
+		}
+	}
+	if preferredConn != "" && pool != nil {
+		snapshot := pool.ConnSnapshot(account.ID, preferredConn)
+		log.PreferredConnInPool = snapshot.Exists
+		log.PreferredConnProfile = snapshot.Profile
+		log.PreferredConnAgeMS = snapshot.Age.Milliseconds()
+		log.PreferredConnIdleMS = snapshot.Idle.Milliseconds()
+		log.PreferredConnLeaseCount = snapshot.LeaseCount
+	}
+	logOpenAIWSModeInfo("%s", openAIWSBindingSnapshotLogMessage(log))
 }
 
 func openAIWSReadFailLogMessage(v openAIWSReadFailLog) string {
@@ -3592,6 +3834,31 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		((storeEnabled && previousResponseID != "") || storeDecision.DroppedPreviousResponseID || sameAccountContinuationWithoutConn) {
 		forceNewConn = true
 	}
+	if shouldLogOpenAIWSContinuationBindingSnapshot(storeDecision) {
+		snapshotPreviousResponseID := previousResponseID
+		if strings.TrimSpace(snapshotPreviousResponseID) == "" {
+			snapshotPreviousResponseID = storeDecision.OriginalPreviousResponseID
+		}
+		s.logOpenAIWSBindingSnapshot(
+			ctx,
+			"continuation_binding",
+			requestID,
+			account,
+			stateStore,
+			pool,
+			groupID,
+			apiKeyID,
+			sessionHash,
+			snapshotPreviousResponseID,
+			strings.TrimSpace(storeDecision.OriginalPreviousResponseID) != "",
+			"",
+			preferredConnID,
+			storeDecision,
+			storeDecision.FallbackReason,
+			"",
+			"",
+		)
+	}
 	logOpenAIWSModeDebug(
 		"acquire_start account_id=%d account_type=%s transport=%s preferred_conn_id=%s has_previous_response_id=%v session_hash=%s has_turn_state=%v turn_state_len=%d has_turn_metadata=%v turn_metadata_len=%d store_mode=%s store_enabled=%v store_disabled=%v sticky_account_hit=%v conn_affinity_hit=%v fallback_reason=%s store_disabled_conn_mode=%s retry_last_reason=%s force_new_conn=%v affinity_only_reuse=%v http_ingress_ws_one_shot=%v header_user_agent=%s header_openai_beta=%s header_originator=%s header_accept_language=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_prompt_cache_key=%v has_chatgpt_account_id=%v has_authorization=%v has_session_id=%v has_conversation_id=%v proxy_enabled=%v",
 		account.ID,
@@ -4401,6 +4668,25 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				fallbackReason = "ws_conn_ttl_evict"
 			}
 			errCode, errType, errMessage := summarizeOpenAIWSErrorEventFieldsFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
+			s.logOpenAIWSBindingSnapshot(
+				ctx,
+				"error_event",
+				requestID,
+				account,
+				stateStore,
+				pool,
+				groupID,
+				apiKeyID,
+				sessionHash,
+				previousResponseID,
+				originalPreviousResponseIDPresent,
+				connID,
+				preferredConnID,
+				storeDecision,
+				fallbackReason,
+				errCode,
+				errType,
+			)
 			logOpenAIWSModeInfo("%s", openAIWSErrorEventLogMessage(openAIWSErrorEventLog{
 				RequestID:                 requestID,
 				ClientRequestID:           clientRequestID,

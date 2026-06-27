@@ -907,6 +907,7 @@ func TestOpenAIWSSessionContextStickySnapshotLogMessageShowsStickyAndCachedConte
 		CachedConnID:             "oa_ws_67238_7",
 		CachedLastResponseID:     "resp_cached_123",
 		AccountMatch:             false,
+		AccountMatchState:        "mismatch",
 		BoundConnID:              "oa_ws_67238_7",
 		BoundConnHit:             true,
 		BoundConnMatch:           true,
@@ -933,6 +934,7 @@ func TestOpenAIWSSessionContextStickySnapshotLogMessageShowsStickyAndCachedConte
 	require.Contains(t, msg, "cached_conn_id=oa_ws_67238_7")
 	require.Contains(t, msg, "cached_last_response_id=resp_cached_123")
 	require.Contains(t, msg, "account_match=false")
+	require.Contains(t, msg, "account_match_state=mismatch")
 	require.Contains(t, msg, "bound_conn_id=oa_ws_67238_7")
 	require.Contains(t, msg, "bound_conn_hit=true")
 	require.Contains(t, msg, "bound_conn_match=true")
@@ -944,6 +946,73 @@ func TestOpenAIWSSessionContextStickySnapshotLogMessageShowsStickyAndCachedConte
 	require.Contains(t, msg, "cached_conn_idle_ms=1200")
 	require.Contains(t, msg, "cached_conn_lease_count=6")
 	require.Contains(t, msg, "cached_conn_last_response_id=resp_cached_123")
+}
+
+func TestOpenAIWSBindingSnapshotLogMessageShowsMismatchState(t *testing.T) {
+	msg := openAIWSBindingSnapshotLogMessage(openAIWSBindingSnapshotLog{
+		Trigger:                         "error_event",
+		RequestID:                       "req-binding",
+		AccountID:                       73972,
+		AccountType:                     AccountTypeOAuth,
+		ConnID:                          "oa_ws_73972_6",
+		PreviousResponseID:              "resp_prev_binding",
+		OriginalPreviousIDPresent:       false,
+		PreviousBoundAccountID:          73972,
+		PreviousBoundAccountHit:         true,
+		PreviousBoundConnID:             "oa_ws_73972_6",
+		PreviousBoundConnHit:            true,
+		PreferredConnID:                 "oa_ws_73972_6",
+		PreferredConnInPool:             true,
+		PreferredConnProfile:            openAIWSConnProfileSessionBound,
+		PreferredConnAgeMS:              81000,
+		PreferredConnIdleMS:             1200,
+		PreferredConnLeaseCount:         6,
+		LeaseConnLastResponseID:         "resp_prev_binding",
+		LeaseConnLastResponseHit:        true,
+		SessionHash:                     "abcdef1234567890",
+		SessionContextFound:             true,
+		SessionContextAccountID:         73972,
+		SessionContextAccountMatch:      true,
+		SessionContextConnID:            "oa_ws_73972_6",
+		SessionContextLastResponseID:    "resp_prev_binding",
+		SessionContextLastResponseMatch: true,
+		SessionConnCachedAccountID:      73972,
+		SessionConnCachedID:             "oa_ws_73972_6",
+		SessionConnCachedHit:            true,
+		SessionConnCachedMatch:          true,
+		SessionConnCurrentID:            "oa_ws_73972_6",
+		SessionConnCurrentHit:           true,
+		SessionConnCurrentMatch:         true,
+		CachedConnInPool:                true,
+		CachedConnProfile:               openAIWSConnProfileSessionBound,
+		CachedConnAgeMS:                 81000,
+		CachedConnIdleMS:                1200,
+		CachedConnLeaseCount:            6,
+		CachedConnLastResponseID:        "resp_prev_binding",
+		CachedConnLastResponseHit:       true,
+		StickyAccountID:                 73972,
+		StickyAccountHit:                true,
+		ConnAffinityHit:                 true,
+		StoreFallbackReason:             "active_delta",
+		FallbackReason:                  "conn_mismatch",
+		ErrorCode:                       "conn_mismatch",
+		ErrorType:                       "invalid_request_error",
+	})
+
+	require.Contains(t, msg, "openai_ws_binding_snapshot")
+	require.Contains(t, msg, "trigger=error_event")
+	require.Contains(t, msg, "request_id=req-binding")
+	require.Contains(t, msg, "previous_bound_account_id=73972")
+	require.Contains(t, msg, "previous_bound_conn_id=oa_ws_73972_6")
+	require.Contains(t, msg, "preferred_conn_in_pool=true")
+	require.Contains(t, msg, "lease_conn_last_response_hit=true")
+	require.Contains(t, msg, "session_context_found=true")
+	require.Contains(t, msg, "session_context_account_match=true")
+	require.Contains(t, msg, "session_context_last_response_match=true")
+	require.Contains(t, msg, "session_conn_current_match=true")
+	require.Contains(t, msg, "cached_conn_in_pool=true")
+	require.Contains(t, msg, "fallback_reason=conn_mismatch")
+	require.Contains(t, msg, "err_code=conn_mismatch")
 }
 
 func TestOpenAIWSWriteRequestFailLogMessageIncludesRequestAndReanchorContext(t *testing.T) {

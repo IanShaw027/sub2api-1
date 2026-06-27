@@ -2152,6 +2152,7 @@ type openAIWSSessionContextStickySnapshotLog struct {
 	CachedConnID             string
 	CachedLastResponseID     string
 	AccountMatch             bool
+	AccountMatchState        string
 	BoundConnID              string
 	BoundConnHit             bool
 	BoundConnMatch           bool
@@ -2169,7 +2170,7 @@ type openAIWSSessionContextStickySnapshotLog struct {
 
 func openAIWSSessionContextStickySnapshotLogMessage(v openAIWSSessionContextStickySnapshotLog) string {
 	return fmt.Sprintf(
-		"openai_ws_session_context_sticky_snapshot temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s sticky_source=%s sticky_account_id=%d cached_found=%v cached_account_id=%d cached_conn_id=%s cached_last_response_id=%s account_match=%v bound_conn_id=%s bound_conn_hit=%v bound_conn_match=%v conn_last_response_id=%s conn_last_response_hit=%v cached_conn_in_pool=%v cached_conn_profile=%s cached_conn_age_ms=%d cached_conn_idle_ms=%d cached_conn_lease_count=%d cached_conn_leased=%v cached_conn_waiters=%d cached_conn_last_response_id=%s",
+		"openai_ws_session_context_sticky_snapshot temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s sticky_source=%s sticky_account_id=%d cached_found=%v cached_account_id=%d cached_conn_id=%s cached_last_response_id=%s account_match=%v account_match_state=%s bound_conn_id=%s bound_conn_hit=%v bound_conn_match=%v conn_last_response_id=%s conn_last_response_hit=%v cached_conn_in_pool=%v cached_conn_profile=%s cached_conn_age_ms=%d cached_conn_idle_ms=%d cached_conn_lease_count=%d cached_conn_leased=%v cached_conn_waiters=%d cached_conn_last_response_id=%s",
 		v.GroupID,
 		v.APIKeyID,
 		truncateOpenAIWSLogValue(v.SessionHash, 12),
@@ -2180,6 +2181,7 @@ func openAIWSSessionContextStickySnapshotLogMessage(v openAIWSSessionContextStic
 		truncateOpenAIWSLogValue(v.CachedConnID, openAIWSIDValueMaxLen),
 		truncateOpenAIWSLogValue(v.CachedLastResponseID, openAIWSIDValueMaxLen),
 		v.AccountMatch,
+		normalizeOpenAIWSLogValue(v.AccountMatchState),
 		truncateOpenAIWSLogValue(v.BoundConnID, openAIWSIDValueMaxLen),
 		v.BoundConnHit,
 		v.BoundConnMatch,
@@ -2194,6 +2196,21 @@ func openAIWSSessionContextStickySnapshotLogMessage(v openAIWSSessionContextStic
 		v.CachedConnWaiters,
 		truncateOpenAIWSLogValue(v.CachedConnLastResponseID, openAIWSIDValueMaxLen),
 	)
+}
+
+func openAIWSStickyAccountMatchState(stickyAccountID int64, cachedFound bool, cachedAccountID int64) string {
+	switch {
+	case !cachedFound && stickyAccountID > 0:
+		return "missing_session_context"
+	case !cachedFound:
+		return "no_session_context"
+	case stickyAccountID <= 0:
+		return "no_sticky_account"
+	case cachedAccountID == stickyAccountID:
+		return "match"
+	default:
+		return "mismatch"
+	}
 }
 
 func (s *OpenAIGatewayService) logOpenAIWSSessionContextStickySnapshot(groupID *int64, apiKeyID int64, sessionHash, stickySource string, stickyAccountID int64) {
@@ -2218,6 +2235,11 @@ func (s *OpenAIGatewayService) logOpenAIWSSessionContextStickySnapshot(groupID *
 		StickyAccountID: stickyAccountID,
 		CachedFound:     cachedFound,
 		AccountMatch:    cachedFound && stickyAccountID > 0 && cached.accountID == stickyAccountID,
+		AccountMatchState: openAIWSStickyAccountMatchState(
+			stickyAccountID,
+			cachedFound,
+			cached.accountID,
+		),
 	}
 	if cachedFound {
 		log.CachedAccountID = cached.accountID

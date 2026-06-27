@@ -618,6 +618,8 @@ type openAIWSDeltaShadowLog struct {
 	Active                   bool
 	Candidate                bool
 	FallbackReason           string
+	AccountMismatchReason    string
+	ConnMismatchReason       string
 	PrefixMatch              bool
 	BreakBoundary            string // "input" | "output" | ""
 	BreakItemType            string
@@ -657,7 +659,8 @@ func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
 			"cached_conn_in_pool=%v cached_conn_profile=%s cached_conn_age_ms=%d cached_conn_idle_ms=%d "+
 			"cached_conn_lease_count=%d cached_conn_leased=%v cached_conn_waiters=%d "+
 			"cached_conn_last_response_id=%s allow_conn_reanchor=%v "+
-			"has_function_call_output=%v active=%v candidate=%v fallback_reason=%s prefix_match=%v "+
+			"has_function_call_output=%v active=%v candidate=%v fallback_reason=%s "+
+			"account_mismatch_reason=%s conn_mismatch_reason=%s prefix_match=%v "+
 			"break_boundary=%s break_item_type=%s break_cached_item_type=%s break_cached_shape=%s "+
 			"break_current_shape=%s conn_match=%v most_recent_match=%v non_input_match=%v "+
 			"non_input_added_keys=%s non_input_removed_keys=%s non_input_changed_keys=%s "+
@@ -691,6 +694,8 @@ func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
 		v.Active,
 		v.Candidate,
 		normalizeOpenAIWSLogValue(v.FallbackReason),
+		normalizeOpenAIWSLogValue(v.AccountMismatchReason),
+		normalizeOpenAIWSLogValue(v.ConnMismatchReason),
 		v.PrefixMatch,
 		normalizeOpenAIWSLogValue(v.BreakBoundary),
 		normalizeOpenAIWSLogValue(v.BreakItemType),
@@ -727,6 +732,53 @@ func openAIWSConnProfileSnapshotLogValue(profile openAIWSConnProfile, exists boo
 		return "-"
 	}
 	return normalizeOpenAIWSLogValue(openAIWSProfileUsageString(profile))
+}
+
+func openAIWSDeltaAccountMismatchReason(in openAIWSDeltaShadowInput, cachedAccountID int64) string {
+	if cachedAccountID == in.AccountID {
+		return ""
+	}
+	switch {
+	case in.StickyAccountMismatch:
+		return "response_sticky_account_mismatch"
+	case in.StickyAccountID > 0 && in.StickyAccountID != in.AccountID:
+		return "sticky_selected_account_mismatch"
+	case !in.StickyAccountHit && strings.TrimSpace(in.StoreFallbackReason) != "":
+		return "sticky_not_applied_" + strings.TrimSpace(in.StoreFallbackReason)
+	case cachedAccountID > 0 && in.AccountID > 0:
+		return "session_context_selected_account_mismatch"
+	case cachedAccountID <= 0:
+		return "missing_cached_account"
+	default:
+		return "unknown"
+	}
+}
+
+func openAIWSDeltaConnMismatchReason(in openAIWSDeltaShadowInput, connMatch, mostRecentMatch, connReanchorMatch bool) string {
+	if connMatch && (mostRecentMatch || connReanchorMatch) {
+		return ""
+	}
+	cachedConnID := strings.TrimSpace(in.Cached.connID)
+	leaseConnID := strings.TrimSpace(in.LeaseConnID)
+	preferredConnID := strings.TrimSpace(in.PreferredConnID)
+	switch {
+	case connReanchorMatch:
+		return ""
+	case cachedConnID == "":
+		return "missing_cached_conn"
+	case leaseConnID == "":
+		return "missing_lease_conn"
+	case preferredConnID != "" && preferredConnID != leaseConnID:
+		return "preferred_not_leased"
+	case !in.CachedConnInPool:
+		return "cached_conn_not_in_pool"
+	case !connMatch:
+		return "cached_conn_differs_from_lease"
+	case !mostRecentMatch:
+		return "last_response_mismatch"
+	default:
+		return "unknown"
+	}
 }
 
 // openAIWSDeltaShadowInput carries the runtime inputs for one follow-up turn's candidate
@@ -821,6 +873,8 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 		in.ConnMostRecentResponseID == strings.TrimSpace(in.Cached.lastResponseID)
 	connAnchorMatch := log.ConnMatch && log.MostRecentMatch
 	connReanchorMatch := in.AllowConnReanchor && strings.TrimSpace(in.Cached.lastResponseID) != ""
+	log.AccountMismatchReason = openAIWSDeltaAccountMismatchReason(in, in.Cached.accountID)
+	log.ConnMismatchReason = openAIWSDeltaConnMismatchReason(in, log.ConnMatch, log.MostRecentMatch, connReanchorMatch)
 	log.RawClientEquiv = in.Cached.rawVsClientVisibleEqual
 
 	currentNonInput, _, currentNonInputFields := openAIWSNonInputFingerprint(in.CurrentPayload)
