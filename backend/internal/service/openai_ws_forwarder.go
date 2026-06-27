@@ -2550,7 +2550,7 @@ func logOpenAIWSResponseStickyBind(groupID int64, apiKeyID int64, accountID int6
 	if accountErr != nil {
 		errText = compactOpenAIWSLogValue(accountErr.Error(), openAIWSLogValueMaxLen)
 	}
-	logOpenAIWSModeInfo(
+	logOpenAIWSModeInfoDirect(
 		"response_sticky_bind temporary_diag=sticky_bind remove_after_debug=true group_id=%d api_key_id=%d account_id=%d account_type=%s response_id=%s conn_id=%s conn_bound=%v ttl_seconds=%d account_bind_error=%s",
 		groupID,
 		apiKeyID,
@@ -2565,7 +2565,7 @@ func logOpenAIWSResponseStickyBind(groupID int64, apiKeyID int64, accountID int6
 }
 
 func logOpenAIWSSessionConnBind(groupID int64, apiKeyID int64, accountID int64, accountType string, sessionHash string, connID string, ttl time.Duration) {
-	logOpenAIWSModeInfo(
+	logOpenAIWSModeInfoDirect(
 		"session_conn_bind temporary_diag=sticky_bind remove_after_debug=true group_id=%d api_key_id=%d account_id=%d account_type=%s session=%s conn_id=%s ttl_seconds=%d",
 		groupID,
 		apiKeyID,
@@ -2591,7 +2591,7 @@ func logOpenAIWSSessionContextBind(
 	outputCaptured bool,
 	rawClientEquivalent bool,
 ) {
-	logOpenAIWSModeInfo(
+	logOpenAIWSModeInfoDirect(
 		"session_context_bind temporary_diag=sticky_bind remove_after_debug=true group_id=%d api_key_id=%d account_id=%d account_type=%s session=%s conn_id=%s response_id=%s ttl_seconds=%d input_count=%d materialized_count=%d output_captured=%v raw_client_equiv=%v",
 		groupID,
 		apiKeyID,
