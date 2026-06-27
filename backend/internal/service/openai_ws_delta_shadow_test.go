@@ -270,7 +270,7 @@ func buildShadowCandidateFixture(t *testing.T) (payload []byte, cached openAIWSS
 
 	h1 := mustItemHash(t, msg1)
 	h2 := mustItemHash(t, out1)
-	nonInput, _ := openAIWSNonInputHash(payload)
+	nonInput, _, nonInputFields := openAIWSNonInputFingerprint(payload)
 	cached = openAIWSSessionContextValue{
 		accountID:               5,
 		connID:                  "conn_a",
@@ -279,6 +279,7 @@ func buildShadowCandidateFixture(t *testing.T) (payload []byte, cached openAIWSS
 		materializedCount:       2,
 		inputCount:              1,
 		nonInputHash:            nonInput,
+		nonInputFields:          nonInputFields,
 		rawVsClientVisibleEqual: true,
 	}
 	return payload, cached
@@ -337,13 +338,14 @@ func TestEvaluateDeltaShadowCandidate_RejectsCodexRequestPropertyChanges(t *test
 		"tools":[{"type":"function","name":"new_tool"}],
 		"input":[` + msg1 + `,` + out1 + `,` + newMsg + `]
 	}`)
-	nonInput, _ := openAIWSNonInputHash(previousPayload)
+	nonInput, _, nonInputFields := openAIWSNonInputFingerprint(previousPayload)
 	cached := openAIWSSessionContextValue{
 		accountID: 5, connID: "conn_a", lastResponseID: "resp_1",
 		materializedHashes:      [][32]byte{mustItemHash(t, msg1), mustItemHash(t, out1)},
 		materializedCount:       2,
 		inputCount:              1,
 		nonInputHash:            nonInput,
+		nonInputFields:          nonInputFields,
 		rawVsClientVisibleEqual: true,
 	}
 
@@ -357,6 +359,11 @@ func TestEvaluateDeltaShadowCandidate_RejectsCodexRequestPropertyChanges(t *test
 	require.False(t, log.Candidate)
 	require.False(t, log.NonInputMatch)
 	require.Equal(t, "non_input_mismatch", log.FallbackReason)
+	require.Equal(t, "include,instructions,parallel_tool_calls,reasoning,text,tool_choice,tools", log.NonInputChangedKeys)
+	require.Contains(t, log.NonInputCachedSummary, "instructions:string")
+	require.Contains(t, log.NonInputCurrentSummary, "instructions:string")
+	require.NotContains(t, log.NonInputCachedSummary, "old instructions")
+	require.NotContains(t, log.NonInputCurrentSummary, "new turn instructions")
 	require.Nil(t, deltaPayload)
 }
 
@@ -376,9 +383,33 @@ func TestEvaluateDeltaShadowCandidate_FallbackReasons(t *testing.T) {
 	// conn mismatch
 	connMis := base
 	connMis.LeaseConnID = "conn_b"
+	connMis.ConnReanchorBlockers = "has_function_call_output"
+	connMis.StickyAccountHit = true
+	connMis.ConnAffinityHit = true
+	connMis.PreferredConnID = "conn_a"
+	connMis.StoreFallbackReason = "active_delta"
 	r := evaluateOpenAIWSDeltaShadowCandidate(connMis)
 	require.False(t, r.Candidate)
 	require.Equal(t, "conn_mismatch", r.FallbackReason)
+	require.Equal(t, "has_function_call_output", r.ConnReanchorBlockers)
+	require.True(t, r.StickyAccountHit)
+	require.True(t, r.ConnAffinityHit)
+	require.Equal(t, "conn_a", r.PreferredConnID)
+	require.Equal(t, "active_delta", r.StoreFallbackReason)
+
+	accountMis := base
+	accountMis.AccountID = 6
+	accountMis.StickyAccountHit = false
+	accountMis.ConnAffinityHit = false
+	accountMis.PreferredConnID = ""
+	accountMis.StoreFallbackReason = "missing_previous_response_id"
+	r = evaluateOpenAIWSDeltaShadowCandidate(accountMis)
+	require.False(t, r.Candidate)
+	require.Equal(t, "account_mismatch", r.FallbackReason)
+	require.Equal(t, int64(5), r.CachedAccountID)
+	require.False(t, r.StickyAccountHit)
+	require.False(t, r.ConnAffinityHit)
+	require.Equal(t, "missing_previous_response_id", r.StoreFallbackReason)
 
 	// not most recent
 	notRecent := base
@@ -691,7 +722,7 @@ func TestOpenAIWSConnEvictHookInvalidatesConnLastResponse(t *testing.T) {
 	store := NewOpenAIWSStateStore(nil)
 	store.BindConnLastResponse("conn_x", "resp_1", time.Minute)
 
-	RegisterOpenAIWSConnEvictHook(func(connID string) { store.DeleteConnLastResponse(connID) })
+	RegisterOpenAIWSConnEvictHook(func(connID string, reason string) { store.DeleteConnLastResponse(connID) })
 	t.Cleanup(func() { RegisterOpenAIWSConnEvictHook(nil) })
 
 	ap := &openAIWSAccountPool{conns: map[string]*openAIWSConn{"conn_x": {}}}

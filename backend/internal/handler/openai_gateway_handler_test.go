@@ -1599,6 +1599,81 @@ func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_WaitTimeoutClearsPrevio
 	require.Zero(t, accountID)
 }
 
+func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_AcquiredSelectionBindsOpenAIStickySession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+
+	groupID := int64(22)
+	stickyCache := &openAIHandlerGatewayCacheStub{}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.StickySessionTTLSeconds = 80
+	gatewaySvc := service.NewOpenAIGatewayService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		stickyCache,
+		cfg,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	h := &OpenAIGatewayHandler{gatewayService: gatewaySvc}
+
+	released := false
+	streamStarted := false
+	selection := &service.AccountSelectionResult{
+		Account: &service.Account{
+			ID:          73972,
+			Platform:    service.PlatformOpenAI,
+			Type:        service.AccountTypeOAuth,
+			Status:      service.StatusActive,
+			Schedulable: true,
+			Concurrency: 20,
+		},
+		Acquired: true,
+		ReleaseFunc: func() {
+			released = true
+		},
+	}
+
+	release, status := h.acquireResponsesAccountSlot(
+		c,
+		&groupID,
+		464,
+		"session-hash-bound",
+		"",
+		selection,
+		true,
+		&streamStarted,
+		zap.NewNop(),
+	)
+	require.Equal(t, accountSlotAcquireAcquired, status)
+	require.NotNil(t, release)
+	require.Equal(t, int64(73972), stickyCache.sessionBindings["openai:session-hash-bound"])
+	require.Equal(t, 80*time.Second, stickyCache.sessionTTLs["openai:session-hash-bound"])
+
+	release()
+	require.True(t, released)
+}
+
 func TestOpenAIResponsesWebSocket_SetsClientTransportWSWhenUpgradeValid(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -2357,6 +2432,7 @@ type openAIWSFailoverHandlerAccountRepoStub struct {
 
 type openAIHandlerGatewayCacheStub struct {
 	sessionBindings      map[string]int64
+	sessionTTLs          map[string]time.Duration
 	deletedSessions      map[string]int
 	sessionWindowPayload map[string][]byte
 	deletedWindows       map[string]int
@@ -2375,7 +2451,11 @@ func (s *openAIHandlerGatewayCacheStub) SetSessionAccountID(ctx context.Context,
 	if s.sessionBindings == nil {
 		s.sessionBindings = make(map[string]int64)
 	}
+	if s.sessionTTLs == nil {
+		s.sessionTTLs = make(map[string]time.Duration)
+	}
 	s.sessionBindings[sessionHash] = accountID
+	s.sessionTTLs[sessionHash] = ttl
 	return nil
 }
 

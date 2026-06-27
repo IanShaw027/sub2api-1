@@ -136,11 +136,11 @@ func TriggerOpenAIWSPoolReconcile() {
 	go hook()
 }
 
-var openAIWSConnEvictHook atomic.Pointer[func(connID string)]
+var openAIWSConnEvictHook atomic.Pointer[func(connID string, reason string)]
 
 // RegisterOpenAIWSConnEvictHook 注册连接淘汰回调（幂等覆盖）。
 // 用于让 conn_id -> last_response_id 等外部映射在连接删除时同步失效。
-func RegisterOpenAIWSConnEvictHook(hook func(connID string)) {
+func RegisterOpenAIWSConnEvictHook(hook func(connID string, reason string)) {
 	if hook == nil {
 		openAIWSConnEvictHook.Store(nil)
 		return
@@ -148,21 +148,25 @@ func RegisterOpenAIWSConnEvictHook(hook func(connID string)) {
 	openAIWSConnEvictHook.Store(&hook)
 }
 
-func triggerOpenAIWSConnEvict(connID string) {
+func triggerOpenAIWSConnEvict(connID string, reason string) {
 	id := stringsTrim(connID)
 	if id == "" {
 		return
+	}
+	evictReason := stringsTrim(reason)
+	if evictReason == "" {
+		evictReason = "unknown"
 	}
 	hookPtr := openAIWSConnEvictHook.Load()
 	if hookPtr == nil || *hookPtr == nil {
 		return
 	}
-	(*hookPtr)(id)
+	(*hookPtr)(id, evictReason)
 }
 
 // deleteOpenAIWSAccountConnLocked 统一删除 ap.conns 中的连接并触发淘汰回调，
 // 保证任何删除路径都不会泄漏陈旧的 conn_id -> last_response_id 映射。调用方须持有 ap.mu。
-func deleteOpenAIWSAccountConnLocked(ap *openAIWSAccountPool, connID string) {
+func deleteOpenAIWSAccountConnLocked(ap *openAIWSAccountPool, connID string, reasons ...string) {
 	if ap == nil {
 		return
 	}
@@ -170,8 +174,12 @@ func deleteOpenAIWSAccountConnLocked(ap *openAIWSAccountPool, connID string) {
 	if id == "" {
 		return
 	}
+	reason := "unknown"
+	if len(reasons) > 0 && stringsTrim(reasons[0]) != "" {
+		reason = stringsTrim(reasons[0])
+	}
 	delete(ap.conns, id)
-	triggerOpenAIWSConnEvict(id)
+	triggerOpenAIWSConnEvict(id, reason)
 }
 
 var (
@@ -302,6 +310,20 @@ func (l *openAIWSConnLease) ConnAge() time.Duration {
 	return l.conn.age(time.Now())
 }
 
+func (l *openAIWSConnLease) ConnIdleDuration() time.Duration {
+	if l == nil || l.conn == nil {
+		return 0
+	}
+	return l.conn.idleDuration(time.Now())
+}
+
+func (l *openAIWSConnLease) ConnLeaseCount() int64 {
+	if l == nil || l.conn == nil {
+		return 0
+	}
+	return l.conn.leaseCount.Load()
+}
+
 func (l *openAIWSConnLease) HandshakeHeader(name string) string {
 	if l == nil || l.conn == nil {
 		return ""
@@ -419,6 +441,7 @@ type openAIWSConn struct {
 	waiters       atomic.Int32
 	createdAtNano atomic.Int64
 	lastUsedNano  atomic.Int64
+	leaseCount    atomic.Int64
 	prewarmed     atomic.Bool
 	neutralStock  atomic.Bool
 	profile       openAIWSConnProfile
@@ -650,6 +673,13 @@ func (c *openAIWSConn) touch() {
 		return
 	}
 	c.lastUsedNano.Store(time.Now().UnixNano())
+}
+
+func (c *openAIWSConn) markLease() {
+	if c == nil {
+		return
+	}
+	c.leaseCount.Add(1)
 }
 
 func (c *openAIWSConn) createdAt() time.Time {
@@ -1230,6 +1260,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 			return nil, err
 		}
 	}
+	conn.markLease()
 	lease := &openAIWSConnLease{pool: p, accountID: accountID, conn: conn, connPick: connPick}
 	p.ensureTargetIdleAsync(accountID)
 	return lease, nil
@@ -1393,6 +1424,9 @@ func openAIWSConnReuseKeyForAcquire(req openAIWSAcquireRequest) string {
 func (p *openAIWSConnPool) finalizeReusedLease(accountID int64, conn *openAIWSConn, req openAIWSAcquireRequest, connPick, queueWait time.Duration) *openAIWSConnLease {
 	if conn != nil && req.Profile == openAIWSConnProfileNeutral {
 		conn.clearNeutralStock()
+	}
+	if conn != nil {
+		conn.markLease()
 	}
 	lease := &openAIWSConnLease{
 		pool:      p,
@@ -1568,11 +1602,15 @@ func (p *openAIWSConnPool) logConnEvict(conn *openAIWSConn, reason string) {
 	if conn == nil {
 		return
 	}
+	now := time.Now()
 	logOpenAIWSModeInfo(
-		"conn_evict conn_id=%s profile=%s reason=%s",
+		"conn_evict conn_id=%s profile=%s reason=%s conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d",
 		normalizeOpenAIWSLogValue(conn.id),
 		normalizeOpenAIWSLogValue(string(conn.profile)),
 		normalizeOpenAIWSLogValue(reason),
+		conn.age(now).Milliseconds(),
+		conn.idleDuration(now).Milliseconds(),
+		conn.leaseCount.Load(),
 	)
 }
 
@@ -1613,7 +1651,7 @@ func (p *openAIWSConnPool) removeConnLocked(ap *openAIWSAccountPool, conn *openA
 		return
 	}
 	p.logConnEvict(conn, reason)
-	deleteOpenAIWSAccountConnLocked(ap, conn.id)
+	deleteOpenAIWSAccountConnLocked(ap, conn.id, reason)
 	if len(ap.pinnedConns) > 0 {
 		delete(ap.pinnedConns, conn.id)
 	}
@@ -1626,7 +1664,7 @@ func (p *openAIWSConnPool) cleanupExpiredReusableConnsLocked(ap *openAIWSAccount
 	evicted := make([]*openAIWSConn, 0)
 	for id, conn := range ap.conns {
 		if conn == nil {
-			deleteOpenAIWSAccountConnLocked(ap, id)
+			deleteOpenAIWSAccountConnLocked(ap, id, "nil_conn")
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, id)
 			}
@@ -1667,7 +1705,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 	evicted := make([]*openAIWSConn, 0)
 	for id, conn := range ap.conns {
 		if conn == nil {
-			deleteOpenAIWSAccountConnLocked(ap, id)
+			deleteOpenAIWSAccountConnLocked(ap, id, "nil_conn")
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, id)
 			}
@@ -1676,7 +1714,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 		select {
 		case <-conn.closedCh:
 			p.logConnEvict(conn, "closed")
-			deleteOpenAIWSAccountConnLocked(ap, id)
+			deleteOpenAIWSAccountConnLocked(ap, id, "closed")
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, id)
 			}
@@ -1689,7 +1727,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 		}
 		if maxAge > 0 && conn.age(now) >= maxAge {
 			p.logConnEvict(conn, "conn_max_age")
-			deleteOpenAIWSAccountConnLocked(ap, id)
+			deleteOpenAIWSAccountConnLocked(ap, id, "conn_max_age")
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, id)
 			}
@@ -1699,7 +1737,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 		}
 		if conn.profile == openAIWSConnProfileSessionBound && sessionIdleTTL > 0 && now.Sub(conn.lastUsedAt()) >= sessionIdleTTL {
 			p.logConnEvict(conn, "session_idle_ttl")
-			deleteOpenAIWSAccountConnLocked(ap, id)
+			deleteOpenAIWSAccountConnLocked(ap, id, "session_idle_ttl")
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, id)
 			}
@@ -1709,7 +1747,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 		}
 		if conn.profile == openAIWSConnProfileNeutral && neutralIdleTTL > 0 && now.Sub(conn.lastUsedAt()) >= neutralIdleTTL {
 			p.logConnEvict(conn, "neutral_idle_ttl")
-			deleteOpenAIWSAccountConnLocked(ap, id)
+			deleteOpenAIWSAccountConnLocked(ap, id, "neutral_idle_ttl")
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, id)
 			}
@@ -1726,7 +1764,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 			break
 		}
 		p.logConnEvict(idle, "neutral_over_target")
-		deleteOpenAIWSAccountConnLocked(ap, idle.id)
+		deleteOpenAIWSAccountConnLocked(ap, idle.id, "neutral_over_target")
 		if len(ap.pinnedConns) > 0 {
 			delete(ap.pinnedConns, idle.id)
 		}
@@ -1742,7 +1780,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 				break
 			}
 			p.logConnEvict(idle, "idle_over_max")
-			deleteOpenAIWSAccountConnLocked(ap, idle.id)
+			deleteOpenAIWSAccountConnLocked(ap, idle.id, "idle_over_max")
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, idle.id)
 			}
@@ -2005,7 +2043,7 @@ func (p *openAIWSConnPool) evictConn(accountID int64, connID string, reasons ...
 		ap.mu.Lock()
 		if c, exists := ap.conns[connID]; exists {
 			conn = c
-			deleteOpenAIWSAccountConnLocked(ap, connID)
+			deleteOpenAIWSAccountConnLocked(ap, connID, reason)
 			if len(ap.pinnedConns) > 0 {
 				delete(ap.pinnedConns, connID)
 			}

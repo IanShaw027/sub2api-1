@@ -52,6 +52,7 @@ type openAIWSSessionContextValue struct {
 	inputCount              int        // = len(input_N); 用于区分 break 落在 input 前缀还是 output 边界
 	inputOnlyContext        bool       // raw output 未捕获时的降级上下文；后续需裁掉历史 replay 输出项
 	nonInputHash            [32]byte
+	nonInputFields          map[string]openAIWSNonInputFieldFingerprint // no raw values; top-level non-input field fingerprints for mismatch diagnostics
 	rawVsClientVisibleEqual bool
 }
 
@@ -105,7 +106,7 @@ type OpenAIWSStateStore interface {
 	BindConnLastResponse(connID, responseID string, ttl time.Duration)
 	GetConnLastResponse(connID string) (string, bool)
 	DeleteConnLastResponse(connID string)
-	DeleteConnScopedState(connID string)
+	DeleteConnScopedState(connID string, reasons ...string)
 
 	// 原子 per-session in-flight 标记，保证 shadow inert：仅 owner 读写状态，non-owner 不等待。
 	TrySessionInFlight(groupID int64, apiKeyID int64, sessionHash string) bool
@@ -548,29 +549,66 @@ func (s *defaultOpenAIWSStateStore) DeleteConnLastResponse(connID string) {
 	s.connLastResponseMu.Unlock()
 }
 
-func (s *defaultOpenAIWSStateStore) DeleteConnScopedState(connID string) {
+func (s *defaultOpenAIWSStateStore) DeleteConnScopedState(connID string, reasons ...string) {
 	conn := strings.TrimSpace(connID)
 	if s == nil || conn == "" {
 		return
 	}
+	reason := "unknown"
+	if len(reasons) > 0 && strings.TrimSpace(reasons[0]) != "" {
+		reason = strings.TrimSpace(reasons[0])
+	}
 
+	responseConnDeleted := 0
 	s.responseToConnMu.Lock()
 	for key, binding := range s.responseToConn {
 		if strings.TrimSpace(binding.connID) == conn {
 			delete(s.responseToConn, key)
+			responseConnDeleted++
 		}
 	}
 	s.responseToConnMu.Unlock()
 
+	sessionConnDeleted := 0
 	s.sessionToConnMu.Lock()
 	for key, binding := range s.sessionToConn {
 		if strings.TrimSpace(binding.connID) == conn {
 			delete(s.sessionToConn, key)
+			sessionConnDeleted++
 		}
 	}
 	s.sessionToConnMu.Unlock()
 
+	sessionContextDeleted := 0
+	if openAIWSConnEvictReasonInvalidatesSessionContext(reason) {
+		s.sessionContextMu.Lock()
+		for key, binding := range s.sessionContext {
+			if strings.TrimSpace(binding.value.connID) == conn {
+				delete(s.sessionContext, key)
+				sessionContextDeleted++
+			}
+		}
+		s.sessionContextMu.Unlock()
+	}
+
 	s.DeleteConnLastResponse(conn)
+	logOpenAIWSModeInfo(
+		"conn_scoped_state_deleted conn_id=%s reason=%s response_conn_deleted=%d session_conn_deleted=%d session_context_deleted=%d",
+		normalizeOpenAIWSLogValue(conn),
+		normalizeOpenAIWSLogValue(reason),
+		responseConnDeleted,
+		sessionConnDeleted,
+		sessionContextDeleted,
+	)
+}
+
+func openAIWSConnEvictReasonInvalidatesSessionContext(reason string) bool {
+	switch strings.TrimSpace(reason) {
+	case "closed", "conn_max_age", "session_idle_ttl", "neutral_idle_ttl", "neutral_acquire_stale_idle", "neutral_over_target", "idle_over_max", "nil_conn":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *defaultOpenAIWSStateStore) TrySessionInFlight(groupID int64, apiKeyID int64, sessionHash string) bool {

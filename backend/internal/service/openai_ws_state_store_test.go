@@ -154,7 +154,7 @@ func TestOpenAIWSStateStore_SessionConnTTL(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestOpenAIWSStateStore_DeleteConnScopedStatePreservesSessionContext(t *testing.T) {
+func TestOpenAIWSStateStore_DeleteConnScopedStateDeletesMatchingSessionContext(t *testing.T) {
 	store := NewOpenAIWSStateStore(nil)
 
 	store.BindSessionConn(7, 11, 101, "sess_a", "conn_a", time.Minute)
@@ -172,7 +172,7 @@ func TestOpenAIWSStateStore_DeleteConnScopedStatePreservesSessionContext(t *test
 	store.BindConnLastResponse("conn_a", "resp_a", time.Minute)
 	store.BindConnLastResponse("conn_b", "resp_b", time.Minute)
 
-	store.DeleteConnScopedState("conn_a")
+	store.DeleteConnScopedState("conn_a", "session_idle_ttl")
 
 	_, ok := store.GetSessionConn(7, 11, 101, "sess_a")
 	require.False(t, ok, "session -> conn binding for evicted conn must be cleared")
@@ -180,10 +180,9 @@ func TestOpenAIWSStateStore_DeleteConnScopedStatePreservesSessionContext(t *test
 	require.True(t, ok)
 	require.Equal(t, "conn_b", connID)
 
-	ctx, ok := store.GetSessionContext(7, 11, "sess_a")
-	require.True(t, ok, "session context is session-scoped and must survive conn eviction for write-retry delta")
-	require.Equal(t, "conn_a", ctx.connID)
-	ctx, ok = store.GetSessionContext(7, 11, "sess_b")
+	_, ok = store.GetSessionContext(7, 11, "sess_a")
+	require.False(t, ok, "session context tied to evicted conn must be cleared to avoid stale conn_mismatch full replay")
+	ctx, ok := store.GetSessionContext(7, 11, "sess_b")
 	require.True(t, ok)
 	require.Equal(t, "conn_b", ctx.connID)
 

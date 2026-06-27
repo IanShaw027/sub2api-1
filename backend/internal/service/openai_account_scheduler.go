@@ -487,13 +487,28 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	}
 	escapeCfg := s.service.openAIStickyEscapeConfig()
 	if reason, errorRate, ttft, shouldEscape := s.shouldEscapeStickyAccount(accountID, escapeCfg); shouldEscape {
-		slog.Info("sticky_escape_triggered",
-			"account_id", accountID,
-			"reason", reason,
-			"error_rate", errorRate,
-			"ttft", ttft,
-		)
-		return nil, true, nil
+		if shouldSuppressOpenAIStickyEscapeForOAuthWS(req, account, reason) {
+			logOpenAIWSModeInfo(
+				"sticky_escape_suppressed_ws_session group_id=%d api_key_id=%d account_id=%d account_type=%s transport=%s session=%s reason=%s err_rate=%.6f ttft=%.0f",
+				derefGroupID(req.GroupID),
+				req.APIKeyID,
+				accountID,
+				normalizeOpenAIWSLogValue(account.Type),
+				normalizeOpenAIWSLogValue(string(req.RequiredTransport)),
+				shortSessionHash(sessionHash),
+				normalizeOpenAIWSLogValue(reason),
+				errorRate,
+				ttft,
+			)
+		} else {
+			slog.Info("sticky_escape_triggered",
+				"account_id", accountID,
+				"reason", reason,
+				"error_rate", errorRate,
+				"ttft", ttft,
+			)
+			return nil, true, nil
+		}
 	}
 
 	maxConcurrency := req.MaxConcurrencyFor(account)
@@ -577,6 +592,14 @@ func (s *defaultOpenAIAccountScheduler) shouldEscapeStickyAccount(accountID int6
 		return "error_rate", errorRate, ttft, true
 	}
 	return "", errorRate, ttft, false
+}
+
+func shouldSuppressOpenAIStickyEscapeForOAuthWS(req OpenAIAccountScheduleRequest, account *Account, reason string) bool {
+	return account != nil &&
+		account.Type == AccountTypeOAuth &&
+		req.RequiredTransport == OpenAIUpstreamTransportResponsesWebsocketV2 &&
+		strings.TrimSpace(req.SessionHash) != "" &&
+		strings.TrimSpace(reason) == "ttft"
 }
 
 type openAIAccountCandidateScore struct {
@@ -1931,12 +1954,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		return nil, decision, fmt.Errorf("%w supporting model: %s (channel pricing restriction)", ErrNoAvailableAccounts, requestedModel)
 	}
 
-	var stickyAccountID int64
-	if sessionHash != "" && s.cache != nil {
-		if accountID, err := s.getStickySessionAccountID(ctx, groupID, sessionHash); err == nil && accountID > 0 {
-			stickyAccountID = accountID
-		}
-	}
+	stickyAccountID, _ := s.resolveOpenAIScheduleStickyAccountID(ctx, groupID, apiKeyID, sessionHash)
 
 	return scheduler.Select(ctx, OpenAIAccountScheduleRequest{
 		GroupID:                 req.GroupID,
@@ -1955,6 +1973,73 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		RequireCompact:          requireCompact,
 		ExcludedIDs:             excludedIDs,
 	})
+}
+
+func (s *OpenAIGatewayService) resolveOpenAIScheduleStickyAccountID(ctx context.Context, groupID *int64, apiKeyID int64, sessionHash string) (int64, string) {
+	if strings.TrimSpace(sessionHash) == "" {
+		return 0, "no_session_hash"
+	}
+
+	var accountID int64
+	source := "redis_miss"
+	redisErr := ""
+	if s != nil && s.cache != nil {
+		id, err := s.getStickySessionAccountID(ctx, groupID, sessionHash)
+		if err == nil && id > 0 {
+			accountID = id
+			source = "redis"
+		} else if err != nil {
+			redisErr = compactOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen)
+			source = "redis_error"
+		}
+	}
+
+	connID := ""
+	if accountID <= 0 {
+		if id, conn, ok := s.openAIWSSessionContextStickyCandidate(groupID, apiKeyID, sessionHash); ok {
+			accountID = id
+			connID = conn
+			source = "ws_session_context"
+		}
+	}
+
+	logOpenAIWSModeInfoDirect(
+		"openai_ws_sticky_select_diag temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s source=%s account_id=%d conn_id=%s redis_error=%s",
+		derefGroupID(groupID),
+		apiKeyID,
+		shortSessionHash(sessionHash),
+		normalizeOpenAIWSLogValue(source),
+		accountID,
+		normalizeOpenAIWSLogValue(connID),
+		normalizeOpenAIWSLogValue(redisErr),
+	)
+	return accountID, source
+}
+
+func (s *OpenAIGatewayService) openAIWSSessionContextStickyCandidate(groupID *int64, apiKeyID int64, sessionHash string) (int64, string, bool) {
+	if s == nil || apiKeyID <= 0 || strings.TrimSpace(sessionHash) == "" {
+		return 0, "", false
+	}
+	stateStore := s.getOpenAIWSStateStore()
+	if stateStore == nil {
+		return 0, "", false
+	}
+	cached, ok := stateStore.GetSessionContext(derefGroupID(groupID), apiKeyID, sessionHash)
+	if !ok || cached.accountID <= 0 {
+		return 0, "", false
+	}
+	connID := strings.TrimSpace(cached.connID)
+	if connID == "" || strings.TrimSpace(cached.lastResponseID) == "" {
+		return 0, "", false
+	}
+	boundConnID, ok := stateStore.GetSessionConn(derefGroupID(groupID), apiKeyID, cached.accountID, sessionHash)
+	if !ok || strings.TrimSpace(boundConnID) != connID {
+		return 0, "", false
+	}
+	if _, ok := stateStore.GetConnLastResponse(connID); !ok {
+		return 0, "", false
+	}
+	return cached.accountID, connID, true
 }
 
 func (s *OpenAIGatewayService) selectByPreviousResponseForScheduleRequest(

@@ -77,6 +77,12 @@ var openAIWSNonInputDenylist = []string{
 	"client_metadata",
 }
 
+type openAIWSNonInputFieldFingerprint struct {
+	kind string
+	size int
+	hash [32]byte
+}
+
 // openAIWSCanonicalItemHash hashes one input/output item. JSON key order is canonicalized
 // (recursively), but string CONTENT is never whitespace-normalized — a whitespace change
 // in text must change the hash. Only confirmed envelope-volatile id/status are dropped,
@@ -361,25 +367,139 @@ func openAIWSItemTypeFromShape(shape string) string {
 	return strings.TrimSpace(rest)
 }
 
-// openAIWSNonInputHash hashes the request payload minus the denylist fields, returning the
-// hash and the set of denylist keys that were actually present (for audit).
-func openAIWSNonInputHash(payload []byte) ([32]byte, []string) {
-	var v map[string]any
-	if err := json.Unmarshal(payload, &v); err != nil {
-		return [32]byte{}, nil
+// openAIWSNonInputFingerprint hashes the request payload minus the denylist fields and
+// also returns top-level field fingerprints. Fingerprints intentionally keep only
+// type/size/hash metadata, never raw request values.
+func openAIWSNonInputFingerprint(payload []byte) ([32]byte, []string, map[string]openAIWSNonInputFieldFingerprint) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return [32]byte{}, nil, nil
 	}
 	ignored := make([]string, 0, len(openAIWSNonInputDenylist))
 	for _, k := range openAIWSNonInputDenylist {
-		if _, ok := v[k]; ok {
+		if _, ok := raw[k]; ok {
 			ignored = append(ignored, k)
-			delete(v, k)
+			delete(raw, k)
+		}
+	}
+	v := make(map[string]any, len(raw))
+	fields := make(map[string]openAIWSNonInputFieldFingerprint, len(raw))
+	for k, rawValue := range raw {
+		var value any
+		if err := json.Unmarshal(rawValue, &value); err != nil {
+			return [32]byte{}, ignored, fields
+		}
+		canonValue, err := openAIWSCanonicalJSON(value)
+		if err != nil {
+			return [32]byte{}, ignored, fields
+		}
+		v[k] = value
+		fields[k] = openAIWSNonInputFieldFingerprint{
+			kind: openAIWSJSONValueKind(value),
+			size: len(canonValue),
+			hash: sha256.Sum256(canonValue),
 		}
 	}
 	canon, err := openAIWSCanonicalJSON(v)
 	if err != nil {
-		return [32]byte{}, ignored
+		return [32]byte{}, ignored, fields
 	}
-	return sha256.Sum256(canon), ignored
+	return sha256.Sum256(canon), ignored, fields
+}
+
+// openAIWSNonInputHash hashes the request payload minus the denylist fields, returning the
+// hash and the set of denylist keys that were actually present (for audit).
+func openAIWSNonInputHash(payload []byte) ([32]byte, []string) {
+	hash, ignored, _ := openAIWSNonInputFingerprint(payload)
+	return hash, ignored
+}
+
+func openAIWSJSONValueKind(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return "null"
+	case bool:
+		return "bool"
+	case float64:
+		return "number"
+	case string:
+		return "string"
+	case []any:
+		return "array"
+	case map[string]any:
+		return "object"
+	default:
+		_ = v
+		return "unknown"
+	}
+}
+
+func openAIWSNonInputFieldDiff(cached, current map[string]openAIWSNonInputFieldFingerprint) (added, removed, changed []string) {
+	for k, cur := range current {
+		prev, ok := cached[k]
+		if !ok {
+			added = append(added, k)
+			continue
+		}
+		if prev.hash != cur.hash {
+			changed = append(changed, k)
+		}
+	}
+	for k := range cached {
+		if _, ok := current[k]; !ok {
+			removed = append(removed, k)
+		}
+	}
+	sort.Strings(added)
+	sort.Strings(removed)
+	sort.Strings(changed)
+	return added, removed, changed
+}
+
+func openAIWSJoinLogKeys(keys []string) string {
+	if len(keys) == 0 {
+		return "-"
+	}
+	return strings.Join(keys, ",")
+}
+
+func openAIWSNonInputFieldSummary(fields map[string]openAIWSNonInputFieldFingerprint) string {
+	if len(fields) == 0 {
+		return "-"
+	}
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	const maxFields = 18
+	if len(keys) > maxFields {
+		keys = keys[:maxFields]
+	}
+	parts := make([]string, 0, len(keys)+1)
+	for _, k := range keys {
+		fp := fields[k]
+		parts = append(parts, k+":"+fp.kind+"("+openAIWSIntString(fp.size)+")")
+	}
+	if len(fields) > len(keys) {
+		parts = append(parts, "more:"+openAIWSIntString(len(fields)-len(keys)))
+	}
+	return strings.Join(parts, ",")
+}
+
+func openAIWSIntString(v int) string {
+	if v == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	n := v
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
 }
 
 // openAIWSCanonicalJSON marshals with recursively sorted object keys. Go's json.Marshal
@@ -494,7 +614,17 @@ type openAIWSDeltaShadowLog struct {
 	ConnMatch                bool
 	MostRecentMatch          bool
 	NonInputMatch            bool
+	NonInputAddedKeys        string
+	NonInputRemovedKeys      string
+	NonInputChangedKeys      string
+	NonInputCachedSummary    string
+	NonInputCurrentSummary   string
 	RawClientEquiv           bool
+	StickyAccountHit         bool
+	ConnAffinityHit          bool
+	PreferredConnID          string
+	StoreFallbackReason      string
+	ConnReanchorBlockers     string
 	MaterializedCount        int
 	CurrentInputCount        int
 	DeltaItems               int
@@ -511,7 +641,10 @@ func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
 			"has_function_call_output=%v active=%v candidate=%v fallback_reason=%s prefix_match=%v "+
 			"break_boundary=%s break_item_type=%s break_cached_item_type=%s break_cached_shape=%s "+
 			"break_current_shape=%s conn_match=%v most_recent_match=%v non_input_match=%v "+
-			"raw_client_equiv=%v materialized_count=%d current_input_count=%d delta_items=%d delta_bytes=%d "+
+			"non_input_added_keys=%s non_input_removed_keys=%s non_input_changed_keys=%s "+
+			"non_input_cached_summary=%s non_input_current_summary=%s raw_client_equiv=%v "+
+			"sticky_account_hit=%v conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s "+
+			"conn_reanchor_blockers=%s materialized_count=%d current_input_count=%d delta_items=%d delta_bytes=%d "+
 			"full_items=%d full_bytes=%d",
 		normalizeOpenAIWSLogValue(v.RequestID),
 		v.AccountID,
@@ -535,7 +668,17 @@ func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
 		v.ConnMatch,
 		v.MostRecentMatch,
 		v.NonInputMatch,
+		normalizeOpenAIWSLogValue(v.NonInputAddedKeys),
+		normalizeOpenAIWSLogValue(v.NonInputRemovedKeys),
+		normalizeOpenAIWSLogValue(v.NonInputChangedKeys),
+		truncateOpenAIWSLogValue(v.NonInputCachedSummary, openAIWSLogValueMaxLen),
+		truncateOpenAIWSLogValue(v.NonInputCurrentSummary, openAIWSLogValueMaxLen),
 		v.RawClientEquiv,
+		v.StickyAccountHit,
+		v.ConnAffinityHit,
+		truncateOpenAIWSLogValue(v.PreferredConnID, openAIWSIDValueMaxLen),
+		normalizeOpenAIWSLogValue(v.StoreFallbackReason),
+		normalizeOpenAIWSLogValue(v.ConnReanchorBlockers),
 		v.MaterializedCount,
 		v.CurrentInputCount,
 		v.DeltaItems,
@@ -555,6 +698,11 @@ type openAIWSDeltaShadowInput struct {
 	CurrentPayload           []byte
 	HasFunctionCallOutput    bool
 	AllowConnReanchor        bool
+	StickyAccountHit         bool
+	ConnAffinityHit          bool
+	PreferredConnID          string
+	StoreFallbackReason      string
+	ConnReanchorBlockers     string
 	Cached                   openAIWSSessionContextValue
 	CachedFound              bool
 }
@@ -574,6 +722,11 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 		ConnMostRecentResponseID: in.ConnMostRecentResponseID,
 		AllowConnReanchor:        in.AllowConnReanchor,
 		HasFunctionCallOutput:    in.HasFunctionCallOutput,
+		StickyAccountHit:         in.StickyAccountHit,
+		ConnAffinityHit:          in.ConnAffinityHit,
+		PreferredConnID:          in.PreferredConnID,
+		StoreFallbackReason:      in.StoreFallbackReason,
+		ConnReanchorBlockers:     in.ConnReanchorBlockers,
 	}
 
 	fullItems, _, err := openAIWSExtractNormalizedInputSequence(in.CurrentPayload)
@@ -599,8 +752,16 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 	connReanchorMatch := in.AllowConnReanchor && strings.TrimSpace(in.Cached.lastResponseID) != ""
 	log.RawClientEquiv = in.Cached.rawVsClientVisibleEqual
 
-	currentNonInput, _ := openAIWSNonInputHash(in.CurrentPayload)
+	currentNonInput, _, currentNonInputFields := openAIWSNonInputFingerprint(in.CurrentPayload)
 	log.NonInputMatch = currentNonInput == in.Cached.nonInputHash
+	if len(in.Cached.nonInputFields) > 0 || len(currentNonInputFields) > 0 {
+		added, removed, changed := openAIWSNonInputFieldDiff(in.Cached.nonInputFields, currentNonInputFields)
+		log.NonInputAddedKeys = openAIWSJoinLogKeys(added)
+		log.NonInputRemovedKeys = openAIWSJoinLogKeys(removed)
+		log.NonInputChangedKeys = openAIWSJoinLogKeys(changed)
+		log.NonInputCachedSummary = openAIWSNonInputFieldSummary(in.Cached.nonInputFields)
+		log.NonInputCurrentSummary = openAIWSNonInputFieldSummary(currentNonInputFields)
+	}
 
 	currentHashes, hok := openAIWSCanonicalItemHashes(fullItems)
 	if !hok {

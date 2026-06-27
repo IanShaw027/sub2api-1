@@ -1349,6 +1349,11 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	}
 	account := selection.Account
 	if selection.Acquired {
+		if h.gatewayService != nil {
+			if err := h.gatewayService.BindStickySession(ctx, groupID, sessionHash, account.ID); err != nil {
+				reqLog.Warn("openai.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			}
+		}
 		return wrapReleaseOnDone(ctx, selection.ReleaseFunc), accountSlotAcquireAcquired
 	}
 	if selection.WaitPlan == nil {

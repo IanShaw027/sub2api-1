@@ -765,6 +765,96 @@ func TestOpenAIWSReadFailLogMessageIncludesRequestAndConnectionContext(t *testin
 	require.Contains(t, msg, "last_event=response.output_text.delta")
 }
 
+func TestOpenAIWSWriteRequestFailLogMessageIncludesRequestAndReanchorContext(t *testing.T) {
+	msg := openAIWSWriteRequestFailLogMessage(openAIWSWriteRequestFailLog{
+		RequestID:                "req-write-fail",
+		ClientRequestID:          "client-write-fail",
+		AccountID:                45,
+		AccountType:              AccountTypeOAuth,
+		Model:                    "gpt-5.5",
+		UpstreamModel:            "gpt-5.5",
+		ConnProfile:              openAIWSConnProfileSessionBound,
+		ConnID:                   "oa_ws_45_3",
+		ConnReused:               true,
+		Transport:                string(OpenAIUpstreamTransportResponsesWebsocketV2),
+		Attempt:                  1,
+		ConnPickMs:               4,
+		QueueWaitMs:              6,
+		ConnAgeMs:                120000,
+		ConnIdleMs:               87000,
+		ConnLeaseCount:           3,
+		PayloadBytes:             4321,
+		PreviousResponseID:       "resp_prev_write_fail",
+		PreviousResponseIDKind:   OpenAIPreviousResponseIDKindResponseID,
+		PreviousResponseIDSource: "session_context",
+		StoreMode:                openAIWSStoreModeIncremental,
+		StoreEnabled:             false,
+		StoreDisabled:            true,
+		StickyAccountHit:         true,
+		ConnAffinityHit:          true,
+		PreferredConnID:          "oa_ws_45_3",
+		StoreFallbackReason:      "active_delta",
+		AllowDeltaConnReanchor:   false,
+		ConnReanchorBlockers:     "has_function_call_output",
+		SessionHash:              "abcdef1234567890",
+		HasPromptCacheKey:        true,
+		HasTurnState:             false,
+		TurnStateLen:             0,
+		HTTPIngressWSOneShot:     false,
+		ForceNewConn:             false,
+		AffinityOnlyReuse:        false,
+		HasFunctionCallOutput:    true,
+		ActiveDelta:              true,
+		DeltaItems:               1,
+		DeltaBytes:               799,
+		FullItems:                305,
+		FullBytes:                834681,
+		ProxyEnabled:             true,
+		ProxyID:                  58,
+		Cause:                    "fail to write frame: broken pipe",
+	})
+
+	require.Contains(t, msg, "write_request_fail")
+	require.Contains(t, msg, "request_id=req-write-fail")
+	require.Contains(t, msg, "client_request_id=client-write-fail")
+	require.Contains(t, msg, "account_id=45")
+	require.Contains(t, msg, "account_type=oauth")
+	require.Contains(t, msg, "model=gpt-5.5")
+	require.Contains(t, msg, "conn_profile=session_bound")
+	require.Contains(t, msg, "conn_id=oa_ws_45_3")
+	require.Contains(t, msg, "conn_reused=true")
+	require.Contains(t, msg, "transport=responses_websockets_v2")
+	require.Contains(t, msg, "attempt=1")
+	require.Contains(t, msg, "conn_pick_ms=4")
+	require.Contains(t, msg, "queue_wait_ms=6")
+	require.Contains(t, msg, "conn_age_ms=120000")
+	require.Contains(t, msg, "conn_idle_ms=87000")
+	require.Contains(t, msg, "conn_lease_count=3")
+	require.Contains(t, msg, "payload_bytes=4321")
+	require.Contains(t, msg, "previous_response_id=resp_prev_write_fail")
+	require.Contains(t, msg, "previous_response_id_source=session_context")
+	require.Contains(t, msg, "store_mode=incremental")
+	require.Contains(t, msg, "sticky_account_hit=true")
+	require.Contains(t, msg, "conn_affinity_hit=true")
+	require.Contains(t, msg, "preferred_conn_id=oa_ws_45_3")
+	require.Contains(t, msg, "store_fallback_reason=active_delta")
+	require.Contains(t, msg, "allow_delta_conn_reanchor=false")
+	require.Contains(t, msg, "conn_reanchor_blockers=has_function_call_output")
+	require.Contains(t, msg, "session_hash=abcdef123456")
+	require.Contains(t, msg, "has_prompt_cache_key=true")
+	require.Contains(t, msg, "http_ingress_ws_one_shot=false")
+	require.Contains(t, msg, "force_new_conn=false")
+	require.Contains(t, msg, "has_function_call_output=true")
+	require.Contains(t, msg, "active_delta=true")
+	require.Contains(t, msg, "delta_items=1")
+	require.Contains(t, msg, "delta_bytes=799")
+	require.Contains(t, msg, "full_items=305")
+	require.Contains(t, msg, "full_bytes=834681")
+	require.Contains(t, msg, "proxy_enabled=true")
+	require.Contains(t, msg, "proxy_id=58")
+	require.Contains(t, msg, "cause=fail_to_write_frame:_broken_pipe")
+}
+
 func TestOpenAIWSTransportPathFromStartClassifiesReuseAndDelta(t *testing.T) {
 	require.Equal(t, "session_bound_ws_reused_incremental_delta", openAIWSTransportPathFromStart(openAIWSDiagnosticStartLog{
 		ConnProfile: openAIWSConnProfileSessionBound,
