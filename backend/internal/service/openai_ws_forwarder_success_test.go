@@ -949,7 +949,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthColdSessionUsesNeutralIdleConn(t
 	require.True(t, result.OpenAIWSConnReused, "冷 session 首轮 store=false 请求应复用账号级 neutral idle 连接")
 	require.Equal(t, 1, captureDialer.DialCount(), "冷 session 首轮不应为了 session 绑定新建连接")
 
-	connID, ok := svc.getOpenAIWSStateStore().GetSessionConn(groupID, sessionHash)
+	connID, ok := svc.getOpenAIWSStateStore().GetSessionConn(groupID, apiKeyID, account.ID, sessionHash)
 	require.True(t, ok, "冷 session 完成后仍应绑定实际连接用于后续亲和")
 	require.Equal(t, seedConnID, connID)
 	profile, ok := pool.ConnProfile(account.ID, seedConnID)
@@ -960,7 +960,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthColdSessionUsesNeutralIdleConn(t
 	require.Equal(t, openAIWSConnProfileSessionBound, profile)
 }
 
-func TestOpenAIGatewayService_Forward_WSv2AccountOnlyPreviousResponseFallsBackFullAndCanUseNeutralIdle(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2AccountOnlyPreviousResponseKeepsPreviousOnNewSessionConn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -985,8 +985,13 @@ func TestOpenAIGatewayService_Forward_WSv2AccountOnlyPreviousResponseFallsBackFu
 			[]byte(`{"type":"response.completed","response":{"id":"resp_reused_neutral_should_not_use","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
 		},
 	}
+	sessionConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_account_only_new_conn","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
+		},
+	}
 	dialer := &openAIWSSequentialCaptureDialer{
-		conns: []*openAIWSCaptureConn{neutralSeed},
+		conns: []*openAIWSCaptureConn{neutralSeed, sessionConn},
 	}
 	pool := newOpenAIWSConnPool(cfg)
 	pool.setClientDialerForTest(dialer)
@@ -1053,20 +1058,25 @@ func TestOpenAIGatewayService_Forward_WSv2AccountOnlyPreviousResponseFallsBackFu
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, "resp_reused_neutral_should_not_use", result.RequestID)
-	require.Equal(t, "neutral", result.OpenAIWSProfile)
-	require.Nil(t, upstream.lastReq, "account-only previous_response_id downgrade must stay on WS, not HTTP fallback")
-	require.Equal(t, 1, dialer.DialCount(), "降级为 full create 后应复用 neutral idle 连接")
+	require.Equal(t, "resp_account_only_new_conn", result.RequestID)
+	require.Equal(t, "session_bound", result.OpenAIWSProfile)
+	require.Nil(t, upstream.lastReq, "account-only previous_response_id continuation must stay on WS, not HTTP fallback")
+	require.Equal(t, 2, dialer.DialCount(), "账号粘连有效但 conn 亲和缺失时应新建 session-bound 连接，不能借用 neutral idle")
 
 	neutralSeed.mu.Lock()
 	neutralWrites := append([]map[string]any(nil), neutralSeed.writes...)
 	neutralSeed.mu.Unlock()
-	require.Len(t, neutralWrites, 1)
-	fullCreateWrite := requestToJSONString(neutralWrites[0])
-	require.False(t, gjson.Get(fullCreateWrite, "previous_response_id").Exists(), "account-only binding must not be continued on a new WS")
-	require.True(t, gjson.Get(fullCreateWrite, "store").Exists())
-	require.False(t, gjson.Get(fullCreateWrite, "store").Bool())
-	require.Equal(t, "hello", gjson.Get(fullCreateWrite, "input.0.text").String())
+	require.Empty(t, neutralWrites, "neutral idle 连接不应承载 previous_response_id 续链请求")
+
+	sessionConn.mu.Lock()
+	sessionWrites := append([]map[string]any(nil), sessionConn.writes...)
+	sessionConn.mu.Unlock()
+	require.Len(t, sessionWrites, 1)
+	continuationWrite := requestToJSONString(sessionWrites[0])
+	require.Equal(t, "resp_missing", gjson.Get(continuationWrite, "previous_response_id").String(), "same-account binding may continue on a fresh WS")
+	require.True(t, gjson.Get(continuationWrite, "store").Exists())
+	require.False(t, gjson.Get(continuationWrite, "store").Bool())
+	require.Equal(t, "hello", gjson.Get(continuationWrite, "input.0.text").String())
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_SameSessionPreemptsInFlightRequest(t *testing.T) {
@@ -1289,7 +1299,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthUnboundPreviousResponseFallsBack
 	require.Equal(t, "full replay from client", gjson.Get(secondWrite, "input.0.text").String())
 }
 
-func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyAccountWithoutConnFallsBackFullOnNewConn(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyAccountWithoutConnKeepsPreviousOnNewConn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -1391,9 +1401,9 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStickyAccountWithoutConnFallsBac
 	secondConn.mu.Unlock()
 	require.Len(t, secondWrites, 1)
 	secondWrite := requestToJSONString(secondWrites[0])
-	require.False(t, gjson.Get(secondWrite, "previous_response_id").Exists(), "account-only binding must not be continued without conn affinity")
+	require.Equal(t, "resp_oauth_account_only_prev", gjson.Get(secondWrite, "previous_response_id").String(), "same-account binding should keep continuation on a fresh WS")
 	require.True(t, gjson.Get(secondWrite, "store").Exists())
-	require.False(t, gjson.Get(secondWrite, "store").Bool(), "account-only binding must downgrade to store=false full create")
+	require.False(t, gjson.Get(secondWrite, "store").Bool(), "OAuth continuation must stay store=false")
 	require.Equal(t, "delta only", gjson.Get(secondWrite, "input.0.text").String())
 }
 
@@ -1647,7 +1657,7 @@ func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheK
 	require.NotNil(t, captureConn.lastWrite)
 	require.True(t, gjson.Get(requestToJSONString(captureConn.lastWrite), "stream").Exists())
 	sessionHash, _ := deriveOpenAIRequestScopedSessionHashes(c, "pcache_123")
-	connID, ok := svc.getOpenAIWSStateStore().GetSessionConn(0, sessionHash)
+	connID, ok := svc.getOpenAIWSStateStore().GetSessionConn(0, 0, account.ID, sessionHash)
 	require.True(t, ok)
 	profile, ok := pool.ConnProfile(account.ID, connID)
 	require.True(t, ok)
@@ -1746,7 +1756,7 @@ func TestOpenAIGatewayService_Forward_WSv2_UsesRoutingPromptCacheKeyWhenPayloadK
 	requestJSON := requestToJSONString(captureConn.lastWrite)
 	require.False(t, gjson.Get(requestJSON, "prompt_cache_key").Exists(), "routing-only prompt_cache_key must not be re-added to upstream payload")
 	sessionHash, _ := deriveOpenAIRequestScopedSessionHashes(c, "pcache_routing_only")
-	connID, ok := svc.getOpenAIWSStateStore().GetSessionConn(groupID, sessionHash)
+	connID, ok := svc.getOpenAIWSStateStore().GetSessionConn(groupID, apiKeyID, account.ID, sessionHash)
 	require.True(t, ok, "routing prompt_cache_key should bind a session connection")
 	require.NotEmpty(t, connID)
 	profile, ok := pool.ConnProfile(account.ID, connID)

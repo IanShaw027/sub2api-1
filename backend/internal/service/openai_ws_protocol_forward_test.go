@@ -1104,7 +1104,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressWSClientDisconnectSkipsStickyBi
 
 	sessionHash := svc.GenerateSessionHash(c, body)
 	require.NotEmpty(t, sessionHash)
-	_, ok = store.GetSessionConn(groupID, sessionHash)
+	_, ok = store.GetSessionConn(groupID, apiKeyID, account.ID, sessionHash)
 	require.False(t, ok, "断连 turn 不应绑定 session -> conn_id")
 }
 
@@ -2572,9 +2572,9 @@ func TestOpenAIGatewayService_Forward_WSv2HTTPFallbackUsesDowngradedContinuation
 	requests := append([][]byte(nil), wsRequestPayloads...)
 	wsRequestMu.Unlock()
 	require.Len(t, requests, 1)
-	require.False(t, gjson.GetBytes(requests[0], "previous_response_id").Exists(), "WS account-only binding should be downgraded before send")
+	require.Equal(t, previousResponseID, gjson.GetBytes(requests[0], "previous_response_id").String(), "same-account WS attempt should keep account-bound previous_response_id")
 	require.True(t, gjson.GetBytes(requests[0], "store").Exists())
-	require.False(t, gjson.GetBytes(requests[0], "store").Bool())
+	require.False(t, gjson.GetBytes(requests[0], "store").Bool(), "same-account WS attempt must force store=false continuation")
 
 	require.Len(t, upstream.bodies, 1)
 	require.False(t, gjson.GetBytes(upstream.bodies[0], "previous_response_id").Exists(), "HTTP fallback must not replay stale continuation id")
@@ -2786,9 +2786,9 @@ func TestOpenAIGatewayService_Forward_WSv2ConnectionLimitContinuationFailoverUse
 	requests := append([][]byte(nil), wsRequestPayloads...)
 	wsRequestMu.Unlock()
 	require.Len(t, requests, 1)
-	require.False(t, gjson.GetBytes(requests[0], "previous_response_id").Exists(), "account-only binding must not be continued without conn affinity")
+	require.Equal(t, "resp_ws_limit_bound_prev", gjson.GetBytes(requests[0], "previous_response_id").String(), "same-account WS attempt should keep account-bound previous_response_id")
 	require.True(t, gjson.GetBytes(requests[0], "store").Exists())
-	require.False(t, gjson.GetBytes(requests[0], "store").Bool(), "account-only binding must downgrade to store=false full create")
+	require.False(t, gjson.GetBytes(requests[0], "store").Bool(), "same-account WS attempt must force store=false continuation")
 	require.Equal(t, "full context for failover", gjson.GetBytes(requests[0], "input.0.text").String())
 
 	failoverBody, ok := getOpenAIFailoverRequestBody(c, nil)
@@ -3587,7 +3587,7 @@ func TestOpenAIGatewayService_Forward_WSv2OAuthToolContinuationWithFullContextRe
 	requests := append([][]byte(nil), wsRequestPayloads...)
 	wsRequestMu.Unlock()
 	require.Len(t, requests, 1)
-	require.False(t, gjson.GetBytes(requests[0], "previous_response_id").Exists())
+	require.Equal(t, previousResponseID, gjson.GetBytes(requests[0], "previous_response_id").String())
 	require.True(t, gjson.GetBytes(requests[0], "store").Exists())
 	require.False(t, gjson.GetBytes(requests[0], "store").Bool())
 	require.Equal(t, "function_call", gjson.GetBytes(requests[0], "input.0.type").String())

@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -89,9 +89,9 @@ type OpenAIWSStateStore interface {
 	GetSessionTurnState(groupID int64, sessionHash string) (string, bool)
 	DeleteSessionTurnState(groupID int64, sessionHash string)
 
-	BindSessionConn(groupID int64, sessionHash, connID string, ttl time.Duration)
-	GetSessionConn(groupID int64, sessionHash string) (string, bool)
-	DeleteSessionConn(groupID int64, sessionHash string)
+	BindSessionConn(groupID int64, apiKeyID int64, accountID int64, sessionHash, connID string, ttl time.Duration)
+	GetSessionConn(groupID int64, apiKeyID int64, accountID int64, sessionHash string) (string, bool)
+	DeleteSessionConn(groupID int64, apiKeyID int64, accountID int64, sessionHash string)
 
 	// strict-delta shadow 阶段状态。
 	BindSessionContext(groupID int64, apiKeyID int64, sessionHash string, value openAIWSSessionContextValue, ttl time.Duration)
@@ -329,8 +329,8 @@ func (s *defaultOpenAIWSStateStore) DeleteSessionTurnState(groupID int64, sessio
 	s.sessionToTurnStateMu.Unlock()
 }
 
-func (s *defaultOpenAIWSStateStore) BindSessionConn(groupID int64, sessionHash, connID string, ttl time.Duration) {
-	key := openAIWSSessionTurnStateKey(groupID, sessionHash)
+func (s *defaultOpenAIWSStateStore) BindSessionConn(groupID int64, apiKeyID int64, accountID int64, sessionHash, connID string, ttl time.Duration) {
+	key := openAIWSSessionConnKey(groupID, apiKeyID, accountID, sessionHash)
 	conn := strings.TrimSpace(connID)
 	if key == "" || conn == "" {
 		return
@@ -347,8 +347,8 @@ func (s *defaultOpenAIWSStateStore) BindSessionConn(groupID int64, sessionHash, 
 	s.sessionToConnMu.Unlock()
 }
 
-func (s *defaultOpenAIWSStateStore) GetSessionConn(groupID int64, sessionHash string) (string, bool) {
-	key := openAIWSSessionTurnStateKey(groupID, sessionHash)
+func (s *defaultOpenAIWSStateStore) GetSessionConn(groupID int64, apiKeyID int64, accountID int64, sessionHash string) (string, bool) {
+	key := openAIWSSessionConnKey(groupID, apiKeyID, accountID, sessionHash)
 	if key == "" {
 		return "", false
 	}
@@ -364,8 +364,8 @@ func (s *defaultOpenAIWSStateStore) GetSessionConn(groupID int64, sessionHash st
 	return binding.connID, true
 }
 
-func (s *defaultOpenAIWSStateStore) DeleteSessionConn(groupID int64, sessionHash string) {
-	key := openAIWSSessionTurnStateKey(groupID, sessionHash)
+func (s *defaultOpenAIWSStateStore) DeleteSessionConn(groupID int64, apiKeyID int64, accountID int64, sessionHash string) {
+	key := openAIWSSessionConnKey(groupID, apiKeyID, accountID, sessionHash)
 	if key == "" {
 		return
 	}
@@ -804,6 +804,14 @@ func openAIWSSessionTurnStateKey(groupID int64, sessionHash string) string {
 		return ""
 	}
 	return fmt.Sprintf("%d:%s", groupID, hash)
+}
+
+func openAIWSSessionConnKey(groupID int64, apiKeyID int64, accountID int64, sessionHash string) string {
+	hash := strings.TrimSpace(sessionHash)
+	if hash == "" || accountID <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d:%d:%s", groupID, apiKeyID, accountID, hash)
 }
 
 // openAIWSSessionContextKey 显式包含 apiKeyID（sessionHash 虽已 api-key-scoped，仍按 plan 显式区分）。

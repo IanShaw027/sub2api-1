@@ -6185,6 +6185,7 @@ oauthTransformDone:
 			setOpsUpstreamRequestBody(c, body)
 			return true
 		}
+		wsContinuationStoreDecision := openAIWSContinuationStoreDecision{}
 		if account.Type == AccountTypeOAuth && openAIWSPayloadString(wsReqBody, "previous_response_id") != "" && !HasFunctionCallOutput(wsReqBody) {
 			decision := s.resolveOpenAIWSContinuationStoreDecision(
 				ctx,
@@ -6194,20 +6195,33 @@ oauthTransformDone:
 				getOpenAIGroupIDFromContext(c),
 				getAPIKeyIDFromContext(c),
 			)
+			wsContinuationStoreDecision = decision
 			if decision.DroppedPreviousResponseID || decision.StoreDisabled || decision.StoreEnabled {
 				if !syncWSRecoveredBody("continuation_store_decision") {
 					return nil, wsErr
 				}
 			}
 		}
-		if openAIWSPayloadStoreDisabled(wsReqBody) && openAIWSPayloadString(wsReqBody, "previous_response_id") == "" && !HasFunctionCallOutput(wsReqBody) {
-			if removedReasoningItems := trimOpenAIEncryptedReasoningItems(wsReqBody); removedReasoningItems {
+		if openAIWSPayloadStoreDisabled(wsReqBody) && !HasFunctionCallOutput(wsReqBody) {
+			previousResponseID := openAIWSPayloadString(wsReqBody, "previous_response_id")
+			dropPreviousForEncryptedPreflight := previousResponseID != "" &&
+				wsContinuationStoreDecision.StickyAccountHit &&
+				!wsContinuationStoreDecision.ConnAffinityHit &&
+				strings.TrimSpace(wsContinuationStoreDecision.FallbackReason) == "conn_affinity_miss"
+			if (previousResponseID == "" || dropPreviousForEncryptedPreflight) &&
+				trimOpenAIEncryptedReasoningItems(wsReqBody) {
+				if dropPreviousForEncryptedPreflight {
+					delete(wsReqBody, "previous_response_id")
+					wsReqBody["store"] = false
+				}
 				if !syncWSRecoveredBody("invalid_encrypted_content_preflight") {
 					return nil, wsErr
 				}
 				logOpenAIWSModeInfo(
-					"preflight_invalid_encrypted_content account_id=%d action=drop_encrypted_reasoning_items previous_response_id_present=false store_disabled=true has_function_call_output=false",
+					"preflight_invalid_encrypted_content account_id=%d action=drop_encrypted_reasoning_items previous_response_id_present=%v store_disabled=true has_function_call_output=false dropped_previous_response_id=%v",
 					account.ID,
+					previousResponseID != "",
+					dropPreviousForEncryptedPreflight,
 				)
 			}
 		}
@@ -6711,6 +6725,24 @@ oauthTransformDone:
 			reason, _ := classifyOpenAIWSReconnectReason(wsErr)
 			requestID, clientRequestID := openAIWSRequestLogIDs(c)
 			body = append([]byte(nil), body...)
+			if account.Type == AccountTypeOAuth && gjson.GetBytes(body, "previous_response_id").Exists() {
+				updatedBody, removed, sanitizeErr := forceOpenAIWSRawPayloadFullCreate(body)
+				if sanitizeErr == nil && removed {
+					body = updatedBody
+					logOpenAIWSModeInfo(
+						"fallback_to_http_sanitize_previous_response_id account_id=%d reason=%s action=drop_previous_response_id_full_create",
+						account.ID,
+						normalizeOpenAIWSLogValue(reason),
+					)
+				} else if sanitizeErr != nil {
+					logOpenAIWSModeInfo(
+						"fallback_to_http_sanitize_previous_response_id_skip account_id=%d reason=%s cause=%s",
+						account.ID,
+						normalizeOpenAIWSLogValue(reason),
+						truncateOpenAIWSLogValue(sanitizeErr.Error(), openAIWSLogValueMaxLen),
+					)
+				}
+			}
 			reqStream = gjson.GetBytes(body, "stream").Bool()
 			upstreamStream = reqStream
 			if bodyPromptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()); bodyPromptCacheKey != "" {

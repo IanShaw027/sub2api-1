@@ -135,26 +135,30 @@ func TestOpenAIWSStateStore_SessionTurnStateTTL(t *testing.T) {
 
 func TestOpenAIWSStateStore_SessionConnTTL(t *testing.T) {
 	store := NewOpenAIWSStateStore(nil)
-	store.BindSessionConn(9, "session_hash_conn_1", "conn_1", 30*time.Millisecond)
+	store.BindSessionConn(9, 101, 201, "session_hash_conn_1", "conn_1", 30*time.Millisecond)
 
-	connID, ok := store.GetSessionConn(9, "session_hash_conn_1")
+	connID, ok := store.GetSessionConn(9, 101, 201, "session_hash_conn_1")
 	require.True(t, ok)
 	require.Equal(t, "conn_1", connID)
 
-	// group 隔离
-	_, ok = store.GetSessionConn(10, "session_hash_conn_1")
+	// group / api key / account isolation.
+	_, ok = store.GetSessionConn(10, 101, 201, "session_hash_conn_1")
+	require.False(t, ok)
+	_, ok = store.GetSessionConn(9, 102, 201, "session_hash_conn_1")
+	require.False(t, ok)
+	_, ok = store.GetSessionConn(9, 101, 202, "session_hash_conn_1")
 	require.False(t, ok)
 
 	time.Sleep(60 * time.Millisecond)
-	_, ok = store.GetSessionConn(9, "session_hash_conn_1")
+	_, ok = store.GetSessionConn(9, 101, 201, "session_hash_conn_1")
 	require.False(t, ok)
 }
 
 func TestOpenAIWSStateStore_DeleteConnScopedStatePreservesSessionContext(t *testing.T) {
 	store := NewOpenAIWSStateStore(nil)
 
-	store.BindSessionConn(7, "sess_a", "conn_a", time.Minute)
-	store.BindSessionConn(7, "sess_b", "conn_b", time.Minute)
+	store.BindSessionConn(7, 11, 101, "sess_a", "conn_a", time.Minute)
+	store.BindSessionConn(7, 11, 102, "sess_b", "conn_b", time.Minute)
 	store.BindSessionContext(7, 11, "sess_a", openAIWSSessionContextValue{
 		accountID:      101,
 		connID:         "conn_a",
@@ -170,9 +174,9 @@ func TestOpenAIWSStateStore_DeleteConnScopedStatePreservesSessionContext(t *test
 
 	store.DeleteConnScopedState("conn_a")
 
-	_, ok := store.GetSessionConn(7, "sess_a")
+	_, ok := store.GetSessionConn(7, 11, 101, "sess_a")
 	require.False(t, ok, "session -> conn binding for evicted conn must be cleared")
-	connID, ok := store.GetSessionConn(7, "sess_b")
+	connID, ok := store.GetSessionConn(7, 11, 102, "sess_b")
 	require.True(t, ok)
 	require.Equal(t, "conn_b", connID)
 

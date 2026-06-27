@@ -1384,7 +1384,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuth
 	require.Equal(t, "full replay", gjson.Get(upstreamWrite, "input.0.text").String())
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuthAccountBoundPreviousResponseDropsPrevAndStoreFalse(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuthAccountBoundPreviousResponseKeepsPrevAndStoreFalse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -1508,9 +1508,9 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuth
 	require.Equal(t, 1, captureDialer.DialCount())
 	require.Len(t, upstreamConn.writes, 1)
 	upstreamWrite := requestToJSONString(upstreamConn.writes[0])
-	require.False(t, gjson.Get(upstreamWrite, "previous_response_id").Exists(), "passthrough new relay must not continue an account-only previous_response_id")
+	require.Equal(t, "resp_passthrough_bound_prev", gjson.Get(upstreamWrite, "previous_response_id").String(), "same-account passthrough relay may continue an account-bound previous_response_id")
 	require.True(t, gjson.Get(upstreamWrite, "store").Exists())
-	require.False(t, gjson.Get(upstreamWrite, "store").Bool(), "passthrough account-only previous_response_id must fall back to store=false full create")
+	require.False(t, gjson.Get(upstreamWrite, "store").Bool(), "passthrough account-only previous_response_id must force store=false continuation")
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughOAuthUnboundPreviousResponseOnFollowupDropsPrevAndStoreFalse(t *testing.T) {
@@ -2589,7 +2589,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CtxPoolOAuthUnbo
 	require.Empty(t, captureConn.writes)
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CtxPoolOAuthAccountBoundPreviousResponseWithoutConnFullReplays(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CtxPoolOAuthAccountBoundPreviousResponseWithoutConnKeepsPrevOnNewConn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -2717,9 +2717,9 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CtxPoolOAuthAcco
 	require.Equal(t, 1, captureDialer.DialCount(), "账号绑定命中但 conn 亲和缺失时应新建连接")
 	require.Len(t, captureConn.writes, 1)
 	upstreamWrite := requestToJSONString(captureConn.writes[0])
-	require.False(t, gjson.Get(upstreamWrite, "previous_response_id").Exists(), "new conn must not carry an old previous_response_id")
+	require.Equal(t, "resp_account_bound_no_conn", gjson.Get(upstreamWrite, "previous_response_id").String(), "same-account new conn should keep previous_response_id")
 	require.True(t, gjson.Get(upstreamWrite, "store").Exists())
-	require.False(t, gjson.Get(upstreamWrite, "store").Bool(), "new conn must full replay with store=false")
+	require.False(t, gjson.Get(upstreamWrite, "store").Bool(), "same-account new conn must force store=false continuation")
 	require.Equal(t, "delta", gjson.Get(upstreamWrite, "input.0.text").String())
 }
 
@@ -5651,6 +5651,6 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientDisconnect
 	store := svc.getOpenAIWSStateStore()
 	connID, ok := store.GetResponseConn(0, 0, "resp_ingress_disconnect")
 	require.False(t, ok, "客户端断连后的 response_id 不应绑定到不可复用上游连接: %s", connID)
-	sessionConnID, ok := store.GetSessionConn(0, sessionHash)
+	sessionConnID, ok := store.GetSessionConn(0, 0, account.ID, sessionHash)
 	require.False(t, ok, "客户端断连后的 session 不应绑定到不可复用上游连接: %s", sessionConnID)
 }

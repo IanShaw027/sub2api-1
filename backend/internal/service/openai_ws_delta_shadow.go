@@ -472,34 +472,43 @@ func openAIWSHashPrefixBreak(full [][32]byte, prefix [][32]byte) (bool, int) {
 
 // openAIWSDeltaShadowLog is the removable shadow diagnostic line.
 type openAIWSDeltaShadowLog struct {
-	RequestID           string
-	AccountID           int64
-	ConnID              string
-	Active              bool
-	Candidate           bool
-	FallbackReason      string
-	PrefixMatch         bool
-	BreakBoundary       string // "input" | "output" | ""
-	BreakItemType       string
-	BreakCachedItemType string
-	BreakCachedShape    string
-	BreakCurrentShape   string
-	ConnMatch           bool
-	MostRecentMatch     bool
-	NonInputMatch       bool
-	RawClientEquiv      bool
-	MaterializedCount   int
-	CurrentInputCount   int
-	DeltaItems          int
-	DeltaBytes          int
-	FullItems           int
-	FullBytes           int
+	RequestID                string
+	AccountID                int64
+	ConnID                   string
+	CachedFound              bool
+	CachedAccountID          int64
+	CachedConnID             string
+	CachedLastResponseID     string
+	ConnMostRecentResponseID string
+	AllowConnReanchor        bool
+	HasFunctionCallOutput    bool
+	Active                   bool
+	Candidate                bool
+	FallbackReason           string
+	PrefixMatch              bool
+	BreakBoundary            string // "input" | "output" | ""
+	BreakItemType            string
+	BreakCachedItemType      string
+	BreakCachedShape         string
+	BreakCurrentShape        string
+	ConnMatch                bool
+	MostRecentMatch          bool
+	NonInputMatch            bool
+	RawClientEquiv           bool
+	MaterializedCount        int
+	CurrentInputCount        int
+	DeltaItems               int
+	DeltaBytes               int
+	FullItems                int
+	FullBytes                int
 }
 
 func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
 	logger.LegacyPrintf("service.openai_gateway",
 		"openai_ws_delta_shadow temporary_diag=openai_ws_delta_shadow remove_after_debug=true "+
-			"request_id=%s account_id=%d conn_id=%s active=%v candidate=%v fallback_reason=%s prefix_match=%v "+
+			"request_id=%s account_id=%d conn_id=%s cached_found=%v cached_account_id=%d cached_conn_id=%s "+
+			"cached_last_response_id=%s conn_most_recent_response_id=%s allow_conn_reanchor=%v "+
+			"has_function_call_output=%v active=%v candidate=%v fallback_reason=%s prefix_match=%v "+
 			"break_boundary=%s break_item_type=%s break_cached_item_type=%s break_cached_shape=%s "+
 			"break_current_shape=%s conn_match=%v most_recent_match=%v non_input_match=%v "+
 			"raw_client_equiv=%v materialized_count=%d current_input_count=%d delta_items=%d delta_bytes=%d "+
@@ -507,6 +516,13 @@ func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
 		normalizeOpenAIWSLogValue(v.RequestID),
 		v.AccountID,
 		normalizeOpenAIWSLogValue(v.ConnID),
+		v.CachedFound,
+		v.CachedAccountID,
+		truncateOpenAIWSLogValue(v.CachedConnID, openAIWSIDValueMaxLen),
+		truncateOpenAIWSLogValue(v.CachedLastResponseID, openAIWSIDValueMaxLen),
+		truncateOpenAIWSLogValue(v.ConnMostRecentResponseID, openAIWSIDValueMaxLen),
+		v.AllowConnReanchor,
+		v.HasFunctionCallOutput,
 		v.Active,
 		v.Candidate,
 		normalizeOpenAIWSLogValue(v.FallbackReason),
@@ -548,9 +564,16 @@ type openAIWSDeltaShadowInput struct {
 // fully populated log record; it NEVER mutates the payload.
 func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSDeltaShadowLog {
 	log := openAIWSDeltaShadowLog{
-		RequestID: in.RequestID,
-		AccountID: in.AccountID,
-		ConnID:    in.LeaseConnID,
+		RequestID:                in.RequestID,
+		AccountID:                in.AccountID,
+		ConnID:                   in.LeaseConnID,
+		CachedFound:              in.CachedFound,
+		CachedAccountID:          in.Cached.accountID,
+		CachedConnID:             in.Cached.connID,
+		CachedLastResponseID:     in.Cached.lastResponseID,
+		ConnMostRecentResponseID: in.ConnMostRecentResponseID,
+		AllowConnReanchor:        in.AllowConnReanchor,
+		HasFunctionCallOutput:    in.HasFunctionCallOutput,
 	}
 
 	fullItems, _, err := openAIWSExtractNormalizedInputSequence(in.CurrentPayload)

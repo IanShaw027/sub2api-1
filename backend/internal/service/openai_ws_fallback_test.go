@@ -491,33 +491,37 @@ func TestShouldLogOpenAIWSPayloadSchema(t *testing.T) {
 
 func TestOpenAIWSContinuationProbeLogMessageIncludesStoreAndTimingFields(t *testing.T) {
 	msg := openAIWSContinuationProbeLogMessage(openAIWSContinuationProbeLog{
-		AccountID:              42,
-		AccountType:            AccountTypeOAuth,
-		ConnID:                 "oa_ws_42_1",
-		PreviousResponseID:     "resp_prev_123",
-		PreviousResponseIDKind: OpenAIPreviousResponseIDKindResponseID,
-		PreferredConnID:        "oa_ws_42_1",
-		ConnReused:             true,
-		StoreDisabled:          false,
-		StoreMode:              openAIWSStoreModeIncremental,
-		StoreEnabled:           true,
-		StickyAccountHit:       true,
-		ConnAffinityHit:        true,
-		FallbackReason:         "",
-		PayloadBytes:           3210,
-		ConnPickMs:             3,
-		QueueWaitMs:            0,
-		SessionHash:            "abcdef1234567890",
-		HeaderSessionID:        "session-header",
-		HeaderConversationID:   "conversation-header",
-		SessionIDSource:        "header",
-		ConversationIDSource:   "header",
-		HasTurnState:           true,
-		TurnStateLen:           17,
-		HasPromptCacheKey:      true,
+		AccountID:                 42,
+		AccountType:               AccountTypeOAuth,
+		ConnID:                    "oa_ws_42_1",
+		PreviousResponseID:        "resp_prev_123",
+		PreviousResponseIDKind:    OpenAIPreviousResponseIDKindResponseID,
+		PreviousResponseIDSource:  "client",
+		OriginalPreviousIDPresent: true,
+		PreferredConnID:           "oa_ws_42_1",
+		ConnReused:                true,
+		StoreDisabled:             false,
+		StoreMode:                 openAIWSStoreModeIncremental,
+		StoreEnabled:              true,
+		StickyAccountHit:          true,
+		ConnAffinityHit:           true,
+		FallbackReason:            "",
+		PayloadBytes:              3210,
+		ConnPickMs:                3,
+		QueueWaitMs:               0,
+		SessionHash:               "abcdef1234567890",
+		HeaderSessionID:           "session-header",
+		HeaderConversationID:      "conversation-header",
+		SessionIDSource:           "header",
+		ConversationIDSource:      "header",
+		HasTurnState:              true,
+		TurnStateLen:              17,
+		HasPromptCacheKey:         true,
 	})
 
 	require.Contains(t, msg, "continuation_probe")
+	require.Contains(t, msg, "previous_response_id_source=client")
+	require.Contains(t, msg, "original_previous_response_id_present=true")
 	require.Contains(t, msg, "store_mode=incremental")
 	require.Contains(t, msg, "store_enabled=true")
 	require.Contains(t, msg, "sticky_account_hit=true")
@@ -546,6 +550,8 @@ func TestOpenAIWSDiagnosticStartLogMessageIncludesTemporaryStoreAndConnFields(t 
 		InputSummary:              "items=1",
 		PreviousResponseID:        "resp_prev_123",
 		PreviousResponseIDKind:    OpenAIPreviousResponseIDKindResponseID,
+		PreviousResponseIDSource:  "session_context",
+		OriginalPreviousIDPresent: false,
 		PreferredConnID:           "oa_ws_42_1",
 		StoreMode:                 openAIWSStoreModeIncremental,
 		StoreEnabled:              true,
@@ -587,6 +593,8 @@ func TestOpenAIWSDiagnosticStartLogMessageIncludesTemporaryStoreAndConnFields(t 
 	require.Contains(t, msg, "payload_bytes=4567")
 	require.Contains(t, msg, "payload_keys=input,model,previous_response_id,store")
 	require.Contains(t, msg, "previous_response_id=resp_prev_123")
+	require.Contains(t, msg, "previous_response_id_source=session_context")
+	require.Contains(t, msg, "original_previous_response_id_present=false")
 	require.Contains(t, msg, "store_mode=incremental")
 	require.Contains(t, msg, "store_enabled=true")
 	require.Contains(t, msg, "sticky_account_hit=true")
@@ -601,39 +609,45 @@ func TestOpenAIWSDiagnosticStartLogMessageIncludesTemporaryStoreAndConnFields(t 
 
 func TestOpenAIWSDiagnosticCompletedLogMessageIncludesTemporaryTTFTAndUsageFields(t *testing.T) {
 	msg := openAIWSDiagnosticCompletedLogMessage(openAIWSDiagnosticCompletedLog{
-		RequestID:              "req-local-2",
-		ClientRequestID:        "client-req-2",
-		AccountID:              43,
-		AccountType:            AccountTypeOAuth,
-		ConnProfile:            openAIWSConnProfileNeutral,
-		ConnID:                 "oa_ws_43_1",
-		ConnReused:             false,
-		ResponseID:             "resp_done_123",
-		Model:                  "gpt-5.4",
-		UpstreamModel:          "gpt-5.4",
-		Stream:                 true,
-		StoreMode:              openAIWSStoreModeFull,
-		StoreEnabled:           false,
-		StoreDisabled:          true,
-		HasPreviousResponseID:  false,
-		PreviousResponseIDKind: OpenAIPreviousResponseIDKindEmpty,
-		PayloadBytes:           98765,
-		DurationMs:             12345,
-		FirstTokenMs:           2345,
-		Events:                 12,
-		TokenEvents:            4,
-		TerminalEvents:         1,
-		BufferedEvents:         3,
-		BufferedFlushed:        3,
-		FirstEvent:             "response.created",
-		LastEvent:              "response.completed",
-		WroteDownstream:        true,
-		ClientDisconnected:     false,
-		HTTPIngressWSOneShot:   true,
-		InputTokens:            1200,
-		CacheReadTokens:        800,
-		CacheCreationTokens:    16,
-		OutputTokens:           321,
+		RequestID:                   "req-local-2",
+		ClientRequestID:             "client-req-2",
+		AccountID:                   43,
+		AccountType:                 AccountTypeOAuth,
+		ConnProfile:                 openAIWSConnProfileNeutral,
+		ConnID:                      "oa_ws_43_1",
+		ConnReused:                  false,
+		ResponseID:                  "resp_done_123",
+		Model:                       "gpt-5.4",
+		UpstreamModel:               "gpt-5.4",
+		Stream:                      true,
+		StoreMode:                   openAIWSStoreModeFull,
+		StoreEnabled:                false,
+		StoreDisabled:               true,
+		HasPreviousResponseID:       false,
+		PreviousResponseIDKind:      OpenAIPreviousResponseIDKindEmpty,
+		PreviousResponseIDSource:    "none",
+		OriginalPreviousIDPresent:   false,
+		PayloadBytes:                98765,
+		WriteSentMs:                 345,
+		DurationMs:                  12345,
+		FirstTokenMs:                2345,
+		FirstEventMs:                456,
+		FirstTokenEvent:             "response.output_text.delta",
+		FirstTokenAfterFirstEventMs: 1889,
+		Events:                      12,
+		TokenEvents:                 4,
+		TerminalEvents:              1,
+		BufferedEvents:              3,
+		BufferedFlushed:             3,
+		FirstEvent:                  "response.created",
+		LastEvent:                   "response.completed",
+		WroteDownstream:             true,
+		ClientDisconnected:          false,
+		HTTPIngressWSOneShot:        true,
+		InputTokens:                 1200,
+		CacheReadTokens:             800,
+		CacheCreationTokens:         16,
+		OutputTokens:                321,
 	})
 
 	require.Contains(t, msg, "openai_ws_diag_completed")
@@ -649,9 +663,15 @@ func TestOpenAIWSDiagnosticCompletedLogMessageIncludesTemporaryTTFTAndUsageField
 	require.Contains(t, msg, "store_enabled=false")
 	require.Contains(t, msg, "store_disabled=true")
 	require.Contains(t, msg, "has_previous_response_id=false")
+	require.Contains(t, msg, "previous_response_id_source=none")
+	require.Contains(t, msg, "original_previous_response_id_present=false")
 	require.Contains(t, msg, "payload_bytes=98765")
+	require.Contains(t, msg, "write_sent_ms=345")
 	require.Contains(t, msg, "duration_ms=12345")
 	require.Contains(t, msg, "first_token_ms=2345")
+	require.Contains(t, msg, "first_event_ms=456")
+	require.Contains(t, msg, "first_token_event=response.output_text.delta")
+	require.Contains(t, msg, "first_token_after_first_event_ms=1889")
 	require.Contains(t, msg, "events=12")
 	require.Contains(t, msg, "token_events=4")
 	require.Contains(t, msg, "terminal_events=1")
@@ -698,6 +718,9 @@ func TestOpenAIWSReadFailLogMessageIncludesRequestAndConnectionContext(t *testin
 		Events:                 198,
 		TokenEvents:            117,
 		TerminalEvents:         0,
+		FirstEventMs:           121,
+		FirstTokenMs:           2048,
+		FirstTokenEvent:        "response.output_text.delta",
 		BufferedPending:        0,
 		BufferedFlushed:        3,
 		FirstEvent:             "response.created",
@@ -736,6 +759,9 @@ func TestOpenAIWSReadFailLogMessageIncludesRequestAndConnectionContext(t *testin
 	require.Contains(t, msg, "events=198")
 	require.Contains(t, msg, "token_events=117")
 	require.Contains(t, msg, "terminal_events=0")
+	require.Contains(t, msg, "first_event_ms=121")
+	require.Contains(t, msg, "first_token_ms=2048")
+	require.Contains(t, msg, "first_token_event=response.output_text.delta")
 	require.Contains(t, msg, "last_event=response.output_text.delta")
 }
 

@@ -26,6 +26,35 @@ func mustItemHash(t *testing.T, raw string) [32]byte {
 	return h
 }
 
+func TestOpenAIWSDeltaShadowLogIncludesContinuationMatchDiagnostics(t *testing.T) {
+	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[{"type":"message","role":"user","content":"hi"}]}`)
+
+	log := evaluateOpenAIWSDeltaShadowCandidate(openAIWSDeltaShadowInput{
+		RequestID:                "req-delta-diag",
+		AccountID:                202,
+		LeaseConnID:              "conn-current",
+		ConnMostRecentResponseID: "resp-current",
+		CurrentPayload:           payload,
+		HasFunctionCallOutput:    true,
+		AllowConnReanchor:        false,
+		Cached: openAIWSSessionContextValue{
+			accountID:      201,
+			connID:         "conn-cached",
+			lastResponseID: "resp-cached",
+		},
+		CachedFound: true,
+	})
+
+	require.True(t, log.CachedFound)
+	require.Equal(t, int64(201), log.CachedAccountID)
+	require.Equal(t, "conn-cached", log.CachedConnID)
+	require.Equal(t, "resp-cached", log.CachedLastResponseID)
+	require.Equal(t, "resp-current", log.ConnMostRecentResponseID)
+	require.False(t, log.AllowConnReanchor)
+	require.True(t, log.HasFunctionCallOutput)
+	require.Equal(t, "account_mismatch", log.FallbackReason)
+}
+
 type openAIWSNthWriteFailConn struct {
 	openAIWSCaptureConn
 	failOnWrite int
@@ -1079,7 +1108,7 @@ func TestOpenAIWSActiveDelta_MissingPreviousResponseReanchorsOnNewSessionConn(t 
 	require.True(t, ok)
 	require.Equal(t, "resp_reanchor_seed", cached.lastResponseID)
 	stateStore.DeleteResponseConn(groupID, apiKeyID, "resp_reanchor_seed")
-	stateStore.DeleteSessionConn(groupID, sessionHash)
+	stateStore.DeleteSessionConn(groupID, apiKeyID, account.ID, sessionHash)
 	pool.evictConn(account.ID, cached.connID, "test_idle_cleanup")
 
 	secondBody := []byte(`{"model":"gpt-5.1","stream":true,"input":[` + input1 + `,` + output1 + `,` + input2 + `]}`)

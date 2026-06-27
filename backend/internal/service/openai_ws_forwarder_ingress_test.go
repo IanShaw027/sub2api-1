@@ -363,7 +363,7 @@ func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthLiveRelayContinuationKe
 	require.False(t, gjson.GetBytes(updated, "store").Bool())
 }
 
-func TestResolveOpenAIWSContinuationStoreDecisionOAuthToolContinuationRequiresConnAffinity(t *testing.T) {
+func TestResolveOpenAIWSContinuationStoreDecisionOAuthToolContinuationKeepsSameAccountPreviousWithoutConn(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	store := NewOpenAIWSStateStore(nil)
@@ -381,15 +381,18 @@ func TestResolveOpenAIWSContinuationStoreDecisionOAuthToolContinuationRequiresCo
 	decision := svc.resolveOpenAIWSContinuationStoreDecision(context.Background(), payload, account, store, 7, 11)
 
 	require.True(t, decision.StickyAccountHit)
-	require.True(t, decision.UnsafeToolContinuation)
+	require.False(t, decision.UnsafeToolContinuation)
 	require.Equal(t, "conn_affinity_miss", decision.FallbackReason)
 	require.False(t, decision.ConnAffinityHit)
 	require.Empty(t, decision.PreferredConnID)
 	require.Equal(t, "resp_bound_no_conn", payload["previous_response_id"])
-	require.NotContains(t, payload, "store")
+	require.Equal(t, false, payload["store"])
+	require.Equal(t, openAIWSStoreModeIncremental, decision.StoreMode)
+	require.False(t, decision.StoreEnabled)
+	require.True(t, decision.StoreDisabled)
 }
 
-func TestResolveOpenAIWSContinuationStoreDecisionOAuthAccountBoundWithoutConnDropsToFullCreate(t *testing.T) {
+func TestResolveOpenAIWSContinuationStoreDecisionOAuthAccountBoundWithoutConnKeepsPrevious(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	store := NewOpenAIWSStateStore(nil)
@@ -408,15 +411,15 @@ func TestResolveOpenAIWSContinuationStoreDecisionOAuthAccountBoundWithoutConnDro
 	require.True(t, decision.StickyAccountHit)
 	require.False(t, decision.ConnAffinityHit)
 	require.Equal(t, "conn_affinity_miss", decision.FallbackReason)
-	require.True(t, decision.DroppedPreviousResponseID)
-	require.Equal(t, openAIWSStoreModeFull, decision.StoreMode)
+	require.False(t, decision.DroppedPreviousResponseID)
+	require.Equal(t, openAIWSStoreModeIncremental, decision.StoreMode)
 	require.False(t, decision.StoreEnabled)
 	require.True(t, decision.StoreDisabled)
-	require.NotContains(t, payload, "previous_response_id")
+	require.Equal(t, "resp_bound_no_conn", payload["previous_response_id"])
 	require.Equal(t, false, payload["store"])
 }
 
-func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthToolContinuationRequiresConnAffinity(t *testing.T) {
+func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthToolContinuationKeepsSameAccountPreviousWithoutConn(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	store := NewOpenAIWSStateStore(nil)
@@ -427,15 +430,19 @@ func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthToolContinuationRequire
 
 	require.NoError(t, err)
 	require.True(t, decision.StickyAccountHit)
-	require.True(t, decision.UnsafeToolContinuation)
+	require.False(t, decision.UnsafeToolContinuation)
 	require.Equal(t, "conn_affinity_miss", decision.FallbackReason)
 	require.False(t, decision.ConnAffinityHit)
 	require.Empty(t, decision.PreferredConnID)
 	require.Equal(t, "resp_bound_no_conn", gjson.GetBytes(updated, "previous_response_id").String())
-	require.False(t, gjson.GetBytes(updated, "store").Exists())
+	require.True(t, gjson.GetBytes(updated, "store").Exists())
+	require.False(t, gjson.GetBytes(updated, "store").Bool())
+	require.Equal(t, openAIWSStoreModeIncremental, decision.StoreMode)
+	require.False(t, decision.StoreEnabled)
+	require.True(t, decision.StoreDisabled)
 }
 
-func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthAccountBoundWithoutConnDropsToFullCreate(t *testing.T) {
+func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthAccountBoundWithoutConnKeepsPrevious(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	store := NewOpenAIWSStateStore(nil)
@@ -448,11 +455,11 @@ func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthAccountBoundWithoutConn
 	require.True(t, decision.StickyAccountHit)
 	require.False(t, decision.ConnAffinityHit)
 	require.Equal(t, "conn_affinity_miss", decision.FallbackReason)
-	require.True(t, decision.DroppedPreviousResponseID)
-	require.Equal(t, openAIWSStoreModeFull, decision.StoreMode)
+	require.False(t, decision.DroppedPreviousResponseID)
+	require.Equal(t, openAIWSStoreModeIncremental, decision.StoreMode)
 	require.False(t, decision.StoreEnabled)
 	require.True(t, decision.StoreDisabled)
-	require.False(t, gjson.GetBytes(updated, "previous_response_id").Exists())
+	require.Equal(t, "resp_bound_no_conn", gjson.GetBytes(updated, "previous_response_id").String())
 	require.False(t, gjson.GetBytes(updated, "store").Bool())
 }
 
