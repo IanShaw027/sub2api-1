@@ -18,7 +18,7 @@ export interface DefaultSubscriptionSetting {
 }
 
 // ── 平台限额类型 ──────────────────────────────────────────────────
-export type PlatformType = "anthropic" | "openai" | "gemini" | "antigravity" | "kiro"
+export type PlatformType = "anthropic" | "openai" | "gemini" | "antigravity" | "kiro" | "grok"
 export type QuotaWindowType = "daily" | "weekly" | "monthly"
 
 /** 单平台三档限额；null = 不限制，undefined = 未填（等价 null） */
@@ -39,7 +39,7 @@ export interface PlatformQuotaOverrideLimits {
 export type DefaultPlatformQuotasMap = Partial<Record<PlatformType, PlatformQuotaLimits>>
 export type AuthSourcePlatformQuotaOverridesMap = Partial<Record<PlatformType, PlatformQuotaOverrideLimits>>
 
-const PLATFORMS: PlatformType[] = ["anthropic", "openai", "gemini", "antigravity", "kiro"]
+const PLATFORMS: PlatformType[] = ["anthropic", "openai", "gemini", "antigravity", "kiro", "grok"]
 const QUOTA_WINDOWS: QuotaWindowType[] = ["daily", "weekly", "monthly"]
 
 export type SchedulingThresholdPlatformType =
@@ -71,8 +71,7 @@ export function sanitizeAccountSchedulingThresholdsMap(
 ): AccountSchedulingThresholdsMap {
   return normalizeAccountSchedulingThresholdsMap(input)
 }
-
-/** 归一化为全 4 平台 × 3 窗口（缺失填 null），供模板非空绑定 */
+/** 归一化为全部平台 × 3 窗口（缺失填 null），供模板非空绑定 */
 export function normalizePlatformQuotasMap(input?: DefaultPlatformQuotasMap | null): DefaultPlatformQuotasMap {
   const result: DefaultPlatformQuotasMap = {}
   for (const p of PLATFORMS) {
@@ -103,7 +102,7 @@ export function findInvalidPlatformQuotaFields(
   return invalid
 }
 
-/** auth-source 覆盖归一化：补全 4 平台 × 3 窗口，但保留 undefined/null/number 三态。 */
+/** auth-source 覆盖归一化：补全全部平台 × 3 窗口，但保留 undefined/null/number 三态。 */
 export function normalizePlatformQuotaOverridesMap(
   input?: AuthSourcePlatformQuotaOverridesMap | null,
 ): AuthSourcePlatformQuotaOverridesMap {
@@ -119,7 +118,7 @@ export function normalizePlatformQuotaOverridesMap(
   return result
 }
 
-/** 提交前清洗：非有限数/负数/空字符串 → null（保留 0 = 显式禁用），返回全 4 平台嵌套 map */
+/** 提交前清洗：非有限数/负数/空字符串 → null（保留 0 = 显式禁用），返回全部平台嵌套 map */
 export function sanitizePlatformQuotasMap(input?: DefaultPlatformQuotasMap | null): DefaultPlatformQuotasMap {
   const clean = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null)
   const result: DefaultPlatformQuotasMap = {}
@@ -868,17 +867,31 @@ export interface SystemSettings {
   gateway_debug_timeline_max_size_mb: number;
   gateway_debug_timeline_include_body: boolean;
   gateway_debug_timeline_body_max_kb: number;
+  enable_claude_oauth_system_prompt_injection: boolean;
+  claude_oauth_system_prompt: string;
+  claude_oauth_system_prompt_blocks: string;
   enable_anthropic_cache_ttl_1h_injection: boolean;
   rewrite_message_cache_control: boolean;
   antigravity_user_agent_version: string;
   openai_codex_user_agent: string;
-  openai_allow_claude_code_codex_plugin: boolean;
+  // codex_cli_only 加固
+  min_codex_version: string;
+  max_codex_version: string;
+  codex_cli_only_blacklist: string;
+  codex_cli_only_whitelist: string;
+  codex_cli_only_allow_app_server_clients: boolean;
+  codex_cli_only_engine_fingerprint_signals: string;
   web_search_emulation_enabled?: boolean;
   allow_user_view_error_requests: boolean;
 
   // Payment configuration
   payment_enabled: boolean;
   risk_control_enabled: boolean;
+
+  // Cyber session block
+  cyber_session_block_enabled: boolean;
+  cyber_session_block_ttl_seconds: number;
+
   payment_min_amount: number;
   payment_max_amount: number;
   payment_daily_limit: number;
@@ -1148,15 +1161,29 @@ export interface UpdateSettingsRequest {
   gateway_debug_timeline_max_size_mb?: number;
   gateway_debug_timeline_include_body?: boolean;
   gateway_debug_timeline_body_max_kb?: number;
+  enable_claude_oauth_system_prompt_injection?: boolean;
+  claude_oauth_system_prompt?: string;
+  claude_oauth_system_prompt_blocks?: string;
   enable_anthropic_cache_ttl_1h_injection?: boolean;
   rewrite_message_cache_control?: boolean;
   antigravity_user_agent_version?: string;
   openai_codex_user_agent?: string;
-  openai_allow_claude_code_codex_plugin?: boolean;
   allow_user_view_error_requests?: boolean;
+  // codex_cli_only 加固
+  min_codex_version?: string;
+  max_codex_version?: string;
+  codex_cli_only_blacklist?: string;
+  codex_cli_only_whitelist?: string;
+  codex_cli_only_allow_app_server_clients?: boolean;
+  codex_cli_only_engine_fingerprint_signals?: string;
   // Payment configuration
   payment_enabled?: boolean;
   risk_control_enabled?: boolean;
+
+  // Cyber session block
+  cyber_session_block_enabled?: boolean;
+  cyber_session_block_ttl_seconds?: number;
+
   payment_min_amount?: number;
   payment_max_amount?: number;
   payment_daily_limit?: number;

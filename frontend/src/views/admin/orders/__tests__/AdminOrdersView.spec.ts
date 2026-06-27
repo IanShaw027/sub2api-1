@@ -260,7 +260,7 @@ describe('AdminOrdersView request races', () => {
             id: 1,
             out_trade_no: 'order-refund-requested',
             status: 'REFUND_REQUESTED',
-            refund_amount: 0,
+            refund_amount: 12.34,
             refund_requested_amount: 12.34,
           }),
         ],
@@ -286,6 +286,7 @@ describe('AdminOrdersView request races', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('¥12.34')
+    expect(wrapper.text().split('¥12.34')).toHaveLength(2)
     expect(wrapper.text()).toContain('payment.status.refunding')
     expect(wrapper.text()).toContain('payment.status.partially_refunded')
   })

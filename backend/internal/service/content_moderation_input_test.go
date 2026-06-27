@@ -94,6 +94,45 @@ func TestExtractContentModerationInput_OpenAIChatMultiTurnExtractsLatestUser(t *
 	require.Equal(t, "Q2", input.Text)
 }
 
+func TestExtractContentModerationInputsForLocalBlock_OpenAIChatExtractsEveryUserTurn(t *testing.T) {
+	body := []byte(`{
+		"messages": [
+			{"role":"system","content":"system must not participate"},
+			{"role":"user","content":"old risky prompt"},
+			{"role":"assistant","content":"answer"},
+			{"role":"user","content":[{"type":"text","text":"current clean prompt"}]}
+		]
+	}`)
+
+	inputs := ExtractContentModerationInputsForLocalBlock(ContentModerationProtocolOpenAIChat, body)
+
+	require.Len(t, inputs, 2)
+	require.Equal(t, "old risky prompt", inputs[0].Text)
+	require.Equal(t, "current clean prompt", inputs[1].Text)
+
+	auditInput := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+	require.Equal(t, "current clean prompt", auditInput.Text)
+}
+
+func TestExtractContentModerationInputsForLocalBlock_OpenAIEmbeddingsExtractsInputItems(t *testing.T) {
+	body := []byte(`{
+		"model": "text-embedding-3-large",
+		"input": ["first embedding text", "second embedding text"]
+	}`)
+
+	inputs := ExtractContentModerationInputsForLocalBlock(ContentModerationProtocolOpenAIEmbeddings, body)
+
+	require.Len(t, inputs, 2)
+	require.Equal(t, "first embedding text", inputs[0].Text)
+	require.Equal(t, "second embedding text", inputs[1].Text)
+
+	auditInput := ExtractContentModerationInput(ContentModerationProtocolOpenAIEmbeddings, []byte(`{
+		"model": "text-embedding-3-large",
+		"input": "current embedding text"
+	}`))
+	require.Equal(t, "current embedding text", auditInput.Text)
+}
+
 func TestExtractContentModerationInput_GeminiAgentToolLoopSkipsAudit(t *testing.T) {
 	body := []byte(`{
 		"contents": [
@@ -162,6 +201,28 @@ func TestExtractContentModerationInput_ResponsesLastUserMessageExtracted(t *test
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
 
 	require.Equal(t, "latest", input.Text)
+}
+
+func TestExtractContentModerationInputsForLocalBlock_ResponsesExtractsUserHistoryOnly(t *testing.T) {
+	body := []byte(`{
+		"input":[
+			{"type":"message","role":"developer","content":[{"type":"input_text","text":"developer secret"}]},
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"old risky input"}]},
+			{"type":"message","role":"assistant","content":[{"type":"output_text","text":"answer"}]},
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"current clean input"}]}
+		]
+	}`)
+
+	inputs := ExtractContentModerationInputsForLocalBlock(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Len(t, inputs, 2)
+	require.Equal(t, "old risky input", inputs[0].Text)
+	require.Equal(t, "current clean input", inputs[1].Text)
+
+	auditInput := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+	require.Equal(t, "current clean input", auditInput.Text)
+	require.NotContains(t, auditInput.Text, "old risky input")
+	require.NotContains(t, auditInput.Text, "developer secret")
 }
 
 func TestExtractContentModerationInput_ResponsesLastIsAssistantSkipped(t *testing.T) {

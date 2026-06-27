@@ -767,7 +767,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressOAuthPreviousResponseNotFoundUs
 		},
 	}
 
-		account := &Account{
+	account := &Account{
 		ID:          109,
 		Name:        "openai-oauth-http-ingress-rebuild",
 		Platform:    PlatformOpenAI,
@@ -1920,6 +1920,7 @@ func TestNewOpenAIGatewayService_InitializesOpenAIWSResolver(t *testing.T) {
 		nil,
 		nil,
 		cfg,
+		nil,
 		nil,
 		nil,
 		nil,

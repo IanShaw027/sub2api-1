@@ -54,8 +54,12 @@ func isOpenAIOAuthAccount(account *Account) bool {
 	return account != nil && account.Platform == PlatformOpenAI && account.Type == AccountTypeOAuth
 }
 
+func isGrokOAuthAccount(account *Account) bool {
+	return account != nil && account.Platform == PlatformGrok && account.Type == AccountTypeOAuth
+}
+
 func isOpenAIAccount(account *Account) bool {
-	return account != nil && account.Platform == PlatformOpenAI
+	return account != nil && (account.Platform == PlatformOpenAI || account.Platform == PlatformGrok)
 }
 
 func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) bool {
@@ -90,20 +94,6 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		s.BlockAccountScheduling(account, time.Time{}, "upstream_disable")
 	}
 	return shouldDisable
-}
-
-func (s *OpenAIGatewayService) markOpenAICyberPolicyIfDetected(ctx context.Context, account *Account, responseBody []byte) bool {
-	stateCtx, cancel := openAIAccountStateContext(ctx)
-	defer cancel()
-
-	if s == nil || account == nil || s.rateLimitService == nil {
-		return false
-	}
-	if !s.rateLimitService.HandleOpenAICyberPolicy(stateCtx, account, responseBody) {
-		return false
-	}
-	s.BlockAccountScheduling(account, time.Time{}, "upstream_disable")
-	return true
 }
 
 func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context, account *Account, headers http.Header, responseBody []byte) {
@@ -227,6 +217,9 @@ func (s *OpenAIGatewayService) isOpenAIOAuth429Storm() bool {
 func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account, statusCode int, failedSwitches int) bool {
 	if statusCode != http.StatusTooManyRequests || failedSwitches < openAIOAuth429StormMaxAccountSwitches {
 		return false
+	}
+	if isGrokOAuthAccount(account) {
+		return true
 	}
 	if !isOpenAIOAuthAccount(account) {
 		return false

@@ -43,6 +43,14 @@ func amountCentsGreaterThan(left, right float64) bool {
 	return amountToCents(left) > amountToCents(right)
 }
 
+func calculateGatewayPaymentAmount(orderAmount, multiplier float64, currency string) float64 {
+	fractionDigits := int32(payment.CurrencyMaxFractionDigits(currency))
+	return decimal.NewFromFloat(orderAmount).
+		Div(decimal.NewFromFloat(normalizeBalanceRechargeMultiplier(multiplier))).
+		Round(fractionDigits).
+		InexactFloat64()
+}
+
 func calculateGatewayRefundAmount(orderAmount, payAmount, refundAmount float64, currency string) float64 {
 	if orderAmount <= 0 || payAmount <= 0 || refundAmount <= 0 {
 		return 0

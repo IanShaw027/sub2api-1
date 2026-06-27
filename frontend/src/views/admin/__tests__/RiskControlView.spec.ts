@@ -82,6 +82,7 @@ const baseConfig = (): ContentModerationConfig => ({
   sample_rate: 100,
   all_groups: true,
   group_ids: [],
+  api_key_exempt_group_ids: [],
   record_non_hits: false,
   worker_count: 4,
   queue_size: 32768,
@@ -393,6 +394,28 @@ describe('admin RiskControlView', () => {
     expect(activeTab.classes()).toContain('dark:bg-primary-600')
     expect(activeTab.classes()).toContain('dark:text-white')
   })
+
+  it('offers embeddings as a moderation log endpoint filter', async () => {
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm
+    expect(setupState.endpointOptions.map((option: { value: string }) => option.value)).toContain('/v1/embeddings')
+  })
+
   it('describes worker runtime as async audit and pre-block record processing', async () => {
     getStatus.mockResolvedValue({
       ...runtimeStatus(),

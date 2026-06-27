@@ -92,6 +92,17 @@ func extractFirstUserText(body []byte) string {
 //
 // 此 block 不带 cache_control（与真实 CLI 一致；cache breakpoint 由后续的
 // Claude Code prompt block 承担）。
+func buildBillingAttributionText(body []byte, cliVersion string) (string, error) {
+	if cliVersion == "" {
+		return "", fmt.Errorf("cliVersion required")
+	}
+	fp := computeClaudeCodeFingerprint(body, cliVersion)
+	return fmt.Sprintf(
+		"x-anthropic-billing-header: cc_version=%s.%s; cc_entrypoint=cli;",
+		cliVersion, fp,
+	), nil
+}
+
 func buildBillingAttributionBlockJSON(body []byte, cliVersion string) ([]byte, error) {
 	if cliVersion == "" {
 		return nil, fmt.Errorf("cliVersion required")

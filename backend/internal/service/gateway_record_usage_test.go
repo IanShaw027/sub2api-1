@@ -168,6 +168,32 @@ func TestGatewayServiceRecordUsage_BillingFingerprintFallsBackToContextRequestID
 	require.Equal(t, "local:req-local-123", billingRepo.lastCmd.RequestPayloadHash)
 }
 
+func TestGatewayServiceRecordCyberPolicyUsageLogMarksCyberRequestType(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newGatewayRecordUsageServiceForTest(usageRepo, userRepo, subRepo)
+
+	svc.RecordCyberPolicyUsageLog(context.Background(), GatewayCyberPolicyUsageInput{
+		APIKey:       &APIKey{ID: 501, User: &User{ID: 601}},
+		User:         &User{ID: 601},
+		Account:      &Account{ID: 701, Platform: PlatformAnthropic},
+		RequestID:    "gateway-cyber-usage",
+		Model:        "claude-sonnet-4",
+		Stream:       false,
+		InputTokens:  123,
+		OutputTokens: 45,
+	})
+
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, RequestTypeCyberBlocked, usageRepo.lastLog.RequestType)
+	require.Equal(t, 123, usageRepo.lastLog.InputTokens)
+	require.Equal(t, 45, usageRepo.lastLog.OutputTokens)
+	require.Equal(t, "claude-sonnet-4", usageRepo.lastLog.Model)
+	require.Equal(t, "gateway-cyber-usage", usageRepo.lastLog.RequestID)
+}
+
 func TestGatewayServiceRecordUsage_PreservesRequestedAndUpstreamModels(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	svc := newGatewayRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})

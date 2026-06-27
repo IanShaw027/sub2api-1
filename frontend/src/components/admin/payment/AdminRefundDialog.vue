@@ -35,7 +35,7 @@
         </div>
         <div class="mt-1 flex justify-between text-sm">
           <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.creditedAmount') }}</span>
-          <span class="font-medium text-gray-900 dark:text-white">{{ formatOrderAmount(order?.amount || 0) }}</span>
+          <span class="font-medium text-gray-900 dark:text-white">{{ formatBalanceAmount(order?.amount || 0) }}</span>
         </div>
         <div class="mt-1 flex justify-between text-sm">
           <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</span>
@@ -57,7 +57,7 @@
             class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
           <label for="deduct-balance" class="text-sm text-gray-700 dark:text-gray-300">
-            {{ order?.order_type === 'subscription' ? '扣除订阅权益' : t('payment.admin.deductBalance') }}
+            {{ order?.order_type === 'subscription' ? t('payment.admin.deductSubscriptionBenefit') : t('payment.admin.deductBalance') }}
           </label>
           <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.deductBalanceHint') }}</span>
         </div>
@@ -66,11 +66,11 @@
         <div v-if="form.deduct_balance && userBalance != null" class="mt-3 grid grid-cols-2 gap-3">
           <div class="rounded-lg bg-gray-50 p-3 text-sm dark:bg-dark-700">
             <div class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.userBalance') }}</div>
-            <div class="mt-1 font-semibold text-gray-900 dark:text-white">{{ formatOrderAmount(userBalance) }}</div>
+            <div class="mt-1 font-semibold text-gray-900 dark:text-white">{{ formatBalanceAmount(userBalance) }}</div>
           </div>
           <div class="rounded-lg bg-gray-50 p-3 text-sm dark:bg-dark-700">
             <div class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.orderAmount') }}</div>
-            <div class="mt-1 font-semibold text-gray-900 dark:text-white">{{ formatOrderAmount(order?.amount || 0) }}</div>
+            <div class="mt-1 font-semibold text-gray-900 dark:text-white">{{ formatBalanceAmount(order?.amount || 0) }}</div>
           </div>
         </div>
 
@@ -95,7 +95,7 @@
       <div>
         <label class="input-label">{{ t('payment.admin.refundAmount') }}</label>
         <div class="relative">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">{{ orderCurrencyPrefix }}</span>
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">{{ refundCurrencyPrefix }}</span>
           <input
             v-model.number="form.amount"
             type="number"
@@ -108,8 +108,8 @@
         </div>
         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
           {{ t('payment.admin.maxRefundable') }}: {{ formatOrderAmount(maxRefundable) }}
-          <span v-if="requestedAmount > 0">，用户申请：{{ formatOrderAmount(requestedAmount) }}</span>
-          <span v-if="previewLoading">，{{ t('common.loading') }}</span>
+          <span v-if="requestedAmount > 0">, {{ t('payment.admin.userRequestedRefundAmount') }}: {{ formatOrderAmount(requestedAmount) }}</span>
+          <span v-if="previewLoading">, {{ t('common.loading') }}</span>
         </p>
       </div>
 
@@ -166,7 +166,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, computed, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import type { PaymentOrder, RefundPreview } from '@/types/payment'
@@ -190,6 +190,8 @@ const emit = defineEmits<{
   (e: 'confirm', data: { amount: number; reason: string; deduct_balance: boolean; force: boolean }): void
   (e: 'cancel'): void
 }>()
+
+const balanceCurrency = 'USD'
 
 const form = reactive({
   amount: 0,
@@ -224,13 +226,17 @@ const balanceInsufficient = computed(() => {
 })
 
 const orderCurrency = computed(() => normalizePaymentCurrency(props.order?.currency))
-const orderCurrencyPrefix = computed(() => {
+const refundCurrencyPrefix = computed(() => {
   const formatted = formatPaymentAmount(0, orderCurrency.value)
   return formatted.replace(/[\d\s.,]+/g, '') || orderCurrency.value
 })
 
 function formatOrderAmount(value: number): string {
   return formatPaymentAmount(value, orderCurrency.value)
+}
+
+function formatBalanceAmount(value: number): string {
+  return formatPaymentAmount(value, balanceCurrency)
 }
 
 watch([() => props.show, () => props.order, () => props.refundPreview], ([val]) => {

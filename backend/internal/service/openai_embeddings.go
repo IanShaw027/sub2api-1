@@ -109,7 +109,21 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 		respBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
-		_ = s.markOpenAICyberPolicyIfDetected(ctx, account, respBody)
+
+		if hit, code, cyberMsg := detectOpenAICyberPolicy(respBody); hit {
+			MarkOpsCyberPolicy(c, CyberPolicyMark{
+				Code:           code,
+				Message:        cyberMsg,
+				Body:           truncateString(string(respBody), 4096),
+				UpstreamStatus: resp.StatusCode,
+			})
+			setOpsUpstreamError(c, resp.StatusCode, cyberMsg, truncateString(string(respBody), 2048))
+			writeOpenAIEmbeddingsUpstreamResponse(c, resp, respBody, s.responseHeaderFilter)
+			if cyberMsg == "" {
+				return nil, fmt.Errorf("openai cyber_policy: %d", resp.StatusCode)
+			}
+			return nil, fmt.Errorf("openai cyber_policy: %s", cyberMsg)
+		}
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -150,7 +164,7 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 		}
 		return nil, fmt.Errorf("read upstream body: %w", err)
 	}
-	_ = s.markOpenAICyberPolicyIfDetected(ctx, account, respBody)
+	_ = markOpsCyberPolicyIfDetected(c, respBody, resp.StatusCode, 0, 0)
 
 	writeOpenAIEmbeddingsUpstreamResponse(c, resp, respBody, s.responseHeaderFilter)
 
@@ -218,8 +232,15 @@ func extractOpenAIEmbeddingsUsage(body []byte) OpenAIUsage {
 		usage.Get("cache_creation_input_tokens"),
 		usage.Get("input_tokens_details.cache_creation_tokens"),
 	)
+	// 多模态 embedding（如 doubao-embedding-vision）回传图文 token 拆分，
+	// 用于图文不同价计费；纯文本 embedding 该字段为 0，行为不变。
+	imageInputTokens := firstPositiveGJSONInt(
+		usage.Get("prompt_tokens_details.image_tokens"),
+		usage.Get("input_tokens_details.image_tokens"),
+	)
 	return OpenAIUsage{
 		InputTokens:              inputTokens,
+		ImageInputTokens:         imageInputTokens,
 		OutputTokens:             outputTokens,
 		CacheReadInputTokens:     cacheReadTokens,
 		CacheCreationInputTokens: cacheCreationTokens,

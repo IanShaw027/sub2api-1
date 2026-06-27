@@ -400,6 +400,11 @@ func resToChatHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 	}
 
 	var chunks []ChatCompletionsChunk
+	for _, refusal := range responseRefusalDeltas(evt.Response) {
+		state.SawText = true
+		refusalCopy := refusal
+		chunks = append(chunks, makeChatDeltaChunk(state, ChatDelta{Refusal: &refusalCopy}))
+	}
 	chunks = append(chunks, makeChatFinishChunk(state, finishReason))
 
 	if state.IncludeUsage && state.Usage != nil {
@@ -414,6 +419,29 @@ func resToChatHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 	}
 
 	return chunks
+}
+
+func responseRefusalDeltas(resp *ResponsesResponse) []string {
+	if resp == nil {
+		return nil
+	}
+	var refusals []string
+	for _, item := range resp.Output {
+		if item.Type != "message" {
+			continue
+		}
+		for _, part := range item.Content {
+			if part.Type != "refusal" {
+				continue
+			}
+			refusal := strings.TrimSpace(part.Refusal)
+			if refusal == "" {
+				continue
+			}
+			refusals = append(refusals, refusal)
+		}
+	}
+	return refusals
 }
 
 func chatUsageFromResponsesUsage(u *ResponsesUsage) *ChatUsage {

@@ -129,6 +129,30 @@ func TestMigrationChecksumCompatibilityRules_CoverEditedUpgradeCompatibilityMigr
 	}
 }
 
+func TestGrokPlatformQuotaMigrationExtendsCheckConstraint(t *testing.T) {
+	content, err := fs.ReadFile(migrations.FS, "181_user_platform_quotas_add_grok.sql")
+	require.NoError(t, err)
+	sql := string(content)
+	require.Contains(t, sql, "user_platform_quotas_platform_check")
+	require.Contains(t, sql, "'grok'")
+}
+
+func TestPrepareNonTransactionalMigration_PreparesAutopauseExpiryIndexRetry(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectQuery("SELECT EXISTS").
+		WithArgs("idx_accounts_autopause_expiry_due").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectExec("DROP INDEX CONCURRENTLY IF EXISTS idx_accounts_autopause_expiry_due").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	err = prepareNonTransactionalMigration(context.Background(), db, "151_account_autopause_expiry_index_notx.sql")
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestPublishedHistoricalMigrationsRemainImmutable(t *testing.T) {
 	expected := map[string]string{
 		"125_add_group_rpm_limit.sql":         "f77d3eed98860f8ebd4772a909441736e88e572352c0e6b137fa9c1860bd9d52",

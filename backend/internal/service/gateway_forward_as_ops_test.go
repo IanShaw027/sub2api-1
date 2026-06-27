@@ -902,7 +902,7 @@ func TestGatewayService_Forward_NativeMessagesToolDowngradeRetryRequestErrorUses
 	require.Equal(t, 3, upstream.calls, "tool-downgrade signature rectifier should perform a second-stage retry")
 
 	filteredThinkingBody := strings.TrimSpace(string(FilterThinkingBlocksForRetry(originalBody)))
-	filteredToolsBody := strings.TrimSpace(string(FilterSignatureSensitiveBlocksForRetry(originalBody)))
+	filteredToolsBody := strings.TrimSpace(string(FilterSignatureSensitiveBlocksForRetry(originalBody, "claude-3-5-sonnet")))
 
 	rawEvents, ok := c.Get(OpsUpstreamErrorsKey)
 	require.True(t, ok)

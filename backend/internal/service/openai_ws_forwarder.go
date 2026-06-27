@@ -48,9 +48,9 @@ const (
 	openAIWSPayloadSizeEstimateMaxBytes = 64 * 1024
 	openAIWSPayloadSizeEstimateMaxItems = 16
 
-	openAIWSEventFlushBatchSizeDefault    = 4
-	openAIWSEventFlushIntervalDefault     = 25 * time.Millisecond
-	openAIWSPayloadLogSampleDefault       = 0.2
+	openAIWSEventFlushBatchSizeDefault = 4
+	openAIWSEventFlushIntervalDefault  = 25 * time.Millisecond
+	openAIWSPayloadLogSampleDefault    = 0.2
 
 	openAIWSStoreDisabledConnModeStrict   = "strict"
 	openAIWSStoreDisabledConnModeAdaptive = "adaptive"
@@ -1671,6 +1671,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		if chatgptAccountID := account.GetChatGPTAccountID(); chatgptAccountID != "" {
 			headers.Set("chatgpt-account-id", chatgptAccountID)
 		}
+		setOpenAIChatGPTAccountHeaders(headers, account)
 		headers.Set("originator", resolveOpenAIUpstreamOriginator(c, isCodexCLI))
 		if c != nil {
 			if windowID := strings.TrimSpace(c.GetHeader(openAIWSWindowIDHeader)); windowID != "" {
@@ -2225,6 +2226,29 @@ func shouldForceNewConnOnStoreDisabled(mode, lastFailureReason string) bool {
 func shouldForceNewConnOnRecoveredFullReplay(lastFailureReason string) bool {
 	reason := strings.TrimPrefix(strings.TrimSpace(lastFailureReason), "prewarm_")
 	return reason == "previous_response_not_found"
+}
+
+// openAIWSHasDeltaReanchorTarget reports whether a strict-delta connection
+// reanchor can actually engage for this session: it requires a cached session
+// context bound to the same account with a prior response to anchor onto.
+// Cold sessions (no cached context) have nothing to reanchor, so they must fall
+// through to neutral idle-connection reuse instead of forcing a new
+// session-bound connection.
+func openAIWSHasDeltaReanchorTarget(
+	stateStore OpenAIWSStateStore,
+	groupID int64,
+	apiKeyID int64,
+	sessionHash string,
+	accountID int64,
+) bool {
+	if stateStore == nil || sessionHash == "" {
+		return false
+	}
+	cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
+	if !ok {
+		return false
+	}
+	return cached.accountID == accountID && strings.TrimSpace(cached.lastResponseID) != ""
 }
 
 func shouldUseOpenAIWSNeutralForColdSession(
@@ -2953,7 +2977,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		storeDisabled &&
 		previousResponseID == "" &&
 		sessionHash != "" &&
-		!HasFunctionCallOutput(payload)
+		!HasFunctionCallOutput(payload) &&
+		openAIWSHasDeltaReanchorTarget(stateStore, groupID, apiKeyID, sessionHash, account.ID)
 	if sessionPreemptedPrevious {
 		preferredConnID = ""
 		connAffinityHit = false
@@ -3676,9 +3701,22 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			return nil, fmt.Errorf("openai ws soft rate limit advisory: %s", advisoryMsg)
 		}
 
+		if eventType == "response.failed" {
+			if hit, code, msg := detectOpenAICyberPolicy(message); hit {
+				MarkOpsCyberPolicy(c, CyberPolicyMark{
+					Code:           code,
+					Message:        msg,
+					Body:           truncateString(string(message), 4096),
+					UpstreamStatus: http.StatusOK,
+					UpstreamInTok:  usage.InputTokens,
+					UpstreamOutTok: usage.OutputTokens,
+				})
+			}
+		}
+
 		if eventType == "error" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
-			_ = s.markOpenAICyberPolicyIfDetected(ctx, account, message)
+			_ = markOpsCyberPolicyIfDetected(c, message, http.StatusOK, usage.InputTokens, usage.OutputTokens)
 			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw)
 			errMsg := strings.TrimSpace(errMsgRaw)
 			if errMsg == "" {
@@ -3748,7 +3786,6 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			return nil, fmt.Errorf("openai ws error event: %s", errMsg)
 		}
 		if eventType == "response.failed" {
-			_ = s.markOpenAICyberPolicyIfDetected(ctx, account, message)
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSResponseFailedErrorFields(message)
 			errMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(errMsgRaw))
 			if errMsg == "" {
@@ -4012,6 +4049,29 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 
 // ProxyResponsesWebSocketFromClient 处理客户端入站 WebSocket（OpenAI Responses WS Mode）并转发到上游。
 // 当前实现按“单请求 -> 终止事件 -> 下一请求”的顺序代理，适配 Codex CLI 的 turn 模式。
+// stripCodexSparkImageGenerationToolFromRawPayload removes the image_generation
+// tool from a raw /responses payload when the upstream model is gpt-5.3-codex-spark.
+// Spark rejects that tool upstream with HTTP 400 (invalid_request_error, param=tools);
+// Codex clients advertise it by default. Returns the (possibly unchanged) payload,
+// whether it changed, and any JSON decode error.
+func stripCodexSparkImageGenerationToolFromRawPayload(payload []byte, model string) ([]byte, bool, error) {
+	if !isCodexSparkModel(model) || !openAIRequestBodyHasImageGenerationTool(payload) {
+		return payload, false, nil
+	}
+	payloadMap := make(map[string]any)
+	if err := json.Unmarshal(payload, &payloadMap); err != nil {
+		return payload, false, err
+	}
+	if !stripCodexSparkImageGenerationTools(payloadMap) {
+		return payload, false, nil
+	}
+	rebuilt, err := json.Marshal(payloadMap)
+	if err != nil {
+		return payload, false, err
+	}
+	return rebuilt, true, nil
+}
+
 func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	ctx context.Context,
 	c *gin.Context,
@@ -4261,6 +4321,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 		}
 		imageToolCapability := hasOpenAIImageGenerationTool(normalizedReqBody)
+		if stripped, changed, stripErr := stripCodexSparkImageGenerationToolFromRawPayload(normalized, upstreamModel); stripErr != nil {
+			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", stripErr)
+		} else if changed {
+			normalized = stripped
+			logOpenAIWSModeInfo("ingress_ws_codex_spark_image_tool_stripped account_id=%d", account.ID)
+		}
 		imageIntent := IsImageGenerationIntent(openAIResponsesEndpoint, originalModel, normalized)
 		if imageIntent && !allowImageGeneration {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, ImageGenerationPermissionMessage(), nil)
@@ -4872,7 +4938,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			if eventType == "error" {
 				errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(upstreamMessage)
-				_ = s.markOpenAICyberPolicyIfDetected(ctx, account, upstreamMessage)
+				_ = markOpsCyberPolicyIfDetected(c, upstreamMessage, http.StatusOK, usage.InputTokens, usage.OutputTokens)
 				s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
 				fallbackReason, _ := classifyOpenAIWSErrorEventFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 				errCode, errType, errMessage := summarizeOpenAIWSErrorEventFieldsFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
@@ -4940,9 +5006,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					}
 				}
 			}
-			if eventType == "response.failed" {
-				_ = s.markOpenAICyberPolicyIfDetected(ctx, account, upstreamMessage)
-			}
 			isTokenEvent := isOpenAIWSTokenEvent(eventType)
 			if isTokenEvent {
 				tokenEventCount++
@@ -4959,6 +5022,19 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				parseOpenAIWSResponseUsageFromCompletedEvent(upstreamMessage, &usage)
 			}
 			imageCounter.AddSSEData(upstreamMessage)
+
+			if eventType == "response.failed" {
+				if hit, code, msg := detectOpenAICyberPolicy(upstreamMessage); hit {
+					MarkOpsCyberPolicy(c, CyberPolicyMark{
+						Code:           code,
+						Message:        msg,
+						Body:           truncateString(string(upstreamMessage), 4096),
+						UpstreamStatus: http.StatusOK,
+						UpstreamInTok:  usage.InputTokens,
+						UpstreamOutTok: usage.OutputTokens,
+					})
+				}
+			}
 
 			if !clientDisconnected {
 				if needModelReplace && len(mappedModelBytes) > 0 && openAIWSEventMayContainModel(eventType) && bytes.Contains(upstreamMessage, mappedModelBytes) {
@@ -5071,7 +5147,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					Model:              originalModel,
 					UpstreamModel:      mappedModel,
 					ServiceTier:        extractOpenAIServiceTierFromBody(payload),
-					ReasoningEffort:    extractOpenAIReasoningEffortFromBody(payload, originalModel),
+					ReasoningEffort:    ApplyThinkingEnabledFallback(extractOpenAIReasoningEffortFromBody(payload, originalModel), payload, mappedModel),
 					Stream:             reqStream,
 					OpenAIWSMode:       true,
 					OpenAIWSProfile:    openAIWSProfileUsageString(openAIWSConnProfileSessionBound),
@@ -6005,7 +6081,6 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 
 		if eventType == "error" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
-			_ = s.markOpenAICyberPolicyIfDetected(ctx, account, message)
 			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw)
 			errMsg := strings.TrimSpace(errMsgRaw)
 			if errMsg == "" {
@@ -6034,9 +6109,6 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 			return wrapOpenAIWSFallback("prewarm_error_event", errors.New(errMsg))
 		}
 
-		if eventType == "response.failed" {
-			_ = s.markOpenAICyberPolicyIfDetected(ctx, account, message)
-		}
 		if isOpenAIWSTerminalEvent(eventType) {
 			prewarmTerminalCount++
 			break
@@ -6255,7 +6327,7 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
 		return nil, nil
 	}
-	account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, "", false, false)
+	account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, "", "", false, false)
 	if account == nil {
 		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
 		return nil, nil

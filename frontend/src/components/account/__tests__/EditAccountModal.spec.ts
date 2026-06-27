@@ -231,6 +231,31 @@ function resetCommonMocks() {
   checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
 }
 
+function buildAntigravityAccount(projectId = 'configured-project') {
+  return {
+    id: 3,
+    name: 'Antigravity OAuth',
+    notes: '',
+    platform: 'antigravity',
+    type: 'oauth',
+    credentials: {
+      antigravity_project_id: projectId,
+      model_mapping: {
+        'gemini-2.5-flash': 'gemini-2.5-flash'
+      }
+    },
+    extra: {},
+    proxy_id: null,
+    concurrency: 1,
+    priority: 1,
+    rate_multiplier: 1,
+    status: 'active',
+    group_ids: [],
+    expires_at: null,
+    auto_pause_on_expired: false
+  } as any
+}
+
 function mountModal(account = buildAccount(), show = false) {
   return mount(EditAccountModal, {
     props: {
@@ -297,7 +322,7 @@ describe('EditAccountModal', () => {
     const account = buildAccount()
     updateAccountMock.mockResolvedValue(account)
 
-    const wrapper = mountModal(account)
+    const wrapper = mountModal(account, true)
     await wrapper.setProps({ show: true })
 
     ;(wrapper.vm as any).tempUnschedEnabled = true
@@ -332,7 +357,7 @@ describe('EditAccountModal', () => {
     }
     updateAccountMock.mockResolvedValue(account)
 
-    const wrapper = mountModal(account)
+    const wrapper = mountModal(account, true)
     await wrapper.setProps({ show: true })
 
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
@@ -351,7 +376,7 @@ describe('EditAccountModal', () => {
     }
     updateAccountMock.mockResolvedValue(account)
 
-    const wrapper = mountModal(account)
+    const wrapper = mountModal(account, true)
     await wrapper.setProps({ show: true })
 
     ;(wrapper.vm as any).customErrorCodesEnabled = false
@@ -374,7 +399,7 @@ describe('EditAccountModal', () => {
     }
     updateAccountMock.mockResolvedValue(account)
 
-    const wrapper = mountModal(account)
+    const wrapper = mountModal(account, true)
     await wrapper.setProps({ show: true })
 
     ;(wrapper.vm as any).poolModeEnabled = false
@@ -393,7 +418,7 @@ describe('EditAccountModal', () => {
     const account = buildAccount()
     updateAccountMock.mockResolvedValue(account)
 
-    const wrapper = mountModal(account)
+    const wrapper = mountModal(account, true)
     await wrapper.setProps({ show: true })
 
     ;(wrapper.vm as any).modelRestrictionMode = 'whitelist'
@@ -416,7 +441,7 @@ describe('EditAccountModal', () => {
     }
     updateAccountMock.mockResolvedValue(account)
 
-    const wrapper = mountModal(account)
+    const wrapper = mountModal(account, true)
     await wrapper.setProps({ show: true })
 
     ;(wrapper.vm as any).openAICompactModelMappings = []
@@ -1352,6 +1377,39 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('refresh_token')
   })
 
+  it('edits Grok OAuth model restrictions without resending OAuth secrets', async () => {
+    const account = buildAccount()
+    account.platform = 'grok'
+    account.type = 'oauth'
+    account.credentials = {
+      email: 'grok@example.com',
+      model_mapping: {
+        'grok-4.3': 'grok-4.3'
+      }
+    }
+
+    resetCommonMocks()
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('grok-4.3')
+
+    await wrapper.get('[data-testid="rewrite-to-snapshot"]').trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
+      model_mapping: {
+        'gpt-5.2-2025-12-11': 'gpt-5.2-2025-12-11'
+      }
+    })
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('email')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('access_token')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('refresh_token')
+  })
+
   it('updates the OpenAI compact status label from current form state', async () => {
     const account = buildAccount()
     account.extra = {
@@ -1776,5 +1834,44 @@ describe('EditAccountModal', () => {
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.response_rewrite_rules).toEqual([])
+  })
+
+  it('loads and submits Antigravity configured project fallback', async () => {
+    const account = buildAntigravityAccount('configured-project')
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account, true)
+    const input = wrapper.get<HTMLInputElement>('[data-testid="antigravity-project-id-input"]')
+    expect(input.element.value).toBe('configured-project')
+
+    await input.setValue('  updated-project  ')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.antigravity_project_id).toBe(
+      'updated-project'
+    )
+  })
+
+  it('clears Antigravity configured project fallback when input is empty', async () => {
+    const account = buildAntigravityAccount('configured-project')
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account, true)
+    const input = wrapper.get<HTMLInputElement>('[data-testid="antigravity-project-id-input"]')
+
+    await input.setValue('')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty(
+      'antigravity_project_id'
+    )
   })
 })

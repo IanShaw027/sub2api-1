@@ -22,20 +22,20 @@ import (
 // If not, it skips the test instead of failing.
 func skipIfExternalServiceUnavailable(t *testing.T, err error) {
 	t.Helper()
-		if err != nil {
-			// Check for common network/TLS errors that indicate external service issues
-			errStr := err.Error()
-			if strings.Contains(errStr, "certificate has expired") ||
-				strings.Contains(errStr, "certificate is not yet valid") ||
-				strings.Contains(errStr, "connection refused") ||
-				strings.Contains(errStr, "connection reset by peer") ||
-				strings.Contains(errStr, "TLS handshake failed") ||
-				strings.Contains(errStr, "no such host") ||
-				strings.Contains(errStr, "unexpected EOF") ||
-				strings.Contains(errStr, "EOF") ||
-				strings.Contains(errStr, "network is unreachable") ||
-				strings.Contains(errStr, "timeout") ||
-				strings.Contains(errStr, "deadline exceeded") {
+	if err != nil {
+		// Check for common network/TLS errors that indicate external service issues
+		errStr := err.Error()
+		if strings.Contains(errStr, "certificate has expired") ||
+			strings.Contains(errStr, "certificate is not yet valid") ||
+			strings.Contains(errStr, "connection refused") ||
+			strings.Contains(errStr, "connection reset by peer") ||
+			strings.Contains(errStr, "TLS handshake failed") ||
+			strings.Contains(errStr, "no such host") ||
+			strings.Contains(errStr, "unexpected EOF") ||
+			strings.Contains(errStr, "EOF") ||
+			strings.Contains(errStr, "network is unreachable") ||
+			strings.Contains(errStr, "timeout") ||
+			strings.Contains(errStr, "deadline exceeded") {
 			t.Skipf("skipping test: external service unavailable: %v", err)
 		}
 		t.Fatalf("failed to get fingerprint: %v", err)

@@ -292,7 +292,7 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(getUsage).toHaveBeenCalledWith(2000, undefined)
+    expect(getUsage).toHaveBeenCalledWith(2000)
     expect(wrapper.text()).toContain('5h|15|300')
     expect(wrapper.text()).toContain('7d|77|300')
   })
@@ -353,7 +353,7 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(getUsage).toHaveBeenCalledWith(2001, undefined)
+    expect(getUsage).toHaveBeenCalledWith(2001)
     // 单一数据源：始终使用 /usage API 返回值，忽略 codex 快照
     expect(wrapper.text()).toContain('5h|18|900')
     expect(wrapper.text()).toContain('7d|36|900')
@@ -501,7 +501,7 @@ describe('AccountUsageCell', () => {
 
     // 手动刷新再拉一次
     expect(getUsage).toHaveBeenCalledTimes(2)
-    expect(getUsage).toHaveBeenCalledWith(2010, undefined)
+    expect(getUsage).toHaveBeenCalledWith(2010)
     // 单一数据源：始终使用 /usage API 值
     expect(wrapper.text()).toContain('5h|18|900')
   })
@@ -590,7 +590,7 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(getUsage).toHaveBeenCalledWith(2011, undefined)
+    expect(getUsage).toHaveBeenCalledWith(2011)
     expect(wrapper.findAll('.usage-bar')).toHaveLength(0)
     expect(wrapper.text()).not.toContain('5h|0')
     expect(wrapper.text()).not.toContain('7d|0')
@@ -646,7 +646,7 @@ describe('AccountUsageCell', () => {
 
 	await flushPromises()
 
-	expect(getUsage).toHaveBeenCalledWith(2002, undefined)
+	expect(getUsage).toHaveBeenCalledWith(2002)
 	expect(wrapper.text()).toContain('5h|0|27700')
 	expect(wrapper.text()).toContain('7d|0|27700')
   })
@@ -780,7 +780,7 @@ describe('AccountUsageCell', () => {
 
 	await flushPromises()
 
-  expect(getUsage).toHaveBeenCalledWith(2004, undefined)
+  expect(getUsage).toHaveBeenCalledWith(2004)
   expect(wrapper.text()).toContain('5h|100|106540000')
   expect(wrapper.text()).toContain('7d|100|106540000')
   })
@@ -1538,7 +1538,7 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(getUsage).toHaveBeenCalledWith(4001, undefined)
+    expect(getUsage).toHaveBeenCalledWith(4001)
     expect(wrapper.text()).toContain('admin.accounts.usageWindow.geminiProDaily|65|5000')
     expect(wrapper.text()).toContain('admin.accounts.usageWindow.geminiFlashDaily|65|12000')
   })
@@ -1593,7 +1593,7 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(getUsage).toHaveBeenCalledWith(4002, undefined)
+    expect(getUsage).toHaveBeenCalledWith(4002)
     expect(wrapper.text()).toContain('admin.accounts.usageWindow.geminiProDaily|60|300')
     expect(wrapper.text()).toContain('admin.accounts.usageWindow.geminiFlashDaily|10|400')
     expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')

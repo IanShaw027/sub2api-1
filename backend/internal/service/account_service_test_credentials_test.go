@@ -179,6 +179,10 @@ func (s *accountCredentialsRepoStub) RevertProxyFallback(ctx context.Context, ac
 	return nil
 }
 
+func (s *accountCredentialsRepoStub) ListOAuthRefreshCandidates(ctx context.Context) ([]Account, error) {
+	return nil, nil
+}
+
 func TestAccountService_TestCredentials_ValidatesPlatformCredentials(t *testing.T) {
 	tests := []struct {
 		name    string

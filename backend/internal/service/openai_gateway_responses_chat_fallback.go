@@ -67,6 +67,8 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 
 	billingModel := resolveOpenAIForwardModelWithSettings(ctx, s.settingService, account, originalModel, "")
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
+	// 国产模型默认 effort 补充：需要 mappedModel 判定，推迟到 billingModel 算出之后。
+	reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, billingModel)
 	chatReq.Model = upstreamModel
 	if clientStream {
 		chatReq.StreamOptions = &apicompat.ChatStreamOptions{IncludeUsage: true}
@@ -217,8 +219,6 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsResponses(
 		}
 		return nil, fmt.Errorf("read upstream body: %w", err)
 	}
-	_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, respBody)
-
 	var ccResp apicompat.ChatCompletionsResponse
 	if err := json.Unmarshal(respBody, &ccResp); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
@@ -235,6 +235,7 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsResponses(
 	if parsed, ok := extractOpenAIUsageFromJSONBytes(respBody); ok {
 		usage = parsed
 	}
+	_ = markOpsCyberPolicyIfDetected(c, respBody, http.StatusOK, usage.InputTokens, usage.OutputTokens)
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -335,11 +336,10 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 			sawDone = true
 			break
 		}
-		_ = s.markOpenAICyberPolicyIfDetected(c.Request.Context(), account, []byte(payload))
-
 		if u := extractCCStreamUsage(payload); u != nil {
 			usage = *u
 		}
+		_ = markOpsCyberPolicyIfDetected(c, []byte(payload), http.StatusOK, usage.InputTokens, usage.OutputTokens)
 
 		var chunk apicompat.ChatCompletionsChunk
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {

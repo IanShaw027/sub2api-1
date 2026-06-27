@@ -826,7 +826,7 @@ func TestAPIContracts(t *testing.T) {
 						"default_balance": 1.25,
 						"kiro_commit": "",
 						"kiro_version": "0.10.0",
-					"default_platform_quotas": {"anthropic":{"daily":null,"weekly":null,"monthly":null},"antigravity":{"daily":null,"weekly":null,"monthly":null},"gemini":{"daily":null,"weekly":null,"monthly":null},"openai":{"daily":null,"weekly":null,"monthly":null}},
+					"default_platform_quotas": {"anthropic":{"daily":null,"weekly":null,"monthly":null},"antigravity":{"daily":null,"weekly":null,"monthly":null},"gemini":{"daily":null,"weekly":null,"monthly":null},"grok":{"daily":null,"weekly":null,"monthly":null},"kiro":{"daily":null,"weekly":null,"monthly":null},"openai":{"daily":null,"weekly":null,"monthly":null}},
 					"auth_source_default_email_platform_quotas": null,
 					"auth_source_default_github_platform_quotas": null,
 					"auth_source_default_google_platform_quotas": null,
@@ -860,10 +860,19 @@ func TestAPIContracts(t *testing.T) {
 					"min_claude_code_version": "",
 					"max_claude_code_version": "",
 					"node_version": "22.21.1",
+					"min_codex_version": "",
+					"max_codex_version": "",
+					"codex_cli_only_blacklist": "",
+					"codex_cli_only_whitelist": "",
+					"codex_cli_only_allow_app_server_clients": false,
+					"codex_cli_only_engine_fingerprint_signals": "[{\"type\":\"header_prefix\",\"match\":[\"x-codex-\"],\"required\":true},{\"type\":\"header_exact\",\"match\":[\"session-id\",\"session_id\"],\"required\":false},{\"type\":\"header_exact\",\"match\":[\"thread-id\",\"thread_id\"],\"required\":false},{\"type\":\"body_path\",\"match\":[\"client_metadata.x-codex-window-id\",\"client_metadata.x-codex-installation-id\"],\"required\":false}]",
 					"allow_ungrouped_key_scheduling": false,
 					"account_scheduling_thresholds": {"anthropic":100,"openai":100},
 					"backend_mode_enabled": false,
 					"enable_cch_signing": false,
+					"enable_claude_oauth_system_prompt_injection": true,
+					"claude_oauth_system_prompt": "",
+					"claude_oauth_system_prompt_blocks": "",
 					"enable_anthropic_cache_ttl_1h_injection": false,
 					"rewrite_message_cache_control": false,
 					"antigravity_user_agent_version": "",
@@ -887,8 +896,8 @@ func TestAPIContracts(t *testing.T) {
 						"openai_ws_max_idle_per_account": 4,
 						"openai_ws_neutral_prewarm_percent": 20,
 						"openai_ws_session_idle_ttl_seconds": 1000,
-						"openai_allow_claude_code_codex_plugin": false,
-						"openai_fast_policy_settings": {
+						"openai_codex_user_agent":           "",
+					"openai_fast_policy_settings": {
 						"rules": []
 					},
 					"platform_default_account_model_config": {},
@@ -928,6 +937,8 @@ func TestAPIContracts(t *testing.T) {
 					"channel_monitor_default_interval_seconds": 60,
 					"available_channels_enabled": false,
 					"risk_control_enabled": false,
+					"cyber_session_block_enabled": false,
+					"cyber_session_block_ttl_seconds": 3600,
 					"affiliate_enabled": false,
 					"wechat_connect_enabled": false,
 					"wechat_connect_app_id": "",
@@ -950,7 +961,7 @@ func TestAPIContracts(t *testing.T) {
 					"dingtalk_connect_client_id": "",
 					"dingtalk_connect_client_secret_configured": false,
 					"dingtalk_connect_redirect_url": "",
-					"dingtalk_connect_corp_restriction_policy": "",
+					"dingtalk_connect_corp_restriction_policy": "none",
 					"dingtalk_connect_internal_corp_id": "",
 					"dingtalk_connect_bypass_registration": false,
 					"dingtalk_connect_sync_corp_email": false,
@@ -1117,7 +1128,7 @@ func TestAPIContracts(t *testing.T) {
 					"purchase_subscription_url": "",
 					"table_default_page_size": 20,
 					"table_page_size_options": [10, 20, 50],
-					"default_platform_quotas": {"anthropic":{"daily":null,"weekly":null,"monthly":null},"antigravity":{"daily":null,"weekly":null,"monthly":null},"gemini":{"daily":null,"weekly":null,"monthly":null},"openai":{"daily":null,"weekly":null,"monthly":null}},
+					"default_platform_quotas": {"anthropic":{"daily":null,"weekly":null,"monthly":null},"antigravity":{"daily":null,"weekly":null,"monthly":null},"gemini":{"daily":null,"weekly":null,"monthly":null},"grok":{"daily":null,"weekly":null,"monthly":null},"kiro":{"daily":null,"weekly":null,"monthly":null},"openai":{"daily":null,"weekly":null,"monthly":null}},
 					"auth_source_default_email_platform_quotas": null,
 					"auth_source_default_github_platform_quotas": null,
 					"auth_source_default_google_platform_quotas": null,
@@ -1154,9 +1165,18 @@ func TestAPIContracts(t *testing.T) {
 					"enable_fingerprint_unification": true,
 					"enable_metadata_passthrough": false,
 					"enable_cch_signing": false,
+					"enable_claude_oauth_system_prompt_injection": true,
+					"claude_oauth_system_prompt": "",
+					"claude_oauth_system_prompt_blocks": "",
 					"enable_anthropic_cache_ttl_1h_injection": false,
 					"rewrite_message_cache_control": false,
 					"antigravity_user_agent_version": "",
+					"min_codex_version": "",
+					"max_codex_version": "",
+					"codex_cli_only_blacklist": "",
+					"codex_cli_only_whitelist": "",
+					"codex_cli_only_allow_app_server_clients": false,
+					"codex_cli_only_engine_fingerprint_signals": "[{\"type\":\"header_prefix\",\"match\":[\"x-codex-\"],\"required\":true},{\"type\":\"header_exact\",\"match\":[\"session-id\",\"session_id\"],\"required\":false},{\"type\":\"header_exact\",\"match\":[\"thread-id\",\"thread_id\"],\"required\":false},{\"type\":\"body_path\",\"match\":[\"client_metadata.x-codex-window-id\",\"client_metadata.x-codex-installation-id\"],\"required\":false}]",
 					"web_search_emulation_enabled": false,
 					"payment_visible_method_alipay_source": "",
 					"payment_visible_method_wxpay_source": "",
@@ -1171,9 +1191,8 @@ func TestAPIContracts(t *testing.T) {
 						"openai_ws_max_idle_per_account": 4,
 						"openai_ws_neutral_prewarm_percent": 20,
 						"openai_ws_session_idle_ttl_seconds": 1000,
-						"openai_allow_claude_code_codex_plugin": false,
-						"openai_codex_user_agent": "",
-						"openai_fast_policy_settings": {
+					"openai_codex_user_agent": "",
+					"openai_fast_policy_settings": {
 						"rules": []
 					},
 					"payment_enabled": false,
@@ -1213,6 +1232,8 @@ func TestAPIContracts(t *testing.T) {
 					"channel_monitor_default_interval_seconds": 60,
 					"available_channels_enabled": false,
 					"risk_control_enabled": false,
+					"cyber_session_block_enabled": false,
+					"cyber_session_block_ttl_seconds": 3600,
 					"affiliate_enabled": false,
 					"affiliate_rebate_cap": 0,
 					"affiliate_rebate_invitee_limit": 0,
@@ -1287,7 +1308,7 @@ func TestAPIContracts(t *testing.T) {
 					"dingtalk_connect_client_id": "",
 					"dingtalk_connect_client_secret_configured": false,
 					"dingtalk_connect_redirect_url": "",
-					"dingtalk_connect_corp_restriction_policy": "",
+					"dingtalk_connect_corp_restriction_policy": "none",
 					"dingtalk_connect_internal_corp_id": "",
 					"dingtalk_connect_bypass_registration": false,
 					"dingtalk_connect_sync_corp_email": false,
@@ -1852,6 +1873,10 @@ func (s *stubAccountRepo) ListByGroup(ctx context.Context, groupID int64) ([]ser
 }
 
 func (s *stubAccountRepo) ListActive(ctx context.Context) ([]service.Account, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *stubAccountRepo) ListOAuthRefreshCandidates(ctx context.Context) ([]service.Account, error) {
 	return nil, errors.New("not implemented")
 }
 

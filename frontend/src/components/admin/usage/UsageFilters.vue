@@ -251,7 +251,8 @@ const requestTypeOptions = ref<SelectOption[]>([
   { value: 'image_web_bridge', label: t('usage.imageWebBridge') },
   { value: 'image', label: t('usage.image') },
   { value: 'stream', label: t('usage.stream') },
-  { value: 'sync', label: t('usage.sync') }
+  { value: 'sync', label: t('usage.sync') },
+  { value: 'cyber', label: t('usage.cyber') }
 ])
 
 const billingTypeOptions = ref<SelectOption[]>([

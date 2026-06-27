@@ -3,17 +3,25 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/redis/go-redis/v9"
 )
 
 const contentModerationFlaggedHashSetKey = "content_moderation:flagged_hashes"
+const contentModerationFlaggedHashCreatedZSetKey = "content_moderation:flagged_hashes:created_at"
 const contentModerationFlaggedHashKeyPrefix = "content_moderation:fh:"
-const contentModerationFlaggedHashTTL = 7 * 24 * time.Hour
+const contentModerationFlaggedHashMetaKeyPrefix = "content_moderation:fh_meta:"
+const contentModerationFlaggedHashHitsKeyPrefix = "content_moderation:fh_hits:"
+const contentModerationFlaggedHashTTL = 90 * 24 * time.Hour
+const contentModerationFlaggedHashHitTTL = 31 * 24 * time.Hour
 const contentModerationAPIKeyQuotaKeyPrefix = "content_moderation:api_key_quota:"
 const contentModerationAPIKeyQuotaTTL = 48 * time.Hour
 
@@ -104,10 +112,21 @@ func (c *contentModerationHashCache) RecordFlaggedInputHash(ctx context.Context,
 	if c == nil || c.rdb == nil || inputHash == "" {
 		return nil
 	}
+	now, err := c.rdb.Time(ctx).Result()
+	if err != nil {
+		return err
+	}
+	nowUnix := now.Unix()
+	expiresUnix := now.Add(contentModerationFlaggedHashTTL).Unix()
+	metaKey := contentModerationFlaggedHashMetaKeyPrefix + inputHash
 	pipe := c.rdb.Pipeline()
 	pipe.SAdd(ctx, contentModerationFlaggedHashSetKey, inputHash)
 	pipe.Set(ctx, contentModerationFlaggedHashKeyPrefix+inputHash, "1", contentModerationFlaggedHashTTL)
-	_, err := pipe.Exec(ctx)
+	pipe.HSetNX(ctx, metaKey, "created_at", nowUnix)
+	pipe.HSet(ctx, metaKey, "expires_at", expiresUnix)
+	pipe.Expire(ctx, metaKey, contentModerationFlaggedHashTTL)
+	pipe.ZAddNX(ctx, contentModerationFlaggedHashCreatedZSetKey, redis.Z{Score: float64(nowUnix), Member: inputHash})
+	_, err = pipe.Exec(ctx)
 	return err
 }
 
@@ -121,9 +140,184 @@ func (c *contentModerationHashCache) HasFlaggedInputHash(ctx context.Context, in
 		return false, err
 	}
 	if exists > 0 {
+		if err := c.recordFlaggedInputHashHit(ctx, inputHash); err != nil {
+			slog.Warn("content_moderation.flagged_hash_hit_metric_failed", "input_hash", inputHash, "error", err)
+		}
 		return true, nil
 	}
-	return c.rdb.SIsMember(ctx, contentModerationFlaggedHashSetKey, inputHash).Result()
+	matched, err := c.rdb.SIsMember(ctx, contentModerationFlaggedHashSetKey, inputHash).Result()
+	if err != nil || !matched {
+		return matched, err
+	}
+	_, _ = c.DeleteFlaggedInputHash(ctx, inputHash)
+	return false, nil
+}
+
+func (c *contentModerationHashCache) recordFlaggedInputHashHit(ctx context.Context, inputHash string) error {
+	now, err := c.rdb.Time(ctx).Result()
+	if err != nil {
+		return err
+	}
+	score := float64(now.Unix())
+	member := fmt.Sprintf("%d:%d", now.UnixNano(), time.Now().UnixNano())
+	key := contentModerationFlaggedHashHitsKeyPrefix + inputHash
+	pipe := c.rdb.Pipeline()
+	pipe.ZAdd(ctx, key, redis.Z{Score: score, Member: member})
+	pipe.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(now.Add(-30*24*time.Hour).Unix()-1, 10))
+	pipe.Expire(ctx, key, contentModerationFlaggedHashHitTTL)
+	_, err = pipe.Exec(ctx)
+	return err
+}
+
+func (c *contentModerationHashCache) ListFlaggedInputHashes(ctx context.Context, filter service.ContentModerationHashListFilter) ([]service.ContentModerationHashItem, *pagination.PaginationResult, error) {
+	if c == nil || c.rdb == nil {
+		return nil, &pagination.PaginationResult{Page: 1, PageSize: 20, Pages: 1}, nil
+	}
+	if err := c.pruneExpiredFlaggedHashes(ctx); err != nil {
+		return nil, nil, err
+	}
+	page := filter.Pagination.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := filter.Pagination.Limit()
+	hashes, err := c.rdb.SMembers(ctx, contentModerationFlaggedHashSetKey).Result()
+	if err != nil {
+		return nil, nil, err
+	}
+	items := make([]service.ContentModerationHashItem, 0, len(hashes))
+	now, err := c.rdb.Time(ctx).Result()
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, inputHash := range hashes {
+		inputHash = strings.TrimSpace(inputHash)
+		if inputHash == "" {
+			continue
+		}
+		item, err := c.flaggedHashItem(ctx, inputHash, now)
+		if err != nil {
+			return nil, nil, err
+		}
+		if item.InputHash == "" {
+			continue
+		}
+		items = append(items, item)
+	}
+	sortFlaggedHashItems(items, filter.Pagination.SortBy, filter.Pagination.NormalizedSortOrder(pagination.SortOrderDesc))
+	total := int64(len(items))
+	start := (page - 1) * pageSize
+	if start > len(items) {
+		start = len(items)
+	}
+	end := start + pageSize
+	if end > len(items) {
+		end = len(items)
+	}
+	pages := int(math.Ceil(float64(total) / float64(pageSize)))
+	if pages < 1 {
+		pages = 1
+	}
+	return items[start:end], &pagination.PaginationResult{
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+		Pages:    pages,
+	}, nil
+}
+
+func (c *contentModerationHashCache) flaggedHashItem(ctx context.Context, inputHash string, now time.Time) (service.ContentModerationHashItem, error) {
+	metaKey := contentModerationFlaggedHashMetaKeyPrefix + inputHash
+	fields, err := c.rdb.HMGet(ctx, metaKey, "created_at", "expires_at").Result()
+	if err != nil {
+		return service.ContentModerationHashItem{}, err
+	}
+	createdUnix := redisInt64(fields[0])
+	expiresUnix := redisInt64(fields[1])
+	if createdUnix <= 0 {
+		score, err := c.rdb.ZScore(ctx, contentModerationFlaggedHashCreatedZSetKey, inputHash).Result()
+		if err == nil {
+			createdUnix = int64(score)
+		}
+	}
+	if createdUnix <= 0 {
+		createdUnix = now.Unix()
+	}
+	if expiresUnix <= 0 {
+		expiresUnix = createdUnix + int64(contentModerationFlaggedHashTTL/time.Second)
+	}
+	expiresAt := time.Unix(expiresUnix, 0)
+	if !expiresAt.After(now) {
+		_, _ = c.DeleteFlaggedInputHash(ctx, inputHash)
+		return service.ContentModerationHashItem{}, nil
+	}
+	hitsKey := contentModerationFlaggedHashHitsKeyPrefix + inputHash
+	hit7d, err := c.rdb.ZCount(ctx, hitsKey, strconv.FormatInt(now.Add(-7*24*time.Hour).Unix(), 10), "+inf").Result()
+	if err != nil {
+		return service.ContentModerationHashItem{}, err
+	}
+	hit30d, err := c.rdb.ZCount(ctx, hitsKey, strconv.FormatInt(now.Add(-30*24*time.Hour).Unix(), 10), "+inf").Result()
+	if err != nil {
+		return service.ContentModerationHashItem{}, err
+	}
+	return service.ContentModerationHashItem{
+		InputHash:   inputHash,
+		CreatedAt:   time.Unix(createdUnix, 0),
+		ExpiresAt:   expiresAt,
+		HitCount7D:  hit7d,
+		HitCount30D: hit30d,
+	}, nil
+}
+
+func sortFlaggedHashItems(items []service.ContentModerationHashItem, sortBy string, sortOrder string) {
+	desc := sortOrder != pagination.SortOrderAsc
+	sort.SliceStable(items, func(i, j int) bool {
+		cmp := 0
+		switch strings.ToLower(strings.TrimSpace(sortBy)) {
+		case service.ContentModerationHashSortHits7D:
+			if items[i].HitCount7D != items[j].HitCount7D {
+				cmp = compareInt64(items[i].HitCount7D, items[j].HitCount7D)
+				break
+			}
+		case service.ContentModerationHashSortHits30D:
+			if items[i].HitCount30D != items[j].HitCount30D {
+				cmp = compareInt64(items[i].HitCount30D, items[j].HitCount30D)
+				break
+			}
+		}
+		if cmp == 0 {
+			cmp = compareTime(items[i].CreatedAt, items[j].CreatedAt)
+		}
+		if cmp == 0 {
+			cmp = strings.Compare(items[i].InputHash, items[j].InputHash)
+		}
+		if desc {
+			return cmp > 0
+		}
+		return cmp < 0
+	})
+}
+
+func compareInt64(a, b int64) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func compareTime(a, b time.Time) int {
+	switch {
+	case a.Before(b):
+		return -1
+	case a.After(b):
+		return 1
+	default:
+		return 0
+	}
 }
 
 func (c *contentModerationHashCache) DeleteFlaggedInputHash(ctx context.Context, inputHash string) (bool, error) {
@@ -134,11 +328,40 @@ func (c *contentModerationHashCache) DeleteFlaggedInputHash(ctx context.Context,
 	pipe := c.rdb.Pipeline()
 	srem := pipe.SRem(ctx, contentModerationFlaggedHashSetKey, inputHash)
 	pipe.Del(ctx, contentModerationFlaggedHashKeyPrefix+inputHash)
+	pipe.Del(ctx, contentModerationFlaggedHashMetaKeyPrefix+inputHash)
+	pipe.Del(ctx, contentModerationFlaggedHashHitsKeyPrefix+inputHash)
+	pipe.ZRem(ctx, contentModerationFlaggedHashCreatedZSetKey, inputHash)
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return false, err
 	}
 	return srem.Val() > 0, nil
+}
+
+func (c *contentModerationHashCache) DeleteFlaggedInputHashes(ctx context.Context, inputHashes []string) (int64, error) {
+	if c == nil || c.rdb == nil || len(inputHashes) == 0 {
+		return 0, nil
+	}
+	seen := map[string]struct{}{}
+	var deleted int64
+	for _, inputHash := range inputHashes {
+		inputHash = strings.TrimSpace(inputHash)
+		if inputHash == "" {
+			continue
+		}
+		if _, ok := seen[inputHash]; ok {
+			continue
+		}
+		seen[inputHash] = struct{}{}
+		ok, err := c.DeleteFlaggedInputHash(ctx, inputHash)
+		if err != nil {
+			return deleted, err
+		}
+		if ok {
+			deleted++
+		}
+	}
+	return deleted, nil
 }
 
 func (c *contentModerationHashCache) ClearFlaggedInputHashes(ctx context.Context) (int64, error) {
@@ -159,8 +382,11 @@ func (c *contentModerationHashCache) ClearFlaggedInputHashes(ctx context.Context
 			continue
 		}
 		pipe.Del(ctx, contentModerationFlaggedHashKeyPrefix+inputHash)
+		pipe.Del(ctx, contentModerationFlaggedHashMetaKeyPrefix+inputHash)
+		pipe.Del(ctx, contentModerationFlaggedHashHitsKeyPrefix+inputHash)
 	}
 	pipe.Del(ctx, contentModerationFlaggedHashSetKey)
+	pipe.Del(ctx, contentModerationFlaggedHashCreatedZSetKey)
 	if _, err := pipe.Exec(ctx); err != nil {
 		return 0, err
 	}
@@ -171,7 +397,43 @@ func (c *contentModerationHashCache) CountFlaggedInputHashes(ctx context.Context
 	if c == nil || c.rdb == nil {
 		return 0, nil
 	}
+	if err := c.pruneExpiredFlaggedHashes(ctx); err != nil {
+		return 0, err
+	}
 	return c.rdb.SCard(ctx, contentModerationFlaggedHashSetKey).Result()
+}
+
+func (c *contentModerationHashCache) pruneExpiredFlaggedHashes(ctx context.Context) error {
+	if c == nil || c.rdb == nil {
+		return nil
+	}
+	now, err := c.rdb.Time(ctx).Result()
+	if err != nil {
+		return err
+	}
+	hashes, err := c.rdb.SMembers(ctx, contentModerationFlaggedHashSetKey).Result()
+	if err != nil {
+		return err
+	}
+	for _, inputHash := range hashes {
+		exists, err := c.rdb.Exists(ctx, contentModerationFlaggedHashKeyPrefix+inputHash).Result()
+		if err != nil {
+			return err
+		}
+		if exists > 0 {
+			continue
+		}
+		expiresUnix, err := c.rdb.HGet(ctx, contentModerationFlaggedHashMetaKeyPrefix+inputHash, "expires_at").Int64()
+		if err != nil && err != redis.Nil {
+			return err
+		}
+		if expiresUnix <= 0 || expiresUnix <= now.Unix() {
+			if _, err := c.DeleteFlaggedInputHash(ctx, inputHash); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (c *contentModerationHashCache) AdmitModerationAPIKeyQuota(ctx context.Context, keyHash string, rpmLimit int, rpdLimit int, tpmLimit int, tokenEstimate int) (*service.ContentModerationAPIKeyQuotaState, bool, error) {

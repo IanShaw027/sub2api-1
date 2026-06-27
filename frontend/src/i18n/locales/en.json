@@ -3708,8 +3708,6 @@
         "responsesWebsocketsV2PassthroughHint": "Automatic passthrough is currently enabled: it only affects HTTP passthrough and does not disable WS mode.",
         "codexCLIOnly": "Codex official clients only",
         "codexCLIOnlyDesc": "Only applies to OpenAI OAuth. When enabled, only Codex official client families are allowed; when disabled, the gateway bypasses this restriction and keeps existing behavior.",
-        "codexCLIOnlyAllowClaudeCode": "Allow Claude Code Codex plugin",
-        "codexCLIOnlyAllowClaudeCodeDesc": "When Codex official clients only is enabled, also allow requests detected as the Claude Code Codex plugin.",
         "compactMode": "Compact mode",
         "compactModeDesc": "Controls how this account participates in /responses/compact routing. Auto follows probe results, Force On always allows, Force Off always excludes.",
         "compactModeAuto": "Auto",
@@ -6223,9 +6221,7 @@
         "apiKeyAclTrustForwardedIPHint": "Use forwarded IP headers when evaluating API Key ACL rules.",
         "openaiCodexUserAgent": "OpenAI Codex User-Agent",
         "openaiCodexUserAgentPlaceholder": "OpenAI-Codex/2025.05",
-        "openaiCodexUserAgentHint": "Set the User-Agent sent to OpenAI Codex upstream requests.",
-        "openaiAllowClaudeCodeCodexPlugin": "Allow Claude Code Codex plugin",
-        "openaiAllowClaudeCodeCodexPluginDesc": "Global switch for accepting Claude Code Codex plugin traffic on OpenAI Codex routes when client restrictions are enabled."
+        "openaiCodexUserAgentHint": "Set the User-Agent sent to OpenAI Codex upstream requests."
       },
       "webSearchEmulation": {
         "title": "Web Search Emulation",
@@ -7656,9 +7652,11 @@
       "allowUserRefund": "Allow User Refund",
       "alreadyRefunded": "Already Refunded",
       "deductBalance": "Deduct Balance",
+      "deductSubscriptionBenefit": "Deduct Subscription Benefit",
       "deductBalanceHint": "Subtract recharged amount from user balance",
       "userBalance": "User Balance",
       "orderAmount": "Order Amount",
+      "userRequestedRefundAmount": "User requested",
       "insufficientBalance": "Insufficient balance — will deduct to $0",
       "noDeduction": "Will NOT deduct user balance",
       "forceRefund": "I understand the risk and want to continue refunding",

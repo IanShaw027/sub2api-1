@@ -554,14 +554,10 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 		}, nil
 	}
 
-	if tlsCaptureSubmissionQuotaReached(task, counts, transportCounts, platform, transport) {
+	if reached, reason := tlsCaptureSubmissionQuotaReached(task, counts, transportCounts, platform, transport); reached {
 		task, counts, transportCounts, err = s.refreshTaskProgress(ctx, task)
 		if err != nil {
 			return nil, err
-		}
-		reason := "platform_target_reached"
-		if len(task.TransportTargets) > 0 && !tlsCapturePlatformTargetReached(task.Targets, counts, platform) && tlsCaptureTransportTargetReached(task.TransportTargets, transportCounts, transport) {
-			reason = "transport_target_reached"
 		}
 		return ignoredTLSCaptureResult(task, reason), nil
 	}
@@ -755,18 +751,33 @@ func tlsCaptureTransportTargetReached(targets, counts map[string]int, transport 
 	return target > 0 && counts[transport] >= target
 }
 
-func tlsCaptureSubmissionQuotaReached(task *TLSFingerprintCaptureTask, counts, transportCounts map[string]int, platform, transport string) bool {
-	platformNeeded := true
-	if target := task.Targets[platform]; target > 0 {
-		platformNeeded = counts[platform] < target
+// tlsCaptureSubmissionQuotaReached reports whether a new sample for the given
+// platform/transport should be rejected because its target quota is already
+// satisfied. It returns a stable reason so callers can distinguish a
+// per-platform stop from a per-transport stop.
+func tlsCaptureSubmissionQuotaReached(task *TLSFingerprintCaptureTask, counts, transportCounts map[string]int, platform, transport string) (bool, string) {
+	platformTargeted := task.Targets[platform] > 0
+	platformReached := platformTargeted && counts[platform] >= task.Targets[platform]
+
+	transportTargeted := len(task.TransportTargets) > 0 && task.TransportTargets[transport] > 0
+	transportReached := transportTargeted && transportCounts[transport] >= task.TransportTargets[transport]
+
+	// A submission is only ignored when every dimension it counts against is
+	// already satisfied. If the platform is targeted but not yet reached, the
+	// sample is still needed regardless of transport state, and vice versa.
+	if platformTargeted && !platformReached {
+		return false, ""
 	}
-	transportNeeded := false
-	if len(task.TransportTargets) > 0 {
-		if target := task.TransportTargets[transport]; target > 0 {
-			transportNeeded = transportCounts[transport] < target
-		}
+	if transportTargeted && !transportReached {
+		return false, ""
 	}
-	return !platformNeeded && !transportNeeded
+	if platformReached {
+		return true, "platform_target_reached"
+	}
+	if transportReached {
+		return true, "transport_target_reached"
+	}
+	return false, ""
 }
 
 func normalizeTLSCaptureTargets(targets map[string]int) map[string]int {

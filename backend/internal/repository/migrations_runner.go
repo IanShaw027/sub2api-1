@@ -57,6 +57,10 @@ const subscriptionFulfillmentClaimUniqueMigration = "138_subscription_fulfillmen
 const subscriptionFulfillmentClaimUniqueIndex = "idx_payment_audit_logs_order_action_uniq"
 const affiliateLedgerOrderActionUniqueIndex = "idx_user_affiliate_ledger_order_action_unique"
 const affiliateSignupBonusOnceIndex = "idx_user_affiliate_signup_bonus_once"
+const accountAutopauseExpiryIndexMigration = "151_account_autopause_expiry_index_notx.sql"
+const accountAutopauseExpiryIndex = "idx_accounts_autopause_expiry_due"
+const schedulerOutboxPendingDedupKeyMigration = "153_scheduler_outbox_pending_dedup_key_index_notx.sql"
+const schedulerOutboxPendingDedupKeyIndex = "idx_scheduler_outbox_pending_dedup_key"
 
 type migrationChecksumCompatibilityRule struct {
 	fileChecksum       string
@@ -269,6 +273,10 @@ func prepareNonTransactionalMigration(ctx context.Context, db *sql.DB, name stri
 		return preparePaymentOrdersOutTradeNoUniqueMigration(ctx, db)
 	case subscriptionFulfillmentClaimUniqueMigration:
 		return prepareSubscriptionFulfillmentClaimUniqueMigration(ctx, db)
+	case accountAutopauseExpiryIndexMigration:
+		return prepareInvalidIndexRetry(ctx, db, accountAutopauseExpiryIndex)
+	case schedulerOutboxPendingDedupKeyMigration:
+		return prepareInvalidIndexRetry(ctx, db, schedulerOutboxPendingDedupKeyIndex)
 	default:
 		return nil
 	}

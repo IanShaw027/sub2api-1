@@ -53,6 +53,39 @@ func TestForwardResponses_ForceChatCompletionsRoutesNonStreamingToChatCompletion
 	require.False(t, result.Stream)
 }
 
+func TestForwardResponses_ForceChatCompletionsNonStreamingCyberPolicyMarksUsage(t *testing.T) {
+	setGinTestMode()
+
+	body := []byte(`{"model":"gpt-5.4","input":"blocked","stream":false}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_resp_chat_cyber_json"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"id":"chatcmpl_cyber","object":"chat.completion","model":"gpt-5.4","choices":[{"index":0,"message":{"role":"assistant","content":null},"finish_reason":"stop"}],"error":{"code":"cyber_policy","message":"blocked by policy"},"usage":{"prompt_tokens":13,"completion_tokens":2,"total_tokens":15}}`,
+		)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.Forward(context.Background(), c, forceChatResponsesFallbackAccount(), body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 13, result.Usage.InputTokens)
+	require.Equal(t, 2, result.Usage.OutputTokens)
+	mark := GetOpsCyberPolicy(c)
+	require.NotNil(t, mark)
+	require.Equal(t, 13, mark.UpstreamInTok)
+	require.Equal(t, 2, mark.UpstreamOutTok)
+}
+
 func TestForwardResponses_ForceChatCompletionsRoutesStreamingToChatCompletions(t *testing.T) {
 	setGinTestMode()
 

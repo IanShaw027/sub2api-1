@@ -448,7 +448,7 @@ func TestRateLimitService_HandleUpstreamError_403FallsBackToRawBody(t *testing.T
 	require.NotContains(t, repo.lastErrorMsg, "account may be suspended or lack permissions")
 }
 
-func TestRateLimitService_HandleUpstreamError_OpenAICyberPolicyMarksAuthError(t *testing.T) {
+func TestRateLimitService_HandleUpstreamError_OpenAICyberPolicySkipsAccountHandling(t *testing.T) {
 	repo := &rateLimitAccountRepoStub{}
 	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 	account := &Account{
@@ -465,10 +465,9 @@ func TestRateLimitService_HandleUpstreamError_OpenAICyberPolicyMarksAuthError(t 
 		[]byte(`{"response":{"error":{"code":"cyber_policy","message":"blocked by policy"}}}`),
 	)
 
-	require.True(t, shouldDisable)
-	require.Equal(t, 1, repo.setErrorCalls)
-	require.Contains(t, repo.lastErrorMsg, "被风控命中")
-	require.Contains(t, repo.lastErrorMsg, "cyber_policy")
+	require.False(t, shouldDisable)
+	require.Zero(t, repo.setErrorCalls)
+	require.Empty(t, repo.lastErrorMsg)
 }
 
 func TestNormalizedCodexLimits_OnlySecondaryData(t *testing.T) {

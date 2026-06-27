@@ -240,6 +240,25 @@ func (s *GatewayService) handleOpenAICompatCCChatError(
 		}
 		upstreamDetail = truncateString(string(respBody), maxBytes)
 	}
+	if markOpsCyberPolicyIfDetected(c, respBody, resp.StatusCode, 0, 0) {
+		if upstreamMsg == "" {
+			upstreamMsg = "Request blocked by upstream cyber-security policy"
+		}
+		setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: resp.StatusCode,
+			UpstreamRequestID:  upstreamRequestIDFromHeader(resp.Header),
+			UpstreamURL:        safeHTTPRequestURL(upstreamReq),
+			Kind:               "http_error",
+			Message:            upstreamMsg,
+			Detail:             upstreamDetail,
+		})
+		writeErr(c, http.StatusBadRequest, "invalid_request_error", upstreamMsg)
+		return nil, fmt.Errorf("openai cyber_policy: %s", upstreamMsg)
+	}
 	if s.shouldFailoverUpstreamError(resp.StatusCode) {
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform:           account.Platform,
@@ -398,6 +417,9 @@ func (s *GatewayService) streamOpenAICompatCCRawChat(
 			if trimmed != "" && trimmed != "[DONE]" {
 				if u := extractCCStreamUsage(payload); u != nil {
 					usage = claudeUsageFromOpenAIUsage(*u)
+					_ = markOpsCyberPolicyIfDetected(c, []byte(payload), http.StatusOK, u.InputTokens, u.OutputTokens)
+				} else {
+					_ = markOpsCyberPolicyIfDetected(c, []byte(payload), http.StatusOK, 0, 0)
 				}
 				if firstTokenMs == nil && !isOpenAIChatUsageOnlyStreamChunk(payload) {
 					elapsed := int(time.Since(startTime).Milliseconds())
@@ -483,6 +505,12 @@ func (s *GatewayService) streamOpenAICompatCCChatAsResponses(
 		}
 		if trimmed == "[DONE]" {
 			break
+		}
+		if u := extractCCStreamUsage(payload); u != nil {
+			usage = claudeUsageFromOpenAIUsage(*u)
+			_ = markOpsCyberPolicyIfDetected(c, []byte(payload), http.StatusOK, u.InputTokens, u.OutputTokens)
+		} else {
+			_ = markOpsCyberPolicyIfDetected(c, []byte(payload), http.StatusOK, int(usage.InputTokens), int(usage.OutputTokens))
 		}
 		var chunk apicompat.ChatCompletionsChunk
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {

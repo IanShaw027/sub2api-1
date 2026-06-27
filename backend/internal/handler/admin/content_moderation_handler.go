@@ -38,6 +38,7 @@ type contentModerationConfigRequest struct {
 	SampleRate              *int                                           `json:"sample_rate"`
 	AllGroups               *bool                                          `json:"all_groups"`
 	GroupIDs                *[]int64                                       `json:"group_ids"`
+	APIKeyExemptGroupIDs    *[]int64                                       `json:"api_key_exempt_group_ids"`
 	RecordNonHits           *bool                                          `json:"record_non_hits"`
 	RecordAttentionInputs   *bool                                          `json:"record_attention_inputs"`
 	AttentionThreshold      *float64                                       `json:"attention_threshold"`
@@ -59,6 +60,9 @@ type contentModerationConfigRequest struct {
 	BlockedKeywords         *[]string                                      `json:"blocked_keywords"`
 	KeywordBlockingMode     *string                                        `json:"keyword_blocking_mode"`
 	ModelFilter             *service.ContentModerationModelFilter          `json:"model_filter"`
+	// cyber_policy 命中是否排除出自动封号计数；前端 RiskControlView 已发送该字段，
+	// service.UpdateContentModerationConfigInput 已支持，此前 handler 层缺透传导致开关静默失效。
+	CyberPolicyExcludeFromBanCount *bool `json:"cyber_policy_exclude_from_ban_count"`
 }
 
 type contentModerationAPIKeyTestRequest struct {
@@ -72,6 +76,10 @@ type contentModerationAPIKeyTestRequest struct {
 
 type contentModerationHashRequest struct {
 	InputHash string `json:"input_hash"`
+}
+
+type contentModerationHashesBatchDeleteRequest struct {
+	InputHashes []string `json:"input_hashes"`
 }
 
 func (h *ContentModerationHandler) GetConfig(c *gin.Context) {
@@ -90,45 +98,47 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 	cfg, err := h.service.UpdateConfig(c.Request.Context(), service.UpdateContentModerationConfigInput{
-		Enabled:                 req.Enabled,
-		Mode:                    req.Mode,
-		BaseURL:                 req.BaseURL,
-		Model:                   req.Model,
-		APIKey:                  req.APIKey,
-		APIKeys:                 req.APIKeys,
-		APIKeyAccounts:          req.APIKeyAccounts,
-		APIKeysMode:             req.APIKeysMode,
-		DeleteAPIKeyHashes:      req.DeleteAPIKeyHashes,
-		ClearAPIKey:             req.ClearAPIKey,
-		APIKeyRPMLimit:          req.APIKeyRPMLimit,
-		APIKeyRPDLimit:          req.APIKeyRPDLimit,
-		APIKeyTPMLimit:          req.APIKeyTPMLimit,
-		APIKeyRateLimitPolicy:   req.APIKeyRateLimitPolicy,
-		TimeoutMS:               req.TimeoutMS,
-		SampleRate:              req.SampleRate,
-		AllGroups:               req.AllGroups,
-		GroupIDs:                req.GroupIDs,
-		RecordNonHits:           req.RecordNonHits,
-		RecordAttentionInputs:   req.RecordAttentionInputs,
-		AttentionThreshold:      req.AttentionThreshold,
-		Thresholds:              req.Thresholds,
-		WorkerCount:             req.WorkerCount,
-		QueueSize:               req.QueueSize,
-		BlockStatus:             req.BlockStatus,
-		BlockMessage:            req.BlockMessage,
-		EmailOnHit:              req.EmailOnHit,
-		AutoBanEnabled:          req.AutoBanEnabled,
-		BanThreshold:            req.BanThreshold,
-		AutoBanExemptUserIDs:    req.AutoBanExemptUserIDs,
-		AutoBanExemptUserEmails: req.AutoBanExemptUserEmails,
-		ViolationWindowHours:    req.ViolationWindowHours,
-		RetryCount:              req.RetryCount,
-		HitRetentionDays:        req.HitRetentionDays,
-		NonHitRetentionDays:     req.NonHitRetentionDays,
-		PreHashCheckEnabled:     req.PreHashCheckEnabled,
-		BlockedKeywords:         req.BlockedKeywords,
-		KeywordBlockingMode:     req.KeywordBlockingMode,
-		ModelFilter:             req.ModelFilter,
+		Enabled:                        req.Enabled,
+		Mode:                           req.Mode,
+		BaseURL:                        req.BaseURL,
+		Model:                          req.Model,
+		APIKey:                         req.APIKey,
+		APIKeys:                        req.APIKeys,
+		APIKeyAccounts:                 req.APIKeyAccounts,
+		APIKeysMode:                    req.APIKeysMode,
+		DeleteAPIKeyHashes:             req.DeleteAPIKeyHashes,
+		ClearAPIKey:                    req.ClearAPIKey,
+		APIKeyRPMLimit:                 req.APIKeyRPMLimit,
+		APIKeyRPDLimit:                 req.APIKeyRPDLimit,
+		APIKeyTPMLimit:                 req.APIKeyTPMLimit,
+		APIKeyRateLimitPolicy:          req.APIKeyRateLimitPolicy,
+		TimeoutMS:                      req.TimeoutMS,
+		SampleRate:                     req.SampleRate,
+		AllGroups:                      req.AllGroups,
+		GroupIDs:                       req.GroupIDs,
+		APIKeyExemptGroupIDs:           req.APIKeyExemptGroupIDs,
+		RecordNonHits:                  req.RecordNonHits,
+		RecordAttentionInputs:          req.RecordAttentionInputs,
+		AttentionThreshold:             req.AttentionThreshold,
+		Thresholds:                     req.Thresholds,
+		WorkerCount:                    req.WorkerCount,
+		QueueSize:                      req.QueueSize,
+		BlockStatus:                    req.BlockStatus,
+		BlockMessage:                   req.BlockMessage,
+		EmailOnHit:                     req.EmailOnHit,
+		AutoBanEnabled:                 req.AutoBanEnabled,
+		BanThreshold:                   req.BanThreshold,
+		AutoBanExemptUserIDs:           req.AutoBanExemptUserIDs,
+		AutoBanExemptUserEmails:        req.AutoBanExemptUserEmails,
+		ViolationWindowHours:           req.ViolationWindowHours,
+		RetryCount:                     req.RetryCount,
+		HitRetentionDays:               req.HitRetentionDays,
+		NonHitRetentionDays:            req.NonHitRetentionDays,
+		PreHashCheckEnabled:            req.PreHashCheckEnabled,
+		BlockedKeywords:                req.BlockedKeywords,
+		KeywordBlockingMode:            req.KeywordBlockingMode,
+		ModelFilter:                    req.ModelFilter,
+		CyberPolicyExcludeFromBanCount: req.CyberPolicyExcludeFromBanCount,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -228,6 +238,24 @@ func (h *ContentModerationHandler) UnbanUser(c *gin.Context) {
 	response.Success(c, result)
 }
 
+func (h *ContentModerationHandler) ListFlaggedHashes(c *gin.Context) {
+	page, pageSize := response.ParsePagination(c)
+	filter := service.ContentModerationHashListFilter{
+		Pagination: pagination.PaginationParams{
+			Page:      page,
+			PageSize:  pageSize,
+			SortBy:    c.Query("sort_by"),
+			SortOrder: c.Query("sort_order"),
+		},
+	}
+	items, pageResult, err := h.service.ListFlaggedInputHashes(c.Request.Context(), filter)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Paginated(c, items, pageResult.Total, pageResult.Page, pageResult.PageSize)
+}
+
 func (h *ContentModerationHandler) DeleteFlaggedHash(c *gin.Context) {
 	var req contentModerationHashRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -235,6 +263,20 @@ func (h *ContentModerationHandler) DeleteFlaggedHash(c *gin.Context) {
 		return
 	}
 	result, err := h.service.DeleteFlaggedInputHash(c.Request.Context(), req.InputHash)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *ContentModerationHandler) DeleteFlaggedHashes(c *gin.Context) {
+	var req contentModerationHashesBatchDeleteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	result, err := h.service.DeleteFlaggedInputHashes(c.Request.Context(), req.InputHashes)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

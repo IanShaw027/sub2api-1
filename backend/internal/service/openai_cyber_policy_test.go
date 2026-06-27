@@ -3,6 +3,7 @@
 package service
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -42,4 +43,20 @@ func TestDetectOpenAICyberPolicy_SSEBody(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "cyber_policy", code)
 	require.Equal(t, "policy denied", msg)
+}
+
+func TestShouldFailoverOpenAIUpstreamResponse_CyberPolicyIsNonRetryable(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	body := []byte(`{"error":{"code":"cyber_policy","message":"blocked by policy"}}`)
+
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusForbidden, "blocked by policy", body))
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusTooManyRequests, "blocked by policy", body))
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusInternalServerError, "blocked by policy", body))
+}
+
+func TestShouldFailoverOpenAIPassthroughResponse_CyberPolicyIsNonRetryable(t *testing.T) {
+	body := []byte(`{"response":{"error":{"code":"cyber_policy","message":"blocked by policy"}}}`)
+
+	require.False(t, shouldFailoverOpenAIPassthroughResponse(http.StatusTooManyRequests, body))
+	require.False(t, shouldFailoverOpenAIPassthroughResponse(http.StatusInternalServerError, body))
 }
