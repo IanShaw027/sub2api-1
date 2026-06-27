@@ -18,6 +18,7 @@ const (
 	openAIWSStateStoreCleanupMaxPerMap = 512
 	openAIWSStateStoreMaxEntriesPerMap = 65536
 	openAIWSStateStoreRedisTimeout     = 3 * time.Second
+	openAIWSConnEvictDiagnosticTTL     = time.Hour
 )
 
 type openAIWSAccountBinding struct {
@@ -66,6 +67,12 @@ type openAIWSConnLastResponseBinding struct {
 	expiresAt  time.Time
 }
 
+type openAIWSConnEvictDiagnostic struct {
+	reason    string
+	evictedAt time.Time
+	expiresAt time.Time
+}
+
 type openAIResponsesSessionWindowBinding struct {
 	window    openAIResponsesSessionWindow
 	expiresAt time.Time
@@ -107,6 +114,7 @@ type OpenAIWSStateStore interface {
 	GetConnLastResponse(connID string) (string, bool)
 	DeleteConnLastResponse(connID string)
 	DeleteConnScopedState(connID string, reasons ...string)
+	GetConnLastEvict(connID string) (string, time.Duration, bool)
 
 	// 原子 per-session in-flight 标记，保证 shadow inert：仅 owner 读写状态，non-owner 不等待。
 	TrySessionInFlight(groupID int64, apiKeyID int64, sessionHash string) bool
@@ -131,6 +139,8 @@ type defaultOpenAIWSStateStore struct {
 	sessionWindow      map[string]openAIResponsesSessionWindowBinding
 	connLastResponseMu sync.RWMutex
 	connLastResponse   map[string]openAIWSConnLastResponseBinding
+	connEvictMu        sync.RWMutex
+	connEvict          map[string]openAIWSConnEvictDiagnostic
 	sessionInFlightMu  sync.Mutex
 	sessionInFlight    map[string]struct{}
 
@@ -148,6 +158,7 @@ func NewOpenAIWSStateStore(cache GatewayCache) OpenAIWSStateStore {
 		sessionContext:     make(map[string]openAIWSSessionContextBinding, 256),
 		sessionWindow:      make(map[string]openAIResponsesSessionWindowBinding, 256),
 		connLastResponse:   make(map[string]openAIWSConnLastResponseBinding, 256),
+		connEvict:          make(map[string]openAIWSConnEvictDiagnostic, 256),
 		sessionInFlight:    make(map[string]struct{}, 256),
 	}
 	store.lastCleanupUnixNano.Store(time.Now().UnixNano())
@@ -549,6 +560,46 @@ func (s *defaultOpenAIWSStateStore) DeleteConnLastResponse(connID string) {
 	s.connLastResponseMu.Unlock()
 }
 
+func (s *defaultOpenAIWSStateStore) recordConnEvictDiagnostic(connID, reason string) {
+	conn := strings.TrimSpace(connID)
+	if s == nil || conn == "" {
+		return
+	}
+	evictReason := strings.TrimSpace(reason)
+	if evictReason == "" {
+		evictReason = "unknown"
+	}
+	now := time.Now()
+	s.connEvictMu.Lock()
+	ensureBindingCapacity(s.connEvict, conn, openAIWSStateStoreMaxEntriesPerMap)
+	s.connEvict[conn] = openAIWSConnEvictDiagnostic{
+		reason:    evictReason,
+		evictedAt: now,
+		expiresAt: now.Add(openAIWSConnEvictDiagnosticTTL),
+	}
+	s.connEvictMu.Unlock()
+}
+
+func (s *defaultOpenAIWSStateStore) GetConnLastEvict(connID string) (string, time.Duration, bool) {
+	conn := strings.TrimSpace(connID)
+	if s == nil || conn == "" {
+		return "", 0, false
+	}
+	s.maybeCleanup()
+	now := time.Now()
+	s.connEvictMu.RLock()
+	diagnostic, ok := s.connEvict[conn]
+	s.connEvictMu.RUnlock()
+	if !ok || now.After(diagnostic.expiresAt) || strings.TrimSpace(diagnostic.reason) == "" {
+		return "", 0, false
+	}
+	age := now.Sub(diagnostic.evictedAt)
+	if age < 0 {
+		age = 0
+	}
+	return diagnostic.reason, age, true
+}
+
 func (s *defaultOpenAIWSStateStore) DeleteConnScopedState(connID string, reasons ...string) {
 	conn := strings.TrimSpace(connID)
 	if s == nil || conn == "" {
@@ -558,6 +609,7 @@ func (s *defaultOpenAIWSStateStore) DeleteConnScopedState(connID string, reasons
 	if len(reasons) > 0 && strings.TrimSpace(reasons[0]) != "" {
 		reason = strings.TrimSpace(reasons[0])
 	}
+	s.recordConnEvictDiagnostic(conn, reason)
 
 	responseConnDeleted := 0
 	s.responseToConnMu.Lock()
@@ -692,6 +744,10 @@ func (s *defaultOpenAIWSStateStore) maybeCleanup() {
 	s.connLastResponseMu.Lock()
 	cleanupExpiredConnLastResponseBindings(s.connLastResponse, now, openAIWSStateStoreCleanupMaxPerMap)
 	s.connLastResponseMu.Unlock()
+
+	s.connEvictMu.Lock()
+	cleanupExpiredConnEvictDiagnostics(s.connEvict, now, openAIWSStateStoreCleanupMaxPerMap)
+	s.connEvictMu.Unlock()
 }
 
 func cleanupExpiredSessionWindowBindings(bindings map[string]openAIResponsesSessionWindowBinding, now time.Time, maxScan int) {
@@ -727,6 +783,22 @@ func cleanupExpiredSessionContextBindings(bindings map[string]openAIWSSessionCon
 }
 
 func cleanupExpiredConnLastResponseBindings(bindings map[string]openAIWSConnLastResponseBinding, now time.Time, maxScan int) {
+	if len(bindings) == 0 || maxScan <= 0 {
+		return
+	}
+	scanned := 0
+	for key, binding := range bindings {
+		if now.After(binding.expiresAt) {
+			delete(bindings, key)
+		}
+		scanned++
+		if scanned >= maxScan {
+			break
+		}
+	}
+}
+
+func cleanupExpiredConnEvictDiagnostics(bindings map[string]openAIWSConnEvictDiagnostic, now time.Time, maxScan int) {
 	if len(bindings) == 0 || maxScan <= 0 {
 		return
 	}

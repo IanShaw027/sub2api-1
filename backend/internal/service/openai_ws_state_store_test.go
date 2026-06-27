@@ -227,6 +227,11 @@ func TestOpenAIWSStateStore_DeleteConnScopedStateReadFailDeletesMatchingSessionC
 	require.False(t, ok, "read-failed upstream conn must not leave stale session context")
 	_, ok = store.GetConnLastResponse("conn_read_fail")
 	require.False(t, ok)
+
+	reason, age, ok := store.GetConnLastEvict("conn_read_fail")
+	require.True(t, ok)
+	require.Equal(t, "read_fail", reason)
+	require.GreaterOrEqual(t, age, time.Duration(0))
 }
 
 func TestOpenAIWSStateStore_DeleteConnScopedStateWriteFailKeepsSessionContextForReanchor(t *testing.T) {

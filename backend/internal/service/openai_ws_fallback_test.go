@@ -1086,6 +1086,8 @@ func TestOpenAIWSBindingSnapshotLogMessageShowsMismatchState(t *testing.T) {
 		CachedConnWaiters:                 0,
 		CachedConnLastResponseID:          "resp_prev_binding",
 		CachedConnLastResponseHit:         true,
+		CachedConnLastEvictReason:         "session_idle_ttl",
+		CachedConnLastEvictAgeMS:          3210,
 		StickyAccountID:                   73972,
 		StickyAccountHit:                  true,
 		ConnAffinityHit:                   true,
@@ -1093,6 +1095,7 @@ func TestOpenAIWSBindingSnapshotLogMessageShowsMismatchState(t *testing.T) {
 		FallbackReason:                    "conn_mismatch",
 		ErrorCode:                         "conn_mismatch",
 		ErrorType:                         "invalid_request_error",
+		ErrorMessage:                      "connection does not match previous response",
 	})
 
 	require.Contains(t, msg, "openai_ws_binding_snapshot")
@@ -1117,8 +1120,11 @@ func TestOpenAIWSBindingSnapshotLogMessageShowsMismatchState(t *testing.T) {
 	require.Contains(t, msg, "cached_conn_in_pool=true")
 	require.Contains(t, msg, "cached_conn_leased=false")
 	require.Contains(t, msg, "cached_conn_waiters=0")
+	require.Contains(t, msg, "cached_conn_last_evict_reason=session_idle_ttl")
+	require.Contains(t, msg, "cached_conn_last_evict_age_ms=3210")
 	require.Contains(t, msg, "fallback_reason=conn_mismatch")
 	require.Contains(t, msg, "err_code=conn_mismatch")
+	require.Contains(t, msg, "err_message=connection_does_not_match_previous_response")
 }
 
 func TestOpenAIWSMismatchErrorProbeLogMessageCapturesBindingState(t *testing.T) {
@@ -1171,6 +1177,8 @@ func TestOpenAIWSMismatchErrorProbeLogMessageCapturesBindingState(t *testing.T) 
 		CachedConnLeaseCount:                  6,
 		CachedConnLeased:                      false,
 		CachedConnWaiters:                     0,
+		CachedConnLastEvictReason:             "write_request_fail_no_reanchor",
+		CachedConnLastEvictAgeMS:              4321,
 		StickyAccountID:                       73972,
 		StickyAccountHit:                      true,
 		StickyAccountMismatch:                 false,
@@ -1186,6 +1194,7 @@ func TestOpenAIWSMismatchErrorProbeLogMessageCapturesBindingState(t *testing.T) 
 		SafeFallbackReason:                    "not_written_downstream",
 		ErrorCode:                             "conn_mismatch",
 		ErrorType:                             "invalid_request_error",
+		ErrorMessage:                          "connection does not match previous response",
 		WroteDownstream:                       false,
 	})
 
@@ -1210,9 +1219,12 @@ func TestOpenAIWSMismatchErrorProbeLogMessageCapturesBindingState(t *testing.T) 
 	require.Contains(t, msg, "session_conn_current_matches=true")
 	require.Contains(t, msg, "cached_conn_in_pool=true")
 	require.Contains(t, msg, "cached_conn_profile=session_bound")
+	require.Contains(t, msg, "cached_conn_last_evict_reason=write_request_fail_no_reanchor")
+	require.Contains(t, msg, "cached_conn_last_evict_age_ms=4321")
 	require.Contains(t, msg, "store_fallback_reason=active_delta")
 	require.Contains(t, msg, "active_delta=true")
 	require.Contains(t, msg, "err_code=conn_mismatch")
+	require.Contains(t, msg, "err_message=connection_does_not_match_previous_response")
 	require.Contains(t, msg, "wrote_downstream=false")
 }
 

@@ -1228,6 +1228,7 @@ func (c stubConcurrencyCache) GetAccountWaitingCount(ctx context.Context, accoun
 
 type stubGatewayCache struct {
 	sessionBindings      map[string]int64
+	sessionTTLs          map[string]time.Duration
 	deletedSessions      map[string]int
 	sessionWindowPayload map[string][]byte
 	deletedWindows       map[string]int
@@ -1250,6 +1251,13 @@ func (c *stubGatewayCache) SetSessionAccountID(ctx context.Context, groupID int6
 
 func (c *stubGatewayCache) RefreshSessionTTL(ctx context.Context, groupID int64, sessionHash string, ttl time.Duration) error {
 	return nil
+}
+
+func (c *stubGatewayCache) GetSessionAccountTTL(ctx context.Context, groupID int64, sessionHash string) (time.Duration, error) {
+	if ttl, ok := c.sessionTTLs[sessionHash]; ok {
+		return ttl, nil
+	}
+	return -2 * time.Millisecond, nil
 }
 
 func (c *stubGatewayCache) DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error {

@@ -25,6 +25,8 @@ var (
 	openAIStickyLegacyDualWriteTotal    atomic.Int64
 )
 
+const openAIStickySessionTTLNotCheckedMS int64 = -3
+
 func openAIStickyCompatStats() (legacyReadFallbackTotal, legacyReadFallbackHit, legacyDualWriteTotal int64) {
 	return openAIStickyLegacyReadFallbackTotal.Load(),
 		openAIStickyLegacyReadFallbackHit.Load(),
@@ -125,7 +127,11 @@ type openAIStickySessionLookupResult struct {
 	AccountID               int64
 	Source                  string
 	PrimaryKey              string
+	PrimaryTTLMS            int64
+	PrimaryTTLError         string
 	LegacyKey               string
+	LegacyTTLMS             int64
+	LegacyTTLError          string
 	PrimaryHit              bool
 	PrimaryError            string
 	LegacyFallbackEnabled   bool
@@ -133,6 +139,18 @@ type openAIStickySessionLookupResult struct {
 	LegacyFallbackHit       bool
 	LegacyError             string
 	Err                     error
+}
+
+type openAIStickySessionTTLReader interface {
+	GetSessionAccountTTL(ctx context.Context, groupID int64, sessionHash string) (time.Duration, error)
+}
+
+func newOpenAIStickySessionLookupResult(source string) openAIStickySessionLookupResult {
+	return openAIStickySessionLookupResult{
+		Source:       source,
+		PrimaryTTLMS: openAIStickySessionTTLNotCheckedMS,
+		LegacyTTLMS:  openAIStickySessionTTLNotCheckedMS,
+	}
 }
 
 func openAIStickySessionLookupErrorValue(err error) string {
@@ -153,7 +171,7 @@ func openAIStickySessionMissSource(err error) string {
 }
 
 func (s *OpenAIGatewayService) getStickySessionAccountIDWithSource(ctx context.Context, groupID *int64, sessionHash string) openAIStickySessionLookupResult {
-	result := openAIStickySessionLookupResult{Source: "no_cache"}
+	result := newOpenAIStickySessionLookupResult("no_cache")
 	if s == nil || s.cache == nil {
 		return result
 	}
@@ -200,6 +218,39 @@ func (s *OpenAIGatewayService) getStickySessionAccountIDWithSource(ctx context.C
 	}
 	result.LegacyError = openAIStickySessionLookupErrorValue(legacyErr)
 	return result
+}
+
+func (s *OpenAIGatewayService) populateOpenAIStickySessionLookupTTLs(ctx context.Context, groupID *int64, lookup *openAIStickySessionLookupResult) {
+	if s == nil || lookup == nil {
+		return
+	}
+	if lookup.PrimaryTTLMS == 0 {
+		lookup.PrimaryTTLMS = openAIStickySessionTTLNotCheckedMS
+	}
+	if lookup.LegacyTTLMS == 0 {
+		lookup.LegacyTTLMS = openAIStickySessionTTLNotCheckedMS
+	}
+	reader, ok := s.cache.(openAIStickySessionTTLReader)
+	if !ok || reader == nil {
+		return
+	}
+	readTTL := func(sessionKey string) (int64, string) {
+		key := strings.TrimSpace(sessionKey)
+		if key == "" {
+			return openAIStickySessionTTLNotCheckedMS, ""
+		}
+		ttl, err := reader.GetSessionAccountTTL(ctx, derefGroupID(groupID), key)
+		if err != nil {
+			return openAIStickySessionTTLNotCheckedMS, openAIStickySessionLookupErrorValue(err)
+		}
+		return ttl.Milliseconds(), ""
+	}
+	if lookup.PrimaryKey != "" {
+		lookup.PrimaryTTLMS, lookup.PrimaryTTLError = readTTL(lookup.PrimaryKey)
+	}
+	if lookup.LegacyKey != "" {
+		lookup.LegacyTTLMS, lookup.LegacyTTLError = readTTL(lookup.LegacyKey)
+	}
 }
 
 func (s *OpenAIGatewayService) getStickySessionAccountID(ctx context.Context, groupID *int64, sessionHash string) (int64, error) {

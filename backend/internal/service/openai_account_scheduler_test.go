@@ -2546,6 +2546,97 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_OAuthWSStickySuppresses
 	}
 }
 
+func TestOpenAIGatewayService_SelectAccountWithScheduler_OAuthWSBoundSessionSuppressesErrorRateEscape(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	groupID := int64(10)
+	apiKeyID := int64(369)
+	stickyAccount := Account{
+		ID:          2021,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    0,
+		GroupIDs:    []int64{groupID},
+		Extra: map[string]any{
+			"openai_oauth_responses_websockets_v2_enabled": true,
+		},
+	}
+	loadBalanceAccount := Account{
+		ID:          2022,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    9,
+		GroupIDs:    []int64{groupID},
+		Extra: map[string]any{
+			"openai_oauth_responses_websockets_v2_enabled": true,
+		},
+	}
+	cache := &schedulerTestGatewayCache{
+		sessionBindings: map[string]int64{
+			"openai:session_hash_ws_error_escape": stickyAccount.ID,
+		},
+	}
+	cfg := newSchedulerTestOpenAIWSV2Config()
+	cfg.Gateway.OpenAIScheduler.StickyEscapeEnabled = true
+	cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs = 2000
+	cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate = 0.5
+
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{stickyAccount, loadBalanceAccount}},
+		cache:              cache,
+		cfg:                cfg,
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+	stateStore := svc.getOpenAIWSStateStore()
+	stateStore.BindSessionConn(groupID, apiKeyID, stickyAccount.ID, "session_hash_ws_error_escape", "oa_ws_2021_1", time.Minute)
+	stateStore.BindConnLastResponse("oa_ws_2021_1", "resp_ws_error_escape", time.Minute)
+	stateStore.BindSessionContext(groupID, apiKeyID, "session_hash_ws_error_escape", openAIWSSessionContextValue{
+		accountID:      stickyAccount.ID,
+		connID:         "oa_ws_2021_1",
+		lastResponseID: "resp_ws_error_escape",
+	}, time.Minute)
+
+	scheduler, ok := svc.getOpenAIAccountScheduler(ctx).(*defaultOpenAIAccountScheduler)
+	require.True(t, ok)
+	scheduler.ReportResult(stickyAccount.ID, false, nil)
+
+	selection, decision, err := svc.SelectAccountWithSchedulerForResponses(
+		ctx,
+		&groupID,
+		apiKeyID,
+		"",
+		"session_hash_ws_error_escape",
+		"gpt-5.1",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, stickyAccount.ID, selection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerSessionSticky, decision.Layer)
+	require.True(t, decision.StickySessionHit)
+	require.Equal(t, stickyAccount.ID, decision.StickyAccountID)
+	require.Equal(t, AccountTypeOAuth, decision.StickyAccountType)
+	require.Equal(t, "error_rate", decision.StickyEscapeReason)
+	require.True(t, decision.StickyEscapeSuppressed)
+	require.False(t, decision.StickyEscapeTriggered)
+	require.Equal(t, 1.0, decision.StickyEscapeErrorRate)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_OAuthWSStickySuppressesTTFTEscapeBeforeTransportResolved(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 

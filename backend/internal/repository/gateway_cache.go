@@ -45,6 +45,11 @@ func (c *gatewayCache) RefreshSessionTTL(ctx context.Context, groupID int64, ses
 	return c.rdb.Expire(ctx, key, ttl).Err()
 }
 
+func (c *gatewayCache) GetSessionAccountTTL(ctx context.Context, groupID int64, sessionHash string) (time.Duration, error) {
+	key := buildSessionKey(groupID, sessionHash)
+	return c.rdb.PTTL(ctx, key).Result()
+}
+
 // DeleteSessionAccountID 删除粘性会话与账号的绑定关系。
 // 当检测到绑定的账号不可用（如状态错误、禁用、不可调度等）时调用，
 // 以便下次请求能够重新选择可用账号。

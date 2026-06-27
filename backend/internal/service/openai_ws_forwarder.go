@@ -1561,6 +1561,8 @@ type openAIWSBindingSnapshotLog struct {
 	PreviousBoundConnHit              bool
 	PreviousBoundConnMatchesLease     bool
 	PreviousBoundConnMatchesPreferred bool
+	PreviousBoundConnLastEvictReason  string
+	PreviousBoundConnLastEvictAgeMS   int64
 	PreferredConnID                   string
 	PreferredConnMatchesLease         bool
 	PreferredConnInPool               bool
@@ -1570,8 +1572,12 @@ type openAIWSBindingSnapshotLog struct {
 	PreferredConnLeaseCount           int64
 	PreferredConnLeased               bool
 	PreferredConnWaiters              int32
+	PreferredConnLastEvictReason      string
+	PreferredConnLastEvictAgeMS       int64
 	LeaseConnLastResponseID           string
 	LeaseConnLastResponseHit          bool
+	LeaseConnLastEvictReason          string
+	LeaseConnLastEvictAgeMS           int64
 	SessionHash                       string
 	SessionContextFound               bool
 	SessionContextAccountID           int64
@@ -1595,6 +1601,8 @@ type openAIWSBindingSnapshotLog struct {
 	CachedConnWaiters                 int32
 	CachedConnLastResponseID          string
 	CachedConnLastResponseHit         bool
+	CachedConnLastEvictReason         string
+	CachedConnLastEvictAgeMS          int64
 	StickyAccountID                   int64
 	StickyAccountHit                  bool
 	StickyAccountMismatch             bool
@@ -1603,11 +1611,12 @@ type openAIWSBindingSnapshotLog struct {
 	FallbackReason                    string
 	ErrorCode                         string
 	ErrorType                         string
+	ErrorMessage                      string
 }
 
 func openAIWSBindingSnapshotLogMessage(v openAIWSBindingSnapshotLog) string {
 	return fmt.Sprintf(
-		"openai_ws_binding_snapshot temporary_diag=sticky_select remove_after_debug=true trigger=%s request_id=%s group_id=%d api_key_id=%d account_id=%d account_type=%s conn_id=%s previous_response_id=%s original_previous_response_id_present=%v previous_bound_account_id=%d previous_bound_account_hit=%v previous_bound_account_matches=%v previous_bound_conn_id=%s previous_bound_conn_hit=%v previous_bound_conn_matches_lease=%v previous_bound_conn_matches_preferred=%v preferred_conn_id=%s preferred_conn_matches_lease=%v preferred_conn_in_pool=%v preferred_conn_profile=%s preferred_conn_age_ms=%d preferred_conn_idle_ms=%d preferred_conn_lease_count=%d preferred_conn_leased=%v preferred_conn_waiters=%d lease_conn_last_response_id=%s lease_conn_last_response_hit=%v session_hash=%s session_context_found=%v session_context_account_id=%d session_context_account_match=%v session_context_conn_id=%s session_context_last_response_id=%s session_context_last_response_match=%v session_conn_cached_account_id=%d session_conn_cached_id=%s session_conn_cached_hit=%v session_conn_cached_match=%v session_conn_current_id=%s session_conn_current_hit=%v session_conn_current_match=%v cached_conn_in_pool=%v cached_conn_profile=%s cached_conn_age_ms=%d cached_conn_idle_ms=%d cached_conn_lease_count=%d cached_conn_leased=%v cached_conn_waiters=%d cached_conn_last_response_id=%s cached_conn_last_response_hit=%v sticky_account_id=%d sticky_account_hit=%v sticky_account_conflict=%v conn_affinity_hit=%v store_fallback_reason=%s fallback_reason=%s err_code=%s err_type=%s",
+		"openai_ws_binding_snapshot temporary_diag=sticky_select remove_after_debug=true trigger=%s request_id=%s group_id=%d api_key_id=%d account_id=%d account_type=%s conn_id=%s previous_response_id=%s original_previous_response_id_present=%v previous_bound_account_id=%d previous_bound_account_hit=%v previous_bound_account_matches=%v previous_bound_conn_id=%s previous_bound_conn_hit=%v previous_bound_conn_matches_lease=%v previous_bound_conn_matches_preferred=%v previous_bound_conn_last_evict_reason=%s previous_bound_conn_last_evict_age_ms=%d preferred_conn_id=%s preferred_conn_matches_lease=%v preferred_conn_in_pool=%v preferred_conn_profile=%s preferred_conn_age_ms=%d preferred_conn_idle_ms=%d preferred_conn_lease_count=%d preferred_conn_leased=%v preferred_conn_waiters=%d preferred_conn_last_evict_reason=%s preferred_conn_last_evict_age_ms=%d lease_conn_last_response_id=%s lease_conn_last_response_hit=%v lease_conn_last_evict_reason=%s lease_conn_last_evict_age_ms=%d session_hash=%s session_context_found=%v session_context_account_id=%d session_context_account_match=%v session_context_conn_id=%s session_context_last_response_id=%s session_context_last_response_match=%v session_conn_cached_account_id=%d session_conn_cached_id=%s session_conn_cached_hit=%v session_conn_cached_match=%v session_conn_current_id=%s session_conn_current_hit=%v session_conn_current_match=%v cached_conn_in_pool=%v cached_conn_profile=%s cached_conn_age_ms=%d cached_conn_idle_ms=%d cached_conn_lease_count=%d cached_conn_leased=%v cached_conn_waiters=%d cached_conn_last_response_id=%s cached_conn_last_response_hit=%v cached_conn_last_evict_reason=%s cached_conn_last_evict_age_ms=%d sticky_account_id=%d sticky_account_hit=%v sticky_account_conflict=%v conn_affinity_hit=%v store_fallback_reason=%s fallback_reason=%s err_code=%s err_type=%s err_message=%s",
 		truncateOpenAIWSLogValueNoReplace(v.Trigger, openAIWSLogValueMaxLen),
 		normalizeOpenAIWSLogValue(v.RequestID),
 		v.GroupID,
@@ -1624,6 +1633,8 @@ func openAIWSBindingSnapshotLogMessage(v openAIWSBindingSnapshotLog) string {
 		v.PreviousBoundConnHit,
 		v.PreviousBoundConnMatchesLease,
 		v.PreviousBoundConnMatchesPreferred,
+		normalizeOpenAIWSLogValue(v.PreviousBoundConnLastEvictReason),
+		v.PreviousBoundConnLastEvictAgeMS,
 		truncateOpenAIWSLogValue(v.PreferredConnID, openAIWSIDValueMaxLen),
 		v.PreferredConnMatchesLease,
 		v.PreferredConnInPool,
@@ -1633,8 +1644,12 @@ func openAIWSBindingSnapshotLogMessage(v openAIWSBindingSnapshotLog) string {
 		v.PreferredConnLeaseCount,
 		v.PreferredConnLeased,
 		v.PreferredConnWaiters,
+		normalizeOpenAIWSLogValue(v.PreferredConnLastEvictReason),
+		v.PreferredConnLastEvictAgeMS,
 		truncateOpenAIWSLogValue(v.LeaseConnLastResponseID, openAIWSIDValueMaxLen),
 		v.LeaseConnLastResponseHit,
+		normalizeOpenAIWSLogValue(v.LeaseConnLastEvictReason),
+		v.LeaseConnLastEvictAgeMS,
 		truncateOpenAIWSLogValue(v.SessionHash, 12),
 		v.SessionContextFound,
 		v.SessionContextAccountID,
@@ -1658,6 +1673,8 @@ func openAIWSBindingSnapshotLogMessage(v openAIWSBindingSnapshotLog) string {
 		v.CachedConnWaiters,
 		truncateOpenAIWSLogValue(v.CachedConnLastResponseID, openAIWSIDValueMaxLen),
 		v.CachedConnLastResponseHit,
+		normalizeOpenAIWSLogValue(v.CachedConnLastEvictReason),
+		v.CachedConnLastEvictAgeMS,
 		v.StickyAccountID,
 		v.StickyAccountHit,
 		v.StickyAccountMismatch,
@@ -1666,7 +1683,19 @@ func openAIWSBindingSnapshotLogMessage(v openAIWSBindingSnapshotLog) string {
 		normalizeOpenAIWSLogValue(v.FallbackReason),
 		normalizeOpenAIWSLogValue(v.ErrorCode),
 		normalizeOpenAIWSLogValue(v.ErrorType),
+		truncateOpenAIWSLogValue(strings.ReplaceAll(v.ErrorMessage, " ", "_"), openAIWSLogValueMaxLen),
 	)
+}
+
+func openAIWSConnLastEvictForLog(stateStore OpenAIWSStateStore, connID string) (string, int64) {
+	if stateStore == nil || strings.TrimSpace(connID) == "" {
+		return "", -1
+	}
+	reason, age, ok := stateStore.GetConnLastEvict(connID)
+	if !ok {
+		return "", -1
+	}
+	return reason, age.Milliseconds()
 }
 
 func shouldLogOpenAIWSContinuationBindingSnapshot(decision openAIWSContinuationStoreDecision) bool {
@@ -1700,6 +1729,7 @@ func (s *OpenAIGatewayService) logOpenAIWSBindingSnapshot(
 	fallbackReason string,
 	errCode string,
 	errType string,
+	errMessage string,
 ) {
 	if account == nil || stateStore == nil || account.Type != AccountTypeOAuth {
 		return
@@ -1732,6 +1762,7 @@ func (s *OpenAIGatewayService) logOpenAIWSBindingSnapshot(
 		FallbackReason:            fallbackReason,
 		ErrorCode:                 errCode,
 		ErrorType:                 errType,
+		ErrorMessage:              errMessage,
 	}
 	if prevID != "" {
 		if accountID, err := stateStore.GetResponseAccount(ctx, groupID, apiKeyID, prevID); err == nil && accountID > 0 {
@@ -1745,10 +1776,12 @@ func (s *OpenAIGatewayService) logOpenAIWSBindingSnapshot(
 			log.PreviousBoundConnHit = true
 			log.PreviousBoundConnMatchesLease = leaseConn != "" && connID == leaseConn
 			log.PreviousBoundConnMatchesPreferred = preferredConn != "" && connID == preferredConn
+			log.PreviousBoundConnLastEvictReason, log.PreviousBoundConnLastEvictAgeMS = openAIWSConnLastEvictForLog(stateStore, connID)
 		}
 	}
 	if leaseConn != "" {
 		log.LeaseConnLastResponseID, log.LeaseConnLastResponseHit = stateStore.GetConnLastResponse(leaseConn)
+		log.LeaseConnLastEvictReason, log.LeaseConnLastEvictAgeMS = openAIWSConnLastEvictForLog(stateStore, leaseConn)
 	}
 	if sess != "" {
 		if cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sess); ok {
@@ -1767,6 +1800,7 @@ func (s *OpenAIGatewayService) logOpenAIWSBindingSnapshot(
 			}
 			if cached.connID != "" {
 				log.CachedConnLastResponseID, log.CachedConnLastResponseHit = stateStore.GetConnLastResponse(cached.connID)
+				log.CachedConnLastEvictReason, log.CachedConnLastEvictAgeMS = openAIWSConnLastEvictForLog(stateStore, cached.connID)
 				if pool != nil {
 					snapshot := pool.ConnSnapshot(cached.accountID, cached.connID)
 					log.CachedConnInPool = snapshot.Exists
@@ -1795,6 +1829,9 @@ func (s *OpenAIGatewayService) logOpenAIWSBindingSnapshot(
 		log.PreferredConnLeased = snapshot.Leased
 		log.PreferredConnWaiters = snapshot.Waiters
 	}
+	if preferredConn != "" {
+		log.PreferredConnLastEvictReason, log.PreferredConnLastEvictAgeMS = openAIWSConnLastEvictForLog(stateStore, preferredConn)
+	}
 	logOpenAIWSModeInfo("%s", openAIWSBindingSnapshotLogMessage(log))
 }
 
@@ -1820,15 +1857,21 @@ type openAIWSMismatchErrorProbeLog struct {
 	PreferredConnLeased                   bool
 	PreferredConnWaiters                  int32
 	PreferredConnMatchesLease             bool
+	PreferredConnLastEvictReason          string
+	PreferredConnLastEvictAgeMS           int64
 	PreviousBoundAccountID                int64
 	PreviousBoundAccountHit               bool
 	PreviousBoundAccountMatches           bool
 	PreviousBoundConnID                   string
 	PreviousBoundConnHit                  bool
 	PreviousBoundConnMatches              bool
+	PreviousBoundConnLastEvictReason      string
+	PreviousBoundConnLastEvictAgeMS       int64
 	LeaseConnLastResponseID               string
 	LeaseConnLastResponseHit              bool
 	LeaseConnLastResponseMatchesPrev      bool
+	LeaseConnLastEvictReason              string
+	LeaseConnLastEvictAgeMS               int64
 	SessionHash                           string
 	SessionContextFound                   bool
 	SessionContextAccountID               int64
@@ -1847,6 +1890,8 @@ type openAIWSMismatchErrorProbeLog struct {
 	CachedConnLeaseCount                  int64
 	CachedConnLeased                      bool
 	CachedConnWaiters                     int32
+	CachedConnLastEvictReason             string
+	CachedConnLastEvictAgeMS              int64
 	StickyAccountID                       int64
 	StickyAccountHit                      bool
 	StickyAccountMismatch                 bool
@@ -1862,12 +1907,13 @@ type openAIWSMismatchErrorProbeLog struct {
 	SafeFallbackReason                    string
 	ErrorCode                             string
 	ErrorType                             string
+	ErrorMessage                          string
 	WroteDownstream                       bool
 }
 
 func openAIWSMismatchErrorProbeLogMessage(v openAIWSMismatchErrorProbeLog) string {
 	return fmt.Sprintf(
-		"openai_ws_mismatch_error_probe temporary_diag=sticky_select remove_after_debug=true request_id=%s client_request_id=%s group_id=%d api_key_id=%d account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v previous_response_id=%s previous_response_id_source=%s original_previous_response_id_present=%v response_id=%s preferred_conn_id=%s preferred_conn_in_pool=%v preferred_conn_age_ms=%d preferred_conn_idle_ms=%d preferred_conn_lease_count=%d preferred_conn_leased=%v preferred_conn_waiters=%d preferred_conn_matches_lease=%v previous_bound_account_id=%d previous_bound_account_hit=%v previous_bound_account_matches=%v previous_bound_conn_id=%s previous_bound_conn_hit=%v previous_bound_conn_matches=%v lease_conn_last_response_id=%s lease_conn_last_response_hit=%v lease_conn_last_response_matches_previous=%v session_hash=%s session_context_found=%v session_context_account_id=%d session_context_account_matches=%v session_context_conn_id=%s session_context_conn_matches=%v session_context_last_response_id=%s session_context_last_response_matches_previous=%v session_conn_current_id=%s session_conn_current_hit=%v session_conn_current_matches=%v cached_conn_in_pool=%v cached_conn_profile=%s cached_conn_age_ms=%d cached_conn_idle_ms=%d cached_conn_lease_count=%d cached_conn_leased=%v cached_conn_waiters=%d sticky_account_id=%d sticky_account_hit=%v sticky_account_conflict=%v conn_affinity_hit=%v store_mode=%s store_fallback_reason=%s active_delta=%v delta_items=%d full_items=%d fallback_reason=%s can_fallback=%v can_safe_fallback=%v safe_fallback_reason=%s err_code=%s err_type=%s wrote_downstream=%v",
+		"openai_ws_mismatch_error_probe temporary_diag=sticky_select remove_after_debug=true request_id=%s client_request_id=%s group_id=%d api_key_id=%d account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v previous_response_id=%s previous_response_id_source=%s original_previous_response_id_present=%v response_id=%s preferred_conn_id=%s preferred_conn_in_pool=%v preferred_conn_age_ms=%d preferred_conn_idle_ms=%d preferred_conn_lease_count=%d preferred_conn_leased=%v preferred_conn_waiters=%d preferred_conn_matches_lease=%v preferred_conn_last_evict_reason=%s preferred_conn_last_evict_age_ms=%d previous_bound_account_id=%d previous_bound_account_hit=%v previous_bound_account_matches=%v previous_bound_conn_id=%s previous_bound_conn_hit=%v previous_bound_conn_matches=%v previous_bound_conn_last_evict_reason=%s previous_bound_conn_last_evict_age_ms=%d lease_conn_last_response_id=%s lease_conn_last_response_hit=%v lease_conn_last_response_matches_previous=%v lease_conn_last_evict_reason=%s lease_conn_last_evict_age_ms=%d session_hash=%s session_context_found=%v session_context_account_id=%d session_context_account_matches=%v session_context_conn_id=%s session_context_conn_matches=%v session_context_last_response_id=%s session_context_last_response_matches_previous=%v session_conn_current_id=%s session_conn_current_hit=%v session_conn_current_matches=%v cached_conn_in_pool=%v cached_conn_profile=%s cached_conn_age_ms=%d cached_conn_idle_ms=%d cached_conn_lease_count=%d cached_conn_leased=%v cached_conn_waiters=%d cached_conn_last_evict_reason=%s cached_conn_last_evict_age_ms=%d sticky_account_id=%d sticky_account_hit=%v sticky_account_conflict=%v conn_affinity_hit=%v store_mode=%s store_fallback_reason=%s active_delta=%v delta_items=%d full_items=%d fallback_reason=%s can_fallback=%v can_safe_fallback=%v safe_fallback_reason=%s err_code=%s err_type=%s err_message=%s wrote_downstream=%v",
 		normalizeOpenAIWSLogValue(v.RequestID),
 		normalizeOpenAIWSLogValue(v.ClientRequestID),
 		v.GroupID,
@@ -1889,15 +1935,21 @@ func openAIWSMismatchErrorProbeLogMessage(v openAIWSMismatchErrorProbeLog) strin
 		v.PreferredConnLeased,
 		v.PreferredConnWaiters,
 		v.PreferredConnMatchesLease,
+		normalizeOpenAIWSLogValue(v.PreferredConnLastEvictReason),
+		v.PreferredConnLastEvictAgeMS,
 		v.PreviousBoundAccountID,
 		v.PreviousBoundAccountHit,
 		v.PreviousBoundAccountMatches,
 		truncateOpenAIWSLogValue(v.PreviousBoundConnID, openAIWSIDValueMaxLen),
 		v.PreviousBoundConnHit,
 		v.PreviousBoundConnMatches,
+		normalizeOpenAIWSLogValue(v.PreviousBoundConnLastEvictReason),
+		v.PreviousBoundConnLastEvictAgeMS,
 		truncateOpenAIWSLogValue(v.LeaseConnLastResponseID, openAIWSIDValueMaxLen),
 		v.LeaseConnLastResponseHit,
 		v.LeaseConnLastResponseMatchesPrev,
+		normalizeOpenAIWSLogValue(v.LeaseConnLastEvictReason),
+		v.LeaseConnLastEvictAgeMS,
 		truncateOpenAIWSLogValue(v.SessionHash, 12),
 		v.SessionContextFound,
 		v.SessionContextAccountID,
@@ -1916,6 +1968,8 @@ func openAIWSMismatchErrorProbeLogMessage(v openAIWSMismatchErrorProbeLog) strin
 		v.CachedConnLeaseCount,
 		v.CachedConnLeased,
 		v.CachedConnWaiters,
+		normalizeOpenAIWSLogValue(v.CachedConnLastEvictReason),
+		v.CachedConnLastEvictAgeMS,
 		v.StickyAccountID,
 		v.StickyAccountHit,
 		v.StickyAccountMismatch,
@@ -1931,6 +1985,7 @@ func openAIWSMismatchErrorProbeLogMessage(v openAIWSMismatchErrorProbeLog) strin
 		normalizeOpenAIWSLogValue(v.SafeFallbackReason),
 		normalizeOpenAIWSLogValue(v.ErrorCode),
 		normalizeOpenAIWSLogValue(v.ErrorType),
+		truncateOpenAIWSLogValue(strings.ReplaceAll(v.ErrorMessage, " ", "_"), openAIWSLogValueMaxLen),
 		v.WroteDownstream,
 	)
 }
@@ -1982,6 +2037,7 @@ func (s *OpenAIGatewayService) logOpenAIWSMismatchErrorProbe(
 	wroteDownstream bool,
 	errCode string,
 	errType string,
+	errMessage string,
 ) {
 	if account == nil || stateStore == nil || account.Type != AccountTypeOAuth || !isOpenAIWSMismatchFallbackReason(fallbackReason) {
 		return
@@ -2023,6 +2079,7 @@ func (s *OpenAIGatewayService) logOpenAIWSMismatchErrorProbe(
 		SafeFallbackReason:        safeFallbackReason,
 		ErrorCode:                 errCode,
 		ErrorType:                 errType,
+		ErrorMessage:              errMessage,
 		WroteDownstream:           wroteDownstream,
 	}
 	if prevID != "" {
@@ -2035,6 +2092,7 @@ func (s *OpenAIGatewayService) logOpenAIWSMismatchErrorProbe(
 			log.PreviousBoundConnID = boundConnID
 			log.PreviousBoundConnHit = true
 			log.PreviousBoundConnMatches = strings.TrimSpace(boundConnID) == leaseConn
+			log.PreviousBoundConnLastEvictReason, log.PreviousBoundConnLastEvictAgeMS = openAIWSConnLastEvictForLog(stateStore, boundConnID)
 		}
 	}
 	if leaseConn != "" {
@@ -2043,6 +2101,7 @@ func (s *OpenAIGatewayService) logOpenAIWSMismatchErrorProbe(
 			log.LeaseConnLastResponseHit = true
 			log.LeaseConnLastResponseMatchesPrev = prevID != "" && strings.TrimSpace(lastResponseID) == prevID
 		}
+		log.LeaseConnLastEvictReason, log.LeaseConnLastEvictAgeMS = openAIWSConnLastEvictForLog(stateStore, leaseConn)
 	}
 	if sess != "" {
 		if cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sess); ok {
@@ -2053,6 +2112,7 @@ func (s *OpenAIGatewayService) logOpenAIWSMismatchErrorProbe(
 			log.SessionContextConnMatches = strings.TrimSpace(cached.connID) == leaseConn
 			log.SessionContextLastResponseID = cached.lastResponseID
 			log.SessionContextLastResponseMatchesPrev = prevID != "" && strings.TrimSpace(cached.lastResponseID) == prevID
+			log.CachedConnLastEvictReason, log.CachedConnLastEvictAgeMS = openAIWSConnLastEvictForLog(stateStore, cached.connID)
 			if cached.accountID > 0 {
 				if currentConnID, hit := stateStore.GetSessionConn(groupID, apiKeyID, cached.accountID, sess); hit {
 					log.SessionConnCurrentID = currentConnID
@@ -2087,6 +2147,9 @@ func (s *OpenAIGatewayService) logOpenAIWSMismatchErrorProbe(
 		log.PreferredConnLeaseCount = snapshot.LeaseCount
 		log.PreferredConnLeased = snapshot.Leased
 		log.PreferredConnWaiters = snapshot.Waiters
+	}
+	if preferredConn != "" {
+		log.PreferredConnLastEvictReason, log.PreferredConnLastEvictAgeMS = openAIWSConnLastEvictForLog(stateStore, preferredConn)
 	}
 	logOpenAIWSModeInfo("%s", openAIWSMismatchErrorProbeLogMessage(log))
 }
@@ -4312,6 +4375,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			storeDecision.FallbackReason,
 			"",
 			"",
+			"",
 		)
 	}
 	logOpenAIWSModeDebug(
@@ -4791,6 +4855,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			"write_request_fail",
 			cleanupReason,
 			"transport_write",
+			err.Error(),
 		)
 		lease.MarkBrokenFor(cleanupReason)
 		var proxyID int64
@@ -5247,6 +5312,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				fallbackReason,
 				errCode,
 				errType,
+				errMessage,
 			)
 			s.logOpenAIWSMismatchErrorProbe(
 				ctx,
@@ -5276,6 +5342,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				wroteDownstream,
 				errCode,
 				errType,
+				errMessage,
 			)
 			logOpenAIWSModeInfo("%s", openAIWSErrorEventLogMessage(openAIWSErrorEventLog{
 				RequestID:                 requestID,
@@ -6607,6 +6674,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					fallbackReason,
 					errCode,
 					errType,
+					errMessage,
 				)
 				s.logOpenAIWSMismatchErrorProbe(
 					ctx,
@@ -6636,6 +6704,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					wroteDownstream,
 					errCode,
 					errType,
+					errMessage,
 				)
 				recoverablePrevNotFound := fallbackReason == openAIWSIngressStagePreviousResponseNotFound &&
 					turnPreviousResponseID != "" &&
