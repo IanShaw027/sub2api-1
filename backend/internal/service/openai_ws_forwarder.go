@@ -2576,6 +2576,20 @@ func openAIWSRawPayloadHasToolCallOutput(payload []byte) bool {
 	return HasToolContinuationOutputInRawPayload(payload)
 }
 
+func analyzeToolContinuationSignalsFromRawPayload(payload []byte) ToolContinuationSignals {
+	signals := ToolContinuationSignals{
+		HasFunctionCallOutput: openAIWSRawPayloadHasToolCallOutput(payload),
+	}
+	if !signals.HasFunctionCallOutput {
+		return signals
+	}
+	var reqBody map[string]any
+	if err := json.Unmarshal(payload, &reqBody); err != nil {
+		return signals
+	}
+	return AnalyzeToolContinuationSignals(reqBody)
+}
+
 func buildOpenAIWSReplayInputSequence(
 	previousFullInput []json.RawMessage,
 	previousFullInputExists bool,
@@ -2711,6 +2725,54 @@ func shouldKeepIngressPreviousResponseIDWithStrictState(
 		return false, "non_input_changed", nil
 	}
 	return true, "strict_incremental_ok", nil
+}
+
+func shouldBranchOpenAIWSIngressFollowupTurn(
+	turn int,
+	originalClientPayload []byte,
+	currentPayload []byte,
+	storeDisabled bool,
+	previousPayload []byte,
+	previousState *openAIWSIngressPreviousTurnStrictState,
+	lastTurnResponseID string,
+) (bool, string, error) {
+	if turn <= 1 {
+		return false, "", nil
+	}
+	signals := analyzeToolContinuationSignalsFromRawPayload(currentPayload)
+	currentPreviousResponseID := strings.TrimSpace(openAIWSPayloadStringFromRaw(currentPayload, "previous_response_id"))
+	clientPreviousResponseID := strings.TrimSpace(openAIWSPayloadStringFromRaw(originalClientPayload, "previous_response_id"))
+	if shouldInferIngressFunctionCallOutputPreviousResponseID(
+		storeDisabled,
+		turn,
+		signals,
+		currentPreviousResponseID,
+		lastTurnResponseID,
+	) {
+		return false, "tool_continuation_prev_infer", nil
+	}
+	if currentPreviousResponseID != "" {
+		// 显式 previous_response_id 的 follow-up 继续沿用既有 strict/full-create/
+		// recovery 规则；这里只处理“同 session 但未显式续链”的 branch 场景。
+		return false, "explicit_previous_response_id", nil
+	}
+	if clientPreviousResponseID != "" {
+		// 规范化过程中可能因为 unsafe/unbound continuation 已经删掉了
+		// previous_response_id；这种 follow-up 仍属于“客户端显式请求续链”，
+		// 继续交给既有 full-create/recovery 逻辑处理，而不是当作历史编辑分叉。
+		return false, "normalized_previous_response_id_removed", nil
+	}
+	if currentPreviousResponseID == "" {
+		if signals.HasFunctionCallOutput {
+			if signals.HasToolCallContext || strings.TrimSpace(lastTurnResponseID) == "" {
+				return false, "self_contained_tool_replay", nil
+			}
+		}
+		return true, "missing_previous_response_id", nil
+	}
+	_ = previousPayload
+	_ = previousState
+	return false, "", nil
 }
 
 func (s *OpenAIGatewayService) forwardOpenAIWSV2(
@@ -4449,6 +4511,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		currentBridgePayload := firstPayload
 		var bridgeReplayInput []json.RawMessage
 		bridgeReplayInputExists := false
+		bridgeLastResponseID := ""
+		bridgeLastPayload := []byte(nil)
+		var bridgeLastStrictState *openAIWSIngressPreviousTurnStrictState
 		for turn := 1; ; turn++ {
 			if turn > 1 && hooks != nil && hooks.BeforeRequest != nil {
 				if err := hooks.BeforeRequest(turn, currentBridgePayload.payloadRaw, currentBridgePayload.originalModel); err != nil {
@@ -4531,6 +4596,20 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				}
 			}
 			responseID := strings.TrimSpace(result.RequestID)
+			bridgeLastResponseID = responseID
+			bridgeLastPayload = cloneOpenAIWSPayloadBytes(currentBridgePayload.payloadRaw)
+			nextStrictState, strictStateErr := buildOpenAIWSIngressPreviousTurnStrictState(currentBridgePayload.payloadRaw)
+			if strictStateErr != nil {
+				bridgeLastStrictState = nil
+				logOpenAIWSModeInfo(
+					"ingress_ws_http_bridge_strict_state_skip account_id=%d turn=%d reason=build_error cause=%s",
+					account.ID,
+					turn,
+					truncateOpenAIWSLogValue(strictStateErr.Error(), openAIWSLogValueMaxLen),
+				)
+			} else {
+				bridgeLastStrictState = nextStrictState
+			}
 			if responseID != "" && stateStore != nil {
 				ttl := s.openAIWSResponseStickyTTL()
 				logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, apiKeyID, responseID, account.ID, ttl))
@@ -4552,6 +4631,51 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			nextPayload, parseErr := parseClientPayload(nextClientMessage)
 			if parseErr != nil {
 				return parseErr
+			}
+			nextStoreDisabled := s.isOpenAIWSStoreDisabledInRequestRaw(nextPayload.payloadRaw, account)
+			shouldBranchTurn, branchReason, branchErr := shouldBranchOpenAIWSIngressFollowupTurn(
+				turn+1,
+				nextPayload.rawForHash,
+				nextPayload.payloadRaw,
+				nextStoreDisabled,
+				bridgeLastPayload,
+				bridgeLastStrictState,
+				bridgeLastResponseID,
+			)
+			if shouldBranchTurn {
+				if stateStore != nil && sessionHash != "" {
+					stateStore.DeleteSessionTurnState(groupID, sessionHash)
+					stateStore.DeleteSessionConn(groupID, sessionHash)
+					stateStore.DeleteSessionContext(groupID, apiKeyID, sessionHash)
+				}
+				updatedPayload, removedPrev, dropErr := dropPreviousResponseIDFromRawPayload(nextPayload.payloadRaw)
+				if dropErr != nil {
+					return fmt.Errorf("drop previous_response_id for ingress http bridge branch replay: %w", dropErr)
+				}
+				if removedPrev {
+					nextPayload.payloadRaw = updatedPayload
+					nextPayload.payloadBytes = len(updatedPayload)
+					nextPayload.previousResponseID = ""
+				}
+				logMsg := "ingress_ws_http_bridge_branch_replay account_id=%d turn=%d next_turn=%d reason=%s removed_previous_response_id=%v"
+				logArgs := []any{
+					account.ID,
+					turn,
+					turn + 1,
+					normalizeOpenAIWSLogValue(branchReason),
+					removedPrev,
+				}
+				if branchErr != nil {
+					logMsg += " cause=%s"
+					logArgs = append(logArgs, truncateOpenAIWSLogValue(branchErr.Error(), openAIWSLogValueMaxLen))
+				}
+				logOpenAIWSModeInfo(logMsg, logArgs...)
+				turnState = ""
+				bridgeReplayInput = nil
+				bridgeReplayInputExists = false
+				bridgeLastResponseID = ""
+				bridgeLastPayload = nil
+				bridgeLastStrictState = nil
 			}
 			currentBridgePayload = nextPayload
 		}
@@ -5261,15 +5385,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		skipBeforeTurn = false
 		currentPreviousResponseID := openAIWSPayloadStringFromRaw(currentPayload, "previous_response_id")
 		expectedPrev := strings.TrimSpace(lastTurnResponseID)
-		toolSignals := ToolContinuationSignals{
-			HasFunctionCallOutput: openAIWSRawPayloadHasToolCallOutput(currentPayload),
-		}
-		if toolSignals.HasFunctionCallOutput {
-			var currentReqBody map[string]any
-			if err := json.Unmarshal(currentPayload, &currentReqBody); err == nil {
-				toolSignals = AnalyzeToolContinuationSignals(currentReqBody)
-			}
-		}
+		toolSignals := analyzeToolContinuationSignalsFromRawPayload(currentPayload)
 		hasFunctionCallOutput := toolSignals.HasFunctionCallOutput
 		// store=false + function_call_output 场景必须有续链锚点。
 		// 若客户端未传 previous_response_id，优先回填上一轮响应 ID，避免上游报 call_id 无法关联。
@@ -5744,7 +5860,58 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if parseErr != nil {
 			return parseErr
 		}
-		if connID != "" {
+		nextStoreDisabled := s.isOpenAIWSStoreDisabledInRequestRaw(nextPayload.payloadRaw, account)
+		shouldBranchTurn, branchReason, branchErr := shouldBranchOpenAIWSIngressFollowupTurn(
+			turn+1,
+			nextPayload.rawForHash,
+			nextPayload.payloadRaw,
+			nextStoreDisabled,
+			lastTurnPayload,
+			lastTurnStrictState,
+			lastTurnResponseID,
+		)
+		if shouldBranchTurn {
+			if stateStore != nil && sessionHash != "" {
+				stateStore.DeleteSessionTurnState(groupID, sessionHash)
+				stateStore.DeleteSessionConn(groupID, sessionHash)
+				stateStore.DeleteSessionContext(groupID, apiKeyID, sessionHash)
+			}
+			updatedPayload, removedPrev, dropErr := dropPreviousResponseIDFromRawPayload(nextPayload.payloadRaw)
+			if dropErr != nil {
+				return fmt.Errorf("drop previous_response_id for ingress branch replay: %w", dropErr)
+			}
+			if removedPrev {
+				nextPayload.payloadRaw = updatedPayload
+				nextPayload.payloadBytes = len(updatedPayload)
+				nextPayload.previousResponseID = ""
+			}
+			logMsg := "ingress_ws_branch_replay account_id=%d turn=%d next_turn=%d conn_id=%s reason=%s removed_previous_response_id=%v"
+			logArgs := []any{
+				account.ID,
+				turn,
+				turn + 1,
+				truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
+				normalizeOpenAIWSLogValue(branchReason),
+				removedPrev,
+			}
+			if branchErr != nil {
+				logMsg += " cause=%s"
+				logArgs = append(logArgs, truncateOpenAIWSLogValue(branchErr.Error(), openAIWSLogValueMaxLen))
+			}
+			logOpenAIWSModeInfo(logMsg, logArgs...)
+			resetSessionLease(true)
+			preferredConnID = ""
+			turnState = ""
+			lastTurnFinishedAt = time.Time{}
+			lastTurnResponseID = ""
+			lastTurnPayload = nil
+			lastTurnStrictState = nil
+			lastTurnReplayInput = nil
+			lastTurnReplayInputExists = false
+			currentTurnReplayInput = nil
+			currentTurnReplayInputExists = false
+		}
+		if !shouldBranchTurn && connID != "" {
 			preferredConnID = connID
 		}
 		if nextPayload.promptCacheKey != "" {

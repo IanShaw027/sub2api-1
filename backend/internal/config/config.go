@@ -1970,7 +1970,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.event_flush_interval_ms", 10)
 	viper.SetDefault("gateway.openai_ws.ingress_preflight_ping_idle_seconds", 20)
 	viper.SetDefault("gateway.openai_ws.prewarm_cooldown_ms", 300)
-	viper.SetDefault("gateway.openai_ws.neutral_acquire_stale_idle_seconds", 300)
+	viper.SetDefault("gateway.openai_ws.neutral_acquire_stale_idle_seconds", 1000)
 	viper.SetDefault("gateway.openai_ws.fallback_cooldown_seconds", 30)
 	viper.SetDefault("gateway.openai_ws.retry_backoff_initial_ms", 120)
 	viper.SetDefault("gateway.openai_ws.retry_backoff_max_ms", 2000)

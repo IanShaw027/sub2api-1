@@ -107,8 +107,8 @@ func TestOpenAIWSPoolRuntimeSettings_NeutralPrewarmPercentAndSessionTTLAccessors
 	require.Equal(t, 60*time.Second, pool.sessionIdleTTL())
 	require.Equal(t, pool.sessionIdleTTL(), pool.neutralIdleTTL())
 
-	StoreOpenAIWSPoolRuntimeSettings(25, 900)
-	require.Equal(t, 600*time.Second, pool.sessionIdleTTL(), "WS idle reuse must not exceed the conservative upstream-safe threshold")
+	StoreOpenAIWSPoolRuntimeSettings(25, 1200)
+	require.Equal(t, 1000*time.Second, pool.sessionIdleTTL(), "WS idle reuse must not exceed the configured upper bound")
 	require.Equal(t, pool.sessionIdleTTL(), pool.neutralIdleTTL())
 }
 

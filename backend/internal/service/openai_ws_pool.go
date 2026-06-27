@@ -25,7 +25,7 @@ const (
 	openAIWSConnPrewarmExtraDelay   = 2 * time.Second
 	openAIWSAcquireCleanupInterval  = 3 * time.Second
 	openAIWSBackgroundSweepTicker   = 30 * time.Second
-	openAIWSNeutralAcquireStaleIdle = 5 * time.Minute
+	openAIWSNeutralAcquireStaleIdle = 1000 * time.Second
 	defaultOpenAIWSDialTimeout      = 10 * time.Second
 	defaultOpenAIWSReadTimeout      = 15 * time.Minute
 	defaultOpenAIWSWriteTimeout     = 2 * time.Minute
@@ -46,9 +46,9 @@ const (
 	defaultOpenAIWSMaxIdlePerAccount        = 4
 	defaultOpenAIWSStickyReservePercent     = 30
 	defaultOpenAIWSNeutralPrewarmPercent    = 20
-	defaultOpenAIWSSessionIdleTTLSeconds    = 600
+	defaultOpenAIWSSessionIdleTTLSeconds    = 1000
 	openAIWSMaxIdlePerAccountUpperBound     = 64
-	openAIWSSessionIdleTTLSecondsUpperBound = 600
+	openAIWSSessionIdleTTLSecondsUpperBound = 1000
 )
 
 // openAIWSPoolRuntimeSettings 是连接池运行时可配参数的进程内快照，
