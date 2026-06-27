@@ -1442,6 +1442,31 @@ func TestOpenAIWSConnPool_PickOldestIdleAndAccountPoolLoad(t *testing.T) {
 	require.Equal(t, 0, zeroConns)
 }
 
+func TestOpenAIWSConnPool_ConnSnapshotReportsReusableConnState(t *testing.T) {
+	pool := &openAIWSConnPool{}
+	accountID := int64(405)
+	ap := &openAIWSAccountPool{conns: map[string]*openAIWSConn{}}
+	conn := newOpenAIWSConnWithProfile("snap_conn", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral)
+	conn.lastUsedNano.Store(time.Now().Add(-2 * time.Minute).UnixNano())
+	conn.leaseCount.Store(3)
+	conn.waiters.Store(2)
+	require.True(t, conn.tryAcquire())
+	ap.conns[conn.id] = conn
+	pool.accounts.Store(accountID, ap)
+
+	snapshot := pool.ConnSnapshot(accountID, conn.id)
+	require.True(t, snapshot.Exists)
+	require.Equal(t, openAIWSConnProfileNeutral, snapshot.Profile)
+	require.Greater(t, snapshot.Age, time.Duration(0))
+	require.GreaterOrEqual(t, snapshot.Idle, 2*time.Minute)
+	require.EqualValues(t, 3, snapshot.LeaseCount)
+	require.True(t, snapshot.Leased)
+	require.EqualValues(t, 2, snapshot.Waiters)
+
+	missing := pool.ConnSnapshot(accountID, "missing")
+	require.False(t, missing.Exists)
+}
+
 func TestOpenAIWSConnPool_Close_WaitsWorkerGroupAndNilStopChannel(t *testing.T) {
 	pool := &openAIWSConnPool{}
 	release := make(chan struct{})

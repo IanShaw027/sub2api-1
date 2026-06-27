@@ -2148,19 +2148,43 @@ func (s *OpenAIGatewayService) openAIWSSessionContextStickyCandidate(groupID *in
 	if stateStore == nil {
 		return 0, "", false
 	}
+	logReject := func(reason string, cached openAIWSSessionContextValue, boundConnID string, boundConnHit bool, connLastResponseID string, connLastResponseHit bool) {
+		logOpenAIWSModeInfoDirect(
+			"openai_ws_session_context_sticky_reject temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s reason=%s cached_account_id=%d cached_conn_id=%s cached_last_response_id=%s bound_conn_id=%s bound_conn_hit=%v bound_conn_match=%v conn_last_response_id=%s conn_last_response_hit=%v",
+			derefGroupID(groupID),
+			apiKeyID,
+			shortSessionHash(sessionHash),
+			normalizeOpenAIWSLogValue(reason),
+			cached.accountID,
+			truncateOpenAIWSLogValue(cached.connID, openAIWSIDValueMaxLen),
+			truncateOpenAIWSLogValue(cached.lastResponseID, openAIWSIDValueMaxLen),
+			truncateOpenAIWSLogValue(boundConnID, openAIWSIDValueMaxLen),
+			boundConnHit,
+			boundConnHit && strings.TrimSpace(boundConnID) == strings.TrimSpace(cached.connID),
+			truncateOpenAIWSLogValue(connLastResponseID, openAIWSIDValueMaxLen),
+			connLastResponseHit,
+		)
+	}
 	cached, ok := stateStore.GetSessionContext(derefGroupID(groupID), apiKeyID, sessionHash)
 	if !ok || cached.accountID <= 0 {
+		if ok {
+			logReject("missing_cached_account", cached, "", false, "", false)
+		}
 		return 0, "", false
 	}
 	connID := strings.TrimSpace(cached.connID)
 	if connID == "" || strings.TrimSpace(cached.lastResponseID) == "" {
+		logReject("missing_cached_conn_or_response", cached, "", false, "", false)
 		return 0, "", false
 	}
 	boundConnID, ok := stateStore.GetSessionConn(derefGroupID(groupID), apiKeyID, cached.accountID, sessionHash)
 	if !ok || strings.TrimSpace(boundConnID) != connID {
+		logReject("session_conn_mismatch", cached, boundConnID, ok, "", false)
 		return 0, "", false
 	}
-	if _, ok := stateStore.GetConnLastResponse(connID); !ok {
+	connLastResponseID, ok := stateStore.GetConnLastResponse(connID)
+	if !ok {
+		logReject("conn_last_response_miss", cached, boundConnID, true, connLastResponseID, false)
 		return 0, "", false
 	}
 	return cached.accountID, connID, true

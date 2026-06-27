@@ -30,10 +30,23 @@ func TestOpenAIWSDeltaShadowLogIncludesContinuationMatchDiagnostics(t *testing.T
 	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[{"type":"message","role":"user","content":"hi"}]}`)
 
 	log := evaluateOpenAIWSDeltaShadowCandidate(openAIWSDeltaShadowInput{
+		GroupID:                  22,
+		APIKeyID:                 200,
+		SessionHash:              "session-hash",
 		RequestID:                "req-delta-diag",
 		AccountID:                202,
 		LeaseConnID:              "conn-current",
 		ConnMostRecentResponseID: "resp-current",
+		CachedSessionConnID:      "conn-cached",
+		CurrentSessionConnID:     "conn-current-bound",
+		CachedConnInPool:         true,
+		CachedConnProfile:        openAIWSConnProfileNeutral,
+		CachedConnAgeMS:          45000,
+		CachedConnIdleMS:         12000,
+		CachedConnLeaseCount:     7,
+		CachedConnLeased:         false,
+		CachedConnWaiters:        1,
+		CachedConnLastResponseID: "resp-cached",
 		CurrentPayload:           payload,
 		HasFunctionCallOutput:    true,
 		AllowConnReanchor:        false,
@@ -53,6 +66,19 @@ func TestOpenAIWSDeltaShadowLogIncludesContinuationMatchDiagnostics(t *testing.T
 	require.False(t, log.AllowConnReanchor)
 	require.True(t, log.HasFunctionCallOutput)
 	require.Equal(t, "account_mismatch", log.FallbackReason)
+	require.Equal(t, int64(22), log.GroupID)
+	require.Equal(t, int64(200), log.APIKeyID)
+	require.Equal(t, "session-hash", log.SessionHash)
+	require.Equal(t, "conn-cached", log.CachedSessionConnID)
+	require.Equal(t, "conn-current-bound", log.CurrentSessionConnID)
+	require.True(t, log.CachedConnInPool)
+	require.Equal(t, openAIWSConnProfileNeutral, log.CachedConnProfile)
+	require.EqualValues(t, 45000, log.CachedConnAgeMS)
+	require.EqualValues(t, 12000, log.CachedConnIdleMS)
+	require.EqualValues(t, 7, log.CachedConnLeaseCount)
+	require.False(t, log.CachedConnLeased)
+	require.EqualValues(t, 1, log.CachedConnWaiters)
+	require.Equal(t, "resp-cached", log.CachedConnLastResponseID)
 }
 
 type openAIWSNthWriteFailConn struct {

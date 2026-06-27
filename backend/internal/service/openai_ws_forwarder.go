@@ -2495,6 +2495,119 @@ func openAIWSDeltaConnReanchorBlockers(
 	return strings.Join(blockers, ",")
 }
 
+func populateOpenAIWSDeltaShadowBindingDiagnostics(
+	input *openAIWSDeltaShadowInput,
+	stateStore OpenAIWSStateStore,
+	pool *openAIWSConnPool,
+	groupID int64,
+	apiKeyID int64,
+	sessionHash string,
+	currentAccountID int64,
+	cached openAIWSSessionContextValue,
+	cachedFound bool,
+) {
+	if input == nil {
+		return
+	}
+	input.GroupID = groupID
+	input.APIKeyID = apiKeyID
+	input.SessionHash = sessionHash
+	if stateStore == nil || strings.TrimSpace(sessionHash) == "" || !cachedFound {
+		return
+	}
+	if cached.accountID > 0 {
+		if connID, ok := stateStore.GetSessionConn(groupID, apiKeyID, cached.accountID, sessionHash); ok {
+			input.CachedSessionConnID = connID
+		}
+	}
+	if currentAccountID > 0 {
+		if connID, ok := stateStore.GetSessionConn(groupID, apiKeyID, currentAccountID, sessionHash); ok {
+			input.CurrentSessionConnID = connID
+		}
+	}
+	cachedConnID := strings.TrimSpace(cached.connID)
+	if cachedConnID == "" {
+		return
+	}
+	if responseID, ok := stateStore.GetConnLastResponse(cachedConnID); ok {
+		input.CachedConnLastResponseID = responseID
+	}
+	if pool == nil || cached.accountID <= 0 {
+		return
+	}
+	snapshot := pool.ConnSnapshot(cached.accountID, cachedConnID)
+	input.CachedConnInPool = snapshot.Exists
+	input.CachedConnProfile = snapshot.Profile
+	input.CachedConnAgeMS = snapshot.Age.Milliseconds()
+	input.CachedConnIdleMS = snapshot.Idle.Milliseconds()
+	input.CachedConnLeaseCount = snapshot.LeaseCount
+	input.CachedConnLeased = snapshot.Leased
+	input.CachedConnWaiters = snapshot.Waiters
+}
+
+func logOpenAIWSResponseStickyBind(groupID int64, apiKeyID int64, accountID int64, accountType string, responseID string, connID string, ttl time.Duration, accountErr error) {
+	errText := "-"
+	if accountErr != nil {
+		errText = compactOpenAIWSLogValue(accountErr.Error(), openAIWSLogValueMaxLen)
+	}
+	logOpenAIWSModeInfo(
+		"response_sticky_bind temporary_diag=sticky_bind remove_after_debug=true group_id=%d api_key_id=%d account_id=%d account_type=%s response_id=%s conn_id=%s conn_bound=%v ttl_seconds=%d account_bind_error=%s",
+		groupID,
+		apiKeyID,
+		accountID,
+		normalizeOpenAIWSLogValue(accountType),
+		truncateOpenAIWSLogValue(responseID, openAIWSIDValueMaxLen),
+		truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
+		strings.TrimSpace(connID) != "",
+		int64(ttl.Seconds()),
+		normalizeOpenAIWSLogValue(errText),
+	)
+}
+
+func logOpenAIWSSessionConnBind(groupID int64, apiKeyID int64, accountID int64, accountType string, sessionHash string, connID string, ttl time.Duration) {
+	logOpenAIWSModeInfo(
+		"session_conn_bind temporary_diag=sticky_bind remove_after_debug=true group_id=%d api_key_id=%d account_id=%d account_type=%s session=%s conn_id=%s ttl_seconds=%d",
+		groupID,
+		apiKeyID,
+		accountID,
+		normalizeOpenAIWSLogValue(accountType),
+		truncateOpenAIWSLogValue(sessionHash, 12),
+		truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
+		int64(ttl.Seconds()),
+	)
+}
+
+func logOpenAIWSSessionContextBind(
+	groupID int64,
+	apiKeyID int64,
+	accountID int64,
+	accountType string,
+	sessionHash string,
+	connID string,
+	responseID string,
+	ttl time.Duration,
+	inputCount int,
+	materializedCount int,
+	outputCaptured bool,
+	rawClientEquivalent bool,
+) {
+	logOpenAIWSModeInfo(
+		"session_context_bind temporary_diag=sticky_bind remove_after_debug=true group_id=%d api_key_id=%d account_id=%d account_type=%s session=%s conn_id=%s response_id=%s ttl_seconds=%d input_count=%d materialized_count=%d output_captured=%v raw_client_equiv=%v",
+		groupID,
+		apiKeyID,
+		accountID,
+		normalizeOpenAIWSLogValue(accountType),
+		truncateOpenAIWSLogValue(sessionHash, 12),
+		truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
+		truncateOpenAIWSLogValue(responseID, openAIWSIDValueMaxLen),
+		int64(ttl.Seconds()),
+		inputCount,
+		materializedCount,
+		outputCaptured,
+		rawClientEquivalent,
+	)
+}
+
 func sanitizeOpenAIWSLogToken(v string) string {
 	v = strings.TrimSpace(v)
 	if v == "" {
@@ -3513,6 +3626,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				Cached:                   cached,
 				CachedFound:              found,
 			}
+			populateOpenAIWSDeltaShadowBindingDiagnostics(&shadowInput, stateStore, pool, groupID, apiKeyID, sessionHash, account.ID, cached, found)
 			if openAIWSActiveDeltaEnabled() {
 				if deltaPayload, deltaLog, applied, buildErr := buildOpenAIWSActiveDeltaPayload(shadowInput); buildErr == nil && applied {
 					payload = deltaPayload
@@ -4304,13 +4418,19 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 
 	if responseID != "" && stateStore != nil && !clientDisconnected && !recoveredUpstreamTransportEOF {
 		ttl := s.openAIWSResponseStickyTTL()
-		logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, apiKeyID, responseID, account.ID, ttl))
+		bindAccountErr := stateStore.BindResponseAccount(ctx, groupID, apiKeyID, responseID, account.ID, ttl)
+		logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, bindAccountErr)
+		boundConnID := ""
 		if !httpIngressWSOneShot {
-			stateStore.BindResponseConn(groupID, apiKeyID, responseID, lease.ConnID(), ttl)
+			boundConnID = lease.ConnID()
+			stateStore.BindResponseConn(groupID, apiKeyID, responseID, boundConnID, ttl)
 		}
+		logOpenAIWSResponseStickyBind(groupID, apiKeyID, account.ID, account.Type, responseID, boundConnID, ttl, bindAccountErr)
 	}
 	if !httpIngressWSOneShot && stateStore != nil && storeDisabled && sessionHash != "" && !clientDisconnected && !recoveredUpstreamTransportEOF {
-		stateStore.BindSessionConn(groupID, apiKeyID, account.ID, sessionHash, lease.ConnID(), s.openAIWSSessionStickyTTL())
+		ttl := s.openAIWSSessionStickyTTL()
+		stateStore.BindSessionConn(groupID, apiKeyID, account.ID, sessionHash, lease.ConnID(), ttl)
+		logOpenAIWSSessionConnBind(groupID, apiKeyID, account.ID, account.Type, sessionHash, lease.ConnID(), ttl)
 	}
 	if shadowOwner && deltaShadowEnabled && stateStore != nil && responseID != "" && connID != "" &&
 		!clientDisconnected && !recoveredUpstreamTransportEOF {
@@ -4328,7 +4448,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				nonInputHash, _, nonInputFields := openAIWSNonInputFingerprint(contextPayloadRaw)
 				ttl := s.openAIWSSessionStickyTTL()
 				stateStore.BindConnLastResponse(connID, responseID, ttl)
-				stateStore.BindSessionContext(groupID, apiKeyID, sessionHash, openAIWSSessionContextValue{
+				sessionContextValue := openAIWSSessionContextValue{
 					accountID:               account.ID,
 					connID:                  connID,
 					lastResponseID:          responseID,
@@ -4340,7 +4460,22 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 					nonInputHash:            nonInputHash,
 					nonInputFields:          nonInputFields,
 					rawVsClientVisibleEqual: deltaShadowRawClientEquiv,
-				}, ttl)
+				}
+				stateStore.BindSessionContext(groupID, apiKeyID, sessionHash, sessionContextValue, ttl)
+				logOpenAIWSSessionContextBind(
+					groupID,
+					apiKeyID,
+					account.ID,
+					account.Type,
+					sessionHash,
+					connID,
+					responseID,
+					ttl,
+					len(inputHashes),
+					len(materialized),
+					deltaShadowOutputCaptured,
+					deltaShadowRawClientEquiv,
+				)
 			}
 		}
 	}
@@ -6114,6 +6249,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			shadowOwner = stateStore.TrySessionInFlight(groupID, apiKeyID, sessionHash)
 			if !shadowOwner {
 				logOpenAIWSDeltaShadow(openAIWSDeltaShadowLog{
+					GroupID:        groupID,
+					APIKeyID:       apiKeyID,
+					SessionHash:    sessionHash,
 					RequestID:      deltaShadowReqLogID,
 					AccountID:      account.ID,
 					ConnID:         connID,
@@ -6123,7 +6261,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			} else if turn > 1 {
 				cached, found := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
 				connMostRecent, _ := stateStore.GetConnLastResponse(connID)
-				logOpenAIWSDeltaShadow(evaluateOpenAIWSDeltaShadowCandidate(openAIWSDeltaShadowInput{
+				shadowInput := openAIWSDeltaShadowInput{
 					RequestID:                deltaShadowReqLogID,
 					AccountID:                account.ID,
 					LeaseConnID:              connID,
@@ -6136,7 +6274,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					StoreFallbackReason:      "",
 					Cached:                   cached,
 					CachedFound:              found,
-				}))
+				}
+				populateOpenAIWSDeltaShadowBindingDiagnostics(&shadowInput, stateStore, pool, groupID, apiKeyID, sessionHash, account.ID, cached, found)
+				logOpenAIWSDeltaShadow(evaluateOpenAIWSDeltaShadowCandidate(shadowInput))
 			}
 		}
 
@@ -6200,19 +6340,25 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			lastTurnStrictState = nextStrictState
 		}
 
-		bindCleanTurnResponseAccount := func() {
+		bindCleanTurnResponseAccount := func(boundConnID string) {
 			if responseID != "" && stateStore != nil && !result.ClientDisconnected {
 				ttl := s.openAIWSResponseStickyTTL()
-				logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, apiKeyID, responseID, account.ID, ttl))
+				bindAccountErr := stateStore.BindResponseAccount(ctx, groupID, apiKeyID, responseID, account.ID, ttl)
+				logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, bindAccountErr)
+				logOpenAIWSResponseStickyBind(groupID, apiKeyID, account.ID, account.Type, responseID, boundConnID, ttl, bindAccountErr)
 			}
 		}
 		bindCleanTurnState := func() {
-			bindCleanTurnResponseAccount()
+			boundConnID := ""
 			if responseID != "" && stateStore != nil && !result.ClientDisconnected {
-				stateStore.BindResponseConn(groupID, apiKeyID, responseID, connID, s.openAIWSResponseStickyTTL())
+				boundConnID = connID
+				stateStore.BindResponseConn(groupID, apiKeyID, responseID, boundConnID, s.openAIWSResponseStickyTTL())
 			}
+			bindCleanTurnResponseAccount(boundConnID)
 			if stateStore != nil && storeDisabled && sessionHash != "" && !result.ClientDisconnected {
-				stateStore.BindSessionConn(groupID, apiKeyID, account.ID, sessionHash, connID, s.openAIWSSessionStickyTTL())
+				ttl := s.openAIWSSessionStickyTTL()
+				stateStore.BindSessionConn(groupID, apiKeyID, account.ID, sessionHash, connID, ttl)
+				logOpenAIWSSessionConnBind(groupID, apiKeyID, account.ID, account.Type, sessionHash, connID, ttl)
 			}
 			// TEMP_DIAG(openai_ws_delta_shadow): owner 在干净完成后写会话上下文指纹；
 			// 优先用 input_N(本轮实际发送的 full input) ++ raw output_N，缺少 raw output 时降级为 input-only context。
@@ -6233,7 +6379,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 							nonInputHash, _, nonInputFields := openAIWSNonInputFingerprint(currentPayload)
 							ttl := s.openAIWSSessionStickyTTL()
 							stateStore.BindConnLastResponse(connID, responseID, ttl)
-							stateStore.BindSessionContext(groupID, apiKeyID, sessionHash, openAIWSSessionContextValue{
+							sessionContextValue := openAIWSSessionContextValue{
 								accountID:               account.ID,
 								connID:                  connID,
 								lastResponseID:          responseID,
@@ -6245,7 +6391,22 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 								nonInputHash:            nonInputHash,
 								nonInputFields:          nonInputFields,
 								rawVsClientVisibleEqual: result.DeltaShadowRawClientEquiv,
-							}, ttl)
+							}
+							stateStore.BindSessionContext(groupID, apiKeyID, sessionHash, sessionContextValue, ttl)
+							logOpenAIWSSessionContextBind(
+								groupID,
+								apiKeyID,
+								account.ID,
+								account.Type,
+								sessionHash,
+								connID,
+								responseID,
+								ttl,
+								len(inputHashes),
+								len(materialized),
+								result.DeltaShadowOutputCaptured,
+								result.DeltaShadowRawClientEquiv,
+							)
 						}
 					}
 				}
@@ -6263,7 +6424,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				if coderws.CloseStatus(readErr) == coderws.StatusNormalClosure && !result.ClientDisconnected {
 					bindCleanTurnState()
 				} else {
-					bindCleanTurnResponseAccount()
+					bindCleanTurnResponseAccount("")
 					lastTurnClean = false
 					if sessionLease != nil {
 						sessionLease.MarkBrokenFor("ingress_client_closed")

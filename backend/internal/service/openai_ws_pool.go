@@ -1857,6 +1857,46 @@ func (p *openAIWSConnPool) AccountPoolLoad(accountID int64) (inflight int, waite
 	return inflight, waiters, len(ap.conns)
 }
 
+type openAIWSConnSnapshot struct {
+	Exists     bool
+	Profile    openAIWSConnProfile
+	Age        time.Duration
+	Idle       time.Duration
+	LeaseCount int64
+	Leased     bool
+	Waiters    int32
+}
+
+func (p *openAIWSConnPool) ConnSnapshot(accountID int64, connID string) openAIWSConnSnapshot {
+	if p == nil || accountID <= 0 {
+		return openAIWSConnSnapshot{}
+	}
+	connID = stringsTrim(connID)
+	if connID == "" {
+		return openAIWSConnSnapshot{}
+	}
+	ap, ok := p.getAccountPool(accountID)
+	if !ok || ap == nil {
+		return openAIWSConnSnapshot{}
+	}
+	now := time.Now()
+	ap.mu.Lock()
+	defer ap.mu.Unlock()
+	conn, ok := ap.conns[connID]
+	if !ok || conn == nil {
+		return openAIWSConnSnapshot{}
+	}
+	return openAIWSConnSnapshot{
+		Exists:     true,
+		Profile:    conn.profile,
+		Age:        conn.age(now),
+		Idle:       conn.idleDuration(now),
+		LeaseCount: conn.leaseCount.Load(),
+		Leased:     conn.isLeased(),
+		Waiters:    conn.waiters.Load(),
+	}
+}
+
 func (p *openAIWSConnPool) ConnProfile(accountID int64, connID string) (openAIWSConnProfile, bool) {
 	if p == nil || accountID <= 0 {
 		return openAIWSConnProfileSessionBound, false

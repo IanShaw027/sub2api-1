@@ -592,6 +592,9 @@ func openAIWSHashPrefixBreak(full [][32]byte, prefix [][32]byte) (bool, int) {
 
 // openAIWSDeltaShadowLog is the removable shadow diagnostic line.
 type openAIWSDeltaShadowLog struct {
+	GroupID                  int64
+	APIKeyID                 int64
+	SessionHash              string
 	RequestID                string
 	AccountID                int64
 	ConnID                   string
@@ -600,6 +603,16 @@ type openAIWSDeltaShadowLog struct {
 	CachedConnID             string
 	CachedLastResponseID     string
 	ConnMostRecentResponseID string
+	CachedSessionConnID      string
+	CurrentSessionConnID     string
+	CachedConnInPool         bool
+	CachedConnProfile        openAIWSConnProfile
+	CachedConnAgeMS          int64
+	CachedConnIdleMS         int64
+	CachedConnLeaseCount     int64
+	CachedConnLeased         bool
+	CachedConnWaiters        int32
+	CachedConnLastResponseID string
 	AllowConnReanchor        bool
 	HasFunctionCallOutput    bool
 	Active                   bool
@@ -636,8 +649,12 @@ type openAIWSDeltaShadowLog struct {
 func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
 	logger.LegacyPrintf("service.openai_gateway",
 		"openai_ws_delta_shadow temporary_diag=openai_ws_delta_shadow remove_after_debug=true "+
-			"request_id=%s account_id=%d conn_id=%s cached_found=%v cached_account_id=%d cached_conn_id=%s "+
-			"cached_last_response_id=%s conn_most_recent_response_id=%s allow_conn_reanchor=%v "+
+			"group_id=%d api_key_id=%d session=%s request_id=%s account_id=%d conn_id=%s "+
+			"cached_found=%v cached_account_id=%d cached_conn_id=%s cached_last_response_id=%s "+
+			"conn_most_recent_response_id=%s cached_session_conn_id=%s current_session_conn_id=%s "+
+			"cached_conn_in_pool=%v cached_conn_profile=%s cached_conn_age_ms=%d cached_conn_idle_ms=%d "+
+			"cached_conn_lease_count=%d cached_conn_leased=%v cached_conn_waiters=%d "+
+			"cached_conn_last_response_id=%s allow_conn_reanchor=%v "+
 			"has_function_call_output=%v active=%v candidate=%v fallback_reason=%s prefix_match=%v "+
 			"break_boundary=%s break_item_type=%s break_cached_item_type=%s break_cached_shape=%s "+
 			"break_current_shape=%s conn_match=%v most_recent_match=%v non_input_match=%v "+
@@ -646,6 +663,9 @@ func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
 			"sticky_account_hit=%v conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s "+
 			"conn_reanchor_blockers=%s materialized_count=%d current_input_count=%d delta_items=%d delta_bytes=%d "+
 			"full_items=%d full_bytes=%d",
+		v.GroupID,
+		v.APIKeyID,
+		truncateOpenAIWSLogValue(v.SessionHash, 12),
 		normalizeOpenAIWSLogValue(v.RequestID),
 		v.AccountID,
 		normalizeOpenAIWSLogValue(v.ConnID),
@@ -654,6 +674,16 @@ func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
 		truncateOpenAIWSLogValue(v.CachedConnID, openAIWSIDValueMaxLen),
 		truncateOpenAIWSLogValue(v.CachedLastResponseID, openAIWSIDValueMaxLen),
 		truncateOpenAIWSLogValue(v.ConnMostRecentResponseID, openAIWSIDValueMaxLen),
+		truncateOpenAIWSLogValue(v.CachedSessionConnID, openAIWSIDValueMaxLen),
+		truncateOpenAIWSLogValue(v.CurrentSessionConnID, openAIWSIDValueMaxLen),
+		v.CachedConnInPool,
+		openAIWSConnProfileSnapshotLogValue(v.CachedConnProfile, v.CachedConnInPool),
+		v.CachedConnAgeMS,
+		v.CachedConnIdleMS,
+		v.CachedConnLeaseCount,
+		v.CachedConnLeased,
+		v.CachedConnWaiters,
+		truncateOpenAIWSLogValue(v.CachedConnLastResponseID, openAIWSIDValueMaxLen),
 		v.AllowConnReanchor,
 		v.HasFunctionCallOutput,
 		v.Active,
@@ -688,13 +718,33 @@ func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
 	)
 }
 
+func openAIWSConnProfileSnapshotLogValue(profile openAIWSConnProfile, exists bool) string {
+	if !exists {
+		return "-"
+	}
+	return normalizeOpenAIWSLogValue(openAIWSProfileUsageString(profile))
+}
+
 // openAIWSDeltaShadowInput carries the runtime inputs for one follow-up turn's candidate
 // evaluation. All fields are read-only snapshots; evaluation never mutates anything.
 type openAIWSDeltaShadowInput struct {
+	GroupID                  int64
+	APIKeyID                 int64
+	SessionHash              string
 	RequestID                string
 	AccountID                int64
 	LeaseConnID              string
 	ConnMostRecentResponseID string // GetConnLastResponse(leaseConnID)
+	CachedSessionConnID      string
+	CurrentSessionConnID     string
+	CachedConnInPool         bool
+	CachedConnProfile        openAIWSConnProfile
+	CachedConnAgeMS          int64
+	CachedConnIdleMS         int64
+	CachedConnLeaseCount     int64
+	CachedConnLeased         bool
+	CachedConnWaiters        int32
+	CachedConnLastResponseID string
 	CurrentPayload           []byte
 	HasFunctionCallOutput    bool
 	AllowConnReanchor        bool
@@ -712,6 +762,9 @@ type openAIWSDeltaShadowInput struct {
 // fully populated log record; it NEVER mutates the payload.
 func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSDeltaShadowLog {
 	log := openAIWSDeltaShadowLog{
+		GroupID:                  in.GroupID,
+		APIKeyID:                 in.APIKeyID,
+		SessionHash:              in.SessionHash,
 		RequestID:                in.RequestID,
 		AccountID:                in.AccountID,
 		ConnID:                   in.LeaseConnID,
@@ -720,6 +773,16 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 		CachedConnID:             in.Cached.connID,
 		CachedLastResponseID:     in.Cached.lastResponseID,
 		ConnMostRecentResponseID: in.ConnMostRecentResponseID,
+		CachedSessionConnID:      in.CachedSessionConnID,
+		CurrentSessionConnID:     in.CurrentSessionConnID,
+		CachedConnInPool:         in.CachedConnInPool,
+		CachedConnProfile:        in.CachedConnProfile,
+		CachedConnAgeMS:          in.CachedConnAgeMS,
+		CachedConnIdleMS:         in.CachedConnIdleMS,
+		CachedConnLeaseCount:     in.CachedConnLeaseCount,
+		CachedConnLeased:         in.CachedConnLeased,
+		CachedConnWaiters:        in.CachedConnWaiters,
+		CachedConnLastResponseID: in.CachedConnLastResponseID,
 		AllowConnReanchor:        in.AllowConnReanchor,
 		HasFunctionCallOutput:    in.HasFunctionCallOutput,
 		StickyAccountHit:         in.StickyAccountHit,
