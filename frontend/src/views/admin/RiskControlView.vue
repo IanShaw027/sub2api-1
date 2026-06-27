@@ -1627,6 +1627,7 @@ const endpointOptions = computed<SelectOption[]>(() => [
   { value: '/v1/messages', label: '/v1/messages' },
   { value: '/v1/responses', label: '/v1/responses' },
   { value: '/v1/chat/completions', label: '/v1/chat/completions' },
+  { value: '/v1/embeddings', label: '/v1/embeddings' },
   { value: '/v1beta/models', label: '/v1beta/models' },
   { value: '/v1/images/generations', label: '/v1/images/generations' },
   { value: '/v1/images/edits', label: '/v1/images/edits' },

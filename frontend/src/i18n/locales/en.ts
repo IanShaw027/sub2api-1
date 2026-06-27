@@ -4270,9 +4270,6 @@ export default {
         codexCLIOnly: 'Codex official clients only',
         codexCLIOnlyDesc:
           'Only applies to OpenAI OAuth. When enabled, only Codex official client families are allowed; when disabled, the gateway bypasses this restriction and keeps existing behavior.',
-        codexCLIOnlyAllowClaudeCode: 'Allow Claude Code Codex plugin',
-        codexCLIOnlyAllowClaudeCodeDesc:
-          'When Codex official clients only is enabled, also allow requests detected as the Claude Code Codex plugin.',
         imageGenerationEnabled: 'Allow image generation',
         imageGenerationEnabledDesc:
           'Affects image-generation routing and declared image_generation tool capability for this account. Ordinary text requests are unchanged.',
@@ -7018,9 +7015,6 @@ export default {
         antigravityUserAgentVersion: 'Antigravity UA Version',
         antigravityUserAgentVersionPlaceholder: '1.23.2',
         antigravityUserAgentVersionHint: 'Leave empty to use ANTIGRAVITY_USER_AGENT_VERSION or the built-in default 1.23.2; when set, the admin setting takes precedence.',
-        openaiAllowClaudeCodeCodexPlugin: 'Allow Claude Code Codex plugin',
-        openaiAllowClaudeCodeCodexPluginDesc:
-          'Global switch for accepting Claude Code Codex plugin traffic on OpenAI Codex routes when client restrictions are enabled.',
         openaiCodexUserAgent: 'OpenAI Codex UA',
         openaiCodexUserAgentPlaceholder: 'codex-tui/0.125.0 (Ubuntu 22.4.0; x86_64) xterm-256color (codex-tui; 0.125.0)',
         openaiCodexUserAgentHint: 'Used to bypass Cloudflare browser-UA challenges on the OpenAI upstream. Only applies when the client User-Agent is detected as a browser (Mozilla/...). Leave empty to use the built-in default.',
@@ -8605,9 +8599,11 @@ export default {
       allowUserRefund: 'Allow User Refund',
       alreadyRefunded: 'Already Refunded',
       deductBalance: 'Deduct Balance',
+      deductSubscriptionBenefit: 'Deduct Subscription Benefit',
       deductBalanceHint: 'Subtract recharged amount from user balance',
       userBalance: 'User Balance',
       orderAmount: 'Order Amount',
+      userRequestedRefundAmount: 'User requested',
       insufficientBalance: 'Insufficient balance — will deduct to $0',
       noDeduction: 'Will NOT deduct user balance',
       forceRefund: 'I understand the risk and want to continue refunding',

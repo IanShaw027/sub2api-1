@@ -133,7 +133,8 @@ let suppressRouteFilterReload = false
 const typeOptions = computed(() => [
   { value: 'all', label: t('common.all', '全部') },
   { value: 'prompt_chat', label: 'prompt_chat' },
-  { value: 'prompt_image', label: 'prompt_image' }
+  { value: 'prompt_image', label: 'prompt_image' },
+  { value: 'script', label: 'script' }
 ])
 
 const priceModeOptions = computed(() => [

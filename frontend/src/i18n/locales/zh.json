@@ -3864,8 +3864,6 @@
         "responsesWebsocketsV2PassthroughHint": "当前已开启自动透传：仅影响 HTTP 透传链路，不影响 WS mode。",
         "codexCLIOnly": "仅允许 Codex 官方客户端",
         "codexCLIOnlyDesc": "仅对 OpenAI OAuth 生效。开启后仅允许 Codex 官方客户端家族访问；关闭后完全绕过并保持原逻辑。",
-        "codexCLIOnlyAllowClaudeCode": "允许 Claude Code Codex 插件",
-        "codexCLIOnlyAllowClaudeCodeDesc": "开启仅允许 Codex 官方客户端时，同时放行识别为 Claude Code Codex 插件的请求。",
         "compactMode": "Compact 模式",
         "compactModeDesc": "控制本账号在 /responses/compact 调度中的参与方式。Auto 跟随探测结果，Force On 强制允许，Force Off 强制排除。",
         "compactModeAuto": "自动",
@@ -6412,9 +6410,7 @@
         "apiKeyAclTrustForwardedIPHint": "评估 API Key ACL 规则时使用转发 IP 请求头。",
         "openaiCodexUserAgent": "OpenAI Codex User-Agent",
         "openaiCodexUserAgentPlaceholder": "OpenAI-Codex/2025.05",
-        "openaiCodexUserAgentHint": "设置转发到 OpenAI Codex 上游请求时使用的 User-Agent。",
-        "openaiAllowClaudeCodeCodexPlugin": "允许 Claude Code Codex 插件",
-        "openaiAllowClaudeCodeCodexPluginDesc": "全局开关。开启客户端限制时，允许 OpenAI Codex 路由接受 Claude Code Codex 插件流量。"
+        "openaiCodexUserAgentHint": "设置转发到 OpenAI Codex 上游请求时使用的 User-Agent。"
       },
       "webSearchEmulation": {
         "title": "Web Search 模拟",
@@ -7845,9 +7841,11 @@
       "allowUserRefund": "允许用户退款",
       "alreadyRefunded": "已退款",
       "deductBalance": "扣除余额",
+      "deductSubscriptionBenefit": "扣除订阅权益",
       "deductBalanceHint": "从用户余额中扣回充值金额",
       "userBalance": "用户余额",
       "orderAmount": "订单金额",
+      "userRequestedRefundAmount": "用户申请",
       "insufficientBalance": "余额不足，将扣至 $0",
       "noDeduction": "将不扣除用户余额",
       "forceRefund": "我已确认风险并继续退款",

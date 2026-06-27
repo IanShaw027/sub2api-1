@@ -394,6 +394,28 @@ describe('admin RiskControlView', () => {
     expect(activeTab.classes()).toContain('dark:bg-primary-600')
     expect(activeTab.classes()).toContain('dark:text-white')
   })
+
+  it('offers embeddings as a moderation log endpoint filter', async () => {
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm
+    expect(setupState.endpointOptions.map((option: { value: string }) => option.value)).toContain('/v1/embeddings')
+  })
+
   it('describes worker runtime as async audit and pre-block record processing', async () => {
     getStatus.mockResolvedValue({
       ...runtimeStatus(),
