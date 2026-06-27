@@ -248,6 +248,24 @@ func TestOpenAIWSStateStore_DeleteConnScopedStateWriteFailKeepsSessionContextFor
 	require.False(t, ok)
 }
 
+func TestOpenAIWSStateStore_DeleteConnScopedStateErrEventDeletesMatchingSessionContext(t *testing.T) {
+	store := NewOpenAIWSStateStore(nil)
+
+	store.BindSessionContext(7, 11, "sess_err_event", openAIWSSessionContextValue{
+		accountID:      101,
+		connID:         "conn_err_event",
+		lastResponseID: "resp_err_event",
+	}, time.Minute)
+	store.BindConnLastResponse("conn_err_event", "resp_err_event", time.Minute)
+
+	store.DeleteConnScopedState("conn_err_event", "err_event")
+
+	_, ok := store.GetSessionContext(7, 11, "sess_err_event")
+	require.False(t, ok, "error-event conn eviction must not leave stale session context")
+	_, ok = store.GetConnLastResponse("conn_err_event")
+	require.False(t, ok)
+}
+
 func TestOpenAIWSStateStore_GetResponseAccount_NoStaleAfterCacheMiss(t *testing.T) {
 	cache := &stubGatewayCache{sessionBindings: map[string]int64{}}
 	store := NewOpenAIWSStateStore(cache)

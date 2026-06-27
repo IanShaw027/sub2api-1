@@ -612,9 +612,11 @@ func openAIWSConnEvictReasonInvalidatesSessionContext(reason string) bool {
 	default:
 		return strings.HasSuffix(reason, "_fail") ||
 			strings.HasSuffix(reason, "_failed") ||
+			strings.HasSuffix(reason, "_event") ||
 			strings.HasPrefix(reason, "read_fail") ||
 			strings.HasPrefix(reason, "write_request_fail") ||
 			strings.HasPrefix(reason, "error_event") ||
+			strings.HasPrefix(reason, "err_event") ||
 			strings.HasPrefix(reason, "response_failed") ||
 			strings.HasPrefix(reason, "session_preempted") ||
 			strings.HasPrefix(reason, "client_disconnected") ||
