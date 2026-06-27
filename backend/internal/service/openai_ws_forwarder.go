@@ -5129,6 +5129,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if strings.TrimSpace(token) == "" {
 		return errors.New("token is empty")
 	}
+	ingressRequestID, _ := openAIWSRequestLogIDs(c)
 
 	// 预取一次 OpenAI Fast Policy settings，绑定到 ctx，让该 WS session
 	// 内所有帧的 evaluateOpenAIFastPolicy 调用复用同一份快照，避免每帧
@@ -5977,6 +5978,45 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
 				fallbackReason, _ := classifyOpenAIWSErrorEventFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 				errCode, errType, errMessage := summarizeOpenAIWSErrorEventFieldsFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
+				snapshotDecision := openAIWSContinuationStoreDecision{
+					StoreMode:                  openAIWSStoreModeFull,
+					StoreDisabled:              turnStoreDisabled,
+					OriginalPreviousResponseID: turnPreviousResponseID,
+					PreferredConnID:            preferredConnID,
+					FallbackReason:             fallbackReason,
+				}
+				if strings.TrimSpace(turnPreviousResponseID) != "" {
+					snapshotDecision.StoreMode = openAIWSStoreModeIncremental
+				}
+				if strings.TrimSpace(preferredConnID) != "" {
+					snapshotDecision.ConnAffinityHit = strings.TrimSpace(preferredConnID) == strings.TrimSpace(lease.ConnID())
+				}
+				if stateStore != nil && strings.TrimSpace(turnPreviousResponseID) != "" {
+					if boundAccountID, getErr := stateStore.GetResponseAccount(ctx, groupID, apiKeyID, turnPreviousResponseID); getErr == nil && boundAccountID > 0 {
+						snapshotDecision.StickyAccountID = boundAccountID
+						snapshotDecision.StickyAccountHit = boundAccountID == account.ID
+						snapshotDecision.StickyAccountMismatch = boundAccountID != account.ID
+					}
+				}
+				s.logOpenAIWSBindingSnapshot(
+					ctx,
+					"ingress_error_event",
+					ingressRequestID,
+					account,
+					stateStore,
+					pool,
+					groupID,
+					apiKeyID,
+					sessionHash,
+					turnPreviousResponseID,
+					strings.TrimSpace(turnPreviousResponseID) != "",
+					lease.ConnID(),
+					preferredConnID,
+					snapshotDecision,
+					fallbackReason,
+					errCode,
+					errType,
+				)
 				recoverablePrevNotFound := fallbackReason == openAIWSIngressStagePreviousResponseNotFound &&
 					turnPreviousResponseID != "" &&
 					!turnHasFunctionCallOutput &&
@@ -7364,6 +7404,14 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 	if responseID == "" {
 		return nil, nil
 	}
+	group := derefGroupID(groupID)
+	responseConnID := ""
+	responseConnHit := false
+	responseConnInPool := false
+	responseConnProfile := openAIWSConnProfile("")
+	responseConnAgeMS := int64(0)
+	responseConnIdleMS := int64(0)
+	responseConnLeaseCount := int64(0)
 	logDiag := func(reason string, action string, account *Account, accountID int64, deletedBinding bool, selectionHit bool) {
 		accountType := ""
 		if account != nil {
@@ -7373,18 +7421,26 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 			}
 		}
 		s.logOpenAIWSPreviousResponseStickyDiag(openAIWSPreviousResponseStickyDiagLog{
-			GroupID:            derefGroupID(groupID),
-			APIKeyID:           apiKeyID,
-			PreviousResponseID: responseID,
-			RequestedModel:     requestedModel,
-			RequiredTransport:  requiredTransport,
-			RequiredCapability: requiredCapability,
-			AccountID:          accountID,
-			AccountType:        accountType,
-			Reason:             reason,
-			Action:             action,
-			DeletedBinding:     deletedBinding,
-			SelectionHit:       selectionHit,
+			GroupID:                derefGroupID(groupID),
+			APIKeyID:               apiKeyID,
+			PreviousResponseID:     responseID,
+			RequestedModel:         requestedModel,
+			RequiredTransport:      requiredTransport,
+			RequiredCapability:     requiredCapability,
+			AccountID:              accountID,
+			AccountType:            accountType,
+			Reason:                 reason,
+			Action:                 action,
+			DeletedBinding:         deletedBinding,
+			SelectionHit:           selectionHit,
+			ExcludedCount:          len(excludedIDs),
+			ResponseConnID:         responseConnID,
+			ResponseConnHit:        responseConnHit,
+			ResponseConnInPool:     responseConnInPool,
+			ResponseConnProfile:    responseConnProfile,
+			ResponseConnAgeMS:      responseConnAgeMS,
+			ResponseConnIdleMS:     responseConnIdleMS,
+			ResponseConnLeaseCount: responseConnLeaseCount,
 		})
 	}
 	store := s.getOpenAIWSStateStore()
@@ -7393,10 +7449,21 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 		return nil, nil
 	}
 
-	accountID, err := store.GetResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
+	accountID, err := store.GetResponseAccount(ctx, group, apiKeyID, responseID)
 	if err != nil {
 		logDiag("binding_error", "load_balance_fallback", nil, 0, false, false)
 		return nil, nil
+	}
+	responseConnID, responseConnHit = store.GetResponseConn(group, apiKeyID, responseID)
+	if responseConnHit && accountID > 0 {
+		if pool := s.getOpenAIWSConnPool(); pool != nil {
+			snapshot := pool.ConnSnapshot(accountID, responseConnID)
+			responseConnInPool = snapshot.Exists
+			responseConnProfile = snapshot.Profile
+			responseConnAgeMS = snapshot.Age.Milliseconds()
+			responseConnIdleMS = snapshot.Idle.Milliseconds()
+			responseConnLeaseCount = snapshot.LeaseCount
+		}
 	}
 	if accountID <= 0 {
 		logDiag("binding_miss", "load_balance_fallback", nil, 0, false, false)
@@ -7404,7 +7471,8 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 	}
 	if excludedIDs != nil {
 		if _, excluded := excludedIDs[accountID]; excluded {
-			logDiag("excluded", "load_balance_fallback", nil, accountID, false, false)
+			account, _ := s.getSchedulableAccount(ctx, accountID)
+			logDiag("excluded", "load_balance_fallback", account, accountID, false, false)
 			return nil, nil
 		}
 	}
@@ -7412,7 +7480,7 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 	account, err := s.getSchedulableAccount(ctx, accountID)
 	if err != nil || account == nil {
 		logDiag("account_not_found", "delete_binding", account, accountID, true, false)
-		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
+		_ = store.DeleteResponseAccount(ctx, group, apiKeyID, responseID)
 		return nil, nil
 	}
 	// 非 WSv2 场景默认不使用 previous_response_id 粘连，避免伪造 HTTP continuation。
@@ -7426,13 +7494,13 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 	stickyWaitTimeout := s.openAIStickyWaitTimeout(ctx)
 	if shouldClearOpenAIStickyAccount(account, requestedModel, "", stickyWaitTimeout) || !isOpenAIStickyCandidateCompatible(ctx, s.settingService, account, requestedModel, requireCompact, "", false, false) {
 		logDiag("sticky_clear_policy", "delete_binding", account, accountID, true, false)
-		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
+		_ = store.DeleteResponseAccount(ctx, group, apiKeyID, responseID)
 		return nil, nil
 	}
 	account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, "", "", false, false)
 	if account == nil {
 		logDiag("recheck_failed", "delete_binding", nil, accountID, true, false)
-		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
+		_ = store.DeleteResponseAccount(ctx, group, apiKeyID, responseID)
 		return nil, nil
 	}
 	if !accountSupportsOpenAICapabilities(account, requiredCapability, "") {
@@ -7451,12 +7519,12 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 		latest, latestErr := s.accountRepo.GetByID(ctx, account.ID)
 		if latestErr != nil || latest == nil {
 			logDiag("latest_missing", "delete_binding", account, accountID, true, false)
-			_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
+			_ = store.DeleteResponseAccount(ctx, group, apiKeyID, responseID)
 			return nil, nil
 		}
 		if shouldClearStickySession(latest, requestedModel) || !latest.IsOpenAI() || !latest.IsSchedulable() {
 			logDiag("latest_unschedulable", "delete_binding", latest, accountID, true, false)
-			_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
+			_ = store.DeleteResponseAccount(ctx, group, apiKeyID, responseID)
 			return nil, nil
 		}
 		if requestedModel != "" && !latest.IsModelSupported(requestedModel) {
@@ -7473,24 +7541,24 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 		}
 		if s.isOpenAIAccountRuntimeBlocked(latest) {
 			logDiag("runtime_blocked", "delete_binding", latest, accountID, true, false)
-			_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
+			_ = store.DeleteResponseAccount(ctx, group, apiKeyID, responseID)
 			return nil, nil
 		}
 		account = latest
 	}
 	if requireCompact && openAICompactSupportTier(account) == 0 {
 		logDiag("compact_unsupported", "delete_binding", account, accountID, true, false)
-		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
+		_ = store.DeleteResponseAccount(ctx, group, apiKeyID, responseID)
 		return nil, nil
 	}
 
 	result, acquireErr := s.tryAcquireAccountSlot(ctx, accountID, groupID, account.Concurrency)
 	if acquireErr == nil && result.Acquired {
 		logOpenAIWSBindResponseAccountWarn(
-			derefGroupID(groupID),
+			group,
 			accountID,
 			responseID,
-			store.BindResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID, accountID, s.openAIWSResponseStickyTTL()),
+			store.BindResponseAccount(ctx, group, apiKeyID, responseID, accountID, s.openAIWSResponseStickyTTL()),
 		)
 		logDiag("slot_acquired", "sticky_previous_selected", account, accountID, false, true)
 		return s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)

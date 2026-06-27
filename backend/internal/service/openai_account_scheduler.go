@@ -67,6 +67,7 @@ type OpenAIAccountScheduleRequest struct {
 	Platform                string
 	SessionHash             string
 	StickyAccountID         int64
+	StickySource            string
 	PreserveStickyBinding   bool
 	PreviousResponseID      string
 	RequestedModel          string
@@ -491,20 +492,23 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 			}
 		}
 		s.service.logOpenAIWSStickySessionReject(openAIWSStickySessionRejectLog{
-			GroupID:            derefGroupID(req.GroupID),
-			APIKeyID:           req.APIKeyID,
-			SessionHash:        sessionHash,
-			AccountID:          accountID,
-			AccountType:        accountType,
-			Reason:             reason,
-			RequestedModel:     req.RequestedModel,
-			RequiredTransport:  req.RequiredTransport,
-			RequiredCapability: req.RequiredCapability,
-			RequiredImageRoute: req.RequiredImageRoute,
-			RequireOAuth:       req.RequireOAuthAccount,
-			RequireCompact:     req.RequireCompact,
-			DeletedBinding:     deletedBinding,
-			Excluded:           excluded,
+			GroupID:               derefGroupID(req.GroupID),
+			APIKeyID:              req.APIKeyID,
+			SessionHash:           sessionHash,
+			AccountID:             accountID,
+			AccountType:           accountType,
+			Reason:                reason,
+			StickySource:          req.StickySource,
+			RequestedModel:        req.RequestedModel,
+			RequiredTransport:     req.RequiredTransport,
+			RequiredCapability:    req.RequiredCapability,
+			RequiredImageRoute:    req.RequiredImageRoute,
+			RequireOAuth:          req.RequireOAuthAccount,
+			RequireCompact:        req.RequireCompact,
+			DeletedBinding:        deletedBinding,
+			Excluded:              excluded,
+			ExcludedCount:         len(req.ExcludedIDs),
+			PreserveStickyBinding: req.PreserveStickyBinding,
 		})
 	}
 
@@ -522,7 +526,8 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	result.AccountID = accountID
 	if req.ExcludedIDs != nil {
 		if _, excluded := req.ExcludedIDs[accountID]; excluded {
-			logReject("excluded", nil, accountID, false, true)
+			account, _ := s.service.getSchedulableAccount(ctx, accountID)
+			logReject("excluded", account, accountID, false, true)
 			return result, nil
 		}
 	}
@@ -2072,6 +2077,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		Platform:                platform,
 		SessionHash:             req.SessionHash,
 		StickyAccountID:         stickyAccountID,
+		StickySource:            stickySource,
 		PreviousResponseID:      previousResponseID,
 		RequestedModel:          requestedModel,
 		RequiredTransport:       requiredTransport,
@@ -2152,31 +2158,35 @@ func (s *OpenAIGatewayService) logOpenAIWSScheduleResultDiag(
 }
 
 type openAIWSStickySessionRejectLog struct {
-	GroupID            int64
-	APIKeyID           int64
-	SessionHash        string
-	AccountID          int64
-	AccountType        string
-	Reason             string
-	RequestedModel     string
-	RequiredTransport  OpenAIUpstreamTransport
-	RequiredCapability OpenAIEndpointCapability
-	RequiredImageRoute string
-	RequireOAuth       bool
-	RequireCompact     bool
-	DeletedBinding     bool
-	Excluded           bool
+	GroupID               int64
+	APIKeyID              int64
+	SessionHash           string
+	AccountID             int64
+	AccountType           string
+	Reason                string
+	StickySource          string
+	RequestedModel        string
+	RequiredTransport     OpenAIUpstreamTransport
+	RequiredCapability    OpenAIEndpointCapability
+	RequiredImageRoute    string
+	RequireOAuth          bool
+	RequireCompact        bool
+	DeletedBinding        bool
+	Excluded              bool
+	ExcludedCount         int
+	PreserveStickyBinding bool
 }
 
 func openAIWSStickySessionRejectLogMessage(v openAIWSStickySessionRejectLog) string {
 	return fmt.Sprintf(
-		"openai_ws_sticky_session_reject temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s account_id=%d account_type=%s reason=%s model=%s transport=%s capability=%s image_route=%s require_oauth=%v require_compact=%v deleted_binding=%v excluded=%v",
+		"openai_ws_sticky_session_reject temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s account_id=%d account_type=%s reason=%s sticky_source=%s model=%s transport=%s capability=%s image_route=%s require_oauth=%v require_compact=%v deleted_binding=%v excluded=%v excluded_count=%d preserve_sticky_binding=%v",
 		v.GroupID,
 		v.APIKeyID,
 		truncateOpenAIWSLogValue(v.SessionHash, 12),
 		v.AccountID,
 		normalizeOpenAIWSLogValue(v.AccountType),
 		normalizeOpenAIWSLogValueNoReplace(v.Reason),
+		normalizeOpenAIWSLogValue(v.StickySource),
 		normalizeOpenAIWSLogValue(v.RequestedModel),
 		normalizeOpenAIWSLogValue(openAIUpstreamTransportLogValue(v.RequiredTransport)),
 		normalizeOpenAIWSLogValue(string(v.RequiredCapability)),
@@ -2185,6 +2195,8 @@ func openAIWSStickySessionRejectLogMessage(v openAIWSStickySessionRejectLog) str
 		v.RequireCompact,
 		v.DeletedBinding,
 		v.Excluded,
+		v.ExcludedCount,
+		v.PreserveStickyBinding,
 	)
 }
 
@@ -2196,23 +2208,31 @@ func (s *OpenAIGatewayService) logOpenAIWSStickySessionReject(v openAIWSStickySe
 }
 
 type openAIWSPreviousResponseStickyDiagLog struct {
-	GroupID            int64
-	APIKeyID           int64
-	PreviousResponseID string
-	RequestedModel     string
-	RequiredTransport  OpenAIUpstreamTransport
-	RequiredCapability OpenAIEndpointCapability
-	AccountID          int64
-	AccountType        string
-	Reason             string
-	Action             string
-	DeletedBinding     bool
-	SelectionHit       bool
+	GroupID                int64
+	APIKeyID               int64
+	PreviousResponseID     string
+	RequestedModel         string
+	RequiredTransport      OpenAIUpstreamTransport
+	RequiredCapability     OpenAIEndpointCapability
+	AccountID              int64
+	AccountType            string
+	Reason                 string
+	Action                 string
+	DeletedBinding         bool
+	SelectionHit           bool
+	ExcludedCount          int
+	ResponseConnID         string
+	ResponseConnHit        bool
+	ResponseConnInPool     bool
+	ResponseConnProfile    openAIWSConnProfile
+	ResponseConnAgeMS      int64
+	ResponseConnIdleMS     int64
+	ResponseConnLeaseCount int64
 }
 
 func openAIWSPreviousResponseStickyDiagLogMessage(v openAIWSPreviousResponseStickyDiagLog) string {
 	return fmt.Sprintf(
-		"openai_ws_previous_response_sticky_diag temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d previous_response_id=%s model=%s transport=%s capability=%s account_id=%d account_type=%s reason=%s action=%s deleted_binding=%v selection_hit=%v",
+		"openai_ws_previous_response_sticky_diag temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d previous_response_id=%s model=%s transport=%s capability=%s account_id=%d account_type=%s reason=%s action=%s deleted_binding=%v selection_hit=%v excluded_count=%d response_conn_id=%s response_conn_hit=%v response_conn_in_pool=%v response_conn_profile=%s response_conn_age_ms=%d response_conn_idle_ms=%d response_conn_lease_count=%d",
 		v.GroupID,
 		v.APIKeyID,
 		truncateOpenAIWSLogValue(v.PreviousResponseID, openAIWSIDValueMaxLen),
@@ -2225,6 +2245,14 @@ func openAIWSPreviousResponseStickyDiagLogMessage(v openAIWSPreviousResponseStic
 		normalizeOpenAIWSLogValueNoReplace(v.Action),
 		v.DeletedBinding,
 		v.SelectionHit,
+		v.ExcludedCount,
+		truncateOpenAIWSLogValue(v.ResponseConnID, openAIWSIDValueMaxLen),
+		v.ResponseConnHit,
+		v.ResponseConnInPool,
+		openAIWSConnProfileSnapshotLogValue(v.ResponseConnProfile, v.ResponseConnInPool),
+		v.ResponseConnAgeMS,
+		v.ResponseConnIdleMS,
+		v.ResponseConnLeaseCount,
 	)
 }
 

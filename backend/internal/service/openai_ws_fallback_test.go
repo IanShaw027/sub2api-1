@@ -950,17 +950,20 @@ func TestOpenAIWSSessionContextStickySnapshotLogMessageShowsStickyAndCachedConte
 
 func TestOpenAIWSStickySessionRejectLogMessageShowsInvalidationReason(t *testing.T) {
 	msg := openAIWSStickySessionRejectLogMessage(openAIWSStickySessionRejectLog{
-		GroupID:            22,
-		APIKeyID:           400,
-		SessionHash:        "abcdef1234567890",
-		AccountID:          73969,
-		AccountType:        AccountTypeOAuth,
-		Reason:             "transport_incompatible",
-		RequestedModel:     "gpt-5.4",
-		RequiredTransport:  OpenAIUpstreamTransportResponsesWebsocketV2,
-		RequiredCapability: OpenAIEndpointCapabilityResponsesIngress,
-		DeletedBinding:     true,
-		Excluded:           false,
+		GroupID:               22,
+		APIKeyID:              400,
+		SessionHash:           "abcdef1234567890",
+		AccountID:             73969,
+		AccountType:           AccountTypeOAuth,
+		Reason:                "transport_incompatible",
+		StickySource:          "redis",
+		RequestedModel:        "gpt-5.4",
+		RequiredTransport:     OpenAIUpstreamTransportResponsesWebsocketV2,
+		RequiredCapability:    OpenAIEndpointCapabilityResponsesIngress,
+		DeletedBinding:        true,
+		Excluded:              false,
+		ExcludedCount:         3,
+		PreserveStickyBinding: true,
 	})
 
 	require.Contains(t, msg, "openai_ws_sticky_session_reject")
@@ -970,27 +973,38 @@ func TestOpenAIWSStickySessionRejectLogMessageShowsInvalidationReason(t *testing
 	require.Contains(t, msg, "account_id=73969")
 	require.Contains(t, msg, "account_type=oauth")
 	require.Contains(t, msg, "reason=transport_incompatible")
+	require.Contains(t, msg, "sticky_source=redis")
 	require.Contains(t, msg, "model=gpt-5.4")
 	require.Contains(t, msg, "transport=responses_websockets_v2")
 	require.Contains(t, msg, "capability=responses_ingress")
 	require.Contains(t, msg, "deleted_binding=true")
 	require.Contains(t, msg, "excluded=false")
+	require.Contains(t, msg, "excluded_count=3")
+	require.Contains(t, msg, "preserve_sticky_binding=true")
 }
 
 func TestOpenAIWSPreviousResponseStickyDiagLogMessageShowsDecisionReason(t *testing.T) {
 	msg := openAIWSPreviousResponseStickyDiagLogMessage(openAIWSPreviousResponseStickyDiagLog{
-		GroupID:            22,
-		APIKeyID:           400,
-		PreviousResponseID: "resp_prev_diag",
-		RequestedModel:     "gpt-5.4",
-		RequiredTransport:  OpenAIUpstreamTransportResponsesWebsocketV2,
-		RequiredCapability: OpenAIEndpointCapabilityResponsesIngress,
-		AccountID:          73969,
-		AccountType:        AccountTypeOAuth,
-		Reason:             "binding_miss",
-		Action:             "load_balance_fallback",
-		DeletedBinding:     false,
-		SelectionHit:       false,
+		GroupID:                22,
+		APIKeyID:               400,
+		PreviousResponseID:     "resp_prev_diag",
+		RequestedModel:         "gpt-5.4",
+		RequiredTransport:      OpenAIUpstreamTransportResponsesWebsocketV2,
+		RequiredCapability:     OpenAIEndpointCapabilityResponsesIngress,
+		AccountID:              73969,
+		AccountType:            AccountTypeOAuth,
+		Reason:                 "binding_miss",
+		Action:                 "load_balance_fallback",
+		DeletedBinding:         false,
+		SelectionHit:           false,
+		ExcludedCount:          2,
+		ResponseConnID:         "oa_ws_73969_7",
+		ResponseConnHit:        true,
+		ResponseConnInPool:     true,
+		ResponseConnProfile:    openAIWSConnProfileSessionBound,
+		ResponseConnAgeMS:      81000,
+		ResponseConnIdleMS:     1200,
+		ResponseConnLeaseCount: 6,
 	})
 
 	require.Contains(t, msg, "openai_ws_previous_response_sticky_diag")
@@ -1006,6 +1020,14 @@ func TestOpenAIWSPreviousResponseStickyDiagLogMessageShowsDecisionReason(t *test
 	require.Contains(t, msg, "action=load_balance_fallback")
 	require.Contains(t, msg, "deleted_binding=false")
 	require.Contains(t, msg, "selection_hit=false")
+	require.Contains(t, msg, "excluded_count=2")
+	require.Contains(t, msg, "response_conn_id=oa_ws_73969_7")
+	require.Contains(t, msg, "response_conn_hit=true")
+	require.Contains(t, msg, "response_conn_in_pool=true")
+	require.Contains(t, msg, "response_conn_profile=session_bound")
+	require.Contains(t, msg, "response_conn_age_ms=81000")
+	require.Contains(t, msg, "response_conn_idle_ms=1200")
+	require.Contains(t, msg, "response_conn_lease_count=6")
 }
 
 func TestOpenAIWSBindingSnapshotLogMessageShowsMismatchState(t *testing.T) {
