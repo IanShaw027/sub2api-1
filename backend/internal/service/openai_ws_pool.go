@@ -25,6 +25,7 @@ const (
 	openAIWSConnPrewarmExtraDelay   = 2 * time.Second
 	openAIWSAcquireCleanupInterval  = 3 * time.Second
 	openAIWSBackgroundSweepTicker   = 30 * time.Second
+	openAIWSNeutralIdleTTLSafeCap   = 70 * time.Second
 	openAIWSNeutralAcquireStaleIdle = 1000 * time.Second
 	defaultOpenAIWSDialTimeout      = 10 * time.Second
 	defaultOpenAIWSReadTimeout      = 15 * time.Minute
@@ -1461,7 +1462,14 @@ func (p *openAIWSConnPool) sessionIdleTTL() time.Duration {
 }
 
 func (p *openAIWSConnPool) neutralIdleTTL() time.Duration {
-	return p.sessionIdleTTL()
+	sessionTTL := p.sessionIdleTTL()
+	if sessionTTL <= 0 {
+		return sessionTTL
+	}
+	if sessionTTL < openAIWSNeutralIdleTTLSafeCap {
+		return sessionTTL
+	}
+	return openAIWSNeutralIdleTTLSafeCap
 }
 
 func (p *openAIWSConnPool) neutralAcquireStaleIdle() time.Duration {

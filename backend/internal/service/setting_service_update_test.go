@@ -475,7 +475,7 @@ func TestSettingService_LoadOpenAIWSPoolRuntimeSettingsInitializesCache(t *testi
 	require.Equal(t, 80, sessionIdleTTLSeconds)
 	pool := newOpenAIWSConnPool(&config.Config{})
 	t.Cleanup(pool.Close)
-	require.Equal(t, 80*time.Second, pool.neutralIdleTTL())
+	require.Equal(t, 70*time.Second, pool.neutralIdleTTL())
 }
 
 func TestSettingService_UpdateSettings_OpenAIWSIdleSettingsDrivePoolRuntime(t *testing.T) {

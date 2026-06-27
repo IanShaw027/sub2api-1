@@ -95,12 +95,12 @@ func TestOpenAIWSPoolRuntimeSettings_NeutralPrewarmPercentAndSessionTTLAccessors
 
 	require.Equal(t, defaultOpenAIWSNeutralPrewarmPercent, pool.neutralPrewarmPercent())
 	require.Equal(t, time.Duration(defaultOpenAIWSSessionIdleTTLSeconds)*time.Second, pool.sessionIdleTTL())
-	require.Equal(t, pool.sessionIdleTTL(), pool.neutralIdleTTL())
+	require.Equal(t, 70*time.Second, pool.neutralIdleTTL())
 
 	StoreOpenAIWSPoolRuntimeSettings(25, 180)
 	require.Equal(t, 25, pool.neutralPrewarmPercent())
 	require.Equal(t, 180*time.Second, pool.sessionIdleTTL())
-	require.Equal(t, pool.sessionIdleTTL(), pool.neutralIdleTTL())
+	require.Equal(t, 70*time.Second, pool.neutralIdleTTL())
 
 	StoreOpenAIWSPoolRuntimeSettings(0, 60)
 	require.Equal(t, 0, pool.neutralPrewarmPercent(), "0 disables proactive neutral prewarm")
@@ -109,7 +109,7 @@ func TestOpenAIWSPoolRuntimeSettings_NeutralPrewarmPercentAndSessionTTLAccessors
 
 	StoreOpenAIWSPoolRuntimeSettings(25, 1200)
 	require.Equal(t, 1000*time.Second, pool.sessionIdleTTL(), "WS idle reuse must not exceed the configured upper bound")
-	require.Equal(t, pool.sessionIdleTTL(), pool.neutralIdleTTL())
+	require.Equal(t, 70*time.Second, pool.neutralIdleTTL())
 }
 
 func TestOpenAIWSPool_NeutralAcquireStaleIdleAccessor(t *testing.T) {

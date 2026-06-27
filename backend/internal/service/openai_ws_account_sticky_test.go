@@ -406,6 +406,7 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_CapabilityMismat
 		"text-embedding-3-small",
 		nil,
 		OpenAIEndpointCapabilityEmbeddings,
+		OpenAIUpstreamTransportAny,
 		false,
 	)
 	require.NoError(t, err)

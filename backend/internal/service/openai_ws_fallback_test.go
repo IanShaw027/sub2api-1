@@ -948,6 +948,66 @@ func TestOpenAIWSSessionContextStickySnapshotLogMessageShowsStickyAndCachedConte
 	require.Contains(t, msg, "cached_conn_last_response_id=resp_cached_123")
 }
 
+func TestOpenAIWSStickySessionRejectLogMessageShowsInvalidationReason(t *testing.T) {
+	msg := openAIWSStickySessionRejectLogMessage(openAIWSStickySessionRejectLog{
+		GroupID:            22,
+		APIKeyID:           400,
+		SessionHash:        "abcdef1234567890",
+		AccountID:          73969,
+		AccountType:        AccountTypeOAuth,
+		Reason:             "transport_incompatible",
+		RequestedModel:     "gpt-5.4",
+		RequiredTransport:  OpenAIUpstreamTransportResponsesWebsocketV2,
+		RequiredCapability: OpenAIEndpointCapabilityResponsesIngress,
+		DeletedBinding:     true,
+		Excluded:           false,
+	})
+
+	require.Contains(t, msg, "openai_ws_sticky_session_reject")
+	require.Contains(t, msg, "group_id=22")
+	require.Contains(t, msg, "api_key_id=400")
+	require.Contains(t, msg, "session=abcdef123456")
+	require.Contains(t, msg, "account_id=73969")
+	require.Contains(t, msg, "account_type=oauth")
+	require.Contains(t, msg, "reason=transport_incompatible")
+	require.Contains(t, msg, "model=gpt-5.4")
+	require.Contains(t, msg, "transport=responses_websockets_v2")
+	require.Contains(t, msg, "capability=responses_ingress")
+	require.Contains(t, msg, "deleted_binding=true")
+	require.Contains(t, msg, "excluded=false")
+}
+
+func TestOpenAIWSPreviousResponseStickyDiagLogMessageShowsDecisionReason(t *testing.T) {
+	msg := openAIWSPreviousResponseStickyDiagLogMessage(openAIWSPreviousResponseStickyDiagLog{
+		GroupID:            22,
+		APIKeyID:           400,
+		PreviousResponseID: "resp_prev_diag",
+		RequestedModel:     "gpt-5.4",
+		RequiredTransport:  OpenAIUpstreamTransportResponsesWebsocketV2,
+		RequiredCapability: OpenAIEndpointCapabilityResponsesIngress,
+		AccountID:          73969,
+		AccountType:        AccountTypeOAuth,
+		Reason:             "binding_miss",
+		Action:             "load_balance_fallback",
+		DeletedBinding:     false,
+		SelectionHit:       false,
+	})
+
+	require.Contains(t, msg, "openai_ws_previous_response_sticky_diag")
+	require.Contains(t, msg, "group_id=22")
+	require.Contains(t, msg, "api_key_id=400")
+	require.Contains(t, msg, "previous_response_id=resp_prev_diag")
+	require.Contains(t, msg, "model=gpt-5.4")
+	require.Contains(t, msg, "transport=responses_websockets_v2")
+	require.Contains(t, msg, "capability=responses_ingress")
+	require.Contains(t, msg, "account_id=73969")
+	require.Contains(t, msg, "account_type=oauth")
+	require.Contains(t, msg, "reason=binding_miss")
+	require.Contains(t, msg, "action=load_balance_fallback")
+	require.Contains(t, msg, "deleted_binding=false")
+	require.Contains(t, msg, "selection_hit=false")
+}
+
 func TestOpenAIWSBindingSnapshotLogMessageShowsMismatchState(t *testing.T) {
 	msg := openAIWSBindingSnapshotLogMessage(openAIWSBindingSnapshotLog{
 		Trigger:                         "error_event",

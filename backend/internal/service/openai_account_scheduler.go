@@ -388,14 +388,34 @@ func (s *defaultOpenAIAccountScheduler) Select(
 			req.RequestedModel,
 			req.ExcludedIDs,
 			req.RequiredCapability,
+			req.RequiredTransport,
 			req.RequireCompact,
 		)
 		if err != nil {
 			return nil, decision, err
 		}
 		if selection != nil && selection.Account != nil {
-			if !s.isAccountTransportCompatible(selection.Account, req.RequiredTransport) ||
-				!s.isAccountRequestCompatible(ctx, selection.Account, req) {
+			transportOK := s.isAccountTransportCompatible(selection.Account, req.RequiredTransport)
+			requestOK := transportOK && s.isAccountRequestCompatible(ctx, selection.Account, req)
+			if !transportOK || !requestOK {
+				reason := "request_incompatible_after_select"
+				if !transportOK {
+					reason = "transport_incompatible_after_select"
+				}
+				s.service.logOpenAIWSPreviousResponseStickyDiag(openAIWSPreviousResponseStickyDiagLog{
+					GroupID:            derefGroupID(req.GroupID),
+					APIKeyID:           req.APIKeyID,
+					PreviousResponseID: previousResponseID,
+					RequestedModel:     req.RequestedModel,
+					RequiredTransport:  req.RequiredTransport,
+					RequiredCapability: req.RequiredCapability,
+					AccountID:          selection.Account.ID,
+					AccountType:        selection.Account.Type,
+					Reason:             reason,
+					Action:             "load_balance_fallback",
+					DeletedBinding:     false,
+					SelectionHit:       false,
+				})
 				if selection.ReleaseFunc != nil {
 					selection.ReleaseFunc()
 				}
@@ -462,6 +482,31 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	if sessionHash == "" || s == nil || s.service == nil || s.service.cache == nil {
 		return result, nil
 	}
+	logReject := func(reason string, account *Account, accountID int64, deletedBinding bool, excluded bool) {
+		accountType := ""
+		if account != nil {
+			accountType = account.Type
+			if accountID <= 0 {
+				accountID = account.ID
+			}
+		}
+		s.service.logOpenAIWSStickySessionReject(openAIWSStickySessionRejectLog{
+			GroupID:            derefGroupID(req.GroupID),
+			APIKeyID:           req.APIKeyID,
+			SessionHash:        sessionHash,
+			AccountID:          accountID,
+			AccountType:        accountType,
+			Reason:             reason,
+			RequestedModel:     req.RequestedModel,
+			RequiredTransport:  req.RequiredTransport,
+			RequiredCapability: req.RequiredCapability,
+			RequiredImageRoute: req.RequiredImageRoute,
+			RequireOAuth:       req.RequireOAuthAccount,
+			RequireCompact:     req.RequireCompact,
+			DeletedBinding:     deletedBinding,
+			Excluded:           excluded,
+		})
+	}
 
 	accountID := req.StickyAccountID
 	if accountID <= 0 {
@@ -477,17 +522,20 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	result.AccountID = accountID
 	if req.ExcludedIDs != nil {
 		if _, excluded := req.ExcludedIDs[accountID]; excluded {
+			logReject("excluded", nil, accountID, false, true)
 			return result, nil
 		}
 	}
 
 	account, err := s.service.getSchedulableAccount(ctx, accountID)
 	if err != nil || account == nil {
+		logReject("account_not_found", account, accountID, true, false)
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
 	result.AccountType = account.Type
 	if !s.isStickyAccountWithinSchedulingScope(ctx, account.ID, req) {
+		logReject("out_of_scope", account, accountID, true, false)
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
@@ -495,14 +543,17 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	if shouldClearOpenAIAccountForStickySelection(account, req.Platform, req.RequestedModel, req.RequiredImageRoute, stickyWaitTimeout) ||
 		account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) ||
 		!account.IsOpenAICompatible() {
+		logReject("sticky_clear_policy", account, accountID, true, false)
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
 	if !isOpenAIStickyCandidateCompatible(ctx, s.service.settingService, account, req.RequestedModel, req.RequireCompact, req.RequiredImageRoute, req.RequireOAuthAccount, req.RequireImageEnabled) {
+		logReject("candidate_incompatible", account, accountID, true, false)
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
 	if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
+		logReject("transport_incompatible", account, accountID, true, false)
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
@@ -513,6 +564,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		!account.IsOpenAICompatible() ||
 		!s.isAccountTransportCompatible(account, req.RequiredTransport) ||
 		!s.isAccountRequestCompatible(ctx, account, req) {
+		logReject("recheck_failed", account, accountID, true, false)
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
@@ -2097,6 +2149,102 @@ func (s *OpenAIGatewayService) logOpenAIWSScheduleResultDiag(
 		decision.LatencyMs,
 		truncateOpenAIWSLogValue(errMessage, openAIWSLogValueMaxLen),
 	)
+}
+
+type openAIWSStickySessionRejectLog struct {
+	GroupID            int64
+	APIKeyID           int64
+	SessionHash        string
+	AccountID          int64
+	AccountType        string
+	Reason             string
+	RequestedModel     string
+	RequiredTransport  OpenAIUpstreamTransport
+	RequiredCapability OpenAIEndpointCapability
+	RequiredImageRoute string
+	RequireOAuth       bool
+	RequireCompact     bool
+	DeletedBinding     bool
+	Excluded           bool
+}
+
+func openAIWSStickySessionRejectLogMessage(v openAIWSStickySessionRejectLog) string {
+	return fmt.Sprintf(
+		"openai_ws_sticky_session_reject temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s account_id=%d account_type=%s reason=%s model=%s transport=%s capability=%s image_route=%s require_oauth=%v require_compact=%v deleted_binding=%v excluded=%v",
+		v.GroupID,
+		v.APIKeyID,
+		truncateOpenAIWSLogValue(v.SessionHash, 12),
+		v.AccountID,
+		normalizeOpenAIWSLogValue(v.AccountType),
+		normalizeOpenAIWSLogValueNoReplace(v.Reason),
+		normalizeOpenAIWSLogValue(v.RequestedModel),
+		normalizeOpenAIWSLogValue(openAIUpstreamTransportLogValue(v.RequiredTransport)),
+		normalizeOpenAIWSLogValue(string(v.RequiredCapability)),
+		normalizeOpenAIWSLogValue(v.RequiredImageRoute),
+		v.RequireOAuth,
+		v.RequireCompact,
+		v.DeletedBinding,
+		v.Excluded,
+	)
+}
+
+func (s *OpenAIGatewayService) logOpenAIWSStickySessionReject(v openAIWSStickySessionRejectLog) {
+	if s == nil || !shouldLogOpenAIWSStickySelectDiag(v.RequiredCapability, v.RequiredTransport, v.AccountType, v.SessionHash) {
+		return
+	}
+	logOpenAIWSModeInfoDirect("%s", openAIWSStickySessionRejectLogMessage(v))
+}
+
+type openAIWSPreviousResponseStickyDiagLog struct {
+	GroupID            int64
+	APIKeyID           int64
+	PreviousResponseID string
+	RequestedModel     string
+	RequiredTransport  OpenAIUpstreamTransport
+	RequiredCapability OpenAIEndpointCapability
+	AccountID          int64
+	AccountType        string
+	Reason             string
+	Action             string
+	DeletedBinding     bool
+	SelectionHit       bool
+}
+
+func openAIWSPreviousResponseStickyDiagLogMessage(v openAIWSPreviousResponseStickyDiagLog) string {
+	return fmt.Sprintf(
+		"openai_ws_previous_response_sticky_diag temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d previous_response_id=%s model=%s transport=%s capability=%s account_id=%d account_type=%s reason=%s action=%s deleted_binding=%v selection_hit=%v",
+		v.GroupID,
+		v.APIKeyID,
+		truncateOpenAIWSLogValue(v.PreviousResponseID, openAIWSIDValueMaxLen),
+		normalizeOpenAIWSLogValue(v.RequestedModel),
+		normalizeOpenAIWSLogValue(openAIUpstreamTransportLogValue(v.RequiredTransport)),
+		normalizeOpenAIWSLogValue(string(v.RequiredCapability)),
+		v.AccountID,
+		normalizeOpenAIWSLogValue(v.AccountType),
+		normalizeOpenAIWSLogValueNoReplace(v.Reason),
+		normalizeOpenAIWSLogValueNoReplace(v.Action),
+		v.DeletedBinding,
+		v.SelectionHit,
+	)
+}
+
+func (s *OpenAIGatewayService) logOpenAIWSPreviousResponseStickyDiag(v openAIWSPreviousResponseStickyDiagLog) {
+	if s == nil || strings.TrimSpace(v.PreviousResponseID) == "" ||
+		!shouldLogOpenAIWSStickySelectDiag(v.RequiredCapability, v.RequiredTransport, v.AccountType, v.PreviousResponseID) {
+		return
+	}
+	logOpenAIWSModeInfoDirect("%s", openAIWSPreviousResponseStickyDiagLogMessage(v))
+}
+
+func shouldLogOpenAIWSStickySelectDiag(requiredCapability OpenAIEndpointCapability, requiredTransport OpenAIUpstreamTransport, accountType string, anchor string) bool {
+	if strings.TrimSpace(anchor) == "" {
+		return false
+	}
+	if accountType != "" && accountType != AccountTypeOAuth {
+		return false
+	}
+	return requiredCapability == OpenAIEndpointCapabilityResponsesIngress ||
+		requiredTransport == OpenAIUpstreamTransportResponsesWebsocketV2
 }
 
 func (s *OpenAIGatewayService) resolveOpenAIScheduleStickyAccountID(ctx context.Context, groupID *int64, apiKeyID int64, sessionHash string) (int64, string) {

@@ -2724,7 +2724,7 @@ func TestOpenAIWSConnPool_CleanupNeutralOverTargetKeepsReusableNeutral(t *testin
 			continue
 		}
 		if conn.id == reusableConnID {
-			conn.lastUsedNano.Store(time.Now().Add(-90 * time.Second).UnixNano())
+			conn.lastUsedNano.Store(time.Now().Add(-60 * time.Second).UnixNano())
 			continue
 		}
 		conn.lastUsedNano.Store(time.Now().Add(-30 * time.Second).UnixNano())
