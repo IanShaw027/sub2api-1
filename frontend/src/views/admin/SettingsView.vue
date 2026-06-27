@@ -3317,55 +3317,6 @@
                     />
                   </div>
                 </div>
-                <div class="overflow-x-auto">
-                  <table class="min-w-full text-sm">
-                    <thead>
-                      <tr class="text-left text-xs text-gray-500 dark:text-gray-400">
-                        <th class="pb-2 pr-4 font-medium">{{ t("admin.settings.platformQuota.platform") }}</th>
-                        <th class="pb-2 pr-4 font-medium">{{ t("admin.settings.platformQuota.daily") }}</th>
-                        <th class="pb-2 pr-4 font-medium">{{ t("admin.settings.platformQuota.weekly") }}</th>
-                        <th class="pb-2 font-medium">{{ t("admin.settings.platformQuota.monthly") }}</th>
-                      </tr>
-                    </thead>
-                    <tbody class="space-y-2">
-                      <tr v-for="p in (['anthropic', 'openai', 'gemini', 'antigravity', 'kiro', 'grok'] as const)" :key="p" class="align-top">
-                        <td class="pr-4 py-1">
-                          <span class="font-mono text-xs text-gray-700 dark:text-gray-300">{{ p }}</span>
-                        </td>
-                        <td class="pr-4 py-1">
-                          <input
-                            v-model.number="form.default_platform_quotas[p]!.daily"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            class="input h-8 w-28 text-sm"
-                            :placeholder="t('admin.settings.platformQuota.placeholder')"
-                          />
-                        </td>
-                        <td class="pr-4 py-1">
-                          <input
-                            v-model.number="form.default_platform_quotas[p]!.weekly"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            class="input h-8 w-28 text-sm"
-                            :placeholder="t('admin.settings.platformQuota.placeholder')"
-                          />
-                        </td>
-                        <td class="py-1">
-                          <input
-                            v-model.number="form.default_platform_quotas[p]!.monthly"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            class="input h-8 w-28 text-sm"
-                            :placeholder="t('admin.settings.platformQuota.placeholder')"
-                          />
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
               </div>
 
               <!-- Add Rule Button -->
@@ -9145,6 +9096,7 @@ const defaultClaudeOAuthSystemPromptBlocks =
 const claudeOAuthSystemPromptBlocks = ref<ClaudeOAuthSystemPromptBlock[]>(
   createDefaultClaudeOAuthSystemPromptBlocks(),
 );
+const claudeOAuthSystemPromptBlocksInherited = ref(false);
 
 const claudeOAuthSystemPromptPresetOptions = computed(() => [
   {
@@ -9188,6 +9140,7 @@ function getClaudeOAuthPresetLabel(
 }
 
 function syncClaudeOAuthSystemPromptBlocksFormField(): void {
+  claudeOAuthSystemPromptBlocksInherited.value = false;
   form.claude_oauth_system_prompt_blocks =
     serializeClaudeOAuthSystemPromptBlocksToJSON(
       claudeOAuthSystemPromptBlocks.value,
@@ -10306,15 +10259,22 @@ async function loadSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
-    if (!form.claude_oauth_system_prompt_blocks?.trim()) {
-      form.claude_oauth_system_prompt_blocks =
-        defaultClaudeOAuthSystemPromptBlocks;
-    }
+    const loadedClaudeOAuthSystemPromptBlocks =
+      form.claude_oauth_system_prompt_blocks || "";
+    claudeOAuthSystemPromptBlocksInherited.value =
+      !loadedClaudeOAuthSystemPromptBlocks.trim();
     claudeOAuthSystemPromptBlocks.value = parseClaudeOAuthSystemPromptBlocks(
-      form.claude_oauth_system_prompt_blocks,
+      loadedClaudeOAuthSystemPromptBlocks,
       form.claude_oauth_system_prompt,
     );
-    syncClaudeOAuthSystemPromptBlocksFormField();
+    if (claudeOAuthSystemPromptBlocksInherited.value) {
+      form.claude_oauth_system_prompt_blocks = "";
+    } else {
+      form.claude_oauth_system_prompt_blocks =
+        serializeClaudeOAuthSystemPromptBlocksToJSON(
+          claudeOAuthSystemPromptBlocks.value,
+        );
+    }
     codexBlacklistRows.value = parseCodexEntriesToRows(
       form.codex_cli_only_blacklist,
     );
@@ -10841,9 +10801,11 @@ async function saveSettings() {
       form.wechat_connect_mode,
     );
     const claudeOAuthSystemPromptBlocksJSON =
-      serializeClaudeOAuthSystemPromptBlocksToJSON(
-        claudeOAuthSystemPromptBlocks.value,
-      );
+      claudeOAuthSystemPromptBlocksInherited.value
+        ? ""
+        : serializeClaudeOAuthSystemPromptBlocksToJSON(
+            claudeOAuthSystemPromptBlocks.value,
+          );
     form.claude_oauth_system_prompt_blocks =
       claudeOAuthSystemPromptBlocksJSON;
 

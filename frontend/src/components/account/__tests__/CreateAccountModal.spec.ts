@@ -276,7 +276,8 @@ function mountModal() {
         ModelWhitelistSelector: true,
         QuotaLimitCard: true,
         OAuthAuthorizationFlow: OAuthAuthorizationFlowStub,
-        KiroAuthorizationFlow: KiroAuthorizationFlowStub
+        KiroAuthorizationFlow: KiroAuthorizationFlowStub,
+        PlatformIcon: true
       }
     }
   })
@@ -321,6 +322,26 @@ describe('CreateAccountModal', () => {
       email: 'manual@example.com',
       plan_name: 'Kiro Pro'
     })
+  })
+
+  it('renders Grok as a separate platform option and switches to it', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    const platformButtons = wrapper.get('[data-tour="account-form-platform"]').findAll('button')
+    expect(platformButtons.map((button) => button.text().trim())).toEqual([
+      'Anthropic',
+      'OpenAI',
+      'Gemini',
+      'Antigravity',
+      'Kiro',
+      'Grok'
+    ])
+
+    await platformButtons[5].trigger('click')
+    await nextTick()
+
+    expect((wrapper.vm as any).form.platform).toBe('grok')
   })
 
   it('allows an empty name for OAuth flows so the auto-naming step can continue', async () => {

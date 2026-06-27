@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref, computed } from 'vue'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 
 import AccountsView from '../AccountsView.vue'
+
+enableAutoUnmount(afterEach)
 
 const {
   listAccounts,
@@ -163,6 +165,9 @@ function deferred<T>() {
 }
 
 async function waitForBatchQueue() {
+  await flushPromises()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await flushPromises()
   await new Promise((resolve) => setTimeout(resolve, 0))
   await flushPromises()
 }
@@ -311,6 +316,52 @@ describe('admin AccountsView usage batch loading', () => {
     expect(getUsage).not.toHaveBeenCalled()
   })
 
+  it('batches Grok OAuth account usage on desktop', async () => {
+    listAccounts.mockResolvedValue({
+      items: [
+        {
+          id: 103,
+          name: 'grok-oauth',
+          platform: 'grok',
+          type: 'oauth',
+          status: 'active',
+          concurrency: 1,
+          priority: 1,
+          schedulable: true,
+          last_used_at: null,
+          expires_at: null,
+          auto_pause_on_expired: true,
+          created_at: '2026-06-25T00:00:00Z',
+          updated_at: '2026-06-25T00:00:00Z',
+          error_message: null,
+          proxy_id: null,
+          rate_limited_at: null,
+          rate_limit_reset_at: null,
+          overload_until: null,
+          temp_unschedulable_until: null,
+          temp_unschedulable_reason: null,
+          session_window_start: null,
+          session_window_end: null,
+          session_window_status: null,
+          extra: {},
+          groups: []
+        }
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    mountView()
+
+    await waitForBatchQueue()
+
+    expect(getBatchUsage).toHaveBeenCalledTimes(1)
+    expect(getBatchUsage).toHaveBeenCalledWith([103], false)
+    expect(getUsage).not.toHaveBeenCalled()
+  })
+
   it('does not load proxy options until the create modal is opened', async () => {
     const wrapper = mountView()
 
@@ -343,6 +394,7 @@ describe('admin AccountsView usage batch loading', () => {
 
   it('keeps earlier account batch state when a later batch request targets different rows', async () => {
     visibleRowCount.value = 1
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 10 * 60 * 1000)
 
     const firstBatch = deferred<{
       usage: Record<string, any>
@@ -356,65 +408,69 @@ describe('admin AccountsView usage batch loading', () => {
       .mockImplementationOnce(() => firstBatch.promise)
       .mockImplementationOnce(() => secondBatch.promise)
 
-    const wrapper = mountView()
-    await waitForBatchQueue()
+    try {
+      const wrapper = mountView()
+      await waitForBatchQueue()
 
-    expect(getBatchUsage).toHaveBeenCalledTimes(1)
-    expect(getBatchUsage).toHaveBeenLastCalledWith([101], false)
-    expect((wrapper.vm as any).usageBatchLoadingByAccountId['101']).toBe(true)
+      expect(getBatchUsage).toHaveBeenCalledTimes(1)
+      expect(getBatchUsage).toHaveBeenLastCalledWith([101], false)
+      expect((wrapper.vm as any).usageBatchLoadingByAccountId['101']).toBe(true)
 
-    visibleRowCount.value = 2
-    await waitForBatchQueue()
+      visibleRowCount.value = 2
+      await waitForBatchQueue()
 
-    expect(wrapper.find('[data-test="row-102"]').exists()).toBe(true)
-    expect(getBatchUsage).toHaveBeenCalledTimes(2)
-    expect(getBatchUsage).toHaveBeenLastCalledWith([102], false)
-    expect((wrapper.vm as any).usageBatchLoadingByAccountId['102']).toBe(true)
+      expect(wrapper.find('[data-test="row-102"]').exists()).toBe(true)
+      expect(getBatchUsage).toHaveBeenCalledTimes(2)
+      expect(getBatchUsage).toHaveBeenLastCalledWith([102], false)
+      expect((wrapper.vm as any).usageBatchLoadingByAccountId['102']).toBe(true)
 
-    firstBatch.resolve({
-      usage: {
-        '101': {
-          five_hour: {
-            utilization: 27,
-            resets_at: '2026-06-25T12:00:00Z',
-            remaining_seconds: 1800,
-            window_stats: {
-              requests: 7,
-              tokens: 700,
-              cost: 0.07,
-              standard_cost: 0.07,
-              user_cost: 0.07
+      firstBatch.resolve({
+        usage: {
+          '101': {
+            five_hour: {
+              utilization: 27,
+              resets_at: '2026-06-25T12:00:00Z',
+              remaining_seconds: 1800,
+              window_stats: {
+                requests: 7,
+                tokens: 700,
+                cost: 0.07,
+                standard_cost: 0.07,
+                user_cost: 0.07
+              }
             }
           }
-        }
-      },
-      errors: {}
-    })
-    await flushPromises()
+        },
+        errors: {}
+      })
+      await flushPromises()
 
-    expect((wrapper.vm as any).usageBatchLoadingByAccountId['101']).toBe(false)
-    expect((wrapper.vm as any).usageBatchByAccountId['101']?.five_hour?.utilization).toBe(27)
+      expect((wrapper.vm as any).usageBatchLoadingByAccountId['101']).toBe(false)
+      expect((wrapper.vm as any).usageBatchByAccountId['101']?.five_hour?.utilization).toBe(27)
 
-    secondBatch.resolve({
-      usage: {
-        '102': {
-          source: 'passive',
-          five_hour: {
-            utilization: 31,
-            resets_at: '2026-06-25T12:00:00Z',
-            remaining_seconds: 3600,
-            window_stats: {
-              requests: 5,
-              tokens: 500,
-              cost: 0.05,
-              standard_cost: 0.05,
-              user_cost: 0.05
+      secondBatch.resolve({
+        usage: {
+          '102': {
+            source: 'passive',
+            five_hour: {
+              utilization: 31,
+              resets_at: '2026-06-25T12:00:00Z',
+              remaining_seconds: 3600,
+              window_stats: {
+                requests: 5,
+                tokens: 500,
+                cost: 0.05,
+                standard_cost: 0.05,
+                user_cost: 0.05
+              }
             }
           }
-        }
-      },
-      errors: {}
-    })
-    await flushPromises()
+        },
+        errors: {}
+      })
+      await flushPromises()
+    } finally {
+      nowSpy.mockRestore()
+    }
   })
 })

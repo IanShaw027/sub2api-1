@@ -904,6 +904,25 @@ describe("admin SettingsView payment visible method controls", () => {
     ]);
   });
 
+  it("preserves inherited Claude OAuth system prompt blocks when unchanged", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      claude_oauth_system_prompt_blocks: "",
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    const payload = updateSettings.mock.calls[0][0] as {
+      claude_oauth_system_prompt_blocks: string;
+    };
+    expect(payload.claude_oauth_system_prompt_blocks).toBe("");
+  });
+
   it("submits Antigravity user agent version gateway setting", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,

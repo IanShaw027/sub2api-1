@@ -492,9 +492,9 @@
 
       </div>
 
-      <!-- OpenAI OAuth Model Mapping (OAuth 类型没有 apikey 容器，需要独立的模型映射区域) -->
+      <!-- OpenAI/Grok OAuth Model Mapping (OAuth 类型没有 apikey 容器，需要独立的模型映射区域) -->
       <div
-        v-if="account.platform === 'openai' && account.type === 'oauth'"
+        v-if="supportsOAuthModelRestriction(account)"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
@@ -2793,7 +2793,6 @@ const openAICompactCheckedAt = ref<string | null>(null)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
-const codexCLIOnlyAllowClaudeCodeEnabled = ref(false)
 const openaiImageGenerationEnabled = ref(true)
 const textEndpointAutoRouteEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
@@ -2988,6 +2987,8 @@ function applyOpenAIEndpointCapabilities(credentials: Record<string, unknown>): 
 }
 // Computed: current preset mappings based on platform
 const presetMappings = computed(() => getPresetMappingsByPlatform(props.account?.platform || 'anthropic'))
+const supportsOAuthModelRestriction = (account: Account | null | undefined) =>
+  account?.type === 'oauth' && (account.platform === 'openai' || account.platform === 'grok')
 const tempUnschedPresets = computed(() => [
   {
     label: t('admin.accounts.tempUnschedulable.presets.overloadLabel'),
@@ -3185,7 +3186,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   codexCLIOnlyEnabled.value = false
-  codexCLIOnlyAllowClaudeCodeEnabled.value = false
   textEndpointAutoRouteEnabled.value =
     supportsTextEndpointAutoRoute(newAccount.platform, newAccount.type, {
       openAIEndpointCapabilities: normalizeOpenAIEndpointCapabilities(credentials?.openai_capabilities)
@@ -3445,8 +3445,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
           : 'https://api.anthropic.com'
     editBaseUrl.value = platformDefaultUrl
 
-    // Load model mappings for OpenAI OAuth accounts
-    if (newAccount.platform === 'openai' && newAccount.credentials) {
+    // Load model mappings for OpenAI/Grok OAuth accounts
+    if (supportsOAuthModelRestriction(newAccount) && newAccount.credentials) {
       const oauthCredentials = newAccount.credentials as Record<string, unknown>
       loadModelRestrictionFromCredentials(oauthCredentials)
     } else {
@@ -4676,7 +4676,7 @@ const handleSubmit = async () => {
       }
 
       updatePayload.credentials = newCredentials
-    } else if (!(props.account.platform === 'openai' && props.account.type === 'oauth')) {
+    } else if (!supportsOAuthModelRestriction(props.account)) {
       // For oauth/setup-token types, only update intercept_warmup_requests if changed
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newCredentials: Record<string, unknown> = { ...currentCredentials }
@@ -4689,17 +4689,18 @@ const handleSubmit = async () => {
       updatePayload.credentials = newCredentials
     }
 
-    // OpenAI OAuth: persist model mapping to credentials
-    if (props.account.platform === 'openai' && props.account.type === 'oauth') {
+    // OpenAI/Grok OAuth: persist model mapping to credentials
+    if (supportsOAuthModelRestriction(props.account)) {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newCredentials: Record<string, unknown> = {}
-      const shouldApplyModelMapping = !openaiPassthroughEnabled.value
+      const shouldApplyModelMapping =
+        props.account.platform !== 'openai' || !openaiPassthroughEnabled.value
 
       const currentInterceptWarmup = currentCredentials.intercept_warmup_requests === true
       if (interceptWarmupRequests.value !== currentInterceptWarmup) {
         newCredentials.intercept_warmup_requests = interceptWarmupRequests.value
       }
-      if (!applyCredentialRulePatches(newCredentials, currentCredentials, 'openai')) {
+      if (!applyCredentialRulePatches(newCredentials, currentCredentials, props.account.platform)) {
         return
       }
 
@@ -4713,13 +4714,15 @@ const handleSubmit = async () => {
           newCredentials.model_mapping = {}
         }
       }
-      const compactModelMapping = buildModelMappingObject('mapping', [], openAICompactModelMappings.value)
-      if (compactModelMapping) {
-        if (credentialsValueChanged(currentCredentials.compact_model_mapping || {}, compactModelMapping)) {
-          newCredentials.compact_model_mapping = compactModelMapping
+      if (props.account.platform === 'openai') {
+        const compactModelMapping = buildModelMappingObject('mapping', [], openAICompactModelMappings.value)
+        if (compactModelMapping) {
+          if (credentialsValueChanged(currentCredentials.compact_model_mapping || {}, compactModelMapping)) {
+            newCredentials.compact_model_mapping = compactModelMapping
+          }
+        } else if (currentCredentials.compact_model_mapping && Object.keys(currentCredentials.compact_model_mapping as Record<string, unknown>).length > 0) {
+          newCredentials.compact_model_mapping = {}
         }
-      } else if (currentCredentials.compact_model_mapping && Object.keys(currentCredentials.compact_model_mapping as Record<string, unknown>).length > 0) {
-        newCredentials.compact_model_mapping = {}
       }
 
       if (Object.keys(newCredentials).length > 0) {

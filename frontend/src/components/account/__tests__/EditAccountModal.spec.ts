@@ -1377,6 +1377,39 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('refresh_token')
   })
 
+  it('edits Grok OAuth model restrictions without resending OAuth secrets', async () => {
+    const account = buildAccount()
+    account.platform = 'grok'
+    account.type = 'oauth'
+    account.credentials = {
+      email: 'grok@example.com',
+      model_mapping: {
+        'grok-4.3': 'grok-4.3'
+      }
+    }
+
+    resetCommonMocks()
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('grok-4.3')
+
+    await wrapper.get('[data-testid="rewrite-to-snapshot"]').trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
+      model_mapping: {
+        'gpt-5.2-2025-12-11': 'gpt-5.2-2025-12-11'
+      }
+    })
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('email')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('access_token')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('refresh_token')
+  })
+
   it('updates the OpenAI compact status label from current form state', async () => {
     const account = buildAccount()
     account.extra = {

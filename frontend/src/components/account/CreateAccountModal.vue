@@ -161,6 +161,9 @@
               <path d="M5 3h3v7l6-7h4l-7 8 8 10h-4l-6-8-1 1v7H5z" />
             </svg>
             Kiro
+          </button>
+          <button
+            type="button"
             @click="form.platform = 'grok'"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
@@ -3934,7 +3937,6 @@ const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
-const codexCLIOnlyAllowClaudeCodeEnabled = ref(false)
 const textEndpointAutoRouteEnabled = ref(false)
 type OpenAIEndpointCapability = 'chat_completions' | 'embeddings'
 const OPENAI_ENDPOINT_CAPABILITIES: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings']
@@ -4539,7 +4541,6 @@ watch(
       openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       codexCLIOnlyEnabled.value = false
-      codexCLIOnlyAllowClaudeCodeEnabled.value = false
       openAIEndpointCapabilities.value = [...OPENAI_ENDPOINT_CAPABILITIES]
       openAIResponsesMode.value = 'auto'
       codexCLIOnlyAppServerEnabled.value = false
@@ -4960,7 +4961,6 @@ const resetForm = () => {
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   codexCLIOnlyEnabled.value = false
-  codexCLIOnlyAllowClaudeCodeEnabled.value = false
   textEndpointAutoRouteEnabled.value = false
   openAIEndpointCapabilities.value = [...OPENAI_ENDPOINT_CAPABILITIES]
   openAIResponsesMode.value = 'auto'
