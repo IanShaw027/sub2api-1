@@ -50,6 +50,8 @@ func TestOpenAIWSDeltaShadowLogIncludesContinuationMatchDiagnostics(t *testing.T
 		CurrentPayload:           payload,
 		HasFunctionCallOutput:    true,
 		AllowConnReanchor:        false,
+		StickyAccountID:          201,
+		StickyAccountMismatch:    true,
 		Cached: openAIWSSessionContextValue{
 			accountID:      201,
 			connID:         "conn-cached",
@@ -66,6 +68,8 @@ func TestOpenAIWSDeltaShadowLogIncludesContinuationMatchDiagnostics(t *testing.T
 	require.False(t, log.AllowConnReanchor)
 	require.True(t, log.HasFunctionCallOutput)
 	require.Equal(t, "account_mismatch", log.FallbackReason)
+	require.Equal(t, int64(201), log.StickyAccountID)
+	require.True(t, log.StickyAccountMismatch)
 	require.Equal(t, int64(22), log.GroupID)
 	require.Equal(t, int64(200), log.APIKeyID)
 	require.Equal(t, "session-hash", log.SessionHash)

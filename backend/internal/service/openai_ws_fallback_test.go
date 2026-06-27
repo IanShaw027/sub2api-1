@@ -503,7 +503,9 @@ func TestOpenAIWSContinuationProbeLogMessageIncludesStoreAndTimingFields(t *test
 		StoreDisabled:             false,
 		StoreMode:                 openAIWSStoreModeIncremental,
 		StoreEnabled:              true,
+		StickyAccountID:           42,
 		StickyAccountHit:          true,
+		StickyAccountMismatch:     false,
 		ConnAffinityHit:           true,
 		FallbackReason:            "",
 		PayloadBytes:              3210,
@@ -527,7 +529,9 @@ func TestOpenAIWSContinuationProbeLogMessageIncludesStoreAndTimingFields(t *test
 	require.Contains(t, msg, "original_previous_response_id_present=true")
 	require.Contains(t, msg, "store_mode=incremental")
 	require.Contains(t, msg, "store_enabled=true")
+	require.Contains(t, msg, "sticky_account_id=42")
 	require.Contains(t, msg, "sticky_account_hit=true")
+	require.Contains(t, msg, "sticky_account_mismatch=false")
 	require.Contains(t, msg, "conn_affinity_hit=true")
 	require.Contains(t, msg, "fallback_reason=-")
 	require.Contains(t, msg, "payload_bytes=3210")
@@ -562,7 +566,9 @@ func TestOpenAIWSDiagnosticStartLogMessageIncludesTemporaryStoreAndConnFields(t 
 		StoreMode:                 openAIWSStoreModeIncremental,
 		StoreEnabled:              true,
 		StoreDisabled:             false,
+		StickyAccountID:           41,
 		StickyAccountHit:          true,
+		StickyAccountMismatch:     true,
 		ConnAffinityHit:           true,
 		FallbackReason:            "",
 		DroppedPreviousResponseID: false,
@@ -606,7 +612,9 @@ func TestOpenAIWSDiagnosticStartLogMessageIncludesTemporaryStoreAndConnFields(t 
 	require.Contains(t, msg, "original_previous_response_id_present=false")
 	require.Contains(t, msg, "store_mode=incremental")
 	require.Contains(t, msg, "store_enabled=true")
+	require.Contains(t, msg, "sticky_account_id=41")
 	require.Contains(t, msg, "sticky_account_hit=true")
+	require.Contains(t, msg, "sticky_account_mismatch=true")
 	require.Contains(t, msg, "conn_affinity_hit=true")
 	require.Contains(t, msg, "conn_pick_ms=2")
 	require.Contains(t, msg, "queue_wait_ms=0")
@@ -704,48 +712,54 @@ func TestOpenAIWSDiagnosticCompletedLogMessageIncludesTemporaryTTFTAndUsageField
 
 func TestOpenAIWSReadFailLogMessageIncludesRequestAndConnectionContext(t *testing.T) {
 	msg := openAIWSReadFailLogMessage(openAIWSReadFailLog{
-		RequestID:              "req-read-fail",
-		ClientRequestID:        "client-read-fail",
-		AccountID:              44,
-		AccountType:            AccountTypeOAuth,
-		Model:                  "gpt-5.4",
-		UpstreamModel:          "gpt-5.4-codex",
-		ConnProfile:            openAIWSConnProfileSessionBound,
-		ConnID:                 "oa_ws_44_2",
-		ConnReused:             true,
-		Transport:              string(OpenAIUpstreamTransportResponsesWebsocketV2),
-		Attempt:                2,
-		ConnPickMs:             5,
-		QueueWaitMs:            7,
-		ConnAgeMs:              91000,
-		ConnIdleMs:             88000,
-		ConnLeaseCount:         2,
-		PayloadBytes:           1234,
-		PreviousResponseID:     "resp_prev_read_fail",
-		PreviousResponseIDKind: OpenAIPreviousResponseIDKindResponseID,
-		StoreMode:              openAIWSStoreModeIncremental,
-		StoreEnabled:           true,
-		StoreDisabled:          false,
-		SessionHash:            "abcdef1234567890",
-		HasPromptCacheKey:      true,
-		HasTurnState:           true,
-		TurnStateLen:           22,
-		ProxyEnabled:           true,
-		ProxyID:                57,
-		WroteDownstream:        true,
-		CloseStatus:            "1006",
-		CloseReason:            "abnormal closure",
-		Cause:                  "websocket: close 1006",
-		Events:                 198,
-		TokenEvents:            117,
-		TerminalEvents:         0,
-		FirstEventMs:           121,
-		FirstTokenMs:           2048,
-		FirstTokenEvent:        "response.output_text.delta",
-		BufferedPending:        0,
-		BufferedFlushed:        3,
-		FirstEvent:             "response.created",
-		LastEvent:              "response.output_text.delta",
+		RequestID:                "req-read-fail",
+		ClientRequestID:          "client-read-fail",
+		AccountID:                44,
+		AccountType:              AccountTypeOAuth,
+		Model:                    "gpt-5.4",
+		UpstreamModel:            "gpt-5.4-codex",
+		ConnProfile:              openAIWSConnProfileSessionBound,
+		ConnID:                   "oa_ws_44_2",
+		ConnReused:               true,
+		Transport:                string(OpenAIUpstreamTransportResponsesWebsocketV2),
+		Attempt:                  2,
+		ConnPickMs:               5,
+		QueueWaitMs:              7,
+		ConnAgeMs:                91000,
+		ConnIdleMs:               88000,
+		ConnLeaseCount:           2,
+		PayloadBytes:             1234,
+		PreviousResponseID:       "resp_prev_read_fail",
+		PreviousResponseIDKind:   OpenAIPreviousResponseIDKindResponseID,
+		PreviousResponseIDSource: "session_context",
+		StoreMode:                openAIWSStoreModeIncremental,
+		StoreEnabled:             true,
+		StoreDisabled:            false,
+		StickyAccountID:          44,
+		StickyAccountHit:         true,
+		ConnAffinityHit:          true,
+		PreferredConnID:          "oa_ws_44_2",
+		StoreFallbackReason:      "active_delta",
+		SessionHash:              "abcdef1234567890",
+		HasPromptCacheKey:        true,
+		HasTurnState:             true,
+		TurnStateLen:             22,
+		ProxyEnabled:             true,
+		ProxyID:                  57,
+		WroteDownstream:          true,
+		CloseStatus:              "1006",
+		CloseReason:              "abnormal closure",
+		Cause:                    "websocket: close 1006",
+		Events:                   198,
+		TokenEvents:              117,
+		TerminalEvents:           0,
+		FirstEventMs:             121,
+		FirstTokenMs:             2048,
+		FirstTokenEvent:          "response.output_text.delta",
+		BufferedPending:          0,
+		BufferedFlushed:          3,
+		FirstEvent:               "response.created",
+		LastEvent:                "response.output_text.delta",
 	})
 
 	require.Contains(t, msg, "read_fail")
@@ -768,9 +782,15 @@ func TestOpenAIWSReadFailLogMessageIncludesRequestAndConnectionContext(t *testin
 	require.Contains(t, msg, "payload_bytes=1234")
 	require.Contains(t, msg, "previous_response_id=resp_prev_read_fail")
 	require.Contains(t, msg, "previous_response_id_kind=response_id")
+	require.Contains(t, msg, "previous_response_id_source=session_context")
 	require.Contains(t, msg, "store_mode=incremental")
 	require.Contains(t, msg, "store_enabled=true")
 	require.Contains(t, msg, "store_disabled=false")
+	require.Contains(t, msg, "sticky_account_id=44")
+	require.Contains(t, msg, "sticky_account_hit=true")
+	require.Contains(t, msg, "conn_affinity_hit=true")
+	require.Contains(t, msg, "preferred_conn_id=oa_ws_44_2")
+	require.Contains(t, msg, "store_fallback_reason=active_delta")
 	require.Contains(t, msg, "session_hash=abcdef123456")
 	require.Contains(t, msg, "has_prompt_cache_key=true")
 	require.Contains(t, msg, "has_turn_state=true")
@@ -787,6 +807,66 @@ func TestOpenAIWSReadFailLogMessageIncludesRequestAndConnectionContext(t *testin
 	require.Contains(t, msg, "first_token_ms=2048")
 	require.Contains(t, msg, "first_token_event=response.output_text.delta")
 	require.Contains(t, msg, "last_event=response.output_text.delta")
+}
+
+func TestOpenAIWSErrorEventLogMessageIncludesRequestBindingAndUpstreamFields(t *testing.T) {
+	msg := openAIWSErrorEventLogMessage(openAIWSErrorEventLog{
+		RequestID:                "req-upstream-event",
+		ClientRequestID:          "client-upstream-event",
+		AccountID:                46,
+		AccountType:              AccountTypeOAuth,
+		ConnProfile:              openAIWSConnProfileSessionBound,
+		ConnID:                   "oa_ws_46_4",
+		ConnReused:               true,
+		Transport:                string(OpenAIUpstreamTransportResponsesWebsocketV2),
+		Attempt:                  1,
+		ConnAgeMs:                55000,
+		ConnIdleMs:               77000,
+		ConnLeaseCount:           9,
+		PayloadBytes:             7654,
+		PreviousResponseID:       "resp_prev_upstream_event",
+		PreviousResponseIDKind:   OpenAIPreviousResponseIDKindResponseID,
+		PreviousResponseIDSource: "session_context",
+		StoreMode:                openAIWSStoreModeIncremental,
+		StoreDisabled:            true,
+		StickyAccountID:          46,
+		StickyAccountHit:         true,
+		ConnAffinityHit:          true,
+		PreferredConnID:          "oa_ws_46_4",
+		StoreFallbackReason:      "active_delta",
+		ActiveDelta:              true,
+		DeltaItems:               2,
+		FullItems:                99,
+		EventIndex:               4,
+		FallbackReason:           "previous_response_not_found",
+		CanFallback:              true,
+		ErrorCode:                "previous_response_not_found",
+		ErrorType:                "invalid_request_error",
+		ErrorMessage:             "previous response not found",
+		SessionHash:              "abcdef1234567890",
+		HasPromptCacheKey:        true,
+		HasTurnState:             false,
+		TurnStateLen:             0,
+	})
+
+	require.Contains(t, msg, "error_event")
+	require.Contains(t, msg, "request_id=req-upstream-event")
+	require.Contains(t, msg, "client_request_id=client-upstream-event")
+	require.Contains(t, msg, "account_id=46")
+	require.Contains(t, msg, "conn_profile=session_bound")
+	require.Contains(t, msg, "conn_reused=true")
+	require.Contains(t, msg, "previous_response_id=resp_prev_upstream_event")
+	require.Contains(t, msg, "previous_response_id_source=session_context")
+	require.Contains(t, msg, "sticky_account_id=46")
+	require.Contains(t, msg, "sticky_account_hit=true")
+	require.Contains(t, msg, "conn_affinity_hit=true")
+	require.Contains(t, msg, "preferred_conn_id=oa_ws_46_4")
+	require.Contains(t, msg, "store_fallback_reason=active_delta")
+	require.Contains(t, msg, "active_delta=true")
+	require.Contains(t, msg, "fallback_reason=previous_response_not_found")
+	require.Contains(t, msg, "can_fallback=true")
+	require.Contains(t, msg, "err_code=previous_response_not_found")
+	require.Contains(t, msg, "session_hash=abcdef123456")
 }
 
 func TestOpenAIWSWriteRequestFailLogMessageIncludesRequestAndReanchorContext(t *testing.T) {
@@ -814,6 +894,7 @@ func TestOpenAIWSWriteRequestFailLogMessageIncludesRequestAndReanchorContext(t *
 		StoreMode:                openAIWSStoreModeIncremental,
 		StoreEnabled:             false,
 		StoreDisabled:            true,
+		StickyAccountID:          45,
 		StickyAccountHit:         true,
 		ConnAffinityHit:          true,
 		PreferredConnID:          "oa_ws_45_3",
@@ -858,6 +939,7 @@ func TestOpenAIWSWriteRequestFailLogMessageIncludesRequestAndReanchorContext(t *
 	require.Contains(t, msg, "previous_response_id=resp_prev_write_fail")
 	require.Contains(t, msg, "previous_response_id_source=session_context")
 	require.Contains(t, msg, "store_mode=incremental")
+	require.Contains(t, msg, "sticky_account_id=45")
 	require.Contains(t, msg, "sticky_account_hit=true")
 	require.Contains(t, msg, "conn_affinity_hit=true")
 	require.Contains(t, msg, "preferred_conn_id=oa_ws_45_3")

@@ -633,7 +633,9 @@ type openAIWSDeltaShadowLog struct {
 	NonInputCachedSummary    string
 	NonInputCurrentSummary   string
 	RawClientEquiv           bool
+	StickyAccountID          int64
 	StickyAccountHit         bool
+	StickyAccountMismatch    bool
 	ConnAffinityHit          bool
 	PreferredConnID          string
 	StoreFallbackReason      string
@@ -660,7 +662,7 @@ func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
 			"break_current_shape=%s conn_match=%v most_recent_match=%v non_input_match=%v "+
 			"non_input_added_keys=%s non_input_removed_keys=%s non_input_changed_keys=%s "+
 			"non_input_cached_summary=%s non_input_current_summary=%s raw_client_equiv=%v "+
-			"sticky_account_hit=%v conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s "+
+			"sticky_account_id=%d sticky_account_hit=%v sticky_account_mismatch=%v conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s "+
 			"conn_reanchor_blockers=%s materialized_count=%d current_input_count=%d delta_items=%d delta_bytes=%d "+
 			"full_items=%d full_bytes=%d",
 		v.GroupID,
@@ -704,7 +706,9 @@ func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
 		truncateOpenAIWSLogValue(v.NonInputCachedSummary, openAIWSLogValueMaxLen),
 		truncateOpenAIWSLogValue(v.NonInputCurrentSummary, openAIWSLogValueMaxLen),
 		v.RawClientEquiv,
+		v.StickyAccountID,
 		v.StickyAccountHit,
+		v.StickyAccountMismatch,
 		v.ConnAffinityHit,
 		truncateOpenAIWSLogValue(v.PreferredConnID, openAIWSIDValueMaxLen),
 		normalizeOpenAIWSLogValue(v.StoreFallbackReason),
@@ -748,7 +752,9 @@ type openAIWSDeltaShadowInput struct {
 	CurrentPayload           []byte
 	HasFunctionCallOutput    bool
 	AllowConnReanchor        bool
+	StickyAccountID          int64
 	StickyAccountHit         bool
+	StickyAccountMismatch    bool
 	ConnAffinityHit          bool
 	PreferredConnID          string
 	StoreFallbackReason      string
@@ -784,8 +790,10 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 		CachedConnWaiters:        in.CachedConnWaiters,
 		CachedConnLastResponseID: in.CachedConnLastResponseID,
 		AllowConnReanchor:        in.AllowConnReanchor,
+		StickyAccountID:          in.StickyAccountID,
 		HasFunctionCallOutput:    in.HasFunctionCallOutput,
 		StickyAccountHit:         in.StickyAccountHit,
+		StickyAccountMismatch:    in.StickyAccountMismatch,
 		ConnAffinityHit:          in.ConnAffinityHit,
 		PreferredConnID:          in.PreferredConnID,
 		StoreFallbackReason:      in.StoreFallbackReason,
