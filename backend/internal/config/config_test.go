@@ -159,8 +159,8 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if cfg.Gateway.OpenAIWS.PrewarmCooldownMS != 300 {
 		t.Fatalf("Gateway.OpenAIWS.PrewarmCooldownMS = %d, want 300", cfg.Gateway.OpenAIWS.PrewarmCooldownMS)
 	}
-	if cfg.Gateway.OpenAIWS.NeutralAcquireStaleIdleSeconds != 300 {
-		t.Fatalf("Gateway.OpenAIWS.NeutralAcquireStaleIdleSeconds = %d, want 300", cfg.Gateway.OpenAIWS.NeutralAcquireStaleIdleSeconds)
+	if cfg.Gateway.OpenAIWS.NeutralAcquireStaleIdleSeconds != 1000 {
+		t.Fatalf("Gateway.OpenAIWS.NeutralAcquireStaleIdleSeconds = %d, want 1000", cfg.Gateway.OpenAIWS.NeutralAcquireStaleIdleSeconds)
 	}
 	if cfg.Gateway.OpenAIWS.ClientReadLimitBytes != 64*1024*1024 {
 		t.Fatalf("Gateway.OpenAIWS.ClientReadLimitBytes = %d, want %d", cfg.Gateway.OpenAIWS.ClientReadLimitBytes, 64*1024*1024)

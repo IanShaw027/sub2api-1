@@ -29,7 +29,8 @@ func TestOpenAIWSConnPool_CleanupStaleAndTrimIdle(t *testing.T) {
 	stale.lastUsedNano.Store(time.Now().Add(-2 * time.Hour).UnixNano())
 
 	idleOld := newOpenAIWSConn("idle_old", accountID, nil, nil)
-	idleOld.lastUsedNano.Store(time.Now().Add(-10 * time.Minute).UnixNano())
+	// 空闲超过 session idle TTL 上限（1000s），确保被 session_idle_ttl 驱逐。
+	idleOld.lastUsedNano.Store(time.Now().Add(-20 * time.Minute).UnixNano())
 
 	idleNew := newOpenAIWSConn("idle_new", accountID, nil, nil)
 	idleNew.lastUsedNano.Store(time.Now().Add(-1 * time.Minute).UnixNano())
@@ -42,7 +43,7 @@ func TestOpenAIWSConnPool_CleanupStaleAndTrimIdle(t *testing.T) {
 	closeOpenAIWSConns(evicted)
 
 	require.Nil(t, ap.conns["stale"], "stale connection should be rotated")
-	require.Nil(t, ap.conns["idle_old"], "old idle should be trimmed by max_idle")
+	require.Nil(t, ap.conns["idle_old"], "idle beyond session idle TTL should be evicted")
 	require.NotNil(t, ap.conns["idle_new"], "newer idle should be kept")
 }
 
@@ -353,6 +354,9 @@ func TestOpenAIWSConnPool_AcquireEvictsStaleNeutralBeforeTTL(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 64
+	// 默认 stale-idle 阈值已抬高到与 session idle TTL 上限相同（1000s），
+	// "stale 早于 TTL 被急切驱逐" 的场景需要显式配置一个低于 TTL 的阈值才能触发。
+	cfg.Gateway.OpenAIWS.NeutralAcquireStaleIdleSeconds = 60
 	pool := newOpenAIWSConnPool(cfg)
 	t.Cleanup(pool.Close)
 	dialer := &openAIWSCountingDialer{}

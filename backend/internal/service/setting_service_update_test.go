@@ -352,13 +352,13 @@ func TestSettingService_UpdateSettings_OpenAIWSPoolRuntimeSettingsRestoreDefault
 
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{
 		OpenAIWSNeutralPrewarmPercent: 50,
-		OpenAIWSSessionIdleTTLSeconds: 900,
+		OpenAIWSSessionIdleTTLSeconds: 1200,
 		OpenAIWSMinIdlePerAccount:     8,
 		OpenAIWSMaxIdlePerAccount:     16,
 		OpenAIStickyReservePercent:    20,
 	})
 	require.NoError(t, err)
-	require.Equal(t, "600", repo.updates[SettingKeyOpenAIWSSessionIdleTTLSeconds])
+	require.Equal(t, "1000", repo.updates[SettingKeyOpenAIWSSessionIdleTTLSeconds])
 	select {
 	case <-reconcileCalls:
 	case <-time.After(time.Second):
@@ -471,19 +471,19 @@ func TestSettingService_UpdateSettings_OpenAIWSIdleSettingsDrivePoolRuntime(t *t
 		OpenAIWSMinIdlePerAccount:     6,
 		OpenAIWSMaxIdlePerAccount:     10,
 		OpenAIWSNeutralPrewarmPercent: 50,
-		OpenAIWSSessionIdleTTLSeconds: 900,
+		OpenAIWSSessionIdleTTLSeconds: 1200,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "20", repo.updates[SettingKeyOpenAIStickyReservePercent])
 	require.Equal(t, "6", repo.updates[SettingKeyOpenAIWSMinIdlePerAccount])
 	require.Equal(t, "10", repo.updates[SettingKeyOpenAIWSMaxIdlePerAccount])
 	require.Equal(t, "50", repo.updates[SettingKeyOpenAIWSNeutralPrewarmPercent])
-	require.Equal(t, "600", repo.updates[SettingKeyOpenAIWSSessionIdleTTLSeconds])
+	require.Equal(t, "1000", repo.updates[SettingKeyOpenAIWSSessionIdleTTLSeconds])
 
 	neutralPrewarmPercent, sessionIdleTTLSeconds, ok := loadOpenAIWSPoolRuntimeSettingsForCompare()
 	require.True(t, ok)
 	require.Equal(t, 50, neutralPrewarmPercent)
-	require.Equal(t, 600, sessionIdleTTLSeconds)
+	require.Equal(t, 1000, sessionIdleTTLSeconds)
 	require.Equal(t, 6, pool.minIdlePerAccount())
 	require.Equal(t, 10, pool.maxIdlePerAccount())
 	require.Equal(t, 20, pool.stickyReservePercent())
