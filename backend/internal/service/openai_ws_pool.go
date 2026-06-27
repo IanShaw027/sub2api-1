@@ -265,6 +265,21 @@ type openAIWSConnLease struct {
 	released  atomic.Bool
 }
 
+type openAIWSConnAcquireSnapshot struct {
+	Exists           bool
+	Profile          openAIWSConnProfile
+	Age              time.Duration
+	Idle             time.Duration
+	LeaseCount       int64
+	Leased           bool
+	Waiters          int32
+	MatchesAcquire   bool
+	ProfileMatches   bool
+	IdentityRequired bool
+	IdentityMatches  bool
+	ReuseKeyMatches  bool
+}
+
 func (l *openAIWSConnLease) activeConn() (*openAIWSConn, error) {
 	if l == nil || l.conn == nil {
 		return nil, errOpenAIWSConnClosed
@@ -1924,6 +1939,52 @@ func (p *openAIWSConnPool) ConnProfile(accountID int64, connID string) (openAIWS
 		return openAIWSConnProfileSessionBound, false
 	}
 	return conn.profile, true
+}
+
+func (p *openAIWSConnPool) ConnAcquireSnapshot(accountID int64, connID string, req openAIWSAcquireRequest) openAIWSConnAcquireSnapshot {
+	if p == nil || accountID <= 0 {
+		return openAIWSConnAcquireSnapshot{}
+	}
+	connID = stringsTrim(connID)
+	if connID == "" {
+		return openAIWSConnAcquireSnapshot{}
+	}
+	ap, ok := p.getAccountPool(accountID)
+	if !ok || ap == nil {
+		return openAIWSConnAcquireSnapshot{}
+	}
+	now := time.Now()
+	ap.mu.Lock()
+	defer ap.mu.Unlock()
+	conn, ok := ap.conns[connID]
+	if !ok || conn == nil {
+		return openAIWSConnAcquireSnapshot{}
+	}
+	identityRequired := stringsTrim(req.IdentityKey) != "" || req.TLSProfile != nil
+	identityMatches := false
+	if identityRequired {
+		requiredIdentity := openAIWSAcquireIdentityKey(req)
+		identityMatches = conn.identityKey != "" && conn.identityKey == requiredIdentity
+	}
+	reuseKeyMatches := true
+	if req.Profile == openAIWSConnProfileNeutral && !identityRequired {
+		reuseKeyMatches = stringsTrim(conn.reuseKey) == stringsTrim(openAIWSConnReuseKeyForAcquire(req))
+	}
+	profileMatches := conn.profile == req.Profile
+	return openAIWSConnAcquireSnapshot{
+		Exists:           true,
+		Profile:          conn.profile,
+		Age:              conn.age(now),
+		Idle:             conn.idleDuration(now),
+		LeaseCount:       conn.leaseCount.Load(),
+		Leased:           conn.isLeased(),
+		Waiters:          conn.waiters.Load(),
+		MatchesAcquire:   conn.matchesAcquire(req),
+		ProfileMatches:   profileMatches,
+		IdentityRequired: identityRequired,
+		IdentityMatches:  !identityRequired || identityMatches,
+		ReuseKeyMatches:  reuseKeyMatches,
+	}
 }
 
 func (p *openAIWSConnPool) PromoteNeutralConnToSessionBound(accountID int64, connID string) bool {

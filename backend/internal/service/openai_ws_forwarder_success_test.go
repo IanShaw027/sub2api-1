@@ -1079,6 +1079,131 @@ func TestOpenAIGatewayService_Forward_WSv2AccountOnlyPreviousResponseKeepsPrevio
 	require.Equal(t, "hello", gjson.Get(continuationWrite, "input.0.text").String())
 }
 
+func TestOpenAIGatewayService_Forward_WSv2StoreDisabledSameSessionForcesPreferredConn(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.StoreDisabledConnMode = openAIWSStoreDisabledConnModeStrict
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 4
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.StickySessionTTLSeconds = 3600
+	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 3600
+
+	preferredConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_preferred_reused","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
+		},
+	}
+	driftConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_wrong_drift","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
+		},
+	}
+	unexpectedNewConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_unexpected_new","model":"gpt-5.1","usage":{"input_tokens":3,"output_tokens":2}}}`),
+		},
+	}
+	dialer := &openAIWSSequentialCaptureDialer{
+		conns: []*openAIWSCaptureConn{preferredConn, driftConn, unexpectedNewConn},
+	}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(dialer)
+	t.Cleanup(pool.Close)
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          133,
+		Name:        "openai-oauth-preferred-session",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 4,
+		Credentials: map[string]any{
+			"access_token": "oauth-token-preferred-session",
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	wsURL, err := svc.buildOpenAIResponsesWSURL(account)
+	require.NoError(t, err)
+	headers, _ := svc.buildOpenAIWSHeaders(nil, account, account.GetOpenAIAccessToken(), OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2}, true, "", "", "")
+	req := openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   wsURL,
+		Headers: headers,
+		Profile: openAIWSConnProfileSessionBound,
+	}
+	preferredLease, err := pool.Acquire(context.Background(), req)
+	require.NoError(t, err)
+	preferredConnID := preferredLease.ConnID()
+	preferredLease.Release()
+	driftReq := req
+	driftReq.ForceNewConn = true
+	driftLease, err := pool.Acquire(context.Background(), driftReq)
+	require.NoError(t, err)
+	driftConnID := driftLease.ConnID()
+	driftLease.Release()
+	require.NotEqual(t, preferredConnID, driftConnID)
+	require.Equal(t, 2, dialer.DialCount(), "setup should create exactly two idle session-bound conns")
+
+	groupID := int64(13301)
+	apiKeyID := int64(13302)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+	c.Request.Header.Set("originator", "codex_exec")
+	c.Request.Header.Set("session_id", "sess-oauth-preferred-session")
+	c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+	sessionHash := svc.GenerateSessionHash(c, nil)
+	store := svc.getOpenAIWSStateStore()
+	store.BindSessionConn(groupID, apiKeyID, account.ID, sessionHash, preferredConnID, time.Hour)
+	store.BindSessionContext(groupID, apiKeyID, sessionHash, openAIWSSessionContextValue{
+		accountID:      account.ID,
+		connID:         preferredConnID,
+		lastResponseID: "resp_preferred_seed",
+	}, time.Hour)
+	store.BindConnLastResponse(preferredConnID, "resp_preferred_seed", time.Hour)
+
+	body := []byte(`{"model":"gpt-5.1","stream":false,"store":false,"prompt_cache_key":"pcache-preferred-session","input":[{"type":"input_text","text":"hello"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_preferred_reused", result.RequestID)
+	require.Equal(t, 2, dialer.DialCount(), "same-session full replay must reuse preferred conn instead of dialing a replacement")
+	require.True(t, result.OpenAIWSConnReused)
+
+	preferredConn.mu.Lock()
+	preferredWrites := len(preferredConn.writes)
+	preferredConn.mu.Unlock()
+	driftConn.mu.Lock()
+	driftWrites := len(driftConn.writes)
+	driftConn.mu.Unlock()
+	require.Equal(t, 1, preferredWrites)
+	require.Equal(t, 0, driftWrites, "same-session full replay must not drift to another idle session-bound conn")
+}
+
 func TestOpenAIGatewayService_Forward_WSv2_SameSessionPreemptsInFlightRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

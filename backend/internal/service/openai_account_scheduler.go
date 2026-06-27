@@ -2282,15 +2282,12 @@ func (s *OpenAIGatewayService) resolveOpenAIScheduleStickyAccountID(ctx context.
 
 	var accountID int64
 	source := "redis_miss"
-	redisErr := ""
+	lookup := openAIStickySessionLookupResult{Source: "no_cache"}
 	if s != nil && s.cache != nil {
-		id, err := s.getStickySessionAccountID(ctx, groupID, sessionHash)
-		if err == nil && id > 0 {
-			accountID = id
-			source = "redis"
-		} else if err != nil {
-			redisErr = compactOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen)
-			source = "redis_error"
+		lookup = s.getStickySessionAccountIDWithSource(ctx, groupID, sessionHash)
+		source = lookup.Source
+		if lookup.AccountID > 0 {
+			accountID = lookup.AccountID
 		}
 	}
 
@@ -2305,14 +2302,24 @@ func (s *OpenAIGatewayService) resolveOpenAIScheduleStickyAccountID(ctx context.
 	s.logOpenAIWSSessionContextStickySnapshot(groupID, apiKeyID, sessionHash, source, accountID)
 
 	logOpenAIWSModeInfoDirect(
-		"openai_ws_sticky_select_diag temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s source=%s account_id=%d conn_id=%s redis_error=%s",
+		"openai_ws_sticky_select_diag temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s source=%s redis_source=%s primary_key=%s legacy_key=%s account_id=%d conn_id=%s session_context_fallback=%v primary_hit=%v primary_error=%s legacy_fallback_enabled=%v legacy_fallback_attempted=%v legacy_fallback_hit=%v legacy_error=%s redis_error=%s",
 		derefGroupID(groupID),
 		apiKeyID,
 		shortSessionHash(sessionHash),
 		normalizeOpenAIWSLogValue(source),
+		normalizeOpenAIWSLogValue(lookup.Source),
+		truncateOpenAIWSLogValue(lookup.PrimaryKey, openAIWSIDValueMaxLen),
+		truncateOpenAIWSLogValue(lookup.LegacyKey, openAIWSIDValueMaxLen),
 		accountID,
 		normalizeOpenAIWSLogValue(connID),
-		normalizeOpenAIWSLogValue(redisErr),
+		source == "ws_session_context",
+		lookup.PrimaryHit,
+		normalizeOpenAIWSLogValue(lookup.PrimaryError),
+		lookup.LegacyFallbackEnabled,
+		lookup.LegacyFallbackAttempted,
+		lookup.LegacyFallbackHit,
+		normalizeOpenAIWSLogValue(lookup.LegacyError),
+		normalizeOpenAIWSLogValue(lookup.PrimaryError),
 	)
 	return accountID, source
 }

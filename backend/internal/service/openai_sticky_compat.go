@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 type openAILegacySessionHashContextKey struct{}
@@ -119,36 +121,90 @@ func (s *OpenAIGatewayService) openAIStickyLegacyTTL(ttl time.Duration) time.Dur
 	return legacyTTL
 }
 
-func (s *OpenAIGatewayService) getStickySessionAccountID(ctx context.Context, groupID *int64, sessionHash string) (int64, error) {
+type openAIStickySessionLookupResult struct {
+	AccountID               int64
+	Source                  string
+	PrimaryKey              string
+	LegacyKey               string
+	PrimaryHit              bool
+	PrimaryError            string
+	LegacyFallbackEnabled   bool
+	LegacyFallbackAttempted bool
+	LegacyFallbackHit       bool
+	LegacyError             string
+	Err                     error
+}
+
+func openAIStickySessionLookupErrorValue(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, redis.Nil) {
+		return "redis_nil"
+	}
+	return compactOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen)
+}
+
+func openAIStickySessionMissSource(err error) string {
+	if err == nil || errors.Is(err, redis.Nil) {
+		return "redis_miss"
+	}
+	return "redis_error"
+}
+
+func (s *OpenAIGatewayService) getStickySessionAccountIDWithSource(ctx context.Context, groupID *int64, sessionHash string) openAIStickySessionLookupResult {
+	result := openAIStickySessionLookupResult{Source: "no_cache"}
 	if s == nil || s.cache == nil {
-		return 0, nil
+		return result
 	}
 
 	primaryKey := s.openAISessionCacheKey(sessionHash)
+	result.PrimaryKey = primaryKey
 	if primaryKey == "" {
-		return 0, nil
+		result.Source = "no_session_hash"
+		return result
 	}
 
 	accountID, err := s.cache.GetSessionAccountID(ctx, derefGroupID(groupID), primaryKey)
 	if err == nil && accountID > 0 {
-		return accountID, nil
+		result.AccountID = accountID
+		result.Source = "redis_current"
+		result.PrimaryHit = true
+		return result
 	}
+	result.AccountID = accountID
+	result.Err = err
+	result.PrimaryError = openAIStickySessionLookupErrorValue(err)
+	result.Source = openAIStickySessionMissSource(err)
 	if !s.openAISessionHashReadOldFallbackEnabled() {
-		return accountID, err
+		return result
 	}
+	result.LegacyFallbackEnabled = true
 
 	legacyKey := s.openAILegacySessionCacheKey(ctx, sessionHash)
+	result.LegacyKey = legacyKey
 	if legacyKey == "" {
-		return accountID, err
+		return result
 	}
+	result.LegacyFallbackAttempted = true
 
 	openAIStickyLegacyReadFallbackTotal.Add(1)
 	legacyAccountID, legacyErr := s.cache.GetSessionAccountID(ctx, derefGroupID(groupID), legacyKey)
 	if legacyErr == nil && legacyAccountID > 0 {
 		openAIStickyLegacyReadFallbackHit.Add(1)
-		return legacyAccountID, nil
+		result.AccountID = legacyAccountID
+		result.Source = "redis_legacy_fallback"
+		result.LegacyFallbackHit = true
+		result.Err = nil
+		return result
 	}
-	return accountID, err
+	result.LegacyError = openAIStickySessionLookupErrorValue(legacyErr)
+	return result
+}
+
+func (s *OpenAIGatewayService) getStickySessionAccountID(ctx context.Context, groupID *int64, sessionHash string) (int64, error) {
+	lookup := s.getStickySessionAccountIDWithSource(ctx, groupID, sessionHash)
+	return lookup.AccountID, lookup.Err
 }
 
 func (s *OpenAIGatewayService) setStickySessionAccountID(ctx context.Context, groupID *int64, sessionHash string, accountID int64, ttl time.Duration) error {

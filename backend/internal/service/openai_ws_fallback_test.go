@@ -1036,69 +1036,254 @@ func TestOpenAIWSPreviousResponseStickyDiagLogMessageShowsDecisionReason(t *test
 
 func TestOpenAIWSBindingSnapshotLogMessageShowsMismatchState(t *testing.T) {
 	msg := openAIWSBindingSnapshotLogMessage(openAIWSBindingSnapshotLog{
-		Trigger:                         "error_event",
-		RequestID:                       "req-binding",
-		AccountID:                       73972,
-		AccountType:                     AccountTypeOAuth,
-		ConnID:                          "oa_ws_73972_6",
-		PreviousResponseID:              "resp_prev_binding",
-		OriginalPreviousIDPresent:       false,
-		PreviousBoundAccountID:          73972,
-		PreviousBoundAccountHit:         true,
-		PreviousBoundConnID:             "oa_ws_73972_6",
-		PreviousBoundConnHit:            true,
-		PreferredConnID:                 "oa_ws_73972_6",
-		PreferredConnInPool:             true,
-		PreferredConnProfile:            openAIWSConnProfileSessionBound,
-		PreferredConnAgeMS:              81000,
-		PreferredConnIdleMS:             1200,
-		PreferredConnLeaseCount:         6,
-		LeaseConnLastResponseID:         "resp_prev_binding",
-		LeaseConnLastResponseHit:        true,
-		SessionHash:                     "abcdef1234567890",
-		SessionContextFound:             true,
-		SessionContextAccountID:         73972,
-		SessionContextAccountMatch:      true,
-		SessionContextConnID:            "oa_ws_73972_6",
-		SessionContextLastResponseID:    "resp_prev_binding",
-		SessionContextLastResponseMatch: true,
-		SessionConnCachedAccountID:      73972,
-		SessionConnCachedID:             "oa_ws_73972_6",
-		SessionConnCachedHit:            true,
-		SessionConnCachedMatch:          true,
-		SessionConnCurrentID:            "oa_ws_73972_6",
-		SessionConnCurrentHit:           true,
-		SessionConnCurrentMatch:         true,
-		CachedConnInPool:                true,
-		CachedConnProfile:               openAIWSConnProfileSessionBound,
-		CachedConnAgeMS:                 81000,
-		CachedConnIdleMS:                1200,
-		CachedConnLeaseCount:            6,
-		CachedConnLastResponseID:        "resp_prev_binding",
-		CachedConnLastResponseHit:       true,
-		StickyAccountID:                 73972,
-		StickyAccountHit:                true,
-		ConnAffinityHit:                 true,
-		StoreFallbackReason:             "active_delta",
-		FallbackReason:                  "conn_mismatch",
-		ErrorCode:                       "conn_mismatch",
-		ErrorType:                       "invalid_request_error",
+		Trigger:                           "error_event",
+		RequestID:                         "req-binding",
+		GroupID:                           22,
+		APIKeyID:                          441,
+		AccountID:                         73972,
+		AccountType:                       AccountTypeOAuth,
+		ConnID:                            "oa_ws_73972_6",
+		PreviousResponseID:                "resp_prev_binding",
+		OriginalPreviousIDPresent:         false,
+		PreviousBoundAccountID:            73972,
+		PreviousBoundAccountHit:           true,
+		PreviousBoundAccountMatches:       true,
+		PreviousBoundConnID:               "oa_ws_73972_6",
+		PreviousBoundConnHit:              true,
+		PreviousBoundConnMatchesLease:     true,
+		PreviousBoundConnMatchesPreferred: true,
+		PreferredConnID:                   "oa_ws_73972_6",
+		PreferredConnMatchesLease:         true,
+		PreferredConnInPool:               true,
+		PreferredConnProfile:              openAIWSConnProfileSessionBound,
+		PreferredConnAgeMS:                81000,
+		PreferredConnIdleMS:               1200,
+		PreferredConnLeaseCount:           6,
+		PreferredConnLeased:               false,
+		PreferredConnWaiters:              0,
+		LeaseConnLastResponseID:           "resp_prev_binding",
+		LeaseConnLastResponseHit:          true,
+		SessionHash:                       "abcdef1234567890",
+		SessionContextFound:               true,
+		SessionContextAccountID:           73972,
+		SessionContextAccountMatch:        true,
+		SessionContextConnID:              "oa_ws_73972_6",
+		SessionContextLastResponseID:      "resp_prev_binding",
+		SessionContextLastResponseMatch:   true,
+		SessionConnCachedAccountID:        73972,
+		SessionConnCachedID:               "oa_ws_73972_6",
+		SessionConnCachedHit:              true,
+		SessionConnCachedMatch:            true,
+		SessionConnCurrentID:              "oa_ws_73972_6",
+		SessionConnCurrentHit:             true,
+		SessionConnCurrentMatch:           true,
+		CachedConnInPool:                  true,
+		CachedConnProfile:                 openAIWSConnProfileSessionBound,
+		CachedConnAgeMS:                   81000,
+		CachedConnIdleMS:                  1200,
+		CachedConnLeaseCount:              6,
+		CachedConnLeased:                  false,
+		CachedConnWaiters:                 0,
+		CachedConnLastResponseID:          "resp_prev_binding",
+		CachedConnLastResponseHit:         true,
+		StickyAccountID:                   73972,
+		StickyAccountHit:                  true,
+		ConnAffinityHit:                   true,
+		StoreFallbackReason:               "active_delta",
+		FallbackReason:                    "conn_mismatch",
+		ErrorCode:                         "conn_mismatch",
+		ErrorType:                         "invalid_request_error",
 	})
 
 	require.Contains(t, msg, "openai_ws_binding_snapshot")
 	require.Contains(t, msg, "trigger=error_event")
 	require.Contains(t, msg, "request_id=req-binding")
+	require.Contains(t, msg, "group_id=22")
+	require.Contains(t, msg, "api_key_id=441")
 	require.Contains(t, msg, "previous_bound_account_id=73972")
+	require.Contains(t, msg, "previous_bound_account_matches=true")
 	require.Contains(t, msg, "previous_bound_conn_id=oa_ws_73972_6")
+	require.Contains(t, msg, "previous_bound_conn_matches_lease=true")
+	require.Contains(t, msg, "previous_bound_conn_matches_preferred=true")
+	require.Contains(t, msg, "preferred_conn_matches_lease=true")
 	require.Contains(t, msg, "preferred_conn_in_pool=true")
+	require.Contains(t, msg, "preferred_conn_leased=false")
+	require.Contains(t, msg, "preferred_conn_waiters=0")
 	require.Contains(t, msg, "lease_conn_last_response_hit=true")
 	require.Contains(t, msg, "session_context_found=true")
 	require.Contains(t, msg, "session_context_account_match=true")
 	require.Contains(t, msg, "session_context_last_response_match=true")
 	require.Contains(t, msg, "session_conn_current_match=true")
 	require.Contains(t, msg, "cached_conn_in_pool=true")
+	require.Contains(t, msg, "cached_conn_leased=false")
+	require.Contains(t, msg, "cached_conn_waiters=0")
 	require.Contains(t, msg, "fallback_reason=conn_mismatch")
 	require.Contains(t, msg, "err_code=conn_mismatch")
+}
+
+func TestOpenAIWSMismatchErrorProbeLogMessageCapturesBindingState(t *testing.T) {
+	msg := openAIWSMismatchErrorProbeLogMessage(openAIWSMismatchErrorProbeLog{
+		RequestID:                             "req-mismatch",
+		ClientRequestID:                       "client-mismatch",
+		GroupID:                               22,
+		APIKeyID:                              441,
+		AccountID:                             73972,
+		AccountType:                           AccountTypeOAuth,
+		ConnProfile:                           openAIWSConnProfileSessionBound,
+		ConnID:                                "oa_ws_73972_6",
+		ConnReused:                            true,
+		PreviousResponseID:                    "resp_prev_binding",
+		PreviousResponseIDSource:              "session_context",
+		OriginalPreviousIDPresent:             false,
+		ResponseID:                            "resp_current",
+		PreferredConnID:                       "oa_ws_73972_6",
+		PreferredConnInPool:                   true,
+		PreferredConnAgeMS:                    81000,
+		PreferredConnIdleMS:                   1200,
+		PreferredConnLeaseCount:               6,
+		PreferredConnLeased:                   false,
+		PreferredConnWaiters:                  0,
+		PreferredConnMatchesLease:             true,
+		PreviousBoundAccountID:                73972,
+		PreviousBoundAccountHit:               true,
+		PreviousBoundAccountMatches:           true,
+		PreviousBoundConnID:                   "oa_ws_73972_6",
+		PreviousBoundConnHit:                  true,
+		PreviousBoundConnMatches:              true,
+		LeaseConnLastResponseID:               "resp_prev_binding",
+		LeaseConnLastResponseHit:              true,
+		LeaseConnLastResponseMatchesPrev:      true,
+		SessionHash:                           "abcdef1234567890",
+		SessionContextFound:                   true,
+		SessionContextAccountID:               73972,
+		SessionContextAccountMatches:          true,
+		SessionContextConnID:                  "oa_ws_73972_6",
+		SessionContextConnMatches:             true,
+		SessionContextLastResponseID:          "resp_prev_binding",
+		SessionContextLastResponseMatchesPrev: true,
+		SessionConnCurrentID:                  "oa_ws_73972_6",
+		SessionConnCurrentHit:                 true,
+		SessionConnCurrentMatches:             true,
+		CachedConnInPool:                      true,
+		CachedConnProfile:                     openAIWSConnProfileSessionBound,
+		CachedConnAgeMS:                       81000,
+		CachedConnIdleMS:                      1200,
+		CachedConnLeaseCount:                  6,
+		CachedConnLeased:                      false,
+		CachedConnWaiters:                     0,
+		StickyAccountID:                       73972,
+		StickyAccountHit:                      true,
+		StickyAccountMismatch:                 false,
+		ConnAffinityHit:                       true,
+		StoreMode:                             openAIWSStoreModeIncremental,
+		StoreFallbackReason:                   "active_delta",
+		ActiveDelta:                           true,
+		DeltaItems:                            2,
+		FullItems:                             99,
+		FallbackReason:                        "conn_mismatch",
+		CanFallback:                           true,
+		CanSafeFallback:                       true,
+		SafeFallbackReason:                    "not_written_downstream",
+		ErrorCode:                             "conn_mismatch",
+		ErrorType:                             "invalid_request_error",
+		WroteDownstream:                       false,
+	})
+
+	require.Contains(t, msg, "openai_ws_mismatch_error_probe")
+	require.Contains(t, msg, "request_id=req-mismatch")
+	require.Contains(t, msg, "client_request_id=client-mismatch")
+	require.Contains(t, msg, "group_id=22")
+	require.Contains(t, msg, "api_key_id=441")
+	require.Contains(t, msg, "fallback_reason=conn_mismatch")
+	require.Contains(t, msg, "can_fallback=true")
+	require.Contains(t, msg, "can_safe_fallback=true")
+	require.Contains(t, msg, "safe_fallback_reason=not_written_downstream")
+	require.Contains(t, msg, "previous_response_id=resp_prev_binding")
+	require.Contains(t, msg, "previous_response_id_source=session_context")
+	require.Contains(t, msg, "previous_bound_account_matches=true")
+	require.Contains(t, msg, "previous_bound_conn_matches=true")
+	require.Contains(t, msg, "preferred_conn_matches_lease=true")
+	require.Contains(t, msg, "lease_conn_last_response_matches_previous=true")
+	require.Contains(t, msg, "session_context_account_matches=true")
+	require.Contains(t, msg, "session_context_conn_matches=true")
+	require.Contains(t, msg, "session_context_last_response_matches_previous=true")
+	require.Contains(t, msg, "session_conn_current_matches=true")
+	require.Contains(t, msg, "cached_conn_in_pool=true")
+	require.Contains(t, msg, "cached_conn_profile=session_bound")
+	require.Contains(t, msg, "store_fallback_reason=active_delta")
+	require.Contains(t, msg, "active_delta=true")
+	require.Contains(t, msg, "err_code=conn_mismatch")
+	require.Contains(t, msg, "wrote_downstream=false")
+}
+
+func TestOpenAIWSAcquirePreferredSnapshotLogMessages(t *testing.T) {
+	snapshot := openAIWSAcquirePreferredSnapshotLog{
+		RequestID:                   "req-preferred",
+		GroupID:                     22,
+		APIKeyID:                    441,
+		AccountID:                   73969,
+		AccountType:                 AccountTypeOAuth,
+		SessionHash:                 "abcdef1234567890",
+		PreferredConnID:             "oa_ws_73969_14",
+		PreferredConnInPool:         true,
+		PreferredConnProfile:        openAIWSConnProfileSessionBound,
+		PreferredConnAgeMS:          44286,
+		PreferredConnIdleMS:         2542,
+		PreferredConnLeaseCount:     1,
+		PreferredConnLeased:         false,
+		PreferredConnWaiters:        0,
+		PreferredConnMatchesAcquire: true,
+		ConnProfile:                 openAIWSConnProfileSessionBound,
+		ForcePreferredConn:          true,
+		ForceNewConn:                false,
+		AffinityOnlyReuse:           true,
+		HasPreviousResponseID:       false,
+		StoreMode:                   openAIWSStoreModeFull,
+		StoreDisabled:               true,
+		StoreFallbackReason:         "missing_previous_response_id",
+	}
+	msg := openAIWSAcquirePreferredSnapshotLogMessage(snapshot)
+
+	require.Contains(t, msg, "openai_ws_acquire_preferred_snapshot")
+	require.Contains(t, msg, "request_id=req-preferred")
+	require.Contains(t, msg, "group_id=22")
+	require.Contains(t, msg, "api_key_id=441")
+	require.Contains(t, msg, "account_id=73969")
+	require.Contains(t, msg, "session_hash=abcdef123456")
+	require.Contains(t, msg, "preferred_conn_id=oa_ws_73969_14")
+	require.Contains(t, msg, "preferred_conn_in_pool=true")
+	require.Contains(t, msg, "preferred_conn_profile=session_bound")
+	require.Contains(t, msg, "preferred_conn_matches_acquire=true")
+	require.Contains(t, msg, "force_preferred_conn=true")
+	require.Contains(t, msg, "affinity_only_reuse=true")
+	require.Contains(t, msg, "store_fallback_reason=missing_previous_response_id")
+
+	drift := openAIWSPreferredConnDriftLog{
+		RequestID:                   "req-preferred",
+		GroupID:                     22,
+		APIKeyID:                    441,
+		AccountID:                   73969,
+		AccountType:                 AccountTypeOAuth,
+		SessionHash:                 "abcdef1234567890",
+		PreferredConnID:             "oa_ws_73969_14",
+		LeaseConnID:                 "oa_ws_73969_55",
+		PreferredConnInPool:         true,
+		PreferredConnProfile:        openAIWSConnProfileSessionBound,
+		PreferredConnLeased:         false,
+		PreferredConnWaiters:        0,
+		PreferredConnMatchesAcquire: true,
+		ConnProfile:                 openAIWSConnProfileSessionBound,
+		ForcePreferredConn:          false,
+		ForceNewConn:                false,
+		AffinityOnlyReuse:           true,
+		StoreFallbackReason:         "missing_previous_response_id",
+	}
+	driftMsg := openAIWSPreferredConnDriftLogMessage(drift)
+
+	require.Contains(t, driftMsg, "openai_ws_preferred_conn_drift")
+	require.Contains(t, driftMsg, "preferred_conn_id=oa_ws_73969_14")
+	require.Contains(t, driftMsg, "lease_conn_id=oa_ws_73969_55")
+	require.Contains(t, driftMsg, "preferred_conn_matches_acquire=true")
 }
 
 func TestOpenAIWSWriteRequestFailLogMessageIncludesRequestAndReanchorContext(t *testing.T) {
