@@ -149,9 +149,6 @@
       </div>
       <div v-else class="text-xs text-gray-400">-</div>
 
-      <!-- Upstream OpenAI/Codex quota reset: on-demand query + reset, always available -->
-      <OpenAIQuotaResetCell :account="account" class="mt-1" />
-
       <!-- Codex invite reset: inline query / reset + invite badge (always available for OpenAI OAuth, even without usage data) -->
       <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
         <button
@@ -615,7 +612,6 @@ import { Icon } from '@/components/icons'
 import { formatCompactNumber, formatRelativeTime } from '@/utils/format'
 import UsageProgressBar from './UsageProgressBar.vue'
 import CodexInviteResetModal from './CodexInviteResetModal.vue'
-import OpenAIQuotaResetCell from './OpenAIQuotaResetCell.vue'
 import GrokQuotaProbeCell from './GrokQuotaProbeCell.vue'
 
 // Module-level cache shared across all AccountUsageCell instances
@@ -1378,7 +1374,7 @@ const inviteResetAvailableCredits = computed(() =>
 const inviteResetAvailableCount = computed(
   () => effectiveInviteResetStatus.value?.available_count ?? inviteResetAvailableCredits.value.length
 )
-const inviteResetHasCredit = computed(() => inviteResetAvailableCredits.value.length > 0)
+const inviteResetHasCredit = computed(() => inviteResetAvailableCount.value > 0)
 
 const loadInviteResetStatus = async () => {
   if (!isOpenAIOAuthAccount.value) return
@@ -1403,14 +1399,14 @@ const queryInviteResetAndUsage = async () => {
 const consumeInviteReset = async () => {
   if (inviteResetConsuming.value) return
   const credit = inviteResetAvailableCredits.value[0]
-  if (!credit) {
+  if (!inviteResetHasCredit.value) {
     useAppStore().showError(t('admin.accounts.inviteResetNoCredit'))
     return
   }
   inviteResetConsuming.value = true
   const appStore = useAppStore()
   try {
-    const result = await adminAPI.accounts.consumeCodexInviteReset(props.account.id, credit.id)
+    const result = await adminAPI.accounts.consumeCodexInviteReset(props.account.id, credit?.id ?? '')
     if (!result.code || result.code === 'reset') {
       appStore.showSuccess(t('admin.accounts.inviteResetConsumeSuccess'))
     } else {

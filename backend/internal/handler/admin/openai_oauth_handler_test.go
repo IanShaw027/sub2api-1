@@ -139,7 +139,7 @@ func TestOpenAIOAuthHandler_CreateFromOAuthPersistsPrivacyModeAndCodexIdentity(t
 	openaiSvc.SetPrivacyClientFactory(newOpenAIOAuthPrivacyClientFactory(privacyServer.URL))
 
 	adminSvc := newStubAdminService()
-	handler := NewOpenAIOAuthHandler(openaiSvc, adminSvc, nil)
+	handler := NewOpenAIOAuthHandler(openaiSvc, adminSvc)
 
 	authResult, err := openaiSvc.GenerateAuthURL(context.Background(), nil, "", service.PlatformOpenAI)
 	require.NoError(t, err)

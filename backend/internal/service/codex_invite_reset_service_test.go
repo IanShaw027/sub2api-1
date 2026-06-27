@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -173,6 +174,102 @@ func TestCodexInviteResetServiceGetStatusAggregatesDesktopEndpoints(t *testing.T
 	require.NotEmpty(t, adminSvc.extraUpdates[0]["codex_invite_reset_updated_at"])
 }
 
+func TestCodexInviteResetServiceUsesDesktopTLSRouter(t *testing.T) {
+	account := &Account{
+		ID:          44,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 3,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Extra: map[string]any{
+			"enable_tls_fingerprint":    true,
+			"tls_fingerprint_router_id": float64(10),
+		},
+	}
+	upstream := &codexInviteResetHTTPUpstreamStub{responsesByPath: map[string]*http.Response{
+		"/backend-api/referrals/invite/eligibility":     codexInviteResetJSONResponse(`{"requires_explicit_confirmation":true}`),
+		"/backend-api/wham/referrals/eligibility_rules": codexInviteResetJSONResponse(`{"rules":[]}`),
+		"/backend-api/wham/rate-limit-reset-credits":    codexInviteResetJSONResponse(`{"available_count":1}`),
+	}}
+	routerSvc := NewTLSFingerprintRouterService(&tlsFingerprintRouterRepoStub{routers: []*model.TLSFingerprintRouter{
+		{
+			ID:      10,
+			Name:    "openai clients",
+			Enabled: true,
+			Rules: []model.TLSFingerprintRouterRule{
+				{
+					Name:                    "desktop",
+					Enabled:                 true,
+					Transport:               model.TLSFingerprintRouterTransportHTTP,
+					MatchType:               model.TLSFingerprintRouterMatchPrefix,
+					Pattern:                 "Codex Desktop/",
+					TLSFingerprintProfileID: 7,
+					UpstreamUserAgent:       "Codex Desktop/26.616.71553 (Mac OS X 15.5; arm64)",
+					UpstreamOriginator:      "Codex Desktop",
+				},
+			},
+		},
+	}}, nil)
+	profileSvc := &TLSFingerprintProfileService{
+		localCache: map[int64]*model.TLSFingerprintProfile{
+			7: {
+				ID:            7,
+				Name:          "Codex Desktop Routed",
+				ALPNProtocols: []string{"h2", "http/1.1"},
+			},
+		},
+	}
+	svc := NewCodexInviteResetService(&codexInviteResetAdminServiceStub{account: account}, upstream, nil, profileSvc, &codexInviteResetHistoryRepoStub{})
+	svc.SetTLSFingerprintRouterService(routerSvc)
+
+	_, err := svc.GetStatus(context.Background(), account.ID)
+	require.NoError(t, err)
+
+	require.Len(t, upstream.profiles, 3)
+	for _, profile := range upstream.profiles {
+		require.NotNil(t, profile)
+		require.Equal(t, "Codex Desktop Routed", profile.Name)
+	}
+	req := upstream.requestByPath("/backend-api/wham/rate-limit-reset-credits")
+	require.NotNil(t, req)
+	require.Equal(t, "Codex Desktop/26.616.71553 (Mac OS X 15.5; arm64)", req.Header.Get("User-Agent"))
+	require.Equal(t, "Codex Desktop", req.Header.Get("originator"))
+}
+
+func TestCodexInviteResetServiceGetStatusFallsBackToUsageCount(t *testing.T) {
+	account := &Account{
+		ID:          43,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 3,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+	}
+	upstream := &codexInviteResetHTTPUpstreamStub{responsesByPath: map[string]*http.Response{
+		"/backend-api/referrals/invite/eligibility":     codexInviteResetErrorResponse(http.StatusServiceUnavailable, `cf challenge`),
+		"/backend-api/wham/referrals/eligibility_rules": codexInviteResetErrorResponse(http.StatusBadGateway, `bad gateway`),
+		"/backend-api/wham/rate-limit-reset-credits":    codexInviteResetErrorResponse(http.StatusNotFound, `not found`),
+		"/backend-api/wham/usage":                       codexInviteResetJSONResponse(`{"rate_limit_reset_credits":{"available_count":4}}`),
+	}}
+	adminSvc := &codexInviteResetAdminServiceStub{account: account}
+	svc := NewCodexInviteResetService(adminSvc, upstream, nil, nil, &codexInviteResetHistoryRepoStub{})
+
+	status, err := svc.GetStatus(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Equal(t, 4, status.AvailableCount)
+	require.Empty(t, status.Credits)
+	require.True(t, status.RequiresConsent)
+	require.NotNil(t, upstream.requestByPath("/backend-api/wham/usage"))
+
+	require.Len(t, adminSvc.extraUpdates, 1)
+	require.Equal(t, 4, adminSvc.extraUpdates[0]["codex_invite_reset_available_count"])
+}
+
 func TestCodexInviteResetServiceSendInviteNormalizesEmails(t *testing.T) {
 	account := &Account{
 		ID:          7,
@@ -244,6 +341,40 @@ func TestCodexInviteResetServiceConsumeSendsRedeemRequestID(t *testing.T) {
 	require.Nil(t, entry.OperatorUserID)
 }
 
+func TestCodexInviteResetServiceConsumeAllowsEmptyCreditID(t *testing.T) {
+	account := &Account{
+		ID:          10,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"access_token": "oauth-token"},
+	}
+	upstream := &codexInviteResetHTTPUpstreamStub{responses: []*http.Response{
+		codexInviteResetJSONResponse(`{"code":"reset","windows_reset":2,"available_count":1}`),
+	}}
+	historyRepo := &codexInviteResetHistoryRepoStub{}
+	svc := NewCodexInviteResetService(&codexInviteResetAdminServiceStub{account: account}, upstream, nil, nil, historyRepo)
+
+	result, err := svc.Consume(context.Background(), account.ID, "", nil)
+	require.NoError(t, err)
+	require.Equal(t, "reset", result.Code)
+	require.Empty(t, result.CreditID)
+	require.NotEmpty(t, result.RedeemRequestID)
+	require.NotNil(t, result.AvailableCount)
+	require.Equal(t, 1, *result.AvailableCount)
+
+	var payload map[string]string
+	require.NoError(t, json.Unmarshal([]byte(upstream.bodies[0]), &payload))
+	require.Empty(t, payload["credit_id"])
+	require.NotEmpty(t, payload["redeem_request_id"])
+
+	require.Len(t, historyRepo.entries, 1)
+	entry := historyRepo.entries[0]
+	require.Equal(t, CodexInviteResetActionConsume, entry.ActionType)
+	require.Empty(t, entry.CreditID)
+	require.Equal(t, "reset", entry.ResultCode)
+	require.True(t, entry.Success)
+}
+
 func TestNormalizeCodexInviteEmailsRejectsInvalidAndTooMany(t *testing.T) {
 	_, err := normalizeCodexInviteEmails([]string{"bad-email"})
 	require.Error(t, err)
@@ -258,6 +389,14 @@ func codexInviteResetJSONResponse(body string) *http.Response {
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}
+
+func codexInviteResetErrorResponse(status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header:     http.Header{"Content-Type": []string{"text/plain"}},
 		Body:       io.NopCloser(strings.NewReader(body)),
 	}
 }

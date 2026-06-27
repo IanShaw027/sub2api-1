@@ -3,16 +3,18 @@ import { flushPromises, mount } from '@vue/test-utils'
 import AccountUsageCell from '../AccountUsageCell.vue'
 import type { Account } from '@/types'
 
-const { getUsage, getCodexInviteResetStatus } = vi.hoisted(() => ({
+const { getUsage, getCodexInviteResetStatus, consumeCodexInviteReset } = vi.hoisted(() => ({
   getUsage: vi.fn(),
-  getCodexInviteResetStatus: vi.fn()
+  getCodexInviteResetStatus: vi.fn(),
+  consumeCodexInviteReset: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       getUsage,
-      getCodexInviteResetStatus
+      getCodexInviteResetStatus,
+      consumeCodexInviteReset
     }
   }
 }))
@@ -60,6 +62,7 @@ describe('AccountUsageCell', () => {
   beforeEach(() => {
     getUsage.mockReset()
     getCodexInviteResetStatus.mockReset()
+    consumeCodexInviteReset.mockReset()
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
       value: vi.fn().mockImplementation(() => ({
@@ -395,6 +398,72 @@ describe('AccountUsageCell', () => {
       .findAll('button')
       .find((button) => button.text().includes('admin.accounts.inviteResetCountShort'))
     expect(inviteResetButton?.text()).toContain('3')
+  })
+
+  it('OpenAI OAuth 只显示 personal-dev 的 Codex 邀请重置入口', async () => {
+    getUsage.mockResolvedValue({})
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 2009,
+          platform: 'openai',
+          type: 'oauth',
+          extra: {
+            codex_invite_reset_available_count: 2,
+            codex_invite_reset_updated_at: '2026-03-07T10:00:00Z',
+            codex_invite_reset_credits: []
+          }
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true,
+          CodexInviteResetModal: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('admin.accounts.openaiQuotaReset.count')
+    expect(wrapper.text()).toContain('admin.accounts.inviteResetCountShort')
+    expect(wrapper.text()).toContain('2')
+  })
+
+  it('OpenAI OAuth 只有持久化次数没有 credit 明细时仍允许重置', async () => {
+    getUsage.mockResolvedValue({})
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 2013,
+          platform: 'openai',
+          type: 'oauth',
+          extra: {
+            codex_invite_reset_available_count: 2,
+            codex_invite_reset_updated_at: '2026-03-07T10:00:00Z',
+            codex_invite_reset_credit_ids: [],
+            codex_invite_reset_credits: []
+          }
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true,
+          CodexInviteResetModal: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    const resetButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('admin.accounts.inviteResetReset'))
+    expect(resetButton?.attributes('disabled')).toBeUndefined()
   })
 
   it('OpenAI OAuth 已有持久化 Codex 重置次数 0 时打开弹窗不重新查询', async () => {

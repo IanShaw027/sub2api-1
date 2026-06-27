@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -23,9 +24,11 @@ import (
 const (
 	codexInviteResetReferralKey = "codex_referral_persistent_invite"
 	codexBackendAPIBaseURL      = "https://chatgpt.com/backend-api"
+	codexInviteResetUsagePath   = "/wham/usage"
 	codexInviteResetMaxEmails   = 5
 	// Codex Desktop 的邀请重置请求默认使用 Desktop UA。
-	codexInviteResetDefaultUserAgent = "Codex Desktop/0.0.0 (Linux; x86_64)"
+	codexInviteResetDefaultUserAgent  = "Codex Desktop/0.0.0 (Linux; x86_64)"
+	codexInviteResetDefaultOriginator = "Codex Desktop"
 	// 上游响应体读取上限，与其他 OpenAI 上游调用保持一致。
 	codexInviteResetBodyReadLimit = 2 << 20
 	// 上游错误信息透传到管理端时的最大长度，避免把 Cloudflare 挑战页或大 JSON 整段塞进 UI。
@@ -40,6 +43,7 @@ type CodexInviteResetService struct {
 	httpUpstream        HTTPUpstream
 	openAITokenProvider *OpenAITokenProvider
 	tlsFPProfileService *TLSFingerprintProfileService
+	tlsFPRouterService  *TLSFingerprintRouterService
 	historyRepo         CodexInviteResetHistoryRepository
 }
 
@@ -58,6 +62,13 @@ func NewCodexInviteResetService(
 		tlsFPProfileService: tlsFPProfileService,
 		historyRepo:         historyRepo,
 	}
+}
+
+func (s *CodexInviteResetService) SetTLSFingerprintRouterService(routerService *TLSFingerprintRouterService) {
+	if s == nil {
+		return
+	}
+	s.tlsFPRouterService = routerService
 }
 
 // CodexInviteResetActionType 区分历史记录的动作类型。
@@ -124,6 +135,7 @@ type codexInviteResetAccountContext struct {
 	token      string
 	proxyURL   string
 	userAgent  string
+	originator string
 	tlsProfile *tlsfingerprint.Profile
 }
 
@@ -134,34 +146,50 @@ func (s *CodexInviteResetService) GetStatus(ctx context.Context, accountID int64
 		return nil, err
 	}
 
-	// 三个上游查询互不依赖，并发执行以降低管理端等待延迟（任一失败即取消其余）。
+	// 三个上游查询互不依赖，并发执行以降低管理端等待延迟。
+	// 邀请资格/规则属于辅助信息；重置次数优先取 detail endpoint，失败时再用
+	// ChatGPT/Codex /wham/usage 中的 rate_limit_reset_credits 兜底。
 	var (
 		eligibility map[string]any
 		rules       map[string]any
 		creditsRaw  map[string]any
+		usageRaw    map[string]any
+		eligErr     error
+		rulesErr    error
+		creditsErr  error
+		usageErr    error
 	)
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
-		var err error
-		eligibility, err = s.getJSON(groupCtx, accountCtx, "/referrals/invite/eligibility", map[string]string{
+		eligibility, eligErr = s.getJSON(groupCtx, accountCtx, "/referrals/invite/eligibility", map[string]string{
 			"referral_key": codexInviteResetReferralKey,
 		})
-		return err
+		return nil
 	})
 	group.Go(func() error {
-		var err error
-		rules, err = s.getJSON(groupCtx, accountCtx, "/wham/referrals/eligibility_rules", map[string]string{
+		rules, rulesErr = s.getJSON(groupCtx, accountCtx, "/wham/referrals/eligibility_rules", map[string]string{
 			"referral_key": codexInviteResetReferralKey,
 		})
-		return err
+		return nil
 	})
 	group.Go(func() error {
-		var err error
-		creditsRaw, err = s.getJSON(groupCtx, accountCtx, "/wham/rate-limit-reset-credits", nil)
-		return err
+		creditsRaw, creditsErr = s.getJSON(groupCtx, accountCtx, "/wham/rate-limit-reset-credits", nil)
+		return nil
 	})
 	if err := group.Wait(); err != nil {
 		return nil, err
+	}
+	if eligErr != nil {
+		slog.Debug("codex_invite_reset_eligibility_query_failed", "account_id", accountID, "error", eligErr)
+	}
+	if rulesErr != nil {
+		slog.Debug("codex_invite_reset_rules_query_failed", "account_id", accountID, "error", rulesErr)
+	}
+	if creditsErr != nil {
+		usageRaw, usageErr = s.getJSON(ctx, accountCtx, codexInviteResetUsagePath, nil)
+		if usageErr != nil {
+			return nil, creditsErr
+		}
 	}
 
 	credits := normalizeCodexInviteResetCredits(creditsRaw)
@@ -170,6 +198,8 @@ func (s *CodexInviteResetService) GetStatus(ctx context.Context, accountID int64
 	var availableCount int
 	if _, ok := creditsRaw["available_count"]; ok {
 		availableCount = codexInviteResetIntFromMap(creditsRaw, "available_count")
+	} else if count, ok := codexInviteResetAvailableCountFromUsage(usageRaw); ok {
+		availableCount = count
 	} else {
 		for _, credit := range credits {
 			if strings.EqualFold(credit.Status, "available") {
@@ -241,15 +271,15 @@ func (s *CodexInviteResetService) Consume(ctx context.Context, accountID int64, 
 		return nil, err
 	}
 	creditID = strings.TrimSpace(creditID)
-	if creditID == "" {
-		return nil, infraerrors.BadRequest("CODEX_INVITE_RESET_CREDIT_ID_REQUIRED", "credit_id is required")
-	}
 	redeemRequestID := uuid.NewString()
 
-	raw, err := s.postJSON(ctx, accountCtx, "/wham/rate-limit-reset-credits/consume", map[string]any{
-		"credit_id":         creditID,
+	payload := map[string]any{
 		"redeem_request_id": redeemRequestID,
-	})
+	}
+	if creditID != "" {
+		payload["credit_id"] = creditID
+	}
+	raw, err := s.postJSON(ctx, accountCtx, "/wham/rate-limit-reset-credits/consume", payload)
 	if err != nil {
 		s.recordHistory(ctx, &CodexInviteResetHistoryEntry{
 			AccountID:      accountID,
@@ -260,6 +290,9 @@ func (s *CodexInviteResetService) Consume(ctx context.Context, accountID int64, 
 			Message:        codexInviteResetTruncateError(err.Error()),
 		})
 		return nil, err
+	}
+	if creditID == "" {
+		creditID = codexInviteResetConsumedCreditID(raw)
 	}
 
 	var availableCount *int
@@ -403,20 +436,49 @@ func (s *CodexInviteResetService) prepareAccount(ctx context.Context, accountID 
 		}
 	}
 
+	tlsRuntime := s.resolveTLSRuntime(ctx, account)
 	return &codexInviteResetAccountContext{
 		account:    account,
 		token:      token,
 		proxyURL:   proxyURL,
-		userAgent:  codexInviteResetDefaultUserAgent,
-		tlsProfile: s.resolveTLSProfile(account),
+		userAgent:  tlsRuntime.UpstreamUserAgent,
+		originator: tlsRuntime.UpstreamOriginator,
+		tlsProfile: tlsRuntime.Profile,
 	}, nil
 }
 
-func (s *CodexInviteResetService) resolveTLSProfile(account *Account) *tlsfingerprint.Profile {
-	if s == nil || s.tlsFPProfileService == nil {
-		return nil
+func (s *CodexInviteResetService) resolveTLSRuntime(ctx context.Context, account *Account) openAITLSFingerprintRuntime {
+	runtime := openAITLSFingerprintRuntime{}
+	if s != nil && s.tlsFPProfileService != nil {
+		runtime.Profile = s.tlsFPProfileService.ResolveTLSProfile(account)
 	}
-	return s.tlsFPProfileService.ResolveTLSProfile(account)
+	seedTLSFingerprintRuntimeHeaders(&runtime, runtime.Profile)
+	if s != nil &&
+		s.tlsFPRouterService != nil &&
+		s.tlsFPProfileService != nil &&
+		account != nil &&
+		account.IsOpenAITLSFingerprintEnabled() {
+		routerID := account.GetTLSFingerprintRouterID()
+		if routerID > 0 {
+			match, ok := s.tlsFPRouterService.MatchRequest(ctx, routerID, codexInviteResetDefaultUserAgent, model.TLSFingerprintRouterTransportHTTP)
+			if ok && match.ProfileID > 0 {
+				if profile := s.tlsFPProfileService.ResolveTLSProfileByID(match.ProfileID); profile != nil {
+					runtime.Profile = profile
+					runtime.UpstreamUserAgent = strings.TrimSpace(match.UpstreamUserAgent)
+					runtime.UpstreamOriginator = strings.TrimSpace(match.UpstreamOriginator)
+					seedTLSFingerprintRuntimeHeaders(&runtime, profile)
+					runtime.Matched = true
+				}
+			}
+		}
+	}
+	if runtime.UpstreamUserAgent == "" {
+		runtime.UpstreamUserAgent = codexInviteResetDefaultUserAgent
+	}
+	if runtime.UpstreamOriginator == "" {
+		runtime.UpstreamOriginator = codexInviteResetDefaultOriginator
+	}
+	return runtime
 }
 
 func (s *CodexInviteResetService) getJSON(ctx context.Context, accountCtx *codexInviteResetAccountContext, path string, query map[string]string) (map[string]any, error) {
@@ -456,7 +518,7 @@ func (s *CodexInviteResetService) applyHeaders(req *http.Request, accountCtx *co
 	req.Header.Set("Authorization", "Bearer "+accountCtx.token)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("OAI-Language", "zh-CN")
-	req.Header.Set("originator", "Codex Desktop")
+	req.Header.Set("originator", accountCtx.originator)
 	req.Header.Set("X-OpenAI-Attach-Auth", "1")
 	req.Header.Set("X-OpenAI-Attach-Integrity-State", "1")
 	req.Header.Set("User-Agent", accountCtx.userAgent)
@@ -586,6 +648,30 @@ func normalizeCodexInviteResetCredits(raw map[string]any) []CodexInviteResetCred
 		})
 	}
 	return credits
+}
+
+func codexInviteResetAvailableCountFromUsage(raw map[string]any) (int, bool) {
+	if raw == nil {
+		return 0, false
+	}
+	credits, ok := raw["rate_limit_reset_credits"].(map[string]any)
+	if !ok || credits == nil {
+		return 0, false
+	}
+	if _, exists := credits["available_count"]; !exists {
+		return 0, false
+	}
+	return codexInviteResetIntFromMap(credits, "available_count"), true
+}
+
+func codexInviteResetConsumedCreditID(raw map[string]any) string {
+	if raw == nil {
+		return ""
+	}
+	if credit, ok := raw["credit"].(map[string]any); ok {
+		return codexInviteResetStringFromMap(credit, "id")
+	}
+	return codexInviteResetStringFromMap(raw, "credit_id")
 }
 
 func normalizeCodexInviteResetRules(raw map[string]any) []string {

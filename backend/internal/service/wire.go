@@ -120,16 +120,17 @@ func ProvideOpenAITokenProvider(
 	return p
 }
 
-// ProvideOpenAIQuotaService wires the OpenAI quota query/reset service.
-// It depends on the OpenAI token provider for refreshed access tokens and the
-// privacy client factory for the impersonated upstream HTTP client.
-func ProvideOpenAIQuotaService(
-	accountRepo AccountRepository,
-	proxyRepo ProxyRepository,
-	tokenProvider *OpenAITokenProvider,
-	privacyClientFactory PrivacyClientFactory,
-) *OpenAIQuotaService {
-	return NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory)
+func ProvideCodexInviteResetService(
+	adminService AdminService,
+	httpUpstream HTTPUpstream,
+	openAITokenProvider *OpenAITokenProvider,
+	tlsFPProfileService *TLSFingerprintProfileService,
+	historyRepo CodexInviteResetHistoryRepository,
+	tlsFPRouterService *TLSFingerprintRouterService,
+) *CodexInviteResetService {
+	svc := NewCodexInviteResetService(adminService, httpUpstream, openAITokenProvider, tlsFPProfileService, historyRepo)
+	svc.SetTLSFingerprintRouterService(tlsFPRouterService)
+	return svc
 }
 
 func ProvideGrokQuotaService(
@@ -779,7 +780,7 @@ var ProviderSet = wire.NewSet(
 	ProvideGatewayService,
 	ProvideOpenAIGatewayService,
 	wire.Bind(new(AccountRuntimeBlocker), new(*OpenAIGatewayService)),
-	NewCodexInviteResetService,
+	ProvideCodexInviteResetService,
 	NewOAuthService,
 	ProvideOpenAIOAuthService,
 	NewGrokOAuthService,
@@ -796,7 +797,6 @@ var ProviderSet = wire.NewSet(
 	ProvideAntigravityTokenProvider,
 	ProvideGrokTokenProvider,
 	ProvideOpenAITokenProvider,
-	ProvideOpenAIQuotaService,
 	ProvideGrokQuotaService,
 	ProvideClaudeTokenProvider,
 	ProvideKiroTokenProvider,

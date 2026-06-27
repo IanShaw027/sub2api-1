@@ -25,7 +25,7 @@ type codexInviteResetInviteRequest struct {
 }
 
 type codexInviteResetConsumeRequest struct {
-	CreditID string `json:"credit_id" binding:"required"`
+	CreditID string `json:"credit_id"`
 }
 
 // GetStatus 查询当前账号的邀请资格和可用重置次数。
