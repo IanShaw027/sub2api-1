@@ -3042,9 +3042,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		connAffinityHit = false
 		forceNewConn = true
 	}
+	lastFailureAllowsDeltaConnReanchor := strings.TrimSpace(lastFailureReason) == "" ||
+		strings.TrimSpace(lastFailureReason) == "write_request" ||
+		strings.TrimSpace(lastFailureReason) == "write"
 	allowDeltaConnReanchor := !sessionPreemptedPrevious &&
-		attempt <= 1 &&
-		strings.TrimSpace(lastFailureReason) == "" &&
+		attempt <= 2 &&
+		lastFailureAllowsDeltaConnReanchor &&
 		!httpIngressWSOneShot &&
 		account.Type == AccountTypeOAuth &&
 		stateStore != nil &&

@@ -1362,7 +1362,7 @@ func TestOpenAIWSActiveDelta_ForwardWSV2BindsInputOnlyContextWithoutOutputCaptur
 	require.Equal(t, "again", gjson.Get(secondWrite, "input.0.content.0.text").String())
 }
 
-func TestOpenAIWSActiveDelta_ForwardWSV2WriteFailureRetryFullReplaysOnNewConn(t *testing.T) {
+func TestOpenAIWSActiveDelta_ForwardWSV2WriteFailureRetryReanchorsDeltaOnNewConn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
 	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
@@ -1471,13 +1471,11 @@ func TestOpenAIWSActiveDelta_ForwardWSV2WriteFailureRetryFullReplaysOnNewConn(t 
 	retryConn.mu.Unlock()
 	require.Len(t, retryWrites, 1)
 	retryWrite := requestToJSONString(retryWrites[0])
-	require.False(t, gjson.Get(retryWrite, "previous_response_id").Exists(), "retry on a new conn must not carry the old active-delta anchor")
+	require.Equal(t, "resp_delta_write_seed", gjson.Get(retryWrite, "previous_response_id").String(), "write failure retry should reanchor same-account delta on the replacement conn")
 	require.True(t, gjson.Get(retryWrite, "store").Exists())
 	require.False(t, gjson.Get(retryWrite, "store").Bool())
-	require.Len(t, gjson.Get(retryWrite, "input").Array(), 3, "retry on a new conn must full replay instead of preserving active delta")
-	require.Equal(t, "hi", gjson.Get(retryWrite, "input.0.content.0.text").String())
-	require.Equal(t, "hello", gjson.Get(retryWrite, "input.1.content.0.text").String())
-	require.Equal(t, "again", gjson.Get(retryWrite, "input.2.content.0.text").String())
+	require.Len(t, gjson.Get(retryWrite, "input").Array(), 1, "retry on a new conn should preserve active delta when the cached account/session context still matches")
+	require.Equal(t, "again", gjson.Get(retryWrite, "input.0.content.0.text").String())
 }
 
 func TestOpenAIWSActiveDelta_PreviousResponseNotFoundRetriesFullPayloadOverWS(t *testing.T) {
