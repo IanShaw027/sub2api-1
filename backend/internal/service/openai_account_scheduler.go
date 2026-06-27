@@ -530,7 +530,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 				req.APIKeyID,
 				accountID,
 				normalizeOpenAIWSLogValue(account.Type),
-				normalizeOpenAIWSLogValue(string(req.RequiredTransport)),
+				normalizeOpenAIWSLogValue(openAIUpstreamTransportLogValue(req.RequiredTransport)),
 				shortSessionHash(sessionHash),
 				normalizeOpenAIWSLogValue(reason),
 				errorRate,
@@ -544,7 +544,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 				"api_key_id", req.APIKeyID,
 				"account_id", accountID,
 				"account_type", account.Type,
-				"transport", string(req.RequiredTransport),
+				"transport", openAIUpstreamTransportLogValue(req.RequiredTransport),
 				"session", shortSessionHash(sessionHash),
 				"reason", reason,
 				"error_rate", errorRate,
@@ -651,6 +651,13 @@ func shouldSuppressOpenAIStickyEscapeForOAuthWS(req OpenAIAccountScheduleRequest
 		return true
 	}
 	return req.RequiredTransport == OpenAIUpstreamTransportAny && account.IsOpenAIResponsesWebSocketV2Enabled()
+}
+
+func openAIUpstreamTransportLogValue(transport OpenAIUpstreamTransport) string {
+	if transport == OpenAIUpstreamTransportAny || strings.TrimSpace(string(transport)) == "" {
+		return "any"
+	}
+	return string(transport)
 }
 
 type openAIAccountCandidateScore struct {
@@ -2069,7 +2076,7 @@ func (s *OpenAIGatewayService) logOpenAIWSScheduleResultDiag(
 		derefGroupID(groupID),
 		apiKeyID,
 		shortSessionHash(sessionHash),
-		normalizeOpenAIWSLogValue(string(requiredTransport)),
+		normalizeOpenAIWSLogValue(openAIUpstreamTransportLogValue(requiredTransport)),
 		normalizeOpenAIWSLogValue(requestedModel),
 		normalizeOpenAIWSLogValue(stickySource),
 		normalizeOpenAIWSLogValue(decision.Layer),
