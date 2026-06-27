@@ -2126,6 +2126,7 @@ func (s *OpenAIGatewayService) resolveOpenAIScheduleStickyAccountID(ctx context.
 			source = "ws_session_context"
 		}
 	}
+	s.logOpenAIWSSessionContextStickySnapshot(groupID, apiKeyID, sessionHash, source, accountID)
 
 	logOpenAIWSModeInfoDirect(
 		"openai_ws_sticky_select_diag temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s source=%s account_id=%d conn_id=%s redis_error=%s",
@@ -2138,6 +2139,110 @@ func (s *OpenAIGatewayService) resolveOpenAIScheduleStickyAccountID(ctx context.
 		normalizeOpenAIWSLogValue(redisErr),
 	)
 	return accountID, source
+}
+
+type openAIWSSessionContextStickySnapshotLog struct {
+	GroupID                  int64
+	APIKeyID                 int64
+	SessionHash              string
+	StickySource             string
+	StickyAccountID          int64
+	CachedFound              bool
+	CachedAccountID          int64
+	CachedConnID             string
+	CachedLastResponseID     string
+	AccountMatch             bool
+	BoundConnID              string
+	BoundConnHit             bool
+	BoundConnMatch           bool
+	ConnLastResponseID       string
+	ConnLastResponseHit      bool
+	CachedConnInPool         bool
+	CachedConnProfile        openAIWSConnProfile
+	CachedConnAgeMS          int64
+	CachedConnIdleMS         int64
+	CachedConnLeaseCount     int64
+	CachedConnLeased         bool
+	CachedConnWaiters        int32
+	CachedConnLastResponseID string
+}
+
+func openAIWSSessionContextStickySnapshotLogMessage(v openAIWSSessionContextStickySnapshotLog) string {
+	return fmt.Sprintf(
+		"openai_ws_session_context_sticky_snapshot temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s sticky_source=%s sticky_account_id=%d cached_found=%v cached_account_id=%d cached_conn_id=%s cached_last_response_id=%s account_match=%v bound_conn_id=%s bound_conn_hit=%v bound_conn_match=%v conn_last_response_id=%s conn_last_response_hit=%v cached_conn_in_pool=%v cached_conn_profile=%s cached_conn_age_ms=%d cached_conn_idle_ms=%d cached_conn_lease_count=%d cached_conn_leased=%v cached_conn_waiters=%d cached_conn_last_response_id=%s",
+		v.GroupID,
+		v.APIKeyID,
+		truncateOpenAIWSLogValue(v.SessionHash, 12),
+		normalizeOpenAIWSLogValue(v.StickySource),
+		v.StickyAccountID,
+		v.CachedFound,
+		v.CachedAccountID,
+		truncateOpenAIWSLogValue(v.CachedConnID, openAIWSIDValueMaxLen),
+		truncateOpenAIWSLogValue(v.CachedLastResponseID, openAIWSIDValueMaxLen),
+		v.AccountMatch,
+		truncateOpenAIWSLogValue(v.BoundConnID, openAIWSIDValueMaxLen),
+		v.BoundConnHit,
+		v.BoundConnMatch,
+		truncateOpenAIWSLogValue(v.ConnLastResponseID, openAIWSIDValueMaxLen),
+		v.ConnLastResponseHit,
+		v.CachedConnInPool,
+		openAIWSConnProfileSnapshotLogValue(v.CachedConnProfile, v.CachedConnInPool),
+		v.CachedConnAgeMS,
+		v.CachedConnIdleMS,
+		v.CachedConnLeaseCount,
+		v.CachedConnLeased,
+		v.CachedConnWaiters,
+		truncateOpenAIWSLogValue(v.CachedConnLastResponseID, openAIWSIDValueMaxLen),
+	)
+}
+
+func (s *OpenAIGatewayService) logOpenAIWSSessionContextStickySnapshot(groupID *int64, apiKeyID int64, sessionHash, stickySource string, stickyAccountID int64) {
+	if s == nil || apiKeyID <= 0 || strings.TrimSpace(sessionHash) == "" {
+		return
+	}
+	stateStore := s.getOpenAIWSStateStore()
+	if stateStore == nil {
+		return
+	}
+	group := derefGroupID(groupID)
+	cached, cachedFound := stateStore.GetSessionContext(group, apiKeyID, sessionHash)
+	if !cachedFound && stickyAccountID <= 0 {
+		return
+	}
+
+	log := openAIWSSessionContextStickySnapshotLog{
+		GroupID:         group,
+		APIKeyID:        apiKeyID,
+		SessionHash:     sessionHash,
+		StickySource:    stickySource,
+		StickyAccountID: stickyAccountID,
+		CachedFound:     cachedFound,
+		AccountMatch:    cachedFound && stickyAccountID > 0 && cached.accountID == stickyAccountID,
+	}
+	if cachedFound {
+		log.CachedAccountID = cached.accountID
+		log.CachedConnID = cached.connID
+		log.CachedLastResponseID = cached.lastResponseID
+		boundConnID, boundConnHit := stateStore.GetSessionConn(group, apiKeyID, cached.accountID, sessionHash)
+		log.BoundConnID = boundConnID
+		log.BoundConnHit = boundConnHit
+		log.BoundConnMatch = boundConnHit && strings.TrimSpace(boundConnID) == strings.TrimSpace(cached.connID)
+		connLastResponseID, connLastResponseHit := stateStore.GetConnLastResponse(cached.connID)
+		log.ConnLastResponseID = connLastResponseID
+		log.ConnLastResponseHit = connLastResponseHit
+		log.CachedConnLastResponseID = connLastResponseID
+		if pool := s.getOpenAIWSConnPool(); pool != nil {
+			snapshot := pool.ConnSnapshot(cached.accountID, cached.connID)
+			log.CachedConnInPool = snapshot.Exists
+			log.CachedConnProfile = snapshot.Profile
+			log.CachedConnAgeMS = snapshot.Age.Milliseconds()
+			log.CachedConnIdleMS = snapshot.Idle.Milliseconds()
+			log.CachedConnLeaseCount = snapshot.LeaseCount
+			log.CachedConnLeased = snapshot.Leased
+			log.CachedConnWaiters = snapshot.Waiters
+		}
+	}
+	logOpenAIWSModeInfoDirect("%s", openAIWSSessionContextStickySnapshotLogMessage(log))
 }
 
 func (s *OpenAIGatewayService) openAIWSSessionContextStickyCandidate(groupID *int64, apiKeyID int64, sessionHash string) (int64, string, bool) {

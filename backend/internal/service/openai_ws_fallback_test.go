@@ -813,42 +813,49 @@ func TestOpenAIWSReadFailLogMessageIncludesRequestAndConnectionContext(t *testin
 
 func TestOpenAIWSErrorEventLogMessageIncludesRequestBindingAndUpstreamFields(t *testing.T) {
 	msg := openAIWSErrorEventLogMessage(openAIWSErrorEventLog{
-		RequestID:                "req-upstream-event",
-		ClientRequestID:          "client-upstream-event",
-		AccountID:                46,
-		AccountType:              AccountTypeOAuth,
-		ConnProfile:              openAIWSConnProfileSessionBound,
-		ConnID:                   "oa_ws_46_4",
-		ConnReused:               true,
-		Transport:                string(OpenAIUpstreamTransportResponsesWebsocketV2),
-		Attempt:                  1,
-		ConnAgeMs:                55000,
-		ConnIdleMs:               77000,
-		ConnLeaseCount:           9,
-		PayloadBytes:             7654,
-		PreviousResponseID:       "resp_prev_upstream_event",
-		PreviousResponseIDKind:   OpenAIPreviousResponseIDKindResponseID,
-		PreviousResponseIDSource: "session_context",
-		StoreMode:                openAIWSStoreModeIncremental,
-		StoreDisabled:            true,
-		StickyAccountID:          46,
-		StickyAccountHit:         true,
-		ConnAffinityHit:          true,
-		PreferredConnID:          "oa_ws_46_4",
-		StoreFallbackReason:      "active_delta",
-		ActiveDelta:              true,
-		DeltaItems:               2,
-		FullItems:                99,
-		EventIndex:               4,
-		FallbackReason:           "previous_response_not_found",
-		CanFallback:              true,
-		ErrorCode:                "previous_response_not_found",
-		ErrorType:                "invalid_request_error",
-		ErrorMessage:             "previous response not found",
-		SessionHash:              "abcdef1234567890",
-		HasPromptCacheKey:        true,
-		HasTurnState:             false,
-		TurnStateLen:             0,
+		RequestID:                 "req-upstream-event",
+		ClientRequestID:           "client-upstream-event",
+		AccountID:                 46,
+		AccountType:               AccountTypeOAuth,
+		ConnProfile:               openAIWSConnProfileSessionBound,
+		ConnID:                    "oa_ws_46_4",
+		ConnReused:                true,
+		Transport:                 string(OpenAIUpstreamTransportResponsesWebsocketV2),
+		Attempt:                   1,
+		ConnAgeMs:                 55000,
+		ConnIdleMs:                77000,
+		ConnLeaseCount:            9,
+		PayloadBytes:              7654,
+		ResponseID:                "resp_event_context",
+		PreviousResponseID:        "resp_prev_upstream_event",
+		PreviousResponseIDKind:    OpenAIPreviousResponseIDKindResponseID,
+		PreviousResponseIDSource:  "session_context",
+		OriginalPreviousIDPresent: false,
+		StoreMode:                 openAIWSStoreModeIncremental,
+		StoreDisabled:             true,
+		StickyAccountID:           46,
+		StickyAccountHit:          true,
+		ConnAffinityHit:           true,
+		PreferredConnID:           "oa_ws_46_4",
+		StoreFallbackReason:       "active_delta",
+		ActiveDelta:               true,
+		DeltaItems:                2,
+		FullItems:                 99,
+		EventIndex:                4,
+		FallbackReason:            "previous_response_not_found",
+		CanFallback:               true,
+		ErrorCode:                 "previous_response_not_found",
+		ErrorType:                 "invalid_request_error",
+		ErrorMessage:              "previous response not found",
+		SessionHash:               "abcdef1234567890",
+		HeaderSessionID:           "session-header",
+		HeaderConversationID:      "conversation-header",
+		SessionIDSource:           "prompt_cache_key",
+		ConversationIDSource:      "header",
+		HTTPIngressWSOneShot:      false,
+		HasPromptCacheKey:         true,
+		HasTurnState:              false,
+		TurnStateLen:              0,
 	})
 
 	require.Contains(t, msg, "error_event")
@@ -857,8 +864,10 @@ func TestOpenAIWSErrorEventLogMessageIncludesRequestBindingAndUpstreamFields(t *
 	require.Contains(t, msg, "account_id=46")
 	require.Contains(t, msg, "conn_profile=session_bound")
 	require.Contains(t, msg, "conn_reused=true")
+	require.Contains(t, msg, "response_id=resp_event_context")
 	require.Contains(t, msg, "previous_response_id=resp_prev_upstream_event")
 	require.Contains(t, msg, "previous_response_id_source=session_context")
+	require.Contains(t, msg, "original_previous_response_id_present=false")
 	require.Contains(t, msg, "sticky_account_id=46")
 	require.Contains(t, msg, "sticky_account_hit=true")
 	require.Contains(t, msg, "conn_affinity_hit=true")
@@ -869,6 +878,72 @@ func TestOpenAIWSErrorEventLogMessageIncludesRequestBindingAndUpstreamFields(t *
 	require.Contains(t, msg, "can_fallback=true")
 	require.Contains(t, msg, "err_code=previous_response_not_found")
 	require.Contains(t, msg, "session_hash=abcdef123456")
+	require.Contains(t, msg, "header_session_id=session-header")
+	require.Contains(t, msg, "header_conversation_id=conversation-header")
+	require.Contains(t, msg, "session_id_source=prompt_cache_key")
+	require.Contains(t, msg, "conversation_id_source=header")
+	require.Contains(t, msg, "http_ingress_ws_one_shot=false")
+}
+
+func TestClassifyOpenAIWSErrorEventFromRawRecognizesMismatchForFallback(t *testing.T) {
+	reason, canFallback := classifyOpenAIWSErrorEventFromRaw("conn_mismatch", "invalid_request_error", "connection context mismatch")
+	require.Equal(t, "conn_mismatch", reason)
+	require.True(t, canFallback)
+
+	reason, canFallback = classifyOpenAIWSErrorEventFromRaw("account_mismatch", "invalid_request_error", "account context mismatch")
+	require.Equal(t, "account_mismatch", reason)
+	require.True(t, canFallback)
+}
+
+func TestOpenAIWSSessionContextStickySnapshotLogMessageShowsStickyAndCachedContext(t *testing.T) {
+	msg := openAIWSSessionContextStickySnapshotLogMessage(openAIWSSessionContextStickySnapshotLog{
+		GroupID:                  22,
+		APIKeyID:                 399,
+		SessionHash:              "abcdef1234567890",
+		StickySource:             "redis",
+		StickyAccountID:          73969,
+		CachedFound:              true,
+		CachedAccountID:          67238,
+		CachedConnID:             "oa_ws_67238_7",
+		CachedLastResponseID:     "resp_cached_123",
+		AccountMatch:             false,
+		BoundConnID:              "oa_ws_67238_7",
+		BoundConnHit:             true,
+		BoundConnMatch:           true,
+		ConnLastResponseID:       "resp_cached_123",
+		ConnLastResponseHit:      true,
+		CachedConnInPool:         true,
+		CachedConnProfile:        openAIWSConnProfileSessionBound,
+		CachedConnAgeMS:          81000,
+		CachedConnIdleMS:         1200,
+		CachedConnLeaseCount:     6,
+		CachedConnLeased:         false,
+		CachedConnWaiters:        0,
+		CachedConnLastResponseID: "resp_cached_123",
+	})
+
+	require.Contains(t, msg, "openai_ws_session_context_sticky_snapshot")
+	require.Contains(t, msg, "group_id=22")
+	require.Contains(t, msg, "api_key_id=399")
+	require.Contains(t, msg, "session=abcdef123456")
+	require.Contains(t, msg, "sticky_source=redis")
+	require.Contains(t, msg, "sticky_account_id=73969")
+	require.Contains(t, msg, "cached_found=true")
+	require.Contains(t, msg, "cached_account_id=67238")
+	require.Contains(t, msg, "cached_conn_id=oa_ws_67238_7")
+	require.Contains(t, msg, "cached_last_response_id=resp_cached_123")
+	require.Contains(t, msg, "account_match=false")
+	require.Contains(t, msg, "bound_conn_id=oa_ws_67238_7")
+	require.Contains(t, msg, "bound_conn_hit=true")
+	require.Contains(t, msg, "bound_conn_match=true")
+	require.Contains(t, msg, "conn_last_response_id=resp_cached_123")
+	require.Contains(t, msg, "conn_last_response_hit=true")
+	require.Contains(t, msg, "cached_conn_in_pool=true")
+	require.Contains(t, msg, "cached_conn_profile=session_bound")
+	require.Contains(t, msg, "cached_conn_age_ms=81000")
+	require.Contains(t, msg, "cached_conn_idle_ms=1200")
+	require.Contains(t, msg, "cached_conn_lease_count=6")
+	require.Contains(t, msg, "cached_conn_last_response_id=resp_cached_123")
 }
 
 func TestOpenAIWSWriteRequestFailLogMessageIncludesRequestAndReanchorContext(t *testing.T) {

@@ -1248,42 +1248,49 @@ type openAIWSWriteRequestFailLog struct {
 }
 
 type openAIWSErrorEventLog struct {
-	RequestID                string
-	ClientRequestID          string
-	AccountID                int64
-	AccountType              string
-	ConnProfile              openAIWSConnProfile
-	ConnID                   string
-	ConnReused               bool
-	Transport                string
-	Attempt                  int
-	ConnAgeMs                int64
-	ConnIdleMs               int64
-	ConnLeaseCount           int64
-	PayloadBytes             int
-	PreviousResponseID       string
-	PreviousResponseIDKind   string
-	PreviousResponseIDSource string
-	StoreMode                string
-	StoreDisabled            bool
-	StickyAccountID          int64
-	StickyAccountHit         bool
-	ConnAffinityHit          bool
-	PreferredConnID          string
-	StoreFallbackReason      string
-	ActiveDelta              bool
-	DeltaItems               int
-	FullItems                int
-	EventIndex               int
-	FallbackReason           string
-	CanFallback              bool
-	ErrorCode                string
-	ErrorType                string
-	ErrorMessage             string
-	SessionHash              string
-	HasPromptCacheKey        bool
-	HasTurnState             bool
-	TurnStateLen             int
+	RequestID                 string
+	ClientRequestID           string
+	AccountID                 int64
+	AccountType               string
+	ConnProfile               openAIWSConnProfile
+	ConnID                    string
+	ConnReused                bool
+	Transport                 string
+	Attempt                   int
+	ConnAgeMs                 int64
+	ConnIdleMs                int64
+	ConnLeaseCount            int64
+	PayloadBytes              int
+	ResponseID                string
+	PreviousResponseID        string
+	PreviousResponseIDKind    string
+	PreviousResponseIDSource  string
+	OriginalPreviousIDPresent bool
+	StoreMode                 string
+	StoreDisabled             bool
+	StickyAccountID           int64
+	StickyAccountHit          bool
+	ConnAffinityHit           bool
+	PreferredConnID           string
+	StoreFallbackReason       string
+	ActiveDelta               bool
+	DeltaItems                int
+	FullItems                 int
+	EventIndex                int
+	FallbackReason            string
+	CanFallback               bool
+	ErrorCode                 string
+	ErrorType                 string
+	ErrorMessage              string
+	SessionHash               string
+	HeaderSessionID           string
+	HeaderConversationID      string
+	SessionIDSource           string
+	ConversationIDSource      string
+	HTTPIngressWSOneShot      bool
+	HasPromptCacheKey         bool
+	HasTurnState              bool
+	TurnStateLen              int
 }
 
 func openAIWSWriteRequestFailLogMessage(v openAIWSWriteRequestFailLog) string {
@@ -1340,7 +1347,7 @@ func openAIWSWriteRequestFailLogMessage(v openAIWSWriteRequestFailLog) string {
 
 func openAIWSErrorEventLogMessage(v openAIWSErrorEventLog) string {
 	return fmt.Sprintf(
-		"error_event request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s attempt=%d conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d payload_bytes=%d previous_response_id=%s previous_response_id_kind=%s previous_response_id_source=%s store_mode=%s store_disabled=%v sticky_account_id=%d sticky_account_hit=%v conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s active_delta=%v delta_items=%d full_items=%d idx=%d fallback_reason=%s can_fallback=%v err_code=%s err_type=%s err_message=%s session_hash=%s has_prompt_cache_key=%v has_turn_state=%v turn_state_len=%d",
+		"error_event request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s attempt=%d conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d payload_bytes=%d response_id=%s previous_response_id=%s previous_response_id_kind=%s previous_response_id_source=%s original_previous_response_id_present=%v store_mode=%s store_disabled=%v sticky_account_id=%d sticky_account_hit=%v conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s active_delta=%v delta_items=%d full_items=%d idx=%d fallback_reason=%s can_fallback=%v err_code=%s err_type=%s err_message=%s session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s http_ingress_ws_one_shot=%v has_prompt_cache_key=%v has_turn_state=%v turn_state_len=%d",
 		normalizeOpenAIWSLogValue(v.RequestID),
 		normalizeOpenAIWSLogValue(v.ClientRequestID),
 		v.AccountID,
@@ -1354,9 +1361,11 @@ func openAIWSErrorEventLogMessage(v openAIWSErrorEventLog) string {
 		v.ConnIdleMs,
 		v.ConnLeaseCount,
 		v.PayloadBytes,
+		truncateOpenAIWSLogValue(v.ResponseID, openAIWSIDValueMaxLen),
 		truncateOpenAIWSLogValue(v.PreviousResponseID, openAIWSIDValueMaxLen),
 		normalizeOpenAIWSLogValue(v.PreviousResponseIDKind),
 		normalizeOpenAIWSLogValue(v.PreviousResponseIDSource),
+		v.OriginalPreviousIDPresent,
 		normalizeOpenAIWSLogValue(v.StoreMode),
 		v.StoreDisabled,
 		v.StickyAccountID,
@@ -1374,6 +1383,11 @@ func openAIWSErrorEventLogMessage(v openAIWSErrorEventLog) string {
 		normalizeOpenAIWSLogValue(v.ErrorType),
 		truncateOpenAIWSLogValue(v.ErrorMessage, openAIWSLogValueMaxLen),
 		truncateOpenAIWSLogValue(v.SessionHash, 12),
+		normalizeOpenAIWSLogValue(v.HeaderSessionID),
+		normalizeOpenAIWSLogValue(v.HeaderConversationID),
+		normalizeOpenAIWSLogValue(v.SessionIDSource),
+		normalizeOpenAIWSLogValue(v.ConversationIDSource),
+		v.HTTPIngressWSOneShot,
 		v.HasPromptCacheKey,
 		v.HasTurnState,
 		v.TurnStateLen,
@@ -4388,42 +4402,49 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			}
 			errCode, errType, errMessage := summarizeOpenAIWSErrorEventFieldsFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 			logOpenAIWSModeInfo("%s", openAIWSErrorEventLogMessage(openAIWSErrorEventLog{
-				RequestID:                requestID,
-				ClientRequestID:          clientRequestID,
-				AccountID:                account.ID,
-				AccountType:              account.Type,
-				ConnProfile:              connProfile,
-				ConnID:                   connID,
-				ConnReused:               lease.Reused(),
-				Transport:                string(decision.Transport),
-				Attempt:                  attempt,
-				ConnAgeMs:                lease.ConnAge().Milliseconds(),
-				ConnIdleMs:               lease.ConnIdleDuration().Milliseconds(),
-				ConnLeaseCount:           lease.ConnLeaseCount(),
-				PayloadBytes:             resolvePayloadBytes(),
-				PreviousResponseID:       previousResponseID,
-				PreviousResponseIDKind:   previousResponseIDKind,
-				PreviousResponseIDSource: previousResponseIDSource,
-				StoreMode:                storeDecision.StoreMode,
-				StoreDisabled:            storeDisabled,
-				StickyAccountID:          storeDecision.StickyAccountID,
-				StickyAccountHit:         storeDecision.StickyAccountHit,
-				ConnAffinityHit:          connAffinityHit,
-				PreferredConnID:          preferredConnID,
-				StoreFallbackReason:      storeDecision.FallbackReason,
-				ActiveDelta:              activeDeltaApplied,
-				DeltaItems:               activeDeltaLog.DeltaItems,
-				FullItems:                activeDeltaLog.FullItems,
-				EventIndex:               eventCount,
-				FallbackReason:           fallbackReason,
-				CanFallback:              canFallback,
-				ErrorCode:                errCode,
-				ErrorType:                errType,
-				ErrorMessage:             errMessage,
-				SessionHash:              sessionHash,
-				HasPromptCacheKey:        promptCacheKey != "",
-				HasTurnState:             turnState != "",
-				TurnStateLen:             len(turnState),
+				RequestID:                 requestID,
+				ClientRequestID:           clientRequestID,
+				AccountID:                 account.ID,
+				AccountType:               account.Type,
+				ConnProfile:               connProfile,
+				ConnID:                    connID,
+				ConnReused:                lease.Reused(),
+				Transport:                 string(decision.Transport),
+				Attempt:                   attempt,
+				ConnAgeMs:                 lease.ConnAge().Milliseconds(),
+				ConnIdleMs:                lease.ConnIdleDuration().Milliseconds(),
+				ConnLeaseCount:            lease.ConnLeaseCount(),
+				PayloadBytes:              resolvePayloadBytes(),
+				ResponseID:                responseID,
+				PreviousResponseID:        previousResponseID,
+				PreviousResponseIDKind:    previousResponseIDKind,
+				PreviousResponseIDSource:  previousResponseIDSource,
+				OriginalPreviousIDPresent: originalPreviousResponseIDPresent,
+				StoreMode:                 storeDecision.StoreMode,
+				StoreDisabled:             storeDisabled,
+				StickyAccountID:           storeDecision.StickyAccountID,
+				StickyAccountHit:          storeDecision.StickyAccountHit,
+				ConnAffinityHit:           connAffinityHit,
+				PreferredConnID:           preferredConnID,
+				StoreFallbackReason:       storeDecision.FallbackReason,
+				ActiveDelta:               activeDeltaApplied,
+				DeltaItems:                activeDeltaLog.DeltaItems,
+				FullItems:                 activeDeltaLog.FullItems,
+				EventIndex:                eventCount,
+				FallbackReason:            fallbackReason,
+				CanFallback:               canFallback,
+				ErrorCode:                 errCode,
+				ErrorType:                 errType,
+				ErrorMessage:              errMessage,
+				SessionHash:               sessionHash,
+				HeaderSessionID:           openAIWSHeaderValueForLog(wsHeaders, "session_id"),
+				HeaderConversationID:      openAIWSHeaderValueForLog(wsHeaders, "conversation_id"),
+				SessionIDSource:           sessionResolution.SessionSource,
+				ConversationIDSource:      sessionResolution.ConversationSource,
+				HTTPIngressWSOneShot:      httpIngressWSOneShot,
+				HasPromptCacheKey:         promptCacheKey != "",
+				HasTurnState:              turnState != "",
+				TurnStateLen:              len(turnState),
 			}))
 			if fallbackReason == "previous_response_not_found" {
 				logOpenAIWSModeInfo(
@@ -7335,6 +7356,10 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 		return "invalid_encrypted_content", true
 	case "previous_response_not_found":
 		return "previous_response_not_found", true
+	case "conn_mismatch", "connection_mismatch":
+		return "conn_mismatch", true
+	case "account_mismatch":
+		return "account_mismatch", true
 	}
 	if isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw) {
 		return "upstream_rate_limited", true
@@ -7361,6 +7386,14 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 	if strings.Contains(msg, "previous_response_not_found") ||
 		(strings.Contains(msg, "previous response") && strings.Contains(msg, "not found")) {
 		return "previous_response_not_found", true
+	}
+	if strings.Contains(msg, "conn_mismatch") ||
+		(strings.Contains(msg, "connection") && strings.Contains(msg, "mismatch")) {
+		return "conn_mismatch", true
+	}
+	if strings.Contains(msg, "account_mismatch") ||
+		(strings.Contains(msg, "account") && strings.Contains(msg, "mismatch")) {
+		return "account_mismatch", true
 	}
 	if strings.Contains(errType, "invalid_request") || strings.Contains(code, "invalid_request") {
 		if fallbackReason := classifyOpenAICodexCompatFallbackMessage(msg); fallbackReason != "" {
