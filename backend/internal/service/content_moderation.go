@@ -57,6 +57,7 @@ const (
 	ContentModerationProtocolAnthropicMessages = "anthropic_messages"
 	ContentModerationProtocolOpenAIResponses   = "openai_responses"
 	ContentModerationProtocolOpenAIChat        = "openai_chat_completions"
+	ContentModerationProtocolOpenAIEmbeddings  = "openai_embeddings"
 	ContentModerationProtocolGemini            = "gemini"
 	ContentModerationProtocolOpenAIImages      = "openai_images"
 
@@ -1059,20 +1060,20 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"configured_models", cfg.ModelFilter.Models)
 		return allow, nil
 	}
-	auditContent := ExtractContentModerationInput(input.Protocol, input.Body)
-	if auditContent.IsEmpty() {
-		slog.Info("content_moderation.skip_empty_input",
-			"user_id", input.UserID,
-			"api_key_id", input.APIKeyID,
-			"group_id", contentModerationLogGroupID(input.GroupID),
-			"endpoint", input.Endpoint,
-			"protocol", input.Protocol,
-			"body_bytes", len(input.Body))
-		return allow, nil
-	}
-	auditContent.Normalize()
 	localContents := ExtractContentModerationInputsForLocalBlock(input.Protocol, input.Body)
+	auditContent := ExtractContentModerationInput(input.Protocol, input.Body)
+	auditContent.Normalize()
 	if len(localContents) == 0 {
+		if auditContent.IsEmpty() {
+			slog.Info("content_moderation.skip_empty_input",
+				"user_id", input.UserID,
+				"api_key_id", input.APIKeyID,
+				"group_id", contentModerationLogGroupID(input.GroupID),
+				"endpoint", input.Endpoint,
+				"protocol", input.Protocol,
+				"body_bytes", len(input.Body))
+			return allow, nil
+		}
 		localContents = []ContentModerationInput{auditContent}
 	}
 	slog.Info("content_moderation.input_extracted",
@@ -1117,16 +1118,6 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				}
 			}
 		}
-		if cfg.KeywordBlockingMode == ContentModerationKeywordModeKeywordOnly {
-			s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
-			slog.Info("content_moderation.skip_api_keyword_only",
-				"user_id", input.UserID,
-				"api_key_id", input.APIKeyID,
-				"group_id", contentModerationLogGroupID(input.GroupID),
-				"endpoint", input.Endpoint,
-				"protocol", input.Protocol)
-			return allow, nil
-		}
 	}
 	if cfg.PreHashCheckEnabled && s.hashCache != nil {
 		for _, localContent := range localContents {
@@ -1165,6 +1156,27 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				}, nil
 			}
 		}
+	}
+	if auditContent.IsEmpty() {
+		slog.Info("content_moderation.skip_empty_current_input_after_local_checks",
+			"user_id", input.UserID,
+			"api_key_id", input.APIKeyID,
+			"group_id", contentModerationLogGroupID(input.GroupID),
+			"endpoint", input.Endpoint,
+			"protocol", input.Protocol,
+			"body_bytes", len(input.Body),
+			"local_input_count", len(localContents))
+		return allow, nil
+	}
+	if cfg.Mode == ContentModerationModePreBlock && cfg.KeywordBlockingMode == ContentModerationKeywordModeKeywordOnly {
+		s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
+		slog.Info("content_moderation.skip_api_keyword_only",
+			"user_id", input.UserID,
+			"api_key_id", input.APIKeyID,
+			"group_id", contentModerationLogGroupID(input.GroupID),
+			"endpoint", input.Endpoint,
+			"protocol", input.Protocol)
+		return allow, nil
 	}
 	if !cfg.shouldSample(hashText) {
 		if cfg.Mode == ContentModerationModePreBlock {
@@ -3670,6 +3682,7 @@ type CyberPolicyRecordInput struct {
 	UpstreamStatus  int
 	UpstreamInTok   int
 	UpstreamOutTok  int
+	SkipHashRecord  bool
 }
 
 // RecordCyberPolicyEvent 把一次 cyber_policy 硬阻断写入风控中心日志、计入违规计数、
@@ -3734,16 +3747,8 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		logPersisted = false
 		slog.Warn("content_moderation.cyber_create_log_failed", "user_id", in.UserID, "error", err)
 	}
-	if s.hashCache != nil {
-		for _, localInput := range ExtractContentModerationInputsForLocalBlock(in.RequestProtocol, in.RequestBody) {
-			inputHash := localInput.Hash()
-			if inputHash == "" {
-				continue
-			}
-			if err := s.hashCache.RecordFlaggedInputHash(ctx, inputHash); err != nil {
-				slog.Warn("content_moderation.cyber_record_hash_failed", "user_id", in.UserID, "input_hash", inputHash, "error", err)
-			}
-		}
+	if !in.SkipHashRecord {
+		s.RecordCyberPolicyFlaggedHashes(ctx, in.RequestProtocol, in.RequestBody)
 	}
 	emailSent := false
 	if s.emailService != nil && strings.TrimSpace(log.UserEmail) != "" {
@@ -3763,6 +3768,24 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 	if logPersisted && emailSent {
 		if err := s.repo.UpdateLogEmailSent(ctx, log.ID, true); err != nil {
 			slog.Warn("content_moderation.cyber_update_email_sent_failed", "log_id", log.ID, "error", err)
+		}
+	}
+}
+
+func (s *ContentModerationService) RecordCyberPolicyFlaggedHashes(ctx context.Context, requestProtocol string, requestBody []byte) {
+	if s == nil || s.hashCache == nil || s.settingRepo == nil {
+		return
+	}
+	if !s.isRiskControlEnabled(ctx) {
+		return
+	}
+	for _, localInput := range ExtractContentModerationInputsForLocalBlock(requestProtocol, requestBody) {
+		inputHash := localInput.Hash()
+		if inputHash == "" {
+			continue
+		}
+		if err := s.hashCache.RecordFlaggedInputHash(ctx, inputHash); err != nil {
+			slog.Warn("content_moderation.cyber_record_hash_failed", "input_hash", inputHash, "error", err)
 		}
 	}
 }

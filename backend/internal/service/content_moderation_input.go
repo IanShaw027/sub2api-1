@@ -44,6 +44,8 @@ func ExtractContentModerationInput(protocol string, body []byte) ContentModerati
 		collectLastRoleMessage(gjson.GetBytes(body, "messages"), "user", &parts, &images)
 	case ContentModerationProtocolOpenAIResponses:
 		collectLastResponsesInput(gjson.GetBytes(body, "input"), &parts, &images)
+	case ContentModerationProtocolOpenAIEmbeddings:
+		collectContentValue(gjson.GetBytes(body, "input"), &parts, &images)
 	case ContentModerationProtocolGemini:
 		collectLastGeminiContent(gjson.GetBytes(body, "contents"), &parts, &images)
 	case ContentModerationProtocolOpenAIImages:
@@ -74,6 +76,8 @@ func ExtractContentModerationInputsForLocalBlock(protocol string, body []byte) [
 		collectAllRoleMessages(gjson.GetBytes(body, "messages"), "user", &out)
 	case ContentModerationProtocolOpenAIResponses:
 		collectAllResponsesInputs(gjson.GetBytes(body, "input"), &out)
+	case ContentModerationProtocolOpenAIEmbeddings:
+		collectAllEmbeddingInputs(gjson.GetBytes(body, "input"), &out)
 	case ContentModerationProtocolGemini:
 		collectAllGeminiUserContents(gjson.GetBytes(body, "contents"), &out)
 	case ContentModerationProtocolOpenAIImages:
@@ -88,6 +92,26 @@ func ExtractContentModerationInputsForLocalBlock(protocol string, body []byte) [
 		collectAllGeminiUserContents(gjson.GetBytes(body, "contents"), &out)
 	}
 	return out
+}
+
+func collectAllEmbeddingInputs(input gjson.Result, out *[]ContentModerationInput) {
+	switch {
+	case !input.Exists():
+		return
+	case input.Type == gjson.String || input.IsObject():
+		var parts []string
+		var images []string
+		collectContentValue(input, &parts, &images)
+		appendLocalModerationInput(out, parts, images)
+	case input.IsArray():
+		input.ForEach(func(_, item gjson.Result) bool {
+			var parts []string
+			var images []string
+			collectContentValue(item, &parts, &images)
+			appendLocalModerationInput(out, parts, images)
+			return true
+		})
+	}
 }
 
 func collectAllRoleMessages(messages gjson.Result, role string, out *[]ContentModerationInput) {

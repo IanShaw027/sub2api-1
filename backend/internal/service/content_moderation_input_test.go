@@ -114,6 +114,25 @@ func TestExtractContentModerationInputsForLocalBlock_OpenAIChatExtractsEveryUser
 	require.Equal(t, "current clean prompt", auditInput.Text)
 }
 
+func TestExtractContentModerationInputsForLocalBlock_OpenAIEmbeddingsExtractsInputItems(t *testing.T) {
+	body := []byte(`{
+		"model": "text-embedding-3-large",
+		"input": ["first embedding text", "second embedding text"]
+	}`)
+
+	inputs := ExtractContentModerationInputsForLocalBlock(ContentModerationProtocolOpenAIEmbeddings, body)
+
+	require.Len(t, inputs, 2)
+	require.Equal(t, "first embedding text", inputs[0].Text)
+	require.Equal(t, "second embedding text", inputs[1].Text)
+
+	auditInput := ExtractContentModerationInput(ContentModerationProtocolOpenAIEmbeddings, []byte(`{
+		"model": "text-embedding-3-large",
+		"input": "current embedding text"
+	}`))
+	require.Equal(t, "current embedding text", auditInput.Text)
+}
+
 func TestExtractContentModerationInput_GeminiAgentToolLoopSkipsAudit(t *testing.T) {
 	body := []byte(`{
 		"contents": [

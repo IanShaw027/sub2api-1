@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strconv"
@@ -140,7 +141,7 @@ func (c *contentModerationHashCache) HasFlaggedInputHash(ctx context.Context, in
 	}
 	if exists > 0 {
 		if err := c.recordFlaggedInputHashHit(ctx, inputHash); err != nil {
-			return false, err
+			slog.Warn("content_moderation.flagged_hash_hit_metric_failed", "input_hash", inputHash, "error", err)
 		}
 		return true, nil
 	}
@@ -271,32 +272,52 @@ func (c *contentModerationHashCache) flaggedHashItem(ctx context.Context, inputH
 func sortFlaggedHashItems(items []service.ContentModerationHashItem, sortBy string, sortOrder string) {
 	desc := sortOrder != pagination.SortOrderAsc
 	sort.SliceStable(items, func(i, j int) bool {
-		var less bool
+		cmp := 0
 		switch strings.ToLower(strings.TrimSpace(sortBy)) {
 		case service.ContentModerationHashSortHits7D:
 			if items[i].HitCount7D != items[j].HitCount7D {
-				less = items[i].HitCount7D < items[j].HitCount7D
+				cmp = compareInt64(items[i].HitCount7D, items[j].HitCount7D)
 				break
 			}
-			less = items[i].CreatedAt.Before(items[j].CreatedAt)
 		case service.ContentModerationHashSortHits30D:
 			if items[i].HitCount30D != items[j].HitCount30D {
-				less = items[i].HitCount30D < items[j].HitCount30D
+				cmp = compareInt64(items[i].HitCount30D, items[j].HitCount30D)
 				break
 			}
-			less = items[i].CreatedAt.Before(items[j].CreatedAt)
-		default:
-			if !items[i].CreatedAt.Equal(items[j].CreatedAt) {
-				less = items[i].CreatedAt.Before(items[j].CreatedAt)
-				break
-			}
-			less = items[i].InputHash < items[j].InputHash
+		}
+		if cmp == 0 {
+			cmp = compareTime(items[i].CreatedAt, items[j].CreatedAt)
+		}
+		if cmp == 0 {
+			cmp = strings.Compare(items[i].InputHash, items[j].InputHash)
 		}
 		if desc {
-			return !less
+			return cmp > 0
 		}
-		return less
+		return cmp < 0
 	})
+}
+
+func compareInt64(a, b int64) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func compareTime(a, b time.Time) int {
+	switch {
+	case a.Before(b):
+		return -1
+	case a.After(b):
+		return 1
+	default:
+		return 0
+	}
 }
 
 func (c *contentModerationHashCache) DeleteFlaggedInputHash(ctx context.Context, inputHash string) (bool, error) {

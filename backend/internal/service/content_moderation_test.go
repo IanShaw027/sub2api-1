@@ -2616,6 +2616,129 @@ func TestContentModerationCheck_PreHashHitInHistorySkipsUpstreamCall(t *testing.
 	require.Equal(t, "old flagged prompt", logs[0].InputExcerpt)
 }
 
+func TestContentModerationCheck_PreHashHitInHistoryWhenCurrentInputEmptySkipsUpstreamCall(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
+			Results: []moderationAPIResult{{
+				CategoryScores: map[string]float64{"sexual": 0.01},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.PreHashCheckEnabled = true
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	historyInput := ContentModerationInput{Text: "old flagged prompt"}
+	historyInput.Normalize()
+	historyHash := historyInput.Hash()
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{hashes: map[string]struct{}{historyHash: {}}}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		hashCache,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	body := []byte(`{"messages":[
+		{"role":"user","content":"old flagged prompt"},
+		{"role":"assistant","content":"I can continue from here"}
+	]}`)
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/chat/completions",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     body,
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionHashBlock, decision.Action)
+	require.Equal(t, historyHash, decision.InputHash)
+	require.Equal(t, 0, requestCount, "historical hash hit must skip upstream moderation call")
+	require.Equal(t, []string{historyHash}, hashCache.snapshotChecked())
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, "old flagged prompt", logs[0].InputExcerpt)
+}
+
+func TestContentModerationCheck_PreHashRunsBeforeKeywordOnlySkip(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
+			Results: []moderationAPIResult{{
+				CategoryScores: map[string]float64{"sexual": 0.01},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.BlockedKeywords = []string{"different-keyword"}
+	cfg.PreHashCheckEnabled = true
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	historyInput := ContentModerationInput{Text: "old flagged prompt"}
+	historyInput.Normalize()
+	historyHash := historyInput.Hash()
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{hashes: map[string]struct{}{historyHash: {}}}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		hashCache,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	body := []byte(`{"messages":[
+		{"role":"user","content":"old flagged prompt"},
+		{"role":"assistant","content":"answer"},
+		{"role":"user","content":"current clean prompt"}
+	]}`)
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/chat/completions",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     body,
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionHashBlock, decision.Action)
+	require.Equal(t, historyHash, decision.InputHash)
+	require.Equal(t, 0, requestCount, "keyword-only mode must still honor pre-hash before skipping API moderation")
+	require.Equal(t, []string{historyHash}, hashCache.snapshotChecked())
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, "old flagged prompt", logs[0].InputExcerpt)
+}
+
 func TestContentModerationCheck_PreBlockFlaggedAppliesSideEffectsBeforeReturn(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(moderationAPIResponse{

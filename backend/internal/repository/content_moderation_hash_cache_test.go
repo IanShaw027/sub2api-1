@@ -102,6 +102,23 @@ func TestContentModerationHashCacheListTracksHitCountsAndSorts(t *testing.T) {
 	require.EqualValues(t, 1, items[0].HitCount30D)
 }
 
+func TestSortFlaggedHashItemsUsesStrictTieBreakerForDescendingHitSorts(t *testing.T) {
+	created := time.Unix(1_700_000_000, 0)
+	items := []service.ContentModerationHashItem{
+		{InputHash: "hash-c", CreatedAt: created, HitCount7D: 0, HitCount30D: 0},
+		{InputHash: "hash-a", CreatedAt: created, HitCount7D: 0, HitCount30D: 0},
+		{InputHash: "hash-b", CreatedAt: created, HitCount7D: 0, HitCount30D: 0},
+	}
+
+	sortFlaggedHashItems(items, service.ContentModerationHashSortHits7D, pagination.SortOrderDesc)
+
+	require.Equal(t, []string{"hash-c", "hash-b", "hash-a"}, []string{
+		items[0].InputHash,
+		items[1].InputHash,
+		items[2].InputHash,
+	})
+}
+
 func TestContentModerationHashCacheExpiresAfter90DaysAndPrunesStaleSetMember(t *testing.T) {
 	cache, mr := newContentModerationHashCacheTest(t)
 	ctx := context.Background()
@@ -120,6 +137,18 @@ func TestContentModerationHashCacheExpiresAfter90DaysAndPrunesStaleSetMember(t *
 	count, err := cache.CountFlaggedInputHashes(ctx)
 	require.NoError(t, err)
 	require.Zero(t, count)
+}
+
+func TestContentModerationHashCacheHitMetricFailureDoesNotDowngradeMatch(t *testing.T) {
+	cache, mr := newContentModerationHashCacheTest(t)
+	ctx := context.Background()
+
+	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "metric-fail"))
+	mr.Set(contentModerationFlaggedHashHitsKeyPrefix+"metric-fail", "not-a-zset")
+
+	matched, err := cache.HasFlaggedInputHash(ctx, "metric-fail")
+	require.NoError(t, err)
+	require.True(t, matched)
 }
 
 func TestContentModerationHashCacheBatchDeleteRemovesMetadataAndHits(t *testing.T) {
