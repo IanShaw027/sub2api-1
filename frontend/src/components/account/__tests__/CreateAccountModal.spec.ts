@@ -12,7 +12,10 @@ const {
   listTlsFingerprintProfilesMock,
   exchangeCodeMock,
   listTlsFingerprintRoutersMock,
-  kiroValidateRefreshTokenMock
+  kiroValidateRefreshTokenMock,
+  grokExchangeAuthCodeMock,
+  grokGenerateAuthUrlMock,
+  grokValidateRefreshTokenMock
 } = vi.hoisted(() => ({
   showErrorMock: vi.fn(),
   showSuccessMock: vi.fn(),
@@ -23,7 +26,10 @@ const {
   listTlsFingerprintProfilesMock: vi.fn(),
   exchangeCodeMock: vi.fn(),
   listTlsFingerprintRoutersMock: vi.fn(),
-  kiroValidateRefreshTokenMock: vi.fn()
+  kiroValidateRefreshTokenMock: vi.fn(),
+  grokExchangeAuthCodeMock: vi.fn(),
+  grokGenerateAuthUrlMock: vi.fn(),
+  grokValidateRefreshTokenMock: vi.fn()
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -171,6 +177,33 @@ vi.mock('@/composables/useKiroOAuth', () => ({
   })
 }))
 
+vi.mock('@/composables/useGrokOAuth', () => ({
+  useGrokOAuth: () => ({
+    authUrl: ref(''),
+    sessionId: ref('grok-session-id'),
+    state: ref('grok-oauth-state'),
+    loading: ref(false),
+    error: ref(''),
+    resetState: vi.fn(),
+    generateAuthUrl: grokGenerateAuthUrlMock,
+    exchangeAuthCode: grokExchangeAuthCodeMock,
+    validateRefreshToken: grokValidateRefreshTokenMock,
+    buildCredentials: (tokenInfo?: any) => {
+      const credentials: Record<string, unknown> = {
+        access_token: tokenInfo?.access_token,
+        refresh_token: tokenInfo?.refresh_token,
+        email: tokenInfo?.email
+      }
+      return Object.fromEntries(Object.entries(credentials).filter(([, value]) => value !== undefined && value !== ''))
+    },
+    buildExtraInfo: (tokenInfo?: any) => {
+      const extra: Record<string, unknown> = {}
+      if (tokenInfo?.email) extra.email = tokenInfo.email
+      return extra
+    }
+  })
+}))
+
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   const translations: Record<string, string> = {
@@ -308,6 +341,9 @@ describe('CreateAccountModal', () => {
     exchangeCodeMock.mockReset()
     listTlsFingerprintRoutersMock.mockReset()
     kiroValidateRefreshTokenMock.mockReset()
+    grokExchangeAuthCodeMock.mockReset()
+    grokGenerateAuthUrlMock.mockReset()
+    grokValidateRefreshTokenMock.mockReset()
 
     createMock.mockResolvedValue(undefined)
     checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
@@ -321,6 +357,17 @@ describe('CreateAccountModal', () => {
       region: 'us-east-1',
       email: 'manual@example.com',
       plan_name: 'Kiro Pro'
+    })
+    grokExchangeAuthCodeMock.mockResolvedValue({
+      refresh_token: 'grok-rt-test',
+      access_token: 'grok-at-test',
+      email: 'grok-owner@example.com'
+    })
+    grokGenerateAuthUrlMock.mockResolvedValue(true)
+    grokValidateRefreshTokenMock.mockResolvedValue({
+      refresh_token: 'grok-rt-test',
+      access_token: 'grok-at-test',
+      email: 'grok-owner@example.com'
     })
   })
 
@@ -342,6 +389,31 @@ describe('CreateAccountModal', () => {
     await nextTick()
 
     expect((wrapper.vm as any).form.platform).toBe('grok')
+  })
+
+  it('uses the bound Grok OAuth email as the default account name after code exchange', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'Grok').trigger('click')
+    await nextTick()
+
+    await (wrapper.vm as any).handleGrokExchange('auth-code')
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'grok-owner@example.com',
+      platform: 'grok',
+      type: 'oauth',
+      credentials: expect.objectContaining({
+        access_token: 'grok-at-test',
+        refresh_token: 'grok-rt-test',
+        email: 'grok-owner@example.com'
+      }),
+      extra: expect.objectContaining({
+        email: 'grok-owner@example.com'
+      })
+    }))
   })
 
   it('allows an empty name for OAuth flows so the auto-naming step can continue', async () => {
