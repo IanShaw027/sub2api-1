@@ -1228,6 +1228,8 @@ func TestOpenAIWSActiveDelta_SameSessionPreemptReplacementUsesNewFullWS(t *testi
 	output1 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}`
 	newInput := `{"type":"message","role":"user","content":[{"type":"input_text","text":"again"}]}`
 	output2 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}`
+	thirdInput := `{"type":"message","role":"user","content":[{"type":"input_text","text":"third"}]}`
+	output3 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"third done"}]}`
 
 	reusedConn := &openAIWSCaptureConn{
 		events: [][]byte{
@@ -1241,6 +1243,8 @@ func TestOpenAIWSActiveDelta_SameSessionPreemptReplacementUsesNewFullWS(t *testi
 		events: [][]byte{
 			[]byte(`{"type":"response.output_item.done","response_id":"resp_preempt_full","output_index":0,"item":` + output2 + `}`),
 			[]byte(`{"type":"response.completed","response":{"id":"resp_preempt_full","model":"gpt-5.1","usage":{"input_tokens":6,"output_tokens":2}}}`),
+			[]byte(`{"type":"response.output_item.done","response_id":"resp_preempt_third_delta","output_index":0,"item":` + output3 + `}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_preempt_third_delta","model":"gpt-5.1","usage":{"input_tokens":7,"output_tokens":2}}}`),
 		},
 	}
 	dialer := &openAIWSQueueDialer{conns: []openAIWSClientConn{reusedConn, replacementConn}}
@@ -1324,6 +1328,26 @@ func TestOpenAIWSActiveDelta_SameSessionPreemptReplacementUsesNewFullWS(t *testi
 	require.False(t, gjson.Get(replacementWrite, "store").Bool())
 	require.Len(t, gjson.Get(replacementWrite, "input").Array(), 3, "preempt replacement must send the full replay payload")
 	require.Equal(t, "again", gjson.Get(replacementWrite, "input.2.content.0.text").String())
+
+	thirdBody := []byte(`{"model":"gpt-5.1","stream":true,"input":[` + input1 + `,` + output1 + `,` + newInput + `,` + output2 + `,` + thirdInput + `]}`)
+	thirdResult, err := svc.Forward(context.Background(), newContext(), account, thirdBody)
+	require.NoError(t, err)
+	require.Equal(t, "resp_preempt_third_delta", thirdResult.RequestID)
+	require.Equal(t, 2, dialer.DialCount(), "third turn should reuse the preempt replacement WS")
+
+	replacementConn.mu.Lock()
+	replacementWrites = append([]map[string]any(nil), replacementConn.writes...)
+	replacementConn.mu.Unlock()
+	require.Len(t, replacementWrites, 2)
+	thirdWrite := requestToJSONString(replacementWrites[1])
+	require.Equal(t, "resp_preempt_full", gjson.Get(thirdWrite, "previous_response_id").String(), "next turn should anchor to the clean preempt full replay response")
+	require.False(t, gjson.Get(thirdWrite, "store").Bool())
+	require.Len(t, gjson.Get(thirdWrite, "input").Array(), 1, "next turn should resume active delta after preempt full replay")
+	require.Equal(t, "third", gjson.Get(thirdWrite, "input.0.content.0.text").String())
+
+	cached, ok := svc.getOpenAIWSStateStore().GetSessionContext(groupID, apiKeyID, sessionHash)
+	require.True(t, ok)
+	require.Equal(t, "resp_preempt_third_delta", cached.lastResponseID)
 }
 
 func TestOpenAIWSActiveDelta_ForwardWSV2BindsInputOnlyContextWithoutOutputCapture(t *testing.T) {

@@ -5713,7 +5713,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		stateStore.BindSessionConn(groupID, apiKeyID, account.ID, sessionHash, lease.ConnID(), ttl)
 		logOpenAIWSSessionConnBind(groupID, apiKeyID, account.ID, account.Type, sessionHash, lease.ConnID(), ttl)
 	}
-	if shadowOwner && deltaShadowEnabled && stateStore != nil && responseID != "" && connID != "" &&
+	bindSessionContextAfterPreemptFullReplay := sessionPreemptedPrevious &&
+		strings.TrimSpace(storeDecision.FallbackReason) == "session_preempted_full_replay"
+	if (shadowOwner || bindSessionContextAfterPreemptFullReplay) && deltaShadowEnabled && stateStore != nil && responseID != "" && connID != "" &&
 		!clientDisconnected && !recoveredUpstreamTransportEOF {
 		if inputItems, _, ierr := openAIWSExtractNormalizedInputSequence(contextPayloadRaw); ierr == nil {
 			if inputHashes, hok := openAIWSCanonicalItemHashes(inputItems); hok {
