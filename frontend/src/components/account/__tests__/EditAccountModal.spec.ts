@@ -1712,6 +1712,30 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_image_generation_enabled).toBe(false)
   })
 
+  it('does not expose or persist OpenAI image generation settings for Grok accounts', async () => {
+    resetCommonMocks()
+    const account = buildAccount()
+    account.platform = 'grok'
+    account.type = 'oauth'
+    account.openai_image_generation_enabled = false
+    account.extra = {
+      openai_image_generation_enabled: false
+    }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.find('[data-testid="openai-image-generation-toggle"]').exists()).toBe(false)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('openai_image_generation_enabled')
+  })
+
   it('falls back to legacy extra OpenAI image generation when the account field is absent', async () => {
     const account = buildAccount()
     account.extra = {

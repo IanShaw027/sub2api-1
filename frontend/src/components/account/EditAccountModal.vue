@@ -4158,6 +4158,14 @@ function resolveKiroSubscriptionTypeKey(account: Account | null): string {
   )
 }
 
+function stripOpenAIImageGenerationExtra(extra: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...extra }
+  delete next.openai_image_generation_enabled
+  delete next.codex_image_generation_bridge
+  delete next.codex_image_generation_bridge_enabled
+  return next
+}
+
 function defaultAccountModelConfigToMapping(config?: DefaultAccountModelConfig | null): Record<string, string> | null {
   if (!config) return null
   if (config.model_mapping && Object.keys(config.model_mapping).length > 0) {
@@ -5017,6 +5025,13 @@ const handleSubmit = async () => {
         (props.account.extra as Record<string, unknown>) ||
         {}
       updatePayload.extra = stripKiroRuntimeExtra(currentExtra)
+    }
+
+    if (props.account.platform !== 'openai') {
+      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
+        (props.account.extra as Record<string, unknown>) ||
+        {}
+      updatePayload.extra = stripOpenAIImageGenerationExtra(currentExtra)
     }
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {

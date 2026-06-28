@@ -149,6 +149,16 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('Grok OAuth 批量编辑不显示 OpenAI 图片生成开关', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['grok'],
+      selectedTypes: ['oauth']
+    })
+
+    expect(wrapper.find('#bulk-edit-openai-image-generation-enabled').exists()).toBe(false)
+    expect(wrapper.find('#bulk-edit-openai-image-generation-toggle').exists()).toBe(false)
+  })
+
   it('OpenAI API Key 仅支持 embeddings 时不显示文本端点自动转换开关', () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],

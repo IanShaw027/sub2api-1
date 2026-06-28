@@ -306,6 +306,63 @@ func TestAdminService_UpdateGroup_PartialImagePricing(t *testing.T) {
 	require.Nil(t, repo.updated.ImagePrice4K)
 }
 
+func TestAdminService_UpdateGroup_ClearsVideoPricingWhenExplicitlySetNil(t *testing.T) {
+	price480p := 0.01
+	price720p := 0.02
+	price1080p := 0.03
+	price4k := 0.04
+	existingGroup := &Group{
+		ID:                    1,
+		Name:                  "existing-group",
+		Platform:              PlatformGrok,
+		Status:                StatusActive,
+		VideoPrice480pPerSec:  &price480p,
+		VideoPrice720pPerSec:  &price720p,
+		VideoPrice1080pPerSec: &price1080p,
+		VideoPrice4kPerSec:    &price4k,
+		AllowVideoGeneration:  true,
+		VideoGenerationRoute:  GroupVideoGenerationRouteNative,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	group, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
+		VideoPrice480pPerSecSet:  true,
+		VideoPrice720pPerSecSet:  true,
+		VideoPrice1080pPerSecSet: true,
+		VideoPrice4kPerSecSet:    true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	require.Nil(t, repo.updated.VideoPrice480pPerSec)
+	require.Nil(t, repo.updated.VideoPrice720pPerSec)
+	require.Nil(t, repo.updated.VideoPrice1080pPerSec)
+	require.Nil(t, repo.updated.VideoPrice4kPerSec)
+}
+
+func TestAdminService_UpdateGroup_PreservesVideoPricingWhenOmitted(t *testing.T) {
+	price720p := 0.02
+	existingGroup := &Group{
+		ID:                   1,
+		Name:                 "existing-group",
+		Platform:             PlatformGrok,
+		Status:               StatusActive,
+		VideoPrice720pPerSec: &price720p,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	group, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{})
+
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	require.NotNil(t, repo.updated.VideoPrice720pPerSec)
+	require.InDelta(t, 0.02, *repo.updated.VideoPrice720pPerSec, 0.0001)
+}
+
 func TestAdminService_UpdateGroup_PreservesImageGenerationControlsWhenOmitted(t *testing.T) {
 	imageMultiplier := 0.5
 	existingGroup := &Group{

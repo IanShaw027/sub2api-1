@@ -287,12 +287,16 @@ type UpdateGroupInput struct {
 	Images2APIPrice2K    *float64
 	Images2APIPrice4K    *float64
 
-	AllowVideoGeneration  *bool
-	VideoGenerationRoute  *string
-	VideoPrice480pPerSec  *float64
-	VideoPrice720pPerSec  *float64
-	VideoPrice1080pPerSec *float64
-	VideoPrice4kPerSec    *float64
+	AllowVideoGeneration     *bool
+	VideoGenerationRoute     *string
+	VideoPrice480pPerSec     *float64
+	VideoPrice480pPerSecSet  bool
+	VideoPrice720pPerSec     *float64
+	VideoPrice720pPerSecSet  bool
+	VideoPrice1080pPerSec    *float64
+	VideoPrice1080pPerSecSet bool
+	VideoPrice4kPerSec       *float64
+	VideoPrice4kPerSecSet    bool
 
 	ClaudeCodeOnly  *bool  // 仅允许 Claude Code 客户端
 	FallbackGroupID *int64 // 降级分组 ID
@@ -2499,16 +2503,16 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.VideoGenerationRoute != nil {
 		group.VideoGenerationRoute = NormalizeGroupVideoGenerationRoute(*input.VideoGenerationRoute)
 	}
-	if input.VideoPrice480pPerSec != nil {
+	if input.VideoPrice480pPerSecSet {
 		group.VideoPrice480pPerSec = normalizePrice(input.VideoPrice480pPerSec)
 	}
-	if input.VideoPrice720pPerSec != nil {
+	if input.VideoPrice720pPerSecSet {
 		group.VideoPrice720pPerSec = normalizePrice(input.VideoPrice720pPerSec)
 	}
-	if input.VideoPrice1080pPerSec != nil {
+	if input.VideoPrice1080pPerSecSet {
 		group.VideoPrice1080pPerSec = normalizePrice(input.VideoPrice1080pPerSec)
 	}
-	if input.VideoPrice4kPerSec != nil {
+	if input.VideoPrice4kPerSecSet {
 		group.VideoPrice4kPerSec = normalizePrice(input.VideoPrice4kPerSec)
 	}
 

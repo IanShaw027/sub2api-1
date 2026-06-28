@@ -398,6 +398,8 @@ describe('CreateAccountModal', () => {
     await findButtonByText(wrapper, 'Grok').trigger('click')
     await nextTick()
 
+    expect(wrapper.find('[data-testid="openai-image-generation-toggle"]').exists()).toBe(false)
+
     await (wrapper.vm as any).handleGrokExchange('auth-code')
     await flushPromises()
 
@@ -414,6 +416,7 @@ describe('CreateAccountModal', () => {
         email: 'grok-owner@example.com'
       })
     }))
+    expect(createMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_image_generation_enabled')
   })
 
   it('allows an empty name for OAuth flows so the auto-naming step can continue', async () => {

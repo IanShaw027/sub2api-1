@@ -280,6 +280,30 @@ func TestGroupHandlerMapsVideoGenerationFields(t *testing.T) {
 	require.InDelta(t, 0.13, *updated.VideoPrice1080pPerSec, 0.000001)
 	require.NotNil(t, updated.VideoPrice4kPerSec)
 	require.InDelta(t, 0.14, *updated.VideoPrice4kPerSec, 0.000001)
+
+	nullBody := []byte(`{
+		"video_price_480p_per_sec": null,
+		"video_price_720p_per_sec": null,
+		"video_price_1080p_per_sec": null,
+		"video_price_4k_per_sec": null
+	}`)
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/admin/groups/2", bytes.NewReader(nullBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, adminSvc.updatedGroups, 2)
+	cleared := adminSvc.updatedGroups[1]
+	require.True(t, cleared.VideoPrice480pPerSecSet)
+	require.Nil(t, cleared.VideoPrice480pPerSec)
+	require.True(t, cleared.VideoPrice720pPerSecSet)
+	require.Nil(t, cleared.VideoPrice720pPerSec)
+	require.True(t, cleared.VideoPrice1080pPerSecSet)
+	require.Nil(t, cleared.VideoPrice1080pPerSec)
+	require.True(t, cleared.VideoPrice4kPerSecSet)
+	require.Nil(t, cleared.VideoPrice4kPerSec)
 }
 
 func TestProxyHandlerEndpoints(t *testing.T) {

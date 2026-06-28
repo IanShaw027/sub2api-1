@@ -500,4 +500,88 @@ describe('admin GroupsView edit hydration', () => {
       video_price_4k_per_sec: 0.04
     })
   })
+
+  it('does not show image pricing controls when editing a Grok group', async () => {
+    listGroups.mockResolvedValueOnce({
+      items: [
+        {
+          ...buildGroup(6, 'Group Grok Generic Video', {}),
+          platform: 'grok',
+          allow_video_generation: true,
+          video_generation_route: 'native'
+        } as any
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountGroupsView()
+
+    await flushPromises()
+    await wrapper.get('[data-test="group-row-6"] button').trigger('click')
+    await flushPromises()
+
+    const editForm = wrapper.get('#edit-group-form')
+    expect(editForm.text()).toContain('admin.groups.videoPricing.title')
+    expect(editForm.text()).not.toContain('admin.groups.imagePricing.title')
+  })
+
+  it('submits explicit nulls when cleared Grok video prices are saved', async () => {
+    listGroups.mockResolvedValueOnce({
+      items: [
+        {
+          ...buildGroup(7, 'Group Grok Clear Video', {}),
+          platform: 'grok',
+          allow_video_generation: true,
+          video_generation_route: 'native',
+          video_price_480p_per_sec: 0.01,
+          video_price_720p_per_sec: 0.02,
+          video_price_1080p_per_sec: 0.03,
+          video_price_4k_per_sec: 0.04
+        } as any
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountGroupsView()
+
+    await flushPromises()
+    await wrapper.get('[data-test="group-row-7"] button').trigger('click')
+    await flushPromises()
+
+    const videoPriceInputs = wrapper
+      .get('#edit-group-form')
+      .findAll('input[type="number"]')
+      .filter((input) => (input.element as HTMLInputElement).placeholder === '0.01' ||
+        (input.element as HTMLInputElement).placeholder === '0.02' ||
+        (input.element as HTMLInputElement).placeholder === '0.03')
+    const video4kInput = wrapper
+      .get('#edit-group-form')
+      .findAll('input[type="number"]')
+      .find((input) => (input.element as HTMLInputElement).placeholder === '0.04')
+
+    expect(videoPriceInputs).toHaveLength(3)
+    expect(video4kInput).toBeTruthy()
+    for (const input of [...videoPriceInputs, video4kInput!]) {
+      await input.setValue('')
+    }
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateGroup).toHaveBeenCalledTimes(1)
+    expect(updateGroup.mock.calls[0][1]).toMatchObject({
+      platform: 'grok',
+      allow_video_generation: true,
+      video_generation_route: 'native',
+      video_price_480p_per_sec: null,
+      video_price_720p_per_sec: null,
+      video_price_1080p_per_sec: null,
+      video_price_4k_per_sec: null
+    })
+  })
 })
