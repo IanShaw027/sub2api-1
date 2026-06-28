@@ -860,6 +860,34 @@ func (s *OpenAIGatewayService) openAIHTTPIncrementalStickyEnabled() bool {
 	return s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.HTTPIncrementalStickyEnabled
 }
 
+func (s *OpenAIGatewayService) shouldPreferOpenAIHTTPIncrementalForHTTPIngress(account *Account, clientTransport OpenAIClientTransport) bool {
+	if s == nil || s.cfg == nil || account == nil {
+		return false
+	}
+	if clientTransport != OpenAIClientTransportHTTP {
+		return false
+	}
+	if !account.IsOpenAIOAuth() || account.IsOpenAIPassthroughEnabled() {
+		return false
+	}
+	if !s.openAIHTTPIncrementalContinuationEnabled() {
+		return false
+	}
+	wsCfg := s.cfg.Gateway.OpenAIWS
+	if !wsCfg.ModeRouterV2Enabled {
+		return false
+	}
+	mode := account.ResolveOpenAIResponsesWebSocketV2Mode(wsCfg.IngressModeDefault)
+	switch mode {
+	case OpenAIWSIngressModePassthrough:
+		return true
+	case OpenAIWSIngressModeCtxPool, OpenAIWSIngressModeShared, OpenAIWSIngressModeDedicated, OpenAIWSIngressModeOff:
+		return false
+	default:
+		return false
+	}
+}
+
 func (s *OpenAIGatewayService) openAIRebuildFallbackEnabled() bool {
 	if s == nil || s.cfg == nil {
 		return true
@@ -5390,6 +5418,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// 也可使用上游 WSv2，由 forwarder 负责无会话请求的一次性隔离。
 	httpIngressUpstreamWSEnabled := s.openAIHTTPIngressUpstreamWSEnabled()
 	wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, clientTransport, httpIngressUpstreamWSEnabled)
+	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 &&
+		s.shouldPreferOpenAIHTTPIncrementalForHTTPIngress(account, clientTransport) {
+		wsDecision = openAIWSHTTPDecision("http_incremental_preferred_non_ctx_pool")
+	}
 	if c != nil {
 		c.Set("openai_ws_transport_decision", string(wsDecision.Transport))
 		c.Set("openai_ws_transport_reason", wsDecision.Reason)

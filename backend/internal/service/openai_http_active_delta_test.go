@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -145,6 +146,82 @@ func TestOpenAIGatewayService_Forward_HTTPActiveDeltaUsesServerHistoryWithoutCli
 	require.False(t, gjson.GetBytes(upstream.bodies[0], "store").Bool())
 	require.Len(t, gjson.GetBytes(upstream.bodies[0], "input").Array(), 1)
 	require.Equal(t, "again", gjson.GetBytes(upstream.bodies[0], "input.0.content.0.text").String())
+}
+
+func TestOpenAIGatewayService_Forward_HTTPIngressOAuthPassthroughModePrefersHTTPActiveDelta(t *testing.T) {
+	setGinTestMode()
+	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
+	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
+
+	upstream := &httpUpstreamRecorder{resp: openAIHTTPActiveDeltaSSE("resp_http_passthrough_mode_delta_ok")}
+	svc := newOpenAIHTTPActiveDeltaTestService(upstream)
+	svc.cfg.Gateway.OpenAIWS.Enabled = true
+	svc.cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	svc.cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	svc.cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	svc.cfg.Gateway.OpenAIWS.IngressModeDefault = OpenAIWSIngressModeCtxPool
+	svc.cfg.Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled = true
+	svc.openaiWSURLBuilder = func(*Account) (string, error) {
+		return "", errors.New("test ws should not be selected")
+	}
+
+	account := newOpenAIHTTPActiveDeltaTestAccount(91007)
+	account.Extra = map[string]any{
+		"openai_passthrough":                           false,
+		"openai_oauth_responses_websockets_v2_mode":    OpenAIWSIngressModePassthrough,
+		"openai_oauth_responses_websockets_v2_enabled": true,
+	}
+	groupID := int64(91070)
+	apiKeyID := int64(91071)
+
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}`
+	replayedOutput := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}`
+	newInput := `{"type":"message","role":"user","content":[{"type":"input_text","text":"again"}]}`
+	firstBody := []byte(`{"model":"gpt-5.4","instructions":"test","stream":true,"store":false,"input":[` + input1 + `]}`)
+	fullFollowupBody := []byte(`{"model":"gpt-5.4","instructions":"test","stream":true,"store":false,"input":[` + input1 + `,` + replayedOutput + `,` + newInput + `]}`)
+
+	firstCtx, _ := newOpenAIHTTPActiveDeltaContext(groupID, apiKeyID, "sess-http-delta-passthrough-mode")
+	bindOpenAIHTTPActiveDeltaInputOnlyContext(t, svc, firstCtx, account, firstBody, "resp_http_prev")
+
+	followupCtx, _ := newOpenAIHTTPActiveDeltaContext(groupID, apiKeyID, "sess-http-delta-passthrough-mode")
+	result, err := svc.Forward(context.Background(), followupCtx, account, fullFollowupBody)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 1)
+	require.Equal(t, "resp_http_prev", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+	require.Len(t, gjson.GetBytes(upstream.bodies[0], "input").Array(), 1)
+	require.Equal(t, "again", gjson.GetBytes(upstream.bodies[0], "input.0.content.0.text").String())
+
+	decision, exists := followupCtx.Get("openai_ws_transport_decision")
+	require.True(t, exists)
+	require.Equal(t, string(OpenAIUpstreamTransportHTTPSSE), decision)
+	reason, exists := followupCtx.Get("openai_ws_transport_reason")
+	require.True(t, exists)
+	require.Equal(t, "http_incremental_preferred_non_ctx_pool", reason)
+}
+
+func TestOpenAIGatewayService_ShouldPreferHTTPIncrementalForHTTPIngressModes(t *testing.T) {
+	cfg := newOpenAIHTTPActiveDeltaTestConfig()
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.IngressModeDefault = OpenAIWSIngressModeCtxPool
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	newAccount := func(mode string, passthrough bool) *Account {
+		account := newOpenAIHTTPActiveDeltaTestAccount(91008)
+		account.Extra = map[string]any{
+			"openai_passthrough":                        passthrough,
+			"openai_oauth_responses_websockets_v2_mode": mode,
+		}
+		return account
+	}
+
+	require.True(t, svc.shouldPreferOpenAIHTTPIncrementalForHTTPIngress(newAccount(OpenAIWSIngressModePassthrough, false), OpenAIClientTransportHTTP))
+	require.False(t, svc.shouldPreferOpenAIHTTPIncrementalForHTTPIngress(newAccount(OpenAIWSIngressModeCtxPool, false), OpenAIClientTransportHTTP))
+	require.False(t, svc.shouldPreferOpenAIHTTPIncrementalForHTTPIngress(newAccount(OpenAIWSIngressModeShared, false), OpenAIClientTransportHTTP))
+	require.False(t, svc.shouldPreferOpenAIHTTPIncrementalForHTTPIngress(newAccount(OpenAIWSIngressModeDedicated, false), OpenAIClientTransportHTTP))
+	require.False(t, svc.shouldPreferOpenAIHTTPIncrementalForHTTPIngress(newAccount(OpenAIWSIngressModeOff, false), OpenAIClientTransportHTTP))
+	require.False(t, svc.shouldPreferOpenAIHTTPIncrementalForHTTPIngress(newAccount(OpenAIWSIngressModePassthrough, true), OpenAIClientTransportHTTP))
+	require.False(t, svc.shouldPreferOpenAIHTTPIncrementalForHTTPIngress(newAccount(OpenAIWSIngressModePassthrough, false), OpenAIClientTransportWS))
 }
 
 func TestOpenAIGatewayService_Forward_HTTPActiveDeltaUsesExplicitClientPreviousResponseID(t *testing.T) {
