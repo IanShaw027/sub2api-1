@@ -907,7 +907,7 @@ func validateDataAccount(item DataAccount) error {
 		return errors.New("account platform is required")
 	}
 	switch item.Platform {
-	case service.PlatformAnthropic, service.PlatformOpenAI, service.PlatformGemini, service.PlatformAntigravity, service.PlatformSora, service.PlatformKiro:
+	case service.PlatformAnthropic, service.PlatformOpenAI, service.PlatformGemini, service.PlatformAntigravity, service.PlatformSora, service.PlatformKiro, service.PlatformGrok:
 	default:
 		return fmt.Errorf("account platform is invalid: %s", item.Platform)
 	}

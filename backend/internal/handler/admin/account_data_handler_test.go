@@ -283,6 +283,45 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 	require.True(t, adminSvc.createdAccounts[0].SkipDefaultGroupBind)
 }
 
+func TestImportDataAcceptsGrokAccount(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+
+	dataPayload := map[string]any{
+		"data": map[string]any{
+			"type":    dataType,
+			"version": dataVersion,
+			"proxies": []map[string]any{},
+			"accounts": []map[string]any{
+				{
+					"name":     "grok-oauth",
+					"platform": service.PlatformGrok,
+					"type":     service.AccountTypeOAuth,
+					"credentials": map[string]any{
+						"access_token":  "grok-at",
+						"refresh_token": "grok-rt",
+						"email":         "owner@example.com",
+					},
+					"concurrency": 3,
+					"priority":    50,
+				},
+			},
+		},
+		"skip_default_group_bind": true,
+	}
+
+	body, _ := json.Marshal(dataPayload)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, adminSvc.createdAccounts, 1)
+	require.Equal(t, service.PlatformGrok, adminSvc.createdAccounts[0].Platform)
+	require.Equal(t, service.AccountTypeOAuth, adminSvc.createdAccounts[0].Type)
+	require.True(t, adminSvc.createdAccounts[0].SkipDefaultGroupBind)
+}
+
 func TestImportDataDedupIgnoreSkipsExistingAccount(t *testing.T) {
 	router, adminSvc := setupAccountDataRouter()
 	adminSvc.accounts = []service.Account{

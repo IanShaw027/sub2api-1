@@ -205,6 +205,50 @@ func TestChannelMonitorHandler_CreateAcceptsKiroProvider(t *testing.T) {
 	require.Equal(t, "kiro(pro号池)", body.Data.GroupName)
 }
 
+func TestChannelMonitorHandler_CreateAcceptsGrokProvider(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &channelMonitorAdjustRepoStub{}
+	repo.createFn = func(ctx context.Context, monitor *service.ChannelMonitor) error {
+		require.Equal(t, service.MonitorProviderGrok, monitor.Provider)
+		require.Equal(t, "grok(supergrok号池)", monitor.GroupName)
+		monitor.ID = 26
+		monitor.CreatedAt = time.Now()
+		monitor.UpdatedAt = monitor.CreatedAt
+		return nil
+	}
+	svc := service.NewChannelMonitorService(repo, channelMonitorAdjustEncryptorStub{})
+	h := NewChannelMonitorHandler(svc)
+
+	router := gin.New()
+	router.POST("/api/v1/admin/channel-monitors", h.Create)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/admin/channel-monitors",
+		bytes.NewBufferString(`{
+			"name":"grok(supergrok号池)",
+			"provider":"grok",
+			"endpoint":"https://api.x.ai",
+			"api_key":"xai-test-monitor-key",
+			"primary_model":"grok-4.3",
+			"group_name":"grok(supergrok号池)",
+			"enabled":true,
+			"interval_seconds":300
+		}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var body struct {
+		Data channelMonitorResponse `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, service.MonitorProviderGrok, body.Data.Provider)
+	require.Equal(t, "grok(supergrok号池)", body.Data.GroupName)
+}
+
 func TestChannelMonitorHandler_AdjustAvailability7dAcceptsZero(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &channelMonitorAdjustRepoStub{

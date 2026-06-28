@@ -83,3 +83,24 @@ func TestChannelMonitorTemplateHandlerCreateAcceptsKiroProvider(t *testing.T) {
 	require.Len(t, repo.created, 1)
 	require.Equal(t, service.MonitorProviderKiro, repo.created[0].Provider)
 }
+
+func TestChannelMonitorTemplateHandlerCreateAcceptsGrokProvider(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &channelMonitorTemplateHandlerRepoStub{}
+	handler := NewChannelMonitorRequestTemplateHandler(service.NewChannelMonitorRequestTemplateService(repo))
+
+	body := []byte(`{"name":"grok-template","provider":"grok","description":"Grok template"}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/channel-monitor-templates", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	handler.Create(c)
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+	require.Len(t, repo.created, 1)
+	require.Equal(t, service.MonitorProviderGrok, repo.created[0].Provider)
+}

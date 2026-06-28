@@ -225,6 +225,38 @@ func TestRunCheckForModel_OpenAI_DefaultChatRequest(t *testing.T) {
 	}
 }
 
+func TestRunCheckForModel_GrokDefaultChatRequest(t *testing.T) {
+	h := &openAICaptureHandler{}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderGrok, endpoint, "xai-grok-key", "grok-4.3", nil)
+
+	if res.Status != MonitorStatusOperational {
+		t.Fatalf("grok default chat request should pass challenge, got status=%s message=%q", res.Status, res.Message)
+	}
+	if h.lastPath != providerOpenAIPath {
+		t.Fatalf("expected chat completions path %q, got %q", providerOpenAIPath, h.lastPath)
+	}
+	if h.lastBody["model"] != "grok-4.3" {
+		t.Errorf("chat body should contain model=grok-4.3, got %v", h.lastBody["model"])
+	}
+	if _, ok := h.lastBody["messages"]; !ok {
+		t.Error("grok chat body should contain messages")
+	}
+	if _, ok := h.lastBody["instructions"]; ok {
+		t.Error("grok chat body must not contain top-level instructions")
+	}
+	if h.lastBody["stream"] != false {
+		t.Errorf("grok chat body should set stream=false, got %v", h.lastBody["stream"])
+	}
+	if h.lastHeaders.Get("Authorization") != "Bearer xai-grok-key" {
+		t.Errorf("expected bearer auth header, got %q", h.lastHeaders.Get("Authorization"))
+	}
+	if h.lastHeaders.Get(ChannelMonitorProbeHeaderName) != "" {
+		t.Errorf("grok monitor requests should not add internal probe header, got %q", h.lastHeaders.Get(ChannelMonitorProbeHeaderName))
+	}
+}
+
 func TestRunCheckForModel_OpenAIResponses_DefaultRequest(t *testing.T) {
 	h := &openAICaptureHandler{}
 	endpoint := setupFakeOpenAI(t, h)

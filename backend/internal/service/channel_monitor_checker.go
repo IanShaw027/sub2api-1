@@ -240,6 +240,21 @@ var providerAdapters = map[string]providerAdapter{
 		textPath:    "content.0.text",
 		extractText: extractAnthropicMonitorText,
 	},
+	MonitorProviderGrok: {
+		buildPath: func(string) string { return providerOpenAIPath },
+		buildBody: func(model, prompt string) ([]byte, error) {
+			return json.Marshal(map[string]any{
+				"model":      model,
+				"messages":   []map[string]string{{"role": "user", "content": prompt}},
+				"max_tokens": monitorChallengeMaxTokens,
+				"stream":     false,
+			})
+		},
+		buildHeaders: func(apiKey string) map[string]string {
+			return map[string]string{"Authorization": "Bearer " + apiKey}
+		},
+		textPath: "choices.0.message.content",
+	},
 }
 
 var openAIChatMonitorAdapter = providerAdapter{
@@ -498,6 +513,12 @@ func bodyMergeKeyDenyList(provider, apiMode string) map[string]bool {
 		return map[string]bool{
 			"model":    true,
 			"messages": true,
+		}
+	case MonitorProviderGrok:
+		return map[string]bool{
+			"model":    true,
+			"messages": true,
+			"stream":   true,
 		}
 	case MonitorProviderGemini:
 		return map[string]bool{
