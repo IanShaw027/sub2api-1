@@ -61,6 +61,7 @@ func TestScheduledTestRunner_DisablesPlanWhenAccountNotFound(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 	runner := NewScheduledTestRunnerService(
 		planRepo,

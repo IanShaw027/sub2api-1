@@ -223,7 +223,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	usageCache := service.NewUsageCache()
 	accountUsageService := service.NewAccountUsageService(accountRepository, usageLogRepository, claudeUsageFetcher, geminiQuotaService, antigravityQuotaFetcher, kiroTokenProvider, grokQuotaFetcher, usageCache, identityCache, compositeTokenCacheInvalidator, proxyRepository, tlsFingerprintProfileService, settingService)
 	geminiAccountAccessTokenProvider := service.ProvideGeminiAccountAccessTokenProvider(geminiTokenProvider)
-	accountTestService := service.NewAccountTestService(accountRepository, geminiAccountAccessTokenProvider, kiroTokenProvider, claudeTokenProvider, antigravityGatewayService, httpUpstream, configConfig, tlsFingerprintProfileService, settingService, opsService)
+	accountTestService := service.NewAccountTestService(accountRepository, geminiAccountAccessTokenProvider, kiroTokenProvider, claudeTokenProvider, grokTokenProvider, antigravityGatewayService, httpUpstream, configConfig, tlsFingerprintProfileService, settingService, opsService)
 	crsSyncService := service.NewCRSSyncService(accountRepository, proxyRepository, oAuthService, openAIOAuthService, geminiOAuthService, configConfig)
 	accountHandler := admin.NewAccountHandler(adminService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, kiroTokenProvider, rateLimitService, accountUsageService, accountTestService, concurrencyService, crsSyncService, sessionLimitCache, rpmCache, compositeTokenCacheInvalidator)
 	adminAnnouncementHandler := admin.NewAnnouncementHandler(announcementService)

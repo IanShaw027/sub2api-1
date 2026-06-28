@@ -28,6 +28,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -112,6 +113,7 @@ type AccountTestService struct {
 	geminiTokenProvider       geminiAccountAccessTokenProvider
 	kiroTokenProvider         *KiroTokenProvider
 	claudeTokenProvider       *ClaudeTokenProvider
+	grokTokenProvider         *GrokTokenProvider
 	antigravityGatewayService *AntigravityGatewayService
 	httpUpstream              HTTPUpstream
 	cfg                       *config.Config
@@ -136,6 +138,7 @@ func NewAccountTestService(
 	geminiTokenProvider geminiAccountAccessTokenProvider,
 	kiroTokenProvider *KiroTokenProvider,
 	claudeTokenProvider *ClaudeTokenProvider,
+	grokTokenProvider *GrokTokenProvider,
 	antigravityGatewayService *AntigravityGatewayService,
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
@@ -148,6 +151,7 @@ func NewAccountTestService(
 		geminiTokenProvider:       geminiTokenProvider,
 		kiroTokenProvider:         kiroTokenProvider,
 		claudeTokenProvider:       claudeTokenProvider,
+		grokTokenProvider:         grokTokenProvider,
 		antigravityGatewayService: antigravityGatewayService,
 		httpUpstream:              httpUpstream,
 		cfg:                       cfg,
@@ -267,6 +271,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 
 	if account.Platform == PlatformKiro {
 		return s.testKiroAccountConnection(c, account, modelID)
+	}
+
+	if account.Platform == PlatformGrok {
+		return s.testGrokAccountConnection(c, account, modelID, prompt)
 	}
 
 	if account.Platform == PlatformAntigravity {
@@ -392,6 +400,132 @@ func (s *AccountTestService) resolveKiroRuntimeSettings(ctx context.Context) *Ki
 		return s.settingService.GetKiroRuntimeSettings(ctx)
 	}
 	return DefaultKiroRuntimeSettings()
+}
+
+func (s *AccountTestService) testGrokAccountConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
+	ctx := c.Request.Context()
+
+	testModelID := strings.TrimSpace(modelID)
+	if testModelID == "" {
+		testModelID = "grok-4.3"
+	}
+	setAccountTestOpsModelIfMissing(c, testModelID)
+	upstreamModel := account.GetMappedModel(testModelID)
+	if strings.TrimSpace(upstreamModel) == "" {
+		upstreamModel = testModelID
+	}
+
+	var authToken string
+	switch account.Type {
+	case AccountTypeOAuth:
+		if s.grokTokenProvider != nil {
+			refreshedToken, err := s.grokTokenProvider.GetAccessToken(ctx, account)
+			if err != nil {
+				return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to get Grok access token: %s", err.Error()))
+			}
+			authToken = refreshedToken
+		} else {
+			authToken = account.GetGrokAccessToken()
+		}
+		if strings.TrimSpace(authToken) == "" {
+			return s.sendErrorAndEnd(c, "No Grok access token available")
+		}
+	case AccountTypeAPIKey:
+		authToken = account.GetCredential("api_key")
+		if strings.TrimSpace(authToken) == "" {
+			return s.sendErrorAndEnd(c, "No Grok API key available")
+		}
+	default:
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported Grok account type: %s", account.Type))
+	}
+
+	apiURL, err := xai.BuildChatCompletionsURL(account.GetGrokBaseURL())
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid Grok base URL: %s", err.Error()))
+	}
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+
+	payload := createOpenAIChatCompletionsTestPayload(upstreamModel, prompt)
+	payloadBytes, _ := json.Marshal(payload)
+
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: upstreamModel})
+	s.sendEvent(c, TestEvent{Type: "status", Text: "正在通过 Grok /v1/chat/completions 测试连接"})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return s.sendErrorAndEnd(c, "Failed to create Grok test request")
+	}
+	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	req.Header.Set("User-Agent", "sub2api-grok/1.0")
+
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok API (/v1/chat/completions) request failed: %s", err.Error()))
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		s.reconcileGrokTestState(ctx, account, resp.StatusCode, resp.Header)
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok API (/v1/chat/completions) returned %d: %s", resp.StatusCode, string(body)))
+	}
+
+	s.reconcileGrokTestState(ctx, account, resp.StatusCode, resp.Header)
+	return s.processOpenAIChatCompletionsStream(c, resp.Body)
+}
+
+func (s *AccountTestService) reconcileGrokTestState(ctx context.Context, account *Account, statusCode int, headers http.Header) {
+	if s == nil || s.accountRepo == nil || account == nil {
+		return
+	}
+	if snapshot := xai.ParseQuotaHeaders(headers, statusCode); snapshot != nil {
+		_ = s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
+			grokQuotaSnapshotExtraKey: snapshot,
+		})
+	}
+
+	var cooldown time.Duration
+	reason := ""
+	switch statusCode {
+	case http.StatusUnauthorized:
+		cooldown = 10 * time.Minute
+		reason = "grok oauth token unauthorized"
+	case http.StatusForbidden:
+		cooldown = 30 * time.Minute
+		reason = "grok entitlement or subscription tier denied"
+	case http.StatusTooManyRequests:
+		cooldown = 2 * time.Minute
+		if snapshot := xai.ParseQuotaHeaders(headers, statusCode); snapshot != nil && snapshot.RetryAfterSeconds != nil && *snapshot.RetryAfterSeconds > 0 {
+			cooldown = time.Duration(*snapshot.RetryAfterSeconds) * time.Second
+		}
+		reason = "grok rate limited"
+	default:
+		if statusCode >= 500 {
+			cooldown = 2 * time.Minute
+			reason = "grok upstream temporary error"
+		}
+	}
+	if cooldown <= 0 || strings.TrimSpace(reason) == "" {
+		return
+	}
+	until := time.Now().Add(cooldown)
+	if account.TempUnschedulableUntil != nil && account.TempUnschedulableUntil.After(until) {
+		until = *account.TempUnschedulableUntil
+	}
+	_ = s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason)
 }
 
 // testClaudeAccountConnection tests an Anthropic Claude account's connection
