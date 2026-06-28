@@ -45,6 +45,27 @@ func TestAdminServiceCreateAccount_AllowsKiroAPIKeyType(t *testing.T) {
 	require.Equal(t, AccountTypeAPIKey, account.Type)
 }
 
+func TestAdminServiceCreateAccount_AllowsGrokOAuthType(t *testing.T) {
+	t.Parallel()
+
+	repo := &accountRepoStubForAdminCreateValidation{}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	account, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
+		Name:                 "grok-oauth",
+		Platform:             PlatformGrok,
+		Type:                 AccountTypeOAuth,
+		Credentials:          map[string]any{"refresh_token": "rt-test"},
+		SkipDefaultGroupBind: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.True(t, repo.createCalled)
+	require.Equal(t, PlatformGrok, account.Platform)
+	require.Equal(t, AccountTypeOAuth, account.Type)
+}
+
 func TestAdminServiceCreateAccount_RejectsInvalidKiroCredentials(t *testing.T) {
 	t.Parallel()
 

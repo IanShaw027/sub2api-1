@@ -108,7 +108,7 @@ func (h *AccountHandler) SetKiroTokenProvider(provider *service.KiroTokenProvide
 type CreateAccountRequest struct {
 	Name                    string         `json:"name" binding:"required"`
 	Notes                   *string        `json:"notes"`
-	Platform                string         `json:"platform" binding:"required,oneof=anthropic openai gemini antigravity sora kiro"`
+	Platform                string         `json:"platform" binding:"required,oneof=anthropic openai gemini antigravity sora kiro grok"`
 	Type                    string         `json:"type" binding:"required,oneof=oauth setup-token apikey upstream bedrock service_account"`
 	Credentials             map[string]any `json:"credentials" binding:"required"`
 	Extra                   map[string]any `json:"extra"`

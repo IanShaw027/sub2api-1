@@ -118,6 +118,27 @@ func TestAccountHandlerCreateMixedChannelConflictSimplifiedResponse(t *testing.T
 	require.False(t, hasRequireConfirmation)
 }
 
+func TestAccountHandlerCreateAcceptsGrokPlatform(t *testing.T) {
+	adminSvc := newStubAdminService()
+	router := setupAccountMixedChannelRouter(adminSvc)
+
+	body, _ := json.Marshal(map[string]any{
+		"name":        "grok-oauth-1",
+		"platform":    service.PlatformGrok,
+		"type":        service.AccountTypeOAuth,
+		"credentials": map[string]any{"refresh_token": "rt-grok"},
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, adminSvc.createdAccounts, 1)
+	require.Equal(t, service.PlatformGrok, adminSvc.createdAccounts[0].Platform)
+	require.Equal(t, service.AccountTypeOAuth, adminSvc.createdAccounts[0].Type)
+}
+
 func TestAccountHandlerUpdateMixedChannelConflictSimplifiedResponse(t *testing.T) {
 	adminSvc := newStubAdminService()
 	adminSvc.updateAccountErr = &service.MixedChannelError{

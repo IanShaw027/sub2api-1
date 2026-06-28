@@ -152,7 +152,7 @@ func requiresOAuthOnlyAccount(platform string) bool {
 
 func validateAccountPlatform(platform string) error {
 	switch strings.TrimSpace(platform) {
-	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformSora, PlatformKiro:
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformSora, PlatformKiro, PlatformGrok:
 		return nil
 	default:
 		return infraerrors.BadRequest("UNSUPPORTED_PLATFORM", fmt.Sprintf("unsupported platform: %s", platform))
