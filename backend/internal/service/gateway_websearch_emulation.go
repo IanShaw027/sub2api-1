@@ -43,7 +43,8 @@ func SetWebSearchManager(m *websearch.Manager) {
 	webSearchManagerPtr.Store(m)
 }
 
-func getWebSearchManager() *websearch.Manager {
+// GetWebSearchManager returns the current websearch.Manager (for dedicated web search API).
+func GetWebSearchManager() *websearch.Manager {
 	return webSearchManagerPtr.Load()
 }
 
@@ -52,7 +53,7 @@ func getWebSearchManager() *websearch.Manager {
 // Judgment chain: manager exists → only web_search tool → global enabled → account/channel enabled.
 // Account-level mode: "enabled" (force on), "disabled" (force off), "default" (follow channel).
 func (s *GatewayService) shouldEmulateWebSearch(ctx context.Context, account *Account, groupID *int64, body []byte) bool {
-	if getWebSearchManager() == nil {
+	if GetWebSearchManager() == nil {
 		return false
 	}
 	if !isOnlyWebSearchToolInBody(body) {
@@ -186,7 +187,7 @@ func (s *GatewayService) handleWebSearchEmulation(
 
 func doWebSearch(ctx context.Context, account *Account, query string) (*websearch.SearchResponse, string, error) {
 	proxyURL := resolveAccountProxyURL(account)
-	mgr := getWebSearchManager()
+	mgr := GetWebSearchManager()
 	if mgr == nil {
 		return nil, "", fmt.Errorf("web search emulation: manager not initialized")
 	}

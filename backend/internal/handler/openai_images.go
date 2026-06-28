@@ -15,6 +15,7 @@ import (
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -107,9 +108,12 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	if service.IsGroupContextValid(apiKey.Group) {
 		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.Group, apiKey.Group))
 	}
-	if !service.GroupAllowsOpenAIImagesCodex(apiKey.Group) {
-		h.errorResponse(c, http.StatusForbidden, "permission_error", service.OpenAIImagesCodexDisabledMessage())
-		return
+	// Codex image requirement only for OpenAI platform groups. Grok groups use their native image path if supported by accounts.
+	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAI {
+		if !service.GroupAllowsOpenAIImagesCodex(apiKey.Group) {
+			h.errorResponse(c, http.StatusForbidden, "permission_error", service.OpenAIImagesCodexDisabledMessage())
+			return
+		}
 	}
 	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIImages, parsed.Model, parsed.ModerationBody()); decision != nil && decision.Blocked {
 		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
@@ -191,7 +195,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				if h.handleOpenAIGroupModelUnsupportedError(c, err, streamStarted) {
 					return
 				}
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformOpenAI)
+				platformForErr := service.PlatformOpenAI
+				if apiKey.Group != nil {
+					platformForErr = apiKey.Group.Platform
+				}
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, platformForErr)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
@@ -212,7 +220,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			return
 		}
 		if selection == nil || selection.Account == nil {
-			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformOpenAI)
+			platformForErr := service.PlatformOpenAI
+			if apiKey.Group != nil {
+				platformForErr = apiKey.Group.Platform
+			}
+			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, platformForErr)
 			if !cls.ModelNotFound {
 				markOpsRoutingCapacityLimited(c)
 			}
@@ -539,4 +551,233 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 
 func isMultipartImagesContentType(contentType string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "multipart/form-data")
+}
+
+// Videos handles OpenAI-compatible Videos API (Sora etc).
+// POST /v1/videos , POST /v1/videos/generations , GET /v1/videos/{id} etc.
+// Follows OpenAI params: prompt, model, seconds, size, input_reference etc.
+// Routed by group/account video capability rather than a single provider platform.
+func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
+	streamStarted := false
+	requestStart := time.Now()
+
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return
+	}
+	reqLog := requestLogger(
+		c,
+		"handler.openai_gateway.videos",
+		zap.Int64("user_id", subject.UserID),
+		zap.Int64("api_key_id", apiKey.ID),
+		zap.Any("group_id", apiKey.GroupID),
+	)
+	if !h.ensureResponsesDependencies(c, reqLog) {
+		return
+	}
+
+	if !service.GroupAllowsVideoGeneration(apiKey.Group) {
+		h.errorResponse(c, http.StatusForbidden, "permission_error", service.VideoGenerationPermissionMessage())
+		return
+	}
+	if service.IsGroupContextValid(apiKey.Group) {
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.Group, apiKey.Group))
+	}
+
+	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			return
+		}
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return
+	}
+
+	// Parse key OpenAI video params for logging / future billing (full struct can be added like OpenAIImagesRequest)
+	model := ""
+	prompt := ""
+	seconds := ""
+	size := ""
+	if len(body) > 0 && gjson.ValidBytes(body) {
+		model = gjson.GetBytes(body, "model").String()
+		prompt = gjson.GetBytes(body, "prompt").String()
+		seconds = gjson.GetBytes(body, "seconds").String()
+		size = gjson.GetBytes(body, "size").String()
+	}
+	reqLog = reqLog.With(
+		zap.String("model", model),
+		zap.String("prompt_prefix", truncateForLog(prompt, 64)),
+		zap.String("seconds", seconds),
+		zap.String("size", size),
+		zap.String("method", c.Request.Method),
+		zap.String("path", c.Request.URL.Path),
+	)
+	setOpsRequestContext(c, model, false, body)
+	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
+
+	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIImages, model, body); decision != nil && decision.Blocked {
+		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+		return
+	}
+
+	_, _ = h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, model)
+
+	subscription, _ := middleware2.GetSubscriptionFromContext(c)
+	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
+
+	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, false, &streamStarted, reqLog)
+	if !acquired {
+		return
+	}
+	if userReleaseFunc != nil {
+		defer userReleaseFunc()
+	}
+
+	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+		reqLog.Info("openai.videos.billing_eligibility_check_failed", zap.Error(err))
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.errorResponse(c, status, code, message)
+		return
+	}
+
+	// Compute target path for sub-resources (e.g. /videos/<id>/content )
+	targetPath := c.Request.URL.Path
+	// normalize to start with /v1 if needed? but use as-is for forward func
+	if !strings.HasPrefix(targetPath, "/v1/") && strings.HasPrefix(targetPath, "/") {
+		// keep client path, ForwardVideos will handle relative to base
+	}
+
+	failedAccountIDs := make(map[int64]struct{})
+	var lastFailoverErr *service.UpstreamFailoverError
+	var lastFailoverAccount *service.Account
+	switchCount := 0
+	maxAccountSwitches := h.maxAccountSwitches
+	if maxAccountSwitches <= 0 {
+		maxAccountSwitches = 3
+	}
+	routingStart := time.Now()
+
+	for {
+		selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+			c.Request.Context(),
+			apiKey.GroupID,
+			"",
+			"",
+			model,
+			failedAccountIDs,
+			service.OpenAIUpstreamTransportHTTPSSE, // or sync
+			service.OpenAIEndpointCapabilityVideos,
+			false,
+		)
+		if err != nil {
+			reqLog.Warn("openai.videos.account_select_failed", zap.Error(err))
+			if len(failedAccountIDs) == 0 {
+				if h.handleOpenAIGroupModelUnsupportedError(c, err, streamStarted) {
+					return
+				}
+				platformForErr := service.PlatformOpenAI
+				if apiKey.Group != nil {
+					platformForErr = apiKey.Group.Platform
+				}
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, model, model, platformForErr)
+				if !cls.ModelNotFound {
+					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+				}
+				message := cls.Message
+				if !cls.ModelNotFound {
+					message = "No available compatible accounts for video generation"
+				}
+				h.errorResponse(c, cls.Status, cls.ErrType, message)
+				return
+			}
+			if lastFailoverErr != nil {
+				h.handleFailoverExhausted(c, lastFailoverErr, lastFailoverAccount, streamStarted)
+			} else {
+				markOpsRoutingCapacityLimited(c)
+				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts after failover")
+			}
+			return
+		}
+		if selection == nil || selection.Account == nil {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available compatible accounts")
+			return
+		}
+
+		account := selection.Account
+		setOpsSelectedAccount(c, account.ID, account.Platform)
+		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
+
+		accountReleaseFunc, acquireStatus := h.acquireResponsesAccountSlot(c, apiKey.GroupID, apiKey.ID, "", "", selection, false, &streamStarted, reqLog)
+		if acquireStatus == accountSlotAcquireRetry {
+			failedAccountIDs[account.ID] = struct{}{}
+			continue
+		}
+		if acquireStatus != accountSlotAcquireAcquired {
+			return
+		}
+
+		forwardStart := time.Now()
+		result, err := func() (*service.OpenAIForwardResult, error) {
+			defer func() {
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+			}()
+			return h.gatewayService.ForwardVideos(c.Request.Context(), c, account, body, targetPath)
+		}()
+
+		forwardDurationMs := time.Since(forwardStart).Milliseconds()
+		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, forwardDurationMs)
+
+		if err != nil {
+			var failoverErr *service.UpstreamFailoverError
+			if errors.As(err, &failoverErr) {
+				h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
+				h.gatewayService.RecordOpenAIAccountSwitch()
+				failedAccountIDs[account.ID] = struct{}{}
+				lastFailoverErr = failoverErr
+				lastFailoverAccount = account
+				if switchCount >= maxAccountSwitches {
+					h.handleFailoverExhausted(c, failoverErr, account, false)
+					return
+				}
+				switchCount++
+				continue
+			}
+			h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
+			if shouldSuppressForwardErrorResponse(c, err) {
+				return
+			}
+			// error may have been written by ForwardVideos already
+			reqLog.Warn("openai.videos.forward_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			return
+		}
+
+		h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
+		reqLog.Debug("openai.videos.request_completed", zap.Int64("account_id", account.ID))
+		// Note: for full billing by video_price_*_per_sec + size tier, hook usage record here with custom video billing.
+		// Current usage recording may be skipped or partial for async jobs.
+		_ = result
+		return
+	}
+}
+
+// truncateForLog helper
+func truncateForLog(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }

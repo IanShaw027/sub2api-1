@@ -267,7 +267,7 @@ type WebSearchTestResult struct {
 const testSearchTimeout = 15 * time.Second
 
 func TestWebSearch(ctx context.Context, query string) (*WebSearchTestResult, error) {
-	mgr := getWebSearchManager()
+	mgr := GetWebSearchManager()
 	if mgr == nil {
 		return nil, fmt.Errorf("web search: manager not initialized, save config first")
 	}
@@ -295,7 +295,7 @@ func PopulateWebSearchUsage(ctx context.Context, cfg *WebSearchEmulationConfig) 
 	out := *cfg
 	out.Providers = make([]WebSearchProviderConfig, len(cfg.Providers))
 
-	mgr := getWebSearchManager()
+	mgr := GetWebSearchManager()
 
 	for i, p := range cfg.Providers {
 		out.Providers[i] = p
@@ -311,7 +311,7 @@ func PopulateWebSearchUsage(ctx context.Context, cfg *WebSearchEmulationConfig) 
 
 // ResetWebSearchUsage deletes the Redis quota key for the given provider type.
 func ResetWebSearchUsage(ctx context.Context, providerType string) error {
-	mgr := getWebSearchManager()
+	mgr := GetWebSearchManager()
 	if mgr == nil {
 		return fmt.Errorf("web search manager not initialized")
 	}
@@ -327,7 +327,7 @@ func SanitizeWebSearchConfig(ctx context.Context, cfg *WebSearchEmulationConfig)
 	out.Providers = make([]WebSearchProviderConfig, len(cfg.Providers))
 
 	// Load usage from the global Manager (reads from Redis)
-	mgr := getWebSearchManager()
+	mgr := GetWebSearchManager()
 
 	for i, p := range cfg.Providers {
 		out.Providers[i] = p

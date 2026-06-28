@@ -542,7 +542,7 @@ func (s *KiroGatewayService) shouldEmulateWebSearch(ctx context.Context, account
 	if s == nil || account == nil || parsed == nil || s.settingService == nil {
 		return false
 	}
-	if getWebSearchManager() == nil || !isOnlyWebSearchToolInBody(parsed.Body.Bytes()) {
+	if GetWebSearchManager() == nil || !isOnlyWebSearchToolInBody(parsed.Body.Bytes()) {
 		return false
 	}
 	if !s.settingService.IsWebSearchEmulationEnabled(ctx) {

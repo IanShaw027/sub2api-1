@@ -66,20 +66,58 @@ func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
 }
 
 func TestGatewayRoutesOpenAIImagesPathsAreRegistered(t *testing.T) {
-	router := newGatewayRoutesTestRouter()
+	// Images supported on OpenAI and Grok
+	for _, plat := range []string{"", service.PlatformOpenAI, service.PlatformGrok} {
+		router := newGatewayRoutesTestRouter(plat)
+		for _, path := range []string{
+			"/v1/images/generations",
+			"/v1/images/edits",
+			"/images/generations",
+			"/images/edits",
+		} {
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"gpt-image-2","prompt":"draw a cat"}`))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			router.ServeHTTP(w, req)
+			require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should be available for platform %s", path, plat)
+		}
+	}
+}
+
+func TestGatewayRoutesOpenAIVideosPathsAreRegistered(t *testing.T) {
+	router := newGatewayRoutesTestRouter(service.PlatformOpenAI)
 
 	for _, path := range []string{
-		"/v1/images/generations",
-		"/v1/images/edits",
-		"/images/generations",
-		"/images/edits",
+		"/v1/videos",
+		"/v1/videos/generations",
+		"/videos",
+		"/videos/generations",
 	} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"gpt-image-2","prompt":"draw a cat"}`))
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"sora-2","prompt":"a cat playing piano","seconds":"8","size":"1280x720"}`))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
-		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit OpenAI images handler", path)
+		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit OpenAI-compatible videos handler", path)
+	}
+}
+
+func TestGatewayRoutesGrokVideosPathsAreRegistered(t *testing.T) {
+	router := newGatewayRoutesTestRouter(service.PlatformGrok)
+
+	for _, path := range []string{
+		"/v1/videos",
+		"/v1/videos/generations",
+		"/videos",
+		"/videos/generations",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"grok","prompt":"a cat playing piano","seconds":"8","size":"1280x720"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit videos handler for Grok groups", path)
 	}
 }
 

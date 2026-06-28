@@ -343,3 +343,40 @@ func openAIJSONString(value gjson.Result) string {
 	}
 	return strings.TrimSpace(value.String())
 }
+
+const videoGenerationPermissionMessage = "Video generation is not enabled for this group"
+
+// GroupAllowsVideoGeneration preserves ungrouped-key behavior and enforces the flag when a group is present.
+func GroupAllowsVideoGeneration(group *Group) bool {
+	return group == nil || group.AllowVideoGeneration
+}
+
+func VideoGenerationPermissionMessage() string {
+	return videoGenerationPermissionMessage
+}
+
+// IsVideoGenerationEndpoint identifies dedicated video generation endpoints.
+func IsVideoGenerationEndpoint(endpoint string) bool {
+	ep := normalizeVideoGenerationEndpoint(endpoint)
+	switch ep {
+	case "/v1/videos", "/videos", "/v1/videos/generations", "/videos/generations":
+		return true
+	}
+	// support subpaths like /videos/{id} etc as video related
+	if strings.HasPrefix(ep, "/v1/videos") || strings.HasPrefix(ep, "/videos") {
+		return true
+	}
+	return false
+}
+
+func normalizeVideoGenerationEndpoint(endpoint string) string {
+	endpoint = strings.TrimSpace(strings.ToLower(endpoint))
+	if endpoint == "" {
+		return ""
+	}
+	endpoint = strings.TrimPrefix(endpoint, "https://api.openai.com")
+	if idx := strings.IndexByte(endpoint, '?'); idx >= 0 {
+		endpoint = endpoint[:idx]
+	}
+	return strings.TrimRight(endpoint, "/")
+}

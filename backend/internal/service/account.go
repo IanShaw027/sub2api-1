@@ -82,6 +82,7 @@ const (
 	OpenAIEndpointCapabilityEmbeddings               OpenAIEndpointCapability = "embeddings"
 	OpenAIEndpointCapabilityResponsesIngress         OpenAIEndpointCapability = "responses_ingress"
 	OpenAIEndpointCapabilityAnthropicMessagesIngress OpenAIEndpointCapability = "anthropic_messages_ingress"
+	OpenAIEndpointCapabilityVideos                   OpenAIEndpointCapability = "videos"
 )
 
 const openAIEndpointCapabilitiesCredentialKey = "openai_capabilities"
@@ -1584,11 +1585,13 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 		return false
 	}
 	if a.IsGrok() {
-		return capability == OpenAIEndpointCapabilityChatCompletions
+		return capability == OpenAIEndpointCapabilityChatCompletions ||
+			capability == OpenAIEndpointCapabilityVideos
 	}
 	switch capability {
 	case OpenAIEndpointCapabilityChatCompletions:
 	case OpenAIEndpointCapabilityEmbeddings:
+	case OpenAIEndpointCapabilityVideos:
 	case OpenAIEndpointCapabilityResponsesIngress, OpenAIEndpointCapabilityAnthropicMessagesIngress:
 		if a.IsAnthropicMessagesUpstream() && !a.TextEndpointAutoRouteEnabled() {
 			return false
@@ -1599,7 +1602,7 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 
 	configured, found := a.openAIEndpointCapabilitySet()
 	if !found {
-		if capability == OpenAIEndpointCapabilityEmbeddings && a.Type != AccountTypeAPIKey {
+		if (capability == OpenAIEndpointCapabilityEmbeddings || capability == OpenAIEndpointCapabilityVideos) && a.Type != AccountTypeAPIKey {
 			return false
 		}
 		return true

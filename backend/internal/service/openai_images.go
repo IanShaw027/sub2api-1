@@ -4278,3 +4278,39 @@ func dedupeStrings(values []string) []string {
 	}
 	return out
 }
+
+// OpenAIVideoRequest captures full OpenAI-compatible video generation params (for /videos and /videos/generations).
+// Complete params per OpenAI Videos API: prompt, model (sora-2 etc), seconds, size, input_reference{image_url|file_id}, etc.
+type OpenAIVideoRequest struct {
+	Endpoint       string
+	Model          string
+	Prompt         string
+	Seconds        string
+	Size           string
+	InputReference map[string]string
+	NVariants      int
+	User           string
+	Body           []byte
+}
+
+func (s *OpenAIGatewayService) ParseOpenAIVideoRequest(c *gin.Context, body []byte) (*OpenAIVideoRequest, error) {
+	req := &OpenAIVideoRequest{Body: body}
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return req, nil
+	}
+	req.Model = strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	req.Prompt = strings.TrimSpace(gjson.GetBytes(body, "prompt").String())
+	req.Seconds = strings.TrimSpace(gjson.GetBytes(body, "seconds").String())
+	req.Size = strings.TrimSpace(gjson.GetBytes(body, "size").String())
+	req.User = strings.TrimSpace(gjson.GetBytes(body, "user").String())
+	if ref := gjson.GetBytes(body, "input_reference"); ref.IsObject() {
+		req.InputReference = map[string]string{
+			"image_url": ref.Get("image_url").String(),
+			"file_id":   ref.Get("file_id").String(),
+		}
+	}
+	if n := gjson.GetBytes(body, "n_variants"); n.Exists() {
+		req.NVariants = int(n.Int())
+	}
+	return req, nil
+}

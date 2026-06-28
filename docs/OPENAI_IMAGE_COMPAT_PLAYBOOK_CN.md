@@ -502,3 +502,36 @@ curl https://gateway.example.com/api/v1/media/upload \
 5. 调 `/api/v1/media/:id/visibility` 把资源改为 `public`，确认资源可以通过 `source.qazwc.com` 访问。
 6. 把同一资源改回 `private`，确认只能通过签名下载或代理访问。
 7. 对 `1K`、`2K`、未知尺寸分别提交图片任务，确认计费落到正确价格档。
+
+## 11. 视频生成 (Videos API)
+
+为与 OpenAI 保持统一，sub2api 提供 OpenAI 兼容的 Videos 端点（参考 Sora Videos API）：
+
+- `POST /v1/videos` / `POST /videos` / `POST /videos/generations`
+- `GET /v1/videos/...` （用于查询状态、下载内容）
+
+**完整参数**（OpenAI 风格）：
+- `prompt`（必填）
+- `model`（如 sora-2）
+- `seconds`（时长，如 "8"）
+- `size`（分辨率，如 "1280x720"）
+- `input_reference`（可选，`{image_url | file_id}` 用于图生视频）
+- 其他如 `n_variants`
+
+**限制与配置**：
+- 仅 OpenAI platform 的分组可用（类似 images）。
+- 分组需 `allow_video_generation: true`
+- 计费：按分辨率 tier + `video_price_*_per_sec`（480p/720p/1080p/4k）
+- 路由：`video_generation_route` (openai / codex)
+- 调度：使用与 chat/images 相同的 `SelectAccountWithSchedulerForCapability`（支持 failover）。
+
+当前实现透传请求到上游 OpenAI 兼容账号，异步 job 由客户端轮询。完整计费 hook 和 multipart 支持可进一步扩展。
+
+客户端可直接使用 OpenAI SDK 指向 sub2api base_url 调用 videos。
+
+示例：
+```bash
+curl https://.../v1/videos \
+  -H "Authorization: Bearer sk-xxx" \
+  -d '{"model":"sora-2","prompt":"a cat on piano","seconds":"8","size":"1280x720"}'
+```

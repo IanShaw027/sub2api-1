@@ -263,3 +263,126 @@ func firstPositiveGJSONInt(values ...gjson.Result) int {
 func buildOpenAIEmbeddingsURL(base string) string {
 	return buildOpenAIEndpointURL(base, "/v1/embeddings")
 }
+
+// ForwardVideos forwards to OpenAI-compatible /v1/videos (create/retrieve/content).
+// Supports provider accounts that expose an OpenAI-compatible videos endpoint.
+// Uses account token (API key or OAuth/GetAccessToken) + appropriate base URL.
+// Billing for video (resolution tier x seconds via group video_price_*_per_sec) should be applied by caller or usage recorder.
+func (s *OpenAIGatewayService) ForwardVideos(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+	targetPath string, // e.g. "/v1/videos" or "/v1/videos/xxx/content"
+) (*OpenAIForwardResult, error) {
+	startTime := time.Now()
+
+	originalModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+
+	logger.L().Debug("openai videos: forwarding",
+		zap.Int64("account_id", account.ID),
+		zap.String("original_model", originalModel),
+		zap.String("target_path", targetPath),
+	)
+
+	// Support OpenAI-compatible providers that need bearer tokens or API keys.
+	token := account.GetOpenAIApiKey()
+	baseURL := account.GetOpenAIBaseURL()
+	if baseURL == "" {
+		baseURL = "https://api.openai.com"
+	}
+	if account.Platform == PlatformGrok || account.Type == AccountTypeOAuth {
+		tok, _, err := s.GetAccessToken(ctx, account)
+		if err != nil {
+			return nil, fmt.Errorf("get access token for video: %w", err)
+		}
+		token = tok
+		if grokBase := account.GetGrokBaseURL(); grokBase != "" {
+			baseURL = grokBase
+		} else if account.Platform == PlatformGrok {
+			baseURL = "https://api.x.ai"
+		}
+	}
+	if token == "" {
+		return nil, fmt.Errorf("account %d missing token for video generation", account.ID)
+	}
+	validatedURL, err := s.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base_url: %w", err)
+	}
+	if targetPath == "" {
+		targetPath = "/v1/videos"
+	}
+	targetURL := buildOpenAIEndpointURL(validatedURL, targetPath)
+
+	upstreamCtx, release := detachUpstreamContext(ctx)
+	upstreamReq, err := http.NewRequestWithContext(upstreamCtx, c.Request.Method, targetURL, bytes.NewReader(body))
+	release()
+	if err != nil {
+		return nil, fmt.Errorf("build upstream video request: %w", err)
+	}
+	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
+	upstreamReq.Header.Set("Content-Type", "application/json")
+	if len(body) == 0 || c.ContentType() == "" {
+		// allow form for reference uploads if needed
+		if ct := c.GetHeader("Content-Type"); ct != "" {
+			upstreamReq.Header.Set("Content-Type", ct)
+		}
+	}
+	upstreamReq.Header.Set("Authorization", "Bearer "+token)
+	upstreamReq.Header.Set("Accept", "application/json")
+	// pass select headers
+	for key, values := range c.Request.Header {
+		lowerKey := strings.ToLower(key)
+		if openaiCCRawAllowedHeaders[lowerKey] {
+			for _, v := range values {
+				upstreamReq.Header.Add(key, v)
+			}
+		}
+	}
+	if customUA := account.GetOpenAIUserAgent(); customUA != "" {
+		upstreamReq.Header.Set("user-agent", customUA)
+	}
+
+	proxyURL := ""
+	if account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "http")
+	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
+	if err != nil {
+		safeErr := sanitizeUpstreamErrorMessage(err.Error())
+		setOpsUpstreamError(c, 0, safeErr, "")
+		return nil, &UpstreamFailoverError{StatusCode: 0, ResponseBody: nil, RetryableOnSameAccount: true}
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		// pass error body through
+		c.Header("Content-Type", "application/json")
+		c.Status(resp.StatusCode)
+		_, _ = c.Writer.Write(respBody)
+		return nil, fmt.Errorf("upstream video error: status %d", resp.StatusCode)
+	}
+
+	// write success
+	for k, vs := range resp.Header {
+		for _, v := range vs {
+			c.Header(k, v)
+		}
+	}
+	c.Status(resp.StatusCode)
+	_, _ = c.Writer.Write(respBody)
+
+	// minimal result
+	res := &OpenAIForwardResult{
+		UpstreamModel: originalModel,
+		// TODO: parse usage or video job for billing (duration etc) e.g. seconds * tier
+		Usage: OpenAIUsage{},
+	}
+	_ = startTime
+	return res, nil
+}
