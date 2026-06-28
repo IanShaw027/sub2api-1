@@ -137,3 +137,65 @@ func TestAccountHandlerGetAvailableModels_KiroUsesExplicitModelMapping(t *testin
 	require.Len(t, resp.Data, 1)
 	require.Equal(t, "claude-sonnet-4.6", resp.Data[0].ID)
 }
+
+func TestAccountHandlerGetAvailableModels_GrokUsesExplicitModelMapping(t *testing.T) {
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       45,
+			Name:     "grok-oauth",
+			Platform: service.PlatformGrok,
+			Type:     service.AccountTypeOAuth,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"grok-4.3":    "grok-4.3",
+					"grok-latest": "grok-4.3",
+				},
+			},
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/45/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Data []struct {
+			ID          string `json:"id"`
+			Type        string `json:"type"`
+			DisplayName string `json:"display_name"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+
+	models := make(map[string]struct {
+		Type        string
+		DisplayName string
+	}, len(resp.Data))
+	for _, model := range resp.Data {
+		models[model.ID] = struct {
+			Type        string
+			DisplayName string
+		}{
+			Type:        model.Type,
+			DisplayName: model.DisplayName,
+		}
+	}
+	require.Equal(t, map[string]struct {
+		Type        string
+		DisplayName string
+	}{
+		"grok-4.3": {
+			Type:        "model",
+			DisplayName: "Grok 4.3",
+		},
+		"grok-latest": {
+			Type:        "model",
+			DisplayName: "grok-latest",
+		},
+	}, models)
+}

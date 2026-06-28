@@ -26,6 +26,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -2325,6 +2326,38 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 					Type:        "model",
 					DisplayName: requestedModel,
 					CreatedAt:   "",
+				})
+			}
+		}
+		response.Success(c, models)
+		return
+	}
+
+	if account.Platform == service.PlatformGrok {
+		mapping := account.GetModelMapping()
+		if len(mapping) == 0 {
+			response.Success(c, xai.DefaultModels())
+			return
+		}
+
+		defaultModels := xai.DefaultModels()
+		var models []xai.Model
+		for requestedModel := range mapping {
+			var found bool
+			for _, dm := range defaultModels {
+				if dm.ID == requestedModel {
+					models = append(models, dm)
+					found = true
+					break
+				}
+			}
+			if !found {
+				models = append(models, xai.Model{
+					ID:          requestedModel,
+					Object:      "model",
+					Type:        "model",
+					OwnedBy:     "xai",
+					DisplayName: requestedModel,
 				})
 			}
 		}
