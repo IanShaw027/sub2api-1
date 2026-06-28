@@ -43,8 +43,7 @@ func RegisterGatewayRoutes(
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
 	isImageSupportedPlatform := func(c *gin.Context) bool {
-		p := getGroupPlatform(c)
-		return p == service.PlatformOpenAI || p == service.PlatformGrok
+		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
 	rejectGrokUnsupportedEndpoint := func(c *gin.Context, endpoint string) {
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)

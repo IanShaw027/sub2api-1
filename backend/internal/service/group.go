@@ -255,6 +255,43 @@ func (g *Group) GetImagePriceForRequestType(imageSize string, requestType Reques
 	}
 }
 
+type VideoPriceConfig struct {
+	Price480p  *float64
+	Price720p  *float64
+	Price1080p *float64
+	Price4K    *float64
+}
+
+func (g *Group) GetVideoPriceConfig() *VideoPriceConfig {
+	if g == nil {
+		return nil
+	}
+	return &VideoPriceConfig{
+		Price480p:  g.VideoPrice480pPerSec,
+		Price720p:  g.VideoPrice720pPerSec,
+		Price1080p: g.VideoPrice1080pPerSec,
+		Price4K:    g.VideoPrice4kPerSec,
+	}
+}
+
+func (g *Group) GetVideoPricePerSecond(videoSize string) *float64 {
+	if g == nil {
+		return nil
+	}
+	switch NormalizeVideoBillingTierOrDefault(videoSize) {
+	case VideoBillingTier480p:
+		return g.VideoPrice480pPerSec
+	case VideoBillingTier720p:
+		return g.VideoPrice720pPerSec
+	case VideoBillingTier1080p:
+		return g.VideoPrice1080pPerSec
+	case VideoBillingTier4K:
+		return g.VideoPrice4kPerSec
+	default:
+		return g.VideoPrice720pPerSec
+	}
+}
+
 func (g *Group) DisplayLabel() string {
 	if g == nil {
 		return ""

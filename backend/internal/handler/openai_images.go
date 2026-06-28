@@ -628,7 +628,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		return
 	}
 
-	_, _ = h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, model)
+	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, model)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
@@ -667,6 +667,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		maxAccountSwitches = 3
 	}
 	routingStart := time.Now()
+	requestPlatform := openAICompatibleRequestPlatform(apiKey)
 
 	for {
 		selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
@@ -679,6 +680,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			service.OpenAIUpstreamTransportHTTPSSE, // or sync
 			service.OpenAIEndpointCapabilityVideos,
 			false,
+			requestPlatform,
 		)
 		if err != nil {
 			reqLog.Warn("openai.videos.account_select_failed", zap.Error(err))
@@ -765,10 +767,40 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		}
 
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
+		if result != nil && result.VideoSeconds > 0 {
+			userAgent := c.GetHeader("User-Agent")
+			clientIP := ip.GetClientIP(c)
+			inboundEndpoint := GetInboundEndpoint(c)
+			upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+			requestPayloadHash := service.HashUsageRequestPayload(body)
+			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+			h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+				if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+					Result:             result,
+					APIKey:             apiKey,
+					User:               apiKey.User,
+					Account:            account,
+					Subscription:       subscription,
+					InboundEndpoint:    inboundEndpoint,
+					UpstreamEndpoint:   upstreamEndpoint,
+					UserAgent:          userAgent,
+					IPAddress:          clientIP,
+					RequestPayloadHash: requestPayloadHash,
+					RequestType:        service.RequestTypeVideo,
+					APIKeyService:      h.apiKeyService,
+					QuotaPlatform:      quotaPlatform,
+					ChannelUsageFields: channelMapping.ToUsageFields(model, result.UpstreamModel),
+				}); err != nil {
+					logger.L().With(
+						zap.String("component", "handler.openai_gateway.videos"),
+						zap.Int64("user_id", subject.UserID),
+						zap.Int64("api_key_id", apiKey.ID),
+						zap.Int64("account_id", account.ID),
+					).Error("openai.videos.usage_record_failed", zap.Error(err))
+				}
+			})
+		}
 		reqLog.Debug("openai.videos.request_completed", zap.Int64("account_id", account.ID))
-		// Note: for full billing by video_price_*_per_sec + size tier, hook usage record here with custom video billing.
-		// Current usage recording may be skipped or partial for async jobs.
-		_ = result
 		return
 	}
 }

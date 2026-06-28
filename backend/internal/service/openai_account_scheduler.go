@@ -561,7 +561,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
-	if !isOpenAIStickyCandidateCompatible(ctx, s.service.settingService, account, req.RequestedModel, req.RequireCompact, req.RequiredImageRoute, req.RequireOAuthAccount, req.RequireImageEnabled) {
+	if !isOpenAIStickyAccountEligibleForSelection(ctx, s.service.settingService, account, req.Platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability, req.RequiredImageRoute, req.RequireOAuthAccount, req.RequireImageEnabled) {
 		logReject("candidate_incompatible", account, accountID, true, false)
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
@@ -571,7 +571,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
-	account = s.service.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, req.RequestedModel, req.RequireCompact, req.RequiredCapability, req.RequiredImageRoute, req.RequireOAuthAccount, req.RequireImageEnabled)
+	account = s.service.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, req.Platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability, req.RequiredImageRoute, req.RequireOAuthAccount, req.RequireImageEnabled)
 	if account == nil ||
 		!s.isStickyAccountWithinSchedulingScope(ctx, account.ID, req) ||
 		account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) ||

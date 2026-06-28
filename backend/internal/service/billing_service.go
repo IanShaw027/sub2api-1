@@ -1371,3 +1371,48 @@ func (s *BillingService) getDefaultImagePrice(model string, imageSize string) fl
 
 	return basePrice
 }
+
+// CalculateVideoCost calculates video generation cost from group per-second pricing.
+func (s *BillingService) CalculateVideoCost(videoSize string, seconds int, videoCount int, groupConfig *VideoPriceConfig, rateMultiplier float64) *CostBreakdown {
+	if seconds <= 0 {
+		return &CostBreakdown{}
+	}
+	if videoCount <= 0 {
+		videoCount = 1
+	}
+	sizeTier := NormalizeVideoBillingTierOrDefault(videoSize)
+	unitPrice := getVideoUnitPrice(sizeTier, groupConfig)
+	totalCost := unitPrice * float64(seconds) * float64(videoCount)
+	if rateMultiplier < 0 {
+		rateMultiplier = 0
+	}
+	actualCost := totalCost * rateMultiplier
+	return &CostBreakdown{
+		TotalCost:   totalCost,
+		ActualCost:  actualCost,
+		BillingMode: string(BillingModeVideo),
+	}
+}
+
+func getVideoUnitPrice(sizeTier string, groupConfig *VideoPriceConfig) float64 {
+	if groupConfig == nil {
+		return 0
+	}
+	var price *float64
+	switch NormalizeVideoBillingTierOrDefault(sizeTier) {
+	case VideoBillingTier480p:
+		price = groupConfig.Price480p
+	case VideoBillingTier720p:
+		price = groupConfig.Price720p
+	case VideoBillingTier1080p:
+		price = groupConfig.Price1080p
+	case VideoBillingTier4K:
+		price = groupConfig.Price4K
+	default:
+		price = groupConfig.Price720p
+	}
+	if price == nil {
+		return 0
+	}
+	return *price
+}

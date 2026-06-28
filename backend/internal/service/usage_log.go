@@ -21,11 +21,12 @@ const (
 	RequestTypeImage          RequestType = 4
 	RequestTypeImageWebBridge RequestType = 5
 	RequestTypeCyberBlocked   RequestType = 6 // cyber_policy 命中（透传但被上游安全策略拒绝）
+	RequestTypeVideo          RequestType = 7
 )
 
 func (t RequestType) IsValid() bool {
 	switch t {
-	case RequestTypeUnknown, RequestTypeSync, RequestTypeStream, RequestTypeWSV2, RequestTypeImage, RequestTypeImageWebBridge, RequestTypeCyberBlocked:
+	case RequestTypeUnknown, RequestTypeSync, RequestTypeStream, RequestTypeWSV2, RequestTypeImage, RequestTypeImageWebBridge, RequestTypeCyberBlocked, RequestTypeVideo:
 		return true
 	default:
 		return false
@@ -53,6 +54,8 @@ func (t RequestType) String() string {
 		return "image_web_bridge"
 	case RequestTypeCyberBlocked:
 		return "cyber"
+	case RequestTypeVideo:
+		return "video"
 	default:
 		return "unknown"
 	}
@@ -78,8 +81,10 @@ func ParseUsageRequestType(value string) (RequestType, error) {
 		return RequestTypeImageWebBridge, nil
 	case "cyber":
 		return RequestTypeCyberBlocked, nil
+	case "video":
+		return RequestTypeVideo, nil
 	default:
-		return RequestTypeUnknown, fmt.Errorf("invalid request_type, allowed values: unknown, sync, stream, ws_v2, image, image_web_bridge, cyber")
+		return RequestTypeUnknown, fmt.Errorf("invalid request_type, allowed values: unknown, sync, stream, ws_v2, image, image_web_bridge, cyber, video")
 	}
 }
 
@@ -101,7 +106,7 @@ func ApplyLegacyRequestFields(requestType RequestType, fallbackStream bool, fall
 		return true, false
 	case RequestTypeWSV2:
 		return true, true
-	case RequestTypeImage, RequestTypeImageWebBridge:
+	case RequestTypeImage, RequestTypeImageWebBridge, RequestTypeVideo:
 		return false, false
 	default:
 		return fallbackStream, fallbackOpenAIWSMode

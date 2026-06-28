@@ -8348,7 +8348,7 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 		_ = store.DeleteResponseAccount(ctx, group, apiKeyID, responseID)
 		return nil, nil
 	}
-	account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, "", "", false, false)
+	account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, PlatformOpenAI, requestedModel, requireCompact, "", "", false, false)
 	if account == nil {
 		logDiag("recheck_failed", "delete_binding", nil, accountID, true, false)
 		_ = store.DeleteResponseAccount(ctx, group, apiKeyID, responseID)

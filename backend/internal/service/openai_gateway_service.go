@@ -454,6 +454,9 @@ type OpenAIForwardResult struct {
 	ImageOutputSizes     []string
 	ImageSizeSource      string
 	ImageSizeBreakdown   map[string]int
+	VideoSeconds         int
+	VideoSize            string
+	VideoCount           int
 	wsReplayInput        []json.RawMessage
 	wsReplayInputExists  bool
 
@@ -3333,7 +3336,7 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 		return nil
 	}
 	if platform == PlatformOpenAI {
-		account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, requiredCapability, requiredImageRoute, requireOAuthAccount, requireImageEnabled)
+		account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, platform, requestedModel, requireCompact, requiredCapability, requiredImageRoute, requireOAuthAccount, requireImageEnabled)
 	} else {
 		account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, platform, requestedModel, requireCompact, requiredCapability, requiredImageRoute, requireOAuthAccount, requireImageEnabled)
 	}
@@ -3541,7 +3544,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				}
 				if !clearSticky && isOpenAIStickyAccountEligibleForSelection(ctx, s.settingService, account, platform, requestedModel, requireCompact, requiredCapability, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
 					if platform == PlatformOpenAI {
-						account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, requiredCapability, requiredImageRoute, requireOAuthAccount, requireImageEnabled)
+						account = s.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, platform, requestedModel, requireCompact, requiredCapability, requiredImageRoute, requireOAuthAccount, requireImageEnabled)
 					} else {
 						account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, platform, requestedModel, requireCompact, requiredCapability, requiredImageRoute, requireOAuthAccount, requireImageEnabled)
 					}
@@ -4082,20 +4085,18 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 	return latest
 }
 
-func (s *OpenAIGatewayService) recheckSelectedStickyOpenAIAccountFromDB(ctx context.Context, account *Account, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability, requiredImageRoute string, requireOAuthAccount bool, requireImageEnabled bool) *Account {
+func (s *OpenAIGatewayService) recheckSelectedStickyOpenAIAccountFromDB(ctx context.Context, account *Account, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability, requiredImageRoute string, requireOAuthAccount bool, requireImageEnabled bool) *Account {
 	if account == nil {
 		return nil
 	}
+	platform = normalizeOpenAICompatiblePlatform(platform)
 	requiredImageRoute = normalizeOpenAIImageRouteForSelection(requiredImageRoute)
 	waitTimeout := s.openAIStickyWaitTimeout(ctx)
 	if s.schedulerSnapshot == nil || s.accountRepo == nil {
-		if shouldClearOpenAIStickyAccount(account, requestedModel, requiredImageRoute, waitTimeout) {
+		if shouldClearOpenAIAccountForStickySelection(account, platform, requestedModel, requiredImageRoute, waitTimeout) {
 			return nil
 		}
-		if !isOpenAIStickyCandidateCompatible(ctx, s.settingService, account, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
-			return nil
-		}
-		if !account.SupportsOpenAIEndpointCapability(requiredCapability) {
+		if !isOpenAIStickyAccountEligibleForSelection(ctx, s.settingService, account, platform, requestedModel, requireCompact, requiredCapability, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
 			return nil
 		}
 		if s.isOpenAIAccountRuntimeBlocked(account) {
@@ -4111,13 +4112,10 @@ func (s *OpenAIGatewayService) recheckSelectedStickyOpenAIAccountFromDB(ctx cont
 	if err != nil || latest == nil {
 		return nil
 	}
-	if shouldClearOpenAIStickyAccount(latest, requestedModel, requiredImageRoute, waitTimeout) {
+	if shouldClearOpenAIAccountForStickySelection(latest, platform, requestedModel, requiredImageRoute, waitTimeout) {
 		return nil
 	}
-	if !isOpenAIStickyCandidateCompatible(ctx, s.settingService, latest, requestedModel, requireCompact, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
-		return nil
-	}
-	if !latest.SupportsOpenAIEndpointCapability(requiredCapability) {
+	if !isOpenAIStickyAccountEligibleForSelection(ctx, s.settingService, latest, platform, requestedModel, requireCompact, requiredCapability, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
 		return nil
 	}
 	if s.isOpenAIAccountRuntimeBlocked(latest) {
@@ -12007,6 +12005,9 @@ func normalizeOpenAIRecordUsageRequestType(input *OpenAIRecordUsageInput, result
 			return requestType
 		}
 	}
+	if isOpenAIRecordUsageVideoRequest(input, result) {
+		return RequestTypeVideo
+	}
 	if isOpenAIRecordUsageImageRequest(input, result) {
 		if input != nil {
 			if isOpenAIImages2APIBridgePath(input.InboundEndpoint) || isOpenAIImages2APIBridgePath(input.UpstreamEndpoint) {
@@ -12019,6 +12020,16 @@ func normalizeOpenAIRecordUsageRequestType(input *OpenAIRecordUsageInput, result
 		return RequestTypeUnknown
 	}
 	return RequestTypeFromLegacy(result.Stream, result.OpenAIWSMode)
+}
+
+func isOpenAIRecordUsageVideoRequest(input *OpenAIRecordUsageInput, result *OpenAIForwardResult) bool {
+	if openAIForwardResultHasVideoBilling(result) {
+		return true
+	}
+	if input == nil {
+		return false
+	}
+	return serviceEndpointIsVideo(input.InboundEndpoint) || serviceEndpointIsVideo(input.UpstreamEndpoint)
 }
 
 func isOpenAIRecordUsageImageRequest(input *OpenAIRecordUsageInput, result *OpenAIForwardResult) bool {
@@ -12327,6 +12338,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if cost != nil && cost.BillingMode != "" {
 		billingMode := cost.BillingMode
 		usageLog.BillingMode = &billingMode
+	} else if openAIForwardResultHasVideoBilling(result) {
+		billingMode := string(BillingModeVideo)
+		usageLog.BillingMode = &billingMode
 	} else if result.ImageCount > 0 {
 		billingMode := string(BillingModeImage)
 		usageLog.BillingMode = &billingMode
@@ -12424,10 +12438,30 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	serviceTier string,
 	requestType RequestType,
 ) (*CostBreakdown, error) {
+	if openAIForwardResultHasVideoBilling(result) {
+		return s.calculateOpenAIVideoRequestCost(result, apiKey, multiplier), nil
+	}
 	if result != nil && result.ImageCount > 0 {
 		return s.calculateOpenAIImageRequestCost(ctx, result, apiKey, billingModel, multiplier, imageRateMultiplier, tokens, serviceTier, requestType)
 	}
 	return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
+}
+
+func openAIForwardResultHasVideoBilling(result *OpenAIForwardResult) bool {
+	return result != nil && result.VideoSeconds > 0
+}
+
+func serviceEndpointIsVideo(path string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(path))
+	return strings.Contains(normalized, "/videos")
+}
+
+func (s *OpenAIGatewayService) calculateOpenAIVideoRequestCost(result *OpenAIForwardResult, apiKey *APIKey, multiplier float64) *CostBreakdown {
+	var groupConfig *VideoPriceConfig
+	if apiKey != nil && apiKey.Group != nil {
+		groupConfig = apiKey.Group.GetVideoPriceConfig()
+	}
+	return s.billingService.CalculateVideoCost(result.VideoSize, result.VideoSeconds, result.VideoCount, groupConfig, multiplier)
 }
 
 func isUsagePricingUnavailableError(err error) bool {
