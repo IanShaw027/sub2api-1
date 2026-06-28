@@ -229,8 +229,16 @@ type CreateGroupInput struct {
 	Images2APIPrice1K    *float64
 	Images2APIPrice2K    *float64
 	Images2APIPrice4K    *float64
-	ClaudeCodeOnly       bool   // 仅允许 Claude Code 客户端
-	FallbackGroupID      *int64 // 降级分组 ID
+
+	AllowVideoGeneration  bool
+	VideoGenerationRoute  string
+	VideoPrice480pPerSec  *float64
+	VideoPrice720pPerSec  *float64
+	VideoPrice1080pPerSec *float64
+	VideoPrice4kPerSec    *float64
+
+	ClaudeCodeOnly  bool   // 仅允许 Claude Code 客户端
+	FallbackGroupID *int64 // 降级分组 ID
 	// 无效请求兜底分组 ID（仅 anthropic 平台使用）
 	FallbackGroupIDOnInvalidRequest *int64
 	// 模型路由配置（仅 anthropic 平台使用）
@@ -278,8 +286,16 @@ type UpdateGroupInput struct {
 	Images2APIPrice1K    *float64
 	Images2APIPrice2K    *float64
 	Images2APIPrice4K    *float64
-	ClaudeCodeOnly       *bool  // 仅允许 Claude Code 客户端
-	FallbackGroupID      *int64 // 降级分组 ID
+
+	AllowVideoGeneration  *bool
+	VideoGenerationRoute  *string
+	VideoPrice480pPerSec  *float64
+	VideoPrice720pPerSec  *float64
+	VideoPrice1080pPerSec *float64
+	VideoPrice4kPerSec    *float64
+
+	ClaudeCodeOnly  *bool  // 仅允许 Claude Code 客户端
+	FallbackGroupID *int64 // 降级分组 ID
 	// 无效请求兜底分组 ID（仅 anthropic 平台使用）
 	FallbackGroupIDOnInvalidRequest *int64
 	// 模型路由配置（仅 anthropic 平台使用）
@@ -2138,6 +2154,12 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	images2APIPrice2K := normalizePrice(input.Images2APIPrice2K)
 	images2APIPrice4K := normalizePrice(input.Images2APIPrice4K)
 	imageRateMultiplier := 1.0
+
+	videoPrice480p := normalizePrice(input.VideoPrice480pPerSec)
+	videoPrice720p := normalizePrice(input.VideoPrice720pPerSec)
+	videoPrice1080p := normalizePrice(input.VideoPrice1080pPerSec)
+	videoPrice4k := normalizePrice(input.VideoPrice4kPerSec)
+
 	if input.ImageRateMultiplier != nil {
 		if *input.ImageRateMultiplier < 0 {
 			return nil, errors.New("image_rate_multiplier must be >= 0")
@@ -2209,30 +2231,38 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	}
 
 	group := &Group{
-		Name:                            input.Name,
-		DisplayName:                     displayName,
-		Description:                     input.Description,
-		Platform:                        platform,
-		RateMultiplier:                  input.RateMultiplier,
-		RefundRateMultiplier:            refundRateMultiplier,
-		IsExclusive:                     input.IsExclusive,
-		UserSelectable:                  true,
-		Status:                          StatusActive,
-		SubscriptionType:                subscriptionType,
-		DailyLimitUSD:                   dailyLimit,
-		WeeklyLimitUSD:                  weeklyLimit,
-		MonthlyLimitUSD:                 monthlyLimit,
-		AllowImageGeneration:            input.AllowImageGeneration,
-		ImageGenerationRoute:            NormalizeGroupImageGenerationRoute(input.ImageGenerationRoute),
-		OpenAIImageMainModel:            openAIImageMainModel,
-		ImageRateIndependent:            input.ImageRateIndependent,
-		ImageRateMultiplier:             imageRateMultiplier,
-		ImagePrice1K:                    imagePrice1K,
-		ImagePrice2K:                    imagePrice2K,
-		ImagePrice4K:                    imagePrice4K,
-		Images2APIPrice1K:               images2APIPrice1K,
-		Images2APIPrice2K:               images2APIPrice2K,
-		Images2APIPrice4K:               images2APIPrice4K,
+		Name:                 input.Name,
+		DisplayName:          displayName,
+		Description:          input.Description,
+		Platform:             platform,
+		RateMultiplier:       input.RateMultiplier,
+		RefundRateMultiplier: refundRateMultiplier,
+		IsExclusive:          input.IsExclusive,
+		UserSelectable:       true,
+		Status:               StatusActive,
+		SubscriptionType:     subscriptionType,
+		DailyLimitUSD:        dailyLimit,
+		WeeklyLimitUSD:       weeklyLimit,
+		MonthlyLimitUSD:      monthlyLimit,
+		AllowImageGeneration: input.AllowImageGeneration,
+		ImageGenerationRoute: NormalizeGroupImageGenerationRoute(input.ImageGenerationRoute),
+		OpenAIImageMainModel: openAIImageMainModel,
+		ImageRateIndependent: input.ImageRateIndependent,
+		ImageRateMultiplier:  imageRateMultiplier,
+		ImagePrice1K:         imagePrice1K,
+		ImagePrice2K:         imagePrice2K,
+		ImagePrice4K:         imagePrice4K,
+		Images2APIPrice1K:    images2APIPrice1K,
+		Images2APIPrice2K:    images2APIPrice2K,
+		Images2APIPrice4K:    images2APIPrice4K,
+
+		AllowVideoGeneration:  input.AllowVideoGeneration,
+		VideoGenerationRoute:  NormalizeGroupVideoGenerationRoute(input.VideoGenerationRoute),
+		VideoPrice480pPerSec:  videoPrice480p,
+		VideoPrice720pPerSec:  videoPrice720p,
+		VideoPrice1080pPerSec: videoPrice1080p,
+		VideoPrice4kPerSec:    videoPrice4k,
+
 		ClaudeCodeOnly:                  input.ClaudeCodeOnly,
 		FallbackGroupID:                 input.FallbackGroupID,
 		FallbackGroupIDOnInvalidRequest: fallbackOnInvalidRequest,
@@ -2425,6 +2455,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.ImageGenerationRoute != nil {
 		group.ImageGenerationRoute = NormalizeGroupImageGenerationRoute(*input.ImageGenerationRoute)
 	}
+	if input.VideoGenerationRoute != nil {
+		group.VideoGenerationRoute = NormalizeGroupVideoGenerationRoute(*input.VideoGenerationRoute)
+	}
 	if input.OpenAIImageMainModel != nil {
 		model := NormalizeOpenAIImageMainModel(*input.OpenAIImageMainModel)
 		if err := ValidateOpenAIImageMainModel(model); err != nil {
@@ -2458,6 +2491,25 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.Images2APIPrice4K != nil {
 		group.Images2APIPrice4K = normalizePrice(input.Images2APIPrice4K)
+	}
+
+	if input.AllowVideoGeneration != nil {
+		group.AllowVideoGeneration = *input.AllowVideoGeneration
+	}
+	if input.VideoGenerationRoute != nil {
+		group.VideoGenerationRoute = NormalizeGroupVideoGenerationRoute(*input.VideoGenerationRoute)
+	}
+	if input.VideoPrice480pPerSec != nil {
+		group.VideoPrice480pPerSec = normalizePrice(input.VideoPrice480pPerSec)
+	}
+	if input.VideoPrice720pPerSec != nil {
+		group.VideoPrice720pPerSec = normalizePrice(input.VideoPrice720pPerSec)
+	}
+	if input.VideoPrice1080pPerSec != nil {
+		group.VideoPrice1080pPerSec = normalizePrice(input.VideoPrice1080pPerSec)
+	}
+	if input.VideoPrice4kPerSec != nil {
+		group.VideoPrice4kPerSec = normalizePrice(input.VideoPrice4kPerSec)
 	}
 
 	// Claude Code 客户端限制

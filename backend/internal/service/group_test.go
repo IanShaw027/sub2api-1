@@ -132,6 +132,12 @@ func TestNormalizeGroupImageGenerationRoute_PreservesWeb2API(t *testing.T) {
 	require.Equal(t, GroupImageGenerationRouteWeb2API, (&Group{ImageGenerationRoute: "web2api"}).EffectiveImageGenerationRoute())
 }
 
+func TestNormalizeGroupVideoGenerationRoute_DefaultsToNative(t *testing.T) {
+	require.Equal(t, "native", NormalizeGroupVideoGenerationRoute(""))
+	require.Equal(t, "native", NormalizeGroupVideoGenerationRoute("native"))
+	require.Equal(t, "native", (&Group{}).EffectiveVideoGenerationRoute())
+}
+
 func TestGroup_GetImagePriceConfigForRequestType_UsesImages2APIConfig(t *testing.T) {
 	price1K := 0.11
 	price2K := 0.22

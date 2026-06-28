@@ -105,6 +105,12 @@ type CreateGroupRequest struct {
 	ImagePrice1K                    *float64 `json:"image_price_1k"`
 	ImagePrice2K                    *float64 `json:"image_price_2k"`
 	ImagePrice4K                    *float64 `json:"image_price_4k"`
+	AllowVideoGeneration            bool     `json:"allow_video_generation"`
+	VideoGenerationRoute            string   `json:"video_generation_route"`
+	VideoPrice480pPerSec            *float64 `json:"video_price_480p_per_sec"`
+	VideoPrice720pPerSec            *float64 `json:"video_price_720p_per_sec"`
+	VideoPrice1080pPerSec           *float64 `json:"video_price_1080p_per_sec"`
+	VideoPrice4kPerSec              *float64 `json:"video_price_4k_per_sec"`
 	ClaudeCodeOnly                  bool     `json:"claude_code_only"`
 	FallbackGroupID                 *int64   `json:"fallback_group_id"`
 	FallbackGroupIDOnInvalidRequest *int64   `json:"fallback_group_id_on_invalid_request"`
@@ -151,6 +157,12 @@ type UpdateGroupRequest struct {
 	ImagePrice1K                    *float64 `json:"image_price_1k"`
 	ImagePrice2K                    *float64 `json:"image_price_2k"`
 	ImagePrice4K                    *float64 `json:"image_price_4k"`
+	AllowVideoGeneration            *bool    `json:"allow_video_generation"`
+	VideoGenerationRoute            *string  `json:"video_generation_route"`
+	VideoPrice480pPerSec            *float64 `json:"video_price_480p_per_sec"`
+	VideoPrice720pPerSec            *float64 `json:"video_price_720p_per_sec"`
+	VideoPrice1080pPerSec           *float64 `json:"video_price_1080p_per_sec"`
+	VideoPrice4kPerSec              *float64 `json:"video_price_4k_per_sec"`
 	ClaudeCodeOnly                  *bool    `json:"claude_code_only"`
 	FallbackGroupID                 *int64   `json:"fallback_group_id"`
 	FallbackGroupIDOnInvalidRequest *int64   `json:"fallback_group_id_on_invalid_request"`
@@ -310,6 +322,12 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		ImagePrice1K:                    req.ImagePrice1K,
 		ImagePrice2K:                    req.ImagePrice2K,
 		ImagePrice4K:                    req.ImagePrice4K,
+		AllowVideoGeneration:            req.AllowVideoGeneration,
+		VideoGenerationRoute:            req.VideoGenerationRoute,
+		VideoPrice480pPerSec:            req.VideoPrice480pPerSec,
+		VideoPrice720pPerSec:            req.VideoPrice720pPerSec,
+		VideoPrice1080pPerSec:           req.VideoPrice1080pPerSec,
+		VideoPrice4kPerSec:              req.VideoPrice4kPerSec,
 		ClaudeCodeOnly:                  req.ClaudeCodeOnly,
 		FallbackGroupID:                 req.FallbackGroupID,
 		FallbackGroupIDOnInvalidRequest: req.FallbackGroupIDOnInvalidRequest,
@@ -371,6 +389,12 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		ImagePrice1K:                    req.ImagePrice1K,
 		ImagePrice2K:                    req.ImagePrice2K,
 		ImagePrice4K:                    req.ImagePrice4K,
+		AllowVideoGeneration:            req.AllowVideoGeneration,
+		VideoGenerationRoute:            req.VideoGenerationRoute,
+		VideoPrice480pPerSec:            req.VideoPrice480pPerSec,
+		VideoPrice720pPerSec:            req.VideoPrice720pPerSec,
+		VideoPrice1080pPerSec:           req.VideoPrice1080pPerSec,
+		VideoPrice4kPerSec:              req.VideoPrice4kPerSec,
 		ClaudeCodeOnly:                  req.ClaudeCodeOnly,
 		FallbackGroupID:                 req.FallbackGroupID,
 		FallbackGroupIDOnInvalidRequest: req.FallbackGroupIDOnInvalidRequest,

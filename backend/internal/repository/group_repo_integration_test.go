@@ -144,6 +144,67 @@ func (s *GroupRepoSuite) TestGetByID_PreservesMessagesDispatchModelConfig() {
 	s.Require().Equal(group.MessagesDispatchModelConfig, got.MessagesDispatchModelConfig)
 }
 
+func (s *GroupRepoSuite) TestCreateUpdatePreservesVideoGenerationConfig() {
+	price480p := 0.01
+	price720p := 0.02
+	price1080p := 0.03
+	price4k := 0.04
+	group := &service.Group{
+		Name:                  "video-config",
+		Platform:              service.PlatformGrok,
+		RateMultiplier:        1.0,
+		IsExclusive:           false,
+		Status:                service.StatusActive,
+		SubscriptionType:      service.SubscriptionTypeStandard,
+		AllowVideoGeneration:  true,
+		VideoGenerationRoute:  "native",
+		VideoPrice480pPerSec:  &price480p,
+		VideoPrice720pPerSec:  &price720p,
+		VideoPrice1080pPerSec: &price1080p,
+		VideoPrice4kPerSec:    &price4k,
+	}
+
+	s.Require().NoError(s.repo.Create(s.ctx, group))
+
+	got, err := s.repo.GetByID(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().True(got.AllowVideoGeneration)
+	s.Require().Equal("native", got.VideoGenerationRoute)
+	s.Require().NotNil(got.VideoPrice480pPerSec)
+	s.Require().InDelta(price480p, *got.VideoPrice480pPerSec, 0.000001)
+	s.Require().NotNil(got.VideoPrice720pPerSec)
+	s.Require().InDelta(price720p, *got.VideoPrice720pPerSec, 0.000001)
+	s.Require().NotNil(got.VideoPrice1080pPerSec)
+	s.Require().InDelta(price1080p, *got.VideoPrice1080pPerSec, 0.000001)
+	s.Require().NotNil(got.VideoPrice4kPerSec)
+	s.Require().InDelta(price4k, *got.VideoPrice4kPerSec, 0.000001)
+
+	updated480p := 0.11
+	updated720p := 0.12
+	updated1080p := 0.13
+	updated4k := 0.14
+	got.AllowVideoGeneration = false
+	got.VideoGenerationRoute = "native"
+	got.VideoPrice480pPerSec = &updated480p
+	got.VideoPrice720pPerSec = &updated720p
+	got.VideoPrice1080pPerSec = &updated1080p
+	got.VideoPrice4kPerSec = &updated4k
+	s.Require().NoError(s.repo.Update(s.ctx, got))
+
+	afterUpdate, err := s.repo.GetByID(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().False(afterUpdate.AllowVideoGeneration)
+	s.Require().Equal("native", afterUpdate.VideoGenerationRoute)
+	s.Require().NotNil(afterUpdate.VideoPrice480pPerSec)
+	s.Require().InDelta(updated480p, *afterUpdate.VideoPrice480pPerSec, 0.000001)
+	s.Require().NotNil(afterUpdate.VideoPrice720pPerSec)
+	s.Require().InDelta(updated720p, *afterUpdate.VideoPrice720pPerSec, 0.000001)
+	s.Require().NotNil(afterUpdate.VideoPrice1080pPerSec)
+	s.Require().InDelta(updated1080p, *afterUpdate.VideoPrice1080pPerSec, 0.000001)
+	s.Require().NotNil(afterUpdate.VideoPrice4kPerSec)
+	s.Require().InDelta(updated4k, *afterUpdate.VideoPrice4kPerSec, 0.000001)
+}
+
 func (s *GroupRepoSuite) TestDelete() {
 	group := &service.Group{
 		Name:             "to-delete",

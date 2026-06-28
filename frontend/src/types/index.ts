@@ -739,6 +739,8 @@ export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 
 
 export type SubscriptionType = 'standard' | 'subscription'
 
+export type VideoGenerationRoute = 'native'
+
 export interface OpenAIMessagesDispatchModelConfig {
   opus_mapped_model?: string
   sonnet_mapped_model?: string
@@ -769,6 +771,13 @@ export interface Group {
   image_price_1k: number | null
   image_price_2k: number | null
   image_price_4k: number | null
+  // 视频生成计费配置
+  allow_video_generation: boolean
+  video_generation_route: VideoGenerationRoute
+  video_price_480p_per_sec: number | null
+  video_price_720p_per_sec: number | null
+  video_price_1080p_per_sec: number | null
+  video_price_4k_per_sec: number | null
   // Claude Code 客户端限制
   claude_code_only: boolean
   fallback_group_id: number | null
@@ -890,6 +899,12 @@ export interface CreateGroupRequest {
   image_price_1k?: number | null
   image_price_2k?: number | null
   image_price_4k?: number | null
+  allow_video_generation?: boolean
+  video_generation_route?: VideoGenerationRoute
+  video_price_480p_per_sec?: number | null
+  video_price_720p_per_sec?: number | null
+  video_price_1080p_per_sec?: number | null
+  video_price_4k_per_sec?: number | null
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
@@ -927,6 +942,12 @@ export interface UpdateGroupRequest {
   image_price_1k?: number | null
   image_price_2k?: number | null
   image_price_4k?: number | null
+  allow_video_generation?: boolean
+  video_generation_route?: VideoGenerationRoute
+  video_price_480p_per_sec?: number | null
+  video_price_720p_per_sec?: number | null
+  video_price_1080p_per_sec?: number | null
+  video_price_4k_per_sec?: number | null
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null

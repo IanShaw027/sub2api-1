@@ -14,6 +14,8 @@ type GroupModelsListConfig = domain.GroupModelsListConfig
 const (
 	GroupImageGenerationRouteCodex   = "codex"
 	GroupImageGenerationRouteWeb2API = "web2api"
+
+	GroupVideoGenerationRouteNative = "native"
 )
 
 type Group struct {
@@ -47,6 +49,14 @@ type Group struct {
 	Images2APIPrice1K    *float64
 	Images2APIPrice2K    *float64
 	Images2APIPrice4K    *float64
+
+	// 视频生成计费配置（按分辨率+秒数，与其他平台统一）
+	AllowVideoGeneration  bool
+	VideoGenerationRoute  string
+	VideoPrice480pPerSec  *float64
+	VideoPrice720pPerSec  *float64
+	VideoPrice1080pPerSec *float64
+	VideoPrice4kPerSec    *float64
 
 	// Claude Code 客户端限制
 	ClaudeCodeOnly  bool
@@ -115,6 +125,22 @@ func NormalizeGroupImageGenerationRoute(route string) string {
 	default:
 		return GroupImageGenerationRouteCodex
 	}
+}
+
+func NormalizeGroupVideoGenerationRoute(route string) string {
+	switch strings.ToLower(strings.TrimSpace(route)) {
+	case "", GroupVideoGenerationRouteNative, "openai", "codex":
+		return GroupVideoGenerationRouteNative
+	default:
+		return GroupVideoGenerationRouteNative
+	}
+}
+
+func (g *Group) EffectiveVideoGenerationRoute() string {
+	if g == nil {
+		return GroupVideoGenerationRouteNative
+	}
+	return NormalizeGroupVideoGenerationRoute(g.VideoGenerationRoute)
 }
 
 func (g *Group) EffectiveImageGenerationRoute() string {

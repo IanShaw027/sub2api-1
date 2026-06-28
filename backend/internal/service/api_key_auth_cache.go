@@ -79,6 +79,12 @@ type APIKeyAuthGroupSnapshot struct {
 	Images2APIPrice1K               *float64 `json:"images2api_price_1k,omitempty"`
 	Images2APIPrice2K               *float64 `json:"images2api_price_2k,omitempty"`
 	Images2APIPrice4K               *float64 `json:"images2api_price_4k,omitempty"`
+	AllowVideoGeneration            bool     `json:"allow_video_generation"`
+	VideoGenerationRoute            string   `json:"video_generation_route,omitempty"`
+	VideoPrice480pPerSec            *float64 `json:"video_price_480p_per_sec,omitempty"`
+	VideoPrice720pPerSec            *float64 `json:"video_price_720p_per_sec,omitempty"`
+	VideoPrice1080pPerSec           *float64 `json:"video_price_1080p_per_sec,omitempty"`
+	VideoPrice4kPerSec              *float64 `json:"video_price_4k_per_sec,omitempty"`
 	ClaudeCodeOnly                  bool     `json:"claude_code_only"`
 	FallbackGroupID                 *int64   `json:"fallback_group_id,omitempty"`
 	FallbackGroupIDOnInvalidRequest *int64   `json:"fallback_group_id_on_invalid_request,omitempty"`

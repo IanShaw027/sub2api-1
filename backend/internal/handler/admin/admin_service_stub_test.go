@@ -73,6 +73,9 @@ type stubAdminService struct {
 		calls     int
 	}
 	lastGenerateRedeemInput *service.GenerateRedeemCodesInput
+	createdGroups           []*service.CreateGroupInput
+	updatedGroupIDs         []int64
+	updatedGroups           []*service.UpdateGroupInput
 	mu                      sync.Mutex
 }
 
@@ -294,11 +297,16 @@ func (s *stubAdminService) GetGroupModelsListCandidates(ctx context.Context, id 
 }
 
 func (s *stubAdminService) CreateGroup(ctx context.Context, input *service.CreateGroupInput) (*service.Group, error) {
+	copied := *input
+	s.createdGroups = append(s.createdGroups, &copied)
 	group := service.Group{ID: 200, Name: input.Name, Status: service.StatusActive}
 	return &group, nil
 }
 
 func (s *stubAdminService) UpdateGroup(ctx context.Context, id int64, input *service.UpdateGroupInput) (*service.Group, error) {
+	copied := *input
+	s.updatedGroupIDs = append(s.updatedGroupIDs, id)
+	s.updatedGroups = append(s.updatedGroups, &copied)
 	group := service.Group{ID: id, Name: input.Name, Status: service.StatusActive}
 	return &group, nil
 }

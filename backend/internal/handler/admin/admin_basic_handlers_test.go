@@ -214,6 +214,74 @@ func TestGroupHandlerEndpoints(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
+func TestGroupHandlerMapsVideoGenerationFields(t *testing.T) {
+	router, adminSvc := setupAdminRouter()
+
+	body, err := json.Marshal(map[string]any{
+		"name":                      "video-create",
+		"platform":                  "grok",
+		"subscription_type":         "standard",
+		"allow_video_generation":    true,
+		"video_generation_route":    "native",
+		"video_price_480p_per_sec":  0.01,
+		"video_price_720p_per_sec":  0.02,
+		"video_price_1080p_per_sec": 0.03,
+		"video_price_4k_per_sec":    0.04,
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/groups", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, adminSvc.createdGroups, 1)
+	created := adminSvc.createdGroups[0]
+	require.True(t, created.AllowVideoGeneration)
+	require.Equal(t, "native", created.VideoGenerationRoute)
+	require.NotNil(t, created.VideoPrice480pPerSec)
+	require.InDelta(t, 0.01, *created.VideoPrice480pPerSec, 0.000001)
+	require.NotNil(t, created.VideoPrice720pPerSec)
+	require.InDelta(t, 0.02, *created.VideoPrice720pPerSec, 0.000001)
+	require.NotNil(t, created.VideoPrice1080pPerSec)
+	require.InDelta(t, 0.03, *created.VideoPrice1080pPerSec, 0.000001)
+	require.NotNil(t, created.VideoPrice4kPerSec)
+	require.InDelta(t, 0.04, *created.VideoPrice4kPerSec, 0.000001)
+
+	updateBody, err := json.Marshal(map[string]any{
+		"allow_video_generation":    false,
+		"video_generation_route":    "native",
+		"video_price_480p_per_sec":  0.11,
+		"video_price_720p_per_sec":  0.12,
+		"video_price_1080p_per_sec": 0.13,
+		"video_price_4k_per_sec":    0.14,
+	})
+	require.NoError(t, err)
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/admin/groups/2", bytes.NewReader(updateBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, []int64{2}, adminSvc.updatedGroupIDs)
+	require.Len(t, adminSvc.updatedGroups, 1)
+	updated := adminSvc.updatedGroups[0]
+	require.NotNil(t, updated.AllowVideoGeneration)
+	require.False(t, *updated.AllowVideoGeneration)
+	require.NotNil(t, updated.VideoGenerationRoute)
+	require.Equal(t, "native", *updated.VideoGenerationRoute)
+	require.NotNil(t, updated.VideoPrice480pPerSec)
+	require.InDelta(t, 0.11, *updated.VideoPrice480pPerSec, 0.000001)
+	require.NotNil(t, updated.VideoPrice720pPerSec)
+	require.InDelta(t, 0.12, *updated.VideoPrice720pPerSec, 0.000001)
+	require.NotNil(t, updated.VideoPrice1080pPerSec)
+	require.InDelta(t, 0.13, *updated.VideoPrice1080pPerSec, 0.000001)
+	require.NotNil(t, updated.VideoPrice4kPerSec)
+	require.InDelta(t, 0.14, *updated.VideoPrice4kPerSec, 0.000001)
+}
+
 func TestProxyHandlerEndpoints(t *testing.T) {
 	router, _ := setupAdminRouter()
 

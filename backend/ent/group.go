@@ -75,6 +75,18 @@ type Group struct {
 	Images2apiPrice2k *float64 `json:"images2api_price_2k,omitempty"`
 	// Images2apiPrice4k holds the value of the "images2api_price_4k" field.
 	Images2apiPrice4k *float64 `json:"images2api_price_4k,omitempty"`
+	// 是否允许该分组使用视频生成能力
+	AllowVideoGeneration bool `json:"allow_video_generation,omitempty"`
+	// 视频生成路由类型：provider native
+	VideoGenerationRoute string `json:"video_generation_route,omitempty"`
+	// VideoPrice480pPerSec holds the value of the "video_price_480p_per_sec" field.
+	VideoPrice480pPerSec *float64 `json:"video_price_480p_per_sec,omitempty"`
+	// VideoPrice720pPerSec holds the value of the "video_price_720p_per_sec" field.
+	VideoPrice720pPerSec *float64 `json:"video_price_720p_per_sec,omitempty"`
+	// VideoPrice1080pPerSec holds the value of the "video_price_1080p_per_sec" field.
+	VideoPrice1080pPerSec *float64 `json:"video_price_1080p_per_sec,omitempty"`
+	// VideoPrice4kPerSec holds the value of the "video_price_4k_per_sec" field.
+	VideoPrice4kPerSec *float64 `json:"video_price_4k_per_sec,omitempty"`
 	// 是否仅允许 Claude Code 客户端
 	ClaudeCodeOnly bool `json:"claude_code_only,omitempty"`
 	// 非 Claude Code 请求降级使用的分组 ID
@@ -213,13 +225,13 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case group.FieldModelRouting, group.FieldSupportedModelScopes, group.FieldMessagesDispatchModelConfig, group.FieldModelsListConfig:
 			values[i] = new([]byte)
-		case group.FieldIsExclusive, group.FieldUserSelectable, group.FieldAllowImageGeneration, group.FieldImageRateIndependent, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet:
+		case group.FieldIsExclusive, group.FieldUserSelectable, group.FieldAllowImageGeneration, group.FieldImageRateIndependent, group.FieldAllowVideoGeneration, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet:
 			values[i] = new(sql.NullBool)
-		case group.FieldRateMultiplier, group.FieldRefundRateMultiplier, group.FieldDailyLimitUsd, group.FieldWeeklyLimitUsd, group.FieldMonthlyLimitUsd, group.FieldImageRateMultiplier, group.FieldImagePrice1k, group.FieldImagePrice2k, group.FieldImagePrice4k, group.FieldImages2apiPrice1k, group.FieldImages2apiPrice2k, group.FieldImages2apiPrice4k:
+		case group.FieldRateMultiplier, group.FieldRefundRateMultiplier, group.FieldDailyLimitUsd, group.FieldWeeklyLimitUsd, group.FieldMonthlyLimitUsd, group.FieldImageRateMultiplier, group.FieldImagePrice1k, group.FieldImagePrice2k, group.FieldImagePrice4k, group.FieldImages2apiPrice1k, group.FieldImages2apiPrice2k, group.FieldImages2apiPrice4k, group.FieldVideoPrice480pPerSec, group.FieldVideoPrice720pPerSec, group.FieldVideoPrice1080pPerSec, group.FieldVideoPrice4kPerSec:
 			values[i] = new(sql.NullFloat64)
 		case group.FieldID, group.FieldDefaultValidityDays, group.FieldFallbackGroupID, group.FieldFallbackGroupIDOnInvalidRequest, group.FieldSortOrder, group.FieldRpmLimit:
 			values[i] = new(sql.NullInt64)
-		case group.FieldName, group.FieldDisplayName, group.FieldDescription, group.FieldStatus, group.FieldPlatform, group.FieldSubscriptionType, group.FieldImageGenerationRoute, group.FieldOpenaiImageMainModel, group.FieldDefaultMappedModel:
+		case group.FieldName, group.FieldDisplayName, group.FieldDescription, group.FieldStatus, group.FieldPlatform, group.FieldSubscriptionType, group.FieldImageGenerationRoute, group.FieldOpenaiImageMainModel, group.FieldVideoGenerationRoute, group.FieldDefaultMappedModel:
 			values[i] = new(sql.NullString)
 		case group.FieldCreatedAt, group.FieldUpdatedAt, group.FieldDeletedAt:
 			values[i] = new(sql.NullTime)
@@ -423,6 +435,46 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Images2apiPrice4k = new(float64)
 				*_m.Images2apiPrice4k = value.Float64
+			}
+		case group.FieldAllowVideoGeneration:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field allow_video_generation", values[i])
+			} else if value.Valid {
+				_m.AllowVideoGeneration = value.Bool
+			}
+		case group.FieldVideoGenerationRoute:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field video_generation_route", values[i])
+			} else if value.Valid {
+				_m.VideoGenerationRoute = value.String
+			}
+		case group.FieldVideoPrice480pPerSec:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field video_price_480p_per_sec", values[i])
+			} else if value.Valid {
+				_m.VideoPrice480pPerSec = new(float64)
+				*_m.VideoPrice480pPerSec = value.Float64
+			}
+		case group.FieldVideoPrice720pPerSec:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field video_price_720p_per_sec", values[i])
+			} else if value.Valid {
+				_m.VideoPrice720pPerSec = new(float64)
+				*_m.VideoPrice720pPerSec = value.Float64
+			}
+		case group.FieldVideoPrice1080pPerSec:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field video_price_1080p_per_sec", values[i])
+			} else if value.Valid {
+				_m.VideoPrice1080pPerSec = new(float64)
+				*_m.VideoPrice1080pPerSec = value.Float64
+			}
+		case group.FieldVideoPrice4kPerSec:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field video_price_4k_per_sec", values[i])
+			} else if value.Valid {
+				_m.VideoPrice4kPerSec = new(float64)
+				*_m.VideoPrice4kPerSec = value.Float64
 			}
 		case group.FieldClaudeCodeOnly:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -705,6 +757,32 @@ func (_m *Group) String() string {
 	builder.WriteString(", ")
 	if v := _m.Images2apiPrice4k; v != nil {
 		builder.WriteString("images2api_price_4k=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("allow_video_generation=")
+	builder.WriteString(fmt.Sprintf("%v", _m.AllowVideoGeneration))
+	builder.WriteString(", ")
+	builder.WriteString("video_generation_route=")
+	builder.WriteString(_m.VideoGenerationRoute)
+	builder.WriteString(", ")
+	if v := _m.VideoPrice480pPerSec; v != nil {
+		builder.WriteString("video_price_480p_per_sec=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.VideoPrice720pPerSec; v != nil {
+		builder.WriteString("video_price_720p_per_sec=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.VideoPrice1080pPerSec; v != nil {
+		builder.WriteString("video_price_1080p_per_sec=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.VideoPrice4kPerSec; v != nil {
+		builder.WriteString("video_price_4k_per_sec=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

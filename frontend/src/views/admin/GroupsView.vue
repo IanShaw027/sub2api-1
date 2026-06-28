@@ -970,6 +970,92 @@
           </template>
         </div>
 
+        <!-- 视频生成计费配置（通用平台能力） -->
+        <div class="border-t pt-4">
+          <label class="block mb-2 font-medium text-gray-700 dark:text-gray-300">
+            {{ t("admin.groups.videoPricing.title") }}
+          </label>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            {{ t("admin.groups.videoPricing.description") }}
+          </p>
+          <label class="mb-4 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              v-model="createForm.allow_video_generation"
+              type="checkbox"
+              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            {{ t("admin.groups.videoPricing.allowVideoGeneration") }}
+          </label>
+          <div v-if="createForm.allow_video_generation" class="space-y-4">
+            <div>
+              <label class="input-label">{{ t("admin.groups.videoPricing.routeLabel") }}</label>
+              <Select
+                v-model="createForm.video_generation_route"
+                :options="videoGenerationRouteOptions"
+              />
+            </div>
+            <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+              <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.videoPricing.pricePerSecond") }}
+              </div>
+              <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div>
+                  <label class="input-label">{{
+                    t("admin.groups.videoPricing.tier480pPrice", "480p ($/s)")
+                  }}</label>
+                  <input
+                    v-model.number="createForm.video_price_480p_per_sec"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    class="input"
+                    placeholder="0.01"
+                  />
+                </div>
+                <div>
+                  <label class="input-label">{{
+                    t("admin.groups.videoPricing.tier720pPrice", "720p ($/s)")
+                  }}</label>
+                  <input
+                    v-model.number="createForm.video_price_720p_per_sec"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    class="input"
+                    placeholder="0.02"
+                  />
+                </div>
+                <div>
+                  <label class="input-label">{{
+                    t("admin.groups.videoPricing.tier1080pPrice", "1080p ($/s)")
+                  }}</label>
+                  <input
+                    v-model.number="createForm.video_price_1080p_per_sec"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    class="input"
+                    placeholder="0.03"
+                  />
+                </div>
+                <div>
+                  <label class="input-label">{{
+                    t("admin.groups.videoPricing.tier4kPrice", "4K ($/s)")
+                  }}</label>
+                  <input
+                    v-model.number="createForm.video_price_4k_per_sec"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    class="input"
+                    placeholder="0.04"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 支持的模型系列（仅 antigravity 平台） -->
         <div v-if="createForm.platform === 'antigravity'" class="border-t pt-4">
           <div class="mb-1.5 flex items-center gap-1">
@@ -2379,6 +2465,92 @@
           </template>
         </div>
 
+        <!-- 视频生成计费配置（通用平台能力） -->
+        <div class="border-t pt-4">
+          <label class="block mb-2 font-medium text-gray-700 dark:text-gray-300">
+            {{ t("admin.groups.videoPricing.title") }}
+          </label>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            {{ t("admin.groups.videoPricing.description") }}
+          </p>
+          <label class="mb-4 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              v-model="editForm.allow_video_generation"
+              type="checkbox"
+              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            {{ t("admin.groups.videoPricing.allowVideoGeneration") }}
+          </label>
+          <div v-if="editForm.allow_video_generation" class="space-y-4">
+            <div>
+              <label class="input-label">{{ t("admin.groups.videoPricing.routeLabel") }}</label>
+              <Select
+                v-model="editForm.video_generation_route"
+                :options="videoGenerationRouteOptions"
+              />
+            </div>
+            <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+              <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.videoPricing.pricePerSecond") }}
+              </div>
+              <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div>
+                  <label class="input-label">{{
+                    t("admin.groups.videoPricing.tier480pPrice", "480p ($/s)")
+                  }}</label>
+                  <input
+                    v-model.number="editForm.video_price_480p_per_sec"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    class="input"
+                    placeholder="0.01"
+                  />
+                </div>
+                <div>
+                  <label class="input-label">{{
+                    t("admin.groups.videoPricing.tier720pPrice", "720p ($/s)")
+                  }}</label>
+                  <input
+                    v-model.number="editForm.video_price_720p_per_sec"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    class="input"
+                    placeholder="0.02"
+                  />
+                </div>
+                <div>
+                  <label class="input-label">{{
+                    t("admin.groups.videoPricing.tier1080pPrice", "1080p ($/s)")
+                  }}</label>
+                  <input
+                    v-model.number="editForm.video_price_1080p_per_sec"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    class="input"
+                    placeholder="0.03"
+                  />
+                </div>
+                <div>
+                  <label class="input-label">{{
+                    t("admin.groups.videoPricing.tier4kPrice", "4K ($/s)")
+                  }}</label>
+                  <input
+                    v-model.number="editForm.video_price_4k_per_sec"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    class="input"
+                    placeholder="0.04"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 支持的模型系列（仅 antigravity 平台） -->
         <div v-if="editForm.platform === 'antigravity'" class="border-t pt-4">
           <div class="mb-1.5 flex items-center gap-1">
@@ -3286,6 +3458,7 @@ import type {
   GroupPlatform,
   SubscriptionType,
   UpdateGroupRequest,
+  VideoGenerationRoute,
 } from "@/types";
 import type { Column } from "@/components/common/types";
 import AppLayout from "@/components/layout/AppLayout.vue";
@@ -3595,6 +3768,13 @@ const createForm = reactive({
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
+  // 视频生成计费配置（通用平台能力）
+  allow_video_generation: false,
+  video_generation_route: "native" as VideoGenerationRoute,
+  video_price_480p_per_sec: null as number | null,
+  video_price_720p_per_sec: null as number | null,
+  video_price_1080p_per_sec: null as number | null,
+  video_price_4k_per_sec: null as number | null,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -3930,6 +4110,13 @@ const editForm = reactive({
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
+  // 视频生成计费配置（通用平台能力）
+  allow_video_generation: false,
+  video_generation_route: "native" as VideoGenerationRoute,
+  video_price_480p_per_sec: null as number | null,
+  video_price_720p_per_sec: null as number | null,
+  video_price_1080p_per_sec: null as number | null,
+  video_price_4k_per_sec: null as number | null,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -3965,6 +4152,15 @@ type ImagePricingFormState = {
   image_price_4k: number | string | null;
 };
 
+type VideoPricingFormState = {
+  allow_video_generation: boolean;
+  video_generation_route: VideoGenerationRoute;
+  video_price_480p_per_sec: number | string | null;
+  video_price_720p_per_sec: number | string | null;
+  video_price_1080p_per_sec: number | string | null;
+  video_price_4k_per_sec: number | string | null;
+};
+
 const imagePricingTiers = [
   {
     key: "image_price_1k",
@@ -3985,6 +4181,10 @@ const imagePricingTiers = [
 
 const imageGenerationRouteOptions = computed(() => [
   { value: "codex", label: t("admin.groups.imagePricing.routeCodex") },
+]);
+
+const videoGenerationRouteOptions = computed(() => [
+  { value: "native", label: t("admin.groups.videoPricing.routeNative") },
 ]);
 
 const normalizePreviewNumber = (value: number | string | null | undefined, fallback = 0) => {
@@ -4218,6 +4418,7 @@ const closeCreateModal = () => {
   createForm.image_price_1k = null;
   createForm.image_price_2k = null;
   createForm.image_price_4k = null;
+  resetVideoPricingFormState(createForm);
   createForm.claude_code_only = false;
   createForm.fallback_group_id = null;
   createForm.fallback_group_id_on_invalid_request = null;
@@ -4269,6 +4470,50 @@ const normalizeNullablePrice = (
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const resetVideoPricingFormState = (form: VideoPricingFormState) => {
+  form.allow_video_generation = false;
+  form.video_generation_route = "native";
+  form.video_price_480p_per_sec = null;
+  form.video_price_720p_per_sec = null;
+  form.video_price_1080p_per_sec = null;
+  form.video_price_4k_per_sec = null;
+};
+
+const deriveVideoPricingFormState = (group: AdminGroup): VideoPricingFormState => ({
+  allow_video_generation: group.allow_video_generation === true,
+  video_generation_route: group.video_generation_route || "native",
+  video_price_480p_per_sec: group.video_price_480p_per_sec ?? null,
+  video_price_720p_per_sec: group.video_price_720p_per_sec ?? null,
+  video_price_1080p_per_sec: group.video_price_1080p_per_sec ?? null,
+  video_price_4k_per_sec: group.video_price_4k_per_sec ?? null,
+});
+
+const normalizeVideoPricingPayload = (
+  payload: Partial<VideoPricingFormState> & { platform?: string },
+) => {
+  if (payload.allow_video_generation !== true) {
+    payload.allow_video_generation = false;
+    payload.video_generation_route = "native";
+    payload.video_price_480p_per_sec = null;
+    payload.video_price_720p_per_sec = null;
+    payload.video_price_1080p_per_sec = null;
+    payload.video_price_4k_per_sec = null;
+    return;
+  }
+
+  payload.video_generation_route = "native";
+  payload.video_price_480p_per_sec = normalizeNullablePrice(
+    payload.video_price_480p_per_sec,
+  );
+  payload.video_price_720p_per_sec = normalizeNullablePrice(
+    payload.video_price_720p_per_sec,
+  );
+  payload.video_price_1080p_per_sec = normalizeNullablePrice(
+    payload.video_price_1080p_per_sec,
+  );
+  payload.video_price_4k_per_sec = normalizeNullablePrice(payload.video_price_4k_per_sec);
 };
 
 const openAIImageTypeSelectionMessage = () =>
@@ -4364,6 +4609,7 @@ const handleCreateGroup = async () => {
     requestData.image_price_1k = normalizeNullablePrice(requestData.image_price_1k);
     requestData.image_price_2k = normalizeNullablePrice(requestData.image_price_2k);
     requestData.image_price_4k = normalizeNullablePrice(requestData.image_price_4k);
+    normalizeVideoPricingPayload(requestData);
     applyOpenAIImageTypeSelection(
       requestData as OpenAIImageTypeSelectionRequest & OpenAIImageSelectionPayload,
     );
@@ -4406,6 +4652,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.weekly_limit_usd = group.weekly_limit_usd;
   editForm.monthly_limit_usd = group.monthly_limit_usd;
   Object.assign(editForm, deriveOpenAIImageFormState(group));
+  Object.assign(editForm, deriveVideoPricingFormState(group));
   editForm.claude_code_only = group.claude_code_only || false;
   editForm.fallback_group_id = group.fallback_group_id;
   editForm.fallback_group_id_on_invalid_request =
@@ -4456,6 +4703,7 @@ const closeEditModal = () => {
   editModelRoutingRules.value = [];
   editForm.copy_accounts_from_group_ids = [];
   resetMessagesDispatchFormState(editForm);
+  resetVideoPricingFormState(editForm);
   resetModelsListState(editModelsListState);
 };
 
@@ -4524,6 +4772,7 @@ const handleUpdateGroup = async () => {
     payload.image_price_1k = normalizeNullablePrice(payload.image_price_1k);
     payload.image_price_2k = normalizeNullablePrice(payload.image_price_2k);
     payload.image_price_4k = normalizeNullablePrice(payload.image_price_4k);
+    normalizeVideoPricingPayload(payload);
     applyOpenAIImageTypeSelection(
       payload as OpenAIImageTypeSelectionRequest & OpenAIImageSelectionPayload,
     );

@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 11 // v11: reload snapshots for custom models_list_config and OpenAI image main model
+const apiKeyAuthSnapshotVersion = 12 // v12: reload snapshots for group video generation config
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -271,6 +271,12 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			Images2APIPrice1K:               apiKey.Group.Images2APIPrice1K,
 			Images2APIPrice2K:               apiKey.Group.Images2APIPrice2K,
 			Images2APIPrice4K:               apiKey.Group.Images2APIPrice4K,
+			AllowVideoGeneration:            apiKey.Group.AllowVideoGeneration,
+			VideoGenerationRoute:            apiKey.Group.EffectiveVideoGenerationRoute(),
+			VideoPrice480pPerSec:            apiKey.Group.VideoPrice480pPerSec,
+			VideoPrice720pPerSec:            apiKey.Group.VideoPrice720pPerSec,
+			VideoPrice1080pPerSec:           apiKey.Group.VideoPrice1080pPerSec,
+			VideoPrice4kPerSec:              apiKey.Group.VideoPrice4kPerSec,
 			ClaudeCodeOnly:                  apiKey.Group.ClaudeCodeOnly,
 			FallbackGroupID:                 apiKey.Group.FallbackGroupID,
 			FallbackGroupIDOnInvalidRequest: apiKey.Group.FallbackGroupIDOnInvalidRequest,
@@ -351,6 +357,12 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			Images2APIPrice1K:               snapshot.Group.Images2APIPrice1K,
 			Images2APIPrice2K:               snapshot.Group.Images2APIPrice2K,
 			Images2APIPrice4K:               snapshot.Group.Images2APIPrice4K,
+			AllowVideoGeneration:            snapshot.Group.AllowVideoGeneration,
+			VideoGenerationRoute:            NormalizeGroupVideoGenerationRoute(snapshot.Group.VideoGenerationRoute),
+			VideoPrice480pPerSec:            snapshot.Group.VideoPrice480pPerSec,
+			VideoPrice720pPerSec:            snapshot.Group.VideoPrice720pPerSec,
+			VideoPrice1080pPerSec:           snapshot.Group.VideoPrice1080pPerSec,
+			VideoPrice4kPerSec:              snapshot.Group.VideoPrice4kPerSec,
 			ClaudeCodeOnly:                  snapshot.Group.ClaudeCodeOnly,
 			FallbackGroupID:                 snapshot.Group.FallbackGroupID,
 			FallbackGroupIDOnInvalidRequest: snapshot.Group.FallbackGroupIDOnInvalidRequest,

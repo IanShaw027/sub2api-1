@@ -61,6 +61,12 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 		SetNillableImages2apiPrice1k(groupIn.Images2APIPrice1K).
 		SetNillableImages2apiPrice2k(groupIn.Images2APIPrice2K).
 		SetNillableImages2apiPrice4k(groupIn.Images2APIPrice4K).
+		SetAllowVideoGeneration(groupIn.AllowVideoGeneration).
+		SetVideoGenerationRoute(groupIn.EffectiveVideoGenerationRoute()).
+		SetNillableVideoPrice480pPerSec(groupIn.VideoPrice480pPerSec).
+		SetNillableVideoPrice720pPerSec(groupIn.VideoPrice720pPerSec).
+		SetNillableVideoPrice1080pPerSec(groupIn.VideoPrice1080pPerSec).
+		SetNillableVideoPrice4kPerSec(groupIn.VideoPrice4kPerSec).
 		SetDefaultValidityDays(groupIn.DefaultValidityDays).
 		SetClaudeCodeOnly(groupIn.ClaudeCodeOnly).
 		SetNillableFallbackGroupID(groupIn.FallbackGroupID).
@@ -159,6 +165,12 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		SetNillableImages2apiPrice1k(groupIn.Images2APIPrice1K).
 		SetNillableImages2apiPrice2k(groupIn.Images2APIPrice2K).
 		SetNillableImages2apiPrice4k(groupIn.Images2APIPrice4K).
+		SetAllowVideoGeneration(groupIn.AllowVideoGeneration).
+		SetVideoGenerationRoute(groupIn.EffectiveVideoGenerationRoute()).
+		SetNillableVideoPrice480pPerSec(groupIn.VideoPrice480pPerSec).
+		SetNillableVideoPrice720pPerSec(groupIn.VideoPrice720pPerSec).
+		SetNillableVideoPrice1080pPerSec(groupIn.VideoPrice1080pPerSec).
+		SetNillableVideoPrice4kPerSec(groupIn.VideoPrice4kPerSec).
 		SetDefaultValidityDays(groupIn.DefaultValidityDays).
 		SetClaudeCodeOnly(groupIn.ClaudeCodeOnly).
 		SetModelRoutingEnabled(groupIn.ModelRoutingEnabled).
@@ -221,6 +233,26 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		builder = builder.SetImages2apiPrice4k(*groupIn.Images2APIPrice4K)
 	} else {
 		builder = builder.ClearImages2apiPrice4k()
+	}
+	if groupIn.VideoPrice480pPerSec != nil {
+		builder = builder.SetVideoPrice480pPerSec(*groupIn.VideoPrice480pPerSec)
+	} else {
+		builder = builder.ClearVideoPrice480pPerSec()
+	}
+	if groupIn.VideoPrice720pPerSec != nil {
+		builder = builder.SetVideoPrice720pPerSec(*groupIn.VideoPrice720pPerSec)
+	} else {
+		builder = builder.ClearVideoPrice720pPerSec()
+	}
+	if groupIn.VideoPrice1080pPerSec != nil {
+		builder = builder.SetVideoPrice1080pPerSec(*groupIn.VideoPrice1080pPerSec)
+	} else {
+		builder = builder.ClearVideoPrice1080pPerSec()
+	}
+	if groupIn.VideoPrice4kPerSec != nil {
+		builder = builder.SetVideoPrice4kPerSec(*groupIn.VideoPrice4kPerSec)
+	} else {
+		builder = builder.ClearVideoPrice4kPerSec()
 	}
 
 	// 处理 FallbackGroupID：nil 时清除，否则设置

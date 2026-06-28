@@ -38915,6 +38915,16 @@ type GroupMutation struct {
 	addimages2api_price_2k                  *float64
 	images2api_price_4k                     *float64
 	addimages2api_price_4k                  *float64
+	allow_video_generation                  *bool
+	video_generation_route                  *string
+	video_price_480p_per_sec                *float64
+	addvideo_price_480p_per_sec             *float64
+	video_price_720p_per_sec                *float64
+	addvideo_price_720p_per_sec             *float64
+	video_price_1080p_per_sec               *float64
+	addvideo_price_1080p_per_sec            *float64
+	video_price_4k_per_sec                  *float64
+	addvideo_price_4k_per_sec               *float64
 	claude_code_only                        *bool
 	fallback_group_id                       *int64
 	addfallback_group_id                    *int64
@@ -40490,6 +40500,358 @@ func (m *GroupMutation) ResetImages2apiPrice4k() {
 	delete(m.clearedFields, group.FieldImages2apiPrice4k)
 }
 
+// SetAllowVideoGeneration sets the "allow_video_generation" field.
+func (m *GroupMutation) SetAllowVideoGeneration(b bool) {
+	m.allow_video_generation = &b
+}
+
+// AllowVideoGeneration returns the value of the "allow_video_generation" field in the mutation.
+func (m *GroupMutation) AllowVideoGeneration() (r bool, exists bool) {
+	v := m.allow_video_generation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowVideoGeneration returns the old "allow_video_generation" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldAllowVideoGeneration(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowVideoGeneration is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowVideoGeneration requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowVideoGeneration: %w", err)
+	}
+	return oldValue.AllowVideoGeneration, nil
+}
+
+// ResetAllowVideoGeneration resets all changes to the "allow_video_generation" field.
+func (m *GroupMutation) ResetAllowVideoGeneration() {
+	m.allow_video_generation = nil
+}
+
+// SetVideoGenerationRoute sets the "video_generation_route" field.
+func (m *GroupMutation) SetVideoGenerationRoute(s string) {
+	m.video_generation_route = &s
+}
+
+// VideoGenerationRoute returns the value of the "video_generation_route" field in the mutation.
+func (m *GroupMutation) VideoGenerationRoute() (r string, exists bool) {
+	v := m.video_generation_route
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVideoGenerationRoute returns the old "video_generation_route" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldVideoGenerationRoute(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVideoGenerationRoute is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVideoGenerationRoute requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVideoGenerationRoute: %w", err)
+	}
+	return oldValue.VideoGenerationRoute, nil
+}
+
+// ResetVideoGenerationRoute resets all changes to the "video_generation_route" field.
+func (m *GroupMutation) ResetVideoGenerationRoute() {
+	m.video_generation_route = nil
+}
+
+// SetVideoPrice480pPerSec sets the "video_price_480p_per_sec" field.
+func (m *GroupMutation) SetVideoPrice480pPerSec(f float64) {
+	m.video_price_480p_per_sec = &f
+	m.addvideo_price_480p_per_sec = nil
+}
+
+// VideoPrice480pPerSec returns the value of the "video_price_480p_per_sec" field in the mutation.
+func (m *GroupMutation) VideoPrice480pPerSec() (r float64, exists bool) {
+	v := m.video_price_480p_per_sec
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVideoPrice480pPerSec returns the old "video_price_480p_per_sec" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldVideoPrice480pPerSec(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVideoPrice480pPerSec is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVideoPrice480pPerSec requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVideoPrice480pPerSec: %w", err)
+	}
+	return oldValue.VideoPrice480pPerSec, nil
+}
+
+// AddVideoPrice480pPerSec adds f to the "video_price_480p_per_sec" field.
+func (m *GroupMutation) AddVideoPrice480pPerSec(f float64) {
+	if m.addvideo_price_480p_per_sec != nil {
+		*m.addvideo_price_480p_per_sec += f
+	} else {
+		m.addvideo_price_480p_per_sec = &f
+	}
+}
+
+// AddedVideoPrice480pPerSec returns the value that was added to the "video_price_480p_per_sec" field in this mutation.
+func (m *GroupMutation) AddedVideoPrice480pPerSec() (r float64, exists bool) {
+	v := m.addvideo_price_480p_per_sec
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearVideoPrice480pPerSec clears the value of the "video_price_480p_per_sec" field.
+func (m *GroupMutation) ClearVideoPrice480pPerSec() {
+	m.video_price_480p_per_sec = nil
+	m.addvideo_price_480p_per_sec = nil
+	m.clearedFields[group.FieldVideoPrice480pPerSec] = struct{}{}
+}
+
+// VideoPrice480pPerSecCleared returns if the "video_price_480p_per_sec" field was cleared in this mutation.
+func (m *GroupMutation) VideoPrice480pPerSecCleared() bool {
+	_, ok := m.clearedFields[group.FieldVideoPrice480pPerSec]
+	return ok
+}
+
+// ResetVideoPrice480pPerSec resets all changes to the "video_price_480p_per_sec" field.
+func (m *GroupMutation) ResetVideoPrice480pPerSec() {
+	m.video_price_480p_per_sec = nil
+	m.addvideo_price_480p_per_sec = nil
+	delete(m.clearedFields, group.FieldVideoPrice480pPerSec)
+}
+
+// SetVideoPrice720pPerSec sets the "video_price_720p_per_sec" field.
+func (m *GroupMutation) SetVideoPrice720pPerSec(f float64) {
+	m.video_price_720p_per_sec = &f
+	m.addvideo_price_720p_per_sec = nil
+}
+
+// VideoPrice720pPerSec returns the value of the "video_price_720p_per_sec" field in the mutation.
+func (m *GroupMutation) VideoPrice720pPerSec() (r float64, exists bool) {
+	v := m.video_price_720p_per_sec
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVideoPrice720pPerSec returns the old "video_price_720p_per_sec" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldVideoPrice720pPerSec(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVideoPrice720pPerSec is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVideoPrice720pPerSec requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVideoPrice720pPerSec: %w", err)
+	}
+	return oldValue.VideoPrice720pPerSec, nil
+}
+
+// AddVideoPrice720pPerSec adds f to the "video_price_720p_per_sec" field.
+func (m *GroupMutation) AddVideoPrice720pPerSec(f float64) {
+	if m.addvideo_price_720p_per_sec != nil {
+		*m.addvideo_price_720p_per_sec += f
+	} else {
+		m.addvideo_price_720p_per_sec = &f
+	}
+}
+
+// AddedVideoPrice720pPerSec returns the value that was added to the "video_price_720p_per_sec" field in this mutation.
+func (m *GroupMutation) AddedVideoPrice720pPerSec() (r float64, exists bool) {
+	v := m.addvideo_price_720p_per_sec
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearVideoPrice720pPerSec clears the value of the "video_price_720p_per_sec" field.
+func (m *GroupMutation) ClearVideoPrice720pPerSec() {
+	m.video_price_720p_per_sec = nil
+	m.addvideo_price_720p_per_sec = nil
+	m.clearedFields[group.FieldVideoPrice720pPerSec] = struct{}{}
+}
+
+// VideoPrice720pPerSecCleared returns if the "video_price_720p_per_sec" field was cleared in this mutation.
+func (m *GroupMutation) VideoPrice720pPerSecCleared() bool {
+	_, ok := m.clearedFields[group.FieldVideoPrice720pPerSec]
+	return ok
+}
+
+// ResetVideoPrice720pPerSec resets all changes to the "video_price_720p_per_sec" field.
+func (m *GroupMutation) ResetVideoPrice720pPerSec() {
+	m.video_price_720p_per_sec = nil
+	m.addvideo_price_720p_per_sec = nil
+	delete(m.clearedFields, group.FieldVideoPrice720pPerSec)
+}
+
+// SetVideoPrice1080pPerSec sets the "video_price_1080p_per_sec" field.
+func (m *GroupMutation) SetVideoPrice1080pPerSec(f float64) {
+	m.video_price_1080p_per_sec = &f
+	m.addvideo_price_1080p_per_sec = nil
+}
+
+// VideoPrice1080pPerSec returns the value of the "video_price_1080p_per_sec" field in the mutation.
+func (m *GroupMutation) VideoPrice1080pPerSec() (r float64, exists bool) {
+	v := m.video_price_1080p_per_sec
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVideoPrice1080pPerSec returns the old "video_price_1080p_per_sec" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldVideoPrice1080pPerSec(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVideoPrice1080pPerSec is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVideoPrice1080pPerSec requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVideoPrice1080pPerSec: %w", err)
+	}
+	return oldValue.VideoPrice1080pPerSec, nil
+}
+
+// AddVideoPrice1080pPerSec adds f to the "video_price_1080p_per_sec" field.
+func (m *GroupMutation) AddVideoPrice1080pPerSec(f float64) {
+	if m.addvideo_price_1080p_per_sec != nil {
+		*m.addvideo_price_1080p_per_sec += f
+	} else {
+		m.addvideo_price_1080p_per_sec = &f
+	}
+}
+
+// AddedVideoPrice1080pPerSec returns the value that was added to the "video_price_1080p_per_sec" field in this mutation.
+func (m *GroupMutation) AddedVideoPrice1080pPerSec() (r float64, exists bool) {
+	v := m.addvideo_price_1080p_per_sec
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearVideoPrice1080pPerSec clears the value of the "video_price_1080p_per_sec" field.
+func (m *GroupMutation) ClearVideoPrice1080pPerSec() {
+	m.video_price_1080p_per_sec = nil
+	m.addvideo_price_1080p_per_sec = nil
+	m.clearedFields[group.FieldVideoPrice1080pPerSec] = struct{}{}
+}
+
+// VideoPrice1080pPerSecCleared returns if the "video_price_1080p_per_sec" field was cleared in this mutation.
+func (m *GroupMutation) VideoPrice1080pPerSecCleared() bool {
+	_, ok := m.clearedFields[group.FieldVideoPrice1080pPerSec]
+	return ok
+}
+
+// ResetVideoPrice1080pPerSec resets all changes to the "video_price_1080p_per_sec" field.
+func (m *GroupMutation) ResetVideoPrice1080pPerSec() {
+	m.video_price_1080p_per_sec = nil
+	m.addvideo_price_1080p_per_sec = nil
+	delete(m.clearedFields, group.FieldVideoPrice1080pPerSec)
+}
+
+// SetVideoPrice4kPerSec sets the "video_price_4k_per_sec" field.
+func (m *GroupMutation) SetVideoPrice4kPerSec(f float64) {
+	m.video_price_4k_per_sec = &f
+	m.addvideo_price_4k_per_sec = nil
+}
+
+// VideoPrice4kPerSec returns the value of the "video_price_4k_per_sec" field in the mutation.
+func (m *GroupMutation) VideoPrice4kPerSec() (r float64, exists bool) {
+	v := m.video_price_4k_per_sec
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVideoPrice4kPerSec returns the old "video_price_4k_per_sec" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldVideoPrice4kPerSec(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVideoPrice4kPerSec is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVideoPrice4kPerSec requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVideoPrice4kPerSec: %w", err)
+	}
+	return oldValue.VideoPrice4kPerSec, nil
+}
+
+// AddVideoPrice4kPerSec adds f to the "video_price_4k_per_sec" field.
+func (m *GroupMutation) AddVideoPrice4kPerSec(f float64) {
+	if m.addvideo_price_4k_per_sec != nil {
+		*m.addvideo_price_4k_per_sec += f
+	} else {
+		m.addvideo_price_4k_per_sec = &f
+	}
+}
+
+// AddedVideoPrice4kPerSec returns the value that was added to the "video_price_4k_per_sec" field in this mutation.
+func (m *GroupMutation) AddedVideoPrice4kPerSec() (r float64, exists bool) {
+	v := m.addvideo_price_4k_per_sec
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearVideoPrice4kPerSec clears the value of the "video_price_4k_per_sec" field.
+func (m *GroupMutation) ClearVideoPrice4kPerSec() {
+	m.video_price_4k_per_sec = nil
+	m.addvideo_price_4k_per_sec = nil
+	m.clearedFields[group.FieldVideoPrice4kPerSec] = struct{}{}
+}
+
+// VideoPrice4kPerSecCleared returns if the "video_price_4k_per_sec" field was cleared in this mutation.
+func (m *GroupMutation) VideoPrice4kPerSecCleared() bool {
+	_, ok := m.clearedFields[group.FieldVideoPrice4kPerSec]
+	return ok
+}
+
+// ResetVideoPrice4kPerSec resets all changes to the "video_price_4k_per_sec" field.
+func (m *GroupMutation) ResetVideoPrice4kPerSec() {
+	m.video_price_4k_per_sec = nil
+	m.addvideo_price_4k_per_sec = nil
+	delete(m.clearedFields, group.FieldVideoPrice4kPerSec)
+}
+
 // SetClaudeCodeOnly sets the "claude_code_only" field.
 func (m *GroupMutation) SetClaudeCodeOnly(b bool) {
 	m.claude_code_only = &b
@@ -41524,7 +41886,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 43)
+	fields := make([]string, 0, 49)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -41608,6 +41970,24 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.images2api_price_4k != nil {
 		fields = append(fields, group.FieldImages2apiPrice4k)
+	}
+	if m.allow_video_generation != nil {
+		fields = append(fields, group.FieldAllowVideoGeneration)
+	}
+	if m.video_generation_route != nil {
+		fields = append(fields, group.FieldVideoGenerationRoute)
+	}
+	if m.video_price_480p_per_sec != nil {
+		fields = append(fields, group.FieldVideoPrice480pPerSec)
+	}
+	if m.video_price_720p_per_sec != nil {
+		fields = append(fields, group.FieldVideoPrice720pPerSec)
+	}
+	if m.video_price_1080p_per_sec != nil {
+		fields = append(fields, group.FieldVideoPrice1080pPerSec)
+	}
+	if m.video_price_4k_per_sec != nil {
+		fields = append(fields, group.FieldVideoPrice4kPerSec)
 	}
 	if m.claude_code_only != nil {
 		fields = append(fields, group.FieldClaudeCodeOnly)
@@ -41718,6 +42098,18 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.Images2apiPrice2k()
 	case group.FieldImages2apiPrice4k:
 		return m.Images2apiPrice4k()
+	case group.FieldAllowVideoGeneration:
+		return m.AllowVideoGeneration()
+	case group.FieldVideoGenerationRoute:
+		return m.VideoGenerationRoute()
+	case group.FieldVideoPrice480pPerSec:
+		return m.VideoPrice480pPerSec()
+	case group.FieldVideoPrice720pPerSec:
+		return m.VideoPrice720pPerSec()
+	case group.FieldVideoPrice1080pPerSec:
+		return m.VideoPrice1080pPerSec()
+	case group.FieldVideoPrice4kPerSec:
+		return m.VideoPrice4kPerSec()
 	case group.FieldClaudeCodeOnly:
 		return m.ClaudeCodeOnly()
 	case group.FieldFallbackGroupID:
@@ -41813,6 +42205,18 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldImages2apiPrice2k(ctx)
 	case group.FieldImages2apiPrice4k:
 		return m.OldImages2apiPrice4k(ctx)
+	case group.FieldAllowVideoGeneration:
+		return m.OldAllowVideoGeneration(ctx)
+	case group.FieldVideoGenerationRoute:
+		return m.OldVideoGenerationRoute(ctx)
+	case group.FieldVideoPrice480pPerSec:
+		return m.OldVideoPrice480pPerSec(ctx)
+	case group.FieldVideoPrice720pPerSec:
+		return m.OldVideoPrice720pPerSec(ctx)
+	case group.FieldVideoPrice1080pPerSec:
+		return m.OldVideoPrice1080pPerSec(ctx)
+	case group.FieldVideoPrice4kPerSec:
+		return m.OldVideoPrice4kPerSec(ctx)
 	case group.FieldClaudeCodeOnly:
 		return m.OldClaudeCodeOnly(ctx)
 	case group.FieldFallbackGroupID:
@@ -42048,6 +42452,48 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetImages2apiPrice4k(v)
 		return nil
+	case group.FieldAllowVideoGeneration:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowVideoGeneration(v)
+		return nil
+	case group.FieldVideoGenerationRoute:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVideoGenerationRoute(v)
+		return nil
+	case group.FieldVideoPrice480pPerSec:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVideoPrice480pPerSec(v)
+		return nil
+	case group.FieldVideoPrice720pPerSec:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVideoPrice720pPerSec(v)
+		return nil
+	case group.FieldVideoPrice1080pPerSec:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVideoPrice1080pPerSec(v)
+		return nil
+	case group.FieldVideoPrice4kPerSec:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVideoPrice4kPerSec(v)
+		return nil
 	case group.FieldClaudeCodeOnly:
 		v, ok := value.(bool)
 		if !ok {
@@ -42200,6 +42646,18 @@ func (m *GroupMutation) AddedFields() []string {
 	if m.addimages2api_price_4k != nil {
 		fields = append(fields, group.FieldImages2apiPrice4k)
 	}
+	if m.addvideo_price_480p_per_sec != nil {
+		fields = append(fields, group.FieldVideoPrice480pPerSec)
+	}
+	if m.addvideo_price_720p_per_sec != nil {
+		fields = append(fields, group.FieldVideoPrice720pPerSec)
+	}
+	if m.addvideo_price_1080p_per_sec != nil {
+		fields = append(fields, group.FieldVideoPrice1080pPerSec)
+	}
+	if m.addvideo_price_4k_per_sec != nil {
+		fields = append(fields, group.FieldVideoPrice4kPerSec)
+	}
 	if m.addfallback_group_id != nil {
 		fields = append(fields, group.FieldFallbackGroupID)
 	}
@@ -42246,6 +42704,14 @@ func (m *GroupMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedImages2apiPrice2k()
 	case group.FieldImages2apiPrice4k:
 		return m.AddedImages2apiPrice4k()
+	case group.FieldVideoPrice480pPerSec:
+		return m.AddedVideoPrice480pPerSec()
+	case group.FieldVideoPrice720pPerSec:
+		return m.AddedVideoPrice720pPerSec()
+	case group.FieldVideoPrice1080pPerSec:
+		return m.AddedVideoPrice1080pPerSec()
+	case group.FieldVideoPrice4kPerSec:
+		return m.AddedVideoPrice4kPerSec()
 	case group.FieldFallbackGroupID:
 		return m.AddedFallbackGroupID()
 	case group.FieldFallbackGroupIDOnInvalidRequest:
@@ -42354,6 +42820,34 @@ func (m *GroupMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddImages2apiPrice4k(v)
 		return nil
+	case group.FieldVideoPrice480pPerSec:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddVideoPrice480pPerSec(v)
+		return nil
+	case group.FieldVideoPrice720pPerSec:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddVideoPrice720pPerSec(v)
+		return nil
+	case group.FieldVideoPrice1080pPerSec:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddVideoPrice1080pPerSec(v)
+		return nil
+	case group.FieldVideoPrice4kPerSec:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddVideoPrice4kPerSec(v)
+		return nil
 	case group.FieldFallbackGroupID:
 		v, ok := value.(int64)
 		if !ok {
@@ -42426,6 +42920,18 @@ func (m *GroupMutation) ClearedFields() []string {
 	if m.FieldCleared(group.FieldImages2apiPrice4k) {
 		fields = append(fields, group.FieldImages2apiPrice4k)
 	}
+	if m.FieldCleared(group.FieldVideoPrice480pPerSec) {
+		fields = append(fields, group.FieldVideoPrice480pPerSec)
+	}
+	if m.FieldCleared(group.FieldVideoPrice720pPerSec) {
+		fields = append(fields, group.FieldVideoPrice720pPerSec)
+	}
+	if m.FieldCleared(group.FieldVideoPrice1080pPerSec) {
+		fields = append(fields, group.FieldVideoPrice1080pPerSec)
+	}
+	if m.FieldCleared(group.FieldVideoPrice4kPerSec) {
+		fields = append(fields, group.FieldVideoPrice4kPerSec)
+	}
 	if m.FieldCleared(group.FieldFallbackGroupID) {
 		fields = append(fields, group.FieldFallbackGroupID)
 	}
@@ -42484,6 +42990,18 @@ func (m *GroupMutation) ClearField(name string) error {
 		return nil
 	case group.FieldImages2apiPrice4k:
 		m.ClearImages2apiPrice4k()
+		return nil
+	case group.FieldVideoPrice480pPerSec:
+		m.ClearVideoPrice480pPerSec()
+		return nil
+	case group.FieldVideoPrice720pPerSec:
+		m.ClearVideoPrice720pPerSec()
+		return nil
+	case group.FieldVideoPrice1080pPerSec:
+		m.ClearVideoPrice1080pPerSec()
+		return nil
+	case group.FieldVideoPrice4kPerSec:
+		m.ClearVideoPrice4kPerSec()
 		return nil
 	case group.FieldFallbackGroupID:
 		m.ClearFallbackGroupID()
@@ -42585,6 +43103,24 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldImages2apiPrice4k:
 		m.ResetImages2apiPrice4k()
+		return nil
+	case group.FieldAllowVideoGeneration:
+		m.ResetAllowVideoGeneration()
+		return nil
+	case group.FieldVideoGenerationRoute:
+		m.ResetVideoGenerationRoute()
+		return nil
+	case group.FieldVideoPrice480pPerSec:
+		m.ResetVideoPrice480pPerSec()
+		return nil
+	case group.FieldVideoPrice720pPerSec:
+		m.ResetVideoPrice720pPerSec()
+		return nil
+	case group.FieldVideoPrice1080pPerSec:
+		m.ResetVideoPrice1080pPerSec()
+		return nil
+	case group.FieldVideoPrice4kPerSec:
+		m.ResetVideoPrice4kPerSec()
 		return nil
 	case group.FieldClaudeCodeOnly:
 		m.ResetClaudeCodeOnly()

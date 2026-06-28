@@ -45,16 +45,23 @@ type GroupSortOrderUpdate struct {
 
 // CreateGroupRequest 创建分组请求
 type CreateGroupRequest struct {
-	Name                 string   `json:"name"`
-	Description          string   `json:"description"`
-	RateMultiplier       float64  `json:"rate_multiplier"`
-	RefundRateMultiplier float64  `json:"refund_rate_multiplier"`
-	IsExclusive          bool     `json:"is_exclusive"`
-	AllowImageGeneration bool     `json:"allow_image_generation"`
-	ImageGenerationRoute string   `json:"image_generation_route"`
-	OpenAIImageMainModel string   `json:"openai_image_main_model"`
-	ImageRateIndependent bool     `json:"image_rate_independent"`
-	ImageRateMultiplier  *float64 `json:"image_rate_multiplier"`
+	Name                 string  `json:"name"`
+	Description          string  `json:"description"`
+	RateMultiplier       float64 `json:"rate_multiplier"`
+	RefundRateMultiplier float64 `json:"refund_rate_multiplier"`
+	IsExclusive          bool    `json:"is_exclusive"`
+	AllowImageGeneration bool    `json:"allow_image_generation"`
+	ImageGenerationRoute string  `json:"image_generation_route"`
+
+	AllowVideoGeneration  bool     `json:"allow_video_generation"`
+	VideoGenerationRoute  string   `json:"video_generation_route"`
+	VideoPrice480pPerSec  *float64 `json:"video_price_480p_per_sec"`
+	VideoPrice720pPerSec  *float64 `json:"video_price_720p_per_sec"`
+	VideoPrice1080pPerSec *float64 `json:"video_price_1080p_per_sec"`
+	VideoPrice4kPerSec    *float64 `json:"video_price_4k_per_sec"`
+	OpenAIImageMainModel  string   `json:"openai_image_main_model"`
+	ImageRateIndependent  bool     `json:"image_rate_independent"`
+	ImageRateMultiplier   *float64 `json:"image_rate_multiplier"`
 }
 
 // UpdateGroupRequest 更新分组请求
@@ -67,9 +74,16 @@ type UpdateGroupRequest struct {
 	Status               *string  `json:"status"`
 	AllowImageGeneration *bool    `json:"allow_image_generation"`
 	ImageGenerationRoute *string  `json:"image_generation_route"`
-	OpenAIImageMainModel *string  `json:"openai_image_main_model"`
-	ImageRateIndependent *bool    `json:"image_rate_independent"`
-	ImageRateMultiplier  *float64 `json:"image_rate_multiplier"`
+
+	AllowVideoGeneration  *bool    `json:"allow_video_generation"`
+	VideoGenerationRoute  *string  `json:"video_generation_route"`
+	VideoPrice480pPerSec  *float64 `json:"video_price_480p_per_sec"`
+	VideoPrice720pPerSec  *float64 `json:"video_price_720p_per_sec"`
+	VideoPrice1080pPerSec *float64 `json:"video_price_1080p_per_sec"`
+	VideoPrice4kPerSec    *float64 `json:"video_price_4k_per_sec"`
+	OpenAIImageMainModel  *string  `json:"openai_image_main_model"`
+	ImageRateIndependent  *bool    `json:"image_rate_independent"`
+	ImageRateMultiplier   *float64 `json:"image_rate_multiplier"`
 }
 
 // GroupService 分组管理服务
@@ -99,6 +113,10 @@ func (s *GroupService) Create(ctx context.Context, req CreateGroupRequest) (*Gro
 	if err := ValidateOpenAIImageMainModel(openAIImageMainModel); err != nil {
 		return nil, err
 	}
+	videoPrice480p := normalizePrice(req.VideoPrice480pPerSec)
+	videoPrice720p := normalizePrice(req.VideoPrice720pPerSec)
+	videoPrice1080p := normalizePrice(req.VideoPrice1080pPerSec)
+	videoPrice4k := normalizePrice(req.VideoPrice4kPerSec)
 	// 检查名称是否已存在
 	exists, err := s.groupRepo.ExistsByName(ctx, req.Name)
 	if err != nil {
@@ -120,9 +138,16 @@ func (s *GroupService) Create(ctx context.Context, req CreateGroupRequest) (*Gro
 		SubscriptionType:     SubscriptionTypeStandard,
 		AllowImageGeneration: req.AllowImageGeneration,
 		ImageGenerationRoute: NormalizeGroupImageGenerationRoute(req.ImageGenerationRoute),
-		OpenAIImageMainModel: openAIImageMainModel,
-		ImageRateIndependent: req.ImageRateIndependent,
-		ImageRateMultiplier:  imageRateMultiplier,
+
+		AllowVideoGeneration:  req.AllowVideoGeneration,
+		VideoGenerationRoute:  NormalizeGroupVideoGenerationRoute(req.VideoGenerationRoute),
+		VideoPrice480pPerSec:  videoPrice480p,
+		VideoPrice720pPerSec:  videoPrice720p,
+		VideoPrice1080pPerSec: videoPrice1080p,
+		VideoPrice4kPerSec:    videoPrice4k,
+		OpenAIImageMainModel:  openAIImageMainModel,
+		ImageRateIndependent:  req.ImageRateIndependent,
+		ImageRateMultiplier:   imageRateMultiplier,
 	}
 
 	if err := s.groupRepo.Create(ctx, group); err != nil {
@@ -202,6 +227,24 @@ func (s *GroupService) Update(ctx context.Context, id int64, req UpdateGroupRequ
 	}
 	if req.ImageGenerationRoute != nil {
 		group.ImageGenerationRoute = NormalizeGroupImageGenerationRoute(*req.ImageGenerationRoute)
+	}
+	if req.AllowVideoGeneration != nil {
+		group.AllowVideoGeneration = *req.AllowVideoGeneration
+	}
+	if req.VideoGenerationRoute != nil {
+		group.VideoGenerationRoute = NormalizeGroupVideoGenerationRoute(*req.VideoGenerationRoute)
+	}
+	if req.VideoPrice480pPerSec != nil {
+		group.VideoPrice480pPerSec = normalizePrice(req.VideoPrice480pPerSec)
+	}
+	if req.VideoPrice720pPerSec != nil {
+		group.VideoPrice720pPerSec = normalizePrice(req.VideoPrice720pPerSec)
+	}
+	if req.VideoPrice1080pPerSec != nil {
+		group.VideoPrice1080pPerSec = normalizePrice(req.VideoPrice1080pPerSec)
+	}
+	if req.VideoPrice4kPerSec != nil {
+		group.VideoPrice4kPerSec = normalizePrice(req.VideoPrice4kPerSec)
 	}
 	if req.OpenAIImageMainModel != nil {
 		model := NormalizeOpenAIImageMainModel(*req.OpenAIImageMainModel)

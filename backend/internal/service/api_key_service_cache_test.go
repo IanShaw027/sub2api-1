@@ -235,9 +235,13 @@ func TestAPIKeyService_GetByKey_UsesL2Cache(t *testing.T) {
 	require.Equal(t, map[string][]int64{"claude-opus-*": {1, 2}}, apiKey.Group.ModelRouting)
 }
 
-func TestAPIKeyService_SnapshotRoundTrip_PreservesMessagesDispatchModelConfig(t *testing.T) {
+func TestAPIKeyService_SnapshotRoundTrip_PreservesGroupFeatureConfig(t *testing.T) {
 	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
 	groupID := int64(9)
+	video480p := 0.01
+	video720p := 0.02
+	video1080p := 0.03
+	video4k := 0.04
 	apiKey := &APIKey{
 		ID:      1,
 		UserID:  2,
@@ -254,11 +258,17 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesMessagesDispatchModelConfig(t 
 		},
 		Group: &Group{
 			ID:                    groupID,
-			Name:                  "openai",
-			Platform:              PlatformOpenAI,
+			Name:                  "grok",
+			Platform:              PlatformGrok,
 			Status:                StatusActive,
 			SubscriptionType:      SubscriptionTypeStandard,
 			RateMultiplier:        1,
+			AllowVideoGeneration:  true,
+			VideoGenerationRoute:  "native",
+			VideoPrice480pPerSec:  &video480p,
+			VideoPrice720pPerSec:  &video720p,
+			VideoPrice1080pPerSec: &video1080p,
+			VideoPrice4kPerSec:    &video4k,
 			AllowMessagesDispatch: true,
 			DefaultMappedModel:    "gpt-5.4",
 			MessagesDispatchModelConfig: OpenAIMessagesDispatchModelConfig{
@@ -279,6 +289,12 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesMessagesDispatchModelConfig(t 
 	require.Equal(t, apiKey.Name, roundTrip.Name)
 	require.NotNil(t, roundTrip.Group)
 	require.Equal(t, apiKey.Group.MessagesDispatchModelConfig, roundTrip.Group.MessagesDispatchModelConfig)
+	require.True(t, roundTrip.Group.AllowVideoGeneration)
+	require.Equal(t, "native", roundTrip.Group.VideoGenerationRoute)
+	require.Equal(t, apiKey.Group.VideoPrice480pPerSec, roundTrip.Group.VideoPrice480pPerSec)
+	require.Equal(t, apiKey.Group.VideoPrice720pPerSec, roundTrip.Group.VideoPrice720pPerSec)
+	require.Equal(t, apiKey.Group.VideoPrice1080pPerSec, roundTrip.Group.VideoPrice1080pPerSec)
+	require.Equal(t, apiKey.Group.VideoPrice4kPerSec, roundTrip.Group.VideoPrice4kPerSec)
 }
 
 func TestAPIKeyService_GetByKey_IgnoresLegacyAuthCacheSnapshotWithoutMessagesDispatchConfig(t *testing.T) {

@@ -116,6 +116,14 @@ type Group struct {
 	ImagePrice2K         *float64 `json:"image_price_2k"`
 	ImagePrice4K         *float64 `json:"image_price_4k"`
 
+	// 视频生成计费配置（按分辨率+秒数，与其他平台统一）
+	AllowVideoGeneration  bool     `json:"allow_video_generation"`
+	VideoGenerationRoute  string   `json:"video_generation_route"`
+	VideoPrice480pPerSec  *float64 `json:"video_price_480p_per_sec"`
+	VideoPrice720pPerSec  *float64 `json:"video_price_720p_per_sec"`
+	VideoPrice1080pPerSec *float64 `json:"video_price_1080p_per_sec"`
+	VideoPrice4kPerSec    *float64 `json:"video_price_4k_per_sec"`
+
 	// Claude Code 客户端限制
 	ClaudeCodeOnly  bool   `json:"claude_code_only"`
 	FallbackGroupID *int64 `json:"fallback_group_id"`

@@ -128,6 +128,29 @@ func (Group) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
+		field.Bool("allow_video_generation").
+			Default(false).
+			Comment("是否允许该分组使用视频生成能力"),
+		field.String("video_generation_route").
+			MaxLen(20).
+			Default("native").
+			Comment("视频生成路由类型：provider native"),
+		field.Float("video_price_480p_per_sec").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
+		field.Float("video_price_720p_per_sec").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
+		field.Float("video_price_1080p_per_sec").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
+		field.Float("video_price_4k_per_sec").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 
 		// Claude Code 客户端限制 (added by migration 029)
 		field.Bool("claude_code_only").

@@ -3050,6 +3050,18 @@ export default {
       tier4kPrice: '4K（美元）',
       notConfigured: '未配置'
       },
+      videoPricing: {
+        title: '视频生成计费',
+        description: '配置供应商原生视频生成能力和按分辨率计费的每秒单价。',
+        allowVideoGeneration: '允许当前分组生成视频',
+        routeLabel: '视频路由',
+        routeNative: '供应商原生',
+        pricePerSecond: '每秒单价',
+        tier480pPrice: '480p（美元/秒）',
+        tier720pPrice: '720p（美元/秒）',
+        tier1080pPrice: '1080p（美元/秒）',
+        tier4kPrice: '4K（美元/秒）'
+      },
       modelsList: {
         title: '自定义 /v1/models 模型列表',
         hint: '仅影响 /v1/models 展示结果，不影响白名单模型调用和账号调度。',

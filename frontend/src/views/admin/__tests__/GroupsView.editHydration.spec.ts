@@ -121,6 +121,12 @@ function buildGroup(id: number, name: string, modelRouting: Record<string, numbe
     image_price_1k: null,
     image_price_2k: null,
     image_price_4k: null,
+    allow_video_generation: false,
+    video_generation_route: 'native',
+    video_price_480p_per_sec: null,
+    video_price_720p_per_sec: null,
+    video_price_1080p_per_sec: null,
+    video_price_4k_per_sec: null,
     claude_code_only: false,
     fallback_group_id: null,
     fallback_group_id_on_invalid_request: null,
@@ -411,6 +417,12 @@ describe('admin GroupsView edit hydration', () => {
           image_price_1k: 0.25,
           image_price_2k: 0.35,
           image_price_4k: 0.45,
+          allow_video_generation: true,
+          video_generation_route: 'native',
+          video_price_480p_per_sec: 0.01,
+          video_price_720p_per_sec: 0.02,
+          video_price_1080p_per_sec: 0.03,
+          video_price_4k_per_sec: 0.04,
           refund_rate_multiplier: 2.5
         } as any
       ],
@@ -436,10 +448,56 @@ describe('admin GroupsView edit hydration', () => {
       image_rate_multiplier: 1.75,
       image_price_1k: 0.25,
       image_price_2k: 0.35,
-      image_price_4k: 0.45
+      image_price_4k: 0.45,
+      allow_video_generation: true,
+      video_generation_route: 'native',
+      video_price_480p_per_sec: 0.01,
+      video_price_720p_per_sec: 0.02,
+      video_price_1080p_per_sec: 0.03,
+      video_price_4k_per_sec: 0.04
     })
     expect(updateGroup.mock.calls[0][1]).not.toHaveProperty('images2api_price_1k')
     expect(updateGroup.mock.calls[0][1]).not.toHaveProperty('images2api_price_2k')
     expect(updateGroup.mock.calls[0][1]).not.toHaveProperty('images2api_price_4k')
+  })
+
+  it('preserves Grok video pricing fields when editing', async () => {
+    listGroups.mockResolvedValueOnce({
+      items: [
+        {
+          ...buildGroup(5, 'Group Grok Video', {}),
+          platform: 'grok',
+          allow_video_generation: true,
+          video_generation_route: 'native',
+          video_price_480p_per_sec: 0.01,
+          video_price_720p_per_sec: 0.02,
+          video_price_1080p_per_sec: 0.03,
+          video_price_4k_per_sec: 0.04
+        } as any
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountGroupsView()
+
+    await flushPromises()
+    await wrapper.get('[data-test="group-row-5"] button').trigger('click')
+    await flushPromises()
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateGroup).toHaveBeenCalledTimes(1)
+    expect(updateGroup.mock.calls[0][1]).toMatchObject({
+      platform: 'grok',
+      allow_video_generation: true,
+      video_generation_route: 'native',
+      video_price_480p_per_sec: 0.01,
+      video_price_720p_per_sec: 0.02,
+      video_price_1080p_per_sec: 0.03,
+      video_price_4k_per_sec: 0.04
+    })
   })
 })

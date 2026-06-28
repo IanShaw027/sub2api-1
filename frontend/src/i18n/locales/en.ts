@@ -2979,6 +2979,18 @@ export default {
       tier4kPrice: '4K ($)',
       notConfigured: 'Not configured'
       },
+      videoPricing: {
+        title: 'Video Generation Pricing',
+        description: 'Configure provider-native video generation access and per-second prices by resolution.',
+        allowVideoGeneration: 'Allow video generation for this group',
+        routeLabel: 'Video route',
+        routeNative: 'Provider native',
+        pricePerSecond: 'Price per second',
+        tier480pPrice: '480p ($/s)',
+        tier720pPrice: '720p ($/s)',
+        tier1080pPrice: '1080p ($/s)',
+        tier4kPrice: '4K ($/s)'
+      },
       modelsList: {
         title: 'Custom /v1/models Model List',
         hint: 'Only changes the /v1/models response. Whitelist model calls and account routing are unchanged.',
