@@ -456,6 +456,20 @@ func openAIWSNonInputFieldDiff(cached, current map[string]openAIWSNonInputFieldF
 	return added, removed, changed
 }
 
+func openAIWSNonInputChangeAllowsActiveDelta(added, removed, changed []string) bool {
+	if len(added) != 0 || len(removed) != 0 || len(changed) == 0 {
+		return false
+	}
+	for _, key := range changed {
+		switch key {
+		case "parallel_tool_calls", "tools":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func openAIWSJoinLogKeys(keys []string) string {
 	if len(keys) == 0 {
 		return "-"
@@ -879,6 +893,7 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 
 	currentNonInput, _, currentNonInputFields := openAIWSNonInputFingerprint(in.CurrentPayload)
 	log.NonInputMatch = currentNonInput == in.Cached.nonInputHash
+	nonInputAllowsActiveDelta := log.NonInputMatch
 	if len(in.Cached.nonInputFields) > 0 || len(currentNonInputFields) > 0 {
 		added, removed, changed := openAIWSNonInputFieldDiff(in.Cached.nonInputFields, currentNonInputFields)
 		log.NonInputAddedKeys = openAIWSJoinLogKeys(added)
@@ -886,6 +901,7 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 		log.NonInputChangedKeys = openAIWSJoinLogKeys(changed)
 		log.NonInputCachedSummary = openAIWSNonInputFieldSummary(in.Cached.nonInputFields)
 		log.NonInputCurrentSummary = openAIWSNonInputFieldSummary(currentNonInputFields)
+		nonInputAllowsActiveDelta = nonInputAllowsActiveDelta || openAIWSNonInputChangeAllowsActiveDelta(added, removed, changed)
 	}
 
 	currentHashes, hok := openAIWSCanonicalItemHashes(fullItems)
@@ -930,7 +946,7 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 		deltaToolFallbackReason = openAIWSActiveDeltaToolContinuationFallbackReason(delta)
 	}
 
-	log.Candidate = accountMatch && (connAnchorMatch || connReanchorMatch) && log.NonInputMatch &&
+	log.Candidate = accountMatch && (connAnchorMatch || connReanchorMatch) && nonInputAllowsActiveDelta &&
 		log.RawClientEquiv && matched && deltaToolFallbackReason == ""
 
 	if log.Candidate {
@@ -945,7 +961,7 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 		log.FallbackReason = "conn_mismatch"
 	case !log.MostRecentMatch && !connReanchorMatch:
 		log.FallbackReason = "not_most_recent"
-	case !log.NonInputMatch:
+	case !nonInputAllowsActiveDelta:
 		log.FallbackReason = "non_input_mismatch"
 	case !log.RawClientEquiv:
 		log.FallbackReason = "raw_client_divergent"

@@ -2187,6 +2187,66 @@ func TestOpenAIWSActiveDelta_AllowsMixedToolContextDeltaWithPreviousResponseID(t
 	require.Equal(t, "continue", gjson.Get(deltaJSON, "input.2.content.0.text").String())
 }
 
+func TestOpenAIWSActiveDelta_AllowsToolConfigOnlyNonInputChange(t *testing.T) {
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	output1 := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
+	toolOutput := `{"type":"function_call_output","call_id":"call_1","output":"ok"}`
+	newInput := `{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}`
+	previousPayload := []byte(`{
+		"model":"gpt-5.5",
+		"store":false,
+		"stream":true,
+		"parallel_tool_calls":false,
+		"tools":[{"type":"function","name":"shell"}],
+		"input":[` + input1 + `,` + output1 + `]
+	}`)
+	currentPayload := []byte(`{
+		"model":"gpt-5.5",
+		"store":false,
+		"stream":true,
+		"parallel_tool_calls":true,
+		"tools":[{"type":"function","name":"shell"},{"type":"function","name":"search"}],
+		"input":[` + input1 + `,` + output1 + `,` + toolOutput + `,` + newInput + `]
+	}`)
+	nonInputHash, _, nonInputFields := openAIWSNonInputFingerprint(previousPayload)
+
+	deltaPayload, deltaLog, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+		RequestID:                "req_tool_config_change",
+		AccountID:                78007,
+		LeaseConnID:              "oa_ws_78007_1",
+		ConnMostRecentResponseID: "resp_tool_config_1",
+		CurrentPayload:           currentPayload,
+		HasFunctionCallOutput:    true,
+		CachedFound:              true,
+		Cached: openAIWSSessionContextValue{
+			accountID:               78007,
+			connID:                  "oa_ws_78007_1",
+			lastResponseID:          "resp_tool_config_1",
+			materializedHashes:      [][32]byte{mustItemHash(t, input1), mustItemHash(t, output1)},
+			materializedCount:       2,
+			inputCount:              1,
+			nonInputHash:            nonInputHash,
+			nonInputFields:          nonInputFields,
+			rawVsClientVisibleEqual: true,
+		},
+	})
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.True(t, deltaLog.Candidate)
+	require.True(t, deltaLog.Active)
+	require.False(t, deltaLog.NonInputMatch)
+	require.Equal(t, "parallel_tool_calls,tools", deltaLog.NonInputChangedKeys)
+	require.Equal(t, 2, deltaLog.DeltaItems)
+	deltaJSON := requestToJSONString(deltaPayload)
+	require.Equal(t, "resp_tool_config_1", gjson.Get(deltaJSON, "previous_response_id").String())
+	require.False(t, gjson.Get(deltaJSON, "store").Bool())
+	require.True(t, gjson.Get(deltaJSON, "parallel_tool_calls").Bool())
+	require.Len(t, gjson.Get(deltaJSON, "tools").Array(), 2)
+	require.Len(t, gjson.Get(deltaJSON, "input").Array(), 2)
+	require.Equal(t, "function_call_output", gjson.Get(deltaJSON, "input.0.type").String())
+	require.Equal(t, "continue", gjson.Get(deltaJSON, "input.1.content.0.text").String())
+}
+
 func TestOpenAIWSActiveDelta_AllowsHistoricalFunctionCallOutputWhenDeltaIsUserMessage(t *testing.T) {
 	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
 	output1 := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
