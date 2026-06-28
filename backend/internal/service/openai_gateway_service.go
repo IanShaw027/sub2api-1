@@ -6766,6 +6766,52 @@ oauthTransformDone:
 		}
 	}
 
+	httpActiveDeltaOriginalBody := []byte(nil)
+	httpActiveDeltaLog := openAIWSDeltaShadowLog{}
+	httpActiveDeltaApplied := false
+	httpActiveDeltaSessionHash := ""
+	httpActiveDeltaSessionOwner := false
+	if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
+		GetOpenAIClientTransport(c) == OpenAIClientTransportHTTP {
+		clientPreviousResponseID := strings.TrimSpace(gjson.GetBytes(originalBody, "previous_response_id").String())
+		activeDeltaResult, buildErr := s.buildOpenAIHTTPActiveDeltaPayload(ctx, c, account, body, clientPreviousResponseID)
+		if buildErr != nil {
+			logger.LegacyPrintf(
+				"service.openai_gateway",
+				"[OpenAI] Skip HTTP active delta after build error (account: %s, error: %v)",
+				account.Name,
+				buildErr,
+			)
+		} else if activeDeltaResult.applied {
+			httpActiveDeltaOriginalBody = append([]byte(nil), body...)
+			httpActiveDeltaLog = activeDeltaResult.log
+			httpActiveDeltaApplied = true
+			httpActiveDeltaSessionHash = activeDeltaResult.sessionHash
+			httpActiveDeltaSessionOwner = activeDeltaResult.sessionOwner
+			resetRawBodyView(activeDeltaResult.body)
+			reqStream = gjson.GetBytes(body, "stream").Bool()
+			upstreamStream = reqStream
+			if bodyPromptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()); bodyPromptCacheKey != "" {
+				promptCacheKey = bodyPromptCacheKey
+				setOpenAIRoutingPromptCacheKey(c, promptCacheKey)
+			}
+			setOpsUpstreamRequestBody(c, body)
+			logOpenAIWSModeInfo(
+				"http_active_delta_applied account_id=%d session=%s previous_response_id=%s delta_items=%d delta_bytes=%d full_items=%d full_bytes=%d",
+				account.ID,
+				truncateOpenAIWSLogValue(httpActiveDeltaSessionHash, 12),
+				truncateOpenAIWSLogValue(gjson.GetBytes(body, "previous_response_id").String(), openAIWSIDValueMaxLen),
+				httpActiveDeltaLog.DeltaItems,
+				httpActiveDeltaLog.DeltaBytes,
+				httpActiveDeltaLog.FullItems,
+				httpActiveDeltaLog.FullBytes,
+			)
+		}
+	}
+	if httpActiveDeltaSessionOwner {
+		defer s.releaseOpenAIHTTPActiveDeltaSession(c, httpActiveDeltaSessionHash)
+	}
+
 	httpInvalidEncryptedContentRetryTried := false
 	httpCodexCompatRetryTried := false
 	httpModelFallbackRetryTried := false
@@ -6875,6 +6921,29 @@ oauthTransformDone:
 			}
 			if !httpInvalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest &&
 				isOpenAIInvalidEncryptedContentError(upstreamCode, upstreamMsg, respBody) {
+				if httpActiveDeltaApplied && len(httpActiveDeltaOriginalBody) > 0 {
+					restoredBody, removedReasoningItems, droppedPreviousResponseID, restoreErr := restoreOpenAIHTTPActiveDeltaInvalidEncryptedContentBody(httpActiveDeltaOriginalBody)
+					if restoreErr != nil {
+						return nil, fmt.Errorf("restore http active delta invalid_encrypted_content body: %w", restoreErr)
+					}
+					if len(restoredBody) > 0 && (removedReasoningItems || droppedPreviousResponseID) {
+						resetRawBodyView(restoredBody)
+						reqStream = gjson.GetBytes(body, "stream").Bool()
+						upstreamStream = reqStream
+						setOpsUpstreamRequestBody(c, body)
+						httpInvalidEncryptedContentRetryTried = true
+						httpActiveDeltaApplied = false
+						s.RecordOpenAIAccountRecoveryReason(account.ID, "invalid_encrypted_content")
+						logger.LegacyPrintf(
+							"service.openai_gateway",
+							"[OpenAI] Retrying non-WSv2 HTTP active delta once after invalid_encrypted_content with full replay (account: %s, dropped_reasoning_items=%v, dropped_previous_response_id=%v)",
+							account.Name,
+							removedReasoningItems,
+							droppedPreviousResponseID,
+						)
+						continue
+					}
+				}
 				reqBody, err = ensureReqBody()
 				if err != nil {
 					return nil, fmt.Errorf("parse invalid_encrypted_content retry body: %w", err)
@@ -6927,6 +6996,27 @@ oauthTransformDone:
 			if !httpUnsupportedPreviousResponseIDRetryTried &&
 				resp.StatusCode == http.StatusBadRequest &&
 				isOpenAIUnsupportedPreviousResponseIDError(upstreamCode, upstreamMsg) {
+				if httpActiveDeltaApplied && len(httpActiveDeltaOriginalBody) > 0 {
+					restoredBody, restored, restoreErr := restoreOpenAIHTTPActiveDeltaFullReplayBody(httpActiveDeltaOriginalBody)
+					if restoreErr != nil {
+						return nil, fmt.Errorf("restore http active delta unsupported previous_response_id body: %w", restoreErr)
+					}
+					if restored {
+						resetRawBodyView(restoredBody)
+						reqStream = gjson.GetBytes(body, "stream").Bool()
+						upstreamStream = reqStream
+						setOpsUpstreamRequestBody(c, body)
+						httpUnsupportedPreviousResponseIDRetryTried = true
+						httpActiveDeltaApplied = false
+						s.RecordOpenAIAccountRecoveryReason(account.ID, "unsupported_previous_response_id")
+						logger.LegacyPrintf(
+							"service.openai_gateway",
+							"[OpenAI] Retrying non-WSv2 HTTP active delta once after dropping unsupported previous_response_id with full replay (account: %s)",
+							account.Name,
+						)
+						continue
+					}
+				}
 				reqBody, err = ensureReqBody()
 				if err != nil {
 					return nil, fmt.Errorf("parse unsupported previous_response_id retry body: %w", err)
@@ -7151,9 +7241,15 @@ oauthTransformDone:
 				return nil, err
 			}
 			usage = result.usage
+			responseID = strings.TrimSpace(result.responseID)
 			imageCount = result.imageCount
 		}
 		s.bindHTTPResponseAccount(ctx, c, account, responseID)
+		httpSessionContextBody := body
+		if httpActiveDeltaApplied && len(httpActiveDeltaOriginalBody) > 0 {
+			httpSessionContextBody = httpActiveDeltaOriginalBody
+		}
+		s.bindHTTPResponseSessionContext(ctx, c, account, httpSessionContextBody, responseID)
 
 		// Extract and save Codex usage snapshot from response headers (for OAuth accounts)
 		if account.Type == AccountTypeOAuth {
@@ -7170,18 +7266,24 @@ oauthTransformDone:
 		serviceTier := extractOpenAIServiceTierFromBody(body)
 
 		result := &OpenAIForwardResult{
-			RequestID:       resp.Header.Get("x-request-id"),
-			ResponseID:      responseID,
-			Usage:           *usage,
-			Model:           originalModel,
-			UpstreamModel:   upstreamModel,
-			ServiceTier:     serviceTier,
-			ReasoningEffort: reasoningEffort,
-			Stream:          reqStream,
-			OpenAIWSMode:    false,
-			Duration:        time.Since(startTime),
-			FirstTokenMs:    firstTokenMs,
-			ImageCount:      imageCount,
+			RequestID:            resp.Header.Get("x-request-id"),
+			ResponseID:           responseID,
+			Usage:                *usage,
+			Model:                originalModel,
+			UpstreamModel:        upstreamModel,
+			ServiceTier:          serviceTier,
+			ReasoningEffort:      reasoningEffort,
+			Stream:               reqStream,
+			OpenAIWSMode:         false,
+			Duration:             time.Since(startTime),
+			FirstTokenMs:         firstTokenMs,
+			ImageCount:           imageCount,
+			OpenAIWSDeltaActive:  httpActiveDeltaApplied,
+			OpenAIWSPayloadBytes: len(body),
+			OpenAIWSDeltaItems:   httpActiveDeltaLog.DeltaItems,
+			OpenAIWSDeltaBytes:   httpActiveDeltaLog.DeltaBytes,
+			OpenAIWSFullItems:    httpActiveDeltaLog.FullItems,
+			OpenAIWSFullBytes:    httpActiveDeltaLog.FullBytes,
 		}
 		applyOpenAIResponsesImageBillingMeta(result, body, upstreamModel)
 		emitOpenAICacheProbeEvent(ctx, c, account, originalBody, body, result, promptCacheKey, false)
