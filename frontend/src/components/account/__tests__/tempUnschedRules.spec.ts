@@ -12,6 +12,7 @@ import {
 import { buildCustomErrorCodesResult } from '../customErrorCodes'
 import TempUnschedRulesForm from '../TempUnschedRulesForm.vue'
 import CustomErrorCodesForm from '../CustomErrorCodesForm.vue'
+import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import PlatformDefaultAccountModelConfigForm from '@/components/admin/PlatformDefaultAccountModelConfigForm.vue'
 
 vi.mock('vue-i18n', () => ({
@@ -405,6 +406,29 @@ describe('PlatformDefaultAccountModelConfigForm', () => {
             }
           }
         }
+      }
+    })
+  })
+
+  it('emits Grok platform defaults from the Grok tab', async () => {
+    const wrapper = mount(PlatformDefaultAccountModelConfigForm, {
+      props: {
+        modelValue: {}
+      },
+      global: {
+        stubs: componentStubs
+      }
+    })
+
+    await wrapper.get('[data-testid="platform-default-tab-grok"]').trigger('click')
+    await nextTick()
+
+    wrapper.getComponent(ModelWhitelistSelector).vm.$emit('update:modelValue', ['grok-4.3'])
+    await nextTick()
+
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+      grok: {
+        model_whitelist: ['grok-4.3']
       }
     })
   })

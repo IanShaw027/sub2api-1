@@ -216,6 +216,7 @@ import {
   PROVIDER_ANTHROPIC,
   PROVIDER_GEMINI,
   PROVIDER_KIRO,
+  PROVIDER_GROK,
   API_MODE_CHAT_COMPLETIONS,
   API_MODE_RESPONSES,
   DEFAULT_INTERVAL_SECONDS,
@@ -359,6 +360,7 @@ const providerOptions = computed<ProviderOption[]>(() => [
   { value: PROVIDER_OPENAI, label: t('monitorCommon.providers.openai') },
   { value: PROVIDER_GEMINI, label: t('monitorCommon.providers.gemini') },
   { value: PROVIDER_KIRO, label: t('monitorCommon.providers.kiro') },
+  { value: PROVIDER_GROK, label: t('monitorCommon.providers.grok') },
 ])
 
 function translateOrFallback(key: string, fallback: string): string {

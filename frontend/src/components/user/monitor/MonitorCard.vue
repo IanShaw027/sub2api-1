@@ -90,6 +90,7 @@ const PROVIDER_TINT: Record<string, string> = {
   anthropic: 'text-orange-600 dark:text-orange-300',
   gemini: 'text-sky-600 dark:text-sky-300',
   kiro: 'text-violet-600 dark:text-violet-300',
+  grok: 'text-slate-700 dark:text-slate-300',
 }
 
 const props = defineProps<{

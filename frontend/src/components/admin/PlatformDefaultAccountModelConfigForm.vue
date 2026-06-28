@@ -112,7 +112,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const platforms = ['anthropic', 'openai', 'gemini', 'antigravity', 'kiro'] as const
+const platforms = ['anthropic', 'openai', 'gemini', 'antigravity', 'kiro', 'grok'] as const
 
 const activePlatform = ref<string>('openai')
 const kiroSubscriptionTypeConfigText = ref('{}')

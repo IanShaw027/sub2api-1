@@ -1607,7 +1607,8 @@ export default {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
       gemini: 'Gemini',
-      kiro: 'Kiro'
+      kiro: 'Kiro',
+      grok: 'Grok'
     },
     extraModelsHeader: '附加模型',
     extraModelsEmpty: '无附加模型',
@@ -7718,7 +7719,8 @@ export default {
           openai: 'OpenAI',
           gemini: 'Gemini',
           antigravity: 'Antigravity',
-          kiro: 'Kiro'
+          kiro: 'Kiro',
+          grok: 'Grok'
         }
       },
       modelMapping: {

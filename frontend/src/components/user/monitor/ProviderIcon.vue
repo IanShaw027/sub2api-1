@@ -56,6 +56,11 @@ const PROVIDER_ICONS: Record<Provider, IconData> = {
       'M5 3h3v7l6-7h4l-7 8 8 10h-4l-6-8-1 1v7H5z',
     ],
   },
+  grok: {
+    paths: [
+      'M4 3h4.2l3.6 5.2L16.1 3H20l-6.4 8.1L21 21h-4.3l-4.9-6.8L6.5 21H2.5l7.4-9.2L4 3z',
+    ],
+  },
 }
 
 const props = withDefaults(defineProps<{

@@ -42,6 +42,7 @@ vi.mock('vue-i18n', async (importOriginal) => {
           'monitorCommon.providers.openai': 'OpenAI',
           'monitorCommon.providers.gemini': 'Gemini',
           'monitorCommon.providers.kiro': 'Kiro',
+          'monitorCommon.providers.grok': 'Grok',
           'admin.channelMonitor.template.managerTitle': 'Template Manager',
           'admin.channelMonitor.template.createButton': 'Create',
           'admin.channelMonitor.template.emptyState': 'No templates',
@@ -165,5 +166,17 @@ describe('MonitorTemplateManagerDialog', () => {
 
     const kiroButtons = wrapper.findAll('button').filter((candidate) => candidate.text().includes('Kiro'))
     expect(kiroButtons.length).toBeGreaterThan(1)
+  })
+
+  it('shows Grok as a template provider option', async () => {
+    const wrapper = mountDialog()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Grok')
+
+    await clickButtonByText(wrapper, 'Create')
+
+    const grokButtons = wrapper.findAll('button').filter((candidate) => candidate.text().includes('Grok'))
+    expect(grokButtons.length).toBeGreaterThan(1)
   })
 })

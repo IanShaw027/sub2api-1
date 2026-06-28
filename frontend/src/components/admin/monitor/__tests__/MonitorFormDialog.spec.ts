@@ -73,6 +73,8 @@ vi.mock('vue-i18n', async (importOriginal) => {
     'monitorCommon.providers.openai': 'OpenAI',
     'monitorCommon.providers.anthropic': 'Anthropic',
     'monitorCommon.providers.gemini': 'Gemini',
+    'monitorCommon.providers.kiro': 'Kiro',
+    'monitorCommon.providers.grok': 'Grok',
     'common.update': 'Update',
     'common.create': 'Create',
     'common.cancel': 'Cancel',
@@ -283,6 +285,33 @@ describe('MonitorFormDialog', () => {
       api_mode: 'responses',
       endpoint: 'https://api.openai.com',
       primary_model: 'gpt-4o-mini',
+    }))
+  })
+
+  it('creates Grok monitors with chat completions mode', async () => {
+    const wrapper = mountDialog()
+    await flushPromises()
+
+    await clickButtonByText(wrapper, 'Grok')
+
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue('Grok Monitor')
+    await inputs[1].setValue('https://api.x.ai')
+    await inputs[2].setValue('xai-key')
+    await inputs[3].setValue('grok-4.3')
+
+    const advanced = wrapper.find('.advanced-config-stub')
+    expect(advanced.attributes('data-provider')).toBe('grok')
+    expect(advanced.attributes('data-api-mode')).toBe('chat_completions')
+
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createMonitorMock).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'grok',
+      api_mode: 'chat_completions',
+      endpoint: 'https://api.x.ai',
+      primary_model: 'grok-4.3',
     }))
   })
 

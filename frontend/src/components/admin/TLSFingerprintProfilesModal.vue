@@ -755,6 +755,7 @@ const captureTargets = reactive([
   { platform: 'anthropic', label: 'Anthropic / Claude', count: 0 },
   { platform: 'gemini', label: 'Gemini', count: 0 },
   { platform: 'kiro', label: 'Kiro', count: 0 },
+  { platform: 'grok', label: 'Grok / xAI', count: 0 },
   { platform: 'antigravity', label: 'Antigravity', count: 0 }
 ])
 
