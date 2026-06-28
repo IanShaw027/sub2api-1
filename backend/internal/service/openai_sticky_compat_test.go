@@ -116,32 +116,40 @@ func TestGetStickySessionAccountIDWithSource_LegacyFallbackHit(t *testing.T) {
 
 func TestOpenAIWSStickySelectDiagLogMessageIncludesRedisTTL(t *testing.T) {
 	msg := openAIWSStickySelectDiagLogMessage(openAIWSStickySelectDiagLog{
-		GroupID:                 22,
-		APIKeyID:                441,
-		SessionHash:             "abcdef1234567890",
-		Source:                  "redis_legacy_fallback",
-		RedisSource:             "redis_legacy_fallback",
-		PrimaryKey:              "openai:new-hash",
-		PrimaryTTLMS:            -2,
-		LegacyKey:               "openai:legacy-hash",
-		LegacyTTLMS:             540000,
-		AccountID:               73972,
-		ConnID:                  "oa_ws_73972_6",
-		SessionContextFallback:  true,
-		SessionContextBound:     true,
-		PrimaryHit:              false,
-		PrimaryError:            "redis_nil",
-		LegacyFallbackEnabled:   true,
-		LegacyFallbackAttempted: true,
-		LegacyFallbackHit:       true,
-		LegacyError:             "",
-		RedisError:              "redis_nil",
+		GroupID:                    22,
+		APIKeyID:                   441,
+		SessionHash:                "abcdef1234567890",
+		Source:                     "redis_legacy_fallback",
+		RedisSource:                "redis_legacy_fallback",
+		PrimaryKey:                 "openai:new-hash",
+		PrimaryTTLMS:               -2,
+		LegacyKey:                  "openai:legacy-hash",
+		LegacyTTLMS:                540000,
+		AccountID:                  73972,
+		ConnID:                     "oa_ws_73972_6",
+		RedisAccountID:             73971,
+		SessionContextAccountID:    73972,
+		SessionContextConnID:       "oa_ws_73972_6",
+		SessionContextAccountMatch: true,
+		SessionContextFallback:     true,
+		SessionContextBound:        true,
+		PrimaryHit:                 false,
+		PrimaryError:               "redis_nil",
+		LegacyFallbackEnabled:      true,
+		LegacyFallbackAttempted:    true,
+		LegacyFallbackHit:          true,
+		LegacyError:                "",
+		RedisError:                 "redis_nil",
 	})
 
 	require.Contains(t, msg, "openai_ws_sticky_select_diag")
 	require.Contains(t, msg, "primary_ttl_ms=-2")
 	require.Contains(t, msg, "legacy_ttl_ms=540000")
 	require.Contains(t, msg, "source=redis_legacy_fb")
+	require.Contains(t, msg, "redis_account_id=73971")
+	require.Contains(t, msg, "session_context_account_id=73972")
+	require.Contains(t, msg, "session_context_conn_id=oa_ws_73972_6")
+	require.Contains(t, msg, "session_context_account_match=true")
 	require.Contains(t, msg, "session_context_fallback=true")
 	require.Contains(t, msg, "session_context_bound=true")
 }

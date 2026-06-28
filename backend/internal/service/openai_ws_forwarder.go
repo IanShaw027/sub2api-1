@@ -1361,6 +1361,10 @@ type openAIWSWriteRequestFailLog struct {
 	ConnAgeMs                int64
 	ConnIdleMs               int64
 	ConnLeaseCount           int64
+	SessionIdleTTLMS         int64
+	PrewritePingThresholdMS  int64
+	PrewritePingAttempted    bool
+	PrewritePingResult       string
 	PayloadBytes             int
 	PreviousResponseID       string
 	PreviousResponseIDKind   string
@@ -1391,6 +1395,33 @@ type openAIWSWriteRequestFailLog struct {
 	FullBytes                int
 	ProxyEnabled             bool
 	ProxyID                  int64
+	Cause                    string
+}
+
+type openAIWSPrewritePingLog struct {
+	RequestID                string
+	ClientRequestID          string
+	AccountID                int64
+	AccountType              string
+	ConnProfile              openAIWSConnProfile
+	ConnID                   string
+	ConnReused               bool
+	ConnAgeMS                int64
+	ConnIdleMS               int64
+	ConnLeaseCount           int64
+	SessionIdleTTLMS         int64
+	PrewritePingThresholdMS  int64
+	PreviousResponseID       string
+	PreviousResponseIDSource string
+	StoreMode                string
+	StoreFallbackReason      string
+	ActiveDelta              bool
+	HasFunctionCallOutput    bool
+	SessionHash              string
+	StickyAccountID          int64
+	StickyAccountHit         bool
+	ConnAffinityHit          bool
+	Result                   string
 	Cause                    string
 }
 
@@ -1443,7 +1474,7 @@ type openAIWSErrorEventLog struct {
 
 func openAIWSWriteRequestFailLogMessage(v openAIWSWriteRequestFailLog) string {
 	return fmt.Sprintf(
-		"write_request_fail request_id=%s client_request_id=%s account_id=%d account_type=%s model=%s upstream_model=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s attempt=%d conn_pick_ms=%d queue_wait_ms=%d conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d payload_bytes=%d previous_response_id=%s previous_response_id_kind=%s previous_response_id_source=%s store_mode=%s store_enabled=%v store_disabled=%v sticky_account_id=%d sticky_account_hit=%v conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s cleanup_reason=%s allow_delta_conn_reanchor=%v conn_reanchor_blockers=%s session_hash=%s has_prompt_cache_key=%v has_turn_state=%v turn_state_len=%d http_ingress_ws_one_shot=%v force_new_conn=%v affinity_only_reuse=%v has_function_call_output=%v active_delta=%v delta_items=%d delta_bytes=%d full_items=%d full_bytes=%d proxy_enabled=%v proxy_id=%d cause=%s",
+		"write_request_fail request_id=%s client_request_id=%s account_id=%d account_type=%s model=%s upstream_model=%s conn_profile=%s conn_id=%s conn_reused=%v transport=%s attempt=%d conn_pick_ms=%d queue_wait_ms=%d conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d session_idle_ttl_ms=%d prewrite_ping_threshold_ms=%d prewrite_ping_attempted=%v prewrite_ping_result=%s payload_bytes=%d previous_response_id=%s previous_response_id_kind=%s previous_response_id_source=%s store_mode=%s store_enabled=%v store_disabled=%v sticky_account_id=%d sticky_account_hit=%v conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s cleanup_reason=%s allow_delta_conn_reanchor=%v conn_reanchor_blockers=%s session_hash=%s has_prompt_cache_key=%v has_turn_state=%v turn_state_len=%d http_ingress_ws_one_shot=%v force_new_conn=%v affinity_only_reuse=%v has_function_call_output=%v active_delta=%v delta_items=%d delta_bytes=%d full_items=%d full_bytes=%d proxy_enabled=%v proxy_id=%d cause=%s",
 		normalizeOpenAIWSLogValue(v.RequestID),
 		normalizeOpenAIWSLogValue(v.ClientRequestID),
 		v.AccountID,
@@ -1460,6 +1491,10 @@ func openAIWSWriteRequestFailLogMessage(v openAIWSWriteRequestFailLog) string {
 		v.ConnAgeMs,
 		v.ConnIdleMs,
 		v.ConnLeaseCount,
+		v.SessionIdleTTLMS,
+		v.PrewritePingThresholdMS,
+		v.PrewritePingAttempted,
+		normalizeOpenAIWSLogValue(v.PrewritePingResult),
 		v.PayloadBytes,
 		truncateOpenAIWSLogValue(v.PreviousResponseID, openAIWSIDValueMaxLen),
 		normalizeOpenAIWSLogValue(v.PreviousResponseIDKind),
@@ -1490,6 +1525,36 @@ func openAIWSWriteRequestFailLogMessage(v openAIWSWriteRequestFailLog) string {
 		v.FullBytes,
 		v.ProxyEnabled,
 		v.ProxyID,
+		compactOpenAIWSLogValue(v.Cause, openAIWSLogValueMaxLen),
+	)
+}
+
+func openAIWSPrewritePingLogMessage(v openAIWSPrewritePingLog) string {
+	return fmt.Sprintf(
+		"prewrite_ping request_id=%s client_request_id=%s account_id=%d account_type=%s conn_profile=%s conn_id=%s conn_reused=%v conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d session_idle_ttl_ms=%d prewrite_ping_threshold_ms=%d previous_response_id=%s previous_response_id_source=%s store_mode=%s store_fallback_reason=%s active_delta=%v has_function_call_output=%v session_hash=%s sticky_account_id=%d sticky_account_hit=%v conn_affinity_hit=%v result=%s cause=%s",
+		normalizeOpenAIWSLogValue(v.RequestID),
+		normalizeOpenAIWSLogValue(v.ClientRequestID),
+		v.AccountID,
+		normalizeOpenAIWSLogValue(v.AccountType),
+		normalizeOpenAIWSLogValue(openAIWSProfileUsageString(v.ConnProfile)),
+		truncateOpenAIWSLogValue(v.ConnID, openAIWSIDValueMaxLen),
+		v.ConnReused,
+		v.ConnAgeMS,
+		v.ConnIdleMS,
+		v.ConnLeaseCount,
+		v.SessionIdleTTLMS,
+		v.PrewritePingThresholdMS,
+		truncateOpenAIWSLogValue(v.PreviousResponseID, openAIWSIDValueMaxLen),
+		normalizeOpenAIWSLogValue(v.PreviousResponseIDSource),
+		normalizeOpenAIWSLogValue(v.StoreMode),
+		normalizeOpenAIWSLogValue(v.StoreFallbackReason),
+		v.ActiveDelta,
+		v.HasFunctionCallOutput,
+		truncateOpenAIWSLogValue(v.SessionHash, 12),
+		v.StickyAccountID,
+		v.StickyAccountHit,
+		v.ConnAffinityHit,
+		normalizeOpenAIWSLogValue(v.Result),
 		compactOpenAIWSLogValue(v.Cause, openAIWSLogValueMaxLen),
 	)
 }
@@ -2554,6 +2619,31 @@ func (s *OpenAIGatewayService) openAIWSPassthroughIdleTimeout() time.Duration {
 
 func (s *OpenAIGatewayService) openAIWSWriteTimeout() time.Duration {
 	return s.openAIWSTransportTimeouts().Write
+}
+
+func openAIWSSessionPrewritePingIdleThreshold(sessionTTL time.Duration) time.Duration {
+	if sessionTTL <= 0 {
+		return 0
+	}
+	threshold := sessionTTL * 3 / 4
+	maxThreshold := 60 * time.Second
+	if threshold > maxThreshold {
+		return maxThreshold
+	}
+	return threshold
+}
+
+func shouldOpenAIWSSessionPrewritePing(account *Account, connProfile openAIWSConnProfile, lease *openAIWSConnLease, httpIngressWSOneShot bool, threshold time.Duration) bool {
+	if account == nil || account.Type != AccountTypeOAuth {
+		return false
+	}
+	if lease == nil || !lease.Reused() {
+		return false
+	}
+	if httpIngressWSOneShot || connProfile != openAIWSConnProfileSessionBound || threshold <= 0 {
+		return false
+	}
+	return lease.ConnIdleDuration() >= threshold
 }
 
 func (s *OpenAIGatewayService) openAIWSDialTimeout() time.Duration {
@@ -4817,6 +4907,72 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 	}
 
+	sessionIdleTTL := time.Duration(0)
+	if pool != nil {
+		sessionIdleTTL = pool.sessionIdleTTL()
+	}
+	prewritePingThreshold := openAIWSSessionPrewritePingIdleThreshold(sessionIdleTTL)
+	prewritePingAttempted := false
+	prewritePingResult := "not_required"
+	if shouldOpenAIWSSessionPrewritePing(account, connProfile, lease, httpIngressWSOneShot, prewritePingThreshold) {
+		prewritePingAttempted = true
+		prewritePingResult = "ok"
+		pingLog := openAIWSPrewritePingLog{
+			RequestID:                requestID,
+			ClientRequestID:          clientRequestID,
+			AccountID:                account.ID,
+			AccountType:              account.Type,
+			ConnProfile:              connProfile,
+			ConnID:                   connID,
+			ConnReused:               lease.Reused(),
+			ConnAgeMS:                lease.ConnAge().Milliseconds(),
+			ConnIdleMS:               lease.ConnIdleDuration().Milliseconds(),
+			ConnLeaseCount:           lease.ConnLeaseCount(),
+			SessionIdleTTLMS:         sessionIdleTTL.Milliseconds(),
+			PrewritePingThresholdMS:  prewritePingThreshold.Milliseconds(),
+			PreviousResponseID:       previousResponseID,
+			PreviousResponseIDSource: previousResponseIDSource,
+			StoreMode:                storeDecision.StoreMode,
+			StoreFallbackReason:      storeDecision.FallbackReason,
+			ActiveDelta:              activeDeltaApplied,
+			HasFunctionCallOutput:    hasFunctionCallOutputForReanchor,
+			SessionHash:              sessionHash,
+			StickyAccountID:          storeDecision.StickyAccountID,
+			StickyAccountHit:         storeDecision.StickyAccountHit,
+			ConnAffinityHit:          connAffinityHit,
+			Result:                   "ok",
+		}
+		if pingErr := lease.PingWithTimeout(openAIWSConnHealthCheckTO); pingErr != nil {
+			prewritePingResult = "fail"
+			pingLog.Result = "fail"
+			pingLog.Cause = pingErr.Error()
+			logOpenAIWSModeInfo("%s", openAIWSPrewritePingLogMessage(pingLog))
+			s.logOpenAIWSBindingSnapshot(
+				ctx,
+				"prewrite_ping_fail",
+				requestID,
+				account,
+				stateStore,
+				pool,
+				groupID,
+				apiKeyID,
+				sessionHash,
+				previousResponseID,
+				originalPreviousResponseIDPresent,
+				connID,
+				preferredConnID,
+				storeDecision,
+				"prewrite_ping_fail",
+				"prewrite_ping_fail",
+				"transport_write",
+				pingErr.Error(),
+			)
+			lease.MarkBrokenFor("prewrite_ping_fail")
+			return nil, wrapOpenAIWSFallback("write_request", pingErr)
+		}
+		logOpenAIWSModeInfo("%s", openAIWSPrewritePingLogMessage(pingLog))
+	}
+
 	writeSentMs := -1
 	if err := lease.WriteJSONWithContextTimeout(ctx, payload, s.openAIWSWriteTimeout()); err != nil {
 		connAgeMs := lease.ConnAge().Milliseconds()
@@ -4879,6 +5035,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			ConnAgeMs:                connAgeMs,
 			ConnIdleMs:               connIdleMs,
 			ConnLeaseCount:           connLeaseCount,
+			SessionIdleTTLMS:         sessionIdleTTL.Milliseconds(),
+			PrewritePingThresholdMS:  prewritePingThreshold.Milliseconds(),
+			PrewritePingAttempted:    prewritePingAttempted,
+			PrewritePingResult:       prewritePingResult,
 			PayloadBytes:             resolvePayloadBytes(),
 			PreviousResponseID:       previousResponseID,
 			PreviousResponseIDKind:   previousResponseIDKind,

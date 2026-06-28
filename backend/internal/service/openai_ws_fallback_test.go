@@ -1316,6 +1316,10 @@ func TestOpenAIWSWriteRequestFailLogMessageIncludesRequestAndReanchorContext(t *
 		ConnAgeMs:                120000,
 		ConnIdleMs:               87000,
 		ConnLeaseCount:           3,
+		SessionIdleTTLMS:         80000,
+		PrewritePingThresholdMS:  60000,
+		PrewritePingAttempted:    true,
+		PrewritePingResult:       "ok",
 		PayloadBytes:             4321,
 		PreviousResponseID:       "resp_prev_write_fail",
 		PreviousResponseIDKind:   OpenAIPreviousResponseIDKindResponseID,
@@ -1365,6 +1369,10 @@ func TestOpenAIWSWriteRequestFailLogMessageIncludesRequestAndReanchorContext(t *
 	require.Contains(t, msg, "conn_age_ms=120000")
 	require.Contains(t, msg, "conn_idle_ms=87000")
 	require.Contains(t, msg, "conn_lease_count=3")
+	require.Contains(t, msg, "session_idle_ttl_ms=80000")
+	require.Contains(t, msg, "prewrite_ping_threshold_ms=60000")
+	require.Contains(t, msg, "prewrite_ping_attempted=true")
+	require.Contains(t, msg, "prewrite_ping_result=ok")
 	require.Contains(t, msg, "payload_bytes=4321")
 	require.Contains(t, msg, "previous_response_id=resp_prev_write_fail")
 	require.Contains(t, msg, "previous_response_id_source=session_context")
@@ -1390,6 +1398,64 @@ func TestOpenAIWSWriteRequestFailLogMessageIncludesRequestAndReanchorContext(t *
 	require.Contains(t, msg, "proxy_enabled=true")
 	require.Contains(t, msg, "proxy_id=58")
 	require.Contains(t, msg, "cause=fail_to_write_frame:_broken_pipe")
+}
+
+func TestOpenAIWSSessionPrewritePingIdleThresholdUsesSessionTTL(t *testing.T) {
+	require.Equal(t, 60*time.Second, openAIWSSessionPrewritePingIdleThreshold(80*time.Second))
+	require.Equal(t, 45*time.Second, openAIWSSessionPrewritePingIdleThreshold(60*time.Second))
+	require.Equal(t, 60*time.Second, openAIWSSessionPrewritePingIdleThreshold(1000*time.Second))
+	require.Equal(t, time.Duration(0), openAIWSSessionPrewritePingIdleThreshold(0))
+}
+
+func TestOpenAIWSPrewritePingLogMessageIncludesReuseRisk(t *testing.T) {
+	msg := openAIWSPrewritePingLogMessage(openAIWSPrewritePingLog{
+		RequestID:                "req-ping",
+		ClientRequestID:          "client-ping",
+		AccountID:                45,
+		AccountType:              AccountTypeOAuth,
+		ConnProfile:              openAIWSConnProfileSessionBound,
+		ConnID:                   "oa_ws_45_3",
+		ConnReused:               true,
+		ConnAgeMS:                120000,
+		ConnIdleMS:               73000,
+		ConnLeaseCount:           4,
+		SessionIdleTTLMS:         80000,
+		PrewritePingThresholdMS:  60000,
+		PreviousResponseID:       "resp_prev_ping",
+		PreviousResponseIDSource: "session_context",
+		StoreMode:                openAIWSStoreModeIncremental,
+		StoreFallbackReason:      "active_delta",
+		ActiveDelta:              true,
+		HasFunctionCallOutput:    true,
+		SessionHash:              "abcdef1234567890",
+		StickyAccountID:          45,
+		StickyAccountHit:         true,
+		ConnAffinityHit:          true,
+		Result:                   "fail",
+		Cause:                    "websocket closed",
+	})
+
+	require.Contains(t, msg, "prewrite_ping")
+	require.Contains(t, msg, "request_id=req-ping")
+	require.Contains(t, msg, "client_request_id=client-ping")
+	require.Contains(t, msg, "account_id=45")
+	require.Contains(t, msg, "conn_profile=session_bound")
+	require.Contains(t, msg, "conn_id=oa_ws_45_3")
+	require.Contains(t, msg, "conn_reused=true")
+	require.Contains(t, msg, "conn_idle_ms=73000")
+	require.Contains(t, msg, "session_idle_ttl_ms=80000")
+	require.Contains(t, msg, "prewrite_ping_threshold_ms=60000")
+	require.Contains(t, msg, "previous_response_id=resp_prev_ping")
+	require.Contains(t, msg, "previous_response_id_source=session_context")
+	require.Contains(t, msg, "store_mode=incremental")
+	require.Contains(t, msg, "store_fallback_reason=active_delta")
+	require.Contains(t, msg, "active_delta=true")
+	require.Contains(t, msg, "has_function_call_output=true")
+	require.Contains(t, msg, "sticky_account_id=45")
+	require.Contains(t, msg, "sticky_account_hit=true")
+	require.Contains(t, msg, "conn_affinity_hit=true")
+	require.Contains(t, msg, "result=fail")
+	require.Contains(t, msg, "cause=websocket_closed")
 }
 
 func TestOpenAIWSTransportPathFromStartClassifiesReuseAndDelta(t *testing.T) {
