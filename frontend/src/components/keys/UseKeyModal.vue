@@ -537,37 +537,36 @@ function generateOpenAIFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
 
   // config.toml content
-  const configContent = `model_provider = "OpenAI"
+  const configContent = `# Minimal Codex CLI config for Sub2API API-key access.
+# API keys can also be configured through other Codex auth methods, such as auth.json
+# or environment variables. This example intentionally uses experimental_bearer_token
+# so the copied config is self-contained.
+model_provider = "sub2api"
 model = "gpt-5.5"
-review_model = "gpt-5.5"
-model_reasoning_effort = "xhigh"
-disable_response_storage = true
-network_access = "enabled"
-windows_wsl_setup_acknowledged = true
+# Optional personal preferences:
+# review_model = "gpt-5.5"
+# model_reasoning_effort = "xhigh"
+# disable_response_storage = true
+# network_access = "enabled"
+# windows_wsl_setup_acknowledged = true
 
-[model_providers.OpenAI]
-name = "OpenAI"
+[model_providers.sub2api]
+name = "sub2api"
 base_url = "${baseUrl}"
+experimental_bearer_token = "${apiKey}"
 wire_api = "responses"
 requires_openai_auth = true
+# supports_websockets = false
 
-[features]
-goals = true`
-
-  // auth.json content
-  const authContent = `{
-  "OPENAI_API_KEY": "${apiKey}"
-}`
+# Optional features:
+# [features]
+# goals = true`
 
   return [
     {
       path: `${configDir}/config.toml`,
       content: configContent,
       hint: t('keys.useKeyModal.openai.configTomlHint')
-    },
-    {
-      path: `${configDir}/auth.json`,
-      content: authContent
     }
   ]
 }
@@ -577,39 +576,36 @@ function generateOpenAIWsFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
 
   // config.toml content with WebSocket v2
-  const configContent = `model_provider = "OpenAI"
+  const configContent = `# Minimal Codex CLI WebSocket config for Sub2API API-key access.
+# API keys can also be configured through other Codex auth methods, such as auth.json
+# or environment variables. This example intentionally uses experimental_bearer_token
+# so the copied config is self-contained.
+model_provider = "sub2api"
 model = "gpt-5.5"
-review_model = "gpt-5.5"
-model_reasoning_effort = "xhigh"
-disable_response_storage = true
-network_access = "enabled"
-windows_wsl_setup_acknowledged = true
+# Optional personal preferences:
+# review_model = "gpt-5.5"
+# model_reasoning_effort = "xhigh"
+# disable_response_storage = true
+# network_access = "enabled"
+# windows_wsl_setup_acknowledged = true
 
-[model_providers.OpenAI]
-name = "OpenAI"
+[model_providers.sub2api]
+name = "sub2api"
 base_url = "${baseUrl}"
+experimental_bearer_token = "${apiKey}"
 wire_api = "responses"
 supports_websockets = true
 requires_openai_auth = true
 
 [features]
 responses_websockets_v2 = true
-goals = true`
-
-  // auth.json content
-  const authContent = `{
-  "OPENAI_API_KEY": "${apiKey}"
-}`
+# goals = true`
 
   return [
     {
       path: `${configDir}/config.toml`,
       content: configContent,
       hint: t('keys.useKeyModal.openai.configTomlHint')
-    },
-    {
-      path: `${configDir}/auth.json`,
-      content: authContent
     }
   ]
 }

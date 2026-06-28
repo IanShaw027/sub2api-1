@@ -1360,8 +1360,8 @@ export default {
       noGroupDescription:
         '此 API 密钥尚未分配分组，请先在密钥列表中点击分组列进行分配，然后才能查看使用配置。',
       openai: {
-        description: '将以下配置文件添加到 Codex CLI 配置目录中。',
-        configTomlHint: '请确保以下内容位于 config.toml 文件的开头部分',
+        description: '将以下 config.toml 添加到 Codex CLI 配置目录中。示例使用 experimental_bearer_token 直接配置当前 API 密钥。',
+        configTomlHint: '请确保以下内容位于 config.toml 文件中；如已有配置，可合并 provider 和 features 部分。',
         note: '请确保配置目录存在。macOS/Linux 用户可运行 mkdir -p ~/.codex 创建目录。',
         noteWindows:
           '按 Win+R，输入 %userprofile%\\.codex 打开配置目录。如目录不存在，请先手动创建。'

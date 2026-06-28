@@ -17,7 +17,7 @@ vi.mock('@/composables/useClipboard', () => ({
 import UseKeyModal from '../UseKeyModal.vue'
 
 describe('UseKeyModal', () => {
-  it('renders GPT-5.5 and goals feature in OpenAI Codex config', () => {
+  it('renders minimal API-key Codex config through experimental_bearer_token', () => {
     const wrapper = mount(UseKeyModal, {
       props: {
         show: true,
@@ -38,18 +38,27 @@ describe('UseKeyModal', () => {
     })
 
     const codeBlocks = wrapper.findAll('pre code').map((code) => code.text())
-    const configToml = codeBlocks.find((content) => content.includes('model_provider = "OpenAI"'))
+    const configToml = codeBlocks.find((content) => content.includes('model_provider = "sub2api"'))
+    const allCode = codeBlocks.join('\n')
 
     expect(configToml).toBeDefined()
     expect(configToml).toContain('model = "gpt-5.5"')
-    expect(configToml).toContain('review_model = "gpt-5.5"')
+    expect(configToml).toContain('[model_providers.sub2api]')
+    expect(configToml).toContain('base_url = "https://example.com/v1"')
+    expect(configToml).toContain('experimental_bearer_token = "sk-test"')
+    expect(configToml).toContain('wire_api = "responses"')
+    expect(configToml).toContain('requires_openai_auth = true')
+    expect(configToml).toContain('# review_model = "gpt-5.5"')
+    expect(configToml).toContain('# model_reasoning_effort = "xhigh"')
+    expect(configToml).toContain('# goals = true')
+    expect(configToml).not.toMatch(/^review_model = "gpt-5\.5"$/m)
     expect(configToml).not.toContain('model = "gpt-5.4"')
     expect(configToml).not.toContain('model_context_window')
     expect(configToml).not.toContain('model_auto_compact_token_limit')
-    expect(configToml).toContain('[features]\ngoals = true')
+    expect(allCode).not.toContain('OPENAI_API_KEY')
   })
 
-  it('renders GPT-5.5 and goals feature in OpenAI Codex WebSocket config', async () => {
+  it('renders minimal API-key Codex WebSocket config through experimental_bearer_token', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {
         show: true,
@@ -82,11 +91,17 @@ describe('UseKeyModal', () => {
 
     expect(configToml).toBeDefined()
     expect(configToml).toContain('model = "gpt-5.5"')
-    expect(configToml).toContain('review_model = "gpt-5.5"')
+    expect(configToml).toContain('model_provider = "sub2api"')
+    expect(configToml).toContain('[model_providers.sub2api]')
+    expect(configToml).toContain('experimental_bearer_token = "sk-test"')
+    expect(configToml).toContain('supports_websockets = true')
+    expect(configToml).toContain('# review_model = "gpt-5.5"')
+    expect(configToml).toContain('# goals = true')
+    expect(configToml).not.toMatch(/^review_model = "gpt-5\.5"$/m)
     expect(configToml).not.toContain('model = "gpt-5.4"')
     expect(configToml).not.toContain('model_context_window')
     expect(configToml).not.toContain('model_auto_compact_token_limit')
-    expect(configToml).toContain('[features]\nresponses_websockets_v2 = true\ngoals = true')
+    expect(configToml).toContain('[features]\nresponses_websockets_v2 = true\n# goals = true')
   })
 
   it('renders GPT-5.4 mini entry in OpenCode config', async () => {

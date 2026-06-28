@@ -1369,8 +1369,8 @@ export default {
       noGroupTitle: 'Please assign a group first',
       noGroupDescription: 'This API key has not been assigned to a group. Please click the group column in the key list to assign one before viewing the configuration.',
       openai: {
-        description: 'Add the following configuration files to your Codex CLI config directory.',
-        configTomlHint: 'Make sure the following content is at the beginning of the config.toml file',
+        description: 'Add the following config.toml to your Codex CLI config directory. This example uses experimental_bearer_token for the current API key.',
+        configTomlHint: 'Make sure the following content is in config.toml. If you already have a config, merge the provider and features sections.',
         note: 'Make sure the config directory exists. macOS/Linux users can run mkdir -p ~/.codex to create it.',
         noteWindows: 'Press Win+R and enter %userprofile%\\.codex to open the config directory. Create it manually if it does not exist.',
       },
