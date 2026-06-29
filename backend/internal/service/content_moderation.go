@@ -3400,7 +3400,8 @@ func matchBlockedKeyword(text string, keywords, exceptions []string) (string, bo
 			continue
 		}
 		if terms := splitBlockedKeywordAndTerms(kw); len(terms) > 1 {
-			if matchBlockedKeywordAndTerms(lower, terms, exSpans) {
+			windowSize := parseProximityWindow(kw)
+			if matchBlockedKeywordAndTerms(lower, terms, exSpans, windowSize) {
 				return kw, true
 			}
 			continue
@@ -3499,6 +3500,8 @@ func splitBlockedKeywordAndTerms(keyword string) []string {
 	if !strings.Contains(keyword, "&&") {
 		return nil
 	}
+	// 移除窗口大小配置 (如果有)
+	keyword = removeProximityWindowSuffix(keyword)
 	parts := strings.Split(keyword, "&&")
 	terms := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -3511,13 +3514,131 @@ func splitBlockedKeywordAndTerms(keyword string) []string {
 	return terms
 }
 
-func matchBlockedKeywordAndTerms(textLower string, terms []string, exSpans []blockedKeywordByteSpan) bool {
-	for _, term := range terms {
-		if !containsKeywordWithBoundary(textLower, term, exSpans) {
-			return false
+// parseProximityWindow 从关键词中解析窗口大小配置
+// 语法: "keyword1&&keyword2:300" 表示窗口300字符
+// 不带配置则返回默认值200
+func parseProximityWindow(keyword string) int {
+	const defaultWindow = 200
+	if idx := strings.LastIndex(keyword, ":"); idx > 0 {
+		if windowStr := strings.TrimSpace(keyword[idx+1:]); windowStr != "" {
+			if window, err := strconv.Atoi(windowStr); err == nil && window > 0 && window <= 2000 {
+				return window
+			}
 		}
 	}
-	return true
+	return defaultWindow
+}
+
+// removeProximityWindowSuffix 移除关键词中的合法窗口大小配置后缀。
+func removeProximityWindowSuffix(keyword string) string {
+	if idx := strings.LastIndex(keyword, ":"); idx > 0 {
+		if windowStr := strings.TrimSpace(keyword[idx+1:]); windowStr != "" {
+			if window, err := strconv.Atoi(windowStr); err == nil && window > 0 && window <= 2000 {
+				return strings.TrimSpace(keyword[:idx])
+			}
+		}
+	}
+	return keyword
+}
+
+// matchBlockedKeywordAndTerms 检查所有terms是否在邻近窗口内共现。
+// windowSize: 邻近窗口大小(字符数),所有terms必须在此范围内全部出现,避免长文本误判。
+func matchBlockedKeywordAndTerms(textLower string, terms []string, exSpans []blockedKeywordByteSpan, windowSize int) bool {
+	if len(terms) == 0 {
+		return false
+	}
+	if len(terms) == 1 {
+		return containsKeywordWithBoundary(textLower, terms[0], exSpans)
+	}
+
+	if windowSize <= 0 {
+		windowSize = 200 // 默认窗口
+	}
+
+	// 收集第一个term的所有出现位置
+	firstTerm := terms[0]
+	var firstPositions []int
+	idx := 0
+	for {
+		pos := strings.Index(textLower[idx:], firstTerm)
+		if pos < 0 {
+			break
+		}
+		start := idx + pos
+		end := start + len(firstTerm)
+
+		// 检查词边界和例外短语
+		ok := true
+		if !hasCJK(firstTerm) {
+			leftOK := start == 0 || !isWordChar(rune(textLower[start-1]))
+			rightOK := end == len(textLower) || !isWordChar(rune(textLower[end]))
+			ok = leftOK && rightOK
+		}
+		if ok && !blockedKeywordSpanCovered(exSpans, start, end) {
+			firstPositions = append(firstPositions, start)
+		}
+		idx = start + 1
+	}
+
+	if len(firstPositions) == 0 {
+		return false
+	}
+
+	// 对每个第一term的位置,检查窗口内是否包含所有其他terms
+	// 窗口策略: 从第一个词开始,向前backward和向后forward各取一部分,总长度为windowSize
+	for _, firstPos := range firstPositions {
+		// 窗口向前backward取25%,向后forward取75%(偏向后文)
+		backward := windowSize / 4
+		forward := windowSize - backward
+
+		windowStart := firstPos - backward
+		if windowStart < 0 {
+			windowStart = 0
+		}
+		windowEnd := firstPos + len(firstTerm) + forward
+		if windowEnd > len(textLower) {
+			windowEnd = len(textLower)
+		}
+
+		windowText := textLower[windowStart:windowEnd]
+		allFound := true
+
+		for i := 1; i < len(terms); i++ {
+			term := terms[i]
+			if !containsKeywordWithBoundary(windowText, term, adjustExceptionSpans(exSpans, windowStart)) {
+				allFound = false
+				break
+			}
+		}
+
+		if allFound {
+			return true
+		}
+	}
+
+	return false
+}
+
+// adjustExceptionSpans 调整例外短语span的偏移量,用于窗口文本。
+func adjustExceptionSpans(spans []blockedKeywordByteSpan, offset int) []blockedKeywordByteSpan {
+	if len(spans) == 0 || offset == 0 {
+		return spans
+	}
+	adjusted := make([]blockedKeywordByteSpan, 0, len(spans))
+	for _, s := range spans {
+		if s.end <= offset {
+			continue // span完全在窗口之前
+		}
+		newStart := s.start - offset
+		if newStart < 0 {
+			newStart = 0
+		}
+		adjusted = append(adjusted, blockedKeywordByteSpan{
+			start: newStart,
+			end:   s.end - offset,
+		})
+	}
+	return adjusted
 }
 
 func normalizeModerationAPIKeys(keys []string) []string {
