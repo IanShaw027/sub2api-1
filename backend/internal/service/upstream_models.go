@@ -80,6 +80,9 @@ func (s *AccountTestService) FetchUpstreamSupportedModels(ctx context.Context, a
 	if account == nil {
 		return nil, newUpstreamModelSyncConfigError("Account is required", nil)
 	}
+	if account.Platform == PlatformGrok {
+		return nil, newUpstreamModelSyncUnsupportedError("Grok upstream model sync is not supported", nil)
+	}
 
 	if account.Platform == PlatformAntigravity && account.Type != AccountTypeAPIKey {
 		return s.fetchAntigravityOAuthUpstreamModels(ctx, account)

@@ -130,6 +130,32 @@ func TestBuildUpstreamModelsRequestsForAPIKeyAccounts(t *testing.T) {
 	require.Equal(t, "antigravity-key", antigravityReq.Header.Get("x-api-key"))
 }
 
+func TestFetchUpstreamSupportedModelsRejectsGrokAsExplicitlyUnsupported(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountTestService{cfg: upstreamModelSyncTestConfig()}
+	for _, accountType := range []string{AccountTypeOAuth, AccountTypeAPIKey, AccountTypeSetupToken, AccountTypeServiceAccount, AccountTypeBedrock, AccountTypeUpstream} {
+		accountType := accountType
+		t.Run(accountType, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := svc.FetchUpstreamSupportedModels(context.Background(), &Account{
+				Platform: PlatformGrok,
+				Type:     accountType,
+				Credentials: map[string]any{
+					"api_key":  "grok-key",
+					"base_url": "https://api.x.ai",
+				},
+			})
+			require.Error(t, err)
+			var syncErr *UpstreamModelSyncError
+			require.True(t, errors.As(err, &syncErr))
+			require.Equal(t, UpstreamModelSyncErrorUnsupported, syncErr.Kind)
+			require.Contains(t, syncErr.SafeMessage(), "Grok upstream model sync is not supported")
+		})
+	}
+}
+
 func TestBuildAntigravityAPIKeyModelsRequestRejectsOfficialCloudCodeBase(t *testing.T) {
 	t.Parallel()
 

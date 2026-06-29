@@ -166,6 +166,9 @@ func validatePlatformAccountType(platform, accountType string) error {
 	if platform == PlatformKiro && accountType != AccountTypeOAuth && accountType != AccountTypeAPIKey {
 		return infraerrors.BadRequest("UNSUPPORTED_ACCOUNT_TYPE", "kiro accounts only support oauth or apikey type")
 	}
+	if platform == PlatformGrok && accountType != AccountTypeOAuth && accountType != AccountTypeAPIKey {
+		return infraerrors.BadRequest("UNSUPPORTED_ACCOUNT_TYPE", "grok accounts only support oauth or apikey type")
+	}
 	return nil
 }
 

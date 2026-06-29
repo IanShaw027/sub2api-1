@@ -12544,7 +12544,15 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		if apiKey != nil && apiKey.Group != nil {
 			groupPrice = apiKey.Group.GetSearchPricePer1k()
 		}
-		return s.billingService.CalculateSearchCost(result.SearchCount, groupPrice, multiplier), nil
+		searchCost := s.billingService.CalculateSearchCost(result.SearchCount, groupPrice, multiplier)
+		if hasUsageTokens(tokens) {
+			tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
+			if err != nil {
+				return nil, err
+			}
+			return mergeCostBreakdowns(string(BillingModeSearch), tokenCost, searchCost), nil
+		}
+		return searchCost, nil
 	}
 	if openAIForwardResultHasVideoBilling(result) {
 		return s.calculateOpenAIVideoRequestCost(result, apiKey, multiplier), nil
@@ -12564,6 +12572,17 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		return s.calculateOpenAIImageRequestCost(ctx, result, apiKey, billingModel, multiplier, imageRateMultiplier, tokens, serviceTier, requestType)
 	}
 	return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
+}
+
+func hasUsageTokens(tokens UsageTokens) bool {
+	return tokens.InputTokens > 0 ||
+		tokens.ImageInputTokens > 0 ||
+		tokens.OutputTokens > 0 ||
+		tokens.CacheCreationTokens > 0 ||
+		tokens.CacheReadTokens > 0 ||
+		tokens.CacheCreation5mTokens > 0 ||
+		tokens.CacheCreation1hTokens > 0 ||
+		tokens.ImageOutputTokens > 0
 }
 
 func OpenAIForwardResultHasVideoBillingForUsage(result *OpenAIForwardResult) bool {

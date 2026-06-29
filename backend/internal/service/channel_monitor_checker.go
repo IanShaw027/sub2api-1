@@ -347,11 +347,21 @@ func resolveProviderAdapter(provider string, opts *CheckOptions) (providerAdapte
 			return providerAdapter{}, fmt.Errorf("unsupported openai api_mode %q", effectiveAPIMode(provider, opts))
 		}
 	}
+	if provider == MonitorProviderGrok && defaultAPIMode(optsAPIMode(opts)) == MonitorAPIModeResponses {
+		return providerAdapter{}, fmt.Errorf("unsupported grok api_mode %q", defaultAPIMode(optsAPIMode(opts)))
+	}
 	adapter, ok := providerAdapters[provider]
 	if !ok {
 		return providerAdapter{}, fmt.Errorf("unsupported provider %q", provider)
 	}
 	return adapter, nil
+}
+
+func optsAPIMode(opts *CheckOptions) string {
+	if opts == nil {
+		return ""
+	}
+	return opts.APIMode
 }
 
 func extractMonitorResponseText(adapter providerAdapter, respBytes []byte) string {

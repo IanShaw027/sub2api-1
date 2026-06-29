@@ -218,6 +218,34 @@ func TestChannelMonitorCreate_TemplateAPIModeMismatch(t *testing.T) {
 	}
 }
 
+func TestChannelMonitorCreate_GrokResponsesModeRejected(t *testing.T) {
+	called := false
+	repo := &channelMonitorRepoStub{
+		createFn: func(context.Context, *ChannelMonitor) error {
+			called = true
+			return nil
+		},
+	}
+	svc := NewChannelMonitorService(repo, channelMonitorEncryptorStub{})
+
+	_, err := svc.Create(context.Background(), ChannelMonitorCreateParams{
+		Name:            "grok-responses",
+		Provider:        MonitorProviderGrok,
+		APIMode:         MonitorAPIModeResponses,
+		Endpoint:        channelMonitorTestPublicEndpoint,
+		APIKey:          "sk",
+		PrimaryModel:    "grok-4.3",
+		Enabled:         true,
+		IntervalSeconds: 60,
+	})
+	if !errors.Is(err, ErrChannelMonitorInvalidAPIMode) {
+		t.Fatalf("expected ErrChannelMonitorInvalidAPIMode, got %v", err)
+	}
+	if called {
+		t.Fatal("repo.Create should not be called for unsupported grok responses mode")
+	}
+}
+
 func TestChannelMonitorUpdate_ProviderChangeViolatesTemplateProvider(t *testing.T) {
 	updated := false
 	repo := &channelMonitorRepoStub{

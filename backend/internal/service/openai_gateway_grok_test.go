@@ -432,3 +432,41 @@ func TestForwardGrokResponses_ReportsSearchCountForWebSearchCall(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, result.SearchCount)
 }
+
+func TestForwardGrokResponsesKeepsTokenUsageWhenWebSearchCallPresent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	body := []byte(`{"model":"grok","input":"hi","stream":true,"tools":[{"type":"web_search"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+
+	account := &Account{
+		ID:          54,
+		Name:        "grok",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "access-token",
+			"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+	}
+	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{accountsByID: map[int64]*Account{54: account}}}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "Xai-Request-Id": []string{"xai-req"}},
+		Body: io.NopCloser(strings.NewReader(
+			`data: {"type":"response.output_text.delta","delta":"ok"}` + "\n\n" +
+				`data: {"type":"response.completed","response":{"id":"resp_1","model":"grok-4.3","output":[{"type":"web_search_call","id":"ws_1"}],"usage":{"input_tokens":9,"output_tokens":4}}}` + "\n\n" +
+				`data: [DONE]\n\n`,
+		)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream, grokTokenProvider: NewGrokTokenProvider(repo, nil), accountRepo: repo}
+
+	result, err := svc.forwardGrokResponses(context.Background(), c, account, body, "grok", true, time.Now())
+	require.NoError(t, err)
+	require.Equal(t, 1, result.SearchCount)
+	require.Equal(t, 9, result.Usage.InputTokens)
+	require.Equal(t, 4, result.Usage.OutputTokens)
+}

@@ -66,6 +66,33 @@ func TestAdminServiceCreateAccount_AllowsGrokOAuthType(t *testing.T) {
 	require.Equal(t, AccountTypeOAuth, account.Type)
 }
 
+func TestAdminServiceCreateAccount_RejectsUnsupportedGrokAccountTypes(t *testing.T) {
+	t.Parallel()
+
+	for _, accountType := range []string{AccountTypeSetupToken, AccountTypeServiceAccount, AccountTypeBedrock, AccountTypeUpstream} {
+		accountType := accountType
+		t.Run(accountType, func(t *testing.T) {
+			t.Parallel()
+
+			repo := &accountRepoStubForAdminCreateValidation{}
+			svc := &adminServiceImpl{accountRepo: repo}
+
+			account, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
+				Name:                 "grok-unsupported",
+				Platform:             PlatformGrok,
+				Type:                 accountType,
+				Credentials:          map[string]any{"refresh_token": "rt-test"},
+				SkipDefaultGroupBind: true,
+			})
+
+			require.Nil(t, account)
+			require.Error(t, err)
+			require.False(t, repo.createCalled)
+			require.Contains(t, err.Error(), "grok accounts only support oauth or apikey type")
+		})
+	}
+}
+
 func TestAdminServiceCreateAccount_RejectsInvalidKiroCredentials(t *testing.T) {
 	t.Parallel()
 

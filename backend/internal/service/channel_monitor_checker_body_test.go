@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 // swapMonitorHTTPClient 临时替换 monitorHTTPClient 为不带 SSRF 校验的普通 client，
@@ -255,6 +257,18 @@ func TestRunCheckForModel_GrokDefaultChatRequest(t *testing.T) {
 	if h.lastHeaders.Get(ChannelMonitorProbeHeaderName) != "" {
 		t.Errorf("grok monitor requests should not add internal probe header, got %q", h.lastHeaders.Get(ChannelMonitorProbeHeaderName))
 	}
+}
+
+func TestRunCheckForModel_GrokResponsesModeIsRejected(t *testing.T) {
+	h := &openAICaptureHandler{}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderGrok, endpoint, "xai-grok-key", "grok-4.3", &CheckOptions{
+		APIMode: MonitorAPIModeResponses,
+	})
+
+	require.Equal(t, MonitorStatusError, res.Status)
+	require.Contains(t, res.Message, "unsupported grok api_mode")
 }
 
 func TestRunCheckForModel_OpenAIResponses_DefaultRequest(t *testing.T) {
