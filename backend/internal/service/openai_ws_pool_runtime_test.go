@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/model"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 )
 
@@ -588,6 +590,79 @@ func TestOpenAIWSPoolReconcile_IneligiblePreservesPinnedConnectionsUntilUnpinned
 	pool.ReconcileTargets(map[int64]openAIWSPoolReconcileTarget{})
 	_, _, conns = pool.AccountPoolLoad(account.ID)
 	require.Equal(t, 0, conns, "unpinned ineligible idle connection should be cleaned on the next reconcile")
+}
+
+type openAIWSTLSRuntimeCaptureDialer struct {
+	lastHeaders    http.Header
+	lastTLSProfile *tlsfingerprint.Profile
+	dialCount      atomic.Int32
+}
+
+func (d *openAIWSTLSRuntimeCaptureDialer) Dial(
+	ctx context.Context,
+	wsURL string,
+	headers http.Header,
+	proxyURL string,
+	tlsProfile *tlsfingerprint.Profile,
+) (openAIWSClientConn, int, http.Header, error) {
+	_ = ctx
+	_ = wsURL
+	_ = proxyURL
+	d.lastHeaders = cloneHeader(headers)
+	d.lastTLSProfile = tlsProfile
+	d.dialCount.Add(1)
+	return &openAIWSFakeConn{}, 0, nil, nil
+}
+
+func TestOpenAIWSPoolReconcilePrewarmUsesTLSFingerprintRuntime(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+	StoreOpenAIWSPoolRuntimeSettings(100, 120)
+
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 4
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 4
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	dialer := &openAIWSTLSRuntimeCaptureDialer{}
+	pool.setClientDialerForTest(dialer)
+
+	svc := &OpenAIGatewayService{
+		cfg:          cfg,
+		openaiWSPool: pool,
+		tlsFPProfileService: &TLSFingerprintProfileService{localCache: map[int64]*model.TLSFingerprintProfile{
+			77: {
+				ID:         77,
+				Name:       "WS Routed TLS",
+				Platform:   "openai",
+				UserAgent:  "ws-profile-ua/1.0",
+				Originator: "ws_profile_origin",
+			},
+		}},
+	}
+	account := &Account{
+		ID:          8801,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 4,
+		Credentials: map[string]any{"access_token": "tok_ws"},
+		Extra: map[string]any{
+			"openai_oauth_responses_websockets_v2_enabled": true,
+			"enable_tls_fingerprint":                       true,
+			"tls_fingerprint_profile_id":                   float64(77),
+		},
+	}
+
+	svc.prewarmNeutralForAccount(context.Background(), pool, account, 1)
+
+	require.Equal(t, int32(1), dialer.dialCount.Load())
+	require.NotNil(t, dialer.lastTLSProfile)
+	require.Equal(t, "WS Routed TLS", dialer.lastTLSProfile.Name)
+	require.Equal(t, "ws-profile-ua/1.0", dialer.lastHeaders.Get("user-agent"))
+	require.Equal(t, "ws_profile_origin", dialer.lastHeaders.Get("originator"))
 }
 
 func TestOpenAIWSPoolReconcile_IneligibleStopsInFlightNeutralPrewarmFromReaddingConnection(t *testing.T) {

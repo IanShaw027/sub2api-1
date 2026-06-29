@@ -34,6 +34,8 @@ func (s *GatewayService) ForwardAsResponses(
 	body []byte,
 	parsed *ParsedRequest,
 ) (*ForwardResult, error) {
+	clearClaudeResponseRewriteContext(c)
+
 	if shouldAutoRouteOpenAICompatCCUpstream(account) {
 		return s.forwardResponsesToOpenAICompatCC(ctx, c, account, body)
 	}
@@ -85,7 +87,7 @@ func (s *GatewayService) ForwardAsResponses(
 		}
 
 		isClaudeCode := false
-		shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode && account.Platform != PlatformKiro
+		shouldMimicClaudeCode := s.shouldMimicClaudeCodeForAccount(ctx, account, isClaudeCode) && account.Platform != PlatformKiro
 		if shouldMimicClaudeCode {
 			anthropicBody = s.applyClaudeCodeOAuthMimicryToBody(ctx, c, account, anthropicBody, anthropicReq.System, mappedModel)
 		}
@@ -437,6 +439,7 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if respBytes, err := json.Marshal(responsesResp); err == nil {
 		respBytes = reverseToolNamesIfPresent(c, respBytes)
+		respBytes = reverseWorkDirIfPresent(c, respBytes)
 		c.Data(http.StatusOK, "application/json; charset=utf-8", respBytes)
 	} else {
 		c.JSON(http.StatusOK, responsesResp)
@@ -532,7 +535,9 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 				)
 				continue
 			}
-			out := string(reverseToolNamesIfPresent(c, []byte(sse)))
+			outBytes := reverseToolNamesIfPresent(c, []byte(sse))
+			outBytes = reverseWorkDirIfPresent(c, outBytes)
+			out := string(outBytes)
 			if _, err := fmt.Fprint(c.Writer, out); err != nil {
 				logger.L().Info("forward_as_responses stream: client disconnected",
 					zap.String("request_id", requestID),
@@ -553,7 +558,9 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 				if err != nil {
 					continue
 				}
-				out := string(reverseToolNamesIfPresent(c, []byte(sse)))
+				outBytes := reverseToolNamesIfPresent(c, []byte(sse))
+				outBytes = reverseWorkDirIfPresent(c, outBytes)
+				out := string(outBytes)
 				fmt.Fprint(c.Writer, out) //nolint:errcheck
 			}
 			c.Writer.Flush()

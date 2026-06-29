@@ -23,6 +23,7 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
+	"golang.org/x/net/http2"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
@@ -294,18 +295,24 @@ func (s *httpUpstreamService) doWithRequestOverrides(
 	settings := s.resolvePoolSettings(s.getIsolationMode(), accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
 	protocolMode := upstreamProtocolModeDefault
-	var transport *http.Transport
+	var roundTripper http.RoundTripper
+	// h1Transport 指向可设置 DisableKeepAlives 等 HTTP/1.x 专属字段的 *http.Transport；
+	// 当 TLS 指纹经路走 HTTP/2(*http2.Transport) 时为 nil。
+	var h1Transport *http.Transport
 	if profile != nil {
-		transport, err = buildUpstreamTransportWithTLSFingerprint(settings, parsedProxy, profile)
+		roundTripper, h1Transport, err = buildUpstreamRoundTripperWithTLSFingerprint(settings, parsedProxy, profile)
 	} else {
 		protocolMode = s.resolveProtocolMode(upstreamProfile, proxyKey, parsedProxy)
-		transport, err = buildUpstreamTransport(settings, parsedProxy, protocolMode)
+		h1Transport, err = buildUpstreamTransport(settings, parsedProxy, protocolMode)
+		roundTripper = h1Transport
 	}
 	if err != nil {
 		return nil, err, true
 	}
 	if opts.DisableKeepAlives {
-		transport.DisableKeepAlives = true
+		if h1Transport != nil {
+			h1Transport.DisableKeepAlives = true
+		}
 		req = req.Clone(req.Context())
 		req.Close = true
 	}
@@ -316,7 +323,7 @@ func (s *httpUpstreamService) doWithRequestOverrides(
 		"disable_keep_alives", opts.DisableKeepAlives,
 		"tls_profile_enabled", profile != nil)
 
-	client := &http.Client{Transport: transport}
+	client := &http.Client{Transport: roundTripper}
 	if s.shouldValidateResolvedIP() {
 		client.CheckRedirect = s.redirectChecker
 	}
@@ -407,15 +414,15 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 		}
 	}
 
-	// 创建带 TLS 指纹的 Transport
+	// 创建带 TLS 指纹的 Transport（profile ALPN 含 h2 时自动走 HTTP/2 出站）
 	slog.Debug("tls_fingerprint_creating_new_client", "account_id", accountID, "cache_key", cacheKey, "proxy", proxyKey)
-	transport, err := buildUpstreamTransportWithTLSFingerprint(settings, parsedProxy, profile)
+	roundTripper, _, err := buildUpstreamRoundTripperWithTLSFingerprint(settings, parsedProxy, profile)
 	if err != nil {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("build TLS fingerprint transport: %w", err)
 	}
 
-	client := &http.Client{Transport: transport}
+	client := &http.Client{Transport: roundTripper}
 	if s.shouldValidateResolvedIP() {
 		client.CheckRedirect = s.redirectChecker
 	}
@@ -1443,35 +1450,107 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 		ForceAttemptHTTP2: false,
 	}
 
-	// 根据代理类型选择合适的 TLS 指纹 Dialer
-	if proxyURL == nil {
-		// 直连：使用 TLSFingerprintDialer
-		slog.Debug("tls_fingerprint_transport_direct")
-		dialer := tlsfingerprint.NewDialer(transportProfile, newUpstreamDialer().DialContext)
-		transport.DialTLSContext = dialer.DialTLSContext
-	} else {
-		scheme := strings.ToLower(proxyURL.Scheme)
-		switch scheme {
-		case "socks5", "socks5h":
-			// SOCKS5 代理：使用 SOCKS5ProxyDialer
-			slog.Debug("tls_fingerprint_transport_socks5", "proxy", proxyURL.Host)
-			socks5Dialer := tlsfingerprint.NewSOCKS5ProxyDialer(transportProfile, proxyURL)
-			transport.DialTLSContext = socks5Dialer.DialTLSContext
-		case "http", "https":
-			// HTTP/HTTPS 代理：使用 HTTPProxyDialer（CONNECT 隧道）
-			slog.Debug("tls_fingerprint_transport_http_connect", "proxy", proxyURL.Host)
-			httpDialer := tlsfingerprint.NewHTTPProxyDialer(transportProfile, proxyURL)
-			transport.DialTLSContext = httpDialer.DialTLSContext
-		default:
-			// 未知代理类型，回退到普通代理配置（无 TLS 指纹）
-			slog.Debug("tls_fingerprint_transport_unknown_scheme_fallback", "scheme", scheme)
-			if err := proxyutil.ConfigureTransportProxy(transport, proxyURL); err != nil {
-				return nil, err
-			}
+	dialTLS, fallbackProxy, err := tlsFingerprintDialTLSFunc(transportProfile, proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	if dialTLS != nil {
+		transport.DialTLSContext = dialTLS
+	} else if fallbackProxy {
+		// 未知代理类型，回退到普通代理配置（无 TLS 指纹）
+		if err := proxyutil.ConfigureTransportProxy(transport, proxyURL); err != nil {
+			return nil, err
 		}
 	}
 
 	return transport, nil
+}
+
+// tlsFingerprintDialTLSFunc 根据代理类型构建带 TLS 指纹的 DialTLSContext。
+// 直连/HTTP CONNECT/SOCKS5 三种经路共享，供 h1(*http.Transport) 与 h2(*http2.Transport) 复用。
+// 返回 (dialTLS, fallbackProxy, err)：dialTLS==nil 且 fallbackProxy==true 表示未知代理类型，
+// 调用方应回退到无指纹的普通代理 Transport。
+func tlsFingerprintDialTLSFunc(
+	transportProfile *tlsfingerprint.Profile,
+	proxyURL *url.URL,
+) (func(ctx context.Context, network, addr string) (net.Conn, error), bool, error) {
+	if proxyURL == nil {
+		slog.Debug("tls_fingerprint_transport_direct")
+		dialer := tlsfingerprint.NewDialer(transportProfile, newUpstreamDialer().DialContext)
+		return dialer.DialTLSContext, false, nil
+	}
+	switch strings.ToLower(proxyURL.Scheme) {
+	case "socks5", "socks5h":
+		slog.Debug("tls_fingerprint_transport_socks5", "proxy", proxyURL.Host)
+		socks5Dialer := tlsfingerprint.NewSOCKS5ProxyDialer(transportProfile, proxyURL)
+		return socks5Dialer.DialTLSContext, false, nil
+	case "http", "https":
+		slog.Debug("tls_fingerprint_transport_http_connect", "proxy", proxyURL.Host)
+		httpDialer := tlsfingerprint.NewHTTPProxyDialer(transportProfile, proxyURL)
+		return httpDialer.DialTLSContext, false, nil
+	default:
+		slog.Debug("tls_fingerprint_transport_unknown_scheme_fallback", "scheme", proxyURL.Scheme)
+		return nil, true, nil
+	}
+}
+
+// tlsFingerprintProfileWantsH2 判断 profile 是否在 ALPN 中显式提供 h2。
+// 仅当模板显式配置 h2 时才走 HTTP/2 出站，现有仅 http/1.1 的模板自然走 h1 经路（零回归）。
+func tlsFingerprintProfileWantsH2(profile *tlsfingerprint.Profile) bool {
+	if profile == nil {
+		return false
+	}
+	for _, proto := range profile.ALPNProtocols {
+		if strings.EqualFold(strings.TrimSpace(proto), "h2") {
+			return true
+		}
+	}
+	return false
+}
+
+// buildUpstreamRoundTripperWithTLSFingerprint 按 profile ALPN 是否含 h2 分流构建出站 RoundTripper。
+//   - 不含 h2（现有绝大多数模板）→ 现有 *http.Transport（HTTP/1.x），字节级零变化。
+//   - 含 h2 → *http2.Transport（utls dialer 接 DialTLSContext，真正走 HTTP/2，消除 ALPN 矛盾）。
+//
+// 第二个返回值是 h1 经路的 *http.Transport（用于设置 DisableKeepAlives 等 h1 专属字段）；
+// h2 经路时为 nil。
+func buildUpstreamRoundTripperWithTLSFingerprint(
+	settings poolSettings,
+	proxyURL *url.URL,
+	profile *tlsfingerprint.Profile,
+) (http.RoundTripper, *http.Transport, error) {
+	if !tlsFingerprintProfileWantsH2(profile) {
+		transport, err := buildUpstreamTransportWithTLSFingerprint(settings, proxyURL, profile)
+		if err != nil {
+			return nil, nil, err
+		}
+		return transport, transport, nil
+	}
+
+	// h2 经路：保留 profile 完整 ALPN（含 h2），让 utls ClientHello 真实提示 h2。
+	dialTLS, fallbackProxy, err := tlsFingerprintDialTLSFunc(profile, proxyURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	if fallbackProxy {
+		// 未知代理类型无法做 utls 隧道：回退到 h1 经路的普通代理（无指纹），保证可用性。
+		slog.Debug("tls_fingerprint_h2_unknown_proxy_fallback_h1", "scheme", proxyURL.Scheme)
+		transport, err := buildUpstreamTransportWithTLSFingerprint(settings, proxyURL, profile)
+		if err != nil {
+			return nil, nil, err
+		}
+		return transport, transport, nil
+	}
+
+	h2 := &http2.Transport{
+		// http2.Transport.DialTLSContext 多一个 *tls.Config 参数；utls dialer 自己管 TLS 配置，忽略之。
+		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+			return dialTLS(ctx, network, addr)
+		},
+		IdleConnTimeout: settings.idleConnTimeout,
+	}
+	slog.Debug("tls_fingerprint_transport_h2_enabled", "profile", profile.Name)
+	return h2, nil, nil
 }
 
 func tlsFingerprintHTTPTransportProfile(profile *tlsfingerprint.Profile) *tlsfingerprint.Profile {

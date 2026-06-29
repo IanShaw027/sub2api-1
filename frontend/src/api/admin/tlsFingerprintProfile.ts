@@ -5,13 +5,16 @@
 
 import { apiClient } from '../client'
 
+export type TLSFingerprintProfileTransport = '' | 'http1' | 'h2' | 'websocket-http1' | 'websocket-h2'
+export type TLSFingerprintExtensionPayloads = Record<string, string>
+
 /**
  * TLS fingerprint profile interface
  */
 export interface TLSFingerprintProfile {
   id: number
   platform: string
-  transport: string
+  transport: TLSFingerprintProfileTransport | string
   os: string
   client_type: string
   name: string
@@ -23,11 +26,13 @@ export interface TLSFingerprintProfile {
   curves: number[]
   point_formats: number[]
   signature_algorithms: number[]
+  signature_algorithms_cert: number[]
   alpn_protocols: string[]
   supported_versions: number[]
   key_share_groups: number[]
   psk_modes: number[]
   extensions: number[]
+  extension_payloads: TLSFingerprintExtensionPayloads
   compress_cert_algos: number[]
   delegated_credentials_algorithms: number[]
   application_settings_protocols: string[]
@@ -40,7 +45,7 @@ export interface TLSFingerprintProfile {
  */
 export interface CreateProfileRequest {
   platform?: string
-  transport?: string
+  transport?: TLSFingerprintProfileTransport | string
   os?: string
   client_type?: string
   name: string
@@ -52,11 +57,13 @@ export interface CreateProfileRequest {
   curves?: number[]
   point_formats?: number[]
   signature_algorithms?: number[]
+  signature_algorithms_cert?: number[]
   alpn_protocols?: string[]
   supported_versions?: number[]
   key_share_groups?: number[]
   psk_modes?: number[]
   extensions?: number[]
+  extension_payloads?: TLSFingerprintExtensionPayloads
   compress_cert_algos?: number[]
   delegated_credentials_algorithms?: number[]
   application_settings_protocols?: string[]
@@ -67,7 +74,7 @@ export interface CreateProfileRequest {
  */
 export interface UpdateProfileRequest {
   platform?: string
-  transport?: string
+  transport?: TLSFingerprintProfileTransport | string
   os?: string
   client_type?: string
   name?: string
@@ -79,11 +86,13 @@ export interface UpdateProfileRequest {
   curves?: number[]
   point_formats?: number[]
   signature_algorithms?: number[]
+  signature_algorithms_cert?: number[]
   alpn_protocols?: string[]
   supported_versions?: number[]
   key_share_groups?: number[]
   psk_modes?: number[]
   extensions?: number[]
+  extension_payloads?: TLSFingerprintExtensionPayloads
   compress_cert_algos?: number[]
   delegated_credentials_algorithms?: number[]
   application_settings_protocols?: string[]

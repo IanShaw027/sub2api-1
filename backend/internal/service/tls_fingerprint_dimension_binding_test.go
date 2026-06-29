@@ -18,9 +18,9 @@ func TestGetTLSFingerprintBindings(t *testing.T) {
 	t.Run("parses mixed numeric types and normalizes keys", func(t *testing.T) {
 		a := &Account{Extra: map[string]any{
 			"tls_fingerprint_bindings": map[string]any{
-				"Windows":          float64(11),
-				"macos/Codex-CLI":  float64(42),
-				"linux":            int64(9),
+				"Windows":         float64(11),
+				"macos/Codex-CLI": float64(42),
+				"linux":           int64(9),
 			},
 		}}
 		got := a.GetTLSFingerprintBindings()
@@ -34,8 +34,8 @@ func TestGetTLSFingerprintProfileIDForDimension(t *testing.T) {
 	t.Run("os+client beats os", func(t *testing.T) {
 		a := &Account{Extra: map[string]any{
 			"tls_fingerprint_bindings": map[string]any{
-				"macos":            float64(1),
-				"macos/codex-cli":  float64(2),
+				"macos":           float64(1),
+				"macos/codex-cli": float64(2),
 			},
 		}}
 		require.Equal(t, int64(2), a.GetTLSFingerprintProfileIDForDimension("macos", "codex-cli"))
@@ -119,4 +119,23 @@ func TestResolveTLSProfileForDimension(t *testing.T) {
 		require.NotNil(t, p)
 		require.Contains(t, p.Name, "Built-in Default")
 	})
+}
+
+func TestResolveTLSProfileForTransport_DefaultOSRespectsTransport(t *testing.T) {
+	svc := &TLSFingerprintProfileService{
+		localCache: map[int64]*model.TLSFingerprintProfile{
+			88: {ID: 88, Name: "WS Only", Platform: "openai", OS: "macos", Transport: "websocket-h2"},
+		},
+	}
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{
+		"enable_tls_fingerprint":     true,
+		"tls_fingerprint_default_os": "macos",
+		"tls_fingerprint_bindings":   map[string]any{"macos": float64(88)},
+	}}
+
+	profile := svc.ResolveTLSProfileForTransport(account, "http")
+
+	require.NotNil(t, profile)
+	require.NotEqual(t, "WS Only", profile.Name)
+	require.Contains(t, profile.Name, "Built-in Default")
 }

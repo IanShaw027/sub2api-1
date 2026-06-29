@@ -67,6 +67,43 @@ func TestHandleResponsesBufferedStreamingResponse_PreservesMessageStartCacheUsag
 	require.Contains(t, rec.Body.String(), `"cached_tokens":9`)
 }
 
+func TestHandleResponsesBufferedStreamingResponse_ReversesWorkDir(t *testing.T) {
+	t.Parallel()
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set("claude_work_dir_rewrite", &WorkDirRewrite{RealDir: "/Users/alice/project", FakeDir: "/tmp/cc/a1b2/project"})
+
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_responses_workdir_buffered"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.5","stop_reason":"","usage":{"input_tokens":1}}}`,
+			``,
+			`event: content_block_start`,
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			``,
+			`event: content_block_delta`,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"open /tmp/cc/a1b2/project/main.go"}}`,
+			``,
+			`event: message_delta`,
+			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`,
+			``,
+			`event: message_stop`,
+			`data: {"type":"message_stop"}`,
+			``,
+		}, "\n"))),
+	}
+
+	svc := &GatewayService{}
+	result, err := svc.handleResponsesBufferedStreamingResponse(resp, c, "claude-sonnet-4.5", "claude-sonnet-4.5", nil, time.Now())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), "/Users/alice/project/main.go")
+	require.NotContains(t, rec.Body.String(), "/tmp/cc/a1b2/project/main.go")
+}
+
 func TestHandleResponsesStreamingResponse_PreservesMessageStartCacheUsage(t *testing.T) {
 	t.Parallel()
 	setGinTestMode()
@@ -101,6 +138,43 @@ func TestHandleResponsesStreamingResponse_PreservesMessageStartCacheUsage(t *tes
 	require.Equal(t, 11, result.Usage.CacheReadInputTokens)
 	require.Equal(t, 4, result.Usage.CacheCreationInputTokens)
 	require.Contains(t, rec.Body.String(), `response.completed`)
+}
+
+func TestHandleResponsesStreamingResponse_ReversesWorkDir(t *testing.T) {
+	t.Parallel()
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set("claude_work_dir_rewrite", &WorkDirRewrite{RealDir: "/Users/alice/project", FakeDir: "/tmp/cc/a1b2/project"})
+
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_responses_workdir_stream"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_2","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.5","stop_reason":"","usage":{"input_tokens":1}}}`,
+			``,
+			`event: content_block_start`,
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			``,
+			`event: content_block_delta`,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"open /tmp/cc/a1b2/project/main.go"}}`,
+			``,
+			`event: message_delta`,
+			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`,
+			``,
+			`event: message_stop`,
+			`data: {"type":"message_stop"}`,
+			``,
+		}, "\n"))),
+	}
+
+	svc := &GatewayService{}
+	result, err := svc.handleResponsesStreamingResponse(resp, c, "claude-sonnet-4.5", "claude-sonnet-4.5", nil, time.Now())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), "/Users/alice/project/main.go")
+	require.NotContains(t, rec.Body.String(), "/tmp/cc/a1b2/project/main.go")
 }
 
 func TestHandleResponsesStreamingResponse_ReadErrorAfterMessageStartEmitsFailed(t *testing.T) {

@@ -555,8 +555,10 @@
             <label class="input-label">{{ t('admin.tlsFingerprintProfiles.form.transport') }}</label>
             <select v-model="form.transport" class="input">
               <option value="">{{ t('admin.tlsFingerprintProfiles.form.transportAny') }}</option>
-              <option value="http">HTTP</option>
-              <option value="websocket">WebSocket</option>
+              <option value="http1">HTTP/1.1</option>
+              <option value="h2">HTTP/2</option>
+              <option value="websocket-http1">WebSocket HTTP/1.1</option>
+              <option value="websocket-h2">WebSocket HTTP/2</option>
             </select>
           </div>
           <div>
@@ -663,6 +665,11 @@
           </div>
 
           <div>
+            <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.form.signatureAlgorithmsCert') }}</label>
+            <textarea v-model="fieldInputs.signature_algorithms_cert" rows="2" class="input font-mono text-xs" placeholder="0x0403, 0x0804" />
+          </div>
+
+          <div>
             <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.form.supportedVersions') }}</label>
             <textarea v-model="fieldInputs.supported_versions" rows="2" class="input font-mono text-xs" placeholder="0x0304, 0x0303" />
           </div>
@@ -675,6 +682,11 @@
           <div>
             <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.form.extensions') }}</label>
             <textarea v-model="fieldInputs.extensions" rows="2" class="input font-mono text-xs" placeholder="0x0000, 0x0005, 0x000a" />
+          </div>
+
+          <div>
+            <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.form.extensionPayloads') }}</label>
+            <textarea v-model="fieldInputs.extension_payloads" rows="2" class="input font-mono text-xs" placeholder='{"65037":"AQID"}' />
           </div>
 
           <div>
@@ -754,6 +766,7 @@ import { adminAPI } from '@/api/admin'
 import type {
   TLSFingerprintCaptureSample,
   TLSFingerprintCaptureTask,
+  TLSFingerprintProfileTransport,
   TLSFingerprintProfile
 } from '@/api/admin/tlsFingerprintProfile'
 import { formatDateTime } from '@/utils/format'
@@ -822,11 +835,13 @@ const fieldInputs = reactive({
   curves: '',
   point_formats: '',
   signature_algorithms: '',
+  signature_algorithms_cert: '',
   alpn_protocols: '',
   supported_versions: '',
   key_share_groups: '',
   psk_modes: '',
   extensions: '',
+  extension_payloads: '',
   compress_cert_algos: '',
   delegated_credentials_algorithms: '',
   application_settings_protocols: ''
@@ -834,7 +849,7 @@ const fieldInputs = reactive({
 
 const form = reactive({
   platform: 'openai',
-  transport: '' as '' | 'http' | 'websocket',
+  transport: '' as TLSFingerprintProfileTransport,
   os: '' as '' | 'windows' | 'macos' | 'linux',
   client_type: '',
   name: '',
@@ -1279,11 +1294,13 @@ const resetForm = () => {
   fieldInputs.curves = ''
   fieldInputs.point_formats = ''
   fieldInputs.signature_algorithms = ''
+  fieldInputs.signature_algorithms_cert = ''
   fieldInputs.alpn_protocols = ''
   fieldInputs.supported_versions = ''
   fieldInputs.key_share_groups = ''
   fieldInputs.psk_modes = ''
   fieldInputs.extensions = ''
+  fieldInputs.extension_payloads = ''
   fieldInputs.compress_cert_algos = ''
   fieldInputs.delegated_credentials_algorithms = ''
   fieldInputs.application_settings_protocols = ''
@@ -1337,6 +1354,7 @@ const parseYamlInput = () => {
       case 'curves':
       case 'point_formats':
       case 'signature_algorithms':
+      case 'signature_algorithms_cert':
       case 'supported_versions':
       case 'key_share_groups':
       case 'psk_modes':
@@ -1354,6 +1372,9 @@ const parseYamlInput = () => {
         }
         break
       }
+      case 'extension_payloads':
+        fieldInputs.extension_payloads = value
+        break
       case 'alpn_protocols':
       case 'application_settings_protocols': {
         const arrMatch = value.match(/^\[(.*)?\]$/)
@@ -1406,6 +1427,25 @@ const parseStringArray = (input: string): string[] => {
     .filter(s => s.length > 0)
 }
 
+const parseExtensionPayloads = (input: string): Record<string, string> => {
+  const trimmed = input.trim()
+  if (!trimmed) return {}
+  const parsed = JSON.parse(trimmed) as unknown
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('extension_payloads must be a JSON object')
+  }
+  return Object.fromEntries(
+    Object.entries(parsed as Record<string, unknown>)
+      .map(([key, value]) => [key.trim(), typeof value === 'string' ? value.trim() : String(value)])
+      .filter(([key, value]) => key.length > 0 && value.length > 0)
+  )
+}
+
+const formatExtensionPayloads = (payloads: Record<string, string> | null | undefined): string => {
+  if (!payloads || Object.keys(payloads).length === 0) return ''
+  return JSON.stringify(payloads, null, 2)
+}
+
 const formatHex = (n: number): string => '0x' + n.toString(16).padStart(4, '0')
 const formatNumericArray = (arr: number[] | null | undefined): string => (arr ?? []).map(formatHex).join(', ')
 const formatPlainNumericArray = (arr: number[] | null | undefined): string => (arr ?? []).join(', ')
@@ -1413,7 +1453,7 @@ const formatPlainNumericArray = (arr: number[] | null | undefined): string => (a
 const handleEdit = (profile: TLSFingerprintProfile) => {
   editingProfile.value = profile
   form.platform = profile.platform || ''
-  form.transport = (profile.transport || '') as '' | 'http' | 'websocket'
+  form.transport = (profile.transport || '') as TLSFingerprintProfileTransport
   form.os = (profile.os || '') as '' | 'windows' | 'macos' | 'linux'
   form.client_type = profile.client_type || ''
   form.name = profile.name
@@ -1425,11 +1465,13 @@ const handleEdit = (profile: TLSFingerprintProfile) => {
   fieldInputs.curves = formatPlainNumericArray(profile.curves)
   fieldInputs.point_formats = formatPlainNumericArray(profile.point_formats)
   fieldInputs.signature_algorithms = formatNumericArray(profile.signature_algorithms)
+  fieldInputs.signature_algorithms_cert = formatNumericArray(profile.signature_algorithms_cert)
   fieldInputs.alpn_protocols = (profile.alpn_protocols ?? []).join(', ')
   fieldInputs.supported_versions = formatNumericArray(profile.supported_versions)
   fieldInputs.key_share_groups = formatPlainNumericArray(profile.key_share_groups)
   fieldInputs.psk_modes = formatPlainNumericArray(profile.psk_modes)
   fieldInputs.extensions = formatNumericArray(profile.extensions)
+  fieldInputs.extension_payloads = formatExtensionPayloads(profile.extension_payloads)
   fieldInputs.compress_cert_algos = formatPlainNumericArray(profile.compress_cert_algos)
   fieldInputs.delegated_credentials_algorithms = formatNumericArray(profile.delegated_credentials_algorithms)
   fieldInputs.application_settings_protocols = (profile.application_settings_protocols ?? []).join(', ')
@@ -1463,11 +1505,13 @@ const handleSubmit = async () => {
       curves: parseNumericArray(fieldInputs.curves),
       point_formats: parseNumericArray(fieldInputs.point_formats),
       signature_algorithms: parseNumericArray(fieldInputs.signature_algorithms),
+      signature_algorithms_cert: parseNumericArray(fieldInputs.signature_algorithms_cert),
       alpn_protocols: parseStringArray(fieldInputs.alpn_protocols),
       supported_versions: parseNumericArray(fieldInputs.supported_versions),
       key_share_groups: parseNumericArray(fieldInputs.key_share_groups),
       psk_modes: parseNumericArray(fieldInputs.psk_modes),
       extensions: parseNumericArray(fieldInputs.extensions),
+      extension_payloads: parseExtensionPayloads(fieldInputs.extension_payloads),
       compress_cert_algos: parseNumericArray(fieldInputs.compress_cert_algos),
       delegated_credentials_algorithms: parseNumericArray(fieldInputs.delegated_credentials_algorithms),
       application_settings_protocols: parseStringArray(fieldInputs.application_settings_protocols)

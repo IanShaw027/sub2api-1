@@ -23,52 +23,56 @@ func NewTLSFingerprintProfileHandler(profileService *service.TLSFingerprintProfi
 
 // CreateTLSFingerprintProfileRequest 创建模板请求
 type CreateTLSFingerprintProfileRequest struct {
-	Platform                       string   `json:"platform"`
-	Transport                      string   `json:"transport"`
-	OS                             string   `json:"os"`
-	ClientType                     string   `json:"client_type"`
-	Name                           string   `json:"name" binding:"required"`
-	UserAgent                      string   `json:"user_agent"`
-	Originator                     string   `json:"originator"`
-	Description                    *string  `json:"description"`
-	EnableGREASE                   *bool    `json:"enable_grease"`
-	CipherSuites                   []uint16 `json:"cipher_suites"`
-	Curves                         []uint16 `json:"curves"`
-	PointFormats                   []uint16 `json:"point_formats"`
-	SignatureAlgorithms            []uint16 `json:"signature_algorithms"`
-	ALPNProtocols                  []string `json:"alpn_protocols"`
-	SupportedVersions              []uint16 `json:"supported_versions"`
-	KeyShareGroups                 []uint16 `json:"key_share_groups"`
-	PSKModes                       []uint16 `json:"psk_modes"`
-	Extensions                     []uint16 `json:"extensions"`
-	CompressCertAlgos              []uint16 `json:"compress_cert_algos"`
-	DelegatedCredentialsAlgorithms []uint16 `json:"delegated_credentials_algorithms"`
-	ApplicationSettingsProtocols   []string `json:"application_settings_protocols"`
+	Platform                       string            `json:"platform"`
+	Transport                      string            `json:"transport"`
+	OS                             string            `json:"os"`
+	ClientType                     string            `json:"client_type"`
+	Name                           string            `json:"name" binding:"required"`
+	UserAgent                      string            `json:"user_agent"`
+	Originator                     string            `json:"originator"`
+	Description                    *string           `json:"description"`
+	EnableGREASE                   *bool             `json:"enable_grease"`
+	CipherSuites                   []uint16          `json:"cipher_suites"`
+	Curves                         []uint16          `json:"curves"`
+	PointFormats                   []uint16          `json:"point_formats"`
+	SignatureAlgorithms            []uint16          `json:"signature_algorithms"`
+	SignatureAlgorithmsCert        []uint16          `json:"signature_algorithms_cert"`
+	ALPNProtocols                  []string          `json:"alpn_protocols"`
+	SupportedVersions              []uint16          `json:"supported_versions"`
+	KeyShareGroups                 []uint16          `json:"key_share_groups"`
+	PSKModes                       []uint16          `json:"psk_modes"`
+	Extensions                     []uint16          `json:"extensions"`
+	ExtensionPayloads              map[uint16][]byte `json:"extension_payloads"`
+	CompressCertAlgos              []uint16          `json:"compress_cert_algos"`
+	DelegatedCredentialsAlgorithms []uint16          `json:"delegated_credentials_algorithms"`
+	ApplicationSettingsProtocols   []string          `json:"application_settings_protocols"`
 }
 
 // UpdateTLSFingerprintProfileRequest 更新模板请求（部分更新）
 type UpdateTLSFingerprintProfileRequest struct {
-	Platform                       *string  `json:"platform"`
-	Transport                      *string  `json:"transport"`
-	OS                             *string  `json:"os"`
-	ClientType                     *string  `json:"client_type"`
-	Name                           *string  `json:"name"`
-	UserAgent                      *string  `json:"user_agent"`
-	Originator                     *string  `json:"originator"`
-	Description                    *string  `json:"description"`
-	EnableGREASE                   *bool    `json:"enable_grease"`
-	CipherSuites                   []uint16 `json:"cipher_suites"`
-	Curves                         []uint16 `json:"curves"`
-	PointFormats                   []uint16 `json:"point_formats"`
-	SignatureAlgorithms            []uint16 `json:"signature_algorithms"`
-	ALPNProtocols                  []string `json:"alpn_protocols"`
-	SupportedVersions              []uint16 `json:"supported_versions"`
-	KeyShareGroups                 []uint16 `json:"key_share_groups"`
-	PSKModes                       []uint16 `json:"psk_modes"`
-	Extensions                     []uint16 `json:"extensions"`
-	CompressCertAlgos              []uint16 `json:"compress_cert_algos"`
-	DelegatedCredentialsAlgorithms []uint16 `json:"delegated_credentials_algorithms"`
-	ApplicationSettingsProtocols   []string `json:"application_settings_protocols"`
+	Platform                       *string           `json:"platform"`
+	Transport                      *string           `json:"transport"`
+	OS                             *string           `json:"os"`
+	ClientType                     *string           `json:"client_type"`
+	Name                           *string           `json:"name"`
+	UserAgent                      *string           `json:"user_agent"`
+	Originator                     *string           `json:"originator"`
+	Description                    *string           `json:"description"`
+	EnableGREASE                   *bool             `json:"enable_grease"`
+	CipherSuites                   []uint16          `json:"cipher_suites"`
+	Curves                         []uint16          `json:"curves"`
+	PointFormats                   []uint16          `json:"point_formats"`
+	SignatureAlgorithms            []uint16          `json:"signature_algorithms"`
+	SignatureAlgorithmsCert        []uint16          `json:"signature_algorithms_cert"`
+	ALPNProtocols                  []string          `json:"alpn_protocols"`
+	SupportedVersions              []uint16          `json:"supported_versions"`
+	KeyShareGroups                 []uint16          `json:"key_share_groups"`
+	PSKModes                       []uint16          `json:"psk_modes"`
+	Extensions                     []uint16          `json:"extensions"`
+	ExtensionPayloads              map[uint16][]byte `json:"extension_payloads"`
+	CompressCertAlgos              []uint16          `json:"compress_cert_algos"`
+	DelegatedCredentialsAlgorithms []uint16          `json:"delegated_credentials_algorithms"`
+	ApplicationSettingsProtocols   []string          `json:"application_settings_protocols"`
 }
 
 // ImportTLSFingerprintCapturesRequest imports captured JSON/YAML fingerprints.
@@ -136,11 +140,13 @@ func (h *TLSFingerprintProfileHandler) Create(c *gin.Context) {
 		Curves:                         req.Curves,
 		PointFormats:                   req.PointFormats,
 		SignatureAlgorithms:            req.SignatureAlgorithms,
+		SignatureAlgorithmsCert:        req.SignatureAlgorithmsCert,
 		ALPNProtocols:                  req.ALPNProtocols,
 		SupportedVersions:              req.SupportedVersions,
 		KeyShareGroups:                 req.KeyShareGroups,
 		PSKModes:                       req.PSKModes,
 		Extensions:                     req.Extensions,
+		ExtensionPayloads:              req.ExtensionPayloads,
 		CompressCertAlgos:              req.CompressCertAlgos,
 		DelegatedCredentialsAlgorithms: req.DelegatedCredentialsAlgorithms,
 		ApplicationSettingsProtocols:   req.ApplicationSettingsProtocols,
@@ -390,6 +396,8 @@ func (h *TLSFingerprintProfileHandler) Update(c *gin.Context) {
 		ID:                             id,
 		Platform:                       existing.Platform,
 		Transport:                      existing.Transport,
+		OS:                             existing.OS,
+		ClientType:                     existing.ClientType,
 		Name:                           existing.Name,
 		UserAgent:                      existing.UserAgent,
 		Originator:                     existing.Originator,
@@ -399,11 +407,13 @@ func (h *TLSFingerprintProfileHandler) Update(c *gin.Context) {
 		Curves:                         existing.Curves,
 		PointFormats:                   existing.PointFormats,
 		SignatureAlgorithms:            existing.SignatureAlgorithms,
+		SignatureAlgorithmsCert:        existing.SignatureAlgorithmsCert,
 		ALPNProtocols:                  existing.ALPNProtocols,
 		SupportedVersions:              existing.SupportedVersions,
 		KeyShareGroups:                 existing.KeyShareGroups,
 		PSKModes:                       existing.PSKModes,
 		Extensions:                     existing.Extensions,
+		ExtensionPayloads:              existing.ExtensionPayloads,
 		CompressCertAlgos:              existing.CompressCertAlgos,
 		DelegatedCredentialsAlgorithms: existing.DelegatedCredentialsAlgorithms,
 		ApplicationSettingsProtocols:   existing.ApplicationSettingsProtocols,
@@ -448,6 +458,9 @@ func (h *TLSFingerprintProfileHandler) Update(c *gin.Context) {
 	if req.SignatureAlgorithms != nil {
 		profile.SignatureAlgorithms = req.SignatureAlgorithms
 	}
+	if req.SignatureAlgorithmsCert != nil {
+		profile.SignatureAlgorithmsCert = req.SignatureAlgorithmsCert
+	}
 	if req.ALPNProtocols != nil {
 		profile.ALPNProtocols = req.ALPNProtocols
 	}
@@ -462,6 +475,9 @@ func (h *TLSFingerprintProfileHandler) Update(c *gin.Context) {
 	}
 	if req.Extensions != nil {
 		profile.Extensions = req.Extensions
+	}
+	if req.ExtensionPayloads != nil {
+		profile.ExtensionPayloads = req.ExtensionPayloads
 	}
 	if req.CompressCertAlgos != nil {
 		profile.CompressCertAlgos = req.CompressCertAlgos

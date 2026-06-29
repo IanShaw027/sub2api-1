@@ -32,6 +32,8 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	body []byte,
 	parsed *ParsedRequest,
 ) (*ForwardResult, error) {
+	clearClaudeResponseRewriteContext(c)
+
 	if shouldAutoRouteOpenAICompatCCUpstream(account) {
 		return s.forwardChatCompletionsToOpenAICompatCC(ctx, c, account, body)
 	}
@@ -106,7 +108,7 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	// 否则会被 Anthropic 判为第三方应用并扣 extra usage。
 	// 见 applyClaudeCodeOAuthMimicryToBody 的 godoc。
 	isClaudeCode := false
-	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode && account.Platform != PlatformKiro
+	shouldMimicClaudeCode := s.shouldMimicClaudeCodeForAccount(ctx, account, isClaudeCode) && account.Platform != PlatformKiro
 
 	if shouldMimicClaudeCode {
 		anthropicBody = s.applyClaudeCodeOAuthMimicryToBody(ctx, c, account, anthropicBody, anthropicReq.System, mappedModel)
@@ -366,6 +368,7 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 	// (parity with Parrot non-stream flow that marshals → restore → emit).
 	if respBytes, err := json.Marshal(ccResp); err == nil {
 		respBytes = reverseToolNamesIfPresent(c, respBytes)
+		respBytes = reverseWorkDirIfPresent(c, respBytes)
 		c.Data(http.StatusOK, "application/json; charset=utf-8", respBytes)
 	} else {
 		c.JSON(http.StatusOK, ccResp)
@@ -441,8 +444,10 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 			return false
 		}
 		// Reverse tool name mapping: fake → real, per-chunk bytes.Replace.
-		// c 可能持有请求侧注入的 ToolNameRewrite；无则仅做静态前缀还原。
-		out := string(reverseToolNamesIfPresent(c, []byte(sse)))
+		// c 可能持有请求侧注入的 ToolNameRewrite / WorkDirRewrite；无则 no-op。
+		outBytes := reverseToolNamesIfPresent(c, []byte(sse))
+		outBytes = reverseWorkDirIfPresent(c, outBytes)
+		out := string(outBytes)
 		if _, err := fmt.Fprint(c.Writer, out); err != nil {
 			return true // client disconnected
 		}

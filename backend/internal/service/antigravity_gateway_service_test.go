@@ -497,6 +497,81 @@ func TestAntigravityGatewayService_Forward_PromptTooLong(t *testing.T) {
 	require.Equal(t, "prompt_too_long", events[0].Kind)
 }
 
+func TestAntigravityGatewayService_Forward_UsesNormalizedBodyForClaudeTransform(t *testing.T) {
+	setGinTestMode()
+	SetRuntimeAntiBanPlatforms(map[string]bool{PlatformAntigravity: true})
+	t.Cleanup(func() {
+		SetRuntimeAntiBanPlatforms(map[string]bool{})
+	})
+
+	writer := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(writer)
+
+	const leakySessionID = "leaky-session"
+	body, err := json.Marshal(map[string]any{
+		"model": "claude-sonnet-4-5",
+		"messages": []map[string]any{
+			{"role": "user", "content": "hello"},
+		},
+		"metadata":   map[string]any{"user_id": leakySessionID},
+		"max_tokens": 16,
+		"stream":     true,
+	})
+	require.NoError(t, err)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+	c.Request.Header.Set("User-Agent", "antigravity-test/1.0")
+
+	upstreamBody := []byte("data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":1,\"candidatesTokenCount\":1}}}\n\n")
+	upstream := &queuedHTTPUpstreamStub{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       io.NopCloser(bytes.NewReader(upstreamBody)),
+			},
+		},
+	}
+	svc := &AntigravityGatewayService{
+		settingService: NewSettingService(&antigravitySettingRepoStub{}, &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}}),
+		tokenProvider:  &AntigravityTokenProvider{},
+		httpUpstream:   upstream,
+		fingerprintNormalizer: NewFingerprintNormalizer(nil, nil, nil, &CanonicalFingerprintConfig{
+			Enabled:           true,
+			AntiBanEnabled:    true,
+			EnabledByPlatform: map[string]bool{PlatformAntigravity: true},
+			TelemetryPaths:    []string{"metadata.user_id"},
+		}, nil),
+	}
+
+	account := &Account{
+		ID:          7,
+		Name:        "acc-forward-normalized",
+		Platform:    PlatformAntigravity,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "token",
+			"project_id":   "proj",
+			"model_mapping": map[string]any{
+				"claude-sonnet-4-5": "gemini-3-pro-high",
+			},
+		},
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body, false)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.requestBodies, 1)
+
+	var wrapped map[string]any
+	require.NoError(t, json.Unmarshal(upstream.requestBodies[0], &wrapped))
+	req, ok := wrapped["request"].(map[string]any)
+	require.True(t, ok)
+	require.NotEqual(t, leakySessionID, req["sessionId"])
+	require.NotContains(t, string(upstream.requestBodies[0]), leakySessionID)
+}
+
 // TestAntigravityGatewayService_Forward_ModelRateLimitTriggersFailover
 // 验证：当账号存在模型限流且剩余时间 >= antigravityRateLimitThreshold 时，
 // Forward 方法应返回 UpstreamFailoverError，触发 Handler 切换账号

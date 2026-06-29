@@ -7007,12 +7007,14 @@
         "curvesHint": "Comma-separated curve IDs",
         "pointFormats": "Point Formats",
         "signatureAlgorithms": "Signature Algorithms",
+        "signatureAlgorithmsCert": "Signature Algorithms Cert",
         "alpnProtocols": "ALPN Protocols",
         "alpnProtocolsHint": "Comma-separated, e.g. h2, http/1.1",
         "supportedVersions": "Supported TLS Versions",
         "keyShareGroups": "Key Share Groups",
         "pskModes": "PSK Modes",
-        "extensions": "Extensions"
+        "extensions": "Extensions",
+        "extensionPayloads": "Extension Payloads (JSON)"
       },
       "deleteConfirm": "Delete Profile",
       "deleteConfirmMessage": "Are you sure you want to delete profile \"{name}\"? Accounts using this profile will fall back to the built-in default.",

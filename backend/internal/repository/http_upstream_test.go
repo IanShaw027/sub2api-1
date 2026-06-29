@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"golang.org/x/net/http2"
 )
 
 // HTTPUpstreamSuite HTTP 上游服务测试套件
@@ -199,18 +200,19 @@ func (s *HTTPUpstreamSuite) TestTLSFingerprintHTTPTransportProfileStripsHTTP2ALP
 	require.Contains(s.T(), profile.ALPNProtocols, "h2", "original profile should not be mutated")
 }
 
-func (s *HTTPUpstreamSuite) TestOpenAIProfileTLSFingerprintUsesHTTP1OnlyTransportProfile() {
+func (s *HTTPUpstreamSuite) TestOpenAIProfileTLSFingerprintH2ProfileUsesHTTP2Transport() {
 	s.cfg.Gateway = config.GatewayConfig{
 		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{
 			Enabled: true,
 		},
 	}
 	svc := s.newService()
+	// ChromeProfile 的 ALPN 含 h2：现在应真正走 HTTP/2 出站(*http2.Transport)，
+	// 消除「TLS 伪装成 Chrome 但 ALPN 固定 http/1.1」的矛盾。
 	entry, err := svc.getClientEntryWithTLS("", 1, 1, tlsfingerprint.ChromeProfile(), service.HTTPUpstreamProfileOpenAI, false, false)
 	require.NoError(s.T(), err)
-	transport, ok := entry.client.Transport.(*http.Transport)
-	require.True(s.T(), ok, "expected *http.Transport")
-	require.False(s.T(), transport.ForceAttemptHTTP2, "uTLS DialTLSContext transport must not advertise h2 unless it can hand off HTTP/2")
+	_, ok := entry.client.Transport.(*http2.Transport)
+	require.True(s.T(), ok, "h2-capable TLS profile should use *http2.Transport for real HTTP/2 egress")
 }
 
 func (s *HTTPUpstreamSuite) TestTLSFingerprintProfileChangeRebuildsClient() {

@@ -1528,7 +1528,7 @@ func (s *GatewayService) applyClaudeCodeOAuthMimicryToBody(
 	systemRaw any,
 	model string,
 ) []byte {
-	if account == nil || !account.IsOAuth() || len(body) == 0 {
+	if account == nil || len(body) == 0 || !s.shouldApplyClaudeAntiBanBodyTransforms(ctx, account) {
 		return body
 	}
 
@@ -5136,6 +5136,8 @@ func (s *GatewayService) claudeOAuthSystemPromptInjectionSettings(ctx context.Co
 
 // Forward 转发请求到Claude API
 func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) (*ForwardResult, error) {
+	clearClaudeResponseRewriteContext(c)
+
 	startTime := time.Now()
 	if parsed == nil {
 		return nil, fmt.Errorf("parse request: empty request")
@@ -5241,7 +5243,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	//
 	// 对于非 Claude Code 的第三方客户端（opencode 等），仍然走完整 mimicry。
 	isClaudeCode := IsClaudeCodeClient(ctx) || isClaudeCodeClient(c.GetHeader("User-Agent"), parsed.MetadataUserID)
-	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
+	shouldMimicClaudeCode := s.shouldMimicClaudeCodeForAccount(ctx, account, isClaudeCode)
 
 	if shouldMimicClaudeCode {
 		// 与 Parrot 对齐：OAuth 账号无条件重写 system（即使客户端已发了 Claude Code
@@ -7165,7 +7167,8 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	if s.settingService != nil {
 		enableFP, enableMPT = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
-	if account.IsOAuth() && s.identityService != nil {
+	claudeAntiBanEnabled := s.shouldApplyClaudeAntiBanBodyTransforms(ctx, account)
+	if claudeAntiBanEnabled && account.IsOAuth() && s.identityService != nil {
 		// 1. 获取或创建指纹（包含随机生成的ClientID）
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
 		if err != nil {
@@ -10600,6 +10603,8 @@ func (s *GatewayService) isStickyAccountUpstreamRestricted(ctx context.Context, 
 // ForwardCountTokens 转发 count_tokens 请求到上游 API
 // 特点：不记录使用量、仅支持非流式响应
 func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) error {
+	clearClaudeResponseRewriteContext(c)
+
 	if parsed == nil {
 		s.countTokensError(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
 		return fmt.Errorf("parse request: empty request")
@@ -10646,7 +10651,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	}
 
 	isClaudeCodeCT := IsClaudeCodeClient(ctx) || isClaudeCodeClient(c.GetHeader("User-Agent"), parsed.MetadataUserID)
-	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCodeCT
+	shouldMimicClaudeCode := s.shouldMimicClaudeCodeForAccount(ctx, account, isClaudeCodeCT)
 
 	if shouldMimicClaudeCode {
 		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: true}
@@ -11080,7 +11085,8 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		ctEnableFP, ctEnableMPT = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
 	var ctFingerprint *Fingerprint
-	if account.IsOAuth() && s.identityService != nil {
+	ctClaudeAntiBanEnabled := s.shouldApplyClaudeAntiBanBodyTransforms(ctx, account)
+	if ctClaudeAntiBanEnabled && account.IsOAuth() && s.identityService != nil {
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
 		if err == nil {
 			ctFingerprint = fp
@@ -11184,6 +11190,16 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	}
 
 	return req, body, nil
+}
+
+func clearClaudeResponseRewriteContext(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	if c.Keys != nil {
+		delete(c.Keys, toolNameRewriteKey)
+		delete(c.Keys, "claude_work_dir_rewrite")
+	}
 }
 
 func sanitizeCountTokensRequestBody(body []byte) []byte {

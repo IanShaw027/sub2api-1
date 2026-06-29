@@ -52,17 +52,17 @@ func TestOpenAITLSFingerprintRuntimeUsesDimensionMatrix(t *testing.T) {
 	accountA := &Account{
 		ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
 		Extra: map[string]any{
-			"enable_tls_fingerprint":   true,
+			"enable_tls_fingerprint":    true,
 			"tls_fingerprint_router_id": float64(20),
-			"tls_fingerprint_bindings": map[string]any{"macos/codex-cli": float64(101)},
+			"tls_fingerprint_bindings":  map[string]any{"macos/codex-cli": float64(101)},
 		},
 	}
 	accountB := &Account{
 		ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
 		Extra: map[string]any{
-			"enable_tls_fingerprint":   true,
+			"enable_tls_fingerprint":    true,
 			"tls_fingerprint_router_id": float64(20),
-			"tls_fingerprint_bindings": map[string]any{"macos/codex-cli": float64(202)},
+			"tls_fingerprint_bindings":  map[string]any{"macos/codex-cli": float64(202)},
 		},
 	}
 
@@ -155,4 +155,92 @@ func TestOpenAITLSFingerprintRuntimeDimensionDegradesToLegacySingle(t *testing.T
 	runtime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account, "http")
 	require.True(t, runtime.Matched)
 	require.Equal(t, "Legacy Single", runtime.Profile.Name)
+}
+
+func TestOpenAITLSFingerprintRuntimeDimensionFallsBackToRuleProfileWhenAccountUnbound(t *testing.T) {
+	setGinTestMode()
+	router := &model.TLSFingerprintRouter{
+		ID:      24,
+		Name:    "dim with fallback",
+		Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{
+			{
+				Name:                    "mac",
+				Enabled:                 true,
+				MatchType:               model.TLSFingerprintRouterMatchContains,
+				Pattern:                 "codex",
+				OS:                      "macos",
+				ClientType:              "codex-cli",
+				TLSFingerprintProfileID: 77,
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		tlsFPRouterService: NewTLSFingerprintRouterService(&tlsFingerprintRouterRepoStub{routers: []*model.TLSFingerprintRouter{router}}, nil),
+		tlsFPProfileService: &TLSFingerprintProfileService{
+			localCache: map[int64]*model.TLSFingerprintProfile{
+				77: {ID: 77, Name: "Rule Fallback", Platform: "openai", OS: "macos", ClientType: "codex-cli"},
+			},
+		},
+	}
+	req, err := http.NewRequest(http.MethodPost, "/v1/responses", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", "codex_cli_rs/1.0")
+	c := &gin.Context{Request: req}
+	account := &Account{
+		ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":    true,
+			"tls_fingerprint_router_id": float64(24),
+		},
+	}
+
+	runtime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account, "http")
+	require.True(t, runtime.Matched)
+	require.Equal(t, "Rule Fallback", runtime.Profile.Name)
+}
+
+func TestOpenAITLSFingerprintRuntimeRandomDimensionRespectsTransport(t *testing.T) {
+	setGinTestMode()
+	router := &model.TLSFingerprintRouter{
+		ID:      25,
+		Name:    "http dim",
+		Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{
+			{
+				Name:       "codex http",
+				Enabled:    true,
+				Transport:  model.TLSFingerprintRouterTransportHTTP,
+				MatchType:  model.TLSFingerprintRouterMatchContains,
+				Pattern:    "codex",
+				OS:         "macos",
+				ClientType: "codex-cli",
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		tlsFPRouterService: NewTLSFingerprintRouterService(&tlsFingerprintRouterRepoStub{routers: []*model.TLSFingerprintRouter{router}}, nil),
+		tlsFPProfileService: &TLSFingerprintProfileService{
+			localCache: map[int64]*model.TLSFingerprintProfile{
+				88: {ID: 88, Name: "WS Only", Platform: "openai", OS: "macos", ClientType: "codex-cli", Transport: "websocket-h2"},
+			},
+		},
+	}
+	req, err := http.NewRequest(http.MethodPost, "/v1/responses", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", "codex_cli_rs/1.0")
+	c := &gin.Context{Request: req}
+	account := &Account{
+		ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":    true,
+			"tls_fingerprint_router_id": float64(25),
+			"tls_fingerprint_bindings":  map[string]any{"macos/codex-cli": float64(-1)},
+		},
+	}
+
+	runtime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account, "http")
+	require.True(t, runtime.Matched)
+	require.NotEqual(t, "WS Only", runtime.Profile.Name)
+	require.Contains(t, runtime.Profile.Name, "Built-in Default")
 }

@@ -18,3 +18,10 @@ func (s *GatewayService) shouldApplyClaudeAntiBanBodyTransforms(ctx context.Cont
 		s.fingerprintNormalizer.isAntiBanEnabledFor(account.Platform),
 	)
 }
+
+func (s *GatewayService) shouldMimicClaudeCodeForAccount(ctx context.Context, account *Account, isClaudeCodeClient bool) bool {
+	if isClaudeCodeClient {
+		return false
+	}
+	return s.shouldApplyClaudeAntiBanBodyTransforms(ctx, account)
+}

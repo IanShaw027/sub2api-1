@@ -2587,10 +2587,14 @@ func (s *OpenAIGatewayService) applyOpenAIBackendAPIResponseState(ctx context.Co
 }
 
 func (s *OpenAIGatewayService) resolveOpenAITLSProfile(account *Account) *tlsfingerprint.Profile {
+	return s.resolveOpenAITLSProfileForTransport(account, "")
+}
+
+func (s *OpenAIGatewayService) resolveOpenAITLSProfileForTransport(account *Account, transport string) *tlsfingerprint.Profile {
 	if s == nil || s.tlsFPProfileService == nil {
 		return nil
 	}
-	return s.tlsFPProfileService.ResolveTLSProfile(account)
+	return s.tlsFPProfileService.ResolveTLSProfileForTransport(account, transport)
 }
 
 func (s *OpenAIGatewayService) openAIOAuthImageBridgeUpstreamOptions(ctx context.Context) HTTPUpstreamRequestOptions {

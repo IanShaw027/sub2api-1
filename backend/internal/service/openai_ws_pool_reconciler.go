@@ -151,7 +151,9 @@ func (s *OpenAIGatewayService) prewarmNeutralForAccount(ctx context.Context, poo
 		return
 	}
 	decision := s.getOpenAIWSProtocolResolver().Resolve(account)
+	tlsFPRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, nil, account, "websocket")
 	headers := s.buildOpenAIWSNeutralHeaders(account, token, decision, true)
+	applyOpenAIWSFingerprintRuntimeHeaders(headers, tlsFPRuntime)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -159,10 +161,11 @@ func (s *OpenAIGatewayService) prewarmNeutralForAccount(ctx context.Context, poo
 	}
 
 	pool.PrewarmNeutral(account.ID, openAIWSAcquireRequest{
-		Account:  account,
-		WSURL:    wsURL,
-		Headers:  headers,
-		ProxyURL: proxyURL,
-		Profile:  openAIWSConnProfileNeutral,
+		Account:    account,
+		WSURL:      wsURL,
+		Headers:    headers,
+		ProxyURL:   proxyURL,
+		TLSProfile: tlsFPRuntime.Profile,
+		Profile:    openAIWSConnProfileNeutral,
 	}, minIdle)
 }

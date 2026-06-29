@@ -154,4 +154,52 @@ describe('TLSFingerprintRoutersModal', () => {
       rules: []
     })
   })
+
+  it('preserves rule transport when creating a router', async () => {
+    listProfilesMock.mockResolvedValue([
+      {
+        id: 42,
+        name: 'Codex WS',
+        platform: 'openai',
+        transport: 'websocket-h2',
+        os: '',
+        client_type: '',
+      },
+    ])
+    const wrapper = mountModal()
+    await flushPromises()
+
+    const createOpenButton = wrapper.findAll('button').find(button => button.text().includes('createRouter'))
+    expect(createOpenButton).toBeTruthy()
+    await createOpenButton!.trigger('click')
+
+    const textInputs = wrapper.findAll('input[type="text"]')
+    expect(textInputs.length).toBeGreaterThanOrEqual(4)
+    await textInputs[0].setValue('WS Router')
+    await textInputs[2].setValue('codex ws')
+    await textInputs[3].setValue('codex')
+
+    const transportSelect = wrapper.findAll('select').find(select => select.find('option[value="websocket"]').exists())
+    expect(transportSelect).toBeTruthy()
+    await transportSelect!.setValue('websocket')
+
+    const submitButton = wrapper.findAll('button').find(button => button.text().includes('common.create'))
+    expect(submitButton).toBeTruthy()
+    await submitButton!.trigger('click')
+    await flushPromises()
+
+    expect(createRouterMock).toHaveBeenCalledWith({
+      name: 'WS Router',
+      description: null,
+      enabled: true,
+      rules: [
+        expect.objectContaining({
+          name: 'codex ws',
+          transport: 'websocket',
+          pattern: 'codex',
+          tls_fingerprint_profile_id: 42,
+        }),
+      ],
+    })
+  })
 })

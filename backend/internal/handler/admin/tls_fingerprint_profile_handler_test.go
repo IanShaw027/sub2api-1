@@ -120,6 +120,65 @@ func TestTLSFingerprintProfileHandlerImportCaptures(t *testing.T) {
 	require.Equal(t, "Codex Desktop live capture", envelope.Data.Profiles[0].Profile.Name)
 }
 
+func TestTLSFingerprintProfileHandlerCreateAcceptsReplayFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &tlsFingerprintProfileHandlerRepoStub{}
+	svc := service.NewTLSFingerprintProfileService(repo, nil)
+	handler := NewTLSFingerprintProfileHandler(svc, nil)
+	router := gin.New()
+	router.POST("/api/v1/admin/tls-fingerprint-profiles", handler.Create)
+
+	body := `{"name":"captured","platform":"openai","extensions":[50,65037],"signature_algorithms_cert":[1027],"extension_payloads":{"65037":"AQID"}}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/tls-fingerprint-profiles", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, repo.profiles, 1)
+	require.Equal(t, []uint16{1027}, repo.profiles[0].SignatureAlgorithmsCert)
+	require.Equal(t, []byte{1, 2, 3}, repo.profiles[0].ExtensionPayloads[65037])
+}
+
+func TestTLSFingerprintProfileHandlerUpdatePreservesDimensionAndReplayFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &tlsFingerprintProfileHandlerRepoStub{profiles: []*model.TLSFingerprintProfile{
+		{
+			ID:                      1,
+			Name:                    "captured",
+			Platform:                "openai",
+			Transport:               "h2",
+			OS:                      "macos",
+			ClientType:              "codex-cli",
+			Extensions:              []uint16{50, 65037},
+			SignatureAlgorithmsCert: []uint16{1027},
+			ExtensionPayloads:       map[uint16][]byte{65037: {1, 2, 3}},
+		},
+	}}
+	svc := service.NewTLSFingerprintProfileService(repo, nil)
+	handler := NewTLSFingerprintProfileHandler(svc, nil)
+	router := gin.New()
+	router.PUT("/api/v1/admin/tls-fingerprint-profiles/:id", handler.Update)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/tls-fingerprint-profiles/1", strings.NewReader(`{"name":"renamed"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, repo.profiles, 1)
+	updated := repo.profiles[0]
+	require.Equal(t, "renamed", updated.Name)
+	require.Equal(t, "macos", updated.OS)
+	require.Equal(t, "codex-cli", updated.ClientType)
+	require.Equal(t, []uint16{1027}, updated.SignatureAlgorithmsCert)
+	require.Equal(t, []byte{1, 2, 3}, updated.ExtensionPayloads[65037])
+}
+
 func TestTLSFingerprintProfileHandlerCaptureTaskLifecycle(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

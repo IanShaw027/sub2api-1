@@ -27,7 +27,7 @@ func (s *OpenAIGatewayService) SetTLSFingerprintRouterService(routerService *TLS
 func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Context, c *gin.Context, account *Account, transport string) openAITLSFingerprintRuntime {
 	runtime := openAITLSFingerprintRuntime{}
 	if s != nil {
-		runtime.Profile = s.resolveOpenAITLSProfile(account)
+		runtime.Profile = s.resolveOpenAITLSProfileForTransport(account, transport)
 	}
 	// The account-bound template can carry an upstream UA/Originator. A router
 	// match may override these below; an empty router value falls back to here,
@@ -61,11 +61,13 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 	// 矩阵未命中时 ResolveTLSProfileForDimension 会降级到账号旧单值。
 	var profile *tlsfingerprint.Profile
 	if match.OS != "" || match.ClientType != "" {
-		profile = s.tlsFPProfileService.ResolveTLSProfileForDimension(account, match.OS, match.ClientType)
+		if p, resolved := s.tlsFPProfileService.ResolveTLSProfileForDimensionMatch(account, match.OS, match.ClientType, transport); resolved {
+			profile = p
+		}
 	}
 	// 规则未带维度，或维度解析无果：回退到规则直出的 ProfileID（向后兼容旧规则）。
 	if profile == nil && match.ProfileID > 0 {
-		profile = s.tlsFPProfileService.ResolveTLSProfileByID(match.ProfileID)
+		profile = s.tlsFPProfileService.resolveProfileByIDForAccount(match.ProfileID, account, transport)
 	}
 	if profile == nil {
 		return runtime
@@ -83,6 +85,58 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 		profile.CipherSuites, profile.Curves, profile.Extensions,
 		profile.SupportedVersions, profile.KeyShareGroups, profile.PSKModes,
 		profile.SignatureAlgorithms, profile.ALPNProtocols,
+		runtime.UpstreamUserAgent, runtime.UpstreamOriginator)
+	return runtime
+}
+
+func (s *OpenAIGatewayService) resolveGrokTLSFingerprintRuntime(ctx context.Context, c *gin.Context, account *Account, transport string) openAITLSFingerprintRuntime {
+	runtime := openAITLSFingerprintRuntime{}
+	if s != nil {
+		runtime.Profile = s.resolveOpenAITLSProfileForTransport(account, transport)
+	}
+	seedTLSFingerprintRuntimeHeaders(&runtime, runtime.Profile)
+	if s == nil || s.tlsFPRouterService == nil || account == nil {
+		return runtime
+	}
+	if !account.IsGrokTLSFingerprintEnabled() {
+		return runtime
+	}
+	routerID := account.GetTLSFingerprintRouterID()
+	if routerID <= 0 {
+		return runtime
+	}
+	inboundUA := ""
+	if c != nil && c.Request != nil {
+		inboundUA = c.Request.Header.Get("User-Agent")
+	}
+	match, ok := s.tlsFPRouterService.MatchRequest(ctx, routerID, inboundUA, transport)
+	if !ok {
+		logger.LegacyPrintf("service.tls_fp_router", "[TLSFPRouter] no_match account_id=%d platform=grok transport=%s router_id=%d inbound_ua=%s", account.ID, transport, routerID, inboundUA)
+		return runtime
+	}
+	if s.tlsFPProfileService == nil {
+		return runtime
+	}
+	var profile *tlsfingerprint.Profile
+	if match.OS != "" || match.ClientType != "" {
+		if p, resolved := s.tlsFPProfileService.ResolveTLSProfileForDimensionMatch(account, match.OS, match.ClientType, transport); resolved {
+			profile = p
+		}
+	}
+	if profile == nil && match.ProfileID > 0 {
+		profile = s.tlsFPProfileService.resolveProfileByIDForAccount(match.ProfileID, account, transport)
+	}
+	if profile == nil {
+		return runtime
+	}
+	runtime.Profile = profile
+	runtime.UpstreamUserAgent = strings.TrimSpace(match.UpstreamUserAgent)
+	runtime.UpstreamOriginator = strings.TrimSpace(match.UpstreamOriginator)
+	seedTLSFingerprintRuntimeHeaders(&runtime, profile)
+	runtime.Matched = true
+	logger.LegacyPrintf("service.tls_fp_router",
+		"[TLSFPRouter] matched account_id=%d platform=grok transport=%s os=%s client_type=%s profile=%s upstream_ua=%s upstream_originator=%s",
+		account.ID, transport, match.OS, match.ClientType, profile.Name,
 		runtime.UpstreamUserAgent, runtime.UpstreamOriginator)
 	return runtime
 }

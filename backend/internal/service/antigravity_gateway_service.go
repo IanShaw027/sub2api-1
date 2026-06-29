@@ -1460,6 +1460,24 @@ func (s *AntigravityGatewayService) Forward(ctx context.Context, c *gin.Context,
 	sessionID := getSessionID(c)
 	prefix := logPrefix(sessionID, account.Name)
 
+	// Apply anti-fp normalizer before parsing so every derived value and every
+	// retry path uses the same normalized ClaudeRequest that is converted to
+	// Gemini. ForwardGemini is already body-first; ForwardUpstream normalizes
+	// before parsing too.
+	if s.fingerprintNormalizer != nil {
+		ua := ""
+		if c != nil && c.Request != nil {
+			ua = c.Request.Header.Get("User-Agent")
+		}
+		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
+		if canonical != nil {
+			_, newB, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
+			if len(newB) > 0 {
+				body = newB
+			}
+		}
+	}
+
 	// 解析 Claude 请求
 	var claudeReq antigravity.ClaudeRequest
 	if err := json.Unmarshal(body, &claudeReq); err != nil {
@@ -1479,21 +1497,6 @@ func (s *AntigravityGatewayService) Forward(ctx context.Context, c *gin.Context,
 	thinkingEnabled := claudeReq.Thinking != nil && (claudeReq.Thinking.Type == "enabled" || claudeReq.Thinking.Type == "adaptive")
 	mappedModel = applyThinkingModelSuffix(mappedModel, thinkingEnabled)
 	billingModel := mappedModel
-
-	// Apply anti-fp normalizer for Antigravity (all platforms)
-	if s.fingerprintNormalizer != nil {
-		ua := ""
-		if c != nil && c.Request != nil {
-			ua = c.Request.Header.Get("User-Agent")
-		}
-		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
-		if canonical != nil {
-			_, newB, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
-			if len(newB) > 0 {
-				body = newB
-			}
-		}
-	}
 
 	// 获取 access_token
 	if s.tokenProvider == nil {

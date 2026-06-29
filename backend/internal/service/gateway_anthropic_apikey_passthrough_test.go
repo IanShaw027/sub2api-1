@@ -875,6 +875,7 @@ func TestGatewayService_AnthropicOAuth_ForwardPreservesBillingHeaderSystemBlock(
 				rateLimitService:     &RateLimitService{},
 				deferredService:      &DeferredService{},
 			}
+			enableClaudeAntiBanForSanitizeTest(t, svc)
 
 			account := &Account{
 				ID:          301,

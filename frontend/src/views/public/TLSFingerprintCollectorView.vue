@@ -35,7 +35,11 @@
           </label>
           <label class="collector-card">
             <span class="collector-label">{{ t('tlsCollector.platform') }}</span>
-            <input v-model="form.platform" class="collector-input" placeholder="openai" />
+            <select v-model="form.platform" class="collector-input">
+              <option value="openai">OpenAI / Codex</option>
+              <option value="anthropic">Anthropic / Claude</option>
+              <option value="grok">Grok / xAI</option>
+            </select>
           </label>
           <label class="collector-card">
             <span class="collector-label">{{ t('tlsCollector.token') }}</span>
@@ -112,7 +116,7 @@
 
           <div class="mt-5 space-y-4">
             <GuideBlock
-              v-for="guide in guides"
+              v-for="guide in platformGuides"
               :key="guide.key"
               :title="guide.title"
               :body="guide.body"
@@ -293,7 +297,29 @@ const guides = computed(() => [
   }
 ])
 
-const allCommands = computed(() => guides.value.map(guide => `# ${guide.title}\n${guide.command}`).join('\n\n'))
+const allCommands = computed(() => platformGuides.value.map(guide => `# ${guide.title}\n${guide.command}`).join('\n\n'))
+
+// 每个客户端采集指令归属的平台，使采集器页按所选平台展示契合的指令，不再混在一起。
+const guidePlatform: Record<string, string> = {
+  'codex-cli': 'openai',
+  'codex-exec': 'openai',
+  'codex-desktop': 'openai',
+  'claude-code': 'anthropic',
+  'claude-print': 'anthropic',
+  'node': 'openai',
+  'python': 'openai',
+  'curl': 'openai'
+}
+
+const platformGuides = computed(() => {
+  const platform = normalizedPlatform.value
+  const matched = guides.value.filter(guide => guidePlatform[guide.key] === platform)
+  // 未知平台（无专属指令）时回退展示通用 curl 指令，避免空白。
+  if (matched.length === 0) {
+    return guides.value.filter(guide => guide.key === 'curl')
+  }
+  return matched
+})
 
 const copyText = async (text: string) => {
   await copyToClipboard(text, t('tlsCollector.copied'))

@@ -64,6 +64,8 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	if err != nil {
 		return nil, err
 	}
+	tlsRuntime := s.resolveGrokTLSFingerprintRuntime(ctx, c, account, "http")
+	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -71,7 +73,7 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	}
 
 	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.resolveOpenAITLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)

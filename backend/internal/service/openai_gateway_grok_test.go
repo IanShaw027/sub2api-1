@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -243,6 +244,74 @@ func TestForwardGrokResponsesAPIKeyUsesXAIResponses(t *testing.T) {
 	require.Equal(t, "grok-4.3", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "resp_apikey", result.ResponseID)
 	require.True(t, upstream.tlsCalled)
+}
+
+func TestForwardGrokResponsesUsesTLSRouterProfileAndHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	body := []byte(`{"model":"grok","input":"hi","stream":false}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("User-Agent", "GrokDesktop/1.0")
+
+	account := &Account{
+		ID:          56,
+		Name:        "grok-oauth",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "grok-token",
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+		Extra: map[string]any{
+			"enable_tls_fingerprint":    true,
+			"tls_fingerprint_router_id": float64(30),
+		},
+	}
+	router := &model.TLSFingerprintRouter{
+		ID:      30,
+		Name:    "grok-router",
+		Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{{
+			Name:                    "desktop",
+			Enabled:                 true,
+			Transport:               model.TLSFingerprintRouterTransportHTTP,
+			MatchType:               model.TLSFingerprintRouterMatchContains,
+			Pattern:                 "GrokDesktop",
+			TLSFingerprintProfileID: 91,
+			UpstreamUserAgent:       "grok-native/1.0",
+			UpstreamOriginator:      "grok_desktop",
+		}},
+	}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type":   []string{"application/json"},
+			"Xai-Request-Id": []string{"xai-grok-tls"},
+		},
+		Body: io.NopCloser(strings.NewReader(`{"id":"resp_grok_tls","object":"response","model":"grok-4.3","output":[],"usage":{"input_tokens":2,"output_tokens":1}}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		httpUpstream: upstream,
+		tlsFPRouterService: NewTLSFingerprintRouterService(&tlsFingerprintRouterRepoStub{
+			routers: []*model.TLSFingerprintRouter{router},
+		}, nil),
+		tlsFPProfileService: &TLSFingerprintProfileService{localCache: map[int64]*model.TLSFingerprintProfile{
+			91: {ID: 91, Name: "Grok Routed", Platform: "grok", Transport: "h2", UserAgent: "profile-ua", Originator: "profile-origin"},
+		}},
+	}
+
+	_, err := svc.forwardGrokResponses(context.Background(), c, account, body, "grok", false, time.Now())
+
+	require.NoError(t, err)
+	require.True(t, upstream.tlsCalled)
+	require.NotNil(t, upstream.lastTLSProfile)
+	require.Equal(t, "Grok Routed", upstream.lastTLSProfile.Name)
+	require.Equal(t, "grok-native/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "grok_desktop", upstream.lastReq.Header.Get("Originator"))
 }
 
 func TestForwardGrokResponsesDoesNotInjectImageBridgeForTextOnlyRequests(t *testing.T) {

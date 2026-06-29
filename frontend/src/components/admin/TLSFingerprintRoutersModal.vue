@@ -435,6 +435,7 @@ const handleDelete = (router: TLSFingerprintRouter) => {
 const normalizeRules = (): TLSFingerprintRouterRule[] => form.rules.map(rule => ({
   name: rule.name.trim(),
   enabled: rule.enabled,
+  transport: rule.transport || '',
   match_type: rule.match_type,
   pattern: rule.pattern.trim(),
   case_sensitive: rule.case_sensitive,

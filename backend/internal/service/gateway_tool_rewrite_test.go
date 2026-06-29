@@ -60,10 +60,19 @@ func TestRestoreToolNamesInBytes_LongestFirst(t *testing.T) {
 	require.Equal(t, `{"tool":"bar","other":"foo"}`, restored)
 }
 
-func TestRestoreToolNamesInBytes_StaticPrefixRollback(t *testing.T) {
+func TestRestoreToolNamesInBytes_StaticPrefixRollbackRequiresRewriteContext(t *testing.T) {
 	data := []byte(`{"name":"sessions_list","id":"cc_ses_xyz"}`)
-	got := string(restoreToolNamesInBytes(data, nil))
+	rw := buildToolNameRewriteFromBody([]byte(`{"tools":[{"name":"session_get","input_schema":{}}]}`), nil)
+	require.NotNil(t, rw)
+
+	got := string(restoreToolNamesInBytes(data, rw))
 	require.Equal(t, `{"name":"sessions_list","id":"session_xyz"}`, got)
+}
+
+func TestReverseToolNamesIfPresent_NoRewriteContextIsNoop(t *testing.T) {
+	data := []byte(`{"id":"cc_ses_xyz","text":"cc_sess_value"}`)
+	got := reverseToolNamesIfPresent(nil, data)
+	require.Equal(t, string(data), string(got))
 }
 
 func TestApplyToolNameRewriteToBody_RenamesToolsAndToolChoice(t *testing.T) {

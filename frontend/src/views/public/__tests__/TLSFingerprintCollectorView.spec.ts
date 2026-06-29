@@ -44,34 +44,36 @@ describe('TLSFingerprintCollectorView', () => {
     }
   })
 
-  it('renders native capture URLs and client instructions without JSON submit controls', () => {
+  it('renders native capture URLs and platform-scoped client instructions without JSON submit controls', () => {
     const wrapper = mount(TLSFingerprintCollectorView)
     const text = wrapper.text()
 
     expect(text).toContain('https://localhost:8444/capture/openai/v1')
     expect(text).toContain('https://localhost:8444/capture/openai/v1/responses')
+    // openai platform shows only OpenAI client guides
     expect(text).toContain('tlsCollector.guides.codexCli.title')
     expect(text).toContain('tlsCollector.guides.codexExec.title')
-    expect(text).toContain('tlsCollector.guides.claudeCode.title')
-    expect(text).toContain('tlsCollector.guides.claudePrint.title')
     expect(text).toContain('tlsCollector.guides.node.title')
     expect(text).toContain('tlsCollector.guides.python.title')
+    // anthropic guides are not shown under the openai platform
+    expect(text).not.toContain('tlsCollector.guides.claudeCode.title')
+    expect(text).not.toContain('tlsCollector.guides.claudePrint.title')
     expect(text).toContain('tlsCollector.supportedTransportsTitle')
     expect(text).toContain('tlsCollector.successBehaviorTitle')
     expect(wrapper.find('textarea').exists()).toBe(false)
   })
 
-  it('copies generated commands instead of posting to a submit API', async () => {
+  it('copies platform-scoped commands instead of posting to a submit API', async () => {
     const wrapper = mount(TLSFingerprintCollectorView)
 
     await wrapper.find('button.collector-button').trigger('click')
 
     expect(copyToClipboardMock).toHaveBeenCalled()
     const copiedText = String(copyToClipboardMock.mock.calls[0][0])
+    // openai platform: includes codex commands, excludes claude commands
     expect(copiedText).toContain('codex exec')
-    expect(copiedText).toContain('claude -p')
+    expect(copiedText).not.toContain('claude -p')
     expect(copiedText).toContain('https://localhost:8444/capture/openai/v1')
-    expect(copiedText).toContain('https://localhost:8444/capture/anthropic/v1')
     expect(copiedText).toContain('capture-token')
     expect(copiedText).not.toContain('/api/v1/tls-fingerprint-captures/submit')
   })
