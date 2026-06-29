@@ -107,7 +107,7 @@ func NewContentModerationHashCache(rdb *redis.Client) service.ContentModerationH
 	return &contentModerationHashCache{rdb: rdb}
 }
 
-func (c *contentModerationHashCache) RecordFlaggedInputHash(ctx context.Context, inputHash string) error {
+func (c *contentModerationHashCache) RecordFlaggedInputHash(ctx context.Context, inputHash string, excerpt string) error {
 	inputHash = strings.TrimSpace(inputHash)
 	if c == nil || c.rdb == nil || inputHash == "" {
 		return nil
@@ -124,6 +124,10 @@ func (c *contentModerationHashCache) RecordFlaggedInputHash(ctx context.Context,
 	pipe.Set(ctx, contentModerationFlaggedHashKeyPrefix+inputHash, "1", contentModerationFlaggedHashTTL)
 	pipe.HSetNX(ctx, metaKey, "created_at", nowUnix)
 	pipe.HSet(ctx, metaKey, "expires_at", expiresUnix)
+	// 仅在首次记录该哈希时写入脱敏摘要（HSetNX），保留最初命中的输入内容；调用方需保证 excerpt 已脱敏。
+	if excerpt = strings.TrimSpace(excerpt); excerpt != "" {
+		pipe.HSetNX(ctx, metaKey, "excerpt", excerpt)
+	}
 	pipe.Expire(ctx, metaKey, contentModerationFlaggedHashTTL)
 	pipe.ZAddNX(ctx, contentModerationFlaggedHashCreatedZSetKey, redis.Z{Score: float64(nowUnix), Member: inputHash})
 	_, err = pipe.Exec(ctx)
@@ -228,12 +232,13 @@ func (c *contentModerationHashCache) ListFlaggedInputHashes(ctx context.Context,
 
 func (c *contentModerationHashCache) flaggedHashItem(ctx context.Context, inputHash string, now time.Time) (service.ContentModerationHashItem, error) {
 	metaKey := contentModerationFlaggedHashMetaKeyPrefix + inputHash
-	fields, err := c.rdb.HMGet(ctx, metaKey, "created_at", "expires_at").Result()
+	fields, err := c.rdb.HMGet(ctx, metaKey, "created_at", "expires_at", "excerpt").Result()
 	if err != nil {
 		return service.ContentModerationHashItem{}, err
 	}
 	createdUnix := redisInt64(fields[0])
 	expiresUnix := redisInt64(fields[1])
+	excerpt := redisString(fields[2])
 	if createdUnix <= 0 {
 		score, err := c.rdb.ZScore(ctx, contentModerationFlaggedHashCreatedZSetKey, inputHash).Result()
 		if err == nil {
@@ -261,11 +266,12 @@ func (c *contentModerationHashCache) flaggedHashItem(ctx context.Context, inputH
 		return service.ContentModerationHashItem{}, err
 	}
 	return service.ContentModerationHashItem{
-		InputHash:   inputHash,
-		CreatedAt:   time.Unix(createdUnix, 0),
-		ExpiresAt:   expiresAt,
-		HitCount7D:  hit7d,
-		HitCount30D: hit30d,
+		InputHash:    inputHash,
+		InputExcerpt: excerpt,
+		CreatedAt:    time.Unix(createdUnix, 0),
+		ExpiresAt:    expiresAt,
+		HitCount7D:   hit7d,
+		HitCount30D:  hit30d,
 	}, nil
 }
 

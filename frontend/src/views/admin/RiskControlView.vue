@@ -945,6 +945,7 @@
                             />
                           </th>
                           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.hashValue') }}</th>
+                          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.hashExcerpt') }}</th>
                           <th class="px-4 py-3 text-left">
                             <button type="button" class="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400" @click="changeHashSort('created_at')">
                               {{ t('admin.riskControl.hashCreatedAt') }}
@@ -968,12 +969,12 @@
                       </thead>
                       <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
                         <tr v-if="hashesLoading">
-                          <td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                          <td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                             {{ t('common.loading') }}
                           </td>
                         </tr>
                         <tr v-else-if="flaggedHashes.length === 0">
-                          <td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                          <td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                             {{ t('admin.riskControl.noFlaggedHashes') }}
                           </td>
                         </tr>
@@ -988,6 +989,14 @@
                           </td>
                           <td class="max-w-[360px] px-4 py-3 font-mono text-xs text-gray-700 dark:text-gray-300">
                             <span class="block truncate" :title="item.input_hash">{{ item.input_hash }}</span>
+                          </td>
+                          <td class="max-w-[420px] px-4 py-3 text-xs text-gray-700 dark:text-gray-300">
+                            <span
+                              v-if="item.input_excerpt"
+                              class="block max-h-16 overflow-y-auto whitespace-pre-wrap break-words"
+                              :title="item.input_excerpt"
+                            >{{ item.input_excerpt }}</span>
+                            <span v-else class="text-gray-400 dark:text-gray-500">{{ t('admin.riskControl.hashExcerptEmpty') }}</span>
                           </td>
                           <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{{ formatDateTime(item.created_at) }}</td>
                           <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{{ formatNumber(item.hit_count_7d) }}</td>

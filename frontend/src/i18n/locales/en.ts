@@ -3392,6 +3392,8 @@ export default {
       flaggedHashHint: 'Hashes expire automatically after 90 days. Review hit counts, delete selected rows, or clear the collection.',
       flaggedHashPlaceholder: 'Paste full 64-character input hash',
       hashValue: 'Hash',
+      hashExcerpt: 'Input excerpt',
+      hashExcerptEmpty: 'No excerpt (legacy)',
       hashCreatedAt: 'Created',
       hashExpiresAt: 'Expires',
       hashHits7d: '7d hits',

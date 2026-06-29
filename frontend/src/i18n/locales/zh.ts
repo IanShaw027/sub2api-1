@@ -3458,6 +3458,8 @@ export default {
       flaggedHashHint: '哈希 90 天后自动过期。可查看命中次数、勾选批量删除，或一键清空全部风险哈希。',
       flaggedHashPlaceholder: '粘贴完整 64 位输入哈希',
       hashValue: '哈希值',
+      hashExcerpt: '输入摘要',
+      hashExcerptEmpty: '无摘要（旧记录）',
       hashCreatedAt: '创建时间',
       hashExpiresAt: '过期时间',
       hashHits7d: '7 天命中',

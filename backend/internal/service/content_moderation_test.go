@@ -399,7 +399,7 @@ func (i *contentModerationTestAuthCacheInvalidator) InvalidateAuthCacheByUserID(
 func (i *contentModerationTestAuthCacheInvalidator) InvalidateAuthCacheByGroupID(ctx context.Context, groupID int64) {
 }
 
-func (c *contentModerationTestHashCache) RecordFlaggedInputHash(ctx context.Context, inputHash string) error {
+func (c *contentModerationTestHashCache) RecordFlaggedInputHash(ctx context.Context, inputHash string, excerpt string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.hashes == nil {

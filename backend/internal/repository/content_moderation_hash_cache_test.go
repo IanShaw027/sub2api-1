@@ -26,7 +26,7 @@ func TestContentModerationHashCacheDeleteRemovesSetMemberAndPerHashKey(t *testin
 	cache, mr := newContentModerationHashCacheTest(t)
 	ctx := context.Background()
 
-	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "hash-delete"))
+	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "hash-delete", ""))
 	require.True(t, mr.Exists(contentModerationFlaggedHashKeyPrefix+"hash-delete"))
 
 	deleted, err := cache.DeleteFlaggedInputHash(ctx, "hash-delete")
@@ -43,8 +43,8 @@ func TestContentModerationHashCacheClearRemovesPerHashKeys(t *testing.T) {
 	cache, mr := newContentModerationHashCacheTest(t)
 	ctx := context.Background()
 
-	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "hash-clear-a"))
-	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "hash-clear-b"))
+	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "hash-clear-a", ""))
+	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "hash-clear-b", ""))
 	require.True(t, mr.Exists(contentModerationFlaggedHashKeyPrefix+"hash-clear-a"))
 	require.True(t, mr.Exists(contentModerationFlaggedHashKeyPrefix+"hash-clear-b"))
 
@@ -64,9 +64,9 @@ func TestContentModerationHashCacheListTracksHitCountsAndSorts(t *testing.T) {
 	cache, mr := newContentModerationHashCacheTest(t)
 	ctx := context.Background()
 
-	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "hash-a"))
+	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "hash-a", ""))
 	mr.FastForward(24 * time.Hour)
-	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "hash-b"))
+	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "hash-b", ""))
 
 	matched, err := cache.HasFlaggedInputHash(ctx, "hash-a")
 	require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestContentModerationHashCacheExpiresAfter90DaysAndPrunesStaleSetMember(t *
 	base := time.Unix(1_700_000_000, 0)
 	mr.SetTime(base)
 
-	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "expires"))
+	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "expires", ""))
 	require.True(t, mr.Exists(contentModerationFlaggedHashKeyPrefix+"expires"))
 
 	mr.FastForward(90*24*time.Hour + time.Second)
@@ -143,7 +143,7 @@ func TestContentModerationHashCacheHitMetricFailureDoesNotDowngradeMatch(t *test
 	cache, mr := newContentModerationHashCacheTest(t)
 	ctx := context.Background()
 
-	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "metric-fail"))
+	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "metric-fail", ""))
 	mr.Set(contentModerationFlaggedHashHitsKeyPrefix+"metric-fail", "not-a-zset")
 
 	matched, err := cache.HasFlaggedInputHash(ctx, "metric-fail")
@@ -155,8 +155,8 @@ func TestContentModerationHashCacheBatchDeleteRemovesMetadataAndHits(t *testing.
 	cache, _ := newContentModerationHashCacheTest(t)
 	ctx := context.Background()
 
-	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "delete-a"))
-	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "delete-b"))
+	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "delete-a", ""))
+	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "delete-b", ""))
 	matched, err := cache.HasFlaggedInputHash(ctx, "delete-a")
 	require.NoError(t, err)
 	require.True(t, matched)

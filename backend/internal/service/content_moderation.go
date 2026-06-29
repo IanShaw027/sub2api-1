@@ -541,11 +541,12 @@ type ContentModerationHashListFilter struct {
 }
 
 type ContentModerationHashItem struct {
-	InputHash   string    `json:"input_hash"`
-	CreatedAt   time.Time `json:"created_at"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	HitCount7D  int64     `json:"hit_count_7d"`
-	HitCount30D int64     `json:"hit_count_30d"`
+	InputHash    string    `json:"input_hash"`
+	InputExcerpt string    `json:"input_excerpt"`
+	CreatedAt    time.Time `json:"created_at"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	HitCount7D   int64     `json:"hit_count_7d"`
+	HitCount30D  int64     `json:"hit_count_30d"`
 }
 
 type ContentModerationBatchDeleteHashesResult struct {
@@ -564,7 +565,7 @@ type ContentModerationRepository interface {
 }
 
 type ContentModerationHashCache interface {
-	RecordFlaggedInputHash(ctx context.Context, inputHash string) error
+	RecordFlaggedInputHash(ctx context.Context, inputHash string, excerpt string) error
 	HasFlaggedInputHash(ctx context.Context, inputHash string) (bool, error)
 	ListFlaggedInputHashes(ctx context.Context, filter ContentModerationHashListFilter) ([]ContentModerationHashItem, *pagination.PaginationResult, error)
 	DeleteFlaggedInputHash(ctx context.Context, inputHash string) (bool, error)
@@ -1976,6 +1977,12 @@ func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Conte
 	return &out.Results[0], nil
 }
 
+// contentModerationExcerpt 生成用于展示的输入摘要：先脱敏（移除 key/token 等敏感信息），再按最大长度截断。
+// 写入前置哈希记录与审计日志的摘要都必须经过此函数，确保存储内容已脱敏。
+func contentModerationExcerpt(text string) string {
+	return trimRunes(redactContentModerationSecrets(text), maxModerationExcerptRunes)
+}
+
 func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, cfg *ContentModerationConfig, action string, flagged bool, highestCategory string, highestScore float64, scores map[string]float64, text string, latency *int, queueDelay *int, errText string) *ContentModerationLog {
 	var userID *int64
 	if input.UserID > 0 {
@@ -2023,7 +2030,8 @@ func (s *ContentModerationService) applyContentModerationPersistenceEffects(ctx 
 		return
 	}
 	if recordHash && s.hashCache != nil {
-		if err := s.hashCache.RecordFlaggedInputHash(ctx, hashText); err != nil {
+		// log.InputExcerpt 已由 contentModerationExcerpt 脱敏并截断，安全用于展示。
+		if err := s.hashCache.RecordFlaggedInputHash(ctx, hashText, log.InputExcerpt); err != nil {
 			slog.Warn("content_moderation.record_hash_failed", "user_id", contentModerationEmailUserID(log), "endpoint", log.Endpoint, "error", err)
 		}
 	}
@@ -4000,7 +4008,8 @@ func (s *ContentModerationService) RecordCyberPolicyFlaggedHashes(ctx context.Co
 		if inputHash == "" {
 			continue
 		}
-		if err := s.hashCache.RecordFlaggedInputHash(ctx, inputHash); err != nil {
+		excerpt := contentModerationExcerpt(localInput.ExcerptText())
+		if err := s.hashCache.RecordFlaggedInputHash(ctx, inputHash, excerpt); err != nil {
 			slog.Warn("content_moderation.cyber_record_hash_failed", "input_hash", inputHash, "error", err)
 		}
 	}

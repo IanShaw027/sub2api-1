@@ -190,6 +190,7 @@ export type SortOrder = 'asc' | 'desc'
 
 export interface ContentModerationHashItem {
   input_hash: string
+  input_excerpt: string
   created_at: string
   expires_at: string
   hit_count_7d: number
