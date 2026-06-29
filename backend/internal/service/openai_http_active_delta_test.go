@@ -618,3 +618,16 @@ func TestRestoreOpenAIHTTPActiveDeltaFullReplayBodyDoesNotRewriteFunctionCallOut
 	require.False(t, ok)
 	require.Nil(t, restored)
 }
+
+func TestRestoreOpenAIHTTPActiveDeltaInvalidEncryptedContentBodyPreservesPreviousResponseIDForRawToolContinuationOutput(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","stream":true,"store":true,"previous_response_id":"resp_prev","input":{"type":"custom_tool_call_output","call_id":"call_1","output":"ok","reasoning":{"type":"reasoning","encrypted_content":"cipher"}}}`)
+
+	restored, removedReasoningItems, droppedPreviousResponseID, err := restoreOpenAIHTTPActiveDeltaInvalidEncryptedContentBody(body)
+	require.NoError(t, err)
+	require.True(t, removedReasoningItems)
+	require.False(t, droppedPreviousResponseID)
+	require.NotNil(t, restored)
+	require.Equal(t, "resp_prev", gjson.GetBytes(restored, "previous_response_id").String())
+	require.False(t, gjson.GetBytes(restored, "input.reasoning.encrypted_content").Exists())
+	require.False(t, gjson.GetBytes(restored, "store").Bool())
+}

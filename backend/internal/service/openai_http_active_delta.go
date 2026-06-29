@@ -222,7 +222,7 @@ func restoreOpenAIHTTPActiveDeltaFullReplayBody(original []byte) ([]byte, bool, 
 	if len(original) == 0 {
 		return nil, false, nil
 	}
-	if HasToolContinuationOutputInRawPayload(original) {
+	if hasOpenAIHTTPActiveDeltaToolContinuationOutput(original, nil) {
 		return nil, false, nil
 	}
 	var reqBody map[string]any
@@ -258,7 +258,7 @@ func restoreOpenAIHTTPActiveDeltaInvalidEncryptedContentBody(original []byte) ([
 	}
 	removedReasoningItems := trimOpenAIEncryptedReasoningItems(reqBody)
 	droppedPreviousResponseID := false
-	if previousResponseID := openAIWSPayloadString(reqBody, "previous_response_id"); previousResponseID != "" && !HasFunctionCallOutput(reqBody) {
+	if previousResponseID := openAIWSPayloadString(reqBody, "previous_response_id"); previousResponseID != "" && !hasOpenAIHTTPActiveDeltaToolContinuationOutput(original, reqBody) {
 		delete(reqBody, "previous_response_id")
 		droppedPreviousResponseID = true
 	}
@@ -273,6 +273,16 @@ func restoreOpenAIHTTPActiveDeltaInvalidEncryptedContentBody(original []byte) ([
 		return nil, false, false, err
 	}
 	return body, removedReasoningItems, droppedPreviousResponseID, nil
+}
+
+func hasOpenAIHTTPActiveDeltaToolContinuationOutput(original []byte, reqBody map[string]any) bool {
+	if HasToolContinuationOutputInRawPayload(original) {
+		return true
+	}
+	if reqBody == nil {
+		return false
+	}
+	return HasFunctionCallOutput(reqBody)
 }
 
 func gjsonGetBytesString(payload []byte, path string) string {
