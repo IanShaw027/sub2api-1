@@ -1153,6 +1153,102 @@
         </div>
       </div>
 
+      <!-- TLS Fingerprint (仅支持的账号类型显示) -->
+      <div v-if="allTLSFingerprintCapable" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div class="mb-3 flex items-center justify-between">
+          <label
+            id="bulk-edit-tls-fingerprint-label"
+            class="input-label mb-0"
+            for="bulk-edit-tls-fingerprint-enabled"
+          >
+            {{ t('admin.accounts.quotaControl.tlsFingerprint.label') }}
+          </label>
+          <input
+            v-model="enableTLSFingerprint"
+            id="bulk-edit-tls-fingerprint-enabled"
+            type="checkbox"
+            aria-controls="bulk-edit-tls-fingerprint-body"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+        </div>
+
+        <div
+          id="bulk-edit-tls-fingerprint-body"
+          :class="!enableTLSFingerprint && 'pointer-events-none opacity-50'"
+          role="group"
+          aria-labelledby="bulk-edit-tls-fingerprint-label"
+        >
+          <div class="mb-3 flex items-center justify-between">
+            <span class="text-sm text-gray-700 dark:text-gray-300">
+              {{ t('admin.accounts.quotaControl.tlsFingerprint.hint') }}
+            </span>
+            <button
+              type="button"
+              @click="tlsFingerprintEnabled = !tlsFingerprintEnabled"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+                tlsFingerprintEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              ]"
+            >
+              <span
+                :class="[
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  tlsFingerprintEnabled ? 'translate-x-5' : 'translate-x-0'
+                ]"
+              />
+            </button>
+          </div>
+
+          <div v-if="tlsFingerprintEnabled" class="space-y-3">
+            <div>
+              <label class="input-label text-xs">
+                {{ t('admin.accounts.quotaControl.tlsFingerprint.profileLabel') }}
+              </label>
+              <select v-model.number="tlsFingerprintProfileId" class="input">
+                <option :value="null">
+                  {{ t('admin.accounts.quotaControl.tlsFingerprint.useDefault') }}
+                </option>
+                <option v-if="hasSelectableTLSFingerprintProfiles" :value="-1">
+                  {{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}
+                </option>
+                <option
+                  v-for="profile in selectableTLSFingerprintProfiles"
+                  :key="profile.id"
+                  :value="profile.id"
+                  :disabled="profile.isPlatformMismatch"
+                >
+                  {{ tlsFingerprintProfileOptionLabel(profile) }}
+                </option>
+              </select>
+              <p class="input-hint">
+                {{ t('admin.accounts.quotaControl.tlsFingerprint.profileHint') }}
+              </p>
+            </div>
+
+            <div>
+              <label class="input-label text-xs">
+                {{ t('admin.accounts.quotaControl.tlsFingerprint.routerLabel') }}
+              </label>
+              <select v-model.number="tlsFingerprintRouterId" class="input">
+                <option :value="null">
+                  {{ t('admin.accounts.quotaControl.tlsFingerprint.noRouter') }}
+                </option>
+                <option
+                  v-for="router in tlsFingerprintRouters"
+                  :key="router.id"
+                  :value="router.id"
+                >
+                  {{ router.name }}
+                </option>
+              </select>
+              <p class="input-hint">
+                {{ t('admin.accounts.quotaControl.tlsFingerprint.routerHint') }}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Groups -->
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
@@ -1259,6 +1355,11 @@ import {
 import type { OpenAIWSMode } from '@/utils/openaiWsMode'
 import { buildCustomErrorCodesResult, isValidCustomErrorCode } from '@/components/account/customErrorCodes'
 import { supportsTextEndpointAutoRoute } from '@/components/account/textEndpointAutoRoute'
+import type { TLSFingerprintProfileOption, SelectableTLSFingerprintProfileOption } from '@/components/account/tlsFingerprintProfileOptions'
+import { getSelectableTLSFingerprintProfiles, formatTLSFingerprintProfileOptionLabel } from '@/components/account/tlsFingerprintProfileOptions'
+import * as tlsFingerprintProfileAPI from '@/api/admin/tlsFingerprintProfile'
+import * as tlsFingerprintRouterAPI from '@/api/admin/tlsFingerprintRouter'
+
 interface Props {
   show: boolean
   accountIds: number[]
@@ -1339,6 +1440,41 @@ const allAnthropicOAuthOrSetupToken = computed(() => {
     targetSelectedPlatforms.value[0] === 'anthropic' &&
     targetSelectedTypes.value.every(t => t === 'oauth' || t === 'setup-token')
   )
+})
+
+// 是否全部支持 TLS 指纹（Anthropic OAuth/SetupToken、OpenAI、Kiro OAuth）
+const allTLSFingerprintCapable = computed(() => {
+  if (targetSelectedPlatforms.value.length === 0) return false
+
+  // Anthropic OAuth/SetupToken
+  if (
+    targetSelectedPlatforms.value.length === 1 &&
+    targetSelectedPlatforms.value[0] === 'anthropic' &&
+    targetSelectedTypes.value.length > 0 &&
+    targetSelectedTypes.value.every(t => t === 'oauth' || t === 'setup-token')
+  ) {
+    return true
+  }
+
+  // OpenAI (any type)
+  if (
+    targetSelectedPlatforms.value.length === 1 &&
+    targetSelectedPlatforms.value[0] === 'openai'
+  ) {
+    return true
+  }
+
+  // Kiro OAuth
+  if (
+    targetSelectedPlatforms.value.length === 1 &&
+    targetSelectedPlatforms.value[0] === 'kiro' &&
+    targetSelectedTypes.value.length > 0 &&
+    targetSelectedTypes.value.every(t => t === 'oauth')
+  ) {
+    return true
+  }
+
+  return false
 })
 
 const filteredPresets = computed(() => {
@@ -1424,6 +1560,34 @@ const umqModeOptions = computed(() => [
   { value: 'throttle', label: t('admin.accounts.quotaControl.rpmLimit.umqModeThrottle') },
   { value: 'serialize', label: t('admin.accounts.quotaControl.rpmLimit.umqModeSerialize') },
 ])
+
+// TLS Fingerprint state
+const enableTLSFingerprint = ref(false)
+const tlsFingerprintEnabled = ref(false)
+const tlsFingerprintProfileId = ref<number | null>(null)
+const tlsFingerprintRouterId = ref<number | null>(null)
+const tlsFingerprintProfiles = ref<TLSFingerprintProfileOption[]>([])
+const tlsFingerprintRouters = ref<{ id: number; name: string }[]>([])
+
+const selectableTLSFingerprintProfiles = computed(() => {
+  // For bulk edit, we need a platform to filter - use the single platform if available
+  const platform = targetSelectedPlatforms.value.length === 1 ? targetSelectedPlatforms.value[0] : null
+  return getSelectableTLSFingerprintProfiles(
+    tlsFingerprintProfiles.value,
+    platform,
+    tlsFingerprintProfileId.value
+  )
+})
+
+const hasSelectableTLSFingerprintProfiles = computed(() =>
+  selectableTLSFingerprintProfiles.value.some(profile => !profile.isPlatformMismatch)
+)
+
+const tlsFingerprintProfileOptionLabel = (profile: SelectableTLSFingerprintProfileOption) =>
+  formatTLSFingerprintProfileOptionLabel(profile, {
+    shared: t('admin.accounts.quotaControl.tlsFingerprint.sharedProfile'),
+    mismatch: t('admin.accounts.quotaControl.tlsFingerprint.platformMismatch')
+  })
 
 // Common HTTP error codes
 const commonErrorCodes = [
@@ -1741,6 +1905,31 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     umqExtra.user_msg_queue_enabled = false  // 清理旧字段（JSONB merge）
   }
 
+  // TLS Fingerprint settings
+  if (enableTLSFingerprint.value) {
+    const extra = ensureExtra()
+    if (tlsFingerprintEnabled.value) {
+      extra.enable_tls_fingerprint = true
+      // Profile ID: -1 表示随机选择，null 表示不设置
+      if (tlsFingerprintProfileId.value === -1 || (tlsFingerprintProfileId.value && tlsFingerprintProfileId.value > 0)) {
+        extra.tls_fingerprint_profile_id = tlsFingerprintProfileId.value
+      } else {
+        extra.tls_fingerprint_profile_id = null
+      }
+      // Router ID: 只有当用户选择了路由器时才设置
+      if (tlsFingerprintRouterId.value && tlsFingerprintRouterId.value > 0) {
+        extra.tls_fingerprint_router_id = tlsFingerprintRouterId.value
+      } else {
+        extra.tls_fingerprint_router_id = null
+      }
+    } else {
+      // 关闭 TLS 指纹 - 显式删除相关字段
+      extra.enable_tls_fingerprint = false
+      extra.tls_fingerprint_profile_id = null
+      extra.tls_fingerprint_router_id = null
+    }
+  }
+
   if (credentialsChanged) {
     updates.credentials = credentials
   }
@@ -1816,7 +2005,8 @@ const handleSubmit = async () => {
     enableOpenAICompactMode.value ||
     enableOpenAICompactModelMapping.value ||
     enableRpmLimit.value ||
-    userMsgQueueMode.value !== null
+    userMsgQueueMode.value !== null ||
+    enableTLSFingerprint.value
 
   if (!hasAnyFieldEnabled) {
     appStore.showError(t('admin.accounts.bulkEdit.noFieldsSelected'))
@@ -1898,6 +2088,19 @@ const handleMixedChannelCancel = () => {
   showMixedChannelWarning.value = false
   pendingUpdatesForConfirm.value = null
 }
+
+// Load TLS Fingerprint configurations
+tlsFingerprintProfileAPI.list().then((profiles) => {
+  tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name, platform: p.platform }))
+}).catch(err => {
+  console.error('Failed to load TLS fingerprint profiles:', err)
+})
+
+tlsFingerprintRouterAPI.list().then((routers) => {
+  tlsFingerprintRouters.value = routers.filter(r => r.enabled).map(r => ({ id: r.id, name: r.name }))
+}).catch(err => {
+  console.error('Failed to load TLS fingerprint routers:', err)
+})
 
 // Reset form when modal closes
 watch(

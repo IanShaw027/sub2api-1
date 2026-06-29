@@ -1388,6 +1388,12 @@ export default {
         modelComment: '如果你有 Gemini 3 权限可以填：gemini-3-pro-preview',
         note: '这些环境变量将在当前终端会话中生效。如需永久配置，请将其添加到 ~/.bashrc、~/.zshrc 或相应的配置文件中。'
       },
+      grok: {
+        description:
+          '将以下环境变量添加到您的终端配置文件或直接在终端中运行。支持通过 API Key 接入 Grok CLI (cli-chat-proxy.grok.com) 和 Codex (api.x.ai)。',
+        note: '这些环境变量将在当前终端会话中生效。如需永久配置，请将其添加到 ~/.bashrc、~/.zshrc 或相应的配置文件中。',
+        configTomlHint: '推荐使用配置文件方式。支持配置多个模型，API Key 可通过 env_key 引用环境变量或直接写入 api_key（不推荐）。'
+      },
       opencode: {
         title: 'OpenCode 配置示例',
         subtitle: 'opencode.json',
@@ -1743,7 +1749,7 @@ export default {
       columns: {
         email: '邮箱',
         username: '用户名',
-        rebate: '返利明细',
+        rebate: '返利额度',
         joinedAt: '注册时间'
       }
     },
@@ -4531,8 +4537,8 @@ export default {
         modelRestrictionDisabledByPassthrough: '已开启自动透传：模型白名单/映射不会生效。',
       },
       grok: {
-        baseUrlHint: 'Grok OAuth 账号会转发到官方 xAI API Base URL。',
-        apiKeyHint: 'Grok 订阅支持使用 OAuth refresh token；API Key 账号不在本次范围内。'
+        baseUrlHint: 'Grok 账号支持通过 API Key 接入 Grok CLI (cli-chat-proxy.grok.com/v1) 和 Codex (api.x.ai/v1)。',
+        apiKeyHint: '填写你的 Grok API Key。支持 CLI 和 Codex 两种 Base URL。'
       },
       anthropic: {
         apiKeyPassthrough: '自动透传（仅替换认证）',
@@ -7087,7 +7093,7 @@ export default {
       },
       defaults: {
         title: '用户默认设置',
-        description: '新用户的默认值',
+        description: '用户注册成功后默认授予的基础余额、并发和订阅',
         defaultBalance: '默认余额',
         defaultBalanceHint: '新用户的初始余额',
         affiliateRebateRate: '邀请返利比例',

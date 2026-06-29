@@ -1766,7 +1766,7 @@
         "username": "Username",
         "joinedAt": "Joined At",
         "consumed": "User Spend",
-        "rebate": "Rebate Quota",
+        "rebate": "Rebate",
         "details": "Details"
       },
       "viewDetails": "Details"
@@ -1779,7 +1779,7 @@
         "time": "Time",
         "consumed": "Spend",
         "rate": "Rate",
-        "rebate": "Rebate Quota"
+        "rebate": "Rebate"
       }
     },
     "tips": {
@@ -2786,7 +2786,7 @@
         "routeNative": "Provider native",
         "routeCodex": "codex",
         "routeWeb2API": "web2api",
-        "images": "Images API (/v1/images/*)",
+        "images": "Images API",
         "fixedHint": "Fixed per group; not affected by rate multipliers.",
         "allowImageGeneration": "Allow image generation for this group",
         "independentMultiplier": "Use independent image multiplier",
@@ -3516,7 +3516,7 @@
         "keywordsHint": "Separate keywords with commas; any keyword match will trigger.",
         "description": "Description",
         "descriptionPlaceholder": "Optional note for this rule",
-        "rulesInvalid": "Add at least one rule with error code, keywords, and duration.",
+        "rulesInvalid": "Add at least one rule with error code and duration. Keywords are optional.",
         "viewDetails": "View temp unschedulable details",
         "accountName": "Account",
         "triggeredAt": "Triggered At",
@@ -3743,7 +3743,7 @@
         "textEndpointAutoRouteDesc": "Allows Responses, Messages, and Chat Completions text ingress to convert to the text upstream endpoint this account can use. Use it for chat-only upstreams serving Codex /responses or /messages requests.",
         "compactSupported": "Compact supported",
         "compactUnsupported": "Compact unsupported",
-        "compactUnknown": "Compact unknown",
+        "compactUnknown": "Compact Auto",
         "compactLastChecked": "Last compact probe",
         "testMode": "Test mode",
         "testModeDefault": "Default request",
@@ -3775,7 +3775,7 @@
       "invalidModelMapping": "Model mapping contains an invalid row: request and target models are required, wildcard * is only allowed at the end of the request model, and target model cannot contain wildcards.",
       "searchModels": "Search models...",
       "noMatchingModels": "No matching models",
-      "fillRelatedModels": "Fill related models",
+      "fillRelatedModels": "Sync latest supported models",
       "syncUpstreamModels": "Sync upstream models",
       "syncUpstreamModelsLoading": "Syncing...",
       "syncUpstreamModelsEmpty": "No upstream models returned",
@@ -4219,7 +4219,7 @@
         },
         "quotaPolicy": {
           "title": "Gemini Quota & Limit Policy (Reference)",
-          "note": "Note: Gemini does not provide an official quota inquiry API. The \"Daily Quota\" shown here is an estimate simulated by the system based on account tiers for scheduling reference only. Please refer to official Google errors for actual limits.",
+          "note": "Note: Gemini OAuth accounts now prefer Google quota snapshots such as remainingFraction and resetTime when available. Plan descriptions and local scheduling quotas are still reference-only; rely on actual Google responses and errors as the source of truth.",
           "columns": {
             "channel": "Auth Channel",
             "account": "Account Status",
@@ -4321,7 +4321,7 @@
         "step2AuthorizeHint": "After authorization finishes in the browser, copy the full callback URL from the address bar. You do not need to extract parameters manually.",
         "step3PasteCallback": "Paste the full callback URL",
         "callbackUrlPlaceholder": "Paste the full Kiro callback URL, for example http://localhost:3128/oauth/callback?...",
-        "callbackUrlHint": "You can paste the full callback URL, only the path, or only the query string. The server will normalize and exchange it.",
+        "callbackUrlHint": "You can paste the full callback URL, only the path, or only the query string. For Your Organization (IAM Identity Center) sign-in, paste the /signin/callback?login_option=awsidc&... URL.",
         "callbackUrlRequired": "Paste the full Kiro callback URL first",
         "callbackBaseUrlHint": "Callback base URL for this login: {value}",
         "generateUrlFirst": "Generate the Kiro auth URL first",
@@ -4354,7 +4354,7 @@
         "authMethodHint": "Social fits normal Kiro accounts. IDC requires extra AWS/IDC client fields.",
         "authMethodSocial": "Social",
         "authMethodIDC": "IDC",
-        "manualRefreshTokenAuth": "Manual RT",
+        "manualRefreshTokenAuth": "Credential Auth",
         "manualRefreshTokenDesc": "Enter existing Kiro refresh tokens. Batch input is supported with one token per line and each token will be validated before account creation.",
         "refreshTokenLabel": "Refresh Token",
         "refreshTokenPlaceholder": "Paste the Kiro refresh token",
@@ -6047,9 +6047,9 @@
         "emailVerification": "Email Verification",
         "emailVerificationHint": "Require email verification for new registrations",
         "emailSuffixWhitelist": "Email Domain Whitelist",
-        "emailSuffixWhitelistHint": "Only email addresses from the specified domains can register (for example, {'@'}qq.com, {'@'}gmail.com)",
-        "emailSuffixWhitelistPlaceholder": "example.com",
-        "emailSuffixWhitelistInputHint": "Leave empty for no restriction",
+        "emailSuffixWhitelistHint": "Only email addresses from the specified domains can register (for example, {'@'}qq.com, {'@'}gmail.com, *.edu.cn)",
+        "emailSuffixWhitelistPlaceholder": "{'@'}example.com, *.edu.cn",
+        "emailSuffixWhitelistInputHint": "Leave empty for no restriction. Use *.edu.cn to match edu.cn and its subdomains.",
         "promoCode": "Promo Code",
         "promoCodeHint": "Allow users to use promo codes during registration",
         "invitationCode": "Invitation Code Registration",
@@ -6235,9 +6235,9 @@
         "anthropicCacheTTL1hInjectionHint": "When enabled, existing ephemeral cache_control blocks in Anthropic OAuth/Setup Token request bodies are forced to 1h; response usage is billed back as 5m by default, with account-level TTL billing override taking priority.",
         "apiKeyAclTrustForwardedIP": "Trust Forwarded IP for API Key ACL",
         "apiKeyAclTrustForwardedIPHint": "Use forwarded IP headers when evaluating API Key ACL rules.",
-        "openaiCodexUserAgent": "OpenAI Codex User-Agent",
-        "openaiCodexUserAgentPlaceholder": "OpenAI-Codex/2025.05",
-        "openaiCodexUserAgentHint": "Set the User-Agent sent to OpenAI Codex upstream requests."
+        "openaiCodexUserAgent": "OpenAI Codex UA",
+        "openaiCodexUserAgentPlaceholder": "codex-tui/0.125.0 (Ubuntu 22.4.0; x86_64) xterm-256color (codex-tui; 0.125.0)",
+        "openaiCodexUserAgentHint": "Used to bypass Cloudflare browser-UA challenges on the OpenAI upstream. Only applies when the client User-Agent is detected as a browser (Mozilla/...). Leave empty to use the built-in default."
       },
       "webSearchEmulation": {
         "title": "Web Search Emulation",

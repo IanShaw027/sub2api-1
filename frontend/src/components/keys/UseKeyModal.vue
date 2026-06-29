@@ -330,6 +330,8 @@ const platformDescription = computed(() => {
       return t('keys.useKeyModal.gemini.description')
     case 'antigravity':
       return t('keys.useKeyModal.antigravity.description')
+    case 'grok':
+      return t('keys.useKeyModal.grok.description')
     default:
       return t('keys.useKeyModal.description')
   }
@@ -350,6 +352,8 @@ const platformNote = computed(() => {
       return activeClientTab.value === 'claude'
         ? t('keys.useKeyModal.antigravity.claudeNote')
         : t('keys.useKeyModal.antigravity.geminiNote')
+    case 'grok':
+      return t('keys.useKeyModal.grok.note')
     default:
       return t('keys.useKeyModal.note')
   }
@@ -432,6 +436,8 @@ const currentFiles = computed((): FileConfig[] => {
         return [generateGeminiCliContent(`${baseUrl}/antigravity`, apiKey)]
       }
       return generateAnthropicFiles(`${baseUrl}/antigravity`, apiKey)
+    case 'grok':
+      return generateGrokFiles(baseUrl, apiKey)
     default:
       return generateAnthropicFiles(baseUrl, apiKey)
   }
@@ -606,6 +612,91 @@ responses_websockets_v2 = true
       path: `${configDir}/config.toml`,
       content: configContent,
       hint: t('keys.useKeyModal.openai.configTomlHint')
+    }
+  ]
+}
+
+function generateGrokFiles(baseUrl: string, apiKey: string): FileConfig[] {
+  const isWindows = activeTab.value === 'windows'
+  const configDir = isWindows ? '%userprofile%\\.grok' : '~/.grok'
+
+  let envPath: string
+  let envContent: string
+
+  // 生成环境变量配置
+  switch (activeTab.value) {
+    case 'unix':
+      envPath = 'Terminal'
+      envContent = `export GROK_MODELS_BASE_URL="${baseUrl}"
+export XAI_API_KEY="${apiKey}"`
+      break
+    case 'cmd':
+      envPath = 'Command Prompt'
+      envContent = `set GROK_MODELS_BASE_URL=${baseUrl}
+set XAI_API_KEY=${apiKey}`
+      break
+    case 'powershell':
+      envPath = 'PowerShell'
+      envContent = `$env:GROK_MODELS_BASE_URL="${baseUrl}"
+$env:XAI_API_KEY="${apiKey}"`
+      break
+    default:
+      envPath = 'Terminal'
+      envContent = ''
+  }
+
+  // 生成 config.toml 配置（支持多个模型）
+  const configContent = `# Grok CLI config for Sub2API API-key access.
+# You can configure multiple custom models here.
+
+# Global endpoint configuration (applies to all models unless overridden)
+[endpoints]
+models_base_url = "${baseUrl}"
+
+# Example: Configure multiple Grok models with the same base URL
+# API key can be set via:
+#   1. env_key = "XAI_API_KEY" (use environment variable)
+#   2. api_key = "sk-xxx..." (hardcode, not recommended for security)
+
+[model.grok-build]
+model = "grok-build"
+name = "Grok Build"
+api_backend = "responses"
+context_window = 512000
+env_key = "XAI_API_KEY"  # Recommended: use environment variable
+# api_key = "${apiKey}"  # Alternative: hardcode API key (not recommended)
+
+[model.grok-4.20-reasoning]
+model = "grok-4.20-reasoning"
+name = "Grok 4.20 Reasoning"
+api_backend = "responses"
+context_window = 512000
+env_key = "XAI_API_KEY"
+
+[model.grok-latest]
+model = "grok-latest"
+name = "Grok Latest"
+api_backend = "responses"
+env_key = "XAI_API_KEY"
+
+# You can add more models as needed:
+# [model.custom-model-name]
+# model = "model-id"
+# name = "Display Name"
+# api_backend = "responses"
+# env_key = "XAI_API_KEY"
+# # or: api_key = "your-api-key"
+
+# Set default model (optional)
+[models]
+default = "grok-build"`
+
+  return [
+    { path: envPath, content: envContent },
+    {
+      path: `${configDir}/config.toml`,
+      content: configContent,
+      hint: t('keys.useKeyModal.grok.configTomlHint')
     }
   ]
 }

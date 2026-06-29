@@ -1393,6 +1393,11 @@ export default {
         modelComment: 'If you have Gemini 3 access, you can use: gemini-3-pro-preview',
         note: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
       },
+      grok: {
+        description: 'Add the following environment variables to your terminal profile or run directly in terminal. Supports API Key access for both Grok CLI (cli-chat-proxy.grok.com) and Codex (api.x.ai).',
+        note: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
+        configTomlHint: 'Config file approach is recommended. Supports multiple models. API Key can be referenced via env_key (environment variable) or hardcoded in api_key (not recommended).'
+      },
       opencode: {
         title: 'OpenCode Example',
         subtitle: 'opencode.json',
@@ -4351,8 +4356,8 @@ export default {
         modelRestrictionDisabledByPassthrough: 'Automatic passthrough is enabled: model whitelist/mapping will not take effect.',
       },
       grok: {
-        baseUrlHint: 'Grok OAuth accounts forward to the official xAI API base URL.',
-        apiKeyHint: 'Grok subscription support uses OAuth refresh tokens; API keys are out of scope for this account type.'
+        baseUrlHint: 'Grok accounts support API Key access for both Grok CLI (cli-chat-proxy.grok.com/v1) and Codex (api.x.ai/v1).',
+        apiKeyHint: 'Enter your Grok API Key. Supports both CLI and Codex base URLs.'
       },
       anthropic: {
         apiKeyPassthrough: 'Auto passthrough (auth only)',
@@ -6931,8 +6936,8 @@ export default {
         userinfoUsernamePathPlaceholder: 'for example data.username'
       },
       defaults: {
-        title: 'Default User Settings',
-        description: 'Default values for new users',
+        title: 'User Defaults',
+        description: 'Base balance, concurrency, and subscriptions granted whenever a user registers',
         defaultBalance: 'Default Balance',
         defaultBalanceHint: 'Initial balance for new users',
         affiliateRebateRate: 'Affiliate Rebate Rate',

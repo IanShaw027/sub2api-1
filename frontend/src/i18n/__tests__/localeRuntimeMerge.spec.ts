@@ -239,4 +239,50 @@ describe('i18n runtime locale merge', () => {
       )
     ).toEqual(['a.b'])
   })
+
+  it('keeps the known locale conflict keys aligned across json and ts sources', async () => {
+    const [{ collectLocaleConflicts }, { default: enJson }, { default: enTs }, { default: zhJson }, { default: zhTs }] =
+      await Promise.all([
+        import('../index'),
+        import('../locales/en.json'),
+        import('../locales/en.ts'),
+        import('../locales/zh.json'),
+        import('../locales/zh.ts')
+      ])
+
+    const enConflicts = collectLocaleConflicts(enJson, enTs)
+    const zhConflicts = collectLocaleConflicts(zhJson, zhTs)
+    const expectedAlignedKeys = [
+      'affiliate.invitees.columns.rebate',
+      'admin.groups.imagePricing.images',
+      'admin.accounts.tempUnschedulable.rulesInvalid',
+      'admin.accounts.openai.compactUnknown',
+      'admin.accounts.fillRelatedModels',
+      'admin.accounts.gemini.quotaPolicy.note',
+      'admin.accounts.kiro.callbackUrlHint',
+      'admin.accounts.kiro.manualRefreshTokenAuth',
+      'admin.settings.registration.emailSuffixWhitelistHint',
+      'admin.settings.registration.emailSuffixWhitelistPlaceholder',
+      'admin.settings.registration.emailSuffixWhitelistInputHint',
+      'admin.settings.defaults.title',
+      'admin.settings.defaults.description',
+      'admin.settings.gatewayForwarding.openaiCodexUserAgent',
+      'admin.settings.gatewayForwarding.openaiCodexUserAgentPlaceholder',
+      'admin.settings.gatewayForwarding.openaiCodexUserAgentHint'
+    ]
+
+    expect(enConflicts).not.toEqual(expect.arrayContaining(expectedAlignedKeys))
+    expect(zhConflicts).not.toEqual(expect.arrayContaining(expectedAlignedKeys))
+  })
+
+  it('loads locale messages without conflict warnings after json and ts alignment', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { loadLocaleMessages } = await import('../index')
+
+    await loadLocaleMessages('en')
+    await loadLocaleMessages('zh')
+
+    expect(warnSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
 })
