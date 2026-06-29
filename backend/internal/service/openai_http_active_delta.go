@@ -222,6 +222,9 @@ func restoreOpenAIHTTPActiveDeltaFullReplayBody(original []byte) ([]byte, bool, 
 	if len(original) == 0 {
 		return nil, false, nil
 	}
+	if HasToolContinuationOutputInRawPayload(original) {
+		return nil, false, nil
+	}
 	var reqBody map[string]any
 	if err := json.Unmarshal(original, &reqBody); err != nil {
 		return nil, false, err

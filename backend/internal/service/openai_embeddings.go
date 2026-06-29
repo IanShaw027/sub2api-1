@@ -394,6 +394,7 @@ func (s *OpenAIGatewayService) ForwardVideos(
 				UpstreamStatus: resp.StatusCode,
 			})
 			setOpsUpstreamError(c, resp.StatusCode, cyberMsg, truncateString(string(respBody), 2048))
+			responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 			c.Header("Content-Type", "application/json")
 			c.Status(resp.StatusCode)
 			_, _ = c.Writer.Write(respBody)
@@ -434,6 +435,7 @@ func (s *OpenAIGatewayService) ForwardVideos(
 			}
 		}
 
+		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		c.Header("Content-Type", "application/json")
 		c.Status(resp.StatusCode)
 		_, _ = c.Writer.Write(respBody)
@@ -441,10 +443,9 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	}
 
 	// write success
-	for k, vs := range resp.Header {
-		for _, v := range vs {
-			c.Header(k, v)
-		}
+	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	if ct := strings.TrimSpace(resp.Header.Get("Content-Type")); ct != "" {
+		c.Header("Content-Type", ct)
 	}
 	c.Status(resp.StatusCode)
 	_, _ = c.Writer.Write(respBody)

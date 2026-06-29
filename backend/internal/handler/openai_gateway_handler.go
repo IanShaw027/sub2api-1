@@ -451,8 +451,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}
-			_ = h.gatewayService.ClearStickySession(c.Request.Context(), apiKey.GroupID, sessionHash)
-			_ = h.gatewayService.ClearPreviousResponseBinding(c.Request.Context(), apiKey.GroupID, apiKey.ID, previousResponseID)
+			h.clearOpenAIResponsesStickySessionOnly(c.Request.Context(), apiKey.GroupID, sessionHash)
 			failedAccountIDs[account.ID] = struct{}{}
 			continue
 		}
@@ -1458,6 +1457,13 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	return wrapReleaseOnDone(ctx, accountReleaseFunc), accountSlotAcquireAcquired
 }
 
+func (h *OpenAIGatewayHandler) clearOpenAIResponsesStickySessionOnly(ctx context.Context, groupID *int64, sessionHash string) {
+	if h == nil || h.gatewayService == nil {
+		return
+	}
+	_ = h.gatewayService.ClearStickySession(ctx, groupID, sessionHash)
+}
+
 // ResponsesWebSocket handles OpenAI Responses API WebSocket ingress endpoint
 // GET /openai/v1/responses (Upgrade: websocket)
 func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
@@ -1803,8 +1809,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "no available account", errOpenAIWSLocalImageToggleUnavailable)
 				}
 				if !openAIResponsesAccountSupportsImageIntent(account, apiKey.Group, imageIntent || needsImageSlot) {
-					_ = h.gatewayService.ClearStickySession(ctx, apiKey.GroupID, sessionHash)
-					_ = h.gatewayService.ClearPreviousResponseBinding(ctx, apiKey.GroupID, apiKey.ID, previousResponseID)
+					h.clearOpenAIResponsesStickySessionOnly(ctx, apiKey.GroupID, sessionHash)
 					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "no available account", errOpenAIWSTurnAccountUnavailable)
 				}
 				currentTurnNeedsImageSlot = needsImageSlot

@@ -29,7 +29,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/reqclientpool"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
@@ -2444,17 +2444,11 @@ func resolveOpenAIProxyURL(account *Account) string {
 }
 
 func newOpenAIBackendAPIClient(proxyURL string) (*req.Client, error) {
-	client := req.C().
-		SetTimeout(180 * time.Second).
-		ImpersonateChrome()
-	trimmed, _, err := proxyurl.Parse(proxyURL)
-	if err != nil {
-		return nil, err
-	}
-	if trimmed != "" {
-		client.SetProxyURL(trimmed)
-	}
-	return client, nil
+	return reqclientpool.Get(reqclientpool.Options{
+		ProxyURL:    proxyURL,
+		Timeout:     180 * time.Second,
+		Impersonate: true,
+	})
 }
 
 func (s *OpenAIGatewayService) buildOpenAIBackendAPIHeaders(account *Account, token string) (http.Header, error) {

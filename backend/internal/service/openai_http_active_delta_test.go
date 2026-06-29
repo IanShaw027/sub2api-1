@@ -499,7 +499,7 @@ func TestOpenAIGatewayService_Forward_HTTPActiveDeltaUnsupportedPreviousResponse
 	require.Equal(t, "again", gjson.GetBytes(upstream.bodies[1], "input.2.content.0.text").String())
 }
 
-func TestOpenAIGatewayService_Forward_HTTPActiveDeltaUnsupportedPreviousResponseIDRetriesFullBodyWithFunctionCallOutput(t *testing.T) {
+func TestOpenAIGatewayService_Forward_HTTPActiveDeltaUnsupportedPreviousResponseIDDoesNotReplayFunctionCallOutput(t *testing.T) {
 	setGinTestMode()
 	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
 	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
@@ -530,16 +530,11 @@ func TestOpenAIGatewayService_Forward_HTTPActiveDeltaUnsupportedPreviousResponse
 
 	followupCtx, _ := newOpenAIHTTPActiveDeltaContext(groupID, apiKeyID, "sess-http-delta-retry-tool")
 	result, err := svc.Forward(context.Background(), followupCtx, account, fullFollowupBody)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, upstream.bodies, 2)
-	require.Equal(t, "resp_http_prev_tool", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Len(t, upstream.bodies, 1)
+	require.False(t, gjson.GetBytes(upstream.bodies[0], "previous_response_id").Exists(), "function_call_output full-create must not get an unsafe previous_response_id injected")
 	require.True(t, HasToolContinuationOutputInRawPayload(upstream.bodies[0]))
-	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists(), "retry must remove the gateway-injected continuation anchor")
-	require.Len(t, gjson.GetBytes(upstream.bodies[1], "input").Array(), 4, "retry must restore the original full request body")
-	require.Equal(t, "function_call", gjson.GetBytes(upstream.bodies[1], "input.1.type").String())
-	require.Equal(t, "function_call_output", gjson.GetBytes(upstream.bodies[1], "input.2.type").String())
-	require.Equal(t, "continue", gjson.GetBytes(upstream.bodies[1], "input.3.content.0.text").String())
 }
 
 func TestOpenAIGatewayService_Forward_HTTPActiveDeltaRejectsPreviousResponseAccountMismatch(t *testing.T) {
@@ -608,14 +603,15 @@ func TestOpenAIHTTPActiveDeltaResponsePayloadFixtureIsValidJSON(t *testing.T) {
 	require.True(t, json.Valid(payload))
 }
 
-func TestRestoreOpenAIHTTPActiveDeltaFullReplayBodyRefusesFunctionCallOutput(t *testing.T) {
+func TestRestoreOpenAIHTTPActiveDeltaFullReplayBodyRejectsFunctionCallOutput(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.4","stream":true,"store":false,"previous_response_id":"resp_prev","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
 	restored, ok, err := restoreOpenAIHTTPActiveDeltaFullReplayBody(body)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.Nil(t, restored)
 }
-func TestRestoreOpenAIHTTPActiveDeltaFullReplayBodyKeepsFunctionCallOutput(t *testing.T) {
+
+func TestRestoreOpenAIHTTPActiveDeltaFullReplayBodyDoesNotRewriteFunctionCallOutputPayload(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.4","stream":true,"store":false,"previous_response_id":"resp_prev","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
 	restored, ok, err := restoreOpenAIHTTPActiveDeltaFullReplayBody(body)
 	require.NoError(t, err)
