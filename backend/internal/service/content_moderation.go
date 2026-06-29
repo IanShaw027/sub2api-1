@@ -3501,7 +3501,9 @@ func splitBlockedKeywordAndTerms(keyword string) []string {
 		return nil
 	}
 	// 移除窗口大小配置 (如果有)
-	keyword = removeProximityWindowSuffix(keyword)
+	if base, _, hasSuffix := parseProximityWindowSuffix(keyword); hasSuffix {
+		keyword = base
+	}
 	parts := strings.Split(keyword, "&&")
 	terms := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -3518,27 +3520,61 @@ func splitBlockedKeywordAndTerms(keyword string) []string {
 // 语法: "keyword1&&keyword2:300" 表示窗口300字符
 // 不带配置则返回默认值200
 func parseProximityWindow(keyword string) int {
-	const defaultWindow = 200
-	if idx := strings.LastIndex(keyword, ":"); idx > 0 {
-		if windowStr := strings.TrimSpace(keyword[idx+1:]); windowStr != "" {
-			if window, err := strconv.Atoi(windowStr); err == nil && window > 0 && window <= 2000 {
-				return window
-			}
-		}
+	if _, window, hasSuffix := parseProximityWindowSuffix(keyword); hasSuffix {
+		return window
 	}
-	return defaultWindow
+	return 200
 }
 
 // removeProximityWindowSuffix 移除关键词中的合法窗口大小配置后缀。
 func removeProximityWindowSuffix(keyword string) string {
-	if idx := strings.LastIndex(keyword, ":"); idx > 0 {
-		if windowStr := strings.TrimSpace(keyword[idx+1:]); windowStr != "" {
-			if window, err := strconv.Atoi(windowStr); err == nil && window > 0 && window <= 2000 {
-				return strings.TrimSpace(keyword[:idx])
-			}
-		}
+	if base, _, hasSuffix := parseProximityWindowSuffix(keyword); hasSuffix {
+		return base
 	}
 	return keyword
+}
+
+func parseProximityWindowSuffix(keyword string) (base string, window int, hasSuffix bool) {
+	const defaultWindow = 200
+	const maxWindow = 2000
+
+	colonIdx := strings.LastIndex(keyword, ":")
+	if colonIdx <= 0 {
+		return keyword, defaultWindow, false
+	}
+	lastAndIdx := strings.LastIndex(keyword, "&&")
+	if lastAndIdx < 0 || colonIdx < lastAndIdx+len("&&") {
+		return keyword, defaultWindow, false
+	}
+
+	windowStr := strings.TrimSpace(keyword[colonIdx+1:])
+	if windowStr == "" {
+		return keyword, defaultWindow, false
+	}
+	for _, r := range windowStr {
+		if r < '0' || r > '9' {
+			return keyword, defaultWindow, false
+		}
+	}
+
+	candidateBase := strings.TrimSpace(keyword[:colonIdx])
+	parts := strings.Split(candidateBase, "&&")
+	if len(parts) < 2 {
+		return keyword, defaultWindow, false
+	}
+	lastTerm := strings.TrimSpace(parts[len(parts)-1])
+	if strings.Contains(lastTerm, "-") {
+		return keyword, defaultWindow, false
+	}
+
+	parsedWindow, err := strconv.Atoi(windowStr)
+	if err != nil {
+		return keyword, defaultWindow, false
+	}
+	if parsedWindow < 1 || parsedWindow > maxWindow {
+		return candidateBase, defaultWindow, true
+	}
+	return candidateBase, parsedWindow, true
 }
 
 // matchBlockedKeywordAndTerms 检查所有terms是否在邻近窗口内共现。

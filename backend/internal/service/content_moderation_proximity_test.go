@@ -189,7 +189,7 @@ func TestMatchBlockedKeyword_ConfigurableProximityWindow(t *testing.T) {
 			name:     "非法窗口配置_导致无法匹配",
 			text:     buildTextWithDistance("reverse", "ctf", 120),
 			keywords: []string{"Reverse&&CTF:abc"}, // 非法配置,:abc不会被移除,匹配失败
-			want:     false,                         // 因为会尝试匹配"ctf:abc"而不是"ctf"
+			want:     false,                        // 因为会尝试匹配"ctf:abc"而不是"ctf"
 		},
 		{
 			name:     "超大窗口限制_最大2000",
@@ -233,12 +233,44 @@ func TestParseProximityWindow(t *testing.T) {
 		{"Reverse&&CTF:0", 200},       // 零值,使用默认
 		{"Reverse&&CTF:-100", 200},    // 负值,使用默认
 		{"Reverse && CTF : 150", 150}, // 带空格
+		{"keyword1&&sk-proj:123", 200},
+		{"keyword1&&exploit:5000", 200},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.keyword, func(t *testing.T) {
 			got := parseProximityWindow(tt.keyword)
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestSplitBlockedKeywordAndTerms_ProximityWindowAmbiguity(t *testing.T) {
+	tests := []struct {
+		name    string
+		keyword string
+		want    []string
+	}{
+		{
+			name:    "colon in second term is not window",
+			keyword: "keyword1&&sk-proj:123",
+			want:    []string{"keyword1", "sk-proj:123"},
+		},
+		{
+			name:    "out of range numeric suffix is removed but default window applies",
+			keyword: "keyword1&&exploit:5000",
+			want:    []string{"keyword1", "exploit"},
+		},
+		{
+			name:    "valid numeric suffix is removed from second term",
+			keyword: "keyword1&&keyword2:300",
+			want:    []string{"keyword1", "keyword2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, splitBlockedKeywordAndTerms(tt.keyword))
 		})
 	}
 }
