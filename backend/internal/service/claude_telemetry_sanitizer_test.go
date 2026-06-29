@@ -73,6 +73,26 @@ func TestSanitizeClaudeTelemetryBatch_RewritesIdentityProcessAndAdditionalMetada
 	require.Equal(t, "ok", gjson.GetBytes(decoded, "keep").String())
 }
 
+func TestSanitizeClaudeTelemetryBatch_RemovesTopLevelAndNestedLeakFields(t *testing.T) {
+	body := []byte(`{
+		"baseUrl":"https://gateway.example.com",
+		"client_metadata":{"env":{"HOST":"real"}},
+		"metadata":{"gateway":"proxy","keep":"ok"},
+		"events":[{"event_data":{"metadata":{"baseUrl":"https://gateway.example.com","keep":"ok"},"client_metadata":{"process":{"rss":1}},"env":{"platform":"linux"}}}]
+	}`)
+
+	got := SanitizeClaudeTelemetryBatch(body, ClaudeTelemetrySanitizeOptions{})
+
+	require.False(t, gjson.GetBytes(got, "baseUrl").Exists())
+	require.False(t, gjson.GetBytes(got, "client_metadata").Exists())
+	require.False(t, gjson.GetBytes(got, "metadata.gateway").Exists())
+	require.Equal(t, "ok", gjson.GetBytes(got, "metadata.keep").String())
+	require.False(t, gjson.GetBytes(got, "events.0.event_data.metadata.baseUrl").Exists())
+	require.Equal(t, "ok", gjson.GetBytes(got, "events.0.event_data.metadata.keep").String())
+	require.False(t, gjson.GetBytes(got, "events.0.event_data.client_metadata").Exists())
+	require.True(t, gjson.GetBytes(got, "events.0.event_data.env").Exists())
+}
+
 func TestRewriteSystemReminderEnvBlocks_RewritesOnlyReminderEnvironment(t *testing.T) {
 	body := []byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"before Platform: linux <system-reminder>Platform: linux\nShell: bash\nOS Version: Linux 6.8\nWorking directory: /home/alice/project\n</system-reminder> after Platform: linux"}]}]}`)
 	profile := &AccountEnvProfile{Platform: "darwin", Shell: "zsh", OSVersion: "Darwin 24.3.0", WorkDir: "/Users/alex/projects/webapp"}
