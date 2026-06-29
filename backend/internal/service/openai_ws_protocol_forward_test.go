@@ -351,6 +351,9 @@ func TestOpenAIGatewayService_Forward_HTTPIngressDurableLanePreservesPreviousRes
 			"access_token":       "oauth-token",
 			"chatgpt_account_id": "chatgpt-acc",
 		},
+		Extra: map[string]any{
+			"openai_http_previous_response_id_supported": true,
+		},
 	}
 
 	body := []byte(`{"model":"gpt-5.1","stream":false,"store":true,"previous_response_id":"resp_http_prev","input":[{"type":"input_text","text":"hello"}]}`)
@@ -1935,6 +1938,7 @@ func TestNewOpenAIGatewayService_InitializesOpenAIWSResolver(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	decision := svc.getOpenAIWSProtocolResolver().Resolve(nil)
@@ -2096,6 +2100,123 @@ func TestOpenAIGatewayService_Forward_WSv2StreamEarlyCloseFallbackHTTP(t *testin
 	require.NotNil(t, upstream.lastReq, "WS 早期断连后应回退 HTTP")
 	require.Equal(t, "resp_http_fallback", result.ResponseID)
 	require.Contains(t, rec.Body.String(), `"delta":"ok"`)
+}
+
+func TestOpenAIGatewayService_Forward_WSv2StreamErrorEventAfterCreatedEmitsUpstreamMessageTerminal(t *testing.T) {
+	setGinTestMode()
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket failed: %v", err)
+			return
+		}
+		defer func() {
+			_ = conn.Close()
+		}()
+
+		var req map[string]any
+		if err := conn.ReadJSON(&req); err != nil {
+			t.Errorf("read ws request failed: %v", err)
+			return
+		}
+
+		if err := conn.WriteJSON(map[string]any{
+			"type": "response.created",
+			"response": map[string]any{
+				"id":    "resp_ws_invalid_image",
+				"model": "gpt-5.4",
+			},
+		}); err != nil {
+			t.Errorf("write response.created failed: %v", err)
+			return
+		}
+		if err := conn.WriteJSON(map[string]any{
+			"type": "error",
+			"error": map[string]any{
+				"code":    "invalid_value",
+				"type":    "invalid_request_err",
+				"message": "The image data you provided does not represent a valid image. Please check your input and try again.",
+			},
+		}); err != nil {
+			t.Errorf("write error event failed: %v", err)
+		}
+	}))
+	defer wsServer.Close()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "custom-client/1.0")
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_http_should_not_happen","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.FallbackCooldownSeconds = 1
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSURLBuilder: func(*Account) (string, error) {
+			return wsServer.URL, nil
+		},
+	}
+
+	account := &Account{
+		ID:          92,
+		Name:        "openai-oauth-invalid-image",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+			"base_url":           wsServer.URL,
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	body := []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"describe this image"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Nil(t, upstream.lastReq, "WS error event 已经是终态客户端错误，不应再透明回退 HTTP")
+
+	responseBody := rec.Body.String()
+	require.NotContains(t, responseBody, `"type":"error"`, "Responses SSE 不应直接透出裸 error event")
+	require.Contains(t, responseBody, `"type":"response.failed"`)
+	require.Contains(t, responseBody, `"status":"failed"`)
+	require.Contains(t, responseBody, `"type":"invalid_request_error"`)
+	require.Contains(t, responseBody, `"code":"invalid_value"`)
+	require.Contains(t, responseBody, "The image data you provided does not represent a valid image. Please check your input and try again.")
+	require.NotContains(t, responseBody, "Upstream transport error")
+	upstreamStatus, ok := c.Get(OpsUpstreamStatusCodeKey)
+	require.True(t, ok)
+	require.Equal(t, http.StatusBadRequest, upstreamStatus)
+	upstreamMsg, ok := c.Get(OpsUpstreamErrorMessageKey)
+	require.True(t, ok)
+	require.Equal(t, "The image data you provided does not represent a valid image. Please check your input and try again.", upstreamMsg)
+	upstreamType, ok := c.Get(OpsUpstreamErrorTypeKey)
+	require.True(t, ok)
+	require.Equal(t, "invalid_request_error", upstreamType)
 }
 
 func TestOpenAIGatewayService_Forward_WSv2StreamEOFAfterDeltaEmitsFailedTerminal(t *testing.T) {

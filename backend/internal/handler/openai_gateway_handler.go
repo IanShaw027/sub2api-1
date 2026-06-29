@@ -647,8 +647,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				if shouldSuppressForwardErrorResponse(c, err) {
 					return
 				}
-				upstreamErrorAlreadyCommunicated := c.Writer.Written()
-				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted, err)
+				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
+				wroteFallback := false
+				if !upstreamErrorAlreadyCommunicated {
+					wroteFallback = h.ensureForwardErrorResponse(c, streamStarted, err)
+				}
 				h.gatewayService.EmitOpenAIGatewayDebugTimelineEvent(c, service.OpenAIGatewayDebugTimelineEventInput{
 					Stage:             "attempt_finished",
 					EndpointKind:      "responses",
@@ -2499,6 +2502,8 @@ func openAIForwardErrorAlreadyCommunicated(c *gin.Context, writerSizeBeforeForwa
 
 	msg := strings.TrimSpace(err.Error())
 	for _, prefix := range []string{
+		"openai ws error event:",
+		"openai ws read event after downstream stream started:",
 		"upstream response failed:",
 		"non-streaming openai protocol error:",
 	} {

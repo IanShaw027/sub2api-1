@@ -40,7 +40,7 @@ func setupAccountHandlerWithService(adminSvc service.AdminService) (*gin.Engine,
 func setupAccountHandlerWithServiceAndInvalidator(adminSvc service.AdminService, invalidator service.TokenCacheInvalidator) (*gin.Engine, *AccountHandler) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, invalidator)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, invalidator)
 	router.POST("/api/v1/admin/accounts/batch-update-credentials", handler.BatchUpdateCredentials)
 	router.POST("/api/v1/admin/accounts/bulk-update", handler.BulkUpdate)
 	return router, handler

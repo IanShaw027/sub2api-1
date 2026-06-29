@@ -66,6 +66,7 @@ var AllowedQuotaPlatforms = []string{
 var AllowedSchedulingThresholdPlatforms = []string{
 	PlatformOpenAI,
 	PlatformAnthropic,
+	PlatformGrok,
 }
 
 // IsAllowedQuotaPlatform 报告 s 是否为合法的 quota platform 标识。
@@ -517,9 +518,9 @@ const (
 	SettingKeyEnableFingerprintUnification = "enable_fingerprint_unification"
 	// SettingKeyEnableMetadataPassthrough 是否透传客户端原始 metadata.user_id（默认 false）
 	SettingKeyEnableMetadataPassthrough = "enable_metadata_passthrough"
-	// SettingKeyEnableCCHSigning 已废弃（no-op）：新版 Claude Code CLI 已取消 cch 签名字段，
-	// 网关随之不再注入/签名 cch（见 buildBillingAttributionText）。保留该 key 仅为向后兼容，
-	// 开关不再产生任何效果。
+	// SettingKeyEnableCCHSigning 遗留 no-op 开关。cch 签名已恢复为无条件执行
+	// （signBillingHeaderCCH 自守卫：body 中无 cch=00000 占位符时自动跳过）。
+	// 保留该 key 仅为向后兼容数据库已有行，开关不再产生任何效果。
 	SettingKeyEnableCCHSigning = "enable_cch_signing"
 	// Gateway debug timeline settings are DB-backed runtime controls for
 	// detailed per-request trace logs. Defaults are disabled and bounded.

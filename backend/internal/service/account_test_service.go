@@ -439,52 +439,17 @@ func (s *AccountTestService) testGrokAccountConnection(c *gin.Context, account *
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported Grok account type: %s", account.Type))
 	}
 
-	apiURL, err := xai.BuildChatCompletionsURL(account.GetGrokBaseURL())
-	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid Grok base URL: %s", err.Error()))
-	}
-
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("X-Accel-Buffering", "no")
-	c.Writer.Flush()
-
-	payload := createOpenAIChatCompletionsTestPayload(upstreamModel, prompt)
-	payloadBytes, _ := json.Marshal(payload)
-
-	s.sendEvent(c, TestEvent{Type: "test_start", Model: upstreamModel})
-	s.sendEvent(c, TestEvent{Type: "status", Text: "正在通过 Grok /v1/chat/completions 测试连接"})
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payloadBytes))
-	if err != nil {
-		return s.sendErrorAndEnd(c, "Failed to create Grok test request")
-	}
-	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Authorization", "Bearer "+authToken)
-	req.Header.Set("User-Agent", "sub2api-grok/1.0")
-
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
-	}
-
-	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
-	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok API (/v1/chat/completions) request failed: %s", err.Error()))
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		s.reconcileGrokTestState(ctx, account, resp.StatusCode, resp.Header)
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok API (/v1/chat/completions) returned %d: %s", resp.StatusCode, string(body)))
-	}
-
-	s.reconcileGrokTestState(ctx, account, resp.StatusCode, resp.Header)
-	return s.processOpenAIChatCompletionsStream(c, resp.Body)
+	return s.testOpenAIResponsesLikeAccountConnection(
+		c,
+		ctx,
+		account,
+		upstreamModel,
+		prompt,
+		authToken,
+		account.GetGrokBaseURL(),
+		"grok",
+		true,
+	)
 }
 
 func (s *AccountTestService) reconcileGrokTestState(ctx context.Context, account *Account, statusCode int, headers http.Header) {
@@ -1025,6 +990,77 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	}
 
 	return s.processOpenAIChatCompletionsStream(c, resp.Body)
+}
+
+func (s *AccountTestService) testOpenAIResponsesLikeAccountConnection(
+	c *gin.Context,
+	ctx context.Context,
+	account *Account,
+	testModelID string,
+	prompt string,
+	authToken string,
+	baseURL string,
+	providerName string,
+	isOAuth bool,
+) error {
+	apiURL, err := xai.BuildResponsesURL(baseURL)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid %s base URL: %s", providerName, err.Error()))
+	}
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+
+	payload := createOpenAITestPayload(testModelID, isOAuth)
+	payloadBytes, _ := json.Marshal(payload)
+
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
+	s.sendEvent(c, TestEvent{Type: "status", Text: fmt.Sprintf("正在通过 %s /v1/responses 测试连接", providerName)})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to create %s test request", providerName))
+	}
+	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	if providerName == "grok" {
+		req.Header.Set("User-Agent", "sub2api-grok/1.0")
+	}
+	if strings.TrimSpace(prompt) != "" {
+		req.Header.Set("X-Account-Test-Prompt", prompt)
+	}
+
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("%s /v1/responses request failed: %s", providerName, err.Error()))
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		if providerName == "grok" {
+			s.reconcileGrokTestState(ctx, account, resp.StatusCode, resp.Header)
+		} else if resp.StatusCode == http.StatusTooManyRequests {
+			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
+		}
+		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
+			errMsg := fmt.Sprintf("%s authentication failed (401): %s", providerName, string(body))
+			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
+		}
+		return s.sendErrorAndEnd(c, fmt.Sprintf("%s /v1/responses returned %d: %s", providerName, resp.StatusCode, string(body)))
+	}
+
+	return s.processOpenAIStream(c, resp.Body)
 }
 
 // testOpenAICompactConnection probes /responses/compact and persists the

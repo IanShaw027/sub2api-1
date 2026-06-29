@@ -274,7 +274,8 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_ForceHTTPDurable
 		Schedulable: true,
 		Concurrency: 1,
 		Extra: map[string]any{
-			"openai_ws_force_http": true,
+			"openai_ws_force_http":                       true,
+			"openai_http_previous_response_id_supported": true,
 		},
 		Credentials: map[string]any{
 			"access_token":       "oauth-token",

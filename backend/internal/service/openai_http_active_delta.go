@@ -25,6 +25,9 @@ func (s *OpenAIGatewayService) buildOpenAIHTTPActiveDeltaPayload(ctx context.Con
 	if !s.openAIHTTPIncrementalContinuationEnabled() || !openAIWSActiveDeltaEnabled() {
 		return result, nil
 	}
+	if !s.openAIHTTPPreviousResponseIDSupported(account) {
+		return result, nil
+	}
 	if isOpenAIResponsesCompactPath(c) {
 		return result, nil
 	}
@@ -65,6 +68,23 @@ func (s *OpenAIGatewayService) buildOpenAIHTTPActiveDeltaPayload(ctx context.Con
 	}()
 
 	cached, found := store.GetSessionContext(groupID, apiKeyID, sessionHash)
+	if found && strings.TrimSpace(cached.connID) != "http" {
+		result.log = openAIWSDeltaShadowLog{
+			GroupID:              groupID,
+			APIKeyID:             apiKeyID,
+			SessionHash:          sessionHash,
+			RequestID:            requestID,
+			AccountID:            account.ID,
+			CachedFound:          found,
+			CachedAccountID:      cached.accountID,
+			CachedConnID:         cached.connID,
+			CachedLastResponseID: cached.lastResponseID,
+			Candidate:            false,
+			FallbackReason:       "transport_context_mismatch",
+		}
+		logOpenAIWSDeltaShadow(result.log)
+		return result, nil
+	}
 	clientPreviousResponseID = strings.TrimSpace(clientPreviousResponseID)
 	if clientPreviousResponseID == "" {
 		clientPreviousResponseID = strings.TrimSpace(gjsonGetBytesString(payload, "previous_response_id"))
@@ -114,6 +134,7 @@ func (s *OpenAIGatewayService) buildOpenAIHTTPActiveDeltaPayload(ctx context.Con
 		CurrentPayload:        payload,
 		HasFunctionCallOutput: HasToolContinuationOutputInRawPayload(payload),
 		AllowConnReanchor:     true,
+		AllowHTTPContext:      true,
 		StickyAccountID:       account.ID,
 		StickyAccountHit:      true,
 		ConnAffinityHit:       true,
@@ -149,7 +170,7 @@ func (s *OpenAIGatewayService) bindHTTPResponseSessionContext(ctx context.Contex
 	if s == nil || c == nil || account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth {
 		return
 	}
-	if !s.openAIHTTPIncrementalContinuationEnabled() {
+	if !s.openAIHTTPIncrementalContinuationEnabled() || !s.openAIHTTPPreviousResponseIDSupported(account) {
 		return
 	}
 	responseID = strings.TrimSpace(responseID)
@@ -204,9 +225,6 @@ func restoreOpenAIHTTPActiveDeltaFullReplayBody(original []byte) ([]byte, bool, 
 	var reqBody map[string]any
 	if err := json.Unmarshal(original, &reqBody); err != nil {
 		return nil, false, err
-	}
-	if HasFunctionCallOutput(reqBody) {
-		return nil, false, nil
 	}
 	changed := false
 	if _, present := reqBody["previous_response_id"]; present {

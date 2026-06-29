@@ -395,6 +395,7 @@ func TestGatewayRecordCyberPolicyIfMarked_ForwardErrorRecordsUsageAndBlocksSessi
 		nil,        // resolver
 		nil,        // balanceNotifyService
 		nil,        // userPlatformQuotaRepo
+		nil,        // fingerprintNormalizer
 	)
 	key := service.CyberSessionBlockKey(22, c, body)
 	require.NotEmpty(t, key)

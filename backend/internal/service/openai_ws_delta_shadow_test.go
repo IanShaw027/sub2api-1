@@ -2145,6 +2145,40 @@ func TestOpenAIWSActiveDelta_AllowsFunctionCallOutputDeltaWithPreviousResponseID
 	require.Equal(t, "call_1", gjson.Get(deltaJSON, "input.0.call_id").String())
 }
 
+func TestOpenAIWSActiveDeltaSkipsCachedHTTPContext(t *testing.T) {
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	output1 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"two"}]}`
+	input2 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"three"}]}`
+	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[` + input1 + `,` + output1 + `,` + input2 + `]}`)
+	nonInputHash, _ := openAIWSNonInputHash(payload)
+
+	deltaPayload, deltaLog, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+		RequestID:                "req_ws_after_http_context",
+		AccountID:                78004,
+		LeaseConnID:              "oa_ws_78004_1",
+		ConnMostRecentResponseID: "",
+		CurrentPayload:           payload,
+		AllowConnReanchor:        true,
+		CachedFound:              true,
+		Cached: openAIWSSessionContextValue{
+			accountID:               78004,
+			connID:                  "http",
+			lastResponseID:          "resp_http_1",
+			materializedHashes:      [][32]byte{mustItemHash(t, input1)},
+			materializedCount:       1,
+			inputCount:              1,
+			inputOnlyContext:        true,
+			nonInputHash:            nonInputHash,
+			rawVsClientVisibleEqual: true,
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, applied)
+	require.False(t, deltaLog.Candidate)
+	require.Equal(t, "transport_context_mismatch", deltaLog.FallbackReason)
+	require.Nil(t, deltaPayload)
+}
+
 func TestOpenAIWSActiveDelta_AllowsMixedToolContextDeltaWithPreviousResponseID(t *testing.T) {
 	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
 	output1 := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`

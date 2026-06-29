@@ -108,7 +108,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	if service.IsGroupContextValid(apiKey.Group) {
 		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.Group, apiKey.Group))
 	}
-	// Codex image requirement only for OpenAI platform groups. Grok groups use their native image path if supported by accounts.
+	// Codex image requirement only for OpenAI platform groups. Grok groups use subscription OAuth (Grok CLI style) to call official Imagine API at api.x.ai (images/generations + videos/generations). Interfaces aligned with https://docs.x.ai/developers/model-capabilities .
 	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAI {
 		if !service.GroupAllowsOpenAIImagesCodex(apiKey.Group) {
 			h.errorResponse(c, http.StatusForbidden, "permission_error", service.OpenAIImagesCodexDisabledMessage())
@@ -176,6 +176,14 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 
 	for {
 		reqLog.Debug("openai.images.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
+		imageRoute := service.GroupImageGenerationRouteCodex
+		requireOAuthForImage := false
+		if apiKey.Group != nil {
+			imageRoute = apiKey.Group.EffectiveImageGenerationRoute()
+			if apiKey.Group.Platform == service.PlatformGrok {
+				requireOAuthForImage = true
+			}
+		}
 		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForImages(
 			requestCtx,
 			apiKey.GroupID,
@@ -183,8 +191,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			requestModel,
 			failedAccountIDs,
 			parsed.RequiredCapability,
-			service.GroupImageGenerationRouteCodex,
-			false,
+			imageRoute,
+			requireOAuthForImage,
 		)
 		if err != nil {
 			reqLog.Warn("openai.images.account_select_failed",
@@ -767,7 +775,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		}
 
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
-		if result != nil && result.VideoSeconds > 0 {
+		if service.OpenAIForwardResultHasVideoBillingForUsage(result) {
 			userAgent := c.GetHeader("User-Agent")
 			clientIP := ip.GetClientIP(c)
 			inboundEndpoint := GetInboundEndpoint(c)

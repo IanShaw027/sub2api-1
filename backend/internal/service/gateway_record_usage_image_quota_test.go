@@ -40,6 +40,7 @@ func newGatewayRecordUsageServiceForDefaultTest(usageRepo UsageLogRepository, us
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 }
 

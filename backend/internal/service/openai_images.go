@@ -762,7 +762,8 @@ func normalizeOpenAIImagesRequestForModel(req *OpenAIImagesRequest) {
 }
 
 func isOpenAIImageGenerationModel(model string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gpt-image-")
+	m := strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(m, "gpt-image-") || strings.HasPrefix(m, "grok-imagine-")
 }
 
 func validateOpenAIImagesModel(model string) error {
@@ -821,7 +822,7 @@ func classifyOpenAIImagesCapability(req *OpenAIImagesRequest) OpenAIImagesCapabi
 		return OpenAIImagesCapabilityNative
 	}
 	model := strings.ToLower(strings.TrimSpace(req.Model))
-	if !strings.HasPrefix(model, "gpt-image-") {
+	if !isOpenAIImageGenerationModel(model) {
 		return OpenAIImagesCapabilityNative
 	}
 	if req.Stream || req.N != 1 || req.HasMask || req.HasNativeOptions {
@@ -1075,6 +1076,19 @@ func (s *OpenAIGatewayService) ForwardImages(
 	parsed *OpenAIImagesRequest,
 	channelMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	if s.fingerprintNormalizer != nil {
+		ua := ""
+		if c != nil && c.Request != nil {
+			ua = c.Request.Header.Get("User-Agent")
+		}
+		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
+		if canonical != nil {
+			_, newB, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
+			if len(newB) > 0 {
+				body = newB
+			}
+		}
+	}
 	if parsed == nil {
 		return nil, fmt.Errorf("parsed images request is required")
 	}
@@ -1088,6 +1102,14 @@ func (s *OpenAIGatewayService) ForwardImages(
 		}
 		return result, err
 	case AccountTypeOAuth:
+		if account.Platform == PlatformGrok {
+			// Grok uses subscription OAuth (like Grok CLI), forward using /images/generations on api.x.ai with access token. Aligns with official Imagine API.
+			result, err := s.forwardOpenAIImagesAPIKey(ctx, c, account, body, parsed, channelMappedModel, imageRoute)
+			if result != nil {
+				result.EffectiveRequestType = effectiveRequestType
+			}
+			return result, err
+		}
 		result, err := s.forwardOpenAIImagesOAuth(ctx, c, account, parsed, channelMappedModel, imageRoute)
 		if result != nil {
 			result.EffectiveRequestType = effectiveRequestType
@@ -1272,6 +1294,13 @@ func (s *OpenAIGatewayService) buildOpenAIImagesRequest(
 		targetURL = openAIImagesEditsURL
 	}
 	baseURL := account.GetOpenAIBaseURL()
+	if account.Platform == PlatformGrok || account.Type == AccountTypeOAuth {
+		if grokBase := account.GetGrokBaseURL(); grokBase != "" {
+			baseURL = grokBase
+		} else if account.Platform == PlatformGrok {
+			baseURL = "https://api.x.ai"
+		}
+	}
 	if baseURL != "" {
 		validatedURL, err := s.validateUpstreamBaseURL(baseURL)
 		if err != nil {

@@ -64,6 +64,7 @@ func TestOpenAIImages_SelectionFailureWritesDebugTimeline(t *testing.T) {
 		nil,
 		handlerGatewayDebugTimelineSettingService(dir),
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	h.Images(c)

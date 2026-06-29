@@ -43,7 +43,25 @@ func RegisterGatewayRoutes(
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
 	isImageSupportedPlatform := func(c *gin.Context) bool {
-		return getGroupPlatform(c) == service.PlatformOpenAI
+		p := getGroupPlatform(c)
+		return p == service.PlatformOpenAI || p == service.PlatformGrok
+	}
+
+	isVideoSupportedPlatform := func(c *gin.Context) bool {
+		p := getGroupPlatform(c)
+		return p == service.PlatformOpenAI || p == service.PlatformGrok
+	}
+	isWebSearchSupportedPlatform := func(c *gin.Context) bool {
+		return getGroupPlatform(c) == service.PlatformGrok
+	}
+	rejectUnsupportedEndpoint := func(c *gin.Context, endpoint string) {
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": gin.H{
+				"type":    "not_found_error",
+				"message": endpoint + " is not supported for this platform",
+			},
+		})
 	}
 	rejectGrokUnsupportedEndpoint := func(c *gin.Context, endpoint string) {
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
@@ -166,11 +184,27 @@ func RegisterGatewayRoutes(
 			}
 			h.OpenAIGateway.Images(c)
 		})
-		// Videos API (OpenAI-compatible): POST /v1/videos , /v1/videos/generations etc.
-		gateway.POST("/videos", h.OpenAIGateway.Videos)
-		gateway.POST("/videos/generations", h.OpenAIGateway.Videos)
-		gateway.GET("/videos", h.OpenAIGateway.Videos)
-		gateway.POST("/web_search", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.Gateway.WebSearch)
+		// Videos API (OpenAI-compatible): POST /v1/videos , /v1/videos/generations etc. Full align with xAI Imagine Video (gen, edits, extensions, image-to-video via body).
+		videoHandler := func(c *gin.Context) {
+			if !isVideoSupportedPlatform(c) {
+				rejectUnsupportedEndpoint(c, "Videos API")
+				return
+			}
+			h.OpenAIGateway.Videos(c)
+		}
+		gateway.POST("/videos", videoHandler)
+		gateway.POST("/videos/generations", videoHandler)
+		gateway.POST("/videos/edits", videoHandler)
+		gateway.POST("/videos/extensions", videoHandler)
+		gateway.GET("/videos", videoHandler)
+		gateway.GET("/videos/*subpath", videoHandler)
+		gateway.POST("/web_search", func(c *gin.Context) {
+			if !isWebSearchSupportedPlatform(c) {
+				rejectUnsupportedEndpoint(c, "Web Search API")
+				return
+			}
+			h.Gateway.WebSearch(c)
+		})
 	}
 
 	// Gemini 原生 API 兼容层（Gemini SDK/CLI 直连）
@@ -269,11 +303,27 @@ func RegisterGatewayRoutes(
 		}
 		h.OpenAIGateway.Images(c)
 	})
-	// Videos API aliases without /v1 prefix.
-	r.POST("/videos", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.OpenAIGateway.Videos)
-	r.POST("/videos/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.OpenAIGateway.Videos)
-	r.GET("/videos", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.OpenAIGateway.Videos)
-	r.POST("/web_search", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.Gateway.WebSearch)
+	// Videos API aliases without /v1 prefix. Full support for Grok/xAI video modes.
+	rootVideoHandler := func(c *gin.Context) {
+		if !isVideoSupportedPlatform(c) {
+			rejectUnsupportedEndpoint(c, "Videos API")
+			return
+		}
+		h.OpenAIGateway.Videos(c)
+	}
+	r.POST("/videos", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, rootVideoHandler)
+	r.POST("/videos/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, rootVideoHandler)
+	r.POST("/videos/edits", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, rootVideoHandler)
+	r.POST("/videos/extensions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, rootVideoHandler)
+	r.GET("/videos", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, rootVideoHandler)
+	r.GET("/videos/*subpath", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, rootVideoHandler)
+	r.POST("/web_search", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
+		if !isWebSearchSupportedPlatform(c) {
+			rejectUnsupportedEndpoint(c, "Web Search API")
+			return
+		}
+		h.Gateway.WebSearch(c)
+	})
 	// Antigravity 模型列表
 	r.GET("/antigravity/models", gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.Gateway.AntigravityModels)
 

@@ -60,6 +60,7 @@ func TestGatewayCountTokens_SelectionFailureWritesSingleErrorResponse(t *testing
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 	billingCacheSvc := service.NewBillingCacheService(
 		nil,

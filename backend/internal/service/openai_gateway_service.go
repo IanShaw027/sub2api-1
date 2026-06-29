@@ -454,11 +454,14 @@ type OpenAIForwardResult struct {
 	ImageOutputSizes     []string
 	ImageSizeSource      string
 	ImageSizeBreakdown   map[string]int
-	VideoSeconds         int
-	VideoSize            string
-	VideoCount           int
-	wsReplayInput        []json.RawMessage
-	wsReplayInputExists  bool
+	// SearchCount bills response/tool search calls (e.g. web_search_call, tool_search_call).
+	SearchCount         int
+	VideoSeconds        int
+	VideoSize           string
+	VideoCount          int
+	AudioUsage          *AudioUsage
+	wsReplayInput       []json.RawMessage
+	wsReplayInputExists bool
 
 	// strict-delta shadow 载体（TEMP_DIAG openai_ws_delta_shadow remove_after_debug=true）。
 	// 仅 shadow 度量用，承载本轮 raw upstream output 的 canonical 哈希和结构签名，不含原文。
@@ -585,6 +588,7 @@ type OpenAIGatewayService struct {
 	tlsFPProfileService   *TLSFingerprintProfileService
 	tlsFPRouterService    *TLSFingerprintRouterService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	fingerprintNormalizer *FingerprintNormalizer
 
 	openaiWSPoolOnce              sync.Once
 	openaiWSStateStoreOnce        sync.Once
@@ -633,6 +637,7 @@ func NewOpenAIGatewayService(
 	tlsFPProfileService *TLSFingerprintProfileService,
 	settingService *SettingService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	fingerprintNormalizer *FingerprintNormalizer,
 ) *OpenAIGatewayService {
 	svc := &OpenAIGatewayService{
 		accountRepo:         accountRepo,
@@ -667,6 +672,7 @@ func NewOpenAIGatewayService(
 		settingService:        settingService,
 		tlsFPProfileService:   tlsFPProfileService,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
+		fingerprintNormalizer: fingerprintNormalizer,
 		responseHeaderFilter:  compileResponseHeaderFilter(cfg),
 		codexSnapshotThrottle: newAccountWriteThrottle(openAICodexSnapshotPersistMinInterval),
 	}
@@ -714,7 +720,7 @@ func (s *OpenAIGatewayService) isCodexImageGenerationBridgeEnabled(ctx context.C
 		ch, err := s.channelService.GetChannelForGroup(ctx, *apiKey.GroupID)
 		if err != nil {
 			slog.Warn("failed to resolve codex image generation bridge channel override", "group_id", *apiKey.GroupID, "error", err)
-		} else if override := ch.CodexImageGenerationBridgeOverride(PlatformOpenAI); override != nil {
+		} else if override := ch.CodexImageGenerationBridgeOverride(account.Platform); override != nil {
 			return *override
 		}
 	}
@@ -863,6 +869,13 @@ func (s *OpenAIGatewayService) openAIHTTPIncrementalStickyEnabled() bool {
 	return s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.HTTPIncrementalStickyEnabled
 }
 
+func (s *OpenAIGatewayService) openAIHTTPPreviousResponseIDSupported(account *Account) bool {
+	if s == nil || account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth {
+		return false
+	}
+	return resolveAccountExtraBool(account.Extra, "openai_http_previous_response_id_supported")
+}
+
 func (s *OpenAIGatewayService) shouldPreferOpenAIHTTPIncrementalForHTTPIngress(account *Account, clientTransport OpenAIClientTransport) bool {
 	if s == nil || s.cfg == nil || account == nil {
 		return false
@@ -873,7 +886,7 @@ func (s *OpenAIGatewayService) shouldPreferOpenAIHTTPIncrementalForHTTPIngress(a
 	if !account.IsOpenAIOAuth() || account.IsOpenAIPassthroughEnabled() {
 		return false
 	}
-	if !s.openAIHTTPIncrementalContinuationEnabled() {
+	if !s.openAIHTTPIncrementalContinuationEnabled() || !s.openAIHTTPPreviousResponseIDSupported(account) {
 		return false
 	}
 	wsCfg := s.cfg.Gateway.OpenAIWS
@@ -908,7 +921,7 @@ func (s *OpenAIGatewayService) openAIRebuildFallbackEnabled() bool {
 }
 
 func (s *OpenAIGatewayService) allowOpenAIDurableHTTPContinuation(account *Account, payload []byte) bool {
-	if account == nil || account.Type != AccountTypeOAuth || !s.openAIHTTPIncrementalContinuationEnabled() {
+	if account == nil || account.Type != AccountTypeOAuth || !s.openAIHTTPIncrementalContinuationEnabled() || !s.openAIHTTPPreviousResponseIDSupported(account) {
 		return false
 	}
 	if s.isOpenAIWSStoreDisabledInRequestRaw(payload, account) {
@@ -921,7 +934,7 @@ func (s *OpenAIGatewayService) allowOpenAIDurableHTTPSticky(account *Account) bo
 	if account == nil || account.Type != AccountTypeOAuth {
 		return false
 	}
-	return s.openAIHTTPIncrementalContinuationEnabled() && s.openAIHTTPIncrementalStickyEnabled()
+	return s.openAIHTTPIncrementalContinuationEnabled() && s.openAIHTTPIncrementalStickyEnabled() && s.openAIHTTPPreviousResponseIDSupported(account)
 }
 
 func classifyOpenAIWSReconnectReason(err error) (string, bool) {
@@ -2890,6 +2903,18 @@ func isOpenAIAccountEligibleForSelection(
 		}
 		return account.SupportsOpenAIEndpointCapability(requiredCapability)
 	}
+	if platform == PlatformGrok {
+		if requireOAuthAccount && !account.IsGrokOAuth() {
+			return false
+		}
+		if strings.TrimSpace(requiredImageRoute) != "" && !account.SupportsOpenAIImageRoute(requiredImageRoute) {
+			return false
+		}
+		if requireImageEnabled && strings.TrimSpace(requiredImageRoute) == "" {
+			return false
+		}
+		return isOpenAICompatibleAccountEligibleForRequest(ctx, account, platform, requestedModel, requireCompact, requiredCapability)
+	}
 	if strings.TrimSpace(requiredImageRoute) != "" || requireOAuthAccount || requireImageEnabled {
 		return false
 	}
@@ -2914,6 +2939,18 @@ func isOpenAIStickyAccountEligibleForSelection(
 			return false
 		}
 		return account.SupportsOpenAIEndpointCapability(requiredCapability)
+	}
+	if platform == PlatformGrok {
+		if requireOAuthAccount && !account.IsGrokOAuth() {
+			return false
+		}
+		if strings.TrimSpace(requiredImageRoute) != "" && !account.SupportsOpenAIImageRoute(requiredImageRoute) {
+			return false
+		}
+		if requireImageEnabled && strings.TrimSpace(requiredImageRoute) == "" {
+			return false
+		}
+		return isOpenAICompatibleAccountEligibleForRequest(ctx, account, platform, requestedModel, requireCompact, requiredCapability)
 	}
 	if strings.TrimSpace(requiredImageRoute) != "" || requireOAuthAccount || requireImageEnabled {
 		return false
@@ -3392,7 +3429,7 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 			selectedCompactTier = compactTier
 			continue
 		}
-		if platform == PlatformOpenAI && requiredImageRoute != "" {
+		if (platform == PlatformOpenAI || platform == PlatformGrok) && requiredImageRoute != "" {
 			candidateRateLimited := openAIImageRouteSchedulingResetAt(fresh, requiredImageRoute) != nil
 			selectedRateLimited := openAIImageRouteSchedulingResetAt(selected, requiredImageRoute) != nil
 			if candidateRateLimited != selectedRateLimited {
@@ -3454,7 +3491,13 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 }
 
 func (s *OpenAIGatewayService) selectAccountWithLoadAwarenessForImageRoute(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, imageRoute string, requireOAuthAccount bool) (*AccountSelectionResult, error) {
-	return s.selectAccountWithLoadAwareness(ctx, groupID, PlatformOpenAI, sessionHash, requestedModel, excludedIDs, requireCompact, "", imageRoute, requireOAuthAccount, strings.TrimSpace(imageRoute) != "")
+	plat := PlatformOpenAI
+	if groupID != nil && *groupID > 0 {
+		if g := s.loadGroupForImageRoute(ctx, *groupID); g != nil && g.Platform == PlatformGrok {
+			plat = PlatformGrok
+		}
+	}
+	return s.selectAccountWithLoadAwareness(ctx, groupID, plat, sessionHash, requestedModel, excludedIDs, requireCompact, "", imageRoute, requireOAuthAccount, strings.TrimSpace(imageRoute) != "")
 }
 
 func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Context, groupID *int64, platform string, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability, requiredImageRoute string, requireOAuthAccount bool, requireImageEnabled bool) (*AccountSelectionResult, error) {
@@ -5380,7 +5423,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, errors.New("codex_cli_only restriction: only codex official clients are allowed")
 	}
 
-	originalBody := body
+	originalBody := append([]byte(nil), body...)
 	requestView := newOpenAIRequestView(body)
 	reqModel, reqStream, promptCacheKey := requestView.Model, requestView.Stream, requestView.PromptCacheKey
 	setOpenAIRoutingPromptCacheKey(c, promptCacheKey)
@@ -5398,6 +5441,21 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			},
 		})
 		return nil, errors.New(ImageGenerationPermissionMessage())
+	}
+
+	// Apply canonical anti-fingerprint normalizer for OpenAI paths (including Grok via platform)
+	if s.fingerprintNormalizer != nil {
+		ua := ""
+		if c != nil && c.Request != nil {
+			ua = c.Request.Header.Get("User-Agent")
+		}
+		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
+		if canonical != nil {
+			_, newBody, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
+			if len(newBody) > 0 {
+				body = newBody
+			}
+		}
 	}
 
 	if account.Platform == PlatformGrok {
@@ -6813,7 +6871,7 @@ oauthTransformDone:
 				buildErr,
 			)
 		} else if activeDeltaResult.applied {
-			httpActiveDeltaOriginalBody = append([]byte(nil), body...)
+			httpActiveDeltaOriginalBody = append([]byte(nil), originalBody...)
 			httpActiveDeltaLog = activeDeltaResult.log
 			httpActiveDeltaApplied = true
 			httpActiveDeltaSessionHash = activeDeltaResult.sessionHash
@@ -7828,6 +7886,20 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	token string,
 	promptCacheKey string,
 ) (*http.Request, error) {
+	// Apply normalizer even in passthrough (safe per platform guards)
+	if s.fingerprintNormalizer != nil {
+		ua := ""
+		if c != nil && c.Request != nil {
+			ua = c.Request.Header.Get("User-Agent")
+		}
+		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
+		if canonical != nil {
+			_, newB, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
+			if len(newB) > 0 {
+				body = newB
+			}
+		}
+	}
 	targetURL := openaiPlatformAPIURL
 	switch account.Type {
 	case AccountTypeOAuth:
@@ -9734,6 +9806,7 @@ type openaiStreamingResult struct {
 	firstTokenMs *int
 	responseID   string
 	imageCount   int
+	searchCount  int
 }
 
 type openaiNonStreamingResult struct {
@@ -10168,7 +10241,13 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	streamImageOutputs := make([]json.RawMessage, 0, 1)
 	streamSeenImages := make(map[string]struct{})
 	resultWithUsage := func() *openaiStreamingResult {
-		return &openaiStreamingResult{usage: usage, firstTokenMs: firstTokenMs, responseID: responseID, imageCount: imageCounter.Count()}
+		searchCount := 0
+		if output := streamOutputAccumulator.BuildOutput(); len(output) > 0 {
+			if outputJSON, err := json.Marshal(output); err == nil {
+				searchCount = countOpenAISearchCallsInResponsesJSONBytes(outputJSON)
+			}
+		}
+		return &openaiStreamingResult{usage: usage, firstTokenMs: firstTokenMs, responseID: responseID, imageCount: imageCounter.Count(), searchCount: searchCount}
 	}
 	writeFrame := func(frame openAICompatSSEFrame, shouldFlush bool) bool {
 		frame, emit := replayAttempt.filterFrame(frame)
@@ -10992,6 +11071,9 @@ func (s *OpenAIGatewayService) bindHTTPResponseAccount(ctx context.Context, c *g
 	if s == nil || account == nil || account.ID <= 0 {
 		return
 	}
+	if account.Type == AccountTypeOAuth && !s.openAIHTTPPreviousResponseIDSupported(account) {
+		return
+	}
 	responseID = strings.TrimSpace(responseID)
 	if responseID == "" {
 		return
@@ -11591,6 +11673,21 @@ func buildResponsesOutputJSON(acc *apicompat.BufferedResponseAccumulator, imageO
 		return nil, false
 	}
 	return outputJSON, true
+}
+
+func countOpenAISearchCallsInResponsesJSONBytes(body []byte) int {
+	if len(body) == 0 {
+		return 0
+	}
+	count := 0
+	for _, item := range gjson.GetBytes(body, "response.output").Array() {
+		t := strings.TrimSpace(item.Get("type").String())
+		switch t {
+		case "web_search_call", "tool_search_call", "x_search_call":
+			count++
+		}
+	}
+	return count
 }
 
 func extractImageGenerationOutputFromSSEData(data []byte, seen map[string]struct{}) (json.RawMessage, bool) {
@@ -12305,6 +12402,10 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		ImageSizeBreakdown:           result.ImageSizeBreakdown,
 		BilledByHigherPricedUpstream: selectedCost.BilledByHigherPricedUpstream,
 	}
+	if result.AudioUsage != nil {
+		billingMode := string(BillingModeAudio)
+		usageLog.BillingMode = &billingMode
+	}
 	if cost != nil {
 		usageLog.InputCost = cost.InputCost
 		usageLog.OutputCost = cost.OutputCost
@@ -12438,8 +12539,26 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	serviceTier string,
 	requestType RequestType,
 ) (*CostBreakdown, error) {
+	if result != nil && result.SearchCount > 0 {
+		var groupPrice *float64
+		if apiKey != nil && apiKey.Group != nil {
+			groupPrice = apiKey.Group.GetSearchPricePer1k()
+		}
+		return s.billingService.CalculateSearchCost(result.SearchCount, groupPrice, multiplier), nil
+	}
 	if openAIForwardResultHasVideoBilling(result) {
 		return s.calculateOpenAIVideoRequestCost(result, apiKey, multiplier), nil
+	}
+	if result != nil && result.AudioUsage != nil {
+		var groupConfig *audioPriceConfig
+		if apiKey != nil && apiKey.Group != nil {
+			groupConfig = &audioPriceConfig{
+				RealtimePerMin: apiKey.Group.AudioRealtimePricePerMin,
+				TTSPerMChars:   apiKey.Group.AudioTTSPricePerMillionChars,
+				STTPerHour:     apiKey.Group.AudioSTTPricePerHour,
+			}
+		}
+		return s.billingService.CalculateAudioCost(result.AudioUsage.Mode, result.AudioUsage.DurationOrUnits, groupConfig, multiplier), nil
 	}
 	if result != nil && result.ImageCount > 0 {
 		return s.calculateOpenAIImageRequestCost(ctx, result, apiKey, billingModel, multiplier, imageRateMultiplier, tokens, serviceTier, requestType)
@@ -12447,8 +12566,15 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
 }
 
+func OpenAIForwardResultHasVideoBillingForUsage(result *OpenAIForwardResult) bool {
+	return openAIForwardResultHasVideoBilling(result)
+}
+
 func openAIForwardResultHasVideoBilling(result *OpenAIForwardResult) bool {
-	return result != nil && result.VideoSeconds > 0
+	if result == nil {
+		return false
+	}
+	return result.VideoSeconds > 0 || result.VideoCount > 0 || strings.TrimSpace(result.VideoSize) != ""
 }
 
 func serviceEndpointIsVideo(path string) bool {
@@ -12461,7 +12587,14 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoRequestCost(result *OpenAIFor
 	if apiKey != nil && apiKey.Group != nil {
 		groupConfig = apiKey.Group.GetVideoPriceConfig()
 	}
-	return s.billingService.CalculateVideoCost(result.VideoSize, result.VideoSeconds, result.VideoCount, groupConfig, multiplier)
+	seconds := result.VideoSeconds
+	if seconds <= 0 {
+		// Some async video creation / retrieval responses do not echo duration.
+		// Treat the successful video request as at least one billable second instead of
+		// falling through to token/zero-cost billing.
+		seconds = 1
+	}
+	return s.billingService.CalculateVideoCost(result.VideoSize, seconds, result.VideoCount, groupConfig, multiplier)
 }
 
 func isUsagePricingUnavailableError(err error) bool {

@@ -49,6 +49,32 @@ func (s *kiroHandlerTokenCacheInvalidatorStub) InvalidateToken(_ context.Context
 	return nil
 }
 
+type grokHandlerOAuthServiceStub struct {
+	refreshCalls int
+	lastAccount  *service.Account
+}
+
+func (s *grokHandlerOAuthServiceStub) RefreshAccountToken(_ context.Context, account *service.Account) (*service.GrokTokenInfo, error) {
+	s.refreshCalls++
+	s.lastAccount = account
+	return &service.GrokTokenInfo{
+		AccessToken:  "grok-access-token",
+		RefreshToken: "grok-refresh-token",
+		ExpiresAt:    time.Now().Add(time.Hour).Unix(),
+		ClientID:     "grok-client-id",
+	}, nil
+}
+
+func (s *grokHandlerOAuthServiceStub) BuildAccountCredentials(tokenInfo *service.GrokTokenInfo) map[string]any {
+	return map[string]any{
+		"access_token":  tokenInfo.AccessToken,
+		"refresh_token": tokenInfo.RefreshToken,
+		"expires_at":    time.Unix(tokenInfo.ExpiresAt, 0).UTC().Format(time.RFC3339),
+		"client_id":     tokenInfo.ClientID,
+		"base_url":      "https://grok.example",
+	}
+}
+
 type kiroReauthAdminServiceStub struct {
 	*stubAdminService
 	getAccountResp *service.Account
@@ -105,7 +131,7 @@ func TestAccountHandlerRefreshSingleAccount_KiroUsesTokenProvider(t *testing.T) 
 		},
 	}
 	provider.SetRefreshAPI(nil, executor)
-	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, provider, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, provider, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	account := &service.Account{
 		ID:       101,
@@ -123,6 +149,36 @@ func TestAccountHandlerRefreshSingleAccount_KiroUsesTokenProvider(t *testing.T) 
 	require.Empty(t, warning)
 	require.Equal(t, 1, executor.refreshCalls)
 	require.NotNil(t, updated)
+}
+
+func TestAccountHandlerRefreshSingleAccount_GrokUsesGrokOAuthService(t *testing.T) {
+	t.Parallel()
+
+	adminSvc := newStubAdminService()
+	grokSvc := &grokHandlerOAuthServiceStub{}
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, grokSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	account := &service.Account{
+		ID:       202,
+		Platform: service.PlatformGrok,
+		Type:     service.AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "old-refresh-token",
+			"base_url":      "https://grok.old",
+		},
+	}
+
+	updated, warning, err := handler.refreshSingleAccount(context.Background(), account)
+
+	require.NoError(t, err)
+	require.Empty(t, warning)
+	require.Equal(t, 1, grokSvc.refreshCalls)
+	require.NotNil(t, grokSvc.lastAccount)
+	require.Equal(t, service.PlatformGrok, grokSvc.lastAccount.Platform)
+	require.NotNil(t, updated)
+	require.Len(t, adminSvc.updatedAccounts, 1)
+	require.Equal(t, "grok-access-token", adminSvc.updatedAccounts[0].Credentials["access_token"])
+	require.Equal(t, "https://grok.old", adminSvc.updatedAccounts[0].Credentials["base_url"])
 }
 
 func TestAccountHandlerReauthorizeKiroOAuthClearsRecoverableState(t *testing.T) {
@@ -154,7 +210,7 @@ func TestAccountHandlerReauthorizeKiroOAuthClearsRecoverableState(t *testing.T) 
 		},
 	}
 	invalidator := &kiroHandlerTokenCacheInvalidatorStub{}
-	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, invalidator)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, invalidator)
 
 	router := gin.New()
 	router.POST("/api/v1/admin/accounts/:id/reauthorize-kiro-oauth", handler.ReauthorizeKiroOAuth)

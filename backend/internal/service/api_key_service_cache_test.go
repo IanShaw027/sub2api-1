@@ -242,6 +242,10 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesGroupFeatureConfig(t *testing.
 	video720p := 0.02
 	video1080p := 0.03
 	video4k := 0.04
+	searchPrice := 1.23
+	audioRealtimePrice := 2.34
+	audioTTSPrice := 3.45
+	audioSTTPrice := 4.56
 	apiKey := &APIKey{
 		ID:      1,
 		UserID:  2,
@@ -257,20 +261,26 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesGroupFeatureConfig(t *testing.
 			Concurrency: 3,
 		},
 		Group: &Group{
-			ID:                    groupID,
-			Name:                  "grok",
-			Platform:              PlatformGrok,
-			Status:                StatusActive,
-			SubscriptionType:      SubscriptionTypeStandard,
-			RateMultiplier:        1,
-			AllowVideoGeneration:  true,
-			VideoGenerationRoute:  "native",
-			VideoPrice480pPerSec:  &video480p,
-			VideoPrice720pPerSec:  &video720p,
-			VideoPrice1080pPerSec: &video1080p,
-			VideoPrice4kPerSec:    &video4k,
-			AllowMessagesDispatch: true,
-			DefaultMappedModel:    "gpt-5.4",
+			ID:                           groupID,
+			Name:                         "grok",
+			Platform:                     PlatformGrok,
+			Status:                       StatusActive,
+			SubscriptionType:             SubscriptionTypeStandard,
+			RateMultiplier:               1,
+			AllowImageGeneration:         true,
+			ImageGenerationRoute:         "native",
+			AllowVideoGeneration:         true,
+			VideoGenerationRoute:         "native",
+			VideoPrice480pPerSec:         &video480p,
+			VideoPrice720pPerSec:         &video720p,
+			VideoPrice1080pPerSec:        &video1080p,
+			VideoPrice4kPerSec:           &video4k,
+			SearchPricePer1k:             &searchPrice,
+			AudioRealtimePricePerMin:     &audioRealtimePrice,
+			AudioTTSPricePerMillionChars: &audioTTSPrice,
+			AudioSTTPricePerHour:         &audioSTTPrice,
+			AllowMessagesDispatch:        true,
+			DefaultMappedModel:           "gpt-5.4",
 			MessagesDispatchModelConfig: OpenAIMessagesDispatchModelConfig{
 				OpusMappedModel:   "gpt-5.4-nano",
 				SonnetMappedModel: "gpt-5.3-codex",
@@ -289,12 +299,17 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesGroupFeatureConfig(t *testing.
 	require.Equal(t, apiKey.Name, roundTrip.Name)
 	require.NotNil(t, roundTrip.Group)
 	require.Equal(t, apiKey.Group.MessagesDispatchModelConfig, roundTrip.Group.MessagesDispatchModelConfig)
+	require.Equal(t, "native", roundTrip.Group.ImageGenerationRoute)
 	require.True(t, roundTrip.Group.AllowVideoGeneration)
 	require.Equal(t, "native", roundTrip.Group.VideoGenerationRoute)
 	require.Equal(t, apiKey.Group.VideoPrice480pPerSec, roundTrip.Group.VideoPrice480pPerSec)
 	require.Equal(t, apiKey.Group.VideoPrice720pPerSec, roundTrip.Group.VideoPrice720pPerSec)
 	require.Equal(t, apiKey.Group.VideoPrice1080pPerSec, roundTrip.Group.VideoPrice1080pPerSec)
 	require.Equal(t, apiKey.Group.VideoPrice4kPerSec, roundTrip.Group.VideoPrice4kPerSec)
+	require.Equal(t, apiKey.Group.SearchPricePer1k, roundTrip.Group.SearchPricePer1k)
+	require.Equal(t, apiKey.Group.AudioRealtimePricePerMin, roundTrip.Group.AudioRealtimePricePerMin)
+	require.Equal(t, apiKey.Group.AudioTTSPricePerMillionChars, roundTrip.Group.AudioTTSPricePerMillionChars)
+	require.Equal(t, apiKey.Group.AudioSTTPricePerHour, roundTrip.Group.AudioSTTPricePerHour)
 }
 
 func TestAPIKeyService_GetByKey_IgnoresLegacyAuthCacheSnapshotWithoutMessagesDispatchConfig(t *testing.T) {

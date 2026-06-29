@@ -514,11 +514,25 @@ var platformToLiteLLMProvider = map[string]string{
 
 // SyncPricingModels 返回 LiteLLM 定价目录中指定平台的最新模型列表
 // GET /api/v1/admin/channels/pricing/sync-models?platform=anthropic
+// For grok (xai) we return the known native models since the catalog does not include xai/grok entries.
 func (h *ChannelHandler) SyncPricingModels(c *gin.Context) {
 	platform := strings.ToLower(strings.TrimSpace(c.Query("platform")))
 	if platform == "" {
 		response.ErrorFrom(c, infraerrors.BadRequest("MISSING_PARAMETER", "platform parameter is required").
 			WithMetadata(map[string]string{"param": "platform"}))
+		return
+	}
+
+	if platform == service.PlatformGrok {
+		// Built-in Grok model list (pricing handled via billing fallback + channel overrides)
+		models := []string{
+			"grok-4.3",
+			"grok-build-0.1",
+			"grok-4.20-0309-reasoning",
+			"grok-4.20-0309-non-reasoning",
+			"grok-4.20-multi-agent-0309",
+		}
+		response.Success(c, gin.H{"models": models})
 		return
 	}
 

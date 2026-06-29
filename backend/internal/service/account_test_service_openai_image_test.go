@@ -38,6 +38,11 @@ func TestAccountSupportsOpenAIImageRoute_CodexOnly(t *testing.T) {
 
 	require.True(t, apiKeyAccount.SupportsOpenAIImageRoute("codex"))
 	require.False(t, oauthAccount.SupportsOpenAIImageRoute("web2api"))
+	// Grok native
+	grokAcc := &Account{Platform: PlatformGrok, Type: AccountTypeOAuth}
+	require.True(t, grokAcc.SupportsOpenAIImageRoute("native"))
+	require.True(t, grokAcc.SupportsOpenAIImageRoute(""))
+	require.True(t, grokAcc.SupportsOpenAIImageRoute("codex"))
 }
 
 func TestAccountTestService_OpenAIImageOAuthDefaultCallsImagesEndpoint(t *testing.T) {

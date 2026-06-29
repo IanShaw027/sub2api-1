@@ -388,6 +388,10 @@ func TestAPIContracts(t *testing.T) {
 							"video_price_720p_per_sec":  null,
 							"video_price_1080p_per_sec": null,
 							"video_price_4k_per_sec":    null,
+							"search_price_per_1k": null,
+							"audio_realtime_price_per_min": null,
+							"audio_tts_price_per_million_chars": null,
+							"audio_stt_price_per_hour": null,
 							"openai_image_main_model": "gpt-5.4-mini",
 							"image_rate_independent": false,
 							"image_rate_multiplier": 0,
@@ -1468,7 +1472,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService, nil, nil)
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil, nil, nil)
-	adminAccountHandler := adminhandler.NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminAccountHandler := adminhandler.NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	jwtAuth := func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{

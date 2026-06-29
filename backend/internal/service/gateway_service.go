@@ -293,6 +293,15 @@ func (s *GatewayService) debugClaudeMimicEnabled() bool {
 	return s.debugClaudeMimic.Load()
 }
 
+// schemaPropRewrites returns the schema property rename map from the fingerprint
+// normalizer if enabled, nil otherwise. Used by buildToolNameRewriteFromBody.
+func (s *GatewayService) schemaPropRewrites() map[string]string {
+	if s.fingerprintNormalizer == nil {
+		return nil
+	}
+	return s.fingerprintNormalizer.SchemaPropRewrites()
+}
+
 func parseDebugEnvBool(raw string) bool {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "1", "true", "yes", "on":
@@ -603,6 +612,11 @@ type ClaudeUsage struct {
 	ImageOutputTokens        int `json:"image_output_tokens,omitempty"`
 }
 
+type AudioUsage struct {
+	Mode            string
+	DurationOrUnits float64
+}
+
 // ForwardResult 转发结果
 type ForwardResult struct {
 	RequestID string
@@ -625,6 +639,11 @@ type ForwardResult struct {
 	ImageOutputSizes   []string
 	ImageSizeSource    string
 	ImageSizeBreakdown map[string]int
+
+	// 显式搜索/工具调用计费字段。
+	SearchCount int
+
+	AudioUsage *AudioUsage
 }
 
 // UpstreamFailoverError indicates an upstream error that should trigger account failover.
@@ -742,6 +761,7 @@ type GatewayService struct {
 	kiroTokenProvider     *KiroTokenProvider
 	kiroGatewayService    *KiroGatewayService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	fingerprintNormalizer *FingerprintNormalizer
 }
 
 // NewGatewayService creates a new GatewayService
@@ -773,6 +793,7 @@ func NewGatewayService(
 	resolver *ModelPricingResolver,
 	balanceNotifyService *BalanceNotifyService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	fingerprintNormalizer *FingerprintNormalizer,
 ) *GatewayService {
 	userGroupRateTTL := resolveUserGroupRateCacheTTL(cfg)
 	modelsListTTL := resolveModelsListCacheTTL(cfg)
@@ -809,6 +830,7 @@ func NewGatewayService(
 		resolver:              resolver,
 		balanceNotifyService:  balanceNotifyService,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
+		fingerprintNormalizer: fingerprintNormalizer,
 	}
 	svc.userGroupRateResolver = newUserGroupRateResolver(
 		userGroupRateRepo,
@@ -1543,7 +1565,7 @@ func (s *GatewayService) applyClaudeCodeOAuthMimicryToBody(
 	//      上打断点；mapping 存入 gin.Context 供响应侧 bytes.Replace 还原。
 	body = s.rewriteMessageCacheControlIfEnabled(ctx, body)
 
-	if rw := buildToolNameRewriteFromBody(body); rw != nil {
+	if rw := buildToolNameRewriteFromBody(body, s.schemaPropRewrites()); rw != nil {
 		body = applyToolNameRewriteToBody(body, rw)
 		if c != nil {
 			c.Set(toolNameRewriteKey, rw)
@@ -4800,6 +4822,10 @@ func rewriteSystemForNonClaudeCodeWithPromptBlocks(body []byte, system any, expa
 		originalSystemText = strings.Join(parts, "\n\n")
 	}
 
+	// Sanitize structural markers to reduce template fingerprinting signals
+	// (markdown headers, XML tags like <workspace>, <tools> etc.)
+	originalSystemText = promptsanitize.SanitizeStructure(originalSystemText)
+
 	// 2. 构造 system 数组，对齐真实 Claude Code CLI 的 3-block 形态：
 	//    [0] billing attribution block（cc_version={cliVer}.{fp}; cc_entrypoint=cli;）
 	//    [1] "You are Claude Code..." 身份前缀 block（默认不带 cache_control）
@@ -4810,8 +4836,8 @@ func rewriteSystemForNonClaudeCodeWithPromptBlocks(body []byte, system any, expa
 	//    接近真实，同时不注入会污染被代理用户行为的工具专属指令。
 	//
 	//    缺失 billing block 的系统 payload 是 Anthropic 判定第三方的关键信号之一
-	//    （真实 CLI 每个请求都带）。新版 CLI 已取消 cch=... 签名字段，故 block 不再注入
-	//    cch（见 buildBillingAttributionText）。
+	//    （真实 CLI 每个请求都带）。billing block 包含 cch=00000 占位符，
+	//    由 signBillingHeaderCCH 在 buildUpstreamRequest 最终阶段替换为真实 hash。
 	systemBlocks, blockErr := buildClaudeOAuthSystemPromptBlocksJSON(body, expansionPrompt, blocksConfig)
 	if blockErr != nil {
 		logger.LegacyPrintf("service.gateway", "Warning: failed to build configured Claude OAuth system blocks: %v", blockErr)
@@ -5199,6 +5225,14 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		})
 	}
 
+	// CCH 算法验证：在 body 被任何网关中间件修改之前，对真实 CC 客户端的原始 body
+	// 提取实际 cch 并与我们的 xxHash64 算法对比。仅在 MISMATCH 时告警日志。
+	if bytes.Contains(body, []byte("cch=")) {
+		if realCCH, ourCCH, match := verifyCCHFromRealCLI(body); realCCH != "" && !match {
+			logger.LegacyPrintf("service.gateway.cch", "CCH verify MISMATCH: real=%s ours=%s account=%d bodyLen=%d", realCCH, ourCCH, account.ID, len(body))
+		}
+	}
+
 	// Claude Code 客户端判定：UA 匹配 claude-cli/* 且携带 metadata.user_id。
 	// 真正的 Claude Code 客户端自带完整的 system prompt、cache_control 断点和 header，
 	// 不需要代理做任何 body 级别的 mimicry；强行替换反而会破坏客户端的缓存策略
@@ -5257,7 +5291,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		if err := replaceBody(s.rewriteMessageCacheControlIfEnabled(ctx, body)); err != nil {
 			return nil, err
 		}
-		if rw := buildToolNameRewriteFromBody(body); rw != nil {
+		if rw := buildToolNameRewriteFromBody(body, s.schemaPropRewrites()); rw != nil {
 			if err := replaceBody(applyToolNameRewriteToBody(body, rw)); err != nil {
 				return nil, err
 			}
@@ -6426,8 +6460,9 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			}
 
 			if !clientDisconnected {
-				restored := string(reverseToolNamesIfPresent(c, []byte(line)))
-				if _, err := io.WriteString(w, restored); err != nil {
+				restored := reverseToolNamesIfPresent(c, []byte(line))
+				restored = reverseWorkDirIfPresent(c, restored)
+				if _, err := io.WriteString(w, string(restored)); err != nil {
 					clientDisconnected = true
 					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
 				} else if _, err := io.WriteString(w, "\n"); err != nil {
@@ -6669,6 +6704,7 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 		contentType = "application/json"
 	}
 	body = reverseToolNamesIfPresent(c, body)
+	body = reverseWorkDirIfPresent(c, body)
 	c.Data(resp.StatusCode, contentType, body)
 	return usage, nil
 }
@@ -7159,6 +7195,37 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		body = syncBillingHeaderVersion(body, fingerprint.UserAgent)
 	}
 
+	// Apply canonical anti-fingerprint normalizer (for all platforms, production complete skeleton)
+	var canonicalPlatform string
+	if s.fingerprintNormalizer != nil {
+		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, clientHeaders.Get("User-Agent"))
+		if canonical != nil {
+			canonicalPlatform = canonical.Platform
+			newReq, newBody, err := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
+			if err == nil && len(newBody) > 0 {
+				body = newBody
+			}
+			_ = newReq // req built later; headers handled via StripProxyHeaders after NewRequest
+		}
+	}
+
+	// PII + 环境特征归一化：按 OAuth 账号生成确定性伪值替换 system prompt 中的
+	// email/git user/working directory/platform/shell/OS version，防止真实 CC
+	// 客户端注入的 PII 和环境信息被透传到上游。同时对 messages 中出现的工作目录
+	// 路径做全量替换。无条件执行（不依赖 anti-ban 开关）；必须在 CCH 签名之前。
+	var envProfile *AccountEnvProfile
+	var workDirRewrite *WorkDirRewrite
+	if account != nil && account.IsOAuth() {
+		envProfile = buildAccountEnvProfile(account.ID, fingerprint)
+		body, workDirRewrite = normalizeSystemPromptPII(body, envProfile)
+		if workDirRewrite != nil {
+			body = replaceWorkDirInBody(body, workDirRewrite)
+		}
+	} else {
+		// 非 OAuth 账号降级为仅删除 PII（不替换）
+		body = scrubSystemPromptPII(body)
+	}
+
 	// === 计算最终 anthropic-beta header（先于 body sanitize 与 CCH 签名）===
 	//
 	// 顺序约束：
@@ -7180,6 +7247,10 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	if sanitized, changed := sanitizeAnthropicBodyForBetaTokens(body, finalBetaHeader); changed {
 		body = sanitized
 	}
+
+	// CCH 签名：对最终 body（含 cch=00000 占位符）做 xxHash64，
+	// 替换占位符为真实 5 位 hex。必须在 body 完全敲定后、NewRequest 前执行。
+	body = signBillingHeaderCCH(body)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
 	if err != nil {
@@ -7247,6 +7318,28 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 				setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", parsed.SessionID)
 			}
 		}
+	}
+
+	// Strip proxy-telemetry headers after all passthrough/fingerprint/mimic writes.
+	if s.fingerprintNormalizer != nil {
+		s.fingerprintNormalizer.StripProxyHeaders(req, canonicalPlatform)
+	}
+
+	// X-Stainless 头按 OS profile 重新注入：真实 CC CLI（通过 Anthropic SDK）总是
+	// 发送 X-Stainless-* 头。StripProxyHeaders 清除了客户端原始值（可能不一致），
+	// 现在按 envProfile 注入与 system prompt Platform 一致的值。
+	if envProfile != nil && fingerprint != nil {
+		setHeaderRaw(req.Header, "X-Stainless-Lang", "js")
+		setHeaderRaw(req.Header, "X-Stainless-Package-Version", fingerprint.StainlessPackageVersion)
+		setHeaderRaw(req.Header, "X-Stainless-OS", envProfile.StainlessOS)
+		setHeaderRaw(req.Header, "X-Stainless-Arch", envProfile.StainlessArch)
+		setHeaderRaw(req.Header, "X-Stainless-Runtime", "node")
+		setHeaderRaw(req.Header, "X-Stainless-Runtime-Version", fingerprint.StainlessRuntimeVersion)
+	}
+
+	// 存储 WorkDirRewrite 到 gin.Context，供 SSE 响应侧反向替换
+	if workDirRewrite != nil && c != nil {
+		c.Set("claude_work_dir_rewrite", workDirRewrite)
 	}
 
 	// === DEBUG: 打印上游转发请求（headers + body 摘要），与 CLIENT_ORIGINAL 对比 ===
@@ -8931,6 +9024,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				for _, block := range outputBlocks {
 					if !clientDisconnected {
 						restored := reverseToolNamesIfPresent(c, []byte(block))
+						restored = reverseWorkDirIfPresent(c, restored)
 						if _, werr := fmt.Fprint(w, string(restored)); werr != nil {
 							clientDisconnected = true
 							logger.LegacyPrintf("service.gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
@@ -9290,6 +9384,7 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 	}
 
 	body = reverseToolNamesIfPresent(c, body)
+	body = reverseWorkDirIfPresent(c, body)
 
 	// 写入响应
 	c.Data(resp.StatusCode, contentType, body)
@@ -10125,6 +10220,26 @@ func (s *GatewayService) calculateRecordUsageCost(
 	imageMultiplier float64,
 	opts *recordUsageOpts,
 ) *CostBreakdown {
+	if result.SearchCount > 0 {
+		var groupPrice *float64
+		if apiKey != nil && apiKey.Group != nil {
+			groupPrice = apiKey.Group.GetSearchPricePer1k()
+		}
+		return s.billingService.CalculateSearchCost(result.SearchCount, groupPrice, multiplier)
+	}
+
+	if result.AudioUsage != nil {
+		var groupConfig *audioPriceConfig
+		if apiKey != nil && apiKey.Group != nil {
+			groupConfig = &audioPriceConfig{
+				RealtimePerMin: apiKey.Group.AudioRealtimePricePerMin,
+				TTSPerMChars:   apiKey.Group.AudioTTSPricePerMillionChars,
+				STTPerHour:     apiKey.Group.AudioSTTPricePerHour,
+			}
+		}
+		return s.billingService.CalculateAudioCost(result.AudioUsage.Mode, result.AudioUsage.DurationOrUnits, groupConfig, multiplier)
+	}
+
 	// 图片生成：渠道定价为 token 计费时走 token 路径，否则走图片计费
 	if result.ImageCount > 0 {
 		if resolved := s.resolveChannelPricing(ctx, billingModel, apiKey); resolved != nil && resolved.Mode == BillingModeToken {
@@ -10309,6 +10424,10 @@ func (s *GatewayService) buildRecordUsageLog(
 		RequestType:           resolveGatewayUsageLogRequestType(result),
 		CreatedAt:             time.Now(),
 	}
+	if result.AudioUsage != nil {
+		billingMode := string(BillingModeAudio)
+		usageLog.BillingMode = &billingMode
+	}
 	if result.ImageCount > 0 && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
 		usageLog.RateMultiplier = imageMultiplier
 	}
@@ -10328,6 +10447,9 @@ func (s *GatewayService) buildRecordUsageLog(
 func resolveGatewayUsageLogRequestType(result *ForwardResult) RequestType {
 	if result == nil {
 		return RequestTypeUnknown
+	}
+	if result.SearchCount > 0 {
+		return RequestTypeSync
 	}
 	if result.ImageCount > 0 ||
 		result.Usage.ImageOutputTokens > 0 ||
@@ -10533,7 +10655,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		if err := replaceBody(s.rewriteMessageCacheControlIfEnabled(ctx, body)); err != nil {
 			return err
 		}
-		if rw := buildToolNameRewriteFromBody(body); rw != nil {
+		if rw := buildToolNameRewriteFromBody(body, s.schemaPropRewrites()); rw != nil {
 			if err := replaceBody(applyToolNameRewriteToBody(body, rw)); err != nil {
 				return err
 			}
@@ -11249,7 +11371,10 @@ func reconcileCachedTokens(usage map[string]any) bool {
 	return true
 }
 
-const debugGatewayBodyDefaultFilename = "gateway_debug.log"
+const (
+	debugGatewayBodyDefaultFilename = "gateway_debug.log"
+	debugGatewayBodyHashPrefixLimit = 4096
+)
 
 type debugGatewayBodyTarget struct {
 	rootPath     string
@@ -11378,9 +11503,14 @@ func (s *GatewayService) initDebugGatewayBodyFile(path string) {
 		}
 	}
 
-	f, err := root.OpenFile(target.relativePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := root.OpenFile(target.relativePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		slog.Error("failed to open gateway debug log file", "path", target.absolutePath, "error", err)
+		return
+	}
+	if err := root.Chmod(target.relativePath, 0600); err != nil {
+		_ = f.Close()
+		slog.Error("failed to restrict gateway debug log permissions", "path", target.absolutePath, "error", err)
 		return
 	}
 	s.debugGatewayBodyFile.Store(f)
@@ -11427,18 +11557,23 @@ func (s *GatewayService) debugLogGatewaySnapshot(tag string, headers http.Header
 		}
 	}
 
-	// 3. body（完整输出，格式化 JSON 便于 diff）
+	// 3. body：只写固定大小的元数据与 hash，避免 CCH mismatch 调试日志落盘用户内容/PII，
+	// 同时把单条日志大小限制在常量范围内，避免超大请求体导致磁盘耗尽。
 	fmt.Fprint(&buf, "--- body ---\n")
-	if len(body) == 0 {
-		fmt.Fprint(&buf, "  (empty)\n")
-	} else {
-		var pretty bytes.Buffer
-		if json.Indent(&pretty, body, "  ", "  ") == nil {
-			fmt.Fprintf(&buf, "  %s\n", pretty.Bytes())
-		} else {
-			// JSON 格式化失败时原样输出
-			fmt.Fprintf(&buf, "  %s\n", body)
-		}
+	fmt.Fprintf(&buf, "  body_len: %d\n", len(body))
+	bodyHash := sha256.Sum256(body)
+	fmt.Fprintf(&buf, "  body_sha256: %x\n", bodyHash[:])
+	hashPrefixLen := len(body)
+	truncated := false
+	if hashPrefixLen > debugGatewayBodyHashPrefixLimit {
+		hashPrefixLen = debugGatewayBodyHashPrefixLimit
+		truncated = true
+	}
+	fmt.Fprintf(&buf, "  body_hash_prefix_len: %d\n", hashPrefixLen)
+	fmt.Fprintf(&buf, "  body_truncated: %t\n", truncated)
+	if hashPrefixLen > 0 {
+		prefixHash := sha256.Sum256(body[:hashPrefixLen])
+		fmt.Fprintf(&buf, "  body_prefix_sha256: %x\n", prefixHash[:])
 	}
 
 	// 写入文件（调试用，并发写入可能交错但不影响可读性）

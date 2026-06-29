@@ -2804,6 +2804,90 @@ func TestOpenAIGatewayService_Forward_WSv2ResponseFailedRetryableKeepsFallbackSi
 	require.Contains(t, fallbackErr.Error(), "temporary upstream failure")
 }
 
+func TestOpenAIGatewayService_Forward_WSv2ResponseFailedStreamUsesNormalizedEnvelope(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 5
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	captureConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.created","response":{"id":"resp_failed_stream","model":"gpt-5.1"}}`),
+			[]byte(`{"type":"response.output_text.delta","delta":"partial"}`),
+			[]byte(`{"type":"response.failed","response":{"id":"resp_failed_stream","status":"failed","error":{"code":"server_error","type":"server_error","message":"temporary upstream failure"}}}`),
+		},
+	}
+	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(captureDialer)
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"resp_http_fallback_stream","usage":{"input_tokens":9,"output_tokens":3}}`,
+			)),
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+
+	account := &Account{
+		ID:          84,
+		Name:        "openai-failed-stream",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key": "sk-test",
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	body := []byte(`{"model":"gpt-5.1","stream":true,"input":[{"type":"input_text","text":"hello"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Nil(t, upstream.lastReq, "response.failed stream path should still preserve fallback signal behavior")
+	require.Contains(t, err.Error(), "temporary upstream failure")
+
+	streamBody := rec.Body.String()
+	require.NotContains(t, streamBody, `{"type":"response.failed","response":{"id":"resp_failed_stream","status":"failed","error":{"code":"server_error","type":"server_error","message":"temporary upstream failure"}}}`)
+	require.Contains(t, streamBody, `"type":"response.failed"`)
+	require.Contains(t, streamBody, `"type":"upstream_error"`)
+	require.Contains(t, streamBody, `"code":"upstream_error"`)
+	require.Contains(t, streamBody, "temporary upstream failure")
+}
+
 type openAIWSCaptureDialer struct {
 	mu          sync.Mutex
 	conn        *openAIWSCaptureConn

@@ -233,7 +233,7 @@ func writeWebSearchStreamResponse(
 	}
 	w.Flush()
 
-	return &ForwardResult{Model: model, Duration: time.Since(startTime), Usage: ClaudeUsage{}}, nil
+	return &ForwardResult{Model: model, Duration: time.Since(startTime), Usage: ClaudeUsage{}, SearchCount: 1}, nil
 }
 
 func setSSEHeaders(c *gin.Context) {
@@ -358,7 +358,7 @@ func writeWebSearchNonStreamResponse(
 	}
 	c.Data(http.StatusOK, "application/json", body)
 
-	return &ForwardResult{Model: model, Duration: time.Since(startTime), Usage: ClaudeUsage{}}, nil
+	return &ForwardResult{Model: model, Duration: time.Since(startTime), Usage: ClaudeUsage{}, SearchCount: 1}, nil
 }
 
 // --- Helpers ---

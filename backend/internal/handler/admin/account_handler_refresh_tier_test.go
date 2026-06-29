@@ -87,7 +87,7 @@ func (s *refreshTierAccountAdminService) UpdateAccount(_ context.Context, id int
 func setupRefreshTierRouter(svc service.AdminService, geminiSvc *service.GeminiOAuthService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	handler := NewAccountHandler(svc, nil, nil, geminiSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAccountHandler(svc, nil, nil, geminiSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts/:id/refresh-tier", handler.RefreshTier)
 	router.POST("/api/v1/admin/accounts/batch-refresh-tier", handler.BatchRefreshTier)
 	return router

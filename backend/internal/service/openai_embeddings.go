@@ -25,6 +25,19 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 	body []byte,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	if s.fingerprintNormalizer != nil {
+		ua := ""
+		if c != nil && c.Request != nil {
+			ua = c.Request.Header.Get("User-Agent")
+		}
+		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
+		if canonical != nil {
+			_, newB, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
+			if len(newB) > 0 {
+				body = newB
+			}
+		}
+	}
 	startTime := time.Now()
 
 	originalModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
@@ -276,6 +289,17 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	body []byte,
 	targetPath string, // e.g. "/v1/videos" or "/v1/videos/xxx/content"
 ) (*OpenAIForwardResult, error) {
+	if s.fingerprintNormalizer != nil {
+		ua := ""
+		// c not passed, use empty; caller can enhance if needed
+		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
+		if canonical != nil {
+			_, newB, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
+			if len(newB) > 0 {
+				body = newB
+			}
+		}
+	}
 	startTime := time.Now()
 
 	originalModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())

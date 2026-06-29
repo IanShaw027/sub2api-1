@@ -1913,7 +1913,16 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	if strings.TrimSpace(requiredRoute) != "" {
 		requiredRoute = openAIImageRouteForAccountScheduling(requiredRoute)
 	}
-	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, 0, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, requiredRoute, true, requireOAuthAccount, false, PlatformOpenAI)
+
+	// Support Grok groups for image gen using their platform (subscription OAuth accounts)
+	imagePlatform := PlatformOpenAI
+	if groupID != nil && *groupID > 0 {
+		if group := s.loadGroupForImageRoute(ctx, *groupID); group != nil && group.Platform == PlatformGrok {
+			imagePlatform = PlatformGrok
+		}
+	}
+
+	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, 0, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, requiredRoute, true, requireOAuthAccount, false, imagePlatform)
 	if err == nil && selection != nil && selection.Account != nil {
 		if !selection.Account.SupportsOpenAIImageRoute(requiredRoute) {
 			if selection.ReleaseFunc != nil {
@@ -1930,7 +1939,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	}
 	// 如果要求 native 能力（如指定了模型）但没有可用的 APIKey 账号，回退到 basic（OAuth 账号）
 	if requiredCapability == OpenAIImagesCapabilityNative {
-		selection, decision, err = s.selectAccountWithScheduler(ctx, groupID, 0, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic, requiredRoute, true, requireOAuthAccount, false, PlatformOpenAI)
+		selection, decision, err = s.selectAccountWithScheduler(ctx, groupID, 0, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic, requiredRoute, true, requireOAuthAccount, false, imagePlatform)
 		if err == nil && selection != nil && selection.Account != nil && !selection.Account.SupportsOpenAIImageRoute(requiredRoute) {
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()

@@ -597,7 +597,7 @@ Sub2API supports Grok subscription accounts through xAI OAuth and forwards OpenA
 - Account type: OAuth subscription accounts
 - Public gateway target: `/v1/responses` and `/responses`, forwarded to `${XAI_BASE_URL:-https://api.x.ai/v1}/responses`
 - Initial models: `grok-4.3`, `grok-build-0.1`, `grok-4.20-0309-reasoning`, `grok-4.20-0309-non-reasoning`, and `grok-4.20-multi-agent-0309`
-- Out of scope for this provider: public Grok Chat Completions routes, image, video, TTS, transcription, browser automation, cookies, and Grok web scraping
+- Grok uses Responses API + native Imagine for images/video (via subscription OAuth accounts, not raw API keys). Chat Completions rejected (use Responses). Image/video now supported and aligned to https://docs.x.ai/developers/model-capabilities .
 
 ### OAuth Configuration
 

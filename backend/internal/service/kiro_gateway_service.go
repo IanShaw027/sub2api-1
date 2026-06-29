@@ -61,16 +61,17 @@ var (
 )
 
 type KiroGatewayService struct {
-	httpUpstream      HTTPUpstream
-	tokenProvider     *KiroTokenProvider
-	rateLimitService  *RateLimitService
-	tlsFPProfileSvc   *TLSFingerprintProfileService
-	settingService    *SettingService
-	channelService    *ChannelService
-	fakeCache         *gocache.Cache
-	fakeCacheMu       sync.Mutex
-	fakeCacheStrategy string
-	fakeCacheGen      uint64
+	httpUpstream          HTTPUpstream
+	tokenProvider         *KiroTokenProvider
+	rateLimitService      *RateLimitService
+	tlsFPProfileSvc       *TLSFingerprintProfileService
+	settingService        *SettingService
+	channelService        *ChannelService
+	fingerprintNormalizer *FingerprintNormalizer
+	fakeCache             *gocache.Cache
+	fakeCacheMu           sync.Mutex
+	fakeCacheStrategy     string
+	fakeCacheGen          uint64
 }
 
 type kiroPreparedRequestMeta struct {
@@ -100,15 +101,17 @@ func NewKiroGatewayService(
 	tlsFPProfileSvc *TLSFingerprintProfileService,
 	settingService *SettingService,
 	channelService *ChannelService,
+	fingerprintNormalizer *FingerprintNormalizer,
 ) *KiroGatewayService {
 	return &KiroGatewayService{
-		httpUpstream:     httpUpstream,
-		tokenProvider:    tokenProvider,
-		rateLimitService: rateLimitService,
-		tlsFPProfileSvc:  tlsFPProfileSvc,
-		settingService:   settingService,
-		channelService:   channelService,
-		fakeCache:        gocache.New(kiropkg.DefaultFakeCacheTTL, time.Minute),
+		httpUpstream:          httpUpstream,
+		tokenProvider:         tokenProvider,
+		rateLimitService:      rateLimitService,
+		tlsFPProfileSvc:       tlsFPProfileSvc,
+		settingService:        settingService,
+		channelService:        channelService,
+		fingerprintNormalizer: fingerprintNormalizer,
+		fakeCache:             gocache.New(kiropkg.DefaultFakeCacheTTL, time.Minute),
 	}
 }
 
@@ -612,6 +615,19 @@ func writeKiroInvalidRequest(c *gin.Context, err error) {
 }
 
 func (s *KiroGatewayService) buildRequest(ctx context.Context, account *Account, body []byte, accessToken string, runtimeSettings *KiroRuntimeSettings) (*http.Request, error) {
+	if s.fingerprintNormalizer != nil {
+		ua := ""
+		if runtimeSettings != nil {
+			ua = fmt.Sprintf("aws-sdk-js/1.0.27 KiroIDE-%s-%s", runtimeSettings.KiroVersion, "")
+		}
+		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
+		if canonical != nil {
+			_, newBody, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
+			if len(newBody) > 0 {
+				body = newBody
+			}
+		}
+	}
 	return buildKiroGenerateAssistantRequest(ctx, account, body, accessToken, runtimeSettings)
 }
 

@@ -818,6 +818,7 @@ type openAIWSDeltaShadowInput struct {
 	CurrentPayload           []byte
 	HasFunctionCallOutput    bool
 	AllowConnReanchor        bool
+	AllowHTTPContext         bool
 	StickyAccountID          int64
 	StickyAccountHit         bool
 	StickyAccountMismatch    bool
@@ -877,6 +878,10 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 
 	if !in.CachedFound {
 		log.FallbackReason = "no_session_context"
+		return log
+	}
+	if strings.TrimSpace(in.Cached.connID) == "http" && !in.AllowHTTPContext {
+		log.FallbackReason = "transport_context_mismatch"
 		return log
 	}
 

@@ -65,6 +65,8 @@ func EvaluateAccountSchedulingThreshold(account *Account, thresholds map[string]
 		winner = pickLatestResetSchedulingCandidate(openAIThresholdCandidates(account), threshold, now)
 	case PlatformAnthropic:
 		winner = pickLatestResetSchedulingCandidate(anthropicThresholdCandidates(account), threshold, now)
+	case PlatformGrok:
+		winner = pickLatestResetSchedulingCandidate(grokThresholdCandidates(account), threshold, now)
 	default:
 		return decision
 	}
@@ -438,6 +440,20 @@ func antigravityThresholdCandidates(account *Account) []*accountSchedulingThresh
 			scope:       strings.TrimSpace(parseSchedulingScope(account.Extra["antigravity_sched_scope"])),
 			usedPercent: schedulingPercentValue(account.Extra["antigravity_sched_utilization"]),
 			until:       parseSchedulingResetAt(account.Extra["antigravity_sched_reset_at"]),
+		},
+	}
+}
+
+func grokThresholdCandidates(account *Account) []*accountSchedulingThresholdCandidate {
+	if account == nil {
+		return nil
+	}
+	return []*accountSchedulingThresholdCandidate{
+		{
+			window:      "quota",
+			scope:       "grok",
+			usedPercent: schedulingPercentValue(account.Extra["grok_sched_utilization"]),
+			until:       parseSchedulingResetAt(account.Extra["grok_sched_reset_at"]),
 		},
 	}
 }

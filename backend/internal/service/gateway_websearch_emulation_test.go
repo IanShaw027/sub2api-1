@@ -5,11 +5,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/websearch"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -377,4 +380,24 @@ func TestShouldEmulateWebSearch_DefaultMode_NilChannelService(t *testing.T) {
 	groupID := int64(42)
 	// nil channelService + default mode → returns false
 	require.False(t, svc.shouldEmulateWebSearch(context.Background(), account, &groupID, webSearchToolBody))
+}
+
+func TestWriteWebSearchResponses_ReportSearchCount(t *testing.T) {
+	resp := &websearch.SearchResponse{Query: "golang", Results: []websearch.SearchResult{{URL: "https://example.com", Title: "Example", Snippet: "stub result"}}}
+
+	streamRec := httptest.NewRecorder()
+	streamCtx, _ := gin.CreateTestContext(streamRec)
+	streamCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/web_search", nil)
+	streamResult, err := writeWebSearchStreamResponse(streamCtx, "golang", resp, "claude-sonnet-4", time.Now())
+	require.NoError(t, err)
+	require.Equal(t, 1, streamResult.SearchCount)
+	require.Contains(t, streamRec.Body.String(), "web_search_tool_result")
+
+	nonStreamRec := httptest.NewRecorder()
+	nonStreamCtx, _ := gin.CreateTestContext(nonStreamRec)
+	nonStreamCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/web_search", nil)
+	nonStreamResult, err := writeWebSearchNonStreamResponse(nonStreamCtx, "golang", resp, "claude-sonnet-4", time.Now())
+	require.NoError(t, err)
+	require.Equal(t, 1, nonStreamResult.SearchCount)
+	require.Contains(t, nonStreamRec.Body.String(), "web_search_tool_result")
 }

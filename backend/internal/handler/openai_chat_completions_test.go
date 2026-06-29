@@ -193,6 +193,7 @@ func TestOpenAIChatCompletions_RecordUsageIncludesRequestPayloadHash(t *testing.
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 	billingCacheSvc := service.NewBillingCacheService(
 		nil,

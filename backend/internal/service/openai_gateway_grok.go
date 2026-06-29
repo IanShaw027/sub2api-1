@@ -33,7 +33,26 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	if strings.TrimSpace(upstreamModel) == "" {
 		upstreamModel = "grok-4.3"
 	}
-	patchedBody, err := patchGrokResponsesBody(body, upstreamModel)
+	patchedBodyForBridge := body
+	if IsImageGenerationIntent(openAIResponsesEndpoint, originalModel, body) || HasOpenAIImageGenerationToolCapability(body) {
+		// Only apply image bridge when the request is actually image-related.
+		var m map[string]any
+		if json.Unmarshal(body, &m) == nil {
+			modified := false
+			if ensureOpenAIResponsesImageGenerationTool(m) {
+				modified = true
+			}
+			if applyCodexImageGenerationBridgeInstructions(m) {
+				modified = true
+			}
+			if modified {
+				if b, err := json.Marshal(m); err == nil {
+					patchedBodyForBridge = b
+				}
+			}
+		}
+	}
+	patchedBody, err := patchGrokResponsesBody(patchedBodyForBridge, upstreamModel)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +147,22 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		ResponseHeaders: resp.Header.Clone(),
 		Duration:        time.Since(startTime),
 		FirstTokenMs:    firstTokenMs,
+		SearchCount:     countOpenAISearchToolsInRequestBody(body),
 	}, nil
+}
+
+func countOpenAISearchToolsInRequestBody(body []byte) int {
+	if len(body) == 0 {
+		return 0
+	}
+	count := 0
+	for _, tool := range gjson.GetBytes(body, "tools").Array() {
+		t := strings.TrimSpace(tool.Get("type").String())
+		if t == "web_search" || t == "web_search_20250305" || t == "google_search" || t == "tool_search" || t == "x_search" {
+			count++
+		}
+	}
+	return count
 }
 
 func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {

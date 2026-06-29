@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -510,6 +511,103 @@ func parseOpenAIWSErrorEventFields(message []byte) (code string, errType string,
 	return strings.TrimSpace(values[0].String()), strings.TrimSpace(values[1].String()), strings.TrimSpace(values[2].String())
 }
 
+func openAIWSErrorClientTypeFromRaw(statusCode int, errTypeRaw string) string {
+	errType := strings.ToLower(strings.TrimSpace(errTypeRaw))
+	switch {
+	case strings.Contains(errType, "invalid_request"):
+		return "invalid_request_error"
+	case strings.Contains(errType, "authentication"):
+		return "authentication_error"
+	case strings.Contains(errType, "permission"):
+		return "permission_error"
+	case strings.Contains(errType, "rate_limit"):
+		return "rate_limit_error"
+	}
+	return openAIClientVisibleErrorType(statusCode)
+}
+
+func openAIWSErrorClientCodeFromRaw(statusCode int, codeRaw, clientErrType string) string {
+	code := strings.TrimSpace(codeRaw)
+	if code != "" {
+		switch {
+		case strings.Contains(strings.ToLower(code), "rate_limit"):
+			return "rate_limit_exceeded"
+		case strings.Contains(strings.ToLower(code), "authentication"):
+			return "authentication_failed"
+		case strings.Contains(strings.ToLower(code), "permission"):
+			return "permission_denied"
+		case strings.Contains(strings.ToLower(code), "server_error"), strings.Contains(strings.ToLower(code), "upstream_error"):
+			return "upstream_error"
+		default:
+			// Preserve concrete upstream validation codes such as invalid_value.
+			return code
+		}
+	}
+	switch clientErrType {
+	case "invalid_request_error":
+		return "invalid_request"
+	case "rate_limit_error":
+		return "rate_limit_exceeded"
+	case "authentication_error":
+		return "authentication_failed"
+	case "permission_error":
+		return "permission_denied"
+	}
+	switch statusCode {
+	case http.StatusBadRequest, http.StatusConflict, http.StatusUnprocessableEntity:
+		return "invalid_request"
+	case http.StatusTooManyRequests:
+		return "rate_limit_exceeded"
+	case http.StatusUnauthorized:
+		return "authentication_failed"
+	case http.StatusForbidden:
+		return "permission_denied"
+	default:
+		return "upstream_error"
+	}
+}
+
+func buildOpenAIWSErrorEventFailedTerminal(responseID, model, clientErrType, clientErrCode, message string) []byte {
+	responseID = strings.TrimSpace(responseID)
+	if responseID == "" {
+		responseID = "resp_synthetic_ws_error"
+	}
+	clientErrType = strings.TrimSpace(clientErrType)
+	if clientErrType == "" {
+		clientErrType = "upstream_error"
+	}
+	clientErrCode = strings.TrimSpace(clientErrCode)
+	if clientErrCode == "" {
+		clientErrCode = "upstream_error"
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "Upstream websocket error"
+	}
+	response := map[string]any{
+		"id":     responseID,
+		"object": "response",
+		"status": "failed",
+		"output": []any{},
+		"error": map[string]any{
+			"type":    clientErrType,
+			"code":    clientErrCode,
+			"message": message,
+		},
+	}
+	if model = strings.TrimSpace(model); model != "" {
+		response["model"] = model
+	}
+	payload, err := json.Marshal(map[string]any{
+		"type":     "response.failed",
+		"response": response,
+	})
+	if err != nil {
+		return []byte(`{"type":"response.failed","response":{"id":"` + responseID + `","object":"response","status":"failed","output":[],"error":{"type":"upstream_error","code":"upstream_error","message":"Upstream websocket error"}}}`)
+	}
+	return payload
+}
+
 func summarizeOpenAIWSErrorEventFieldsFromRaw(codeRaw, errTypeRaw, errMessageRaw string) (code string, errType string, errMessage string) {
 	code = truncateOpenAIWSLogValue(codeRaw, openAIWSLogValueMaxLen)
 	errType = truncateOpenAIWSLogValue(errTypeRaw, openAIWSLogValueMaxLen)
@@ -805,15 +903,33 @@ func stripOpenAIWSCreatePayloadUnsupportedFields(payload map[string]any) {
 }
 
 func logOpenAIWSModeInfo(format string, args ...any) {
-	logger.LegacyPrintf("service.openai_gateway", "[OpenAI WS Mode][openai_ws_mode=true] "+format, args...)
+	if !isOpenAIWSModeDebugEnabled() || shouldSuppressOpenAIWSTemporaryDiagnosticLog(format) {
+		return
+	}
+	logger.LegacyPrintf("service.openai_gateway", "[debug] [OpenAI WS Mode][openai_ws_mode=true] "+format, args...)
 }
 
 func logOpenAIWSModeInfoDirect(format string, args ...any) {
+	if !isOpenAIWSModeDebugEnabled() || shouldSuppressOpenAIWSTemporaryDiagnosticLog(format) {
+		return
+	}
 	msg := fmt.Sprintf("[OpenAI WS Mode][openai_ws_mode=true] "+format, args...)
 	logger.L().
 		With(zap.String("component", "service.openai_gateway")).
 		WithOptions(zap.AddCallerSkip(1)).
-		Info(msg, zap.Bool("legacy_printf", true))
+		Debug(msg, zap.Bool("legacy_printf", true))
+}
+
+func shouldSuppressOpenAIWSTemporaryDiagnosticLog(format string) bool {
+	if !strings.Contains(format, "remove_after_debug=true") && !strings.Contains(format, "temporary_diag=") {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("OPENAI_WS_TEMP_DIAG_LOGS"))) {
+	case "1", "true", "yes", "on":
+		return false
+	default:
+		return true
+	}
 }
 
 func isOpenAIWSModeDebugEnabled() bool {
@@ -5582,15 +5698,17 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				return nil, wrapOpenAIWSFallbackWithPayloadState(fallbackReason, errors.New(errMsg), previousResponseID, activeDeltaApplied)
 			}
 			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
-			setOpsUpstreamError(c, statusCode, errMsg, "")
+			clientErrType := openAIWSErrorClientTypeFromRaw(statusCode, errTypeRaw)
+			clientErrCode := openAIWSErrorClientCodeFromRaw(statusCode, errCodeRaw, clientErrType)
+			setOpsUpstreamErrorInternal(c, clientErrType, statusCode, errMsg, "")
 			if reqStream && !clientDisconnected {
 				flushBufferedStreamEvents("error_event")
-				emitStreamMessage(message, true)
+				emitStreamMessage(buildOpenAIWSErrorEventFailedTerminal(responseID, originalModel, clientErrType, clientErrCode, errMsg), true)
 			}
 			if !reqStream {
 				c.JSON(statusCode, gin.H{
 					"error": gin.H{
-						"type":    "upstream_error",
+						"type":    clientErrType,
 						"message": errMsg,
 					},
 				})
@@ -5614,10 +5732,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				return nil, wrapOpenAIWSFallback("response_failed", failedErr)
 			}
 			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
+			clientErrType := openAIWSErrorClientTypeFromRaw(statusCode, errTypeRaw)
+			clientErrCode := openAIWSErrorClientCodeFromRaw(statusCode, errCodeRaw, clientErrType)
 			setOpsUpstreamError(c, statusCode, errMsg, "")
 			if reqStream && !clientDisconnected {
 				flushBufferedStreamEvents("response_failed")
-				emitStreamMessage(message, true)
+				emitStreamMessage(buildOpenAIWSErrorEventFailedTerminal(responseID, originalModel, clientErrType, clientErrCode, errMsg), true)
 			}
 			return nil, fmt.Errorf("upstream response failed: %s", errMsg)
 		}

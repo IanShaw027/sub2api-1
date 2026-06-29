@@ -84,7 +84,7 @@ func TestGatewayRoutesOpenAIImagesPathsAreRegistered(t *testing.T) {
 	}
 }
 
-func TestGatewayRoutesGrokImagesPathsAreRejected(t *testing.T) {
+func TestGatewayRoutesGrokImagesPathsAreRegistered(t *testing.T) {
 	router := newGatewayRoutesTestRouter(service.PlatformGrok)
 
 	for _, path := range []string{
@@ -93,12 +93,12 @@ func TestGatewayRoutesGrokImagesPathsAreRejected(t *testing.T) {
 		"/images/generations",
 		"/images/edits",
 	} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"grok","prompt":"draw a cat"}`))
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"grok-imagine-image","prompt":"draw a cat"}`))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should not expose images for Grok groups", path)
+		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should expose images for Grok groups (uses subscription OAuth)", path)
 	}
 }
 
@@ -111,8 +111,12 @@ func TestGatewayRoutesOpenAIVideosPathsAreRegistered(t *testing.T) {
 	}{
 		{http.MethodPost, "/v1/videos"},
 		{http.MethodPost, "/v1/videos/generations"},
+		{http.MethodPost, "/v1/videos/edits"},
+		{http.MethodPost, "/v1/videos/extensions"},
 		{http.MethodPost, "/videos"},
 		{http.MethodPost, "/videos/generations"},
+		{http.MethodPost, "/videos/edits"},
+		{http.MethodPost, "/videos/extensions"},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{"model":"sora-2","prompt":"a cat playing piano","seconds":"8","size":"1280x720"}`))
 		req.Header.Set("Content-Type", "application/json")
@@ -132,8 +136,12 @@ func TestGatewayRoutesGrokVideosPathsAreRegistered(t *testing.T) {
 	}{
 		{http.MethodPost, "/v1/videos"},
 		{http.MethodPost, "/v1/videos/generations"},
+		{http.MethodPost, "/v1/videos/edits"},
+		{http.MethodPost, "/v1/videos/extensions"},
 		{http.MethodPost, "/videos"},
 		{http.MethodPost, "/videos/generations"},
+		{http.MethodPost, "/videos/edits"},
+		{http.MethodPost, "/videos/extensions"},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{"model":"grok","prompt":"a cat playing piano","seconds":"8","size":"1280x720"}`))
 		req.Header.Set("Content-Type", "application/json")
@@ -196,5 +204,30 @@ func TestGatewayRoutesGrokOnlyAllowsResponsesHTTP(t *testing.T) {
 
 		router.ServeHTTP(w, req)
 		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should still reach Responses handler", path)
+	}
+}
+
+func TestGatewayRoutesVideoAndWebSearchRejectUnsupportedPlatforms(t *testing.T) {
+	router := newGatewayRoutesTestRouter(service.PlatformAnthropic)
+
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/v1/videos"},
+		{http.MethodPost, "/v1/videos/generations"},
+		{http.MethodGet, "/v1/videos"},
+		{http.MethodPost, "/videos"},
+		{http.MethodPost, "/videos/generations"},
+		{http.MethodGet, "/videos"},
+		{http.MethodPost, "/v1/web_search"},
+		{http.MethodPost, "/web_search"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{"query":"news"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code, "method=%s path=%s should be platform-gated", tc.method, tc.path)
 	}
 }

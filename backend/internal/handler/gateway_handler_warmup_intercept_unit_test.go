@@ -184,6 +184,7 @@ func newTestGatewayHandlerWithUpstream(t *testing.T, group *service.Group, accou
 		nil, // resolver
 		nil, // balanceNotifyService
 		nil, // userPlatformQuotaRepo
+		nil, // fingerprintNormalizer
 	)
 
 	// RunModeSimple：跳过计费检查，避免引入 repo/cache 依赖。

@@ -459,6 +459,28 @@ func TestOpenAIEnsureForwardErrorResponse_UsesClientVisibleUpstreamError(t *test
 	assert.Equal(t, "The image data you provided does not represent a valid image.", errorObj["message"])
 }
 
+func TestOpenAIForwardErrorAlreadyCommunicated_DetectsOpenAIWSErrorEvent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+
+	writerSizeBeforeForward := c.Writer.Size()
+	_, _ = c.Writer.WriteString(`event: response.failed
+data: {"type":"response.failed","response":{"id":"resp_invalid_image","status":"failed","error":{"type":"invalid_request_error","code":"invalid_value","message":"The image data you provided does not represent a valid image. Please check your input and try again."}}}
+
+`)
+
+	ok := openAIForwardErrorAlreadyCommunicated(
+		c,
+		writerSizeBeforeForward,
+		errors.New("openai ws error event: The image data you provided does not represent a valid image. Please check your input and try again."),
+	)
+
+	require.True(t, ok, "handler must not append a generic fallback after the WS path already sent the upstream error terminal")
+}
+
 func TestOpenAIEnsureForwardErrorResponse_ClientDisconnectSkipsFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1006,6 +1028,7 @@ func TestOpenAIResponses_HTTPPostRoutingImageIntentSkipsImageDisabledAccount(t *
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	cache := &concurrencyCacheMock{
@@ -1140,6 +1163,7 @@ func TestOpenAIResponses_HTTPPostImageToolCapabilityKeepsImageDisabledAccount(t 
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	cache := &concurrencyCacheMock{
@@ -1264,6 +1288,7 @@ func TestOpenAIResponses_HTTPPostRoutingImageIntentRejectsImageDisabledOnlyAccou
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	cache := &concurrencyCacheMock{
@@ -1378,6 +1403,7 @@ func TestOpenAIResponses_HTTPPostAccountMappedImageOnlyModel_CodexRouteUsesImage
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	cache := &concurrencyCacheMock{
@@ -1470,6 +1496,7 @@ func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_WaitTimeoutRequestsRese
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 	h := &OpenAIGatewayHandler{
 		gatewayService:    gatewaySvc,
@@ -1556,6 +1583,7 @@ func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_WaitTimeoutClearsPrevio
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 	h := &OpenAIGatewayHandler{
 		gatewayService:    gatewaySvc,
@@ -1634,6 +1662,7 @@ func TestOpenAIGatewayHandlerAcquireResponsesAccountSlot_AcquiredSelectionBindsO
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 	h := &OpenAIGatewayHandler{gatewayService: gatewaySvc}
 
@@ -2124,6 +2153,7 @@ func TestOpenAIResponsesWebSocket_PassthroughBillingUsesPerTurnRequestPayloadHas
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	cache := &concurrencyCacheMock{
@@ -2782,6 +2812,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	cache := &concurrencyCacheMock{
@@ -2986,6 +3017,7 @@ func TestOpenAIResponsesWebSocket_FirstTurnPostModelMappingImageIntentSkipsImage
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	cache := &concurrencyCacheMock{
@@ -3158,6 +3190,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentRejectsAfterLiveTo
 		nil,
 		settingSvc,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	cache := &concurrencyCacheMock{
@@ -3339,6 +3372,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageToolCapabilityRejectsAfterLiveTo
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	cache := &concurrencyCacheMock{
@@ -3521,6 +3555,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnImageIntentRejectsUnsupportedRoute(t 
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	cache := &concurrencyCacheMock{
@@ -3706,6 +3741,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnRejectsAfterLiveAccountStatusChange(t
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	cache := &concurrencyCacheMock{
@@ -3875,6 +3911,7 @@ func TestOpenAIResponsesWebSocket_LaterTurnRespectsLiveConcurrencyDecrease(t *te
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	var (
@@ -4090,6 +4127,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	cache := &concurrencyCacheMock{

@@ -253,3 +253,29 @@ func TestEvaluateAccountSchedulingThreshold_UnsupportedPlatformsDoNotPause(t *te
 		})
 	}
 }
+
+func TestEvaluateAccountSchedulingThreshold_GrokUsesConfiguredThresholds(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	wantUntil := now.Add(2 * time.Hour)
+	account := &Account{
+		Platform: PlatformGrok,
+		Extra: map[string]any{
+			"grok_sched_utilization": 92.0,
+			"grok_sched_reset_at":    wantUntil.Format(time.RFC3339),
+		},
+	}
+
+	decision := EvaluateAccountSchedulingThreshold(account, map[string]int{
+		PlatformGrok: 90,
+	}, now)
+
+	require.True(t, decision.ShouldPause)
+	require.Equal(t, PlatformGrok, decision.Platform)
+	require.Equal(t, 90, decision.ThresholdPercent)
+	require.Equal(t, "grok", decision.Scope)
+	require.Equal(t, 92.0, decision.UsedPercent)
+	require.NotNil(t, decision.Until)
+	require.True(t, wantUntil.Equal(*decision.Until))
+}

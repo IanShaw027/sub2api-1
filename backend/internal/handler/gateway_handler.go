@@ -1625,6 +1625,41 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 		return
 	}
 
+	userAgent := c.GetHeader("User-Agent")
+	clientIP := ip.GetClientIP(c)
+	inboundEndpoint := GetInboundEndpoint(c)
+	upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+	requestPayloadHash := service.HashUsageRequestPayload([]byte(req.Query))
+	quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+	h.submitUsageRecordTask(c.Request.Context(), wrapUsageRecordTaskWithRequestContext(c, func(ctx context.Context) {
+		if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
+			Result: &service.ForwardResult{
+				RequestID:   "web_search:" + service.HashUsageRequestPayload([]byte(req.Query)),
+				Model:       "grok-web-search",
+				SearchCount: 1,
+				Duration:    0,
+			},
+			APIKey:             apiKey,
+			User:               apiKey.User,
+			Account:            account,
+			Subscription:       subscription,
+			InboundEndpoint:    inboundEndpoint,
+			UpstreamEndpoint:   upstreamEndpoint,
+			UserAgent:          userAgent,
+			IPAddress:          clientIP,
+			RequestPayloadHash: requestPayloadHash,
+			APIKeyService:      h.apiKeyService,
+			QuotaPlatform:      quotaPlatform,
+		}); err != nil {
+			logger.L().With(
+				zap.String("component", "handler.gateway.web_search"),
+				zap.Int64("user_id", apiKey.User.ID),
+				zap.Int64("api_key_id", apiKey.ID),
+				zap.Int64("account_id", account.ID),
+			).Error("gateway.web_search.record_usage_failed", zap.Error(err))
+		}
+	}))
+
 	c.JSON(http.StatusOK, gin.H{
 		"query":       req.Query,
 		"results":     nativeResp.Results,

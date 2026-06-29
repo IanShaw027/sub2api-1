@@ -1166,14 +1166,14 @@ func TestAccountSupportsOpenAIEndpointCapability(t *testing.T) {
 		require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityEmbeddings))
 	})
 
-	t.Run("Grok 默认兼容 chat 和 videos", func(t *testing.T) {
+	t.Run("Grok 默认兼容 videos, images (subscription OAuth), Responses; chat rejected at route", func(t *testing.T) {
 		account := &Account{
 			Platform: PlatformGrok,
-			Type:     AccountTypeAPIKey,
+			Type:     AccountTypeOAuth,
 		}
 
-		require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityChatCompletions))
 		require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityVideos))
+		require.True(t, account.SupportsOpenAIImageRoute("native"))
 		require.False(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityEmbeddings))
 	})
 
@@ -2211,6 +2211,59 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationUsesConfiguredV1BaseU
 	require.Equal(t, "gpt-image-2", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, "aGVsbG8=", gjson.Get(rec.Body.String(), "data.0.b64_json").String())
+}
+
+func TestOpenAIGatewayServiceForwardImages_GrokOAuthUsesNativeImagesAPI(t *testing.T) {
+	setGinTestMode()
+	body := []byte(`{"model":"grok-image-1","prompt":"draw a cat","response_format":"b64_json"}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	upstream := &openAIImagesHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type": []string{"application/json"},
+				"X-Request-Id": []string{"req_img_grok_native"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"created":1710000008,"data":[{"b64_json":"aGVsbG8=","revised_prompt":"draw a cat"}]}`)),
+		},
+	}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+
+	account := &Account{
+		ID:       7,
+		Name:     "grok-oauth",
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "xai-token",
+			"base_url":     "https://api.x.ai",
+		},
+	}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "grok-image-1", result.Model)
+	require.Equal(t, "grok-image-1", result.UpstreamModel)
+
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "https://api.x.ai/v1/images/generations", upstream.lastReq.URL.String())
+	require.Equal(t, "Bearer xai-token", upstream.lastReq.Header.Get("Authorization"))
+	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Content-Type"))
+	require.Equal(t, "grok-image-1", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.NotContains(t, upstream.lastReq.URL.String(), "chatgpt.com/backend-api/codex")
+	require.Equal(t, http.StatusOK, rec.Code)
 }
 
 func TestOpenAIGatewayServiceForwardImages_APIKeyCyberPolicyMarksAndDoesNotFailover(t *testing.T) {

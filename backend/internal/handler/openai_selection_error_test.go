@@ -101,6 +101,7 @@ func newOpenAISelectionErrorTestHandler(t *testing.T, accounts []service.Account
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	return &OpenAIGatewayHandler{
@@ -159,6 +160,7 @@ func newOpenAISelectionErrorTestHandlerWithAccountAcquire(
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	return &OpenAIGatewayHandler{

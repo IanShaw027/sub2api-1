@@ -1776,6 +1776,14 @@ func (a *Account) IsSchedulableForOpenAIImageRoute(route string) bool {
 }
 
 func (a *Account) SupportsOpenAIImageRoute(route string) bool {
+	if a == nil {
+		return false
+	}
+	// Grok uses native subscription path for images (like video native)
+	if a.Platform == PlatformGrok {
+		r := strings.ToLower(strings.TrimSpace(route))
+		return r == "" || r == "native" || r == GroupImageGenerationRouteCodex // allow for Grok
+	}
 	if !a.IsOpenAI() {
 		return false
 	}

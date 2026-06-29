@@ -148,6 +148,7 @@ func newGatewaySelectionErrorTestHandler(t *testing.T, accounts []service.Accoun
 		nil,
 		nil,
 		nil,
+		nil, // fingerprintNormalizer
 	)
 
 	return &GatewayHandler{
