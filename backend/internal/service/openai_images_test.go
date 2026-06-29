@@ -2215,7 +2215,7 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationUsesConfiguredV1BaseU
 
 func TestOpenAIGatewayServiceForwardImages_GrokOAuthUsesNativeImagesAPI(t *testing.T) {
 	setGinTestMode()
-	body := []byte(`{"model":"grok-image-1","prompt":"draw a cat","response_format":"b64_json"}`)
+	body := []byte(`{"model":"grok-imagine-1","prompt":"draw a cat","response_format":"b64_json"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -2254,14 +2254,14 @@ func TestOpenAIGatewayServiceForwardImages_GrokOAuthUsesNativeImagesAPI(t *testi
 	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, "grok-image-1", result.Model)
-	require.Equal(t, "grok-image-1", result.UpstreamModel)
+	require.Equal(t, "grok-imagine-1", result.Model)
+	require.Equal(t, "grok-imagine-1", result.UpstreamModel)
 
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, "https://api.x.ai/v1/images/generations", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer xai-token", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Content-Type"))
-	require.Equal(t, "grok-image-1", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "grok-imagine-1", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.NotContains(t, upstream.lastReq.URL.String(), "chatgpt.com/backend-api/codex")
 	require.Equal(t, http.StatusOK, rec.Code)
 }

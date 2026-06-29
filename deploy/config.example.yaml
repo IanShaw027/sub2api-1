@@ -207,6 +207,10 @@ gateway:
   #
   # 注意：开启后会影响所有客户端的行为（不仅限于 VS Code / Codex CLI），请谨慎开启。
   force_codex_cli: false
+  # Claude Code telemetry mode for /api/event_logging/batch: drop or forward.
+  # drop returns 200 without upstream forwarding; forward sanitizes and forwards using Anthropic OAuth accounts only.
+  # Claude Code 遥测处理模式：drop=直接 200 丢弃；forward=清洗后仅通过 Anthropic OAuth 账号代发。
+  claude_telemetry_mode: "drop"
   # Per-platform anti-ban / anti-fingerprint suite (fingerprint normalizer + TLS spoof + header strip + jitter + trigger sanitization).
   # Defaults to OFF ("默认应该是关的"). Enable explicitly per platform in System Settings > Gateway Settings (DB overrides).
   # 各平台防封控套件默认关闭；需在 系统设置 > 网关设置 里为具体平台手动开启（DB 优先覆盖此配置）。
