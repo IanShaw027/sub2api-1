@@ -66,7 +66,6 @@ type CanonicalFingerprintConfig struct {
 	TelemetryPaths      []string
 	JitterMinMs         int
 	JitterMaxMs         int
-	PlatformProfiles    map[string]PlatformProfile
 	// EnabledByPlatform: per-platform override for the whole anti-ban suite.
 	// Key must be explicitly true to enable; absent or false means disabled (default OFF).
 	EnabledByPlatform map[string]bool
@@ -441,12 +440,6 @@ func (n *FingerprintNormalizer) ApplyToRequest(req *http.Request, body []byte, c
 }
 
 func (n *FingerprintNormalizer) getPlatformProfile(plat string) PlatformProfile {
-	if n.cfg.PlatformProfiles != nil {
-		if p, ok := n.cfg.PlatformProfiles[plat]; ok {
-			return p
-		}
-	}
-	// Fallback to manager hardcoded profiles
 	if n.platformFPManager != nil {
 		return n.platformFPManager.Get(plat)
 	}
@@ -1205,7 +1198,6 @@ func ProvideFingerprintNormalizer(
 		TelemetryPaths:      []string{"/telemetry", "datadog", "sentry", "statsig", "segment", "amplitude", "events"},
 		JitterMinMs:         10,
 		JitterMaxMs:         150,
-		PlatformProfiles:    map[string]PlatformProfile{},
 	}
 	if cfg != nil {
 		af := cfg.Gateway.AntiFingerprint
@@ -1225,19 +1217,6 @@ func ProvideFingerprintNormalizer(
 		// Schema property rewriting
 		normalizerCfg.SchemaPropRewriteEnabled = af.ToolSchemaPropRewriteEnabled
 		normalizerCfg.SchemaPropRewrites = af.ToolSchemaPropRewrites
-		// Convert platform profiles
-		for k, v := range af.PlatformProfiles {
-			normalizerCfg.PlatformProfiles[k] = PlatformProfile{
-				CanonicalUA:   v.CanonicalUA,
-				JitterMinMs:   v.JitterMinMs,
-				JitterMaxMs:   v.JitterMaxMs,
-				SpoofMemoryMB: v.SpoofMemoryMB,
-				SpoofHeapMB:   v.SpoofHeapMB,
-				CPUInfo:       v.CPUInfo,
-				StripExtra:    v.StripExtra,
-				BodyStripKeys: v.BodyStripKeys,
-			}
-		}
 
 		// Per-platform anti-ban toggles (from gateway.anti_ban.platforms). Default OFF; only explicit true enables.
 		ban := cfg.Gateway.AntiBan

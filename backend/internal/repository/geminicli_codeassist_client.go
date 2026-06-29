@@ -171,7 +171,7 @@ func (c *geminiCliCodeAssistClient) RetrieveUserQuota(ctx context.Context, acces
 }
 
 func createGeminiCliReqClient(proxyURL string) (*req.Client, error) {
-	return getSharedReqClient(reqClientOptions{
+	return getSharedReqClient(ReqClientOptions{
 		ProxyURL: proxyURL,
 		Timeout:  30 * time.Second,
 	})

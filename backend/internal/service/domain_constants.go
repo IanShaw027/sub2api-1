@@ -50,6 +50,9 @@ const (
 	PlatformGrok        = domain.PlatformGrok
 )
 
+// AllGatewayPlatforms 是网关/抗风控子系统覆盖的平台列表（re-export from domain）。
+var AllGatewayPlatforms = domain.AllGatewayPlatforms
+
 // AllowedQuotaPlatforms 是允许设置 user × platform quota 的平台列表（单一权威来源）。
 // ent/schema/user_platform_quota.go 的 Validate 函数独立维护（构建期约束），
 // 若新增平台需同步修改该 schema。

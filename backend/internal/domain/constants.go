@@ -27,6 +27,29 @@ const (
 	PlatformGrok        = "grok"
 )
 
+// AllGatewayPlatforms 是网关/抗风控子系统覆盖的平台列表（不含 sora）。
+// sora 有独立链路（curl_cffi sidecar），不经网关指纹/anti-ban 处理。
+// 新增平台时同步修改此处。
+var AllGatewayPlatforms = []string{
+	PlatformAnthropic,
+	PlatformOpenAI,
+	PlatformGemini,
+	PlatformGrok,
+	PlatformKiro,
+	PlatformAntigravity,
+}
+
+// AllAccountPlatforms 是所有可创建账号的平台列表（含 sora）。
+var AllAccountPlatforms = []string{
+	PlatformAnthropic,
+	PlatformOpenAI,
+	PlatformGemini,
+	PlatformAntigravity,
+	PlatformSora,
+	PlatformKiro,
+	PlatformGrok,
+}
+
 // Account type constants
 const (
 	AccountTypeOAuth          = "oauth"           // OAuth类型账号（full scope: profile + inference）

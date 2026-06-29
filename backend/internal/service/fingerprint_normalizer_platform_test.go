@@ -147,11 +147,13 @@ func TestFingerprintNormalizer_ApplyToRequestAndStripProxyHeadersUseSameStrippin
 		AntiBanEnabled:    true,
 		EnabledByPlatform: map[string]bool{"anthropic": true},
 		StripProxyHeaders: []string{"x-litellm", "x-forwarded", "via"},
-		PlatformProfiles: map[string]PlatformProfile{
+	}
+	mgr := &PlatformFingerprintManager{
+		profiles: map[string]PlatformProfile{
 			"anthropic": {StripExtra: []string{"x-stainless"}},
 		},
 	}
-	n := NewFingerprintNormalizer(nil, nil, nil, cfg, nil)
+	n := NewFingerprintNormalizer(nil, nil, nil, cfg, mgr)
 	buildReq := func() *http.Request {
 		req := httptest.NewRequest("POST", "/v1/messages", nil)
 		req.Header.Set("X-Litellm-Trace", "drop")

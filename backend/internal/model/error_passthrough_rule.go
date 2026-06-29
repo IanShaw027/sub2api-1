@@ -1,7 +1,11 @@
 // Package model 定义服务层使用的数据模型。
 package model
 
-import "time"
+import (
+	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/domain"
+)
 
 // ErrorPassthroughRule 全局错误透传规则
 // 用于控制上游错误如何返回给客户端
@@ -30,18 +34,23 @@ const MatchModeAny = "any"
 // MatchModeAll 表示所有条件都必须匹配
 const MatchModeAll = "all"
 
-// 支持的平台常量
+// 支持的平台常量（re-export from domain，确保唯一来源）
 const (
-	PlatformAnthropic   = "anthropic"
-	PlatformOpenAI      = "openai"
-	PlatformGemini      = "gemini"
-	PlatformAntigravity = "antigravity"
-	PlatformGrok        = "grok"
+	PlatformAnthropic   = domain.PlatformAnthropic
+	PlatformOpenAI      = domain.PlatformOpenAI
+	PlatformGemini      = domain.PlatformGemini
+	PlatformAntigravity = domain.PlatformAntigravity
+	PlatformSora        = domain.PlatformSora
+	PlatformKiro        = domain.PlatformKiro
+	PlatformGrok        = domain.PlatformGrok
 )
 
-// AllPlatforms 返回所有支持的平台列表
+// AllPlatforms 返回所有网关平台列表（不含 sora）。
 func AllPlatforms() []string {
-	return []string{PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok}
+	// 返回副本，防止外部修改
+	out := make([]string, len(domain.AllGatewayPlatforms))
+	copy(out, domain.AllGatewayPlatforms)
+	return out
 }
 
 // Validate 验证规则配置的有效性

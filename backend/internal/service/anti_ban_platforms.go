@@ -1,13 +1,11 @@
 package service
 
-var antiBanPlatformKeys = []string{
-	PlatformAnthropic,
-	PlatformOpenAI,
-	PlatformGemini,
-	PlatformGrok,
-	PlatformKiro,
-	PlatformAntigravity,
-}
+// antiBanPlatformKeys 从 AllGatewayPlatforms 派生，确保与全局注册表一致。
+var antiBanPlatformKeys = func() []string {
+	out := make([]string, len(AllGatewayPlatforms))
+	copy(out, AllGatewayPlatforms)
+	return out
+}()
 
 var antiBanPlatformKeySet = func() map[string]struct{} {
 	m := make(map[string]struct{}, len(antiBanPlatformKeys))
