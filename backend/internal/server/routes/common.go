@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -14,7 +13,7 @@ import (
 )
 
 // RegisterCommonRoutes 注册通用路由（健康检查、状态等）+ CC 辅助端点 stub
-func RegisterCommonRoutes(r *gin.Engine, h *handler.Handlers, apiKeyAuth middleware.APIKeyAuthMiddleware, settingService *service.SettingService, cfg *config.Config) {
+func RegisterCommonRoutes(r *gin.Engine, h *handler.Handlers, apiKeyAuth middleware.APIKeyAuthMiddleware, settingService *service.SettingService, _ any) {
 	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -42,18 +41,7 @@ func RegisterCommonRoutes(r *gin.Engine, h *handler.Handlers, apiKeyAuth middlew
 	// -----------------------------------------------------------------------
 
 	// 一方遥测事件上报：默认 drop；forward 模式下先鉴权，再只通过 Anthropic OAuth 账号清洗代发。
-	if cfg != nil && cfg.Gateway.ClaudeTelemetryMode == config.ClaudeTelemetryModeForward {
-		forwardHandler := gin.HandlerFunc(func(c *gin.Context) {
-			if h == nil || h.Gateway == nil {
-				c.JSON(http.StatusOK, gin.H{})
-				return
-			}
-			h.Gateway.ClaudeTelemetryBatch(c)
-		})
-		r.POST("/api/event_logging/batch", gin.HandlerFunc(apiKeyAuth), forwardHandler)
-	} else {
-		r.POST("/api/event_logging/batch", claudeTelemetryDropHandler(settingService))
-	}
+	r.POST("/api/event_logging/batch", claudeTelemetryModeHandler(h, apiKeyAuth, settingService))
 
 	// 启动引导配置
 	r.GET("/api/claude_cli/bootstrap",
@@ -82,6 +70,28 @@ func RegisterCommonRoutes(r *gin.Engine, h *handler.Handlers, apiKeyAuth middlew
 	// 用量查询
 	r.GET("/api/oauth/usage",
 		ccAuxHandler(settingService, "oauth_usage", http.StatusOK, gin.H{}))
+}
+
+func claudeTelemetryModeHandler(h *handler.Handlers, apiKeyAuth middleware.APIKeyAuthMiddleware, settingService *service.SettingService) gin.HandlerFunc {
+	forwardHandler := gin.HandlerFunc(func(c *gin.Context) {
+		if h == nil || h.Gateway == nil {
+			c.JSON(http.StatusOK, gin.H{})
+			return
+		}
+		h.Gateway.ClaudeTelemetryBatch(c)
+	})
+	dropHandler := claudeTelemetryDropHandler(settingService)
+	return func(c *gin.Context) {
+		if settingService == nil || settingService.GetClaudeTelemetryMode(c.Request.Context()) != service.ClaudeTelemetryModeForward || apiKeyAuth == nil {
+			dropHandler(c)
+			return
+		}
+		gin.HandlerFunc(apiKeyAuth)(c)
+		if c.IsAborted() {
+			return
+		}
+		forwardHandler(c)
+	}
 }
 
 func claudeTelemetryDropHandler(settingService *service.SettingService) gin.HandlerFunc {

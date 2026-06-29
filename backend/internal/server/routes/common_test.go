@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,56 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type commonRoutesSettingRepoStub struct {
+	values map[string]string
+}
+
+func (r *commonRoutesSettingRepoStub) Get(context.Context, string) (*service.Setting, error) {
+	return nil, service.ErrSettingNotFound
+}
+func (r *commonRoutesSettingRepoStub) GetValue(_ context.Context, key string) (string, error) {
+	if r.values == nil {
+		return "", service.ErrSettingNotFound
+	}
+	v, ok := r.values[key]
+	if !ok {
+		return "", service.ErrSettingNotFound
+	}
+	return v, nil
+}
+func (r *commonRoutesSettingRepoStub) Set(_ context.Context, key, value string) error {
+	if r.values == nil {
+		r.values = map[string]string{}
+	}
+	r.values[key] = value
+	return nil
+}
+func (r *commonRoutesSettingRepoStub) GetMultiple(_ context.Context, keys []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, key := range keys {
+		if r.values != nil {
+			out[key] = r.values[key]
+		}
+	}
+	return out, nil
+}
+func (r *commonRoutesSettingRepoStub) SetMultiple(_ context.Context, settings map[string]string) error {
+	if r.values == nil {
+		r.values = map[string]string{}
+	}
+	for k, v := range settings {
+		r.values[k] = v
+	}
+	return nil
+}
+func (r *commonRoutesSettingRepoStub) GetAll(context.Context) (map[string]string, error) {
+	return r.values, nil
+}
+func (r *commonRoutesSettingRepoStub) Delete(_ context.Context, key string) error {
+	delete(r.values, key)
+	return nil
+}
+
 func TestCommonRoutesClaudeTelemetryDropModeDoesNotRequireAPIKeyAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -21,7 +72,7 @@ func TestCommonRoutesClaudeTelemetryDropModeDoesNotRequireAPIKeyAuth(t *testing.
 	RegisterCommonRoutes(router, &handler.Handlers{Gateway: &handler.GatewayHandler{}}, servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
 		authCalls++
 		c.AbortWithStatus(http.StatusUnauthorized)
-	}), nil, &config.Config{Gateway: config.GatewayConfig{ClaudeTelemetryMode: config.ClaudeTelemetryModeDrop}})
+	}), nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/event_logging/batch", strings.NewReader(`{"events":[]}`))
 	req.Header.Set("Authorization", "Bearer secret-token")
@@ -39,11 +90,12 @@ func TestCommonRoutesClaudeTelemetryForwardModeUsesAPIKeyAuth(t *testing.T) {
 	router := gin.New()
 	authCalls := 0
 	groupID := int64(10)
+	settingService := service.NewSettingService(&commonRoutesSettingRepoStub{values: map[string]string{service.SettingKeyClaudeTelemetryMode: service.ClaudeTelemetryModeForward}}, &config.Config{})
 	RegisterCommonRoutes(router, &handler.Handlers{Gateway: &handler.GatewayHandler{}}, servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
 		authCalls++
 		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{GroupID: &groupID, Group: &service.Group{ID: groupID, Platform: service.PlatformAnthropic}})
 		c.Next()
-	}), nil, &config.Config{Gateway: config.GatewayConfig{ClaudeTelemetryMode: config.ClaudeTelemetryModeForward}})
+	}), settingService, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/event_logging/batch", strings.NewReader(`{"events":[]}`))
 	w := httptest.NewRecorder()

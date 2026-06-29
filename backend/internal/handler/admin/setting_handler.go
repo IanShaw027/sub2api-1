@@ -646,6 +646,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		EnableFingerprintUnification:           settings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:              settings.EnableMetadataPassthrough,
 		EnableCCHSigning:                       settings.EnableCCHSigning,
+		ClaudeTelemetryMode:                    settings.ClaudeTelemetryMode,
 		GatewayDebugTimelineEnabled:            settings.GatewayDebugTimelineEnabled,
 		GatewayDebugTimelineDirectory:          settings.GatewayDebugTimelineDirectory,
 		GatewayDebugTimelineRetentionDays:      settings.GatewayDebugTimelineRetentionDays,
@@ -1012,6 +1013,7 @@ type UpdateSettingsRequest struct {
 	EnableFingerprintUnification           *bool   `json:"enable_fingerprint_unification"`
 	EnableMetadataPassthrough              *bool   `json:"enable_metadata_passthrough"`
 	EnableCCHSigning                       *bool   `json:"enable_cch_signing"`
+	ClaudeTelemetryMode                    *string `json:"claude_telemetry_mode"`
 	GatewayDebugTimelineEnabled            *bool   `json:"gateway_debug_timeline_enabled"`
 	GatewayDebugTimelineDirectory          *string `json:"gateway_debug_timeline_directory"`
 	GatewayDebugTimelineRetentionDays      *int    `json:"gateway_debug_timeline_retention_days"`
@@ -2455,6 +2457,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.EnableCCHSigning
 		}(),
+		ClaudeTelemetryMode: func() string {
+			if req.ClaudeTelemetryMode != nil {
+				return strings.TrimSpace(*req.ClaudeTelemetryMode)
+			}
+			return previousSettings.ClaudeTelemetryMode
+		}(),
 		EnableClaudeOAuthSystemPromptInjection: func() bool {
 			if req.EnableClaudeOAuthSystemPromptInjection != nil {
 				return *req.EnableClaudeOAuthSystemPromptInjection
@@ -3619,6 +3627,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.EnableCCHSigning != after.EnableCCHSigning {
 		changed = append(changed, "enable_cch_signing")
+	}
+	if before.ClaudeTelemetryMode != after.ClaudeTelemetryMode {
+		changed = append(changed, "claude_telemetry_mode")
 	}
 	if before.EnableClaudeOAuthSystemPromptInjection != after.EnableClaudeOAuthSystemPromptInjection {
 		changed = append(changed, "enable_claude_oauth_system_prompt_injection")

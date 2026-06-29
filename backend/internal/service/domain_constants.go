@@ -522,6 +522,8 @@ const (
 	// （signBillingHeaderCCH 自守卫：body 中无 cch=00000 占位符时自动跳过）。
 	// 保留该 key 仅为向后兼容数据库已有行，开关不再产生任何效果。
 	SettingKeyEnableCCHSigning = "enable_cch_signing"
+	// SettingKeyClaudeTelemetryMode 控制 Claude Code 遥测处理：drop=直接 200 丢弃，forward=清洗后代发。
+	SettingKeyClaudeTelemetryMode = "claude_telemetry_mode"
 	// Gateway debug timeline settings are DB-backed runtime controls for
 	// detailed per-request trace logs. Defaults are disabled and bounded.
 	SettingKeyGatewayDebugTimelineEnabled       = "gateway_debug_timeline_enabled"

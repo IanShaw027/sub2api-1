@@ -80,6 +80,23 @@ func TestForwardClaudeTelemetryBatch_UsesOnlyAnthropicOAuthAndSanitizes(t *testi
 	require.False(t, gjson.GetBytes(upstream.lastBody, "events.0.event_data.client_metadata").Exists())
 }
 
+func TestForwardClaudeTelemetryBatch_UsesSetupTokenOAuthCredentialAndSkipsAPIKey(t *testing.T) {
+	groupID := int64(9)
+	repo := &claudeTelemetryAccountRepoStub{byGroup: []Account{
+		{ID: 1, Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "key"}, Status: StatusActive, Schedulable: true},
+		{ID: 3, Platform: PlatformAnthropic, Type: AccountTypeSetupToken, Credentials: map[string]any{"access_token": "setup-token"}, Status: StatusActive, Schedulable: true, Concurrency: 1},
+	}}
+	upstream := &claudeTelemetryHTTPUpstreamRecorder{}
+	svc := &GatewayService{accountRepo: repo, httpUpstream: upstream}
+
+	status, err := svc.ForwardClaudeTelemetryBatch(context.Background(), &groupID, []byte(`{"events":[]}`))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusAccepted, status)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "Bearer setup-token", getHeaderRaw(upstream.lastReq.Header, "authorization"))
+	require.Empty(t, upstream.lastReq.Header.Get("x-api-key"))
+}
+
 func TestForwardClaudeTelemetryBatch_ReturnsNoopWhenOnlyAPIKeyAccountsExist(t *testing.T) {
 	groupID := int64(8)
 	repo := &claudeTelemetryAccountRepoStub{byGroup: []Account{
