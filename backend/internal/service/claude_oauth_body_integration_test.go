@@ -44,6 +44,19 @@ func newClaudeOAuthSanitizeTestService(upstream *claudeOAuthSanitizeUpstreamReco
 	}
 }
 
+func enableClaudeAntiBanForSanitizeTest(t *testing.T, svc *GatewayService) {
+	t.Helper()
+	SetRuntimeAntiBanPlatforms(map[string]bool{PlatformAnthropic: true})
+	t.Cleanup(func() {
+		SetRuntimeAntiBanPlatforms(map[string]bool{})
+	})
+	svc.fingerprintNormalizer = NewFingerprintNormalizer(nil, nil, nil, &CanonicalFingerprintConfig{
+		Enabled:           true,
+		AntiBanEnabled:    true,
+		EnabledByPlatform: map[string]bool{PlatformAnthropic: true},
+	}, nil)
+}
+
 func newClaudeOAuthSanitizeTestContext() *gin.Context {
 	setGinTestMode()
 	rec := httptest.NewRecorder()
@@ -54,13 +67,24 @@ func newClaudeOAuthSanitizeTestContext() *gin.Context {
 	return c
 }
 
-func TestBuildUpstreamRequest_SanitizesClaudeLeakFieldsForOAuthOnly(t *testing.T) {
+func TestBuildUpstreamRequest_SanitizesClaudeLeakFieldsForOAuthOnlyWhenAntiBanEnabled(t *testing.T) {
+	SetRuntimeAntiBanPlatforms(map[string]bool{})
+	t.Cleanup(func() {
+		SetRuntimeAntiBanPlatforms(map[string]bool{})
+	})
 	upstream := &claudeOAuthSanitizeUpstreamRecorder{}
 	svc := newClaudeOAuthSanitizeTestService(upstream)
 	c := newClaudeOAuthSanitizeTestContext()
 	body := []byte(`{"model":"claude-sonnet-4-5","baseUrl":"https://gateway.example.com","client_metadata":{"env":{"HOSTNAME":"real"}},"metadata":{"base_url":"https://gateway.example.com","keep":"ok"},"messages":[{"role":"user","content":"hello gateway text"}]}`)
 
 	oauthAccount := &Account{ID: 701, Platform: PlatformAnthropic, Type: AccountTypeOAuth, Concurrency: 1, Credentials: map[string]any{"access_token": "tok"}, Status: StatusActive, Schedulable: true}
+	_, disabledBody, err := svc.buildUpstreamRequest(context.Background(), c, oauthAccount, body, "tok", "oauth", "claude-sonnet-4-5", false, false)
+	require.NoError(t, err)
+	require.True(t, gjson.GetBytes(disabledBody, "baseUrl").Exists())
+	require.True(t, gjson.GetBytes(disabledBody, "client_metadata").Exists())
+	require.True(t, gjson.GetBytes(disabledBody, "metadata.base_url").Exists())
+
+	enableClaudeAntiBanForSanitizeTest(t, svc)
 	_, sanitized, err := svc.buildUpstreamRequest(context.Background(), c, oauthAccount, body, "tok", "oauth", "claude-sonnet-4-5", false, false)
 	require.NoError(t, err)
 	require.False(t, gjson.GetBytes(sanitized, "baseUrl").Exists())
@@ -77,13 +101,23 @@ func TestBuildUpstreamRequest_SanitizesClaudeLeakFieldsForOAuthOnly(t *testing.T
 	require.True(t, gjson.GetBytes(unsanitized, "metadata.base_url").Exists())
 }
 
-func TestBuildCountTokensRequest_SanitizesClaudeLeakFieldsForOAuthOnly(t *testing.T) {
+func TestBuildCountTokensRequest_SanitizesClaudeLeakFieldsForOAuthOnlyWhenAntiBanEnabled(t *testing.T) {
+	SetRuntimeAntiBanPlatforms(map[string]bool{})
+	t.Cleanup(func() {
+		SetRuntimeAntiBanPlatforms(map[string]bool{})
+	})
 	upstream := &claudeOAuthSanitizeUpstreamRecorder{}
 	svc := newClaudeOAuthSanitizeTestService(upstream)
 	c := newClaudeOAuthSanitizeTestContext()
 	body := []byte(`{"model":"claude-sonnet-4-5","base_url":"https://gateway.example.com","client_metadata":{"process":{"rss":1}},"messages":[{"role":"user","content":"hello"}]}`)
 
 	oauthAccount := &Account{ID: 703, Platform: PlatformAnthropic, Type: AccountTypeOAuth, Concurrency: 1, Credentials: map[string]any{"access_token": "tok"}, Status: StatusActive, Schedulable: true}
+	_, disabledBody, err := svc.buildCountTokensRequest(context.Background(), c, oauthAccount, body, "tok", "oauth", "claude-sonnet-4-5", false)
+	require.NoError(t, err)
+	require.True(t, gjson.GetBytes(disabledBody, "base_url").Exists())
+	require.True(t, gjson.GetBytes(disabledBody, "client_metadata").Exists())
+
+	enableClaudeAntiBanForSanitizeTest(t, svc)
 	_, sanitized, err := svc.buildCountTokensRequest(context.Background(), c, oauthAccount, body, "tok", "oauth", "claude-sonnet-4-5", false)
 	require.NoError(t, err)
 	require.False(t, gjson.GetBytes(sanitized, "base_url").Exists())

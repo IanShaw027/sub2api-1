@@ -66,8 +66,10 @@ func (s *OpenAIGatewayService) ReconcileOpenAIWSPool(ctx context.Context) {
 }
 
 func (s *OpenAIGatewayService) runOpenAIWSPoolReconcileRound(ctx context.Context) {
-	pool := s.getOpenAIWSConnPool()
-	if pool == nil {
+	if s.accountRepo == nil {
+		if s.openaiWSPool != nil {
+			s.openaiWSPool.ReconcileShrink()
+		}
 		return
 	}
 	if ctx == nil {
@@ -77,24 +79,21 @@ func (s *OpenAIGatewayService) runOpenAIWSPoolReconcileRound(ctx context.Context
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIWSReconcileTimeout)
 	defer cancel()
 
-	// 1) 收缩：按 session TTL 与 neutral 目标立即回收多余空闲连接。
-	pool.ReconcileShrink()
-
-	// 2) 扩张：仅当 neutral prewarm percent > 0 时为可调度账号预热 neutral 连接。
-	if pool.neutralPrewarmPercent() <= 0 {
-		return
-	}
-
-	if s.accountRepo == nil {
-		return
-	}
 	accounts, err := s.accountRepo.ListSchedulableByPlatform(runCtx, PlatformOpenAI)
-	if err != nil || len(accounts) == 0 {
+	pool := s.getOpenAIWSConnPool()
+	if pool == nil {
+		return
+	}
+	if err != nil {
+		pool.ReconcileShrink()
 		return
 	}
 
-	g, gctx := errgroup.WithContext(runCtx)
-	g.SetLimit(openAIWSReconcilePrewarmConcurrency)
+	targets := make(map[int64]openAIWSPoolReconcileTarget, len(accounts))
+	prewarmCandidates := make([]struct {
+		account *Account
+		target  int
+	}, 0, len(accounts))
 	for i := range accounts {
 		account := accounts[i]
 		acc := &account
@@ -105,9 +104,31 @@ func (s *OpenAIGatewayService) runOpenAIWSPoolReconcileRound(ctx context.Context
 			continue
 		}
 		target := pool.neutralPrewarmTargetForAccount(acc)
-		if target <= 0 {
-			continue
+		targets[acc.ID] = openAIWSPoolReconcileTarget{
+			accountConcurrency: acc.Concurrency,
 		}
+		if target > 0 {
+			prewarmCandidates = append(prewarmCandidates, struct {
+				account *Account
+				target  int
+			}{account: acc, target: target})
+		}
+	}
+
+	// 1) 收缩：按最新账号可调度/WS 模式快照回收不再 eligible 的账号空闲连接，
+	// 并按当前 target 收缩多余 neutral stock。
+	pool.ReconcileTargets(targets)
+
+	// 2) 扩张：仅当 neutral target > 0 时为可调度账号预热 neutral 连接。
+	if len(prewarmCandidates) == 0 {
+		return
+	}
+
+	g, gctx := errgroup.WithContext(runCtx)
+	g.SetLimit(openAIWSReconcilePrewarmConcurrency)
+	for _, candidate := range prewarmCandidates {
+		acc := candidate.account
+		target := candidate.target
 		g.Go(func() error {
 			s.prewarmNeutralForAccount(gctx, pool, acc, target)
 			return nil

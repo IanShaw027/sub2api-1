@@ -106,6 +106,71 @@ func TestCommonRoutesClaudeTelemetryForwardModeUsesAPIKeyAuth(t *testing.T) {
 	require.JSONEq(t, `{}`, w.Body.String())
 }
 
+func TestCommonRoutesClaudeTelemetryForwardModeMissingAPIKeyStillReturnsOK(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	authCalls := 0
+	settingService := service.NewSettingService(&commonRoutesSettingRepoStub{values: map[string]string{service.SettingKeyClaudeTelemetryMode: service.ClaudeTelemetryModeForward}}, &config.Config{})
+	RegisterCommonRoutes(router, &handler.Handlers{Gateway: &handler.GatewayHandler{}}, servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+		authCalls++
+		c.AbortWithStatus(http.StatusUnauthorized)
+	}), settingService, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/event_logging/batch", strings.NewReader(`{"events":[]}`))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, 1, authCalls)
+	require.JSONEq(t, `{}`, w.Body.String())
+}
+
+func TestCommonRoutesClaudeTelemetryForwardModeBillingAbortStillReturnsOK(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	authCalls := 0
+	settingService := service.NewSettingService(&commonRoutesSettingRepoStub{values: map[string]string{service.SettingKeyClaudeTelemetryMode: service.ClaudeTelemetryModeForward}}, &config.Config{})
+	RegisterCommonRoutes(router, &handler.Handlers{Gateway: &handler.GatewayHandler{}}, servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+		authCalls++
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "quota exhausted"})
+	}), settingService, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/event_logging/batch", strings.NewReader(`{"events":[]}`))
+	req.Header.Set("Authorization", "Bearer exhausted")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, 1, authCalls)
+	require.JSONEq(t, `{}`, w.Body.String())
+}
+
+func TestCommonRoutesClaudeTelemetryForwardModeMarksAPIKeyAuthBillingSkipped(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	authSawSkipBilling := false
+	groupID := int64(10)
+	settingService := service.NewSettingService(&commonRoutesSettingRepoStub{values: map[string]string{service.SettingKeyClaudeTelemetryMode: service.ClaudeTelemetryModeForward}}, &config.Config{})
+	RegisterCommonRoutes(router, &handler.Handlers{Gateway: &handler.GatewayHandler{}}, servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+		authSawSkipBilling = c.GetBool("skip_api_key_billing")
+		if !authSawSkipBilling {
+			c.AbortWithStatus(http.StatusTooManyRequests)
+			return
+		}
+		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{GroupID: &groupID, Group: &service.Group{ID: groupID, Platform: service.PlatformAnthropic}})
+		c.Next()
+	}), settingService, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/event_logging/batch", strings.NewReader(`{"events":[]}`))
+	req.Header.Set("Authorization", "Bearer exhausted")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.True(t, authSawSkipBilling)
+	require.JSONEq(t, `{}`, w.Body.String())
+}
+
 func TestCommonRoutesClaudeAuxPolicyLimitsStub(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

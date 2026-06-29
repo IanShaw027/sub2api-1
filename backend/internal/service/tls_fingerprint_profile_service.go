@@ -181,6 +181,74 @@ func (s *TLSFingerprintProfileService) getRandomProfileForPlatform(platform stri
 	return profiles[rand.IntN(len(profiles))].ToTLSProfile()
 }
 
+// getRandomProfileForDimension 从匹配 platform + os(+client_type) 的模板中随机选一个。
+// os/clientType 为空表示该维度不约束。platform 为空模板视为通用（shared）。
+func (s *TLSFingerprintProfileService) getRandomProfileForDimension(platform, os, clientType string) *tlsfingerprint.Profile {
+	s.localMu.RLock()
+	defer s.localMu.RUnlock()
+
+	if len(s.localCache) == 0 {
+		return nil
+	}
+
+	normPlatform := strings.ToLower(strings.TrimSpace(platform))
+	normOS := strings.ToLower(strings.TrimSpace(os))
+	normClient := strings.ToLower(strings.TrimSpace(clientType))
+
+	profiles := make([]*model.TLSFingerprintProfile, 0, len(s.localCache))
+	for _, p := range s.localCache {
+		if p == nil {
+			continue
+		}
+		pPlatform := strings.ToLower(strings.TrimSpace(p.Platform))
+		if pPlatform != "" && pPlatform != normPlatform {
+			continue
+		}
+		if normOS != "" {
+			pOS := strings.ToLower(strings.TrimSpace(p.OS))
+			if pOS != "" && pOS != normOS {
+				continue
+			}
+		}
+		if normClient != "" {
+			pClient := strings.ToLower(strings.TrimSpace(p.ClientType))
+			if pClient != "" && pClient != normClient {
+				continue
+			}
+		}
+		profiles = append(profiles, p)
+	}
+	if len(profiles) == 0 {
+		return nil
+	}
+	return profiles[rand.IntN(len(profiles))].ToTLSProfile()
+}
+
+// ResolveTLSProfileForDimension 按账号的「OS×client 绑定矩阵」解析运行时 Profile。
+//
+// 逻辑：
+//  1. 未启用 TLS 指纹 → nil
+//  2. 按 (os, clientType) 维度解析出 profileID（含旧单值降级）
+//  3. profileID>0 → 查模板；==-1 → 同维度随机；否则 → 空 Profile（内置默认）
+func (s *TLSFingerprintProfileService) ResolveTLSProfileForDimension(account *Account, os, clientType string) *tlsfingerprint.Profile {
+	if account == nil || !account.IsTLSFingerprintEnabled() {
+		return nil
+	}
+	id := account.GetTLSFingerprintProfileIDForDimension(os, clientType)
+	if id > 0 {
+		if p := s.GetProfileByID(id); p != nil {
+			return p
+		}
+	}
+	if id == -1 {
+		if p := s.getRandomProfileForDimension(account.Platform, os, clientType); p != nil {
+			return p
+		}
+	}
+	return &tlsfingerprint.Profile{Name: "Built-in Default (Node.js 24.x)"}
+}
+
+
 // ResolveTLSProfile 根据 Account 的配置解析出运行时 TLS Profile。
 //
 // 逻辑：
@@ -190,6 +258,13 @@ func (s *TLSFingerprintProfileService) getRandomProfileForPlatform(platform stri
 func (s *TLSFingerprintProfileService) ResolveTLSProfile(account *Account) *tlsfingerprint.Profile {
 	if account == nil || !account.IsTLSFingerprintEnabled() {
 		return nil
+	}
+	// 非 OpenAI 路径没有入站 UA 上下文，无法用路由判定维度。
+	// 若账号配置了默认 OS，则按该 OS 维度从绑定矩阵解析（每账号可不同）。
+	if defaultOS := account.GetTLSFingerprintDefaultOS(); defaultOS != "" {
+		if p := s.ResolveTLSProfileForDimension(account, defaultOS, ""); p != nil {
+			return p
+		}
 	}
 	id := account.GetTLSFingerprintProfileID()
 	if id > 0 {

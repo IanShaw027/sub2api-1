@@ -124,13 +124,13 @@ if (enableTLSFingerprint.value) {
 
 ```sql
 -- 查看 group=14 的账号 TLS 指纹配置
-SELECT 
-    id, 
+SELECT
+    id,
     name,
     extra->>'enable_tls_fingerprint' as tls_enabled,
     extra->>'tls_fingerprint_profile_id' as profile_id,
     extra->>'tls_fingerprint_router_id' as router_id
-FROM accounts 
+FROM accounts
 WHERE id IN (SELECT account_id FROM account_groups WHERE group_id = 14)
 AND deleted_at IS NULL
 LIMIT 20;

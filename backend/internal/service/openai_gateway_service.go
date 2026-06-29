@@ -684,6 +684,7 @@ func NewOpenAIGatewayService(
 	}
 	svc.registerOpenAIWSPoolReconcileHook()
 	svc.logOpenAIWSModeBootstrap()
+	TriggerOpenAIWSPoolReconcile()
 	return svc
 }
 

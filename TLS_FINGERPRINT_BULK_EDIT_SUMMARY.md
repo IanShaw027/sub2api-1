@@ -43,7 +43,7 @@
 #### SQL 批量配置（已验证）
 ```sql
 UPDATE accounts
-SET extra = COALESCE(extra, '{}'::jsonb) || 
+SET extra = COALESCE(extra, '{}'::jsonb) ||
     jsonb_build_object(
         'enable_tls_fingerprint', true,
         'tls_fingerprint_router_id', 2

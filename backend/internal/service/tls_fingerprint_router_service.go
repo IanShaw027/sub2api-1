@@ -32,6 +32,8 @@ type TLSFingerprintRouterCache interface {
 // TLSFingerprintRouterMatchResult 表示一次 UA 路由命中的结果。
 type TLSFingerprintRouterMatchResult struct {
 	ProfileID          int64
+	OS                 string
+	ClientType         string
 	UpstreamUserAgent  string
 	UpstreamOriginator string
 }
@@ -156,6 +158,8 @@ func (s *TLSFingerprintRouterService) MatchRequest(ctx context.Context, routerID
 		}
 		return TLSFingerprintRouterMatchResult{
 			ProfileID:          rule.TLSFingerprintProfileID,
+			OS:                 strings.ToLower(strings.TrimSpace(rule.OS)),
+			ClientType:         strings.ToLower(strings.TrimSpace(rule.ClientType)),
 			UpstreamUserAgent:  strings.TrimSpace(rule.UpstreamUserAgent),
 			UpstreamOriginator: strings.TrimSpace(rule.UpstreamOriginator),
 		}, true

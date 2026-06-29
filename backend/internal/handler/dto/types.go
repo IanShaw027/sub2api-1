@@ -238,6 +238,11 @@ type Account struct {
 	EnableTLSFingerprint    *bool  `json:"enable_tls_fingerprint,omitempty"`
 	TLSFingerprintProfileID *int64 `json:"tls_fingerprint_profile_id,omitempty"`
 	TLSFingerprintRouterID  *int64 `json:"tls_fingerprint_router_id,omitempty"`
+	// TLSFingerprintBindings 是「OS(/client_type) 维度 → 模板ID」绑定矩阵，
+	// 实现每账号按操作系统/客户端类型绑定不同模板。
+	TLSFingerprintBindings map[string]int64 `json:"tls_fingerprint_bindings,omitempty"`
+	// TLSFingerprintDefaultOS 为非 OpenAI 平台（无入站UA上下文）指定默认 OS 维度。
+	TLSFingerprintDefaultOS *string `json:"tls_fingerprint_default_os,omitempty"`
 
 	// 会话ID伪装（仅 Anthropic OAuth/SetupToken 账号有效）
 	// 启用后将在15分钟内固定 metadata.user_id 中的 session ID

@@ -38,8 +38,13 @@ type TLSFingerprintRouterRule struct {
 	Pattern                 string `json:"pattern"`
 	CaseSensitive           bool   `json:"case_sensitive"`
 	TLSFingerprintProfileID int64  `json:"tls_fingerprint_profile_id"`
-	UpstreamUserAgent       string `json:"upstream_user_agent,omitempty"`
-	UpstreamOriginator      string `json:"upstream_originator,omitempty"`
+	// OS / ClientType: 命中后输出的「判定维度」。非空时，账号侧据此在
+	// tls_fingerprint_bindings 矩阵中解析出该账号专属的具体模板（每账号可不同）。
+	// 留空表示该规则不参与维度判定，沿用 TLSFingerprintProfileID 直出（向后兼容）。
+	OS                 string `json:"os,omitempty"`
+	ClientType         string `json:"client_type,omitempty"`
+	UpstreamUserAgent  string `json:"upstream_user_agent,omitempty"`
+	UpstreamOriginator string `json:"upstream_originator,omitempty"`
 }
 
 // Validate 验证路由配置的有效性。
@@ -67,8 +72,16 @@ func (r *TLSFingerprintRouterRule) Validate(index int) error {
 	if strings.TrimSpace(r.Pattern) == "" {
 		return &ValidationError{Field: prefix + ".pattern", Message: "rule pattern is required"}
 	}
-	if r.TLSFingerprintProfileID <= 0 {
-		return &ValidationError{Field: prefix + ".tls_fingerprint_profile_id", Message: "tls fingerprint profile is required"}
+	// 规则必须能产出 profile：要么直出 profileID，要么输出判定维度（OS/ClientType）
+	// 让账号矩阵去解析。两者都没有则无效。
+	hasDimension := strings.TrimSpace(r.OS) != "" || strings.TrimSpace(r.ClientType) != ""
+	if r.TLSFingerprintProfileID <= 0 && !hasDimension {
+		return &ValidationError{Field: prefix + ".tls_fingerprint_profile_id", Message: "either tls fingerprint profile or os/client_type dimension is required"}
+	}
+	switch strings.ToLower(strings.TrimSpace(r.OS)) {
+	case "", "windows", "macos", "linux":
+	default:
+		return &ValidationError{Field: prefix + ".os", Message: "os must be empty, windows, macos, or linux"}
 	}
 	switch strings.TrimSpace(r.Transport) {
 	case "", TLSFingerprintRouterTransportHTTP, TLSFingerprintRouterTransportWebSocket:

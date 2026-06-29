@@ -1238,6 +1238,8 @@ export interface Account<
   enable_tls_fingerprint?: boolean | null
   tls_fingerprint_profile_id?: number | null
   tls_fingerprint_router_id?: number | null
+  tls_fingerprint_bindings?: Record<string, number> | null
+  tls_fingerprint_default_os?: string | null
 
   // 会话ID伪装（仅 Anthropic OAuth/SetupToken 账号有效）
   // 启用后将在15分钟内固定 metadata.user_id 中的 session ID

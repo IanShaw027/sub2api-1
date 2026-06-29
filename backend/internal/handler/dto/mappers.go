@@ -270,11 +270,17 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		if enabled, ok := boolExtraValue(a.Extra, "enable_tls_fingerprint"); ok {
 			out.EnableTLSFingerprint = &enabled
 		}
-		if profileID := a.GetTLSFingerprintProfileID(); profileID > 0 {
+		if profileID := a.GetTLSFingerprintProfileID(); profileID != 0 {
 			out.TLSFingerprintProfileID = &profileID
 		}
 		if routerID := a.GetTLSFingerprintRouterID(); routerID > 0 {
 			out.TLSFingerprintRouterID = &routerID
+		}
+		if bindings := a.GetTLSFingerprintBindings(); len(bindings) > 0 {
+			out.TLSFingerprintBindings = bindings
+		}
+		if defaultOS := a.GetTLSFingerprintDefaultOS(); defaultOS != "" {
+			out.TLSFingerprintDefaultOS = &defaultOS
 		}
 	}
 
@@ -402,7 +408,10 @@ func supportsAccountTLSFingerprint(a *service.Account) bool {
 	if a == nil {
 		return false
 	}
-	return a.IsAnthropicOAuthOrSetupToken() || a.Platform == service.PlatformOpenAI || (a.Platform == service.PlatformKiro && a.Type == service.AccountTypeOAuth)
+	return a.IsAnthropicOAuthOrSetupToken() ||
+		a.Platform == service.PlatformOpenAI ||
+		(a.Platform == service.PlatformKiro && a.Type == service.AccountTypeOAuth) ||
+		(a.Platform == service.PlatformGrok && a.Type == service.AccountTypeOAuth)
 }
 
 func boolExtraValue(extra map[string]any, key string) (bool, bool) {

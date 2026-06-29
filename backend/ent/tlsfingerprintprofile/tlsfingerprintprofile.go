@@ -23,6 +23,10 @@ const (
 	FieldPlatform = "platform"
 	// FieldTransport holds the string denoting the transport field in the database.
 	FieldTransport = "transport"
+	// FieldOs holds the string denoting the os field in the database.
+	FieldOs = "os"
+	// FieldClientType holds the string denoting the client_type field in the database.
+	FieldClientType = "client_type"
 	// FieldUserAgent holds the string denoting the user_agent field in the database.
 	FieldUserAgent = "user_agent"
 	// FieldOriginator holds the string denoting the originator field in the database.
@@ -71,6 +75,8 @@ var Columns = []string{
 	FieldName,
 	FieldPlatform,
 	FieldTransport,
+	FieldOs,
+	FieldClientType,
 	FieldUserAgent,
 	FieldOriginator,
 	FieldDescription,
@@ -118,6 +124,14 @@ var (
 	DefaultTransport string
 	// TransportValidator is a validator for the "transport" field. It is called by the builders before save.
 	TransportValidator func(string) error
+	// DefaultOs holds the default value on creation for the "os" field.
+	DefaultOs string
+	// OsValidator is a validator for the "os" field. It is called by the builders before save.
+	OsValidator func(string) error
+	// DefaultClientType holds the default value on creation for the "client_type" field.
+	DefaultClientType string
+	// ClientTypeValidator is a validator for the "client_type" field. It is called by the builders before save.
+	ClientTypeValidator func(string) error
 	// DefaultUserAgent holds the default value on creation for the "user_agent" field.
 	DefaultUserAgent string
 	// UserAgentValidator is a validator for the "user_agent" field. It is called by the builders before save.
@@ -161,6 +175,16 @@ func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 // ByTransport orders the results by the transport field.
 func ByTransport(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTransport, opts...).ToFunc()
+}
+
+// ByOs orders the results by the os field.
+func ByOs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOs, opts...).ToFunc()
+}
+
+// ByClientType orders the results by the client_type field.
+func ByClientType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldClientType, opts...).ToFunc()
 }
 
 // ByUserAgent orders the results by the user_agent field.

@@ -168,9 +168,9 @@ func TestNormalizeSystemPromptPII_StringSystem(t *testing.T) {
 		t.Error("original git user should not remain")
 	}
 
-	// Working directory replaced
-	if !strings.Contains(sys, "/Users/jordan/projects/webapp") {
-		t.Error("working directory should be replaced with profile workDir")
+	// Working directory replaced with a realistic fake path that keeps the real project basename.
+	if !strings.Contains(sys, "/Users/jordan/projects/real-project") {
+		t.Error("working directory should be replaced with profile workDir parent and real project basename")
 	}
 	if strings.Contains(sys, "/Users/alice/real-project") {
 		t.Error("original working directory should not remain")
@@ -214,8 +214,8 @@ func TestNormalizeSystemPromptPII_StringSystem(t *testing.T) {
 	if wdr.RealDir != "/Users/alice/real-project" {
 		t.Errorf("wdr.RealDir: got %q, want /Users/alice/real-project", wdr.RealDir)
 	}
-	if wdr.FakeDir != "/Users/jordan/projects/webapp" {
-		t.Errorf("wdr.FakeDir: got %q, want /Users/jordan/projects/webapp", wdr.FakeDir)
+	if wdr.FakeDir != "/Users/jordan/projects/real-project" {
+		t.Errorf("wdr.FakeDir: got %q, want /Users/jordan/projects/real-project", wdr.FakeDir)
 	}
 }
 
@@ -262,7 +262,7 @@ func TestNormalizeSystemPromptPII_ArraySystem(t *testing.T) {
 	if !strings.Contains(block1, "Git user: Sam") {
 		t.Errorf("block 1 should contain profile git user, got: %q", block1)
 	}
-	if !strings.Contains(block1, "/home/sam/projects/api-server") {
+	if !strings.Contains(block1, "/home/sam/projects/myproject") {
 		t.Errorf("block 1 should contain profile workDir, got: %q", block1)
 	}
 	if strings.Contains(block1, "bob@corp.io") || strings.Contains(block1, "Bob Smith") {
@@ -438,6 +438,58 @@ func TestClientMetadataNotPresentInCleanBody(t *testing.T) {
 	result := safeDeleteJSONKey(body, "client_metadata")
 	if string(result) != string(body) {
 		t.Error("body without client_metadata should be unchanged after delete attempt")
+	}
+}
+
+func TestRewriteSystemReminderEnvBlocksWithWorkDirRewrite_CapturesDirectoryForResponseRestore(t *testing.T) {
+	body := []byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"<system-reminder>Platform: linux\nShell: bash\nOS Version: Linux 6.8\nWorking directory: /opt/sub2api\n</system-reminder>\nRead /opt/sub2api/CLAUDE.md"}]}]}`)
+	profile := &AccountEnvProfile{
+		GitUser:   "Jordan",
+		WorkDir:   "/Users/jordan/projects/webapp",
+		Platform:  "darwin",
+		Shell:     "zsh",
+		OSVersion: "Darwin 24.3.0",
+	}
+
+	got, wdr := RewriteSystemReminderEnvBlocksWithWorkDirRewrite(body, profile)
+	if wdr == nil {
+		t.Fatal("system-reminder directory rewrite should be captured for response restore")
+	}
+	if wdr.RealDir != "/opt/sub2api" {
+		t.Fatalf("wdr.RealDir = %q, want /opt/sub2api", wdr.RealDir)
+	}
+	if wdr.FakeDir != "/Users/jordan/projects/sub2api" {
+		t.Fatalf("wdr.FakeDir = %q, want /Users/jordan/projects/sub2api", wdr.FakeDir)
+	}
+	replaced := replaceWorkDirInBody(got, wdr)
+	if strings.Contains(string(replaced), "/opt/sub2api") {
+		t.Fatalf("real directory should be replaced throughout body: %s", replaced)
+	}
+	if !strings.Contains(string(replaced), "/Users/jordan/projects/sub2api/CLAUDE.md") {
+		t.Fatalf("non-reminder body paths should use fake directory after full-body replacement: %s", replaced)
+	}
+}
+
+func TestShouldApplyClaudeAntiBanBodyTransformsForAccount_RequiresOAuthAndEnabled(t *testing.T) {
+	oauth := &Account{Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+	setup := &Account{Platform: PlatformAnthropic, Type: AccountTypeSetupToken}
+	apiKey := &Account{Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
+	openAI := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	if !shouldApplyClaudeAntiBanBodyTransformsForAccount(oauth, true) {
+		t.Fatal("enabled Anthropic OAuth should apply Claude anti-ban body transforms")
+	}
+	if !shouldApplyClaudeAntiBanBodyTransformsForAccount(setup, true) {
+		t.Fatal("enabled Anthropic setup-token should apply Claude anti-ban body transforms")
+	}
+	if shouldApplyClaudeAntiBanBodyTransformsForAccount(apiKey, true) {
+		t.Fatal("Anthropic APIKey must not apply Claude anti-ban body transforms")
+	}
+	if shouldApplyClaudeAntiBanBodyTransformsForAccount(oauth, false) {
+		t.Fatal("disabled anti-ban platform toggle must disable Claude body transforms")
+	}
+	if shouldApplyClaudeAntiBanBodyTransformsForAccount(openAI, true) {
+		t.Fatal("non-Anthropic OAuth must not apply Claude body transforms")
 	}
 }
 

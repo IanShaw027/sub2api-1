@@ -52,6 +52,8 @@ func (r *tlsFingerprintProfileRepository) Create(ctx context.Context, p *model.T
 		SetName(p.Name).
 		SetPlatform(p.Platform).
 		SetTransport(p.Transport).
+		SetOs(p.OS).
+		SetClientType(p.ClientType).
 		SetUserAgent(p.UserAgent).
 		SetOriginator(p.Originator).
 		SetEnableGrease(p.EnableGREASE)
@@ -115,6 +117,8 @@ func (r *tlsFingerprintProfileRepository) Update(ctx context.Context, p *model.T
 		SetName(p.Name).
 		SetPlatform(p.Platform).
 		SetTransport(p.Transport).
+		SetOs(p.OS).
+		SetClientType(p.ClientType).
 		SetUserAgent(p.UserAgent).
 		SetOriginator(p.Originator).
 		SetEnableGrease(p.EnableGREASE)
@@ -214,6 +218,8 @@ func (r *tlsFingerprintProfileRepository) toModel(e *ent.TLSFingerprintProfile) 
 		ID:                             e.ID,
 		Platform:                       e.Platform,
 		Transport:                      e.Transport,
+		OS:                             e.Os,
+		ClientType:                     e.ClientType,
 		Name:                           e.Name,
 		UserAgent:                      e.UserAgent,
 		Originator:                     e.Originator,

@@ -22,6 +22,8 @@ const (
 	ContextKeyAPIKey ContextKey = "api_key"
 	// ContextKeySubscription 订阅上下文键
 	ContextKeySubscription ContextKey = "subscription"
+	// ContextKeySkipAPIKeyBilling 让 API Key 鉴权只执行身份校验，跳过过期/配额/订阅/余额等计费拦截。
+	ContextKeySkipAPIKeyBilling ContextKey = "skip_api_key_billing"
 	// ContextKeyForcePlatform 强制平台（用于 /antigravity 路由）
 	ContextKeyForcePlatform ContextKey = "force_platform"
 	// ContextKeyOpsFallbackAPIKey 运维错误日志专用回退键。

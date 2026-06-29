@@ -28,6 +28,10 @@ type TLSFingerprintProfile struct {
 	Platform string `json:"platform,omitempty"`
 	// Transport holds the value of the "transport" field.
 	Transport string `json:"transport,omitempty"`
+	// Os holds the value of the "os" field.
+	Os string `json:"os,omitempty"`
+	// ClientType holds the value of the "client_type" field.
+	ClientType string `json:"client_type,omitempty"`
 	// UserAgent holds the value of the "user_agent" field.
 	UserAgent string `json:"user_agent,omitempty"`
 	// Originator holds the value of the "originator" field.
@@ -78,7 +82,7 @@ func (*TLSFingerprintProfile) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case tlsfingerprintprofile.FieldID:
 			values[i] = new(sql.NullInt64)
-		case tlsfingerprintprofile.FieldName, tlsfingerprintprofile.FieldPlatform, tlsfingerprintprofile.FieldTransport, tlsfingerprintprofile.FieldUserAgent, tlsfingerprintprofile.FieldOriginator, tlsfingerprintprofile.FieldDescription:
+		case tlsfingerprintprofile.FieldName, tlsfingerprintprofile.FieldPlatform, tlsfingerprintprofile.FieldTransport, tlsfingerprintprofile.FieldOs, tlsfingerprintprofile.FieldClientType, tlsfingerprintprofile.FieldUserAgent, tlsfingerprintprofile.FieldOriginator, tlsfingerprintprofile.FieldDescription:
 			values[i] = new(sql.NullString)
 		case tlsfingerprintprofile.FieldCreatedAt, tlsfingerprintprofile.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -132,6 +136,18 @@ func (_m *TLSFingerprintProfile) assignValues(columns []string, values []any) er
 				return fmt.Errorf("unexpected type %T for field transport", values[i])
 			} else if value.Valid {
 				_m.Transport = value.String
+			}
+		case tlsfingerprintprofile.FieldOs:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field os", values[i])
+			} else if value.Valid {
+				_m.Os = value.String
+			}
+		case tlsfingerprintprofile.FieldClientType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field client_type", values[i])
+			} else if value.Valid {
+				_m.ClientType = value.String
 			}
 		case tlsfingerprintprofile.FieldUserAgent:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -320,6 +336,12 @@ func (_m *TLSFingerprintProfile) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("transport=")
 	builder.WriteString(_m.Transport)
+	builder.WriteString(", ")
+	builder.WriteString("os=")
+	builder.WriteString(_m.Os)
+	builder.WriteString(", ")
+	builder.WriteString("client_type=")
+	builder.WriteString(_m.ClientType)
 	builder.WriteString(", ")
 	builder.WriteString("user_agent=")
 	builder.WriteString(_m.UserAgent)

@@ -2291,6 +2291,100 @@ func (a *Account) GetTLSFingerprintRouterID() int64 {
 	return 0
 }
 
+// tlsFPInt64FromAny 容错解析 Extra 中可能为 float64/int/int64/json.Number 的整数值。
+func tlsFPInt64FromAny(v any) (int64, bool) {
+	switch id := v.(type) {
+	case float64:
+		return int64(id), true
+	case int64:
+		return id, true
+	case int:
+		return int64(id), true
+	case json.Number:
+		if i, err := id.Int64(); err == nil {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// GetTLSFingerprintBindings 返回账号的「维度 → 模板ID」绑定矩阵。
+// key 为 os（如 "macos"）或 os/client_type（如 "macos/codex-cli"）。
+// value 为 profileID：>0 指定模板，-1 同维度随机，0/缺省 表示回退。
+// 返回 nil 表示未配置矩阵（调用方应降级到旧单值 tls_fingerprint_profile_id）。
+func (a *Account) GetTLSFingerprintBindings() map[string]int64 {
+	if a.Extra == nil {
+		return nil
+	}
+	raw, ok := a.Extra["tls_fingerprint_bindings"]
+	if !ok || raw == nil {
+		return nil
+	}
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return nil
+	}
+	out := make(map[string]int64, len(m))
+	for k, v := range m {
+		key := strings.ToLower(strings.TrimSpace(k))
+		if key == "" {
+			continue
+		}
+		if id, ok := tlsFPInt64FromAny(v); ok {
+			out[key] = id
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// GetTLSFingerprintDefaultOS 返回非 OpenAI 平台使用的默认 OS 维度（windows/macos/linux）。
+// 空字符串表示未配置（调用方应降级到旧单值逻辑）。
+func (a *Account) GetTLSFingerprintDefaultOS() string {
+	if a.Extra == nil {
+		return ""
+	}
+	if v, ok := a.Extra["tls_fingerprint_default_os"].(string); ok {
+		os := strings.ToLower(strings.TrimSpace(v))
+		switch os {
+		case "windows", "macos", "linux":
+			return os
+		}
+	}
+	return ""
+}
+
+// GetTLSFingerprintProfileIDForDimension 按 (os, clientType) 维度解析账号应使用的模板 ID。
+//
+// 解析优先级（命中即返回，含旧单值降级）：
+//  1. bindings["os/client_type"]（当 clientType 非空）
+//  2. bindings["os"]
+//  3. 旧单值 tls_fingerprint_profile_id（向后兼容现有账号）
+//
+// 返回值语义：>0 指定模板，-1 同维度随机，0 表示无绑定（调用方回退内置默认）。
+func (a *Account) GetTLSFingerprintProfileIDForDimension(os, clientType string) int64 {
+	os = strings.ToLower(strings.TrimSpace(os))
+	clientType = strings.ToLower(strings.TrimSpace(clientType))
+	bindings := a.GetTLSFingerprintBindings()
+	if len(bindings) > 0 {
+		if os != "" && clientType != "" {
+			if id, ok := bindings[os+"/"+clientType]; ok && id != 0 {
+				return id
+			}
+		}
+		if os != "" {
+			if id, ok := bindings[os]; ok && id != 0 {
+				return id
+			}
+		}
+	}
+	// 降级：旧单值
+	return a.GetTLSFingerprintProfileID()
+}
+
+
 // GetUserMsgQueueMode 获取用户消息队列模式
 // "serialize" = 串行队列, "throttle" = 软性限速, "" = 未设置（使用全局配置）
 func (a *Account) GetUserMsgQueueMode() string {

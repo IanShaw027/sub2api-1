@@ -102,6 +102,6 @@ func TestRewriteSystemReminderEnvBlocks_RewritesOnlyReminderEnvironment(t *testi
 
 	require.Contains(t, text, "before Platform: linux")
 	require.Contains(t, text, "after Platform: linux")
-	require.Contains(t, text, "<system-reminder>Platform: darwin\nShell: zsh\nOS Version: Darwin 24.3.0\nWorking directory: /Users/alex/projects/webapp")
+	require.Contains(t, text, "<system-reminder>Platform: darwin\nShell: zsh\nOS Version: Darwin 24.3.0\nWorking directory: /Users/alex/projects/project")
 	require.NotContains(t, text, "Shell: bash")
 }

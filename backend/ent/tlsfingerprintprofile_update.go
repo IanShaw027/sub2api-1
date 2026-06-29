@@ -77,6 +77,34 @@ func (_u *TLSFingerprintProfileUpdate) SetNillableTransport(v *string) *TLSFinge
 	return _u
 }
 
+// SetOs sets the "os" field.
+func (_u *TLSFingerprintProfileUpdate) SetOs(v string) *TLSFingerprintProfileUpdate {
+	_u.mutation.SetOs(v)
+	return _u
+}
+
+// SetNillableOs sets the "os" field if the given value is not nil.
+func (_u *TLSFingerprintProfileUpdate) SetNillableOs(v *string) *TLSFingerprintProfileUpdate {
+	if v != nil {
+		_u.SetOs(*v)
+	}
+	return _u
+}
+
+// SetClientType sets the "client_type" field.
+func (_u *TLSFingerprintProfileUpdate) SetClientType(v string) *TLSFingerprintProfileUpdate {
+	_u.mutation.SetClientType(v)
+	return _u
+}
+
+// SetNillableClientType sets the "client_type" field if the given value is not nil.
+func (_u *TLSFingerprintProfileUpdate) SetNillableClientType(v *string) *TLSFingerprintProfileUpdate {
+	if v != nil {
+		_u.SetClientType(*v)
+	}
+	return _u
+}
+
 // SetUserAgent sets the "user_agent" field.
 func (_u *TLSFingerprintProfileUpdate) SetUserAgent(v string) *TLSFingerprintProfileUpdate {
 	_u.mutation.SetUserAgent(v)
@@ -443,6 +471,16 @@ func (_u *TLSFingerprintProfileUpdate) check() error {
 			return &ValidationError{Name: "transport", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.transport": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Os(); ok {
+		if err := tlsfingerprintprofile.OsValidator(v); err != nil {
+			return &ValidationError{Name: "os", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.os": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ClientType(); ok {
+		if err := tlsfingerprintprofile.ClientTypeValidator(v); err != nil {
+			return &ValidationError{Name: "client_type", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.client_type": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UserAgent(); ok {
 		if err := tlsfingerprintprofile.UserAgentValidator(v); err != nil {
 			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.user_agent": %w`, err)}
@@ -479,6 +517,12 @@ func (_u *TLSFingerprintProfileUpdate) sqlSave(ctx context.Context) (_node int, 
 	}
 	if value, ok := _u.mutation.Transport(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldTransport, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Os(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldOs, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ClientType(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldClientType, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.UserAgent(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldUserAgent, field.TypeString, value)
@@ -708,6 +752,34 @@ func (_u *TLSFingerprintProfileUpdateOne) SetTransport(v string) *TLSFingerprint
 func (_u *TLSFingerprintProfileUpdateOne) SetNillableTransport(v *string) *TLSFingerprintProfileUpdateOne {
 	if v != nil {
 		_u.SetTransport(*v)
+	}
+	return _u
+}
+
+// SetOs sets the "os" field.
+func (_u *TLSFingerprintProfileUpdateOne) SetOs(v string) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.SetOs(v)
+	return _u
+}
+
+// SetNillableOs sets the "os" field if the given value is not nil.
+func (_u *TLSFingerprintProfileUpdateOne) SetNillableOs(v *string) *TLSFingerprintProfileUpdateOne {
+	if v != nil {
+		_u.SetOs(*v)
+	}
+	return _u
+}
+
+// SetClientType sets the "client_type" field.
+func (_u *TLSFingerprintProfileUpdateOne) SetClientType(v string) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.SetClientType(v)
+	return _u
+}
+
+// SetNillableClientType sets the "client_type" field if the given value is not nil.
+func (_u *TLSFingerprintProfileUpdateOne) SetNillableClientType(v *string) *TLSFingerprintProfileUpdateOne {
+	if v != nil {
+		_u.SetClientType(*v)
 	}
 	return _u
 }
@@ -1091,6 +1163,16 @@ func (_u *TLSFingerprintProfileUpdateOne) check() error {
 			return &ValidationError{Name: "transport", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.transport": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Os(); ok {
+		if err := tlsfingerprintprofile.OsValidator(v); err != nil {
+			return &ValidationError{Name: "os", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.os": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ClientType(); ok {
+		if err := tlsfingerprintprofile.ClientTypeValidator(v); err != nil {
+			return &ValidationError{Name: "client_type", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.client_type": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UserAgent(); ok {
 		if err := tlsfingerprintprofile.UserAgentValidator(v); err != nil {
 			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.user_agent": %w`, err)}
@@ -1144,6 +1226,12 @@ func (_u *TLSFingerprintProfileUpdateOne) sqlSave(ctx context.Context) (_node *T
 	}
 	if value, ok := _u.mutation.Transport(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldTransport, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Os(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldOs, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ClientType(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldClientType, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.UserAgent(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldUserAgent, field.TypeString, value)

@@ -16,6 +16,8 @@ export interface TLSFingerprintRouterRule {
   pattern: string
   case_sensitive: boolean
   tls_fingerprint_profile_id: number
+  os?: string
+  client_type?: string
   upstream_user_agent?: string
   upstream_originator?: string
 }

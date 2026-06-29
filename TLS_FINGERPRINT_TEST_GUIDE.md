@@ -8,11 +8,11 @@
 
 ```sql
 -- 验证配置
-SELECT 
+SELECT
     COUNT(*) as total,
     COUNT(CASE WHEN extra->>'enable_tls_fingerprint' = 'true' THEN 1 END) as enabled_count,
     COUNT(CASE WHEN extra->>'tls_fingerprint_router_id' = '2' THEN 1 END) as router_count
-FROM accounts 
+FROM accounts
 WHERE id IN (SELECT account_id FROM account_groups WHERE group_id = 14)
 AND deleted_at IS NULL;
 
@@ -83,11 +83,11 @@ npm run dev
 
 **验证**：
 ```sql
-SELECT id, name, 
+SELECT id, name,
        extra->>'enable_tls_fingerprint' as enabled,
        extra->>'tls_fingerprint_profile_id' as profile,
        extra->>'tls_fingerprint_router_id' as router
-FROM accounts 
+FROM accounts
 WHERE id IN (选择的账号ID列表)
 AND deleted_at IS NULL;
 ```
@@ -104,9 +104,9 @@ AND deleted_at IS NULL;
 **验证**：
 ```sql
 -- 应该看到 enable_tls_fingerprint = false 或 null
-SELECT id, name, 
+SELECT id, name,
        extra->>'enable_tls_fingerprint' as enabled
-FROM accounts 
+FROM accounts
 WHERE id IN (选择的账号ID列表)
 AND deleted_at IS NULL;
 ```

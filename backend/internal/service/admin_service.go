@@ -702,6 +702,44 @@ func NewAdminService(
 	}
 }
 
+func isOpenAIWSPoolReconcileRelevantAccount(account *Account) bool {
+	return account != nil && account.IsOpenAIOAuth()
+}
+
+func triggerOpenAIWSPoolReconcileForAccountChange(wasRelevant bool, accounts ...*Account) {
+	if wasRelevant {
+		TriggerOpenAIWSPoolReconcile()
+		return
+	}
+	for _, account := range accounts {
+		if isOpenAIWSPoolReconcileRelevantAccount(account) {
+			TriggerOpenAIWSPoolReconcile()
+			return
+		}
+	}
+}
+
+func anyOpenAIWSPoolReconcileRelevantAccount(accounts []*Account) bool {
+	for _, account := range accounts {
+		if isOpenAIWSPoolReconcileRelevantAccount(account) {
+			return true
+		}
+	}
+	return false
+}
+
+func bulkUpdateMayAffectOpenAIWSPool(input *BulkUpdateAccountsInput) bool {
+	if input == nil {
+		return false
+	}
+	return input.ProxyID != nil ||
+		input.Concurrency != nil ||
+		input.Status != "" ||
+		input.Schedulable != nil ||
+		len(input.Credentials) > 0 ||
+		len(input.Extra) > 0
+}
+
 // User management implementations
 func (s *adminServiceImpl) ListUsers(ctx context.Context, page, pageSize int, filters UserListFilters, sortBy, sortOrder string) ([]User, int64, error) {
 	if isLiveUserConcurrencySort(sortBy) {
@@ -3183,6 +3221,7 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 			return nil, err
 		}
 	}
+	triggerOpenAIWSPoolReconcileForAccountChange(false, account)
 
 	// OAuth 账号：创建后异步设置隐私。
 	// 使用 Ensure（幂等）而非 Force：新建账号 Extra 为空时效果相同，但更安全。
@@ -3218,6 +3257,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		return nil, err
 	}
 	wasOveragesEnabled := account.IsOveragesEnabled()
+	wasOpenAIWSPoolRelevant := isOpenAIWSPoolReconcileRelevantAccount(account)
 
 	if input.Name != "" {
 		account.Name = input.Name
@@ -3356,6 +3396,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if err != nil {
 		return nil, err
 	}
+	triggerOpenAIWSPoolReconcileForAccountChange(wasOpenAIWSPoolRelevant, updated)
 	return updated, nil
 }
 
@@ -3365,7 +3406,15 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	if len(updates) == 0 {
 		return nil
 	}
-	return s.accountRepo.UpdateExtra(ctx, id, updates)
+	var wasOpenAIWSPoolRelevant bool
+	if account, err := s.accountRepo.GetByID(ctx, id); err == nil {
+		wasOpenAIWSPoolRelevant = isOpenAIWSPoolReconcileRelevantAccount(account)
+	}
+	if err := s.accountRepo.UpdateExtra(ctx, id, updates); err != nil {
+		return err
+	}
+	triggerOpenAIWSPoolReconcileForAccountChange(wasOpenAIWSPoolRelevant)
+	return nil
 }
 
 // BulkUpdateAccounts updates multiple accounts in one request.
@@ -3409,6 +3458,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			platformByID[account.ID] = account.Platform
 		}
 	}
+	shouldTriggerOpenAIWSPoolReconcile := bulkUpdateMayAffectOpenAIWSPool(input) && anyOpenAIWSPoolReconcileRelevantAccount(accounts)
 	for _, accountID := range input.AccountIDs {
 		if accountByID[accountID] == nil {
 			return nil, fmt.Errorf("account %d not found", accountID)
@@ -3478,7 +3528,11 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 				return nil, err
 			}
 		}
-		return s.finishBulkUpdateGroupBindings(ctx, input, result)
+		finished, err := s.finishBulkUpdateGroupBindings(ctx, input, result)
+		if err == nil && shouldTriggerOpenAIWSPoolReconcile {
+			TriggerOpenAIWSPoolReconcile()
+		}
+		return finished, err
 	}
 
 	// Prepare bulk updates for columns and JSONB fields.
@@ -3538,7 +3592,11 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 				return nil, err
 			}
 		}
-		return s.finishBulkUpdateGroupBindings(ctx, input, result)
+		finished, err := s.finishBulkUpdateGroupBindings(ctx, input, result)
+		if err == nil && shouldTriggerOpenAIWSPoolReconcile {
+			TriggerOpenAIWSPoolReconcile()
+		}
+		return finished, err
 	}
 
 	if hasAccountBulkUpdateFields(repoUpdates) {
@@ -3550,7 +3608,11 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			return nil, fmt.Errorf("bulk update affected %d of %d accounts", affected, len(input.AccountIDs))
 		}
 	}
-	return s.finishBulkUpdateGroupBindings(ctx, input, result)
+	finished, err := s.finishBulkUpdateGroupBindings(ctx, input, result)
+	if err == nil && shouldTriggerOpenAIWSPoolReconcile {
+		TriggerOpenAIWSPoolReconcile()
+	}
+	return finished, err
 }
 
 func (s *adminServiceImpl) finishBulkUpdateGroupBindings(ctx context.Context, input *BulkUpdateAccountsInput, result *BulkUpdateAccountsResult) (*BulkUpdateAccountsResult, error) {
@@ -3680,9 +3742,14 @@ func (s *adminServiceImpl) resolveBulkUpdateTargetIDs(ctx context.Context, filte
 	}
 }
 func (s *adminServiceImpl) DeleteAccount(ctx context.Context, id int64) error {
+	var wasOpenAIWSPoolRelevant bool
+	if account, err := s.accountRepo.GetByID(ctx, id); err == nil {
+		wasOpenAIWSPoolRelevant = isOpenAIWSPoolReconcileRelevantAccount(account)
+	}
 	if err := s.accountRepo.Delete(ctx, id); err != nil {
 		return err
 	}
+	triggerOpenAIWSPoolReconcileForAccountChange(wasOpenAIWSPoolRelevant)
 	return nil
 }
 
@@ -3718,9 +3785,15 @@ func (s *adminServiceImpl) RefreshAccountCredentials(ctx context.Context, id int
 		return nil, infraerrors.New(http.StatusConflict, "REFRESH_IN_PROGRESS", "account credential refresh is already in progress")
 	}
 	if result != nil && result.Account != nil {
+		triggerOpenAIWSPoolReconcileForAccountChange(false, result.Account)
 		return result.Account, nil
 	}
-	return s.accountRepo.GetByID(ctx, id)
+	updated, err := s.accountRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	triggerOpenAIWSPoolReconcileForAccountChange(false, updated)
+	return updated, nil
 }
 
 func (s *adminServiceImpl) findAccountCredentialRefreshExecutor(account *Account) OAuthRefreshExecutor {
@@ -3762,14 +3835,31 @@ func (s *adminServiceImpl) ClearAccountError(ctx context.Context, id int64) (*Ac
 	if s.runtimeBlocker != nil {
 		s.runtimeBlocker.ClearAccountSchedulingBlock(id)
 	}
-	return s.accountRepo.GetByID(ctx, id)
+	updated, err := s.accountRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	triggerOpenAIWSPoolReconcileForAccountChange(false, updated)
+	return updated, nil
 }
 
 func (s *adminServiceImpl) SetAccountError(ctx context.Context, id int64, errorMsg string) error {
-	return s.accountRepo.SetError(ctx, id, errorMsg)
+	var wasOpenAIWSPoolRelevant bool
+	if account, err := s.accountRepo.GetByID(ctx, id); err == nil {
+		wasOpenAIWSPoolRelevant = isOpenAIWSPoolReconcileRelevantAccount(account)
+	}
+	if err := s.accountRepo.SetError(ctx, id, errorMsg); err != nil {
+		return err
+	}
+	triggerOpenAIWSPoolReconcileForAccountChange(wasOpenAIWSPoolRelevant)
+	return nil
 }
 
 func (s *adminServiceImpl) SetAccountSchedulable(ctx context.Context, id int64, schedulable bool) (*Account, error) {
+	var wasOpenAIWSPoolRelevant bool
+	if account, err := s.accountRepo.GetByID(ctx, id); err == nil {
+		wasOpenAIWSPoolRelevant = isOpenAIWSPoolReconcileRelevantAccount(account)
+	}
 	if err := s.accountRepo.SetSchedulable(ctx, id, schedulable); err != nil {
 		return nil, err
 	}
@@ -3777,6 +3867,7 @@ func (s *adminServiceImpl) SetAccountSchedulable(ctx context.Context, id int64, 
 	if err != nil {
 		return nil, err
 	}
+	triggerOpenAIWSPoolReconcileForAccountChange(wasOpenAIWSPoolRelevant, updated)
 	return updated, nil
 }
 

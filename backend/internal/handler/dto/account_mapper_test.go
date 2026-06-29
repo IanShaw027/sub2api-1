@@ -80,6 +80,54 @@ func TestAccountFromServiceExposesOpenAITLSFingerprintConfig(t *testing.T) {
 	require.Equal(t, int64(7), *out.TLSFingerprintRouterID)
 }
 
+func TestAccountFromServiceExposesGrokOAuthTLSFingerprintConfig(t *testing.T) {
+	account := &service.Account{
+		Platform: service.PlatformGrok,
+		Type:     service.AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(42),
+		},
+	}
+
+	out := AccountFromService(account)
+	require.NotNil(t, out)
+	require.NotNil(t, out.EnableTLSFingerprint)
+	require.True(t, *out.EnableTLSFingerprint)
+	require.NotNil(t, out.TLSFingerprintProfileID)
+	require.Equal(t, int64(42), *out.TLSFingerprintProfileID)
+}
+
+func TestAccountFromServiceExposesRandomTLSFingerprintProfile(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform string
+		typ      string
+	}{
+		{name: "openai oauth", platform: service.PlatformOpenAI, typ: service.AccountTypeOAuth},
+		{name: "kiro oauth", platform: service.PlatformKiro, typ: service.AccountTypeOAuth},
+		{name: "grok oauth", platform: service.PlatformGrok, typ: service.AccountTypeOAuth},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := &service.Account{
+				Platform: tt.platform,
+				Type:     tt.typ,
+				Extra: map[string]any{
+					"enable_tls_fingerprint":     true,
+					"tls_fingerprint_profile_id": int64(-1),
+				},
+			}
+
+			out := AccountFromService(account)
+			require.NotNil(t, out)
+			require.NotNil(t, out.TLSFingerprintProfileID)
+			require.Equal(t, int64(-1), *out.TLSFingerprintProfileID)
+		})
+	}
+}
+
 func TestAccountFromServiceDropsOpenAIWebProfile(t *testing.T) {
 	account := &service.Account{
 		Platform: service.PlatformOpenAI,

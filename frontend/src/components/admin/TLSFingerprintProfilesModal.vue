@@ -230,7 +230,7 @@
               </div>
 
               <div class="mb-3 flex flex-wrap gap-2">
-                <button @click="loadSelectedTaskSamples" :disabled="samplesLoading" class="btn btn-secondary btn-sm">
+                <button @click="loadSelectedTaskSamples()" :disabled="samplesLoading" class="btn btn-secondary btn-sm">
                   <Icon
                     name="refresh"
                     size="sm"
@@ -347,16 +347,34 @@
 
       <div v-show="activeTab === 'profiles'" class="space-y-5">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <label class="text-xs font-medium text-gray-600 dark:text-gray-300">
             {{ t('admin.tlsFingerprintProfiles.filterPlatform') }}
           </label>
-          <select v-model="profilePlatformFilter" class="input w-44 text-sm">
+          <select v-model="profilePlatformFilter" class="input w-36 text-sm">
             <option value="">{{ t('admin.tlsFingerprintProfiles.allPlatforms') }}</option>
             <option v-for="platform in profilePlatforms" :key="platform" :value="platform">
               {{ platform || 'shared' }}
             </option>
           </select>
+          <select v-model="profileOSFilter" class="input w-32 text-sm">
+            <option value="">{{ t('admin.tlsFingerprintProfiles.allOS') }}</option>
+            <option v-for="os in profileOSOptions" :key="os" :value="os">
+              {{ os || 'shared' }}
+            </option>
+          </select>
+          <select v-model="profileClientTypeFilter" class="input w-40 text-sm">
+            <option value="">{{ t('admin.tlsFingerprintProfiles.allClientTypes') }}</option>
+            <option v-for="ct in profileClientTypeOptions" :key="ct" :value="ct">
+              {{ ct || 'shared' }}
+            </option>
+          </select>
+          <input
+            v-model="profileNameFilter"
+            type="text"
+            class="input w-40 text-sm"
+            :placeholder="t('admin.tlsFingerprintProfiles.filterNamePlaceholder')"
+          />
         </div>
         <div class="text-xs text-gray-500 dark:text-gray-400">
           {{ t('admin.tlsFingerprintProfiles.profileCount', { count: filteredProfiles.length }) }}
@@ -390,6 +408,12 @@
                 {{ t('admin.tlsFingerprintProfiles.columns.transport') }}
               </th>
               <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+                {{ t('admin.tlsFingerprintProfiles.columns.os') }}
+              </th>
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+                {{ t('admin.tlsFingerprintProfiles.columns.clientType') }}
+              </th>
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
                 {{ t('admin.tlsFingerprintProfiles.columns.name') }}
               </th>
               <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
@@ -413,6 +437,14 @@
               </td>
               <td class="px-3 py-2">
                 <span v-if="profile.transport" class="badge badge-primary text-xs">{{ profile.transport }}</span>
+                <span v-else class="text-xs text-gray-400 dark:text-gray-600">—</span>
+              </td>
+              <td class="px-3 py-2">
+                <span v-if="profile.os" class="badge badge-gray text-xs">{{ profile.os }}</span>
+                <span v-else class="text-xs text-gray-400 dark:text-gray-600">—</span>
+              </td>
+              <td class="px-3 py-2">
+                <span v-if="profile.client_type" class="badge badge-gray text-xs">{{ profile.client_type }}</span>
                 <span v-else class="text-xs text-gray-400 dark:text-gray-600">—</span>
               </td>
               <td class="px-3 py-2">
@@ -526,6 +558,24 @@
               <option value="http">HTTP</option>
               <option value="websocket">WebSocket</option>
             </select>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.tlsFingerprintProfiles.form.os') }}</label>
+            <select v-model="form.os" class="input">
+              <option value="">{{ t('admin.tlsFingerprintProfiles.form.osAny') }}</option>
+              <option value="windows">Windows</option>
+              <option value="macos">macOS</option>
+              <option value="linux">Linux</option>
+            </select>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.tlsFingerprintProfiles.form.clientType') }}</label>
+            <input
+              v-model="form.client_type"
+              type="text"
+              class="input"
+              :placeholder="t('admin.tlsFingerprintProfiles.form.clientTypePlaceholder')"
+            />
           </div>
           <div>
             <label class="input-label">{{ t('admin.tlsFingerprintProfiles.form.name') }}</label>
@@ -732,6 +782,9 @@ const editingProfile = ref<TLSFingerprintProfile | null>(null)
 const deletingProfile = ref<TLSFingerprintProfile | null>(null)
 const yamlInput = ref('')
 const profilePlatformFilter = ref('')
+const profileOSFilter = ref('')
+const profileClientTypeFilter = ref('')
+const profileNameFilter = ref('')
 
 const captureTasks = ref<TLSFingerprintCaptureTask[]>([])
 const selectedTaskID = ref<number | null>(null)
@@ -782,6 +835,8 @@ const fieldInputs = reactive({
 const form = reactive({
   platform: 'openai',
   transport: '' as '' | 'http' | 'websocket',
+  os: '' as '' | 'windows' | 'macos' | 'linux',
+  client_type: '',
   name: '',
   user_agent: '',
   originator: '',
@@ -853,11 +908,31 @@ const profilePlatforms = computed(() => {
   return Array.from(new Set(profiles.value.map(profile => profile.platform || '').filter(Boolean))).sort()
 })
 
+const profileOSOptions = computed(() => {
+  return Array.from(new Set(profiles.value.map(profile => profile.os || '').filter(Boolean))).sort()
+})
+
+const profileClientTypeOptions = computed(() => {
+  return Array.from(new Set(profiles.value.map(profile => profile.client_type || '').filter(Boolean))).sort()
+})
+
 const filteredProfiles = computed(() => {
-  if (!profilePlatformFilter.value) {
-    return profiles.value
-  }
-  return profiles.value.filter(profile => (profile.platform || '') === profilePlatformFilter.value)
+  const nameKeyword = profileNameFilter.value.trim().toLowerCase()
+  return profiles.value.filter(profile => {
+    if (profilePlatformFilter.value && (profile.platform || '') !== profilePlatformFilter.value) {
+      return false
+    }
+    if (profileOSFilter.value && (profile.os || '') !== profileOSFilter.value) {
+      return false
+    }
+    if (profileClientTypeFilter.value && (profile.client_type || '') !== profileClientTypeFilter.value) {
+      return false
+    }
+    if (nameKeyword && !(profile.name || '').toLowerCase().includes(nameKeyword)) {
+      return false
+    }
+    return true
+  })
 })
 
 const refreshAll = async () => {
@@ -876,34 +951,46 @@ const loadProfiles = async () => {
   }
 }
 
-const loadCaptureTasks = async () => {
-  captureLoading.value = true
+const loadCaptureTasks = async (options: { silent?: boolean } = {}) => {
+  const { silent = false } = options
+  // 轮询时静默刷新：不切换 captureLoading，避免采集详情区整体被销毁重建
+  // （否则任务卡片、样本表格每 3 秒整块闪烁，视觉上像整个弹窗刷新）。
+  if (!silent) {
+    captureLoading.value = true
+  }
   try {
     captureTasks.value = await adminAPI.tlsFingerprintProfiles.listCaptureTasks()
     if (!selectedTaskID.value && captureTasks.value.length > 0) {
       selectedTaskID.value = captureTasks.value[0].id
-      await loadSelectedTaskSamples()
+      await loadSelectedTaskSamples({ silent })
     }
     if (selectedTaskID.value && !captureTasks.value.some(task => task.id === selectedTaskID.value)) {
       selectedTaskID.value = captureTasks.value[0]?.id || null
-      await loadSelectedTaskSamples()
+      await loadSelectedTaskSamples({ silent })
     }
     updateCapturePollingState()
   } catch (error: any) {
     appStore.showError(error?.message || t('admin.tlsFingerprintProfiles.capture.loadFailed'))
     console.error('Error loading TLS fingerprint capture tasks:', error)
   } finally {
-    captureLoading.value = false
+    if (!silent) {
+      captureLoading.value = false
+    }
   }
 }
 
-const loadSelectedTaskSamples = async () => {
+const loadSelectedTaskSamples = async (options: { silent?: boolean } = {}) => {
   if (!selectedTaskID.value) {
     captureSamples.value = []
     selectedSampleIDs.value = []
     return
   }
-  samplesLoading.value = true
+  const { silent = false } = options
+  // 轮询时静默刷新：不切换 samplesLoading，避免样本表格容器被销毁重建
+  // （否则滚动位置、展开的详情会被重置）。样本行有稳定 :key，整表赋值时 DOM 会复用。
+  if (!silent) {
+    samplesLoading.value = true
+  }
   try {
     captureSamples.value = await adminAPI.tlsFingerprintProfiles.listCaptureSamples(selectedTaskID.value)
     const available = new Set(captureSamples.value.map(sample => sample.id))
@@ -912,7 +999,9 @@ const loadSelectedTaskSamples = async () => {
     appStore.showError(error?.message || t('admin.tlsFingerprintProfiles.capture.samplesLoadFailed'))
     console.error('Error loading TLS fingerprint capture samples:', error)
   } finally {
-    samplesLoading.value = false
+    if (!silent) {
+      samplesLoading.value = false
+    }
   }
 }
 
@@ -930,9 +1019,9 @@ const startCapturePolling = () => {
     if (!props.show) {
       return
     }
-    await loadCaptureTasks()
+    await loadCaptureTasks({ silent: true })
     if (selectedTaskID.value) {
-      await loadSelectedTaskSamples()
+      await loadSelectedTaskSamples({ silent: true })
     }
   }, 3000)
 }
@@ -1179,6 +1268,8 @@ const normalizeCaptureURL = (value: string): string => {
 const resetForm = () => {
   form.platform = 'openai'
   form.transport = ''
+  form.os = ''
+  form.client_type = ''
   form.name = ''
   form.user_agent = ''
   form.originator = ''
@@ -1323,6 +1414,8 @@ const handleEdit = (profile: TLSFingerprintProfile) => {
   editingProfile.value = profile
   form.platform = profile.platform || ''
   form.transport = (profile.transport || '') as '' | 'http' | 'websocket'
+  form.os = (profile.os || '') as '' | 'windows' | 'macos' | 'linux'
+  form.client_type = profile.client_type || ''
   form.name = profile.name
   form.user_agent = profile.user_agent || ''
   form.originator = profile.originator || ''
@@ -1359,6 +1452,8 @@ const handleSubmit = async () => {
     const data = {
       platform: form.platform.trim(),
       transport: form.transport,
+      os: form.os,
+      client_type: form.client_type.trim(),
       name: form.name.trim(),
       user_agent: form.user_agent.trim(),
       originator: form.originator.trim(),

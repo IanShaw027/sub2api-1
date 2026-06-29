@@ -45,18 +45,24 @@ var claudeLeakFieldPaths = []string{
 // It removes structured proxy/client-metadata leak fields and, when a profile is
 // available, rewrites environment details inside Claude Code system-reminder blocks.
 func SanitizeClaudeOAuthBody(body []byte, profile *AccountEnvProfile) []byte {
+	out, _ := SanitizeClaudeOAuthBodyWithWorkDirRewrite(body, profile)
+	return out
+}
+
+func SanitizeClaudeOAuthBodyWithWorkDirRewrite(body []byte, profile *AccountEnvProfile) ([]byte, *WorkDirRewrite) {
 	if len(body) == 0 || !json.Valid(body) {
-		return body
+		return body, nil
 	}
 	out := body
 	for _, p := range claudeLeakFieldPaths {
 		out = safeDeleteJSONKey(out, p)
 	}
-	out = RewriteSystemReminderEnvBlocks(out, profile)
+	var workDirRewrite *WorkDirRewrite
+	out, workDirRewrite = RewriteSystemReminderEnvBlocksWithWorkDirRewrite(out, profile)
 	if !json.Valid(out) {
-		return body
+		return body, nil
 	}
-	return out
+	return out, workDirRewrite
 }
 
 // SanitizeClaudeTelemetryBatch rewrites/sanitizes Claude Code event batch payloads.
@@ -150,19 +156,28 @@ func sanitizeBase64JSONLeakMetadata(raw string) (string, bool) {
 // RewriteSystemReminderEnvBlocks rewrites environment fields inside injected
 // <system-reminder> blocks only, leaving user-authored text outside unchanged.
 func RewriteSystemReminderEnvBlocks(body []byte, profile *AccountEnvProfile) []byte {
+	out, _ := RewriteSystemReminderEnvBlocksWithWorkDirRewrite(body, profile)
+	return out
+}
+
+func RewriteSystemReminderEnvBlocksWithWorkDirRewrite(body []byte, profile *AccountEnvProfile) ([]byte, *WorkDirRewrite) {
 	if profile == nil || len(body) == 0 || !json.Valid(body) {
-		return body
+		return body, nil
 	}
 	out := body
+	var workDirRewrite *WorkDirRewrite
 	msgs := gjson.GetBytes(out, "messages")
 	if !msgs.IsArray() {
-		return out
+		return out, nil
 	}
 	for i := range msgs.Array() {
 		contentPath := fmt.Sprintf("messages.%d.content", i)
 		content := gjson.GetBytes(out, contentPath)
 		if content.Type == gjson.String {
-			cleaned := rewriteSystemReminderText(content.String(), profile)
+			cleaned, wdr := rewriteSystemReminderTextWithWorkDirRewrite(content.String(), profile)
+			if workDirRewrite == nil && wdr != nil {
+				workDirRewrite = wdr
+			}
 			if cleaned != content.String() {
 				out, _ = sjson.SetBytes(out, contentPath, cleaned)
 			}
@@ -177,27 +192,55 @@ func RewriteSystemReminderEnvBlocks(body []byte, profile *AccountEnvProfile) []b
 			if text.Type != gjson.String {
 				continue
 			}
-			cleaned := rewriteSystemReminderText(text.String(), profile)
+			cleaned, wdr := rewriteSystemReminderTextWithWorkDirRewrite(text.String(), profile)
+			if workDirRewrite == nil && wdr != nil {
+				workDirRewrite = wdr
+			}
 			if cleaned != text.String() {
 				out, _ = sjson.SetBytes(out, textPath, cleaned)
 			}
 		}
 	}
 	if !json.Valid(out) {
-		return body
+		return body, nil
 	}
-	return out
+	return out, workDirRewrite
 }
 
 func rewriteSystemReminderText(text string, profile *AccountEnvProfile) string {
-	return systemReminderBlockRe.ReplaceAllStringFunc(text, func(block string) string {
-		return rewriteReminderEnvBlock(block, profile)
+	out, _ := rewriteSystemReminderTextWithWorkDirRewrite(text, profile)
+	return out
+}
+
+func rewriteSystemReminderTextWithWorkDirRewrite(text string, profile *AccountEnvProfile) (string, *WorkDirRewrite) {
+	var workDirRewrite *WorkDirRewrite
+	out := systemReminderBlockRe.ReplaceAllStringFunc(text, func(block string) string {
+		rewritten, wdr := rewriteReminderEnvBlockWithWorkDirRewrite(block, profile)
+		if workDirRewrite == nil && wdr != nil {
+			workDirRewrite = wdr
+		}
+		return rewritten
 	})
+	return out, workDirRewrite
 }
 
 func rewriteReminderEnvBlock(block string, profile *AccountEnvProfile) string {
+	out, _ := rewriteReminderEnvBlockWithWorkDirRewrite(block, profile)
+	return out
+}
+
+func rewriteReminderEnvBlockWithWorkDirRewrite(block string, profile *AccountEnvProfile) (string, *WorkDirRewrite) {
 	if profile == nil {
-		return block
+		return block, nil
+	}
+	var workDirRewrite *WorkDirRewrite
+	workDirRe := regexp.MustCompile(`(?m)((?:Primary )?[Ww]orking directory:\s*)([^\n<]+)`)
+	if match := workDirRe.FindStringSubmatch(block); len(match) == 3 {
+		realDir := strings.TrimSpace(match[2])
+		fakeDir := profileWorkDirForRealDir(profile, realDir)
+		if realDir != "" && fakeDir != "" && realDir != fakeDir {
+			workDirRewrite = &WorkDirRewrite{RealDir: realDir, FakeDir: fakeDir}
+		}
 	}
 	replacements := []struct {
 		re *regexp.Regexp
@@ -206,7 +249,12 @@ func rewriteReminderEnvBlock(block string, profile *AccountEnvProfile) string {
 		{regexp.MustCompile(`(?m)(Platform:\s*)[^\n<]+`), "${1}" + profile.Platform},
 		{regexp.MustCompile(`(?m)(Shell:\s*)[^\n<]+`), "${1}" + profile.Shell},
 		{regexp.MustCompile(`(?m)(OS Version:\s*)[^\n<]+`), "${1}" + profile.OSVersion},
-		{regexp.MustCompile(`(?m)((?:Primary )?[Ww]orking directory:\s*)[^\n<]+`), "${1}" + profile.WorkDir},
+		{workDirRe, "${1}" + func() string {
+			if workDirRewrite != nil {
+				return workDirRewrite.FakeDir
+			}
+			return profile.WorkDir
+		}()},
 	}
 	out := block
 	for _, r := range replacements {
@@ -215,5 +263,5 @@ func rewriteReminderEnvBlock(block string, profile *AccountEnvProfile) string {
 		}
 		out = r.re.ReplaceAllString(out, r.to)
 	}
-	return out
+	return out, workDirRewrite
 }

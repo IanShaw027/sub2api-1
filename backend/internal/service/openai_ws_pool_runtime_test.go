@@ -452,3 +452,234 @@ func TestOpenAIWSPoolReconcile_RerunsPendingTriggerAfterCurrentRound(t *testing.
 		return repo.calls.Load() == 2
 	}, time.Second, 10*time.Millisecond, "concurrent reconcile trigger should be replayed after the current round")
 }
+
+type openAIWSReconcileSignalAccountRepo struct {
+	AccountRepository
+	calls    atomic.Int32
+	calledCh chan struct{}
+	accounts []Account
+}
+
+func (r *openAIWSReconcileSignalAccountRepo) ListSchedulableByPlatform(ctx context.Context, platform string) ([]Account, error) {
+	_ = ctx
+	_ = platform
+	if r.calls.Add(1) == 1 && r.calledCh != nil {
+		close(r.calledCh)
+	}
+	return append([]Account(nil), r.accounts...), nil
+}
+
+func TestOpenAIGatewayService_TriggersOpenAIWSPoolReconcileOnStartup(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+	RegisterOpenAIWSPoolReconcileHook(nil)
+	t.Cleanup(func() { RegisterOpenAIWSPoolReconcileHook(nil) })
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(30, 120, 1, 4, 30)
+
+	cfg := &config.Config{}
+	repo := &openAIWSReconcileSignalAccountRepo{calledCh: make(chan struct{})}
+	svc := NewOpenAIGatewayService(
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cfg,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	t.Cleanup(svc.CloseOpenAIWSPool)
+
+	select {
+	case <-repo.calledCh:
+	case <-time.After(time.Second):
+		t.Fatal("startup should trigger one OpenAI WS pool reconcile after registering the hook")
+	}
+}
+
+func TestOpenAIWSPoolReconcile_CleansIdleConnectionsForIneligibleAccounts(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(25, 120, 0, 4, 0)
+
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+
+	account := &Account{ID: 4545, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 8}
+	req := openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.invalid/ws",
+		Profile: openAIWSConnProfileNeutral,
+	}
+	pool.PrewarmNeutral(account.ID, req, 2)
+	_, _, conns := pool.AccountPoolLoad(account.ID)
+	require.Equal(t, 2, conns)
+
+	svc := &OpenAIGatewayService{
+		cfg:          cfg,
+		openaiWSPool: pool,
+		accountRepo:  &openAIWSReconcileSignalAccountRepo{accounts: nil},
+	}
+	svc.ReconcileOpenAIWSPool(context.Background())
+
+	require.Eventually(t, func() bool {
+		_, _, current := pool.AccountPoolLoad(account.ID)
+		return current == 0
+	}, time.Second, 10*time.Millisecond, "ineligible accounts should have idle WS connections cleaned during reconcile")
+	require.Equal(t, 2, dialer.DialCount(), "cleanup must not prewarm new connections for ineligible accounts")
+}
+
+func TestOpenAIWSPoolReconcile_IneligiblePreservesPinnedConnectionsUntilUnpinned(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(25, 120, 0, 4, 0)
+
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	pool.setClientDialerForTest(&openAIWSCountingDialer{})
+
+	account := &Account{ID: 4555, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 8}
+	req := openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.invalid/ws",
+		Profile: openAIWSConnProfileNeutral,
+	}
+	pool.PrewarmNeutral(account.ID, req, 1)
+
+	ap, ok := pool.getAccountPool(account.ID)
+	require.True(t, ok)
+	ap.mu.Lock()
+	connID := ""
+	for id := range ap.conns {
+		connID = id
+		break
+	}
+	ap.mu.Unlock()
+	require.NotEmpty(t, connID)
+	require.True(t, pool.PinConn(account.ID, connID))
+
+	pool.ReconcileTargets(map[int64]openAIWSPoolReconcileTarget{})
+	_, _, conns := pool.AccountPoolLoad(account.ID)
+	require.Equal(t, 1, conns, "ineligible cleanup must not evict a pinned active-ingress connection")
+
+	pool.UnpinConn(account.ID, connID)
+	pool.ReconcileTargets(map[int64]openAIWSPoolReconcileTarget{})
+	_, _, conns = pool.AccountPoolLoad(account.ID)
+	require.Equal(t, 0, conns, "unpinned ineligible idle connection should be cleaned on the next reconcile")
+}
+
+func TestOpenAIWSPoolReconcile_IneligibleStopsInFlightNeutralPrewarmFromReaddingConnection(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(25, 120, 0, 4, 0)
+
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	dialer := &openAIWSBlockingDialer{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	pool.setClientDialerForTest(dialer)
+
+	account := &Account{ID: 4556, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 8}
+	req := openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.invalid/ws",
+		Profile: openAIWSConnProfileNeutral,
+	}
+	done := make(chan struct{})
+	go func() {
+		pool.PrewarmNeutral(account.ID, req, 1)
+		close(done)
+	}()
+
+	select {
+	case <-dialer.started:
+	case <-time.After(time.Second):
+		t.Fatal("neutral prewarm dial did not start")
+	}
+
+	pool.ReconcileTargets(map[int64]openAIWSPoolReconcileTarget{})
+	close(dialer.release)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("neutral prewarm did not finish")
+	}
+	require.Equal(t, 1, dialer.DialCount())
+	_, _, conns := pool.AccountPoolLoad(account.ID)
+	require.Equal(t, 0, conns, "stale in-flight prewarm must close its dialed conn instead of re-adding it after the account became ineligible")
+	ap, ok := pool.getAccountPool(account.ID)
+	require.True(t, ok)
+	ap.mu.Lock()
+	creating := ap.creating
+	creatingNeutral := ap.creatingNeutral
+	ap.mu.Unlock()
+	require.Equal(t, 0, creating)
+	require.Equal(t, 0, creatingNeutral)
+}
+
+func TestOpenAIWSPool_EvictConnReplenishesNeutralStock(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(25, 120, 0, 4, 0)
+
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+
+	account := &Account{ID: 4646, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 8}
+	req := openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.invalid/ws",
+		Profile: openAIWSConnProfileNeutral,
+	}
+	pool.PrewarmNeutral(account.ID, req, 2)
+	require.Equal(t, 2, dialer.DialCount())
+
+	ap, ok := pool.getAccountPool(account.ID)
+	require.True(t, ok)
+	ap.mu.Lock()
+	connID := ""
+	for id := range ap.conns {
+		connID = id
+		break
+	}
+	ap.mu.Unlock()
+	require.NotEmpty(t, connID)
+
+	pool.evictConn(account.ID, connID, "test_evict")
+
+	require.Eventually(t, func() bool {
+		_, _, conns := pool.AccountPoolLoad(account.ID)
+		return dialer.DialCount() == 3 && conns == 2
+	}, time.Second, 10*time.Millisecond, "evicting a neutral stock connection should replenish to the configured target")
+}

@@ -978,6 +978,55 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('tls_fingerprint_router_id')
   })
 
+  it('preserves existing Grok OAuth TLS fingerprint random profile when saving unchanged', async () => {
+    const account = {
+      id: 74,
+      name: 'Grok OAuth',
+      notes: '',
+      platform: 'grok',
+      type: 'oauth',
+      credentials: {
+        access_token: 'grok-at',
+        refresh_token: 'grok-rt'
+      },
+      extra: {
+        keep_flag: true,
+        enable_tls_fingerprint: true,
+        tls_fingerprint_profile_id: -1
+      },
+      enable_tls_fingerprint: true,
+      tls_fingerprint_profile_id: -1,
+      proxy_id: null,
+      concurrency: 1,
+      priority: 1,
+      rate_multiplier: 1,
+      status: 'active',
+      group_ids: [],
+      expires_at: null,
+      auto_pause_on_expired: false
+    } as any
+
+    resetCommonMocks()
+    listTlsFingerprintProfilesMock.mockResolvedValue([{ id: 15, name: 'Grok CLI' }])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await wrapper.vm.$nextTick()
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="grok-tls-fingerprint-profile"]').element as HTMLSelectElement).value).toBe('-1')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual(expect.objectContaining({
+      keep_flag: true,
+      enable_tls_fingerprint: true,
+      tls_fingerprint_profile_id: -1
+    }))
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('tls_fingerprint_router_id')
+  })
+
   it('submits empty extra when Kiro OAuth only has old runtime overrides', async () => {
     const account = {
       id: 3,

@@ -79,6 +79,16 @@ func Transport(v string) predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldTransport, v))
 }
 
+// Os applies equality check predicate on the "os" field. It's identical to OsEQ.
+func Os(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldOs, v))
+}
+
+// ClientType applies equality check predicate on the "client_type" field. It's identical to ClientTypeEQ.
+func ClientType(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldClientType, v))
+}
+
 // UserAgent applies equality check predicate on the "user_agent" field. It's identical to UserAgentEQ.
 func UserAgent(v string) predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldUserAgent, v))
@@ -372,6 +382,136 @@ func TransportEqualFold(v string) predicate.TLSFingerprintProfile {
 // TransportContainsFold applies the ContainsFold predicate on the "transport" field.
 func TransportContainsFold(v string) predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldContainsFold(FieldTransport, v))
+}
+
+// OsEQ applies the EQ predicate on the "os" field.
+func OsEQ(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldOs, v))
+}
+
+// OsNEQ applies the NEQ predicate on the "os" field.
+func OsNEQ(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNEQ(FieldOs, v))
+}
+
+// OsIn applies the In predicate on the "os" field.
+func OsIn(vs ...string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldIn(FieldOs, vs...))
+}
+
+// OsNotIn applies the NotIn predicate on the "os" field.
+func OsNotIn(vs ...string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNotIn(FieldOs, vs...))
+}
+
+// OsGT applies the GT predicate on the "os" field.
+func OsGT(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldGT(FieldOs, v))
+}
+
+// OsGTE applies the GTE predicate on the "os" field.
+func OsGTE(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldGTE(FieldOs, v))
+}
+
+// OsLT applies the LT predicate on the "os" field.
+func OsLT(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldLT(FieldOs, v))
+}
+
+// OsLTE applies the LTE predicate on the "os" field.
+func OsLTE(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldLTE(FieldOs, v))
+}
+
+// OsContains applies the Contains predicate on the "os" field.
+func OsContains(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldContains(FieldOs, v))
+}
+
+// OsHasPrefix applies the HasPrefix predicate on the "os" field.
+func OsHasPrefix(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldHasPrefix(FieldOs, v))
+}
+
+// OsHasSuffix applies the HasSuffix predicate on the "os" field.
+func OsHasSuffix(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldHasSuffix(FieldOs, v))
+}
+
+// OsEqualFold applies the EqualFold predicate on the "os" field.
+func OsEqualFold(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEqualFold(FieldOs, v))
+}
+
+// OsContainsFold applies the ContainsFold predicate on the "os" field.
+func OsContainsFold(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldContainsFold(FieldOs, v))
+}
+
+// ClientTypeEQ applies the EQ predicate on the "client_type" field.
+func ClientTypeEQ(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldClientType, v))
+}
+
+// ClientTypeNEQ applies the NEQ predicate on the "client_type" field.
+func ClientTypeNEQ(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNEQ(FieldClientType, v))
+}
+
+// ClientTypeIn applies the In predicate on the "client_type" field.
+func ClientTypeIn(vs ...string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldIn(FieldClientType, vs...))
+}
+
+// ClientTypeNotIn applies the NotIn predicate on the "client_type" field.
+func ClientTypeNotIn(vs ...string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNotIn(FieldClientType, vs...))
+}
+
+// ClientTypeGT applies the GT predicate on the "client_type" field.
+func ClientTypeGT(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldGT(FieldClientType, v))
+}
+
+// ClientTypeGTE applies the GTE predicate on the "client_type" field.
+func ClientTypeGTE(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldGTE(FieldClientType, v))
+}
+
+// ClientTypeLT applies the LT predicate on the "client_type" field.
+func ClientTypeLT(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldLT(FieldClientType, v))
+}
+
+// ClientTypeLTE applies the LTE predicate on the "client_type" field.
+func ClientTypeLTE(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldLTE(FieldClientType, v))
+}
+
+// ClientTypeContains applies the Contains predicate on the "client_type" field.
+func ClientTypeContains(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldContains(FieldClientType, v))
+}
+
+// ClientTypeHasPrefix applies the HasPrefix predicate on the "client_type" field.
+func ClientTypeHasPrefix(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldHasPrefix(FieldClientType, v))
+}
+
+// ClientTypeHasSuffix applies the HasSuffix predicate on the "client_type" field.
+func ClientTypeHasSuffix(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldHasSuffix(FieldClientType, v))
+}
+
+// ClientTypeEqualFold applies the EqualFold predicate on the "client_type" field.
+func ClientTypeEqualFold(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEqualFold(FieldClientType, v))
+}
+
+// ClientTypeContainsFold applies the ContainsFold predicate on the "client_type" field.
+func ClientTypeContainsFold(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldContainsFold(FieldClientType, v))
 }
 
 // UserAgentEQ applies the EQ predicate on the "user_agent" field.

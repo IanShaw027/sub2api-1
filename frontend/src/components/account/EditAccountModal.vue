@@ -1605,6 +1605,14 @@
           <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
             {{ t('admin.accounts.quotaControl.tlsFingerprint.routerHint') }}
           </p>
+          <div class="mt-3 border-t border-gray-100 pt-3 dark:border-dark-700">
+            <TLSFingerprintBindingMatrix
+              v-model="tlsFingerprintBindings"
+              :profiles="tlsFingerprintProfiles"
+              platform="openai"
+              :with-client-type="true"
+            />
+          </div>
         </div>
       </div>
 
@@ -1643,6 +1651,16 @@
             <option v-if="hasSelectableTLSFingerprintProfiles" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
             <option v-for="p in selectableTLSFingerprintProfiles" :key="p.id" :value="p.id">{{ tlsFingerprintProfileOptionLabel(p) }}</option>
           </select>
+          <label class="input-label mb-0 mt-2">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOS') }}</label>
+          <select v-model="tlsFingerprintDefaultOS" class="input mt-1">
+            <option value="">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOSNone') }}</option>
+            <option value="windows">Windows</option>
+            <option value="macos">macOS</option>
+            <option value="linux">Linux</option>
+          </select>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOSHint') }}
+          </p>
         </div>
       </div>
 
@@ -1681,6 +1699,16 @@
             <option v-if="hasSelectableTLSFingerprintProfiles" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
             <option v-for="p in selectableTLSFingerprintProfiles" :key="p.id" :value="p.id">{{ tlsFingerprintProfileOptionLabel(p) }}</option>
           </select>
+          <label class="input-label mb-0 mt-2">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOS') }}</label>
+          <select v-model="tlsFingerprintDefaultOS" class="input mt-1">
+            <option value="">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOSNone') }}</option>
+            <option value="windows">Windows</option>
+            <option value="macos">macOS</option>
+            <option value="linux">Linux</option>
+          </select>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOSHint') }}
+          </p>
         </div>
       </div>
 
@@ -2322,6 +2350,16 @@
               <option v-if="hasSelectableTLSFingerprintProfiles" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
               <option v-for="p in selectableTLSFingerprintProfiles" :key="p.id" :value="p.id">{{ tlsFingerprintProfileOptionLabel(p) }}</option>
             </select>
+            <label class="input-label mb-0 mt-2">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOS') }}</label>
+            <select v-model="tlsFingerprintDefaultOS" class="input mt-1">
+              <option value="">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOSNone') }}</option>
+              <option value="windows">Windows</option>
+              <option value="macos">macOS</option>
+              <option value="linux">Linux</option>
+            </select>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOSHint') }}
+            </p>
           </div>
         </div>
 
@@ -2619,6 +2657,7 @@ import {
   type SelectableTLSFingerprintProfileOption,
   type TLSFingerprintProfileOption
 } from '@/components/account/tlsFingerprintProfileOptions'
+import TLSFingerprintBindingMatrix from '@/components/account/TLSFingerprintBindingMatrix.vue'
 import { stripKiroRuntimeExtra } from '@/composables/useKiroOAuth'
 import {
   applyAntigravityProjectID
@@ -2802,6 +2841,8 @@ const tlsFingerprintProfileId = ref<number | null>(null)
 const tlsFingerprintProfiles = ref<TLSFingerprintProfileOption[]>([])
 const tlsFingerprintRouterId = ref<number | null>(null)
 const tlsFingerprintRouters = ref<{ id: number; name: string }[]>([])
+const tlsFingerprintBindings = ref<Record<string, number>>({})
+const tlsFingerprintDefaultOS = ref<string>('')
 const selectableTLSFingerprintProfiles = computed(() =>
   getSelectableTLSFingerprintProfiles(
     tlsFingerprintProfiles.value,
@@ -3504,7 +3545,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 async function loadTLSProfiles() {
   try {
     const profiles = await adminAPI.tlsFingerprintProfiles.list()
-    tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name, platform: p.platform || '' }))
+    tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name, platform: p.platform || '', os: p.os || '', client_type: p.client_type || '' }))
   } catch {
     tlsFingerprintProfiles.value = []
   }
@@ -3601,7 +3642,11 @@ const toOptionalNumber = (value: unknown): number | null => {
   return null
 }
 
-const applyTLSFingerprintExtra = (extra: Record<string, unknown>, includeRouter = true) => {
+const applyTLSFingerprintExtra = (
+  extra: Record<string, unknown>,
+  includeRouter = true,
+  dimensionMode: 'matrix' | 'defaultOS' | 'none' = 'none'
+) => {
   if (tlsFingerprintEnabled.value) {
     extra.enable_tls_fingerprint = true
     const profileId = toOptionalNumber(tlsFingerprintProfileId.value)
@@ -3620,10 +3665,40 @@ const applyTLSFingerprintExtra = (extra: Record<string, unknown>, includeRouter 
     } else {
       delete extra.tls_fingerprint_router_id
     }
+    // OpenAI: router 判定维度 → 账号 bindings 矩阵解析具体模板
+    if (dimensionMode === 'matrix') {
+      const bindings = tlsFingerprintBindings.value
+      if (bindings && Object.keys(bindings).length > 0) {
+        extra.tls_fingerprint_bindings = { ...bindings }
+      } else {
+        delete extra.tls_fingerprint_bindings
+      }
+      delete extra.tls_fingerprint_default_os
+    } else if (dimensionMode === 'defaultOS') {
+      // 非 OpenAI：账号默认 OS + 单维度 bindings
+      const os = (tlsFingerprintDefaultOS.value || '').trim().toLowerCase()
+      if (os) {
+        extra.tls_fingerprint_default_os = os
+        const bindings = tlsFingerprintBindings.value
+        if (bindings && Object.keys(bindings).length > 0) {
+          extra.tls_fingerprint_bindings = { ...bindings }
+        } else {
+          delete extra.tls_fingerprint_bindings
+        }
+      } else {
+        delete extra.tls_fingerprint_default_os
+        delete extra.tls_fingerprint_bindings
+      }
+    } else {
+      delete extra.tls_fingerprint_bindings
+      delete extra.tls_fingerprint_default_os
+    }
   } else {
     delete extra.enable_tls_fingerprint
     delete extra.tls_fingerprint_profile_id
     delete extra.tls_fingerprint_router_id
+    delete extra.tls_fingerprint_bindings
+    delete extra.tls_fingerprint_default_os
   }
 }
 
@@ -3819,6 +3894,8 @@ function loadQuotaControlSettings(account: Account) {
   tlsFingerprintEnabled.value = false
   tlsFingerprintProfileId.value = null
   tlsFingerprintRouterId.value = null
+  tlsFingerprintBindings.value = { ...(account.tls_fingerprint_bindings ?? {}) }
+  tlsFingerprintDefaultOS.value = account.tls_fingerprint_default_os ?? ''
   sessionIdMaskingEnabled.value = false
   cacheTTLOverrideEnabled.value = false
   cacheTTLOverrideTarget.value = '5m'
@@ -4436,7 +4513,7 @@ const handleSubmit = async () => {
 
       const currentExtra = (props.account.extra || {}) as Record<string, unknown>
       const newExtra = stripKiroRuntimeExtra(currentExtra)
-      applyTLSFingerprintExtra(newExtra, false)
+      applyTLSFingerprintExtra(newExtra, false, 'defaultOS')
       updatePayload.extra = newExtra
     } else if (props.account.platform === 'kiro' && props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
@@ -4880,7 +4957,7 @@ const handleSubmit = async () => {
       }
       delete newExtra.user_msg_queue_enabled  // 清理旧字段
 
-      applyTLSFingerprintExtra(newExtra)
+      applyTLSFingerprintExtra(newExtra, true, 'defaultOS')
 
       // Session ID masking setting
       if (sessionIdMaskingEnabled.value) {
@@ -4987,7 +5064,7 @@ const handleSubmit = async () => {
         }
       }
 
-      applyTLSFingerprintExtra(newExtra)
+      applyTLSFingerprintExtra(newExtra, true, 'matrix')
 
       updatePayload.extra = newExtra
     }
@@ -4997,7 +5074,7 @@ const handleSubmit = async () => {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
-      applyTLSFingerprintExtra(newExtra, false)
+      applyTLSFingerprintExtra(newExtra, false, 'defaultOS')
       updatePayload.extra = newExtra
     }
 

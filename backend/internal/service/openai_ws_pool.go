@@ -823,6 +823,7 @@ type openAIWSAccountPool struct {
 	neutralVariants    map[string]*openAIWSNeutralVariant
 	prewarmActive      bool
 	prewarmUntil       time.Time
+	prewarmGeneration  uint64
 	prewarmFails       int
 	prewarmFailAt      time.Time
 }
@@ -1034,6 +1035,10 @@ type openAIWSConnPool struct {
 	closeOnce    sync.Once
 }
 
+type openAIWSPoolReconcileTarget struct {
+	accountConcurrency int
+}
+
 func newOpenAIWSConnPool(cfg *config.Config) *openAIWSConnPool {
 	pool := &openAIWSConnPool{
 		cfg:          cfg,
@@ -1199,6 +1204,45 @@ func (p *openAIWSConnPool) ReconcileShrink() {
 	p.runBackgroundCleanupSweep(time.Now())
 }
 
+// ReconcileTargets immediately reconciles existing account pools against the
+// latest schedulable WS target set. Accounts absent from targets are no longer
+// eligible for the context pool and have all idle WS connections removed.
+func (p *openAIWSConnPool) ReconcileTargets(targets map[int64]openAIWSPoolReconcileTarget) {
+	if p == nil {
+		return
+	}
+	now := time.Now()
+	type cleanupResult struct {
+		accountID int64
+		evicted   []*openAIWSConn
+	}
+	results := make([]cleanupResult, 0)
+	p.accounts.Range(func(key any, value any) bool {
+		accountID, _ := key.(int64)
+		ap, ok := value.(*openAIWSAccountPool)
+		if !ok || ap == nil {
+			return true
+		}
+		target, eligible := targets[accountID]
+		ap.mu.Lock()
+		var evicted []*openAIWSConn
+		if eligible {
+			evicted = p.cleanupAccountLocked(ap, now, target.accountConcurrency)
+		} else {
+			evicted = p.cleanupIneligibleAccountLocked(ap, now)
+		}
+		ap.lastCleanupAt = now
+		ap.mu.Unlock()
+		if len(evicted) > 0 {
+			results = append(results, cleanupResult{accountID: accountID, evicted: evicted})
+		}
+		return true
+	})
+	for _, result := range results {
+		closeOpenAIWSConns(result.evicted)
+	}
+}
+
 // PrewarmNeutral 为指定账号补足 neutral 空闲连接到 targetIdle（受 neutralMax 与抑制窗约束）。
 // 因冷账号无请求快照会在 ensureTargetIdleAsync 早退，这里先 seed lastNeutralAcquire 再补连。
 // req 必须是 neutral profile 的合成请求；阻塞拨号，调用方应在后台 goroutine 中执行。
@@ -1239,10 +1283,11 @@ func (p *openAIWSConnPool) PrewarmNeutral(accountID int64, req openAIWSAcquireRe
 		return
 	}
 	ap.addCreatingLocked(openAIWSConnProfileNeutral, len(plan))
+	prewarmGeneration := ap.prewarmGeneration
 	p.metrics.scaleUpTotal.Add(int64(len(plan)))
 	ap.mu.Unlock()
 
-	p.prewarmNeutralConns(accountID, plan)
+	p.prewarmNeutralConns(accountID, plan, prewarmGeneration)
 }
 
 func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireRequest, retry int) (*openAIWSConnLease, error) {
@@ -2021,6 +2066,50 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 	return evicted
 }
 
+func (p *openAIWSConnPool) cleanupIneligibleAccountLocked(ap *openAIWSAccountPool, now time.Time) []*openAIWSConn {
+	if ap == nil {
+		return nil
+	}
+	ap.pruneNeutralVariantsLocked(now, p.neutralIdleTTL())
+	evicted := make([]*openAIWSConn, 0)
+	for id, conn := range ap.conns {
+		if conn == nil {
+			deleteOpenAIWSAccountConnLocked(ap, id, "nil_conn")
+			if len(ap.pinnedConns) > 0 {
+				delete(ap.pinnedConns, id)
+			}
+			continue
+		}
+		select {
+		case <-conn.closedCh:
+			p.logConnEvict(conn, "closed")
+			deleteOpenAIWSAccountConnLocked(ap, id, "closed")
+			if len(ap.pinnedConns) > 0 {
+				delete(ap.pinnedConns, id)
+			}
+			evicted = append(evicted, conn)
+			continue
+		default:
+		}
+		if p.isConnPinnedLocked(ap, id) || conn.isLeased() || conn.waiters.Load() > 0 {
+			continue
+		}
+		p.logConnEvict(conn, "account_ineligible")
+		deleteOpenAIWSAccountConnLocked(ap, id, "account_ineligible")
+		if len(ap.pinnedConns) > 0 {
+			delete(ap.pinnedConns, id)
+		}
+		evicted = append(evicted, conn)
+		p.metrics.scaleDownTotal.Add(1)
+	}
+	ap.lastNeutralAcquire = nil
+	ap.neutralVariants = nil
+	ap.prewarmActive = false
+	ap.prewarmUntil = time.Time{}
+	ap.prewarmGeneration++
+	return evicted
+}
+
 func (p *openAIWSConnPool) pickLeastBusyConnLocked(ap *openAIWSAccountPool, preferredConnID string, req openAIWSAcquireRequest) *openAIWSConn {
 	if ap == nil || len(ap.conns) == 0 {
 		return nil
@@ -2259,17 +2348,20 @@ func (p *openAIWSConnPool) ensureTargetIdleAsync(accountID int64) {
 		ap.prewarmUntil = now.Add(cooldown)
 	}
 	ap.addCreatingLocked(openAIWSConnProfileNeutral, len(plan))
+	prewarmGeneration := ap.prewarmGeneration
 	p.metrics.scaleUpTotal.Add(int64(len(plan)))
 
 	go func() {
 		defer func() {
 			if ap, ok := p.getAccountPool(accountID); ok && ap != nil {
 				ap.mu.Lock()
-				ap.prewarmActive = false
+				if ap.prewarmGeneration == prewarmGeneration {
+					ap.prewarmActive = false
+				}
 				ap.mu.Unlock()
 			}
 		}()
-		p.prewarmNeutralConns(accountID, plan)
+		p.prewarmNeutralConns(accountID, plan, prewarmGeneration)
 	}()
 }
 
@@ -2318,8 +2410,28 @@ func (p *openAIWSConnPool) targetConnCountLocked(ap *openAIWSAccountPool, maxCon
 }
 
 // prewarmConns 顺序拨号补足缺口；prewarmActive 的重置由调用方负责。
-func (p *openAIWSConnPool) prewarmConns(accountID int64, req openAIWSAcquireRequest, total int) {
+func (p *openAIWSConnPool) prewarmConns(accountID int64, req openAIWSAcquireRequest, total int, generationOpt ...uint64) {
+	hasGeneration := len(generationOpt) > 0
+	var prewarmGeneration uint64
+	if hasGeneration {
+		prewarmGeneration = generationOpt[0]
+	}
 	for i := 0; i < total; i++ {
+		if hasGeneration {
+			ap, ok := p.getAccountPool(accountID)
+			if !ok || ap == nil {
+				return
+			}
+			ap.mu.Lock()
+			if ap.prewarmGeneration != prewarmGeneration {
+				for skipped := i; skipped < total; skipped++ {
+					ap.doneCreatingLocked(req.Profile)
+				}
+				ap.mu.Unlock()
+				return
+			}
+			ap.mu.Unlock()
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), p.dialTimeout()+openAIWSConnPrewarmExtraDelay)
 		conn, err := p.dialConn(ctx, req)
 		cancel()
@@ -2332,6 +2444,17 @@ func (p *openAIWSConnPool) prewarmConns(accountID int64, req openAIWSAcquireRequ
 			return
 		}
 		ap.mu.Lock()
+		if hasGeneration && ap.prewarmGeneration != prewarmGeneration {
+			ap.doneCreatingLocked(req.Profile)
+			for skipped := i + 1; skipped < total; skipped++ {
+				ap.doneCreatingLocked(req.Profile)
+			}
+			ap.mu.Unlock()
+			if conn != nil {
+				conn.close()
+			}
+			return
+		}
 		ap.doneCreatingLocked(req.Profile)
 		if err != nil {
 			ap.prewarmFails++
@@ -2349,10 +2472,10 @@ func (p *openAIWSConnPool) prewarmConns(accountID int64, req openAIWSAcquireRequ
 	}
 }
 
-func (p *openAIWSConnPool) prewarmNeutralConns(accountID int64, requests []openAIWSAcquireRequest) {
+func (p *openAIWSConnPool) prewarmNeutralConns(accountID int64, requests []openAIWSAcquireRequest, generationOpt ...uint64) {
 	for _, req := range requests {
 		req.Profile = openAIWSConnProfileNeutral
-		p.prewarmConns(accountID, req, 1)
+		p.prewarmConns(accountID, req, 1, generationOpt...)
 	}
 }
 
@@ -2380,6 +2503,7 @@ func (p *openAIWSConnPool) evictConn(accountID int64, connID string, reasons ...
 	if conn != nil {
 		p.logConnEvict(conn, reason)
 		conn.close()
+		p.ensureTargetIdleAsync(accountID)
 	}
 }
 

@@ -84,6 +84,34 @@ func (_c *TLSFingerprintProfileCreate) SetNillableTransport(v *string) *TLSFinge
 	return _c
 }
 
+// SetOs sets the "os" field.
+func (_c *TLSFingerprintProfileCreate) SetOs(v string) *TLSFingerprintProfileCreate {
+	_c.mutation.SetOs(v)
+	return _c
+}
+
+// SetNillableOs sets the "os" field if the given value is not nil.
+func (_c *TLSFingerprintProfileCreate) SetNillableOs(v *string) *TLSFingerprintProfileCreate {
+	if v != nil {
+		_c.SetOs(*v)
+	}
+	return _c
+}
+
+// SetClientType sets the "client_type" field.
+func (_c *TLSFingerprintProfileCreate) SetClientType(v string) *TLSFingerprintProfileCreate {
+	_c.mutation.SetClientType(v)
+	return _c
+}
+
+// SetNillableClientType sets the "client_type" field if the given value is not nil.
+func (_c *TLSFingerprintProfileCreate) SetNillableClientType(v *string) *TLSFingerprintProfileCreate {
+	if v != nil {
+		_c.SetClientType(*v)
+	}
+	return _c
+}
+
 // SetUserAgent sets the "user_agent" field.
 func (_c *TLSFingerprintProfileCreate) SetUserAgent(v string) *TLSFingerprintProfileCreate {
 	_c.mutation.SetUserAgent(v)
@@ -275,6 +303,14 @@ func (_c *TLSFingerprintProfileCreate) defaults() {
 		v := tlsfingerprintprofile.DefaultTransport
 		_c.mutation.SetTransport(v)
 	}
+	if _, ok := _c.mutation.Os(); !ok {
+		v := tlsfingerprintprofile.DefaultOs
+		_c.mutation.SetOs(v)
+	}
+	if _, ok := _c.mutation.ClientType(); !ok {
+		v := tlsfingerprintprofile.DefaultClientType
+		_c.mutation.SetClientType(v)
+	}
 	if _, ok := _c.mutation.UserAgent(); !ok {
 		v := tlsfingerprintprofile.DefaultUserAgent
 		_c.mutation.SetUserAgent(v)
@@ -319,6 +355,22 @@ func (_c *TLSFingerprintProfileCreate) check() error {
 	if v, ok := _c.mutation.Transport(); ok {
 		if err := tlsfingerprintprofile.TransportValidator(v); err != nil {
 			return &ValidationError{Name: "transport", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.transport": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Os(); !ok {
+		return &ValidationError{Name: "os", err: errors.New(`ent: missing required field "TLSFingerprintProfile.os"`)}
+	}
+	if v, ok := _c.mutation.Os(); ok {
+		if err := tlsfingerprintprofile.OsValidator(v); err != nil {
+			return &ValidationError{Name: "os", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.os": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ClientType(); !ok {
+		return &ValidationError{Name: "client_type", err: errors.New(`ent: missing required field "TLSFingerprintProfile.client_type"`)}
+	}
+	if v, ok := _c.mutation.ClientType(); ok {
+		if err := tlsfingerprintprofile.ClientTypeValidator(v); err != nil {
+			return &ValidationError{Name: "client_type", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.client_type": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.UserAgent(); !ok {
@@ -386,6 +438,14 @@ func (_c *TLSFingerprintProfileCreate) createSpec() (*TLSFingerprintProfile, *sq
 	if value, ok := _c.mutation.Transport(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldTransport, field.TypeString, value)
 		_node.Transport = value
+	}
+	if value, ok := _c.mutation.Os(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldOs, field.TypeString, value)
+		_node.Os = value
+	}
+	if value, ok := _c.mutation.ClientType(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldClientType, field.TypeString, value)
+		_node.ClientType = value
 	}
 	if value, ok := _c.mutation.UserAgent(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldUserAgent, field.TypeString, value)
@@ -556,6 +616,30 @@ func (u *TLSFingerprintProfileUpsert) SetTransport(v string) *TLSFingerprintProf
 // UpdateTransport sets the "transport" field to the value that was provided on create.
 func (u *TLSFingerprintProfileUpsert) UpdateTransport() *TLSFingerprintProfileUpsert {
 	u.SetExcluded(tlsfingerprintprofile.FieldTransport)
+	return u
+}
+
+// SetOs sets the "os" field.
+func (u *TLSFingerprintProfileUpsert) SetOs(v string) *TLSFingerprintProfileUpsert {
+	u.Set(tlsfingerprintprofile.FieldOs, v)
+	return u
+}
+
+// UpdateOs sets the "os" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsert) UpdateOs() *TLSFingerprintProfileUpsert {
+	u.SetExcluded(tlsfingerprintprofile.FieldOs)
+	return u
+}
+
+// SetClientType sets the "client_type" field.
+func (u *TLSFingerprintProfileUpsert) SetClientType(v string) *TLSFingerprintProfileUpsert {
+	u.Set(tlsfingerprintprofile.FieldClientType, v)
+	return u
+}
+
+// UpdateClientType sets the "client_type" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsert) UpdateClientType() *TLSFingerprintProfileUpsert {
+	u.SetExcluded(tlsfingerprintprofile.FieldClientType)
 	return u
 }
 
@@ -963,6 +1047,34 @@ func (u *TLSFingerprintProfileUpsertOne) SetTransport(v string) *TLSFingerprintP
 func (u *TLSFingerprintProfileUpsertOne) UpdateTransport() *TLSFingerprintProfileUpsertOne {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
 		s.UpdateTransport()
+	})
+}
+
+// SetOs sets the "os" field.
+func (u *TLSFingerprintProfileUpsertOne) SetOs(v string) *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetOs(v)
+	})
+}
+
+// UpdateOs sets the "os" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertOne) UpdateOs() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateOs()
+	})
+}
+
+// SetClientType sets the "client_type" field.
+func (u *TLSFingerprintProfileUpsertOne) SetClientType(v string) *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetClientType(v)
+	})
+}
+
+// UpdateClientType sets the "client_type" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertOne) UpdateClientType() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateClientType()
 	})
 }
 
@@ -1587,6 +1699,34 @@ func (u *TLSFingerprintProfileUpsertBulk) SetTransport(v string) *TLSFingerprint
 func (u *TLSFingerprintProfileUpsertBulk) UpdateTransport() *TLSFingerprintProfileUpsertBulk {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
 		s.UpdateTransport()
+	})
+}
+
+// SetOs sets the "os" field.
+func (u *TLSFingerprintProfileUpsertBulk) SetOs(v string) *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetOs(v)
+	})
+}
+
+// UpdateOs sets the "os" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertBulk) UpdateOs() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateOs()
+	})
+}
+
+// SetClientType sets the "client_type" field.
+func (u *TLSFingerprintProfileUpsertBulk) SetClientType(v string) *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetClientType(v)
+	})
+}
+
+// UpdateClientType sets the "client_type" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertBulk) UpdateClientType() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateClientType()
 	})
 }
 

@@ -243,6 +243,19 @@
                 </select>
               </div>
               <div>
+                <label class="input-label text-xs">{{ t('admin.tlsFingerprintRouters.form.dimensionOS') }}</label>
+                <select v-model="rule.os" class="input">
+                  <option value="">{{ t('admin.tlsFingerprintRouters.form.dimensionNone') }}</option>
+                  <option value="windows">Windows</option>
+                  <option value="macos">macOS</option>
+                  <option value="linux">Linux</option>
+                </select>
+              </div>
+              <div>
+                <label class="input-label text-xs">{{ t('admin.tlsFingerprintRouters.form.dimensionClientType') }}</label>
+                <input v-model="rule.client_type" type="text" class="input" :placeholder="t('admin.tlsFingerprintRouters.form.dimensionClientTypePlaceholder')" />
+              </div>
+              <div>
                 <label class="input-label text-xs">{{ t('admin.tlsFingerprintRouters.form.upstreamUserAgent') }}</label>
                 <input v-model="rule.upstream_user_agent" type="text" class="input" :placeholder="t('admin.tlsFingerprintRouters.form.upstreamUserAgentPlaceholder')" />
               </div>
@@ -366,6 +379,8 @@ const newRule = (): TLSFingerprintRouterRule => ({
   pattern: '',
   case_sensitive: false,
   tls_fingerprint_profile_id: profiles.value[0]?.id || 0,
+  os: '',
+  client_type: '',
   upstream_user_agent: '',
   upstream_originator: ''
 })
@@ -404,6 +419,8 @@ const handleEdit = (router: TLSFingerprintRouter) => {
     pattern: rule.pattern,
     case_sensitive: rule.case_sensitive,
     tls_fingerprint_profile_id: rule.tls_fingerprint_profile_id,
+    os: rule.os || '',
+    client_type: rule.client_type || '',
     upstream_user_agent: rule.upstream_user_agent || '',
     upstream_originator: rule.upstream_originator || ''
   }))
@@ -422,6 +439,8 @@ const normalizeRules = (): TLSFingerprintRouterRule[] => form.rules.map(rule => 
   pattern: rule.pattern.trim(),
   case_sensitive: rule.case_sensitive,
   tls_fingerprint_profile_id: Number(rule.tls_fingerprint_profile_id) || 0,
+  os: (rule.os || '').trim(),
+  client_type: (rule.client_type || '').trim(),
   upstream_user_agent: rule.upstream_user_agent?.trim() || '',
   upstream_originator: rule.upstream_originator?.trim() || ''
 }))

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -826,10 +827,11 @@ func normalizeTextPII(s string, profile *AccountEnvProfile) (string, *WorkDirRew
 	// Primary working directory (capture original real dir for response reverse)
 	if m := rePrimaryWorkDir.FindStringSubmatch(s); len(m) == 2 {
 		realDir := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(m[0]), m[1]))
-		if realDir != "" && realDir != profile.WorkDir {
-			wdr = &WorkDirRewrite{RealDir: realDir, FakeDir: profile.WorkDir}
+		fakeDir := profileWorkDirForRealDir(profile, realDir)
+		if realDir != "" && fakeDir != "" && realDir != fakeDir {
+			wdr = &WorkDirRewrite{RealDir: realDir, FakeDir: fakeDir}
 		}
-		s = rePrimaryWorkDir.ReplaceAllString(s, "${1}"+profile.WorkDir)
+		s = rePrimaryWorkDir.ReplaceAllString(s, "${1}"+fakeDir)
 	}
 
 	// Additional working dirs — delete (rare, keeps prompt simpler)
@@ -849,6 +851,67 @@ func normalizeTextPII(s string, profile *AccountEnvProfile) (string, *WorkDirRew
 	}
 
 	return s, wdr
+}
+
+func profileWorkDirForRealDir(profile *AccountEnvProfile, realDir string) string {
+	if profile == nil {
+		return ""
+	}
+	fallback := strings.TrimSpace(profile.WorkDir)
+	realDir = strings.TrimSpace(realDir)
+	project := projectBasenameFromDir(realDir)
+	if project == "" || fallback == "" {
+		return fallback
+	}
+	if strings.Contains(fallback, `\`) {
+		idx := strings.LastIndex(fallback, `\`)
+		if idx < 0 {
+			return fallback
+		}
+		return fallback[:idx+1] + project
+	}
+	parent := path.Dir(fallback)
+	if parent == "." || parent == "/" || parent == "" {
+		return fallback
+	}
+	return parent + "/" + project
+}
+
+func projectBasenameFromDir(dir string) string {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return ""
+	}
+	dir = strings.TrimRight(dir, `/\`)
+	if dir == "" {
+		return ""
+	}
+	idx := strings.LastIndexAny(dir, `/\`)
+	if idx >= 0 {
+		dir = dir[idx+1:]
+	}
+	dir = strings.TrimSpace(dir)
+	if dir == "" || dir == "." || dir == ".." {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range dir {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		}
+	}
+	project := strings.Trim(b.String(), ".-_")
+	if project == "" {
+		return ""
+	}
+	return project
 }
 
 // WorkDirRewrite carries the real<->fake working dir pair so that:

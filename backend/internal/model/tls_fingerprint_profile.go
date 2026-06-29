@@ -14,6 +14,8 @@ type TLSFingerprintProfile struct {
 	ID                             int64             `json:"id"`
 	Platform                       string            `json:"platform"`
 	Transport                      string            `json:"transport"`
+	OS                             string            `json:"os"`
+	ClientType                     string            `json:"client_type"`
 	Name                           string            `json:"name"`
 	UserAgent                      string            `json:"user_agent"`
 	Originator                     string            `json:"originator"`
@@ -44,6 +46,14 @@ func (p *TLSFingerprintProfile) Validate() error {
 	}
 	if len(p.Platform) > 50 {
 		return &ValidationError{Field: "platform", Message: "platform is too long"}
+	}
+	switch p.OS {
+	case "", "windows", "macos", "linux":
+	default:
+		return &ValidationError{Field: "os", Message: "os must be empty, windows, macos, or linux"}
+	}
+	if len(p.ClientType) > 50 {
+		return &ValidationError{Field: "client_type", Message: "client_type is too long"}
 	}
 	switch p.Transport {
 	case "",

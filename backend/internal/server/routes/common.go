@@ -86,12 +86,98 @@ func claudeTelemetryModeHandler(h *handler.Handlers, apiKeyAuth middleware.APIKe
 			dropHandler(c)
 			return
 		}
-		gin.HandlerFunc(apiKeyAuth)(c)
-		if c.IsAborted() {
+		if !runClaudeTelemetrySoftAPIKeyAuth(c, apiKeyAuth) {
+			dropHandler(c)
 			return
 		}
 		forwardHandler(c)
 	}
+}
+
+type claudeTelemetryDiscardResponseWriter struct {
+	gin.ResponseWriter
+	header  http.Header
+	status  int
+	size    int
+	written bool
+}
+
+func newClaudeTelemetryDiscardResponseWriter(base gin.ResponseWriter) *claudeTelemetryDiscardResponseWriter {
+	return &claudeTelemetryDiscardResponseWriter{
+		ResponseWriter: base,
+		header:         http.Header{},
+		status:         http.StatusOK,
+		size:           -1,
+	}
+}
+
+func (w *claudeTelemetryDiscardResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *claudeTelemetryDiscardResponseWriter) WriteHeader(code int) {
+	if w.written {
+		return
+	}
+	w.status = code
+	w.written = true
+}
+
+func (w *claudeTelemetryDiscardResponseWriter) WriteHeaderNow() {
+	if !w.written {
+		w.WriteHeader(w.status)
+	}
+}
+
+func (w *claudeTelemetryDiscardResponseWriter) Write(data []byte) (int, error) {
+	w.WriteHeaderNow()
+	if w.size < 0 {
+		w.size = 0
+	}
+	w.size += len(data)
+	return len(data), nil
+}
+
+func (w *claudeTelemetryDiscardResponseWriter) WriteString(data string) (int, error) {
+	w.WriteHeaderNow()
+	if w.size < 0 {
+		w.size = 0
+	}
+	w.size += len(data)
+	return len(data), nil
+}
+
+func (w *claudeTelemetryDiscardResponseWriter) Status() int {
+	return w.status
+}
+
+func (w *claudeTelemetryDiscardResponseWriter) Size() int {
+	return w.size
+}
+
+func (w *claudeTelemetryDiscardResponseWriter) Written() bool {
+	return w.written
+}
+
+func runClaudeTelemetrySoftAPIKeyAuth(c *gin.Context, apiKeyAuth middleware.APIKeyAuthMiddleware) bool {
+	if c == nil || apiKeyAuth == nil {
+		return false
+	}
+	skipBillingKey := string(middleware.ContextKeySkipAPIKeyBilling)
+	previousSkipBilling, hadPreviousSkipBilling := c.Get(skipBillingKey)
+	c.Set(skipBillingKey, true)
+	originalWriter := c.Writer
+	c.Writer = newClaudeTelemetryDiscardResponseWriter(originalWriter)
+	gin.HandlerFunc(apiKeyAuth)(c)
+	c.Writer = originalWriter
+	if hadPreviousSkipBilling {
+		c.Set(skipBillingKey, previousSkipBilling)
+	} else if c.Keys != nil {
+		delete(c.Keys, skipBillingKey)
+	}
+
+	apiKey, ok := middleware.GetAPIKeyFromContext(c)
+	return ok && apiKey != nil
 }
 
 func claudeTelemetryDropHandler(settingService *service.SettingService) gin.HandlerFunc {

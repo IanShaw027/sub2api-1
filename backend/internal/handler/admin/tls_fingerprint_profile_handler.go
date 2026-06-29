@@ -25,6 +25,8 @@ func NewTLSFingerprintProfileHandler(profileService *service.TLSFingerprintProfi
 type CreateTLSFingerprintProfileRequest struct {
 	Platform                       string   `json:"platform"`
 	Transport                      string   `json:"transport"`
+	OS                             string   `json:"os"`
+	ClientType                     string   `json:"client_type"`
 	Name                           string   `json:"name" binding:"required"`
 	UserAgent                      string   `json:"user_agent"`
 	Originator                     string   `json:"originator"`
@@ -48,6 +50,8 @@ type CreateTLSFingerprintProfileRequest struct {
 type UpdateTLSFingerprintProfileRequest struct {
 	Platform                       *string  `json:"platform"`
 	Transport                      *string  `json:"transport"`
+	OS                             *string  `json:"os"`
+	ClientType                     *string  `json:"client_type"`
 	Name                           *string  `json:"name"`
 	UserAgent                      *string  `json:"user_agent"`
 	Originator                     *string  `json:"originator"`
@@ -122,6 +126,8 @@ func (h *TLSFingerprintProfileHandler) Create(c *gin.Context) {
 	profile := &model.TLSFingerprintProfile{
 		Platform:                       req.Platform,
 		Transport:                      req.Transport,
+		OS:                             req.OS,
+		ClientType:                     req.ClientType,
 		Name:                           req.Name,
 		UserAgent:                      req.UserAgent,
 		Originator:                     req.Originator,
@@ -411,6 +417,12 @@ func (h *TLSFingerprintProfileHandler) Update(c *gin.Context) {
 	}
 	if req.Transport != nil {
 		profile.Transport = *req.Transport
+	}
+	if req.OS != nil {
+		profile.OS = *req.OS
+	}
+	if req.ClientType != nil {
+		profile.ClientType = *req.ClientType
 	}
 	if req.UserAgent != nil {
 		profile.UserAgent = *req.UserAgent

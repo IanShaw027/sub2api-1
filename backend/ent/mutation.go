@@ -67106,6 +67106,8 @@ type TLSFingerprintProfileMutation struct {
 	name                                   *string
 	platform                               *string
 	transport                              *string
+	os                                     *string
+	client_type                            *string
 	user_agent                             *string
 	originator                             *string
 	description                            *string
@@ -67419,6 +67421,78 @@ func (m *TLSFingerprintProfileMutation) OldTransport(ctx context.Context) (v str
 // ResetTransport resets all changes to the "transport" field.
 func (m *TLSFingerprintProfileMutation) ResetTransport() {
 	m.transport = nil
+}
+
+// SetOs sets the "os" field.
+func (m *TLSFingerprintProfileMutation) SetOs(s string) {
+	m.os = &s
+}
+
+// Os returns the value of the "os" field in the mutation.
+func (m *TLSFingerprintProfileMutation) Os() (r string, exists bool) {
+	v := m.os
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOs returns the old "os" field's value of the TLSFingerprintProfile entity.
+// If the TLSFingerprintProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintProfileMutation) OldOs(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOs: %w", err)
+	}
+	return oldValue.Os, nil
+}
+
+// ResetOs resets all changes to the "os" field.
+func (m *TLSFingerprintProfileMutation) ResetOs() {
+	m.os = nil
+}
+
+// SetClientType sets the "client_type" field.
+func (m *TLSFingerprintProfileMutation) SetClientType(s string) {
+	m.client_type = &s
+}
+
+// ClientType returns the value of the "client_type" field in the mutation.
+func (m *TLSFingerprintProfileMutation) ClientType() (r string, exists bool) {
+	v := m.client_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClientType returns the old "client_type" field's value of the TLSFingerprintProfile entity.
+// If the TLSFingerprintProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintProfileMutation) OldClientType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClientType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClientType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClientType: %w", err)
+	}
+	return oldValue.ClientType, nil
+}
+
+// ResetClientType resets all changes to the "client_type" field.
+func (m *TLSFingerprintProfileMutation) ResetClientType() {
+	m.client_type = nil
 }
 
 // SetUserAgent sets the "user_agent" field.
@@ -68506,7 +68580,7 @@ func (m *TLSFingerprintProfileMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TLSFingerprintProfileMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 25)
 	if m.created_at != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldCreatedAt)
 	}
@@ -68521,6 +68595,12 @@ func (m *TLSFingerprintProfileMutation) Fields() []string {
 	}
 	if m.transport != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldTransport)
+	}
+	if m.os != nil {
+		fields = append(fields, tlsfingerprintprofile.FieldOs)
+	}
+	if m.client_type != nil {
+		fields = append(fields, tlsfingerprintprofile.FieldClientType)
 	}
 	if m.user_agent != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldUserAgent)
@@ -68594,6 +68674,10 @@ func (m *TLSFingerprintProfileMutation) Field(name string) (ent.Value, bool) {
 		return m.Platform()
 	case tlsfingerprintprofile.FieldTransport:
 		return m.Transport()
+	case tlsfingerprintprofile.FieldOs:
+		return m.Os()
+	case tlsfingerprintprofile.FieldClientType:
+		return m.ClientType()
 	case tlsfingerprintprofile.FieldUserAgent:
 		return m.UserAgent()
 	case tlsfingerprintprofile.FieldOriginator:
@@ -68649,6 +68733,10 @@ func (m *TLSFingerprintProfileMutation) OldField(ctx context.Context, name strin
 		return m.OldPlatform(ctx)
 	case tlsfingerprintprofile.FieldTransport:
 		return m.OldTransport(ctx)
+	case tlsfingerprintprofile.FieldOs:
+		return m.OldOs(ctx)
+	case tlsfingerprintprofile.FieldClientType:
+		return m.OldClientType(ctx)
 	case tlsfingerprintprofile.FieldUserAgent:
 		return m.OldUserAgent(ctx)
 	case tlsfingerprintprofile.FieldOriginator:
@@ -68728,6 +68816,20 @@ func (m *TLSFingerprintProfileMutation) SetField(name string, value ent.Value) e
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTransport(v)
+		return nil
+	case tlsfingerprintprofile.FieldOs:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOs(v)
+		return nil
+	case tlsfingerprintprofile.FieldClientType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClientType(v)
 		return nil
 	case tlsfingerprintprofile.FieldUserAgent:
 		v, ok := value.(string)
@@ -69011,6 +69113,12 @@ func (m *TLSFingerprintProfileMutation) ResetField(name string) error {
 		return nil
 	case tlsfingerprintprofile.FieldTransport:
 		m.ResetTransport()
+		return nil
+	case tlsfingerprintprofile.FieldOs:
+		m.ResetOs()
+		return nil
+	case tlsfingerprintprofile.FieldClientType:
+		m.ResetClientType()
 		return nil
 	case tlsfingerprintprofile.FieldUserAgent:
 		m.ResetUserAgent()

@@ -12,6 +12,8 @@ export interface TLSFingerprintProfile {
   id: number
   platform: string
   transport: string
+  os: string
+  client_type: string
   name: string
   user_agent: string
   originator: string
@@ -39,6 +41,8 @@ export interface TLSFingerprintProfile {
 export interface CreateProfileRequest {
   platform?: string
   transport?: string
+  os?: string
+  client_type?: string
   name: string
   user_agent?: string
   originator?: string
@@ -64,6 +68,8 @@ export interface CreateProfileRequest {
 export interface UpdateProfileRequest {
   platform?: string
   transport?: string
+  os?: string
+  client_type?: string
   name?: string
   user_agent?: string
   originator?: string

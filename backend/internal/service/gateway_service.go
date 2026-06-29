@@ -7212,19 +7212,22 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	// PII + 环境特征归一化：按 OAuth 账号生成确定性伪值替换 system prompt 中的
 	// email/git user/working directory/platform/shell/OS version，防止真实 CC
 	// 客户端注入的 PII 和环境信息被透传到上游。同时对 messages 中出现的工作目录
-	// 路径做全量替换。无条件执行（不依赖 anti-ban 开关）；必须在 CCH 签名之前。
+	// 路径做全量替换。仅在 Anthropic OAuth/SetupToken 且 anti-ban 平台开关开启时执行；
+	// APIKey 账号保持原始 body，不做 Claude 防分发类改写。必须在 CCH 签名之前。
 	var envProfile *AccountEnvProfile
 	var workDirRewrite *WorkDirRewrite
-	if account != nil && account.IsOAuth() {
+	if s.shouldApplyClaudeAntiBanBodyTransforms(ctx, account) {
 		envProfile = buildAccountEnvProfile(account.ID, fingerprint)
 		body, workDirRewrite = normalizeSystemPromptPII(body, envProfile)
 		if workDirRewrite != nil {
 			body = replaceWorkDirInBody(body, workDirRewrite)
 		}
-		body = SanitizeClaudeOAuthBody(body, envProfile)
-	} else {
-		// 非 OAuth 账号降级为仅删除 PII（不替换）
-		body = scrubSystemPromptPII(body)
+		var reminderWorkDirRewrite *WorkDirRewrite
+		body, reminderWorkDirRewrite = SanitizeClaudeOAuthBodyWithWorkDirRewrite(body, envProfile)
+		if workDirRewrite == nil && reminderWorkDirRewrite != nil {
+			workDirRewrite = reminderWorkDirRewrite
+			body = replaceWorkDirInBody(body, workDirRewrite)
+		}
 	}
 
 	// === 计算最终 anthropic-beta header（先于 body sanitize 与 CCH 签名）===
@@ -11096,7 +11099,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	if ctFingerprint != nil && ctEnableFP {
 		body = syncBillingHeaderVersion(body, ctFingerprint.UserAgent)
 	}
-	if account != nil && account.IsOAuth() {
+	if s.shouldApplyClaudeAntiBanBodyTransforms(ctx, account) {
 		body = SanitizeClaudeOAuthBody(body, buildAccountEnvProfile(account.ID, ctFingerprint))
 	}
 

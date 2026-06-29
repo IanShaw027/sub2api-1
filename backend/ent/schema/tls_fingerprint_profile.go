@@ -55,6 +55,20 @@ func (TLSFingerprintProfile) Fields() []ent.Field {
 			MaxLen(20).
 			Default(""),
 
+		// os: optional operating-system classification (windows/macos/linux).
+		// Empty string means OS-agnostic / shared across operating systems.
+		// Used for admin-UI filtering and per-OS account binding.
+		field.String("os").
+			MaxLen(20).
+			Default(""),
+
+		// client_type: optional client classification within a platform
+		// (e.g. codex-cli, chatgpt-desktop, claude-code, browser).
+		// Empty string means client-agnostic. Used for filtering and binding.
+		field.String("client_type").
+			MaxLen(50).
+			Default(""),
+
 		// user_agent: optional upstream User-Agent sent when this template is applied.
 		// Empty string falls back to the built-in default (e.g. Codex CLI UA).
 		field.String("user_agent").
