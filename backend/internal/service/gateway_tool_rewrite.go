@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"math/rand"
@@ -42,13 +43,21 @@ const dynamicToolMapThreshold = 5
 //   - Forward: real → fake，请求阶段在 body 上应用。
 //   - Reverse: fake → real，响应阶段对每个 chunk 做 bytes.Replace 还原。
 //
-// ReverseOrdered 是按假名长度倒序的 (fake, real) 列表，用于防止短假名是长假名的
-// 子串时 bytes.Replace 先被吃掉（对齐 Parrot _restore_tool_names_in_chunk 的
-// `sorted(..., key=lambda x: len(x[1]), reverse=True)`）。
+// ReverseOrdered 是按假名长度倒序的 (fake, real) 列表，仅包含工具名对，
+// 用于防止短假名是长假名的子串时 bytes.Replace 先被吃掉。
+//
+// PropForward/PropReverse 存储 schema 属性名重命名映射（real → fake / fake → real）。
+// 属性反向映射通过独立的 restorePropNamesInJSON 做 JSON-key-aware 替换，
+// 不走 ReverseOrdered 的 byte-level 路径，避免误替换 model 文本中的通用标识符。
+//
+// DescStripped 标记是否对工具描述做了剥离（用于日志/调试）。
 type ToolNameRewrite struct {
 	Forward        map[string]string
 	Reverse        map[string]string
 	ReverseOrdered [][2]string
+	PropForward    map[string]string
+	PropReverse    map[string]string
+	DescStripped   bool
 }
 
 // buildDynamicToolMap 构造 tools 的动态假名映射。
@@ -122,10 +131,14 @@ func shouldSkipShadowToolName(name string) bool {
 }
 
 // buildToolNameRewriteFromBody 扫描 body 的 tools[*].name，构造 ToolNameRewrite
-// 并返回它。若不需要混淆（tools 数量不足 + 没有匹配静态前缀的工具）返回 nil。
+// 并返回它。若不需要混淆（tools 数量不足 + 没有匹配静态前缀的工具）且无 schema prop
+// 重命名，返回 nil。
+//
+// schemaPropRewrites 为 schema 属性名→替换名映射，nil/empty 时跳过属性重命名。
+// 只有在 tools 中实际出现匹配的 properties key 时才记录。
 //
 // 注意：只扫描，不改 body。真正的 body 改写在 applyToolNameRewriteToBody。
-func buildToolNameRewriteFromBody(body []byte) *ToolNameRewrite {
+func buildToolNameRewriteFromBody(body []byte, schemaPropRewrites map[string]string) *ToolNameRewrite {
 	tools := gjson.GetBytes(body, "tools")
 	if !tools.IsArray() {
 		return nil
@@ -158,7 +171,17 @@ func buildToolNameRewriteFromBody(body []byte) *ToolNameRewrite {
 		rw.Forward[name] = fake
 		rw.Reverse[fake] = name
 	}
-	if len(rw.Forward) == 0 {
+
+	// Scan schema properties for rewriting
+	if len(schemaPropRewrites) > 0 {
+		propFwd, propRev := scanSchemaProperties(body, schemaPropRewrites)
+		if len(propFwd) > 0 {
+			rw.PropForward = propFwd
+			rw.PropReverse = propRev
+		}
+	}
+
+	if len(rw.Forward) == 0 && len(rw.PropForward) == 0 {
 		return nil
 	}
 
@@ -182,6 +205,11 @@ func buildToolNameRewriteFromBody(body []byte) *ToolNameRewrite {
 //
 // 响应侧 bytes.Replace 会连带还原假名 → 真名。
 func applyToolNameRewriteToBody(body []byte, rw *ToolNameRewrite) []byte {
+	// Apply schema property renames if configured
+	if rw != nil && len(rw.PropForward) > 0 {
+		body = rewriteSchemaProperties(body, rw.PropForward)
+	}
+
 	if rw == nil || len(rw.Forward) == 0 {
 		body = applyToolsLastCacheBreakpoint(body)
 		return body
@@ -199,12 +227,18 @@ func applyToolNameRewriteToBody(body []byte, rw *ToolNameRewrite) []byte {
 			if name == "" || shouldSkipShadowToolName(name) {
 				return true
 			}
+			// Tool name rewrite
 			fake, ok := rw.Forward[name]
 			if !ok {
 				return true
 			}
 			if next, err := sjson.SetBytes(body, fmt.Sprintf("tools.%d.name", idx), fake); err == nil {
 				body = next
+			}
+			if t.Get("description").Exists() {
+				if next, err := sjson.SetBytes(body, fmt.Sprintf("tools.%d.description", idx), ""); err == nil {
+					body = next
+				}
 			}
 			return true
 		})
@@ -253,6 +287,163 @@ func applyToolNameRewriteToBody(body []byte, rw *ToolNameRewrite) []byte {
 	}
 
 	body = applyToolsLastCacheBreakpoint(body)
+	return body
+}
+
+// scanSchemaProperties scans tools[*].input_schema.properties for keys matching
+// schemaPropRewrites and returns forward (real→fake) and reverse (fake→real) maps.
+// Only properties that actually exist in at least one tool are included.
+func scanSchemaProperties(body []byte, rewrites map[string]string) (forward, reverse map[string]string) {
+	tools := gjson.GetBytes(body, "tools")
+	if !tools.IsArray() {
+		return nil, nil
+	}
+	forward = make(map[string]string)
+	reverse = make(map[string]string)
+	tools.ForEach(func(_, t gjson.Result) bool {
+		if !shouldMimicToolName(t.Get("type").String()) {
+			return true
+		}
+		props := t.Get("input_schema.properties")
+		if !props.IsObject() {
+			return true
+		}
+		props.ForEach(func(key, _ gjson.Result) bool {
+			propName := key.String()
+			if replacement, ok := rewrites[propName]; ok && replacement != propName {
+				forward[propName] = replacement
+				reverse[replacement] = propName
+			}
+			return true
+		})
+		return true
+	})
+	if len(forward) == 0 {
+		return nil, nil
+	}
+	return forward, reverse
+}
+
+// rewriteSchemaProperties renames property keys in tools[*].input_schema.properties
+// and synchronizes the required[] array for each tool.
+// Also renames matching keys in messages[*].content[*].input (tool_use blocks' input objects).
+func rewriteSchemaProperties(body []byte, propForward map[string]string) []byte {
+	tools := gjson.GetBytes(body, "tools")
+	if !tools.IsArray() {
+		return body
+	}
+	idx := -1
+	tools.ForEach(func(_, t gjson.Result) bool {
+		idx++
+		if !shouldMimicToolName(t.Get("type").String()) {
+			return true
+		}
+		props := t.Get("input_schema.properties")
+		if !props.IsObject() {
+			return true
+		}
+		propsPath := fmt.Sprintf("tools.%d.input_schema.properties", idx)
+		reqPath := fmt.Sprintf("tools.%d.input_schema.required", idx)
+		type propRename struct {
+			oldName string
+			newName string
+			raw     string
+		}
+		renames := make([]propRename, 0)
+		props.ForEach(func(key, val gjson.Result) bool {
+			propName := key.String()
+			newName, ok := propForward[propName]
+			if !ok {
+				return true
+			}
+			renames = append(renames, propRename{oldName: propName, newName: newName, raw: val.Raw})
+			return true
+		})
+		for _, rename := range renames {
+			// Copy value to new key after the gjson iterator has finished reading the old body.
+			if next, err := sjson.SetRawBytes(body, propsPath+"."+rename.newName, []byte(rename.raw)); err == nil {
+				body = next
+			}
+			// Delete old key after setting the replacement.
+			if next, err := sjson.DeleteBytes(body, propsPath+"."+rename.oldName); err == nil {
+				body = next
+			}
+		}
+		// Sync required[] array
+		reqArr := gjson.GetBytes(body, reqPath)
+		if reqArr.IsArray() {
+			newReqs := make([]string, 0)
+			reqArr.ForEach(func(_, v gjson.Result) bool {
+				name := v.String()
+				if newName, ok := propForward[name]; ok {
+					newReqs = append(newReqs, newName)
+				} else {
+					newReqs = append(newReqs, name)
+				}
+				return true
+			})
+			if next, err := sjson.SetBytes(body, reqPath, newReqs); err == nil {
+				body = next
+			}
+		}
+		return true
+	})
+	// Also rename matching property keys in historical tool_use input objects
+	body = rewriteToolUseInputProperties(body, propForward)
+	return body
+}
+
+// rewriteToolUseInputProperties renames property keys in messages[*].content[*].input
+// where content type is "tool_use", keeping the tool_use input consistent with the
+// renamed schema properties.
+func rewriteToolUseInputProperties(body []byte, propForward map[string]string) []byte {
+	messages := gjson.GetBytes(body, "messages")
+	if !messages.IsArray() {
+		return body
+	}
+	messages.ForEach(func(msgKey, msg gjson.Result) bool {
+		msgIdx := int(msgKey.Num)
+		content := msg.Get("content")
+		if !content.IsArray() {
+			return true
+		}
+		content.ForEach(func(blkKey, blk gjson.Result) bool {
+			blkIdx := int(blkKey.Num)
+			if blk.Get("type").String() != "tool_use" {
+				return true
+			}
+			input := blk.Get("input")
+			if !input.IsObject() {
+				return true
+			}
+			inputPath := fmt.Sprintf("messages.%d.content.%d.input", msgIdx, blkIdx)
+			type inputRename struct {
+				oldName string
+				newName string
+				raw     string
+			}
+			renames := make([]inputRename, 0)
+			input.ForEach(func(key, val gjson.Result) bool {
+				propName := key.String()
+				newName, ok := propForward[propName]
+				if !ok {
+					return true
+				}
+				renames = append(renames, inputRename{oldName: propName, newName: newName, raw: val.Raw})
+				return true
+			})
+			for _, rename := range renames {
+				if next, err := sjson.SetRawBytes(body, inputPath+"."+rename.newName, []byte(rename.raw)); err == nil {
+					body = next
+				}
+				if next, err := sjson.DeleteBytes(body, inputPath+"."+rename.oldName); err == nil {
+					body = next
+				}
+			}
+			return true
+		})
+		return true
+	})
 	return body
 }
 
@@ -316,7 +507,60 @@ func restoreToolNamesInBytes(data []byte, rw *ToolNameRewrite) []byte {
 	for prefix, replacement := range staticToolNameRewrites {
 		data = replaceAllBytes(data, replacement, prefix)
 	}
+	// JSON-key-aware prop name reversal (avoids mutating free-text occurrences)
+	data = restorePropNamesInJSON(data, rw)
 	return data
+}
+
+// restorePropNamesInJSON reverses schema property name renames in a JSON-key-aware
+// manner. Instead of blind strings.ReplaceAll (which would corrupt model-generated
+// prose containing common words like "thread_id"), it only replaces occurrences
+// that appear in JSON key position ("fake_name":) or as quoted JSON string values
+// ("fake_name"). This is safe for SSE streaming because each `data:` line is a
+// complete JSON fragment — keys are not split across chunk boundaries.
+func restorePropNamesInJSON(data []byte, rw *ToolNameRewrite) []byte {
+	if rw == nil || len(rw.PropReverse) == 0 {
+		return data
+	}
+	var decoded any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return data
+	}
+	decoded = restorePropNamesJSONValue(decoded, rw.PropReverse, "")
+	out, err := json.Marshal(decoded)
+	if err != nil {
+		return data
+	}
+	return out
+}
+
+func restorePropNamesJSONValue(v any, reverse map[string]string, parentKey string) any {
+	switch val := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(val))
+		for key, child := range val {
+			newKey := key
+			if real, ok := reverse[key]; ok {
+				newKey = real
+			}
+			out[newKey] = restorePropNamesJSONValue(child, reverse, newKey)
+		}
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, child := range val {
+			if s, ok := child.(string); ok && parentKey == "required" {
+				if real, ok := reverse[s]; ok {
+					out[i] = real
+					continue
+				}
+			}
+			out[i] = restorePropNamesJSONValue(child, reverse, parentKey)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // replaceAllBytes 是 bytes.ReplaceAll 的便捷封装，避免每个调用点各自做 []byte 转换。

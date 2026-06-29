@@ -1564,3 +1564,32 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_StreamingUpstreamReadErrorAft
 	require.True(t, result.clientDisconnect)
 	require.Equal(t, 8, result.usage.InputTokens)
 }
+
+func TestGatewayService_BuildUpstreamRequestStripsClientProxyTelemetryAfterPassthrough(t *testing.T) {
+	setGinTestMode()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("X-Stainless-OS", "client-os")
+	c.Request.Header.Set("Accept", "application/json")
+
+	normalizer := NewFingerprintNormalizer(nil, nil, nil, &CanonicalFingerprintConfig{
+		Enabled:           true,
+		AntiBanEnabled:    true,
+		EnabledByPlatform: map[string]bool{PlatformAnthropic: true},
+		StripProxyHeaders: []string{"x-litellm", "helicone", "cf-aig", "x-portkey", "x-forwarded", "via"},
+	}, NewPlatformFingerprintManager(nil))
+	svc := &GatewayService{
+		cfg: &config.Config{
+			Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize},
+		},
+		fingerprintNormalizer: normalizer,
+	}
+	account := &Account{ID: 42, Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+
+	req, _, err := svc.buildUpstreamRequest(context.Background(), c, account, []byte(`{"model":"claude-3-7-sonnet-20250219"}`), "oauth-token", "oauth", "claude-3-7-sonnet-20250219", true, false)
+
+	require.NoError(t, err)
+	require.Empty(t, getHeaderRaw(req.Header, "X-Stainless-OS"))
+	require.Equal(t, "application/json", getHeaderRaw(req.Header, "Accept"))
+}

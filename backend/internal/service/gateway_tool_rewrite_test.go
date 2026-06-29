@@ -68,7 +68,7 @@ func TestRestoreToolNamesInBytes_StaticPrefixRollback(t *testing.T) {
 
 func TestApplyToolNameRewriteToBody_RenamesToolsAndToolChoice(t *testing.T) {
 	body := []byte(`{"tools":[{"name":"sessions_list","input_schema":{}},{"name":"session_get","input_schema":{}},{"name":"web_search","type":"web_search_20250305"}],"tool_choice":{"type":"tool","name":"sessions_list"}}`)
-	rw := buildToolNameRewriteFromBody(body)
+	rw := buildToolNameRewriteFromBody(body, nil)
 	require.NotNil(t, rw)
 	require.Contains(t, rw.Forward, "sessions_list")
 	require.Contains(t, rw.Forward, "session_get")
@@ -92,7 +92,7 @@ func TestApplyToolNameRewriteToBody_RenamesToolUseInMessages(t *testing.T) {
 	// web_search 是 server tool（type != ""），不参与工具名改写
 	// messages 中的 tool_use.name 必须同步改写，才能和 tools[] 保持一致
 	body := []byte(`{"tools":[{"name":"sessions_list","input_schema":{}},{"name":"web_search","type":"web_search_20250305"}],"messages":[{"role":"user","content":[{"type":"text","text":"hi"}]},{"role":"assistant","content":[{"type":"tool_use","id":"tu_01","name":"sessions_list","input":{}},{"type":"text","text":"thinking"}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_01","content":"ok"}]}]}`)
-	rw := buildToolNameRewriteFromBody(body)
+	rw := buildToolNameRewriteFromBody(body, nil)
 	require.NotNil(t, rw)
 	require.Equal(t, "cc_sess_list", rw.Forward["sessions_list"])
 
@@ -111,8 +111,8 @@ func TestApplyToolNameRewriteToBody_RenamesToolUseInMessages(t *testing.T) {
 }
 
 func TestApplyToolNameRewriteToBody_RenamesToolUseWithDynamicMapping(t *testing.T) {
-	body := []byte(`{"tools":[{"name":"alpha_search","input_schema":{}},{"name":"beta_lookup","input_schema":{}},{"name":"gamma_fetch","input_schema":{}},{"name":"delta_update","input_schema":{}},{"name":"epsilon_parse","input_schema":{}},{"name":"zeta_render","input_schema":{}},{"name":"web_search","type":"web_search_20250305"}],"tool_choice":{"type":"tool","name":"gamma_fetch"},"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"tu_dyn","name":"gamma_fetch","input":{}},{"type":"tool_use","id":"tu_srv","name":"web_search","input":{}},{"type":"text","text":"done"}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_dyn","content":"ok"}]}]}`)
-	rw := buildToolNameRewriteFromBody(body)
+	body := []byte(`{"tools":[{"name":"alpha_search","description":"alpha desc","input_schema":{}},{"name":"beta_lookup","description":"beta desc","input_schema":{}},{"name":"gamma_fetch","description":"gamma desc","input_schema":{}},{"name":"delta_update","description":"delta desc","input_schema":{}},{"name":"epsilon_parse","description":"epsilon desc","input_schema":{}},{"name":"zeta_render","description":"zeta desc","input_schema":{}},{"name":"web_search","type":"web_search_20250305","description":"server desc"}],"tool_choice":{"type":"tool","name":"gamma_fetch"},"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"tu_dyn","name":"gamma_fetch","input":{}},{"type":"tool_use","id":"tu_srv","name":"web_search","input":{}},{"type":"text","text":"done"}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_dyn","content":"ok"}]}]}`)
+	rw := buildToolNameRewriteFromBody(body, nil)
 	require.NotNil(t, rw)
 	require.Len(t, rw.Forward, 6)
 
@@ -130,8 +130,29 @@ func TestApplyToolNameRewriteToBody_RenamesToolUseWithDynamicMapping(t *testing.
 	// server tool 不参与动态映射，历史 tool_use 中同名引用也保持不变
 	require.Equal(t, "web_search", gjson.GetBytes(out, "tools.6.name").String())
 	require.Equal(t, "web_search", gjson.GetBytes(out, "messages.0.content.1.name").String())
+	require.Equal(t, "", gjson.GetBytes(out, "tools.2.description").String())
+	require.Equal(t, "server desc", gjson.GetBytes(out, "tools.6.description").String())
 	// tool_result 依靠 tool_use_id 关联，不需要 name 字段
 	require.Equal(t, "ok", gjson.GetBytes(out, "messages.1.content.0.content").String())
+}
+
+func TestApplyToolNameRewriteToBody_PreservesUnchangedToolDescriptions(t *testing.T) {
+	body := []byte(`{"tools":[
+		{"name":"sessions_list","description":"session tool","input_schema":{}},
+		{"name":"search","description":"normal tool","input_schema":{}}
+	]}`)
+
+	rw := buildToolNameRewriteFromBody(body, nil)
+	require.NotNil(t, rw)
+	require.Contains(t, rw.Forward, "sessions_list")
+	require.NotContains(t, rw.Forward, "search")
+
+	out := applyToolNameRewriteToBody(body, rw)
+
+	require.Equal(t, "", gjson.GetBytes(out, "tools.0.description").String())
+	require.Equal(t, "normal tool", gjson.GetBytes(out, "tools.1.description").String())
+	require.Equal(t, "cc_sess_list", gjson.GetBytes(out, "tools.0.name").String())
+	require.Equal(t, "search", gjson.GetBytes(out, "tools.1.name").String())
 }
 
 func TestApplyToolsLastCacheBreakpoint_InjectsDefault(t *testing.T) {
@@ -251,7 +272,7 @@ func TestBuildToolNameRewriteFromBody_ReverseOrderedByLengthDesc(t *testing.T) {
         {"name":"t5","input_schema":{}},
         {"name":"t6","input_schema":{}}
     ]}`)
-	rw := buildToolNameRewriteFromBody(body)
+	rw := buildToolNameRewriteFromBody(body, nil)
 	require.NotNil(t, rw)
 	require.NotEmpty(t, rw.ReverseOrdered)
 	for i := 1; i < len(rw.ReverseOrdered); i++ {
@@ -296,7 +317,7 @@ func TestBuildToolNameRewriteFromBody_ShadowToolsAreSkipped(t *testing.T) {
 		{"name":"epsilon_parse","input_schema":{}}
 	]}`)
 
-	rw := buildToolNameRewriteFromBody(body)
+	rw := buildToolNameRewriteFromBody(body, nil)
 	require.NotNil(t, rw)
 	require.NotContains(t, rw.Forward, "cc_srv_web_search")
 	require.NotContains(t, rw.Forward, "cc_srv_web_fetch")
@@ -320,7 +341,7 @@ func TestApplyToolNameRewriteToBody_ShadowToolsKeepStableNames(t *testing.T) {
 		]}
 	]}`)
 
-	rw := buildToolNameRewriteFromBody(body)
+	rw := buildToolNameRewriteFromBody(body, nil)
 	require.NotNil(t, rw)
 	require.Contains(t, rw.Forward, "sessions_list")
 	fakeSessions := rw.Forward["sessions_list"]
@@ -333,4 +354,59 @@ func TestApplyToolNameRewriteToBody_ShadowToolsKeepStableNames(t *testing.T) {
 	require.Equal(t, "cc_srv_web_search", gjson.GetBytes(out, "messages.0.content.0.name").String())
 	require.Equal(t, fakeSessions, gjson.GetBytes(out, "tools.1.name").String())
 	require.Equal(t, fakeSessions, gjson.GetBytes(out, "messages.0.content.1.name").String())
+}
+
+func TestRewriteSchemaProperties_MultiplePropertiesDoesNotCorruptJSON(t *testing.T) {
+	body := []byte(`{"tools":[{"name":"tool","input_schema":{"type":"object","properties":{"thread_id":{"type":"string","description":"thread"},"session_id":{"type":"string","description":"session"},"keep":{"type":"string"}},"required":["thread_id","session_id","keep"]}}],"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"tool","input":{"thread_id":"thr-1","session_id":"ses-1","keep":"ok"}}]}]}`)
+	rw := buildToolNameRewriteFromBody(body, map[string]string{
+		"thread_id":  "arg_thread_id",
+		"session_id": "arg_session_id",
+	})
+	require.NotNil(t, rw)
+
+	out := applyToolNameRewriteToBody(body, rw)
+	require.True(t, gjson.ValidBytes(out), string(out))
+	require.False(t, gjson.GetBytes(out, "tools.0.input_schema.properties.thread_id").Exists())
+	require.False(t, gjson.GetBytes(out, "tools.0.input_schema.properties.session_id").Exists())
+	require.Equal(t, "string", gjson.GetBytes(out, "tools.0.input_schema.properties.arg_thread_id.type").String())
+	require.Equal(t, "string", gjson.GetBytes(out, "tools.0.input_schema.properties.arg_session_id.type").String())
+	require.ElementsMatch(t, []string{"arg_thread_id", "arg_session_id", "keep"}, []string{
+		gjson.GetBytes(out, "tools.0.input_schema.required.0").String(),
+		gjson.GetBytes(out, "tools.0.input_schema.required.1").String(),
+		gjson.GetBytes(out, "tools.0.input_schema.required.2").String(),
+	})
+	require.False(t, gjson.GetBytes(out, "messages.0.content.0.input.thread_id").Exists())
+	require.False(t, gjson.GetBytes(out, "messages.0.content.0.input.session_id").Exists())
+	require.Equal(t, "thr-1", gjson.GetBytes(out, "messages.0.content.0.input.arg_thread_id").String())
+	require.Equal(t, "ses-1", gjson.GetBytes(out, "messages.0.content.0.input.arg_session_id").String())
+	require.Equal(t, "ok", gjson.GetBytes(out, "messages.0.content.0.input.keep").String())
+}
+
+func TestRestorePropNamesInJSON_DoesNotTouchFreeTextContent(t *testing.T) {
+	rw := &ToolNameRewrite{
+		PropReverse: map[string]string{
+			"arg_thread_id":  "thread_id",
+			"arg_session_id": "session_id",
+		},
+	}
+	data := []byte(`{"tools":[{"input_schema":{"properties":{"arg_thread_id":{"type":"string"},"arg_session_id":{"type":"string"}},"required":["arg_thread_id","arg_session_id"]}}],"messages":[{"role":"assistant","content":[{"type":"text","text":"keep arg_thread_id and arg_session_id in prose"},{"type":"tool_use","id":"tu_1","name":"tool","input":{"arg_thread_id":"thr-1","arg_session_id":"ses-1"}}]}]}`)
+
+	got := restorePropNamesInJSON(data, rw)
+
+	require.True(t, gjson.ValidBytes(got), string(got))
+	require.False(t, gjson.GetBytes(got, "tools.0.input_schema.properties.arg_thread_id").Exists())
+	require.False(t, gjson.GetBytes(got, "tools.0.input_schema.properties.arg_session_id").Exists())
+	require.True(t, gjson.GetBytes(got, "tools.0.input_schema.properties.thread_id").Exists())
+	require.True(t, gjson.GetBytes(got, "tools.0.input_schema.properties.session_id").Exists())
+	require.Equal(t, "string", gjson.GetBytes(got, "tools.0.input_schema.properties.thread_id.type").String())
+	require.Equal(t, "string", gjson.GetBytes(got, "tools.0.input_schema.properties.session_id.type").String())
+	require.ElementsMatch(t, []string{"thread_id", "session_id"}, []string{
+		gjson.GetBytes(got, "tools.0.input_schema.required.0").String(),
+		gjson.GetBytes(got, "tools.0.input_schema.required.1").String(),
+	})
+	require.Equal(t, "keep arg_thread_id and arg_session_id in prose", gjson.GetBytes(got, "messages.0.content.0.text").String())
+	require.False(t, gjson.GetBytes(got, "messages.0.content.1.input.arg_thread_id").Exists())
+	require.False(t, gjson.GetBytes(got, "messages.0.content.1.input.arg_session_id").Exists())
+	require.Equal(t, "thr-1", gjson.GetBytes(got, "messages.0.content.1.input.thread_id").String())
+	require.Equal(t, "ses-1", gjson.GetBytes(got, "messages.0.content.1.input.session_id").String())
 }

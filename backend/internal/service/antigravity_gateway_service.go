@@ -911,14 +911,15 @@ func logPrefix(sessionID, accountName string) string {
 
 // AntigravityGatewayService 处理 Antigravity 平台的 API 转发
 type AntigravityGatewayService struct {
-	accountRepo       AccountRepository
-	tokenProvider     *AntigravityTokenProvider
-	rateLimitService  *RateLimitService
-	httpUpstream      HTTPUpstream
-	settingService    *SettingService
-	cache             GatewayCache // 用于模型级限流时清除粘性会话绑定
-	schedulerSnapshot *SchedulerSnapshotService
-	internal500Cache  Internal500CounterCache // INTERNAL 500 渐进惩罚计数器
+	accountRepo           AccountRepository
+	tokenProvider         *AntigravityTokenProvider
+	rateLimitService      *RateLimitService
+	httpUpstream          HTTPUpstream
+	settingService        *SettingService
+	cache                 GatewayCache // 用于模型级限流时清除粘性会话绑定
+	schedulerSnapshot     *SchedulerSnapshotService
+	internal500Cache      Internal500CounterCache // INTERNAL 500 渐进惩罚计数器
+	fingerprintNormalizer *FingerprintNormalizer
 }
 
 func (s *AntigravityGatewayService) upstreamErrorBodyReadLimit() int64 {
@@ -946,16 +947,18 @@ func NewAntigravityGatewayService(
 	httpUpstream HTTPUpstream,
 	settingService *SettingService,
 	internal500Cache Internal500CounterCache,
+	fingerprintNormalizer *FingerprintNormalizer,
 ) *AntigravityGatewayService {
 	return &AntigravityGatewayService{
-		accountRepo:       accountRepo,
-		tokenProvider:     tokenProvider,
-		rateLimitService:  rateLimitService,
-		httpUpstream:      httpUpstream,
-		settingService:    settingService,
-		cache:             cache,
-		schedulerSnapshot: schedulerSnapshot,
-		internal500Cache:  internal500Cache,
+		accountRepo:           accountRepo,
+		tokenProvider:         tokenProvider,
+		rateLimitService:      rateLimitService,
+		httpUpstream:          httpUpstream,
+		settingService:        settingService,
+		cache:                 cache,
+		schedulerSnapshot:     schedulerSnapshot,
+		internal500Cache:      internal500Cache,
+		fingerprintNormalizer: fingerprintNormalizer,
 	}
 }
 
@@ -1476,6 +1479,21 @@ func (s *AntigravityGatewayService) Forward(ctx context.Context, c *gin.Context,
 	thinkingEnabled := claudeReq.Thinking != nil && (claudeReq.Thinking.Type == "enabled" || claudeReq.Thinking.Type == "adaptive")
 	mappedModel = applyThinkingModelSuffix(mappedModel, thinkingEnabled)
 	billingModel := mappedModel
+
+	// Apply anti-fp normalizer for Antigravity (all platforms)
+	if s.fingerprintNormalizer != nil {
+		ua := ""
+		if c != nil && c.Request != nil {
+			ua = c.Request.Header.Get("User-Agent")
+		}
+		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
+		if canonical != nil {
+			_, newB, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
+			if len(newB) > 0 {
+				body = newB
+			}
+		}
+	}
 
 	// 获取 access_token
 	if s.tokenProvider == nil {
@@ -2204,6 +2222,21 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 	for _, apply := range options {
 		if apply != nil {
 			apply(&forwardOpts)
+		}
+	}
+
+	// Apply anti-fp for Gemini via Antigravity
+	if s.fingerprintNormalizer != nil {
+		ua := ""
+		if c != nil && c.Request != nil {
+			ua = c.Request.Header.Get("User-Agent")
+		}
+		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
+		if canonical != nil {
+			_, newB, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
+			if len(newB) > 0 {
+				body = newB
+			}
 		}
 	}
 
@@ -4455,6 +4488,21 @@ func (s *AntigravityGatewayService) ForwardUpstream(ctx context.Context, c *gin.
 	startTime := time.Now()
 	sessionID := getSessionID(c)
 	prefix := logPrefix(sessionID, account.Name)
+
+	// Apply anti-fp normalizer for upstream passthrough
+	if s.fingerprintNormalizer != nil {
+		ua := ""
+		if c != nil && c.Request != nil {
+			ua = c.Request.Header.Get("User-Agent")
+		}
+		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
+		if canonical != nil {
+			_, newB, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
+			if len(newB) > 0 {
+				body = newB
+			}
+		}
+	}
 
 	// 获取上游配置
 	baseURL := strings.TrimSpace(account.GetCredential("base_url"))

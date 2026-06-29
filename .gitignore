@@ -134,8 +134,12 @@ backend/cmd/server/server
 /data/.installed
 /data/config.yaml
 /data/logs/
+/data/logs/gateway-debug/
 /data/model_pricing.json
 /data/model_pricing.sha256
+/data/*.csv
+/data/public/
+/data/pages/
 deploy/docker-compose.override.yml
 .gocache/
 vite.config.js

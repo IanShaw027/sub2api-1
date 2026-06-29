@@ -2185,3 +2185,39 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 		t.Fatalf("image stream timeout = %d, want 900", cfg.Gateway.ImageStreamDataIntervalTimeout)
 	}
 }
+
+func TestValidateAntiFingerprintJitterRejectsInvalidRanges(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	cfg.Gateway.AntiFingerprint.JitterMinMs = 200
+	cfg.Gateway.AntiFingerprint.JitterMaxMs = 100
+
+	err = cfg.Validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "gateway.anti_fingerprint.jitter_max_ms must be >= jitter_min_ms")
+}
+
+func TestValidateAntiFingerprintPlatformProfileJitterRejectsInvalidRanges(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	cfg.Gateway.AntiFingerprint.PlatformProfiles = map[string]struct {
+		CanonicalUA   string   `mapstructure:"canonical_ua"`
+		JitterMinMs   int      `mapstructure:"jitter_min_ms"`
+		JitterMaxMs   int      `mapstructure:"jitter_max_ms"`
+		SpoofMemoryMB int      `mapstructure:"spoof_memory_mb"`
+		SpoofHeapMB   int      `mapstructure:"spoof_heap_mb"`
+		CPUInfo       string   `mapstructure:"cpu_info"`
+		StripExtra    []string `mapstructure:"strip_extra"`
+		BodyStripKeys []string `mapstructure:"body_strip_keys"`
+	}{
+		"anthropic": {JitterMinMs: 150, JitterMaxMs: 10},
+	}
+
+	err = cfg.Validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "gateway.anti_fingerprint.platform_profiles.anthropic.jitter_max_ms must be >= jitter_min_ms")
+}

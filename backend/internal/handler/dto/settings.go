@@ -206,6 +206,9 @@ type SystemSettings struct {
 	AntigravityUserAgentVersion            string `json:"antigravity_user_agent_version"`
 	OpenAICodexUserAgent                   string `json:"openai_codex_user_agent"`
 
+	// Anti-ban platforms (per-platform anti-fingerprint / anti-ban controls)
+	AntiBanPlatforms map[string]bool `json:"anti_ban_platforms"`
+
 	// codex_cli_only 加固
 	MinCodexVersion                      string `json:"min_codex_version"`
 	MaxCodexVersion                      string `json:"max_codex_version"`

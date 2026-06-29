@@ -827,6 +827,14 @@ type GatewayConfig struct {
 	// TLSFingerprint: TLS指纹伪装配置
 	TLSFingerprint TLSFingerprintConfig `mapstructure:"tls_fingerprint"`
 
+	// AntiFingerprint: 反指纹归一 / 抗检测配置（支持多平台）
+	AntiFingerprint AntiFingerprintConfig `mapstructure:"anti_fingerprint"`
+
+	// AntiBan: per-platform toggles for the anti-ban / anti-fingerprinting suite
+	// (normalizer, TLS spoof, header stripping, jitter, trigger sanitization etc.)
+	// Configurable in System Settings > Gateway Settings.
+	AntiBan AntiBanConfig `mapstructure:"anti_ban"`
+
 	// UsageRecord: 使用量记录异步队列配置（有界队列 + 固定 worker）
 	UsageRecord GatewayUsageRecordConfig `mapstructure:"usage_record"`
 
@@ -1103,6 +1111,44 @@ type TLSProfileConfig struct {
 	// 空则使用内置默认顺序 [0,11,10,35,16,22,23,13,43,45,51]
 	// GREASE值(如0x0a0a)会自动插入GREASE扩展
 	Extensions []uint16 `mapstructure:"extensions"`
+}
+
+// AntiFingerprintConfig 反指纹归一配置（支持多平台抗风控）
+type AntiFingerprintConfig struct {
+	Enabled             bool     `mapstructure:"enabled"`
+	StripProxyHeaders   []string `mapstructure:"strip_proxy_headers"`
+	SpoofProcessMetrics bool     `mapstructure:"spoof_process_metrics"`
+	TelemetryPaths      []string `mapstructure:"telemetry_paths"`
+	JitterMinMs         int      `mapstructure:"jitter_min_ms"`
+	JitterMaxMs         int      `mapstructure:"jitter_max_ms"`
+	// TriggerScanEnabled 开启后会扫描请求 body 中的已知第三方触发短语并替换/删除
+	TriggerScanEnabled bool `mapstructure:"trigger_scan_enabled"`
+	// TriggerPhrases 是触发短语→替换文本映射（空字符串=删除）
+	TriggerPhrases map[string]string `mapstructure:"trigger_phrases"`
+	// ToolSchemaPropRewriteEnabled 开启后对 tools schema 中的高信号属性名做归一化重命名
+	ToolSchemaPropRewriteEnabled bool `mapstructure:"tool_schema_prop_rewrite_enabled"`
+	// ToolSchemaPropRewrites 是 schema 属性名→替换名映射
+	ToolSchemaPropRewrites map[string]string `mapstructure:"tool_schema_prop_rewrites"`
+	// PlatformProfiles: 各平台覆盖（key 如 "anthropic", "openai", "grok", "antigravity"）
+	PlatformProfiles map[string]struct {
+		CanonicalUA   string   `mapstructure:"canonical_ua"`
+		JitterMinMs   int      `mapstructure:"jitter_min_ms"`
+		JitterMaxMs   int      `mapstructure:"jitter_max_ms"`
+		SpoofMemoryMB int      `mapstructure:"spoof_memory_mb"`
+		SpoofHeapMB   int      `mapstructure:"spoof_heap_mb"`
+		CPUInfo       string   `mapstructure:"cpu_info"`
+		StripExtra    []string `mapstructure:"strip_extra"`
+		BodyStripKeys []string `mapstructure:"body_strip_keys"`
+	} `mapstructure:"platform_profiles"`
+}
+
+// AntiBanConfig per-platform enable/disable for the anti-ban suite (anti-fingerprint normalizer,
+// TLS spoofing, header stripping, trigger sanitization, jitter etc.).
+// Exposed and editable in Admin System Settings > Gateway Settings.
+// Platforms: anthropic, openai, gemini, grok, kiro, antigravity, etc.
+type AntiBanConfig struct {
+	Enabled   bool            `mapstructure:"enabled"`
+	Platforms map[string]bool `mapstructure:"platforms"` // e.g. {"anthropic": false, "grok": true} // default OFF per user request; enable per-platform in UI
 }
 
 // GatewaySchedulingConfig accounts scheduling configuration.
@@ -2068,6 +2114,77 @@ func setDefaults() {
 	viper.SetDefault("gateway.user_message_queue.cleanup_interval_seconds", 60)
 
 	viper.SetDefault("gateway.tls_fingerprint.enabled", true)
+
+	// AntiFingerprint defaults (from report: enabled true, multi-platform support)
+	viper.SetDefault("gateway.anti_fingerprint.enabled", true)
+
+	// AntiBan per-platform (anti-ban suite)
+	viper.SetDefault("gateway.anti_ban.enabled", true)
+	viper.SetDefault("gateway.anti_ban.platforms", map[string]bool{
+		"anthropic":   false,
+		"openai":      false,
+		"gemini":      false,
+		"grok":        false,
+		"kiro":        false,
+		"antigravity": false,
+	})
+	viper.SetDefault("gateway.anti_fingerprint.strip_proxy_headers", []string{"x-litellm", "helicone", "cf-aig", "x-portkey", "x-forwarded", "via"})
+	viper.SetDefault("gateway.anti_fingerprint.spoof_process_metrics", true)
+	viper.SetDefault("gateway.anti_fingerprint.telemetry_paths", []string{"/telemetry", "datadog", "sentry", "statsig", "segment", "amplitude", "events"})
+	viper.SetDefault("gateway.anti_fingerprint.jitter_min_ms", 10)
+	viper.SetDefault("gateway.anti_fingerprint.jitter_max_ms", 150)
+	// Trigger phrase scanning: detects and removes known third-party harness identifiers from request body
+	viper.SetDefault("gateway.anti_fingerprint.trigger_scan_enabled", true)
+	viper.SetDefault("gateway.anti_fingerprint.trigger_phrases", map[string]string{
+		// Product names (word-boundary matching applied for short alphabetic phrases ≤6 chars)
+		"opencode":           "",
+		"windsurf":           "",
+		"cline":              "",
+		"aider":              "",
+		"roo code":           "",
+		"roo-code":           "",
+		"augment code":       "",
+		"sourcegraph":        "",
+		"tabnine":            "",
+		"codeium":            "",
+		"codestory":          "",
+		"pearai":             "",
+		"privy":              "",
+		"bolt.new":           "",
+		"v0.dev":             "",
+		"devin":              "",
+		"claude-dev":         "",
+		"cursor":             "", // 6 chars, word boundary
+		"copilot":            "", // 7 chars, no boundary needed
+		"cody":               "", // 4 chars, word boundary
+		"zed":                "", // 3 chars, word boundary
+		"continue.dev":       "", // contains dot, exact match
+		"kilo code":          "", // space, >6 chars
+		"claude code":        "", // 11 chars, no boundary
+		"supermaven":         "", // 10 chars
+		"amazon q developer": "", // long enough
+		"tabby":              "", // 5 chars, word boundary
+		// Function/marker triggers (contain special chars, exact substring match)
+		"sessions_spawn":      "",
+		"session_fork":        "",
+		"x-harness-id":        "",
+		"x-tool-runtime":      "",
+		"x-editor-version":    "",
+		"x-editor-name":       "",
+		"x-ide-name":          "",
+		"x-ide-version":       "",
+		"x-extension-version": "",
+	})
+	// Schema property rewriting: renames high-signal tool schema property names to generic alternatives.
+	// Default OFF — byte-level reverse mapping can cause false positives; enable after validation.
+	viper.SetDefault("gateway.anti_fingerprint.tool_schema_prop_rewrite_enabled", false)
+	viper.SetDefault("gateway.anti_fingerprint.tool_schema_prop_rewrites", map[string]string{
+		"session_id":     "thread_id",
+		"workspace_path": "directory_path",
+		"file_uri":       "file_path",
+		"session_name":   "thread_name",
+	})
+
 	viper.SetDefault("concurrency.ping_interval", 10)
 
 	// TokenRefresh
@@ -2627,6 +2744,26 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIResponseHeaderTimeout < 0 {
 		return fmt.Errorf("gateway.openai_response_header_timeout must be non-negative")
+	}
+	if c.Gateway.AntiFingerprint.JitterMinMs < 0 {
+		return fmt.Errorf("gateway.anti_fingerprint.jitter_min_ms must be non-negative")
+	}
+	if c.Gateway.AntiFingerprint.JitterMaxMs < 0 {
+		return fmt.Errorf("gateway.anti_fingerprint.jitter_max_ms must be non-negative")
+	}
+	if c.Gateway.AntiFingerprint.JitterMaxMs < c.Gateway.AntiFingerprint.JitterMinMs {
+		return fmt.Errorf("gateway.anti_fingerprint.jitter_max_ms must be >= jitter_min_ms")
+	}
+	for platform, profile := range c.Gateway.AntiFingerprint.PlatformProfiles {
+		if profile.JitterMinMs < 0 {
+			return fmt.Errorf("gateway.anti_fingerprint.platform_profiles.%s.jitter_min_ms must be non-negative", platform)
+		}
+		if profile.JitterMaxMs < 0 {
+			return fmt.Errorf("gateway.anti_fingerprint.platform_profiles.%s.jitter_max_ms must be non-negative", platform)
+		}
+		if profile.JitterMaxMs > 0 && profile.JitterMinMs > 0 && profile.JitterMaxMs < profile.JitterMinMs {
+			return fmt.Errorf("gateway.anti_fingerprint.platform_profiles.%s.jitter_max_ms must be >= jitter_min_ms", platform)
+		}
 	}
 	if strings.TrimSpace(c.Gateway.ConnectionPoolIsolation) != "" {
 		switch c.Gateway.ConnectionPoolIsolation {

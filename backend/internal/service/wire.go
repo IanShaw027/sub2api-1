@@ -725,6 +725,7 @@ func ProvideGatewayService(
 	kiroTokenProvider *KiroTokenProvider,
 	kiroGatewayService *KiroGatewayService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	fingerprintNormalizer *FingerprintNormalizer,
 ) *GatewayService {
 	svc := NewGatewayService(
 		accountRepo,
@@ -754,6 +755,7 @@ func ProvideGatewayService(
 		resolver,
 		balanceNotifyService,
 		userPlatformQuotaRepo,
+		fingerprintNormalizer,
 	)
 	svc.SetKiroDeps(kiroTokenProvider, kiroGatewayService)
 	return svc
@@ -805,8 +807,8 @@ var ProviderSet = wire.NewSet(
 	ProvideKiroTokenProvider,
 	ProvideKiroTokenRefresher,
 	NewKiroUsageService,
-	NewKiroGatewayService,
-	NewAntigravityGatewayService,
+	ProvideKiroGatewayService,
+	ProvideAntigravityGatewayService,
 	ProvideRateLimitService,
 	NewAccountUsageService,
 	NewAccountTestService,
@@ -863,6 +865,8 @@ var ProviderSet = wire.NewSet(
 	ProvideTLSFingerprintCaptureService,
 	ProvideTLSCaptureListener,
 	NewTLSFingerprintRouterService,
+	ProvidePlatformFingerprintManager,
+	ProvideFingerprintNormalizer,
 	NewDigestSessionStore,
 	ProvideIdempotencyCoordinator,
 	ProvideSystemOperationLockService,
@@ -936,6 +940,7 @@ func ProvideOpenAIGatewayService(
 	tlsFPRouterService *TLSFingerprintRouterService,
 	settingService *SettingService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	fingerprintNormalizer *FingerprintNormalizer,
 ) *OpenAIGatewayService {
 	svc := NewOpenAIGatewayService(
 		accountRepo,
@@ -961,9 +966,54 @@ func ProvideOpenAIGatewayService(
 		tlsFPProfileService,
 		settingService,
 		userPlatformQuotaRepo,
+		fingerprintNormalizer,
 	)
 	svc.SetTLSFingerprintRouterService(tlsFPRouterService)
 	return svc
+}
+
+func ProvideAntigravityGatewayService(
+	accountRepo AccountRepository,
+	cache GatewayCache,
+	schedulerSnapshot *SchedulerSnapshotService,
+	tokenProvider *AntigravityTokenProvider,
+	rateLimitService *RateLimitService,
+	httpUpstream HTTPUpstream,
+	settingService *SettingService,
+	internal500Cache Internal500CounterCache,
+	fingerprintNormalizer *FingerprintNormalizer,
+) *AntigravityGatewayService {
+	return NewAntigravityGatewayService(
+		accountRepo,
+		cache,
+		schedulerSnapshot,
+		tokenProvider,
+		rateLimitService,
+		httpUpstream,
+		settingService,
+		internal500Cache,
+		fingerprintNormalizer,
+	)
+}
+
+func ProvideKiroGatewayService(
+	httpUpstream HTTPUpstream,
+	tokenProvider *KiroTokenProvider,
+	rateLimitService *RateLimitService,
+	tlsFPProfileSvc *TLSFingerprintProfileService,
+	settingService *SettingService,
+	channelService *ChannelService,
+	fingerprintNormalizer *FingerprintNormalizer,
+) *KiroGatewayService {
+	return NewKiroGatewayService(
+		httpUpstream,
+		tokenProvider,
+		rateLimitService,
+		tlsFPProfileSvc,
+		settingService,
+		channelService,
+		fingerprintNormalizer,
+	)
 }
 
 // ProvideGeminiAccountAccessTokenProvider adapts GeminiTokenProvider to the

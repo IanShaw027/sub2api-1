@@ -853,6 +853,37 @@ describe("admin SettingsView payment visible method controls", () => {
     });
   });
 
+  it("preserves loaded anti-ban platform toggles when saving untouched settings", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      anti_ban_platforms: {
+        anthropic: true,
+        openai: false,
+        grok: true,
+      },
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        anti_ban_platforms: expect.objectContaining({
+          anthropic: true,
+          openai: false,
+          grok: true,
+          gemini: false,
+          kiro: false,
+          antigravity: false,
+        }),
+      }),
+    );
+  });
+
   it("keeps sticky wait timeout from updateSettings response in the form", async () => {
     updateSettings.mockImplementationOnce(async (payload) => ({
       ...baseSettingsResponse,
@@ -1135,7 +1166,7 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(wrapper.text()).toContain("平台账号自动停调阈值");
     expect(wrapper.text()).toContain("100 表示禁用该平台的自动停调阈值。");
-    expect(wrapper.findAll('[data-testid^="account-scheduling-threshold-"]')).toHaveLength(2);
+    expect(wrapper.findAll('[data-testid^="account-scheduling-threshold-"]')).toHaveLength(3);
     expect(
       (
         wrapper.get('[data-testid="account-scheduling-threshold-openai"]')
@@ -1148,6 +1179,12 @@ describe("admin SettingsView payment visible method controls", () => {
           .element as HTMLInputElement
       ).value,
     ).toBe("67");
+    expect(
+      (
+        wrapper.get('[data-testid="account-scheduling-threshold-grok"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("100");
     expect(wrapper.find('[data-testid="account-scheduling-threshold-kiro"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="account-scheduling-threshold-gemini"]').exists()).toBe(false);
   });
@@ -1158,6 +1195,7 @@ describe("admin SettingsView payment visible method controls", () => {
       account_scheduling_thresholds: {
         openai: 0,
         anthropic: 45,
+        grok: 67,
         gemini: 999,
       },
     });
@@ -1173,6 +1211,12 @@ describe("admin SettingsView payment visible method controls", () => {
           .element as HTMLInputElement
       ).value,
     ).toBe("1");
+    expect(
+      (
+        wrapper.get('[data-testid="account-scheduling-threshold-grok"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("67");
     expect(wrapper.find('[data-testid="account-scheduling-threshold-gemini"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="account-scheduling-threshold-kiro"]').exists()).toBe(false);
 
@@ -1184,6 +1228,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(payload.account_scheduling_thresholds).toEqual({
       openai: 1,
       anthropic: 45,
+      grok: 67,
     });
   });
 

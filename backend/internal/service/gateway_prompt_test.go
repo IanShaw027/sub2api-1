@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -417,8 +418,8 @@ func TestRewriteSystemForNonClaudeCode(t *testing.T) {
 			require.Contains(t, billingBlock["text"], "x-anthropic-billing-header:")
 			require.Contains(t, billingBlock["text"], "cc_version=")
 			require.Contains(t, billingBlock["text"], "cc_entrypoint=cli")
-			// 新版 CLI 已取消 cch=... 签名字段，注入的 billing block 不应再带 cch。
-			require.NotContains(t, billingBlock["text"], "cch=")
+			// billing block 应包含 cch=00000 占位符（由 signBillingHeaderCCH 在发送前替换）。
+			require.Contains(t, billingBlock["text"], "cch=")
 
 			systemBlock, ok := systemArr[1].(map[string]any)
 			require.True(t, ok)
@@ -506,4 +507,26 @@ func TestRewriteSystemForNonClaudeCodeWithPromptBlocks_UsesConfiguredBlocks(t *t
 	require.False(t, arr[1].Get("cache_control").Exists())
 	require.Equal(t, "tail", arr[2].Get("text").String())
 	require.Equal(t, "1h", arr[2].Get("cache_control.ttl").String())
+}
+
+func TestStripProxyHeadersAfterHeaderWritesRemovesForwardedProxyTelemetry(t *testing.T) {
+	n := NewFingerprintNormalizer(nil, nil, nil, &CanonicalFingerprintConfig{
+		Enabled:           true,
+		AntiBanEnabled:    true,
+		EnabledByPlatform: map[string]bool{PlatformAnthropic: true},
+		StripProxyHeaders: []string{"x-litellm", "x-forwarded", "via"},
+	}, nil)
+	req, err := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", strings.NewReader(`{}`))
+	require.NoError(t, err)
+	req.Header.Set("X-Litellm-Model", "claude")
+	req.Header.Set("X-Forwarded-For", "127.0.0.1")
+	req.Header.Set("Via", "proxy")
+	req.Header.Set("User-Agent", "claude-cli/2.1.161")
+
+	n.StripProxyHeaders(req, "anthropic")
+
+	require.Empty(t, req.Header.Values("X-Litellm-Model"))
+	require.Empty(t, req.Header.Values("X-Forwarded-For"))
+	require.Empty(t, req.Header.Values("Via"))
+	require.Equal(t, "claude-cli/2.1.161", req.Header.Get("User-Agent"))
 }

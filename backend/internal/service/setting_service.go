@@ -283,6 +283,7 @@ func defaultAccountSchedulingThresholds() map[string]int {
 	return map[string]int{
 		PlatformOpenAI:    100,
 		PlatformAnthropic: 100,
+		PlatformGrok:      100,
 	}
 }
 
@@ -385,6 +386,8 @@ var (
 )
 
 const (
+	SettingKeyAntiBanPlatforms = "anti_ban_platforms" // JSON map[string]bool : platform -> anti-ban enabled (fingerprint suite)
+
 	defaultAuthSourceBalance     = 0
 	defaultAuthSourceConcurrency = 5
 	defaultWeChatConnectMode     = "open"
@@ -2121,6 +2124,8 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	if err == nil {
 		s.refreshCachedSettings(settings)
 		triggerOpenAIWSPoolReconcileIfRuntimeSettingsChanged(settings, prevPoolSettings)
+		// Hot-apply anti-ban platform toggles
+		SetRuntimeAntiBanPlatforms(settings.AntiBanPlatforms)
 	}
 	return err
 }
@@ -2168,6 +2173,8 @@ func (s *SettingService) UpdateSettingsWithAuthSourceDefaults(ctx context.Contex
 	if err == nil {
 		s.refreshCachedSettings(settings)
 		triggerOpenAIWSPoolReconcileIfRuntimeSettingsChanged(settings, prevPoolSettings)
+		// Hot-apply anti-ban platform toggles
+		SetRuntimeAntiBanPlatforms(settings.AntiBanPlatforms)
 	}
 	return err
 }
@@ -2262,6 +2269,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	}
 	if err := validateKiroRuntimeSettingsForUpdate(settings); err != nil {
 		return nil, err
+	}
+	if settings.AntiBanPlatforms != nil {
+		settings.AntiBanPlatforms = normalizeAntiBanPlatforms(settings.AntiBanPlatforms)
 	}
 	normalizedWhitelist, err := NormalizeRegistrationEmailSuffixWhitelist(settings.RegistrationEmailSuffixWhitelist)
 	if err != nil {
@@ -2624,6 +2634,15 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyRewriteMessageCacheControl] = strconv.FormatBool(settings.RewriteMessageCacheControl)
 	updates[SettingKeyAntigravityUserAgentVersion] = antigravity.NormalizeUserAgentVersion(settings.AntigravityUserAgentVersion)
 	updates[SettingKeyOpenAICodexUserAgent] = strings.TrimSpace(settings.OpenAICodexUserAgent)
+	// Anti-ban per-platform (防封控开关，按平台)
+	if settings.AntiBanPlatforms != nil {
+		settings.AntiBanPlatforms = normalizeAntiBanPlatforms(settings.AntiBanPlatforms)
+		if b, err := json.Marshal(settings.AntiBanPlatforms); err == nil {
+			updates[SettingKeyAntiBanPlatforms] = string(b)
+		} else {
+			updates[SettingKeyAntiBanPlatforms] = "{}"
+		}
+	}
 	// codex_cli_only 加固
 	updates[SettingKeyMinCodexVersion] = strings.TrimSpace(settings.MinCodexVersion)
 	updates[SettingKeyMaxCodexVersion] = strings.TrimSpace(settings.MaxCodexVersion)
@@ -4319,6 +4338,26 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	} else {
 		result.CodexCLIOnlyEngineFingerprintSignals = openai.DefaultEngineFingerprintSignalsJSON() // 缺失/空 → 展示默认种子
 	}
+
+	// Anti-ban per platform (default from cfg or false/off for known platforms; "默认应该是关的")
+	if raw := strings.TrimSpace(settings[SettingKeyAntiBanPlatforms]); raw != "" {
+		var m map[string]bool
+		if json.Unmarshal([]byte(raw), &m) == nil && len(m) > 0 {
+			result.AntiBanPlatforms = normalizeAntiBanPlatforms(m)
+		}
+	}
+	if result.AntiBanPlatforms == nil {
+		// fallback to cfg or sensible defaults
+		if s != nil && s.cfg != nil && len(s.cfg.Gateway.AntiBan.Platforms) > 0 {
+			result.AntiBanPlatforms = cloneAntiBanPlatforms(s.cfg.Gateway.AntiBan.Platforms)
+		} else {
+			result.AntiBanPlatforms = normalizeAntiBanPlatforms(nil)
+		}
+	} else {
+		result.AntiBanPlatforms = normalizeAntiBanPlatforms(result.AntiBanPlatforms)
+	}
+	// Propagate to runtime normalizer (DB settings override static cfg for per-platform)
+	SetRuntimeAntiBanPlatforms(result.AntiBanPlatforms)
 
 	// Web search emulation: quick enabled check from the JSON config
 	if raw := settings[SettingKeyWebSearchEmulationConfig]; raw != "" {

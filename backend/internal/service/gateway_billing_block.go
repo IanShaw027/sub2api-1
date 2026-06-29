@@ -1,12 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
+	xxhash "github.com/cespare/xxhash/v2"
 	"github.com/tidwall/gjson"
 )
 
@@ -98,25 +100,64 @@ func buildBillingAttributionText(body []byte, cliVersion string) (string, error)
 	}
 	fp := computeClaudeCodeFingerprint(body, cliVersion)
 	return fmt.Sprintf(
-		"x-anthropic-billing-header: cc_version=%s.%s; cc_entrypoint=cli;",
+		"x-anthropic-billing-header: cc_version=%s.%s; cc_entrypoint=cli; cch=00000;",
 		cliVersion, fp,
 	), nil
 }
 
-func buildBillingAttributionBlockJSON(body []byte, cliVersion string) ([]byte, error) {
-	if cliVersion == "" {
-		return nil, fmt.Errorf("cliVersion required")
+// cchSeed 是 Claude Code Zig 层 xxHash64 cch 计算的种子常量。
+// 来自 bun-anthropic/src/http/Attestation.zig 中的 xxHash64 seed。
+const cchSeed uint64 = 0x4d659218e32a3268
+
+// signBillingHeaderCCH 对最终 body 执行 cch 签名：
+//  1. 在 body 中查找占位符 "cch=00000"
+//  2. 对含占位符的 body 做 xxHash64(body, cchSeed)
+//  3. 取低 20 位 (& 0xFFFFF)，格式化为 5 位 hex
+//  4. 替换占位符为 "cch={hash}"
+//
+// 与真实 CLI Zig 层行为对齐：hash 输入是含占位符的 body，替换后 body 长度不变。
+// 不含占位符的 body 直接返回（非 Claude Code 伪装路径）。
+func signBillingHeaderCCH(body []byte) []byte {
+	placeholder := []byte("cch=00000")
+	if !bytes.Contains(body, placeholder) {
+		return body
 	}
-	billingVersion := composeClaudeCodeBillingVersion(body, cliVersion)
-	if billingVersion == "" {
-		return nil, fmt.Errorf("cliVersion required")
+	h := xxhash.NewWithSeed(cchSeed)
+	h.Write(body)
+	digest := h.Sum64()
+	signed := []byte(fmt.Sprintf("cch=%05x", digest&0xFFFFF))
+	return bytes.Replace(body, placeholder, signed, 1)
+}
+
+// cchRealValueRe 匹配 body 中 cch=XXXXX（5 位 hex，非占位符 00000）。
+var cchRealValueRe = regexp.MustCompile(`cch=([0-9a-f]{5})`)
+
+// verifyCCHFromRealCLI 从真实 Claude Code CLI 请求的 body 中提取实际 cch 值，
+// 将其替换回占位符 cch=00000 后用我们的算法重算，返回 (realCCH, ourCCH, match)。
+//
+// 如果 body 中不包含合法的 cch=XXXXX（非 00000），返回 ("", "", false)。
+// 用于线上验证我们的 xxHash64 实现与真实 CLI Zig 层是否对齐。
+func verifyCCHFromRealCLI(body []byte) (realCCH, ourCCH string, match bool) {
+	loc := cchRealValueRe.FindSubmatchIndex(body)
+	if loc == nil {
+		return "", "", false
 	}
-	text := fmt.Sprintf(
-		"x-anthropic-billing-header: cc_version=%s; cc_entrypoint=cli; cch=00000;",
-		billingVersion,
-	)
-	return json.Marshal(map[string]string{
-		"type": "text",
-		"text": text,
-	})
+	realCCH = string(body[loc[2]:loc[3]])
+	if realCCH == "00000" {
+		// 占位符，不是真实值
+		return "", "", false
+	}
+
+	// 将真实 cch 替换回占位符
+	placeholderBody := make([]byte, len(body))
+	copy(placeholderBody, body)
+	copy(placeholderBody[loc[2]:loc[3]], []byte("00000"))
+
+	// 用我们的算法重算
+	h := xxhash.NewWithSeed(cchSeed)
+	h.Write(placeholderBody)
+	digest := h.Sum64()
+	ourCCH = fmt.Sprintf("%05x", digest&0xFFFFF)
+
+	return realCCH, ourCCH, realCCH == ourCCH
 }

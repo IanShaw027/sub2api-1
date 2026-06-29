@@ -207,6 +207,18 @@ gateway:
   #
   # 注意：开启后会影响所有客户端的行为（不仅限于 VS Code / Codex CLI），请谨慎开启。
   force_codex_cli: false
+  # Per-platform anti-ban / anti-fingerprint suite (fingerprint normalizer + TLS spoof + header strip + jitter + trigger sanitization).
+  # Defaults to OFF ("默认应该是关的"). Enable explicitly per platform in System Settings > Gateway Settings (DB overrides).
+  # 各平台防封控套件默认关闭；需在 系统设置 > 网关设置 里为具体平台手动开启（DB 优先覆盖此配置）。
+  anti_ban:
+    enabled: true
+    platforms:
+      anthropic: false
+      openai: false
+      gemini: false
+      grok: false
+      kiro: false
+      antigravity: false
   # Enable Codex image-generation bridge injection for /openai/v1/responses.
   # 是否为 Codex /responses 请求自动注入 image_generation 工具与桥接指令。
   #

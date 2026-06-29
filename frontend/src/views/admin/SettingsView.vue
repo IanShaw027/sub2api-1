@@ -4794,6 +4794,45 @@
             </div>
           </div>
 
+          <!-- Anti-Ban / 防封控 Suite (Per-Platform) -->
+          <div class="card">
+            <div
+              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+            >
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ localText("防封控套件（按平台）", "Anti-Ban / Fingerprint Suite (Per-Platform)") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{
+                  localText(
+                    "在系统设置中控制指纹归一化、TLS 伪装、头部剥离、抖动、触发词清理等整套防封控功能对哪些平台生效。默认全部关闭，需要时手动为对应平台开启。",
+                    "Toggle the complete anti-ban suite (fingerprint normalizer + TLS spoof + header stripping + jitter + trigger sanitizers etc) per platform. Defaults to OFF for all; manually enable for platforms that need it (e.g. Grok/Codex).",
+                  )
+                }}
+              </p>
+            </div>
+            <div class="p-6 space-y-4">
+              <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                <div
+                  v-for="p in antiBanPlatformList"
+                  :key="p"
+                  class="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-dark-700 dark:bg-dark-800/60"
+                >
+                  <span class="font-mono text-sm text-gray-700 dark:text-gray-200">{{ p }}</span>
+                  <Toggle v-model="form.anti_ban_platforms[p]" />
+                </div>
+              </div>
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                {{
+                  localText(
+                    "默认关闭（未显式开启的平台不启用防封控）；更改保存后即时生效（网关流程中实时读取，无需重启服务）。",
+                    "Defaults to OFF (platforms not explicitly enabled have anti-ban disabled). Changes apply immediately on save (runtime read in gateway path, no server restart required).",
+                  )
+                }}
+              </p>
+            </div>
+          </div>
+
           <!-- Web Search Emulation -->
           <div class="card">
             <div
@@ -8641,6 +8680,9 @@ const settingsTabs = [
 ];
 const schedulingThresholdPlatforms = SCHEDULING_THRESHOLD_PLATFORMS;
 
+// Platforms supported by per-platform anti-ban toggles (matches backend defaults + grok)
+const antiBanPlatformList = ["anthropic", "openai", "gemini", "grok", "kiro", "antigravity"];
+
 const settingsTabKeyboardActions = {
   ArrowLeft: -1,
   ArrowUp: -1,
@@ -9286,6 +9328,7 @@ type SettingsForm = Omit<
   default_platform_quotas: DefaultPlatformQuotasMap;
   openai_oauth_image_bridge_disable_keepalives: boolean;
   openai_oauth_image_bridge_fresh_upstream_client: boolean;
+  anti_ban_platforms: Record<string, boolean>;
 };
 
 type SettingsUpdatePayload = UpdateSettingsRequest;
@@ -9518,6 +9561,15 @@ const form = reactive<SettingsForm>({
   antigravity_user_agent_version: "",
   openai_codex_user_agent: "",
   allow_user_view_error_requests: false,
+  // Per-platform anti-ban (防封控)
+  anti_ban_platforms: {
+    anthropic: false,
+    openai: false,
+    gemini: false,
+    grok: false,
+    kiro: false,
+    antigravity: false,
+  },
   // codex_cli_only 加固
   min_codex_version: "",
   max_codex_version: "",
@@ -10302,6 +10354,19 @@ async function loadSettings() {
     form.account_scheduling_thresholds = normalizeAccountSchedulingThresholdsMap(
       settings.account_scheduling_thresholds,
     );
+    // ensure anti_ban_platforms has all keys with sensible defaults
+    const defaultAntiBanPlatforms = {
+      anthropic: false,
+      openai: false,
+      gemini: false,
+      grok: false,
+      kiro: false,
+      antigravity: false,
+    };
+    form.anti_ban_platforms = {
+      ...defaultAntiBanPlatforms,
+      ...(settings.anti_ban_platforms || {}),
+    };
     form.backend_mode_enabled = settings.backend_mode_enabled;
     form.default_subscriptions = normalizeDefaultSubscriptionSettings(
       settings.default_subscriptions,
@@ -11019,6 +11084,7 @@ async function saveSettings() {
   openai_codex_user_agent:
     form.openai_codex_user_agent?.trim() || "",
   allow_user_view_error_requests: form.allow_user_view_error_requests,
+  anti_ban_platforms: { ...(form.anti_ban_platforms || {}) },
   min_codex_version: form.min_codex_version?.trim() || "",
       max_codex_version: form.max_codex_version?.trim() || "",
       codex_cli_only_allow_app_server_clients:

@@ -45,12 +45,14 @@ const QUOTA_WINDOWS: QuotaWindowType[] = ["daily", "weekly", "monthly"]
 export type SchedulingThresholdPlatformType =
   | "openai"
   | "anthropic"
+  | "grok"
 
 export type AccountSchedulingThresholdsMap = Record<SchedulingThresholdPlatformType, number>
 
 export const SCHEDULING_THRESHOLD_PLATFORMS: SchedulingThresholdPlatformType[] = [
   "openai",
   "anthropic",
+  "grok",
 ]
 
 export function normalizeAccountSchedulingThresholdsMap(
@@ -874,6 +876,7 @@ export interface SystemSettings {
   rewrite_message_cache_control: boolean;
   antigravity_user_agent_version: string;
   openai_codex_user_agent: string;
+  anti_ban_platforms: Record<string, boolean>;
   // codex_cli_only 加固
   min_codex_version: string;
   max_codex_version: string;
@@ -1168,6 +1171,7 @@ export interface UpdateSettingsRequest {
   rewrite_message_cache_control?: boolean;
   antigravity_user_agent_version?: string;
   openai_codex_user_agent?: string;
+  anti_ban_platforms?: Record<string, boolean>;
   allow_user_view_error_requests?: boolean;
   // codex_cli_only 加固
   min_codex_version?: string;
