@@ -1474,6 +1474,16 @@ const allTLSFingerprintCapable = computed(() => {
     return true
   }
 
+  // Grok OAuth
+  if (
+    targetSelectedPlatforms.value.length === 1 &&
+    targetSelectedPlatforms.value[0] === 'grok' &&
+    targetSelectedTypes.value.length > 0 &&
+    targetSelectedTypes.value.every(t => t === 'oauth')
+  ) {
+    return true
+  }
+
   return false
 })
 

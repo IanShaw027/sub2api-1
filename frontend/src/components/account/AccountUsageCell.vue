@@ -400,8 +400,17 @@
         </span>
       </div>
       <div v-else-if="usageInfo" class="space-y-1">
-        <div v-if="grokEntitlementLabel" class="mb-0.5">
-          <span class="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+        <div v-if="grokSubscriptionTierLabel || grokEntitlementLabel" class="mb-0.5 flex flex-wrap items-center gap-1">
+          <span
+            v-if="grokSubscriptionTierLabel"
+            class="inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"
+          >
+            {{ grokSubscriptionTierLabel }}
+          </span>
+          <span
+            v-if="grokEntitlementLabel"
+            class="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+          >
             {{ grokEntitlementLabel }}
           </span>
         </div>
@@ -1113,6 +1122,12 @@ const grokLocalUsage = computed(() => usageInfo.value?.grok_local_usage || props
 const grokEntitlementLabel = computed(() => {
   const status = (usageInfo.value?.grok_entitlement_status || '').trim()
   return status || null
+})
+// 订阅 tier 透传展示：xAI 不提供可靠的订阅查询渠道，tier 仅来自上游响应头，
+// 拿到原始值即直接展示（中性徽章），不做枚举归一化以免误标。
+const grokSubscriptionTierLabel = computed(() => {
+  const tier = (usageInfo.value?.subscription_tier_raw || usageInfo.value?.subscription_tier || '').trim()
+  return tier || null
 })
 const grokRetryAfterLabel = computed(() => {
   const seconds = usageInfo.value?.grok_retry_after_seconds

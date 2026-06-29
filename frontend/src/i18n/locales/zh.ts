@@ -4658,6 +4658,10 @@ export default {
         tlsFingerprint: {
           label: 'TLS 指纹模拟',
           hint: '模拟 Node.js/Claude Code 客户端的 TLS 指纹',
+          profileLabel: '指纹模板',
+          profileHint: '选择共享模板、随机模板，或使用账号默认设置。',
+          routerLabel: '指纹路由器',
+          useDefault: '使用默认',
           defaultProfile: '内置默认',
           randomProfile: '随机',
           sharedProfile: '共享',

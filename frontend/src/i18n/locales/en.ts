@@ -4482,6 +4482,10 @@ export default {
         tlsFingerprint: {
           label: 'TLS Fingerprint Simulation',
           hint: 'Simulate Node.js/Claude Code client TLS fingerprint',
+          profileLabel: 'Fingerprint Profile',
+          profileHint: 'Choose a shared profile, random profile, or default account setting.',
+          routerLabel: 'Fingerprint Router',
+          useDefault: 'Use Default',
           defaultProfile: 'Built-in Default',
           randomProfile: 'Random',
           sharedProfile: 'shared',

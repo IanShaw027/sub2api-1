@@ -48,11 +48,66 @@ func TestAccount_IsTLSFingerprintEnabled_AllowsExistingAnthropicAndKiroBehavior(
 			}},
 			want: false,
 		},
+		{
+			name: "grok oauth enabled",
+			account: &Account{Platform: PlatformGrok, Type: AccountTypeOAuth, Extra: map[string]any{
+				"enable_tls_fingerprint": true,
+			}},
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, tt.account.IsTLSFingerprintEnabled())
+		})
+	}
+}
+
+func TestAccount_IsGrokTLSFingerprintEnabled_AllowsOnlyGrokOAuthWhenEnabled(t *testing.T) {
+	tests := []struct {
+		name    string
+		account *Account
+		want    bool
+	}{
+		{
+			name: "grok oauth enabled",
+			account: &Account{Platform: PlatformGrok, Type: AccountTypeOAuth, Extra: map[string]any{
+				"enable_tls_fingerprint": true,
+			}},
+			want: true,
+		},
+		{
+			name:    "grok oauth disabled when missing flag",
+			account: &Account{Platform: PlatformGrok, Type: AccountTypeOAuth, Extra: map[string]any{}},
+			want:    false,
+		},
+		{
+			name: "grok oauth disabled when flag false",
+			account: &Account{Platform: PlatformGrok, Type: AccountTypeOAuth, Extra: map[string]any{
+				"enable_tls_fingerprint": false,
+			}},
+			want: false,
+		},
+		{
+			name: "grok api key blocked",
+			account: &Account{Platform: PlatformGrok, Type: AccountTypeAPIKey, Extra: map[string]any{
+				"enable_tls_fingerprint": true,
+			}},
+			want: false,
+		},
+		{
+			name: "non grok blocked",
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{
+				"enable_tls_fingerprint": true,
+			}},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.account.IsGrokTLSFingerprintEnabled())
 		})
 	}
 }
@@ -130,6 +185,40 @@ func TestTLSFingerprintProfileService_ResolveTLSProfile_OpenAIUsesExistingProfil
 
 	require.NotNil(t, profile)
 	require.Equal(t, "OpenAI TLS Profile", profile.Name)
+}
+
+func TestTLSFingerprintProfileService_ResolveTLSProfile_GrokUsesBoundProfile(t *testing.T) {
+	svc := &TLSFingerprintProfileService{
+		localCache: map[int64]*model.TLSFingerprintProfile{
+			91: {ID: 91, Name: "Grok TLS Profile"},
+		},
+	}
+
+	profile := svc.ResolveTLSProfile(&Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(91),
+		},
+	})
+
+	require.NotNil(t, profile)
+	require.Equal(t, "Grok TLS Profile", profile.Name)
+}
+
+func TestTLSFingerprintProfileService_ResolveTLSProfile_GrokDisabledReturnsNil(t *testing.T) {
+	svc := &TLSFingerprintProfileService{}
+
+	profile := svc.ResolveTLSProfile(&Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint": false,
+		},
+	})
+
+	require.Nil(t, profile)
 }
 
 func TestTLSFingerprintProfileService_ResolveTLSProfile_OpenAIDisabledReturnsNil(t *testing.T) {

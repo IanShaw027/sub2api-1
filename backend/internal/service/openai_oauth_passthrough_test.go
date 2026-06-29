@@ -33,6 +33,9 @@ type httpUpstreamRecorder struct {
 	resp      *http.Response
 	responses []*http.Response
 	err       error
+
+	tlsCalled      bool
+	lastTLSProfile *tlsfingerprint.Profile
 }
 
 func (u *httpUpstreamRecorder) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
@@ -58,6 +61,8 @@ func (u *httpUpstreamRecorder) Do(req *http.Request, proxyURL string, accountID 
 }
 
 func (u *httpUpstreamRecorder) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+	u.tlsCalled = true
+	u.lastTLSProfile = profile
 	return u.Do(req, proxyURL, accountID, accountConcurrency)
 }
 

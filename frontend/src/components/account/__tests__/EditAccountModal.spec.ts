@@ -920,6 +920,64 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('tls_fingerprint_router_id')
   })
 
+  it('updates Grok OAuth TLS fingerprint profile settings in extra', async () => {
+    const account = {
+      id: 73,
+      name: 'Grok OAuth',
+      notes: '',
+      platform: 'grok',
+      type: 'oauth',
+      credentials: {
+        access_token: 'grok-at',
+        refresh_token: 'grok-rt'
+      },
+      extra: {
+        keep_flag: true,
+        enable_tls_fingerprint: false
+      },
+      proxy_id: null,
+      concurrency: 1,
+      priority: 1,
+      rate_multiplier: 1,
+      status: 'active',
+      group_ids: [],
+      expires_at: null,
+      auto_pause_on_expired: false
+    } as any
+
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    listTlsFingerprintRoutersMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([{ id: 15, name: 'Grok CLI' }])
+    listTlsFingerprintRoutersMock.mockResolvedValue([{ id: 9, name: 'UA Router' }])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await wrapper.vm.$nextTick()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="grok-tls-fingerprint-toggle"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="grok-tls-fingerprint-profile"]').text()).toContain('Grok CLI')
+    await wrapper.get('[data-testid="grok-tls-fingerprint-profile"]').setValue('15')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual(expect.objectContaining({
+      keep_flag: true,
+      enable_tls_fingerprint: true,
+      tls_fingerprint_profile_id: 15
+    }))
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('tls_fingerprint_router_id')
+  })
+
   it('submits empty extra when Kiro OAuth only has old runtime overrides', async () => {
     const account = {
       id: 3,

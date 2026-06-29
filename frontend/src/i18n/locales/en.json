@@ -3862,7 +3862,11 @@
           "defaultProfile": "Built-in Default",
           "randomProfile": "Random",
           "noRouter": "No Router",
-          "routerHint": "Optional: choose a router to select profiles by inbound User-Agent."
+          "routerHint": "Optional: choose a router to select profiles by inbound User-Agent.",
+          "profileLabel": "Fingerprint Profile",
+          "profileHint": "Choose a shared profile, random profile, or default account setting.",
+          "routerLabel": "Fingerprint Router",
+          "useDefault": "Use Default"
         },
         "sessionIdMasking": {
           "label": "Session ID Masking",

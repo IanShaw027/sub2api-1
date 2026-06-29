@@ -1340,6 +1340,8 @@ export interface AccountUsageInfo {
   grok_token_quota?: GrokQuotaWindow | null
   grok_retry_after_seconds?: number | null
   grok_entitlement_status?: string
+  subscription_tier?: string
+  subscription_tier_raw?: string
   grok_quota_snapshot_state?: string
   grok_last_quota_probe_at?: string
   grok_last_headers_seen_at?: string

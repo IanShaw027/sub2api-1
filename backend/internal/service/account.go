@@ -2197,6 +2197,7 @@ func (a *Account) IsAnthropicOAuthOrSetupToken() bool {
 // 1. Anthropic OAuth/SetupToken
 // 2. Kiro OAuth
 // 3. OpenAI OAuth/APIKey
+// 4. Grok OAuth
 // 启用后将模拟对应客户端的 TLS 握手特征。
 func (a *Account) IsTLSFingerprintEnabled() bool {
 	if a == nil {
@@ -2204,7 +2205,8 @@ func (a *Account) IsTLSFingerprintEnabled() bool {
 	}
 	if !a.IsAnthropicOAuthOrSetupToken() &&
 		(a.Platform != PlatformKiro || a.Type != AccountTypeOAuth) &&
-		!a.IsOpenAITLSFingerprintEnabled() {
+		!a.IsOpenAITLSFingerprintEnabled() &&
+		!a.IsGrokTLSFingerprintEnabled() {
 		return false
 	}
 	return a.isTLSFingerprintFlagEnabled()
@@ -2214,6 +2216,15 @@ func (a *Account) IsTLSFingerprintEnabled() bool {
 // 仅 OpenAI OAuth/APIKey 账号可通过 extra.enable_tls_fingerprint=true 启用。
 func (a *Account) IsOpenAITLSFingerprintEnabled() bool {
 	if a == nil || a.Platform != PlatformOpenAI || (a.Type != AccountTypeOAuth && a.Type != AccountTypeAPIKey) {
+		return false
+	}
+	return a.isTLSFingerprintFlagEnabled()
+}
+
+// IsGrokTLSFingerprintEnabled 检查 Grok 账号是否启用 TLS 指纹伪装。
+// 仅 Grok OAuth 账号可通过 extra.enable_tls_fingerprint=true 启用。
+func (a *Account) IsGrokTLSFingerprintEnabled() bool {
+	if a == nil || a.Platform != PlatformGrok || a.Type != AccountTypeOAuth {
 		return false
 	}
 	return a.isTLSFingerprintFlagEnabled()
