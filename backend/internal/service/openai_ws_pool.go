@@ -61,12 +61,13 @@ const (
 // openAIWSPoolRuntimeSettings 是连接池运行时可配参数的进程内快照，
 // 由 SettingService.refreshCachedSettings 在设置变更时写入；读取走 atomic 零锁。
 type openAIWSPoolRuntimeSettings struct {
-	neutralPrewarmPercent int
-	sessionIdleTTLSeconds int
-	legacyMinIdle         int
-	legacyMaxIdle         int
-	legacyStickyReserve   int
-	legacyIdleConfigured  bool
+	neutralPrewarmPercent  int
+	sessionIdleTTLSeconds  int
+	legacyMinIdle          int
+	legacyMaxIdle          int
+	legacyStickyReserve    int
+	legacyIdleConfigured   bool
+	legacyStickyConfigured bool
 }
 
 var openAIWSPoolRuntimeSettingsCache atomic.Value // *openAIWSPoolRuntimeSettings
@@ -77,11 +78,16 @@ func StoreOpenAIWSPoolRuntimeSettings(neutralPrewarmPercent, sessionIdleTTLSecon
 		neutralPrewarmPercent: neutralPrewarmPercent,
 		sessionIdleTTLSeconds: normalizeOpenAIWSSessionIdleTTLSeconds(sessionIdleTTLSeconds),
 	}
-	if len(legacyStickyReserve) > 0 {
-		settings.legacyMinIdle = neutralPrewarmPercent
-		settings.legacyMaxIdle = sessionIdleTTLSeconds
-		settings.legacyStickyReserve = legacyStickyReserve[0]
+	if len(legacyStickyReserve) == 1 {
+		settings.legacyStickyReserve = boundedIntOrDefault(legacyStickyReserve[0], 0, 100, 0)
+		settings.legacyStickyConfigured = true
+	} else if len(legacyStickyReserve) >= 3 {
+		minIdlePerAccount, maxIdlePerAccount := normalizeOpenAIWSIdleSettingValues(legacyStickyReserve[0], legacyStickyReserve[1])
+		settings.legacyMinIdle = minIdlePerAccount
+		settings.legacyMaxIdle = maxIdlePerAccount
+		settings.legacyStickyReserve = boundedIntOrDefault(legacyStickyReserve[2], 0, 100, 0)
 		settings.legacyIdleConfigured = true
+		settings.legacyStickyConfigured = true
 	}
 	openAIWSPoolRuntimeSettingsCache.Store(settings)
 }
@@ -89,12 +95,13 @@ func StoreOpenAIWSPoolRuntimeSettings(neutralPrewarmPercent, sessionIdleTTLSecon
 func StoreOpenAIWSPoolRuntimeSettingsWithIdle(neutralPrewarmPercent, sessionIdleTTLSeconds, minIdlePerAccount, maxIdlePerAccount, stickyReservePercent int) {
 	minIdlePerAccount, maxIdlePerAccount = normalizeOpenAIWSIdleSettingValues(minIdlePerAccount, maxIdlePerAccount)
 	settings := &openAIWSPoolRuntimeSettings{
-		neutralPrewarmPercent: neutralPrewarmPercent,
-		sessionIdleTTLSeconds: normalizeOpenAIWSSessionIdleTTLSeconds(sessionIdleTTLSeconds),
-		legacyMinIdle:         minIdlePerAccount,
-		legacyMaxIdle:         maxIdlePerAccount,
-		legacyStickyReserve:   boundedIntOrDefault(stickyReservePercent, 0, 100, 0),
-		legacyIdleConfigured:  true,
+		neutralPrewarmPercent:  neutralPrewarmPercent,
+		sessionIdleTTLSeconds:  normalizeOpenAIWSSessionIdleTTLSeconds(sessionIdleTTLSeconds),
+		legacyMinIdle:          minIdlePerAccount,
+		legacyMaxIdle:          maxIdlePerAccount,
+		legacyStickyReserve:    boundedIntOrDefault(stickyReservePercent, 0, 100, 0),
+		legacyIdleConfigured:   true,
+		legacyStickyConfigured: true,
 	}
 	openAIWSPoolRuntimeSettingsCache.Store(settings)
 }
@@ -1765,13 +1772,7 @@ func (p *openAIWSConnPool) neutralMaxConns(accountConcurrency int) int {
 // 其次静态 cfg，最后回退默认 30%。
 func (p *openAIWSConnPool) stickyReservePercent() int {
 	if rt, ok := loadOpenAIWSPoolRuntimeSettings(); ok {
-		if rt.legacyIdleConfigured {
-			if rt.legacyStickyReserve < 0 {
-				return 0
-			}
-			if rt.legacyStickyReserve > 100 {
-				return 100
-			}
+		if rt.legacyStickyConfigured {
 			return rt.legacyStickyReserve
 		}
 	}

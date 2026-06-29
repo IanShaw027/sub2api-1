@@ -69,10 +69,10 @@ func TestOpenAIWSPoolRuntimeSettings_AccessorPriority(t *testing.T) {
 	require.Equal(t, 4, pool.maxIdlePerAccount())
 	require.Equal(t, 0, pool.stickyReservePercent())
 
-	// 运行时快照优先。
+	// 三参数 legacy 调用只配置 sticky reserve；idle min/max 回退静态 cfg。
 	StoreOpenAIWSPoolRuntimeSettings(2, 6, 40)
-	require.Equal(t, 2, pool.minIdlePerAccount())
-	require.Equal(t, 6, pool.maxIdlePerAccount())
+	require.Equal(t, 0, pool.minIdlePerAccount())
+	require.Equal(t, 4, pool.maxIdlePerAccount())
 	require.Equal(t, 40, pool.stickyReservePercent())
 
 	// 0 是有效的运行时设置，表示不为 sticky 会话预留 neutral 之外的容量。
@@ -83,6 +83,24 @@ func TestOpenAIWSPoolRuntimeSettings_AccessorPriority(t *testing.T) {
 	cfg.Gateway.OpenAIWS.StickyReservePercent = 17
 	StoreOpenAIWSPoolRuntimeSettings(25, 120)
 	require.Equal(t, 17, pool.stickyReservePercent())
+}
+
+func TestOpenAIWSPoolRuntimeSettings_LegacyVariadicIdleAndSticky(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 4
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+
+	StoreOpenAIWSPoolRuntimeSettings(20, 1000, 2, 6, 40)
+
+	require.Equal(t, 2, pool.minIdlePerAccount())
+	require.Equal(t, 6, pool.maxIdlePerAccount())
+	require.Equal(t, 40, pool.stickyReservePercent())
+	require.Equal(t, 1000*time.Second, pool.sessionIdleTTL())
 }
 
 func TestOpenAIWSPoolRuntimeSettings_NeutralPrewarmPercentAndSessionTTLAccessors(t *testing.T) {
