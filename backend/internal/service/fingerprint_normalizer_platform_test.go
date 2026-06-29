@@ -1,11 +1,20 @@
 package service
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
+
+func TestPlatformFingerprintManager_AnthropicUserAgentMatchesClaudeDefaultHeaders(t *testing.T) {
+	mgr := NewPlatformFingerprintManager(nil)
+
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], mgr.Get(PlatformAnthropic).CanonicalUA)
+}
 
 func TestFingerprintNormalizer_ApplyToRequest_OpenAIAndGrokKeepUserAndSkipClientMetadata(t *testing.T) {
 	n := NewFingerprintNormalizer(nil, nil, nil, &CanonicalFingerprintConfig{
@@ -102,20 +111,65 @@ func TestFingerprintNormalizer_ApplyToRequest_AnthropicStillRewritesAttributionP
 	require.Contains(t, developerText, "canonical client")
 }
 
-func TestFingerprintNormalizer_DefaultTriggerPhrasesDoNotRemoveCommonProductWords(t *testing.T) {
+func TestFingerprintNormalizer_DefaultTriggerPhrasePairsKeepPreviouslyFilteredDefaults(t *testing.T) {
+	pairs := buildTriggerPhrasePairs(map[string]string{
+		"cursor": "",
+		"devin":  "",
+		"zed":    "",
+	})
+
+	require.Contains(t, pairs, [2]string{"cursor", ""})
+	require.Contains(t, pairs, [2]string{"devin", ""})
+	require.Contains(t, pairs, [2]string{"zed", ""})
+}
+
+func TestFingerprintNormalizer_DefaultTriggerPhrasePairsKeepConcreteHarnessPhrases(t *testing.T) {
+	pairs := buildTriggerPhrasePairs(map[string]string{
+		"cursor":              "",
+		"devin":               "",
+		"zed":                 "",
+		"third-party harness": "canonical client",
+	})
+	body := []byte(`{"messages":[{"role":"system","content":"Use cursor pagination with zed ordering and ask Devin for review. Remove third-party harness marker."}]}`)
+
+	out := sanitizeTriggerPhrases(body, pairs)
+	content := gjson.GetBytes(out, "messages.0.content").String()
+	require.NotContains(t, content, "cursor")
+	require.NotContains(t, content, "zed")
+	require.NotContains(t, content, "Devin")
+	require.Contains(t, content, "canonical client")
+	require.NotContains(t, content, "third-party harness")
+}
+
+func TestFingerprintNormalizer_ApplyToRequestAndStripProxyHeadersUseSameStrippingRules(t *testing.T) {
 	cfg := &CanonicalFingerprintConfig{
-		Enabled:            true,
-		AntiBanEnabled:     true,
-		TriggerScanEnabled: true,
-		TriggerPhrases: buildTriggerPhrasePairs(map[string]string{
-			"cursor": "",
-			"devin":  "",
-			"zed":    "",
-		}),
+		Enabled:           true,
+		AntiBanEnabled:    true,
+		EnabledByPlatform: map[string]bool{"anthropic": true},
+		StripProxyHeaders: []string{"x-litellm", "x-forwarded", "via"},
+		PlatformProfiles: map[string]PlatformProfile{
+			"anthropic": {StripExtra: []string{"x-stainless"}},
+		},
 	}
-	body := []byte(`{"messages":[{"role":"system","content":"Use cursor pagination with zed ordering and ask Devin for review."}]}`)
+	n := NewFingerprintNormalizer(nil, nil, nil, cfg, nil)
+	buildReq := func() *http.Request {
+		req := httptest.NewRequest("POST", "/v1/messages", nil)
+		req.Header.Set("X-Litellm-Trace", "drop")
+		req.Header.Set("X-Forwarded-For", "drop")
+		req.Header.Set("Via", "drop")
+		req.Header.Set("X-Stainless-Arch", "drop")
+		req.Header.Set("X-Anthropic-Billing-Header", "drop")
+		req.Header.Set("X-Anthropic-Attribution", "drop")
+		req.Header.Set("X-Keep", "keep")
+		return req
+	}
 
-	out := sanitizeTriggerPhrases(body, cfg.TriggerPhrases)
+	stripReq := buildReq()
+	n.StripProxyHeaders(stripReq, PlatformAnthropic)
+	applyReq := buildReq()
+	_, _, err := n.ApplyToRequest(applyReq, []byte(`{"messages":[{"role":"user","content":"hi"}]}`), &CanonicalFingerprint{Platform: PlatformAnthropic})
+	require.NoError(t, err)
 
-	require.Equal(t, "Use cursor pagination with zed ordering and ask Devin for review.", gjson.GetBytes(out, "messages.0.content").String())
+	require.Equal(t, stripReq.Header, applyReq.Header)
+	require.Equal(t, "keep", stripReq.Header.Get("X-Keep"))
 }

@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -282,12 +283,14 @@ func (n *FingerprintNormalizer) StripProxyHeaders(req *http.Request, platform st
 	if platform == "" || !n.isAntiBanEnabledFor(platform) {
 		return
 	}
-	strips := append([]string{}, n.cfg.StripProxyHeaders...)
-	if prof := n.getPlatformProfile(platform); len(prof.StripExtra) > 0 {
-		strips = append(strips, prof.StripExtra...)
+	n.stripProxyHeaders(req, platform)
+}
+
+func (n *FingerprintNormalizer) stripProxyHeaders(req *http.Request, platform string) {
+	if n == nil || req == nil || n.cfg == nil {
+		return
 	}
-	strips = append(strips, "x-anthropic-billing-header", "x-anthropic-attribution")
-	for _, prefix := range strips {
+	for _, prefix := range n.proxyHeaderStripPrefixes(platform) {
 		lowerPrefix := strings.ToLower(prefix)
 		toDelete := []string{}
 		for k := range req.Header {
@@ -299,6 +302,18 @@ func (n *FingerprintNormalizer) StripProxyHeaders(req *http.Request, platform st
 			delete(req.Header, k)
 		}
 	}
+}
+
+func (n *FingerprintNormalizer) proxyHeaderStripPrefixes(platform string) []string {
+	if n == nil || n.cfg == nil {
+		return nil
+	}
+	strips := append([]string{}, n.cfg.StripProxyHeaders...)
+	if prof := n.getPlatformProfile(platform); len(prof.StripExtra) > 0 {
+		strips = append(strips, prof.StripExtra...)
+	}
+	strips = append(strips, "x-anthropic-billing-header", "x-anthropic-attribution")
+	return strips
 }
 
 // ApplyToRequest applies the canonical to req and body.
@@ -315,22 +330,7 @@ func (n *FingerprintNormalizer) ApplyToRequest(req *http.Request, body []byte, c
 
 	// 1. Headers
 	if req != nil {
-		strips := append([]string{}, n.cfg.StripProxyHeaders...)
-		if prof := n.getPlatformProfile(canonical.Platform); len(prof.StripExtra) > 0 {
-			strips = append(strips, prof.StripExtra...)
-		}
-		strips = append(strips, "x-anthropic-billing-header", "x-anthropic-attribution")
-		for _, prefix := range strips {
-			toDelete := []string{}
-			for k := range req.Header {
-				if strings.HasPrefix(strings.ToLower(k), strings.ToLower(prefix)) {
-					toDelete = append(toDelete, k)
-				}
-			}
-			for _, k := range toDelete {
-				delete(req.Header, k)
-			}
-		}
+		n.stripProxyHeaders(req, plat)
 		if canonical.UserAgent != "" {
 			req.Header.Set("User-Agent", canonical.UserAgent)
 		}
@@ -1048,7 +1048,7 @@ func buildTriggerPhrasePairs(m map[string]string) [][2]string {
 	pairs := make([][2]string, 0, len(m))
 	for phrase, replacement := range m {
 		phrase = strings.TrimSpace(phrase)
-		if phrase == "" || isAmbiguousTriggerPhrase(phrase) {
+		if phrase == "" {
 			continue
 		}
 		pairs = append(pairs, [2]string{phrase, replacement})
@@ -1057,15 +1057,6 @@ func buildTriggerPhrasePairs(m map[string]string) [][2]string {
 		return len(pairs[i][0]) > len(pairs[j][0])
 	})
 	return pairs
-}
-
-func isAmbiguousTriggerPhrase(phrase string) bool {
-	switch strings.ToLower(strings.TrimSpace(phrase)) {
-	case "cursor", "devin", "zed":
-		return true
-	default:
-		return false
-	}
 }
 
 func safeRenameJSONKey(b []byte, key string) []byte {
@@ -1103,7 +1094,7 @@ func NewPlatformFingerprintManager(cfg *config.Config) *PlatformFingerprintManag
 	m := &PlatformFingerprintManager{
 		profiles: map[string]PlatformProfile{
 			"anthropic": {
-				CanonicalUA:   "claude-cli/2.1.161 (external, cli)",
+				CanonicalUA:   "claude-cli/" + claude.CLICurrentVersion + " (external, cli)",
 				JitterMinMs:   10,
 				JitterMaxMs:   150,
 				SpoofMemoryMB: 8192,
@@ -1219,7 +1210,6 @@ func ProvideFingerprintNormalizer(
 	if cfg != nil {
 		af := cfg.Gateway.AntiFingerprint
 		normalizerCfg.Enabled = af.Enabled
-		normalizerCfg.AntiBanEnabled = cfg.Gateway.AntiBan.Enabled
 		if len(af.StripProxyHeaders) > 0 {
 			normalizerCfg.StripProxyHeaders = af.StripProxyHeaders
 		}
