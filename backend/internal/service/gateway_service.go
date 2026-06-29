@@ -5345,7 +5345,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	}
 
 	// 解析 TLS 指纹 profile（同一请求生命周期内不变，避免重试循环中重复解析）
-	tlsProfile := s.tlsFPProfileService.ResolveTLSProfile(account)
+	tlsProfile := s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http")
 
 	// 调试日志：记录即将转发的账号信息
 	logger.LegacyPrintf("service.gateway", "[Forward] Using account: ID=%d Name=%s Platform=%s Type=%s TLSFingerprint=%v Proxy=%s",
@@ -6023,7 +6023,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 		}
 
 		attemptStart := time.Now()
-		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 		accumulatedUpstreamLatency += time.Since(attemptStart)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, accumulatedUpstreamLatency.Milliseconds())
 		if err != nil {
@@ -6109,7 +6109,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 		return req, buildErr
 	}
 	doFallbackReq := func(req *http.Request) (*http.Response, error) {
-		return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+		return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 	}
 	if fallbackResp, fallbackBody, fallbackReqModel, _, applied := s.maybeRetryAnthropicModelFallback(
 		ctx,
@@ -7200,7 +7200,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 
 	// Apply canonical anti-fingerprint normalizer (for all platforms, production complete skeleton)
 	var canonicalPlatform string
-	if s.fingerprintNormalizer != nil {
+	if s.fingerprintNormalizer != nil && claudeAntiBanEnabled {
 		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, clientHeaders.Get("User-Agent"))
 		if canonical != nil {
 			canonicalPlatform = canonical.Platform
@@ -7300,7 +7300,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	if getHeaderRaw(req.Header, "anthropic-version") == "" {
 		setHeaderRaw(req.Header, "anthropic-version", "2023-06-01")
 	}
-	if tokenType == "oauth" {
+	if tokenType == "oauth" && claudeAntiBanEnabled {
 		applyClaudeOAuthHeaderDefaults(req)
 	}
 
@@ -10738,7 +10738,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 
 	// 发送请求
 	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		detail := recordDetailedUpstreamTransportError(c, err)
@@ -10776,7 +10776,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		retryReq, retryWireBody, buildErr := s.buildCountTokensRequest(ctx, c, account, filteredBody, token, tokenType, reqModel, shouldMimicClaudeCode)
 		if buildErr == nil {
 			retryStart := time.Now()
-			retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+			retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 			SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds()+time.Since(retryStart).Milliseconds())
 			if retryErr == nil {
 				if retryResp.StatusCode < 400 {
@@ -10894,7 +10894,7 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 	if err != nil {
 		detail := recordDetailedUpstreamTransportError(c, err)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -11158,7 +11158,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	if getHeaderRaw(req.Header, "anthropic-version") == "" {
 		setHeaderRaw(req.Header, "anthropic-version", "2023-06-01")
 	}
-	if tokenType == "oauth" {
+	if tokenType == "oauth" && ctClaudeAntiBanEnabled {
 		applyClaudeOAuthHeaderDefaults(req)
 	}
 

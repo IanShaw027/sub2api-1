@@ -120,6 +120,61 @@ func TestTLSFingerprintRouterServiceUpstreamOriginatorIsPassthrough(t *testing.T
 	require.Equal(t, "codex_cli_rs", result.UpstreamOriginator)
 }
 
+func TestTLSFingerprintRouterServiceCanonicalTransportValuesValidateAndMatchRuntimeFamilies(t *testing.T) {
+	router := &model.TLSFingerprintRouter{
+		ID:      12,
+		Name:    "canonical transport",
+		Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{
+			{
+				Name:                    "codex h2",
+				Enabled:                 true,
+				Transport:               "h2",
+				MatchType:               model.TLSFingerprintRouterMatchPrefix,
+				Pattern:                 "Codex/",
+				TLSFingerprintProfileID: 15,
+			},
+			{
+				Name:                    "codex ws h2",
+				Enabled:                 true,
+				Transport:               "websocket-h2",
+				MatchType:               model.TLSFingerprintRouterMatchPrefix,
+				Pattern:                 "Codex/",
+				TLSFingerprintProfileID: 16,
+			},
+		},
+	}
+	require.NoError(t, router.Validate())
+	svc := NewTLSFingerprintRouterService(&tlsFingerprintRouterRepoStub{routers: []*model.TLSFingerprintRouter{router}}, nil)
+
+	result, ok := svc.MatchRequest(context.Background(), 12, "Codex/1.2.3", model.TLSFingerprintRouterTransportHTTP)
+	require.True(t, ok)
+	require.Equal(t, int64(15), result.ProfileID)
+
+	result, ok = svc.MatchRequest(context.Background(), 12, "Codex/1.2.3", model.TLSFingerprintRouterTransportWebSocket)
+	require.True(t, ok)
+	require.Equal(t, int64(16), result.ProfileID)
+}
+
+func TestTLSFingerprintRouterServiceLegacyCoarseTransportValuesStillValidate(t *testing.T) {
+	router := &model.TLSFingerprintRouter{
+		ID:      13,
+		Name:    "legacy transport",
+		Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{
+			{
+				Name:                    "legacy http",
+				Enabled:                 true,
+				Transport:               "http",
+				MatchType:               model.TLSFingerprintRouterMatchPrefix,
+				Pattern:                 "Codex/",
+				TLSFingerprintProfileID: 17,
+			},
+		},
+	}
+	require.NoError(t, router.Validate())
+}
+
 func TestTLSFingerprintRouterServiceMatchUserAgentRegex(t *testing.T) {
 	router := &model.TLSFingerprintRouter{
 		ID:      20,

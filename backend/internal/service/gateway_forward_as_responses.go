@@ -86,7 +86,10 @@ func (s *GatewayService) ForwardAsResponses(
 			return nil, fmt.Errorf("marshal anthropic request: %w", err)
 		}
 
-		isClaudeCode := false
+		isClaudeCode := IsClaudeCodeClient(ctx)
+		if !isClaudeCode && c != nil && c.Request != nil {
+			isClaudeCode = IsClaudeCodeClient(c.Request.Context())
+		}
 		shouldMimicClaudeCode := s.shouldMimicClaudeCodeForAccount(ctx, account, isClaudeCode) && account.Platform != PlatformKiro
 		if shouldMimicClaudeCode {
 			anthropicBody = s.applyClaudeCodeOAuthMimicryToBody(ctx, c, account, anthropicBody, anthropicReq.System, mappedModel)
@@ -163,7 +166,7 @@ func (s *GatewayService) ForwardAsResponses(
 		setOpsUpstreamRequestBody(c, upstreamWireBody)
 
 		upstreamStart := time.Now()
-		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
 			if resp != nil && resp.Body != nil {

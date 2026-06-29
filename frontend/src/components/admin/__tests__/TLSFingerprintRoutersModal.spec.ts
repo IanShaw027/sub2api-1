@@ -155,7 +155,7 @@ describe('TLSFingerprintRoutersModal', () => {
     })
   })
 
-  it('preserves rule transport when creating a router', async () => {
+  it('preserves canonical rule transport when creating a router', async () => {
     listProfilesMock.mockResolvedValue([
       {
         id: 42,
@@ -179,9 +179,9 @@ describe('TLSFingerprintRoutersModal', () => {
     await textInputs[2].setValue('codex ws')
     await textInputs[3].setValue('codex')
 
-    const transportSelect = wrapper.findAll('select').find(select => select.find('option[value="websocket"]').exists())
+    const transportSelect = wrapper.findAll('select').find(select => select.find('option[value="websocket-h2"]').exists())
     expect(transportSelect).toBeTruthy()
-    await transportSelect!.setValue('websocket')
+    await transportSelect!.setValue('websocket-h2')
 
     const submitButton = wrapper.findAll('button').find(button => button.text().includes('common.create'))
     expect(submitButton).toBeTruthy()
@@ -195,11 +195,60 @@ describe('TLSFingerprintRoutersModal', () => {
       rules: [
         expect.objectContaining({
           name: 'codex ws',
-          transport: 'websocket',
+          transport: 'websocket-h2',
           pattern: 'codex',
           tls_fingerprint_profile_id: 42,
         }),
       ],
     })
+  })
+
+  it('shows legacy rule transport when editing an existing router', async () => {
+    listRoutersMock.mockResolvedValue([
+      {
+        id: 9,
+        name: 'Legacy Router',
+        description: null,
+        enabled: true,
+        rules: [
+          {
+            name: 'legacy ws',
+            enabled: true,
+            transport: 'websocket',
+            match_type: 'prefix',
+            pattern: 'codex',
+            case_sensitive: false,
+            tls_fingerprint_profile_id: 42,
+            os: '',
+            client_type: '',
+            upstream_user_agent: '',
+            upstream_originator: ''
+          }
+        ],
+        created_at: '2026-06-18T00:00:00Z',
+        updated_at: '2026-06-18T00:00:00Z'
+      }
+    ])
+    listProfilesMock.mockResolvedValue([
+      {
+        id: 42,
+        name: 'Legacy Profile',
+        platform: 'openai',
+        transport: 'websocket-h2',
+        os: '',
+        client_type: '',
+      },
+    ])
+    const wrapper = mountModal()
+    await flushPromises()
+
+    const editButton = wrapper.findAll('button').find(button => button.attributes('title') === 'common.edit')
+    expect(editButton).toBeTruthy()
+    await editButton!.trigger('click')
+    await flushPromises()
+
+    const transportSelect = wrapper.findAll('select').find(select => select.element instanceof HTMLSelectElement && (select.element as HTMLSelectElement).value === 'websocket')
+    expect(transportSelect).toBeTruthy()
+    expect(transportSelect!.find('option[value="websocket"]').exists()).toBe(true)
   })
 })

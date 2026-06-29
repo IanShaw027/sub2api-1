@@ -136,6 +136,37 @@ extensions: [0, 10, 11, 13, 16, 43, 45, 51]
 	require.Equal(t, "h2", repo.profiles[0].Transport)
 }
 
+func TestTLSFingerprintProfileServiceImportCapturesParsesDimensions(t *testing.T) {
+	repo := &tlsFingerprintProfileImportRepoStub{}
+	svc := NewTLSFingerprintProfileService(repo, nil)
+
+	result, err := svc.ImportTLSFingerprintCaptures(context.Background(), TLSFingerprintCaptureImportRequest{
+		Profiles: []string{`
+name: "Codex Desktop over h2"
+transport: "h2"
+os: "macos"
+client_type: "codex-cli"
+enable_grease: false
+cipher_suites: [4865, 4866, 4867]
+curves: [29, 23, 24]
+point_formats: [0]
+signature_algorithms: [1027, 2052, 1025]
+alpn_protocols: ["h2", "http/1.1"]
+supported_versions: [772, 771]
+key_share_groups: [29]
+psk_modes: [1]
+extensions: [0, 10, 11, 13, 16, 43, 45, 51]
+`},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Imported)
+	require.Equal(t, "macos", result.Profiles[0].Profile.OS)
+	require.Equal(t, "codex-cli", result.Profiles[0].Profile.ClientType)
+	require.Equal(t, "macos", repo.profiles[0].OS)
+	require.Equal(t, "codex-cli", repo.profiles[0].ClientType)
+}
+
 func TestTLSFingerprintProfileServiceImportCapturesParsesParametricReplayExtensions(t *testing.T) {
 	repo := &tlsFingerprintProfileImportRepoStub{}
 	svc := NewTLSFingerprintProfileService(repo, nil)

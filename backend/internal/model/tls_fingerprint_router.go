@@ -16,6 +16,10 @@ const (
 
 	TLSFingerprintRouterTransportHTTP      = "http"
 	TLSFingerprintRouterTransportWebSocket = "websocket"
+	TLSFingerprintRouterTransportHTTP1     = "http1"
+	TLSFingerprintRouterTransportH2        = "h2"
+	TLSFingerprintRouterTransportWSHTTP1   = "websocket-http1"
+	TLSFingerprintRouterTransportWSH2      = "websocket-h2"
 )
 
 // TLSFingerprintRouter TLS 指纹路由规则集。
@@ -84,9 +88,15 @@ func (r *TLSFingerprintRouterRule) Validate(index int) error {
 		return &ValidationError{Field: prefix + ".os", Message: "os must be empty, windows, macos, or linux"}
 	}
 	switch strings.TrimSpace(r.Transport) {
-	case "", TLSFingerprintRouterTransportHTTP, TLSFingerprintRouterTransportWebSocket:
+	case "",
+		TLSFingerprintRouterTransportHTTP,
+		TLSFingerprintRouterTransportWebSocket,
+		TLSFingerprintRouterTransportHTTP1,
+		TLSFingerprintRouterTransportH2,
+		TLSFingerprintRouterTransportWSHTTP1,
+		TLSFingerprintRouterTransportWSH2:
 	default:
-		return &ValidationError{Field: prefix + ".transport", Message: "transport must be empty, http, or websocket"}
+		return &ValidationError{Field: prefix + ".transport", Message: "transport must be empty, http1, h2, websocket-http1, websocket-h2, or legacy http/websocket"}
 	}
 	switch strings.TrimSpace(r.MatchType) {
 	case TLSFingerprintRouterMatchContains, TLSFingerprintRouterMatchPrefix, TLSFingerprintRouterMatchExact:

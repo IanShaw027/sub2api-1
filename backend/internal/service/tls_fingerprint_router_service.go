@@ -135,6 +135,8 @@ func (s *TLSFingerprintRouterService) MatchUserAgent(ctx context.Context, router
 
 // MatchRequest 匹配入站请求头，采用 first-match-wins。
 // transport 为对上游的传输类型（"http"/"websocket"/""），空字符串表示不过滤。
+// 规则可保存更细的 canonical transport（http1/h2/websocket-http1/websocket-h2）；
+// runtime 只区分 HTTP vs WebSocket 时按族匹配。
 func (s *TLSFingerprintRouterService) MatchRequest(ctx context.Context, routerID int64, userAgent string, transport string) (TLSFingerprintRouterMatchResult, bool) {
 	if s == nil || routerID <= 0 {
 		return TLSFingerprintRouterMatchResult{}, false
@@ -208,7 +210,7 @@ func tlsFingerprintRouterRuleTransportAllowed(rule model.TLSFingerprintRouterRul
 	if ruleTransport == "" {
 		return true
 	}
-	return strings.EqualFold(ruleTransport, strings.TrimSpace(transport))
+	return tlsFingerprintProfileTransportMatches(ruleTransport, transport)
 }
 
 func (s *TLSFingerprintRouterService) refreshLocalCache(ctx context.Context) error {

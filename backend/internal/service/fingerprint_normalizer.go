@@ -198,11 +198,11 @@ func (n *FingerprintNormalizer) ResolveCanonical(ctx context.Context, account *A
 	}
 
 	// 1. TLS Router/Profile for effective UA and profile-driven values
-	if n.tlsRouterSvc != nil && account.IsTLSFingerprintEnabled() {
+	if n.tlsRouterSvc != nil && n.tlsProfileSvc != nil && account.IsTLSFingerprintEnabled() {
 		routerID := account.GetTLSFingerprintRouterID()
 		if routerID > 0 {
 			if match, ok := n.tlsRouterSvc.MatchRequest(ctx, routerID, ua, "http"); ok && match.ProfileID > 0 {
-				if p := n.tlsProfileSvc.ResolveTLSProfileByID(match.ProfileID); p != nil {
+				if p := n.tlsProfileSvc.resolveProfileByIDForAccount(match.ProfileID, account, "http"); p != nil {
 					if match.UpstreamUserAgent != "" {
 						c.UserAgent = match.UpstreamUserAgent
 					}

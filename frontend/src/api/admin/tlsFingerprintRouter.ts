@@ -6,7 +6,7 @@
 import { apiClient } from '../client'
 
 export type TLSFingerprintRouterMatchType = 'contains' | 'prefix' | 'exact' | 'regex'
-export type TLSFingerprintRouterTransport = '' | 'http' | 'websocket'
+export type TLSFingerprintRouterTransport = '' | 'http1' | 'h2' | 'websocket-http1' | 'websocket-h2' | 'http' | 'websocket'
 
 export interface TLSFingerprintRouterRule {
   name: string

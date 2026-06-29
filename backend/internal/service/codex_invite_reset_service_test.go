@@ -239,6 +239,82 @@ func TestCodexInviteResetServiceUsesDesktopTLSRouter(t *testing.T) {
 	require.Equal(t, "Codex Desktop", req.Header.Get("originator"))
 }
 
+func TestCodexInviteResetServiceRouterRejectsWebSocketOnlyProfileForHTTP(t *testing.T) {
+	account := &Account{
+		ID:          45,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 3,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_router_id":  float64(10),
+			"tls_fingerprint_profile_id": float64(8),
+		},
+	}
+	upstream := &codexInviteResetHTTPUpstreamStub{responsesByPath: map[string]*http.Response{
+		"/backend-api/referrals/invite/eligibility":     codexInviteResetJSONResponse(`{"requires_explicit_confirmation":true}`),
+		"/backend-api/wham/referrals/eligibility_rules": codexInviteResetJSONResponse(`{"rules":[]}`),
+		"/backend-api/wham/rate-limit-reset-credits":    codexInviteResetJSONResponse(`{"available_count":1}`),
+	}}
+	routerSvc := NewTLSFingerprintRouterService(&tlsFingerprintRouterRepoStub{routers: []*model.TLSFingerprintRouter{
+		{
+			ID:      10,
+			Name:    "openai clients",
+			Enabled: true,
+			Rules: []model.TLSFingerprintRouterRule{
+				{
+					Name:                    "desktop",
+					Enabled:                 true,
+					Transport:               model.TLSFingerprintRouterTransportHTTP,
+					MatchType:               model.TLSFingerprintRouterMatchPrefix,
+					Pattern:                 "Codex Desktop/",
+					TLSFingerprintProfileID: 7,
+					UpstreamUserAgent:       "Codex Desktop/26.616.71553 (Mac OS X 15.5; arm64)",
+					UpstreamOriginator:      "Codex Desktop",
+				},
+			},
+		},
+	}}, nil)
+	profileSvc := &TLSFingerprintProfileService{
+		localCache: map[int64]*model.TLSFingerprintProfile{
+			7: {
+				ID:        7,
+				Name:      "WebSocket Only",
+				Platform:  PlatformOpenAI,
+				Transport: model.TLSFingerprintRouterTransportWSH2,
+			},
+			8: {
+				ID:            8,
+				Name:          "HTTP Account Default",
+				Platform:      PlatformOpenAI,
+				Transport:     model.TLSFingerprintRouterTransportH2,
+				UserAgent:     "Account Default HTTP UA",
+				Originator:    "Account Default",
+				ALPNProtocols: []string{"h2", "http/1.1"},
+			},
+		},
+	}
+	svc := NewCodexInviteResetService(&codexInviteResetAdminServiceStub{account: account}, upstream, nil, profileSvc, &codexInviteResetHistoryRepoStub{})
+	svc.SetTLSFingerprintRouterService(routerSvc)
+
+	_, err := svc.GetStatus(context.Background(), account.ID)
+	require.NoError(t, err)
+
+	require.Len(t, upstream.profiles, 3)
+	for _, profile := range upstream.profiles {
+		require.NotNil(t, profile)
+		require.Equal(t, "HTTP Account Default", profile.Name)
+	}
+	req := upstream.requestByPath("/backend-api/wham/rate-limit-reset-credits")
+	require.NotNil(t, req)
+	require.Equal(t, "Account Default HTTP UA", req.Header.Get("User-Agent"))
+	require.Equal(t, "Account Default", req.Header.Get("originator"))
+}
+
 func TestCodexInviteResetServiceGetStatusFallsBackToUsageCount(t *testing.T) {
 	account := &Account{
 		ID:          43,

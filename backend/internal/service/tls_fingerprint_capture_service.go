@@ -563,6 +563,8 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 	}
 
 	rawClientHello := append([]byte(nil), req.ClientHello...)
+	sampleProfile := cloneTLSFingerprintCaptureProfile(profile)
+	mergeTLSCaptureSampleDimensionsIntoProfile(sampleProfile, strings.TrimSpace(req.ClientType), req.StainlessMetadata)
 	sample := &TLSFingerprintCaptureSample{
 		TaskID:            task.ID,
 		Platform:          platform,
@@ -586,7 +588,7 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 		ResponseMode:      strings.TrimSpace(req.ResponseMode),
 		HTTP2Fingerprint:  defaultString(strings.TrimSpace(req.HTTP2Fingerprint), strings.TrimSpace(parsed.Derived.Http2Fingerprint)),
 		StainlessMetadata: copyStringAnyMap(req.StainlessMetadata),
-		Profile:           profile,
+		Profile:           sampleProfile,
 		RawPayload:        req.RawPayload,
 		RawClientHello:    rawClientHello,
 		CapturedAt:        time.Now().UTC(),
@@ -1030,11 +1032,78 @@ func tlsCaptureSamplePayload(sample *TLSFingerprintCaptureSample) (string, error
 		}
 		return "", &model.ValidationError{Field: "replay_profile", Message: "captured sample replay profile is required"}
 	}
-	encoded, err := json.Marshal(sample.Profile)
+	profile := cloneTLSFingerprintCaptureProfile(sample.Profile)
+	mergeTLSCaptureSampleDimensionsIntoProfile(profile, strings.TrimSpace(sample.ClientType), sample.StainlessMetadata)
+	encoded, err := json.Marshal(profile)
 	if err != nil {
 		return "", err
 	}
 	return string(encoded), nil
+}
+
+func cloneTLSFingerprintCaptureProfile(profile *model.TLSFingerprintProfile) *model.TLSFingerprintProfile {
+	if profile == nil {
+		return nil
+	}
+	clone := *profile
+	if profile.Description != nil {
+		desc := *profile.Description
+		clone.Description = &desc
+	}
+	clone.CipherSuites = append([]uint16(nil), profile.CipherSuites...)
+	clone.Curves = append([]uint16(nil), profile.Curves...)
+	clone.PointFormats = append([]uint16(nil), profile.PointFormats...)
+	clone.SignatureAlgorithms = append([]uint16(nil), profile.SignatureAlgorithms...)
+	clone.SignatureAlgorithmsCert = append([]uint16(nil), profile.SignatureAlgorithmsCert...)
+	clone.ALPNProtocols = append([]string(nil), profile.ALPNProtocols...)
+	clone.SupportedVersions = append([]uint16(nil), profile.SupportedVersions...)
+	clone.KeyShareGroups = append([]uint16(nil), profile.KeyShareGroups...)
+	clone.PSKModes = append([]uint16(nil), profile.PSKModes...)
+	clone.Extensions = append([]uint16(nil), profile.Extensions...)
+	clone.ExtensionPayloads = cloneExtensionPayloads(profile.ExtensionPayloads)
+	clone.CompressCertAlgos = append([]uint16(nil), profile.CompressCertAlgos...)
+	clone.DelegatedCredentialsAlgorithms = append([]uint16(nil), profile.DelegatedCredentialsAlgorithms...)
+	clone.ApplicationSettingsProtocols = append([]string(nil), profile.ApplicationSettingsProtocols...)
+	return &clone
+}
+
+func mergeTLSCaptureSampleDimensionsIntoProfile(profile *model.TLSFingerprintProfile, clientType string, stainlessMetadata map[string]any) {
+	if profile == nil {
+		return
+	}
+	if strings.TrimSpace(profile.ClientType) == "" {
+		profile.ClientType = strings.TrimSpace(clientType)
+	}
+	if strings.TrimSpace(profile.OS) == "" {
+		profile.OS = normalizeTLSCaptureProfileOS(stringFromAny(stainlessMetadata["os"]))
+	}
+}
+
+func normalizeTLSCaptureProfileOS(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "macos", "mac", "darwin", "osx", "mac os", "mac os x":
+		return "macos"
+	case "linux":
+		return "linux"
+	case "windows", "win", "win32":
+		return "windows"
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
+}
+
+func stringFromAny(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	default:
+		if value == nil {
+			return ""
+		}
+		return fmt.Sprint(value)
+	}
 }
 
 func buildTLSCaptureSampleFingerprint(platform, transport, replayHash string, req TLSFingerprintCaptureNativeSubmitRequest) string {

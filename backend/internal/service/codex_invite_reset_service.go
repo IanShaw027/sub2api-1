@@ -450,7 +450,7 @@ func (s *CodexInviteResetService) prepareAccount(ctx context.Context, accountID 
 func (s *CodexInviteResetService) resolveTLSRuntime(ctx context.Context, account *Account) openAITLSFingerprintRuntime {
 	runtime := openAITLSFingerprintRuntime{}
 	if s != nil && s.tlsFPProfileService != nil {
-		runtime.Profile = s.tlsFPProfileService.ResolveTLSProfile(account)
+		runtime.Profile = s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http")
 	}
 	seedTLSFingerprintRuntimeHeaders(&runtime, runtime.Profile)
 	if s != nil &&
@@ -461,8 +461,17 @@ func (s *CodexInviteResetService) resolveTLSRuntime(ctx context.Context, account
 		routerID := account.GetTLSFingerprintRouterID()
 		if routerID > 0 {
 			match, ok := s.tlsFPRouterService.MatchRequest(ctx, routerID, codexInviteResetDefaultUserAgent, model.TLSFingerprintRouterTransportHTTP)
-			if ok && match.ProfileID > 0 {
-				if profile := s.tlsFPProfileService.ResolveTLSProfileByID(match.ProfileID); profile != nil {
+			if ok {
+				var profile *tlsfingerprint.Profile
+				if match.OS != "" || match.ClientType != "" {
+					if p, resolved := s.tlsFPProfileService.ResolveTLSProfileForDimensionMatch(account, match.OS, match.ClientType, "http"); resolved {
+						profile = p
+					}
+				}
+				if profile == nil && match.ProfileID > 0 {
+					profile = s.tlsFPProfileService.resolveProfileByIDForAccount(match.ProfileID, account, "http")
+				}
+				if profile != nil {
 					runtime.Profile = profile
 					runtime.UpstreamUserAgent = strings.TrimSpace(match.UpstreamUserAgent)
 					runtime.UpstreamOriginator = strings.TrimSpace(match.UpstreamOriginator)

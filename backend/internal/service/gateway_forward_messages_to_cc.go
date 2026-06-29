@@ -96,7 +96,7 @@ func (s *GatewayService) forwardMessagesToChatCompletions(
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{

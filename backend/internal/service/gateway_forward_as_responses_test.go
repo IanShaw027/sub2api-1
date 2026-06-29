@@ -177,6 +177,35 @@ func TestHandleResponsesStreamingResponse_ReversesWorkDir(t *testing.T) {
 	require.NotContains(t, rec.Body.String(), "/tmp/cc/a1b2/project/main.go")
 }
 
+func TestForwardAsResponses_RealClaudeCodeContextSkipsOAuthMimicry(t *testing.T) {
+	SetRuntimeAntiBanPlatforms(map[string]bool{})
+	t.Cleanup(func() {
+		SetRuntimeAntiBanPlatforms(map[string]bool{})
+	})
+	upstream := &anthropicCompatSSEUpstreamRecorder{}
+	svc := &GatewayService{
+		cfg:                  &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}},
+		responseHeaderFilter: compileResponseHeaderFilter(&config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}}),
+		httpUpstream:         upstream,
+	}
+	enableClaudeAntiBanForSanitizeTest(t, svc)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	account := &Account{ID: 802, Platform: PlatformAnthropic, Type: AccountTypeOAuth, Concurrency: 1, Credentials: map[string]any{"access_token": "tok"}, Status: StatusActive, Schedulable: true}
+	body := []byte(`{"model":"claude-sonnet-4-5","input":"hello","tools":[{"type":"function","name":"sessions_lookup","description":"desc","parameters":{"type":"object","properties":{}}}],"tool_choice":{"type":"function","name":"sessions_lookup"},"stream":false}`)
+	ctx := SetClaudeCodeClient(context.Background(), true)
+
+	_, err := svc.ForwardAsResponses(ctx, c, account, body, nil)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, upstream.lastBody)
+	require.Equal(t, "sessions_lookup", gjson.GetBytes(upstream.lastBody, "tools.0.name").String())
+	require.Equal(t, "sessions_lookup", gjson.GetBytes(upstream.lastBody, "tool_choice.name").String())
+	_, hasToolRewrite := c.Get(toolNameRewriteKey)
+	require.False(t, hasToolRewrite)
+}
+
 func TestHandleResponsesStreamingResponse_ReadErrorAfterMessageStartEmitsFailed(t *testing.T) {
 	t.Parallel()
 	setGinTestMode()

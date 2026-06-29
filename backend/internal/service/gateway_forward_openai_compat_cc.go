@@ -215,7 +215,7 @@ func (s *GatewayService) resolveGatewayTLSProfile(account *Account) *tlsfingerpr
 	if s == nil || s.tlsFPProfileService == nil {
 		return nil
 	}
-	return s.tlsFPProfileService.ResolveTLSProfile(account)
+	return s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http")
 }
 
 func (s *GatewayService) handleOpenAICompatCCChatError(

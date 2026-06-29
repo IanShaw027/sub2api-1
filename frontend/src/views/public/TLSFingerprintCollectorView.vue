@@ -36,9 +36,15 @@
           <label class="collector-card">
             <span class="collector-label">{{ t('tlsCollector.platform') }}</span>
             <select v-model="form.platform" class="collector-input">
-              <option value="openai">OpenAI / Codex</option>
-              <option value="anthropic">Anthropic / Claude</option>
-              <option value="grok">Grok / xAI</option>
+              <option
+                v-if="normalizedPlatform && !selectedPlatformListed"
+                :value="normalizedPlatform"
+              >
+                {{ normalizedPlatform }}
+              </option>
+              <option v-for="option in platformOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
             </select>
           </label>
           <label class="collector-card">
@@ -159,6 +165,16 @@ const form = reactive({
 
 const normalizedCaptureURL = computed(() => trimTrailingSlash(form.captureURL) || 'https://localhost:8444/capture')
 const normalizedPlatform = computed(() => form.platform.trim() || 'openai')
+const platformOptions = [
+  { value: 'openai', label: 'OpenAI / Codex' },
+  { value: 'anthropic', label: 'Anthropic / Claude' },
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'kiro', label: 'Kiro' },
+  { value: 'grok', label: 'Grok / xAI' },
+  { value: 'antigravity', label: 'Antigravity' },
+  { value: 'custom', label: 'Custom' }
+]
+const selectedPlatformListed = computed(() => platformOptions.some(option => option.value === normalizedPlatform.value))
 const platformBaseURL = computed(() => platformURL(normalizedPlatform.value))
 const probeURL = computed(() => `${platformBaseURL.value}/responses`)
 const openAIPlatformBaseURL = computed(() => platformURL(platformOrDefault('openai')))

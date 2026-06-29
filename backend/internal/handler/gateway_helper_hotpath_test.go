@@ -5,10 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -212,6 +214,50 @@ func TestSetClaudeCodeClientContext_ReuseParsedRequest(t *testing.T) {
 		SetClaudeCodeClientContext(c, []byte(`{invalid`), parsedReq)
 		require.True(t, service.IsClaudeCodeClient(c.Request.Context()))
 	})
+}
+
+func TestAnthropicCompatHandlersMarkClaudeCodeContextBeforeEarlyReturn(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		path string
+		body string
+		call func(*GatewayHandler, *gin.Context)
+	}{
+		{
+			name: "chat_completions",
+			path: "/v1/chat/completions",
+			body: `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}]}`,
+			call: (*GatewayHandler).ChatCompletions,
+		},
+		{
+			name: "responses",
+			path: "/v1/responses",
+			body: `{"model":"claude-sonnet-4-5","input":"hi"}`,
+			call: (*GatewayHandler).Responses,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := newHelperTestContext(http.MethodPost, tc.path)
+			c.Request = httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+			c.Request.Header.Set("User-Agent", "claude-cli/1.0.1")
+			c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
+				ID:      11,
+				GroupID: ptrInt64ForHelperTest(22),
+				Group:   &service.Group{ID: 22, ClaudeCodeOnly: true, Platform: service.PlatformAnthropic},
+				User:    &service.User{ID: 33, Concurrency: 1, Status: service.StatusActive},
+			})
+			c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 33, Concurrency: 1})
+			h := &GatewayHandler{gatewayService: &service.GatewayService{}}
+
+			tc.call(h, c)
+
+			require.True(t, service.IsClaudeCodeClient(c.Request.Context()))
+		})
+	}
+}
+
+func ptrInt64ForHelperTest(v int64) *int64 {
+	return &v
 }
 
 func TestWaitForSlotWithPingTimeout_AccountAndUserAcquire(t *testing.T) {

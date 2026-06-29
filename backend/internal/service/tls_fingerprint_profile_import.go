@@ -132,6 +132,8 @@ func ParseTLSFingerprintCaptureProfile(raw string) (*model.TLSFingerprintProfile
 
 	profile := &model.TLSFingerprintProfile{
 		Transport:                      stringField(payload, "transport"),
+		OS:                             normalizeTLSCaptureProfileOS(stringField(payload, "os")),
+		ClientType:                     stringField(payload, "client_type"),
 		Name:                           stringField(payload, "name"),
 		EnableGREASE:                   boolField(payload, "enable_grease"),
 		CipherSuites:                   uint16SliceField(payload, "cipher_suites"),

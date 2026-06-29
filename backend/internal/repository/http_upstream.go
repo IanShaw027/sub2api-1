@@ -1533,8 +1533,8 @@ func buildUpstreamRoundTripperWithTLSFingerprint(
 		return nil, nil, err
 	}
 	if fallbackProxy {
-		// 未知代理类型无法做 utls 隧道：回退到 h1 经路的普通代理（无指纹），保证可用性。
-		slog.Debug("tls_fingerprint_h2_unknown_proxy_fallback_h1", "scheme", proxyURL.Scheme)
+		// 未知代理类型无法做 utls 隧道；沿用 h1 经路的 fail-closed 行为返回错误。
+		slog.Debug("tls_fingerprint_h2_unknown_proxy_fail_closed", "scheme", proxyURL.Scheme)
 		transport, err := buildUpstreamTransportWithTLSFingerprint(settings, proxyURL, profile)
 		if err != nil {
 			return nil, nil, err
@@ -1550,7 +1550,57 @@ func buildUpstreamRoundTripperWithTLSFingerprint(
 		IdleConnTimeout: settings.idleConnTimeout,
 	}
 	slog.Debug("tls_fingerprint_transport_h2_enabled", "profile", profile.Name)
+	if settings.responseHeaderTimeout > 0 {
+		return responseHeaderTimeoutRoundTripper{base: h2, timeout: settings.responseHeaderTimeout}, nil, nil
+	}
 	return h2, nil, nil
+}
+
+type responseHeaderTimeoutRoundTripper struct {
+	base    http.RoundTripper
+	timeout time.Duration
+}
+
+func (rt responseHeaderTimeoutRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if rt.base == nil {
+		return nil, errors.New("base round tripper is nil")
+	}
+	if req == nil || rt.timeout <= 0 {
+		return rt.base.RoundTrip(req)
+	}
+	ctx, cancel := context.WithCancel(req.Context())
+	timer := time.AfterFunc(rt.timeout, cancel)
+	reqWithTimeout := req.Clone(ctx)
+	resp, err := rt.base.RoundTrip(reqWithTimeout)
+	if err != nil {
+		timer.Stop()
+		cancel()
+		return resp, err
+	}
+	if !timer.Stop() {
+		cancel()
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		return nil, context.DeadlineExceeded
+	}
+	if resp != nil && resp.Body != nil {
+		resp.Body = cancelOnCloseReadCloser{ReadCloser: resp.Body, cancel: cancel}
+	} else {
+		cancel()
+	}
+	return resp, nil
+}
+
+type cancelOnCloseReadCloser struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (r cancelOnCloseReadCloser) Close() error {
+	err := r.ReadCloser.Close()
+	r.cancel()
+	return err
 }
 
 func tlsFingerprintHTTPTransportProfile(profile *tlsfingerprint.Profile) *tlsfingerprint.Profile {

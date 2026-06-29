@@ -16,7 +16,7 @@ func resolveKiroTLSProfile(account *Account, tlsFPProfileService *TLSFingerprint
 	if tlsFPProfileService == nil || !isKiroTLSFingerprintEnabled(account) {
 		return nil
 	}
-	return tlsFPProfileService.ResolveTLSProfile(account)
+	return tlsFPProfileService.ResolveTLSProfileForTransport(account, "http")
 }
 
 func isKiroTLSFingerprintEnabled(account *Account) bool {

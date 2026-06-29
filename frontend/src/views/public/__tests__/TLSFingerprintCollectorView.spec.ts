@@ -78,6 +78,56 @@ describe('TLSFingerprintCollectorView', () => {
     expect(copiedText).not.toContain('/api/v1/tls-fingerprint-captures/submit')
   })
 
+  it('shows Anthropic Claude guides and base URL for platform=anthropic', async () => {
+    routeQuery.value = {
+      capture_url: 'https://localhost:8444/capture',
+      token: 'capture-token',
+      platform: 'anthropic'
+    }
+    const wrapper = mount(TLSFingerprintCollectorView)
+    const text = wrapper.text()
+
+    expect(text).toContain('https://localhost:8444/capture/anthropic/v1')
+    expect(text).toContain('tlsCollector.guides.claudeCode.title')
+    expect(text).toContain('tlsCollector.guides.claudePrint.title')
+    expect(text).not.toContain('tlsCollector.guides.codexCli.title')
+  })
+
+  it('offers custom collector platform and falls back to platform-scoped curl', async () => {
+    routeQuery.value = {
+      capture_url: 'https://localhost:8444/capture',
+      token: 'capture-token',
+      platform: 'custom'
+    }
+    const wrapper = mount(TLSFingerprintCollectorView)
+
+    const platformSelect = wrapper.find('select')
+    expect(platformSelect.find('option[value="custom"]').exists()).toBe(true)
+    await wrapper.find('button.collector-button').trigger('click')
+
+    const copiedText = String(copyToClipboardMock.mock.calls[0][0])
+    expect(copiedText).toContain('curl -v')
+    expect(copiedText).toContain('https://localhost:8444/capture/custom/v1/responses')
+    expect(copiedText).not.toContain('codex exec')
+    expect(copiedText).not.toContain('claude -p')
+  })
+
+  it('preserves unknown collector platforms from query', async () => {
+    routeQuery.value = {
+      capture_url: 'https://localhost:8444/capture',
+      token: 'capture-token',
+      platform: 'custom-acme'
+    }
+    const wrapper = mount(TLSFingerprintCollectorView)
+
+    const platformSelect = wrapper.find('select')
+    expect(platformSelect.find('option[value="custom-acme"]').exists()).toBe(true)
+    await wrapper.find('button.collector-button').trigger('click')
+
+    const copiedText = String(copyToClipboardMock.mock.calls[0][0])
+    expect(copiedText).toContain('https://localhost:8444/capture/custom-acme/v1/responses')
+  })
+
   it('single quotes curl authorization header so token command substitution is inert', async () => {
     routeQuery.value = {
       capture_url: 'https://localhost:8444/capture',

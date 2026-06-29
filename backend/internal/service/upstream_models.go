@@ -364,7 +364,7 @@ func (s *AccountTestService) doUpstreamModelsRequest(req *http.Request, proxyURL
 	if s.tlsFPProfileService == nil {
 		return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, nil)
 	}
-	return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 }
 
 func upstreamModelsProxyURL(account *Account) string {

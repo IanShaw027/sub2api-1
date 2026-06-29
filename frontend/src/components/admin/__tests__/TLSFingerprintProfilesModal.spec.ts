@@ -139,4 +139,61 @@ describe('TLSFingerprintProfilesModal', () => {
     expect(wrapper.text()).toContain('signatureAlgorithmsCert')
     expect(wrapper.text()).toContain('extensionPayloads')
   })
+
+  it('parses transport and dimension fields from pasted YAML before creating a profile', async () => {
+    const wrapper = mount(TLSFingerprintProfilesModal, {
+      props: {
+        show: true,
+      },
+      global: {
+        stubs: {
+          BaseDialog: BaseDialogStub,
+          ConfirmDialog: true,
+          Icon: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    const createOpenButton = wrapper.findAll('button').find(button => button.text().includes('createProfile'))
+    expect(createOpenButton).toBeTruthy()
+    await createOpenButton!.trigger('click')
+    await flushPromises()
+
+    const yamlTextarea = wrapper.find('textarea[placeholder="admin.tlsFingerprintProfiles.form.pasteYamlPlaceholder"]')
+    expect(yamlTextarea.exists()).toBe(true)
+    await yamlTextarea.setValue(`
+name: "Captured Codex"
+platform: "openai"
+transport: "h2"
+os: "macos"
+client_type: "codex-cli"
+enable_grease: false
+cipher_suites: [4865, 4866]
+curves: [29, 23]
+point_formats: [0]
+signature_algorithms: [1027]
+alpn_protocols: ["h2", "http/1.1"]
+supported_versions: [772, 771]
+key_share_groups: [29]
+psk_modes: [1]
+extensions: [0, 10, 11, 13, 16, 43, 45, 51]
+`)
+    const parseButton = wrapper.findAll('button').find(button => button.text().includes('parseYaml'))
+    expect(parseButton).toBeTruthy()
+    await parseButton!.trigger('click')
+
+    const submitButton = wrapper.findAll('button').find(button => button.text().includes('common.create'))
+    expect(submitButton).toBeTruthy()
+    await submitButton!.trigger('click')
+    await flushPromises()
+
+    expect(createProfileMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Captured Codex',
+      platform: 'openai',
+      transport: 'h2',
+      os: 'macos',
+      client_type: 'codex-cli',
+    }))
+  })
 })

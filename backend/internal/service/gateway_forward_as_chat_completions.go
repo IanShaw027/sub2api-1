@@ -103,11 +103,13 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	}
 
 	// 6. Apply Claude Code mimicry for OAuth accounts.
-	// Chat Completions 协议进来的请求永远不是 Claude Code 客户端，所以对 OAuth 账号
-	// 必须完整执行 /v1/messages 主路径上的伪装链路（system 重写 + normalize + metadata 注入），
-	// 否则会被 Anthropic 判为第三方应用并扣 extra usage。
-	// 见 applyClaudeCodeOAuthMimicryToBody 的 godoc。
-	isClaudeCode := false
+	// OpenAI-compatible ingress normally is not Claude Code, but the handler may
+	// already have marked a true Claude Code request in context. In that case do
+	// not mimic it a second time.
+	isClaudeCode := IsClaudeCodeClient(ctx)
+	if !isClaudeCode && c != nil && c.Request != nil {
+		isClaudeCode = IsClaudeCodeClient(c.Request.Context())
+	}
 	shouldMimicClaudeCode := s.shouldMimicClaudeCodeForAccount(ctx, account, isClaudeCode) && account.Platform != PlatformKiro
 
 	if shouldMimicClaudeCode {
@@ -140,7 +142,7 @@ func (s *GatewayService) ForwardAsChatCompletions(
 
 	// 11. Send request
 	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		if resp != nil && resp.Body != nil {

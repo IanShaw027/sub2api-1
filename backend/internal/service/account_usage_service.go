@@ -1852,7 +1852,7 @@ func (s *AccountUsageService) fetchOAuthUsageRaw(ctx context.Context, account *A
 		AccessToken: accessToken,
 		ProxyURL:    proxyURL,
 		AccountID:   account.ID,
-		TLSProfile:  s.tlsFPProfileService.ResolveTLSProfile(account),
+		TLSProfile:  s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"),
 	}
 
 	// 尝试获取缓存的 Fingerprint（包含 User-Agent 等信息）

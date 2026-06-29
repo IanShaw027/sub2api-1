@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	tlsfpTransport "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/transport"
 	utls "github.com/refraction-networking/utls"
 	"github.com/stretchr/testify/require"
@@ -113,6 +115,24 @@ func TestTLSCaptureSampleDedupesExactReplayableObservation(t *testing.T) {
 	require.Len(t, repo.samples, 1)
 	require.Len(t, repo.sessions, 2)
 	require.Len(t, repo.sessionEvents, 2)
+}
+
+func TestTLSCaptureSamplePayloadMergesSampleDimensionsIntoProfile(t *testing.T) {
+	payload, err := tlsCaptureSamplePayload(&TLSFingerprintCaptureSample{
+		ClientType:        "codex-cli",
+		StainlessMetadata: map[string]any{"os": "Linux"},
+		Profile: &model.TLSFingerprintProfile{
+			Name:      "captured",
+			Platform:  "openai",
+			Transport: "h2",
+		},
+	})
+
+	require.NoError(t, err)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal([]byte(payload), &got))
+	require.Equal(t, "linux", got["os"])
+	require.Equal(t, "codex-cli", got["client_type"])
 }
 
 func TestTLSCaptureSessionReplayabilityFailureCreatesSessionEventOnly(t *testing.T) {

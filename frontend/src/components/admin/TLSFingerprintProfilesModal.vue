@@ -850,7 +850,7 @@ const fieldInputs = reactive({
 const form = reactive({
   platform: 'openai',
   transport: '' as TLSFingerprintProfileTransport,
-  os: '' as '' | 'windows' | 'macos' | 'linux',
+  os: '',
   client_type: '',
   name: '',
   user_agent: '',
@@ -1328,6 +1328,15 @@ const parseYamlInput = () => {
       case 'platform':
         form.platform = value.replace(/^["']|["']$/g, '')
         break
+      case 'transport':
+        form.transport = value.replace(/^["']|["']$/g, '') as TLSFingerprintProfileTransport
+        break
+      case 'os':
+        form.os = value.replace(/^["']|["']$/g, '')
+        break
+      case 'client_type':
+        form.client_type = value.replace(/^["']|["']$/g, '')
+        break
       case 'user_agent':
         form.user_agent = value.replace(/^["']|["']$/g, '')
         break
@@ -1454,7 +1463,7 @@ const handleEdit = (profile: TLSFingerprintProfile) => {
   editingProfile.value = profile
   form.platform = profile.platform || ''
   form.transport = (profile.transport || '') as TLSFingerprintProfileTransport
-  form.os = (profile.os || '') as '' | 'windows' | 'macos' | 'linux'
+  form.os = profile.os || ''
   form.client_type = profile.client_type || ''
   form.name = profile.name
   form.user_agent = profile.user_agent || ''

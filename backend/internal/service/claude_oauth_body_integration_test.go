@@ -123,6 +123,9 @@ func TestBuildUpstreamRequest_DoesNotApplyOAuthFingerprintWhenAntiBanDisabled(t 
 	require.NoError(t, err)
 	require.NotNil(t, req)
 	require.Equal(t, originalUserID, gjson.GetBytes(disabledBody, "metadata.user_id").String())
+	require.Empty(t, getHeaderRaw(req.Header, "x-stainless-lang"))
+	require.Empty(t, getHeaderRaw(req.Header, "x-stainless-package-version"))
+	require.Empty(t, getHeaderRaw(req.Header, "x-app"))
 }
 
 func TestBuildCountTokensRequest_SanitizesClaudeLeakFieldsForOAuthOnlyWhenAntiBanEnabled(t *testing.T) {
@@ -176,6 +179,9 @@ func TestBuildCountTokensRequest_DoesNotApplyOAuthFingerprintWhenAntiBanDisabled
 	require.NoError(t, err)
 	require.NotNil(t, req)
 	require.Equal(t, originalUserID, gjson.GetBytes(disabledBody, "metadata.user_id").String())
+	require.Empty(t, getHeaderRaw(req.Header, "x-stainless-lang"))
+	require.Empty(t, getHeaderRaw(req.Header, "x-stainless-package-version"))
+	require.Empty(t, getHeaderRaw(req.Header, "x-app"))
 }
 
 func TestForward_DoesNotApplyClaudeOAuthMimicryWhenAntiBanDisabled(t *testing.T) {
@@ -264,4 +270,27 @@ func TestBuildUpstreamRequestClearsStaleClaudeResponseRewriteContext(t *testing.
 	require.Nil(t, rawTool)
 	rawWorkDir, _ := c.Get("claude_work_dir_rewrite")
 	require.Nil(t, rawWorkDir)
+}
+
+func TestBuildUpstreamRequest_DoesNotApplyCanonicalNormalizerOutsideAnthropicOAuthGate(t *testing.T) {
+	SetRuntimeAntiBanPlatforms(map[string]bool{PlatformOpenAI: true})
+	t.Cleanup(func() {
+		SetRuntimeAntiBanPlatforms(map[string]bool{})
+	})
+	svc := newClaudeOAuthSanitizeTestService(nil)
+	svc.fingerprintNormalizer = NewFingerprintNormalizer(nil, nil, nil, &CanonicalFingerprintConfig{
+		Enabled:           true,
+		AntiBanEnabled:    true,
+		EnabledByPlatform: map[string]bool{PlatformOpenAI: true},
+		TelemetryPaths:    []string{"datadog"},
+	}, nil)
+	c := newClaudeOAuthSanitizeTestContext()
+	body := []byte(`{"model":"gpt-5","datadog":"trace","messages":[{"role":"user","content":"hello"}]}`)
+	account := &Account{ID: 709, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1, Credentials: map[string]any{"access_token": "tok"}, Status: StatusActive, Schedulable: true}
+
+	_, wireBody, err := svc.buildUpstreamRequest(context.Background(), c, account, body, "tok", "oauth", "gpt-5", false, false)
+
+	require.NoError(t, err)
+	require.Equal(t, "trace", gjson.GetBytes(wireBody, "datadog").String())
+	require.False(t, gjson.GetBytes(wireBody, "datadog_canonical").Exists())
 }

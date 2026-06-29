@@ -597,7 +597,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -669,7 +669,7 @@ func (s *AccountTestService) testClaudeVertexServiceAccountConnection(c *gin.Con
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -902,7 +902,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -971,7 +971,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Chat Completions API (/v1/chat/completions) request failed: %s", err.Error()))
 	}
@@ -1040,7 +1040,7 @@ func (s *AccountTestService) testOpenAIResponsesLikeAccountConnection(
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("%s /v1/responses request failed: %s", providerName, err.Error()))
 	}
@@ -1129,7 +1129,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 	if err != nil {
 		if s.accountRepo != nil {
 			updates := buildOpenAICompactProbeExtraUpdates(nil, nil, err, time.Now())
@@ -1225,7 +1225,7 @@ func (s *AccountTestService) testOpenAIImageAPIEndpoint(c *gin.Context, ctx cont
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -1665,7 +1665,7 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}

@@ -218,8 +218,13 @@
                 <label class="input-label text-xs">{{ t('admin.tlsFingerprintRouters.form.transport') }}</label>
                 <select v-model="rule.transport" class="input">
                   <option value="">{{ t('admin.tlsFingerprintRouters.form.transportAny') }}</option>
-                  <option value="http">HTTP</option>
-                  <option value="websocket">WebSocket</option>
+                  <option v-if="isLegacyRouterTransport(rule.transport)" :value="rule.transport">
+                    {{ rule.transport }} (legacy)
+                  </option>
+                  <option value="http1">HTTP/1.1</option>
+                  <option value="h2">HTTP/2</option>
+                  <option value="websocket-http1">WebSocket HTTP/1.1</option>
+                  <option value="websocket-h2">WebSocket HTTP/2</option>
                 </select>
               </div>
               <div>
@@ -340,6 +345,9 @@ const form = reactive<{
   enabled: true,
   rules: []
 })
+
+const legacyRouterTransports = new Set(['http', 'websocket'])
+const isLegacyRouterTransport = (transport?: string) => legacyRouterTransports.has(transport || '')
 
 const loadData = async () => {
   loading.value = true

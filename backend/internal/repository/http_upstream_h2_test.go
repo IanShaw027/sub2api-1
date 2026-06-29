@@ -1,8 +1,12 @@
 package repository
 
 import (
+	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,7 +57,7 @@ func TestBuildUpstreamRoundTripperWithTLSFingerprintH2UsesHTTP2(t *testing.T) {
 	}
 }
 
-func TestBuildUpstreamRoundTripperWithTLSFingerprintH2UnknownProxyFallsBackToHTTP1(t *testing.T) {
+func TestBuildUpstreamRoundTripperWithTLSFingerprintH2UnknownProxyFailsClosed(t *testing.T) {
 	settings := poolSettings{maxIdleConns: 10, idleConnTimeout: time.Minute}
 	profile := &tlsfingerprint.Profile{Name: "h2", ALPNProtocols: []string{"h2", "http/1.1"}}
 	parsed, err := url.Parse("quic://127.0.0.1:9999")
@@ -64,4 +68,59 @@ func TestBuildUpstreamRoundTripperWithTLSFingerprintH2UnknownProxyFallsBackToHTT
 	require.Contains(t, err.Error(), "unsupported proxy scheme")
 	require.Nil(t, rt)
 	require.Nil(t, h1)
+}
+
+type blockingHeaderRoundTripper struct {
+	started chan struct{}
+}
+
+func (rt blockingHeaderRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	close(rt.started)
+	<-req.Context().Done()
+	return nil, req.Context().Err()
+}
+
+func TestResponseHeaderTimeoutRoundTripperTimesOutBeforeHeaders(t *testing.T) {
+	started := make(chan struct{})
+	rt := responseHeaderTimeoutRoundTripper{
+		base:    blockingHeaderRoundTripper{started: started},
+		timeout: 20 * time.Millisecond,
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.test/", nil)
+	require.NoError(t, err)
+
+	start := time.Now()
+	resp, err := rt.RoundTrip(req)
+
+	require.Nil(t, resp)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
+	require.Less(t, time.Since(start), time.Second)
+}
+
+type immediateHeaderRoundTripper struct {
+	body io.ReadCloser
+}
+
+func (rt immediateHeaderRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: http.StatusOK, Body: rt.body, Request: req}, nil
+}
+
+func TestResponseHeaderTimeoutRoundTripperDoesNotCancelStreamingBodyAfterHeaders(t *testing.T) {
+	body := io.NopCloser(strings.NewReader("stream"))
+	rt := responseHeaderTimeoutRoundTripper{
+		base:    immediateHeaderRoundTripper{body: body},
+		timeout: 10 * time.Millisecond,
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.test/", nil)
+	require.NoError(t, err)
+
+	resp, err := rt.RoundTrip(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	time.Sleep(30 * time.Millisecond)
+	data, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, "stream", string(data))
 }
