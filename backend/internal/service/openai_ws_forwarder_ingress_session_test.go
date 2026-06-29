@@ -2979,20 +2979,21 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	require.Equal(t, "resp_preflight_skip_1", gjson.GetBytes(firstTurn, "response.id").String())
 
 	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"store":false,"previous_response_id":"resp_stale_external","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
-	secondTurn := readMessage()
-	require.Equal(t, "resp_preflight_skip_2", gjson.GetBytes(secondTurn, "response.id").String())
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+	_, _, readErr := clientConn.Read(readCtx)
+	cancelRead()
+	require.Error(t, readErr, "stale function_call_output previous_response_id should fail-close locally instead of being sent upstream")
 
-	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 	select {
 	case serverErr := <-serverErrCh:
-		require.NoError(t, serverErr)
+		require.Error(t, serverErr)
+		require.Contains(t, serverErr.Error(), "unsafe websocket tool continuation")
 	case <-time.After(5 * time.Second):
 		t.Fatal("等待 ingress websocket 结束超时")
 	}
 
 	require.Equal(t, 1, captureDialer.DialCount())
-	require.Len(t, captureConn.writes, 2)
-	require.Equal(t, "resp_stale_external", gjson.Get(requestToJSONString(captureConn.writes[1]), "previous_response_id").String(), "function_call_output 场景不应预改写 previous_response_id")
+	require.Len(t, captureConn.writes, 1, "unsafe function_call_output must not be forwarded as a second upstream turn")
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledFunctionCallOutputAutoAttachesPreviousResponseID(t *testing.T) {
@@ -3515,20 +3516,21 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledFun
 	require.Empty(t, gjson.GetBytes(firstTurn, "response.id").String(), "首轮响应不返回 response.id，模拟无法推导续链锚点")
 
 	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"store":false,"input":[{"type":"function_call_output","call_id":"call_auto_skip_1","output":"ok"}]}`)
-	secondTurn := readMessage()
-	require.Equal(t, "resp_auto_prev_skip_2", gjson.GetBytes(secondTurn, "response.id").String())
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+	_, _, readErr := clientConn.Read(readCtx)
+	cancelRead()
+	require.Error(t, readErr, "function_call_output without any previous response anchor should fail-close locally")
 
-	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 	select {
 	case serverErr := <-serverErrCh:
-		require.NoError(t, serverErr)
+		require.Error(t, serverErr)
+		require.Contains(t, serverErr.Error(), "unsafe websocket tool continuation")
 	case <-time.After(5 * time.Second):
 		t.Fatal("等待 ingress websocket 结束超时")
 	}
 
 	require.Equal(t, 1, captureDialer.DialCount())
-	require.Len(t, captureConn.writes, 2)
-	require.False(t, gjson.Get(requestToJSONString(captureConn.writes[1]), "previous_response_id").Exists(), "上一轮缺失 response.id 时不应自动补齐 previous_response_id")
+	require.Len(t, captureConn.writes, 1, "unsafe function_call_output must not be forwarded without a previous response anchor")
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledFunctionCallOutputSkipsAutoAttachWhenToolCallContextPresent(t *testing.T) {
