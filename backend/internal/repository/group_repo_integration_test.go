@@ -205,6 +205,60 @@ func (s *GroupRepoSuite) TestCreateUpdatePreservesVideoGenerationConfig() {
 	s.Require().InDelta(updated4k, *afterUpdate.VideoPrice4kPerSec, 0.000001)
 }
 
+func (s *GroupRepoSuite) TestCreateUpdatePreservesAudioAndSearchPricingFields() {
+	search1 := 1.11
+	rt1 := 2.22
+	tts1 := 3.33
+	stt1 := 4.44
+	group := &service.Group{
+		Name:                         "pricing-fields",
+		Platform:                     service.PlatformGrok,
+		RateMultiplier:               1.0,
+		IsExclusive:                  false,
+		Status:                       service.StatusActive,
+		SubscriptionType:             service.SubscriptionTypeStandard,
+		SearchPricePer1k:             &search1,
+		AudioRealtimePricePerMin:     &rt1,
+		AudioTTSPricePerMillionChars: &tts1,
+		AudioSTTPricePerHour:         &stt1,
+	}
+
+	s.Require().NoError(s.repo.Create(s.ctx, group))
+
+	got, err := s.repo.GetByID(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().NotNil(got.SearchPricePer1k)
+	s.Require().InDelta(search1, *got.SearchPricePer1k, 0.000001)
+	s.Require().NotNil(got.AudioRealtimePricePerMin)
+	s.Require().InDelta(rt1, *got.AudioRealtimePricePerMin, 0.000001)
+	s.Require().NotNil(got.AudioTTSPricePerMillionChars)
+	s.Require().InDelta(tts1, *got.AudioTTSPricePerMillionChars, 0.000001)
+	s.Require().NotNil(got.AudioSTTPricePerHour)
+	s.Require().InDelta(stt1, *got.AudioSTTPricePerHour, 0.000001)
+
+	search2 := 5.55
+	rt2 := 6.66
+	tts2 := 7.77
+	stt2 := 8.88
+	got.SearchPricePer1k = &search2
+	got.AudioRealtimePricePerMin = &rt2
+	got.AudioTTSPricePerMillionChars = &tts2
+	got.AudioSTTPricePerHour = &stt2
+
+	s.Require().NoError(s.repo.Update(s.ctx, got))
+
+	afterUpdate, err := s.repo.GetByID(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().NotNil(afterUpdate.SearchPricePer1k)
+	s.Require().InDelta(search2, *afterUpdate.SearchPricePer1k, 0.000001)
+	s.Require().NotNil(afterUpdate.AudioRealtimePricePerMin)
+	s.Require().InDelta(rt2, *afterUpdate.AudioRealtimePricePerMin, 0.000001)
+	s.Require().NotNil(afterUpdate.AudioTTSPricePerMillionChars)
+	s.Require().InDelta(tts2, *afterUpdate.AudioTTSPricePerMillionChars, 0.000001)
+	s.Require().NotNil(afterUpdate.AudioSTTPricePerHour)
+	s.Require().InDelta(stt2, *afterUpdate.AudioSTTPricePerHour, 0.000001)
+}
+
 func (s *GroupRepoSuite) TestDelete() {
 	group := &service.Group{
 		Name:             "to-delete",

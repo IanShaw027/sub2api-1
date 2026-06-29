@@ -237,6 +237,11 @@ type CreateGroupInput struct {
 	VideoPrice1080pPerSec *float64
 	VideoPrice4kPerSec    *float64
 
+	SearchPricePer1k             *float64
+	AudioRealtimePricePerMin     *float64
+	AudioTtsPricePerMillionChars *float64
+	AudioSttPricePerHour         *float64
+
 	ClaudeCodeOnly  bool   // 仅允许 Claude Code 客户端
 	FallbackGroupID *int64 // 降级分组 ID
 	// 无效请求兜底分组 ID（仅 anthropic 平台使用）
@@ -297,6 +302,16 @@ type UpdateGroupInput struct {
 	VideoPrice1080pPerSecSet bool
 	VideoPrice4kPerSec       *float64
 	VideoPrice4kPerSecSet    bool
+
+	// 搜索与音频显式定价（支持 clear via *Set）
+	SearchPricePer1k                *float64
+	SearchPricePer1kSet             bool
+	AudioRealtimePricePerMin        *float64
+	AudioRealtimePricePerMinSet     bool
+	AudioTtsPricePerMillionChars    *float64
+	AudioTtsPricePerMillionCharsSet bool
+	AudioSttPricePerHour            *float64
+	AudioSttPricePerHourSet         bool
 
 	ClaudeCodeOnly  *bool  // 仅允许 Claude Code 客户端
 	FallbackGroupID *int64 // 降级分组 ID
@@ -2249,7 +2264,16 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		WeeklyLimitUSD:       weeklyLimit,
 		MonthlyLimitUSD:      monthlyLimit,
 		AllowImageGeneration: input.AllowImageGeneration,
-		ImageGenerationRoute: NormalizeGroupImageGenerationRoute(input.ImageGenerationRoute),
+		ImageGenerationRoute: func() string {
+			if input.Platform == PlatformGrok {
+				route := strings.ToLower(strings.TrimSpace(input.ImageGenerationRoute))
+				if route == GroupImageGenerationRouteCodex {
+					return GroupImageGenerationRouteCodex
+				}
+				return GroupVideoGenerationRouteNative
+			}
+			return NormalizeGroupImageGenerationRoute(input.ImageGenerationRoute)
+		}(),
 		OpenAIImageMainModel: openAIImageMainModel,
 		ImageRateIndependent: input.ImageRateIndependent,
 		ImageRateMultiplier:  imageRateMultiplier,
@@ -2260,12 +2284,22 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		Images2APIPrice2K:    images2APIPrice2K,
 		Images2APIPrice4K:    images2APIPrice4K,
 
-		AllowVideoGeneration:  input.AllowVideoGeneration,
-		VideoGenerationRoute:  NormalizeGroupVideoGenerationRoute(input.VideoGenerationRoute),
+		AllowVideoGeneration: input.AllowVideoGeneration,
+		VideoGenerationRoute: func() string {
+			if input.Platform == PlatformGrok {
+				return "native"
+			}
+			return NormalizeGroupVideoGenerationRoute(input.VideoGenerationRoute)
+		}(),
 		VideoPrice480pPerSec:  videoPrice480p,
 		VideoPrice720pPerSec:  videoPrice720p,
 		VideoPrice1080pPerSec: videoPrice1080p,
 		VideoPrice4kPerSec:    videoPrice4k,
+
+		SearchPricePer1k:             normalizePrice(input.SearchPricePer1k),
+		AudioRealtimePricePerMin:     normalizePrice(input.AudioRealtimePricePerMin),
+		AudioTTSPricePerMillionChars: normalizePrice(input.AudioTtsPricePerMillionChars),
+		AudioSTTPricePerHour:         normalizePrice(input.AudioSttPricePerHour),
 
 		ClaudeCodeOnly:                  input.ClaudeCodeOnly,
 		FallbackGroupID:                 input.FallbackGroupID,
@@ -2457,10 +2491,18 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		group.AllowImageGeneration = *input.AllowImageGeneration
 	}
 	if input.ImageGenerationRoute != nil {
-		group.ImageGenerationRoute = NormalizeGroupImageGenerationRoute(*input.ImageGenerationRoute)
-	}
-	if input.VideoGenerationRoute != nil {
-		group.VideoGenerationRoute = NormalizeGroupVideoGenerationRoute(*input.VideoGenerationRoute)
+		if group.Platform == PlatformGrok {
+			route := strings.ToLower(strings.TrimSpace(*input.ImageGenerationRoute))
+			if route == GroupImageGenerationRouteCodex {
+				group.ImageGenerationRoute = GroupImageGenerationRouteCodex
+			} else {
+				group.ImageGenerationRoute = GroupVideoGenerationRouteNative
+			}
+		} else {
+			group.ImageGenerationRoute = NormalizeGroupImageGenerationRoute(*input.ImageGenerationRoute)
+		}
+	} else if group.Platform == PlatformGrok && group.ImageGenerationRoute == "" {
+		group.ImageGenerationRoute = GroupVideoGenerationRouteNative
 	}
 	if input.OpenAIImageMainModel != nil {
 		model := NormalizeOpenAIImageMainModel(*input.OpenAIImageMainModel)
@@ -2501,7 +2543,13 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		group.AllowVideoGeneration = *input.AllowVideoGeneration
 	}
 	if input.VideoGenerationRoute != nil {
-		group.VideoGenerationRoute = NormalizeGroupVideoGenerationRoute(*input.VideoGenerationRoute)
+		if group.Platform == PlatformGrok {
+			group.VideoGenerationRoute = "native"
+		} else {
+			group.VideoGenerationRoute = NormalizeGroupVideoGenerationRoute(*input.VideoGenerationRoute)
+		}
+	} else if group.Platform == PlatformGrok && group.VideoGenerationRoute == "" {
+		group.VideoGenerationRoute = "native"
 	}
 	if input.VideoPrice480pPerSecSet {
 		group.VideoPrice480pPerSec = normalizePrice(input.VideoPrice480pPerSec)
@@ -2514,6 +2562,19 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.VideoPrice4kPerSecSet {
 		group.VideoPrice4kPerSec = normalizePrice(input.VideoPrice4kPerSec)
+	}
+
+	if input.SearchPricePer1kSet {
+		group.SearchPricePer1k = normalizePrice(input.SearchPricePer1k)
+	}
+	if input.AudioRealtimePricePerMinSet {
+		group.AudioRealtimePricePerMin = normalizePrice(input.AudioRealtimePricePerMin)
+	}
+	if input.AudioTtsPricePerMillionCharsSet {
+		group.AudioTTSPricePerMillionChars = normalizePrice(input.AudioTtsPricePerMillionChars)
+	}
+	if input.AudioSttPricePerHourSet {
+		group.AudioSTTPricePerHour = normalizePrice(input.AudioSttPricePerHour)
 	}
 
 	// Claude Code 客户端限制

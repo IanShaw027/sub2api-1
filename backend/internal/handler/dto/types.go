@@ -124,6 +124,12 @@ type Group struct {
 	VideoPrice1080pPerSec *float64 `json:"video_price_1080p_per_sec"`
 	VideoPrice4kPerSec    *float64 `json:"video_price_4k_per_sec"`
 
+	// 新增：搜索与音频显式定价（Grok 等平台分组级，不按文本倍率）
+	SearchPricePer1k             *float64 `json:"search_price_per_1k"`
+	AudioRealtimePricePerMin     *float64 `json:"audio_realtime_price_per_min"`
+	AudioTtsPricePerMillionChars *float64 `json:"audio_tts_price_per_million_chars"`
+	AudioSttPricePerHour         *float64 `json:"audio_stt_price_per_hour"`
+
 	// Claude Code 客户端限制
 	ClaudeCodeOnly  bool   `json:"claude_code_only"`
 	FallbackGroupID *int64 `json:"fallback_group_id"`

@@ -72,6 +72,10 @@ func createGroupIfNotExists(ctx context.Context, client *dbent.Client, name, pla
 		SetSubscriptionType(service.SubscriptionTypeStandard).
 		SetRateMultiplier(1.0).
 		SetIsExclusive(false).
+		SetAllowVideoGeneration(platform == service.PlatformGrok).
+		SetVideoGenerationRoute("native").
+		SetAllowImageGeneration(platform == service.PlatformGrok).
+		SetImageGenerationRoute("native").
 		Save(ctx)
 	if err != nil {
 		if dbent.IsConstraintError(err) {

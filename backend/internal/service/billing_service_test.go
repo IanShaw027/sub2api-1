@@ -257,6 +257,39 @@ func TestGetModelPricing_OpenAIGPT51AndCodexFallbacks(t *testing.T) {
 	}
 }
 
+func TestCalculateAudioCost_RealtimeUsesGroupPrice(t *testing.T) {
+	svc := newTestBillingService()
+	price := 0.42
+
+	bd := svc.CalculateAudioCost("realtime", 3.5, &audioPriceConfig{RealtimePerMin: &price}, 1.25)
+
+	require.InDelta(t, 1.47, bd.TotalCost, 1e-12)
+	require.InDelta(t, 1.8375, bd.ActualCost, 1e-12)
+	require.Equal(t, string(BillingModeAudio), bd.BillingMode)
+}
+
+func TestCalculateAudioCost_TTSUsesGroupPrice(t *testing.T) {
+	svc := newTestBillingService()
+	price := 2.0
+
+	bd := svc.CalculateAudioCost("tts", 1.5, &audioPriceConfig{TTSPerMChars: &price}, 0.5)
+
+	require.InDelta(t, 3.0, bd.TotalCost, 1e-12)
+	require.InDelta(t, 1.5, bd.ActualCost, 1e-12)
+	require.Equal(t, string(BillingModeAudio), bd.BillingMode)
+}
+
+func TestCalculateAudioCost_STTUsesGroupPrice(t *testing.T) {
+	svc := newTestBillingService()
+	price := 8.0
+
+	bd := svc.CalculateAudioCost("stt", 0.25, &audioPriceConfig{STTPerHour: &price}, 2.0)
+
+	require.InDelta(t, 2.0, bd.TotalCost, 1e-12)
+	require.InDelta(t, 4.0, bd.ActualCost, 1e-12)
+	require.Equal(t, string(BillingModeAudio), bd.BillingMode)
+}
+
 func TestCalculateCost_OpenAIGPT54LongContextAppliesWholeSessionMultipliers(t *testing.T) {
 	svc := newTestBillingService()
 

@@ -130,23 +130,29 @@ type CreateGroupRequest struct {
 	WeeklyLimitUSD       optionalLimitField `json:"weekly_limit_usd"`
 	MonthlyLimitUSD      optionalLimitField `json:"monthly_limit_usd"`
 	// 图片生成计费配置（antigravity 和 gemini 平台使用，负数表示清除配置）
-	AllowImageGeneration            bool     `json:"allow_image_generation"`
-	ImageGenerationRoute            string   `json:"image_generation_route"`
-	OpenAIImageMainModel            string   `json:"openai_image_main_model"`
-	ImageRateIndependent            bool     `json:"image_rate_independent"`
-	ImageRateMultiplier             *float64 `json:"image_rate_multiplier"`
-	ImagePrice1K                    *float64 `json:"image_price_1k"`
-	ImagePrice2K                    *float64 `json:"image_price_2k"`
-	ImagePrice4K                    *float64 `json:"image_price_4k"`
-	AllowVideoGeneration            bool     `json:"allow_video_generation"`
-	VideoGenerationRoute            string   `json:"video_generation_route"`
-	VideoPrice480pPerSec            *float64 `json:"video_price_480p_per_sec"`
-	VideoPrice720pPerSec            *float64 `json:"video_price_720p_per_sec"`
-	VideoPrice1080pPerSec           *float64 `json:"video_price_1080p_per_sec"`
-	VideoPrice4kPerSec              *float64 `json:"video_price_4k_per_sec"`
-	ClaudeCodeOnly                  bool     `json:"claude_code_only"`
-	FallbackGroupID                 *int64   `json:"fallback_group_id"`
-	FallbackGroupIDOnInvalidRequest *int64   `json:"fallback_group_id_on_invalid_request"`
+	AllowImageGeneration  bool     `json:"allow_image_generation"`
+	ImageGenerationRoute  string   `json:"image_generation_route"`
+	OpenAIImageMainModel  string   `json:"openai_image_main_model"`
+	ImageRateIndependent  bool     `json:"image_rate_independent"`
+	ImageRateMultiplier   *float64 `json:"image_rate_multiplier"`
+	ImagePrice1K          *float64 `json:"image_price_1k"`
+	ImagePrice2K          *float64 `json:"image_price_2k"`
+	ImagePrice4K          *float64 `json:"image_price_4k"`
+	AllowVideoGeneration  bool     `json:"allow_video_generation"`
+	VideoGenerationRoute  string   `json:"video_generation_route"`
+	VideoPrice480pPerSec  *float64 `json:"video_price_480p_per_sec"`
+	VideoPrice720pPerSec  *float64 `json:"video_price_720p_per_sec"`
+	VideoPrice1080pPerSec *float64 `json:"video_price_1080p_per_sec"`
+	VideoPrice4kPerSec    *float64 `json:"video_price_4k_per_sec"`
+
+	SearchPricePer1k             *float64 `json:"search_price_per_1k"`
+	AudioRealtimePricePerMin     *float64 `json:"audio_realtime_price_per_min"`
+	AudioTtsPricePerMillionChars *float64 `json:"audio_tts_price_per_million_chars"`
+	AudioSttPricePerHour         *float64 `json:"audio_stt_price_per_hour"`
+
+	ClaudeCodeOnly                  bool   `json:"claude_code_only"`
+	FallbackGroupID                 *int64 `json:"fallback_group_id"`
+	FallbackGroupIDOnInvalidRequest *int64 `json:"fallback_group_id_on_invalid_request"`
 	// 模型路由配置（仅 anthropic 平台使用）
 	ModelRouting        map[string][]int64 `json:"model_routing"`
 	ModelRoutingEnabled bool               `json:"model_routing_enabled"`
@@ -182,23 +188,30 @@ type UpdateGroupRequest struct {
 	WeeklyLimitUSD       optionalLimitField `json:"weekly_limit_usd"`
 	MonthlyLimitUSD      optionalLimitField `json:"monthly_limit_usd"`
 	// 图片生成计费配置（antigravity 和 gemini 平台使用，负数表示清除配置）
-	AllowImageGeneration            *bool              `json:"allow_image_generation"`
-	ImageGenerationRoute            *string            `json:"image_generation_route"`
-	OpenAIImageMainModel            *string            `json:"openai_image_main_model"`
-	ImageRateIndependent            *bool              `json:"image_rate_independent"`
-	ImageRateMultiplier             *float64           `json:"image_rate_multiplier"`
-	ImagePrice1K                    *float64           `json:"image_price_1k"`
-	ImagePrice2K                    *float64           `json:"image_price_2k"`
-	ImagePrice4K                    *float64           `json:"image_price_4k"`
-	AllowVideoGeneration            *bool              `json:"allow_video_generation"`
-	VideoGenerationRoute            *string            `json:"video_generation_route"`
-	VideoPrice480pPerSec            optionalFloatField `json:"video_price_480p_per_sec"`
-	VideoPrice720pPerSec            optionalFloatField `json:"video_price_720p_per_sec"`
-	VideoPrice1080pPerSec           optionalFloatField `json:"video_price_1080p_per_sec"`
-	VideoPrice4kPerSec              optionalFloatField `json:"video_price_4k_per_sec"`
-	ClaudeCodeOnly                  *bool              `json:"claude_code_only"`
-	FallbackGroupID                 *int64             `json:"fallback_group_id"`
-	FallbackGroupIDOnInvalidRequest *int64             `json:"fallback_group_id_on_invalid_request"`
+	AllowImageGeneration  *bool              `json:"allow_image_generation"`
+	ImageGenerationRoute  *string            `json:"image_generation_route"`
+	OpenAIImageMainModel  *string            `json:"openai_image_main_model"`
+	ImageRateIndependent  *bool              `json:"image_rate_independent"`
+	ImageRateMultiplier   *float64           `json:"image_rate_multiplier"`
+	ImagePrice1K          *float64           `json:"image_price_1k"`
+	ImagePrice2K          *float64           `json:"image_price_2k"`
+	ImagePrice4K          *float64           `json:"image_price_4k"`
+	AllowVideoGeneration  *bool              `json:"allow_video_generation"`
+	VideoGenerationRoute  *string            `json:"video_generation_route"`
+	VideoPrice480pPerSec  optionalFloatField `json:"video_price_480p_per_sec"`
+	VideoPrice720pPerSec  optionalFloatField `json:"video_price_720p_per_sec"`
+	VideoPrice1080pPerSec optionalFloatField `json:"video_price_1080p_per_sec"`
+	VideoPrice4kPerSec    optionalFloatField `json:"video_price_4k_per_sec"`
+
+	// 搜索与音频显式定价（Grok 图片/音频/search 支持，不按文本倍率）
+	SearchPricePer1k             optionalFloatField `json:"search_price_per_1k"`
+	AudioRealtimePricePerMin     optionalFloatField `json:"audio_realtime_price_per_min"`
+	AudioTtsPricePerMillionChars optionalFloatField `json:"audio_tts_price_per_million_chars"`
+	AudioSttPricePerHour         optionalFloatField `json:"audio_stt_price_per_hour"`
+
+	ClaudeCodeOnly                  *bool  `json:"claude_code_only"`
+	FallbackGroupID                 *int64 `json:"fallback_group_id"`
+	FallbackGroupIDOnInvalidRequest *int64 `json:"fallback_group_id_on_invalid_request"`
 	// 模型路由配置（仅 anthropic 平台使用）
 	ModelRouting        map[string][]int64 `json:"model_routing"`
 	ModelRoutingEnabled *bool              `json:"model_routing_enabled"`
@@ -335,32 +348,38 @@ func (h *GroupHandler) Create(c *gin.Context) {
 	}
 
 	group, err := h.adminService.CreateGroup(c.Request.Context(), &service.CreateGroupInput{
-		Name:                            req.Name,
-		DisplayName:                     req.DisplayName,
-		Description:                     req.Description,
-		Platform:                        req.Platform,
-		RateMultiplier:                  req.RateMultiplier,
-		RefundRateMultiplier:            req.RefundRateMultiplier,
-		IsExclusive:                     req.IsExclusive,
-		UserSelectable:                  req.UserSelectable,
-		SubscriptionType:                req.SubscriptionType,
-		DailyLimitUSD:                   req.DailyLimitUSD.ToServiceInput(),
-		WeeklyLimitUSD:                  req.WeeklyLimitUSD.ToServiceInput(),
-		MonthlyLimitUSD:                 req.MonthlyLimitUSD.ToServiceInput(),
-		AllowImageGeneration:            req.AllowImageGeneration,
-		ImageGenerationRoute:            req.ImageGenerationRoute,
-		OpenAIImageMainModel:            req.OpenAIImageMainModel,
-		ImageRateIndependent:            req.ImageRateIndependent,
-		ImageRateMultiplier:             req.ImageRateMultiplier,
-		ImagePrice1K:                    req.ImagePrice1K,
-		ImagePrice2K:                    req.ImagePrice2K,
-		ImagePrice4K:                    req.ImagePrice4K,
-		AllowVideoGeneration:            req.AllowVideoGeneration,
-		VideoGenerationRoute:            req.VideoGenerationRoute,
-		VideoPrice480pPerSec:            req.VideoPrice480pPerSec,
-		VideoPrice720pPerSec:            req.VideoPrice720pPerSec,
-		VideoPrice1080pPerSec:           req.VideoPrice1080pPerSec,
-		VideoPrice4kPerSec:              req.VideoPrice4kPerSec,
+		Name:                  req.Name,
+		DisplayName:           req.DisplayName,
+		Description:           req.Description,
+		Platform:              req.Platform,
+		RateMultiplier:        req.RateMultiplier,
+		RefundRateMultiplier:  req.RefundRateMultiplier,
+		IsExclusive:           req.IsExclusive,
+		UserSelectable:        req.UserSelectable,
+		SubscriptionType:      req.SubscriptionType,
+		DailyLimitUSD:         req.DailyLimitUSD.ToServiceInput(),
+		WeeklyLimitUSD:        req.WeeklyLimitUSD.ToServiceInput(),
+		MonthlyLimitUSD:       req.MonthlyLimitUSD.ToServiceInput(),
+		AllowImageGeneration:  req.AllowImageGeneration,
+		ImageGenerationRoute:  req.ImageGenerationRoute,
+		OpenAIImageMainModel:  req.OpenAIImageMainModel,
+		ImageRateIndependent:  req.ImageRateIndependent,
+		ImageRateMultiplier:   req.ImageRateMultiplier,
+		ImagePrice1K:          req.ImagePrice1K,
+		ImagePrice2K:          req.ImagePrice2K,
+		ImagePrice4K:          req.ImagePrice4K,
+		AllowVideoGeneration:  req.AllowVideoGeneration,
+		VideoGenerationRoute:  req.VideoGenerationRoute,
+		VideoPrice480pPerSec:  req.VideoPrice480pPerSec,
+		VideoPrice720pPerSec:  req.VideoPrice720pPerSec,
+		VideoPrice1080pPerSec: req.VideoPrice1080pPerSec,
+		VideoPrice4kPerSec:    req.VideoPrice4kPerSec,
+
+		SearchPricePer1k:             req.SearchPricePer1k,
+		AudioRealtimePricePerMin:     req.AudioRealtimePricePerMin,
+		AudioTtsPricePerMillionChars: req.AudioTtsPricePerMillionChars,
+		AudioSttPricePerHour:         req.AudioSttPricePerHour,
+
 		ClaudeCodeOnly:                  req.ClaudeCodeOnly,
 		FallbackGroupID:                 req.FallbackGroupID,
 		FallbackGroupIDOnInvalidRequest: req.FallbackGroupIDOnInvalidRequest,
@@ -401,37 +420,47 @@ func (h *GroupHandler) Update(c *gin.Context) {
 	}
 
 	group, err := h.adminService.UpdateGroup(c.Request.Context(), groupID, &service.UpdateGroupInput{
-		Name:                            req.Name,
-		DisplayName:                     req.DisplayName,
-		Description:                     req.Description,
-		Platform:                        req.Platform,
-		RateMultiplier:                  req.RateMultiplier,
-		RefundRateMultiplier:            req.RefundRateMultiplier,
-		IsExclusive:                     req.IsExclusive,
-		UserSelectable:                  req.UserSelectable,
-		Status:                          req.Status,
-		SubscriptionType:                req.SubscriptionType,
-		DailyLimitUSD:                   req.DailyLimitUSD.ToServiceInput(),
-		WeeklyLimitUSD:                  req.WeeklyLimitUSD.ToServiceInput(),
-		MonthlyLimitUSD:                 req.MonthlyLimitUSD.ToServiceInput(),
-		AllowImageGeneration:            req.AllowImageGeneration,
-		ImageGenerationRoute:            req.ImageGenerationRoute,
-		OpenAIImageMainModel:            req.OpenAIImageMainModel,
-		ImageRateIndependent:            req.ImageRateIndependent,
-		ImageRateMultiplier:             req.ImageRateMultiplier,
-		ImagePrice1K:                    req.ImagePrice1K,
-		ImagePrice2K:                    req.ImagePrice2K,
-		ImagePrice4K:                    req.ImagePrice4K,
-		AllowVideoGeneration:            req.AllowVideoGeneration,
-		VideoGenerationRoute:            req.VideoGenerationRoute,
-		VideoPrice480pPerSec:            req.VideoPrice480pPerSec.Value(),
-		VideoPrice480pPerSecSet:         req.VideoPrice480pPerSec.Set(),
-		VideoPrice720pPerSec:            req.VideoPrice720pPerSec.Value(),
-		VideoPrice720pPerSecSet:         req.VideoPrice720pPerSec.Set(),
-		VideoPrice1080pPerSec:           req.VideoPrice1080pPerSec.Value(),
-		VideoPrice1080pPerSecSet:        req.VideoPrice1080pPerSec.Set(),
-		VideoPrice4kPerSec:              req.VideoPrice4kPerSec.Value(),
-		VideoPrice4kPerSecSet:           req.VideoPrice4kPerSec.Set(),
+		Name:                     req.Name,
+		DisplayName:              req.DisplayName,
+		Description:              req.Description,
+		Platform:                 req.Platform,
+		RateMultiplier:           req.RateMultiplier,
+		RefundRateMultiplier:     req.RefundRateMultiplier,
+		IsExclusive:              req.IsExclusive,
+		UserSelectable:           req.UserSelectable,
+		Status:                   req.Status,
+		SubscriptionType:         req.SubscriptionType,
+		DailyLimitUSD:            req.DailyLimitUSD.ToServiceInput(),
+		WeeklyLimitUSD:           req.WeeklyLimitUSD.ToServiceInput(),
+		MonthlyLimitUSD:          req.MonthlyLimitUSD.ToServiceInput(),
+		AllowImageGeneration:     req.AllowImageGeneration,
+		ImageGenerationRoute:     req.ImageGenerationRoute,
+		OpenAIImageMainModel:     req.OpenAIImageMainModel,
+		ImageRateIndependent:     req.ImageRateIndependent,
+		ImageRateMultiplier:      req.ImageRateMultiplier,
+		ImagePrice1K:             req.ImagePrice1K,
+		ImagePrice2K:             req.ImagePrice2K,
+		ImagePrice4K:             req.ImagePrice4K,
+		AllowVideoGeneration:     req.AllowVideoGeneration,
+		VideoGenerationRoute:     req.VideoGenerationRoute,
+		VideoPrice480pPerSec:     req.VideoPrice480pPerSec.Value(),
+		VideoPrice480pPerSecSet:  req.VideoPrice480pPerSec.Set(),
+		VideoPrice720pPerSec:     req.VideoPrice720pPerSec.Value(),
+		VideoPrice720pPerSecSet:  req.VideoPrice720pPerSec.Set(),
+		VideoPrice1080pPerSec:    req.VideoPrice1080pPerSec.Value(),
+		VideoPrice1080pPerSecSet: req.VideoPrice1080pPerSec.Set(),
+		VideoPrice4kPerSec:       req.VideoPrice4kPerSec.Value(),
+		VideoPrice4kPerSecSet:    req.VideoPrice4kPerSec.Set(),
+
+		SearchPricePer1k:                req.SearchPricePer1k.Value(),
+		SearchPricePer1kSet:             req.SearchPricePer1k.Set(),
+		AudioRealtimePricePerMin:        req.AudioRealtimePricePerMin.Value(),
+		AudioRealtimePricePerMinSet:     req.AudioRealtimePricePerMin.Set(),
+		AudioTtsPricePerMillionChars:    req.AudioTtsPricePerMillionChars.Value(),
+		AudioTtsPricePerMillionCharsSet: req.AudioTtsPricePerMillionChars.Set(),
+		AudioSttPricePerHour:            req.AudioSttPricePerHour.Value(),
+		AudioSttPricePerHourSet:         req.AudioSttPricePerHour.Set(),
+
 		ClaudeCodeOnly:                  req.ClaudeCodeOnly,
 		FallbackGroupID:                 req.FallbackGroupID,
 		FallbackGroupIDOnInvalidRequest: req.FallbackGroupIDOnInvalidRequest,

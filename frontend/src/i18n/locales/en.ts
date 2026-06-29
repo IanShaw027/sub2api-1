@@ -2977,7 +2977,17 @@ export default {
       tier1kPrice: '1K ($)',
       tier2kPrice: '2K ($)',
       tier4kPrice: '4K ($)',
+      routeNativeHint: 'Grok image requests use the provider-native route.',
       notConfigured: 'Not configured'
+      },
+      explicitPricing: {
+        title: 'Search / Audio Pricing',
+        description: 'Optional explicit prices for search and audio capabilities. Leave empty to disable explicit billing.',
+        searchPricePer1k: 'Search per 1K calls ($)',
+        audioRealtimePerMin: 'Realtime audio per minute ($)',
+        audioTtsPerMillionChars: 'TTS per 1M chars ($)',
+        audioSttPerHour: 'STT per hour ($)',
+        pricePlaceholder: 'Leave empty to disable'
       },
       videoPricing: {
         title: 'Video Generation Pricing',
@@ -3500,6 +3510,10 @@ export default {
       blockedKeywordsModeWarning: 'Current mode is "{mode}". Keyword blocking will not run until you switch to "Pre-block" mode.',
       blockedKeywordCount: '{count} keywords configured',
       blockedKeywordsLimit: 'Up to {max} keywords or rules, each line no longer than 200 characters. Duplicates are removed automatically.',
+      keywordExceptions: 'Exception phrases (allowlist)',
+      keywordExceptionsPlaceholder: 'One exception phrase per line, e.g.:\nransomware\nanti-fraud\nreverse engineering tutorial',
+      keywordExceptionCount: '{count} exception phrases configured',
+      keywordExceptionsHint: 'When a keyword hit is fully contained within an exception phrase, that hit is ignored (e.g. "ransomware" prevents "ransom" from misfiring). Matching is case-insensitive.',
       keywordBlockingMode: 'Moderation strategy',
       keywordModeKeywordAndApi: 'Keyword + API',
       keywordModeKeywordAndApiDesc: 'Block on keyword hit; otherwise fall through to the upstream moderation API.',

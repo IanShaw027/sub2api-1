@@ -400,7 +400,9 @@
     "installedSkills": "Installed Skills"
   },
   "ai": {
-    "center": { "label": "AI Studio" },
+    "center": {
+      "label": "AI Studio"
+    },
     "line": {
       "selector": "Line",
       "key": "Key",
@@ -2780,7 +2782,10 @@
         "description": "Configure image generation access and base image prices. Leave empty to use default prices.",
         "routeLabel": "Image route",
         "routeHint": "The images endpoint only uses codex.",
+        "routeNativeHint": "Grok image requests use the provider-native route.",
+        "routeNative": "Provider native",
         "routeCodex": "codex",
+        "routeWeb2API": "web2api",
         "images": "Images API (/v1/images/*)",
         "fixedHint": "Fixed per group; not affected by rate multipliers.",
         "allowImageGeneration": "Allow image generation for this group",
@@ -2889,6 +2894,15 @@
         "geminiText": "Gemini Text",
         "geminiImage": "Gemini Image",
         "hint": "Select at least one model family"
+      },
+      "explicitPricing": {
+        "title": "Search / Audio Pricing",
+        "description": "Optional explicit prices for search and audio capabilities. Leave empty to disable explicit billing.",
+        "searchPricePer1k": "Search per 1K calls ($)",
+        "audioRealtimePerMin": "Realtime audio per minute ($)",
+        "audioTtsPerMillionChars": "TTS per 1M chars ($)",
+        "audioSttPerHour": "STT per hour ($)",
+        "pricePlaceholder": "Leave empty to disable"
       }
     },
     "availableChannels": {

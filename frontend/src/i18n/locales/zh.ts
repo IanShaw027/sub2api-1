@@ -3048,7 +3048,17 @@ export default {
       tier1kPrice: '1K（美元）',
       tier2kPrice: '2K（美元）',
       tier4kPrice: '4K（美元）',
+      routeNativeHint: 'Grok 生图请求走供应商原生路由。',
       notConfigured: '未配置'
+      },
+      explicitPricing: {
+        title: '搜索 / 音频显式定价',
+        description: '可选配置搜索与音频能力的显式价格，留空表示不启用显式计费。',
+        searchPricePer1k: '搜索每 1K 次调用（美元）',
+        audioRealtimePerMin: 'Realtime 音频每分钟（美元）',
+        audioTtsPerMillionChars: 'TTS 每百万字符（美元）',
+        audioSttPerHour: 'STT 每小时（美元）',
+        pricePlaceholder: '留空禁用'
       },
       videoPricing: {
         title: '视频生成计费',
@@ -3565,6 +3575,10 @@ export default {
       blockedKeywordsModeWarning: '当前为「{mode}」模式，关键词拦截不会生效；请切换到「前置拦截」模式后再保存关键词。',
       blockedKeywordCount: '已配置 {count} 个关键词',
       blockedKeywordsLimit: '最多保存 {max} 个关键词或规则，单行不超过 200 个字符；重复项会自动去重。',
+      keywordExceptions: '例外短语（白名单）',
+      keywordExceptionsPlaceholder: '每行一个例外短语，例如：\n勒索病毒\n防勒索\n逆向工程入门',
+      keywordExceptionCount: '已配置 {count} 个例外短语',
+      keywordExceptionsHint: '当关键词的某次命中被某个例外短语完整包含时，该次命中将被忽略（如「勒索病毒」可让「勒索」不误判）；匹配忽略大小写。',
       keywordBlockingMode: '审计策略',
       keywordModeKeywordAndApi: '关键词 + API',
       keywordModeKeywordAndApiDesc: '命中关键词直接拦截；未命中时再调用上游审计接口。',

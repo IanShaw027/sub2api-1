@@ -1620,6 +1620,32 @@ func init() {
 	groupDescImageRateMultiplier := groupFields[18].Descriptor()
 	// group.DefaultImageRateMultiplier holds the default value on creation for the image_rate_multiplier field.
 	group.DefaultImageRateMultiplier = groupDescImageRateMultiplier.Default.(float64)
+	// group.ImageRateMultiplierValidator is a validator for the "image_rate_multiplier" field. It is called by the builders before save.
+	group.ImageRateMultiplierValidator = groupDescImageRateMultiplier.Validators[0].(func(float64) error)
+	// groupDescImagePrice1k is the schema descriptor for image_price_1k field.
+	groupDescImagePrice1k := groupFields[19].Descriptor()
+	// group.ImagePrice1kValidator is a validator for the "image_price_1k" field. It is called by the builders before save.
+	group.ImagePrice1kValidator = groupDescImagePrice1k.Validators[0].(func(float64) error)
+	// groupDescImagePrice2k is the schema descriptor for image_price_2k field.
+	groupDescImagePrice2k := groupFields[20].Descriptor()
+	// group.ImagePrice2kValidator is a validator for the "image_price_2k" field. It is called by the builders before save.
+	group.ImagePrice2kValidator = groupDescImagePrice2k.Validators[0].(func(float64) error)
+	// groupDescImagePrice4k is the schema descriptor for image_price_4k field.
+	groupDescImagePrice4k := groupFields[21].Descriptor()
+	// group.ImagePrice4kValidator is a validator for the "image_price_4k" field. It is called by the builders before save.
+	group.ImagePrice4kValidator = groupDescImagePrice4k.Validators[0].(func(float64) error)
+	// groupDescImages2apiPrice1k is the schema descriptor for images2api_price_1k field.
+	groupDescImages2apiPrice1k := groupFields[22].Descriptor()
+	// group.Images2apiPrice1kValidator is a validator for the "images2api_price_1k" field. It is called by the builders before save.
+	group.Images2apiPrice1kValidator = groupDescImages2apiPrice1k.Validators[0].(func(float64) error)
+	// groupDescImages2apiPrice2k is the schema descriptor for images2api_price_2k field.
+	groupDescImages2apiPrice2k := groupFields[23].Descriptor()
+	// group.Images2apiPrice2kValidator is a validator for the "images2api_price_2k" field. It is called by the builders before save.
+	group.Images2apiPrice2kValidator = groupDescImages2apiPrice2k.Validators[0].(func(float64) error)
+	// groupDescImages2apiPrice4k is the schema descriptor for images2api_price_4k field.
+	groupDescImages2apiPrice4k := groupFields[24].Descriptor()
+	// group.Images2apiPrice4kValidator is a validator for the "images2api_price_4k" field. It is called by the builders before save.
+	group.Images2apiPrice4kValidator = groupDescImages2apiPrice4k.Validators[0].(func(float64) error)
 	// groupDescAllowVideoGeneration is the schema descriptor for allow_video_generation field.
 	groupDescAllowVideoGeneration := groupFields[25].Descriptor()
 	// group.DefaultAllowVideoGeneration holds the default value on creation for the allow_video_generation field.
@@ -1630,54 +1656,86 @@ func init() {
 	group.DefaultVideoGenerationRoute = groupDescVideoGenerationRoute.Default.(string)
 	// group.VideoGenerationRouteValidator is a validator for the "video_generation_route" field. It is called by the builders before save.
 	group.VideoGenerationRouteValidator = groupDescVideoGenerationRoute.Validators[0].(func(string) error)
+	// groupDescVideoPrice480pPerSec is the schema descriptor for video_price_480p_per_sec field.
+	groupDescVideoPrice480pPerSec := groupFields[27].Descriptor()
+	// group.VideoPrice480pPerSecValidator is a validator for the "video_price_480p_per_sec" field. It is called by the builders before save.
+	group.VideoPrice480pPerSecValidator = groupDescVideoPrice480pPerSec.Validators[0].(func(float64) error)
+	// groupDescVideoPrice720pPerSec is the schema descriptor for video_price_720p_per_sec field.
+	groupDescVideoPrice720pPerSec := groupFields[28].Descriptor()
+	// group.VideoPrice720pPerSecValidator is a validator for the "video_price_720p_per_sec" field. It is called by the builders before save.
+	group.VideoPrice720pPerSecValidator = groupDescVideoPrice720pPerSec.Validators[0].(func(float64) error)
+	// groupDescVideoPrice1080pPerSec is the schema descriptor for video_price_1080p_per_sec field.
+	groupDescVideoPrice1080pPerSec := groupFields[29].Descriptor()
+	// group.VideoPrice1080pPerSecValidator is a validator for the "video_price_1080p_per_sec" field. It is called by the builders before save.
+	group.VideoPrice1080pPerSecValidator = groupDescVideoPrice1080pPerSec.Validators[0].(func(float64) error)
+	// groupDescVideoPrice4kPerSec is the schema descriptor for video_price_4k_per_sec field.
+	groupDescVideoPrice4kPerSec := groupFields[30].Descriptor()
+	// group.VideoPrice4kPerSecValidator is a validator for the "video_price_4k_per_sec" field. It is called by the builders before save.
+	group.VideoPrice4kPerSecValidator = groupDescVideoPrice4kPerSec.Validators[0].(func(float64) error)
+	// groupDescSearchPricePer1k is the schema descriptor for search_price_per_1k field.
+	groupDescSearchPricePer1k := groupFields[31].Descriptor()
+	// group.SearchPricePer1kValidator is a validator for the "search_price_per_1k" field. It is called by the builders before save.
+	group.SearchPricePer1kValidator = groupDescSearchPricePer1k.Validators[0].(func(float64) error)
+	// groupDescAudioRealtimePricePerMin is the schema descriptor for audio_realtime_price_per_min field.
+	groupDescAudioRealtimePricePerMin := groupFields[32].Descriptor()
+	// group.AudioRealtimePricePerMinValidator is a validator for the "audio_realtime_price_per_min" field. It is called by the builders before save.
+	group.AudioRealtimePricePerMinValidator = groupDescAudioRealtimePricePerMin.Validators[0].(func(float64) error)
+	// groupDescAudioTtsPricePerMillionChars is the schema descriptor for audio_tts_price_per_million_chars field.
+	groupDescAudioTtsPricePerMillionChars := groupFields[33].Descriptor()
+	// group.AudioTtsPricePerMillionCharsValidator is a validator for the "audio_tts_price_per_million_chars" field. It is called by the builders before save.
+	group.AudioTtsPricePerMillionCharsValidator = groupDescAudioTtsPricePerMillionChars.Validators[0].(func(float64) error)
+	// groupDescAudioSttPricePerHour is the schema descriptor for audio_stt_price_per_hour field.
+	groupDescAudioSttPricePerHour := groupFields[34].Descriptor()
+	// group.AudioSttPricePerHourValidator is a validator for the "audio_stt_price_per_hour" field. It is called by the builders before save.
+	group.AudioSttPricePerHourValidator = groupDescAudioSttPricePerHour.Validators[0].(func(float64) error)
 	// groupDescClaudeCodeOnly is the schema descriptor for claude_code_only field.
-	groupDescClaudeCodeOnly := groupFields[31].Descriptor()
+	groupDescClaudeCodeOnly := groupFields[35].Descriptor()
 	// group.DefaultClaudeCodeOnly holds the default value on creation for the claude_code_only field.
 	group.DefaultClaudeCodeOnly = groupDescClaudeCodeOnly.Default.(bool)
 	// groupDescModelRoutingEnabled is the schema descriptor for model_routing_enabled field.
-	groupDescModelRoutingEnabled := groupFields[35].Descriptor()
+	groupDescModelRoutingEnabled := groupFields[39].Descriptor()
 	// group.DefaultModelRoutingEnabled holds the default value on creation for the model_routing_enabled field.
 	group.DefaultModelRoutingEnabled = groupDescModelRoutingEnabled.Default.(bool)
 	// groupDescMcpXMLInject is the schema descriptor for mcp_xml_inject field.
-	groupDescMcpXMLInject := groupFields[36].Descriptor()
+	groupDescMcpXMLInject := groupFields[40].Descriptor()
 	// group.DefaultMcpXMLInject holds the default value on creation for the mcp_xml_inject field.
 	group.DefaultMcpXMLInject = groupDescMcpXMLInject.Default.(bool)
 	// groupDescSupportedModelScopes is the schema descriptor for supported_model_scopes field.
-	groupDescSupportedModelScopes := groupFields[37].Descriptor()
+	groupDescSupportedModelScopes := groupFields[41].Descriptor()
 	// group.DefaultSupportedModelScopes holds the default value on creation for the supported_model_scopes field.
 	group.DefaultSupportedModelScopes = groupDescSupportedModelScopes.Default.([]string)
 	// groupDescSortOrder is the schema descriptor for sort_order field.
-	groupDescSortOrder := groupFields[38].Descriptor()
+	groupDescSortOrder := groupFields[42].Descriptor()
 	// group.DefaultSortOrder holds the default value on creation for the sort_order field.
 	group.DefaultSortOrder = groupDescSortOrder.Default.(int)
 	// groupDescAllowMessagesDispatch is the schema descriptor for allow_messages_dispatch field.
-	groupDescAllowMessagesDispatch := groupFields[39].Descriptor()
+	groupDescAllowMessagesDispatch := groupFields[43].Descriptor()
 	// group.DefaultAllowMessagesDispatch holds the default value on creation for the allow_messages_dispatch field.
 	group.DefaultAllowMessagesDispatch = groupDescAllowMessagesDispatch.Default.(bool)
 	// groupDescRequireOauthOnly is the schema descriptor for require_oauth_only field.
-	groupDescRequireOauthOnly := groupFields[40].Descriptor()
+	groupDescRequireOauthOnly := groupFields[44].Descriptor()
 	// group.DefaultRequireOauthOnly holds the default value on creation for the require_oauth_only field.
 	group.DefaultRequireOauthOnly = groupDescRequireOauthOnly.Default.(bool)
 	// groupDescRequirePrivacySet is the schema descriptor for require_privacy_set field.
-	groupDescRequirePrivacySet := groupFields[41].Descriptor()
+	groupDescRequirePrivacySet := groupFields[45].Descriptor()
 	// group.DefaultRequirePrivacySet holds the default value on creation for the require_privacy_set field.
 	group.DefaultRequirePrivacySet = groupDescRequirePrivacySet.Default.(bool)
 	// groupDescDefaultMappedModel is the schema descriptor for default_mapped_model field.
-	groupDescDefaultMappedModel := groupFields[42].Descriptor()
+	groupDescDefaultMappedModel := groupFields[46].Descriptor()
 	// group.DefaultDefaultMappedModel holds the default value on creation for the default_mapped_model field.
 	group.DefaultDefaultMappedModel = groupDescDefaultMappedModel.Default.(string)
 	// group.DefaultMappedModelValidator is a validator for the "default_mapped_model" field. It is called by the builders before save.
 	group.DefaultMappedModelValidator = groupDescDefaultMappedModel.Validators[0].(func(string) error)
 	// groupDescMessagesDispatchModelConfig is the schema descriptor for messages_dispatch_model_config field.
-	groupDescMessagesDispatchModelConfig := groupFields[43].Descriptor()
+	groupDescMessagesDispatchModelConfig := groupFields[47].Descriptor()
 	// group.DefaultMessagesDispatchModelConfig holds the default value on creation for the messages_dispatch_model_config field.
 	group.DefaultMessagesDispatchModelConfig = groupDescMessagesDispatchModelConfig.Default.(domain.OpenAIMessagesDispatchModelConfig)
 	// groupDescModelsListConfig is the schema descriptor for models_list_config field.
-	groupDescModelsListConfig := groupFields[44].Descriptor()
+	groupDescModelsListConfig := groupFields[48].Descriptor()
 	// group.DefaultModelsListConfig holds the default value on creation for the models_list_config field.
 	group.DefaultModelsListConfig = groupDescModelsListConfig.Default.(domain.GroupModelsListConfig)
 	// groupDescRpmLimit is the schema descriptor for rpm_limit field.
-	groupDescRpmLimit := groupFields[45].Descriptor()
+	groupDescRpmLimit := groupFields[49].Descriptor()
 	// group.DefaultRpmLimit holds the default value on creation for the rpm_limit field.
 	group.DefaultRpmLimit = groupDescRpmLimit.Default.(int)
 	idempotencyrecordMixin := schema.IdempotencyRecord{}.Mixin()

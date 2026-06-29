@@ -46,6 +46,7 @@ func newGatewayRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo 
 		nil,
 		nil,
 		nil, // userPlatformQuotaRepo
+		nil, // fingerprintNormalizer
 	)
 }
 
@@ -242,6 +243,36 @@ func TestGatewayServiceRecordUsage_PersistsProviderFromAccountPlatform(t *testin
 	require.True(t, provider.IsValid(), "UsageLog must expose provider for usage_logs.provider persistence")
 	require.Equal(t, PlatformOpenAI, provider.String())
 }
+
+func TestGatewayServiceRecordUsage_AudioRealtimeUsesGroupPrice(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:  "gateway_audio_realtime",
+			Usage:      ClaudeUsage{},
+			Model:      "gpt-4o-mini-tts",
+			Duration:   time.Second,
+			AudioUsage: &AudioUsage{Mode: "realtime", DurationOrUnits: 3.5},
+		},
+		APIKey:           &APIKey{ID: 501, Quota: 100, Group: &Group{ID: 11, AudioRealtimePricePerMin: floatPtrAudio(0.42)}},
+		User:             &User{ID: 601},
+		Account:          &Account{ID: 701},
+		InboundEndpoint:  "/v1/audio/transcriptions",
+		UpstreamEndpoint: "/v1/audio/transcriptions",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, string(BillingModeAudio), *usageRepo.lastLog.BillingMode)
+	require.InDelta(t, 1.47, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, 1.617, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, 1.617, billingRepo.lastCmd.BalanceCost, 1e-12)
+}
+
+func floatPtrAudio(v float64) *float64 { return &v }
 
 func TestGatewayServiceRecordUsage_EmptyImageSizeDefaultsBeforeBillingAndPersistence(t *testing.T) {
 	imagePrice2K := 0.19
@@ -540,4 +571,38 @@ func TestGatewayServiceRecordUsage_ReasoningEffortNil(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, usageRepo.lastLog)
 	require.Nil(t, usageRepo.lastLog.ReasoningEffort)
+}
+
+func TestGatewayServiceRecordUsage_SearchUsageBillsExplicitGroupPrice(t *testing.T) {
+	usageRepo := &openAIRecordUsageBestEffortLogRepoStub{}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newGatewayRecordUsageServiceForTest(usageRepo, userRepo, subRepo)
+	groupID := int64(42)
+	pricePer1k := 5.0
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:   "search_usage_1",
+			Model:       "grok-web-search",
+			SearchCount: 1,
+			Duration:    time.Second,
+		},
+		APIKey: &APIKey{ID: 101, GroupID: &groupID, Group: &Group{
+			ID:               groupID,
+			RateMultiplier:   1,
+			SearchPricePer1k: &pricePer1k,
+		}},
+		User:    &User{ID: 201},
+		Account: &Account{ID: 301, Platform: PlatformGrok},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, usageRepo.bestEffortCalls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, usageRepo.lastLog.BillingMode)
+	require.Equal(t, string(BillingModeSearch), *usageRepo.lastLog.BillingMode)
+	require.InDelta(t, 0.005, usageRepo.lastLog.ActualCost, 1e-12)
+	require.Equal(t, 1, userRepo.deductCalls)
+	require.InDelta(t, usageRepo.lastLog.ActualCost, userRepo.lastAmount, 1e-12)
 }

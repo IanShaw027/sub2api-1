@@ -400,7 +400,9 @@
     "installedSkills": "已安装技能"
   },
   "ai": {
-    "center": { "label": "AI 创作中心" },
+    "center": {
+      "label": "AI 创作中心"
+    },
     "line": {
       "selector": "线路",
       "key": "密钥",
@@ -2867,7 +2869,10 @@
         "description": "配置图片生成能力和图片基础单价，留空则使用默认价格",
         "routeLabel": "生图类型",
         "routeHint": "images 端点只走 codex。",
+        "routeNativeHint": "Grok 生图请求走供应商原生路由。",
+        "routeNative": "供应商原生",
         "routeCodex": "codex",
+        "routeWeb2API": "web2api",
         "images": "Images API (/v1/images/*)",
         "fixedHint": "按分组固定价格计费，不受倍率影响。",
         "allowImageGeneration": "允许当前分组生图",
@@ -2976,6 +2981,15 @@
         "geminiText": "Gemini Text",
         "geminiImage": "Gemini Image",
         "hint": "至少选择一个模型系列"
+      },
+      "explicitPricing": {
+        "title": "搜索 / 音频显式定价",
+        "description": "可选配置搜索与音频能力的显式价格，留空表示不启用显式计费。",
+        "searchPricePer1k": "搜索每 1K 次调用（美元）",
+        "audioRealtimePerMin": "Realtime 音频每分钟（美元）",
+        "audioTtsPerMillionChars": "TTS 每百万字符（美元）",
+        "audioSttPerHour": "STT 每小时（美元）",
+        "pricePlaceholder": "留空禁用"
       }
     },
     "availableChannels": {

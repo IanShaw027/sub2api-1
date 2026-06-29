@@ -116,6 +116,63 @@ func TestRecordCyberPolicyUsageLog_NonStreamZeroTokensZeroCost(t *testing.T) {
 	require.Equal(t, RequestTypeCyberBlocked, usageRepo.lastLog.RequestType)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_AudioRealtimeUsesGroupPrice(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:  "oa-audio-realtime",
+			Model:      "gpt-4o-mini-tts",
+			AudioUsage: &AudioUsage{Mode: "realtime", DurationOrUnits: 3.5},
+		},
+		APIKey:  &APIKey{ID: 2, User: &User{ID: 1}, Group: &Group{ID: 7, AudioRealtimePricePerMin: floatPtrAudioOpenAI(0.42)}},
+		User:    &User{ID: 1},
+		Account: &Account{ID: 3},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, string(BillingModeAudio), *usageRepo.lastLog.BillingMode)
+	require.InDelta(t, 1.47, usageRepo.lastLog.TotalCost, 1e-12)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_AudioTTSUsesGroupPrice(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:  "oa-audio-tts",
+			Model:      "gpt-4o-mini-tts",
+			AudioUsage: &AudioUsage{Mode: "tts", DurationOrUnits: 1.5},
+		},
+		APIKey:  &APIKey{ID: 2, User: &User{ID: 1}, Group: &Group{ID: 7, AudioTTSPricePerMillionChars: floatPtrAudioOpenAI(2.0)}},
+		User:    &User{ID: 1},
+		Account: &Account{ID: 3},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, string(BillingModeAudio), *usageRepo.lastLog.BillingMode)
+	require.InDelta(t, 3.0, usageRepo.lastLog.TotalCost, 1e-12)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_AudioSTTUsesGroupPrice(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:  "oa-audio-stt",
+			Model:      "gpt-4o-mini-stt",
+			AudioUsage: &AudioUsage{Mode: "stt", DurationOrUnits: 0.25},
+		},
+		APIKey:  &APIKey{ID: 2, User: &User{ID: 1}, Group: &Group{ID: 7, AudioSTTPricePerHour: floatPtrAudioOpenAI(8.0)}},
+		User:    &User{ID: 1},
+		Account: &Account{ID: 3},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, string(BillingModeAudio), *usageRepo.lastLog.BillingMode)
+	require.InDelta(t, 2.0, usageRepo.lastLog.TotalCost, 1e-12)
+}
+
 func TestRecordCyberPolicyUsageLog_SkipsWhenIncomplete(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
@@ -262,6 +319,9 @@ func (s *openAIUserGroupRateRepoStub) GetByUserAndGroup(ctx context.Context, use
 func i64p(v int64) *int64 {
 	return &v
 }
+func floatPtrAudioOpenAI(v float64) *float64 {
+	return &v
+}
 
 func derefStringPtr(value *string) string {
 	if value == nil {
@@ -297,6 +357,7 @@ func newOpenAIRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo U
 		nil, // tlsFPProfileService
 		nil, // settingService
 		nil, // userPlatformQuotaRepo
+		nil, // fingerprintNormalizer
 	)
 	svc.userGroupRateResolver = newUserGroupRateResolver(
 		rateRepo,
@@ -2335,4 +2396,44 @@ func TestGatewayServiceCalculateRecordUsageCost_ChannelImageBillingNormalizesMis
 	require.Equal(t, string(BillingModeImage), cost.BillingMode)
 	require.InDelta(t, 0.44, cost.TotalCost, 1e-12)
 	require.InDelta(t, 0.44, cost.ActualCost, 1e-12)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_VideoEndpointWithMissingSecondsBillsDefaultDuration(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, subRepo, nil)
+	price720p := 0.02
+	groupID := int64(77)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:     "resp_video_missing_seconds",
+			Model:         "grok-vid-1",
+			UpstreamModel: "grok-vid-1",
+			VideoSize:     VideoBillingTier720p,
+			VideoCount:    1,
+			Duration:      time.Second,
+		},
+		APIKey: &APIKey{ID: 1008, GroupID: &groupID, Group: &Group{
+			ID:                   groupID,
+			RateMultiplier:       1,
+			VideoPrice720pPerSec: &price720p,
+		}},
+		User:             &User{ID: 2008},
+		Account:          &Account{ID: 3008, Platform: PlatformGrok},
+		InboundEndpoint:  "/v1/videos/generations",
+		UpstreamEndpoint: "/v1/videos/generations",
+		RequestType:      RequestTypeVideo,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, RequestTypeVideo, usageRepo.lastLog.RequestType)
+	require.NotNil(t, usageRepo.lastLog.BillingMode)
+	require.Equal(t, string(BillingModeVideo), *usageRepo.lastLog.BillingMode)
+	require.Greater(t, usageRepo.lastLog.ActualCost, 0.0)
+	require.Equal(t, 1, userRepo.deductCalls)
+	require.InDelta(t, usageRepo.lastLog.ActualCost, userRepo.lastAmount, 1e-12)
 }

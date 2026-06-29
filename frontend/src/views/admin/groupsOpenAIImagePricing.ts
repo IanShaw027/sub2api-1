@@ -1,4 +1,4 @@
-export type OpenAIImageRoute = "codex";
+export type OpenAIImageRoute = "codex" | "web2api" | "native";
 
 export type OpenAIImageSelectionFormState = {
   platform: string;
@@ -41,7 +41,14 @@ export function normalizeOpenAIImageTypeSelection(
 export function applyOpenAIImageTypeSelection(
   payload: OpenAIImageSelectionPayload,
 ): void {
-  if (payload.platform !== "openai") {
+  const platform = (payload.platform || "").trim().toLowerCase();
+  if (platform === "grok") {
+    payload.image_generation_route = "native";
+    delete payload.openai_image_codex_enabled;
+    return;
+  }
+
+  if (platform !== "openai") {
     delete payload.openai_image_codex_enabled;
     return;
   }
@@ -78,10 +85,12 @@ export function deriveOpenAIImageFormState(
 > {
   const allowImageGeneration = group.allow_image_generation === true;
   const platform = group.platform.trim().toLowerCase();
+  const route = platform === "grok" ? "native" : "codex";
+  const isCodexRoute = route === "codex";
   return {
     allow_image_generation: allowImageGeneration,
-    image_generation_route: "codex",
-    openai_image_codex_enabled: platform === "openai" && allowImageGeneration,
+    image_generation_route: route as OpenAIImageRoute,
+    openai_image_codex_enabled: platform === "openai" && allowImageGeneration && isCodexRoute,
     image_rate_independent:
       platform === "openai" ? false : group.image_rate_independent === true,
     image_rate_multiplier: group.image_rate_multiplier ?? 1,

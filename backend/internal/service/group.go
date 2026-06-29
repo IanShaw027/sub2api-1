@@ -58,6 +58,12 @@ type Group struct {
 	VideoPrice1080pPerSec *float64
 	VideoPrice4kPerSec    *float64
 
+	// 搜索/工具 & 音频显式定价（分组级，不按文本 RateMultiplier，参考 OpenAI 图片定价）
+	SearchPricePer1k             *float64
+	AudioRealtimePricePerMin     *float64
+	AudioTTSPricePerMillionChars *float64
+	AudioSTTPricePerHour         *float64
+
 	// Claude Code 客户端限制
 	ClaudeCodeOnly  bool
 	FallbackGroupID *int64
@@ -146,6 +152,9 @@ func (g *Group) EffectiveVideoGenerationRoute() string {
 func (g *Group) EffectiveImageGenerationRoute() string {
 	if g == nil {
 		return GroupImageGenerationRouteCodex
+	}
+	if g.Platform == PlatformGrok && strings.EqualFold(strings.TrimSpace(g.ImageGenerationRoute), "native") {
+		return "native"
 	}
 	return NormalizeGroupImageGenerationRoute(g.ImageGenerationRoute)
 }
@@ -289,6 +298,31 @@ func (g *Group) GetVideoPricePerSecond(videoSize string) *float64 {
 		return g.VideoPrice4kPerSec
 	default:
 		return g.VideoPrice720pPerSec
+	}
+}
+
+// GetSearchPricePer1k returns explicit search/tool price per 1k calls if configured on group.
+func (g *Group) GetSearchPricePer1k() *float64 {
+	if g == nil {
+		return nil
+	}
+	return g.SearchPricePer1k
+}
+
+type AudioPriceConfig struct {
+	RealtimePerMin *float64
+	TTSPerMChars   *float64
+	STTPerHour     *float64
+}
+
+func (g *Group) GetAudioPriceConfig() *AudioPriceConfig {
+	if g == nil {
+		return nil
+	}
+	return &AudioPriceConfig{
+		RealtimePerMin: g.AudioRealtimePricePerMin,
+		TTSPerMChars:   g.AudioTTSPricePerMillionChars,
+		STTPerHour:     g.AudioSTTPricePerHour,
 	}
 }
 

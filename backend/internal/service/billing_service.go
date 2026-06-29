@@ -538,7 +538,7 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown:  false,
 	}
 
-	// xAI Grok 4.3 (official docs: $1.25 input / $2.50 output per MTok)
+	// xAI Grok 4.3 / 4.20 series (per https://docs.x.ai/developers/pricing : $1.25/$2.50 per M tokens)
 	s.fallbackPrices["grok-4.3"] = &ModelPricing{
 		InputPricePerToken:         1.25e-6,
 		OutputPricePerToken:        2.5e-6,
@@ -547,7 +547,12 @@ func (s *BillingService) initFallbackPricing() {
 		LongContextInputThreshold:  1000000,
 		LongContextInputMultiplier: 1,
 	}
-	// xAI Grok Build 0.1 (official docs: $1 input / $2 output per MTok)
+	// All 4.20 variants share the same pricing
+	s.fallbackPrices["grok-4.20-0309-reasoning"] = s.fallbackPrices["grok-4.3"]
+	s.fallbackPrices["grok-4.20-0309-non-reasoning"] = s.fallbackPrices["grok-4.3"]
+	s.fallbackPrices["grok-4.20-multi-agent-0309"] = s.fallbackPrices["grok-4.3"]
+
+	// xAI Grok Build 0.1 (per official: $1.00 / $2.00)
 	s.fallbackPrices["grok-build-0.1"] = &ModelPricing{
 		InputPricePerToken:     1e-6,
 		OutputPricePerToken:    2e-6,
@@ -732,6 +737,11 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		return s.fallbackPrices["grok-4.3"]
 	case "grok-build", "grok-build-0.1":
 		return s.fallbackPrices["grok-build-0.1"]
+	}
+
+	// Grok 4.20 series (all share grok-4.3 pricing per official)
+	if strings.Contains(modelLower, "grok-4.20") {
+		return s.fallbackPrices["grok-4.3"]
 	}
 
 	return nil
@@ -1412,7 +1422,93 @@ func getVideoUnitPrice(sizeTier string, groupConfig *VideoPriceConfig) float64 {
 		price = groupConfig.Price720p
 	}
 	if price == nil {
+		// Fallback to highest non-nil defined price (avoid 0 for 4K or missing tier per report)
+		for _, p := range []*float64{groupConfig.Price4K, groupConfig.Price1080p, groupConfig.Price720p, groupConfig.Price480p} {
+			if p != nil {
+				price = p
+				log.Printf("[Billing] video price tier %s not configured, falling back to highest configured tier", sizeTier)
+				break
+			}
+		}
+	}
+	if price == nil {
 		return 0
 	}
 	return *price
+}
+
+// --- Grok / explicit non-text pricing (image/audio/search) ---
+// These use explicit group prices (not derived from token pricing), and callers
+// typically pass rateMultiplier=1 for platforms like OpenAI/Grok to avoid applying text rate.
+
+type SearchPriceConfig struct {
+	PricePer1k *float64
+}
+
+// CalculateSearchCost bills search/tool invocations (e.g. web_search, x_search) per 1k calls.
+// numCalls is the count of tool invocations in the request/response.
+// Uses explicit group price if set; otherwise 0 (caller may fall back).
+func (s *BillingService) CalculateSearchCost(numCalls int, groupPricePer1k *float64, rateMultiplier float64) *CostBreakdown {
+	if numCalls <= 0 {
+		return &CostBreakdown{}
+	}
+	if groupPricePer1k == nil || *groupPricePer1k <= 0 {
+		return &CostBreakdown{}
+	}
+	unit := *groupPricePer1k / 1000.0 // per call
+	total := unit * float64(numCalls)
+	if rateMultiplier < 0 {
+		rateMultiplier = 0
+	}
+	actual := total * rateMultiplier
+	return &CostBreakdown{
+		TotalCost:   total,
+		ActualCost:  actual,
+		BillingMode: string(BillingModeSearch), // reuse or add if needed; for now use a mode
+	}
+}
+
+type audioPriceConfig struct {
+	RealtimePerMin *float64
+	TTSPerMChars   *float64
+	STTPerHour     *float64
+}
+
+// CalculateAudioCost supports realtime (per min), tts (per M chars), stt (per hr).
+// durationOrUnits: minutes for realtime, millions chars for tts, hours for stt.
+// mode: "realtime" | "tts" | "stt"
+func (s *BillingService) CalculateAudioCost(mode string, durationOrUnits float64, groupConfig *audioPriceConfig, rateMultiplier float64) *CostBreakdown {
+	if durationOrUnits <= 0 {
+		return &CostBreakdown{}
+	}
+	var unitPrice float64
+	switch strings.ToLower(mode) {
+	case "realtime":
+		if groupConfig != nil && groupConfig.RealtimePerMin != nil {
+			unitPrice = *groupConfig.RealtimePerMin
+		}
+	case "tts":
+		if groupConfig != nil && groupConfig.TTSPerMChars != nil {
+			unitPrice = *groupConfig.TTSPerMChars
+		}
+	case "stt":
+		if groupConfig != nil && groupConfig.STTPerHour != nil {
+			unitPrice = *groupConfig.STTPerHour
+		}
+	default:
+		return &CostBreakdown{}
+	}
+	if unitPrice <= 0 {
+		return &CostBreakdown{}
+	}
+	total := unitPrice * durationOrUnits
+	if rateMultiplier < 0 {
+		rateMultiplier = 0
+	}
+	actual := total * rateMultiplier
+	return &CostBreakdown{
+		TotalCost:   total,
+		ActualCost:  actual,
+		BillingMode: string(BillingModeAudio),
+	}
 }

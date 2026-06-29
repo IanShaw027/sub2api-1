@@ -306,6 +306,47 @@ func TestAdminService_UpdateGroup_PartialImagePricing(t *testing.T) {
 	require.Nil(t, repo.updated.ImagePrice4K)
 }
 
+func TestAdminService_CreateGroup_AllowsGrokImageRouteCodex(t *testing.T) {
+	repo := &groupRepoStubForAdmin{}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	input := &CreateGroupInput{
+		Name:                 "grok-group",
+		Description:          "Grok group",
+		Platform:             PlatformGrok,
+		RateMultiplier:       1.0,
+		AllowImageGeneration: true,
+		ImageGenerationRoute: "codex",
+	}
+
+	group, err := svc.CreateGroup(context.Background(), input)
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.created)
+	require.Equal(t, GroupImageGenerationRouteCodex, repo.created.ImageGenerationRoute)
+}
+
+func TestAdminService_UpdateGroup_AllowsGrokImageRouteCodex(t *testing.T) {
+	existingGroup := &Group{
+		ID:       1,
+		Name:     "existing-grok-group",
+		Platform: PlatformGrok,
+		Status:   StatusActive,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	input := &UpdateGroupInput{
+		ImageGenerationRoute: strPtr("codex"),
+	}
+
+	group, err := svc.UpdateGroup(context.Background(), 1, input)
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	require.Equal(t, GroupImageGenerationRouteCodex, repo.updated.ImageGenerationRoute)
+}
+
 func TestAdminService_UpdateGroup_ClearsVideoPricingWhenExplicitlySetNil(t *testing.T) {
 	price480p := 0.01
 	price720p := 0.02

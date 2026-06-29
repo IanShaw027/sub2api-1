@@ -501,7 +501,7 @@ describe('admin GroupsView edit hydration', () => {
     })
   })
 
-  it('does not show image pricing controls when editing a Grok group', async () => {
+  it('shows Grok image pricing controls without a route selector', async () => {
     listGroups.mockResolvedValueOnce({
       items: [
         {
@@ -525,7 +525,8 @@ describe('admin GroupsView edit hydration', () => {
 
     const editForm = wrapper.get('#edit-group-form')
     expect(editForm.text()).toContain('admin.groups.videoPricing.title')
-    expect(editForm.text()).not.toContain('admin.groups.imagePricing.title')
+    expect(editForm.text()).toContain('admin.groups.imagePricing.title')
+    expect(editForm.text()).not.toContain('admin.groups.imagePricing.routeCodex')
   })
 
   it('submits explicit nulls when cleared Grok video prices are saved', async () => {
@@ -584,4 +585,94 @@ describe('admin GroupsView edit hydration', () => {
       video_price_4k_per_sec: null
     })
   })
+
+  it('shows explicit search and audio pricing only for Grok groups', async () => {
+    listGroups.mockResolvedValueOnce({
+      items: [
+        buildGroup(8, 'Group OpenAI Explicit Hidden', {}),
+        {
+          ...buildGroup(9, 'Group Grok Explicit Visible', {}),
+          platform: 'grok',
+          search_price_per_1k: 5,
+          audio_realtime_price_per_min: 0.2,
+          audio_tts_price_per_million_chars: 1.5,
+          audio_stt_price_per_hour: 3
+        } as any
+      ],
+      total: 2,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountGroupsView()
+
+    await flushPromises()
+    await wrapper.get('[data-test="group-row-8"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('#edit-group-form').text()).not.toContain('admin.groups.explicitPricing.title')
+
+    await wrapper.get('[data-test="group-row-9"] button').trigger('click')
+    await flushPromises()
+    const editForm = wrapper.get('#edit-group-form')
+    expect(editForm.text()).toContain('admin.groups.explicitPricing.title')
+    const placeholders = editForm
+      .findAll('input[type="number"]')
+      .map((input) => (input.element as HTMLInputElement).placeholder)
+    expect(placeholders).toContain('admin.groups.explicitPricing.pricePlaceholder')
+    expect(placeholders).not.toContain('0')
+  })
+
+
+  it('hydrates and submits cleared Grok explicit search and audio prices', async () => {
+    listGroups.mockResolvedValueOnce({
+      items: [
+        {
+          ...buildGroup(10, 'Group Grok Explicit Clear', {}),
+          platform: 'grok',
+          search_price_per_1k: 5,
+          audio_realtime_price_per_min: 0.25,
+          audio_tts_price_per_million_chars: 1.5,
+          audio_stt_price_per_hour: 2.75
+        } as any
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountGroupsView()
+
+    await flushPromises()
+    await wrapper.get('[data-test="group-row-10"] button').trigger('click')
+    await flushPromises()
+
+    const explicitInputs = wrapper
+      .get('#edit-group-form')
+      .findAll('input[type="number"]')
+      .filter((input) => (input.element as HTMLInputElement).placeholder === 'admin.groups.explicitPricing.pricePlaceholder')
+
+    expect(explicitInputs).toHaveLength(4)
+    expect((explicitInputs[0].element as HTMLInputElement).value).toBe('5')
+    expect((explicitInputs[1].element as HTMLInputElement).value).toBe('0.25')
+    expect((explicitInputs[2].element as HTMLInputElement).value).toBe('1.5')
+    expect((explicitInputs[3].element as HTMLInputElement).value).toBe('2.75')
+
+    for (const input of explicitInputs) {
+      await input.setValue('')
+    }
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateGroup).toHaveBeenCalledTimes(1)
+    expect(updateGroup.mock.calls[0][1]).toMatchObject({
+      platform: 'grok',
+      search_price_per_1k: null,
+      audio_realtime_price_per_min: null,
+      audio_tts_price_per_million_chars: null,
+      audio_stt_price_per_hour: null
+    })
+  })
+
 })

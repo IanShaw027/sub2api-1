@@ -101,32 +101,39 @@ func (Group) Fields() []ent.Field {
 			Default(false).
 			Comment("图片生成是否使用独立倍率；false 表示共享分组有效倍率"),
 		field.Float("image_rate_multiplier").
+			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
 			Default(1.0).
 			Comment("图片生成独立倍率，仅 image_rate_independent=true 时生效"),
 		field.Float("image_price_1k").
 			Optional().
 			Nillable().
+			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("image_price_2k").
 			Optional().
 			Nillable().
+			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("image_price_4k").
 			Optional().
 			Nillable().
+			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("images2api_price_1k").
 			Optional().
 			Nillable().
+			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("images2api_price_2k").
 			Optional().
 			Nillable().
+			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("images2api_price_4k").
 			Optional().
 			Nillable().
+			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Bool("allow_video_generation").
 			Default(false).
@@ -138,19 +145,51 @@ func (Group) Fields() []ent.Field {
 		field.Float("video_price_480p_per_sec").
 			Optional().
 			Nillable().
+			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("video_price_720p_per_sec").
 			Optional().
 			Nillable().
+			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("video_price_1080p_per_sec").
 			Optional().
 			Nillable().
+			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("video_price_4k_per_sec").
 			Optional().
 			Nillable().
+			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
+
+		// 搜索/工具调用显式定价（per 1k calls），参考 OpenAI 图片不按文本倍率，用于 Grok 等平台
+		field.Float("search_price_per_1k").
+			Optional().
+			Nillable().
+			Min(0).
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Comment("搜索工具价格 per 1000 calls（web_search、x_search 等），分组显式定价"),
+
+		// 音频/语音显式定价（realtime、TTS、STT），不按文本 RateMultiplier，用于 Grok voice 能力
+		field.Float("audio_realtime_price_per_min").
+			Optional().
+			Nillable().
+			Min(0).
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Comment("Voice realtime 每分钟价格"),
+		field.Float("audio_tts_price_per_million_chars").
+			Optional().
+			Nillable().
+			Min(0).
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Comment("TTS 每百万字符价格"),
+		field.Float("audio_stt_price_per_hour").
+			Optional().
+			Nillable().
+			Min(0).
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Comment("STT 每小时价格"),
 
 		// Claude Code 客户端限制 (added by migration 029)
 		field.Bool("claude_code_only").

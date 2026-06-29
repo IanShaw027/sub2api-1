@@ -759,11 +759,7 @@
 
         <!-- 图片生成计费配置 -->
         <div
-          v-if="
-            createForm.platform === 'antigravity' ||
-            createForm.platform === 'gemini' ||
-            createForm.platform === 'openai'
-          "
+          v-if="hasGroupImagePricing(createForm.platform)"
           class="border-t pt-4"
         >
           <label
@@ -774,7 +770,74 @@
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
-          <template v-if="createForm.platform === 'openai'">
+          <template v-if="isGrokGroupPlatform(createForm.platform)">
+            <label class="mb-4 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="createForm.allow_image_generation"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.allowImageGeneration") }}
+            </label>
+            <div v-if="createForm.allow_image_generation" class="space-y-4">
+              <div>
+                <label class="input-label">{{ t("admin.groups.imagePricing.routeLabel") }}</label>
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.imagePricing.routeNative", "native") }}
+                </p>
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.imagePricing.routeNativeHint") }}
+                </p>
+              </div>
+              <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.imagePricing.routeNative", "native") }}
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.image_price_1k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.134"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.image_price_2k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.201"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.image_price_4k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.268"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+          <template v-else-if="isOpenAIGroupPlatform(createForm.platform)">
             <label class="mb-4 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
                 v-model="createForm.allow_image_generation"
@@ -801,7 +864,11 @@
                 </p>
               </div>
               <div
-                v-if="createForm.openai_image_codex_enabled"
+                v-if="
+                  isOpenAIGroupPlatform(createForm.platform)
+                    ? createForm.openai_image_codex_enabled
+                    : createForm.allow_image_generation
+                "
                 class="rounded-lg border border-gray-200 p-4 dark:border-gray-700"
               >
                 <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -1057,6 +1124,34 @@
         </div>
 
         <!-- 支持的模型系列（仅 antigravity 平台） -->
+        <!-- 搜索/音频显式定价（仅 Grok 平台） -->
+        <div v-if="isGrokGroupPlatform(createForm.platform)" class="border-t pt-4">
+          <label class="block mb-2 font-medium text-gray-700 dark:text-gray-300">
+            {{ t("admin.groups.explicitPricing.title") }}
+          </label>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            {{ t("admin.groups.explicitPricing.description") }}
+          </p>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="input-label">{{ t("admin.groups.explicitPricing.searchPricePer1k") }}</label>
+              <input v-model.number="createForm.search_price_per_1k" type="number" step="0.000001" min="0" class="input" :placeholder="t('admin.groups.explicitPricing.pricePlaceholder')" />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.explicitPricing.audioRealtimePerMin") }}</label>
+              <input v-model.number="createForm.audio_realtime_price_per_min" type="number" step="0.000001" min="0" class="input" :placeholder="t('admin.groups.explicitPricing.pricePlaceholder')" />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.explicitPricing.audioTtsPerMillionChars") }}</label>
+              <input v-model.number="createForm.audio_tts_price_per_million_chars" type="number" step="0.000001" min="0" class="input" :placeholder="t('admin.groups.explicitPricing.pricePlaceholder')" />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.explicitPricing.audioSttPerHour") }}</label>
+              <input v-model.number="createForm.audio_stt_price_per_hour" type="number" step="0.000001" min="0" class="input" :placeholder="t('admin.groups.explicitPricing.pricePlaceholder')" />
+            </div>
+          </div>
+        </div>
+
         <div v-if="createForm.platform === 'antigravity'" class="border-t pt-4">
           <div class="mb-1.5 flex items-center gap-1">
             <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -2254,11 +2349,7 @@
 
         <!-- 图片生成计费配置 -->
         <div
-          v-if="
-            editForm.platform === 'antigravity' ||
-            editForm.platform === 'gemini' ||
-            editForm.platform === 'openai'
-          "
+          v-if="hasGroupImagePricing(editForm.platform)"
           class="border-t pt-4"
         >
           <label
@@ -2269,7 +2360,74 @@
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
-          <template v-if="editForm.platform === 'openai'">
+          <template v-if="isGrokGroupPlatform(editForm.platform)">
+            <label class="mb-4 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="editForm.allow_image_generation"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.allowImageGeneration") }}
+            </label>
+            <div v-if="editForm.allow_image_generation" class="space-y-4">
+              <div>
+                <label class="input-label">{{ t("admin.groups.imagePricing.routeLabel") }}</label>
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.imagePricing.routeNative", "native") }}
+                </p>
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.imagePricing.routeNativeHint") }}
+                </p>
+              </div>
+              <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.imagePricing.routeNative", "native") }}
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.image_price_1k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.134"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.image_price_2k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.201"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.image_price_4k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.268"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+          <template v-else-if="isOpenAIGroupPlatform(editForm.platform)">
             <label class="mb-4 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
                 v-model="editForm.allow_image_generation"
@@ -2296,7 +2454,11 @@
                 </p>
               </div>
               <div
-                v-if="editForm.openai_image_codex_enabled"
+                v-if="
+                  isOpenAIGroupPlatform(editForm.platform)
+                    ? editForm.openai_image_codex_enabled
+                    : editForm.allow_image_generation
+                "
                 class="rounded-lg border border-gray-200 p-4 dark:border-gray-700"
               >
                 <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -2552,6 +2714,34 @@
         </div>
 
         <!-- 支持的模型系列（仅 antigravity 平台） -->
+        <!-- 搜索/音频显式定价（仅 Grok 平台） -->
+        <div v-if="isGrokGroupPlatform(editForm.platform)" class="border-t pt-4">
+          <label class="block mb-2 font-medium text-gray-700 dark:text-gray-300">
+            {{ t("admin.groups.explicitPricing.title") }}
+          </label>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            {{ t("admin.groups.explicitPricing.description") }}
+          </p>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="input-label">{{ t("admin.groups.explicitPricing.searchPricePer1k") }}</label>
+              <input v-model.number="editForm.search_price_per_1k" type="number" step="0.000001" min="0" class="input" :placeholder="t('admin.groups.explicitPricing.pricePlaceholder')" />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.explicitPricing.audioRealtimePerMin") }}</label>
+              <input v-model.number="editForm.audio_realtime_price_per_min" type="number" step="0.000001" min="0" class="input" :placeholder="t('admin.groups.explicitPricing.pricePlaceholder')" />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.explicitPricing.audioTtsPerMillionChars") }}</label>
+              <input v-model.number="editForm.audio_tts_price_per_million_chars" type="number" step="0.000001" min="0" class="input" :placeholder="t('admin.groups.explicitPricing.pricePlaceholder')" />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.explicitPricing.audioSttPerHour") }}</label>
+              <input v-model.number="editForm.audio_stt_price_per_hour" type="number" step="0.000001" min="0" class="input" :placeholder="t('admin.groups.explicitPricing.pricePlaceholder')" />
+            </div>
+          </div>
+        </div>
+
         <div v-if="editForm.platform === 'antigravity'" class="border-t pt-4">
           <div class="mb-1.5 flex items-center gap-1">
             <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -3775,6 +3965,11 @@ const createForm = reactive({
   video_price_720p_per_sec: null as number | null,
   video_price_1080p_per_sec: null as number | null,
   video_price_4k_per_sec: null as number | null,
+  // 搜索/音频显式定价
+  search_price_per_1k: null as number | null,
+  audio_realtime_price_per_min: null as number | null,
+  audio_tts_price_per_million_chars: null as number | null,
+  audio_stt_price_per_hour: null as number | null,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -4117,6 +4312,11 @@ const editForm = reactive({
   video_price_720p_per_sec: null as number | null,
   video_price_1080p_per_sec: null as number | null,
   video_price_4k_per_sec: null as number | null,
+  // 搜索/音频显式定价
+  search_price_per_1k: null as number | null,
+  audio_realtime_price_per_min: null as number | null,
+  audio_tts_price_per_million_chars: null as number | null,
+  audio_stt_price_per_hour: null as number | null,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -4161,6 +4361,13 @@ type VideoPricingFormState = {
   video_price_4k_per_sec: number | string | null;
 };
 
+type ExplicitMediaPricingFormState = {
+  search_price_per_1k: number | string | null;
+  audio_realtime_price_per_min: number | string | null;
+  audio_tts_price_per_million_chars: number | string | null;
+  audio_stt_price_per_hour: number | string | null;
+};
+
 const imagePricingTiers = [
   {
     key: "image_price_1k",
@@ -4181,7 +4388,24 @@ const imagePricingTiers = [
 
 const imageGenerationRouteOptions = computed(() => [
   { value: "codex", label: t("admin.groups.imagePricing.routeCodex") },
+  { value: "web2api", label: t("admin.groups.imagePricing.routeWeb2API", "web2api") },
 ]);
+
+const isOpenAIGroupPlatform = (platform: string) =>
+  platform.trim().toLowerCase() === "openai";
+
+const isGrokGroupPlatform = (platform: string) =>
+  platform.trim().toLowerCase() === "grok";
+
+const hasGroupImagePricing = (platform: string) => {
+  const normalized = platform.trim().toLowerCase();
+  return (
+    normalized === "antigravity" ||
+    normalized === "gemini" ||
+    normalized === "openai" ||
+    normalized === "grok"
+  );
+};
 
 const videoGenerationRouteOptions = computed(() => [
   { value: "native", label: t("admin.groups.videoPricing.routeNative") },
@@ -4419,6 +4643,7 @@ const closeCreateModal = () => {
   createForm.image_price_2k = null;
   createForm.image_price_4k = null;
   resetVideoPricingFormState(createForm);
+  resetExplicitMediaPricingFormState(createForm);
   createForm.claude_code_only = false;
   createForm.fallback_group_id = null;
   createForm.fallback_group_id_on_invalid_request = null;
@@ -4470,6 +4695,29 @@ const normalizeNullablePrice = (
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const resetExplicitMediaPricingFormState = (form: ExplicitMediaPricingFormState) => {
+  form.search_price_per_1k = null;
+  form.audio_realtime_price_per_min = null;
+  form.audio_tts_price_per_million_chars = null;
+  form.audio_stt_price_per_hour = null;
+};
+
+const deriveExplicitMediaPricingFormState = (
+  group: AdminGroup,
+): ExplicitMediaPricingFormState => ({
+  search_price_per_1k: group.search_price_per_1k ?? null,
+  audio_realtime_price_per_min: group.audio_realtime_price_per_min ?? null,
+  audio_tts_price_per_million_chars: group.audio_tts_price_per_million_chars ?? null,
+  audio_stt_price_per_hour: group.audio_stt_price_per_hour ?? null,
+});
+
+const normalizeExplicitMediaPricingPayload = (payload: Partial<ExplicitMediaPricingFormState>) => {
+  payload.search_price_per_1k = normalizeNullablePrice(payload.search_price_per_1k);
+  payload.audio_realtime_price_per_min = normalizeNullablePrice(payload.audio_realtime_price_per_min);
+  payload.audio_tts_price_per_million_chars = normalizeNullablePrice(payload.audio_tts_price_per_million_chars);
+  payload.audio_stt_price_per_hour = normalizeNullablePrice(payload.audio_stt_price_per_hour);
 };
 
 const resetVideoPricingFormState = (form: VideoPricingFormState) => {
@@ -4610,6 +4858,7 @@ const handleCreateGroup = async () => {
     requestData.image_price_2k = normalizeNullablePrice(requestData.image_price_2k);
     requestData.image_price_4k = normalizeNullablePrice(requestData.image_price_4k);
     normalizeVideoPricingPayload(requestData);
+    normalizeExplicitMediaPricingPayload(requestData);
     applyOpenAIImageTypeSelection(
       requestData as OpenAIImageTypeSelectionRequest & OpenAIImageSelectionPayload,
     );
@@ -4653,6 +4902,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.monthly_limit_usd = group.monthly_limit_usd;
   Object.assign(editForm, deriveOpenAIImageFormState(group));
   Object.assign(editForm, deriveVideoPricingFormState(group));
+  Object.assign(editForm, deriveExplicitMediaPricingFormState(group));
   editForm.claude_code_only = group.claude_code_only || false;
   editForm.fallback_group_id = group.fallback_group_id;
   editForm.fallback_group_id_on_invalid_request =
@@ -4704,6 +4954,7 @@ const closeEditModal = () => {
   editForm.copy_accounts_from_group_ids = [];
   resetMessagesDispatchFormState(editForm);
   resetVideoPricingFormState(editForm);
+  resetExplicitMediaPricingFormState(editForm);
   resetModelsListState(editModelsListState);
 };
 
@@ -4773,6 +5024,7 @@ const handleUpdateGroup = async () => {
     payload.image_price_2k = normalizeNullablePrice(payload.image_price_2k);
     payload.image_price_4k = normalizeNullablePrice(payload.image_price_4k);
     normalizeVideoPricingPayload(payload);
+    normalizeExplicitMediaPricingPayload(payload);
     applyOpenAIImageTypeSelection(
       payload as OpenAIImageTypeSelectionRequest & OpenAIImageSelectionPayload,
     );

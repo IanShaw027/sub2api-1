@@ -740,6 +740,7 @@ export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 
 export type SubscriptionType = 'standard' | 'subscription'
 
 export type VideoGenerationRoute = 'native'
+export type ImageGenerationRoute = 'codex' | 'web2api' | 'native'
 
 export interface OpenAIMessagesDispatchModelConfig {
   opus_mapped_model?: string
@@ -765,7 +766,7 @@ export interface Group {
   monthly_limit_usd: number | null
   // 图片生成计费配置
   allow_image_generation: boolean
-  image_generation_route: 'codex'
+  image_generation_route: ImageGenerationRoute
   image_rate_independent: boolean
   image_rate_multiplier: number
   image_price_1k: number | null
@@ -778,6 +779,11 @@ export interface Group {
   video_price_720p_per_sec: number | null
   video_price_1080p_per_sec: number | null
   video_price_4k_per_sec: number | null
+  // 搜索与音频显式定价（Grok 等，支持图片/音频/search 分组定价，不按文本倍率）
+  search_price_per_1k?: number | null
+  audio_realtime_price_per_min?: number | null
+  audio_tts_price_per_million_chars?: number | null
+  audio_stt_price_per_hour?: number | null
   // Claude Code 客户端限制
   claude_code_only: boolean
   fallback_group_id: number | null
@@ -893,7 +899,7 @@ export interface CreateGroupRequest {
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
   allow_image_generation?: boolean
-  image_generation_route?: 'codex'
+  image_generation_route?: ImageGenerationRoute
   image_rate_independent?: boolean
   image_rate_multiplier?: number
   image_price_1k?: number | null
@@ -905,6 +911,10 @@ export interface CreateGroupRequest {
   video_price_720p_per_sec?: number | null
   video_price_1080p_per_sec?: number | null
   video_price_4k_per_sec?: number | null
+  search_price_per_1k?: number | null
+  audio_realtime_price_per_min?: number | null
+  audio_tts_price_per_million_chars?: number | null
+  audio_stt_price_per_hour?: number | null
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
@@ -936,7 +946,7 @@ export interface UpdateGroupRequest {
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
   allow_image_generation?: boolean
-  image_generation_route?: 'codex'
+  image_generation_route?: ImageGenerationRoute
   image_rate_independent?: boolean
   image_rate_multiplier?: number
   image_price_1k?: number | null
@@ -948,6 +958,10 @@ export interface UpdateGroupRequest {
   video_price_720p_per_sec?: number | null
   video_price_1080p_per_sec?: number | null
   video_price_4k_per_sec?: number | null
+  search_price_per_1k?: number | null
+  audio_realtime_price_per_min?: number | null
+  audio_tts_price_per_million_chars?: number | null
+  audio_stt_price_per_hour?: number | null
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
