@@ -264,7 +264,7 @@ func TestCalculateAudioCost_RealtimeUsesGroupPrice(t *testing.T) {
 	bd := svc.CalculateAudioCost("realtime", 3.5, &audioPriceConfig{RealtimePerMin: &price}, 1.25)
 
 	require.InDelta(t, 1.47, bd.TotalCost, 1e-12)
-	require.InDelta(t, 1.47, bd.ActualCost, 1e-12)
+	require.InDelta(t, 1.8375, bd.ActualCost, 1e-12)
 	require.Equal(t, string(BillingModeAudio), bd.BillingMode)
 }
 
@@ -286,7 +286,18 @@ func TestCalculateAudioCost_STTUsesGroupPrice(t *testing.T) {
 	bd := svc.CalculateAudioCost("stt", 0.25, &audioPriceConfig{STTPerHour: &price}, 2.0)
 
 	require.InDelta(t, 2.0, bd.TotalCost, 1e-12)
-	require.InDelta(t, 2.0, bd.ActualCost, 1e-12)
+	require.InDelta(t, 4.0, bd.ActualCost, 1e-12)
+	require.Equal(t, string(BillingModeAudio), bd.BillingMode)
+}
+
+func TestCalculateAudioCost_NegativeRateMultiplierClampsActualCost(t *testing.T) {
+	svc := newTestBillingService()
+	price := 8.0
+
+	bd := svc.CalculateAudioCost("stt", 0.25, &audioPriceConfig{STTPerHour: &price}, -1.0)
+
+	require.InDelta(t, 2.0, bd.TotalCost, 1e-12)
+	require.InDelta(t, 0.0, bd.ActualCost, 1e-12)
 	require.Equal(t, string(BillingModeAudio), bd.BillingMode)
 }
 

@@ -1497,10 +1497,13 @@ func (s *BillingService) CalculateAudioCost(mode string, durationOrUnits float64
 	if unitPrice <= 0 {
 		return &CostBreakdown{}
 	}
+	if rateMultiplier < 0 {
+		rateMultiplier = 0
+	}
 	total := unitPrice * durationOrUnits
 	return &CostBreakdown{
 		TotalCost:   total,
-		ActualCost:  total,
+		ActualCost:  total * rateMultiplier,
 		BillingMode: string(BillingModeAudio),
 	}
 }
