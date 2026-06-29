@@ -2610,6 +2610,210 @@ func TestOpenAIWSConnPool_EnsureTargetIdleNeutral(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond, "中性预热应补足到 percent target")
 }
 
+func TestOpenAIWSConnPool_EnsureTargetIdlePrewarmsBoundedNeutralVariants(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.StickyReservePercent = 0
+	cfg.Gateway.OpenAIWS.PrewarmCooldownMS = 0
+
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 908, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 4}
+
+	headersA := http.Header{}
+	headersA.Set("authorization", "Bearer same-token")
+	headersA.Set("originator", "codex_cli_rs")
+	headersA.Set("user-agent", codexCLIUserAgent)
+	headersA.Set("OpenAI-Beta", openAIWSBetaV2Value)
+	headersB := headersA.Clone()
+	headersB.Set("originator", "opencode")
+	headersB.Set("user-agent", "opencode/1.0")
+
+	reqA := openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		Headers: headersA,
+		Profile: openAIWSConnProfileNeutral,
+	}
+	reqB := openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   reqA.WSURL,
+		Headers: headersB,
+		Profile: openAIWSConnProfileNeutral,
+	}
+	reuseKeyA := openAIWSConnReuseKeyForAcquire(reqA)
+	reuseKeyB := openAIWSConnReuseKeyForAcquire(reqB)
+
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(0, 120, 0, 2, 0)
+	leaseA, err := pool.Acquire(context.Background(), reqA)
+	require.NoError(t, err)
+	require.False(t, leaseA.Reused())
+	leaseA.Release()
+
+	leaseB, err := pool.Acquire(context.Background(), reqB)
+	require.NoError(t, err)
+	require.False(t, leaseB.Reused())
+	leaseB.Release()
+	require.Equal(t, 2, dialer.DialCount())
+
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(50, 120, 0, 2, 0)
+	pool.ensureTargetIdleAsync(account.ID)
+
+	require.Eventually(t, func() bool {
+		ap, ok := pool.getAccountPool(account.ID)
+		if !ok || ap == nil {
+			return false
+		}
+		ap.mu.Lock()
+		defer ap.mu.Unlock()
+		return !ap.prewarmActive &&
+			countNeutralStockConnsLocked(ap) == 2 &&
+			countNeutralStockConnsByReuseKeyLocked(ap, reuseKeyA) == 1 &&
+			countNeutralStockConnsByReuseKeyLocked(ap, reuseKeyB) == 1
+	}, 2*time.Second, 10*time.Millisecond, "neutral refill should spread account target across remembered variants without exceeding target")
+
+	leaseA2, err := pool.Acquire(context.Background(), reqA)
+	require.NoError(t, err)
+	require.True(t, leaseA2.Reused(), "variant A should reuse its prewarmed neutral stock")
+	leaseA2.Release()
+
+	leaseB2, err := pool.Acquire(context.Background(), reqB)
+	require.NoError(t, err)
+	require.True(t, leaseB2.Reused(), "variant B should reuse its prewarmed neutral stock")
+	leaseB2.Release()
+}
+
+func TestOpenAIWSConnPool_EnsureTargetIdleEvictsNeutralVariantsOverCap(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 4
+	cfg.Gateway.OpenAIWS.StickyReservePercent = 0
+	cfg.Gateway.OpenAIWS.PrewarmCooldownMS = 0
+
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 909, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 4}
+
+	reqs := make([]openAIWSAcquireRequest, 0, 5)
+	reuseKeys := make([]string, 0, 5)
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(0, 120, 0, 4, 0)
+	for i := 0; i < 5; i++ {
+		headers := http.Header{}
+		headers.Set("authorization", "Bearer same-token")
+		headers.Set("originator", fmt.Sprintf("client-%d", i))
+		headers.Set("user-agent", fmt.Sprintf("client/%d", i))
+		headers.Set("OpenAI-Beta", openAIWSBetaV2Value)
+		req := openAIWSAcquireRequest{
+			Account: account,
+			WSURL:   "wss://example.com/v1/responses",
+			Headers: headers,
+			Profile: openAIWSConnProfileNeutral,
+		}
+		lease, err := pool.Acquire(context.Background(), req)
+		require.NoError(t, err)
+		require.False(t, lease.Reused())
+		lease.Release()
+		reqs = append(reqs, req)
+		reuseKeys = append(reuseKeys, openAIWSConnReuseKeyForAcquire(req))
+	}
+	require.Equal(t, 5, dialer.DialCount())
+
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(100, 120, 0, 4, 0)
+	pool.ensureTargetIdleAsync(account.ID)
+
+	require.Eventually(t, func() bool {
+		ap, ok := pool.getAccountPool(account.ID)
+		if !ok || ap == nil {
+			return false
+		}
+		ap.mu.Lock()
+		defer ap.mu.Unlock()
+		if ap.prewarmActive || countNeutralStockConnsLocked(ap) != 4 {
+			return false
+		}
+		if countNeutralStockConnsByReuseKeyLocked(ap, reuseKeys[0]) != 0 {
+			return false
+		}
+		for _, reuseKey := range reuseKeys[1:] {
+			if countNeutralStockConnsByReuseKeyLocked(ap, reuseKey) != 1 {
+				return false
+			}
+		}
+		return true
+	}, 2*time.Second, 10*time.Millisecond, "catalog should keep the four most recent variants and prewarm one stock conn for each")
+
+	for _, req := range reqs[1:] {
+		lease, err := pool.Acquire(context.Background(), req)
+		require.NoError(t, err)
+		require.True(t, lease.Reused())
+		lease.Release()
+	}
+}
+
+func TestOpenAIWSConnPool_EnsureTargetIdleDropsExpiredNeutralVariants(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 4
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.StickyReservePercent = 0
+	cfg.Gateway.OpenAIWS.PrewarmCooldownMS = 0
+
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 910, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 4}
+	headers := http.Header{}
+	headers.Set("authorization", "Bearer same-token")
+	headers.Set("originator", "codex_cli_rs")
+	headers.Set("user-agent", codexCLIUserAgent)
+	headers.Set("OpenAI-Beta", openAIWSBetaV2Value)
+	req := openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+		Headers: headers,
+		Profile: openAIWSConnProfileNeutral,
+	}
+
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(0, 1, 0, 2, 0)
+	lease, err := pool.Acquire(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, lease.Reused())
+	lease.Release()
+	require.Equal(t, 1, dialer.DialCount())
+
+	time.Sleep(1100 * time.Millisecond)
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(50, 1, 0, 2, 0)
+	pool.ensureTargetIdleAsync(account.ID)
+	time.Sleep(150 * time.Millisecond)
+
+	ap, ok := pool.getAccountPool(account.ID)
+	require.True(t, ok)
+	ap.mu.Lock()
+	stock := countNeutralStockConnsLocked(ap)
+	prewarmActive := ap.prewarmActive
+	ap.mu.Unlock()
+	require.False(t, prewarmActive)
+	require.Equal(t, 0, stock, "expired neutral variants should be pruned instead of used as prewarm templates")
+	require.Equal(t, 1, dialer.DialCount(), "expired variant should not trigger a fresh neutral prewarm dial")
+}
+
 func TestOpenAIWSConnPool_UsedNeutralDoesNotBlockInventoryReplenish(t *testing.T) {
 	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
 	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)

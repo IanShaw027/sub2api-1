@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +35,11 @@ const (
 
 	openAIWSPrewarmFailureWindow   = 30 * time.Second
 	openAIWSPrewarmFailureSuppress = 2
+
+	// openAIWSNeutralVariantCatalogMaxPerAccount is the current bounded,
+	// heuristic cap for per-account neutral handshake variants. Keep this named:
+	// it is intentionally easy to tune if neutral traffic mix changes.
+	openAIWSNeutralVariantCatalogMaxPerAccount = 4
 
 	// openAIWSConnLimitTTLEvictThreshold: 当连接命中 websocket_connection_limit_reached
 	// 且连接年龄已达该阈值（接近 60min 单连接 TTL）时，视为 TTL 到期而非账户级并发上限，
@@ -807,10 +813,19 @@ type openAIWSAccountPool struct {
 	// lastNeutralAcquire 保存最近一次 neutral 请求快照（供中性预热克隆），互不污染。
 	lastAcquire        *openAIWSAcquireRequest
 	lastNeutralAcquire *openAIWSAcquireRequest
+	neutralVariants    map[string]*openAIWSNeutralVariant
 	prewarmActive      bool
 	prewarmUntil       time.Time
 	prewarmFails       int
 	prewarmFailAt      time.Time
+}
+
+type openAIWSNeutralVariant struct {
+	reuseKey      string
+	req           openAIWSAcquireRequest
+	lastSeenAt    time.Time
+	lastSuccessAt time.Time
+	leaseCount    int64
 }
 
 func (ap *openAIWSAccountPool) creatingForProfileLocked(profile openAIWSConnProfile) int {
@@ -851,6 +866,124 @@ func (ap *openAIWSAccountPool) doneCreatingLocked(profile openAIWSConnProfile) {
 	if ap.creatingSessionBound > 0 {
 		ap.creatingSessionBound--
 	}
+}
+
+func (ap *openAIWSAccountPool) rememberNeutralVariantLocked(req openAIWSAcquireRequest, now time.Time, successful bool, ttl time.Duration) {
+	if ap == nil || req.Profile != openAIWSConnProfileNeutral {
+		return
+	}
+	req = cloneOpenAIWSNeutralVariantRequest(req)
+	if req.Account == nil || stringsTrim(req.WSURL) == "" {
+		return
+	}
+	reuseKey := openAIWSConnReuseKeyForAcquire(req)
+	if stringsTrim(reuseKey) == "" {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if ap.neutralVariants == nil {
+		ap.neutralVariants = make(map[string]*openAIWSNeutralVariant)
+	}
+	variant := ap.neutralVariants[reuseKey]
+	if variant == nil {
+		variant = &openAIWSNeutralVariant{reuseKey: reuseKey}
+		ap.neutralVariants[reuseKey] = variant
+	}
+	variant.req = req
+	variant.lastSeenAt = now
+	if successful {
+		variant.lastSuccessAt = now
+		variant.leaseCount++
+	}
+	ap.pruneNeutralVariantsLocked(now, ttl)
+}
+
+func (ap *openAIWSAccountPool) pruneNeutralVariantsLocked(now time.Time, ttl time.Duration) {
+	if ap == nil || len(ap.neutralVariants) == 0 {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if ttl > 0 {
+		for reuseKey, variant := range ap.neutralVariants {
+			if variant == nil {
+				delete(ap.neutralVariants, reuseKey)
+				continue
+			}
+			lastSeen := variant.lastSeenAt
+			if !variant.lastSuccessAt.IsZero() && variant.lastSuccessAt.After(lastSeen) {
+				lastSeen = variant.lastSuccessAt
+			}
+			if lastSeen.IsZero() || now.Sub(lastSeen) >= ttl {
+				delete(ap.neutralVariants, reuseKey)
+			}
+		}
+	}
+	for len(ap.neutralVariants) > openAIWSNeutralVariantCatalogMaxPerAccount {
+		var oldestKey string
+		var oldestAt time.Time
+		for reuseKey, variant := range ap.neutralVariants {
+			if variant == nil {
+				oldestKey = reuseKey
+				break
+			}
+			lastSeen := variant.lastSeenAt
+			if lastSeen.IsZero() {
+				oldestKey = reuseKey
+				oldestAt = lastSeen
+				break
+			}
+			if oldestKey == "" || lastSeen.Before(oldestAt) {
+				oldestKey = reuseKey
+				oldestAt = lastSeen
+			}
+		}
+		if oldestKey == "" {
+			break
+		}
+		delete(ap.neutralVariants, oldestKey)
+	}
+}
+
+func (ap *openAIWSAccountPool) prioritizedNeutralVariantsLocked(now time.Time, ttl time.Duration) []openAIWSNeutralVariant {
+	if ap == nil {
+		return nil
+	}
+	ap.pruneNeutralVariantsLocked(now, ttl)
+	if len(ap.neutralVariants) == 0 {
+		return nil
+	}
+	variants := make([]openAIWSNeutralVariant, 0, len(ap.neutralVariants))
+	for _, variant := range ap.neutralVariants {
+		if variant == nil || stringsTrim(variant.reuseKey) == "" {
+			continue
+		}
+		variants = append(variants, *variant)
+	}
+	sort.SliceStable(variants, func(i, j int) bool {
+		left := variants[i]
+		right := variants[j]
+		if !left.lastSuccessAt.Equal(right.lastSuccessAt) {
+			if left.lastSuccessAt.IsZero() {
+				return false
+			}
+			if right.lastSuccessAt.IsZero() {
+				return true
+			}
+			return left.lastSuccessAt.After(right.lastSuccessAt)
+		}
+		if left.leaseCount != right.leaseCount {
+			return left.leaseCount > right.leaseCount
+		}
+		if !left.lastSeenAt.Equal(right.lastSeenAt) {
+			return left.lastSeenAt.After(right.lastSeenAt)
+		}
+		return left.reuseKey < right.reuseKey
+	})
+	return variants
 }
 
 type OpenAIWSPoolMetricsSnapshot struct {
@@ -1087,23 +1220,22 @@ func (p *openAIWSConnPool) PrewarmNeutral(accountID int64, req openAIWSAcquireRe
 	ap.mu.Lock()
 	// seed neutral 快照，供后续 ensureTargetIdleAsync / cleanup 使用账号信息。
 	ap.lastNeutralAcquire = cloneOpenAIWSAcquireRequestPtr(&req)
-	reqReuseKey := openAIWSConnReuseKeyForAcquire(req)
 	now := time.Now()
+	ap.rememberNeutralVariantLocked(req, now, false, p.neutralIdleTTL())
 	if p.shouldSuppressPrewarmLocked(ap, now) {
 		ap.mu.Unlock()
 		return
 	}
-	current := countNeutralStockConnsByReuseKeyLocked(ap, reqReuseKey) + ap.creatingForProfileLocked(openAIWSConnProfileNeutral)
-	need := targetIdle - current
-	if need <= 0 {
+	plan := p.neutralPrewarmPlanLocked(ap, now, targetIdle)
+	if len(plan) == 0 {
 		ap.mu.Unlock()
 		return
 	}
-	ap.addCreatingLocked(openAIWSConnProfileNeutral, need)
-	p.metrics.scaleUpTotal.Add(int64(need))
+	ap.addCreatingLocked(openAIWSConnProfileNeutral, len(plan))
+	p.metrics.scaleUpTotal.Add(int64(len(plan)))
 	ap.mu.Unlock()
 
-	p.prewarmConns(accountID, req, need)
+	p.prewarmNeutralConns(accountID, plan)
 }
 
 func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireRequest, retry int) (*openAIWSConnLease, error) {
@@ -1268,6 +1400,9 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 		return nil, dialErr
 	}
 	ap.conns[conn.id] = conn
+	if req.Profile == openAIWSConnProfileNeutral {
+		ap.rememberNeutralVariantLocked(req, time.Now(), true, p.neutralIdleTTL())
+	}
 	ap.prewarmFails = 0
 	ap.prewarmFailAt = time.Time{}
 	ap.mu.Unlock()
@@ -1406,6 +1541,70 @@ func countNeutralStockConnsByReuseKeyLocked(ap *openAIWSAccountPool, reuseKey st
 	return count
 }
 
+func (p *openAIWSConnPool) neutralPrewarmPlanLocked(ap *openAIWSAccountPool, now time.Time, target int) []openAIWSAcquireRequest {
+	if p == nil || ap == nil || target <= 0 {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if ap.neutralVariants == nil && ap.lastNeutralAcquire != nil {
+		ap.rememberNeutralVariantLocked(*ap.lastNeutralAcquire, now, false, p.neutralIdleTTL())
+	}
+	variants := ap.prioritizedNeutralVariantsLocked(now, p.neutralIdleTTL())
+	if len(variants) == 0 {
+		return nil
+	}
+	current := countNeutralStockConnsLocked(ap) + ap.creatingForProfileLocked(openAIWSConnProfileNeutral)
+	need := target - current
+	if need <= 0 {
+		return nil
+	}
+
+	stockByReuseKey := make(map[string]int, len(variants))
+	for _, variant := range variants {
+		stockByReuseKey[variant.reuseKey] = countNeutralStockConnsByReuseKeyLocked(ap, variant.reuseKey)
+	}
+
+	plan := make([]openAIWSAcquireRequest, 0, need)
+	for _, variant := range variants {
+		if need <= 0 {
+			break
+		}
+		if stockByReuseKey[variant.reuseKey] > 0 {
+			continue
+		}
+		plan = append(plan, cloneOpenAIWSNeutralVariantRequest(variant.req))
+		stockByReuseKey[variant.reuseKey]++
+		need--
+	}
+	for need > 0 {
+		for _, variant := range variants {
+			if need <= 0 {
+				break
+			}
+			plan = append(plan, cloneOpenAIWSNeutralVariantRequest(variant.req))
+			stockByReuseKey[variant.reuseKey]++
+			need--
+		}
+	}
+	return plan
+}
+
+func (p *openAIWSConnPool) recordNeutralAcquireSuccess(accountID int64, req openAIWSAcquireRequest) {
+	if p == nil || accountID <= 0 || req.Profile != openAIWSConnProfileNeutral {
+		return
+	}
+	ap, ok := p.getAccountPool(accountID)
+	if !ok || ap == nil {
+		return
+	}
+	now := time.Now()
+	ap.mu.Lock()
+	ap.rememberNeutralVariantLocked(req, now, true, p.neutralIdleTTL())
+	ap.mu.Unlock()
+}
+
 func openAIWSConnMatchesProfileAndReuseKey(conn *openAIWSConn, profile openAIWSConnProfile, reuseKey string) bool {
 	if conn == nil || conn.profile != profile {
 		return false
@@ -1457,6 +1656,7 @@ func (p *openAIWSConnPool) finalizeReusedLease(accountID int64, conn *openAIWSCo
 		reused:    true,
 	}
 	p.metrics.acquireReuseTotal.Add(1)
+	p.recordNeutralAcquireSuccess(accountID, req)
 	p.ensureTargetIdleAsync(accountID)
 	return lease
 }
@@ -1725,6 +1925,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 	if ap == nil {
 		return nil
 	}
+	ap.pruneNeutralVariantsLocked(now, p.neutralIdleTTL())
 	maxAge := p.maxConnAge()
 	sessionIdleTTL := p.sessionIdleTTL()
 	neutralIdleTTL := p.neutralIdleTTL()
@@ -2022,7 +2223,7 @@ func (p *openAIWSConnPool) ensureTargetIdleAsync(accountID int64) {
 	}
 	ap.mu.Lock()
 	defer ap.mu.Unlock()
-	if ap.lastNeutralAcquire == nil {
+	if ap.lastNeutralAcquire == nil && len(ap.neutralVariants) == 0 {
 		return
 	}
 	if ap.prewarmActive {
@@ -2035,24 +2236,29 @@ func (p *openAIWSConnPool) ensureTargetIdleAsync(accountID int64) {
 	if p.shouldSuppressPrewarmLocked(ap, now) {
 		return
 	}
-	account := ap.lastNeutralAcquire.Account
-	neutralNeed := 0
-	neutralReuseKey := openAIWSConnReuseKeyForAcquire(*ap.lastNeutralAcquire)
-	target := p.neutralPrewarmTargetForAccount(account)
-	current := countNeutralStockConnsByReuseKeyLocked(ap, neutralReuseKey) + ap.creatingForProfileLocked(openAIWSConnProfileNeutral)
-	if current < target {
-		neutralNeed = target - current
+	var account *Account
+	if ap.lastNeutralAcquire != nil {
+		account = ap.lastNeutralAcquire.Account
 	}
-	if neutralNeed <= 0 {
+	if account == nil {
+		for _, variant := range ap.neutralVariants {
+			if variant != nil && variant.req.Account != nil {
+				account = variant.req.Account
+				break
+			}
+		}
+	}
+	target := p.neutralPrewarmTargetForAccount(account)
+	plan := p.neutralPrewarmPlanLocked(ap, now, target)
+	if len(plan) == 0 {
 		return
 	}
-	neutralReq := cloneOpenAIWSAcquireRequest(*ap.lastNeutralAcquire)
 	ap.prewarmActive = true
 	if cooldown := p.prewarmCooldown(); cooldown > 0 {
 		ap.prewarmUntil = now.Add(cooldown)
 	}
-	ap.addCreatingLocked(openAIWSConnProfileNeutral, neutralNeed)
-	p.metrics.scaleUpTotal.Add(int64(neutralNeed))
+	ap.addCreatingLocked(openAIWSConnProfileNeutral, len(plan))
+	p.metrics.scaleUpTotal.Add(int64(len(plan)))
 
 	go func() {
 		defer func() {
@@ -2062,7 +2268,7 @@ func (p *openAIWSConnPool) ensureTargetIdleAsync(accountID int64) {
 				ap.mu.Unlock()
 			}
 		}()
-		p.prewarmConns(accountID, neutralReq, neutralNeed)
+		p.prewarmNeutralConns(accountID, plan)
 	}()
 }
 
@@ -2139,6 +2345,13 @@ func (p *openAIWSConnPool) prewarmConns(accountID int64, req openAIWSAcquireRequ
 		ap.prewarmFails = 0
 		ap.prewarmFailAt = time.Time{}
 		ap.mu.Unlock()
+	}
+}
+
+func (p *openAIWSConnPool) prewarmNeutralConns(accountID int64, requests []openAIWSAcquireRequest) {
+	for _, req := range requests {
+		req.Profile = openAIWSConnProfileNeutral
+		p.prewarmConns(accountID, req, 1)
 	}
 }
 
@@ -2412,6 +2625,16 @@ func cloneOpenAIWSAcquireRequest(req openAIWSAcquireRequest) openAIWSAcquireRequ
 	copied.ProxyURL = stringsTrim(req.ProxyURL)
 	copied.IdentityKey = stringsTrim(req.IdentityKey)
 	copied.PreferredConnID = stringsTrim(req.PreferredConnID)
+	return copied
+}
+
+func cloneOpenAIWSNeutralVariantRequest(req openAIWSAcquireRequest) openAIWSAcquireRequest {
+	copied := cloneOpenAIWSAcquireRequest(req)
+	copied.Profile = openAIWSConnProfileNeutral
+	copied.PreferredConnID = ""
+	copied.ForceNewConn = false
+	copied.ForcePreferredConn = false
+	copied.AffinityOnlyReuse = false
 	return copied
 }
 

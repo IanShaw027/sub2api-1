@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -607,6 +608,135 @@ func TestEvaluateDeltaShadowCandidate_ReplayedAssistantOutputWithoutTypeMatches(
 	require.Len(t, inputItems, 1)
 }
 
+func TestBuildOpenAIWSActiveDeltaPayload_AllowsConnReanchorWhenAllowed(t *testing.T) {
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	output1 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"two"}]}`
+	input2 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"three"}]}`
+	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[` + input1 + `,` + output1 + `,` + input2 + `]}`)
+	nonInputHash, _ := openAIWSNonInputHash(payload)
+
+	deltaPayload, deltaLog, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+		RequestID:                "req_conn_reanchor_allowed",
+		AccountID:                78070,
+		LeaseConnID:              "oa_ws_78070_new",
+		ConnMostRecentResponseID: "",
+		CurrentPayload:           payload,
+		AllowConnReanchor:        true,
+		StickyAccountID:          78070,
+		StickyAccountHit:         true,
+		ConnAffinityHit:          false,
+		PreferredConnID:          "",
+		StoreFallbackReason:      "conn_affinity_miss",
+		CachedFound:              true,
+		Cached: openAIWSSessionContextValue{
+			accountID:               78070,
+			connID:                  "oa_ws_78070_old",
+			lastResponseID:          "resp_reanchor_allowed_1",
+			materializedHashes:      [][32]byte{mustItemHash(t, input1), mustItemHash(t, output1)},
+			materializedCount:       2,
+			inputCount:              1,
+			nonInputHash:            nonInputHash,
+			rawVsClientVisibleEqual: true,
+		},
+	})
+
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.True(t, deltaLog.Candidate)
+	require.True(t, deltaLog.Active)
+	require.True(t, deltaLog.AllowConnReanchor)
+	require.False(t, deltaLog.ConnMatch)
+	require.False(t, deltaLog.MostRecentMatch)
+	require.Equal(t, "conn_affinity_miss", deltaLog.StoreFallbackReason)
+	deltaJSON := requestToJSONString(deltaPayload)
+	require.Equal(t, "resp_reanchor_allowed_1", gjson.Get(deltaJSON, "previous_response_id").String())
+	require.False(t, gjson.Get(deltaJSON, "store").Bool())
+	require.Len(t, gjson.Get(deltaJSON, "input").Array(), 1)
+	require.Equal(t, "three", gjson.Get(deltaJSON, "input.0.content.0.text").String())
+}
+
+func TestBuildOpenAIWSActiveDeltaPayload_BlocksConnReanchorWhenNotAllowed(t *testing.T) {
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	output1 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"two"}]}`
+	input2 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"three"}]}`
+	toolOutput := `{"type":"function_call_output","call_id":"call_1","output":"ok"}`
+	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[` + input1 + `,` + output1 + `,` + input2 + `]}`)
+	toolPayload := []byte(`{"model":"gpt-5.1","store":false,"input":[` + input1 + `,` + output1 + `,` + toolOutput + `]}`)
+	nonInputHash, _ := openAIWSNonInputHash(payload)
+	toolNonInputHash, _ := openAIWSNonInputHash(toolPayload)
+
+	tests := []struct {
+		name              string
+		payload           []byte
+		hasFunctionOutput bool
+		allowReanchor     bool
+		cached            openAIWSSessionContextValue
+		wantFallback      string
+	}{
+		{
+			name:          "gate disabled",
+			payload:       payload,
+			allowReanchor: false,
+			cached: openAIWSSessionContextValue{
+				accountID:               78071,
+				connID:                  "oa_ws_78071_old",
+				lastResponseID:          "resp_reanchor_block_1",
+				materializedHashes:      [][32]byte{mustItemHash(t, input1), mustItemHash(t, output1)},
+				materializedCount:       2,
+				inputCount:              1,
+				nonInputHash:            nonInputHash,
+				rawVsClientVisibleEqual: true,
+			},
+			wantFallback: "conn_mismatch",
+		},
+		{
+			name:              "function output blocks conn reanchor",
+			payload:           toolPayload,
+			hasFunctionOutput: true,
+			allowReanchor:     true,
+			cached: openAIWSSessionContextValue{
+				accountID:               78071,
+				connID:                  "oa_ws_78071_old",
+				lastResponseID:          "resp_reanchor_block_tool",
+				materializedHashes:      [][32]byte{mustItemHash(t, input1), mustItemHash(t, output1)},
+				materializedCount:       2,
+				inputCount:              1,
+				nonInputHash:            toolNonInputHash,
+				rawVsClientVisibleEqual: true,
+			},
+			wantFallback: "has_function_call_output",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			deltaPayload, deltaLog, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+				RequestID:                "req_" + strings.ReplaceAll(tt.name, " ", "_"),
+				AccountID:                78071,
+				LeaseConnID:              "oa_ws_78071_new",
+				ConnMostRecentResponseID: "",
+				CurrentPayload:           tt.payload,
+				HasFunctionCallOutput:    tt.hasFunctionOutput,
+				AllowConnReanchor:        tt.allowReanchor,
+				StickyAccountID:          78071,
+				StickyAccountHit:         true,
+				ConnAffinityHit:          false,
+				StoreFallbackReason:      "conn_affinity_miss",
+				CachedFound:              true,
+				Cached:                   tt.cached,
+			})
+
+			require.NoError(t, err)
+			require.False(t, applied)
+			require.Nil(t, deltaPayload)
+			require.False(t, deltaLog.Candidate)
+			require.False(t, deltaLog.Active)
+			require.Equal(t, tt.wantFallback, deltaLog.FallbackReason)
+		})
+	}
+}
+
 func TestOpenAIWSActiveDelta_InputOnlyContextDropsReplayedAssistantOutput(t *testing.T) {
 	msg1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}`
 	replayedOutput := `{"type":"message","role":"assistant","content":[{"type":"input_text","text":"hello"}]}`
@@ -980,6 +1110,20 @@ func TestOpenAIWSActiveDelta_ResponseConnMissUsesSessionConnAndStillSendsDelta(t
 	gin.SetMode(gin.TestMode)
 	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
 	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
+	require.NoError(t, logger.Init(logger.InitOptions{
+		Level:       "debug",
+		Format:      "json",
+		ServiceName: "sub2api",
+		Environment: "test",
+		Output: logger.OutputOptions{
+			ToStdout: true,
+			ToFile:   false,
+		},
+		Sampling: logger.SamplingOptions{Enabled: false},
+	}))
+	logSink := &openAIWSModeLogTestSink{}
+	logger.SetSink(logSink)
+	t.Cleanup(func() { logger.SetSink(nil) })
 
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
@@ -1058,6 +1202,9 @@ func TestOpenAIWSActiveDelta_ResponseConnMissUsesSessionConnAndStillSendsDelta(t
 	require.Equal(t, "resp_conn_miss_seed", firstResult.RequestID)
 
 	stateStore := svc.getOpenAIWSStateStore()
+	cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
+	require.True(t, ok)
+	require.NotEmpty(t, cached.connID)
 	stateStore.DeleteResponseConn(groupID, apiKeyID, "resp_conn_miss_seed")
 
 	secondBody := []byte(`{"model":"gpt-5.1","stream":true,"previous_response_id":"resp_conn_miss_seed","input":[` + input1 + `,` + output1 + `,` + input2 + `]}`)
@@ -1075,8 +1222,23 @@ func TestOpenAIWSActiveDelta_ResponseConnMissUsesSessionConnAndStillSendsDelta(t
 	require.False(t, gjson.Get(secondWrite, "store").Bool())
 	require.Len(t, gjson.Get(secondWrite, "input").Array(), 1, "same-session response conn miss should still send only trailing input")
 	require.Equal(t, "again", gjson.Get(secondWrite, "input.0.content.0.text").String())
+	foundSessionContextReanchorLog := false
+	for _, event := range logSink.snapshot() {
+		if event == nil {
+			continue
+		}
+		msg := event.Message
+		if strings.Contains(msg, "openai_ws_delta_shadow") &&
+			strings.Contains(msg, "active=true") &&
+			strings.Contains(msg, "store_fallback_reason=session_context_conn_reanchor") &&
+			strings.Contains(msg, "preferred_conn_id="+cached.connID) {
+			foundSessionContextReanchorLog = true
+			break
+		}
+	}
+	require.True(t, foundSessionContextReanchorLog, "delta shadow log should preserve the session-context conn reanchor decision")
 
-	cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
+	cached, ok = stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
 	require.True(t, ok)
 	require.Equal(t, "resp_conn_miss_next", cached.lastResponseID)
 }

@@ -463,6 +463,99 @@ func TestResolveOpenAIWSContinuationStoreDecisionRawOAuthAccountBoundWithoutConn
 	require.False(t, gjson.GetBytes(updated, "store").Bool())
 }
 
+func TestOpenAIWSDeltaConnReanchorBlockersSafetyGates(t *testing.T) {
+	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	store := NewOpenAIWSStateStore(nil)
+	store.BindSessionContext(7, 11, "sess", openAIWSSessionContextValue{
+		accountID:               account.ID,
+		connID:                  "oa_ws_101_cached",
+		lastResponseID:          "resp_cached",
+		materializedCount:       1,
+		inputCount:              1,
+		rawVsClientVisibleEqual: true,
+	}, time.Minute)
+	require.True(t, openAIWSHasDeltaReanchorTarget(store, 7, 11, "sess", account.ID))
+
+	baseline := func() string {
+		return openAIWSDeltaConnReanchorBlockers(
+			false,
+			1,
+			"",
+			false,
+			account,
+			store,
+			true,
+			"",
+			"sess",
+			false,
+			openAIWSHasDeltaReanchorTarget(store, 7, 11, "sess", account.ID),
+		)
+	}
+	require.Equal(t, "-", baseline())
+
+	tests := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{
+			name: "function output",
+			got: openAIWSDeltaConnReanchorBlockers(
+				false, 1, "", false, account, store, true, "", "sess", true,
+				openAIWSHasDeltaReanchorTarget(store, 7, 11, "sess", account.ID),
+			),
+			want: "has_function_call_output",
+		},
+		{
+			name: "http ingress one shot",
+			got: openAIWSDeltaConnReanchorBlockers(
+				false, 1, "", true, account, store, true, "", "sess", false,
+				openAIWSHasDeltaReanchorTarget(store, 7, 11, "sess", account.ID),
+			),
+			want: "http_ingress_one_shot",
+		},
+		{
+			name: "non oauth",
+			got: openAIWSDeltaConnReanchorBlockers(
+				false, 1, "", false, &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, store, true, "", "sess", false,
+				openAIWSHasDeltaReanchorTarget(store, 7, 11, "sess", account.ID),
+			),
+			want: "account_not_oauth",
+		},
+		{
+			name: "missing session hash",
+			got: openAIWSDeltaConnReanchorBlockers(
+				false, 1, "", false, account, store, true, "", "", false, false,
+			),
+			want: "missing_session_hash",
+		},
+		{
+			name: "sticky account mismatch",
+			got: func() string {
+				mismatchStore := NewOpenAIWSStateStore(nil)
+				mismatchStore.BindSessionContext(7, 11, "sess", openAIWSSessionContextValue{
+					accountID:      202,
+					connID:         "oa_ws_202_cached",
+					lastResponseID: "resp_other",
+				}, time.Minute)
+				require.False(t, openAIWSHasDeltaReanchorTarget(mismatchStore, 7, 11, "sess", account.ID))
+				return openAIWSDeltaConnReanchorBlockers(
+					false, 1, "", false, account, mismatchStore, true, "", "sess", false,
+					openAIWSHasDeltaReanchorTarget(mismatchStore, 7, 11, "sess", account.ID),
+				)
+			}(),
+			want: "missing_reanchor_target",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			require.Contains(t, tt.got, tt.want)
+		})
+	}
+}
+
 func TestResolveOpenAIWSContinuationStoreDecisionOAuthStickyMismatchDropsPreviousResponseID(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
@@ -489,7 +582,7 @@ func TestResolveOpenAIWSContinuationStoreDecisionOAuthStickyMismatchDropsPreviou
 	require.Equal(t, false, payload["store"])
 }
 
-func TestShouldInferIngressFunctionCallOutputPreviousResponseID(t *testing.T) {
+func TestOpenAIWSForwarderIngressShouldInferFunctionCallOutputPreviousResponseID(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -596,6 +689,116 @@ func TestShouldInferIngressFunctionCallOutputPreviousResponseID(t *testing.T) {
 				tt.expectedPrevious,
 			)
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestOpenAIWSForwarderIngressShouldRejectUnsafeFunctionCallOutputContinuation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                    string
+		storeDisabled           bool
+		turn                    int
+		signals                 ToolContinuationSignals
+		currentPreviousResponse string
+		expectedPrevious        string
+		matchedToolContext      bool
+		wantReject              bool
+		wantReason              string
+	}{
+		{
+			name:          "reject_missing_call_id_and_do_not_infer",
+			storeDisabled: true,
+			turn:          2,
+			signals: ToolContinuationSignals{
+				HasFunctionCallOutput:              true,
+				HasFunctionCallOutputMissingCallID: true,
+			},
+			expectedPrevious: "resp_1",
+			wantReject:       true,
+			wantReason:       "function_call_output_missing_call_id",
+		},
+		{
+			name:          "self_contained_function_call_context_is_safe_full_create",
+			storeDisabled: true,
+			turn:          2,
+			signals: ToolContinuationSignals{
+				HasFunctionCallOutput: true,
+				HasToolCallContext:    true,
+			},
+			matchedToolContext: true,
+			expectedPrevious:   "",
+			wantReject:         false,
+		},
+		{
+			name:          "mismatched_function_call_context_rejects_locally",
+			storeDisabled: true,
+			turn:          2,
+			signals: ToolContinuationSignals{
+				HasFunctionCallOutput: true,
+				HasToolCallContext:    true,
+			},
+			expectedPrevious: "resp_1",
+			wantReject:       true,
+			wantReason:       "function_call_output_unmatched_tool_context",
+		},
+		{
+			name:             "known_last_response_allows_infer_instead_of_reject",
+			storeDisabled:    true,
+			turn:             2,
+			signals:          ToolContinuationSignals{HasFunctionCallOutput: true},
+			expectedPrevious: "resp_1",
+			wantReject:       false,
+		},
+		{
+			name:          "no_known_last_response_rejects_locally",
+			storeDisabled: true,
+			turn:          2,
+			signals:       ToolContinuationSignals{HasFunctionCallOutput: true},
+			wantReject:    true,
+			wantReason:    "function_call_output_missing_previous_response_id",
+		},
+		{
+			name:                    "explicit_previous_response_id_defers_to_strict_match_check",
+			storeDisabled:           true,
+			turn:                    2,
+			signals:                 ToolContinuationSignals{HasFunctionCallOutput: true},
+			currentPreviousResponse: "resp_client",
+			expectedPrevious:        "",
+			wantReject:              false,
+		},
+		{
+			name:          "explicit_previous_response_id_with_missing_call_id_rejects_locally",
+			storeDisabled: true,
+			turn:          2,
+			signals: ToolContinuationSignals{
+				HasFunctionCallOutput:              true,
+				HasFunctionCallOutputMissingCallID: true,
+			},
+			currentPreviousResponse: "resp_client",
+			expectedPrevious:        "resp_client",
+			wantReject:              true,
+			wantReason:              "function_call_output_missing_call_id",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			gotReject, gotReason := shouldRejectUnsafeIngressFunctionCallOutputContinuation(
+				tt.storeDisabled,
+				tt.turn,
+				tt.signals,
+				tt.currentPreviousResponse,
+				tt.expectedPrevious,
+				tt.matchedToolContext,
+			)
+			require.Equal(t, tt.wantReject, gotReject)
+			if tt.wantReason != "" {
+				require.Equal(t, tt.wantReason, gotReason)
+			}
 		})
 	}
 }
@@ -797,7 +1000,7 @@ func TestOpenAIWSExtractNormalizedInputSequence(t *testing.T) {
 	})
 }
 
-func TestShouldKeepIngressPreviousResponseID(t *testing.T) {
+func TestOpenAIWSForwarderIngressShouldKeepPreviousResponseID(t *testing.T) {
 	t.Parallel()
 
 	previousPayload := []byte(`{
@@ -818,6 +1021,21 @@ func TestShouldKeepIngressPreviousResponseID(t *testing.T) {
 
 	t.Run("strict_incremental_keep", func(t *testing.T) {
 		keep, reason, err := shouldKeepIngressPreviousResponseID(previousPayload, currentStrictPayload, "resp_turn_1", false)
+		require.NoError(t, err)
+		require.True(t, keep)
+		require.Equal(t, "strict_incremental_ok", reason)
+	})
+
+	t.Run("function_call_output_exact_previous_and_unchanged_non_input_keeps_previous_response_id", func(t *testing.T) {
+		payload := []byte(`{
+			"type":"response.create",
+			"model":"gpt-5.1",
+			"store":false,
+			"tools":[{"name":"tool_a","type":"function"}],
+			"previous_response_id":"resp_turn_1",
+			"input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]
+		}`)
+		keep, reason, err := shouldKeepIngressPreviousResponseID(previousPayload, payload, "resp_turn_1", true)
 		require.NoError(t, err)
 		require.True(t, keep)
 		require.Equal(t, "strict_incremental_ok", reason)
@@ -845,6 +1063,20 @@ func TestShouldKeepIngressPreviousResponseID(t *testing.T) {
 		require.Equal(t, "previous_response_id_mismatch", reason)
 	})
 
+	t.Run("function_call_output_previous_response_id_mismatch_does_not_keep_stale_previous_response_id", func(t *testing.T) {
+		payload := []byte(`{
+			"type":"response.create",
+			"model":"gpt-5.1",
+			"store":false,
+			"previous_response_id":"resp_external",
+			"input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]
+		}`)
+		keep, reason, err := shouldKeepIngressPreviousResponseID(previousPayload, payload, "resp_turn_1", true)
+		require.NoError(t, err)
+		require.False(t, keep)
+		require.Equal(t, "previous_response_id_mismatch", reason)
+	})
+
 	t.Run("missing_previous_turn_payload", func(t *testing.T) {
 		keep, reason, err := shouldKeepIngressPreviousResponseID(nil, currentStrictPayload, "resp_turn_1", false)
 		require.NoError(t, err)
@@ -867,6 +1099,39 @@ func TestShouldKeepIngressPreviousResponseID(t *testing.T) {
 		require.Equal(t, "non_input_changed", reason)
 	})
 
+	t.Run("changed_tools_do_not_keep_stale_previous_response_id", func(t *testing.T) {
+		payload := []byte(`{
+			"type":"response.create",
+			"model":"gpt-5.1",
+			"store":false,
+			"tools":[{"type":"function","name":"tool_b"}],
+			"previous_response_id":"resp_turn_1",
+			"input":[{"type":"input_text","text":"hello"},{"type":"input_text","text":"world"}]
+		}`)
+		keep, reason, err := shouldKeepIngressPreviousResponseID(previousPayload, payload, "resp_turn_1", false)
+		require.NoError(t, err)
+		require.False(t, keep)
+		require.Equal(t, "non_input_changed", reason)
+	})
+
+	t.Run("changed_reasoning_config_does_not_keep_stale_previous_response_id", func(t *testing.T) {
+		prev := []byte(`{"type":"response.create","model":"gpt-5.1","store":false,"reasoning":{"effort":"low"},"input":[{"type":"input_text","text":"hello"}]}`)
+		payload := []byte(`{"type":"response.create","model":"gpt-5.1","store":false,"reasoning":{"effort":"high"},"previous_response_id":"resp_turn_1","input":[{"type":"input_text","text":"world"}]}`)
+		keep, reason, err := shouldKeepIngressPreviousResponseID(prev, payload, "resp_turn_1", false)
+		require.NoError(t, err)
+		require.False(t, keep)
+		require.Equal(t, "non_input_changed", reason)
+	})
+
+	t.Run("changed_text_config_does_not_keep_stale_previous_response_id", func(t *testing.T) {
+		prev := []byte(`{"type":"response.create","model":"gpt-5.1","store":false,"text":{"verbosity":"low"},"input":[{"type":"input_text","text":"hello"}]}`)
+		payload := []byte(`{"type":"response.create","model":"gpt-5.1","store":false,"text":{"verbosity":"high"},"previous_response_id":"resp_turn_1","input":[{"type":"input_text","text":"world"}]}`)
+		keep, reason, err := shouldKeepIngressPreviousResponseID(prev, payload, "resp_turn_1", false)
+		require.NoError(t, err)
+		require.False(t, keep)
+		require.Equal(t, "non_input_changed", reason)
+	})
+
 	t.Run("delta_input_keeps_previous_response_id", func(t *testing.T) {
 		payload := []byte(`{
 			"type":"response.create",
@@ -882,21 +1147,7 @@ func TestShouldKeepIngressPreviousResponseID(t *testing.T) {
 		require.Equal(t, "strict_incremental_ok", reason)
 	})
 
-	t.Run("function_call_output_keeps_previous_response_id", func(t *testing.T) {
-		payload := []byte(`{
-			"type":"response.create",
-			"model":"gpt-5.1",
-			"store":false,
-			"previous_response_id":"resp_external",
-			"input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]
-		}`)
-		keep, reason, err := shouldKeepIngressPreviousResponseID(previousPayload, payload, "resp_turn_1", true)
-		require.NoError(t, err)
-		require.True(t, keep)
-		require.Equal(t, "has_function_call_output", reason)
-	})
-
-	t.Run("tool_search_output_keeps_previous_response_id", func(t *testing.T) {
+	t.Run("tool_search_output_previous_response_id_mismatch_does_not_keep_stale_previous_response_id", func(t *testing.T) {
 		payload := []byte(`{
 			"type":"response.create",
 			"model":"gpt-5.1",
@@ -906,8 +1157,8 @@ func TestShouldKeepIngressPreviousResponseID(t *testing.T) {
 		}`)
 		keep, reason, err := shouldKeepIngressPreviousResponseID(previousPayload, payload, "resp_turn_1", true)
 		require.NoError(t, err)
-		require.True(t, keep)
-		require.Equal(t, "has_function_call_output", reason)
+		require.False(t, keep)
+		require.Equal(t, "previous_response_id_mismatch", reason)
 	})
 
 	t.Run("non_input_compare_error", func(t *testing.T) {
@@ -1015,6 +1266,17 @@ func TestOpenAIWSRawItemsHaveToolCallContextForOutputsAcceptsIDOnlyToolCall(t *t
 	}
 
 	require.True(t, openAIWSRawItemsHaveToolCallContextForOutputs(items))
+}
+
+func TestOpenAIWSRawItemsHaveToolCallContextForOutputsRejectsMismatchedCallID(t *testing.T) {
+	t.Parallel()
+
+	items := []json.RawMessage{
+		json.RawMessage(`{"type":"function_call","call_id":"call_a","name":"tool_a","arguments":"{}"}`),
+		json.RawMessage(`{"type":"function_call_output","call_id":"call_b","output":"ok"}`),
+	}
+
+	require.False(t, openAIWSRawItemsHaveToolCallContextForOutputs(items))
 }
 
 func TestOpenAIWSRawPayloadHasToolCallOutput(t *testing.T) {

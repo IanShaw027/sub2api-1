@@ -277,6 +277,7 @@ func TestOpenAIWSPool_PrewarmNeutralDoesNotCountDifferentAuthorization(t *testin
 	t.Cleanup(pool.Close)
 	dialer := &openAIWSCountingDialer{}
 	pool.setClientDialerForTest(dialer)
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(25, 120, 0, 4, 0)
 
 	account := &Account{ID: 4246, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 8}
 	headersA := http.Header{}
@@ -305,8 +306,8 @@ func TestOpenAIWSPool_PrewarmNeutralDoesNotCountDifferentAuthorization(t *testin
 		WSURL:   baseReq.WSURL,
 		Headers: headersB,
 		Profile: openAIWSConnProfileNeutral,
-	}, 1)
-	require.Equal(t, 2, dialer.DialCount(), "prewarm must create a separate neutral connection for a different authorization identity")
+	}, 2)
+	require.Equal(t, 2, dialer.DialCount(), "prewarm must create a separate neutral connection for a different authorization identity when account target has room")
 }
 
 func TestOpenAIWSPool_PrewarmNeutralClearsCreatingAfterDial(t *testing.T) {

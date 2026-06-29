@@ -3841,6 +3841,35 @@ func shouldInferIngressFunctionCallOutputPreviousResponseID(
 	return strings.TrimSpace(expectedPreviousResponseID) != ""
 }
 
+func shouldRejectUnsafeIngressFunctionCallOutputContinuation(
+	storeDisabled bool,
+	turn int,
+	signals ToolContinuationSignals,
+	currentPreviousResponseID string,
+	expectedPreviousResponseID string,
+	hasMatchedToolCallContextForOutputs bool,
+) (bool, string) {
+	if !storeDisabled || turn <= 1 || !signals.HasFunctionCallOutput {
+		return false, ""
+	}
+	if signals.HasFunctionCallOutputMissingCallID {
+		return true, "function_call_output_missing_call_id"
+	}
+	if strings.TrimSpace(currentPreviousResponseID) != "" {
+		return false, ""
+	}
+	if signals.HasToolCallContext {
+		if !hasMatchedToolCallContextForOutputs {
+			return true, "function_call_output_unmatched_tool_context"
+		}
+		return false, ""
+	}
+	if strings.TrimSpace(expectedPreviousResponseID) == "" {
+		return true, "function_call_output_missing_previous_response_id"
+	}
+	return false, ""
+}
+
 func alignStoreDisabledPreviousResponseID(
 	payload []byte,
 	expectedPreviousResponseID string,
@@ -4113,9 +4142,7 @@ func shouldKeepIngressPreviousResponseID(
 	lastTurnResponseID string,
 	hasFunctionCallOutput bool,
 ) (bool, string, error) {
-	if hasFunctionCallOutput {
-		return true, "has_function_call_output", nil
-	}
+	_ = hasFunctionCallOutput
 	currentPreviousResponseID := strings.TrimSpace(openAIWSPayloadStringFromRaw(currentPayload, "previous_response_id"))
 	if currentPreviousResponseID == "" {
 		return false, "missing_previous_response_id", nil
@@ -4168,9 +4195,7 @@ func shouldKeepIngressPreviousResponseIDWithStrictState(
 	lastTurnResponseID string,
 	hasFunctionCallOutput bool,
 ) (bool, string, error) {
-	if hasFunctionCallOutput {
-		return true, "has_function_call_output", nil
-	}
+	_ = hasFunctionCallOutput
 	currentPreviousResponseID := strings.TrimSpace(openAIWSPayloadStringFromRaw(currentPayload, "previous_response_id"))
 	if currentPreviousResponseID == "" {
 		return false, "missing_previous_response_id", nil
@@ -6814,7 +6839,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return lease, nil
 	}
 
-	sendAndRelay := func(turn int, lease *openAIWSConnLease, payload []byte, payloadBytes int, originalModel string, imageBillingModel string, imageSizeTier string, imageInputSize string) (*OpenAIForwardResult, error) {
+	sendAndRelay := func(turn int, lease *openAIWSConnLease, payload []byte, payloadBytes int, originalModel string, imageBillingModel string, imageSizeTier string, imageInputSize string, canRecoverPreviousResponseNotFound bool) (*OpenAIForwardResult, error) {
 		if lease == nil {
 			return nil, errors.New("upstream websocket lease is nil")
 		}
@@ -6990,7 +7015,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				)
 				recoverablePrevNotFound := fallbackReason == openAIWSIngressStagePreviousResponseNotFound &&
 					turnPreviousResponseID != "" &&
-					!turnHasFunctionCallOutput &&
+					(!turnHasFunctionCallOutput || canRecoverPreviousResponseNotFound) &&
 					s.openAIWSIngressPreviousResponseRecoveryEnabled() &&
 					!wroteDownstream
 				if recoverablePrevNotFound {
@@ -7322,10 +7347,20 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if turnPrevRecoveryTried || !s.openAIWSIngressPreviousResponseRecoveryEnabled() {
 			return false
 		}
-		// 携带 function_call_output 的请求不能丢弃 previous_response_id：
-		// 上游 API 需要 response chain 来匹配 tool_result 与之前的 tool_use，
-		// 丢弃后会导致 "No tool call found for function call output" 400 错误。
-		if hasCurrentOrReplayFunctionCallOutput(currentPayload) {
+		// 携带 function_call_output 的请求只有在 replay input 已经包含可配对
+		// tool-call 上下文时，才允许丢弃 previous_response_id 做 full-create
+		// 恢复；否则 fail-close，避免把 tool output 变成上游 400。
+		hasRecoverFCOutput := hasCurrentOrReplayFunctionCallOutput(currentPayload)
+		hasRecoverReplayToolContext := hasRecoverFCOutput &&
+			currentTurnReplayInputExists &&
+			openAIWSRawItemsHaveToolCallContextForOutputs(currentTurnReplayInput)
+		if hasRecoverFCOutput && !hasRecoverReplayToolContext {
+			logOpenAIWSModeInfo(
+				"ingress_ws_prev_response_recovery_skip account_id=%d turn=%d conn_id=%s reason=function_call_output_missing_replay_context action=fail_close",
+				account.ID,
+				turn,
+				truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
+			)
 			return false
 		}
 		if isStrictAffinityTurn(currentPayload) {
@@ -7429,6 +7464,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		expectedPrev := strings.TrimSpace(lastTurnResponseID)
 		toolSignals := analyzeToolContinuationSignalsFromRawPayload(currentPayload)
 		hasFunctionCallOutput := toolSignals.HasFunctionCallOutput
+		hasMatchedToolCallContextForOutputs := false
+		if toolSignals.HasFunctionCallOutput && toolSignals.HasToolCallContext {
+			if currentInputItems, currentInputExists, currentInputErr := openAIWSExtractNormalizedInputSequence(currentPayload); currentInputErr == nil && currentInputExists {
+				hasMatchedToolCallContextForOutputs = openAIWSRawItemsHaveToolCallContextForOutputs(currentInputItems)
+			}
+		}
 		// store=false + function_call_output 场景必须有续链锚点。
 		// 若客户端未传 previous_response_id，优先回填上一轮响应 ID，避免上游报 call_id 无法关联。
 		if shouldInferIngressFunctionCallOutputPreviousResponseID(
@@ -7460,6 +7501,26 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
 				)
 			}
+		} else if rejectUnsafe, rejectReason := shouldRejectUnsafeIngressFunctionCallOutputContinuation(
+			storeDisabled,
+			turn,
+			toolSignals,
+			currentPreviousResponseID,
+			expectedPrev,
+			hasMatchedToolCallContextForOutputs,
+		); rejectUnsafe {
+			logOpenAIWSModeInfo(
+				"ingress_ws_function_call_output_prev_reject account_id=%d turn=%d conn_id=%s reason=%s action=fail_close",
+				account.ID,
+				turn,
+				truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
+				normalizeOpenAIWSLogValue(rejectReason),
+			)
+			return NewOpenAIWSClientCloseError(
+				coderws.StatusPolicyViolation,
+				"unsafe websocket tool continuation",
+				fmt.Errorf("previous response binding unavailable for tool continuation: %s", rejectReason),
+			)
 		}
 		nextReplayInput, nextReplayInputExists, replayInputErr := buildOpenAIWSReplayInputSequence(
 			lastTurnReplayInput,
@@ -7516,6 +7577,25 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					hasFunctionCallOutput,
 				)
 			} else if !shouldKeepPreviousResponseID {
+				hasSafeFullCreateToolReplay := !hasFunctionCallOutput ||
+					(currentTurnReplayInputExists && openAIWSRawItemsHaveToolCallContextForOutputs(currentTurnReplayInput))
+				if !hasSafeFullCreateToolReplay {
+					logOpenAIWSModeInfo(
+						"ingress_ws_prev_response_strict_eval account_id=%d turn=%d conn_id=%s action=fail_close reason=%s previous_response_id=%s expected_previous_response_id=%s has_function_call_output=%v",
+						account.ID,
+						turn,
+						truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
+						normalizeOpenAIWSLogValue(strictReason),
+						truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
+						truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
+						hasFunctionCallOutput,
+					)
+					return NewOpenAIWSClientCloseError(
+						coderws.StatusPolicyViolation,
+						"unsafe websocket tool continuation",
+						fmt.Errorf("previous response binding unavailable for tool continuation: %s", strictReason),
+					)
+				}
 				updatedPayload, removed, dropErr := forceOpenAIWSRawPayloadFullCreate(currentPayload)
 				if dropErr != nil || !removed {
 					dropReason := "not_removed"
@@ -7756,7 +7836,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 		}
 
-		result, relayErr := sendAndRelay(turn, sessionLease, currentPayload, currentPayloadBytes, currentOriginalModel, currentImageBillingModel, currentImageSizeTier, currentImageInputSize)
+		canRecoverPreviousResponseNotFound := !hasFunctionCallOutput ||
+			(currentTurnReplayInputExists && openAIWSRawItemsHaveToolCallContextForOutputs(currentTurnReplayInput))
+		result, relayErr := sendAndRelay(turn, sessionLease, currentPayload, currentPayloadBytes, currentOriginalModel, currentImageBillingModel, currentImageSizeTier, currentImageInputSize, canRecoverPreviousResponseNotFound)
 		if relayErr != nil {
 			if shadowOwner {
 				stateStore.EndSessionInFlight(groupID, apiKeyID, sessionHash)

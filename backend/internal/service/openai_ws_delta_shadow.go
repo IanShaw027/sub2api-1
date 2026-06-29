@@ -891,7 +891,8 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 	log.MostRecentMatch = strings.TrimSpace(in.ConnMostRecentResponseID) != "" &&
 		in.ConnMostRecentResponseID == strings.TrimSpace(in.Cached.lastResponseID)
 	connAnchorMatch := log.ConnMatch && log.MostRecentMatch
-	connReanchorMatch := in.AllowConnReanchor && strings.TrimSpace(in.Cached.lastResponseID) != ""
+	connReanchorBlockedByFunctionOutput := in.AllowConnReanchor && in.HasFunctionCallOutput
+	connReanchorMatch := in.AllowConnReanchor && !in.HasFunctionCallOutput && strings.TrimSpace(in.Cached.lastResponseID) != ""
 	log.AccountMismatchReason = openAIWSDeltaAccountMismatchReason(in, in.Cached.accountID)
 	log.ConnMismatchReason = openAIWSDeltaConnMismatchReason(in, log.ConnMatch, log.MostRecentMatch, connReanchorMatch)
 	log.RawClientEquiv = in.Cached.rawVsClientVisibleEqual
@@ -962,6 +963,8 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 	switch {
 	case !accountMatch:
 		log.FallbackReason = "account_mismatch"
+	case connReanchorBlockedByFunctionOutput && !connAnchorMatch:
+		log.FallbackReason = "has_function_call_output"
 	case !log.ConnMatch && !connReanchorMatch:
 		log.FallbackReason = "conn_mismatch"
 	case !log.MostRecentMatch && !connReanchorMatch:
