@@ -4321,6 +4321,31 @@
                 <Toggle v-model="form.enable_cch_signing" />
               </div>
 
+              <!-- Claude Telemetry Mode -->
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div class="max-w-2xl">
+                  <label
+                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ t("admin.settings.gatewayForwarding.claudeTelemetryMode") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.gatewayForwarding.claudeTelemetryModeHint") }}
+                  </p>
+                </div>
+                <select
+                  v-model="form.claude_telemetry_mode"
+                  class="input w-full sm:w-56"
+                >
+                  <option value="drop">
+                    {{ t("admin.settings.gatewayForwarding.claudeTelemetryModeDrop") }}
+                  </option>
+                  <option value="forward">
+                    {{ t("admin.settings.gatewayForwarding.claudeTelemetryModeForward") }}
+                  </option>
+                </select>
+              </div>
+
               <!-- Gateway Debug Timeline -->
               <div class="rounded-lg border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
                 <div class="flex items-center justify-between gap-4">
@@ -9547,6 +9572,7 @@ const form = reactive<SettingsForm>({
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
   enable_cch_signing: false,
+  claude_telemetry_mode: "drop",
   gateway_debug_timeline_enabled: false,
   gateway_debug_timeline_directory: "logs/gateway-debug",
   gateway_debug_timeline_retention_days: 7,
@@ -11051,6 +11077,8 @@ async function saveSettings() {
       enable_fingerprint_unification: form.enable_fingerprint_unification,
       enable_metadata_passthrough: form.enable_metadata_passthrough,
       enable_cch_signing: form.enable_cch_signing,
+      claude_telemetry_mode:
+        form.claude_telemetry_mode === "forward" ? "forward" : "drop",
       gateway_debug_timeline_enabled: form.gateway_debug_timeline_enabled,
       gateway_debug_timeline_directory:
         form.gateway_debug_timeline_directory || "logs/gateway-debug",

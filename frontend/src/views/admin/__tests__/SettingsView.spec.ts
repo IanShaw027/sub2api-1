@@ -477,6 +477,7 @@ const baseSettingsResponse = {
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
   enable_cch_signing: false,
+  claude_telemetry_mode: "drop",
   enable_claude_oauth_system_prompt_injection: true,
   claude_oauth_system_prompt: "",
   claude_oauth_system_prompt_blocks: "",
@@ -812,6 +813,28 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         rewrite_message_cache_control: true,
+      }),
+    );
+  });
+
+  it("submits Claude telemetry mode gateway setting", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      claude_telemetry_mode: "forward",
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+    expect(wrapper.text()).toContain("admin.settings.gatewayForwarding.claudeTelemetryMode");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        claude_telemetry_mode: "forward",
       }),
     );
   });

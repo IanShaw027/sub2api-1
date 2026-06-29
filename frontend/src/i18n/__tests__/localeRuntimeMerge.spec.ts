@@ -113,6 +113,12 @@ describe('i18n runtime locale merge', () => {
     expect(messages.admin.settings.gatewayForwarding.anthropicCacheTTL1hInjectionHint).toContain(
       'ephemeral 缓存块强制写入 1h'
     )
+    expect(messages.admin.settings.gatewayForwarding.claudeTelemetryMode).toBe(
+      'Claude Code 遥测处理'
+    )
+    expect(messages.admin.settings.gatewayForwarding.claudeTelemetryModeHint).toContain(
+      'API Key 账号不会参与'
+    )
     expect(messages.admin.ops.settings.title).toBe('运维监控设置')
     expect(messages.admin.ops.settings.retentionDaysHint).toContain(
       '填 0 表示每次定时清理时清空所有历史'
@@ -189,6 +195,12 @@ describe('i18n runtime locale merge', () => {
     )
     expect(messages.admin.settings.gatewayForwarding.anthropicCacheTTL1hInjectionHint).toContain(
       'forced to 1h'
+    )
+    expect(messages.admin.settings.gatewayForwarding.claudeTelemetryMode).toBe(
+      'Claude Code Telemetry Handling'
+    )
+    expect(messages.admin.settings.gatewayForwarding.claudeTelemetryModeHint).toContain(
+      'never API key accounts'
     )
     expect(messages.admin.ops.settings.title).toBe('Ops Monitoring Settings')
     expect(messages.admin.ops.settings.retentionDaysHint).toContain(

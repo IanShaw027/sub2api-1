@@ -863,6 +863,7 @@ export interface SystemSettings {
   enable_fingerprint_unification: boolean;
   enable_metadata_passthrough: boolean;
   enable_cch_signing: boolean;
+  claude_telemetry_mode: string;
   gateway_debug_timeline_enabled: boolean;
   gateway_debug_timeline_directory: string;
   gateway_debug_timeline_retention_days: number;
@@ -1158,6 +1159,7 @@ export interface UpdateSettingsRequest {
   enable_fingerprint_unification?: boolean;
   enable_metadata_passthrough?: boolean;
   enable_cch_signing?: boolean;
+  claude_telemetry_mode?: string;
   gateway_debug_timeline_enabled?: boolean;
   gateway_debug_timeline_directory?: string;
   gateway_debug_timeline_retention_days?: number;
