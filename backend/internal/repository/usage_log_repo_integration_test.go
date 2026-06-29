@@ -87,6 +87,40 @@ func (s *UsageLogRepoSuite) TestCreate() {
 	s.Require().NotZero(log.ID)
 }
 
+func (s *UsageLogRepoSuite) TestCreate_RequestTypeVideoPersists() {
+	user := mustCreateUser(s.T(), s.client, &service.User{Email: "create-video@test.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-create-video", Name: "k"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-create-video"})
+
+	log := &service.UsageLog{
+		UserID:       user.ID,
+		APIKeyID:     apiKey.ID,
+		AccountID:    account.ID,
+		RequestID:    uuid.New().String(),
+		Model:        "claude-3",
+		RequestType:  service.RequestTypeVideo,
+		InputTokens:  10,
+		OutputTokens: 20,
+		TotalCost:    0.5,
+		ActualCost:   0.4,
+		CreatedAt:    time.Now().UTC(),
+	}
+
+	_, err := s.repo.Create(s.ctx, log)
+	s.Require().NoError(err, "Create video usage log")
+	s.Require().NotZero(log.ID)
+
+	var storedRequestType int16
+	require.NoError(s.T(), scanSingleRow(
+		s.ctx,
+		s.tx,
+		"SELECT request_type FROM usage_logs WHERE id = $1",
+		[]any{log.ID},
+		&storedRequestType,
+	))
+	s.Require().Equal(int16(service.RequestTypeVideo), storedRequestType)
+}
+
 func TestUsageLogRepositoryCreate_BatchPathConcurrent(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)
