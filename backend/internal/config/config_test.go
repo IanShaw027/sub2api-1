@@ -63,6 +63,32 @@ func TestNormalizeRunMode(t *testing.T) {
 	}
 }
 
+func TestClaudeTelemetryModeDefaultsToDrop(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, ClaudeTelemetryModeDrop, cfg.Gateway.ClaudeTelemetryMode)
+}
+
+func TestClaudeTelemetryModeAcceptsForward(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	viper.Set("gateway.claude_telemetry_mode", " forward ")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, ClaudeTelemetryModeForward, cfg.Gateway.ClaudeTelemetryMode)
+}
+
+func TestClaudeTelemetryModeRejectsInvalidValue(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	viper.Set("gateway.claude_telemetry_mode", "proxy")
+
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "gateway.claude_telemetry_mode")
+}
+
 func TestLoadDefaultSchedulingConfig(t *testing.T) {
 	resetViperWithJWTSecret(t)
 

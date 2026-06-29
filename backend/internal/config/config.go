@@ -718,6 +718,11 @@ const (
 	ImageConcurrencyOverflowModeWait   = "wait"
 )
 
+const (
+	ClaudeTelemetryModeDrop    = "drop"
+	ClaudeTelemetryModeForward = "forward"
+)
+
 // GatewayConfig API网关相关配置
 type GatewayConfig struct {
 	// 等待上游响应头的超时时间（秒），0表示无超时
@@ -739,6 +744,9 @@ type GatewayConfig struct {
 	// ForceCodexCLI: 强制将 OpenAI `/v1/responses` 请求按 Codex CLI 处理。
 	// 用于网关未透传/改写 User-Agent 时的兼容兜底（默认关闭，避免影响其他客户端）。
 	ForceCodexCLI bool `mapstructure:"force_codex_cli"`
+	// ClaudeTelemetryMode controls /api/event_logging/batch handling: drop or forward.
+	// drop keeps the current stub behavior; forward sanitizes and forwards using Anthropic OAuth accounts only.
+	ClaudeTelemetryMode string `mapstructure:"claude_telemetry_mode"`
 	// CodexImageGenerationBridgeEnabled: 是否为 Codex `/v1/responses` 自动注入 image_generation 工具和桥接指令。
 	// 默认关闭，避免纯文本 Codex 请求被意外改写；显式携带 image_generation 工具的请求仍按分组能力转发。
 	CodexImageGenerationBridgeEnabled bool `mapstructure:"codex_image_generation_bridge_enabled"`
@@ -1522,6 +1530,10 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	}
 
 	cfg.RunMode = NormalizeRunMode(cfg.RunMode)
+	cfg.Gateway.ClaudeTelemetryMode = strings.ToLower(strings.TrimSpace(cfg.Gateway.ClaudeTelemetryMode))
+	if cfg.Gateway.ClaudeTelemetryMode == "" {
+		cfg.Gateway.ClaudeTelemetryMode = ClaudeTelemetryModeDrop
+	}
 	cfg.Server.Mode = strings.ToLower(strings.TrimSpace(cfg.Server.Mode))
 	if cfg.Server.Mode == "" {
 		cfg.Server.Mode = "debug"
@@ -1974,6 +1986,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.max_account_switches", 10)
 	viper.SetDefault("gateway.max_account_switches_gemini", 3)
 	viper.SetDefault("gateway.force_codex_cli", false)
+	viper.SetDefault("gateway.claude_telemetry_mode", ClaudeTelemetryModeDrop)
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
 	viper.SetDefault("gateway.openai_oauth_image_bridge_disable_keepalives", false)
@@ -2744,6 +2757,11 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIResponseHeaderTimeout < 0 {
 		return fmt.Errorf("gateway.openai_response_header_timeout must be non-negative")
+	}
+	switch strings.TrimSpace(c.Gateway.ClaudeTelemetryMode) {
+	case "", ClaudeTelemetryModeDrop, ClaudeTelemetryModeForward:
+	default:
+		return fmt.Errorf("gateway.claude_telemetry_mode must be one of: %s/%s", ClaudeTelemetryModeDrop, ClaudeTelemetryModeForward)
 	}
 	if c.Gateway.AntiFingerprint.JitterMinMs < 0 {
 		return fmt.Errorf("gateway.anti_fingerprint.jitter_min_ms must be non-negative")
