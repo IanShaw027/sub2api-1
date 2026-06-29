@@ -119,14 +119,23 @@ const cchSeed uint64 = 0x4d659218e32a3268
 // 不含占位符的 body 直接返回（非 Claude Code 伪装路径）。
 func signBillingHeaderCCH(body []byte) []byte {
 	placeholder := []byte("cch=00000")
-	if !bytes.Contains(body, placeholder) {
+	start := bytes.Index(body, []byte("x-anthropic-billing-header:"))
+	if start < 0 {
 		return body
 	}
+	offset := bytes.Index(body[start:], placeholder)
+	if offset < 0 {
+		return body
+	}
+	offset += start
 	h := xxhash.NewWithSeed(cchSeed)
 	h.Write(body)
 	digest := h.Sum64()
 	signed := []byte(fmt.Sprintf("cch=%05x", digest&0xFFFFF))
-	return bytes.Replace(body, placeholder, signed, 1)
+	out := append([]byte(nil), body[:offset]...)
+	out = append(out, signed...)
+	out = append(out, body[offset+len(placeholder):]...)
+	return out
 }
 
 // cchRealValueRe 匹配 body 中 cch=XXXXX（5 位 hex，非占位符 00000）。

@@ -65,6 +65,16 @@ func TestSignBillingHeaderCCH_NoPlaceholder(t *testing.T) {
 	require.Equal(t, body, signed)
 }
 
+func TestSignBillingHeaderCCH_DoesNotTouchEarlierUserContent(t *testing.T) {
+	body := []byte(`{"messages":[{"role":"user","content":"cch=00000"}],"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.161.abc; cc_entrypoint=cli; cch=00000;"}]}`)
+
+	signed := signBillingHeaderCCH(body)
+
+	require.Contains(t, string(signed), `"content":"cch=00000"`)
+	require.NotContains(t, string(signed), `cc_entrypoint=cli; cch=00000;`)
+	require.Contains(t, string(signed), `cc_entrypoint=cli; cch=`)
+}
+
 func TestSignBillingHeaderCCH_Deterministic(t *testing.T) {
 	body := []byte(`{"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.161.abc; cc_entrypoint=cli; cch=00000;"}],"messages":[{"role":"user","content":"test"}]}`)
 

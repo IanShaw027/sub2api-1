@@ -5,13 +5,16 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/handler"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
 // RegisterCommonRoutes 注册通用路由（健康检查、状态等）+ CC 辅助端点 stub
-func RegisterCommonRoutes(r *gin.Engine, settingService *service.SettingService) {
+func RegisterCommonRoutes(r *gin.Engine, h *handler.Handlers, apiKeyAuth middleware.APIKeyAuthMiddleware, settingService *service.SettingService, cfg *config.Config) {
 	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -38,9 +41,19 @@ func RegisterCommonRoutes(r *gin.Engine, settingService *service.SettingService)
 	// 2. 在 Gateway Debug Timeline 中记录完整请求头和请求体（便于后续分析）
 	// -----------------------------------------------------------------------
 
-	// 一方遥测事件上报
-	r.POST("/api/event_logging/batch",
-		ccAuxHandler(settingService, "event_logging_batch", http.StatusOK, gin.H{}))
+	// 一方遥测事件上报：默认 drop；forward 模式下先鉴权，再只通过 Anthropic OAuth 账号清洗代发。
+	if cfg != nil && cfg.Gateway.ClaudeTelemetryMode == config.ClaudeTelemetryModeForward {
+		forwardHandler := gin.HandlerFunc(func(c *gin.Context) {
+			if h == nil || h.Gateway == nil {
+				c.JSON(http.StatusOK, gin.H{})
+				return
+			}
+			h.Gateway.ClaudeTelemetryBatch(c)
+		})
+		r.POST("/api/event_logging/batch", gin.HandlerFunc(apiKeyAuth), forwardHandler)
+	} else {
+		r.POST("/api/event_logging/batch", claudeTelemetryDropHandler(settingService))
+	}
 
 	// 启动引导配置
 	r.GET("/api/claude_cli/bootstrap",
@@ -69,6 +82,22 @@ func RegisterCommonRoutes(r *gin.Engine, settingService *service.SettingService)
 	// 用量查询
 	r.GET("/api/oauth/usage",
 		ccAuxHandler(settingService, "oauth_usage", http.StatusOK, gin.H{}))
+}
+
+func claudeTelemetryDropHandler(settingService *service.SettingService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var body []byte
+		if c.Request.Body != nil {
+			body, _ = io.ReadAll(c.Request.Body)
+		}
+		service.RecordGatewayDebugTimelineBody(settingService, c, "cc_aux_request", service.SanitizeClaudeTelemetryBatch(body, service.ClaudeTelemetrySanitizeOptions{}),
+			c.GetHeader("Content-Type"), map[string]any{
+				"component":     "cc_aux_endpoint",
+				"endpoint_name": "event_logging_batch",
+				"mode":          "drop",
+			})
+		c.JSON(http.StatusOK, gin.H{})
+	}
 }
 
 // ccAuxHandler 为 CC CLI 辅助端点生成通用 handler：

@@ -73,7 +73,7 @@ func TestForwardClaudeTelemetryBatch_UsesOnlyAnthropicOAuthAndSanitizes(t *testi
 	require.Equal(t, "https", upstream.lastReq.URL.Scheme)
 	require.Equal(t, "api.anthropic.com", upstream.lastReq.URL.Host)
 	require.Equal(t, "/api/event_logging/batch", upstream.lastReq.URL.Path)
-	require.Equal(t, "Bearer oauth-token", upstream.lastReq.Header.Get("Authorization"))
+	require.Equal(t, "Bearer oauth-token", getHeaderRaw(upstream.lastReq.Header, "authorization"))
 	require.Empty(t, upstream.lastReq.Header.Get("x-api-key"))
 	require.False(t, gjson.GetBytes(upstream.lastBody, "baseUrl").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "events.0.event_data.base_url").Exists())
