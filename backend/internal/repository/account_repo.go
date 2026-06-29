@@ -25,6 +25,7 @@ import (
 	dbgroup "github.com/Wei-Shaw/sub2api/ent/group"
 	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	dbproxy "github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -697,6 +698,13 @@ func (r *accountRepository) ListOAuthRefreshCandidates(ctx context.Context) ([]s
 	if r.sql == nil {
 		return nil, errors.New("account repository SQL executor not configured")
 	}
+	platforms := oauthRefreshCandidatePlatforms()
+	placeholders := make([]string, 0, len(platforms))
+	args := make([]any, 0, len(platforms))
+	for i, platform := range platforms {
+		placeholders = append(placeholders, "$"+strconv.Itoa(i+1))
+		args = append(args, platform)
+	}
 	// (cond) IS NOT TRUE 把 NULL 和 FALSE 都视为"可被刷新"。直接写
 	// NOT (a AND b) 在 PG 三值逻辑下会把 a 或 b 为 NULL 的行（即绝大多数
 	// 健康账号：temp_unschedulable_until=NULL）也排除，导致后台 token
@@ -707,7 +715,7 @@ func (r *accountRepository) ListOAuthRefreshCandidates(ctx context.Context) ([]s
 		WHERE deleted_at IS NULL
 			AND status = 'active'
 			AND type = 'oauth'
-			AND platform IN ('anthropic', 'openai', 'gemini', 'antigravity', 'kiro', 'grok')
+			AND platform IN (`+strings.Join(placeholders, ", ")+`)
 			AND credentials ? 'refresh_token'
 			AND btrim(credentials->>'refresh_token') <> ''
 			AND (
@@ -715,7 +723,7 @@ func (r *accountRepository) ListOAuthRefreshCandidates(ctx context.Context) ([]s
 				AND temp_unschedulable_reason LIKE 'token refresh retry exhausted:%'
 			) IS NOT TRUE
 		ORDER BY priority ASC, id ASC
-	`)
+	`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -747,6 +755,17 @@ func (r *accountRepository) ListOAuthRefreshCandidates(ctx context.Context) ([]s
 		}
 	}
 	return out, nil
+}
+
+func oauthRefreshCandidatePlatforms() []string {
+	platforms := make([]string, 0, len(domain.AllAccountPlatforms))
+	for _, platform := range domain.AllAccountPlatforms {
+		if platform == domain.PlatformSora {
+			continue
+		}
+		platforms = append(platforms, platform)
+	}
+	return platforms
 }
 
 func (r *accountRepository) ListByPlatform(ctx context.Context, platform string) ([]service.Account, error) {

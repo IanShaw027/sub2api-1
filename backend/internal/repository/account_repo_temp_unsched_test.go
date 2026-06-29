@@ -3,12 +3,14 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,12 +31,24 @@ func TestAccountRepository_ListOAuthRefreshCandidates_SQLFilter(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
+	expectedPlatforms := make([]string, 0, len(domain.AllAccountPlatforms))
+	expectedPlatformArgs := make([]driver.Value, 0, len(domain.AllAccountPlatforms))
+	for _, platform := range domain.AllAccountPlatforms {
+		if platform == domain.PlatformSora {
+			continue
+		}
+		expectedPlatforms = append(expectedPlatforms, platform)
+		expectedPlatformArgs = append(expectedPlatformArgs, platform)
+	}
+
 	var capturedSQL string
+	var capturedArgs []any
 	mock.ExpectQuery("SELECT id").
+		WithArgs(expectedPlatformArgs...).
 		WillReturnRows(sqlmock.NewRows([]string{"id"})).
 		WillDelayFor(0)
 
-	repo := newAccountRepositoryWithSQL(nil, captureQuerySQL{db: db, captured: &capturedSQL}, nil)
+	repo := newAccountRepositoryWithSQL(nil, captureQuerySQL{db: db, captured: &capturedSQL, capturedArgs: &capturedArgs}, nil)
 
 	accounts, err := repo.ListOAuthRefreshCandidates(context.Background())
 	require.NoError(t, err)
@@ -44,7 +58,10 @@ func TestAccountRepository_ListOAuthRefreshCandidates_SQLFilter(t *testing.T) {
 	require.Contains(t, normalized, "deleted_at IS NULL")
 	require.Contains(t, normalized, "status = 'active'")
 	require.Contains(t, normalized, "type = 'oauth'")
-	require.Contains(t, normalized, "platform IN ('anthropic', 'openai', 'gemini', 'antigravity', 'kiro', 'grok')")
+	require.Regexp(t, `platform IN \([^)]*\)`, normalized)
+	require.NotContains(t, normalized, "'anthropic', 'openai', 'gemini', 'antigravity', 'kiro', 'grok'")
+	require.ElementsMatch(t, expectedPlatforms, argsToStrings(capturedArgs))
+	require.NotContains(t, argsToStrings(capturedArgs), domain.PlatformSora)
 	require.Contains(t, normalized, "credentials ? 'refresh_token'")
 	require.Contains(t, normalized, "btrim(credentials->>'refresh_token') <> ''")
 	require.Contains(t, normalized, "temp_unschedulable_until > NOW()")
@@ -59,8 +76,9 @@ func TestAccountRepository_ListOAuthRefreshCandidates_SQLFilter(t *testing.T) {
 }
 
 type captureQuerySQL struct {
-	db       *sql.DB
-	captured *string
+	db           *sql.DB
+	captured     *string
+	capturedArgs *[]any
 }
 
 func (c captureQuerySQL) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
@@ -71,7 +89,20 @@ func (c captureQuerySQL) QueryContext(ctx context.Context, query string, args ..
 	if c.captured != nil {
 		*c.captured = query
 	}
+	if c.capturedArgs != nil {
+		*c.capturedArgs = append((*c.capturedArgs)[:0], args...)
+	}
 	return c.db.QueryContext(ctx, query, args...)
+}
+
+func argsToStrings(args []any) []string {
+	values := make([]string, 0, len(args))
+	for _, arg := range args {
+		if s, ok := arg.(string); ok {
+			values = append(values, s)
+		}
+	}
+	return values
 }
 
 func normalizeSQLWhitespace(sql string) string {
