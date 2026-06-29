@@ -824,9 +824,6 @@ type GatewayConfig struct {
 	// Scheduling: 账号调度相关配置
 	Scheduling GatewaySchedulingConfig `mapstructure:"scheduling"`
 
-	// TLSFingerprint: TLS指纹伪装配置
-	TLSFingerprint TLSFingerprintConfig `mapstructure:"tls_fingerprint"`
-
 	// AntiFingerprint: 反指纹归一 / 抗检测配置（支持多平台）
 	AntiFingerprint AntiFingerprintConfig `mapstructure:"anti_fingerprint"`
 
@@ -1071,46 +1068,6 @@ type GatewayUsageRecordConfig struct {
 	AutoScaleCheckIntervalSeconds int `mapstructure:"auto_scale_check_interval_seconds"`
 	// AutoScaleCooldownSeconds: 自动扩缩容冷却时间（秒）
 	AutoScaleCooldownSeconds int `mapstructure:"auto_scale_cooldown_seconds"`
-}
-
-// TLSFingerprintConfig TLS指纹伪装配置
-// 用于模拟 Claude CLI (Node.js) 的 TLS 握手特征，避免被识别为非官方客户端
-type TLSFingerprintConfig struct {
-	// Enabled: 是否全局启用TLS指纹功能
-	Enabled bool `mapstructure:"enabled"`
-	// Profiles: 预定义的TLS指纹配置模板
-	// key 为模板名称，如 "claude_cli_v2", "chrome_120" 等
-	Profiles map[string]TLSProfileConfig `mapstructure:"profiles"`
-}
-
-// TLSProfileConfig 单个TLS指纹模板的配置
-// 所有列表字段为空时使用内置默认值（Claude CLI 2.x / Node.js 20.x）
-// 建议通过 TLS 指纹采集工具 (tests/tls-fingerprint-web) 获取完整配置
-type TLSProfileConfig struct {
-	// Name: 模板显示名称
-	Name string `mapstructure:"name"`
-	// EnableGREASE: 是否启用GREASE扩展（Chrome使用，Node.js不使用）
-	EnableGREASE bool `mapstructure:"enable_grease"`
-	// CipherSuites: TLS加密套件列表
-	CipherSuites []uint16 `mapstructure:"cipher_suites"`
-	// Curves: 椭圆曲线列表
-	Curves []uint16 `mapstructure:"curves"`
-	// PointFormats: 点格式列表
-	PointFormats []uint16 `mapstructure:"point_formats"`
-	// SignatureAlgorithms: 签名算法列表
-	SignatureAlgorithms []uint16 `mapstructure:"signature_algorithms"`
-	// ALPNProtocols: ALPN协议列表（如 ["h2", "http/1.1"]）
-	ALPNProtocols []string `mapstructure:"alpn_protocols"`
-	// SupportedVersions: 支持的TLS版本列表（如 [0x0304, 0x0303] 即 TLS1.3, TLS1.2）
-	SupportedVersions []uint16 `mapstructure:"supported_versions"`
-	// KeyShareGroups: Key Share中发送的曲线组（如 [29] 即 X25519）
-	KeyShareGroups []uint16 `mapstructure:"key_share_groups"`
-	// PSKModes: PSK密钥交换模式（如 [1] 即 psk_dhe_ke）
-	PSKModes []uint16 `mapstructure:"psk_modes"`
-	// Extensions: TLS扩展类型ID列表，按发送顺序排列
-	// 空则使用内置默认顺序 [0,11,10,35,16,22,23,13,43,45,51]
-	// GREASE值(如0x0a0a)会自动插入GREASE扩展
-	Extensions []uint16 `mapstructure:"extensions"`
 }
 
 // AntiFingerprintConfig 反指纹归一配置（支持多平台抗风控）
@@ -2112,8 +2069,6 @@ func setDefaults() {
 	viper.SetDefault("gateway.user_message_queue.min_delay_ms", 200)
 	viper.SetDefault("gateway.user_message_queue.max_delay_ms", 2000)
 	viper.SetDefault("gateway.user_message_queue.cleanup_interval_seconds", 60)
-
-	viper.SetDefault("gateway.tls_fingerprint.enabled", true)
 
 	// AntiFingerprint defaults (from report: enabled true, multi-platform support)
 	viper.SetDefault("gateway.anti_fingerprint.enabled", true)

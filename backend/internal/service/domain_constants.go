@@ -518,10 +518,6 @@ const (
 	SettingKeyEnableFingerprintUnification = "enable_fingerprint_unification"
 	// SettingKeyEnableMetadataPassthrough 是否透传客户端原始 metadata.user_id（默认 false）
 	SettingKeyEnableMetadataPassthrough = "enable_metadata_passthrough"
-	// SettingKeyEnableCCHSigning 遗留 no-op 开关。cch 签名已恢复为无条件执行
-	// （signBillingHeaderCCH 自守卫：body 中无 cch=00000 占位符时自动跳过）。
-	// 保留该 key 仅为向后兼容数据库已有行，开关不再产生任何效果。
-	SettingKeyEnableCCHSigning = "enable_cch_signing"
 	// SettingKeyClaudeTelemetryMode 控制 Claude Code 遥测处理：drop=直接 200 丢弃，forward=清洗后代发。
 	SettingKeyClaudeTelemetryMode = "claude_telemetry_mode"
 	// Gateway debug timeline settings are DB-backed runtime controls for

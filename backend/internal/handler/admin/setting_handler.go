@@ -645,7 +645,6 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		BackendModeEnabled:                     settings.BackendModeEnabled,
 		EnableFingerprintUnification:           settings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:              settings.EnableMetadataPassthrough,
-		EnableCCHSigning:                       settings.EnableCCHSigning,
 		ClaudeTelemetryMode:                    settings.ClaudeTelemetryMode,
 		GatewayDebugTimelineEnabled:            settings.GatewayDebugTimelineEnabled,
 		GatewayDebugTimelineDirectory:          settings.GatewayDebugTimelineDirectory,
@@ -1012,7 +1011,6 @@ type UpdateSettingsRequest struct {
 	// Gateway forwarding behavior
 	EnableFingerprintUnification           *bool   `json:"enable_fingerprint_unification"`
 	EnableMetadataPassthrough              *bool   `json:"enable_metadata_passthrough"`
-	EnableCCHSigning                       *bool   `json:"enable_cch_signing"`
 	ClaudeTelemetryMode                    *string `json:"claude_telemetry_mode"`
 	GatewayDebugTimelineEnabled            *bool   `json:"gateway_debug_timeline_enabled"`
 	GatewayDebugTimelineDirectory          *string `json:"gateway_debug_timeline_directory"`
@@ -2451,12 +2449,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.EnableMetadataPassthrough
 		}(),
-		EnableCCHSigning: func() bool {
-			if req.EnableCCHSigning != nil {
-				return *req.EnableCCHSigning
-			}
-			return previousSettings.EnableCCHSigning
-		}(),
 		ClaudeTelemetryMode: func() string {
 			if req.ClaudeTelemetryMode != nil {
 				return strings.TrimSpace(*req.ClaudeTelemetryMode)
@@ -3083,7 +3075,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		BackendModeEnabled:                        updatedSettings.BackendModeEnabled,
 		EnableFingerprintUnification:              updatedSettings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:                 updatedSettings.EnableMetadataPassthrough,
-		EnableCCHSigning:                          updatedSettings.EnableCCHSigning,
 		EnableClaudeOAuthSystemPromptInjection:    updatedSettings.EnableClaudeOAuthSystemPromptInjection,
 		ClaudeOAuthSystemPrompt:                   updatedSettings.ClaudeOAuthSystemPrompt,
 		ClaudeOAuthSystemPromptBlocks:             updatedSettings.ClaudeOAuthSystemPromptBlocks,
@@ -3624,9 +3615,6 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.EnableMetadataPassthrough != after.EnableMetadataPassthrough {
 		changed = append(changed, "enable_metadata_passthrough")
-	}
-	if before.EnableCCHSigning != after.EnableCCHSigning {
-		changed = append(changed, "enable_cch_signing")
 	}
 	if before.ClaudeTelemetryMode != after.ClaudeTelemetryMode {
 		changed = append(changed, "claude_telemetry_mode")

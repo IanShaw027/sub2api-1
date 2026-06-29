@@ -7137,8 +7137,6 @@ export default {
         fingerprintUnificationHint: '统一共享同一 OAuth 账号的用户的 X-Stainless-* 请求头。关闭后透传客户端原始请求头。',
         metadataPassthrough: 'Metadata 透传',
         metadataPassthroughHint: '透传客户端原始 metadata.user_id，不进行重写。可能提高上游缓存命中率。',
-        cchSigning: 'CCH 签名',
-        cchSigningHint: '对转发请求的 billing header 进行 CCH 哈希签名。关闭时保留原始占位符。',
         claudeTelemetryMode: 'Claude Code 遥测处理',
         claudeTelemetryModeDrop: '直接丢弃（默认）',
         claudeTelemetryModeForward: '清洗后代发',

@@ -4306,21 +4306,6 @@
                 <Toggle v-model="form.enable_metadata_passthrough" />
               </div>
 
-              <!-- CCH Signing -->
-              <div class="flex items-center justify-between">
-                <div>
-                  <label
-                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    {{ t("admin.settings.gatewayForwarding.cchSigning") }}
-                  </label>
-                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{ t("admin.settings.gatewayForwarding.cchSigningHint") }}
-                  </p>
-                </div>
-                <Toggle v-model="form.enable_cch_signing" />
-              </div>
-
               <!-- Claude Telemetry Mode -->
               <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div class="max-w-2xl">
@@ -9571,7 +9556,6 @@ const form = reactive<SettingsForm>({
   // Gateway forwarding behavior
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
-  enable_cch_signing: false,
   claude_telemetry_mode: "drop",
   gateway_debug_timeline_enabled: false,
   gateway_debug_timeline_directory: "logs/gateway-debug",
@@ -11076,7 +11060,6 @@ async function saveSettings() {
       ),
       enable_fingerprint_unification: form.enable_fingerprint_unification,
       enable_metadata_passthrough: form.enable_metadata_passthrough,
-      enable_cch_signing: form.enable_cch_signing,
       claude_telemetry_mode:
         form.claude_telemetry_mode === "forward" ? "forward" : "drop",
       gateway_debug_timeline_enabled: form.gateway_debug_timeline_enabled,
