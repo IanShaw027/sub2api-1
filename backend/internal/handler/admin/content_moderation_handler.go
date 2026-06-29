@@ -58,6 +58,7 @@ type contentModerationConfigRequest struct {
 	NonHitRetentionDays     *int                                           `json:"non_hit_retention_days"`
 	PreHashCheckEnabled     *bool                                          `json:"pre_hash_check_enabled"`
 	BlockedKeywords         *[]string                                      `json:"blocked_keywords"`
+	KeywordExceptions       *[]string                                      `json:"keyword_exceptions"`
 	KeywordBlockingMode     *string                                        `json:"keyword_blocking_mode"`
 	ModelFilter             *service.ContentModerationModelFilter          `json:"model_filter"`
 	// cyber_policy 命中是否排除出自动封号计数；前端 RiskControlView 已发送该字段，
@@ -136,6 +137,7 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		NonHitRetentionDays:            req.NonHitRetentionDays,
 		PreHashCheckEnabled:            req.PreHashCheckEnabled,
 		BlockedKeywords:                req.BlockedKeywords,
+		KeywordExceptions:              req.KeywordExceptions,
 		KeywordBlockingMode:            req.KeywordBlockingMode,
 		ModelFilter:                    req.ModelFilter,
 		CyberPolicyExcludeFromBanCount: req.CyberPolicyExcludeFromBanCount,

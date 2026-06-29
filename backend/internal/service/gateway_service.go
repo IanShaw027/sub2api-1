@@ -7221,6 +7221,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		if workDirRewrite != nil {
 			body = replaceWorkDirInBody(body, workDirRewrite)
 		}
+		body = SanitizeClaudeOAuthBody(body, envProfile)
 	} else {
 		// 非 OAuth 账号降级为仅删除 PII（不替换）
 		body = scrubSystemPromptPII(body)
@@ -11094,6 +11095,9 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
 	if ctFingerprint != nil && ctEnableFP {
 		body = syncBillingHeaderVersion(body, ctFingerprint.UserAgent)
+	}
+	if account != nil && account.IsOAuth() {
+		body = SanitizeClaudeOAuthBody(body, buildAccountEnvProfile(account.ID, ctFingerprint))
 	}
 
 	// === 计算最终 anthropic-beta header（先于 body sanitize 与 CCH 签名）===

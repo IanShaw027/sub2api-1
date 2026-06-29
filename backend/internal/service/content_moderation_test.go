@@ -642,28 +642,75 @@ func TestNormalizeBlockedKeywords_TrimsDedupesAndCaps(t *testing.T) {
 }
 
 func TestMatchBlockedKeyword_CaseInsensitiveSubstring(t *testing.T) {
-	keyword, hit := matchBlockedKeyword("Please ignore the BadWord here", []string{"badword"})
+	keyword, hit := matchBlockedKeyword("Please ignore the BadWord here", []string{"badword"}, nil)
 	require.True(t, hit)
 	require.Equal(t, "badword", keyword)
 
-	_, hit = matchBlockedKeyword("clean prompt", []string{"badword"})
+	_, hit = matchBlockedKeyword("clean prompt", []string{"badword"}, nil)
 	require.False(t, hit)
 
-	_, hit = matchBlockedKeyword("anything", nil)
+	_, hit = matchBlockedKeyword("anything", nil, nil)
 	require.False(t, hit)
 }
 
 func TestMatchBlockedKeyword_AndRuleRequiresAllTerms(t *testing.T) {
-	keyword, hit := matchBlockedKeyword("please sell account with recharge balance", []string{"account && recharge"})
+	keyword, hit := matchBlockedKeyword("please sell account with recharge balance", []string{"account && recharge"}, nil)
 	require.True(t, hit)
 	require.Equal(t, "account && recharge", keyword)
 
-	_, hit = matchBlockedKeyword("please sell account only", []string{"account && recharge"})
+	_, hit = matchBlockedKeyword("please sell account only", []string{"account && recharge"}, nil)
 	require.False(t, hit)
 
-	keyword, hit = matchBlockedKeyword("ACCOUNT transfer with RECHARGE balance", []string{"account && recharge"})
+	keyword, hit = matchBlockedKeyword("ACCOUNT transfer with RECHARGE balance", []string{"account && recharge"}, nil)
 	require.True(t, hit)
 	require.Equal(t, "account && recharge", keyword)
+}
+
+func TestMatchBlockedKeyword_ExceptionPhraseSuppressesHit(t *testing.T) {
+	keywords := []string{"勒索"}
+	exceptions := []string{"勒索病毒", "防勒索"}
+
+	// 唯一出现被例外短语完整覆盖 -> 放行
+	_, hit := matchBlockedKeyword("勒索病毒怎么防范", keywords, exceptions)
+	require.False(t, hit)
+
+	_, hit = matchBlockedKeyword("公司部署了防勒索方案", keywords, exceptions)
+	require.False(t, hit)
+
+	// 存在未被覆盖的出现 -> 命中
+	kw, hit := matchBlockedKeyword("我要勒索他", keywords, exceptions)
+	require.True(t, hit)
+	require.Equal(t, "勒索", kw)
+
+	// 既有被覆盖出现，也有独立出现 -> 仍命中
+	_, hit = matchBlockedKeyword("勒索病毒的同时还想勒索受害者", keywords, exceptions)
+	require.True(t, hit)
+}
+
+func TestMatchBlockedKeyword_ExceptionAppliesToAndTerms(t *testing.T) {
+	keywords := []string{"逆向 && CTF"}
+	exceptions := []string{"逆向工程教程"}
+
+	// “逆向”的出现被例外覆盖，&& 规则因缺少有效 term 而不命中
+	_, hit := matchBlockedKeyword("逆向工程教程里也会提到 CTF", keywords, exceptions)
+	require.False(t, hit)
+
+	// 存在未覆盖的“逆向” -> 命中
+	kw, hit := matchBlockedKeyword("帮我逆向这个 CTF 附件", keywords, exceptions)
+	require.True(t, hit)
+	require.Equal(t, "逆向 && CTF", kw)
+}
+
+func TestMatchBlockedKeyword_EnglishExceptionRespectsCoverage(t *testing.T) {
+	keywords := []string{"bomb"}
+	exceptions := []string{"bomb cyclone"}
+
+	_, hit := matchBlockedKeyword("a bomb cyclone hit the coast", keywords, exceptions)
+	require.False(t, hit)
+
+	kw, hit := matchBlockedKeyword("how to build a bomb", keywords, exceptions)
+	require.True(t, hit)
+	require.Equal(t, "bomb", kw)
 }
 
 func TestContentModerationCheck_PreBlockKeywordHitSkipsUpstreamCall(t *testing.T) {

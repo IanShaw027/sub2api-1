@@ -180,6 +180,7 @@ type ContentModerationConfig struct {
 	NonHitRetentionDays     int                               `json:"non_hit_retention_days"`
 	PreHashCheckEnabled     bool                              `json:"pre_hash_check_enabled"`
 	BlockedKeywords         []string                          `json:"blocked_keywords"`
+	KeywordExceptions       []string                          `json:"keyword_exceptions"`
 	KeywordBlockingMode     string                            `json:"keyword_blocking_mode"`
 	ModelFilter             ContentModerationModelFilter      `json:"model_filter"`
 	// CyberPolicyExcludeFromBanCount 为 true 时，cyber_policy 命中不参与自动封号计数：
@@ -226,6 +227,7 @@ type ContentModerationConfigView struct {
 	NonHitRetentionDays            int                             `json:"non_hit_retention_days"`
 	PreHashCheckEnabled            bool                            `json:"pre_hash_check_enabled"`
 	BlockedKeywords                []string                        `json:"blocked_keywords"`
+	KeywordExceptions              []string                        `json:"keyword_exceptions"`
 	KeywordBlockingMode            string                          `json:"keyword_blocking_mode"`
 	ModelFilter                    ContentModerationModelFilter    `json:"model_filter"`
 	CyberPolicyExcludeFromBanCount bool                            `json:"cyber_policy_exclude_from_ban_count"`
@@ -346,6 +348,7 @@ type UpdateContentModerationConfigInput struct {
 	NonHitRetentionDays            *int                                   `json:"non_hit_retention_days"`
 	PreHashCheckEnabled            *bool                                  `json:"pre_hash_check_enabled"`
 	BlockedKeywords                *[]string                              `json:"blocked_keywords"`
+	KeywordExceptions              *[]string                              `json:"keyword_exceptions"`
 	KeywordBlockingMode            *string                                `json:"keyword_blocking_mode"`
 	ModelFilter                    *ContentModerationModelFilter          `json:"model_filter"`
 	CyberPolicyExcludeFromBanCount *bool                                  `json:"cyber_policy_exclude_from_ban_count"`
@@ -777,6 +780,9 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if input.BlockedKeywords != nil {
 		cfg.BlockedKeywords = normalizeBlockedKeywords(*input.BlockedKeywords)
 	}
+	if input.KeywordExceptions != nil {
+		cfg.KeywordExceptions = normalizeBlockedKeywords(*input.KeywordExceptions)
+	}
 	if input.KeywordBlockingMode != nil {
 		cfg.KeywordBlockingMode = strings.TrimSpace(*input.KeywordBlockingMode)
 	}
@@ -1089,7 +1095,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	if cfg.Mode == ContentModerationModePreBlock {
 		if cfg.KeywordBlockingMode != ContentModerationKeywordModeAPIOnly && len(cfg.BlockedKeywords) > 0 {
 			for _, localContent := range localContents {
-				if keyword, hit := matchBlockedKeyword(localContent.Text, cfg.BlockedKeywords); hit {
+				if keyword, hit := matchBlockedKeyword(localContent.Text, cfg.BlockedKeywords, cfg.KeywordExceptions); hit {
 					localHash := localContent.Hash()
 					s.recordPreBlockSyncMetric(0, ContentModerationActionKeywordBlock)
 					slog.Info("content_moderation.keyword_block",
@@ -2265,6 +2271,7 @@ func defaultContentModerationConfig() *ContentModerationConfig {
 		NonHitRetentionDays:     defaultContentModerationNonHitRetentionDays,
 		PreHashCheckEnabled:     false,
 		BlockedKeywords:         []string{},
+		KeywordExceptions:       []string{},
 		KeywordBlockingMode:     ContentModerationKeywordModeKeywordAndAPI,
 		ModelFilter: ContentModerationModelFilter{
 			Type:   ContentModerationModelFilterAll,
@@ -2286,6 +2293,7 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 	clone.AutoBanExemptUserIDs = append([]int64(nil), cfg.AutoBanExemptUserIDs...)
 	clone.AutoBanExemptUserEmails = append([]string(nil), cfg.AutoBanExemptUserEmails...)
 	clone.BlockedKeywords = append([]string(nil), cfg.BlockedKeywords...)
+	clone.KeywordExceptions = append([]string(nil), cfg.KeywordExceptions...)
 	clone.Thresholds = cloneFloatMap(cfg.Thresholds)
 	clone.ModelFilter = ContentModerationModelFilter{
 		Type:   cfg.ModelFilter.Type,
@@ -2399,6 +2407,7 @@ func (cfg *ContentModerationConfig) normalize() {
 	cfg.AutoBanExemptUserEmails = normalizeContentModerationEmailList(cfg.AutoBanExemptUserEmails)
 	cfg.Thresholds = mergeContentModerationThresholds(ContentModerationDefaultThresholds(), cfg.Thresholds)
 	cfg.BlockedKeywords = normalizeBlockedKeywords(cfg.BlockedKeywords)
+	cfg.KeywordExceptions = normalizeBlockedKeywords(cfg.KeywordExceptions)
 	cfg.KeywordBlockingMode = normalizeKeywordBlockingMode(cfg.KeywordBlockingMode)
 	cfg.ModelFilter = normalizeContentModerationModelFilter(cfg.ModelFilter)
 }
@@ -2830,6 +2839,7 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		NonHitRetentionDays:            cfg.NonHitRetentionDays,
 		PreHashCheckEnabled:            cfg.PreHashCheckEnabled,
 		BlockedKeywords:                append([]string(nil), cfg.BlockedKeywords...),
+		KeywordExceptions:              append([]string(nil), cfg.KeywordExceptions...),
 		KeywordBlockingMode:            cfg.KeywordBlockingMode,
 		ModelFilter:                    cloneContentModerationModelFilter(cfg.ModelFilter),
 		CyberPolicyExcludeFromBanCount: cfg.CyberPolicyExcludeFromBanCount,
@@ -3379,33 +3389,78 @@ func contentModerationModelListContains(models []string, model string) bool {
 	return false
 }
 
-func matchBlockedKeyword(text string, keywords []string) (string, bool) {
+func matchBlockedKeyword(text string, keywords, exceptions []string) (string, bool) {
 	if text == "" || len(keywords) == 0 {
 		return "", false
 	}
 	lower := strings.ToLower(text)
+	exSpans := blockedKeywordExceptionSpans(lower, exceptions)
 	for _, kw := range keywords {
 		if kw == "" {
 			continue
 		}
 		if terms := splitBlockedKeywordAndTerms(kw); len(terms) > 1 {
-			if matchBlockedKeywordAndTerms(lower, terms) {
+			if matchBlockedKeywordAndTerms(lower, terms, exSpans) {
 				return kw, true
 			}
 			continue
 		}
 		kwLower := strings.ToLower(kw)
-		if containsKeywordWithBoundary(lower, kwLower) {
+		if containsKeywordWithBoundary(lower, kwLower, exSpans) {
 			return kw, true
 		}
 	}
 	return "", false
 }
 
-func containsKeywordWithBoundary(text, keyword string) bool {
-	if hasCJK(keyword) {
-		return strings.Contains(text, keyword)
+// blockedKeywordByteSpan 是 lowerText 中一段例外短语出现的字节区间 [start, end)。
+type blockedKeywordByteSpan struct {
+	start int
+	end   int
+}
+
+// blockedKeywordExceptionSpans 收集所有例外短语在文本中的出现区间。
+// 关键词命中若被某个区间完整覆盖，则视为处于无害语境而跳过。
+func blockedKeywordExceptionSpans(lowerText string, exceptions []string) []blockedKeywordByteSpan {
+	if len(exceptions) == 0 {
+		return nil
 	}
+	var spans []blockedKeywordByteSpan
+	for _, ex := range exceptions {
+		exLower := strings.ToLower(strings.TrimSpace(ex))
+		if exLower == "" {
+			continue
+		}
+		idx := 0
+		for {
+			pos := strings.Index(lowerText[idx:], exLower)
+			if pos < 0 {
+				break
+			}
+			start := idx + pos
+			spans = append(spans, blockedKeywordByteSpan{start: start, end: start + len(exLower)})
+			idx = start + 1
+		}
+	}
+	return spans
+}
+
+func blockedKeywordSpanCovered(spans []blockedKeywordByteSpan, start, end int) bool {
+	for _, s := range spans {
+		if s.start <= start && end <= s.end {
+			return true
+		}
+	}
+	return false
+}
+
+// containsKeywordWithBoundary 判断 keyword 是否在 text 中存在“有效命中”：
+// 英文需满足词边界；任何被例外短语区间完整覆盖的出现都不计入。
+func containsKeywordWithBoundary(text, keyword string, exSpans []blockedKeywordByteSpan) bool {
+	if keyword == "" {
+		return false
+	}
+	cjk := hasCJK(keyword)
 	idx := 0
 	for {
 		pos := strings.Index(text[idx:], keyword)
@@ -3414,9 +3469,13 @@ func containsKeywordWithBoundary(text, keyword string) bool {
 		}
 		start := idx + pos
 		end := start + len(keyword)
-		leftOK := start == 0 || !isWordChar(rune(text[start-1]))
-		rightOK := end == len(text) || !isWordChar(rune(text[end]))
-		if leftOK && rightOK {
+		ok := true
+		if !cjk {
+			leftOK := start == 0 || !isWordChar(rune(text[start-1]))
+			rightOK := end == len(text) || !isWordChar(rune(text[end]))
+			ok = leftOK && rightOK
+		}
+		if ok && !blockedKeywordSpanCovered(exSpans, start, end) {
 			return true
 		}
 		idx = start + 1
@@ -3452,9 +3511,9 @@ func splitBlockedKeywordAndTerms(keyword string) []string {
 	return terms
 }
 
-func matchBlockedKeywordAndTerms(textLower string, terms []string) bool {
+func matchBlockedKeywordAndTerms(textLower string, terms []string, exSpans []blockedKeywordByteSpan) bool {
 	for _, term := range terms {
-		if !containsKeywordWithBoundary(textLower, term) {
+		if !containsKeywordWithBoundary(textLower, term, exSpans) {
 			return false
 		}
 	}
