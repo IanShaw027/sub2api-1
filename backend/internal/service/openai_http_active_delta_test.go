@@ -257,6 +257,33 @@ func TestOpenAIGatewayService_Forward_HTTPDefaultDoesNotBindContinuationState(t 
 	require.Zero(t, accountID)
 }
 
+func TestOpenAIGatewayService_Forward_HTTPOAuthWithoutPreviousResponseSupportKeepsDefaultDisabled(t *testing.T) {
+	setGinTestMode()
+
+	upstream := &httpUpstreamRecorder{resp: openAIHTTPActiveDeltaSSE("resp_http_no_support")}
+	svc := newOpenAIHTTPActiveDeltaTestService(upstream)
+	account := newOpenAIHTTPActiveDeltaTestAccount(91015)
+	groupID := int64(91150)
+	apiKeyID := int64(91151)
+
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}`
+	replayedOutput := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}`
+	newInput := `{"type":"message","role":"user","content":[{"type":"input_text","text":"again"}]}`
+	firstBody := []byte(`{"model":"gpt-5.4","instructions":"test","stream":true,"store":false,"input":[` + input1 + `]}`)
+	fullFollowupBody := []byte(`{"model":"gpt-5.4","instructions":"test","stream":true,"store":false,"input":[` + input1 + `,` + replayedOutput + `,` + newInput + `]}`)
+
+	firstCtx, _ := newOpenAIHTTPActiveDeltaContext(groupID, apiKeyID, "sess-http-no-support")
+	bindOpenAIHTTPActiveDeltaInputOnlyContext(t, svc, firstCtx, account, firstBody, "resp_http_prev")
+
+	followupCtx, _ := newOpenAIHTTPActiveDeltaContext(groupID, apiKeyID, "sess-http-no-support")
+	result, err := svc.Forward(context.Background(), followupCtx, account, fullFollowupBody)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 1)
+	require.False(t, gjson.GetBytes(upstream.bodies[0], "previous_response_id").Exists())
+	require.Len(t, gjson.GetBytes(upstream.bodies[0], "input").Array(), 3)
+}
+
 func TestOpenAIGatewayService_Forward_HTTPActiveDeltaSkipsCachedWSContext(t *testing.T) {
 	setGinTestMode()
 	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")

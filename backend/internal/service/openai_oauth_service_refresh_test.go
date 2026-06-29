@@ -90,6 +90,7 @@ func TestOpenAIOAuthService_BuildAccountExtraSeedsPrivacyModeAndCodexIdentity(t 
 
 	require.NotEmpty(t, extra["openai_device_id"])
 	require.NotEmpty(t, extra["openai_session_id"])
+	require.Equal(t, true, extra["openai_http_previous_response_id_supported"])
 	require.NotContains(t, extra, "web_profile")
 }
 

@@ -456,6 +456,7 @@ func (s *OpenAIOAuthService) BuildAccountExtra(tokenInfo *OpenAITokenInfo, proxy
 
 	extra["openai_device_id"] = deviceID
 	extra["openai_session_id"] = sessionID
+	extra["openai_http_previous_response_id_supported"] = true
 	return extra
 }
 

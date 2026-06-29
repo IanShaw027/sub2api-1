@@ -159,3 +159,14 @@ func TestClassifyNoAccountError_FromGin_NilContextStillSafe(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, cls.Status, "even with a nil gin context the classifier must still run and yield a coherent response")
 	require.True(t, cls.ModelNotFound)
 }
+
+func TestClassifyNoAccountError_FromGin_PreservesRequestPlatform(t *testing.T) {
+	c := newTestGinContextWithRequest()
+	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
+	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
+
+	_ = classifyNoAccountErrorFromGin(c, fd, apiKey, "grok-4.3", "grok-4.3", service.PlatformGrok)
+
+	require.Len(t, fd.calls, 1)
+	require.Equal(t, service.PlatformGrok, fd.calls[0].Platform)
+}
