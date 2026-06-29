@@ -290,6 +290,17 @@ func TestCalculateAudioCost_STTUsesGroupPrice(t *testing.T) {
 	require.Equal(t, string(BillingModeAudio), bd.BillingMode)
 }
 
+func TestCalculateSearchCost_DoesNotApplyTextMultiplierToExplicitPrice(t *testing.T) {
+	svc := newTestBillingService()
+	price := 5.0
+
+	bd := svc.CalculateSearchCost(2, &price, 1.25)
+
+	require.InDelta(t, 0.01, bd.TotalCost, 1e-12)
+	require.InDelta(t, 0.01, bd.ActualCost, 1e-12)
+	require.Equal(t, string(BillingModeSearch), bd.BillingMode)
+}
+
 func TestCalculateCost_OpenAIGPT54LongContextAppliesWholeSessionMultipliers(t *testing.T) {
 	svc := newTestBillingService()
 

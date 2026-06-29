@@ -1457,13 +1457,9 @@ func (s *BillingService) CalculateSearchCost(numCalls int, groupPricePer1k *floa
 	}
 	unit := *groupPricePer1k / 1000.0 // per call
 	total := unit * float64(numCalls)
-	if rateMultiplier < 0 {
-		rateMultiplier = 0
-	}
-	actual := total * rateMultiplier
 	return &CostBreakdown{
 		TotalCost:   total,
-		ActualCost:  actual,
+		ActualCost:  total,
 		BillingMode: string(BillingModeSearch), // reuse or add if needed; for now use a mode
 	}
 }
@@ -1502,13 +1498,9 @@ func (s *BillingService) CalculateAudioCost(mode string, durationOrUnits float64
 		return &CostBreakdown{}
 	}
 	total := unitPrice * durationOrUnits
-	if rateMultiplier < 0 {
-		rateMultiplier = 0
-	}
-	actual := total * rateMultiplier
 	return &CostBreakdown{
 		TotalCost:   total,
-		ActualCost:  actual,
+		ActualCost:  total,
 		BillingMode: string(BillingModeAudio),
 	}
 }

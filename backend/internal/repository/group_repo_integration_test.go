@@ -259,6 +259,43 @@ func (s *GroupRepoSuite) TestCreateUpdatePreservesAudioAndSearchPricingFields() 
 	s.Require().InDelta(stt2, *afterUpdate.AudioSTTPricePerHour, 0.000001)
 }
 
+func (s *GroupRepoSuite) TestUpdate_ClearsAudioAndSearchPricingFields() {
+	search := 1.11
+	rt := 2.22
+	tts := 3.33
+	stt := 4.44
+	group := &service.Group{
+		Name:                         "pricing-fields-clear",
+		Platform:                     service.PlatformGrok,
+		RateMultiplier:               1.0,
+		IsExclusive:                  false,
+		Status:                       service.StatusActive,
+		SubscriptionType:             service.SubscriptionTypeStandard,
+		SearchPricePer1k:             &search,
+		AudioRealtimePricePerMin:     &rt,
+		AudioTTSPricePerMillionChars: &tts,
+		AudioSTTPricePerHour:         &stt,
+	}
+
+	s.Require().NoError(s.repo.Create(s.ctx, group))
+
+	got, err := s.repo.GetByID(s.ctx, group.ID)
+	s.Require().NoError(err)
+	got.SearchPricePer1k = nil
+	got.AudioRealtimePricePerMin = nil
+	got.AudioTTSPricePerMillionChars = nil
+	got.AudioSTTPricePerHour = nil
+
+	s.Require().NoError(s.repo.Update(s.ctx, got))
+
+	afterUpdate, err := s.repo.GetByID(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().Nil(afterUpdate.SearchPricePer1k)
+	s.Require().Nil(afterUpdate.AudioRealtimePricePerMin)
+	s.Require().Nil(afterUpdate.AudioTTSPricePerMillionChars)
+	s.Require().Nil(afterUpdate.AudioSTTPricePerHour)
+}
+
 func (s *GroupRepoSuite) TestDelete() {
 	group := &service.Group{
 		Name:             "to-delete",

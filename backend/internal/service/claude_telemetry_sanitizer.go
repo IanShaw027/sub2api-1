@@ -66,6 +66,9 @@ func SanitizeClaudeTelemetryBatch(body []byte, opts ClaudeTelemetrySanitizeOptio
 		return body
 	}
 	out := body
+	for _, p := range claudeLeakFieldPaths {
+		out = safeDeleteJSONKey(out, p)
+	}
 	events := gjson.GetBytes(out, "events")
 	if !events.IsArray() {
 		return out
@@ -87,7 +90,7 @@ func SanitizeClaudeTelemetryBatch(body []byte, opts ClaudeTelemetrySanitizeOptio
 		if gjson.GetBytes(out, base+".process").Exists() {
 			out = sanitizeClaudeTelemetryProcess(out, base+".process", opts)
 		}
-		for _, p := range []string{"baseUrl", "base_url", "gateway"} {
+		for _, p := range claudeLeakFieldPaths {
 			out = safeDeleteJSONKey(out, base+"."+p)
 		}
 		if v := gjson.GetBytes(out, base+".additional_metadata"); v.Exists() && v.Type == gjson.String {
