@@ -9,12 +9,20 @@
     <p class="text-xs text-gray-500 dark:text-gray-400">
       {{ t('admin.accounts.quotaControl.tlsFingerprint.bindingMatrixHint') }}
     </p>
+    <p v-if="hasDuplicateDimensions" class="text-xs text-red-500 dark:text-red-400">
+      {{ duplicateBindingLabel }}
+    </p>
 
     <div v-if="rows.length === 0" class="rounded-md border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-400 dark:border-dark-600">
       {{ t('admin.accounts.quotaControl.tlsFingerprint.noBindings') }}
     </div>
 
-    <div v-for="(row, index) in rows" :key="row.key" class="flex items-center gap-2">
+    <div
+      v-for="(row, index) in rows"
+      :key="row.key"
+      class="flex items-center gap-2"
+      :class="isDuplicateRow(index) ? 'rounded-md border border-red-200 p-1 dark:border-red-800' : ''"
+    >
       <select v-model="row.os" class="input w-28 text-sm" @change="emitUpdate">
         <option value="windows">Windows</option>
         <option value="macos">macOS</option>
@@ -28,7 +36,12 @@
         :placeholder="t('admin.accounts.quotaControl.tlsFingerprint.clientTypePlaceholder')"
         @input="emitUpdate"
       />
-      <select v-model.number="row.profileId" class="input min-w-0 flex-1 text-sm" @change="emitUpdate">
+      <select
+        v-model.number="row.profileId"
+        class="input min-w-0 flex-1 text-sm"
+        :disabled="isDuplicateRow(index)"
+        @change="emitUpdate"
+      >
         <option :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
         <option v-for="p in profilesForRow(row)" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>
@@ -45,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import type { TLSFingerprintProfileOption } from '@/components/account/tlsFingerprintProfileOptions'
@@ -99,6 +112,43 @@ function profilesForRow(row: MatrixRow): TLSFingerprintProfileOption[] {
   )
 }
 
+function dimensionForRow(row: MatrixRow): string {
+  const os = row.os.trim().toLowerCase()
+  if (!os) return ''
+  const client = props.withClientType ? row.clientType.trim().toLowerCase() : ''
+  return client ? `${os}/${client}` : os
+}
+
+const duplicateDimensionKeys = computed(() => {
+  const seen = new Set<string>()
+  const duplicates = new Set<string>()
+  for (const row of rows.value) {
+    const dim = dimensionForRow(row)
+    if (!dim) continue
+    if (seen.has(dim)) {
+      duplicates.add(row.key)
+      continue
+    }
+    seen.add(dim)
+  }
+  return duplicates
+})
+
+const hasDuplicateDimensions = computed(() => duplicateDimensionKeys.value.size > 0)
+
+const duplicateBindingLabel = computed(() => {
+  const key = 'admin.accounts.quotaControl.tlsFingerprint.duplicateBinding'
+  const translated = t(key)
+  return translated === key
+    ? 'Duplicate TLS binding dimensions are ignored; keep each OS/client type unique.'
+    : translated
+})
+
+function isDuplicateRow(index: number): boolean {
+  const row = rows.value[index]
+  return !!row && duplicateDimensionKeys.value.has(row.key)
+}
+
 function addRow() {
   rows.value.push({ key: `r${rowSeq++}`, os: 'windows', clientType: '', profileId: -1 })
   emitUpdate()
@@ -112,10 +162,8 @@ function removeRow(index: number) {
 function emitUpdate() {
   const out: Record<string, number> = {}
   for (const row of rows.value) {
-    const os = row.os.trim().toLowerCase()
-    if (!os) continue
-    const client = props.withClientType ? row.clientType.trim().toLowerCase() : ''
-    const dim = client ? `${os}/${client}` : os
+    const dim = dimensionForRow(row)
+    if (!dim || Object.prototype.hasOwnProperty.call(out, dim)) continue
     out[dim] = row.profileId
   }
   emit('update:modelValue', out)

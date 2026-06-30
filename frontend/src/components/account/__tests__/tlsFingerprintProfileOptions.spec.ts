@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatTLSFingerprintProfileOptionLabel,
-  getSelectableTLSFingerprintProfiles
+  getSelectableTLSFingerprintProfiles,
+  getTLSFingerprintProfilesForDimension
 } from '../tlsFingerprintProfileOptions'
 
 describe('tlsFingerprintProfileOptions', () => {
@@ -24,6 +25,63 @@ describe('tlsFingerprintProfileOptions', () => {
 
     expect(selectable.map((profile) => profile.id)).toEqual([1, 2, 3])
     expect(selectable.find((profile) => profile.id === 3)?.isPlatformMismatch).toBe(true)
+  })
+
+
+
+  it('keeps OS-only binding slots restricted to profiles without client_type unless selected', () => {
+    const dimensionProfiles = [
+      { id: 1, name: 'Windows OS-only', platform: 'openai', os: 'windows', client_type: '' },
+      { id: 2, name: 'Windows Codex', platform: 'openai', os: 'windows', client_type: 'codex' },
+      { id: 3, name: 'Windows Shared Client', platform: 'openai', os: 'windows', client_type: null },
+      { id: 4, name: 'macOS OS-only', platform: 'openai', os: 'macos', client_type: '' }
+    ]
+
+    expect(getTLSFingerprintProfilesForDimension(
+      dimensionProfiles,
+      { platform: 'openai', os: 'windows', clientType: '' },
+      null
+    ).map((profile) => profile.id)).toEqual([1, 3])
+    expect(getTLSFingerprintProfilesForDimension(
+      dimensionProfiles,
+      { platform: 'openai', os: 'windows' },
+      null
+    ).map((profile) => profile.id)).toEqual([1, 3])
+    expect(getTLSFingerprintProfilesForDimension(
+      dimensionProfiles,
+      { platform: 'openai', os: 'windows', clientType: '' },
+      2
+    ).map((profile) => profile.id)).toEqual([1, 2, 3])
+  })
+
+  it('matches backend transport semantics: empty binding context keeps transport-specific profiles', () => {
+    const transportProfiles = [
+      { id: 1, name: 'Shared Any Transport', platform: 'openai', transport: '' },
+      { id: 2, name: 'HTTP/2 Only', platform: 'openai', transport: 'h2' },
+      { id: 3, name: 'WebSocket Only', platform: 'openai', transport: 'websocket-h2' }
+    ]
+
+    expect(getTLSFingerprintProfilesForDimension(
+      transportProfiles,
+      { platform: 'openai', os: 'windows' },
+      null
+    ).map((profile) => profile.id)).toEqual([1, 2, 3])
+    expect(getTLSFingerprintProfilesForDimension(
+      transportProfiles,
+      { platform: 'openai', os: 'windows', transport: 'websocket' },
+      null
+    ).map((profile) => profile.id)).toEqual([1, 3])
+    expect(getTLSFingerprintProfilesForDimension(
+      transportProfiles,
+      { platform: 'openai', os: 'windows' },
+      2
+    ).map((profile) => profile.id)).toEqual([1, 2, 3])
+
+    expect(getSelectableTLSFingerprintProfiles(
+      transportProfiles,
+      'openai',
+      null
+    ).map((profile) => profile.id)).toEqual([1, 2, 3])
   })
 
   it('labels shared, platform-specific, and mismatched profiles explicitly', () => {

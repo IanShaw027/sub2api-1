@@ -44,6 +44,8 @@ export function applyOpenAIImageTypeSelection(
   const platform = (payload.platform || "").trim().toLowerCase();
   if (platform === "grok") {
     payload.image_generation_route = "native";
+    payload.image_rate_independent = false;
+    payload.image_rate_multiplier = 1;
     delete payload.openai_image_codex_enabled;
     return;
   }
@@ -85,15 +87,26 @@ export function deriveOpenAIImageFormState(
 > {
   const allowImageGeneration = group.allow_image_generation === true;
   const platform = group.platform.trim().toLowerCase();
-  const route = platform === "grok" ? "native" : "codex";
+  const storedRoute = group.image_generation_route;
+  const route =
+    platform === "grok"
+      ? "native"
+      : platform === "openai"
+        ? "codex"
+        : storedRoute === "native" || storedRoute === "web2api" || storedRoute === "codex"
+          ? storedRoute
+          : "codex";
   const isCodexRoute = route === "codex";
   return {
     allow_image_generation: allowImageGeneration,
     image_generation_route: route as OpenAIImageRoute,
     openai_image_codex_enabled: platform === "openai" && allowImageGeneration && isCodexRoute,
     image_rate_independent:
-      platform === "openai" ? false : group.image_rate_independent === true,
-    image_rate_multiplier: group.image_rate_multiplier ?? 1,
+      platform === "openai" || platform === "grok"
+        ? false
+        : group.image_rate_independent === true,
+    image_rate_multiplier:
+      platform === "grok" ? 1 : group.image_rate_multiplier ?? 1,
     image_price_1k: group.image_price_1k ?? null,
     image_price_2k: group.image_price_2k ?? null,
     image_price_4k: group.image_price_4k ?? null,

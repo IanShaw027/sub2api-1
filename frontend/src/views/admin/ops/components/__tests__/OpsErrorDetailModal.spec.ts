@@ -180,4 +180,50 @@ describe('OpsErrorDetailModal request races', () => {
     expect((wrapper.vm as any).detail).toBeNull()
     expect(wrapper.text()).not.toContain('loaded-request')
   })
+
+  it('labels cyber request_type rows', async () => {
+    getRequestErrorDetail.mockResolvedValueOnce({
+      id: 6,
+      created_at: '2026-05-24T00:00:00Z',
+      request_id: 'cyber-request',
+      status_code: 403,
+      error_body: '{}',
+      request_type: 6,
+      phase: 'request',
+      type: 'cyber_policy_session_blocked',
+      severity: 'error',
+      error_owner: 'platform',
+      error_source: 'gateway_local',
+      platform: 'openai',
+      model: 'gpt-5',
+      resolved: false,
+      client_request_id: 'cyber-request',
+      message: 'blocked',
+    })
+    listRequestErrorUpstreamErrors.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 100,
+      pages: 0,
+    })
+
+    const wrapper = mount(OpsErrorDetailModal, {
+      props: {
+        show: true,
+        errorId: 6,
+        errorType: 'request',
+      },
+      global: {
+        stubs: {
+          BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /></div>' },
+          Icon: { template: '<span />' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.ops.errorDetail.requestTypeCyber')
+  })
 })

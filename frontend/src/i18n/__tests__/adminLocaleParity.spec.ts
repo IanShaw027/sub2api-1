@@ -20,6 +20,7 @@ const requiredRuntimeKeys = [
   'admin.groups.claudeMaxSimulation.enabled',
   'admin.groups.claudeMaxSimulation.disabled',
   'admin.groups.claudeMaxSimulation.hint',
+  'admin.accounts.quotaControl.tlsFingerprint.duplicateBinding',
   'admin.settings.gatewayForwarding.apiKeyAclTrustForwardedIP',
   'admin.settings.gatewayForwarding.apiKeyAclTrustForwardedIPHint',
   'admin.settings.gatewayForwarding.openaiCodexUserAgent',

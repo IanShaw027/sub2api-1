@@ -5,7 +5,7 @@
  */
 
 import { apiClient } from '../client'
-import type { PaginatedResponse } from '@/types'
+import type { PaginatedResponse, UsageRequestType } from '@/types'
 
 export type OpsQueryMode = 'auto' | 'raw' | 'preagg'
 
@@ -1132,6 +1132,8 @@ export type OpsErrorListQueryParams = {
   api_key_id?: number
   // 模型过滤：后端以 COALESCE(requested_model, model) 精确匹配（admin 路径）。
   model?: string
+  request_type?: UsageRequestType | null
+  stream?: boolean | null
 
   phase?: string
   error_owner?: string

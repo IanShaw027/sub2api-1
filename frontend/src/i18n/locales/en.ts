@@ -427,6 +427,8 @@ export default {
     mySubscriptions: 'My Subscriptions',
     buySubscription: 'Recharge / Subscription',
     docs: 'Docs',
+    helpDocs: 'Help Docs',
+    downloadTools: 'Download',
     myOrders: 'My Orders',
     myInvoices: 'My Invoices',
     invoiceDetail: 'Invoice Detail',
@@ -1531,7 +1533,10 @@ export default {
     ws: 'WS',
     stream: 'Stream',
     sync: 'Sync',
+    image: 'Image',
+    imageWebBridge: 'Images2API',
     cyber: 'Cyber',
+    video: 'Video',
     unknown: 'Unknown',
     in: 'In',
     out: 'Out',
@@ -2968,6 +2973,12 @@ export default {
       imagePricing: {
         title: 'Image Generation Pricing',
         description: 'Configure image generation access and base image prices. Leave empty to use default prices.',
+        routeLabel: 'Image route',
+        routeHint: 'The images endpoint only uses codex.',
+        routeNativeHint: 'Grok image requests use the provider-native route.',
+        routeNative: 'Provider native',
+        routeCodex: 'codex',
+        routeWeb2API: 'web2api',
         images: 'Images API',
         fixedHint: 'Fixed per group; not affected by rate multipliers.',
         allowImageGeneration: 'Allow image generation for this group',
@@ -2982,7 +2993,6 @@ export default {
       tier1kPrice: '1K ($)',
       tier2kPrice: '2K ($)',
       tier4kPrice: '4K ($)',
-      routeNativeHint: 'Grok image requests use the provider-native route.',
       notConfigured: 'Not configured'
       },
       explicitPricing: {
@@ -2996,8 +3006,8 @@ export default {
       },
       videoPricing: {
         title: 'Video Generation Pricing',
-        description: 'Configure provider-native video generation access and per-second prices by resolution.',
-        allowVideoGeneration: 'Allow video generation for this group',
+        description: 'Configure Grok/xAI native Videos access and per-second prices by resolution.',
+        allowVideoGeneration: 'Allow video generation for this Grok group',
         routeLabel: 'Video route',
         routeNative: 'Provider native',
         pricePerSecond: 'Price per second',
@@ -4501,7 +4511,8 @@ export default {
           clientTypePlaceholder: 'client (e.g. codex-cli)',
           defaultOS: 'Default OS',
           defaultOSNone: 'Not set (use profile above)',
-          defaultOSHint: 'No inbound User-Agent on this platform; pick the OS dimension this account simulates.'
+          defaultOSHint: 'No inbound User-Agent on this platform; pick the OS dimension this account simulates.',
+          duplicateBinding: 'Duplicate TLS binding dimensions are ignored; keep each OS/client type unique.'
         },
         sessionIdMasking: {
           label: 'Session ID Masking',
@@ -6106,7 +6117,11 @@ export default {
         requestType: 'Type',
         requestTypeSync: 'Sync',
         requestTypeStream: 'Stream',
-        requestTypeWs: 'WS'
+        requestTypeWs: 'WS',
+        requestTypeImage: 'Image',
+        requestTypeImageWebBridge: 'Images2API',
+        requestTypeCyber: 'Cyber',
+        requestTypeVideo: 'Video'
       },
       // Error Details Modal
       errorDetails: {
@@ -6202,6 +6217,10 @@ export default {
         requestTypeSync: 'Sync',
         requestTypeStream: 'Stream',
         requestTypeWs: 'WebSocket',
+        requestTypeImage: 'Image',
+        requestTypeImageWebBridge: 'Images2API',
+        requestTypeCyber: 'Cyber',
+        requestTypeVideo: 'Video',
         modelMapping: 'Model Mapping',
         timings: 'Timings',
         auth: 'Auth',

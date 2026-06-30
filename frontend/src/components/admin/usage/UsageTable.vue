@@ -514,6 +514,7 @@ const getRequestTypeLabel = (row: AdminUsageLog): string => {
   if (requestType === 'stream') return t('usage.stream')
   if (requestType === 'image_web_bridge') return t('usage.imageWebBridge')
   if (requestType === 'image') return t('usage.image')
+  if (requestType === 'video') return t('usage.video')
   if (requestType === 'sync') return t('usage.sync')
   return t('usage.unknown')
 }
@@ -525,6 +526,7 @@ const getRequestTypeBadgeClass = (row: AdminUsageLog): string => {
   if (requestType === 'stream') return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
   if (requestType === 'image_web_bridge') return 'bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200'
   if (requestType === 'image') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
+  if (requestType === 'video') return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
   if (requestType === 'sync') return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
   return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
 }

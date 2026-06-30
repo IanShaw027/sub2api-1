@@ -1600,7 +1600,7 @@
           </select>
           <select v-model="tlsFingerprintRouterId" class="input mt-2" data-testid="openai-tls-fingerprint-router">
             <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.noRouter') }}</option>
-            <option v-for="router in tlsFingerprintRouters" :key="router.id" :value="router.id">{{ router.name }}</option>
+            <option v-for="router in selectableTLSFingerprintRouters" :key="router.id" :value="router.id">{{ tlsFingerprintRouterOptionLabel(router) }}</option>
           </select>
           <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
             {{ t('admin.accounts.quotaControl.tlsFingerprint.routerHint') }}
@@ -1699,6 +1699,13 @@
             <option v-if="hasSelectableTLSFingerprintProfiles" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
             <option v-for="p in selectableTLSFingerprintProfiles" :key="p.id" :value="p.id">{{ tlsFingerprintProfileOptionLabel(p) }}</option>
           </select>
+          <select v-model="tlsFingerprintRouterId" class="input mt-2" data-testid="grok-tls-fingerprint-router">
+            <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.noRouter') }}</option>
+            <option v-for="router in selectableTLSFingerprintRouters" :key="router.id" :value="router.id">{{ tlsFingerprintRouterOptionLabel(router) }}</option>
+          </select>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.quotaControl.tlsFingerprint.routerHint') }}
+          </p>
           <label class="input-label mb-0 mt-2">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOS') }}</label>
           <select v-model="tlsFingerprintDefaultOS" class="input mt-1">
             <option value="">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOSNone') }}</option>
@@ -2840,9 +2847,18 @@ const tlsFingerprintEnabled = ref(false)
 const tlsFingerprintProfileId = ref<number | null>(null)
 const tlsFingerprintProfiles = ref<TLSFingerprintProfileOption[]>([])
 const tlsFingerprintRouterId = ref<number | null>(null)
-const tlsFingerprintRouters = ref<{ id: number; name: string }[]>([])
+const tlsFingerprintRouters = ref<{ id: number; name: string; enabled: boolean }[]>([])
 const tlsFingerprintBindings = ref<Record<string, number>>({})
 const tlsFingerprintDefaultOS = ref<string>('')
+const selectableTLSFingerprintRouters = computed(() =>
+  tlsFingerprintRouters.value.filter(router => router.enabled !== false || router.id === tlsFingerprintRouterId.value)
+)
+const disabledTLSFingerprintRouterLabel = computed(() => {
+  const translated = t('common.disabled')
+  return translated === 'common.disabled' ? 'disabled' : translated
+})
+const tlsFingerprintRouterOptionLabel = (router: { name: string; enabled: boolean }) =>
+  router.enabled === false ? `${router.name} (${disabledTLSFingerprintRouterLabel.value})` : router.name
 const selectableTLSFingerprintProfiles = computed(() =>
   getSelectableTLSFingerprintProfiles(
     tlsFingerprintProfiles.value,
@@ -3545,7 +3561,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 async function loadTLSProfiles() {
   try {
     const profiles = await adminAPI.tlsFingerprintProfiles.list()
-    tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name, platform: p.platform || '', os: p.os || '', client_type: p.client_type || '' }))
+	    tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name, platform: p.platform || '', transport: p.transport || '', os: p.os || '', client_type: p.client_type || '' }))
   } catch {
     tlsFingerprintProfiles.value = []
   }
@@ -3554,7 +3570,7 @@ async function loadTLSProfiles() {
 async function loadTLSRouters() {
   try {
     const routers = await adminAPI.tlsFingerprintRouters.list()
-    tlsFingerprintRouters.value = routers.map(router => ({ id: router.id, name: router.name }))
+    tlsFingerprintRouters.value = routers.map(router => ({ id: router.id, name: router.name, enabled: router.enabled !== false }))
   } catch {
     tlsFingerprintRouters.value = []
   }
@@ -3676,18 +3692,17 @@ const applyTLSFingerprintExtra = (
       delete extra.tls_fingerprint_default_os
     } else if (dimensionMode === 'defaultOS') {
       // 非 OpenAI：账号默认 OS + 单维度 bindings
+      const bindings = tlsFingerprintBindings.value
+      if (bindings && Object.keys(bindings).length > 0) {
+        extra.tls_fingerprint_bindings = { ...bindings }
+      } else {
+        delete extra.tls_fingerprint_bindings
+      }
       const os = (tlsFingerprintDefaultOS.value || '').trim().toLowerCase()
       if (os) {
         extra.tls_fingerprint_default_os = os
-        const bindings = tlsFingerprintBindings.value
-        if (bindings && Object.keys(bindings).length > 0) {
-          extra.tls_fingerprint_bindings = { ...bindings }
-        } else {
-          delete extra.tls_fingerprint_bindings
-        }
       } else {
         delete extra.tls_fingerprint_default_os
-        delete extra.tls_fingerprint_bindings
       }
     } else {
       delete extra.tls_fingerprint_bindings
@@ -3925,7 +3940,7 @@ function loadQuotaControlSettings(account: Account) {
       tlsFingerprintEnabled.value = true
     }
     tlsFingerprintProfileId.value = account.tls_fingerprint_profile_id ?? null
-    tlsFingerprintRouterId.value = null
+    tlsFingerprintRouterId.value = account.tls_fingerprint_router_id ?? null
     return
   }
 
@@ -4957,7 +4972,7 @@ const handleSubmit = async () => {
       }
       delete newExtra.user_msg_queue_enabled  // 清理旧字段
 
-      applyTLSFingerprintExtra(newExtra, true, 'defaultOS')
+      applyTLSFingerprintExtra(newExtra, false, 'defaultOS')
 
       // Session ID masking setting
       if (sessionIdMaskingEnabled.value) {
@@ -5074,7 +5089,7 @@ const handleSubmit = async () => {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
-      applyTLSFingerprintExtra(newExtra, false, 'defaultOS')
+      applyTLSFingerprintExtra(newExtra, true, 'defaultOS')
       updatePayload.extra = newExtra
     }
 

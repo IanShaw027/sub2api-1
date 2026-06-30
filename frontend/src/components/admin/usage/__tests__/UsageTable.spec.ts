@@ -16,6 +16,7 @@ const messages: Record<string, string> = {
   'usage.perMillionTokens': '/ 1M tokens',
   'usage.imageCount': 'Image count',
   'usage.imageUnit': ' images',
+  'usage.video': 'Video',
   'usage.imageUnitPrice': 'Per-image price',
   'usage.imageSubtotal': 'Image subtotal',
   'usage.tokenSubtotal': 'Token subtotal',
@@ -63,6 +64,7 @@ const DataTableStub = {
     <div>
       <div v-for="row in data" :key="row.request_id">
         <slot name="cell-model" :row="row" :value="row.model" />
+        <slot name="cell-stream" :row="row" />
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
@@ -200,6 +202,40 @@ describe('admin UsageTable tooltip', () => {
     const text = wrapper.text()
     expect(text).toContain('claude-sonnet-4')
     expect(text).toContain('claude-sonnet-4-20250514')
+  })
+
+  it('labels video usage rows as video requests', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-admin-video',
+          model: 'grok-4.3',
+          request_type: 'video',
+          actual_cost: 0,
+          total_cost: 0,
+          account_rate_multiplier: 1,
+          rate_multiplier: 1,
+          input_cost: 0,
+          output_cost: 0,
+          cache_creation_cost: 0,
+          cache_read_cost: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('Video')
   })
 
   it.each([

@@ -380,6 +380,8 @@
     "mySubscriptions": "My Subscriptions",
     "buySubscription": "Recharge / Subscription",
     "docs": "Docs",
+    "helpDocs": "Help Docs",
+    "downloadTools": "Download",
     "myOrders": "My Orders",
     "orderManagement": "Orders",
     "paymentDashboard": "Payment Dashboard",
@@ -1569,6 +1571,8 @@
     "sync": "Sync",
     "image": "Image",
     "imageWebBridge": "Images2API",
+    "cyber": "Cyber",
+    "video": "Video",
     "unknown": "Unknown",
     "in": "In",
     "out": "Out",
@@ -2802,6 +2806,18 @@
         "tier4kPrice": "4K ($)",
         "notConfigured": "Not configured"
       },
+      "videoPricing": {
+        "title": "Video Generation Pricing",
+        "description": "Configure Grok/xAI native Videos access and per-second prices by resolution.",
+        "allowVideoGeneration": "Allow video generation for this Grok group",
+        "routeLabel": "Video route",
+        "routeNative": "Provider native",
+        "pricePerSecond": "Price per second",
+        "tier480pPrice": "480p ($/s)",
+        "tier720pPrice": "720p ($/s)",
+        "tier1080pPrice": "1080p ($/s)",
+        "tier4kPrice": "4K ($/s)"
+      },
       "claudeCode": {
         "title": "Claude Code Client Restriction",
         "tooltip": "When enabled, this group only allows official Claude Code clients. Non-Claude Code requests will be rejected or fallback to the specified group.",
@@ -3866,7 +3882,16 @@
           "profileLabel": "Fingerprint Profile",
           "profileHint": "Choose a shared profile, random profile, or default account setting.",
           "routerLabel": "Fingerprint Router",
-          "useDefault": "Use Default"
+          "useDefault": "Use Default",
+          "bindingMatrix": "Per-OS / Client Bindings",
+          "bindingMatrixHint": "The router decides which OS/client a request maps to; this matrix decides which profile this account uses for that dimension. Different accounts can bind different profiles.",
+          "addBinding": "Add binding",
+          "noBindings": "No per-dimension bindings. The router/default profile above is used.",
+          "clientTypePlaceholder": "client (e.g. codex-cli)",
+          "defaultOS": "Default OS",
+          "defaultOSNone": "Not set (use profile above)",
+          "defaultOSHint": "No inbound User-Agent on this platform; pick the OS dimension this account simulates.",
+          "duplicateBinding": "Duplicate TLS binding dimensions are ignored; keep each OS/client type unique."
         },
         "sessionIdMasking": {
           "label": "Session ID Masking",
@@ -5328,7 +5353,11 @@
         "requestType": "Type",
         "requestTypeSync": "Sync",
         "requestTypeStream": "Stream",
-        "requestTypeWs": "WS"
+        "requestTypeWs": "WS",
+        "requestTypeImage": "Image",
+        "requestTypeImageWebBridge": "Images2API",
+        "requestTypeCyber": "Cyber",
+        "requestTypeVideo": "Video"
       },
       "errorDetails": {
         "upstreamErrors": "Upstream Errors",
@@ -5422,6 +5451,10 @@
         "requestTypeSync": "Sync",
         "requestTypeStream": "Stream",
         "requestTypeWs": "WebSocket",
+        "requestTypeImage": "Image",
+        "requestTypeImageWebBridge": "Images2API",
+        "requestTypeCyber": "Cyber",
+        "requestTypeVideo": "Video",
         "modelMapping": "Model Mapping",
         "timings": "Timings",
         "auth": "Auth",

@@ -547,6 +547,7 @@ const getRequestTypeLabel = (log: AdminUsageLog): string => {
   if (requestType === 'stream') return t('usage.stream')
   if (requestType === 'image_web_bridge') return t('usage.imageWebBridge')
   if (requestType === 'image') return t('usage.image')
+  if (requestType === 'video') return t('usage.video')
   if (requestType === 'sync') return t('usage.sync')
   return t('usage.unknown')
 }
@@ -693,6 +694,7 @@ const toRFC3339 = (d: string | undefined, endOfDay = false): string | undefined 
 
 const loadAdminErrors = async () => {
   errLoading.value = true
+  const sharedFilters = buildSharedFilterParams()
   try {
     const resp = await listErrorLogs({
       page: errPage.value,
@@ -705,6 +707,8 @@ const loadAdminErrors = async () => {
       account_id: filters.value.account_id ?? undefined,
       group_id: filters.value.group_id ?? undefined,
       model: filters.value.model || undefined,
+      request_type: sharedFilters.request_type ?? undefined,
+      stream: sharedFilters.stream ?? undefined,
     })
     errRows.value = resp.items
     errTotal.value = resp.total

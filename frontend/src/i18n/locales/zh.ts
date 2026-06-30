@@ -428,6 +428,8 @@ export default {
     mySubscriptions: '我的订阅',
     buySubscription: '充值/订阅',
     docs: '文档',
+    helpDocs: '帮助文档',
+    downloadTools: '下载工具',
     myOrders: '我的订单',
     myInvoices: '我的发票',
     invoiceDetail: '发票详情',
@@ -1528,7 +1530,10 @@ export default {
     ws: 'WS',
     stream: '流式',
     sync: '同步',
+    image: '图片',
+    imageWebBridge: 'Images2API',
     cyber: '安全策略',
+    video: '视频',
     unknown: '未知',
     in: '输入',
     out: '输出',
@@ -3040,6 +3045,12 @@ export default {
       imagePricing: {
         title: '图片生成计费',
         description: '配置图片生成能力和图片基础单价，留空则使用默认价格',
+        routeLabel: '生图类型',
+        routeHint: 'images 端点只走 codex。',
+        routeNativeHint: 'Grok 生图请求走供应商原生路由。',
+        routeNative: '供应商原生',
+        routeCodex: 'codex',
+        routeWeb2API: 'web2api',
         images: 'Images API',
         fixedHint: '按分组固定价格计费，不受倍率影响。',
         allowImageGeneration: '允许当前分组生图',
@@ -3054,7 +3065,6 @@ export default {
       tier1kPrice: '1K（美元）',
       tier2kPrice: '2K（美元）',
       tier4kPrice: '4K（美元）',
-      routeNativeHint: 'Grok 生图请求走供应商原生路由。',
       notConfigured: '未配置'
       },
       explicitPricing: {
@@ -3068,8 +3078,8 @@ export default {
       },
       videoPricing: {
         title: '视频生成计费',
-        description: '配置供应商原生视频生成能力和按分辨率计费的每秒单价。',
-        allowVideoGeneration: '允许当前分组生成视频',
+        description: '仅配置 Grok/xAI 原生 Videos 能力和按分辨率计费的每秒单价。',
+        allowVideoGeneration: '允许当前 Grok 分组生成视频',
         routeLabel: '视频路由',
         routeNative: '供应商原生',
         pricePerSecond: '每秒单价',
@@ -6261,7 +6271,11 @@ export default {
         requestType: '类型',
         requestTypeSync: '同步',
         requestTypeStream: '流式',
-        requestTypeWs: 'WS'
+        requestTypeWs: 'WS',
+        requestTypeImage: '图片',
+        requestTypeImageWebBridge: 'Images2API',
+        requestTypeCyber: '安全策略',
+        requestTypeVideo: '视频'
       },
       // Error Details Modal
       errorDetails: {
@@ -6357,6 +6371,10 @@ export default {
         requestTypeSync: '同步',
         requestTypeStream: '流式',
         requestTypeWs: 'WebSocket',
+        requestTypeImage: '图片',
+        requestTypeImageWebBridge: 'Images2API',
+        requestTypeCyber: '安全策略',
+        requestTypeVideo: '视频',
         modelMapping: '模型映射',
         timings: '时序信息',
         auth: '认证',

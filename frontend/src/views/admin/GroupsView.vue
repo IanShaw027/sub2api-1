@@ -1037,8 +1037,8 @@
           </template>
         </div>
 
-        <!-- 视频生成计费配置（通用平台能力） -->
-        <div class="border-t pt-4">
+        <!-- 视频生成计费配置（仅 Grok native videos） -->
+        <div v-if="isGrokGroupPlatform(createForm.platform)" class="border-t pt-4">
           <label class="block mb-2 font-medium text-gray-700 dark:text-gray-300">
             {{ t("admin.groups.videoPricing.title") }}
           </label>
@@ -1123,7 +1123,7 @@
           </div>
         </div>
 
-        <!-- 支持的模型系列（仅 antigravity 平台） -->
+        <!-- 支持的模型系列 -->
         <!-- 搜索/音频显式定价（仅 Grok 平台） -->
         <div v-if="isGrokGroupPlatform(createForm.platform)" class="border-t pt-4">
           <label class="block mb-2 font-medium text-gray-700 dark:text-gray-300">
@@ -2627,8 +2627,8 @@
           </template>
         </div>
 
-        <!-- 视频生成计费配置（通用平台能力） -->
-        <div class="border-t pt-4">
+        <!-- 视频生成计费配置（仅 Grok native videos） -->
+        <div v-if="isGrokGroupPlatform(editForm.platform)" class="border-t pt-4">
           <label class="block mb-2 font-medium text-gray-700 dark:text-gray-300">
             {{ t("admin.groups.videoPricing.title") }}
           </label>
@@ -2713,7 +2713,7 @@
           </div>
         </div>
 
-        <!-- 支持的模型系列（仅 antigravity 平台） -->
+        <!-- 支持的模型系列 -->
         <!-- 搜索/音频显式定价（仅 Grok 平台） -->
         <div v-if="isGrokGroupPlatform(editForm.platform)" class="border-t pt-4">
           <label class="block mb-2 font-medium text-gray-700 dark:text-gray-300">
@@ -3958,7 +3958,7 @@ const createForm = reactive({
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
-  // 视频生成计费配置（通用平台能力）
+  // 视频生成计费配置（仅 Grok/xAI native videos）
   allow_video_generation: false,
   video_generation_route: "native" as VideoGenerationRoute,
   video_price_480p_per_sec: null as number | null,
@@ -3985,7 +3985,7 @@ const createForm = reactive({
   require_privacy_set: false,
   // 模型路由开关
   model_routing_enabled: false,
-  // 支持的模型系列（仅 antigravity 平台）
+  // 支持的模型系列
   supported_model_scopes: ["claude", "gemini_text", "gemini_image"] as string[],
   // MCP XML 协议注入开关（仅 antigravity 平台）
   mcp_xml_inject: true,
@@ -4305,7 +4305,7 @@ const editForm = reactive({
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
-  // 视频生成计费配置（通用平台能力）
+  // 视频生成计费配置（仅 Grok/xAI native videos）
   allow_video_generation: false,
   video_generation_route: "native" as VideoGenerationRoute,
   video_price_480p_per_sec: null as number | null,
@@ -4333,7 +4333,7 @@ const editForm = reactive({
   require_privacy_set: false,
   // 模型路由开关
   model_routing_enabled: false,
-  // 支持的模型系列（仅 antigravity 平台）
+  // 支持的模型系列
   supported_model_scopes: ["claude", "gemini_text", "gemini_image"] as string[],
   // MCP XML 协议注入开关（仅 antigravity 平台）
   mcp_xml_inject: true,
@@ -4713,7 +4713,17 @@ const deriveExplicitMediaPricingFormState = (
   audio_stt_price_per_hour: group.audio_stt_price_per_hour ?? null,
 });
 
-const normalizeExplicitMediaPricingPayload = (payload: Partial<ExplicitMediaPricingFormState>) => {
+const normalizeExplicitMediaPricingPayload = (
+  payload: Partial<ExplicitMediaPricingFormState> & { platform?: string },
+) => {
+  if (!isGrokGroupPlatform(payload.platform || "")) {
+    payload.search_price_per_1k = null;
+    payload.audio_realtime_price_per_min = null;
+    payload.audio_tts_price_per_million_chars = null;
+    payload.audio_stt_price_per_hour = null;
+    return;
+  }
+
   payload.search_price_per_1k = normalizeNullablePrice(payload.search_price_per_1k);
   payload.audio_realtime_price_per_min = normalizeNullablePrice(payload.audio_realtime_price_per_min);
   payload.audio_tts_price_per_million_chars = normalizeNullablePrice(payload.audio_tts_price_per_million_chars);
@@ -4741,6 +4751,16 @@ const deriveVideoPricingFormState = (group: AdminGroup): VideoPricingFormState =
 const normalizeVideoPricingPayload = (
   payload: Partial<VideoPricingFormState> & { platform?: string },
 ) => {
+  if (!isGrokGroupPlatform(payload.platform || "")) {
+    payload.allow_video_generation = false;
+    payload.video_generation_route = "native";
+    payload.video_price_480p_per_sec = null;
+    payload.video_price_720p_per_sec = null;
+    payload.video_price_1080p_per_sec = null;
+    payload.video_price_4k_per_sec = null;
+    return;
+  }
+
   if (payload.allow_video_generation !== true) {
     payload.allow_video_generation = false;
     payload.video_generation_route = "native";
@@ -5122,6 +5142,10 @@ watch(
       createForm.require_oauth_only = false;
       createForm.require_privacy_set = false;
     }
+    if (!isGrokGroupPlatform(newVal)) {
+      resetVideoPricingFormState(createForm);
+      resetExplicitMediaPricingFormState(createForm);
+    }
     resetModelsListState(createModelsListState);
     loadModelsListCandidates("create", 0, newVal);
   },
@@ -5139,6 +5163,10 @@ watch(
     if (!["openai", "antigravity", "anthropic", "gemini"].includes(newVal)) {
       editForm.require_oauth_only = false;
       editForm.require_privacy_set = false;
+    }
+    if (!isGrokGroupPlatform(newVal)) {
+      resetVideoPricingFormState(editForm);
+      resetExplicitMediaPricingFormState(editForm);
     }
     if (editingGroup.value) {
       resetModelsListState(editModelsListState, editForm.platform === editingGroup.value.platform ? editingGroup.value.models_list_config : undefined);

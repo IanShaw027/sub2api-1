@@ -423,6 +423,10 @@ describe('admin GroupsView edit hydration', () => {
           video_price_720p_per_sec: 0.02,
           video_price_1080p_per_sec: 0.03,
           video_price_4k_per_sec: 0.04,
+          search_price_per_1k: 5,
+          audio_realtime_price_per_min: 0.2,
+          audio_tts_price_per_million_chars: 1.5,
+          audio_stt_price_per_hour: 3,
           refund_rate_multiplier: 2.5
         } as any
       ],
@@ -449,12 +453,16 @@ describe('admin GroupsView edit hydration', () => {
       image_price_1k: 0.25,
       image_price_2k: 0.35,
       image_price_4k: 0.45,
-      allow_video_generation: true,
+      allow_video_generation: false,
       video_generation_route: 'native',
-      video_price_480p_per_sec: 0.01,
-      video_price_720p_per_sec: 0.02,
-      video_price_1080p_per_sec: 0.03,
-      video_price_4k_per_sec: 0.04
+      video_price_480p_per_sec: null,
+      video_price_720p_per_sec: null,
+      video_price_1080p_per_sec: null,
+      video_price_4k_per_sec: null,
+      search_price_per_1k: null,
+      audio_realtime_price_per_min: null,
+      audio_tts_price_per_million_chars: null,
+      audio_stt_price_per_hour: null
     })
     expect(updateGroup.mock.calls[0][1]).not.toHaveProperty('images2api_price_1k')
     expect(updateGroup.mock.calls[0][1]).not.toHaveProperty('images2api_price_2k')

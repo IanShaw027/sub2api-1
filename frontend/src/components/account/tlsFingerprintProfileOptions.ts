@@ -2,6 +2,7 @@ export interface TLSFingerprintProfileOption {
   id: number
   name: string
   platform?: string | null
+  transport?: string | null
   os?: string | null
   client_type?: string | null
 }
@@ -17,6 +18,27 @@ export function normalizeTLSFingerprintProfilePlatform(platform: unknown): strin
 
 function normalizeDimensionValue(value: unknown): string {
   return typeof value === 'string' ? value.trim().toLowerCase() : ''
+}
+
+function tlsFingerprintTransportMatchesContext(profileTransport: unknown, contextTransport: unknown): boolean {
+  const profile = normalizeDimensionValue(profileTransport)
+  const context = normalizeDimensionValue(contextTransport)
+  if (!profile) {
+    return true
+  }
+  if (!context) {
+    return true
+  }
+  if (profile === context) {
+    return true
+  }
+  if (context === 'http') {
+    return profile === 'http1' || profile === 'h2'
+  }
+  if (context === 'websocket') {
+    return profile === 'websocket-http1' || profile === 'websocket-h2'
+  }
+  return false
 }
 
 export function getSelectableTLSFingerprintProfiles(
@@ -39,10 +61,16 @@ export function getSelectableTLSFingerprintProfiles(
       }
     })
     .filter((profile) => {
+      if (normalizedSelectedID != null && profile.id === normalizedSelectedID) {
+        return true
+      }
+      if (!tlsFingerprintTransportMatchesContext(profile.transport, '')) {
+        return false
+      }
       if (!profile.platform || profile.platform === normalizedAccountPlatform) {
         return true
       }
-      return normalizedSelectedID != null && profile.id === normalizedSelectedID
+      return false
     })
 }
 
@@ -57,6 +85,7 @@ export function formatTLSFingerprintProfileOptionLabel(
 
 export interface TLSFingerprintProfileDimensionFilter {
   platform?: string | null
+  transport?: string | null
   os?: string | null
   clientType?: string | null
 }
@@ -72,6 +101,7 @@ export function getTLSFingerprintProfilesForDimension(
   selectedProfileID: number | null | undefined
 ): TLSFingerprintProfileOption[] {
   const wantPlatform = normalizeTLSFingerprintProfilePlatform(filter.platform)
+  const wantTransport = normalizeDimensionValue(filter.transport)
   const wantOS = normalizeDimensionValue(filter.os)
   const wantClient = normalizeDimensionValue(filter.clientType)
   const normalizedSelectedID = typeof selectedProfileID === 'number' && Number.isFinite(selectedProfileID)
@@ -86,17 +116,22 @@ export function getTLSFingerprintProfilesForDimension(
     if (pPlatform && wantPlatform && pPlatform !== wantPlatform) {
       return false
     }
+    if (!tlsFingerprintTransportMatchesContext(profile.transport, wantTransport)) {
+      return false
+    }
     if (wantOS) {
       const pOS = normalizeDimensionValue(profile.os)
       if (pOS && pOS !== wantOS) {
         return false
       }
     }
+    const pClient = normalizeDimensionValue(profile.client_type)
     if (wantClient) {
-      const pClient = normalizeDimensionValue(profile.client_type)
       if (pClient && pClient !== wantClient) {
         return false
       }
+    } else if (pClient) {
+      return false
     }
     return true
   })

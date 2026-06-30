@@ -381,6 +381,8 @@
     "mySubscriptions": "我的订阅",
     "buySubscription": "充值/订阅",
     "docs": "文档",
+    "helpDocs": "帮助文档",
+    "downloadTools": "下载工具",
     "myOrders": "我的订单",
     "orderManagement": "订单管理",
     "paymentDashboard": "支付概览",
@@ -1569,6 +1571,8 @@
     "sync": "同步",
     "image": "图片",
     "imageWebBridge": "Images2API",
+    "cyber": "安全策略",
+    "video": "视频",
     "unknown": "未知",
     "in": "输入",
     "out": "输出",
@@ -2889,6 +2893,18 @@
         "tier4kPrice": "4K（美元）",
         "notConfigured": "未配置"
       },
+      "videoPricing": {
+        "title": "视频生成计费",
+        "description": "仅配置 Grok/xAI 原生 Videos 能力和按分辨率计费的每秒单价。",
+        "allowVideoGeneration": "允许当前 Grok 分组生成视频",
+        "routeLabel": "视频路由",
+        "routeNative": "供应商原生",
+        "pricePerSecond": "每秒单价",
+        "tier480pPrice": "480p（美元/秒）",
+        "tier720pPrice": "720p（美元/秒）",
+        "tier1080pPrice": "1080p（美元/秒）",
+        "tier4kPrice": "4K（美元/秒）"
+      },
       "claudeCode": {
         "title": "Claude Code 客户端限制",
         "tooltip": "启用后，此分组仅允许 Claude Code 官方客户端访问。非 Claude Code 请求将被拒绝或降级到指定分组。",
@@ -4022,7 +4038,16 @@
           "profileLabel": "指纹模板",
           "profileHint": "选择共享模板、随机模板，或使用账号默认设置。",
           "routerLabel": "指纹路由器",
-          "useDefault": "使用默认"
+          "useDefault": "使用默认",
+          "bindingMatrix": "按 OS / 客户端 绑定模板",
+          "bindingMatrixHint": "路由器判定请求对应哪个 OS/客户端；此矩阵决定本账号在该维度使用哪个模板。不同账号可绑定不同模板。",
+          "addBinding": "添加绑定",
+          "noBindings": "未配置分维度绑定，将使用上方的路由/默认模板。",
+          "clientTypePlaceholder": "客户端（如 codex-cli）",
+          "defaultOS": "默认操作系统",
+          "defaultOSNone": "未设置（用上方模板）",
+          "defaultOSHint": "该平台无入站 User-Agent，请选择本账号模拟的 OS 维度。",
+          "duplicateBinding": "重复的 TLS 绑定维度会被忽略；请保持每个 OS/客户端类型唯一。"
         },
         "sessionIdMasking": {
           "label": "会话 ID 伪装",
@@ -5517,7 +5542,11 @@
         "requestType": "类型",
         "requestTypeSync": "同步",
         "requestTypeStream": "流式",
-        "requestTypeWs": "WS"
+        "requestTypeWs": "WS",
+        "requestTypeImage": "图片",
+        "requestTypeImageWebBridge": "Images2API",
+        "requestTypeCyber": "安全策略",
+        "requestTypeVideo": "视频"
       },
       "errorDetails": {
         "upstreamErrors": "上游错误",
@@ -5611,6 +5640,10 @@
         "requestTypeSync": "同步",
         "requestTypeStream": "流式",
         "requestTypeWs": "WebSocket",
+        "requestTypeImage": "图片",
+        "requestTypeImageWebBridge": "Images2API",
+        "requestTypeCyber": "安全策略",
+        "requestTypeVideo": "视频",
         "modelMapping": "模型映射",
         "timings": "时序信息",
         "auth": "认证",

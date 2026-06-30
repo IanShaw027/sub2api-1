@@ -65,6 +65,7 @@ describe("groupsOpenAIImagePricing", () => {
 
     expect(payload.image_generation_route).toBe("native");
     expect(payload.image_rate_independent).toBe(false);
+    expect(payload.image_rate_multiplier).toBe(1);
     expect("openai_image_codex_enabled" in payload).toBe(false);
   });
 
@@ -108,6 +109,7 @@ describe("groupsOpenAIImagePricing", () => {
     const formState = deriveOpenAIImageFormState({
       platform: "anthropic",
       allow_image_generation: true,
+      image_generation_route: "web2api",
       image_rate_independent: true,
       image_rate_multiplier: 3,
       image_price_1k: 0.3,
@@ -116,6 +118,7 @@ describe("groupsOpenAIImagePricing", () => {
     });
 
     expect(formState.openai_image_codex_enabled).toBe(false);
+    expect(formState.image_generation_route).toBe("web2api");
     expect(formState.image_rate_independent).toBe(true);
     expect(formState.image_rate_multiplier).toBe(3);
     expect(formState.image_price_1k).toBe(0.3);
@@ -135,15 +138,17 @@ describe("groupsOpenAIImagePricing", () => {
     expect(formState.openai_image_codex_enabled).toBe(false);
   });
 
-  it("forces Grok payloads to native route handling through hydration only", () => {
+  it("forces Grok payloads to native route and non-independent pricing through hydration", () => {
     const formState = deriveOpenAIImageFormState({
       platform: "grok",
       allow_image_generation: true,
       image_generation_route: "codex",
       image_rate_independent: true,
+      image_rate_multiplier: 2.5,
     });
 
     expect(formState.image_generation_route).toBe("native");
-    expect(formState.image_rate_independent).toBe(true);
+    expect(formState.image_rate_independent).toBe(false);
+    expect(formState.image_rate_multiplier).toBe(1);
   });
 });

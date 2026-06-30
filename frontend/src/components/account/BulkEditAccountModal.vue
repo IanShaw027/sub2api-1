@@ -1225,7 +1225,7 @@
               </p>
             </div>
 
-            <div>
+            <div v-if="allTLSFingerprintRouterCapable">
               <label class="input-label text-xs">
                 {{ t('admin.accounts.quotaControl.tlsFingerprint.routerLabel') }}
               </label>
@@ -1442,7 +1442,7 @@ const allAnthropicOAuthOrSetupToken = computed(() => {
   )
 })
 
-// 是否全部支持 TLS 指纹（Anthropic OAuth/SetupToken、OpenAI、Kiro OAuth）
+// 是否全部支持 TLS 指纹（Anthropic OAuth/SetupToken、OpenAI OAuth/APIKey、Kiro OAuth）
 const allTLSFingerprintCapable = computed(() => {
   if (targetSelectedPlatforms.value.length === 0) return false
 
@@ -1456,10 +1456,12 @@ const allTLSFingerprintCapable = computed(() => {
     return true
   }
 
-  // OpenAI (any type)
+  // OpenAI OAuth/APIKey
   if (
     targetSelectedPlatforms.value.length === 1 &&
-    targetSelectedPlatforms.value[0] === 'openai'
+    targetSelectedPlatforms.value[0] === 'openai' &&
+    targetSelectedTypes.value.length > 0 &&
+    targetSelectedTypes.value.every(t => t === 'oauth' || t === 'apikey')
   ) {
     return true
   }
@@ -1486,6 +1488,11 @@ const allTLSFingerprintCapable = computed(() => {
 
   return false
 })
+
+const allTLSFingerprintRouterCapable = computed(() =>
+  targetSelectedPlatforms.value.length === 1 &&
+  (targetSelectedPlatforms.value[0] === 'openai' || targetSelectedPlatforms.value[0] === 'grok')
+)
 
 const filteredPresets = computed(() => {
   if (targetSelectedPlatforms.value.length === 0) return []
@@ -1920,6 +1927,8 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     const extra = ensureExtra()
     if (tlsFingerprintEnabled.value) {
       extra.enable_tls_fingerprint = true
+      extra.tls_fingerprint_bindings = null
+      extra.tls_fingerprint_default_os = null
       // Profile ID: -1 表示随机选择，null 表示不设置
       if (tlsFingerprintProfileId.value === -1 || (tlsFingerprintProfileId.value && tlsFingerprintProfileId.value > 0)) {
         extra.tls_fingerprint_profile_id = tlsFingerprintProfileId.value
@@ -1927,7 +1936,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
         extra.tls_fingerprint_profile_id = null
       }
       // Router ID: 只有当用户选择了路由器时才设置
-      if (tlsFingerprintRouterId.value && tlsFingerprintRouterId.value > 0) {
+      if (allTLSFingerprintRouterCapable.value && tlsFingerprintRouterId.value && tlsFingerprintRouterId.value > 0) {
         extra.tls_fingerprint_router_id = tlsFingerprintRouterId.value
       } else {
         extra.tls_fingerprint_router_id = null
@@ -1937,6 +1946,8 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
       extra.enable_tls_fingerprint = false
       extra.tls_fingerprint_profile_id = null
       extra.tls_fingerprint_router_id = null
+      extra.tls_fingerprint_bindings = null
+      extra.tls_fingerprint_default_os = null
     }
   }
 
@@ -2101,7 +2112,14 @@ const handleMixedChannelCancel = () => {
 
 // Load TLS Fingerprint configurations
 tlsFingerprintProfileAPI.list().then((profiles) => {
-  tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name, platform: p.platform }))
+  tlsFingerprintProfiles.value = profiles.map(p => ({
+    id: p.id,
+    name: p.name,
+    platform: p.platform,
+    transport: p.transport,
+    os: p.os,
+    client_type: p.client_type
+  }))
 }).catch(err => {
   console.error('Failed to load TLS fingerprint profiles:', err)
 })
@@ -2139,6 +2157,7 @@ watch(
       enableOpenAICompactMode.value = false
       enableOpenAICompactModelMapping.value = false
       enableRpmLimit.value = false
+      enableTLSFingerprint.value = false
 
       // Reset all values
       baseUrl.value = ''
@@ -2169,6 +2188,9 @@ watch(
       bulkRpmStrategy.value = 'tiered'
       bulkRpmStickyBuffer.value = null
       userMsgQueueMode.value = null
+      tlsFingerprintEnabled.value = false
+      tlsFingerprintProfileId.value = null
+      tlsFingerprintRouterId.value = null
 
       // Reset mixed channel warning state
       showMixedChannelWarning.value = false

@@ -719,6 +719,30 @@ describe('CreateAccountModal', () => {
     expect(createMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('text_endpoint_auto_route')
   })
 
+
+
+  it('hides disabled TLS fingerprint routers when creating OpenAI accounts', async () => {
+    listTlsFingerprintProfilesMock.mockResolvedValue([{ id: 12, name: 'Chrome 124' }])
+    listTlsFingerprintRoutersMock.mockResolvedValue([
+      { id: 9, name: 'Enabled Router', enabled: true },
+      { id: 10, name: 'Disabled Router', enabled: false }
+    ])
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await findAccountTypeButton(wrapper, 1).trigger('click')
+    await nextTick()
+
+    await wrapper.get('[data-testid="openai-tls-fingerprint-toggle"]').trigger('click')
+    await flushPromises()
+
+    const routerSelect = wrapper.get('[data-testid="openai-tls-fingerprint-router"]')
+    expect(routerSelect.text()).toContain('Enabled Router')
+    expect(routerSelect.text()).not.toContain('Disabled Router')
+  })
+
   it('creates an OpenAI API key account with TLS fingerprint settings', async () => {
     listTlsFingerprintProfilesMock.mockResolvedValue([{ id: 12, name: 'Chrome 124' }])
     listTlsFingerprintRoutersMock.mockResolvedValue([{ id: 9, name: 'UA Router' }])
@@ -751,6 +775,72 @@ describe('CreateAccountModal', () => {
         enable_tls_fingerprint: true,
         tls_fingerprint_profile_id: 12,
         tls_fingerprint_router_id: 9
+      })
+    }))
+  })
+
+  it('creates a Grok OAuth account from auth code with TLS fingerprint router settings', async () => {
+    listTlsFingerprintProfilesMock.mockResolvedValue([{ id: 15, name: 'Grok CLI' }])
+    listTlsFingerprintRoutersMock.mockResolvedValue([{ id: 9, name: 'UA Router' }])
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'Grok').trigger('click')
+    await nextTick()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="grok-tls-fingerprint-toggle"]').trigger('click')
+    await nextTick()
+    expect(wrapper.get('[data-testid="grok-tls-fingerprint-profile"]').text()).toContain('Grok CLI')
+    await wrapper.get('[data-testid="grok-tls-fingerprint-profile"]').setValue('15')
+    expect(wrapper.get('[data-testid="grok-tls-fingerprint-router"]').text()).toContain('UA Router')
+    await wrapper.get('[data-testid="grok-tls-fingerprint-router"]').setValue('9')
+    await wrapper.get('[data-testid="grok-tls-fingerprint-default-os"]').setValue('macos')
+
+    await (wrapper.vm as any).handleGrokExchange('auth-code')
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      platform: 'grok',
+      type: 'oauth',
+      extra: expect.objectContaining({
+        email: 'grok-owner@example.com',
+        enable_tls_fingerprint: true,
+        tls_fingerprint_profile_id: 15,
+        tls_fingerprint_router_id: 9,
+        tls_fingerprint_default_os: 'macos'
+      })
+    }))
+  })
+
+  it('creates a Grok OAuth account from manual refresh token with TLS fingerprint router settings', async () => {
+    listTlsFingerprintProfilesMock.mockResolvedValue([{ id: 15, name: 'Grok CLI' }])
+    listTlsFingerprintRoutersMock.mockResolvedValue([{ id: 9, name: 'UA Router' }])
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'Grok').trigger('click')
+    await nextTick()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="grok-tls-fingerprint-toggle"]').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="grok-tls-fingerprint-profile"]').setValue('15')
+    await wrapper.get('[data-testid="grok-tls-fingerprint-router"]').setValue('9')
+    await wrapper.get('[data-testid="grok-tls-fingerprint-default-os"]').setValue('linux')
+
+    await (wrapper.vm as any).handleGrokValidateRT('rt-manual')
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      platform: 'grok',
+      type: 'oauth',
+      extra: expect.objectContaining({
+        email: 'grok-owner@example.com',
+        enable_tls_fingerprint: true,
+        tls_fingerprint_profile_id: 15,
+        tls_fingerprint_router_id: 9,
+        tls_fingerprint_default_os: 'linux'
       })
     }))
   })
@@ -1107,6 +1197,7 @@ describe('CreateAccountModal', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="kiro-tls-fingerprint-profile"]').text()).toContain('Chrome 124')
     await wrapper.get('[data-testid="kiro-tls-fingerprint-profile"]').setValue('12')
+    await wrapper.get('[data-testid="kiro-tls-fingerprint-default-os"]').setValue('windows')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
@@ -1125,7 +1216,8 @@ describe('CreateAccountModal', () => {
       type: 'oauth',
       extra: expect.objectContaining({
         enable_tls_fingerprint: true,
-        tls_fingerprint_profile_id: 12
+        tls_fingerprint_profile_id: 12,
+        tls_fingerprint_default_os: 'windows'
       })
     }))
     expect(createMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('tls_fingerprint_router_id')

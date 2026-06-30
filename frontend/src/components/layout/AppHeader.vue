@@ -23,22 +23,34 @@
 
       <!-- Right: Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
       <div class="flex items-center gap-3">
-        <SupportQRCodesButton :entries="supportQRCodes" :legacy-contact-info="contactInfo" />
-
-        <!-- Announcement Bell -->
-        <AnnouncementBell v-if="user" />
-
-        <!-- Docs Link -->
+        <!-- Help Docs -->
         <a
-          v-if="docUrl"
-          :href="docUrl"
+          v-if="helpDocsUrl"
+          :href="helpDocsUrl"
           target="_blank"
           rel="noopener noreferrer"
           class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
         >
           <Icon name="book" size="sm" />
-          <span class="hidden sm:inline">{{ t('nav.docs') }}</span>
+          <span class="hidden sm:inline">{{ t('nav.helpDocs') }}</span>
         </a>
+
+        <!-- Download Tools -->
+        <a
+          v-if="downloadToolsUrl"
+          :href="downloadToolsUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+        >
+          <Icon name="download" size="sm" />
+          <span class="hidden sm:inline">{{ t('nav.downloadTools') }}</span>
+        </a>
+
+        <SupportQRCodesButton :entries="supportQRCodes" :legacy-contact-info="contactInfo" />
+
+        <!-- Announcement Bell -->
+        <AnnouncementBell v-if="user" />
 
         <!-- Language Switcher -->
         <LocaleSwitcher />
@@ -213,8 +225,12 @@ const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
 const supportQRCodes = computed(() => appStore.supportQRCodes)
-const docUrl = computed(() => appStore.docUrl)
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
+const helpDocsUrl = computed(() => (appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '').trim())
+const downloadToolsUrl = computed(() => {
+  const base = helpDocsUrl.value.replace(/\/+$/, '')
+  return base ? `${base}/cli` : ''
+})
 
 // 只在标准模式的管理员下显示新手引导按钮
 const showOnboardingButton = computed(() => {

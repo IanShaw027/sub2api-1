@@ -182,6 +182,7 @@ describe('admin UsageView distribution metric toggles', () => {
     getSnapshotV2.mockReset()
     getModelStats.mockReset()
     getById.mockReset()
+    listErrorLogs.mockReset()
 
     list.mockResolvedValue({
       items: [],
@@ -204,10 +205,63 @@ describe('admin UsageView distribution metric toggles', () => {
       models: [],
       groups: [],
     })
+    listErrorLogs.mockResolvedValue({ items: [], total: 0, pages: 0 })
   })
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+
+
+  it('passes shared request_type and legacy stream filters to the error tab', async () => {
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          UsageStatsCards: true,
+          UsageFilters: UsageFiltersStub,
+          UsageTable: true,
+          UsageExportProgress: true,
+          UsageCleanupDialog: true,
+          UserBalanceHistoryModal: true,
+          Pagination: true,
+          Select: true,
+          DateRangePicker: true,
+          Icon: true,
+          TokenUsageTrend: true,
+          EndpointDistributionChart: true,
+          ModelDistributionChart: ModelDistributionChartStub,
+          GroupDistributionChart: GroupDistributionChartStub,
+          OpsErrorLogTable: { template: '<div data-test="ops-errors" />' },
+          OpsErrorDetailModal: true,
+        },
+      },
+    })
+
+    ;(wrapper.vm as any).filters = {
+      ...(wrapper.vm as any).filters,
+      user_id: 42,
+      api_key_id: 7,
+      account_id: 9,
+      group_id: 11,
+      model: 'gpt-4.1',
+      request_type: 'image',
+      stream: true,
+    }
+    ;(wrapper.vm as any).switchToErrorsTab()
+    await flushPromises()
+
+    expect(listErrorLogs).toHaveBeenCalledWith(expect.objectContaining({
+      view: 'all',
+      user_id: 42,
+      api_key_id: 7,
+      account_id: 9,
+      group_id: 11,
+      model: 'gpt-4.1',
+      request_type: 'image',
+      stream: false,
+    }))
   })
 
   it('keeps previous model stats visible during refresh until new data arrives', async () => {

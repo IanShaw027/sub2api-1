@@ -48,6 +48,7 @@ const messages: Record<string, string> = {
   'usage.time': 'Time',
   'usage.userAgent': 'User Agent',
   'usage.endpoint': 'Endpoint',
+  'usage.video': 'Video',
 }
 
 vi.mock('@/api', () => ({
@@ -214,6 +215,67 @@ describe('user UsageView tooltip', () => {
     expect(text).toContain('$0.092883')
     expect(text).toContain('$5.0000 / 1M tokens')
     expect(text).toContain('$30.0000 / 1M tokens')
+  })
+
+  it('labels video usage rows as video requests', async () => {
+    query.mockResolvedValue({
+      items: [
+        {
+          request_id: 'req-user-video',
+          model: 'grok-4.3',
+          request_type: 'video',
+          actual_cost: 0,
+          total_cost: 0,
+          rate_multiplier: 1,
+          service_tier: null,
+          input_cost: 0,
+          output_cost: 0,
+          cache_creation_cost: 0,
+          cache_read_cost: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_creation_tokens: 0,
+          cache_read_tokens: 0,
+          cache_creation_5m_tokens: 0,
+          cache_creation_1h_tokens: 0,
+          image_count: 0,
+          image_size: null,
+          first_token_ms: null,
+          duration_ms: 1,
+          created_at: '2026-03-08T00:00:00Z',
+        },
+      ],
+      total: 1,
+      pages: 1,
+    })
+    getStatsByDateRange.mockResolvedValue({
+      total_requests: 1,
+      total_tokens: 0,
+      total_cost: 0,
+      avg_duration_ms: 1,
+    })
+    list.mockResolvedValue({ items: [] })
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          TablePageLayout: TablePageLayoutStub,
+          Pagination: true,
+          EmptyState: true,
+          DataTable: DataTableStub,
+          Select: true,
+          DateRangePicker: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await nextTick()
+
+    expect(wrapper.text()).toContain('Video')
   })
 
   it('exports csv with input and output unit price columns', async () => {

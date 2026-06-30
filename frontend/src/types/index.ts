@@ -772,7 +772,7 @@ export interface Group {
   image_price_1k: number | null
   image_price_2k: number | null
   image_price_4k: number | null
-  // 视频生成计费配置
+  // 视频生成计费配置（仅 Grok/xAI native videos）
   allow_video_generation: boolean
   video_generation_route: VideoGenerationRoute
   video_price_480p_per_sec: number | null
@@ -1663,7 +1663,7 @@ export interface ArchiveImportResult {
 // ==================== Usage & Redeem Types ====================
 
 export type RedeemCodeType = 'balance' | 'concurrency' | 'subscription' | 'invitation'
-export type UsageRequestType = 'unknown' | 'sync' | 'stream' | 'ws_v2' | 'image' | 'image_web_bridge' | 'cyber'
+export type UsageRequestType = 'unknown' | 'sync' | 'stream' | 'ws_v2' | 'image' | 'image_web_bridge' | 'cyber' | 'video'
 export type ImageSizeSource = 'output' | 'input' | 'default' | 'legacy'
 export type ImageSizeBreakdown = Record<string, number>
 

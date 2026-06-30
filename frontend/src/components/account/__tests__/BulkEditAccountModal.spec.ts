@@ -4,6 +4,14 @@ import BulkEditAccountModal from '../BulkEditAccountModal.vue'
 import ModelWhitelistSelector from '../ModelWhitelistSelector.vue'
 import { adminAPI } from '@/api/admin'
 
+const {
+  listTlsFingerprintProfilesMock,
+  listTlsFingerprintRoutersMock
+} = vi.hoisted(() => ({
+  listTlsFingerprintProfilesMock: vi.fn(),
+  listTlsFingerprintRoutersMock: vi.fn()
+}))
+
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
     showError: vi.fn(),
@@ -23,6 +31,14 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/api/admin/accounts', () => ({
   getAntigravityDefaultModelMapping: vi.fn()
+}))
+
+vi.mock('@/api/admin/tlsFingerprintProfile', () => ({
+  list: listTlsFingerprintProfilesMock
+}))
+
+vi.mock('@/api/admin/tlsFingerprintRouter', () => ({
+  list: listTlsFingerprintRoutersMock
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -77,6 +93,8 @@ describe('BulkEditAccountModal', () => {
   beforeEach(() => {
     vi.mocked(adminAPI.accounts.bulkUpdate).mockReset()
     vi.mocked(adminAPI.accounts.checkMixedChannelRisk).mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    listTlsFingerprintRoutersMock.mockReset()
 
     vi.mocked(adminAPI.accounts.bulkUpdate).mockResolvedValue({
       success: 2,
@@ -86,6 +104,8 @@ describe('BulkEditAccountModal', () => {
     vi.mocked(adminAPI.accounts.checkMixedChannelRisk).mockResolvedValue({
       has_risk: false
     } as any)
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
+    listTlsFingerprintRoutersMock.mockResolvedValue([{ id: 9, name: 'UA Router', enabled: true }])
   })
 
   it('antigravity 白名单包含 Gemini 图片模型且过滤掉普通 GPT 模型', async () => {
@@ -157,6 +177,189 @@ describe('BulkEditAccountModal', () => {
 
     expect(wrapper.find('#bulk-edit-openai-image-generation-enabled').exists()).toBe(false)
     expect(wrapper.find('#bulk-edit-openai-image-generation-toggle').exists()).toBe(false)
+  })
+
+  it('Bulk TLS router selector only appears for OpenAI and Grok targets', async () => {
+    const openAIWrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+    await flushPromises()
+    ;(openAIWrapper.vm as any).tlsFingerprintEnabled = true
+    await openAIWrapper.vm.$nextTick()
+    expect(openAIWrapper.text()).toContain('admin.accounts.quotaControl.tlsFingerprint.routerLabel')
+
+    const grokWrapper = mountModal({
+      selectedPlatforms: ['grok'],
+      selectedTypes: ['oauth']
+    })
+    await flushPromises()
+    ;(grokWrapper.vm as any).tlsFingerprintEnabled = true
+    await grokWrapper.vm.$nextTick()
+    expect(grokWrapper.text()).toContain('admin.accounts.quotaControl.tlsFingerprint.routerLabel')
+
+    const anthropicWrapper = mountModal({
+      selectedPlatforms: ['anthropic'],
+      selectedTypes: ['oauth']
+    })
+    await flushPromises()
+    ;(anthropicWrapper.vm as any).tlsFingerprintEnabled = true
+    await anthropicWrapper.vm.$nextTick()
+    expect(anthropicWrapper.text()).not.toContain('admin.accounts.quotaControl.tlsFingerprint.routerLabel')
+
+    const kiroWrapper = mountModal({
+      selectedPlatforms: ['kiro'],
+      selectedTypes: ['oauth']
+    })
+    await flushPromises()
+    ;(kiroWrapper.vm as any).tlsFingerprintEnabled = true
+    await kiroWrapper.vm.$nextTick()
+    expect(kiroWrapper.text()).not.toContain('admin.accounts.quotaControl.tlsFingerprint.routerLabel')
+  })
+
+  it('Bulk TLS router is submitted for Grok but not Anthropic or Kiro targets', async () => {
+    const grokWrapper = mountModal({
+      selectedPlatforms: ['grok'],
+      selectedTypes: ['oauth']
+    })
+    await flushPromises()
+    await grokWrapper.get('#bulk-edit-tls-fingerprint-enabled').setValue(true)
+    ;(grokWrapper.vm as any).tlsFingerprintEnabled = true
+    ;(grokWrapper.vm as any).tlsFingerprintProfileId = 15
+    ;(grokWrapper.vm as any).tlsFingerprintRouterId = 9
+    await grokWrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenLastCalledWith([1, 2], {
+      extra: {
+        enable_tls_fingerprint: true,
+        tls_fingerprint_profile_id: 15,
+        tls_fingerprint_router_id: 9,
+        tls_fingerprint_bindings: null,
+        tls_fingerprint_default_os: null
+      }
+    })
+
+    vi.mocked(adminAPI.accounts.bulkUpdate).mockClear()
+    const kiroWrapper = mountModal({
+      selectedPlatforms: ['kiro'],
+      selectedTypes: ['oauth']
+    })
+    await flushPromises()
+    await kiroWrapper.get('#bulk-edit-tls-fingerprint-enabled').setValue(true)
+    ;(kiroWrapper.vm as any).tlsFingerprintEnabled = true
+    ;(kiroWrapper.vm as any).tlsFingerprintProfileId = 15
+    ;(kiroWrapper.vm as any).tlsFingerprintRouterId = 9
+    await kiroWrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenLastCalledWith([1, 2], {
+      extra: {
+        enable_tls_fingerprint: true,
+        tls_fingerprint_profile_id: 15,
+        tls_fingerprint_router_id: null,
+        tls_fingerprint_bindings: null,
+        tls_fingerprint_default_os: null
+      }
+    })
+
+    vi.mocked(adminAPI.accounts.bulkUpdate).mockClear()
+    const anthropicWrapper = mountModal({
+      selectedPlatforms: ['anthropic'],
+      selectedTypes: ['oauth']
+    })
+    await flushPromises()
+    await anthropicWrapper.get('#bulk-edit-tls-fingerprint-enabled').setValue(true)
+    ;(anthropicWrapper.vm as any).tlsFingerprintEnabled = true
+    ;(anthropicWrapper.vm as any).tlsFingerprintProfileId = 15
+    ;(anthropicWrapper.vm as any).tlsFingerprintRouterId = 9
+    await anthropicWrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenLastCalledWith([1, 2], {
+      extra: {
+        enable_tls_fingerprint: true,
+        tls_fingerprint_profile_id: 15,
+        tls_fingerprint_router_id: null,
+        tls_fingerprint_bindings: null,
+        tls_fingerprint_default_os: null
+      }
+    })
+  })
+
+  it('does not offer TLS fingerprint bulk edit for unsupported OpenAI account types', () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['setup-token']
+    })
+
+    expect(wrapper.find('#bulk-edit-tls-fingerprint-enabled').exists()).toBe(false)
+  })
+
+  it('Bulk TLS enable clears stale matrix and default OS fields so the selected profile applies', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+    await flushPromises()
+    await wrapper.get('#bulk-edit-tls-fingerprint-enabled').setValue(true)
+    ;(wrapper.vm as any).tlsFingerprintEnabled = true
+    ;(wrapper.vm as any).tlsFingerprintProfileId = 15
+    ;(wrapper.vm as any).tlsFingerprintRouterId = 9
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenLastCalledWith([1, 2], {
+      extra: {
+        enable_tls_fingerprint: true,
+        tls_fingerprint_profile_id: 15,
+        tls_fingerprint_router_id: 9,
+        tls_fingerprint_bindings: null,
+        tls_fingerprint_default_os: null
+      }
+    })
+  })
+
+  it('Bulk TLS disable clears stale matrix and default OS fields', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+    await flushPromises()
+    await wrapper.get('#bulk-edit-tls-fingerprint-enabled').setValue(true)
+    ;(wrapper.vm as any).tlsFingerprintEnabled = false
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenLastCalledWith([1, 2], {
+      extra: {
+        enable_tls_fingerprint: false,
+        tls_fingerprint_profile_id: null,
+        tls_fingerprint_router_id: null,
+        tls_fingerprint_bindings: null,
+        tls_fingerprint_default_os: null
+      }
+    })
+  })
+
+  it('resets bulk TLS state when modal closes', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+    await flushPromises()
+    ;(wrapper.vm as any).enableTLSFingerprint = true
+    ;(wrapper.vm as any).tlsFingerprintEnabled = true
+    ;(wrapper.vm as any).tlsFingerprintProfileId = 15
+    ;(wrapper.vm as any).tlsFingerprintRouterId = 9
+
+    await wrapper.setProps({ show: false })
+    await flushPromises()
+
+    expect((wrapper.vm as any).enableTLSFingerprint).toBe(false)
+    expect((wrapper.vm as any).tlsFingerprintEnabled).toBe(false)
+    expect((wrapper.vm as any).tlsFingerprintProfileId).toBeNull()
+    expect((wrapper.vm as any).tlsFingerprintRouterId).toBeNull()
   })
 
   it('OpenAI API Key 仅支持 embeddings 时不显示文本端点自动转换开关', () => {

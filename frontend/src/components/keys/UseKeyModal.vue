@@ -183,6 +183,8 @@ const defaultClientTab = computed(() => {
       return 'codex'
     case 'gemini':
       return 'gemini'
+    case 'grok':
+      return 'grok'
     case 'antigravity':
       return 'claude'
     default:
@@ -288,6 +290,8 @@ const clientTabs = computed((): TabConfig[] => {
         { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
+    case 'grok':
+      return []
     default:
       return [
         { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
@@ -382,7 +386,8 @@ const comment = (value: string) => wrapToken('text-slate-500', value)
 const currentFiles = computed((): FileConfig[] => {
   const baseUrl = props.baseUrl || window.location.origin
   const apiKey = props.apiKey
-  const baseRoot = baseUrl.replace(/\/v1\/?$/, '').replace(/\/+$/, '')
+  const baseRoot = baseUrl.replace(/\/(v1|v1beta)\/?$/, '').replace(/\/+$/, '')
+  const anthropicBase = baseRoot
   const ensureV1 = (value: string) => {
     const trimmed = value.replace(/\/+$/, '')
     return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`
@@ -401,9 +406,9 @@ const currentFiles = computed((): FileConfig[] => {
   if (activeClientTab.value === 'opencode') {
     switch (props.platform) {
       case 'kiro':
-        return [generateOpenCodeConfig('anthropic', apiBase, apiKey)]
+        return [generateOpenCodeConfig('anthropic', anthropicBase, apiKey)]
       case 'anthropic':
-        return [generateOpenCodeConfig('anthropic', apiBase, apiKey)]
+        return [generateOpenCodeConfig('anthropic', anthropicBase, apiKey)]
       case 'openai':
         return [generateOpenCodeConfig('openai', apiBase, apiKey)]
       case 'gemini':
@@ -420,26 +425,26 @@ const currentFiles = computed((): FileConfig[] => {
 
   switch (props.platform) {
     case 'kiro':
-      return generateAnthropicFiles(baseUrl, apiKey)
+      return generateAnthropicFiles(anthropicBase, apiKey)
     case 'openai':
       if (activeClientTab.value === 'claude') {
-        return generateAnthropicFiles(baseUrl, apiKey)
+        return generateAnthropicFiles(anthropicBase, apiKey)
       }
       if (activeClientTab.value === 'codex-ws') {
-        return generateOpenAIWsFiles(baseUrl, apiKey)
+        return generateOpenAIWsFiles(apiBase, apiKey)
       }
-      return generateOpenAIFiles(baseUrl, apiKey)
+      return generateOpenAIFiles(apiBase, apiKey)
     case 'gemini':
-      return [generateGeminiCliContent(baseUrl, apiKey)]
+      return [generateGeminiCliContent(baseRoot, apiKey)]
     case 'antigravity':
       if (activeClientTab.value === 'gemini') {
-        return [generateGeminiCliContent(`${baseUrl}/antigravity`, apiKey)]
+        return [generateGeminiCliContent(`${baseRoot}/antigravity`, apiKey)]
       }
-      return generateAnthropicFiles(`${baseUrl}/antigravity`, apiKey)
+      return generateAnthropicFiles(`${baseRoot}/antigravity`, apiKey)
     case 'grok':
-      return generateGrokFiles(baseUrl, apiKey)
+      return generateGrokFiles(apiBase, apiKey)
     default:
-      return generateAnthropicFiles(baseUrl, apiKey)
+      return generateAnthropicFiles(anthropicBase, apiKey)
   }
 })
 
@@ -617,7 +622,7 @@ responses_websockets_v2 = true
 }
 
 function generateGrokFiles(baseUrl: string, apiKey: string): FileConfig[] {
-  const isWindows = activeTab.value === 'windows'
+  const isWindows = activeTab.value === 'cmd' || activeTab.value === 'powershell'
   const configDir = isWindows ? '%userprofile%\\.grok' : '~/.grok'
 
   let envPath: string

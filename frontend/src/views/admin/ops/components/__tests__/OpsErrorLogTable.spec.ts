@@ -73,6 +73,24 @@ describe('OpsErrorLogTable user/api-key/account columns', () => {
     expect(wrapper.text()).toContain('old-key')
     expect(wrapper.text()).toContain('admin.ops.errorLog.keyDeletedBadge')
   })
+
+
+
+  it('shows unknown for unrecognized positive request_type values', () => {
+    const wrapper = mountTable({
+      request_type: 99,
+    })
+
+    expect(wrapper.text()).toContain('common.unknown')
+  })
+
+  it('labels cyber request_type rows', () => {
+    const wrapper = mountTable({
+      request_type: 6,
+    })
+
+    expect(wrapper.text()).toContain('admin.ops.errorLog.requestTypeCyber')
+  })
 })
 
 // 防回归:组件用 admin.ops.errorLog.* 命名空间。若 i18n 键写错命名空间(如误放到
@@ -88,6 +106,7 @@ describe('OpsErrorLogTable i18n keys exist in the errorLog namespace', () => {
       const errorLog = msgs?.admin?.ops?.errorLog
       expect(errorLog?.apiKey).toBeTruthy()
       expect(errorLog?.keyDeletedBadge).toBeTruthy()
+      expect(errorLog?.requestTypeCyber).toBeTruthy()
     })
   }
 })

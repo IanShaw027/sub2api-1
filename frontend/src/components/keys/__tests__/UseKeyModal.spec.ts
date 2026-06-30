@@ -58,6 +58,61 @@ describe('UseKeyModal', () => {
     expect(allCode).not.toContain('OPENAI_API_KEY')
   })
 
+  it('normalizes root base URL to /v1 for OpenAI Codex config', () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-test',
+        baseUrl: 'https://example.com',
+        platform: 'openai'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const configToml = wrapper.findAll('pre code')
+      .map((code) => code.text())
+      .find((content) => content.includes('[model_providers.sub2api]'))
+
+    expect(configToml).toBeDefined()
+    expect(configToml).toContain('base_url = "https://example.com/v1"')
+  })
+
+  it('normalizes /v1 base URL back to root for Anthropic configs', () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-claude',
+        baseUrl: 'https://example.com/v1',
+        platform: 'anthropic'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const allCode = wrapper.findAll('pre code').map((code) => code.text()).join('\n')
+
+    expect(allCode).toContain('ANTHROPIC_BASE_URL="https://example.com"')
+    expect(allCode).toContain('"ANTHROPIC_BASE_URL": "https://example.com"')
+    expect(allCode).not.toContain('https://example.com/v1')
+  })
+
   it('renders minimal API-key Codex WebSocket config through experimental_bearer_token', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {
@@ -178,5 +233,72 @@ describe('UseKeyModal', () => {
     expect(fable.limit).toEqual({ context: 1048576, output: 128000 })
     expect(fable.options.thinking).toEqual({ type: 'adaptive' })
     expect(fable.options.thinking).not.toHaveProperty('budgetTokens')
+  })
+
+
+
+  it('uses Windows Grok config paths for cmd and powershell tabs', async () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-grok',
+        baseUrl: 'https://example.com/v1',
+        platform: 'grok'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const clickTab = async (label: string) => {
+      const tab = wrapper.findAll('button').find((button) => button.text().includes(label))
+      expect(tab).toBeDefined()
+      await tab!.trigger('click')
+      await nextTick()
+    }
+
+    await clickTab('Windows CMD')
+    expect(wrapper.text()).toContain('%userprofile%\\.grok/config.toml')
+
+    await clickTab('PowerShell')
+    expect(wrapper.text()).toContain('%userprofile%\\.grok/config.toml')
+  })
+
+  it('defaults Grok to Grok CLI config and hides OpenCode tab', () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-grok',
+        baseUrl: 'https://example.com/v1',
+        platform: 'grok'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    expect(wrapper.text()).not.toContain('keys.useKeyModal.cliTabs.claudeCode')
+    expect(wrapper.text()).not.toContain('keys.useKeyModal.cliTabs.opencode')
+    const codeBlocks = wrapper.findAll('pre code').map((code) => code.text())
+    const allCode = codeBlocks.join('\n')
+    expect(allCode).toContain('GROK_MODELS_BASE_URL')
+    expect(allCode).toContain('XAI_API_KEY')
+    expect(allCode).toContain('[model.grok-build]')
+    expect(allCode).not.toContain('ANTHROPIC_BASE_URL')
+    expect(allCode).not.toContain('"openai"')
   })
 })

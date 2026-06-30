@@ -250,6 +250,7 @@ const requestTypeOptions = ref<SelectOption[]>([
   { value: 'ws_v2', label: t('usage.ws') },
   { value: 'image_web_bridge', label: t('usage.imageWebBridge') },
   { value: 'image', label: t('usage.image') },
+  { value: 'video', label: t('usage.video') },
   { value: 'stream', label: t('usage.stream') },
   { value: 'sync', label: t('usage.sync') },
   { value: 'cyber', label: t('usage.cyber') }

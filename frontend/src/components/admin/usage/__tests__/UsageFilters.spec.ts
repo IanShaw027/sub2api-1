@@ -40,7 +40,13 @@ vi.mock('@/api/admin', () => ({
 const SelectStub = {
   props: ['modelValue', 'options', 'searchable'],
   emits: ['update:modelValue', 'change'],
-  template: '<div />',
+  template: `
+    <select>
+      <option v-for="option in options" :key="String(option.value)" :value="option.value">
+        {{ option.label }}
+      </option>
+    </select>
+  `,
 }
 
 describe('admin UsageFilters', () => {
@@ -75,5 +81,26 @@ describe('admin UsageFilters', () => {
 
     expect(modelValue.exclude_admin).toBe(true)
     expect(wrapper.emitted('change')).toHaveLength(1)
+  })
+
+  it('offers video as a request type filter option', () => {
+    const wrapper = mount(UsageFilters, {
+      props: {
+        modelValue: {
+          start_date: '2026-04-01',
+          end_date: '2026-04-24',
+        },
+        exporting: false,
+        startDate: '2026-04-01',
+        endDate: '2026-04-24',
+      },
+      global: {
+        stubs: {
+          Select: SelectStub,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('usage.video')
   })
 })

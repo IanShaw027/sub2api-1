@@ -6,7 +6,7 @@ export interface UsageRequestTypeLike {
   openai_ws_mode?: boolean | null
 }
 
-const VALID_REQUEST_TYPES = new Set<UsageRequestType>(['unknown', 'sync', 'stream', 'ws_v2', 'image', 'image_web_bridge', 'cyber'])
+const VALID_REQUEST_TYPES = new Set<UsageRequestType>(['unknown', 'sync', 'stream', 'ws_v2', 'image', 'image_web_bridge', 'cyber', 'video'])
 
 export const isUsageRequestType = (value: unknown): value is UsageRequestType => {
   return typeof value === 'string' && VALID_REQUEST_TYPES.has(value as UsageRequestType)
@@ -27,7 +27,7 @@ export const requestTypeToLegacyStream = (requestType?: UsageRequestType | null)
   if (!requestType || requestType === 'unknown' || requestType === 'cyber') {
     return null
   }
-  if (requestType === 'sync' || requestType === 'image' || requestType === 'image_web_bridge') {
+  if (requestType === 'sync' || requestType === 'image' || requestType === 'image_web_bridge' || requestType === 'video') {
     return false
   }
   return true
