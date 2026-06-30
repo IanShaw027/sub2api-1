@@ -32,6 +32,7 @@ export const useAppStore = defineStore('app', () => {
   const supportQRCodes = ref<SupportQRCodeEntry[]>([])
   const apiBaseUrl = ref<string>('')
   const docUrl = ref<string>('')
+  const downloadToolsUrl = ref<string>('')
   const cachedPublicSettings = ref<PublicSettings | null>(null)
 
   // Version cache state
@@ -300,6 +301,7 @@ export const useAppStore = defineStore('app', () => {
     supportQRCodes.value = Array.isArray(config.support_qr_codes) ? [...config.support_qr_codes] : []
     apiBaseUrl.value = config.api_base_url || ''
     docUrl.value = config.doc_url || ''
+    downloadToolsUrl.value = config.download_tools_url || ''
     publicSettingsLoaded.value = true
   }
 
@@ -344,6 +346,7 @@ export const useAppStore = defineStore('app', () => {
         contact_info: contactInfo.value,
         support_qr_codes: supportQRCodes.value,
         doc_url: docUrl.value,
+        download_tools_url: downloadToolsUrl.value,
         home_content: '',
         hide_ccs_import_button: false,
         payment_enabled: false,
@@ -433,6 +436,7 @@ export const useAppStore = defineStore('app', () => {
     supportQRCodes,
     apiBaseUrl,
     docUrl,
+    downloadToolsUrl,
     cachedPublicSettings,
 
     // Version state

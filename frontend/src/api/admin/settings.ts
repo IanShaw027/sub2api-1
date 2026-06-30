@@ -727,6 +727,7 @@ export interface SystemSettings {
   contact_info: string;
   support_qr_codes: SupportQRCodeEntry[];
   doc_url: string;
+  download_tools_url: string;
   home_content: string;
   hide_ccs_import_button: boolean;
   table_default_page_size: number;
@@ -1046,6 +1047,7 @@ export interface UpdateSettingsRequest {
   contact_info?: string;
   support_qr_codes?: SupportQRCodeEntry[];
   doc_url?: string;
+  download_tools_url?: string;
   home_content?: string;
   hide_ccs_import_button?: boolean;
   table_default_page_size?: number;

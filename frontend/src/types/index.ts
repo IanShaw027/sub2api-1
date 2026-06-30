@@ -251,6 +251,7 @@ export interface PublicSettings {
   contact_info: string
   support_qr_codes: SupportQRCodeEntry[]
   doc_url: string
+  download_tools_url: string
   home_content: string
   hide_ccs_import_button: boolean
   payment_enabled: boolean

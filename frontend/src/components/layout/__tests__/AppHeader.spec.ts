@@ -13,3 +13,12 @@ describe('AppHeader support entry', () => {
     expect(componentSource).toContain('<SupportQRCodesButton :entries="supportQRCodes" :legacy-contact-info="contactInfo" />')
   })
 })
+
+describe('AppHeader document links', () => {
+  it('uses separate settings for help docs and tool downloads', () => {
+    expect(componentSource).toContain("cachedPublicSettings?.doc_url")
+    expect(componentSource).toContain("cachedPublicSettings?.download_tools_url")
+    expect(componentSource).toContain('const downloadToolsUrl = computed(() => (appStore.cachedPublicSettings?.download_tools_url || appStore.downloadToolsUrl || \'\').trim())')
+    expect(componentSource).not.toContain('`${base}/cli`')
+  })
+})

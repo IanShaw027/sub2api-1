@@ -6321,6 +6321,24 @@
                 </p>
               </div>
 
+              <!-- Download Tools URL -->
+              <div>
+                <label
+                  class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {{ t("admin.settings.site.downloadToolsUrl") }}
+                </label>
+                <input
+                  v-model="form.download_tools_url"
+                  type="url"
+                  class="input font-mono text-sm"
+                  :placeholder="t('admin.settings.site.downloadToolsUrlPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.site.downloadToolsUrlHint") }}
+                </p>
+              </div>
+
               <!-- Site Logo Upload -->
               <div>
                 <label
@@ -9379,6 +9397,7 @@ const form = reactive<SettingsForm>({
   contact_info: "",
   support_qr_codes: [] as SupportQRCodeEntry[],
   doc_url: "",
+  download_tools_url: "",
   home_content: "",
   backend_mode_enabled: false,
   hide_ccs_import_button: false,
@@ -10864,6 +10883,7 @@ async function saveSettings() {
     // Optional URL fields: auto-clear invalid values so they don't cause backend 400 errors
     if (!isValidHttpUrl(form.frontend_url)) form.frontend_url = "";
     if (!isValidHttpUrl(form.doc_url)) form.doc_url = "";
+    if (!isValidHttpUrl(form.download_tools_url)) form.download_tools_url = "";
     syncWeChatConnectMode();
     const dingtalkCorpRestrictionPolicy =
       normalizeDingTalkCorpRestrictionPolicy(
@@ -10928,6 +10948,7 @@ async function saveSettings() {
         }))
         .filter((item) => item.image_url),
       doc_url: form.doc_url,
+      download_tools_url: form.download_tools_url,
       home_content: form.home_content,
       backend_mode_enabled: form.backend_mode_enabled,
       hide_ccs_import_button: form.hide_ccs_import_button,

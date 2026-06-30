@@ -227,10 +227,7 @@ const contactInfo = computed(() => appStore.contactInfo)
 const supportQRCodes = computed(() => appStore.supportQRCodes)
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const helpDocsUrl = computed(() => (appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '').trim())
-const downloadToolsUrl = computed(() => {
-  const base = helpDocsUrl.value.replace(/\/+$/, '')
-  return base ? `${base}/cli` : ''
-})
+const downloadToolsUrl = computed(() => (appStore.cachedPublicSettings?.download_tools_url || appStore.downloadToolsUrl || '').trim())
 
 // 只在标准模式的管理员下显示新手引导按钮
 const showOnboardingButton = computed(() => {
