@@ -108,7 +108,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	if service.IsGroupContextValid(apiKey.Group) {
 		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.Group, apiKey.Group))
 	}
-	// Codex image requirement only for OpenAI platform groups. Grok groups use subscription OAuth (Grok CLI style) to call official Imagine API at api.x.ai (images/generations + videos/generations). Interfaces aligned with https://docs.x.ai/developers/model-capabilities .
+	// Codex image requirement only for OpenAI platform groups. Grok groups use subscription OAuth (Grok CLI style) for official Imagine images; Grok videos are handled by the separate Grok-only /videos gate. Interfaces aligned with https://docs.x.ai/developers/model-capabilities .
 	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAI {
 		if !service.GroupAllowsOpenAIImagesCodex(apiKey.Group) {
 			h.errorResponse(c, http.StatusForbidden, "permission_error", service.OpenAIImagesCodexDisabledMessage())
@@ -339,7 +339,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockKeyImages = service.CyberSessionBlockKey(apiKey.ID, c, body)
 		}
-		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, requestModel, err != nil, cyberBlockKeyImages, channelMapping.ToUsageFields(parsed.Model, upstreamModel), requestPayloadHash, service.ContentModerationProtocolOpenAIImages, body)
+		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, requestModel, err != nil, cyberBlockKeyImages, channelMapping.ToUsageFields(parsed.Model, upstreamModel), requestPayloadHash, service.ContentModerationProtocolOpenAIImages, parsed.ModerationBody())
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
 		responseLatencyMs := forwardDurationMs
@@ -561,10 +561,10 @@ func isMultipartImagesContentType(contentType string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "multipart/form-data")
 }
 
-// Videos handles OpenAI-compatible Videos API (Sora etc).
+// Videos handles Grok/xAI-compatible Videos API.
 // POST /v1/videos , POST /v1/videos/generations , GET /v1/videos/{id} etc.
-// Follows OpenAI params: prompt, model, seconds, size, input_reference etc.
-// Routed by group/account video capability rather than a single provider platform.
+// Follows Grok/xAI video params: prompt, model, duration, aspect_ratio, resolution, input_reference etc.
+// Routed by Grok group/account video capability.
 func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	streamStarted := false
 	requestStart := time.Now()
@@ -587,6 +587,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		zap.Int64("api_key_id", apiKey.ID),
 		zap.Any("group_id", apiKey.GroupID),
 	)
+	setOpsEndpointContext(c, "", int16(service.RequestTypeVideo))
 	if !h.ensureResponsesDependencies(c, reqLog) {
 		return
 	}
@@ -609,27 +610,30 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		return
 	}
 
-	// Parse key OpenAI video params for logging / future billing (full struct can be added like OpenAIImagesRequest)
+	// Parse key Grok/xAI video params for logging / future billing.
 	model := ""
 	prompt := ""
-	seconds := ""
-	size := ""
+	duration := ""
+	resolution := ""
+	aspectRatio := ""
 	if len(body) > 0 && gjson.ValidBytes(body) {
 		model = gjson.GetBytes(body, "model").String()
 		prompt = gjson.GetBytes(body, "prompt").String()
-		seconds = gjson.GetBytes(body, "seconds").String()
-		size = gjson.GetBytes(body, "size").String()
+		duration = firstNonEmpty(gjson.GetBytes(body, "duration").String(), gjson.GetBytes(body, "seconds").String())
+		resolution = firstNonEmpty(gjson.GetBytes(body, "resolution").String(), gjson.GetBytes(body, "size").String())
+		aspectRatio = gjson.GetBytes(body, "aspect_ratio").String()
 	}
 	reqLog = reqLog.With(
 		zap.String("model", model),
 		zap.String("prompt_prefix", truncateForLog(prompt, 64)),
-		zap.String("seconds", seconds),
-		zap.String("size", size),
+		zap.String("duration", duration),
+		zap.String("resolution", resolution),
+		zap.String("aspect_ratio", aspectRatio),
 		zap.String("method", c.Request.Method),
 		zap.String("path", c.Request.URL.Path),
 	)
 	setOpsRequestContext(c, model, false, body)
-	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
+	setOpsEndpointContext(c, "", int16(service.RequestTypeVideo))
 
 	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIImages, model, body); decision != nil && decision.Blocked {
 		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
@@ -659,8 +663,9 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		return
 	}
 
-	// Compute target path for sub-resources (e.g. /videos/<id>/content )
-	targetPath := c.Request.URL.Path
+	// Compute target path for sub-resources and preserve query string
+	// (e.g. /videos?limit=10, /videos/<id>/content).
+	targetPath := c.Request.URL.RequestURI()
 	// normalize to start with /v1 if needed? but use as-is for forward func
 	if !strings.HasPrefix(targetPath, "/v1/") && strings.HasPrefix(targetPath, "/") {
 		// keep client path, ForwardVideos will handle relative to base

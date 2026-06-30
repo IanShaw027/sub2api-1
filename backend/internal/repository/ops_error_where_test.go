@@ -70,6 +70,41 @@ func TestBuildOpsErrorLogsWhere_ModelFuzzy(t *testing.T) {
 	}
 }
 
+func TestBuildOpsErrorLogsWhere_RequestTypeOverridesLegacyStream(t *testing.T) {
+	requestType := int16(service.RequestTypeVideo)
+	stream := true
+	filter := &service.OpsErrorLogFilter{
+		RequestType: &requestType,
+		Stream:      &stream,
+	}
+
+	where, args := buildOpsErrorLogsWhere(filter)
+
+	if !strings.Contains(where, "COALESCE(e.request_type, 0) = $") {
+		t.Fatalf("request_type filter missing: %s", where)
+	}
+	if strings.Contains(where, "e.stream") {
+		t.Fatalf("legacy stream must not be applied when request_type is present: %s", where)
+	}
+	if len(args) != 1 || args[0] != requestType {
+		t.Fatalf("expected request_type arg %d, got %v", requestType, args)
+	}
+}
+
+func TestBuildOpsErrorLogsWhere_LegacyStreamFilter(t *testing.T) {
+	stream := true
+	filter := &service.OpsErrorLogFilter{Stream: &stream}
+
+	where, args := buildOpsErrorLogsWhere(filter)
+
+	if !strings.Contains(where, "COALESCE(e.stream, false) = $") {
+		t.Fatalf("legacy stream filter missing: %s", where)
+	}
+	if len(args) != 1 || args[0] != stream {
+		t.Fatalf("expected stream arg %v, got %v", stream, args)
+	}
+}
+
 // TestBuildOpsErrorLogsWhere_CyberPolicyStatusExemption verifies that streaming
 // cyber_policy hits (status_code=200) remain visible in admin + user error-request
 // lists.  The repository filter must emit an OR exemption for error_type='cyber_policy'

@@ -131,6 +131,25 @@ func TestMatchBlockedKeyword_ProximityWithMultipleOccurrences(t *testing.T) {
 }
 
 // TestMatchBlockedKeyword_ProximityWithCJK 测试中文&&组合的邻近窗口
+
+func TestMatchBlockedKeyword_AndRuleProximityWindowIsOrderInsensitive(t *testing.T) {
+	text := buildTextWithDistance("reverse", "ctf", 80)
+
+	kw, hit := matchBlockedKeyword(text, []string{"CTF&&Reverse:200"}, nil)
+
+	require.True(t, hit, "term order in rule must not change proximity semantics")
+	require.Equal(t, "CTF&&Reverse:200", kw)
+}
+
+func TestMatchBlockedKeyword_ProximityWindowCountsRunesForCJK(t *testing.T) {
+	text := "撞库" + strings.Repeat("安", 120) + "账号"
+
+	kw, hit := matchBlockedKeyword(text, []string{"撞库&&账号:200"}, nil)
+
+	require.True(t, hit, "200-character window should be 200 runes, not bytes")
+	require.Equal(t, "撞库&&账号:200", kw)
+}
+
 func TestMatchBlockedKeyword_ProximityWithCJK(t *testing.T) {
 	// 中文也应用窗口限制
 	farText := "撞库攻击" + strings.Repeat("是常见的安全威胁。", 30) + "保护账号安全很重要"
@@ -153,10 +172,11 @@ func TestMatchBlockedKeyword_ConfigurableProximityWindow(t *testing.T) {
 		wantKW   string
 	}{
 		{
-			name:     "使用默认窗口200_超过则不命中",
+			name:     "使用默认窗口200_按字符窗口命中",
 			text:     buildTextWithDistance("reverse", "ctf", 180),
 			keywords: []string{"Reverse&&CTF"},
-			want:     false,
+			want:     true,
+			wantKW:   "Reverse&&CTF",
 		},
 		{
 			name:     "配置窗口300_同样距离应命中",

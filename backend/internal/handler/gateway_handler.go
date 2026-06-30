@@ -1,16 +1,13 @@
 package handler
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -236,6 +233,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	// 验证 model 必填
 	if reqModel == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return
+	}
+
+	if h.rejectIfCyberSessionBlocked(c, apiKey, body, reqModel, cyberBlockFormatAnthropic) {
 		return
 	}
 
@@ -1122,6 +1123,13 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		})
 		return
 	}
+	if platform == service.PlatformGrok {
+		c.JSON(http.StatusOK, gin.H{
+			"object": "list",
+			"data":   xai.DefaultModels(),
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"object": "list",
@@ -1601,7 +1609,65 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 		}})
 		return
 	}
+	if selected == nil || selected.Account == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
+			"type":    "scheduling_error",
+			"message": "No available accounts",
+		}})
+		return
+	}
 	account := selected.Account
+	accountReleaseFunc := selected.ReleaseFunc
+	if !selected.Acquired {
+		if selected.WaitPlan == nil || h.concurrencyHelper == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
+				"type":    "scheduling_error",
+				"message": "No available accounts",
+			}})
+			return
+		}
+		accountWaitCounted := false
+		canWait, waitErr := h.concurrencyHelper.IncrementAccountWaitCount(c.Request.Context(), account.ID, selected.WaitPlan.MaxWaiting)
+		if waitErr != nil {
+			logger.L().Warn("gateway.web_search.account_wait_counter_increment_failed",
+				zap.Int64("account_id", account.ID),
+				zap.Error(waitErr),
+			)
+		} else if !canWait {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": gin.H{
+				"type":    "rate_limit_error",
+				"message": "Too many pending requests, please retry later",
+			}})
+			return
+		} else {
+			accountWaitCounted = true
+		}
+		releaseWait := func() {
+			if accountWaitCounted {
+				h.concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), account.ID)
+				accountWaitCounted = false
+			}
+		}
+		streamStarted := false
+		release, acquireErr := h.concurrencyHelper.AcquireAccountSlotWithWaitTimeoutForGroup(
+			c,
+			account.ID,
+			apiKey.GroupID,
+			selected.WaitPlan.MaxConcurrency,
+			selected.WaitPlan.Timeout,
+			false,
+			&streamStarted,
+		)
+		releaseWait()
+		if acquireErr != nil {
+			h.handleConcurrencyError(c, acquireErr, "account", streamStarted)
+			return
+		}
+		accountReleaseFunc = release
+	}
+	if accountReleaseFunc != nil {
+		defer accountReleaseFunc()
+	}
 
 	// Scheduling is 100% the same as other requests:
 	// SelectAccountWithLoadAwareness handles load balancing, rate limits, failover, sticky sessions, concurrency, proxies etc.
@@ -1611,12 +1677,7 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 	// This ensures results come from Grok's own search (not third-party emulation like Tavily/Brave).
 	// Output is normalized to the same unified format for clients/agents/MCP.
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
-	}
-
-	nativeResp, providerName, err := h.doGrokNativeWebSearch(c.Request.Context(), account, req.Query, req.MaxResults, proxyURL)
+	nativeResp, providerName, err := h.doGrokNativeWebSearch(c.Request.Context(), c, account, req.Query, req.MaxResults)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{
 			"type":    "web_search_error",
@@ -1670,7 +1731,7 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 
 // doGrokNativeWebSearch executes web search using the Grok account's native capability
 // by calling the responses endpoint with web_search tool, then normalizes sources to unified format.
-func (h *GatewayHandler) doGrokNativeWebSearch(ctx context.Context, account *service.Account, query string, maxResults int, proxyURL string) (*websearch.SearchResponse, string, error) {
+func (h *GatewayHandler) doGrokNativeWebSearch(ctx context.Context, c *gin.Context, account *service.Account, query string, maxResults int) (*websearch.SearchResponse, string, error) {
 	if maxResults <= 0 {
 		maxResults = 5
 	}
@@ -1686,47 +1747,9 @@ func (h *GatewayHandler) doGrokNativeWebSearch(ctx context.Context, account *ser
 	}
 	bodyBytes, _ := json.Marshal(searchBody)
 
-	token, _, err := h.gatewayService.GetAccessToken(ctx, account)
+	respBytes, err := h.gatewayService.DoGrokNativeResponsesJSON(ctx, c, account, bodyBytes)
 	if err != nil {
-		return nil, "", fmt.Errorf("get grok token: %w", err)
-	}
-
-	base := strings.TrimRight(account.GetGrokBaseURL(), "/")
-	if base == "" {
-		base = "https://api.x.ai"
-	}
-	targetURL := base + "/v1/responses"
-
-	upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, "", fmt.Errorf("build grok search request: %w", err)
-	}
-	upstreamReq.Header.Set("Authorization", "Bearer "+token)
-	upstreamReq.Header.Set("Content-Type", "application/json")
-	upstreamReq.Header.Set("Accept", "application/json")
-
-	// Apply proxy if provided (same as emulation path)
-	var client *http.Client
-	if proxyURL != "" {
-		p, perr := url.Parse(proxyURL)
-		if perr == nil {
-			transport := &http.Transport{Proxy: http.ProxyURL(p)}
-			client = &http.Client{Transport: transport, Timeout: 60 * time.Second}
-		}
-	}
-	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
-	}
-
-	httpResp, err := client.Do(upstreamReq)
-	if err != nil {
-		return nil, "", fmt.Errorf("grok native search upstream: %w", err)
-	}
-	defer httpResp.Body.Close()
-
-	respBytes, _ := io.ReadAll(httpResp.Body)
-	if httpResp.StatusCode >= 400 {
-		return nil, "", fmt.Errorf("grok upstream %d: %s", httpResp.StatusCode, string(respBytes[:min(200, len(respBytes))]))
+		return nil, "", err
 	}
 
 	// Extract sources from Grok responses output.

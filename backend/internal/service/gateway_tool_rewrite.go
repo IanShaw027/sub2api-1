@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -8,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
@@ -58,6 +60,19 @@ type ToolNameRewrite struct {
 	PropForward    map[string]string
 	PropReverse    map[string]string
 	DescStripped   bool
+
+	propDeltaStateOnce sync.Once
+	propDeltaState     *propDeltaReverseState
+}
+
+type propDeltaReverseState struct {
+	mu      sync.Mutex
+	pending map[string]string
+}
+
+type jsonKeyRename struct {
+	oldName string
+	newName string
 }
 
 // buildDynamicToolMap 构造 tools 的动态假名映射。
@@ -238,6 +253,7 @@ func applyToolNameRewriteToBody(body []byte, rw *ToolNameRewrite) []byte {
 			if t.Get("description").Exists() {
 				if next, err := sjson.SetBytes(body, fmt.Sprintf("tools.%d.description", idx), ""); err == nil {
 					body = next
+					rw.DescStripped = true
 				}
 			}
 			return true
@@ -344,28 +360,18 @@ func rewriteSchemaProperties(body []byte, propForward map[string]string) []byte 
 		}
 		propsPath := fmt.Sprintf("tools.%d.input_schema.properties", idx)
 		reqPath := fmt.Sprintf("tools.%d.input_schema.required", idx)
-		type propRename struct {
-			oldName string
-			newName string
-			raw     string
-		}
-		renames := make([]propRename, 0)
+		renames := make([]jsonKeyRename, 0)
 		props.ForEach(func(key, val gjson.Result) bool {
 			propName := key.String()
 			newName, ok := propForward[propName]
 			if !ok {
 				return true
 			}
-			renames = append(renames, propRename{oldName: propName, newName: newName, raw: val.Raw})
+			renames = append(renames, jsonKeyRename{oldName: propName, newName: newName})
 			return true
 		})
-		for _, rename := range renames {
-			// Copy value to new key after the gjson iterator has finished reading the old body.
-			if next, err := sjson.SetRawBytes(body, propsPath+"."+rename.newName, []byte(rename.raw)); err == nil {
-				body = next
-			}
-			// Delete old key after setting the replacement.
-			if next, err := sjson.DeleteBytes(body, propsPath+"."+rename.oldName); err == nil {
+		if renamedProps, ok := renameRawJSONObjectKeys(props.Raw, renames); ok {
+			if next, err := sjson.SetRawBytes(body, propsPath, renamedProps); err == nil {
 				body = next
 			}
 		}
@@ -417,26 +423,18 @@ func rewriteToolUseInputProperties(body []byte, propForward map[string]string) [
 				return true
 			}
 			inputPath := fmt.Sprintf("messages.%d.content.%d.input", msgIdx, blkIdx)
-			type inputRename struct {
-				oldName string
-				newName string
-				raw     string
-			}
-			renames := make([]inputRename, 0)
+			renames := make([]jsonKeyRename, 0)
 			input.ForEach(func(key, val gjson.Result) bool {
 				propName := key.String()
 				newName, ok := propForward[propName]
 				if !ok {
 					return true
 				}
-				renames = append(renames, inputRename{oldName: propName, newName: newName, raw: val.Raw})
+				renames = append(renames, jsonKeyRename{oldName: propName, newName: newName})
 				return true
 			})
-			for _, rename := range renames {
-				if next, err := sjson.SetRawBytes(body, inputPath+"."+rename.newName, []byte(rename.raw)); err == nil {
-					body = next
-				}
-				if next, err := sjson.DeleteBytes(body, inputPath+"."+rename.oldName); err == nil {
+			if renamedInput, ok := renameRawJSONObjectKeys(input.Raw, renames); ok {
+				if next, err := sjson.SetRawBytes(body, inputPath, renamedInput); err == nil {
 					body = next
 				}
 			}
@@ -445,6 +443,37 @@ func rewriteToolUseInputProperties(body []byte, propForward map[string]string) [
 		return true
 	})
 	return body
+}
+
+func renameRawJSONObjectKeys(raw string, renames []jsonKeyRename) ([]byte, bool) {
+	if raw == "" || len(renames) == 0 {
+		return nil, false
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+		return nil, false
+	}
+	changed := false
+	for _, rename := range renames {
+		if rename.oldName == "" || rename.oldName == rename.newName {
+			continue
+		}
+		value, ok := obj[rename.oldName]
+		if !ok {
+			continue
+		}
+		obj[rename.newName] = value
+		delete(obj, rename.oldName)
+		changed = true
+	}
+	if !changed {
+		return nil, false
+	}
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return nil, false
+	}
+	return out, true
 }
 
 // applyToolsLastCacheBreakpoint 在 tools 数组最后一个工具上注入 cache_control
@@ -511,17 +540,57 @@ func restoreToolNamesInBytes(data []byte, rw *ToolNameRewrite) []byte {
 			data = replaceAllBytes(data, replacement, prefix)
 		}
 	}
-	// JSON-key-aware prop name reversal (avoids mutating free-text occurrences)
-	data = restorePropNamesInJSON(data, rw)
+	// JSON-key-aware prop name reversal (avoids mutating free-text occurrences).
+	data = restorePropNamesInBytes(data, rw)
 	return data
+}
+
+func restorePropNamesInBytes(data []byte, rw *ToolNameRewrite) []byte {
+	if rw == nil || len(rw.PropReverse) == 0 {
+		return data
+	}
+	if !bytes.Contains(data, []byte("data:")) {
+		return restorePropNamesInJSON(data, rw)
+	}
+	lines := strings.SplitAfter(string(data), "\n")
+	changed := false
+	for i, line := range lines {
+		lineBody := strings.TrimSuffix(line, "\n")
+		newline := ""
+		if len(lineBody) != len(line) {
+			newline = "\n"
+		}
+		if strings.HasSuffix(lineBody, "\r") {
+			lineBody = strings.TrimSuffix(lineBody, "\r")
+			newline = "\r" + newline
+		}
+		if !strings.HasPrefix(lineBody, "data:") {
+			continue
+		}
+		payload := strings.TrimPrefix(lineBody, "data:")
+		leading := payload[:len(payload)-len(strings.TrimLeft(payload, " \t"))]
+		trimmedPayload := strings.TrimSpace(payload)
+		if trimmedPayload == "" || trimmedPayload == "[DONE]" {
+			continue
+		}
+		restored := restorePropNamesInJSON([]byte(trimmedPayload), rw)
+		if bytes.Equal(restored, []byte(trimmedPayload)) {
+			continue
+		}
+		lines[i] = "data:" + leading + string(restored) + newline
+		changed = true
+	}
+	if !changed {
+		return data
+	}
+	return []byte(strings.Join(lines, ""))
 }
 
 // restorePropNamesInJSON reverses schema property name renames in a JSON-key-aware
 // manner. Instead of blind strings.ReplaceAll (which would corrupt model-generated
-// prose containing common words like "thread_id"), it only replaces occurrences
-// that appear in JSON key position ("fake_name":) or as quoted JSON string values
-// ("fake_name"). This is safe for SSE streaming because each `data:` line is a
-// complete JSON fragment — keys are not split across chunk boundaries.
+// prose containing common words like "thread_id"), it replaces object keys,
+// required[] string values, complete function-call arguments JSON strings, and the
+// argument-key positions inside streaming function-call argument fragments.
 func restorePropNamesInJSON(data []byte, rw *ToolNameRewrite) []byte {
 	if rw == nil || len(rw.PropReverse) == 0 {
 		return data
@@ -530,7 +599,25 @@ func restorePropNamesInJSON(data []byte, rw *ToolNameRewrite) []byte {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return data
 	}
-	decoded = restorePropNamesJSONValue(decoded, rw.PropReverse, "")
+	rootEventType := ""
+	if obj, ok := decoded.(map[string]any); ok {
+		if typ, ok := obj["type"].(string); ok {
+			rootEventType = typ
+		}
+		if rootEventType == "response.function_call_arguments.delta" {
+			if delta, ok := obj["delta"].(string); ok {
+				obj["delta"] = rw.restorePropNamesInDeltaFragment(delta, responseFunctionCallArgumentsDeltaStreamKey(obj))
+			}
+			decoded = restorePropNamesJSONValue(decoded, rw.PropReverse, "", "")
+			out, err := json.Marshal(decoded)
+			if err != nil {
+				return data
+			}
+			return out
+		}
+	}
+	restoreChatCompletionToolCallArgumentFragments(decoded, rw)
+	decoded = restorePropNamesJSONValue(decoded, rw.PropReverse, "", rootEventType)
 	out, err := json.Marshal(decoded)
 	if err != nil {
 		return data
@@ -538,7 +625,171 @@ func restorePropNamesInJSON(data []byte, rw *ToolNameRewrite) []byte {
 	return out
 }
 
-func restorePropNamesJSONValue(v any, reverse map[string]string, parentKey string) any {
+func restoreChatCompletionToolCallArgumentFragments(decoded any, rw *ToolNameRewrite) {
+	if rw == nil || len(rw.PropReverse) == 0 {
+		return
+	}
+	root, ok := decoded.(map[string]any)
+	if !ok {
+		return
+	}
+	choices, ok := root["choices"].([]any)
+	if !ok {
+		return
+	}
+	for choiceIdx, choiceValue := range choices {
+		choice, ok := choiceValue.(map[string]any)
+		if !ok {
+			continue
+		}
+		delta, ok := choice["delta"].(map[string]any)
+		if !ok {
+			continue
+		}
+		toolCalls, ok := delta["tool_calls"].([]any)
+		if !ok {
+			continue
+		}
+		for toolIdx, toolCallValue := range toolCalls {
+			toolCall, ok := toolCallValue.(map[string]any)
+			if !ok {
+				continue
+			}
+			function, ok := toolCall["function"].(map[string]any)
+			if !ok {
+				continue
+			}
+			arguments, ok := function["arguments"].(string)
+			if !ok || arguments == "" {
+				continue
+			}
+			streamKey := "chat_arguments|" + chatCompletionToolCallArgumentsStreamKey(choiceIdx, toolIdx, toolCall)
+			function["arguments"] = rw.restorePropNamesInDeltaFragment(arguments, streamKey)
+		}
+	}
+}
+
+func chatCompletionToolCallArgumentsStreamKey(choiceIdx int, toolIdx int, toolCall map[string]any) string {
+	parts := []string{fmt.Sprintf("choice=%d", choiceIdx)}
+	for _, key := range []string{"id", "index"} {
+		if v, ok := toolCall[key]; ok {
+			parts = append(parts, key+"="+fmt.Sprint(v))
+		}
+	}
+	if len(parts) == 1 {
+		parts = append(parts, fmt.Sprintf("tool_index=%d", toolIdx))
+	}
+	return strings.Join(parts, "|")
+}
+
+func responseFunctionCallArgumentsDeltaStreamKey(obj map[string]any) string {
+	if len(obj) == 0 {
+		return "_default"
+	}
+	parts := make([]string, 0, 4)
+	for _, key := range []string{"item_id", "call_id", "output_index", "content_index"} {
+		if v, ok := obj[key]; ok {
+			parts = append(parts, key+"="+fmt.Sprint(v))
+		}
+	}
+	if len(parts) == 0 {
+		return "_default"
+	}
+	return strings.Join(parts, "|")
+}
+
+func (rw *ToolNameRewrite) restorePropNamesInDeltaFragment(fragment string, streamKey string) string {
+	if rw == nil || len(rw.PropReverse) == 0 || fragment == "" {
+		return fragment
+	}
+	if streamKey == "" {
+		streamKey = "_default"
+	}
+	rw.propDeltaStateOnce.Do(func() {
+		rw.propDeltaState = &propDeltaReverseState{pending: make(map[string]string)}
+	})
+	rw.propDeltaState.mu.Lock()
+	defer rw.propDeltaState.mu.Unlock()
+	combined := rw.propDeltaState.pending[streamKey] + fragment
+	restorable, pending := splitPendingPropNameKeyFragment(combined, rw.PropReverse)
+	if pending != "" {
+		rw.propDeltaState.pending[streamKey] = pending
+	} else {
+		delete(rw.propDeltaState.pending, streamKey)
+	}
+	return restorePropNamesInJSONStringFragment(restorable, rw.PropReverse)
+}
+
+func splitPendingPropNameKeyFragment(value string, reverse map[string]string) (restorable string, pending string) {
+	if value == "" || len(reverse) == 0 {
+		return value, ""
+	}
+	pendingStart := -1
+	for start := 0; start < len(value); start++ {
+		if value[start] != '"' {
+			continue
+		}
+		if !isPotentialJSONPropNameStart(value, start) {
+			continue
+		}
+		suffix := value[start+1:]
+		if suffixCouldBecomePropNameKey(suffix, reverse) {
+			pendingStart = start
+		}
+	}
+	if pendingStart < 0 {
+		return value, ""
+	}
+	return value[:pendingStart], value[pendingStart:]
+}
+
+func isPotentialJSONPropNameStart(value string, quoteIdx int) bool {
+	for idx := quoteIdx - 1; idx >= 0; idx-- {
+		if isJSONWhitespaceByte(value[idx]) {
+			continue
+		}
+		return value[idx] == '{' || value[idx] == ','
+	}
+	return true
+}
+
+func suffixCouldBecomePropNameKey(suffix string, reverse map[string]string) bool {
+	for fake := range reverse {
+		if fake == "" {
+			continue
+		}
+		if strings.HasPrefix(fake, suffix) {
+			return true
+		}
+		if !strings.HasPrefix(suffix, fake) {
+			continue
+		}
+		rest := suffix[len(fake):]
+		if rest == "" {
+			return true
+		}
+		if rest[0] != '"' {
+			continue
+		}
+		afterQuote := rest[1:]
+		if afterQuote == "" {
+			return true
+		}
+		allWhitespace := true
+		for i := 0; i < len(afterQuote); i++ {
+			if !isJSONWhitespaceByte(afterQuote[i]) {
+				allWhitespace = false
+				break
+			}
+		}
+		if allWhitespace {
+			return true
+		}
+	}
+	return false
+}
+
+func restorePropNamesJSONValue(v any, reverse map[string]string, parentKey string, rootEventType string) any {
 	switch val := v.(type) {
 	case map[string]any:
 		out := make(map[string]any, len(val))
@@ -547,7 +798,7 @@ func restorePropNamesJSONValue(v any, reverse map[string]string, parentKey strin
 			if real, ok := reverse[key]; ok {
 				newKey = real
 			}
-			out[newKey] = restorePropNamesJSONValue(child, reverse, newKey)
+			out[newKey] = restorePropNamesJSONValue(child, reverse, newKey, rootEventType)
 		}
 		return out
 	case []any:
@@ -559,12 +810,91 @@ func restorePropNamesJSONValue(v any, reverse map[string]string, parentKey strin
 					continue
 				}
 			}
-			out[i] = restorePropNamesJSONValue(child, reverse, parentKey)
+			out[i] = restorePropNamesJSONValue(child, reverse, parentKey, rootEventType)
 		}
 		return out
+	case string:
+		if parentKey == "delta" && rootEventType == "response.function_call_arguments.delta" {
+			return restorePropNamesInJSONStringFragment(val, reverse)
+		}
+		if parentKey != "arguments" {
+			return v
+		}
+		var decoded any
+		if err := json.Unmarshal([]byte(val), &decoded); err != nil {
+			return restorePropNamesInJSONStringFragment(val, reverse)
+		}
+		decoded = restorePropNamesJSONValue(decoded, reverse, "", rootEventType)
+		out, err := json.Marshal(decoded)
+		if err != nil {
+			return v
+		}
+		return string(out)
 	default:
 		return v
 	}
+}
+
+func restorePropNamesInJSONStringFragment(value string, reverse map[string]string) string {
+	if value == "" || len(reverse) == 0 {
+		return value
+	}
+	var out strings.Builder
+	changed := false
+	for i := 0; i < len(value); {
+		if value[i] != '"' {
+			out.WriteByte(value[i])
+			i++
+			continue
+		}
+		start := i
+		j := i + 1
+		escaped := false
+		for ; j < len(value); j++ {
+			ch := value[j]
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == '"' {
+				break
+			}
+		}
+		if j >= len(value) {
+			out.WriteString(value[start:])
+			break
+		}
+		keyEnd := j + 1
+		colon := keyEnd
+		for colon < len(value) && isJSONWhitespaceByte(value[colon]) {
+			colon++
+		}
+		if colon < len(value) && value[colon] == ':' {
+			if real, ok := reverse[value[start+1:j]]; ok {
+				out.WriteByte('"')
+				out.WriteString(real)
+				out.WriteByte('"')
+				out.WriteString(value[keyEnd : colon+1])
+				i = colon + 1
+				changed = true
+				continue
+			}
+		}
+		out.WriteString(value[start:keyEnd])
+		i = keyEnd
+	}
+	if !changed {
+		return value
+	}
+	return out.String()
+}
+
+func isJSONWhitespaceByte(ch byte) bool {
+	return ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t'
 }
 
 // replaceAllBytes 是 bytes.ReplaceAll 的便捷封装，避免每个调用点各自做 []byte 转换。

@@ -1592,6 +1592,12 @@ func (rt responseHeaderTimeoutRoundTripper) RoundTrip(req *http.Request) (*http.
 	return resp, nil
 }
 
+func (rt responseHeaderTimeoutRoundTripper) CloseIdleConnections() {
+	if closer, ok := rt.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}
+
 type cancelOnCloseReadCloser struct {
 	io.ReadCloser
 	cancel context.CancelFunc

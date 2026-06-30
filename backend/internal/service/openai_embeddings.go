@@ -25,19 +25,7 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 	body []byte,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	if s.fingerprintNormalizer != nil {
-		ua := ""
-		if c != nil && c.Request != nil {
-			ua = c.Request.Header.Get("User-Agent")
-		}
-		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
-		if canonical != nil {
-			_, newB, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
-			if len(newB) > 0 {
-				body = newB
-			}
-		}
-	}
+	body = s.normalizeOpenAICompatibleFingerprintJSONBody(ctx, c, account, body, "embeddings")
 	startTime := time.Now()
 
 	originalModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
@@ -76,10 +64,11 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 	upstreamReq, err := http.NewRequestWithContext(upstreamCtx, http.MethodPost, targetURL, bytes.NewReader(upstreamBody))
-	releaseUpstreamCtx()
 	if err != nil {
+		releaseUpstreamCtx()
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
+	defer releaseUpstreamCtx()
 	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
@@ -100,7 +89,7 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "http")
+	tlsRuntime := s.resolveOpenAICompatibleTLSFingerprintRuntime(ctx, c, account, "http")
 	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
 	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
@@ -141,15 +130,15 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
-		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
-			upstreamDetail := ""
-			if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
-				maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
-				if maxBytes <= 0 {
-					maxBytes = 2048
-				}
-				upstreamDetail = truncateString(string(respBody), maxBytes)
+		upstreamDetail := ""
+		if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
+			maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
+			if maxBytes <= 0 {
+				maxBytes = 2048
 			}
+			upstreamDetail = truncateString(string(respBody), maxBytes)
+		}
+		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
 				AccountID:          account.ID,
@@ -278,9 +267,10 @@ func buildOpenAIEmbeddingsURL(base string) string {
 	return buildOpenAIEndpointURL(base, "/v1/embeddings")
 }
 
-// ForwardVideos forwards to OpenAI-compatible /v1/videos (create/retrieve/content).
-// Supports provider accounts that expose an OpenAI-compatible videos endpoint.
-// Uses account token (API key or OAuth/GetAccessToken) + appropriate base URL.
+// ForwardVideos forwards to Grok/xAI-compatible /v1/videos (create/retrieve/content).
+// Videos are a Grok-only surface; OpenAI and other OpenAI-compatible accounts
+// must be rejected before any upstream request is built.
+// Uses the Grok account token (API key or OAuth/GetAccessToken) + xAI base URL.
 // Billing for video (resolution tier x seconds via group video_price_*_per_sec) should be applied by caller or usage recorder.
 func (s *OpenAIGatewayService) ForwardVideos(
 	ctx context.Context,
@@ -289,45 +279,25 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	body []byte,
 	targetPath string, // e.g. "/v1/videos" or "/v1/videos/xxx/content"
 ) (*OpenAIForwardResult, error) {
-	if s.fingerprintNormalizer != nil {
-		ua := ""
-		// c not passed, use empty; caller can enhance if needed
-		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
-		if canonical != nil {
-			_, newB, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
-			if len(newB) > 0 {
-				body = newB
-			}
-		}
+	if account == nil || account.Platform != PlatformGrok {
+		return nil, fmt.Errorf("videos endpoint is only supported for Grok accounts")
 	}
+	body = s.normalizeOpenAICompatibleFingerprintJSONBody(ctx, c, account, body, "videos")
 	startTime := time.Now()
 
 	originalModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
 
-	logger.L().Debug("openai videos: forwarding",
+	logger.L().Debug("grok videos: forwarding",
 		zap.Int64("account_id", account.ID),
 		zap.String("original_model", originalModel),
 		zap.String("target_path", targetPath),
 	)
 
-	// Support OpenAI-compatible providers that need bearer tokens or API keys.
-	token := account.GetOpenAIApiKey()
-	baseURL := account.GetOpenAIBaseURL()
-	if baseURL == "" {
-		baseURL = "https://api.openai.com"
+	token, _, err := s.GetAccessToken(ctx, account)
+	if err != nil {
+		return nil, fmt.Errorf("get access token for video: %w", err)
 	}
-	if account.Platform == PlatformGrok || account.Type == AccountTypeOAuth {
-		tok, _, err := s.GetAccessToken(ctx, account)
-		if err != nil {
-			return nil, fmt.Errorf("get access token for video: %w", err)
-		}
-		token = tok
-		if grokBase := account.GetGrokBaseURL(); grokBase != "" {
-			baseURL = grokBase
-		} else if account.Platform == PlatformGrok {
-			baseURL = "https://api.x.ai"
-		}
-	}
+	baseURL := account.GetGrokBaseURL()
 	if token == "" {
 		return nil, fmt.Errorf("account %d missing token for video generation", account.ID)
 	}
@@ -338,24 +308,30 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	if targetPath == "" {
 		targetPath = "/v1/videos"
 	}
+	targetPath = canonicalOpenAIVideoTargetPath(targetPath)
 	targetURL := buildOpenAIEndpointURL(validatedURL, targetPath)
 
 	upstreamCtx, release := detachUpstreamContext(ctx)
 	upstreamReq, err := http.NewRequestWithContext(upstreamCtx, c.Request.Method, targetURL, bytes.NewReader(body))
-	release()
 	if err != nil {
+		release()
 		return nil, fmt.Errorf("build upstream video request: %w", err)
 	}
+	defer release()
 	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
-	upstreamReq.Header.Set("Content-Type", "application/json")
-	if len(body) == 0 || c.ContentType() == "" {
-		// allow form for reference uploads if needed
-		if ct := c.GetHeader("Content-Type"); ct != "" {
+	if len(body) > 0 {
+		if ct := strings.TrimSpace(c.GetHeader("Content-Type")); ct != "" {
 			upstreamReq.Header.Set("Content-Type", ct)
+		} else {
+			upstreamReq.Header.Set("Content-Type", "application/json")
 		}
 	}
 	upstreamReq.Header.Set("Authorization", "Bearer "+token)
-	upstreamReq.Header.Set("Accept", "application/json")
+	if accept := strings.TrimSpace(c.GetHeader("Accept")); accept != "" {
+		upstreamReq.Header.Set("Accept", accept)
+	} else {
+		upstreamReq.Header.Set("Accept", "application/json")
+	}
 	// pass select headers
 	for key, values := range c.Request.Header {
 		lowerKey := strings.ToLower(key)
@@ -373,7 +349,7 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "http")
+	tlsRuntime := s.resolveOpenAICompatibleTLSFingerprintRuntime(ctx, c, account, "http")
 	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
 
 	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
@@ -383,6 +359,46 @@ func (s *OpenAIGatewayService) ForwardVideos(
 		return nil, &UpstreamFailoverError{StatusCode: 0, ResponseBody: nil, RetryableOnSameAccount: true}
 	}
 	defer resp.Body.Close()
+
+	videoBillingRequest := isOpenAIVideoBillingRequest(c.Request.Method, targetPath)
+
+	if resp.StatusCode < 400 && !videoBillingRequest {
+		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+		if ct := strings.TrimSpace(resp.Header.Get("Content-Type")); ct != "" {
+			c.Header("Content-Type", ct)
+		}
+		c.Status(resp.StatusCode)
+		if flusher, ok := c.Writer.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		buf := make([]byte, 32*1024)
+		for {
+			n, readErr := resp.Body.Read(buf)
+			if n > 0 {
+				if _, writeErr := c.Writer.Write(buf[:n]); writeErr != nil {
+					return nil, fmt.Errorf("stream upstream video response: %w", writeErr)
+				}
+				if flusher, ok := c.Writer.(http.Flusher); ok {
+					flusher.Flush()
+				}
+			}
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			if readErr != nil {
+				return nil, fmt.Errorf("stream upstream video response: %w", readErr)
+			}
+		}
+		videoModel := firstNonEmptyString(strings.TrimSpace(resp.Header.Get("openai-model")), originalModel)
+		return &OpenAIForwardResult{
+			RequestID:       firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id"), resp.Header.Get("xai-request-id")),
+			Model:           videoModel,
+			UpstreamModel:   videoModel,
+			Usage:           OpenAIUsage{},
+			ResponseHeaders: resp.Header.Clone(),
+			Duration:        time.Since(startTime),
+		}, nil
+	}
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
@@ -399,22 +415,22 @@ func (s *OpenAIGatewayService) ForwardVideos(
 			c.Status(resp.StatusCode)
 			_, _ = c.Writer.Write(respBody)
 			if cyberMsg == "" {
-				return nil, fmt.Errorf("openai video cyber_policy: %d", resp.StatusCode)
+				return nil, fmt.Errorf("grok video cyber_policy: %d", resp.StatusCode)
 			}
-			return nil, fmt.Errorf("openai video cyber_policy: %s", cyberMsg)
+			return nil, fmt.Errorf("grok video cyber_policy: %s", cyberMsg)
 		}
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
-		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
-			upstreamDetail := ""
-			if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
-				maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
-				if maxBytes <= 0 {
-					maxBytes = 2048
-				}
-				upstreamDetail = truncateString(string(respBody), maxBytes)
+		upstreamDetail := ""
+		if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
+			maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
+			if maxBytes <= 0 {
+				maxBytes = 2048
 			}
+			upstreamDetail = truncateString(string(respBody), maxBytes)
+		}
+		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
 				AccountID:          account.ID,
@@ -435,6 +451,18 @@ func (s *OpenAIGatewayService) ForwardVideos(
 			}
 		}
 
+		setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: resp.StatusCode,
+			UpstreamRequestID:  resp.Header.Get("x-request-id"),
+			UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
+			Kind:               "upstream_error",
+			Message:            upstreamMsg,
+			Detail:             upstreamDetail,
+		})
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		c.Header("Content-Type", "application/json")
 		c.Status(resp.StatusCode)
@@ -452,23 +480,33 @@ func (s *OpenAIGatewayService) ForwardVideos(
 
 	// minimal result
 	videoModel := firstNonEmptyString(strings.TrimSpace(gjson.GetBytes(respBody, "model").String()), originalModel)
-	videoSeconds := firstPositiveInt(
-		gjsonPositiveInt(body, "seconds"),
-		gjsonPositiveInt(respBody, "seconds"),
-		gjsonPositiveInt(respBody, "duration"),
-		gjsonPositiveInt(respBody, "duration_seconds"),
-	)
-	videoSize := NormalizeVideoBillingTierOrDefault(firstNonEmptyString(
-		strings.TrimSpace(gjson.GetBytes(body, "size").String()),
-		strings.TrimSpace(gjson.GetBytes(respBody, "size").String()),
-		strings.TrimSpace(gjson.GetBytes(respBody, "resolution").String()),
-	))
-	videoCount := firstPositiveInt(
-		gjsonPositiveInt(body, "n_variants"),
-		gjsonPositiveInt(body, "n"),
-		int(gjson.GetBytes(respBody, "data.#").Int()),
-		1,
-	)
+	var videoSeconds int
+	var videoSize string
+	var videoCount int
+	if videoBillingRequest {
+		videoSeconds = firstPositiveInt(
+			gjsonPositiveInt(body, "duration"),
+			gjsonPositiveInt(body, "duration_seconds"),
+			gjsonPositiveInt(body, "seconds"),
+			gjsonPositiveInt(respBody, "video.duration"),
+			gjsonPositiveInt(respBody, "seconds"),
+			gjsonPositiveInt(respBody, "duration"),
+			gjsonPositiveInt(respBody, "duration_seconds"),
+		)
+		videoSize = NormalizeVideoBillingTierOrDefault(firstNonEmptyString(
+			strings.TrimSpace(gjson.GetBytes(body, "resolution").String()),
+			strings.TrimSpace(gjson.GetBytes(body, "size").String()),
+			strings.TrimSpace(gjson.GetBytes(respBody, "video.resolution").String()),
+			strings.TrimSpace(gjson.GetBytes(respBody, "size").String()),
+			strings.TrimSpace(gjson.GetBytes(respBody, "resolution").String()),
+		))
+		videoCount = firstPositiveInt(
+			gjsonPositiveInt(body, "n_variants"),
+			gjsonPositiveInt(body, "n"),
+			int(gjson.GetBytes(respBody, "data.#").Int()),
+			1,
+		)
+	}
 	res := &OpenAIForwardResult{
 		RequestID:       firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id"), resp.Header.Get("xai-request-id")),
 		Model:           videoModel,
@@ -480,8 +518,47 @@ func (s *OpenAIGatewayService) ForwardVideos(
 		VideoSize:       videoSize,
 		VideoCount:      videoCount,
 	}
-	_ = startTime
 	return res, nil
+}
+
+func canonicalOpenAIVideoTargetPath(targetPath string) string {
+	trimmed := strings.TrimSpace(targetPath)
+	if trimmed == "" {
+		return "/v1/videos"
+	}
+	path := trimmed
+	query := ""
+	if idx := strings.IndexAny(path, "?#"); idx >= 0 {
+		query = path[idx:]
+		path = path[:idx]
+	}
+	if path == "" {
+		path = "/v1/videos"
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	lowerPath := strings.ToLower(path)
+	if lowerPath == "/videos" || strings.HasPrefix(lowerPath, "/videos/") {
+		path = "/v1" + path
+	}
+	return path + query
+}
+
+func isOpenAIVideoBillingRequest(method, targetPath string) bool {
+	if !strings.EqualFold(strings.TrimSpace(method), http.MethodPost) {
+		return false
+	}
+	canonical := canonicalOpenAIVideoTargetPath(targetPath)
+	if idx := strings.IndexAny(canonical, "?#"); idx >= 0 {
+		canonical = canonical[:idx]
+	}
+	switch strings.ToLower(strings.TrimRight(canonical, "/")) {
+	case "/v1/videos", "/v1/videos/generations", "/v1/videos/edits", "/v1/videos/extensions":
+		return true
+	default:
+		return false
+	}
 }
 
 func gjsonPositiveInt(body []byte, path string) int {

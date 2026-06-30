@@ -306,6 +306,58 @@ func TestGroupHandlerMapsVideoGenerationFields(t *testing.T) {
 	require.Nil(t, cleared.VideoPrice4kPerSec)
 }
 
+func TestGroupHandlerMapsImages2APIPriceFields(t *testing.T) {
+	router, adminSvc := setupAdminRouter()
+
+	body, err := json.Marshal(map[string]any{
+		"name":                "images2api-create",
+		"platform":            "openai",
+		"subscription_type":   "standard",
+		"images2api_price_1k": 0.21,
+		"images2api_price_2k": 0.42,
+		"images2api_price_4k": 0.84,
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/groups", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, adminSvc.createdGroups, 1)
+	created := adminSvc.createdGroups[0]
+	require.NotNil(t, created.Images2APIPrice1K)
+	require.InDelta(t, 0.21, *created.Images2APIPrice1K, 0.000001)
+	require.NotNil(t, created.Images2APIPrice2K)
+	require.InDelta(t, 0.42, *created.Images2APIPrice2K, 0.000001)
+	require.NotNil(t, created.Images2APIPrice4K)
+	require.InDelta(t, 0.84, *created.Images2APIPrice4K, 0.000001)
+
+	updateBody, err := json.Marshal(map[string]any{
+		"images2api_price_1k": 0.31,
+		"images2api_price_2k": -1,
+		"images2api_price_4k": 0,
+	})
+	require.NoError(t, err)
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/admin/groups/2", bytes.NewReader(updateBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, []int64{2}, adminSvc.updatedGroupIDs)
+	require.Len(t, adminSvc.updatedGroups, 1)
+	updated := adminSvc.updatedGroups[0]
+	require.NotNil(t, updated.Images2APIPrice1K)
+	require.InDelta(t, 0.31, *updated.Images2APIPrice1K, 0.000001)
+	require.NotNil(t, updated.Images2APIPrice2K)
+	require.InDelta(t, -1, *updated.Images2APIPrice2K, 0.000001)
+	require.NotNil(t, updated.Images2APIPrice4K)
+	require.InDelta(t, 0, *updated.Images2APIPrice4K, 0.000001)
+}
+
 func TestProxyHandlerEndpoints(t *testing.T) {
 	router, _ := setupAdminRouter()
 

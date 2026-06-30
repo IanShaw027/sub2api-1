@@ -4368,6 +4368,55 @@ func (s *GatewayService) GetAccessToken(ctx context.Context, account *Account) (
 	}
 }
 
+func (s *GatewayService) DoGrokNativeResponsesJSON(ctx context.Context, c *gin.Context, account *Account, body []byte) ([]byte, error) {
+	if s == nil || s.httpUpstream == nil {
+		return nil, errors.New("http upstream not configured")
+	}
+	if account == nil || !account.IsGrok() {
+		return nil, errors.New("grok account required")
+	}
+	token, _, err := s.GetAccessToken(ctx, account)
+	if err != nil {
+		return nil, fmt.Errorf("get grok token: %w", err)
+	}
+	baseURL, err := s.validateUpstreamBaseURL(account.GetGrokBaseURL())
+	if err != nil {
+		return nil, err
+	}
+	targetURL := strings.TrimRight(baseURL, "/") + "/v1/responses"
+	upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("build grok responses request: %w", err)
+	}
+	upstreamReq.Header.Set("Authorization", "Bearer "+token)
+	upstreamReq.Header.Set("Content-Type", "application/json")
+	upstreamReq.Header.Set("Accept", "application/json")
+	if c != nil {
+		if ua := strings.TrimSpace(c.GetHeader("User-Agent")); ua != "" {
+			upstreamReq.Header.Set("User-Agent", ua)
+		}
+	}
+	resp, err := s.httpUpstream.DoWithTLS(
+		upstreamReq,
+		accountProxyURL(account),
+		account.ID,
+		account.Concurrency,
+		s.resolveGatewayTLSProfile(account),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("grok native search upstream: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	respBytes, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("read grok native search response: %w", readErr)
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("grok upstream %d: %s", resp.StatusCode, string(respBytes[:min(200, len(respBytes))]))
+	}
+	return respBytes, nil
+}
+
 func (s *GatewayService) getOAuthToken(ctx context.Context, account *Account) (string, string, error) {
 	// 对于 Anthropic OAuth 账号，使用 ClaudeTokenProvider 获取缓存的 token
 	if account.Platform == PlatformAnthropic && account.Type == AccountTypeOAuth && s.claudeTokenProvider != nil {
@@ -10244,7 +10293,7 @@ func (s *GatewayService) calculateRecordUsageCost(
 				STTPerHour:     apiKey.Group.AudioSTTPricePerHour,
 			}
 		}
-		return s.billingService.CalculateAudioCost(result.AudioUsage.Mode, result.AudioUsage.DurationOrUnits, groupConfig, multiplier)
+		return s.billingService.CalculateAudioCost(result.AudioUsage.Mode, result.AudioUsage.DurationOrUnits, groupConfig, 1)
 	}
 
 	// 图片生成：渠道定价为 token 计费时走 token 路径，否则走图片计费
@@ -10434,6 +10483,7 @@ func (s *GatewayService) buildRecordUsageLog(
 	if result.AudioUsage != nil {
 		billingMode := string(BillingModeAudio)
 		usageLog.BillingMode = &billingMode
+		usageLog.RateMultiplier = 1
 	}
 	if result.ImageCount > 0 && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
 		usageLog.RateMultiplier = imageMultiplier

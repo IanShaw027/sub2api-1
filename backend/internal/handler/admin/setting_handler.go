@@ -2581,7 +2581,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAICodexUserAgent
 		}(),
-		AntiBanPlatforms:      req.AntiBanPlatforms,
+		AntiBanPlatforms: func() map[string]bool {
+			if req.AntiBanPlatforms != nil {
+				return req.AntiBanPlatforms
+			}
+			return previousSettings.AntiBanPlatforms
+		}(),
 		MinCodexVersion:       strings.TrimSpace(req.MinCodexVersion),
 		MaxCodexVersion:       strings.TrimSpace(req.MaxCodexVersion),
 		CodexCLIOnlyBlacklist: strings.TrimSpace(req.CodexCLIOnlyBlacklist),
@@ -3086,8 +3091,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		GatewayDebugTimelineBodyMaxKB:             updatedSettings.GatewayDebugTimelineBodyMaxKB,
 		EnableAnthropicCacheTTL1hInjection:        updatedSettings.EnableAnthropicCacheTTL1hInjection,
 		RewriteMessageCacheControl:                updatedSettings.RewriteMessageCacheControl,
+		ClaudeTelemetryMode:                       updatedSettings.ClaudeTelemetryMode,
 		AntigravityUserAgentVersion:               updatedSettings.AntigravityUserAgentVersion,
 		OpenAICodexUserAgent:                      updatedSettings.OpenAICodexUserAgent,
+		AntiBanPlatforms:                          updatedSettings.AntiBanPlatforms,
 		MinCodexVersion:                           updatedSettings.MinCodexVersion,
 		MaxCodexVersion:                           updatedSettings.MaxCodexVersion,
 		CodexCLIOnlyBlacklist:                     updatedSettings.CodexCLIOnlyBlacklist,

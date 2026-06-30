@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+const ccAuxMaxBodyBytes int64 = 1 << 20
 
 // RegisterCommonRoutes 注册通用路由（健康检查、状态等）+ CC 辅助端点 stub
 func RegisterCommonRoutes(r *gin.Engine, h *handler.Handlers, apiKeyAuth middleware.APIKeyAuthMiddleware, settingService *service.SettingService, _ any) {
@@ -82,6 +85,9 @@ func claudeTelemetryModeHandler(h *handler.Handlers, apiKeyAuth middleware.APIKe
 	})
 	dropHandler := claudeTelemetryDropHandler(settingService)
 	return func(c *gin.Context) {
+		if !limitCCAuxRequestBody(c) {
+			return
+		}
 		if settingService == nil || settingService.GetClaudeTelemetryMode(c.Request.Context()) != service.ClaudeTelemetryModeForward || apiKeyAuth == nil {
 			dropHandler(c)
 			return
@@ -182,9 +188,9 @@ func runClaudeTelemetrySoftAPIKeyAuth(c *gin.Context, apiKeyAuth middleware.APIK
 
 func claudeTelemetryDropHandler(settingService *service.SettingService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var body []byte
-		if c.Request.Body != nil {
-			body, _ = io.ReadAll(c.Request.Body)
+		body, ok := readCCAuxRequestBody(c)
+		if !ok {
+			return
 		}
 		service.RecordGatewayDebugTimelineBody(settingService, c, "cc_aux_request", service.SanitizeClaudeTelemetryBatch(body, service.ClaudeTelemetrySanitizeOptions{}),
 			c.GetHeader("Content-Type"), map[string]any{
@@ -200,10 +206,13 @@ func claudeTelemetryDropHandler(settingService *service.SettingService) gin.Hand
 // 读取完整请求头+请求体 → 写入 Gateway Debug Timeline → 返回 stub 响应。
 func ccAuxHandler(settingService *service.SettingService, endpointName string, statusCode int, response any) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if !limitCCAuxRequestBody(c) {
+			return
+		}
 		// 1. 读取请求体
-		var body []byte
-		if c.Request.Body != nil {
-			body, _ = io.ReadAll(c.Request.Body)
+		body, ok := readCCAuxRequestBody(c)
+		if !ok {
+			return
 		}
 
 		// 2. 收集完整请求头（敏感值脱敏）
@@ -223,6 +232,34 @@ func ccAuxHandler(settingService *service.SettingService, endpointName string, s
 		// 4. 返回 stub 响应
 		c.JSON(statusCode, response)
 	}
+}
+
+func limitCCAuxRequestBody(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.Body == nil {
+		return true
+	}
+	if c.Request.ContentLength > ccAuxMaxBodyBytes {
+		c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
+		return false
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, ccAuxMaxBodyBytes)
+	return true
+}
+
+func readCCAuxRequestBody(c *gin.Context) ([]byte, bool) {
+	if c == nil || c.Request == nil || c.Request.Body == nil {
+		return nil, true
+	}
+	body, err := io.ReadAll(c.Request.Body)
+	if err == nil {
+		return body, true
+	}
+	var maxErr *http.MaxBytesError
+	if errors.As(err, &maxErr) {
+		c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
+		return nil, false
+	}
+	return nil, true
 }
 
 // redactSensitiveHeader 对 authorization / x-api-key 等敏感请求头值进行脱敏。

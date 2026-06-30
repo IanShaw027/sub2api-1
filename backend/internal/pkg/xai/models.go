@@ -13,6 +13,8 @@ type Model struct {
 var defaultModels = []Model{
 	{ID: "grok-4.3", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok 4.3"},
 	{ID: "grok-build-0.1", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok Build 0.1"},
+	{ID: "grok-imagine-1", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok Imagine 1"},
+	{ID: "grok-imagine-video", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok Imagine Video"},
 	{ID: "grok-4.20-0309-reasoning", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok 4.20 Reasoning"},
 	{ID: "grok-4.20-0309-non-reasoning", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok 4.20 Non Reasoning"},
 	{ID: "grok-4.20-multi-agent-0309", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok 4.20 Multi Agent"},

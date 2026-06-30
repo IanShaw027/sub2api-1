@@ -138,6 +138,9 @@ type CreateGroupRequest struct {
 	ImagePrice1K          *float64 `json:"image_price_1k"`
 	ImagePrice2K          *float64 `json:"image_price_2k"`
 	ImagePrice4K          *float64 `json:"image_price_4k"`
+	Images2APIPrice1K     *float64 `json:"images2api_price_1k"`
+	Images2APIPrice2K     *float64 `json:"images2api_price_2k"`
+	Images2APIPrice4K     *float64 `json:"images2api_price_4k"`
 	AllowVideoGeneration  bool     `json:"allow_video_generation"`
 	VideoGenerationRoute  string   `json:"video_generation_route"`
 	VideoPrice480pPerSec  *float64 `json:"video_price_480p_per_sec"`
@@ -196,6 +199,9 @@ type UpdateGroupRequest struct {
 	ImagePrice1K          *float64           `json:"image_price_1k"`
 	ImagePrice2K          *float64           `json:"image_price_2k"`
 	ImagePrice4K          *float64           `json:"image_price_4k"`
+	Images2APIPrice1K     *float64           `json:"images2api_price_1k"`
+	Images2APIPrice2K     *float64           `json:"images2api_price_2k"`
+	Images2APIPrice4K     *float64           `json:"images2api_price_4k"`
 	AllowVideoGeneration  *bool              `json:"allow_video_generation"`
 	VideoGenerationRoute  *string            `json:"video_generation_route"`
 	VideoPrice480pPerSec  optionalFloatField `json:"video_price_480p_per_sec"`
@@ -368,6 +374,9 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		ImagePrice1K:          req.ImagePrice1K,
 		ImagePrice2K:          req.ImagePrice2K,
 		ImagePrice4K:          req.ImagePrice4K,
+		Images2APIPrice1K:     req.Images2APIPrice1K,
+		Images2APIPrice2K:     req.Images2APIPrice2K,
+		Images2APIPrice4K:     req.Images2APIPrice4K,
 		AllowVideoGeneration:  req.AllowVideoGeneration,
 		VideoGenerationRoute:  req.VideoGenerationRoute,
 		VideoPrice480pPerSec:  req.VideoPrice480pPerSec,
@@ -441,6 +450,9 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		ImagePrice1K:             req.ImagePrice1K,
 		ImagePrice2K:             req.ImagePrice2K,
 		ImagePrice4K:             req.ImagePrice4K,
+		Images2APIPrice1K:        req.Images2APIPrice1K,
+		Images2APIPrice2K:        req.Images2APIPrice2K,
+		Images2APIPrice4K:        req.Images2APIPrice4K,
 		AllowVideoGeneration:     req.AllowVideoGeneration,
 		VideoGenerationRoute:     req.VideoGenerationRoute,
 		VideoPrice480pPerSec:     req.VideoPrice480pPerSec.Value(),

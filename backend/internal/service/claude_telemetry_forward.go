@@ -8,15 +8,24 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 )
 
 const claudeTelemetryBatchURL = "https://api.anthropic.com/api/event_logging/batch"
+const claudeTelemetryForwardTimeout = 3 * time.Second
 
 // ForwardClaudeTelemetryBatch sanitizes and forwards Claude Code telemetry using
 // Anthropic OAuth/SetupToken accounts only. If no OAuth account is available it
 // is a no-op so API-key accounts are never used for telemetry forwarding.
 func (s *GatewayService) ForwardClaudeTelemetryBatch(ctx context.Context, groupID *int64, body []byte) (int, error) {
-	account, err := s.selectClaudeTelemetryOAuthAccount(ctx, groupID)
+	baseCtx := context.Background()
+	if ctx != nil {
+		baseCtx = context.WithoutCancel(ctx)
+	}
+	forwardCtx, cancel := context.WithTimeout(baseCtx, claudeTelemetryForwardTimeout)
+	defer cancel()
+
+	account, err := s.selectClaudeTelemetryOAuthAccount(forwardCtx, groupID)
 	if err != nil {
 		return http.StatusOK, err
 	}
@@ -24,21 +33,21 @@ func (s *GatewayService) ForwardClaudeTelemetryBatch(ctx context.Context, groupI
 		return http.StatusOK, nil
 	}
 
-	token, err := s.getClaudeTelemetryOAuthToken(ctx, account)
+	token, err := s.getClaudeTelemetryOAuthToken(forwardCtx, account)
 	if err != nil {
 		return http.StatusOK, err
 	}
 
 	fp := &Fingerprint{}
 	if s.identityService != nil {
-		if got, fpErr := s.identityService.GetOrCreateFingerprint(ctx, account.ID, http.Header{}); fpErr == nil && got != nil {
+		if got, fpErr := s.identityService.GetOrCreateFingerprint(forwardCtx, account.ID, http.Header{}); fpErr == nil && got != nil {
 			fp = got
 		}
 	}
 	profile := buildAccountEnvProfile(account.ID, fp)
 	cleaned := SanitizeClaudeTelemetryBatch(body, claudeTelemetrySanitizeOptions(account, fp, profile))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, claudeTelemetryBatchURL, bytes.NewReader(cleaned))
+	req, err := http.NewRequestWithContext(forwardCtx, http.MethodPost, claudeTelemetryBatchURL, bytes.NewReader(cleaned))
 	if err != nil {
 		return http.StatusOK, err
 	}

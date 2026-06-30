@@ -653,6 +653,15 @@ func TestMatchBlockedKeyword_CaseInsensitiveSubstring(t *testing.T) {
 	require.False(t, hit)
 }
 
+func TestMatchBlockedKeyword_EnglishBoundaryHandlesUTF8Neighbors(t *testing.T) {
+	keyword, hit := matchBlockedKeyword("中文 badword 测试", []string{"badword"}, nil)
+	require.True(t, hit)
+	require.Equal(t, "badword", keyword)
+
+	_, hit = matchBlockedKeyword("prefixbadword后缀", []string{"badword"}, nil)
+	require.False(t, hit)
+}
+
 func TestMatchBlockedKeyword_AndRuleRequiresAllTerms(t *testing.T) {
 	keyword, hit := matchBlockedKeyword("please sell account with recharge balance", []string{"account && recharge"}, nil)
 	require.True(t, hit)
@@ -953,7 +962,7 @@ func TestContentModerationCheck_AttentionThresholdRecordsNonHit(t *testing.T) {
 	require.Equal(t, 0.5, logs[0].HighestScore)
 }
 
-func TestContentModerationCheck_PreBlockAuditFailureAllowsAfterRetries(t *testing.T) {
+func TestContentModerationCheck_PreBlockAuditFailureBlocksAfterRetries(t *testing.T) {
 	var attempts int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts++
@@ -968,6 +977,7 @@ func TestContentModerationCheck_PreBlockAuditFailureAllowsAfterRetries(t *testin
 	cfg.APIKeys = []string{"sk-test-1", "sk-test-2", "sk-test-3"}
 	cfg.RetryCount = 2
 	cfg.RecordNonHits = false
+	cfg.APIKeyRateLimitPolicy = ContentModerationRateLimitFailurePolicyError
 	rawCfg, err := json.Marshal(cfg)
 	require.NoError(t, err)
 
@@ -995,9 +1005,52 @@ func TestContentModerationCheck_PreBlockAuditFailureAllowsAfterRetries(t *testin
 
 	require.NoError(t, err)
 	require.Equal(t, 3, attempts)
-	require.True(t, decision.Allowed)
-	require.False(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.False(t, decision.Flagged)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+}
+
+func TestContentModerationCheck_PreBlockNoAuditKeysBlocksWhenPolicyIsError(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = nil
+	cfg.RecordNonHits = false
+	cfg.APIKeyRateLimitPolicy = ContentModerationRateLimitFailurePolicyError
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:    1002,
+		UserEmail: "risk@example.com",
+		Endpoint:  "/v1/chat/completions",
+		Protocol:  ContentModerationProtocolOpenAIChat,
+		Body:      []byte(`{"messages":[{"role":"user","content":"prompt that must be audited"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.False(t, decision.Flagged)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+	require.Empty(t, repo.logs)
 }
 
 func TestContentModerationCheck_PreBlockRateLimitFailureCanAllow(t *testing.T) {

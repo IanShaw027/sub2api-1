@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/reqclientpool"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
 	"github.com/imroc/req/v3"
@@ -33,6 +34,14 @@ type failingOpenAIImageWriter struct {
 	gin.ResponseWriter
 	failAfter int
 	writes    int
+}
+
+func TestNewOpenAIBackendAPIClient_DisablesCookieJar(t *testing.T) {
+	reqclientpool.ResetForTest()
+
+	client, err := newOpenAIBackendAPIClient("")
+	require.NoError(t, err)
+	require.Nil(t, client.GetClient().Jar)
 }
 
 type blockingOpenAIImagesHTTPUpstreamRecorder struct {
@@ -1152,7 +1161,14 @@ func TestAccountSupportsOpenAIImageCapability_EmptyRequirementDoesNotRejectGrok(
 	}
 
 	require.True(t, account.SupportsOpenAIImageCapability(""))
-	require.False(t, account.SupportsOpenAIImageCapability(OpenAIImagesCapabilityBasic))
+	require.True(t, account.SupportsOpenAIImageCapability(OpenAIImagesCapabilityBasic))
+	require.True(t, account.SupportsOpenAIImageCapability(OpenAIImagesCapabilityNative))
+
+	apiKeyAccount := &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeAPIKey,
+	}
+	require.False(t, apiKeyAccount.SupportsOpenAIImageCapability(OpenAIImagesCapabilityBasic))
 }
 
 func TestAccountSupportsOpenAIEndpointCapability(t *testing.T) {
@@ -1164,6 +1180,7 @@ func TestAccountSupportsOpenAIEndpointCapability(t *testing.T) {
 
 		require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityChatCompletions))
 		require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityEmbeddings))
+		require.False(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityVideos))
 	})
 
 	t.Run("Grok 默认兼容 videos, images (subscription OAuth), Responses; chat rejected at route", func(t *testing.T) {
@@ -1173,6 +1190,7 @@ func TestAccountSupportsOpenAIEndpointCapability(t *testing.T) {
 		}
 
 		require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityVideos))
+		require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesIngress))
 		require.True(t, account.SupportsOpenAIImageRoute("native"))
 		require.False(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityEmbeddings))
 	})
@@ -1198,6 +1216,18 @@ func TestAccountSupportsOpenAIEndpointCapability(t *testing.T) {
 
 		require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityChatCompletions))
 		require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityEmbeddings))
+	})
+
+	t.Run("OpenAI 显式声明 videos 也不开放视频能力", func(t *testing.T) {
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"openai_capabilities": []any{"videos"},
+			},
+		}
+
+		require.False(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityVideos))
 	})
 
 	t.Run("显式列表只声明 chat 时不支持 embeddings", func(t *testing.T) {

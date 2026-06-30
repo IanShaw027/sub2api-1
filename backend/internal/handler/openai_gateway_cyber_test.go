@@ -233,6 +233,165 @@ func TestGatewayRecordCyberPolicyIfMarked_RecordsFlaggedHashesBeforeAsyncAudit(t
 	require.NotEmpty(t, hashCache.snapshot(), "gateway flagged hashes must be recorded synchronously before asynchronous audit work continues")
 }
 
+func TestRecordCyberPolicyIfMarked_BlocksSessionSynchronously(t *testing.T) {
+	c := newTestGinContext()
+	body := []byte(`{"model":"gpt-5","prompt_cache_key":"openai-session","messages":[{"role":"user","content":"cyber input"}]}`)
+	c.Request = httptest.NewRequest("POST", "/openai/v1/chat/completions", strings.NewReader(string(body)))
+	service.MarkOpsCyberPolicy(c, service.CyberPolicyMark{
+		Message:        "blocked by upstream policy",
+		Body:           `{"error":{"code":"cyber_policy"}}`,
+		UpstreamStatus: http.StatusBadRequest,
+	})
+
+	releaseAudit := make(chan struct{})
+	defer close(releaseAudit)
+	repo := &blockingCyberPolicyModerationRepo{
+		started: make(chan struct{}),
+		release: releaseAudit,
+	}
+	moderationSvc := service.NewContentModerationService(
+		&contentModerationHandlerSettingRepo{values: map[string]string{
+			service.SettingKeyRiskControlEnabled: "true",
+		}},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	cache := &handlerCyberCacheStoreStub{}
+	settingSvc := service.NewSettingService(
+		&handlerCyberSettingRepoStub{
+			vals: map[string]string{
+				service.SettingKeyCyberSessionBlockEnabled:    "true",
+				service.SettingKeyCyberSessionBlockTTLSeconds: "60",
+			},
+		},
+		&config.Config{},
+	)
+	cfg := &config.Config{}
+	gatewaySvc := service.NewOpenAIGatewayService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cache,
+		cfg,
+		nil,
+		nil,
+		nil,
+		nil,
+		&service.BillingCacheService{},
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		settingSvc,
+		nil,
+		nil,
+	)
+	apiKey := &service.APIKey{ID: 22, Name: "openai key", Key: "sk-test-openai-key"}
+	key := service.CyberSessionBlockKey(apiKey.ID, c, body)
+	require.NotEmpty(t, key)
+	h := &OpenAIGatewayHandler{gatewayService: gatewaySvc, contentModerationService: moderationSvc}
+
+	h.recordCyberPolicyIfMarked(c, apiKey, nil, nil, "gpt-5", false, key, service.ChannelUsageFields{}, "", service.ContentModerationProtocolOpenAIChat, body)
+
+	require.Eventually(t, func() bool {
+		return repo.createStarted()
+	}, time.Second, 10*time.Millisecond, "async audit should be blocked before old async session-block writes")
+	require.True(t, gatewaySvc.IsCyberSessionBlocked(context.Background(), key), "session block must be visible when recordCyberPolicyIfMarked returns")
+}
+
+func TestGatewayRecordCyberPolicyIfMarked_BlocksSessionSynchronously(t *testing.T) {
+	c := newTestGinContext()
+	body := []byte(`{"model":"glm-5.2","prompt_cache_key":"compat-session","messages":[{"role":"user","content":"cyber input"}]}`)
+	c.Request = httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(string(body)))
+	service.MarkOpsCyberPolicy(c, service.CyberPolicyMark{
+		Message:        "blocked by upstream policy",
+		Body:           `{"error":{"code":"cyber_policy"}}`,
+		UpstreamStatus: http.StatusBadRequest,
+	})
+
+	releaseAudit := make(chan struct{})
+	defer close(releaseAudit)
+	repo := &blockingCyberPolicyModerationRepo{
+		started: make(chan struct{}),
+		release: releaseAudit,
+	}
+	moderationSvc := service.NewContentModerationService(
+		&contentModerationHandlerSettingRepo{values: map[string]string{
+			service.SettingKeyRiskControlEnabled: "true",
+		}},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	cache := &handlerCyberCacheStoreStub{}
+	settingSvc := service.NewSettingService(
+		&handlerCyberSettingRepoStub{
+			vals: map[string]string{
+				service.SettingKeyCyberSessionBlockEnabled:    "true",
+				service.SettingKeyCyberSessionBlockTTLSeconds: "60",
+			},
+		},
+		&config.Config{},
+	)
+	cfg := &config.Config{}
+	cfg.Default.RateMultiplier = 1
+	gatewaySvc := service.NewGatewayService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cache,
+		cfg,
+		nil,
+		nil,
+		service.NewBillingService(cfg, nil),
+		nil,
+		&service.BillingCacheService{},
+		nil,
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		settingSvc,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	apiKey := &service.APIKey{ID: 22, Name: "compat key", Key: "sk-test-compat-key"}
+	key := service.CyberSessionBlockKey(apiKey.ID, c, body)
+	require.NotEmpty(t, key)
+	h := &GatewayHandler{gatewayService: gatewaySvc, contentModerationService: moderationSvc}
+
+	h.recordGatewayCyberPolicyIfMarked(c, apiKey, nil, nil, "glm-5.2", false, key, service.ChannelUsageFields{}, service.ContentModerationProtocolOpenAIChat, body)
+
+	require.Eventually(t, func() bool {
+		return repo.createStarted()
+	}, time.Second, 10*time.Millisecond, "gateway async audit should be blocked before old async session-block writes")
+	require.True(t, gatewaySvc.IsCyberSessionBlocked(context.Background(), key), "session block must be visible when recordGatewayCyberPolicyIfMarked returns")
+}
+
 func TestRecordCyberPolicyIfMarked_RecordsFlaggedHashesAfterRequestContextCanceled(t *testing.T) {
 	reqCtx, cancelReq := context.WithCancel(context.Background())
 	cancelReq()
@@ -422,6 +581,48 @@ func TestGatewayRecordCyberPolicyIfMarked_ForwardErrorRecordsUsageAndBlocksSessi
 	require.Equal(t, 17, usageRepo.lastLog.InputTokens)
 	require.Equal(t, 3, usageRepo.lastLog.OutputTokens)
 	require.Equal(t, "glm-5.2", usageRepo.lastLog.Model)
+}
+
+func TestGatewayRejectIfCyberSessionBlocked_WritesCompatError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := []byte(`{"model":"glm-5.2","prompt_cache_key":"compat-session","messages":[{"role":"user","content":"blocked followup"}]}`)
+	c.Request = httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(string(body)))
+
+	cache := &handlerCyberCacheStoreStub{}
+	settingSvc := service.NewSettingService(
+		&handlerCyberSettingRepoStub{
+			vals: map[string]string{
+				service.SettingKeyCyberSessionBlockEnabled:    "true",
+				service.SettingKeyCyberSessionBlockTTLSeconds: "60",
+			},
+		},
+		&config.Config{},
+	)
+	cfg := &config.Config{}
+	gatewaySvc := service.NewGatewayService(
+		nil, nil, nil, nil, nil, nil, nil,
+		cache,
+		cfg,
+		nil, nil, service.NewBillingService(cfg, nil), nil, &service.BillingCacheService{}, nil, nil, &service.DeferredService{},
+		nil, nil, nil, nil,
+		settingSvc,
+		nil, nil, nil, nil, nil, nil,
+	)
+	apiKey := &service.APIKey{ID: 22, Name: "compat key", Key: "sk-test-compat-key", Group: &service.Group{ID: 44, Platform: service.PlatformAnthropic}}
+	groupID := int64(44)
+	apiKey.GroupID = &groupID
+	key := service.CyberSessionBlockKey(apiKey.ID, c, body)
+	require.NotEmpty(t, key)
+	cache.blocked = map[string]bool{key: true}
+	h := &GatewayHandler{gatewayService: gatewaySvc}
+
+	blocked := h.rejectIfCyberSessionBlocked(c, apiKey, body, "glm-5.2", cyberBlockFormatChat)
+
+	require.True(t, blocked)
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, w.Body.String(), "session_blocked_by_cyber_policy")
 }
 
 // TestBuildCyberPolicyOpsErrorEntry_StatusCode verifies F6: the ops error log

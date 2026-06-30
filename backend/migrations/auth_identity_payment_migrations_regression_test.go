@@ -212,6 +212,86 @@ func TestMigration153UsesConfiguredTimezoneBucketsForSplitCostBackfill(t *testin
 	require.NotContains(t, sql, "AT TIME ZONE 'UTC'")
 }
 
+func TestMigration187AllowsNativeImageRouteAndAddsVideoPriceChecks(t *testing.T) {
+	content, err := FS.ReadFile("187_allow_native_image_route_and_video_price_checks.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "DROP CONSTRAINT IF EXISTS groups_image_generation_route_check")
+	require.Contains(t, sql, "image_generation_route IN ('codex', 'web2api', 'native')")
+	for _, name := range []string{
+		"groups_video_price_480p_per_sec_non_negative",
+		"groups_video_price_720p_per_sec_non_negative",
+		"groups_video_price_1080p_per_sec_non_negative",
+		"groups_video_price_4k_per_sec_non_negative",
+	} {
+		require.Contains(t, sql, name)
+	}
+	require.Contains(t, sql, "video_price_480p_per_sec IS NULL OR video_price_480p_per_sec >= 0")
+	require.Contains(t, sql, "video_price_720p_per_sec IS NULL OR video_price_720p_per_sec >= 0")
+	require.Contains(t, sql, "video_price_1080p_per_sec IS NULL OR video_price_1080p_per_sec >= 0")
+	require.Contains(t, sql, "video_price_4k_per_sec IS NULL OR video_price_4k_per_sec >= 0")
+}
+
+func TestMigration188AddsAudioSearchPriceChecksWithoutMutating184(t *testing.T) {
+	content184, err := FS.ReadFile("184_add_group_audio_search_pricing.sql")
+	require.NoError(t, err)
+	sql184 := string(content184)
+	require.Contains(t, sql184, "ADD COLUMN IF NOT EXISTS search_price_per_1k")
+	for _, name := range []string{
+		"groups_search_price_per_1k_non_negative",
+		"groups_audio_realtime_price_per_min_non_negative",
+		"groups_audio_tts_price_per_million_chars_non_negative",
+		"groups_audio_stt_price_per_hour_non_negative",
+	} {
+		require.NotContains(t, sql184, name)
+	}
+
+	content188, err := FS.ReadFile("188_add_group_audio_search_price_checks.sql")
+	require.NoError(t, err)
+	sql188 := string(content188)
+	for _, name := range []string{
+		"groups_search_price_per_1k_non_negative",
+		"groups_audio_realtime_price_per_min_non_negative",
+		"groups_audio_tts_price_per_million_chars_non_negative",
+		"groups_audio_stt_price_per_hour_non_negative",
+	} {
+		require.Contains(t, sql188, "IF NOT EXISTS")
+		require.Contains(t, sql188, name)
+	}
+	require.Contains(t, sql188, "search_price_per_1k IS NULL OR search_price_per_1k >= 0")
+	require.Contains(t, sql188, "audio_realtime_price_per_min IS NULL OR audio_realtime_price_per_min >= 0")
+	require.Contains(t, sql188, "audio_tts_price_per_million_chars IS NULL OR audio_tts_price_per_million_chars >= 0")
+	require.Contains(t, sql188, "audio_stt_price_per_hour IS NULL OR audio_stt_price_per_hour >= 0")
+}
+
+func TestMigration189UpdatesOpsErrorRequestTypeComment(t *testing.T) {
+	content, err := FS.ReadFile("189_update_ops_error_request_type_comment.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "COMMENT ON COLUMN ops_error_logs.request_type")
+	require.Contains(t, sql, "6=cyber")
+	require.Contains(t, sql, "7=video")
+}
+
+func TestMigration190ClearsNonGrokVideoGenerationConfig(t *testing.T) {
+	content, err := FS.ReadFile("190_clear_non_grok_video_generation_config.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "UPDATE groups")
+	require.Contains(t, sql, "allow_video_generation = false")
+	require.Contains(t, sql, "video_generation_route = 'native'")
+	require.Contains(t, sql, "video_price_480p_per_sec = NULL")
+	require.Contains(t, sql, "video_price_720p_per_sec = NULL")
+	require.Contains(t, sql, "video_price_1080p_per_sec = NULL")
+	require.Contains(t, sql, "video_price_4k_per_sec = NULL")
+	require.Contains(t, sql, "WHERE platform IS DISTINCT FROM 'grok'")
+	require.Contains(t, sql, "allow_video_generation IS DISTINCT FROM false")
+	require.NotContains(t, sql, "WHERE platform = 'grok'")
+}
+
 func TestMigration132BackfillsHistoricalAffiliateLedgerRowsSafely(t *testing.T) {
 	content, err := FS.ReadFile("132_affiliate_policy_limits.sql")
 	require.NoError(t, err)

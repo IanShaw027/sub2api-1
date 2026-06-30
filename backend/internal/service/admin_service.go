@@ -2308,7 +2308,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 				if route == GroupImageGenerationRouteCodex {
 					return GroupImageGenerationRouteCodex
 				}
-				return GroupVideoGenerationRouteNative
+				return GroupImageGenerationRouteNative
 			}
 			return NormalizeGroupImageGenerationRoute(input.ImageGenerationRoute)
 		}(),
@@ -2353,6 +2353,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		ModelsListConfig:                normalizeGroupModelsListConfig(input.ModelsListConfig),
 		RPMLimit:                        input.RPMLimit,
 	}
+	sanitizeGroupVideoGenerationFields(group)
 	if input.UserSelectable != nil {
 		group.UserSelectable = *input.UserSelectable
 	}
@@ -2534,13 +2535,13 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			if route == GroupImageGenerationRouteCodex {
 				group.ImageGenerationRoute = GroupImageGenerationRouteCodex
 			} else {
-				group.ImageGenerationRoute = GroupVideoGenerationRouteNative
+				group.ImageGenerationRoute = GroupImageGenerationRouteNative
 			}
 		} else {
 			group.ImageGenerationRoute = NormalizeGroupImageGenerationRoute(*input.ImageGenerationRoute)
 		}
 	} else if group.Platform == PlatformGrok && group.ImageGenerationRoute == "" {
-		group.ImageGenerationRoute = GroupVideoGenerationRouteNative
+		group.ImageGenerationRoute = GroupImageGenerationRouteNative
 	}
 	if input.OpenAIImageMainModel != nil {
 		model := NormalizeOpenAIImageMainModel(*input.OpenAIImageMainModel)
@@ -2687,6 +2688,7 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		}
 		group.RPMLimit = *input.RPMLimit
 	}
+	sanitizeGroupVideoGenerationFields(group)
 	sanitizeGroupMessagesDispatchFields(group)
 
 	if err := s.groupRepo.Update(ctx, group); err != nil {

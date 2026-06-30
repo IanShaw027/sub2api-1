@@ -48,8 +48,7 @@ func RegisterGatewayRoutes(
 	}
 
 	isVideoSupportedPlatform := func(c *gin.Context) bool {
-		p := getGroupPlatform(c)
-		return p == service.PlatformOpenAI || p == service.PlatformGrok
+		return getGroupPlatform(c) == service.PlatformGrok
 	}
 	isWebSearchSupportedPlatform := func(c *gin.Context) bool {
 		return getGroupPlatform(c) == service.PlatformGrok
@@ -184,7 +183,7 @@ func RegisterGatewayRoutes(
 			}
 			h.OpenAIGateway.Images(c)
 		})
-		// Videos API (OpenAI-compatible): POST /v1/videos , /v1/videos/generations etc. Full align with xAI Imagine Video (gen, edits, extensions, image-to-video via body).
+		// Videos API (Grok/xAI-compatible): POST /v1/videos, /v1/videos/generations etc.
 		videoHandler := func(c *gin.Context) {
 			if !isVideoSupportedPlatform(c) {
 				rejectUnsupportedEndpoint(c, "Videos API")

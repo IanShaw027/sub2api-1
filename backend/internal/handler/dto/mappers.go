@@ -179,6 +179,9 @@ func GroupFromServiceAdmin(g *service.Group) *AdminGroup {
 }
 
 func groupFromServiceBase(g *service.Group) Group {
+	normalized := *g
+	service.SanitizeGroupVideoGenerationFields(&normalized)
+	g = &normalized
 	return Group{
 		ID:                   g.ID,
 		Name:                 g.Name,

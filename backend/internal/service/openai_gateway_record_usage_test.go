@@ -135,6 +135,31 @@ func TestOpenAIGatewayServiceRecordUsage_AudioRealtimeUsesGroupPrice(t *testing.
 	require.InDelta(t, 1.47, usageRepo.lastLog.TotalCost, 1e-12)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_AudioExplicitPriceDoesNotApplyTextRateMultiplier(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:  "oa-audio-realtime-rate",
+			Model:      "gpt-4o-mini-tts",
+			AudioUsage: &AudioUsage{Mode: "realtime", DurationOrUnits: 3.5},
+		},
+		APIKey: &APIKey{ID: 2, User: &User{ID: 1}, Group: &Group{
+			ID:                       7,
+			RateMultiplier:           2,
+			AudioRealtimePricePerMin: floatPtrAudioOpenAI(0.42),
+		}},
+		User:    &User{ID: 1},
+		Account: &Account{ID: 3},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, string(BillingModeAudio), *usageRepo.lastLog.BillingMode)
+	require.InDelta(t, 1.47, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, 1.47, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, 1.0, usageRepo.lastLog.RateMultiplier, 1e-12)
+}
+
 func TestOpenAIGatewayServiceRecordUsage_AudioTTSUsesGroupPrice(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
@@ -2436,4 +2461,43 @@ func TestOpenAIGatewayServiceRecordUsage_VideoEndpointWithMissingSecondsBillsDef
 	require.Greater(t, usageRepo.lastLog.ActualCost, 0.0)
 	require.Equal(t, 1, userRepo.deductCalls)
 	require.InDelta(t, usageRepo.lastLog.ActualCost, userRepo.lastAmount, 1e-12)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_VideoExplicitPriceDoesNotApplyTextRateMultiplier(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, subRepo, nil)
+	price720p := 0.02
+	groupID := int64(78)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:     "resp_video_rate_multiplier",
+			Model:         "grok-vid-1",
+			UpstreamModel: "grok-vid-1",
+			VideoSize:     VideoBillingTier720p,
+			VideoSeconds:  10,
+			VideoCount:    1,
+			Duration:      time.Second,
+		},
+		APIKey: &APIKey{ID: 1009, GroupID: &groupID, Group: &Group{
+			ID:                   groupID,
+			RateMultiplier:       2,
+			VideoPrice720pPerSec: &price720p,
+		}},
+		User:             &User{ID: 2009},
+		Account:          &Account{ID: 3009, Platform: PlatformGrok},
+		InboundEndpoint:  "/v1/videos/generations",
+		UpstreamEndpoint: "/v1/videos/generations",
+		RequestType:      RequestTypeVideo,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, string(BillingModeVideo), *usageRepo.lastLog.BillingMode)
+	require.InDelta(t, 0.2, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, 0.2, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, 0.2, userRepo.lastAmount, 1e-12)
+	require.InDelta(t, 1.0, usageRepo.lastLog.RateMultiplier, 1e-12)
 }

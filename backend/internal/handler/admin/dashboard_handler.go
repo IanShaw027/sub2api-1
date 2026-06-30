@@ -66,6 +66,7 @@ func parseTimeRange(c *gin.Context) (time.Time, time.Time) {
 }
 
 func parseUsageRequestTypeQuery(raw string) (service.RequestType, error) {
+	const allowedUsageRequestTypes = "unknown, sync, stream, ws_v2, image, image_web_bridge, cyber, video"
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return service.RequestTypeUnknown, nil
@@ -75,11 +76,11 @@ func parseUsageRequestTypeQuery(raw string) (service.RequestType, error) {
 	}
 	legacyValue, err := strconv.ParseInt(raw, 10, 16)
 	if err != nil {
-		return service.RequestTypeUnknown, fmt.Errorf("invalid request_type, allowed values: unknown, sync, stream, ws_v2, image, image_web_bridge")
+		return service.RequestTypeUnknown, fmt.Errorf("invalid request_type, allowed values: %s", allowedUsageRequestTypes)
 	}
 	legacyType := service.RequestType(legacyValue)
 	if !legacyType.IsValid() {
-		return service.RequestTypeUnknown, fmt.Errorf("invalid request_type, allowed values: unknown, sync, stream, ws_v2, image, image_web_bridge")
+		return service.RequestTypeUnknown, fmt.Errorf("invalid request_type, allowed values: %s", allowedUsageRequestTypes)
 	}
 	return legacyType.Normalize(), nil
 }

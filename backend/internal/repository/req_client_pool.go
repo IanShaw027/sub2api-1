@@ -10,10 +10,11 @@ import (
 
 // ReqClientOptions 定义 req 客户端的构建参数（导出供 service 层使用）
 type ReqClientOptions struct {
-	ProxyURL    string        // 代理 URL（支持 http/https/socks5）
-	Timeout     time.Duration // 请求超时时间
-	Impersonate bool          // 是否模拟 Chrome 浏览器指纹
-	ForceHTTP2  bool          // 是否强制使用 HTTP/2
+	ProxyURL       string        // 代理 URL（支持 http/https/socks5）
+	Timeout        time.Duration // 请求超时时间
+	Impersonate    bool          // 是否模拟 Chrome 浏览器指纹
+	ForceHTTP2     bool          // 是否强制使用 HTTP/2
+	DisableCookies bool          // 是否禁用 client-level CookieJar，避免共享客户端串 cookie
 }
 
 // GetSharedReqClient 获取共享的 req 客户端实例（导出，供 service 层使用）。

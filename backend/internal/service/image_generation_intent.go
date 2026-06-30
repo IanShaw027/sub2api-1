@@ -346,9 +346,10 @@ func openAIJSONString(value gjson.Result) string {
 
 const videoGenerationPermissionMessage = "Video generation is not enabled for this group"
 
-// GroupAllowsVideoGeneration preserves ungrouped-key behavior and enforces the flag when a group is present.
+// GroupAllowsVideoGeneration preserves ungrouped-key behavior and enforces
+// that grouped Videos requests are Grok-only and explicitly enabled.
 func GroupAllowsVideoGeneration(group *Group) bool {
-	return group == nil || group.AllowVideoGeneration
+	return group == nil || (groupPlatformSupportsVideoGeneration(group.Platform) && group.AllowVideoGeneration)
 }
 
 func VideoGenerationPermissionMessage() string {

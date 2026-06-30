@@ -141,6 +141,7 @@ func TestApplyToolNameRewriteToBody_RenamesToolUseWithDynamicMapping(t *testing.
 	require.Equal(t, "web_search", gjson.GetBytes(out, "messages.0.content.1.name").String())
 	require.Equal(t, "", gjson.GetBytes(out, "tools.2.description").String())
 	require.Equal(t, "server desc", gjson.GetBytes(out, "tools.6.description").String())
+	require.True(t, rw.DescStripped)
 	// tool_result 依靠 tool_use_id 关联，不需要 name 字段
 	require.Equal(t, "ok", gjson.GetBytes(out, "messages.1.content.0.content").String())
 }
@@ -391,6 +392,38 @@ func TestRewriteSchemaProperties_MultiplePropertiesDoesNotCorruptJSON(t *testing
 	require.Equal(t, "ok", gjson.GetBytes(out, "messages.0.content.0.input.keep").String())
 }
 
+func TestRewriteSchemaProperties_EscapesSpecialPropertyNames(t *testing.T) {
+	body := []byte(`{"tools":[{"name":"tool","input_schema":{"type":"object","properties":{"thread.id":{"type":"string","description":"thread"},"session/id":{"type":"string","description":"session"},"keep":{"type":"string"}},"required":["thread.id","session/id","keep"]}}],"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"tool","input":{"thread.id":"thr-1","session/id":"ses-1","keep":"ok"}}]}]}`)
+	rw := buildToolNameRewriteFromBody(body, map[string]string{
+		"thread.id":  "arg.thread.id",
+		"session/id": "arg/session/id",
+	})
+	require.NotNil(t, rw)
+
+	out := applyToolNameRewriteToBody(body, rw)
+	require.True(t, gjson.ValidBytes(out), string(out))
+
+	props := gjson.GetBytes(out, "tools.0.input_schema.properties").Map()
+	require.NotContains(t, props, "thread.id")
+	require.NotContains(t, props, "session/id")
+	require.Contains(t, props, "arg.thread.id")
+	require.Contains(t, props, "arg/session/id")
+	require.Equal(t, "string", props["arg.thread.id"].Get("type").String())
+	require.Equal(t, "string", props["arg/session/id"].Get("type").String())
+	require.ElementsMatch(t, []string{"arg.thread.id", "arg/session/id", "keep"}, []string{
+		gjson.GetBytes(out, "tools.0.input_schema.required.0").String(),
+		gjson.GetBytes(out, "tools.0.input_schema.required.1").String(),
+		gjson.GetBytes(out, "tools.0.input_schema.required.2").String(),
+	})
+
+	input := gjson.GetBytes(out, "messages.0.content.0.input").Map()
+	require.NotContains(t, input, "thread.id")
+	require.NotContains(t, input, "session/id")
+	require.Equal(t, "thr-1", input["arg.thread.id"].String())
+	require.Equal(t, "ses-1", input["arg/session/id"].String())
+	require.Equal(t, "ok", input["keep"].String())
+}
+
 func TestRestorePropNamesInJSON_DoesNotTouchFreeTextContent(t *testing.T) {
 	rw := &ToolNameRewrite{
 		PropReverse: map[string]string{
@@ -418,4 +451,148 @@ func TestRestorePropNamesInJSON_DoesNotTouchFreeTextContent(t *testing.T) {
 	require.False(t, gjson.GetBytes(got, "messages.0.content.1.input.arg_session_id").Exists())
 	require.Equal(t, "thr-1", gjson.GetBytes(got, "messages.0.content.1.input.thread_id").String())
 	require.Equal(t, "ses-1", gjson.GetBytes(got, "messages.0.content.1.input.session_id").String())
+}
+
+func TestRestorePropNamesInJSON_RestoresSpecialPropertyNames(t *testing.T) {
+	rw := &ToolNameRewrite{
+		PropReverse: map[string]string{
+			"arg.thread.id":  "thread.id",
+			"arg/session/id": "session/id",
+		},
+	}
+	data := []byte(`{"tools":[{"input_schema":{"properties":{"arg.thread.id":{"type":"string"},"arg/session/id":{"type":"string"}},"required":["arg.thread.id","arg/session/id"]}}],"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"tool","input":{"arg.thread.id":"thr-1","arg/session/id":"ses-1"}}]}]}`)
+
+	got := restorePropNamesInJSON(data, rw)
+
+	require.True(t, gjson.ValidBytes(got), string(got))
+	props := gjson.GetBytes(got, "tools.0.input_schema.properties").Map()
+	require.NotContains(t, props, "arg.thread.id")
+	require.NotContains(t, props, "arg/session/id")
+	require.Contains(t, props, "thread.id")
+	require.Contains(t, props, "session/id")
+	require.ElementsMatch(t, []string{"thread.id", "session/id"}, []string{
+		gjson.GetBytes(got, "tools.0.input_schema.required.0").String(),
+		gjson.GetBytes(got, "tools.0.input_schema.required.1").String(),
+	})
+	input := gjson.GetBytes(got, "messages.0.content.0.input").Map()
+	require.Equal(t, "thr-1", input["thread.id"].String())
+	require.Equal(t, "ses-1", input["session/id"].String())
+}
+
+func TestRestorePropNamesInJSON_RewritesFunctionArgumentsString(t *testing.T) {
+	rw := &ToolNameRewrite{
+		PropReverse: map[string]string{
+			"arg_thread_id": "thread_id",
+		},
+	}
+	data := []byte(`{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"arg_thread_id\":\"thr-1\",\"keep\":\"ok\"}"}}]}}]}`)
+
+	got := restorePropNamesInJSON(data, rw)
+
+	args := gjson.GetBytes(got, "choices.0.delta.tool_calls.0.function.arguments").String()
+	require.JSONEq(t, `{"thread_id":"thr-1","keep":"ok"}`, args)
+}
+
+func TestRestorePropNamesInJSON_RewritesFunctionArgumentsJSONFragment(t *testing.T) {
+	rw := &ToolNameRewrite{
+		PropReverse: map[string]string{
+			"arg_thread_id": "thread_id",
+		},
+	}
+	data := []byte(`{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"arg_thread_id\":\""}}]}}]}`)
+
+	got := restorePropNamesInJSON(data, rw)
+
+	args := gjson.GetBytes(got, "choices.0.delta.tool_calls.0.function.arguments").String()
+	require.Equal(t, `{"thread_id":"`, args)
+	require.NotContains(t, args, "arg_thread_id")
+}
+
+func TestRestoreToolNamesInBytes_RewritesPropNamesInsideSSEData(t *testing.T) {
+	rw := &ToolNameRewrite{
+		PropReverse: map[string]string{
+			"arg_thread_id": "thread_id",
+		},
+	}
+	data := []byte("event: response.output_item.done\n" +
+		"data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"arguments\":\"{\\\"arg_thread_id\\\":\\\"thr-1\\\"}\"}}\n\n")
+
+	got := restoreToolNamesInBytes(data, rw)
+
+	require.Contains(t, string(got), "event: response.output_item.done\n")
+	payload := strings.TrimSpace(strings.TrimPrefix(strings.Split(string(got), "\n")[1], "data: "))
+	require.JSONEq(t, `{"type":"response.output_item.done","item":{"type":"function_call","arguments":"{\"thread_id\":\"thr-1\"}"}}`, payload)
+}
+
+func TestRestoreToolNamesInBytes_RewritesResponsesFunctionCallArgumentsDelta(t *testing.T) {
+	rw := &ToolNameRewrite{
+		PropReverse: map[string]string{
+			"arg_thread_id": "thread_id",
+		},
+	}
+	data := []byte("event: response.function_call_arguments.delta\n" +
+		"data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{\\\"arg_thread_id\\\":\\\"thr-1\\\"}\"}\n\n")
+
+	got := restoreToolNamesInBytes(data, rw)
+
+	require.Contains(t, string(got), "event: response.function_call_arguments.delta\n")
+	payload := strings.TrimSpace(strings.TrimPrefix(strings.Split(string(got), "\n")[1], "data: "))
+	require.JSONEq(t, `{"type":"response.function_call_arguments.delta","delta":"{\"thread_id\":\"thr-1\"}"}`, payload)
+	require.NotContains(t, payload, "arg_thread_id")
+}
+
+func TestRestoreToolNamesInBytes_RewritesSplitResponsesFunctionCallArgumentsDelta(t *testing.T) {
+	rw := &ToolNameRewrite{
+		PropReverse: map[string]string{
+			"arg_thread_id": "thread_id",
+		},
+	}
+	first := []byte("event: response.function_call_arguments.delta\n" +
+		"data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_1\",\"delta\":\"{\\\"arg_th\"}\n\n")
+	second := []byte("event: response.function_call_arguments.delta\n" +
+		"data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_1\",\"delta\":\"read_id\\\":\\\"thr-1\\\"}\"}\n\n")
+
+	gotFirst := restoreToolNamesInBytes(first, rw)
+	gotSecond := restoreToolNamesInBytes(second, rw)
+
+	payloadFirst := strings.TrimSpace(strings.TrimPrefix(strings.Split(string(gotFirst), "\n")[1], "data: "))
+	payloadSecond := strings.TrimSpace(strings.TrimPrefix(strings.Split(string(gotSecond), "\n")[1], "data: "))
+	combinedDelta := gjson.Get(payloadFirst, "delta").String() + gjson.Get(payloadSecond, "delta").String()
+	require.JSONEq(t, `{"thread_id":"thr-1"}`, combinedDelta)
+	require.NotContains(t, combinedDelta, "arg_thread_id")
+}
+
+func TestRestoreToolNamesInBytes_RewritesSplitChatCompletionFunctionArguments(t *testing.T) {
+	rw := &ToolNameRewrite{
+		PropReverse: map[string]string{
+			"arg_thread_id": "thread_id",
+		},
+	}
+	first := []byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"arguments\":\"{\\\"arg_th\"}}]}}]}\n\n")
+	second := []byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"arguments\":\"read_id\\\":\\\"thr-1\\\"}\"}}]}}]}\n\n")
+
+	gotFirst := restoreToolNamesInBytes(first, rw)
+	gotSecond := restoreToolNamesInBytes(second, rw)
+
+	payloadFirst := strings.TrimSpace(strings.TrimPrefix(strings.Split(string(gotFirst), "\n")[0], "data: "))
+	payloadSecond := strings.TrimSpace(strings.TrimPrefix(strings.Split(string(gotSecond), "\n")[0], "data: "))
+	argsFirst := gjson.Get(payloadFirst, "choices.0.delta.tool_calls.0.function.arguments").String()
+	argsSecond := gjson.Get(payloadSecond, "choices.0.delta.tool_calls.0.function.arguments").String()
+	require.JSONEq(t, `{"thread_id":"thr-1"}`, argsFirst+argsSecond)
+	require.NotContains(t, argsFirst+argsSecond, "arg_thread_id")
+}
+
+func TestRestoreToolNamesInBytes_DoesNotRewriteOutputTextDelta(t *testing.T) {
+	rw := &ToolNameRewrite{
+		PropReverse: map[string]string{
+			"arg_thread_id": "thread_id",
+		},
+	}
+	data := []byte("event: response.output_text.delta\n" +
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"literal arg_thread_id text\"}\n\n")
+
+	got := restoreToolNamesInBytes(data, rw)
+
+	payload := strings.TrimSpace(strings.TrimPrefix(strings.Split(string(got), "\n")[1], "data: "))
+	require.JSONEq(t, `{"type":"response.output_text.delta","delta":"literal arg_thread_id text"}`, payload)
 }

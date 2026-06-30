@@ -93,6 +93,26 @@ func TestHasOpenAIImageGenerationToolCapability(t *testing.T) {
 	require.False(t, HasOpenAIImageGenerationToolCapability([]byte(`{"input":"write code"}`)))
 }
 
+func TestGroupAllowsVideoGenerationRequiresGrokPlatform(t *testing.T) {
+	require.True(t, GroupAllowsVideoGeneration(nil), "ungrouped keys keep legacy scheduling behavior")
+	require.True(t, GroupAllowsVideoGeneration(&Group{
+		Platform:             PlatformGrok,
+		AllowVideoGeneration: true,
+	}))
+	require.False(t, GroupAllowsVideoGeneration(&Group{
+		Platform:             PlatformGrok,
+		AllowVideoGeneration: false,
+	}))
+	require.False(t, GroupAllowsVideoGeneration(&Group{
+		Platform:             PlatformOpenAI,
+		AllowVideoGeneration: true,
+	}), "stale OpenAI group video flags must not enable Videos")
+	require.False(t, GroupAllowsVideoGeneration(&Group{
+		Platform:             PlatformAnthropic,
+		AllowVideoGeneration: true,
+	}))
+}
+
 func TestOpenAIRequestBodyImageGenerationToolNeedsNormalization_AutoCorrectsInvalidSize(t *testing.T) {
 	require.True(t, openAIRequestBodyImageGenerationToolNeedsNormalization([]byte(`{"tools":[{"type":"image_generation","size":"2048x1153"}]}`)))
 	require.False(t, openAIRequestBodyImageGenerationToolNeedsNormalization([]byte(`{"tools":[{"type":"image_generation","size":"2048x1152"}]}`)))

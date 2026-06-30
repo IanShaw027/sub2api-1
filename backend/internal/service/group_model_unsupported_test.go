@@ -3,6 +3,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -142,6 +143,45 @@ func TestNewGroupModelUnsupportedError_BuildsTypedError(t *testing.T) {
 	require.Equal(t, PlatformGemini, modelErr.Platform)
 	require.Equal(t, "gemini-missing", modelErr.RequestedModel)
 	require.Contains(t, modelErr.AvailableModels, "gemini-2.5-pro")
+}
+
+func TestNewGroupModelUnsupportedError_UsesGrokDefaults(t *testing.T) {
+	err := newGroupModelUnsupportedError(PlatformGrok, "grok-missing", []Account{
+		{
+			ID:          1,
+			Platform:    PlatformGrok,
+			Status:      StatusActive,
+			Schedulable: true,
+		},
+	})
+
+	var modelErr *GroupModelUnsupportedError
+	require.ErrorAs(t, err, &modelErr)
+	require.Equal(t, PlatformGrok, modelErr.Platform)
+	require.Equal(t, "grok-missing", modelErr.RequestedModel)
+	require.Contains(t, modelErr.AvailableModels, "grok-4.3")
+	require.NotContains(t, modelErr.AvailableModels, "claude-sonnet-4-6")
+}
+
+func TestNoAvailableOpenAICompatibleSelectionErrorWithRouting_UsesGrokPlatform(t *testing.T) {
+	err := noAvailableOpenAICompatibleSelectionErrorWithRouting(context.Background(), nil, PlatformGrok, "grok-missing", false, false, []Account{
+		{
+			ID:          1,
+			Platform:    PlatformGrok,
+			Status:      StatusActive,
+			Schedulable: true,
+		},
+	})
+
+	var modelErr *GroupModelUnsupportedError
+	require.ErrorAs(t, err, &modelErr)
+	require.Equal(t, PlatformGrok, modelErr.Platform)
+	require.Contains(t, modelErr.AvailableModels, "grok-4.3")
+	require.NotContains(t, err.Error(), "OpenAI")
+
+	err = noAvailableOpenAICompatibleSelectionErrorWithRouting(context.Background(), nil, PlatformGrok, "grok-missing", false, false)
+	require.ErrorContains(t, err, "no available Grok accounts supporting model: grok-missing")
+	require.NotContains(t, err.Error(), "OpenAI")
 }
 
 func sortStringsAreAscending(values []string) bool {

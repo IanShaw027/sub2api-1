@@ -102,7 +102,7 @@ func TestGatewayRoutesGrokImagesPathsAreRegistered(t *testing.T) {
 	}
 }
 
-func TestGatewayRoutesOpenAIVideosPathsAreRegistered(t *testing.T) {
+func TestGatewayRoutesOpenAIVideosPathsRejectOpenAIGroups(t *testing.T) {
 	router := newGatewayRoutesTestRouter(service.PlatformOpenAI)
 
 	for _, tc := range []struct {
@@ -113,17 +113,22 @@ func TestGatewayRoutesOpenAIVideosPathsAreRegistered(t *testing.T) {
 		{http.MethodPost, "/v1/videos/generations"},
 		{http.MethodPost, "/v1/videos/edits"},
 		{http.MethodPost, "/v1/videos/extensions"},
+		{http.MethodGet, "/v1/videos"},
+		{http.MethodGet, "/v1/videos/video-job"},
 		{http.MethodPost, "/videos"},
 		{http.MethodPost, "/videos/generations"},
 		{http.MethodPost, "/videos/edits"},
 		{http.MethodPost, "/videos/extensions"},
+		{http.MethodGet, "/videos"},
+		{http.MethodGet, "/videos/video-job"},
 	} {
-		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{"model":"sora-2","prompt":"a cat playing piano","seconds":"8","size":"1280x720"}`))
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{"model":"grok-video","prompt":"a cat playing piano","seconds":"8","size":"1280x720"}`))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
-		require.NotEqual(t, http.StatusNotFound, w.Code, "method=%s path=%s should hit OpenAI-compatible videos handler", tc.method, tc.path)
+		require.Equal(t, http.StatusNotFound, w.Code, "method=%s path=%s should reject videos for OpenAI groups", tc.method, tc.path)
+		require.Contains(t, w.Body.String(), "Videos API is not supported for this platform")
 	}
 }
 

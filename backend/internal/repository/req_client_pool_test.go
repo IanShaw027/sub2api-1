@@ -62,7 +62,27 @@ func TestGetSharedReqClient_ImpersonateAndProxy(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, client)
-	require.Equal(t, "http://proxy.local:8080|4s|true|false", buildReqClientKey(opts))
+	require.Equal(t, "http://proxy.local:8080|4s|true|false|false", buildReqClientKey(opts))
+}
+
+func TestGetSharedReqClient_DisableCookiesSeparatesCacheAndDisablesJar(t *testing.T) {
+	reqclientpool.ResetForTest()
+	base := ReqClientOptions{
+		ProxyURL: "http://proxy.local:8080",
+		Timeout:  2 * time.Second,
+	}
+	withCookies, err := getSharedReqClient(base)
+	require.NoError(t, err)
+	require.NotNil(t, withCookies.GetClient().Jar)
+
+	noCookies := base
+	noCookies.DisableCookies = true
+	withoutCookies, err := getSharedReqClient(noCookies)
+	require.NoError(t, err)
+
+	require.NotSame(t, withCookies, withoutCookies)
+	require.NotEqual(t, buildReqClientKey(base), buildReqClientKey(noCookies))
+	require.Nil(t, withoutCookies.GetClient().Jar)
 }
 
 func TestGetSharedReqClient_InvalidProxyURL(t *testing.T) {

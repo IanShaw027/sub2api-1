@@ -171,6 +171,54 @@ func TestCommonRoutesClaudeTelemetryForwardModeMarksAPIKeyAuthBillingSkipped(t *
 	require.JSONEq(t, `{}`, w.Body.String())
 }
 
+func TestCommonRoutesClaudeTelemetryRejectsOversizedBodyBeforeAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	authCalls := 0
+	settingService := service.NewSettingService(&commonRoutesSettingRepoStub{values: map[string]string{service.SettingKeyClaudeTelemetryMode: service.ClaudeTelemetryModeForward}}, &config.Config{})
+	RegisterCommonRoutes(router, &handler.Handlers{Gateway: &handler.GatewayHandler{}}, servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+		authCalls++
+		c.Next()
+	}), settingService, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/event_logging/batch", strings.NewReader(strings.Repeat("a", 1<<20+1)))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+	require.Equal(t, 0, authCalls)
+}
+
+func TestCommonRoutesClaudeTelemetryRejectsChunkedOversizedBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	groupID := int64(10)
+	settingService := service.NewSettingService(&commonRoutesSettingRepoStub{values: map[string]string{service.SettingKeyClaudeTelemetryMode: service.ClaudeTelemetryModeForward}}, &config.Config{})
+	RegisterCommonRoutes(router, &handler.Handlers{Gateway: &handler.GatewayHandler{}}, servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{GroupID: &groupID, Group: &service.Group{ID: groupID, Platform: service.PlatformAnthropic}})
+		c.Next()
+	}), settingService, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/event_logging/batch", strings.NewReader(strings.Repeat("a", 1<<20+1)))
+	req.ContentLength = -1
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+}
+
+func TestCommonRoutesClaudeAuxRejectsOversizedPutBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterCommonRoutes(router, nil, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/claude_code/user_settings", strings.NewReader(strings.Repeat("a", 1<<20+1)))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+}
+
 func TestCommonRoutesClaudeAuxPolicyLimitsStub(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/stretchr/testify/require"
 )
 
@@ -732,6 +733,52 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_AllowsG
 	require.NotNil(t, selection)
 	require.NotNil(t, selection.Account)
 	require.Equal(t, int64(36041), selection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForResponses_AllowsGrokAccount(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	groupID := int64(10115)
+	accounts := []Account{
+		{
+			ID:          36042,
+			Platform:    PlatformGrok,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, decision, err := svc.SelectAccountWithSchedulerForResponses(
+		ctx,
+		&groupID,
+		0,
+		"",
+		"",
+		"grok-4.3",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+		false,
+		PlatformGrok,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(36042), selection.Account.ID)
 	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
 }
 
@@ -2132,6 +2179,70 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_SkipsImageDisa
 			require.NotNil(t, selection)
 			require.NotNil(t, selection.Account)
 			require.Equal(t, int64(32020), selection.Account.ID)
+		})
+	}
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_GrokGroupUsesGrokOAuthAccount(t *testing.T) {
+	for _, advancedSchedulerEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("advanced_scheduler_enabled=%t", advancedSchedulerEnabled), func(t *testing.T) {
+			ctx := context.Background()
+			groupID := int64(101028)
+			ctx = context.WithValue(ctx, ctxkey.Group, &Group{
+				ID:                   groupID,
+				Platform:             PlatformGrok,
+				Status:               StatusActive,
+				Hydrated:             true,
+				ImageGenerationRoute: GroupImageGenerationRouteNative,
+			})
+			accounts := []Account{
+				{
+					ID:          32061,
+					Platform:    PlatformOpenAI,
+					Type:        AccountTypeOAuth,
+					Status:      StatusActive,
+					Schedulable: true,
+					Concurrency: 1,
+					Priority:    9,
+				},
+				{
+					ID:          32062,
+					Platform:    PlatformGrok,
+					Type:        AccountTypeOAuth,
+					Status:      StatusActive,
+					Schedulable: true,
+					Concurrency: 1,
+					Priority:    5,
+				},
+			}
+			cfg := &config.Config{}
+			cfg.Gateway.Scheduling.LoadBatchEnabled = false
+			svc := &OpenAIGatewayService{
+				accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+				cache:              &schedulerTestGatewayCache{},
+				cfg:                cfg,
+				concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+			}
+			if advancedSchedulerEnabled {
+				svc.rateLimitService = newOpenAIAdvancedSchedulerRateLimitService("true")
+			}
+
+			selection, _, err := svc.SelectAccountWithSchedulerForImages(
+				ctx,
+				&groupID,
+				"",
+				"grok-imagine-1",
+				nil,
+				OpenAIImagesCapabilityNative,
+				GroupImageGenerationRouteNative,
+				true,
+			)
+
+			require.NoError(t, err)
+			require.NotNil(t, selection)
+			require.NotNil(t, selection.Account)
+			require.Equal(t, int64(32062), selection.Account.ID)
+			require.Equal(t, PlatformGrok, selection.Account.Platform)
 		})
 	}
 }

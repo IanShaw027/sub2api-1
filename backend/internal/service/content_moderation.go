@@ -20,6 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -76,6 +77,7 @@ const (
 	defaultContentModerationViolationWindowHours = 720
 	defaultContentModerationBlockHTTPStatus      = http.StatusForbidden
 	defaultContentModerationBlockMessage         = "内容审计命中风险规则，请调整输入后重试"
+	defaultContentModerationAuditFailureMessage  = "内容审计服务暂不可用，请稍后重试"
 	defaultContentModerationRetryCount           = 2
 	maxContentModerationRetryCount               = 5
 	defaultContentModerationHitRetentionDays     = 180
@@ -1208,6 +1210,9 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"group_id", contentModerationLogGroupID(input.GroupID),
 			"endpoint", input.Endpoint,
 			"protocol", input.Protocol)
+		if shouldBlockContentModerationAuditFailure(cfg, true, nil) {
+			return contentModerationAuditFailureDecision(cfg), nil
+		}
 		return allow, nil
 	}
 	if cfg.Mode == ContentModerationModeObserve {
@@ -1256,6 +1261,9 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		if cfg.RecordNonHits {
 			log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, content.ExcerptText(), &latency, queueDelay, err.Error())
 			_ = s.repo.CreateLog(ctx, log)
+		}
+		if shouldBlockContentModerationAuditFailure(cfg, allowBlock, queueDelay) {
+			return contentModerationAuditFailureDecision(cfg)
 		}
 		return allow
 	}
@@ -1319,6 +1327,25 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		HighestScore:    highestScore,
 		CategoryScores:  result.CategoryScores,
 		Action:          action,
+	}
+}
+
+func shouldBlockContentModerationAuditFailure(cfg *ContentModerationConfig, allowBlock bool, queueDelay *int) bool {
+	return cfg != nil &&
+		cfg.Mode == ContentModerationModePreBlock &&
+		allowBlock &&
+		queueDelay == nil &&
+		cfg.APIKeyRateLimitPolicy == ContentModerationRateLimitFailurePolicyError
+}
+
+func contentModerationAuditFailureDecision(cfg *ContentModerationConfig) *ContentModerationDecision {
+	return &ContentModerationDecision{
+		Allowed:    false,
+		Blocked:    true,
+		Flagged:    false,
+		Message:    defaultContentModerationAuditFailureMessage,
+		StatusCode: http.StatusServiceUnavailable,
+		Action:     ContentModerationActionError,
 	}
 }
 
@@ -3480,9 +3507,7 @@ func containsKeywordWithBoundary(text, keyword string, exSpans []blockedKeywordB
 		end := start + len(keyword)
 		ok := true
 		if !cjk {
-			leftOK := start == 0 || !isWordChar(rune(text[start-1]))
-			rightOK := end == len(text) || !isWordChar(rune(text[end]))
-			ok = leftOK && rightOK
+			ok = hasBlockedKeywordWordBoundary(text, start, end)
 		}
 		if ok && !blockedKeywordSpanCovered(exSpans, start, end) {
 			return true
@@ -3502,6 +3527,20 @@ func hasCJK(s string) bool {
 
 func isWordChar(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
+}
+
+func hasBlockedKeywordWordBoundary(text string, start, end int) bool {
+	leftOK := true
+	if start > 0 {
+		r, _ := utf8.DecodeLastRuneInString(text[:start])
+		leftOK = !isWordChar(r)
+	}
+	rightOK := true
+	if end < len(text) {
+		r, _ := utf8.DecodeRuneInString(text[end:])
+		rightOK = !isWordChar(r)
+	}
+	return leftOK && rightOK
 }
 
 func splitBlockedKeywordAndTerms(keyword string) []string {
@@ -3599,68 +3638,96 @@ func matchBlockedKeywordAndTerms(textLower string, terms []string, exSpans []blo
 		windowSize = 200 // 默认窗口
 	}
 
-	// 收集第一个term的所有出现位置
-	firstTerm := terms[0]
-	var firstPositions []int
+	byteRuneIndex := buildBlockedKeywordByteRuneIndex(textLower)
+	occurrencesByTerm := make([][]blockedKeywordOccurrence, 0, len(terms))
+	for _, term := range terms {
+		occurrences := findBlockedKeywordOccurrences(textLower, term, exSpans, byteRuneIndex)
+		if len(occurrences) == 0 {
+			return false
+		}
+		occurrencesByTerm = append(occurrencesByTerm, occurrences)
+	}
+
+	ranges := make([]blockedKeywordRuneSpan, 0, len(occurrencesByTerm[0]))
+	for _, occ := range occurrencesByTerm[0] {
+		ranges = append(ranges, blockedKeywordRuneSpan{start: occ.startRune, end: occ.endRune})
+	}
+	for i := 1; i < len(occurrencesByTerm); i++ {
+		next := make([]blockedKeywordRuneSpan, 0, len(ranges)*len(occurrencesByTerm[i]))
+		for _, current := range ranges {
+			for _, occ := range occurrencesByTerm[i] {
+				merged := blockedKeywordRuneSpan{
+					start: min(current.start, occ.startRune),
+					end:   max(current.end, occ.endRune),
+				}
+				if merged.end-merged.start <= windowSize {
+					next = append(next, merged)
+				}
+			}
+		}
+		if len(next) == 0 {
+			return false
+		}
+		ranges = next
+	}
+	return len(ranges) > 0
+}
+
+type blockedKeywordOccurrence struct {
+	startByte int
+	endByte   int
+	startRune int
+	endRune   int
+}
+
+type blockedKeywordRuneSpan struct {
+	start int
+	end   int
+}
+
+func buildBlockedKeywordByteRuneIndex(text string) map[int]int {
+	index := make(map[int]int, len(text)+1)
+	runeIndex := 0
+	for byteIndex := range text {
+		index[byteIndex] = runeIndex
+		runeIndex++
+	}
+	index[len(text)] = runeIndex
+	return index
+}
+
+func findBlockedKeywordOccurrences(text, term string, exSpans []blockedKeywordByteSpan, byteRuneIndex map[int]int) []blockedKeywordOccurrence {
+	if term == "" {
+		return nil
+	}
+	cjk := hasCJK(term)
 	idx := 0
+	var out []blockedKeywordOccurrence
 	for {
-		pos := strings.Index(textLower[idx:], firstTerm)
+		pos := strings.Index(text[idx:], term)
 		if pos < 0 {
-			break
+			return out
 		}
 		start := idx + pos
-		end := start + len(firstTerm)
-
-		// 检查词边界和例外短语
+		end := start + len(term)
 		ok := true
-		if !hasCJK(firstTerm) {
-			leftOK := start == 0 || !isWordChar(rune(textLower[start-1]))
-			rightOK := end == len(textLower) || !isWordChar(rune(textLower[end]))
-			ok = leftOK && rightOK
+		if !cjk {
+			ok = hasBlockedKeywordWordBoundary(text, start, end)
 		}
 		if ok && !blockedKeywordSpanCovered(exSpans, start, end) {
-			firstPositions = append(firstPositions, start)
+			startRune, startOK := byteRuneIndex[start]
+			endRune, endOK := byteRuneIndex[end]
+			if startOK && endOK {
+				out = append(out, blockedKeywordOccurrence{
+					startByte: start,
+					endByte:   end,
+					startRune: startRune,
+					endRune:   endRune,
+				})
+			}
 		}
 		idx = start + 1
 	}
-
-	if len(firstPositions) == 0 {
-		return false
-	}
-
-	// 对每个第一term的位置,检查窗口内是否包含所有其他terms
-	// 窗口策略: 从第一个词开始,向前backward和向后forward各取一部分,总长度为windowSize
-	for _, firstPos := range firstPositions {
-		// 窗口向前backward取25%,向后forward取75%(偏向后文)
-		backward := windowSize / 4
-		forward := windowSize - backward
-
-		windowStart := firstPos - backward
-		if windowStart < 0 {
-			windowStart = 0
-		}
-		windowEnd := firstPos + len(firstTerm) + forward
-		if windowEnd > len(textLower) {
-			windowEnd = len(textLower)
-		}
-
-		windowText := textLower[windowStart:windowEnd]
-		allFound := true
-
-		for i := 1; i < len(terms); i++ {
-			term := terms[i]
-			if !containsKeywordWithBoundary(windowText, term, adjustExceptionSpans(exSpans, windowStart)) {
-				allFound = false
-				break
-			}
-		}
-
-		if allFound {
-			return true
-		}
-	}
-
-	return false
 }
 
 // adjustExceptionSpans 调整例外短语span的偏移量,用于窗口文本。

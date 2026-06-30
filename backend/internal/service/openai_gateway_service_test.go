@@ -2602,7 +2602,7 @@ func TestOpenAIGatewayService_ListOpenAIImageCandidateAccounts_OverlaysCachedLas
 		cfg:               &config.Config{},
 	}
 
-	accounts, err := svc.listOpenAIImageCandidateAccounts(context.Background(), nil)
+	accounts, err := svc.listOpenAIImageCandidateAccounts(context.Background(), nil, PlatformOpenAI)
 	require.NoError(t, err)
 	require.Len(t, accounts, 1)
 	require.NotNil(t, accounts[0].LastUsedAt)

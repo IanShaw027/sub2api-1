@@ -10,6 +10,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
 
 const groupModelUnsupportedAvailableModelsLimit = 20
@@ -64,6 +65,8 @@ func defaultRequestModelIDsForPlatform(platform string) []string {
 			ids = append(ids, model.ID)
 		}
 		return ids
+	case PlatformGrok:
+		return xai.DefaultModelIDs()
 	default:
 		return claude.DefaultModelIDs()
 	}

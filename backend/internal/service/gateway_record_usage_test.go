@@ -244,7 +244,7 @@ func TestGatewayServiceRecordUsage_PersistsProviderFromAccountPlatform(t *testin
 	require.Equal(t, PlatformOpenAI, provider.String())
 }
 
-func TestGatewayServiceRecordUsage_AudioRealtimeUsesGroupPrice(t *testing.T) {
+func TestGatewayServiceRecordUsage_AudioRealtimeUsesGroupPriceWithoutTextRateMultiplier(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
 	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
@@ -268,8 +268,9 @@ func TestGatewayServiceRecordUsage_AudioRealtimeUsesGroupPrice(t *testing.T) {
 	require.NotNil(t, usageRepo.lastLog)
 	require.Equal(t, string(BillingModeAudio), *usageRepo.lastLog.BillingMode)
 	require.InDelta(t, 1.47, usageRepo.lastLog.TotalCost, 1e-12)
-	require.InDelta(t, 1.617, usageRepo.lastLog.ActualCost, 1e-12)
-	require.InDelta(t, 1.617, billingRepo.lastCmd.BalanceCost, 1e-12)
+	require.InDelta(t, 1.47, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, 1.0, usageRepo.lastLog.RateMultiplier, 1e-12)
+	require.InDelta(t, 1.47, billingRepo.lastCmd.BalanceCost, 1e-12)
 }
 
 func floatPtrAudio(v float64) *float64 { return &v }

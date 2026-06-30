@@ -306,6 +306,66 @@ func TestAdminService_UpdateGroup_PartialImagePricing(t *testing.T) {
 	require.Nil(t, repo.updated.ImagePrice4K)
 }
 
+func TestAdminService_CreateGroup_WithImages2APIPricing(t *testing.T) {
+	repo := &groupRepoStubForAdmin{}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	price1K := 0.21
+	price2K := 0.42
+	price4K := 0.84
+
+	group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+		Name:              "images2api-group",
+		Description:       "Images2API group",
+		Platform:          PlatformOpenAI,
+		RateMultiplier:    1.0,
+		Images2APIPrice1K: &price1K,
+		Images2APIPrice2K: &price2K,
+		Images2APIPrice4K: &price4K,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.created)
+	require.NotNil(t, repo.created.Images2APIPrice1K)
+	require.InDelta(t, 0.21, *repo.created.Images2APIPrice1K, 0.0001)
+	require.NotNil(t, repo.created.Images2APIPrice2K)
+	require.InDelta(t, 0.42, *repo.created.Images2APIPrice2K, 0.0001)
+	require.NotNil(t, repo.created.Images2APIPrice4K)
+	require.InDelta(t, 0.84, *repo.created.Images2APIPrice4K, 0.0001)
+}
+
+func TestAdminService_UpdateGroup_WithImages2APIPricingPreservesOmittedAndClearsNegative(t *testing.T) {
+	oldPrice2K := 0.42
+	oldPrice4K := 0.84
+	existingGroup := &Group{
+		ID:                1,
+		Name:              "existing-images2api-group",
+		Platform:          PlatformOpenAI,
+		Status:            StatusActive,
+		Images2APIPrice2K: &oldPrice2K,
+		Images2APIPrice4K: &oldPrice4K,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	price1K := 0.21
+	clearPrice := -1.0
+	group, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
+		Images2APIPrice1K: &price1K,
+		Images2APIPrice2K: &clearPrice,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	require.NotNil(t, repo.updated.Images2APIPrice1K)
+	require.InDelta(t, 0.21, *repo.updated.Images2APIPrice1K, 0.0001)
+	require.Nil(t, repo.updated.Images2APIPrice2K)
+	require.NotNil(t, repo.updated.Images2APIPrice4K)
+	require.InDelta(t, 0.84, *repo.updated.Images2APIPrice4K, 0.0001)
+}
+
 func TestAdminService_CreateGroup_AllowsGrokImageRouteCodex(t *testing.T) {
 	repo := &groupRepoStubForAdmin{}
 	svc := &adminServiceImpl{groupRepo: repo}
@@ -324,6 +384,34 @@ func TestAdminService_CreateGroup_AllowsGrokImageRouteCodex(t *testing.T) {
 	require.NotNil(t, group)
 	require.NotNil(t, repo.created)
 	require.Equal(t, GroupImageGenerationRouteCodex, repo.created.ImageGenerationRoute)
+}
+
+func TestAdminService_CreateGroup_ClearsVideoPricingForNonGrokPlatform(t *testing.T) {
+	price480p := 0.01
+	repo := &groupRepoStubForAdmin{}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+		Name:                  "openai-group",
+		Platform:              PlatformOpenAI,
+		RateMultiplier:        1.0,
+		AllowVideoGeneration:  true,
+		VideoGenerationRoute:  GroupVideoGenerationRouteNative,
+		VideoPrice480pPerSec:  &price480p,
+		VideoPrice720pPerSec:  &price480p,
+		VideoPrice1080pPerSec: &price480p,
+		VideoPrice4kPerSec:    &price480p,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.created)
+	require.False(t, repo.created.AllowVideoGeneration)
+	require.Equal(t, GroupVideoGenerationRouteNative, repo.created.VideoGenerationRoute)
+	require.Nil(t, repo.created.VideoPrice480pPerSec)
+	require.Nil(t, repo.created.VideoPrice720pPerSec)
+	require.Nil(t, repo.created.VideoPrice1080pPerSec)
+	require.Nil(t, repo.created.VideoPrice4kPerSec)
 }
 
 func TestAdminService_UpdateGroup_AllowsGrokImageRouteCodex(t *testing.T) {
@@ -345,6 +433,33 @@ func TestAdminService_UpdateGroup_AllowsGrokImageRouteCodex(t *testing.T) {
 	require.NotNil(t, group)
 	require.NotNil(t, repo.updated)
 	require.Equal(t, GroupImageGenerationRouteCodex, repo.updated.ImageGenerationRoute)
+}
+
+func TestAdminService_UpdateGroup_ClearsStaleVideoPricingWhenPlatformBecomesNonGrok(t *testing.T) {
+	price720p := 0.02
+	existingGroup := &Group{
+		ID:                   1,
+		Name:                 "existing-grok-group",
+		Platform:             PlatformGrok,
+		Status:               StatusActive,
+		AllowVideoGeneration: true,
+		VideoGenerationRoute: GroupVideoGenerationRouteNative,
+		VideoPrice720pPerSec: &price720p,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	group, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
+		Platform: PlatformOpenAI,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	require.Equal(t, PlatformOpenAI, repo.updated.Platform)
+	require.False(t, repo.updated.AllowVideoGeneration)
+	require.Equal(t, GroupVideoGenerationRouteNative, repo.updated.VideoGenerationRoute)
+	require.Nil(t, repo.updated.VideoPrice720pPerSec)
 }
 
 func TestAdminService_UpdateGroup_ClearsVideoPricingWhenExplicitlySetNil(t *testing.T) {

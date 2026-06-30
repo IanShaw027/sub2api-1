@@ -88,6 +88,7 @@ var migrationChecksumCompatibilityRules = map[string]migrationChecksumCompatibil
 	"131_affiliate_rebate_hardening.sql":                      newMigrationChecksumCompatibilityRule("d40933ed0257fb7355a541c5dfd65b3a4487fa587fe76dc18625793b96804b36", "00b2290e6646666df46409564b545b1de91b222db8f3ca0c992164a6dc4034e7", "9fd0a6021290b24c7e76d4ff6405824eef528a6afe969e845c8cc3bf8053ba15", "706c8102d96d0a10f2e2a23156a8cd8b414a241591fd65ab3e26425b2a54fe29", "c4b74b9dd08e3634ac9b752376e92ce41f27fa0cb8046d7932944ca61e5f351c", "b20a2678be74db6a5a9a376004f4bf5bc7844ab46ee2f1e09194e8b1c48d49fd", "da8f7e442df20609449c51b13c250a2f79d3bb95c50f1c11b96b8108e5dddb02"),
 	"132_affiliate_policy_limits.sql":                         newMigrationChecksumCompatibilityRule("ed8d931267f0dd1fb4e6f4abd7f7a5171df61760b4ffdab18b40bfbeff6fdd0f", "f8104c1e67f4e56e34c59a5831d1a3a75efffb3f8c3183d1910f7ec0555c4994", "1b06272a1b5ed48a0cd4aaef5abf2ef098232cf011f49d309d586acb31b687b7", "51f95d399e30dc499e9d1bc3bdefc5a7f5b358726ac83242ec64a363a6bfe092"),
 	"138_subscription_fulfillment_claim_unique_notx.sql":      newMigrationChecksumCompatibilityRule("23a0c91410feb00cb45231181811b35c6bbcef77768986b61444c07cb78c8df4", "fcdbbbcfa9010f6b2b0e9b6210a63d103eec5081358e70f591dec8a818c93009"),
+	"184_add_group_audio_search_pricing.sql":                  newMigrationChecksumCompatibilityRule("7eeb54c89f2eaae6da3ef59f67b9f421cb272a335bd6985a26f6e602ff8c8525", "56b65dbc1dc1927c193b5b5bf74cf458a20070d5c12c23a28f95933f87d72ae9"),
 }
 
 // ApplyMigrations 将嵌入的 SQL 迁移文件应用到指定的数据库。

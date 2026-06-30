@@ -37,6 +37,7 @@ import (
 	"github.com/imroc/req/v3"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"go.uber.org/zap"
 	xdraw "golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
 )
@@ -1076,21 +1077,21 @@ func (s *OpenAIGatewayService) ForwardImages(
 	parsed *OpenAIImagesRequest,
 	channelMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	if s.fingerprintNormalizer != nil {
-		ua := ""
-		if c != nil && c.Request != nil {
-			ua = c.Request.Header.Get("User-Agent")
-		}
-		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
-		if canonical != nil {
-			_, newB, _ := s.fingerprintNormalizer.ApplyToRequest(nil, body, canonical)
-			if len(newB) > 0 {
-				body = newB
-			}
-		}
-	}
 	if parsed == nil {
 		return nil, fmt.Errorf("parsed images request is required")
+	}
+	if normalizedBody := s.normalizeOpenAICompatibleFingerprintJSONBody(ctx, c, account, body, "images"); !bytes.Equal(normalizedBody, body) {
+		body = normalizedBody
+		if !parsed.Multipart {
+			if normalizedParsed, err := s.ParseOpenAIImagesRequest(c, body); err == nil {
+				parsed = normalizedParsed
+			} else {
+				logger.L().Debug("openai images fingerprint body normalization reverted",
+					zap.Error(err),
+				)
+				body = parsed.Body
+			}
+		}
 	}
 	imageRoute := GroupImageGenerationRouteCodex
 	effectiveRequestType := applyOpenAIImagesRouteSelection(parsed, imageRoute)
@@ -1177,7 +1178,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "http")
+	tlsRuntime := s.resolveOpenAICompatibleTLSFingerprintRuntime(ctx, c, account, "http")
 	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
 	upstreamStart := time.Now()
 	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
@@ -2445,9 +2446,10 @@ func resolveOpenAIProxyURL(account *Account) string {
 
 func newOpenAIBackendAPIClient(proxyURL string) (*req.Client, error) {
 	return reqclientpool.Get(reqclientpool.Options{
-		ProxyURL:    proxyURL,
-		Timeout:     180 * time.Second,
-		Impersonate: true,
+		ProxyURL:       proxyURL,
+		Timeout:        180 * time.Second,
+		Impersonate:    true,
+		DisableCookies: true,
 	})
 }
 
@@ -4306,8 +4308,8 @@ func dedupeStrings(values []string) []string {
 	return out
 }
 
-// OpenAIVideoRequest captures full OpenAI-compatible video generation params (for /videos and /videos/generations).
-// Complete params per OpenAI Videos API: prompt, model (sora-2 etc), seconds, size, input_reference{image_url|file_id}, etc.
+// OpenAIVideoRequest captures Grok/xAI-only video generation params (for /videos and /videos/generations).
+// Complete params include prompt, model, seconds, size, input_reference{image_url|file_id}, n_variants, etc.
 type OpenAIVideoRequest struct {
 	Endpoint       string
 	Model          string

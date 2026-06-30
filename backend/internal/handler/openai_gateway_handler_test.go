@@ -2140,6 +2140,766 @@ func TestOpenAIResponsesWebSocket_ContentModerationBlocksFirstFrame(t *testing.T
 	require.Equal(t, "bad prompt", logs[0].InputExcerpt)
 }
 
+func TestOpenAIResponsesWebSocket_RejectsCyberSessionBlockBeforeContentModeration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	moderationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/moderations", r.URL.Path)
+		_, _ = w.Write([]byte(`{"results":[{"category_scores":{"sexual":0.9}}]}`))
+	}))
+	defer moderationServer.Close()
+
+	cfg := &service.ContentModerationConfig{
+		Enabled:      true,
+		Mode:         service.ContentModerationModePreBlock,
+		BaseURL:      moderationServer.URL,
+		Model:        "omni-moderation-latest",
+		APIKeys:      []string{"sk-test"},
+		SampleRate:   100,
+		AllGroups:    true,
+		BlockMessage: "内容审计不应先运行",
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	repo := &contentModerationHandlerTestRepo{}
+	moderationSvc := service.NewContentModerationService(
+		&contentModerationHandlerSettingRepo{values: map[string]string{
+			service.SettingKeyRiskControlEnabled:      "true",
+			service.SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	firstPayload := []byte(`{"type":"response.create","model":"gpt-5.5","prompt_cache_key":"blocked-ws-session","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"bad prompt"}]}]}`)
+	keyCtx := newTestGinContext()
+	keyCtx.Request = httptest.NewRequest(http.MethodGet, "/openai/v1/responses", nil)
+	blockKey := service.CyberSessionBlockKey(101, keyCtx, firstPayload)
+	require.NotEmpty(t, blockKey)
+	cache := &handlerCyberCacheStoreStub{blocked: map[string]bool{blockKey: true}}
+	settingSvc := service.NewSettingService(
+		&handlerCyberSettingRepoStub{vals: map[string]string{
+			service.SettingKeyCyberSessionBlockEnabled:    "true",
+			service.SettingKeyCyberSessionBlockTTLSeconds: "60",
+		}},
+		&config.Config{},
+	)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cache,
+		&config.Config{},
+		nil,
+		nil,
+		nil,
+		nil,
+		&service.BillingCacheService{},
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		settingSvc,
+		nil,
+		nil,
+	)
+	h := &OpenAIGatewayHandler{
+		gatewayService:           gatewaySvc,
+		billingCacheService:      &service.BillingCacheService{},
+		apiKeyService:            &service.APIKeyService{},
+		contentModerationService: moderationSvc,
+		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
+	}
+	wsServer := newOpenAIWSHandlerTestServer(t, h, middleware.AuthSubject{UserID: 1, Concurrency: 1})
+	defer wsServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http")+"/openai/v1/responses", nil)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() {
+		_ = clientConn.CloseNow()
+	}()
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, firstPayload)
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+	_, payload, readErr := clientConn.Read(readCtx)
+	cancelRead()
+	if readErr == nil {
+		require.Contains(t, string(payload), "session_blocked_by_cyber_policy")
+	} else {
+		var closeErr coderws.CloseError
+		require.ErrorAs(t, readErr, &closeErr)
+		require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+		require.Contains(t, strings.ToLower(closeErr.Reason), "session blocked")
+	}
+	require.Empty(t, repo.logSnapshot(), "cyber session block must short-circuit before content moderation")
+}
+
+func TestOpenAIResponsesWebSocket_FollowupTurnCyberSessionBlockSkipsContentModeration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	moderationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		score := 0.0
+		if strings.Contains(string(body), "bad followup prompt") {
+			score = 0.9
+		}
+		_, _ = fmt.Fprintf(w, `{"results":[{"category_scores":{"sexual":%0.1f}}]}`, score)
+	}))
+	defer moderationServer.Close()
+
+	cfgModeration := &service.ContentModerationConfig{
+		Enabled:      true,
+		Mode:         service.ContentModerationModePreBlock,
+		BaseURL:      moderationServer.URL,
+		Model:        "omni-moderation-latest",
+		APIKeys:      []string{"sk-test"},
+		SampleRate:   100,
+		AllGroups:    true,
+		BlockMessage: "content moderation should not run after cyber block",
+	}
+	rawModerationCfg, err := json.Marshal(cfgModeration)
+	require.NoError(t, err)
+	moderationRepo := &contentModerationHandlerTestRepo{}
+	moderationSvc := service.NewContentModerationService(
+		&contentModerationHandlerSettingRepo{values: map[string]string{
+			service.SettingKeyRiskControlEnabled:      "true",
+			service.SettingKeyContentModerationConfig: string(rawModerationCfg),
+		}},
+		moderationRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	firstHitCh := make(chan []byte, 1)
+	secondHitCh := make(chan []byte, 1)
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, acceptErr := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+		if acceptErr != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
+		_, payload, readErr := conn.Read(readCtx)
+		cancelRead()
+		if readErr != nil {
+			return
+		}
+		firstHitCh <- payload
+
+		cyberFailed := []byte(`{"type":"response.failed","response":{"id":"resp_cyber_turn_one","status":"failed","error":{"code":"cyber_policy","message":"Request blocked by cyber policy."},"usage":{"input_tokens":2,"output_tokens":0}}}`)
+		writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
+		_ = conn.Write(writeCtx, coderws.MessageText, cyberFailed)
+		cancelWrite()
+
+		readCtx, cancelRead = context.WithTimeout(r.Context(), 500*time.Millisecond)
+		_, payload, readErr = conn.Read(readCtx)
+		cancelRead()
+		if readErr == nil {
+			secondHitCh <- payload
+		}
+	}))
+	defer upstreamServer.Close()
+
+	groupID := int64(6406)
+	account := service.Account{
+		ID:          14006,
+		Name:        "openai-ws-cyber-followup",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-ws-cyber-followup",
+			"base_url": upstreamServer.URL,
+		},
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_enabled": true,
+			"openai_apikey_responses_websockets_v2_mode":    service.OpenAIWSIngressModePassthrough,
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.RunMode = config.RunModeSimple
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	cyberCache := &handlerCyberCacheStoreStub{}
+	settingSvc := service.NewSettingService(
+		&handlerCyberSettingRepoStub{vals: map[string]string{
+			service.SettingKeyCyberSessionBlockEnabled:    "true",
+			service.SettingKeyCyberSessionBlockTTLSeconds: "60",
+		}},
+		cfg,
+	)
+	accountRepo := &openAIWSUsageHandlerAccountRepoStub{account: account}
+	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cyberCache,
+		cfg,
+		nil,
+		nil,
+		service.NewBillingService(cfg, nil),
+		nil,
+		billingCacheSvc,
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		settingSvc,
+		nil,
+		nil, // fingerprintNormalizer
+	)
+
+	cache := &concurrencyCacheMock{
+		acquireUserSlotFn: func(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+		acquireAccountSlotFn: func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+	}
+	h := &OpenAIGatewayHandler{
+		gatewayService:           gatewaySvc,
+		billingCacheService:      billingCacheSvc,
+		apiKeyService:            &service.APIKeyService{},
+		contentModerationService: moderationSvc,
+		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+	}
+
+	apiKey := &service.APIKey{
+		ID:      9406,
+		GroupID: &groupID,
+		User:    &service.User{ID: 9306, Status: service.StatusActive},
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
+		c.Next()
+	})
+	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
+	handlerServer := httptest.NewServer(router)
+	defer handlerServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(
+		dialCtx,
+		"ws"+strings.TrimPrefix(handlerServer.URL, "http")+"/openai/v1/responses",
+		&coderws.DialOptions{CompressionMode: coderws.CompressionContextTakeover},
+	)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	firstPayload := []byte(`{"type":"response.create","model":"gpt-5.4","stream":false,"prompt_cache_key":"ws-followup-cyber-block","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"safe prompt"}]}]}`)
+	keyCtx := newTestGinContext()
+	keyCtx.Request = httptest.NewRequest(http.MethodGet, "/openai/v1/responses", nil)
+	firstBlockKey := service.CyberSessionBlockKey(apiKey.ID, keyCtx, firstPayload)
+	require.NotEmpty(t, firstBlockKey)
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, firstPayload)
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 5*time.Second)
+	_, event, err := clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "response.failed", gjson.GetBytes(event, "type").String())
+	require.Equal(t, "cyber_policy", gjson.GetBytes(event, "response.error.code").String())
+
+	select {
+	case <-firstHitCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for first websocket upstream request")
+	}
+	require.Eventually(t, func() bool {
+		return gatewaySvc.IsCyberSessionBlocked(context.Background(), firstBlockKey)
+	}, 3*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		return len(moderationRepo.logSnapshot()) >= 1
+	}, 3*time.Second, 10*time.Millisecond, "first cyber event must finish async logging before resetting the test repo")
+	moderationRepo.resetLogs()
+
+	secondPayload := []byte(`{"type":"response.create","model":"gpt-5.4","stream":false,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"bad followup prompt"}]}]}`)
+	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, secondPayload)
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 3*time.Second)
+	_, payload, readErr := clientConn.Read(readCtx)
+	cancelRead()
+	if readErr == nil {
+		require.Contains(t, strings.ToLower(string(payload)), "session")
+		require.NotContains(t, string(payload), "content_policy_violation")
+	} else {
+		var closeErr coderws.CloseError
+		require.ErrorAs(t, readErr, &closeErr)
+		require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+		require.Contains(t, strings.ToLower(closeErr.Reason), "session")
+	}
+	select {
+	case payload := <-secondHitCh:
+		t.Fatalf("cyber-blocked followup should not reach upstream: %s", string(payload))
+	case <-time.After(200 * time.Millisecond):
+	}
+	require.Empty(t, moderationRepo.logSnapshot(), "cyber-blocked followup must short-circuit before content moderation")
+}
+
+func TestOpenAIResponsesWebSocket_FollowupTurnPreblockedPromptCacheKeySkipsContentModeration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	moderationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		score := 0.0
+		if strings.Contains(string(body), "bad followup prompt") {
+			score = 0.9
+		}
+		_, _ = fmt.Fprintf(w, `{"results":[{"category_scores":{"sexual":%0.1f}}]}`, score)
+	}))
+	defer moderationServer.Close()
+
+	cfgModeration := &service.ContentModerationConfig{
+		Enabled:      true,
+		Mode:         service.ContentModerationModePreBlock,
+		BaseURL:      moderationServer.URL,
+		Model:        "omni-moderation-latest",
+		APIKeys:      []string{"sk-test"},
+		SampleRate:   100,
+		AllGroups:    true,
+		BlockMessage: "content moderation should not mask cyber session block",
+	}
+	rawModerationCfg, err := json.Marshal(cfgModeration)
+	require.NoError(t, err)
+	moderationRepo := &contentModerationHandlerTestRepo{}
+	moderationSvc := service.NewContentModerationService(
+		&contentModerationHandlerSettingRepo{values: map[string]string{
+			service.SettingKeyRiskControlEnabled:      "true",
+			service.SettingKeyContentModerationConfig: string(rawModerationCfg),
+		}},
+		moderationRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	firstHitCh := make(chan []byte, 1)
+	secondHitCh := make(chan []byte, 1)
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, acceptErr := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+		if acceptErr != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
+		_, payload, readErr := conn.Read(readCtx)
+		cancelRead()
+		if readErr != nil {
+			return
+		}
+		firstHitCh <- payload
+
+		writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
+		_ = conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.completed","response":{"id":"resp_preblock_turn_one","model":"gpt-5.4","usage":{"input_tokens":1,"output_tokens":1}}}`))
+		cancelWrite()
+
+		readCtx, cancelRead = context.WithTimeout(r.Context(), 500*time.Millisecond)
+		_, payload, readErr = conn.Read(readCtx)
+		cancelRead()
+		if readErr == nil {
+			secondHitCh <- payload
+		}
+	}))
+	defer upstreamServer.Close()
+
+	groupID := int64(6407)
+	account := service.Account{
+		ID:          14007,
+		Name:        "openai-ws-preblocked-followup",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-ws-preblocked-followup",
+			"base_url": upstreamServer.URL,
+		},
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_enabled": true,
+			"openai_apikey_responses_websockets_v2_mode":    service.OpenAIWSIngressModePassthrough,
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.RunMode = config.RunModeSimple
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	secondPayload := []byte(`{"type":"response.create","model":"gpt-5.4","stream":false,"service_tier":"priority","prompt_cache_key":"already-blocked-followup","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"bad followup prompt"}]}]}`)
+	keyCtx := newTestGinContext()
+	keyCtx.Request = httptest.NewRequest(http.MethodGet, "/openai/v1/responses", nil)
+	blockedFollowupKey := service.CyberSessionBlockKey(9407, keyCtx, secondPayload)
+	require.NotEmpty(t, blockedFollowupKey)
+	cyberCache := &handlerCyberCacheStoreStub{blocked: map[string]bool{blockedFollowupKey: true}}
+	settingSvc := service.NewSettingService(
+		&handlerCyberSettingRepoStub{vals: map[string]string{
+			service.SettingKeyCyberSessionBlockEnabled:    "true",
+			service.SettingKeyCyberSessionBlockTTLSeconds: "60",
+			service.SettingKeyOpenAIFastPolicySettings:    `{"rules":[{"service_tier":"priority","action":"block","scope":"all","error_message":"fast policy should not mask cyber session block","model_whitelist":["*"],"fallback_action":"pass"}]}`,
+		}},
+		cfg,
+	)
+	accountRepo := &openAIWSUsageHandlerAccountRepoStub{account: account}
+	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cyberCache,
+		cfg,
+		nil,
+		nil,
+		service.NewBillingService(cfg, nil),
+		nil,
+		billingCacheSvc,
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		settingSvc,
+		nil,
+		nil, // fingerprintNormalizer
+	)
+	cache := &concurrencyCacheMock{
+		acquireUserSlotFn: func(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+		acquireAccountSlotFn: func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+	}
+	h := &OpenAIGatewayHandler{
+		gatewayService:           gatewaySvc,
+		billingCacheService:      billingCacheSvc,
+		apiKeyService:            &service.APIKeyService{},
+		contentModerationService: moderationSvc,
+		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+	}
+
+	apiKey := &service.APIKey{
+		ID:      9407,
+		GroupID: &groupID,
+		User:    &service.User{ID: 9307, Status: service.StatusActive},
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
+		c.Next()
+	})
+	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
+	handlerServer := httptest.NewServer(router)
+	defer handlerServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(
+		dialCtx,
+		"ws"+strings.TrimPrefix(handlerServer.URL, "http")+"/openai/v1/responses",
+		&coderws.DialOptions{CompressionMode: coderws.CompressionContextTakeover},
+	)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	firstPayload := []byte(`{"type":"response.create","model":"gpt-5.4","stream":false,"prompt_cache_key":"safe-first-turn","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"safe prompt"}]}]}`)
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, firstPayload)
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 5*time.Second)
+	_, event, err := clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
+	select {
+	case <-firstHitCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for first websocket upstream request")
+	}
+	moderationRepo.resetLogs()
+
+	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, secondPayload)
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 3*time.Second)
+	_, payload, readErr := clientConn.Read(readCtx)
+	cancelRead()
+	if readErr == nil {
+		require.Contains(t, string(payload), "session_blocked_by_cyber_policy")
+		require.NotContains(t, string(payload), "content_policy_violation")
+		require.NotContains(t, string(payload), "fast policy should not mask cyber session block")
+	} else {
+		var closeErr coderws.CloseError
+		require.ErrorAs(t, readErr, &closeErr)
+		require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+		require.Contains(t, strings.ToLower(closeErr.Reason), "session")
+		require.NotContains(t, closeErr.Reason, "fast policy should not mask cyber session block")
+	}
+	select {
+	case payload := <-secondHitCh:
+		t.Fatalf("preblocked followup should not reach upstream: %s", string(payload))
+	case <-time.After(200 * time.Millisecond):
+	}
+	require.Empty(t, moderationRepo.logSnapshot(), "preblocked followup must short-circuit before content moderation")
+}
+
+func TestOpenAIResponsesWebSocket_LaterTurnCyberPolicyBlocksLaterPromptCacheKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, acceptErr := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+		if acceptErr != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
+		_, _, readErr := conn.Read(readCtx)
+		cancelRead()
+		if readErr != nil {
+			return
+		}
+		writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
+		_ = conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.completed","response":{"id":"resp_later_key_turn_one","model":"gpt-5.4","usage":{"input_tokens":1,"output_tokens":1}}}`))
+		cancelWrite()
+
+		readCtx, cancelRead = context.WithTimeout(r.Context(), 3*time.Second)
+		_, _, readErr = conn.Read(readCtx)
+		cancelRead()
+		if readErr != nil {
+			return
+		}
+		cyberFailed := []byte(`{"type":"response.failed","response":{"id":"resp_later_key_cyber","status":"failed","error":{"code":"cyber_policy","message":"Request blocked by cyber policy."},"usage":{"input_tokens":3,"output_tokens":0}}}`)
+		writeCtx, cancelWrite = context.WithTimeout(r.Context(), 3*time.Second)
+		_ = conn.Write(writeCtx, coderws.MessageText, cyberFailed)
+		cancelWrite()
+	}))
+	defer upstreamServer.Close()
+
+	groupID := int64(6408)
+	account := service.Account{
+		ID:          14008,
+		Name:        "openai-ws-later-cyber-key",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-ws-later-cyber-key",
+			"base_url": upstreamServer.URL,
+		},
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_enabled": true,
+			"openai_apikey_responses_websockets_v2_mode":    service.OpenAIWSIngressModePassthrough,
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.RunMode = config.RunModeSimple
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	cyberCache := &handlerCyberCacheStoreStub{}
+	settingSvc := service.NewSettingService(
+		&handlerCyberSettingRepoStub{vals: map[string]string{
+			service.SettingKeyCyberSessionBlockEnabled:    "true",
+			service.SettingKeyCyberSessionBlockTTLSeconds: "60",
+		}},
+		cfg,
+	)
+	accountRepo := &openAIWSUsageHandlerAccountRepoStub{account: account}
+	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cyberCache,
+		cfg,
+		nil,
+		nil,
+		service.NewBillingService(cfg, nil),
+		nil,
+		billingCacheSvc,
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		settingSvc,
+		nil,
+		nil, // fingerprintNormalizer
+	)
+	cache := &concurrencyCacheMock{
+		acquireUserSlotFn: func(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+		acquireAccountSlotFn: func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+	}
+	h := &OpenAIGatewayHandler{
+		gatewayService:      gatewaySvc,
+		billingCacheService: billingCacheSvc,
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+	}
+	apiKey := &service.APIKey{
+		ID:      9408,
+		GroupID: &groupID,
+		User:    &service.User{ID: 9308, Status: service.StatusActive},
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
+		c.Next()
+	})
+	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
+	handlerServer := httptest.NewServer(router)
+	defer handlerServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(
+		dialCtx,
+		"ws"+strings.TrimPrefix(handlerServer.URL, "http")+"/openai/v1/responses",
+		&coderws.DialOptions{CompressionMode: coderws.CompressionContextTakeover},
+	)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	firstPayload := []byte(`{"type":"response.create","model":"gpt-5.4","stream":false,"prompt_cache_key":"first-safe-key","input":"safe"}`)
+	laterPayload := []byte(`{"type":"response.create","model":"gpt-5.4","stream":false,"prompt_cache_key":"later-cyber-key","input":"blocked"}`)
+	keyCtx := newTestGinContext()
+	keyCtx.Request = httptest.NewRequest(http.MethodGet, "/openai/v1/responses", nil)
+	firstKey := service.CyberSessionBlockKey(apiKey.ID, keyCtx, firstPayload)
+	laterKey := service.CyberSessionBlockKey(apiKey.ID, keyCtx, laterPayload)
+	require.NotEmpty(t, firstKey)
+	require.NotEmpty(t, laterKey)
+	require.NotEqual(t, firstKey, laterKey)
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, firstPayload)
+	cancelWrite()
+	require.NoError(t, err)
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 5*time.Second)
+	_, event, err := clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
+
+	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, laterPayload)
+	cancelWrite()
+	require.NoError(t, err)
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 5*time.Second)
+	_, event, err = clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "response.failed", gjson.GetBytes(event, "type").String())
+	require.Equal(t, "cyber_policy", gjson.GetBytes(event, "response.error.code").String())
+
+	require.Eventually(t, func() bool {
+		return gatewaySvc.IsCyberSessionBlocked(context.Background(), laterKey)
+	}, 3*time.Second, 10*time.Millisecond)
+	require.False(t, gatewaySvc.IsCyberSessionBlocked(context.Background(), firstKey), "later turn cyber hit must not block the first turn key")
+}
+
 func TestOpenAIResponsesWebSocket_PassthroughUsageLogPersistsUserAgentAndReasoningEffort(t *testing.T) {
 	got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
 		firstPayload: `{"type":"response.create","model":"gpt-5.4","stream":false,"reasoning":{"effort":"HIGH"}}`,
@@ -3226,6 +3986,161 @@ func TestOpenAIResponsesWebSocket_FirstTurnPostModelMappingImageIntentSkipsImage
 	}
 }
 
+func TestOpenAIResponsesWebSocket_FirstTurnImageIntentRejectedByImageConcurrency(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	firstHitCh := make(chan []byte, 1)
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
+		_, payload, readErr := conn.Read(readCtx)
+		cancelRead()
+		if readErr == nil {
+			firstHitCh <- payload
+		}
+	}))
+	defer upstreamServer.Close()
+
+	groupID := int64(62033)
+	account := service.Account{
+		ID:          12033,
+		Name:        "openai-ws-image-limiter-first-turn",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-ws-image-limiter",
+			"base_url": upstreamServer.URL,
+		},
+		Extra: map[string]any{
+			"openai_image_generation_enabled":               true,
+			"openai_apikey_responses_websockets_v2_enabled": true,
+			"openai_apikey_responses_websockets_v2_mode":    service.OpenAIWSIngressModePassthrough,
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.RunMode = config.RunModeSimple
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.ImageConcurrency = config.ImageConcurrencyConfig{
+		Enabled:               true,
+		MaxConcurrentRequests: 1,
+		OverflowMode:          config.ImageConcurrencyOverflowModeReject,
+	}
+
+	accountRepo := &openAIWSUsageHandlerAccountRepoStub{account: account}
+	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cfg,
+		nil,
+		nil,
+		service.NewBillingService(cfg, nil),
+		nil,
+		billingCacheSvc,
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil, // fingerprintNormalizer
+	)
+	imageLimiter := &imageConcurrencyLimiter{}
+	release, acquired := imageLimiter.TryAcquire(true, 1)
+	require.True(t, acquired)
+	defer release()
+	cache := &concurrencyCacheMock{
+		acquireUserSlotFn: func(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+		acquireAccountSlotFn: func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+			return true, nil
+		},
+	}
+	h := &OpenAIGatewayHandler{
+		gatewayService:      gatewaySvc,
+		billingCacheService: billingCacheSvc,
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+		imageLimiter:        imageLimiter,
+		cfg:                 cfg,
+	}
+
+	apiKey := &service.APIKey{
+		ID:      92033,
+		GroupID: &groupID,
+		User:    &service.User{ID: 91033, Status: service.StatusActive},
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive, AllowImageGeneration: true},
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
+		c.Next()
+	})
+	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
+	handlerServer := httptest.NewServer(router)
+	defer handlerServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(
+		dialCtx,
+		"ws"+strings.TrimPrefix(handlerServer.URL, "http")+"/openai/v1/responses",
+		&coderws.DialOptions{CompressionMode: coderws.CompressionContextTakeover},
+	)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.4","stream":false,"tools":[{"type":"image_generation"}],"input":"draw a cat"}`))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 5*time.Second)
+	_, _, err = clientConn.Read(readCtx)
+	cancelRead()
+	require.Error(t, err)
+	var closeErr coderws.CloseError
+	require.ErrorAs(t, err, &closeErr)
+	require.Equal(t, coderws.StatusTryAgainLater, closeErr.Code)
+	require.Contains(t, closeErr.Reason, "Image generation concurrency limit exceeded")
+
+	select {
+	case payload := <-firstHitCh:
+		t.Fatalf("image-limited first turn should not reach upstream: %s", string(payload))
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 func TestOpenAIResponsesWebSocket_LaterTurnExplicitImageIntentRejectsAfterLiveToggleChange(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -4138,6 +5053,10 @@ func TestShouldReportOpenAIWebSocketAccountFailure_SkipsLocalImageToggleClose(t 
 
 	require.False(t, shouldReportOpenAIWebSocketAccountFailure(
 		service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "no available account", errOpenAIWSTurnAccountUnavailable),
+	))
+
+	require.False(t, shouldReportOpenAIWebSocketAccountFailure(
+		service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil),
 	))
 
 	require.True(t, shouldReportOpenAIWebSocketAccountFailure(

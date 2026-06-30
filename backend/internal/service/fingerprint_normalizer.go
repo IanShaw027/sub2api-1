@@ -192,6 +192,9 @@ func (n *FingerprintNormalizer) ResolveCanonical(ctx context.Context, account *A
 	if account.Type == AccountTypeAPIKey {
 		return nil
 	}
+	if !n.isAntiBanEnabledFor(account.Platform) {
+		return nil
+	}
 	c := &CanonicalFingerprint{
 		Platform:  string(account.Platform),
 		UserAgent: ua,

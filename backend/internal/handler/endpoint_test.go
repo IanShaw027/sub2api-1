@@ -84,7 +84,7 @@ func TestDeriveUpstreamEndpoint(t *testing.T) {
 		{"openai embeddings", EndpointEmbeddings, "/v1/embeddings", service.PlatformOpenAI, EndpointEmbeddings},
 		{"openai image generations", EndpointImagesGenerations, "/v1/images/generations", service.PlatformOpenAI, EndpointImagesGenerations},
 		{"openai image edits", EndpointImagesEdits, "/openai/v1/images/edits", service.PlatformOpenAI, EndpointImagesEdits},
-		{"openai videos root alias", EndpointVideos, "/videos", service.PlatformOpenAI, EndpointVideos},
+		{"videos root alias canonical before platform gate", EndpointVideos, "/videos", service.PlatformOpenAI, EndpointVideos},
 		{"grok videos generations alias", EndpointVideos, "/videos/generations", service.PlatformGrok, EndpointVideos},
 		{"grok image generations", EndpointImagesGenerations, "/v1/images/generations", service.PlatformGrok, EndpointImagesGenerations},
 		{"grok image edits", EndpointImagesEdits, "/images/edits", service.PlatformGrok, EndpointImagesEdits},

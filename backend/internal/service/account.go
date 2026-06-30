@@ -1584,14 +1584,16 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	if !a.IsOpenAICompatible() {
 		return false
 	}
+	if capability == OpenAIEndpointCapabilityVideos {
+		return a.IsGrok()
+	}
 	if a.IsGrok() {
 		return capability == OpenAIEndpointCapabilityChatCompletions ||
-			capability == OpenAIEndpointCapabilityVideos
+			capability == OpenAIEndpointCapabilityResponsesIngress
 	}
 	switch capability {
 	case OpenAIEndpointCapabilityChatCompletions:
 	case OpenAIEndpointCapabilityEmbeddings:
-	case OpenAIEndpointCapabilityVideos:
 	case OpenAIEndpointCapabilityResponsesIngress, OpenAIEndpointCapabilityAnthropicMessagesIngress:
 		if a.IsAnthropicMessagesUpstream() && !a.TextEndpointAutoRouteEnabled() {
 			return false
@@ -1665,13 +1667,19 @@ func (a *Account) SupportsOpenAIImageCapability(capability OpenAIImagesCapabilit
 	if capability == "" {
 		return true
 	}
-	if !a.IsOpenAI() {
+	if !a.IsOpenAICompatible() {
 		return false
 	}
 	switch capability {
 	case OpenAIImagesCapabilityBasic:
+		if a.IsGrok() {
+			return a.Type == AccountTypeOAuth
+		}
 		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
 	case OpenAIImagesCapabilityNative:
+		if a.IsGrok() {
+			return a.Type == AccountTypeOAuth
+		}
 		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
 	default:
 		return true
@@ -2383,7 +2391,6 @@ func (a *Account) GetTLSFingerprintProfileIDForDimension(os, clientType string) 
 	// 降级：旧单值
 	return a.GetTLSFingerprintProfileID()
 }
-
 
 // GetUserMsgQueueMode 获取用户消息队列模式
 // "serialize" = 串行队列, "throttle" = 软性限速, "" = 未设置（使用全局配置）

@@ -102,6 +102,35 @@ func applyOpsStatusCodeFilters(c *gin.Context, filter *service.OpsErrorLogFilter
 	return nil
 }
 
+func applyOpsRequestTypeFilters(c *gin.Context, filter *service.OpsErrorLogFilter) error {
+	if c == nil || filter == nil {
+		return nil
+	}
+	if raw := strings.TrimSpace(c.Query("request_type")); raw != "" {
+		requestType, err := service.ParseUsageRequestType(raw)
+		if err != nil {
+			return err
+		}
+		value := int16(requestType.Normalize())
+		filter.RequestType = &value
+		filter.Stream = nil
+		return nil
+	}
+	if raw := strings.TrimSpace(c.Query("stream")); raw != "" {
+		switch strings.ToLower(raw) {
+		case "1", "true", "yes":
+			value := true
+			filter.Stream = &value
+		case "0", "false", "no":
+			value := false
+			filter.Stream = &value
+		default:
+			return fmt.Errorf("invalid stream")
+		}
+	}
+	return nil
+}
+
 func NewOpsHandler(opsService *service.OpsService) *OpsHandler {
 	return &OpsHandler{opsService: opsService}
 }
@@ -147,6 +176,10 @@ func (h *OpsHandler) GetErrorLogs(c *gin.Context) {
 	// Model 过滤：admin 走精确匹配（ModelFuzzy 默认 false，保持管理端语义）。
 	// buildOpsErrorLogsWhere 以 COALESCE(requested_model, model) 比对。
 	filter.Model = strings.TrimSpace(c.Query("model"))
+	if err := applyOpsRequestTypeFilters(c, filter); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
 	// Force request errors: client-visible status >= 400.
 	// buildOpsErrorLogsWhere already applies this for non-upstream phase.
@@ -254,6 +287,10 @@ func (h *OpsHandler) ListRequestErrors(c *gin.Context) {
 	// Model 过滤：admin 走精确匹配（ModelFuzzy 默认 false，保持管理端语义）。
 	// buildOpsErrorLogsWhere 以 COALESCE(requested_model, model) 比对。
 	filter.Model = strings.TrimSpace(c.Query("model"))
+	if err := applyOpsRequestTypeFilters(c, filter); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
 	// Force request errors: client-visible status >= 400.
 	// buildOpsErrorLogsWhere already applies this for non-upstream phase.

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"io"
 	"net/http"
 
@@ -18,7 +19,15 @@ import (
 func (h *GatewayHandler) ClaudeTelemetryBatch(c *gin.Context) {
 	var body []byte
 	if c.Request != nil && c.Request.Body != nil {
-		body, _ = io.ReadAll(c.Request.Body)
+		var err error
+		body, err = io.ReadAll(c.Request.Body)
+		if err != nil {
+			if maxErr, ok := extractMaxBytesError(err); ok {
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": buildBodyTooLargeMessage(maxErr.Limit)})
+				return
+			}
+			body = nil
+		}
 	}
 
 	service.RecordGatewayDebugTimelineBody(h.settingService, c, "cc_aux_request", service.SanitizeClaudeTelemetryBatch(body, service.ClaudeTelemetrySanitizeOptions{}),
@@ -39,11 +48,31 @@ func (h *GatewayHandler) ClaudeTelemetryBatch(c *gin.Context) {
 		return
 	}
 
-	status, err := h.gatewayService.ForwardClaudeTelemetryBatch(c.Request.Context(), apiKey.GroupID, body)
-	if err != nil {
-		logger.L().Warn("claude_telemetry_forward_failed", zap.Error(err))
-	} else if status >= 400 {
-		logger.L().Warn("claude_telemetry_forward_upstream_status", zap.Int("status", status))
-	}
+	groupID := cloneInt64Ptr(apiKey.GroupID)
+	forwardCtx := contextWithoutCancel(c.Request.Context())
+	forwardBody := append([]byte(nil), body...)
+	go func() {
+		status, err := h.gatewayService.ForwardClaudeTelemetryBatch(forwardCtx, groupID, forwardBody)
+		if err != nil {
+			logger.L().Warn("claude_telemetry_forward_failed", zap.Error(err))
+		} else if status >= 400 {
+			logger.L().Warn("claude_telemetry_forward_upstream_status", zap.Int("status", status))
+		}
+	}()
 	c.JSON(http.StatusOK, gin.H{})
+}
+
+func cloneInt64Ptr(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func contextWithoutCancel(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return context.WithoutCancel(ctx)
 }

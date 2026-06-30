@@ -149,6 +149,7 @@ func (s *GroupService) Create(ctx context.Context, req CreateGroupRequest) (*Gro
 		ImageRateIndependent:  req.ImageRateIndependent,
 		ImageRateMultiplier:   imageRateMultiplier,
 	}
+	sanitizeGroupVideoGenerationFields(group)
 
 	if err := s.groupRepo.Create(ctx, group); err != nil {
 		return nil, fmt.Errorf("create group: %w", err)
@@ -262,6 +263,7 @@ func (s *GroupService) Update(ctx context.Context, id int64, req UpdateGroupRequ
 		}
 		group.ImageRateMultiplier = *req.ImageRateMultiplier
 	}
+	sanitizeGroupVideoGenerationFields(group)
 
 	if err := s.groupRepo.Update(ctx, group); err != nil {
 		return nil, fmt.Errorf("update group: %w", err)

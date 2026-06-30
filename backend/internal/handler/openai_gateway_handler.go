@@ -41,7 +41,10 @@ type OpenAIGatewayHandler struct {
 	cfg                      *config.Config
 }
 
-const openAIStreamRetryReplayStateContextKey = "openai_stream_retry_replay_state"
+const (
+	openAIStreamRetryReplayStateContextKey = "openai_stream_retry_replay_state"
+	openAIWSCyberBlockKeyContextKey        = "openai_ws_cyber_block_key"
+)
 
 var (
 	errOpenAIWSLocalImageToggleUnavailable = errors.New("openai websocket local image-toggle unavailable")
@@ -250,6 +253,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 
+	// Reject previously blocked cyber-policy sessions before moderation,
+	// billing, or concurrency slots can mask the local block reason.
+	sessionHash := h.gatewayService.GenerateSessionHash(c, sessionHashBody)
+	if h.rejectIfCyberSessionBlocked(c, apiKey, sessionHashBody, reqModel, cyberBlockFormatResponses) {
+		return
+	}
+
 	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, body); decision != nil && decision.Blocked {
 		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
 		return
@@ -313,11 +323,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.Group, apiKey.Group))
 	}
 
-	// Generate session hash (header first; fallback to prompt_cache_key)
-	sessionHash := h.gatewayService.GenerateSessionHash(c, sessionHashBody)
-	if h.rejectIfCyberSessionBlocked(c, apiKey, sessionHashBody, reqModel, cyberBlockFormatResponses) {
-		return
-	}
 	requireCompact := isOpenAIRemoteCompactPath(c)
 
 	maxAccountSwitches := h.maxAccountSwitches
@@ -921,6 +926,13 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 
+	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
+	promptCacheKey := h.gatewayService.ExtractSessionID(c, body)
+	sessionHash, promptCacheKey = resolveOpenAIMessagesMetadataSession(sessionHash, promptCacheKey, reqModel, body)
+	if h.rejectIfCyberSessionBlocked(c, apiKey, body, reqModel, cyberBlockFormatAnthropic) {
+		return
+	}
+
 	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolAnthropicMessages, reqModel, body); decision != nil && decision.Blocked {
 		h.anthropicErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
 		return
@@ -956,13 +968,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
 		}
 		h.anthropicStreamingAwareError(c, status, code, message, streamStarted)
-		return
-	}
-
-	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
-	promptCacheKey := h.gatewayService.ExtractSessionID(c, body)
-	sessionHash, promptCacheKey = resolveOpenAIMessagesMetadataSession(sessionHash, promptCacheKey, reqModel, body)
-	if h.rejectIfCyberSessionBlocked(c, apiKey, body, reqModel, cyberBlockFormatAnthropic) {
 		return
 	}
 
@@ -1564,6 +1569,20 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, true, firstMessage)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeWSV2))
 
+	// F5a: 首帧层会话屏蔽检查必须早于内容风控，避免已屏蔽会话被后续
+	// moderation 结果覆盖本地 block 原因。WS 可从 header 或首帧
+	// prompt_cache_key 派生显式会话标识；无标识则放行，连接内 flag 兜底。
+	cyberBlockKey := service.CyberSessionBlockKey(apiKey.ID, c, firstMessage)
+	if cyberBlockKey != "" && h.gatewayService.IsCyberSessionBlocked(c.Request.Context(), cyberBlockKey) {
+		writeCyberSessionBlockedWSError(c.Request.Context(), wsConn)
+		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg)
+		h.enqueueCyberSessionBlockedOpsEntry(c, apiKey, reqModel, cyberBlockKey)
+		return
+	}
+	c.Set(openAIWSCyberBlockKeyContextKey, cyberBlockKey)
+	cyberBlockedThisConn := false
+	currentCyberBlockKey := cyberBlockKey
+
 	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, firstMessage); decision != nil && decision.Blocked {
 		writeContentModerationWSError(ctx, wsConn, decision)
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, decision.Message)
@@ -1576,17 +1595,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
 		return
 	}
-
-	// F5a: 握手层会话屏蔽检查。WS 握手无 body，显式标识仅来自握手 header
-	// （session_id / conversation_id）；无标识则放行，连接内仍有本地 flag 兜底。
-	cyberBlockKey := service.CyberSessionBlockKey(apiKey.ID, c, nil)
-	if cyberBlockKey != "" && h.gatewayService.IsCyberSessionBlocked(c.Request.Context(), cyberBlockKey) {
-		writeCyberSessionBlockedWSError(c.Request.Context(), wsConn)
-		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "session blocked by cyber-security policy")
-		h.enqueueCyberSessionBlockedOpsEntry(c, apiKey, reqModel, cyberBlockKey)
-		return
-	}
-	cyberBlockedThisConn := false
 
 	// 解析渠道级模型映射
 	channelMappingWS, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, reqModel)
@@ -1772,10 +1780,50 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 		currentTurnNeedsImageSlot = firstTurnNeedsImageSlot
 
+		resolveCyberBlockKeyForWSTurn := func(payload []byte) string {
+			turnCyberBlockKey := service.CyberSessionBlockKey(apiKey.ID, c, payload)
+			if turnCyberBlockKey == "" {
+				turnCyberBlockKey = currentCyberBlockKey
+			}
+			if turnCyberBlockKey == "" {
+				turnCyberBlockKey = cyberBlockKey
+			}
+			if turnCyberBlockKey != "" {
+				currentCyberBlockKey = turnCyberBlockKey
+				c.Set(openAIWSCyberBlockKeyContextKey, turnCyberBlockKey)
+			}
+			return turnCyberBlockKey
+		}
+		isCyberBlockedWSTurn := func(payload []byte) (string, bool) {
+			turnCyberBlockKey := resolveCyberBlockKeyForWSTurn(payload)
+			return turnCyberBlockKey, turnCyberBlockKey != "" && h.gatewayService.IsCyberSessionBlocked(c.Request.Context(), turnCyberBlockKey)
+		}
+		rejectCyberBlockedWSTurn := func(payload []byte) error {
+			turnCyberBlockKey := resolveCyberBlockKeyForWSTurn(payload)
+			writeCyberSessionBlockedWSError(c.Request.Context(), wsConn)
+			h.enqueueCyberSessionBlockedOpsEntry(c, apiKey, reqModel, turnCyberBlockKey)
+			return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
+		}
+
 		hooks := &service.OpenAIWSIngressHooks{
 			InitialRequestModel: reqModel,
 			SessionHash:         sessionHash,
+			BeforePolicy: func(turn int, payload []byte, originalModel string) error {
+				if cyberBlockedThisConn {
+					return rejectCyberBlockedWSTurn(payload)
+				}
+				if _, blocked := isCyberBlockedWSTurn(payload); blocked {
+					return rejectCyberBlockedWSTurn(payload)
+				}
+				return nil
+			},
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
+				if cyberBlockedThisConn {
+					return rejectCyberBlockedWSTurn(payload)
+				}
+				if _, blocked := isCyberBlockedWSTurn(payload); blocked {
+					return rejectCyberBlockedWSTurn(payload)
+				}
 				if turn == 1 {
 					return nil
 				}
@@ -1821,6 +1869,15 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
 				}
 				if turn == 1 {
+					if currentTurnNeedsImageSlot {
+						imageReleaseFunc, err := h.acquireImageGenerationWSSlot(ctx)
+						if err != nil {
+							return err
+						}
+						currentImageRelease = imageReleaseFunc
+					} else {
+						currentImageRelease = nil
+					}
 					return nil
 				}
 				// 防御式清理：避免异常路径下旧槽位覆盖导致泄漏。
@@ -1876,7 +1933,22 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				// WebSocket turn 请求体可能很大，hash 必须在闭包内提前算成字符串，
 				// 避免在异步 usage record / cyber 记录中保活整个请求体。
 				requestPayloadHash := service.HashUsageRequestPayload(turnPayload)
-				h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, turnErr != nil, cyberBlockKey, channelMappingWS.ToUsageFields(reqModel, ""), requestPayloadHash, service.ContentModerationProtocolOpenAIResponses, turnPayload)
+				turnCyberBlockKey := ""
+				if v, ok := c.Get(openAIWSCyberBlockKeyContextKey); ok {
+					if s, ok := v.(string); ok {
+						turnCyberBlockKey = s
+					}
+				}
+				if turnCyberBlockKey == "" {
+					turnCyberBlockKey = service.CyberSessionBlockKey(apiKey.ID, c, turnPayload)
+				}
+				if turnCyberBlockKey == "" {
+					turnCyberBlockKey = currentCyberBlockKey
+				}
+				if turnCyberBlockKey == "" {
+					turnCyberBlockKey = cyberBlockKey
+				}
+				h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, turnErr != nil, turnCyberBlockKey, channelMappingWS.ToUsageFields(reqModel, ""), requestPayloadHash, service.ContentModerationProtocolOpenAIResponses, turnPayload)
 				if service.GetOpsCyberPolicy(c) != nil {
 					cyberBlockedThisConn = true
 				}
@@ -2079,6 +2151,12 @@ func (h *OpenAIGatewayHandler) missingResponsesDependencies() []string {
 }
 
 func shouldReportOpenAIWebSocketAccountFailure(err error) bool {
+	var closeErr *service.OpenAIWSClientCloseError
+	if errors.As(err, &closeErr) &&
+		closeErr.StatusCode() == coderws.StatusPolicyViolation &&
+		closeErr.Reason() == cyberSessionBlockedClientMsg {
+		return false
+	}
 	return !errors.Is(err, errOpenAIWSLocalImageToggleUnavailable) &&
 		!errors.Is(err, errOpenAIWSTurnAccountUnavailable)
 }
@@ -2940,6 +3018,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 		ClientIP:        clientIPStr,
 		CreatedAt:       time.Now(),
 	}
+	markCyberSessionBlockedBeforeAsync(c, gwSvc, cyberBlockKey)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -2982,9 +3061,6 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				APIKeyService:      apiKeySvc,
 				ChannelUsageFields: channelFields,
 			})
-		}
-		if gwSvc != nil && cyberBlockKey != "" {
-			gwSvc.MarkCyberSessionBlocked(ctx, cyberBlockKey)
 		}
 		if opsSvc != nil {
 			enqueueOpsErrorLog(opsSvc, buildCyberPolicyOpsErrorEntry(opsMeta, mark))

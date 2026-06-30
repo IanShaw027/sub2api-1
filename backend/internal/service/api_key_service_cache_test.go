@@ -312,6 +312,72 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesGroupFeatureConfig(t *testing.
 	require.Equal(t, apiKey.Group.AudioSTTPricePerHour, roundTrip.Group.AudioSTTPricePerHour)
 }
 
+func TestAPIKeyService_SnapshotRoundTrip_ClearsNonGrokVideoConfig(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+	groupID := int64(10)
+	video480p := 0.01
+	video720p := 0.02
+	video1080p := 0.03
+	video4k := 0.04
+	apiKey := &APIKey{
+		ID:      1,
+		UserID:  2,
+		GroupID: &groupID,
+		Key:     "k-openai-stale-video",
+		Name:    "OpenAI stale video",
+		Status:  StatusActive,
+		User: &User{
+			ID:          2,
+			Status:      StatusActive,
+			Role:        RoleUser,
+			Balance:     10,
+			Concurrency: 3,
+		},
+		Group: &Group{
+			ID:                    groupID,
+			Name:                  "openai",
+			Platform:              PlatformOpenAI,
+			Status:                StatusActive,
+			SubscriptionType:      SubscriptionTypeStandard,
+			RateMultiplier:        1,
+			AllowVideoGeneration:  true,
+			VideoGenerationRoute:  GroupVideoGenerationRouteNative,
+			VideoPrice480pPerSec:  &video480p,
+			VideoPrice720pPerSec:  &video720p,
+			VideoPrice1080pPerSec: &video1080p,
+			VideoPrice4kPerSec:    &video4k,
+		},
+	}
+
+	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+	require.NotNil(t, snapshot.Group)
+	require.False(t, snapshot.Group.AllowVideoGeneration)
+	require.Equal(t, GroupVideoGenerationRouteNative, snapshot.Group.VideoGenerationRoute)
+	require.Nil(t, snapshot.Group.VideoPrice480pPerSec)
+	require.Nil(t, snapshot.Group.VideoPrice720pPerSec)
+	require.Nil(t, snapshot.Group.VideoPrice1080pPerSec)
+	require.Nil(t, snapshot.Group.VideoPrice4kPerSec)
+
+	staleSnapshot := *snapshot
+	staleGroup := *snapshot.Group
+	staleGroup.AllowVideoGeneration = true
+	staleGroup.VideoPrice480pPerSec = &video480p
+	staleGroup.VideoPrice720pPerSec = &video720p
+	staleGroup.VideoPrice1080pPerSec = &video1080p
+	staleGroup.VideoPrice4kPerSec = &video4k
+	staleSnapshot.Group = &staleGroup
+
+	roundTrip := svc.snapshotToAPIKey(apiKey.Key, &staleSnapshot)
+	require.NotNil(t, roundTrip)
+	require.NotNil(t, roundTrip.Group)
+	require.False(t, roundTrip.Group.AllowVideoGeneration)
+	require.Equal(t, GroupVideoGenerationRouteNative, roundTrip.Group.VideoGenerationRoute)
+	require.Nil(t, roundTrip.Group.VideoPrice480pPerSec)
+	require.Nil(t, roundTrip.Group.VideoPrice720pPerSec)
+	require.Nil(t, roundTrip.Group.VideoPrice1080pPerSec)
+	require.Nil(t, roundTrip.Group.VideoPrice4kPerSec)
+}
+
 func TestAPIKeyService_GetByKey_IgnoresLegacyAuthCacheSnapshotWithoutMessagesDispatchConfig(t *testing.T) {
 	cache := &authCacheStub{}
 	var repoCalls int32

@@ -47,3 +47,42 @@ func TestOpenAIGatewayHandlerImages_DisabledGroupRejectsBeforeScheduling(t *test
 	require.Equal(t, "permission_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 	require.Contains(t, rec.Body.String(), service.ImageGenerationPermissionMessage())
 }
+
+func TestOpenAIGatewayHandlerVideos_DisabledGroupStoresVideoRequestType(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"grok-4.3","prompt":"draw a video"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+	groupID := int64(112)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		ID:      223,
+		GroupID: &groupID,
+		Group: &service.Group{
+			ID:                   groupID,
+			Platform:             service.PlatformGrok,
+			AllowVideoGeneration: false,
+		},
+		User: &service.User{ID: 334},
+	})
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 334, Concurrency: 1})
+
+	h := &OpenAIGatewayHandler{
+		gatewayService:      &service.OpenAIGatewayService{},
+		billingCacheService: &service.BillingCacheService{},
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   &ConcurrencyHelper{concurrencyService: &service.ConcurrencyService{}},
+	}
+
+	h.Videos(c)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Equal(t, "permission_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+	require.Contains(t, rec.Body.String(), service.VideoGenerationPermissionMessage())
+	rt, ok := c.Get(opsRequestTypeKey)
+	require.True(t, ok)
+	require.Equal(t, int16(service.RequestTypeVideo), rt)
+}

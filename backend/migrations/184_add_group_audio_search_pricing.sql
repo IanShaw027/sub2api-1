@@ -9,22 +9,6 @@ ALTER TABLE groups ADD COLUMN IF NOT EXISTS audio_realtime_price_per_min DECIMAL
 ALTER TABLE groups ADD COLUMN IF NOT EXISTS audio_tts_price_per_million_chars DECIMAL(20,8);
 ALTER TABLE groups ADD COLUMN IF NOT EXISTS audio_stt_price_per_hour DECIMAL(20,8);
 
-ALTER TABLE groups
-    ADD CONSTRAINT groups_search_price_per_1k_non_negative
-    CHECK (search_price_per_1k IS NULL OR search_price_per_1k >= 0);
-
-ALTER TABLE groups
-    ADD CONSTRAINT groups_audio_realtime_price_per_min_non_negative
-    CHECK (audio_realtime_price_per_min IS NULL OR audio_realtime_price_per_min >= 0);
-
-ALTER TABLE groups
-    ADD CONSTRAINT groups_audio_tts_price_per_million_chars_non_negative
-    CHECK (audio_tts_price_per_million_chars IS NULL OR audio_tts_price_per_million_chars >= 0);
-
-ALTER TABLE groups
-    ADD CONSTRAINT groups_audio_stt_price_per_hour_non_negative
-    CHECK (audio_stt_price_per_hour IS NULL OR audio_stt_price_per_hour >= 0);
-
 COMMENT ON COLUMN groups.search_price_per_1k IS '搜索/工具调用显式价格 per 1000 calls (USD)，如 grok web_search / x_search 等，不走文本倍率';
 COMMENT ON COLUMN groups.audio_realtime_price_per_min IS '语音 Realtime 每分钟显式价格 (USD)';
 COMMENT ON COLUMN groups.audio_tts_price_per_million_chars IS 'TTS 每百万字符显式价格 (USD)';

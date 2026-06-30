@@ -92,7 +92,7 @@ func (Group) Fields() []ent.Field {
 		field.String("image_generation_route").
 			MaxLen(20).
 			Default("codex").
-			Comment("图片生成路由类型：codex 或 web2api"),
+			Comment("图片生成路由类型：codex / web2api / native（native 用于 Grok 原生图片等）"),
 		field.String("openai_image_main_model").
 			MaxLen(100).
 			Default("gpt-5.4-mini").

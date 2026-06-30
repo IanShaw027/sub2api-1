@@ -129,7 +129,9 @@ func TestNormalizeGroupImageGenerationRoute_PreservesWeb2API(t *testing.T) {
 	require.Equal(t, GroupImageGenerationRouteCodex, NormalizeGroupImageGenerationRoute(""))
 	require.Equal(t, GroupImageGenerationRouteCodex, NormalizeGroupImageGenerationRoute("codex"))
 	require.Equal(t, GroupImageGenerationRouteWeb2API, NormalizeGroupImageGenerationRoute("web2api"))
+	require.Equal(t, GroupImageGenerationRouteNative, NormalizeGroupImageGenerationRoute("native"))
 	require.Equal(t, GroupImageGenerationRouteWeb2API, (&Group{ImageGenerationRoute: "web2api"}).EffectiveImageGenerationRoute())
+	require.Equal(t, GroupImageGenerationRouteNative, (&Group{ImageGenerationRoute: "native"}).EffectiveImageGenerationRoute())
 }
 
 func TestNormalizeGroupVideoGenerationRoute_DefaultsToNative(t *testing.T) {

@@ -1357,6 +1357,13 @@ func buildOpsErrorLogsWhere(filter *service.OpsErrorLogFilter) (string, []any) {
 		args = append(args, *filter.APIKeyID)
 		clauses = append(clauses, "e.api_key_id = $"+itoa(len(args)))
 	}
+	if filter.RequestType != nil {
+		args = append(args, *filter.RequestType)
+		clauses = append(clauses, "COALESCE(e.request_type, 0) = $"+itoa(len(args)))
+	} else if filter.Stream != nil {
+		args = append(args, *filter.Stream)
+		clauses = append(clauses, "COALESCE(e.stream, false) = $"+itoa(len(args)))
+	}
 	if m := strings.TrimSpace(filter.Model); m != "" {
 		if filter.ModelFuzzy {
 			args = append(args, "%"+escapeLikePattern(m)+"%")

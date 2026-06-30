@@ -14,6 +14,7 @@ type GroupModelsListConfig = domain.GroupModelsListConfig
 const (
 	GroupImageGenerationRouteCodex   = "codex"
 	GroupImageGenerationRouteWeb2API = "web2api"
+	GroupImageGenerationRouteNative  = "native"
 
 	GroupVideoGenerationRouteNative = "native"
 )
@@ -50,7 +51,7 @@ type Group struct {
 	Images2APIPrice2K    *float64
 	Images2APIPrice4K    *float64
 
-	// 视频生成计费配置（按分辨率+秒数，与其他平台统一）
+	// 视频生成计费配置（仅 Grok/xAI native videos）
 	AllowVideoGeneration  bool
 	VideoGenerationRoute  string
 	VideoPrice480pPerSec  *float64
@@ -128,6 +129,8 @@ func NormalizeGroupImageGenerationRoute(route string) string {
 		return GroupImageGenerationRouteCodex
 	case GroupImageGenerationRouteWeb2API:
 		return GroupImageGenerationRouteWeb2API
+	case GroupImageGenerationRouteNative:
+		return GroupImageGenerationRouteNative
 	default:
 		return GroupImageGenerationRouteCodex
 	}
@@ -142,6 +145,30 @@ func NormalizeGroupVideoGenerationRoute(route string) string {
 	}
 }
 
+func groupPlatformSupportsVideoGeneration(platform string) bool {
+	return strings.EqualFold(strings.TrimSpace(platform), PlatformGrok)
+}
+
+func SanitizeGroupVideoGenerationFields(group *Group) {
+	if group == nil {
+		return
+	}
+	if !groupPlatformSupportsVideoGeneration(group.Platform) {
+		group.AllowVideoGeneration = false
+		group.VideoGenerationRoute = GroupVideoGenerationRouteNative
+		group.VideoPrice480pPerSec = nil
+		group.VideoPrice720pPerSec = nil
+		group.VideoPrice1080pPerSec = nil
+		group.VideoPrice4kPerSec = nil
+		return
+	}
+	group.VideoGenerationRoute = NormalizeGroupVideoGenerationRoute(group.VideoGenerationRoute)
+}
+
+func sanitizeGroupVideoGenerationFields(group *Group) {
+	SanitizeGroupVideoGenerationFields(group)
+}
+
 func (g *Group) EffectiveVideoGenerationRoute() string {
 	if g == nil {
 		return GroupVideoGenerationRouteNative
@@ -152,9 +179,6 @@ func (g *Group) EffectiveVideoGenerationRoute() string {
 func (g *Group) EffectiveImageGenerationRoute() string {
 	if g == nil {
 		return GroupImageGenerationRouteCodex
-	}
-	if g.Platform == PlatformGrok && strings.EqualFold(strings.TrimSpace(g.ImageGenerationRoute), "native") {
-		return "native"
 	}
 	return NormalizeGroupImageGenerationRoute(g.ImageGenerationRoute)
 }

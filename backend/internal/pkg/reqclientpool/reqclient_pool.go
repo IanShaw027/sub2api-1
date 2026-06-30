@@ -11,10 +11,11 @@ import (
 )
 
 type Options struct {
-	ProxyURL    string
-	Timeout     time.Duration
-	Impersonate bool
-	ForceHTTP2  bool
+	ProxyURL       string
+	Timeout        time.Duration
+	Impersonate    bool
+	ForceHTTP2     bool
+	DisableCookies bool
 }
 
 var sharedClients sync.Map
@@ -28,6 +29,9 @@ func Get(opts Options) (*req.Client, error) {
 	}
 
 	client := req.C().SetTimeout(opts.Timeout)
+	if opts.DisableCookies {
+		client.SetCookieJar(nil)
+	}
 	if opts.ForceHTTP2 {
 		client = client.EnableForceHTTP2()
 	}
@@ -50,11 +54,12 @@ func Get(opts Options) (*req.Client, error) {
 }
 
 func Key(opts Options) string {
-	return fmt.Sprintf("%s|%s|%t|%t",
+	return fmt.Sprintf("%s|%s|%t|%t|%t",
 		strings.TrimSpace(opts.ProxyURL),
 		opts.Timeout.String(),
 		opts.Impersonate,
 		opts.ForceHTTP2,
+		opts.DisableCookies,
 	)
 }
 

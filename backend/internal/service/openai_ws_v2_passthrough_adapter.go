@@ -530,6 +530,19 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			if model == "" {
 				model = capturedSessionModel
 			}
+			turnNo := int(completedTurns.Load()) + 1
+			if turnNo < 2 {
+				turnNo = 2
+			}
+			requestModel := requestModelForThisFrame
+			if requestModel == "" {
+				requestModel = capturedSessionModel
+			}
+			if hooks != nil && hooks.BeforePolicy != nil {
+				if err := hooks.BeforePolicy(turnNo, payload, requestModel); err != nil {
+					return payload, nil, err
+				}
+			}
 			out, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, model, payload)
 			if policyErr != nil || blocked != nil {
 				return out, blocked, policyErr
@@ -539,19 +552,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				return payload, nil, policyErr
 			}
 			if hooks != nil && hooks.BeforeRequest != nil {
-				turnNo := int(completedTurns.Load()) + 1
-				if turnNo < 2 {
-					turnNo = 2
-				}
-				requestModel := requestModelForThisFrame
-				if requestModel == "" {
-					requestModel = capturedSessionModel
-				}
 				if err := hooks.BeforeRequest(turnNo, out, requestModel); err != nil {
 					return out, nil, err
 				}
 			}
-			turnNo := int(completedTurns.Load()) + 1
+			turnNo = int(completedTurns.Load()) + 1
 			if turnNo < 2 {
 				turnNo = 2
 			}
@@ -689,12 +694,15 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				}
 			},
 			BeforeWriteClient: func(msgType coderws.MessageType, payload []byte, wroteDownstream bool) error {
-				if msgType != coderws.MessageText || wroteDownstream {
+				if msgType != coderws.MessageText {
 					return nil
 				}
 				eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
 				if eventType == "error" || eventType == "response.failed" {
 					_ = markOpenAIWSPassthroughCyberPolicy(c, payload)
+				}
+				if wroteDownstream {
+					return nil
 				}
 				if eventType != "error" {
 					return nil

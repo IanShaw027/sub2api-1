@@ -115,8 +115,11 @@ type Group struct {
 	ImagePrice1K         *float64 `json:"image_price_1k"`
 	ImagePrice2K         *float64 `json:"image_price_2k"`
 	ImagePrice4K         *float64 `json:"image_price_4k"`
+	Images2APIPrice1K    *float64 `json:"images2api_price_1k"`
+	Images2APIPrice2K    *float64 `json:"images2api_price_2k"`
+	Images2APIPrice4K    *float64 `json:"images2api_price_4k"`
 
-	// 视频生成计费配置（按分辨率+秒数，与其他平台统一）
+	// 视频生成计费配置（仅 Grok/xAI native videos）
 	AllowVideoGeneration  bool     `json:"allow_video_generation"`
 	VideoGenerationRoute  string   `json:"video_generation_route"`
 	VideoPrice480pPerSec  *float64 `json:"video_price_480p_per_sec"`

@@ -102,6 +102,15 @@ func openAIImageRouteForAccountScheduling(route string) string {
 	return normalized
 }
 
+func openAICompatibleAccountSatisfiesOAuthRequirement(account *Account, platform string) bool {
+	switch normalizeOpenAICompatiblePlatform(platform) {
+	case PlatformGrok:
+		return account != nil && account.IsGrokOAuth()
+	default:
+		return account != nil && account.IsOpenAIOAuth()
+	}
+}
+
 type OpenAIAccountScheduleDecision struct {
 	Layer                         string
 	StickyPreviousHit             bool
@@ -1107,7 +1116,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		return nil, 0, 0, 0, err
 	}
 	if len(accounts) == 0 {
-		return nil, 0, 0, 0, noAvailableOpenAISelectionErrorWithRouting(ctx, s.service.settingService, req.RequestedModel, false, req.RequireCompact, accounts)
+		return nil, 0, 0, 0, noAvailableOpenAICompatibleSelectionErrorWithRouting(ctx, s.service.settingService, req.Platform, req.RequestedModel, false, req.RequireCompact, accounts)
 	}
 
 	// require_privacy_set: 获取分组信息
@@ -1152,7 +1161,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		})
 	}
 	if len(filtered) == 0 {
-		return nil, 0, 0, 0, noAvailableOpenAISelectionErrorWithRouting(ctx, s.service.settingService, req.RequestedModel, false, req.RequireCompact, errorAccounts)
+		return nil, 0, 0, 0, noAvailableOpenAICompatibleSelectionErrorWithRouting(ctx, s.service.settingService, req.Platform, req.RequestedModel, false, req.RequireCompact, errorAccounts)
 	}
 
 	loadMap := map[int64]*AccountLoadInfo{}
@@ -1357,7 +1366,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		waitSelectionOrder = buildSelectionOrder(waitCandidates)
 	}
 	if len(selectionOrder) == 0 && len(waitSelectionOrder) == 0 {
-		return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionErrorWithRouting(ctx, s.service.settingService, req.RequestedModel, req.RequireCompact && len(allCandidates) > 0, req.RequireCompact, errorAccounts)
+		return nil, candidateCount, topK, loadSkew, noAvailableOpenAICompatibleSelectionErrorWithRouting(ctx, s.service.settingService, req.Platform, req.RequestedModel, req.RequireCompact && len(allCandidates) > 0, req.RequireCompact, errorAccounts)
 	}
 
 	compactBlocked := false
@@ -1444,7 +1453,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		return selection, candidateCount, topK, loadSkew, err
 	}
 
-	return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionErrorWithRouting(ctx, s.service.settingService, req.RequestedModel, compactBlocked, req.RequireCompact, errorAccounts)
+	return nil, candidateCount, topK, loadSkew, noAvailableOpenAICompatibleSelectionErrorWithRouting(ctx, s.service.settingService, req.Platform, req.RequestedModel, compactBlocked, req.RequireCompact, errorAccounts)
 }
 
 func (s *defaultOpenAIAccountScheduler) selectionErrorAccounts(ctx context.Context, req OpenAIAccountScheduleRequest, accounts []Account, schedGroup *Group) []Account {
@@ -1492,7 +1501,7 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 	if req.RequireImageEnabled && !account.OpenAIImageGenerationAllowed() {
 		return false
 	}
-	if req.RequireOAuthAccount && !account.IsOpenAIOAuth() {
+	if req.RequireOAuthAccount && !openAICompatibleAccountSatisfiesOAuthRequirement(account, req.Platform) {
 		return false
 	}
 	if req.RequiredImageRoute != "" && !account.IsSelectableForOpenAIImageRoute(req.RequiredImageRoute, allowRateLimitedOpenAIImageRouteScheduling(req.RequiredImageRoute)) {
@@ -1544,7 +1553,7 @@ func (s *defaultOpenAIAccountScheduler) isLoadBalanceAccountSchedulableForReques
 	if req.RequireImageEnabled && !account.OpenAIImageGenerationAllowed() {
 		return false
 	}
-	if req.RequireOAuthAccount && !account.IsOpenAIOAuth() {
+	if req.RequireOAuthAccount && !openAICompatibleAccountSatisfiesOAuthRequirement(account, req.Platform) {
 		return false
 	}
 	if req.RequiredImageRoute != "" {
@@ -2011,6 +2020,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	req := OpenAIAccountScheduleRequest{
 		GroupID:                 groupID,
 		APIKeyID:                apiKeyID,
+		Platform:                platform,
 		SessionHash:             sessionHash,
 		PreviousResponseID:      previousResponseID,
 		RequestedModel:          requestedModel,

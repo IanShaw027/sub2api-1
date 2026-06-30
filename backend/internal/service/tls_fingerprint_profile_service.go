@@ -286,11 +286,17 @@ func (s *TLSFingerprintProfileService) resolveTLSProfileForDimension(account *Ac
 		if p := s.resolveProfileByIDForAccount(id, account, transport); p != nil {
 			return p, true
 		}
+		if !defaultWhenUnresolved {
+			return nil, false
+		}
 		return builtinDefaultTLSProfile(), true
 	}
 	if id == -1 {
 		if p := s.getRandomProfileForDimensionTransport(account.Platform, os, clientType, transport); p != nil {
 			return p, true
+		}
+		if !defaultWhenUnresolved {
+			return nil, false
 		}
 		return builtinDefaultTLSProfile(), true
 	}

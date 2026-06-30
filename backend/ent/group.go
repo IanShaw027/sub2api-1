@@ -55,7 +55,7 @@ type Group struct {
 	DefaultValidityDays int `json:"default_validity_days,omitempty"`
 	// 是否允许该分组使用图片生成能力
 	AllowImageGeneration bool `json:"allow_image_generation,omitempty"`
-	// 图片生成路由类型：codex 或 web2api
+	// 图片生成路由类型：codex / web2api / native（native 用于 Grok 原生图片等）
 	ImageGenerationRoute string `json:"image_generation_route,omitempty"`
 	// OpenAI OAuth/codex 图片请求的 Responses 主模型
 	OpenaiImageMainModel string `json:"openai_image_main_model,omitempty"`

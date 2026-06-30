@@ -210,6 +210,24 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 		require.True(t, ok)
 	})
 
+	t.Run("184约束误追加checksum可兼容回滚后的原始迁移", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"184_add_group_audio_search_pricing.sql",
+			"56b65dbc1dc1927c193b5b5bf74cf458a20070d5c12c23a28f95933f87d72ae9",
+			currentMigrationChecksumForTest(t, "184_add_group_audio_search_pricing.sql"),
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("184原始checksum可兼容曾误追加约束的文件checksum", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"184_add_group_audio_search_pricing.sql",
+			currentMigrationChecksumForTest(t, "184_add_group_audio_search_pricing.sql"),
+			"56b65dbc1dc1927c193b5b5bf74cf458a20070d5c12c23a28f95933f87d72ae9",
+		)
+		require.True(t, ok)
+	})
+
 	t.Run("119未知checksum不兼容", func(t *testing.T) {
 		ok := isMigrationChecksumCompatible(
 			"119_enforce_payment_orders_out_trade_no_unique.sql",

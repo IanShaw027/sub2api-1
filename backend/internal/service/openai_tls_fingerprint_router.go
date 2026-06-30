@@ -26,6 +26,9 @@ func (s *OpenAIGatewayService) SetTLSFingerprintRouterService(routerService *TLS
 
 func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Context, c *gin.Context, account *Account, transport string) openAITLSFingerprintRuntime {
 	runtime := openAITLSFingerprintRuntime{}
+	if enabled, ok := getRuntimeAntiBanFor(normalizePlatform(PlatformOpenAI)); ok && !enabled {
+		return runtime
+	}
 	if s != nil {
 		runtime.Profile = s.resolveOpenAITLSProfileForTransport(account, transport)
 	}
@@ -60,7 +63,8 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 	// 解析出该账号专属的具体模板（实现「同一路由规则、不同账号用不同模板」）。
 	// 矩阵未命中时 ResolveTLSProfileForDimension 会降级到账号旧单值。
 	var profile *tlsfingerprint.Profile
-	if match.OS != "" || match.ClientType != "" {
+	hasDimensionMatch := match.OS != "" || match.ClientType != ""
+	if hasDimensionMatch {
 		if p, resolved := s.tlsFPProfileService.ResolveTLSProfileForDimensionMatch(account, match.OS, match.ClientType, transport); resolved {
 			profile = p
 		}
@@ -68,6 +72,9 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 	// 规则未带维度，或维度解析无果：回退到规则直出的 ProfileID（向后兼容旧规则）。
 	if profile == nil && match.ProfileID > 0 {
 		profile = s.tlsFPProfileService.resolveProfileByIDForAccount(match.ProfileID, account, transport)
+	}
+	if profile == nil && hasDimensionMatch {
+		profile = builtinDefaultTLSProfile()
 	}
 	if profile == nil {
 		return runtime
@@ -91,6 +98,9 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 
 func (s *OpenAIGatewayService) resolveGrokTLSFingerprintRuntime(ctx context.Context, c *gin.Context, account *Account, transport string) openAITLSFingerprintRuntime {
 	runtime := openAITLSFingerprintRuntime{}
+	if enabled, ok := getRuntimeAntiBanFor(normalizePlatform(PlatformGrok)); ok && !enabled {
+		return runtime
+	}
 	if s != nil {
 		runtime.Profile = s.resolveOpenAITLSProfileForTransport(account, transport)
 	}
@@ -118,13 +128,17 @@ func (s *OpenAIGatewayService) resolveGrokTLSFingerprintRuntime(ctx context.Cont
 		return runtime
 	}
 	var profile *tlsfingerprint.Profile
-	if match.OS != "" || match.ClientType != "" {
+	hasDimensionMatch := match.OS != "" || match.ClientType != ""
+	if hasDimensionMatch {
 		if p, resolved := s.tlsFPProfileService.ResolveTLSProfileForDimensionMatch(account, match.OS, match.ClientType, transport); resolved {
 			profile = p
 		}
 	}
 	if profile == nil && match.ProfileID > 0 {
 		profile = s.tlsFPProfileService.resolveProfileByIDForAccount(match.ProfileID, account, transport)
+	}
+	if profile == nil && hasDimensionMatch {
+		profile = builtinDefaultTLSProfile()
 	}
 	if profile == nil {
 		return runtime
@@ -139,6 +153,13 @@ func (s *OpenAIGatewayService) resolveGrokTLSFingerprintRuntime(ctx context.Cont
 		account.ID, transport, match.OS, match.ClientType, profile.Name,
 		runtime.UpstreamUserAgent, runtime.UpstreamOriginator)
 	return runtime
+}
+
+func (s *OpenAIGatewayService) resolveOpenAICompatibleTLSFingerprintRuntime(ctx context.Context, c *gin.Context, account *Account, transport string) openAITLSFingerprintRuntime {
+	if account != nil && account.Platform == PlatformGrok {
+		return s.resolveGrokTLSFingerprintRuntime(ctx, c, account, transport)
+	}
+	return s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, transport)
 }
 
 // seedTLSFingerprintRuntimeHeaders fills any empty runtime UA/Originator from the

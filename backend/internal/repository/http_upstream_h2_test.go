@@ -124,3 +124,24 @@ func TestResponseHeaderTimeoutRoundTripperDoesNotCancelStreamingBodyAfterHeaders
 	require.NoError(t, err)
 	require.Equal(t, "stream", string(data))
 }
+
+type closeIdleRoundTripper struct {
+	closed bool
+}
+
+func (rt *closeIdleRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(""))}, nil
+}
+
+func (rt *closeIdleRoundTripper) CloseIdleConnections() {
+	rt.closed = true
+}
+
+func TestResponseHeaderTimeoutRoundTripperClosesBaseIdleConnections(t *testing.T) {
+	base := &closeIdleRoundTripper{}
+	client := &http.Client{Transport: responseHeaderTimeoutRoundTripper{base: base, timeout: time.Second}}
+
+	client.CloseIdleConnections()
+
+	require.True(t, base.closed)
+}

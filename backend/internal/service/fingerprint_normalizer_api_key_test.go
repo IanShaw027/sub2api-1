@@ -98,7 +98,61 @@ func TestFingerprintNormalizer_AntiBanGlobalDisabledOverridesPlatformToggle(t *t
 	require.Equal(t, body, newBody)
 }
 
+func TestFingerprintNormalizerResolveCanonicalSkipsDisabledPlatformBeforeRouter(t *testing.T) {
+	SetRuntimeAntiBanPlatforms(map[string]bool{})
+	t.Cleanup(func() { SetRuntimeAntiBanPlatforms(map[string]bool{}) })
+
+	routerSvc := NewTLSFingerprintRouterService(&fingerprintNormalizerRouterRepoStub{routers: []*model.TLSFingerprintRouter{
+		{
+			ID:      11,
+			Name:    "disabled-platform-router",
+			Enabled: true,
+			Rules: []model.TLSFingerprintRouterRule{
+				{
+					Name:                    "codex",
+					Enabled:                 true,
+					Transport:               model.TLSFingerprintRouterTransportHTTP,
+					MatchType:               model.TLSFingerprintRouterMatchPrefix,
+					Pattern:                 "Codex Desktop/",
+					TLSFingerprintProfileID: 8,
+					UpstreamUserAgent:       "Router UA",
+				},
+			},
+		},
+	}}, nil)
+	profileSvc := &TLSFingerprintProfileService{
+		localCache: map[int64]*model.TLSFingerprintProfile{
+			8: {
+				ID:        8,
+				Name:      "HTTP",
+				Platform:  PlatformOpenAI,
+				Transport: model.TLSFingerprintRouterTransportHTTP,
+			},
+		},
+	}
+	n := NewFingerprintNormalizer(profileSvc, routerSvc, nil, &CanonicalFingerprintConfig{
+		Enabled:           true,
+		AntiBanEnabled:    true,
+		EnabledByPlatform: map[string]bool{PlatformOpenAI: false},
+	}, nil)
+
+	canonical := n.ResolveCanonical(context.Background(), &Account{
+		ID:       71801,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":    true,
+			"tls_fingerprint_router_id": float64(11),
+		},
+	}, "Codex Desktop/26.1")
+
+	require.Nil(t, canonical)
+}
+
 func TestFingerprintNormalizerResolveCanonicalRejectsWebSocketOnlyRouterProfileForHTTP(t *testing.T) {
+	SetRuntimeAntiBanPlatforms(map[string]bool{PlatformOpenAI: true})
+	t.Cleanup(func() { SetRuntimeAntiBanPlatforms(map[string]bool{}) })
+
 	routerSvc := NewTLSFingerprintRouterService(&fingerprintNormalizerRouterRepoStub{routers: []*model.TLSFingerprintRouter{
 		{
 			ID:      10,

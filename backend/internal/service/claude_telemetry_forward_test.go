@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
@@ -14,15 +15,31 @@ import (
 
 type claudeTelemetryAccountRepoStub struct {
 	rateLimitAccountRepoStub
-	byGroup []Account
-	global  []Account
+	byGroup        []Account
+	global         []Account
+	lastDeadline   time.Time
+	hasDeadline    bool
+	observedDone   <-chan struct{}
+	blockUntilDone bool
 }
 
-func (r *claudeTelemetryAccountRepoStub) ListSchedulableByGroupIDAndPlatform(_ context.Context, _ int64, platform string) ([]Account, error) {
+func (r *claudeTelemetryAccountRepoStub) ListSchedulableByGroupIDAndPlatform(ctx context.Context, _ int64, platform string) ([]Account, error) {
+	r.lastDeadline, r.hasDeadline = ctx.Deadline()
+	if r.blockUntilDone {
+		r.observedDone = ctx.Done()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	return filterClaudeTelemetryTestAccounts(r.byGroup, platform), nil
 }
 
-func (r *claudeTelemetryAccountRepoStub) ListSchedulableByPlatform(_ context.Context, platform string) ([]Account, error) {
+func (r *claudeTelemetryAccountRepoStub) ListSchedulableByPlatform(ctx context.Context, platform string) ([]Account, error) {
+	r.lastDeadline, r.hasDeadline = ctx.Deadline()
+	if r.blockUntilDone {
+		r.observedDone = ctx.Done()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	return filterClaudeTelemetryTestAccounts(r.global, platform), nil
 }
 
@@ -37,8 +54,10 @@ func filterClaudeTelemetryTestAccounts(accounts []Account, platform string) []Ac
 }
 
 type claudeTelemetryHTTPUpstreamRecorder struct {
-	lastReq  *http.Request
-	lastBody []byte
+	lastReq      *http.Request
+	lastBody     []byte
+	lastDeadline time.Time
+	hasDeadline  bool
 }
 
 func (u *claudeTelemetryHTTPUpstreamRecorder) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
@@ -47,6 +66,9 @@ func (u *claudeTelemetryHTTPUpstreamRecorder) Do(req *http.Request, proxyURL str
 
 func (u *claudeTelemetryHTTPUpstreamRecorder) DoWithTLS(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
 	u.lastReq = req
+	if req != nil {
+		u.lastDeadline, u.hasDeadline = req.Context().Deadline()
+	}
 	if req != nil && req.Body != nil {
 		b, _ := io.ReadAll(req.Body)
 		u.lastBody = b
@@ -78,6 +100,43 @@ func TestForwardClaudeTelemetryBatch_UsesOnlyAnthropicOAuthAndSanitizes(t *testi
 	require.False(t, gjson.GetBytes(upstream.lastBody, "baseUrl").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "events.0.event_data.base_url").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "events.0.event_data.client_metadata").Exists())
+}
+
+func TestForwardClaudeTelemetryBatch_UsesShortForwardDeadline(t *testing.T) {
+	groupID := int64(7)
+	repo := &claudeTelemetryAccountRepoStub{byGroup: []Account{
+		{ID: 2, Platform: PlatformAnthropic, Type: AccountTypeOAuth, Credentials: map[string]any{"access_token": "oauth-token"}, Status: StatusActive, Schedulable: true, Concurrency: 1},
+	}}
+	upstream := &claudeTelemetryHTTPUpstreamRecorder{}
+	svc := &GatewayService{accountRepo: repo, httpUpstream: upstream}
+
+	status, err := svc.ForwardClaudeTelemetryBatch(context.Background(), &groupID, []byte(`{"events":[]}`))
+
+	require.NoError(t, err)
+	require.Equal(t, http.StatusAccepted, status)
+	require.True(t, repo.hasDeadline, "telemetry account selection must also run under the short deadline")
+	require.LessOrEqual(t, time.Until(repo.lastDeadline), 5*time.Second)
+	require.Positive(t, time.Until(repo.lastDeadline))
+	require.True(t, upstream.hasDeadline, "telemetry forwarding must not inherit an unbounded request context")
+	require.LessOrEqual(t, time.Until(upstream.lastDeadline), 5*time.Second)
+	require.Positive(t, time.Until(upstream.lastDeadline))
+}
+
+func TestForwardClaudeTelemetryBatch_AccountSelectionUsesShortTimeout(t *testing.T) {
+	groupID := int64(7)
+	repo := &claudeTelemetryAccountRepoStub{blockUntilDone: true}
+	upstream := &claudeTelemetryHTTPUpstreamRecorder{}
+	svc := &GatewayService{accountRepo: repo, httpUpstream: upstream}
+
+	start := time.Now()
+	status, err := svc.ForwardClaudeTelemetryBatch(context.Background(), &groupID, []byte(`{"events":[]}`))
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Equal(t, http.StatusOK, status)
+	require.Less(t, time.Since(start), 5*time.Second, "account selection should be bounded by telemetry forward timeout")
+	require.True(t, repo.hasDeadline)
+	require.NotNil(t, repo.observedDone)
+	require.Nil(t, upstream.lastReq)
 }
 
 func TestForwardClaudeTelemetryBatch_UsesSetupTokenOAuthCredentialAndSkipsAPIKey(t *testing.T) {

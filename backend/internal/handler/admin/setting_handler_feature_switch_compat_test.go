@@ -204,6 +204,47 @@ func TestSettingHandler_UpdateSettings_PreservesOmittedGenericScalarFieldsOnPart
 	require.Equal(t, "512", repo.values[service.SettingKeyGatewayDebugTimelineBodyMaxKB])
 }
 
+func TestSettingHandler_UpdateSettings_PreservesAndReturnsAntiBanAndTelemetryFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyClaudeTelemetryMode: "forward",
+			service.SettingKeyAntiBanPlatforms:    `{"openai":true,"grok":false}`,
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+	rawBody, err := json.Marshal(map[string]any{
+		"gateway_debug_timeline_include_body": true,
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{"openai":true,"anthropic":false,"kiro":false,"grok":false,"gemini":false,"antigravity":false}`, repo.values[service.SettingKeyAntiBanPlatforms])
+
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	data, ok := resp.Data.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "forward", data["claude_telemetry_mode"])
+	require.Equal(t, map[string]any{
+		"openai":      true,
+		"anthropic":   false,
+		"kiro":        false,
+		"grok":        false,
+		"gemini":      false,
+		"antigravity": false,
+	}, data["anti_ban_platforms"])
+}
+
 func TestSettingHandler_UpdateSettings_RejectsClearingLinuxDoClientIDWhenEffectiveStateStaysEnabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &settingHandlerRepoStub{
