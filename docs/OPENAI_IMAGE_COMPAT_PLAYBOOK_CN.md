@@ -1,6 +1,6 @@
 # OpenAI 兼容与 AI 创作中心接入手册
 
-本文档面向任务 E，聚焦当前仓库已经能从代码和测试中落地的事实，统一说明 OpenAI 文本/图片兼容接口、AI 创作中心业务接口、`codex-image` 适配、提示词与媒体可见性、计费尺寸口径，以及用户/管理员/运维操作流程。
+本文档面向 OpenAI 兼容与 AI 创作中心接入场景，聚焦当前仓库已经能从代码和测试中落地的事实，统一说明 OpenAI 文本/图片兼容接口、AI 创作中心业务接口、`codex-image` 适配、提示词与媒体可见性、计费尺寸口径，以及用户/管理员/运维操作流程。
 
 ## 1. 结论先行
 
@@ -12,7 +12,7 @@
 - 当前仓库里，`free` 的最终 web 会话模型仍是 `auto`，`plus` / `pro` / `team` 会切到 `gpt-5-5-thinking`。
 - Prompt 与媒体都按私有优先设计；`forced_private` 会把有效可见性压成私有。
 - MinIO 统一承载头像、公告、工单、AI、论坛图片。
-- `source.qazwc.com` 是唯一资源访问域名，不向前台暴露 MinIO 内网地址或桶域名。
+- 资源访问域名应使用部署环境配置的公开媒体域名，不向前台暴露 MinIO 内网地址或桶域名。
 
 ## 2. 账号与线路规范
 
@@ -459,7 +459,7 @@ curl https://gateway.example.com/api/v1/media/upload \
 ### 8.3 运维流程
 
 1. 准备 MinIO、资源桶、生命周期和审计策略。
-2. 准备 `source.qazwc.com` TLS、反向代理、缓存和签名下载能力。
+2. 准备 `<MEDIA_DOMAIN>` TLS、反向代理、缓存和签名下载能力。
 3. 检查前台与接口返回值，确认没有泄露 MinIO 内网地址。
 4. 定期检查私有资源 TTL、公开资源缓存、跨业务串读和对象回收。
 
@@ -499,39 +499,40 @@ curl https://gateway.example.com/api/v1/media/upload \
 2. 调 `/v1/responses` 图片工具链，确认请求被强制 `store=false`。
 3. 调 `/v1/images/edits` 上传本地文件，确认不会泄露公开外链。
 4. 调 `/api/v1/user/ai/prompt-templates` 创建 `public` Prompt，再由管理员改成 `forced_private`，确认普通用户不再能在库里看到。
-5. 调 `/api/v1/media/:id/visibility` 把资源改为 `public`，确认资源可以通过 `source.qazwc.com` 访问。
+5. 调 `/api/v1/media/:id/visibility` 把资源改为 `public`，确认资源可以通过 `<MEDIA_DOMAIN>` 访问。
 6. 把同一资源改回 `private`，确认只能通过签名下载或代理访问。
 7. 对 `1K`、`2K`、未知尺寸分别提交图片任务，确认计费落到正确价格档。
 
 ## 11. 视频生成 (Videos API)
 
-为与 OpenAI 保持统一，sub2api 提供 OpenAI 兼容的 Videos 端点（参考 Sora Videos API）：
+Videos 是 Grok/xAI-only 能力。sub2api 暴露 OpenAI-style 的入站路径只是为了客户端调用形态统一；实际只允许 Grok 分组进入，并透传到 Grok/xAI 视频上游：
 
 - `POST /v1/videos` / `POST /videos` / `POST /videos/generations`
 - `GET /v1/videos/...` （用于查询状态、下载内容）
 
-**完整参数**（OpenAI 风格）：
+**常见参数**（以 Grok/xAI 上游为准）：
 - `prompt`（必填）
-- `model`（如 sora-2）
-- `seconds`（时长，如 "8"）
-- `size`（分辨率，如 "1280x720"）
-- `input_reference`（可选，`{image_url | file_id}` 用于图生视频）
+- `model`（如控制台开放的 Grok 视频模型）
+- `duration`（xAI 官方时长字段，如 `8`；旧客户端 `seconds` 仍兼容）
+- `aspect_ratio`（xAI 官方画幅字段，如 `16:9`）
+- `resolution`（xAI 官方分辨率字段，如 `720p`/`1080p`；旧客户端 `size` 仍兼容）
+- `image` / `reference_images` / `input_reference`（可选，用于图生视频或参考图视频）
 - 其他如 `n_variants`
 
 **限制与配置**：
-- 仅 OpenAI platform 的分组可用（类似 images）。
+- 仅 Grok platform 的分组可用；OpenAI/Claude/其他分组在路由层返回 `Videos API is not supported for this platform`。
 - 分组需 `allow_video_generation: true`
 - 计费：按分辨率 tier + `video_price_*_per_sec`（480p/720p/1080p/4k）
-- 路由：`video_generation_route` (openai / codex)
-- 调度：使用与 chat/images 相同的 `SelectAccountWithSchedulerForCapability`（支持 failover）。
+- 路由：`video_generation_route` 当前规范化为 `native`
+- 调度：使用 `SelectAccountWithSchedulerForCapability(..., videos)` 选择支持 Grok videos 的账号（支持 failover）。
 
-当前实现透传请求到上游 OpenAI 兼容账号，异步 job 由客户端轮询。完整计费 hook 和 multipart 支持可进一步扩展。
+当前实现透传请求到 Grok/xAI 上游，异步 job 由客户端轮询；POST 会从请求/响应提取 `duration`/`resolution` 等视频计费元数据，GET 查询只透传状态/结果，不提取视频生成计费元数据。
 
-客户端可直接使用 OpenAI SDK 指向 sub2api base_url 调用 videos。
+客户端应使用 Grok 分组 Key 指向 sub2api base_url 调用 videos。
 
 示例：
 ```bash
-curl https://.../v1/videos \
+curl https://.../v1/videos/generations \
   -H "Authorization: Bearer sk-xxx" \
-  -d '{"model":"sora-2","prompt":"a cat on piano","seconds":"8","size":"1280x720"}'
+  -d '{"model":"grok-imagine-video","prompt":"a cat on piano","duration":8,"aspect_ratio":"16:9","resolution":"720p"}'
 ```
