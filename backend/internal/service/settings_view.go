@@ -134,6 +134,7 @@ type SystemSettings struct {
 	ContactInfo                 string
 	SupportQRCodes              string
 	DocURL                      string
+	DownloadToolsURL            string
 	HomeContent                 string
 	HideCcsImportButton         bool
 	PurchaseSubscriptionEnabled bool
@@ -373,6 +374,7 @@ type PublicSettings struct {
 	ContactInfo                      string
 	SupportQRCodes                   string
 	DocURL                           string
+	DownloadToolsURL                 string
 	HomeContent                      string
 	HideCcsImportButton              bool
 

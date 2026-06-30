@@ -139,6 +139,7 @@ type SystemSettings struct {
 	ContactInfo                 string               `json:"contact_info"`
 	SupportQRCodes              []SupportQRCodeEntry `json:"support_qr_codes"`
 	DocURL                      string               `json:"doc_url"`
+	DownloadToolsURL            string               `json:"download_tools_url"`
 	HomeContent                 string               `json:"home_content"`
 	HideCcsImportButton         bool                 `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled bool                 `json:"purchase_subscription_enabled"`
@@ -359,6 +360,7 @@ type PublicSettings struct {
 	ContactInfo                      string                   `json:"contact_info"`
 	SupportQRCodes                   []SupportQRCodeEntry     `json:"support_qr_codes"`
 	DocURL                           string                   `json:"doc_url"`
+	DownloadToolsURL                 string                   `json:"download_tools_url"`
 	HomeContent                      string                   `json:"home_content"`
 	HideCcsImportButton              bool                     `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled      bool                     `json:"purchase_subscription_enabled"`

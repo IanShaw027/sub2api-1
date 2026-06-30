@@ -916,6 +916,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyContactInfo,
 		SettingKeySupportQRCodes,
 		SettingKeyDocURL,
+		SettingKeyDownloadToolsURL,
 		SettingKeyHomeContent,
 		SettingKeyHideCcsImportButton,
 		SettingKeyPurchaseSubscriptionEnabled,
@@ -1037,6 +1038,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ContactInfo:                      settings[SettingKeyContactInfo],
 		SupportQRCodes:                   settings[SettingKeySupportQRCodes],
 		DocURL:                           settings[SettingKeyDocURL],
+		DownloadToolsURL:                 settings[SettingKeyDownloadToolsURL],
 		HomeContent:                      settings[SettingKeyHomeContent],
 		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
 		PurchaseSubscriptionEnabled:      settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
@@ -1560,6 +1562,7 @@ type PublicSettingsInjectionPayload struct {
 	ContactInfo                      string                   `json:"contact_info"`
 	SupportQRCodes                   json.RawMessage          `json:"support_qr_codes"`
 	DocURL                           string                   `json:"doc_url"`
+	DownloadToolsURL                 string                   `json:"download_tools_url"`
 	HomeContent                      string                   `json:"home_content"`
 	HideCcsImportButton              bool                     `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled      bool                     `json:"purchase_subscription_enabled"`
@@ -1630,6 +1633,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ContactInfo:                      settings.ContactInfo,
 		SupportQRCodes:                   safeRawJSONArray(settings.SupportQRCodes),
 		DocURL:                           settings.DocURL,
+		DownloadToolsURL:                 settings.DownloadToolsURL,
 		HomeContent:                      settings.HomeContent,
 		HideCcsImportButton:              settings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:      settings.PurchaseSubscriptionEnabled,
@@ -2482,6 +2486,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyContactInfo] = settings.ContactInfo
 	updates[SettingKeySupportQRCodes] = safeJSONString(settings.SupportQRCodes)
 	updates[SettingKeyDocURL] = settings.DocURL
+	updates[SettingKeyDownloadToolsURL] = settings.DownloadToolsURL
 	updates[SettingKeyHomeContent] = settings.HomeContent
 	updates[SettingKeyHideCcsImportButton] = strconv.FormatBool(settings.HideCcsImportButton)
 	updates[SettingKeyPurchaseSubscriptionEnabled] = strconv.FormatBool(settings.PurchaseSubscriptionEnabled)
@@ -3698,6 +3703,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeySiteName:                                  "Sub2API",
 		SettingKeySiteLogo:                                  "",
 		SettingKeySupportQRCodes:                            "[]",
+		SettingKeyDocURL:                                    "",
+		SettingKeyDownloadToolsURL:                          "",
 		SettingKeyPurchaseSubscriptionEnabled:               "false",
 		SettingKeyPurchaseSubscriptionURL:                   "",
 		SettingKeyTableDefaultPageSize:                      "20",
@@ -3919,6 +3926,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		ContactInfo:                      settings[SettingKeyContactInfo],
 		SupportQRCodes:                   settings[SettingKeySupportQRCodes],
 		DocURL:                           settings[SettingKeyDocURL],
+		DownloadToolsURL:                 settings[SettingKeyDownloadToolsURL],
 		HomeContent:                      settings[SettingKeyHomeContent],
 		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
 		PurchaseSubscriptionEnabled:      settings[SettingKeyPurchaseSubscriptionEnabled] == "true",

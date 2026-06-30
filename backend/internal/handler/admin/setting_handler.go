@@ -602,6 +602,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		ContactInfo:                            settings.ContactInfo,
 		SupportQRCodes:                         dto.ParseSupportQRCodes(settings.SupportQRCodes),
 		DocURL:                                 settings.DocURL,
+		DownloadToolsURL:                       settings.DownloadToolsURL,
 		HomeContent:                            settings.HomeContent,
 		HideCcsImportButton:                    settings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:            settings.PurchaseSubscriptionEnabled,
@@ -921,6 +922,7 @@ type UpdateSettingsRequest struct {
 	ContactInfo                 string                    `json:"contact_info"`
 	SupportQRCodes              *[]dto.SupportQRCodeEntry `json:"support_qr_codes"`
 	DocURL                      string                    `json:"doc_url"`
+	DownloadToolsURL            string                    `json:"download_tools_url"`
 	HomeContent                 string                    `json:"home_content"`
 	HideCcsImportButton         bool                      `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled *bool                     `json:"purchase_subscription_enabled"`
@@ -2377,6 +2379,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ContactInfo:                  req.ContactInfo,
 		SupportQRCodes:               supportQRCodes,
 		DocURL:                       req.DocURL,
+		DownloadToolsURL:             req.DownloadToolsURL,
 		HomeContent:                  req.HomeContent,
 		HideCcsImportButton:          req.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:  purchaseEnabled,
@@ -3487,6 +3490,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.DocURL != after.DocURL {
 		changed = append(changed, "doc_url")
+	}
+	if before.DownloadToolsURL != after.DownloadToolsURL {
+		changed = append(changed, "download_tools_url")
 	}
 	if before.HomeContent != after.HomeContent {
 		changed = append(changed, "home_content")

@@ -104,6 +104,21 @@ func TestSettingService_GetPublicSettings_ExposesForceEmailOnThirdPartySignup(t 
 	require.True(t, settings.ForceEmailOnThirdPartySignup)
 }
 
+func TestSettingService_GetPublicSettings_ExposesDownloadToolsURL(t *testing.T) {
+	repo := &settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeyDocURL:           "https://docs.example.com",
+			SettingKeyDownloadToolsURL: "https://downloads.example.com/tools",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "https://docs.example.com", settings.DocURL)
+	require.Equal(t, "https://downloads.example.com/tools", settings.DownloadToolsURL)
+}
+
 func TestSettingService_GetPublicSettings_HidesIncompleteEmailOAuthProviders(t *testing.T) {
 	svc := NewSettingService(&settingPublicRepoStub{
 		values: map[string]string{
