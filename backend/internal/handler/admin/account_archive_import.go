@@ -127,15 +127,10 @@ func (h *AccountHandler) ImportArchive(c *gin.Context) {
 			if payload.Accounts == nil {
 				payload.Accounts = []DataAccount{}
 			}
-			req := DataImportRequest{
-				Data:                 payload,
-				SkipDefaultGroupBind: &skipDefaultGroupBind,
-				DedupMode:            dedupMode,
-			}
-			if err := validateDataHeader(req.Data); err != nil {
+			if err := validateDataHeader(payload); err != nil {
 				return result, err
 			}
-			subResult, err := h.importData(ctx, req)
+			subResult, err := h.importData(ctx, payload, &skipDefaultGroupBind, dedupMode)
 			if err != nil {
 				return result, err
 			}

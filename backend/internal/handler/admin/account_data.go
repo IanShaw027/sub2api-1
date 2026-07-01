@@ -1,7 +1,9 @@
 package admin
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -69,9 +71,13 @@ type DataAccount struct {
 }
 
 type DataImportRequest struct {
-	Data                 DataPayload `json:"data"`
-	SkipDefaultGroupBind *bool       `json:"skip_default_group_bind"`
-	DedupMode            string      `json:"dedup_mode"`
+	// Data 兼容两种格式：
+	//   1. 标准备份对象 {type,version,proxies,accounts}
+	//   2. Kiro 客户端原始导出（顶层账号数组），每个元素带 kiro_*_raw 嵌套字段
+	// 因此以 RawMessage 承载，落地时按 JSON token 判定对象/数组后再解析。
+	Data                 json.RawMessage `json:"data"`
+	SkipDefaultGroupBind *bool           `json:"skip_default_group_bind"`
+	DedupMode            string          `json:"dedup_mode"`
 }
 
 type DataImportResult struct {
@@ -212,24 +218,128 @@ func (h *AccountHandler) ImportData(c *gin.Context) {
 		return
 	}
 
-	if err := validateDataHeader(req.Data); err != nil {
+	payload, err := parseDataImportPayload(req.Data)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	if err := validateDataHeader(payload); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 
 	executeAdminIdempotentJSON(c, "admin.accounts.import_data", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		return h.importData(ctx, req)
+		return h.importData(ctx, payload, req.SkipDefaultGroupBind, req.DedupMode)
 	})
 }
 
-func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) (DataImportResult, error) {
-	skipDefaultGroupBind := true
-	if req.SkipDefaultGroupBind != nil {
-		skipDefaultGroupBind = *req.SkipDefaultGroupBind
+// parseDataImportPayload 兼容两种 data 载荷：
+//   - 标准备份对象 {type,version,proxies,accounts}
+//   - Kiro 客户端原始导出（顶层账号数组）
+//
+// 通过跳过空白后的首个非空字符判定：'{' 走对象解析，'[' 走 Kiro 原始数组解析。
+func parseDataImportPayload(raw json.RawMessage) (DataPayload, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return DataPayload{}, errors.New("data is required")
 	}
-	dedupMode := normalizeDataImportDedupMode(req.DedupMode)
+	switch trimmed[0] {
+	case '{':
+		var payload DataPayload
+		if err := json.Unmarshal(trimmed, &payload); err != nil {
+			return DataPayload{}, fmt.Errorf("invalid data object: %w", err)
+		}
+		return payload, nil
+	case '[':
+		var rawAccounts []map[string]any
+		if err := json.Unmarshal(trimmed, &rawAccounts); err != nil {
+			return DataPayload{}, fmt.Errorf("invalid data array: %w", err)
+		}
+		return dataPayloadFromKiroRawAccounts(rawAccounts), nil
+	default:
+		return DataPayload{}, errors.New("data must be an object or an array")
+	}
+}
 
-	dataPayload := req.Data
+// dataPayloadFromKiroRawAccounts 把 Kiro 客户端原始导出的账号数组转换为标准 DataPayload。
+// 每个元素的顶层 + kiro_*_raw 嵌套字段整体作为 credentials 交给后端规范化
+// （service.NormalizeKiroOAuthCredentialShape 会从 kiro_profile_raw.arn 等提取正确的
+// profile_arn / profile_id，并识别 auth_method=external_idp）。凭证以外的展示信息
+// （plan/usage/status 等）落入 extra，不参与调度但便于后台查看。
+func dataPayloadFromKiroRawAccounts(rawAccounts []map[string]any) DataPayload {
+	accounts := make([]DataAccount, 0, len(rawAccounts))
+	for _, raw := range rawAccounts {
+		if len(raw) == 0 {
+			continue
+		}
+		credentials := make(map[string]any, len(raw))
+		for k, v := range raw {
+			credentials[k] = v
+		}
+		// 剥离纯展示/元信息字段，避免污染 credentials；这些字段转入 extra。
+		extra := map[string]any{}
+		for _, k := range kiroRawDisplayOnlyKeys {
+			if v, ok := credentials[k]; ok {
+				extra[k] = v
+				delete(credentials, k)
+			}
+		}
+		name := kiroRawAccountName(raw)
+		accounts = append(accounts, DataAccount{
+			Name:        name,
+			Platform:    service.PlatformKiro,
+			Type:        service.AccountTypeOAuth,
+			Credentials: credentials,
+			Extra:       extra,
+		})
+	}
+	return DataPayload{
+		Type:     dataType,
+		Version:  dataVersion,
+		Proxies:  []DataProxy{},
+		Accounts: accounts,
+	}
+}
+
+// kiroRawDisplayOnlyKeys 是 Kiro 原始导出中不属于运行凭证、仅供展示的字段，导入时转入 extra。
+var kiroRawDisplayOnlyKeys = []string{
+	"id",
+	"status",
+	"status_reason",
+	"created_at",
+	"last_used",
+	"plan_name",
+	"plan_tier",
+	"credits_total",
+	"credits_used",
+	"usage_reset_at",
+	"kiro_usage_raw",
+}
+
+// kiroRawAccountName 生成导入账号名：优先 email，其次 profile 名，最后回退到原始 id。
+func kiroRawAccountName(raw map[string]any) string {
+	if email := credentialString(raw, "email"); email != "" {
+		return email
+	}
+	if profile, ok := raw["kiro_profile_raw"].(map[string]any); ok {
+		if name := credentialString(profile, "name"); name != "" {
+			return name
+		}
+	}
+	if id := credentialString(raw, "id"); id != "" {
+		return id
+	}
+	return "Kiro OAuth Account"
+}
+
+func (h *AccountHandler) importData(ctx context.Context, dataPayload DataPayload, skipDefaultGroupBindPtr *bool, dedupModeRaw string) (DataImportResult, error) {
+	skipDefaultGroupBind := true
+	if skipDefaultGroupBindPtr != nil {
+		skipDefaultGroupBind = *skipDefaultGroupBindPtr
+	}
+	dedupMode := normalizeDataImportDedupMode(dedupModeRaw)
+
 	result := DataImportResult{}
 
 	existingProxies, err := h.listAllProxies(ctx)

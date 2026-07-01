@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -321,6 +322,89 @@ func TestImportDataAcceptsGrokAccount(t *testing.T) {
 	require.Equal(t, service.PlatformGrok, adminSvc.createdAccounts[0].Platform)
 	require.Equal(t, service.AccountTypeOAuth, adminSvc.createdAccounts[0].Type)
 	require.True(t, adminSvc.createdAccounts[0].SkipDefaultGroupBind)
+}
+
+func TestImportDataAcceptsKiroRawArray(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+
+	longRT := strings.Repeat("A", 512)
+	rawArray := []map[string]any{
+		{
+			"id":             "kiro_abc",
+			"email":          "jeno@example.com",
+			"login_provider": "ExternalIdp",
+			"access_token":   "at-1",
+			"refresh_token":  longRT,
+			"token_type":     "Bearer",
+			"expires_at":     1782908966,
+			"issuer_url":     "https://login.microsoftonline.com/tenant/v2.0",
+			"client_id":      "e491fadf-0239-44f9-be3b-d3e1ff193c79",
+			"scopes":         "api://x/codewhisperer:conversations offline_access",
+			"login_hint":     "jeno@example.com",
+			"plan_name":      "Credit",
+			"plan_tier":      "CREDIT",
+			"status":         "banned",
+			"status_reason":  "Invalid ARN e491fadf-0239-44f9-be3b-d3e1ff193c79",
+			"kiro_auth_token_raw": map[string]any{
+				"authMethod":    "external_idp",
+				"clientId":      "e491fadf-0239-44f9-be3b-d3e1ff193c79",
+				"issuerUrl":     "https://login.microsoftonline.com/tenant/v2.0",
+				"refreshToken":  longRT,
+				"tokenEndpoint": "https://login.microsoftonline.com/tenant/oauth2/v2.0/token",
+			},
+			"kiro_profile_raw": map[string]any{
+				"arn":  "arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD",
+				"name": "KiroProfile-us-east-1",
+			},
+			"kiro_usage_raw": map[string]any{"hasBeenInstalled": true},
+		},
+		{
+			"id":            "kiro_def",
+			"email":         "inigo@example.com",
+			"refresh_token": longRT,
+			"access_token":  "at-2",
+			"expires_at":    1782907857,
+			"client_id":     "e491fadf-0239-44f9-be3b-d3e1ff193c79",
+			"kiro_auth_token_raw": map[string]any{
+				"authMethod":    "external_idp",
+				"tokenEndpoint": "https://login.microsoftonline.com/tenant/oauth2/v2.0/token",
+			},
+			"kiro_profile_raw": map[string]any{
+				"arn": "arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD",
+			},
+		},
+	}
+
+	dataPayload := map[string]any{
+		"data":                    rawArray,
+		"skip_default_group_bind": true,
+		"dedup_mode":              "none",
+	}
+
+	body, _ := json.Marshal(dataPayload)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, adminSvc.createdAccounts, 2)
+
+	first := adminSvc.createdAccounts[0]
+	require.Equal(t, service.PlatformKiro, first.Platform)
+	require.Equal(t, service.AccountTypeOAuth, first.Type)
+	require.Equal(t, "jeno@example.com", first.Name)
+	require.True(t, first.SkipDefaultGroupBind)
+	// 嵌套原始字段整体保留在 credentials 中，交给后端规范化提取 profile_arn。
+	require.Contains(t, first.Credentials, "kiro_profile_raw")
+	require.Contains(t, first.Credentials, "kiro_auth_token_raw")
+	require.Equal(t, longRT, first.Credentials["refresh_token"])
+	// 纯展示/元信息字段转入 extra，不污染 credentials。
+	require.NotContains(t, first.Credentials, "status")
+	require.NotContains(t, first.Credentials, "plan_name")
+	require.NotContains(t, first.Credentials, "kiro_usage_raw")
+	require.Equal(t, "banned", first.Extra["status"])
+	require.Equal(t, "Credit", first.Extra["plan_name"])
 }
 
 func TestImportDataDedupIgnoreSkipsExistingAccount(t *testing.T) {
