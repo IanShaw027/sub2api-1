@@ -672,6 +672,49 @@ func TestPrepareKiroConvertedRequest_PromotesLargeContextToOneMillionModelWithou
 	require.Equal(t, "claude-sonnet-4.6", current["modelId"])
 }
 
+func TestBuildKiroGenerateAssistantRequest_ExternalIDPSetsTokenTypeHeader(t *testing.T) {
+	account := &Account{
+		ID:       112,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"auth_method": "ExternalIdp",
+		},
+	}
+
+	req, err := buildKiroGenerateAssistantRequest(context.Background(), account, []byte(`{}`), "access-token", DefaultKiroRuntimeSettings())
+
+	require.NoError(t, err)
+	require.Equal(t, "EXTERNAL_IDP", req.Header.Get("TokenType"))
+}
+
+func TestPrepareKiroConvertedRequest_IncludesAccountProfileARN(t *testing.T) {
+	account := &Account{
+		ID:       111,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"profile_arn": "arn:aws:codewhisperer:us-east-1:123456789012:profile/test",
+		},
+	}
+	body := []byte(`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}]}`)
+	injected := injectKiroProfileARNIntoAnthropicBody(body, account)
+	var injectedPayload map[string]any
+	require.NoError(t, json.Unmarshal(injected, &injectedPayload))
+	require.Equal(t, "arn:aws:codewhisperer:us-east-1:123456789012:profile/test", account.GetCredential("profile_arn"))
+	require.Equal(t, "arn:aws:codewhisperer:us-east-1:123456789012:profile/test", injectedPayload["profile_arn"])
+
+	converted, _, err := prepareKiroConvertedRequest(account, &ParsedRequest{
+		Model: "claude-sonnet-4-6",
+		Body:  NewRequestBodyRef(body),
+	}, nil)
+
+	require.NoError(t, err)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(converted.Body, &payload))
+	require.Equal(t, "arn:aws:codewhisperer:us-east-1:123456789012:profile/test", payload["profileArn"])
+}
+
 func TestRenderKiroThinkingSimulation_UsesConfiguredTemplateAndEffortThreshold(t *testing.T) {
 	settings := &KiroRuntimeSettings{
 		ThinkingMode:               KiroThinkingModeSimulate,

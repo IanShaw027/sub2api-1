@@ -132,6 +132,7 @@ func (h *KiroOAuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
+	req.Credentials = service.NormalizeKiroOAuthCredentialShape(req.Credentials)
 	refreshToken := strings.TrimSpace(stringCredentialValue(req.Credentials, "refresh_token"))
 	if err := service.ValidateKiroRefreshTokenHealth(refreshToken); err != nil {
 		response.ErrorFrom(c, err)

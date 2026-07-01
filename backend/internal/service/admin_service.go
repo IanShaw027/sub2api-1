@@ -3125,6 +3125,9 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err := validatePlatformAccountType(input.Platform, input.Type); err != nil {
 		return nil, err
 	}
+	if input.Platform == PlatformKiro && input.Type == AccountTypeOAuth {
+		input.Credentials = NormalizeKiroOAuthCredentialShape(input.Credentials)
+	}
 	if s.settingService != nil {
 		defaults := s.settingService.GetPlatformDefaultAccountModelConfig(ctx)
 		if cfg, ok := defaults[strings.ToLower(strings.TrimSpace(input.Platform))]; ok {
@@ -3275,6 +3278,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	if input.Credentials != nil {
 		if len(input.Credentials) > 0 {
+			if account.Platform == PlatformKiro && account.Type == AccountTypeOAuth {
+				input.Credentials = NormalizeKiroOAuthCredentialShape(input.Credentials)
+			}
 			account.Credentials = mergeAccountCredentialsForAccountUpdate(
 				account.Platform,
 				account.Type,

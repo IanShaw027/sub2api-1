@@ -451,13 +451,15 @@ const sanitizeKiroCredentialsForAuthMethod = (
   credentials: Record<string, unknown>
 ): Record<string, unknown> => {
   const sanitized = { ...credentials }
-  if (sanitized.auth_method !== 'idc') {
-    delete sanitized.client_id
+  if (sanitized.auth_method === 'external_idp') {
     delete sanitized.client_secret
-    delete sanitized.issuer_url
     delete sanitized.idc_region
-    delete sanitized.scopes
-    delete sanitized.login_hint
+    return sanitized
+  }
+  if (sanitized.auth_method !== 'idc') {
+    for (const key of ['client_id', 'client_secret', 'issuer_url', 'idc_region', 'scopes', 'login_hint', 'token_endpoint']) {
+      delete sanitized[key]
+    }
   }
   return sanitized
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -81,6 +82,8 @@ func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map
 	switch authMethod := NormalizeKiroAuthMethod(account.Credentials); {
 	case KiroAuthMethodUsesIDCRefresh(authMethod):
 		accessToken, refreshToken, expiresAt, err = r.refreshKiroIDCToken(ctx, account)
+	case authMethod == "external_idp":
+		accessToken, refreshToken, expiresAt, err = r.refreshKiroExternalIDPToken(ctx, account)
 	default:
 		accessToken, refreshToken, expiresAt, profileARN, err = r.refreshKiroSocialToken(ctx, account)
 	}
@@ -95,6 +98,12 @@ func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map
 	}
 	if profileARN != "" {
 		newCreds["profile_arn"] = profileARN
+	}
+	if NormalizeKiroAuthMethod(account.Credentials) == "external_idp" {
+		newCreds["auth_method"] = "external_idp"
+		if endpoint := resolveKiroExternalIDPTokenEndpoint(account.Credentials); endpoint != "" {
+			newCreds["token_endpoint"] = endpoint
+		}
 	}
 	return MergeCredentials(account.Credentials, newCreds), nil
 }
@@ -157,6 +166,64 @@ func (r *KiroTokenRefresher) refreshKiroIDCToken(ctx context.Context, account *A
 		refreshToken = out.RefreshToken
 	}
 	expiresAt = time.Now().Add(time.Duration(out.ExpiresIn) * time.Second).UTC().Format(time.RFC3339)
+	return out.AccessToken, refreshToken, expiresAt, nil
+}
+
+func (r *KiroTokenRefresher) refreshKiroExternalIDPToken(ctx context.Context, account *Account) (accessToken, refreshToken, expiresAt string, err error) {
+	refreshToken = strings.TrimSpace(account.GetCredential("refresh_token"))
+	if err = ValidateKiroRefreshTokenHealth(refreshToken); err != nil {
+		return "", "", "", err
+	}
+	clientID := strings.TrimSpace(account.GetCredential("client_id"))
+	if clientID == "" {
+		return "", "", "", infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp client_id is required")
+	}
+	tokenEndpoint := resolveKiroExternalIDPTokenEndpoint(account.Credentials)
+	if tokenEndpoint == "" {
+		return "", "", "", infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp token_endpoint or issuer_url is required")
+	}
+
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	form.Set("client_id", clientID)
+	form.Set("refresh_token", refreshToken)
+	if scopes := strings.TrimSpace(account.GetCredential("scopes")); scopes != "" {
+		form.Set("scope", scopes)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenEndpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", "", "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := doKiroSidecarRequest(req, account, r.httpUpstream, r.tlsFPProfileService, 60*time.Second)
+	if err != nil {
+		return "", "", "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return "", "", "", readErr
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", "", "", buildKiroRefreshUpstreamError(resp.StatusCode, body)
+	}
+
+	var out kiroRefreshResponse
+	if err := decodeKiroRefreshResponse(body, &out); err != nil {
+		return "", "", "", err
+	}
+	if ValidateKiroRefreshTokenHealth(out.RefreshToken) == nil {
+		refreshToken = out.RefreshToken
+	}
+	expiresIn := out.ExpiresIn
+	if expiresIn <= 0 {
+		expiresIn = 3600
+	}
+	expiresAt = time.Now().Add(time.Duration(expiresIn) * time.Second).UTC().Format(time.RFC3339)
 	return out.AccessToken, refreshToken, expiresAt, nil
 }
 

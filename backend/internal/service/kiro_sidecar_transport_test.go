@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -178,6 +179,33 @@ func TestKiroUsageService_FetchUsageLimits_EncodesProfileARNQuery(t *testing.T) 
 	if got := upstream.req.URL.Query().Get("profileArn"); got != "arn:aws:kiro:us-east-1:123456789012:profile/dev:alpha" {
 		t.Fatalf("profileArn query = %q", got)
 	}
+}
+
+func TestKiroUsageService_FetchUsageLimits_ExternalIDPSetsTokenTypeHeader(t *testing.T) {
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(strings.NewReader(`{
+				"subscriptionInfo":{"subscriptionTitle":"Kiro Pro"},
+				"usageBreakdownList":[{"currentUsageWithPrecision":12.5,"usageLimitWithPrecision":100}]
+			}`)),
+			Header: make(http.Header),
+		},
+	}
+	service := NewKiroUsageService().WithTransport(upstream, nil)
+	account := &Account{
+		ID:       44,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"auth_method": "external_idp",
+		},
+	}
+
+	_, err := service.FetchUsageLimits(context.Background(), account, "access-token")
+
+	require.NoError(t, err)
+	require.Equal(t, "EXTERNAL_IDP", upstream.req.Header.Get("TokenType"))
 }
 
 func TestKiroTokenRefresher_Refresh_UsesHTTPUpstreamTransport(t *testing.T) {
@@ -430,6 +458,63 @@ func TestKiroTokenRefresher_Refresh_IDCUsesJSONTokenPayload(t *testing.T) {
 		"grantType":    "refresh_token",
 		"refreshToken": "refresh-token",
 	}, payload)
+}
+
+func TestKiroTokenRefresher_Refresh_ExternalIDPUsesFormTokenEndpoint(t *testing.T) {
+	var requestBody string
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			requestBody = string(body)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(`{
+					"access_token":"new-ms-access-token",
+					"refresh_token":"new-ms-refresh-token",
+					"expires_in":3600,
+					"token_type":"Bearer",
+					"scope":"scope-a scope-b"
+				}`)),
+				Header: make(http.Header),
+			}, nil
+		},
+	}
+	refresher := NewKiroTokenRefresher().WithTransport(upstream, &TLSFingerprintProfileService{})
+	account := &Account{
+		ID:       13,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token":  "external-refresh-token",
+			"auth_method":    "ExternalIdp",
+			"client_id":      "microsoft-public-client",
+			"token_endpoint": "https://login.microsoftonline.com/tenant/oauth2/v2.0/token",
+			"scopes":         "scope-a scope-b",
+			"profile_arn":    "arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD",
+		},
+	}
+
+	creds, err := refresher.Refresh(context.Background(), account)
+
+	require.NoError(t, err)
+	require.Equal(t, "new-ms-access-token", creds["access_token"])
+	require.Equal(t, "new-ms-refresh-token", creds["refresh_token"])
+	require.Equal(t, "external_idp", creds["auth_method"])
+	require.Equal(t, "arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD", creds["profile_arn"])
+	require.NotNil(t, upstream.req)
+	require.Equal(t, "https", upstream.req.URL.Scheme)
+	require.Equal(t, "login.microsoftonline.com", upstream.req.URL.Host)
+	require.Equal(t, "/tenant/oauth2/v2.0/token", upstream.req.URL.Path)
+	require.Equal(t, "application/x-www-form-urlencoded", upstream.req.Header.Get("Content-Type"))
+	require.NotContains(t, upstream.req.URL.String(), "oidc.")
+
+	form, err := url.ParseQuery(requestBody)
+	require.NoError(t, err)
+	require.Equal(t, "refresh_token", form.Get("grant_type"))
+	require.Equal(t, "microsoft-public-client", form.Get("client_id"))
+	require.Equal(t, "external-refresh-token", form.Get("refresh_token"))
+	require.Equal(t, "scope-a scope-b", form.Get("scope"))
 }
 
 func TestKiroTokenRefresher_Refresh_IDCDoesNotFallbackToSocial(t *testing.T) {

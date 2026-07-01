@@ -244,6 +244,7 @@ export function useKiroOAuth() {
 
     if (tokenInfo.client_id) credentials.client_id = tokenInfo.client_id
     if (tokenInfo.client_secret) credentials.client_secret = tokenInfo.client_secret
+    if (tokenInfo.token_endpoint) credentials.token_endpoint = tokenInfo.token_endpoint
     if (tokenInfo.auth_region) credentials.auth_region = tokenInfo.auth_region
     if (tokenInfo.api_region) credentials.api_region = tokenInfo.api_region
     if (tokenInfo.profile_arn) credentials.profile_arn = tokenInfo.profile_arn

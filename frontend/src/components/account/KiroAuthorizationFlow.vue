@@ -376,6 +376,7 @@
           <select v-model="manualAuthMethod" class="input">
             <option value="social">{{ t('admin.accounts.kiro.authMethodSocial') }}</option>
             <option value="idc">{{ t('admin.accounts.kiro.authMethodIDC') }}</option>
+            <option value="external_idp">{{ t('admin.accounts.kiro.authMethodExternalIdp') }}</option>
           </select>
           <p class="input-hint">{{ t('admin.accounts.kiro.authMethodHint') }}</p>
         </div>
@@ -437,6 +438,54 @@
               type="password"
               class="input font-mono text-sm"
               :placeholder="t('admin.accounts.kiro.clientSecretPlaceholder')"
+            />
+          </div>
+        </div>
+
+        <div v-if="manualAuthMethod === 'external_idp'" class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.clientIdLabel') }}</label>
+            <input
+              v-model="manualClientID"
+              type="text"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.clientIdPlaceholder')"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.tokenEndpointLabel') }}</label>
+            <input
+              v-model="manualTokenEndpoint"
+              type="text"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.tokenEndpointPlaceholder')"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.issuerUrlLabel') }}</label>
+            <input
+              v-model="manualIssuerURL"
+              type="text"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.issuerUrlPlaceholder')"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.scopesLabel') }}</label>
+            <input
+              v-model="manualScopes"
+              type="text"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.scopesPlaceholder')"
+            />
+          </div>
+          <div class="md:col-span-2">
+            <label class="input-label">{{ t('admin.accounts.kiro.loginHintLabel') }}</label>
+            <input
+              v-model="manualLoginHint"
+              type="text"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.loginHintPlaceholder')"
             />
           </div>
         </div>
@@ -581,12 +630,16 @@ const apiRegion = ref('')
 const machineID = ref('')
 const localError = ref('')
 const inputMode = ref<'oauth' | 'refresh_token'>('oauth')
-const manualAuthMethod = ref<'social' | 'idc'>('social')
+const manualAuthMethod = ref<'social' | 'idc' | 'external_idp'>('social')
 const manualRefreshToken = ref('')
 const manualAccessToken = ref('')
 const manualExpiresAtInput = ref('')
 const manualClientID = ref('')
 const manualClientSecret = ref('')
+const manualTokenEndpoint = ref('')
+const manualIssuerURL = ref('')
+const manualScopes = ref('')
+const manualLoginHint = ref('')
 
 const title = computed(() => (
   props.mode === 'reauth'
@@ -627,12 +680,16 @@ const resetForm = () => {
   apiRegion.value = credentials.api_region || ''
   machineID.value = credentials.machine_id || ''
   inputMode.value = 'oauth'
-  manualAuthMethod.value = (credentials.auth_method || 'social') as 'social' | 'idc'
+  manualAuthMethod.value = (credentials.auth_method || 'social') as 'social' | 'idc' | 'external_idp'
   manualRefreshToken.value = ''
   manualAccessToken.value = ''
   manualExpiresAtInput.value = ''
   manualClientID.value = credentials.client_id || ''
   manualClientSecret.value = ''
+  manualTokenEndpoint.value = credentials.token_endpoint || ''
+  manualIssuerURL.value = credentials.issuer_url || ''
+  manualScopes.value = credentials.scopes || ''
+  manualLoginHint.value = credentials.login_hint || ''
   localError.value = ''
 }
 
@@ -687,6 +744,14 @@ const handleSubmitRefreshToken = () => {
     return
   }
 
+  if (
+    manualAuthMethod.value === 'external_idp' &&
+    (!manualClientID.value.trim() || (!manualTokenEndpoint.value.trim() && !manualIssuerURL.value.trim()))
+  ) {
+    localError.value = t('admin.accounts.kiro.externalIdpRequired')
+    return
+  }
+
   const expiresAt = manualExpiresAtInput.value.trim()
     ? new Date(manualExpiresAtInput.value)
     : null
@@ -705,6 +770,13 @@ const handleSubmitRefreshToken = () => {
   if (manualAuthMethod.value === 'idc') {
     credentials.client_id = manualClientID.value.trim()
     credentials.client_secret = manualClientSecret.value.trim()
+  }
+  if (manualAuthMethod.value === 'external_idp') {
+    credentials.client_id = manualClientID.value.trim()
+    if (manualTokenEndpoint.value.trim()) credentials.token_endpoint = manualTokenEndpoint.value.trim()
+    if (manualIssuerURL.value.trim()) credentials.issuer_url = manualIssuerURL.value.trim()
+    if (manualScopes.value.trim()) credentials.scopes = manualScopes.value.trim()
+    if (manualLoginHint.value.trim()) credentials.login_hint = manualLoginHint.value.trim()
   }
   if (authRegion.value.trim()) credentials.auth_region = authRegion.value.trim()
   if (apiRegion.value.trim()) credentials.api_region = apiRegion.value.trim()

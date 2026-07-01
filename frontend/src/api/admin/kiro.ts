@@ -35,6 +35,7 @@ export interface KiroTokenInfo {
   auth_method?: string
   client_id?: string
   client_secret?: string
+  token_endpoint?: string
   region?: string
   auth_region?: string
   api_region?: string

@@ -173,6 +173,7 @@ func validatePlatformAccountType(platform, accountType string) error {
 }
 
 func validateKiroCredentials(credentials map[string]any) error {
+	credentials = NormalizeKiroOAuthCredentialShape(credentials)
 	refreshToken := strings.TrimSpace(stringCredential(credentials, "refresh_token"))
 	if err := ValidateKiroRefreshTokenHealth(refreshToken); err != nil {
 		return err
@@ -181,6 +182,14 @@ func validateKiroCredentials(credentials map[string]any) error {
 	if KiroAuthMethodUsesIDCRefresh(authMethod) {
 		if strings.TrimSpace(stringCredential(credentials, "client_id")) == "" || strings.TrimSpace(stringCredential(credentials, "client_secret")) == "" {
 			return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro idc client_id and client_secret are required")
+		}
+	}
+	if authMethod == "external_idp" {
+		if strings.TrimSpace(stringCredential(credentials, "client_id")) == "" {
+			return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp client_id is required")
+		}
+		if strings.TrimSpace(resolveKiroExternalIDPTokenEndpoint(credentials)) == "" {
+			return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp token_endpoint or issuer_url is required")
 		}
 	}
 	if rawExpiresAt, ok := credentials["expires_at"]; ok {
@@ -274,6 +283,9 @@ func validateKiroAPIKeyCredentials(credentials map[string]any) error {
 }
 
 func validateKiroAccountCredentials(accountType string, credentials map[string]any) error {
+	if accountType == AccountTypeOAuth {
+		credentials = NormalizeKiroOAuthCredentialShape(credentials)
+	}
 	switch accountType {
 	case AccountTypeOAuth:
 		return validateKiroCredentials(credentials)
@@ -407,9 +419,17 @@ func dropStaleKiroCredentialsForType(credentials map[string]any, accountType str
 			}
 		}
 		if allowSensitiveCredentials {
-			if method, ok := incoming["auth_method"].(string); ok && !KiroAuthMethodUsesIDCRefresh(method) {
-				for _, key := range []string{"client_id", "client_secret", "issuer_url", "idc_region", "scopes", "login_hint"} {
-					delete(credentials, key)
+			if method, ok := incoming["auth_method"].(string); ok {
+				switch normalizedMethod := NormalizeKiroAuthMethod(map[string]any{"auth_method": method}); {
+				case KiroAuthMethodUsesIDCRefresh(normalizedMethod):
+				case normalizedMethod == "external_idp":
+					for _, key := range []string{"client_secret", "idc_region"} {
+						delete(credentials, key)
+					}
+				default:
+					for _, key := range []string{"client_id", "client_secret", "issuer_url", "idc_region", "scopes", "login_hint", "token_endpoint"} {
+						delete(credentials, key)
+					}
 				}
 			}
 		}
@@ -468,11 +488,124 @@ func normalizeKiroAuthMethodValue(value string) string {
 	switch normalized {
 	case "":
 		return ""
-	case "idc", "builderid", "builder-id", "awsidc", "aws-idc", "iam", "internal", "enterprise", "external-idp":
+	case "external-idp", "externalidp":
+		return "external_idp"
+	case "idc", "builderid", "builder-id", "awsidc", "aws-idc", "iam", "internal", "enterprise":
 		return "idc"
 	default:
 		return "social"
 	}
+}
+
+func NormalizeKiroOAuthCredentialShape(credentials map[string]any) map[string]any {
+	if credentials == nil {
+		return nil
+	}
+	normalized := cloneCredentials(credentials)
+	copyKiroCredentialStringIfEmpty(normalized, normalized, "access_token", "accessToken", "access_token")
+	copyKiroCredentialStringIfEmpty(normalized, normalized, "refresh_token", "refreshToken", "refresh_token")
+	copyKiroCredentialStringIfEmpty(normalized, normalized, "token_type", "tokenType", "token_type")
+	copyKiroCredentialStringIfEmpty(normalized, normalized, "expires_at", "expiresAt", "expires_at")
+	copyKiroCredentialStringIfEmpty(normalized, normalized, "auth_method", "authMethod", "auth_method")
+	copyKiroCredentialStringIfEmpty(normalized, normalized, "client_id", "clientId", "client_id")
+	copyKiroCredentialStringIfEmpty(normalized, normalized, "issuer_url", "issuerUrl", "issuer_url")
+	copyKiroCredentialStringIfEmpty(normalized, normalized, "scopes", "scopes", "scope")
+	copyKiroCredentialStringIfEmpty(normalized, normalized, "token_endpoint", "tokenEndpoint", "token_endpoint")
+	copyKiroCredentialStringIfEmpty(normalized, normalized, "login_provider", "provider", "loginProvider", "login_provider")
+	copyKiroCredentialStringIfEmpty(normalized, normalized, "login_hint", "loginHint", "login_hint")
+
+	if rawToken, ok := kiroCredentialNestedMap(normalized, "kiro_auth_token_raw"); ok {
+		copyKiroCredentialStringIfEmpty(normalized, rawToken, "access_token", "accessToken", "access_token")
+		copyKiroCredentialStringIfEmpty(normalized, rawToken, "refresh_token", "refreshToken", "refresh_token")
+		copyKiroCredentialStringIfEmpty(normalized, rawToken, "token_type", "tokenType", "token_type")
+		copyKiroCredentialStringIfEmpty(normalized, rawToken, "expires_at", "expiresAt", "expires_at")
+		copyKiroCredentialStringIfEmpty(normalized, rawToken, "auth_method", "authMethod", "auth_method")
+		copyKiroCredentialStringIfEmpty(normalized, rawToken, "client_id", "clientId", "client_id")
+		copyKiroCredentialStringIfEmpty(normalized, rawToken, "issuer_url", "issuerUrl", "issuer_url")
+		copyKiroCredentialStringIfEmpty(normalized, rawToken, "scopes", "scopes", "scope")
+		copyKiroCredentialStringIfEmpty(normalized, rawToken, "token_endpoint", "tokenEndpoint", "token_endpoint")
+		copyKiroCredentialStringIfEmpty(normalized, rawToken, "login_provider", "provider", "loginProvider", "login_provider")
+		copyKiroCredentialStringIfEmpty(normalized, rawToken, "login_hint", "loginHint", "login_hint")
+	}
+	if rawProfile, ok := kiroCredentialNestedMap(normalized, "kiro_profile_raw"); ok {
+		copyKiroCredentialStringIfEmpty(normalized, rawProfile, "profile_arn", "profileArn", "profile_arn", "arn")
+		copyKiroCredentialStringIfEmpty(normalized, rawProfile, "profile_name", "name")
+	}
+	copyKiroCredentialStringIfEmpty(normalized, normalized, "profile_arn", "profileArn", "profile_arn", "arn")
+
+	if NormalizeKiroAuthMethod(normalized) == "external_idp" {
+		normalized["auth_method"] = "external_idp"
+	}
+	if endpoint := resolveKiroExternalIDPTokenEndpoint(normalized); endpoint != "" {
+		normalized["token_endpoint"] = endpoint
+	}
+	if profileARN := strings.TrimSpace(stringCredential(normalized, "profile_arn")); profileARN != "" && strings.TrimSpace(stringCredential(normalized, "profile_id")) == "" {
+		normalized["profile_id"] = profileARNProfileID(profileARN)
+	}
+	return normalized
+}
+
+func kiroCredentialNestedMap(credentials map[string]any, key string) (map[string]any, bool) {
+	raw, ok := credentials[key]
+	if !ok || raw == nil {
+		return nil, false
+	}
+	if typed, ok := raw.(map[string]any); ok {
+		return typed, true
+	}
+	if typed, ok := raw.(map[string]interface{}); ok {
+		return map[string]any(typed), true
+	}
+	return nil, false
+}
+
+func copyKiroCredentialStringIfEmpty(dst, src map[string]any, target string, keys ...string) {
+	if strings.TrimSpace(stringCredential(dst, target)) != "" {
+		return
+	}
+	for _, key := range keys {
+		if value := strings.TrimSpace(stringCredential(src, key)); value != "" {
+			dst[target] = value
+			return
+		}
+	}
+}
+
+func resolveKiroExternalIDPTokenEndpoint(credentials map[string]any) string {
+	if credentials == nil {
+		return ""
+	}
+	if endpoint := strings.TrimSpace(stringCredential(credentials, "token_endpoint")); endpoint != "" {
+		return endpoint
+	}
+	if endpoint := strings.TrimSpace(stringCredential(credentials, "tokenEndpoint")); endpoint != "" {
+		return endpoint
+	}
+	issuerURL := strings.TrimSpace(stringCredential(credentials, "issuer_url"))
+	if issuerURL == "" {
+		issuerURL = strings.TrimSpace(stringCredential(credentials, "issuerUrl"))
+	}
+	return deriveMicrosoftTokenEndpointFromIssuer(issuerURL)
+}
+
+func deriveMicrosoftTokenEndpointFromIssuer(issuerURL string) string {
+	issuerURL = strings.TrimSpace(issuerURL)
+	if issuerURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(issuerURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	if !strings.Contains(strings.ToLower(parsed.Host), "login.microsoftonline.com") {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+		return ""
+	}
+	tenant := parts[0]
+	return fmt.Sprintf("%s://%s/%s/oauth2/v2.0/token", parsed.Scheme, parsed.Host, tenant)
 }
 
 func stringCredential(credentials map[string]any, key string) string {
@@ -528,6 +661,9 @@ func NewAccountService(accountRepo AccountRepository, groupRepo GroupRepository)
 func (s *AccountService) Create(ctx context.Context, req CreateAccountRequest) (*Account, error) {
 	if err := validatePlatformAccountType(req.Platform, req.Type); err != nil {
 		return nil, err
+	}
+	if req.Platform == PlatformKiro && req.Type == AccountTypeOAuth {
+		req.Credentials = NormalizeKiroOAuthCredentialShape(req.Credentials)
 	}
 	if req.Platform == PlatformKiro {
 		if err := validateKiroAccountCredentials(req.Type, req.Credentials); err != nil {
@@ -651,6 +787,9 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 
 	if req.Credentials != nil {
 		nextCredentials := *req.Credentials
+		if account.Platform == PlatformKiro && account.Type == AccountTypeOAuth {
+			nextCredentials = NormalizeKiroOAuthCredentialShape(nextCredentials)
+		}
 		account.Credentials = mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, nextCredentials, false)
 	}
 

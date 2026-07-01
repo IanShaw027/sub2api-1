@@ -1112,7 +1112,7 @@ export interface GeminiCredentials {
   model_mapping?: Record<string, string>
 }
 
-export type KiroAuthMethod = 'social' | 'idc'
+export type KiroAuthMethod = 'social' | 'idc' | 'external_idp'
 
 export interface KiroCredentials {
   access_token?: string
@@ -1121,6 +1121,10 @@ export interface KiroCredentials {
   auth_method?: KiroAuthMethod | string
   client_id?: string
   client_secret?: string
+  token_endpoint?: string
+  issuer_url?: string
+  scopes?: string
+  login_hint?: string
   region?: string
   auth_region?: string
   api_region?: string

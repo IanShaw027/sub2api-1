@@ -107,6 +107,9 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 	machineID := kiro.GenerateMachineID(account.GetCredential("machine_id"), "", account.GetCredential("refresh_token"))
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+	if isKiroExternalIDPAccount(account) {
+		req.Header.Set("TokenType", "EXTERNAL_IDP")
+	}
 	req.Header.Set("host", host)
 	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=1")

@@ -210,6 +210,7 @@ type KiroTokenInfo struct {
 	AuthMethod       string `json:"auth_method,omitempty"`
 	ClientID         string `json:"client_id,omitempty"`
 	ClientSecret     string `json:"client_secret,omitempty"`
+	TokenEndpoint    string `json:"token_endpoint,omitempty"`
 	Region           string `json:"region,omitempty"`
 	AuthRegion       string `json:"auth_region,omitempty"`
 	APIRegion        string `json:"api_region,omitempty"`
@@ -675,6 +676,7 @@ func kiroTokenInfoMap(tokenInfo *KiroTokenInfo) map[string]any {
 		"auth_method":       tokenInfo.AuthMethod,
 		"client_id":         tokenInfo.ClientID,
 		"client_secret":     tokenInfo.ClientSecret,
+		"token_endpoint":    tokenInfo.TokenEndpoint,
 		"region":            tokenInfo.Region,
 		"auth_region":       tokenInfo.AuthRegion,
 		"api_region":        tokenInfo.APIRegion,
@@ -1414,6 +1416,7 @@ func buildKiroTokenInfo(payload map[string]any, query url.Values, loginOption st
 		AuthMethod:       authMethod,
 		ClientID:         pickKiroString(payload, []string{"client_id"}, []string{"clientId"}, []string{"clientRegistration", "clientId"}, []string{"registration", "clientId"}, []string{"oidcClient", "clientId"}),
 		ClientSecret:     pickKiroString(payload, []string{"client_secret"}, []string{"clientSecret"}, []string{"clientRegistration", "clientSecret"}, []string{"clientRegistration", "client_secret"}, []string{"registration", "clientSecret"}, []string{"oidcClient", "clientSecret"}),
+		TokenEndpoint:    firstNonEmptyKiroString(pickKiroString(payload, []string{"token_endpoint"}, []string{"tokenEndpoint"}), resolveKiroExternalIDPTokenEndpoint(payload)),
 		Region:           region,
 		AuthRegion:       firstNonEmptyKiroString(authRegion, region),
 		APIRegion:        firstNonEmptyKiroString(apiRegion, region),

@@ -296,6 +296,7 @@ func prepareKiroConvertedRequestWithRoutingWithMeta(ctx context.Context, setting
 	meta.ForwardBody = forwardBody
 
 	forwardBody = patchKiroThinkingForModel(forwardBody, requestedModel, strings.TrimSpace(parsed.OutputEffort))
+	forwardBody = injectKiroProfileARNIntoAnthropicBody(forwardBody, account)
 
 	converted, err := kiropkg.ConvertAnthropicRequestWithModel(forwardBody, requestedModel)
 	if err != nil {
@@ -303,6 +304,33 @@ func prepareKiroConvertedRequestWithRoutingWithMeta(ctx context.Context, setting
 	}
 	meta.ToolCount = len(converted.ToolNameMap)
 	return converted, billedInputTokens, meta, nil
+}
+
+func injectKiroProfileARNIntoAnthropicBody(body []byte, account *Account) []byte {
+	profileARN := strings.TrimSpace(accountCredential(account, "profile_arn"))
+	if profileARN == "" || len(body) == 0 {
+		return body
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body
+	}
+	if existing, ok := payload["profile_arn"]; ok && strings.TrimSpace(fmt.Sprint(existing)) != "" {
+		return body
+	}
+	payload["profile_arn"] = profileARN
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return encoded
+}
+
+func accountCredential(account *Account, key string) string {
+	if account == nil {
+		return ""
+	}
+	return account.GetCredential(key)
 }
 
 func patchKiroThinkingForModel(forwardBody []byte, requestedModel string, outputEffort string) []byte {
@@ -647,6 +675,9 @@ func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, bo
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+	if isKiroExternalIDPAccount(account) {
+		req.Header.Set("TokenType", "EXTERNAL_IDP")
+	}
 	req.Header.Set("host", host)
 	req.Header.Set("x-amzn-codewhisperer-optout", "true")
 	req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
@@ -658,6 +689,13 @@ func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, bo
 	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=3")
 	return req, nil
+}
+
+func isKiroExternalIDPAccount(account *Account) bool {
+	if account == nil {
+		return false
+	}
+	return NormalizeKiroAuthMethod(account.Credentials) == "external_idp"
 }
 
 func (s *KiroGatewayService) retryInvalidTokenResponse(

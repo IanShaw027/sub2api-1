@@ -351,6 +351,7 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Kiro test payload")
 	}
+	body = injectKiroProfileARNIntoAnthropicBody(body, account)
 	converted, err := kiropkg.ConvertAnthropicRequestWithModel(body, convertedModelID)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to convert Kiro payload: %s", err.Error()))

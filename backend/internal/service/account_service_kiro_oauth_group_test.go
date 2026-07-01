@@ -278,6 +278,20 @@ func TestNormalizeKiroAuthMethod_CanonicalizesIDCAliases(t *testing.T) {
 	}
 }
 
+func TestNormalizeKiroAuthMethod_CanonicalizesExternalIDPAliases(t *testing.T) {
+	t.Parallel()
+
+	for _, authMethod := range []string{"external_idp", "external-idp", "ExternalIdp"} {
+		authMethod := authMethod
+		t.Run(authMethod, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, "external_idp", NormalizeKiroAuthMethod(map[string]any{
+				"auth_method": authMethod,
+			}))
+		})
+	}
+}
+
 func TestAccountService_Update_IgnoresKiroOAuthAuthCredentialPatches(t *testing.T) {
 	t.Parallel()
 

@@ -108,6 +108,45 @@ describe('KiroAuthorizationFlow', () => {
     expect(wrapper.emitted('submit')).toBeUndefined()
   })
 
+  it('emits ExternalIdp metadata for manual refresh-token account creation', async () => {
+    const wrapper = mountComponent({
+      mode: 'create',
+      initialCredentials: {
+        auth_method: 'external_idp',
+        client_id: 'saved-client',
+        issuer_url: 'https://login.microsoftonline.com/tenant/v2.0',
+        token_endpoint: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+        scopes: 'scope-a scope-b',
+        login_hint: 'user@example.com',
+        profile_arn: 'arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD'
+      }
+    })
+
+    await wrapper.get('input[value="refresh_token"]').setValue()
+    await wrapper
+      .get('textarea[placeholder="admin.accounts.kiro.refreshTokenPlaceholderBatch"]')
+      .setValue('rt-external')
+
+    await findButtonByText(wrapper, 'admin.accounts.kiro.validateAndCreate').trigger('click')
+
+    expect(wrapper.emitted('submit-refresh-token')).toEqual([[
+      {
+        credentials: {
+          refresh_token: 'rt-external',
+          auth_method: 'external_idp',
+          region: 'us-east-1',
+          client_id: 'saved-client',
+          issuer_url: 'https://login.microsoftonline.com/tenant/v2.0',
+          token_endpoint: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+          scopes: 'scope-a scope-b',
+          login_hint: 'user@example.com',
+          profile_arn: 'arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD'
+        },
+        extra: {}
+      }
+    ]])
+  })
+
   it('allows multiline manual refresh-token input during reauth', async () => {
     const wrapper = mountComponent({ mode: 'reauth' })
 

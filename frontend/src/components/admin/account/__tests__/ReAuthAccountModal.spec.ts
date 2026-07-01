@@ -684,6 +684,73 @@ describe('admin ReAuthAccountModal', () => {
     expect(credentials).not.toHaveProperty('idc_region')
   })
 
+  it('preserves ExternalIdp metadata when Kiro manual refresh-token reauth validates', async () => {
+    validateRefreshTokenMock.mockResolvedValue({
+      access_token: 'access-external',
+      refresh_token: 'refresh-external-new',
+      expires_at: '2026-07-01T07:57:02Z',
+      auth_method: 'external_idp',
+      client_id: 'microsoft-public-client',
+      issuer_url: 'https://login.microsoftonline.com/tenant/v2.0',
+      token_endpoint: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+      scopes: 'scope-a scope-b',
+      login_hint: 'external@example.com',
+      profile_arn: 'arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD',
+      email: 'external@example.com',
+      plan_name: 'Credit'
+    })
+    buildAccountNameMock.mockReturnValue('Kiro ExternalIdp')
+    buildExtraInfoMock.mockReturnValue({
+      email: 'external@example.com',
+      subscription_type: 'Credit'
+    })
+    const account = buildKiroAccount('oauth')
+    account.credentials = {
+      refresh_token: 'rt-old',
+      auth_method: 'social',
+      region: 'us-east-1'
+    }
+    const wrapper = mountModal(account)
+
+    wrapper.getComponent(KiroAuthorizationFlowStub).vm.$emit('submit-refresh-token', {
+      credentials: {
+        refresh_token: 'refresh-external',
+        auth_method: 'external_idp',
+        region: 'us-east-1',
+        client_id: 'microsoft-public-client',
+        issuer_url: 'https://login.microsoftonline.com/tenant/v2.0',
+        token_endpoint: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+        scopes: 'scope-a scope-b',
+        login_hint: 'external@example.com',
+        profile_arn: 'arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD'
+      },
+      extra: {}
+    })
+    await flushPromises()
+
+    expect(validateRefreshTokenMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        auth_method: 'external_idp',
+        client_id: 'microsoft-public-client',
+        token_endpoint: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token'
+      }),
+      {},
+      null
+    )
+    const credentials = reauthorizeKiroOAuthMock.mock.calls[0]?.[1]?.credentials
+    expect(credentials).toEqual(expect.objectContaining({
+      auth_method: 'external_idp',
+      refresh_token: 'refresh-external-new',
+      access_token: 'access-external',
+      client_id: 'microsoft-public-client',
+      issuer_url: 'https://login.microsoftonline.com/tenant/v2.0',
+      token_endpoint: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+      scopes: 'scope-a scope-b',
+      login_hint: 'external@example.com',
+      profile_arn: 'arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD'
+    }))
+  })
+
   it('removes stale IDC credentials when Kiro callback reauth switches back to social credentials', async () => {
     const account = buildKiroAccount('oauth')
     account.credentials = {
