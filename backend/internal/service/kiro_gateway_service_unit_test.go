@@ -625,3 +625,14 @@ func TestKiroGatewayService_Forward_TransportErr_ClientDisconnect_NoFailoverNoMa
 	require.Empty(t, repo.rateLimitedIDs)
 	require.Empty(t, repo.errorIDs)
 }
+
+func TestKiroResponseTelemetryFlagsMixedCompletedAndPartialToolUse(t *testing.T) {
+	t.Parallel()
+
+	telemetry := &kiroResponseTelemetry{
+		CompletedToolUseCount: 1,
+		PartialToolUseCount:   1,
+	}
+
+	require.Contains(t, telemetry.anomalyKinds("tool_use"), "incomplete_tool_use_completed")
+}

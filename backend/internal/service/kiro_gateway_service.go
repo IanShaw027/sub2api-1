@@ -992,7 +992,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		PartialToolUseCount:    partialToolUses,
 		ContextUsagePercentage: lastContextUsagePercentage,
 	}
-	if telemetry.PartialToolUseCount > 0 && telemetry.CompletedToolUseCount == 0 {
+	if telemetry.PartialToolUseCount > 0 {
 		incompleteErr := errors.New("kiro response completed with incomplete tool_use output")
 		logKiroResponseAnomaly(ctx, account, parsed, false, "incomplete_tool_use_completed", incompleteErr, telemetry.FramesSeen, telemetry.ToolUseCount, telemetry.ContextUsagePercentage)
 		if c != nil && account != nil {
@@ -2037,7 +2037,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			estimateKiroOutputTokens(streamThinkingText, "")
 	}
 	partialTelemetry := buildStreamTelemetry()
-	if partialTelemetry.PartialToolUseCount > 0 && partialTelemetry.CompletedToolUseCount == 0 {
+	if partialTelemetry.PartialToolUseCount > 0 {
 		outputTokens, _ := computeStreamUsageTokens()
 		incompleteErr := errors.New("kiro response completed with incomplete tool_use output")
 		if err := writeKiroStreamError(writer, kiroIncompleteToolUseClientMessage()); err != nil {
@@ -4463,7 +4463,7 @@ func (t *kiroResponseTelemetry) anomalyKinds(stopReason string) []string {
 		return nil
 	}
 	kinds := make([]string, 0, 3)
-	if t.PartialToolUseCount > 0 && t.CompletedToolUseCount == 0 {
+	if t.PartialToolUseCount > 0 {
 		kinds = append(kinds, "incomplete_tool_use_completed")
 	}
 	if stopReason == "model_context_window_exceeded" {
