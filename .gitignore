@@ -135,6 +135,7 @@ backend/cmd/server/server
 /data/config.yaml
 /data/logs/
 /data/logs/gateway-debug/
+/tools/kiro-capture/
 /data/model_pricing.json
 /data/model_pricing.sha256
 /data/*.csv
