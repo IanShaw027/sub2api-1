@@ -130,11 +130,19 @@ func TestMigrationChecksumCompatibilityRules_CoverEditedUpgradeCompatibilityMigr
 }
 
 func TestGrokPlatformQuotaMigrationExtendsCheckConstraint(t *testing.T) {
-	content, err := fs.ReadFile(migrations.FS, "181_user_platform_quotas_add_grok.sql")
-	require.NoError(t, err)
-	sql := string(content)
-	require.Contains(t, sql, "user_platform_quotas_platform_check")
-	require.Contains(t, sql, "'grok'")
+	for _, name := range []string{
+		"157_user_platform_quotas_add_grok.sql",
+		"181_user_platform_quotas_add_grok.sql",
+	} {
+		t.Run(name, func(t *testing.T) {
+			content, err := fs.ReadFile(migrations.FS, name)
+			require.NoError(t, err)
+			sql := string(content)
+			require.Contains(t, sql, "user_platform_quotas_platform_check")
+			require.Contains(t, sql, "'kiro'")
+			require.Contains(t, sql, "'grok'")
+		})
+	}
 }
 
 func TestPrepareNonTransactionalMigration_PreparesAutopauseExpiryIndexRetry(t *testing.T) {
