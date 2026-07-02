@@ -2636,6 +2636,8 @@ export default {
       sortConcurrency: '并发排序',
       sortAvailableDesc: '可用并发',
       sortCurrentDesc: '当前并发',
+      sortBy: '排序字段',
+      sortCurrentPageOnly: '仅对当前页本地排序',
       noSubscription: '暂无订阅',
       publicGroupCount: '+{count} 公开',
       exclusiveLabel: '专属',

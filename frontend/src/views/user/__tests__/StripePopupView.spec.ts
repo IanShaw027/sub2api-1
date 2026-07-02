@@ -7,6 +7,7 @@ const routeState = vi.hoisted(() => ({
 
 const loadStripe = vi.hoisted(() => vi.fn())
 const fetchMock = vi.hoisted(() => vi.fn())
+const getOrder = vi.hoisted(() => vi.fn())
 const openerPostMessage = vi.hoisted(() => vi.fn())
 const windowClose = vi.hoisted(() => vi.fn())
 const stripeInstance = vi.hoisted(() => ({
@@ -36,6 +37,12 @@ vi.mock('@stripe/stripe-js', () => ({
   loadStripe,
 }))
 
+vi.mock('@/api/payment', () => ({
+  paymentAPI: {
+    getOrder,
+  },
+}))
+
 vi.mock('@/utils/device', () => ({
   isMobileDevice: () => false,
 }))
@@ -58,6 +65,9 @@ describe('StripePopupView', () => {
       },
     })
     stripeInstance.confirmAlipayPayment.mockReset()
+    getOrder.mockReset().mockResolvedValue({
+      data: { status: 'RECHARGING' },
+    })
     fetchMock.mockReset().mockResolvedValue({
       ok: true,
       json: async () => ({ data: { status: 'RECHARGING' } }),
@@ -131,12 +141,7 @@ describe('StripePopupView', () => {
     await vi.advanceTimersByTimeAsync(3000)
     await flushPromises()
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/v1/payment/orders/42',
-      expect.objectContaining({
-        credentials: 'include',
-      }),
-    )
+    expect(getOrder).toHaveBeenCalledWith(42)
     expect(wrapper.text()).toContain('payment.result.success')
   })
 })

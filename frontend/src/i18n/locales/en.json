@@ -2644,7 +2644,9 @@
         "failedToReorder": "Failed to update order",
         "keyExists": "Attribute key already exists",
         "dragToReorder": "Drag to reorder"
-      }
+      },
+      "sortBy": "Sort by",
+      "sortCurrentPageOnly": "Only the current page is sorted locally"
     },
     "groups": {
       "title": "Group Management",

@@ -2624,6 +2624,8 @@ export default {
       sortConcurrency: 'Sort concurrency',
       sortAvailableDesc: 'Available concurrency',
       sortCurrentDesc: 'Current concurrency',
+      sortBy: 'Sort by',
+      sortCurrentPageOnly: 'Only the current page is sorted locally',
       noSubscription: 'No subscription',
       publicGroupCount: '+{count} public',
       exclusiveLabel: 'exclusive',

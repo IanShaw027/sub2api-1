@@ -2702,7 +2702,9 @@
         "failedToReorder": "更新排序失败",
         "keyExists": "属性键已存在",
         "dragToReorder": "拖拽排序"
-      }
+      },
+      "sortBy": "排序字段",
+      "sortCurrentPageOnly": "仅对当前页本地排序"
     },
     "groups": {
       "title": "分组管理",
