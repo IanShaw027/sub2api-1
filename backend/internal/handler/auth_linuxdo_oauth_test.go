@@ -554,7 +554,8 @@ func TestLinuxDoOAuthCallbackCreatesBindPendingSessionForCompatEmailUser(t *test
 	require.NotNil(t, session.TargetUserID)
 	require.Equal(t, existingUser.ID, *session.TargetUserID)
 	require.Equal(t, strings.TrimSpace(existingUser.Email), session.ResolvedEmail)
-	require.Equal(t, "legacy@example.com", session.UpstreamIdentityClaims["email"])
+	require.Equal(t, linuxDoSyntheticEmail("321"), session.UpstreamIdentityClaims["email"])
+	require.Equal(t, "legacy@example.com", session.UpstreamIdentityClaims["compat_email"])
 
 	completion, ok := session.LocalFlowState[oauthCompletionResponseKey].(map[string]any)
 	require.True(t, ok)
@@ -624,7 +625,7 @@ func TestLinuxDoOAuthCallbackCreatesChoicePendingSessionWhenSignupRequiresInvite
 	require.Equal(t, oauthIntentLogin, session.Intent)
 	require.Nil(t, session.TargetUserID)
 	require.Equal(t, linuxDoSyntheticEmail("654"), session.ResolvedEmail)
-	require.Equal(t, "victim@example.com", session.UpstreamIdentityClaims["email"])
+	require.Equal(t, linuxDoSyntheticEmail("654"), session.UpstreamIdentityClaims["email"])
 	require.Equal(t, "victim@example.com", session.UpstreamIdentityClaims["compat_email"])
 
 	completion, ok := session.LocalFlowState[oauthCompletionResponseKey].(map[string]any)
@@ -693,7 +694,7 @@ func TestLinuxDoOAuthCallbackUsesSyntheticEmailWhenProviderOmitsEmail(t *testing
 	require.Equal(t, oauthIntentLogin, session.Intent)
 	require.Nil(t, session.TargetUserID)
 	require.Equal(t, linuxDoSyntheticEmail("987"), session.ResolvedEmail)
-	require.Equal(t, "", session.UpstreamIdentityClaims["email"])
+	require.Equal(t, linuxDoSyntheticEmail("987"), session.UpstreamIdentityClaims["email"])
 	require.NotContains(t, session.UpstreamIdentityClaims, "compat_email")
 
 	completion, ok := session.LocalFlowState[oauthCompletionResponseKey].(map[string]any)

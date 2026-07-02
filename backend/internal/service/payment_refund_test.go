@@ -1792,7 +1792,7 @@ func TestFinishRefundSuccessStatusesFinalize(t *testing.T) {
 	}
 }
 
-func TestPrepareRefundRejectsLegacyGuessedProviderInstance(t *testing.T) {
+func TestPrepareRefundAllowsPaymentTypeOnlyLegacyProviderInstance(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
 
@@ -1839,10 +1839,11 @@ func TestPrepareRefundRejectsLegacyGuessedProviderInstance(t *testing.T) {
 	}
 
 	plan, result, err := svc.PrepareRefund(ctx, order.ID, 0, "", false, false)
-	require.Nil(t, plan)
 	require.Nil(t, result)
-	require.Error(t, err)
-	require.Equal(t, "REFUND_DISABLED", infraerrors.Reason(err))
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+	require.Equal(t, order.ID, plan.OrderID)
+	require.Equal(t, 188.0, plan.RefundAmount)
 }
 
 func TestQueryAndFinalizeRefundFinalizesProviderStatuses(t *testing.T) {
@@ -2036,7 +2037,7 @@ func TestQueryAndFinalizeRefundUnsupportedProviderReturnsClearError(t *testing.T
 	require.Equal(t, "REFUND_QUERY_UNSUPPORTED", infraerrors.Reason(err))
 }
 
-func TestValidateRefundRequestRejectsLegacyGuessedProviderInstance(t *testing.T) {
+func TestValidateRefundRequestAllowsPaymentTypeOnlyLegacyProviderInstance(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
 
@@ -2083,8 +2084,7 @@ func TestValidateRefundRequestRejectsLegacyGuessedProviderInstance(t *testing.T)
 	}
 
 	_, _, _, err = svc.validateRefundRequest(ctx, order.ID, user.ID)
-	require.Error(t, err)
-	require.Equal(t, "REFUND_DISABLED", infraerrors.Reason(err))
+	require.NoError(t, err)
 }
 
 type refundProviderTestDouble struct {

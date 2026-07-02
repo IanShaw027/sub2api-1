@@ -1384,7 +1384,7 @@ func TestApplyCodexOAuthTransform_GPT55SuppliesModelSpecificInstructions(t *test
 
 	instructions, ok := reqBody["instructions"].(string)
 	require.True(t, ok)
-	require.Contains(t, instructions, "You are Codex, a coding agent based on GPT-5")
+	require.Contains(t, instructions, "You are Codex, based on GPT-5")
 	require.NotContains(t, instructions, "You are GPT-5.1 running in the Codex CLI")
 	require.True(t, result.Modified)
 }
