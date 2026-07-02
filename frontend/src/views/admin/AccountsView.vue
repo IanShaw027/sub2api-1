@@ -248,8 +248,8 @@
                   :type="row.type"
                   :plan-type="getPlatformBadgePlanType(row)"
                   :type-label-override="getPlatformBadgeTypeLabel(row)"
-                  :privacy-mode="row.extra?.privacy_mode"
-                  :subscription-expires-at="row.credentials?.subscription_expires_at"
+                  :privacy-mode="getPlatformBadgePrivacyMode(row)"
+                  :subscription-expires-at="getPlatformBadgeSubscriptionExpiresAt(row)"
                   :organization-role="getOpenAIOrganizationRole(row)"
                 />
                 <span
@@ -425,7 +425,7 @@
       :model-options="scheduleModelOptions"
       @close="closeSchedulePanel"
     />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" />
+    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal v-if="showSync" :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal
       v-if="showImportData"
@@ -453,6 +453,7 @@
       @reset="handleTempUnschedReset"
     />
     <ConfirmDialog :show="showDeleteDialog" :title="t('admin.accounts.deleteAccount')" :message="t('admin.accounts.deleteConfirm', { name: deletingAcc?.name })" :confirm-text="t('common.delete')" :cancel-text="t('common.cancel')" :danger="true" @confirm="confirmDelete" @cancel="showDeleteDialog = false" />
+    <ConfirmDialog :show="showCreateShadowDialog" :title="t('admin.accounts.createSparkShadow')" :message="t('admin.accounts.createSparkShadowConfirm', { name: creatingShadowAcc?.name })" @confirm="confirmCreateSparkShadow" @cancel="showCreateShadowDialog = false" />
     <ConfirmDialog :show="showExportDataDialog" :title="t('admin.accounts.dataExport')" :message="t('admin.accounts.dataExportConfirmMessage')" :confirm-text="t('admin.accounts.dataExportConfirm')" :cancel-text="t('common.cancel')" @confirm="handleExportData" @cancel="showExportDataDialog = false">
       <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
         <input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" v-model="includeProxyOnExport" />
@@ -591,6 +592,7 @@ const showBulkEdit = ref(false)
 const bulkEditTarget = ref<AccountBulkEditTarget | null>(null)
 const showTempUnsched = ref(false)
 const showDeleteDialog = ref(false)
+const showCreateShadowDialog = ref(false)
 const showReAuth = ref(false)
 const showTest = ref(false)
 const showStats = ref(false)
@@ -601,6 +603,7 @@ const edAcc = ref<Account | null>(null)
 let editDetailRequestSeq = 0
 const tempUnschedAcc = ref<Account | null>(null)
 const deletingAcc = ref<Account | null>(null)
+const creatingShadowAcc = ref<Account | null>(null)
 const reAuthAcc = ref<Account | null>(null)
 const testingAcc = ref<Account | null>(null)
 const statsAcc = ref<Account | null>(null)
@@ -1435,6 +1438,9 @@ function normalizeGeminiPlatformTier(value: unknown): string {
 }
 
 function getPlatformBadgePlanType(row: any): string | undefined {
+  if (row?.platform === 'openai' && row?.parent_account_id != null) {
+    return row?.parent_plan_type || row?.credentials?.plan_type
+  }
   if (row?.platform === 'gemini') {
     const normalizedTier = collectGeminiTierMetadataSources(
       (row?.credentials || {}) as Record<string, unknown>,
@@ -1445,6 +1451,20 @@ function getPlatformBadgePlanType(row: any): string | undefined {
     return normalizedTier || undefined
   }
   return row?.credentials?.plan_type
+}
+
+function getPlatformBadgePrivacyMode(row: any): string | undefined {
+  if (row?.platform === 'openai' && row?.parent_account_id != null) {
+    return row?.parent_privacy_mode || row?.extra?.privacy_mode
+  }
+  return row?.extra?.privacy_mode
+}
+
+function getPlatformBadgeSubscriptionExpiresAt(row: any): string | undefined {
+  if (row?.platform === 'openai' && row?.parent_account_id != null) {
+    return row?.parent_subscription_expires_at || row?.credentials?.subscription_expires_at
+  }
+  return row?.credentials?.subscription_expires_at
 }
 
 function getGeminiOAuthBadgeType(row: any): 'google_one' | 'code_assist' | '' {
@@ -1478,7 +1498,9 @@ function getOpenAIOrganizationRole(row: any): string | undefined {
 
 function getDisplayAccountName(row: any, fallbackName: string): string {
   if (row?.platform === 'openai' && row?.type === 'oauth') {
-    const email = typeof row?.credentials?.email === 'string' ? row.credentials.email.trim() : ''
+    const email = typeof row?.credentials?.email === 'string'
+      ? row.credentials.email.trim()
+      : (typeof row?.parent_email === 'string' ? row.parent_email.trim() : '')
     if (!email) return fallbackName
     const planType = typeof row?.credentials?.plan_type === 'string'
       ? row.credentials.plan_type.trim().toLowerCase()
@@ -2113,7 +2135,13 @@ const handleExportData = async () => {
     link.download = filename
     link.click()
     URL.revokeObjectURL(url)
-    appStore.showSuccess(t('admin.accounts.dataExported'))
+    // spark 影子账号被后端排除出备份(其凭据透传母账号、调度配置不可经凭据型导入重建);
+    // 跳过非零时明确提示用户,避免「下载成功但少了账号」的静默丢失。
+    if (dataPayload.skipped_shadows && dataPayload.skipped_shadows > 0) {
+      appStore.showWarning(t('admin.accounts.dataExportedSkippedShadows', { count: dataPayload.skipped_shadows }))
+    } else {
+      appStore.showSuccess(t('admin.accounts.dataExported'))
+    }
   } catch (error: any) {
     appStore.showError(error?.message || t('admin.accounts.dataExportFailed'))
   } finally {
@@ -2228,6 +2256,24 @@ const onRevertFallback = async (a: Account) => {
   } catch (error: any) {
     console.error('Failed to revert proxy fallback:', error)
     appStore.showError(error?.response?.data?.message || t('admin.accounts.revertProxyFailed'))
+  }
+}
+const handleCreateSparkShadow = (a: Account) => {
+  creatingShadowAcc.value = a
+  showCreateShadowDialog.value = true
+}
+const confirmCreateSparkShadow = async () => {
+  const a = creatingShadowAcc.value
+  if (!a) return
+  try {
+    await adminAPI.accounts.createSparkShadow(a.id, { name: `${a.name} (Spark)` })
+    showCreateShadowDialog.value = false
+    creatingShadowAcc.value = null
+    appStore.showSuccess(t('admin.accounts.createSparkShadowSuccess'))
+    reload()
+  } catch (error: any) {
+    console.error('Failed to create spark shadow:', error)
+    appStore.showError(error?.response?.data?.message || t('admin.accounts.createSparkShadowFailed'))
   }
 }
 const handleDelete = (a: Account) => { deletingAcc.value = a; showDeleteDialog.value = true }

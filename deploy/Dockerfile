@@ -42,7 +42,7 @@ RUN pnpm run build
 FROM ${GOLANG_IMAGE} AS backend-builder
 
 # Build arguments for version info (set by CI)
-ARG VERSION=docker
+ARG VERSION=
 ARG COMMIT=docker
 ARG DATE
 ARG DIRTY=unknown

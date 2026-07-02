@@ -29,6 +29,7 @@ func sanitizeCodexToolName(name string) string {
 
 var codexModelMap = map[string]string{
 	"gpt-5.5":                    "gpt-5.5",
+	"gpt-5.5-pro":                "gpt-5.5-pro",
 	"codex-auto-review":          "codex-auto-review",
 	"gpt-5.4":                    "gpt-5.4",
 	"gpt-5.4-mini":               "gpt-5.4-mini",
@@ -133,10 +134,12 @@ const (
 )
 
 type codexInputFilterOptions struct {
-	rewriteToolContinuationIDs    bool
-	dropItemReferences            bool
-	dropNonToolItemIDs            bool
-	dropOrphanFunctionCallOutputs bool
+	rewriteToolContinuationIDs                bool
+	dropItemReferences                        bool
+	dropNonToolItemIDs                        bool
+	dropOrphanFunctionCallOutputs             bool
+	dropReasoningItems                        bool
+	dropReasoningItemsWithoutEncryptedContent bool
 }
 
 type codexOAuthTransformOptions struct {
@@ -881,6 +884,9 @@ func normalizeCodexModel(model string) string {
 
 	normalized := strings.ToLower(modelID)
 
+	if strings.Contains(normalized, "gpt-5.5-pro") || strings.Contains(normalized, "gpt 5.5 pro") {
+		return "gpt-5.5-pro"
+	}
 	if strings.Contains(normalized, "gpt-5.5") || strings.Contains(normalized, "gpt 5.5") {
 		return "gpt-5.5"
 	}
@@ -1937,10 +1943,25 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 		}
 		typ, _ := m["type"].(string)
 		if typ == "reasoning" {
-			if id, _ := m["id"].(string); strings.HasPrefix(strings.TrimSpace(id), "rs_") {
+			_, hasEncryptedContent := m["encrypted_content"]
+			if opts.dropReasoningItems || (opts.dropReasoningItemsWithoutEncryptedContent && !hasEncryptedContent) {
 				modified = true
 				continue
 			}
+			newItem := make(map[string]any, len(m))
+			for key, value := range m {
+				if key == "id" {
+					modified = true
+					continue
+				}
+				newItem[key] = value
+			}
+			if summary, ok := newItem["summary"]; !ok || summary == nil {
+				newItem["summary"] = []any{}
+				modified = true
+			}
+			filtered = append(filtered, newItem)
+			continue
 		}
 
 		// 仅修正真正的 tool/function call 标识，避免误改普通 message/reasoning id；

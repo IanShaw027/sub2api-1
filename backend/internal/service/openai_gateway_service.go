@@ -3440,6 +3440,10 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
 	}
+	if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
+		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
+		return nil
+	}
 	if s.isOpenAIAccountRuntimeBlocked(account) {
 		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
@@ -3671,6 +3675,8 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel, requireCompact) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
+					} else if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
+						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else {
 						stickyLimit := selectionMaxConcurrency(ctx, s, account, platform, requiredImageRoute, false)
 						if waitPlan := buildOpenAIAccountWaitPlan(account, requestedModel, requiredImageRoute, stickyLimit, stickyWaitTimeout, cfg.StickySessionMaxWaiting); waitPlan != nil {
@@ -3698,6 +3704,21 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		}
 	}
 
+	// Per-pass parent-health cache to avoid repeated DB calls when multiple shadow
+	// accounts share the same parent.
+	parentCacheL2 := make(map[int64]*Account)
+	parentLookupL2 := func(id int64) *Account {
+		if a, ok := parentCacheL2[id]; ok {
+			return a
+		}
+		if s.accountRepo == nil {
+			return nil
+		}
+		a, _ := s.accountRepo.GetByID(ctx, id)
+		parentCacheL2[id] = a
+		return a
+	}
+
 	baseCandidateCount := 0
 	candidates := make([]*Account, 0, len(accounts))
 	for i := range accounts {
@@ -3706,6 +3727,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			continue
 		}
 		if !isOpenAIAccountEligibleForSelection(ctx, s.settingService, acc, platform, requestedModel, false, requiredCapability, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
+			continue
+		}
+		if !parentHealthyForShadow(acc, parentLookupL2) {
 			continue
 		}
 		if s.isOpenAIAccountRuntimeBlocked(acc) {
@@ -4163,6 +4187,9 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccount(ctx context.
 	if !isOpenAIAccountEligibleForSelection(ctx, s.settingService, fresh, platform, requestedModel, requireCompact, requiredCapability, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
 		return nil
 	}
+	if !parentHealthyForShadow(fresh, s.parentAccountLookup(ctx)) {
+		return nil
+	}
 	if s.isOpenAIAccountRuntimeBlocked(fresh) {
 		return nil
 	}
@@ -4182,6 +4209,9 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 		if s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, account) {
 			return nil
 		}
+		if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
+			return nil
+		}
 		return account
 	}
 
@@ -4192,6 +4222,9 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 	if !isOpenAIAccountEligibleForSelection(ctx, s.settingService, latest, platform, requestedModel, requireCompact, requiredCapability, requiredImageRoute, requireOAuthAccount, requireImageEnabled) {
 		return nil
 	}
+	if !parentHealthyForShadow(latest, s.parentAccountLookup(ctx)) {
+		return nil
+	}
 	if s.isOpenAIAccountRuntimeBlocked(latest) {
 		return nil
 	}
@@ -4199,6 +4232,19 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 		return nil
 	}
 	return latest
+}
+
+// parentAccountLookup 返回供 parentHealthyForShadow 使用的母账号解析闭包:经 accountRepo
+// 按 ID 取当前 Account(repo 为空时 fail-closed 返回 nil)。统一调度/粘连各路径的母账号解析,
+// 取代各调用点重复内联的同一闭包。L2 候选循环改用带 per-pass 缓存的 parentLookupL2。
+func (s *OpenAIGatewayService) parentAccountLookup(ctx context.Context) func(int64) *Account {
+	return func(id int64) *Account {
+		if s.accountRepo == nil {
+			return nil
+		}
+		a, _ := s.accountRepo.GetByID(ctx, id)
+		return a
+	}
 }
 
 func (s *OpenAIGatewayService) recheckSelectedStickyOpenAIAccountFromDB(ctx context.Context, account *Account, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability, requiredImageRoute string, requireOAuthAccount bool, requireImageEnabled bool) *Account {
@@ -4383,6 +4429,13 @@ func (s *OpenAIGatewayService) openAIHTTPIngressUpstreamWSEnabled() bool {
 
 // GetAccessToken gets the access token for an OpenAI account
 func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Account) (string, string, error) {
+	if account.IsShadow() {
+		credAccount, err := resolveCredentialAccount(ctx, s.accountRepo, account)
+		if err != nil {
+			return "", "", err
+		}
+		account = credAccount
+	}
 	switch account.Type {
 	case AccountTypeOAuth:
 		if account.Platform == PlatformGrok {
@@ -4706,7 +4759,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		markPatchSet("instructions", "You are a helpful coding assistant.")
 	}
 
-	if codexImageGenerationBridgeEnabled && !isMessagesBridgeRequest && ensureOpenAIResponsesImageGenerationTool(reqBody) {
+	if !isCompactRequest && codexImageGenerationBridgeEnabled && !isMessagesBridgeRequest && ensureOpenAIResponsesImageGenerationTool(reqBody) {
 		bodyModified = true
 		disablePatch()
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Injected /responses image_generation tool for Codex client")
@@ -4728,7 +4781,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		disablePatch()
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized response_format JSON schemas for /responses request")
 	}
-	if codexImageGenerationBridgeEnabled && !isMessagesBridgeRequest && applyCodexImageGenerationBridgeInstructions(reqBody) {
+	if !isCompactRequest && codexImageGenerationBridgeEnabled && !isMessagesBridgeRequest && applyCodexImageGenerationBridgeInstructions(reqBody) {
 		bodyModified = true
 		disablePatch()
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Added Codex image_generation bridge instructions")
@@ -4895,7 +4948,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, errors.New("image generation disabled for group")
 	}
 
-	if imageGenerationAllowed && (codexImageGenerationBridgeEnabled || isOpenAIImageGenerationModel(requestView.Model) || openAIRequestBodyImageGenerationToolNeedsNormalization(body) || isOpenAIImageGenerationModel(upstreamModel)) {
+	// /responses/compact 是会话压缩请求：上游不接受 tool_choice（400 unknown_parameter），
+	// 注入 image_generation 工具也没有意义，整块豁免。
+	if imageGenerationAllowed && !isCompactRequest && (codexImageGenerationBridgeEnabled || isOpenAIImageGenerationModel(requestView.Model) || openAIRequestBodyImageGenerationToolNeedsNormalization(body) || isOpenAIImageGenerationModel(upstreamModel)) {
 		decoded, decodeErr := ensureReqBody()
 		if decodeErr != nil {
 			return nil, decodeErr
@@ -6427,8 +6482,9 @@ oauthTransformDone:
 		}
 		s.bindHTTPResponseSessionContext(ctx, c, account, httpSessionContextBody, responseID)
 
-		// Extract and save Codex usage snapshot from response headers (for OAuth accounts)
-		if account.Type == AccountTypeOAuth {
+		// Extract and save Codex usage snapshot from response headers (for OAuth accounts).
+		// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。
+		if account.Type == AccountTypeOAuth && !account.IsShadow() {
 			if snapshot := ParseCodexRateLimitHeaders(resp.Header); snapshot != nil {
 				s.updateCodexUsageSnapshot(ctx, account.ID, snapshot)
 			}
@@ -6873,7 +6929,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		// 透传模式默认保持原样代理；但容量、网关和 Cloudflare transient
 		// 错误应先触发多账号 failover 以维持基础 SLA。大请求类错误留给
 		// 错误改写规则返回明确 413，不做无效重试。
-		if shouldFailoverOpenAIPassthroughResponse(resp.StatusCode, respBody) {
+		if shouldFailoverOpenAIPassthroughResponse(account, resp.StatusCode, respBody) {
 			if fallbackModelRetried {
 				setOpenAIFailoverRequestBody(c, body)
 			}
@@ -6908,8 +6964,11 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 	s.bindHTTPResponseAccount(ctx, c, account, responseID)
 
-	if snapshot := ParseCodexRateLimitHeaders(resp.Header); snapshot != nil {
-		s.updateCodexUsageSnapshot(ctx, account.ID, snapshot)
+	// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。
+	if !account.IsShadow() {
+		if snapshot := ParseCodexRateLimitHeaders(resp.Header); snapshot != nil {
+			s.updateCodexUsageSnapshot(ctx, account.ID, snapshot)
+		}
 	}
 
 	if usage == nil {
@@ -7105,12 +7164,18 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	return req, nil
 }
 
-func shouldFailoverOpenAIPassthroughResponse(statusCode int, responseBody []byte) bool {
+func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, responseBody []byte) bool {
 	if matched, _, _ := detectOpenAICyberPolicy(responseBody); matched {
 		return false
 	}
+	if statusCode == http.StatusTooManyRequests || statusCode == 529 {
+		return true
+	}
+	if account == nil || account.Type != AccountTypeAPIKey {
+		return false
+	}
 	switch statusCode {
-	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, 520, 524, 529:
+	case http.StatusBadGateway, http.StatusServiceUnavailable, 520, 524:
 		return true
 	case http.StatusInternalServerError:
 		return !isOpenAILargeRequestUpstreamError(statusCode, responseBody)
@@ -8333,7 +8398,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	if account.Type == AccountTypeOAuth {
 		// Required: set Host for ChatGPT API (must use req.Host, not Header.Set)
 		req.Host = "chatgpt.com"
-		setOpenAIChatGPTAccountHeaders(req.Header, account)
+		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, req.Header, account); err != nil {
+			return nil, fmt.Errorf("resolve chatgpt account headers: %w", err)
+		}
 	}
 
 	// Whitelist passthrough headers
@@ -10942,7 +11009,9 @@ func trimOpenAIStoreFalseReasoningItems(reqBody map[string]any) bool {
 		return false
 	}
 
-	filtered, modified := filterCodexInputWithOptions(input, codexInputFilterOptions{})
+	filtered, modified := filterCodexInputWithOptions(input, codexInputFilterOptions{
+		dropReasoningItemsWithoutEncryptedContent: true,
+	})
 	if !modified {
 		return false
 	}
@@ -11396,10 +11465,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		}
 		multiplier = resolver.Resolve(ctx, user.ID, *apiKey.GroupID, apiKey.Group.RateMultiplier)
 	}
+	multiplier, imageRateMultiplier := computePeakAwareMultipliers(apiKey, multiplier, time.Now())
 	effectiveRateMultiplier := multiplier
-	if result.ImageCount > 0 {
-		effectiveRateMultiplier = resolveImageRateMultiplier(apiKey, multiplier)
-	}
 
 	var cost *CostBreakdown
 	var err error
@@ -11431,7 +11498,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			apiKey,
 			billingModelCandidate,
 			multiplier,
-			effectiveRateMultiplier,
+			imageRateMultiplier,
 			tokens,
 			serviceTier,
 			requestType,
@@ -11476,6 +11543,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 	if result.AudioUsage != nil || openAIForwardResultHasVideoBilling(result) {
 		effectiveRateMultiplier = 1
+	} else if result.ImageCount > 0 && cost != nil && cost.BillingMode != string(BillingModeToken) {
+		effectiveRateMultiplier = imageRateMultiplier
 	}
 
 	// Determine billing type
@@ -11690,6 +11759,12 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		return s.billingService.CalculateAudioCost(result.AudioUsage.Mode, result.AudioUsage.DurationOrUnits, groupConfig, 1), nil
 	}
 	if result != nil && result.ImageCount > 0 {
+		if s.resolver != nil && apiKey != nil && apiKey.Group != nil {
+			gid := apiKey.Group.ID
+			if resolved := s.resolver.Resolve(ctx, PricingInput{Model: billingModel, GroupID: &gid}); resolved != nil && resolved.Source == PricingSourceChannel && resolved.Mode == BillingModeToken {
+				return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
+			}
+		}
 		return s.calculateOpenAIImageRequestCost(ctx, result, apiKey, billingModel, multiplier, imageRateMultiplier, tokens, serviceTier, requestType)
 	}
 	return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
@@ -12158,6 +12233,10 @@ func (s *OpenAIGatewayService) persistOpenAIWSSoftRateLimitAdvisory(ctx context.
 }
 
 // updateCodexUsageSnapshot saves the Codex usage snapshot to account's Extra field
+// updateCodexUsageSnapshot 把 /responses 的 x-codex-* 全局头快照写入账号 codex_* Extra。
+// ⚠️ 调用方必须排除 spark 影子账号(account.IsShadow()):影子的 codex_* 仅由 QueryUsage
+// (/wham/usage bengalfox 道)更新,不能被全局头口径污染(外审第7轮 P1)。本函数仅持 accountID,
+// 无法在此自检影子,故守卫前置到各调用点。
 func (s *OpenAIGatewayService) updateCodexUsageSnapshot(ctx context.Context, accountID int64, snapshot *OpenAICodexUsageSnapshot) {
 	if snapshot == nil {
 		return

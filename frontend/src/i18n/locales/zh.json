@@ -2954,9 +2954,9 @@
       "accountFilters": {
         "title": "账号过滤控制",
         "oauthOnly": "仅允许 OAuth 账号",
-        "oauthOnlyEnabled": "已启用：排除 API Key 类型账号",
-        "privacyOnly": "仅允许隐私保护已设置的账号",
-        "privacyOnlyEnabled": "已启用：Privacy 未设置的账号将被排除",
+        "oauthOnlyEnabled": "已启用 — 排除 API Key 类型账号",
+        "privacySetOnly": "仅允许隐私保护已设置的账号",
+        "privacySetOnlyEnabled": "已启用 — Privacy 未设置的账号将被排除",
         "disabled": "未启用"
       },
       "modelRouting": {
@@ -3375,7 +3375,7 @@
       "pleaseSelectUser": "请选择用户",
       "pleaseSelectGroup": "请选择分组",
       "validityDaysRequired": "请输入有效的天数（至少1天）",
-      "revokeConfirm": "确定要撤销 '{user}' 的订阅吗？此操作无法撤销。",
+      "revokeConfirm": "确定要撤销 '{user}' 的订阅吗？可稍后在已撤销列表中恢复。",
       "guide": {
         "title": "订阅管理教程",
         "subtitle": "订阅模式允许你按时间周期为用户分配使用额度，支持日/周/月配额限制。按照以下步骤即可完成配置。",
@@ -3405,7 +3405,8 @@
           "revokeDesc": "立即终止该用户的订阅，不可恢复"
         },
         "tip": "提示：订阅分组下拉列表中只会显示计费类型为「订阅」且状态为「正常」的分组。如果没有可选项，请先到分组管理中创建。"
-      }
+      },
+      "restoreConfirm": "确定要恢复 '{user}' 的订阅吗？如果原订阅已过期，恢复后将显示为已过期。"
     },
     "accounts": {
       "title": "账号管理",
@@ -4661,6 +4662,25 @@
         "todayCost": "今日费用",
         "usageTrend": "30天费用与请求趋势",
         "noData": "该账号暂无使用数据"
+      },
+      "openaiQuotaReset": {
+        "count": "次数",
+        "reset": "重置",
+        "countTooltipLoad": "点击查询剩余重置次数",
+        "countTooltipRefresh": "点击刷新剩余重置次数",
+        "resetTooltipReady": "消耗 1 次重置次数以立即恢复当前窗口",
+        "resetTooltipNeedQuery": "先点击「次数」加载剩余重置次数",
+        "resetTooltipNoCredits": "没有可用的重置次数",
+        "resetTooltipShadow": "Spark 影子账号不能重置次数;请在母账号上重置",
+        "expiresAt": "到期 {time}",
+        "expiresAtFull": "重置次数到期时间: {time}",
+        "expandExpirations": "展开其余 {count} 张重置次数到期时间",
+        "collapseExpirations": "收起重置次数到期时间",
+        "expirationDetails": "重置次数到期明细",
+        "noCreditsAvailable": "没有可用的重置次数",
+        "resetSuccess": "已重置 {windows} 个窗口",
+        "confirmTitle": "确认重置周限",
+        "confirmMessage": "将消耗 1 次重置次数立即恢复当前窗口，剩余 {count} 次。此操作不可撤销，确定继续吗？"
       }
     },
     "scheduledTests": {
@@ -5415,7 +5435,8 @@
           "time": "时间",
           "level": "级别",
           "details": "日志详细信息"
-        }
+        },
+        "keyId": "API Key ID"
       },
       "health": "健康",
       "healthCondition": "健康状况",

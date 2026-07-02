@@ -190,6 +190,9 @@ func (*announcementUserSubRepoStub) Create(context.Context, *UserSubscription) e
 func (*announcementUserSubRepoStub) GetByID(context.Context, int64) (*UserSubscription, error) {
 	return nil, nil
 }
+func (*announcementUserSubRepoStub) GetByIDIncludeDeleted(context.Context, int64) (*UserSubscription, error) {
+	return nil, nil
+}
 func (*announcementUserSubRepoStub) GetByUserIDAndGroupID(context.Context, int64, int64) (*UserSubscription, error) {
 	return nil, nil
 }
@@ -198,6 +201,9 @@ func (*announcementUserSubRepoStub) GetActiveByUserIDAndGroupID(context.Context,
 }
 func (*announcementUserSubRepoStub) Update(context.Context, *UserSubscription) error { return nil }
 func (*announcementUserSubRepoStub) Delete(context.Context, int64) error             { return nil }
+func (*announcementUserSubRepoStub) Restore(context.Context, int64, string) (*UserSubscription, error) {
+	return nil, nil
+}
 func (*announcementUserSubRepoStub) ListByUserID(context.Context, int64) ([]UserSubscription, error) {
 	return nil, nil
 }
@@ -214,6 +220,9 @@ func (*announcementUserSubRepoStub) List(context.Context, pagination.PaginationP
 	return nil, nil, nil
 }
 func (*announcementUserSubRepoStub) ExistsByUserIDAndGroupID(context.Context, int64, int64) (bool, error) {
+	return false, nil
+}
+func (*announcementUserSubRepoStub) ExistsActiveByUserIDAndGroupID(context.Context, int64, int64) (bool, error) {
 	return false, nil
 }
 func (*announcementUserSubRepoStub) ExtendExpiry(context.Context, int64, time.Time) error { return nil }

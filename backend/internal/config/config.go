@@ -751,6 +751,9 @@ type GatewayConfig struct {
 	// OpenAIPassthroughAllowTimeoutHeaders: OpenAI 透传模式是否放行客户端超时头
 	// 关闭（默认）可避免 x-stainless-timeout 等头导致上游提前断流。
 	OpenAIPassthroughAllowTimeoutHeaders bool `mapstructure:"openai_passthrough_allow_timeout_headers"`
+	// OpenAICompactModel: /responses/compact 上游使用的模型。
+	// compact 端点支持模型滞后于普通 /responses 时，可用该配置降级规避上游错误。
+	OpenAICompactModel string `mapstructure:"openai_compact_model"`
 	// OpenAIOAuthImageBridgeDisableKeepAlives: 仅对 OpenAI OAuth 图片桥接请求生效。
 	// 开启后，每次桥接请求使用独立 transport，并禁用 keep-alive 复用，便于排查 HTTP/2 stream reset。
 	OpenAIOAuthImageBridgeDisableKeepAlives bool `mapstructure:"openai_oauth_image_bridge_disable_keepalives"`
@@ -907,7 +910,7 @@ func (c *UserMessageQueueConfig) GetEffectiveMode() string {
 type GatewayOpenAIWSConfig struct {
 	// ModeRouterV2Enabled: 新版 WS mode 路由开关（默认 false；关闭时保持 legacy 行为）
 	ModeRouterV2Enabled bool `mapstructure:"mode_router_v2_enabled"`
-	// IngressModeDefault: ingress 默认模式（off/ctx_pool/passthrough）
+	// IngressModeDefault: ingress 默认模式（off/ctx_pool/passthrough/http_bridge）
 	IngressModeDefault string `mapstructure:"ingress_mode_default"`
 	// HttpIngressUpstreamWSEnabled: 允许 HTTP /v1/responses 入站显式走上游 WSv2（默认 false）
 	HttpIngressUpstreamWSEnabled bool `mapstructure:"http_ingress_upstream_ws_enabled"`
@@ -1935,6 +1938,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.force_codex_cli", false)
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
+	viper.SetDefault("gateway.openai_compact_model", "gpt-5.4")
 	viper.SetDefault("gateway.openai_oauth_image_bridge_disable_keepalives", false)
 	viper.SetDefault("gateway.openai_oauth_image_bridge_fresh_upstream_client", false)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）
@@ -2892,11 +2896,11 @@ func (c *Config) Validate() error {
 	}
 	if mode := strings.ToLower(strings.TrimSpace(c.Gateway.OpenAIWS.IngressModeDefault)); mode != "" {
 		switch mode {
-		case "off", "ctx_pool", "passthrough":
+		case "off", "ctx_pool", "passthrough", "http_bridge":
 		case "shared", "dedicated":
-			slog.Warn("gateway.openai_ws.ingress_mode_default is deprecated, treating as ctx_pool; please update to off|ctx_pool|passthrough", "value", mode)
+			slog.Warn("gateway.openai_ws.ingress_mode_default is deprecated, treating as ctx_pool; please update to off|ctx_pool|passthrough|http_bridge", "value", mode)
 		default:
-			return fmt.Errorf("gateway.openai_ws.ingress_mode_default must be one of off|ctx_pool|passthrough")
+			return fmt.Errorf("gateway.openai_ws.ingress_mode_default must be one of off|ctx_pool|passthrough|http_bridge")
 		}
 	}
 	if mode := strings.ToLower(strings.TrimSpace(c.Gateway.OpenAIWS.StoreDisabledConnMode)); mode != "" {

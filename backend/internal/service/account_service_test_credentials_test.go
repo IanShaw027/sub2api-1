@@ -183,6 +183,10 @@ func (s *accountCredentialsRepoStub) ListOAuthRefreshCandidates(ctx context.Cont
 	return nil, nil
 }
 
+func (s *accountCredentialsRepoStub) ListShadowsByParent(ctx context.Context, parentID int64) ([]*Account, error) {
+	return nil, nil
+}
+
 func TestAccountService_TestCredentials_ValidatesPlatformCredentials(t *testing.T) {
 	tests := []struct {
 		name    string

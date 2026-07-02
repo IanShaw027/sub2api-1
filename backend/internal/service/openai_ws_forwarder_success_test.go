@@ -1147,7 +1147,8 @@ func TestOpenAIGatewayService_Forward_WSv2StoreDisabledSameSessionForcesPreferre
 
 	wsURL, err := svc.buildOpenAIResponsesWSURL(account)
 	require.NoError(t, err)
-	headers, _ := svc.buildOpenAIWSHeaders(nil, account, account.GetOpenAIAccessToken(), OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2}, true, "", "", "")
+	headers, _, err := svc.buildOpenAIWSHeaders(context.Background(), nil, account, account.GetOpenAIAccessToken(), OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2}, true, "", "", "")
+	require.NoError(t, err)
 	req := openAIWSAcquireRequest{
 		Account: account,
 		WSURL:   wsURL,
@@ -1713,7 +1714,8 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeaders_NonOfficialOAuthPreservesUser
 		Credentials: map[string]any{"chatgpt_account_id": "chatgpt-acc"},
 	}
 
-	headers, _ := svc.buildOpenAIWSHeaders(c, account, "token", OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2}, false, "", "", "")
+	headers, _, err := svc.buildOpenAIWSHeaders(context.Background(), c, account, "token", OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2}, false, "", "", "")
+	require.NoError(t, err)
 	require.Equal(t, "custom-client/1.0", headers.Get("User-Agent"))
 	require.Equal(t, "opencode", headers.Get("Originator"))
 	require.Equal(t, openAIWSBetaV2Value, headers.Get("OpenAI-Beta"))

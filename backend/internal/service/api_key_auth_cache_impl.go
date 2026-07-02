@@ -15,7 +15,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 13 // v13: reload snapshots for Grok native image route preservation
+const apiKeyAuthSnapshotVersion = 14 // v14: reload snapshots for group peak-rate fields
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -296,6 +296,10 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			MessagesDispatchModelConfig:     group.MessagesDispatchModelConfig,
 			ModelsListConfig:                group.ModelsListConfig,
 			RPMLimit:                        group.RPMLimit,
+			PeakRateEnabled:                 group.PeakRateEnabled,
+			PeakStart:                       group.PeakStart,
+			PeakEnd:                         group.PeakEnd,
+			PeakRateMultiplier:              group.PeakRateMultiplier,
 		}
 	}
 	return snapshot
@@ -391,6 +395,10 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			MessagesDispatchModelConfig:     snapshot.Group.MessagesDispatchModelConfig,
 			ModelsListConfig:                snapshot.Group.ModelsListConfig,
 			RPMLimit:                        snapshot.Group.RPMLimit,
+			PeakRateEnabled:                 snapshot.Group.PeakRateEnabled,
+			PeakStart:                       snapshot.Group.PeakStart,
+			PeakEnd:                         snapshot.Group.PeakEnd,
+			PeakRateMultiplier:              snapshot.Group.PeakRateMultiplier,
 		}
 		SanitizeGroupVideoGenerationFields(apiKey.Group)
 	}

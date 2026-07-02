@@ -1544,6 +1544,22 @@ func (s *defaultOpenAIAccountScheduler) isAccountTransportCompatible(account *Ac
 	return s.service.isOpenAIAccountTransportCompatible(account, requiredTransport)
 }
 
+func (s *defaultOpenAIAccountScheduler) lookupShadowParentAccount(ctx context.Context, id int64) *Account {
+	if s == nil || s.service == nil {
+		return nil
+	}
+	if s.service.schedulerSnapshot != nil {
+		if account, err := s.service.schedulerSnapshot.GetAccount(ctx, id); err == nil && account != nil {
+			return account
+		}
+	}
+	if s.service.accountRepo == nil {
+		return nil
+	}
+	account, _ := s.service.accountRepo.GetByID(ctx, id)
+	return account
+}
+
 func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest) bool {
 	if account == nil {
 		return false
@@ -1558,6 +1574,11 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 		return false
 	}
 	if s != nil && s.service != nil && s.service.isOpenAIAccountRuntimeBlocked(account) {
+		return false
+	}
+	if account.IsShadow() && !parentHealthyForShadow(account, func(parentID int64) *Account {
+		return s.lookupShadowParentAccount(ctx, parentID)
+	}) {
 		return false
 	}
 	if paused, reason := shouldAutoPauseOpenAIAccountByQuota(ctx, account); paused {
@@ -2897,6 +2918,18 @@ func (s *OpenAIGatewayService) isOpenAIAccountTransportCompatible(account *Accou
 	}
 	if s == nil || account == nil {
 		return false
+	}
+	if requiredTransport == OpenAIUpstreamTransportResponsesWebsocketV2Ingress {
+		if s.cfg == nil || !s.cfg.Gateway.OpenAIWS.ModeRouterV2Enabled {
+			return s.getOpenAIWSProtocolResolver().Resolve(account).Transport == OpenAIUpstreamTransportResponsesWebsocketV2
+		}
+		mode := account.ResolveOpenAIResponsesWebSocketV2Mode(s.cfg.Gateway.OpenAIWS.IngressModeDefault)
+		switch mode {
+		case OpenAIWSIngressModeCtxPool, OpenAIWSIngressModePassthrough, OpenAIWSIngressModeHTTPBridge, OpenAIWSIngressModeShared, OpenAIWSIngressModeDedicated:
+			return true
+		default:
+			return false
+		}
 	}
 	return s.getOpenAIWSProtocolResolver().Resolve(account).Transport == requiredTransport
 }

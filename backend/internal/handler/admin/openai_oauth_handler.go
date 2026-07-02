@@ -17,6 +17,7 @@ import (
 type OpenAIOAuthHandler struct {
 	openaiOAuthService *service.OpenAIOAuthService
 	adminService       service.AdminService
+	quotaService       *service.OpenAIQuotaService
 }
 
 func oauthPlatformFromPath(c *gin.Context) string {
@@ -27,10 +28,16 @@ func oauthPlatformFromPath(c *gin.Context) string {
 func NewOpenAIOAuthHandler(
 	openaiOAuthService *service.OpenAIOAuthService,
 	adminService service.AdminService,
+	quotaService ...*service.OpenAIQuotaService,
 ) *OpenAIOAuthHandler {
+	var qs *service.OpenAIQuotaService
+	if len(quotaService) > 0 {
+		qs = quotaService[0]
+	}
 	return &OpenAIOAuthHandler{
 		openaiOAuthService: openaiOAuthService,
 		adminService:       adminService,
+		quotaService:       qs,
 	}
 }
 
@@ -188,6 +195,13 @@ func (h *OpenAIOAuthHandler) RefreshAccountToken(c *gin.Context) {
 	// Only refresh OAuth-based accounts
 	if !account.IsOAuth() {
 		response.BadRequest(c, "Cannot refresh non-OAuth account credentials")
+		return
+	}
+
+	// spark 影子账号凭据透传母账号、自身恒空,刷新无意义;在调用上游前早拒,避免先打上游
+	// 再被凭据写守卫拦下的无谓副作用(外审第6轮)。
+	if account.IsCredentialShadow() {
+		response.BadRequest(c, "Cannot refresh spark shadow account; its credentials are managed by the parent account")
 		return
 	}
 
@@ -392,4 +406,81 @@ func buildOpenAICodexPATAccountName(name string, tokenInfo *service.OpenAITokenI
 		}
 	}
 	return "Codex PAT Account"
+}
+
+// QueryQuota queries the rate-limit / quota usage for an OpenAI account.
+// GET /api/v1/admin/openai/accounts/:id/quota
+func (h *OpenAIOAuthHandler) QueryQuota(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	if h.quotaService == nil {
+		response.BadRequest(c, "openai quota service is not enabled")
+		return
+	}
+	usage, err := h.quotaService.QueryUsage(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, usage)
+}
+
+// CreateShadowRequest is the request body for CreateShadow.
+type CreateShadowRequest struct {
+	Name        string  `json:"name"`
+	Priority    int     `json:"priority"`
+	Concurrency int     `json:"concurrency"`
+	GroupIDs    []int64 `json:"group_ids"`
+}
+
+// CreateShadow creates a spark-dimension shadow account for a parent OpenAI OAuth account.
+// POST /api/v1/admin/accounts/:id/shadow
+func (h *OpenAIOAuthHandler) CreateShadow(c *gin.Context) {
+	parentID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+
+	var req CreateShadowRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	shadow, err := h.adminService.CreateShadow(c.Request.Context(), parentID, service.ShadowOptions{
+		Name:        req.Name,
+		Priority:    req.Priority,
+		Concurrency: req.Concurrency,
+		GroupIDs:    req.GroupIDs,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, dto.AccountFromServiceShallow(shadow))
+}
+
+// ResetQuota consumes one rate-limit reset credit for an OpenAI account.
+// POST /api/v1/admin/openai/accounts/:id/reset-quota
+func (h *OpenAIOAuthHandler) ResetQuota(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	if h.quotaService == nil {
+		response.BadRequest(c, "openai quota service is not enabled")
+		return
+	}
+	result, err := h.quotaService.ResetCredit(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
 }

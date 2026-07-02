@@ -2865,11 +2865,11 @@
         "hintEdit": "⚠️ Warning: This will replace all existing account bindings"
       },
       "accountFilters": {
-        "title": "Account Filters",
-        "oauthOnly": "OAuth accounts only",
-        "oauthOnlyEnabled": "Enabled: exclude API key accounts",
-        "privacyOnly": "Require privacy protection to be configured",
-        "privacyOnlyEnabled": "Enabled: accounts without privacy configured will be excluded",
+        "title": "Account Filter Controls",
+        "oauthOnly": "Only allow OAuth accounts",
+        "oauthOnlyEnabled": "Enabled — API Key accounts will be excluded",
+        "privacySetOnly": "Only allow accounts with privacy protection set",
+        "privacySetOnlyEnabled": "Enabled — accounts with unset Privacy will be excluded",
         "disabled": "Disabled"
       },
       "modelRouting": {
@@ -3288,7 +3288,7 @@
       "pleaseSelectUser": "Please select a user",
       "pleaseSelectGroup": "Please select a group",
       "validityDaysRequired": "Please enter a valid number of days (at least 1)",
-      "revokeConfirm": "Are you sure you want to revoke the subscription for '{user}'? This action cannot be undone.",
+      "revokeConfirm": "Are you sure you want to revoke the subscription for '{user}'? You can restore it later from the revoked list.",
       "guide": {
         "title": "Subscription Management Guide",
         "subtitle": "Subscription mode lets you assign time-based usage quotas to users, with daily/weekly/monthly limits. Follow these steps to get started.",
@@ -3318,7 +3318,8 @@
           "revokeDesc": "Immediately terminate the subscription (irreversible)"
         },
         "tip": "Tip: Only groups with billing type \"Subscription\" and status \"Active\" appear in the group dropdown. If no options are available, create one in Group Management first."
-      }
+      },
+      "restoreConfirm": "Restore the subscription for '{user}'? If the original subscription has expired, it will be restored as expired."
     },
     "accounts": {
       "title": "Account Management",
@@ -4536,7 +4537,26 @@
       "linkCopied": "Link Copied",
       "needsReauth": "Re-auth Required",
       "rateLimited": "Rate Limited",
-      "usageError": "Fetch Error"
+      "usageError": "Fetch Error",
+      "openaiQuotaReset": {
+        "count": "Credits",
+        "reset": "Reset",
+        "countTooltipLoad": "Click to load the available reset-credit count",
+        "countTooltipRefresh": "Click to refresh the available reset-credit count",
+        "resetTooltipReady": "Consume 1 reset credit to immediately restore the window",
+        "resetTooltipNeedQuery": "Click Credits first to load the available count",
+        "resetTooltipNoCredits": "No reset credits available",
+        "resetTooltipShadow": "Spark shadow accounts cannot reset credits; reset on the parent account",
+        "expiresAt": "Expires {time}",
+        "expiresAtFull": "Reset credit expires at {time}",
+        "expandExpirations": "Expand the other {count} reset credit expiration(s)",
+        "collapseExpirations": "Collapse reset credit expirations",
+        "expirationDetails": "Reset credit expiration details",
+        "noCreditsAvailable": "No reset credits available",
+        "resetSuccess": "Reset {windows} window(s)",
+        "confirmTitle": "Confirm Weekly Limit Reset",
+        "confirmMessage": "This will consume 1 reset credit to immediately restore the current window ({count} remaining). This action cannot be undone. Continue?"
+      }
     },
     "scheduledTests": {
       "title": "Scheduled Tests",
@@ -5225,7 +5245,8 @@
           "time": "Time",
           "level": "Level",
           "details": "Log Details"
-        }
+        },
+        "keyId": "API Key ID"
       },
       "health": "Health",
       "healthCondition": "Health Condition",

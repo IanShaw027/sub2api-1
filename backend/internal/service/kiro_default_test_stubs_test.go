@@ -326,6 +326,10 @@ func (s *kiroDefaultAccountRepoStub) ListOAuthRefreshCandidates(ctx context.Cont
 	return nil, nil
 }
 
+func (s *kiroDefaultAccountRepoStub) ListShadowsByParent(ctx context.Context, parentID int64) ([]*Account, error) {
+	return nil, nil
+}
+
 type kiroDefaultGroupRepoStub struct {
 	getByID *Group
 	getErr  error

@@ -120,6 +120,16 @@ func ProvideOpenAITokenProvider(
 	return p
 }
 
+// ProvideOpenAIQuotaService wires the OpenAI quota query/reset service.
+func ProvideOpenAIQuotaService(
+	accountRepo AccountRepository,
+	proxyRepo ProxyRepository,
+	tokenProvider *OpenAITokenProvider,
+	privacyClientFactory PrivacyClientFactory,
+) *OpenAIQuotaService {
+	return NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory)
+}
+
 func ProvideCodexInviteResetService(
 	adminService AdminService,
 	httpUpstream HTTPUpstream,
@@ -803,6 +813,7 @@ var ProviderSet = wire.NewSet(
 	ProvideAntigravityTokenProvider,
 	ProvideGrokTokenProvider,
 	ProvideOpenAITokenProvider,
+	ProvideOpenAIQuotaService,
 	ProvideGrokQuotaService,
 	ProvideClaudeTokenProvider,
 	ProvideKiroTokenProvider,

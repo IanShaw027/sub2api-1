@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,6 +37,21 @@ type httpUpstreamRecorder struct {
 
 	tlsCalled      bool
 	lastTLSProfile *tlsfingerprint.Profile
+}
+
+type passthroughErrReadCloser struct {
+	err error
+}
+
+func (r passthroughErrReadCloser) Read(_ []byte) (int, error) {
+	if r.err != nil {
+		return 0, r.err
+	}
+	return 0, io.ErrUnexpectedEOF
+}
+
+func (r passthroughErrReadCloser) Close() error {
+	return nil
 }
 
 func (u *httpUpstreamRecorder) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
@@ -1941,11 +1957,12 @@ func TestOpenAIGatewayService_OpenAIPassthrough_429And529TriggerFailover(t *test
 	}
 
 	testCases := []struct {
-		name        string
-		accountType string
-		statusCode  int
-		body        string
-		assertRepo  func(t *testing.T, repo *openAIPassthroughFailoverRepo, start time.Time)
+		name           string
+		accountType    string
+		statusCode     int
+		body           string
+		expectFailover bool
+		assertRepo     func(t *testing.T, repo *openAIPassthroughFailoverRepo, start time.Time)
 	}{
 		{
 			name:        "oauth_429_rate_limit",
@@ -1955,6 +1972,7 @@ func TestOpenAIGatewayService_OpenAIPassthrough_429And529TriggerFailover(t *test
 				resetAt := time.Now().Add(7 * 24 * time.Hour).Unix()
 				return fmt.Sprintf(`{"error":{"message":"The usage limit has been reached","type":"usage_limit_reached","resets_at":%d}}`, resetAt)
 			}(),
+			expectFailover: true,
 			assertRepo: func(t *testing.T, repo *openAIPassthroughFailoverRepo, _ time.Time) {
 				require.Len(t, repo.rateLimitCalls, 1)
 				require.Empty(t, repo.overloadCalls)
@@ -1962,14 +1980,48 @@ func TestOpenAIGatewayService_OpenAIPassthrough_429And529TriggerFailover(t *test
 			},
 		},
 		{
-			name:        "oauth_529_overload",
-			accountType: AccountTypeOAuth,
-			statusCode:  529,
-			body:        `{"error":{"message":"server overloaded","type":"server_error"}}`,
+			name:           "oauth_529_overload",
+			accountType:    AccountTypeOAuth,
+			statusCode:     529,
+			body:           `{"error":{"message":"server overloaded","type":"server_error"}}`,
+			expectFailover: true,
 			assertRepo: func(t *testing.T, repo *openAIPassthroughFailoverRepo, start time.Time) {
 				require.Empty(t, repo.rateLimitCalls)
 				require.Len(t, repo.overloadCalls, 1)
 				require.WithinDuration(t, start.Add(10*time.Minute), repo.overloadCalls[0], 5*time.Second)
+			},
+		},
+		{
+			name:           "oauth_502_bad_gateway",
+			accountType:    AccountTypeOAuth,
+			statusCode:     http.StatusBadGateway,
+			body:           `{"error":{"message":"bad gateway","type":"server_error"}}`,
+			expectFailover: false,
+			assertRepo: func(t *testing.T, repo *openAIPassthroughFailoverRepo, _ time.Time) {
+				require.Empty(t, repo.rateLimitCalls)
+				require.Empty(t, repo.overloadCalls)
+			},
+		},
+		{
+			name:           "oauth_503_unavailable",
+			accountType:    AccountTypeOAuth,
+			statusCode:     http.StatusServiceUnavailable,
+			body:           `{"error":{"message":"service unavailable","type":"server_error"}}`,
+			expectFailover: false,
+			assertRepo: func(t *testing.T, repo *openAIPassthroughFailoverRepo, _ time.Time) {
+				require.Empty(t, repo.rateLimitCalls)
+				require.Empty(t, repo.overloadCalls)
+			},
+		},
+		{
+			name:           "oauth_504_gateway_timeout",
+			accountType:    AccountTypeOAuth,
+			statusCode:     http.StatusGatewayTimeout,
+			body:           `{"error":{"message":"gateway timeout","type":"server_error"}}`,
+			expectFailover: false,
+			assertRepo: func(t *testing.T, repo *openAIPassthroughFailoverRepo, _ time.Time) {
+				require.Empty(t, repo.rateLimitCalls)
+				require.Empty(t, repo.overloadCalls)
 			},
 		},
 		{
@@ -1980,6 +2032,7 @@ func TestOpenAIGatewayService_OpenAIPassthrough_429And529TriggerFailover(t *test
 				resetAt := time.Now().Add(7 * 24 * time.Hour).Unix()
 				return fmt.Sprintf(`{"error":{"message":"The usage limit has been reached","type":"usage_limit_reached","resets_at":%d}}`, resetAt)
 			}(),
+			expectFailover: true,
 			assertRepo: func(t *testing.T, repo *openAIPassthroughFailoverRepo, _ time.Time) {
 				require.Len(t, repo.rateLimitCalls, 1)
 				require.Empty(t, repo.overloadCalls)
@@ -1987,10 +2040,11 @@ func TestOpenAIGatewayService_OpenAIPassthrough_429And529TriggerFailover(t *test
 			},
 		},
 		{
-			name:        "apikey_529_overload",
-			accountType: AccountTypeAPIKey,
-			statusCode:  529,
-			body:        `{"error":{"message":"server overloaded","type":"server_error"}}`,
+			name:           "apikey_529_overload",
+			accountType:    AccountTypeAPIKey,
+			statusCode:     529,
+			body:           `{"error":{"message":"server overloaded","type":"server_error"}}`,
+			expectFailover: true,
 			assertRepo: func(t *testing.T, repo *openAIPassthroughFailoverRepo, start time.Time) {
 				require.Empty(t, repo.rateLimitCalls)
 				require.Len(t, repo.overloadCalls, 1)
@@ -2035,9 +2089,15 @@ func TestOpenAIGatewayService_OpenAIPassthrough_429And529TriggerFailover(t *test
 			require.Error(t, err)
 
 			var failoverErr *UpstreamFailoverError
-			require.ErrorAs(t, err, &failoverErr)
-			require.Equal(t, tc.statusCode, failoverErr.StatusCode)
-			require.False(t, c.Writer.Written(), "429/529 passthrough 应返回 failover 错误给上层换号，而不是直接向客户端写响应")
+			if tc.expectFailover {
+				require.ErrorAs(t, err, &failoverErr)
+				require.Equal(t, tc.statusCode, failoverErr.StatusCode)
+				require.False(t, c.Writer.Written(), "retryable passthrough 错误应返回 failover 错误给上层换号，而不是直接向客户端写响应")
+			} else {
+				require.False(t, errors.As(err, &failoverErr))
+				require.True(t, c.Writer.Written(), "非 failover 的 passthrough http 错误应直接写回客户端")
+				require.Equal(t, tc.statusCode, rec.Code)
+			}
 
 			v, ok := c.Get(OpsUpstreamErrorsKey)
 			require.True(t, ok)
@@ -2045,7 +2105,11 @@ func TestOpenAIGatewayService_OpenAIPassthrough_429And529TriggerFailover(t *test
 			require.True(t, ok)
 			require.NotEmpty(t, arr)
 			require.True(t, arr[len(arr)-1].Passthrough)
-			require.Equal(t, "failover", arr[len(arr)-1].Kind)
+			if tc.expectFailover {
+				require.Equal(t, "failover", arr[len(arr)-1].Kind)
+			} else {
+				require.Equal(t, "http_error", arr[len(arr)-1].Kind)
+			}
 			require.Equal(t, tc.statusCode, arr[len(arr)-1].UpstreamStatusCode)
 
 			tc.assertRepo(t, repo, start)

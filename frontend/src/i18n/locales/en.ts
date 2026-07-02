@@ -254,6 +254,8 @@ export default {
     submitting: 'Submitting...',
     send: 'Send',
     justNow: 'just now',
+    peakRateTooltip: 'Peak rate: {window}',
+    peakRateImageNote: '; image tokens billed as tokens are also affected, per-image billing is unaffected',
     save: 'Save',
     saved: 'Saved successfully',
     deleted: 'Deleted successfully',
@@ -390,7 +392,24 @@ export default {
     updatedAt: 'Updated: {date}',
     empty: 'No content',
     loginAgreement: 'Login Agreement',
-    adminCompliance: 'Deployment and Operation Compliance Commitment'
+    adminCompliance: 'Deployment and Operation Compliance Commitment',
+    loginAgreementPrompt: {
+      checkboxPrefix: 'I have read and agree to ',
+      documentSeparator: ', ',
+      noticeTitle: 'Accept the latest terms before continuing.',
+      noticeDescription: 'Account/password login and quick sign-in stay disabled until you accept.',
+      viewTerms: 'View terms',
+      dialogTitle: 'Terms Update Notice',
+      dialogDescription: 'Our service terms were updated on {date}. Please read and accept the following terms before continuing.',
+      recently: 'recently',
+      relatedDocuments: 'Related documents',
+      reject: 'Reject',
+      accept: 'Accept and continue',
+      loginRejectedWarning: 'Account/password login and quick sign-in are disabled until you accept the latest terms.',
+      loginRequiredWarning: 'Please read and accept the latest terms before logging in.',
+      registerRejectedWarning: 'Registration and quick sign-in are disabled until you accept the latest terms.',
+      registerRequiredWarning: 'Please read and accept the latest terms before registering.'
+    }
   },
 
   // Navigation
@@ -1589,6 +1608,21 @@ export default {
     exportExcelFailed: 'Failed to export usage data',
     imageUnit: ' images',
     userAgent: 'User-Agent',
+    ipGeo: {
+      fetch: 'Fetch region',
+      fetching: 'Fetching...',
+      failed: 'Failed',
+      private: 'Private address',
+      refreshTitle: 'Refresh region info',
+      batchFetch: 'Batch fetch regions',
+      batchFetching: 'Fetching...',
+      pending: '{count} IPs pending',
+      batchFailed: 'Failed to batch fetch IP regions',
+      detailOrg: 'ISP',
+      detailTimezone: 'Timezone',
+      detailAccuracy: 'Accuracy',
+      detailCoordinates: 'Coordinates',
+    },
     tabs: { usage: 'Usage', errors: 'Error Requests' },
     errors: {
       time: 'Time', model: 'Model', endpoint: 'Endpoint', status: 'Status',
@@ -2844,6 +2878,7 @@ export default {
       editGroup: 'Edit Group',
       deleteGroup: 'Delete Group',
       sortOrder: 'Sort',
+      columnSettings: 'Column Settings',
       sortOrderHint: 'Drag groups to adjust display order, groups at the top will be displayed first',
       sortOrderUpdated: 'Sort order updated',
       failedToUpdateSortOrder: 'Failed to update sort order',
@@ -2881,6 +2916,15 @@ export default {
       accountsUnit: '',
       rateAndAccounts: '{rate}x rate · {count} accounts',
       accountsCount: '{count} accounts',
+      rateLabel: 'rate',
+      accountFilters: {
+        title: 'Account Filter Controls',
+        oauthOnly: 'Only allow OAuth accounts',
+        oauthOnlyEnabled: 'Enabled — API Key accounts will be excluded',
+        privacySetOnly: 'Only allow accounts with privacy protection set',
+        privacySetOnlyEnabled: 'Enabled — accounts with unset Privacy will be excluded',
+        disabled: 'Disabled'
+      },
       form: {
         name: 'Name',
         description: 'Description',
@@ -3020,11 +3064,21 @@ export default {
         tier1080pPrice: '1080p ($/s)',
         tier4kPrice: '4K ($/s)'
       },
+      peakRate: {
+        enable: 'Enable peak rate multiplier',
+        peakStart: 'Peak start',
+        peakEnd: 'Peak end',
+        peakMultiplier: 'Peak multiplier',
+        multiplierHint: 'Applies to token billing multiplier; image tokens in token billing are also affected. 0 means peak token requests are billed at 0x.'
+      },
       modelsList: {
         title: 'Custom /v1/models Model List',
         hint: 'Only changes the /v1/models response. Whitelist model calls and account routing are unchanged.',
         loading: 'Loading model list...',
-        empty: 'No displayable models'
+        empty: 'No displayable models',
+        selectedSummary: 'Selected {selected} / {total}',
+        selectAll: 'Select all',
+        invertSelection: 'Invert'
       },
       claudeCode: {
         title: 'Claude Code Client Restriction',
@@ -3069,14 +3123,6 @@ export default {
         selectPlaceholder: 'Select groups to copy accounts from...',
         hint: 'Multiple groups can be selected, accounts will be deduplicated',
         hintEdit: '⚠️ Warning: This will replace all existing account bindings'
-      },
-      accountFilters: {
-        title: 'Account Filters',
-        oauthOnly: 'OAuth accounts only',
-        oauthOnlyEnabled: 'Enabled: exclude API key accounts',
-        privacyOnly: 'Require privacy protection to be configured',
-        privacyOnlyEnabled: 'Enabled: accounts without privacy configured will be excluded',
-        disabled: 'Disabled'
       },
       modelRouting: {
         title: 'Model Routing',
@@ -3190,6 +3236,21 @@ export default {
       duplicateModels: 'Model "{0}" appears in multiple pricing entries',
       modelConflict: "Model patterns '{model1}' and '{model2}' conflict: overlapping match range. Model names are matched case-insensitively, so an existing entry already covers all case variants — no need to add the variant separately.",
       mappingConflict: "Mapping source patterns '{model1}' and '{model2}' conflict: overlapping match range. Source patterns are matched case-insensitively, so an existing entry already covers all case variants.",
+      intervalValidation: {
+        negativeMin: 'Interval #{index}: minimum token count ({value}) cannot be negative',
+        maxPositive: 'Interval #{index}: maximum token count ({value}) must be greater than 0',
+        maxGreaterThanMin: 'Interval #{index}: maximum token count ({max}) must be greater than minimum token count ({min})',
+        negativePrice: 'Interval #{index}: {field} cannot be negative',
+        unboundedLast: 'Interval #{index}: an unbounded interval (empty maximum token count) must be last',
+        overlap: 'Intervals #{previousIndex} and #{currentIndex} overlap: previous upper bound ({previousMax}) is greater than current lower bound ({currentMin})',
+        price: {
+          inputPrice: 'input price',
+          outputPrice: 'output price',
+          cacheWritePrice: 'cache write price',
+          cacheReadPrice: 'cache read price',
+          perRequestPrice: 'per-request price'
+        }
+      },
       deleteConfirm: 'Are you sure you want to delete channel "{name}"? This cannot be undone.',
       columns: {
         name: 'Name',
@@ -3224,10 +3285,15 @@ export default {
         outputPrice: 'Output',
         cacheWritePrice: 'Cache Write',
         cacheReadPrice: 'Cache Read',
+        cacheWritePriceShort: 'Cache W',
+        cacheReadPriceShort: 'Cache R',
         imageTokenPrice: 'Image Output',
         imageOutputPrice: 'Image Output Price',
         pricePlaceholder: 'Default',
         intervals: 'Context Intervals (optional)',
+        minTokens: 'Min',
+        maxTokens: 'Max',
+        inclusive: '(inclusive)',
         addInterval: 'Add Interval',
         requestTiers: 'Request Tiers',
         imageTiers: 'Image Tiers (Per Request)',
@@ -3434,6 +3500,7 @@ export default {
       queueSize: 'Async Queue Size',
       blockStatus: 'Block HTTP Status',
       blockMessage: 'Custom Block Message',
+      defaultBlockMessage: 'Content audit matched a risk rule. Please adjust your input and try again.',
       emailOnHit: 'Email on Hit',
       emailOnHitHint: 'When enabled, send a risk-control email on every hit; auto-ban notices are always sent.',
       autoBan: 'Auto Ban User',
@@ -3757,6 +3824,7 @@ export default {
       assignSubscription: 'Assign Subscription',
       adjustSubscription: 'Adjust Subscription',
       revokeSubscription: 'Revoke Subscription',
+      restoreSubscription: 'Restore Subscription',
       allStatus: 'All Status',
       allGroups: 'All Groups',
       allPlatforms: 'All Platforms',
@@ -3779,7 +3847,8 @@ export default {
       status: {
         active: 'Active',
         expired: 'Expired',
-        revoked: 'Revoked'
+        revoked: 'Revoked',
+        suspended: 'Suspended'
       },
       columns: {
         user: 'User',
@@ -3808,6 +3877,7 @@ export default {
       adjust: 'Adjust',
       adjusting: 'Adjusting...',
       revoke: 'Revoke',
+      restore: 'Restore',
       resetQuota: 'Reset Quota',
       resetQuotaTitle: 'Reset Usage Quota',
       resetQuotaConfirm: "Reset the daily, weekly, and monthly usage quota for '{user}'? Usage will be zeroed and windows restarted from today.",
@@ -3818,17 +3888,21 @@ export default {
       subscriptionAssigned: 'Subscription assigned successfully',
       subscriptionAdjusted: 'Subscription adjusted successfully',
       subscriptionRevoked: 'Subscription revoked successfully',
+      subscriptionRestored: 'Subscription restored successfully',
       failedToLoad: 'Failed to load subscriptions',
       failedToAssign: 'Failed to assign subscription',
       failedToAdjust: 'Failed to adjust subscription',
       failedToRevoke: 'Failed to revoke subscription',
+      failedToRestore: 'Failed to restore subscription',
       adjustWouldExpire: 'Remaining days after adjustment must be greater than 0',
       adjustOutOfRange: 'Adjustment days must be between -36500 and 36500',
       pleaseSelectUser: 'Please select a user',
       pleaseSelectGroup: 'Please select a group',
       validityDaysRequired: 'Please enter a valid number of days (at least 1)',
       revokeConfirm:
-        "Are you sure you want to revoke the subscription for '{user}'? This action cannot be undone.",
+        "Are you sure you want to revoke the subscription for '{user}'? You can restore it later from the revoked list.",
+      restoreConfirm:
+        "Restore the subscription for '{user}'? If the original subscription has expired, it will be restored as expired.",
       guide: {
         title: 'Subscription Management Guide',
         subtitle: 'Subscription mode lets you assign time-based usage quotas to users, with daily/weekly/monthly limits. Follow these steps to get started.',
@@ -3888,6 +3962,7 @@ export default {
       dataExportConfirmMessage: 'The exported data contains sensitive account and proxy information. Store it securely.',
       dataExportConfirm: 'Confirm Export',
       dataExported: 'Data exported successfully',
+      dataExportedSkippedShadows: 'Data exported. Skipped {count} spark shadow account(s): their scheduling config is not included in the backup; recreate and re-tune them after restore.',
       dataExportFailed: 'Failed to export data',
       dataImportTitle: 'Import Data',
       dataImportHint: 'Upload the exported JSON file to import accounts and proxies.',
@@ -4250,6 +4325,10 @@ export default {
       revertProxy: 'Revert proxy',
       revertProxySuccess: 'Successfully reverted to original proxy',
       revertProxyFailed: 'Failed to revert proxy',
+      createSparkShadow: 'Create Spark Shadow',
+      createSparkShadowConfirm: 'Create a spark shadow account linked to "{name}"? It shares the parent\'s credentials and serves only spark models.',
+      createSparkShadowSuccess: 'Spark shadow account created',
+      createSparkShadowFailed: 'Failed to create spark shadow account',
       resetStatus: 'Reset Status',
       statusReset: 'Account status reset successfully',
       failedToResetStatus: 'Failed to reset account status',
@@ -4315,6 +4394,7 @@ export default {
         wsModeOff: 'Off (off)',
         wsModeCtxPool: 'Context Pool (ctx_pool)',
         wsModePassthrough: 'Passthrough (passthrough)',
+        wsModeHttpBridge: 'HTTP Bridge (http_bridge)',
         wsModeShared: 'Shared (shared)',
         wsModeDedicated: 'Dedicated (dedicated)',
         wsModeConcurrencyHint:
@@ -4392,6 +4472,10 @@ export default {
         apiKeyPassthrough: 'Auto passthrough (auth only)',
         apiKeyPassthroughDesc:
           'Only applies to Anthropic API Key accounts. When enabled, messages/count_tokens are forwarded in passthrough mode with auth replacement only, while billing/concurrency/audit and safety filtering are preserved. Disable to roll back immediately.',
+        apiKeyAuthScheme: 'Upstream auth scheme',
+        apiKeyAuthSchemeDesc: 'Choose the API key auth header used when forwarding to an Anthropic-compatible upstream. Ollama Cloud uses Authorization: Bearer.',
+        apiKeyAuthSchemeXApiKey: 'x-api-key',
+        apiKeyAuthSchemeBearer: 'Authorization: Bearer',
         webSearchEmulation: 'Web Search Emulation',
         webSearchEmulationDesc:
           'Enable web search emulation for this API Key account. When a pure web_search request is detected, the gateway calls a third-party search API and constructs the response locally. Default follows channel config.',
@@ -4944,6 +5028,11 @@ export default {
           builtInTitle: 'Built-in OAuth (Gemini CLI / Code Assist)',
           builtInDesc: 'Uses Google built-in client ID. No admin configuration required.',
           builtInRequirement: 'Requires a GCP project and Project ID.',
+          googleOneDesc: 'Personal account with Google One subscription quota',
+          codeAssistDesc: 'Enterprise-grade, requires a GCP project',
+          codeAssistRequirement: 'Requires an active GCP project with billing enabled',
+          showAdvanced: 'Show advanced options (custom OAuth Client)',
+          hideAdvanced: 'Hide advanced options (custom OAuth Client)',
           gcpProjectLink: 'Create project',
           customTitle: 'Custom OAuth (AI Studio OAuth)',
           customDesc: 'Uses admin-configured OAuth client for org management.',
@@ -5273,6 +5362,25 @@ export default {
         grokLastHeadersSeen: 'Headers {time}',
         passiveSampled: 'Passive',
         activeQuery: 'Query'
+      },
+      openaiQuotaReset: {
+        count: 'Credits',
+        reset: 'Reset',
+        countTooltipLoad: 'Click to load the available reset-credit count',
+        countTooltipRefresh: 'Click to refresh the available reset-credit count',
+        resetTooltipReady: 'Consume 1 reset credit to immediately restore the window',
+        resetTooltipNeedQuery: 'Click Credits first to load the available count',
+        resetTooltipNoCredits: 'No reset credits available',
+        resetTooltipShadow: 'Spark shadow accounts cannot reset credits; reset on the parent account',
+        expiresAt: 'Expires {time}',
+        expiresAtFull: 'Reset credit expires at {time}',
+        expandExpirations: 'Expand the other {count} reset credit expiration(s)',
+        collapseExpirations: 'Collapse reset credit expirations',
+        expirationDetails: 'Reset credit expiration details',
+        noCreditsAvailable: 'No reset credits available',
+        resetSuccess: 'Reset {windows} window(s)',
+        confirmTitle: 'Confirm Weekly Limit Reset',
+        confirmMessage: 'This will consume 1 reset credit to immediately restore the current window ({count} remaining). This action cannot be undone. Continue?'
       },
       inviteResetTitle: 'Codex Invite Reset',
       inviteResetSubtitle: "Invite friends to use Codex and manage this account's reset credits",
@@ -5894,6 +6002,7 @@ export default {
       noData: 'No data.',
       loadingText: 'loading',
       ready: 'ready',
+      autoRefreshRemaining: 'Remaining {seconds}s',
       requestsTotal: 'Requests (total)',
       slaScope: 'SLA scope:',
       tokens: 'Tokens',
@@ -5962,6 +6071,7 @@ export default {
         cleanupSuccess: 'Cleanup complete. Deleted {count} logs',
         cleanupFailed: 'Failed to clean up system logs',
         noData: 'No system logs',
+        keyId: 'API Key ID',
         health: {
           queue: 'Queue',
           written: 'Written',
@@ -7093,6 +7203,8 @@ export default {
         anthropicCacheTTL1hInjectionHint: 'When enabled, existing ephemeral cache_control blocks in Anthropic OAuth/Setup Token request bodies are forced to 1h; response usage is billed back as 5m by default, with account-level TTL billing override taking priority.',
         rewriteMessageCacheControl: 'Rewrite Message Cache Breakpoints',
         rewriteMessageCacheControlHint: 'Default off: preserve client cache_control on message content blocks. When enabled, client breakpoints are stripped and proxy breakpoints are injected for clients that do not manage caching themselves.',
+        clientDatelineNormalization: 'Client Dateline Normalization',
+        clientDatelineNormalizationHint: 'Default on. Rewrites the "Today\'s date is …" sentence in Anthropic OAuth/Setup Token requests back to a canonical ASCII apostrophe and hyphen date format, erasing steganographic fingerprint bits some clients inject when they detect a non-official base URL. Applies to system prompts and <system-reminder> blocks only; API-Key accounts are unaffected.',
         antigravityUserAgentVersion: 'Antigravity UA Version',
         antigravityUserAgentVersionPlaceholder: '1.23.2',
         antigravityUserAgentVersionHint: 'Leave empty to use ANTIGRAVITY_USER_AGENT_VERSION or the built-in default 1.23.2; when set, the admin setting takes precedence.',
@@ -8208,6 +8320,10 @@ export default {
     notFoundDesc: 'This custom page does not exist or has been removed.',
     notConfiguredTitle: 'Page URL not configured',
     notConfiguredDesc: 'The URL for this custom page has not been properly configured.',
+    tableOfContents: 'Contents',
+    copyCode: 'Copy',
+    copiedCode: 'Copied',
+    copyCodeFailed: 'Failed'
   },
 
   // Announcements Page
@@ -8634,6 +8750,7 @@ export default {
     planFeatures: 'Features',
     planCard: {
       rate: 'Rate',
+      peakRate: 'Peak Rate',
       dailyLimit: 'Daily',
       weeklyLimit: 'Weekly',
       monthlyLimit: 'Monthly',

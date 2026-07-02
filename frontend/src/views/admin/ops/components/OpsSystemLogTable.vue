@@ -467,7 +467,7 @@ onMounted(async () => {
         <input v-model="filters.user_id" type="text" class="input mt-1" />
       </label>
       <label class="text-xs text-gray-600 dark:text-gray-300">
-        KEY ID
+        {{ t('admin.ops.systemLogs.keyId') }}
         <input v-model="filters.api_key_id" type="text" class="input mt-1" />
       </label>
       <label class="text-xs text-gray-600 dark:text-gray-300">

@@ -22,7 +22,7 @@
               <Icon name="clock" size="sm" class="text-orange-500" />
               {{ t('admin.scheduledTests.schedule') }}
             </button>
-            <template v-if="account.type === 'oauth' || account.type === 'setup-token'">
+            <template v-if="!isShadow && (account.type === 'oauth' || account.type === 'setup-token')">
               <button
                 v-if="supportsReauth || isKiroOAuth"
                 @click="$emit('reauth', account); $emit('close')"
@@ -39,6 +39,10 @@
                 {{ t('admin.accounts.refreshToken') }}
               </button>
             </template>
+            <button v-if="isOpenAIOAuthParent" @click="$emit('create-spark-shadow', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-amber-600 hover:bg-gray-100 dark:hover:bg-dark-700">
+              <Icon name="sparkles" size="sm" />
+              {{ t('admin.accounts.createSparkShadow') }}
+            </button>
             <button v-if="supportsPrivacy" @click="$emit('set-privacy', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-emerald-600 hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="shield" size="sm" />
               {{ t('admin.accounts.setPrivacy') }}
@@ -66,7 +70,7 @@ import { Icon } from '@/components/icons'
 import type { Account } from '@/types'
 
 const props = defineProps<{ show: boolean; account: Account | null; position: { top: number; left: number } | null }>()
-const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy'])
+const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
 const { t } = useI18n()
 const now = ref(Date.now())
 let clockTimer: ReturnType<typeof setInterval> | null = null
@@ -84,6 +88,7 @@ const stopClock = () => {
   clockTimer = null
 }
 
+const isShadow = computed(() => props.account?.parent_account_id != null)
 const isRateLimited = computed(() => {
   if (props.account?.rate_limit_reset_at && new Date(props.account.rate_limit_reset_at).getTime() > now.value) {
     return true
@@ -103,9 +108,10 @@ const hasRecoverableState = computed(() => {
 })
 const isAntigravityOAuth = computed(() => props.account?.platform === 'antigravity' && props.account?.type === 'oauth')
 const isOpenAIOAuth = computed(() => props.account?.platform === 'openai' && props.account?.type === 'oauth')
+const isOpenAIOAuthParent = computed(() => isOpenAIOAuth.value && props.account?.parent_account_id == null)
 const isKiroOAuth = computed(() => props.account?.platform === 'kiro' && props.account?.type === 'oauth')
-const supportsReauth = computed(() => props.account?.type === 'oauth' || props.account?.type === 'setup-token')
-const supportsPrivacy = computed(() => isAntigravityOAuth.value || isOpenAIOAuth.value)
+const supportsReauth = computed(() => !isShadow.value && (props.account?.type === 'oauth' || props.account?.type === 'setup-token'))
+const supportsPrivacy = computed(() => !isShadow.value && (isAntigravityOAuth.value || isOpenAIOAuth.value))
 const hasQuotaLimit = computed(() => {
   return (props.account?.type === 'apikey' || props.account?.type === 'bedrock') && (
     (props.account?.quota_limit ?? 0) > 0 ||

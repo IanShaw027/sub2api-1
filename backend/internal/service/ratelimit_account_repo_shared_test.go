@@ -146,5 +146,8 @@ func (r *rateLimitAccountRepoStub) UpdateCredentials(ctx context.Context, id int
 func (r *rateLimitAccountRepoStub) ListOAuthRefreshCandidates(context.Context) ([]Account, error) {
 	return nil, nil
 }
+func (r *rateLimitAccountRepoStub) ListShadowsByParent(context.Context, int64) ([]*Account, error) {
+	return nil, nil
+}
 
 var _ AccountRepository = (*rateLimitAccountRepoStub)(nil)

@@ -236,28 +236,28 @@ async function mountSubscriptionConfirm(options: Parameters<typeof checkoutInfoW
 }
 
 describe('PaymentView subscription confirmation amounts', () => {
-  it('uses subscription plan price directly for CNY plan price, original price, and create button', async () => {
+  it('keeps subscription plan price independent from balance recharge multiplier', async () => {
     const wrapper = await mountSubscriptionConfirm({
       checkout: {
-        balance_recharge_multiplier: 0.14,
+        balance_recharge_multiplier: 4,
       },
       method: {
         currency: 'CNY',
       },
       plan: {
-        price: 7.99,
-        original_price: 9.99,
+        price: 200,
+        original_price: 300,
       },
     })
 
     const text = wrapper.text()
-    const planPrice = formatPaymentAmount(7.99, 'CNY')
-    const originalPrice = formatPaymentAmount(9.99, 'CNY')
+    const planPrice = formatPaymentAmount(200, 'CNY')
+    const originalPrice = formatPaymentAmount(300, 'CNY')
+    const convertedByRechargeMultiplier = formatPaymentAmount(50, 'CNY')
 
     expect(text).toContain(planPrice)
     expect(text).toContain(originalPrice)
-    expect(text).not.toContain(formatPaymentAmount(57.07, 'CNY'))
-    expect(text).not.toContain(formatPaymentAmount(71.36, 'CNY'))
+    expect(text).not.toContain(convertedByRechargeMultiplier)
     expect(wrapper.findAll('button').some(button => button.text().includes(planPrice))).toBe(true)
   })
 
@@ -317,7 +317,7 @@ describe('PaymentView subscription confirmation amounts', () => {
   it('adds fee rate to the direct subscription price without applying balance multiplier', async () => {
     const wrapper = await mountSubscriptionConfirm({
       checkout: {
-        balance_recharge_multiplier: 0.14,
+        balance_recharge_multiplier: 4,
         recharge_fee_rate: 2.5,
       },
       method: {

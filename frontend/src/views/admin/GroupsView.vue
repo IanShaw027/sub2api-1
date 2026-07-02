@@ -60,6 +60,38 @@
                 :class="loading ? 'animate-spin' : ''"
               />
             </button>
+            <div class="relative" ref="columnDropdownRef">
+              <button
+                @click="showColumnDropdown = !showColumnDropdown"
+                class="btn btn-secondary"
+                :title="t('admin.groups.columnSettings')"
+              >
+                <Icon name="grid" size="md" class="mr-2" />
+                <span class="hidden md:inline">{{
+                  t("admin.groups.columnSettings")
+                }}</span>
+              </button>
+              <div
+                v-if="showColumnDropdown"
+                class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-600 dark:bg-dark-800"
+              >
+                <button
+                  v-for="col in toggleableColumns"
+                  :key="col.key"
+                  @click="toggleColumn(col.key)"
+                  class="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
+                >
+                  <span>{{ col.label }}</span>
+                  <Icon
+                    v-if="isColumnVisible(col.key)"
+                    name="check"
+                    size="sm"
+                    class="text-primary-500"
+                    :stroke-width="2"
+                  />
+                </button>
+              </div>
+            </div>
             <button
               @click="openSortModal"
               class="btn btn-secondary"
@@ -106,7 +138,9 @@
                     ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
                     : value === 'antigravity'
                       ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                      : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                      : value === 'grok'
+                        ? 'bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100'
+                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
               ]"
             >
               <PlatformIcon :platform="value" size="xs" />
@@ -691,8 +725,12 @@
               class="flex items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs dark:border-dark-600 dark:bg-dark-800"
             >
               <span class="text-gray-500 dark:text-gray-400">
-                已选 {{ createModelsListSelectedCount }} /
-                {{ createModelsListState.items.length }}
+                {{
+                  t("admin.groups.modelsList.selectedSummary", {
+                    selected: createModelsListSelectedCount,
+                    total: createModelsListState.items.length,
+                  })
+                }}
               </span>
               <div class="flex items-center gap-1.5">
                 <button
@@ -700,14 +738,14 @@
                   class="rounded px-2 py-1 font-medium text-primary-600 transition-colors hover:bg-primary-50 dark:text-primary-400 dark:hover:bg-primary-900/20"
                   @click="selectAllModelsListItems(createModelsListState)"
                 >
-                  全选
+                  {{ t("admin.groups.modelsList.selectAll") }}
                 </button>
                 <button
                   type="button"
                   class="rounded px-2 py-1 font-medium text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
                   @click="invertModelsListSelection(createModelsListState)"
                 >
-                  反选
+                  {{ t("admin.groups.modelsList.invertSelection") }}
                 </button>
               </div>
             </div>
@@ -1595,20 +1633,20 @@
           class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4 space-y-4"
         >
           <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-            账号过滤控制
+            {{ t("admin.groups.accountFilters.title") }}
           </h4>
 
           <!-- require_oauth_only toggle -->
           <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
-                >仅允许 OAuth 账号</label
+                >{{ t("admin.groups.accountFilters.oauthOnly") }}</label
               >
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {{
                   createForm.require_oauth_only
-                    ? "已启用 — 排除 API Key 类型账号"
-                    : "未启用"
+                    ? t("admin.groups.accountFilters.oauthOnlyEnabled")
+                    : t("admin.groups.accountFilters.disabled")
                 }}
               </p>
             </div>
@@ -1639,13 +1677,13 @@
           <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
-                >仅允许隐私保护已设置的账号</label
+                >{{ t("admin.groups.accountFilters.privacySetOnly") }}</label
               >
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {{
                   createForm.require_privacy_set
-                    ? "已启用 — Privacy 未设置的账号将被排除"
-                    : "未启用"
+                    ? t("admin.groups.accountFilters.privacySetOnlyEnabled")
+                    : t("admin.groups.accountFilters.disabled")
                 }}
               </p>
             </div>
@@ -2281,8 +2319,12 @@
               class="flex items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs dark:border-dark-600 dark:bg-dark-800"
             >
               <span class="text-gray-500 dark:text-gray-400">
-                已选 {{ editModelsListSelectedCount }} /
-                {{ editModelsListState.items.length }}
+                {{
+                  t("admin.groups.modelsList.selectedSummary", {
+                    selected: editModelsListSelectedCount,
+                    total: editModelsListState.items.length,
+                  })
+                }}
               </span>
               <div class="flex items-center gap-1.5">
                 <button
@@ -2290,14 +2332,14 @@
                   class="rounded px-2 py-1 font-medium text-primary-600 transition-colors hover:bg-primary-50 dark:text-primary-400 dark:hover:bg-primary-900/20"
                   @click="selectAllModelsListItems(editModelsListState)"
                 >
-                  全选
+                  {{ t("admin.groups.modelsList.selectAll") }}
                 </button>
                 <button
                   type="button"
                   class="rounded px-2 py-1 font-medium text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
                   @click="invertModelsListSelection(editModelsListState)"
                 >
-                  反选
+                  {{ t("admin.groups.modelsList.invertSelection") }}
                 </button>
               </div>
             </div>
@@ -3181,20 +3223,20 @@
           class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4 space-y-4"
         >
           <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-            账号过滤控制
+            {{ t("admin.groups.accountFilters.title") }}
           </h4>
 
           <!-- require_oauth_only toggle -->
           <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
-                >仅允许 OAuth 账号</label
+                >{{ t("admin.groups.accountFilters.oauthOnly") }}</label
               >
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {{
                   editForm.require_oauth_only
-                    ? "已启用 — 排除 API Key 类型账号"
-                    : "未启用"
+                    ? t("admin.groups.accountFilters.oauthOnlyEnabled")
+                    : t("admin.groups.accountFilters.disabled")
                 }}
               </p>
             </div>
@@ -3225,13 +3267,13 @@
           <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
-                >仅允许隐私保护已设置的账号</label
+                >{{ t("admin.groups.accountFilters.privacySetOnly") }}</label
               >
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {{
                   editForm.require_privacy_set
-                    ? "已启用 — Privacy 未设置的账号将被排除"
-                    : "未启用"
+                    ? t("admin.groups.accountFilters.privacySetOnlyEnabled")
+                    : t("admin.groups.accountFilters.disabled")
                 }}
               </p>
             </div>
@@ -3566,7 +3608,9 @@
                         ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
                         : group.platform === 'antigravity'
                           ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                          : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                          : group.platform === 'grok'
+                            ? 'bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100'
+                            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
                   ]"
                 >
                   {{ t("admin.groups.platforms." + group.platform) }}
@@ -3697,7 +3741,10 @@ const { t } = useI18n();
 const appStore = useAppStore();
 const onboardingStore = useOnboardingStore();
 
-const columns = computed<Column[]>(() => [
+const ALWAYS_VISIBLE_COLUMNS = new Set(["name", "actions"]);
+const HIDDEN_COLUMNS_KEY = "group-hidden-columns";
+
+const allColumns = computed<Column[]>(() => [
   { key: "name", label: t("admin.groups.columns.name"), sortable: true },
   {
     key: "platform",
@@ -3733,6 +3780,77 @@ const columns = computed<Column[]>(() => [
   { key: "status", label: t("admin.groups.columns.status"), sortable: true },
   { key: "actions", label: t("admin.groups.columns.actions"), sortable: false },
 ]);
+
+const toggleableColumns = computed(() =>
+  allColumns.value.filter((col) => !ALWAYS_VISIBLE_COLUMNS.has(col.key)),
+);
+const hiddenColumns = reactive<Set<string>>(new Set());
+const showColumnDropdown = ref(false);
+const columnDropdownRef = ref<HTMLElement | null>(null);
+
+const getValidHiddenColumnKeys = () =>
+  new Set(toggleableColumns.value.map((col) => col.key));
+
+const loadSavedColumns = () => {
+  hiddenColumns.clear();
+  try {
+    const saved = localStorage.getItem(HIDDEN_COLUMNS_KEY);
+    if (!saved) return;
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return;
+
+    const validKeys = getValidHiddenColumnKeys();
+    parsed
+      .filter((key): key is string => typeof key === "string" && validKeys.has(key))
+      .forEach((key) => hiddenColumns.add(key));
+  } catch (error) {
+    console.error("Failed to load group column settings:", error);
+  }
+};
+
+const saveColumnsToStorage = () => {
+  try {
+    const validKeys = getValidHiddenColumnKeys();
+    const keys = [...hiddenColumns].filter((key) => validKeys.has(key));
+    localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify(keys));
+  } catch (error) {
+    console.error("Failed to save group column settings:", error);
+  }
+};
+
+const isColumnVisible = (key: string) => !hiddenColumns.has(key);
+const hasVisibleUsageColumn = computed(() => isColumnVisible("usage"));
+const hasVisibleCapacityColumn = computed(() => isColumnVisible("capacity"));
+
+const toggleColumn = (key: string) => {
+  const validKeys = getValidHiddenColumnKeys();
+  if (!validKeys.has(key)) return;
+
+  const wasHidden = hiddenColumns.has(key);
+  if (wasHidden) {
+    hiddenColumns.delete(key);
+  } else {
+    hiddenColumns.add(key);
+  }
+  saveColumnsToStorage();
+
+  if (wasHidden && key === "usage") {
+    loadUsageSummary();
+  }
+  if (wasHidden && key === "capacity") {
+    loadCapacitySummary();
+  }
+};
+
+const columns = computed<Column[]>(() =>
+  allColumns.value.filter(
+    (col) => ALWAYS_VISIBLE_COLUMNS.has(col.key) || !hiddenColumns.has(col.key),
+  ),
+);
+
+if (typeof window !== "undefined") {
+  loadSavedColumns();
+}
 
 // Filter options
 const statusOptions = computed(() => [
@@ -3857,7 +3975,7 @@ const copyAccountsGroupOptions = computed(() => {
   );
   return eligibleGroups.map((g) => ({
     value: g.id,
-    label: `${g.name} (${g.account_count || 0} 个账号)`,
+    label: `${g.name} (${t("admin.groups.accountsCount", { count: g.account_count || 0 })})`,
   }));
 });
 
@@ -3872,7 +3990,7 @@ const copyAccountsGroupOptionsForEdit = computed(() => {
   );
   return eligibleGroups.map((g) => ({
     value: g.id,
-    label: `${g.name} (${g.account_count || 0} 个账号)`,
+    label: `${g.name} (${t("admin.groups.accountsCount", { count: g.account_count || 0 })})`,
   }));
 });
 
@@ -3944,6 +4062,10 @@ const createForm = reactive({
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
   refund_rate_multiplier: 1.0,
+  peak_rate_enabled: false,
+  peak_start: "",
+  peak_end: "",
+  peak_rate_multiplier: 1.0,
   is_exclusive: false,
   subscription_type: "standard" as SubscriptionType,
   daily_limit_usd: null as number | null,
@@ -4290,6 +4412,10 @@ const editForm = reactive({
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
   refund_rate_multiplier: 1.0,
+  peak_rate_enabled: false,
+  peak_start: "",
+  peak_end: "",
+  peak_rate_multiplier: 1.0,
   is_exclusive: false,
   status: "active" as "active" | "inactive",
   subscription_type: "standard" as SubscriptionType,
@@ -4350,6 +4476,10 @@ type ImagePricingFormState = {
   image_price_1k: number | string | null;
   image_price_2k: number | string | null;
   image_price_4k: number | string | null;
+  peak_rate_enabled: boolean;
+  peak_start: string;
+  peak_end: string;
+  peak_rate_multiplier: number;
 };
 
 type VideoPricingFormState = {
@@ -4493,8 +4623,14 @@ const loadGroups = async () => {
     groups.value = response.items;
     pagination.total = response.total;
     pagination.pages = response.pages;
-    loadUsageSummary();
-    loadCapacitySummary();
+    if (hasVisibleUsageColumn.value) {
+      loadUsageSummary();
+    } else {
+      usageLoading.value = false;
+    }
+    if (hasVisibleCapacityColumn.value) {
+      loadCapacitySummary();
+    }
   } catch (error: any) {
     if (
       signal.aborted ||
@@ -4560,6 +4696,9 @@ const loadUsageSummary = async () => {
 };
 
 const loadCapacitySummary = async () => {
+  if (!hasVisibleCapacityColumn.value) {
+    return;
+  }
   try {
     const data = await adminAPI.groups.getCapacitySummary();
     const map = new Map<
@@ -4677,7 +4816,7 @@ const normalizeOptionalLimit = (
   return Number.isFinite(value) && value > 0 ? value : null;
 };
 
-const normalizeImageRateMultiplier = (
+const normalizeRateMultiplier = (
   value: number | string | null | undefined,
 ): number => {
   if (value === null || value === undefined || value === "") {
@@ -4871,7 +5010,7 @@ const handleCreateGroup = async () => {
     requestData.daily_limit_usd = emptyToNull(requestData.daily_limit_usd);
     requestData.weekly_limit_usd = emptyToNull(requestData.weekly_limit_usd);
     requestData.monthly_limit_usd = emptyToNull(requestData.monthly_limit_usd);
-    requestData.image_rate_multiplier = normalizeImageRateMultiplier(
+    requestData.image_rate_multiplier = normalizeRateMultiplier(
       requestData.image_rate_multiplier,
     );
     requestData.image_price_1k = normalizeNullablePrice(requestData.image_price_1k);
@@ -4914,6 +5053,10 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.platform = group.platform;
   editForm.rate_multiplier = group.rate_multiplier;
   editForm.refund_rate_multiplier = group.refund_rate_multiplier ?? 1.0;
+  editForm.peak_rate_enabled = group.peak_rate_enabled ?? false;
+  editForm.peak_start = group.peak_start ?? "";
+  editForm.peak_end = group.peak_end ?? "";
+  editForm.peak_rate_multiplier = group.peak_rate_multiplier ?? 1.0;
   editForm.is_exclusive = group.is_exclusive;
   editForm.status = group.status;
   editForm.subscription_type = group.subscription_type || "standard";
@@ -4972,6 +5115,10 @@ const closeEditModal = () => {
   editingGroup.value = null;
   editModelRoutingRules.value = [];
   editForm.copy_accounts_from_group_ids = [];
+  editForm.peak_rate_enabled = false;
+  editForm.peak_start = "";
+  editForm.peak_end = "";
+  editForm.peak_rate_multiplier = 1.0;
   resetMessagesDispatchFormState(editForm);
   resetVideoPricingFormState(editForm);
   resetExplicitMediaPricingFormState(editForm);
@@ -5037,7 +5184,7 @@ const handleUpdateGroup = async () => {
     payload.daily_limit_usd = emptyToNull(payload.daily_limit_usd);
     payload.weekly_limit_usd = emptyToNull(payload.weekly_limit_usd);
     payload.monthly_limit_usd = emptyToNull(payload.monthly_limit_usd);
-    payload.image_rate_multiplier = normalizeImageRateMultiplier(
+    payload.image_rate_multiplier = normalizeRateMultiplier(
       payload.image_rate_multiplier,
     );
     payload.image_price_1k = normalizeNullablePrice(payload.image_price_1k);
@@ -5118,13 +5265,31 @@ const confirmDelete = async () => {
   }
 };
 
-// 监听 subscription_type 变化，订阅模式时 is_exclusive 默认为 true
+// 监听 subscription_type 变化，订阅模式时 is_exclusive 默认为 true；标准模式清空高峰配置
 watch(
   () => createForm.subscription_type,
   (newVal) => {
     if (newVal === "subscription") {
       createForm.is_exclusive = true;
       createForm.fallback_group_id_on_invalid_request = null;
+    } else {
+      createForm.peak_rate_enabled = false;
+      createForm.peak_start = "";
+      createForm.peak_end = "";
+      createForm.peak_rate_multiplier = 1.0;
+    }
+  },
+);
+
+// 编辑表单：切回标准模式时清空高峰配置，避免残留随更新请求提交被后端拒绝
+watch(
+  () => editForm.subscription_type,
+  (newVal) => {
+    if (newVal !== "subscription") {
+      editForm.peak_rate_enabled = false;
+      editForm.peak_start = "";
+      editForm.peak_end = "";
+      editForm.peak_rate_multiplier = 1.0;
     }
   },
 );
@@ -5196,6 +5361,9 @@ const handleClickOutside = (event: MouseEvent) => {
     Object.keys(showAccountDropdown.value).forEach((key) => {
       showAccountDropdown.value[key] = false;
     });
+  }
+  if (columnDropdownRef.value && !columnDropdownRef.value.contains(target)) {
+    showColumnDropdown.value = false;
   }
 };
 

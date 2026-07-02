@@ -32,6 +32,14 @@ const (
 	FieldRateMultiplier = "rate_multiplier"
 	// FieldRefundRateMultiplier holds the string denoting the refund_rate_multiplier field in the database.
 	FieldRefundRateMultiplier = "refund_rate_multiplier"
+	// FieldPeakRateEnabled holds the string denoting the peak_rate_enabled field in the database.
+	FieldPeakRateEnabled = "peak_rate_enabled"
+	// FieldPeakStart holds the string denoting the peak_start field in the database.
+	FieldPeakStart = "peak_start"
+	// FieldPeakEnd holds the string denoting the peak_end field in the database.
+	FieldPeakEnd = "peak_end"
+	// FieldPeakRateMultiplier holds the string denoting the peak_rate_multiplier field in the database.
+	FieldPeakRateMultiplier = "peak_rate_multiplier"
 	// FieldIsExclusive holds the string denoting the is_exclusive field in the database.
 	FieldIsExclusive = "is_exclusive"
 	// FieldUserSelectable holds the string denoting the user_selectable field in the database.
@@ -205,6 +213,10 @@ var Columns = []string{
 	FieldDescription,
 	FieldRateMultiplier,
 	FieldRefundRateMultiplier,
+	FieldPeakRateEnabled,
+	FieldPeakStart,
+	FieldPeakEnd,
+	FieldPeakRateMultiplier,
 	FieldIsExclusive,
 	FieldUserSelectable,
 	FieldStatus,
@@ -293,6 +305,18 @@ var (
 	DefaultRateMultiplier float64
 	// DefaultRefundRateMultiplier holds the default value on creation for the "refund_rate_multiplier" field.
 	DefaultRefundRateMultiplier float64
+	// DefaultPeakRateEnabled holds the default value on creation for the "peak_rate_enabled" field.
+	DefaultPeakRateEnabled bool
+	// DefaultPeakStart holds the default value on creation for the "peak_start" field.
+	DefaultPeakStart string
+	// PeakStartValidator is a validator for the "peak_start" field. It is called by the builders before save.
+	PeakStartValidator func(string) error
+	// DefaultPeakEnd holds the default value on creation for the "peak_end" field.
+	DefaultPeakEnd string
+	// PeakEndValidator is a validator for the "peak_end" field. It is called by the builders before save.
+	PeakEndValidator func(string) error
+	// DefaultPeakRateMultiplier holds the default value on creation for the "peak_rate_multiplier" field.
+	DefaultPeakRateMultiplier float64
 	// DefaultIsExclusive holds the default value on creation for the "is_exclusive" field.
 	DefaultIsExclusive bool
 	// DefaultUserSelectable holds the default value on creation for the "user_selectable" field.
@@ -435,6 +459,26 @@ func ByRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
 // ByRefundRateMultiplier orders the results by the refund_rate_multiplier field.
 func ByRefundRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRefundRateMultiplier, opts...).ToFunc()
+}
+
+// ByPeakRateEnabled orders the results by the peak_rate_enabled field.
+func ByPeakRateEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPeakRateEnabled, opts...).ToFunc()
+}
+
+// ByPeakStart orders the results by the peak_start field.
+func ByPeakStart(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPeakStart, opts...).ToFunc()
+}
+
+// ByPeakEnd orders the results by the peak_end field.
+func ByPeakEnd(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPeakEnd, opts...).ToFunc()
+}
+
+// ByPeakRateMultiplier orders the results by the peak_rate_multiplier field.
+func ByPeakRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPeakRateMultiplier, opts...).ToFunc()
 }
 
 // ByIsExclusive orders the results by the is_exclusive field.

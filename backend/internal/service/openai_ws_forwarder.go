@@ -2899,6 +2899,7 @@ func (s *OpenAIGatewayService) buildOpenAIResponsesWSURL(account *Account) (stri
 }
 
 func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
+	ctx context.Context,
 	c *gin.Context,
 	account *Account,
 	token string,
@@ -2907,7 +2908,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	turnState string,
 	turnMetadata string,
 	promptCacheKey string,
-) (http.Header, openAIWSSessionHeaderResolution) {
+) (http.Header, openAIWSSessionHeaderResolution, error) {
 	headers := make(http.Header)
 	headers.Set("authorization", "Bearer "+token)
 
@@ -2985,7 +2986,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		headers.Set("user-agent", codexCLIUserAgent)
 	}
 
-	return headers, sessionResolution
+	return headers, sessionResolution, nil
 }
 
 // buildOpenAIWSNeutralHeaders 构造账号级中性握手头：不携带任何请求级身份
@@ -4538,7 +4539,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	promoteNeutralConnToSessionBound := false
 	pool := s.getOpenAIWSConnPool()
 	tlsFPRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "websocket")
-	wsHeaders, sessionResolution := s.buildOpenAIWSHeaders(c, account, token, decision, isCodexCLI, turnState, turnMetadata, promptCacheKey)
+	wsHeaders, sessionResolution, buildHdrErr := s.buildOpenAIWSHeaders(ctx, c, account, token, decision, isCodexCLI, turnState, turnMetadata, promptCacheKey)
+	if buildHdrErr != nil {
+		return nil, fmt.Errorf("build ws headers: %w", buildHdrErr)
+	}
 	applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
 	if httpIngressWSOneShot {
 		// 无会话 one-shot：使用账号级中性握手头，不绑定 session/response。
@@ -6133,12 +6137,14 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				hooks,
 				wsDecision,
 			)
+		case OpenAIWSIngressModeHTTPBridge:
+			forceHTTPBridge = true
 		case OpenAIWSIngressModeCtxPool, OpenAIWSIngressModeShared, OpenAIWSIngressModeDedicated:
 			// continue
 		default:
 			return NewOpenAIWSClientCloseError(
 				coderws.StatusPolicyViolation,
-				"websocket mode only supports ctx_pool/passthrough",
+				"websocket mode only supports ctx_pool/passthrough/http_bridge",
 				nil,
 			)
 		}
@@ -6513,7 +6519,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 	refreshIngressRouteState(firstPayload)
 
-	if s.shouldBridgeOpenAIWSHTTP(account, firstPayload.payloadBytes, firstPayload.previousResponseID) {
+	if forceHTTPBridge || s.shouldBridgeOpenAIWSHTTP(account, firstPayload.payloadBytes, firstPayload.previousResponseID) {
 		logOpenAIWSModeInfo(
 			"ingress_ws_http_bridge_start account_id=%d account_type=%s payload_bytes=%d threshold_bytes=%d has_session_hash=%v store_disabled=%v",
 			account.ID,
@@ -6698,7 +6704,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 	isCodexCLI = openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator")) || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI)
 	tlsFPRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "websocket")
-	wsHeaders, _ := s.buildOpenAIWSHeaders(c, account, token, wsDecision, isCodexCLI, turnState, strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), firstPayload.promptCacheKey)
+	wsHeaders, _, buildHdrErr := s.buildOpenAIWSHeaders(ctx, c, account, token, wsDecision, isCodexCLI, turnState, strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), firstPayload.promptCacheKey)
+	if buildHdrErr != nil {
+		return fmt.Errorf("build ws headers: %w", buildHdrErr)
+	}
 	applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
 	baseAcquireReq := openAIWSAcquireRequest{
 		Account:    account,
@@ -8091,7 +8100,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if nextPayload.promptCacheKey != "" {
 			// ingress 会话在整个客户端 WS 生命周期内复用同一上游连接；
 			// prompt_cache_key 对握手头的更新仅在未来需要重新建连时生效。
-			updatedHeaders, _ := s.buildOpenAIWSHeaders(c, account, token, wsDecision, isCodexCLI, turnState, strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), nextPayload.promptCacheKey)
+			updatedHeaders, _, updHdrErr := s.buildOpenAIWSHeaders(ctx, c, account, token, wsDecision, isCodexCLI, turnState, strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), nextPayload.promptCacheKey)
+			if updHdrErr != nil {
+				return fmt.Errorf("build ws headers: %w", updHdrErr)
+			}
 			applyOpenAIWSFingerprintRuntimeHeaders(updatedHeaders, tlsFPRuntime)
 			baseAcquireReq.Headers = updatedHeaders
 		}
@@ -8595,6 +8607,10 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 		if shouldClearStickySession(latest, requestedModel) || !latest.IsOpenAI() || !latest.IsSchedulable() {
 			logDiag("latest_unschedulable", "delete_binding", latest, accountID, true, false)
 			_ = store.DeleteResponseAccount(ctx, group, apiKeyID, responseID)
+			return nil, nil
+		}
+		if !parentHealthyForShadow(latest, s.parentAccountLookup(ctx)) {
+			_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), apiKeyID, responseID)
 			return nil, nil
 		}
 		if requestedModel != "" && !latest.IsModelSupported(requestedModel) {
