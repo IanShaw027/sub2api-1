@@ -28,6 +28,8 @@ type stubAdminService struct {
 	updatedProxies       []*service.UpdateProxyInput
 	testedProxyIDs       []int64
 	getUserErr           error
+	getProxyErr          error
+	getProxyNil          bool
 	createAccountErr     error
 	updateAccountErr     error
 	bulkUpdateAccountErr error
@@ -486,6 +488,12 @@ func (s *stubAdminService) GetAllProxiesWithAccountCount(ctx context.Context) ([
 }
 
 func (s *stubAdminService) GetProxy(ctx context.Context, id int64) (*service.Proxy, error) {
+	if s.getProxyErr != nil {
+		return nil, s.getProxyErr
+	}
+	if s.getProxyNil {
+		return nil, nil
+	}
 	for i := range s.proxies {
 		proxy := s.proxies[i]
 		if proxy.ID == id {

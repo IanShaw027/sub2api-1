@@ -53,6 +53,22 @@ type OAuthSession struct {
 	ProxyURL      string    `json:"proxy_url,omitempty"`
 	RedirectURI   string    `json:"redirect_uri"`
 	CreatedAt     time.Time `json:"created_at"`
+
+	mu       sync.Mutex
+	consumed bool
+}
+
+func (s *OAuthSession) TryConsume() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.consumed {
+		return false
+	}
+	s.consumed = true
+	return true
 }
 
 // SessionStore manages xAI OAuth sessions in memory.

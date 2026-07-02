@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
@@ -13,11 +14,24 @@ import (
 type grokOAuthClientStub struct {
 	refreshResponse *xai.TokenResponse
 	exchangeCalls   int
+	mu              sync.Mutex
+	exchangeStarted chan struct{}
+	releaseExchange chan struct{}
+	onExchangeOnce  sync.Once
 }
 
 func (s *grokOAuthClientStub) ExchangeCode(context.Context, string, string, string, string, string) (*xai.TokenResponse, error) {
+	s.mu.Lock()
 	s.exchangeCalls++
-	return &xai.TokenResponse{}, nil
+	callNumber := s.exchangeCalls
+	s.mu.Unlock()
+	if callNumber == 1 && s.exchangeStarted != nil {
+		s.onExchangeOnce.Do(func() { close(s.exchangeStarted) })
+	}
+	if callNumber == 1 && s.releaseExchange != nil {
+		<-s.releaseExchange
+	}
+	return &xai.TokenResponse{AccessToken: "access-token", RefreshToken: "refresh-token", ExpiresIn: 3600}, nil
 }
 
 func (s *grokOAuthClientStub) RefreshToken(context.Context, string, string, string) (*xai.TokenResponse, error) {
@@ -39,6 +53,23 @@ func TestGrokOAuthServiceRefreshTokenPreservesOriginalRefreshTokenWhenNotRotated
 	require.Equal(t, "new-access-token", info.AccessToken)
 	require.Equal(t, "original-refresh-token", info.RefreshToken)
 	require.Equal(t, "client-id", info.ClientID)
+}
+
+func TestGrokOAuthServiceRefreshTokenRejectsResponseWithoutAccessToken(t *testing.T) {
+	svc := NewGrokOAuthService(nil, &grokOAuthClientStub{
+		refreshResponse: &xai.TokenResponse{
+			RefreshToken: "new-refresh-token",
+			TokenType:    "Bearer",
+			ExpiresIn:    3600,
+		},
+	})
+	defer svc.Stop()
+
+	info, err := svc.RefreshToken(context.Background(), "original-refresh-token", "", "client-id")
+
+	require.Nil(t, info)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "GROK_OAUTH_INVALID_TOKEN_RESPONSE")
 }
 
 func TestGrokOAuthServiceExchangeCodeRequiresStateForCallbackURLAndConsumesSession(t *testing.T) {
@@ -65,4 +96,46 @@ func TestGrokOAuthServiceExchangeCodeRequiresStateForCallbackURLAndConsumesSessi
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "GROK_OAUTH_SESSION_NOT_FOUND")
 	require.Zero(t, client.exchangeCalls)
+}
+
+func TestGrokOAuthServiceExchangeCodeRejectsConcurrentSessionReuse(t *testing.T) {
+	client := &grokOAuthClientStub{
+		exchangeStarted: make(chan struct{}),
+		releaseExchange: make(chan struct{}),
+	}
+	released := false
+	defer func() {
+		if !released {
+			close(client.releaseExchange)
+		}
+	}()
+	svc := NewGrokOAuthService(nil, client)
+	defer svc.Stop()
+
+	auth, err := svc.GenerateAuthURL(context.Background(), nil, "")
+	require.NoError(t, err)
+
+	firstErr := make(chan error, 1)
+	go func() {
+		_, err := svc.ExchangeCode(context.Background(), &GrokExchangeCodeInput{
+			SessionID: auth.SessionID,
+			Code:      "first-code",
+			State:     auth.State,
+		})
+		firstErr <- err
+	}()
+	<-client.exchangeStarted
+
+	_, err = svc.ExchangeCode(context.Background(), &GrokExchangeCodeInput{
+		SessionID: auth.SessionID,
+		Code:      "second-code",
+		State:     auth.State,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "GROK_OAUTH_SESSION_ALREADY_USED")
+	require.Equal(t, 1, client.exchangeCalls, "second concurrent callback must not redeem the same session")
+
+	close(client.releaseExchange)
+	released = true
+	require.NoError(t, <-firstErr)
 }

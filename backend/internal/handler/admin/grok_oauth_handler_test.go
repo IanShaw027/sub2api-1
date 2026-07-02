@@ -4,6 +4,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,19 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
+
+type grokOAuthHandlerClient struct {
+	refreshCalls int
+}
+
+func (c *grokOAuthHandlerClient) ExchangeCode(context.Context, string, string, string, string, string) (*xai.TokenResponse, error) {
+	return nil, errors.New("unexpected exchange")
+}
+
+func (c *grokOAuthHandlerClient) RefreshToken(context.Context, string, string, string) (*xai.TokenResponse, error) {
+	c.refreshCalls++
+	return &xai.TokenResponse{AccessToken: "access-token", RefreshToken: "refresh-token", ExpiresIn: 3600}, nil
+}
 
 type grokQuotaHandlerAccountRepo struct {
 	service.AccountRepository
@@ -102,6 +116,26 @@ func TestGrokOAuthHandlerQueryQuotaProbesUpstream(t *testing.T) {
 	require.Equal(t, "Bearer access-token", upstream.lastReq.Header.Get("Authorization"))
 	require.Contains(t, string(upstream.lastBody), `"store":false`)
 	require.NotNil(t, repo.updates[42])
+}
+
+func TestGrokOAuthHandlerRefreshTokenRejectsMissingProxyWithoutUpstreamCall(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	oauthClient := &grokOAuthHandlerClient{}
+	oauthService := service.NewGrokOAuthService(nil, oauthClient)
+	defer oauthService.Stop()
+	handler := NewGrokOAuthHandler(oauthService, &stubAdminService{getProxyNil: true}, nil)
+
+	router := gin.New()
+	router.POST("/api/v1/admin/grok/oauth/refresh-token", handler.RefreshToken)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/grok/oauth/refresh-token", strings.NewReader(`{"refresh_token":"rt","proxy_id":99}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.NotEqual(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "GROK_OAUTH_PROXY_NOT_FOUND")
+	require.Zero(t, oauthClient.refreshCalls)
 }
 
 func TestGrokOAuthHandlerResetQuotaReturnsUnsupported(t *testing.T) {

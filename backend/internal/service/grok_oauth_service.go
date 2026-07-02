@@ -144,8 +144,14 @@ func (s *GrokOAuthService) ExchangeCode(ctx context.Context, input *GrokExchange
 		redirectURI = input.RedirectURI
 	}
 
+	if !session.TryConsume() {
+		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_SESSION_ALREADY_USED", "oauth session has already been used")
+	}
 	tokenResp, err := s.oauthClient.ExchangeCode(ctx, code, session.CodeVerifier, redirectURI, proxyURL, session.ClientID)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateGrokTokenResponse(tokenResp); err != nil {
 		return nil, err
 	}
 	return s.tokenInfoFromResponse(tokenResp, session.ClientID, nil), nil
@@ -158,6 +164,9 @@ func (s *GrokOAuthService) RefreshToken(ctx context.Context, refreshToken, proxy
 	}
 	tokenResp, err := s.oauthClient.RefreshToken(ctx, refreshToken, proxyURL, clientID)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateGrokTokenResponse(tokenResp); err != nil {
 		return nil, err
 	}
 	tokenInfo := s.tokenInfoFromResponse(tokenResp, clientID, nil)
@@ -241,6 +250,13 @@ func (s *GrokOAuthService) BuildAccountCredentials(tokenInfo *GrokTokenInfo) map
 
 func (s *GrokOAuthService) Stop() {
 	s.sessionStore.Stop()
+}
+
+func validateGrokTokenResponse(tokenResp *xai.TokenResponse) error {
+	if tokenResp == nil || strings.TrimSpace(tokenResp.AccessToken) == "" {
+		return infraerrors.New(http.StatusBadGateway, "GROK_OAUTH_INVALID_TOKEN_RESPONSE", "grok oauth token response missing access_token")
+	}
+	return nil
 }
 
 func (s *GrokOAuthService) tokenInfoFromResponse(tokenResp *xai.TokenResponse, clientID string, existing map[string]any) *GrokTokenInfo {
