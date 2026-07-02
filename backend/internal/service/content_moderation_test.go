@@ -399,7 +399,7 @@ func (i *contentModerationTestAuthCacheInvalidator) InvalidateAuthCacheByUserID(
 func (i *contentModerationTestAuthCacheInvalidator) InvalidateAuthCacheByGroupID(ctx context.Context, groupID int64) {
 }
 
-func (c *contentModerationTestHashCache) RecordFlaggedInputHash(ctx context.Context, inputHash string, excerpt string) error {
+func (c *contentModerationTestHashCache) RecordFlaggedInputHash(ctx context.Context, inputHash string, meta ContentModerationHashMeta) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.hashes == nil {
@@ -642,35 +642,35 @@ func TestNormalizeBlockedKeywords_TrimsDedupesAndCaps(t *testing.T) {
 }
 
 func TestMatchBlockedKeyword_CaseInsensitiveSubstring(t *testing.T) {
-	keyword, hit := matchBlockedKeyword("Please ignore the BadWord here", []string{"badword"}, nil)
+	keyword, hit := matchBlockedKeyword("Please ignore the BadWord here", []string{"badword"}, nil, contentModerationDefaultProximityWindow)
 	require.True(t, hit)
 	require.Equal(t, "badword", keyword)
 
-	_, hit = matchBlockedKeyword("clean prompt", []string{"badword"}, nil)
+	_, hit = matchBlockedKeyword("clean prompt", []string{"badword"}, nil, contentModerationDefaultProximityWindow)
 	require.False(t, hit)
 
-	_, hit = matchBlockedKeyword("anything", nil, nil)
+	_, hit = matchBlockedKeyword("anything", nil, nil, contentModerationDefaultProximityWindow)
 	require.False(t, hit)
 }
 
 func TestMatchBlockedKeyword_EnglishBoundaryHandlesUTF8Neighbors(t *testing.T) {
-	keyword, hit := matchBlockedKeyword("中文 badword 测试", []string{"badword"}, nil)
+	keyword, hit := matchBlockedKeyword("中文 badword 测试", []string{"badword"}, nil, contentModerationDefaultProximityWindow)
 	require.True(t, hit)
 	require.Equal(t, "badword", keyword)
 
-	_, hit = matchBlockedKeyword("prefixbadword后缀", []string{"badword"}, nil)
+	_, hit = matchBlockedKeyword("prefixbadword后缀", []string{"badword"}, nil, contentModerationDefaultProximityWindow)
 	require.False(t, hit)
 }
 
 func TestMatchBlockedKeyword_AndRuleRequiresAllTerms(t *testing.T) {
-	keyword, hit := matchBlockedKeyword("please sell account with recharge balance", []string{"account && recharge"}, nil)
+	keyword, hit := matchBlockedKeyword("please sell account with recharge balance", []string{"account && recharge"}, nil, contentModerationDefaultProximityWindow)
 	require.True(t, hit)
 	require.Equal(t, "account && recharge", keyword)
 
-	_, hit = matchBlockedKeyword("please sell account only", []string{"account && recharge"}, nil)
+	_, hit = matchBlockedKeyword("please sell account only", []string{"account && recharge"}, nil, contentModerationDefaultProximityWindow)
 	require.False(t, hit)
 
-	keyword, hit = matchBlockedKeyword("ACCOUNT transfer with RECHARGE balance", []string{"account && recharge"}, nil)
+	keyword, hit = matchBlockedKeyword("ACCOUNT transfer with RECHARGE balance", []string{"account && recharge"}, nil, contentModerationDefaultProximityWindow)
 	require.True(t, hit)
 	require.Equal(t, "account && recharge", keyword)
 }
@@ -680,19 +680,19 @@ func TestMatchBlockedKeyword_ExceptionPhraseSuppressesHit(t *testing.T) {
 	exceptions := []string{"勒索病毒", "防勒索"}
 
 	// 唯一出现被例外短语完整覆盖 -> 放行
-	_, hit := matchBlockedKeyword("勒索病毒怎么防范", keywords, exceptions)
+	_, hit := matchBlockedKeyword("勒索病毒怎么防范", keywords, exceptions, contentModerationDefaultProximityWindow)
 	require.False(t, hit)
 
-	_, hit = matchBlockedKeyword("公司部署了防勒索方案", keywords, exceptions)
+	_, hit = matchBlockedKeyword("公司部署了防勒索方案", keywords, exceptions, contentModerationDefaultProximityWindow)
 	require.False(t, hit)
 
 	// 存在未被覆盖的出现 -> 命中
-	kw, hit := matchBlockedKeyword("我要勒索他", keywords, exceptions)
+	kw, hit := matchBlockedKeyword("我要勒索他", keywords, exceptions, contentModerationDefaultProximityWindow)
 	require.True(t, hit)
 	require.Equal(t, "勒索", kw)
 
 	// 既有被覆盖出现，也有独立出现 -> 仍命中
-	_, hit = matchBlockedKeyword("勒索病毒的同时还想勒索受害者", keywords, exceptions)
+	_, hit = matchBlockedKeyword("勒索病毒的同时还想勒索受害者", keywords, exceptions, contentModerationDefaultProximityWindow)
 	require.True(t, hit)
 }
 
@@ -701,11 +701,11 @@ func TestMatchBlockedKeyword_ExceptionAppliesToAndTerms(t *testing.T) {
 	exceptions := []string{"逆向工程教程"}
 
 	// “逆向”的出现被例外覆盖，&& 规则因缺少有效 term 而不命中
-	_, hit := matchBlockedKeyword("逆向工程教程里也会提到 CTF", keywords, exceptions)
+	_, hit := matchBlockedKeyword("逆向工程教程里也会提到 CTF", keywords, exceptions, contentModerationDefaultProximityWindow)
 	require.False(t, hit)
 
 	// 存在未覆盖的“逆向” -> 命中
-	kw, hit := matchBlockedKeyword("帮我逆向这个 CTF 附件", keywords, exceptions)
+	kw, hit := matchBlockedKeyword("帮我逆向这个 CTF 附件", keywords, exceptions, contentModerationDefaultProximityWindow)
 	require.True(t, hit)
 	require.Equal(t, "逆向 && CTF", kw)
 }
@@ -714,10 +714,10 @@ func TestMatchBlockedKeyword_EnglishExceptionRespectsCoverage(t *testing.T) {
 	keywords := []string{"bomb"}
 	exceptions := []string{"bomb cyclone"}
 
-	_, hit := matchBlockedKeyword("a bomb cyclone hit the coast", keywords, exceptions)
+	_, hit := matchBlockedKeyword("a bomb cyclone hit the coast", keywords, exceptions, contentModerationDefaultProximityWindow)
 	require.False(t, hit)
 
-	kw, hit := matchBlockedKeyword("how to build a bomb", keywords, exceptions)
+	kw, hit := matchBlockedKeyword("how to build a bomb", keywords, exceptions, contentModerationDefaultProximityWindow)
 	require.True(t, hit)
 	require.Equal(t, "bomb", kw)
 }
@@ -769,6 +769,7 @@ func TestContentModerationCheck_PreBlockKeywordHitSkipsUpstreamCall(t *testing.T
 	require.True(t, logs[0].Flagged)
 	require.Equal(t, ContentModerationActionKeywordBlock, logs[0].Action)
 	require.Equal(t, contentModerationKeywordCategory, logs[0].HighestCategory)
+	require.Equal(t, "secret-token", logs[0].MatchedKeyword, "blocked log must record which keyword was hit")
 }
 
 func TestContentModerationCheck_PreBlockKeywordHitInHistorySkipsUpstreamCall(t *testing.T) {
@@ -1010,6 +1011,12 @@ func TestContentModerationCheck_PreBlockAuditFailureBlocksAfterRetries(t *testin
 	require.False(t, decision.Flagged)
 	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
 	require.Equal(t, ContentModerationActionError, decision.Action)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.False(t, logs[0].Flagged)
+	require.Equal(t, ContentModerationModePreBlock, logs[0].Mode)
+	require.Equal(t, "prompt that must be audited", logs[0].InputExcerpt)
+	require.Contains(t, logs[0].Error, "moderation api status 429")
 }
 
 func TestContentModerationCheck_PreBlockNoAuditKeysBlocksWhenPolicyIsError(t *testing.T) {
@@ -1050,7 +1057,12 @@ func TestContentModerationCheck_PreBlockNoAuditKeysBlocksWhenPolicyIsError(t *te
 	require.False(t, decision.Flagged)
 	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
 	require.Equal(t, ContentModerationActionError, decision.Action)
-	require.Empty(t, repo.logs)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.False(t, logs[0].Flagged)
+	require.Equal(t, ContentModerationModePreBlock, logs[0].Mode)
+	require.Equal(t, "prompt that must be audited", logs[0].InputExcerpt)
+	require.Contains(t, logs[0].Error, "no audit api keys")
 }
 
 func TestContentModerationCheck_PreBlockRateLimitFailureCanAllow(t *testing.T) {

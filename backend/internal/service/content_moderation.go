@@ -100,6 +100,8 @@ const (
 	maxContentModerationBlockedKeywordRunes      = 200
 	maxContentModerationModelFilterModels        = 1000
 	maxContentModerationModelFilterRunes         = 200
+	contentModerationDefaultProximityWindow      = 200
+	contentModerationMaxProximityWindow          = 2000
 
 	contentModerationCleanupInterval = 24 * time.Hour
 	contentModerationCleanupTimeout  = 30 * time.Minute
@@ -184,7 +186,10 @@ type ContentModerationConfig struct {
 	BlockedKeywords         []string                          `json:"blocked_keywords"`
 	KeywordExceptions       []string                          `json:"keyword_exceptions"`
 	KeywordBlockingMode     string                            `json:"keyword_blocking_mode"`
-	ModelFilter             ContentModerationModelFilter      `json:"model_filter"`
+	// DefaultProximityWindow 是 && 组合关键词在未显式指定 :N 后缀时使用的默认邻近窗口（字符数）。
+	// 归一化范围 [1, contentModerationMaxProximityWindow]，默认 contentModerationDefaultProximityWindow。
+	DefaultProximityWindow int                          `json:"default_proximity_window"`
+	ModelFilter            ContentModerationModelFilter `json:"model_filter"`
 	// CyberPolicyExcludeFromBanCount 为 true 时，cyber_policy 命中不参与自动封号计数：
 	// 当次不判定封号，且历史 cyber 行在 CountFlaggedByUserSince 中被排除。
 	// 默认 false（计入，与历史行为一致；旧配置 JSON 无此字段时反序列化为 false）。
@@ -231,6 +236,7 @@ type ContentModerationConfigView struct {
 	BlockedKeywords                []string                        `json:"blocked_keywords"`
 	KeywordExceptions              []string                        `json:"keyword_exceptions"`
 	KeywordBlockingMode            string                          `json:"keyword_blocking_mode"`
+	DefaultProximityWindow         int                             `json:"default_proximity_window"`
 	ModelFilter                    ContentModerationModelFilter    `json:"model_filter"`
 	CyberPolicyExcludeFromBanCount bool                            `json:"cyber_policy_exclude_from_ban_count"`
 }
@@ -352,6 +358,7 @@ type UpdateContentModerationConfigInput struct {
 	BlockedKeywords                *[]string                              `json:"blocked_keywords"`
 	KeywordExceptions              *[]string                              `json:"keyword_exceptions"`
 	KeywordBlockingMode            *string                                `json:"keyword_blocking_mode"`
+	DefaultProximityWindow         *int                                   `json:"default_proximity_window"`
 	ModelFilter                    *ContentModerationModelFilter          `json:"model_filter"`
 	CyberPolicyExcludeFromBanCount *bool                                  `json:"cyber_policy_exclude_from_ban_count"`
 }
@@ -457,6 +464,7 @@ type ContentModerationLog struct {
 	Flagged           bool               `json:"flagged"`
 	HighestCategory   string             `json:"highest_category"`
 	HighestScore      float64            `json:"highest_score"`
+	MatchedKeyword    string             `json:"matched_keyword"`
 	CategoryScores    map[string]float64 `json:"category_scores"`
 	ThresholdSnapshot map[string]float64 `json:"threshold_snapshot"`
 	InputExcerpt      string             `json:"input_excerpt"`
@@ -543,12 +551,31 @@ type ContentModerationHashListFilter struct {
 }
 
 type ContentModerationHashItem struct {
-	InputHash    string    `json:"input_hash"`
-	InputExcerpt string    `json:"input_excerpt"`
-	CreatedAt    time.Time `json:"created_at"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	HitCount7D   int64     `json:"hit_count_7d"`
-	HitCount30D  int64     `json:"hit_count_30d"`
+	InputHash       string    `json:"input_hash"`
+	InputExcerpt    string    `json:"input_excerpt"`
+	Action          string    `json:"action"`
+	HighestCategory string    `json:"highest_category"`
+	MatchedKeyword  string    `json:"matched_keyword"`
+	Model           string    `json:"model"`
+	GroupName       string    `json:"group_name"`
+	UserEmail       string    `json:"user_email"`
+	CreatedAt       time.Time `json:"created_at"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	HitCount7D      int64     `json:"hit_count_7d"`
+	HitCount30D     int64     `json:"hit_count_30d"`
+}
+
+// ContentModerationHashMeta 是记录 flagged 哈希时随哈希一起快照的审核记录上下文。
+// 所有字段应为已脱敏、可直接展示的值（与 Excerpt 的脱敏约定一致）。
+// 首次记录该哈希时写入（HSetNX），保留最初命中的上下文。
+type ContentModerationHashMeta struct {
+	Excerpt         string
+	Action          string
+	HighestCategory string
+	MatchedKeyword  string
+	Model           string
+	GroupName       string
+	UserEmail       string
 }
 
 type ContentModerationBatchDeleteHashesResult struct {
@@ -567,7 +594,7 @@ type ContentModerationRepository interface {
 }
 
 type ContentModerationHashCache interface {
-	RecordFlaggedInputHash(ctx context.Context, inputHash string, excerpt string) error
+	RecordFlaggedInputHash(ctx context.Context, inputHash string, meta ContentModerationHashMeta) error
 	HasFlaggedInputHash(ctx context.Context, inputHash string) (bool, error)
 	ListFlaggedInputHashes(ctx context.Context, filter ContentModerationHashListFilter) ([]ContentModerationHashItem, *pagination.PaginationResult, error)
 	DeleteFlaggedInputHash(ctx context.Context, inputHash string) (bool, error)
@@ -788,6 +815,9 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	}
 	if input.KeywordBlockingMode != nil {
 		cfg.KeywordBlockingMode = strings.TrimSpace(*input.KeywordBlockingMode)
+	}
+	if input.DefaultProximityWindow != nil {
+		cfg.DefaultProximityWindow = *input.DefaultProximityWindow
 	}
 	if input.ModelFilter != nil {
 		cfg.ModelFilter = *input.ModelFilter
@@ -1098,7 +1128,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	if cfg.Mode == ContentModerationModePreBlock {
 		if cfg.KeywordBlockingMode != ContentModerationKeywordModeAPIOnly && len(cfg.BlockedKeywords) > 0 {
 			for _, localContent := range localContents {
-				if keyword, hit := matchBlockedKeyword(localContent.Text, cfg.BlockedKeywords, cfg.KeywordExceptions); hit {
+				if keyword, hit := matchBlockedKeyword(localContent.Text, cfg.BlockedKeywords, cfg.KeywordExceptions, cfg.DefaultProximityWindow); hit {
 					localHash := localContent.Hash()
 					s.recordPreBlockSyncMetric(0, ContentModerationActionKeywordBlock)
 					slog.Info("content_moderation.keyword_block",
@@ -1112,6 +1142,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 						"input_hash", localHash)
 					scores := map[string]float64{contentModerationKeywordCategory: 1.0}
 					log := s.buildLog(input, cfg, ContentModerationActionKeywordBlock, true, contentModerationKeywordCategory, 1.0, scores, localContent.ExcerptText(), nil, nil, "")
+					log.MatchedKeyword = keyword
 					s.enqueueRecord(ctx, input, cfg, log, localHash, false, true)
 					return &ContentModerationDecision{
 						Allowed:         false,
@@ -1211,6 +1242,8 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"endpoint", input.Endpoint,
 			"protocol", input.Protocol)
 		if shouldBlockContentModerationAuditFailure(cfg, true, nil) {
+			log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, auditContent.ExcerptText(), nil, nil, "no audit api keys available")
+			_ = s.repo.CreateLog(ctx, log)
 			return contentModerationAuditFailureDecision(cfg), nil
 		}
 		return allow, nil
@@ -1258,7 +1291,7 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		if queueDelay != nil {
 			s.asyncErrors.Add(1)
 		}
-		if cfg.RecordNonHits {
+		if cfg.RecordNonHits || shouldBlockContentModerationAuditFailure(cfg, allowBlock, queueDelay) {
 			log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, content.ExcerptText(), &latency, queueDelay, err.Error())
 			_ = s.repo.CreateLog(ctx, log)
 		}
@@ -2058,7 +2091,7 @@ func (s *ContentModerationService) applyContentModerationPersistenceEffects(ctx 
 	}
 	if recordHash && s.hashCache != nil {
 		// log.InputExcerpt 已由 contentModerationExcerpt 脱敏并截断，安全用于展示。
-		if err := s.hashCache.RecordFlaggedInputHash(ctx, hashText, log.InputExcerpt); err != nil {
+		if err := s.hashCache.RecordFlaggedInputHash(ctx, hashText, contentModerationHashMetaFromLog(log)); err != nil {
 			slog.Warn("content_moderation.record_hash_failed", "user_id", contentModerationEmailUserID(log), "endpoint", log.Endpoint, "error", err)
 		}
 	}
@@ -2066,6 +2099,22 @@ func (s *ContentModerationService) applyContentModerationPersistenceEffects(ctx 
 	if applySideEffects {
 		autoBanJustApplied = s.applyFlaggedAccountSideEffects(ctx, cfg, log)
 		go s.sendFlaggedNotificationSideEffects(context.Background(), cfg, log, autoBanJustApplied)
+	}
+}
+
+// contentModerationHashMetaFromLog 从审核记录快照出可展示的哈希上下文。
+func contentModerationHashMetaFromLog(log *ContentModerationLog) ContentModerationHashMeta {
+	if log == nil {
+		return ContentModerationHashMeta{}
+	}
+	return ContentModerationHashMeta{
+		Excerpt:         log.InputExcerpt,
+		Action:          log.Action,
+		HighestCategory: log.HighestCategory,
+		MatchedKeyword:  log.MatchedKeyword,
+		Model:           log.Model,
+		GroupName:       log.GroupName,
+		UserEmail:       log.UserEmail,
 	}
 }
 
@@ -2308,6 +2357,7 @@ func defaultContentModerationConfig() *ContentModerationConfig {
 		BlockedKeywords:         []string{},
 		KeywordExceptions:       []string{},
 		KeywordBlockingMode:     ContentModerationKeywordModeKeywordAndAPI,
+		DefaultProximityWindow:  contentModerationDefaultProximityWindow,
 		ModelFilter: ContentModerationModelFilter{
 			Type:   ContentModerationModelFilterAll,
 			Models: []string{},
@@ -2444,7 +2494,20 @@ func (cfg *ContentModerationConfig) normalize() {
 	cfg.BlockedKeywords = normalizeBlockedKeywords(cfg.BlockedKeywords)
 	cfg.KeywordExceptions = normalizeBlockedKeywords(cfg.KeywordExceptions)
 	cfg.KeywordBlockingMode = normalizeKeywordBlockingMode(cfg.KeywordBlockingMode)
+	cfg.DefaultProximityWindow = normalizeProximityWindow(cfg.DefaultProximityWindow)
 	cfg.ModelFilter = normalizeContentModerationModelFilter(cfg.ModelFilter)
+}
+
+// normalizeProximityWindow 将默认邻近窗口归一化到 [1, contentModerationMaxProximityWindow]，
+// 非正值回落到 contentModerationDefaultProximityWindow。
+func normalizeProximityWindow(window int) int {
+	if window <= 0 {
+		return contentModerationDefaultProximityWindow
+	}
+	if window > contentModerationMaxProximityWindow {
+		return contentModerationMaxProximityWindow
+	}
+	return window
 }
 
 func (cfg *ContentModerationConfig) includesGroup(groupID *int64) bool {
@@ -2876,6 +2939,7 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		BlockedKeywords:                append([]string(nil), cfg.BlockedKeywords...),
 		KeywordExceptions:              append([]string(nil), cfg.KeywordExceptions...),
 		KeywordBlockingMode:            cfg.KeywordBlockingMode,
+		DefaultProximityWindow:         cfg.DefaultProximityWindow,
 		ModelFilter:                    cloneContentModerationModelFilter(cfg.ModelFilter),
 		CyberPolicyExcludeFromBanCount: cfg.CyberPolicyExcludeFromBanCount,
 	}
@@ -3424,9 +3488,13 @@ func contentModerationModelListContains(models []string, model string) bool {
 	return false
 }
 
-func matchBlockedKeyword(text string, keywords, exceptions []string) (string, bool) {
+func matchBlockedKeyword(text string, keywords, exceptions []string, defaultWindowValues ...int) (string, bool) {
 	if text == "" || len(keywords) == 0 {
 		return "", false
+	}
+	defaultWindow := 0
+	if len(defaultWindowValues) > 0 {
+		defaultWindow = defaultWindowValues[0]
 	}
 	lower := strings.ToLower(text)
 	exSpans := blockedKeywordExceptionSpans(lower, exceptions)
@@ -3435,7 +3503,7 @@ func matchBlockedKeyword(text string, keywords, exceptions []string) (string, bo
 			continue
 		}
 		if terms := splitBlockedKeywordAndTerms(kw); len(terms) > 1 {
-			windowSize := parseProximityWindow(kw)
+			windowSize := parseProximityWindow(kw, defaultWindow)
 			if matchBlockedKeywordAndTerms(lower, terms, exSpans, windowSize) {
 				return kw, true
 			}
@@ -3565,12 +3633,19 @@ func splitBlockedKeywordAndTerms(keyword string) []string {
 
 // parseProximityWindow 从关键词中解析窗口大小配置
 // 语法: "keyword1&&keyword2:300" 表示窗口300字符
-// 不带配置则返回默认值200
-func parseProximityWindow(keyword string) int {
+// 不带 :N 后缀则返回 defaultWindow（全局默认邻近窗口配置）。
+func parseProximityWindow(keyword string, defaultWindowValues ...int) int {
 	if _, window, hasSuffix := parseProximityWindowSuffix(keyword); hasSuffix {
 		return window
 	}
-	return 200
+	defaultWindow := 0
+	if len(defaultWindowValues) > 0 {
+		defaultWindow = defaultWindowValues[0]
+	}
+	if defaultWindow <= 0 {
+		return contentModerationDefaultProximityWindow
+	}
+	return defaultWindow
 }
 
 // removeProximityWindowSuffix 移除关键词中的合法窗口大小配置后缀。
@@ -4039,7 +4114,7 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		slog.Warn("content_moderation.cyber_create_log_failed", "user_id", in.UserID, "error", err)
 	}
 	if !in.SkipHashRecord {
-		s.RecordCyberPolicyFlaggedHashes(ctx, in.RequestProtocol, in.RequestBody)
+		s.RecordCyberPolicyFlaggedHashes(ctx, in.RequestProtocol, in.RequestBody, contentModerationHashMetaFromLog(log))
 	}
 	emailSent := false
 	if s.emailService != nil && strings.TrimSpace(log.UserEmail) != "" {
@@ -4063,20 +4138,27 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 	}
 }
 
-func (s *ContentModerationService) RecordCyberPolicyFlaggedHashes(ctx context.Context, requestProtocol string, requestBody []byte) {
+func (s *ContentModerationService) RecordCyberPolicyFlaggedHashes(ctx context.Context, requestProtocol string, requestBody []byte, base ContentModerationHashMeta) {
 	if s == nil || s.hashCache == nil || s.settingRepo == nil {
 		return
 	}
 	if !s.isRiskControlEnabled(ctx) {
 		return
 	}
+	if base.Action == "" {
+		base.Action = ContentModerationActionCyberPolicy
+	}
+	if base.HighestCategory == "" {
+		base.HighestCategory = "cyber_policy"
+	}
 	for _, localInput := range ExtractContentModerationInputsForLocalBlock(requestProtocol, requestBody) {
 		inputHash := localInput.Hash()
 		if inputHash == "" {
 			continue
 		}
-		excerpt := contentModerationExcerpt(localInput.ExcerptText())
-		if err := s.hashCache.RecordFlaggedInputHash(ctx, inputHash, excerpt); err != nil {
+		meta := base
+		meta.Excerpt = contentModerationExcerpt(localInput.ExcerptText())
+		if err := s.hashCache.RecordFlaggedInputHash(ctx, inputHash, meta); err != nil {
 			slog.Warn("content_moderation.cyber_record_hash_failed", "input_hash", inputHash, "error", err)
 		}
 	}

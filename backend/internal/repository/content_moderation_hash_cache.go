@@ -107,7 +107,7 @@ func NewContentModerationHashCache(rdb *redis.Client) service.ContentModerationH
 	return &contentModerationHashCache{rdb: rdb}
 }
 
-func (c *contentModerationHashCache) RecordFlaggedInputHash(ctx context.Context, inputHash string, excerpt string) error {
+func (c *contentModerationHashCache) RecordFlaggedInputHash(ctx context.Context, inputHash string, meta service.ContentModerationHashMeta) error {
 	inputHash = strings.TrimSpace(inputHash)
 	if c == nil || c.rdb == nil || inputHash == "" {
 		return nil
@@ -124,9 +124,27 @@ func (c *contentModerationHashCache) RecordFlaggedInputHash(ctx context.Context,
 	pipe.Set(ctx, contentModerationFlaggedHashKeyPrefix+inputHash, "1", contentModerationFlaggedHashTTL)
 	pipe.HSetNX(ctx, metaKey, "created_at", nowUnix)
 	pipe.HSet(ctx, metaKey, "expires_at", expiresUnix)
-	// 仅在首次记录该哈希时写入脱敏摘要（HSetNX），保留最初命中的输入内容；调用方需保证 excerpt 已脱敏。
-	if excerpt = strings.TrimSpace(excerpt); excerpt != "" {
-		pipe.HSetNX(ctx, metaKey, "excerpt", excerpt)
+	// 仅在首次记录该哈希时写入脱敏上下文（HSetNX），保留最初命中的输入内容；调用方需保证字段已脱敏。
+	if value := strings.TrimSpace(meta.Excerpt); value != "" {
+		pipe.HSetNX(ctx, metaKey, "excerpt", value)
+	}
+	if value := strings.TrimSpace(meta.Action); value != "" {
+		pipe.HSetNX(ctx, metaKey, "action", value)
+	}
+	if value := strings.TrimSpace(meta.HighestCategory); value != "" {
+		pipe.HSetNX(ctx, metaKey, "highest_category", value)
+	}
+	if value := strings.TrimSpace(meta.MatchedKeyword); value != "" {
+		pipe.HSetNX(ctx, metaKey, "matched_keyword", value)
+	}
+	if value := strings.TrimSpace(meta.Model); value != "" {
+		pipe.HSetNX(ctx, metaKey, "model", value)
+	}
+	if value := strings.TrimSpace(meta.GroupName); value != "" {
+		pipe.HSetNX(ctx, metaKey, "group_name", value)
+	}
+	if value := strings.TrimSpace(meta.UserEmail); value != "" {
+		pipe.HSetNX(ctx, metaKey, "user_email", value)
 	}
 	pipe.Expire(ctx, metaKey, contentModerationFlaggedHashTTL)
 	pipe.ZAddNX(ctx, contentModerationFlaggedHashCreatedZSetKey, redis.Z{Score: float64(nowUnix), Member: inputHash})
@@ -232,7 +250,17 @@ func (c *contentModerationHashCache) ListFlaggedInputHashes(ctx context.Context,
 
 func (c *contentModerationHashCache) flaggedHashItem(ctx context.Context, inputHash string, now time.Time) (service.ContentModerationHashItem, error) {
 	metaKey := contentModerationFlaggedHashMetaKeyPrefix + inputHash
-	fields, err := c.rdb.HMGet(ctx, metaKey, "created_at", "expires_at", "excerpt").Result()
+	fields, err := c.rdb.HMGet(ctx, metaKey,
+		"created_at",
+		"expires_at",
+		"excerpt",
+		"action",
+		"highest_category",
+		"matched_keyword",
+		"model",
+		"group_name",
+		"user_email",
+	).Result()
 	if err != nil {
 		return service.ContentModerationHashItem{}, err
 	}
@@ -266,12 +294,18 @@ func (c *contentModerationHashCache) flaggedHashItem(ctx context.Context, inputH
 		return service.ContentModerationHashItem{}, err
 	}
 	return service.ContentModerationHashItem{
-		InputHash:    inputHash,
-		InputExcerpt: excerpt,
-		CreatedAt:    time.Unix(createdUnix, 0),
-		ExpiresAt:    expiresAt,
-		HitCount7D:   hit7d,
-		HitCount30D:  hit30d,
+		InputHash:       inputHash,
+		InputExcerpt:    excerpt,
+		Action:          redisString(fields[3]),
+		HighestCategory: redisString(fields[4]),
+		MatchedKeyword:  redisString(fields[5]),
+		Model:           redisString(fields[6]),
+		GroupName:       redisString(fields[7]),
+		UserEmail:       redisString(fields[8]),
+		CreatedAt:       time.Unix(createdUnix, 0),
+		ExpiresAt:       expiresAt,
+		HitCount7D:      hit7d,
+		HitCount30D:     hit30d,
 	}, nil
 }
 

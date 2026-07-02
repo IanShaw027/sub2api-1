@@ -92,7 +92,7 @@ func TestMatchBlockedKeyword_AndRuleProximityWindow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			exceptions := []string{"勒索病毒", "勒索软件"}
-			kw, hit := matchBlockedKeyword(tt.text, tt.keywords, exceptions)
+			kw, hit := matchBlockedKeyword(tt.text, tt.keywords, exceptions, contentModerationDefaultProximityWindow)
 			require.Equal(t, tt.want, hit, "命中判断不符合预期")
 			if tt.want {
 				require.Equal(t, tt.wantKW, kw, "命中的关键词不符合预期")
@@ -125,7 +125,7 @@ func TestMatchBlockedKeyword_ProximityWithMultipleOccurrences(t *testing.T) {
 		strings.Repeat("padding ", 40) + // 超过窗口
 		"reverse engineering for CTF challenges"
 
-	kw, hit := matchBlockedKeyword(text, []string{"Reverse&&CTF"}, nil)
+	kw, hit := matchBlockedKeyword(text, []string{"Reverse&&CTF"}, nil, contentModerationDefaultProximityWindow)
 	require.True(t, hit, "应该匹配最后一次reverse和CTF的邻近共现")
 	require.Equal(t, "Reverse&&CTF", kw)
 }
@@ -135,7 +135,7 @@ func TestMatchBlockedKeyword_ProximityWithMultipleOccurrences(t *testing.T) {
 func TestMatchBlockedKeyword_AndRuleProximityWindowIsOrderInsensitive(t *testing.T) {
 	text := buildTextWithDistance("reverse", "ctf", 80)
 
-	kw, hit := matchBlockedKeyword(text, []string{"CTF&&Reverse:200"}, nil)
+	kw, hit := matchBlockedKeyword(text, []string{"CTF&&Reverse:200"}, nil, contentModerationDefaultProximityWindow)
 
 	require.True(t, hit, "term order in rule must not change proximity semantics")
 	require.Equal(t, "CTF&&Reverse:200", kw)
@@ -144,7 +144,7 @@ func TestMatchBlockedKeyword_AndRuleProximityWindowIsOrderInsensitive(t *testing
 func TestMatchBlockedKeyword_ProximityWindowCountsRunesForCJK(t *testing.T) {
 	text := "撞库" + strings.Repeat("安", 120) + "账号"
 
-	kw, hit := matchBlockedKeyword(text, []string{"撞库&&账号:200"}, nil)
+	kw, hit := matchBlockedKeyword(text, []string{"撞库&&账号:200"}, nil, contentModerationDefaultProximityWindow)
 
 	require.True(t, hit, "200-character window should be 200 runes, not bytes")
 	require.Equal(t, "撞库&&账号:200", kw)
@@ -153,11 +153,11 @@ func TestMatchBlockedKeyword_ProximityWindowCountsRunesForCJK(t *testing.T) {
 func TestMatchBlockedKeyword_ProximityWithCJK(t *testing.T) {
 	// 中文也应用窗口限制
 	farText := "撞库攻击" + strings.Repeat("是常见的安全威胁。", 30) + "保护账号安全很重要"
-	_, hit := matchBlockedKeyword(farText, []string{"撞库&&账号"}, nil)
+	_, hit := matchBlockedKeyword(farText, []string{"撞库&&账号"}, nil, contentModerationDefaultProximityWindow)
 	require.False(t, hit, "中文词距离太远不应命中")
 
 	nearText := "撞库攻击获取账号信息"
-	kw, hit := matchBlockedKeyword(nearText, []string{"撞库&&账号"}, nil)
+	kw, hit := matchBlockedKeyword(nearText, []string{"撞库&&账号"}, nil, contentModerationDefaultProximityWindow)
 	require.True(t, hit, "中文词邻近应该命中")
 	require.Equal(t, "撞库&&账号", kw)
 }
@@ -228,7 +228,7 @@ func TestMatchBlockedKeyword_ConfigurableProximityWindow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			kw, hit := matchBlockedKeyword(tt.text, tt.keywords, nil)
+			kw, hit := matchBlockedKeyword(tt.text, tt.keywords, nil, contentModerationDefaultProximityWindow)
 			require.Equal(t, tt.want, hit, "命中判断不符合预期")
 			if tt.want {
 				require.Equal(t, tt.wantKW, kw, "命中的关键词不符合预期")
@@ -259,10 +259,44 @@ func TestParseProximityWindow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.keyword, func(t *testing.T) {
-			got := parseProximityWindow(tt.keyword)
+			got := parseProximityWindow(tt.keyword, contentModerationDefaultProximityWindow)
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// TestParseProximityWindow_GlobalDefault 验证无 :N 后缀时使用传入的全局默认窗口，
+// 且 :N 后缀仍逐条覆盖全局默认。
+func TestParseProximityWindow_GlobalDefault(t *testing.T) {
+	// 无后缀 -> 用全局默认
+	require.Equal(t, 40, parseProximityWindow("绕过&&风控", 40))
+	require.Equal(t, 500, parseProximityWindow("绕过&&风控", 500))
+	// :N 后缀覆盖全局默认
+	require.Equal(t, 300, parseProximityWindow("绕过&&风控:300", 40))
+	// 非法全局默认回落到内置默认
+	require.Equal(t, contentModerationDefaultProximityWindow, parseProximityWindow("绕过&&风控", 0))
+	require.Equal(t, contentModerationDefaultProximityWindow, parseProximityWindow("绕过&&风控", -1))
+}
+
+// TestMatchBlockedKeyword_GlobalDefaultWindowTightening 复现 绕过&&风控 误判：
+// 两词相距约 100 字符，默认窗口 200 会命中，调小全局默认窗口到 40 后不再误判。
+func TestMatchBlockedKeyword_GlobalDefaultWindowTightening(t *testing.T) {
+	text := buildTextWithDistance("绕过", "风控", 100)
+	kws := []string{"绕过&&风控"}
+
+	_, hit := matchBlockedKeyword(text, kws, nil, 200)
+	require.True(t, hit, "默认窗口 200：两词在窗口内应命中")
+
+	_, hit = matchBlockedKeyword(text, kws, nil, 40)
+	require.False(t, hit, "全局默认窗口收紧到 40：两词超窗口不应命中")
+}
+
+func TestNormalizeProximityWindow(t *testing.T) {
+	require.Equal(t, contentModerationDefaultProximityWindow, normalizeProximityWindow(0))
+	require.Equal(t, contentModerationDefaultProximityWindow, normalizeProximityWindow(-5))
+	require.Equal(t, 1, normalizeProximityWindow(1))
+	require.Equal(t, 350, normalizeProximityWindow(350))
+	require.Equal(t, contentModerationMaxProximityWindow, normalizeProximityWindow(999999))
 }
 
 func TestSplitBlockedKeywordAndTerms_ProximityWindowAmbiguity(t *testing.T) {

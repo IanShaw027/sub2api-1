@@ -318,6 +318,9 @@
                     <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
                       <div>{{ row.highest_category || '-' }}</div>
                       <div class="text-xs text-gray-400">{{ percent(row.highest_score) }}</div>
+                      <div v-if="row.matched_keyword" class="mt-0.5 text-xs font-medium text-red-600 dark:text-red-300" :title="t('admin.riskControl.matchedKeyword') + ': ' + row.matched_keyword">
+                        {{ t('admin.riskControl.matchedKeyword') }}: {{ row.matched_keyword }}
+                      </div>
                     </td>
                     <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
                       <div>{{ violationCountText(row) }}</div>
@@ -946,6 +949,10 @@
                           </th>
                           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.hashValue') }}</th>
                           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.hashExcerpt') }}</th>
+                          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.hashAction') }}</th>
+                          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.hashCategory') }}</th>
+                          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.hashMatchedKeyword') }}</th>
+                          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.hashSource') }}</th>
                           <th class="px-4 py-3 text-left">
                             <button type="button" class="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400" @click="changeHashSort('created_at')">
                               {{ t('admin.riskControl.hashCreatedAt') }}
@@ -969,12 +976,12 @@
                       </thead>
                       <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
                         <tr v-if="hashesLoading">
-                          <td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                          <td colspan="11" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                             {{ t('common.loading') }}
                           </td>
                         </tr>
                         <tr v-else-if="flaggedHashes.length === 0">
-                          <td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                          <td colspan="11" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                             {{ t('admin.riskControl.noFlaggedHashes') }}
                           </td>
                         </tr>
@@ -997,6 +1004,24 @@
                               :title="item.input_excerpt"
                             >{{ item.input_excerpt }}</span>
                             <span v-else class="text-gray-400 dark:text-gray-500">{{ t('admin.riskControl.hashExcerptEmpty') }}</span>
+                          </td>
+                          <td class="px-4 py-3">
+                            <span
+                              v-if="item.action"
+                              class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 dark:bg-dark-700 dark:text-gray-300"
+                            >{{ item.action }}</span>
+                            <span v-else class="text-xs text-gray-400 dark:text-gray-500">{{ t('admin.riskControl.hashFieldEmpty') }}</span>
+                          </td>
+                          <td class="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
+                            {{ item.highest_category || t('admin.riskControl.hashFieldEmpty') }}
+                          </td>
+                          <td class="max-w-[200px] px-4 py-3 text-xs text-gray-700 dark:text-gray-300">
+                            <span v-if="item.matched_keyword" class="block truncate font-mono" :title="item.matched_keyword">{{ item.matched_keyword }}</span>
+                            <span v-else class="text-gray-400 dark:text-gray-500">{{ t('admin.riskControl.hashFieldEmpty') }}</span>
+                          </td>
+                          <td class="max-w-[220px] px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
+                            <span class="block truncate" :title="item.user_email">{{ item.user_email || t('admin.riskControl.hashFieldEmpty') }}</span>
+                            <span class="block truncate text-gray-400 dark:text-gray-500" :title="`${item.model} / ${item.group_name}`">{{ [item.model, item.group_name].filter(Boolean).join(' / ') || t('admin.riskControl.hashFieldEmpty') }}</span>
                           </td>
                           <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{{ formatDateTime(item.created_at) }}</td>
                           <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{{ formatNumber(item.hit_count_7d) }}</td>
@@ -1215,6 +1240,33 @@
             </div>
 
             <div>
+              <label class="input-label">{{ t('admin.riskControl.defaultProximityWindow') }}</label>
+              <input
+                v-model.number="configForm.default_proximity_window"
+                type="number"
+                min="1"
+                max="2000"
+                class="input"
+                :disabled="configForm.keyword_blocking_mode === 'api_only'"
+              />
+              <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.riskControl.defaultProximityWindowHint') }}
+              </p>
+            </div>
+
+            <details class="rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-800/60">
+              <summary class="cursor-pointer select-none text-sm font-medium text-gray-700 dark:text-gray-200">
+                {{ t('admin.riskControl.keywordSyntaxTitle') }}
+              </summary>
+              <ul class="mt-2 space-y-1.5 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                <li>{{ t('admin.riskControl.keywordSyntaxRuleAnd') }}</li>
+                <li>{{ t('admin.riskControl.keywordSyntaxRuleWindow') }}</li>
+                <li>{{ t('admin.riskControl.keywordSyntaxRuleOverride') }}</li>
+                <li>{{ t('admin.riskControl.keywordSyntaxRuleException') }}</li>
+              </ul>
+            </details>
+
+            <div>
               <div class="mb-2 flex items-center justify-between">
                 <label class="input-label mb-0">{{ t('admin.riskControl.blockedKeywords') }}</label>
                 <span class="inline-flex rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-500 dark:bg-dark-700 dark:text-gray-300">
@@ -1308,6 +1360,10 @@
               <p class="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-white">
                 {{ inputDetailRow.highest_category || '-' }} / {{ percent(inputDetailRow.highest_score) }}
               </p>
+            </div>
+            <div v-if="inputDetailRow.matched_keyword" class="rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-900/20">
+              <p class="text-xs font-medium text-red-500 dark:text-red-300">{{ t('admin.riskControl.matchedKeyword') }}</p>
+              <p class="mt-1 truncate text-sm font-semibold text-red-700 dark:text-red-200" :title="inputDetailRow.matched_keyword">{{ inputDetailRow.matched_keyword }}</p>
             </div>
           </div>
 
@@ -1498,6 +1554,7 @@ const configForm = reactive({
   blocked_keywords_text: '',
   keyword_exceptions_text: '',
   keyword_blocking_mode: 'keyword_and_api' as KeywordBlockingMode,
+  default_proximity_window: 200,
   model_filter_type: 'all' as ContentModerationModelFilterType,
   model_filter_models: [] as string[],
 })
@@ -2068,6 +2125,7 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.blocked_keywords_text = Array.isArray(config.blocked_keywords) ? config.blocked_keywords.join('\n') : ''
   configForm.keyword_exceptions_text = Array.isArray(config.keyword_exceptions) ? config.keyword_exceptions.join('\n') : ''
   configForm.keyword_blocking_mode = normalizeKeywordBlockingMode(config.keyword_blocking_mode)
+  configForm.default_proximity_window = clampProximityWindow(config.default_proximity_window)
   const modelFilter = normalizeModelFilter(config.model_filter)
   configForm.model_filter_type = modelFilter.type
   configForm.model_filter_models = modelFilter.models
@@ -2216,6 +2274,7 @@ async function saveConfig() {
       blocked_keywords: blockedKeywordList.value,
       keyword_exceptions: keywordExceptionList.value,
       keyword_blocking_mode: configForm.keyword_blocking_mode,
+      default_proximity_window: clampProximityWindow(configForm.default_proximity_window),
       model_filter: modelFilterPayload,
     }
     const keyAccounts = parseApiKeyAccountInputs(configForm.api_keys_text)
@@ -2823,6 +2882,18 @@ function normalizeKeywordBlockingMode(value: unknown): KeywordBlockingMode {
     return value
   }
   return 'keyword_and_api'
+}
+
+const PROXIMITY_WINDOW_DEFAULT = 200
+const PROXIMITY_WINDOW_MAX = 2000
+
+// clampProximityWindow 归一化默认邻近窗口到 [1, 2000]，非正/非法值回落到 200（与后端一致）。
+function clampProximityWindow(value: unknown): number {
+  const n = Math.floor(Number(value))
+  if (!Number.isFinite(n) || n <= 0) {
+    return PROXIMITY_WINDOW_DEFAULT
+  }
+  return Math.min(n, PROXIMITY_WINDOW_MAX)
 }
 
 function normalizeModelFilter(value: unknown): ContentModerationModelFilter {

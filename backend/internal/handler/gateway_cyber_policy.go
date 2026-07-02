@@ -107,7 +107,7 @@ func (h *GatewayHandler) recordGatewayCyberPolicyIfMarked(c *gin.Context, apiKey
 			hashParent = context.WithoutCancel(c.Request.Context())
 		}
 		hashCtx, cancel := context.WithTimeout(hashParent, 5*time.Second)
-		cmSvc.RecordCyberPolicyFlaggedHashes(hashCtx, requestProtocol, requestBodyCopy)
+		cmSvc.RecordCyberPolicyFlaggedHashes(hashCtx, requestProtocol, requestBodyCopy, service.ContentModerationHashMeta{})
 		cancel()
 	}
 	opsMeta := cyberPolicyOpsErrorMeta{

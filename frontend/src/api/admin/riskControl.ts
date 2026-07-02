@@ -50,6 +50,7 @@ export interface ContentModerationConfig {
   blocked_keywords: string[]
   keyword_exceptions: string[]
   keyword_blocking_mode: KeywordBlockingMode
+  default_proximity_window: number
   model_filter: ContentModerationModelFilter
   cyber_policy_exclude_from_ban_count: boolean
 }
@@ -149,6 +150,7 @@ export interface UpdateContentModerationConfig {
   blocked_keywords?: string[]
   keyword_exceptions?: string[]
   keyword_blocking_mode?: KeywordBlockingMode
+  default_proximity_window?: number
   model_filter?: ContentModerationModelFilter
   cyber_policy_exclude_from_ban_count?: boolean
 }
@@ -191,6 +193,12 @@ export type SortOrder = 'asc' | 'desc'
 export interface ContentModerationHashItem {
   input_hash: string
   input_excerpt: string
+  action: string
+  highest_category: string
+  matched_keyword: string
+  model: string
+  group_name: string
+  user_email: string
   created_at: string
   expires_at: string
   hit_count_7d: number
@@ -250,6 +258,7 @@ export interface ContentModerationLog {
   flagged: boolean
   highest_category: string
   highest_score: number
+  matched_keyword: string
   category_scores: Record<string, number>
   threshold_snapshot: Record<string, number>
   input_excerpt: string
