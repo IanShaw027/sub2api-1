@@ -47,7 +47,7 @@
               {{ t('payment.admin.retry') }}
             </button>
             <template v-if="row.status === 'REFUND_REQUESTED'">
-              <span v-if="row.refund_requested_amount" class="rounded-full bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">{{ formatOrderAmount(row.refund_requested_amount, row) }}</span>
+              <span v-if="row.refund_requested_amount" class="rounded-full bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">{{ formatBalanceAmount(row.refund_requested_amount) }}</span>
               <button @click="openRefundDialog(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/20">
                 <Icon name="check" size="sm" />
                 {{ t('payment.admin.approveRefund') }}
@@ -56,6 +56,10 @@
             <button v-else-if="row.status === 'REFUND_FAILED'" @click="openRefundDialog(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/20">
               <Icon name="refresh" size="sm" />
               {{ t('payment.admin.retryRefund') }}
+            </button>
+            <button v-else-if="row.status === 'REFUND_PENDING'" :disabled="refundQueryingIds.has(row.id)" @click="handleQueryRefund(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-orange-600 hover:bg-orange-50 disabled:opacity-60 dark:text-orange-400 dark:hover:bg-orange-900/20">
+              <Icon name="refresh" size="sm" :class="refundQueryingIds.has(row.id) ? 'animate-spin' : ''" />
+              {{ t('payment.admin.queryRefundStatus') }}
             </button>
             <button v-else-if="row.status === 'COMPLETED' || row.status === 'PARTIALLY_REFUNDED'" @click="openRefundDialog(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20">
               <Icon name="dollar" size="sm" />
@@ -74,15 +78,15 @@
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderId') }}</p><p class="font-mono text-sm font-medium text-gray-900 dark:text-white">#{{ selectedOrder.id }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderNo') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ selectedOrder.out_trade_no }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.status') }}</p><OrderStatusBadge :status="selectedOrder.status" /></div>
-          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ formatOrderAmount(selectedOrder.amount, selectedOrder) }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ formatBalanceAmount(selectedOrder.amount) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ formatOrderAmount(selectedOrder.pay_amount, selectedOrder) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.paymentMethod') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ t(paymentMethodDisplayKey(selectedOrder.payment_type), selectedOrder.payment_type) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.feeRate') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ selectedOrder.fee_rate }}%</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.createdAt') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(selectedOrder.created_at) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.expiresAt') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(selectedOrder.expires_at) }}</p></div>
           <div v-if="selectedOrder.paid_at"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.paidAt') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(selectedOrder.paid_at) }}</p></div>
-          <div v-if="selectedOrder.refund_amount && selectedOrder.status !== 'REFUND_REQUESTED'"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundAmount') }}</p><p class="text-sm font-medium text-red-600 dark:text-red-400">{{ formatOrderAmount(selectedOrder.refund_amount, selectedOrder) }}</p></div>
-          <div v-if="selectedOrder.refund_requested_amount"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundRequestedAmount') }}</p><p class="text-sm font-medium text-purple-600 dark:text-purple-400">{{ formatOrderAmount(selectedOrder.refund_requested_amount, selectedOrder) }}</p></div>
+          <div v-if="selectedOrder.refund_amount && selectedOrder.status !== 'REFUND_REQUESTED'"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundAmount') }}</p><p class="text-sm font-medium text-red-600 dark:text-red-400">{{ formatBalanceAmount(selectedOrder.refund_amount) }}</p></div>
+          <div v-if="selectedOrder.refund_requested_amount"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundRequestedAmount') }}</p><p class="text-sm font-medium text-purple-600 dark:text-purple-400">{{ formatBalanceAmount(selectedOrder.refund_requested_amount) }}</p></div>
           <div v-if="selectedOrder.refund_reason" class="col-span-2"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundReason') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ selectedOrder.refund_reason }}</p></div>
           <!-- Refund request info -->
           <div v-if="selectedOrder.refund_requested_at" class="col-span-2 border-t border-gray-200 pt-3 dark:border-dark-600">
@@ -184,6 +188,7 @@ const refundRequireForce = ref(false)
 const refundWarning = ref('')
 const refundPreview = ref<RefundPreview | null>(null)
 const refundPreviewLoading = ref(false)
+const refundQueryingIds = ref(new Set<number>())
 const orderAuditLogs = ref<AuditLog[]>([])
 let orderListReqSeq = 0
 let orderDetailReqSeq = 0
@@ -259,6 +264,7 @@ const statusFilterOptions = computed(() => [
   { value: 'REFUNDED', label: t('payment.status.refunded') },
   { value: 'REFUND_REQUESTED', label: t('payment.status.refund_requested') },
   { value: 'REFUNDING', label: t('payment.status.refunding') },
+  { value: 'REFUND_PENDING', label: t('payment.status.refund_pending') },
   { value: 'PARTIALLY_REFUNDED', label: t('payment.status.partially_refunded') },
   { value: 'REFUND_FAILED', label: t('payment.status.refund_failed') },
 ])
@@ -356,6 +362,14 @@ function closeRefundDialog() {
   resetRefundFeedback()
 }
 
+function isRefundPendingWarning(warning: string | undefined): boolean {
+  const normalized = String(warning || '').toLowerCase()
+  if (/rollback failed|deduction rollback failed|回滚失败|扣款回滚失败/.test(normalized)) {
+    return false
+  }
+  return /pending|处理中|待/.test(normalized)
+}
+
 async function handleRefund(data: { amount: number; reason: string; deduct_balance: boolean; force: boolean }) {
   if (!selectedOrder.value) return
   const seq = ++refundReqSeq
@@ -363,27 +377,65 @@ async function handleRefund(data: { amount: number; reason: string; deduct_balan
   refundSubmitting.value = true
   try {
     const res = await adminPaymentAPI.refundOrder(orderId, { amount: data.amount, reason: data.reason, deduct_balance: data.deduct_balance, force: data.force })
-    if (seq !== refundReqSeq) return
+    if (seq !== refundReqSeq || selectedOrder.value?.id !== orderId) return
     const result = res.data as AdminRefundResult | undefined
     if (result?.success === false) {
+      if (isRefundPendingWarning(result.warning)) {
+        clearOrderSearchDebounce()
+        refundPreviewReqSeq += 1
+        resetRefundFeedback()
+        appStore.showSuccess(t('payment.admin.refundPending'))
+        showRefundDialog.value = false
+        loadOrders()
+        return
+      }
       refundRequireForce.value = Boolean(result.require_force)
       refundWarning.value = result.warning || ''
       appStore.showError(refundWarning.value || t('common.error'))
       return
     }
     clearOrderSearchDebounce()
-    appStore.showSuccess(t('payment.admin.refundSuccess')); showRefundDialog.value = false; loadOrders()
+    refundPreviewReqSeq += 1
+    resetRefundFeedback()
+    appStore.showSuccess(t('payment.admin.refundSuccess'))
+    showRefundDialog.value = false
+    loadOrders()
   } catch (err: unknown) {
-    if (seq !== refundReqSeq) return
+    if (seq !== refundReqSeq || selectedOrder.value?.id !== orderId) return
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
   }
   finally { if (seq === refundReqSeq) refundSubmitting.value = false }
+}
+
+async function handleQueryRefund(order: PaymentOrder) {
+  refundQueryingIds.value = new Set(refundQueryingIds.value).add(order.id)
+  try {
+    const res = await adminPaymentAPI.queryRefund(order.id)
+    if (res.data.success) {
+      appStore.showSuccess(t('payment.admin.refundSuccess'))
+    } else if (isRefundPendingWarning(res.data.warning)) {
+      appStore.showSuccess(t('payment.admin.refundPending'))
+    } else {
+      appStore.showError(res.data.warning || t('common.error'))
+    }
+    loadOrders()
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    const next = new Set(refundQueryingIds.value)
+    next.delete(order.id)
+    refundQueryingIds.value = next
+  }
 }
 
 function formatDateTime(dateStr: string): string { return formatOrderDateTime(dateStr) }
 
 function formatOrderAmount(value: number, order: PaymentOrder): string {
   return formatPaymentAmount(Number(value || 0), order.currency)
+}
+
+function formatBalanceAmount(value: number): string {
+  return formatPaymentAmount(Number(value || 0), 'USD')
 }
 
 onMounted(() => reloadOrders())

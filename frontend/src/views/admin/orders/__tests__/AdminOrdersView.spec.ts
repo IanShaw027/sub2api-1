@@ -285,8 +285,8 @@ describe('AdminOrdersView request races', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('¥12.34')
-    expect(wrapper.text().split('¥12.34')).toHaveLength(2)
+    expect(wrapper.text()).toContain('$12.34')
+    expect(wrapper.text().split('$12.34')).toHaveLength(2)
     expect(wrapper.text()).toContain('payment.status.refunding')
     expect(wrapper.text()).toContain('payment.status.partially_refunded')
   })
@@ -526,9 +526,9 @@ describe('AdminOrdersView request races', () => {
 
     const dialogText = wrapper.get('[data-test="dialog"]').text()
     expect(dialogText).toContain('€12.34')
-    expect(dialogText).toContain('€1.23')
-    expect(dialogText).toContain('€4.56')
-    expect(dialogText).not.toContain('$12.34')
+    expect(dialogText).toContain('$1.23')
+    expect(dialogText).toContain('$4.56')
+    expect(dialogText).not.toContain('€1.23')
     expect(dialogText).not.toContain('¥12.34')
   })
 
@@ -642,6 +642,52 @@ describe('AdminOrdersView request races', () => {
     expect(showError).toHaveBeenCalledWith('order has an issued invoice; refund requires a credit note (use force)')
     expect(dialog.attributes('data-require-force')).toBe('true')
     expect(dialog.attributes('data-warning')).toBe('order has an issued invoice; refund requires a credit note (use force)')
+  })
+
+  it('surfaces pending refund deduction rollback failures instead of treating them as normal pending', async () => {
+    getOrders.mockResolvedValue({
+      data: {
+        items: [
+          createOrder({ id: 1, out_trade_no: 'order-1', status: 'COMPLETED' }),
+        ],
+        total: 1,
+      },
+    })
+    adminPaymentAPI.refundOrder.mockResolvedValueOnce({
+      data: {
+        success: false,
+        warning: 'gateway refund is pending confirmation; refund deduction rollback failed',
+      },
+    })
+
+    const wrapper = mount(AdminOrdersView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Pagination: PaginationStub,
+          Select: SelectStub,
+          Icon: IconStub,
+          AdminRefundDialog: AdminRefundDialogStub,
+          OrderStatusBadge: true,
+          OrderTable: OrderTableStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const refundButton = wrapper.findAll('button').find((button) => button.text().includes('payment.admin.refund'))
+    expect(refundButton).toBeTruthy()
+
+    await refundButton!.trigger('click')
+    await wrapper.get('[data-test="refund-dialog"] .refund-confirm').trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.get('[data-test="refund-dialog"]')
+    expect(showSuccess).not.toHaveBeenCalledWith('payment.admin.refundPending')
+    expect(showError).toHaveBeenCalledWith('gateway refund is pending confirmation; refund deduction rollback failed')
+    expect(dialog.attributes('data-warning')).toBe('gateway refund is pending confirmation; refund deduction rollback failed')
   })
 
   it('loads refund preview and passes backend max refundable amount to the refund dialog', async () => {

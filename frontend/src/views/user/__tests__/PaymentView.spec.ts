@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import PaymentView from '../PaymentView.vue'
 import { PAYMENT_RECOVERY_STORAGE_KEY } from '@/components/payment/paymentFlow'
+import { formatPaymentAmount } from '@/components/payment/currency'
+import type { CheckoutInfoResponse, MethodLimit, SubscriptionPlan } from '@/types/payment'
 
 const routeState = vi.hoisted(() => ({
   path: '/purchase',
@@ -84,58 +86,74 @@ vi.mock('@/utils/device', () => ({
   isMobileDevice: () => true,
 }))
 
-function checkoutInfoFixture() {
-  return {
-    data: {
-      methods: {
-        wxpay: {
-          daily_limit: 0,
-          daily_used: 0,
-          daily_remaining: 0,
-          single_min: 0,
-          single_max: 0,
-          fee_rate: 0,
-          available: true,
-        },
-      },
-      global_min: 0,
-      global_max: 0,
-      plans: [],
-      balance_disabled: false,
-      balance_recharge_multiplier: 1,
-      recharge_fee_rate: 0,
-      help_text: '',
-      help_image_url: '',
-      stripe_publishable_key: '',
+function checkoutInfoFixture(overrides: Partial<CheckoutInfoResponse> = {}) {
+  const wxpayMethod: MethodLimit = {
+    daily_limit: 0,
+    daily_used: 0,
+    daily_remaining: 0,
+    single_min: 0,
+    single_max: 0,
+    fee_rate: 0,
+    available: true,
+  }
+  const data: CheckoutInfoResponse = {
+    methods: {
+      wxpay: wxpayMethod,
     },
+    global_min: 0,
+    global_max: 0,
+    plans: [],
+    balance_disabled: false,
+    balance_recharge_multiplier: 1,
+    recharge_fee_rate: 0,
+    help_text: '',
+    help_image_url: '',
+    stripe_publishable_key: '',
+  }
+
+  return {
+    data: { ...data, ...overrides },
   }
 }
 
-function checkoutInfoWithPlansFixture() {
+function checkoutInfoWithPlansFixture(options: {
+  checkout?: Partial<CheckoutInfoResponse>
+  method?: Partial<MethodLimit>
+  plan?: Partial<SubscriptionPlan>
+} = {}) {
+  const base = checkoutInfoFixture(options.checkout).data
+  const plan: SubscriptionPlan = {
+    id: 7,
+    group_id: 3,
+    name: 'Starter',
+    description: '',
+    price: 128,
+    original_price: 0,
+    validity_days: 30,
+    validity_unit: 'day',
+    rate_multiplier: 1,
+    daily_limit_usd: null,
+    weekly_limit_usd: null,
+    monthly_limit_usd: null,
+    features: [],
+    group_platform: 'openai',
+    sort_order: 1,
+    for_sale: true,
+    group_name: 'OpenAI',
+    ...options.plan,
+  }
+
   return {
     data: {
-      ...checkoutInfoFixture().data,
-      plans: [
-        {
-          id: 7,
-          group_id: 3,
-          name: 'Starter',
-          description: '',
-          price: 128,
-          original_price: 0,
-          validity_days: 30,
-          validity_unit: 'day',
-          rate_multiplier: 1,
-          daily_limit_usd: null,
-          weekly_limit_usd: null,
-          monthly_limit_usd: null,
-          features: [],
-          group_platform: 'openai',
-          sort_order: 1,
-          for_sale: true,
-          group_name: 'OpenAI',
+      ...base,
+      methods: {
+        ...base.methods,
+        wxpay: {
+          ...base.methods.wxpay,
+          ...options.method,
         },
-      ],
+      },
+      plans: [plan],
     },
   }
 }
@@ -179,6 +197,168 @@ function oauthOrderFixture() {
     },
   }
 }
+
+async function mountSubscriptionConfirm(options: Parameters<typeof checkoutInfoWithPlansFixture>[0] = {}) {
+  vi.useRealTimers()
+  routeState.path = '/purchase'
+  routeState.query = {
+    tab: 'subscription',
+    group: '3',
+  }
+  routerReplace.mockReset().mockResolvedValue(undefined)
+  routerPush.mockReset().mockResolvedValue(undefined)
+  routerResolve.mockClear()
+  createOrder.mockReset()
+  refreshUser.mockReset()
+  fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+  showError.mockReset()
+  showInfo.mockReset()
+  showWarning.mockReset()
+  getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoWithPlansFixture(options))
+  bridgeInvoke.mockReset()
+  window.localStorage.clear()
+  ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = undefined
+
+  const wrapper = shallowMount(PaymentView, {
+    global: {
+      stubs: {
+        AppLayout: {
+          template: '<div><slot /></div>',
+        },
+        Teleport: true,
+        Transition: false,
+      },
+    },
+  })
+  await flushPromises()
+  await flushPromises()
+  return wrapper
+}
+
+describe('PaymentView subscription confirmation amounts', () => {
+  it('uses subscription plan price directly for CNY plan price, original price, and create button', async () => {
+    const wrapper = await mountSubscriptionConfirm({
+      checkout: {
+        balance_recharge_multiplier: 0.14,
+      },
+      method: {
+        currency: 'CNY',
+      },
+      plan: {
+        price: 7.99,
+        original_price: 9.99,
+      },
+    })
+
+    const text = wrapper.text()
+    const planPrice = formatPaymentAmount(7.99, 'CNY')
+    const originalPrice = formatPaymentAmount(9.99, 'CNY')
+
+    expect(text).toContain(planPrice)
+    expect(text).toContain(originalPrice)
+    expect(text).not.toContain(formatPaymentAmount(57.07, 'CNY'))
+    expect(text).not.toContain(formatPaymentAmount(71.36, 'CNY'))
+    expect(wrapper.findAll('button').some(button => button.text().includes(planPrice))).toBe(true)
+  })
+
+  it('validates subscription method limits against direct pay amount, not multiplier-derived balance credit', async () => {
+    const wrapper = await mountSubscriptionConfirm({
+      checkout: {
+        balance_recharge_multiplier: 0.14,
+      },
+      method: {
+        currency: 'CNY',
+        single_max: 10,
+      },
+      plan: {
+        price: 7.99,
+      },
+    })
+
+    const createButton = wrapper.findAll('button').find(button => button.text().includes('payment.createOrder'))
+
+    expect(createButton?.attributes('disabled')).toBeUndefined()
+    expect(createButton?.text()).toContain(formatPaymentAmount(7.99, 'CNY'))
+  })
+
+  it('keeps plan price when multiplier is not configured or payment currency is not CNY', async () => {
+    const cnyWrapper = await mountSubscriptionConfirm({
+      checkout: {
+        balance_recharge_multiplier: 0,
+      },
+      method: {
+        currency: 'CNY',
+      },
+      plan: {
+        price: 7.99,
+      },
+    })
+
+    expect(cnyWrapper.text()).toContain(formatPaymentAmount(7.99, 'CNY'))
+    expect(cnyWrapper.text()).not.toContain(formatPaymentAmount(57.07, 'CNY'))
+
+    const usdWrapper = await mountSubscriptionConfirm({
+      checkout: {
+        balance_recharge_multiplier: 0.14,
+      },
+      method: {
+        currency: 'USD',
+      },
+      plan: {
+        price: 7.99,
+        original_price: 9.99,
+      },
+    })
+
+    expect(usdWrapper.text()).toContain(formatPaymentAmount(7.99, 'USD'))
+    expect(usdWrapper.text()).toContain(formatPaymentAmount(9.99, 'USD'))
+  })
+
+  it('adds fee rate to the direct subscription price without applying balance multiplier', async () => {
+    const wrapper = await mountSubscriptionConfirm({
+      checkout: {
+        balance_recharge_multiplier: 0.14,
+        recharge_fee_rate: 2.5,
+      },
+      method: {
+        currency: 'CNY',
+      },
+      plan: {
+        price: 7.99,
+      },
+    })
+
+    const text = wrapper.text()
+    const planPrice = formatPaymentAmount(7.99, 'CNY')
+    const fee = formatPaymentAmount(0.2, 'CNY')
+    const total = formatPaymentAmount(8.19, 'CNY')
+
+    expect(text).toContain(planPrice)
+    expect(text).toContain(fee)
+    expect(text).toContain(total)
+    expect(text).not.toContain(formatPaymentAmount(57.07, 'CNY'))
+    expect(wrapper.findAll('button').some(button => button.text().includes(total))).toBe(true)
+  })
+
+  it('marks subscription payment method unavailable when fee-inclusive total exceeds method limit', async () => {
+    const wrapper = await mountSubscriptionConfirm({
+      checkout: {
+        recharge_fee_rate: 2.5,
+      },
+      method: {
+        currency: 'CNY',
+        single_max: 8.1,
+      },
+      plan: {
+        price: 7.99,
+      },
+    })
+
+    const selector = wrapper.findComponent({ name: 'PaymentMethodSelector' })
+    const methods = selector.props('methods') as Array<{ type: string; available: boolean }>
+    expect(methods.find((method) => method.type === 'wxpay')?.available).toBe(false)
+  })
+})
 
 describe('PaymentView WeChat JSAPI flow', () => {
   beforeEach(() => {

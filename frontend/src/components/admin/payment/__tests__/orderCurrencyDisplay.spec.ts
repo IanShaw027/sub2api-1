@@ -129,7 +129,7 @@ describe('admin order currency display', () => {
     expect(text).not.toContain('，')
   })
 
-  it('uses order currency for refund limits and requested refund amounts', () => {
+  it('uses USD balance currency for refund limits and requested refund amounts', () => {
     const wrapper = mount(AdminRefundDialog, {
       props: {
         show: true,
@@ -158,10 +158,10 @@ describe('admin order currency display', () => {
     })
 
     const text = wrapper.text()
-    expect(text).toContain('payment.admin.maxRefundable: ¥82.25')
-    expect(text).toContain('payment.admin.userRequestedRefundAmount: ¥37.50')
-    expect(text).not.toContain('$82.25')
-    expect(text).not.toContain('$37.50')
+    expect(text).toContain('payment.admin.maxRefundable: $82.25')
+    expect(text).toContain('payment.admin.userRequestedRefundAmount: $37.50')
+    expect(text).not.toContain('¥82.25')
+    expect(text).not.toContain('¥37.50')
   })
 
   it('does not render duplicate legacy amount labels in the refund dialog', () => {
@@ -184,12 +184,12 @@ describe('admin order currency display', () => {
 
     const text = wrapper.text()
     expect(countOccurrences(text, '¥108.00')).toBe(1)
-    expect(text).toContain('¥80.00')
-    expect(text).toContain('¥20.00')
+    expect(text).toContain('$80.00')
+    expect(text).toContain('$20.00')
     expect(text).toContain('$100.00')
     expect(text).toContain('$200.00')
-    expect(text).not.toContain('$80.00')
-    expect(text).not.toContain('$20.00')
+    expect(text).not.toContain('¥80.00')
+    expect(text).not.toContain('¥20.00')
   })
 
   it('renders payment currency consistently in the shared order table', () => {

@@ -43,7 +43,7 @@
         </div>
         <div v-if="actuallyRefunded > 0" class="mt-1 flex justify-between text-sm">
           <span class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.alreadyRefunded') }}</span>
-          <span class="font-medium text-red-600 dark:text-red-400">{{ formatOrderAmount(actuallyRefunded) }}</span>
+          <span class="font-medium text-red-600 dark:text-red-400">{{ formatBalanceAmount(actuallyRefunded) }}</span>
         </div>
       </div>
 
@@ -107,8 +107,8 @@
           />
         </div>
         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          {{ t('payment.admin.maxRefundable') }}: {{ formatOrderAmount(maxRefundable) }}
-          <span v-if="requestedAmount > 0">, {{ t('payment.admin.userRequestedRefundAmount') }}: {{ formatOrderAmount(requestedAmount) }}</span>
+          {{ t('payment.admin.maxRefundable') }}: {{ formatBalanceAmount(maxRefundable) }}
+          <span v-if="requestedAmount > 0">, {{ t('payment.admin.userRequestedRefundAmount') }}: {{ formatBalanceAmount(requestedAmount) }}</span>
           <span v-if="previewLoading">, {{ t('common.loading') }}</span>
         </p>
       </div>
@@ -200,7 +200,7 @@ const form = reactive({
   force: false,
 })
 
-// In REFUND_REQUESTED status, refund_amount is the REQUESTED amount, not actually refunded.
+// In REFUND_REQUESTED / REFUND_PENDING status, refund_amount is requested/pending, not actually refunded.
 // Only PARTIALLY_REFUNDED / REFUNDED have real refund amounts.
 const actuallyRefunded = computed(() => {
   if (!props.order) return 0
@@ -227,8 +227,8 @@ const balanceInsufficient = computed(() => {
 
 const orderCurrency = computed(() => normalizePaymentCurrency(props.order?.currency))
 const refundCurrencyPrefix = computed(() => {
-  const formatted = formatPaymentAmount(0, orderCurrency.value)
-  return formatted.replace(/[\d\s.,]+/g, '') || orderCurrency.value
+  const formatted = formatPaymentAmount(0, balanceCurrency)
+  return formatted.replace(/[\d\s.,]+/g, '') || balanceCurrency
 })
 
 function formatOrderAmount(value: number): string {
