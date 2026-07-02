@@ -261,8 +261,8 @@ func TestKiroGatewayService_CommitFakeCachePlanPersistsEffectiveProgress(t *test
 	plan.CacheStrategyGeneration = svc.fakeCacheGen
 	usage := resolveKiroFakeCacheUsage(plan, kiropkg.FakeCacheHitState{}, 1200, settings)
 	require.Equal(t, 0, usage.CacheReadInputTokens)
-	require.Equal(t, 1140, usage.CacheCreationInputTokens)
-	require.Equal(t, 60, usage.InputTokens)
+	require.Equal(t, 1200, usage.CacheCreationInputTokens)
+	require.Equal(t, 0, usage.InputTokens)
 
 	svc.commitFakeCachePlan(plan, settings)
 	progress, found := svc.fakeCache.Get(plan.SessionProgressKey)
@@ -951,7 +951,7 @@ func TestKiroGatewayService_ForwardStream_NativeThinkingBlocksUseUpstreamContent
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	output := rec.Body.String()
-	require.Contains(t, output, `"content_block":{"thinking":"","type":"thinking"}`)
+	require.Contains(t, output, `"content_block":{"signature":"","thinking":"","type":"thinking"}`)
 	require.Contains(t, output, `"delta":{"thinking":"real native reasoning","type":"thinking_delta"}`)
 	require.Contains(t, output, `"content_block":{"text":"","type":"text"}`)
 	require.Contains(t, output, `"delta":{"text":"final","type":"text_delta"}`)
@@ -1005,12 +1005,18 @@ func TestKiroGatewayService_ForwardStream_ReasoningContentEventEmitsThinkingBloc
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	output := rec.Body.String()
-	require.Contains(t, output, `"content_block":{"thinking":"","type":"thinking"}`)
+	require.Contains(t, output, `"content_block":{"signature":"","thinking":"","type":"thinking"}`)
 	require.Contains(t, output, `"delta":{"thinking":"let me think","type":"thinking_delta"}`)
 	require.Contains(t, output, `"delta":{"thinking":" step by step","type":"thinking_delta"}`)
 	require.Contains(t, output, `"delta":{"signature":"sig-abc","type":"signature_delta"}`)
 	require.Contains(t, output, `"delta":{"text":"final answer","type":"text_delta"}`)
-	thinkingStart := strings.Index(output, `"content_block":{"thinking":"","type":"thinking"}`)
+	signatureAt := strings.Index(output, `"delta":{"signature":"sig-abc","type":"signature_delta"}`)
+	require.NotEqual(t, -1, signatureAt)
+	afterSignature := output[signatureAt:]
+	stopAfterSignature := strings.Index(afterSignature, `"type":"content_block_stop"`)
+	require.NotEqual(t, -1, stopAfterSignature)
+	require.NotContains(t, afterSignature[:stopAfterSignature], `"type":"thinking_delta"`)
+	thinkingStart := strings.Index(output, `"content_block":{"signature":"","thinking":"","type":"thinking"}`)
 	textStart := strings.Index(output, `"content_block":{"text":"","type":"text"}`)
 	require.Greater(t, textStart, thinkingStart, "thinking block must precede text block")
 	thinkingStop := strings.Index(output[thinkingStart:], `"content_block_stop"`)
@@ -3227,7 +3233,7 @@ func TestKiroGatewayService_ForwardStream_NativeServerToolsEmitServerToolUse(t *
 	}
 }
 
-func TestKiroGatewayService_ForwardStream_NativeWebSearchLocalFallbackFailureUsesLegacyShadowTool(t *testing.T) {
+func TestKiroGatewayService_ForwardStream_NativeWebSearchLocalFallbackFailureEmitsProperResultBlock(t *testing.T) {
 	setGinTestMode()
 
 	previousSearchExecutor := kiroShadowWebSearchExecutor
@@ -3269,10 +3275,13 @@ func TestKiroGatewayService_ForwardStream_NativeWebSearchLocalFallbackFailureUse
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	output := rec.Body.String()
-	require.Contains(t, output, `"content_block":{"_shadow_bridge"`)
-	require.Contains(t, output, `"name":"cc_srv_web_search"`)
-	require.NotContains(t, output, `"type":"web_search_tool_result"`)
+	require.Contains(t, output, `"type":"server_tool_use"`)
+	require.Contains(t, output, `"name":"web_search"`)
+	require.Contains(t, output, `"type":"web_search_tool_result"`)
+	require.Contains(t, output, "No search results found (emulation unavailable)")
 	require.Contains(t, output, `"stop_reason":"tool_use"`)
+	require.NotContains(t, output, `"cc_srv_web_search"`)
+	require.NotContains(t, output, `_shadow_bridge`)
 }
 
 func TestKiroLegacyShadowToolNameForBridgeOnlyAllowsKnownWebTools(t *testing.T) {
@@ -3337,7 +3346,7 @@ func TestKiroGatewayService_ForwardNonStream_NativeWebSearchToolUseExecutesLocal
 	require.NotContains(t, output, `"cc_srv_web_search"`)
 }
 
-func TestKiroGatewayService_ForwardNonStream_NativeWebSearchLocalFallbackFailureUsesLegacyShadowTool(t *testing.T) {
+func TestKiroGatewayService_ForwardNonStream_NativeWebSearchLocalFallbackFailureEmitsProperResultBlock(t *testing.T) {
 	setGinTestMode()
 
 	previousSearchExecutor := kiroShadowWebSearchExecutor
@@ -3378,11 +3387,13 @@ func TestKiroGatewayService_ForwardNonStream_NativeWebSearchLocalFallbackFailure
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	output := rec.Body.String()
-	require.Contains(t, output, `"type":"tool_use"`)
-	require.Contains(t, output, `"name":"cc_srv_web_search"`)
-	require.Contains(t, output, `"_shadow_bridge"`)
-	require.NotContains(t, output, `"type":"web_search_tool_result"`)
+	require.Contains(t, output, `"type":"server_tool_use"`)
+	require.Contains(t, output, `"name":"web_search"`)
+	require.Contains(t, output, `"type":"web_search_tool_result"`)
+	require.Contains(t, output, "No search results found (emulation unavailable)")
 	require.Contains(t, output, `"stop_reason":"tool_use"`)
+	require.NotContains(t, output, `"cc_srv_web_search"`)
+	require.NotContains(t, output, `_shadow_bridge`)
 }
 
 func TestKiroGatewayService_ForwardNonStream_NativeWebFetchToolUseExecutesLocalFallback(t *testing.T) {
@@ -3502,7 +3513,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchReturnsServerToolPaus
 	kiroShadowWebFetchExecutor = func(ctx context.Context, account *Account, req webfetch.FetchRequest) *webfetch.FetchResult {
 		require.Equal(t, int64(11), account.ID)
 		require.Equal(t, "https://example.com/fetch", req.URL)
-		require.Equal(t, []string{"127.0.0.1", "localhost"}, req.AllowedHosts)
+		require.Equal(t, []string{"127.0.0.1", "localhost", "example.com"}, req.AllowedHosts)
 		require.Equal(t, []string{"blocked.local"}, req.BlockedHosts)
 		require.True(t, req.AllowPrivate)
 		require.False(t, req.AllowInsecureHTTP)
@@ -3544,7 +3555,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchReturnsServerToolPaus
 					"cc_srv_web_fetch": {
 						AnthropicType:  "web_fetch_20250305",
 						AnthropicName:  "web_fetch",
-						AllowedDomains: []string{"127.0.0.1", "localhost"},
+						AllowedDomains: []string{"127.0.0.1", "localhost", "example.com"},
 						BlockedDomains: []string{"blocked.local"},
 					},
 				},
@@ -4325,6 +4336,190 @@ func TestKiroGatewayService_Forward_ContinuationWithoutToolsRestoresNativeWebFet
 	require.Contains(t, rec.Body.String(), `"type":"web_fetch_tool_result"`)
 	require.Contains(t, rec.Body.String(), `"next docs body"`)
 	require.Contains(t, rec.Body.String(), `"stop_reason":"pause_turn"`)
+}
+
+func TestKiroGatewayService_ForwardStream_NativeWebSearchContinuesToFinalAnswer(t *testing.T) {
+	setGinTestMode()
+
+	previousSearchExecutor := kiroShadowWebSearchExecutor
+	kiroShadowWebSearchExecutor = func(ctx context.Context, account *Account, query string) (*websearch.SearchResponse, string, error) {
+		require.Equal(t, "golang", query)
+		return &websearch.SearchResponse{
+			Query: query,
+			Results: []websearch.SearchResult{
+				{URL: "https://go.dev", Title: "The Go Programming Language", Snippet: "Official Go site"},
+			},
+		}, "stub", nil
+	}
+	t.Cleanup(func() { kiroShadowWebSearchExecutor = previousSearchExecutor })
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{
+		"model":"claude-sonnet-4",
+		"stream":true,
+		"max_tokens":1024,
+		"tool_choice":{"type":"tool","name":"web_search"},
+		"tools":[{"type":"web_search_20250305","name":"web_search"}],
+		"messages":[{"role":"user","content":"Search Go"}]
+	}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	var continuationBody string
+	upstream := &kiroHTTPUpstreamRecorder{}
+	upstream.doFunc = func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+		raw, err := io.ReadAll(req.Body)
+		require.NoError(t, err)
+		if upstream.calls == 1 {
+			require.Contains(t, string(raw), `"name":"web_search"`)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"x-amzn-requestid": []string{"first"}},
+				Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+					":message-type": "event",
+					":event-type":   "toolUseEvent",
+				}, map[string]any{"toolUseId": "toolu_search_1", "name": "web_search", "input": `{"query":"golang"}`, "stop": true}))),
+			}, nil
+		}
+		require.Equal(t, 2, upstream.calls, "native web_search should be replayed once as a continuation")
+		continuationBody = string(raw)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"x-amzn-requestid": []string{"second"}},
+			Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+				":message-type": "event",
+				":event-type":   "assistantResponseEvent",
+			}, map[string]any{"content": "Go's official site is https://go.dev."}))),
+		}, nil
+	}
+
+	svc := &KiroGatewayService{
+		httpUpstream: upstream,
+		fakeCache:    gocache.New(time.Minute, time.Minute),
+	}
+	account := &Account{
+		ID:       305,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-api-key",
+		},
+	}
+	parsed := &ParsedRequest{
+		Model:  "claude-sonnet-4",
+		Stream: true,
+		Body:   NewRequestBodyRef(body),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, parsed)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, upstream.calls)
+	require.Contains(t, continuationBody, `"toolUses"`)
+	require.Contains(t, continuationBody, `"toolResults"`)
+	require.NotContains(t, continuationBody, `"tool_choice"`)
+	output := rec.Body.String()
+	require.Contains(t, output, `"type":"server_tool_use"`)
+	require.Contains(t, output, `"type":"web_search_tool_result"`)
+	require.Contains(t, output, `Go's official site is https`)
+	require.Contains(t, output, `://go.dev.`)
+	require.Contains(t, output, `"stop_reason":"end_turn"`)
+	require.NotContains(t, output, `"stop_reason":"pause_turn"`)
+}
+
+func TestKiroGatewayService_ForwardStream_NativeWebFetchContinuesToFinalAnswer(t *testing.T) {
+	setGinTestMode()
+
+	previousFetchExecutor := kiroShadowWebFetchExecutor
+	kiroShadowWebFetchExecutor = func(ctx context.Context, account *Account, req webfetch.FetchRequest) *webfetch.FetchResult {
+		require.Equal(t, "https://example.com/doc", req.URL)
+		return &webfetch.FetchResult{
+			RequestedURL: req.URL,
+			FinalURL:     req.URL,
+			StatusCode:   http.StatusOK,
+			ContentType:  "text/html",
+			Title:        "Example Docs",
+			Text:         "Example docs body",
+		}
+	}
+	t.Cleanup(func() { kiroShadowWebFetchExecutor = previousFetchExecutor })
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{
+		"model":"claude-sonnet-4",
+		"stream":true,
+		"max_tokens":1024,
+		"tool_choice":{"type":"tool","name":"web_fetch"},
+		"tools":[{"type":"web_fetch_20250910","name":"web_fetch"}],
+		"messages":[{"role":"user","content":"Fetch the docs page"}]
+	}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	var continuationBody string
+	upstream := &kiroHTTPUpstreamRecorder{}
+	upstream.doFunc = func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+		raw, err := io.ReadAll(req.Body)
+		require.NoError(t, err)
+		if upstream.calls == 1 {
+			require.Contains(t, string(raw), `"name":"web_fetch"`)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"x-amzn-requestid": []string{"first-fetch"}},
+				Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+					":message-type": "event",
+					":event-type":   "toolUseEvent",
+				}, map[string]any{"toolUseId": "toolu_fetch_1", "name": "web_fetch", "input": `{"url":"https://example.com/doc"}`, "stop": true}))),
+			}, nil
+		}
+		require.Equal(t, 2, upstream.calls, "native web_fetch should be replayed once as a continuation")
+		continuationBody = string(raw)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"x-amzn-requestid": []string{"second-fetch"}},
+			Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+				":message-type": "event",
+				":event-type":   "assistantResponseEvent",
+			}, map[string]any{"content": "The fetched page is Example Docs."}))),
+		}, nil
+	}
+
+	svc := &KiroGatewayService{
+		httpUpstream: upstream,
+		fakeCache:    gocache.New(time.Minute, time.Minute),
+	}
+	account := &Account{
+		ID:       306,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-api-key",
+		},
+	}
+	parsed := &ParsedRequest{
+		Model:  "claude-sonnet-4",
+		Stream: true,
+		Body:   NewRequestBodyRef(body),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, parsed)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, upstream.calls)
+	require.Contains(t, continuationBody, `"toolUses"`)
+	require.Contains(t, continuationBody, `"toolResults"`)
+	require.NotContains(t, continuationBody, `"tool_choice"`)
+	output := rec.Body.String()
+	require.Contains(t, output, `"type":"server_tool_use"`)
+	require.Contains(t, output, `"type":"web_fetch_tool_result"`)
+	require.Contains(t, output, `The fetched page is`)
+	require.Contains(t, output, `mple Docs.`)
+	require.Contains(t, output, `"stop_reason":"end_turn"`)
+	require.NotContains(t, output, `"stop_reason":"pause_turn"`)
 }
 
 func buildKiroTestFrame(t *testing.T, headers map[string]string, payload map[string]any) []byte {

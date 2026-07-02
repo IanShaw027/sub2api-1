@@ -184,6 +184,9 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.kiroRuntime.systemVersionPlaceholder": "例如 darwin#24.6.0",
     "admin.settings.kiroRuntime.nodeVersion": "Node.js 版本",
     "admin.settings.kiroRuntime.nodeVersionPlaceholder": "例如 22.21.1",
+    "admin.settings.kiroRuntime.codeExecutionSandboxCommand": "Code execution sandbox command",
+    "admin.settings.kiroRuntime.codeExecutionSandboxCommandPlaceholder": "sandbox runner command",
+    "admin.settings.kiroRuntime.codeExecutionSandboxCommandHint": "Empty disables code_execution; command receives code on stdin.",
     "admin.settings.kiroRuntime.cacheHitRateScale": "缓存命中率缩放",
     "admin.settings.kiroRuntime.cacheHitRateScalePlaceholder": "0 - 100",
     "admin.settings.kiroRuntime.cacheHitRateScaleHint": "范围 0-100，按百分比填写。",
@@ -523,7 +526,8 @@ const baseSettingsResponse = {
   kiro_commit: "",
   system_version: "darwin#24.6.0",
   node_version: "22.21.1",
-  cache_hit_rate_scale: 100,
+  kiro_code_execution_sandbox_command: "sandbox-current",
+  cache_hit_rate_scale: 85,
   cache_min_block_tokens: 1024,
   cache_independent_ttl_seconds: 3600,
   cache_prefix_ttl_seconds: 3600,
@@ -1789,7 +1793,13 @@ describe("admin SettingsView wechat connect controls", () => {
         wrapper.get('[data-testid="kiro-runtime-cache-hit-rate-scale"]')
           .element as HTMLInputElement
       ).value,
-    ).toBe("100");
+    ).toBe("85");
+    expect(
+      (
+        wrapper.get('[data-testid="kiro-runtime-code-execution-sandbox-command"]')
+          .element as HTMLTextAreaElement
+      ).value,
+    ).toBe("sandbox-current");
 
     await wrapper.get('[data-testid="kiro-runtime-version"]').setValue(" 0.11.0 ");
     await wrapper
@@ -1801,6 +1811,9 @@ describe("admin SettingsView wechat connect controls", () => {
     await wrapper
       .get('[data-testid="kiro-runtime-node-version"]')
       .setValue(" 24.1.0 ");
+    await wrapper
+      .get('[data-testid="kiro-runtime-code-execution-sandbox-command"]')
+      .setValue("  sandbox-next --language-env  ");
     await wrapper
       .get('[data-testid="kiro-runtime-cache-hit-rate-scale"]')
       .setValue("88.6");
@@ -1823,6 +1836,7 @@ describe("admin SettingsView wechat connect controls", () => {
         kiro_commit: "abc123",
         system_version: "linux#6.8.0",
         node_version: "24.1.0",
+        kiro_code_execution_sandbox_command: "sandbox-next --language-env",
         cache_hit_rate_scale: 88,
         cache_min_block_tokens: 2048,
         cache_independent_ttl_seconds: 7200,
@@ -1855,7 +1869,7 @@ describe("admin SettingsView wechat connect controls", () => {
     expect(updateSettings).toHaveBeenCalledTimes(1);
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
-        cache_hit_rate_scale: 100,
+        cache_hit_rate_scale: 85,
         cache_min_block_tokens: 1024,
         cache_independent_ttl_seconds: 3600,
         cache_prefix_ttl_seconds: 3600,

@@ -232,6 +232,112 @@ func TestConvertAnthropicRequestWithModel_RewritesKiroIdentityBanner(t *testing.
 	}
 }
 
+func TestSanitizeIdentityText_TargetsSelfIdentificationOnly(t *testing.T) {
+	require.Equal(t,
+		"I'm Claude Code, your coding assistant.",
+		SanitizeIdentityText("I'm Kiro, your coding assistant."),
+	)
+	require.Equal(t,
+		"I am Claude and can help.",
+		SanitizeIdentityText("I am Amazon Q and can help."),
+	)
+	require.Equal(t,
+		"Use the Kiro project config and mention Amazon Q docs in this code comment.",
+		SanitizeIdentityText("Use the Kiro project config and mention Amazon Q docs in this code comment."),
+	)
+}
+
+func TestSanitizeIdentityText_RedactsChineseIdentityProbeLeaks(t *testing.T) {
+	input := strings.Join([]string{
+		"真实模型：我是 Claude Sonnet 4.6（模型 ID：claude-sonnet-4-6）",
+		"确实存在 Kiro 与 Claude Code 的身份冲突",
+		"一段把我定义为 \"Kiro\"，另一段把我定义为 \"Claude Code\"。",
+	}, "\n")
+
+	got := SanitizeIdentityText(input)
+
+	require.Contains(t, got, "Claude Code")
+	require.NotContains(t, got, "Claude Sonnet")
+	require.NotContains(t, got, "claude-sonnet-4-6")
+	require.NotContains(t, got, "真实模型")
+	require.NotContains(t, got, "模型 ID")
+	require.NotContains(t, got, "Kiro 与 Claude Code")
+	require.NotContains(t, got, "身份冲突")
+	require.NotContains(t, got, `"Kiro"`)
+}
+
+func TestCouldStartIdentityPhrase_HoldsSplitSelfIdentificationButNotBareKiro(t *testing.T) {
+	require.True(t, CouldStartIdentityPhrase("I'm Ki"))
+	require.True(t, CouldStartIdentityPhrase("I am Amazon "))
+	require.True(t, CouldStartIdentityPhrase("Claude Sonn"))
+	require.True(t, CouldStartIdentityPhrase("真实模"))
+	require.False(t, CouldStartIdentityPhrase("Kiro"))
+	require.False(t, CouldStartIdentityPhrase("The Kiro project"))
+}
+
+func TestBuildConstraintInjection_JSONSchemaIncludesSchema(t *testing.T) {
+	req := map[string]any{
+		"response_format": map[string]any{
+			"type": "json_schema",
+			"json_schema": map[string]any{
+				"name":   "weather_answer",
+				"strict": true,
+				"schema": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"properties": map[string]any{
+						"city":        map[string]any{"type": "string"},
+						"temperature": map[string]any{"type": "number"},
+					},
+					"required": []any{"city", "temperature"},
+				},
+			},
+		},
+	}
+
+	constraint := BuildConstraintInjection(req)
+	require.Contains(t, constraint, "valid JSON only")
+	require.Contains(t, constraint, "weather_answer")
+	require.Contains(t, constraint, `"additionalProperties":false`)
+	require.Contains(t, constraint, `"required":["city","temperature"]`)
+	require.Contains(t, constraint, "strict")
+}
+
+func TestConvertAnthropicRequestWithModel_JSONSchemaResponseFormatInjectsCurrentMessageConstraint(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"response_format":{
+			"type":"json_schema",
+			"json_schema":{
+				"name":"weather_answer",
+				"strict":true,
+				"schema":{
+					"type":"object",
+					"additionalProperties":false,
+					"properties":{"city":{"type":"string"},"temperature":{"type":"number"}},
+					"required":["city","temperature"]
+				}
+			}
+		},
+		"messages":[{"role":"user","content":"Weather for Paris"}]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(body, "claude-sonnet-4-6")
+	require.NoError(t, err)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(result.Body, &payload))
+	state := requireJSONObject(t, payload["conversationState"], "conversationState")
+	current := requireJSONObject(t, state["currentMessage"], "currentMessage")
+	userInput := requireJSONObject(t, current["userInputMessage"], "userInputMessage")
+	content := requireJSONString(t, userInput["content"], "currentMessage.userInputMessage.content")
+	require.Contains(t, content, "Weather for Paris")
+	require.Contains(t, content, "valid JSON only")
+	require.Contains(t, content, "weather_answer")
+	require.Contains(t, content, `"additionalProperties":false`)
+	require.Contains(t, content, `"required":["city","temperature"]`)
+}
+
 func TestConvertAnthropicRequestWithModel_FiltersUnsupportedServerTools(t *testing.T) {
 	input := []byte(`{
 		"model":"claude-sonnet-4-6",

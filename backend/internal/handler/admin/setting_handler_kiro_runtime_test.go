@@ -84,14 +84,15 @@ func TestSettingHandler_UpdateSettings_KiroRuntimeRequestResponseAndRuntimeMatch
 	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
 	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
 	body := map[string]any{
-		"kiro_version":                  " 0.11.0 ",
-		"kiro_commit":                   " commit-123 ",
-		"system_version":                " linux#6.8.0 ",
-		"node_version":                  " 22.22.0 ",
-		"cache_hit_rate_scale":          88,
-		"cache_min_block_tokens":        service.KiroCacheMinBlockTokensMax,
-		"cache_independent_ttl_seconds": 7200,
-		"cache_prefix_ttl_seconds":      600,
+		"kiro_version":                        " 0.11.0 ",
+		"kiro_commit":                         " commit-123 ",
+		"system_version":                      " linux#6.8.0 ",
+		"node_version":                        " 22.22.0 ",
+		"cache_hit_rate_scale":                88,
+		"cache_min_block_tokens":              service.KiroCacheMinBlockTokensMax,
+		"cache_independent_ttl_seconds":       7200,
+		"cache_prefix_ttl_seconds":            600,
+		"kiro_code_execution_sandbox_command": "  sandbox-run --kiro  ",
 	}
 	rawBody, err := json.Marshal(body)
 	require.NoError(t, err)
@@ -108,14 +109,15 @@ func TestSettingHandler_UpdateSettings_KiroRuntimeRequestResponseAndRuntimeMatch
 	var resp struct {
 		Code int `json:"code"`
 		Data struct {
-			KiroVersion                    string `json:"kiro_version"`
-			KiroCommit                     string `json:"kiro_commit"`
-			SystemVersion                  string `json:"system_version"`
-			NodeVersion                    string `json:"node_version"`
-			KiroCacheHitRateScale          int    `json:"cache_hit_rate_scale"`
-			KiroCacheMinBlockTokens        int    `json:"cache_min_block_tokens"`
-			KiroCacheIndependentTTLSeconds int    `json:"cache_independent_ttl_seconds"`
-			KiroCachePrefixTTLSeconds      int    `json:"cache_prefix_ttl_seconds"`
+			KiroVersion                     string `json:"kiro_version"`
+			KiroCommit                      string `json:"kiro_commit"`
+			SystemVersion                   string `json:"system_version"`
+			NodeVersion                     string `json:"node_version"`
+			KiroCacheHitRateScale           int    `json:"cache_hit_rate_scale"`
+			KiroCacheMinBlockTokens         int    `json:"cache_min_block_tokens"`
+			KiroCacheIndependentTTLSeconds  int    `json:"cache_independent_ttl_seconds"`
+			KiroCachePrefixTTLSeconds       int    `json:"cache_prefix_ttl_seconds"`
+			KiroCodeExecutionSandboxCommand string `json:"kiro_code_execution_sandbox_command"`
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
@@ -128,6 +130,7 @@ func TestSettingHandler_UpdateSettings_KiroRuntimeRequestResponseAndRuntimeMatch
 	require.Equal(t, service.KiroCacheMinBlockTokensMax, resp.Data.KiroCacheMinBlockTokens)
 	require.Equal(t, 7200, resp.Data.KiroCacheIndependentTTLSeconds)
 	require.Equal(t, 600, resp.Data.KiroCachePrefixTTLSeconds)
+	require.Equal(t, "sandbox-run --kiro", resp.Data.KiroCodeExecutionSandboxCommand)
 
 	runtime := svc.GetKiroRuntimeSettings(context.Background())
 	require.Equal(t, resp.Data.KiroVersion, runtime.KiroVersion)
@@ -138,6 +141,7 @@ func TestSettingHandler_UpdateSettings_KiroRuntimeRequestResponseAndRuntimeMatch
 	require.Equal(t, resp.Data.KiroCacheMinBlockTokens, runtime.CacheMinBlockTokens)
 	require.Equal(t, resp.Data.KiroCacheIndependentTTLSeconds, runtime.CacheIndependentTTLSecs)
 	require.Equal(t, resp.Data.KiroCachePrefixTTLSeconds, runtime.CachePrefixTTLSecs)
+	require.Equal(t, resp.Data.KiroCodeExecutionSandboxCommand, runtime.CodeExecutionSandboxCommand)
 }
 
 func TestSettingHandler_UpdateSettings_ReturnsOpenAIStickyWaitTimeoutSeconds(t *testing.T) {

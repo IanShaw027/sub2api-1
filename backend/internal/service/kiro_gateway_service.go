@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os/exec"
 	"sort"
 	"strings"
 	"sync"
@@ -301,6 +302,17 @@ func prepareKiroConvertedRequestWithRoutingWithMeta(ctx context.Context, setting
 	converted, err := kiropkg.ConvertAnthropicRequestWithModel(forwardBody, requestedModel)
 	if err != nil {
 		return nil, 0, nil, err
+	}
+	// Adjust for constraint injection tokens (added inside Convert) to avoid under-est in billed/forward for cache/compact.
+	if len(rawBody) > 0 {
+		var origReq map[string]any
+		if json.Unmarshal(rawBody, &origReq) == nil {
+			if c := kiropkg.BuildConstraintInjection(origReq); c != "" {
+				added := kiropkg.EstimateInputTokens([]byte(c))
+				billedInputTokens += added
+				meta.ForwardInputTokens += added
+			}
+		}
 	}
 	meta.ToolCount = len(converted.ToolNameMap)
 	return converted, billedInputTokens, meta, nil
@@ -928,7 +940,10 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	content := make([]map[string]any, 0, 2+len(toolUses))
 	reasoningThinkingText := reasoningTextBuilder.String()
 	reasoningThinkingSignature := reasoningSignatureBuilder.String()
-	if strings.TrimSpace(reasoningThinkingText) != "" {
+	if strings.TrimSpace(reasoningThinkingText) != "" || reasoningThinkingSignature != "" {
+		// Include reasoning thinking block even if text is empty, as long as a
+		// signature was accumulated. This ensures one-time complete signature is
+		// delivered in non-stream path too (symmetric to stream's signature_delta).
 		block := map[string]any{"type": "thinking", "thinking": reasoningThinkingText}
 		if reasoningThinkingSignature != "" {
 			block["signature"] = reasoningThinkingSignature
@@ -940,10 +955,15 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	if assistantText != "" && (stopReason == "tool_use" || stopReason == "pause_turn") {
 		assistantText = kiropkg.StripTrailingPlaceholderFragment(assistantText)
 	}
+	// P1 identity filtering on final non-stream text output (targeted, after stripping placeholders)
+	assistantText = kiropkg.SanitizeIdentityText(assistantText)
 	content, textOutput, nativeThinkingOutput := appendKiroNativeContentBlocks(assistantText, content)
 	if textOutput != "" || nativeThinkingOutput != "" {
 		hasVisibleOutput = true
 	}
+	// P1 identity sanitize on final non-stream outputs
+	textOutput = kiropkg.SanitizeIdentityText(textOutput)
+	nativeThinkingOutput = kiropkg.SanitizeIdentityText(nativeThinkingOutput)
 	if !hasVisibleOutput {
 		emptyErr := errors.New("kiro response contained no assistant output")
 		logKiroResponseAnomaly(ctx, account, parsed, false, "empty_output", emptyErr, 0, len(toolNames), nil)
@@ -1065,6 +1085,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	var textOutputBuilder strings.Builder
 	var nativeThinkingBuilder strings.Builder
 	var toolOutputBuilder strings.Builder
+	var reasoningSignatureBuilder strings.Builder
 	stopReason := "end_turn"
 	framesSeen := 0
 	completedToolUses := 0
@@ -1074,6 +1095,8 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	normalToolSeen := false
 	shadowToolSeen := false
 	shadowMaxUsesLimit := 0
+	nativeWebContinuationBlocks := make([]map[string]any, 0)
+	nativeWebContinuationCompleted := false
 	var lastContextUsagePercentage *float64
 	nativeThinkingBuffer := ""
 	nativeThinkingExtracted := false
@@ -1090,6 +1113,11 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	// look like placeholder echoes (e.g. "call") are held back until the next
 	// event confirms whether they are genuine text or pre-tool-use noise.
 	trailingHoldback := ""
+	// identity holdback for P1 (response-side Kiro/Amazon Q → Claude Code/Claude).
+	// Prevents splits like "Ki"+"ro" or "Amazon "+"Q". Uses same ~40-rune tail + flush pattern
+	// as placeholder/trailing + kirocc stop sequences. Sanitize applied to pending.
+	identityPending := ""
+	const identityMaxKeep = 40
 	debugAggregator := BeginKiroFrameAggregator(s.settingService, c)
 	defer func() {
 		debugAggregator.Finalize("upstream_response_body", map[string]any{
@@ -1125,11 +1153,15 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	// placeholder-suppression buffer before closing the text block. Assigned once
 	// emitTextDeltaRaw is in scope.
 	var flushPendingPlaceholder func() error
+	var flushIdentityHoldback func() error
 	closeTextBlock := func() error {
 		if flushPendingPlaceholder != nil {
 			if err := flushPendingPlaceholder(); err != nil {
 				return err
 			}
+		}
+		if err := flushIdentityHoldback(); err != nil {
+			return err
 		}
 		if !textBlockOpen {
 			return nil
@@ -1197,6 +1229,16 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	}
 	suppressTrailingHoldback := func() {
 		trailingHoldback = ""
+		identityPending = ""
+	}
+
+	flushIdentityHoldback = func() error {
+		if identityPending == "" {
+			return nil
+		}
+		clean := kiropkg.SanitizeIdentityText(identityPending)
+		identityPending = ""
+		return emitTextDeltaRaw(clean)
 	}
 	emitTextDelta := func(text string) error {
 		if text == "" {
@@ -1206,11 +1248,35 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			if err := flushTrailingHoldback(); err != nil {
 				return err
 			}
+			if err := flushIdentityHoldback(); err != nil {
+				return err
+			}
 			if kiropkg.IsPlaceholderFragment(text) {
 				trailingHoldback = text
 				return nil
 			}
-			return emitTextDeltaRaw(text)
+			// identity sanitization with *conditional* holdback (only if could split phrase).
+			// Normal text (incl. whitespace) emitted immediately to avoid regressions.
+			// Only hold tail when pending ends with start of identity phrase.
+			identityPending += text
+			if !kiropkg.CouldStartIdentityPhrase(identityPending) {
+				cleaned := kiropkg.SanitizeIdentityText(identityPending)
+				identityPending = ""
+				return emitTextDeltaRaw(cleaned)
+			}
+			cleaned := kiropkg.SanitizeIdentityText(identityPending)
+			if utf8.RuneCountInString(cleaned) <= identityMaxKeep {
+				return nil // hold potential split
+			}
+			runes := []rune(cleaned)
+			emit := string(runes[:len(runes)-identityMaxKeep])
+			pendingRunes := []rune(identityPending)
+			if len(pendingRunes) > identityMaxKeep {
+				identityPending = string(pendingRunes[len(pendingRunes)-identityMaxKeep:])
+			} else {
+				identityPending = ""
+			}
+			return emitTextDeltaRaw(emit)
 		}
 		placeholderPending += text
 		exact, prefix := kiropkg.ToolTurnPlaceholderMatch(placeholderPending)
@@ -1232,6 +1298,9 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	}
 	flushPendingPlaceholder = func() error {
 		if err := flushTrailingHoldback(); err != nil {
+			return err
+		}
+		if err := flushIdentityHoldback(); err != nil {
 			return err
 		}
 		if placeholderResolved || placeholderPending == "" {
@@ -1275,8 +1344,13 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		if !thinkingBlockOpen {
 			return nil
 		}
-		if err := writeKiroThinkingBlockDelta(writer, thinkingBlockIndex, ""); err != nil {
-			return err
+		// Emit full accumulated signature as a single signature_delta before stop.
+		// Buffers fragments from reasoningContentEvent frames (fixes per-chunk sig deltas).
+		if sig := reasoningSignatureBuilder.String(); sig != "" {
+			if err := writeKiroThinkingBlockSignatureDelta(writer, thinkingBlockIndex, sig); err != nil {
+				return err
+			}
+			reasoningSignatureBuilder.Reset()
 		}
 		if err := writeKiroThinkingBlockStop(writer, thinkingBlockIndex); err != nil {
 			return err
@@ -1284,6 +1358,21 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		thinkingBlockOpen = false
 		thinkingBlockIndex = -1
 		return nil
+	}
+	// closeOpenKiroBlocksSafely ensures that if a thinking block is still open,
+	// we use the canonical closeThinkingBlock (which emits any accumulated
+	// complete signature_delta once + terminating delta before stop) to satisfy
+	// the one-shot signature protocol in *all* paths, including error/early returns.
+	// Only after that we delegate text+tool cleanup (passing false for thinking
+	// to avoid double-stop). This closes the gap where closeOpenKiroBlocks
+	// previously did a bare stop, dropping pending signatures.
+	closeOpenKiroBlocksSafely := func() error {
+		if thinkingBlockOpen {
+			if err := closeThinkingBlock(); err != nil {
+				return err
+			}
+		}
+		return closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, false, -1, toolStates)
 	}
 	processAssistantContent := func(content string) error {
 		nativeThinkingBuffer += content
@@ -1396,7 +1485,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				if failureErr := kiroFrameFailure(frame); failureErr != nil {
 					if streamStarted {
 						handledErr := s.handleFrameFailure(ctx, c, account, resp.Header.Get("x-amzn-requestid"), frame, failureErr, false)
-						if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
+						if err := closeOpenKiroBlocksSafely(); err != nil {
 							return nil, err
 						}
 						_ = writeKiroStreamError(writer, failureErr.Error())
@@ -1442,9 +1531,9 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						}
 					}
 					if reasoningSignature != "" {
-						if err := writeKiroThinkingBlockSignatureDelta(writer, thinkingBlockIndex, reasoningSignature); err != nil {
-							return nil, err
-						}
+						// Accumulate; send the COMPLETE signature as one delta on closeThinkingBlock.
+						// This matches Anthropic streaming protocol (full sig once, not per upstream frame).
+						_, _ = reasoningSignatureBuilder.WriteString(reasoningSignature)
 					}
 				case "assistantResponseEvent":
 					content := rawStringField(frame.Payload, "content")
@@ -1466,6 +1555,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					toolUseID := controlStringField(frame.Payload, "toolUseId")
 					state := ensureKiroToolState(toolStates, toolUseID, controlStringField(frame.Payload, "name"))
 					toolOrder = appendKiroToolStateOrder(toolOrder, state)
+
 					if shadowBridge, ok, isNativeRunnable := kiroRunnableWebToolBridgeForState(converted, state); ok {
 						shadowMaxUsesLimit = mergeShadowMaxUsesLimit(shadowMaxUsesLimit, shadowBridge.MaxUses)
 						inputChunk := rawStringField(frame.Payload, "input")
@@ -1521,8 +1611,52 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 								return nil, shadowErr
 							}
 							if shadowErr != nil {
-								shadowBlocks = []map[string]any{kiroLegacyShadowToolUseBlock(state, shadowBridge)}
-								shadowOutput = state.Name
+								// Fixed fallback: emit proper server_tool_use + web_xxx_tool_result (or code result)
+								// instead of bare legacy tool_use. This avoids empty assistant_text and wrong stop_reason.
+								inp, _ := kiroShadowToolInput(state)
+								nm := strings.ToLower(strings.TrimSpace(state.Name))
+								typ := strings.ToLower(strings.TrimSpace(shadowBridge.AnthropicType))
+								if nm == "code_execution" || strings.HasPrefix(nm, "code_execution") || strings.HasPrefix(typ, "code_execution") {
+									shadowBlocks = []map[string]any{
+										{
+											"type":  "server_tool_use",
+											"id":    state.ToolUseID,
+											"name":  "code_execution",
+											"input": inp,
+										},
+										{
+											"type":        "code_execution_tool_result",
+											"tool_use_id": state.ToolUseID,
+											"content": []any{
+												map[string]any{
+													"type":        "code_execution_result",
+													"stdout":      "",
+													"stderr":      "[code execution simulation unavailable]",
+													"return_code": 1,
+												},
+											},
+										},
+									}
+									shadowOutput = "[code execution simulation unavailable]"
+								} else if strings.HasPrefix(nm, "web_search") || strings.HasPrefix(typ, "web_search") {
+									shadowBlocks = []map[string]any{
+										{
+											"type":  "server_tool_use",
+											"id":    state.ToolUseID,
+											"name":  "web_search",
+											"input": inp,
+										},
+										{
+											"type":        "web_search_tool_result",
+											"tool_use_id": state.ToolUseID,
+											"content":     []any{map[string]any{"type": "text", "text": "No search results found (emulation unavailable)."}},
+										},
+									}
+									shadowOutput = "No search results found (emulation unavailable)."
+								} else {
+									shadowBlocks = []map[string]any{kiroLegacyShadowToolUseBlock(state, shadowBridge)}
+									shadowOutput = state.Name
+								}
 							}
 							rawShadowInput := state.InputBuilder.String()
 							for _, block := range shadowBlocks {
@@ -1531,6 +1665,9 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 								if err := writeKiroShadowStreamBlock(writer, blockIndex, block, rawShadowInput); err != nil {
 									return nil, err
 								}
+							}
+							if isNativeRunnable && shadowErr == nil {
+								nativeWebContinuationBlocks = append(nativeWebContinuationBlocks, shadowBlocks...)
 							}
 							if shadowErr != nil {
 								if stopReason == "end_turn" {
@@ -1556,7 +1693,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					if shadowToolSeen {
 						conflictErr := kiroShadowToolConflictError(state.Name)
 						if streamStarted {
-							if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
+							if err := closeOpenKiroBlocksSafely(); err != nil {
 								return nil, err
 							}
 						}
@@ -1722,7 +1859,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusBadGateway, kiroTransportFailureReasonKeyword, "Kiro upstream disconnected before first forwardable event", incompleteErr.Error())
 					}
 					if streamStarted {
-						if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
+						if err := closeOpenKiroBlocksSafely(); err != nil {
 							return nil, err
 						}
 					}
@@ -1747,7 +1884,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusBadGateway, kiroTransportFailureReasonKeyword, "Kiro upstream disconnected before first forwardable event", readErr.Error())
 			}
 			if streamStarted {
-				if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
+				if err := closeOpenKiroBlocksSafely(); err != nil {
 					return nil, err
 				}
 			}
@@ -1774,15 +1911,113 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		}
 		nativeThinkingBuffer = ""
 	}
+	if len(nativeWebContinuationBlocks) > 0 && kiroShouldAutoContinueNativeWebTools(parsed) {
+		continuationResp, _, continuationErr := s.startKiroNativeWebToolContinuation(ctx, c, account, parsed, nativeWebContinuationBlocks, runtimeSettings)
+		if continuationErr == nil && continuationResp != nil && continuationResp.Body != nil {
+			continuationFrames, readErr := readAllKiroFrames(continuationResp.Body)
+			_ = continuationResp.Body.Close()
+			if readErr == nil {
+				continuationHadAssistantText := false
+				for _, frame := range continuationFrames {
+					framesSeen++
+					if debugAggregator != nil && debugAggregator.enabled {
+						logKiroFrameDiagnostic(ctx, account, parsed, frame)
+					}
+					debugAggregator.Append(frame, rawStringField(frame.Payload, "content"))
+					if failureErr := kiroFrameFailure(frame); failureErr != nil {
+						return nil, s.handleFrameFailure(ctx, c, account, continuationResp.Header.Get("x-amzn-requestid"), frame, failureErr, false)
+					}
+					switch frame.EventType {
+					case "reasoningContentEvent":
+						reasoningText := rawStringField(frame.Payload, "text")
+						reasoningSignature := rawStringField(frame.Payload, "signature")
+						if reasoningText == "" && reasoningSignature == "" {
+							continue
+						}
+						if !streamStarted {
+							if err := startStream(inputTokens); err != nil {
+								return nil, err
+							}
+						}
+						if !thinkingBlockOpen {
+							if err := openThinkingBlock(); err != nil {
+								return nil, err
+							}
+							reasoningThinkingActive = true
+						}
+						if reasoningText != "" {
+							if err := emitThinkingDelta(reasoningText); err != nil {
+								return nil, err
+							}
+						}
+						if reasoningSignature != "" {
+							_, _ = reasoningSignatureBuilder.WriteString(reasoningSignature)
+						}
+					case "assistantResponseEvent":
+						content := rawStringField(frame.Payload, "content")
+						if content == "" {
+							continue
+						}
+						if reasoningThinkingActive && thinkingBlockOpen {
+							if err := closeThinkingBlock(); err != nil {
+								return nil, err
+							}
+							reasoningThinkingActive = false
+							nativeThinkingExtracted = true
+						}
+						if err := processAssistantContent(content); err != nil {
+							return nil, err
+						}
+						continuationHadAssistantText = true
+					case "contextUsageEvent":
+						if usagePercent, ok := numericField(frame.Payload, "contextUsagePercentage"); ok {
+							lastContextUsagePercentage = &usagePercent
+							setKiroContextUsagePercentage(c, usagePercent)
+							if reason := kiroStopReasonFromContextUsage(usagePercent); reason != "" {
+								stopReason = reason
+							}
+						}
+					}
+				}
+				if continuationHadAssistantText && stopReason == "pause_turn" {
+					stopReason = "end_turn"
+					nativeWebContinuationCompleted = true
+				}
+				if thinkingBlockOpen {
+					if err := emitThinkingDelta(nativeThinkingBuffer); err != nil {
+						return nil, err
+					}
+					nativeThinkingBuffer = ""
+					if err := closeThinkingBlock(); err != nil {
+						return nil, err
+					}
+					nativeThinkingExtracted = true
+				} else if nativeThinkingBuffer != "" {
+					if strings.TrimSpace(nativeThinkingBuffer) != "" {
+						if err := emitTextDelta(nativeThinkingBuffer); err != nil {
+							return nil, err
+						}
+					}
+					nativeThinkingBuffer = ""
+				}
+			}
+		}
+	}
+	if err := flushIdentityHoldback(); err != nil {
+		return nil, err
+	}
 	// Flush any buffered leading text now that the stream has ended. A
 	// pure-placeholder buffer is dropped here, leaving textOutputBuilder empty so
 	// the empty-output guard below can engage the fallback path.
 	if err := flushPendingPlaceholder(); err != nil {
 		return nil, err
 	}
+	if err := flushIdentityHoldback(); err != nil {
+		return nil, err
+	}
 	visibleToolUses, completedVisibleToolUses, partialToolUses := kiroVisibleToolStateCounts(toolStates, toolOrder)
 	hasVisibleToolOutput := visibleToolUses > 0
-	if hasVisibleToolOutput && stopReason == "end_turn" {
+	if hasVisibleToolOutput && stopReason == "end_turn" && !nativeWebContinuationCompleted {
 		stopReason = "tool_use"
 	}
 	buildStreamTelemetry := func() *kiroResponseTelemetry {
@@ -1828,7 +2063,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusBadGateway, kiroTransportFailureReasonKeyword, "Kiro upstream returned no assistant output before first forwardable event", emptyErr.Error())
 		}
 		if streamStarted {
-			if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
+			if err := closeOpenKiroBlocksSafely(); err != nil {
 				return nil, err
 			}
 		}
@@ -1885,6 +2120,132 @@ func estimateKiroOutputTokens(textOutput, toolOutput string) int {
 	return kiropkg.EstimateOutputTokens(textOutput + toolOutput)
 }
 
+func kiroShouldAutoContinueNativeWebTools(parsed *ParsedRequest) bool {
+	if parsed == nil || parsed.Body == nil {
+		return false
+	}
+	var req map[string]any
+	if err := json.Unmarshal(parsed.Body.Bytes(), &req); err != nil {
+		return false
+	}
+	toolChoice, _ := req["tool_choice"].(map[string]any)
+	if strings.TrimSpace(fmt.Sprint(toolChoice["type"])) != "tool" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(fmt.Sprint(toolChoice["name"]))) {
+	case "web_search", "web_fetch":
+		return true
+	default:
+		return false
+	}
+}
+
+func buildKiroNativeWebToolContinuationBody(original []byte, shadowBlocks []map[string]any) ([]byte, bool, error) {
+	var req map[string]any
+	if err := json.Unmarshal(original, &req); err != nil {
+		return nil, false, err
+	}
+	rawMessages, _ := req["messages"].([]any)
+	if len(rawMessages) == 0 {
+		return nil, false, errors.New("kiro native web continuation: empty messages")
+	}
+
+	assistantContent := make([]any, 0, len(shadowBlocks))
+	userContent := make([]any, 0, len(shadowBlocks))
+	for _, block := range shadowBlocks {
+		if block == nil {
+			continue
+		}
+		switch strings.TrimSpace(kiroShadowStringField(block, "type")) {
+		case "server_tool_use":
+			name := strings.ToLower(strings.TrimSpace(kiroShadowStringField(block, "name")))
+			if strings.HasPrefix(name, "web_search") || strings.HasPrefix(name, "web_fetch") || name == "google_search" {
+				assistantContent = append(assistantContent, block)
+			}
+		case "web_search_tool_result", "web_fetch_tool_result":
+			userContent = append(userContent, block)
+		}
+	}
+	if len(assistantContent) == 0 || len(userContent) == 0 {
+		return nil, false, nil
+	}
+
+	req["messages"] = append(rawMessages,
+		map[string]any{
+			"role":    "assistant",
+			"content": assistantContent,
+		},
+		map[string]any{
+			"role":    "user",
+			"content": userContent,
+		},
+	)
+	delete(req, "tool_choice")
+
+	encoded, err := json.Marshal(req)
+	if err != nil {
+		return nil, false, err
+	}
+	return encoded, true, nil
+}
+
+func (s *KiroGatewayService) startKiroNativeWebToolContinuation(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	parsed *ParsedRequest,
+	shadowBlocks []map[string]any,
+	runtimeSettings *KiroRuntimeSettings,
+) (*http.Response, *kiropkg.ConvertResult, error) {
+	if s == nil || s.httpUpstream == nil || parsed == nil || parsed.Body == nil {
+		return nil, nil, errors.New("kiro native web continuation: upstream unavailable")
+	}
+	body, ok, err := buildKiroNativeWebToolContinuationBody(parsed.Body.Bytes(), shadowBlocks)
+	if err != nil || !ok {
+		return nil, nil, err
+	}
+	continuationParsed := *parsed
+	continuationParsed.Body = NewRequestBodyRef(body)
+
+	converted, _, _, err := prepareKiroConvertedRequestWithRoutingWithMeta(ctx, s.settingService, account, &continuationParsed, runtimeSettings)
+	if err != nil {
+		return nil, nil, err
+	}
+	accessToken, err := s.resolveAccessToken(ctx, account)
+	if err != nil {
+		return nil, nil, err
+	}
+	req, err := s.buildRequest(ctx, account, converted.Body, accessToken, runtimeSettings)
+	if err != nil {
+		return nil, nil, err
+	}
+	s.emitGatewayDebugUpstreamRequest(c, account, req, converted.Body, 2)
+
+	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, s.resolveTLSProfile(account))
+	if err != nil {
+		return nil, nil, err
+	}
+	if resp != nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		if retryResp, retryErr := s.retryInvalidTokenResponse(ctx, account, req, resp.StatusCode, body, runtimeSettings); retryResp != nil {
+			_ = resp.Body.Close()
+			resp = retryResp
+		} else {
+			_ = retryErr
+			resp.Body = io.NopCloser(bytes.NewReader(body))
+		}
+	}
+	if resp == nil {
+		return nil, nil, errors.New("kiro native web continuation: nil upstream response")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		return nil, nil, fmt.Errorf("kiro native web continuation: upstream status %d: %s", resp.StatusCode, truncateString(strings.TrimSpace(string(body)), 256))
+	}
+	return resp, converted, nil
+}
+
 func kiroAnthropicUsageForStart(inputTokens, outputTokens int, fakeCacheUsage kiropkg.FakeCacheUsage) gin.H {
 	return gin.H{
 		"input_tokens":                inputTokens,
@@ -1932,8 +2293,9 @@ func writeKiroThinkingBlockStart(writer gin.ResponseWriter, index int) error {
 		"type":  "content_block_start",
 		"index": index,
 		"content_block": map[string]any{
-			"type":     "thinking",
-			"thinking": "",
+			"type":      "thinking",
+			"thinking":  "",
+			"signature": "",
 		},
 	})
 }
@@ -2153,7 +2515,8 @@ func normalizeKiroShadowToolHistory(body []byte) []byte {
 				}
 			case "user":
 				blockType := strings.TrimSpace(kiroShadowStringField(block, "type"))
-				if (blockType == "web_search_tool_result" || blockType == "web_fetch_tool_result") && shadowToolNames[strings.TrimSpace(kiroShadowStringField(block, "tool_use_id"))] != "" {
+				if (blockType == "web_search_tool_result" || blockType == "web_fetch_tool_result" || blockType == "code_execution_tool_result") && shadowToolNames[strings.TrimSpace(kiroShadowStringField(block, "tool_use_id"))] != "" {
+					// note: code_execution_tool_result only rewritten here for shadow (code is native; keeps typed result for native history)
 					toolResult := map[string]any{
 						"type":        "tool_result",
 						"tool_use_id": kiroShadowStringField(block, "tool_use_id"),
@@ -2523,7 +2886,7 @@ func kiroRunnableWebToolBridgeForState(converted *kiropkg.ConvertResult, state *
 
 func kiroResponseToolFamilyIsRunnableWeb(family string) bool {
 	switch strings.TrimSpace(family) {
-	case "anthropic_web_search", "anthropic_web_fetch":
+	case "anthropic_web_search", "anthropic_web_fetch", "code_execution":
 		return true
 	default:
 		return false
@@ -2606,7 +2969,47 @@ func (s *KiroGatewayService) executeKiroShadowTools(
 			if !isNative {
 				return nil, nil, nil, "", false, false, err
 			}
-			blocksByID[toolUseID] = []map[string]any{kiroLegacyShadowToolUseBlock(state, bridge)}
+			inp, _ := kiroShadowToolInput(state)
+			nm := strings.ToLower(strings.TrimSpace(state.Name))
+			typ := strings.ToLower(strings.TrimSpace(bridge.AnthropicType))
+			if nm == "code_execution" || strings.HasPrefix(nm, "code_execution") || strings.HasPrefix(typ, "code_execution") {
+				blocksByID[toolUseID] = []map[string]any{
+					{
+						"type":  "server_tool_use",
+						"id":    state.ToolUseID,
+						"name":  "code_execution",
+						"input": inp,
+					},
+					{
+						"type":        "code_execution_tool_result",
+						"tool_use_id": state.ToolUseID,
+						"content": []any{
+							map[string]any{
+								"type":        "code_execution_result",
+								"stdout":      "",
+								"stderr":      "[code execution simulation unavailable]",
+								"return_code": 1,
+							},
+						},
+					},
+				}
+			} else if strings.HasPrefix(nm, "web_search") || strings.HasPrefix(typ, "web_search") {
+				blocksByID[toolUseID] = []map[string]any{
+					{
+						"type":  "server_tool_use",
+						"id":    state.ToolUseID,
+						"name":  "web_search",
+						"input": inp,
+					},
+					{
+						"type":        "web_search_tool_result",
+						"tool_use_id": state.ToolUseID,
+						"content":     []any{map[string]any{"type": "text", "text": "No search results found (emulation unavailable)."}},
+					},
+				}
+			} else {
+				blocksByID[toolUseID] = []map[string]any{kiroLegacyShadowToolUseBlock(state, bridge)}
+			}
 			if name := strings.TrimSpace(kiroShadowStringField(blocksByID[toolUseID][0], "name")); name != "" {
 				toolNames = append(toolNames, name)
 			}
@@ -2622,6 +3025,99 @@ func (s *KiroGatewayService) executeKiroShadowTools(
 		shadowUsed++
 	}
 	return blocksByID, shadowHandledIDs, toolNames, outputBuilder.String(), shadowExecuted, unresolvedFallback, nil
+}
+
+func isCodeExecutionToolState(state *kiroToolState) bool {
+	if state == nil {
+		return false
+	}
+	n := strings.ToLower(strings.TrimSpace(state.Name))
+	return n == "code_execution" || strings.HasPrefix(n, "code_execution_")
+}
+
+func extractCodeAndLang(state *kiroToolState) (code, lang string) {
+	if state == nil {
+		return "", "python"
+	}
+	input := state.InputBuilder.String()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(input), &m); err == nil {
+		if c, ok := m["code"].(string); ok {
+			code = c
+		}
+		if l, ok := m["language"].(string); ok {
+			lang = l
+		}
+	}
+	if code == "" {
+		code = input
+	}
+	if lang == "" {
+		lang = "python"
+	}
+	return code, lang
+}
+
+func executeCodeInExplicitSandbox(ctx context.Context, code, language string, runtimeSettings *KiroRuntimeSettings) (stdout, stderr string, hadError bool) {
+	if language == "" {
+		language = "python"
+	}
+	if strings.TrimSpace(code) == "" {
+		return "[code execution simulation]\nNo code provided.", "", false
+	}
+	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
+	sandboxCommand := strings.TrimSpace(runtimeSettings.CodeExecutionSandboxCommand)
+	if sandboxCommand == "" {
+		return "", "[code execution sandbox unavailable]\ncode execution sandbox is not configured", true
+	}
+
+	// Enforce reasonable timeout to prevent hanging.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", sandboxCommand)
+	cmd.Env = []string{
+		"KIRO_CODE_EXECUTION_LANGUAGE=" + language,
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"HOME=/tmp",
+	}
+	cmd.Stdin = strings.NewReader(code)
+
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+
+	runErr := cmd.Run()
+	stdout = outBuf.String()
+	stderr = errBuf.String()
+
+	if runErr != nil {
+		hadError = true
+		if _, ok := runErr.(*exec.ExitError); ok {
+			// keep program's stderr; note exit status
+			if !strings.Contains(stderr, runErr.Error()) {
+				stderr += "\n[execution error] " + runErr.Error()
+			}
+		} else if !strings.Contains(stderr, runErr.Error()) {
+			stderr += "\n[execution error] " + runErr.Error()
+		}
+	}
+
+	const maxCodeOutput = 8192
+	if len(stdout) > maxCodeOutput {
+		stdout = stdout[:maxCodeOutput] + "\n... (stdout truncated for safety)"
+	}
+	if len(stderr) > maxCodeOutput {
+		stderr = stderr[:maxCodeOutput] + "\n... (stderr truncated for safety)"
+	}
+	if stdout == "" && stderr == "" {
+		if hadError {
+			stderr = "[code execution simulation]\n(no output)"
+		} else {
+			stdout = "[code execution simulation]\n(no output)"
+		}
+	}
+	return stdout, stderr, hadError
 }
 
 func (s *KiroGatewayService) executeKiroShadowTool(
@@ -2644,9 +3140,26 @@ func (s *KiroGatewayService) executeKiroShadowTool(
 
 	switch {
 	case strings.HasPrefix(strings.ToLower(strings.TrimSpace(bridge.AnthropicType)), "web_search"):
+		// For Kiro, we declare the tool as native "web_search" so Kiro uses its built-in support.
+		// We still execute the search here using the gateway's configured provider (Brave/Tavily etc.)
+		// to fill the actual result content for the client. This ensures results are returned.
+		// Kiro credits may still be affected by tool declaration.
 		query := strings.TrimSpace(kiroShadowStringField(input, "query"))
 		if query == "" {
 			query = strings.TrimSpace(kiroShadowStringField(input, "q"))
+		}
+		// 优先走 Kiro 原生 InvokeMCP(用账号自身凭证,无需外部搜索 key)。
+		// 失败或空结果时回退到 gateway 配置的 Brave/Tavily 等 provider。
+		results, mcpErr := s.kiroMCPWebSearch(ctx, account, query)
+		if mcpErr == nil && len(results) > 0 {
+			return []map[string]any{
+				serverToolUse,
+				{
+					"type":        "web_search_tool_result",
+					"tool_use_id": state.ToolUseID,
+					"content":     kiroShadowWebSearchResults(results),
+				},
+			}, buildTextSummary(query, results), nil
 		}
 		resp, _, err := kiroShadowWebSearchExecutor(ctx, account, query)
 		if err != nil {
@@ -2668,14 +3181,26 @@ func (s *KiroGatewayService) executeKiroShadowTool(
 		}, buildTextSummary(query, resp.Results), nil
 	case strings.HasPrefix(strings.ToLower(strings.TrimSpace(bridge.AnthropicType)), "web_fetch"):
 		urlValue := strings.TrimSpace(kiroShadowStringField(input, "url"))
-		fetchResult := kiroShadowWebFetchExecutor(ctx, account, webfetch.FetchRequest{
+		fetchReq := webfetch.FetchRequest{
 			URL:               urlValue,
 			ProxyURL:          resolveAccountProxyURL(account),
 			AllowedHosts:      bridge.AllowedDomains,
 			BlockedHosts:      bridge.BlockedDomains,
 			AllowPrivate:      s.kiroShadowAllowPrivateHosts(),
 			AllowInsecureHTTP: s.kiroShadowAllowInsecureHTTP(),
-		})
+		}
+		// 优先走 Kiro 原生 InvokeMCP web_fetch,失败回退本地 fetcher。
+		if fetchResult, ok := s.kiroMCPWebFetch(ctx, account, fetchReq, bridge.MaxContentTokens); ok {
+			return []map[string]any{
+				serverToolUse,
+				{
+					"type":        "web_fetch_tool_result",
+					"tool_use_id": state.ToolUseID,
+					"content":     kiroShadowWebFetchResultContent(fetchResult),
+				},
+			}, kiroShadowWebFetchSummary(fetchResult), nil
+		}
+		fetchResult := kiroShadowWebFetchExecutor(ctx, account, fetchReq)
 		if fetchResult == nil {
 			return nil, "", errors.New("web fetch returned no result")
 		}
@@ -2689,6 +3214,44 @@ func (s *KiroGatewayService) executeKiroShadowTool(
 			},
 		}, kiroShadowWebFetchSummary(fetchResult), nil
 	default:
+		if isCodeExecutionToolState(state) {
+			code, lang := extractCodeAndLang(state)
+			var runtimeSettings *KiroRuntimeSettings
+			if s != nil {
+				runtimeSettings = s.resolveKiroRuntimeSettings(ctx)
+			}
+			stdoutStr, stderrStr, hadErr := executeCodeInExplicitSandbox(ctx, code, lang, runtimeSettings)
+			summary := stdoutStr
+			if stderrStr != "" {
+				if summary != "" {
+					summary += "\n"
+				}
+				summary += stderrStr
+			}
+			rc := 0
+			if hadErr {
+				rc = 1
+			}
+			codeRes := map[string]any{
+				"type":        "code_execution_tool_result",
+				"tool_use_id": state.ToolUseID,
+				"content": []any{
+					map[string]any{
+						"type":        "code_execution_result",
+						"stdout":      stdoutStr,
+						"stderr":      stderrStr,
+						"return_code": rc,
+					},
+				},
+			}
+			if hadErr {
+				codeRes["is_error"] = true
+			}
+			return []map[string]any{
+				serverToolUse,
+				codeRes,
+			}, summary, nil
+		}
 		return nil, "", nil
 	}
 }

@@ -3486,6 +3486,36 @@
                 </div>
               </div>
 
+              <div>
+                <label
+                  class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {{
+                    t(
+                      "admin.settings.kiroRuntime.codeExecutionSandboxCommand",
+                    )
+                  }}
+                </label>
+                <textarea
+                  v-model="form.kiro_code_execution_sandbox_command"
+                  rows="3"
+                  class="input font-mono text-sm"
+                  data-testid="kiro-runtime-code-execution-sandbox-command"
+                  :placeholder="
+                    t(
+                      'admin.settings.kiroRuntime.codeExecutionSandboxCommandPlaceholder',
+                    )
+                  "
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{
+                    t(
+                      "admin.settings.kiroRuntime.codeExecutionSandboxCommandHint",
+                    )
+                  }}
+                </p>
+              </div>
+
               <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <div>
                   <label
@@ -9562,6 +9592,7 @@ const form = reactive<SettingsForm>({
   kiro_commit: "",
   system_version: "darwin#24.6.0",
   node_version: "22.21.1",
+  kiro_code_execution_sandbox_command: "",
   cache_hit_rate_scale: undefined,
   cache_min_block_tokens: undefined,
   cache_independent_ttl_seconds: undefined,
@@ -9964,34 +9995,46 @@ const addQuotaNotifyEmail = () => {
 const currentOrigin =
   typeof window !== "undefined" ? window.location.origin : "";
 
-function resolveBackendCallbackOrigin(): string {
+function normalizeCallbackPath(path: string): string {
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
+function resolveBackendCallbackBaseUrl(): string {
   if (typeof window === "undefined") return "";
 
   const raw = form.api_base_url.trim();
+  const fallbackOrigin =
+    window.location.origin ||
+    `${window.location.protocol}//${window.location.host}` ||
+    currentOrigin;
+
+  let apiBaseUrl = fallbackOrigin;
   if (raw) {
     try {
-      const parsed = new URL(raw);
+      const parsed = new URL(raw, fallbackOrigin || undefined);
       if (
         (parsed.protocol === "http:" || parsed.protocol === "https:") &&
         parsed.host
       ) {
-        return parsed.origin;
+        apiBaseUrl = `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
       }
     } catch {
-      // Fall back to the browser origin when api_base_url is relative or invalid.
+      // Fall back to the browser origin when api_base_url is invalid.
     }
   }
 
-  return (
-    window.location.origin ||
-    `${window.location.protocol}//${window.location.host}`
-  );
+  const base = apiBaseUrl.replace(/\/+$/, "");
+  return base.endsWith("/api/v1") ? base : `${base}/api/v1`;
+}
+
+function buildApiCallbackUrl(path: string): string {
+  const base = resolveBackendCallbackBaseUrl();
+  return base ? `${base}${normalizeCallbackPath(path)}` : "";
 }
 
 // LinuxDo OAuth redirect URL suggestion
 const linuxdoRedirectUrlSuggestion = computed(() => {
-  const origin = resolveBackendCallbackOrigin();
-  return origin ? `${origin}/api/v1/auth/oauth/linuxdo/callback` : "";
+  return buildApiCallbackUrl("/auth/oauth/linuxdo/callback");
 });
 
 async function setAndCopyLinuxdoRedirectUrl() {
@@ -10006,8 +10049,7 @@ async function setAndCopyLinuxdoRedirectUrl() {
 }
 
 const dingtalkRedirectUrlSuggestion = computed(() => {
-  const origin = resolveBackendCallbackOrigin();
-  return origin ? `${origin}/api/v1/auth/oauth/dingtalk/callback` : "";
+  return buildApiCallbackUrl("/auth/oauth/dingtalk/callback");
 });
 
 async function setAndCopyDingTalkRedirectUrl() {
@@ -10024,13 +10066,11 @@ async function setAndCopyDingTalkRedirectUrl() {
 type EmailOAuthProvider = "github" | "google";
 
 const githubOAuthRedirectUrlSuggestion = computed(() => {
-  const origin = resolveBackendCallbackOrigin();
-  return origin ? `${origin}/api/v1/auth/oauth/github/callback` : "";
+  return buildApiCallbackUrl("/auth/oauth/github/callback");
 });
 
 const googleOAuthRedirectUrlSuggestion = computed(() => {
-  const origin = resolveBackendCallbackOrigin();
-  return origin ? `${origin}/api/v1/auth/oauth/google/callback` : "";
+  return buildApiCallbackUrl("/auth/oauth/google/callback");
 });
 
 async function setAndCopyEmailOAuthRedirectUrl(provider: EmailOAuthProvider) {
@@ -10052,8 +10092,7 @@ async function setAndCopyEmailOAuthRedirectUrl(provider: EmailOAuthProvider) {
 }
 
 const wechatRedirectUrlSuggestion = computed(() => {
-  const origin = resolveBackendCallbackOrigin();
-  return origin ? `${origin}/api/v1/auth/oauth/wechat/callback` : "";
+  return buildApiCallbackUrl("/auth/oauth/wechat/callback");
 });
 
 function syncWeChatConnectMode(preferredMode?: WeChatConnectMode) {
@@ -10118,8 +10157,7 @@ async function setAndCopyWeChatRedirectUrl() {
 }
 
 const oidcRedirectUrlSuggestion = computed(() => {
-  const origin = resolveBackendCallbackOrigin();
-  return origin ? `${origin}/api/v1/auth/oauth/oidc/callback` : "";
+  return buildApiCallbackUrl("/auth/oauth/oidc/callback");
 });
 
 async function setAndCopyOIDCRedirectUrl() {

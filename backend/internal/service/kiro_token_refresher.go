@@ -180,14 +180,14 @@ func (r *KiroTokenRefresher) refreshKiroExternalIDPToken(ctx context.Context, ac
 	}
 	tokenEndpoint := resolveKiroExternalIDPTokenEndpoint(account.Credentials)
 	if tokenEndpoint == "" {
-		return "", "", "", infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp token_endpoint or issuer_url is required")
+		return "", "", "", infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp token_endpoint or Microsoft issuer_url is required")
 	}
 
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")
 	form.Set("client_id", clientID)
 	form.Set("refresh_token", refreshToken)
-	if scopes := strings.TrimSpace(account.GetCredential("scopes")); scopes != "" {
+	if scopes := strings.TrimSpace(stringCredential(account.Credentials, "scopes")); scopes != "" {
 		form.Set("scope", scopes)
 	}
 

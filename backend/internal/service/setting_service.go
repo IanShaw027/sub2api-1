@@ -2615,14 +2615,15 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyGatewayDebugTimelineIncludeBody] = strconv.FormatBool(gatewayDebugTimeline.IncludeBody)
 	updates[SettingKeyGatewayDebugTimelineBodyMaxKB] = strconv.Itoa(gatewayDebugTimeline.BodyMaxKB)
 	kiroRuntime := normalizeKiroRuntimeSettings(&KiroRuntimeSettings{
-		KiroVersion:             settings.KiroDefaultVersion,
-		KiroCommit:              settings.KiroDefaultCommit,
-		SystemVersion:           settings.KiroDefaultSystemVersion,
-		NodeVersion:             settings.KiroDefaultNodeVersion,
-		CacheHitRateScale:       settings.KiroCacheHitRateScale,
-		CacheMinBlockTokens:     settings.KiroCacheMinBlockTokens,
-		CacheIndependentTTLSecs: settings.KiroCacheIndependentTTLSeconds,
-		CachePrefixTTLSecs:      settings.KiroCachePrefixTTLSeconds,
+		KiroVersion:                 settings.KiroDefaultVersion,
+		KiroCommit:                  settings.KiroDefaultCommit,
+		SystemVersion:               settings.KiroDefaultSystemVersion,
+		NodeVersion:                 settings.KiroDefaultNodeVersion,
+		CacheHitRateScale:           settings.KiroCacheHitRateScale,
+		CacheMinBlockTokens:         settings.KiroCacheMinBlockTokens,
+		CacheIndependentTTLSecs:     settings.KiroCacheIndependentTTLSeconds,
+		CachePrefixTTLSecs:          settings.KiroCachePrefixTTLSeconds,
+		CodeExecutionSandboxCommand: settings.KiroCodeExecutionSandboxCommand,
 	})
 	updates[SettingKeyKiroDefaultVersion] = kiroRuntime.KiroVersion
 	updates[SettingKeyKiroDefaultCommit] = kiroRuntime.KiroCommit
@@ -2632,6 +2633,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyKiroCacheMinBlockTokens] = strconv.Itoa(kiroRuntime.CacheMinBlockTokens)
 	updates[SettingKeyKiroCacheIndependentTTLSeconds] = strconv.Itoa(kiroRuntime.CacheIndependentTTLSecs)
 	updates[SettingKeyKiroCachePrefixTTLSeconds] = strconv.Itoa(kiroRuntime.CachePrefixTTLSecs)
+	updates[SettingKeyKiroCodeExecutionSandboxCommand] = kiroRuntime.CodeExecutionSandboxCommand
 	updates[SettingKeyEnableClaudeOAuthSystemPromptInjection] = strconv.FormatBool(settings.EnableClaudeOAuthSystemPromptInjection)
 	updates[SettingKeyClaudeOAuthSystemPrompt] = settings.ClaudeOAuthSystemPrompt
 	if err := ValidateClaudeOAuthSystemPromptBlocksConfig(settings.ClaudeOAuthSystemPromptBlocks); err != nil {
@@ -2863,14 +2865,15 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	kiroRuntimeSettingsSF.Forget("kiro_runtime")
 	kiroRuntimeSettingsCache.Store(&cachedKiroRuntimeSettings{
 		settings: normalizeKiroRuntimeSettings(&KiroRuntimeSettings{
-			KiroVersion:             settings.KiroDefaultVersion,
-			KiroCommit:              settings.KiroDefaultCommit,
-			SystemVersion:           settings.KiroDefaultSystemVersion,
-			NodeVersion:             settings.KiroDefaultNodeVersion,
-			CacheHitRateScale:       settings.KiroCacheHitRateScale,
-			CacheMinBlockTokens:     settings.KiroCacheMinBlockTokens,
-			CacheIndependentTTLSecs: settings.KiroCacheIndependentTTLSeconds,
-			CachePrefixTTLSecs:      settings.KiroCachePrefixTTLSeconds,
+			KiroVersion:                 settings.KiroDefaultVersion,
+			KiroCommit:                  settings.KiroDefaultCommit,
+			SystemVersion:               settings.KiroDefaultSystemVersion,
+			NodeVersion:                 settings.KiroDefaultNodeVersion,
+			CacheHitRateScale:           settings.KiroCacheHitRateScale,
+			CacheMinBlockTokens:         settings.KiroCacheMinBlockTokens,
+			CacheIndependentTTLSecs:     settings.KiroCacheIndependentTTLSeconds,
+			CachePrefixTTLSecs:          settings.KiroCachePrefixTTLSeconds,
+			CodeExecutionSandboxCommand: settings.KiroCodeExecutionSandboxCommand,
 		}),
 		expiresAt: time.Now().Add(kiroRuntimeSettingsCacheTTL).UnixNano(),
 	})
@@ -3876,14 +3879,15 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient: strconv.FormatBool(
 			openAIOAuthImageBridgeFreshUpstreamClientDefault,
 		),
-		SettingKeyKiroDefaultVersion:             defaultKiroVersion,
-		SettingKeyKiroDefaultCommit:              "",
-		SettingKeyKiroDefaultSystemVersion:       defaultKiroSystemVersion,
-		SettingKeyKiroDefaultNodeVersion:         defaultKiroNodeVersion,
-		SettingKeyKiroCacheHitRateScale:          strconv.Itoa(defaultKiroCacheHitRateScale),
-		SettingKeyKiroCacheMinBlockTokens:        strconv.Itoa(defaultKiroCacheMinBlockTokens),
-		SettingKeyKiroCacheIndependentTTLSeconds: strconv.Itoa(defaultKiroCacheIndependentTTL),
-		SettingKeyKiroCachePrefixTTLSeconds:      strconv.Itoa(defaultKiroCachePrefixTTL),
+		SettingKeyKiroDefaultVersion:              defaultKiroVersion,
+		SettingKeyKiroDefaultCommit:               "",
+		SettingKeyKiroDefaultSystemVersion:        defaultKiroSystemVersion,
+		SettingKeyKiroDefaultNodeVersion:          defaultKiroNodeVersion,
+		SettingKeyKiroCacheHitRateScale:           strconv.Itoa(defaultKiroCacheHitRateScale),
+		SettingKeyKiroCacheMinBlockTokens:         strconv.Itoa(defaultKiroCacheMinBlockTokens),
+		SettingKeyKiroCacheIndependentTTLSeconds:  strconv.Itoa(defaultKiroCacheIndependentTTL),
+		SettingKeyKiroCachePrefixTTLSeconds:       strconv.Itoa(defaultKiroCachePrefixTTL),
+		SettingKeyKiroCodeExecutionSandboxCommand: "",
 	}
 
 	return s.settingRepo.SetMultiple(ctx, defaults)
@@ -4404,6 +4408,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.KiroCacheMinBlockTokens = kiroRuntime.CacheMinBlockTokens
 	result.KiroCacheIndependentTTLSeconds = kiroRuntime.CacheIndependentTTLSecs
 	result.KiroCachePrefixTTLSeconds = kiroRuntime.CachePrefixTTLSecs
+	result.KiroCodeExecutionSandboxCommand = kiroRuntime.CodeExecutionSandboxCommand
 	result.PaymentVisibleMethodAlipaySource = NormalizeVisibleMethodSource("alipay", settings[SettingPaymentVisibleMethodAlipaySource])
 	result.PaymentVisibleMethodWxpaySource = NormalizeVisibleMethodSource("wxpay", settings[SettingPaymentVisibleMethodWxpaySource])
 	result.PaymentVisibleMethodAlipayEnabled = settings[SettingPaymentVisibleMethodAlipayEnabled] == "true"
@@ -4524,6 +4529,7 @@ func parseKiroRuntimeSettingsMap(settings map[string]string) *KiroRuntimeSetting
 	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyKiroCachePrefixTTLSeconds])); err == nil {
 		result.CachePrefixTTLSecs = v
 	}
+	result.CodeExecutionSandboxCommand = strings.TrimSpace(settings[SettingKeyKiroCodeExecutionSandboxCommand])
 	return normalizeKiroRuntimeSettings(result)
 }
 
@@ -4543,6 +4549,7 @@ func normalizeKiroRuntimeSettings(settings *KiroRuntimeSettings) *KiroRuntimeSet
 	if settings.CachePrefixTTLSecs > settings.CacheIndependentTTLSecs {
 		settings.CachePrefixTTLSecs = settings.CacheIndependentTTLSecs
 	}
+	settings.CodeExecutionSandboxCommand = strings.TrimSpace(settings.CodeExecutionSandboxCommand)
 	return settings
 }
 
@@ -4554,6 +4561,7 @@ func validateKiroRuntimeSettingsForUpdate(settings *SystemSettings) error {
 	settings.KiroDefaultCommit = strings.TrimSpace(settings.KiroDefaultCommit)
 	settings.KiroDefaultSystemVersion = strings.TrimSpace(settings.KiroDefaultSystemVersion)
 	settings.KiroDefaultNodeVersion = strings.TrimSpace(settings.KiroDefaultNodeVersion)
+	settings.KiroCodeExecutionSandboxCommand = strings.TrimSpace(settings.KiroCodeExecutionSandboxCommand)
 	if !isSafeKiroHeaderValue(settings.KiroDefaultVersion) {
 		return infraerrors.BadRequest("INVALID_KIRO_RUNTIME_SETTINGS", "Kiro version contains invalid header characters")
 	}
@@ -4626,10 +4634,8 @@ func boundedIntOrDefault(value, minValue, maxValue, defaultValue int) int {
 
 func clampInt(value, minValue, maxValue, defaultValue int) int {
 	switch {
-	case value < minValue:
+	case value < minValue || value > maxValue:
 		return defaultValue
-	case value > maxValue:
-		return maxValue
 	default:
 		return value
 	}
@@ -5679,6 +5685,7 @@ func (s *SettingService) GetKiroRuntimeSettings(ctx context.Context) *KiroRuntim
 			SettingKeyKiroCacheMinBlockTokens,
 			SettingKeyKiroCacheIndependentTTLSeconds,
 			SettingKeyKiroCachePrefixTTLSeconds,
+			SettingKeyKiroCodeExecutionSandboxCommand,
 		})
 		if err != nil {
 			slog.Warn("failed to get kiro runtime settings, falling back to defaults", "error", err)

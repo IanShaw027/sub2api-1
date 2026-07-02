@@ -129,7 +129,7 @@ func TestAdminServiceCreateAccount_NormalizesExternalIDPRawKiroShape(t *testing.
 				"expiresAt":     "2026-07-01T07:57:02.932Z",
 				"issuerUrl":     "https://login.microsoftonline.com/tenant/v2.0",
 				"provider":      "ExternalIdp",
-				"scopes":        "scope-a scope-b",
+				"scopes":        []any{"scope-a", "scope-b"},
 				"tokenEndpoint": "https://login.microsoftonline.com/tenant/oauth2/v2.0/token",
 			},
 			"kiro_profile_raw": map[string]any{
@@ -146,6 +146,7 @@ func TestAdminServiceCreateAccount_NormalizesExternalIDPRawKiroShape(t *testing.
 	require.Equal(t, "access-token", account.GetCredential("access_token"))
 	require.Equal(t, "refresh-token", account.GetCredential("refresh_token"))
 	require.Equal(t, "microsoft-public-client", account.GetCredential("client_id"))
+	require.Equal(t, "scope-a scope-b", account.GetCredential("scopes"))
 	require.Equal(t, "https://login.microsoftonline.com/tenant/oauth2/v2.0/token", account.GetCredential("token_endpoint"))
 	require.Equal(t, "arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD", account.GetCredential("profile_arn"))
 	require.Equal(t, "CQRAXYDP9YVD", account.GetCredential("profile_id"))
@@ -580,6 +581,21 @@ func TestValidateKiroCredentials_RequiresExternalIDPClientID(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "kiro external_idp client_id is required")
+}
+
+func TestValidateKiroCredentials_ExternalIDPIssuerDiscoveryIsMicrosoftOnly(t *testing.T) {
+	t.Parallel()
+
+	err := validateKiroCredentials(map[string]any{
+		"refresh_token": "rt-placeholder",
+		"auth_method":   "ExternalIdp",
+		"client_id":     "public-client",
+		"issuer_url":    "https://issuer.example.com/tenant",
+		"profile_arn":   "arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD",
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "kiro external_idp token_endpoint or Microsoft issuer_url is required")
 }
 
 func TestNormalizeKiroAuthMethod_InfersIDCFromClientCredentials(t *testing.T) {

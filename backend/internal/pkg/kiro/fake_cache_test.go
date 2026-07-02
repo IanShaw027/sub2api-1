@@ -486,17 +486,17 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAndHonorsMinBlock(t 
 	// With 95% hit rate:
 	// - ideal read: Independent 20 + PreviousPrefix 60 = 80
 	// - currentTokens: Independent 20 + CurrentPrefix 80 = 100
-	// - existing read remains 80
-	// - new growth is 20, 95% of it is written: 19
-	// - the unwritten growth token remains input
+	// - read is scaled to 76
+	// - missed read token budget plus current growth is classified as cache creation
+	// - pure input remains the non-cacheable tail
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              41,
-		CacheCreationInputTokens: 19,
-		CacheReadInputTokens:     80,
+		InputTokens:              40,
+		CacheCreationInputTokens: 24,
+		CacheReadInputTokens:     76,
 	}, usage)
 }
 
-func TestFakeCachePlanResolveUsageWithConfig_ScalesNewGrowthIntoInput(t *testing.T) {
+func TestFakeCachePlanResolveUsageWithConfig_ScalesReadIntoCacheCreationNotInput(t *testing.T) {
 	plan := &FakeCachePlan{
 		IndependentCacheableTokens:    20,
 		CurrentPrefixCacheableTokens:  80,
@@ -514,9 +514,9 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesNewGrowthIntoInput(t *testing
 	})
 
 	require.Equal(t, 140, usage.InputTokens+usage.CacheCreationInputTokens+usage.CacheReadInputTokens)
-	require.Equal(t, 80, usage.CacheReadInputTokens)
-	require.Equal(t, 19, usage.CacheCreationInputTokens)
-	require.Equal(t, 41, usage.InputTokens)
+	require.Equal(t, 76, usage.CacheReadInputTokens)
+	require.Equal(t, 24, usage.CacheCreationInputTokens)
+	require.Equal(t, 40, usage.InputTokens)
 }
 
 func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAt98Percent(t *testing.T) {
@@ -534,9 +534,9 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAt98Percent(t *testi
 	})
 
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              41,
-		CacheCreationInputTokens: 39,
-		CacheReadInputTokens:     60,
+		InputTokens:              40,
+		CacheCreationInputTokens: 42,
+		CacheReadInputTokens:     58,
 	}, usage)
 	require.Equal(t, usage.CacheReadInputTokens+usage.CacheCreationInputTokens, plan.RecordedEffectiveCachedTokens)
 }
@@ -547,9 +547,9 @@ func TestFakeCachePlanResolveUsageWithConfig_ChainsEffectiveCacheAcrossTurns(t *
 		CurrentPrefixKey:             "prefix:current",
 	}
 	u1 := turn1.ResolveUsageWithConfig(1000, FakeCacheHitState{}, FakeCacheUsageConfig{HitRateScale: 95})
-	require.Equal(t, 950, u1.CacheCreationInputTokens)
+	require.Equal(t, 1000, u1.CacheCreationInputTokens)
 	require.Equal(t, 0, u1.CacheReadInputTokens)
-	require.Equal(t, 50, u1.InputTokens)
+	require.Equal(t, 0, u1.InputTokens)
 	require.Equal(t, u1.CacheReadInputTokens+u1.CacheCreationInputTokens, turn1.RecordedEffectiveCachedTokens)
 
 	turn2 := &FakeCachePlan{
@@ -563,8 +563,8 @@ func TestFakeCachePlanResolveUsageWithConfig_ChainsEffectiveCacheAcrossTurns(t *
 		EffectiveCachedTokens: turn1.RecordedEffectiveCachedTokens,
 	}, FakeCacheUsageConfig{HitRateScale: 95})
 	require.Equal(t, 950, u2.CacheReadInputTokens)
-	require.Equal(t, 237, u2.CacheCreationInputTokens)
-	require.Equal(t, 13, u2.InputTokens)
+	require.Equal(t, 250, u2.CacheCreationInputTokens)
+	require.Equal(t, 0, u2.InputTokens)
 	require.Equal(t, u2.CacheReadInputTokens+u2.CacheCreationInputTokens, turn2.RecordedEffectiveCachedTokens)
 
 	turn3 := &FakeCachePlan{
@@ -577,9 +577,9 @@ func TestFakeCachePlanResolveUsageWithConfig_ChainsEffectiveCacheAcrossTurns(t *
 		Prefix:                true,
 		EffectiveCachedTokens: turn2.RecordedEffectiveCachedTokens,
 	}, FakeCacheUsageConfig{HitRateScale: 95})
-	require.Equal(t, u2.CacheReadInputTokens+u2.CacheCreationInputTokens, u3.CacheReadInputTokens)
-	require.Equal(t, 107, u3.CacheCreationInputTokens)
-	require.Equal(t, 6, u3.InputTokens)
+	require.Equal(t, 1140, u3.CacheReadInputTokens)
+	require.Equal(t, 160, u3.CacheCreationInputTokens)
+	require.Equal(t, 0, u3.InputTokens)
 	require.Equal(t, u3.CacheReadInputTokens+u3.CacheCreationInputTokens, turn3.RecordedEffectiveCachedTokens)
 }
 
@@ -599,9 +599,9 @@ func TestFakeCachePlanResolveUsageWithConfig_UsesSessionProgressWhenPrefixKeyMis
 	})
 
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              500,
-		CacheCreationInputTokens: 9500,
-		CacheReadInputTokens:     100000,
+		InputTokens:              0,
+		CacheCreationInputTokens: 15000,
+		CacheReadInputTokens:     95000,
 	}, usage)
 	require.Equal(t, usage.CacheReadInputTokens+usage.CacheCreationInputTokens, plan.RecordedEffectiveCachedTokens)
 }
@@ -645,13 +645,30 @@ func TestFakeCachePlanResolveUsageWithConfig_ZeroHitRateScaleIsValid(t *testing.
 		HitRateScale: 0,
 	})
 
-	// With 0% hit rate, existing cache remains readable but no new growth is
-	// written. The unwritten growth is reported as input.
+	// With 0% hit rate, all would-be cache reads are reclassified into cache
+	// creation. The pure-input tail remains unchanged.
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              80,
-		CacheCreationInputTokens: 0,
-		CacheReadInputTokens:     60,
+		InputTokens:              40,
+		CacheCreationInputTokens: 100,
+		CacheReadInputTokens:     0,
 	}, usage)
+}
+
+func TestConvertAnthropicRequestWithModel_SupportsCodeExecutionServerTool(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"run code"}],
+		"tools":[
+			{"type":"code_execution_20250522","name":"code_execution"}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.ToolMetadata)
+	_, hasCode := result.ToolMetadata.ResponseTools["code_execution"]
+	require.True(t, hasCode, "code_execution should be registered in ToolMetadata for native simulation")
 }
 
 func TestFakeCachePlanResolveUsageWithConfig_DropsSmallBlocks(t *testing.T) {

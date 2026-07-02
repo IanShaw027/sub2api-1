@@ -678,6 +678,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		KiroCacheMinBlockTokens:                   settings.KiroCacheMinBlockTokens,
 		KiroCacheIndependentTTLSeconds:            settings.KiroCacheIndependentTTLSeconds,
 		KiroCachePrefixTTLSeconds:                 settings.KiroCachePrefixTTLSeconds,
+		KiroCodeExecutionSandboxCommand:           settings.KiroCodeExecutionSandboxCommand,
 		PaymentVisibleMethodAlipaySource:          settings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:           settings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:         settings.PaymentVisibleMethodAlipayEnabled,
@@ -1041,14 +1042,15 @@ type UpdateSettingsRequest struct {
 	CodexCLIOnlyEngineFingerprintSignals string `json:"codex_cli_only_engine_fingerprint_signals"`
 
 	// Kiro runtime defaults
-	KiroDefaultVersion             *string `json:"kiro_version"`
-	KiroDefaultCommit              *string `json:"kiro_commit"`
-	KiroDefaultSystemVersion       *string `json:"system_version"`
-	KiroDefaultNodeVersion         *string `json:"node_version"`
-	KiroCacheHitRateScale          *int    `json:"cache_hit_rate_scale"`
-	KiroCacheMinBlockTokens        *int    `json:"cache_min_block_tokens"`
-	KiroCacheIndependentTTLSeconds *int    `json:"cache_independent_ttl_seconds"`
-	KiroCachePrefixTTLSeconds      *int    `json:"cache_prefix_ttl_seconds"`
+	KiroDefaultVersion              *string `json:"kiro_version"`
+	KiroDefaultCommit               *string `json:"kiro_commit"`
+	KiroDefaultSystemVersion        *string `json:"system_version"`
+	KiroDefaultNodeVersion          *string `json:"node_version"`
+	KiroCacheHitRateScale           *int    `json:"cache_hit_rate_scale"`
+	KiroCacheMinBlockTokens         *int    `json:"cache_min_block_tokens"`
+	KiroCacheIndependentTTLSeconds  *int    `json:"cache_independent_ttl_seconds"`
+	KiroCachePrefixTTLSeconds       *int    `json:"cache_prefix_ttl_seconds"`
+	KiroCodeExecutionSandboxCommand *string `json:"kiro_code_execution_sandbox_command"`
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  *string `json:"payment_visible_method_alipay_source"`
@@ -2560,6 +2562,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.KiroCachePrefixTTLSeconds
 		}(),
+		KiroCodeExecutionSandboxCommand: func() string {
+			if req.KiroCodeExecutionSandboxCommand != nil {
+				return strings.TrimSpace(*req.KiroCodeExecutionSandboxCommand)
+			}
+			return previousSettings.KiroCodeExecutionSandboxCommand
+		}(),
 		EnableAnthropicCacheTTL1hInjection: func() bool {
 			if req.EnableAnthropicCacheTTL1hInjection != nil {
 				return *req.EnableAnthropicCacheTTL1hInjection
@@ -3112,6 +3120,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		KiroCacheMinBlockTokens:                   updatedSettings.KiroCacheMinBlockTokens,
 		KiroCacheIndependentTTLSeconds:            updatedSettings.KiroCacheIndependentTTLSeconds,
 		KiroCachePrefixTTLSeconds:                 updatedSettings.KiroCachePrefixTTLSeconds,
+		KiroCodeExecutionSandboxCommand:           updatedSettings.KiroCodeExecutionSandboxCommand,
 		PaymentVisibleMethodAlipaySource:          updatedSettings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:           updatedSettings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:         updatedSettings.PaymentVisibleMethodAlipayEnabled,

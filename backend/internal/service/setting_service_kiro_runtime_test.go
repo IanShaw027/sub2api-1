@@ -91,14 +91,15 @@ func TestSettingService_UpdateSettings_WritesKiroRuntimeDefaults(t *testing.T) {
 	svc := NewSettingService(repo, &config.Config{})
 
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{
-		KiroDefaultVersion:             "0.11.0",
-		KiroDefaultCommit:              "commit-123",
-		KiroDefaultSystemVersion:       "linux#6.8.0",
-		KiroDefaultNodeVersion:         "22.22.0",
-		KiroCacheHitRateScale:          88,
-		KiroCacheMinBlockTokens:        2048,
-		KiroCacheIndependentTTLSeconds: 7200,
-		KiroCachePrefixTTLSeconds:      600,
+		KiroDefaultVersion:              "0.11.0",
+		KiroDefaultCommit:               "commit-123",
+		KiroDefaultSystemVersion:        "linux#6.8.0",
+		KiroDefaultNodeVersion:          "22.22.0",
+		KiroCacheHitRateScale:           88,
+		KiroCacheMinBlockTokens:         2048,
+		KiroCacheIndependentTTLSeconds:  7200,
+		KiroCachePrefixTTLSeconds:       600,
+		KiroCodeExecutionSandboxCommand: "  sandbox-run --kiro  ",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "0.11.0", repo.updates[SettingKeyKiroDefaultVersion])
@@ -109,6 +110,7 @@ func TestSettingService_UpdateSettings_WritesKiroRuntimeDefaults(t *testing.T) {
 	require.Equal(t, "2048", repo.updates[SettingKeyKiroCacheMinBlockTokens])
 	require.Equal(t, "7200", repo.updates[SettingKeyKiroCacheIndependentTTLSeconds])
 	require.Equal(t, "600", repo.updates[SettingKeyKiroCachePrefixTTLSeconds])
+	require.Equal(t, "sandbox-run --kiro", repo.updates[SettingKeyKiroCodeExecutionSandboxCommand])
 
 	got := svc.GetKiroRuntimeSettings(context.Background())
 	require.Equal(t, "0.11.0", got.KiroVersion)
@@ -119,6 +121,21 @@ func TestSettingService_UpdateSettings_WritesKiroRuntimeDefaults(t *testing.T) {
 	require.Equal(t, 2048, got.CacheMinBlockTokens)
 	require.Equal(t, 7200, got.CacheIndependentTTLSecs)
 	require.Equal(t, 600, got.CachePrefixTTLSecs)
+	require.Equal(t, "sandbox-run --kiro", got.CodeExecutionSandboxCommand)
+}
+
+func TestSettingService_GetAllSettings_ReturnsKiroCodeExecutionSandboxCommand(t *testing.T) {
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyKiroCodeExecutionSandboxCommand: "  sandbox-from-db  ",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	got, err := svc.GetAllSettings(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, "sandbox-from-db", got.KiroCodeExecutionSandboxCommand)
 }
 
 func TestSettingService_GetAllSettingsAndUpdateSettings_PreserveGatewayDebugTimelineBodySettings(t *testing.T) {
@@ -210,7 +227,7 @@ func TestSettingService_GetKiroRuntimeSettings_NormalizesInvalidValues(t *testin
 	require.Equal(t, "", got.KiroCommit)
 	require.Equal(t, defaultKiroSystemVersion, got.SystemVersion)
 	require.Equal(t, defaultKiroNodeVersion, got.NodeVersion)
-	require.Equal(t, 100, got.CacheHitRateScale)
+	require.Equal(t, defaultKiroCacheHitRateScale, got.CacheHitRateScale)
 	require.Equal(t, defaultKiroCacheMinBlockTokens, got.CacheMinBlockTokens)
 	require.Equal(t, defaultKiroCacheIndependentTTL, got.CacheIndependentTTLSecs)
 	require.Equal(t, defaultKiroCachePrefixTTL, got.CachePrefixTTLSecs)

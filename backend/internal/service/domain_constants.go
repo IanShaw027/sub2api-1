@@ -568,14 +568,15 @@ const (
 	SettingKeyWebSearchEmulationConfig = "web_search_emulation_config" // JSON 配置
 
 	// Kiro runtime defaults
-	SettingKeyKiroDefaultVersion             = "kiro_default_version"
-	SettingKeyKiroDefaultCommit              = "kiro_default_commit"
-	SettingKeyKiroDefaultSystemVersion       = "kiro_default_system_version"
-	SettingKeyKiroDefaultNodeVersion         = "kiro_default_node_version"
-	SettingKeyKiroCacheHitRateScale          = "kiro_cache_hit_rate_scale"
-	SettingKeyKiroCacheMinBlockTokens        = "kiro_cache_min_block_tokens"
-	SettingKeyKiroCacheIndependentTTLSeconds = "kiro_cache_independent_ttl_seconds"
-	SettingKeyKiroCachePrefixTTLSeconds      = "kiro_cache_prefix_ttl_seconds"
+	SettingKeyKiroDefaultVersion              = "kiro_default_version"
+	SettingKeyKiroDefaultCommit               = "kiro_default_commit"
+	SettingKeyKiroDefaultSystemVersion        = "kiro_default_system_version"
+	SettingKeyKiroDefaultNodeVersion          = "kiro_default_node_version"
+	SettingKeyKiroCacheHitRateScale           = "kiro_cache_hit_rate_scale"
+	SettingKeyKiroCacheMinBlockTokens         = "kiro_cache_min_block_tokens"
+	SettingKeyKiroCacheIndependentTTLSeconds  = "kiro_cache_independent_ttl_seconds"
+	SettingKeyKiroCachePrefixTTLSeconds       = "kiro_cache_prefix_ttl_seconds"
+	SettingKeyKiroCodeExecutionSandboxCommand = "kiro_code_execution_sandbox_command"
 )
 
 // SettingKeyDefaultPlatformQuotas —— 系统全局：每用户 × 平台日/周/月 USD 上限（JSON）。

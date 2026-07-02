@@ -209,6 +209,13 @@ func validateFetchURL(rawURL string, req FetchRequest) (normalizedURL, host stri
 	return normalizedURL, host, nil
 }
 
+// ValidateRequestURL applies the same URL/domain/SSRF checks used by Fetch,
+// without performing the HTTP request. Callers that execute fetches through a
+// remote backend can use this to enforce the local tool contract first.
+func ValidateRequestURL(rawURL string, req FetchRequest) (normalizedURL, host string, fetchErr *FetchError) {
+	return validateFetchURL(rawURL, req)
+}
+
 func newHTTPClientForRequest(req FetchRequest) (*http.Client, error) {
 	return newHTTPClient(req.ProxyURL, req.AllowPrivate)
 }

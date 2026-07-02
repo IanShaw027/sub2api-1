@@ -229,14 +229,15 @@ type SystemSettings struct {
 	WebSearchEmulationEnabled bool // 是否启用 web search 模拟
 
 	// Kiro runtime defaults
-	KiroDefaultVersion             string
-	KiroDefaultCommit              string
-	KiroDefaultSystemVersion       string
-	KiroDefaultNodeVersion         string
-	KiroCacheHitRateScale          int
-	KiroCacheMinBlockTokens        int
-	KiroCacheIndependentTTLSeconds int
-	KiroCachePrefixTTLSeconds      int
+	KiroDefaultVersion              string
+	KiroDefaultCommit               string
+	KiroDefaultSystemVersion        string
+	KiroDefaultNodeVersion          string
+	KiroCacheHitRateScale           int
+	KiroCacheMinBlockTokens         int
+	KiroCacheIndependentTTLSeconds  int
+	KiroCachePrefixTTLSeconds       int
+	KiroCodeExecutionSandboxCommand string
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  string
@@ -289,17 +290,18 @@ func DefaultOpenAIImageWebConversationSettings() *OpenAIImageWebConversationSett
 }
 
 type KiroRuntimeSettings struct {
-	KiroVersion                string           `json:"kiro_version"`
-	KiroCommit                 string           `json:"kiro_commit"`
-	SystemVersion              string           `json:"system_version"`
-	NodeVersion                string           `json:"node_version"`
-	CacheHitRateScale          int              `json:"cache_hit_rate_scale"`
-	CacheMinBlockTokens        int              `json:"cache_min_block_tokens"`
-	CacheIndependentTTLSecs    int              `json:"cache_independent_ttl_seconds"`
-	CachePrefixTTLSecs         int              `json:"cache_prefix_ttl_seconds"`
-	ThinkingMode               KiroThinkingMode `json:"-"`
-	ThinkingEffortThreshold    string           `json:"-"`
-	ThinkingSimulationTemplate string           `json:"-"`
+	KiroVersion                 string           `json:"kiro_version"`
+	KiroCommit                  string           `json:"kiro_commit"`
+	SystemVersion               string           `json:"system_version"`
+	NodeVersion                 string           `json:"node_version"`
+	CacheHitRateScale           int              `json:"cache_hit_rate_scale"`
+	CacheMinBlockTokens         int              `json:"cache_min_block_tokens"`
+	CacheIndependentTTLSecs     int              `json:"cache_independent_ttl_seconds"`
+	CachePrefixTTLSecs          int              `json:"cache_prefix_ttl_seconds"`
+	ThinkingMode                KiroThinkingMode `json:"-"`
+	ThinkingEffortThreshold     string           `json:"-"`
+	ThinkingSimulationTemplate  string           `json:"-"`
+	CodeExecutionSandboxCommand string           `json:"kiro_code_execution_sandbox_command"`
 }
 
 type KiroThinkingMode string
@@ -314,7 +316,7 @@ const (
 	defaultKiroVersion             = "0.10.0"
 	defaultKiroSystemVersion       = "darwin#24.6.0"
 	defaultKiroNodeVersion         = "22.21.1"
-	defaultKiroCacheHitRateScale   = 100
+	defaultKiroCacheHitRateScale   = 85
 	defaultKiroCacheMinBlockTokens = 1024
 	defaultKiroCacheIndependentTTL = 3600
 	defaultKiroCachePrefixTTL      = 3600
@@ -322,14 +324,15 @@ const (
 
 func DefaultKiroRuntimeSettings() *KiroRuntimeSettings {
 	return &KiroRuntimeSettings{
-		KiroVersion:             defaultKiroVersion,
-		KiroCommit:              "",
-		SystemVersion:           defaultKiroSystemVersion,
-		NodeVersion:             defaultKiroNodeVersion,
-		CacheHitRateScale:       defaultKiroCacheHitRateScale,
-		CacheMinBlockTokens:     defaultKiroCacheMinBlockTokens,
-		CacheIndependentTTLSecs: defaultKiroCacheIndependentTTL,
-		CachePrefixTTLSecs:      defaultKiroCachePrefixTTL,
+		KiroVersion:                 defaultKiroVersion,
+		KiroCommit:                  "",
+		SystemVersion:               defaultKiroSystemVersion,
+		NodeVersion:                 defaultKiroNodeVersion,
+		CacheHitRateScale:           defaultKiroCacheHitRateScale,
+		CacheMinBlockTokens:         defaultKiroCacheMinBlockTokens,
+		CacheIndependentTTLSecs:     defaultKiroCacheIndependentTTL,
+		CachePrefixTTLSecs:          defaultKiroCachePrefixTTL,
+		CodeExecutionSandboxCommand: "",
 	}
 }
 

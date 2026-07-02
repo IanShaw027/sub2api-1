@@ -11,7 +11,7 @@ import (
 
 const (
 	DefaultFakeCacheTTL            = 5 * time.Minute
-	DefaultFakeCacheHitRateScale   = 100
+	DefaultFakeCacheHitRateScale   = 85
 	DefaultFakeCacheMinBlockTokens = 1024
 	DefaultFakeCacheIndependentTTL = 3600
 	DefaultFakeCachePrefixTTL      = 300
@@ -166,7 +166,7 @@ func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCac
 	}
 
 	if config.HitRateScale < 0 || config.HitRateScale > 100 {
-		config.HitRateScale = 100
+		config.HitRateScale = DefaultFakeCacheHitRateScale
 	}
 	// If all keys are empty (no session ID), don't simulate cache at all
 	// This prevents incorrect statistics where all input tokens are counted as cache creation
@@ -202,9 +202,9 @@ func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCac
 //     bound for cache_read + cache_creation.
 //   - idealRead is the cacheable prefix known to have existed before this turn.
 //     SessionProgress caps it when available because that value reflects the
-//     effective cache span actually written by prior scaled turns.
-//   - hitRateScale governs how much new cacheable growth is written this turn.
-//     The missed growth remains billable input.
+//     effective cache span actually written by prior turns.
+//   - hitRateScale only redistributes the cacheable portion between cache_read
+//     and cache_creation. The scaled-away read does not become pure input.
 //   - RecordedEffectiveCachedTokens stores read + creation so the next turn's
 //     cache read can continue from the effective written span.
 func (p *FakeCachePlan) resolveFakeCacheUsage(totalInputTokens, currentTokens, idealRead, effectiveCap, hitRateScale int) FakeCacheUsage {
@@ -226,14 +226,17 @@ func (p *FakeCachePlan) resolveFakeCacheUsage(totalInputTokens, currentTokens, i
 
 	created := growth
 	if hitRateScale < 100 {
-		created = growth * hitRateScale / 100
+		scaledRead := read * hitRateScale / 100
+		created += read - scaledRead
+		read = scaledRead
 	}
 	if created < 0 {
 		created = 0
 	}
-	if created > growth {
-		created = growth
+	if created > currentTokens-read {
+		created = currentTokens - read
 	}
+
 	inputTokens := totalInputTokens - read - created
 	if inputTokens < 0 {
 		inputTokens = 0
@@ -461,7 +464,7 @@ func fakeCacheUserContent(content any) string {
 				if text := stringField(block, "text"); text != "" {
 					parts = append(parts, text)
 				}
-			case "tool_result", "web_search_tool_result", "web_fetch_tool_result":
+			case "tool_result", "web_search_tool_result", "web_fetch_tool_result", "code_execution_tool_result":
 				if rendered := fakeCacheToolResultBlock(block); rendered != "" {
 					parts = append(parts, rendered)
 				}
@@ -546,7 +549,7 @@ func fakeCacheUserBlock(block map[string]any) string {
 	switch strings.TrimSpace(stringField(block, "type")) {
 	case "text":
 		return stringField(block, "text")
-	case "tool_result", "web_search_tool_result", "web_fetch_tool_result":
+	case "tool_result", "web_search_tool_result", "web_fetch_tool_result", "code_execution_tool_result":
 		return fakeCacheToolResultBlock(block)
 	case "image":
 		return "image:" + fakeCacheJSON(block)

@@ -189,7 +189,12 @@ func doWebSearch(ctx context.Context, account *Account, query string) (*websearc
 	proxyURL := resolveAccountProxyURL(account)
 	mgr := GetWebSearchManager()
 	if mgr == nil {
-		return nil, "", fmt.Errorf("web search emulation: manager not initialized")
+		// Per analysis: return empty results instead of error when no provider configured.
+		// This allows graceful degradation instead of failing the whole request.
+		return &websearch.SearchResponse{
+			Query:   query,
+			Results: []websearch.SearchResult{},
+		}, "none", nil
 	}
 	resp, providerName, err := mgr.SearchWithBestProvider(ctx, websearch.SearchRequest{
 		Query: query, MaxResults: webSearchDefaultMaxResults, ProxyURL: proxyURL,

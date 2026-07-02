@@ -215,13 +215,14 @@ export interface KiroRuntimeSettingsInput {
   kiro_commit?: string | null;
   system_version?: string | null;
   node_version?: string | null;
+  kiro_code_execution_sandbox_command?: string | null;
   cache_hit_rate_scale?: number | null;
   cache_min_block_tokens?: number | null;
   cache_independent_ttl_seconds?: number | null;
   cache_prefix_ttl_seconds?: number | null;
 }
 
-export const KIRO_CACHE_HIT_RATE_SCALE_DEFAULT = 100;
+export const KIRO_CACHE_HIT_RATE_SCALE_DEFAULT = 85;
 export const KIRO_CACHE_MIN_BLOCK_TOKENS_DEFAULT = 1024;
 export const KIRO_CACHE_MIN_BLOCK_TOKENS_MAX = 1 << 20;
 export const KIRO_CACHE_INDEPENDENT_TTL_SECONDS_DEFAULT = 3600;
@@ -537,6 +538,7 @@ export function normalizeKiroRuntimeSettingsForUpdate(
   | "kiro_commit"
   | "system_version"
   | "node_version"
+  | "kiro_code_execution_sandbox_command"
   | "cache_hit_rate_scale"
   | "cache_min_block_tokens"
   | "cache_independent_ttl_seconds"
@@ -548,6 +550,7 @@ export function normalizeKiroRuntimeSettingsForUpdate(
     | "kiro_commit"
     | "system_version"
     | "node_version"
+    | "kiro_code_execution_sandbox_command"
     | "cache_hit_rate_scale"
     | "cache_min_block_tokens"
     | "cache_independent_ttl_seconds"
@@ -565,6 +568,11 @@ export function normalizeKiroRuntimeSettingsForUpdate(
   }
   if (settings.node_version !== undefined) {
     payload.node_version = String(settings.node_version ?? "").trim();
+  }
+  if (settings.kiro_code_execution_sandbox_command !== undefined) {
+    payload.kiro_code_execution_sandbox_command = String(
+      settings.kiro_code_execution_sandbox_command ?? "",
+    ).trim();
   }
 
   const cacheHitRateScale = normalizeOptionalIntegerForUpdate(
@@ -852,6 +860,7 @@ export interface SystemSettings {
   kiro_commit?: string;
   system_version?: string;
   node_version?: string;
+  kiro_code_execution_sandbox_command?: string;
   cache_hit_rate_scale?: number | null;
   cache_min_block_tokens?: number | null;
   cache_independent_ttl_seconds?: number | null;
@@ -1152,6 +1161,7 @@ export interface UpdateSettingsRequest {
   kiro_commit?: string;
   system_version?: string;
   node_version?: string;
+  kiro_code_execution_sandbox_command?: string;
   cache_hit_rate_scale?: number;
   cache_min_block_tokens?: number;
   cache_independent_ttl_seconds?: number;

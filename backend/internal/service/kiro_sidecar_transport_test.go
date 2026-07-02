@@ -517,6 +517,49 @@ func TestKiroTokenRefresher_Refresh_ExternalIDPUsesFormTokenEndpoint(t *testing.
 	require.Equal(t, "scope-a scope-b", form.Get("scope"))
 }
 
+func TestKiroTokenRefresher_Refresh_ExternalIDPJoinsScopeArray(t *testing.T) {
+	var requestBody string
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			requestBody = string(body)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(`{
+					"access_token":"new-ms-access-token",
+					"refresh_token":"new-ms-refresh-token",
+					"expires_in":3600,
+					"token_type":"Bearer"
+				}`)),
+				Header: make(http.Header),
+			}, nil
+		},
+	}
+	refresher := NewKiroTokenRefresher().WithTransport(upstream, &TLSFingerprintProfileService{})
+	account := &Account{
+		ID:       14,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token":  "external-refresh-token",
+			"auth_method":    "external_idp",
+			"client_id":      "microsoft-public-client",
+			"token_endpoint": "https://login.microsoftonline.com/tenant/oauth2/v2.0/token",
+			"scopes":         []any{"scope-a", "scope-b"},
+			"profile_arn":    "arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD",
+		},
+	}
+
+	_, err := refresher.Refresh(context.Background(), account)
+
+	require.NoError(t, err)
+	form, err := url.ParseQuery(requestBody)
+	require.NoError(t, err)
+	require.Equal(t, "scope-a scope-b", form.Get("scope"))
+	require.NotEqual(t, "[scope-a scope-b]", form.Get("scope"))
+}
+
 func TestKiroTokenRefresher_Refresh_IDCDoesNotFallbackToSocial(t *testing.T) {
 	upstream := &kiroHTTPUpstreamRecorder{
 		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
