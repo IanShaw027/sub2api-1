@@ -189,7 +189,7 @@ func validateKiroCredentials(credentials map[string]any) error {
 			return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp client_id is required")
 		}
 		if strings.TrimSpace(resolveKiroExternalIDPTokenEndpoint(credentials)) == "" {
-			return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp token_endpoint or issuer_url is required")
+			return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp token_endpoint or Microsoft issuer_url is required")
 		}
 	}
 	if rawExpiresAt, ok := credentials["expires_at"]; ok {
@@ -615,6 +615,21 @@ func stringCredential(credentials map[string]any, key string) string {
 	value, ok := credentials[key]
 	if !ok || value == nil {
 		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case []string:
+		return strings.Join(typed, " ")
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			part := strings.TrimSpace(fmt.Sprint(item))
+			if part != "" {
+				parts = append(parts, part)
+			}
+		}
+		return strings.Join(parts, " ")
 	}
 	return fmt.Sprintf("%v", value)
 }

@@ -407,6 +407,54 @@ func TestImportDataAcceptsKiroRawArray(t *testing.T) {
 	require.Equal(t, "Credit", first.Extra["plan_name"])
 }
 
+func TestImportDataKiroRawArrayDedupUsesNormalizedCredentials(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+	longRT := strings.Repeat("R", 32)
+	adminSvc.accounts = []service.Account{
+		{
+			ID:       81,
+			Name:     "existing-kiro",
+			Platform: service.PlatformKiro,
+			Type:     service.AccountTypeOAuth,
+			Credentials: map[string]any{
+				"profile_id":    "CQRAXYDP9YVD",
+				"refresh_token": "old-refresh-token",
+			},
+		},
+	}
+
+	rawArray := []map[string]any{
+		{
+			"id":            "kiro_abc",
+			"email":         "jeno@example.com",
+			"refresh_token": longRT,
+			"kiro_auth_token_raw": map[string]any{
+				"authMethod":   "external_idp",
+				"clientId":     "microsoft-public-client",
+				"refreshToken": longRT,
+			},
+			"kiro_profile_raw": map[string]any{
+				"arn": "arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD",
+			},
+		},
+	}
+	body, _ := json.Marshal(map[string]any{
+		"data":       rawArray,
+		"dedup_mode": "ignore",
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var resp dataImportResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 1, resp.Data.AccountSkipped)
+	require.Len(t, adminSvc.createdAccounts, 0)
+}
+
 func TestImportDataDedupIgnoreSkipsExistingAccount(t *testing.T) {
 	router, adminSvc := setupAccountDataRouter()
 	adminSvc.accounts = []service.Account{

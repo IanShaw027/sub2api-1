@@ -124,6 +124,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { buildApiUrl } from '@/api/client'
 import { buildEmbeddedUrl, detectTheme } from '@/utils/embedded-url'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -218,7 +219,7 @@ function buildPageImageUrl(slug: string, src: string): string {
     .filter((part) => part && part !== '.')
     .map((part) => encodeURIComponent(part))
     .join('/')
-  return `/api/v1/pages/${encodeURIComponent(slug)}/images/${encodedPath}${suffix}`
+  return buildApiUrl(`/pages/${encodeURIComponent(slug)}/images/${encodedPath}${suffix}`)
 }
 
 function revokeMarkdownImageObjectUrls() {
@@ -259,7 +260,7 @@ async function fetchAndRenderMarkdown(slug: string) {
   activeHeadingId.value = ''
   revokeMarkdownImageObjectUrls()
   try {
-    const resp = await fetch(`/api/v1/pages/${encodeURIComponent(slug)}`, {
+    const resp = await fetch(buildApiUrl(`/pages/${encodeURIComponent(slug)}`), {
       headers: authStore.token ? { Authorization: `Bearer ${authStore.token}` } : {},
     })
     if (!resp.ok) {

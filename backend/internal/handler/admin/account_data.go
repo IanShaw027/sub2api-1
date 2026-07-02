@@ -777,6 +777,9 @@ func normalizeDataAccountCredentials(platform, accountType string, credentials m
 	for key, value := range credentials {
 		normalized[key] = value
 	}
+	if strings.EqualFold(strings.TrimSpace(platform), service.PlatformKiro) && strings.EqualFold(strings.TrimSpace(accountType), service.AccountTypeOAuth) {
+		normalized = service.NormalizeKiroOAuthCredentialShape(normalized)
+	}
 
 	return normalized
 }

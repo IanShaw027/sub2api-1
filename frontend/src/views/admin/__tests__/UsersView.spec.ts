@@ -89,10 +89,11 @@ const DataTableStub = {
   template: `
     <div>
       <div data-test="columns">{{ columns.map(col => col.key).join(',') }}</div>
-      <div data-test="header-usage"><slot name="header-usage" /></div>
-      <div data-test="header-concurrency"><slot name="header-concurrency" /></div>
-      <button data-test="sort-last-used" @click="$emit('sort', 'last_used_at', 'desc')">sort</button>
       <div data-test="row-order">{{ data.map(row => row.email).join(',') }}</div>
+      <button data-test="sort-last-used" @click="$emit('sort', 'last_used_at', 'desc')">sort</button>
+      <template v-for="col in columns" :key="col.key">
+        <slot :name="'header-' + col.key" :column="col" />
+      </template>
       <div v-for="row in data" :key="row.id">
         <slot name="cell-email" :value="row.email" :row="row" />
         <div data-test="usage-cell">
@@ -119,8 +120,7 @@ describe('admin UsersView', () => {
   const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
   beforeEach(() => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-04-24T12:00:00Z'))
+    vi.useRealTimers()
     localStorage.clear()
     openSpy.mockClear()
 
@@ -348,7 +348,7 @@ describe('admin UsersView', () => {
     )
   })
 
-  it('shows split usage totals from the list response and toggles usage sorting in place', async () => {
+  it('shows split usage totals from the list response', async () => {
     listUsers.mockResolvedValue({
       items: [
         createAdminUser({
@@ -399,30 +399,188 @@ describe('admin UsersView', () => {
     expect(wrapper.get('[data-test="usage-cell"]').text()).toContain('$0.1200')
     expect(wrapper.get('[data-test="usage-cell"]').text()).toContain('$0.0500')
     expect(wrapper.get('[data-test="usage-cell"]').text()).toContain('$1.2300')
+  })
 
-    await wrapper.get('[data-test="header-usage"] button').trigger('click')
+  it('sorts the current page by usage without replacing the persisted server sort flow', async () => {
+    listUsers.mockResolvedValue({
+      items: [
+        createAdminUser({ id: 1, email: 'low-usage@example.com', today_balance_actual_cost: 1, total_actual_cost: 5 }),
+        createAdminUser({ id: 2, email: 'high-usage@example.com', today_balance_actual_cost: 9, total_actual_cost: 2 })
+      ],
+      total: 2,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
     await flushPromises()
+    expect(wrapper.get('[data-test="row-order"]').text()).toBe('low-usage@example.com,high-usage@example.com')
+
+    await wrapper.get('[data-test="usage-sort-trigger-usage"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="usage-sort-usage-today_balance"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="row-order"]').text()).toBe('high-usage@example.com,low-usage@example.com')
+    expect(localStorage.getItem('admin-users-usage-sort')).toContain('"key":"usage"')
+    expect(listUsers).toHaveBeenCalledTimes(1)
+
+    await wrapper.get('[data-test="sort-last-used"]').trigger('click')
+    await flushPromises()
+
+    expect(localStorage.getItem('admin-users-usage-sort')).toBeNull()
     expect(listUsers).toHaveBeenLastCalledWith(
       1,
       20,
       expect.objectContaining({
-        sort_by: 'today_balance_usage',
+        sort_by: 'last_used_at',
         sort_order: 'desc'
       }),
       expect.any(Object)
     )
+  })
 
-    await wrapper.get('[data-test="header-usage"] button').trigger('click')
+  it('clears current-page usage sort before applying server-side concurrency sort', async () => {
+    const rows = [
+      createAdminUser({ id: 1, email: 'low-usage@example.com', current_concurrency: 9, today_balance_actual_cost: 1 }),
+      createAdminUser({ id: 2, email: 'high-usage@example.com', current_concurrency: 1, today_balance_actual_cost: 9 })
+    ]
+    listUsers.mockImplementation(async (_page, _pageSize, params) => {
+      const items = [...rows]
+      if (params.sort_by === 'current_concurrency') {
+        items.sort((a, b) => (b.current_concurrency ?? 0) - (a.current_concurrency ?? 0))
+      }
+      return {
+        items,
+        total: 2,
+        page: 1,
+        page_size: 20,
+        pages: 1
+      }
+    })
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
     await flushPromises()
+
+    await wrapper.get('[data-test="usage-sort-trigger-usage"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="usage-sort-usage-today_balance"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="row-order"]').text()).toBe('high-usage@example.com,low-usage@example.com')
+
+    await wrapper.get('[data-test="concurrency-sort-trigger"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="concurrency-sort-option-current_concurrency"]').trigger('click')
+    await flushPromises()
+
+    expect(localStorage.getItem('admin-users-usage-sort')).toBeNull()
     expect(listUsers).toHaveBeenLastCalledWith(
       1,
       20,
       expect.objectContaining({
-        sort_by: 'today_balance_usage',
-        sort_order: 'asc'
+        sort_by: 'current_concurrency',
+        sort_order: 'desc'
       }),
       expect.any(Object)
     )
+    expect(wrapper.get('[data-test="row-order"]').text()).toBe('low-usage@example.com,high-usage@example.com')
+  })
+
+  it('closes the usage sort menu when clicking outside the trigger', async () => {
+    const wrapper = mount(UsersView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-test="usage-sort-trigger-usage"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="usage-sort-usage-today_balance"]').exists()).toBe(true)
+
+    document.body.click()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="usage-sort-usage-today_balance"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('falls back missing usage totals to zero instead of a dash', async () => {
@@ -579,6 +737,7 @@ describe('admin UsersView', () => {
   })
 
   it('exits platform quota loading when a single getPlatformQuotas request rejects', async () => {
+    vi.useFakeTimers()
     localStorage.setItem('user-hidden-columns', JSON.stringify([]))
     getPlatformQuotas.mockRejectedValueOnce(new Error('quota fetch failed'))
 
@@ -730,6 +889,9 @@ describe('admin UsersView', () => {
   })
 
   it('jumps to admin usage for the clicked user with the default date range', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-24T12:00:00Z'))
+
     const wrapper = mount(UsersView, {
       global: {
         stubs: {

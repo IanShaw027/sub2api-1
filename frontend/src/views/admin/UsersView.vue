@@ -283,7 +283,7 @@
         <DataTable
           :key="dataTableSortUiKey"
           :columns="columns"
-          :data="displayUsers"
+          :data="sortedUsers"
           :loading="loading"
           :actions-count="7"
           :server-side-sort="true"
@@ -291,22 +291,6 @@
           :default-sort-order="dataTableDefaultSortOrder"
           @sort="handleSort"
         >
-          <template #header-usage>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1"
-              @click="handleUsageSort"
-            >
-              <span>{{ t('admin.users.columns.usage') }}</span>
-              <span class="text-[10px] font-normal uppercase tracking-wide text-gray-400 dark:text-dark-500">
-                {{ usageSortLabel }}
-              </span>
-              <span class="text-gray-400 dark:text-dark-500">
-                {{ sortState.sort_order === 'desc' && usageSortActive ? '↓' : usageSortActive ? '↑' : '↕' }}
-              </span>
-            </button>
-          </template>
-
           <template #header-concurrency>
             <button
               type="button"
@@ -506,6 +490,78 @@
             >
               <UserPlatformQuotaCell :quotas="platformQuotaStats[row.id]" />
             </button>
+          </template>
+
+          <!-- 用量列自定义表头：今日余额/今日订阅/近30日当前页本地排序；DataTable 内置 server-side sort 不接管该列。 -->
+          <template #header-usage>
+            <div class="flex items-center gap-1.5">
+              <span>{{ t('admin.users.columns.usage') }}</span>
+              <div class="usage-sort-trigger relative">
+                <button
+                  type="button"
+                  class="flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:bg-gray-200 dark:hover:bg-dark-700"
+                  :class="usageSort ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400 dark:text-dark-500'"
+                  :title="t('admin.users.sortBy')"
+                  data-test="usage-sort-trigger-usage"
+                  @click.stop="toggleUsageSortMenu('usage')"
+                >
+                  <span
+                    v-if="usageSort"
+                    class="text-[10px] normal-case font-medium tracking-normal"
+                  >{{ usageSortLabel }}</span>
+                  <svg
+                    v-if="usageSort"
+                    class="h-3.5 w-3.5"
+                    :class="{ 'rotate-180': usageSort.order === 'desc' }"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z"
+                      clip-rule="evenodd"
+                    />
+                  </svg>
+                  <svg v-else class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M10 3l-4 5h8l-4-5zM10 17l4-5H6l4 5z" />
+                  </svg>
+                </button>
+                <div
+                  v-if="openUsageSortMenu === 'usage'"
+                  class="absolute right-0 top-full z-50 mt-1 min-w-[140px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-600 dark:bg-dark-800"
+                >
+                  <button
+                    v-for="metric in USAGE_METRICS"
+                    :key="metric"
+                    type="button"
+                    class="flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-xs normal-case tracking-normal hover:bg-gray-100 dark:hover:bg-dark-700"
+                    :class="isUsageSortActive(metric)
+                      ? 'font-medium text-primary-600 dark:text-primary-400'
+                      : 'text-gray-700 dark:text-gray-300'"
+                    :data-test="`usage-sort-usage-${metric}`"
+                    @click.stop="toggleUsageSort(metric)"
+                  >
+                    <span>{{ getUsageMetricLabel(metric) }}</span>
+                    <svg
+                      v-if="getUsageSortOrder(metric)"
+                      class="h-3 w-3"
+                      :class="{ 'rotate-180': getUsageSortOrder(metric) === 'desc' }"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                  <div class="mt-1 border-t border-gray-100 px-3 py-1 text-[10px] normal-case tracking-normal text-gray-400 dark:border-dark-700 dark:text-dark-500">
+                    {{ t('admin.users.sortCurrentPageOnly') }}
+                  </div>
+                </div>
+              </div>
+            </div>
           </template>
 
           <template #cell-usage="{ row }">
@@ -1163,6 +1219,54 @@ const saveSortStateToStorage = () => {
   }
 }
 
+type UsageMetric = 'today_balance' | 'today_subscription' | 'total'
+type UsageSortState = { metric: UsageMetric; order: 'asc' | 'desc' } | null
+const USAGE_SORT_STORAGE_KEY = 'admin-users-usage-sort'
+const USAGE_METRICS: readonly UsageMetric[] = ['today_balance', 'today_subscription', 'total']
+const openUsageSortMenu = ref<string | null>(null)
+
+const loadInitialUsageSort = (): UsageSortState => {
+  try {
+    const raw = localStorage.getItem(USAGE_SORT_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<{ metric: string; order: string }>
+    if (!USAGE_METRICS.includes(parsed.metric as UsageMetric)) return null
+    return {
+      metric: parsed.metric as UsageMetric,
+      order: parsed.order === 'asc' ? 'asc' : 'desc'
+    }
+  } catch {
+    return null
+  }
+}
+const usageSort = ref<UsageSortState>(loadInitialUsageSort())
+const persistUsageSort = () => {
+  try {
+    if (usageSort.value) {
+      localStorage.setItem(USAGE_SORT_STORAGE_KEY, JSON.stringify({ key: 'usage', ...usageSort.value }))
+    } else {
+      localStorage.removeItem(USAGE_SORT_STORAGE_KEY)
+    }
+  } catch (e) {
+    console.error('Failed to persist usage sort:', e)
+  }
+}
+const clearUsageSort = () => {
+  if (!usageSort.value) return
+  usageSort.value = null
+  openUsageSortMenu.value = null
+  persistUsageSort()
+}
+const getUsageMetricLabel = (metric: UsageMetric) => {
+  switch (metric) {
+    case 'today_subscription':
+      return t('admin.users.todaySubscription', '今日订阅')
+    case 'total':
+      return t('admin.users.last30Days', '近30日')
+    default:
+      return t('admin.users.todayBalance', '今日余额')
+  }
+}
 const usageSortActive = computed(() => usageSortKeys.has(sortState.sort_by as UsageSortKey))
 const concurrencySortActive = computed(() => concurrencySortKeys.has(sortState.sort_by as ConcurrencySortKey))
 const usageSortKey = computed<UsageSortKey>(() =>
@@ -1172,6 +1276,7 @@ const concurrencySortKey = computed<ConcurrencySortKey>(() =>
   concurrencySortActive.value ? sortState.sort_by as ConcurrencySortKey : 'current_concurrency'
 )
 const usageSortLabel = computed(() => {
+  if (usageSort.value) return getUsageMetricLabel(usageSort.value.metric)
   switch (usageSortKey.value) {
     case 'today_subscription_usage':
       return t('admin.users.todaySubscription', '今日订阅')
@@ -1180,6 +1285,46 @@ const usageSortLabel = computed(() => {
     default:
       return t('admin.users.todayBalance', '今日余额')
   }
+})
+const isUsageSortActive = (metric: UsageMetric) =>
+  !!usageSort.value && usageSort.value.metric === metric
+const getUsageSortOrder = (metric: UsageMetric): 'asc' | 'desc' | null =>
+  isUsageSortActive(metric) ? usageSort.value!.order : null
+const toggleUsageSort = (metric: UsageMetric) => {
+  const cur = usageSort.value
+  if (cur && cur.metric === metric) {
+    usageSort.value = cur.order === 'desc' ? { metric, order: 'asc' } : null
+  } else {
+    usageSort.value = { metric, order: 'desc' }
+  }
+  persistUsageSort()
+  openUsageSortMenu.value = null
+}
+const toggleUsageSortMenu = (key: string) => {
+  openUsageSortMenu.value = openUsageSortMenu.value === key ? null : key
+}
+const getUsageValue = (user: AdminUser, metric: UsageMetric): number => {
+  switch (metric) {
+    case 'today_subscription':
+      return user.today_subscription_actual_cost ?? 0
+    case 'total':
+      return user.total_actual_cost ?? 0
+    default:
+      return user.today_balance_actual_cost ?? user.today_actual_cost ?? 0
+  }
+}
+const sortedUsers = computed(() => {
+  const s = usageSort.value
+  if (!s) return users.value
+  return [...users.value]
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const av = getUsageValue(a.row, s.metric)
+      const bv = getUsageValue(b.row, s.metric)
+      if (av !== bv) return s.order === 'asc' ? av - bv : bv - av
+      return a.index - b.index
+    })
+    .map((x) => x.row)
 })
 const concurrencySortLabel = computed(() => {
   if (concurrencySortKey.value === 'available_concurrency') {
@@ -1199,7 +1344,6 @@ const specialSortOptions = computed(() => [
   { key: 'current_concurrency' as SpecialSortKey, label: t('admin.users.sortCurrentDesc', '当前并发').replace(/\s*[↓↑]$/, '') },
   { key: 'available_concurrency' as SpecialSortKey, label: t('admin.users.sortAvailableDesc', '可用并发').replace(/\s*[↓↑]$/, '') }
 ])
-const displayUsers = computed(() => users.value)
 // User attribute definitions and values
 const attributeDefinitions = ref<UserAttributeDefinition[]>([])
 const userAttributeValues = ref<Record<number, Record<number, string>>>({})
@@ -1388,6 +1532,9 @@ const handleClickOutside = (event: MouseEvent) => {
   if (sortDropdownRef.value && !sortDropdownRef.value.contains(target)) {
     showSortDropdown.value = false
   }
+  if (!target.closest('.usage-sort-trigger')) {
+    openUsageSortMenu.value = null
+  }
   // Close expanded group dropdown when clicking outside
   if (expandedGroupUserId.value !== null) {
     expandedGroupUserId.value = null
@@ -1518,13 +1665,10 @@ const applySortAndReload = (key: string, order: 'asc' | 'desc') => {
 }
 
 const toggleSpecialSort = (key: SpecialSortKey) => {
+  clearUsageSort()
   const nextOrder: 'asc' | 'desc' =
     sortState.sort_by === key && sortState.sort_order === 'desc' ? 'asc' : 'desc'
   applySortAndReload(key, nextOrder)
-}
-
-const handleUsageSort = () => {
-  toggleSpecialSort(usageSortKey.value)
 }
 
 const handleConcurrencySort = () => {
@@ -1554,6 +1698,7 @@ const handlePageSizeChange = (pageSize: number) => {
 }
 
 const handleSort = (key: string, order: 'asc' | 'desc') => {
+  clearUsageSort()
   applySortAndReload(key, order)
 }
 
