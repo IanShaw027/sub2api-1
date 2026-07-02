@@ -43,8 +43,9 @@ const (
 	// ChatGPT internal API for OAuth accounts
 	chatgptCodexURL = "https://chatgpt.com/backend-api/codex/responses"
 	// OpenAI Platform API for API Key accounts (fallback)
-	openaiPlatformAPIURL   = "https://api.openai.com/v1/responses"
-	openaiStickySessionTTL = time.Hour // 粘性会话TTL
+	openaiPlatformAPIURL            = "https://api.openai.com/v1/responses"
+	openaiPlatformAPIInputTokensURL = "https://api.openai.com/v1/responses/input_tokens"
+	openaiStickySessionTTL          = time.Hour // 粘性会话TTL
 	// 与真实 Codex CLI 的 User-Agent 结构对齐：
 	// {originator}/{version} ({OS} {OS_version}; {arch}) {terminal}
 	// 旧值 "codex_cli_rs/0.125.0" 缺少 OS/架构/终端后缀，易被上游指纹识别为非官方客户端。
@@ -84,6 +85,20 @@ var (
 	openAITTFTWatchdogTimeout  = 0 * time.Second
 	openAITTFTCooldownDuration = time.Minute
 )
+
+func marshalOpenAIUpstreamJSON(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	out := buf.Bytes()
+	if len(out) > 0 && out[len(out)-1] == '\n' {
+		out = out[:len(out)-1]
+	}
+	return out, nil
+}
 
 func openAIUpstreamErrorBodyReadLimitForConfig(cfg *config.Config) int64 {
 	limit := openAIUpstreamErrorBodyReadLimit
@@ -2310,6 +2325,51 @@ func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string
 	return match(string(upstreamBody))
 }
 
+func isOpenAIContextWindowError(upstreamMsg string, upstreamBody []byte) bool {
+	match := func(text string) bool {
+		lower := strings.ToLower(strings.TrimSpace(text))
+		if lower == "" {
+			return false
+		}
+		if strings.Contains(lower, "context_too_large") || strings.Contains(lower, "context_length_exceeded") {
+			return true
+		}
+		if strings.Contains(lower, "maximum context length") || strings.Contains(lower, "max context length") {
+			return true
+		}
+		hasExceeded := strings.Contains(lower, "exceed") || strings.Contains(lower, "too large") || strings.Contains(lower, "too long")
+		if strings.Contains(lower, "context window") && hasExceeded {
+			return true
+		}
+		if strings.Contains(lower, "context length") && hasExceeded {
+			return true
+		}
+		return strings.Contains(lower, "token limit") &&
+			strings.Contains(lower, "context") &&
+			hasExceeded
+	}
+
+	if match(upstreamMsg) {
+		return true
+	}
+	if len(upstreamBody) == 0 {
+		return false
+	}
+	for _, path := range []string{
+		"error.message",
+		"response.error.message",
+		"message",
+		"error.code",
+		"response.error.code",
+		"code",
+	} {
+		if match(gjson.GetBytes(upstreamBody, path).String()) {
+			return true
+		}
+	}
+	return match(string(upstreamBody))
+}
+
 // ExtractSessionID extracts the raw session ID from headers or body without hashing.
 // Used by ForwardAsAnthropic to pass as prompt_cache_key for upstream cache.
 func explicitOpenAISessionID(c *gin.Context, body []byte) string {
@@ -4384,6 +4444,9 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	if matched, _, _ := detectOpenAICyberPolicy(upstreamBody); matched {
 		return false
 	}
+	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) {
+		return false
+	}
 	if s.shouldFailoverUpstreamError(statusCode) {
 		return true
 	}
@@ -4840,6 +4903,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if codexImageGenerationBridgeEnabled && ensureOpenAIResponsesImageGenerationTool(decoded) {
 			markDecodedModified()
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Injected /responses image_generation tool for Codex client")
+		}
+		if codexImageGenerationBridgeEnabled && ensureOpenAIResponsesImageGenerationToolChoiceAuto(decoded) {
+			markDecodedModified()
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Set /responses image_generation tool_choice=auto for Codex client")
 		}
 		if normalizeOpenAIResponsesImageGenerationTools(decoded) {
 			markDecodedModified()
@@ -7272,7 +7339,13 @@ func openAIStreamDataStartsClientOutput(data, eventType string) bool {
 }
 
 func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool {
+	if isOpenAIContextWindowError(message, payload) {
+		return false
+	}
 	if _, matched := classifyOpenAIRetryableOverload(payload, message); matched {
+		return true
+	}
+	if isOpenAITransientProcessingError(http.StatusBadRequest, message, payload) {
 		return true
 	}
 	code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "response.error.code").String()))
@@ -7474,17 +7547,18 @@ func (s *OpenAIGatewayService) newOpenAITTFTTimeoutFailoverError(
 	}
 }
 
-func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
+func (s *OpenAIGatewayService) recordOpenAIStreamUpstreamError(
 	c *gin.Context,
 	account *Account,
 	passthrough bool,
 	upstreamRequestID string,
+	kind string,
 	payload []byte,
 	message string,
-) *UpstreamFailoverError {
+) string {
 	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
 	if message == "" {
-		message = "OpenAI stream disconnected before completion"
+		message = "OpenAI upstream response failed"
 	}
 	detail := ""
 	if len(payload) > 0 && s != nil && s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
@@ -7501,7 +7575,7 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 			UpstreamStatusCode: http.StatusBadGateway,
 			UpstreamRequestID:  strings.TrimSpace(upstreamRequestID),
 			Passthrough:        passthrough,
-			Kind:               "failover",
+			Kind:               kind,
 			Message:            message,
 			Detail:             detail,
 		}
@@ -7512,6 +7586,22 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 		}
 		appendOpsUpstreamError(c, event)
 	}
+	return message
+}
+
+func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
+	c *gin.Context,
+	account *Account,
+	passthrough bool,
+	upstreamRequestID string,
+	payload []byte,
+	message string,
+) *UpstreamFailoverError {
+	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
+	if message == "" {
+		message = "OpenAI stream disconnected before completion"
+	}
+	message = s.recordOpenAIStreamUpstreamError(c, account, passthrough, upstreamRequestID, "failover", payload, message)
 	body, _ := json.Marshal(gin.H{
 		"error": gin.H{
 			"type":    "upstream_error",
@@ -7770,6 +7860,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			if responseID == "" {
 				responseID = extractOpenAIResponseIDFromJSONBytes(dataBytes)
 			}
+			s.recordOpenAIWSCodexRateLimitSnapshot(ctx, account, dataBytes)
 			if overloadMsg, matched := classifyOpenAIRetryableOverload(dataBytes, ""); matched {
 				if sawSuccessfulTerminal {
 					return nil
@@ -8539,6 +8630,9 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		statusCode = http.StatusTooManyRequests
 		errType = "rate_limit_error"
 		errMsg = openAIBillingLimitClientMessage()
+	}
+	if isOpenAIContextWindowError(upstreamMsg, body) && upstreamMsg != "" {
+		errMsg = upstreamMsg
 	}
 
 	c.JSON(statusCode, gin.H{
@@ -9396,6 +9490,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			if responseID == "" {
 				responseID = extractOpenAIResponseIDFromJSONBytes(dataBytes)
 			}
+			s.recordOpenAIWSCodexRateLimitSnapshot(ctx, account, dataBytes)
 			if overloadMsg, matched := classifyOpenAIRetryableOverload(dataBytes, ""); matched && !openAIResponseFailedHasNestedServerOverloadedCode(dataBytes, eventType) {
 				if sawSuccessfulTerminal {
 					return
@@ -11506,6 +11601,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 
 	billingErr := func() error {
+		// Async usage billing runs outside the original request context, so it
+		// cannot recover ForcePlatform there. Fall back for internal/test callers.
 		quotaPlatform := strings.TrimSpace(input.QuotaPlatform)
 		if quotaPlatform == "" {
 			quotaPlatform = PlatformFromAPIKey(apiKey)
@@ -11971,6 +12068,17 @@ func parseOpenAIWSCodexRateLimitSnapshot(payload []byte, now time.Time) *OpenAIC
 		return nil
 	}
 	return snapshot
+}
+
+func (s *OpenAIGatewayService) recordOpenAIWSCodexRateLimitSnapshot(ctx context.Context, account *Account, payload []byte) {
+	if s == nil || account == nil || account.ID <= 0 || account.Platform != PlatformOpenAI {
+		return
+	}
+	snapshot := parseOpenAIWSCodexRateLimitSnapshot(payload, time.Now().UTC().Truncate(time.Second))
+	if snapshot == nil {
+		return
+	}
+	s.updateCodexUsageSnapshot(ctx, account.ID, snapshot)
 }
 
 func openAIWSSoftRateLimitTempUnschedUntil(updates map[string]any, now time.Time) *time.Time {

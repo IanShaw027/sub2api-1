@@ -725,6 +725,16 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(&service.APIKey{Group: &service.Group{}}, "gpt-5.4"))
 	})
 
+	t.Run("grok_group_maps_claude_cli_model_to_grok_default", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			Group: &service.Group{
+				Platform: service.PlatformGrok,
+			},
+		}
+		require.Equal(t, "grok-4.3", resolveOpenAIMessagesDispatchMappedModel(apiKey, "claude-sonnet-4-5"))
+		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(apiKey, "grok"))
+	})
+
 	t.Run("does_not_fall_back_to_group_default_mapped_model", func(t *testing.T) {
 		apiKey := &service.APIKey{
 			Group: &service.Group{
@@ -767,11 +777,106 @@ func TestResolveOpenAIMessagesDispatchForcedModel(t *testing.T) {
 		require.Empty(t, resolveOpenAIMessagesDispatchForcedModel(apiKey, "claude-sonnet-4-5-20250929"))
 	})
 
+	t.Run("grok_default_mapping_is_not_forced", func(t *testing.T) {
+		apiKey := &service.APIKey{Group: &service.Group{Platform: service.PlatformGrok}}
+		require.Empty(t, resolveOpenAIMessagesDispatchForcedModel(apiKey, "claude-sonnet-4-5"))
+	})
+
 	t.Run("returns_empty_for_non_claude_or_missing_group", func(t *testing.T) {
 		require.Empty(t, resolveOpenAIMessagesDispatchForcedModel(nil, "claude-sonnet-4-5-20250929"))
 		require.Empty(t, resolveOpenAIMessagesDispatchForcedModel(&service.APIKey{}, "claude-sonnet-4-5-20250929"))
 		require.Empty(t, resolveOpenAIMessagesDispatchForcedModel(&service.APIKey{Group: &service.Group{}}, "gpt-5.4"))
 	})
+}
+
+func TestOpenAIGatewayMessagesDispatchGateAllowsGrokGroups(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("openai_group_without_dispatch_flag_is_rejected", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}]}`))
+		groupID := int64(4101)
+		c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
+			ID:      5101,
+			GroupID: &groupID,
+			User:    &service.User{ID: 6101},
+			Group: &service.Group{
+				ID:                    groupID,
+				Platform:              service.PlatformOpenAI,
+				AllowMessagesDispatch: false,
+			},
+		})
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 6101, Concurrency: 1})
+
+		h := &OpenAIGatewayHandler{}
+		h.Messages(c)
+
+		require.Equal(t, http.StatusForbidden, rec.Code)
+		require.Equal(t, "permission_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+		require.Contains(t, rec.Body.String(), "This group does not allow /v1/messages dispatch")
+	})
+
+	t.Run("grok_group_without_dispatch_flag_reaches_gateway_dependencies", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"grok-4.3","messages":[{"role":"user","content":"hi"}]}`))
+		groupID := int64(4102)
+		c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
+			ID:      5102,
+			GroupID: &groupID,
+			User:    &service.User{ID: 6102},
+			Group: &service.Group{
+				ID:                    groupID,
+				Platform:              service.PlatformGrok,
+				AllowMessagesDispatch: false,
+			},
+		})
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 6102, Concurrency: 1})
+
+		h := &OpenAIGatewayHandler{}
+		h.Messages(c)
+
+		require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+		require.Equal(t, "api_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+		require.NotContains(t, rec.Body.String(), "This group does not allow /v1/messages dispatch")
+	})
+}
+
+func TestOpenAIModelMappedBody(t *testing.T) {
+	body := []byte(`{"model":"alias","input":"hello"}`)
+	calls := 0
+	mappedBody := newOpenAIModelMappedBodyCache(body, func(body []byte, newModel string) []byte {
+		calls++
+		return service.ReplaceModelInBody(body, newModel)
+	})
+
+	forwardBody := mappedBody(true, "gpt-5.4")
+
+	require.Equal(t, 1, calls)
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(forwardBody, "model").String())
+	require.Equal(t, "alias", gjson.GetBytes(body, "model").String())
+}
+
+func TestOpenAIModelMappedBodyCache(t *testing.T) {
+	body := []byte(`{"model":"alias","input":"hello"}`)
+	calls := 0
+	mappedBody := newOpenAIModelMappedBodyCache(body, func(body []byte, newModel string) []byte {
+		calls++
+		return service.ReplaceModelInBody(body, newModel)
+	})
+
+	first := mappedBody(true, "gpt-5.4")
+	second := mappedBody(true, "gpt-5.4")
+	third := mappedBody(true, "gpt-5.3-codex")
+	unmapped := mappedBody(false, "ignored")
+
+	require.Equal(t, 2, calls)
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(first, "model").String())
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(second, "model").String())
+	require.Equal(t, "gpt-5.3-codex", gjson.GetBytes(third, "model").String())
+	require.Equal(t, body, unmapped)
+	require.Same(t, &first[0], &second[0])
 }
 
 func TestOpenAIResponses_MissingDependencies_ReturnsServiceUnavailable(t *testing.T) {

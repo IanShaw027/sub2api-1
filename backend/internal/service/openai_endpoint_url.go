@@ -18,6 +18,29 @@ func buildOpenAIEndpointURL(base string, endpoint string) string {
 	return normalized + endpoint
 }
 
+func buildOpenAIResponsesInputTokensURL(base string) string {
+	normalized := strings.TrimRight(strings.TrimSpace(base), "/")
+	if openAIEndpointURLPathHasSuffix(normalized, "/responses") {
+		return normalized + "/input_tokens"
+	}
+	return buildOpenAIEndpointURL(base, "/v1/responses/input_tokens")
+}
+
+func openAIEndpointURLPathHasSuffix(raw string, suffix string) bool {
+	trimmed := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if trimmed == "" {
+		return false
+	}
+	suffix = strings.TrimRight(strings.TrimSpace(suffix), "/")
+	if suffix == "" {
+		return false
+	}
+	if parsed, err := url.Parse(trimmed); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		return strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), suffix)
+	}
+	return strings.HasSuffix(trimmed, suffix)
+}
+
 func openAIBaseURLHasVersionSuffix(raw string) bool {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {

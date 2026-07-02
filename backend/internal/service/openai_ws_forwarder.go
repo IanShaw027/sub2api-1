@@ -62,9 +62,7 @@ const (
 	openAIWSIngressStagePreviousResponseNotFound = "previous_response_not_found"
 	openAIWSMaxPrevResponseIDDeletePasses        = 8
 
-	openAIWSSoftRateLimitAdvisoryMessage      = "Approaching upstream rate limits; switch account and retry"
-	openAIWSSoftRateLimitAdvisoryThreshold    = 90.0
-	openAIWSSoftRateLimitAdvisoryDefaultLimit = "codex"
+	openAIWSSoftRateLimitAdvisoryThreshold = 90.0
 )
 
 var openAIWSLogValueReplacer = strings.NewReplacer(
@@ -5552,6 +5550,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			parseOpenAIWSResponseUsageFromCompletedEvent(message, usage)
 		}
 		imageCounter.AddSSEData(message)
+		s.recordOpenAIWSCodexRateLimitSnapshot(ctx, account, message)
 		if advisoryMsg, ok := classifyOpenAIWSSoftRateLimitAdvisory(message); ok {
 			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), nil, "rate_limit_exceeded", "rate_limit_error", advisoryMsg)
 			logOpenAIWSModeInfo(
@@ -6107,9 +6106,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
+	forceHTTPBridge := account.Platform == PlatformGrok
 	modeRouterV2Enabled := s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.ModeRouterV2Enabled
 	ingressMode := OpenAIWSIngressModeCtxPool
-	if modeRouterV2Enabled {
+	if modeRouterV2Enabled && !forceHTTPBridge {
 		ingressMode = account.ResolveOpenAIResponsesWebSocketV2Mode(s.cfg.Gateway.OpenAIWS.IngressModeDefault)
 		if ingressMode == OpenAIWSIngressModeOff {
 			return NewOpenAIWSClientCloseError(
@@ -6143,20 +6143,27 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			)
 		}
 	}
-	if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
+	if !forceHTTPBridge && wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
 		return fmt.Errorf("websocket ingress requires ws_v2 transport, got=%s", wsDecision.Transport)
 	}
 	dedicatedMode := modeRouterV2Enabled && ingressMode == OpenAIWSIngressModeDedicated
 
-	wsURL, err := s.buildOpenAIResponsesWSURL(account)
-	if err != nil {
-		return fmt.Errorf("build ws url: %w", err)
-	}
+	wsURL := ""
 	wsHost := "-"
 	wsPath := "-"
-	if parsedURL, parseErr := url.Parse(wsURL); parseErr == nil && parsedURL != nil {
-		wsHost = normalizeOpenAIWSLogValue(parsedURL.Host)
-		wsPath = normalizeOpenAIWSLogValue(parsedURL.Path)
+	if forceHTTPBridge {
+		wsHost = "xai-http-bridge"
+		wsPath = "/v1/responses"
+	} else {
+		var err error
+		wsURL, err = s.buildOpenAIResponsesWSURL(account)
+		if err != nil {
+			return fmt.Errorf("build ws url: %w", err)
+		}
+		if parsedURL, parseErr := url.Parse(wsURL); parseErr == nil && parsedURL != nil {
+			wsHost = normalizeOpenAIWSLogValue(parsedURL.Host)
+			wsPath = normalizeOpenAIWSLogValue(parsedURL.Path)
+		}
 	}
 	debugEnabled := isOpenAIWSModeDebugEnabled()
 	isCodexCLI := openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator")) || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI)
@@ -6286,6 +6293,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if ensureOpenAIResponsesImageGenerationTool(payloadMap) {
 				bridgeModified = true
 				logOpenAIWSModeInfo("ingress_ws_codex_image_tool_injected account_id=%d", account.ID)
+			}
+			if ensureOpenAIResponsesImageGenerationToolChoiceAuto(payloadMap) {
+				bridgeModified = true
+				logOpenAIWSModeInfo("ingress_ws_codex_image_tool_choice_auto account_id=%d", account.ID)
 			}
 			if normalizeOpenAIResponsesImageGenerationTools(payloadMap) {
 				bridgeModified = true
@@ -6502,7 +6513,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 	refreshIngressRouteState(firstPayload)
 
-	if s.shouldBridgeOpenAIWSHTTP(firstPayload.payloadBytes, firstPayload.previousResponseID) {
+	if s.shouldBridgeOpenAIWSHTTP(account, firstPayload.payloadBytes, firstPayload.previousResponseID) {
 		logOpenAIWSModeInfo(
 			"ingress_ws_http_bridge_start account_id=%d account_type=%s payload_bytes=%d threshold_bytes=%d has_session_hash=%v store_disabled=%v",
 			account.ID,
@@ -8704,42 +8715,14 @@ func classifyOpenAIWSSoftRateLimitAdvisory(message []byte) (string, bool) {
 	}
 	eventType := strings.TrimSpace(gjson.GetBytes(message, "type").String())
 	if eventType == "codex.rate_limits" {
-		if !gjson.GetBytes(message, "rate_limits").IsObject() {
-			return "", false
-		}
-		allowed := gjson.GetBytes(message, "rate_limits.allowed")
-		limitReached := gjson.GetBytes(message, "rate_limits.limit_reached")
-		if !allowed.Exists() || !allowed.Bool() || !limitReached.Exists() || limitReached.Bool() {
-			return "", false
-		}
-		limitID := strings.TrimSpace(gjson.GetBytes(message, "metered_limit_name").String())
-		if limitID == "" {
-			limitID = strings.TrimSpace(gjson.GetBytes(message, "limit_name").String())
-		}
-		if limitID == "" {
-			limitID = openAIWSSoftRateLimitAdvisoryDefaultLimit
-		}
-		normalizedLimitID := strings.ReplaceAll(strings.ToLower(limitID), "-", "_")
-		if normalizedLimitID != openAIWSSoftRateLimitAdvisoryDefaultLimit {
-			return "", false
-		}
-		if gjson.GetBytes(message, "credits.has_credits").Bool() ||
-			gjson.GetBytes(message, "credits.unlimited").Bool() {
-			return "", false
-		}
-		if !openAIWSRateLimitWindowApproaching(message, "rate_limits.primary.used_percent") &&
-			!openAIWSRateLimitWindowApproaching(message, "rate_limits.secondary.used_percent") {
-			return "", false
-		}
-		return openAIWSSoftRateLimitAdvisoryMessage, true
+		// `codex.rate_limits` is upstream quota telemetry. A 90% window with
+		// allowed=true and limit_reached=false is advisory-only, not an
+		// upstream 429. Let the normal response continue; hard rate-limit
+		// failures are still handled through upstream HTTP 429 / error /
+		// response.failed events.
+		return "", false
 	}
-
 	return "", false
-}
-
-func openAIWSRateLimitWindowApproaching(message []byte, path string) bool {
-	value := gjson.GetBytes(message, path)
-	return value.Exists() && value.Float() >= openAIWSSoftRateLimitAdvisoryThreshold
 }
 
 func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Context, account *Account, headers http.Header, responseBody []byte, codeRaw, errTypeRaw, msgRaw string) {

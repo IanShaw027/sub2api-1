@@ -11,6 +11,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2353,33 +2354,39 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	// Handle Grok accounts
 	if account.Platform == service.PlatformGrok {
+		defaultModels := xai.DefaultModels()
 		mapping := account.GetModelMapping()
 		if len(mapping) == 0 {
-			response.Success(c, xai.DefaultModels())
+			response.Success(c, defaultModels)
 			return
 		}
 
-		defaultModels := xai.DefaultModels()
-		var models []xai.Model
+		defaultByID := make(map[string]xai.Model, len(defaultModels))
+		for _, model := range defaultModels {
+			defaultByID[model.ID] = model
+		}
+
+		requestedModels := make([]string, 0, len(mapping))
 		for requestedModel := range mapping {
-			var found bool
-			for _, dm := range defaultModels {
-				if dm.ID == requestedModel {
-					models = append(models, dm)
-					found = true
-					break
-				}
+			requestedModels = append(requestedModels, requestedModel)
+		}
+		sort.Strings(requestedModels)
+
+		var models []xai.Model
+		for _, requestedModel := range requestedModels {
+			if defaultModel, found := defaultByID[requestedModel]; found {
+				models = append(models, defaultModel)
+				continue
 			}
-			if !found {
-				models = append(models, xai.Model{
-					ID:          requestedModel,
-					Object:      "model",
-					Type:        "model",
-					OwnedBy:     "xai",
-					DisplayName: requestedModel,
-				})
-			}
+			models = append(models, xai.Model{
+				ID:          requestedModel,
+				Object:      "model",
+				Type:        "model",
+				OwnedBy:     "xai",
+				DisplayName: requestedModel,
+			})
 		}
 		response.Success(c, models)
 		return

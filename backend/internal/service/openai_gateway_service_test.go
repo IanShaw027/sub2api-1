@@ -3006,7 +3006,7 @@ func TestOpenAIStreamingResponseFailedCapacityAfterOutputReturnsRetryableFailove
 	require.NotContains(t, rec.Body.String(), "server_is_overloaded")
 }
 
-func TestOpenAIStreamingSoftRateLimitAdvisoryBeforeOutputReturnsFailover(t *testing.T) {
+func TestOpenAIStreamingCodexRateLimitAdvisoryBeforeOutputContinues(t *testing.T) {
 	setGinTestMode()
 	cfg := &config.Config{
 		Gateway: config.GatewayConfig{
@@ -3030,17 +3030,22 @@ func TestOpenAIStreamingSoftRateLimitAdvisoryBeforeOutputReturnsFailover(t *test
 			"event: codex.rate_limits",
 			`data: {"type":"codex.rate_limits","metered_limit_name":"codex","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":91,"window_minutes":300,"reset_at":1700000000},"secondary":null},"credits":{"has_credits":false,"unlimited":false,"balance":null}}`,
 			"",
+			"event: response.completed",
+			`data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","usage":{"input_tokens":2,"output_tokens":3},"output":[]}}`,
+			"",
 		}, "\n"))),
 		Header: http.Header{"X-Request-Id": []string{"rid-soft-limit"}},
 	}
 
-	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "model", "model")
-	require.Error(t, err)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
-	require.False(t, c.Writer.Written())
-	require.Empty(t, rec.Body.String())
+	result, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "model", "model")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_1", result.responseID)
+	require.Equal(t, 2, result.usage.InputTokens)
+	require.Equal(t, 3, result.usage.OutputTokens)
+	require.True(t, c.Writer.Written())
+	require.Contains(t, rec.Body.String(), `"type":"codex.rate_limits"`)
+	require.Contains(t, rec.Body.String(), `"type":"response.completed"`)
 }
 
 func TestOpenAIStreamingPreambleOnlyMissingTerminalReturnsFailover(t *testing.T) {
@@ -3504,6 +3509,43 @@ func TestOpenAIStreamingResponseFailedAfterOutputSanitizesVerboseResponseForClie
 	require.NotContains(t, body, `"usage"`)
 }
 
+func TestOpenAIStreamingContextWindowResponseFailedBeforeOutputPassesThrough(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			StreamDataIntervalTimeout: 0,
+			StreamKeepaliveInterval:   0,
+			MaxLineSize:               defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.created",
+			`data: {"type":"response.created","response":{"id":"resp_1"}}`,
+			"",
+			"event: response.failed",
+			`data: {"type":"response.failed","error":{"type":"upstream_error","message":"Your input exceeds the context window of this model. Please adjust your input and try again.","code":null}}`,
+			"",
+		}, "\n"))),
+		Header: http.Header{"X-Request-Id": []string{"rid-context-window-failed"}},
+	}
+
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "model", "model")
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr))
+	require.True(t, c.Writer.Written())
+	require.Contains(t, rec.Body.String(), "response.failed")
+	require.Contains(t, rec.Body.String(), "Your input exceeds the context window")
+}
+
 func TestOpenAIStreamingRetryAfterPartialOverloadDedupesRetriedPrefix(t *testing.T) {
 	setGinTestMode()
 	cfg := &config.Config{
@@ -3691,7 +3733,7 @@ func TestOpenAIStreamingCompletedBeforeTrailingOverloadTreatsStreamAsSuccess(t *
 	require.NotContains(t, rec.Body.String(), "server_is_overloaded")
 }
 
-func TestOpenAIStreamingPassthroughSoftRateLimitAdvisoryBeforeOutputReturnsFailover(t *testing.T) {
+func TestOpenAIStreamingPassthroughCodexRateLimitAdvisoryBeforeOutputContinues(t *testing.T) {
 	setGinTestMode()
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 
@@ -3708,17 +3750,22 @@ func TestOpenAIStreamingPassthroughSoftRateLimitAdvisoryBeforeOutputReturnsFailo
 			"event: codex.rate_limits",
 			`data: {"type":"codex.rate_limits","metered_limit_name":"codex","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":95,"window_minutes":300,"reset_at":1700000000},"secondary":null},"credits":{"has_credits":false,"unlimited":false,"balance":null}}`,
 			"",
+			"event: response.completed",
+			`data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","usage":{"input_tokens":2,"output_tokens":3},"output":[]}}`,
+			"",
 		}, "\n"))),
 		Header: http.Header{"X-Request-Id": []string{"rid-soft-limit-passthrough"}},
 	}
 
-	_, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "", "")
-	require.Error(t, err)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
-	require.False(t, c.Writer.Written())
-	require.Empty(t, rec.Body.String())
+	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_1", result.responseID)
+	require.Equal(t, 2, result.usage.InputTokens)
+	require.Equal(t, 3, result.usage.OutputTokens)
+	require.True(t, c.Writer.Written())
+	require.Contains(t, rec.Body.String(), `"type":"codex.rate_limits"`)
+	require.Contains(t, rec.Body.String(), `"type":"response.completed"`)
 }
 
 func TestOpenAIStreamingTTFTWatchdogReturnsFailoverAndCooldown(t *testing.T) {
@@ -3904,8 +3951,8 @@ func TestExtractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(t *testing.T) {
 	}, "\n")
 
 	msg, matched := extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(body)
-	require.True(t, matched)
-	require.Contains(t, msg, "Approaching upstream rate limits")
+	require.False(t, matched)
+	require.Empty(t, msg)
 
 	body = strings.Join([]string{
 		"event: response.completed",

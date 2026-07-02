@@ -81,6 +81,7 @@ const (
 	OpenAIEndpointCapabilityChatCompletions          OpenAIEndpointCapability = "chat_completions"
 	OpenAIEndpointCapabilityEmbeddings               OpenAIEndpointCapability = "embeddings"
 	OpenAIEndpointCapabilityResponsesIngress         OpenAIEndpointCapability = "responses_ingress"
+	OpenAIEndpointCapabilityResponsesInputTokens     OpenAIEndpointCapability = "responses_input_tokens"
 	OpenAIEndpointCapabilityAnthropicMessagesIngress OpenAIEndpointCapability = "anthropic_messages_ingress"
 	OpenAIEndpointCapabilityVideos                   OpenAIEndpointCapability = "videos"
 )
@@ -1586,6 +1587,17 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	}
 	if capability == OpenAIEndpointCapabilityVideos {
 		return a.IsGrok()
+	}
+	if capability == OpenAIEndpointCapabilityResponsesInputTokens {
+		if a.IsGrok() || a.Type != AccountTypeAPIKey {
+			return false
+		}
+		configured, found := a.openAIEndpointCapabilitySet()
+		if !found {
+			return true
+		}
+		return configured[string(OpenAIEndpointCapabilityResponsesInputTokens)] ||
+			configured[string(OpenAIEndpointCapabilityResponsesIngress)]
 	}
 	if a.IsGrok() {
 		return capability == OpenAIEndpointCapabilityChatCompletions ||

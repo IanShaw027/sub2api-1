@@ -1610,8 +1610,10 @@ func TestOpenAIGatewayService_BuildOpenAIWSCreatePayload_ExtractsSystemMessages(
 	payloadJSON := requestToJSONString(payload)
 	require.False(t, gjson.Get(payloadJSON, `input.#(role=="system")`).Exists())
 	require.Equal(t, "repo policy\n\nexisting instructions", gjson.Get(payloadJSON, "instructions").String())
-	require.Equal(t, "user", gjson.Get(payloadJSON, "input.0.role").String())
-	require.Equal(t, "hello", gjson.Get(payloadJSON, "input.0.content").String())
+	require.Equal(t, "developer", gjson.Get(payloadJSON, "input.0.role").String())
+	require.Equal(t, "repo policy", gjson.Get(payloadJSON, "input.0.content").String())
+	require.Equal(t, "user", gjson.Get(payloadJSON, "input.1.role").String())
+	require.Equal(t, "hello", gjson.Get(payloadJSON, "input.1.content").String())
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testing.T) {

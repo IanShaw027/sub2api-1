@@ -685,7 +685,7 @@ type recordingCyberPolicyHashCache struct {
 	respectContext bool
 }
 
-func (c *recordingCyberPolicyHashCache) RecordFlaggedInputHash(ctx context.Context, inputHash string, excerpt string) error {
+func (c *recordingCyberPolicyHashCache) RecordFlaggedInputHash(ctx context.Context, inputHash string, meta service.ContentModerationHashMeta) error {
 	if c.respectContext {
 		if err := ctx.Err(); err != nil {
 			return err

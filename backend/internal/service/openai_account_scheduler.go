@@ -31,6 +31,12 @@ const (
 	openAIAdvancedSchedulerSettingDBTimeout = 2 * time.Second
 )
 
+const (
+	openAIQuotaHeadroomNeutralFactor      = 0.5
+	openAIQuotaHeadroomSecondaryLowRemain = 0.10
+	openAIQuotaHeadroomSnapshotStaleAfter = 8 * time.Hour
+)
+
 type cachedOpenAIAdvancedSchedulerSetting struct {
 	enabled   bool
 	expiresAt int64
@@ -894,13 +900,18 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 				}
 			}
 		}
+		quotaHeadroomFactor := 0.0
+		if weights.QuotaHeadroom > 0 {
+			quotaHeadroomFactor = openAIQuotaHeadroomFactor(item.account, now)
+		}
 
 		item.score = weights.Priority*priorityFactor +
 			weights.Load*loadFactor +
 			weights.Queue*queueFactor +
 			weights.ErrorRate*errorFactor +
 			weights.TTFT*ttftFactor +
-			weights.Reset*resetFactor
+			weights.Reset*resetFactor +
+			weights.QuotaHeadroom*quotaHeadroomFactor
 	}
 	plan.candidates = candidates
 
@@ -1259,6 +1270,29 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		loadSkew = calcLoadSkewByMoments(loadRateSum, loadRateSumSquares, len(candidates))
 
 		weights := s.service.openAIWSSchedulerWeights()
+		minResetRemaining, maxResetRemaining := 0.0, 0.0
+		hasResetSample := false
+		now := time.Now()
+		if weights.Reset > 0 {
+			for _, candidate := range candidates {
+				end := candidate.account.SessionWindowEnd
+				if end == nil || !now.Before(*end) {
+					continue
+				}
+				remaining := end.Sub(now).Seconds()
+				if !hasResetSample {
+					minResetRemaining, maxResetRemaining = remaining, remaining
+					hasResetSample = true
+					continue
+				}
+				if remaining < minResetRemaining {
+					minResetRemaining = remaining
+				}
+				if remaining > maxResetRemaining {
+					maxResetRemaining = remaining
+				}
+			}
+		}
 		for i := range candidates {
 			item := &candidates[i]
 			priorityFactor := 1.0
@@ -1272,12 +1306,28 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			if item.hasTTFT && hasTTFTSample && maxTTFT > minTTFT {
 				ttftFactor = 1 - clamp01((item.ttft-minTTFT)/(maxTTFT-minTTFT))
 			}
+			resetFactor := 0.0
+			if weights.Reset > 0 && hasResetSample {
+				if end := item.account.SessionWindowEnd; end != nil && now.Before(*end) {
+					if maxResetRemaining > minResetRemaining {
+						resetFactor = 1 - clamp01((end.Sub(now).Seconds()-minResetRemaining)/(maxResetRemaining-minResetRemaining))
+					} else {
+						resetFactor = 1
+					}
+				}
+			}
+			quotaHeadroomFactor := 0.0
+			if weights.QuotaHeadroom > 0 {
+				quotaHeadroomFactor = openAIQuotaHeadroomFactor(item.account, now)
+			}
 
 			item.score = weights.Priority*priorityFactor +
 				weights.Load*loadFactor +
 				weights.Queue*queueFactor +
 				weights.ErrorRate*errorFactor +
-				weights.TTFT*ttftFactor
+				weights.TTFT*ttftFactor +
+				weights.Reset*resetFactor +
+				weights.QuotaHeadroom*quotaHeadroomFactor
 		}
 	}
 
@@ -1873,6 +1923,76 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForCapability(
 		platform = platformOverride[0]
 	}
 	return s.selectAccountWithScheduler(ctx, groupID, 0, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, requiredCapability, "", "", false, false, requireCompact, platform)
+}
+
+func (s *OpenAIGatewayService) SelectAccountWithSchedulerForCapabilityNoAcquire(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requireCompact bool,
+	platformOverride ...string,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	ctx = s.withOpenAIQuotaAutoPauseContext(ctx)
+	platform := PlatformOpenAI
+	if len(platformOverride) > 0 {
+		platform = platformOverride[0]
+	}
+	platform = normalizeOpenAICompatiblePlatform(platform)
+	decision := OpenAIAccountScheduleDecision{
+		Layer: openAIAccountScheduleLayerLoadBalance,
+	}
+	if s.checkChannelPricingRestriction(ctx, groupID, requestedModel) {
+		slog.Warn("channel pricing restriction blocked request",
+			"group_id", derefGroupID(groupID),
+			"model", requestedModel)
+		return nil, decision, fmt.Errorf("%w supporting model: %s (channel pricing restriction)", ErrNoAvailableAccounts, requestedModel)
+	}
+
+	accounts, err := s.listSchedulableAccounts(ctx, groupID, platform, "")
+	if err != nil {
+		return nil, decision, err
+	}
+	decision.CandidateCount = len(accounts)
+	compat := &defaultOpenAIAccountScheduler{service: s}
+	req := OpenAIAccountScheduleRequest{
+		GroupID:            groupID,
+		Platform:           platform,
+		SessionHash:        sessionHash,
+		RequestedModel:     requestedModel,
+		RequiredTransport:  requiredTransport,
+		RequiredCapability: requiredCapability,
+		RequireCompact:     requireCompact,
+		ExcludedIDs:        excludedIDs,
+	}
+	for i := range accounts {
+		account := &accounts[i]
+		if excludedIDs != nil {
+			if _, excluded := excludedIDs[account.ID]; excluded {
+				continue
+			}
+		}
+		if !compat.isLoadBalanceAccountSchedulableForRequest(account, req) {
+			continue
+		}
+		if !compat.isAccountTransportCompatible(account, requiredTransport) {
+			continue
+		}
+		if !compat.isAccountRequestCompatible(ctx, account, req) {
+			continue
+		}
+		selection, err := s.newSelectionResult(ctx, account, false, nil, nil)
+		if err != nil {
+			return nil, decision, err
+		}
+		decision.SelectedAccountID = selection.Account.ID
+		decision.SelectedAccountType = selection.Account.Type
+		return selection, decision, nil
+	}
+	return nil, decision, ErrNoAvailableAccounts
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForResponses(
@@ -2886,20 +3006,23 @@ func (s *OpenAIGatewayService) openAIStickyEscapeConfig() openAIStickyEscapeConf
 func (s *OpenAIGatewayService) openAIWSSchedulerWeights() GatewayOpenAIWSSchedulerScoreWeightsView {
 	if s != nil && s.cfg != nil {
 		return GatewayOpenAIWSSchedulerScoreWeightsView{
-			Priority:  s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority,
-			Load:      s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Load,
-			Queue:     s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Queue,
-			ErrorRate: s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate,
-			TTFT:      s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT,
-			Reset:     s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Reset,
+			Priority:      s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority,
+			Load:          s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Load,
+			Queue:         s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Queue,
+			ErrorRate:     s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate,
+			TTFT:          s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT,
+			Reset:         s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Reset,
+			QuotaHeadroom: s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.QuotaHeadroom,
 		}
 	}
 	return GatewayOpenAIWSSchedulerScoreWeightsView{
-		Priority:  1.0,
-		Load:      1.0,
-		Queue:     0.7,
-		ErrorRate: 0.8,
-		TTFT:      0.5,
+		Priority:      1.0,
+		Load:          1.0,
+		Queue:         0.7,
+		ErrorRate:     0.8,
+		TTFT:          0.5,
+		Reset:         0.0,
+		QuotaHeadroom: 0.0,
 	}
 }
 
@@ -2909,7 +3032,50 @@ type GatewayOpenAIWSSchedulerScoreWeightsView struct {
 	Queue     float64
 	ErrorRate float64
 	TTFT      float64
-	Reset     float64
+	// Reset 倾向「会话窗口最早重置」的账号；0 表示关闭（默认）。
+	Reset         float64
+	QuotaHeadroom float64
+}
+
+func openAIQuotaHeadroomFactor(account *Account, now time.Time) float64 {
+	if account == nil || len(account.Extra) == 0 || openAIQuotaHeadroomSnapshotStale(account.Extra, now) {
+		return openAIQuotaHeadroomNeutralFactor
+	}
+	primaryUsedPercent, ok := resolveAccountExtraNumber(account.Extra, "codex_primary_used_percent", "codex_7d_used_percent")
+	if !ok || openAIQuotaWindowResetAny(account.Extra, now, "primary", "7d") {
+		return openAIQuotaHeadroomNeutralFactor
+	}
+
+	factor := 1 - clamp01(primaryUsedPercent/100)
+	if secondaryUsedPercent, ok := resolveAccountExtraNumber(account.Extra, "codex_secondary_used_percent", "codex_5h_used_percent"); ok &&
+		!openAIQuotaWindowResetAny(account.Extra, now, "secondary", "5h") {
+		secondaryRemaining := 1 - clamp01(secondaryUsedPercent/100)
+		if secondaryRemaining < openAIQuotaHeadroomSecondaryLowRemain {
+			factor *= openAIQuotaHeadroomNeutralFactor
+		}
+	}
+	return factor
+}
+
+func openAIQuotaHeadroomSnapshotStale(extra map[string]any, now time.Time) bool {
+	updatedRaw, ok := extra["codex_usage_updated_at"]
+	if !ok {
+		return true
+	}
+	updatedAt, err := parseTime(fmt.Sprint(updatedRaw))
+	if err != nil {
+		return true
+	}
+	return now.Sub(updatedAt) >= openAIQuotaHeadroomSnapshotStaleAfter
+}
+
+func openAIQuotaWindowResetAny(extra map[string]any, now time.Time, windows ...string) bool {
+	for _, window := range windows {
+		if openAIQuotaWindowReset(extra, window, now) {
+			return true
+		}
+	}
+	return false
 }
 
 func clamp01(value float64) float64 {

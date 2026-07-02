@@ -535,7 +535,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
 				QuotaPlatform:      quotaPlatform,
-				ChannelUsageFields: channelMapping.ToUsageFields(parsed.Model, upstreamModel),
+				ChannelUsageFields: channelMapping.ToUsageFields(requestModel, upstreamModel),
 				CyberBlocked:       cyberBlocked,
 			}); err != nil {
 				logger.L().With(
@@ -787,6 +787,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 			requestPayloadHash := service.HashUsageRequestPayload(body)
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+			cyberBlocked := service.GetOpsCyberPolicy(c) != nil
 			h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 					Result:             result,
@@ -803,6 +804,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 					APIKeyService:      h.apiKeyService,
 					QuotaPlatform:      quotaPlatform,
 					ChannelUsageFields: channelMapping.ToUsageFields(model, result.UpstreamModel),
+					CyberBlocked:       cyberBlocked,
 				}); err != nil {
 					logger.L().With(
 						zap.String("component", "handler.openai_gateway.videos"),

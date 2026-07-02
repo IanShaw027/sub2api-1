@@ -66,6 +66,53 @@ func TestAccountSupportsOpenAIEndpointCapability_TextEndpointAutoRouteAllowsConv
 	require.False(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAnthropicMessagesIngress))
 }
 
+func TestAccountSupportsOpenAIEndpointCapability_InputTokensRequiresAPIKeyResponses(t *testing.T) {
+	apiKey := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+	}
+	require.True(t, apiKey.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesInputTokens))
+
+	oauth := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}
+	require.False(t, oauth.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesInputTokens))
+
+	chatOnly := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"openai_capabilities": []any{"chat_completions"},
+		},
+	}
+	require.False(t, chatOnly.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesInputTokens))
+
+	responsesIngress := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"openai_capabilities": []any{"responses_ingress"},
+		},
+	}
+	require.True(t, responsesIngress.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesInputTokens))
+
+	inputTokens := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"openai_capabilities": []any{"responses_input_tokens"},
+		},
+	}
+	require.True(t, inputTokens.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesInputTokens))
+
+	grok := &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+	}
+	require.False(t, grok.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesInputTokens))
+}
+
 func TestAccountTextEndpointAutoRouteEnabled_IsAccountLevelForOpenAIAndAnthropic(t *testing.T) {
 	for _, account := range []*Account{
 		{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{"text_endpoint_auto_route": true}},

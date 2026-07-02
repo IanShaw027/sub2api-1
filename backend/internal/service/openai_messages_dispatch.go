@@ -1,6 +1,10 @@
 package service
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+)
 
 const (
 	defaultOpenAIMessagesDispatchOpusMappedModel   = "gpt-5.4"
@@ -99,6 +103,12 @@ func (g *Group) ResolveMessagesDispatchModel(requestedModel string) string {
 
 func (g *Group) ResolveMessagesDispatchModelWithSource(requestedModel string) (string, bool) {
 	if g == nil {
+		return "", false
+	}
+	if g.Platform == PlatformGrok {
+		if claudeMessagesDispatchFamily(strings.TrimSpace(requestedModel)) != "" {
+			return xai.DefaultModelMapping()["grok"], false
+		}
 		return "", false
 	}
 	cfg := normalizeOpenAIMessagesDispatchModelConfig(g.MessagesDispatchModelConfig)

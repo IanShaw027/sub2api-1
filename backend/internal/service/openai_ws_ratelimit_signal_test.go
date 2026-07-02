@@ -741,6 +741,32 @@ func TestOpenAIGatewayService_UpdateCodexUsageSnapshot_NonExhaustedSnapshotDoesN
 	}
 }
 
+func TestOpenAIGatewayService_RecordCodexRateLimitEventUpdatesSnapshotWithoutRateLimit(t *testing.T) {
+	repo := &openAICodexSnapshotAsyncRepo{
+		updateExtraCh: make(chan map[string]any, 1),
+		rateLimitCh:   make(chan time.Time, 1),
+	}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	account := &Account{ID: 603, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	resetAt := time.Now().Add(90 * time.Minute).Unix()
+	payload := []byte(`{"type":"codex.rate_limits","metered_limit_name":"codex","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":95,"window_minutes":300,"reset_at":` + strconv.FormatInt(resetAt, 10) + `},"secondary":null},"credits":{"has_credits":false,"unlimited":false,"balance":null}}`)
+
+	svc.recordOpenAIWSCodexRateLimitSnapshot(context.Background(), account, payload)
+
+	select {
+	case updates := <-repo.updateExtraCh:
+		require.Equal(t, 95.0, updates["codex_5h_used_percent"])
+	case <-time.After(2 * time.Second):
+		t.Fatal("等待 codex rate_limits 快照落库超时")
+	}
+
+	select {
+	case resetAt := <-repo.rateLimitCh:
+		t.Fatalf("advisory 快照不应写入运行时限流: %v", resetAt)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 func TestOpenAIGatewayService_UpdateCodexUsageSnapshot_ThrottlesExtraWrites(t *testing.T) {
 	repo := &openAICodexSnapshotAsyncRepo{
 		updateExtraCh: make(chan map[string]any, 2),

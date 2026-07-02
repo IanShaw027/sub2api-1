@@ -874,7 +874,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	c.Writer.Flush()
 
 	// Create OpenAI Responses API payload
-	payload := createOpenAITestPayload(testModelID, isOAuth)
+	payload := createOpenAITestPayloadWithPrompt(testModelID, isOAuth, prompt)
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event
@@ -933,6 +933,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	return s.processOpenAIStream(c, resp.Body)
 }
 
+// testGrokAccountConnection tests a Grok OAuth account through xAI's Responses API.
 // testOpenAIChatCompletionsConnection tests an OpenAI-compatible APIKey account
 // through the raw /v1/chat/completions endpoint.
 func (s *AccountTestService) testOpenAIChatCompletionsConnection(
@@ -1015,7 +1016,7 @@ func (s *AccountTestService) testOpenAIResponsesLikeAccountConnection(
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
-	payload := createOpenAITestPayload(testModelID, isOAuth)
+	payload := createOpenAITestPayloadWithPrompt(testModelID, isOAuth, prompt)
 	payloadBytes, _ := json.Marshal(payload)
 
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -1032,10 +1033,6 @@ func (s *AccountTestService) testOpenAIResponsesLikeAccountConnection(
 	if providerName == "grok" {
 		req.Header.Set("User-Agent", "sub2api-grok/1.0")
 	}
-	if strings.TrimSpace(prompt) != "" {
-		req.Header.Set("X-Account-Test-Prompt", prompt)
-	}
-
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
@@ -1995,6 +1992,14 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader)
 
 // createOpenAITestPayload creates a test payload for OpenAI Responses API
 func createOpenAITestPayload(modelID string, isOAuth bool) map[string]any {
+	return createOpenAITestPayloadWithPrompt(modelID, isOAuth, "")
+}
+
+func createOpenAITestPayloadWithPrompt(modelID string, isOAuth bool, prompt string) map[string]any {
+	testPrompt := strings.TrimSpace(prompt)
+	if testPrompt == "" {
+		testPrompt = "hi"
+	}
 	payload := map[string]any{
 		"model": modelID,
 		"input": []map[string]any{
@@ -2003,7 +2008,7 @@ func createOpenAITestPayload(modelID string, isOAuth bool) map[string]any {
 				"content": []map[string]any{
 					{
 						"type": "input_text",
-						"text": "hi",
+						"text": testPrompt,
 					},
 				},
 			},

@@ -262,7 +262,7 @@ func TestGatewaySSEAudit_ResponseFailedTerminalEnvelopeDominatesLaterDone(t *tes
 	}
 }
 
-func TestGatewaySSEAudit_ResponseFailedTerminalEnvelopeWithRateLimitAdvisoryReturnsFailover(t *testing.T) {
+func TestGatewaySSEAudit_ResponseFailedTerminalEnvelopeWithCodexRateLimitAdvisoryDoesNotReturn429(t *testing.T) {
 	invokers := []struct {
 		name        string
 		passthrough bool
@@ -283,11 +283,12 @@ func TestGatewaySSEAudit_ResponseFailedTerminalEnvelopeWithRateLimitAdvisoryRetu
 			result, err := invokeGatewaySSEAuditHandler(t, body, invoker.passthrough)
 			require.Error(t, err)
 			var failoverErr *UpstreamFailoverError
-			require.ErrorAs(t, err, &failoverErr)
-			require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+			require.False(t, errors.As(err, &failoverErr))
 			require.NotNil(t, result)
 			require.Nil(t, result.usage)
-			require.Empty(t, result.body)
+			require.Contains(t, result.contentType, "application/json")
+			require.Contains(t, result.body, `"type":"upstream_error"`)
+			require.Contains(t, result.body, `temporary upstream failure`)
 		})
 	}
 }

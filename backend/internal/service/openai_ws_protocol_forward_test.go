@@ -2322,7 +2322,7 @@ func TestOpenAIGatewayService_Forward_WSv2StreamEOFAfterDeltaEmitsFailedTerminal
 	require.NotContains(t, responseBody, "data: [DONE]", "Responses stream must end with a terminal event, not [DONE]")
 }
 
-func TestOpenAIGatewayService_Forward_WSv2SoftRateLimitAdvisoryReturnsFailover(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2CodexRateLimitAdvisoryContinues(t *testing.T) {
 	setGinTestMode()
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
@@ -2342,7 +2342,7 @@ func TestOpenAIGatewayService_Forward_WSv2SoftRateLimitAdvisoryReturnsFailover(t
 			return
 		}
 
-		_ = conn.WriteJSON(map[string]any{
+		if err := conn.WriteJSON(map[string]any{
 			"type":               "codex.rate_limits",
 			"metered_limit_name": "codex",
 			"rate_limits": map[string]any{
@@ -2360,7 +2360,26 @@ func TestOpenAIGatewayService_Forward_WSv2SoftRateLimitAdvisoryReturnsFailover(t
 				"unlimited":   false,
 				"balance":     nil,
 			},
-		})
+		}); err != nil {
+			t.Errorf("write codex.rate_limits failed: %v", err)
+			return
+		}
+		if err := conn.WriteJSON(map[string]any{
+			"type": "response.completed",
+			"response": map[string]any{
+				"id":     "resp_ws_soft_limit_completed",
+				"model":  "gpt-5.3-codex",
+				"status": "completed",
+				"usage": map[string]any{
+					"input_tokens":  2,
+					"output_tokens": 3,
+				},
+				"output": []any{},
+			},
+		}); err != nil {
+			t.Errorf("write response.completed failed: %v", err)
+			return
+		}
 	}))
 	defer wsServer.Close()
 
@@ -2412,13 +2431,13 @@ func TestOpenAIGatewayService_Forward_WSv2SoftRateLimitAdvisoryReturnsFailover(t
 
 	body := []byte(`{"model":"gpt-5.3-codex","stream":false,"input":[{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.Error(t, err)
-	require.Nil(t, result)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
-	require.Nil(t, upstream.lastReq, "WS 软限额提示不应透传也不应回退 HTTP")
-	require.Empty(t, rec.Body.String(), "切换账号前不应向客户端输出软限额提示")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_ws_soft_limit_completed", result.RequestID)
+	require.Equal(t, 2, result.Usage.InputTokens)
+	require.Equal(t, 3, result.Usage.OutputTokens)
+	require.Nil(t, upstream.lastReq, "WS 90% advisory 不应回退 HTTP")
+	require.Contains(t, rec.Body.String(), `"id":"resp_ws_soft_limit_completed"`)
 }
 
 func TestOpenAIGatewayService_Forward_WSv2RetryFiveTimesThenFallbackHTTP(t *testing.T) {
