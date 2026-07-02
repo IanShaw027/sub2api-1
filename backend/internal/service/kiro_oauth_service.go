@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
 const (
@@ -595,27 +597,39 @@ func (s *KiroOAuthService) exchangeCallbackProgress(ctx context.Context, input *
 	s.sessionStore.Delete(input.SessionID)
 
 	tokenInfo := buildKiroTokenInfo(tokenPayload, query, loginOption)
-	s.enrichTokenInfo(ctx, tokenInfo)
+	if err := s.enrichTokenInfoForExternalIDPAuth(ctx, nil, tokenInfo); err != nil {
+		return nil, err
+	}
 	return &KiroOAuthProgressResult{TokenInfo: tokenInfo}, nil
 }
 
 func (s *KiroOAuthService) enrichTokenInfo(ctx context.Context, tokenInfo *KiroTokenInfo) {
-	s.enrichTokenInfoForAccount(ctx, nil, tokenInfo)
+	_, _ = s.enrichTokenInfoForAccountResult(ctx, nil, tokenInfo)
 }
 
 func (s *KiroOAuthService) enrichTokenInfoForAccount(ctx context.Context, baseAccount *Account, tokenInfo *KiroTokenInfo) {
-	if s == nil || tokenInfo == nil || tokenInfo.AccessToken == "" || tokenInfo.ProfileARN == "" || s.usageService == nil {
-		return
-	}
+	_, _ = s.enrichTokenInfoForAccountResult(ctx, baseAccount, tokenInfo)
+}
 
-	credentials := map[string]any{
-		"access_token":  tokenInfo.AccessToken,
-		"refresh_token": tokenInfo.RefreshToken,
-		"profile_arn":   tokenInfo.ProfileARN,
-		"region":        firstNonEmptyKiroString(tokenInfo.Region, "us-east-1"),
-		"auth_region":   tokenInfo.AuthRegion,
-		"api_region":    tokenInfo.APIRegion,
+func (s *KiroOAuthService) enrichTokenInfoForAccountResult(ctx context.Context, baseAccount *Account, tokenInfo *KiroTokenInfo) (*KiroUsageLimits, error) {
+	if s == nil || tokenInfo == nil || tokenInfo.AccessToken == "" || tokenInfo.ProfileARN == "" || s.usageService == nil {
+		return nil, nil
 	}
+	credentials := map[string]any{
+		"access_token":   tokenInfo.AccessToken,
+		"refresh_token":  tokenInfo.RefreshToken,
+		"auth_method":    tokenInfo.AuthMethod,
+		"client_id":      tokenInfo.ClientID,
+		"profile_arn":    tokenInfo.ProfileARN,
+		"region":         firstNonEmptyKiroString(tokenInfo.Region, "us-east-1"),
+		"auth_region":    tokenInfo.AuthRegion,
+		"api_region":     tokenInfo.APIRegion,
+		"token_endpoint": tokenInfo.TokenEndpoint,
+		"issuer_url":     tokenInfo.IssuerURL,
+		"scopes":         tokenInfo.Scopes,
+		"login_hint":     tokenInfo.LoginHint,
+	}
+	credentials = NormalizeKiroOAuthCredentialShape(credentials)
 	account := baseAccount
 	if account == nil {
 		account = &Account{
@@ -636,7 +650,7 @@ func (s *KiroOAuthService) enrichTokenInfoForAccount(ctx context.Context, baseAc
 	usageService := s.usageService.WithProxyRepo(s.proxyRepo)
 	usage, err := usageService.FetchUsageLimits(ctx, account, tokenInfo.AccessToken)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	subscriptionTitle := strings.TrimSpace(usage.SubscriptionTitle())
@@ -647,6 +661,7 @@ func (s *KiroOAuthService) enrichTokenInfoForAccount(ctx context.Context, baseAc
 	if resetAt := usage.ResetAt(); resetAt != nil {
 		tokenInfo.UsageResetAt = resetAt.Format(time.RFC3339)
 	}
+	return usage, nil
 }
 
 func (s *KiroOAuthService) EnrichRefreshedCredentials(ctx context.Context, credentials map[string]any) map[string]any {
@@ -662,6 +677,40 @@ func (s *KiroOAuthService) EnrichRefreshedCredentialsForAccount(ctx context.Cont
 		s.enrichTokenInfoForAccount(ctx, account, tokenInfo)
 	}
 	return MergeCredentials(credentials, kiroTokenInfoMap(tokenInfo))
+}
+
+func (s *KiroOAuthService) ValidateAndEnrichRefreshedCredentialsForAccount(ctx context.Context, account *Account, credentials map[string]any) (map[string]any, error) {
+	if credentials == nil {
+		return nil, nil
+	}
+	tokenInfo := buildKiroTokenInfo(credentials, url.Values{}, NormalizeKiroAuthMethod(credentials))
+	if err := s.enrichTokenInfoForExternalIDPAuth(ctx, account, tokenInfo); err != nil {
+		return nil, err
+	}
+	return MergeCredentials(credentials, kiroTokenInfoMap(tokenInfo)), nil
+}
+
+func (s *KiroOAuthService) enrichTokenInfoForExternalIDPAuth(ctx context.Context, account *Account, tokenInfo *KiroTokenInfo) error {
+	if tokenInfo == nil {
+		return nil
+	}
+	if NormalizeKiroAuthMethod(kiroTokenInfoMap(tokenInfo)) != "external_idp" {
+		s.enrichTokenInfoForAccount(ctx, account, tokenInfo)
+		return nil
+	}
+	if tokenInfo.AccessToken == "" {
+		return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp access_token is required")
+	}
+	if tokenInfo.ProfileARN == "" {
+		return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp profile_arn is required")
+	}
+	if _, err := s.enrichTokenInfoForAccountResult(ctx, account, tokenInfo); err != nil {
+		return infraerrors.BadRequest(
+			"INVALID_KIRO_CREDENTIALS",
+			"kiro external_idp credentials refreshed, but Kiro rejected them: "+err.Error(),
+		)
+	}
+	return nil
 }
 
 func kiroTokenInfoMap(tokenInfo *KiroTokenInfo) map[string]any {

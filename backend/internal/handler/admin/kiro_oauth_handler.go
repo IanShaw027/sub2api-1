@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"errors"
+	"io"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -27,7 +29,10 @@ type KiroGenerateAuthURLRequest struct {
 func (h *KiroOAuthHandler) GenerateAuthURL(c *gin.Context) {
 	var req KiroGenerateAuthURLRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		req = KiroGenerateAuthURLRequest{}
+		if !errors.Is(err, io.EOF) {
+			response.BadRequest(c, "请求无效: "+err.Error())
+			return
+		}
 	}
 	if h == nil || h.oauthService == nil {
 		response.InternalError(c, "Kiro OAuth service is not configured")
@@ -165,7 +170,11 @@ func (h *KiroOAuthHandler) RefreshToken(c *gin.Context) {
 	}
 	if h.oauthService != nil {
 		account.Credentials = credentials
-		credentials = h.oauthService.EnrichRefreshedCredentialsForAccount(c.Request.Context(), account, credentials)
+		credentials, err = h.oauthService.ValidateAndEnrichRefreshedCredentialsForAccount(c.Request.Context(), account, credentials)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
 	}
 
 	response.Success(c, credentials)

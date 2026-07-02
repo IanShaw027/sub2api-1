@@ -508,6 +508,7 @@ func NormalizeKiroOAuthCredentialShape(credentials map[string]any) map[string]an
 	copyKiroCredentialStringIfEmpty(normalized, normalized, "expires_at", "expiresAt", "expires_at")
 	copyKiroCredentialStringIfEmpty(normalized, normalized, "auth_method", "authMethod", "auth_method")
 	copyKiroCredentialStringIfEmpty(normalized, normalized, "client_id", "clientId", "client_id")
+	copyKiroCredentialStringIfEmpty(normalized, normalized, "client_secret", "clientSecret", "client_secret")
 	copyKiroCredentialStringIfEmpty(normalized, normalized, "issuer_url", "issuerUrl", "issuer_url")
 	copyKiroCredentialStringIfEmpty(normalized, normalized, "scopes", "scopes", "scope")
 	copyKiroCredentialStringIfEmpty(normalized, normalized, "token_endpoint", "tokenEndpoint", "token_endpoint")
@@ -521,6 +522,7 @@ func NormalizeKiroOAuthCredentialShape(credentials map[string]any) map[string]an
 		copyKiroCredentialStringIfEmpty(normalized, rawToken, "expires_at", "expiresAt", "expires_at")
 		copyKiroCredentialStringIfEmpty(normalized, rawToken, "auth_method", "authMethod", "auth_method")
 		copyKiroCredentialStringIfEmpty(normalized, rawToken, "client_id", "clientId", "client_id")
+		copyKiroCredentialStringIfEmpty(normalized, rawToken, "client_secret", "clientSecret", "client_secret")
 		copyKiroCredentialStringIfEmpty(normalized, rawToken, "issuer_url", "issuerUrl", "issuer_url")
 		copyKiroCredentialStringIfEmpty(normalized, rawToken, "scopes", "scopes", "scope")
 		copyKiroCredentialStringIfEmpty(normalized, rawToken, "token_endpoint", "tokenEndpoint", "token_endpoint")
@@ -535,9 +537,12 @@ func NormalizeKiroOAuthCredentialShape(credentials map[string]any) map[string]an
 
 	if NormalizeKiroAuthMethod(normalized) == "external_idp" {
 		normalized["auth_method"] = "external_idp"
+		delete(normalized, "tokenEndpoint")
 	}
 	if endpoint := resolveKiroExternalIDPTokenEndpoint(normalized); endpoint != "" {
 		normalized["token_endpoint"] = endpoint
+	} else if NormalizeKiroAuthMethod(normalized) == "external_idp" {
+		delete(normalized, "token_endpoint")
 	}
 	if profileARN := strings.TrimSpace(stringCredential(normalized, "profile_arn")); profileARN != "" && strings.TrimSpace(stringCredential(normalized, "profile_id")) == "" {
 		normalized["profile_id"] = profileARNProfileID(profileARN)
@@ -576,10 +581,10 @@ func resolveKiroExternalIDPTokenEndpoint(credentials map[string]any) string {
 		return ""
 	}
 	if endpoint := strings.TrimSpace(stringCredential(credentials, "token_endpoint")); endpoint != "" {
-		return endpoint
+		return normalizeKiroMicrosoftTokenEndpoint(endpoint)
 	}
 	if endpoint := strings.TrimSpace(stringCredential(credentials, "tokenEndpoint")); endpoint != "" {
-		return endpoint
+		return normalizeKiroMicrosoftTokenEndpoint(endpoint)
 	}
 	issuerURL := strings.TrimSpace(stringCredential(credentials, "issuer_url"))
 	if issuerURL == "" {
@@ -594,10 +599,10 @@ func deriveMicrosoftTokenEndpointFromIssuer(issuerURL string) string {
 		return ""
 	}
 	parsed, err := url.Parse(issuerURL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil {
 		return ""
 	}
-	if !strings.Contains(strings.ToLower(parsed.Host), "login.microsoftonline.com") {
+	if strings.ToLower(parsed.Scheme) != "https" || parsed.Port() != "" || strings.ToLower(parsed.Hostname()) != "login.microsoftonline.com" {
 		return ""
 	}
 	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
@@ -605,7 +610,26 @@ func deriveMicrosoftTokenEndpointFromIssuer(issuerURL string) string {
 		return ""
 	}
 	tenant := parts[0]
-	return fmt.Sprintf("%s://%s/%s/oauth2/v2.0/token", parsed.Scheme, parsed.Host, tenant)
+	return fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenant)
+}
+
+func normalizeKiroMicrosoftTokenEndpoint(endpoint string) string {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return ""
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil {
+		return ""
+	}
+	if strings.ToLower(parsed.Scheme) != "https" || parsed.Port() != "" || strings.ToLower(parsed.Hostname()) != "login.microsoftonline.com" {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) != 4 || strings.TrimSpace(parts[0]) == "" || parts[1] != "oauth2" || parts[2] != "v2.0" || parts[3] != "token" {
+		return ""
+	}
+	return fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", parts[0])
 }
 
 func stringCredential(credentials map[string]any, key string) string {

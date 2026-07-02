@@ -138,6 +138,9 @@ func (r *KiroTokenRefresher) refreshKiroSocialToken(ctx context.Context, account
 	if err = r.doKiroJSONRequest(ctx, account, url, host, payload, &out); err != nil {
 		return "", "", "", "", err
 	}
+	if err = validateKiroRefreshResponse(out); err != nil {
+		return "", "", "", "", err
+	}
 	if ValidateKiroRefreshTokenHealth(out.RefreshToken) == nil {
 		refreshToken = out.RefreshToken
 	}
@@ -161,6 +164,9 @@ func (r *KiroTokenRefresher) refreshKiroIDCToken(ctx context.Context, account *A
 	var out kiroRefreshResponse
 	if err = r.doKiroJSONRequest(ctx, account, url, host, payload, &out); err != nil {
 		return "", "", "", fmt.Errorf("kiro idc refresh failed: %w", err)
+	}
+	if err = validateKiroRefreshResponse(out); err != nil {
+		return "", "", "", err
 	}
 	if ValidateKiroRefreshTokenHealth(out.RefreshToken) == nil {
 		refreshToken = out.RefreshToken
@@ -216,6 +222,9 @@ func (r *KiroTokenRefresher) refreshKiroExternalIDPToken(ctx context.Context, ac
 	if err := decodeKiroRefreshResponse(body, &out); err != nil {
 		return "", "", "", err
 	}
+	if err := validateKiroRefreshResponse(out); err != nil {
+		return "", "", "", err
+	}
 	if ValidateKiroRefreshTokenHealth(out.RefreshToken) == nil {
 		refreshToken = out.RefreshToken
 	}
@@ -232,6 +241,13 @@ type kiroRefreshResponse struct {
 	RefreshToken string
 	ProfileARN   string
 	ExpiresIn    int64
+}
+
+func validateKiroRefreshResponse(out kiroRefreshResponse) error {
+	if strings.TrimSpace(out.AccessToken) == "" {
+		return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro refresh response missing access_token")
+	}
+	return nil
 }
 
 func (r *KiroTokenRefresher) doKiroJSONRequest(ctx context.Context, account *Account, url, host string, payload any, out any) error {

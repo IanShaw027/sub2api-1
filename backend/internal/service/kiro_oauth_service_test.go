@@ -129,6 +129,114 @@ func TestKiroOAuthServiceExchangeCallbackUsesCallbackPathAndLoginOptionForTokenE
 	}
 }
 
+func TestKiroOAuthServiceExchangeCallbackRejectsExternalIDPWhenKiroUsageForbidden(t *testing.T) {
+	usageUpstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			if req.Method != http.MethodGet || req.URL.Host != "q.us-east-1.amazonaws.com" || req.URL.Path != "/getUsageLimits" {
+				t.Fatalf("unexpected validation request: %s %s", req.Method, req.URL.String())
+			}
+			if got := req.Header.Get("TokenType"); got != "EXTERNAL_IDP" {
+				t.Fatalf("TokenType header = %q, want EXTERNAL_IDP", got)
+			}
+			return &http.Response{
+				StatusCode: http.StatusForbidden,
+				Body:       io.NopCloser(strings.NewReader(`{"message":"User is not authorized to make this call."}`)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, usageUpstream, &TLSFingerprintProfileService{}, nil)
+	defer svc.Stop()
+
+	const (
+		sessionID    = "session-external-idp"
+		state        = "state-external-idp"
+		code         = "code-external-idp"
+		codeVerifier = "verifier-external-idp"
+		redirectURI  = "http://localhost:3128"
+		callbackURL  = "http://localhost:3128/signin/callback?code=" + code + "&state=" + state + "&login_option=external_idp"
+	)
+	svc.sessionStore.Set(sessionID, &KiroOAuthSession{
+		State:           state,
+		CodeVerifier:    codeVerifier,
+		RedirectURI:     redirectURI,
+		CallbackBaseURL: redirectURI,
+		CreatedAt:       time.Now(),
+	})
+
+	originalExchange := kiroCodeExchangeFunc
+	kiroCodeExchangeFunc = func(ctx context.Context, gotCode, gotVerifier, gotRedirect, gotProxy string) (map[string]any, error) {
+		if gotCode != code {
+			t.Fatalf("unexpected code: got=%q want=%q", gotCode, code)
+		}
+		return map[string]any{
+			"accessToken":   "new-ms-access-token",
+			"refreshToken":  "new-ms-refresh-token",
+			"expiresIn":     3600,
+			"authMethod":    "external_idp",
+			"provider":      "ExternalIdp",
+			"clientId":      "microsoft-public-client",
+			"tokenEndpoint": "https://login.microsoftonline.com/tenant/oauth2/v2.0/token",
+			"issuerUrl":     "https://login.microsoftonline.com/tenant/v2.0",
+			"profileArn":    "arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD",
+		}, nil
+	}
+	t.Cleanup(func() {
+		kiroCodeExchangeFunc = originalExchange
+	})
+
+	result, err := svc.ExchangeCallbackOrStartContinuation(context.Background(), &KiroExchangeCallbackInput{
+		SessionID:   sessionID,
+		CallbackURL: callbackURL,
+	})
+
+	if err == nil {
+		t.Fatal("expected external_idp callback to fail when Kiro rejects the refreshed credentials")
+	}
+	if result != nil {
+		t.Fatalf("expected no token result on validation failure, got %#v", result)
+	}
+	if !strings.Contains(err.Error(), "Kiro rejected") {
+		t.Fatalf("error %q should mention Kiro rejection", err.Error())
+	}
+	if usageUpstream.calls != 1 {
+		t.Fatalf("usage validation calls = %d, want 1", usageUpstream.calls)
+	}
+}
+
+func TestKiroTokenRefresherRejectsRefreshResponseWithoutAccessToken(t *testing.T) {
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			if req.Method != http.MethodPost || req.URL.Path != "/refreshToken" {
+				t.Fatalf("unexpected refresh request: %s %s", req.Method, req.URL.String())
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"refreshToken":"new-refresh-token","expiresIn":3600}`)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+	refresher := NewKiroTokenRefresher().WithTransport(upstream, &TLSFingerprintProfileService{})
+
+	credentials, err := refresher.Refresh(context.Background(), &Account{
+		Platform:    PlatformKiro,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"refresh_token": "original-refresh-token"},
+		Concurrency: 1,
+	})
+
+	if err == nil {
+		t.Fatal("expected malformed Kiro refresh response to fail")
+	}
+	if credentials != nil {
+		t.Fatalf("expected no credentials on malformed response, got %#v", credentials)
+	}
+	if !strings.Contains(err.Error(), "access_token") {
+		t.Fatalf("error %q should mention missing access_token", err.Error())
+	}
+}
+
 func TestBuildKiroTokenInfoExtractsProfileIDFromARN(t *testing.T) {
 	tokenInfo := buildKiroTokenInfo(map[string]any{
 		"profileArn": "arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK",

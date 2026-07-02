@@ -152,6 +152,55 @@ func TestAdminServiceCreateAccount_NormalizesExternalIDPRawKiroShape(t *testing.
 	require.Equal(t, "CQRAXYDP9YVD", account.GetCredential("profile_id"))
 }
 
+func TestNormalizeKiroOAuthCredentialShapeRejectsUnsafeExternalIDPTokenEndpoints(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name        string
+		credentials map[string]any
+	}{
+		{
+			name: "explicit private http endpoint",
+			credentials: map[string]any{
+				"auth_method":    "external_idp",
+				"token_endpoint": "http://127.0.0.1:8081/capture",
+			},
+		},
+		{
+			name: "microsoft lookalike issuer",
+			credentials: map[string]any{
+				"auth_method": "external_idp",
+				"issuer_url":  "https://login.microsoftonline.com.evil.example/tenant/v2.0",
+			},
+		},
+	} {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			normalized := NormalizeKiroOAuthCredentialShape(tt.credentials)
+
+			require.Empty(t, normalized["token_endpoint"])
+		})
+	}
+}
+
+func TestNormalizeKiroOAuthCredentialShapeAcceptsMicrosoftExternalIDPEndpointAndClientSecret(t *testing.T) {
+	t.Parallel()
+
+	normalized := NormalizeKiroOAuthCredentialShape(map[string]any{
+		"authMethod":    "idc",
+		"clientId":      "client-id",
+		"clientSecret":  "client-secret",
+		"issuerUrl":     "https://login.microsoftonline.com/tenant/v2.0",
+		"tokenEndpoint": "https://login.microsoftonline.com/tenant/oauth2/v2.0/token",
+	})
+
+	require.Equal(t, "client-id", normalized["client_id"])
+	require.Equal(t, "client-secret", normalized["client_secret"])
+	require.Equal(t, "https://login.microsoftonline.com/tenant/oauth2/v2.0/token", normalized["token_endpoint"])
+}
+
 func TestAdminServiceUpdateAccount_AllowsSwitchToKiroAPIKeyType(t *testing.T) {
 	t.Parallel()
 
