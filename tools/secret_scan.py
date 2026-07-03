@@ -33,6 +33,7 @@ ALLOW_VALUE_FRAGMENTS = (
 PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("private key block", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |)?PRIVATE KEY-----")),
     ("GitHub token", re.compile(r"\bgh[opsu]_[A-Za-z0-9_]{36,}\b")),
+    ("GitHub fine-grained PAT", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{82,}\b")),
     ("Stripe live secret", re.compile(r"\b(?:sk|rk)_live_[A-Za-z0-9]{24,}\b")),
     ("Stripe webhook secret", re.compile(r"\bwhsec_[A-Za-z0-9]{24,}\b")),
     ("OpenAI-style API key", re.compile(r"\bsk-(?:proj-|ant-api03-)?[A-Za-z0-9_-]{24,}\b")),

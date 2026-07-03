@@ -153,6 +153,15 @@ def main() -> int:
     exception_index = {}
     errors = []
 
+    audit_error = audit.get("error")
+    if audit_error:
+        if isinstance(audit_error, dict):
+            code = audit_error.get("code") or audit_error.get("errno") or "unknown"
+            summary = audit_error.get("summary") or audit_error.get("message") or audit_error.get("detail") or audit_error
+            errors.append(f"pnpm audit returned an error: {code}: {summary}")
+        else:
+            errors.append(f"pnpm audit returned an error: {audit_error}")
+
     for exc in exceptions:
         missing = [field for field in REQUIRED_FIELDS if not exc.get(field)]
         if missing:
