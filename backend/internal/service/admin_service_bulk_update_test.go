@@ -198,6 +198,20 @@ func TestAdminService_BulkUpdateAccounts_GroupOnlySkipsAccountTableUpdate(t *tes
 	require.Empty(t, result.FailedIDs)
 }
 
+func TestApplyBulkUpdateInputToAccount_ProxyIDZeroClearsProxy(t *testing.T) {
+	t.Parallel()
+
+	existingProxy := int64(42)
+	account := &Account{ProxyID: &existingProxy}
+	clearProxy := int64(0)
+
+	applyBulkUpdateInputToAccount(account, &BulkUpdateAccountsInput{
+		ProxyID: &clearProxy,
+	})
+
+	require.Nil(t, account.ProxyID)
+}
+
 func TestAdminService_BulkUpdateAccounts_NilGroupRepoReturnsError(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{}
 	svc := &adminServiceImpl{accountRepo: repo}

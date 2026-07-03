@@ -550,6 +550,38 @@ func TestAdminServiceBulkUpdateAccounts_DoesNotMutateSharedKiroCredentialPayload
 	require.Equal(t, "eu-west-1", repo.updatedAccounts[1].GetCredential("region"))
 }
 
+func TestAdminServiceBulkUpdateAccounts_KiroFallbackClearsProxyOnZero(t *testing.T) {
+	t.Parallel()
+
+	existingProxy := int64(42)
+	clearProxy := int64(0)
+	repo := &kiroDefaultAccountRepoStub{
+		getByIDsAccounts: []*Account{
+			{
+				ID:       77,
+				Platform: PlatformKiro,
+				Type:     AccountTypeOAuth,
+				ProxyID:  &existingProxy,
+				Credentials: map[string]any{
+					"refresh_token": "first-refresh",
+				},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:  []int64{77},
+		ProxyID:     &clearProxy,
+		Credentials: map[string]any{"region": "eu-west-1"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, repo.updatedAccounts, 1)
+	require.Nil(t, repo.updatedAccounts[0].ProxyID)
+}
+
 func TestAdminServiceCreateAccount_ValidatesGroupsBeforePersist(t *testing.T) {
 	t.Parallel()
 

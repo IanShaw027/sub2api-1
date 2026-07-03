@@ -757,6 +757,35 @@ func TestBulkUpdateAccounts_PropagatesProxyToShadow(t *testing.T) {
 	require.Equal(t, newProxy, *storedShadow.ProxyID)
 }
 
+func TestBulkUpdateAccounts_OpenAIExtraFallbackClearsProxyOnZero(t *testing.T) {
+	ctx := context.Background()
+	repo := newSparkShadowRepoStub()
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	existingProxy := int64(7)
+	parent := &Account{
+		Name:        "bulk-parent-openai-extra",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		ProxyID:     &existingProxy,
+		Credentials: map[string]any{"chatgpt_account_id": "org-openai-extra"},
+		Extra:       map[string]any{"note": "before"},
+	}
+	require.NoError(t, repo.Create(ctx, parent))
+
+	_, err := svc.BulkUpdateAccounts(ctx, &BulkUpdateAccountsInput{
+		AccountIDs: []int64{parent.ID},
+		ProxyID:    int64Ptr(0),
+		Extra:      map[string]any{"note": "after"},
+	})
+	require.NoError(t, err)
+
+	storedParent, ok := repo.accounts[parent.ID]
+	require.True(t, ok)
+	require.Nil(t, storedParent.ProxyID)
+}
+
 // ── 外审 P1/P2 加固:专用测试桩 ───────────────────────────────────────────
 
 // raceCreateRepoStub 模拟并发竞态:对影子的 Create 撞一母一影唯一索引(返回错误),

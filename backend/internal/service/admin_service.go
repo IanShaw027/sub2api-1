@@ -3801,7 +3801,11 @@ func applyBulkUpdateInputToAccount(account *Account, input *BulkUpdateAccountsIn
 		account.Name = input.Name
 	}
 	if input.ProxyID != nil {
-		account.ProxyID = input.ProxyID
+		if *input.ProxyID == 0 {
+			account.ProxyID = nil
+		} else {
+			account.ProxyID = input.ProxyID
+		}
 	}
 	if input.Concurrency != nil {
 		account.Concurrency = *input.Concurrency
