@@ -8,6 +8,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestEnsureOpenAIResponsesImageGenerationToolChoiceAuto_NormalizesExplicitImageChoice(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		toolChoice any
+	}{
+		{name: "object", toolChoice: map[string]any{"type": "image_generation"}},
+		{name: "string", toolChoice: "image_generation"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reqBody := map[string]any{
+				"model": "gpt-5.5",
+				"tools": []any{
+					map[string]any{"type": "image_generation", "output_format": "png"},
+				},
+				"tool_choice": tc.toolChoice,
+			}
+
+			modified := ensureOpenAIResponsesImageGenerationToolChoiceAuto(reqBody)
+
+			require.True(t, modified)
+			require.Equal(t, "auto", reqBody["tool_choice"])
+		})
+	}
+}
+
 func TestApplyCodexOAuthTransform_ToolContinuationPreservesInput(t *testing.T) {
 	// 续链场景：保留 item_reference 与 id，但不再强制 store=true。
 

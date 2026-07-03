@@ -57,6 +57,6 @@ func TestShouldFailoverOpenAIUpstreamResponse_CyberPolicyIsNonRetryable(t *testi
 func TestShouldFailoverOpenAIPassthroughResponse_CyberPolicyIsNonRetryable(t *testing.T) {
 	body := []byte(`{"response":{"error":{"code":"cyber_policy","message":"blocked by policy"}}}`)
 
-	require.False(t, shouldFailoverOpenAIPassthroughResponse(http.StatusTooManyRequests, body))
-	require.False(t, shouldFailoverOpenAIPassthroughResponse(http.StatusInternalServerError, body))
+	require.False(t, shouldFailoverOpenAIPassthroughResponse(nil, http.StatusTooManyRequests, body))
+	require.False(t, shouldFailoverOpenAIPassthroughResponse(nil, http.StatusInternalServerError, body))
 }

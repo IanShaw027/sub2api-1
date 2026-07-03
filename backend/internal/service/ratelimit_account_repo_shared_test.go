@@ -17,13 +17,18 @@ type rateLimitAccountRepoStub struct {
 	lastCredentials        map[string]any
 	lastErrorMsg           string
 	lastTempReason         string
+	lastTempID             int64
 	lastRateLimitedAt      time.Time
+	accountsByID           map[int64]*Account
 	tempErr                error
 }
 
 func (r *rateLimitAccountRepoStub) Create(context.Context, *Account) error { return nil }
-func (r *rateLimitAccountRepoStub) GetByID(context.Context, int64) (*Account, error) {
-	return nil, nil
+func (r *rateLimitAccountRepoStub) GetByID(_ context.Context, id int64) (*Account, error) {
+	if r.accountsByID == nil {
+		return nil, nil
+	}
+	return r.accountsByID[id], nil
 }
 func (r *rateLimitAccountRepoStub) GetByIDs(context.Context, []int64) ([]*Account, error) {
 	return nil, nil
@@ -105,6 +110,7 @@ func (r *rateLimitAccountRepoStub) SetModelRateLimit(context.Context, int64, str
 func (r *rateLimitAccountRepoStub) SetOverloaded(context.Context, int64, time.Time) error { return nil }
 func (r *rateLimitAccountRepoStub) SetTempUnschedulable(ctx context.Context, id int64, until time.Time, reason string) error {
 	r.tempCalls++
+	r.lastTempID = id
 	r.lastTempReason = reason
 	return r.tempErr
 }
