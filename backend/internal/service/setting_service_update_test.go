@@ -534,6 +534,72 @@ func TestSettingService_UpdateSettings_OpenAIOAuthImageBridgeTransportSettings(t
 	require.Equal(t, "true", repo.updates[SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient])
 }
 
+func TestSettingService_UpdateSettings_OpenAIWSDeltaRuntimeSettings(t *testing.T) {
+	resetOpenAIWSDeltaRuntimeSettingsForTest()
+	t.Cleanup(resetOpenAIWSDeltaRuntimeSettingsForTest)
+
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		OpenAIWSDeltaShadowEnabled:                true,
+		OpenAIWSActiveDeltaEnabled:                false,
+		OpenAIWSTempDiagLogsEnabled:               true,
+		OpenAIWSDeltaRuntimeSettingsLoaded:        true,
+		OpenAIWSNeutralPrewarmPercent:             20,
+		OpenAIWSSessionIdleTTLSeconds:             120,
+		OpenAIStickyReservePercent:                10,
+		OpenAIStickyWaitTimeoutSeconds:            30,
+		OpenAIWSMinIdlePerAccount:                 1,
+		OpenAIWSMaxIdlePerAccount:                 4,
+		OpenAIAdvancedSchedulerEnabled:            true,
+		OpenAIOAuthImageBridgeFreshUpstreamClient: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "true", repo.updates[SettingKeyOpenAIWSDeltaShadowEnabled])
+	require.Equal(t, "false", repo.updates[SettingKeyOpenAIWSActiveDeltaEnabled])
+	require.Equal(t, "true", repo.updates[SettingKeyOpenAIWSTempDiagLogsEnabled])
+	require.True(t, openAIWSDeltaShadowEnabled())
+	require.False(t, openAIWSActiveDeltaEnabled(), "active-delta should follow runtime DB-backed setting without restart")
+	require.False(t, shouldSuppressOpenAIWSTemporaryDiagnosticLog("temporary_diag=delta remove_after_debug=true"))
+}
+
+func TestSettingService_UpdateSettings_OpenAIWSDeltaRuntimeSettingsDefaultTrueOnPartialUpdate(t *testing.T) {
+	resetOpenAIWSDeltaRuntimeSettingsForTest()
+	t.Cleanup(resetOpenAIWSDeltaRuntimeSettingsForTest)
+
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{})
+	require.NoError(t, err)
+	require.Equal(t, "true", repo.updates[SettingKeyOpenAIWSDeltaShadowEnabled])
+	require.Equal(t, "true", repo.updates[SettingKeyOpenAIWSActiveDeltaEnabled])
+	require.Equal(t, "false", repo.updates[SettingKeyOpenAIWSTempDiagLogsEnabled])
+	require.True(t, openAIWSDeltaShadowEnabled())
+	require.True(t, openAIWSActiveDeltaEnabled())
+	require.True(t, shouldSuppressOpenAIWSTemporaryDiagnosticLog("temporary_diag=delta remove_after_debug=true"))
+}
+
+func TestSettingService_LoadOpenAIWSDeltaRuntimeSettingsInitializesCache(t *testing.T) {
+	resetOpenAIWSDeltaRuntimeSettingsForTest()
+	t.Cleanup(resetOpenAIWSDeltaRuntimeSettingsForTest)
+
+	repo := &kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyOpenAIWSDeltaShadowEnabled:  "true",
+			SettingKeyOpenAIWSActiveDeltaEnabled:  "false",
+			SettingKeyOpenAIWSTempDiagLogsEnabled: "true",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	require.NoError(t, svc.LoadOpenAIWSDeltaRuntimeSettings(context.Background()))
+	require.True(t, openAIWSDeltaShadowEnabled())
+	require.False(t, openAIWSActiveDeltaEnabled())
+	require.False(t, shouldSuppressOpenAIWSTemporaryDiagnosticLog("temporary_diag=delta remove_after_debug=true"))
+}
+
 func TestSettingService_UpdateSettings_AntigravityUserAgentVersion(t *testing.T) {
 	repo := &settingUpdateRepoStub{}
 	svc := NewSettingService(repo, &config.Config{})

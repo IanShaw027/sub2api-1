@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -923,12 +922,7 @@ func shouldSuppressOpenAIWSTemporaryDiagnosticLog(format string) bool {
 	if !strings.Contains(format, "remove_after_debug=true") && !strings.Contains(format, "temporary_diag=") {
 		return false
 	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("OPENAI_WS_TEMP_DIAG_LOGS"))) {
-	case "1", "true", "yes", "on":
-		return false
-	default:
-		return true
-	}
+	return !openAIWSTemporaryDiagnosticLogsEnabled()
 }
 
 func isOpenAIWSModeDebugEnabled() bool {

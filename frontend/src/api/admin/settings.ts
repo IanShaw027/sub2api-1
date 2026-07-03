@@ -937,6 +937,9 @@ export interface SystemSettings {
   openai_ws_max_idle_per_account?: number;
   openai_ws_neutral_prewarm_percent?: number;
   openai_ws_session_idle_ttl_seconds?: number;
+  openai_ws_delta_shadow_enabled?: boolean;
+  openai_ws_active_delta_enabled?: boolean;
+  openai_ws_temp_diag_logs_enabled?: boolean;
   openai_oauth_image_bridge_disable_keepalives?: boolean;
   openai_oauth_image_bridge_fresh_upstream_client?: boolean;
 
@@ -1233,6 +1236,9 @@ export interface UpdateSettingsRequest {
   openai_ws_max_idle_per_account?: number;
   openai_ws_neutral_prewarm_percent?: number;
   openai_ws_session_idle_ttl_seconds?: number;
+  openai_ws_delta_shadow_enabled?: boolean;
+  openai_ws_active_delta_enabled?: boolean;
+  openai_ws_temp_diag_logs_enabled?: boolean;
   openai_oauth_image_bridge_disable_keepalives?: boolean;
   openai_oauth_image_bridge_fresh_upstream_client?: boolean;
   // Balance & quota notification

@@ -1029,6 +1029,30 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(payload).not.toHaveProperty("openai_ws_max_idle_per_account");
   });
 
+  it("submits dynamic OpenAI WS delta and diagnostic log switches", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
+    setupState.form.openai_ws_delta_shadow_enabled = true;
+    setupState.form.openai_ws_active_delta_enabled = false;
+    setupState.form.openai_ws_temp_diag_logs_enabled = true;
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        openai_ws_delta_shadow_enabled: true,
+        openai_ws_active_delta_enabled: false,
+        openai_ws_temp_diag_logs_enabled: true,
+      }),
+    );
+  });
+
   it("updates provider enablement immediately and reloads providers", async () => {
     const provider = {
       id: 7,

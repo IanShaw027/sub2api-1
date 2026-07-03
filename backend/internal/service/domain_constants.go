@@ -466,6 +466,15 @@ const (
 	// SettingKeyOpenAIWSSessionIdleTTLSeconds stores how long an idle
 	// session-bound WS connection may wait for follow-up turns before eviction.
 	SettingKeyOpenAIWSSessionIdleTTLSeconds = "openai_ws_session_idle_ttl_seconds"
+	// SettingKeyOpenAIWSDeltaShadowEnabled controls strict-delta shadow/context
+	// collection at runtime. It is DB-backed so admin changes do not require restart.
+	SettingKeyOpenAIWSDeltaShadowEnabled = "openai_ws_delta_shadow_enabled"
+	// SettingKeyOpenAIWSActiveDeltaEnabled controls payload mutation for strict-delta
+	// continuation at runtime.
+	SettingKeyOpenAIWSActiveDeltaEnabled = "openai_ws_active_delta_enabled"
+	// SettingKeyOpenAIWSTempDiagLogsEnabled controls removable temporary OpenAI WS
+	// diagnostics (temporary_diag/remove_after_debug) at runtime.
+	SettingKeyOpenAIWSTempDiagLogsEnabled = "openai_ws_temp_diag_logs_enabled"
 
 	// =========================
 	// Sora S3 存储配置

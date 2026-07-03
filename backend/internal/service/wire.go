@@ -671,6 +671,9 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	if err := svc.LoadOpenAIWSPoolRuntimeSettings(context.Background()); err != nil {
 		logger.LegacyPrintf("service.setting", "Warning: load openai ws pool runtime settings failed: %v", err)
 	}
+	if err := svc.LoadOpenAIWSDeltaRuntimeSettings(context.Background()); err != nil {
+		logger.LegacyPrintf("service.setting", "Warning: load openai ws delta runtime settings failed: %v", err)
+	}
 	antigravity.SetUserAgentVersionResolver(svc.GetAntigravityUserAgentVersion)
 	return svc
 }

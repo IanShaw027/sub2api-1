@@ -254,6 +254,10 @@ type SystemSettings struct {
 	OpenAIWSMaxIdlePerAccount                 int
 	OpenAIWSNeutralPrewarmPercent             int
 	OpenAIWSSessionIdleTTLSeconds             int
+	OpenAIWSDeltaShadowEnabled                bool
+	OpenAIWSActiveDeltaEnabled                bool
+	OpenAIWSTempDiagLogsEnabled               bool
+	OpenAIWSDeltaRuntimeSettingsLoaded        bool
 	OpenAIOAuthImageBridgeDisableKeepAlives   bool
 	OpenAIOAuthImageBridgeFreshUpstreamClient bool
 

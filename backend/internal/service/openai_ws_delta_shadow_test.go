@@ -86,6 +86,44 @@ func TestOpenAIWSDeltaShadowLogIncludesContinuationMatchDiagnostics(t *testing.T
 	require.Equal(t, "resp-cached", log.CachedConnLastResponseID)
 }
 
+func TestLogOpenAIWSDeltaShadowSuppressesTemporaryDiagnosticByDefaultWithoutDisablingActiveDelta(t *testing.T) {
+	t.Setenv("OPENAI_WS_TEMP_DIAG_LOGS", "")
+	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
+	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
+	require.NoError(t, logger.Init(logger.InitOptions{
+		Level:       "debug",
+		Format:      "json",
+		ServiceName: "sub2api",
+		Environment: "test",
+		Output: logger.OutputOptions{
+			ToStdout: true,
+			ToFile:   false,
+		},
+		Sampling: logger.SamplingOptions{Enabled: false},
+	}))
+	logSink := &openAIWSModeLogTestSink{}
+	logger.SetSink(logSink)
+	t.Cleanup(func() { logger.SetSink(nil) })
+
+	require.True(t, openAIWSDeltaShadowEnabled())
+	require.True(t, openAIWSActiveDeltaEnabled())
+
+	logOpenAIWSDeltaShadow(openAIWSDeltaShadowLog{
+		RequestID:      "req-delta-shadow-log",
+		AccountID:      202,
+		ConnID:         "conn-current",
+		Candidate:      true,
+		Active:         true,
+		DeltaItems:     1,
+		DeltaBytes:     128,
+		FullItems:      100,
+		FullBytes:      8192,
+		FallbackReason: "-",
+	})
+
+	require.Empty(t, logSink.snapshot(), "delta shadow temporary diagnostic logging should be suppressible without disabling active-delta")
+}
+
 type openAIWSNthWriteFailConn struct {
 	openAIWSCaptureConn
 	failOnWrite int
@@ -510,7 +548,7 @@ func TestEvaluateDeltaShadowCandidate_FallbackReasons(t *testing.T) {
 	divergent.Cached = divCached
 	require.Equal(t, "raw_client_divergent", evaluateOpenAIWSDeltaShadowCandidate(divergent).FallbackReason)
 
-	// tool continuation in the candidate delta is still blocked.
+	// self-contained tool continuation in the candidate delta is safe to send as delta.
 	toolInput := `{"type":"message","role":"user","content":"call tool"}`
 	toolCall := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
 	toolOutput := `{"type":"function_call_output","call_id":"call_1","output":"ok"}`
@@ -534,7 +572,7 @@ func TestEvaluateDeltaShadowCandidate_FallbackReasons(t *testing.T) {
 			rawVsClientVisibleEqual: true,
 		},
 	}
-	require.Equal(t, "delta_tool_continuation_self_contained", evaluateOpenAIWSDeltaShadowCandidate(tool).FallbackReason)
+	require.True(t, evaluateOpenAIWSDeltaShadowCandidate(tool).Candidate)
 }
 
 func TestOpenAIWSActiveDeltaContextPayloadRawRequiresConnAffinity(t *testing.T) {
@@ -591,7 +629,7 @@ func TestEvaluateDeltaShadowCandidate_OutputBoundaryBreak(t *testing.T) {
 	require.Equal(t, "prefix_break_output", log.FallbackReason)
 }
 
-func TestEvaluateDeltaShadowCandidate_OutputBoundaryBreakIncludesShapeDiagnostics(t *testing.T) {
+func TestEvaluateDeltaShadowCandidate_NormalizesReasoningSummaryContentEnvelope(t *testing.T) {
 	msg1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}`
 	rawReasoning := `{"type":"reasoning","id":"rs_1","status":"completed","summary":[{"type":"summary_text","text":"hidden raw reasoning"}]}`
 	replayedReasoning := `{"type":"reasoning","content":[{"type":"output_text","text":"hidden raw reasoning"}]}`
@@ -620,12 +658,10 @@ func TestEvaluateDeltaShadowCandidate_OutputBoundaryBreakIncludesShapeDiagnostic
 		ConnMostRecentResponseID: "resp_1", CurrentPayload: payload,
 		Cached: cached, CachedFound: true,
 	})
-	require.False(t, log.Candidate)
-	require.Equal(t, "output", log.BreakBoundary)
-	require.Equal(t, "reasoning", log.BreakItemType)
-	require.Equal(t, "reasoning", log.BreakCachedItemType)
-	require.Contains(t, log.BreakCachedShape, "summary[]")
-	require.Contains(t, log.BreakCurrentShape, "content[]")
+	require.True(t, log.Candidate)
+	require.True(t, log.PrefixMatch)
+	require.Equal(t, 1, log.DeltaItems)
+	require.Empty(t, log.BreakBoundary)
 	require.NotContains(t, log.BreakCachedShape, "hidden raw reasoning")
 	require.NotContains(t, log.BreakCurrentShape, "hidden raw reasoning")
 }
@@ -1162,6 +1198,7 @@ func TestOpenAIWSActiveDelta_StickyPreviousResponseFullReplayStillSendsOnlyTrail
 
 func TestOpenAIWSActiveDelta_ResponseConnMissUsesSessionConnAndStillSendsDelta(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	t.Setenv("OPENAI_WS_TEMP_DIAG_LOGS", "1")
 	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
 	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
 	require.NoError(t, logger.Init(logger.InitOptions{
@@ -2019,7 +2056,7 @@ func TestOpenAIWSActiveDelta_PreviousResponseNotFoundRecoveryRestoresNextTurnDel
 	require.Equal(t, "resp_restore_delta_3", cached.lastResponseID)
 }
 
-func TestOpenAIWSActiveDelta_ColdFunctionCallOutputFullPayloadUsesFreshWS(t *testing.T) {
+func TestOpenAIWSActiveDelta_ColdSelfContainedFunctionCallOutputUsesFreshWSDelta(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
 	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
@@ -2123,14 +2160,12 @@ func TestOpenAIWSActiveDelta_ColdFunctionCallOutputFullPayloadUsesFreshWS(t *tes
 	secondConn.mu.Unlock()
 	require.Len(t, secondWrites, 1)
 	fullReplayWrite := requestToJSONString(secondWrites[0])
-	require.False(t, gjson.Get(fullReplayWrite, "previous_response_id").Exists(), "cold full tool replay must full-create without the stale active-delta anchor")
+	require.Equal(t, "resp_tool_prev_1", gjson.Get(fullReplayWrite, "previous_response_id").String(), "self-contained tool delta may safely anchor to the previous response")
 	require.True(t, gjson.Get(fullReplayWrite, "store").Exists())
 	require.False(t, gjson.Get(fullReplayWrite, "store").Bool())
-	require.Len(t, gjson.Get(fullReplayWrite, "input").Array(), 3, "cold full tool replay must send the full original input sequence")
-	require.Equal(t, "function_call", gjson.Get(fullReplayWrite, "input.1.type").String())
-	require.Equal(t, "call_1", gjson.Get(fullReplayWrite, "input.1.call_id").String())
-	require.Equal(t, "function_call_output", gjson.Get(fullReplayWrite, "input.2.type").String())
-	require.Equal(t, "call_1", gjson.Get(fullReplayWrite, "input.2.call_id").String())
+	require.Len(t, gjson.Get(fullReplayWrite, "input").Array(), 1, "call_id-bound tool delta should send only the new tool output")
+	require.Equal(t, "function_call_output", gjson.Get(fullReplayWrite, "input.0.type").String())
+	require.Equal(t, "call_1", gjson.Get(fullReplayWrite, "input.0.call_id").String())
 
 	stateStore := svc.getOpenAIWSStateStore()
 	stickyAccountID, err := stateStore.GetResponseAccount(context.Background(), groupID, apiKeyID, "resp_tool_prev_2")
@@ -2580,15 +2615,14 @@ func TestOpenAIWSActiveDelta_AllowsConnReanchorWithHistoricalFunctionCallOutputW
 	require.Equal(t, "continue", gjson.Get(deltaJSON, "input.0.content.0.text").String())
 }
 
-func TestOpenAIWSActiveDelta_BlocksConnReanchorWhenDeltaIsLegacyRoleToolOutput(t *testing.T) {
+func TestOpenAIWSActiveDelta_BlocksConnReanchorWhenFunctionOutputMissingCallID(t *testing.T) {
 	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
-	output1 := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
-	toolOutput := `{"role":"tool","tool_call_id":"call_1","content":"ok"}`
-	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[` + input1 + `,` + output1 + `,` + toolOutput + `]}`)
+	toolOutput := `{"type":"function_call_output","output":"ok"}`
+	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[` + input1 + `,` + toolOutput + `]}`)
 	nonInputHash, _ := openAIWSNonInputHash(payload)
 
 	deltaPayload, deltaLog, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
-		RequestID:                "req_legacy_role_tool_output_reanchor",
+		RequestID:                "req_missing_call_id_tool_output_reanchor",
 		AccountID:                78004,
 		LeaseConnID:              "oa_ws_78004_new",
 		ConnMostRecentResponseID: "",
@@ -2599,7 +2633,41 @@ func TestOpenAIWSActiveDelta_BlocksConnReanchorWhenDeltaIsLegacyRoleToolOutput(t
 		Cached: openAIWSSessionContextValue{
 			accountID:               78004,
 			connID:                  "",
-			lastResponseID:          "resp_tool_legacy",
+			lastResponseID:          "resp_tool_missing_call_id",
+			materializedHashes:      [][32]byte{mustItemHash(t, input1)},
+			materializedCount:       1,
+			inputCount:              1,
+			nonInputHash:            nonInputHash,
+			rawVsClientVisibleEqual: true,
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, applied)
+	require.False(t, deltaLog.Candidate)
+	require.Equal(t, "delta_tool_continuation_missing_call_id", deltaLog.FallbackReason)
+	require.Nil(t, deltaPayload)
+}
+
+func TestOpenAIWSActiveDelta_BlocksFunctionOutputWhenOnlyEnvelopeIDMatchesCallID(t *testing.T) {
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	output1 := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
+	toolOutput := `{"type":"function_call_output","id":"call_1","output":"ok"}`
+	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[` + input1 + `,` + output1 + `,` + toolOutput + `]}`)
+	nonInputHash, _ := openAIWSNonInputHash(payload)
+
+	deltaPayload, deltaLog, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+		RequestID:                "req_id_only_tool_output",
+		AccountID:                78004,
+		LeaseConnID:              "oa_ws_78004_new",
+		ConnMostRecentResponseID: "",
+		CurrentPayload:           payload,
+		HasFunctionCallOutput:    true,
+		AllowConnReanchor:        true,
+		CachedFound:              true,
+		Cached: openAIWSSessionContextValue{
+			accountID:               78004,
+			connID:                  "",
+			lastResponseID:          "resp_tool_id_only",
 			materializedHashes:      [][32]byte{mustItemHash(t, input1), mustItemHash(t, output1)},
 			materializedCount:       2,
 			inputCount:              1,
@@ -2610,11 +2678,11 @@ func TestOpenAIWSActiveDelta_BlocksConnReanchorWhenDeltaIsLegacyRoleToolOutput(t
 	require.NoError(t, err)
 	require.False(t, applied)
 	require.False(t, deltaLog.Candidate)
-	require.Equal(t, "has_function_call_output", deltaLog.FallbackReason)
+	require.Equal(t, "delta_tool_continuation_missing_call_id", deltaLog.FallbackReason)
 	require.Nil(t, deltaPayload)
 }
 
-func TestOpenAIWSActiveDelta_SkipsSelfContainedFunctionCallOutputDelta(t *testing.T) {
+func TestOpenAIWSActiveDelta_AllowsSelfContainedFunctionCallOutputDelta(t *testing.T) {
 	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
 	toolCall := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
 	toolOutput := `{"type":"function_call_output","call_id":"call_1","output":"ok"}`
@@ -2641,9 +2709,53 @@ func TestOpenAIWSActiveDelta_SkipsSelfContainedFunctionCallOutputDelta(t *testin
 		},
 	})
 	require.NoError(t, err)
-	require.False(t, applied)
-	require.Nil(t, deltaPayload)
-	require.False(t, deltaLog.Candidate)
-	require.Equal(t, "delta_tool_continuation_self_contained", deltaLog.FallbackReason)
-	require.False(t, deltaLog.Active)
+	require.True(t, applied)
+	require.NotNil(t, deltaPayload)
+	require.True(t, deltaLog.Candidate)
+	require.True(t, deltaLog.Active)
+	require.Equal(t, 2, deltaLog.DeltaItems)
+	deltaJSON := requestToJSONString(deltaPayload)
+	require.Equal(t, "function_call", gjson.Get(deltaJSON, "input.0.type").String())
+	require.Equal(t, "function_call_output", gjson.Get(deltaJSON, "input.1.type").String())
+}
+
+func TestOpenAIWSActiveDelta_AllowsConnReanchorWhenFunctionOutputCallIDIsBoundToMaterializedContext(t *testing.T) {
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	toolCall := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
+	toolOutput := `{"role":"tool","tool_call_id":"call_1","content":"ok"}`
+	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[` + input1 + `,` + toolCall + `,` + toolOutput + `]}`)
+	nonInputHash, _ := openAIWSNonInputHash(payload)
+
+	deltaPayload, deltaLog, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+		RequestID:                "req_bound_tool_output_reanchor",
+		AccountID:                78004,
+		LeaseConnID:              "oa_ws_78004_new",
+		ConnMostRecentResponseID: "",
+		CurrentPayload:           payload,
+		HasFunctionCallOutput:    true,
+		AllowConnReanchor:        true,
+		CachedFound:              true,
+		Cached: openAIWSSessionContextValue{
+			accountID:               78004,
+			connID:                  "",
+			lastResponseID:          "resp_tool_bound",
+			materializedHashes:      [][32]byte{mustItemHash(t, input1), mustItemHash(t, toolCall)},
+			materializedCount:       2,
+			inputCount:              1,
+			nonInputHash:            nonInputHash,
+			rawVsClientVisibleEqual: true,
+		},
+	})
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.True(t, deltaLog.Candidate)
+	require.Equal(t, 1, deltaLog.DeltaItems)
+	require.Equal(t, "resp_tool_bound", gjson.Get(requestToJSONString(deltaPayload), "previous_response_id").String())
+}
+
+func TestOpenAIWSCanonicalReasoningNormalizesNullAndEmptyEnvelopeFields(t *testing.T) {
+	rawReasoning := `{"type":"reasoning","id":"rs_1","status":"completed","encrypted_content":null,"summary":[{"type":"summary_text","text":"thinking"}],"content":[]}`
+	replayedReasoning := `{"type":"reasoning","summary":[],"content":[{"type":"output_text","text":"thinking"}]}`
+
+	require.Equal(t, mustItemHash(t, rawReasoning), mustItemHash(t, replayedReasoning))
 }

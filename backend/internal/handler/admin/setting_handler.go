@@ -691,6 +691,9 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		OpenAIWSMaxIdlePerAccount:                 settings.OpenAIWSMaxIdlePerAccount,
 		OpenAIWSNeutralPrewarmPercent:             settings.OpenAIWSNeutralPrewarmPercent,
 		OpenAIWSSessionIdleTTLSeconds:             settings.OpenAIWSSessionIdleTTLSeconds,
+		OpenAIWSDeltaShadowEnabled:                settings.OpenAIWSDeltaShadowEnabled,
+		OpenAIWSActiveDeltaEnabled:                settings.OpenAIWSActiveDeltaEnabled,
+		OpenAIWSTempDiagLogsEnabled:               settings.OpenAIWSTempDiagLogsEnabled,
 		OpenAIOAuthImageBridgeDisableKeepAlives:   settings.OpenAIOAuthImageBridgeDisableKeepAlives,
 		OpenAIOAuthImageBridgeFreshUpstreamClient: settings.OpenAIOAuthImageBridgeFreshUpstreamClient,
 		BalanceLowNotifyEnabled:                   settings.BalanceLowNotifyEnabled,
@@ -1068,6 +1071,9 @@ type UpdateSettingsRequest struct {
 	OpenAIWSMaxIdlePerAccount                 *int  `json:"openai_ws_max_idle_per_account"`
 	OpenAIWSNeutralPrewarmPercent             *int  `json:"openai_ws_neutral_prewarm_percent"`
 	OpenAIWSSessionIdleTTLSeconds             *int  `json:"openai_ws_session_idle_ttl_seconds"`
+	OpenAIWSDeltaShadowEnabled                *bool `json:"openai_ws_delta_shadow_enabled"`
+	OpenAIWSActiveDeltaEnabled                *bool `json:"openai_ws_active_delta_enabled"`
+	OpenAIWSTempDiagLogsEnabled               *bool `json:"openai_ws_temp_diag_logs_enabled"`
 	OpenAIOAuthImageBridgeDisableKeepAlives   *bool `json:"openai_oauth_image_bridge_disable_keepalives"`
 	OpenAIOAuthImageBridgeFreshUpstreamClient *bool `json:"openai_oauth_image_bridge_fresh_upstream_client"`
 
@@ -2725,6 +2731,25 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAIWSSessionIdleTTLSeconds
 		}(),
+		OpenAIWSDeltaShadowEnabled: func() bool {
+			if req.OpenAIWSDeltaShadowEnabled != nil {
+				return *req.OpenAIWSDeltaShadowEnabled
+			}
+			return previousSettings.OpenAIWSDeltaShadowEnabled
+		}(),
+		OpenAIWSActiveDeltaEnabled: func() bool {
+			if req.OpenAIWSActiveDeltaEnabled != nil {
+				return *req.OpenAIWSActiveDeltaEnabled
+			}
+			return previousSettings.OpenAIWSActiveDeltaEnabled
+		}(),
+		OpenAIWSTempDiagLogsEnabled: func() bool {
+			if req.OpenAIWSTempDiagLogsEnabled != nil {
+				return *req.OpenAIWSTempDiagLogsEnabled
+			}
+			return previousSettings.OpenAIWSTempDiagLogsEnabled
+		}(),
+		OpenAIWSDeltaRuntimeSettingsLoaded: true,
 		OpenAIOAuthImageBridgeDisableKeepAlives: func() bool {
 			if req.OpenAIOAuthImageBridgeDisableKeepAlives != nil {
 				return *req.OpenAIOAuthImageBridgeDisableKeepAlives
@@ -3140,6 +3165,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		OpenAIWSMaxIdlePerAccount:                 updatedSettings.OpenAIWSMaxIdlePerAccount,
 		OpenAIWSNeutralPrewarmPercent:             updatedSettings.OpenAIWSNeutralPrewarmPercent,
 		OpenAIWSSessionIdleTTLSeconds:             updatedSettings.OpenAIWSSessionIdleTTLSeconds,
+		OpenAIWSDeltaShadowEnabled:                updatedSettings.OpenAIWSDeltaShadowEnabled,
+		OpenAIWSActiveDeltaEnabled:                updatedSettings.OpenAIWSActiveDeltaEnabled,
+		OpenAIWSTempDiagLogsEnabled:               updatedSettings.OpenAIWSTempDiagLogsEnabled,
 		OpenAIOAuthImageBridgeDisableKeepAlives:   updatedSettings.OpenAIOAuthImageBridgeDisableKeepAlives,
 		OpenAIOAuthImageBridgeFreshUpstreamClient: updatedSettings.OpenAIOAuthImageBridgeFreshUpstreamClient,
 		BalanceLowNotifyEnabled:                   updatedSettings.BalanceLowNotifyEnabled,
@@ -3723,6 +3751,15 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.OpenAIWSSessionIdleTTLSeconds != after.OpenAIWSSessionIdleTTLSeconds {
 		changed = append(changed, "openai_ws_session_idle_ttl_seconds")
+	}
+	if before.OpenAIWSDeltaShadowEnabled != after.OpenAIWSDeltaShadowEnabled {
+		changed = append(changed, "openai_ws_delta_shadow_enabled")
+	}
+	if before.OpenAIWSActiveDeltaEnabled != after.OpenAIWSActiveDeltaEnabled {
+		changed = append(changed, "openai_ws_active_delta_enabled")
+	}
+	if before.OpenAIWSTempDiagLogsEnabled != after.OpenAIWSTempDiagLogsEnabled {
+		changed = append(changed, "openai_ws_temp_diag_logs_enabled")
 	}
 	if before.OpenAIOAuthImageBridgeDisableKeepAlives != after.OpenAIOAuthImageBridgeDisableKeepAlives {
 		changed = append(changed, "openai_oauth_image_bridge_disable_keepalives")

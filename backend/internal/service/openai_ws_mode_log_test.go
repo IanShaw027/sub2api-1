@@ -105,6 +105,40 @@ func TestLogOpenAIWSModeInfoAllowsTemporaryDiagnosticsWhenExplicitlyEnabled(t *t
 	require.Contains(t, events[0].Message, "openai_ws_diag_start")
 }
 
+func TestOpenAIWSTemporaryDiagnosticLogSwitchCanChangeAtRuntime(t *testing.T) {
+	t.Setenv("OPENAI_WS_TEMP_DIAG_LOGS", "")
+	resetOpenAIWSDeltaRuntimeSettingsForTest()
+	t.Cleanup(resetOpenAIWSDeltaRuntimeSettingsForTest)
+
+	err := logger.Init(logger.InitOptions{
+		Level:       "debug",
+		Format:      "json",
+		ServiceName: "sub2api",
+		Environment: "test",
+		Output: logger.OutputOptions{
+			ToStdout: true,
+			ToFile:   false,
+		},
+		Sampling: logger.SamplingOptions{Enabled: false},
+	})
+	require.NoError(t, err)
+
+	sink := &openAIWSModeLogTestSink{}
+	logger.SetSink(sink)
+	t.Cleanup(func() { logger.SetSink(nil) })
+
+	logOpenAIWSModeInfo("openai_ws_diag_start temporary_diag=sticky_select remove_after_debug=true account_id=%d", 123)
+	require.Empty(t, sink.snapshot())
+
+	StoreOpenAIWSDeltaRuntimeSettings(true, true, true)
+	logOpenAIWSModeInfo("openai_ws_diag_start temporary_diag=sticky_select remove_after_debug=true account_id=%d", 456)
+	require.Len(t, sink.snapshot(), 1)
+
+	StoreOpenAIWSDeltaRuntimeSettings(true, true, false)
+	logOpenAIWSModeInfo("openai_ws_diag_start temporary_diag=sticky_select remove_after_debug=true account_id=%d", 789)
+	require.Len(t, sink.snapshot(), 1, "runtime switch should suppress new temporary diagnostics without restart")
+}
+
 func TestLogOpenAIWSModeInfoSilentWhenDebugDisabled(t *testing.T) {
 	err := logger.Init(logger.InitOptions{
 		Level:       "info",

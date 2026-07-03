@@ -828,6 +828,30 @@ func (s *SettingService) LoadOpenAIWSPoolRuntimeSettings(ctx context.Context) er
 	return nil
 }
 
+// LoadOpenAIWSDeltaRuntimeSettings initializes process-local strict-delta
+// switches from DB-backed settings during startup, before any admin settings
+// page is opened. Env vars remain only boot defaults for missing DB settings.
+func (s *SettingService) LoadOpenAIWSDeltaRuntimeSettings(ctx context.Context) error {
+	if s == nil || s.settingRepo == nil {
+		return nil
+	}
+	values, err := s.settingRepo.GetMultiple(ctx, []string{
+		SettingKeyOpenAIWSDeltaShadowEnabled,
+		SettingKeyOpenAIWSActiveDeltaEnabled,
+		SettingKeyOpenAIWSTempDiagLogsEnabled,
+	})
+	if err != nil {
+		return fmt.Errorf("get openai ws delta runtime settings: %w", err)
+	}
+	parsed := s.parseSettings(values)
+	StoreOpenAIWSDeltaRuntimeSettings(
+		parsed.OpenAIWSDeltaShadowEnabled,
+		parsed.OpenAIWSActiveDeltaEnabled,
+		parsed.OpenAIWSTempDiagLogsEnabled,
+	)
+	return nil
+}
+
 // GetFrontendURL 获取前端基础URL（数据库优先，fallback 到配置文件）
 func (s *SettingService) GetFrontendURL(ctx context.Context) string {
 	val, err := s.settingRepo.GetValue(ctx, SettingKeyFrontendURL)
@@ -2266,6 +2290,22 @@ func normalizeOpenAIWSSessionIdleTTLSeconds(value int) int {
 	return boundedIntOrDefault(value, 1, openAIWSSessionIdleTTLSecondsUpperBound, defaultOpenAIWSSessionIdleTTLSeconds)
 }
 
+func parseBoolSettingOrDefault(settings map[string]string, key string, fallback bool) bool {
+	raw, ok := settings[key]
+	if !ok {
+		return fallback
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return fallback
+	}
+	return value
+}
+
 func normalizeOpenAIWSPoolRuntimeSettingsForUpdate(settings *SystemSettings) (int, int) {
 	if settings == nil {
 		return defaultOpenAIWSNeutralPrewarmPercent, defaultOpenAIWSSessionIdleTTLSeconds
@@ -2310,6 +2350,14 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 		settings.OpenAIWSMaxIdlePerAccount,
 	)
 	openAIWSNeutralPrewarmPercent, openAIWSSessionIdleTTLSeconds := normalizeOpenAIWSPoolRuntimeSettingsForUpdate(settings)
+	openAIWSDeltaShadowEnabled := true
+	openAIWSActiveDeltaEnabled := true
+	openAIWSTempDiagLogsEnabled := false
+	if settings.OpenAIWSDeltaRuntimeSettingsLoaded {
+		openAIWSDeltaShadowEnabled = settings.OpenAIWSDeltaShadowEnabled
+		openAIWSActiveDeltaEnabled = settings.OpenAIWSActiveDeltaEnabled
+		openAIWSTempDiagLogsEnabled = settings.OpenAIWSTempDiagLogsEnabled
+	}
 	settings.WeChatConnectAppID = strings.TrimSpace(settings.WeChatConnectAppID)
 	settings.WeChatConnectAppSecret = strings.TrimSpace(settings.WeChatConnectAppSecret)
 	settings.WeChatConnectOpenAppID = strings.TrimSpace(firstNonEmpty(settings.WeChatConnectOpenAppID, settings.WeChatConnectAppID))
@@ -2679,6 +2727,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyOpenAIWSMaxIdlePerAccount] = strconv.Itoa(openAIWSMaxIdle)
 	updates[SettingKeyOpenAIWSNeutralPrewarmPercent] = strconv.Itoa(openAIWSNeutralPrewarmPercent)
 	updates[SettingKeyOpenAIWSSessionIdleTTLSeconds] = strconv.Itoa(openAIWSSessionIdleTTLSeconds)
+	updates[SettingKeyOpenAIWSDeltaShadowEnabled] = strconv.FormatBool(openAIWSDeltaShadowEnabled)
+	updates[SettingKeyOpenAIWSActiveDeltaEnabled] = strconv.FormatBool(openAIWSActiveDeltaEnabled)
+	updates[SettingKeyOpenAIWSTempDiagLogsEnabled] = strconv.FormatBool(openAIWSTempDiagLogsEnabled)
 	updates[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives] = strconv.FormatBool(settings.OpenAIOAuthImageBridgeDisableKeepAlives)
 	updates[SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient] = strconv.FormatBool(settings.OpenAIOAuthImageBridgeFreshUpstreamClient)
 
@@ -2938,6 +2989,11 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		openAIWSMinIdlePerAccount,
 		openAIWSMaxIdlePerAccount,
 		settings.OpenAIStickyReservePercent,
+	)
+	StoreOpenAIWSDeltaRuntimeSettings(
+		settings.OpenAIWSDeltaShadowEnabled || !settings.OpenAIWSDeltaRuntimeSettingsLoaded,
+		settings.OpenAIWSActiveDeltaEnabled || !settings.OpenAIWSDeltaRuntimeSettingsLoaded,
+		settings.OpenAIWSTempDiagLogsEnabled,
 	)
 	openAIOAuthImageBridgeTransportSettingsSF.Forget(openAIOAuthImageBridgeTransportSettingsKey)
 	openAIOAuthImageBridgeTransportSettingsCache.Store(&cachedOpenAIOAuthImageBridgeTransportSettings{
@@ -3849,6 +3905,9 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOpenAIStickyReservePercent:        strconv.Itoa(defaultOpenAIWSStickyReservePercent),
 		SettingKeyOpenAIWSNeutralPrewarmPercent:     strconv.Itoa(defaultOpenAIWSNeutralPrewarmPercent),
 		SettingKeyOpenAIWSSessionIdleTTLSeconds:     strconv.Itoa(defaultOpenAIWSSessionIdleTTLSeconds),
+		SettingKeyOpenAIWSDeltaShadowEnabled:        "true",
+		SettingKeyOpenAIWSActiveDeltaEnabled:        "true",
+		SettingKeyOpenAIWSTempDiagLogsEnabled:       "false",
 		// Identity patch defaults
 		SettingKeyEnableIdentityPatch: "true",
 		SettingKeyIdentityPatchPrompt: "",
@@ -4474,6 +4533,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	} else {
 		result.OpenAIWSSessionIdleTTLSeconds = defaultOpenAIWSSessionIdleTTLSeconds
 	}
+	result.OpenAIWSDeltaShadowEnabled = parseBoolSettingOrDefault(settings, SettingKeyOpenAIWSDeltaShadowEnabled, true)
+	result.OpenAIWSActiveDeltaEnabled = parseBoolSettingOrDefault(settings, SettingKeyOpenAIWSActiveDeltaEnabled, true)
+	result.OpenAIWSTempDiagLogsEnabled = parseBoolSettingOrDefault(settings, SettingKeyOpenAIWSTempDiagLogsEnabled, false)
+	result.OpenAIWSDeltaRuntimeSettingsLoaded = true
 	if raw, ok := settings[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives]; ok && strings.TrimSpace(raw) != "" {
 		result.OpenAIOAuthImageBridgeDisableKeepAlives = strings.EqualFold(strings.TrimSpace(raw), "true")
 	} else if s.cfg != nil {

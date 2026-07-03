@@ -3877,6 +3877,59 @@
                 </p>
               </div>
 
+              <div class="grid gap-4 rounded-lg border border-gray-200 p-4 dark:border-dark-700">
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ localText("Active Delta 动态启用", "Enable Active Delta") }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        localText(
+                          "满足严格前缀校验的 OpenAI Responses 续写请求只发送新增 input，并自动使用上一次 response_id；保存后立即生效，无需重启。",
+                          "Strictly verified OpenAI Responses continuations send only new input items and reuse the previous response_id; changes apply immediately without restart.",
+                        )
+                      }}
+                    </p>
+                  </div>
+                  <Toggle v-model="form.openai_ws_active_delta_enabled" />
+                </div>
+
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ localText("Delta Shadow/上下文采集", "Delta Shadow / Context Capture") }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        localText(
+                          "采集 strict-delta 判定所需的会话上下文指纹；关闭会同时让 Active Delta 无法命中。",
+                          "Captures session fingerprints required by strict-delta matching; disabling it prevents Active Delta hits.",
+                        )
+                      }}
+                    </p>
+                  </div>
+                  <Toggle v-model="form.openai_ws_delta_shadow_enabled" />
+                </div>
+
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ localText("临时诊断日志", "Temporary Diagnostic Logs") }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        localText(
+                          "控制 temporary_diag/remove_after_debug 日志输出，例如 openai_ws_delta_shadow；仅影响日志，不影响 Active Delta 逻辑。",
+                          "Controls temporary_diag/remove_after_debug logs such as openai_ws_delta_shadow; affects logging only, not Active Delta behavior.",
+                        )
+                      }}
+                    </p>
+                  </div>
+                  <Toggle v-model="form.openai_ws_temp_diag_logs_enabled" />
+                </div>
+              </div>
+
 	              <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
 	                <div class="flex items-center justify-between gap-4">
 	                  <div>
@@ -9408,6 +9461,9 @@ type SettingsForm = Omit<
   openai_advanced_scheduler_enabled: boolean;
   openai_sticky_reserve_percent: number;
   openai_sticky_wait_timeout_seconds: number;
+  openai_ws_delta_shadow_enabled: boolean;
+  openai_ws_active_delta_enabled: boolean;
+  openai_ws_temp_diag_logs_enabled: boolean;
   default_platform_quotas: DefaultPlatformQuotasMap;
   openai_oauth_image_bridge_disable_keepalives: boolean;
   openai_oauth_image_bridge_fresh_upstream_client: boolean;
@@ -9600,6 +9656,9 @@ const form = reactive<SettingsForm>({
   openai_sticky_wait_timeout_seconds: 30,
   openai_ws_neutral_prewarm_percent: 20,
   openai_ws_session_idle_ttl_seconds: 600,
+  openai_ws_delta_shadow_enabled: true,
+  openai_ws_active_delta_enabled: true,
+  openai_ws_temp_diag_logs_enabled: false,
   platform_default_account_model_config: {},
   // Identity patch (Claude -> Gemini)
   enable_identity_patch: true,
@@ -11244,6 +11303,9 @@ async function saveSettings() {
         normalizedOpenAIWSNeutralPrewarmPercent,
       openai_ws_session_idle_ttl_seconds:
         normalizedOpenAIWSSessionIdleTTLSeconds,
+      openai_ws_delta_shadow_enabled: form.openai_ws_delta_shadow_enabled,
+      openai_ws_active_delta_enabled: form.openai_ws_active_delta_enabled,
+      openai_ws_temp_diag_logs_enabled: form.openai_ws_temp_diag_logs_enabled,
       openai_oauth_image_bridge_disable_keepalives:
         form.openai_oauth_image_bridge_disable_keepalives,
       openai_oauth_image_bridge_fresh_upstream_client:

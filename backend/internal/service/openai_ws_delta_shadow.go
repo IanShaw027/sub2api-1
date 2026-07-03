@@ -13,23 +13,76 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/tidwall/gjson"
 )
 
+type openAIWSDeltaRuntimeSettings struct {
+	loaded              bool
+	deltaShadowEnabled  bool
+	activeDeltaEnabled  bool
+	tempDiagLogsEnabled bool
+}
+
+var openAIWSDeltaRuntimeSettingsCache atomic.Value // *openAIWSDeltaRuntimeSettings
+
+func defaultOpenAIWSDeltaRuntimeSettings() openAIWSDeltaRuntimeSettings {
+	return openAIWSDeltaRuntimeSettings{
+		deltaShadowEnabled:  os.Getenv("OPENAI_WS_DELTA_SHADOW_DISABLED") != "1",
+		activeDeltaEnabled:  os.Getenv("OPENAI_WS_ACTIVE_DELTA_DISABLED") != "1",
+		tempDiagLogsEnabled: openAIWSEnvBool("OPENAI_WS_TEMP_DIAG_LOGS", false),
+	}
+}
+
+func openAIWSEnvBool(key string, fallback bool) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
+}
+
+func loadOpenAIWSDeltaRuntimeSettings() openAIWSDeltaRuntimeSettings {
+	if cached, ok := openAIWSDeltaRuntimeSettingsCache.Load().(*openAIWSDeltaRuntimeSettings); ok && cached != nil && cached.loaded {
+		return *cached
+	}
+	return defaultOpenAIWSDeltaRuntimeSettings()
+}
+
+func StoreOpenAIWSDeltaRuntimeSettings(deltaShadowEnabled, activeDeltaEnabled, tempDiagLogsEnabled bool) {
+	openAIWSDeltaRuntimeSettingsCache.Store(&openAIWSDeltaRuntimeSettings{
+		loaded:              true,
+		deltaShadowEnabled:  deltaShadowEnabled,
+		activeDeltaEnabled:  activeDeltaEnabled,
+		tempDiagLogsEnabled: tempDiagLogsEnabled,
+	})
+}
+
+func resetOpenAIWSDeltaRuntimeSettingsForTest() {
+	openAIWSDeltaRuntimeSettingsCache.Store(&openAIWSDeltaRuntimeSettings{})
+}
+
 // openAIWSDeltaShadowEnabled gates all shadow instrumentation. Default on; ops can disable
-// at startup via OPENAI_WS_DELTA_SHADOW_DISABLED=1. Shadow is inert (no payload mutation),
-// so the gate exists only as a kill-switch.
+// with the DB-backed admin switch; env vars only provide boot defaults before settings load.
 func openAIWSDeltaShadowEnabled() bool {
-	return os.Getenv("OPENAI_WS_DELTA_SHADOW_DISABLED") != "1"
+	return loadOpenAIWSDeltaRuntimeSettings().deltaShadowEnabled
 }
 
 // openAIWSActiveDeltaEnabled gates payload mutation for strict-delta continuation.
 // It depends on the shadow machinery because the same strict checks produce both
 // the diagnostic line and the active payload.
 func openAIWSActiveDeltaEnabled() bool {
-	return openAIWSDeltaShadowEnabled() && os.Getenv("OPENAI_WS_ACTIVE_DELTA_DISABLED") != "1"
+	settings := loadOpenAIWSDeltaRuntimeSettings()
+	return settings.deltaShadowEnabled && settings.activeDeltaEnabled
+}
+
+func openAIWSTemporaryDiagnosticLogsEnabled() bool {
+	return loadOpenAIWSDeltaRuntimeSettings().tempDiagLogsEnabled
 }
 
 // openAIWSHashSlicesEqual reports whether two canonical-hash slices are identical.
@@ -119,11 +172,20 @@ func openAIWSNormalizeCanonicalItemObject(obj map[string]any) {
 	openAIWSDropTurnIDMetadata(obj)
 	switch itemType {
 	case "reasoning":
+		openAIWSDropNullField(obj, "encrypted_content")
 		openAIWSDropEmptyArrayField(obj, "content")
+		openAIWSDropEmptyArrayField(obj, "summary")
+		openAIWSNormalizeReasoningContentEnvelope(obj)
 	case "message":
 		delete(obj, "phase")
 		openAIWSNormalizeMessageContentEnvelope(obj)
 		openAIWSNormalizeOutputMessageRole(obj)
+	}
+}
+
+func openAIWSDropNullField(obj map[string]any, key string) {
+	if value, ok := obj[key]; ok && value == nil {
+		delete(obj, key)
 	}
 }
 
@@ -200,6 +262,35 @@ func openAIWSNormalizeAssistantTextContentType(role string, contentObj map[strin
 		if role == "assistant" {
 			contentObj["type"] = "assistant_text"
 		}
+	}
+}
+
+func openAIWSNormalizeReasoningContentEnvelope(obj map[string]any) {
+	content, contentOK := obj["content"].([]any)
+	summary, summaryOK := obj["summary"].([]any)
+	if !contentOK && summaryOK {
+		content = summary
+		contentOK = true
+		obj["content"] = content
+		delete(obj, "summary")
+	} else if contentOK {
+		delete(obj, "summary")
+	}
+	if !contentOK {
+		return
+	}
+	for _, raw := range content {
+		contentObj, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		contentType, _ := contentObj["type"].(string)
+		switch strings.TrimSpace(contentType) {
+		case "summary_text", "output_text", "reasoning_text":
+			contentObj["type"] = "reasoning_text"
+		}
+		openAIWSDropEmptyArrayField(contentObj, "annotations")
+		openAIWSDropEmptyArrayField(contentObj, "logprobs")
 	}
 }
 
@@ -666,6 +757,9 @@ type openAIWSDeltaShadowLog struct {
 }
 
 func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
+	if shouldSuppressOpenAIWSTemporaryDiagnosticLog("openai_ws_delta_shadow temporary_diag=openai_ws_delta_shadow remove_after_debug=true") {
+		return
+	}
 	logger.LegacyPrintf("service.openai_gateway",
 		"openai_ws_delta_shadow temporary_diag=openai_ws_delta_shadow remove_after_debug=true "+
 			"group_id=%d api_key_id=%d session=%s request_id=%s account_id=%d conn_id=%s "+
@@ -935,8 +1029,9 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 		}
 	}
 
-	deltaToolFallbackReason := ""
 	deltaHasFunctionCallOutput := false
+	deltaReanchorFunctionOutputSafe := true
+	deltaToolFallbackReason := ""
 	if matched {
 		if in.Cached.materializedCount < 0 || in.Cached.materializedCount > len(fullItems) {
 			log.FallbackReason = "materialized_count_invalid"
@@ -952,8 +1047,9 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 		log.DeltaBytes = openAIWSRawItemsByteLen(delta)
 		deltaHasFunctionCallOutput = openAIWSRawItemsHasFunctionCallOutput(delta)
 		deltaToolFallbackReason = openAIWSActiveDeltaToolContinuationFallbackReason(delta)
+		deltaReanchorFunctionOutputSafe = openAIWSDeltaFunctionOutputSafeForConnReanchor(fullItems, deltaStart)
 	}
-	connReanchorBlockedByDeltaFunctionOutput := !connAnchorMatch && connReanchorMatch && deltaHasFunctionCallOutput
+	connReanchorBlockedByDeltaFunctionOutput := !connAnchorMatch && connReanchorMatch && deltaHasFunctionCallOutput && !deltaReanchorFunctionOutputSafe
 
 	log.Candidate = accountMatch && (connAnchorMatch || connReanchorMatch) && nonInputAllowsActiveDelta &&
 		log.RawClientEquiv && matched && !connReanchorBlockedByDeltaFunctionOutput && deltaToolFallbackReason == ""
@@ -1103,7 +1199,6 @@ func openAIWSActiveDeltaToolContinuationFallbackReason(delta []json.RawMessage) 
 			callID := firstNonEmptyString(
 				parsed.Get("call_id").String(),
 				parsed.Get("tool_call_id").String(),
-				parsed.Get("id").String(),
 			)
 			if strings.TrimSpace(callID) == "" {
 				missingOutputCallID = true
@@ -1122,13 +1217,77 @@ func openAIWSActiveDeltaToolContinuationFallbackReason(delta []json.RawMessage) 
 	if !hasContext {
 		return ""
 	}
-	if openAIWSRawItemsHaveToolCallContextForOutputs(delta) {
-		return "delta_tool_continuation_self_contained"
-	}
-	// Mixed deltas can contain a function_call_output that belongs to the
-	// previous response plus unrelated new tool-call context. The injected
-	// previous_response_id is the required anchor for that output.
 	return ""
+}
+
+func openAIWSDeltaFunctionOutputSafeForConnReanchor(fullItems []json.RawMessage, deltaStart int) bool {
+	if deltaStart < 0 || deltaStart > len(fullItems) {
+		return false
+	}
+	delta := fullItems[deltaStart:]
+	outputIDs, missing := openAIWSFunctionOutputCallIDs(delta)
+	if len(outputIDs) == 0 {
+		return true
+	}
+	if missing {
+		return false
+	}
+	deltaContextIDs := openAIWSToolCallContextIDs(delta)
+	if openAIWSCallIDSetContainsAll(deltaContextIDs, outputIDs) {
+		return true
+	}
+	prefixContextIDs := openAIWSToolCallContextIDs(fullItems[:deltaStart])
+	return openAIWSCallIDSetContainsAll(prefixContextIDs, outputIDs)
+}
+
+func openAIWSFunctionOutputCallIDs(items []json.RawMessage) (map[string]struct{}, bool) {
+	ids := make(map[string]struct{})
+	missing := false
+	for _, item := range items {
+		parsed := gjson.ParseBytes(item)
+		if !rawInputItemHasToolContinuationOutput(parsed) {
+			continue
+		}
+		callID := strings.TrimSpace(firstNonEmptyString(
+			parsed.Get("call_id").String(),
+			parsed.Get("tool_call_id").String(),
+		))
+		if callID == "" {
+			missing = true
+			continue
+		}
+		ids[callID] = struct{}{}
+	}
+	return ids, missing
+}
+
+func openAIWSToolCallContextIDs(items []json.RawMessage) map[string]struct{} {
+	ids := make(map[string]struct{})
+	for _, item := range items {
+		parsed := gjson.ParseBytes(item)
+		if !isCodexToolCallContextItemType(parsed.Get("type").String()) {
+			continue
+		}
+		if callID := strings.TrimSpace(toolCallContextIDFromRaw(parsed)); callID != "" {
+			ids[callID] = struct{}{}
+		}
+	}
+	return ids
+}
+
+func openAIWSCallIDSetContainsAll(haystack, needles map[string]struct{}) bool {
+	if len(needles) == 0 {
+		return true
+	}
+	if len(haystack) == 0 {
+		return false
+	}
+	for id := range needles {
+		if _, ok := haystack[id]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // openAIWSRawItemsByteLen sums the raw byte length of a sequence of items (approx transmission size).
