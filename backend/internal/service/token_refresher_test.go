@@ -272,3 +272,15 @@ func TestGeminiTokenRefresher_NeedsRefresh_MissingExpiry(t *testing.T) {
 
 	require.True(t, refresher.NeedsRefresh(account, 30*time.Minute))
 }
+
+func TestAntigravityTokenRefresher_NeedsRefresh_MissingExpiry(t *testing.T) {
+	refresher := &AntigravityTokenRefresher{}
+
+	account := &Account{
+		Platform:    PlatformAntigravity,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"refresh_token": "refresh-token"},
+	}
+
+	require.True(t, refresher.NeedsRefresh(account, 30*time.Minute))
+}

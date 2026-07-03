@@ -43,7 +43,7 @@ func (r *AntigravityTokenRefresher) NeedsRefresh(account *Account, _ time.Durati
 	}
 	expiresAt := account.GetCredentialAsTime("expires_at")
 	if expiresAt == nil {
-		return false
+		return true
 	}
 	timeUntilExpiry := time.Until(*expiresAt)
 	needsRefresh := timeUntilExpiry < antigravityRefreshWindow
