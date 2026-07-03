@@ -59,12 +59,14 @@ func newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo UsageLogReposi
 type openAIRecordUsageBestEffortLogRepoStub struct {
 	UsageLogRepository
 
-	bestEffortErr   error
-	createErr       error
-	bestEffortCalls int
-	createCalls     int
-	lastLog         *UsageLog
-	lastCtxErr      error
+	bestEffortErr     error
+	createErr         error
+	directCreateErr   error
+	bestEffortCalls   int
+	createCalls       int
+	directCreateCalls int
+	lastLog           *UsageLog
+	lastCtxErr        error
 }
 
 func (s *openAIRecordUsageBestEffortLogRepoStub) CreateBestEffort(ctx context.Context, log *UsageLog) error {
@@ -79,6 +81,13 @@ func (s *openAIRecordUsageBestEffortLogRepoStub) Create(ctx context.Context, log
 	s.lastLog = log
 	s.lastCtxErr = ctx.Err()
 	return false, s.createErr
+}
+
+func (s *openAIRecordUsageBestEffortLogRepoStub) CreateDirect(ctx context.Context, log *UsageLog) (bool, error) {
+	s.directCreateCalls++
+	s.lastLog = log
+	s.lastCtxErr = ctx.Err()
+	return false, s.directCreateErr
 }
 
 func TestGatewayServiceRecordUsage_BillingUsesDetachedContext(t *testing.T) {
@@ -522,9 +531,9 @@ func TestGatewayServiceRecordUsage_GeneratesRequestIDWhenAllSourcesMissing(t *te
 	require.Equal(t, billingRepo.lastCmd.RequestID, usageRepo.lastLog.RequestID)
 }
 
-func TestGatewayServiceRecordUsage_DroppedUsageLogFallsBackToSyncCreate(t *testing.T) {
+func TestGatewayServiceRecordUsage_DroppedUsageLogFallsBackToDirectCreate(t *testing.T) {
 	// 计费成功后 best-effort 写入被丢弃（队列超时）时必须同步兜底，
-	// 否则出现“已扣费但无 usage_log”的对账缺口（issue #3656）。
+	// 且必须绕过普通批队列直写，否则在第二层队列持续饱和时仍会留下对账缺口。
 	usageRepo := &openAIRecordUsageBestEffortLogRepoStub{
 		bestEffortErr: MarkUsageLogCreateDropped(errors.New("usage log best-effort queue full")),
 	}
@@ -548,7 +557,8 @@ func TestGatewayServiceRecordUsage_DroppedUsageLogFallsBackToSyncCreate(t *testi
 
 	require.NoError(t, err)
 	require.Equal(t, 1, usageRepo.bestEffortCalls)
-	require.Equal(t, 1, usageRepo.createCalls)
+	require.Equal(t, 0, usageRepo.createCalls)
+	require.Equal(t, 1, usageRepo.directCreateCalls)
 	// 兜底调用使用的 ctx 必须仍然存活，不能带着已死的 ctx 走过场。
 	require.NoError(t, usageRepo.lastCtxErr)
 }

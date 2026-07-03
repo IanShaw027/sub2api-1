@@ -475,6 +475,38 @@ func TestUsageLogRepositoryCreate_BatchPathQueueFullMarksNotPersisted(t *testing
 	require.GreaterOrEqual(t, time.Since(start), 150*time.Millisecond)
 }
 
+func TestUsageLogRepositoryCreateDirect_BypassesSaturatedBatchQueue(t *testing.T) {
+	client := testEntClient(t)
+	repo := newUsageLogRepositoryWithSQL(client, integrationDB)
+	repo.createBatchCh = make(chan usageLogCreateRequest, 1)
+	repo.createBatchCh <- usageLogCreateRequest{}
+
+	user := mustCreateUser(t, client, &service.User{Email: fmt.Sprintf("usage-create-direct-%d@example.com", time.Now().UnixNano())})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-usage-create-direct-" + uuid.NewString(), Name: "k"})
+	account := mustCreateAccount(t, client, &service.Account{Name: "acc-usage-create-direct-" + uuid.NewString()})
+
+	requestID := uuid.NewString()
+	inserted, err := repo.CreateDirect(context.Background(), &service.UsageLog{
+		UserID:       user.ID,
+		APIKeyID:     apiKey.ID,
+		AccountID:    account.ID,
+		RequestID:    requestID,
+		Model:        "claude-3",
+		InputTokens:  10,
+		OutputTokens: 20,
+		TotalCost:    0.5,
+		ActualCost:   0.5,
+		CreatedAt:    time.Now().UTC(),
+	})
+
+	require.NoError(t, err)
+	require.True(t, inserted)
+
+	var count int
+	require.NoError(t, integrationDB.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM usage_logs WHERE request_id = $1 AND api_key_id = $2", requestID, apiKey.ID).Scan(&count))
+	require.Equal(t, 1, count)
+}
+
 func TestUsageLogRepositoryCreate_BatchPathCanceledAfterQueueMarksNotPersisted(t *testing.T) {
 	client := testEntClient(t)
 	repo := newUsageLogRepositoryWithSQL(client, integrationDB)

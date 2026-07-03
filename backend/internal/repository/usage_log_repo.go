@@ -355,6 +355,18 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 	return r.createBatched(ctx, log)
 }
 
+func (r *usageLogRepository) CreateDirect(ctx context.Context, log *service.UsageLog) (bool, error) {
+	if log == nil {
+		return false, nil
+	}
+
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		return r.createSingle(ctx, tx.Client(), log)
+	}
+	log.RequestID = strings.TrimSpace(log.RequestID)
+	return r.createSingle(ctx, r.sql, log)
+}
+
 func (r *usageLogRepository) CreateBestEffort(ctx context.Context, log *service.UsageLog) error {
 	if log == nil {
 		return nil
