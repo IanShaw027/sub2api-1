@@ -149,6 +149,7 @@ type codexOAuthTransformOptions struct {
 }
 
 var openAIChatGPTInternalUnsupportedFields = []string{
+	"name",
 	"user",
 	"metadata",
 	"prompt_cache_retention",
@@ -157,6 +158,9 @@ var openAIChatGPTInternalUnsupportedFields = []string{
 	"stream_options",
 	"max_output_tokens",
 	"max_completion_tokens",
+	"max_tokens",
+	"max_tool_calls",
+	"web_search",
 	"temperature",
 	"top_p",
 }
@@ -312,6 +316,7 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
 
 	// Strip parameters unsupported by codex models via the Responses API.
 	unsupportedKeys := []string{
+		"name",
 		"user",
 		"metadata",
 		"prompt_cache_retention",
@@ -320,6 +325,9 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
 		"stream_options",
 		"max_output_tokens",
 		"max_completion_tokens",
+		"max_tokens",
+		"max_tool_calls",
+		"web_search",
 		"frequency_penalty",
 		"presence_penalty",
 		// prompt_cache_retention is a newer Responses API parameter (cache TTL).
@@ -2038,6 +2046,23 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 					newItem["call_id"] = fixedCallID
 					modified = true
 				}
+				callID = fixedCallID
+			}
+
+			if isCodexToolCallContextItemType(typ) {
+				if id, ok := m["id"].(string); ok && strings.TrimSpace(id) != "" && !strings.HasPrefix(strings.TrimSpace(id), "fc") {
+					fixedID := ""
+					if opts.rewriteToolContinuationIDs && strings.TrimSpace(callID) != "" {
+						fixedID = strings.TrimSpace(callID)
+					} else {
+						fixedID = fixCallIDPrefix(strings.TrimSpace(id))
+					}
+					if fixedID != "" && fixedID != id {
+						ensureCopy()
+						newItem["id"] = fixedID
+						modified = true
+					}
+				}
 			}
 
 			if isCodexToolCallOutputItemType(typ) {
@@ -2142,6 +2167,39 @@ func normalizeCodexStructuredToolCallArguments(typ string, raw any) (any, bool) 
 	return parsed, true
 }
 
+func normalizeCodexInputStructuredToolCallArguments(reqBody map[string]any) bool {
+	if reqBody == nil {
+		return false
+	}
+	input, ok := reqBody["input"].([]any)
+	if !ok || len(input) == 0 {
+		return false
+	}
+	modified := false
+	for idx, rawItem := range input {
+		item, ok := rawItem.(map[string]any)
+		if !ok {
+			continue
+		}
+		typ := strings.TrimSpace(firstNonEmptyString(item["type"]))
+		normalizedArgs, ok := normalizeCodexStructuredToolCallArguments(typ, item["arguments"])
+		if !ok {
+			continue
+		}
+		copied := make(map[string]any, len(item))
+		for key, value := range item {
+			copied[key] = value
+		}
+		copied["arguments"] = normalizedArgs
+		input[idx] = copied
+		modified = true
+	}
+	if modified {
+		reqBody["input"] = input
+	}
+	return modified
+}
+
 // dropOrphanFunctionCallOutputs removes function_call_output items whose call_id
 // has no matching function_call (or other tool-call) item earlier in the same
 // input array. Sending an orphan function_call_output causes the upstream to
@@ -2236,6 +2294,13 @@ func sanitizeCodexInputItem(item map[string]any) (map[string]any, bool) {
 			if _, ok := codexMessageInputAllowedFields[key]; !ok {
 				modified = true
 				continue
+			}
+			if key == "id" {
+				id, _ := value.(string)
+				if strings.TrimSpace(id) == "" || !strings.HasPrefix(strings.TrimSpace(id), "msg") {
+					modified = true
+					continue
+				}
 			}
 			sanitized[key] = value
 		}
@@ -2470,6 +2535,12 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 
 		toolType, _ := toolMap["type"].(string)
 		toolType = strings.TrimSpace(toolType)
+		if isCodexUnsupportedWebSearchPreviewToolType(toolType) {
+			toolMap["type"] = "tool_search"
+			modified = true
+			validTools = append(validTools, toolMap)
+			continue
+		}
 		if toolType == "" || strings.EqualFold(toolType, "none") || strings.EqualFold(toolType, "null") {
 			if _, hasFunction := toolMap["function"]; hasFunction {
 				toolMap["type"] = "function"
@@ -2547,6 +2618,11 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 	}
 
 	return modified
+}
+
+func isCodexUnsupportedWebSearchPreviewToolType(toolType string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(toolType))
+	return normalized == "web_search_preview" || strings.HasPrefix(normalized, "web_search_preview_")
 }
 
 func normalizeCodexFunctionToolParameters(toolMap map[string]any) bool {

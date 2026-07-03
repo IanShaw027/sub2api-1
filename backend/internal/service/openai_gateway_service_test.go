@@ -566,6 +566,36 @@ func TestClassifyOpenAICodexCompatFallback(t *testing.T) {
 		require.Equal(t, "call_id", reason)
 	})
 
+	t.Run("missing tool output for previous function call", func(t *testing.T) {
+		reason := classifyOpenAICodexCompatFallback(
+			http.StatusBadRequest,
+			"",
+			"No tool output found for function call call_mRB5oEi5J3m4YTpcrHQuncFr.",
+			nil,
+		)
+		require.Equal(t, "call_id", reason)
+	})
+
+	t.Run("invalid id prefix for tool call", func(t *testing.T) {
+		reason := classifyOpenAICodexCompatFallback(
+			http.StatusBadRequest,
+			"",
+			"[ApiIdParam] [input[3].id] [invalid_id_prefix] Invalid 'input[3].id': 'item_24b0657c20b5397d08f83d12'. Expected an ID that begins with 'fc'.",
+			nil,
+		)
+		require.Equal(t, "call_id", reason)
+	})
+
+	t.Run("invalid id prefix for message", func(t *testing.T) {
+		reason := classifyOpenAICodexCompatFallback(
+			http.StatusBadRequest,
+			"",
+			"[ApiIdParam] [input[1].id] [invalid_id_prefix] Invalid 'input[1].id': 'item_8f2fe8e6d109059a090dfc2d'. Expected an ID that begins with 'msg'.",
+			nil,
+		)
+		require.Equal(t, "input_schema", reason)
+	})
+
 	t.Run("item_reference schema mismatch", func(t *testing.T) {
 		reason := classifyOpenAICodexCompatFallback(
 			http.StatusBadRequest,

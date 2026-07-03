@@ -121,12 +121,16 @@ func (s *OpenAIGatewayService) readUpstreamErrorBody(resp *http.Response) []byte
 }
 
 var openAIResponsesUnsupportedFields = []string{
+	"name",
 	"prompt_cache_retention",
 	"reasoningSummary",
 	"safety_identifier",
 	"metadata",
 	"stream_options",
 	"temperature",
+	"max_tokens",
+	"max_tool_calls",
+	"web_search",
 	"verbosity",
 	"enable_thinking",
 	"stop_sequences",
@@ -1986,9 +1990,18 @@ func classifyOpenAICodexCompatFallbackMessage(msg string) string {
 		strings.Contains(msg, "unknown parameter") ||
 		strings.Contains(msg, "unsupported field") ||
 		strings.Contains(msg, "unsupported parameter") ||
+		strings.Contains(msg, "invalid_id_prefix") ||
+		strings.Contains(msg, "expected an id that begins with") ||
 		strings.Contains(msg, "must be set")
 
 	switch {
+	case strings.Contains(msg, "no tool output found for function call"):
+		return "call_id"
+	case strings.Contains(msg, "invalid_id_prefix") || strings.Contains(msg, "expected an id that begins with"):
+		if strings.Contains(msg, "begins with 'fc'") || strings.Contains(msg, `begins with "fc"`) {
+			return "call_id"
+		}
+		return "input_schema"
 	case strings.Contains(msg, "item_reference"):
 		if hasSchemaSignal || strings.Contains(msg, "missing") {
 			return "item_reference"
@@ -12547,6 +12560,9 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	if normalizeOpenAIResponsesInputToolRolesWithOptions(reqBody, sanitizeOrphanToolOutputs) {
 		changed = true
 	}
+	if normalizeCodexInputStructuredToolCallArguments(reqBody) {
+		changed = true
+	}
 	if input, ok := reqBody["input"].([]any); ok {
 		if normalizedInput, modified := normalizeCodexMessageContentText(input); modified {
 			reqBody["input"] = normalizedInput
@@ -12580,6 +12596,14 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	}
 	if normalizeOpenAIToolSchemaLookaroundPatterns(reqBody) {
 		changed = true
+	}
+	if !compact {
+		if normalizeCodexTools(reqBody) {
+			changed = true
+		}
+		if normalizeCodexToolChoice(reqBody) {
+			changed = true
+		}
 	}
 
 	if !changed {
@@ -12638,6 +12662,9 @@ func normalizeOpenAIPassthroughBaseBody(body []byte, compact bool, stripTopP boo
 	if normalizeOpenAIResponsesInputToolRolesWithOptions(reqBody, sanitizeOrphanToolOutputs) {
 		changed = true
 	}
+	if normalizeCodexInputStructuredToolCallArguments(reqBody) {
+		changed = true
+	}
 	if trimOpenAIStoreFalseReasoningItems(reqBody) {
 		changed = true
 	}
@@ -12646,6 +12673,14 @@ func normalizeOpenAIPassthroughBaseBody(body []byte, compact bool, stripTopP boo
 	}
 	if normalizeOpenAIToolSchemaLookaroundPatterns(reqBody) {
 		changed = true
+	}
+	if !compact {
+		if normalizeCodexTools(reqBody) {
+			changed = true
+		}
+		if normalizeCodexToolChoice(reqBody) {
+			changed = true
+		}
 	}
 
 	if !changed {

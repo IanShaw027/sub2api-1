@@ -12,7 +12,7 @@ import (
 )
 
 func TestNormalizeOpenAIPassthroughOAuthBody_RemovesUnsupportedUser(t *testing.T) {
-	body := []byte(`{"model":"gpt-5.4","input":"hello","temperature":0.2,"user":"user_123","metadata":{"user_id":"user_123"},"prompt_cache_retention":"24h","safety_identifier":"sid","stream_options":{"include_usage":true}}`)
+	body := []byte(`{"model":"gpt-5.4","input":"hello","name":"request-name","temperature":0.2,"user":"user_123","metadata":{"user_id":"user_123"},"prompt_cache_retention":"24h","safety_identifier":"sid","stream_options":{"include_usage":true}}`)
 
 	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
 	require.NoError(t, err)
@@ -55,6 +55,63 @@ func TestNormalizeOpenAIPassthroughBaseBody_StripsTopPWhenRequested(t *testing.T
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.False(t, gjson.GetBytes(normalized, "top_p").Exists())
+}
+
+func TestNormalizeOpenAIPassthroughBaseBody_DropsNoneTypedTools(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","tools":[{"type":"None"},{"type":null},{"name":"run","parameters":{"type":"object"}}],"input":[{"type":"message","role":"user","content":"hi"}]}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughBaseBody(body, false, false)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "function", gjson.GetBytes(normalized, "tools.0.type").String())
+	require.Equal(t, "run", gjson.GetBytes(normalized, "tools.0.name").String())
+	require.Equal(t, 1, len(gjson.GetBytes(normalized, "tools").Array()))
+}
+
+func TestNormalizeOpenAIPassthroughBaseBody_MapsWebSearchPreviewTool(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","tools":[{"type":"web_search_preview"},{"type":"web_search_preview_2025_03_11"}],"input":[{"type":"message","role":"user","content":"hi"}]}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughBaseBody(body, false, false)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "tool_search", gjson.GetBytes(normalized, "tools.0.type").String())
+	require.Equal(t, "tool_search", gjson.GetBytes(normalized, "tools.1.type").String())
+}
+
+func TestNormalizeOpenAIPassthroughBaseBody_StripsAdditionalCodexUnsupportedFields(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","max_tokens":64,"max_tool_calls":8,"web_search":{"enabled":true},"input":[{"type":"message","role":"user","content":"hi"}]}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughBaseBody(body, false, false)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(normalized, "max_tokens").Exists())
+	require.False(t, gjson.GetBytes(normalized, "max_tool_calls").Exists())
+	require.False(t, gjson.GetBytes(normalized, "web_search").Exists())
+}
+
+func TestNormalizeOpenAIPassthroughBaseBody_NormalizesStructuredToolCallArgumentsString(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","input":[{"type":"tool_search_call","call_id":"call_search","arguments":"{\"query\":\"golang\",\"limit\":5}"},{"type":"function_call","call_id":"call_fn","name":"run","arguments":"{\"cmd\":\"pwd\"}"}]}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughBaseBody(body, false, false)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "golang", gjson.GetBytes(normalized, "input.0.arguments.query").String())
+	require.Equal(t, int64(5), gjson.GetBytes(normalized, "input.0.arguments.limit").Int())
+	require.Equal(t, `{"cmd":"pwd"}`, gjson.GetBytes(normalized, "input.1.arguments").String())
+}
+
+func TestNormalizeOpenAIPassthroughOAuthBody_NormalizesStructuredToolCallArgumentsString(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","input":[{"type":"custom_tool_call","call_id":"call_custom","name":"run","arguments":"not json"}]}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "not json", gjson.GetBytes(normalized, "input.0.arguments.value").String())
 }
 
 func TestNormalizeOpenAIPassthroughBaseBody_PreservesTopPWhenNotRequested(t *testing.T) {

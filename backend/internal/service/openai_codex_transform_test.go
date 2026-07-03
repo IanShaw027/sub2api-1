@@ -172,6 +172,71 @@ func TestApplyCodexOAuthTransform_ToolContinuationNormalizesToolReferenceIDsOnly
 	require.Equal(t, "fc_1", second["call_id"])
 }
 
+func TestApplyCodexOAuthTransform_ToolContinuationRewritesToolCallItemIDPrefix(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"input": []any{
+			map[string]any{
+				"type":    "function_call",
+				"id":      "item_24b0657c20b5397d08f83d12",
+				"call_id": "call_tool",
+				"name":    "run",
+			},
+			map[string]any{
+				"type":    "function_call_output",
+				"call_id": "call_tool",
+				"output":  "ok",
+			},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, false, false)
+
+	require.True(t, result.Modified)
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	call, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "fc_tool", call["id"])
+	require.Equal(t, "fc_tool", call["call_id"])
+	output, ok := input[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "fc_tool", output["call_id"])
+}
+
+func TestApplyCodexOAuthTransform_RemovesInvalidMessageItemID(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"input": []any{
+			map[string]any{
+				"type":    "message",
+				"id":      "item_8f2fe8e6d109059a090dfc2d",
+				"role":    "user",
+				"content": "hi",
+			},
+			map[string]any{
+				"type":    "message",
+				"id":      "msg_keep",
+				"role":    "assistant",
+				"content": "ok",
+			},
+			map[string]any{"type": "item_reference", "id": "fc_keep_context"},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, false, false)
+
+	require.True(t, result.Modified)
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	first, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, first, "id")
+	second, ok := input[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "msg_keep", second["id"])
+}
+
 func TestApplyCodexOAuthTransform_ToolSearchOutputPreservesCallID(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "gpt-5.2",
@@ -277,6 +342,50 @@ func TestApplyCodexOAuthTransform_DropsNoneTypedTools(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "function", tool["type"])
 	require.Equal(t, "run", tool["name"])
+}
+
+func TestApplyCodexOAuthTransform_MapsWebSearchPreviewTools(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{
+			map[string]any{"type": "web_search_preview"},
+			map[string]any{"type": "web_search_preview_2025_03_11"},
+		},
+		"input": []any{
+			map[string]any{"type": "message", "role": "user", "content": "search docs"},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, false, false)
+
+	require.True(t, result.Modified)
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 2)
+	for _, rawTool := range tools {
+		tool, ok := rawTool.(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "tool_search", tool["type"])
+	}
+}
+
+func TestApplyCodexOAuthTransform_StripsAdditionalUnsupportedFields(t *testing.T) {
+	reqBody := map[string]any{
+		"model":          "gpt-5.5",
+		"max_tokens":     float64(64),
+		"max_tool_calls": float64(8),
+		"web_search":     map[string]any{"enabled": true},
+		"input": []any{
+			map[string]any{"type": "message", "role": "user", "content": "hi"},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, false, false)
+
+	require.True(t, result.Modified)
+	require.NotContains(t, reqBody, "max_tokens")
+	require.NotContains(t, reqBody, "max_tool_calls")
+	require.NotContains(t, reqBody, "web_search")
 }
 
 func TestApplyCodexOAuthTransform_TruncatesOversizedToolOutputs(t *testing.T) {
@@ -1697,6 +1806,7 @@ func TestApplyCodexOAuthTransform_StripsPromptCacheRetention(t *testing.T) {
 func TestApplyCodexOAuthTransform_StripsChatGPTInternalUnsupportedFields(t *testing.T) {
 	reqBody := map[string]any{
 		"model":                  "gpt-5.4",
+		"name":                   "request-name",
 		"user":                   "user_123",
 		"metadata":               map[string]any{"trace_id": "abc"},
 		"prompt_cache_retention": "24h",
