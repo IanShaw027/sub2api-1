@@ -17,10 +17,12 @@ import (
 
 // officeMaxEntryBytes 限制单个 zip entry 解压后累计字节,防 zip 炸弹 / OOM。
 const (
-	officeMaxEntryBytes      = 8 << 20 // 8MB per XML entry
-	officeMaxDecompressBytes = officeMaxEntryBytes
+	officeMaxEntryBytes      = 8 << 20  // 8MB per XML entry
+	officeMaxDecompressBytes = 32 << 20 // 32MB cumulative XML budget across a workbook
 	officeMaxSheets          = 64
 )
+
+var errOfficeZipEntryNotFound = errors.New("office zip entry not found")
 
 // openOfficeZip 打开 OOXML 容器。
 func openOfficeZip(data []byte) (*zip.Reader, error) {
@@ -50,7 +52,22 @@ func readZipEntry(zr *zip.Reader, name string) ([]byte, error) {
 		}
 		return raw, nil
 	}
-	return nil, fmt.Errorf("zip entry not found: %s", name)
+	return nil, fmt.Errorf("%w: %s", errOfficeZipEntryNotFound, name)
+}
+
+func readZipEntryWithBudget(zr *zip.Reader, name string, remaining *int) ([]byte, error) {
+	raw, err := readZipEntry(zr, name)
+	if err != nil {
+		return nil, err
+	}
+	if remaining == nil {
+		return raw, nil
+	}
+	if len(raw) > *remaining {
+		return nil, fmt.Errorf("xlsx decompressed size exceeds cumulative limit of %d bytes", officeMaxDecompressBytes)
+	}
+	*remaining -= len(raw)
+	return raw, nil
 }
 
 // extractDocxText 从 Word .docx 提取纯文本。
@@ -161,8 +178,9 @@ func extractXlsxText(data []byte) (text string, err error) {
 	}
 
 	// 1) 解析共享字符串表(可能不存在)
+	remainingBytes := officeMaxDecompressBytes
 	var shared []string
-	if raw, rerr := readZipEntry(zr, "xl/sharedStrings.xml"); rerr == nil {
+	if raw, rerr := readZipEntryWithBudget(zr, "xl/sharedStrings.xml", &remainingBytes); rerr == nil {
 		var ss xlsxSharedStrings
 		if xml.Unmarshal(raw, &ss) == nil {
 			shared = make([]string, len(ss.Items))
@@ -170,6 +188,8 @@ func extractXlsxText(data []byte) (text string, err error) {
 				shared[i] = si.text()
 			}
 		}
+	} else if !errors.Is(rerr, errOfficeZipEntryNotFound) {
+		return "", rerr
 	}
 
 	// 2) 收集所有 sheet 文件并按名排序(sheet1, sheet2 ...)
@@ -193,9 +213,12 @@ func extractXlsxText(data []byte) (text string, err error) {
 
 	limiter := newDocumentTextLimiter(maxDocumentExtractedRunes)
 	for idx, name := range sheetNames {
-		raw, rerr := readZipEntry(zr, name)
+		raw, rerr := readZipEntryWithBudget(zr, name, &remainingBytes)
 		if rerr != nil {
-			continue
+			if errors.Is(rerr, errOfficeZipEntryNotFound) {
+				continue
+			}
+			return "", rerr
 		}
 		sheetText := parseXlsxSheet(raw, shared)
 		if strings.TrimSpace(sheetText) == "" {

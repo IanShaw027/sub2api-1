@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
@@ -206,9 +207,12 @@ func TestExecuteKiroShadowTool_MCPWebFetchAppliesMaxContentTokens(t *testing.T) 
 		"result": map[string]any{"content": []any{map[string]any{"type": "text", "text": inner}}},
 	})
 	stub := &kiroMCPStubUpstream{respBody: string(outer)}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	svc := &KiroGatewayService{
-		httpUpstream:  stub,
-		tokenProvider: NewKiroTokenProvider(nil, nil),
+		httpUpstream:   stub,
+		tokenProvider:  NewKiroTokenProvider(nil, nil),
+		settingService: NewSettingService(nil, cfg),
 	}
 	state := &kiroToolState{ToolUseID: "tool-fetch", Name: "web_fetch"}
 	state.InputBuilder.WriteString(`{"url":"https://example.com/fetch"}`)

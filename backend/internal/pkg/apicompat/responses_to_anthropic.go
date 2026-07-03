@@ -78,7 +78,7 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 				Type:  "tool_use",
 				ID:    fromResponsesCallID(item.CallID),
 				Name:  MapClaudeToolName(item.Name, toolNameMap),
-				Input: json.RawMessage(item.Arguments),
+				Input: responsesFunctionCallInput(item.Arguments),
 			})
 		case "web_search_call":
 			toolUseID := "srvtoolu_" + item.ID
@@ -122,6 +122,18 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 	}
 
 	return out
+}
+
+func responsesFunctionCallInput(arguments string) json.RawMessage {
+	arguments = strings.TrimSpace(arguments)
+	if arguments == "" {
+		return json.RawMessage("{}")
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(arguments), &obj); err != nil || obj == nil {
+		return json.RawMessage("{}")
+	}
+	return json.RawMessage(arguments)
 }
 
 func newAnthropicUsageEnvelope(inputTokens, outputTokens, cacheReadTokens int) AnthropicUsage {

@@ -245,6 +245,46 @@ func TestSettingHandler_UpdateSettings_PreservesAndReturnsAntiBanAndTelemetryFie
 	}, data["anti_ban_platforms"])
 }
 
+func TestSettingHandler_UpdateSettings_RoundTripsAdminSettingsContractFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyDownloadToolsURL:                  "https://old.example.com/tools",
+			service.SettingKeyEnableClientDatelineNormalization: "true",
+			service.SettingKeyAllowUserViewErrorRequests:        "false",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+	rawBody, err := json.Marshal(map[string]any{
+		"download_tools_url":                   "https://downloads.example.com/tools",
+		"enable_client_dateline_normalization": false,
+		"allow_user_view_error_requests":       true,
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "https://downloads.example.com/tools", repo.values[service.SettingKeyDownloadToolsURL])
+	require.Equal(t, "false", repo.values[service.SettingKeyEnableClientDatelineNormalization])
+	require.Equal(t, "true", repo.values[service.SettingKeyAllowUserViewErrorRequests])
+
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	data, ok := resp.Data.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "https://downloads.example.com/tools", data["download_tools_url"])
+	require.Equal(t, false, data["enable_client_dateline_normalization"])
+	require.Equal(t, true, data["allow_user_view_error_requests"])
+}
+
 func TestSettingHandler_UpdateSettings_RejectsClearingLinuxDoClientIDWhenEffectiveStateStaysEnabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &settingHandlerRepoStub{

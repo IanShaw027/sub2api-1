@@ -489,6 +489,72 @@ func TestExecuteSubscriptionFulfillmentRetryWithOrphanedClaimStillAssignsSubscri
 	require.Equal(t, 1, successCount)
 }
 
+func TestSubscriptionFulfillmentWritesSuccessSentinelBeforeOrderCompletion(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeSubscription)
+
+	repo := &paymentFulfillmentUserSubRepoStub{existing: &UserSubscription{
+		ID:        55,
+		UserID:    order.UserID,
+		GroupID:   *order.SubscriptionGroupID,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		Status:    SubscriptionStatusActive,
+	}}
+	groupRepo := paymentFulfillmentGroupRepoStub{group: &Group{
+		ID:                  *order.SubscriptionGroupID,
+		Status:              payment.EntityStatusActive,
+		SubscriptionType:    SubscriptionTypeSubscription,
+		DefaultValidityDays: 30,
+	}}
+	subscriptionSvc := NewSubscriptionService(groupRepo, repo, nil, client, nil)
+	var notifications []string
+	svc := &PaymentService{
+		entClient:       client,
+		groupRepo:       groupRepo,
+		subscriptionSvc: subscriptionSvc,
+		notificationDispatchHook: func(order *dbent.PaymentOrder, auditAction string) {
+			if order != nil {
+				notifications = append(notifications, auditAction)
+			}
+		},
+	}
+
+	trigger := fmt.Sprintf(`
+		CREATE TRIGGER fail_subscription_completion_once
+		BEFORE UPDATE OF status ON payment_orders
+		WHEN NEW.id = %d AND NEW.status = '%s'
+		BEGIN
+			SELECT RAISE(FAIL, 'forced subscription completion failure');
+		END;
+	`, order.ID, OrderStatusCompleted)
+	_, err := client.ExecContext(ctx, trigger)
+	require.NoError(t, err)
+
+	err = svc.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "mark completed")
+	require.Equal(t, 1, repo.extendCalls)
+
+	successCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("SUBSCRIPTION_SUCCESS")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, successCount)
+
+	_, err = client.ExecContext(ctx, `DROP TRIGGER fail_subscription_completion_once`)
+	require.NoError(t, err)
+
+	err = svc.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.extendCalls)
+	require.Equal(t, []string{"SUBSCRIPTION_SUCCESS"}, notifications)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+}
+
 func TestTryClaimSubscriptionFulfillmentAuditSkipsExistingSuccessSentinel(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentFulfillmentTestClient(t)

@@ -89,10 +89,11 @@ func (s *AISkillSettlementService) Settle(ctx context.Context, input AISkillSett
 		return nil, ErrAISkillCreatorEarningsUnavailable
 	}
 
+	chargeRef := fmt.Sprintf("ai_skill_run:%d", input.RunID)
 	charge, err := s.balanceCharger.ChargeUserBalance(ctx, AISkillBalanceChargeInput{
 		UserID:    input.BuyerUserID,
 		Amount:    quote.TotalAmount,
-		Reference: fmt.Sprintf("ai_skill_run:%d", input.RunID),
+		Reference: chargeRef,
 		Metadata:  cloneAIMap(input.Metadata),
 		Trace:     input.Trace,
 	})
@@ -105,6 +106,10 @@ func (s *AISkillSettlementService) Settle(ctx context.Context, input AISkillSett
 	}
 	if charge != nil {
 		settlement.BalanceAfter = &charge.BalanceAfter
+	}
+	chargedAmount := quote.TotalAmount
+	if charge != nil && charge.ChargedAmount > 0 {
+		chargedAmount = charge.ChargedAmount
 	}
 
 	if quote.CreatorAmount > 0 {
@@ -120,16 +125,26 @@ func (s *AISkillSettlementService) Settle(ctx context.Context, input AISkillSett
 			Trace:         input.Trace,
 		})
 		if creditErr != nil {
-			settlement.FailureReason = creditErr.Error()
-			if updateErr := s.markFailed(ctx, settlement); updateErr != nil {
+			if updateErr := s.failAfterBuyerCharge(ctx, settlement, AISkillBalanceRefundInput{
+				UserID:    input.BuyerUserID,
+				Amount:    chargedAmount,
+				Reference: chargeRef,
+				Metadata:  cloneAIMap(input.Metadata),
+				Trace:     input.Trace,
+			}, creditErr); updateErr != nil {
 				return nil, updateErr
 			}
 			return nil, creditErr
 		}
 		if roundTo(credited, 8) != roundTo(quote.CreatorAmount, 8) {
 			settlement.CreatorCreditedAmount = roundTo(credited, 8)
-			settlement.FailureReason = ErrAISkillCreatorEarningsMismatch.Error()
-			if updateErr := s.markFailed(ctx, settlement); updateErr != nil {
+			if updateErr := s.failAfterBuyerCharge(ctx, settlement, AISkillBalanceRefundInput{
+				UserID:    input.BuyerUserID,
+				Amount:    chargedAmount,
+				Reference: chargeRef,
+				Metadata:  cloneAIMap(input.Metadata),
+				Trace:     input.Trace,
+			}, ErrAISkillCreatorEarningsMismatch); updateErr != nil {
 				return nil, updateErr
 			}
 			return nil, ErrAISkillCreatorEarningsMismatch
@@ -143,6 +158,49 @@ func (s *AISkillSettlementService) Settle(ctx context.Context, input AISkillSett
 		return nil, err
 	}
 	return settlement, nil
+}
+
+func (s *AISkillSettlementService) failAfterBuyerCharge(ctx context.Context, settlement *AISkillSettlement, refund AISkillBalanceRefundInput, cause error) error {
+	if settlement == nil {
+		return nil
+	}
+	if cause != nil {
+		settlement.FailureReason = cause.Error()
+	}
+	if settlement.CreatorCreditedAmount > 0 && s != nil && s.creatorCreditor != nil {
+		if reversed, err := s.creatorCreditor.ReverseCreatorEarnings(ctx, AISkillCreatorEarningsReversalInput{
+			CreatorUserID: settlement.CreatorUserID,
+			RunID:         settlement.RunID,
+			Amount:        settlement.CreatorCreditedAmount,
+			Currency:      settlement.Currency,
+			Metadata:      cloneAIMap(settlement.Metadata),
+			Trace:         settlement.Trace,
+		}); err != nil {
+			settlement.FailureReason = appendAISkillSettlementFailure(settlement.FailureReason, fmt.Errorf("creator reversal failed: %w", err))
+		} else if reversed > 0 {
+			settlement.CreatorCreditedAmount = roundTo(reversed, 8)
+		}
+	}
+	if refund.Amount > 0 {
+		if s == nil || s.balanceCharger == nil {
+			settlement.FailureReason = appendAISkillSettlementFailure(settlement.FailureReason, ErrAISkillBalanceServiceUnavailable)
+		} else if refundResult, err := s.balanceCharger.RefundUserBalance(ctx, refund); err != nil {
+			settlement.FailureReason = appendAISkillSettlementFailure(settlement.FailureReason, fmt.Errorf("buyer refund failed: %w", err))
+		} else if refundResult != nil {
+			settlement.BalanceAfter = &refundResult.BalanceAfter
+		}
+	}
+	return s.markFailed(ctx, settlement)
+}
+
+func appendAISkillSettlementFailure(current string, err error) string {
+	if err == nil {
+		return current
+	}
+	if current == "" {
+		return err.Error()
+	}
+	return fmt.Sprintf("%s; %s", current, err.Error())
 }
 
 func (s *AISkillSettlementService) nowOrDefault() time.Time {

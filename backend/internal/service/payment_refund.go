@@ -714,7 +714,29 @@ func (s *PaymentService) QueryAndFinalizeRefund(ctx context.Context, oid int64) 
 			})
 			return nil, err
 		}
-		return s.markRefundOk(ctx, plan)
+		result, err := s.markRefundOk(ctx, plan)
+		if err == nil {
+			return result, nil
+		}
+		rollbackOK := s.RollbackRefund(ctx, plan, err)
+		if rollbackOK {
+			s.restorePendingRefundFinalization(ctx, o)
+		} else {
+			now := time.Now()
+			_, _ = s.entClient.PaymentOrder.UpdateOneID(o.ID).
+				SetStatus(OrderStatusRefundFailed).
+				SetFailedAt(now).
+				SetFailedReason(psErrMsg(err)).
+				Save(ctx)
+		}
+		s.writeAuditLog(ctx, oid, "REFUND_FINALIZE_PERSIST_FAILED", "admin", map[string]any{
+			"refundID":           resp.RefundID,
+			"detail":             psErrMsg(err),
+			"rollbackOK":         rollbackOK,
+			"balanceDeducted":    plan.BalanceToDeduct,
+			"subscriptionDeduct": plan.SubDaysToDeduct,
+		})
+		return nil, err
 	case payment.ProviderStatusPending:
 		s.restorePendingRefundFinalization(ctx, o)
 		s.writeAuditLog(ctx, oid, "REFUND_QUERY_PENDING", "admin", map[string]any{"refundID": resp.RefundID})
@@ -785,15 +807,11 @@ func (s *PaymentService) refundFinalizePlan(o *dbent.PaymentOrder, pendingDetail
 }
 
 func (s *PaymentService) applyRefundFinalDeduction(ctx context.Context, p *RefundPlan) error {
-	if s.hasAuditLog(ctx, p.OrderID, "REFUND_SUCCESS") {
-		p.BalanceToDeduct = 0
-		p.SubDaysToDeduct = 0
-		return nil
-	}
 	if p.DeductionType == payment.DeductionTypeBalance && p.BalanceToDeduct > 0 {
 		if err := s.userRepo.DeductBalance(ctx, p.Order.UserID, p.BalanceToDeduct); err != nil {
 			return fmt.Errorf("deduction: %w", err)
 		}
+		p.DeductionApplied = true
 	}
 	if p.DeductionType == payment.DeductionTypeSubscription && p.SubDaysToDeduct > 0 && p.SubscriptionID > 0 {
 		if _, err := s.subscriptionSvc.ExtendSubscription(ctx, p.SubscriptionID, -p.SubDaysToDeduct); err != nil {
@@ -805,6 +823,7 @@ func (s *PaymentService) applyRefundFinalDeduction(ctx context.Context, p *Refun
 				return fmt.Errorf("deduct subscription days: %w", err)
 			}
 		}
+		p.DeductionApplied = true
 	}
 	return nil
 }

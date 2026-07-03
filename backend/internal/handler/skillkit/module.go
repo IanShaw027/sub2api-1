@@ -136,6 +136,10 @@ type balanceChargerUserRepository interface {
 	GetByID(ctx context.Context, id int64) (*service.User, error)
 }
 
+type balanceRefundUserRepository interface {
+	AddBalanceWithoutRecharge(ctx context.Context, id int64, amount float64) error
+}
+
 type balanceChargerAdapter struct {
 	userRepo balanceChargerUserRepository
 }
@@ -154,5 +158,26 @@ func (a *balanceChargerAdapter) ChargeUserBalance(ctx context.Context, input ser
 	return &service.AISkillBalanceChargeResult{
 		ChargedAmount: input.Amount,
 		BalanceAfter:  user.Balance,
+	}, nil
+}
+
+func (a *balanceChargerAdapter) RefundUserBalance(ctx context.Context, input service.AISkillBalanceRefundInput) (*service.AISkillBalanceRefundResult, error) {
+	if a == nil || a.userRepo == nil {
+		return nil, service.ErrAISkillBalanceServiceUnavailable
+	}
+	refundRepo, ok := a.userRepo.(balanceRefundUserRepository)
+	if !ok {
+		return nil, service.ErrAISkillBalanceServiceUnavailable
+	}
+	if err := refundRepo.AddBalanceWithoutRecharge(ctx, input.UserID, input.Amount); err != nil {
+		return nil, err
+	}
+	user, err := a.userRepo.GetByID(ctx, input.UserID)
+	if err != nil {
+		return nil, err
+	}
+	return &service.AISkillBalanceRefundResult{
+		RefundedAmount: input.Amount,
+		BalanceAfter:   user.Balance,
 	}, nil
 }

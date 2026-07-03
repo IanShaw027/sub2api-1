@@ -729,6 +729,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 
 		AvailableChannelsEnabled:    settings.AvailableChannelsEnabled,
 		AccountSchedulingThresholds: settings.AccountSchedulingThresholds,
+		AllowUserViewErrorRequests:  settings.AllowUserViewErrorRequests,
 	}
 
 	// OpenAI fast policy (stored under a dedicated setting key)
@@ -2840,6 +2841,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.CyberSessionBlockTTLSeconds
 		}(),
+		AllowUserViewErrorRequests: func() bool {
+			if req.AllowUserViewErrorRequests != nil {
+				return *req.AllowUserViewErrorRequests
+			}
+			return previousSettings.AllowUserViewErrorRequests
+		}(),
 	}
 
 	// req.AuthSourceXxxPlatformQuotas 为 nil 表示本次请求未包含该 source 的 quota 配置（保留 previousAuthSourceDefaults 中的值）；
@@ -3084,6 +3091,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ContactInfo:                               updatedSettings.ContactInfo,
 		SupportQRCodes:                            dto.ParseSupportQRCodes(updatedSettings.SupportQRCodes),
 		DocURL:                                    updatedSettings.DocURL,
+		DownloadToolsURL:                          updatedSettings.DownloadToolsURL,
 		HomeContent:                               updatedSettings.HomeContent,
 		HideCcsImportButton:                       updatedSettings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:               updatedSettings.PurchaseSubscriptionEnabled,
@@ -3135,6 +3143,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		GatewayDebugTimelineBodyMaxKB:             updatedSettings.GatewayDebugTimelineBodyMaxKB,
 		EnableAnthropicCacheTTL1hInjection:        updatedSettings.EnableAnthropicCacheTTL1hInjection,
 		RewriteMessageCacheControl:                updatedSettings.RewriteMessageCacheControl,
+		EnableClientDatelineNormalization:         updatedSettings.EnableClientDatelineNormalization,
 		ClaudeTelemetryMode:                       updatedSettings.ClaudeTelemetryMode,
 		AntigravityUserAgentVersion:               updatedSettings.AntigravityUserAgentVersion,
 		OpenAICodexUserAgent:                      updatedSettings.OpenAICodexUserAgent,
@@ -3206,6 +3215,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		CyberSessionBlockEnabled:    updatedSettings.CyberSessionBlockEnabled,
 		CyberSessionBlockTTLSeconds: updatedSettings.CyberSessionBlockTTLSeconds,
 		AccountSchedulingThresholds: updatedSettings.AccountSchedulingThresholds,
+		AllowUserViewErrorRequests:  updatedSettings.AllowUserViewErrorRequests,
 	}
 	if fastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context()); err != nil {
 		slog.Error("openai_fast_policy_settings_get_failed", "error", err)

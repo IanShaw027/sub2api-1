@@ -6474,6 +6474,7 @@ oauthTransformDone:
 		var firstTokenMs *int
 		responseID := ""
 		imageCount := 0
+		searchCount := 0
 		if reqStream {
 			streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, upstreamModel)
 			if err != nil {
@@ -6483,14 +6484,26 @@ oauthTransformDone:
 			firstTokenMs = streamResult.firstTokenMs
 			responseID = strings.TrimSpace(streamResult.responseID)
 			imageCount = streamResult.imageCount
+			searchCount = streamResult.searchCount
 		} else {
 			result, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
 			if err != nil {
+				if result != nil {
+					partial := buildOpenAIPartialForwardResult(resp, body, originalModel, upstreamModel, result.usage, result.responseID, result.imageCount, result.searchCount, time.Since(startTime))
+					partial.OpenAIWSDeltaActive = httpActiveDeltaApplied
+					partial.OpenAIWSPayloadBytes = len(body)
+					partial.OpenAIWSDeltaItems = httpActiveDeltaLog.DeltaItems
+					partial.OpenAIWSDeltaBytes = httpActiveDeltaLog.DeltaBytes
+					partial.OpenAIWSFullItems = httpActiveDeltaLog.FullItems
+					partial.OpenAIWSFullBytes = httpActiveDeltaLog.FullBytes
+					return partial, err
+				}
 				return nil, err
 			}
 			usage = result.usage
 			responseID = strings.TrimSpace(result.responseID)
 			imageCount = result.imageCount
+			searchCount = result.searchCount
 		}
 		s.bindHTTPResponseAccount(ctx, c, account, responseID)
 		httpSessionContextBody := body
@@ -6527,6 +6540,7 @@ oauthTransformDone:
 			Duration:             time.Since(startTime),
 			FirstTokenMs:         firstTokenMs,
 			ImageCount:           imageCount,
+			SearchCount:          searchCount,
 			OpenAIWSDeltaActive:  httpActiveDeltaApplied,
 			OpenAIWSPayloadBytes: len(body),
 			OpenAIWSDeltaItems:   httpActiveDeltaLog.DeltaItems,
@@ -6960,6 +6974,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	var firstTokenMs *int
 	responseID := ""
 	imageCount := 0
+	searchCount := 0
 	upstreamPassthroughModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
 	if reqStream {
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
@@ -6970,14 +6985,19 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		firstTokenMs = result.firstTokenMs
 		responseID = strings.TrimSpace(result.responseID)
 		imageCount = result.imageCount
+		searchCount = result.searchCount
 	} else {
 		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, account, reqModel, upstreamPassthroughModel)
 		if err != nil {
+			if result != nil {
+				return buildOpenAIPartialForwardResult(resp, body, reqModel, upstreamPassthroughModel, result.usage, result.responseID, result.imageCount, result.searchCount, time.Since(startTime)), err
+			}
 			return nil, err
 		}
 		usage = result.usage
 		responseID = strings.TrimSpace(result.responseID)
 		imageCount = result.imageCount
+		searchCount = result.searchCount
 	}
 	s.bindHTTPResponseAccount(ctx, c, account, responseID)
 
@@ -7005,10 +7025,34 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		Duration:        time.Since(startTime),
 		FirstTokenMs:    firstTokenMs,
 		ImageCount:      imageCount,
+		SearchCount:     searchCount,
 	}
 	applyOpenAIResponsesImageBillingMeta(result, body, upstreamPassthroughModel)
 	emitOpenAICacheProbeEvent(ctx, c, account, originalBody, body, result, promptCacheKey, true)
 	return result, nil
+}
+
+func buildOpenAIPartialForwardResult(resp *http.Response, requestBody []byte, originalModel, upstreamModel string, usage *OpenAIUsage, responseID string, imageCount, searchCount int, duration time.Duration) *OpenAIForwardResult {
+	if usage == nil {
+		usage = &OpenAIUsage{}
+	}
+	result := &OpenAIForwardResult{
+		RequestID:       resp.Header.Get("x-request-id"),
+		ResponseID:      strings.TrimSpace(responseID),
+		Usage:           *usage,
+		Model:           originalModel,
+		UpstreamModel:   upstreamModel,
+		ServiceTier:     extractOpenAIServiceTierFromBody(requestBody),
+		ReasoningEffort: extractOpenAIReasoningEffortFromBody(requestBody, originalModel),
+		Stream:          false,
+		OpenAIWSMode:    false,
+		ResponseHeaders: resp.Header.Clone(),
+		Duration:        duration,
+		ImageCount:      imageCount,
+		SearchCount:     searchCount,
+	}
+	applyOpenAIResponsesImageBillingMeta(result, requestBody, upstreamModel)
+	return result
 }
 
 func logOpenAIPassthroughInstructionsRejected(
@@ -7385,12 +7429,14 @@ type openaiStreamingResultPassthrough struct {
 	firstTokenMs *int
 	responseID   string
 	imageCount   int
+	searchCount  int
 }
 
 type openaiNonStreamingResultPassthrough struct {
-	usage      *OpenAIUsage
-	responseID string
-	imageCount int
+	usage       *OpenAIUsage
+	responseID  string
+	imageCount  int
+	searchCount int
 }
 
 func openAIStreamClientOutputStarted(c *gin.Context, localStarted bool) bool {
@@ -7840,12 +7886,55 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	clientOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	imageCounter := newOpenAIImageOutputCounter()
+	streamOutputAccumulator := apicompat.NewBufferedResponseAccumulator()
+	streamSeenSearchCalls := make(map[string]struct{})
+	streamSearchCount := 0
+	recordStreamSearchItem := func(item gjson.Result) {
+		t := strings.TrimSpace(item.Get("type").String())
+		switch t {
+		case "web_search_call", "tool_search_call", "x_search_call":
+		default:
+			return
+		}
+		key := strings.TrimSpace(item.Get("id").String())
+		if key == "" {
+			key = item.Raw
+		}
+		if key == "" {
+			key = fmt.Sprintf("search:%d:%s", streamSearchCount, t)
+		}
+		if _, exists := streamSeenSearchCalls[key]; exists {
+			return
+		}
+		streamSeenSearchCalls[key] = struct{}{}
+		streamSearchCount++
+	}
+	recordStreamSearchCalls := func(data []byte) {
+		if item := gjson.GetBytes(data, "item"); item.Exists() {
+			recordStreamSearchItem(item)
+		}
+		for _, item := range gjson.GetBytes(data, "response.output").Array() {
+			recordStreamSearchItem(item)
+		}
+		for _, item := range gjson.GetBytes(data, "output").Array() {
+			recordStreamSearchItem(item)
+		}
+	}
 	resultWithUsage := func() *openaiStreamingResultPassthrough {
+		searchCount := streamSearchCount
+		if output := streamOutputAccumulator.BuildOutput(); len(output) > 0 {
+			if outputJSON, err := json.Marshal(output); err == nil {
+				if accumulatedCount := countOpenAISearchCallsInResponsesJSONBytes(outputJSON); accumulatedCount > searchCount {
+					searchCount = accumulatedCount
+				}
+			}
+		}
 		return &openaiStreamingResultPassthrough{
 			usage:        usage,
 			firstTokenMs: firstTokenMs,
 			responseID:   responseID,
 			imageCount:   imageCounter.Count(),
+			searchCount:  searchCount,
 		}
 	}
 	ttftWatchdogEnabled := s.shouldEnableOpenAITTFTWatchdog(c, account)
@@ -7983,6 +8072,13 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 
 			imageCounter.AddSSEData(dataBytes)
+			recordStreamSearchCalls(dataBytes)
+			if responsesStreamEventMayContributeToOutput(eventType) {
+				var streamEvent apicompat.ResponsesStreamEvent
+				if err := json.Unmarshal(dataBytes, &streamEvent); err == nil {
+					streamOutputAccumulator.ProcessEvent(&streamEvent)
+				}
+			}
 			if sanitizedData, sanitized := sanitizeOpenAIResponseFailedEventForClient(dataBytes, eventType); sanitized {
 				openAICompatSetSSEFrameData(&frame, string(sanitizedData))
 				eventType, data = openAIStreamFrameEventTypeAndData(frame)
@@ -8225,6 +8321,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		usage = s.parseSSEUsageFromBody(string(body))
 	}
 	imageCount := countOpenAIResponseImageOutputsFromJSONBytes(body)
+	searchCount := countOpenAISearchCallsInResponsesJSONBytes(body)
 
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 
@@ -8236,7 +8333,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 	}
 	c.Data(resp.StatusCode, contentType, body)
-	return &openaiNonStreamingResultPassthrough{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount}, nil
+	return &openaiNonStreamingResultPassthrough{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
 }
 
 // handlePassthroughSSEToJSON converts an SSE response body into a JSON
@@ -8264,7 +8361,11 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 			if msg == "" {
 				msg = "Upstream compact response failed"
 			}
-			return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
+			return &openaiNonStreamingResultPassthrough{
+				usage:       extractOpenAIUsagePointerFromSSEEventBytes(terminalPayload),
+				responseID:  strings.TrimSpace(gjson.GetBytes(terminalPayload, "response.id").String()),
+				searchCount: countOpenAISearchCallsInResponsesSSEBody(bodyText),
+			}, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 		}
 		if !ok {
 			if response := extractOpenAISSETerminalResponse(terminalPayload); len(response) > 0 {
@@ -8327,7 +8428,8 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	c.Writer.Header().Set("Content-Type", contentType)
 	c.Data(resp.StatusCode, contentType, body)
 
-	return &openaiNonStreamingResultPassthrough{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount}, nil
+	searchCount := countOpenAISearchCallsInResponsesJSONBytes(body)
+	return &openaiNonStreamingResultPassthrough{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
 }
 
 func writeOpenAIPassthroughResponseHeaders(dst http.Header, src http.Header, filter *responseheaders.CompiledHeaderFilter) {
@@ -9009,9 +9111,10 @@ type openaiStreamingResult struct {
 }
 
 type openaiNonStreamingResult struct {
-	usage      *OpenAIUsage
-	responseID string
-	imageCount int
+	usage       *OpenAIUsage
+	responseID  string
+	imageCount  int
+	searchCount int
 }
 
 const openAIStreamRetryReplayStateKey = "openai_stream_retry_replay_state"
@@ -9439,11 +9542,46 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	streamOutputAccumulator := apicompat.NewBufferedResponseAccumulator()
 	streamImageOutputs := make([]json.RawMessage, 0, 1)
 	streamSeenImages := make(map[string]struct{})
+	streamSeenSearchCalls := make(map[string]struct{})
+	streamSearchCount := 0
+	recordStreamSearchItem := func(item gjson.Result) {
+		t := strings.TrimSpace(item.Get("type").String())
+		switch t {
+		case "web_search_call", "tool_search_call", "x_search_call":
+		default:
+			return
+		}
+		key := strings.TrimSpace(item.Get("id").String())
+		if key == "" {
+			key = item.Raw
+		}
+		if key == "" {
+			key = fmt.Sprintf("search:%d:%s", streamSearchCount, t)
+		}
+		if _, exists := streamSeenSearchCalls[key]; exists {
+			return
+		}
+		streamSeenSearchCalls[key] = struct{}{}
+		streamSearchCount++
+	}
+	recordStreamSearchCalls := func(data []byte) {
+		if item := gjson.GetBytes(data, "item"); item.Exists() {
+			recordStreamSearchItem(item)
+		}
+		for _, item := range gjson.GetBytes(data, "response.output").Array() {
+			recordStreamSearchItem(item)
+		}
+		for _, item := range gjson.GetBytes(data, "output").Array() {
+			recordStreamSearchItem(item)
+		}
+	}
 	resultWithUsage := func() *openaiStreamingResult {
-		searchCount := 0
+		searchCount := streamSearchCount
 		if output := streamOutputAccumulator.BuildOutput(); len(output) > 0 {
 			if outputJSON, err := json.Marshal(output); err == nil {
-				searchCount = countOpenAISearchCallsInResponsesJSONBytes(outputJSON)
+				if accumulatedCount := countOpenAISearchCallsInResponsesJSONBytes(outputJSON); accumulatedCount > searchCount {
+					searchCount = accumulatedCount
+				}
 			}
 		}
 		return &openaiStreamingResult{usage: usage, firstTokenMs: firstTokenMs, responseID: responseID, imageCount: imageCounter.Count(), searchCount: searchCount}
@@ -9628,6 +9766,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				stopTTFTWatchdog()
 			}
 			imageCounter.AddSSEData(dataBytes)
+			recordStreamSearchCalls(dataBytes)
 			s.parseSSEUsageBytes(dataBytes, usage)
 			if imageOutput, ok := extractImageGenerationOutputFromSSEData(dataBytes, streamSeenImages); ok {
 				streamImageOutputs = append(streamImageOutputs, imageOutput)
@@ -10513,6 +10652,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		*usage = usageValue
 	}
 	imageCount := countOpenAIResponseImageOutputsFromJSONBytes(body)
+	searchCount := countOpenAISearchCallsInResponsesJSONBytes(body)
 
 	// Replace model in response if needed
 	if originalModel != mappedModel {
@@ -10530,7 +10670,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 
 	c.Data(resp.StatusCode, contentType, body)
 
-	return &openaiNonStreamingResult{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount}, nil
+	return &openaiNonStreamingResult{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
 }
 
 func isEventStreamResponse(header http.Header) bool {
@@ -10559,7 +10699,11 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			if msg == "" {
 				msg = "Upstream compact response failed"
 			}
-			return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
+			return &openaiNonStreamingResult{
+				usage:       extractOpenAIUsagePointerFromSSEEventBytes(terminalPayload),
+				responseID:  strings.TrimSpace(gjson.GetBytes(terminalPayload, "response.id").String()),
+				searchCount: countOpenAISearchCallsInResponsesSSEBody(bodyText),
+			}, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 		}
 		if !ok {
 			if response := extractOpenAISSETerminalResponse(terminalPayload); len(response) > 0 {
@@ -10571,6 +10715,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 
 	usage := &OpenAIUsage{}
 	imageCount := 0
+	searchCount := 0
 	if ok {
 		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
 			*usage = parsedUsage
@@ -10594,6 +10739,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		// Correct tool calls in final response
 		body = s.correctToolCallsInResponseBody(body)
 		imageCount = countOpenAIResponseImageOutputsFromJSONBytes(body)
+		searchCount = countOpenAISearchCallsInResponsesJSONBytes(body)
 	} else {
 		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 		if terminalOK && terminalType == "response.failed" {
@@ -10623,7 +10769,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	c.Writer.Header().Set("Content-Type", contentType)
 	c.Data(resp.StatusCode, contentType, body)
 
-	return &openaiNonStreamingResult{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount}, nil
+	return &openaiNonStreamingResult{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
 }
 
 func extractOpenAISSETerminalEvent(body string) (string, []byte, bool) {
@@ -10880,7 +11026,14 @@ func countOpenAISearchCallsInResponsesJSONBytes(body []byte) int {
 		return 0
 	}
 	count := 0
-	for _, item := range gjson.GetBytes(body, "response.output").Array() {
+	output := gjson.GetBytes(body, "response.output")
+	if !output.Exists() {
+		output = gjson.GetBytes(body, "output")
+	}
+	if !output.Exists() && gjson.GetBytes(body, "@this").IsArray() {
+		output = gjson.GetBytes(body, "@this")
+	}
+	for _, item := range output.Array() {
 		t := strings.TrimSpace(item.Get("type").String())
 		switch t {
 		case "web_search_call", "tool_search_call", "x_search_call":
@@ -10888,6 +11041,53 @@ func countOpenAISearchCallsInResponsesJSONBytes(body []byte) int {
 		}
 	}
 	return count
+}
+
+func countOpenAISearchCallsInResponsesSSEBody(body string) int {
+	if strings.TrimSpace(body) == "" {
+		return 0
+	}
+	seen := make(map[string]struct{})
+	count := 0
+	addItem := func(item gjson.Result) {
+		t := strings.TrimSpace(item.Get("type").String())
+		switch t {
+		case "web_search_call", "tool_search_call", "x_search_call":
+		default:
+			return
+		}
+		key := strings.TrimSpace(item.Get("id").String())
+		if key == "" {
+			key = t + ":" + strings.TrimSpace(item.Raw)
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		count++
+	}
+
+	for _, frame := range openAICompatSSEFramesFromBody(body) {
+		data := strings.TrimSpace(openAICompatPayloadWithEventType(frame.Data, frame.EventType))
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+		if item := gjson.Get(data, "item"); item.Exists() && item.IsObject() {
+			addItem(item)
+		}
+		for _, item := range gjson.Get(data, "response.output").Array() {
+			addItem(item)
+		}
+	}
+	return count
+}
+
+func extractOpenAIUsagePointerFromSSEEventBytes(data []byte) *OpenAIUsage {
+	usage := &OpenAIUsage{}
+	if parsedUsage, ok := extractOpenAIUsageFromSSEEventBytes(data); ok {
+		*usage = parsedUsage
+	}
+	return usage
 }
 
 func extractImageGenerationOutputFromSSEData(data []byte, seen map[string]struct{}) (json.RawMessage, bool) {

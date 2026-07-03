@@ -17,6 +17,7 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 )
 
 const (
@@ -676,7 +677,7 @@ func (s *KiroOAuthService) EnrichRefreshedCredentialsForAccount(ctx context.Cont
 	if s != nil {
 		s.enrichTokenInfoForAccount(ctx, account, tokenInfo)
 	}
-	return MergeCredentials(credentials, kiroTokenInfoMap(tokenInfo))
+	return mergeKiroRefreshedCredentials(credentials, tokenInfo)
 }
 
 func (s *KiroOAuthService) ValidateAndEnrichRefreshedCredentialsForAccount(ctx context.Context, account *Account, credentials map[string]any) (map[string]any, error) {
@@ -687,7 +688,18 @@ func (s *KiroOAuthService) ValidateAndEnrichRefreshedCredentialsForAccount(ctx c
 	if err := s.enrichTokenInfoForExternalIDPAuth(ctx, account, tokenInfo); err != nil {
 		return nil, err
 	}
-	return MergeCredentials(credentials, kiroTokenInfoMap(tokenInfo)), nil
+	return mergeKiroRefreshedCredentials(credentials, tokenInfo), nil
+}
+
+func mergeKiroRefreshedCredentials(credentials map[string]any, tokenInfo *KiroTokenInfo) map[string]any {
+	merged := MergeCredentials(credentials, kiroTokenInfoMap(tokenInfo))
+	if machineID := strings.TrimSpace(stringCredential(credentials, "machine_id")); machineID != "" {
+		if merged == nil {
+			merged = map[string]any{}
+		}
+		merged["machine_id"] = machineID
+	}
+	return merged
 }
 
 func (s *KiroOAuthService) enrichTokenInfoForExternalIDPAuth(ctx context.Context, account *Account, tokenInfo *KiroTokenInfo) error {
@@ -745,6 +757,9 @@ func kiroTokenInfoMap(tokenInfo *KiroTokenInfo) map[string]any {
 		"scopes":            tokenInfo.Scopes,
 		"login_hint":        tokenInfo.LoginHint,
 		"subscription_type": tokenInfo.SubscriptionType,
+	}
+	if machineID := kiropkg.GenerateMachineID("", "", tokenInfo.RefreshToken); machineID != "" {
+		values["machine_id"] = machineID
 	}
 	for key, value := range values {
 		if text, ok := value.(string); ok && strings.TrimSpace(text) == "" {

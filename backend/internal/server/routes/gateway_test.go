@@ -47,6 +47,12 @@ func newGatewayRoutesTestRouter(platform ...string) *gin.Engine {
 	return router
 }
 
+func TestGatewayImageRouteKindForPlatform(t *testing.T) {
+	require.Equal(t, imageGatewayRouteOpenAI, imageGatewayRouteKindForPlatform(service.PlatformOpenAI))
+	require.Equal(t, imageGatewayRouteGrok, imageGatewayRouteKindForPlatform(service.PlatformGrok))
+	require.Equal(t, imageGatewayRouteUnsupported, imageGatewayRouteKindForPlatform(service.PlatformAnthropic))
+}
+
 func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
 	router := newGatewayRoutesTestRouter()
 

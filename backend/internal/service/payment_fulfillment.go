@@ -454,6 +454,10 @@ func (s *PaymentService) markCompletedWithClient(ctx context.Context, client *db
 }
 
 func (s *PaymentService) dispatchPaymentFulfillmentNotification(o *dbent.PaymentOrder, auditAction string) {
+	if s != nil && s.notificationDispatchHook != nil {
+		s.notificationDispatchHook(o, auditAction)
+		return
+	}
 	if s == nil || s.notificationEmailService == nil || o == nil {
 		return
 	}
@@ -580,7 +584,11 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder) error
 		switch state {
 		case subscriptionFulfillmentAuditStateSucceeded:
 			slog.Info("subscription already assigned for order, skipping", "orderID", o.ID, "groupID", gid)
-			return s.markCompletedWithoutAudit(ctx, o)
+			if err := s.markCompletedWithoutAudit(ctx, o); err != nil {
+				return err
+			}
+			s.dispatchPaymentFulfillmentNotification(o, "SUBSCRIPTION_SUCCESS")
+			return nil
 		case subscriptionFulfillmentAuditStateClaimed:
 			slog.Warn("resuming subscription fulfillment from orphaned claim", "orderID", o.ID, "groupID", gid)
 		default:
@@ -593,7 +601,16 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder) error
 		s.releaseSubscriptionFulfillmentClaim(ctx, o.ID)
 		return fmt.Errorf("assign subscription: %w", err)
 	}
-	return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS")
+	s.writeAuditLog(ctx, o.ID, "SUBSCRIPTION_SUCCESS", "system", map[string]any{
+		"rechargeCode":   o.RechargeCode,
+		"creditedAmount": o.Amount,
+		"payAmount":      o.PayAmount,
+	})
+	if err := s.markCompletedWithoutAudit(ctx, o); err != nil {
+		return err
+	}
+	s.dispatchPaymentFulfillmentNotification(o, "SUBSCRIPTION_SUCCESS")
+	return nil
 }
 
 type subscriptionFulfillmentAuditState int

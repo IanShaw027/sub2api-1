@@ -428,6 +428,43 @@ func TestResponsesToAnthropic_ToolUse(t *testing.T) {
 	assert.Equal(t, "get_weather", anth.Content[1].Name)
 }
 
+func TestResponsesToAnthropic_ToolUseNormalizesEmptyOrInvalidArguments(t *testing.T) {
+	tests := []struct {
+		name      string
+		arguments string
+	}{
+		{name: "empty", arguments: ""},
+		{name: "invalid_json", arguments: `{"city":`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := &ResponsesResponse{
+				ID:     "resp_456",
+				Model:  "gpt-5.2",
+				Status: "completed",
+				Output: []ResponsesOutput{
+					{
+						Type:      "function_call",
+						CallID:    "call_1",
+						Name:      "get_weather",
+						Arguments: tt.arguments,
+					},
+				},
+			}
+
+			anth := ResponsesToAnthropic(resp, "claude-opus-4-6")
+
+			require.Len(t, anth.Content, 1)
+			require.Equal(t, "tool_use", anth.Content[0].Type)
+			require.True(t, json.Valid(anth.Content[0].Input))
+			require.JSONEq(t, `{}`, string(anth.Content[0].Input))
+			_, err := json.Marshal(anth)
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestClaudeToolNameMapFromTools_PreservesOriginalClaudeToolName(t *testing.T) {
 	nameMap := ClaudeToolNameMapFromTools([]ResponsesTool{
 		{Type: "function", Name: "__ReadFile"},

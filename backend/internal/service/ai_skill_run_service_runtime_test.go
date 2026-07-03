@@ -130,11 +130,19 @@ func (s *aiSkillRunServiceTestStore) UpdateRun(_ context.Context, run *AISkillRu
 }
 
 type aiSkillRunServiceTestSettlementRepo struct {
-	created []*AISkillSettlement
+	created          []*AISkillSettlement
+	nextSettlementID int64
 }
 
 func (r *aiSkillRunServiceTestSettlementRepo) CreateSettlement(_ context.Context, settlement *AISkillSettlement) error {
-	r.created = append(r.created, settlement)
+	if r.nextSettlementID <= 0 {
+		r.nextSettlementID = 1
+	}
+	settlement.ID = r.nextSettlementID
+	r.nextSettlementID++
+	copy := *settlement
+	copy.Metadata = cloneAIMap(settlement.Metadata)
+	r.created = append(r.created, &copy)
 	return nil
 }
 
@@ -413,7 +421,7 @@ func TestAISkillRunServiceExecuteScriptDispatchAckReturnsDispatchedRun(t *testin
 	require.Nil(t, run.SettlementID)
 }
 
-func TestAISkillRunServiceExecuteSuccessKeepsRunUnsettledWhenFinalUpdateFails(t *testing.T) {
+func TestAISkillRunServiceExecuteSuccessRecoversWhenFinalUpdateFailsAfterSettlement(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -464,23 +472,25 @@ func TestAISkillRunServiceExecuteSuccessKeepsRunUnsettledWhenFinalUpdateFails(t 
 			"topic": "golang",
 		},
 	})
-	require.Error(t, err)
-	require.Nil(t, result)
+	require.NoError(t, err)
+	require.NotNil(t, result)
 	require.Len(t, runtime.requests, 1)
 	run := store.runs[1]
 	require.NotNil(t, run)
-	require.Equal(t, AISkillRunStatusDispatched, run.Status)
+	require.Equal(t, AISkillRunStatusSucceeded, run.Status)
 	require.Equal(t, "openai", run.Provider)
 	require.Equal(t, "resp_settled", run.ExternalJobID)
 	require.Empty(t, run.ErrorMessage)
 	require.Equal(t, 0.0, run.ChargeAmount)
-	require.Empty(t, run.BillingMode)
-	require.Empty(t, run.Currency)
-	require.Nil(t, run.SettlementID)
+	require.Equal(t, AISkillBillingModeFree, run.BillingMode)
+	require.Equal(t, "credit", run.Currency)
+	require.NotNil(t, run.SettlementID)
+	require.Equal(t, int64(1), *run.SettlementID)
 	settlementRepo, ok := settlementSvc.repo.(*aiSkillRunServiceTestSettlementRepo)
 	require.True(t, ok)
 	require.Len(t, settlementRepo.created, 1)
-	require.Equal(t, 2, store.updateCalls)
+	require.Equal(t, int64(1), settlementRepo.created[0].ID)
+	require.Equal(t, 3, store.updateCalls)
 }
 
 func cloneAISkillEntityForRunRuntime(skill *AISkill) *AISkill {

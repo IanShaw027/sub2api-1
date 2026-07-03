@@ -191,13 +191,38 @@ func (s *AISkillRunService) Execute(ctx context.Context, userID int64, input *AI
 	prepared.Run.Currency = settlement.Currency
 	prepared.Run.SettlementID = &settlement.ID
 	prepared.Run.UpdatedAt = s.nowOrDefault()
-	if err := s.runRepo.UpdateRun(ctx, prepared.Run); err != nil {
-		return nil, err
-	}
+	s.persistSettledRunBestEffort(ctx, prepared.Run, settlement)
 	return &AISkillRunResult{
 		Prepared: prepared,
 		Dispatch: dispatch,
 	}, nil
+}
+
+func (s *AISkillRunService) persistSettledRunBestEffort(ctx context.Context, run *AISkillRun, settlement *AISkillSettlement) {
+	if s == nil || s.runRepo == nil || run == nil || settlement == nil {
+		return
+	}
+	if err := s.runRepo.UpdateRun(ctx, run); err == nil {
+		return
+	}
+	current, err := s.runRepo.GetRunByID(ctx, run.ID)
+	if err != nil || current == nil {
+		return
+	}
+	current.Status = AISkillRunStatusSucceeded
+	current.Provider = strings.TrimSpace(run.Provider)
+	current.ExternalJobID = strings.TrimSpace(run.ExternalJobID)
+	current.Output = cloneAIMap(run.Output)
+	current.ErrorMessage = ""
+	current.BillingMode = settlement.BillingMode
+	current.ChargeAmount = settlement.TotalAmount
+	current.Currency = settlement.Currency
+	current.SettlementID = &settlement.ID
+	current.UpdatedAt = s.nowOrDefault()
+	if err := s.runRepo.UpdateRun(ctx, current); err != nil {
+		return
+	}
+	*run = *current
 }
 
 func (s *AISkillRunService) resolveVersion(ctx context.Context, skillID int64, versionID *int64) (*AISkillVersion, error) {

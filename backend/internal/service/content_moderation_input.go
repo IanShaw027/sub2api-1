@@ -22,8 +22,6 @@ var (
 		"command-name",
 		"command-message",
 		"command-args",
-		"context",
-		"artifacts",
 	}
 )
 

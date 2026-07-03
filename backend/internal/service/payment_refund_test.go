@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -1940,6 +1941,13 @@ func TestQueryAndFinalizeRefundAddsOnlyPendingAmountToExistingRefund(t *testing.
 	require.NoError(t, err)
 	_, err = client.PaymentAuditLog.Create().
 		SetOrderID(strconv.FormatInt(order.ID, 10)).
+		SetAction("REFUND_SUCCESS").
+		SetOperator("admin").
+		SetDetail(`{"refundAmount":30,"totalRefunded":30,"reason":"first partial","balanceDeducted":30}`).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(order.ID, 10)).
 		SetAction("REFUND_PENDING").
 		SetOperator("admin").
 		SetDetail(`{"refundID":"rf_second","refundAmount":20,"deductionRollbackOK":true}`).
@@ -2005,6 +2013,61 @@ func TestQueryAndFinalizeRefundRestoresPendingWhenFinalDeductionFails(t *testing
 
 	exists, err := client.PaymentAuditLog.Query().
 		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("REFUND_FINAL_DEDUCTION_FAILED")).
+		Exist(ctx)
+	require.NoError(t, err)
+	require.True(t, exists)
+}
+
+func TestQueryAndFinalizeRefundRestoresPendingWhenRefundPersistFailsAfterDeduction(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	order := createPendingRefundOrderForTest(t, ctx, client, "query-finalize-persist-fail")
+
+	var deducted float64
+	var restored float64
+	svc := &PaymentService{
+		entClient:    client,
+		loadBalancer: &captureLoadBalancer{},
+		userRepo: &mockUserRepo{
+			deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
+				deducted += amount
+				return nil
+			},
+			updateBalanceFn: func(ctx context.Context, id int64, amount float64) error {
+				restored += amount
+				return nil
+			},
+		},
+	}
+	restore := replacePaymentProviderFactoryForTest(t, &refundQueryProviderTestDouble{
+		refundResponse: &payment.RefundResponse{RefundID: "rf_query_final", Status: payment.ProviderStatusSuccess},
+	})
+	defer restore()
+
+	trigger := fmt.Sprintf(`
+		CREATE TRIGGER fail_refund_finalize_once
+		BEFORE UPDATE OF status ON payment_orders
+		WHEN NEW.id = %d AND NEW.status = '%s'
+		BEGIN
+			SELECT RAISE(FAIL, 'forced refund finalize failure');
+		END;
+	`, order.ID, OrderStatusRefunded)
+	_, err := client.ExecContext(ctx, trigger)
+	require.NoError(t, err)
+
+	result, err := svc.QueryAndFinalizeRefund(ctx, order.ID)
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "forced refund finalize failure")
+	require.Equal(t, 100.0, deducted)
+	require.Equal(t, 100.0, restored)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRefundPending, reloaded.Status)
+
+	exists, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("REFUND_FINALIZE_PERSIST_FAILED")).
 		Exist(ctx)
 	require.NoError(t, err)
 	require.True(t, exists)

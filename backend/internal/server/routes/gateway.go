@@ -42,10 +42,6 @@ func RegisterGatewayRoutes(
 	isOpenAIGatewayPlatform := func(c *gin.Context) bool {
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
-	isImageSupportedPlatform := func(c *gin.Context) bool {
-		p := getGroupPlatform(c)
-		return p == service.PlatformOpenAI || p == service.PlatformGrok
-	}
 
 	isVideoSupportedPlatform := func(c *gin.Context) bool {
 		return getGroupPlatform(c) == service.PlatformGrok
@@ -61,6 +57,16 @@ func RegisterGatewayRoutes(
 				"message": endpoint + " is not supported for this platform",
 			},
 		})
+	}
+	imageHandler := func(c *gin.Context) {
+		switch imageGatewayRouteKindForPlatform(getGroupPlatform(c)) {
+		case imageGatewayRouteOpenAI:
+			h.OpenAIGateway.Images(c)
+		case imageGatewayRouteGrok:
+			h.OpenAIGateway.GrokImages(c)
+		default:
+			rejectUnsupportedEndpoint(c, "Images API")
+		}
 	}
 
 	// API网关（Claude API兼容）
@@ -142,30 +148,10 @@ func RegisterGatewayRoutes(
 			h.OpenAIGateway.Embeddings(c)
 		})
 		gateway.POST("/images/generations", func(c *gin.Context) {
-			if !isImageSupportedPlatform(c) {
-				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-				c.JSON(http.StatusNotFound, gin.H{
-					"error": gin.H{
-						"type":    "not_found_error",
-						"message": "Images API is not supported for this platform",
-					},
-				})
-				return
-			}
-			h.OpenAIGateway.Images(c)
+			imageHandler(c)
 		})
 		gateway.POST("/images/edits", func(c *gin.Context) {
-			if !isImageSupportedPlatform(c) {
-				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-				c.JSON(http.StatusNotFound, gin.H{
-					"error": gin.H{
-						"type":    "not_found_error",
-						"message": "Images API is not supported for this platform",
-					},
-				})
-				return
-			}
-			h.OpenAIGateway.Images(c)
+			imageHandler(c)
 		})
 		// Videos API (Grok/xAI-compatible): POST /v1/videos, /v1/videos/generations etc.
 		videoHandler := func(c *gin.Context) {
@@ -249,30 +235,10 @@ func RegisterGatewayRoutes(
 		h.OpenAIGateway.Embeddings(c)
 	})
 	r.POST("/images/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
-		if !isImageSupportedPlatform(c) {
-			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-			c.JSON(http.StatusNotFound, gin.H{
-				"error": gin.H{
-					"type":    "not_found_error",
-					"message": "Images API is not supported for this platform",
-				},
-			})
-			return
-		}
-		h.OpenAIGateway.Images(c)
+		imageHandler(c)
 	})
 	r.POST("/images/edits", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
-		if !isImageSupportedPlatform(c) {
-			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-			c.JSON(http.StatusNotFound, gin.H{
-				"error": gin.H{
-					"type":    "not_found_error",
-					"message": "Images API is not supported for this platform",
-				},
-			})
-			return
-		}
-		h.OpenAIGateway.Images(c)
+		imageHandler(c)
 	})
 	// Videos API aliases without /v1 prefix. Full support for Grok/xAI video modes.
 	rootVideoHandler := func(c *gin.Context) {
@@ -328,6 +294,25 @@ func RegisterGatewayRoutes(
 		antigravityV1Beta.POST("/models/*modelAction", h.Gateway.GeminiV1BetaModels)
 	}
 
+}
+
+type imageGatewayRouteKind string
+
+const (
+	imageGatewayRouteUnsupported imageGatewayRouteKind = "unsupported"
+	imageGatewayRouteOpenAI      imageGatewayRouteKind = "openai"
+	imageGatewayRouteGrok        imageGatewayRouteKind = "grok"
+)
+
+func imageGatewayRouteKindForPlatform(platform string) imageGatewayRouteKind {
+	switch platform {
+	case service.PlatformOpenAI:
+		return imageGatewayRouteOpenAI
+	case service.PlatformGrok:
+		return imageGatewayRouteGrok
+	default:
+		return imageGatewayRouteUnsupported
+	}
 }
 
 // getGroupPlatform extracts the group platform from the API Key stored in context.

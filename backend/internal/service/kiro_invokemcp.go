@@ -285,15 +285,15 @@ func (s *KiroGatewayService) kiroMCPWebSearch(ctx context.Context, account *Acco
 // ok=true，避免绕过 allowed_domains / blocked_domains。账号不适用或 MCP 失败
 // 时 ok=false，由调用方回退到本地 fetcher。
 func (s *KiroGatewayService) kiroMCPWebFetch(ctx context.Context, account *Account, req webfetch.FetchRequest, maxContentTokens int) (*webfetch.FetchResult, bool) {
+	if !kiroMCPEligible(account) {
+		return nil, false
+	}
 	normalizedURL, _, fetchErr := webfetch.ValidateRequestURL(req.URL, req)
 	if fetchErr != nil {
 		return &webfetch.FetchResult{
 			RequestedURL: req.URL,
 			Error:        fetchErr,
 		}, true
-	}
-	if !kiroMCPEligible(account) {
-		return nil, false
 	}
 	inner, err := s.invokeKiroMCP(ctx, account, kiroMCPToolFetch, map[string]any{"url": normalizedURL})
 	if err != nil || strings.TrimSpace(inner) == "" {

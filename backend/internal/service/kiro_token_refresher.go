@@ -96,6 +96,11 @@ func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map
 		"refresh_token": refreshToken,
 		"expires_at":    expiresAt,
 	}
+	if strings.TrimSpace(account.GetCredential("machine_id")) == "" {
+		if machineID := kiropkg.GenerateMachineID("", "", account.GetCredential("refresh_token")); machineID != "" {
+			newCreds["machine_id"] = machineID
+		}
+	}
 	if profileARN != "" {
 		newCreds["profile_arn"] = profileARN
 	}

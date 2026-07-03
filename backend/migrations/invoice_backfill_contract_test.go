@@ -41,6 +41,17 @@ func TestTLSFingerprintCaptureSampleNativeColumnsMigration(t *testing.T) {
 	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS raw_client_hello BYTEA")
 }
 
+func TestEmbeddedMigrationsDoNotContainDownSections(t *testing.T) {
+	files, err := fs.Glob(FS, "*.sql")
+	require.NoError(t, err)
+
+	for _, file := range files {
+		content, err := FS.ReadFile(file)
+		require.NoError(t, err)
+		require.NotContains(t, string(content), "+migrate Down", "%s contains a Down section, but the migration runner executes the whole file", file)
+	}
+}
+
 func TestMigrationFilenameNumericPrefixesStayDeliberate(t *testing.T) {
 	files, err := fs.Glob(FS, "*.sql")
 	require.NoError(t, err)
@@ -89,6 +100,7 @@ func TestMigrationFilenameNumericPrefixesStayDeliberate(t *testing.T) {
 		"141": {"141_add_media_thumbnail_mime_type.sql", "141_subscription_expiry_notify_enabled.sql"},
 		"142": {"142_add_media_storage_profile_id.sql", "142_create_ai_skill_center.sql", "142_user_platform_quotas.sql"},
 		"143": {"143_create_ai_skill_installs.sql", "143_group_models_list_config.sql"},
+		"148": {"148_expand_usage_log_request_type_check.sql", "148a_validate_usage_log_request_type_check.sql"},
 		"151": {"151_account_autopause_expiry_index_notx.sql", "151_apply_rpm_parallel_constraints_and_replace_claude_code_template.sql", "151_channel_monitor_jitter.sql"},
 		"152": {"152_add_group_openai_image_main_model.sql", "152_payment_refund_self_service.sql", "152_scheduler_outbox_dedup_key.sql"},
 		"153": {"153_add_dashboard_billing_split_costs.sql", "153_scheduler_outbox_pending_dedup_key_index_notx.sql"},
@@ -100,6 +112,7 @@ func TestMigrationFilenameNumericPrefixesStayDeliberate(t *testing.T) {
 		"161": {"161_add_opus48_to_model_mapping.sql", "161_channel_monitor_add_kiro_provider.sql"},
 		"162": {"162_create_codex_invite_reset_history.sql", "162_create_tls_fingerprint_routers.sql", "162_deleted_api_key_audit.sql"},
 		"176": {"176_add_tls_fingerprint_profile_transport.sql", "176_tls_fingerprint_capture_unification.sql"},
+		"185": {"185_expand_usage_log_request_type_check.sql", "185a_validate_usage_log_request_type_check.sql"},
 	}
 
 	byPrefix := make(map[string][]string)

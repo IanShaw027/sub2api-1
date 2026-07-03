@@ -190,6 +190,10 @@ func groupFromServiceBase(g *service.Group) Group {
 		Platform:             g.Platform,
 		RateMultiplier:       g.RateMultiplier,
 		RefundRateMultiplier: g.RefundRateMultiplier,
+		PeakRateEnabled:      g.PeakRateEnabled,
+		PeakStart:            g.PeakStart,
+		PeakEnd:              g.PeakEnd,
+		PeakRateMultiplier:   g.PeakRateMultiplier,
 		IsExclusive:          g.IsExclusive,
 		UserSelectable:       g.UserSelectable,
 		Status:               g.Status,
@@ -266,6 +270,8 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		SessionWindowStart:           a.SessionWindowStart,
 		SessionWindowEnd:             a.SessionWindowEnd,
 		SessionWindowStatus:          a.SessionWindowStatus,
+		ParentAccountID:              a.ParentAccountID,
+		QuotaDimension:               a.QuotaDimension,
 		GroupIDs:                     a.GroupIDs,
 	}
 

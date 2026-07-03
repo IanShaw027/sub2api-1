@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"io"
 	"testing"
 	"time"
@@ -187,6 +188,7 @@ func (s *aiSkillStoreStub) UpdateSettlement(_ context.Context, settlement *AISki
 
 type aiSkillBalanceChargerStub struct {
 	charges []AISkillBalanceChargeInput
+	refunds []AISkillBalanceRefundInput
 	result  *AISkillBalanceChargeResult
 	err     error
 }
@@ -203,10 +205,18 @@ func (s *aiSkillBalanceChargerStub) ChargeUserBalance(_ context.Context, input A
 	return &copy, nil
 }
 
+func (s *aiSkillBalanceChargerStub) RefundUserBalance(_ context.Context, input AISkillBalanceRefundInput) (*AISkillBalanceRefundResult, error) {
+	s.refunds = append(s.refunds, input)
+	return &AISkillBalanceRefundResult{RefundedAmount: input.Amount}, nil
+}
+
 type aiSkillCreatorCreditorStub struct {
-	inputs []AISkillCreatorEarningsInput
-	amount float64
-	err    error
+	inputs        []AISkillCreatorEarningsInput
+	reversals     []AISkillCreatorEarningsReversalInput
+	amount        float64
+	err           error
+	reverseAmount float64
+	reverseErr    error
 }
 
 func (s *aiSkillCreatorCreditorStub) CreditCreatorEarnings(_ context.Context, input AISkillCreatorEarningsInput) (float64, error) {
@@ -218,6 +228,17 @@ func (s *aiSkillCreatorCreditorStub) CreditCreatorEarnings(_ context.Context, in
 		return input.Amount, nil
 	}
 	return s.amount, nil
+}
+
+func (s *aiSkillCreatorCreditorStub) ReverseCreatorEarnings(_ context.Context, input AISkillCreatorEarningsReversalInput) (float64, error) {
+	s.reversals = append(s.reversals, input)
+	if s.reverseErr != nil {
+		return 0, s.reverseErr
+	}
+	if s.reverseAmount == 0 {
+		return input.Amount, nil
+	}
+	return s.reverseAmount, nil
 }
 
 type aiSkillRuntimeGatewayStub struct {
@@ -473,6 +494,87 @@ func TestAISkillRunServiceExecuteFailedDispatchDoesNotCharge(t *testing.T) {
 	require.Equal(t, 0.0, run.ChargeAmount)
 	require.Equal(t, "openai", run.Provider)
 	require.Equal(t, "resp_failed", run.ExternalJobID)
+}
+
+func TestAISkillSettlementRefundsBuyerWhenCreatorCreditFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillStoreStub()
+	balance := &aiSkillBalanceChargerStub{
+		result: &AISkillBalanceChargeResult{ChargedAmount: 12.5, BalanceAfter: 87.5},
+	}
+	creator := &aiSkillCreatorCreditorStub{err: errors.New("credit down")}
+	settlementSvc := NewAISkillSettlementService(store, balance, creator)
+
+	settlement, err := settlementSvc.Settle(ctx, AISkillSettleInput{
+		RunID:         3001,
+		SkillID:       1001,
+		VersionID:     2001,
+		BuyerUserID:   900,
+		CreatorUserID: 700,
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:                   AISkillBillingModePerRun,
+			PricePerRun:            12.5,
+			PlatformCommissionRate: 0.2,
+		},
+		Metadata: map[string]any{"scene": "creator-fail"},
+	})
+
+	require.Error(t, err)
+	require.Nil(t, settlement)
+	require.Len(t, balance.charges, 1)
+	require.Len(t, balance.refunds, 1)
+	require.Equal(t, int64(900), balance.refunds[0].UserID)
+	require.Equal(t, 12.5, balance.refunds[0].Amount)
+	require.Equal(t, "ai_skill_run:3001", balance.refunds[0].Reference)
+	require.Len(t, store.settlements, 1)
+	for _, stored := range store.settlements {
+		require.Equal(t, AISkillSettlementStatusFailed, stored.Status)
+		require.Contains(t, stored.FailureReason, "credit down")
+	}
+}
+
+func TestAISkillSettlementReversesCreatorEarningsWhenCreditedAmountMismatches(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillStoreStub()
+	balance := &aiSkillBalanceChargerStub{
+		result: &AISkillBalanceChargeResult{ChargedAmount: 12.5, BalanceAfter: 87.5},
+	}
+	creator := &aiSkillCreatorCreditorStub{amount: 9.5}
+	settlementSvc := NewAISkillSettlementService(store, balance, creator)
+
+	settlement, err := settlementSvc.Settle(ctx, AISkillSettleInput{
+		RunID:         3002,
+		SkillID:       1002,
+		VersionID:     2002,
+		BuyerUserID:   901,
+		CreatorUserID: 701,
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:                   AISkillBillingModePerRun,
+			PricePerRun:            12.5,
+			PlatformCommissionRate: 0.2,
+		},
+		Metadata: map[string]any{"scene": "creator-mismatch"},
+	})
+
+	require.ErrorIs(t, err, ErrAISkillCreatorEarningsMismatch)
+	require.Nil(t, settlement)
+	require.Len(t, balance.charges, 1)
+	require.Len(t, balance.refunds, 1)
+	require.Len(t, creator.inputs, 1)
+	require.Len(t, creator.reversals, 1)
+	require.Equal(t, int64(701), creator.reversals[0].CreatorUserID)
+	require.Equal(t, int64(3002), creator.reversals[0].RunID)
+	require.Equal(t, 9.5, creator.reversals[0].Amount)
+
+	require.Len(t, store.settlements, 1)
+	for _, stored := range store.settlements {
+		require.Equal(t, AISkillSettlementStatusFailed, stored.Status)
+		require.Contains(t, stored.FailureReason, ErrAISkillCreatorEarningsMismatch.Error())
+	}
 }
 
 func TestAISkillRunServicePrepareBuildsPromptImageAndFreeSettlement(t *testing.T) {

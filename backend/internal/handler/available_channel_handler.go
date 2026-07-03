@@ -55,14 +55,18 @@ func (h *AvailableChannelHandler) featureEnabled(c *gin.Context) bool {
 // 订阅视觉加深），并展示默认倍率与高峰倍率规则；用户专属倍率前端走
 // /groups/rates，和 API 密钥页面保持一致。
 type userAvailableGroup struct {
-	ID               int64   `json:"id"`
-	Name             string  `json:"name"`
-	DisplayName      string  `json:"display_name"`
-	Platform         string  `json:"platform"`
-	SubscriptionType string  `json:"subscription_type"`
-	RateMultiplier   float64 `json:"rate_multiplier"`
-	IsExclusive      bool    `json:"is_exclusive"`
-	UserSelectable   bool    `json:"user_selectable"`
+	ID                 int64   `json:"id"`
+	Name               string  `json:"name"`
+	DisplayName        string  `json:"display_name"`
+	Platform           string  `json:"platform"`
+	SubscriptionType   string  `json:"subscription_type"`
+	RateMultiplier     float64 `json:"rate_multiplier"`
+	PeakRateEnabled    bool    `json:"peak_rate_enabled"`
+	PeakStart          string  `json:"peak_start"`
+	PeakEnd            string  `json:"peak_end"`
+	PeakRateMultiplier float64 `json:"peak_rate_multiplier"`
+	IsExclusive        bool    `json:"is_exclusive"`
+	UserSelectable     bool    `json:"user_selectable"`
 }
 
 func (g userAvailableGroup) DisplayLabel() string {
@@ -245,14 +249,18 @@ func filterUserVisibleGroups(
 			displayName = g.Name
 		}
 		visible = append(visible, userAvailableGroup{
-			ID:               g.ID,
-			Name:             g.Name,
-			DisplayName:      displayName,
-			Platform:         g.Platform,
-			SubscriptionType: g.SubscriptionType,
-			RateMultiplier:   g.RateMultiplier,
-			IsExclusive:      g.IsExclusive,
-			UserSelectable:   g.UserSelectable,
+			ID:                 g.ID,
+			Name:               g.Name,
+			DisplayName:        displayName,
+			Platform:           g.Platform,
+			SubscriptionType:   g.SubscriptionType,
+			RateMultiplier:     g.RateMultiplier,
+			PeakRateEnabled:    g.PeakRateEnabled,
+			PeakStart:          g.PeakStart,
+			PeakEnd:            g.PeakEnd,
+			PeakRateMultiplier: g.PeakRateMultiplier,
+			IsExclusive:        g.IsExclusive,
+			UserSelectable:     g.UserSelectable,
 		})
 	}
 	return visible
@@ -262,14 +270,18 @@ func toServiceAvailableGroupRefs(groups []userAvailableGroup) []service.Availabl
 	refs := make([]service.AvailableGroupRef, 0, len(groups))
 	for _, group := range groups {
 		refs = append(refs, service.AvailableGroupRef{
-			ID:               group.ID,
-			Name:             group.Name,
-			DisplayName:      group.DisplayLabel(),
-			Platform:         group.Platform,
-			SubscriptionType: group.SubscriptionType,
-			RateMultiplier:   group.RateMultiplier,
-			IsExclusive:      group.IsExclusive,
-			UserSelectable:   group.UserSelectable,
+			ID:                 group.ID,
+			Name:               group.Name,
+			DisplayName:        group.DisplayLabel(),
+			Platform:           group.Platform,
+			SubscriptionType:   group.SubscriptionType,
+			RateMultiplier:     group.RateMultiplier,
+			PeakRateEnabled:    group.PeakRateEnabled,
+			PeakStart:          group.PeakStart,
+			PeakEnd:            group.PeakEnd,
+			PeakRateMultiplier: group.PeakRateMultiplier,
+			IsExclusive:        group.IsExclusive,
+			UserSelectable:     group.UserSelectable,
 		})
 	}
 	return refs

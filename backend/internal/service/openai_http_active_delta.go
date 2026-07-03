@@ -128,6 +128,24 @@ func (s *OpenAIGatewayService) buildOpenAIHTTPActiveDeltaPayload(ctx context.Con
 		return result, nil
 	}
 
+	if HasToolContinuationOutputInRawPayload(payload) {
+		result.log = openAIWSDeltaShadowLog{
+			GroupID:               groupID,
+			APIKeyID:              apiKeyID,
+			SessionHash:           sessionHash,
+			RequestID:             requestID,
+			AccountID:             account.ID,
+			CachedFound:           found,
+			CachedAccountID:       cached.accountID,
+			CachedLastResponseID:  cached.lastResponseID,
+			HasFunctionCallOutput: true,
+			Candidate:             false,
+			FallbackReason:        "has_function_call_output",
+		}
+		logOpenAIWSDeltaShadow(result.log)
+		return result, nil
+	}
+
 	shadowInput := openAIWSDeltaShadowInput{
 		GroupID:               groupID,
 		APIKeyID:              apiKeyID,

@@ -7943,8 +7943,17 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		// TEMP_DIAG(openai_ws_delta_shadow): owner 在发送前评估 strict-delta 候选（只读），
 		// owner 生命周期 = TryBegin → 评估 → (完成后)写状态 → End；non-owner 仅记录 same_session_in_flight。
 		shadowOwner := false
+		releaseShadowOwner := func() {
+			if shadowOwner {
+				stateStore.EndSessionInFlight(groupID, apiKeyID, sessionHash)
+				shadowOwner = false
+			}
+		}
 		if deltaShadowEnabled && stateStore != nil && sessionHash != "" {
 			shadowOwner = stateStore.TrySessionInFlight(groupID, apiKeyID, sessionHash)
+			if shadowOwner {
+				defer releaseShadowOwner()
+			}
 			if !shadowOwner {
 				logOpenAIWSDeltaShadow(openAIWSDeltaShadowLog{
 					GroupID:        groupID,
@@ -7984,10 +7993,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			(currentTurnReplayInputExists && openAIWSRawItemsHaveToolCallContextForOutputs(currentTurnReplayInput))
 		result, relayErr := sendAndRelay(turn, sessionLease, currentPayload, currentPayloadBytes, currentOriginalModel, currentImageBillingModel, currentImageSizeTier, currentImageInputSize, canRecoverPreviousResponseNotFound)
 		if relayErr != nil {
-			if shadowOwner {
-				stateStore.EndSessionInFlight(groupID, apiKeyID, sessionHash)
-				shadowOwner = false
-			}
+			releaseShadowOwner()
 			lastTurnClean = false
 			if recoverIngressPrevResponseNotFound(relayErr, turn, connID) {
 				continue
@@ -8006,10 +8012,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return finalErr
 		}
 		if result == nil {
-			if shadowOwner {
-				stateStore.EndSessionInFlight(groupID, apiKeyID, sessionHash)
-				shadowOwner = false
-			}
+			releaseShadowOwner()
 			return errors.New("websocket turn result is nil")
 		}
 		turnRetry = 0
@@ -8112,8 +8115,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						}
 					}
 				}
-				stateStore.EndSessionInFlight(groupID, apiKeyID, sessionHash)
-				shadowOwner = false
+				releaseShadowOwner()
 			}
 			if connID != "" {
 				preferredConnID = connID

@@ -3947,6 +3947,116 @@ func TestOpenAINonStreamingSoftRateLimitAdvisoryDoesNotFailover(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "Approaching rate limits")
 }
 
+func TestOpenAIForwardNonStreamingResponseCountsResponsesSearchCalls(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-5","stream":false,"input":"hi"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{"id":"resp_search","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]},{"type":"web_search_call","id":"ws_1"},{"type":"tool_search_call","id":"ts_1"},{"type":"x_search_call","id":"xs_1"}],"usage":{"input_tokens":1,"output_tokens":1}}`)),
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID:          1,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test"},
+		Extra:       map[string]any{"openai_responses_supported": true},
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 3, result.SearchCount)
+}
+
+func TestCountOpenAISearchCallsInResponsesJSONBytesAcceptsBareOutputArray(t *testing.T) {
+	body := []byte(`[{"type":"message"},{"type":"web_search_call","id":"ws_1"},{"type":"tool_search_call","id":"ts_1"},{"type":"x_search_call","id":"xs_1"}]`)
+
+	require.Equal(t, 3, countOpenAISearchCallsInResponsesJSONBytes(body))
+}
+
+func TestOpenAIStreamingResponseCountsBareAccumulatedSearchCalls(t *testing.T) {
+	setGinTestMode()
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: response.output_item.added`,
+			`data: {"type":"response.output_item.added","output_index":0,"item":{"id":"ws_1","type":"web_search_call","status":"in_progress"}}`,
+			``,
+			`event: response.output_item.added`,
+			`data: {"type":"response.output_item.added","output_index":1,"item":{"id":"ts_1","type":"tool_search_call","status":"in_progress"}}`,
+			``,
+			`event: response.completed`,
+			`data: {"type":"response.completed","response":{"id":"resp_done","usage":{"input_tokens":1,"output_tokens":1}}}`,
+			``,
+			`data: [DONE]`,
+			``,
+		}, "\n"))),
+		Header: http.Header{"Content-Type": []string{"text/event-stream"}},
+	}
+
+	result, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "model", "model")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, result.searchCount)
+}
+
+func TestOpenAIForwardStreamingResponseCountsResponsesSearchCalls(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-5","stream":true,"input":"hi"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: response.output_item.added`,
+			`data: {"type":"response.output_item.added","output_index":0,"item":{"id":"ws_1","type":"web_search_call","status":"in_progress"}}`,
+			``,
+			`event: response.output_item.added`,
+			`data: {"type":"response.output_item.added","output_index":1,"item":{"id":"xs_1","type":"x_search_call","status":"in_progress"}}`,
+			``,
+			`event: response.completed`,
+			`data: {"type":"response.completed","response":{"id":"resp_done","output":[{"type":"web_search_call","id":"ws_1"},{"type":"x_search_call","id":"xs_1"}],"usage":{"input_tokens":1,"output_tokens":1}}}`,
+			``,
+			`data: [DONE]`,
+			``,
+		}, "\n"))),
+		Header: http.Header{"Content-Type": []string{"text/event-stream"}},
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID:          1,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test"},
+		Extra:       map[string]any{"openai_responses_supported": true},
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, result.SearchCount)
+}
+
 func TestOpenAINonStreamingPassthroughSoftRateLimitAdvisoryDoesNotFailover(t *testing.T) {
 	setGinTestMode()
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
@@ -5536,11 +5646,39 @@ func TestHandleSSEToJSON_ResponseFailedReturnsProtocolError(t *testing.T) {
 	}, "\n"))
 
 	result, err := svc.handleSSEToJSON(resp, c, account, body, "gpt-4o", "gpt-4o")
-	require.Nil(t, result)
+	require.NotNil(t, result)
 	require.Error(t, err)
+	require.Equal(t, 0, result.searchCount)
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Contains(t, rec.Body.String(), "upstream rejected request")
 	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+}
+
+func TestHandleSSEToJSON_ResponseFailedPreservesSearchCount(t *testing.T) {
+	setGinTestMode()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	account := &Account{ID: 4, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+	}
+	body := []byte(strings.Join([]string{
+		`data: {"type":"response.output_item.added","item":{"id":"ws_1","type":"web_search_call","status":"in_progress"}}`,
+		`data: {"type":"response.failed","response":{"id":"resp_failed","usage":{"input_tokens":1,"output_tokens":0}},"error":{"message":"upstream rejected request"}}`,
+		`data: [DONE]`,
+	}, "\n"))
+
+	result, err := svc.handleSSEToJSON(resp, c, account, body, "gpt-4o", "gpt-4o")
+	require.NotNil(t, result)
+	require.Error(t, err)
+	require.Equal(t, 1, result.searchCount)
+	require.Equal(t, "resp_failed", result.responseID)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 1, result.usage.InputTokens)
 }
 
 func TestHandleSSEToJSON_ResponseFailedServerOverloadedReturnsRetryableFailover(t *testing.T) {

@@ -53,6 +53,16 @@ func (s *sparkShadowRepoStub) GetByID(_ context.Context, id int64) (*Account, er
 	return acc, nil
 }
 
+func (s *sparkShadowRepoStub) GetByIDs(_ context.Context, ids []int64) ([]*Account, error) {
+	result := make([]*Account, 0, len(ids))
+	for _, id := range ids {
+		if acc, ok := s.accounts[id]; ok {
+			result = append(result, acc)
+		}
+	}
+	return result, nil
+}
+
 func (s *sparkShadowRepoStub) ListShadowsByParent(_ context.Context, parentID int64) ([]*Account, error) {
 	var result []*Account
 	for _, acc := range s.accounts {
@@ -100,6 +110,60 @@ func (s *sparkShadowRepoStub) Update(_ context.Context, account *Account) error 
 	s.accounts[account.ID] = &cp
 	s.mockAccountRepoForGemini.accountsByID[account.ID] = &cp
 	return nil
+}
+
+func (s *sparkShadowRepoStub) BulkUpdate(_ context.Context, ids []int64, updates AccountBulkUpdate) (int64, error) {
+	var affected int64
+	for _, id := range ids {
+		account, ok := s.accounts[id]
+		if !ok {
+			continue
+		}
+		if updates.Name != nil {
+			account.Name = *updates.Name
+		}
+		if updates.ProxyID != nil {
+			if *updates.ProxyID == 0 {
+				account.ProxyID = nil
+			} else {
+				proxyID := *updates.ProxyID
+				account.ProxyID = &proxyID
+			}
+		}
+		if updates.Concurrency != nil {
+			account.Concurrency = *updates.Concurrency
+		}
+		if updates.Priority != nil {
+			account.Priority = *updates.Priority
+		}
+		if updates.RateMultiplier != nil {
+			account.RateMultiplier = updates.RateMultiplier
+		}
+		if updates.LoadFactor != nil {
+			if *updates.LoadFactor <= 0 {
+				account.LoadFactor = nil
+			} else {
+				account.LoadFactor = updates.LoadFactor
+			}
+		}
+		if updates.Status != nil {
+			account.Status = *updates.Status
+		}
+		if updates.Schedulable != nil {
+			account.Schedulable = *updates.Schedulable
+		}
+		if len(updates.Credentials) > 0 {
+			account.Credentials = mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, updates.Credentials, false)
+		}
+		if len(updates.Extra) > 0 {
+			account.Extra = MergeCredentials(account.Extra, updates.Extra)
+		}
+		cp := *account
+		s.accounts[id] = &cp
+		s.mockAccountRepoForGemini.accountsByID[id] = &cp
+		affected++
+	}
+	return affected, nil
 }
 
 func (s *sparkShadowRepoStub) Delete(_ context.Context, id int64) error {

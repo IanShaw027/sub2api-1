@@ -395,12 +395,37 @@ type AISkillBalanceChargeInput struct {
 	Trace     AIWriteTrace
 }
 
+type AISkillBalanceRefundInput struct {
+	UserID    int64
+	Amount    float64
+	Reference string
+	Metadata  map[string]any
+	Trace     AIWriteTrace
+}
+
 type AISkillBalanceChargeResult struct {
 	ChargedAmount float64 `json:"charged_amount"`
 	BalanceAfter  float64 `json:"balance_after"`
 }
 
+type AISkillBalanceRefundResult struct {
+	RefundedAmount float64 `json:"refunded_amount"`
+	BalanceAfter   float64 `json:"balance_after"`
+}
+
 type AISkillCreatorEarningsInput struct {
+	CreatorUserID int64
+	BuyerUserID   int64
+	SkillID       int64
+	VersionID     int64
+	RunID         int64
+	Amount        float64
+	Currency      string
+	Metadata      map[string]any
+	Trace         AIWriteTrace
+}
+
+type AISkillCreatorEarningsReversalInput struct {
 	CreatorUserID int64
 	BuyerUserID   int64
 	SkillID       int64
@@ -445,10 +470,12 @@ type AISkillSettlementRepository interface {
 
 type AISkillBalanceCharger interface {
 	ChargeUserBalance(ctx context.Context, input AISkillBalanceChargeInput) (*AISkillBalanceChargeResult, error)
+	RefundUserBalance(ctx context.Context, input AISkillBalanceRefundInput) (*AISkillBalanceRefundResult, error)
 }
 
 type AISkillCreatorEarningsCreditor interface {
 	CreditCreatorEarnings(ctx context.Context, input AISkillCreatorEarningsInput) (float64, error)
+	ReverseCreatorEarnings(ctx context.Context, input AISkillCreatorEarningsReversalInput) (float64, error)
 }
 
 type AISkillRuntimeGateway interface {

@@ -94,6 +94,18 @@ func TestExtractContentModerationInput_OpenAIChatMultiTurnExtractsLatestUser(t *
 	require.Equal(t, "Q2", input.Text)
 }
 
+func TestExtractContentModerationInput_OpenAIChatKeepsUserControlledContextContent(t *testing.T) {
+	body := []byte(`{
+		"messages": [
+			{"role":"user","content":"<context>bad</context>"}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+
+	require.Equal(t, "bad", input.Text)
+}
+
 func TestExtractContentModerationInputsForLocalBlock_OpenAIChatExtractsEveryUserTurn(t *testing.T) {
 	body := []byte(`{
 		"messages": [

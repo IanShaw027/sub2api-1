@@ -258,6 +258,33 @@ func TestOpenAIResponses_SelectionFailureAfterLocalExclusion_ReturnsNoAvailableA
 	require.NotContains(t, rec.Body.String(), `"message":"No available accounts supporting model: gpt-5"`)
 }
 
+func TestOpenAIResponses_NilSelectionWithoutErrorReturnsNoAvailableAccounts(t *testing.T) {
+	c, rec := newOpenAISelectionErrorTestContext("/v1/responses", `{"model":"gpt-5","input":"hello"}`)
+	h := newOpenAISelectionErrorTestHandler(t, nil)
+	h.selectAccountForResponses = func(
+		ctx context.Context,
+		groupID *int64,
+		apiKeyID int64,
+		previousResponseID string,
+		sessionHash string,
+		requestedModel string,
+		excludedIDs map[int64]struct{},
+		requiredTransport service.OpenAIUpstreamTransport,
+		imageIntent bool,
+		requireCompact bool,
+		requiredCapability service.OpenAIEndpointCapability,
+		requestPlatform string,
+	) (*service.AccountSelectionResult, service.OpenAIAccountScheduleDecision, error) {
+		return nil, service.OpenAIAccountScheduleDecision{}, nil
+	}
+
+	require.NotPanics(t, func() {
+		h.Responses(c)
+	})
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Contains(t, rec.Body.String(), `"message":"No available accounts"`)
+}
+
 func TestOpenAIChatCompletions_SelectionFailure_ReturnsSupportingModelMessage(t *testing.T) {
 	c, rec := newOpenAISelectionErrorTestContext("/v1/chat/completions", `{"model":"gpt-5","messages":[{"role":"user","content":"hello"}]}`)
 	h := newOpenAISelectionErrorTestHandler(t, nil)

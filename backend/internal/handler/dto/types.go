@@ -97,6 +97,10 @@ type Group struct {
 	Platform             string  `json:"platform"`
 	RateMultiplier       float64 `json:"rate_multiplier"`
 	RefundRateMultiplier float64 `json:"refund_rate_multiplier"`
+	PeakRateEnabled      bool    `json:"peak_rate_enabled"`
+	PeakStart            string  `json:"peak_start"`
+	PeakEnd              string  `json:"peak_end"`
+	PeakRateMultiplier   float64 `json:"peak_rate_multiplier"`
 	IsExclusive          bool    `json:"is_exclusive"`
 	UserSelectable       bool    `json:"user_selectable"`
 	Status               string  `json:"status"`

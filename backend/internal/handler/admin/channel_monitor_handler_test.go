@@ -229,7 +229,7 @@ func TestChannelMonitorHandler_CreateAcceptsGrokProvider(t *testing.T) {
 		bytes.NewBufferString(`{
 			"name":"grok(supergrok号池)",
 			"provider":"grok",
-			"endpoint":"https://api.x.ai",
+			"endpoint":"https://8.8.8.8",
 			"api_key":"xai-test-monitor-key",
 			"primary_model":"grok-4.3",
 			"group_name":"grok(supergrok号池)",

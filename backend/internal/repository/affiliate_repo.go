@@ -657,6 +657,139 @@ WHERE user_id = $2`, amount, input.CreatorUserID)
 	return appliedAmount, nil
 }
 
+func (r *affiliateRepository) ReverseCreatorEarnings(ctx context.Context, input service.AISkillCreatorEarningsReversalInput) (float64, error) {
+	if input.CreatorUserID <= 0 {
+		return 0, service.ErrUserNotFound
+	}
+	if input.Amount <= 0 || math.IsNaN(input.Amount) || math.IsInf(input.Amount, 0) || input.RunID <= 0 {
+		return 0, nil
+	}
+
+	requestedAmount := roundTo8(input.Amount)
+	if requestedAmount <= 0 {
+		return 0, nil
+	}
+
+	var reversedAmount float64
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		if _, err := ensureUserAffiliateWithClient(txCtx, txClient, input.CreatorUserID); err != nil {
+			return err
+		}
+
+		var existingReverse float64
+		err := scanSingleRow(txCtx, txClient, `
+SELECT amount::double precision
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND source_skill_run_id = $2
+  AND action = 'creator_earning_reverse'
+LIMIT 1`, []any{input.CreatorUserID, input.RunID}, &existingReverse)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("check creator earnings reversal duplicate: %w", err)
+		}
+		if err == nil {
+			reversedAmount = existingReverse
+			return nil
+		}
+
+		var creditedAmount float64
+		if err := scanSingleRow(txCtx, txClient, `
+SELECT amount::double precision
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND source_skill_run_id = $2
+  AND action = 'creator_earning'
+LIMIT 1`, []any{input.CreatorUserID, input.RunID}, &creditedAmount); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			return fmt.Errorf("load creator earnings for reversal: %w", err)
+		}
+
+		amount := roundTo8(math.Min(requestedAmount, creditedAmount))
+		if amount <= 0 {
+			return nil
+		}
+
+		var currentQuota, frozenQuota, historyQuota float64
+		if err := scanSingleRow(txCtx, txClient, `
+SELECT aff_quota::double precision,
+       aff_frozen_quota::double precision,
+       aff_history_quota::double precision
+FROM user_affiliates
+WHERE user_id = $1
+FOR UPDATE`, []any{input.CreatorUserID}, &currentQuota, &frozenQuota, &historyQuota); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return service.ErrUserNotFound
+			}
+			return fmt.Errorf("lock affiliate creator for reversal: %w", err)
+		}
+
+		quotaAfter := roundTo8(math.Max(currentQuota-amount, 0))
+		historyAfter := roundTo8(math.Max(historyQuota-amount, 0))
+		res, err := txClient.ExecContext(txCtx, `
+INSERT INTO user_affiliate_ledger (
+    user_id,
+    action,
+    amount,
+    source_user_id,
+    source_skill_run_id,
+    aff_quota_after,
+    aff_frozen_quota_after,
+    aff_history_quota_after,
+    created_at,
+    updated_at
+)
+VALUES ($1, 'creator_earning_reverse', $2, $3, $4, $5, $6, $7, NOW(), NOW())
+ON CONFLICT DO NOTHING`,
+			input.CreatorUserID,
+			amount,
+			nullablePositiveInt64(input.BuyerUserID),
+			input.RunID,
+			quotaAfter,
+			frozenQuota,
+			historyAfter,
+		)
+		if err != nil {
+			return fmt.Errorf("insert creator earnings reversal ledger: %w", err)
+		}
+		inserted, _ := res.RowsAffected()
+		if inserted == 0 {
+			if err := scanSingleRow(txCtx, txClient, `
+SELECT amount::double precision
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND source_skill_run_id = $2
+  AND action = 'creator_earning_reverse'
+LIMIT 1`, []any{input.CreatorUserID, input.RunID}, &reversedAmount); err != nil {
+				return fmt.Errorf("query creator earnings reversal duplicate after conflict: %w", err)
+			}
+			return nil
+		}
+
+		res, err = txClient.ExecContext(txCtx, `
+UPDATE user_affiliates
+SET aff_quota = GREATEST(aff_quota - $1, 0),
+    aff_history_quota = GREATEST(aff_history_quota - $1, 0),
+    updated_at = NOW()
+WHERE user_id = $2`, amount, input.CreatorUserID)
+		if err != nil {
+			return fmt.Errorf("reverse creator affiliate quota: %w", err)
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return service.ErrUserNotFound
+		}
+
+		reversedAmount = amount
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return reversedAmount, nil
+}
+
 func (r *affiliateRepository) CountRebatedInvitees(ctx context.Context, inviterID int64) (int, error) {
 	if inviterID <= 0 {
 		return 0, nil

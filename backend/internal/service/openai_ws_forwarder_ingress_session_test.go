@@ -323,6 +323,8 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_FollowupWithoutP
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientGoingAwayAfterCleanTurnKeepsResponseAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	StoreOpenAIWSDeltaRuntimeSettings(true, true, false)
+	t.Cleanup(resetOpenAIWSDeltaRuntimeSettingsForTest)
 
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
@@ -375,6 +377,8 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientGoingAwayA
 	}
 
 	serverErrCh := make(chan error, 1)
+	sessionHash := "session_ingress_clean_then_going_away"
+	hooks := &OpenAIWSIngressHooks{SessionHash: sessionHash}
 	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{
 			CompressionMode: coderws.CompressionContextTakeover,
@@ -406,7 +410,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientGoingAwayA
 			return
 		}
 
-		serverErrCh <- svc.ProxyResponsesWebSocketFromClient(r.Context(), ginCtx, conn, account, "sk-test", firstMessage, nil)
+		serverErrCh <- svc.ProxyResponsesWebSocketFromClient(r.Context(), ginCtx, conn, account, "sk-test", firstMessage, hooks)
 	}))
 	defer wsServer.Close()
 
@@ -445,6 +449,8 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientGoingAwayA
 	require.Equal(t, account.ID, accountID)
 	connID, ok := store.GetResponseConn(0, 0, responseID)
 	require.False(t, ok, "客户端关闭后不应保留不可复用连接: %s", connID)
+	require.True(t, store.TrySessionInFlight(0, 0, sessionHash), "clean turn 后客户端 abnormal close 必须释放 session in-flight owner")
+	store.EndSessionInFlight(0, 0, sessionHash)
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_FollowupCreateCanOmitModel(t *testing.T) {

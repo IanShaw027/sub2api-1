@@ -3331,6 +3331,10 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			return nil, infraerrors.Newf(http.StatusBadRequest, "SPARK_SHADOW_NO_CREDENTIALS",
 				"spark shadow accounts do not hold auth credentials; only model mapping can be configured on the shadow account")
 		}
+		if input.Credentials != nil {
+			account.Credentials = sanitizeSparkShadowCredentials(input.Credentials)
+			input.Credentials = nil
+		}
 		// 影子 type 不可变——很多上游逻辑按 account.Type 分支(OAuth transform / ChatGPT
 		// header 注入 / WS OAuth 决策),改成 apikey 会让 spark 影子被选中后按错误协议转发(外审 G7)。
 		if input.Type != "" && input.Type != account.Type {
@@ -3571,6 +3575,20 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			return nil, fmt.Errorf("account %d not found", accountID)
 		}
 	}
+	for _, accountID := range input.AccountIDs {
+		account := accountByID[accountID]
+		if account == nil || !account.IsCredentialShadow() {
+			continue
+		}
+		if len(input.Credentials) > 0 && !isAllowedSparkShadowCredentialsUpdate(input.Credentials) {
+			return nil, infraerrors.Newf(http.StatusBadRequest, "SPARK_SHADOW_NO_CREDENTIALS",
+				"spark shadow accounts do not hold auth credentials; only model mapping can be configured on the shadow account")
+		}
+		if input.ProxyID != nil {
+			return nil, infraerrors.Newf(http.StatusBadRequest, "SPARK_SHADOW_IMMUTABLE_PROXY",
+				"spark shadow account proxy is inherited from its parent and cannot be changed directly")
+		}
+	}
 
 	// 预检查混合渠道风险：在任何写操作之前，若发现风险立即返回错误。
 	if needMixedChannelCheck {
@@ -3634,6 +3652,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			if err := s.accountRepo.Update(ctx, account); err != nil {
 				return nil, err
 			}
+		}
+		if err := s.propagateBulkProxyToShadows(ctx, input, accountByID); err != nil {
+			return nil, err
 		}
 		finished, err := s.finishBulkUpdateGroupBindings(ctx, input, result)
 		if err == nil && shouldTriggerOpenAIWSPoolReconcile {
@@ -3699,6 +3720,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 				return nil, err
 			}
 		}
+		if err := s.propagateBulkProxyToShadows(ctx, input, accountByID); err != nil {
+			return nil, err
+		}
 		finished, err := s.finishBulkUpdateGroupBindings(ctx, input, result)
 		if err == nil && shouldTriggerOpenAIWSPoolReconcile {
 			TriggerOpenAIWSPoolReconcile()
@@ -3714,6 +3738,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		if affected != int64(len(input.AccountIDs)) {
 			return nil, fmt.Errorf("bulk update affected %d of %d accounts", affected, len(input.AccountIDs))
 		}
+	}
+	if err := s.propagateBulkProxyToShadows(ctx, input, accountByID); err != nil {
+		return nil, err
 	}
 	finished, err := s.finishBulkUpdateGroupBindings(ctx, input, result)
 	if err == nil && shouldTriggerOpenAIWSPoolReconcile {
@@ -3744,6 +3771,26 @@ func (s *adminServiceImpl) finishBulkUpdateGroupBindings(ctx context.Context, in
 	}
 
 	return result, nil
+}
+
+func (s *adminServiceImpl) propagateBulkProxyToShadows(ctx context.Context, input *BulkUpdateAccountsInput, accountByID map[int64]*Account) error {
+	if input == nil || input.ProxyID == nil {
+		return nil
+	}
+	var proxyID *int64
+	if *input.ProxyID != 0 {
+		proxyID = input.ProxyID
+	}
+	for _, accountID := range input.AccountIDs {
+		account := accountByID[accountID]
+		if account == nil || account.IsCredentialShadow() {
+			continue
+		}
+		if err := s.propagateProxyToShadows(ctx, accountID, proxyID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func applyBulkUpdateInputToAccount(account *Account, input *BulkUpdateAccountsInput) {
@@ -3852,6 +3899,20 @@ func (s *adminServiceImpl) DeleteAccount(ctx context.Context, id int64) error {
 	var wasOpenAIWSPoolRelevant bool
 	if account, err := s.accountRepo.GetByID(ctx, id); err == nil {
 		wasOpenAIWSPoolRelevant = isOpenAIWSPoolReconcileRelevantAccount(account)
+		if account != nil && !account.IsCredentialShadow() {
+			shadows, listErr := s.accountRepo.ListShadowsByParent(ctx, id)
+			if listErr != nil {
+				return listErr
+			}
+			for _, shadow := range shadows {
+				if shadow == nil {
+					continue
+				}
+				if err := s.accountRepo.Delete(ctx, shadow.ID); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	if err := s.accountRepo.Delete(ctx, id); err != nil {
 		return err

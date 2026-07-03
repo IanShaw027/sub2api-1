@@ -28,17 +28,31 @@ import (
 
 // OpenAIGatewayHandler handles OpenAI API gateway requests
 type OpenAIGatewayHandler struct {
-	gatewayService           *service.OpenAIGatewayService
-	billingCacheService      *service.BillingCacheService
-	apiKeyService            *service.APIKeyService
-	usageRecordWorkerPool    *service.UsageRecordWorkerPool
-	errorPassthroughService  *service.ErrorPassthroughService
-	contentModerationService *service.ContentModerationService
-	opsService               *service.OpsService
-	concurrencyHelper        *ConcurrencyHelper
-	imageLimiter             *imageConcurrencyLimiter
-	maxAccountSwitches       int
-	cfg                      *config.Config
+	gatewayService            *service.OpenAIGatewayService
+	billingCacheService       *service.BillingCacheService
+	apiKeyService             *service.APIKeyService
+	usageRecordWorkerPool     *service.UsageRecordWorkerPool
+	errorPassthroughService   *service.ErrorPassthroughService
+	contentModerationService  *service.ContentModerationService
+	opsService                *service.OpsService
+	concurrencyHelper         *ConcurrencyHelper
+	imageLimiter              *imageConcurrencyLimiter
+	maxAccountSwitches        int
+	cfg                       *config.Config
+	selectAccountForResponses func(
+		ctx context.Context,
+		groupID *int64,
+		apiKeyID int64,
+		previousResponseID string,
+		sessionHash string,
+		requestedModel string,
+		excludedIDs map[int64]struct{},
+		requiredTransport service.OpenAIUpstreamTransport,
+		imageIntent bool,
+		requireCompact bool,
+		requiredCapability service.OpenAIEndpointCapability,
+		requestPlatform string,
+	) (*service.AccountSelectionResult, service.OpenAIAccountScheduleDecision, error)
 }
 
 const (
@@ -58,6 +72,26 @@ func (h *OpenAIGatewayHandler) handleOpenAIGroupModelUnsupportedError(c *gin.Con
 	}
 	h.handleStreamingAwareError(c, http.StatusForbidden, "permission_error", modelErr.Error(), streamStarted)
 	return true
+}
+
+func (h *OpenAIGatewayHandler) selectOpenAIAccountForResponses(
+	ctx context.Context,
+	groupID *int64,
+	apiKeyID int64,
+	previousResponseID string,
+	sessionHash string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport service.OpenAIUpstreamTransport,
+	imageIntent bool,
+	requireCompact bool,
+	requiredCapability service.OpenAIEndpointCapability,
+	requestPlatform string,
+) (*service.AccountSelectionResult, service.OpenAIAccountScheduleDecision, error) {
+	if h.selectAccountForResponses != nil {
+		return h.selectAccountForResponses(ctx, groupID, apiKeyID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, imageIntent, requireCompact, requiredCapability, requestPlatform)
+	}
+	return h.gatewayService.SelectAccountWithSchedulerForResponsesCapability(ctx, groupID, apiKeyID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, imageIntent, requireCompact, requiredCapability, requestPlatform)
 }
 
 type accountSlotAcquireStatus int
@@ -345,7 +379,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	for {
 		// Select account supporting the requested model
 		reqLog.Debug("openai.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForResponsesCapability(
+		selection, scheduleDecision, err := h.selectOpenAIAccountForResponses(
 			c.Request.Context(),
 			apiKey.GroupID,
 			apiKey.ID,
@@ -398,18 +432,18 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				}
 				return
 			}
-			if selection == nil || selection.Account == nil {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, requestPlatform)
-				if !cls.ModelNotFound {
-					markOpsRoutingCapacityLimited(c)
-				}
-				message := cls.Message
-				if !cls.ModelNotFound {
-					message = "No available accounts"
-				}
-				h.handleStreamingAwareError(c, cls.Status, cls.ErrType, message, streamStarted)
-				return
+		}
+		if selection == nil || selection.Account == nil {
+			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, requestPlatform)
+			if !cls.ModelNotFound {
+				markOpsRoutingCapacityLimited(c)
 			}
+			message := cls.Message
+			if !cls.ModelNotFound {
+				message = "No available accounts"
+			}
+			h.handleStreamingAwareError(c, cls.Status, cls.ErrType, message, streamStarted)
+			return
 		}
 		if previousResponseID != "" && selection != nil && selection.Account != nil {
 			reqLog.Debug("openai.account_selected_with_previous_response_id", zap.Int64("account_id", selection.Account.ID))
@@ -551,12 +585,48 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		if err != nil {
-			if result != nil && result.ImageCount > 0 {
-				reqLog.Warn("openai.forward_partial_error_with_image_result",
+			if result != nil {
+				userAgent := c.GetHeader("User-Agent")
+				clientIP := ip.GetClientIP(c)
+				requestPayloadHash := service.HashUsageRequestPayload(body)
+				inboundEndpoint := GetInboundEndpoint(c)
+				upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account)
+				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+				cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+				h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
+					if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+						Result:             result,
+						APIKey:             apiKey,
+						User:               apiKey.User,
+						Account:            account,
+						Subscription:       subscription,
+						InboundEndpoint:    inboundEndpoint,
+						UpstreamEndpoint:   upstreamEndpoint,
+						UserAgent:          userAgent,
+						IPAddress:          clientIP,
+						RequestPayloadHash: requestPayloadHash,
+						APIKeyService:      h.apiKeyService,
+						QuotaPlatform:      quotaPlatform,
+						ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+						CyberBlocked:       cyberBlocked,
+					}); err != nil {
+						logger.L().With(
+							zap.String("component", "handler.openai_gateway.responses"),
+							zap.Int64("user_id", subject.UserID),
+							zap.Int64("api_key_id", apiKey.ID),
+							zap.Any("group_id", apiKey.GroupID),
+							zap.String("model", reqModel),
+							zap.Int64("account_id", account.ID),
+						).Error("openai.record_partial_usage_failed", zap.Error(err))
+					}
+				})
+				reqLog.Warn("openai.forward_partial_error_result",
 					zap.Int64("account_id", account.ID),
 					zap.Int("image_count", result.ImageCount),
+					zap.Int("search_count", result.SearchCount),
 					zap.Error(err),
 				)
+				return
 			} else {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {

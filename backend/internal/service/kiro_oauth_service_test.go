@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
 
@@ -234,6 +235,72 @@ func TestKiroTokenRefresherRejectsRefreshResponseWithoutAccessToken(t *testing.T
 	}
 	if !strings.Contains(err.Error(), "access_token") {
 		t.Fatalf("error %q should mention missing access_token", err.Error())
+	}
+}
+
+func TestKiroTokenRefresherPersistsStableMachineIDBeforeRefreshTokenRotates(t *testing.T) {
+	oldRefresh := "original-refresh-token"
+	newRefresh := "rotated-refresh-token"
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			if req.Method != http.MethodPost || req.URL.Path != "/refreshToken" {
+				t.Fatalf("unexpected refresh request: %s %s", req.Method, req.URL.String())
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"accessToken":"fresh-access","refreshToken":"` + newRefresh + `","expiresIn":3600}`)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+	refresher := NewKiroTokenRefresher().WithTransport(upstream, &TLSFingerprintProfileService{})
+
+	credentials, err := refresher.Refresh(context.Background(), &Account{
+		Platform:    PlatformKiro,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"refresh_token": oldRefresh},
+		Concurrency: 1,
+	})
+
+	if err != nil {
+		t.Fatalf("refresh returned error: %v", err)
+	}
+	oldMachineID := kiropkg.GenerateMachineID("", "", oldRefresh)
+	newMachineID := kiropkg.GenerateMachineID("", "", newRefresh)
+	if got := strings.TrimSpace(stringCredential(credentials, "machine_id")); got != oldMachineID {
+		t.Fatalf("machine_id = %q, want stable old-token machine id %q", got, oldMachineID)
+	}
+	if stringCredential(credentials, "machine_id") == newMachineID {
+		t.Fatalf("machine_id should not be derived from rotated refresh token")
+	}
+}
+
+func TestValidateAndEnrichRefreshedCredentialsForAccountPreservesMachineID(t *testing.T) {
+	oldRefresh := "original-refresh-token"
+	newRefresh := "rotated-refresh-token"
+	oldMachineID := kiropkg.GenerateMachineID("", "", oldRefresh)
+	newMachineID := kiropkg.GenerateMachineID("", "", newRefresh)
+
+	svc := &KiroOAuthService{}
+	credentials, err := svc.ValidateAndEnrichRefreshedCredentialsForAccount(context.Background(), &Account{
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": oldRefresh,
+			"machine_id":    oldMachineID,
+		},
+	}, map[string]any{
+		"refresh_token": newRefresh,
+		"machine_id":    oldMachineID,
+	})
+	if err != nil {
+		t.Fatalf("ValidateAndEnrichRefreshedCredentialsForAccount returned error: %v", err)
+	}
+	if got := strings.TrimSpace(stringCredential(credentials, "machine_id")); got != oldMachineID {
+		t.Fatalf("machine_id = %q, want preserved %q", got, oldMachineID)
+	}
+	if stringCredential(credentials, "machine_id") == newMachineID {
+		t.Fatalf("machine_id should not be derived from rotated refresh token")
 	}
 }
 

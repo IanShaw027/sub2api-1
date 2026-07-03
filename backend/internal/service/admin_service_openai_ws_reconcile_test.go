@@ -138,6 +138,18 @@ func (r *adminOpenAIWSReconcileAccountRepo) BindGroups(_ context.Context, _ int6
 	return nil
 }
 
+func (r *adminOpenAIWSReconcileAccountRepo) ListShadowsByParent(_ context.Context, parentID int64) ([]*Account, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []*Account
+	for _, account := range r.accounts {
+		if account != nil && account.ParentAccountID != nil && *account.ParentAccountID == parentID && account.QuotaDimension == QuotaDimensionSpark {
+			out = append(out, cloneAdminOpenAIWSReconcileAccount(account))
+		}
+	}
+	return out, nil
+}
+
 func (r *adminOpenAIWSReconcileAccountRepo) Delete(_ context.Context, id int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

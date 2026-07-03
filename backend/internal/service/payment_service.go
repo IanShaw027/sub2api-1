@@ -208,6 +208,7 @@ type PaymentService struct {
 	resumeService            *PaymentResumeService
 	affiliateService         *AffiliateService
 	notificationEmailService *NotificationEmailService
+	notificationDispatchHook func(order *dbent.PaymentOrder, auditAction string)
 	invoiceVoider            invoiceRefundVoider
 	commitPaymentTx          func(tx *dbent.Tx) error
 }

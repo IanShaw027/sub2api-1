@@ -292,6 +292,10 @@ type aiSkillBalanceCharger struct {
 	balanceNotifyService *BalanceNotifyService
 }
 
+type aiSkillBalanceRefundRepository interface {
+	AddBalanceWithoutRecharge(ctx context.Context, id int64, amount float64) error
+}
+
 func (c *aiSkillBalanceCharger) ChargeUserBalance(ctx context.Context, input AISkillBalanceChargeInput) (*AISkillBalanceChargeResult, error) {
 	if c == nil || c.userRepo == nil {
 		return nil, ErrAISkillBalanceServiceUnavailable
@@ -324,6 +328,35 @@ func (c *aiSkillBalanceCharger) ChargeUserBalance(ctx context.Context, input AIS
 	return &AISkillBalanceChargeResult{
 		ChargedAmount: input.Amount,
 		BalanceAfter:  balanceAfter,
+	}, nil
+}
+
+func (c *aiSkillBalanceCharger) RefundUserBalance(ctx context.Context, input AISkillBalanceRefundInput) (*AISkillBalanceRefundResult, error) {
+	if c == nil || c.userRepo == nil {
+		return nil, ErrAISkillBalanceServiceUnavailable
+	}
+	if input.UserID <= 0 || input.Amount <= 0 {
+		return nil, ErrAISkillBalanceServiceUnavailable
+	}
+
+	refundRepo, ok := c.userRepo.(aiSkillBalanceRefundRepository)
+	if !ok {
+		return nil, ErrAISkillBalanceServiceUnavailable
+	}
+	if err := refundRepo.AddBalanceWithoutRecharge(ctx, input.UserID, input.Amount); err != nil {
+		return nil, err
+	}
+	if c.billingCacheService != nil {
+		_ = c.billingCacheService.InvalidateUserBalance(ctx, input.UserID)
+	}
+
+	balanceAfter := 0.0
+	if updated, err := c.userRepo.GetByID(ctx, input.UserID); err == nil {
+		balanceAfter = updated.Balance
+	}
+	return &AISkillBalanceRefundResult{
+		RefundedAmount: input.Amount,
+		BalanceAfter:   balanceAfter,
 	}, nil
 }
 

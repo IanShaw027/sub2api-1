@@ -257,6 +257,34 @@ func TestAIHandlerBuildRunAttachmentsWithoutMediaPreservesRawURLs(t *testing.T) 
 	require.Empty(t, cleanupIDs)
 }
 
+func TestAIHandlerBuildRunAttachmentsDoesNotResolveOtherUsersPublicMedia(t *testing.T) {
+	t.Parallel()
+
+	handler, repo, _ := newAIHandlerMediaTestHarness(t)
+	otherUserID := int64(99)
+	repo.assets = map[int64]*service.MediaAsset{
+		77: {
+			ID:          77,
+			ObjectKey:   "ai_skill/stub/77.png",
+			Visibility:  service.MediaVisibilityPublic,
+			Status:      service.MediaStatusActive,
+			OwnerUserID: &otherUserID,
+		},
+	}
+
+	attachments, cleanupIDs, err := handler.buildRunAttachments(context.Background(), 42, []map[string]any{
+		{
+			"media_id":  int64(77),
+			"purpose":   "reference",
+			"file_name": "other-user.png",
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, attachments, 1)
+	require.Empty(t, attachments[0].URL)
+	require.Empty(t, cleanupIDs)
+}
+
 func TestAIHandlerBuildSkillMetadataWithDisabledMediaPreservesRawCoverImageURL(t *testing.T) {
 	t.Parallel()
 
@@ -443,7 +471,7 @@ func TestAIHandlerRunSkillRejectsPrivateSkillBeforeUploadingAttachments(t *testi
 	require.Empty(t, store.deleted)
 }
 
-func TestAIHandlerRunSkillWithModeForwardsRequestParameters(t *testing.T) {
+func TestAIHandlerRunSkillWithModeForwardsRequestParametersAndAttachments(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -510,7 +538,7 @@ func TestAIHandlerRunSkillWithModeForwardsRequestParameters(t *testing.T) {
 				RunService: runSvc,
 			}
 
-			ctx, recorder := newAISkillHandlerJSONContext(t, http.MethodPost, tc.path+"?version_id=8", `{"parameters":{"subject":"sunrise","count":2,"nested":{"enabled":true}}}`)
+			ctx, recorder := newAISkillHandlerJSONContext(t, http.MethodPost, tc.path+"?version_id=8", `{"parameters":{"subject":"sunrise","count":2,"nested":{"enabled":true}},"attachments":[{"url":"https://example.invalid/input.png","purpose":"input","file_name":"input.png"},{"media_id":321,"purpose":"reference","file_name":"managed.png"}]}`)
 			ctx.Params = gin.Params{{Key: "id", Value: "7"}}
 
 			tc.invoke(handler, ctx)
@@ -524,6 +552,98 @@ func TestAIHandlerRunSkillWithModeForwardsRequestParameters(t *testing.T) {
 					"enabled": true,
 				},
 			}, runRepo.created[0].Parameters)
+			require.Len(t, runRepo.created[0].Attachments, 2)
+			require.Equal(t, "https://example.invalid/input.png", runRepo.created[0].Attachments[0].URL)
+			require.Equal(t, "input", runRepo.created[0].Attachments[0].Purpose)
+			require.Equal(t, "input.png", runRepo.created[0].Attachments[0].FileName)
+			require.NotNil(t, runRepo.created[0].Attachments[1].MediaID)
+			require.Equal(t, int64(321), *runRepo.created[0].Attachments[1].MediaID)
+		})
+	}
+}
+
+func TestAIHandlerRunSkillWithModeCleansUpUploadedAttachmentsOnExecutionFailure(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		path   string
+		invoke func(*AIHandler, *gin.Context)
+	}{
+		{
+			name: "test",
+			path: "/api/v1/ai/skills/7/test",
+			invoke: func(handler *AIHandler, ctx *gin.Context) {
+				handler.TestSkill(ctx)
+			},
+		},
+		{
+			name: "use",
+			path: "/api/v1/ai/skills/7/use",
+			invoke: func(handler *AIHandler, ctx *gin.Context) {
+				handler.UseSkill(ctx)
+			},
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			handler, repo, store := newAIHandlerMediaTestHarness(t)
+			versionID := int64(8)
+			runSvc := service.NewAISkillRunService(
+				&aiSkillHandlerRunSkillRepo{
+					skill: &service.AISkill{ID: 7, CreatorUserID: 1001, Type: service.AISkillTypePromptChat},
+				},
+				&aiSkillHandlerRunVersionRepo{
+					version: &service.AISkillVersion{
+						ID:            versionID,
+						SkillID:       7,
+						CreatorUserID: 1001,
+						Type:          service.AISkillTypePromptChat,
+						Status:        service.AISkillVersionStatusApproved,
+						ExecutionSpec: service.AISkillExecutionSpec{
+							Type: service.AISkillTypePromptChat,
+							PromptChat: &service.AISkillPromptChatSpec{
+								UserPromptTemplate: "Write about {{subject}}",
+							},
+						},
+						BillingPolicy: service.AISkillBillingPolicy{Mode: service.AISkillBillingModeFree},
+					},
+				},
+				&aiSkillHandlerRunRepo{createErr: errors.New("run persistence failed")},
+				service.NewAISkillSettlementService(nil, nil, nil),
+				nil,
+			)
+			handler.skillModule = &skillkit.Module{
+				DomainRepo: &aiSkillHandlerViewerRepo{
+					skill: &domain.AISkill{
+						ID:               7,
+						UserID:           42,
+						Type:             domain.AISkillTypePromptChat,
+						Visibility:       domain.AIVisibilityPublic,
+						CurrentVersionID: &versionID,
+					},
+				},
+				RunService: runSvc,
+			}
+
+			png := aiSkillHandlerTestPNGBytes(t)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "image/png")
+				_, _ = w.Write(png)
+			}))
+			defer srv.Close()
+
+			ctx, _ := newAISkillHandlerJSONContext(t, http.MethodPost, tc.path+"?version_id=8", `{"attachments":[{"url":"`+srv.URL+`/input.png","purpose":"input","file_name":"input.png"}]}`)
+			ctx.Params = gin.Params{{Key: "id", Value: "7"}}
+
+			tc.invoke(handler, ctx)
+
+			require.Len(t, repo.created, 1)
+			require.Len(t, store.uploads, 1)
+			require.Len(t, repo.deleted, 1)
+			require.Len(t, store.deleted, 1)
 		})
 	}
 }

@@ -3,6 +3,7 @@
 package skillkit
 
 import (
+	"context"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -184,4 +185,48 @@ func TestRunAndSettlementBillingModesTranslateAcrossAdapterBoundary(t *testing.T
 	})
 	require.NotNil(t, settlementDTO)
 	require.Equal(t, service.AISkillBillingModePerRun, settlementDTO.BillingMode)
+}
+
+type balanceChargerRepoStub struct {
+	balance            float64
+	refundCalls        []float64
+	updateBalanceCalls []float64
+}
+
+func (s *balanceChargerRepoStub) DeductBalance(_ context.Context, _ int64, amount float64) error {
+	s.balance -= amount
+	return nil
+}
+
+func (s *balanceChargerRepoStub) AddBalanceWithoutRecharge(_ context.Context, _ int64, amount float64) error {
+	s.refundCalls = append(s.refundCalls, amount)
+	s.balance += amount
+	return nil
+}
+
+func (s *balanceChargerRepoStub) UpdateBalance(_ context.Context, _ int64, amount float64) error {
+	s.updateBalanceCalls = append(s.updateBalanceCalls, amount)
+	return nil
+}
+
+func (s *balanceChargerRepoStub) GetByID(_ context.Context, id int64) (*service.User, error) {
+	return &service.User{ID: id, Balance: s.balance}, nil
+}
+
+func TestBalanceChargerAdapterRefundDoesNotUseRechargeBalancePath(t *testing.T) {
+	t.Parallel()
+
+	repo := &balanceChargerRepoStub{balance: 20}
+	adapter := &balanceChargerAdapter{userRepo: repo}
+
+	result, err := adapter.RefundUserBalance(t.Context(), service.AISkillBalanceRefundInput{
+		UserID: 9,
+		Amount: 4.25,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []float64{4.25}, repo.refundCalls)
+	require.Empty(t, repo.updateBalanceCalls)
+	require.InDelta(t, 4.25, result.RefundedAmount, 1e-9)
+	require.InDelta(t, 24.25, result.BalanceAfter, 1e-9)
 }

@@ -104,6 +104,51 @@ func TestExtractXlsxTextLimitsWorksheetCount(t *testing.T) {
 	require.Contains(t, text, "worksheet limit reached")
 }
 
+func TestExtractXlsxTextRejectsCumulativeWorksheetDecompressionBomb(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	padding := bytes.Repeat([]byte("x"), officeMaxDecompressBytes/2+1024)
+	for i := 1; i <= 2; i++ {
+		w, _ := zw.Create(fmt.Sprintf("xl/worksheets/sheet%d.xml", i))
+		_, _ = w.Write([]byte(`<worksheet><ignored>`))
+		_, _ = w.Write(padding)
+		_, _ = w.Write([]byte(fmt.Sprintf(`</ignored><sheetData><row><c t="inlineStr"><is><t>sheet-%d</t></is></c></row></sheetData></worksheet>`, i)))
+	}
+	_ = zw.Close()
+
+	_, err := extractXlsxText(buf.Bytes())
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "decompressed")
+}
+
+func TestExtractXlsxTextAllowsModerateMultiSheetWorkbookWithinCumulativeBudget(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	padding := strings.Repeat("x", officeMaxEntryBytes/3)
+	for i := 1; i <= 3; i++ {
+		w, err := zw.Create(fmt.Sprintf("xl/worksheets/sheet%d.xml", i))
+		require.NoError(t, err)
+		_, err = w.Write([]byte(
+			`<?xml version="1.0" encoding="UTF-8"?>` +
+				`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><ignored>` +
+				padding +
+				`</ignored><sheetData><row><c t="inlineStr"><is><t>sheet-` +
+				fmt.Sprintf("%d", i) +
+				`</t></is></c></row>` +
+				`</sheetData></worksheet>`,
+		))
+		require.NoError(t, err)
+	}
+	_ = zw.Close()
+
+	text, err := extractXlsxText(buf.Bytes())
+	require.NoError(t, err)
+	require.Contains(t, text, "sheet-1")
+	require.Contains(t, text, "sheet-2")
+	require.Contains(t, text, "sheet-3")
+}
+
 func TestExtractDocumentText_DocxBase64(t *testing.T) {
 	data, err := os.ReadFile("testdata/sample.docx")
 	require.NoError(t, err)

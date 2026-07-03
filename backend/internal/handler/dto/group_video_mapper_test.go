@@ -52,3 +52,21 @@ func TestGroupFromServicePreservesGrokVideoConfig(t *testing.T) {
 	require.Equal(t, &price, out.VideoPrice1080pPerSec)
 	require.Equal(t, &price, out.VideoPrice4kPerSec)
 }
+
+func TestGroupFromServiceMapsPeakRateFields(t *testing.T) {
+	out := GroupFromService(&service.Group{
+		ID:                 3,
+		Name:               "peak-group",
+		Platform:           service.PlatformAnthropic,
+		PeakRateEnabled:    true,
+		PeakStart:          "09:30",
+		PeakEnd:            "18:45",
+		PeakRateMultiplier: 1.75,
+	})
+
+	require.NotNil(t, out)
+	require.True(t, out.PeakRateEnabled)
+	require.Equal(t, "09:30", out.PeakStart)
+	require.Equal(t, "18:45", out.PeakEnd)
+	require.Equal(t, 1.75, out.PeakRateMultiplier)
+}

@@ -645,10 +645,11 @@ func (h *AIHandler) runSkillWithMode(c *gin.Context, mode string) {
 		parameters = map[string]any{}
 	}
 	executeUserIdempotentJSON(c, "skills:runs:"+mode, map[string]any{
-		"skill_id":   skillID,
-		"version_id": versionID,
-		"mode":       mode,
-		"parameters": parameters,
+		"skill_id":    skillID,
+		"version_id":  versionID,
+		"mode":        mode,
+		"parameters":  parameters,
+		"attachments": req.Attachments,
 	}, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
 		skill, _, err := loadSkillForViewer(ctx, module, skillID, subject.UserID)
 		if err != nil {
@@ -658,15 +659,21 @@ func (h *AIHandler) runSkillWithMode(c *gin.Context, mode string) {
 		if err != nil {
 			return nil, err
 		}
+		attachments, cleanupIDs, err := h.buildRunAttachments(ctx, subject.UserID, req.Attachments)
+		if err != nil {
+			return nil, err
+		}
 		result, err := module.RunService.Execute(ctx, subject.UserID, &service.AISkillRunInput{
 			SkillID:        skillID,
 			VersionID:      versionID,
 			Mode:           mode,
 			Parameters:     parameters,
+			Attachments:    attachments,
 			IdempotencyKey: strings.TrimSpace(c.GetHeader("Idempotency-Key")),
 			Trace:          buildUserAITrace(aiTraceRequest{}),
 		})
 		if err != nil {
+			h.cleanupSkillMedia(ctx, subject.UserID, cleanupIDs)
 			return nil, err
 		}
 		return result, nil
@@ -1113,7 +1120,7 @@ func (h *AIHandler) buildRunAttachments(ctx context.Context, userID int64, items
 				}
 			}
 		} else if strings.TrimSpace(attachment.URL) == "" {
-			attachment.URL = h.skillManagedMediaURL(ctx, attachment.MediaID, attachment.AssetID)
+			attachment.URL = h.skillManagedMediaURL(ctx, userID, attachment.MediaID, attachment.AssetID)
 		}
 		out = append(out, attachment)
 	}
@@ -1225,16 +1232,19 @@ func (h *AIHandler) cleanupSkillMedia(ctx context.Context, userID int64, mediaID
 	}
 }
 
-func (h *AIHandler) skillManagedMediaURL(ctx context.Context, primaryID, fallbackID *int64) string {
-	if h == nil || h.mediaService == nil {
+func (h *AIHandler) skillManagedMediaURL(ctx context.Context, userID int64, primaryID, fallbackID *int64) string {
+	if h == nil || h.mediaService == nil || userID <= 0 {
 		return ""
 	}
 	for _, id := range []*int64{primaryID, fallbackID} {
 		if id == nil || *id <= 0 {
 			continue
 		}
-		asset, err := h.mediaService.GetForAdmin(ctx, *id)
+		asset, err := h.mediaService.GetForUser(ctx, userID, *id)
 		if err != nil || asset == nil {
+			continue
+		}
+		if asset.OwnerUserID != nil && *asset.OwnerUserID != userID {
 			continue
 		}
 		if url := h.mediaService.PublicURL(asset); strings.TrimSpace(url) != "" {
