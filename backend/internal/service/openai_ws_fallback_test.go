@@ -375,7 +375,15 @@ func TestOpenAIWSRetryTotalBudget(t *testing.T) {
 func TestClassifyOpenAIWSReadFallbackReason(t *testing.T) {
 	require.Equal(t, "policy_violation", classifyOpenAIWSReadFallbackReason(coderws.CloseError{Code: coderws.StatusPolicyViolation}))
 	require.Equal(t, "message_too_big", classifyOpenAIWSReadFallbackReason(coderws.CloseError{Code: coderws.StatusMessageTooBig}))
+	require.Equal(t, "normal_close", classifyOpenAIWSReadFallbackReason(coderws.CloseError{Code: coderws.StatusNormalClosure}))
 	require.Equal(t, "read_event", classifyOpenAIWSReadFallbackReason(errors.New("io")))
+}
+
+func TestOpenAIWSNormalCloseIsRetryableWithNewConnection(t *testing.T) {
+	reason, retryable := classifyOpenAIWSReconnectReason(wrapOpenAIWSFallback("normal_close", coderws.CloseError{Code: coderws.StatusNormalClosure}))
+	require.Equal(t, "normal_close", reason)
+	require.True(t, retryable)
+	require.True(t, shouldForceNewConnOnHTTPIngressWSOneShotRetry(reason))
 }
 
 func TestOpenAIWSStoreDisabledConnMode(t *testing.T) {

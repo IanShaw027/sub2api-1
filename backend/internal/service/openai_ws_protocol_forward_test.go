@@ -3978,7 +3978,7 @@ func TestOpenAIGatewayService_Forward_WSv2OAuthToolContinuationWithFullContextRe
 	requests := append([][]byte(nil), wsRequestPayloads...)
 	wsRequestMu.Unlock()
 	require.Len(t, requests, 1)
-	require.Equal(t, previousResponseID, gjson.GetBytes(requests[0], "previous_response_id").String())
+	require.False(t, gjson.GetBytes(requests[0], "previous_response_id").Exists(), "full tool context replay can safely drop account-bound previous_response_id")
 	require.True(t, gjson.GetBytes(requests[0], "store").Exists())
 	require.False(t, gjson.GetBytes(requests[0], "store").Bool())
 	require.Equal(t, "function_call", gjson.GetBytes(requests[0], "input.0.type").String())

@@ -31,6 +31,9 @@ func (s *OpenAIGatewayService) buildOpenAIHTTPActiveDeltaPayload(ctx context.Con
 	if isOpenAIResponsesCompactPath(c) {
 		return result, nil
 	}
+	if HasToolContinuationOutputInRawPayload(payload) {
+		return result, nil
+	}
 	sessionHash := s.GenerateSessionHash(c, payload)
 	if sessionHash == "" {
 		return result, nil

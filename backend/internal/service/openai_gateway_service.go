@@ -994,6 +994,7 @@ func classifyOpenAIWSReconnectReason(err error) (string, bool) {
 
 	switch baseReason {
 	case "read_event",
+		"normal_close",
 		"write_request",
 		"write",
 		"acquire_timeout",
@@ -5457,6 +5458,7 @@ oauthTransformDone:
 				if dropPreviousForEncryptedPreflight {
 					delete(wsReqBody, "previous_response_id")
 					wsReqBody["store"] = false
+					trimOpenAIStoreFalseReasoningItems(wsReqBody)
 				}
 				if !syncWSRecoveredBody("invalid_encrypted_content_preflight") {
 					return nil, wsErr
@@ -5664,6 +5666,8 @@ oauthTransformDone:
 			hasFunctionCallOutput := HasFunctionCallOutput(wsReqBody)
 			if previousResponseID != "" && !hasFunctionCallOutput {
 				delete(wsReqBody, "previous_response_id")
+				wsReqBody["store"] = false
+				trimOpenAIStoreFalseReasoningItems(wsReqBody)
 			}
 			if !syncWSRecoveredBody("invalid_encrypted_content_recovery") {
 				return false

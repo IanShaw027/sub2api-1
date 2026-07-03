@@ -2612,6 +2612,8 @@ func classifyOpenAIWSReadFallbackReason(err error) string {
 		return "read_event"
 	}
 	switch coderws.CloseStatus(err) {
+	case coderws.StatusNormalClosure:
+		return "normal_close"
 	case coderws.StatusPolicyViolation:
 		return "policy_violation"
 	case coderws.StatusMessageTooBig:
@@ -3504,6 +3506,40 @@ func shouldForceNewConnOnRecoveredFullReplay(lastFailureReason string) bool {
 	return reason == "previous_response_not_found"
 }
 
+// shouldPreferOpenAIWSNeutralForRecoveredFullReplay returns true when the
+// previous WS attempt failed because its continuation/session anchor was not
+// usable, and the retry payload has already been converted to a safe full replay
+// (`store=false` with no `previous_response_id`). In that state a session-bound
+// fresh connection is not required for correctness and is measurably slower than
+// reusing neutral/prewarmed WS capacity. This intentionally ignores saved
+// turn-state metadata: the recovery payload is now the source of truth.
+func shouldPreferOpenAIWSNeutralForRecoveredFullReplay(
+	account *Account,
+	storeDisabled bool,
+	previousResponseID string,
+	sessionHash string,
+	lastFailureReason string,
+) bool {
+	if account == nil || account.Type != AccountTypeOAuth {
+		return false
+	}
+	if !storeDisabled || strings.TrimSpace(previousResponseID) != "" || strings.TrimSpace(sessionHash) == "" {
+		return false
+	}
+	reason := strings.TrimPrefix(strings.TrimSpace(lastFailureReason), "prewarm_")
+	switch reason {
+	case "previous_response_not_found", "invalid_encrypted_content", "unsafe_tool_continuation":
+		return true
+	default:
+		return false
+	}
+}
+
+func canDropOpenAIWSContinuationForNeutralFullReplay(payload map[string]any) bool {
+	signals := AnalyzeToolContinuationSignals(payload)
+	return signals.HasFunctionCallOutput && signals.HasToolCallContext
+}
+
 // openAIWSHasDeltaReanchorTarget reports whether a strict-delta connection
 // reanchor can actually engage for this session: it requires a cached session
 // context bound to the same account with a prior response to anchor onto.
@@ -3775,7 +3811,7 @@ func shouldForceNewConnOnHTTPIngressWSOneShotRetry(lastFailureReason string) boo
 		return false
 	}
 	switch reason {
-	case "read_event", "write_request", "write":
+	case "read_event", "normal_close", "write_request", "write":
 		return true
 	default:
 		return false
@@ -4469,6 +4505,20 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 	storeDisabled := openAIWSPayloadStoreDisabled(payload)
 	storeEnabled := openAIWSPayloadStoreEnabled(payload)
+	preferNeutralForRecoveredFullReplay := shouldPreferOpenAIWSNeutralForRecoveredFullReplay(
+		account,
+		storeDisabled,
+		previousResponseID,
+		sessionHash,
+		lastFailureReason,
+	)
+	preferNeutralForSafeFullReplay := preferNeutralForRecoveredFullReplay ||
+		(account != nil &&
+			account.Type == AccountTypeOAuth &&
+			storeDisabled &&
+			previousResponseID == "" &&
+			sessionHash != "" &&
+			storeDecision.DroppedPreviousResponseID)
 	bypassSessionConnForColdToolReplay := shouldBypassOpenAIWSSessionConnForColdToolReplay(
 		account,
 		httpIngressWSOneShot,
@@ -4488,8 +4538,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			storeDecision.FallbackReason = "cold_tool_replay_neutral"
 		}
 	}
-	forceNewConnForRecoveredFullReplay := shouldForceNewConnOnRecoveredFullReplay(lastFailureReason)
-	if !bypassSessionConnForColdToolReplay && !sessionPreemptedPrevious && !forceNewConnForRecoveredFullReplay && !httpIngressWSOneShot && stateStore != nil && storeDisabled && previousResponseID == "" && sessionHash != "" {
+	forceNewConnForRecoveredFullReplay := shouldForceNewConnOnRecoveredFullReplay(lastFailureReason) && !preferNeutralForSafeFullReplay
+	if !bypassSessionConnForColdToolReplay && !preferNeutralForSafeFullReplay && !sessionPreemptedPrevious && !forceNewConnForRecoveredFullReplay && !httpIngressWSOneShot && stateStore != nil && storeDisabled && previousResponseID == "" && sessionHash != "" {
 		if connID, ok := stateStore.GetSessionConn(groupID, apiKeyID, account.ID, sessionHash); ok {
 			preferredConnID = connID
 			connAffinityHit = true
@@ -4525,7 +4575,25 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	if sameAccountContinuationWithoutConn && !sameAccountContinuationReanchoredSessionConn {
 		preferredConnID = ""
 		connAffinityHit = false
-		forceNewConn = true
+		if canDropOpenAIWSContinuationForNeutralFullReplay(payload) {
+			delete(payload, "previous_response_id")
+			payload["store"] = false
+			trimOpenAIStoreFalseReasoningItems(payload)
+			previousResponseID = ""
+			previousResponseIDKind = ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
+			storeEnabled = false
+			storeDisabled = true
+			storeDecision.StoreMode = openAIWSStoreModeFull
+			storeDecision.StoreEnabled = false
+			storeDecision.StoreDisabled = true
+			storeDecision.DroppedPreviousResponseID = true
+			storeDecision.PreferredConnID = ""
+			storeDecision.ConnAffinityHit = false
+			storeDecision.FallbackReason = "conn_affinity_miss_full_replay"
+			preferNeutralForSafeFullReplay = true
+		} else {
+			forceNewConn = true
+		}
 	}
 	lastFailureAllowsDeltaConnReanchor := strings.TrimSpace(lastFailureReason) == "" ||
 		strings.TrimSpace(lastFailureReason) == "write_request" ||
@@ -4533,7 +4601,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	hasFunctionCallOutputForReanchor := HasFunctionCallOutput(payload)
 	fullPayloadFunctionOutputIsReanchorBlocker := false
 	deltaConnReanchorTarget := false
-	if !sessionPreemptedPrevious &&
+	if !preferNeutralForSafeFullReplay &&
+		!sessionPreemptedPrevious &&
 		attempt <= 2 &&
 		lastFailureAllowsDeltaConnReanchor &&
 		!httpIngressWSOneShot &&
@@ -4557,7 +4626,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		fullPayloadFunctionOutputIsReanchorBlocker,
 		deltaConnReanchorTarget,
 	)
-	allowDeltaConnReanchor := !sessionPreemptedPrevious &&
+	allowDeltaConnReanchor := !preferNeutralForSafeFullReplay &&
+		!sessionPreemptedPrevious &&
 		attempt <= 2 &&
 		lastFailureAllowsDeltaConnReanchor &&
 		!httpIngressWSOneShot &&
@@ -4591,7 +4661,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		wsHeaders = s.buildOpenAIWSNeutralHeaders(account, token, decision, isCodexCLI)
 		applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
 	}
-	if shouldUseOpenAIWSNeutralForColdSession(account, httpIngressWSOneShot, storeDisabled, previousResponseID, sessionHash, turnState, turnMetadata, payload) {
+	if preferNeutralForSafeFullReplay || shouldUseOpenAIWSNeutralForColdSession(account, httpIngressWSOneShot, storeDisabled, previousResponseID, sessionHash, turnState, turnMetadata, payload) {
 		useNeutral := preferredConnID == ""
 		if preferredConnID != "" {
 			if profile, ok := pool.ConnProfile(account.ID, preferredConnID); ok {
@@ -4763,8 +4833,18 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		connAffinityHit = false
 		storeDecision.ConnAffinityHit = false
 		storeDecision.FallbackReason = "preferred_conn_unavailable_full_replay"
+		connProfile = openAIWSConnProfileNeutral
+		forceNewConn = false
+		affinityOnlyReuse = false
+		wsHeaders = s.buildOpenAIWSNeutralHeaders(account, token, decision, isCodexCLI)
+		applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
+		promoteNeutralConnToSessionBound = true
 		acquireReq.PreferredConnID = ""
 		acquireReq.ForcePreferredConn = false
+		acquireReq.ForceNewConn = false
+		acquireReq.AffinityOnlyReuse = false
+		acquireReq.Profile = openAIWSConnProfileNeutral
+		acquireReq.Headers = wsHeaders
 		lease, err = pool.Acquire(acquireCtx, acquireReq)
 	}
 	if err != nil {
