@@ -165,9 +165,13 @@ const KiroAuthorizationFlowStub = defineComponent({
     initialExtra: {
       type: Object,
       default: () => ({})
+    },
+    continuation: {
+      type: Object,
+      default: null
     }
   },
-  emits: ['generate-url', 'submit', 'submit-refresh-token'],
+  emits: ['generate-url', 'submit', 'submit-refresh-token', 'cancel-continuation'],
   setup(_, { emit }) {
     return () => [
       h('button', {

@@ -162,6 +162,8 @@
           v-if="showRequestDetails"
           v-model="showRequestDetails"
           :time-range="timeRange"
+          :custom-start-time="customStartTime"
+          :custom-end-time="customEndTime"
           :preset="requestDetailsPreset"
           :platform="platform"
           :group-id="groupId"
@@ -896,7 +898,15 @@ async function fetchData() {
 }
 
 watch(
-  () => [timeRange.value, platform.value, groupId.value, queryMode.value] as const,
+  () =>
+    [
+      timeRange.value,
+      customStartTime.value,
+      customEndTime.value,
+      platform.value,
+      groupId.value,
+      queryMode.value,
+    ] as const,
   () => {
     if (isApplyingRouteQuery.value) return
     if (opsEnabled.value) {
@@ -912,6 +922,8 @@ watch(
     if (isSyncingRouteQuery.value) return
 
     const prevTimeRange = timeRange.value
+    const prevCustomStartTime = customStartTime.value
+    const prevCustomEndTime = customEndTime.value
     const prevPlatform = platform.value
     const prevGroupId = groupId.value
     const prevQueryMode = queryMode.value
@@ -922,6 +934,8 @@ watch(
 
     const changed =
       prevTimeRange !== timeRange.value ||
+      prevCustomStartTime !== customStartTime.value ||
+      prevCustomEndTime !== customEndTime.value ||
       prevPlatform !== platform.value ||
       prevGroupId !== groupId.value ||
       prevQueryMode !== queryMode.value

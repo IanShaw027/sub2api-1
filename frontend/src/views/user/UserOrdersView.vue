@@ -21,7 +21,7 @@
           {{ t('payment.invoice.create.selected', { count: selectedCount }) }}
         </span>
         <span class="text-sm text-blue-600 dark:text-blue-400">
-          {{ t('payment.invoice.create.totalAmount') }}: ¥{{ selectedTotalAmount.toFixed(2) }}
+          {{ t('payment.invoice.create.totalAmount') }}: {{ selectedInvoiceTotalLabel }}
         </span>
         <div class="ml-auto flex items-center gap-2">
           <button class="btn btn-primary btn-sm" @click="openCreateInvoiceDialog">
@@ -182,7 +182,7 @@
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
           <div class="flex justify-between text-sm">
             <span class="text-gray-500 dark:text-gray-400">{{ t('payment.invoice.create.selected', { count: selectedCount }) }}</span>
-            <span class="font-medium text-gray-900 dark:text-white">{{ t('payment.invoice.create.totalAmount') }}: ¥{{ selectedTotalAmount.toFixed(2) }}</span>
+            <span class="font-medium text-gray-900 dark:text-white">{{ t('payment.invoice.create.totalAmount') }}: {{ selectedInvoiceTotalLabel }}</span>
           </div>
         </div>
         <div>
@@ -235,7 +235,7 @@ import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { useTableSelection } from '@/composables/useTableSelection'
 import type { PaymentOrder, RefundPreview } from '@/types/payment'
-import { formatPaymentAmount } from '@/components/payment/currency'
+import { formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -292,11 +292,21 @@ const someEligibleSelected = computed(() => {
   return eligibleOrders.value.some((o) => isSelected(o.id))
 })
 
-const selectedTotalAmount = computed(() => {
+const selectedInvoiceTotals = computed(() => {
   const ids = new Set(selectedIds.value)
-  return orders.value
-    .filter((o) => ids.has(o.id))
-    .reduce((sum, o) => sum + o.pay_amount, 0)
+  const totals = new Map<string, number>()
+  for (const order of orders.value) {
+    if (!ids.has(order.id)) continue
+    const currency = normalizePaymentCurrency(order.currency)
+    totals.set(currency, (totals.get(currency) || 0) + Number(order.pay_amount || 0))
+  }
+  return Array.from(totals.entries()).map(([currency, amount]) => ({ currency, amount }))
+})
+
+const selectedInvoiceTotalLabel = computed(() => {
+  return selectedInvoiceTotals.value
+    .map(({ currency, amount }) => formatPaymentAmount(amount, currency))
+    .join(' / ')
 })
 
 function isOrderSelected(row: PaymentOrder): boolean {

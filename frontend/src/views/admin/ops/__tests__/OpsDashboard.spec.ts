@@ -102,8 +102,55 @@ vi.mock('vue-i18n', async (importOriginal) => {
 
 const HeaderStub = defineComponent({
   name: 'OpsDashboardHeaderStub',
-  emits: ['open-settings'],
-  template: '<button data-test="open-settings" @click="$emit(\'open-settings\')">open settings</button>',
+  emits: [
+    'open-settings',
+    'open-request-details',
+    'update:customTimeRange',
+    'update:timeRange',
+  ],
+  template: `
+    <div>
+      <button data-test="open-settings" @click="$emit('open-settings')">open settings</button>
+      <button data-test="open-request-details" @click="$emit('open-request-details')">open request details</button>
+      <button
+        data-test="set-custom-range"
+        @click="$emit('update:customTimeRange', '2026-06-02T00:00:00Z', '2026-06-02T02:00:00Z'); $emit('update:timeRange', 'custom')"
+      >
+        set custom range
+      </button>
+    </div>
+  `,
+})
+
+const RequestDetailsModalStub = defineComponent({
+  name: 'AsyncOpsRequestDetailsModal',
+  props: {
+    modelValue: {
+      type: Boolean,
+      default: false,
+    },
+    timeRange: {
+      type: String,
+      default: '',
+    },
+    customStartTime: {
+      type: String,
+      default: null,
+    },
+    customEndTime: {
+      type: String,
+      default: null,
+    },
+  },
+  template: `
+    <div
+      v-if="modelValue"
+      data-test="request-details-modal"
+      :data-time-range="timeRange"
+      :data-start-time="customStartTime || ''"
+      :data-end-time="customEndTime || ''"
+    />
+  `,
 })
 
 const SettingsDialogStub = defineComponent({
@@ -143,7 +190,7 @@ function mountView() {
         AsyncOpsAlertRulesCard: true,
         AsyncOpsErrorDetailsModal: true,
         AsyncOpsErrorDetailModal: true,
-        AsyncOpsRequestDetailsModal: true,
+        AsyncOpsRequestDetailsModal: RequestDetailsModalStub,
       },
     },
   })
@@ -237,5 +284,59 @@ describe('OpsDashboard request orchestration', () => {
 
     expect(getLatencyHistogramMock).toHaveBeenCalledTimes(1)
     expect(getErrorDistributionMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes custom time range values to the request details modal', async () => {
+    routeState.query = {
+      tr: 'custom',
+      start_time: '2026-06-01T00:00:00Z',
+      end_time: '2026-06-01T01:30:00Z',
+    }
+
+    const wrapper = mountView()
+
+    await flushPromises()
+    await wrapper.get('[data-test="open-request-details"]').trigger('click')
+    await flushPromises()
+
+    const modal = wrapper.get('[data-test="request-details-modal"]')
+    expect(modal.attributes('data-time-range')).toBe('custom')
+    expect(modal.attributes('data-start-time')).toBe('2026-06-01T00:00:00Z')
+    expect(modal.attributes('data-end-time')).toBe('2026-06-01T01:30:00Z')
+  })
+
+  it('refreshes dashboard data and syncs the route when custom range changes while already custom', async () => {
+    routeState.query = {
+      tr: 'custom',
+      start_time: '2026-06-01T00:00:00Z',
+      end_time: '2026-06-01T01:30:00Z',
+    }
+
+    const wrapper = mountView()
+
+    await flushPromises()
+    getDashboardSnapshotV2Mock.mockClear()
+    routerReplaceMock.mockClear()
+
+    await wrapper.get('[data-test="set-custom-range"]').trigger('click')
+    await flushPromises()
+
+    expect(getDashboardSnapshotV2Mock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start_time: '2026-06-02T00:00:00Z',
+        end_time: '2026-06-02T02:00:00Z',
+      }),
+      expect.any(Object),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    await flushPromises()
+
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      query: expect.objectContaining({
+        tr: 'custom',
+        start_time: '2026-06-02T00:00:00Z',
+        end_time: '2026-06-02T02:00:00Z',
+      }),
+    })
   })
 })

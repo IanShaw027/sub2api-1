@@ -37,7 +37,7 @@
                 <td class="px-4 py-3 text-sm text-gray-900 dark:text-white">#{{ item.id }}</td>
                 <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ item.title }}</td>
                 <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ item.order_count }}</td>
-                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">¥{{ item.invoice_amount.toFixed(2) }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ formatPaymentAmount(item.invoice_amount, item.currency) }}</td>
                 <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ statusLabel(item.status) }}</td>
                 <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ formatDate(item.created_at) }}</td>
                 <td class="px-4 py-3 text-right" @click.stop>
@@ -71,6 +71,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { paymentAPI } from '@/api/payment'
 import type { Invoice } from '@/types/payment'
+import { formatPaymentAmount } from '@/components/payment/currency'
 import { useAppStore } from '@/stores'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import AppLayout from '@/components/layout/AppLayout.vue'

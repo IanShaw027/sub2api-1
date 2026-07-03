@@ -469,6 +469,54 @@ describe('admin GroupsView edit hydration', () => {
     expect(updateGroup.mock.calls[0][1]).not.toHaveProperty('images2api_price_4k')
   })
 
+  it('submits negative image prices when cleared values should remove existing admin group prices', async () => {
+    listGroups.mockResolvedValueOnce({
+      items: [
+        {
+          ...buildGroup(11, 'Group Image Clear', {}),
+          allow_image_generation: true,
+          image_generation_route: 'codex',
+          image_price_1k: 0.25,
+          image_price_2k: 0.35,
+          image_price_4k: 0.45,
+        } as any
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountGroupsView()
+
+    await flushPromises()
+    await wrapper.get('[data-test="group-row-11"] button').trigger('click')
+    await flushPromises()
+
+    const imagePriceInputs = wrapper
+      .get('#edit-group-form')
+      .findAll('input[type="number"]')
+      .filter((input) => ['0.134', '0.201', '0.268'].includes((input.element as HTMLInputElement).placeholder))
+
+    expect(imagePriceInputs).toHaveLength(3)
+    expect((imagePriceInputs[0].element as HTMLInputElement).value).toBe('0.25')
+    expect((imagePriceInputs[1].element as HTMLInputElement).value).toBe('0.35')
+    expect((imagePriceInputs[2].element as HTMLInputElement).value).toBe('0.45')
+
+    for (const input of imagePriceInputs) {
+      await input.setValue('')
+    }
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateGroup).toHaveBeenCalledTimes(1)
+    expect(updateGroup.mock.calls[0][1]).toMatchObject({
+      image_price_1k: -1,
+      image_price_2k: -1,
+      image_price_4k: -1
+    })
+  })
+
   it('preserves Grok video pricing fields when editing', async () => {
     listGroups.mockResolvedValueOnce({
       items: [

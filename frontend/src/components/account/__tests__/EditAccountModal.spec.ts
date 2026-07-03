@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -203,30 +203,6 @@ function buildAccount() {
     group_ids: [],
     expires_at: null,
     auto_pause_on_expired: false
-  } as any
-}
-
-function buildOpenAISparkShadowAccount() {
-  const account = buildAccount()
-  return {
-    ...account,
-    id: 4,
-    name: 'OpenAI Spark Shadow',
-    type: 'oauth',
-    parent_account_id: 1,
-    credentials: {
-      access_token: 'parent-access-token',
-      refresh_token: 'parent-refresh-token',
-      api_key: 'sk-parent',
-      base_url: 'https://api.openai.com',
-      model_mapping: {
-        'gpt-5.3-codex-spark': 'gpt-5.3-codex-spark'
-      },
-      compact_model_mapping: {
-        'gpt-5.3-codex-spark': 'gpt-5.3-codex-spark-compact'
-      }
-    },
-    group_ids: []
   } as any
 }
 

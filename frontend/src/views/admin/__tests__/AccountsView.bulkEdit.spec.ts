@@ -22,6 +22,8 @@ const {
   getAllGroups,
   setSchedulable,
   bulkUpdate,
+  listTLSFingerprintProfiles,
+  listTLSFingerprintRouters,
   showError
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
@@ -31,6 +33,8 @@ const {
   getAllGroups: vi.fn(),
   setSchedulable: vi.fn(),
   bulkUpdate: vi.fn(),
+  listTLSFingerprintProfiles: vi.fn(),
+  listTLSFingerprintRouters: vi.fn(),
   showError: vi.fn()
 }))
 
@@ -68,6 +72,14 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     token: 'test-token'
   })
+}))
+
+vi.mock('@/api/admin/tlsFingerprintProfile', () => ({
+  list: listTLSFingerprintProfiles
+}))
+
+vi.mock('@/api/admin/tlsFingerprintRouter', () => ({
+  list: listTLSFingerprintRouters
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -260,6 +272,8 @@ describe('admin AccountsView bulk edit scope', () => {
     getAllGroups.mockReset()
     setSchedulable.mockReset()
     bulkUpdate.mockReset()
+    listTLSFingerprintProfiles.mockReset()
+    listTLSFingerprintRouters.mockReset()
     showError.mockReset()
 
     listAccounts.mockResolvedValue({
@@ -277,6 +291,8 @@ describe('admin AccountsView bulk edit scope', () => {
     getBatchTodayStats.mockResolvedValue({ stats: {} })
     getAllProxies.mockResolvedValue([])
     getAllGroups.mockResolvedValue([])
+    listTLSFingerprintProfiles.mockResolvedValue([])
+    listTLSFingerprintRouters.mockResolvedValue([])
   })
 
   it('opens bulk edit in filtered-results mode from the bulk actions dropdown', async () => {
@@ -600,13 +616,17 @@ describe('admin AccountsView bulk edit scope', () => {
       .mockRejectedValueOnce(new Error('boom'))
 
     const wrapper = mountAccountsView()
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await flushPromises()
+      await wrapper.get('[data-test="edit-filtered"]').trigger('click')
+      await flushPromises()
 
-    await flushPromises()
-    await wrapper.get('[data-test="edit-filtered"]').trigger('click')
-    await flushPromises()
-
-    expect(showError).toHaveBeenCalledWith('admin.accounts.bulkEdit.failedToLoadPreview')
-    expect(wrapper.find('[data-test="bulk-edit-modal"]').exists()).toBe(false)
+      expect(showError).toHaveBeenCalledWith('admin.accounts.bulkEdit.failedToLoadPreview')
+      expect(wrapper.find('[data-test="bulk-edit-modal"]').exists()).toBe(false)
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
   })
 
   it('removes a toggled row from the active filter and marks the list pending sync', async () => {

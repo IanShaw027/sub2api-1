@@ -63,6 +63,10 @@ config.global.stubs = {
     props: ['to'],
     template: '<a :href="typeof to === \'string\' ? to : to?.path"><slot /></a>',
   },
+  'el-tooltip': {
+    props: ['content'],
+    template: '<span :title="content"><slot /></span>',
+  },
 }
 
 // 设置全局测试超时

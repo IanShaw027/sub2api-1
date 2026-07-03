@@ -36,7 +36,11 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string, params?: Record<string, unknown>) => (params?.n ? `${key}:${params.n}` : key),
+      t: (key: string, params?: Record<string, unknown>) => {
+        if (params?.n) return `${key}:${params.n}`
+        if (params?.range) return `${key}:${params.range}`
+        return key
+      },
     }),
   }
 })
@@ -125,5 +129,40 @@ describe('OpsRequestDetailsModal request races', () => {
     expect((wrapper.vm as any).items).toEqual([])
     expect((wrapper.vm as any).total).toBe(0)
     expect((wrapper.vm as any).loading).toBe(false)
+  })
+
+  it('uses provided custom start and end times for custom ranges', async () => {
+    listRequestDetails.mockResolvedValueOnce({
+      items: [],
+      total: 0,
+    })
+
+    const wrapper = mount(OpsRequestDetailsModal as any, {
+      props: {
+        modelValue: true,
+        timeRange: 'custom',
+        customStartTime: '2026-06-01T00:00:00Z',
+        customEndTime: '2026-06-01T01:30:00Z',
+        preset: { title: 'Requests', kind: 'all', sort: 'created_at_desc' },
+      },
+      global: {
+        stubs: {
+          BaseDialog: { props: ['show', 'title'], template: '<div v-if="show"><slot /></div>' },
+          Pagination: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(listRequestDetails).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start_time: '2026-06-01T00:00:00Z',
+        end_time: '2026-06-01T01:30:00Z',
+      }),
+      expect.any(Object)
+    )
+    expect(listRequestDetails.mock.calls[0][0]).not.toHaveProperty('time_range')
+    expect(wrapper.text()).toContain('admin.ops.requestDetails.rangeLabel:admin.ops.timeRange.custom')
   })
 })

@@ -47,7 +47,7 @@ vi.mock('@/api/payment', () => ({
       data: {
         items: [{
           id: 42, user_id: 1, user_email: 'u@x.com',
-          status: 'ISSUED', invoice_amount: 318, order_count: 3,
+          status: 'ISSUED', invoice_amount: 318, currency: 'USD', order_count: 3,
           title: 'ACME', tax_number: 'TX', email: 'b@a.com',
           contact_name: '', contact_phone: '',
           file_name: 'inv.pdf',
@@ -78,7 +78,7 @@ const i18n = createI18n({
   } },
 })
 
-function mountView() {
+async function mountView() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -87,7 +87,8 @@ function mountView() {
       { path: '/orders/invoices/:id', name: 'MyInvoiceDetail', component: { template: '<div />' } },
     ],
   })
-  router.push('/orders/invoices')
+  await router.push('/orders/invoices')
+  await router.isReady()
   return mount(UserInvoicesView, {
     global: {
       plugins: [router, i18n, createPinia()],
@@ -106,11 +107,12 @@ describe('UserInvoicesView', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('renders list with order_count and amount', async () => {
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
     expect(wrapper.text()).toContain('ACME')
     expect(wrapper.text()).toContain('3')          // order_count
-    expect(wrapper.text()).toContain('318')        // invoice_amount
+    expect(wrapper.text()).toContain('$318.00')    // invoice_amount with invoice currency
+    expect(wrapper.text()).not.toContain('¥318.00')
     expect(wrapper.text()).toContain('已开具')      // status label
   })
 })

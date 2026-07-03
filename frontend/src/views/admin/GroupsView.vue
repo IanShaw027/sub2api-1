@@ -4836,6 +4836,17 @@ const normalizeNullablePrice = (
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 };
 
+const IMAGE_PRICE_CLEAR_SENTINEL = -1;
+
+const normalizeUpdateImagePrice = (
+  value: number | string | null | undefined,
+): number | null => {
+  if (value === null || value === undefined || value === "") {
+    return IMAGE_PRICE_CLEAR_SENTINEL;
+  }
+  return normalizeNullablePrice(value);
+};
+
 const resetExplicitMediaPricingFormState = (form: ExplicitMediaPricingFormState) => {
   form.search_price_per_1k = null;
   form.audio_realtime_price_per_min = null;
@@ -5187,14 +5198,14 @@ const handleUpdateGroup = async () => {
     payload.image_rate_multiplier = normalizeRateMultiplier(
       payload.image_rate_multiplier,
     );
-    payload.image_price_1k = normalizeNullablePrice(payload.image_price_1k);
-    payload.image_price_2k = normalizeNullablePrice(payload.image_price_2k);
-    payload.image_price_4k = normalizeNullablePrice(payload.image_price_4k);
     normalizeVideoPricingPayload(payload);
     normalizeExplicitMediaPricingPayload(payload);
     applyOpenAIImageTypeSelection(
       payload as OpenAIImageTypeSelectionRequest & OpenAIImageSelectionPayload,
     );
+    payload.image_price_1k = normalizeUpdateImagePrice(payload.image_price_1k);
+    payload.image_price_2k = normalizeUpdateImagePrice(payload.image_price_2k);
+    payload.image_price_4k = normalizeUpdateImagePrice(payload.image_price_4k);
     await adminAPI.groups.update(editingGroup.value.id, payload);
     appStore.showSuccess(t("admin.groups.groupUpdated"));
     closeEditModal();

@@ -57,10 +57,19 @@ const SelectStub = {
   template: `<select @change="$emit('change')"></select>`,
 }
 const OrderTableStub = {
-  props: ['orders'],
+  props: ['orders', 'selectable', 'isSelected', 'isRowSelectable'],
+  emits: ['toggle-row'],
   template: `
     <div>
       <div v-for="row in orders" :key="row.id" :data-test="'row-actions-' + row.out_trade_no">
+        <input
+          v-if="selectable"
+          :data-test="'select-' + row.out_trade_no"
+          type="checkbox"
+          :checked="isSelected?.(row) ?? false"
+          :disabled="!(isRowSelectable?.(row) ?? true)"
+          @change="$emit('toggle-row', row)"
+        />
         <slot name="actions" :row="row" />
       </div>
     </div>
@@ -193,5 +202,63 @@ describe('UserOrdersView refund visibility', () => {
 
     expect(wrapper.text()).toContain('€12.34')
     expect(wrapper.text()).not.toContain('$12.34')
+  })
+
+  it('formats selected invoice totals by the selected orders currencies', async () => {
+    paymentAPI.getMyOrders.mockResolvedValue({
+      data: {
+        items: [
+          createOrder({
+            id: 5,
+            out_trade_no: 'order-usd',
+            amount: 12.34,
+            pay_amount: 12.34,
+            currency: 'USD',
+          }),
+          createOrder({
+            id: 6,
+            out_trade_no: 'order-eur',
+            amount: 5,
+            pay_amount: 5,
+            currency: 'EUR',
+          }),
+        ],
+        total: 2,
+      },
+    })
+
+    const wrapper = mount(UserOrdersView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          OrdersTabBar: OrdersTabBarStub,
+          BaseDialog: BaseDialogStub,
+          Pagination: PaginationStub,
+          Select: SelectStub,
+          Icon: IconStub,
+          OrderTable: OrderTableStub,
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-test="select-order-usd"]').trigger('change')
+    await wrapper.get('[data-test="select-order-eur"]').trigger('change')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('$12.34')
+    expect(wrapper.text()).toContain('€5.00')
+    expect(wrapper.text()).not.toContain('¥17.34')
+
+    const createInvoiceButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('payment.invoice.create.action'))
+    expect(createInvoiceButton).toBeTruthy()
+    await createInvoiceButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('$12.34')
+    expect(wrapper.text()).toContain('€5.00')
+    expect(wrapper.text()).not.toContain('¥17.34')
   })
 })

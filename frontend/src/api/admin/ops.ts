@@ -5,6 +5,7 @@
  */
 
 import { apiClient } from '../client'
+import { getAPIBaseURL } from '../url'
 import type { PaginatedResponse, UsageRequestType } from '@/types'
 
 export type OpsQueryMode = 'auto' | 'raw' | 'preagg'
@@ -515,6 +516,7 @@ export const OPS_WS_CLOSE_CODES = {
 
 const OPS_WS_BASE_PROTOCOL = 'sub2api-admin'
 const OPS_QPS_WS_PATH = '/api/v1/admin/ops/ws/qps'
+const OPS_QPS_API_PATH = '/admin/ops/ws/qps'
 
 export function buildOpsWebSocketURL(pageProtocol: string, wsBaseUrl: string, currentHost?: string): URL {
   const defaultWsProtocol = pageProtocol === 'https:' ? 'wss:' : 'ws:'
@@ -539,6 +541,33 @@ export function buildOpsWebSocketURL(pageProtocol: string, wsBaseUrl: string, cu
 
   const basePath = base.pathname.replace(/\/+$/, '')
   base.pathname = `${basePath}${OPS_QPS_WS_PATH}`
+  base.search = ''
+  base.hash = ''
+  return base
+}
+
+export function buildOpsWebSocketURLFromAPIBase(pageProtocol: string, apiBaseUrl: string, currentHost?: string): URL {
+  const defaultWsProtocol = pageProtocol === 'https:' ? 'wss:' : 'ws:'
+  const rawBase = String(apiBaseUrl || '').trim()
+  const originHost = String(currentHost || '').trim()
+
+  if (!rawBase) {
+    return buildOpsWebSocketURL(pageProtocol, '', currentHost)
+  }
+
+  let base: URL
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(rawBase) || rawBase.startsWith('//')) {
+    base = new URL(rawBase, `${defaultWsProtocol}//${originHost}`)
+  } else {
+    const basePath = rawBase.startsWith('/') ? rawBase : `/${rawBase}`
+    base = new URL(basePath, `${defaultWsProtocol}//${originHost}`)
+  }
+
+  if (base.protocol === 'https:') base.protocol = 'wss:'
+  if (base.protocol === 'http:') base.protocol = 'ws:'
+
+  const basePath = base.pathname.replace(/\/+$/, '')
+  base.pathname = `${basePath}${OPS_QPS_API_PATH}`
   base.search = ''
   base.hash = ''
   return base
@@ -633,8 +662,10 @@ export function subscribeQPS(onMessage: (data: any) => void, options: SubscribeQ
 
     isConnecting = true
     setStatus(hasConnectedOnce ? 'reconnecting' : 'connecting')
-    const wsBaseUrl = options.wsBaseUrl || import.meta.env.VITE_WS_BASE_URL || window.location.host
-    const wsURL = buildOpsWebSocketURL(window.location.protocol, wsBaseUrl, window.location.host)
+    const configuredWsBaseUrl = options.wsBaseUrl || import.meta.env.VITE_WS_BASE_URL
+    const wsURL = configuredWsBaseUrl
+      ? buildOpsWebSocketURL(window.location.protocol, configuredWsBaseUrl, window.location.host)
+      : buildOpsWebSocketURLFromAPIBase(window.location.protocol, getAPIBaseURL(), window.location.host)
 
     // Do NOT put admin JWT in the URL query string (it can leak via access logs, proxies, etc).
     // Browsers cannot set Authorization headers for WebSockets, so we pass the token via

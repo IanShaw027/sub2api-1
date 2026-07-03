@@ -236,8 +236,12 @@ describe('useTableLoader', () => {
     it('非取消错误会被抛出', async () => {
       const fetchFn = vi.fn().mockRejectedValue(new Error('Server error'))
       const { load } = useTableLoader({ fetchFn })
-
-      await expect(load()).rejects.toThrow('Server error')
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        await expect(load()).rejects.toThrow('Server error')
+      } finally {
+        consoleErrorSpy.mockRestore()
+      }
     })
 
     it('取消错误被静默处理', async () => {

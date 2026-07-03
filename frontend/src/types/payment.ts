@@ -191,6 +191,7 @@ export interface Invoice {
   user_email: string
   status: 'APPLIED' | 'ISSUED' | 'CANCELLED'
   invoice_amount: number
+  currency?: string
   order_count: number
   title: string
   tax_number: string

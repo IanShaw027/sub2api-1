@@ -283,6 +283,41 @@ const OAuthAuthorizationFlowStub = defineComponent({
 
 const KiroAuthorizationFlowStub = defineComponent({
   name: 'KiroAuthorizationFlow',
+  props: {
+    mode: {
+      type: String,
+      default: ''
+    },
+    authUrl: {
+      type: String,
+      default: ''
+    },
+    callbackBaseUrl: {
+      type: String,
+      default: ''
+    },
+    loading: {
+      type: Boolean,
+      default: false
+    },
+    error: {
+      type: String,
+      default: ''
+    },
+    initialCredentials: {
+      type: Object,
+      default: () => ({})
+    },
+    initialExtra: {
+      type: Object,
+      default: () => ({})
+    },
+    continuation: {
+      type: Object,
+      default: null
+    }
+  },
+  emits: ['generate-url', 'submit', 'submit-refresh-token', 'cancel-continuation'],
   setup(_, { expose }) {
     expose({
       reset: vi.fn()
