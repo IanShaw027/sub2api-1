@@ -179,12 +179,12 @@ func TestOpenAIWSCanonicalItemHash_WhitespaceInContentBreaksHash(t *testing.T) {
 }
 
 func TestOpenAIWSNonInputHash_DenylistIgnoresOnlyCodexVolatileFields(t *testing.T) {
-	p1 := []byte(`{"model":"gpt","tools":[{"type":"x"}],"input":[{"a":1}],"previous_response_id":"resp_1","store":false,"client_metadata":{"x-client-request-id":"a"}}`)
-	p2 := []byte(`{"model":"gpt","tools":[{"type":"x"}],"input":[{"b":2},{"c":3}],"previous_response_id":"resp_9","store":false,"client_metadata":{"x-client-request-id":"z"}}`)
+	p1 := []byte(`{"model":"gpt","tools":[{"type":"x"}],"include":["reasoning.encrypted_content"],"input":[{"a":1}],"previous_response_id":"resp_1","store":false,"client_metadata":{"x-client-request-id":"a"}}`)
+	p2 := []byte(`{"model":"gpt","tools":[{"type":"x"}],"include":[],"input":[{"b":2},{"c":3}],"previous_response_id":"resp_9","store":false,"client_metadata":{"x-client-request-id":"z"}}`)
 	h1, ig1 := openAIWSNonInputHash(p1)
 	h2, _ := openAIWSNonInputHash(p2)
 	require.Equal(t, h1, h2, "denylist fields must not affect the non-input fingerprint")
-	require.ElementsMatch(t, []string{"input", "previous_response_id", "client_metadata"}, ig1)
+	require.ElementsMatch(t, []string{"input", "previous_response_id", "client_metadata", "include"}, ig1)
 
 	// a semantic change (model) must change the fingerprint.
 	p3 := []byte(`{"model":"gpt-other","tools":[{"type":"x"}],"input":[{"a":1}]}`)
@@ -229,7 +229,6 @@ func TestOpenAIWSNonInputHash_CodexRequestPropertiesAreSemantic(t *testing.T) {
 		{"reasoning", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"high"},"store":false,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
 		{"store", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":true,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
 		{"stream", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":false,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
-		{"include", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":[],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
 		{"service_tier", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"priority","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
 		{"prompt_cache_key", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-b","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
 		{"text", []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":["reasoning.encrypted_content"],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"low"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)},
@@ -241,6 +240,10 @@ func TestOpenAIWSNonInputHash_CodexRequestPropertiesAreSemantic(t *testing.T) {
 			require.NotEqual(t, baseHash, hash)
 		})
 	}
+
+	includeOnly := []byte(`{"type":"response.create","model":"gpt-5.1","instructions":"same","tools":[{"type":"function","name":"same"}],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,"include":[],"service_tier":"auto","prompt_cache_key":"session-a","text":{"verbosity":"medium"},"input":[{"type":"message","role":"user","content":"hi"}],"client_metadata":{"x-client-request-id":"b"},"previous_response_id":"resp_2"}`)
+	includeOnlyHash, _ := openAIWSNonInputHash(includeOnly)
+	require.Equal(t, baseHash, includeOnlyHash, "include controls response shape and must not block active delta")
 }
 
 func TestOpenAIWSExtractResponseOutputItems(t *testing.T) {
@@ -390,12 +393,63 @@ func TestEvaluateDeltaShadowCandidate_RejectsCodexRequestPropertyChanges(t *test
 	require.False(t, log.Candidate)
 	require.False(t, log.NonInputMatch)
 	require.Equal(t, "non_input_mismatch", log.FallbackReason)
-	require.Equal(t, "include,instructions,parallel_tool_calls,reasoning,text,tool_choice,tools", log.NonInputChangedKeys)
+	require.Equal(t, "instructions,parallel_tool_calls,reasoning,text,tool_choice,tools", log.NonInputChangedKeys)
 	require.Contains(t, log.NonInputCachedSummary, "instructions:string")
 	require.Contains(t, log.NonInputCurrentSummary, "instructions:string")
 	require.NotContains(t, log.NonInputCachedSummary, "old instructions")
 	require.NotContains(t, log.NonInputCurrentSummary, "new turn instructions")
 	require.Nil(t, deltaPayload)
+}
+
+func TestOpenAIWSActiveDelta_AllowsIncludeOnlyNonInputChangeAndPreservesCurrentInclude(t *testing.T) {
+	msg1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	out1 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"two"}]}`
+	newMsg := `{"type":"message","role":"user","content":[{"type":"input_text","text":"three"}]}`
+	previousPayload := []byte(`{
+		"model":"gpt-5.5",
+		"stream":true,
+		"store":false,
+		"include":["reasoning.encrypted_content"],
+		"input":[` + msg1 + `,` + out1 + `]
+	}`)
+	currentPayload := []byte(`{
+		"model":"gpt-5.5",
+		"stream":true,
+		"store":false,
+		"include":["reasoning.encrypted_content","web_search_call.action.sources"],
+		"input":[` + msg1 + `,` + out1 + `,` + newMsg + `]
+	}`)
+	nonInput, _, nonInputFields := openAIWSNonInputFingerprint(previousPayload)
+
+	deltaPayload, log, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+		RequestID:                "req_include_only_delta",
+		AccountID:                5,
+		LeaseConnID:              "conn_a",
+		ConnMostRecentResponseID: "resp_1",
+		CurrentPayload:           currentPayload,
+		CachedFound:              true,
+		Cached: openAIWSSessionContextValue{
+			accountID:               5,
+			connID:                  "conn_a",
+			lastResponseID:          "resp_1",
+			materializedHashes:      [][32]byte{mustItemHash(t, msg1), mustItemHash(t, out1)},
+			materializedCount:       2,
+			inputCount:              1,
+			nonInputHash:            nonInput,
+			nonInputFields:          nonInputFields,
+			rawVsClientVisibleEqual: true,
+		},
+	})
+
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.True(t, log.Candidate)
+	require.True(t, log.NonInputMatch)
+	deltaJSON := requestToJSONString(deltaPayload)
+	require.Equal(t, "resp_1", gjson.Get(deltaJSON, "previous_response_id").String())
+	require.Len(t, gjson.Get(deltaJSON, "input").Array(), 1)
+	require.Len(t, gjson.Get(deltaJSON, "include").Array(), 2, "active payload must preserve current include response-shape request")
+	require.Equal(t, "web_search_call.action.sources", gjson.Get(deltaJSON, "include.1").String())
 }
 
 func TestEvaluateDeltaShadowCandidate_FallbackReasons(t *testing.T) {
@@ -1965,7 +2019,7 @@ func TestOpenAIWSActiveDelta_PreviousResponseNotFoundRecoveryRestoresNextTurnDel
 	require.Equal(t, "resp_restore_delta_3", cached.lastResponseID)
 }
 
-func TestOpenAIWSActiveDelta_PreviousResponseNotFoundRetriesFunctionCallOutputWithFullPayloadOverWS(t *testing.T) {
+func TestOpenAIWSActiveDelta_ColdFunctionCallOutputFullPayloadUsesFreshWS(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
 	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
@@ -2056,33 +2110,27 @@ func TestOpenAIWSActiveDelta_PreviousResponseNotFoundRetriesFunctionCallOutputWi
 	require.NoError(t, err)
 	require.NotNil(t, secondResult)
 	require.Equal(t, "resp_tool_prev_2", secondResult.RequestID)
-	require.Nil(t, upstream.lastReq, "function_call_output previous_response_not_found must recover over WS, not HTTP fallback")
-	require.Equal(t, 2, dialer.DialCount(), "recovery should replace the broken WS connection once")
+	require.Nil(t, upstream.lastReq, "function_call_output cold full replay must stay on WS, not HTTP fallback")
+	require.Equal(t, 2, dialer.DialCount(), "cold full replay should use a fresh WS connection")
 
 	firstConn.mu.Lock()
 	firstWrites := append([]map[string]any(nil), firstConn.writes...)
 	firstConn.mu.Unlock()
-	require.Len(t, firstWrites, 2)
-	deltaWrite := requestToJSONString(firstWrites[1])
-	require.Equal(t, "resp_tool_prev_1", gjson.Get(deltaWrite, "previous_response_id").String())
-	require.False(t, gjson.Get(deltaWrite, "store").Bool())
-	require.Len(t, gjson.Get(deltaWrite, "input").Array(), 1, "first second-turn attempt should be active delta")
-	require.Equal(t, "function_call_output", gjson.Get(deltaWrite, "input.0.type").String())
-	require.Equal(t, "call_1", gjson.Get(deltaWrite, "input.0.call_id").String())
+	require.Len(t, firstWrites, 1, "cold full tool replay should not reuse the previous session-bound ctx_pool conn")
 
 	secondConn.mu.Lock()
 	secondWrites := append([]map[string]any(nil), secondConn.writes...)
 	secondConn.mu.Unlock()
 	require.Len(t, secondWrites, 1)
-	retryWrite := requestToJSONString(secondWrites[0])
-	require.False(t, gjson.Get(retryWrite, "previous_response_id").Exists(), "recovery retry must full-create without the stale active-delta anchor")
-	require.True(t, gjson.Get(retryWrite, "store").Exists())
-	require.False(t, gjson.Get(retryWrite, "store").Bool())
-	require.Len(t, gjson.Get(retryWrite, "input").Array(), 3, "recovery retry must send the full original input sequence")
-	require.Equal(t, "function_call", gjson.Get(retryWrite, "input.1.type").String())
-	require.Equal(t, "call_1", gjson.Get(retryWrite, "input.1.call_id").String())
-	require.Equal(t, "function_call_output", gjson.Get(retryWrite, "input.2.type").String())
-	require.Equal(t, "call_1", gjson.Get(retryWrite, "input.2.call_id").String())
+	fullReplayWrite := requestToJSONString(secondWrites[0])
+	require.False(t, gjson.Get(fullReplayWrite, "previous_response_id").Exists(), "cold full tool replay must full-create without the stale active-delta anchor")
+	require.True(t, gjson.Get(fullReplayWrite, "store").Exists())
+	require.False(t, gjson.Get(fullReplayWrite, "store").Bool())
+	require.Len(t, gjson.Get(fullReplayWrite, "input").Array(), 3, "cold full tool replay must send the full original input sequence")
+	require.Equal(t, "function_call", gjson.Get(fullReplayWrite, "input.1.type").String())
+	require.Equal(t, "call_1", gjson.Get(fullReplayWrite, "input.1.call_id").String())
+	require.Equal(t, "function_call_output", gjson.Get(fullReplayWrite, "input.2.type").String())
+	require.Equal(t, "call_1", gjson.Get(fullReplayWrite, "input.2.call_id").String())
 
 	stateStore := svc.getOpenAIWSStateStore()
 	stickyAccountID, err := stateStore.GetResponseAccount(context.Background(), groupID, apiKeyID, "resp_tool_prev_2")
@@ -2484,6 +2532,86 @@ func TestOpenAIWSActiveDelta_AllowsHistoricalFunctionCallOutputWhenDeltaIsUserMe
 	require.Equal(t, "resp_tool_2", gjson.Get(deltaJSON, "previous_response_id").String())
 	require.Len(t, gjson.Get(deltaJSON, "input").Array(), 1)
 	require.Equal(t, "continue", gjson.Get(deltaJSON, "input.0.content.0.text").String())
+}
+
+func TestOpenAIWSActiveDelta_AllowsConnReanchorWithHistoricalFunctionCallOutputWhenDeltaIsUserMessage(t *testing.T) {
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	output1 := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
+	toolOutput := `{"type":"function_call_output","call_id":"call_1","output":"ok"}`
+	output2 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"tool ok"}]}`
+	newInput := `{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}`
+	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[` + input1 + `,` + output1 + `,` + toolOutput + `,` + output2 + `,` + newInput + `]}`)
+	nonInputHash, _ := openAIWSNonInputHash(payload)
+
+	deltaPayload, deltaLog, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+		RequestID:                "req_historical_tool_output_reanchor",
+		AccountID:                78004,
+		LeaseConnID:              "oa_ws_78004_new",
+		ConnMostRecentResponseID: "",
+		CurrentPayload:           payload,
+		HasFunctionCallOutput:    true,
+		AllowConnReanchor:        true,
+		CachedFound:              true,
+		Cached: openAIWSSessionContextValue{
+			accountID:      78004,
+			connID:         "",
+			lastResponseID: "resp_tool_2",
+			materializedHashes: [][32]byte{
+				mustItemHash(t, input1),
+				mustItemHash(t, output1),
+				mustItemHash(t, toolOutput),
+				mustItemHash(t, output2),
+			},
+			materializedCount:       4,
+			inputCount:              2,
+			nonInputHash:            nonInputHash,
+			rawVsClientVisibleEqual: true,
+		},
+	})
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.True(t, deltaLog.Candidate)
+	require.False(t, deltaLog.ConnMatch)
+	require.False(t, deltaLog.MostRecentMatch)
+	require.Equal(t, 1, deltaLog.DeltaItems)
+	deltaJSON := requestToJSONString(deltaPayload)
+	require.Equal(t, "resp_tool_2", gjson.Get(deltaJSON, "previous_response_id").String())
+	require.Len(t, gjson.Get(deltaJSON, "input").Array(), 1)
+	require.Equal(t, "continue", gjson.Get(deltaJSON, "input.0.content.0.text").String())
+}
+
+func TestOpenAIWSActiveDelta_BlocksConnReanchorWhenDeltaIsLegacyRoleToolOutput(t *testing.T) {
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	output1 := `{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}`
+	toolOutput := `{"role":"tool","tool_call_id":"call_1","content":"ok"}`
+	payload := []byte(`{"model":"gpt-5.1","store":false,"input":[` + input1 + `,` + output1 + `,` + toolOutput + `]}`)
+	nonInputHash, _ := openAIWSNonInputHash(payload)
+
+	deltaPayload, deltaLog, applied, err := buildOpenAIWSActiveDeltaPayload(openAIWSDeltaShadowInput{
+		RequestID:                "req_legacy_role_tool_output_reanchor",
+		AccountID:                78004,
+		LeaseConnID:              "oa_ws_78004_new",
+		ConnMostRecentResponseID: "",
+		CurrentPayload:           payload,
+		HasFunctionCallOutput:    true,
+		AllowConnReanchor:        true,
+		CachedFound:              true,
+		Cached: openAIWSSessionContextValue{
+			accountID:               78004,
+			connID:                  "",
+			lastResponseID:          "resp_tool_legacy",
+			materializedHashes:      [][32]byte{mustItemHash(t, input1), mustItemHash(t, output1)},
+			materializedCount:       2,
+			inputCount:              1,
+			nonInputHash:            nonInputHash,
+			rawVsClientVisibleEqual: true,
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, applied)
+	require.False(t, deltaLog.Candidate)
+	require.Equal(t, "has_function_call_output", deltaLog.FallbackReason)
+	require.Nil(t, deltaPayload)
 }
 
 func TestOpenAIWSActiveDelta_SkipsSelfContainedFunctionCallOutputDelta(t *testing.T) {

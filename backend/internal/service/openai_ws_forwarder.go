@@ -3749,6 +3749,32 @@ func shouldUseOpenAIWSNeutralForColdSession(
 	return signals.HasToolCallContext
 }
 
+func shouldBypassOpenAIWSSessionConnForColdToolReplay(
+	account *Account,
+	httpIngressWSOneShot bool,
+	storeDisabled bool,
+	previousResponseID string,
+	sessionHash string,
+	turnState string,
+	turnMetadata string,
+	payload map[string]any,
+) bool {
+	if account == nil || account.Type != AccountTypeOAuth {
+		return false
+	}
+	if httpIngressWSOneShot || !storeDisabled {
+		return false
+	}
+	if strings.TrimSpace(previousResponseID) != "" || strings.TrimSpace(sessionHash) == "" {
+		return false
+	}
+	if strings.TrimSpace(turnState) != "" || strings.TrimSpace(turnMetadata) != "" {
+		return false
+	}
+	signals := AnalyzeToolContinuationSignals(payload)
+	return signals.HasFunctionCallOutput && signals.HasToolCallContext
+}
+
 func shouldForceNewConnOnHTTPIngressWSOneShotRetry(lastFailureReason string) bool {
 	reason := strings.TrimSpace(lastFailureReason)
 	if reason == "" || strings.HasPrefix(reason, "prewarm_") {
@@ -4030,7 +4056,7 @@ func openAIWSRawItemsHasPrefix(items []json.RawMessage, prefix []json.RawMessage
 
 func openAIWSRawItemsHasFunctionCallOutput(items []json.RawMessage) bool {
 	for _, item := range items {
-		if isToolContinuationOutputItemType(gjson.GetBytes(item, "type").String()) {
+		if rawInputItemHasToolContinuationOutput(gjson.ParseBytes(item)) {
 			return true
 		}
 	}
@@ -4449,8 +4475,27 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 	storeDisabled := openAIWSPayloadStoreDisabled(payload)
 	storeEnabled := openAIWSPayloadStoreEnabled(payload)
+	bypassSessionConnForColdToolReplay := shouldBypassOpenAIWSSessionConnForColdToolReplay(
+		account,
+		httpIngressWSOneShot,
+		storeDisabled,
+		previousResponseID,
+		sessionHash,
+		turnState,
+		turnMetadata,
+		payload,
+	)
+	if bypassSessionConnForColdToolReplay {
+		preferredConnID = ""
+		connAffinityHit = false
+		storeDecision.PreferredConnID = ""
+		storeDecision.ConnAffinityHit = false
+		if strings.TrimSpace(storeDecision.FallbackReason) == "" || strings.TrimSpace(storeDecision.FallbackReason) == "missing_previous_response_id" {
+			storeDecision.FallbackReason = "cold_tool_replay_neutral"
+		}
+	}
 	forceNewConnForRecoveredFullReplay := shouldForceNewConnOnRecoveredFullReplay(lastFailureReason)
-	if !sessionPreemptedPrevious && !forceNewConnForRecoveredFullReplay && !httpIngressWSOneShot && stateStore != nil && storeDisabled && previousResponseID == "" && sessionHash != "" {
+	if !bypassSessionConnForColdToolReplay && !sessionPreemptedPrevious && !forceNewConnForRecoveredFullReplay && !httpIngressWSOneShot && stateStore != nil && storeDisabled && previousResponseID == "" && sessionHash != "" {
 		if connID, ok := stateStore.GetSessionConn(groupID, apiKeyID, account.ID, sessionHash); ok {
 			preferredConnID = connID
 			connAffinityHit = true
@@ -4492,6 +4537,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		strings.TrimSpace(lastFailureReason) == "write_request" ||
 		strings.TrimSpace(lastFailureReason) == "write"
 	hasFunctionCallOutputForReanchor := HasFunctionCallOutput(payload)
+	fullPayloadFunctionOutputIsReanchorBlocker := false
 	deltaConnReanchorTarget := false
 	if !sessionPreemptedPrevious &&
 		attempt <= 2 &&
@@ -4501,8 +4547,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		stateStore != nil &&
 		storeDisabled &&
 		previousResponseID == "" &&
-		sessionHash != "" &&
-		!hasFunctionCallOutputForReanchor {
+		sessionHash != "" {
 		deltaConnReanchorTarget = openAIWSHasDeltaReanchorTarget(stateStore, groupID, apiKeyID, sessionHash, account.ID)
 	}
 	deltaConnReanchorBlockers := openAIWSDeltaConnReanchorBlockers(
@@ -4515,7 +4560,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		storeDisabled,
 		previousResponseID,
 		sessionHash,
-		hasFunctionCallOutputForReanchor,
+		fullPayloadFunctionOutputIsReanchorBlocker,
 		deltaConnReanchorTarget,
 	)
 	allowDeltaConnReanchor := !sessionPreemptedPrevious &&
@@ -4527,7 +4572,6 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		storeDisabled &&
 		previousResponseID == "" &&
 		sessionHash != "" &&
-		!hasFunctionCallOutputForReanchor &&
 		deltaConnReanchorTarget
 	if sessionPreemptedPrevious {
 		preferredConnID = ""

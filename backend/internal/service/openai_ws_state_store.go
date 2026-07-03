@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,8 @@ const (
 	openAIWSStateStoreMaxEntriesPerMap = 65536
 	openAIWSStateStoreRedisTimeout     = 3 * time.Second
 	openAIWSConnEvictDiagnosticTTL     = time.Hour
+	openAIWSSessionContextCacheVersion = 1
+	openAIWSSessionContextCachePrefix  = "wsctx:"
 )
 
 type openAIWSAccountBinding struct {
@@ -60,6 +63,26 @@ type openAIWSSessionContextValue struct {
 type openAIWSSessionContextBinding struct {
 	value     openAIWSSessionContextValue
 	expiresAt time.Time
+}
+
+type openAIWSSessionContextCacheValue struct {
+	Version                 int                                               `json:"version"`
+	AccountID               int64                                             `json:"account_id"`
+	ContextTransport        string                                            `json:"context_transport,omitempty"`
+	LastResponseID          string                                            `json:"last_response_id,omitempty"`
+	MaterializedHashes      []string                                          `json:"materialized_hashes,omitempty"`
+	MaterializedCount       int                                               `json:"materialized_count"`
+	InputCount              int                                               `json:"input_count"`
+	InputOnlyContext        bool                                              `json:"input_only_context,omitempty"`
+	NonInputHash            string                                            `json:"non_input_hash,omitempty"`
+	NonInputFields          map[string]openAIWSSessionContextCacheFingerprint `json:"non_input_fields,omitempty"`
+	RawVsClientVisibleEqual bool                                              `json:"raw_vs_client_visible_equal"`
+}
+
+type openAIWSSessionContextCacheFingerprint struct {
+	Kind string `json:"kind,omitempty"`
+	Size int    `json:"size"`
+	Hash string `json:"hash,omitempty"`
 }
 
 type openAIWSConnLastResponseBinding struct {
@@ -386,6 +409,137 @@ func (s *defaultOpenAIWSStateStore) DeleteSessionConn(groupID int64, apiKeyID in
 	s.sessionToConnMu.Unlock()
 }
 
+func cloneOpenAIWSSessionContextValue(value openAIWSSessionContextValue) openAIWSSessionContextValue {
+	if len(value.materializedHashes) > 0 {
+		value.materializedHashes = append([][32]byte(nil), value.materializedHashes...)
+	}
+	if len(value.materializedShapes) > 0 {
+		value.materializedShapes = append([]string(nil), value.materializedShapes...)
+	}
+	if len(value.nonInputFields) > 0 {
+		fields := make(map[string]openAIWSNonInputFieldFingerprint, len(value.nonInputFields))
+		for key, field := range value.nonInputFields {
+			fields[key] = field
+		}
+		value.nonInputFields = fields
+	}
+	return value
+}
+
+func encodeOpenAIWSSessionContextForCache(value openAIWSSessionContextValue) ([]byte, bool) {
+	dto := openAIWSSessionContextCacheValue{
+		Version:                 openAIWSSessionContextCacheVersion,
+		AccountID:               value.accountID,
+		ContextTransport:        openAIWSSessionContextTransportForCache(value.connID),
+		LastResponseID:          strings.TrimSpace(value.lastResponseID),
+		MaterializedHashes:      make([]string, 0, len(value.materializedHashes)),
+		MaterializedCount:       value.materializedCount,
+		InputCount:              value.inputCount,
+		InputOnlyContext:        value.inputOnlyContext,
+		NonInputHash:            openAIWSSHA256Hex(value.nonInputHash),
+		RawVsClientVisibleEqual: value.rawVsClientVisibleEqual,
+	}
+	for _, hash := range value.materializedHashes {
+		dto.MaterializedHashes = append(dto.MaterializedHashes, openAIWSSHA256Hex(hash))
+	}
+	if len(value.nonInputFields) > 0 {
+		dto.NonInputFields = make(map[string]openAIWSSessionContextCacheFingerprint, len(value.nonInputFields))
+		for key, field := range value.nonInputFields {
+			dto.NonInputFields[key] = openAIWSSessionContextCacheFingerprint{
+				Kind: field.kind,
+				Size: field.size,
+				Hash: openAIWSSHA256Hex(field.hash),
+			}
+		}
+	}
+	encoded, err := json.Marshal(dto)
+	if err != nil {
+		return nil, false
+	}
+	return encoded, true
+}
+
+func decodeOpenAIWSSessionContextFromCache(payload []byte) (openAIWSSessionContextValue, bool) {
+	if len(payload) == 0 {
+		return openAIWSSessionContextValue{}, false
+	}
+	var dto openAIWSSessionContextCacheValue
+	if err := json.Unmarshal(payload, &dto); err != nil {
+		return openAIWSSessionContextValue{}, false
+	}
+	if dto.Version != openAIWSSessionContextCacheVersion {
+		return openAIWSSessionContextValue{}, false
+	}
+	value := openAIWSSessionContextValue{
+		accountID:               dto.AccountID,
+		connID:                  openAIWSSessionContextConnIDFromCacheTransport(dto.ContextTransport),
+		lastResponseID:          strings.TrimSpace(dto.LastResponseID),
+		materializedHashes:      make([][32]byte, 0, len(dto.MaterializedHashes)),
+		materializedShapes:      nil,
+		materializedCount:       dto.MaterializedCount,
+		inputCount:              dto.InputCount,
+		inputOnlyContext:        dto.InputOnlyContext,
+		rawVsClientVisibleEqual: dto.RawVsClientVisibleEqual,
+	}
+	for _, encodedHash := range dto.MaterializedHashes {
+		hash, ok := openAIWSDecodeSHA256Hex(encodedHash)
+		if !ok {
+			return openAIWSSessionContextValue{}, false
+		}
+		value.materializedHashes = append(value.materializedHashes, hash)
+	}
+	if strings.TrimSpace(dto.NonInputHash) != "" {
+		hash, ok := openAIWSDecodeSHA256Hex(dto.NonInputHash)
+		if !ok {
+			return openAIWSSessionContextValue{}, false
+		}
+		value.nonInputHash = hash
+	}
+	if len(dto.NonInputFields) > 0 {
+		value.nonInputFields = make(map[string]openAIWSNonInputFieldFingerprint, len(dto.NonInputFields))
+		for key, field := range dto.NonInputFields {
+			hash, ok := openAIWSDecodeSHA256Hex(field.Hash)
+			if !ok {
+				return openAIWSSessionContextValue{}, false
+			}
+			value.nonInputFields[key] = openAIWSNonInputFieldFingerprint{
+				kind: field.Kind,
+				size: field.Size,
+				hash: hash,
+			}
+		}
+	}
+	return value, true
+}
+
+func openAIWSSessionContextTransportForCache(connID string) string {
+	if strings.TrimSpace(connID) == "http" {
+		return "http"
+	}
+	return ""
+}
+
+func openAIWSSessionContextConnIDFromCacheTransport(transport string) string {
+	if strings.TrimSpace(transport) == "http" {
+		return "http"
+	}
+	return ""
+}
+
+func openAIWSSHA256Hex(value [32]byte) string {
+	return hex.EncodeToString(value[:])
+}
+
+func openAIWSDecodeSHA256Hex(value string) ([32]byte, bool) {
+	var out [32]byte
+	raw, err := hex.DecodeString(strings.TrimSpace(value))
+	if err != nil || len(raw) != len(out) {
+		return out, false
+	}
+	copy(out[:], raw)
+	return out, true
+}
+
 func (s *defaultOpenAIWSStateStore) BindSessionContext(groupID int64, apiKeyID int64, sessionHash string, value openAIWSSessionContextValue, ttl time.Duration) {
 	key := openAIWSSessionContextKey(groupID, apiKeyID, sessionHash)
 	if key == "" {
@@ -394,6 +548,7 @@ func (s *defaultOpenAIWSStateStore) BindSessionContext(groupID int64, apiKeyID i
 	ttl = normalizeOpenAIWSTTL(ttl)
 	s.maybeCleanup()
 
+	value = cloneOpenAIWSSessionContextValue(value)
 	s.sessionContextMu.Lock()
 	ensureBindingCapacity(s.sessionContext, key, openAIWSStateStoreMaxEntriesPerMap)
 	s.sessionContext[key] = openAIWSSessionContextBinding{
@@ -401,6 +556,18 @@ func (s *defaultOpenAIWSStateStore) BindSessionContext(groupID int64, apiKeyID i
 		expiresAt: time.Now().Add(ttl),
 	}
 	s.sessionContextMu.Unlock()
+
+	if s.cache == nil {
+		return
+	}
+	cacheKey := openAIWSSessionContextCacheKey(apiKeyID, sessionHash)
+	encoded, ok := encodeOpenAIWSSessionContextForCache(value)
+	if cacheKey == "" || !ok {
+		return
+	}
+	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(context.Background())
+	defer cancel()
+	_ = s.cache.SetOpenAIResponsesSessionWindow(cacheCtx, groupID, cacheKey, encoded, ttl)
 }
 
 func (s *defaultOpenAIWSStateStore) GetSessionContext(groupID int64, apiKeyID int64, sessionHash string) (openAIWSSessionContextValue, bool) {
@@ -414,10 +581,61 @@ func (s *defaultOpenAIWSStateStore) GetSessionContext(groupID int64, apiKeyID in
 	s.sessionContextMu.RLock()
 	binding, ok := s.sessionContext[key]
 	s.sessionContextMu.RUnlock()
-	if !ok || now.After(binding.expiresAt) {
+	if ok && !now.After(binding.expiresAt) {
+		if s.cache != nil && !s.sessionContextCacheExists(groupID, apiKeyID, sessionHash) {
+			s.sessionContextMu.Lock()
+			if current, exists := s.sessionContext[key]; exists && current.expiresAt.Equal(binding.expiresAt) {
+				delete(s.sessionContext, key)
+			}
+			s.sessionContextMu.Unlock()
+			return openAIWSSessionContextValue{}, false
+		}
+		return cloneOpenAIWSSessionContextValue(binding.value), true
+	}
+	if ok && now.After(binding.expiresAt) {
+		s.sessionContextMu.Lock()
+		if current, exists := s.sessionContext[key]; exists && now.After(current.expiresAt) {
+			delete(s.sessionContext, key)
+		}
+		s.sessionContextMu.Unlock()
+	}
+
+	if s.cache == nil {
 		return openAIWSSessionContextValue{}, false
 	}
-	return binding.value, true
+	cacheKey := openAIWSSessionContextCacheKey(apiKeyID, sessionHash)
+	if cacheKey == "" {
+		return openAIWSSessionContextValue{}, false
+	}
+	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(context.Background())
+	defer cancel()
+	payload, err := s.cache.GetOpenAIResponsesSessionWindow(cacheCtx, groupID, cacheKey)
+	if err != nil || len(payload) == 0 {
+		return openAIWSSessionContextValue{}, false
+	}
+	value, ok := decodeOpenAIWSSessionContextFromCache(payload)
+	if !ok {
+		return openAIWSSessionContextValue{}, false
+	}
+	return cloneOpenAIWSSessionContextValue(value), true
+}
+
+func (s *defaultOpenAIWSStateStore) sessionContextCacheExists(groupID int64, apiKeyID int64, sessionHash string) bool {
+	if s == nil || s.cache == nil {
+		return false
+	}
+	cacheKey := openAIWSSessionContextCacheKey(apiKeyID, sessionHash)
+	if cacheKey == "" {
+		return false
+	}
+	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(context.Background())
+	defer cancel()
+	payload, err := s.cache.GetOpenAIResponsesSessionWindow(cacheCtx, groupID, cacheKey)
+	if err != nil || len(payload) == 0 {
+		return false
+	}
+	_, ok := decodeOpenAIWSSessionContextFromCache(payload)
+	return ok
 }
 
 func (s *defaultOpenAIWSStateStore) DeleteSessionContext(groupID int64, apiKeyID int64, sessionHash string) {
@@ -428,6 +646,17 @@ func (s *defaultOpenAIWSStateStore) DeleteSessionContext(groupID int64, apiKeyID
 	s.sessionContextMu.Lock()
 	delete(s.sessionContext, key)
 	s.sessionContextMu.Unlock()
+
+	if s.cache == nil {
+		return
+	}
+	cacheKey := openAIWSSessionContextCacheKey(apiKeyID, sessionHash)
+	if cacheKey == "" {
+		return
+	}
+	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(context.Background())
+	defer cancel()
+	_ = s.cache.DeleteOpenAIResponsesSessionWindow(cacheCtx, groupID, cacheKey)
 }
 
 func (s *defaultOpenAIWSStateStore) BindSessionWindow(ctx context.Context, groupID int64, apiKeyID int64, sessionHash string, window openAIResponsesSessionWindow, ttl time.Duration) error {
@@ -632,15 +861,34 @@ func (s *defaultOpenAIWSStateStore) DeleteConnScopedState(connID string, reasons
 	s.sessionToConnMu.Unlock()
 
 	sessionContextDeleted := 0
+	sessionContextCacheDeleteKeys := make([]string, 0)
 	if openAIWSConnEvictReasonInvalidatesSessionContext(reason) {
 		s.sessionContextMu.Lock()
 		for key, binding := range s.sessionContext {
 			if strings.TrimSpace(binding.value.connID) == conn {
 				delete(s.sessionContext, key)
 				sessionContextDeleted++
+				if openAIWSConnEvictReasonDeletesDurableSessionContext(reason) {
+					sessionContextCacheDeleteKeys = append(sessionContextCacheDeleteKeys, key)
+				}
 			}
 		}
 		s.sessionContextMu.Unlock()
+	}
+	if s.cache != nil {
+		for _, key := range sessionContextCacheDeleteKeys {
+			groupID, apiKeyID, sessionHash, ok := parseOpenAIWSSessionContextKey(key)
+			if !ok {
+				continue
+			}
+			cacheKey := openAIWSSessionContextCacheKey(apiKeyID, sessionHash)
+			if cacheKey == "" {
+				continue
+			}
+			cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(context.Background())
+			_ = s.cache.DeleteOpenAIResponsesSessionWindow(cacheCtx, groupID, cacheKey)
+			cancel()
+		}
 	}
 
 	s.DeleteConnLastResponse(conn)
@@ -677,6 +925,30 @@ func openAIWSConnEvictReasonInvalidatesSessionContext(reason string) bool {
 			strings.HasPrefix(reason, "prewarm_") ||
 			strings.HasPrefix(reason, "soft_rate_limit")
 	}
+}
+
+func openAIWSConnEvictReasonDeletesDurableSessionContext(reason string) bool {
+	reason = strings.TrimSpace(reason)
+	switch reason {
+	case "closed", "evict", "conn_max_age", "session_idle_ttl", "neutral_idle_ttl", "neutral_acquire_stale_idle", "neutral_over_target", "idle_over_max", "nil_conn":
+		return false
+	case "write_request_fail", "prewarm_write_fail":
+		return false
+	}
+	return strings.HasSuffix(reason, "_fail") ||
+		strings.HasSuffix(reason, "_failed") ||
+		strings.HasSuffix(reason, "_event") ||
+		strings.HasPrefix(reason, "read_fail") ||
+		strings.HasPrefix(reason, "write_request_fail") ||
+		strings.HasPrefix(reason, "error_event") ||
+		strings.HasPrefix(reason, "err_event") ||
+		strings.HasPrefix(reason, "response_failed") ||
+		strings.HasPrefix(reason, "session_preempted") ||
+		strings.HasPrefix(reason, "client_disconnected") ||
+		strings.HasPrefix(reason, "unclean_exit") ||
+		strings.HasPrefix(reason, "ingress_") ||
+		strings.HasPrefix(reason, "prewarm_") ||
+		strings.HasPrefix(reason, "soft_rate_limit")
 }
 
 func (s *defaultOpenAIWSStateStore) TrySessionInFlight(groupID int64, apiKeyID int64, sessionHash string) bool {
@@ -947,6 +1219,30 @@ func openAIWSSessionContextKey(groupID int64, apiKeyID int64, sessionHash string
 		return ""
 	}
 	return fmt.Sprintf("%d:%d:%s", groupID, apiKeyID, hash)
+}
+
+func openAIWSSessionContextCacheKey(apiKeyID int64, sessionHash string) string {
+	hash := strings.TrimSpace(sessionHash)
+	if hash == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s%d:%s", openAIWSSessionContextCachePrefix, apiKeyID, hash)
+}
+
+func parseOpenAIWSSessionContextKey(key string) (int64, int64, string, bool) {
+	parts := strings.SplitN(strings.TrimSpace(key), ":", 3)
+	if len(parts) != 3 || strings.TrimSpace(parts[2]) == "" {
+		return 0, 0, "", false
+	}
+	groupID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, 0, "", false
+	}
+	apiKeyID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, 0, "", false
+	}
+	return groupID, apiKeyID, parts[2], true
 }
 
 func withOpenAIWSStateStoreRedisTimeout(ctx context.Context) (context.Context, context.CancelFunc) {

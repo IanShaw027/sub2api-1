@@ -98,6 +98,23 @@ func rawInputItemHasToolContinuationOutput(item gjson.Result) bool {
 	return false
 }
 
+func inputItemToolContinuationOutputCallID(item map[string]any) (string, bool) {
+	if item == nil {
+		return "", false
+	}
+	itemType, _ := item["type"].(string)
+	if isToolContinuationOutputItemType(itemType) {
+		callID, _ := item["call_id"].(string)
+		return strings.TrimSpace(callID), true
+	}
+	role, _ := item["role"].(string)
+	if strings.TrimSpace(role) != "tool" {
+		return "", false
+	}
+	callID := strings.TrimSpace(firstNonEmptyString(item["call_id"], item["tool_call_id"], item["id"]))
+	return callID, callID != ""
+}
+
 // NeedsToolContinuation 判定请求是否需要工具调用续链处理。
 // 满足以下任一信号即视为续链：previous_response_id、input 内包含工具输出/item_reference、
 // 或显式声明 tools/tool_choice。
@@ -151,10 +168,8 @@ func AnalyzeToolContinuationSignals(reqBody map[string]any) ToolContinuationSign
 			continue
 		}
 		itemType, _ := itemMap["type"].(string)
-		if isCodexToolCallOutputItemType(itemType) {
+		if callID, ok := inputItemToolContinuationOutputCallID(itemMap); ok {
 			signals.HasFunctionCallOutput = true
-			callID, _ := itemMap["call_id"].(string)
-			callID = strings.TrimSpace(callID)
 			if callID == "" {
 				signals.HasFunctionCallOutputMissingCallID = true
 				continue

@@ -464,6 +464,74 @@ func TestShouldUseOpenAIWSNeutralForColdSessionToolContinuationContext(t *testin
 	}
 }
 
+func TestShouldBypassOpenAIWSSessionConnForColdToolReplay(t *testing.T) {
+	account := &Account{Type: AccountTypeOAuth}
+	fullToolReplay := map[string]any{
+		"store": false,
+		"input": []any{
+			map[string]any{"type": "function_call", "call_id": "call_1", "name": "shell", "arguments": "{}"},
+			map[string]any{"type": "function_call_output", "call_id": "call_1", "output": "ok"},
+			map[string]any{"type": "message", "role": "user", "content": "continue"},
+		},
+	}
+
+	require.True(t, shouldBypassOpenAIWSSessionConnForColdToolReplay(
+		account,
+		false,
+		true,
+		"",
+		"session-hash",
+		"",
+		"",
+		fullToolReplay,
+	), "full tool-context replay should use a neutral/fresh connection instead of a stale session-bound ctx_pool conn")
+
+	legacyRoleToolReplay := map[string]any{
+		"store": false,
+		"input": []any{
+			map[string]any{"type": "function_call", "call_id": "call_legacy", "name": "shell", "arguments": "{}"},
+			map[string]any{"role": "tool", "tool_call_id": "call_legacy", "content": "ok"},
+			map[string]any{"type": "message", "role": "user", "content": "continue"},
+		},
+	}
+	require.True(t, shouldBypassOpenAIWSSessionConnForColdToolReplay(
+		account,
+		false,
+		true,
+		"",
+		"session-hash",
+		"",
+		"",
+		legacyRoleToolReplay,
+	), "legacy role=tool full replay should not reuse a stale session-bound ctx_pool conn")
+
+	require.False(t, shouldBypassOpenAIWSSessionConnForColdToolReplay(
+		account,
+		false,
+		true,
+		"resp_prev",
+		"session-hash",
+		"",
+		"",
+		fullToolReplay,
+	), "explicit previous_response_id continuations still need their bound session connection")
+
+	require.False(t, shouldBypassOpenAIWSSessionConnForColdToolReplay(
+		account,
+		false,
+		true,
+		"",
+		"session-hash",
+		"",
+		"",
+		map[string]any{
+			"input": []any{
+				map[string]any{"type": "function_call_output", "call_id": "call_1", "output": "ok"},
+			},
+		},
+	), "orphan tool output without replayed tool-call context cannot be treated as a cold full replay")
+}
+
 func TestOpenAIWSRetryMetricsSnapshot(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	svc.recordOpenAIWSRetryAttempt(150 * time.Millisecond)

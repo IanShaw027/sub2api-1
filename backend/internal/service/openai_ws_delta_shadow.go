@@ -75,6 +75,7 @@ var openAIWSNonInputDenylist = []string{
 	"input",
 	"previous_response_id",
 	"client_metadata",
+	"include",
 }
 
 type openAIWSNonInputFieldFingerprint struct {
@@ -891,8 +892,7 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 	log.MostRecentMatch = strings.TrimSpace(in.ConnMostRecentResponseID) != "" &&
 		in.ConnMostRecentResponseID == strings.TrimSpace(in.Cached.lastResponseID)
 	connAnchorMatch := log.ConnMatch && log.MostRecentMatch
-	connReanchorBlockedByFunctionOutput := in.AllowConnReanchor && in.HasFunctionCallOutput
-	connReanchorMatch := in.AllowConnReanchor && !in.HasFunctionCallOutput && strings.TrimSpace(in.Cached.lastResponseID) != ""
+	connReanchorMatch := in.AllowConnReanchor && strings.TrimSpace(in.Cached.lastResponseID) != ""
 	log.AccountMismatchReason = openAIWSDeltaAccountMismatchReason(in, in.Cached.accountID)
 	log.ConnMismatchReason = openAIWSDeltaConnMismatchReason(in, log.ConnMatch, log.MostRecentMatch, connReanchorMatch)
 	log.RawClientEquiv = in.Cached.rawVsClientVisibleEqual
@@ -936,6 +936,7 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 	}
 
 	deltaToolFallbackReason := ""
+	deltaHasFunctionCallOutput := false
 	if matched {
 		if in.Cached.materializedCount < 0 || in.Cached.materializedCount > len(fullItems) {
 			log.FallbackReason = "materialized_count_invalid"
@@ -949,11 +950,13 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 		delta := fullItems[deltaStart:]
 		log.DeltaItems = len(delta)
 		log.DeltaBytes = openAIWSRawItemsByteLen(delta)
+		deltaHasFunctionCallOutput = openAIWSRawItemsHasFunctionCallOutput(delta)
 		deltaToolFallbackReason = openAIWSActiveDeltaToolContinuationFallbackReason(delta)
 	}
+	connReanchorBlockedByDeltaFunctionOutput := !connAnchorMatch && connReanchorMatch && deltaHasFunctionCallOutput
 
 	log.Candidate = accountMatch && (connAnchorMatch || connReanchorMatch) && nonInputAllowsActiveDelta &&
-		log.RawClientEquiv && matched && deltaToolFallbackReason == ""
+		log.RawClientEquiv && matched && !connReanchorBlockedByDeltaFunctionOutput && deltaToolFallbackReason == ""
 
 	if log.Candidate {
 		return log
@@ -963,7 +966,7 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 	switch {
 	case !accountMatch:
 		log.FallbackReason = "account_mismatch"
-	case connReanchorBlockedByFunctionOutput && !connAnchorMatch:
+	case connReanchorBlockedByDeltaFunctionOutput:
 		log.FallbackReason = "has_function_call_output"
 	case !log.ConnMatch && !connReanchorMatch:
 		log.FallbackReason = "conn_mismatch"

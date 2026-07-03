@@ -253,6 +253,175 @@ func TestOpenAIWSStateStore_DeleteConnScopedStateWriteFailKeepsSessionContextFor
 	require.False(t, ok)
 }
 
+func TestOpenAIWSStateStore_RestoresSessionContextFromSharedHashCacheWithoutConnTrust(t *testing.T) {
+	cache := &stubGatewayCache{}
+	writer := NewOpenAIWSStateStore(cache)
+	reader := NewOpenAIWSStateStore(cache)
+
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	output1 := `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"two"}]}`
+	payload := []byte(`{"model":"gpt-5.5","store":false,"input":[` + input1 + `,` + output1 + `]}`)
+	nonInputHash, _, nonInputFields := openAIWSNonInputFingerprint(payload)
+
+	writer.BindSessionContext(7, 11, "sess_shared_ctx", openAIWSSessionContextValue{
+		accountID:               101,
+		connID:                  "oa_ws_101_old_process",
+		lastResponseID:          "resp_shared_ctx_1",
+		materializedHashes:      [][32]byte{mustItemHash(t, input1), mustItemHash(t, output1)},
+		materializedShapes:      []string{"type=message;paths=$.content[]", "type=message;paths=$.content[]"},
+		materializedCount:       2,
+		inputCount:              1,
+		nonInputHash:            nonInputHash,
+		nonInputFields:          nonInputFields,
+		rawVsClientVisibleEqual: true,
+	}, time.Hour)
+
+	restored, ok := reader.GetSessionContext(7, 11, "sess_shared_ctx")
+	require.True(t, ok)
+	require.Equal(t, int64(101), restored.accountID)
+	require.Empty(t, restored.connID, "shared hash context must not trust stale in-process conn_id")
+	require.Equal(t, "resp_shared_ctx_1", restored.lastResponseID)
+	require.Equal(t, 2, restored.materializedCount)
+	require.Equal(t, 1, restored.inputCount)
+	require.Len(t, restored.materializedHashes, 2)
+	require.Equal(t, mustItemHash(t, input1), restored.materializedHashes[0])
+	require.Equal(t, mustItemHash(t, output1), restored.materializedHashes[1])
+	require.Empty(t, restored.materializedShapes, "durable context should not persist diagnostic shapes")
+	require.Equal(t, nonInputHash, restored.nonInputHash)
+	require.Contains(t, restored.nonInputFields, "model")
+	require.True(t, restored.rawVsClientVisibleEqual)
+}
+
+func TestOpenAIWSStateStore_RestoredSharedHashContextPreservesHTTPTransportMarker(t *testing.T) {
+	cache := &stubGatewayCache{}
+	writer := NewOpenAIWSStateStore(cache)
+	reader := NewOpenAIWSStateStore(cache)
+
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	payload := []byte(`{"model":"gpt-5.5","store":false,"input":[` + input1 + `]}`)
+	nonInputHash, _, nonInputFields := openAIWSNonInputFingerprint(payload)
+
+	writer.BindSessionContext(7, 11, "sess_http_shared_ctx", openAIWSSessionContextValue{
+		accountID:               101,
+		connID:                  "http",
+		lastResponseID:          "resp_http_shared_ctx",
+		materializedHashes:      [][32]byte{mustItemHash(t, input1)},
+		materializedCount:       1,
+		inputCount:              1,
+		inputOnlyContext:        true,
+		nonInputHash:            nonInputHash,
+		nonInputFields:          nonInputFields,
+		rawVsClientVisibleEqual: true,
+	}, time.Hour)
+
+	restored, ok := reader.GetSessionContext(7, 11, "sess_http_shared_ctx")
+	require.True(t, ok)
+	require.Equal(t, "http", restored.connID, "HTTP transport marker is not a stale WS conn_id and must survive durable restore")
+	require.Equal(t, "resp_http_shared_ctx", restored.lastResponseID)
+	require.True(t, restored.inputOnlyContext)
+}
+
+func TestOpenAIWSStateStore_RestoredSharedHashContextDoesNotOutliveExplicitSharedDelete(t *testing.T) {
+	cache := &stubGatewayCache{}
+	writer := NewOpenAIWSStateStore(cache)
+	reader := NewOpenAIWSStateStore(cache)
+
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	writer.BindSessionContext(7, 11, "sess_restore_then_delete", openAIWSSessionContextValue{
+		accountID:               101,
+		lastResponseID:          "resp_restore_then_delete",
+		materializedHashes:      [][32]byte{mustItemHash(t, input1)},
+		materializedCount:       1,
+		inputCount:              1,
+		rawVsClientVisibleEqual: true,
+	}, time.Hour)
+
+	_, ok := reader.GetSessionContext(7, 11, "sess_restore_then_delete")
+	require.True(t, ok)
+
+	writer.DeleteSessionContext(7, 11, "sess_restore_then_delete")
+
+	_, ok = reader.GetSessionContext(7, 11, "sess_restore_then_delete")
+	require.False(t, ok, "a process that restored from shared cache must not keep using stale local durable context after explicit shared delete")
+}
+
+func TestOpenAIWSStateStore_LocalSessionContextDoesNotOutliveExplicitSharedDelete(t *testing.T) {
+	cache := &stubGatewayCache{}
+	owner := NewOpenAIWSStateStore(cache)
+	deleter := NewOpenAIWSStateStore(cache)
+
+	owner.BindSessionContext(7, 11, "sess_local_delete", openAIWSSessionContextValue{
+		accountID:               101,
+		connID:                  "oa_ws_local",
+		lastResponseID:          "resp_local_delete",
+		materializedHashes:      [][32]byte{mustItemHash(t, `{"type":"message","role":"user","content":"one"}`)},
+		materializedCount:       1,
+		inputCount:              1,
+		rawVsClientVisibleEqual: true,
+	}, time.Hour)
+
+	cached, ok := owner.GetSessionContext(7, 11, "sess_local_delete")
+	require.True(t, ok)
+	require.Equal(t, "oa_ws_local", cached.connID)
+
+	deleter.DeleteSessionContext(7, 11, "sess_local_delete")
+
+	_, ok = owner.GetSessionContext(7, 11, "sess_local_delete")
+	require.False(t, ok, "local durable context must be invalidated when another process deletes the shared session context")
+}
+
+func TestOpenAIWSStateStore_DeleteSessionContextDeletesSharedHashCache(t *testing.T) {
+	cache := &stubGatewayCache{}
+	writer := NewOpenAIWSStateStore(cache)
+	reader := NewOpenAIWSStateStore(cache)
+
+	writer.BindSessionContext(7, 11, "sess_delete_shared_ctx", openAIWSSessionContextValue{
+		accountID:               101,
+		lastResponseID:          "resp_delete_shared_ctx",
+		materializedHashes:      [][32]byte{mustItemHash(t, `{"type":"message","role":"user","content":"one"}`)},
+		materializedCount:       1,
+		inputCount:              1,
+		rawVsClientVisibleEqual: true,
+	}, time.Hour)
+
+	writer.DeleteSessionContext(7, 11, "sess_delete_shared_ctx")
+
+	_, ok := reader.GetSessionContext(7, 11, "sess_delete_shared_ctx")
+	require.False(t, ok)
+}
+
+func TestOpenAIWSStateStore_SessionIdleEvictKeepsSharedHashContextForReanchor(t *testing.T) {
+	cache := &stubGatewayCache{}
+	writer := NewOpenAIWSStateStore(cache)
+	reader := NewOpenAIWSStateStore(cache)
+
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}`
+	payload := []byte(`{"model":"gpt-5.5","store":false,"input":[` + input1 + `]}`)
+	nonInputHash, _, nonInputFields := openAIWSNonInputFingerprint(payload)
+
+	writer.BindSessionContext(7, 11, "sess_idle_shared_ctx", openAIWSSessionContextValue{
+		accountID:               101,
+		connID:                  "oa_ws_idle_old",
+		lastResponseID:          "resp_idle_shared_ctx",
+		materializedHashes:      [][32]byte{mustItemHash(t, input1)},
+		materializedShapes:      []string{"type=message;paths=$.content[]"},
+		materializedCount:       1,
+		inputCount:              1,
+		nonInputHash:            nonInputHash,
+		nonInputFields:          nonInputFields,
+		rawVsClientVisibleEqual: true,
+	}, time.Hour)
+
+	writer.DeleteConnScopedState("oa_ws_idle_old", "session_idle_ttl")
+
+	restored, ok := reader.GetSessionContext(7, 11, "sess_idle_shared_ctx")
+	require.True(t, ok, "idle WS destruction should keep hash-only context so the next turn can reanchor on last_response_id")
+	require.Empty(t, restored.connID, "restored durable context must not trust the evicted conn_id")
+	require.Equal(t, "resp_idle_shared_ctx", restored.lastResponseID)
+	require.Equal(t, nonInputHash, restored.nonInputHash)
+	require.Contains(t, restored.nonInputFields, "model")
+}
+
 func TestOpenAIWSStateStore_DeleteConnScopedStateWriteFailNoReanchorDeletesSessionContext(t *testing.T) {
 	store := NewOpenAIWSStateStore(nil)
 
