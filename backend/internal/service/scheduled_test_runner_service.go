@@ -121,6 +121,11 @@ func (s *ScheduledTestRunnerService) runScheduled() {
 }
 
 func (s *ScheduledTestRunnerService) runOnePlan(ctx context.Context, plan *ScheduledTestPlan) {
+	if s.shouldSkipPlanForUnschedulableAccount(ctx, plan) {
+		s.advanceSkippedPlan(ctx, plan)
+		return
+	}
+
 	result, err := s.accountTestSvc.RunTestBackground(ctx, plan.AccountID, plan.ModelID)
 	if err != nil && result == nil {
 		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d RunTestBackground error: %v", plan.ID, err)
@@ -157,6 +162,42 @@ func (s *ScheduledTestRunnerService) runOnePlan(ctx context.Context, plan *Sched
 
 	if err := s.planRepo.UpdateAfterRun(ctx, plan.ID, time.Now(), nextRun); err != nil {
 		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d UpdateAfterRun error: %v", plan.ID, err)
+	}
+}
+
+func (s *ScheduledTestRunnerService) shouldSkipPlanForUnschedulableAccount(ctx context.Context, plan *ScheduledTestPlan) bool {
+	if s == nil || plan == nil || s.accountTestSvc == nil || s.accountTestSvc.accountRepo == nil {
+		return false
+	}
+	account, err := s.accountTestSvc.accountRepo.GetByID(ctx, plan.AccountID)
+	if err != nil || account == nil {
+		return false
+	}
+	if account.IsSchedulable() {
+		return false
+	}
+	logger.LegacyPrintf(
+		"service.scheduled_test_runner",
+		"[ScheduledTestRunner] plan=%d skipped unschedulable account=%d status=%s schedulable=%v",
+		plan.ID,
+		plan.AccountID,
+		account.Status,
+		account.Schedulable,
+	)
+	return true
+}
+
+func (s *ScheduledTestRunnerService) advanceSkippedPlan(ctx context.Context, plan *ScheduledTestPlan) {
+	if s == nil || plan == nil || s.planRepo == nil {
+		return
+	}
+	nextRun, err := computeNextRun(plan.CronExpression, time.Now())
+	if err != nil {
+		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d computeNextRun after skip error: %v", plan.ID, err)
+		return
+	}
+	if err := s.planRepo.UpdateAfterRun(ctx, plan.ID, time.Now(), nextRun); err != nil {
+		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d UpdateAfterRun after skip error: %v", plan.ID, err)
 	}
 }
 
