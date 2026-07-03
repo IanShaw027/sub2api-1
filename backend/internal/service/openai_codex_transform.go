@@ -2084,6 +2084,12 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 			}
 		}
 
+		if normalizedArgs, ok := normalizeCodexStructuredToolCallArguments(typ, m["arguments"]); ok {
+			ensureCopy()
+			newItem["arguments"] = normalizedArgs
+			modified = true
+		}
+
 		if opts.dropNonToolItemIDs && !isCodexToolCallItemType(typ) && !codexInputItemPreservesID(typ) {
 			if _, exists := newItem["id"]; exists {
 				ensureCopy()
@@ -2110,6 +2116,30 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 		return input, false
 	}
 	return filtered, true
+}
+
+func normalizeCodexStructuredToolCallArguments(typ string, raw any) (any, bool) {
+	switch strings.TrimSpace(typ) {
+	case "tool_search_call", "custom_tool_call", "mcp_tool_call", "local_shell_call":
+	default:
+		return nil, false
+	}
+	argString, ok := raw.(string)
+	if !ok {
+		return nil, false
+	}
+	trimmed := strings.TrimSpace(argString)
+	if trimmed == "" {
+		return map[string]any{}, true
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+		return map[string]any{"value": argString}, true
+	}
+	if parsed == nil {
+		parsed = map[string]any{}
+	}
+	return parsed, true
 }
 
 // dropOrphanFunctionCallOutputs removes function_call_output items whose call_id
@@ -2440,6 +2470,20 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 
 		toolType, _ := toolMap["type"].(string)
 		toolType = strings.TrimSpace(toolType)
+		if toolType == "" || strings.EqualFold(toolType, "none") || strings.EqualFold(toolType, "null") {
+			if _, hasFunction := toolMap["function"]; hasFunction {
+				toolMap["type"] = "function"
+				toolType = "function"
+				modified = true
+			} else if strings.TrimSpace(firstNonEmptyString(toolMap["name"])) != "" || toolMap["parameters"] != nil {
+				toolMap["type"] = "function"
+				toolType = "function"
+				modified = true
+			} else {
+				modified = true
+				continue
+			}
+		}
 		if toolType != "function" {
 			validTools = append(validTools, toolMap)
 			continue

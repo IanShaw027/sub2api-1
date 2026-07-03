@@ -216,6 +216,69 @@ func TestApplyCodexOAuthTransform_CustomAndMCPToolOutputsPreserveCallID(t *testi
 	require.Equal(t, "fc_mcp", second["call_id"])
 }
 
+func TestApplyCodexOAuthTransform_NormalizesStructuredToolCallArgumentsString(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"input": []any{
+			map[string]any{
+				"type":      "tool_search_call",
+				"call_id":   "call_search",
+				"arguments": `{"query":"golang","limit":5}`,
+			},
+			map[string]any{
+				"type":      "function_call",
+				"call_id":   "call_fn",
+				"name":      "shell",
+				"arguments": `{"cmd":"pwd"}`,
+			},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, false, false)
+
+	require.True(t, result.Modified)
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 2)
+
+	searchCall, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	arguments, ok := searchCall["arguments"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "golang", arguments["query"])
+	require.Equal(t, float64(5), arguments["limit"])
+
+	functionCall, ok := input[1].(map[string]any)
+	require.True(t, ok)
+	require.IsType(t, "", functionCall["arguments"], "function_call arguments must remain a JSON string")
+}
+
+func TestApplyCodexOAuthTransform_DropsNoneTypedTools(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{
+			map[string]any{"type": "None"},
+			map[string]any{"type": nil},
+			map[string]any{},
+			map[string]any{"type": "function", "name": "run", "parameters": map[string]any{"type": "object"}},
+		},
+		"input": []any{
+			map[string]any{"type": "message", "role": "user", "content": "hi"},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, false, false)
+
+	require.True(t, result.Modified)
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 1)
+	tool, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function", tool["type"])
+	require.Equal(t, "run", tool["name"])
+}
+
 func TestApplyCodexOAuthTransform_TruncatesOversizedToolOutputs(t *testing.T) {
 	oversized := strings.Repeat("a", codexToolOutputMaxChars+1)
 	reqBody := map[string]any{
