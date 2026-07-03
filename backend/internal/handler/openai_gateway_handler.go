@@ -345,7 +345,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	for {
 		// Select account supporting the requested model
 		reqLog.Debug("openai.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForResponses(
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForResponsesCapability(
 			c.Request.Context(),
 			apiKey.GroupID,
 			apiKey.ID,
@@ -356,6 +356,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			service.OpenAIUpstreamTransportAny,
 			previewImageIntent,
 			requireCompact,
+			openAIResponsesEndpointCapabilityForRequest(c),
 			requestPlatform,
 		)
 		if err != nil {
@@ -782,6 +783,18 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 }
+
+func openAIResponsesEndpointCapabilityForRequest(c *gin.Context) service.OpenAIEndpointCapability {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return service.OpenAIEndpointCapabilityResponsesIngress
+	}
+	normalizedPath := strings.TrimRight(strings.TrimSpace(c.Request.URL.Path), "/")
+	if strings.HasSuffix(normalizedPath, "/responses/input_tokens") {
+		return service.OpenAIEndpointCapabilityResponsesInputTokens
+	}
+	return service.OpenAIEndpointCapabilityResponsesIngress
+}
+
 func isOpenAIRemoteCompactPath(c *gin.Context) bool {
 	if c == nil || c.Request == nil || c.Request.URL == nil {
 		return false

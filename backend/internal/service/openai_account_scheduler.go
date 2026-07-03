@@ -2029,9 +2029,42 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForResponses(
 	requireCompact bool,
 	platformOverride ...string,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	return s.SelectAccountWithSchedulerForResponsesCapability(
+		ctx,
+		groupID,
+		apiKeyID,
+		previousResponseID,
+		sessionHash,
+		requestedModel,
+		excludedIDs,
+		requiredTransport,
+		requireImageEnabled,
+		requireCompact,
+		OpenAIEndpointCapabilityResponsesIngress,
+		platformOverride...,
+	)
+}
+
+func (s *OpenAIGatewayService) SelectAccountWithSchedulerForResponsesCapability(
+	ctx context.Context,
+	groupID *int64,
+	apiKeyID int64,
+	previousResponseID string,
+	sessionHash string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requireImageEnabled bool,
+	requireCompact bool,
+	requiredCapability OpenAIEndpointCapability,
+	platformOverride ...string,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	platform := PlatformOpenAI
 	if len(platformOverride) > 0 {
 		platform = platformOverride[0]
+	}
+	if requiredCapability == "" {
+		requiredCapability = OpenAIEndpointCapabilityResponsesIngress
 	}
 	requiredImageRoute := ""
 	if requireImageEnabled {
@@ -2042,7 +2075,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForResponses(
 			}
 		}
 	}
-	return s.selectAccountWithScheduler(ctx, groupID, apiKeyID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, OpenAIEndpointCapabilityResponsesIngress, "", requiredImageRoute, requireImageEnabled, false, requireCompact, platform)
+	return s.selectAccountWithScheduler(ctx, groupID, apiKeyID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, requiredCapability, "", requiredImageRoute, requireImageEnabled, false, requireCompact, platform)
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
