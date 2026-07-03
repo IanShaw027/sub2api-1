@@ -6041,6 +6041,7 @@ export default {
       other: 'Other',
       errorsSla: 'Errors (SLA scope)',
       upstreamExcl429529: 'Upstream (excl 429/529)',
+      recoveredTelemetry: 'Recovered telemetry',
       failedToLoadData: 'Failed to load ops data.',
       failedToLoadOverview: 'Failed to load overview',
       failedToLoadThroughputTrend: 'Failed to load throughput trend',
@@ -6827,7 +6828,7 @@ export default {
         throughputTrend: 'Requests/QPS + Tokens/TPS in the selected window.',
         switchRateTrend: 'Trend of account switches / total requests over the last 5 hours (avg switches).',
         latencyHistogram: 'Request duration distribution (ms) for successful requests.',
-        errorTrend: 'Error counts over time (SLA scope excludes business limits; upstream excludes 429/529).',
+        errorTrend: 'SLA error counts over time. Recovered telemetry is final-200 upstream anomaly telemetry, shown separately and excluded from error-rate/details scope.',
         errorDistribution: 'Error distribution by owner, with status-code aggregates attached.',
         goroutines:
           'Number of Go runtime goroutines (lightweight threads). There is no absolute "safe" number—use your historical baseline. Heuristic: <2k is common; 2k–8k watch; >8k plus rising queue/latency often suggests blocking/leaks.',

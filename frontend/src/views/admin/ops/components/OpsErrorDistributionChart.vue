@@ -33,6 +33,7 @@ const colors = computed(() => ({
 const totalSlaErrors = computed(() =>
   (props.data?.items ?? []).reduce((total, item) => total + Number(item.sla || 0), 0)
 )
+const recoveredTelemetryTotal = computed(() => Number(props.data?.recovered_telemetry_total || 0))
 
 const hasData = computed(() => totalSlaErrors.value > 0)
 
@@ -167,6 +168,12 @@ const options = computed(() => ({
           <div v-if="topReason" class="text-xs font-bold text-gray-900 dark:text-white">
             {{ t('admin.ops.top') }}: <span :style="{ color: topReason.color }">{{ topReason.label }}</span>
           </div>
+          <div
+            v-if="recoveredTelemetryTotal > 0"
+            class="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20"
+          >
+            {{ t('admin.ops.recoveredTelemetry') }}: {{ recoveredTelemetryTotal }}
+          </div>
           <div class="flex flex-wrap justify-center gap-3">
             <div v-for="item in categories" :key="item.label" class="flex items-center gap-1.5 text-xs">
               <span class="h-2 w-2 rounded-full" :style="{ backgroundColor: item.color }"></span>
@@ -176,9 +183,17 @@ const options = computed(() => ({
         </div>
       </div>
 
-      <div v-else class="flex h-full items-center justify-center">
+      <div v-else class="flex h-full flex-col items-center justify-center gap-3">
         <div v-if="state === 'loading'" class="animate-pulse text-sm text-gray-400">{{ t('common.loading') }}</div>
-        <EmptyState v-else :title="t('common.noData')" :description="t('admin.ops.charts.emptyError')" />
+        <template v-else>
+          <EmptyState :title="t('common.noData')" :description="t('admin.ops.charts.emptyError')" />
+          <div
+            v-if="recoveredTelemetryTotal > 0"
+            class="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20"
+          >
+            {{ t('admin.ops.recoveredTelemetry') }}: {{ recoveredTelemetryTotal }}
+          </div>
+        </template>
       </div>
     </div>
   </div>

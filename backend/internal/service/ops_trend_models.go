@@ -46,6 +46,7 @@ type OpsErrorTrendPoint struct {
 	UpstreamErrorCountExcl429529 int64 `json:"upstream_error_count_excl_429_529"`
 	Upstream429Count             int64 `json:"upstream_429_count"`
 	Upstream529Count             int64 `json:"upstream_529_count"`
+	RecoveredTelemetryCount      int64 `json:"recovered_telemetry_count"`
 }
 
 type OpsErrorTrendResponse struct {
@@ -68,7 +69,8 @@ type OpsErrorOwnerDistributionItem struct {
 }
 
 type OpsErrorDistributionResponse struct {
-	Total  int64                            `json:"total"`
-	Items  []*OpsErrorDistributionItem      `json:"items"`
-	Owners []*OpsErrorOwnerDistributionItem `json:"owners"`
+	Total                   int64                            `json:"total"`
+	RecoveredTelemetryTotal int64                            `json:"recovered_telemetry_total"`
+	Items                   []*OpsErrorDistributionItem      `json:"items"`
+	Owners                  []*OpsErrorOwnerDistributionItem `json:"owners"`
 }

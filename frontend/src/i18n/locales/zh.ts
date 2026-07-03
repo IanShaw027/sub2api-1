@@ -6189,6 +6189,7 @@ export default {
       other: '其他',
       errorsSla: '错误（SLA范围）',
       upstreamExcl429529: '上游（排除429/529）',
+      recoveredTelemetry: '恢复遥测',
       failedToLoadData: '加载运维数据失败',
       failedToLoadOverview: '加载概览数据失败',
       failedToLoadThroughputTrend: '加载吞吐趋势失败',
@@ -6981,7 +6982,7 @@ export default {
         throughputTrend: '当前窗口内的请求/QPS 与 token/TPS 趋势。',
         switchRateTrend: '近5小时内账号切换次数 / 请求总数的趋势（平均切换次数）。',
         latencyHistogram: '成功请求的请求时长分布（毫秒）。',
-        errorTrend: '错误趋势（SLA 口径排除业务限制；上游错误率排除 429/529）。',
+        errorTrend: 'SLA 错误趋势。恢复遥测是最终 200 的上游异常遥测，单独展示，不计入错误率/错误详情口径。',
         errorDistribution: '按归属方统计的错误分布，附带状态码聚合明细。',
         upstreamErrors: '上游服务返回的错误，包括API提供商的错误响应（排除429/529限流错误）。',
         goroutines:

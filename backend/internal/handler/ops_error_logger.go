@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"runtime"
 	"runtime/debug"
@@ -487,6 +488,54 @@ func classifyOpsErrorSourceForContext(c *gin.Context, phase, errType, message, c
 	return classifyOpsErrorSource(phase, errType, message, code)
 }
 
+func shouldSuppressRecoveredContextCanceled(c *gin.Context, events []*service.OpsUpstreamErrorEvent, upstreamErrorMessage *string, upstreamErrorDetail *string) bool {
+	if c == nil || c.Request == nil || c.Request.Context() == nil || !errors.Is(c.Request.Context().Err(), context.Canceled) {
+		return false
+	}
+	if !isOpsImageRequest(c) {
+		return false
+	}
+	containsCanceled := func(s string) bool {
+		return strings.Contains(strings.ToLower(strings.TrimSpace(s)), "context canceled")
+	}
+	if upstreamErrorMessage != nil && containsCanceled(*upstreamErrorMessage) {
+		return true
+	}
+	if upstreamErrorDetail != nil && containsCanceled(*upstreamErrorDetail) {
+		return true
+	}
+	for _, event := range events {
+		if event == nil {
+			continue
+		}
+		if containsCanceled(event.Message) || containsCanceled(event.Detail) || containsCanceled(event.UpstreamResponseBody) {
+			return true
+		}
+	}
+	return false
+}
+
+func isOpsImageRequest(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	if c.Request != nil && c.Request.URL != nil {
+		path := strings.ToLower(strings.TrimSpace(c.Request.URL.Path))
+		if strings.Contains(path, "/v1/images") {
+			return true
+		}
+	}
+	if v, ok := c.Get(opsRequestTypeKey); ok {
+		switch t := v.(type) {
+		case int16:
+			return t == int16(service.RequestTypeImage)
+		case int:
+			return t == int(service.RequestTypeImage)
+		}
+	}
+	return false
+}
+
 // setOpsEndpointContext stores upstream model and request type for ops error logging.
 // Called by handlers after model mapping and request type determination.
 func setOpsEndpointContext(c *gin.Context, upstreamModel string, requestType int16) {
@@ -609,7 +658,8 @@ func shouldCaptureOpsResponseChunkString(s string, status int) bool {
 		strings.Contains(s, `data: {"type":"error"`)
 }
 
-// OpsErrorLoggerMiddleware records error responses (status >= 400) into ops_error_logs.
+// OpsErrorLoggerMiddleware records client-visible error responses (status >= 400)
+// and final-success recovered upstream telemetry into ops_error_logs.
 //
 // Notes:
 // - It buffers response bodies only when status >= 400 to avoid overhead for successful traffic.
@@ -688,219 +738,222 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 				apiKey := getOpsAPIKey(c)
 				clientRequestID, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string)
 
-			model, _ := c.Get(opsModelKey)
-			streamV, _ := c.Get(opsStreamKey)
-			accountIDV, _ := c.Get(opsAccountIDKey)
+				model, _ := c.Get(opsModelKey)
+				streamV, _ := c.Get(opsStreamKey)
+				accountIDV, _ := c.Get(opsAccountIDKey)
 
-			var modelName string
-			if s, ok := model.(string); ok {
-				modelName = s
-			}
-			stream := false
-			if b, ok := streamV.(bool); ok {
-				stream = b
-			}
-
-			// Prefer showing the account that experienced the upstream error (if we have events),
-			// otherwise fall back to the final selected account (best-effort).
-			var accountID *int64
-			if len(events) > 0 {
-				if last := events[len(events)-1]; last != nil && last.AccountID > 0 {
-					v := last.AccountID
-					accountID = &v
+				var modelName string
+				if s, ok := model.(string); ok {
+					modelName = s
 				}
-			}
-			if accountID == nil {
-				if v, ok := accountIDV.(int64); ok && v > 0 {
-					accountID = &v
+				stream := false
+				if b, ok := streamV.(bool); ok {
+					stream = b
 				}
-			}
 
-			fallbackPlatform := guessPlatformFromPath(c.Request.URL.Path)
-			platform := resolveOpsPlatform(apiKey, fallbackPlatform)
-
-			requestID := c.Writer.Header().Get("X-Request-Id")
-			if requestID == "" {
-				requestID = c.Writer.Header().Get("x-request-id")
-			}
-
-			// Best-effort backfill single upstream fields from the last event (if present).
-			var upstreamStatusCode *int
-			var upstreamErrorMessage *string
-			var upstreamErrorDetail *string
-			if len(events) > 0 {
-				last := events[len(events)-1]
-				if last != nil {
-					if last.UpstreamStatusCode > 0 {
-						code := last.UpstreamStatusCode
-						upstreamStatusCode = &code
-					}
-					if msg := strings.TrimSpace(last.Message); msg != "" {
-						upstreamErrorMessage = &msg
-					}
-					if detail := strings.TrimSpace(last.Detail); detail != "" {
-						upstreamErrorDetail = &detail
+				// Prefer showing the account that experienced the upstream error (if we have events),
+				// otherwise fall back to the final selected account (best-effort).
+				var accountID *int64
+				if len(events) > 0 {
+					if last := events[len(events)-1]; last != nil && last.AccountID > 0 {
+						v := last.AccountID
+						accountID = &v
 					}
 				}
-			}
+				if accountID == nil {
+					if v, ok := accountIDV.(int64); ok && v > 0 {
+						accountID = &v
+					}
+				}
 
-			if upstreamStatusCode == nil {
-				if v, ok := c.Get(service.OpsUpstreamStatusCodeKey); ok {
-					switch t := v.(type) {
-					case int:
-						if t > 0 {
-							code := t
+				fallbackPlatform := guessPlatformFromPath(c.Request.URL.Path)
+				platform := resolveOpsPlatform(apiKey, fallbackPlatform)
+
+				requestID := c.Writer.Header().Get("X-Request-Id")
+				if requestID == "" {
+					requestID = c.Writer.Header().Get("x-request-id")
+				}
+
+				// Best-effort backfill single upstream fields from the last event (if present).
+				var upstreamStatusCode *int
+				var upstreamErrorMessage *string
+				var upstreamErrorDetail *string
+				if len(events) > 0 {
+					last := events[len(events)-1]
+					if last != nil {
+						if last.UpstreamStatusCode > 0 {
+							code := last.UpstreamStatusCode
 							upstreamStatusCode = &code
 						}
-					case int64:
-						if t > 0 {
-							code := int(t)
-							upstreamStatusCode = &code
+						if msg := strings.TrimSpace(last.Message); msg != "" {
+							upstreamErrorMessage = &msg
+						}
+						if detail := strings.TrimSpace(last.Detail); detail != "" {
+							upstreamErrorDetail = &detail
 						}
 					}
 				}
-			}
-			if upstreamErrorMessage == nil {
-				if v, ok := c.Get(service.OpsUpstreamErrorMessageKey); ok {
-					if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-						msg := strings.TrimSpace(s)
-						upstreamErrorMessage = &msg
+
+				if upstreamStatusCode == nil {
+					if v, ok := c.Get(service.OpsUpstreamStatusCodeKey); ok {
+						switch t := v.(type) {
+						case int:
+							if t > 0 {
+								code := t
+								upstreamStatusCode = &code
+							}
+						case int64:
+							if t > 0 {
+								code := int(t)
+								upstreamStatusCode = &code
+							}
+						}
 					}
 				}
-			}
-			if upstreamErrorDetail == nil {
-				if v, ok := c.Get(service.OpsUpstreamErrorDetailKey); ok {
-					if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-						detail := strings.TrimSpace(s)
-						upstreamErrorDetail = &detail
+				if upstreamErrorMessage == nil {
+					if v, ok := c.Get(service.OpsUpstreamErrorMessageKey); ok {
+						if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+							msg := strings.TrimSpace(s)
+							upstreamErrorMessage = &msg
+						}
 					}
 				}
-			}
+				if upstreamErrorDetail == nil {
+					if v, ok := c.Get(service.OpsUpstreamErrorDetailKey); ok {
+						if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+							detail := strings.TrimSpace(s)
+							upstreamErrorDetail = &detail
+						}
+					}
+				}
 
 				// If we still have nothing meaningful, skip.
 				if upstreamStatusCode == nil && upstreamErrorMessage == nil && upstreamErrorDetail == nil && len(events) == 0 {
 					return
 				}
-
-			effectiveUpstreamStatus := 0
-			if upstreamStatusCode != nil {
-				effectiveUpstreamStatus = *upstreamStatusCode
-			}
-
-			recoveredMsg := "Recovered upstream error"
-			if effectiveUpstreamStatus > 0 {
-				recoveredMsg += " " + strconvItoa(effectiveUpstreamStatus)
-			}
-			if upstreamErrorMessage != nil && strings.TrimSpace(*upstreamErrorMessage) != "" {
-				recoveredMsg += ": " + strings.TrimSpace(*upstreamErrorMessage)
-			}
-			recoveredMsg = truncateString(recoveredMsg, 2048)
-
-			errorType := "upstream_error"
-			if v, ok := c.Get(service.OpsUpstreamErrorTypeKey); ok {
-				if s, ok := v.(string); ok && isKnownOpsErrorType(s) {
-					errorType = s
-				}
-			}
-			if errorType == "upstream_canceled_error" {
-				return
-			}
-
-			entry := &service.OpsInsertErrorLogInput{
-				RequestID:       requestID,
-				ClientRequestID: clientRequestID,
-
-				AccountID: accountID,
-				Platform:  platform,
-				Model:     modelName,
-				RequestPath: func() string {
-					if c.Request != nil && c.Request.URL != nil {
-						return c.Request.URL.Path
-					}
-					return ""
-				}(),
-				Stream:           stream,
-				InboundEndpoint:  GetInboundEndpoint(c),
-				UpstreamEndpoint: GetUpstreamEndpoint(c, platform),
-				RequestedModel:   modelName,
-				UpstreamModel: func() string {
-					if v, ok := c.Get(opsUpstreamModelKey); ok {
-						if s, ok := v.(string); ok {
-							return strings.TrimSpace(s)
-						}
-					}
-					return ""
-				}(),
-				RequestType: func() *int16 {
-					if v, ok := c.Get(opsRequestTypeKey); ok {
-						switch t := v.(type) {
-						case int16:
-							return &t
-						case int:
-							v16 := int16(t)
-							return &v16
-						}
-					}
-					return nil
-				}(),
-				UserAgent: c.GetHeader("User-Agent"),
-
-				ErrorPhase: "upstream",
-				ErrorType:  errorType,
-				// Severity/retryability should reflect the upstream failure, not the final client status (200).
-				Severity:          classifyOpsSeverity(errorType, effectiveUpstreamStatus),
-				StatusCode:        status,
-				IsBusinessLimited: false,
-				IsCountTokens:     isCountTokensRequest(c),
-
-				ErrorMessage: recoveredMsg,
-				ErrorBody:    "",
-
-				ErrorSource: "upstream_http",
-				ErrorOwner:  "provider",
-
-				UpstreamStatusCode:   upstreamStatusCode,
-				UpstreamErrorMessage: upstreamErrorMessage,
-				UpstreamErrorDetail:  upstreamErrorDetail,
-				UpstreamErrors:       events,
-
-				IsRetryable: classifyOpsIsRetryable(errorType, effectiveUpstreamStatus),
-				RetryCount:  0,
-				CreatedAt:   time.Now(),
-			}
-			applyOpsLatencyFieldsFromContext(c, entry)
-
-			if apiKey != nil {
-				entry.APIKeyID = &apiKey.ID
-				entry.APIKeyPrefix = keyPrefix(apiKey.Key, 8)
-				if apiKey.User != nil {
-					entry.UserID = &apiKey.User.ID
-				}
-				if apiKey.GroupID != nil {
-					entry.GroupID = apiKey.GroupID
-				}
-				// Prefer group platform if present (more stable than inferring from path).
-				if apiKey.Group != nil && apiKey.Group.Platform != "" {
-					entry.Platform = apiKey.Group.Platform
-				}
-			}
-
-			var clientIP string
-			if ip := strings.TrimSpace(ip.GetClientIP(c)); ip != "" {
-				clientIP = ip
-				entry.ClientIP = &clientIP
-			}
-
-			// Store request headers/body only when an upstream error occurred to keep overhead minimal.
-			entry.RequestHeadersJSON = extractOpsRetryRequestHeaders(c)
-			attachOpsRequestBodyToEntry(c, entry)
-
-			// Skip logging if a passthrough rule with skip_monitoring=true matched.
-			if v, ok := c.Get(service.OpsSkipPassthroughKey); ok {
-				if skip, _ := v.(bool); skip {
+				if shouldSuppressRecoveredContextCanceled(c, events, upstreamErrorMessage, upstreamErrorDetail) {
 					return
 				}
-			}
+
+				effectiveUpstreamStatus := 0
+				if upstreamStatusCode != nil {
+					effectiveUpstreamStatus = *upstreamStatusCode
+				}
+
+				recoveredMsg := "Recovered upstream error"
+				if effectiveUpstreamStatus > 0 {
+					recoveredMsg += " " + strconvItoa(effectiveUpstreamStatus)
+				}
+				if upstreamErrorMessage != nil && strings.TrimSpace(*upstreamErrorMessage) != "" {
+					recoveredMsg += ": " + strings.TrimSpace(*upstreamErrorMessage)
+				}
+				recoveredMsg = truncateString(recoveredMsg, 2048)
+
+				errorType := "upstream_error"
+				if v, ok := c.Get(service.OpsUpstreamErrorTypeKey); ok {
+					if s, ok := v.(string); ok && isKnownOpsErrorType(s) {
+						errorType = s
+					}
+				}
+				if errorType == "upstream_canceled_error" {
+					return
+				}
+
+				entry := &service.OpsInsertErrorLogInput{
+					RequestID:       requestID,
+					ClientRequestID: clientRequestID,
+
+					AccountID: accountID,
+					Platform:  platform,
+					Model:     modelName,
+					RequestPath: func() string {
+						if c.Request != nil && c.Request.URL != nil {
+							return c.Request.URL.Path
+						}
+						return ""
+					}(),
+					Stream:           stream,
+					InboundEndpoint:  GetInboundEndpoint(c),
+					UpstreamEndpoint: GetUpstreamEndpoint(c, platform),
+					RequestedModel:   modelName,
+					UpstreamModel: func() string {
+						if v, ok := c.Get(opsUpstreamModelKey); ok {
+							if s, ok := v.(string); ok {
+								return strings.TrimSpace(s)
+							}
+						}
+						return ""
+					}(),
+					RequestType: func() *int16 {
+						if v, ok := c.Get(opsRequestTypeKey); ok {
+							switch t := v.(type) {
+							case int16:
+								return &t
+							case int:
+								v16 := int16(t)
+								return &v16
+							}
+						}
+						return nil
+					}(),
+					UserAgent: c.GetHeader("User-Agent"),
+
+					ErrorPhase: "upstream",
+					ErrorType:  errorType,
+					// Severity/retryability should reflect the upstream failure, not the final client status (200).
+					Severity:          classifyOpsSeverity(errorType, effectiveUpstreamStatus),
+					StatusCode:        status,
+					IsBusinessLimited: false,
+					IsCountTokens:     isCountTokensRequest(c),
+
+					ErrorMessage: recoveredMsg,
+					ErrorBody:    "",
+
+					ErrorSource: "upstream_http",
+					ErrorOwner:  "provider",
+
+					UpstreamStatusCode:   upstreamStatusCode,
+					UpstreamErrorMessage: upstreamErrorMessage,
+					UpstreamErrorDetail:  upstreamErrorDetail,
+					UpstreamErrors:       events,
+
+					IsRetryable: classifyOpsIsRetryable(errorType, effectiveUpstreamStatus),
+					RetryCount:  0,
+					CreatedAt:   time.Now(),
+				}
+				applyOpsLatencyFieldsFromContext(c, entry)
+
+				if apiKey != nil {
+					entry.APIKeyID = &apiKey.ID
+					entry.APIKeyPrefix = keyPrefix(apiKey.Key, 8)
+					if apiKey.User != nil {
+						entry.UserID = &apiKey.User.ID
+					}
+					if apiKey.GroupID != nil {
+						entry.GroupID = apiKey.GroupID
+					}
+					// Prefer group platform if present (more stable than inferring from path).
+					if apiKey.Group != nil && apiKey.Group.Platform != "" {
+						entry.Platform = apiKey.Group.Platform
+					}
+				}
+
+				var clientIP string
+				if ip := strings.TrimSpace(ip.GetClientIP(c)); ip != "" {
+					clientIP = ip
+					entry.ClientIP = &clientIP
+				}
+
+				// Store request headers/body only when an upstream error occurred to keep overhead minimal.
+				entry.RequestHeadersJSON = extractOpsRetryRequestHeaders(c)
+				attachOpsRequestBodyToEntry(c, entry)
+
+				// Skip logging if a passthrough rule with skip_monitoring=true matched.
+				if v, ok := c.Get(service.OpsSkipPassthroughKey); ok {
+					if skip, _ := v.(bool); skip {
+						return
+					}
+				}
 
 				enqueueOpsErrorLog(ops, entry)
 				return
@@ -1200,9 +1253,9 @@ func getContextLatencyMs(c *gin.Context, key string) *int64 {
 }
 
 type parsedOpsError struct {
-	ErrorType string
-	Message   string
-	Code      string
+	ErrorType     string
+	Message       string
+	Code          string
 	StreamFailure bool
 }
 

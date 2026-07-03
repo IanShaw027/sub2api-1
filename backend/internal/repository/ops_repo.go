@@ -1287,6 +1287,9 @@ func buildOpsErrorLogsWhere(filter *service.OpsErrorLogFilter) (string, []any) {
 		args = append(args, phase)
 		clauses = append(clauses, "e.error_phase = $"+itoa(len(args)))
 	}
+	if filter != nil && filter.ExcludeRecoveredTelemetry {
+		clauses = append(clauses, "COALESCE(e.status_code, 0) >= 400")
+	}
 	if filter != nil {
 		if owner := strings.TrimSpace(strings.ToLower(filter.Owner)); owner != "" {
 			args = append(args, owner)

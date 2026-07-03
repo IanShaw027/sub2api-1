@@ -184,6 +184,7 @@ export interface OpsErrorTrendPoint {
   upstream_error_count_excl_429_529: number
   upstream_429_count: number
   upstream_529_count: number
+  recovered_telemetry_count: number
 }
 
 export interface OpsErrorTrendResponse {
@@ -207,6 +208,7 @@ export interface OpsErrorOwnerDistributionItem {
 
 export interface OpsErrorDistributionResponse {
   total: number
+  recovered_telemetry_total: number
   items: OpsErrorDistributionItem[]
   owners: OpsErrorOwnerDistributionItem[]
 }

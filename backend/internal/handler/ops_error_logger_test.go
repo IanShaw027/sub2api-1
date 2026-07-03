@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -445,6 +446,146 @@ func TestOpsErrorLoggerMiddleware_SkipsRecoveredUpstreamCanceledOnSuccessfulRequ
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, int64(0), OpsErrorLogEnqueuedTotal())
 	require.Equal(t, int64(0), OpsErrorLogQueueLength())
+}
+
+func TestOpsErrorLoggerMiddleware_SkipsRecoveredContextCanceledWhenRequestContextCanceled(t *testing.T) {
+	resetOpsErrorLoggerStateForTest(t)
+	t.Cleanup(func() { resetOpsErrorLoggerStateForTest(t) })
+	gin.SetMode(gin.TestMode)
+
+	opsErrorLogOnce.Do(func() {})
+	opsErrorLogMu.Lock()
+	opsErrorLogQueue = make(chan opsErrorLogJob, 1)
+	opsErrorLogMu.Unlock()
+
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := gin.New()
+	r.POST("/v1/images/generations", OpsErrorLoggerMiddleware(ops), func(c *gin.Context) {
+		body := []byte(`{"model":"gpt-image-2","prompt":"draw"}`)
+		setOpsRequestContext(c, "gpt-image-2", false, body)
+		setOpsEndpointContext(c, "gpt-image-2", int16(service.RequestTypeImage))
+		c.Set(service.OpsUpstreamErrorsKey, []*service.OpsUpstreamErrorEvent{{
+			Platform:           service.PlatformOpenAI,
+			AccountID:          74209,
+			Kind:               "stream_error",
+			Message:            "context canceled",
+			UpstreamStatusCode: http.StatusOK,
+			Detail:             "context canceled",
+		}})
+		if cancel, ok := c.Request.Context().Value("cancel").(context.CancelFunc); ok {
+			cancel()
+		}
+		c.JSON(http.StatusOK, gin.H{"id": "img_123"})
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil).WithContext(context.WithValue(ctx, "cancel", context.CancelFunc(cancel)))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(0), OpsErrorLogEnqueuedTotal())
+	require.Equal(t, int64(0), OpsErrorLogQueueLength())
+}
+
+func TestOpsErrorLoggerMiddleware_RecordsNonImageRecoveredContextCanceledWhenRequestContextCanceled(t *testing.T) {
+	resetOpsErrorLoggerStateForTest(t)
+	t.Cleanup(func() { resetOpsErrorLoggerStateForTest(t) })
+	gin.SetMode(gin.TestMode)
+
+	opsErrorLogOnce.Do(func() {})
+	opsErrorLogMu.Lock()
+	opsErrorLogQueue = make(chan opsErrorLogJob, 1)
+	opsErrorLogMu.Unlock()
+
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := gin.New()
+	r.POST("/v1/messages", OpsErrorLoggerMiddleware(ops), func(c *gin.Context) {
+		body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}]}`)
+		setOpsRequestContext(c, "claude-sonnet-4-5", true, body)
+		setOpsEndpointContext(c, "claude-sonnet-4.5", int16(service.RequestTypeSync))
+		c.Set(service.OpsUpstreamErrorsKey, []*service.OpsUpstreamErrorEvent{{
+			Platform:           service.PlatformKiro,
+			AccountID:          99,
+			Kind:               "transport_error",
+			Message:            "context canceled",
+			UpstreamStatusCode: http.StatusOK,
+			Detail:             "context canceled",
+		}})
+		if cancel, ok := c.Request.Context().Value("cancel").(context.CancelFunc); ok {
+			cancel()
+		}
+		c.JSON(http.StatusOK, gin.H{"type": "message"})
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(context.WithValue(ctx, "cancel", context.CancelFunc(cancel)))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(1), OpsErrorLogEnqueuedTotal())
+	require.Equal(t, int64(1), OpsErrorLogQueueLength())
+
+	select {
+	case job := <-opsErrorLogQueue:
+		opsErrorLogQueueLen.Add(-1)
+		require.NotNil(t, job.entry)
+		require.Equal(t, http.StatusOK, job.entry.StatusCode)
+		require.Equal(t, "upstream", job.entry.ErrorPhase)
+		require.Contains(t, job.entry.ErrorMessage, "context canceled")
+	default:
+		t.Fatal("expected non-image recovered context canceled telemetry to be enqueued")
+	}
+}
+
+func TestOpsErrorLoggerMiddleware_RecordsImageRecoveredContextCanceledWhenRequestDeadlineExceeded(t *testing.T) {
+	resetOpsErrorLoggerStateForTest(t)
+	t.Cleanup(func() { resetOpsErrorLoggerStateForTest(t) })
+	gin.SetMode(gin.TestMode)
+
+	opsErrorLogOnce.Do(func() {})
+	opsErrorLogMu.Lock()
+	opsErrorLogQueue = make(chan opsErrorLogJob, 1)
+	opsErrorLogMu.Unlock()
+
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := gin.New()
+	r.POST("/v1/images/generations", OpsErrorLoggerMiddleware(ops), func(c *gin.Context) {
+		body := []byte(`{"model":"gpt-image-2","prompt":"draw"}`)
+		setOpsRequestContext(c, "gpt-image-2", false, body)
+		setOpsEndpointContext(c, "gpt-image-2", int16(service.RequestTypeImage))
+		c.Set(service.OpsUpstreamErrorsKey, []*service.OpsUpstreamErrorEvent{{
+			Platform:           service.PlatformOpenAI,
+			AccountID:          74209,
+			Kind:               "stream_error",
+			Message:            "context canceled",
+			UpstreamStatusCode: http.StatusOK,
+			Detail:             "context canceled",
+		}})
+		c.JSON(http.StatusOK, gin.H{"id": "img_123"})
+	})
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(1), OpsErrorLogEnqueuedTotal())
+	require.Equal(t, int64(1), OpsErrorLogQueueLength())
+
+	select {
+	case job := <-opsErrorLogQueue:
+		opsErrorLogQueueLen.Add(-1)
+		require.NotNil(t, job.entry)
+		require.Equal(t, http.StatusOK, job.entry.StatusCode)
+		require.Equal(t, "upstream", job.entry.ErrorPhase)
+		require.Contains(t, job.entry.ErrorMessage, "context canceled")
+	default:
+		t.Fatal("expected image recovered context canceled telemetry to be enqueued for deadline exceeded requests")
+	}
 }
 
 func TestShouldSkipOpsErrorLog_NewAdvancedFilters(t *testing.T) {

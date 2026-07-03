@@ -40,6 +40,8 @@ const colors = computed(() => ({
   redAlpha: '#ef444420',
   purple: '#8b5cf6',
   purpleAlpha: '#8b5cf620',
+  blue: '#0ea5e9',
+  blueAlpha: '#0ea5e920',
   gray: '#9ca3af',
   grid: isDarkMode.value ? '#374151' : '#f3f4f6',
   text: isDarkMode.value ? '#9ca3af' : '#6b7280'
@@ -48,13 +50,13 @@ const colors = computed(() => ({
 const totalRequestErrors = computed(() => sumNumbers(props.points.map((p) => p.error_count_sla ?? 0)))
 
 const totalUpstreamErrors = computed(() =>
-  sumNumbers(
-    props.points.map((p) => (p.upstream_error_count_excl_429_529 ?? 0) + (p.upstream_429_count ?? 0) + (p.upstream_529_count ?? 0))
-  )
+  sumNumbers(props.points.map((p) => p.upstream_error_count_excl_429_529 ?? 0))
 )
 
+const totalRecoveredTelemetry = computed(() => sumNumbers(props.points.map((p) => p.recovered_telemetry_count ?? 0)))
+
 const totalDisplayed = computed(() =>
-  sumNumbers(props.points.map((p) => (p.error_count_sla ?? 0) + (p.business_limited_count ?? 0)))
+  sumNumbers(props.points.map((p) => (p.error_count_sla ?? 0) + (p.business_limited_count ?? 0) + (p.recovered_telemetry_count ?? 0)))
 )
 
 const hasRequestErrors = computed(() => totalRequestErrors.value > 0)
@@ -81,6 +83,17 @@ const chartData = computed(() => {
         borderColor: colors.value.purple,
         backgroundColor: colors.value.purpleAlpha,
         fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        pointHitRadius: 10
+      },
+      {
+        label: t('admin.ops.recoveredTelemetry'),
+        data: props.points.map((p) => p.recovered_telemetry_count ?? 0),
+        borderColor: colors.value.blue,
+        backgroundColor: colors.value.blueAlpha,
+        fill: false,
+        borderDash: [3, 4],
         tension: 0.35,
         pointRadius: 0,
         pointHitRadius: 10
@@ -168,6 +181,12 @@ const options = computed(() => {
         <HelpTooltip :content="t('admin.ops.tooltips.errorTrend')" />
       </h3>
       <div class="flex items-center gap-2">
+        <span
+          v-if="totalRecoveredTelemetry > 0"
+          class="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20"
+        >
+          {{ t('admin.ops.recoveredTelemetry') }}: {{ totalRecoveredTelemetry }}
+        </span>
         <button
           type="button"
           class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"

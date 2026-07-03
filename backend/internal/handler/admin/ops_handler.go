@@ -488,6 +488,7 @@ func (h *OpsHandler) ListUpstreamErrors(c *gin.Context) {
 	filter.View = parseOpsViewParam(c)
 	filter.Phase = "upstream"
 	filter.Owner = "provider"
+	filter.ExcludeRecoveredTelemetry = true
 	filter.Source = strings.TrimSpace(c.Query("error_source"))
 	filter.Query = strings.TrimSpace(c.Query("q"))
 

@@ -128,6 +128,16 @@ func TestBuildOpsErrorLogsWhere_CyberPolicyStatusExemption(t *testing.T) {
 	}
 }
 
+func TestBuildOpsErrorLogsWhere_UpstreamCanExcludeRecoveredTelemetry(t *testing.T) {
+	where, _ := buildOpsErrorLogsWhere(&service.OpsErrorLogFilter{
+		Phase:                     "upstream",
+		ExcludeRecoveredTelemetry: true,
+	})
+	if !strings.Contains(where, "COALESCE(e.status_code, 0) >= 400") {
+		t.Fatalf("upstream drilldown should be able to exclude recovered status=200 telemetry\nfull: %s", where)
+	}
+}
+
 func TestBuildOpsErrorLogsWhere_MatchDeletedKeyOwner(t *testing.T) {
 	uid := int64(42)
 

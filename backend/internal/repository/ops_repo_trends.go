@@ -184,6 +184,14 @@ ORDER BY bucket ASC`
 	}, nil
 }
 
+func opsRecoveredTelemetryPredicate(statusExpr string) string {
+	statusExpr = strings.TrimSpace(statusExpr)
+	if statusExpr == "" {
+		statusExpr = "status_code"
+	}
+	return statusExpr + " > 0 AND " + statusExpr + " < 400 AND error_phase = 'upstream'"
+}
+
 func (r *opsRepository) getThroughputBreakdownByPlatform(ctx context.Context, start, end time.Time) ([]*service.OpsThroughputPlatformBreakdownItem, error) {
 	q := `
 WITH usage_totals AS (
@@ -456,7 +464,8 @@ SELECT
   COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND NOT (is_business_limited OR COALESCE(upstream_status_code, status_code, 0) IN (429, 529))) AS error_sla,
   COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND error_owner = 'provider' AND NOT is_business_limited AND COALESCE(upstream_status_code, status_code, 0) NOT IN (429, 529)) AS upstream_excl,
   COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND error_owner = 'provider' AND NOT is_business_limited AND COALESCE(upstream_status_code, status_code, 0) = 429) AS upstream_429,
-  COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND error_owner = 'provider' AND NOT is_business_limited AND COALESCE(upstream_status_code, status_code, 0) = 529) AS upstream_529
+  COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND error_owner = 'provider' AND NOT is_business_limited AND COALESCE(upstream_status_code, status_code, 0) = 529) AS upstream_529,
+  COUNT(*) FILTER (WHERE ` + opsRecoveredTelemetryPredicate("COALESCE(status_code, 0)") + `) AS recovered_telemetry
 FROM ops_error_logs
 ` + where + `
 GROUP BY 1
@@ -471,8 +480,8 @@ ORDER BY 1 ASC`
 	points := make([]*service.OpsErrorTrendPoint, 0, 256)
 	for rows.Next() {
 		var bucket time.Time
-		var total, businessLimited, sla, upstreamExcl, upstream429, upstream529 int64
-		if err := rows.Scan(&bucket, &total, &businessLimited, &sla, &upstreamExcl, &upstream429, &upstream529); err != nil {
+		var total, businessLimited, sla, upstreamExcl, upstream429, upstream529, recoveredTelemetry int64
+		if err := rows.Scan(&bucket, &total, &businessLimited, &sla, &upstreamExcl, &upstream429, &upstream529, &recoveredTelemetry); err != nil {
 			return nil, err
 		}
 		points = append(points, &service.OpsErrorTrendPoint{
@@ -485,6 +494,7 @@ ORDER BY 1 ASC`
 			UpstreamErrorCountExcl429529: upstreamExcl,
 			Upstream429Count:             upstream429,
 			Upstream529Count:             upstream529,
+			RecoveredTelemetryCount:      recoveredTelemetry,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -540,6 +550,7 @@ func fillOpsErrorTrendBuckets(start, end time.Time, bucketSeconds int, points []
 			UpstreamErrorCountExcl429529: 0,
 			Upstream429Count:             0,
 			Upstream529Count:             0,
+			RecoveredTelemetryCount:      0,
 		})
 	}
 	return out
@@ -636,9 +647,20 @@ ORDER BY total DESC`
 		return nil, err
 	}
 
+	recoveredTelemetryQuery := `
+SELECT
+  COALESCE(COUNT(*) FILTER (WHERE ` + opsRecoveredTelemetryPredicate("COALESCE(status_code, 0)") + `), 0) AS recovered_telemetry_total
+FROM ops_error_logs
+` + where
+	var recoveredTelemetryTotal int64
+	if err := r.db.QueryRowContext(ctx, recoveredTelemetryQuery, args...).Scan(&recoveredTelemetryTotal); err != nil {
+		return nil, err
+	}
+
 	return &service.OpsErrorDistributionResponse{
-		Total:  total,
-		Items:  items,
-		Owners: owners,
+		Total:                   total,
+		RecoveredTelemetryTotal: recoveredTelemetryTotal,
+		Items:                   items,
+		Owners:                  owners,
 	}, nil
 }
