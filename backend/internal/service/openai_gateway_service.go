@@ -5494,36 +5494,36 @@ oauthTransformDone:
 						attempt,
 						activeDeltaRecovery,
 					)
-					return false
-				}
-				rebuiltReqBody := map[string]any{}
-				if err := json.Unmarshal(rebuiltPayload, &rebuiltReqBody); err != nil {
-					wsErr = wrapOpenAIWSFallback("previous_response_recovery_rebuild_parse", err)
+				} else {
+					rebuiltReqBody := map[string]any{}
+					if err := json.Unmarshal(rebuiltPayload, &rebuiltReqBody); err != nil {
+						wsErr = wrapOpenAIWSFallback("previous_response_recovery_rebuild_parse", err)
+						logOpenAIWSModeInfo(
+							"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=parse_rebuilt_window previous_response_id_present=true active_delta=%v cause=%s",
+							account.ID,
+							attempt,
+							activeDeltaRecovery,
+							truncateOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen),
+						)
+						return false
+					}
+					wsReqBody = rebuiltReqBody
+					if !syncWSRecoveredBody("prev_response_recovery_session_window") {
+						return false
+					}
+					wsPrevResponseRecoveryTried = true
+					s.RecordOpenAIAccountRecoveryReason(account.ID, "previous_response_not_found")
 					logOpenAIWSModeInfo(
-						"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=parse_rebuilt_window previous_response_id_present=true active_delta=%v cause=%s",
+						"reconnect_prev_response_recovery account_id=%d attempt=%d action=session_window_full_rebuild retry=1 previous_response_id=%s previous_response_id_kind=%s active_delta=%v has_function_call_output=%v",
 						account.ID,
 						attempt,
+						truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
+						normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
 						activeDeltaRecovery,
-						truncateOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen),
+						HasFunctionCallOutput(wsReqBody),
 					)
-					return false
+					return true
 				}
-				wsReqBody = rebuiltReqBody
-				if !syncWSRecoveredBody("prev_response_recovery_session_window") {
-					return false
-				}
-				wsPrevResponseRecoveryTried = true
-				s.RecordOpenAIAccountRecoveryReason(account.ID, "previous_response_not_found")
-				logOpenAIWSModeInfo(
-					"reconnect_prev_response_recovery account_id=%d attempt=%d action=session_window_full_rebuild retry=1 previous_response_id=%s previous_response_id_kind=%s active_delta=%v has_function_call_output=%v",
-					account.ID,
-					attempt,
-					truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
-					normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
-					activeDeltaRecovery,
-					HasFunctionCallOutput(wsReqBody),
-				)
-				return true
 			}
 			if HasFunctionCallOutput(wsReqBody) {
 				replayReqBody := map[string]any{}
@@ -5834,9 +5834,6 @@ oauthTransformDone:
 			if wsErr == nil {
 				break
 			}
-			if c != nil && c.Writer != nil && c.Writer.Written() {
-				break
-			}
 
 			reason, retryable := classifyOpenAIWSReconnectReason(wsErr)
 			if reason != "" {
@@ -5846,6 +5843,9 @@ oauthTransformDone:
 			// 对非 function_call_output 场景，允许一次“去掉 previous_response_id 后重放”。
 			if reason == "previous_response_not_found" && recoverPrevResponseNotFound(attempt) {
 				continue
+			}
+			if c != nil && c.Writer != nil && c.Writer.Size() > 0 {
+				break
 			}
 			if reason == "unsafe_tool_continuation" && recoverUnsafeToolContinuation(attempt) {
 				continue

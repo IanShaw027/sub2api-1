@@ -823,6 +823,257 @@ func TestOpenAIGatewayService_Forward_HTTPIngressOAuthPreviousResponseNotFoundUs
 	require.Equal(t, "followup", gjson.GetBytes(requests[2], "input.1.text").String())
 }
 
+func TestOpenAIGatewayService_Forward_HTTPIngressOAuthPreviousResponseNotFoundMissingWindowFallsBackToFullReplay(t *testing.T) {
+	setGinTestMode()
+
+	var wsAttempts atomic.Int32
+	var wsRequestPayloads [][]byte
+	var wsRequestMu sync.Mutex
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt := wsAttempts.Add(1)
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket failed: %v", err)
+			return
+		}
+		defer func() {
+			_ = conn.Close()
+		}()
+
+		var req map[string]any
+		if err := conn.ReadJSON(&req); err != nil {
+			t.Errorf("read ws request failed: %v", err)
+			return
+		}
+		reqRaw, _ := json.Marshal(req)
+		wsRequestMu.Lock()
+		wsRequestPayloads = append(wsRequestPayloads, reqRaw)
+		wsRequestMu.Unlock()
+
+		if attempt == 1 {
+			_ = conn.WriteJSON(map[string]any{
+				"type": "error",
+				"error": map[string]any{
+					"code":    "previous_response_not_found",
+					"type":    "invalid_request_error",
+					"message": "missing anchor after restart",
+				},
+			})
+			return
+		}
+
+		_ = conn.WriteJSON(map[string]any{
+			"type": "response.completed",
+			"response": map[string]any{
+				"id":    "resp_oauth_full_replay_ok",
+				"model": "gpt-5.5",
+				"usage": map[string]any{
+					"input_tokens":  2,
+					"output_tokens": 1,
+					"input_tokens_details": map[string]any{
+						"cached_tokens": 0,
+					},
+				},
+			},
+		})
+	}))
+	defer wsServer.Close()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "custom-client/1.0")
+	c.Request.Header.Set("session_id", "oauth-missing-window-session")
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+	groupID := int64(1105)
+	apiKeyID := int64(2205)
+	c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_http_should_not_happen","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 30
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 10
+	wsURL := "ws" + strings.TrimPrefix(wsServer.URL, "http")
+	previousResponseID := "resp_missing_after_restart"
+	stateStore := NewOpenAIWSStateStore(nil)
+	require.NoError(t, stateStore.BindResponseAccount(context.Background(), groupID, apiKeyID, previousResponseID, int64(110), time.Hour))
+	stateStore.DeleteResponseConn(groupID, apiKeyID, previousResponseID)
+
+	svc := &OpenAIGatewayService{
+		cfg:                cfg,
+		httpUpstream:       upstream,
+		openaiWSResolver:   NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:      NewCodexToolCorrector(),
+		openaiWSStateStore: stateStore,
+		openaiWSURLBuilder: func(account *Account) (string, error) {
+			return wsURL, nil
+		},
+	}
+
+	account := &Account{
+		ID:          110,
+		Name:        "openai-oauth-http-ingress-missing-window",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Extra: map[string]any{
+			"openai_oauth_responses_websockets_v2_enabled": true,
+		},
+	}
+
+	body := []byte(`{"model":"gpt-5.5","stream":false,"store":false,"previous_response_id":"` + previousResponseID + `","input":[{"type":"input_text","text":"full replay me"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_oauth_full_replay_ok", result.RequestID)
+	require.Nil(t, upstream.lastReq, "previous_response_not_found recovery should stay on WS")
+	require.Equal(t, int32(2), wsAttempts.Load(), "missing session window should still retry once as full replay")
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	wsRequestMu.Lock()
+	requests := append([][]byte(nil), wsRequestPayloads...)
+	wsRequestMu.Unlock()
+	require.Len(t, requests, 2)
+	require.Equal(t, previousResponseID, gjson.GetBytes(requests[0], "previous_response_id").String())
+	require.False(t, gjson.GetBytes(requests[1], "previous_response_id").Exists(), "full replay retry must drop stale previous_response_id")
+	require.False(t, gjson.GetBytes(requests[1], "store").Bool())
+	require.Equal(t, "full replay me", gjson.GetBytes(requests[1], "input.0.text").String())
+}
+
+func TestOpenAIGatewayService_Forward_WSv2PrewritePingWriteRequestRetriesOnFreshConn(t *testing.T) {
+	setGinTestMode()
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	firstConn := &openAIWSPreflightFailConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_ping_seed","model":"gpt-5.5","usage":{"input_tokens":1,"output_tokens":1}}}`),
+		},
+	}
+	secondConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_ping_retry_ok","model":"gpt-5.5","usage":{"input_tokens":2,"output_tokens":1}}}`),
+		},
+	}
+	dialer := &openAIWSQueueDialer{conns: []openAIWSClientConn{firstConn, secondConn}}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(dialer)
+	stateStore := NewOpenAIWSStateStore(nil)
+
+	svc := &OpenAIGatewayService{
+		cfg:                cfg,
+		httpUpstream:       &httpUpstreamRecorder{},
+		cache:              &stubGatewayCache{},
+		openaiWSResolver:   NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:      NewCodexToolCorrector(),
+		openaiWSPool:       pool,
+		openaiWSStateStore: stateStore,
+		openaiWSURLBuilder: func(account *Account) (string, error) {
+			return "ws://unit.test/openai", nil
+		},
+	}
+	account := &Account{
+		ID:          111,
+		Name:        "openai-oauth-prewrite-ping-retry",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Extra: map[string]any{
+			"openai_oauth_responses_websockets_v2_enabled": true,
+		},
+	}
+
+	groupID := int64(1106)
+	apiKeyID := int64(2206)
+	newCtx := func() (*gin.Context, *httptest.ResponseRecorder) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+		c.Request.Header.Set("User-Agent", "custom-client/1.0")
+		c.Request.Header.Set("session_id", "prewrite-ping-retry-session")
+		SetOpenAIClientTransport(c, OpenAIClientTransportWS)
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+		return c, rec
+	}
+
+	firstCtx, _ := newCtx()
+	firstResult, err := svc.Forward(context.Background(), firstCtx, account, []byte(`{"model":"gpt-5.5","stream":false,"store":false,"input":[{"type":"input_text","text":"seed"}]}`))
+	require.NoError(t, err)
+	require.NotNil(t, firstResult)
+	require.Equal(t, "resp_ping_seed", firstResult.RequestID)
+	require.Equal(t, 1, dialer.DialCount())
+
+	connID, ok := stateStore.GetResponseConn(groupID, apiKeyID, "resp_ping_seed")
+	require.True(t, ok, "first turn must bind response id to pooled conn")
+	ap, ok := pool.getAccountPool(account.ID)
+	require.True(t, ok)
+	ap.mu.Lock()
+	if conn := ap.conns[connID]; conn != nil {
+		conn.lastUsedNano.Store(time.Now().Add(-2 * time.Minute).UnixNano())
+	}
+	ap.mu.Unlock()
+
+	secondCtx, secondRec := newCtx()
+	secondResult, err := svc.Forward(context.Background(), secondCtx, account, []byte(`{"model":"gpt-5.5","stream":false,"store":false,"previous_response_id":"resp_ping_seed","input":[{"type":"input_text","text":"after stale ping"}]}`))
+	require.NoError(t, err)
+	require.NotNil(t, secondResult)
+	require.Equal(t, "resp_ping_retry_ok", secondResult.RequestID)
+	require.Equal(t, http.StatusOK, secondRec.Code)
+	require.Equal(t, 2, dialer.DialCount(), "write_request ping failure should evict stale conn and retry on a fresh conn")
+	require.GreaterOrEqual(t, firstConn.PingCount(), 1, "reused idle session conn should be pinged before writing")
+
+	secondConn.mu.Lock()
+	secondWrites := append([]map[string]any(nil), secondConn.writes...)
+	secondConn.mu.Unlock()
+	require.Len(t, secondWrites, 1)
+	secondWrite := requestToJSONString(secondWrites[0])
+	require.Equal(t, "resp_ping_seed", gjson.Get(secondWrite, "previous_response_id").String())
+	require.Equal(t, "after stale ping", gjson.Get(secondWrite, "input.0.text").String())
+}
+
 func TestOpenAIGatewayService_Forward_HTTPIngressNoSessionUsesOneShotWS(t *testing.T) {
 	setGinTestMode()
 
