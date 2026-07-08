@@ -1117,6 +1117,57 @@ func TestOpenAIGatewayService_Forward_StripsUnsupportedFieldsConsistently(t *tes
 	require.False(t, result.Stream)
 }
 
+func TestOpenAIGatewayService_Forward_CodexAPIKeyStripsTopLevelVerbosity(t *testing.T) {
+	setGinTestMode()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{
+		"model":"gpt-5.4",
+		"input":"hello",
+		"stream":false,
+		"reasoning":{"effort":"none"},
+		"verbosity":"low"
+	}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("User-Agent", "codex-tui/0.141.0 (Ubuntu 24.4.0; x86_64)")
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid-codex-apikey-verbosity"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_codex_apikey_verbosity","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.OpenAIWS.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	account := &Account{
+		ID:          74251,
+		Name:        "2chat.cc",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-upstream",
+			"base_url": "https://2chat.cc",
+		},
+		Extra: map[string]any{
+			"openai_responses_supported": true,
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, gjson.GetBytes(upstream.lastBody, "verbosity").Exists())
+	require.Equal(t, "none", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
+	require.NotEmpty(t, gjson.GetBytes(upstream.lastBody, "input").Raw)
+}
+
 func TestOpenAIGatewayService_Forward_CodexCLIStripsMessageNoiseFields(t *testing.T) {
 	setGinTestMode()
 	rec := httptest.NewRecorder()
@@ -4365,6 +4416,17 @@ func TestOpenAIStreamingResponsesReadErrorAfterOutputEmitsResponseFailed(t *test
 	require.Contains(t, body, "stream_read_error")
 	require.NotContains(t, body, `data: {"type":"error"`)
 	require.True(t, IsResponseCommitted(c))
+	require.Equal(t, "upstream_connection_closed_error", c.GetString(OpsUpstreamErrorTypeKey))
+	require.Equal(t, "stream_read_error", c.GetString(OpsUpstreamErrorMessageKey))
+	require.Contains(t, c.GetString(OpsUpstreamErrorDetailKey), "unexpected EOF")
+	rawEvents, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := rawEvents.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "stream_read_error", events[0].Kind)
+	require.Equal(t, "Upstream connection closed unexpectedly", events[0].Message)
+	require.Contains(t, events[0].Detail, "unexpected EOF")
 }
 
 func TestOpenAINonStreamingContentTypePassThrough(t *testing.T) {

@@ -1030,6 +1030,29 @@ func TestNormalizeOpenAIResponsesImageGenerationTools_RewritesLegacyFields(t *te
 	require.False(t, hasCompression)
 }
 
+func TestNormalizeOpenAIResponsesImageGenerationTools_RemovesUnsupportedImageField(t *testing.T) {
+	reqBody := map[string]any{
+		"tools": []any{
+			map[string]any{
+				"type":  "image_generation",
+				"image": "data:image/png;base64,aGVsbG8=",
+				"size":  "1024x1024",
+			},
+		},
+	}
+
+	modified := normalizeOpenAIResponsesImageGenerationTools(reqBody)
+	require.True(t, modified)
+
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	first, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "image_generation", first["type"])
+	require.Equal(t, "1024x1024", first["size"])
+	require.NotContains(t, first, "image")
+}
+
 func TestNormalizeOpenAIResponsesImageGenerationTools_AutoCorrectsInvalidSize(t *testing.T) {
 	reqBody := map[string]any{
 		"tools": []any{

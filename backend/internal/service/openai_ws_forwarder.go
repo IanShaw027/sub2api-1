@@ -5538,7 +5538,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				LastEvent:                lastEventType,
 			})
 			if !wroteDownstream {
-				return nil, wrapOpenAIWSFallback(classifyOpenAIWSReadFallbackReason(readErr), readErr)
+				return nil, wrapOpenAIWSFallbackWithPayloadState(classifyOpenAIWSReadFallbackReason(readErr), readErr, previousResponseID, activeDeltaApplied)
 			}
 			if clientDisconnected {
 				break

@@ -19,13 +19,20 @@ import (
 type openAISelectionErrorAccountRepoStub struct {
 	service.AccountRepository
 	accounts []service.Account
+	listErr  error
 }
 
 func (s openAISelectionErrorAccountRepoStub) ListSchedulableByGroupIDAndPlatform(_ context.Context, _ int64, platform string) ([]service.Account, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
 	return s.listByPlatform(platform), nil
 }
 
 func (s openAISelectionErrorAccountRepoStub) ListSchedulableByPlatform(_ context.Context, platform string) ([]service.Account, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
 	return s.listByPlatform(platform), nil
 }
 
@@ -61,6 +68,11 @@ func (s openAISelectionErrorAccountRepoStub) listByPlatform(platform string) []s
 
 func newOpenAISelectionErrorTestHandler(t *testing.T, accounts []service.Account) *OpenAIGatewayHandler {
 	t.Helper()
+	return newOpenAISelectionErrorTestHandlerWithRepo(t, openAISelectionErrorAccountRepoStub{accounts: accounts})
+}
+
+func newOpenAISelectionErrorTestHandlerWithRepo(t *testing.T, repo openAISelectionErrorAccountRepoStub) *OpenAIGatewayHandler {
+	t.Helper()
 
 	cfg := &config.Config{RunMode: config.RunModeSimple}
 	cfg.Gateway.Scheduling.LoadBatchEnabled = false
@@ -78,7 +90,7 @@ func newOpenAISelectionErrorTestHandler(t *testing.T, accounts []service.Account
 	t.Cleanup(billingCacheService.Stop)
 
 	gatewayService := service.NewOpenAIGatewayService(
-		openAISelectionErrorAccountRepoStub{accounts: accounts},
+		repo,
 		nil,
 		nil,
 		nil,
@@ -223,6 +235,18 @@ func TestOpenAIResponses_SelectionFailure_ReturnsSupportingModelMessage(t *testi
 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.Contains(t, rec.Body.String(), `"message":"No available accounts supporting model: gpt-5"`)
+}
+
+func TestOpenAIResponses_SelectionContextCanceled_ReturnsClientCanceled(t *testing.T) {
+	c, rec := newOpenAISelectionErrorTestContext("/v1/responses", `{"model":"gpt-5","input":"hello"}`)
+	h := newOpenAISelectionErrorTestHandlerWithRepo(t, openAISelectionErrorAccountRepoStub{listErr: context.Canceled})
+
+	h.Responses(c)
+
+	require.Equal(t, statusClientClosedRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), `"type":"request_canceled"`)
+	require.Contains(t, rec.Body.String(), `"message":"Client canceled request"`)
+	require.NotContains(t, rec.Body.String(), "No available accounts")
 }
 
 func TestOpenAIResponses_SelectionFailureAfterLocalExclusion_ReturnsNoAvailableAccounts(t *testing.T) {

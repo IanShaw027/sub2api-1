@@ -394,6 +394,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			requestPlatform,
 		)
 		if err != nil {
+			if isOpenAIClientRequestCanceled(c, err) {
+				reqLog.Info("openai.account_select_client_canceled",
+					zap.Error(err),
+					zap.Int("excluded_account_count", len(failedAccountIDs)),
+				)
+				h.handleStreamingAwareError(c, statusClientClosedRequest, "request_canceled", "Client canceled request", streamStarted)
+				return
+			}
 			reqLog.Warn("openai.account_select_failed",
 				zap.Error(err),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),

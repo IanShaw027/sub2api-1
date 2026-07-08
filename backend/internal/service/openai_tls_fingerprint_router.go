@@ -26,9 +26,6 @@ func (s *OpenAIGatewayService) SetTLSFingerprintRouterService(routerService *TLS
 
 func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Context, c *gin.Context, account *Account, transport string) openAITLSFingerprintRuntime {
 	runtime := openAITLSFingerprintRuntime{}
-	if enabled, ok := getRuntimeAntiBanFor(normalizePlatform(PlatformOpenAI)); ok && !enabled {
-		return runtime
-	}
 	if s != nil {
 		runtime.Profile = s.resolveOpenAITLSProfileForTransport(account, transport)
 	}
@@ -98,9 +95,6 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 
 func (s *OpenAIGatewayService) resolveGrokTLSFingerprintRuntime(ctx context.Context, c *gin.Context, account *Account, transport string) openAITLSFingerprintRuntime {
 	runtime := openAITLSFingerprintRuntime{}
-	if enabled, ok := getRuntimeAntiBanFor(normalizePlatform(PlatformGrok)); ok && !enabled {
-		return runtime
-	}
 	if s != nil {
 		runtime.Profile = s.resolveOpenAITLSProfileForTransport(account, transport)
 	}

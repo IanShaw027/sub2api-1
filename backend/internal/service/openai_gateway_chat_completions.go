@@ -329,6 +329,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "http")
 	httpCodexCompatRetryTried := false
 	httpRawChatFallbackRetryTried := false
+	httpMaxOutputTokensRetryTried := false
 	var resp *http.Response
 	for {
 		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
@@ -357,6 +358,33 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 				openai_compat.ResolveResponsesSupport(account.Extra) == openai_compat.ResponsesSupportUnknown &&
 				!isResponsesEndpointSupportedByStatus(resp.StatusCode) {
 				return s.forwardAsRawChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, selectedFallbackModel)
+			}
+			if !httpMaxOutputTokensRetryTried &&
+				resp.StatusCode == http.StatusBadRequest &&
+				isOpenAIUnsupportedParameterError(upstreamCode, upstreamMsg, respBody, "max_output_tokens") &&
+				gjson.GetBytes(responsesBody, "max_output_tokens").Exists() {
+				updatedBody, deleteErr := sjson.DeleteBytes(responsesBody, "max_output_tokens")
+				if deleteErr != nil {
+					return nil, fmt.Errorf("delete unsupported max_output_tokens for chat compat retry: %w", deleteErr)
+				}
+				responsesBody = updatedBody
+				if err := syncResponsesRequestBillingMetaFromBody(responsesReq, responsesBody); err != nil {
+					return nil, fmt.Errorf("sync responses request billing meta after max_output_tokens retry: %w", err)
+				}
+				upstreamCtx, releaseUpstreamCtx = detachUpstreamContext(ctx)
+				upstreamReq, err = s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, true, promptCacheKey, isOpenAICodexOfficialClientRequest(c))
+				releaseUpstreamCtx()
+				if err != nil {
+					return nil, fmt.Errorf("build upstream request after max_output_tokens retry: %w", err)
+				}
+				if account.Type == AccountTypeAPIKey && promptCacheKey != "" {
+					apiKeyID := getAPIKeyIDFromContext(c)
+					upstreamReq.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, promptCacheKey)))
+				}
+				httpMaxOutputTokensRetryTried = true
+				s.RecordOpenAIAccountRecoveryReason(account.ID, "unsupported_max_output_tokens")
+				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying chat compat request once after dropping unsupported max_output_tokens (account: %s)", account.Name)
+				continue
 			}
 			if !httpCodexCompatRetryTried && account.Type == AccountTypeOAuth && oauthReqBody != nil {
 				if fallbackReason := classifyOpenAICodexCompatFallback(resp.StatusCode, upstreamCode, upstreamMsg, respBody); fallbackReason != "" {

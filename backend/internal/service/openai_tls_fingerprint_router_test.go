@@ -68,7 +68,7 @@ func TestOpenAITLSFingerprintRuntimeUsesRouterMatch(t *testing.T) {
 	require.Equal(t, "codex_cli_rs", upstreamReq.Header.Get("Originator"))
 }
 
-func TestOpenAITLSFingerprintRuntimeSkipsAccountProfileWhenPlatformAntiBanDisabled(t *testing.T) {
+func TestOpenAITLSFingerprintRuntimeUsesAccountProfileWhenPlatformAntiBanDisabled(t *testing.T) {
 	SetRuntimeAntiBanPlatforms(map[string]bool{PlatformOpenAI: false})
 	t.Cleanup(func() { SetRuntimeAntiBanPlatforms(map[string]bool{}) })
 	svc := &OpenAIGatewayService{
@@ -97,12 +97,13 @@ func TestOpenAITLSFingerprintRuntimeSkipsAccountProfileWhenPlatformAntiBanDisabl
 	runtime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), nil, account, "http")
 
 	require.False(t, runtime.Matched)
-	require.Nil(t, runtime.Profile)
-	require.Empty(t, runtime.UpstreamUserAgent)
-	require.Empty(t, runtime.UpstreamOriginator)
+	require.NotNil(t, runtime.Profile)
+	require.Equal(t, "Account Profile", runtime.Profile.Name)
+	require.Equal(t, "profile-ua/1.0", runtime.UpstreamUserAgent)
+	require.Equal(t, "profile-originator", runtime.UpstreamOriginator)
 }
 
-func TestGrokTLSFingerprintRuntimeSkipsAccountProfileWhenPlatformAntiBanDisabled(t *testing.T) {
+func TestGrokTLSFingerprintRuntimeUsesAccountProfileWhenPlatformAntiBanDisabled(t *testing.T) {
 	SetRuntimeAntiBanPlatforms(map[string]bool{PlatformGrok: false})
 	t.Cleanup(func() { SetRuntimeAntiBanPlatforms(map[string]bool{}) })
 	svc := &OpenAIGatewayService{
@@ -131,9 +132,73 @@ func TestGrokTLSFingerprintRuntimeSkipsAccountProfileWhenPlatformAntiBanDisabled
 	runtime := svc.resolveGrokTLSFingerprintRuntime(context.Background(), nil, account, "http")
 
 	require.False(t, runtime.Matched)
-	require.Nil(t, runtime.Profile)
-	require.Empty(t, runtime.UpstreamUserAgent)
-	require.Empty(t, runtime.UpstreamOriginator)
+	require.NotNil(t, runtime.Profile)
+	require.Equal(t, "Grok Account Profile", runtime.Profile.Name)
+	require.Equal(t, "grok-profile-ua/1.0", runtime.UpstreamUserAgent)
+	require.Equal(t, "grok-originator", runtime.UpstreamOriginator)
+}
+
+func TestOpenAITLSFingerprintRuntimeUsesTransportRouterWhenPlatformAntiBanDisabled(t *testing.T) {
+	SetRuntimeAntiBanPlatforms(map[string]bool{PlatformOpenAI: false})
+	t.Cleanup(func() { SetRuntimeAntiBanPlatforms(map[string]bool{}) })
+	setGinTestMode()
+	router := &model.TLSFingerprintRouter{
+		ID:      13,
+		Name:    "transport router",
+		Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{
+			{
+				Name:                    "codex ws mac",
+				Enabled:                 true,
+				Transport:               model.TLSFingerprintRouterTransportWebSocket,
+				MatchType:               model.TLSFingerprintRouterMatchContains,
+				Pattern:                 "Mac OS",
+				TLSFingerprintProfileID: 8,
+				UpstreamUserAgent:       "ws-codex/1.0",
+			},
+			{
+				Name:                    "codex http mac",
+				Enabled:                 true,
+				Transport:               model.TLSFingerprintRouterTransportHTTP,
+				MatchType:               model.TLSFingerprintRouterMatchContains,
+				Pattern:                 "Mac OS",
+				TLSFingerprintProfileID: 7,
+				UpstreamUserAgent:       "http-codex/1.0",
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		tlsFPRouterService: NewTLSFingerprintRouterService(&tlsFingerprintRouterRepoStub{routers: []*model.TLSFingerprintRouter{router}}, nil),
+		tlsFPProfileService: &TLSFingerprintProfileService{
+			localCache: map[int64]*model.TLSFingerprintProfile{
+				7: {ID: 7, Name: "HTTP Profile", Platform: "openai", Transport: "http"},
+				8: {ID: 8, Name: "WS Profile", Platform: "openai", Transport: "websocket"},
+			},
+		},
+	}
+	req, err := http.NewRequest(http.MethodPost, "/v1/responses", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", "codex-tui/0.141.0 (Mac OS 26.3.1; arm64)")
+	c := &gin.Context{Request: req}
+	account := &Account{
+		ID:       1,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":    true,
+			"tls_fingerprint_router_id": float64(13),
+		},
+	}
+
+	httpRuntime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account, "http")
+	wsRuntime := svc.resolveOpenAITLSFingerprintRuntime(context.Background(), c, account, "websocket")
+
+	require.True(t, httpRuntime.Matched)
+	require.Equal(t, "HTTP Profile", httpRuntime.Profile.Name)
+	require.Equal(t, "http-codex/1.0", httpRuntime.UpstreamUserAgent)
+	require.True(t, wsRuntime.Matched)
+	require.Equal(t, "WS Profile", wsRuntime.Profile.Name)
+	require.Equal(t, "ws-codex/1.0", wsRuntime.UpstreamUserAgent)
 }
 
 func TestOpenAICompatibleTLSFingerprintRuntimeUsesGrokRouterMatch(t *testing.T) {

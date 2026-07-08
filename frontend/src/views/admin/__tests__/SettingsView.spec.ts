@@ -1023,10 +1023,10 @@ describe("admin SettingsView payment visible method controls", () => {
       expect.objectContaining({
         openai_ws_neutral_prewarm_percent: 100,
         openai_ws_session_idle_ttl_seconds: 1,
+        openai_ws_min_idle_per_account: 5,
+        openai_ws_max_idle_per_account: 5,
       }),
     );
-    expect(payload).not.toHaveProperty("openai_ws_min_idle_per_account");
-    expect(payload).not.toHaveProperty("openai_ws_max_idle_per_account");
   });
 
   it("submits dynamic OpenAI WS delta and diagnostic log switches", async () => {

@@ -2097,6 +2097,69 @@ func TestOpenAIGatewayServiceRecordUsage_ImageToolBillsMainModelTokensPlusExactI
 	require.InDelta(t, expectedTokenCost.ActualCost+0.04, usageRepo.lastLog.ActualCost, 1e-12)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_ResponsesImageToolKeepsExplicitImageBillingModelWhenTextModelHasTokenChannelPricing(t *testing.T) {
+	groupID := int64(1212)
+	imagePrice := 0.075
+	inputPrice := 5e-6
+	outputPrice := 30e-6
+
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	cache := newEmptyChannelCache()
+	cache.pricingByGroupModel[channelModelKey{groupID: groupID, platform: PlatformOpenAI, model: "gpt-image-2"}] = &ChannelModelPricing{
+		BillingMode:     BillingModeImage,
+		PerRequestPrice: &imagePrice,
+	}
+	cache.pricingByGroupModel[channelModelKey{groupID: groupID, platform: PlatformOpenAI, model: "gpt-5.5"}] = &ChannelModelPricing{
+		BillingMode: BillingModeToken,
+		InputPrice:  &inputPrice,
+		OutputPrice: &outputPrice,
+	}
+	cache.channelByGroupID[groupID] = &Channel{ID: groupID, Status: StatusActive}
+	cache.groupPlatform[groupID] = PlatformOpenAI
+	cache.loadedAt = time.Now()
+	cs := &ChannelService{}
+	cs.cache.Store(cache)
+	svc.resolver = NewModelPricingResolver(cs, svc.billingService)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:         "resp_text_model_image_tool",
+			Model:             "gpt-5.5",
+			BillingModel:      "gpt-image-2",
+			TokenBillingModel: "gpt-5.5",
+			UpstreamModel:     "gpt-5.5",
+			Usage: OpenAIUsage{
+				InputTokens:  1000,
+				OutputTokens: 100,
+			},
+			ImageCount: 1,
+			ImageSize:  "2K",
+			Duration:   time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      12120,
+			GroupID: i64p(groupID),
+			Group: &Group{
+				ID:             groupID,
+				Platform:       PlatformOpenAI,
+				RateMultiplier: 0.18,
+			},
+		},
+		User:    &User{ID: 22120},
+		Account: &Account{ID: 32120, Platform: PlatformOpenAI},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, usageRepo.lastLog.BillingMode)
+	require.Equal(t, string(BillingModeImage), *usageRepo.lastLog.BillingMode)
+	require.Equal(t, 1, usageRepo.lastLog.ImageCount)
+	expectedTokenTotal := 1000*inputPrice + 100*outputPrice
+	require.InDelta(t, imagePrice+expectedTokenTotal, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, imagePrice+expectedTokenTotal*0.18, usageRepo.lastLog.ActualCost, 1e-12)
+}
+
 func TestOpenAIGatewayServiceRecordUsage_ImageWebBridgeUsesExactImageCostOnly(t *testing.T) {
 	imagePrice := 0.03
 	groupID := int64(213)

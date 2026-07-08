@@ -1113,6 +1113,15 @@ func normalizeOpenAIResponsesImageGenerationTools(reqBody map[string]any) bool {
 			delete(toolMap, "compression")
 			modified = true
 		}
+		// Responses image_generation tools do not accept a top-level "image"
+		// parameter. Image inputs must be supplied through input content
+		// ("input_image") or the dedicated input_image_mask object; forwarding a
+		// tool.image field makes the upstream reject the whole request with
+		// "Unknown parameter: 'tools[0].image'".
+		if _, ok := toolMap["image"]; ok {
+			delete(toolMap, "image")
+			modified = true
+		}
 	}
 	return modified
 }

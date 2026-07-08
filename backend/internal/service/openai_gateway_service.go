@@ -818,28 +818,13 @@ func (s *OpenAIGatewayService) CloseOpenAIWSPool() {
 	}
 }
 
-func ResolveOpenAIWSOutboundPayloadHTTPFallbackThresholdBytes(cfg *config.Config) int64 {
-	if cfg != nil && cfg.Gateway.OpenAIWS.OutboundPayloadHTTPFallbackThresholdBytes > 0 {
-		return cfg.Gateway.OpenAIWS.OutboundPayloadHTTPFallbackThresholdBytes
-	}
-	return ResolveOpenAIWSClientReadLimitBytes(cfg)
-}
-
-func (s *OpenAIGatewayService) shouldPreflightFallbackOpenAIWSPayloadToHTTP(body []byte) (bool, int64) {
-	threshold := ResolveOpenAIWSOutboundPayloadHTTPFallbackThresholdBytes(nil)
-	if s != nil {
-		threshold = ResolveOpenAIWSOutboundPayloadHTTPFallbackThresholdBytes(s.cfg)
-	}
-	return threshold > 0 && int64(len(body)) > threshold, threshold
-}
-
 func (s *OpenAIGatewayService) logOpenAIWSModeBootstrap() {
 	if s == nil || s.cfg == nil {
 		return
 	}
 	wsCfg := s.cfg.Gateway.OpenAIWS
 	logOpenAIWSModeInfo(
-		"bootstrap enabled=%v oauth_enabled=%v apikey_enabled=%v force_http=%v responses_websockets_v2=%v responses_websockets=%v payload_log_sample_rate=%.3f event_flush_batch_size=%d event_flush_interval_ms=%d prewarm_cooldown_ms=%d retry_backoff_initial_ms=%d retry_backoff_max_ms=%d retry_jitter_ratio=%.3f retry_total_budget_ms=%d ws_read_limit_bytes=%d outbound_payload_http_fallback_threshold_bytes=%d",
+		"bootstrap enabled=%v oauth_enabled=%v apikey_enabled=%v force_http=%v responses_websockets_v2=%v responses_websockets=%v payload_log_sample_rate=%.3f event_flush_batch_size=%d event_flush_interval_ms=%d prewarm_cooldown_ms=%d retry_backoff_initial_ms=%d retry_backoff_max_ms=%d retry_jitter_ratio=%.3f retry_total_budget_ms=%d ws_read_limit_bytes=%d",
 		wsCfg.Enabled,
 		wsCfg.OAuthEnabled,
 		wsCfg.APIKeyEnabled,
@@ -855,7 +840,6 @@ func (s *OpenAIGatewayService) logOpenAIWSModeBootstrap() {
 		wsCfg.RetryJitterRatio,
 		wsCfg.RetryTotalBudgetMS,
 		openAIWSMessageReadLimitBytes,
-		ResolveOpenAIWSOutboundPayloadHTTPFallbackThresholdBytes(s.cfg),
 	)
 }
 
@@ -1203,6 +1187,33 @@ func shouldFallbackOpenAIWSToHTTP(wsErr error) bool {
 	default:
 		return true
 	}
+}
+
+func isOpenAIWSUpstreamProblemRetryReason(reason string) bool {
+	reason = strings.TrimPrefix(strings.TrimSpace(reason), "prewarm_")
+	switch reason {
+	case "normal_close",
+		"error_event",
+		"upstream_error_event",
+		"previous_response_not_found",
+		"invalid_encrypted_content",
+		"unsafe_tool_continuation",
+		"model_unavailable":
+		return true
+	default:
+		return false
+	}
+}
+
+func canFallbackOpenAIWSFullReplayPayloadToHTTP(payload []byte) bool {
+	if !HasToolContinuationOutputInRawPayload(payload) {
+		return true
+	}
+	inputItems, inputExists, inputErr := openAIWSExtractNormalizedInputSequence(payload)
+	if inputErr != nil || !inputExists {
+		return false
+	}
+	return openAIWSRawItemsHaveToolCallContextForOutputs(inputItems)
 }
 
 func openAIWSActiveDeltaPreviousResponseID(wsErr error) string {
@@ -2086,6 +2097,32 @@ func isOpenAIUnsupportedReasoningEnabledError(upstreamCode, upstreamMsg string, 
 	if strings.Contains(msg, "unsupported parameter") ||
 		strings.Contains(msg, "unsupported field") ||
 		strings.Contains(msg, "unknown parameter") ||
+		strings.Contains(msg, "not supported") {
+		return true
+	}
+	code := strings.ToLower(strings.TrimSpace(upstreamCode))
+	return strings.Contains(code, "unsupported_parameter") || strings.Contains(code, "unknown_parameter")
+}
+
+func isOpenAIUnsupportedParameterError(upstreamCode, upstreamMsg string, upstreamBody []byte, parameter string) bool {
+	parameter = strings.ToLower(strings.TrimSpace(parameter))
+	if parameter == "" {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(upstreamMsg))
+	if msg == "" {
+		msg = strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(upstreamBody)))
+	}
+	if msg == "" {
+		msg = strings.ToLower(strings.TrimSpace(string(upstreamBody)))
+	}
+	if !strings.Contains(msg, parameter) {
+		return false
+	}
+	if strings.Contains(msg, "unsupported parameter") ||
+		strings.Contains(msg, "unsupported field") ||
+		strings.Contains(msg, "unknown parameter") ||
+		strings.Contains(msg, "unknown field") ||
 		strings.Contains(msg, "not supported") {
 		return true
 	}
@@ -5153,8 +5190,11 @@ oauthTransformDone:
 		}
 	}
 
-	// Handle provider-specific token limits and unsupported fields for non-Codex CLI compatibility paths.
-	if !isCodexCLI {
+	// Handle provider-specific token limits and unsupported fields for non-Codex CLI
+	// compatibility paths. API-key Responses upstreams can be OpenAI-compatible
+	// providers that reject Codex-only top-level fields even when the client UA is
+	// Codex, so strip the same unsupported fields for API-key accounts too.
+	if !isCodexCLI || (account != nil && account.Type == AccountTypeAPIKey) {
 		if maxOutputTokens, hasMaxOutputTokens := reqBody["max_output_tokens"]; hasMaxOutputTokens && account.Platform != PlatformOpenAI {
 			switch account.Platform {
 			case PlatformAnthropic:
@@ -5334,25 +5374,8 @@ oauthTransformDone:
 	// Capture upstream request body for ops retry of this attempt.
 	setOpsUpstreamRequestBody(c, body)
 
-	wsSkippedByPayloadPreflight := false
-	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
-		if skipWS, threshold := s.shouldPreflightFallbackOpenAIWSPayloadToHTTP(body); skipWS {
-			wsSkippedByPayloadPreflight = true
-			requestID, clientRequestID := openAIWSRequestLogIDs(c)
-			SetOpsOpenAIWSTransportPath(c, "http_preflight_ws_payload_too_large")
-			logOpenAIWSModeInfo(
-				"preflight_fallback_to_http request_id=%s client_request_id=%s account_id=%d reason=payload_too_large payload_bytes=%d threshold_bytes=%d action=replay_full_payload fallback_scope=http_preflight transport_path=http_preflight_ws_payload_too_large",
-				normalizeOpenAIWSLogValue(requestID),
-				normalizeOpenAIWSLogValue(clientRequestID),
-				account.ID,
-				len(body),
-				threshold,
-			)
-		}
-	}
-
 	// 命中 WS 时优先走 WebSocket Mode；WS 传输异常且未写下游时可回退同账号 HTTP。
-	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 && !wsSkippedByPayloadPreflight {
+	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
 		wsHTTPFallbackBody := append([]byte(nil), body...)
 		// WS 分支需要结构化 payload 与重连恢复，命中后再触发 full-map decode。
 		wsReqBody, err := ensureReqBody()
@@ -5429,6 +5452,28 @@ oauthTransformDone:
 			clearOpenAIRequestBodyCache(c)
 			setOpsUpstreamRequestBody(c, body)
 			return true
+		}
+		if account.Type == AccountTypeOAuth &&
+			openAIWSPayloadString(wsReqBody, "previous_response_id") != "" &&
+			HasFunctionCallOutput(wsReqBody) {
+			if replayReqBody, prepared, preflightErr := prepareOpenAIWSUnsafeToolContinuationFullReplayPreflight(wsReqBody, wsHTTPFallbackBody); preflightErr != nil {
+				logOpenAIWSModeInfo(
+					"preflight_unsafe_tool_continuation_skip account_id=%d reason=prepare_full_replay cause=%s",
+					account.ID,
+					truncateOpenAIWSLogValue(preflightErr.Error(), openAIWSLogValueMaxLen),
+				)
+			} else if prepared {
+				wsReqBody = replayReqBody
+				if !syncWSRecoveredBody("unsafe_tool_continuation_preflight") {
+					return nil, wsErr
+				}
+				wsUnsafeToolContinuationRecoveryTried = true
+				logOpenAIWSModeInfo(
+					"preflight_unsafe_tool_continuation account_id=%d action=drop_previous_response_id_full_replay has_function_call_output=%v",
+					account.ID,
+					HasFunctionCallOutput(wsReqBody),
+				)
+			}
 		}
 		wsContinuationStoreDecision := openAIWSContinuationStoreDecision{}
 		if account.Type == AccountTypeOAuth && openAIWSPayloadString(wsReqBody, "previous_response_id") != "" && !HasFunctionCallOutput(wsReqBody) {
@@ -5876,6 +5921,18 @@ oauthTransformDone:
 			if recoverCodexCompat(attempt, reason) {
 				continue
 			}
+			if !retryable &&
+				isOpenAIWSUpstreamProblemRetryReason(reason) &&
+				openAIWSPayloadString(wsReqBody, "previous_response_id") == "" &&
+				openAIWSActiveDeltaPreviousResponseID(wsErr) == "" {
+				logOpenAIWSModeInfo(
+					"reconnect_full_ws_stop account_id=%d attempt=%d reason=%s action=http_fallback",
+					account.ID,
+					attempt,
+					normalizeOpenAIWSLogValue(reason),
+				)
+				break
+			}
 			if retryable && attempt < maxAttempts {
 				backoff := s.openAIWSRetryBackoff(attempt)
 				if retryBudget > 0 && time.Since(retryStartedAt)+backoff > retryBudget {
@@ -5968,8 +6025,8 @@ oauthTransformDone:
 		}
 		if c != nil && c.Writer != nil && !c.Writer.Written() &&
 			shouldFallbackOpenAIWSToHTTP(wsErr) &&
-			!HasToolContinuationOutputInRawPayload(wsHTTPFallbackBody) &&
-			!HasToolContinuationOutputInRawPayload(body) {
+			canFallbackOpenAIWSFullReplayPayloadToHTTP(wsHTTPFallbackBody) &&
+			canFallbackOpenAIWSFullReplayPayloadToHTTP(body) {
 			reason, _ := classifyOpenAIWSReconnectReason(wsErr)
 			requestID, clientRequestID := openAIWSRequestLogIDs(c)
 			body = append([]byte(nil), body...)
@@ -7717,6 +7774,35 @@ func (s *OpenAIGatewayService) recordOpenAIStreamUpstreamError(
 	return message
 }
 
+func recordOpenAIStreamReadError(
+	c *gin.Context,
+	account *Account,
+	passthrough bool,
+	upstreamRequestID string,
+	err error,
+) upstreamTransportErrorDetail {
+	detail := classifyUpstreamTransportError(err)
+	if c != nil {
+		SetOpsUpstreamErrorWithType(c, detail.ErrorType, http.StatusBadGateway, "stream_read_error", detail.Detail)
+		event := OpsUpstreamErrorEvent{
+			Platform:           PlatformOpenAI,
+			UpstreamStatusCode: http.StatusBadGateway,
+			UpstreamRequestID:  strings.TrimSpace(upstreamRequestID),
+			Passthrough:        passthrough,
+			Kind:               "stream_read_error",
+			Message:            detail.Message,
+			Detail:             detail.Detail,
+		}
+		if account != nil {
+			event.Platform = account.Platform
+			event.AccountID = account.ID
+			event.AccountName = account.Name
+		}
+		appendOpsUpstreamError(c, event)
+	}
+	return detail
+}
+
 func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	c *gin.Context,
 	account *Account,
@@ -8169,6 +8255,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			upstreamRequestID,
 			err,
 		)
+		recordOpenAIStreamReadError(c, account, true, upstreamRequestID, err)
 		return fmt.Errorf("stream read error: %w", err)
 	}
 
@@ -9677,6 +9764,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", scanErr), true
 		}
+		recordOpenAIStreamReadError(c, account, false, upstreamRequestID, scanErr)
 		sendErrorEvent("stream_read_error")
 		return resultWithUsage(), fmt.Errorf("stream read error: %w", scanErr), true
 	}
@@ -11754,9 +11842,15 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			return fmt.Errorf("calculate OpenAI usage cost failed: %w", err)
 		}
 	}
-	selectedCost := chooseHigherPricedUsageCost(modelView.RequestedModel, requestedCost, modelView.UpstreamModel, upstreamCost)
-	if selectedCost.Cost != nil {
-		cost = selectedCost.Cost
+	selectedCost := usageBillingSelection{Cost: cost}
+	preserveExplicitImageBillingModel := result.ImageCount > 0 &&
+		strings.TrimSpace(result.BillingModel) != "" &&
+		strings.TrimSpace(result.BillingModel) != modelView.RequestedModel
+	if !preserveExplicitImageBillingModel {
+		selectedCost = chooseHigherPricedUsageCost(modelView.RequestedModel, requestedCost, modelView.UpstreamModel, upstreamCost)
+		if selectedCost.Cost != nil {
+			cost = selectedCost.Cost
+		}
 	}
 	if result.AudioUsage != nil || openAIForwardResultHasVideoBilling(result) {
 		effectiveRateMultiplier = 1

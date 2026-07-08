@@ -3849,6 +3849,64 @@
                 </p>
               </div>
 
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label class="label">
+                    {{
+                      localText(
+                        "WS 最小空闲连接数",
+                        "WS Min Idle Connections",
+                      )
+                    }}
+                  </label>
+                  <input
+                    v-model.number="form.openai_ws_min_idle_per_account"
+                    type="number"
+                    min="0"
+                    max="64"
+                    step="1"
+                    class="input"
+                    placeholder="1"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      localText(
+                        "每个 OpenAI OAuth 账号至少保留的中性 WS 空闲连接数；0 表示不强制保底。",
+                        "Minimum neutral idle WS connections kept per OpenAI OAuth account. 0 disables the floor.",
+                      )
+                    }}
+                  </p>
+                </div>
+
+                <div>
+                  <label class="label">
+                    {{
+                      localText(
+                        "WS 最大空闲连接数",
+                        "WS Max Idle Connections",
+                      )
+                    }}
+                  </label>
+                  <input
+                    v-model.number="form.openai_ws_max_idle_per_account"
+                    type="number"
+                    min="0"
+                    max="64"
+                    step="1"
+                    class="input"
+                    placeholder="4"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      localText(
+                        "每个账号最多保留的中性 WS 预热库存；保存时若小于最小空闲数，会自动抬到最小空闲数。",
+                        "Maximum neutral WS prewarm stock per account. If lower than the minimum idle count, saving raises it to the minimum.",
+                      )
+                    }}
+                  </p>
+                </div>
+              </div>
+
               <div>
                 <label class="label">
                   {{
@@ -9654,6 +9712,8 @@ const form = reactive<SettingsForm>({
   fallback_model_antigravity: "gemini-2.5-pro",
   openai_sticky_reserve_percent: 30,
   openai_sticky_wait_timeout_seconds: 30,
+  openai_ws_min_idle_per_account: 1,
+  openai_ws_max_idle_per_account: 4,
   openai_ws_neutral_prewarm_percent: 20,
   openai_ws_session_idle_ttl_seconds: 600,
   openai_ws_delta_shadow_enabled: true,
@@ -10630,6 +10690,20 @@ async function loadSettings() {
         Math.floor(Number(settings.openai_ws_neutral_prewarm_percent ?? 20)),
       ),
     );
+    form.openai_ws_min_idle_per_account = Math.max(
+      0,
+      Math.min(
+        64,
+        Math.floor(Number(settings.openai_ws_min_idle_per_account ?? 1)),
+      ),
+    );
+    form.openai_ws_max_idle_per_account = Math.max(
+      form.openai_ws_min_idle_per_account,
+      Math.min(
+        64,
+        Math.floor(Number(settings.openai_ws_max_idle_per_account ?? 4)),
+      ),
+    );
     form.openai_ws_session_idle_ttl_seconds = Math.max(
       1,
       Math.min(
@@ -10836,6 +10910,20 @@ async function saveSettings() {
       Math.min(
         100,
         Math.floor(Number(form.openai_ws_neutral_prewarm_percent) || 0),
+      ),
+    );
+    const normalizedOpenAIWSMinIdlePerAccount = Math.max(
+      0,
+      Math.min(
+        64,
+        Math.floor(Number(form.openai_ws_min_idle_per_account) || 0),
+      ),
+    );
+    const normalizedOpenAIWSMaxIdlePerAccount = Math.max(
+      normalizedOpenAIWSMinIdlePerAccount,
+      Math.min(
+        64,
+        Math.floor(Number(form.openai_ws_max_idle_per_account) || 0),
       ),
     );
     const rawOpenAIWSSessionIdleTTLSeconds = Math.floor(
@@ -11301,6 +11389,10 @@ async function saveSettings() {
       ),
       openai_ws_neutral_prewarm_percent:
         normalizedOpenAIWSNeutralPrewarmPercent,
+      openai_ws_min_idle_per_account:
+        normalizedOpenAIWSMinIdlePerAccount,
+      openai_ws_max_idle_per_account:
+        normalizedOpenAIWSMaxIdlePerAccount,
       openai_ws_session_idle_ttl_seconds:
         normalizedOpenAIWSSessionIdleTTLSeconds,
       openai_ws_delta_shadow_enabled: form.openai_ws_delta_shadow_enabled,
