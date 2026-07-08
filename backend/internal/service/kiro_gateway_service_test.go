@@ -1493,6 +1493,116 @@ func TestKiroGatewayService_ForwardStream_ExceptionDoesNotCommitFakeCacheOrEmitF
 	require.False(t, found, "exception streams must not commit fake cache")
 }
 
+func TestKiroGatewayService_ForwardStream_DropsRepeatedWordHoldbackOnExceptionAndUsesLongCooldown(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	repo := &kiroPreStartAccountRepoStub{}
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+		rateLimitService: &RateLimitService{
+			accountRepo: repo,
+		},
+	}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "partial output"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "\n\ncourt"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "\n\ncourt"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "\n\ncourt"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "\n\ncourt"}),
+		buildKiroTestFrame(t, map[string]string{
+			":event-type":     "exception",
+			":exception-type": "RuntimeException",
+		}, map[string]any{"message": "Encountered an unexpected error when processing the request, please try again."}),
+	}, nil)
+
+	before := time.Now()
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 75521, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-opus-4-8", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-opus-4.8"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	output := rec.Body.String()
+	require.Contains(t, output, `"partial output"`)
+	require.NotContains(t, output, "court", "repeated upstream degeneration words should be withheld and dropped when the stream ends with exception")
+	require.Contains(t, output, "Kiro upstream generation failed after stream started")
+	require.NotContains(t, output, "kiro upstream returned exception frame")
+
+	require.Len(t, repo.calls, 1)
+	require.Equal(t, int64(75521), repo.calls[0].accountID)
+	require.True(t, repo.calls[0].until.After(before.Add(kiroPostStartGenerationFailureCooldown-time.Second)))
+	require.Contains(t, repo.calls[0].reason, kiroPostStartGenerationFailureReasonKeyword)
+}
+
+func TestKiroGatewayService_ForwardStream_FlushesRepeatedWordHoldbackOnNormalCompletion(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "court"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "\n\ncourt"}),
+	}, nil)
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 75521, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-opus-4-8", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-opus-4.8"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), "court")
+}
+
 func TestKiroGatewayService_ForwardNonStream_UsageMatchesAnthropicCacheShape(t *testing.T) {
 	setGinTestMode()
 
@@ -1879,6 +1989,13 @@ func TestKiroGatewayService_ForwardStream_IncompleteFrameDoesNotCommitFakeCacheO
 	require.NotContains(t, rec.Body.String(), "event: message_stop")
 	_, found := svc.fakeCache.Get(fakeCachePlan.CurrentKey)
 	require.False(t, found, "truncated stream responses must not commit fake cache")
+}
+
+func TestKiroMarkerPrefixHoldbackBytes(t *testing.T) {
+	require.Equal(t, 0, kiroMarkerPrefixHoldbackBytes("plain text", "<thinking>"))
+	require.Equal(t, len("<thin"), kiroMarkerPrefixHoldbackBytes("answer <thin", "<thinking>"))
+	require.Equal(t, len("<thinking"), kiroMarkerPrefixHoldbackBytes("answer <thinking", "<thinking>"))
+	require.Equal(t, 0, kiroMarkerPrefixHoldbackBytes("answer <thinking>", "<thinking>"))
 }
 
 func TestKiroGatewayService_ForwardNonStream_EmptyBodyFails(t *testing.T) {

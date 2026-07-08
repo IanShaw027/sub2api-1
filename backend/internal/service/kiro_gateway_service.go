@@ -50,6 +50,14 @@ const (
 	kiroTransportFailureCooldown      = 2 * time.Minute
 	kiroTransportFailureReasonKeyword = "kiro_transport_failure"
 	kiroAccountStateUpdateTimeout     = 5 * time.Second
+
+	// 流式输出已经开始后，如果上游先退化成同一个短词反复输出、随后返回 exception frame，
+	// 说明这次生成结果已经不可信。此类故障比普通 transport 闪断更容易在同一账号上复现，
+	// 因此加重账号冷却，并把被暂存的重复短词丢弃，避免客户端被刷屏。
+	kiroPostStartGenerationFailureCooldown      = 15 * time.Minute
+	kiroPostStartGenerationFailureReasonKeyword = "kiro_generation_failure"
+	kiroRepeatedWordHoldbackThreshold           = 4
+	kiroRepeatedWordMaxRunes                    = 24
 )
 
 var kiroFirstForwardableEventTimeout = 30 * time.Second
@@ -1118,6 +1126,9 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	// as placeholder/trailing + kirocc stop sequences. Sanitize applied to pending.
 	identityPending := ""
 	const identityMaxKeep = 40
+	repeatedWordHoldback := ""
+	repeatedWordCanonical := ""
+	repeatedWordCount := 0
 	debugAggregator := BeginKiroFrameAggregator(s.settingService, c)
 	defer func() {
 		debugAggregator.Finalize("upstream_response_body", map[string]any{
@@ -1154,9 +1165,15 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	// emitTextDeltaRaw is in scope.
 	var flushPendingPlaceholder func() error
 	var flushIdentityHoldback func() error
+	var flushRepeatedWordHoldback func() error
 	closeTextBlock := func() error {
 		if flushPendingPlaceholder != nil {
 			if err := flushPendingPlaceholder(); err != nil {
+				return err
+			}
+		}
+		if flushRepeatedWordHoldback != nil {
+			if err := flushRepeatedWordHoldback(); err != nil {
 				return err
 			}
 		}
@@ -1231,6 +1248,14 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		trailingHoldback = ""
 		identityPending = ""
 	}
+	dropRepeatedWordHoldback := func() {
+		repeatedWordHoldback = ""
+		repeatedWordCanonical = ""
+		repeatedWordCount = 0
+	}
+	repeatedWordHoldbackSuspicious := func() bool {
+		return repeatedWordCanonical != "" && repeatedWordCount >= kiroRepeatedWordHoldbackThreshold
+	}
 
 	flushIdentityHoldback = func() error {
 		if identityPending == "" {
@@ -1239,6 +1264,14 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		clean := kiropkg.SanitizeIdentityText(identityPending)
 		identityPending = ""
 		return emitTextDeltaRaw(clean)
+	}
+	flushRepeatedWordHoldback = func() error {
+		if repeatedWordHoldback == "" {
+			return nil
+		}
+		flush := kiropkg.SanitizeIdentityText(repeatedWordHoldback)
+		dropRepeatedWordHoldback()
+		return emitTextDeltaRaw(flush)
 	}
 	emitTextDelta := func(text string) error {
 		if text == "" {
@@ -1254,6 +1287,24 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			if kiropkg.IsPlaceholderFragment(text) {
 				trailingHoldback = text
 				return nil
+			}
+			if canonical, ok := kiroRepeatedWordCandidate(text); ok {
+				if repeatedWordCanonical == "" || repeatedWordCanonical == canonical {
+					repeatedWordCanonical = canonical
+					repeatedWordCount++
+					repeatedWordHoldback += text
+					return nil
+				}
+				if err := flushRepeatedWordHoldback(); err != nil {
+					return err
+				}
+				repeatedWordCanonical = canonical
+				repeatedWordCount = 1
+				repeatedWordHoldback = text
+				return nil
+			}
+			if err := flushRepeatedWordHoldback(); err != nil {
+				return err
 			}
 			// identity sanitization with *conditional* holdback (only if could split phrase).
 			// Normal text (incl. whitespace) emitted immediately to avoid regressions.
@@ -1393,7 +1444,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					}
 					continue
 				}
-				targetLen := len(nativeThinkingBuffer) - len("<thinking>")
+				targetLen := len(nativeThinkingBuffer) - kiroMarkerPrefixHoldbackBytes(nativeThinkingBuffer, "<thinking>")
 				if targetLen > 0 {
 					safeContent := utf8SafePrefix(nativeThinkingBuffer, targetLen)
 					if strings.TrimSpace(safeContent) != "" {
@@ -1484,12 +1535,24 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 
 				if failureErr := kiroFrameFailure(frame); failureErr != nil {
 					if streamStarted {
-						handledErr := s.handleFrameFailure(ctx, c, account, resp.Header.Get("x-amzn-requestid"), frame, failureErr, false)
+						cooldown := kiroTransportFailureCooldown
+						reasonKeyword := kiroTransportFailureReasonKeyword
+						repeatedGenerationFailure := repeatedWordHoldbackSuspicious()
+						if repeatedGenerationFailure {
+							dropRepeatedWordHoldback()
+							cooldown = kiroPostStartGenerationFailureCooldown
+							reasonKeyword = kiroPostStartGenerationFailureReasonKeyword
+						}
+						handledErr := s.handleFrameFailureWithCooldown(ctx, c, account, resp.Header.Get("x-amzn-requestid"), frame, failureErr, false, cooldown, reasonKeyword)
 						if err := closeOpenKiroBlocksSafely(); err != nil {
 							return nil, err
 						}
-						_ = writeKiroStreamError(writer, failureErr.Error())
-						logKiroResponseAnomaly(ctx, account, parsed, true, "frame_failure", failureErr, framesSeen, completedToolUses, lastContextUsagePercentage)
+						_ = writeKiroStreamError(writer, kiroPostStartFrameFailureClientMessage(failureErr))
+						anomalyKind := "frame_failure"
+						if repeatedGenerationFailure {
+							anomalyKind = "repeated_word_frame_failure"
+						}
+						logKiroResponseAnomaly(ctx, account, parsed, true, anomalyKind, failureErr, framesSeen, completedToolUses, lastContextUsagePercentage)
 						var failoverErr *UpstreamFailoverError
 						if handledErr != nil && !errors.As(handledErr, &failoverErr) {
 							return nil, handledErr
@@ -3804,6 +3867,22 @@ func utf8SafePrefix(s string, maxBytes int) string {
 	return s[:maxBytes]
 }
 
+func kiroMarkerPrefixHoldbackBytes(s, marker string) int {
+	if s == "" || marker == "" {
+		return 0
+	}
+	max := len(marker) - 1
+	if max > len(s) {
+		max = len(s)
+	}
+	for n := max; n > 0; n-- {
+		if strings.HasPrefix(marker, s[len(s)-n:]) {
+			return n
+		}
+	}
+	return 0
+}
+
 func readAllKiroFrames(body io.Reader) ([]*kiroFrame, error) {
 	raw, err := io.ReadAll(io.LimitReader(body, kiroMaxBodySize+1))
 	if err != nil {
@@ -4042,8 +4121,18 @@ func (s *KiroGatewayService) handleProtocolError(ctx context.Context, c *gin.Con
 }
 
 func (s *KiroGatewayService) handleFrameFailure(ctx context.Context, c *gin.Context, account *Account, upstreamRequestID string, frame *kiroFrame, failureErr error, writeClientError bool) error {
+	return s.handleFrameFailureWithCooldown(ctx, c, account, upstreamRequestID, frame, failureErr, writeClientError, kiroTransportFailureCooldown, kiroTransportFailureReasonKeyword)
+}
+
+func (s *KiroGatewayService) handleFrameFailureWithCooldown(ctx context.Context, c *gin.Context, account *Account, upstreamRequestID string, frame *kiroFrame, failureErr error, writeClientError bool, cooldown time.Duration, reasonKeyword string) error {
 	if failureErr == nil {
 		return nil
+	}
+	if cooldown <= 0 {
+		cooldown = kiroTransportFailureCooldown
+	}
+	if strings.TrimSpace(reasonKeyword) == "" {
+		reasonKeyword = kiroTransportFailureReasonKeyword
 	}
 	statusCode := kiroFrameFailureStatusCode(frame)
 	body := []byte(failureErr.Error())
@@ -4052,7 +4141,7 @@ func (s *KiroGatewayService) handleFrameFailure(ctx context.Context, c *gin.Cont
 	if shouldKiroFailover(statusCode) {
 		if statusCode >= http.StatusInternalServerError {
 			stateCtx, cancel := kiroAccountStateContext(ctx)
-			s.markKiroFailureUnschedulable(stateCtx, account, statusCode, kiroTransportFailureReasonKeyword, sanitizeUpstreamErrorMessage(failureErr.Error()), kiroTransportFailureCooldown)
+			s.markKiroFailureUnschedulable(stateCtx, account, statusCode, reasonKeyword, sanitizeUpstreamErrorMessage(failureErr.Error()), cooldown)
 			cancel()
 		}
 		return &UpstreamFailoverError{
@@ -4156,6 +4245,28 @@ func kiroFrameFailure(frame *kiroFrame) error {
 		return fmt.Errorf("kiro upstream returned %s frame", kind)
 	}
 	return fmt.Errorf("kiro upstream returned %s frame: %s", kind, message)
+}
+
+func kiroPostStartFrameFailureClientMessage(err error) string {
+	return "Kiro upstream generation failed after stream started; partial output may be invalid."
+}
+
+func kiroRepeatedWordCandidate(text string) (string, bool) {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return "", false
+	}
+	runeCount := utf8.RuneCountInString(trimmed)
+	if runeCount < 3 || runeCount > kiroRepeatedWordMaxRunes {
+		return "", false
+	}
+	for _, r := range trimmed {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			continue
+		}
+		return "", false
+	}
+	return strings.ToLower(trimmed), true
 }
 
 func kiroFrameFailureStatusCode(frame *kiroFrame) int {
