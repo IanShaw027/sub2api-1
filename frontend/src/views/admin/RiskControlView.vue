@@ -1703,8 +1703,12 @@ const resultOptions = computed<SelectOption[]>(() => [
   { value: '', label: t('admin.riskControl.result.all') },
   { value: 'hit', label: t('admin.riskControl.result.hit') },
   { value: 'blocked', label: t('admin.riskControl.result.blocked') },
+  { value: 'block', label: t('admin.riskControl.result.apiBlock') },
+  { value: 'keyword_block', label: t('admin.riskControl.result.keywordBlock') },
+  { value: 'hash_block', label: t('admin.riskControl.result.hashBlock') },
+  { value: 'cyber_policy', label: t('admin.riskControl.result.cyberPolicy') },
   { value: 'attention', label: t('admin.riskControl.result.attention') },
-  { value: 'pass', label: t('admin.riskControl.result.pass') },
+  { value: 'allow', label: t('admin.riskControl.result.pass') },
   { value: 'error', label: t('admin.riskControl.result.error') },
 ])
 
@@ -2340,7 +2344,13 @@ function canUnbanRow(row: ContentModerationLog): boolean {
 }
 
 function inputSummaryText(row: ContentModerationLog): string {
-  return row.input_excerpt || row.error || '-'
+  return truncateText(row.input_excerpt || row.error || '-', 500)
+}
+
+function truncateText(value: string, maxChars: number): string {
+  const chars = Array.from(value)
+  if (chars.length <= maxChars) return value
+  return `${chars.slice(0, maxChars).join('')}…`
 }
 
 function openInputDetail(row: ContentModerationLog) {
@@ -2700,6 +2710,7 @@ function modeDescription(mode: ModerationMode): string {
 
 function resultLabel(row: ContentModerationLog): string {
   if (row.action === 'cyber_policy') return t('admin.riskControl.action.cyberPolicy')
+  if (row.action === 'hash_block') return t('admin.riskControl.action.hashBlock')
   if (row.action === 'keyword_block') return t('admin.riskControl.action.keywordBlock')
   if (row.action === 'block') return t('admin.riskControl.action.block')
   if (row.action === 'attention') return t('admin.riskControl.action.attention')
@@ -2709,7 +2720,7 @@ function resultLabel(row: ContentModerationLog): string {
 }
 
 function resultBadgeClass(row: ContentModerationLog): string {
-  if (row.action === 'block' || row.action === 'keyword_block' || row.action === 'cyber_policy') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  if (row.action === 'block' || row.action === 'keyword_block' || row.action === 'hash_block' || row.action === 'cyber_policy') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
   if (row.action === 'attention') return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
   if (row.action === 'error' || row.error) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
   if (row.flagged) return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300'

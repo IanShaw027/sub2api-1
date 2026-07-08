@@ -17,8 +17,31 @@ func TestBuildContentModerationLogWhere_BlockedIncludesAllBlockActions(t *testin
 
 	require.Empty(t, args)
 	sql := strings.Join(where, " AND ")
-	require.Contains(t, sql, "l.action IN ('block', 'keyword_block', 'hash_block')")
+	require.Contains(t, sql, "l.action IN ('block', 'keyword_block', 'hash_block', 'cyber_policy')")
 	require.NotContains(t, sql, "l.action = 'block'")
+}
+
+func TestBuildContentModerationLogWhere_SupportsExactResultTypes(t *testing.T) {
+	tests := []struct {
+		name     string
+		result   string
+		contains string
+	}{
+		{name: "api block", result: "block", contains: "l.action = 'block'"},
+		{name: "keyword block", result: "keyword_block", contains: "l.action = 'keyword_block'"},
+		{name: "hash block", result: "hash_block", contains: "l.action = 'hash_block'"},
+		{name: "cyber policy", result: "cyber_policy", contains: "l.action = 'cyber_policy'"},
+		{name: "allow", result: "allow", contains: "l.action = 'allow' AND l.flagged = FALSE AND l.error = ''"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{Result: tt.result})
+
+			require.Empty(t, args)
+			require.Contains(t, strings.Join(where, " AND "), tt.contains)
+		})
+	}
 }
 
 func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesHashBlock(t *testing.T) {

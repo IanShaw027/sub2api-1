@@ -722,6 +722,28 @@ func TestMatchBlockedKeyword_EnglishExceptionRespectsCoverage(t *testing.T) {
 	require.Equal(t, "bomb", kw)
 }
 
+func TestMatchBlockedKeyword_IgnoresSpacesAndPunctuationWithinKeyword(t *testing.T) {
+	kw, hit := matchBlockedKeyword("安全提示：炸 弹制作", []string{"炸弹"}, nil, contentModerationDefaultProximityWindow)
+	require.True(t, hit)
+	require.Equal(t, "炸弹", kw)
+
+	kw, hit = matchBlockedKeyword("安全提示：炸-弹制作", []string{"炸弹"}, nil, contentModerationDefaultProximityWindow)
+	require.True(t, hit)
+	require.Equal(t, "炸弹", kw)
+
+	_, hit = matchBlockedKeyword("标题：青春期孩子一说就炸？亲测好用的“拆弹”沟通指南", []string{"炸弹"}, nil, contentModerationDefaultProximityWindow)
+	require.False(t, hit, "忽略空格和标点不应把远处的“炸”和“拆弹”的“弹”拼成关键词")
+}
+
+func TestMatchBlockedKeyword_AndTermsStillUseProximityAndIgnoreSpacesAndPunctuation(t *testing.T) {
+	kw, hit := matchBlockedKeyword("用户尝试绕 过平台风-控限制", []string{"绕过&&风控"}, nil, 40)
+	require.True(t, hit)
+	require.Equal(t, "绕过&&风控", kw)
+
+	_, hit = matchBlockedKeyword("绕过"+strings.Repeat("正常内容", 30)+"风控", []string{"绕过&&风控"}, nil, 40)
+	require.False(t, hit, "&& 组合仍应受默认邻近窗口限制")
+}
+
 func TestContentModerationCheck_PreBlockKeywordHitSkipsUpstreamCall(t *testing.T) {
 	upstreamCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

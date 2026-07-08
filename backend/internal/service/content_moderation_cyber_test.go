@@ -154,7 +154,7 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 		"Error should mention flagged or cyber_policy")
 }
 
-func TestRecordCyberPolicyEvent_RecordsRequestUserSegmentHashes(t *testing.T) {
+func TestRecordCyberPolicyEvent_RecordsLatestRequestUserSegmentHash(t *testing.T) {
 	repo := &contentModerationTestRepo{}
 	hashCache := &contentModerationTestHashCache{}
 	svc := NewContentModerationService(
@@ -196,7 +196,7 @@ func TestRecordCyberPolicyEvent_RecordsRequestUserSegmentHashes(t *testing.T) {
 		]
 	}`))
 	require.Len(t, expectedInputs, 2)
-	require.Equal(t, []string{expectedInputs[0].Hash(), expectedInputs[1].Hash()}, hashCache.snapshotRecorded())
+	require.Equal(t, []string{expectedInputs[1].Hash()}, hashCache.snapshotRecorded())
 	require.Len(t, repo.snapshotLogs(), 1, "cyber_policy 风控日志仍需照记")
 }
 

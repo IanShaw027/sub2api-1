@@ -257,12 +257,20 @@ func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) (
 	switch strings.ToLower(strings.TrimSpace(filter.Result)) {
 	case "hit", "flagged":
 		where = append(where, "l.flagged = TRUE")
-	case "blocked", "block":
-		where = append(where, "l.action IN ('block', 'keyword_block', 'hash_block')")
+	case "blocked":
+		where = append(where, "l.action IN ('block', 'keyword_block', 'hash_block', 'cyber_policy')")
+	case "block", "api_block":
+		where = append(where, "l.action = 'block'")
+	case "keyword", "keyword_block":
+		where = append(where, "l.action = 'keyword_block'")
+	case "hash", "hash_block":
+		where = append(where, "l.action = 'hash_block'")
+	case "cyber", "cyber_policy":
+		where = append(where, "l.action = 'cyber_policy'")
 	case "attention":
 		where = append(where, "l.action = 'attention'")
 	case "pass", "allow":
-		where = append(where, "l.flagged = FALSE AND l.error = '' AND l.action <> 'attention'")
+		where = append(where, "l.action = 'allow' AND l.flagged = FALSE AND l.error = ''")
 	case "error":
 		where = append(where, "l.error <> ''")
 	}

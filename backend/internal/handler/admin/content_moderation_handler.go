@@ -60,6 +60,7 @@ type contentModerationConfigRequest struct {
 	BlockedKeywords         *[]string                                      `json:"blocked_keywords"`
 	KeywordExceptions       *[]string                                      `json:"keyword_exceptions"`
 	KeywordBlockingMode     *string                                        `json:"keyword_blocking_mode"`
+	DefaultProximityWindow  *int                                           `json:"default_proximity_window"`
 	ModelFilter             *service.ContentModerationModelFilter          `json:"model_filter"`
 	// cyber_policy 命中是否排除出自动封号计数；前端 RiskControlView 已发送该字段，
 	// service.UpdateContentModerationConfigInput 已支持，此前 handler 层缺透传导致开关静默失效。
@@ -139,6 +140,7 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		BlockedKeywords:                req.BlockedKeywords,
 		KeywordExceptions:              req.KeywordExceptions,
 		KeywordBlockingMode:            req.KeywordBlockingMode,
+		DefaultProximityWindow:         req.DefaultProximityWindow,
 		ModelFilter:                    req.ModelFilter,
 		CyberPolicyExcludeFromBanCount: req.CyberPolicyExcludeFromBanCount,
 	})

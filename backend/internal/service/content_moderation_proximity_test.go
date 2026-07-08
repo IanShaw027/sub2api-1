@@ -112,7 +112,7 @@ func buildTextWithDistance(word1, word2 string, distanceChars int) string {
 	if distanceChars < 0 {
 		distanceChars = 0
 	}
-	padding := strings.Repeat(".", distanceChars)
+	padding := strings.Repeat("正", distanceChars)
 	return word1 + padding + word2
 }
 
@@ -289,6 +289,14 @@ func TestMatchBlockedKeyword_GlobalDefaultWindowTightening(t *testing.T) {
 
 	_, hit = matchBlockedKeyword(text, kws, nil, 40)
 	require.False(t, hit, "全局默认窗口收紧到 40：两词超窗口不应命中")
+}
+
+func TestMatchBlockedKeyword_MalformedAndRuleDoesNotFallbackToSingleTerm(t *testing.T) {
+	_, hit := matchBlockedKeyword("the account is safe", []string{"account && ---"}, nil, contentModerationDefaultProximityWindow)
+	require.False(t, hit, "畸形 && 规则不能因空 term 被丢弃而退化成单关键词误杀")
+
+	_, hit = matchBlockedKeyword("账号状态正常", []string{"账号 && ！！！"}, nil, contentModerationDefaultProximityWindow)
+	require.False(t, hit, "中文畸形 && 规则也不能退化成单关键词误杀")
 }
 
 func TestNormalizeProximityWindow(t *testing.T) {

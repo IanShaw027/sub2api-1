@@ -416,6 +416,113 @@ describe('admin RiskControlView', () => {
     expect(setupState.endpointOptions.map((option: { value: string }) => option.value)).toContain('/v1/embeddings')
   })
 
+  it('offers concrete moderation result type filters and sends the selected result type', async () => {
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm
+    const resultValues = setupState.resultOptions.map((option: { value: string }) => option.value)
+    expect(resultValues).toEqual(expect.arrayContaining([
+      'block',
+      'keyword_block',
+      'hash_block',
+      'cyber_policy',
+      'attention',
+      'error',
+      'allow',
+    ]))
+
+    listLogs.mockClear()
+    setupState.filters.result = 'keyword_block'
+    setupState.reloadLogsFromFirstPage()
+    await flushPromises()
+
+    expect(listLogs).toHaveBeenCalledWith(expect.objectContaining({
+      page: 1,
+      result: 'keyword_block',
+    }))
+  })
+
+  it('shows the current input column capped at 500 characters while keeping full detail text', async () => {
+    const longCurrentInput = `${'当前消息'.repeat(140)}尾部`
+    listLogs.mockResolvedValueOnce({
+      items: [{
+        id: 1,
+        request_id: 'req-1',
+        user_id: 1001,
+        user_email: 'user@example.com',
+        api_key_id: 2001,
+        api_key_name: 'main-key',
+        group_id: 3001,
+        group_name: 'default',
+        endpoint: '/v1/chat/completions',
+        provider: 'openai',
+        model: 'gpt-5.5',
+        mode: 'pre_block',
+        action: 'allow',
+        flagged: false,
+        highest_category: '',
+        highest_score: 0,
+        matched_keyword: '',
+        category_scores: {},
+        threshold_snapshot: {},
+        input_excerpt: longCurrentInput,
+        upstream_latency_ms: 18,
+        error: '',
+        violation_count: 0,
+        auto_banned: false,
+        email_sent: false,
+        user_status: 'active',
+        queue_delay_ms: null,
+        created_at: '2026-07-05T12:00:00Z',
+      }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm
+    const row = setupState.logs[0]
+    const summary = setupState.inputSummaryText(row)
+    expect(Array.from(summary)).toHaveLength(501)
+    expect(summary.endsWith('…')).toBe(true)
+
+    setupState.openInputDetail(row)
+    await flushPromises()
+
+    expect(setupState.inputDetailText).toBe(longCurrentInput)
+  })
+
   it('describes worker runtime as async audit and pre-block record processing', async () => {
     getStatus.mockResolvedValue({
       ...runtimeStatus(),
