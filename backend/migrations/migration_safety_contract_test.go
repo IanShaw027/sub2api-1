@@ -59,6 +59,11 @@ func TestUsageLogsRequestTypeCheckValidationRunsAfterNotValidAdd(t *testing.T) {
 			validateMigration: "185a_validate_usage_log_request_type_check.sql",
 			checkExpression:   "CHECK (REQUEST_TYPE IN (0, 1, 2, 3, 4, 5, 6, 7)) NOT VALID",
 		},
+		{
+			addMigration:      "191_restore_usage_request_type_cyber_value.sql",
+			validateMigration: "191a_validate_usage_log_request_type_check.sql",
+			checkExpression:   "CHECK (REQUEST_TYPE IN (0, 1, 2, 3, 4, 5, 6, 7, 8)) NOT VALID",
+		},
 	}
 
 	for _, tt := range tests {

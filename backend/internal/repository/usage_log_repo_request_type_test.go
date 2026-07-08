@@ -875,6 +875,18 @@ func TestBuildRequestTypeFilterConditionLegacyFallback(t *testing.T) {
 			wantArg:   int16(service.RequestTypeWSV2),
 		},
 		{
+			name:      "image_excludes_historical_cyber_rows",
+			request:   int16(service.RequestTypeImage),
+			wantWhere: "(request_type = $3 OR (request_type = 4 AND (image_count > 0 OR image_output_tokens > 0 OR billing_mode = 'image')))",
+			wantArg:   int16(service.RequestTypeImage),
+		},
+		{
+			name:      "cyber_includes_moved_alias_and_excludes_legacy_image_rows",
+			request:   int16(service.RequestTypeCyberBlocked),
+			wantWhere: "((request_type = $3 AND NOT (image_count > 0 OR image_output_tokens > 0 OR billing_mode = 'image')) OR request_type = 6)",
+			wantArg:   int16(service.RequestTypeCyberBlocked),
+		},
+		{
 			name:      "invalid_request_type_normalized_to_unknown",
 			request:   int16(99),
 			wantWhere: "request_type = $3",

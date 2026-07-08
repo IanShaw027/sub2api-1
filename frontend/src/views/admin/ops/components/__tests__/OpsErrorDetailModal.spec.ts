@@ -181,14 +181,14 @@ describe('OpsErrorDetailModal request races', () => {
     expect(wrapper.text()).not.toContain('loaded-request')
   })
 
-  it('labels cyber request_type rows', async () => {
+  it('labels canonical cyber request_type rows', async () => {
     getRequestErrorDetail.mockResolvedValueOnce({
       id: 6,
       created_at: '2026-05-24T00:00:00Z',
       request_id: 'cyber-request',
       status_code: 403,
       error_body: '{}',
-      request_type: 6,
+      request_type: 4,
       phase: 'request',
       type: 'cyber_policy_session_blocked',
       severity: 'error',
@@ -225,5 +225,49 @@ describe('OpsErrorDetailModal request races', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('admin.ops.errorDetail.requestTypeCyber')
+  })
+
+  it('labels image request_type rows after cyber value restoration', async () => {
+    getRequestErrorDetail.mockResolvedValueOnce({
+      id: 8,
+      created_at: '2026-05-24T00:00:00Z',
+      request_id: 'image-request',
+      status_code: 500,
+      error_body: '{}',
+      request_type: 8,
+      phase: 'request',
+      type: 'upstream_error',
+      severity: 'error',
+      error_owner: 'upstream',
+      error_source: 'upstream',
+      platform: 'openai',
+      model: 'gpt-image-1',
+      resolved: false,
+      client_request_id: 'image-request',
+      message: 'failed',
+    })
+    listRequestErrorUpstreamErrors.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 20,
+    })
+
+    const wrapper = mount(OpsErrorDetailModal, {
+      props: {
+        show: true,
+        errorId: 8,
+        errorType: 'request',
+      },
+      global: {
+        stubs: {
+          BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /></div>' },
+          Icon: { template: '<span />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.ops.errorDetail.requestTypeImage')
   })
 })

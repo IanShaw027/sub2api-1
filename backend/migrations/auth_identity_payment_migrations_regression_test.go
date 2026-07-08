@@ -275,6 +275,20 @@ func TestMigration189UpdatesOpsErrorRequestTypeComment(t *testing.T) {
 	require.Contains(t, sql, "7=video")
 }
 
+func TestMigration191RestoresHistoricalCyberRequestTypeValue(t *testing.T) {
+	content, err := FS.ReadFile("191_restore_usage_request_type_cyber_value.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "SET request_type = 8")
+	require.Contains(t, sql, "WHERE request_type = 4")
+	require.Contains(t, sql, "image_count > 0")
+	require.Contains(t, sql, "SET request_type = 4")
+	require.Contains(t, sql, "WHERE request_type = 6")
+	require.Contains(t, sql, "4=cyber")
+	require.Contains(t, sql, "8=image")
+}
+
 func TestMigration190ClearsNonGrokVideoGenerationConfig(t *testing.T) {
 	content, err := FS.ReadFile("190_clear_non_grok_video_generation_config.sql")
 	require.NoError(t, err)

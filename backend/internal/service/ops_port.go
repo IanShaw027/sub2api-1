@@ -95,7 +95,7 @@ type OpsInsertErrorLogInput struct {
 	RequestedModel string
 	// UpstreamModel is the actual model sent to upstream after mapping. Empty means no mapping.
 	UpstreamModel string
-	// RequestType is the granular request type: 0=unknown, 1=sync, 2=stream, 3=ws_v2, 4=image, 5=image_web_bridge, 6=cyber, 7=video.
+	// RequestType is the granular request type: 0=unknown, 1=sync, 2=stream, 3=ws_v2, 4=cyber, 5=image_web_bridge, 6=legacy_cyber_alias, 7=video, 8=image.
 	// Matches service.RequestType enum semantics from usage_log.go.
 	RequestType *int16
 	UserAgent   string

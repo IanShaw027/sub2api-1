@@ -23,3 +23,21 @@ func TestRequestTypeCyberBlocked(t *testing.T) {
 	require.Equal(t, RequestTypeCyberBlocked, u.RequestType)
 	require.True(t, u.Stream, "cyber 不应覆盖真实 stream 字段")
 }
+
+func TestRequestTypeNumericAssignmentsKeepHistoricalCyberValue(t *testing.T) {
+	require.Equal(t, int16(4), int16(RequestTypeCyberBlocked), "request_type=4 is already persisted as cyber in historical rows")
+	require.NotEqual(t, RequestTypeCyberBlocked, RequestTypeImage, "image must not reuse the historical cyber enum value")
+}
+
+func TestUsageLogEffectiveRequestTypeDisambiguatesLegacyImageRows(t *testing.T) {
+	billingMode := string(BillingModeImage)
+	inbound := "/v1/images/generations"
+	u := &UsageLog{
+		RequestType:       RequestTypeCyberBlocked, // raw historical value 4, reused by image during the collision window
+		BillingMode:       &billingMode,
+		InboundEndpoint:   &inbound,
+		ImageCount:        1,
+		ImageOutputTokens: 42,
+	}
+	require.Equal(t, RequestTypeImage, u.EffectiveRequestType())
+}

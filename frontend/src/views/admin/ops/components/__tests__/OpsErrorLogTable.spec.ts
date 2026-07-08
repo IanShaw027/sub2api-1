@@ -84,12 +84,28 @@ describe('OpsErrorLogTable user/api-key/account columns', () => {
     expect(wrapper.text()).toContain('common.unknown')
   })
 
-  it('labels cyber request_type rows', () => {
+  it('labels canonical cyber request_type rows', () => {
+    const wrapper = mountTable({
+      request_type: 4,
+    })
+
+    expect(wrapper.text()).toContain('admin.ops.errorLog.requestTypeCyber')
+  })
+
+  it('labels moved cyber alias request_type rows', () => {
     const wrapper = mountTable({
       request_type: 6,
     })
 
     expect(wrapper.text()).toContain('admin.ops.errorLog.requestTypeCyber')
+  })
+
+  it('labels image request_type rows after cyber value restoration', () => {
+    const wrapper = mountTable({
+      request_type: 8,
+    })
+
+    expect(wrapper.text()).toContain('admin.ops.errorLog.requestTypeImage')
   })
 })
 

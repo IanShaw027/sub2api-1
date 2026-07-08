@@ -18,15 +18,17 @@ const (
 	RequestTypeSync           RequestType = 1
 	RequestTypeStream         RequestType = 2
 	RequestTypeWSV2           RequestType = 3
-	RequestTypeImage          RequestType = 4
+	RequestTypeCyberBlocked   RequestType = 4 // cyber_policy 命中（透传但被上游安全策略拒绝）；历史持久化值，禁止复用
 	RequestTypeImageWebBridge RequestType = 5
-	RequestTypeCyberBlocked   RequestType = 6 // cyber_policy 命中（透传但被上游安全策略拒绝）
-	RequestTypeVideo          RequestType = 7
+	// RequestTypeCyberBlockedMoved 是曾短暂写入过的 cyber 值；读取/过滤时兼容，写入统一回 4。
+	RequestTypeCyberBlockedMoved RequestType = 6
+	RequestTypeVideo             RequestType = 7
+	RequestTypeImage             RequestType = 8
 )
 
 func (t RequestType) IsValid() bool {
 	switch t {
-	case RequestTypeUnknown, RequestTypeSync, RequestTypeStream, RequestTypeWSV2, RequestTypeImage, RequestTypeImageWebBridge, RequestTypeCyberBlocked, RequestTypeVideo:
+	case RequestTypeUnknown, RequestTypeSync, RequestTypeStream, RequestTypeWSV2, RequestTypeCyberBlocked, RequestTypeImageWebBridge, RequestTypeCyberBlockedMoved, RequestTypeVideo, RequestTypeImage:
 		return true
 	default:
 		return false
@@ -34,6 +36,9 @@ func (t RequestType) IsValid() bool {
 }
 
 func (t RequestType) Normalize() RequestType {
+	if t == RequestTypeCyberBlockedMoved {
+		return RequestTypeCyberBlocked
+	}
 	if t.IsValid() {
 		return t
 	}
@@ -218,10 +223,34 @@ func (u *UsageLog) EffectiveRequestType() RequestType {
 	if u == nil {
 		return RequestTypeUnknown
 	}
+	if u.RequestType == RequestTypeCyberBlocked && u.hasImageRequestEvidence() {
+		return RequestTypeImage
+	}
 	if normalized := u.RequestType.Normalize(); normalized != RequestTypeUnknown {
 		return normalized
 	}
 	return RequestTypeFromLegacy(u.Stream, u.OpenAIWSMode)
+}
+
+func (u *UsageLog) hasImageRequestEvidence() bool {
+	if u == nil {
+		return false
+	}
+	if u.ImageCount > 0 || u.ImageOutputTokens > 0 {
+		return true
+	}
+	if u.BillingMode != nil && strings.EqualFold(strings.TrimSpace(*u.BillingMode), string(BillingModeImage)) {
+		return true
+	}
+	return endpointLooksLikeImageRequest(u.InboundEndpoint) || endpointLooksLikeImageRequest(u.UpstreamEndpoint)
+}
+
+func endpointLooksLikeImageRequest(endpoint *string) bool {
+	if endpoint == nil {
+		return false
+	}
+	normalized := strings.ToLower(strings.TrimSpace(*endpoint))
+	return strings.Contains(normalized, "/images/") || strings.Contains(normalized, "/images2api/")
 }
 
 func (u *UsageLog) SyncRequestTypeAndLegacyFields() {

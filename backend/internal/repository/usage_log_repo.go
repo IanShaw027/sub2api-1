@@ -4797,9 +4797,17 @@ func buildRequestTypeFilterCondition(startArgIndex int, requestType int16) (stri
 		return fmt.Sprintf("(request_type = $%d OR (request_type = %d AND stream = TRUE AND openai_ws_mode = FALSE))", startArgIndex, int16(service.RequestTypeUnknown)), []any{requestTypeArg}
 	case service.RequestTypeWSV2:
 		return fmt.Sprintf("(request_type = $%d OR (request_type = %d AND openai_ws_mode = TRUE))", startArgIndex, int16(service.RequestTypeUnknown)), []any{requestTypeArg}
+	case service.RequestTypeImage:
+		return fmt.Sprintf("(request_type = $%d OR (request_type = %d AND %s))", startArgIndex, int16(service.RequestTypeCyberBlocked), legacyImageRequestTypeSQLPredicate()), []any{requestTypeArg}
+	case service.RequestTypeCyberBlocked:
+		return fmt.Sprintf("((request_type = $%d AND NOT %s) OR request_type = %d)", startArgIndex, legacyImageRequestTypeSQLPredicate(), int16(service.RequestTypeCyberBlockedMoved)), []any{requestTypeArg}
 	default:
 		return fmt.Sprintf("request_type = $%d", startArgIndex), []any{requestTypeArg}
 	}
+}
+
+func legacyImageRequestTypeSQLPredicate() string {
+	return "(image_count > 0 OR image_output_tokens > 0 OR billing_mode = 'image')"
 }
 
 func nullInt64(v *int64) sql.NullInt64 {

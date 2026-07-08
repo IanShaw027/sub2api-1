@@ -307,10 +307,11 @@ function formatRequestType(type: number | null | undefined): string {
     case 1: return t('admin.ops.errorLog.requestTypeSync')
     case 2: return t('admin.ops.errorLog.requestTypeStream')
     case 3: return t('admin.ops.errorLog.requestTypeWs')
-    case 4: return t('admin.ops.errorLog.requestTypeImage')
+    case 4: return t('admin.ops.errorLog.requestTypeCyber')
     case 5: return t('admin.ops.errorLog.requestTypeImageWebBridge')
     case 6: return t('admin.ops.errorLog.requestTypeCyber')
     case 7: return t('admin.ops.errorLog.requestTypeVideo')
+    case 8: return t('admin.ops.errorLog.requestTypeImage')
     default: return t('common.unknown')
   }
 }
