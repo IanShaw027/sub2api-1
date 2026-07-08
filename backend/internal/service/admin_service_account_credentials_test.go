@@ -314,3 +314,32 @@ func TestAdminServiceBulkUpdateKiroCredentialsUsesKiroMerge(t *testing.T) {
 	require.Equal(t, map[string]any{"claude-haiku-*": "claude-haiku-4.5"}, repo.updatedAccounts[0].Credentials["model_mapping"])
 	require.Empty(t, repo.bulkUpdateCreds)
 }
+
+func TestAdminServiceUpdateAccountProxyChangeClearsFallbackOrigin(t *testing.T) {
+	t.Parallel()
+
+	originID := int64(10)
+	oldProxyID := int64(11)
+	newProxyID := int64(12)
+	repo := &kiroDefaultAccountRepoStub{accountsByID: map[int64]*Account{
+		50: {
+			ID:                    50,
+			Name:                  "fallback-account",
+			Platform:              PlatformOpenAI,
+			Type:                  AccountTypeOAuth,
+			Status:                StatusActive,
+			ProxyID:               &oldProxyID,
+			ProxyFallbackOriginID: &originID,
+			Credentials:           map[string]any{},
+		},
+	}}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	updated, err := svc.UpdateAccount(context.Background(), 50, &UpdateAccountInput{ProxyID: &newProxyID})
+
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.Len(t, repo.updatedAccounts, 1)
+	require.Nil(t, repo.updatedAccounts[0].ProxyFallbackOriginID)
+	require.Nil(t, updated.ProxyFallbackOriginID)
+}

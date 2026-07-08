@@ -409,6 +409,11 @@ func (r *accountRepository) Update(ctx context.Context, account *service.Account
 	} else {
 		builder.ClearProxyID()
 	}
+	if account.ProxyFallbackOriginID != nil {
+		builder.SetProxyFallbackOriginID(*account.ProxyFallbackOriginID)
+	} else {
+		builder.ClearProxyFallbackOriginID()
+	}
 	if account.LastUsedAt != nil {
 		builder.SetLastUsedAt(*account.LastUsedAt)
 	} else {
@@ -1639,6 +1644,7 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 			args = append(args, *updates.ProxyID)
 			idx++
 		}
+		setClauses = append(setClauses, "proxy_fallback_origin_id = NULL")
 	}
 	if updates.Concurrency != nil {
 		setClauses = append(setClauses, "concurrency = $"+itoa(idx))

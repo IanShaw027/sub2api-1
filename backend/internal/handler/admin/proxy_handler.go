@@ -2,6 +2,8 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -206,11 +209,28 @@ func (h *ProxyHandler) Update(c *gin.Context) {
 		return
 	}
 
+	body, readErr := io.ReadAll(c.Request.Body)
+	if readErr != nil {
+		response.BadRequest(c, "Invalid request: "+readErr.Error())
+		return
+	}
+
 	var req UpdateProxyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := binding.JSON.BindBody(body, &req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	_, expiresAtSet := raw["expires_at"]
+	_, fallbackModeSet := raw["fallback_mode"]
+	_, backupProxyIDSet := raw["backup_proxy_id"]
+	_, expiryWarnDaysSet := raw["expiry_warn_days"]
 
 	var expiresAt *time.Time
 	if req.ExpiresAt != nil && *req.ExpiresAt > 0 {
@@ -218,17 +238,21 @@ func (h *ProxyHandler) Update(c *gin.Context) {
 		expiresAt = &t
 	}
 	proxy, err := h.adminService.UpdateProxy(c.Request.Context(), proxyID, &service.UpdateProxyInput{
-		Name:           strings.TrimSpace(req.Name),
-		Protocol:       strings.TrimSpace(req.Protocol),
-		Host:           strings.TrimSpace(req.Host),
-		Port:           req.Port,
-		Username:       strings.TrimSpace(req.Username),
-		Password:       strings.TrimSpace(req.Password),
-		Status:         strings.TrimSpace(req.Status),
-		ExpiresAt:      expiresAt,
-		FallbackMode:   strings.TrimSpace(req.FallbackMode),
-		BackupProxyID:  req.BackupProxyID,
-		ExpiryWarnDays: req.ExpiryWarnDays,
+		Name:              strings.TrimSpace(req.Name),
+		Protocol:          strings.TrimSpace(req.Protocol),
+		Host:              strings.TrimSpace(req.Host),
+		Port:              req.Port,
+		Username:          strings.TrimSpace(req.Username),
+		Password:          strings.TrimSpace(req.Password),
+		Status:            strings.TrimSpace(req.Status),
+		ExpiresAt:         expiresAt,
+		ExpiresAtSet:      expiresAtSet,
+		FallbackMode:      strings.TrimSpace(req.FallbackMode),
+		FallbackModeSet:   fallbackModeSet,
+		BackupProxyID:     req.BackupProxyID,
+		BackupProxyIDSet:  backupProxyIDSet,
+		ExpiryWarnDays:    req.ExpiryWarnDays,
+		ExpiryWarnDaysSet: expiryWarnDaysSet,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)

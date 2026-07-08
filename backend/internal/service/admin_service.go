@@ -486,17 +486,21 @@ type CreateProxyInput struct {
 }
 
 type UpdateProxyInput struct {
-	Name           string
-	Protocol       string
-	Host           string
-	Port           int
-	Username       string
-	Password       string
-	Status         string
-	ExpiresAt      *time.Time
-	FallbackMode   string
-	BackupProxyID  *int64
-	ExpiryWarnDays int
+	Name              string
+	Protocol          string
+	Host              string
+	Port              int
+	Username          string
+	Password          string
+	Status            string
+	ExpiresAt         *time.Time
+	ExpiresAtSet      bool
+	FallbackMode      string
+	FallbackModeSet   bool
+	BackupProxyID     *int64
+	BackupProxyIDSet  bool
+	ExpiryWarnDays    int
+	ExpiryWarnDaysSet bool
 }
 
 type GenerateRedeemCodesInput struct {
@@ -3420,12 +3424,14 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	// 影子代理恒继承母账号(由 propagateProxyToShadows 同步),不接受独立编辑——外审 B/P1;
 	// 否则要等母账号下次改 proxy 才被覆盖,期间影子会出现"有时继承、有时独立"的漂移。
 	if input.ProxyID != nil && !account.IsCredentialShadow() {
-		// 0 表示清除代理（前端发送 0 而不是 null 来表达清除意图）
+		// 0 表示清除代理（前端发送 0 而不是 null 来表达清除意图）。
+		// 手动 proxy 变更代表管理员接管该账号，应退出过期代理 fallback 状态，避免后续“恢复原代理”误回滚。
 		if *input.ProxyID == 0 {
 			account.ProxyID = nil
 		} else {
 			account.ProxyID = input.ProxyID
 		}
+		account.ProxyFallbackOriginID = nil
 		account.Proxy = nil // 清除关联对象，防止 GORM Save 时根据 Proxy.ID 覆盖 ProxyID
 	}
 	// 只在指针非 nil 时更新 Concurrency（支持设置为 0）
@@ -3806,6 +3812,7 @@ func applyBulkUpdateInputToAccount(account *Account, input *BulkUpdateAccountsIn
 		} else {
 			account.ProxyID = input.ProxyID
 		}
+		account.ProxyFallbackOriginID = nil
 	}
 	if input.Concurrency != nil {
 		account.Concurrency = *input.Concurrency
@@ -4192,6 +4199,7 @@ func propagateAccountProxyToShadows(ctx context.Context, repo AccountRepository,
 	}
 	for _, shadow := range shadows {
 		shadow.ProxyID = proxyID
+		shadow.ProxyFallbackOriginID = nil
 		if err := repo.Update(ctx, shadow); err != nil {
 			return fmt.Errorf("update spark shadow %d proxy: %w", shadow.ID, err)
 		}
@@ -4276,26 +4284,34 @@ func (s *adminServiceImpl) CreateProxy(ctx context.Context, input *CreateProxyIn
 }
 
 func (s *adminServiceImpl) UpdateProxy(ctx context.Context, id int64, input *UpdateProxyInput) (*Proxy, error) {
-	// 校验：backup_proxy_id 不能是自身
-	if input.BackupProxyID != nil && *input.BackupProxyID == id {
-		return nil, infraerrors.BadRequest("PROXY_BACKUP_SELF", "backup proxy cannot be itself")
-	}
-	// 规范化 fallback_mode
-	mode := input.FallbackMode
-	if mode == "" {
-		mode = FallbackModeNone
-	}
-	// 校验：mode=proxy 必须有 backup
-	if mode == FallbackModeProxy && input.BackupProxyID == nil {
-		return nil, infraerrors.BadRequest("PROXY_BACKUP_REQUIRED", "backup proxy required when fallback_mode=proxy")
-	}
-	if input.ExpiryWarnDays < 0 {
-		return nil, infraerrors.BadRequest("PROXY_WARN_DAYS_INVALID", "expiry_warn_days must be >= 0")
-	}
-
 	proxy, err := s.proxyRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+
+	if input.ExpiryWarnDaysSet && input.ExpiryWarnDays < 0 {
+		return nil, infraerrors.BadRequest("PROXY_WARN_DAYS_INVALID", "expiry_warn_days must be >= 0")
+	}
+
+	effectiveMode := proxy.FallbackMode
+	if effectiveMode == "" {
+		effectiveMode = FallbackModeNone
+	}
+	if input.FallbackModeSet {
+		effectiveMode = input.FallbackMode
+		if effectiveMode == "" {
+			effectiveMode = FallbackModeNone
+		}
+	}
+	effectiveBackupProxyID := proxy.BackupProxyID
+	if input.BackupProxyIDSet {
+		effectiveBackupProxyID = input.BackupProxyID
+	}
+	if effectiveBackupProxyID != nil && *effectiveBackupProxyID == id {
+		return nil, infraerrors.BadRequest("PROXY_BACKUP_SELF", "backup proxy cannot be itself")
+	}
+	if effectiveMode == FallbackModeProxy && effectiveBackupProxyID == nil {
+		return nil, infraerrors.BadRequest("PROXY_BACKUP_REQUIRED", "backup proxy required when fallback_mode=proxy")
 	}
 
 	if input.Name != "" {
@@ -4319,11 +4335,18 @@ func (s *adminServiceImpl) UpdateProxy(ctx context.Context, id int64, input *Upd
 	if input.Status != "" {
 		proxy.Status = input.Status
 	}
-	// 透传有效期与回退字段
-	proxy.ExpiresAt = input.ExpiresAt
-	proxy.FallbackMode = mode
-	proxy.BackupProxyID = input.BackupProxyID
-	proxy.ExpiryWarnDays = input.ExpiryWarnDays
+	if input.ExpiresAtSet {
+		proxy.ExpiresAt = input.ExpiresAt
+	}
+	if input.FallbackModeSet {
+		proxy.FallbackMode = effectiveMode
+	}
+	if input.BackupProxyIDSet {
+		proxy.BackupProxyID = effectiveBackupProxyID
+	}
+	if input.ExpiryWarnDaysSet {
+		proxy.ExpiryWarnDays = input.ExpiryWarnDays
+	}
 
 	if err := s.proxyRepo.Update(ctx, proxy); err != nil {
 		return nil, err

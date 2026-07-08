@@ -306,3 +306,13 @@ func TestAdminServiceBulkUpdateAccounts_ResolvesIDsFromFilters(t *testing.T) {
 	require.Equal(t, 0, result.Failed)
 	require.Equal(t, []int64{7, 11}, result.SuccessIDs)
 }
+
+func TestApplyBulkUpdateInputToAccountProxyChangeClearsFallbackOrigin(t *testing.T) {
+	originID := int64(10)
+	newProxyID := int64(20)
+	account := &Account{ProxyFallbackOriginID: &originID}
+
+	applyBulkUpdateInputToAccount(account, &BulkUpdateAccountsInput{ProxyID: &newProxyID})
+
+	require.Nil(t, account.ProxyFallbackOriginID)
+}
