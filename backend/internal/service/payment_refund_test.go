@@ -1867,10 +1867,13 @@ func TestQueryAndFinalizeRefundFinalizesProviderStatuses(t *testing.T) {
 			svc := &PaymentService{
 				entClient:    client,
 				loadBalancer: &captureLoadBalancer{},
-				userRepo: &mockUserRepo{deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
-					deducted += amount
-					return nil
-				}},
+				userRepo: &mockUserRepo{
+					getByIDUser: &User{ID: order.UserID, Balance: 100},
+					deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
+						deducted += amount
+						return nil
+					},
+				},
 			}
 			restore := replacePaymentProviderFactoryForTest(t, &refundQueryProviderTestDouble{
 				refundResponse: &payment.RefundResponse{RefundID: "rf_test", Status: tc.status},
@@ -1899,10 +1902,13 @@ func TestQueryAndFinalizeRefundUsesPendingAuditAmountWithoutDoubling(t *testing.
 	svc := &PaymentService{
 		entClient:    client,
 		loadBalancer: &captureLoadBalancer{},
-		userRepo: &mockUserRepo{deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
-			deducted += amount
-			return nil
-		}},
+		userRepo: &mockUserRepo{
+			getByIDUser: &User{ID: order.UserID, Balance: 100},
+			deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
+				deducted += amount
+				return nil
+			},
+		},
 	}
 	queryProvider := &refundQueryProviderTestDouble{
 		refundResponse: &payment.RefundResponse{RefundID: "rf_test", Status: payment.ProviderStatusSuccess},
@@ -1928,6 +1934,36 @@ func TestQueryAndFinalizeRefundUsesPendingAuditAmountWithoutDoubling(t *testing.
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusRefunded, reloaded.Status)
 	require.Equal(t, 100.0, reloaded.RefundAmount)
+}
+
+func TestQueryAndFinalizeRefundCapsBalanceDeductionToCurrentBalance(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	order := createPendingRefundOrderForTest(t, ctx, client, "query-finalize-balance-cap")
+
+	var deducted float64
+	svc := &PaymentService{
+		entClient:    client,
+		loadBalancer: &captureLoadBalancer{},
+		userRepo: &mockUserRepo{
+			getByIDUser: &User{ID: order.UserID, Balance: 10},
+			deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
+				deducted += amount
+				return nil
+			},
+		},
+	}
+	restore := replacePaymentProviderFactoryForTest(t, &refundQueryProviderTestDouble{
+		refundResponse: &payment.RefundResponse{RefundID: "rf_test", Status: payment.ProviderStatusSuccess},
+	})
+	defer restore()
+
+	result, err := svc.QueryAndFinalizeRefund(ctx, order.ID)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Success)
+	require.Equal(t, 10.0, deducted)
+	require.Equal(t, 10.0, result.BalanceDeducted)
 }
 
 func TestQueryAndFinalizeRefundAddsOnlyPendingAmountToExistingRefund(t *testing.T) {
@@ -1958,10 +1994,13 @@ func TestQueryAndFinalizeRefundAddsOnlyPendingAmountToExistingRefund(t *testing.
 	svc := &PaymentService{
 		entClient:    client,
 		loadBalancer: &captureLoadBalancer{},
-		userRepo: &mockUserRepo{deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
-			deducted += amount
-			return nil
-		}},
+		userRepo: &mockUserRepo{
+			getByIDUser: &User{ID: order.UserID, Balance: 20},
+			deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
+				deducted += amount
+				return nil
+			},
+		},
 	}
 	restore := replacePaymentProviderFactoryForTest(t, &refundQueryProviderTestDouble{
 		refundResponse: &payment.RefundResponse{RefundID: "rf_second", Status: payment.ProviderStatusSuccess},
@@ -1989,10 +2028,13 @@ func TestQueryAndFinalizeRefundRestoresPendingWhenFinalDeductionFails(t *testing
 	svc := &PaymentService{
 		entClient:    client,
 		loadBalancer: &captureLoadBalancer{},
-		userRepo: &mockUserRepo{deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
-			deducted += amount
-			return deductErr
-		}},
+		userRepo: &mockUserRepo{
+			getByIDUser: &User{ID: order.UserID, Balance: 100},
+			deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
+				deducted += amount
+				return deductErr
+			},
+		},
 	}
 	restore := replacePaymentProviderFactoryForTest(t, &refundQueryProviderTestDouble{
 		refundResponse: &payment.RefundResponse{RefundID: "rf_test", Status: payment.ProviderStatusSuccess},
@@ -2029,6 +2071,7 @@ func TestQueryAndFinalizeRefundRestoresPendingWhenRefundPersistFailsAfterDeducti
 		entClient:    client,
 		loadBalancer: &captureLoadBalancer{},
 		userRepo: &mockUserRepo{
+			getByIDUser: &User{ID: order.UserID, Balance: 100},
 			deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
 				deducted += amount
 				return nil

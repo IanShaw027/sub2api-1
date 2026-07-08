@@ -699,7 +699,9 @@ func (s *PaymentService) QueryAndFinalizeRefund(ctx context.Context, oid int64) 
 	if !pendingDetail.DeductionRollbackOK {
 		plan.BalanceToDeduct = 0
 		plan.SubDaysToDeduct = 0
-	} else if o.OrderType == payment.OrderTypeSubscription {
+	} else {
+		plan.BalanceToDeduct = 0
+		plan.SubDaysToDeduct = 0
 		if early := s.prepDeduct(ctx, o, plan, true); early != nil {
 			return early, nil
 		}

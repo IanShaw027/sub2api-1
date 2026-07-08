@@ -108,6 +108,14 @@ type ModelPricing struct {
 	ImageOutputPriceExplicit       bool    // 是否由渠道定价显式设定（为 true 时即使 == 0 也不回退）
 }
 
+func cloneModelPricing(pricing *ModelPricing) *ModelPricing {
+	if pricing == nil {
+		return nil
+	}
+	cloned := *pricing
+	return &cloned
+}
+
 const (
 	openAIGPT54LongContextInputThreshold   = 272000
 	openAIGPT54LongContextInputMultiplier  = 2.0
@@ -123,6 +131,18 @@ func usePriorityServiceTierPricing(serviceTier string, pricing *ModelPricing) bo
 		return false
 	}
 	return pricing.InputPricePerTokenPriority > 0 || pricing.OutputPricePerTokenPriority > 0 || pricing.CacheReadPricePerTokenPriority > 0
+}
+
+func clearPriorityServiceTierPricing(pricing *ModelPricing) {
+	if pricing == nil {
+		return
+	}
+	// Channel pricing expresses the normal resolved unit price. Until channels
+	// grow explicit priority-tier fields, leaving/copying priority prices here
+	// would suppress serviceTierCostMultiplier("priority") and under-bill fast.
+	pricing.InputPricePerTokenPriority = 0
+	pricing.OutputPricePerTokenPriority = 0
+	pricing.CacheReadPricePerTokenPriority = 0
 }
 
 func serviceTierCostMultiplier(serviceTier string) float64 {
@@ -840,7 +860,7 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 		if _, seen := s.fallbackWarnSeen.LoadOrStore(model, struct{}{}); !seen {
 			log.Printf("[Billing] Using fallback pricing for model: %s", model)
 		}
-		return s.applyModelSpecificPricingPolicy(model, fallback), nil
+		return s.applyModelSpecificPricingPolicy(model, cloneModelPricing(fallback)), nil
 	}
 
 	return nil, fmt.Errorf("%w for model: %s", ErrModelPricingUnavailable, model)
@@ -858,11 +878,9 @@ func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing
 	}
 	if channelPricing.InputPrice != nil {
 		pricing.InputPricePerToken = *channelPricing.InputPrice
-		pricing.InputPricePerTokenPriority = *channelPricing.InputPrice
 	}
 	if channelPricing.OutputPrice != nil {
 		pricing.OutputPricePerToken = *channelPricing.OutputPrice
-		pricing.OutputPricePerTokenPriority = *channelPricing.OutputPrice
 	}
 	if channelPricing.CacheWritePrice != nil {
 		pricing.CacheCreationPricePerToken = *channelPricing.CacheWritePrice
@@ -871,8 +889,8 @@ func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing
 	}
 	if channelPricing.CacheReadPrice != nil {
 		pricing.CacheReadPricePerToken = *channelPricing.CacheReadPrice
-		pricing.CacheReadPricePerTokenPriority = *channelPricing.CacheReadPrice
 	}
+	clearPriorityServiceTierPricing(pricing)
 	if channelPricing.ImageOutputPrice != nil {
 		pricing.ImageOutputPricePerToken = *channelPricing.ImageOutputPrice
 	} else {
@@ -971,6 +989,7 @@ func (s *BillingService) computeTokenBreakdown(
 	cacheReadPrice := pricing.CacheReadPricePerToken
 	cacheCreationMultiplier := 1.0
 	tierMultiplier := 1.0
+	uncoveredPriorityMultiplier := 1.0
 
 	if usePriorityServiceTierPricing(serviceTier, pricing) {
 		if pricing.InputPricePerTokenPriority > 0 {
@@ -982,6 +1001,7 @@ func (s *BillingService) computeTokenBreakdown(
 		if pricing.CacheReadPricePerTokenPriority > 0 {
 			cacheReadPrice = pricing.CacheReadPricePerTokenPriority
 		}
+		uncoveredPriorityMultiplier = serviceTierCostMultiplier(serviceTier)
 	} else {
 		tierMultiplier = serviceTierCostMultiplier(serviceTier)
 	}
@@ -997,6 +1017,7 @@ func (s *BillingService) computeTokenBreakdown(
 		// 的倍率修改，因此显式向下传一个倍率，避免长上下文场景下被漏乘。
 		cacheCreationMultiplier = pricing.LongContextInputMultiplier
 	}
+	cacheCreationMultiplier *= uncoveredPriorityMultiplier
 
 	bd := &CostBreakdown{}
 	// 分离图片输入 token 与文本输入 token（多模态 embedding 等图文不同价场景）。
@@ -1012,6 +1033,8 @@ func (s *BillingService) computeTokenBreakdown(
 		if imageInputPrice == 0 {
 			// 未配置图片输入档时回退到文本 input 价（已含 priority / 长上下文调整）
 			imageInputPrice = inputPrice
+		} else {
+			imageInputPrice *= uncoveredPriorityMultiplier
 		}
 		bd.InputCost = float64(textInputTokens)*inputPrice + float64(imageInputTokens)*imageInputPrice
 	} else {
@@ -1030,6 +1053,8 @@ func (s *BillingService) computeTokenBreakdown(
 		imgPrice := pricing.ImageOutputPricePerToken
 		if imgPrice == 0 && !pricing.ImageOutputPriceExplicit {
 			imgPrice = outputPrice
+		} else {
+			imgPrice *= uncoveredPriorityMultiplier
 		}
 		bd.ImageOutputCost = float64(tokens.ImageOutputTokens) * imgPrice
 	}
