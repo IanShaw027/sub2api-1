@@ -85,6 +85,16 @@ describe('PlatformTypeBadge', () => {
     expect(wrapper.text()).toContain('AI Studio Pay-as-you-go')
   })
 
+  it('shows Grok subscription tier labels in the platform/type badge', () => {
+    const superWrapper = mountBadge({ platform: 'grok', type: 'oauth', planType: 'supergrok' })
+    const heavyWrapper = mountBadge({ platform: 'grok', type: 'oauth', planType: 'Heavy' })
+    const freeWrapper = mountBadge({ platform: 'grok', type: 'oauth', planType: 'free' })
+
+    expect(superWrapper.text()).toContain('SuperGrok')
+    expect(heavyWrapper.text()).toContain('Heavy')
+    expect(freeWrapper.text()).toContain('Free')
+  })
+
   it('marks OpenAI team leaders in platform type badges', () => {
     const wrapper = mountBadge({
       platform: 'openai',

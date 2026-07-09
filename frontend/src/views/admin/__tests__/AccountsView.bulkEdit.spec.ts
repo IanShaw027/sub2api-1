@@ -451,6 +451,37 @@ describe('admin AccountsView bulk edit scope', () => {
     expect(nameCells[2].text()).not.toContain('(personal)')
   })
 
+  it('passes Grok subscription tier from quota snapshot to the platform/type badge', async () => {
+    listAccounts.mockResolvedValueOnce({
+      items: [
+        {
+          id: 77,
+          name: 'Grok Owner',
+          platform: 'grok',
+          type: 'oauth',
+          status: 'active',
+          schedulable: true,
+          credentials: {},
+          extra: {
+            grok_usage_snapshot: {
+              subscription_tier: 'supergrok'
+            }
+          }
+        }
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountAccountsView()
+    await flushPromises()
+
+    const badge = wrapper.get('[data-test="row-77"] [data-test="platform-type-badge"]')
+    expect(badge.attributes('data-plan-type')).toBe('supergrok')
+  })
+
   it('limits account name cell width and exposes full text via title', async () => {
     const longName = 'Gemini account name '.repeat(30).trim()
     listAccounts.mockResolvedValueOnce({

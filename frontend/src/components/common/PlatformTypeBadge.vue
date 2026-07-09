@@ -182,6 +182,20 @@ const planLabel = computed(() => {
     }
   }
   const lower = props.planType.toLowerCase()
+  if (props.platform === 'grok') {
+    switch (lower.replace(/[\s_-]+/g, '')) {
+      case 'supergrok':
+        return 'SuperGrok'
+      case 'supergrokheavy':
+        return 'SuperGrok Heavy'
+      case 'heavy':
+        return 'Heavy'
+      case 'free':
+        return 'Free'
+      default:
+        return props.planType
+    }
+  }
   switch (lower) {
     case 'plus':
       return 'Plus'
@@ -246,6 +260,18 @@ const typeClass = computed(() => {
 const planBadgeClass = computed(() => {
   if (props.planType && props.planType.toLowerCase() === 'abnormal') {
     return 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+  }
+  if (props.platform === 'grok' && props.planType) {
+    const normalized = props.planType.trim().toLowerCase().replace(/[\s_-]+/g, '')
+    if (normalized === 'free') {
+      return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+    }
+    if (normalized.includes('heavy')) {
+      return 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300'
+    }
+    if (normalized.includes('supergrok')) {
+      return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
+    }
   }
   if (props.platform === 'gemini' && geminiTier.value) {
     switch (geminiTier.value) {

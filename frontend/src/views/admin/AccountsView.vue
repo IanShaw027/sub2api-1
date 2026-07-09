@@ -1441,6 +1441,16 @@ function getPlatformBadgePlanType(row: any): string | undefined {
   if (row?.platform === 'openai' && row?.parent_account_id != null) {
     return row?.parent_plan_type || row?.credentials?.plan_type
   }
+  if (row?.platform === 'grok') {
+    const candidates = [
+      row?.extra?.grok_usage_snapshot?.subscription_tier,
+      row?.credentials?.subscription_tier,
+      row?.extra?.subscription_tier,
+      row?.credentials?.plan_type
+    ]
+    const tier = candidates.find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    return tier?.trim() || undefined
+  }
   if (row?.platform === 'gemini') {
     const normalizedTier = collectGeminiTierMetadataSources(
       (row?.credentials || {}) as Record<string, unknown>,
