@@ -11,13 +11,14 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
 
 const (
 	grokQuotaUpstreamTimeout = 20 * time.Second
 	grokQuotaProbeInput      = "."
-	grokQuotaDefaultModel    = "grok-4.3"
+	grokQuotaDefaultModel    = xai.DefaultTextModel
 )
 
 type GrokQuotaProbeResult struct {
@@ -36,10 +37,11 @@ type GrokQuotaResetResult struct {
 }
 
 type GrokQuotaService struct {
-	accountRepo   AccountRepository
-	proxyRepo     ProxyRepository
-	tokenProvider *GrokTokenProvider
-	httpUpstream  HTTPUpstream
+	accountRepo         AccountRepository
+	proxyRepo           ProxyRepository
+	tokenProvider       *GrokTokenProvider
+	httpUpstream        HTTPUpstream
+	tlsFPProfileService *TLSFingerprintProfileService
 }
 
 func NewGrokQuotaService(
@@ -53,6 +55,12 @@ func NewGrokQuotaService(
 		proxyRepo:     proxyRepo,
 		tokenProvider: tokenProvider,
 		httpUpstream:  httpUpstream,
+	}
+}
+
+func (s *GrokQuotaService) SetTLSFingerprintProfileService(profileService *TLSFingerprintProfileService) {
+	if s != nil {
+		s.tlsFPProfileService = profileService
 	}
 }
 
@@ -81,23 +89,32 @@ func (s *GrokQuotaService) ProbeUsage(ctx context.Context, accountID int64) (*Gr
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "sub2api-grok-quota-probe/1.0")
+	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 
-	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, maxInt(account.Concurrency, 1))
+	var tlsProfile = (*tlsfingerprint.Profile)(nil)
+	if s.tlsFPProfileService != nil {
+		tlsProfile = s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http")
+	}
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, maxInt(account.Concurrency, 1), tlsProfile)
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusBadGateway, "GROK_QUOTA_PROBE_REQUEST_FAILED", "upstream probe failed: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	snapshot := xai.ObserveQuotaHeaders(resp.Header, resp.StatusCode, "active_probe")
-	_ = s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
-		grokQuotaSnapshotExtraKey: snapshot,
-	})
+	// Only overwrite the durable quota snapshot when rate-limit headers were
+	// actually observed. Empty probes must not wipe prior Retry-After / remaining.
+	if snapshot != nil && snapshot.HeadersObserved {
+		_ = s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
+			grokQuotaSnapshotExtraKey: snapshot,
+		})
+	}
 
 	result := &GrokQuotaProbeResult{
 		Source:          "active_probe",
 		Snapshot:        snapshot,
 		StatusCode:      resp.StatusCode,
-		HeadersObserved: snapshot.HeadersObserved,
+		HeadersObserved: snapshot != nil && snapshot.HeadersObserved,
 		ResetSupported:  false,
 		FetchedAt:       time.Now().Unix(),
 	}
@@ -179,7 +196,9 @@ func buildGrokQuotaProbeBody(account *Account) ([]byte, error) {
 	model := grokQuotaDefaultModel
 	if account != nil {
 		if mapped := strings.TrimSpace(account.GetMappedModel("grok")); mapped != "" {
-			model = mapped
+			if xai.IsGrokTextResponsesModelID(mapped) {
+				model = mapped
+			}
 		}
 	}
 	return json.Marshal(map[string]any{

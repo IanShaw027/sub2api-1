@@ -565,11 +565,21 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown:  false,
 	}
 
-	// xAI Grok 4.3 / 4.20 series (per https://docs.x.ai/developers/pricing : $1.25/$2.50 per M tokens)
+	// xAI Grok 4.5 (per https://docs.x.ai/docs/models : $2.00/$6.00 per M tokens, cached $0.50, 500k context)
+	s.fallbackPrices["grok-4.5"] = &ModelPricing{
+		InputPricePerToken:         2e-6,   // $2.00 per MTok
+		OutputPricePerToken:        6e-6,   // $6.00 per MTok
+		CacheReadPricePerToken:     0.5e-6, // $0.50 per MTok (cached input)
+		SupportsCacheBreakdown:     false,
+		LongContextInputThreshold:  500000,
+		LongContextInputMultiplier: 1,
+	}
+
+	// xAI Grok 4.3 / 4.20 series (per https://docs.x.ai/developers/models : $1.25/$2.50, cached $0.20)
 	s.fallbackPrices["grok-4.3"] = &ModelPricing{
-		InputPricePerToken:         1.25e-6,
-		OutputPricePerToken:        2.5e-6,
-		CacheReadPricePerToken:     0,
+		InputPricePerToken:         1.25e-6, // $1.25 per MTok
+		OutputPricePerToken:        2.5e-6,  // $2.50 per MTok
+		CacheReadPricePerToken:     0.2e-6,  // $0.20 per MTok (cached input)
 		SupportsCacheBreakdown:     false,
 		LongContextInputThreshold:  1000000,
 		LongContextInputMultiplier: 1,
@@ -579,10 +589,11 @@ func (s *BillingService) initFallbackPricing() {
 	s.fallbackPrices["grok-4.20-0309-non-reasoning"] = s.fallbackPrices["grok-4.3"]
 	s.fallbackPrices["grok-4.20-multi-agent-0309"] = s.fallbackPrices["grok-4.3"]
 
-	// xAI Grok Build 0.1 (per official: $1.00 / $2.00)
+	// xAI Grok Build 0.1 (per official: $1.00 / $2.00, cached $0.20)
 	s.fallbackPrices["grok-build-0.1"] = &ModelPricing{
-		InputPricePerToken:     1e-6,
-		OutputPricePerToken:    2e-6,
+		InputPricePerToken:     1e-6,   // $1.00 per MTok
+		OutputPricePerToken:    2e-6,   // $2.00 per MTok
+		CacheReadPricePerToken: 0.2e-6, // $0.20 per MTok (cached input)
 		SupportsCacheBreakdown: false,
 	}
 }
@@ -761,17 +772,41 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		}
 	}
 
+	// xAI Grok text models: whitelist only known families / aliases.
+	// Do NOT catch-all grok* — Imagine media models must not inherit text token rates.
 	switch modelLower {
-	case "grok", "grok-latest", "grok-4.3":
+	case "grok", "grok-latest", "grok-4.5", "grok-4.5-latest":
+		return s.fallbackPrices["grok-4.5"]
+	case "grok-4.3", "grok-4.3-latest":
 		return s.fallbackPrices["grok-4.3"]
-	case "grok-build", "grok-build-0.1":
+	case "grok-build", "grok-build-0.1", "grok-code-fast", "grok-code-fast-1", "grok-code-fast-1-0825":
 		return s.fallbackPrices["grok-build-0.1"]
+	case "grok-4.20-0309-reasoning", "grok-4.20-reasoning":
+		return s.fallbackPrices["grok-4.20-0309-reasoning"]
+	case "grok-4.20-0309-non-reasoning", "grok-4.20-non-reasoning":
+		return s.fallbackPrices["grok-4.20-0309-non-reasoning"]
+	case "grok-4.20-multi-agent-0309":
+		return s.fallbackPrices["grok-4.20-multi-agent-0309"]
 	}
 
+	// Grok 4.5 family (including future dated/aliased variants)
+	if strings.Contains(modelLower, "grok-4.5") {
+		return s.fallbackPrices["grok-4.5"]
+	}
+	// Grok 4.3 family (dated variants)
+	if strings.Contains(modelLower, "grok-4.3") {
+		return s.fallbackPrices["grok-4.3"]
+	}
 	// Grok 4.20 series (all share grok-4.3 pricing per official)
 	if strings.Contains(modelLower, "grok-4.20") {
 		return s.fallbackPrices["grok-4.3"]
 	}
+	// Grok Build / code-fast family
+	if strings.Contains(modelLower, "grok-build") || strings.Contains(modelLower, "grok-code-fast") {
+		return s.fallbackPrices["grok-build-0.1"]
+	}
+	// grok-imagine-* and any other unknown grok-* → nil so media/token callers
+	// use image-video pricing paths instead of silent text overcharge.
 
 	return nil
 }
@@ -1392,6 +1427,14 @@ func (s *BillingService) getImageUnitPrice(model string, imageSize string, group
 	return s.getDefaultImagePrice(model, imageSize)
 }
 
+// Official xAI Imagine list prices (https://docs.x.ai/docs/models).
+const (
+	grokImagineImageQualityPricePerImage = 0.05 // grok-imagine-image-quality
+	grokImagineImageFastPricePerImage    = 0.02 // grok-imagine-image
+	grokImagineVideoPricePerSecond       = 0.05 // grok-imagine-video
+	grokImagineVideo15PricePerSecond     = 0.08 // grok-imagine-video-1.5
+)
+
 // getDefaultImagePrice 获取 LiteLLM 默认图片价格
 func (s *BillingService) getDefaultImagePrice(model string, imageSize string) float64 {
 	basePrice := 0.0
@@ -1404,9 +1447,21 @@ func (s *BillingService) getDefaultImagePrice(model string, imageSize string) fl
 		}
 	}
 
+	// Grok Imagine: official flat per-image rates (prefer over Gemini default).
+	if basePrice <= 0 {
+		if p := getGrokImagineDefaultImagePrice(model); p > 0 {
+			basePrice = p
+		}
+	}
+
 	// 如果没有找到价格，使用硬编码默认值（$0.134，来自 gemini-3-pro-image-preview）
 	if basePrice <= 0 {
 		basePrice = 0.134
+	}
+
+	// Official Grok Imagine is flat per image regardless of resolution tier.
+	if isGrokImagineImageModel(model) {
+		return basePrice
 	}
 
 	// 2K 尺寸 1.5 倍，4K 尺寸翻倍
@@ -1420,16 +1475,54 @@ func (s *BillingService) getDefaultImagePrice(model string, imageSize string) fl
 	return basePrice
 }
 
+func isGrokImagineImageModel(model string) bool {
+	m := strings.ToLower(strings.TrimSpace(model))
+	if m == "" {
+		return false
+	}
+	// Aliases (grok-imagine, grok-imagine-1, grok-imagine-edit) bill as quality.
+	if strings.HasPrefix(m, "grok-imagine-image") ||
+		m == "grok-imagine" || m == "grok-imagine-1" || m == "grok-imagine-edit" {
+		return true
+	}
+	return false
+}
+
+// getGrokImagineDefaultImagePrice returns official flat per-image price, or 0 if not an Imagine image model.
+// Official list: quality $0.05/image, fast (grok-imagine-image) $0.02/image; aliases bill as quality.
+func getGrokImagineDefaultImagePrice(model string) float64 {
+	m := strings.ToLower(strings.TrimSpace(model))
+	if m == "" || strings.Contains(m, "video") {
+		return 0
+	}
+	switch {
+	case m == "grok-imagine-image":
+		return grokImagineImageFastPricePerImage
+	case strings.HasPrefix(m, "grok-imagine-image-quality"),
+		m == "grok-imagine", m == "grok-imagine-1", m == "grok-imagine-edit",
+		strings.HasPrefix(m, "grok-imagine-image"),
+		strings.HasPrefix(m, "grok-imagine"):
+		return grokImagineImageQualityPricePerImage
+	default:
+		return 0
+	}
+}
+
 // CalculateVideoCost calculates video generation cost from group per-second pricing.
-func (s *BillingService) CalculateVideoCost(videoSize string, seconds int, videoCount int, groupConfig *VideoPriceConfig, rateMultiplier float64) *CostBreakdown {
+// Optional modelOptional[0] enables catalog / Grok Imagine defaults when group config is absent.
+func (s *BillingService) CalculateVideoCost(videoSize string, seconds int, videoCount int, groupConfig *VideoPriceConfig, rateMultiplier float64, modelOptional ...string) *CostBreakdown {
 	if seconds <= 0 {
 		return &CostBreakdown{}
 	}
 	if videoCount <= 0 {
 		videoCount = 1
 	}
+	model := ""
+	if len(modelOptional) > 0 {
+		model = modelOptional[0]
+	}
 	sizeTier := NormalizeVideoBillingTierOrDefault(videoSize)
-	unitPrice := getVideoUnitPrice(sizeTier, groupConfig)
+	unitPrice := s.getVideoUnitPrice(model, sizeTier, groupConfig)
 	totalCost := unitPrice * float64(seconds) * float64(videoCount)
 	if rateMultiplier < 0 {
 		rateMultiplier = 0
@@ -1442,37 +1535,59 @@ func (s *BillingService) CalculateVideoCost(videoSize string, seconds int, video
 	}
 }
 
-func getVideoUnitPrice(sizeTier string, groupConfig *VideoPriceConfig) float64 {
-	if groupConfig == nil {
-		return 0
-	}
-	var price *float64
-	switch NormalizeVideoBillingTierOrDefault(sizeTier) {
-	case VideoBillingTier480p:
-		price = groupConfig.Price480p
-	case VideoBillingTier720p:
-		price = groupConfig.Price720p
-	case VideoBillingTier1080p:
-		price = groupConfig.Price1080p
-	case VideoBillingTier4K:
-		price = groupConfig.Price4K
-	default:
-		price = groupConfig.Price720p
-	}
-	if price == nil {
-		// Fallback to highest non-nil defined price (avoid 0 for 4K or missing tier per report)
-		for _, p := range []*float64{groupConfig.Price4K, groupConfig.Price1080p, groupConfig.Price720p, groupConfig.Price480p} {
-			if p != nil {
-				price = p
-				log.Printf("[Billing] video price tier %s not configured, falling back to highest configured tier", sizeTier)
-				break
+func (s *BillingService) getVideoUnitPrice(model string, sizeTier string, groupConfig *VideoPriceConfig) float64 {
+	if groupConfig != nil {
+		var price *float64
+		switch NormalizeVideoBillingTierOrDefault(sizeTier) {
+		case VideoBillingTier480p:
+			price = groupConfig.Price480p
+		case VideoBillingTier720p:
+			price = groupConfig.Price720p
+		case VideoBillingTier1080p:
+			price = groupConfig.Price1080p
+		case VideoBillingTier4K:
+			price = groupConfig.Price4K
+		default:
+			price = groupConfig.Price720p
+		}
+		if price == nil {
+			// Fallback to highest non-nil defined price (avoid 0 for 4K or missing tier per report)
+			for _, p := range []*float64{groupConfig.Price4K, groupConfig.Price1080p, groupConfig.Price720p, groupConfig.Price480p} {
+				if p != nil {
+					price = p
+					log.Printf("[Billing] video price tier %s not configured, falling back to highest configured tier", sizeTier)
+					break
+				}
 			}
 		}
+		if price != nil {
+			return *price
+		}
 	}
-	if price == nil {
+	return s.getDefaultVideoPricePerSecond(model)
+}
+
+// getDefaultVideoPricePerSecond resolves catalog / hard-coded Grok Imagine per-second rates.
+func (s *BillingService) getDefaultVideoPricePerSecond(model string) float64 {
+	if s.pricingService != nil {
+		if pricing := s.pricingService.GetModelPricing(model); pricing != nil && pricing.OutputCostPerSecond > 0 {
+			return pricing.OutputCostPerSecond
+		}
+	}
+	return getGrokImagineDefaultVideoPricePerSecond(model)
+}
+
+func getGrokImagineDefaultVideoPricePerSecond(model string) float64 {
+	m := strings.ToLower(strings.TrimSpace(model))
+	switch {
+	case m == "grok-imagine-video-1.5" || strings.Contains(m, "video-1.5") || m == "grok-video-1.5":
+		return grokImagineVideo15PricePerSecond
+	case m == "grok-imagine-video" || m == "grok-video" || m == "grok-video-latest" ||
+		strings.HasPrefix(m, "grok-imagine-video") || strings.HasPrefix(m, "grok-video"):
+		return grokImagineVideoPricePerSecond
+	default:
 		return 0
 	}
-	return *price
 }
 
 // --- Grok / explicit non-text pricing (image/audio/search) ---

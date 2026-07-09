@@ -1601,7 +1601,7 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 		return
 	}
 
-	selected, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), groupID, "", "grok-4.3", nil, "", 0)
+	selected, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), groupID, "", xai.DefaultTextModel, nil, "", 0)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
 			"type":    "scheduling_error",
@@ -1739,7 +1739,7 @@ func (h *GatewayHandler) doGrokNativeWebSearch(ctx context.Context, c *gin.Conte
 	// Build a minimal responses request that triggers Grok web search tool.
 	// Grok will perform the search using its backend and return sources in web_search_call or annotations.
 	searchBody := map[string]any{
-		"model":  "grok-4.3",
+		"model":  xai.DefaultTextModel,
 		"input":  query,
 		"tools":  []map[string]any{{"type": "web_search"}},
 		"store":  false,

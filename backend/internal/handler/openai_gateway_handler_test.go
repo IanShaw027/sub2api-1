@@ -731,8 +731,10 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 				Platform: service.PlatformGrok,
 			},
 		}
-		require.Equal(t, "grok-4.3", resolveOpenAIMessagesDispatchMappedModel(apiKey, "claude-sonnet-4-5"))
+		require.Equal(t, "grok-4.5", resolveOpenAIMessagesDispatchMappedModel(apiKey, "claude-sonnet-4-5"))
+		// Native Grok models are not rewritten by messages dispatch.
 		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(apiKey, "grok"))
+		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(apiKey, "grok-4.5"))
 	})
 
 	t.Run("does_not_fall_back_to_group_default_mapped_model", func(t *testing.T) {

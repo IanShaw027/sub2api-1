@@ -52,7 +52,13 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 		writeAnthropicCountTokensError(c, http.StatusServiceUnavailable, "api_error", "No available OpenAI accounts")
 		return fmt.Errorf("count_tokens: missing account")
 	}
-	if account.IsGrok() || (account.Type != AccountTypeAPIKey && account.Type != AccountTypeOAuth) {
+	// Grok has no /responses/input_tokens style counter on xAI; fail closed with a
+	// clear not-supported error (route still reaches here for Grok groups).
+	if account.IsGrok() {
+		writeAnthropicCountTokensError(c, http.StatusNotFound, "not_found_error", "Token counting is not supported for Grok groups; use text endpoints directly")
+		return nil
+	}
+	if account.Type != AccountTypeAPIKey && account.Type != AccountTypeOAuth {
 		writeAnthropicCountTokensError(c, http.StatusNotFound, "not_found_error", "Token counting is not supported for this OpenAI account type")
 		return nil
 	}

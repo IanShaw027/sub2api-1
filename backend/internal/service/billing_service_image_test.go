@@ -163,3 +163,25 @@ func TestGetDefaultImagePrice_FallbackHardcoded(t *testing.T) {
 	cost = svc.CalculateImageCost("gemini-3-pro-image", "2K", 1, nil, 1.0)
 	require.InDelta(t, 0.201, cost.TotalCost, 0.0001)
 }
+
+// TestCalculateImageCost_GrokImagineNoGeminiFallback 确保 Imagine 不用 Gemini $0.134 默认价
+func TestCalculateImageCost_GrokImagineNoGeminiFallback(t *testing.T) {
+	svc := &BillingService{}
+
+	cost := svc.CalculateImageCost("grok-imagine-image-quality", "1K", 1, nil, 1.0)
+	require.InDelta(t, 0.05, cost.TotalCost, 1e-12)
+
+	cost = svc.CalculateImageCost("grok-imagine-image", "4K", 1, nil, 1.0)
+	require.InDelta(t, 0.02, cost.TotalCost, 1e-12) // flat, not *2
+}
+
+// TestCalculateVideoCost_GrokImagineDefaultPerSecond 无分组配置时使用官方每秒价
+func TestCalculateVideoCost_GrokImagineDefaultPerSecond(t *testing.T) {
+	svc := &BillingService{}
+
+	cost := svc.CalculateVideoCost("720p", 8, 1, nil, 1.0, "grok-imagine-video")
+	require.InDelta(t, 0.40, cost.TotalCost, 1e-12)
+
+	cost = svc.CalculateVideoCost("720p", 8, 1, nil, 1.0, "grok-imagine-video-1.5")
+	require.InDelta(t, 0.64, cost.TotalCost, 1e-12)
+}

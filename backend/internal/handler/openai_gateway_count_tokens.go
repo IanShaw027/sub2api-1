@@ -24,6 +24,15 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		return
 	}
 
+	// Pure Grok groups have no /responses/input_tokens capability (accounts hard-return
+	// false for ResponsesInputTokens). Fail closed with an intentional not_found before
+	// scheduler selection can surface a misleading capacity/503 error.
+	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformGrok {
+		h.anthropicErrorResponse(c, http.StatusNotFound, "not_found_error",
+			"Token counting is not supported for Grok groups; use text endpoints directly")
+		return
+	}
+
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
 		h.anthropicErrorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
@@ -37,7 +46,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		zap.Any("group_id", apiKey.GroupID),
 	)
 
-	if apiKey.Group != nil && !apiKey.Group.AllowMessagesDispatch {
+	if !allowOpenAICompatibleMessagesDispatch(apiKey) {
 		h.anthropicErrorResponse(c, http.StatusForbidden, "permission_error",
 			"This group does not allow /v1/messages dispatch")
 		return

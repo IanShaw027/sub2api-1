@@ -148,8 +148,11 @@ func ProvideGrokQuotaService(
 	proxyRepo ProxyRepository,
 	tokenProvider *GrokTokenProvider,
 	httpUpstream HTTPUpstream,
+	tlsFPProfileService *TLSFingerprintProfileService,
 ) *GrokQuotaService {
-	return NewGrokQuotaService(accountRepo, proxyRepo, tokenProvider, httpUpstream)
+	svc := NewGrokQuotaService(accountRepo, proxyRepo, tokenProvider, httpUpstream)
+	svc.SetTLSFingerprintProfileService(tlsFPProfileService)
+	return svc
 }
 
 // ProvideGeminiTokenProvider creates GeminiTokenProvider with OAuthRefreshAPI injection
@@ -770,6 +773,7 @@ func ProvideGatewayService(
 	balanceNotifyService *BalanceNotifyService,
 	kiroTokenProvider *KiroTokenProvider,
 	kiroGatewayService *KiroGatewayService,
+	grokTokenProvider *GrokTokenProvider,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 	fingerprintNormalizer *FingerprintNormalizer,
 ) *GatewayService {
@@ -804,6 +808,7 @@ func ProvideGatewayService(
 		fingerprintNormalizer,
 	)
 	svc.SetKiroDeps(kiroTokenProvider, kiroGatewayService)
+	svc.SetGrokTokenProvider(grokTokenProvider)
 	return svc
 }
 

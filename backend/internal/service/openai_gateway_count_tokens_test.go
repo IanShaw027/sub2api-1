@@ -160,6 +160,34 @@ func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_OAuthFallsBackWhenPl
 	}
 }
 
+func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_GrokReturnsNotSupported(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"grok","messages":[{"role":"user","content":"hi"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", bytes.NewReader(body))
+
+	upstream := &httpUpstreamRecorder{}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:       303,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "tok",
+		},
+	}
+
+	err := svc.ForwardCountTokensAsAnthropic(context.Background(), c, account, body, "grok-4.5")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Contains(t, rec.Body.String(), "not_found_error")
+	require.Contains(t, rec.Body.String(), "Token counting is not supported for Grok groups")
+	require.NotContains(t, strings.ToLower(rec.Body.String()), "no available")
+	require.Nil(t, upstream.lastReq, "Grok count_tokens must not call upstream input_tokens")
+}
+
 func TestOpenAIEndpointURL_ResponsesInputTokensBaseAlreadyAtResponses(t *testing.T) {
 	require.Equal(t,
 		"http://upstream.example/v1/responses/input_tokens",

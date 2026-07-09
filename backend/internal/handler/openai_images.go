@@ -672,6 +672,13 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		// keep client path, ForwardVideos will handle relative to base
 	}
 
+	// Sticky session: GET status/content reuses the account that created the job.
+	// POST generations bind the account after we learn request_id from the response.
+	sessionHash := ""
+	if videoJobID := service.ExtractGrokVideoRequestIDFromPath(c.Request.URL.Path); videoJobID != "" {
+		sessionHash = service.GrokMediaVideoRequestSessionHash(videoJobID)
+	}
+
 	failedAccountIDs := make(map[int64]struct{})
 	var lastFailoverErr *service.UpstreamFailoverError
 	var lastFailoverAccount *service.Account
@@ -688,7 +695,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			c.Request.Context(),
 			apiKey.GroupID,
 			"",
-			"",
+			sessionHash,
 			model,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportHTTPSSE, // or sync
@@ -734,7 +741,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 
-		accountReleaseFunc, acquireStatus := h.acquireResponsesAccountSlot(c, apiKey.GroupID, apiKey.ID, "", "", selection, false, &streamStarted, reqLog)
+		accountReleaseFunc, acquireStatus := h.acquireResponsesAccountSlot(c, apiKey.GroupID, apiKey.ID, sessionHash, "", selection, false, &streamStarted, reqLog)
 		if acquireStatus == accountSlotAcquireRetry {
 			failedAccountIDs[account.ID] = struct{}{}
 			continue
@@ -781,6 +788,16 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		}
 
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
+		// Pin POST generations to this account so subsequent GET /videos/{id} polls stick.
+		if result != nil && strings.TrimSpace(result.ResponseID) != "" {
+			if bindErr := h.gatewayService.BindGrokMediaVideoRequestAccount(c.Request.Context(), apiKey.GroupID, result.ResponseID, account.ID); bindErr != nil {
+				reqLog.Warn("openai.videos.bind_sticky_failed",
+					zap.Int64("account_id", account.ID),
+					zap.String("response_id", result.ResponseID),
+					zap.Error(bindErr),
+				)
+			}
+		}
 		if service.OpenAIForwardResultHasVideoBillingForUsage(result) {
 			userAgent := c.GetHeader("User-Agent")
 			clientIP := ip.GetClientIP(c)

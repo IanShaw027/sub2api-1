@@ -2483,6 +2483,17 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 
 	modified := false
 	validTools := make([]any, 0, len(tools))
+	hasDeferredTool := false
+	for _, tool := range tools {
+		toolMap, ok := tool.(map[string]any)
+		if !ok || toolMap == nil {
+			continue
+		}
+		if v, _ := toolMap["defer_loading"].(bool); v {
+			hasDeferredTool = true
+			break
+		}
+	}
 	sanitizeToolName := func(toolMap map[string]any) {
 		if toolMap == nil {
 			return
@@ -2545,9 +2556,16 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 		toolType, _ := toolMap["type"].(string)
 		toolType = strings.TrimSpace(toolType)
 		if isCodexUnsupportedWebSearchPreviewToolType(toolType) {
-			toolMap["type"] = "tool_search"
 			modified = true
+			if !hasDeferredTool {
+				continue
+			}
+			toolMap["type"] = "tool_search"
 			validTools = append(validTools, toolMap)
+			continue
+		}
+		if toolType == "tool_search" && !hasDeferredTool {
+			modified = true
 			continue
 		}
 		if toolType == "" || strings.EqualFold(toolType, "none") || strings.EqualFold(toolType, "null") {

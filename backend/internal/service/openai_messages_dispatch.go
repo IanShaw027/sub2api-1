@@ -106,8 +106,17 @@ func (g *Group) ResolveMessagesDispatchModelWithSource(requestedModel string) (s
 		return "", false
 	}
 	if g.Platform == PlatformGrok {
-		if claudeMessagesDispatchFamily(strings.TrimSpace(requestedModel)) != "" {
-			return xai.DefaultModelMapping()["grok"], false
+		requestedModel = strings.TrimSpace(requestedModel)
+		// Native Grok models pass through without rewrite so clients can pick any grok-*.
+		if xai.IsGrokModelID(requestedModel) {
+			return "", false
+		}
+		// Claude Code default model names map onto the current Grok text default.
+		// Intentionally fixed (not group-configurable): Grok groups always enable
+		// /v1/messages and map all Claude families to DefaultTextModel. Per-family
+		// overrides remain an OpenAI-group feature.
+		if claudeMessagesDispatchFamily(requestedModel) != "" {
+			return xai.DefaultTextModel, false
 		}
 		return "", false
 	}

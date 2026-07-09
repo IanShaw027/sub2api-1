@@ -2366,8 +2366,8 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 
 	// Handle Grok accounts
 	if account.Platform == service.PlatformGrok {
-		defaultModels := xai.DefaultModels()
-		mapping := account.GetModelMapping()
+		defaultModels := grokAvailableDefaultModels()
+		mapping := explicitAccountModelMapping(account.Credentials)
 		if len(mapping) == 0 {
 			response.Success(c, defaultModels)
 			return
@@ -2441,6 +2441,69 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	}
 
 	response.Success(c, models)
+}
+
+func explicitAccountModelMapping(credentials map[string]any) map[string]string {
+	if credentials == nil {
+		return nil
+	}
+	switch raw := credentials["model_mapping"].(type) {
+	case map[string]any:
+		if len(raw) == 0 {
+			return nil
+		}
+		out := make(map[string]string, len(raw))
+		for k, v := range raw {
+			if s, ok := v.(string); ok {
+				out[k] = s
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case map[string]string:
+		if len(raw) == 0 {
+			return nil
+		}
+		out := make(map[string]string, len(raw))
+		for k, v := range raw {
+			out[k] = v
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func grokAvailableDefaultModels() []xai.Model {
+	models := xai.DefaultModels()
+	seen := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		seen[model.ID] = struct{}{}
+	}
+	aliases := make([]string, 0)
+	for alias := range xai.DefaultModelMapping() {
+		if !strings.HasPrefix(alias, "grok") {
+			continue
+		}
+		if _, ok := seen[alias]; ok {
+			continue
+		}
+		seen[alias] = struct{}{}
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	for _, alias := range aliases {
+		models = append(models, xai.Model{
+			ID:          alias,
+			Object:      "model",
+			Type:        "model",
+			OwnedBy:     "xai",
+			DisplayName: alias,
+		})
+	}
+	return models
 }
 
 // SyncUpstreamModels handles syncing live supported models from an account's upstream.

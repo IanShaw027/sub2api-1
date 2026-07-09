@@ -325,12 +325,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		oauthReqBody = reqBody
 	}
 
-	// For API key accounts (including OpenAI-compatible upstream gateways),
-	// ensure promptCacheKey is also propagated via the request body so that
-	// upstreams using the Responses API can derive a stable session identifier
-	// from prompt_cache_key. This makes our Anthropic /v1/messages compatibility
-	// path behave more like a native Responses client.
-	if account.Type == AccountTypeAPIKey {
+	// For API key accounts (including OpenAI-compatible upstream gateways) and
+	// Grok OAuth subscription accounts, ensure promptCacheKey is also propagated
+	// via the request body so upstream Responses can derive a stable session id.
+	// This keeps Anthropic /v1/messages (Claude Code) multi-turn sticky on Grok.
+	if account.Type == AccountTypeAPIKey || account.Platform == PlatformGrok {
 		if trimmedKey := strings.TrimSpace(promptCacheKey); trimmedKey != "" {
 			var reqBody map[string]any
 			if err := json.Unmarshal(responsesBody, &reqBody); err != nil {
@@ -385,7 +384,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 
 	// Override session_id with a deterministic UUID derived from the isolated
 	// session key, ensuring different API keys produce different upstream sessions.
-	if account.Type == AccountTypeAPIKey && promptCacheKey != "" {
+	// Grok OAuth Claude Code traffic also needs isolation so concurrent keys do
+	// not share xAI session state.
+	if (account.Type == AccountTypeAPIKey || account.Platform == PlatformGrok) && promptCacheKey != "" {
 		apiKeyID := getAPIKeyIDFromContext(c)
 		upstreamReq.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, promptCacheKey)))
 	}

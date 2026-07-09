@@ -95,6 +95,7 @@ type LiteLLMModelPricing struct {
 	SupportsPromptCaching               bool    `json:"supports_prompt_caching"`
 	OutputCostPerImage                  float64 `json:"output_cost_per_image"`       // 图片生成模型每张图片价格
 	OutputCostPerImageToken             float64 `json:"output_cost_per_image_token"` // 图片输出 token 价格
+	OutputCostPerSecond                 float64 `json:"output_cost_per_second"`      // 视频生成模型每秒价格
 }
 
 // PricingRemoteClient 远程价格数据获取接口
@@ -119,6 +120,7 @@ type LiteLLMRawEntry struct {
 	SupportsPromptCaching               bool     `json:"supports_prompt_caching"`
 	OutputCostPerImage                  *float64 `json:"output_cost_per_image"`
 	OutputCostPerImageToken             *float64 `json:"output_cost_per_image_token"`
+	OutputCostPerSecond                 *float64 `json:"output_cost_per_second"`
 }
 
 // PricingService 动态价格服务
@@ -436,6 +438,9 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 		if entry.OutputCostPerImageToken != nil {
 			pricing.OutputCostPerImageToken = *entry.OutputCostPerImageToken
 		}
+		if entry.OutputCostPerSecond != nil {
+			pricing.OutputCostPerSecond = *entry.OutputCostPerSecond
+		}
 
 		result[modelName] = pricing
 	}
@@ -624,6 +629,10 @@ func (s *PricingService) buildModelLookupCandidates(modelLower string) []string 
 		lastSegment(modelLower),
 		lastSegment(strings.TrimPrefix(modelLower, "models/")),
 	)
+	canonical := candidates[0]
+	if strings.HasPrefix(canonical, "grok") {
+		candidates = append(candidates, "xai/"+canonical)
+	}
 
 	seen := make(map[string]struct{}, len(candidates))
 	out := make([]string, 0, len(candidates))

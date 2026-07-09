@@ -3,6 +3,7 @@ package routes
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -265,8 +266,13 @@ func TestGatewayRoutesGrokAllowsCLICompatibilityEntrypoints(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
+	// Grok groups fail closed for count_tokens (no xAI input_tokens endpoint).
+	// Must be intentional not_found, not a misleading capacity/503 selection error.
 	require.Equal(t, http.StatusNotFound, w.Code)
-	require.Contains(t, w.Body.String(), "Token counting is not supported for this platform")
+	require.Contains(t, w.Body.String(), "not_found_error")
+	require.Contains(t, w.Body.String(), "Token counting is not supported for Grok groups")
+	require.NotContains(t, strings.ToLower(w.Body.String()), "no available")
+	require.NotContains(t, strings.ToLower(w.Body.String()), "capacity")
 
 	for _, path := range []string{
 		"/v1/responses",
@@ -305,6 +311,18 @@ func TestGatewayRoutesVideoAndWebSearchRejectUnsupportedPlatforms(t *testing.T) 
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "method=%s path=%s should be platform-gated", tc.method, tc.path)
 	}
+}
+
+func TestGatewayRoutesGrokCountTokensDocsMatchUnsupportedBehavior(t *testing.T) {
+	readme, err := os.ReadFile("../../../../README.md")
+	require.NoError(t, err)
+	readmeCN, err := os.ReadFile("../../../../README_CN.md")
+	require.NoError(t, err)
+
+	require.Contains(t, string(readme), "Grok groups do not support `/v1/messages/count_tokens`")
+	require.NotContains(t, string(readme), "Public Claude-compatible targets: `/v1/messages` and `/v1/messages/count_tokens`")
+	require.Contains(t, string(readmeCN), "Grok 分组不支持 `count_tokens`")
+	require.NotContains(t, string(readmeCN), "`/v1/messages`（含 `count_tokens`）")
 }
 
 func TestGatewayRoutesOpenAICountTokensPathIsRegistered(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
 
 const compatPromptCacheKeyPrefix = "compat_cc_"
@@ -12,7 +13,11 @@ const compatAnthropicPromptCacheKeyPrefix = "compat_msg_"
 const anthropicCachePromptCacheKeyPrefix = "anthropic-cache-"
 
 func shouldAutoInjectPromptCacheKeyForCompat(model string) bool {
-	return ResolveOpenAIModelCapabilities(model).SupportsCompatPromptCacheKey
+	if ResolveOpenAIModelCapabilities(model).SupportsCompatPromptCacheKey {
+		return true
+	}
+	// Grok Claude Code / Codex bridges also benefit from stable session keys.
+	return xai.IsGrokModelID(model)
 }
 
 func deriveCompatPromptCacheKey(req *apicompat.ChatCompletionsRequest, mappedModel string) string {

@@ -408,12 +408,30 @@ func (s *AccountTestService) testGrokAccountConnection(c *gin.Context, account *
 
 	testModelID := strings.TrimSpace(modelID)
 	if testModelID == "" {
-		testModelID = "grok-4.3"
+		testModelID = xai.DefaultTextModel
 	}
 	setAccountTestOpsModelIfMissing(c, testModelID)
-	upstreamModel := account.GetMappedModel(testModelID)
-	if strings.TrimSpace(upstreamModel) == "" {
-		upstreamModel = testModelID
+	if isGrokImageTestModel(testModelID) {
+		// Imagine image is subscription OAuth only; apikey accounts are text-only.
+		if !account.SupportsOpenAIImageCapability(OpenAIImagesCapabilityNative) {
+			return s.sendErrorAndEnd(c, "Grok image tests require an OAuth subscription account (Imagine is OAuth-only)")
+		}
+		imagePrompt := strings.TrimSpace(prompt)
+		if imagePrompt == "" {
+			imagePrompt = defaultOpenAIImageTestPrompt
+		}
+		return s.testGrokImageConnection(c, ctx, account, testModelID, imagePrompt)
+	}
+	if isGrokVideoTestModel(testModelID) {
+		// Imagine video is subscription OAuth only; apikey accounts are text-only.
+		if !account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityVideos) {
+			return s.sendErrorAndEnd(c, "Grok video tests require an OAuth subscription account (Imagine is OAuth-only)")
+		}
+		videoPrompt := strings.TrimSpace(prompt)
+		if videoPrompt == "" {
+			videoPrompt = defaultOpenAIImageTestPrompt
+		}
+		return s.testGrokVideoConnection(c, ctx, account, testModelID, videoPrompt)
 	}
 
 	var authToken string
@@ -444,13 +462,144 @@ func (s *AccountTestService) testGrokAccountConnection(c *gin.Context, account *
 		c,
 		ctx,
 		account,
-		upstreamModel,
+		testModelID,
 		prompt,
 		authToken,
 		account.GetGrokBaseURL(),
 		"grok",
 		true,
 	)
+}
+
+func isGrokImageTestModel(model string) bool {
+	normalized := normalizeGrokMediaModelForEndpoint(GrokMediaEndpointImagesGenerations, model)
+	return strings.HasPrefix(strings.ToLower(normalized), "grok-imagine-image")
+}
+
+func isGrokVideoTestModel(model string) bool {
+	normalized := normalizeGrokMediaModelForEndpoint(GrokMediaEndpointVideosGenerations, model)
+	return strings.HasPrefix(strings.ToLower(normalized), "grok-imagine-video")
+}
+
+func (s *AccountTestService) testGrokImageConnection(c *gin.Context, ctx context.Context, account *Account, modelID string, prompt string) error {
+	payload := map[string]any{
+		"model":           modelID,
+		"prompt":          prompt,
+		"n":               1,
+		"response_format": "b64_json",
+	}
+	payloadBytes, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(payloadBytes)).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: modelID})
+
+	gateway := &OpenAIGatewayService{
+		accountRepo:           s.accountRepo,
+		cfg:                   s.cfg,
+		httpUpstream:          s.httpUpstream,
+		grokTokenProvider:     s.grokTokenProvider,
+		tlsFPProfileService:   s.tlsFPProfileService,
+		responseHeaderFilter:  compileResponseHeaderFilter(s.cfg),
+		fingerprintNormalizer: nil,
+	}
+	mediaRec := httptest.NewRecorder()
+	mediaCtx, _ := gin.CreateTestContext(mediaRec)
+	mediaCtx.Request = req
+	if _, err := gateway.ForwardGrokMedia(ctx, mediaCtx, account, GrokMediaEndpointImagesGenerations, "", payloadBytes, "application/json"); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok Images API request failed: %s", err.Error()))
+	}
+
+	images, err := collectOpenAIImageTestResults(mediaRec.Body.Bytes())
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to parse Grok image response: %s", err.Error()))
+	}
+	if len(images) == 0 {
+		return s.sendErrorAndEnd(c, "No images returned from Grok Images API")
+	}
+	hasImageBytes := false
+	for _, item := range images {
+		mimeType := openAIImageOutputMIMEType(item.OutputFormat)
+		if item.RevisedPrompt != "" {
+			s.sendEvent(c, TestEvent{Type: "content", Text: item.RevisedPrompt})
+		}
+		imageURL := strings.TrimSpace(item.URL)
+		if imageURL == "" && strings.TrimSpace(item.B64JSON) != "" {
+			imageURL = "data:" + mimeType + ";base64," + item.B64JSON
+		}
+		if imageURL != "" {
+			hasImageBytes = true
+			s.sendEvent(c, TestEvent{Type: "image", ImageURL: imageURL, MimeType: mimeType})
+		}
+	}
+	// ImageCount may be inflated to ≥1 on HTTP 200 even without image payload;
+	// require at least one concrete url or b64_json before declaring success.
+	if !hasImageBytes {
+		return s.sendErrorAndEnd(c, "No image url/b64_json returned from Grok Images API")
+	}
+
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	return nil
+}
+
+func (s *AccountTestService) testGrokVideoConnection(c *gin.Context, ctx context.Context, account *Account, modelID string, prompt string) error {
+	payload := map[string]any{
+		"model":  modelID,
+		"prompt": prompt,
+		"n":      1,
+	}
+	payloadBytes, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/videos/generations", bytes.NewReader(payloadBytes)).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: modelID})
+
+	gateway := &OpenAIGatewayService{
+		accountRepo:          s.accountRepo,
+		cfg:                  s.cfg,
+		httpUpstream:         s.httpUpstream,
+		grokTokenProvider:    s.grokTokenProvider,
+		tlsFPProfileService:  s.tlsFPProfileService,
+		responseHeaderFilter: compileResponseHeaderFilter(s.cfg),
+	}
+	mediaRec := httptest.NewRecorder()
+	mediaCtx, _ := gin.CreateTestContext(mediaRec)
+	mediaCtx.Request = req
+	result, err := gateway.ForwardGrokMedia(ctx, mediaCtx, account, GrokMediaEndpointVideosGenerations, "", payloadBytes, "application/json")
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok Videos API request failed: %s", err.Error()))
+	}
+
+	// VideoCount may be inflated to ≥1 on HTTP 200 even without a job id;
+	// require a non-empty request/job id before declaring success.
+	responseID := ""
+	if result != nil {
+		responseID = strings.TrimSpace(result.ResponseID)
+	}
+	if responseID == "" {
+		responseID = extractGrokMediaVideoRequestID(mediaRec.Body.Bytes())
+	}
+	if responseID == "" {
+		return s.sendErrorAndEnd(c, "No video request/job id returned from Grok Videos API")
+	}
+	s.sendEvent(c, TestEvent{Type: "content", Text: fmt.Sprintf("Grok video request accepted: %s", responseID)})
+
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	return nil
 }
 
 func (s *AccountTestService) reconcileGrokTestState(ctx context.Context, account *Account, statusCode int, headers http.Header) {

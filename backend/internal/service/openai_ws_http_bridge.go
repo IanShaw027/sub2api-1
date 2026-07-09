@@ -180,15 +180,19 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 	var upstreamReq *http.Request
 	if account.Platform == PlatformGrok {
+		// Match HTTP Grok Responses: never silently drop image_generation tools.
+		if err := rejectGrokUnsupportedImageGenerationTools(body); err != nil {
+			releaseUpstreamCtx()
+			_ = writeClientMessage(buildOpenAIWSHTTPBridgeErrorEvent(http.StatusBadRequest, err.Error()))
+			return nil, err
+		}
 		upstreamModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
 		if originalModel != "" {
 			if mappedModel := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(originalModel)); mappedModel != "" {
 				upstreamModel = mappedModel
 			}
 		}
-		if upstreamModel == "" {
-			upstreamModel = "grok-4.3"
-		}
+		upstreamModel = xai.ResolveDefaultTextModel(upstreamModel)
 		body, err = patchGrokResponsesBody(body, upstreamModel)
 		if err != nil {
 			releaseUpstreamCtx()

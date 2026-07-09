@@ -15,6 +15,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/cespare/xxhash/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -48,6 +49,18 @@ type ttftCooldownAccountRepoStub struct {
 
 type openAISettingRepoStub struct {
 	values map[string]string
+}
+
+type openAIGatewayServiceRecordUsageBestEffortLogRepo struct {
+	UsageLogRepository
+	calls   int
+	lastLog *UsageLog
+}
+
+func (r *openAIGatewayServiceRecordUsageBestEffortLogRepo) CreateBestEffort(_ context.Context, log *UsageLog) error {
+	r.calls++
+	r.lastLog = log
+	return nil
 }
 
 func (s *openAISettingRepoStub) Get(ctx context.Context, key string) (*Setting, error) {
@@ -4103,6 +4116,192 @@ func TestOpenAIForwardStreamingResponseCountsResponsesSearchCalls(t *testing.T) 
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, result.SearchCount)
+}
+
+func TestForwardGrokResponsesSetsBillingModelToUpstreamModelForMappedText(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-5.5","stream":false,"input":"hi"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "Xai-Request-Id": []string{"xai-req-billing-model"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"resp_billing_model","model":"grok-4.5","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":1000,"output_tokens":100}}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID:          1051,
+		Name:        "grok",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "access-token",
+			"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+	}
+
+	result, err := svc.forwardGrokResponses(context.Background(), c, account, body, "gpt-5.5", false, time.Now())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "gpt-5.5", result.Model)
+	require.Equal(t, "grok-4.5", result.UpstreamModel)
+	require.Equal(t, "grok-4.5", result.BillingModel)
+}
+
+func TestOpenAIGatewayRecordUsageGrokTextHonorsExplicitUpstreamBillingModel(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Default.RateMultiplier = 1
+	cfg.RunMode = config.RunModeSimple
+	usageRepo := &openAIGatewayServiceRecordUsageBestEffortLogRepo{}
+	svc := &OpenAIGatewayService{
+		cfg:             cfg,
+		billingService:  NewBillingService(cfg, nil),
+		usageLogRepo:    usageRepo,
+		deferredService: &DeferredService{},
+	}
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:     "grok_text_explicit_billing_model",
+			Model:         "gpt-5.5",
+			UpstreamModel: "grok-4.5",
+			BillingModel:  "grok-4.5",
+			Usage: OpenAIUsage{
+				InputTokens:  1000,
+				OutputTokens: 100,
+			},
+			Duration: time.Second,
+		},
+		APIKey: &APIKey{ID: 2051},
+		User:   &User{ID: 3051},
+		Account: &Account{
+			ID:       4051,
+			Platform: PlatformGrok,
+		},
+		ChannelUsageFields: ChannelUsageFields{
+			OriginalModel: "gpt-5.5",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, "gpt-5.5", usageRepo.lastLog.RequestedModel)
+	require.NotNil(t, usageRepo.lastLog.UpstreamModel)
+	require.Equal(t, "grok-4.5", *usageRepo.lastLog.UpstreamModel)
+	require.False(t, usageRepo.lastLog.BilledByHigherPricedUpstream)
+	require.InDelta(t, 0.0026, usageRepo.lastLog.TotalCost, 1e-12)
+}
+
+func TestCalculateOpenAIVideoRequestCostGrokImagineUsesDefaultPriceWithoutGroupVideoPrice(t *testing.T) {
+	svc := &OpenAIGatewayService{billingService: NewBillingService(nil, nil)}
+	groupID := int64(9051)
+	result := &OpenAIForwardResult{
+		Model:         "gpt-5.5",
+		UpstreamModel: "grok-imagine-video",
+		BillingModel:  "grok-imagine-video",
+		VideoSize:     "720p",
+		VideoSeconds:  8,
+		VideoCount:    1,
+	}
+
+	breakdown, err := svc.calculateOpenAIRecordUsageCost(
+		context.Background(),
+		result,
+		&APIKey{GroupID: &groupID, Group: &Group{ID: groupID}},
+		result.BillingModel,
+		1,
+		1,
+		UsageTokens{},
+		"",
+		RequestTypeUnknown,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, breakdown)
+	require.Equal(t, "video", breakdown.BillingMode)
+	require.InDelta(t, 0.40, breakdown.TotalCost, 1e-12)
+}
+
+func TestForwardGrokResponsesSearchCountRequiresActualStreamingCall(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-5.5","stream":true,"input":"hi","tools":[{"type":"web_search"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "Xai-Request-Id": []string{"xai-req-no-search"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: response.output_text.delta`,
+			`data: {"type":"response.output_text.delta","delta":"ok"}`,
+			``,
+			`event: response.completed`,
+			`data: {"type":"response.completed","response":{"id":"resp_no_search","model":"grok-4.5","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":1,"output_tokens":1}}}`,
+			``,
+			`data: [DONE]`,
+			``,
+		}, "\n"))),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID:          1052,
+		Name:        "grok",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "access-token",
+			"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+	}
+
+	result, err := svc.forwardGrokResponses(context.Background(), c, account, body, "gpt-5.5", true, time.Now())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 0, result.SearchCount)
+}
+
+func TestForwardGrokResponsesNonStreamingSearchCountUsesActualOutputCalls(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-5.5","stream":false,"input":"hi","tools":[{"type":"web_search"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "Xai-Request-Id": []string{"xai-req-two-searches"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"resp_two_searches","model":"grok-4.5","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]},{"type":"web_search_call","id":"ws_1"},{"type":"x_search_call","id":"xs_1"}],"usage":{"input_tokens":1,"output_tokens":1}}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID:          1053,
+		Name:        "grok",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "access-token",
+			"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+	}
+
+	result, err := svc.forwardGrokResponses(context.Background(), c, account, body, "gpt-5.5", false, time.Now())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 2, result.SearchCount)

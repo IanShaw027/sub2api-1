@@ -348,6 +348,7 @@ func TestApplyCodexOAuthTransform_MapsWebSearchPreviewTools(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "gpt-5.5",
 		"tools": []any{
+			map[string]any{"type": "function", "name": "late_bound", "defer_loading": true, "parameters": map[string]any{"type": "object"}},
 			map[string]any{"type": "web_search_preview"},
 			map[string]any{"type": "web_search_preview_2025_03_11"},
 		},
@@ -361,8 +362,12 @@ func TestApplyCodexOAuthTransform_MapsWebSearchPreviewTools(t *testing.T) {
 	require.True(t, result.Modified)
 	tools, ok := reqBody["tools"].([]any)
 	require.True(t, ok)
-	require.Len(t, tools, 2)
-	for _, rawTool := range tools {
+	require.Len(t, tools, 3)
+	deferredTool, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function", deferredTool["type"])
+	require.Equal(t, true, deferredTool["defer_loading"])
+	for _, rawTool := range tools[1:] {
 		tool, ok := rawTool.(map[string]any)
 		require.True(t, ok)
 		require.Equal(t, "tool_search", tool["type"])

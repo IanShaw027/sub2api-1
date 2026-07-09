@@ -69,15 +69,56 @@ func TestNormalizeOpenAIPassthroughBaseBody_DropsNoneTypedTools(t *testing.T) {
 	require.Equal(t, 1, len(gjson.GetBytes(normalized, "tools").Array()))
 }
 
+func TestFinalizeOpenAIResponsesOAuthUpstreamBody_DropsWebSearchPreviewWithoutDeferredTool(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}
+	body := []byte(`{"model":"gpt-5.5","stream":false,"input":[{"type":"message","role":"user","content":"search later"}],"tools":[{"type":"web_search_preview"}]}`)
+
+	finalBody, changed, err := finalizeOpenAIResponsesOAuthUpstreamBody(c, account, "gpt-5.5", body)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(finalBody, `tools.#(type=="tool_search")`).Exists())
+	require.False(t, gjson.GetBytes(finalBody, `tools.#(type=="web_search_preview")`).Exists())
+}
+
+func TestFinalizeOpenAIResponsesOAuthUpstreamBody_DropsToolSearchWithoutDeferredTool(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}
+	body := []byte(`{"model":"gpt-5.5","stream":false,"input":[{"type":"message","role":"user","content":"hello"}],"tools":[{"type":"tool_search"}]}`)
+
+	finalBody, changed, err := finalizeOpenAIResponsesOAuthUpstreamBody(c, account, "gpt-5.5", body)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(finalBody, `tools.#(type=="tool_search")`).Exists())
+}
+
 func TestNormalizeOpenAIPassthroughBaseBody_MapsWebSearchPreviewTool(t *testing.T) {
-	body := []byte(`{"model":"gpt-5.5","tools":[{"type":"web_search_preview"},{"type":"web_search_preview_2025_03_11"}],"input":[{"type":"message","role":"user","content":"hi"}]}`)
+	body := []byte(`{"model":"gpt-5.5","tools":[{"type":"function","name":"late_bound","defer_loading":true,"parameters":{"type":"object"}},{"type":"web_search_preview"},{"type":"web_search_preview_2025_03_11"}],"input":[{"type":"message","role":"user","content":"hi"}]}`)
 
 	normalized, changed, err := normalizeOpenAIPassthroughBaseBody(body, false, false)
 
 	require.NoError(t, err)
 	require.True(t, changed)
-	require.Equal(t, "tool_search", gjson.GetBytes(normalized, "tools.0.type").String())
+	require.Equal(t, "function", gjson.GetBytes(normalized, "tools.0.type").String())
+	require.True(t, gjson.GetBytes(normalized, "tools.0.defer_loading").Bool())
 	require.Equal(t, "tool_search", gjson.GetBytes(normalized, "tools.1.type").String())
+	require.Equal(t, "tool_search", gjson.GetBytes(normalized, "tools.2.type").String())
 }
 
 func TestNormalizeOpenAIPassthroughBaseBody_StripsAdditionalCodexUnsupportedFields(t *testing.T) {

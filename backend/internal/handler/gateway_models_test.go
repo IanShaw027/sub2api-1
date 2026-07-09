@@ -109,6 +109,7 @@ func TestGatewayModels_GrokGroupFallsBackToGrokModels(t *testing.T) {
 	var got gatewayModelsResponseForTest
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Equal(t, "list", got.Object)
+	require.Contains(t, modelIDsForTest(got.Data), "grok-4.5")
 	require.Contains(t, modelIDsForTest(got.Data), "grok-4.3")
 	require.NotContains(t, modelIDsForTest(got.Data), "claude-sonnet-4-6")
 }

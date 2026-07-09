@@ -215,6 +215,18 @@ type UsageLog struct {
 	Subscription *UserSubscription
 }
 
+type OpenAIStickyScheduleEventInput struct {
+	CreatedAt                 time.Time
+	Platform                  string
+	GroupID                   *int64
+	APIKeyID                  int64
+	StickyAccountID           int64
+	SelectedAccountID         *int64
+	StickyOriginalUnavailable bool
+	Reason                    string
+	StickySource              string
+}
+
 func (u *UsageLog) TotalTokens() int {
 	return u.InputTokens + u.OutputTokens + u.CacheCreationTokens + u.CacheReadTokens
 }

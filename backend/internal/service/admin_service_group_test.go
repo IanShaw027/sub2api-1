@@ -400,7 +400,7 @@ func TestAdminService_UpdateGroup_WithImages2APIPricingPreservesOmittedAndClears
 	require.InDelta(t, 0.84, *repo.updated.Images2APIPrice4K, 0.0001)
 }
 
-func TestAdminService_CreateGroup_AllowsGrokImageRouteCodex(t *testing.T) {
+func TestAdminService_CreateGroup_ForcesGrokImageRouteNative(t *testing.T) {
 	repo := &groupRepoStubForAdmin{}
 	svc := &adminServiceImpl{groupRepo: repo}
 
@@ -410,6 +410,7 @@ func TestAdminService_CreateGroup_AllowsGrokImageRouteCodex(t *testing.T) {
 		Platform:             PlatformGrok,
 		RateMultiplier:       1.0,
 		AllowImageGeneration: true,
+		// Even if client sends codex, Grok groups always persist native Imagine.
 		ImageGenerationRoute: "codex",
 	}
 
@@ -417,7 +418,7 @@ func TestAdminService_CreateGroup_AllowsGrokImageRouteCodex(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, group)
 	require.NotNil(t, repo.created)
-	require.Equal(t, GroupImageGenerationRouteCodex, repo.created.ImageGenerationRoute)
+	require.Equal(t, GroupImageGenerationRouteNative, repo.created.ImageGenerationRoute)
 }
 
 func TestAdminService_CreateGroup_ClearsVideoPricingForNonGrokPlatform(t *testing.T) {
@@ -448,7 +449,7 @@ func TestAdminService_CreateGroup_ClearsVideoPricingForNonGrokPlatform(t *testin
 	require.Nil(t, repo.created.VideoPrice4kPerSec)
 }
 
-func TestAdminService_UpdateGroup_AllowsGrokImageRouteCodex(t *testing.T) {
+func TestAdminService_UpdateGroup_ForcesGrokImageRouteNative(t *testing.T) {
 	existingGroup := &Group{
 		ID:       1,
 		Name:     "existing-grok-group",
@@ -466,7 +467,7 @@ func TestAdminService_UpdateGroup_AllowsGrokImageRouteCodex(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, group)
 	require.NotNil(t, repo.updated)
-	require.Equal(t, GroupImageGenerationRouteCodex, repo.updated.ImageGenerationRoute)
+	require.Equal(t, GroupImageGenerationRouteNative, repo.updated.ImageGenerationRoute)
 }
 
 func TestAdminService_UpdateGroup_ClearsStaleVideoPricingWhenPlatformBecomesNonGrok(t *testing.T) {

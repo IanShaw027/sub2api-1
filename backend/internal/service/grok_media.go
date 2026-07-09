@@ -27,6 +27,12 @@ const (
 	GrokMediaEndpointImagesEdits       GrokMediaEndpoint = "images_edits"
 	GrokMediaEndpointVideosGenerations GrokMediaEndpoint = "videos_generations"
 	GrokMediaEndpointVideoStatus       GrokMediaEndpoint = "video_status"
+
+	// Official xAI multi-image edit limit (docs.x.ai Imagine edits).
+	grokMediaMaxEditSourceImages = 3
+	// Default billable duration when create/status responses omit seconds.
+	// Aligns pending-create billing with xAI's common 8s default.
+	grokMediaDefaultVideoSeconds = 8
 )
 
 func (e GrokMediaEndpoint) RequiresRequestBody() bool {
@@ -60,6 +66,8 @@ func (r GrokMediaRequestInfo) ModerationBody() []byte {
 		payload["prompt"] = prompt
 	}
 
+	// Moderation payload keeps a simple image_url list for the content filter;
+	// image refs themselves are resolved via extractGrokMediaImageURL on parse.
 	images := make([]map[string]string, 0, len(r.InputImageURLs)+len(r.Uploads)+1)
 	for _, imageURL := range r.InputImageURLs {
 		if imageURL = strings.TrimSpace(imageURL); imageURL != "" {
@@ -137,35 +145,61 @@ func parseGrokMediaJSONRequest(body []byte, info *GrokMediaRequestInfo) {
 		switch {
 		case value.IsArray():
 			for _, item := range value.Array() {
-				if imageURL := strings.TrimSpace(item.Get("image_url").String()); imageURL != "" {
-					info.InputImageURLs = append(info.InputImageURLs, imageURL)
-					continue
-				}
-				if item.Type == gjson.String {
-					imageURL := strings.TrimSpace(item.String())
-					if imageURL == "" {
-						continue
-					}
+				if imageURL := extractGrokMediaImageURL(item); imageURL != "" {
 					info.InputImageURLs = append(info.InputImageURLs, imageURL)
 				}
 			}
 		default:
-			if imageURL := strings.TrimSpace(value.Get("image_url").String()); imageURL != "" {
-				info.InputImageURLs = append(info.InputImageURLs, imageURL)
-				return
-			}
-			if value.Type == gjson.String {
-				imageURL := strings.TrimSpace(value.String())
-				if imageURL == "" {
-					return
-				}
+			if imageURL := extractGrokMediaImageURL(value); imageURL != "" {
 				info.InputImageURLs = append(info.InputImageURLs, imageURL)
 			}
 		}
 	}
 	appendJSONImageURLs(gjson.GetBytes(body, "image"))
 	appendJSONImageURLs(gjson.GetBytes(body, "images"))
-	info.MaskImageURL = strings.TrimSpace(gjson.GetBytes(body, "mask.image_url").String())
+	// Mask: support both official xAI ({url,type}) and legacy {image_url} shapes.
+	info.MaskImageURL = extractGrokMediaImageURL(gjson.GetBytes(body, "mask"))
+}
+
+// extractGrokMediaImageURL resolves an image reference from common client shapes:
+//   - official xAI: {"url":"...","type":"image_url"}
+//   - OpenAI-style nested: {"image_url":"..."} or {"image_url":{"url":"..."}}
+//   - plain string URL / data URI
+func extractGrokMediaImageURL(value gjson.Result) string {
+	if !value.Exists() {
+		return ""
+	}
+	if value.Type == gjson.String {
+		return strings.TrimSpace(value.String())
+	}
+	// Official xAI Imagine field.
+	if url := strings.TrimSpace(value.Get("url").String()); url != "" {
+		return url
+	}
+	// Nested OpenAI-style image_url object.
+	if nested := value.Get("image_url"); nested.Exists() {
+		if nested.Type == gjson.String {
+			if url := strings.TrimSpace(nested.String()); url != "" {
+				return url
+			}
+		}
+		if url := strings.TrimSpace(nested.Get("url").String()); url != "" {
+			return url
+		}
+	}
+	// Flat legacy key used by some gateways.
+	if url := strings.TrimSpace(value.Get("image_url").String()); url != "" {
+		return url
+	}
+	return ""
+}
+
+// grokMediaImageObject builds the official xAI image object shape.
+func grokMediaImageObject(imageURL string) map[string]string {
+	return map[string]string{
+		"url":  imageURL,
+		"type": "image_url",
+	}
 }
 
 func parseGrokMediaMultipartRequest(contentType string, body []byte, info *GrokMediaRequestInfo) {
@@ -295,10 +329,15 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 
 	body, contentType, err = prepareGrokMediaForwardBody(endpoint, body, contentType)
 	if err != nil {
+		// Client-facing validation (e.g. >3 edit images) must surface as 400,
+		// not a generic 502 from the handler when nothing has been written yet.
+		writeGrokMediaErrorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, err
 	}
-	body, contentType, err = normalizeGrokMediaForwardBody(endpoint, body, contentType)
+	originalModel, upstreamModel := "", ""
+	body, contentType, originalModel, upstreamModel, err = normalizeGrokMediaForwardBody(account, endpoint, body, contentType)
 	if err != nil {
+		writeGrokMediaErrorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, err
 	}
 
@@ -312,6 +351,7 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	if err != nil {
 		return nil, err
 	}
+	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
 	upstreamReq.Header.Set("Authorization", "Bearer "+token)
 	upstreamReq.Header.Set("Accept", "application/json")
 	upstreamReq.Header.Set("User-Agent", "sub2api-grok/1.0")
@@ -327,8 +367,10 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
+	tlsRuntime := s.resolveGrokTLSFingerprintRuntime(ctx, c, account, "http")
+	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
 	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
@@ -337,7 +379,8 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 
 	requestIDHeader := firstNonEmpty(resp.Header.Get("x-request-id"), resp.Header.Get("xai-request-id"))
 	requestInfo := ParseGrokMediaRequest(contentType, body)
-	requestModel := requestInfo.Model
+	// Prefer original client model for logging/billing identity; fall back to body model.
+	requestModel := firstNonEmptyString(originalModel, requestInfo.Model)
 	if resp.StatusCode >= 400 {
 		s.updateGrokUsageSnapshot(ctx, account.ID, xai.ParseQuotaHeaders(resp.Header, resp.StatusCode))
 		return s.handleGrokMediaErrorResponse(ctx, resp, c, account, requestIDHeader, requestModel)
@@ -350,26 +393,48 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	}
 	writeGrokMediaResponse(c, resp, respBody, s.responseHeaderFilter)
 	usage := grokMediaUsageFromResponse(endpoint, requestInfo, respBody)
-	return &OpenAIForwardResult{
-		RequestID:        requestIDHeader,
-		ResponseID:       usage.ResponseID,
-		Usage:            usage.Usage,
-		Model:            requestModel,
-		BillingModel:     requestModel,
-		UpstreamModel:    requestModel,
-		ResponseHeaders:  resp.Header.Clone(),
-		Duration:         time.Since(startTime),
-		ImageCount:       usage.ImageCount,
-		ImageSize:        usage.ImageSize,
-		ImageInputSize:   usage.ImageInputSize,
-		ImageOutputSizes: usage.ImageOutputSizes,
-	}, nil
+	resultModel := firstNonEmptyString(originalModel, requestInfo.Model)
+	resultUpstream := firstNonEmptyString(upstreamModel, requestInfo.Model)
+	result := &OpenAIForwardResult{
+		RequestID:       requestIDHeader,
+		ResponseID:      usage.ResponseID,
+		Usage:           usage.Usage,
+		Model:           resultModel,
+		BillingModel:    resultModel,
+		UpstreamModel:   resultUpstream,
+		ResponseHeaders: resp.Header.Clone(),
+		Duration:        time.Since(startTime),
+	}
+	switch endpoint {
+	case GrokMediaEndpointVideosGenerations:
+		// Video generation billing uses Video* fields, never ImageCount.
+		result.VideoCount = usage.VideoCount
+		result.VideoSeconds = usage.VideoSeconds
+		result.VideoSize = usage.VideoSize
+	default:
+		result.ImageCount = usage.ImageCount
+		result.ImageSize = usage.ImageSize
+		result.ImageInputSize = usage.ImageInputSize
+		result.ImageOutputSizes = usage.ImageOutputSizes
+	}
+	return result, nil
 }
 
 func prepareGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, contentType string) ([]byte, string, error) {
-	if endpoint != GrokMediaEndpointImagesEdits || gjson.ValidBytes(body) {
+	switch endpoint {
+	case GrokMediaEndpointImagesEdits:
+		if gjson.ValidBytes(body) {
+			// JSON edits: rewrite OpenAI-style image refs to official xAI shape.
+			out, err := normalizeGrokMediaJSONImageRefs(body)
+			return out, contentType, err
+		}
+		return prepareGrokMediaMultipartEditsBody(body, contentType)
+	default:
 		return body, contentType, nil
 	}
+}
+
+func prepareGrokMediaMultipartEditsBody(body []byte, contentType string) ([]byte, string, error) {
 	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(contentType))
 	if err != nil || !strings.EqualFold(mediaType, "multipart/form-data") {
 		return body, contentType, nil
@@ -390,10 +455,12 @@ func prepareGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, conten
 		payload["size"] = info.Size
 	}
 
+	// Emit official xAI Imagine image objects ({url, type:image_url}) so
+	// multipart→JSON conversion matches docs.x.ai examples and SDK clients.
 	images := make([]map[string]string, 0, len(info.InputImageURLs)+len(info.Uploads))
 	for _, imageURL := range info.InputImageURLs {
 		if imageURL = strings.TrimSpace(imageURL); imageURL != "" {
-			images = append(images, map[string]string{"image_url": imageURL})
+			images = append(images, grokMediaImageObject(imageURL))
 		}
 	}
 	for _, upload := range info.Uploads {
@@ -401,7 +468,13 @@ func prepareGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, conten
 		if err != nil {
 			return nil, "", err
 		}
-		images = append(images, map[string]string{"image_url": dataURL})
+		images = append(images, grokMediaImageObject(dataURL))
+	}
+	if len(images) > grokMediaMaxEditSourceImages {
+		return nil, "", fmt.Errorf(
+			"a maximum of %d source images is supported for image edits",
+			grokMediaMaxEditSourceImages,
+		)
 	}
 	if len(images) > 0 {
 		payload["image"] = images[0]
@@ -419,7 +492,7 @@ func prepareGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, conten
 		maskImageURL = dataURL
 	}
 	if maskImageURL != "" {
-		payload["mask"] = map[string]string{"image_url": maskImageURL}
+		payload["mask"] = grokMediaImageObject(maskImageURL)
 	}
 
 	out, err := marshalOpenAIUpstreamJSON(payload)
@@ -429,28 +502,145 @@ func prepareGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, conten
 	return out, "application/json", nil
 }
 
-func normalizeGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, contentType string) ([]byte, string, error) {
-	if !endpoint.RequiresRequestBody() || !gjson.ValidBytes(body) {
-		return body, contentType, nil
+// normalizeGrokMediaJSONImageRefs rewrites image/images/mask fields from common
+// OpenAI client shapes into official xAI Imagine objects:
+//
+//	{"url":"...","type":"image_url"}
+//
+// Known inputs: plain string URL, {"image_url":"..."}, {"image_url":{"url":"..."}},
+// and already-official {"url","type"}. Rejects more than 3 source images.
+func normalizeGrokMediaJSONImageRefs(body []byte) ([]byte, error) {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return body, nil
 	}
-	model := strings.TrimSpace(gjson.GetBytes(body, "model").String())
-	upstreamModel := normalizeGrokMediaModelForEndpoint(endpoint, model)
-	if upstreamModel == "" || upstreamModel == model {
-		return body, contentType, nil
+	info := ParseGrokMediaRequest("application/json", body)
+	if len(info.InputImageURLs) > grokMediaMaxEditSourceImages {
+		return nil, fmt.Errorf(
+			"a maximum of %d source images is supported for image edits",
+			grokMediaMaxEditSourceImages,
+		)
 	}
-	out, err := sjson.SetBytes(body, "model", upstreamModel)
+	if !gjson.GetBytes(body, "image").Exists() &&
+		!gjson.GetBytes(body, "images").Exists() &&
+		!gjson.GetBytes(body, "mask").Exists() {
+		return body, nil
+	}
+
+	out := body
+	var err error
+	if out, err = rewriteGrokMediaJSONImageField(out, "image"); err != nil {
+		return nil, err
+	}
+	if out, err = rewriteGrokMediaJSONImageField(out, "images"); err != nil {
+		return nil, err
+	}
+	if out, err = rewriteGrokMediaJSONImageField(out, "mask"); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func rewriteGrokMediaJSONImageField(body []byte, path string) ([]byte, error) {
+	value := gjson.GetBytes(body, path)
+	if !value.Exists() {
+		return body, nil
+	}
+	if value.IsArray() {
+		rewritten := make([]map[string]string, 0, len(value.Array()))
+		changed := false
+		for _, item := range value.Array() {
+			imageURL := extractGrokMediaImageURL(item)
+			if imageURL == "" {
+				// Leave unparseable entries as-is by aborting rewrite of this field.
+				return body, nil
+			}
+			obj := grokMediaImageObject(imageURL)
+			rewritten = append(rewritten, obj)
+			if !item.IsObject() ||
+				strings.TrimSpace(item.Get("url").String()) != obj["url"] ||
+				strings.TrimSpace(item.Get("type").String()) != obj["type"] {
+				changed = true
+			}
+		}
+		if !changed {
+			return body, nil
+		}
+		out, err := sjson.SetBytes(body, path, rewritten)
+		if err != nil {
+			return nil, fmt.Errorf("rewrite grok media %s: %w", path, err)
+		}
+		return out, nil
+	}
+
+	imageURL := extractGrokMediaImageURL(value)
+	if imageURL == "" {
+		return body, nil
+	}
+	obj := grokMediaImageObject(imageURL)
+	// Skip rewrite when already official {url,type} without legacy keys.
+	if value.IsObject() &&
+		strings.TrimSpace(value.Get("url").String()) == obj["url"] &&
+		strings.TrimSpace(value.Get("type").String()) == obj["type"] &&
+		!value.Get("image_url").Exists() {
+		return body, nil
+	}
+	out, err := sjson.SetBytes(body, path, obj)
 	if err != nil {
-		return nil, "", fmt.Errorf("rewrite grok media model: %w", err)
+		return nil, fmt.Errorf("rewrite grok media %s: %w", path, err)
 	}
-	return out, contentType, nil
+	return out, nil
+}
+
+// resolveGrokMediaUpstreamModel applies account model mapping then endpoint
+// Imagine aliases. originalModel is the client-facing model identity.
+func resolveGrokMediaUpstreamModel(account *Account, endpoint GrokMediaEndpoint, originalModel string) string {
+	originalModel = strings.TrimSpace(originalModel)
+	mapped := originalModel
+	if account != nil {
+		mapped = account.GetMappedModel(originalModel)
+	}
+	return normalizeGrokMediaModelForEndpoint(endpoint, mapped)
+}
+
+// normalizeGrokMediaForwardBody rewrites the JSON model field for upstream while
+// returning the original client model for billing/logging identity.
+func normalizeGrokMediaForwardBody(
+	account *Account,
+	endpoint GrokMediaEndpoint,
+	body []byte,
+	contentType string,
+) (out []byte, outContentType string, originalModel string, upstreamModel string, err error) {
+	out = body
+	outContentType = contentType
+	if !endpoint.RequiresRequestBody() || !gjson.ValidBytes(body) {
+		return out, outContentType, "", "", nil
+	}
+	originalModel = strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	upstreamModel = resolveGrokMediaUpstreamModel(account, endpoint, originalModel)
+	if upstreamModel == "" || upstreamModel == originalModel {
+		return out, outContentType, originalModel, upstreamModel, nil
+	}
+	out, err = sjson.SetBytes(body, "model", upstreamModel)
+	if err != nil {
+		return nil, "", originalModel, upstreamModel, fmt.Errorf("rewrite grok media model: %w", err)
+	}
+	return out, outContentType, originalModel, upstreamModel, nil
 }
 
 func normalizeGrokMediaModelForEndpoint(endpoint GrokMediaEndpoint, model string) string {
 	model = strings.TrimSpace(model)
 	switch endpoint {
 	case GrokMediaEndpointImagesGenerations, GrokMediaEndpointImagesEdits:
-		if model == "grok-imagine" {
-			return "grok-imagine-image-quality"
+		switch strings.ToLower(model) {
+		case "grok-imagine", "grok-imagine-1", "grok-imagine-edit":
+			return xai.DefaultImagineImageQualityModel
+		}
+	case GrokMediaEndpointVideosGenerations:
+		switch strings.ToLower(model) {
+		case "grok-imagine-video", "grok-video", "grok-video-latest":
+			return xai.DefaultImagineVideoModel
+		case "grok-imagine-video-1.5", "grok-video-1.5":
+			return xai.DefaultImagineVideo15Model
 		}
 	}
 	return model
@@ -463,6 +653,9 @@ type grokMediaUsageMetadata struct {
 	ImageSize        string
 	ImageInputSize   string
 	ImageOutputSizes []string
+	VideoCount       int
+	VideoSeconds     int
+	VideoSize        string
 }
 
 func grokMediaUsageFromResponse(endpoint GrokMediaEndpoint, requestInfo GrokMediaRequestInfo, responseBody []byte) grokMediaUsageMetadata {
@@ -483,9 +676,23 @@ func grokMediaUsageFromResponse(endpoint GrokMediaEndpoint, requestInfo GrokMedi
 		meta.ImageOutputSizes = collectOpenAIResponseImageOutputSizesFromJSONBytes(responseBody)
 	case GrokMediaEndpointVideosGenerations:
 		meta.ResponseID = extractGrokMediaVideoRequestID(responseBody)
-		meta.ImageCount = 1
-		meta.ImageSize = requestInfo.SizeTier
-		meta.ImageInputSize = requestInfo.Size
+		meta.VideoCount = 1
+		if n := requestInfo.N; n > 1 {
+			meta.VideoCount = n
+		}
+		// Prefer explicit duration from response; fall back to documented default
+		// so pending creates do not under-bill as 1s via calculateOpenAIVideoRequestCost.
+		meta.VideoSeconds = resolveGrokMediaVideoSeconds(
+			gjsonPositiveInt(responseBody, "video.duration"),
+			gjsonPositiveInt(responseBody, "duration"),
+			gjsonPositiveInt(responseBody, "seconds"),
+		)
+		meta.VideoSize = NormalizeVideoBillingTierOrDefault(firstNonEmptyString(
+			requestInfo.Size,
+			strings.TrimSpace(gjson.GetBytes(responseBody, "video.resolution").String()),
+			strings.TrimSpace(gjson.GetBytes(responseBody, "resolution").String()),
+			strings.TrimSpace(gjson.GetBytes(responseBody, "size").String()),
+		))
 	}
 	return meta
 }
@@ -500,6 +707,15 @@ func extractGrokMediaVideoRequestID(body []byte) string {
 		}
 	}
 	return ""
+}
+
+// resolveGrokMediaVideoSeconds picks the first positive candidate, otherwise the
+// shared default used by ForwardGrokMedia and ForwardVideos billing paths.
+func resolveGrokMediaVideoSeconds(candidates ...int) int {
+	if seconds := firstPositiveInt(candidates...); seconds > 0 {
+		return seconds
+	}
+	return grokMediaDefaultVideoSeconds
 }
 
 func (s *OpenAIGatewayService) handleGrokMediaErrorResponse(

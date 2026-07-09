@@ -36,6 +36,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/promptsanitize"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/cespare/xxhash/v2"
@@ -745,6 +746,7 @@ type GatewayService struct {
 	deferredService       *DeferredService
 	concurrencyService    *ConcurrencyService
 	claudeTokenProvider   *ClaudeTokenProvider
+	grokTokenProvider     *GrokTokenProvider
 	sessionLimitCache     SessionLimitCache // 会话数量限制缓存（仅 Anthropic OAuth/SetupToken）
 	rpmCache              RPMCache          // RPM 计数缓存（仅 Anthropic OAuth/SetupToken）
 	userGroupRateResolver *userGroupRateResolver
@@ -856,6 +858,15 @@ func (s *GatewayService) SetKiroDeps(kiroTokenProvider *KiroTokenProvider, kiroG
 	}
 	s.kiroTokenProvider = kiroTokenProvider
 	s.kiroGatewayService = kiroGatewayService
+}
+
+// SetGrokTokenProvider injects the Grok OAuth token provider used by web_search
+// and other GatewayService-owned Grok native paths (outside OpenAI gateway).
+func (s *GatewayService) SetGrokTokenProvider(provider *GrokTokenProvider) {
+	if s == nil {
+		return
+	}
+	s.grokTokenProvider = provider
 }
 
 // GenerateSessionHash 从预解析请求计算粘性会话 hash
@@ -4382,11 +4393,19 @@ func (s *GatewayService) DoGrokNativeResponsesJSON(ctx context.Context, c *gin.C
 	if err != nil {
 		return nil, fmt.Errorf("get grok token: %w", err)
 	}
-	baseURL, err := s.validateUpstreamBaseURL(account.GetGrokBaseURL())
+	// GetGrokBaseURL already includes /v1; BuildResponsesURL appends /responses only.
+	targetURL, err := xai.BuildResponsesURL(account.GetGrokBaseURL())
 	if err != nil {
 		return nil, err
 	}
-	targetURL := strings.TrimRight(baseURL, "/") + "/v1/responses"
+	// Align body defaults with the OpenAI-gateway Grok path.
+	if json.Valid(body) {
+		if model := strings.TrimSpace(gjson.GetBytes(body, "model").String()); model == "" {
+			if patched, patchErr := sjson.SetBytes(body, "model", xai.DefaultTextModel); patchErr == nil {
+				body = patched
+			}
+		}
+	}
 	upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("build grok responses request: %w", err)
@@ -4394,9 +4413,11 @@ func (s *GatewayService) DoGrokNativeResponsesJSON(ctx context.Context, c *gin.C
 	upstreamReq.Header.Set("Authorization", "Bearer "+token)
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Accept", "application/json")
+	upstreamReq.Header.Set("OpenAI-Beta", "responses=experimental")
+	upstreamReq.Header.Set("User-Agent", resolveGrokUpstreamUserAgent(c))
 	if c != nil {
-		if ua := strings.TrimSpace(c.GetHeader("User-Agent")); ua != "" {
-			upstreamReq.Header.Set("User-Agent", ua)
+		if v := strings.TrimSpace(c.GetHeader("OpenAI-Beta")); v != "" {
+			upstreamReq.Header.Set("OpenAI-Beta", v)
 		}
 	}
 	resp, err := s.httpUpstream.DoWithTLS(
@@ -4424,6 +4445,15 @@ func (s *GatewayService) getOAuthToken(ctx context.Context, account *Account) (s
 	// 对于 Anthropic OAuth 账号，使用 ClaudeTokenProvider 获取缓存的 token
 	if account.Platform == PlatformAnthropic && account.Type == AccountTypeOAuth && s.claudeTokenProvider != nil {
 		accessToken, err := s.claudeTokenProvider.GetAccessToken(ctx, account)
+		if err != nil {
+			return "", "", err
+		}
+		return accessToken, "oauth", nil
+	}
+	// Grok OAuth: use GrokTokenProvider so expired tokens refresh on request path
+	// (web_search and other GatewayService-owned native Grok calls).
+	if account.Platform == PlatformGrok && account.Type == AccountTypeOAuth && s.grokTokenProvider != nil {
+		accessToken, err := s.grokTokenProvider.GetAccessToken(ctx, account)
 		if err != nil {
 			return "", "", err
 		}

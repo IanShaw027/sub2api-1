@@ -86,22 +86,12 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Messages(c)
 		})
-		// /v1/messages/count_tokens: OpenAI uses Anthropic-compat bridge; other
-		// OpenAI-compatible platforms keep the prior unsupported response.
+		// /v1/messages/count_tokens: OpenAI uses the Anthropic-compat bridge.
+		// Grok is routed here only to return the service-level not-supported
+		// response with a Grok-specific message.
 		gateway.POST("/messages/count_tokens", func(c *gin.Context) {
-			if isOpenAIGatewayPlatform(c) {
+			if isOpenAIGatewayPlatform(c) || isOpenAIResponsesCompatibleGatewayPlatform(c) {
 				h.OpenAIGateway.CountTokens(c)
-				return
-			}
-			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
-				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-				c.JSON(http.StatusNotFound, gin.H{
-					"type": "error",
-					"error": gin.H{
-						"type":    "not_found_error",
-						"message": "Token counting is not supported for this platform",
-					},
-				})
 				return
 			}
 			h.Gateway.CountTokens(c)

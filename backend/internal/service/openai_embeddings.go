@@ -286,10 +286,26 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	startTime := time.Now()
 
 	originalModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	if targetPath == "" {
+		targetPath = "/v1/videos"
+	}
+	targetPath = canonicalOpenAIVideoTargetPath(targetPath)
+	videoBillingRequest := isOpenAIVideoBillingRequest(c.Request.Method, targetPath)
+
+	// POST create/edit/extend: apply account mapping + Imagine alias normalization
+	// so live traffic matches ForwardGrokMedia. Keep originalModel for billing identity.
+	upstreamModel := originalModel
+	if videoBillingRequest && originalModel != "" && gjson.ValidBytes(body) {
+		upstreamModel = resolveGrokMediaUpstreamModel(account, GrokMediaEndpointVideosGenerations, originalModel)
+		if upstreamModel != "" && upstreamModel != originalModel {
+			body = ReplaceModelInBody(body, upstreamModel)
+		}
+	}
 
 	logger.L().Debug("grok videos: forwarding",
 		zap.Int64("account_id", account.ID),
 		zap.String("original_model", originalModel),
+		zap.String("upstream_model", upstreamModel),
 		zap.String("target_path", targetPath),
 	)
 
@@ -305,10 +321,6 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	if err != nil {
 		return nil, fmt.Errorf("invalid base_url: %w", err)
 	}
-	if targetPath == "" {
-		targetPath = "/v1/videos"
-	}
-	targetPath = canonicalOpenAIVideoTargetPath(targetPath)
 	targetURL := buildOpenAIEndpointURL(validatedURL, targetPath)
 
 	upstreamCtx, release := detachUpstreamContext(ctx)
@@ -360,40 +372,70 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	}
 	defer resp.Body.Close()
 
-	videoBillingRequest := isOpenAIVideoBillingRequest(c.Request.Method, targetPath)
-
 	if resp.StatusCode < 400 && !videoBillingRequest {
+		pathJobID := ExtractGrokVideoRequestIDFromPath(targetPath)
+		// Binary content streams early; sticky identity comes from the path job id.
+		if isOpenAIVideoContentPath(targetPath) {
+			responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+			if ct := strings.TrimSpace(resp.Header.Get("Content-Type")); ct != "" {
+				c.Header("Content-Type", ct)
+			}
+			c.Status(resp.StatusCode)
+			if flusher, ok := c.Writer.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			buf := make([]byte, 32*1024)
+			for {
+				n, readErr := resp.Body.Read(buf)
+				if n > 0 {
+					if _, writeErr := c.Writer.Write(buf[:n]); writeErr != nil {
+						return nil, fmt.Errorf("stream upstream video response: %w", writeErr)
+					}
+					if flusher, ok := c.Writer.(http.Flusher); ok {
+						flusher.Flush()
+					}
+				}
+				if errors.Is(readErr, io.EOF) {
+					break
+				}
+				if readErr != nil {
+					return nil, fmt.Errorf("stream upstream video response: %w", readErr)
+				}
+			}
+			videoModel := firstNonEmptyString(strings.TrimSpace(resp.Header.Get("openai-model")), originalModel)
+			return &OpenAIForwardResult{
+				RequestID:       firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id"), resp.Header.Get("xai-request-id")),
+				ResponseID:      pathJobID,
+				Model:           videoModel,
+				UpstreamModel:   firstNonEmptyString(upstreamModel, videoModel),
+				Usage:           OpenAIUsage{},
+				ResponseHeaders: resp.Header.Clone(),
+				Duration:        time.Since(startTime),
+			}, nil
+		}
+
+		// JSON status/retrieve: buffer so ResponseID can be extracted from body.
+		respBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("read upstream video status response: %w", readErr)
+		}
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		if ct := strings.TrimSpace(resp.Header.Get("Content-Type")); ct != "" {
 			c.Header("Content-Type", ct)
 		}
 		c.Status(resp.StatusCode)
-		if flusher, ok := c.Writer.(http.Flusher); ok {
-			flusher.Flush()
-		}
-		buf := make([]byte, 32*1024)
-		for {
-			n, readErr := resp.Body.Read(buf)
-			if n > 0 {
-				if _, writeErr := c.Writer.Write(buf[:n]); writeErr != nil {
-					return nil, fmt.Errorf("stream upstream video response: %w", writeErr)
-				}
-				if flusher, ok := c.Writer.(http.Flusher); ok {
-					flusher.Flush()
-				}
-			}
-			if errors.Is(readErr, io.EOF) {
-				break
-			}
-			if readErr != nil {
-				return nil, fmt.Errorf("stream upstream video response: %w", readErr)
-			}
-		}
-		videoModel := firstNonEmptyString(strings.TrimSpace(resp.Header.Get("openai-model")), originalModel)
+		_, _ = c.Writer.Write(respBody)
+		videoModel := firstNonEmptyString(
+			strings.TrimSpace(gjson.GetBytes(respBody, "model").String()),
+			strings.TrimSpace(resp.Header.Get("openai-model")),
+			originalModel,
+		)
+		responseID := firstNonEmptyString(extractGrokMediaVideoRequestID(respBody), pathJobID)
 		return &OpenAIForwardResult{
 			RequestID:       firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id"), resp.Header.Get("xai-request-id")),
+			ResponseID:      responseID,
 			Model:           videoModel,
-			UpstreamModel:   videoModel,
+			UpstreamModel:   firstNonEmptyString(upstreamModel, videoModel),
 			Usage:           OpenAIUsage{},
 			ResponseHeaders: resp.Header.Clone(),
 			Duration:        time.Since(startTime),
@@ -478,13 +520,16 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	c.Status(resp.StatusCode)
 	_, _ = c.Writer.Write(respBody)
 
-	// minimal result
-	videoModel := firstNonEmptyString(strings.TrimSpace(gjson.GetBytes(respBody, "model").String()), originalModel)
+	// Prefer original client model for billing/logging; upstream may echo rewritten id.
+	videoModel := firstNonEmptyString(originalModel, strings.TrimSpace(gjson.GetBytes(respBody, "model").String()))
+	resultUpstreamModel := firstNonEmptyString(upstreamModel, strings.TrimSpace(gjson.GetBytes(respBody, "model").String()), videoModel)
 	var videoSeconds int
 	var videoSize string
 	var videoCount int
 	if videoBillingRequest {
-		videoSeconds = firstPositiveInt(
+		// Prefer explicit request duration; fall back to response, then shared default
+		// so pending creates without duration do not under-bill as 1 second.
+		videoSeconds = resolveGrokMediaVideoSeconds(
 			gjsonPositiveInt(body, "duration"),
 			gjsonPositiveInt(body, "duration_seconds"),
 			gjsonPositiveInt(body, "seconds"),
@@ -507,10 +552,17 @@ func (s *OpenAIGatewayService) ForwardVideos(
 			1,
 		)
 	}
+	// Capture async job id so the handler can pin sticky scheduling for GET polls.
+	responseID := extractGrokMediaVideoRequestID(respBody)
+	if responseID == "" {
+		responseID = ExtractGrokVideoRequestIDFromPath(targetPath)
+	}
 	res := &OpenAIForwardResult{
 		RequestID:       firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id"), resp.Header.Get("xai-request-id")),
+		ResponseID:      responseID,
 		Model:           videoModel,
-		UpstreamModel:   videoModel,
+		BillingModel:    videoModel,
+		UpstreamModel:   resultUpstreamModel,
 		Usage:           OpenAIUsage{},
 		ResponseHeaders: resp.Header.Clone(),
 		Duration:        time.Since(startTime),
@@ -519,6 +571,37 @@ func (s *OpenAIGatewayService) ForwardVideos(
 		VideoCount:      videoCount,
 	}
 	return res, nil
+}
+
+// ExtractGrokVideoRequestIDFromPath returns the async video job id from a client path
+// such as /v1/videos/{id}, /videos/{id}/content, or /v1/videos/{id}?foo=bar.
+func ExtractGrokVideoRequestIDFromPath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
+	}
+	if idx := strings.IndexAny(trimmed, "?#"); idx >= 0 {
+		trimmed = trimmed[:idx]
+	}
+	trimmed = strings.Trim(trimmed, "/")
+	parts := strings.Split(trimmed, "/")
+	// Accept both /v1/videos/{id}[...] and /videos/{id}[...].
+	for i := 0; i < len(parts); i++ {
+		if !strings.EqualFold(parts[i], "videos") {
+			continue
+		}
+		if i+1 >= len(parts) {
+			return ""
+		}
+		candidate := strings.TrimSpace(parts[i+1])
+		switch strings.ToLower(candidate) {
+		case "", "generations", "edits", "extensions":
+			return ""
+		default:
+			return candidate
+		}
+	}
+	return ""
 }
 
 func canonicalOpenAIVideoTargetPath(targetPath string) string {
@@ -559,6 +642,16 @@ func isOpenAIVideoBillingRequest(method, targetPath string) bool {
 	default:
 		return false
 	}
+}
+
+// isOpenAIVideoContentPath reports GET .../videos/{id}/content binary download paths.
+func isOpenAIVideoContentPath(targetPath string) bool {
+	canonical := canonicalOpenAIVideoTargetPath(targetPath)
+	if idx := strings.IndexAny(canonical, "?#"); idx >= 0 {
+		canonical = canonical[:idx]
+	}
+	canonical = strings.ToLower(strings.TrimRight(canonical, "/"))
+	return strings.HasSuffix(canonical, "/content") && strings.Contains(canonical, "/videos/")
 }
 
 func gjsonPositiveInt(body []byte, path string) int {

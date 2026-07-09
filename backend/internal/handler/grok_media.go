@@ -26,14 +26,16 @@ func (h *OpenAIGatewayHandler) GrokImages(c *gin.Context) {
 	h.handleGrokMedia(c, endpoint, "")
 }
 
-// GrokVideoGeneration handles xAI video generation through Grok groups.
+// GrokVideoGeneration is retained as a thin alias of Videos so any remaining
+// call sites share the single ForwardVideos path (sticky + billing + path
+// passthrough for edits/extensions/status). Prefer OpenAIGatewayHandler.Videos.
 func (h *OpenAIGatewayHandler) GrokVideoGeneration(c *gin.Context) {
-	h.handleGrokMedia(c, service.GrokMediaEndpointVideosGenerations, "")
+	h.Videos(c)
 }
 
-// GrokVideoStatus handles xAI video status retrieval through Grok groups.
+// GrokVideoStatus is a thin alias of Videos for GET status/content polls.
 func (h *OpenAIGatewayHandler) GrokVideoStatus(c *gin.Context) {
-	h.handleGrokMedia(c, service.GrokMediaEndpointVideoStatus, c.Param("request_id"))
+	h.Videos(c)
 }
 
 func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.GrokMediaEndpoint, requestID string) {
@@ -353,6 +355,12 @@ func recordGrokMediaUsage(
 		OriginalModel:      requestModel,
 		ChannelMappedModel: requestModel,
 	}
+	requestType := service.RequestTypeSync
+	if result != nil && service.OpenAIForwardResultHasVideoBillingForUsage(result) {
+		requestType = service.RequestTypeVideo
+	} else if result != nil && result.ImageCount > 0 {
+		requestType = service.RequestTypeImage
+	}
 	h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
 		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 			Result:             result,
@@ -365,6 +373,7 @@ func recordGrokMediaUsage(
 			UserAgent:          userAgent,
 			IPAddress:          clientIP,
 			RequestPayloadHash: service.HashUsageRequestPayload(payloadForHash),
+			RequestType:        requestType,
 			APIKeyService:      h.apiKeyService,
 			QuotaPlatform:      quotaPlatform,
 			ChannelUsageFields: channelUsageFields,

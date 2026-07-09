@@ -25,32 +25,53 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	reqStream bool,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
-	upstreamModel := account.GetMappedModel(originalModel)
-	if strings.TrimSpace(upstreamModel) == "" {
-		upstreamModel = "grok-4.3"
-	}
-	patchedBodyForBridge := body
-	if IsImageGenerationIntent(openAIResponsesEndpoint, originalModel, body) || HasOpenAIImageGenerationToolCapability(body) {
-		// Only apply image bridge when the request is actually image-related.
-		var m map[string]any
-		if json.Unmarshal(body, &m) == nil {
-			modified := false
-			if ensureOpenAIResponsesImageGenerationTool(m) {
-				modified = true
-			}
-			if applyCodexImageGenerationBridgeInstructions(m) {
-				modified = true
-			}
-			if modified {
-				if b, err := json.Marshal(m); err == nil {
-					patchedBodyForBridge = b
-				}
-			}
+	return s.forwardGrokResponsesWithPromptCacheKey(ctx, c, account, body, originalModel, reqStream, startTime, "")
+}
+
+func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+	originalModel string,
+	reqStream bool,
+	startTime time.Time,
+	promptCacheKey string,
+) (*OpenAIForwardResult, error) {
+	// Prefer platform-default + account mapping (same path as OpenAI groups).
+	upstreamModel := resolveOpenAIForwardModelWithSettings(ctx, s.settingService, account, originalModel, "")
+	upstreamModel = xai.ResolveDefaultTextModel(upstreamModel)
+
+	// Never silently drop image_generation: xAI Responses does not support it.
+	// Fail closed so clients use POST /v1/images/* instead of getting plain text.
+	if err := rejectGrokUnsupportedImageGenerationTools(body); err != nil {
+		if c != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": gin.H{
+					"type":    "invalid_request_error",
+					"message": err.Error(),
+					"code":    "unsupported_tool",
+				},
+			})
 		}
+		return nil, err
 	}
-	patchedBody, err := patchGrokResponsesBody(patchedBodyForBridge, upstreamModel)
+
+	patchedBody, err := patchGrokResponsesBody(body, upstreamModel)
 	if err != nil {
 		return nil, err
+	}
+	// Inject prompt_cache_key into body when provided so xAI can sticky-route.
+	if trimmed := strings.TrimSpace(promptCacheKey); trimmed != "" {
+		if existing := strings.TrimSpace(gjson.GetBytes(patchedBody, "prompt_cache_key").String()); existing == "" {
+			if updated, setErr := sjson.SetBytes(patchedBody, "prompt_cache_key", trimmed); setErr == nil {
+				patchedBody = updated
+			}
+		} else {
+			promptCacheKey = existing
+		}
+	} else {
+		promptCacheKey = strings.TrimSpace(gjson.GetBytes(patchedBody, "prompt_cache_key").String())
 	}
 
 	token, _, err := s.GetAccessToken(ctx, account)
@@ -63,6 +84,12 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	upstreamReq, err := buildGrokResponsesRequest(upstreamCtx, c, account, patchedBody, token)
 	if err != nil {
 		return nil, err
+	}
+	// Isolate session_id from prompt_cache_key so multi-tenant Grok traffic
+	// does not share xAI conversation state (parity with OpenAI path).
+	if trimmed := strings.TrimSpace(promptCacheKey); trimmed != "" && upstreamReq.Header.Get("session_id") == "" {
+		apiKeyID := getAPIKeyIDFromContext(c)
+		upstreamReq.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, trimmed)))
 	}
 	tlsRuntime := s.resolveGrokTLSFingerprintRuntime(ctx, c, account, "http")
 	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
@@ -113,6 +140,7 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	var usage *OpenAIUsage
 	var firstTokenMs *int
 	responseID := ""
+	searchCount := 0
 	if reqStream {
 		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, upstreamModel)
 		if err != nil {
@@ -121,6 +149,7 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		usage = streamResult.usage
 		firstTokenMs = streamResult.firstTokenMs
 		responseID = strings.TrimSpace(streamResult.responseID)
+		searchCount = streamResult.searchCount
 	} else {
 		nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
 		if err != nil {
@@ -128,16 +157,22 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		}
 		usage = nonStreamResult.usage
 		responseID = strings.TrimSpace(nonStreamResult.responseID)
+		searchCount = nonStreamResult.searchCount
 	}
 
 	if usage == nil {
 		usage = &OpenAIUsage{}
+	}
+	// Bind response_id → account so previous_response_id can stick to the same Grok account.
+	if responseID != "" {
+		s.bindHTTPResponseAccount(ctx, c, account, responseID)
 	}
 	return &OpenAIForwardResult{
 		RequestID:       firstNonEmpty(resp.Header.Get("x-request-id"), resp.Header.Get("xai-request-id")),
 		ResponseID:      responseID,
 		Usage:           *usage,
 		Model:           originalModel,
+		BillingModel:    upstreamModel,
 		UpstreamModel:   upstreamModel,
 		ReasoningEffort: ptrStringOrNil(normalizeOpenAIReasoningEffort(gjson.GetBytes(patchedBody, "reasoning.effort").String())),
 		Stream:          reqStream,
@@ -145,31 +180,66 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		ResponseHeaders: resp.Header.Clone(),
 		Duration:        time.Since(startTime),
 		FirstTokenMs:    firstTokenMs,
-		SearchCount:     countOpenAISearchToolsInRequestBody(body),
+		// Bill actual search calls observed in the response, not merely requested tools.
+		SearchCount: searchCount,
 	}, nil
+}
+
+func rejectGrokUnsupportedImageGenerationTools(body []byte) error {
+	if len(body) == 0 {
+		return nil
+	}
+	for _, tool := range gjson.GetBytes(body, "tools").Array() {
+		t := strings.TrimSpace(tool.Get("type").String())
+		if t == "image_generation" || t == "image_generation_call" {
+			return fmt.Errorf("tool type %q is not supported on Grok Responses; use POST /v1/images/generations or /v1/images/edits instead", t)
+		}
+	}
+	return nil
 }
 
 func countOpenAISearchToolsInRequestBody(body []byte) int {
 	if len(body) == 0 {
 		return 0
 	}
-	count := 0
+	// Dedupe by tool type: alias expansion may leave multiple web_search entries
+	// (e.g. google_search + web_search_preview → two web_search tools) that should
+	// bill once per distinct search capability, not once per alias.
+	seen := make(map[string]struct{}, 2)
 	for _, tool := range gjson.GetBytes(body, "tools").Array() {
 		t := strings.TrimSpace(tool.Get("type").String())
-		if t == "web_search" || t == "web_search_20250305" || t == "google_search" || t == "tool_search" || t == "x_search" {
-			count++
+		// Only count tools that survive Grok sanitization / are actually executed.
+		if t == "web_search" || t == "x_search" {
+			seen[t] = struct{}{}
 		}
 	}
-	return count
+	return len(seen)
 }
 
 func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
 	if !json.Valid(body) {
 		return nil, fmt.Errorf("invalid json request body")
 	}
+	upstreamModel = xai.ResolveDefaultTextModel(upstreamModel)
 	out, err := sjson.SetBytes(body, "model", upstreamModel)
 	if err != nil {
 		return nil, err
+	}
+	// Do not force stream=true when the client omitted/false'd it. The handler
+	// branches on pre-patch reqStream; forcing stream here desyncs body vs path
+	// (SSE upstream + non-stream client handling). Keep stream aligned with the client.
+	// Prefer not storing conversation payloads server-side unless the client
+	// explicitly opts in (Codex/Claude bridges re-send full turns).
+	// Exception: multi-turn sticky (previous_response_id present) must not force
+	// store=false, or continuation can break against xAI response storage.
+	if !gjson.GetBytes(out, "store").Exists() {
+		prevID := strings.TrimSpace(gjson.GetBytes(out, "previous_response_id").String())
+		if prevID == "" {
+			out, err = sjson.SetBytes(out, "store", false)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	for _, unsupportedField := range []string{"prompt_cache_retention", "safety_identifier"} {
 		if gjson.GetBytes(out, unsupportedField).Exists() {
@@ -250,6 +320,29 @@ var grokResponsesSupportedToolTypes = map[string]struct{}{
 	"x_search":           {},
 }
 
+// normalizeGrokResponsesToolType maps client tool aliases onto types xAI accepts
+// so they are executed instead of silently dropped by sanitizeGrokResponsesTools.
+//
+// tool_search is intentionally NOT remapped to web_search: OpenAI's tool_search is
+// a deferred tool-loading mechanism, not web search. Without deferred loading
+// support, tool_search is dropped by sanitizeGrokResponsesTools (not in the
+// supported set) rather than billed/executed as a web search.
+func normalizeGrokResponsesToolType(toolType string) string {
+	trimmed := strings.TrimSpace(toolType)
+	switch {
+	case trimmed == "web_search_20250305", trimmed == "google_search":
+		return "web_search"
+	case trimmed == "web_search_preview" || strings.HasPrefix(trimmed, "web_search_preview_"):
+		// OpenAI preview tool type / dated variants → xAI web_search.
+		return "web_search"
+	// Codex CLI historically advertises local_shell; xAI Responses uses shell.
+	case trimmed == "local_shell":
+		return "shell"
+	default:
+		return trimmed
+	}
+}
+
 func sanitizeGrokResponsesTools(body []byte) ([]byte, error) {
 	tools := gjson.GetBytes(body, "tools")
 	if !tools.Exists() || !tools.IsArray() {
@@ -259,24 +352,34 @@ func sanitizeGrokResponsesTools(body []byte) ([]byte, error) {
 	rawTools := tools.Array()
 	filteredTools := make([]json.RawMessage, 0, len(rawTools))
 	for _, tool := range rawTools {
-		toolType := strings.TrimSpace(tool.Get("type").String())
-		if _, ok := grokResponsesSupportedToolTypes[toolType]; ok {
-			filteredTools = append(filteredTools, json.RawMessage(tool.Raw))
+		toolType := normalizeGrokResponsesToolType(strings.TrimSpace(tool.Get("type").String()))
+		if _, ok := grokResponsesSupportedToolTypes[toolType]; !ok {
+			continue
 		}
+		raw := json.RawMessage(tool.Raw)
+		if original := strings.TrimSpace(tool.Get("type").String()); original != toolType {
+			if rewritten, err := sjson.SetBytes([]byte(tool.Raw), "type", toolType); err == nil {
+				raw = json.RawMessage(rewritten)
+			}
+		}
+		filteredTools = append(filteredTools, raw)
 	}
 
 	var err error
-	if len(filteredTools) != len(rawTools) {
-		if len(filteredTools) == 0 {
+	// Always rewrite tools slice so alias remaps (same count) still land in body.
+	if len(filteredTools) == 0 {
+		if len(rawTools) > 0 {
 			body, err = sjson.DeleteBytes(body, "tools")
-		} else {
-			var encoded []byte
-			encoded, err = json.Marshal(filteredTools)
 			if err != nil {
 				return nil, err
 			}
-			body, err = sjson.SetRawBytes(body, "tools", encoded)
 		}
+	} else {
+		encoded, marshalErr := json.Marshal(filteredTools)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		body, err = sjson.SetRawBytes(body, "tools", encoded)
 		if err != nil {
 			return nil, err
 		}
@@ -291,6 +394,16 @@ func sanitizeGrokResponsesTools(body []byte) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		return body, nil
+	}
+	// Rewrite tool_choice.type aliases (e.g. local_shell → shell) for xAI.
+	if toolChoice.IsObject() {
+		original := strings.TrimSpace(toolChoice.Get("type").String())
+		if normalized := normalizeGrokResponsesToolType(original); original != "" && normalized != original {
+			if rewritten, setErr := sjson.SetBytes(body, "tool_choice.type", normalized); setErr == nil {
+				body = rewritten
+			}
+		}
 	}
 	return body, nil
 }
@@ -302,7 +415,7 @@ func shouldDropGrokToolChoice(toolChoice gjson.Result, tools []json.RawMessage) 
 	if !toolChoice.IsObject() {
 		return false
 	}
-	choiceType := strings.TrimSpace(toolChoice.Get("type").String())
+	choiceType := normalizeGrokResponsesToolType(strings.TrimSpace(toolChoice.Get("type").String()))
 	if choiceType == "" {
 		return false
 	}
@@ -352,14 +465,54 @@ func buildGrokResponsesRequest(ctx context.Context, c *gin.Context, account *Acc
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
+	// Align with OpenAI Responses clients: accept both JSON and SSE so streaming
+	// Claude Code / Codex traffic works through the same Grok Responses upstream.
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	req.Header.Set("User-Agent", "sub2api-grok/1.0")
+	req.Header.Set("OpenAI-Beta", "responses=experimental")
+
+	req.Header.Set("User-Agent", resolveGrokUpstreamUserAgent(c))
 	if c != nil {
-		if v := c.GetHeader("OpenAI-Beta"); strings.TrimSpace(v) != "" {
+		if v := strings.TrimSpace(c.GetHeader("OpenAI-Beta")); v != "" {
 			req.Header.Set("OpenAI-Beta", v)
 		}
+		// Preserve client session affinity when present so multi-turn Codex /
+		// Claude Code conversations stay sticky on Grok upstream.
+		if sessionID := strings.TrimSpace(c.GetHeader("session_id")); sessionID != "" {
+			apiKeyID := getAPIKeyIDFromContext(c)
+			if apiKeyID > 0 {
+				req.Header.Set("session_id", isolateOpenAISessionID(apiKeyID, sessionID))
+			} else {
+				req.Header.Set("session_id", sessionID)
+			}
+		}
 	}
+	_ = account
 	return req, nil
+}
+
+func resolveGrokUpstreamUserAgent(c *gin.Context) string {
+	const fallback = "sub2api-grok/1.0"
+	if c == nil {
+		return fallback
+	}
+	ua := strings.TrimSpace(c.GetHeader("User-Agent"))
+	if ua == "" {
+		return fallback
+	}
+	lower := strings.ToLower(ua)
+	// Keep a stable identity for generic library agents; pass through real clients
+	// (Claude Code / Codex / Grok CLI) so upstream fingerprinting stays coherent.
+	switch {
+	case strings.HasPrefix(lower, "go-http-client"),
+		strings.HasPrefix(lower, "python-"),
+		strings.HasPrefix(lower, "axios/"),
+		strings.HasPrefix(lower, "node-fetch"),
+		strings.HasPrefix(lower, "curl/"),
+		strings.HasPrefix(lower, "wget/"):
+		return fallback
+	default:
+		return ua
+	}
 }
 
 func (s *OpenAIGatewayService) updateGrokUsageSnapshot(ctx context.Context, accountID int64, snapshot *xai.QuotaSnapshot) {

@@ -2350,11 +2350,8 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		MonthlyLimitUSD:      monthlyLimit,
 		AllowImageGeneration: allowImageGeneration,
 		ImageGenerationRoute: func() string {
+			// Grok only supports native Imagine routes; never persist codex for Grok groups.
 			if input.Platform == PlatformGrok {
-				route := strings.ToLower(strings.TrimSpace(input.ImageGenerationRoute))
-				if route == GroupImageGenerationRouteCodex {
-					return GroupImageGenerationRouteCodex
-				}
 				return GroupImageGenerationRouteNative
 			}
 			return NormalizeGroupImageGenerationRoute(input.ImageGenerationRoute)
@@ -2578,16 +2575,11 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.ImageGenerationRoute != nil {
 		if group.Platform == PlatformGrok {
-			route := strings.ToLower(strings.TrimSpace(*input.ImageGenerationRoute))
-			if route == GroupImageGenerationRouteCodex {
-				group.ImageGenerationRoute = GroupImageGenerationRouteCodex
-			} else {
-				group.ImageGenerationRoute = GroupImageGenerationRouteNative
-			}
+			group.ImageGenerationRoute = GroupImageGenerationRouteNative
 		} else {
 			group.ImageGenerationRoute = NormalizeGroupImageGenerationRoute(*input.ImageGenerationRoute)
 		}
-	} else if group.Platform == PlatformGrok && group.ImageGenerationRoute == "" {
+	} else if group.Platform == PlatformGrok && (group.ImageGenerationRoute == "" || group.ImageGenerationRoute == GroupImageGenerationRouteCodex) {
 		group.ImageGenerationRoute = GroupImageGenerationRouteNative
 	}
 	if input.OpenAIImageMainModel != nil {

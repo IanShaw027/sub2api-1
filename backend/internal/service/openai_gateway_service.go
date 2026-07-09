@@ -4647,8 +4647,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	if account.Platform == PlatformGrok {
-		_ = promptCacheKey
-		return s.forwardGrokResponses(ctx, c, account, body, originalModel, reqStream, startTime)
+		return s.forwardGrokResponsesWithPromptCacheKey(ctx, c, account, body, originalModel, reqStream, startTime, promptCacheKey)
 	}
 
 	if account.Type == AccountTypeAPIKey && !openai_compat.ShouldUseResponsesAPI(account.Extra) {
@@ -10498,7 +10497,9 @@ func (s *OpenAIGatewayService) bindHTTPResponseAccount(ctx context.Context, c *g
 	if s == nil || account == nil || account.ID <= 0 {
 		return
 	}
-	if account.Type == AccountTypeOAuth && !s.openAIHTTPPreviousResponseIDSupported(account) {
+	// Grok OAuth always benefits from response sticky; OpenAI OAuth requires the
+	// explicit previous_response_id support flag.
+	if account.Type == AccountTypeOAuth && !account.IsGrok() && !s.openAIHTTPPreviousResponseIDSupported(account) {
 		return
 	}
 	responseID = strings.TrimSpace(responseID)
@@ -11846,7 +11847,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	preserveExplicitImageBillingModel := result.ImageCount > 0 &&
 		strings.TrimSpace(result.BillingModel) != "" &&
 		strings.TrimSpace(result.BillingModel) != modelView.RequestedModel
-	if !preserveExplicitImageBillingModel {
+	preserveExplicitGrokBillingModel := account != nil &&
+		account.Platform == PlatformGrok &&
+		strings.TrimSpace(result.BillingModel) != "" &&
+		strings.TrimSpace(result.BillingModel) != modelView.RequestedModel
+	if !preserveExplicitImageBillingModel && !preserveExplicitGrokBillingModel {
 		selectedCost = chooseHigherPricedUsageCost(modelView.RequestedModel, requestedCost, modelView.UpstreamModel, upstreamCost)
 		if selectedCost.Cost != nil {
 			cost = selectedCost.Cost
@@ -12113,14 +12118,25 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoRequestCost(result *OpenAIFor
 	if apiKey != nil && apiKey.Group != nil {
 		groupConfig = apiKey.Group.GetVideoPriceConfig()
 	}
+	billingModel := strings.TrimSpace(result.BillingModel)
+	if billingModel == "" {
+		billingModel = strings.TrimSpace(result.UpstreamModel)
+	}
+	if billingModel == "" {
+		billingModel = strings.TrimSpace(result.Model)
+	}
 	seconds := result.VideoSeconds
 	if seconds <= 0 {
 		// Some async video creation / retrieval responses do not echo duration.
-		// Treat the successful video request as at least one billable second instead of
-		// falling through to token/zero-cost billing.
-		seconds = 1
+		// Prefer the shared Grok media default when the model is Grok Imagine video;
+		// otherwise floor to 1s so we do not fall through to token/zero-cost billing.
+		if getGrokImagineDefaultVideoPricePerSecond(billingModel) > 0 {
+			seconds = grokMediaDefaultVideoSeconds
+		} else {
+			seconds = 1
+		}
 	}
-	return s.billingService.CalculateVideoCost(result.VideoSize, seconds, result.VideoCount, groupConfig, multiplier)
+	return s.billingService.CalculateVideoCost(result.VideoSize, seconds, result.VideoCount, groupConfig, multiplier, billingModel)
 }
 
 func isUsagePricingUnavailableError(err error) bool {

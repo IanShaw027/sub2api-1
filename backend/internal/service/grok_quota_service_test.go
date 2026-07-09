@@ -13,6 +13,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 type grokQuotaAccountRepo struct {
@@ -101,6 +102,93 @@ func TestGrokQuotaServiceProbeUsageStoresHeaders(t *testing.T) {
 	require.NotNil(t, repo.updates[42][grokQuotaSnapshotExtraKey])
 }
 
+func TestBuildGrokQuotaProbeBodyUsesMappedTextResponsesModel(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"grok": "grok-4.3",
+			},
+		},
+	}
+
+	body, err := buildGrokQuotaProbeBody(account)
+	require.NoError(t, err)
+	require.Equal(t, "grok-4.3", gjson.GetBytes(body, "model").String())
+	require.Equal(t, grokQuotaProbeInput, gjson.GetBytes(body, "input").String())
+	require.EqualValues(t, 1, gjson.GetBytes(body, "max_output_tokens").Int())
+	require.False(t, gjson.GetBytes(body, "store").Bool())
+}
+
+func TestBuildGrokQuotaProbeBodyFallsBackWhenMappingIsNotTextResponsesModel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mapped string
+	}{
+		{name: "image model", mapped: xai.DefaultImagineImageQualityModel},
+		{name: "video model", mapped: xai.DefaultImagineVideoModel},
+		{name: "non grok model", mapped: "gpt-5.5"},
+		{name: "unknown grok model", mapped: "grok-custom-non-responses"},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			account := &Account{
+				Platform: PlatformGrok,
+				Type:     AccountTypeOAuth,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{
+						"grok": tt.mapped,
+					},
+				},
+			}
+
+			body, err := buildGrokQuotaProbeBody(account)
+			require.NoError(t, err)
+			require.Equal(t, xai.DefaultTextModel, gjson.GetBytes(body, "model").String())
+		})
+	}
+}
+
+func TestGrokQuotaServiceProbeUsageUsesTLSAwareTransport(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:          47,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "access-token",
+			"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		},
+	}
+	repo := &grokQuotaAccountRepo{
+		mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
+			accountsByID: map[int64]*Account{47: account},
+		},
+	}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"resp_probe"}`)),
+	}}
+	svc := NewGrokQuotaService(repo, nil, NewGrokTokenProvider(repo, nil), upstream)
+
+	_, err := svc.ProbeUsage(context.Background(), 47)
+	require.NoError(t, err)
+	require.True(t, upstream.tlsCalled, "Grok quota probe should use DoWithTLS like the main Grok HTTP path")
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.lastReq.Context()))
+}
+
 func TestGrokQuotaServiceProbeUsageLoadsProxyWhenAccountEdgeMissing(t *testing.T) {
 	t.Parallel()
 
@@ -179,10 +267,9 @@ func TestGrokQuotaServiceProbeUsageStoresNoHeadersState(t *testing.T) {
 	require.NotEmpty(t, result.Snapshot.LastProbeAt)
 	require.Empty(t, result.Snapshot.LastHeadersSeenAt)
 
-	stored, ok := repo.updates[45][grokQuotaSnapshotExtraKey].(*xai.QuotaSnapshot)
-	require.True(t, ok)
-	require.False(t, stored.HeadersObserved)
-	require.Equal(t, http.StatusOK, stored.StatusCode)
+	// Empty probes must not overwrite a durable quota snapshot.
+	_, hasUpdate := repo.updates[45]
+	require.False(t, hasUpdate, "no-headers probe must not UpdateExtra quota snapshot")
 }
 
 func TestGrokQuotaServiceProbeUsageReturnsRateLimitedSnapshot(t *testing.T) {

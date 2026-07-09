@@ -8,6 +8,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -59,7 +60,7 @@ type updateChannelRequest struct {
 type channelModelPricingRequest struct {
 	Platform         string                   `json:"platform" binding:"omitempty,max=50"`
 	Models           []string                 `json:"models" binding:"required,min=1,max=100"`
-	BillingMode      string                   `json:"billing_mode" binding:"omitempty,oneof=token per_request image"`
+	BillingMode      string                   `json:"billing_mode" binding:"omitempty,oneof=token per_request image video search audio"`
 	InputPrice       *float64                 `json:"input_price" binding:"omitempty,min=0"`
 	OutputPrice      *float64                 `json:"output_price" binding:"omitempty,min=0"`
 	CacheWritePrice  *float64                 `json:"cache_write_price" binding:"omitempty,min=0"`
@@ -524,14 +525,9 @@ func (h *ChannelHandler) SyncPricingModels(c *gin.Context) {
 	}
 
 	if platform == service.PlatformGrok {
-		// Built-in Grok model list (pricing handled via billing fallback + channel overrides)
-		models := []string{
-			"grok-4.3",
-			"grok-build-0.1",
-			"grok-4.20-0309-reasoning",
-			"grok-4.20-0309-non-reasoning",
-			"grok-4.20-multi-agent-0309",
-		}
+		// Built-in Grok model list (pricing handled via billing fallback + channel overrides).
+		// Keep in sync with xai.DefaultModelIDs / DefaultTextModel.
+		models := xai.DefaultModelIDs()
 		response.Success(c, gin.H{"models": models})
 		return
 	}

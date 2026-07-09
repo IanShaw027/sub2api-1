@@ -1615,7 +1615,8 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 		return false
 	}
 	if capability == OpenAIEndpointCapabilityVideos {
-		return a.IsGrok()
+		// Imagine video is subscription OAuth only; Grok API-key accounts are text-only.
+		return a.IsGrokOAuth()
 	}
 	if capability == OpenAIEndpointCapabilityResponsesInputTokens {
 		if a.IsGrok() || a.Type != AccountTypeAPIKey {
@@ -1629,8 +1630,11 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 			configured[string(OpenAIEndpointCapabilityResponsesIngress)]
 	}
 	if a.IsGrok() {
+		// Grok serves OpenAI-compatible text via Responses/Chat Completions and
+		// Claude Code via /v1/messages (AnthropicMessagesIngress → xAI Responses bridge).
 		return capability == OpenAIEndpointCapabilityChatCompletions ||
-			capability == OpenAIEndpointCapabilityResponsesIngress
+			capability == OpenAIEndpointCapabilityResponsesIngress ||
+			capability == OpenAIEndpointCapabilityAnthropicMessagesIngress
 	}
 	switch capability {
 	case OpenAIEndpointCapabilityChatCompletions:

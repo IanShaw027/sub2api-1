@@ -75,11 +75,14 @@ func TestGroupResolveMessagesDispatchModel_GrokMapsClaudeFamilyToGrok(t *testing
 	group := &Group{Platform: PlatformGrok}
 
 	mappedModel, explicit := group.ResolveMessagesDispatchModelWithSource("claude-sonnet-4-5")
-	require.Equal(t, "grok-4.3", mappedModel)
+	require.Equal(t, "grok-4.5", mappedModel)
 	require.False(t, explicit)
-	require.Equal(t, "grok-4.3", group.ResolveMessagesDispatchModel("claude-sonnet-4-5"))
-	require.Equal(t, "grok-4.3", group.ResolveMessagesDispatchModel("claude-opus-4-6"))
-	require.Equal(t, "grok-4.3", group.ResolveMessagesDispatchModel("claude-haiku-4-5"))
+	require.Equal(t, "grok-4.5", group.ResolveMessagesDispatchModel("claude-sonnet-4-5"))
+	require.Equal(t, "grok-4.5", group.ResolveMessagesDispatchModel("claude-opus-4-6"))
+	require.Equal(t, "grok-4.5", group.ResolveMessagesDispatchModel("claude-haiku-4-5"))
+	// Native Grok models pass through (no dispatch rewrite).
 	require.Empty(t, group.ResolveMessagesDispatchModel("grok"))
+	require.Empty(t, group.ResolveMessagesDispatchModel("grok-4.5"))
+	require.Empty(t, group.ResolveMessagesDispatchModel("grok-4.3"))
 	require.Empty(t, group.ResolveMessagesDispatchModel("gpt-5.3-codex"))
 }
