@@ -3296,24 +3296,32 @@ func init() {
 	usagelogDescImageSizeSource := usagelogFields[37].Descriptor()
 	// usagelog.ImageSizeSourceValidator is a validator for the "image_size_source" field. It is called by the builders before save.
 	usagelog.ImageSizeSourceValidator = usagelogDescImageSizeSource.Validators[0].(func(string) error)
+	// usagelogDescVideoResolution is the schema descriptor for video_resolution field.
+	usagelogDescVideoResolution := usagelogFields[39].Descriptor()
+	// usagelog.VideoResolutionValidator is a validator for the "video_resolution" field. It is called by the builders before save.
+	usagelog.VideoResolutionValidator = usagelogDescVideoResolution.Validators[0].(func(string) error)
+	// usagelogDescVideoCount is the schema descriptor for video_count field.
+	usagelogDescVideoCount := usagelogFields[41].Descriptor()
+	// usagelog.DefaultVideoCount holds the default value on creation for the video_count field.
+	usagelog.DefaultVideoCount = usagelogDescVideoCount.Default.(int)
 	// usagelogDescCacheTTLOverridden is the schema descriptor for cache_ttl_overridden field.
-	usagelogDescCacheTTLOverridden := usagelogFields[39].Descriptor()
+	usagelogDescCacheTTLOverridden := usagelogFields[43].Descriptor()
 	// usagelog.DefaultCacheTTLOverridden holds the default value on creation for the cache_ttl_overridden field.
 	usagelog.DefaultCacheTTLOverridden = usagelogDescCacheTTLOverridden.Default.(bool)
 	// usagelogDescOpenaiWsProfile is the schema descriptor for openai_ws_profile field.
-	usagelogDescOpenaiWsProfile := usagelogFields[40].Descriptor()
+	usagelogDescOpenaiWsProfile := usagelogFields[44].Descriptor()
 	// usagelog.DefaultOpenaiWsProfile holds the default value on creation for the openai_ws_profile field.
 	usagelog.DefaultOpenaiWsProfile = usagelogDescOpenaiWsProfile.Default.(string)
 	// usagelogDescOpenaiWsConnReused is the schema descriptor for openai_ws_conn_reused field.
-	usagelogDescOpenaiWsConnReused := usagelogFields[41].Descriptor()
+	usagelogDescOpenaiWsConnReused := usagelogFields[45].Descriptor()
 	// usagelog.DefaultOpenaiWsConnReused holds the default value on creation for the openai_ws_conn_reused field.
 	usagelog.DefaultOpenaiWsConnReused = usagelogDescOpenaiWsConnReused.Default.(bool)
 	// usagelogDescProvider is the schema descriptor for provider field.
-	usagelogDescProvider := usagelogFields[42].Descriptor()
+	usagelogDescProvider := usagelogFields[46].Descriptor()
 	// usagelog.DefaultProvider holds the default value on creation for the provider field.
 	usagelog.DefaultProvider = usagelogDescProvider.Default.(string)
 	// usagelogDescCreatedAt is the schema descriptor for created_at field.
-	usagelogDescCreatedAt := usagelogFields[43].Descriptor()
+	usagelogDescCreatedAt := usagelogFields[47].Descriptor()
 	// usagelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagelog.DefaultCreatedAt = usagelogDescCreatedAt.Default.(func() time.Time)
 	userMixin := schema.User{}.Mixin()

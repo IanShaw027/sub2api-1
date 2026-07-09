@@ -81,6 +81,34 @@ func TestHandle429_FallbackUsesDBSeconds(t *testing.T) {
 	require.True(t, !accountRepo.lastRateLimitReset.Before(before.Add(12*time.Second)) && !accountRepo.lastRateLimitReset.After(after.Add(12*time.Second)))
 }
 
+func TestHandle429_GrokUsesResetHeaderWindow(t *testing.T) {
+	accountRepo := &rateLimit429AccountRepoStub{}
+	svc := NewRateLimitService(accountRepo, nil, &config.Config{}, nil, nil)
+
+	account := &Account{ID: 77, Platform: PlatformGrok, Type: AccountTypeOAuth}
+	headers := http.Header{"X-Ratelimit-Remaining-Requests": []string{"0"}, "Retry-After": []string{"45"}}
+	before := time.Now()
+	svc.handle429(context.Background(), account, headers, nil)
+
+	require.Equal(t, 1, accountRepo.rateLimitCalls, "Grok 429 with reset header uses SetRateLimited")
+	require.Equal(t, int64(77), accountRepo.lastRateLimitID)
+	require.True(t, accountRepo.lastRateLimitReset.After(before.Add(44*time.Second)))
+	require.True(t, accountRepo.lastRateLimitReset.Before(before.Add(46*time.Second)))
+}
+
+func TestHandle429_GrokCapsOversizedRetryAfter(t *testing.T) {
+	accountRepo := &rateLimit429AccountRepoStub{}
+	svc := NewRateLimitService(accountRepo, nil, &config.Config{}, nil, nil)
+
+	account := &Account{ID: 78, Platform: PlatformGrok, Type: AccountTypeOAuth}
+	before := time.Now()
+	svc.handle429(context.Background(), account, http.Header{"Retry-After": []string{"86400"}}, nil)
+
+	require.Equal(t, 1, accountRepo.rateLimitCalls)
+	require.True(t, accountRepo.lastRateLimitReset.Before(before.Add(grokMaxUpstreamCooldown+time.Second)))
+	require.True(t, accountRepo.lastRateLimitReset.After(before.Add(grokMaxUpstreamCooldown-time.Second)))
+}
+
 func TestHandle429_FallbackDisabledSkipsLocalMark(t *testing.T) {
 	accountRepo := &rateLimit429AccountRepoStub{}
 	settingRepo := newMockSettingRepo()

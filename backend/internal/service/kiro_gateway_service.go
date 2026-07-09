@@ -1129,6 +1129,33 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	repeatedWordHoldback := ""
 	repeatedWordCanonical := ""
 	repeatedWordCount := 0
+	// buildKiroPartialStreamResult constructs a billable ForwardResult from the
+	// output accumulated so far. Used for *terminal* post-start failures (client
+	// disconnect, mid-stream read/parse error, generation-failure frame) where the
+	// upstream already consumed the account's quota and no failover retry happens —
+	// so the usage must still be billed instead of silently dropped (which would let
+	// a client abort mid-stream to obtain output for free). Mirrors the success-path
+	// ForwardResult built at the end of forwardStream.
+	buildKiroPartialStreamResult := func() *ForwardResult {
+		thinkingText := nativeThinkingBuilder.String()
+		outputTokens := estimateKiroOutputTokens(textOutputBuilder.String()+thinkingText, toolOutputBuilder.String())
+		fakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
+		return &ForwardResult{
+			RequestID:     resp.Header.Get("x-amzn-requestid"),
+			Model:         parsed.Model,
+			UpstreamModel: converted.Model,
+			Stream:        true,
+			Duration:      time.Since(start),
+			FirstTokenMs:  firstTokenMs,
+			Usage: ClaudeUsage{
+				InputTokens:              fakeCacheUsage.InputTokens,
+				OutputTokens:             outputTokens,
+				CacheCreationInputTokens: fakeCacheUsage.CacheCreationInputTokens,
+				CacheCreation5mTokens:    fakeCacheUsage.CacheCreationInputTokens,
+				CacheReadInputTokens:     fakeCacheUsage.CacheReadInputTokens,
+			},
+		}
+	}
 	debugAggregator := BeginKiroFrameAggregator(s.settingService, c)
 	defer func() {
 		debugAggregator.Finalize("upstream_response_body", map[string]any{
@@ -1245,8 +1272,10 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		return emitTextDeltaRaw(flush)
 	}
 	suppressTrailingHoldback := func() {
+		// 只丢弃占位符回声。identityPending 是真实文本的尾巴（恰好以身份短语前缀
+		// 结尾被暂存），必须保留，由 closeTextBlock → flushIdentityHoldback
+		// 消毒后发出——否则 tool 事件前的正常输出会静默缺字。
 		trailingHoldback = ""
-		identityPending = ""
 	}
 	dropRepeatedWordHoldback := func() {
 		repeatedWordHoldback = ""
@@ -1281,8 +1310,13 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			if err := flushTrailingHoldback(); err != nil {
 				return err
 			}
-			if err := flushIdentityHoldback(); err != nil {
-				return err
+			// 跨 delta 拼接：把上一个 delta 暂存的身份短语前缀尾巴并入本次文本，
+			// 让 sanitizer 能看到完整短语（"I am Ki"+"ro"）。绝不能在入口无条件
+			// flush identityPending——那会让暂存尾巴在拼接前就单独发出，导致整套
+			// 跨 delta holdback 机制失效（拆分的身份短语原样泄漏给客户端）。
+			if identityPending != "" {
+				text = identityPending + text
+				identityPending = ""
 			}
 			if kiropkg.IsPlaceholderFragment(text) {
 				trailingHoldback = text
@@ -1511,7 +1545,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusBadGateway, kiroTransportFailureReasonKeyword, "Kiro upstream disconnected before first forwardable event", err.Error())
 				}
 				s.handleProtocolError(ctx, c, account, parsed.Model, true, err)
-				return nil, err
+				return buildKiroPartialStreamResult(), err
 			}
 			for {
 				frame, consumed, ok, err := parseKiroFrame(buffer)
@@ -1520,7 +1554,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusBadGateway, kiroTransportFailureReasonKeyword, "Kiro upstream disconnected before first forwardable event", err.Error())
 					}
 					s.handleProtocolError(ctx, c, account, parsed.Model, true, err)
-					return nil, err
+					return buildKiroPartialStreamResult(), err
 				}
 				if !ok {
 					break
@@ -1555,9 +1589,11 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						logKiroResponseAnomaly(ctx, account, parsed, true, anomalyKind, failureErr, framesSeen, completedToolUses, lastContextUsagePercentage)
 						var failoverErr *UpstreamFailoverError
 						if handledErr != nil && !errors.As(handledErr, &failoverErr) {
-							return nil, handledErr
+							// Terminal post-start frame failure: content already streamed
+							// to the client and upstream quota consumed. Bill the partial.
+							return buildKiroPartialStreamResult(), handledErr
 						}
-						return nil, failureErr
+						return buildKiroPartialStreamResult(), failureErr
 					}
 					return nil, s.handleFrameFailure(ctx, c, account, resp.Header.Get("x-amzn-requestid"), frame, failureErr, true)
 				}
@@ -1909,6 +1945,12 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		}
 		if readErr != nil {
 			if isClientDisconnectError(c, readErr) {
+				// Client aborted mid-stream after receiving content: upstream quota
+				// already consumed and no failover. Bill the partial so aborting a
+				// stream can't be used to obtain output for free.
+				if streamStarted {
+					return buildKiroPartialStreamResult(), readErr
+				}
 				return nil, readErr
 			}
 			if !streamStarted && firstForwardableTimeoutTriggered.Load() {
@@ -1929,7 +1971,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					_ = writeKiroStreamError(writer, incompleteErr.Error())
 					logKiroResponseAnomaly(ctx, account, parsed, true, "incomplete_frame_eof", incompleteErr, framesSeen, completedToolUses, lastContextUsagePercentage)
 					s.handleProtocolError(ctx, c, account, parsed.Model, true, incompleteErr)
-					return nil, incompleteErr
+					return buildKiroPartialStreamResult(), incompleteErr
 				}
 				if framesSeen == 0 {
 					emptyErr := errors.New("empty kiro response body")
@@ -1954,7 +1996,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			_ = writeKiroStreamError(writer, readErr.Error())
 			logKiroResponseAnomaly(ctx, account, parsed, true, "stream_read_error", readErr, framesSeen, completedToolUses, lastContextUsagePercentage)
 			s.handleProtocolError(ctx, c, account, parsed.Model, true, readErr)
-			return nil, readErr
+			return buildKiroPartialStreamResult(), readErr
 		}
 	}
 	if thinkingBlockOpen {
@@ -2118,7 +2160,8 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				Detail:            partialTelemetry.opsDetail(stopReason, outputTokens, partialTelemetry.shortOutput(outputTokens), []string{"incomplete_tool_use_completed"}),
 			})
 		}
-		return nil, incompleteErr
+		// Upstream produced (incomplete) output and consumed quota; bill the partial.
+		return buildKiroPartialStreamResult(), incompleteErr
 	}
 	if !streamStarted || (textOutputBuilder.Len() == 0 && nativeThinkingBuilder.Len() == 0 && !hasVisibleToolOutput) {
 		emptyErr := errors.New("kiro response contained no assistant output")

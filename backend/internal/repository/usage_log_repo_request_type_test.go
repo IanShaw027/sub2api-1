@@ -90,6 +90,10 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // model_mapping_chain
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
+			sqlmock.AnyArg(), // video_resolution
+			sqlmock.AnyArg(), // video_seconds
+			sqlmock.AnyArg(), // video_count
+			sqlmock.AnyArg(), // video_unit_price
 			sqlmock.AnyArg(), // account_stats_cost
 			createdAt,
 			sqlmock.AnyArg(), // openai_ws_profile
@@ -177,6 +181,10 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // model_mapping_chain
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
+			sqlmock.AnyArg(), // video_resolution
+			sqlmock.AnyArg(), // video_seconds
+			sqlmock.AnyArg(), // video_count
+			sqlmock.AnyArg(), // video_unit_price
 			sqlmock.AnyArg(), // account_stats_cost
 			createdAt,
 			sqlmock.AnyArg(), // openai_ws_profile
@@ -964,6 +972,10 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},
 			sql.NullString{},
 			sql.NullString{},
+			sql.NullString{},  // video_resolution
+			sql.NullInt64{},   // video_seconds
+			sql.NullInt64{},   // video_count
+			sql.NullFloat64{}, // video_unit_price
 			sql.NullFloat64{},
 			now,
 			sql.NullString{}, // openai_ws_profile
@@ -1036,6 +1048,10 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // model_mapping_chain
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
+			sql.NullString{},  // video_resolution
+			sql.NullInt64{},   // video_seconds
+			sql.NullInt64{},   // video_count
+			sql.NullFloat64{}, // video_unit_price
 			sql.NullFloat64{}, // account_stats_cost
 			now,
 			sql.NullString{}, // openai_ws_profile
@@ -1093,6 +1109,10 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // model_mapping_chain
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
+			sql.NullString{},  // video_resolution
+			sql.NullInt64{},   // video_seconds
+			sql.NullInt64{},   // video_count
+			sql.NullFloat64{}, // video_unit_price
 			sql.NullFloat64{}, // account_stats_cost
 			now,
 			sql.NullString{}, // openai_ws_profile
@@ -1149,6 +1169,10 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // model_mapping_chain
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
+			sql.NullString{},  // video_resolution
+			sql.NullInt64{},   // video_seconds
+			sql.NullInt64{},   // video_count
+			sql.NullFloat64{}, // video_unit_price
 			sql.NullFloat64{}, // account_stats_cost
 			now,
 			sql.NullString{}, // openai_ws_profile

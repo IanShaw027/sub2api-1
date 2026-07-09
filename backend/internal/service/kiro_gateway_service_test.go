@@ -1475,7 +1475,11 @@ func TestKiroGatewayService_ForwardStream_ExceptionDoesNotCommitFakeCacheOrEmitF
 	)
 
 	require.Error(t, err)
-	require.Nil(t, result)
+	// Terminal post-start exception: partial usage is billed (upstream consumed
+	// quota and the client already received streamed content) even though the
+	// fake cache is NOT committed and no final message_delta/stop is emitted.
+	require.NotNil(t, result)
+	require.Greater(t, result.Usage.OutputTokens, 0)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), "event: message_start")
 	require.Contains(t, rec.Body.String(), "event: error")
@@ -1550,7 +1554,11 @@ func TestKiroGatewayService_ForwardStream_DropsRepeatedWordHoldbackOnExceptionAn
 	)
 
 	require.Error(t, err)
-	require.Nil(t, result)
+	// Terminal post-start generation failure bills the partial output that already
+	// reached the client ("partial output"); the withheld degenerate "court" words
+	// are dropped and not billed as visible content.
+	require.NotNil(t, result)
+	require.Greater(t, result.Usage.OutputTokens, 0)
 	output := rec.Body.String()
 	require.Contains(t, output, `"partial output"`)
 	require.NotContains(t, output, "court", "repeated upstream degeneration words should be withheld and dropped when the stream ends with exception")
@@ -1601,6 +1609,114 @@ func TestKiroGatewayService_ForwardStream_FlushesRepeatedWordHoldbackOnNormalCom
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Contains(t, rec.Body.String(), "court")
+}
+
+func TestKiroGatewayService_ForwardStream_SanitizesIdentityPhraseSplitAcrossDeltas(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	// 先发一段普通文本确认流开始（首个确认块会裸发，不参与跨 delta holdback），
+	// 随后把身份短语 "I am Kiro" 拆成两个 delta："I am Ki" + "ro, ready."。
+	// 单独 sanitize 任一 delta 都不命中；只有跨 delta 拼接后 sanitizer 才能替换。
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "Hello. "}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "I am Ki"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "ro, ready to help."}),
+	}, nil)
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 90210, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-opus-4-8", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-opus-4.8"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	output := rec.Body.String()
+	require.NotContains(t, output, "Kiro", "cross-delta identity phrase must be sanitized before reaching client")
+	require.Contains(t, output, "Claude Code")
+	require.Contains(t, output, "ready to help.")
+}
+
+// kiroCanceledAfterReader yields payload on the first Read, then returns
+// context.Canceled — simulating a client that disconnects mid-stream after
+// receiving content.
+type kiroCanceledAfterReader struct {
+	payload []byte
+	done    bool
+}
+
+func (r *kiroCanceledAfterReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, context.Canceled
+	}
+	n := copy(p, r.payload)
+	r.done = true
+	return n, nil
+}
+
+func TestKiroGatewayService_ForwardStream_ClientDisconnectMidStreamBillsPartialUsage(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	// 请求上下文已取消 → isClientDisconnectError 成立。
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(cancelCtx)
+
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	frame := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "assistantResponseEvent",
+	}, map[string]any{"content": "some streamed assistant output"})
+
+	result, err := svc.forwardStream(
+		cancelCtx,
+		c,
+		&Account{ID: 42, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(&kiroCanceledAfterReader{payload: frame}), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.5"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.Error(t, err)
+	// 客户端中途断开必须计费已产生的部分输出，否则可被用来免费获取输出。
+	require.NotNil(t, result, "client disconnect after streamed content must bill partial usage")
+	require.Greater(t, result.Usage.OutputTokens, 0)
+	require.Equal(t, 32, result.Usage.InputTokens)
 }
 
 func TestKiroGatewayService_ForwardNonStream_UsageMatchesAnthropicCacheShape(t *testing.T) {
@@ -2885,7 +3001,9 @@ func TestKiroGatewayService_ForwardStream_IncompleteToolUseEOFReturnsRecoverable
 		"",
 	)
 
-	require.Nil(t, result)
+	// Terminal incomplete-tool-use at EOF: upstream produced partial output and
+	// consumed quota, so the partial usage is billed.
+	require.NotNil(t, result)
 	require.Error(t, err)
 	require.Contains(t, rec.Body.String(), `"id":"tool-1"`)
 	require.Contains(t, rec.Body.String(), `"partial_json":"{\"q\":\"a\""`)

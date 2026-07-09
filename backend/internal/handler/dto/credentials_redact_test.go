@@ -17,6 +17,7 @@ func TestRedactCredentials_StripsSensitiveKeysAndReportsStatus(t *testing.T) {
 		"refresh_token":         "rt-secret",
 		"access_token":          "at-secret",
 		"api_key":               "sk-secret",
+		"client_secret":         "idc-client-secret",
 		"aws_secret_access_key": "aws-secret",
 		"service_account_json":  map[string]any{"private_key": "..."},
 		"private_key":           "raw-key",
@@ -24,6 +25,7 @@ func TestRedactCredentials_StripsSensitiveKeysAndReportsStatus(t *testing.T) {
 		"base_url":      "https://api.example.com",
 		"model_mapping": map[string]any{"foo": "bar"},
 		"project_id":    "proj-1",
+		"client_id":     "idc-client-id",
 		"expires_at":    int64(123456),
 	}
 
@@ -32,6 +34,7 @@ func TestRedactCredentials_StripsSensitiveKeysAndReportsStatus(t *testing.T) {
 	require.NotContains(t, out, "refresh_token")
 	require.NotContains(t, out, "access_token")
 	require.NotContains(t, out, "api_key")
+	require.NotContains(t, out, "client_secret")
 	require.NotContains(t, out, "aws_secret_access_key")
 	require.NotContains(t, out, "service_account_json")
 	require.NotContains(t, out, "private_key")
@@ -39,11 +42,14 @@ func TestRedactCredentials_StripsSensitiveKeysAndReportsStatus(t *testing.T) {
 	require.Equal(t, "https://api.example.com", out["base_url"])
 	require.Equal(t, map[string]any{"foo": "bar"}, out["model_mapping"])
 	require.Equal(t, "proj-1", out["project_id"])
+	// client_id 是公开标识符（Kiro IdC 前端 re-auth 需要展示/回填），不脱敏
+	require.Equal(t, "idc-client-id", out["client_id"])
 	require.Equal(t, int64(123456), out["expires_at"])
 
 	require.True(t, status["has_refresh_token"])
 	require.True(t, status["has_access_token"])
 	require.True(t, status["has_api_key"])
+	require.True(t, status["has_client_secret"])
 	require.True(t, status["has_aws_secret_access_key"])
 	require.True(t, status["has_service_account_json"])
 	require.True(t, status["has_private_key"])
@@ -80,7 +86,7 @@ func TestRedactCredentials_DoesNotMutateInput(t *testing.T) {
 
 func TestRedactCredentials_AllKnownSensitiveKeys(t *testing.T) {
 	keys := []string{
-		"access_token", "refresh_token", "id_token",
+		"access_token", "refresh_token", "id_token", "client_secret",
 		"api_key", "session_key", "cookie",
 		"aws_secret_access_key", "aws_session_token",
 		"service_account_json", "service_account", "private_key",

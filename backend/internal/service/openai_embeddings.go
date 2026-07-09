@@ -484,7 +484,14 @@ func (s *OpenAIGatewayService) ForwardVideos(
 				Message:            upstreamMsg,
 				Detail:             upstreamDetail,
 			})
-			s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, originalModel)
+			// Videos are Grok-only: route through the Grok upstream-error handler so
+			// 429/401 honor the parsed x-ratelimit-reset-* window and the unified
+			// pipeline (Retry-After was previously a no-op on this path).
+			if account.Platform == PlatformGrok {
+				s.handleGrokAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+			} else {
+				s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, originalModel)
+			}
 			return nil, &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
 				ResponseBody:           respBody,

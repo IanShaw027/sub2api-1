@@ -532,6 +532,12 @@ type UsageLog struct {
 	ImageSizeBreakdown map[string]int `json:"image_size_breakdown"`
 	MediaType          *string        `json:"media_type"`
 
+	// 视频生成计费明细
+	VideoResolution *string  `json:"video_resolution,omitempty"`
+	VideoSeconds    *int     `json:"video_seconds,omitempty"`
+	VideoCount      int      `json:"video_count"`
+	VideoUnitPrice  *float64 `json:"video_unit_price,omitempty"`
+
 	// User-Agent
 	UserAgent *string `json:"user_agent"`
 	// IPAddress is visible to the owner of the usage record.

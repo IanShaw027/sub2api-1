@@ -6534,6 +6534,12 @@ oauthTransformDone:
 		if reqStream {
 			streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, upstreamModel)
 			if err != nil {
+				// Terminal streaming errors (client disconnect / mid-stream read
+				// error) already consumed upstream quota and cannot be retried, so
+				// bill the partial usage. Failover errors return nil to allow retry.
+				if streamResult != nil && openaiStreamingErrorBillsPartial(err) {
+					return buildOpenAIStreamingPartialForwardResult(resp, body, originalModel, upstreamModel, streamResult, time.Since(startTime)), err
+				}
 				return nil, err
 			}
 			usage = streamResult.usage
@@ -7109,6 +7115,60 @@ func buildOpenAIPartialForwardResult(resp *http.Response, requestBody []byte, or
 	}
 	applyOpenAIResponsesImageBillingMeta(result, requestBody, upstreamModel)
 	return result
+}
+
+// buildOpenAIStreamingPartialForwardResult constructs a billable partial result
+// from a streaming result carrying usage. Used for *terminal* streaming errors
+// (client disconnect, mid-stream read error, incomplete terminal event) where the
+// upstream already consumed quota and no failover retry will happen.
+func buildOpenAIStreamingPartialForwardResult(resp *http.Response, requestBody []byte, originalModel, upstreamModel string, streamResult *openaiStreamingResult, duration time.Duration) *OpenAIForwardResult {
+	usage := (*OpenAIUsage)(nil)
+	responseID := ""
+	imageCount := 0
+	searchCount := 0
+	var firstTokenMs *int
+	if streamResult != nil {
+		usage = streamResult.usage
+		responseID = streamResult.responseID
+		imageCount = streamResult.imageCount
+		searchCount = streamResult.searchCount
+		firstTokenMs = streamResult.firstTokenMs
+	}
+	if usage == nil {
+		usage = &OpenAIUsage{}
+	}
+	result := &OpenAIForwardResult{
+		RequestID:       resp.Header.Get("x-request-id"),
+		ResponseID:      strings.TrimSpace(responseID),
+		Usage:           *usage,
+		Model:           originalModel,
+		UpstreamModel:   upstreamModel,
+		ServiceTier:     extractOpenAIServiceTierFromBody(requestBody),
+		ReasoningEffort: extractOpenAIReasoningEffortFromBody(requestBody, originalModel),
+		Stream:          true,
+		OpenAIWSMode:    false,
+		ResponseHeaders: resp.Header.Clone(),
+		Duration:        duration,
+		FirstTokenMs:    firstTokenMs,
+		ImageCount:      imageCount,
+		SearchCount:     searchCount,
+	}
+	applyOpenAIResponsesImageBillingMeta(result, requestBody, upstreamModel)
+	return result
+}
+
+// openaiStreamingErrorBillsPartial reports whether a streaming error should be
+// billed as a terminal partial result rather than retried. Failover errors
+// (*UpstreamFailoverError) are retried on another account (which will bill the
+// retry), so they must NOT bill here to avoid double-billing. Every other
+// streaming error is terminal — the client already received partial content and
+// there is no replay — so the upstream-consumed usage must be recorded.
+func openaiStreamingErrorBillsPartial(err error) bool {
+	if err == nil {
+		return false
+	}
+	var failoverErr *UpstreamFailoverError
+	return !errors.As(err, &failoverErr)
 }
 
 func logOpenAIPassthroughInstructionsRejected(
@@ -8170,13 +8230,25 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				dataBytes = []byte(data)
 				trimmedData = strings.TrimSpace(data)
 			}
-			lineStartsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsClientOutput(trimmedData, eventType)
+			suppressReasoningSummary := isOpenAIResponsesReasoningSummaryStreamEvent(eventType)
+			if !suppressReasoningSummary {
+				if sanitizedData, sanitized := sanitizeOpenAIResponsesReasoningSummariesForClient(dataBytes); sanitized {
+					openAICompatSetSSEFrameData(&frame, string(sanitizedData))
+					eventType, data = openAIStreamFrameEventTypeAndData(frame)
+					dataBytes = []byte(data)
+					trimmedData = strings.TrimSpace(data)
+				}
+			}
+			lineStartsClientOutput := !suppressReasoningSummary && (forceFlushFailedEvent || openAIStreamDataStartsClientOutput(trimmedData, eventType))
 			if firstTokenMs == nil && lineStartsClientOutput && trimmedData != "[DONE]" {
 				ms := int(time.Since(startTime).Milliseconds())
 				firstTokenMs = &ms
 				stopTTFTWatchdog()
 			}
 			s.parseSSEUsageBytes(dataBytes, usage)
+			if suppressReasoningSummary {
+				return nil
+			}
 			if clientDisconnected {
 				return nil
 			}
@@ -9845,7 +9917,8 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				_, data = openAIStreamFrameEventTypeAndData(frame)
 				dataBytes = correctedData
 			}
-			startsClientOutput = forceFlushFailedEvent || openAIStreamFrameStartsClientOutput(frame)
+			suppressReasoningSummary := isOpenAIResponsesReasoningSummaryStreamEvent(eventType)
+			startsClientOutput = !suppressReasoningSummary && (forceFlushFailedEvent || openAIStreamFrameStartsClientOutput(frame))
 			flushForFirstToken = firstTokenMs == nil && startsClientOutput && strings.TrimSpace(data) != "[DONE]"
 			if flushForFirstToken {
 				ms := int(time.Since(startTime).Milliseconds())
@@ -9858,7 +9931,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			if imageOutput, ok := extractImageGenerationOutputFromSSEData(dataBytes, streamSeenImages); ok {
 				streamImageOutputs = append(streamImageOutputs, imageOutput)
 			}
-			if responsesStreamEventMayContributeToOutput(eventType) {
+			if !suppressReasoningSummary && responsesStreamEventMayContributeToOutput(eventType) {
 				var streamEvent apicompat.ResponsesStreamEvent
 				if err := json.Unmarshal(dataBytes, &streamEvent); err == nil {
 					streamOutputAccumulator.ProcessEvent(&streamEvent)
@@ -9875,6 +9948,13 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				dataBytes = sanitizedData
 				data = string(sanitizedData)
 			}
+			if !suppressReasoningSummary {
+				if sanitizedData, sanitized := sanitizeOpenAIResponsesReasoningSummariesForClient(dataBytes); sanitized {
+					openAICompatSetSSEFrameData(&frame, string(sanitizedData))
+					dataBytes = sanitizedData
+					data = string(sanitizedData)
+				}
+			}
 			// Replace model in response if needed.
 			// Fast path: most events do not contain model field values.
 			if needModelReplace && mappedModel != "" && strings.Contains(data, mappedModel) {
@@ -9886,6 +9966,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				}
 			}
 			startsClientOutput = forceFlushFailedEvent || openAIStreamDataStartsClientOutput(data, eventType)
+			if suppressReasoningSummary {
+				return
+			}
 
 		}
 
@@ -11063,6 +11146,60 @@ func responsesStreamEventMayContributeToOutput(eventType string) bool {
 	}
 }
 
+func isOpenAIResponsesReasoningSummaryStreamEvent(eventType string) bool {
+	switch strings.TrimSpace(eventType) {
+	case "response.reasoning_summary_text.delta",
+		"response.reasoning_summary_text.done",
+		"response.reasoning_summary_part.added",
+		"response.reasoning_summary_part.done":
+		return true
+	default:
+		return false
+	}
+}
+
+func sanitizeOpenAIResponsesReasoningSummariesForClient(data []byte) ([]byte, bool) {
+	if len(data) == 0 {
+		return data, false
+	}
+	updated := data
+	modified := false
+	paths := []string{"response.output", "output"}
+	for _, path := range paths {
+		output := gjson.GetBytes(updated, path)
+		if !output.IsArray() {
+			continue
+		}
+		for index, item := range output.Array() {
+			if strings.TrimSpace(item.Get("type").String()) != "reasoning" {
+				continue
+			}
+			summaryPath := fmt.Sprintf("%s.%d.summary", path, index)
+			summary := item.Get("summary")
+			if !summary.Exists() || (summary.IsArray() && len(summary.Array()) == 0) {
+				continue
+			}
+			patched, err := sjson.SetRawBytes(updated, summaryPath, []byte("[]"))
+			if err != nil {
+				continue
+			}
+			updated = patched
+			modified = true
+		}
+	}
+	item := gjson.GetBytes(updated, "item")
+	if item.IsObject() && strings.TrimSpace(item.Get("type").String()) == "reasoning" {
+		summary := item.Get("summary")
+		if summary.Exists() && (!summary.IsArray() || len(summary.Array()) > 0) {
+			if patched, err := sjson.SetRawBytes(updated, "item.summary", []byte("[]")); err == nil {
+				updated = patched
+				modified = true
+			}
+		}
+	}
+	return updated, modified
+}
+
 // reconstructResponseOutputFromSSE scans raw SSE body text for delta events and
 // returns a JSON-encoded output array reconstructed from accumulated deltas.
 // Returns (nil, false) if no content was found in deltas.
@@ -11073,6 +11210,13 @@ func reconstructResponseOutputFromSSE(bodyText string) ([]byte, bool) {
 	for _, frame := range openAICompatSSEFramesFromBody(bodyText) {
 		data := strings.TrimSpace(openAICompatPayloadWithEventType(frame.Data, frame.EventType))
 		if data == "" || data == "[DONE]" {
+			continue
+		}
+		eventType := strings.TrimSpace(frame.EventType)
+		if payloadType := strings.TrimSpace(gjson.Get(data, "type").String()); payloadType != "" {
+			eventType = payloadType
+		}
+		if isOpenAIResponsesReasoningSummaryStreamEvent(eventType) {
 			continue
 		}
 		if imageOutput, ok := extractImageGenerationOutputFromSSEData([]byte(data), seenImages); ok {
@@ -11880,6 +12024,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		}
 	}
 
+	var videoMeta openAIVideoBillingMetadata
+	if openAIForwardResultHasVideoBilling(result) {
+		videoMeta = s.openAIVideoBillingMetadata(result, apiKey)
+	}
+
 	usageLog := &UsageLog{
 		UserID:                       user.ID,
 		APIKeyID:                     apiKey.ID,
@@ -11905,6 +12054,12 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		ImageSizeSource:              optionalTrimmedStringPtr(result.ImageSizeSource),
 		ImageSizeBreakdown:           result.ImageSizeBreakdown,
 		BilledByHigherPricedUpstream: selectedCost.BilledByHigherPricedUpstream,
+	}
+	if openAIForwardResultHasVideoBilling(result) {
+		usageLog.VideoResolution = optionalTrimmedStringPtr(videoMeta.resolution)
+		usageLog.VideoSeconds = &videoMeta.seconds
+		usageLog.VideoCount = videoMeta.count
+		usageLog.VideoUnitPrice = &videoMeta.unitPrice
 	}
 	if result.AudioUsage != nil {
 		billingMode := string(BillingModeAudio)
@@ -12114,29 +12269,54 @@ func serviceEndpointIsVideo(path string) bool {
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIVideoRequestCost(result *OpenAIForwardResult, apiKey *APIKey, multiplier float64) *CostBreakdown {
-	var groupConfig *VideoPriceConfig
+	meta := s.openAIVideoBillingMetadata(result, apiKey)
+	return s.billingService.CalculateVideoCost(meta.resolution, meta.seconds, meta.count, meta.groupConfig, multiplier, meta.billingModel)
+}
+
+type openAIVideoBillingMetadata struct {
+	billingModel string
+	resolution   string
+	seconds      int
+	count        int
+	unitPrice    float64
+	groupConfig  *VideoPriceConfig
+}
+
+func (s *OpenAIGatewayService) openAIVideoBillingMetadata(result *OpenAIForwardResult, apiKey *APIKey) openAIVideoBillingMetadata {
+	meta := openAIVideoBillingMetadata{count: 1}
+	if result == nil {
+		meta.resolution = VideoBillingTier720p
+		return meta
+	}
 	if apiKey != nil && apiKey.Group != nil {
-		groupConfig = apiKey.Group.GetVideoPriceConfig()
+		meta.groupConfig = apiKey.Group.GetVideoPriceConfig()
 	}
-	billingModel := strings.TrimSpace(result.BillingModel)
-	if billingModel == "" {
-		billingModel = strings.TrimSpace(result.UpstreamModel)
+	meta.billingModel = strings.TrimSpace(result.BillingModel)
+	if meta.billingModel == "" {
+		meta.billingModel = strings.TrimSpace(result.UpstreamModel)
 	}
-	if billingModel == "" {
-		billingModel = strings.TrimSpace(result.Model)
+	if meta.billingModel == "" {
+		meta.billingModel = strings.TrimSpace(result.Model)
 	}
-	seconds := result.VideoSeconds
-	if seconds <= 0 {
+	meta.resolution = NormalizeVideoBillingTierOrDefault(result.VideoSize)
+	meta.seconds = result.VideoSeconds
+	if meta.seconds <= 0 {
 		// Some async video creation / retrieval responses do not echo duration.
 		// Prefer the shared Grok media default when the model is Grok Imagine video;
 		// otherwise floor to 1s so we do not fall through to token/zero-cost billing.
-		if getGrokImagineDefaultVideoPricePerSecond(billingModel) > 0 {
-			seconds = grokMediaDefaultVideoSeconds
+		if getGrokImagineDefaultVideoPricePerSecond(meta.billingModel) > 0 {
+			meta.seconds = grokMediaDefaultVideoSeconds
 		} else {
-			seconds = 1
+			meta.seconds = 1
 		}
 	}
-	return s.billingService.CalculateVideoCost(result.VideoSize, seconds, result.VideoCount, groupConfig, multiplier, billingModel)
+	if result.VideoCount > 0 {
+		meta.count = result.VideoCount
+	}
+	if s != nil && s.billingService != nil {
+		meta.unitPrice = s.billingService.GetVideoUnitPrice(meta.billingModel, meta.resolution, meta.groupConfig)
+	}
+	return meta
 }
 
 func isUsagePricingUnavailableError(err error) bool {

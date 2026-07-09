@@ -2649,4 +2649,11 @@ func TestOpenAIGatewayServiceRecordUsage_VideoExplicitPriceDoesNotApplyTextRateM
 	require.InDelta(t, 0.2, usageRepo.lastLog.ActualCost, 1e-12)
 	require.InDelta(t, 0.2, userRepo.lastAmount, 1e-12)
 	require.InDelta(t, 1.0, usageRepo.lastLog.RateMultiplier, 1e-12)
+	require.NotNil(t, usageRepo.lastLog.VideoResolution)
+	require.Equal(t, VideoBillingTier720p, *usageRepo.lastLog.VideoResolution)
+	require.NotNil(t, usageRepo.lastLog.VideoSeconds)
+	require.Equal(t, 10, *usageRepo.lastLog.VideoSeconds)
+	require.Equal(t, 1, usageRepo.lastLog.VideoCount)
+	require.NotNil(t, usageRepo.lastLog.VideoUnitPrice)
+	require.InDelta(t, 0.02, *usageRepo.lastLog.VideoUnitPrice, 1e-12)
 }

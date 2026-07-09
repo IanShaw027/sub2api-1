@@ -30,7 +30,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, billed_by_higher_priced_upstream, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, image_input_size, image_output_size, image_size_source, image_size_breakdown, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, channel_id, model_mapping_chain, billing_tier, billing_mode, account_stats_cost, created_at, openai_ws_profile, openai_ws_conn_reused, provider"
+const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, billed_by_higher_priced_upstream, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, image_input_size, image_output_size, image_size_source, image_size_breakdown, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, channel_id, model_mapping_chain, billing_tier, billing_mode, video_resolution, video_seconds, video_count, video_unit_price, account_stats_cost, created_at, openai_ws_profile, openai_ws_conn_reused, provider"
 
 // usageLogInsertArgTypes must stay in the same order as:
 //  1. prepareUsageLogInsert().args
@@ -89,6 +89,10 @@ var usageLogInsertArgTypes = [...]string{
 	"text",        // model_mapping_chain
 	"text",        // billing_tier
 	"text",        // billing_mode
+	"text",        // video_resolution
+	"integer",     // video_seconds
+	"integer",     // video_count
+	"numeric",     // video_unit_price
 	"numeric",     // account_stats_cost
 	"timestamptz", // created_at
 	"text",        // openai_ws_profile
@@ -475,6 +479,10 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			model_mapping_chain,
 			billing_tier,
 			billing_mode,
+			video_resolution,
+			video_seconds,
+			video_count,
+			video_unit_price,
 			account_stats_cost,
 			created_at,
 			openai_ws_profile,
@@ -486,7 +494,7 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			$10, $11, $12, $13,
 			$14, $15, $16, $17,
 			$18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54
+			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
@@ -927,6 +935,10 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			model_mapping_chain,
 			billing_tier,
 			billing_mode,
+			video_resolution,
+			video_seconds,
+			video_count,
+			video_unit_price,
 			account_stats_cost,
 			created_at,
 			openai_ws_profile,
@@ -1012,6 +1024,10 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				model_mapping_chain,
 				billing_tier,
 				billing_mode,
+				video_resolution,
+				video_seconds,
+				video_count,
+				video_unit_price,
 				account_stats_cost,
 				created_at,
 				openai_ws_profile,
@@ -1068,6 +1084,10 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				model_mapping_chain,
 				billing_tier,
 				billing_mode,
+				video_resolution,
+				video_seconds,
+				video_count,
+				video_unit_price,
 				account_stats_cost,
 				created_at,
 				openai_ws_profile,
@@ -1164,6 +1184,10 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			model_mapping_chain,
 			billing_tier,
 			billing_mode,
+			video_resolution,
+			video_seconds,
+			video_count,
+			video_unit_price,
 			account_stats_cost,
 			created_at,
 			openai_ws_profile,
@@ -1246,6 +1270,10 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			model_mapping_chain,
 			billing_tier,
 			billing_mode,
+			video_resolution,
+			video_seconds,
+			video_count,
+			video_unit_price,
 			account_stats_cost,
 			created_at,
 			openai_ws_profile,
@@ -1302,6 +1330,10 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			model_mapping_chain,
 			billing_tier,
 			billing_mode,
+			video_resolution,
+			video_seconds,
+			video_count,
+			video_unit_price,
 			account_stats_cost,
 			created_at,
 			openai_ws_profile,
@@ -1366,6 +1398,10 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			model_mapping_chain,
 			billing_tier,
 			billing_mode,
+			video_resolution,
+			video_seconds,
+			video_count,
+			video_unit_price,
 			account_stats_cost,
 			created_at,
 			openai_ws_profile,
@@ -1377,7 +1413,7 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			$10, $11, $12, $13,
 			$14, $15, $16, $17,
 			$18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54
+			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`, prepared.args...)
@@ -1421,6 +1457,9 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 	modelMappingChain := nullString(log.ModelMappingChain)
 	billingTier := nullString(log.BillingTier)
 	billingMode := nullString(log.BillingMode)
+	videoResolution := nullString(log.VideoResolution)
+	videoSeconds := nullInt(log.VideoSeconds)
+	videoUnitPrice := nullFloat64(log.VideoUnitPrice)
 	requestedModel := strings.TrimSpace(log.RequestedModel)
 	if requestedModel == "" {
 		requestedModel = strings.TrimSpace(log.Model)
@@ -1487,6 +1526,10 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			modelMappingChain,
 			billingTier,
 			billingMode,
+			videoResolution,
+			videoSeconds,
+			log.VideoCount,
+			videoUnitPrice,
 			log.AccountStatsCost, // account_stats_cost
 			createdAt,
 			log.OpenAIWSProfile,
@@ -4509,6 +4552,10 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		modelMappingChain            sql.NullString
 		billingTier                  sql.NullString
 		billingMode                  sql.NullString
+		videoResolution              sql.NullString
+		videoSeconds                 sql.NullInt64
+		videoCount                   sql.NullInt64
+		videoUnitPrice               sql.NullFloat64
 		accountStatsCost             sql.NullFloat64
 		createdAt                    time.Time
 		openaiWSProfile              sql.NullString
@@ -4567,6 +4614,10 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		&modelMappingChain,
 		&billingTier,
 		&billingMode,
+		&videoResolution,
+		&videoSeconds,
+		&videoCount,
+		&videoUnitPrice,
 		&accountStatsCost,
 		&createdAt,
 		&openaiWSProfile,
@@ -4692,6 +4743,19 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 	}
 	if billingMode.Valid {
 		log.BillingMode = &billingMode.String
+	}
+	if videoResolution.Valid {
+		log.VideoResolution = &videoResolution.String
+	}
+	if videoSeconds.Valid {
+		value := int(videoSeconds.Int64)
+		log.VideoSeconds = &value
+	}
+	if videoCount.Valid {
+		log.VideoCount = int(videoCount.Int64)
+	}
+	if videoUnitPrice.Valid {
+		log.VideoUnitPrice = &videoUnitPrice.Float64
 	}
 	if accountStatsCost.Valid {
 		log.AccountStatsCost = &accountStatsCost.Float64
@@ -4830,6 +4894,13 @@ func nullFloat64Ptr(v sql.NullFloat64) *float64 {
 	}
 	out := v.Float64
 	return &out
+}
+
+func nullFloat64(v *float64) sql.NullFloat64 {
+	if v == nil {
+		return sql.NullFloat64{}
+	}
+	return sql.NullFloat64{Float64: *v, Valid: true}
 }
 
 func nullString(v *string) sql.NullString {

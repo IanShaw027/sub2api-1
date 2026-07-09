@@ -1302,6 +1302,22 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 		}
 	}
 
+	// 1b. Grok/xAI 平台：解析 x-ratelimit-reset-* / retry-after，按重置时间限流。
+	//     使用带上限的冷却，避免异常上游返回超大 retry-after 把账号长时间摘除。
+	if account.Platform == PlatformGrok {
+		if resetAt := grokRateLimitResetTime(headers); resetAt != nil {
+			s.notifyAccountSchedulingBlocked(account, *resetAt, "429")
+			if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {
+				slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
+				return
+			}
+			slog.Info("grok_account_rate_limited", "account_id", account.ID, "reset_at", *resetAt, "reset_in", time.Until(*resetAt).Truncate(time.Second))
+			return
+		}
+		s.apply429FallbackRateLimit(ctx, account, "grok_no_reset_time")
+		return
+	}
+
 	// 2. Anthropic 平台：尝试解析 per-window 头（5h / 7d），选择实际触发的窗口
 	if result := calculateAnthropic429ResetTime(headers); result != nil {
 		s.notifyAccountSchedulingBlocked(account, result.resetAt, "429")

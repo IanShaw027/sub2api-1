@@ -2,9 +2,13 @@ package service
 
 // SensitiveCredentialKeys 列出 Account.Credentials JSON map 中绝不允许返回到前端的子键。
 // dto 层做响应脱敏、service 层做更新合并都引用此清单——新增凭证类型时务必同步。
+// 注意：账号更新合并另有一份语义不同的清单（account_service.go isSensitiveCredentialKey，
+// 额外含 client_id 等"防误清空"键），两份清单的**秘密类**键必须保持同步。
 var SensitiveCredentialKeys = []string{
 	// OAuth
 	"access_token", "refresh_token", "id_token",
+	// OAuth 动态注册客户端秘密（Kiro IdC/BuilderID 的 SSO-OIDC client_secret）
+	"client_secret",
 	// API Key 类
 	"api_key", "session_key", "cookie",
 	// 云服务凭据

@@ -129,8 +129,17 @@ func parseResetHeader(raw string) *int64 {
 		return nil
 	}
 	if value, err := strconv.ParseInt(raw, 10, 64); err == nil {
-		if value > 1_000_000_000_000 {
+		// xAI (and OpenAI-compatible upstreams) may express the reset as a
+		// millisecond epoch, a second epoch, or a *relative* number of seconds
+		// until reset (e.g. "60"). Disambiguate by magnitude, mirroring the
+		// Kiro reset parser, so a relative "60" is not misread as 1970-01-01.
+		switch {
+		case value >= 1_000_000_000_000: // milliseconds epoch → seconds
 			value = value / 1000
+		case value >= 1_000_000_000: // already a plausible unix-seconds epoch (>= 2001-09)
+			// keep as-is
+		default: // relative seconds from now
+			value = time.Now().Unix() + value
 		}
 		return &value
 	}

@@ -99,17 +99,51 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 		proxyURL = account.Proxy.URL()
 	}
 
-	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
-	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
-	if err != nil {
-		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
-	}
-	defer func() { _ = resp.Body.Close() }()
+	compactionRetryTried := false
+	var resp *http.Response
+	for {
+		upstreamStart := time.Now()
+		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
+		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+		if err != nil {
+			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+		}
 
-	if resp.StatusCode >= 400 {
+		if resp.StatusCode < 400 {
+			break
+		}
+
 		respBody := s.readUpstreamErrorBody(resp)
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
+		if !compactionRetryTried && isGrokCompactionBlobDecodeError(resp.StatusCode, respBody) {
+			retryBody, retryable, retryErr := sanitizeGrokCompactionReplayBody(patchedBody)
+			if retryErr != nil {
+				_ = resp.Body.Close()
+				return nil, retryErr
+			}
+			if retryable {
+				_ = resp.Body.Close()
+				compactionRetryTried = true
+				patchedBody = retryBody
+				promptCacheKey = strings.TrimSpace(gjson.GetBytes(patchedBody, "prompt_cache_key").String())
+				if promptCacheKey == "" {
+					promptCacheKey = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+				}
+				setOpsUpstreamRequestBody(c, patchedBody)
+				upstreamReq, err = buildGrokResponsesRequest(upstreamCtx, c, account, patchedBody, token)
+				if err != nil {
+					return nil, err
+				}
+				if trimmed := strings.TrimSpace(promptCacheKey); trimmed != "" && upstreamReq.Header.Get("session_id") == "" {
+					apiKeyID := getAPIKeyIDFromContext(c)
+					upstreamReq.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, trimmed)))
+				}
+				applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+				continue
+			}
+		}
+		defer func() { _ = resp.Body.Close() }()
+
 		s.updateGrokUsageSnapshot(ctx, account.ID, xai.ParseQuotaHeaders(resp.Header, resp.StatusCode))
 		upstreamMsg := sanitizeUpstreamErrorMessage(extractUpstreamErrorMessage(respBody))
 		if upstreamMsg == "" {
@@ -134,6 +168,7 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 		}
 		return s.handleErrorResponse(ctx, resp, c, account, patchedBody, upstreamModel)
 	}
+	defer func() { _ = resp.Body.Close() }()
 
 	s.updateGrokUsageSnapshot(ctx, account.ID, xai.ParseQuotaHeaders(resp.Header, resp.StatusCode))
 
@@ -144,6 +179,13 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 	if reqStream {
 		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, upstreamModel)
 		if err != nil {
+			// Terminal streaming errors (client disconnect / mid-stream read error)
+			// already consumed upstream quota and cannot be retried, so bill the
+			// partial usage. Failover errors return nil to allow retry (avoids
+			// double-billing). Mirrors the OpenAI Responses path for consistency.
+			if streamResult != nil && openaiStreamingErrorBillsPartial(err) {
+				return buildOpenAIStreamingPartialForwardResult(resp, patchedBody, originalModel, upstreamModel, streamResult, time.Since(startTime)), err
+			}
 			return nil, err
 		}
 		usage = streamResult.usage
@@ -153,6 +195,12 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 	} else {
 		nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
 		if err != nil {
+			// Non-streaming terminal errors (e.g. SSE `response.failed` carrying
+			// usage) already consumed upstream quota; bill the partial. Failover
+			// errors return a nil result, so this guard is safe. Mirrors OpenAI.
+			if nonStreamResult != nil {
+				return buildOpenAIPartialForwardResult(resp, patchedBody, originalModel, upstreamModel, nonStreamResult.usage, nonStreamResult.responseID, nonStreamResult.imageCount, nonStreamResult.searchCount, time.Since(startTime)), err
+			}
 			return nil, err
 		}
 		usage = nonStreamResult.usage
@@ -196,6 +244,61 @@ func rejectGrokUnsupportedImageGenerationTools(body []byte) error {
 		}
 	}
 	return nil
+}
+
+func isGrokCompactionBlobDecodeError(statusCode int, body []byte) bool {
+	if statusCode != http.StatusBadRequest || len(body) == 0 {
+		return false
+	}
+
+	code := strings.ToLower(strings.TrimSpace(firstNonEmpty(
+		gjson.GetBytes(body, "code").String(),
+		gjson.GetBytes(body, "error.code").String(),
+	)))
+	msg := strings.ToLower(strings.TrimSpace(firstNonEmpty(
+		gjson.GetBytes(body, "error").String(),
+		gjson.GetBytes(body, "error.message").String(),
+		gjson.GetBytes(body, "message").String(),
+		gjson.GetBytes(body, "detail").String(),
+		string(body),
+	)))
+	if strings.Contains(msg, "compaction blob") &&
+		(strings.Contains(msg, "could not decode") || strings.Contains(msg, "decode")) {
+		return true
+	}
+	return isOpenAIInvalidEncryptedContentError(code, msg, body)
+}
+
+func sanitizeGrokCompactionReplayBody(body []byte) ([]byte, bool, error) {
+	if len(body) == 0 {
+		return nil, false, nil
+	}
+	var reqBody map[string]any
+	if err := json.Unmarshal(body, &reqBody); err != nil {
+		return nil, false, fmt.Errorf("parse grok compaction retry body: %w", err)
+	}
+
+	removedReasoningItems := trimOpenAIEncryptedReasoningItems(reqBody)
+	previousResponseID := openAIWSPayloadString(reqBody, "previous_response_id")
+	hasFunctionCallOutput := HasFunctionCallOutput(reqBody)
+	droppedPreviousResponseID := false
+	if previousResponseID != "" && !hasFunctionCallOutput {
+		delete(reqBody, "previous_response_id")
+		droppedPreviousResponseID = true
+	}
+	if droppedPreviousResponseID {
+		if _, ok := reqBody["store"]; !ok {
+			reqBody["store"] = false
+		}
+	}
+	if !removedReasoningItems && !droppedPreviousResponseID {
+		return nil, false, nil
+	}
+	retryBody, err := marshalOpenAIResponsesRequestBodyOrdered(reqBody)
+	if err != nil {
+		return nil, false, fmt.Errorf("serialize grok compaction retry body: %w", err)
+	}
+	return retryBody, true, nil
 }
 
 func countOpenAISearchToolsInRequestBody(body []byte) int {
@@ -522,32 +625,167 @@ func (s *OpenAIGatewayService) updateGrokUsageSnapshot(ctx context.Context, acco
 	if s.codexSnapshotThrottle != nil && !s.codexSnapshotThrottle.Allow(accountID, time.Now()) {
 		return
 	}
-	_ = s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{
+	updates := map[string]any{
 		grokQuotaSnapshotExtraKey: snapshot,
-	})
+	}
+	// Also derive the scheduling-threshold extras (grok_sched_*) the evaluator
+	// reads in grokThresholdCandidates. Without this writer the admin-configured
+	// Grok auto-pause threshold could never fire (the read side was dead config).
+	for k, v := range buildGrokSchedulerExtraUpdates(snapshot) {
+		updates[k] = v
+	}
+	_ = s.accountRepo.UpdateExtra(ctx, accountID, updates)
 }
+
+// buildGrokSchedulerExtraUpdates derives the grok_sched_* scheduling snapshot
+// (utilization percent + reset time) consumed by EvaluateAccountSchedulingThreshold.
+// Utilization is the most-constrained of the requests/tokens windows.
+func buildGrokSchedulerExtraUpdates(snapshot *xai.QuotaSnapshot) map[string]any {
+	if snapshot == nil {
+		return nil
+	}
+	util, reset, ok := grokSnapshotUtilization(snapshot)
+	if !ok {
+		return nil
+	}
+	updates := map[string]any{
+		"grok_sched_utilization":      util,
+		"grok_sched_usage_updated_at": time.Now().UTC().Format(time.RFC3339),
+	}
+	if reset != nil {
+		updates["grok_sched_reset_at"] = reset.UTC().Format(time.RFC3339)
+	}
+	return updates
+}
+
+// grokSnapshotUtilization returns the highest window utilization (0-100) across
+// the requests/tokens quota windows and the reset time of that window.
+func grokSnapshotUtilization(snapshot *xai.QuotaSnapshot) (float64, *time.Time, bool) {
+	best := -1.0
+	var bestReset *time.Time
+	consider := func(window *xai.QuotaWindow) {
+		if window == nil || window.Limit == nil || *window.Limit <= 0 || window.Remaining == nil {
+			return
+		}
+		remaining := *window.Remaining
+		if remaining < 0 {
+			remaining = 0
+		}
+		util := (1 - float64(remaining)/float64(*window.Limit)) * 100
+		if util < 0 {
+			util = 0
+		}
+		if util > 100 {
+			util = 100
+		}
+		if util > best {
+			best = util
+			if window.ResetUnix != nil {
+				t := time.Unix(*window.ResetUnix, 0).UTC()
+				bestReset = &t
+			} else {
+				bestReset = nil
+			}
+		}
+	}
+	consider(snapshot.Requests)
+	consider(snapshot.Tokens)
+	if best < 0 {
+		return 0, nil, false
+	}
+	return best, bestReset, true
+}
+
+// grokMaxUpstreamCooldown caps how long a single upstream error response can
+// remove a Grok account from scheduling. Prevents a malformed/hostile
+// `retry-after: 86400` (or a bogus reset header) from parking an account for a
+// day off one bad response.
+const grokMaxUpstreamCooldown = 30 * time.Minute
 
 func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte) {
 	if s == nil || account == nil {
 		return
 	}
+	// Refresh the quota snapshot from every error response so quota-based
+	// auto-pause and the admin quota view see the latest reset window, including
+	// on 429 (previously the reset headers here were ignored entirely).
+	if snapshot := xai.ParseQuotaHeaders(headers, statusCode); snapshot != nil {
+		s.updateGrokUsageSnapshot(ctx, account.ID, snapshot)
+	}
+
 	switch statusCode {
-	case http.StatusUnauthorized:
-		s.tempUnscheduleGrok(ctx, account, 10*time.Minute, "grok oauth token unauthorized")
-	case http.StatusForbidden:
-		s.tempUnscheduleGrok(ctx, account, 30*time.Minute, "grok entitlement or subscription tier denied")
-	case http.StatusTooManyRequests:
-		cooldown := 2 * time.Minute
-		if snapshot := xai.ParseQuotaHeaders(headers, statusCode); snapshot != nil && snapshot.RetryAfterSeconds != nil && *snapshot.RetryAfterSeconds > 0 {
-			cooldown = time.Duration(*snapshot.RetryAfterSeconds) * time.Second
+	case http.StatusUnauthorized, http.StatusTooManyRequests:
+		// Route 401/429 through the unified pipeline so Grok gets the same
+		// treatment as every other platform: 401 invalidates the token cache,
+		// permanently disables accounts missing a refresh_token, and honors
+		// OAuth401CooldownMinutes; 429 uses the parsed x-ratelimit-reset-* window
+		// (capped) and respects pool-mode / custom-error-code rules.
+		if s.rateLimitService != nil {
+			if s.rateLimitService.HandleUpstreamError(ctx, account, statusCode, headers, responseBody) {
+				s.BlockAccountScheduling(account, time.Time{}, "upstream_disable")
+			}
+			return
 		}
-		s.tempUnscheduleGrok(ctx, account, cooldown, "grok rate limited")
+		// Defensive fallback if the rate-limit service is unwired (tests).
+		s.tempUnscheduleGrok(ctx, account, grokUpstreamCooldownFor(statusCode, headers), "grok upstream error")
+	case http.StatusForbidden:
+		// Keep 403 recoverable with a bounded cooldown rather than the generic
+		// permanent SetError — a transient entitlement/tier 403 should not kill
+		// the account outright.
+		s.tempUnscheduleGrok(ctx, account, grokMaxUpstreamCooldown, "grok entitlement or subscription tier denied")
 	default:
 		if statusCode >= 500 {
 			s.tempUnscheduleGrok(ctx, account, 2*time.Minute, "grok upstream temporary error")
 		}
 	}
-	_ = responseBody
+}
+
+// grokUpstreamCooldownFor derives a capped cooldown from the upstream reset /
+// retry-after headers, used only on the defensive fallback path.
+func grokUpstreamCooldownFor(statusCode int, headers http.Header) time.Duration {
+	cooldown := 2 * time.Minute
+	if snapshot := xai.ParseQuotaHeaders(headers, statusCode); snapshot != nil && snapshot.RetryAfterSeconds != nil && *snapshot.RetryAfterSeconds > 0 {
+		cooldown = time.Duration(*snapshot.RetryAfterSeconds) * time.Second
+	}
+	if cooldown > grokMaxUpstreamCooldown {
+		cooldown = grokMaxUpstreamCooldown
+	}
+	return cooldown
+}
+
+// grokRateLimitResetTime returns the soonest capped reset time from Grok/xAI
+// rate-limit headers (x-ratelimit-reset-requests/tokens or retry-after), or nil
+// when none are present. The result is clamped to grokMaxUpstreamCooldown from
+// now so a hostile/oversized value can't park the account indefinitely.
+func grokRateLimitResetTime(headers http.Header) *time.Time {
+	snapshot := xai.ParseQuotaHeaders(headers, http.StatusTooManyRequests)
+	if snapshot == nil {
+		return nil
+	}
+	now := time.Now()
+	maxUntil := now.Add(grokMaxUpstreamCooldown)
+	var reset *time.Time
+	consider := func(candidate time.Time) {
+		if !candidate.After(now) {
+			return
+		}
+		if candidate.After(maxUntil) {
+			candidate = maxUntil
+		}
+		if reset == nil || candidate.Before(*reset) {
+			c := candidate
+			reset = &c
+		}
+	}
+	if snapshot.RetryAfterSeconds != nil && *snapshot.RetryAfterSeconds > 0 {
+		consider(now.Add(time.Duration(*snapshot.RetryAfterSeconds) * time.Second))
+	}
+	for _, window := range []*xai.QuotaWindow{snapshot.Requests, snapshot.Tokens} {
+		if window != nil && window.ResetUnix != nil {
+			consider(time.Unix(*window.ResetUnix, 0))
+		}
+	}
+	return reset
 }
 
 func (s *OpenAIGatewayService) tempUnscheduleGrok(ctx context.Context, account *Account, cooldown time.Duration, reason string) {

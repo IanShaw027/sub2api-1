@@ -23,6 +23,12 @@ type grokQuotaAccountRepo struct {
 	lastTempUnschedID     int64
 	lastTempUnschedUntil  time.Time
 	lastTempUnschedReason string
+	rateLimitedCalls      int
+	lastRateLimitedID     int64
+	lastRateLimitedUntil  time.Time
+	setErrorCalls         int
+	lastSetErrorID        int64
+	lastSetErrorMsg       string
 }
 
 func (r *grokQuotaAccountRepo) UpdateExtra(_ context.Context, id int64, updates map[string]any) error {
@@ -38,6 +44,20 @@ func (r *grokQuotaAccountRepo) SetTempUnschedulable(_ context.Context, id int64,
 	r.lastTempUnschedID = id
 	r.lastTempUnschedUntil = until
 	r.lastTempUnschedReason = reason
+	return nil
+}
+
+func (r *grokQuotaAccountRepo) SetRateLimited(_ context.Context, id int64, resetAt time.Time) error {
+	r.rateLimitedCalls++
+	r.lastRateLimitedID = id
+	r.lastRateLimitedUntil = resetAt
+	return nil
+}
+
+func (r *grokQuotaAccountRepo) SetError(_ context.Context, id int64, errorMsg string) error {
+	r.setErrorCalls++
+	r.lastSetErrorID = id
+	r.lastSetErrorMsg = errorMsg
 	return nil
 }
 

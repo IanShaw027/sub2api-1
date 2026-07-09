@@ -5,6 +5,7 @@ package xai
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -39,6 +40,38 @@ func TestParseQuotaHeaders(t *testing.T) {
 	require.Equal(t, "active", snapshot.EntitlementStatus)
 	require.Contains(t, snapshot.Headers, "x-ratelimit-limit-requests")
 	require.NotContains(t, snapshot.Headers, "authorization")
+}
+
+func TestParseResetHeaderRelativeSecondsNotMisreadAsEpoch(t *testing.T) {
+	t.Parallel()
+
+	headers := http.Header{}
+	// xAI may return the reset window as a relative number of seconds ("60").
+	// It must resolve to ~now+60s, NOT 1970-01-01 (epoch 60).
+	headers.Set("x-ratelimit-reset-requests", "60")
+	headers.Set("x-ratelimit-remaining-requests", "0")
+
+	before := time.Now().Unix()
+	snapshot := ParseQuotaHeaders(headers, http.StatusTooManyRequests)
+	require.NotNil(t, snapshot)
+	require.NotNil(t, snapshot.Requests)
+	require.NotNil(t, snapshot.Requests.ResetUnix)
+	got := *snapshot.Requests.ResetUnix
+	require.GreaterOrEqual(t, got, before+59)
+	require.LessOrEqual(t, got, time.Now().Unix()+61)
+}
+
+func TestParseResetHeaderMillisecondsEpochNormalized(t *testing.T) {
+	t.Parallel()
+
+	headers := http.Header{}
+	headers.Set("x-ratelimit-reset-tokens", "1893456000000") // ms epoch
+	headers.Set("x-ratelimit-remaining-tokens", "0")
+
+	snapshot := ParseQuotaHeaders(headers, http.StatusTooManyRequests)
+	require.NotNil(t, snapshot)
+	require.NotNil(t, snapshot.Tokens)
+	require.Equal(t, int64(1893456000), *snapshot.Tokens.ResetUnix)
 }
 
 func TestParseQuotaHeadersReturnsNilForMissingHeaders(t *testing.T) {

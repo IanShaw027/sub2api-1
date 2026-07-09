@@ -361,6 +361,28 @@
                 <span class="font-medium text-white">${{ tooltipData.total_cost?.toFixed(6) || '0.000000' }}</span>
               </div>
             </template>
+            <template v-else-if="tooltipData?.billing_mode === BILLING_MODE_VIDEO">
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.videoResolution') }}</span>
+                <span class="font-medium text-white">{{ tooltipData.video_resolution || '-' }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.videoDuration') }}</span>
+                <span class="font-medium text-white">{{ tooltipData.video_seconds ?? '-' }}s</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.videoCount') }}</span>
+                <span class="font-medium text-white">{{ tooltipData.video_count ?? 1 }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.videoUnitPrice') }}</span>
+                <span class="font-medium text-sky-300">${{ (tooltipData.video_unit_price ?? 0).toFixed(6) }}/s</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.videoSubtotal') }}</span>
+                <span class="font-medium text-white">${{ tooltipData.total_cost?.toFixed(6) || '0.000000' }}</span>
+              </div>
+            </template>
             <!-- Token billing: show unit prices per 1M tokens -->
             <template v-else-if="!tooltipData?.billing_mode || tooltipData.billing_mode === BILLING_MODE_TOKEN">
               <div v-if="tooltipData && tooltipData.input_tokens > 0" class="flex items-center justify-between gap-4">
@@ -441,6 +463,7 @@ import { resolveUsageRequestType } from '@/utils/usageRequestType'
 import {
   BILLING_MODE_IMAGE,
   BILLING_MODE_TOKEN,
+  BILLING_MODE_VIDEO,
   getBillingModeLabel,
   getBillingModeBadgeClass,
 } from '@/utils/billingMode'

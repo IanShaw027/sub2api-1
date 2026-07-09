@@ -538,6 +538,49 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					}
 				}
 				h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "error", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
+				// 终态错误但已产生部分输出（流式中途断开 / 读错误 / 生成失败帧等）：
+				// 上游已消耗账号配额且不会 failover（failover 错误在上面的分支已 return），
+				// 补记这部分用量，避免客户端主动中断流来逃避计费。
+				if result != nil {
+					userAgent := c.GetHeader("User-Agent")
+					clientIP := ip.GetClientIP(c)
+					requestPayloadHash := service.HashUsageRequestPayload(body)
+					inboundEndpoint := GetInboundEndpoint(c)
+					upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+					forceCacheBilling := fs.ForceCacheBilling
+					quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+					h.submitUsageRecordTask(c.Request.Context(), wrapUsageRecordTaskWithRequestContext(c, func(ctx context.Context) {
+						if recErr := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
+							Result:             result,
+							QuotaPlatform:      quotaPlatform,
+							APIKey:             apiKey,
+							User:               apiKey.User,
+							Account:            account,
+							Subscription:       subscription,
+							InboundEndpoint:    inboundEndpoint,
+							UpstreamEndpoint:   upstreamEndpoint,
+							UserAgent:          userAgent,
+							IPAddress:          clientIP,
+							RequestPayloadHash: requestPayloadHash,
+							ForceCacheBilling:  forceCacheBilling,
+							APIKeyService:      h.apiKeyService,
+							ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+						}); recErr != nil {
+							logger.L().With(
+								zap.String("component", "handler.gateway.messages"),
+								zap.Int64("user_id", subject.UserID),
+								zap.Int64("api_key_id", apiKey.ID),
+								zap.Any("group_id", apiKey.GroupID),
+								zap.String("model", reqModel),
+								zap.Int64("account_id", account.ID),
+							).Error("gateway.record_partial_usage_failed", zap.Error(recErr))
+						}
+					}))
+					reqLog.Warn("gateway.forward_partial_error_result",
+						zap.Int64("account_id", account.ID),
+						zap.Error(err),
+					)
+				}
 				if shouldSuppressForwardErrorResponse(c, err) {
 					return
 				}

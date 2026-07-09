@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/gin-gonic/gin"
@@ -751,6 +752,58 @@ func TestForwardGrokResponsesAPIKeyUsesXAIResponses(t *testing.T) {
 	require.True(t, upstream.tlsCalled)
 }
 
+func TestForwardGrokResponsesRetriesCompactionBlobErrorWithSanitizedReplay(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	body := []byte(`{"model":"gpt-5.4","stream":false,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","summary":[{"type":"summary_text","text":"keep summary"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          59,
+		Name:        "grok-oauth",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "access-token",
+			"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+	}
+	upstream := &httpUpstreamRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_compaction_bad"}},
+				Body:       io.NopCloser(strings.NewReader(`{"code":"invalid-argument","error":"Could not decode the compaction blob. Ensure it is unmodified from the compact response."}`)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}, "Xai-Request-Id": []string{"rid_compaction_retry_ok"}},
+				Body:       io.NopCloser(strings.NewReader(`{"id":"resp_retry_ok","object":"response","model":"grok-4.3","output":[],"usage":{"input_tokens":3,"output_tokens":1}}`)),
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+
+	result, err := svc.forwardGrokResponses(context.Background(), c, account, body, "gpt-5.4", false, time.Now())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	require.True(t, gjson.GetBytes(upstream.bodies[0], "previous_response_id").Exists())
+	require.True(t, strings.Contains(string(upstream.bodies[0]), "encrypted_content"))
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
+	require.True(t, gjson.GetBytes(upstream.bodies[1], "store").Exists())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "store").Bool())
+	require.False(t, strings.Contains(string(upstream.bodies[1]), "encrypted_content"))
+	require.Equal(t, "continue", gjson.GetBytes(upstream.bodies[1], "input.0.content.0.text").String())
+	require.Equal(t, "rid_compaction_retry_ok", result.RequestID)
+	require.Equal(t, "resp_retry_ok", result.ResponseID)
+}
+
 func TestForwardGrokResponsesUsesTLSRouterProfileAndHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -987,59 +1040,122 @@ func TestForwardAsAnthropicForGrokUsesXAIResponses(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), "ok")
 }
 
-func TestHandleGrokAccountUpstreamErrorTempUnschedulesReadinessStates(t *testing.T) {
-	tests := []struct {
-		name            string
-		status          int
-		headers         http.Header
-		wantReason      string
-		wantMinCooldown time.Duration
-		wantMaxCooldown time.Duration
-	}{
-		{
-			name:            "unauthorized reauth",
-			status:          http.StatusUnauthorized,
-			wantReason:      "grok oauth token unauthorized",
-			wantMinCooldown: 10*time.Minute - time.Second,
-			wantMaxCooldown: 10*time.Minute + time.Second,
-		},
-		{
-			name:            "forbidden entitlement",
-			status:          http.StatusForbidden,
-			wantReason:      "grok entitlement or subscription tier denied",
-			wantMinCooldown: 30*time.Minute - time.Second,
-			wantMaxCooldown: 30*time.Minute + time.Second,
-		},
-		{
-			name:            "rate limited retry after",
-			status:          http.StatusTooManyRequests,
-			headers:         http.Header{"Retry-After": []string{"45"}},
-			wantReason:      "grok rate limited",
-			wantMinCooldown: 44 * time.Second,
-			wantMaxCooldown: 46 * time.Second,
-		},
+func TestBuildGrokSchedulerExtraUpdates_FeedsThresholdEvaluator(t *testing.T) {
+	int64p := func(v int64) *int64 { return &v }
+	resetUnix := time.Now().Add(90 * time.Minute).Unix()
+	snapshot := &xai.QuotaSnapshot{
+		Requests: &xai.QuotaWindow{Limit: int64p(100), Remaining: int64p(30)},                    // 70% used
+		Tokens:   &xai.QuotaWindow{Limit: int64p(1000), Remaining: int64p(50), ResetUnix: &resetUnix}, // 95% used (most constrained)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			account := &Account{ID: 61, Platform: PlatformGrok, Type: AccountTypeOAuth}
-			repo := &grokQuotaAccountRepo{}
-			svc := &OpenAIGatewayService{accountRepo: repo}
-			before := time.Now()
+	updates := buildGrokSchedulerExtraUpdates(snapshot)
+	require.NotNil(t, updates)
+	require.InDelta(t, 95.0, updates["grok_sched_utilization"], 0.001, "picks the most-constrained window")
+	require.Contains(t, updates, "grok_sched_reset_at")
 
-			svc.handleGrokAccountUpstreamError(context.Background(), account, tt.status, tt.headers, nil)
-
-			require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
-			require.Equal(t, 1, repo.tempUnschedCalls)
-			require.Equal(t, account.ID, repo.lastTempUnschedID)
-			require.Equal(t, tt.wantReason, repo.lastTempUnschedReason)
-			require.True(t, repo.lastTempUnschedUntil.After(before.Add(tt.wantMinCooldown)))
-			require.True(t, repo.lastTempUnschedUntil.Before(before.Add(tt.wantMaxCooldown)))
-		})
-	}
+	// The written extras must actually drive EvaluateAccountSchedulingThreshold
+	// (proves the previously-dead read side is now fed).
+	account := &Account{Platform: PlatformGrok, Extra: updates}
+	decision := EvaluateAccountSchedulingThreshold(account, map[string]int{PlatformGrok: 90}, time.Now())
+	require.True(t, decision.ShouldPause)
+	require.InDelta(t, 95.0, decision.UsedPercent, 0.001)
+	require.NotNil(t, decision.Until)
 }
 
-func TestHandleGrokAccountUpstreamErrorDoesNotShortenExistingPause(t *testing.T) {
+func TestBuildGrokSchedulerExtraUpdates_NilWhenNoQuotaWindows(t *testing.T) {
+	require.Nil(t, buildGrokSchedulerExtraUpdates(&xai.QuotaSnapshot{}))
+	require.Nil(t, buildGrokSchedulerExtraUpdates(nil))
+}
+
+// newGrokErrorTestService wires an OpenAIGatewayService with a RateLimitService
+// so Grok 401/429 exercise the unified upstream-error pipeline.
+func newGrokErrorTestService(repo *grokQuotaAccountRepo) *OpenAIGatewayService {
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	svc.rateLimitService = &RateLimitService{
+		accountRepo:    repo,
+		cfg:            &config.Config{},
+		runtimeBlocker: svc,
+	}
+	return svc
+}
+
+func TestHandleGrokAccountUpstreamError_401RoutesThroughUnifiedPipeline(t *testing.T) {
+	// OAuth account missing a refresh_token must be permanently disabled (not
+	// endlessly reselected every cooldown), matching every other platform.
+	account := &Account{ID: 61, Platform: PlatformGrok, Type: AccountTypeOAuth}
+	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{accountsByID: map[int64]*Account{61: account}}}
+	svc := newGrokErrorTestService(repo)
+
+	svc.handleGrokAccountUpstreamError(context.Background(), account, http.StatusUnauthorized, nil, []byte(`{"error":{"message":"unauthorized"}}`))
+
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account), "401 with no refresh_token should block scheduling")
+	require.Equal(t, 1, repo.setErrorCalls, "401 with no refresh_token permanently disables the account via SetError")
+	require.Contains(t, repo.lastSetErrorMsg, "no refresh_token")
+}
+
+func TestHandleGrokAccountUpstreamError_401OAuthCooldownWhenRefreshable(t *testing.T) {
+	// With a refresh_token the account is temp-unschedulable for the configured
+	// OAuth 401 window (default 10m), not permanently disabled.
+	account := &Account{ID: 63, Platform: PlatformGrok, Type: AccountTypeOAuth, Credentials: map[string]any{"refresh_token": "rt"}}
+	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{accountsByID: map[int64]*Account{63: account}}}
+	svc := newGrokErrorTestService(repo)
+	before := time.Now()
+
+	svc.handleGrokAccountUpstreamError(context.Background(), account, http.StatusUnauthorized, nil, []byte(`{"error":{"message":"expired"}}`))
+
+	require.Equal(t, 1, repo.tempUnschedCalls)
+	require.Equal(t, account.ID, repo.lastTempUnschedID)
+	require.True(t, repo.lastTempUnschedUntil.After(before.Add(10*time.Minute-time.Second)))
+	require.True(t, repo.lastTempUnschedUntil.Before(before.Add(10*time.Minute+time.Second)))
+}
+
+func TestHandleGrokAccountUpstreamError_429UsesResetHeaderViaRateLimited(t *testing.T) {
+	account := &Account{ID: 64, Platform: PlatformGrok, Type: AccountTypeOAuth, Credentials: map[string]any{"refresh_token": "rt"}}
+	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{accountsByID: map[int64]*Account{64: account}}}
+	svc := newGrokErrorTestService(repo)
+	before := time.Now()
+
+	// Relative retry-after 45s → SetRateLimited ~45s out, runtime blocked.
+	svc.handleGrokAccountUpstreamError(context.Background(), account, http.StatusTooManyRequests, http.Header{"Retry-After": []string{"45"}}, nil)
+
+	require.Equal(t, 1, repo.rateLimitedCalls, "429 marks rate-limited (not temp-unschedulable)")
+	require.Equal(t, account.ID, repo.lastRateLimitedID)
+	require.True(t, repo.lastRateLimitedUntil.After(before.Add(44*time.Second)))
+	require.True(t, repo.lastRateLimitedUntil.Before(before.Add(46*time.Second)))
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestHandleGrokAccountUpstreamError_429CapsHugeRetryAfter(t *testing.T) {
+	account := &Account{ID: 65, Platform: PlatformGrok, Type: AccountTypeOAuth, Credentials: map[string]any{"refresh_token": "rt"}}
+	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{accountsByID: map[int64]*Account{65: account}}}
+	svc := newGrokErrorTestService(repo)
+	before := time.Now()
+
+	// A hostile retry-after of one day must be clamped to grokMaxUpstreamCooldown.
+	svc.handleGrokAccountUpstreamError(context.Background(), account, http.StatusTooManyRequests, http.Header{"Retry-After": []string{"86400"}}, nil)
+
+	require.Equal(t, 1, repo.rateLimitedCalls)
+	require.True(t, repo.lastRateLimitedUntil.Before(before.Add(grokMaxUpstreamCooldown+time.Second)))
+	require.True(t, repo.lastRateLimitedUntil.After(before.Add(grokMaxUpstreamCooldown-time.Second)))
+}
+
+func TestHandleGrokAccountUpstreamError_403BoundedCooldownNotPermanent(t *testing.T) {
+	account := &Account{ID: 66, Platform: PlatformGrok, Type: AccountTypeOAuth}
+	repo := &grokQuotaAccountRepo{}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	before := time.Now()
+
+	svc.handleGrokAccountUpstreamError(context.Background(), account, http.StatusForbidden, nil, nil)
+
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.Equal(t, 1, repo.tempUnschedCalls)
+	require.Equal(t, "grok entitlement or subscription tier denied", repo.lastTempUnschedReason)
+	require.True(t, repo.lastTempUnschedUntil.After(before.Add(grokMaxUpstreamCooldown-time.Second)))
+	require.True(t, repo.lastTempUnschedUntil.Before(before.Add(grokMaxUpstreamCooldown+time.Second)))
+	require.Equal(t, 0, repo.setErrorCalls, "transient 403 must not permanently disable the account")
+}
+
+func TestHandleGrokAccountUpstreamError_5xxShortCooldownDoesNotShortenExistingPause(t *testing.T) {
 	existingUntil := time.Now().Add(15 * time.Minute)
 	account := &Account{
 		ID:                      62,
@@ -1051,7 +1167,8 @@ func TestHandleGrokAccountUpstreamErrorDoesNotShortenExistingPause(t *testing.T)
 	repo := &grokQuotaAccountRepo{}
 	svc := &OpenAIGatewayService{accountRepo: repo}
 
-	svc.handleGrokAccountUpstreamError(context.Background(), account, http.StatusTooManyRequests, http.Header{"Retry-After": []string{"45"}}, nil)
+	// A short 5xx cooldown (2m) must not shorten a longer existing pause (15m).
+	svc.handleGrokAccountUpstreamError(context.Background(), account, http.StatusBadGateway, nil, nil)
 
 	require.Equal(t, 1, repo.tempUnschedCalls)
 	require.WithinDuration(t, existingUntil, repo.lastTempUnschedUntil, time.Second)

@@ -1535,6 +1535,10 @@ func (s *BillingService) CalculateVideoCost(videoSize string, seconds int, video
 	}
 }
 
+func (s *BillingService) GetVideoUnitPrice(model string, sizeTier string, groupConfig *VideoPriceConfig) float64 {
+	return s.getVideoUnitPrice(model, sizeTier, groupConfig)
+}
+
 func (s *BillingService) getVideoUnitPrice(model string, sizeTier string, groupConfig *VideoPriceConfig) float64 {
 	if groupConfig != nil {
 		var price *float64

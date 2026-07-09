@@ -525,6 +525,62 @@ func (_c *UsageLogCreate) SetImageSizeBreakdown(v map[string]int) *UsageLogCreat
 	return _c
 }
 
+// SetVideoResolution sets the "video_resolution" field.
+func (_c *UsageLogCreate) SetVideoResolution(v string) *UsageLogCreate {
+	_c.mutation.SetVideoResolution(v)
+	return _c
+}
+
+// SetNillableVideoResolution sets the "video_resolution" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableVideoResolution(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetVideoResolution(*v)
+	}
+	return _c
+}
+
+// SetVideoSeconds sets the "video_seconds" field.
+func (_c *UsageLogCreate) SetVideoSeconds(v int) *UsageLogCreate {
+	_c.mutation.SetVideoSeconds(v)
+	return _c
+}
+
+// SetNillableVideoSeconds sets the "video_seconds" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableVideoSeconds(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetVideoSeconds(*v)
+	}
+	return _c
+}
+
+// SetVideoCount sets the "video_count" field.
+func (_c *UsageLogCreate) SetVideoCount(v int) *UsageLogCreate {
+	_c.mutation.SetVideoCount(v)
+	return _c
+}
+
+// SetNillableVideoCount sets the "video_count" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableVideoCount(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetVideoCount(*v)
+	}
+	return _c
+}
+
+// SetVideoUnitPrice sets the "video_unit_price" field.
+func (_c *UsageLogCreate) SetVideoUnitPrice(v float64) *UsageLogCreate {
+	_c.mutation.SetVideoUnitPrice(v)
+	return _c
+}
+
+// SetNillableVideoUnitPrice sets the "video_unit_price" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableVideoUnitPrice(v *float64) *UsageLogCreate {
+	if v != nil {
+		_c.SetVideoUnitPrice(*v)
+	}
+	return _c
+}
+
 // SetCacheTTLOverridden sets the "cache_ttl_overridden" field.
 func (_c *UsageLogCreate) SetCacheTTLOverridden(v bool) *UsageLogCreate {
 	_c.mutation.SetCacheTTLOverridden(v)
@@ -719,6 +775,10 @@ func (_c *UsageLogCreate) defaults() {
 		v := usagelog.DefaultImageCount
 		_c.mutation.SetImageCount(v)
 	}
+	if _, ok := _c.mutation.VideoCount(); !ok {
+		v := usagelog.DefaultVideoCount
+		_c.mutation.SetVideoCount(v)
+	}
 	if _, ok := _c.mutation.CacheTTLOverridden(); !ok {
 		v := usagelog.DefaultCacheTTLOverridden
 		_c.mutation.SetCacheTTLOverridden(v)
@@ -870,6 +930,14 @@ func (_c *UsageLogCreate) check() error {
 		if err := usagelog.ImageSizeSourceValidator(v); err != nil {
 			return &ValidationError{Name: "image_size_source", err: fmt.Errorf(`ent: validator failed for field "UsageLog.image_size_source": %w`, err)}
 		}
+	}
+	if v, ok := _c.mutation.VideoResolution(); ok {
+		if err := usagelog.VideoResolutionValidator(v); err != nil {
+			return &ValidationError{Name: "video_resolution", err: fmt.Errorf(`ent: validator failed for field "UsageLog.video_resolution": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.VideoCount(); !ok {
+		return &ValidationError{Name: "video_count", err: errors.New(`ent: missing required field "UsageLog.video_count"`)}
 	}
 	if _, ok := _c.mutation.CacheTTLOverridden(); !ok {
 		return &ValidationError{Name: "cache_ttl_overridden", err: errors.New(`ent: missing required field "UsageLog.cache_ttl_overridden"`)}
@@ -1057,6 +1125,22 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ImageSizeBreakdown(); ok {
 		_spec.SetField(usagelog.FieldImageSizeBreakdown, field.TypeJSON, value)
 		_node.ImageSizeBreakdown = value
+	}
+	if value, ok := _c.mutation.VideoResolution(); ok {
+		_spec.SetField(usagelog.FieldVideoResolution, field.TypeString, value)
+		_node.VideoResolution = &value
+	}
+	if value, ok := _c.mutation.VideoSeconds(); ok {
+		_spec.SetField(usagelog.FieldVideoSeconds, field.TypeInt, value)
+		_node.VideoSeconds = &value
+	}
+	if value, ok := _c.mutation.VideoCount(); ok {
+		_spec.SetField(usagelog.FieldVideoCount, field.TypeInt, value)
+		_node.VideoCount = value
+	}
+	if value, ok := _c.mutation.VideoUnitPrice(); ok {
+		_spec.SetField(usagelog.FieldVideoUnitPrice, field.TypeFloat64, value)
+		_node.VideoUnitPrice = &value
 	}
 	if value, ok := _c.mutation.CacheTTLOverridden(); ok {
 		_spec.SetField(usagelog.FieldCacheTTLOverridden, field.TypeBool, value)
@@ -1902,6 +1986,90 @@ func (u *UsageLogUpsert) UpdateImageSizeBreakdown() *UsageLogUpsert {
 // ClearImageSizeBreakdown clears the value of the "image_size_breakdown" field.
 func (u *UsageLogUpsert) ClearImageSizeBreakdown() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldImageSizeBreakdown)
+	return u
+}
+
+// SetVideoResolution sets the "video_resolution" field.
+func (u *UsageLogUpsert) SetVideoResolution(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldVideoResolution, v)
+	return u
+}
+
+// UpdateVideoResolution sets the "video_resolution" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateVideoResolution() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldVideoResolution)
+	return u
+}
+
+// ClearVideoResolution clears the value of the "video_resolution" field.
+func (u *UsageLogUpsert) ClearVideoResolution() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldVideoResolution)
+	return u
+}
+
+// SetVideoSeconds sets the "video_seconds" field.
+func (u *UsageLogUpsert) SetVideoSeconds(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldVideoSeconds, v)
+	return u
+}
+
+// UpdateVideoSeconds sets the "video_seconds" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateVideoSeconds() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldVideoSeconds)
+	return u
+}
+
+// AddVideoSeconds adds v to the "video_seconds" field.
+func (u *UsageLogUpsert) AddVideoSeconds(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldVideoSeconds, v)
+	return u
+}
+
+// ClearVideoSeconds clears the value of the "video_seconds" field.
+func (u *UsageLogUpsert) ClearVideoSeconds() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldVideoSeconds)
+	return u
+}
+
+// SetVideoCount sets the "video_count" field.
+func (u *UsageLogUpsert) SetVideoCount(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldVideoCount, v)
+	return u
+}
+
+// UpdateVideoCount sets the "video_count" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateVideoCount() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldVideoCount)
+	return u
+}
+
+// AddVideoCount adds v to the "video_count" field.
+func (u *UsageLogUpsert) AddVideoCount(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldVideoCount, v)
+	return u
+}
+
+// SetVideoUnitPrice sets the "video_unit_price" field.
+func (u *UsageLogUpsert) SetVideoUnitPrice(v float64) *UsageLogUpsert {
+	u.Set(usagelog.FieldVideoUnitPrice, v)
+	return u
+}
+
+// UpdateVideoUnitPrice sets the "video_unit_price" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateVideoUnitPrice() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldVideoUnitPrice)
+	return u
+}
+
+// AddVideoUnitPrice adds v to the "video_unit_price" field.
+func (u *UsageLogUpsert) AddVideoUnitPrice(v float64) *UsageLogUpsert {
+	u.Add(usagelog.FieldVideoUnitPrice, v)
+	return u
+}
+
+// ClearVideoUnitPrice clears the value of the "video_unit_price" field.
+func (u *UsageLogUpsert) ClearVideoUnitPrice() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldVideoUnitPrice)
 	return u
 }
 
@@ -2800,6 +2968,104 @@ func (u *UsageLogUpsertOne) UpdateImageSizeBreakdown() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearImageSizeBreakdown() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearImageSizeBreakdown()
+	})
+}
+
+// SetVideoResolution sets the "video_resolution" field.
+func (u *UsageLogUpsertOne) SetVideoResolution(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoResolution(v)
+	})
+}
+
+// UpdateVideoResolution sets the "video_resolution" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateVideoResolution() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoResolution()
+	})
+}
+
+// ClearVideoResolution clears the value of the "video_resolution" field.
+func (u *UsageLogUpsertOne) ClearVideoResolution() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearVideoResolution()
+	})
+}
+
+// SetVideoSeconds sets the "video_seconds" field.
+func (u *UsageLogUpsertOne) SetVideoSeconds(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoSeconds(v)
+	})
+}
+
+// AddVideoSeconds adds v to the "video_seconds" field.
+func (u *UsageLogUpsertOne) AddVideoSeconds(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddVideoSeconds(v)
+	})
+}
+
+// UpdateVideoSeconds sets the "video_seconds" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateVideoSeconds() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoSeconds()
+	})
+}
+
+// ClearVideoSeconds clears the value of the "video_seconds" field.
+func (u *UsageLogUpsertOne) ClearVideoSeconds() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearVideoSeconds()
+	})
+}
+
+// SetVideoCount sets the "video_count" field.
+func (u *UsageLogUpsertOne) SetVideoCount(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoCount(v)
+	})
+}
+
+// AddVideoCount adds v to the "video_count" field.
+func (u *UsageLogUpsertOne) AddVideoCount(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddVideoCount(v)
+	})
+}
+
+// UpdateVideoCount sets the "video_count" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateVideoCount() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoCount()
+	})
+}
+
+// SetVideoUnitPrice sets the "video_unit_price" field.
+func (u *UsageLogUpsertOne) SetVideoUnitPrice(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoUnitPrice(v)
+	})
+}
+
+// AddVideoUnitPrice adds v to the "video_unit_price" field.
+func (u *UsageLogUpsertOne) AddVideoUnitPrice(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddVideoUnitPrice(v)
+	})
+}
+
+// UpdateVideoUnitPrice sets the "video_unit_price" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateVideoUnitPrice() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoUnitPrice()
+	})
+}
+
+// ClearVideoUnitPrice clears the value of the "video_unit_price" field.
+func (u *UsageLogUpsertOne) ClearVideoUnitPrice() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearVideoUnitPrice()
 	})
 }
 
@@ -3872,6 +4138,104 @@ func (u *UsageLogUpsertBulk) UpdateImageSizeBreakdown() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearImageSizeBreakdown() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearImageSizeBreakdown()
+	})
+}
+
+// SetVideoResolution sets the "video_resolution" field.
+func (u *UsageLogUpsertBulk) SetVideoResolution(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoResolution(v)
+	})
+}
+
+// UpdateVideoResolution sets the "video_resolution" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateVideoResolution() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoResolution()
+	})
+}
+
+// ClearVideoResolution clears the value of the "video_resolution" field.
+func (u *UsageLogUpsertBulk) ClearVideoResolution() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearVideoResolution()
+	})
+}
+
+// SetVideoSeconds sets the "video_seconds" field.
+func (u *UsageLogUpsertBulk) SetVideoSeconds(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoSeconds(v)
+	})
+}
+
+// AddVideoSeconds adds v to the "video_seconds" field.
+func (u *UsageLogUpsertBulk) AddVideoSeconds(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddVideoSeconds(v)
+	})
+}
+
+// UpdateVideoSeconds sets the "video_seconds" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateVideoSeconds() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoSeconds()
+	})
+}
+
+// ClearVideoSeconds clears the value of the "video_seconds" field.
+func (u *UsageLogUpsertBulk) ClearVideoSeconds() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearVideoSeconds()
+	})
+}
+
+// SetVideoCount sets the "video_count" field.
+func (u *UsageLogUpsertBulk) SetVideoCount(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoCount(v)
+	})
+}
+
+// AddVideoCount adds v to the "video_count" field.
+func (u *UsageLogUpsertBulk) AddVideoCount(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddVideoCount(v)
+	})
+}
+
+// UpdateVideoCount sets the "video_count" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateVideoCount() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoCount()
+	})
+}
+
+// SetVideoUnitPrice sets the "video_unit_price" field.
+func (u *UsageLogUpsertBulk) SetVideoUnitPrice(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoUnitPrice(v)
+	})
+}
+
+// AddVideoUnitPrice adds v to the "video_unit_price" field.
+func (u *UsageLogUpsertBulk) AddVideoUnitPrice(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddVideoUnitPrice(v)
+	})
+}
+
+// UpdateVideoUnitPrice sets the "video_unit_price" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateVideoUnitPrice() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoUnitPrice()
+	})
+}
+
+// ClearVideoUnitPrice clears the value of the "video_unit_price" field.
+func (u *UsageLogUpsertBulk) ClearVideoUnitPrice() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearVideoUnitPrice()
 	})
 }
 

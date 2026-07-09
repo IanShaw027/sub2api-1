@@ -1748,6 +1748,12 @@ export interface UsageLog {
   image_output_tokens: number
   image_output_cost: number
 
+  // 视频生成计费明细
+  video_resolution?: string | null
+  video_seconds?: number | null
+  video_count?: number
+  video_unit_price?: number | null
+
   // User-Agent
   user_agent: string | null
   ip_address?: string | null
