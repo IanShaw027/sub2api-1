@@ -454,6 +454,35 @@ describe('CreateAccountModal', () => {
     expect(createMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_image_generation_enabled')
   })
 
+  it('creates Grok API key accounts with the official xAI OpenAI-compatible base URL', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'Grok').trigger('click')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('__API_KEY__')
+
+    ;(wrapper.vm as any).accountCategory = 'apikey'
+    ;(wrapper.vm as any).form.name = 'Grok API Key'
+    ;(wrapper.vm as any).apiKeyValue = 'xai-test-key'
+    ;(wrapper.vm as any).apiKeyBaseUrl = ''
+    await nextTick()
+
+    await (wrapper.vm as any).handleSubmit()
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Grok API Key',
+      platform: 'grok',
+      type: 'apikey',
+      credentials: expect.objectContaining({
+        base_url: 'https://api.x.ai/v1',
+        api_key: 'xai-test-key'
+      })
+    }))
+  })
+
   it('allows an empty name for OAuth flows so the auto-naming step can continue', async () => {
     const wrapper = mountModal()
     await flushPromises()
