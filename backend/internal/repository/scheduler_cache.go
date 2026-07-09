@@ -727,6 +727,10 @@ func filterSchedulerCredentials(credentials map[string]any) map[string]any {
 	}
 	keys := []string{
 		"model_mapping",
+		// compact_model_mapping 与 model_mapping 一样是账号的路由身份（尤其 Spark
+		// 影子账号的紧凑模型路由，见 service.sparkShadowAllowedCredentialKeys）。
+		// 调度器缓存视图必须保留它，否则影子账号在调度侧丢失紧凑路由映射。
+		"compact_model_mapping",
 		"api_key",
 		"project_id",
 		"oauth_type",
